@@ -48,6 +48,7 @@ import {
   lineOfBounds,
   sameLines,
 } from "./writing-lines";
+import { t } from "../i18n/translate";
 
 /**
  * A line counts as written on when ink covers more than this share of its
@@ -250,7 +251,7 @@ export function planInsertSpace(
   const lines = count > 0 ? count : -closeUp(walk, pageIndex, target, -count);
   if (count > 0) pushDown(walk, pageIndex, target, count);
   if (walk.moves.length === 0) return none;
-  const label = count > 0 ? "Insert space" : "Remove space";
+  const label = count > 0 ? t("surface.command.insertSpace") : t("surface.command.removeSpace");
   return {
     command: new CompositeCommand(label, [...walk.added, ...walk.moves]),
     lines,
@@ -330,8 +331,8 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
     const lists = listsOf(page, group);
     walk.moves.push(
       new TranslateElements(page.id, lists, 0, shift),
-      new RemoveElements(page.id, lists, "Insert space"),
-      new AddElements(next.id, lists, "Insert space"),
+      new RemoveElements(page.id, lists, t("surface.command.insertSpace")),
+      new AddElements(next.id, lists, t("surface.command.insertSpace")),
     );
   }
   // A link goes with most of its ink; strokes it leaves behind lose it.
@@ -342,8 +343,13 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
     const moving = link.strokes.filter((id) => carried.has(id));
     if (moving.length * 2 <= link.strokes.length) continue;
     walk.moves.push(
-      new SetLink(page, link.id, null, "Insert space"),
-      new SetLink(next, link.id, { strokes: moving, target: link.target }, "Insert space"),
+      new SetLink(page, link.id, null, t("surface.command.insertSpace")),
+      new SetLink(
+        next,
+        link.id,
+        { strokes: moving, target: link.target },
+        t("surface.command.insertSpace"),
+      ),
     );
   }
   // So does a checklist item made of handwriting.
@@ -352,8 +358,8 @@ function pushDown(walk: Walk, pageIndex: number, target: SpaceTarget, count: num
     if (moving.length * 2 <= task.strokes.length) continue;
     const { id: _id, ...rest } = task;
     walk.moves.push(
-      new SetTask(page, task.id, null, "Insert space"),
-      new SetTask(next, task.id, { ...rest, strokes: moving }, "Insert space"),
+      new SetTask(page, task.id, null, t("surface.command.insertSpace")),
+      new SetTask(next, task.id, { ...rest, strokes: moving }, t("surface.command.insertSpace")),
     );
   }
   // A section goes with its heading, keeping its place on the line.

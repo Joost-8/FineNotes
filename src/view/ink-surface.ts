@@ -1,5 +1,6 @@
 import { bindScrollThumb } from "./scroll-thumb-drag";
 import { type PdfRenderArea, boundsMeet } from "../canvas/pdf-raster";
+import { t, tn } from "../i18n/translate";
 /**
  * The notebook's drawing surface: the part of `InkView` the pen touches.
  *
@@ -1274,11 +1275,41 @@ const LINK_GAP_PX = 48;
 
 /** The shapes a new linked shape can be turned into, in the order its bar shows them. */
 const LINK_TYPES: ReadonlyArray<{ kind: BoxPreset; icon: string; label: string }> = [
-  { kind: "rect", icon: "square", label: "Rectangle" },
-  { kind: "ellipse", icon: "circle", label: "Circle" },
-  { kind: "triangle", icon: "triangle", label: "Triangle" },
-  { kind: "diamond", icon: "diamond", label: "Diamond" },
-  { kind: "roundrect", icon: "squircle", label: "Rounded rectangle" },
+  {
+    kind: "rect",
+    icon: "square",
+    get label() {
+      return t("surface.shapeType.rectangle");
+    },
+  },
+  {
+    kind: "ellipse",
+    icon: "circle",
+    get label() {
+      return t("surface.shapeType.circle");
+    },
+  },
+  {
+    kind: "triangle",
+    icon: "triangle",
+    get label() {
+      return t("surface.shapeType.triangle");
+    },
+  },
+  {
+    kind: "diamond",
+    icon: "diamond",
+    get label() {
+      return t("surface.shapeType.diamond");
+    },
+  },
+  {
+    kind: "roundrect",
+    icon: "squircle",
+    get label() {
+      return t("surface.shapeType.roundedRectangle");
+    },
+  },
 ];
 /**
  * A lasso press on the paper held this long without moving opens the small
@@ -1633,24 +1664,37 @@ function flipActions(flip: (axis: FlipAxis) => void, group = "flip"): SelectionA
     {
       id: "flip-x",
       icon: "flip-horizontal-2",
-      label: "Flip horizontal",
+      label: t("surface.command.flipHorizontal"),
       group,
-      segment: "Flip",
+      segment: t("surface.selectionBar.segment.flip"),
       run: () => flip("x"),
     },
     {
       id: "flip-y",
       icon: "flip-vertical-2",
-      label: "Flip vertical",
+      label: t("surface.command.flipVertical"),
       group,
-      segment: "Flip",
+      segment: t("surface.selectionBar.segment.flip"),
       run: () => flip("y"),
     },
   ];
 }
 
+/** The button in `root` whose tooltip is `label`: found by the words in use, whatever the language. */
+function buttonLabelled(root: HTMLElement, label: string): HTMLButtonElement | null {
+  for (const button of Array.from(root.querySelectorAll<HTMLButtonElement>("button"))) {
+    if (button.getAttribute("aria-label") === label) return button;
+  }
+  return null;
+}
+
 /** The lasso menu's one row that opens what a selection can become (2.5). */
-const TURN_INTO = { label: "Turn into", icon: "wand-sparkles" } as const;
+const TURN_INTO = {
+  get label() {
+    return t("surface.selectionBar.turnInto");
+  },
+  icon: "wand-sparkles",
+} as const;
 
 /**
  * A box on screen, client px; whether it is being typed in (the keyboard is
@@ -2668,7 +2712,7 @@ export class InkSurface {
     this.textHintLabel = this.textHintEl.createSpan({ cls: "goodobsidian-text-hint-label" });
     const hintClose = this.textHintEl.createEl("button", {
       cls: "goodobsidian-text-hint-close clickable-icon",
-      attr: { "aria-label": "Dismiss this tip" },
+      attr: { "aria-label": t("surface.textHint.dismiss") },
     });
     iconInto(hintClose, "x", "×");
     // Keep a page text box's focus (and the iPad keyboard) while closing it.
@@ -2688,11 +2732,11 @@ export class InkSurface {
     );
     this.offPageEl.createSpan({
       cls: "goodobsidian-offpage-label",
-      text: "Part of this stroke is outside the page",
+      text: t("surface.offPage.message"),
     });
     const offPageUndo = this.offPageEl.createEl("button", {
       cls: "goodobsidian-offpage-undo clickable-icon",
-      text: "Undo",
+      text: t("common.undo"),
     });
     offPageUndo.addEventListener("pointerdown", (event) => event.preventDefault());
     offPageUndo.addEventListener("click", () => {
@@ -2707,7 +2751,7 @@ export class InkSurface {
     this.textCopyLabel = this.textCopyEl.createSpan({ cls: "goodobsidian-text-copy-label" });
     const textCopyButton = this.textCopyEl.createEl("button", {
       cls: "goodobsidian-text-copy-button clickable-icon",
-      text: "Copy",
+      text: t("common.copy"),
     });
     onTap(textCopyButton, () => {
       const text = this.textCopyText;
@@ -2851,7 +2895,7 @@ export class InkSurface {
     for (const type of fingerEvents) {
       this.selectionFrameEl.addEventListener(type, this.onSelectionFinger);
     }
-    this.actionBar = new SelectionActionBar(this.selectionUiEl, "Selection");
+    this.actionBar = new SelectionActionBar(this.selectionUiEl, t("surface.selectionBar.title"));
     this.textPickView = new TextPickView(this.selectionUiEl, {
       grab: (end, x, y) => this.grabTextHandle(end, x, y),
       drag: (x, y) => this.dragTextHandle(x, y),
@@ -3212,7 +3256,7 @@ export class InkSurface {
     for (const tab of tabs) {
       const el = this.tabStripEl.createEl("button", {
         cls: "goodobsidian-page-tab clickable-icon",
-        attr: { "aria-label": `Open ${tab.label}`, title: tab.label },
+        attr: { "aria-label": t("surface.pageTab.open", { label: tab.label }), title: tab.label },
       });
       el.setCssStyles({ backgroundColor: tab.color });
       el.createSpan({ cls: "goodobsidian-page-tab-label", text: tab.label });
@@ -3366,7 +3410,7 @@ export class InkSurface {
     const page = this.doc.pages.find((p) => p.id === pageId);
     if (!page) return false;
     const made: Stroke[] = strokes.map((s) => ({ ...s, id: this.strokeIds.next() }));
-    this.applyCommand(addStrokesTimed(page, made, this.clock(), "Write answer"));
+    this.applyCommand(addStrokesTimed(page, made, this.clock(), t("surface.command.writeAnswer")));
     return true;
   }
 
@@ -4926,7 +4970,9 @@ export class InkSurface {
       const top = this.viewport.scrollY;
       index = currentPageIndex(this.pageLayout, top, top + this.cssH / scale);
     }
-    this.indicatorEl.setText(total > 0 ? `${index + 1} of ${total}` : "0 of 0");
+    this.indicatorEl.setText(
+      t("surface.pageIndicator", { page: total > 0 ? index + 1 : 0, total }),
+    );
     const seen = this.visiblePageRect(index);
     if (seen) this.callbacks.onReadingPoint?.(index, seen.y + seen.h / 3);
     // A board has no pages to count; the zoom readout stays.
@@ -5887,7 +5933,12 @@ export class InkSurface {
       if (text === live.text) return;
       this.history.push(
         this.doc,
-        new SetTextBoxText(view.pageId, view.id, text, done ? "Tick task" : "Untick task"),
+        new SetTextBoxText(
+          view.pageId,
+          view.id,
+          text,
+          done ? t("surface.command.tickTask") : t("surface.command.untickTask"),
+        ),
       );
       view.input.value = text;
       this.renderShownText(view, text);
@@ -6008,15 +6059,15 @@ export class InkSurface {
     });
     const input = root.createEl("textarea", {
       cls: "goodobsidian-page-textbox-input",
-      attr: { "aria-label": "Page text box", rows: "1" },
+      attr: { "aria-label": t("surface.textBox.page"), rows: "1" },
     });
     const moveHandle = root.createDiv({
       cls: "goodobsidian-page-textbox-handle is-move",
-      attr: { "aria-label": "Move text box" },
+      attr: { "aria-label": t("surface.textBox.move") },
     });
     const resizeHandle = root.createDiv({
       cls: "goodobsidian-page-textbox-handle is-resize",
-      attr: { "aria-label": "Resize text box" },
+      attr: { "aria-label": t("surface.textBox.resize") },
     });
     const shown = root.createDiv({ cls: "goodobsidian-page-textbox-view" });
     input.value = textBox.text;
@@ -7213,7 +7264,10 @@ export class InkSurface {
     const redo = fingers >= 3;
     const can = redo ? this.history.canRedo() : this.history.canUndo();
     // A step names itself in the readout (`stepHistory`).
-    if (!can) this.flashReadout(redo ? "Nothing to redo" : "Nothing to undo");
+    if (!can)
+      this.flashReadout(
+        redo ? t("surface.readout.nothingToRedo") : t("surface.readout.nothingToUndo"),
+      );
     else if (redo) this.redo();
     else this.undo();
   }
@@ -7805,8 +7859,8 @@ export class InkSurface {
       // No title on the bar: the grip and the magnified page say what it
       // is, and its seven buttons need the room. Its name stays for screen readers.
       title: "",
-      label: "Zoom box",
-      closeLabel: "Close zoom box",
+      label: t("surface.zoomBox.title"),
+      closeLabel: t("surface.zoomBox.close"),
       min: { w: 304, h: 160 },
       // A palm resting inside the window while the Pencil writes must not
       // drag or resize it; the bar's buttons stay tappable.
@@ -7818,17 +7872,41 @@ export class InkSurface {
           this.zoomStroke,
         ),
       buttons: [
-        { icon: "arrow-left", label: "Previous position", run: () => this.previousZoomBox() },
-        { icon: "arrow-right", label: "Advance", run: () => this.advanceZoomBox() },
-        { icon: "corner-down-left", label: "New line", run: () => this.newZoomBoxLine() },
+        {
+          icon: "arrow-left",
+          label: t("surface.zoomBox.previous"),
+          run: () => this.previousZoomBox(),
+        },
+        {
+          icon: "arrow-right",
+          label: t("surface.zoomBox.advance"),
+          run: () => this.advanceZoomBox(),
+        },
+        {
+          icon: "corner-down-left",
+          label: t("surface.zoomBox.newLine"),
+          run: () => this.newZoomBoxLine(),
+        },
         {
           icon: "chevrons-right",
-          label: "Auto-advance",
+          label: t("surface.zoomBox.autoAdvance"),
           run: () => this.setZoomAutoAdvance(!this.zoomAutoAdvanceOn()),
         },
-        { icon: "minus", label: "Zoom out", run: () => this.scaleZoomWindow(1 / ZOOM_STEP) },
-        { icon: "plus", label: "Zoom in", run: () => this.scaleZoomWindow(ZOOM_STEP) },
-        { icon: "settings", label: "Zoom box settings", run: () => this.toggleZoomSettings() },
+        {
+          icon: "minus",
+          label: t("surface.zoomBox.zoomOut"),
+          run: () => this.scaleZoomWindow(1 / ZOOM_STEP),
+        },
+        {
+          icon: "plus",
+          label: t("surface.zoomBox.zoomIn"),
+          run: () => this.scaleZoomWindow(ZOOM_STEP),
+        },
+        {
+          icon: "settings",
+          label: t("surface.zoomBox.settings"),
+          run: () => this.toggleZoomSettings(),
+        },
       ],
       // Open at the bottom, above the options pill, and centred.
       firstPlace: (bounds) => zoomWindowFirstPlace(bounds),
@@ -7850,11 +7928,9 @@ export class InkSurface {
       setIcon(grip, "grip-horizontal");
       bar.insertBefore(grip, bar.firstChild);
       this.zoomReadout = bar.createSpan({ cls: "goodobsidian-zoombox-readout" });
-      const plus = bar.querySelector<HTMLElement>('[aria-label="Zoom in"]');
+      const plus = buttonLabelled(bar, t("surface.zoomBox.zoomIn"));
       if (plus) bar.insertBefore(this.zoomReadout, plus);
-      this.zoomAutoAdvanceButton = bar.querySelector<HTMLButtonElement>(
-        '[aria-label="Auto-advance"]',
-      );
+      this.zoomAutoAdvanceButton = buttonLabelled(bar, t("surface.zoomBox.autoAdvance"));
       this.syncZoomAutoAdvanceButton();
     }
     const canvas = frame.body.createEl("canvas", {
@@ -8147,10 +8223,10 @@ export class InkSurface {
     if (!frame) return;
     const panel = frame.el.createDiv({ cls: "goodobsidian-zoombox-settings" });
     panel.setAttribute("role", "group");
-    panel.setAttribute("aria-label", "Zoom box settings");
+    panel.setAttribute("aria-label", t("surface.zoomBox.settings"));
     this.zoomSettingsEl = panel;
     this.zoomSettingSlider(panel, {
-      label: "Line spacing",
+      label: t("surface.zoomBox.lineSpacing"),
       min: -50,
       max: 100,
       step: 5,
@@ -8159,7 +8235,7 @@ export class InkSurface {
       save: (lineStep) => this.callbacks.onZoomBoxSettings?.({ lineStep }),
     });
     this.zoomSettingSlider(panel, {
-      label: "Auto-advance zone",
+      label: t("surface.zoomBox.autoAdvanceZone"),
       min: 10,
       max: 50,
       step: 1,
@@ -8178,7 +8254,9 @@ export class InkSurface {
   }
 
   private syncZoomSettingsButton(): void {
-    const gear = this.zoomFrame?.el.querySelector<HTMLElement>('[aria-label="Zoom box settings"]');
+    const gear = this.zoomFrame
+      ? buttonLabelled(this.zoomFrame.el, t("surface.zoomBox.settings"))
+      : null;
     const open = this.zoomSettingsEl !== null;
     gear?.toggleClass("is-active", open);
     gear?.setAttribute("aria-expanded", String(open));
@@ -8251,7 +8329,10 @@ export class InkSurface {
     }
     button.toggleClass("is-active", on);
     button.setAttribute("aria-pressed", String(on));
-    button.setAttribute("aria-label", on ? "Auto-advance: on" : "Auto-advance: off");
+    button.setAttribute(
+      "aria-label",
+      on ? t("surface.zoomBox.autoAdvanceOn") : t("surface.zoomBox.autoAdvanceOff"),
+    );
   }
 
   /** A new stroke in the box supersedes a pending advance. */
@@ -8839,9 +8920,7 @@ export class InkSurface {
     if (!result.ok) {
       if (!quiet) {
         new Notice(
-          result.reason === "open"
-            ? "This area is not closed: nothing filled."
-            : "Tap inside an outline to fill it.",
+          result.reason === "open" ? t("surface.fill.notClosed") : t("surface.fill.tapInside"),
         );
       }
       return false;
@@ -10627,8 +10706,8 @@ export class InkSurface {
   private copyText(text: string): void {
     if (!text) return;
     void writeSystemText(text).then(
-      () => new Notice("Text copied."),
-      () => new Notice("FineNotes could not use the clipboard here."),
+      () => new Notice(t("surface.notice.textCopied")),
+      () => new Notice(t("surface.notice.clipboardUnusable")),
     );
   }
 
@@ -10648,12 +10727,12 @@ export class InkSurface {
   copyHighlightedText(): void {
     const page = this.pageAt(this.pageIndex);
     if (!page || page.backdrop.kind !== "pdf" || !this.textSource) {
-      new Notice("This page has no PDF text to copy.");
+      new Notice(t("surface.notice.noPdfText"));
       return;
     }
     const text = this.highlightedText(this.pageIndex);
-    if (text === null) new Notice("Reading this page's text. Try again in a moment.");
-    else if (!text) new Notice("Nothing highlighted on this page covers text.");
+    if (text === null) new Notice(t("surface.notice.readingPageText"));
+    else if (!text) new Notice(t("surface.notice.nothingHighlighted"));
     else this.copyText(text);
   }
 
@@ -10783,7 +10862,7 @@ export class InkSurface {
     if (known !== undefined) return known;
     const blocks = writingLines(page.backdrop, page.geometry);
     if (blocks.length === 0) {
-      if (announce) this.flashReadout("No lines on this page: erasing normally");
+      if (announce) this.flashReadout(t("surface.readout.noLinesErasing"));
       this.eraseRuled.set(page.id, null);
       return null;
     }
@@ -10947,7 +11026,7 @@ export class InkSurface {
     }
     this.history.push(
       this.doc,
-      steps.length === 1 ? steps[0] : new CompositeCommand("Erase", steps),
+      steps.length === 1 ? steps[0] : new CompositeCommand(t("surface.command.erase"), steps),
     );
     // Each step changes the one page it names; the rest of the index stands.
     const touched = steps.map((step) => step.pageId);
@@ -11041,7 +11120,10 @@ export class InkSurface {
     );
     // A linked word goes whole, never in part.
     for (const id of withLinkedStrokes(page, ids)) ids.add(id);
-    this.history.push(this.doc, new RemoveStrokesFromPage(page.id, ids, "Scribble to erase"));
+    this.history.push(
+      this.doc,
+      new RemoveStrokesFromPage(page.id, ids, t("surface.command.scribbleToErase")),
+    );
     for (const id of ids) this.strokeIndex.remove(id, page.id);
     if (erased) this.renderer?.invalidateRegion(box.index, erased);
     if (this.debug) this.hud.mark("scribble");
@@ -11315,13 +11397,13 @@ export class InkSurface {
       const page = this.pageAt(box.index);
       lines = page ? writingLines(page.backdrop, page.geometry) : [];
       const target = page ? spaceTargetAt(lines, page.geometry.width, local.x, local.y) : null;
-      if (lines.length === 0) this.flashReadout("No lines on this page: selecting a rectangle");
+      if (lines.length === 0) this.flashReadout(t("surface.readout.noLinesSelecting"));
       if (target) {
         space = {
           target,
           count: 0,
           plan: null,
-          text: "Drag down to insert lines, up to remove empty ones",
+          text: t("surface.readout.dragToInsertOrRemove"),
         };
         this.flashReadout(space.text);
       } else if (!lineAt(lines, local.x, local.y)) {
@@ -11471,7 +11553,8 @@ export class InkSurface {
     if (lines === 0) {
       this.renderer?.clearWet();
       this.requestZoomPaint();
-      space.text = count < 0 ? "No empty lines to remove here" : "Drag down to insert lines";
+      space.text =
+        count < 0 ? t("surface.readout.noEmptyLines") : t("surface.readout.dragToInsert");
       this.flashReadout(space.text);
       return;
     }
@@ -11591,7 +11674,7 @@ export class InkSurface {
       });
       const button = pill.createEl("button", {
         cls: "goodobsidian-empty-lasso-shot clickable-icon",
-        attr: { "aria-label": "Screenshot" },
+        attr: { "aria-label": t("surface.selectionBar.screenshot") },
       });
       iconInto(button, "camera", "");
       onTap(button, () => {
@@ -12410,7 +12493,7 @@ export class InkSurface {
     const colour: SelectionAction = {
       id: "note-colour",
       icon: "palette",
-      label: "Colour",
+      label: t("surface.selectionBar.colour"),
       group: "style",
       swatches: {
         colors: STICKY_COLORS.map((choice) => choice.color),
@@ -12422,7 +12505,7 @@ export class InkSurface {
     const fold: SelectionAction = {
       id: "note-fold",
       icon: "minimize-2",
-      label: "Fold note",
+      label: t("surface.command.foldNote"),
       group: "style",
       bar: true,
       menu: "none",
@@ -12433,7 +12516,9 @@ export class InkSurface {
       fold,
       ...actions
         .filter((action) => !pictureOnly(action.id))
-        .map((action) => (action.id === "lock" ? { ...action, label: "Lock note" } : action)),
+        .map((action) =>
+          action.id === "lock" ? { ...action, label: t("surface.selectionBar.lockNote") } : action,
+        ),
     ];
   }
 
@@ -12445,7 +12530,7 @@ export class InkSurface {
       {
         id: "crop",
         icon: "crop",
-        label: "Crop",
+        label: t("surface.selectionBar.crop"),
         group: "crop",
         bar: true,
         menu: "none",
@@ -12454,7 +12539,7 @@ export class InkSurface {
       {
         id: "cut",
         icon: "scissors",
-        label: "Cut",
+        label: t("common.cut"),
         group: "edit",
         bar: true,
         menu: "tile",
@@ -12463,7 +12548,7 @@ export class InkSurface {
       {
         id: "copy",
         icon: "copy",
-        label: "Copy",
+        label: t("common.copy"),
         group: "edit",
         menu: "tile",
         run: () => this.copySelection(),
@@ -12471,7 +12556,7 @@ export class InkSurface {
       {
         id: "duplicate",
         icon: "copy-plus",
-        label: "Duplicate",
+        label: t("common.duplicate"),
         group: "edit",
         bar: true,
         menu: "tile",
@@ -12481,32 +12566,32 @@ export class InkSurface {
       {
         id: "front",
         icon: "bring-to-front",
-        label: "Bring to front",
+        label: t("surface.command.bringToFront"),
         group: "arrange",
-        segment: "Arrange",
+        segment: t("surface.selectionBar.segment.arrange"),
         enabled: can("front"),
         run: () => this.reorderSelectedImage("front"),
       },
       {
         id: "back",
         icon: "send-to-back",
-        label: "Send to back",
+        label: t("surface.command.sendToBack"),
         group: "arrange",
-        segment: "Arrange",
+        segment: t("surface.selectionBar.segment.arrange"),
         enabled: can("back"),
         run: () => this.reorderSelectedImage("back"),
       },
       {
         id: "lock",
         icon: "lock",
-        label: "Lock image",
+        label: t("surface.command.lockImage"),
         group: "edit",
         run: () => this.lockSelectedImage(),
       },
       {
         id: "crop-image",
         icon: "crop",
-        label: "Crop image",
+        label: t("surface.command.cropImage"),
         group: "crop-image",
         run: () => this.startCrop(),
       },
@@ -12514,7 +12599,7 @@ export class InkSurface {
       {
         id: "in-front",
         icon: "layers",
-        label: "In front of ink",
+        label: t("surface.selectionBar.inFrontOfInk"),
         group: "opacity",
         checked: sel.image.front === true,
         run: () => this.setSelectedImageFront(sel.image.front !== true),
@@ -12524,7 +12609,7 @@ export class InkSurface {
         icon: opacity === 1 ? "circle" : "circle-dashed",
         label: `${Math.round(opacity * 100)} %`,
         group: "opacity",
-        segment: "Opacity",
+        segment: t("surface.selectionBar.segment.opacity"),
         showLabel: true,
         checked: Math.abs((sel.image.opacity ?? 1) - opacity) < 0.005,
         run: () => this.setSelectedImageOpacity(opacity),
@@ -12532,7 +12617,7 @@ export class InkSurface {
       {
         id: "delete",
         icon: "trash-2",
-        label: "Delete",
+        label: t("common.delete"),
         group: "edit",
         menuGroup: "delete",
         bar: true,
@@ -12558,7 +12643,7 @@ export class InkSurface {
       {
         id: "cut",
         icon: "scissors",
-        label: "Cut",
+        label: t("common.cut"),
         group: "edit",
         bar: true,
         menu: "tile",
@@ -12567,7 +12652,7 @@ export class InkSurface {
       {
         id: "copy",
         icon: "copy",
-        label: "Copy",
+        label: t("common.copy"),
         group: "edit",
         bar: true,
         menu: "tile",
@@ -12576,7 +12661,7 @@ export class InkSurface {
       {
         id: "duplicate",
         icon: "copy-plus",
-        label: "Duplicate",
+        label: t("common.duplicate"),
         group: "edit",
         bar: true,
         menu: "tile",
@@ -12587,7 +12672,7 @@ export class InkSurface {
       {
         id: "screenshot",
         icon: "camera",
-        label: "Screenshot",
+        label: t("surface.selectionBar.screenshot"),
         group: "edit",
         run: () => void this.showSelectionScreenshot(),
       },
@@ -12598,7 +12683,7 @@ export class InkSurface {
       actions.push({
         id: "ask-ai",
         icon: "messages-square",
-        label: "Ask AI",
+        label: t("surface.selectionBar.askAi"),
         group: "edit",
         run: () => {
           const at = this.selectionPatch(sel);
@@ -12613,7 +12698,7 @@ export class InkSurface {
       actions.unshift({
         id: "explore-graph",
         icon: "move",
-        label: "Explore",
+        label: t("surface.selectionBar.explore"),
         group: "graph",
         bar: true,
         run: () => this.exploreGraph(sel.pageId, graph),
@@ -12623,7 +12708,7 @@ export class InkSurface {
         actions.splice(1, 0, {
           id: "edit-graph",
           icon: "function-square",
-          label: "Edit graph",
+          label: t("surface.command.editGraph"),
           group: "graph",
           bar: true,
           run: () => {
@@ -12639,7 +12724,7 @@ export class InkSurface {
       actions.unshift({
         id: "edit-table",
         icon: "text-cursor-input",
-        label: "Edit table",
+        label: t("surface.selectionBar.editTable"),
         group: "table",
         bar: true,
         run: () => this.startCellEdit(sel.pageId, table, { row: 0, col: 0 }),
@@ -12650,7 +12735,7 @@ export class InkSurface {
       actions.push({
         id: "colour",
         icon: "palette",
-        label: "Colour",
+        label: t("surface.selectionBar.colour"),
         group: "style",
         swatches: {
           // The notebook's colours, the palette, then the custom colours picked lately.
@@ -12679,7 +12764,7 @@ export class InkSurface {
       actions.push({
         id: "copy-style",
         icon: "paintbrush",
-        label: "Copy style",
+        label: t("surface.selectionBar.copyStyle"),
         group: "style",
         run: () => this.copyStyle(sel.strokes),
       });
@@ -12694,7 +12779,7 @@ export class InkSurface {
       actions.push({
         id: "to-text",
         icon: "type",
-        label: "Text",
+        label: t("surface.selectionBar.text"),
         group: "turn",
         submenu: TURN_INTO,
         run: () => {
@@ -12712,7 +12797,7 @@ export class InkSurface {
       actions.push({
         id: "copy-text",
         icon: "type",
-        label: "Copy text",
+        label: t("surface.selectionBar.copyText"),
         group: "edit",
         run: () => this.copyText(highlighted),
       });
@@ -12725,7 +12810,7 @@ export class InkSurface {
       actions.push({
         id: "contents",
         icon: "list-plus",
-        label: "Contents heading",
+        label: t("surface.selectionBar.contentsHeading"),
         group: "turn",
         submenu: TURN_INTO,
         run: () => {
@@ -12744,7 +12829,7 @@ export class InkSurface {
       actions.push({
         id: "save-sticker",
         icon: "sticker",
-        label: "Sticker",
+        label: t("surface.selectionBar.sticker"),
         group: "turn",
         submenu: TURN_INTO,
         run: () => void this.saveSelectionAsSticker(),
@@ -12755,7 +12840,7 @@ export class InkSurface {
       actions.push({
         id: "comment",
         icon: "message-square-plus",
-        label: "Comment",
+        label: t("surface.selectionBar.comment"),
         group: "turn",
         submenu: TURN_INTO,
         run: () => {
@@ -12773,7 +12858,7 @@ export class InkSurface {
     actions.push({
       id: "delete",
       icon: "trash-2",
-      label: "Delete",
+      label: t("common.delete"),
       group: "edit",
       menuGroup: "delete",
       bar: true,
@@ -12788,7 +12873,9 @@ export class InkSurface {
       actions.push({
         id: "corners",
         icon: "scan",
-        label: this.selectionCorners ? "Hide resize handles" : "Show resize handles",
+        label: this.selectionCorners
+          ? t("surface.selectionBar.hideResizeHandles")
+          : t("surface.selectionBar.showResizeHandles"),
         group: "edit",
         bar: true,
         menu: "none",
@@ -12803,7 +12890,9 @@ export class InkSurface {
       actions.push({
         id: "corner-points",
         icon: "vector-square",
-        label: this.shapePointsOn ? "Hide corner points" : "Edit corner points",
+        label: this.shapePointsOn
+          ? t("surface.selectionBar.hideCornerPoints")
+          : t("surface.selectionBar.editCornerPoints"),
         group: "edit",
         bar: true,
         menu: "none",
@@ -12836,7 +12925,7 @@ export class InkSurface {
     return {
       id: "correct-word",
       icon: "spell-check",
-      label: "Correct",
+      label: t("surface.selectionBar.correct"),
       group: "edit",
       ...extra,
       run: () => {
@@ -12859,7 +12948,7 @@ export class InkSurface {
       {
         id: "task",
         icon: "square-check-big",
-        label: "Task",
+        label: t("surface.command.task"),
         group: "turn",
         submenu: TURN_INTO,
         run: () => {
@@ -12873,11 +12962,11 @@ export class InkSurface {
       actions.push({
         id: "untask",
         icon: "square-x",
-        label: "Remove task",
+        label: t("surface.command.removeTask"),
         group: "link",
         run: () => {
           const commands = held.map((task) => new SetTask(page, task.id, null));
-          this.applyCommand(new CompositeCommand("Remove task", commands));
+          this.applyCommand(new CompositeCommand(t("surface.command.removeTask"), commands));
         },
       });
     }
@@ -12899,7 +12988,7 @@ export class InkSurface {
       {
         id: "link",
         icon: "link",
-        label: one ? "Change link" : "Link to…",
+        label: one ? t("surface.selectionBar.changeLink") : t("surface.selectionBar.linkTo"),
         group: "turn",
         submenu: TURN_INTO,
         run: () => {
@@ -12913,7 +13002,7 @@ export class InkSurface {
       actions.push({
         id: "open-link",
         icon: "external-link",
-        label: "Open link",
+        label: t("surface.selectionBar.openLink"),
         group: "link",
         bar: true,
         run: () => open(one.target),
@@ -12923,11 +13012,12 @@ export class InkSurface {
       actions.push({
         id: "unlink",
         icon: "unlink",
-        label: "Remove link",
+        label: t("surface.command.removeLink"),
         group: "link",
         run: () => {
           const commands = linkStrokes(this.doc, page, ids, null);
-          if (commands.length > 0) this.applyCommand(new CompositeCommand("Remove link", commands));
+          if (commands.length > 0)
+            this.applyCommand(new CompositeCommand(t("surface.command.removeLink"), commands));
         },
       });
     }
@@ -12939,7 +13029,7 @@ export class InkSurface {
     return {
       id: "paste",
       icon: "clipboard-paste",
-      label: "Paste",
+      label: t("common.paste"),
       group: "edit",
       enabled: clipboard.canPaste(this.imagesShown),
       run: () => {
@@ -12954,7 +13044,7 @@ export class InkSurface {
       {
         id: "crop-cancel",
         icon: "x",
-        label: "Cancel",
+        label: t("common.cancel"),
         group: "crop",
         bar: true,
         menu: "none",
@@ -12964,7 +13054,7 @@ export class InkSurface {
       {
         id: "crop-reset",
         icon: "rotate-ccw",
-        label: "Reset",
+        label: t("surface.selectionBar.reset"),
         group: "crop",
         bar: true,
         menu: "none",
@@ -12975,7 +13065,7 @@ export class InkSurface {
       {
         id: "crop-done",
         icon: "check",
-        label: "Done",
+        label: t("common.done"),
         group: "done",
         bar: true,
         menu: "none",
@@ -12996,7 +13086,7 @@ export class InkSurface {
     const copy: SelectionAction = {
       id: "copy-text",
       icon: "copy",
-      label: "Copy",
+      label: t("common.copy"),
       group: "press",
       bar: true,
       menu: "none",
@@ -13101,7 +13191,7 @@ export class InkSurface {
         {
           id: "unlock",
           icon: "lock-open",
-          label: "Unlock",
+          label: t("surface.selectionBar.unlock"),
           group: "press",
           bar: true,
           menu: "none",
@@ -13116,7 +13206,7 @@ export class InkSurface {
       {
         id: "paste",
         icon: "clipboard-paste",
-        label: "Paste",
+        label: t("common.paste"),
         group: "press",
         ...inBar,
         enabled: this.canPasteHere(),
@@ -13135,7 +13225,7 @@ export class InkSurface {
       {
         id: "text-here",
         icon: "type",
-        label: "Text box",
+        label: t("surface.selectionBar.textBox"),
         group: "press-text",
         ...inBar,
         run: () => this.textBoxHere(press.pageId, press.at),
@@ -13143,7 +13233,7 @@ export class InkSurface {
       {
         id: "comment-here",
         icon: "message-square-plus",
-        label: "Comment",
+        label: t("surface.selectionBar.comment"),
         group: "press-text",
         // In the bar's "…" menu, so the bar keeps to its three words.
         enabled: this.callbacks.onAddComment !== undefined,
@@ -13155,7 +13245,7 @@ export class InkSurface {
       {
         id: "select-page",
         icon: "box-select",
-        label: "Select all",
+        label: t("surface.selectionBar.selectAll"),
         group: "press-select",
         ...inBar,
         enabled: page !== undefined && !isEmptySelection(selectablesOf(page)),
@@ -13186,7 +13276,7 @@ export class InkSurface {
   private pasteHere(pageId: string, at: Pt): void {
     const ink = clipboard.canPaste(this.imagesShown);
     if (this.practice || inkFirst(ink, clipboard.leftSinceCopy) || !canReadSystemClipboard()) {
-      if (!this.paste({ pageId, at }) && !ink) new Notice("FineNotes: nothing to paste.");
+      if (!this.paste({ pageId, at }) && !ink) new Notice(t("surface.notice.nothingToPaste"));
       return;
     }
     void readSystemClipboard().then((found) => {
@@ -13204,8 +13294,8 @@ export class InkSurface {
       if (this.paste({ pageId, at })) return;
       new Notice(
         found.kind === "unavailable"
-          ? "FineNotes: couldn't read the clipboard here."
-          : "FineNotes: nothing to paste.",
+          ? t("surface.notice.clipboardUnreadable")
+          : t("surface.notice.nothingToPaste"),
       );
     });
   }
@@ -13292,7 +13382,7 @@ export class InkSurface {
   /** Delete everything selected, as one undo step. */
   private deleteSelection(): void {
     if (this.callbacks.isLocked?.()) return;
-    if (this.removeSelection("Delete selection")) this.selectionTakenAway();
+    if (this.removeSelection(t("surface.command.deleteSelection"))) this.selectionTakenAway();
   }
 
   /**
@@ -13370,7 +13460,7 @@ export class InkSurface {
   private cutSelection(): void {
     if (this.callbacks.isLocked?.() || !this.copySelection()) return;
     if (this.liveSelection()) {
-      if (this.removeSelection("Cut")) this.selectionTakenAway();
+      if (this.removeSelection(t("common.cut"))) this.selectionTakenAway();
       return;
     }
     const sel = this.liveImageSelection();
@@ -13379,7 +13469,7 @@ export class InkSurface {
       new RemoveElements(
         sel.pageId,
         { strokes: this.noteInk(sel), images: [sel.image], textBoxes: [] },
-        "Cut",
+        t("common.cut"),
       ),
     );
     this.selectionTakenAway();
@@ -13419,7 +13509,7 @@ export class InkSurface {
     });
     const copies = pasteCopies(entry, this.freshIds(), d.dx, d.dy, withImages);
     this.dropSelection();
-    this.history.push(this.doc, new AddElements(page.id, copies, "Paste"));
+    this.history.push(this.doc, new AddElements(page.id, copies, t("common.paste")));
     this.renderer?.invalidateRegion(box.index, shiftBounds(entry.bounds, d.dx, d.dy));
     this.strokeIndex.refreshPages(this.doc.pages, [page.id]);
     this.renderDry();
@@ -13558,7 +13648,9 @@ export class InkSurface {
         return made.blob;
       });
       const copied = await writePngToClipboard(png);
-      this.flashReadout(copied ? "Copied as a picture" : "Couldn't copy the picture");
+      this.flashReadout(
+        copied ? t("surface.readout.copiedAsPicture") : t("surface.readout.copyPictureFailed"),
+      );
       return;
     }
     const made = await shot;
@@ -13710,7 +13802,7 @@ export class InkSurface {
     this.history.push(this.doc, new SetImageLocked(sel.pageId, sel.image, true));
     this.syncLockBadges();
     this.changed();
-    new Notice("FineNotes: image locked. To unlock it, hold the lasso on it.");
+    new Notice(t("surface.notice.imageLocked"));
   }
 
   /** Unlock a picture from the tap-and-hold bar, and select it. */
@@ -13881,7 +13973,7 @@ export class InkSurface {
         mark.dataset.pageId = page.id;
         mark.dataset.taskId = task.id;
         mark.setAttribute("aria-checked", String(task.done === true));
-        mark.setAttribute("aria-label", task.text || "Task");
+        mark.setAttribute("aria-label", task.text || t("surface.command.task"));
         mark.setCssStyles({
           left: `${(box.x + rect.x) * scale}px`,
           top: `${(box.y + rect.y) * scale}px`,
@@ -14300,7 +14392,7 @@ export class InkSurface {
         marker.removeClass("is-hidden");
         marker.toggleClass("is-ai", comment.author === "ai");
         marker.toggleClass("is-resolved", comment.resolved === true);
-        marker.setAttribute("aria-label", `Comment: ${comment.text}`);
+        marker.setAttribute("aria-label", t("surface.comment.marker", { text: comment.text }));
         marker.setCssStyles({
           left: `${(box.x + comment.x) * scale}px`,
           top: `${(box.y + comment.y) * scale}px`,
@@ -14580,23 +14672,79 @@ export class InkSurface {
             : splitFill(style.fill).alpha < 1
               ? "soft"
               : "solid";
-      row("fill-none", "square", "No fill", "Fill", fill === "none", { fill: null });
-      row("fill-soft", "droplet", "Soft fill", "Fill", fill === "soft", { fillFrom: "soft" });
-      row("fill-solid", "paint-bucket", "Solid fill", "Fill", fill === "solid", {
-        fillFrom: "solid",
-      });
+      row(
+        "fill-none",
+        "square",
+        t("surface.shapeStyle.noFill"),
+        t("surface.shapeStyle.fill"),
+        fill === "none",
+        { fill: null },
+      );
+      row(
+        "fill-soft",
+        "droplet",
+        t("surface.shapeStyle.softFill"),
+        t("surface.shapeStyle.fill"),
+        fill === "soft",
+        { fillFrom: "soft" },
+      );
+      row(
+        "fill-solid",
+        "paint-bucket",
+        t("surface.shapeStyle.solidFill"),
+        t("surface.shapeStyle.fill"),
+        fill === "solid",
+        {
+          fillFrom: "solid",
+        },
+      );
     }
-    row("line-solid", "minus", "Solid line", "Line", style.dash === null, { dash: null });
-    row("line-dash", "square-dashed", "Dashed line", "Line", style.dash === "dash", {
-      dash: "dash",
-    });
-    row("line-dot", "ellipsis", "Dotted line", "Line", style.dash === "dot", { dash: "dot" });
+    row(
+      "line-solid",
+      "minus",
+      t("surface.shapeStyle.solidLine"),
+      t("surface.shapeStyle.line"),
+      style.dash === null,
+      { dash: null },
+    );
+    row(
+      "line-dash",
+      "square-dashed",
+      t("surface.shapeStyle.dashedLine"),
+      t("surface.shapeStyle.line"),
+      style.dash === "dash",
+      {
+        dash: "dash",
+      },
+    );
+    row(
+      "line-dot",
+      "ellipsis",
+      t("surface.shapeStyle.dottedLine"),
+      t("surface.shapeStyle.line"),
+      style.dash === "dot",
+      { dash: "dot" },
+    );
     if (common.roundable) {
       const rounded = typeof style.radius === "number" && style.radius > 0;
-      row("corners-square", "square", "Square corners", "Corners", !rounded, { radius: null });
-      row("corners", "square-round-corner", "Rounded corners", "Corners", rounded, {
-        radius: ROUND_RADIUS,
-      });
+      row(
+        "corners-square",
+        "square",
+        t("surface.shapeStyle.squareCorners"),
+        t("surface.shapeStyle.corners"),
+        !rounded,
+        { radius: null },
+      );
+      row(
+        "corners",
+        "square-round-corner",
+        t("surface.shapeStyle.roundedCorners"),
+        t("surface.shapeStyle.corners"),
+        rounded,
+        {
+          radius: ROUND_RADIUS,
+        },
+      );
     }
     if (common.headed) {
       const heads = style.heads ?? null;
@@ -14604,19 +14752,40 @@ export class InkSurface {
       const end = heads?.end;
       const filled = start === "filled" || end === "filled";
       const kind = filled ? "filled" : "open";
-      row("head-start", "arrow-left", "Arrow at start", "Arrows", start !== undefined, {
-        heads: { ...(start ? {} : { start: kind }), ...(end ? { end } : {}) },
-      });
-      row("head-end", "arrow-right", "Arrow at end", "Arrows", end !== undefined, {
-        heads: { ...(start ? { start } : {}), ...(end ? {} : { end: kind }) },
-      });
+      row(
+        "head-start",
+        "arrow-left",
+        t("surface.shapeStyle.arrowAtStart"),
+        t("surface.shapeStyle.arrows"),
+        start !== undefined,
+        {
+          heads: { ...(start ? {} : { start: kind }), ...(end ? { end } : {}) },
+        },
+      );
+      row(
+        "head-end",
+        "arrow-right",
+        t("surface.shapeStyle.arrowAtEnd"),
+        t("surface.shapeStyle.arrows"),
+        end !== undefined,
+        {
+          heads: { ...(start ? { start } : {}), ...(end ? {} : { end: kind }) },
+        },
+      );
       const flip = filled ? "open" : "filled";
-      row("head-filled", "triangle", "Filled arrowheads", "Arrows", filled, {
-        heads:
-          start || end
-            ? { ...(start ? { start: flip } : {}), ...(end ? { end: flip } : {}) }
-            : { end: "filled" },
-      });
+      row(
+        "head-filled",
+        "triangle",
+        t("surface.shapeStyle.filledArrowheads"),
+        t("surface.shapeStyle.arrows"),
+        filled,
+        {
+          heads:
+            start || end
+              ? { ...(start ? { start: flip } : {}), ...(end ? { end: flip } : {}) }
+              : { end: "filled" },
+        },
+      );
     }
     return out;
   }
@@ -15859,7 +16028,10 @@ export class InkSurface {
     const bar = this.linkBar;
     if (!bar) return;
     const kind = bar.stroke.shape;
-    const bar2 = (this.typeBar ??= new SelectionActionBar(this.selectionUiEl, "Shape"));
+    const bar2 = (this.typeBar ??= new SelectionActionBar(
+      this.selectionUiEl,
+      t("surface.selectionBar.shapeTitle"),
+    ));
     bar2.setActions(
       LINK_TYPES.map((t) => ({
         id: `type-${t.kind}`,
@@ -17058,7 +17230,7 @@ export class InkSurface {
         ? new RemoveElements(
             sel.pageId,
             { strokes: ink, images: [sel.image], textBoxes: text },
-            "Delete",
+            t("common.delete"),
           )
         : new RemoveImage(sel.pageId, sel.image.id),
     );
@@ -17270,7 +17442,11 @@ export class InkSurface {
     const text = copyNoteText(page, sel.image, copy, () => this.textBoxIds.next());
     this.applyCommand(
       ink.length > 0 || text.length > 0
-        ? new AddElements(page.id, { strokes: ink, images: [copy], textBoxes: text }, "Duplicate")
+        ? new AddElements(
+            page.id,
+            { strokes: ink, images: [copy], textBoxes: text },
+            t("common.duplicate"),
+          )
         : new InsertImage(page.id, copy),
     );
     this.setImageSelection(page.id, copy);
@@ -18860,11 +19036,14 @@ interface ScrollSnapshot {
 /** What an insert-space drag will do, for the readout while it is dragged. */
 export function spaceReadout(plan: SpacePlan): string {
   const n = Math.abs(plan.lines);
-  const lines = `${n} ${n === 1 ? "line" : "lines"}`;
-  if (plan.lines < 0) return `Remove ${lines}`;
-  const parts = [`Insert ${lines}`];
-  if (plan.spilled > 0) parts.push("some ink moves to the next page");
-  if (plan.addedPages > 0) parts.push(plan.addedPages === 1 ? "adds a page" : "adds pages");
+  if (plan.lines < 0) return tn("surface.insertSpace.remove", n);
+  const parts = [tn("surface.insertSpace.insert", n)];
+  if (plan.spilled > 0) parts.push(t("surface.insertSpace.spills"));
+  if (plan.addedPages > 0) {
+    parts.push(
+      t(plan.addedPages === 1 ? "surface.insertSpace.addsPage" : "surface.insertSpace.addsPages"),
+    );
+  }
   return parts.join(" · ");
 }
 

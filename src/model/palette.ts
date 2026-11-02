@@ -12,6 +12,7 @@
 
 import type { Command } from "./commands";
 import type { InkDocument } from "./document";
+import { t } from "../i18n/translate";
 
 export interface NotebookPalette {
   /** A curated palette's id, or "custom". */
@@ -31,37 +32,51 @@ export const PALETTE_SIZE = 6;
 export const PALETTES: readonly NotebookPalette[] = [
   {
     id: "classic",
-    name: "Classic",
+    get name() {
+      return t("surface.palette.classic");
+    },
     colors: ["#1a1a1a", "#e03131", "#1971c2", "#2f9e44", "#f08c00", "#9c36b5"],
   },
   {
     id: "ocean",
-    name: "Ocean",
+    get name() {
+      return t("surface.palette.ocean");
+    },
     colors: ["#0b3954", "#087e8b", "#3fa7d6", "#59cd90", "#ee6c4d", "#5e60ce"],
   },
   {
     id: "sunset",
-    name: "Sunset",
+    get name() {
+      return t("surface.palette.sunset");
+    },
     colors: ["#3d2c2e", "#d1495b", "#00798c", "#30638e", "#edae49", "#f08a4b"],
   },
   {
     id: "forest",
-    name: "Forest",
+    get name() {
+      return t("surface.palette.forest");
+    },
     colors: ["#283618", "#bc4b51", "#2a6f97", "#606c38", "#dda15e", "#7f5539"],
   },
   {
     id: "berry",
-    name: "Berry",
+    get name() {
+      return t("surface.palette.berry");
+    },
     colors: ["#2b2d42", "#c9184a", "#4361ee", "#2d6a4f", "#f77f00", "#7209b7"],
   },
   {
     id: "pastel",
-    name: "Pastel",
+    get name() {
+      return t("surface.palette.pastel");
+    },
     colors: ["#4a4e69", "#e5989b", "#7aa5d2", "#84a98c", "#e9c46a", "#b392ac"],
   },
   {
     id: "mono",
-    name: "Mono",
+    get name() {
+      return t("surface.palette.mono");
+    },
     colors: ["#111111", "#c92a2a", "#495057", "#868e96", "#adb5bd", "#343a40"],
   },
 ];
@@ -79,7 +94,7 @@ export function readPalette(raw: unknown): NotebookPalette | undefined {
   if (!r.colors.every((c) => typeof c === "string" && HEX6.test(c))) return undefined;
   return {
     id: typeof r.id === "string" && r.id ? r.id : "custom",
-    name: typeof r.name === "string" && r.name ? r.name : "Custom",
+    name: typeof r.name === "string" && r.name ? r.name : t("surface.palette.custom"),
     colors: (r.colors as string[]).map((c) => c.toLowerCase()),
   };
 }
@@ -116,7 +131,7 @@ interface Change {
  * the palette that was.
  */
 export class SetNotebookPalette implements Command {
-  readonly label = "Change notebook colours";
+  readonly label = t("surface.command.changeNotebookColours");
   private changes: Change[] = [];
   private previous: NotebookPalette | undefined;
   private hadKey = false;

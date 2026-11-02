@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 /**
  * The ruler's geometry: where a straight ruler, a set square or a
  * protractor lies on screen, which of its edges a pen is near, where the pen
@@ -28,9 +29,15 @@ export const RULER_KINDS: readonly RulerKind[] = ["straight", "square", "protrac
 
 /** What each kind is called, for its tile's `aria-label`. */
 export const RULER_KIND_LABELS: Record<RulerKind, string> = {
-  straight: "Ruler",
-  square: "Set square",
-  protractor: "Protractor",
+  get straight() {
+    return t("surface.ruler.straight");
+  },
+  get square() {
+    return t("surface.ruler.square");
+  },
+  get protractor() {
+    return t("surface.ruler.protractor");
+  },
 };
 
 /** The angle snapping offered: off, or a step in degrees. */

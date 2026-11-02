@@ -24,6 +24,7 @@ import {
 } from "./document";
 import { cleanFamily, familyStack } from "./text-family";
 import { standInFaceOf } from "./font-catalogue";
+import { t } from "../i18n/translate";
 
 /** Line height of a box with no `lineHeight`, as a multiple of its font size (§6). */
 export const DEFAULT_LINE_HEIGHT = 1.25;
@@ -70,9 +71,24 @@ export const TEXT_FILLS: readonly string[] = [
  * ({@link MAX_BORDER_WIDTH}), so a box reopens with the width it was given.
  */
 export const TEXT_BORDER_WIDTHS: ReadonlyArray<{ label: string; width: number }> = [
-  { label: "Thin", width: 1 },
-  { label: "Medium", width: 2 },
-  { label: "Thick", width: 4 },
+  {
+    get label() {
+      return t("surface.border.thin");
+    },
+    width: 1,
+  },
+  {
+    get label() {
+      return t("surface.border.medium");
+    },
+    width: 2,
+  },
+  {
+    get label() {
+      return t("surface.border.thick");
+    },
+    width: 4,
+  },
 ];
 
 /** Widest border a box keeps, page px; a wider stored one is dropped as corrupt. */
@@ -86,19 +102,33 @@ export const MAX_CORNER_RADIUS = 500;
 
 /** Menu names for the typefaces, shown in their own face. */
 export const TEXT_FONT_LABELS: Readonly<Record<TextFont, string>> = {
-  sans: "Sans",
-  serif: "Serif",
+  get sans() {
+    return t("surface.textFont.sans");
+  },
+  get serif() {
+    return t("surface.textFont.serif");
+  },
   times: "Times",
-  mono: "Mono",
+  get mono() {
+    return t("surface.textFont.mono");
+  },
   verdana: "Verdana",
   trebuchet: "Trebuchet",
 };
 
 export const TEXT_ALIGN_LABELS: Readonly<Record<TextAlign, string>> = {
-  left: "Align left",
-  center: "Centre",
-  right: "Align right",
-  justify: "Justify",
+  get left() {
+    return t("surface.textAlign.left");
+  },
+  get center() {
+    return t("surface.textAlign.center");
+  },
+  get right() {
+    return t("surface.textAlign.right");
+  },
+  get justify() {
+    return t("surface.textAlign.justify");
+  },
 };
 
 /** Everything a text box's look is made of: the 0.5 style keys plus colour and size. */
@@ -301,7 +331,9 @@ export interface TextPreset {
 export const TEXT_PRESETS: readonly TextPreset[] = [
   {
     id: "title",
-    name: "Title",
+    get name() {
+      return t("surface.textPreset.title");
+    },
     patch: {
       font: "serif",
       family: null,
@@ -314,7 +346,9 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
   },
   {
     id: "heading",
-    name: "Heading",
+    get name() {
+      return t("surface.textPreset.heading");
+    },
     patch: {
       font: "sans",
       family: null,
@@ -327,7 +361,9 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
   },
   {
     id: "subheading",
-    name: "Subheading",
+    get name() {
+      return t("surface.textPreset.subheading");
+    },
     patch: {
       font: "sans",
       family: null,
@@ -340,7 +376,9 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
   },
   {
     id: "body",
-    name: "Body",
+    get name() {
+      return t("surface.textPreset.body");
+    },
     patch: {
       font: "sans",
       family: null,
@@ -353,7 +391,9 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
   },
   {
     id: "caption",
-    name: "Caption",
+    get name() {
+      return t("surface.textPreset.caption");
+    },
     patch: {
       font: "sans",
       family: null,
@@ -366,7 +406,9 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
   },
   {
     id: "label",
-    name: "Label",
+    get name() {
+      return t("surface.textPreset.label");
+    },
     patch: {
       font: "sans",
       family: null,
@@ -389,10 +431,30 @@ export const MAX_TEXT_PADDING = 120;
 
 /** The padding choices the Text tool offers, page px (0 is none). */
 export const TEXT_PADDINGS: ReadonlyArray<{ label: string; padding: number }> = [
-  { label: "None", padding: 0 },
-  { label: "S", padding: 4 },
-  { label: "M", padding: 10 },
-  { label: "L", padding: 18 },
+  {
+    get label() {
+      return t("surface.padding.none");
+    },
+    padding: 0,
+  },
+  {
+    get label() {
+      return t("surface.padding.small");
+    },
+    padding: 4,
+  },
+  {
+    get label() {
+      return t("surface.padding.medium");
+    },
+    padding: 10,
+  },
+  {
+    get label() {
+      return t("surface.padding.large");
+    },
+    padding: 18,
+  },
 ];
 
 /** The border widths the Text tool offers, page px, past the thin ones. */
@@ -400,10 +462,30 @@ export const TEXT_BORDER_CHOICES: readonly number[] = [1, 2, 4, 8, 16];
 
 /** The corner radii the Text tool offers, page px (0 is square). */
 export const TEXT_CORNER_CHOICES: ReadonlyArray<{ label: string; radius: number }> = [
-  { label: "Square", radius: 0 },
-  { label: "Small", radius: 6 },
-  { label: "Medium", radius: 12 },
-  { label: "Large", radius: 24 },
+  {
+    get label() {
+      return t("surface.corner.square");
+    },
+    radius: 0,
+  },
+  {
+    get label() {
+      return t("surface.corner.small");
+    },
+    radius: 6,
+  },
+  {
+    get label() {
+      return t("surface.corner.medium");
+    },
+    radius: 12,
+  },
+  {
+    get label() {
+      return t("surface.corner.large");
+    },
+    radius: 24,
+  },
 ];
 
 /** A padding the loader keeps: finite, above 0, at most {@link MAX_TEXT_PADDING}. */

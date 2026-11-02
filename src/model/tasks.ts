@@ -10,6 +10,7 @@
 
 import type { Command } from "./commands";
 import { type Bounds, type InkDocument, type InkTask, type Page, strokeBounds } from "./document";
+import { t } from "../i18n/translate";
 
 /** The longest task text kept, in characters; more is cut. */
 export const MAX_TASK_TEXT = 300;
@@ -83,7 +84,8 @@ export class SetTask implements Command {
     private readonly value: Omit<InkTask, "id"> | null,
     label?: string,
   ) {
-    this.label = label ?? (value === null ? "Remove task" : "Task");
+    this.label =
+      label ?? (value === null ? t("surface.command.removeTask") : t("surface.command.task"));
   }
 
   get pageId(): string {
@@ -147,7 +149,12 @@ export function tickTask(page: Page, task: InkTask, done: boolean): Command {
   const { id, ...rest } = task;
   const value: Omit<InkTask, "id"> = { strokes: rest.strokes, text: rest.text };
   if (done) value.done = true;
-  return new SetTask(page, id, value, done ? "Tick task" : "Untick task");
+  return new SetTask(
+    page,
+    id,
+    value,
+    done ? t("surface.command.tickTask") : t("surface.command.untickTask"),
+  );
 }
 
 /** A task box's size as a share of its ink's height, and its bounds, page px. */

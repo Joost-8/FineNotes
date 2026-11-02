@@ -24,6 +24,7 @@ import {
   roundTextSize,
   textStyleOf,
 } from "./text-style";
+import { t } from "../i18n/translate";
 
 /**
  * Largest font a box made from ink starts with: the size list's top. Ink
@@ -104,7 +105,7 @@ export function sharedInkColor(strokes: readonly Stroke[]): string | null {
  * changes (the ink went while the dialog was open).
  */
 export class TurnInkIntoText implements Command {
-  readonly label = "Turn into text";
+  readonly label = t("surface.command.turnIntoText");
   readonly pageId: string;
   private removed: Array<Removed<Stroke>> | null = null;
 

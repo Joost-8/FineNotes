@@ -14,6 +14,7 @@ import {
   isCoverRuling,
 } from "./document";
 import { CompositeCommand } from "./page-commands";
+import { t } from "../i18n/translate";
 
 /**
  * Set or clear `InkDocument.single`. "Convert to notebook" is
@@ -25,7 +26,9 @@ export class SetSingle implements Command {
   private previous = false;
 
   constructor(private readonly single: boolean) {
-    this.label = single ? "Make single page" : "Convert to notebook";
+    this.label = single
+      ? t("surface.command.makeSinglePage")
+      : t("surface.command.convertToNotebook");
   }
 
   apply(doc: InkDocument): void {
@@ -54,7 +57,7 @@ const FRAME_TOLERANCE = 1;
  * the user recoloured or moved is theirs, and is left alone.
  */
 export class RestyleCoverTitles implements Command {
-  readonly label = "Restyle cover title";
+  readonly label = t("surface.command.restyleCoverTitle");
   private changed: Array<{ box: TextBoxElement; before: TitleStyle; after: TitleStyle }> = [];
 
   constructor(
@@ -159,7 +162,7 @@ export function changeCover(page: Page, backdrop: SyntheticBackdrop): Command | 
   if (from.kind === "pdf" || !isCoverRuling(from.kind) || !isCoverRuling(backdrop.kind)) {
     return null;
   }
-  return new CompositeCommand("Change cover", [
+  return new CompositeCommand(t("surface.command.changeCover"), [
     new SetBackdrop(page.id, { ...backdrop }),
     new RestyleCoverTitles(page, { ...from }, backdrop),
   ]);

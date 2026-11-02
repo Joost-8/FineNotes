@@ -17,6 +17,7 @@
 import type { Command } from "./commands";
 import { type InkDocument, type Page, insertPage } from "./document";
 import { duplicatePageAfter } from "./page-commands";
+import { t } from "../i18n/translate";
 
 /**
  * Where a single page at `from` lands for `MovePage` when dropped in gap
@@ -95,7 +96,8 @@ export class MovePages implements Command {
     private readonly pages: readonly Page[],
     private readonly gap: number,
   ) {
-    this.label = pages.length === 1 ? "Move page" : "Move pages";
+    this.label =
+      pages.length === 1 ? t("surface.command.movePage") : t("surface.command.movePages");
   }
 
   apply(doc: InkDocument): void {
@@ -127,7 +129,8 @@ export class RemovePages implements Command {
   private removed: Array<{ page: Page; at: number }> | null = null;
 
   constructor(private readonly pages: readonly Page[]) {
-    this.label = pages.length === 1 ? "Delete page" : "Delete pages";
+    this.label =
+      pages.length === 1 ? t("surface.command.deletePage") : t("surface.command.deletePages");
   }
 
   apply(doc: InkDocument): void {
@@ -158,7 +161,8 @@ export class DuplicatePages implements Command {
   private applied = false;
 
   constructor(private readonly pages: readonly Page[]) {
-    this.label = pages.length === 1 ? "Duplicate page" : "Duplicate pages";
+    this.label =
+      pages.length === 1 ? t("surface.command.duplicatePage") : t("surface.command.duplicatePages");
   }
 
   /** The copies the last apply inserted, in page order. */

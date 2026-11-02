@@ -37,6 +37,7 @@ import {
   pdfAssets,
 } from "./pdf-worker";
 import { errorMessage } from "../util/errors";
+import { t } from "../i18n/translate";
 
 /** Largest raster edge, in device px. A 1024x1448 page at dpr 3 would be 13 Mpx
  *  and ~53 MB per page — several of those will evict an iPad's web view. */
@@ -130,7 +131,9 @@ export interface PdfMiss {
   retry?: true;
 }
 
-const NO_CANVAS: PdfMiss = { ok: false, reason: "No canvas memory for the PDF page", retry: true };
+function noCanvas(): PdfMiss {
+  return { ok: false, reason: t("surface.pdf.noCanvas"), retry: true };
+}
 
 export type PdfEntry = PdfRaster | PdfMiss;
 
@@ -574,7 +577,7 @@ export class PdfBackdropCache {
     const key = rasterKey(path, page, dprScale, area);
     const cached = this.entries.peek(key);
     if (cached) return Promise.resolve(cached.entry);
-    if (this.destroyed) return Promise.resolve({ ok: false, reason: "Cache closed" });
+    if (this.destroyed) return Promise.resolve({ ok: false, reason: t("surface.pdf.cacheClosed") });
 
     const existing = this.inflight.get(key);
     if (existing) {
@@ -619,7 +622,7 @@ export class PdfBackdropCache {
     deviceScale: number,
     frame?: PdfFrame,
   ): Promise<PdfEntry> {
-    if (this.destroyed) return { ok: false, reason: "Cache closed" };
+    if (this.destroyed) return { ok: false, reason: t("surface.pdf.cacheClosed") };
     try {
       const area = { geometry, exact: true, ...(frame ? { frame } : {}) };
       return await this.rasterise(path, page, deviceScale, area);
@@ -637,7 +640,7 @@ export class PdfBackdropCache {
       this.work.delete(job.key);
       this.inflight.delete(job.key);
     }
-    job.finish({ ok: false, reason: "PDF render superseded" });
+    job.finish({ ok: false, reason: t("surface.pdf.superseded") });
   }
 
   private drain(): void {
@@ -858,10 +861,10 @@ export class PdfBackdropCache {
     job: RasterWork | undefined,
   ): Promise<PdfEntry> {
     const pages = await this.workerDocument(worker, path);
-    if (job?.cancelled) return { ok: false, reason: "PDF render superseded" };
-    if (pages === null) return { ok: false, reason: `Missing PDF — ${path}` };
+    if (job?.cancelled) return { ok: false, reason: t("surface.pdf.superseded") };
+    if (pages === null) return { ok: false, reason: t("surface.pdf.missing", { path }) };
     if (!Number.isInteger(page) || page < 0 || page >= pages) {
-      return { ok: false, reason: `Page ${page + 1} is outside ${path} (${pages} pages)` };
+      return { ok: false, reason: t("surface.pdf.pageOutside", { page: page + 1, path, pages }) };
     }
     const sizeKey = `${path}:${page}`;
     let size = this.workerSizes.get(sizeKey);
@@ -871,7 +874,7 @@ export class PdfBackdropCache {
       size.catch(() => this.workerSizes.delete(sizeKey));
     }
     const base = await size;
-    if (job?.cancelled) return { ok: false, reason: "PDF render superseded" };
+    if (job?.cancelled) return { ok: false, reason: t("surface.pdf.superseded") };
     const plan = area ? planPdfRaster(base, quantiseLevel(dprScale), area) : null;
     const cap = MAX_RASTER_EDGE / Math.max(1, base.width, base.height);
     const scale = plan?.sourceScale ?? Math.min(Math.max(0.05, dprScale), cap);
@@ -932,24 +935,27 @@ export class PdfBackdropCache {
         return await this.rasteriseInWorker(worker, path, page, dprScale, area, job);
       } catch (error) {
         if (error instanceof PdfRenderCancelled || job?.cancelled) {
-          return { ok: false, reason: "PDF render superseded" };
+          return { ok: false, reason: t("surface.pdf.superseded") };
         }
         // This thread's canvases come out of the same memory.
-        if (error instanceof PdfCanvasUnavailable) return NO_CANVAS;
+        if (error instanceof PdfCanvasUnavailable) return noCanvas();
         // A worker that died is dropped for good; one page it could not draw
         // is tried here, where it may still work.
         if (!worker.alive && this.worker === worker) this.setWorker(null);
       }
     }
     const doc = await this.document(path);
-    if (job?.cancelled) return { ok: false, reason: "PDF render superseded" };
-    if (!doc) return { ok: false, reason: `Missing PDF — ${path}` };
+    if (job?.cancelled) return { ok: false, reason: t("surface.pdf.superseded") };
+    if (!doc) return { ok: false, reason: t("surface.pdf.missing", { path }) };
     if (!Number.isInteger(page) || page < 0 || page >= doc.numPages) {
-      return { ok: false, reason: `Page ${page + 1} is outside ${path} (${doc.numPages} pages)` };
+      return {
+        ok: false,
+        reason: t("surface.pdf.pageOutside", { page: page + 1, path, pages: doc.numPages }),
+      };
     }
 
     const pdfPage = await doc.getPage(page + 1);
-    if (job?.cancelled) return { ok: false, reason: "PDF render superseded" };
+    if (job?.cancelled) return { ok: false, reason: t("surface.pdf.superseded") };
     const base = pdfPage.getViewport({ scale: 1 });
     const plan = area ? planPdfRaster(base, quantiseLevel(dprScale), area) : null;
     const cap = MAX_RASTER_EDGE / Math.max(1, base.width, base.height);
@@ -968,7 +974,7 @@ export class PdfBackdropCache {
     if (!ctx) {
       canvas.width = canvas.height = 0;
       pdfPage.cleanup?.();
-      return NO_CANVAS;
+      return noCanvas();
     }
 
     try {

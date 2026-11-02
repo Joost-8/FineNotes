@@ -16,6 +16,7 @@ import type { Command } from "./commands";
 import { type InkDocument, type Page, insertPage } from "./document";
 import { relinkNoteInk } from "./sticky-notes";
 import { remapConnectors } from "./connectors";
+import { t, tn } from "../i18n/translate";
 
 /** Why a notebook takes no pages, or `null` when it does. */
 export function transferRefusal(doc: InkDocument): string | null {
@@ -125,7 +126,8 @@ export class ReceivePages implements Command {
   private copies: Page[] | null = null;
 
   constructor(private readonly sources: readonly Page[]) {
-    this.label = sources.length === 1 ? "Receive page" : "Receive pages";
+    this.label =
+      sources.length === 1 ? t("surface.command.receivePage") : t("surface.command.receivePages");
   }
 
   /** The pages this command put in the notebook (empty before it ran). */
@@ -210,6 +212,5 @@ export function rememberTarget(recent: readonly string[], path: string, limit = 
 
 /** The notice after a transfer: "Moved 3 pages to Maths." */
 export function transferNotice(count: number, destination: string, copied: boolean): string {
-  const what = count === 1 ? "1 page" : `${count} pages`;
-  return `${copied ? "Copied" : "Moved"} ${what} to ${destination}.`;
+  return tn(copied ? "surface.transfer.copied" : "surface.transfer.moved", count, { destination });
 }

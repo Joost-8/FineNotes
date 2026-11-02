@@ -23,10 +23,11 @@ import {
   setRowHeight,
 } from "./table";
 import { insertColumnWithin, insertRowWithin } from "./table-fit";
+import { t } from "../i18n/translate";
 
 /** Put a table on a page, above the tables already there. */
 export class AddTable implements Command {
-  readonly label = "Add table";
+  readonly label = t("surface.command.addTable");
   /** Whether the page had no `tables` list before, so undo leaves it without one. */
   private created = false;
 
@@ -90,14 +91,14 @@ class TableEdit implements Command {
  */
 export class InsertTableRow extends TableEdit {
   constructor(pageId: string, table: TableElement, index: number, room = Infinity) {
-    super(pageId, table, "Add row", (t) => insertRowWithin(t, index, room));
+    super(pageId, table, t("surface.command.addRow"), (t) => insertRowWithin(t, index, room));
   }
 }
 
 /** Take out row `index`. */
 export class RemoveTableRow extends TableEdit {
   constructor(pageId: string, table: TableElement, index: number) {
-    super(pageId, table, "Delete row", (t) => removeRow(t, index));
+    super(pageId, table, t("surface.command.deleteRow"), (t) => removeRow(t, index));
   }
 }
 
@@ -108,38 +109,43 @@ export class RemoveTableRow extends TableEdit {
  */
 export class InsertTableColumn extends TableEdit {
   constructor(pageId: string, table: TableElement, index: number, room = Infinity) {
-    super(pageId, table, "Add column", (t) => insertColumnWithin(t, index, room));
+    super(pageId, table, t("surface.command.addColumn"), (t) => insertColumnWithin(t, index, room));
   }
 }
 
 /** Take out column `index`. */
 export class RemoveTableColumn extends TableEdit {
   constructor(pageId: string, table: TableElement, index: number) {
-    super(pageId, table, "Delete column", (t) => removeColumn(t, index));
+    super(pageId, table, t("surface.command.deleteColumn"), (t) => removeColumn(t, index));
   }
 }
 
 /** Give column `index` a width, page px. */
 export class ResizeTableColumn extends TableEdit {
   constructor(pageId: string, table: TableElement, index: number, width: number) {
-    super(pageId, table, "Resize column", (t) => setColumnWidth(t, index, width));
+    super(pageId, table, t("surface.command.resizeColumn"), (t) => setColumnWidth(t, index, width));
   }
 }
 
 /** Give row `index` a least height, page px. */
 export class ResizeTableRow extends TableEdit {
   constructor(pageId: string, table: TableElement, index: number, height: number) {
-    super(pageId, table, "Resize row", (t) => setRowHeight(t, index, height));
+    super(pageId, table, t("surface.command.resizeRow"), (t) => setRowHeight(t, index, height));
   }
 }
 
 /** Make the first row a header, or an ordinary row again. */
 export class SetTableHeader extends TableEdit {
   constructor(pageId: string, table: TableElement, on: boolean) {
-    super(pageId, table, on ? "Header row" : "No header row", (t) => {
-      if (on) t.header = true;
-      else delete t.header;
-    });
+    super(
+      pageId,
+      table,
+      on ? t("surface.command.headerRow") : t("surface.command.noHeaderRow"),
+      (t) => {
+        if (on) t.header = true;
+        else delete t.header;
+      },
+    );
   }
 }
 
@@ -152,7 +158,7 @@ export class SetTableCellStyle extends TableEdit {
     col: number,
     patch: TableCellStylePatch,
   ) {
-    super(pageId, table, "Cell style", (t) => setCellStyle(t, row, col, patch));
+    super(pageId, table, t("surface.command.cellStyle"), (t) => setCellStyle(t, row, col, patch));
   }
 }
 
@@ -167,7 +173,7 @@ export class SetTableCellStyle extends TableEdit {
  * move are one step.
  */
 export class SetTableCell implements Command {
-  readonly label = "Edit cell";
+  readonly label = t("surface.command.editCell");
 
   constructor(
     readonly pageId: string,

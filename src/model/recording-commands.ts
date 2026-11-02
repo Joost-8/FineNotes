@@ -13,6 +13,7 @@
 import type { Command } from "./commands";
 import { type InkDocument, type Page, type Recording, type Stroke, pageById } from "./document";
 import { AddStrokeToPage, CompositeCommand } from "./page-commands";
+import { t } from "../i18n/translate";
 
 function isEpoch(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -30,7 +31,7 @@ function resolvePage(doc: InkDocument, page: Page): Page | null {
 
 /** Set a page's stroke clock. Its inverse puts back what was there, absent included. */
 export class SetPageEpoch implements Command {
-  readonly label = "Start page clock";
+  readonly label = t("surface.command.startPageClock");
   private target: Page | null = null;
   private previous: number | undefined;
 
@@ -95,7 +96,7 @@ export function addStrokesTimed(
   page: Page,
   strokes: readonly Stroke[],
   penDown: number | null | undefined,
-  label = "Add stroke",
+  label = t("surface.command.addStroke"),
 ): Command {
   const stamp = strokes.length > 0 ? strokeTimestamp(page, penDown) : null;
   if (stamp) for (const stroke of strokes) stroke.t0 = stamp.t0;
@@ -122,7 +123,7 @@ function pruneRecordings(doc: InkDocument): void {
 
 /** Add a finished recording to the note. Undo takes the entry away; the audio file stays. */
 export class AddRecording implements Command {
-  readonly label = "Add recording";
+  readonly label = t("surface.command.addRecording");
 
   constructor(private readonly recording: Recording) {}
 
@@ -142,7 +143,7 @@ export class AddRecording implements Command {
  * note) stays in the vault. Undo puts the entry back where it was.
  */
 export class RemoveRecording implements Command {
-  readonly label = "Remove recording";
+  readonly label = t("surface.command.removeRecording");
   private removed: { index: number; recording: Recording } | null = null;
 
   constructor(private readonly recording: Recording) {}
@@ -172,7 +173,7 @@ export class RemoveRecording implements Command {
  * forget it (`undefined`). Undo restores the previous value, absent included.
  */
 export class SetRecordingTranscript implements Command {
-  readonly label = "Set transcript";
+  readonly label = t("surface.command.setTranscript");
   private target: Recording | null = null;
   private previous: string | undefined;
 

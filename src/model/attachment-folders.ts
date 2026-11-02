@@ -15,6 +15,7 @@
 import type { Command } from "./commands";
 import type { AttachmentFolders, AttachmentKind, InkDocument } from "./document";
 import { normalizeFolder } from "./new-notebook";
+import { t } from "../i18n/translate";
 
 export const ATTACHMENT_KINDS: readonly AttachmentKind[] = [
   "images",
@@ -24,12 +25,12 @@ export const ATTACHMENT_KINDS: readonly AttachmentKind[] = [
   "exports",
 ];
 
-const LABELS: Record<AttachmentKind, string> = {
-  images: "Set image folder",
-  audio: "Set recording folder",
-  transcripts: "Set transcript folder",
-  chats: "Set AI chat folder",
-  exports: "Set export folder",
+const LABELS: Record<AttachmentKind, () => string> = {
+  images: () => t("surface.command.setImageFolder"),
+  audio: () => t("surface.command.setRecordingFolder"),
+  transcripts: () => t("surface.command.setTranscriptFolder"),
+  chats: () => t("surface.command.setChatFolder"),
+  exports: () => t("surface.command.setExportFolder"),
 };
 
 /**
@@ -96,7 +97,7 @@ export class SetAttachmentFolder implements Command {
     folder: string | undefined,
   ) {
     this.folder = cleanFolder(folder);
-    this.label = LABELS[kind];
+    this.label = LABELS[kind]();
   }
 
   apply(doc: InkDocument): void {
