@@ -10,6 +10,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Search the text of your PDFs**
+  ([#112](https://github.com/Joost-8/FineNotes/discussions/112)). The
+  notebook search finds words printed on a notebook's PDF pages, marked PDF
+  in the list, and lights them on the page, whole words, as it lights
+  handwriting. Scanned PDFs have no text to search.
+- **Search a phrase.** Several words typed in order ("recipe for
+  defining") are found as one: pages holding the phrase come first, and
+  only the phrase lights, in PDFs, text boxes and handwriting, across a
+  line break too. Pages with the words apart still follow.
+- **Text boxes light the words found**, not the whole box.
 - **Importing a ZIP keeps its folders.** Notebooks from a ZIP of a whole
   library (a Goodnotes export of several folders, a zipped backup folder)
   go into the same folders under the folder you import to, instead of all
