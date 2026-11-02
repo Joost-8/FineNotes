@@ -101,6 +101,12 @@ import {
   extractOpenRouterKey,
   generateCodeVerifier,
 } from "./recognition/openrouter-auth";
+import {
+  FINENOTES_LINK_ACTION,
+  parseFinenotesLink,
+  pdfByName,
+  pdfCandidates,
+} from "./model/finenotes-link";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { WhatsNewModal } from "./ui/whats-new-modal";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
@@ -217,6 +223,8 @@ const GRAPE_BRIDGE_DELAY_MS = 8000;
 
 /** How long after the layout is ready the daily update check runs: off the startup path. */
 const UPDATE_CHECK_DELAY_MS = 20_000;
+/** How long an `obsidian://finenotes?do=pdf` link waits for its file to reach the vault. */
+const PDF_LINK_WAIT_MS = 15_000;
 /** This device's record of the last update check (update-notice.ts). */
 const UPDATE_KEY = "finenotes:update-check";
 
@@ -542,6 +550,11 @@ export default class GoodObsidianPlugin extends Plugin {
     // obsidian://goodobsidian-openrouter with a one-time code.
     this.registerObsidianProtocolHandler(OPENROUTER_CALLBACK_ACTION, (params) => {
       void this.handleOpenRouterCallback(params);
+    });
+    // obsidian://finenotes?do=… from the Shortcuts app (finenotes-link.ts).
+    // A cold start can hand the link over before the workspace is up.
+    this.registerObsidianProtocolHandler(FINENOTES_LINK_ACTION, (params) => {
+      this.app.workspace.onLayoutReady(() => void this.handleFinenotesLink(params));
     });
     this.startup.mark("onload done");
   }
@@ -2450,5 +2463,67 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.createNotebook(pdf.basename, choices, folder, (heading, attachments) =>
       buildPdfNotebook(choices, heading, attachments, pdf.path, sizes),
     );
+  }
+
+  // --- obsidian://finenotes links ------------------------------------------------
+
+  private async handleFinenotesLink(params: Record<string, string>): Promise<void> {
+    const request = parseFinenotesLink(params);
+    if (request.do === "new") {
+      await this.createNotebook(
+        request.name,
+        parseNotebookChoices(this.settings.lastNotebookChoices),
+        request.folder,
+      );
+    } else if (request.do === "pdf") {
+      const pdf = await this.waitForPdf(request.file);
+      if (pdf) await this.createNotebookFromPdf(pdf);
+    } else {
+      new Notice(`FineNotes: this link asks for ${request.what}, which FineNotes doesn't know.`);
+    }
+  }
+
+  /**
+   * The vault PDF a link names. A shortcut saves the file and opens the link
+   * at once, so Obsidian may not have seen the file yet: look again every
+   * half second for up to PDF_LINK_WAIT_MS. When it never shows up, say
+   * whether it is on disk at all, which tells "not indexed" from "not there".
+   */
+  private async waitForPdf(file: string): Promise<TFile | null> {
+    const find = (): TFile | null => {
+      for (const path of pdfCandidates(file)) {
+        const found = this.app.vault.getFileByPath(normalizePath(path));
+        if (found) return found;
+      }
+      const pdfs = this.app.vault
+        .getFiles()
+        .filter((f) => f.extension.toLowerCase() === "pdf")
+        .map((f) => ({ path: f.path, name: f.name, mtime: f.stat.mtime }));
+      const byName = pdfByName(file, pdfs);
+      return byName ? this.app.vault.getFileByPath(byName) : null;
+    };
+    let found = find();
+    if (found) return found;
+    const waiting = new Notice(`FineNotes: waiting for ${file}…`, 0);
+    try {
+      const until = Date.now() + PDF_LINK_WAIT_MS;
+      while (!found && Date.now() < until) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        found = find();
+      }
+    } finally {
+      waiting.hide();
+    }
+    if (found) return found;
+    const onDisk = await Promise.all(
+      pdfCandidates(file).map((path) => this.app.vault.adapter.exists(normalizePath(path))),
+    );
+    new Notice(
+      onDisk.some(Boolean)
+        ? `FineNotes: ${file} is in the vault's folder, but Obsidian hasn't picked it up yet. Try the link again in a moment.`
+        : `FineNotes: there is no ${file} in this vault.`,
+      10000,
+    );
+    return null;
   }
 }

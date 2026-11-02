@@ -26,6 +26,7 @@ export default tseslint.config(
       "scripts/ui-gallery/embed-harness/out/**",
       "scripts/ui-gallery/graph-harness/out/**",
       "scripts/ui-gallery/showcase/out/**",
+      "scripts/ui-gallery/perf-harness/out/**",
       // The speech runtime's build folder and output (gitignored).
       "scripts/whisper-runtime/.build/**",
       "scripts/whisper-runtime/out/**",

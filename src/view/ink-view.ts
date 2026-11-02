@@ -5305,10 +5305,14 @@ export class InkView extends TextFileView {
     }
   }
 
-  async importVaultPdf(path: string): Promise<void> {
+  /**
+   * A PDF already in the vault, referenced where it is. `ask` false (a drop)
+   * adds every page after the last one, with no page picker.
+   */
+  async importVaultPdf(path: string, ask = true): Promise<void> {
     const file = this.app.vault.getFileByPath(path);
     if (!file) return;
-    await this.preparePdfImport(() => this.app.vault.readBinary(file), file.name, path);
+    await this.preparePdfImport(() => this.app.vault.readBinary(file), file.name, path, ask);
   }
 
   private async handleFileDrop(event: DragEvent): Promise<void> {
@@ -5334,7 +5338,7 @@ export class InkView extends TextFileView {
     event.preventDefault();
     event.stopPropagation();
     if (vaultFile) {
-      if (/\.pdf$/i.test(vaultFile.path)) await this.importVaultPdf(vaultFile.path);
+      if (/\.pdf$/i.test(vaultFile.path)) await this.importVaultPdf(vaultFile.path, false);
       else await this.insertImageFromVault(vaultFile.path);
       return;
     }
@@ -5342,7 +5346,7 @@ export class InkView extends TextFileView {
     const surface = this.surface;
     for (const file of files) {
       if (this.file !== note || this.surface !== surface || this.isProtected()) return;
-      if (isPdf(file)) await this.importPdfFile(file);
+      if (isPdf(file)) await this.importPdfFile(file, false);
       else {
         try {
           const bytes = await file.arrayBuffer();
@@ -5355,14 +5359,15 @@ export class InkView extends TextFileView {
     }
   }
 
-  private async importPdfFile(file: File): Promise<void> {
-    await this.preparePdfImport(() => file.arrayBuffer(), file.name);
+  private async importPdfFile(file: File, ask = true): Promise<void> {
+    await this.preparePdfImport(() => file.arrayBuffer(), file.name, undefined, ask);
   }
 
   private async preparePdfImport(
     read: () => Promise<ArrayBuffer>,
     name: string,
     savedPath?: string,
+    ask = true,
   ): Promise<void> {
     const note = this.file;
     const surface = this.surface;
@@ -5377,6 +5382,11 @@ export class InkView extends TextFileView {
       const pages = await measurePdfPages(bytes);
       if (this.file !== note || this.surface !== surface || this.isProtected()) return;
       const item: ScanItem = { kind: "pdf", bytes, name, savedPath, pages: [] };
+      if (!ask) {
+        item.pages = pages.map((size, page) => ({ ...size, page }));
+        await this.insertScans([item], "Import PDF", surface.document.pages.length - 1);
+        return;
+      }
       new PdfImportModal(this.app, name, pages.length, async (indices) => {
         if (this.file !== note || this.surface !== surface || this.isProtected()) return false;
         item.pages = indices.map((page) => ({ ...pages[page], page }));
@@ -5420,7 +5430,12 @@ export class InkView extends TextFileView {
    * A file saved before a later one failed keeps its path, so trying Add
    * again does not save it twice.
    */
-  private async insertScans(items: ScanItem[], label?: string): Promise<boolean> {
+  private async insertScans(
+    items: ScanItem[],
+    label?: string,
+    /** The page they go after; the one in view unless given. */
+    after?: number,
+  ): Promise<boolean> {
     const note = this.file;
     if (!note || !this.surface || this.isProtected()) return false;
     const originalSurface = this.surface;
@@ -5456,7 +5471,7 @@ export class InkView extends TextFileView {
     const surface = this.surface;
     if (!surface || surface !== originalSurface || this.file !== note || this.isProtected())
       return false;
-    const insert = buildScanInsert(surface.document, surface.currentPage, saved, label);
+    const insert = buildScanInsert(surface.document, after ?? surface.currentPage, saved, label);
     const first = insert?.placed[0];
     if (!insert || !first) {
       if (this.isSinglePage) {

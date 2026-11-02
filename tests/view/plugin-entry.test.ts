@@ -479,14 +479,51 @@ describe("registration", () => {
     expect((command as { hotkeys?: unknown } | undefined)?.hotkeys).toBeUndefined();
   });
 
-  it("registers the notebook view, the ribbon button and the OpenRouter callback", async () => {
+  it("registers the notebook view, the ribbon button and the two link handlers", async () => {
     await load();
     expect([...registered.views.keys()]).toEqual([INK]);
     expect(registered.ribbon.map((r) => r.icon)).toEqual(["notebook-pen"]);
     expect(registered.ribbon[0].title).toBe("New notebook");
     // The import icon is FineNotes' own, so it must be registered before use.
     expect(addedIcons.has("finenotes-notebook-import")).toBe(true);
-    expect([...registered.protocolHandlers.keys()]).toEqual(["goodobsidian-openrouter"]);
+    expect([...registered.protocolHandlers.keys()]).toEqual([
+      "goodobsidian-openrouter",
+      "finenotes",
+    ]);
+  });
+
+  describe("obsidian://finenotes links", () => {
+    function link(params: Record<string, string>): Promise<void> {
+      const handler = registered.protocolHandlers.get("finenotes");
+      if (!handler) throw new Error("no handler");
+      handler({ action: "finenotes", ...params });
+      return flush();
+    }
+
+    it("makes a notebook once the workspace is up", async () => {
+      await load({ lastSeenVersion: VERSION });
+      const created = (app.vault as unknown as { created: { path: string }[] }).created;
+      await link({ do: "new", name: "Physics", folder: "School" });
+      expect(created).toEqual([]);
+      app.workspace.fireLayoutReady();
+      await flush();
+      expect(created.map((c) => c.path)).toEqual(["School/Physics/Physics.notebook.md"]);
+    });
+
+    it("makes a notebook from the PDF a bare name points to", async () => {
+      await load({ lastSeenVersion: VERSION });
+      const pdf = app.addFile("Inbox/Lecture 7.pdf");
+      const fromPdf = vi
+        .spyOn(
+          plugin as unknown as { createNotebookFromPdf(f: unknown): Promise<void> },
+          "createNotebookFromPdf",
+        )
+        .mockResolvedValue();
+      await link({ do: "pdf", file: "Lecture 7" });
+      app.workspace.fireLayoutReady();
+      await flush();
+      expect(fromPdf).toHaveBeenCalledWith(pdf);
+    });
   });
 
   it("opens the import dialog on the folder it was asked for", async () => {

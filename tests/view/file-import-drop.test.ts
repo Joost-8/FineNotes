@@ -16,7 +16,7 @@ function setup(text = "", uri = "") {
   });
   const internal = view as unknown as {
     handleFileDrop(event: DragEvent): Promise<void>;
-    importPdfFile(file: File): Promise<void>;
+    importPdfFile(file: File, ask?: boolean): Promise<void>;
     file: TFile | null;
     surface: unknown;
     isProtected(): boolean;
@@ -53,7 +53,8 @@ describe("file drop routing", () => {
     const file = new File(["%PDF-"], name, { type });
     const { pdf, event, drop } = setup();
     await drop([file]);
-    expect(pdf).toHaveBeenCalledWith(file);
+    // A drop adds every page after the last, without the page picker.
+    expect(pdf).toHaveBeenCalledWith(file, false);
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(event.stopPropagation).toHaveBeenCalledOnce();
   });
@@ -76,7 +77,7 @@ describe("file drop routing", () => {
   it("references an existing vault PDF without copying it", async () => {
     const { vaultPdf, pdf, drop } = setup("[[Lecture.pdf#page=2|Lecture]]");
     await drop();
-    expect(vaultPdf).toHaveBeenCalledWith("Lecture.pdf");
+    expect(vaultPdf).toHaveBeenCalledWith("Lecture.pdf", false);
     expect(pdf).not.toHaveBeenCalled();
   });
   it.each([
