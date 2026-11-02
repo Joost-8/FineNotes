@@ -280,9 +280,7 @@ async function collect(
   // A backup: notebooks packed inside as files, or as unzipped package folders.
   // PDFs inside a backup need pdf.js; they are left for the dialog's own PDF path.
   const packed = names
-    .filter(
-      (name) => isImportFileName(name) && extensionOf(name) !== "pdf" && !isMacResource(name),
-    )
+    .filter((name) => isImportFileName(name) && extensionOf(name) !== "pdf" && !isMacResource(name))
     .sort();
   const packages = packageFolders(names.filter((name) => !isMacResource(name)));
   // A backup inside the picked one is a folder named after it.

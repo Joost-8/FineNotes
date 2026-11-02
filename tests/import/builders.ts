@@ -536,11 +536,11 @@ export function goodnotesFiles(spec: {
                     bytes: bv4Raw(
                       s.tpl ??
                         (s.schema25 !== undefined
-                        ? tplStroke25(
-                            s.samples.map(([x, y]): [number, number] => [x, y]),
-                            s.schema25,
-                          )
-                        : tplStroke(s.samples, s.stride)),
+                          ? tplStroke25(
+                              s.samples.map(([x, y]): [number, number] => [x, y]),
+                              s.schema25,
+                            )
+                          : tplStroke(s.samples, s.stride)),
                     ),
                   },
                 ],

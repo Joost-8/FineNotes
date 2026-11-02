@@ -118,9 +118,7 @@ export function nearbyTarget(
   }
   const ours = (candidate: string): boolean => {
     const dir = candidate.includes("/") ? candidate.slice(0, candidate.lastIndexOf("/")) : "";
-    return (
-      folders.includes(dir) || noteFolder === "" || candidate.startsWith(`${noteFolder}/`)
-    );
+    return folders.includes(dir) || noteFolder === "" || candidate.startsWith(`${noteFolder}/`);
   };
   for (let n = segments.length; n >= 1; n--) {
     const tail = segments.slice(-n).join("/");

@@ -77,9 +77,7 @@ describe("Apple LZ4 frames", () => {
     expect(() => decodeBlock(new Uint8Array([0x10, 0x61]), 0xffffffff)).toThrow(
       "raw size too large",
     );
-    expect(() => decodeAppleLz4(bv4Block([0x10, 0x61], 0x7fffffff))).toThrow(
-      "raw size too large",
-    );
+    expect(() => decodeAppleLz4(bv4Block([0x10, 0x61], 0x7fffffff))).toThrow("raw size too large");
   });
 });
 

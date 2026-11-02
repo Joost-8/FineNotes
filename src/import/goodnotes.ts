@@ -744,9 +744,7 @@ function centreline(
     // The curve's middle: a quarter each of its ends, half its control point.
     const mid = (a: number, b: number, ctrl: number): number => 0.25 * a + 0.5 * ctrl + 0.25 * b;
     const hm =
-      from.half !== undefined && hc !== undefined && h !== undefined
-        ? mid(from.half, h, hc)
-        : hc;
+      from.half !== undefined && hc !== undefined && h !== undefined ? mid(from.half, h, hc) : hc;
     points.push(at(mid(from.x, x, cx), mid(from.y, y, cy), hm), at(x, y, h));
   }
   const path: PenPath = { points, half };
@@ -1395,7 +1393,7 @@ export function readRtf(rtf: string): RtfText | null {
     bytes = [];
   };
 
-  for (let i = 0; i < rtf.length; ) {
+  for (let i = 0; i < rtf.length;) {
     const ch = rtf[i];
     if (ch !== "\\" || rtf[i + 1] !== "'") flushBytes();
     if (ch === "{") {
