@@ -7,11 +7,13 @@
  * passed off as an answer.
  */
 
+import { type TextKey, t } from "../i18n/translate";
+
 export type Real = (x: number) => number;
 export type Numeric = { ok: true; value: number } | { ok: false; error: string };
 
 const ok = (value: number): Numeric => ({ ok: true, value });
-const no = (error: string): Numeric => ({ ok: false, error });
+const no = (error: TextKey): Numeric => ({ ok: false, error: t(error) });
 
 /** Put a result a rounding error away from a whole number on it. */
 function snap(x: number): number {
@@ -27,7 +29,7 @@ function snap(x: number): number {
  * disagree (a corner, a jump) or a value is not finite.
  */
 export function derivative(f: Real, x0: number): Numeric {
-  if (!Number.isFinite(x0)) return no("Not a real number");
+  if (!Number.isFinite(x0)) return no("calculator.errNotReal");
   const h = 1e-3 * Math.max(1, Math.abs(x0));
   const central = (s: number): number => (f(x0 + s) - f(x0 - s)) / (2 * s);
   const d1 = central(h);
@@ -37,12 +39,12 @@ export function derivative(f: Real, x0: number): Numeric {
   const r2 = (4 * d3 - d2) / 3;
   const r = (16 * r2 - r1) / 15;
   const fx = f(x0);
-  if (!Number.isFinite(r) || !Number.isFinite(fx)) return no("Not differentiable here");
+  if (!Number.isFinite(r) || !Number.isFinite(fx)) return no("calculator.errNotDifferentiable");
   const s = h / 64;
   const left = (fx - f(x0 - s)) / s;
   const right = (f(x0 + s) - fx) / s;
   const scale = Math.max(1, Math.abs(left), Math.abs(right));
-  if (!(Math.abs(left - right) <= 0.05 * scale)) return no("Not differentiable here");
+  if (!(Math.abs(left - right) <= 0.05 * scale)) return no("calculator.errNotDifferentiable");
   return ok(snap(r));
 }
 
@@ -92,7 +94,7 @@ const MAX_PIECES = 600;
  * fine; anything that will not settle is refused, not guessed.
  */
 export function integrate(f: Real, a: number, b: number): Numeric {
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return no("Limits must be finite");
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return no("calculator.errLimitsFinite");
   if (a === b) return ok(0);
   if (a > b) {
     const flipped = integrate(f, b, a);
@@ -108,16 +110,16 @@ export function integrate(f: Real, a: number, b: number): Numeric {
       error += pieces[i].error;
       if (pieces[i].error > pieces[worst].error) worst = i;
     }
-    if (!Number.isFinite(value) || !Number.isFinite(error)) return no("Integral does not converge");
+    if (!Number.isFinite(value) || !Number.isFinite(error)) return no("calculator.errNoConverge");
     if (error <= Math.max(1e-13, 1e-11 * Math.abs(value))) return ok(snap(value));
     if (pieces.length >= MAX_PIECES) {
       return error <= Math.max(1e-9, 1e-8 * Math.abs(value))
         ? ok(value)
-        : no("Integral does not converge");
+        : no("calculator.errNoConverge");
     }
     const { a: lo, b: hi } = pieces[worst];
     const mid = (lo + hi) / 2;
-    if (!(mid > lo && mid < hi)) return no("Integral does not converge");
+    if (!(mid > lo && mid < hi)) return no("calculator.errNoConverge");
     pieces.splice(worst, 1, kronrod(f, lo, mid), kronrod(f, mid, hi));
   }
 }
@@ -226,7 +228,7 @@ function scan(f: Real, a: number, b: number, steps: number): number | null {
  * Newton's method from the guess.
  */
 export function solveNear(f: Real, guess: number): Numeric {
-  if (!Number.isFinite(guess)) return no("Not a real number");
+  if (!Number.isFinite(guess)) return no("calculator.errNotReal");
   if (f(guess) === 0) return ok(guess);
   const scale = Math.max(1, Math.abs(guess));
   let step = 0.01 * scale;
@@ -251,15 +253,15 @@ export function solveNear(f: Real, guess: number): Numeric {
     step *= 2;
   }
   const r = newton(f, guess);
-  return r === null ? no("No root found") : ok(snap(r));
+  return r === null ? no("calculator.errNoRoot") : ok(snap(r));
 }
 
 /** A root of f in [a, b]: the first sign change, else Newton from the middle if it stays inside. */
 export function solveIn(f: Real, a: number, b: number): Numeric {
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return no("Limits must be finite");
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return no("calculator.errLimitsFinite");
   if (a > b) [a, b] = [b, a];
   const r = scan(f, a, b, 400) ?? newton(f, (a + b) / 2);
-  return r !== null && r >= a && r <= b ? ok(snap(r)) : no("No root found in range");
+  return r !== null && r >= a && r <= b ? ok(snap(r)) : no("calculator.errNoRootInRange");
 }
 
 // --- Limit --------------------------------------------------------------------
@@ -303,24 +305,26 @@ function sequenceLimit(
  * that runs off to infinity says so.
  */
 export function limit(f: Real, a: number): Numeric {
-  if (Number.isNaN(a)) return no("Not a real number");
+  if (Number.isNaN(a)) return no("calculator.errNotReal");
   if (!Number.isFinite(a)) {
     // x up to 10⁵ only: (1 + 1/x)^x at 10⁶ has already lost 10 digits to rounding.
     const l = sequenceLimit((h) => f(Math.sign(a) / h), [1e-1, 1e-2, 1e-3, 1e-4, 1e-5]);
-    if (l === null) return no("Limit does not exist");
-    if (!Number.isFinite(l)) return no(l > 0 ? "Tends to ∞" : "Tends to −∞");
+    if (l === null) return no("calculator.errNoLimit");
+    if (!Number.isFinite(l))
+      return no(l > 0 ? "calculator.errTendsInfinity" : "calculator.errTendsMinusInfinity");
     return ok(snap(l));
   }
   const scale = Math.max(1, Math.abs(a));
   const right = sequenceLimit((h) => f(a + scale * h));
   const left = sequenceLimit((h) => f(a - scale * h));
-  if (right === null || left === null) return no("Limit does not exist");
+  if (right === null || left === null) return no("calculator.errNoLimit");
   if (!Number.isFinite(right) || !Number.isFinite(left)) {
-    if (right === left) return no(right > 0 ? "Tends to ∞" : "Tends to −∞");
-    return no("Limit does not exist");
+    if (right === left)
+      return no(right > 0 ? "calculator.errTendsInfinity" : "calculator.errTendsMinusInfinity");
+    return no("calculator.errNoLimit");
   }
   if (Math.abs(right - left) > 1e-6 * Math.max(1, Math.abs(right), Math.abs(left))) {
-    return no("Limit does not exist");
+    return no("calculator.errNoLimit");
   }
   return ok(snap((right + left) / 2));
 }

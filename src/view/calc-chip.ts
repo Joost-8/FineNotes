@@ -6,6 +6,7 @@
  * with the page; the surface places it (`InkSurface.showCalcSuggestion`).
  */
 
+import { t } from "../i18n/translate";
 import { onTap } from "./selection-bar";
 
 /** Where the chip belongs: a page, and a point on it in page px (the chip's bottom left). */
@@ -44,7 +45,7 @@ export class CalcChip {
     this.accept = accept;
     this.sumEl.setText(sum);
     this.answerEl.setText(answer);
-    this.el.setAttribute("aria-label", `Write ${answer}`);
+    this.el.setAttribute("aria-label", t("calculator.writeAnswer", { answer }));
     this.el.removeClass("is-hidden");
   }
 

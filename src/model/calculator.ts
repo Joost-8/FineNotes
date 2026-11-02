@@ -27,6 +27,7 @@
  * no NaN or Infinity ever leaves this module as a value.
  */
 
+import { t, tn } from "../i18n/translate";
 import { derivative, integrate, limit, solveIn, solveNear } from "./calculus";
 
 export type AngleMode = "deg" | "rad";
@@ -58,6 +59,19 @@ export interface EvalContext {
 }
 
 export type EvalResult = { ok: true; value: CalcValue } | { ok: false; error: string };
+
+/**
+ * Whether `error` (a failure's message) says a name was not known, in the
+ * language in use. Callers that must react to that failure ask here rather
+ * than comparing the words.
+ */
+export function isUnknownNameError(error: string): boolean {
+  const mark = "@@name@@";
+  const [head = "", tail = ""] = t("calculator.errUnknownName", { name: mark }).split(mark);
+  return (
+    error.length >= head.length + tail.length && error.startsWith(head) && error.endsWith(tail)
+  );
+}
 
 export interface FormatOptions {
   /** Show non-whole rationals as `n/d`. */
@@ -111,7 +125,7 @@ function pow10(k: number): bigint {
 
 /** n/d in lowest terms; a float when either part grows past {@link MAX_BITS}. */
 export function rational(n: bigint, d = 1n): CalcValue {
-  if (d === 0n) fail("Divide by zero");
+  if (d === 0n) fail(t("calculator.errDivideByZero"));
   if (d < 0n) {
     n = -n;
     d = -d;
@@ -161,8 +175,8 @@ export function toFloat(value: CalcValue): number {
 
 /** A float result, refused when it is not a real, finite number. */
 function finite(x: number): number {
-  if (Number.isNaN(x)) fail("Not a real number");
-  if (!Number.isFinite(x)) fail("Too large");
+  if (Number.isNaN(x)) fail(t("calculator.errNotReal"));
+  if (!Number.isFinite(x)) fail(t("calculator.errTooLarge"));
   return x === 0 ? 0 : x;
 }
 
@@ -202,7 +216,7 @@ export function multiply(a: CalcValue, b: CalcValue): CalcValue {
 }
 
 export function divide(a: CalcValue, b: CalcValue): CalcValue {
-  if (sign(b) === 0) fail("Divide by zero");
+  if (sign(b) === 0) fail(t("calculator.errDivideByZero"));
   if (isRational(a) && isRational(b)) return rational(a.n * b.d, a.d * b.n);
   return finite(toFloat(a) / toFloat(b));
 }
@@ -214,7 +228,7 @@ function floorDiv(n: bigint, d: bigint): bigint {
 
 /** a mod b, taking the divisor's sign (a − b·⌊a/b⌋). */
 function modulo(a: CalcValue, b: CalcValue): CalcValue {
-  if (sign(b) === 0) fail("Divide by zero");
+  if (sign(b) === 0) fail(t("calculator.errDivideByZero"));
   if (isRational(a) && isRational(b)) {
     const q = floorDiv(a.n * b.d, a.d * b.n);
     return subtract(a, multiply(b, rational(q)));
@@ -259,7 +273,7 @@ function rationalRoot(q: Rational, k: number): CalcValue | null {
 
 function wholePower(a: Rational, k: bigint): CalcValue {
   if (k === 0n) return ONE;
-  if (a.n === 0n && k < 0n) fail("Divide by zero");
+  if (a.n === 0n && k < 0n) fail(t("calculator.errDivideByZero"));
   const e = babs(k);
   if (Math.max(bitLength(a.n), bitLength(a.d)) * Number(e) > MAX_BITS) {
     return finite(Math.pow(toFloat(a), Number(k)));
@@ -278,20 +292,20 @@ export function power(a: CalcValue, b: CalcValue): CalcValue {
   }
   const x = toFloat(a);
   const y = toFloat(b);
-  if (x === 0 && y < 0) fail("Divide by zero");
+  if (x === 0 && y < 0) fail(t("calculator.errDivideByZero"));
   if (x < 0 && !Number.isInteger(y)) {
     // A negative number to an odd-denominator fraction is still real.
     if (isRational(b) && b.d % 2n === 1n) {
       const m = Math.pow(-x, y);
       return finite(b.n % 2n === 0n ? m : -m);
     }
-    fail("Not a real number");
+    fail(t("calculator.errNotReal"));
   }
   return finite(Math.pow(x, y));
 }
 
 function naturalLog(value: CalcValue): number {
-  if (sign(value) <= 0) fail("Not a real number");
+  if (sign(value) <= 0) fail(t("calculator.errNotReal"));
   if (isRational(value) && value.n === value.d) return 0;
   const x = toFloat(value);
   if (Number.isFinite(x) && x > 0) return Math.log(x);
@@ -303,7 +317,7 @@ function naturalLog(value: CalcValue): number {
 
 function logarithm(x: CalcValue, base: CalcValue): CalcValue {
   const lb = naturalLog(base);
-  if (lb === 0) fail("Undefined");
+  if (lb === 0) fail(t("calculator.errUndefined"));
   const r = naturalLog(x) / lb;
   // log₂ 8 is 3, not 2.9999999999999996, when it is exactly so.
   const k = Math.round(r);
@@ -314,7 +328,7 @@ function logarithm(x: CalcValue, base: CalcValue): CalcValue {
 }
 
 function roundTo(value: CalcValue, places: CalcValue): CalcValue {
-  if (!isInteger(places) || places.n < 0n || places.n > 15n) fail("Places: 0 to 15");
+  if (!isInteger(places) || places.n < 0n || places.n > 15n) fail(t("calculator.errPlaces"));
   const scale = pow10(Number(places.n));
   if (isRational(value)) {
     const n = babs(value.n) * scale;
@@ -326,13 +340,13 @@ function roundTo(value: CalcValue, places: CalcValue): CalcValue {
 
 function wholeNonNegative(value: CalcValue): bigint {
   const v = exactIfWhole(value);
-  if (!isInteger(v) || v.n < 0n) fail("Whole numbers ≥ 0 only");
+  if (!isInteger(v) || v.n < 0n) fail(t("calculator.errWholeNonNegative"));
   return v.n;
 }
 
 function factorial(value: CalcValue): CalcValue {
   const n = wholeNonNegative(value);
-  if (n > BigInt(MAX_FACTORIAL)) fail("Too large");
+  if (n > BigInt(MAX_FACTORIAL)) fail(t("calculator.errTooLarge"));
   let p = 1n;
   for (let i = 2n; i <= n; i++) p *= i;
   return rational(p);
@@ -343,7 +357,7 @@ function permutations(nValue: CalcValue, rValue: CalcValue, choose: boolean): Ca
   let r = wholeNonNegative(rValue);
   if (r > n) return ZERO;
   if (choose && n - r < r) r = n - r;
-  if (r > BigInt(MAX_COMBINATION_STEPS)) fail("Too large");
+  if (r > BigInt(MAX_COMBINATION_STEPS)) fail(t("calculator.errTooLarge"));
   let p = 1n;
   for (let i = 0n; i < r; i++) p *= n - i;
   if (!choose) return rational(p);
@@ -373,7 +387,7 @@ function exactDegrees(kind: Trig, degrees: Rational): CalcValue | null {
   if (!isInteger(r)) return null;
   const a = Number(r.n);
   if (kind === "tan") {
-    if (a % 180 === 90) fail("Undefined");
+    if (a % 180 === 90) fail(t("calculator.errUndefined"));
     if (a % 180 === 0) return ZERO;
     if (a % 180 === 45) return ONE;
     if (a % 180 === 135) return rational(-1n);
@@ -396,13 +410,13 @@ function trig(kind: Trig, value: CalcValue, angle: AngleMode): CalcValue {
     if (exact !== null) return exact;
   }
   const x = angle === "deg" ? (toFloat(value) * Math.PI) / 180 : toFloat(value);
-  if (kind === "tan" && Math.abs(Math.cos(x)) < 1e-12) fail("Undefined");
+  if (kind === "tan" && Math.abs(Math.cos(x)) < 1e-12) fail(t("calculator.errUndefined"));
   return snapTrig(kind === "sin" ? Math.sin(x) : kind === "cos" ? Math.cos(x) : Math.tan(x));
 }
 
 function inverseTrig(kind: Trig, value: CalcValue, angle: AngleMode): CalcValue {
   const x = toFloat(value);
-  if (kind !== "tan" && (x < -1 || x > 1)) fail("Not a real number");
+  if (kind !== "tan" && (x < -1 || x > 1)) fail(t("calculator.errNotReal"));
   const r = kind === "sin" ? Math.asin(x) : kind === "cos" ? Math.acos(x) : Math.atan(x);
   if (angle === "rad") return finite(r);
   const degrees = (r * 180) / Math.PI;
@@ -606,13 +620,13 @@ const FUNCTIONS: ReadonlyMap<string, CalcFunction> = new Map<string, CalcFunctio
 /** A whole number for the bitwise functions, or a clear refusal. */
 function wholeNumber(value: CalcValue): bigint {
   const v = exactIfWhole(value);
-  if (!isInteger(v)) fail("Whole numbers only");
+  if (!isInteger(v)) fail(t("calculator.errWholeOnly"));
   return v.n;
 }
 
 /** 1 / f(x), "Undefined" where f is 0 (sec 90°). */
 function reciprocal(value: CalcValue): CalcValue {
-  if (sign(value) === 0) fail("Undefined");
+  if (sign(value) === 0) fail(t("calculator.errUndefined"));
   return divide(ONE, value);
 }
 
@@ -789,7 +803,7 @@ const MORE_FUNCTIONS: Array<[string, CalcFunction]> = [
       max: 2,
       apply: ([a, n]) => {
         const k = wholeNumber(n);
-        if (k < 0n || k > BigInt(MAX_SHIFT)) fail("Shift by 0 to 4096");
+        if (k < 0n || k > BigInt(MAX_SHIFT)) fail(t("calculator.errShift"));
         return rational(wholeNumber(a) << k);
       },
       float: ([a, n]) => (Number.isInteger(a) && Number.isInteger(n) && n >= 0 ? a * 2 ** n : NaN),
@@ -803,7 +817,7 @@ const MORE_FUNCTIONS: Array<[string, CalcFunction]> = [
       max: 2,
       apply: ([a, n]) => {
         const k = wholeNumber(n);
-        if (k < 0n || k > BigInt(MAX_SHIFT)) fail("Shift by 0 to 4096");
+        if (k < 0n || k > BigInt(MAX_SHIFT)) fail(t("calculator.errShift"));
         return rational(wholeNumber(a) >> k);
       },
       float: ([a, n]) =>
@@ -882,7 +896,7 @@ const isLetter = (c: string | undefined): boolean => c !== undefined && /[A-Za-z
 const isHexDigit = (c: string | undefined): boolean => c !== undefined && /[0-9A-Fa-f]/.test(c);
 
 function decimalLiteral(int: string, frac: string, exp: number): CalcValue {
-  if (Math.abs(exp) > 1000) fail("Too large");
+  if (Math.abs(exp) > 1000) fail(t("calculator.errTooLarge"));
   const n = BigInt(int + frac || "0");
   const scale = exp - frac.length;
   return scale >= 0 ? rational(n * pow10(scale)) : rational(n, pow10(-scale));
@@ -970,7 +984,7 @@ function tokenize(source: string, base: NumberBase, letters = false): Token[] {
         exp = Number(readWhile(isDigit));
         if (negative) exp = -exp;
       }
-      if (s[i] === ".") fail("Syntax error");
+      if (s[i] === ".") fail(t("calculator.errSyntax"));
       tokens.push({ kind: "num", value: decimalLiteral(int, frac, exp), text: s.slice(start, i) });
       continue;
     }
@@ -1001,7 +1015,7 @@ function tokenize(source: string, base: NumberBase, letters = false): Token[] {
       i += op.length;
       continue;
     }
-    fail(c === "." ? "Syntax error" : `Unknown sign: ${c}`);
+    fail(c === "." ? t("calculator.errSyntax") : t("calculator.errUnknownSign", { sign: c }));
   }
   return tokens;
 }
@@ -1012,7 +1026,12 @@ function baseLiteral(digits: string, radix: number): CalcValue {
   for (const ch of digits) {
     const v = parseInt(ch, 16);
     if (!(v < radix))
-      fail(`${ch.toUpperCase()} is not a ${BASE_LABELS[radix as NumberBase]} digit`);
+      fail(
+        t("calculator.errNotDigit", {
+          digit: ch.toUpperCase(),
+          base: BASE_LABELS[radix as NumberBase],
+        }),
+      );
     n = n * R + BigInt(v);
   }
   return rational(n);
@@ -1054,10 +1073,15 @@ class Parser {
   ) {}
 
   parse(): CalcNode {
-    if (this.tokens.length === 0) fail("Nothing to calculate");
+    if (this.tokens.length === 0) fail(t("calculator.errNothing"));
     const node = this.relations ? this.relation() : this.expression();
     const left = this.tokens[this.i];
-    if (left) fail(left.kind === "op" && left.op === ")" ? "Missing bracket" : "Syntax error");
+    if (left)
+      fail(
+        left.kind === "op" && left.op === ")"
+          ? t("calculator.errMissingBracket")
+          : t("calculator.errSyntax"),
+      );
     return node;
   }
 
@@ -1067,7 +1091,7 @@ class Parser {
   }
 
   private enter(): void {
-    if (++this.depth > MAX_DEPTH) fail("Too complex");
+    if (++this.depth > MAX_DEPTH) fail(t("calculator.errTooComplex"));
   }
 
   /** `a = b`, `a < b`, or a plain expression. */
@@ -1156,27 +1180,29 @@ class Parser {
   /** `)` closes; the end of the input closes too (brackets left open are forgiven). */
   private close(): void {
     if (this.peekOp() === ")") this.i++;
-    else if (this.i < this.tokens.length) fail("Syntax error");
+    else if (this.i < this.tokens.length) fail(t("calculator.errSyntax"));
   }
 
   private primary(): CalcNode {
-    const t = this.tokens[this.i];
-    if (!t) fail("Syntax error");
+    const tok = this.tokens[this.i];
+    if (!tok) fail(t("calculator.errSyntax"));
     this.i++;
-    if (t.kind === "num") return { k: "num", v: t.value, text: t.text };
-    if (t.kind === "op") {
-      if (t.op === "(") {
+    if (tok.kind === "num") return { k: "num", v: tok.value, text: tok.text };
+    if (tok.kind === "op") {
+      if (tok.op === "(") {
         const node = this.expression();
         this.close();
         // A bracket the user wrote is kept, for the natural display.
         return { k: "call", fn: "(", args: [node], bracketed: true };
       }
-      if (t.op === "√") return { k: "call", fn: "sqrt", args: [this.unary()], bracketed: false };
+      if (tok.op === "√") return { k: "call", fn: "sqrt", args: [this.unary()], bracketed: false };
       const after = this.tokens[this.i - 2];
       const empty = after?.kind === "op" && after.op === "(";
-      fail(t.op === ")" && !empty ? "Missing bracket" : "Syntax error");
+      fail(
+        tok.op === ")" && !empty ? t("calculator.errMissingBracket") : t("calculator.errSyntax"),
+      );
     }
-    const name = ALIASES[t.name] ?? t.name;
+    const name = ALIASES[tok.name] ?? tok.name;
     const fn = FUNCTIONS.get(name);
     const calculus = Object.prototype.hasOwnProperty.call(CALCULUS, name) ? CALCULUS[name] : null;
     if (!fn && !calculus) {
@@ -1202,12 +1228,15 @@ class Parser {
     }
     const spec = fn ?? calculus!;
     if (args.length < spec.min || args.length > spec.max) {
-      const count = spec.min === spec.max ? `${spec.min}` : `${spec.min} or ${spec.max}`;
-      fail(`${spec.label} takes ${count} input${spec.max === 1 ? "" : "s"}`);
+      const count =
+        spec.min === spec.max
+          ? `${spec.min}`
+          : t("calculator.errInputsEither", { min: spec.min, max: spec.max });
+      fail(tn("calculator.errTakes", spec.max, { label: spec.label, inputs: count }));
     }
     if (name === "solve" && args[0].k === "rel" && args[0].op !== "=")
-      fail("solve needs an equation");
-    for (const arg of args.slice(1)) if (arg.k === "rel") fail("Syntax error");
+      fail(t("calculator.errNeedsEquation"));
+    for (const arg of args.slice(1)) if (arg.k === "rel") fail(t("calculator.errSyntax"));
     return { k: "call", fn: name, args, bracketed };
   }
 }
@@ -1219,12 +1248,12 @@ export function parseExpression(
   options: { letters?: boolean; relations?: boolean } = {},
 ): { ok: true; node: CalcNode } | { ok: false; error: string } {
   try {
-    if (expression.length > MAX_LENGTH) fail("Too long");
+    if (expression.length > MAX_LENGTH) fail(t("calculator.errTooLong"));
     const tokens = tokenize(expression, base, options.letters === true);
     return { ok: true, node: new Parser(tokens, options.relations === true).parse() };
   } catch (error) {
     if (error instanceof CalcError) return { ok: false, error: error.message };
-    if (error instanceof RangeError) return { ok: false, error: "Too large" };
+    if (error instanceof RangeError) return { ok: false, error: t("calculator.errTooLarge") };
     throw error;
   }
 }
@@ -1253,7 +1282,7 @@ function evalExact(node: CalcNode, env: Env): CalcValue {
       return node.op === "!" ? factorial(a) : divide(a, rational(100n));
     }
     case "rel":
-      return fail("Syntax error");
+      return fail(t("calculator.errSyntax"));
     case "bin": {
       const a = evalExact(node.a, env);
       const b = evalExact(node.b, env);
@@ -1294,7 +1323,7 @@ function lookup(name: string, env: Env): CalcValue {
     case "e":
       return Math.E;
     case "inf":
-      return fail("∞ only as a limit's target");
+      return fail(t("calculator.errInfinityTarget"));
     case "ans":
       return env.ans;
     case "m":
@@ -1302,15 +1331,15 @@ function lookup(name: string, env: Env): CalcValue {
     case PLACEHOLDER:
     case CARET:
     case ACTIVE_BOX:
-      return fail("Syntax error");
+      return fail(t("calculator.errSyntax"));
   }
-  return fail(`Unknown name: ${name}`);
+  return fail(t("calculator.errUnknownName", { name }));
 }
 
 /** `node` as a real function of `variable`, every other name taken from `env`. */
 function realFunction(node: CalcNode, env: Env, variable: string): (x: number) => number {
   const unknown = unknownName(node, new Set([...env.vars.keys(), variable]));
-  if (unknown !== null) fail(`Unknown name: ${unknown}`);
+  if (unknown !== null) fail(t("calculator.errUnknownName", { name: unknown }));
   const vars = new Map<string, number>();
   for (const [name, value] of env.vars) vars.set(name, toFloat(value));
   const compiled = compileNode(node, {
@@ -1348,10 +1377,10 @@ function calculus(name: string, args: CalcNode[], env: Env): CalcValue {
       return numeric(limit(realFunction(args[0], env, VARIABLE), to));
     }
     case "deriv":
-      if (args.length < 2) return fail("d/dx(f) is a function: d/dx(f, a) is its slope at a");
+      if (args.length < 2) return fail(t("calculator.errDerivNeedsPoint"));
       return numeric(derivative(realFunction(args[0], env, VARIABLE), value(args[1])));
     case "integral":
-      if (args.length < 3) return fail("∫(f) is a function: ∫(f, a, b) is a number");
+      if (args.length < 3) return fail(t("calculator.errIntegralNeedsLimits"));
       return numeric(
         integrate(realFunction(args[0], env, VARIABLE), value(args[1]), value(args[2])),
       );
@@ -1376,16 +1405,16 @@ function sumOver(args: CalcNode[], env: Env, product = false): CalcValue {
   if (args.length === 4) {
     const index = args[1];
     if (index.k !== "name" || index.name === PLACEHOLDER)
-      fail(`${sym} needs a letter to count with`);
+      fail(t("calculator.errNeedsLetter", { sym }));
     variable = index.name;
     bounds = args.slice(2);
   }
   const from = exactIfWhole(evalExact(bounds[0], env));
   const to = exactIfWhole(evalExact(bounds[1], env));
-  if (!isInteger(from) || !isInteger(to)) fail(`${sym} counts in whole numbers`);
+  if (!isInteger(from) || !isInteger(to)) fail(t("calculator.errCountsWhole", { sym }));
   if (to.n < from.n) return product ? ONE : ZERO;
   const terms = to.n - from.n + 1n;
-  if (terms > BigInt(SUM_MAX_TERMS)) fail("Too many terms");
+  if (terms > BigInt(SUM_MAX_TERMS)) fail(t("calculator.errTooManyTerms"));
   if (terms <= BigInt(SUM_EXACT_TERMS)) {
     let total: CalcValue = product ? ONE : ZERO;
     const vars = new Map(env.vars);
@@ -1575,7 +1604,8 @@ export function compileFunction(
   };
   // An unknown name surfaces now, not as a blank graph.
   const unknown = unknownName(parsed.node);
-  if (unknown !== null) return { ok: false, error: `Unknown name: ${unknown}` };
+  if (unknown !== null)
+    return { ok: false, error: t("calculator.errUnknownName", { name: unknown }) };
   return { ok: true, fn };
 }
 
@@ -1664,7 +1694,7 @@ export function evaluate(expression: string, ctx: EvalContext = {}): EvalResult 
   } catch (error) {
     if (error instanceof CalcError) return { ok: false, error: error.message };
     // A bigint grown past what the engine allows, or a recursion limit.
-    if (error instanceof RangeError) return { ok: false, error: "Too large" };
+    if (error instanceof RangeError) return { ok: false, error: t("calculator.errTooLarge") };
     throw error;
   }
 }
@@ -1728,7 +1758,7 @@ export function calculate(
   const result = evaluate(expression, ctx);
   if (!result.ok) return result;
   const text = formatValue(result.value, { ...options, base: ctx.base ?? options.base });
-  if (text === null) return { ok: false, error: "Not a whole number" };
+  if (text === null) return { ok: false, error: t("calculator.errNotWhole") };
   return { ok: true, value: result.value, text };
 }
 

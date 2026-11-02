@@ -5,6 +5,7 @@
  * does it). Pure: no DOM.
  */
 
+import { t } from "../../i18n/translate";
 import {
   AlgebraError,
   type Expr,
@@ -44,7 +45,7 @@ export function expand(e: Expr): Expr {
     case "pow": {
       const base = expand(e.base);
       if (base.t === "add" && e.exp.t === "num" && qint(e.exp.v) && e.exp.v.n > 1n) {
-        if (e.exp.v.n > BigInt(MAX_DEGREE)) throw new AlgebraError("Too complex");
+        if (e.exp.v.n > BigInt(MAX_DEGREE)) throw new AlgebraError(t("calculator.errTooComplex"));
         let out: Expr = base;
         for (let i = 1n; i < e.exp.v.n; i++) out = multiplyOut(out, base);
         return out;
@@ -60,7 +61,7 @@ export function expand(e: Expr): Expr {
 function multiplyOut(a: Expr, b: Expr): Expr {
   const left = a.t === "add" ? a.terms : [a];
   const right = b.t === "add" ? b.terms : [b];
-  if (left.length * right.length > 4096) throw new AlgebraError("Too complex");
+  if (left.length * right.length > 4096) throw new AlgebraError(t("calculator.errTooComplex"));
   const terms: Expr[] = [];
   for (const x of left) for (const y of right) terms.push(mul(x, y));
   return add(...terms);
@@ -124,7 +125,7 @@ export function evalPoly(p: Poly, x: Q): Q {
 /** p / d: quotient and remainder. */
 export function divide(p: Poly, d: Poly): { quotient: Poly; remainder: Poly } {
   const den = trim(d);
-  if (den.length === 0) throw new AlgebraError("Divide by zero");
+  if (den.length === 0) throw new AlgebraError(t("calculator.errDivideByZero"));
   let rem = trim(p);
   const quot: Poly = [];
   const lead = den[den.length - 1];
