@@ -132,7 +132,10 @@ An area's agent edits only these files plus src/i18n/en/<area>.ts.
 
 ## settings (6)
 
+- src/constants.ts
+- src/settings-data.ts
 - src/settings.ts
+- src/view/update-notice.ts
 - src/ui/api-key-modal.ts
 - src/ui/confirm-modal.ts
 - src/ui/shortcuts-modal.ts
