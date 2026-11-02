@@ -13,8 +13,12 @@
 import type { Command } from "./commands";
 import { POINT_STRIDE, type Page, type Stroke } from "./document";
 import { addStrokesTimed } from "./recording-commands";
+import { t } from "../i18n/translate";
 
-/** The undo step's name. */
+/**
+ * The undo step's name in English; the command shows it through the
+ * language table (`surface.command.highlightText`).
+ */
 export const HIGHLIGHT_TEXT_LABEL = "Highlight text";
 
 /**
@@ -69,7 +73,7 @@ export function highlightText(
   strokes: readonly Stroke[],
   penDown: number | null | undefined,
 ): Command {
-  return addStrokesTimed(page, strokes, penDown, HIGHLIGHT_TEXT_LABEL);
+  return addStrokesTimed(page, strokes, penDown, t("surface.command.highlightText"));
 }
 
 /** Whether a stroke is highlighter ink with points: what Copy text reads under. */

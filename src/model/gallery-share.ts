@@ -12,18 +12,59 @@
  */
 
 import { TEMPLATE_LICENCES, type TemplateLicence } from "../import/template-package";
+import { t } from "../i18n/translate";
 
 /** The community gallery's repository. */
 export const GALLERY_REPOSITORY = "Joost-8/FineNotes-templates";
 
-/** The categories as the form lists them. */
-export const SHARE_CATEGORIES: ReadonlyArray<{ id: string; label: string }> = [
-  { id: "planner", label: "Planner" },
-  { id: "study", label: "Study" },
-  { id: "journal", label: "Journal" },
-  { id: "work", label: "Work" },
-  { id: "paper", label: "Paper" },
-  { id: "other", label: "Other" },
+/**
+ * The categories as the form lists them. `label` is what the share dialog
+ * shows, in the language in use; `form` is the English word GitHub's form
+ * and the gallery's bot know, and is what the address carries.
+ */
+export const SHARE_CATEGORIES: ReadonlyArray<{ id: string; label: string; form: string }> = [
+  {
+    id: "planner",
+    get label() {
+      return t("surface.shareCategory.planner");
+    },
+    form: "Planner",
+  },
+  {
+    id: "study",
+    get label() {
+      return t("surface.shareCategory.study");
+    },
+    form: "Study",
+  },
+  {
+    id: "journal",
+    get label() {
+      return t("surface.shareCategory.journal");
+    },
+    form: "Journal",
+  },
+  {
+    id: "work",
+    get label() {
+      return t("surface.shareCategory.work");
+    },
+    form: "Work",
+  },
+  {
+    id: "paper",
+    get label() {
+      return t("surface.shareCategory.paper");
+    },
+    form: "Paper",
+  },
+  {
+    id: "other",
+    get label() {
+      return t("surface.shareCategory.other");
+    },
+    form: "Other",
+  },
 ];
 
 export interface ShareDetails {
@@ -45,7 +86,7 @@ export function submissionUrl(details: ShareDetails): string {
   params.set("name", name);
   params.set("author", details.author.trim());
   const category = SHARE_CATEGORIES.find((c) => c.id === details.category);
-  if (category) params.set("category", category.label);
+  if (category) params.set("category", category.form);
   const licence = TEMPLATE_LICENCES.find((l) => l.id === details.licence);
   if (licence) params.set("licence", licence.label);
   if (details.description?.trim()) params.set("description", details.description.trim());
@@ -56,7 +97,7 @@ export function submissionUrl(details: ShareDetails): string {
 /** What the share form asks before it opens GitHub: what is missing, or nothing. */
 export function shareProblems(details: ShareDetails): string[] {
   const problems: string[] = [];
-  if (!details.name.trim()) problems.push("Give the template a name.");
-  if (!details.author.trim()) problems.push("Add your name, as it should show in the gallery.");
+  if (!details.name.trim()) problems.push(t("surface.share.needName"));
+  if (!details.author.trim()) problems.push(t("surface.share.needAuthor"));
   return problems;
 }

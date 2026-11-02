@@ -14,6 +14,7 @@
 
 import type { Command } from "./commands";
 import { POINT_STRIDE, type InkDocument, type Stroke, pageById } from "./document";
+import { t } from "../i18n/translate";
 
 /** A fill's outline width, page px: thinner than any pen, under the ink round it. */
 export const FILL_EDGE = 0.5;
@@ -134,7 +135,7 @@ function boundsOf(
 
 /** Put a fill on a page, behind the ink (at `index` in its strokes). */
 export class AddFill implements Command {
-  readonly label = "Fill";
+  readonly label = t("surface.command.fill");
   constructor(
     readonly pageId: string,
     private readonly stroke: Stroke,
@@ -157,7 +158,7 @@ export class AddFill implements Command {
 
 /** Give a fill another colour, its outline and inside alike. */
 export class RecolorFill implements Command {
-  readonly label = "Fill";
+  readonly label = t("surface.command.fill");
   private previous: { color: string; fill: string | undefined } | null = null;
   constructor(
     readonly pageId: string,

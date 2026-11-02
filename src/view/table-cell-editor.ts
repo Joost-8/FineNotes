@@ -28,6 +28,7 @@ import type { TextStyle } from "../model/text-style";
 import { lineHeightOf } from "../model/text-style";
 import { textInset } from "../canvas/text-layout";
 import { swallowGhostClick } from "./ghost-click";
+import { t } from "../i18n/translate";
 
 /** What the bar's buttons do. */
 export type TableAction =
@@ -107,14 +108,68 @@ const REFUSED_MS = 450;
  */
 const ACTIONS: ReadonlyArray<{ action: TableAction; icon: string; label: string; text?: string }> =
   [
-    { action: "row-above", icon: "arrow-up-to-line", label: "Add row above" },
-    { action: "row-below", icon: "arrow-down-to-line", label: "Add row below" },
-    { action: "col-left", icon: "arrow-left-to-line", label: "Add column left" },
-    { action: "col-right", icon: "arrow-right-to-line", label: "Add column right" },
-    { action: "header", icon: "heading", label: "Header row" },
-    { action: "bold", icon: "bold", label: "Bold" },
-    { action: "delete-row", icon: "trash-2", label: "Delete row", text: "Row" },
-    { action: "delete-col", icon: "trash-2", label: "Delete column", text: "Column" },
+    {
+      action: "row-above",
+      icon: "arrow-up-to-line",
+      get label() {
+        return t("surface.table.addRowAbove");
+      },
+    },
+    {
+      action: "row-below",
+      icon: "arrow-down-to-line",
+      get label() {
+        return t("surface.table.addRowBelow");
+      },
+    },
+    {
+      action: "col-left",
+      icon: "arrow-left-to-line",
+      get label() {
+        return t("surface.table.addColumnLeft");
+      },
+    },
+    {
+      action: "col-right",
+      icon: "arrow-right-to-line",
+      get label() {
+        return t("surface.table.addColumnRight");
+      },
+    },
+    {
+      action: "header",
+      icon: "heading",
+      get label() {
+        return t("surface.table.headerRow");
+      },
+    },
+    {
+      action: "bold",
+      icon: "bold",
+      get label() {
+        return t("surface.table.bold");
+      },
+    },
+    {
+      action: "delete-row",
+      icon: "trash-2",
+      get label() {
+        return t("surface.table.deleteRow");
+      },
+      get text() {
+        return t("surface.table.rowWord");
+      },
+    },
+    {
+      action: "delete-col",
+      icon: "trash-2",
+      get label() {
+        return t("surface.table.deleteColumn");
+      },
+      get text() {
+        return t("surface.table.columnWord");
+      },
+    },
   ];
 /** A divider goes before each of these. */
 const GROUP_STARTS: ReadonlySet<TableAction> = new Set(["col-left", "header", "delete-row"]);
@@ -146,7 +201,7 @@ export class TableCellEditor {
     this.root = layer.createDiv({ cls: "goodobsidian-table-cell is-hidden" });
     this.input = this.root.createEl("textarea", {
       cls: "goodobsidian-table-cell-input",
-      attr: { "aria-label": "Table cell", rows: "1" },
+      attr: { "aria-label": t("surface.table.cell"), rows: "1" },
     });
     this.grips = layer.createDiv({ cls: "goodobsidian-table-grips is-hidden" });
     this.guide = this.grips.createDiv({ cls: "goodobsidian-table-guide is-hidden" });
@@ -175,7 +230,7 @@ export class TableCellEditor {
         // The colour sits beside Bold: the disc is the cell's colour, a value, not chrome.
         this.colorButton = this.bar.createEl("button", {
           cls: "goodobsidian-table-bar-button clickable-icon is-color",
-          attr: { "aria-label": "Text colour", "aria-expanded": "false" },
+          attr: { "aria-label": t("surface.table.textColour"), "aria-expanded": "false" },
         });
         this.colorDisc = this.colorButton.createSpan({ cls: "goodobsidian-table-bar-disc" });
         onPress(this.colorButton, () => this.toggleSwatches());
@@ -273,7 +328,7 @@ export class TableCellEditor {
       colors.forEach((color, i) => {
         const swatch = this.swatchRow.createEl("button", {
           cls: "goodobsidian-table-swatch clickable-icon",
-          attr: { "aria-label": i === 0 ? "Table's text colour" : color },
+          attr: { "aria-label": i === 0 ? t("surface.table.tableTextColour") : color },
         });
         swatch.dataset.color = color;
         swatch.createSpan({ cls: "goodobsidian-table-swatch-disc" }).setCssStyles({
@@ -316,7 +371,10 @@ export class TableCellEditor {
       const index = list.length;
       const grip = this.grips.createDiv({
         cls: `goodobsidian-table-grip is-${kind}`,
-        attr: { "aria-label": kind === "col" ? "Resize column" : "Resize row" },
+        attr: {
+          "aria-label":
+            kind === "col" ? t("surface.command.resizeColumn") : t("surface.command.resizeRow"),
+        },
       });
       grip.addEventListener("pointerdown", (event) => {
         event.stopPropagation();

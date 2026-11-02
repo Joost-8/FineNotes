@@ -24,10 +24,11 @@ import {
 import { relinkNoteInk } from "./sticky-notes";
 import { nextConnectorId, remapConnectors } from "./connectors";
 import { paperPageFor, repeatedPaper } from "./templates";
+import { t } from "../i18n/translate";
 
 /** Append a freshly-drawn stroke to a specific page. */
 export class AddStrokeToPage implements Command {
-  readonly label = "Add stroke";
+  readonly label = t("surface.command.addStroke");
   constructor(
     readonly pageId: string,
     private readonly stroke: Stroke,
@@ -47,7 +48,7 @@ export class AddStrokeToPage implements Command {
 
 /** Place a typed text box on one page. */
 export class AddTextBoxToPage implements Command {
-  readonly label = "Add text box";
+  readonly label = t("surface.command.addTextBox");
 
   constructor(
     readonly pageId: string,
@@ -68,7 +69,7 @@ export class AddTextBoxToPage implements Command {
 
 /** Remove one text box from one page, restoring it at the same index on undo. */
 export class RemoveTextBoxFromPage implements Command {
-  readonly label = "Remove text box";
+  readonly label = t("surface.command.removeTextBox");
   private removed: { index: number; textBox: TextBoxElement } | null = null;
 
   constructor(
@@ -111,7 +112,7 @@ export interface TextBoxFrame {
 
 /** Move and/or resize one text box on one page. */
 export class SetTextBoxFrame implements Command {
-  readonly label = "Resize text box";
+  readonly label = t("surface.command.resizeTextBox");
   private previous: TextBoxFrame | null = null;
   /** The box acted on, so undo restores exactly that object (ids can repeat). */
   private target: TextBoxElement | null = null;
@@ -186,7 +187,7 @@ export class RemoveStrokesFromPage implements Command {
   constructor(
     readonly pageId: string,
     private readonly ids: ReadonlySet<string>,
-    label = "Erase",
+    label = t("surface.command.erase"),
   ) {
     this.label = label;
   }
@@ -219,7 +220,7 @@ export class RemoveStrokesFromPage implements Command {
 
 /** Translate a set of a page's strokes by (dx, dy), in page space. */
 export class MoveStrokesOnPage implements Command {
-  readonly label = "Move";
+  readonly label = t("surface.command.move");
   constructor(
     readonly pageId: string,
     private readonly ids: ReadonlySet<string>,
@@ -333,7 +334,7 @@ export class CompositeCommand implements Command {
 
 /** Remove every stroke on one page (one undoable step). */
 export class ClearPage implements Command {
-  readonly label = "Clear page";
+  readonly label = t("surface.command.clearPage");
   private removed: Stroke[] = [];
 
   constructor(readonly pageId: string) {}
@@ -438,7 +439,7 @@ function maxNumericId(
  * `invert()` is one too.
  */
 export class MovePage implements Command {
-  readonly label = "Move page";
+  readonly label = t("surface.command.movePage");
   readonly keepsReading = true;
   private moved: Page | null = null;
 
@@ -476,7 +477,7 @@ export class MovePage implements Command {
  * but intact, and changing back reveals it again.
  */
 export class SetPageTemplate implements Command {
-  readonly label = "Change template";
+  readonly label = t("surface.command.changeTemplate");
   private previous: { backdrop: Backdrop; geometry: Page["geometry"] } | null = null;
 
   constructor(
@@ -514,7 +515,7 @@ export class SetPageBookmark implements Command {
     private readonly page: Page,
     private readonly on: boolean,
   ) {
-    this.label = on ? "Bookmark page" : "Remove bookmark";
+    this.label = on ? t("surface.command.bookmarkPage") : t("surface.command.removeBookmark");
   }
 
   get pageId(): string {

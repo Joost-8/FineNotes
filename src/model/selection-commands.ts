@@ -43,6 +43,7 @@ import {
   restoreStyleFields,
   styleFieldsOf,
 } from "./shape-style";
+import { t } from "../i18n/translate";
 
 /** The elements a selection holds on one page. */
 export interface PageElements {
@@ -105,7 +106,7 @@ export function translatePoints(pts: readonly number[], dx: number, dy: number):
  * very array and kind it had.
  */
 export class ReshapeStroke implements Command {
-  readonly label = "Edit shape";
+  readonly label = t("surface.command.editShape");
   private previous: { pts: number[]; shape?: ShapeKind } | null = null;
 
   constructor(
@@ -139,7 +140,7 @@ export class ReshapeStroke implements Command {
  * height, as one step. Undo puts back the very points array it replaced.
  */
 export class StretchTape implements Command {
-  readonly label = "Resize tape";
+  readonly label = t("surface.command.resizeTape");
   private previous: { pts: number[]; size: number } | null = null;
 
   constructor(
@@ -173,7 +174,7 @@ export class StretchTape implements Command {
  * text boxes keep their size, rotation and style.
  */
 export class TranslateElements implements Command {
-  readonly label = "Move selection";
+  readonly label = t("surface.command.moveSelection");
   private moved: {
     strokes: Array<{ stroke: Stroke; pts: number[] }>;
     images: Array<{ image: ImageElement; x: number; y: number }>;
@@ -303,7 +304,7 @@ export function textScaleRange(textBoxes: readonly TextBoxElement[]): { min: num
  * they do under a move.
  */
 export class ScaleElements implements Command {
-  readonly label = "Resize selection";
+  readonly label = t("surface.command.resizeSelection");
   private scaled: {
     strokes: Array<{ stroke: Stroke; pts: number[]; size: number; radius: number | undefined }>;
     images: Array<{ image: ImageElement; x: number; y: number; w: number; h: number }>;
@@ -504,10 +505,10 @@ export class ReorientElements implements Command {
   ) {
     this.label =
       motion.kind === "rotate"
-        ? "Rotate selection"
+        ? t("surface.command.rotateSelection")
         : motion.axis === "x"
-          ? "Flip horizontal"
-          : "Flip vertical";
+          ? t("surface.command.flipHorizontal")
+          : t("surface.command.flipVertical");
   }
 
   apply(doc: InkDocument): void {
@@ -632,7 +633,7 @@ export class RemoveElements implements Command {
   constructor(
     readonly pageId: string,
     private readonly elements: PageElements,
-    readonly label = "Delete selection",
+    readonly label = t("surface.command.deleteSelection"),
   ) {}
 
   apply(doc: InkDocument): void {
@@ -674,7 +675,7 @@ export class RemoveElements implements Command {
  * puts every list, field and key order back as it was.
  */
 export class MoveElementsToPage implements Command {
-  readonly label = "Move to page";
+  readonly label = t("surface.command.moveToPage");
   private moved: {
     removed: {
       strokes: Array<Removed<Stroke>>;
@@ -831,7 +832,7 @@ export class AddElements implements Command {
   constructor(
     readonly pageId: string,
     private readonly elements: PageElements,
-    readonly label = "Duplicate selection",
+    readonly label = t("surface.command.duplicateSelection"),
   ) {}
 
   apply(doc: InkDocument): void {
@@ -873,7 +874,7 @@ export class AddElements implements Command {
 
 /** Give selected strokes one colour; undo restores each stroke's own. */
 export class RecolorStrokes implements Command {
-  readonly label = "Change colour";
+  readonly label = t("surface.command.changeColour");
   private previous: Array<{ stroke: Stroke; color: string; fill?: string }> = [];
 
   constructor(
@@ -911,7 +912,7 @@ export class RecolorStrokes implements Command {
  * shape back as it was, points included (an arrow given heads became a line).
  */
 export class RestyleShapes implements Command {
-  readonly label = "Change shape style";
+  readonly label = t("surface.command.changeShapeStyle");
   private previous: Array<{ stroke: Stroke; saved: StyleFields }> = [];
 
   constructor(

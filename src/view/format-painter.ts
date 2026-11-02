@@ -21,6 +21,7 @@ import { setIcon } from "obsidian";
 import type { InkStyle } from "../model/format-painter";
 import { swallowGhostClick } from "./ghost-click";
 import { onTap } from "./selection-bar";
+import { t } from "../i18n/translate";
 
 export interface FormatPainterHost {
   /** The page's input overlay: a press inside it is aimed at the page. */
@@ -158,7 +159,7 @@ export class FormatPainter {
       cls: "goodobsidian-eyedrop-bar goodobsidian-paint-bar",
     });
     bar.setAttribute("role", "status");
-    bar.setAttribute("aria-label", "Paste style");
+    bar.setAttribute("aria-label", t("surface.command.pasteStyle"));
     setIcon(bar.createSpan({ cls: "goodobsidian-eyedrop-bar-icon" }), "paintbrush");
     // The mark *is* the style: a value, not chrome.
     const mark = bar.createSpan({ cls: "goodobsidian-paint-mark" });
@@ -171,7 +172,7 @@ export class FormatPainter {
     mark.toggleClass("is-highlighter", style.tool === "highlighter");
     const close = bar.createEl("button", {
       cls: "goodobsidian-eyedrop-bar-button clickable-icon",
-      attr: { "aria-label": "Done", title: "Done" },
+      attr: { "aria-label": t("common.done"), title: t("common.done") },
     });
     setIcon(close, "x");
     onTap(close, () => this.cancel());

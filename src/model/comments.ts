@@ -11,6 +11,7 @@
 
 import type { Command } from "./commands";
 import { type InkDocument, type PageComment, pageById } from "./document";
+import { t } from "../i18n/translate";
 
 /** Longest comment kept, characters; a longer one is cut. */
 export const MAX_COMMENT_LENGTH = 2000;
@@ -56,7 +57,7 @@ export function normalizeComment(raw: unknown, mintId: () => string): PageCommen
 
 /** Pin a comment to a page. */
 export class AddComment implements Command {
-  readonly label = "Add comment";
+  readonly label = t("surface.command.addComment");
   /** Whether the page had no `comments` list before, so undo leaves it without one. */
   private created = false;
 
@@ -84,7 +85,7 @@ export class AddComment implements Command {
 
 /** Take a comment off its page; undo puts it back where it was in the list. */
 export class RemoveComment implements Command {
-  readonly label = "Delete comment";
+  readonly label = t("surface.command.deleteComment");
   private removed: { index: number } | null = null;
 
   constructor(
@@ -123,7 +124,9 @@ export class SetCommentResolved implements Command {
     private readonly comment: PageComment,
     private readonly resolved: boolean,
   ) {
-    this.label = resolved ? "Resolve comment" : "Reopen comment";
+    this.label = resolved
+      ? t("surface.command.resolveComment")
+      : t("surface.command.reopenComment");
   }
 
   apply(doc: InkDocument): void {
@@ -142,7 +145,7 @@ export class SetCommentResolved implements Command {
 
 /** Change what a comment says. */
 export class SetCommentText implements Command {
-  readonly label = "Edit comment";
+  readonly label = t("surface.command.editComment");
   private before: string | null = null;
   private readonly text: string;
 

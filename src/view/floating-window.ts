@@ -26,6 +26,7 @@ import {
   clampPlace,
   defaultPlace,
 } from "../model/calculator-store";
+import { t } from "../i18n/translate";
 
 /** Every floating window's class, for bringing one over the others. */
 const FLOATING_WINDOWS =
@@ -93,15 +94,17 @@ export class FloatingWindow {
       this.barButtons.push(this.barButton(bar, button.icon, button.label, button.run));
     }
     if (options.minimise) {
-      this.barButton(bar, "minus", "Minimise", () => this.setMinimised(!this.place.minimised));
+      this.barButton(bar, "minus", t("surface.floatingWindow.minimise"), () =>
+        this.setMinimised(!this.place.minimised),
+      );
     }
-    this.barButton(bar, "x", options.closeLabel ?? "Close", () => options.onClose()).addClass(
-      "is-close",
-    );
+    this.barButton(bar, "x", options.closeLabel ?? t("common.close"), () =>
+      options.onClose(),
+    ).addClass("is-close");
 
     this.body = this.el.createDiv({ cls: `${cls}-body` });
     const grip = this.el.createDiv({ cls: `${cls}-grip` });
-    grip.setAttribute("aria-label", "Resize");
+    grip.setAttribute("aria-label", t("surface.floatingWindow.resize"));
     setIcon(grip, "move-diagonal-2");
 
     const bounds = this.bounds();

@@ -13,6 +13,7 @@
 
 import type { PickEnd, TextPick } from "../canvas/text-pick";
 import { pickHandles } from "../canvas/text-pick";
+import { t } from "../i18n/translate";
 
 export interface TextPickCallbacks {
   /** A handle was taken at client px (`x`, `y`). */
@@ -34,8 +35,8 @@ export class TextPickView {
   ) {
     this.tintEl = parent.createDiv({ cls: "goodobsidian-text-pick is-hidden" });
     this.handles = {
-      start: this.handle(parent, "start", "Start of selection"),
-      end: this.handle(parent, "end", "End of selection"),
+      start: this.handle(parent, "start", t("surface.textPick.start")),
+      end: this.handle(parent, "end", t("surface.textPick.end")),
     };
   }
 

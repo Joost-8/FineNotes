@@ -38,6 +38,7 @@ import {
   POINT_STRIDE,
   pageById,
 } from "./document";
+import { t } from "../i18n/translate";
 
 /** A colour the sticky notes button offers a note in. */
 export interface StickyColor {
@@ -54,16 +55,76 @@ export interface StickyColor {
  * the colours notes were made in before, unchanged.
  */
 export const STICKY_COLORS: readonly StickyColor[] = [
-  { id: "red", label: "Red", color: "#fecaca" },
-  { id: "orange", label: "Orange", color: "#fed7aa" },
-  { id: "yellow", label: "Yellow", color: "#fde68a" },
-  { id: "green", label: "Green", color: "#bbf7d0" },
-  { id: "teal", label: "Teal", color: "#a5f3fc" },
-  { id: "blue", label: "Blue", color: "#bfdbfe" },
-  { id: "purple", label: "Purple", color: "#e9d5ff" },
-  { id: "pink", label: "Pink", color: "#fbcfe8" },
-  { id: "grey", label: "Grey", color: "#e5e7eb" },
-  { id: "white", label: "White", color: "#ffffff" },
+  {
+    id: "red",
+    get label() {
+      return t("surface.colour.red");
+    },
+    color: "#fecaca",
+  },
+  {
+    id: "orange",
+    get label() {
+      return t("surface.colour.orange");
+    },
+    color: "#fed7aa",
+  },
+  {
+    id: "yellow",
+    get label() {
+      return t("surface.colour.yellow");
+    },
+    color: "#fde68a",
+  },
+  {
+    id: "green",
+    get label() {
+      return t("surface.colour.green");
+    },
+    color: "#bbf7d0",
+  },
+  {
+    id: "teal",
+    get label() {
+      return t("surface.colour.teal");
+    },
+    color: "#a5f3fc",
+  },
+  {
+    id: "blue",
+    get label() {
+      return t("surface.colour.blue");
+    },
+    color: "#bfdbfe",
+  },
+  {
+    id: "purple",
+    get label() {
+      return t("surface.colour.purple");
+    },
+    color: "#e9d5ff",
+  },
+  {
+    id: "pink",
+    get label() {
+      return t("surface.colour.pink");
+    },
+    color: "#fbcfe8",
+  },
+  {
+    id: "grey",
+    get label() {
+      return t("surface.colour.grey");
+    },
+    color: "#e5e7eb",
+  },
+  {
+    id: "white",
+    get label() {
+      return t("surface.colour.white");
+    },
+    color: "#ffffff",
+  },
 ];
 
 /** The colour a first note is offered in: the classic yellow. */
@@ -535,7 +596,7 @@ function moveStroke(stroke: Stroke, m: Affine): void {
  * puts the old arrays back.
  */
 export class MoveNoteInk implements Command {
-  readonly label = "Move sticky note";
+  readonly label = t("surface.command.moveStickyNote");
   private saved: Array<{ stroke: Stroke; pts: number[]; size: number; radius?: number }> | null =
     null;
   /** The note's text boxes and where each stood, for the undo. */
@@ -600,7 +661,7 @@ export class SetNoteFolded implements Command {
     private readonly note: ImageElement,
     private readonly folded: boolean,
   ) {
-    this.label = folded ? "Fold note" : "Open note";
+    this.label = folded ? t("surface.command.foldNote") : t("surface.command.openNote");
   }
 
   apply(doc: InkDocument): void {
@@ -622,7 +683,7 @@ export class SetNoteFolded implements Command {
 
 /** Repaint a note in another colour. Its own inverse, through the paper it had. */
 export class SetStickyColor implements Command {
-  readonly label = "Note colour";
+  readonly label = t("surface.command.noteColour");
   private previous: StickyPaper | null = null;
 
   constructor(

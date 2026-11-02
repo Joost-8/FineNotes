@@ -35,6 +35,7 @@ import {
 import { inkReach, inkReachesPage, movePagePts } from "./page-join";
 import type { DocumentLayout, PageBox } from "./page-layout";
 import { HEAD_MAX } from "./shape-decor";
+import { t } from "../i18n/translate";
 
 /** The element lists of a page that can hold mirrors. */
 export type MirrorKind = "strokes" | "images" | "textBoxes" | "tables" | "graphs";
@@ -327,7 +328,7 @@ export function sameElement(a: unknown, b: unknown): boolean {
  * as it was, a list it had to create removed again.
  */
 export class MirrorSync implements Command {
-  readonly label = "Mirror over the join";
+  readonly label = t("surface.command.mirrorOverJoin");
   private done: Array<{
     pageId: string;
     kind: MirrorKind;
@@ -450,7 +451,7 @@ export type ElementIds = Partial<Record<MirrorKind, readonly string[]>>;
  * (`joinsNext`), so one undo takes back the move and what the selection did.
  */
 export class MoveToPage implements Command {
-  readonly label = "Pick up over the join";
+  readonly label = t("surface.command.pickUpOverJoin");
   readonly joinsNext = true;
   /** What was moved, by kind: each original, where it was, and its copy on the new page. */
   private moved: Array<{

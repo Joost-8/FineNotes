@@ -8,6 +8,7 @@
 
 import type { Command } from "./commands";
 import { type InkDocument, type InkLink, type InkTask, type Stroke, pageById } from "./document";
+import { t } from "../i18n/translate";
 
 /** One erased stroke and what is left of it (possibly nothing). */
 export interface StrokeReplacement {
@@ -22,7 +23,7 @@ export interface StrokeReplacement {
  * index it came from, and the page's links as they were.
  */
 export class ReplaceStrokesOnPage implements Command {
-  readonly label = "Erase";
+  readonly label = t("surface.command.erase");
   /** Where each replacement landed on the last apply, for an exact undo. */
   private applied: Array<{ replacement: StrokeReplacement; index: number }> = [];
   /** The page's links and tasks before the last apply; `null` until it has run. */

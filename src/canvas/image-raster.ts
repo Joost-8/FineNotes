@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 /**
  * The decisions behind putting a picture on a page, kept pure so they can be
  * tested: which formats count as images, how big a picked photo is saved and
@@ -492,7 +493,7 @@ export function drawImagePlaceholder(
     ctx.font = `${size}px ${PLACEHOLDER_FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText("Missing image", cx, cy + s / 2.5 + size * 0.8);
+    ctx.fillText(t("surface.image.missing"), cx, cy + s / 2.5 + size * 0.8);
   }
   ctx.restore();
 }

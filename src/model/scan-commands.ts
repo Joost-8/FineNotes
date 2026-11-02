@@ -26,6 +26,7 @@ import type { Backdrop, InkDocument, Page, PageGeometry } from "./document";
 import { newImageElement } from "./images";
 import { CompositeCommand, nextPageId } from "./page-commands";
 import { paperTemplateFor } from "./templates";
+import { tn } from "../i18n/translate";
 
 /** Margin around a scan on its page, as a fraction of the page's shorter side. */
 export const SCAN_MARGIN = 0.035;
@@ -212,7 +213,7 @@ export function buildScanInsert(
 
   if (parts.length === 0) return null;
   const count = single ? placed.length : pages.length - doc.pages.length;
-  const defaultLabel = count === 1 ? "Scan document" : `Scan ${count} pages`;
+  const defaultLabel = tn("surface.command.scanDocument", count);
   return {
     command: new CompositeCommand(label ?? defaultLabel, parts),
     placed,

@@ -29,6 +29,7 @@ import type {
 } from "./document";
 import { POINT_STRIDE, pdfFrameOf } from "./document";
 import { TranslateElements } from "./selection-commands";
+import { t } from "../i18n/translate";
 
 /** A page's margin on each side, page px. */
 export interface PageMargin {
@@ -285,7 +286,7 @@ export function withoutFrame<T extends Backdrop>(backdrop: T): T {
  * page back. The margin is kept at least as wide as what is written in it.
  */
 export class SetPageMargin implements Command {
-  readonly label = "Margin";
+  readonly label = t("surface.command.margin");
   /** A wider page re-fits the view: stay on the page being read. */
   readonly keepsReading = true;
   private done: Array<{
