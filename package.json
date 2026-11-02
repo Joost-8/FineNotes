@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "version": "node version-bump.mjs && git add manifest.json versions.json",
-    "bench:scale": "node scripts/scale/bench.mjs"
+    "bench:scale": "node scripts/scale/bench.mjs",
+    "languages:check": "node scripts/languages-check.mjs"
   },
   "keywords": [
     "obsidian",
