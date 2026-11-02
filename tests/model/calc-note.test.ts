@@ -16,7 +16,8 @@ import {
   sumOfLine,
   variablesOfLines,
 } from "../../src/model/calc-note";
-import { type CalcValue, formatValue, rational } from "../../src/model/calculator";
+import { type CalcValue, evaluate, formatValue, rational } from "../../src/model/calculator";
+import { useLanguage } from "../../src/i18n/translate";
 
 /** The answer a reading gets, as written, or null when it gets none. */
 function answer(reading: string, vars: ReadonlyMap<string, CalcValue> = new Map()): string | null {
@@ -129,6 +130,16 @@ describe("sumOfLine and evaluateSum", () => {
     expect(needsVariables({ ok: false, error: "Unknown name: b" })).toBe(true);
     expect(needsVariables({ ok: false, error: "Divide by zero" })).toBe(false);
     expect(needsVariables({ ok: true, value: rational(1n) })).toBe(false);
+  });
+
+  it("knows an unknown name in any interface language", () => {
+    useLanguage("de", { "calculator.errUnknownName": "Unbekannter Name: {name}" });
+    try {
+      expect(needsVariables(evaluate("b + 1"))).toBe(true);
+      expect(needsVariables({ ok: false, error: "Unknown name: b" })).toBe(false);
+    } finally {
+      useLanguage("en");
+    }
   });
 });
 
