@@ -4419,6 +4419,36 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   color: var(--text-accent-hover);
 }
 
+/* "Import PDF", at the end of the paper row and set apart from it by a
+   rule: a pill as tall as the orientation switch beside it. */
+.goodobsidian-newnb-paper-sep {
+  align-self: center;
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: var(--background-modifier-border);
+}
+
+.goodobsidian-newnb button.goodobsidian-newnb-import-pdf.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--gob-well);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+  white-space: nowrap;
+}
+
+.goodobsidian-newnb button.goodobsidian-newnb-import-pdf.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+}
+
 /* A dialog's call-to-action that also carries `clickable-icon` (to escape
    the iPad's 20 px button padding) would take that class's faint icon
    colour, which on the accent fill is unreadable. */
@@ -7196,6 +7226,16 @@ textarea.goodobsidian-chat-input:focus-visible {
    shape shows them at once; anything else after the bar's corners button. */
 .goodobsidian-selection-frame.no-corners .goodobsidian-image-handle.is-corner {
   display: none;
+}
+
+/* A lone cover tape's side handles, placed on its own sides by the surface:
+   an end lengthens it, a long edge makes it taller. */
+.goodobsidian-image-handle.goodobsidian-tape-handle {
+  cursor: ns-resize;
+}
+
+.goodobsidian-image-handle.goodobsidian-tape-handle.is-along {
+  cursor: ew-resize;
 }
 
 /* A freehand lasso's selection is drawn by its own rounded loop, as in
@@ -10149,6 +10189,57 @@ button.goodobsidian-color-delete.clickable-icon {
 
 .goodobsidian-pen-colors > * {
   flex: none;
+}
+
+/* An arrow on a pen or colour row's cut end, for a mouse, which cannot
+   swipe the row (toolbar.ts, rowArrows): over the faded end, beside the
+   row rather than in it so the row's fade leaves it alone. Only on a
+   computer; a finger swipes. */
+.goodobsidian-options button.goodobsidian-row-arrow {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .goodobsidian-options button.goodobsidian-row-arrow {
+    display: inline-flex;
+    position: absolute;
+    z-index: 2;
+    min-width: 0;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--gob-line);
+    border-radius: 50%;
+    background: var(--gob-pill-bg);
+    box-shadow: var(--gob-shadow-raised);
+    color: var(--text-normal);
+    translate: 0 -50%;
+  }
+
+  .goodobsidian-options button.goodobsidian-row-arrow.is-end {
+    translate: -100% -50%;
+  }
+
+  .goodobsidian-options.is-upright button.goodobsidian-row-arrow.is-start {
+    translate: -50% 0;
+  }
+
+  .goodobsidian-options.is-upright button.goodobsidian-row-arrow.is-end {
+    translate: -50% -100%;
+  }
+
+  .goodobsidian-options button.goodobsidian-row-arrow:hover:not(:disabled) {
+    background: var(--gob-well);
+  }
+
+  .goodobsidian-options button.goodobsidian-row-arrow.is-hidden {
+    display: none;
+  }
+
+  .goodobsidian-options button.goodobsidian-row-arrow svg {
+    width: 16px;
+    height: 16px;
+  }
 }
 
 /* A colour held to be dragged off: it fades where it was, and a copy of
@@ -14529,4 +14620,27 @@ button.clickable-icon.goodobsidian-calc-bkey.is-wide {
 /* Beside another switch, the tapes switch is the last one pushed left. */
 .goodobsidian-ask-actions button:has(+ button.goodobsidian-export-tapes) {
   margin-right: 0;
+}
+
+/* A text box whose words a search found (#112): the box's shown copy, laid
+   exactly over its textarea, stays unseen but for the words, which carry the
+   search mark. A box with links shows its copy anyway, in its own colours. */
+.goodobsidian-page-textbox.has-search-words:not(:focus-within):not(.has-links)
+  .goodobsidian-page-textbox-view {
+  display: block;
+  visibility: hidden;
+}
+
+.goodobsidian-search-word {
+  visibility: visible;
+  border-radius: 3px;
+  color: transparent;
+  background: hsla(var(--interactive-accent-hsl), 0.22);
+  box-shadow: 0 0 0 1.5px hsla(var(--interactive-accent-hsl), 0.55);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.goodobsidian-page-textbox.has-links .goodobsidian-search-word {
+  color: inherit;
 }

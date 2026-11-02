@@ -324,13 +324,14 @@ describe("New notebook explorer bar integration", () => {
       await load();
       sync.mockClear();
       app.workspace.fireLayoutReady();
-      expect(sync).toHaveBeenCalledWith([], false);
+      // On by default (Joost, 2026-11-02).
+      expect(sync).toHaveBeenCalledWith([], true);
       sync.mockClear();
       app.workspace.trigger("layout-change");
-      expect(sync).toHaveBeenCalledWith([], false);
-      plugin.settings.showNewNotebookInExplorer = true;
+      expect(sync).toHaveBeenCalledWith([], true);
+      plugin.settings.showNewNotebookInExplorer = false;
       await plugin.saveSettings();
-      expect(sync).toHaveBeenLastCalledWith([], true);
+      expect(sync).toHaveBeenLastCalledWith([], false);
       registered.unload();
       expect(destroy).toHaveBeenCalled();
     } finally {

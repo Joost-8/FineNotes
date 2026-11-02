@@ -922,9 +922,9 @@ describe("control values", () => {
     async (key) => {
       const plugin = makePlugin();
       const { tab } = makeTab(plugin);
-      expect(plugin.settings[key]).toBe(key === "showNewNotebookInContextMenu");
+      expect(plugin.settings[key]).toBe(true);
       await tab.setControlValue(key, !plugin.settings[key]);
-      expect(plugin.settings[key]).toBe(key === "showNewNotebookInExplorer");
+      expect(plugin.settings[key]).toBe(false);
       expect(plugin.saveSettings).toHaveBeenCalledOnce();
     },
   );

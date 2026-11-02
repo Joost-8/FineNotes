@@ -35,6 +35,11 @@ export interface PdfPageReading {
   width: number;
   height: number;
   inks: readonly PdfInkReading[];
+  /**
+   * Annotations it draws that are neither ink nor highlights (typed text,
+   * shapes, stamps, form fields); absent is none.
+   */
+  others?: number;
 }
 
 export class PdfImportError extends Error {}
@@ -138,8 +143,22 @@ export function readPdf(
 
 type Ink = Omit<Stroke, "id">;
 
-/** The strokes one annotation makes, scaled by `k` page px per PDF point. */
-function inkStrokes(ink: PdfInkReading, k: number): Ink[] {
+/**
+ * A PDF page's ink and highlight annotations as strokes on a page of
+ * `width` × `height` px that the PDF page is drawn across.
+ */
+export function annotationStrokes(reading: PdfPageReading, width: number, height: number): Ink[] {
+  if (!(reading.width > 0 && reading.height > 0)) return [];
+  const kx = width / reading.width;
+  const ky = height / reading.height;
+  return reading.inks.flatMap((ink) => inkStrokes(ink, kx, ky));
+}
+
+/**
+ * The strokes one annotation makes, scaled by `k` page px per PDF point
+ * (`ky` down the page, when the page is drawn stretched).
+ */
+function inkStrokes(ink: PdfInkReading, k: number, ky = k): Ink[] {
   const width = ink.width > 0 && Number.isFinite(ink.width) ? ink.width : 1;
   const rgb = ink.color && ink.color.length >= 3 ? ink.color : null;
   const color = rgb ? hexColor(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255) : null;
@@ -151,7 +170,7 @@ function inkStrokes(ink: PdfInkReading, k: number): Ink[] {
         const x = path[i];
         const y = path[i + 1];
         if (Number.isFinite(x) && Number.isFinite(y))
-          pts.push(round2(x * k), round2(y * k), PRESSURE);
+          pts.push(round2(x * k), round2(y * ky), PRESSURE);
       }
       if (pts.length === 0) continue;
       out.push({ color: color ?? DEFAULT_COLOR, size: round2(width * k), tool: "pen", pts });
@@ -163,14 +182,14 @@ function inkStrokes(ink: PdfInkReading, k: number): Ink[] {
     if (!span) continue;
     out.push({
       color: color ?? DEFAULT_HIGHLIGHT,
-      size: round2(span.height * k),
+      size: round2(span.height * ky),
       tool: "highlighter",
       pts: [
         round2(span.x0 * k),
-        round2(span.y * k),
+        round2(span.y * ky),
         PRESSURE,
         round2(span.x1 * k),
-        round2(span.y * k),
+        round2(span.y * ky),
         PRESSURE,
       ],
     });

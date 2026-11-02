@@ -29,6 +29,7 @@ import {
   pb,
   PDF,
   PNG,
+  tplCentreline,
   tplStroke,
   tplStroke25,
   type GnPage,
@@ -209,7 +210,11 @@ describe("readGoodnotes", () => {
         template: "T-RULED",
         order: "b",
         images: [{ id: "I1", attachment: "A-MISSING", frame: [0, 0, 10, 10] }],
-        strokes: [{ id: "S1", samples: [] }],
+        strokes: [
+          { id: "S1", samples: [], tpl: new TextEncoder().encode("not a stroke") },
+          // A stroke without points is nothing to bring over, and no loss.
+          { id: "S2", samples: [] },
+        ],
       },
     ]);
     const result = readGoodnotes(files, "");
@@ -609,6 +614,186 @@ describe("readGoodnotes: what real notebooks hold", () => {
   });
 });
 
+describe("readGoodnotes: pages changed after they were made", () => {
+  it("takes a page's later paper, by its clock, and a page moved to its new place", () => {
+    const result = readGoodnotes(
+      notebook(
+        [
+          {
+            id: PAGE_A,
+            template: "T-SHEET",
+            order: "a",
+            strokes: [{ id: "S", samples: [[1, 2, 0.5]] }],
+            // Given its own paper, then an older change that came later in the log.
+            paperChanges: [
+              { template: "T-OWN", clock: 3 },
+              { template: "T-SHEET", clock: 2 },
+            ],
+          },
+          { id: PAGE_B, template: "T-SHEET", order: "b", moved: { order: "0", clock: 2 } },
+        ],
+        {
+          templates: [
+            { id: "T-SHEET", size: LETTER, attachment: "A-COVER", pdfPage: 4 },
+            { id: "T-OWN", size: LETTER, attachment: "A-RULED", pdfPage: 1 },
+          ],
+        },
+      ),
+      "",
+    );
+    // The moved page first, on the sheet; the written one second, on its own paper.
+    expect(result.doc.pages.map((p) => p.strokes.length)).toEqual([0, 1]);
+    expect(result.doc.pages.map((p) => p.backdrop)).toEqual([
+      { kind: "pdf", path: "Biology - paper 1.pdf", page: 3 },
+      { kind: "pdf", path: "Biology - paper 2.pdf", page: 0 },
+    ]);
+    expect(result.warnings).toEqual([]);
+  });
+});
+
+describe("readGoodnotes: newer notebooks", () => {
+  const round2 = (v: number): number => Math.round(v * 100) / 100;
+  const at = (v: number): number => round2(v * K);
+
+  it("brings a stroke in pieces over as one stroke a piece, at its full width", () => {
+    const result = readGoodnotes(
+      notebook([
+        {
+          id: PAGE_A,
+          template: "T-RULED",
+          order: "a",
+          strokes: [
+            {
+              id: "S",
+              samples: [],
+              rgba: [0, 0, 1, 0.5],
+              tpl: tplCentreline({
+                width: 24,
+                structs: true,
+                verbs: [0, 1, 0, 1],
+                moves: [10, 10, 50, 50],
+                curves: [20, 10, 30, 10, 60, 50, 70, 50],
+              }),
+            },
+          ],
+        },
+      ]),
+      "",
+    );
+    const strokes = result.doc.pages[0].strokes;
+    expect(result.warnings).toEqual([]);
+    expect(strokes.map((s) => s.id)).toEqual(["s1", "s2"]);
+    for (const s of strokes) {
+      expect(s.tool).toBe("highlighter");
+      expect(s.size).toBeCloseTo(24 * K, 2);
+      expect(s.pts.length).toBe(9);
+    }
+    expect(strokes[1].pts[0]).toBeCloseTo(50 * K, 3);
+    expect(strokes[1].pts[6]).toBeCloseTo(70 * K, 3);
+  });
+
+  it("brings older text boxes over from their RTF", () => {
+    const rtf =
+      "{\\rtf1\\ansi\\ansicpg1252\\cocoartf2707\n" +
+      "{\\fonttbl\\f0\\fnil\\fcharset0 Courier;}\n" +
+      "{\\colortbl;\\red255\\green255\\blue255;\\red200\\green0\\blue0;}\n" +
+      "{\\*\\expandedcolortbl;;\\cssrgb\\c80000\\c0\\c0;}\n" +
+      "\\pard\\tx560\\partightenfactor0\n\n" +
+      "\\f0\\fs48 \\cf2 Gef\\'e4hrdungen\\\nzweite Zeile\\\n}";
+    const result = readGoodnotes(
+      notebook([
+        {
+          id: PAGE_A,
+          template: "T-RULED",
+          order: "a",
+          rtfTexts: [
+            { id: "R", frame: [100, 200, 300, 60], rtf },
+            { id: "E", frame: [0, 0, 100, 40], rtf: "{\\rtf1\\ansi \\fs48 \\\n}" },
+            { id: "H", frame: [50, 400, 120, 44], rtf: "{\\rtf1\\ansi \\fs48 Heading}" },
+          ],
+        },
+      ]),
+      "",
+    );
+    expect(result.warnings).toEqual([]);
+    expect(result.doc.pages[0].textBoxes).toEqual([
+      {
+        id: "t1",
+        // Its text where Goodnotes put it, inside the padding a box keeps.
+        x: round2(110 * K - 4),
+        y: round2(210 * K - 2),
+        w: round2(280 * K + 8),
+        text: "Gefährdungen\nzweite Zeile",
+        color: "#c80000",
+        fontSize: at(24),
+        font: "mono",
+      },
+      {
+        // One line in Goodnotes: it grows with its text, in whatever font stands in.
+        id: "t2",
+        x: round2(60 * K - 4),
+        y: round2(410 * K - 2),
+        w: round2(100 * K + 8),
+        text: "Heading",
+        color: "#000000",
+        fontSize: at(24),
+        fit: true,
+      },
+    ]);
+  });
+
+  it("keeps a JPEG 2000 picture as one, and says Obsidian cannot show it", () => {
+    const jp2 = new Uint8Array([0, 0, 0, 12, 0x6a, 0x50, 0x20, 0x20, 0x0d, 0x0a, 0x87, 0x0a, 1, 2]);
+    const result = readGoodnotes(
+      notebook(
+        [
+          {
+            id: PAGE_A,
+            template: "T-RULED",
+            order: "a",
+            images: [{ id: "I", attachment: "A-SCAN", frame: [0, 0, 50, 80] }],
+          },
+        ],
+        { attachments: { "A-RULED": PDF, "A-SCAN": jp2 } },
+      ),
+      "Scan",
+    );
+    expect(result.attachments.find((a) => a.name.endsWith(".jp2"))?.mime).toBe("image/jp2");
+    expect(result.warnings).toEqual([
+      "1 picture is JPEG 2000, which Obsidian cannot show until converted to PNG or JPEG (page 1).",
+    ]);
+  });
+
+  it("turns a turned picture", () => {
+    const result = readGoodnotes(
+      notebook([
+        {
+          id: PAGE_A,
+          template: "T-RULED",
+          order: "a",
+          images: [
+            {
+              id: "I",
+              attachment: "A-PHOTO",
+              frame: [100, 100, 50, 80],
+              turned: { centre: [125, 140], size: [80, 50], rotation: Math.PI / 2 },
+            },
+          ],
+        },
+      ]),
+      "",
+    );
+    const [image] = result.doc.pages[0].images;
+    expect(image).toMatchObject({
+      x: at(85),
+      y: at(115),
+      w: at(80),
+      h: at(50),
+    });
+    expect(image.rotation).toBeCloseTo(Math.PI / 2, 3);
+  });
+});
+
 describe("Goodnotes stroke layouts", () => {
   it("reads both layouts' points", () => {
     expect(penPath(tplStroke([[5, 6, 0.5]])).points).toEqual([{ x: 5, y: 6, half: 0.5 }]);
@@ -634,12 +819,76 @@ describe("Goodnotes stroke layouts", () => {
     expect(layout.arrays[1]).toMatchObject({ kind: "S", count: 1, size: 20, fields: "uuuuu" });
   });
 
-  it("refuses layouts it cannot read", () => {
+  it("reads the centreline when the samples cannot be read", () => {
     // A sample count that does not divide the samples.
-    const ragged = tplStroke([[5, 6, 0.5]]);
+    const ragged = tplStroke([
+      [5, 6, 0.5],
+      [9, 10, 1.5],
+      [13, 14, 0.5],
+    ]);
     const view = new DataView(ragged.buffer);
-    view.setUint32(ragged.length - 6, 2, true);
-    expect(() => penPath(ragged)).toThrow(GoodnotesError);
+    view.setUint32(ragged.length - 10, 2, true);
+    expect(penPath(ragged).points).toEqual([
+      { x: 5, y: 6, half: 0.5 },
+      { x: 7, y: 8, half: 1 },
+      { x: 9, y: 10, half: 1.5 },
+      { x: 11, y: 12, half: 1 },
+      { x: 13, y: 14, half: 0.5 },
+    ]);
+  });
+
+  it("reads centrelines as structs: curves by their middle and end, pieces apart", () => {
+    const path = penPath(
+      tplCentreline({
+        width: 2,
+        structs: true,
+        verbs: [0, 1, 1, 0, 1],
+        moves: [0, 0, 100, 100],
+        curves: [4, 0, 4, 4, 4, 8, 0, 8, 104, 100, 108, 100],
+        tail: true,
+      }),
+    );
+    expect(path.points).toEqual([
+      { x: 0, y: 0, half: 1 },
+      { x: 3, y: 1, half: 1 },
+      { x: 4, y: 4, half: 1 },
+      { x: 3, y: 7, half: 1 },
+      { x: 0, y: 8, half: 1 },
+      { x: 100, y: 100, half: 1 },
+      { x: 104, y: 100, half: 1 },
+      { x: 108, y: 100, half: 1 },
+    ]);
+    expect(path.starts).toEqual([5]);
+    expect(path.half).toBe(1);
+  });
+
+  it("reads flat centrelines whose points carry their own full widths", () => {
+    const path = penPath(
+      tplCentreline({
+        width: -1,
+        structs: false,
+        verbs: [2, 3],
+        moves: [0, 0, 2],
+        curves: [2, 0, 4, 0, 4, 6],
+      }),
+    );
+    expect(path.points).toEqual([
+      { x: 0, y: 0, half: 1 },
+      { x: 2, y: 0, half: 2 },
+      { x: 4, y: 0, half: 3 },
+    ]);
+    expect(path.half).toBeUndefined();
+  });
+
+  it("refuses layouts it cannot read", () => {
+    // Verbs reading past their points.
+    expect(() =>
+      penPath(tplCentreline({ width: 2, structs: true, verbs: [0, 1], moves: [1, 2], curves: [] })),
+    ).toThrow(GoodnotesError);
+    // A verb with widths among structs, which have no room for them.
+    expect(() =>
+      penPath(tplCentreline({ width: 2, structs: true, verbs: [2], moves: [1, 2], curves: [] })),
+    ).toThrow(GoodnotesError);
     // Structs without a start point.
     const noStart = tplStroke25([], 2);
     expect(() => penPath(noStart)).toThrow(GoodnotesError);

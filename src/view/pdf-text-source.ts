@@ -127,6 +127,8 @@ export class PdfTextCache {
   /** Laid-out pages, by page and the geometry they were laid out on. */
   private readonly layouts = new Map<string, TextLayout>();
   private readonly inflight = new Set<string>();
+  /** Callers of {@link layout} waiting on a page. */
+  private readonly waiters = new Map<string, Array<() => void>>();
   private readonly deferred = new Map<string, PdfBackdrop>();
   private readonly documents = new Map<string, Promise<PdfDocumentLike | null>>();
   /** Per page key, or per path for a PDF that would not open: when it failed. */
@@ -168,6 +170,25 @@ export class PdfTextCache {
       : linksOnPage(text.links, text.viewport, text.source, geometry);
   }
 
+  /**
+   * The page's text laid out on a page of `geometry`, read first if need
+   * be: for search (#112), which may wait. Empty when it cannot be read.
+   */
+  async layout(backdrop: PdfBackdrop, geometry: PageGeometry): Promise<TextLayout> {
+    const known = this.peek(backdrop, geometry);
+    if (known) return known;
+    const key = pageKey(backdrop.path, backdrop.page);
+    await new Promise<void>((resolve) => {
+      const list = this.waiters.get(key) ?? [];
+      list.push(resolve);
+      this.waiters.set(key, list);
+      this.request(backdrop);
+      // Destroyed, or nothing to read: nobody would answer.
+      if (this.destroyed) this.wake(key);
+    });
+    return this.peek(backdrop, geometry) ?? { chars: [], lines: [] };
+  }
+
   /** Read the page's text in the background, unless it is read or being read. */
   request(backdrop: PdfBackdrop): void {
     if (this.destroyed) return;
@@ -190,6 +211,7 @@ export class PdfTextCache {
       }
       this.failed.delete(key);
       this.store(key, text);
+      this.wake(key);
       this.onReady?.(backdrop.path, backdrop.page);
     });
   }
@@ -228,6 +250,13 @@ export class PdfTextCache {
     this.pages.clear();
     this.layouts.clear();
     this.onReady = null;
+    for (const key of [...this.waiters.keys()]) this.wake(key);
+  }
+
+  private wake(key: string): void {
+    const list = this.waiters.get(key);
+    this.waiters.delete(key);
+    for (const resolve of list ?? []) resolve();
   }
 
   private store(key: string, text: PageText): void {

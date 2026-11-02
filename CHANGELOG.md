@@ -10,6 +10,21 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Search the text of your PDFs**
+  ([#112](https://github.com/Joost-8/FineNotes/discussions/112)). The
+  notebook search finds words printed on a notebook's PDF pages, marked PDF
+  in the list, and lights them on the page, whole words, as it lights
+  handwriting. Scanned PDFs have no text to search.
+- **Search a phrase.** Several words typed in order ("recipe for
+  defining") are found as one: pages holding the phrase come first, and
+  only the phrase lights, in PDFs, text boxes and handwriting, across a
+  line break too. Pages with the words apart still follow.
+- **Text boxes light the words found**, not the whole box.
+- **Importing a ZIP keeps its folders.** Notebooks from a ZIP of a whole
+  library (a Goodnotes export of several folders, a zipped backup folder)
+  go into the same folders under the folder you import to, instead of all
+  into one. A folder that only wraps everything else is left out, and a ZIP
+  inside the ZIP becomes a folder of its own.
 - **Scroll on past the last page to add one**, on a computer
   ([#111](https://github.com/Joost-8/FineNotes/issues/111)). At the end of a
   notebook, keep turning the mouse wheel or swiping the touchpad: the page
@@ -159,6 +174,19 @@ extracted from the matching section of this file by `release.yml`.
   after "Dark, PDFs as they are" turned PDFs dark again. They are two
   choices now, Page appearance in Settings and Dark PDF pages in the ⋯
   menu, and neither changes the other.
+- **Goodnotes notebooks import whole.** Most handwriting in Goodnotes 6
+  notebooks was written in a layout the import could not read, so pages came
+  over nearly empty; every stroke now comes over, at its width, with
+  highlighters as highlighters. Typed text from older Goodnotes text boxes,
+  turned pictures, a page given another paper or moved in Goodnotes, and
+  handwriting saved in a sheet's PDF as annotations come over too, the last
+  as strokes you can edit. A JPEG 2000 picture, which Obsidian cannot show,
+  is named as one in the import's report.
+- **A notebook copied into the vault finds its files.** A notebook brought
+  in from outside Obsidian, with its PDFs and pictures beside it, finds them
+  relative to itself when it opens, wherever its folder now is, and saves
+  the corrected paths. Names with accents (ü, é) are saved in one spelling,
+  so they are found on every system.
 
 ## [2.6.0] - 2026-10-30
 

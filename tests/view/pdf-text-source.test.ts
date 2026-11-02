@@ -136,6 +136,38 @@ describe("PdfTextCache", () => {
     expect(pdf.reads).toBe(1);
   });
 
+  it("waits for a page's text when search asks for it, reading it once (#112)", async () => {
+    pdf.items = [
+      {
+        str: "Signals",
+        transform: [20, 0, 0, 20, 100, 700],
+        width: 70,
+        height: 20,
+        fontName: "f1",
+      },
+    ];
+    const c = cache();
+    const [one, two] = await Promise.all([
+      c.layout(BACKDROP, GEOMETRY),
+      c.layout(BACKDROP, GEOMETRY),
+    ]);
+    expect(one.lines).toHaveLength(1);
+    expect(two).toBe(one);
+    expect(pdf.reads).toBe(1);
+    // Read: answered at once.
+    expect(await c.layout(BACKDROP, GEOMETRY)).toBe(one);
+  });
+
+  it("answers a waiting search with no text when the PDF cannot be read or the cache goes", async () => {
+    expect((await cache(null).layout(BACKDROP, GEOMETRY)).lines).toEqual([]);
+    const c = cache();
+    c.setHeld(true);
+    const waiting = c.layout(BACKDROP, GEOMETRY);
+    c.destroy();
+    expect((await waiting).lines).toEqual([]);
+    expect((await c.layout(BACKDROP, GEOMETRY)).lines).toEqual([]);
+  });
+
   it("reads nothing while the pen writes, and what was asked for once it lifts", async () => {
     const c = cache();
     c.setHeld(true);

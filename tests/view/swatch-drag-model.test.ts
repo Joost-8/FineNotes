@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { OFF_BAR_PX, hiddenEnds, offBar, scrollToShow } from "../../src/view/swatch-drag-model";
+import {
+  OFF_BAR_PX,
+  hiddenEnds,
+  offBar,
+  pageScroll,
+  scrollToShow,
+} from "../../src/view/swatch-drag-model";
 
 describe("a swatch dragged off the pen pill", () => {
   const bar = { left: 100, top: 50, right: 500, bottom: 94 };
@@ -41,5 +47,18 @@ describe("scrolling the row to a swatch", () => {
     expect(scrollToShow(0, 180, 300, 36, 12)).toBe(168);
     expect(scrollToShow(200, 180, 120, 36, 12)).toBe(108);
     expect(scrollToShow(200, 180, 4, 36, 12)).toBe(0);
+  });
+});
+
+describe("pageScroll", () => {
+  it("moves by what shows less the two fades, and stops at either end", () => {
+    expect(pageScroll(0, 200, 600, 1, 14)).toBe(172);
+    expect(pageScroll(172, 200, 600, -1, 14)).toBe(0);
+    expect(pageScroll(350, 200, 600, 1, 14)).toBe(400);
+    expect(pageScroll(30, 200, 600, -1, 14)).toBe(0);
+  });
+
+  it("stays put in a row with nothing hidden", () => {
+    expect(pageScroll(0, 200, 180, 1, 14)).toBe(0);
   });
 });

@@ -30,6 +30,15 @@ describe("pageHits", () => {
     expect(pageHits("ghost", words, boxes)).toEqual({ words: [], boxes: ["t2"] });
   });
 
+  it("finds the boxes holding the phrase, on a page that holds it", () => {
+    const boxes = [
+      { id: "t1", text: "A recipe for\ndefining subnets" },
+      { id: "t2", text: "for defining; a recipe" },
+    ];
+    expect(pageHits("recipe for definin", [], boxes, true).boxes).toEqual(["t1"]);
+    expect(pageHits("recipe for definin", [], boxes).boxes).toEqual(["t1", "t2"]);
+  });
+
   it("finds nothing for an empty query", () => {
     expect(pageHits("  ", words, [{ id: "t1", text: "x" }])).toEqual({ words: [], boxes: [] });
   });
@@ -67,6 +76,17 @@ describe("lineHits", () => {
     expect(lineHits("crt", [{ text: "CIA", words: [["g0"]] }], boundsOf)).toEqual([]);
   });
 
+  it("lights a phrase in the reading as one, with the words between", () => {
+    const lines = [
+      { text: "Recipe for defining subnets", words: [["g0"], ["g1"], ["g2"], ["g3"]] },
+    ];
+    expect(lineHits("recipe for defining", lines, boundsOf, "", true)).toEqual([
+      ["g0", "g1", "g2"],
+    ]);
+    // Without the phrase, every word on its own.
+    expect(lineHits("recipe for defining", lines, boundsOf)).toHaveLength(3);
+  });
+
   it("prefers exact hits over near ones", () => {
     const lines = [{ text: "packet packets", words: [["g0"], ["g1"]] }];
     expect(lineHits("packets", lines, boundsOf)).toEqual([["g1"]]);
@@ -95,6 +115,16 @@ describe("lineHits", () => {
     it("lights every place the transcript holds it, besides the reading's own", () => {
       const twice = [{ text: "order of the ordet", words: [["g0"], ["g1"], ["g2"], ["g3"]] }];
       expect(lineHits("order", twice, boundsOf, "order of the order")).toEqual([["g0"], ["g3"]]);
+    });
+
+    it("lights a phrase as one, across lines, where the transcript says it is", () => {
+      const ink = lineHits("assignment sign is", lines, boundsOf, transcript, true);
+      expect(ink).toEqual([["g2", "g3", "g4"]]);
+    });
+
+    it("lights a phrase's words one by one when the phrase cannot be placed", () => {
+      const other = [{ text: "flag zzzz plus", words: [["g0"], ["g1"], ["g2"]] }];
+      expect(lineHits("flag plus", other, boundsOf, "", true)).toEqual([["g0"], ["g2"]]);
     });
 
     it("lights nothing where the reading has nothing like the transcript", () => {
