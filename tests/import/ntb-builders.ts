@@ -127,28 +127,65 @@ export function flatbuffer(root: Node): Uint8Array {
 /** An event's id: two words, as the reader reads them. */
 export const eventId = (n: number): Uint8Array => u32s(0, n);
 
-/** A position on a page: three words, the page at the third. */
-const onPage = (page: number): Uint8Array => u32s(0, 0, page);
+/**
+ * A page (the schema's `PageLocation`): the id of the CreatePage event that made it and its
+ * place in that event's run, three words. A plain number is a page of the run of event 2,
+ * which is where `createPageEvent(2, …)` puts its pages.
+ */
+export type PageRef = number | [run: number, index: number];
+export const pageRef = (page: PageRef): Uint8Array =>
+  typeof page === "number" ? u32s(0, 2, page) : u32s(0, page[0], page[1]);
+const onPage = pageRef;
 
 /** An event: its id, type and payload. */
 export function event(id: number, type: number, payload: Node): Node {
   return table({ 0: eventId(id), 4: u8(type), 5: payload });
 }
 
-/** The document's paper size, and its first event. */
-export function documentEvent(width: number, height: number): Node {
-  return event(1, 1, table({ 1: table({ 0: table({ 3: f32s(width, height) }) }), 5: f32s(12) }));
+/** Margins as a struct of four float32s: top, bottom, left, right. */
+export type Margins = [top: number, bottom: number, left: number, right: number];
+
+/**
+ * The document's paper size, and its first event. `margins` is the note-wide page margins its
+ * pageBackground table sets (field 4).
+ */
+export function documentEvent(width: number, height: number, margins?: Margins): Node {
+  const background: Record<number, Field> = { 0: table({ 3: f32s(width, height) }) };
+  if (margins) background[4] = f32s(...margins);
+  return event(1, 1, table({ 1: table(background), 5: f32s(12) }));
 }
 
-/** A CreatePage event with the page's size. */
-export function createPageEvent(id: number, width: number, height: number): Node {
-  return event(id, 3, table({ 1: table({ 3: f32s(width, height) }) }));
+/** The hash the test notes' PDF asset (`assets/aaaa….pdf`) is named by. */
+const PDF_HASH = new Uint8Array(64).fill(0xaa);
+
+/**
+ * A CreatePage event with the page's size. `pdf` makes its pages those of the note's PDF, from
+ * the page `offset` on; `count` is the number of pages it makes (the schema's default is 1);
+ * `after` is the page it goes after (the start of the note when absent).
+ */
+export function createPageEvent(
+  id: number,
+  width: number,
+  height: number,
+  o: { count?: number; after?: PageRef; pdf?: { offset?: number }; margins?: Margins } = {},
+): Node {
+  const background: Record<number, Field> = { 3: f32s(width, height) };
+  if (o.margins) background[4] = f32s(...o.margins);
+  if (o.pdf) {
+    const asset: Record<number, Field> = { 0: table({ 0: PDF_HASH }) };
+    if (o.pdf.offset !== undefined) asset[4] = u32s(o.pdf.offset);
+    background[1] = table(asset);
+  }
+  const fields: Record<number, Field> = { 1: table(background) };
+  if (o.after !== undefined) fields[0] = pageRef(o.after);
+  if (o.count !== undefined) fields[2] = u32s(o.count);
+  return event(id, 3, table(fields));
 }
 
 /** A line drawn with the shape tool (type 18); `tool` 2 is the highlighter. */
 export function lineEvent(
   id: number,
-  page: number,
+  page: PageRef,
   from: [number, number],
   to: [number, number],
   tool: number,
@@ -170,48 +207,100 @@ export function lineEvent(
   );
 }
 
+/** A block's fields with its `scale` (field 5) when it has one. */
+function withScale(fields: Record<number, Field>, scale?: [number, number]): Record<number, Field> {
+  return scale ? { ...fields, 5: f32s(...scale) } : fields;
+}
+
 /** A block with a paper and no picture (type 22): what the note calls a sticky note. */
 export function stickyEvent(
   id: number,
-  page: number,
+  page: PageRef,
   at: [number, number],
   size: [number, number],
+  scale?: [number, number],
 ): Node {
   return event(
     id,
     22,
-    table({
-      2: onPage(page),
-      3: f32s(...at),
-      6: f32s(...size),
-      15: table({ 4: Uint8Array.from([255, 244, 142, 255]) }),
-    }),
+    table(
+      withScale(
+        {
+          2: onPage(page),
+          3: f32s(...at),
+          6: f32s(...size),
+          15: table({ 4: Uint8Array.from([255, 244, 142, 255]) }),
+        },
+        scale,
+      ),
+    ),
   );
 }
 
-/** A text box's block (type 22): a paper too, but one with no colour of its own. */
+/** The hash the test notes' picture asset (`assets/bbbb….png`) is named by. */
+export const PICTURE_HASH = new Uint8Array(64).fill(0xbb);
+
+/** A picture block (type 22): a media block with an asset, shown at `size` times `scale`. */
+export function pictureEvent(
+  id: number,
+  page: PageRef,
+  at: [number, number],
+  size: [number, number],
+  scale?: [number, number],
+): Node {
+  return event(
+    id,
+    22,
+    table(
+      withScale(
+        {
+          2: onPage(page),
+          3: f32s(...at),
+          6: f32s(...size),
+          10: table({ 0: table({ 0: PICTURE_HASH }) }),
+        },
+        scale,
+      ),
+    ),
+  );
+}
+
+/**
+ * A text box's block (type 22): a paper too, but one with no colour of its own. `margins` is
+ * the block's own (field 19); without it Notability's default (3, 3, 5, 5) applies.
+ */
 export function textBoxEvent(
   id: number,
-  page: number,
+  page: PageRef,
   at: [number, number],
   size: [number, number],
+  margins?: Margins,
 ): Node {
-  return event(
-    id,
-    22,
-    table({
-      2: onPage(page),
-      3: f32s(...at),
-      6: f32s(...size),
-      15: table({ 1: f32s(0) }),
-    }),
-  );
+  const fields: Record<number, Field> = {
+    2: onPage(page),
+    3: f32s(...at),
+    6: f32s(...size),
+    15: table({ 1: f32s(0) }),
+  };
+  if (margins) fields[19] = f32s(...margins);
+  return event(id, 22, table(fields));
 }
 
-/** A DeleteEntities event naming the events `ids` made, and those `undeleted` brings back. */
-export function deleteEvent(id: number, ids: number[], undeleted: number[] = []): Node {
+/**
+ * A DeleteEntities event naming the events `ids` made, and those `undeleted` brings back; and
+ * the pages `pages` deletes and `pagesBack` brings back.
+ */
+export function deleteEvent(
+  id: number,
+  ids: number[],
+  undeleted: number[] = [],
+  pages: PageRef[] = [],
+  pagesBack: PageRef[] = [],
+): Node {
   const fields: Record<number, Field> = { 0: vector(ids.map(eventId)) };
   if (undeleted.length > 0) fields[1] = vector(undeleted.map(eventId));
+  if (pages.length > 0) fields[2] = vector(pages.map(pageRef));
+  if (pagesBack.length > 0) fields[3] = vector(pagesBack.map(pageRef));
   return event(id, 25, table(fields));
 }
 
@@ -274,7 +363,7 @@ export function boldEvent(id: number, start: Uint8Array, end: Uint8Array): Node 
 export function movePositionEvent(
   id: number,
   target: number,
-  page: number,
+  page: PageRef,
   at: [number, number],
 ): Node {
   return event(
@@ -287,6 +376,11 @@ export function movePositionEvent(
 /** A ModifyBlock event (type 23) that gives `target` a new size. */
 export function resizeBlockEvent(id: number, target: number, size: [number, number]): Node {
   return event(id, 23, table({ 0: vector([eventId(target)]), 6: f32s(...size) }));
+}
+
+/** A ModifyBlock event (type 23) that gives `target` a new scale. */
+export function scaleBlockEvent(id: number, target: number, scale: [number, number]): Node {
+  return event(id, 23, table({ 0: vector([eventId(target)]), 5: table({ 0: f32s(...scale) }) }));
 }
 
 /** An `.ntb` note's `noteBundle` holding `events`. */

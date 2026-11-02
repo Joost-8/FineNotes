@@ -29,9 +29,18 @@
  * Read from real notes of Notability 16 (2026-10). The layout follows the
  * Rust converter in the dev repo (`ntb/documents.rs`, `ntb.rs`, `render.rs`),
  * which renders them: a position is measured from its page's top, and its x
- * from the content's left edge (the inset is added back); the note's typed
- * text flows down the pages from the top; a single PDF's page n is note page n.
+ * from the content's left edge (the inset is added back). The note's typed
+ * text flows down the pages inside their margins (half an inch on every side
+ * unless the page or the document sets them), and a text box's words sit in
+ * from its edge by the box's own margins (3, 3, 5, 5 unless it sets them), as
+ * Notability's own PDF export shows them; FineNotes draws a text box's words in by a small padding
+ * of its own, which is taken off.
  *
+ * Pages are named, not numbered: a page is a `PageLocation`, the id of the
+ * CreatePage event that made it and its place in that event's run (one event
+ * makes `pageCount` pages), and every item says which page it is on that way
+ * ({@link pageSetOf}). A run goes in right after the page its `location` names,
+ * and shows the PDF's pages from `pageOffset` on.
  * Where this differs from the converter, on purpose:
  *
  * - A page is `paper` wide in document units, and as tall as its PDF page is
@@ -45,6 +54,9 @@
  *   that was made and thrown away as a solid yellow rectangle. It also reads
  *   typed text wrongly (it takes InsertChar for a text boundary), and
  *   skips the later edits of where things are; both are replayed here.
+ * - Pages deleted by a DeleteEntities event are left out, and the others are
+ *   put in the order the log gives them, not by the index in their run. A
+ *   block's `scale` (set when it is resized) is applied to its size.
  *
  * Decoding is ported from `ntb-parser.ts` in the dev repo, with the zlib calls
  * replaced by the zip reader the caller already ran.
@@ -59,6 +71,7 @@ import type {
   Stroke,
   TextBoxElement,
 } from "../model/document";
+import { TEXT_PAD_X, TEXT_PAD_Y } from "../canvas/text-layout";
 import { SCHEMA_VERSION } from "../constants";
 import { newStickyNote } from "../model/sticky-notes";
 import { PAGE_SIZES } from "../model/templates";
@@ -132,8 +145,14 @@ const CONTENT_INSET_RATIO = 1 / 38.4;
 const DEFAULT_PAPER_WIDTH = 679;
 const DEFAULT_PAPER_HEIGHT = 891.18756;
 
-/** Where the typed text starts, from the top of the first page (document units). */
-const DEFAULT_TEXT_TOP = 3;
+/**
+ * The margins Notability lays a note's typed text out inside (document units):
+ * half an inch, 72 points to the inch, on every side.
+ */
+const NOTE_MARGIN = 72 * 0.5;
+
+/** The margins of a text box's text, when its CreateBlock event gives none (document units). */
+const BOX_MARGINS: Margins = { top: 3, bottom: 3, left: 5, right: 5 };
 
 /** Line spacing when the paper has none (document units). */
 const DEFAULT_LINE_SPACING = 20;
@@ -586,7 +605,17 @@ interface Sticky {
   ruled: boolean;
 }
 
+/** Margins in document units: a page's, around its typed text, or a text box's, around its words. */
+interface Margins {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
 interface TextBox {
+  /** Where the words sit inside the box. */
+  margins: Margins;
   page: number;
   x: number;
   y: number;
@@ -604,6 +633,8 @@ interface Note {
   lineSpacing: number | undefined;
   /** Whether the paper's lines run both ways (graph paper), when it has lines. */
   grid: boolean;
+  /** The margins the document's metadata sets for every page, when it does. */
+  margins: Margins | null;
   defaultStyle: Style;
   curves: Curve[];
   pictures: Picture[];
@@ -612,19 +643,68 @@ interface Note {
   body: { text: string; spans: Span[] };
   /** Characters of text in containers the note never places: left out, and said so. */
   unplaced: number;
-  /** The page each CreatePage event made, in order: its PDF, by path under the note, when it has one. */
-  pageAssets: Array<string | null>;
-  /** Each of those pages' size in points, as the CreatePage event states it, when it does. */
-  pageSizes: Array<Pt | null>;
+  /** The note's pages, in order. */
+  pageSet: PageSet;
   /** Every asset the note holds, by its hash in hex, as a path under the note. */
   assets: Map<string, string>;
 }
 
-/** The page a position field names: the index at offset 8 of the field. */
-function pageIndexOf(flat: FlatBuffer, table: number, index: number): number {
-  const field = flat.field(table, index);
-  if (field === null) return 0;
-  return flat.u32(field + 8) ?? 0;
+/** One page of the note, as the CreatePage event that made it states it. */
+interface NotePage {
+  /** The PDF it shows, by path under the note, when it shows one. */
+  asset: string | null;
+  /** Which page of that PDF: the run's `pageOffset` plus the page's place in the run. */
+  pdfPage: number;
+  /** Its size in points, as the CreatePage event states it, when it does. */
+  size: Pt | null;
+  /** Its own margins, when the CreatePage event sets them. */
+  margins: Margins | null;
+}
+
+/** The pages of a note in order, with the deleted ones left out. */
+interface PageSet {
+  /** Whether the note has any CreatePage event; without one a page key is a plain index. */
+  runs: boolean;
+  pages: NotePage[];
+  /** Each page's place in `pages`, by its {@link pageKeyAt} key. */
+  index: Map<string, number>;
+}
+
+/**
+ * A `PageLocation` struct (12 bytes) as a key: the CreatePage event's id, as
+ * {@link eventIdOf} writes it, and the page's place in that event's run.
+ */
+function pageKeyAt(flat: FlatBuffer, pos: number): string | null {
+  const a = flat.u32(pos);
+  const b = flat.u32(pos + 4);
+  const index = flat.u32(pos + 8);
+  return a === null || b === null || index === null ? null : `${a}:${b}:${index}`;
+}
+
+/** The page a position field names, or `null` when it names none. */
+function pageKeyOf(flat: FlatBuffer, table: number, slot: number): string | null {
+  const field = flat.field(table, slot);
+  return field === null ? null : pageKeyAt(flat, field);
+}
+
+/**
+ * The place of a page in the note: `key` is the one an edit states, else the
+ * item's own field `slot`. `-1` for a page the note does not have (or has
+ * deleted). A note with no CreatePage events has no run to look in, so the
+ * key's index in its run is the page number; a field that names none is the
+ * first page.
+ */
+function pageOf(
+  flat: FlatBuffer,
+  pages: PageSet,
+  table: number,
+  slot: number,
+  edit?: PlacementEdit,
+): number {
+  const key = edit?.page ?? pageKeyOf(flat, table, slot);
+  if (key === null) return 0;
+  if (pages.runs) return pages.index.get(key) ?? -1;
+  return Number(key.slice(key.lastIndexOf(":") + 1));
 }
 
 /** The position an event id names (two words), or `null`. */
@@ -664,12 +744,27 @@ function idVector(flat: FlatBuffer, payload: number, slot: number): string[] {
   return ids;
 }
 
+/** A vector of 12-byte `PageLocation` structs (DeleteEntities' page lists), each as a {@link pageKeyAt} key. */
+function pageKeyVector(flat: FlatBuffer, payload: number, slot: number): string[] {
+  const list = flat.offsetField(payload, slot);
+  const count = list === null ? null : flat.u32(list);
+  const keys: string[] = [];
+  if (list === null || count === null) return keys;
+  for (let i = 0; i < count; i++) {
+    const key = pageKeyAt(flat, list + 4 + i * 12);
+    if (key === null) break;
+    keys.push(key);
+  }
+  return keys;
+}
+
 /**
  * The ids that are deleted once DeleteEntities events (25) have all been
  * played, in the order of the log: ink, shapes, blocks and recordings that
  * were made and then deleted (field 0), less those an undo brought back
- * (field 1). Notability keeps the creating event, so a reader that skips this
- * brings every deleted thing back.
+ * (field 1); and the pages (fields 2 and 3, as {@link pageKeyAt} keys, which
+ * cannot be taken for an id). Notability keeps the creating event, so a reader
+ * that skips this brings every deleted thing back.
  */
 export function deletedIds(flat: FlatBuffer, events: readonly number[]): Set<string> {
   const ids = new Set<string>();
@@ -679,8 +774,62 @@ export function deletedIds(flat: FlatBuffer, events: readonly number[]): Set<str
     if (payload === null) continue;
     for (const id of idVector(flat, payload, 0)) ids.add(id);
     for (const id of idVector(flat, payload, 1)) ids.delete(id);
+    for (const key of pageKeyVector(flat, payload, 2)) ids.add(key);
+    for (const key of pageKeyVector(flat, payload, 3)) ids.delete(key);
   }
   return ids;
+}
+
+/**
+ * The note's pages from its CreatePage events (3), replayed in the order of
+ * the log. An event makes a run of `pageCount` pages (1 when absent) and puts
+ * it right after the page its `location` names, or at the start. Two runs
+ * after one page: the later goes first, nearer the page, as in the sequence
+ * CRDT of the typed text (the file does not say; assumed). A run whose page
+ * is not there goes last. Then the deleted pages are dropped.
+ */
+function pageSetOf(
+  flat: FlatBuffer,
+  events: readonly number[],
+  assetFor: (hash: Uint8Array) => string | null,
+  deleted: ReadonlySet<string>,
+): PageSet {
+  const order: string[] = [];
+  const made = new Map<string, NotePage>();
+  let runs = false;
+  for (const event of events) {
+    if (eventTypeOf(flat, event) !== EVENT_CREATE_PAGE) continue;
+    const payload = flat.offsetField(event, 5);
+    const id = eventIdOf(flat, event, 0);
+    if (payload === null || id === null) continue;
+    runs = true;
+    const countField = flat.field(payload, 2);
+    const count = countField === null ? 1 : (flat.u32(countField) ?? 1);
+    if (count === 0 || order.length + count > MAX_PAGES || made.has(`${id}:0`)) continue;
+    const asset = pageAssetOf(flat, payload, assetFor);
+    const offset = asset === null ? 0 : pageOffsetOf(flat, payload);
+    const size = pageSizeOf(flat, payload);
+    const background = flat.offsetField(payload, 1);
+    const margins = background === null ? null : marginsOf(flat, background);
+    const keys: string[] = [];
+    for (let i = 0; i < count; i++) {
+      keys.push(`${id}:${i}`);
+      made.set(`${id}:${i}`, { asset, pdfPage: offset + i, size, margins });
+    }
+    const after = pageKeyOf(flat, payload, 0);
+    const anchor = after === null ? -1 : order.indexOf(after);
+    const at = after === null ? 0 : anchor < 0 ? order.length : anchor + 1;
+    order.splice(at, 0, ...keys);
+  }
+  const pages: NotePage[] = [];
+  const index = new Map<string, number>();
+  for (const key of order) {
+    const page = made.get(key);
+    if (!page || deleted.has(key)) continue;
+    index.set(key, pages.length);
+    pages.push(page);
+  }
+  return { runs, pages, index };
 }
 
 /**
@@ -689,7 +838,8 @@ export function deletedIds(flat: FlatBuffer, events: readonly number[]): Set<str
  * Only what an event states is set; the creating event keeps the rest.
  */
 interface PlacementEdit {
-  page?: number;
+  /** The page, as a {@link pageKeyAt} key. */
+  page?: string;
   origin?: Pt;
   rotation?: number;
   scale?: Pt;
@@ -719,8 +869,7 @@ function editFrom(
   slots: { page: number; origin: number; rotation: number; scale: number; z: number },
 ): PlacementEdit {
   const edit: PlacementEdit = {};
-  const pageField = flat.field(table, slots.page);
-  const page = pageField === null ? null : flat.u32(pageField + 8);
+  const page = pageKeyOf(flat, table, slots.page);
   if (page !== null) edit.page = page;
   const origin = flat.pairField(table, slots.origin);
   if (origin) edit.origin = origin;
@@ -816,14 +965,14 @@ function parseNote(files: ReadonlyMap<string, Uint8Array>, root: string): Note {
   let paperHeight = DEFAULT_PAPER_HEIGHT;
   let lineSpacing: number | undefined;
   let grid = false;
+  let margins: Margins | null = null;
   const style = defaultStyle();
   const curves: Curve[] = [];
   const pictures: Picture[] = [];
   const stickies: Sticky[] = [];
-  const pageAssets: Array<string | null> = [];
-  const pageSizes: Array<Pt | null> = [];
   const deleted = deletedIds(flat, events);
   const edits = placementEdits(flat, events);
+  const pageSet = pageSetOf(flat, events, assetFor, deleted);
 
   // The paper settings may come after the things placed on it: read them first.
   const ordered = [
@@ -849,6 +998,7 @@ function parseNote(files: ReadonlyMap<string, Uint8Array>, root: string): Note {
           style.fontSize = clampFontSize(size);
         const paperRef = flat.offsetField(payload, 1);
         const paper = paperRef === null ? null : flat.offsetField(paperRef, 0);
+        if (paperRef !== null) margins = marginsOf(flat, paperRef) ?? margins;
         if (paper !== null) {
           const dims = flat.pairField(paper, 3);
           if (dims && [...dims].every((v) => Number.isFinite(v) && v > 0)) {
@@ -868,25 +1018,21 @@ function parseNote(files: ReadonlyMap<string, Uint8Array>, root: string): Note {
         }
         break;
       }
-      case EVENT_CREATE_PAGE:
-        pageAssets.push(pageAssetOf(flat, payload, assetFor));
-        pageSizes.push(pageSizeOf(flat, payload));
-        break;
       case EVENT_CREATE_BLOCK: {
-        const picture = pictureOf(flat, payload, inset, assetFor, edit);
+        const picture = pictureOf(flat, payload, inset, assetFor, pageSet, edit);
         if (picture) {
           pictures.push(picture);
           break;
         }
-        const sticky = stickyOf(flat, payload, inset, edit);
+        const sticky = stickyOf(flat, payload, inset, pageSet, edit);
         if (sticky) stickies.push(sticky);
         break;
       }
       case EVENT_CREATE_INK:
-        curves.push(...inkCurves(flat, payload, inset, edit));
+        curves.push(...inkCurves(flat, payload, inset, pageSet, edit));
         break;
       case EVENT_CREATE_SHAPE: {
-        const curve = shapeCurve(flat, payload, inset, edit);
+        const curve = shapeCurve(flat, payload, inset, pageSet, edit);
         if (curve) curves.push(curve);
         break;
       }
@@ -895,13 +1041,22 @@ function parseNote(files: ReadonlyMap<string, Uint8Array>, root: string): Note {
     }
   }
 
-  const text = readText(flat, events, style, paperWidth * CONTENT_INSET_RATIO, deleted, edits);
+  const text = readText(
+    flat,
+    events,
+    style,
+    paperWidth * CONTENT_INSET_RATIO,
+    deleted,
+    edits,
+    pageSet,
+  );
 
   return {
     paperWidth,
     paperHeight,
     lineSpacing,
     grid,
+    margins,
     defaultStyle: style,
     curves,
     pictures,
@@ -909,14 +1064,31 @@ function parseNote(files: ReadonlyMap<string, Uint8Array>, root: string): Note {
     boxes: text.boxes,
     body: text.body,
     unplaced: text.unplaced,
-    pageAssets,
-    pageSizes,
+    pageSet,
     assets,
   };
 }
 
 /**
- * The asset a CreatePage event's page is drawn from, as a path under the
+ * The margins a table sets (a struct of four float32s: top, bottom, left,
+ * right): a PageBackground's at field 4, a CreateBlock's at field 19. `null`
+ * when it sets none or they are not sane.
+ */
+function marginsOf(flat: FlatBuffer, table: number, slot = 4): Margins | null {
+  const field = flat.field(table, slot);
+  const values = field === null ? null : flat.floatArray(field, 4);
+  if (!values || !values.every((v) => Number.isFinite(v) && v >= 0 && v <= PAPER_MAX)) return null;
+  return { top: values[0], bottom: values[1], left: values[2], right: values[3] };
+}
+
+/** A CreatePage event's PDF (the background's `PDFAsset` table, `payload.1.1`), or `null`. */
+function pdfOf(flat: FlatBuffer, payload: number): number | null {
+  const background = flat.offsetField(payload, 1);
+  return background === null ? null : flat.offsetField(background, 1);
+}
+
+/**
+ * The asset a CreatePage event's pages are drawn from, as a path under the
  * note: the hash at `payload.1.1.0.0`, where a page of a PDF keeps it.
  */
 function pageAssetOf(
@@ -924,12 +1096,32 @@ function pageAssetOf(
   payload: number,
   assetFor: (hash: Uint8Array) => string | null,
 ): string | null {
-  const first = flat.offsetField(payload, 1);
-  const second = first === null ? null : flat.offsetField(first, 1);
-  const asset = second === null ? null : flat.offsetField(second, 0);
+  const pdf = pdfOf(flat, payload);
+  const asset = pdf === null ? null : flat.offsetField(pdf, 0);
   const hashField = asset === null ? null : flat.field(asset, 0);
   const hash = hashField === null ? null : flat.slice(hashField, 64);
   return hash ? assetFor(hash) : null;
+}
+
+/** The first page of the PDF a CreatePage event's run shows (`payload.1.1.4`, 0 when absent). */
+function pageOffsetOf(flat: FlatBuffer, payload: number): number {
+  const pdf = pdfOf(flat, payload);
+  const field = pdf === null ? null : flat.field(pdf, 4);
+  const offset = field === null ? null : flat.i32(field);
+  return offset !== null && offset > 0 ? offset : 0;
+}
+
+/**
+ * A block's size as it is shown: the size an edit gives, else the creating
+ * event's (field 6), times the scale an edit gives, else the creating event's
+ * (field 5, 1 when absent). `null` when it has no size.
+ */
+function blockSize(flat: FlatBuffer, payload: number, edit?: PlacementEdit): Pt | null {
+  const size = edit?.size ?? flat.pairField(payload, 6);
+  if (!size || !size.every((v) => Number.isFinite(v))) return null;
+  const scale = edit?.scale ?? flat.pairField(payload, 5);
+  if (!scale || !scale.every((v) => Number.isFinite(v))) return size;
+  return [size[0] * scale[0], size[1] * scale[1]];
 }
 
 /**
@@ -948,6 +1140,7 @@ function pictureOf(
   payload: number,
   inset: number,
   assetFor: (hash: Uint8Array) => string | null,
+  pages: PageSet,
   edit?: PlacementEdit,
 ): Picture | null {
   const media = flat.offsetField(payload, 10);
@@ -958,7 +1151,7 @@ function pictureOf(
   const mime = flat.stringField(asset, 2) ?? "image/jpeg";
   if (!hash || !mime.startsWith("image/")) return null;
   const at = edit?.origin ?? flat.pairField(payload, 3);
-  const size = edit?.size ?? flat.pairField(payload, 6);
+  const size = blockSize(flat, payload, edit);
   if (!at || !size) return null;
   const rotation = flat.field(payload, 4);
   const angle = edit?.rotation ?? (rotation === null ? 0 : (flat.f32(rotation) ?? 0));
@@ -977,7 +1170,7 @@ function pictureOf(
     if (!whole) crop = [values[0], values[1], values[2], values[3]];
   }
   return {
-    page: edit?.page ?? pageIndexOf(flat, payload, 2),
+    page: pageOf(flat, pages, payload, 2, edit),
     x,
     y,
     w: size[0],
@@ -1000,18 +1193,19 @@ function stickyOf(
   flat: FlatBuffer,
   payload: number,
   inset: number,
+  pages: PageSet,
   edit?: PlacementEdit,
 ): Sticky | null {
   const paper = flat.offsetField(payload, 15);
   const at = edit?.origin ?? flat.pairField(payload, 3);
-  const size = edit?.size ?? flat.pairField(payload, 6);
+  const size = blockSize(flat, payload, edit);
   if (paper === null || !at || !size) return null;
   const colour = flat.rgbaField(paper, 4);
   if (colour === null) return null;
   const ruling = flat.field(paper, 1);
   const spacing = ruling === null ? null : flat.f32(ruling);
   return {
-    page: edit?.page ?? pageIndexOf(flat, payload, 2),
+    page: pageOf(flat, pages, payload, 2, edit),
     x: at[0] - inset,
     y: at[1],
     w: size[0],
@@ -1026,6 +1220,7 @@ function inkCurves(
   flat: FlatBuffer,
   payload: number,
   inset: number,
+  pages: PageSet,
   edit?: PlacementEdit,
 ): Curve[] {
   const origin = edit?.origin ?? flat.pairField(payload, 1);
@@ -1053,7 +1248,7 @@ function inkCurves(
   const lineField = flat.field(payload, 5);
   const lineStyle = lineField === null ? 1 : (flat.u8(lineField) ?? 1);
   const colour = edit?.colour ?? flat.rgbaField(payload, 7) ?? BLACK;
-  const page = edit?.page ?? pageIndexOf(flat, payload, 0);
+  const page = pageOf(flat, pages, payload, 0, edit);
   return decoded.map((path) => {
     if (Math.abs(rotation) > 1e-6) rotatePoints(path.points, strokeOrigin, rotation);
     return {
@@ -1076,6 +1271,7 @@ function shapeCurve(
   flat: FlatBuffer,
   payload: number,
   inset: number,
+  pages: PageSet,
   edit?: PlacementEdit,
 ): Curve | null {
   const rawOrigin = edit?.origin ?? flat.pairField(payload, 1);
@@ -1135,7 +1331,7 @@ function shapeCurve(
   const dashField = flat.field(payload, 7);
   const dash = dashField === null ? 1 : (flat.u8(dashField) ?? 1);
   return {
-    page: edit?.page ?? pageIndexOf(flat, payload, 0),
+    page: pageOf(flat, pages, payload, 0, edit),
     points,
     cubic,
     width,
@@ -1507,6 +1703,7 @@ function readText(
   inset: number,
   deleted: ReadonlySet<string>,
   edits: ReadonlyMap<string, PlacementEdit>,
+  pages: PageSet,
 ): { body: { text: string; spans: Span[] }; boxes: TextBox[]; unplaced: number } {
   const documentEvent = events.find((event) => eventTypeOf(flat, event) === EVENT_DOCUMENT);
   const documentId =
@@ -1641,15 +1838,16 @@ function readText(
     if (payload === null) return;
     const edit = edits.get(id);
     const at = edit?.origin ?? flat.pairField(payload, 3);
-    const size = edit?.size ?? flat.pairField(payload, 6);
-    if (!at || !size || ![...at, ...size].every((v) => Number.isFinite(v))) return;
+    const size = blockSize(flat, payload, edit);
+    if (!at || !size || !at.every((v) => Number.isFinite(v))) return;
     const rotationField = flat.field(payload, 4);
     const rotation =
       edit?.rotation ?? (rotationField === null ? 0 : (flat.f32(rotationField) ?? 0));
     const [x, y] = unrotateTopLeft([at[0] - inset, at[1]], size, rotation);
     placed.add(id);
     boxes.push({
-      page: edit?.page ?? pageIndexOf(flat, payload, 2),
+      margins: marginsOf(flat, payload, 19) ?? BOX_MARGINS,
+      page: pageOf(flat, pages, payload, 2, edit),
       x,
       y,
       w: size[0],
@@ -1958,53 +2156,6 @@ export function readNotabilityNtb(
   const k = pageWidthPx / note.paperWidth;
   const inset = note.paperWidth * CONTENT_INSET_RATIO;
   const spacing = note.lineSpacing ?? DEFAULT_LINE_SPACING;
-  const maxWidth = note.paperWidth - 2 * inset;
-
-  // --- Typed text, cut into text boxes per page and style ----------------------
-  const logical = logicalLines(
-    note.body.text,
-    styleList(note.body.spans, Array.from(note.body.text).length, note.defaultStyle),
-    note.defaultStyle,
-  );
-  let cursor = DEFAULT_TEXT_TOP;
-  const placedLines = logical.map((line) => {
-    const lineHeight = line.style.fontSize * Math.max(1, line.style.lineSpacingMultiplier);
-    const advance = advanceFor(lineHeight, spacing);
-    const top = cursor;
-    cursor += rowsOf(line.text, line.style, maxWidth) * advance;
-    return { ...line, top, advance };
-  });
-  type Block = {
-    page: number;
-    top: number;
-    advance: number;
-    style: Style;
-    key: string;
-    lines: string[];
-  };
-  const blocks: Block[] = [];
-  for (const line of placedLines) {
-    const page = Math.floor(line.top / note.paperHeight);
-    const local = line.top - page * note.paperHeight;
-    const key = looks(line.style);
-    const last = blocks[blocks.length - 1];
-    if (last && last.page === page && last.key === key) {
-      last.lines.push(line.text);
-    } else {
-      blocks.push({
-        page,
-        top: local,
-        advance: line.advance,
-        style: line.style,
-        key,
-        lines: [line.text],
-      });
-    }
-  }
-  for (const block of blocks) {
-    while (block.lines.length > 0 && block.lines[block.lines.length - 1].trim() === "")
-      block.lines.pop();
-  }
 
   // --- Text boxes from the note's own boxes --------------------------------------
   const boxTexts: Array<{ page: number; box: Omit<TextBoxElement, "id"> }> = [];
@@ -2016,6 +2167,10 @@ export function readNotabilityNtb(
       .join("\n")
       .replace(/\s+$/, "");
     if (text.trim() === "") continue;
+    if (box.page < 0) {
+      tally.add("offPage");
+      continue;
+    }
     const first = styles[0] ?? note.defaultStyle;
     const colours = new Set<string>();
     Array.from(box.text).forEach((ch, i) => {
@@ -2023,11 +2178,14 @@ export function readNotabilityNtb(
     });
     if (colours.size > 1) tally.add("mixed", box.page + 1);
     if (Math.abs(box.rotation) > 0.01) tally.add("rotatedText", box.page + 1);
+    // FineNotes draws the words TEXT_PAD_X / TEXT_PAD_Y in from the box; Notability
+    // draws them its margins in from the block. Put the box where the words land.
+    const { top, bottom, left, right } = box.margins;
     const element: Omit<TextBoxElement, "id"> = {
-      x: round2((box.x + inset) * k),
-      y: round2(box.y * k),
-      w: round2(Math.max(8, box.w * k)),
-      h: round2(Math.max(24, box.h * k)),
+      x: round2((box.x + inset + left) * k - TEXT_PAD_X),
+      y: round2((box.y + top) * k - TEXT_PAD_Y),
+      w: round2(Math.max(8, (box.w - left - right) * k + 2 * TEXT_PAD_X)),
+      h: round2(Math.max(24, (box.h - top - bottom) * k + 2 * TEXT_PAD_Y)),
       text,
       color: hexColor(first.color[0] / 255, first.color[1] / 255, first.color[2] / 255),
       fontSize: round2(Math.max(1, first.fontSize * k)),
@@ -2042,12 +2200,14 @@ export function readNotabilityNtb(
   }
 
   // --- The PDFs ----------------------------------------------------------------------
-  // The PDFs the pages are made from: those the CreatePage events name, or else
-  // the note's one PDF. A single PDF's page n is note page n (as the converter
-  // renders it); with several, each page takes the PDF's next page, in order.
-  const named = [...new Set(note.pageAssets.filter((path): path is string => path !== null))];
-  const pdfPaths =
-    named.length > 0 ? named : [...note.assets.values()].filter((path) => /\.pdf$/i.test(path));
+  // The PDFs the pages are made from: those the CreatePage runs name. A note with
+  // no CreatePage event shows its one PDF, if it has just one, page for page.
+  const named = [...new Set(note.pageSet.pages.map((page) => page.asset))].filter(
+    (path): path is string => path !== null,
+  );
+  const pdfPaths = note.pageSet.runs
+    ? named
+    : [...note.assets.values()].filter((path) => /\.pdf$/i.test(path));
   const pdfAttachments = new Map<string, string | null>();
   for (const path of pdfPaths) {
     const bytes = files.get(root + path);
@@ -2056,38 +2216,116 @@ export function readNotabilityNtb(
   if ([...pdfAttachments.values()].some((path) => path === null)) {
     warnings.push("A PDF the note uses is missing from the file; its pages are blank.");
   }
-  const singlePdf = pdfPaths.length === 1 ? pdfPaths[0] : null;
-  const pdfPageOf = new Map<number, { path: string; page: number }>();
-  if (singlePdf === null) {
-    const used = new Map<string, number>();
-    note.pageAssets.forEach((path, index) => {
-      if (path === null) return;
-      const next = used.get(path) ?? 0;
-      used.set(path, next + 1);
-      pdfPageOf.set(index, { path, page: next });
-    });
-  }
-  if (pdfPaths.length > 1) {
-    warnings.push(
-      `The note has ${plural(pdfPaths.length, "PDF")}; its pages were matched to them in order, ` +
-        "which the file does not confirm.",
-    );
-  }
-  if (pdfPaths.some((path) => !pdfSizes.has(path)) && note.pageSizes.every((size) => !size)) {
+  const singlePdf = !note.pageSet.runs && pdfPaths.length === 1 ? pdfPaths[0] : null;
+  if (
+    pdfPaths.some((path) => !pdfSizes.has(path)) &&
+    note.pageSet.pages.every((page) => !page.size)
+  ) {
     warnings.push(
       "The PDF's page sizes could not be read, so its pages are taken as the note's paper size.",
     );
   }
+  /** What shows on page `i`: the note's page, or the one PDF's page `i` in a note with no runs. */
+  const pageAt = (i: number): NotePage | null => {
+    if (i < note.pageSet.pages.length) return note.pageSet.pages[i];
+    const sizes = singlePdf === null ? undefined : pdfSizes.get(singlePdf);
+    if (singlePdf === null || (sizes !== undefined && i >= sizes.length)) return null;
+    return { asset: singlePdf, pdfPage: i, size: null, margins: null };
+  };
+  /** The PDF page shown on page `i`, with its size, or `null` for a page with none. */
+  const pdfOn = (
+    i: number,
+  ): { attachment: string; page: number; source: PdfPageSize | null } | null => {
+    const placed = pageAt(i);
+    const attachment = placed?.asset ? (pdfAttachments.get(placed.asset) ?? null) : null;
+    const measured = placed?.asset ? pdfSizes.get(placed.asset) : undefined;
+    if (
+      !placed?.asset ||
+      !attachment ||
+      (measured !== undefined && placed.pdfPage >= measured.length)
+    )
+      return null;
+    return {
+      attachment,
+      page: placed.pdfPage,
+      source: measured?.[placed.pdfPage] ?? sizeOfPage(placed.size),
+    };
+  };
+  const layoutOf = (i: number): ReturnType<typeof pageLayout> =>
+    pageLayout(
+      { width: note.paperWidth, height: note.paperHeight },
+      pageWidthPx,
+      pdfOn(i)?.source ?? null,
+    );
+
+  // --- Typed text, cut into text boxes per page and style ----------------------
+  // Notability lays it out inside the page's margins: the page's own, else the
+  // document's, else half an inch. A line that would start below the bottom
+  // margin goes to the top margin of the next page.
+  const marginsAt = (i: number): Margins => {
+    const own = pageAt(i)?.margins ?? note.margins;
+    return own ?? { top: NOTE_MARGIN, bottom: NOTE_MARGIN, left: NOTE_MARGIN, right: NOTE_MARGIN };
+  };
+  type Block = {
+    page: number;
+    top: number;
+    left: number;
+    width: number;
+    advance: number;
+    style: Style;
+    key: string;
+    lines: string[];
+  };
+  const blocks: Block[] = [];
+  let bodyPage = 0;
+  let cursor = marginsAt(0).top;
+  for (const line of logicalLines(
+    note.body.text,
+    styleList(note.body.spans, Array.from(note.body.text).length, note.defaultStyle),
+    note.defaultStyle,
+  )) {
+    const lineHeight = line.style.fontSize * Math.max(1, line.style.lineSpacingMultiplier);
+    const advance = advanceFor(lineHeight, spacing);
+    const pageHeight = pdfOn(bodyPage) ? layoutOf(bodyPage).height / k : note.paperHeight;
+    if (cursor >= pageHeight - marginsAt(bodyPage).bottom) {
+      bodyPage++;
+      cursor = marginsAt(bodyPage).top;
+    }
+    const { left, right } = marginsAt(bodyPage);
+    const width = Math.max(1, note.paperWidth - left - right);
+    const key = looks(line.style);
+    const last = blocks[blocks.length - 1];
+    if (last && last.page === bodyPage && last.key === key) {
+      last.lines.push(line.text);
+    } else {
+      blocks.push({
+        page: bodyPage,
+        top: cursor,
+        left,
+        width,
+        advance,
+        style: line.style,
+        key,
+        lines: [line.text],
+      });
+    }
+    cursor += rowsOf(line.text, line.style, width) * advance;
+  }
+  for (const block of blocks) {
+    while (block.lines.length > 0 && block.lines[block.lines.length - 1].trim() === "")
+      block.lines.pop();
+  }
 
   // --- Pages --------------------------------------------------------------------------
-  // The pages the note makes: its CreatePage events, its one PDF's pages and the
-  // run of its typed text. A thing placed further past them than PAGE_MARGIN is
-  // corrupt (a page index from a damaged or crafted file) and is left out.
-  let made = Math.max(1, note.pageAssets.length);
+  // The pages the note makes: its CreatePage runs (or its one PDF's pages) and the
+  // run of its typed text. Without runs, a thing placed further past them than
+  // PAGE_MARGIN is corrupt (a page index from a damaged or crafted file) and is
+  // left out; with them, a thing on a page the note does not have is.
+  let made = Math.max(1, note.pageSet.pages.length);
   for (const block of blocks) made = Math.max(made, block.page + 1);
   if (singlePdf !== null) made = Math.max(made, pdfSizes.get(singlePdf)?.length ?? 0);
   const pageLimit = Math.min(MAX_PAGES, made + PAGE_MARGIN);
-  let pageCount = 1;
+  let pageCount = made;
   const need = (page: number): void => {
     if (page < pageLimit) pageCount = Math.max(pageCount, page + 1);
   };
@@ -2096,18 +2334,10 @@ export function readNotabilityNtb(
   for (const sticky of note.stickies) need(sticky.page);
   for (const box of note.boxes) need(box.page);
   for (const { page } of boxTexts) need(page);
-  for (const block of blocks) need(block.page);
-  for (const index of pdfPageOf.keys()) need(index);
-  if (singlePdf !== null) {
-    const sizes = pdfSizes.get(singlePdf);
-    if (sizes) pageCount = Math.max(pageCount, sizes.length);
-    else
-      pageCount = Math.max(pageCount, note.pageAssets.filter((path) => path === singlePdf).length);
-  }
   pageCount = Math.min(pageCount, MAX_PAGES);
   // Whether a thing's page is one of the note's; one past them is counted and left out.
   const onPage = (page: number): boolean => {
-    if (page < pageCount) return true;
+    if (page >= 0 && page < pageCount) return true;
     tally.add("offPage");
     return false;
   };
@@ -2125,27 +2355,9 @@ export function readNotabilityNtb(
             color: RULE_COLOUR,
           }
         : { kind: "blank" };
-    let source: PdfPageSize | null = null;
-    if (singlePdf !== null) {
-      const attachment = pdfAttachments.get(singlePdf) ?? null;
-      const sizes = pdfSizes.get(singlePdf);
-      if (attachment && (sizes === undefined || i < sizes.length)) {
-        backdrop = { kind: "pdf", path: attachment, page: i };
-        source = sizes?.[i] ?? sizeOfPage(note.pageSizes[i]);
-      }
-    } else {
-      const placed = pdfPageOf.get(i);
-      const attachment = placed ? (pdfAttachments.get(placed.path) ?? null) : null;
-      if (placed && attachment) {
-        backdrop = { kind: "pdf", path: attachment, page: placed.page };
-        source = pdfSizes.get(placed.path)?.[placed.page] ?? sizeOfPage(note.pageSizes[i]);
-      }
-    }
-    const layout = pageLayout(
-      { width: note.paperWidth, height: note.paperHeight },
-      pageWidthPx,
-      source,
-    );
+    const pdf = pdfOn(i);
+    if (pdf) backdrop = { kind: "pdf", path: pdf.attachment, page: pdf.page };
+    const layout = layoutOf(i);
     pages.push({
       id: `p${i + 1}`,
       kind: "ink",
@@ -2212,9 +2424,9 @@ export function readNotabilityNtb(
     if (!onPage(block.page)) continue;
     const first = block.style;
     const element: Omit<TextBoxElement, "id"> = {
-      x: round2(inset * k),
-      y: round2(block.top * k),
-      w: round2(Math.max(8, maxWidth * k)),
+      x: round2(block.left * k - TEXT_PAD_X),
+      y: round2(block.top * k - TEXT_PAD_Y),
+      w: round2(Math.max(8, block.width * k + 2 * TEXT_PAD_X)),
       text: block.lines.join("\n"),
       color: hexColor(first.color[0] / 255, first.color[1] / 255, first.color[2] / 255),
       fontSize: round2(Math.max(1, first.fontSize * k)),

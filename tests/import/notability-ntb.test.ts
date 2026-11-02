@@ -31,9 +31,11 @@ import {
   lineEvent,
   movePositionEvent,
   noteBundle,
+  pictureEvent,
   removeCharEvent,
   removeCharsEvent,
   resizeBlockEvent,
+  scaleBlockEvent,
   stickyEvent,
   table,
   textBoxEvent,
@@ -272,8 +274,23 @@ describe("a note's typed text", () => {
     ]);
     expect(rest).toHaveLength(0);
     expect(placed.text).toBe("Hi!");
-    expect(placed.x).toBeCloseTo(340 * k, 1);
-    expect(placed.y).toBeCloseTo(128 * k, 1);
+    // The words land at the block's origin plus its default margins (5 across, 3 down); the
+    // element sits TEXT_PAD_X / TEXT_PAD_Y before them.
+    expect(placed.x).toBeCloseTo((340 + 5) * k - 4, 1);
+    expect(placed.y).toBeCloseTo((128 + 3) * k - 2, 1);
+    expect(placed.w).toBeCloseTo((240 - 10) * k + 8, 1);
+    expect(placed.h).toBeCloseTo(Math.max(24, (22 - 6) * k + 4), 1);
+  });
+
+  it("offsets a text box's words by the margins its block sets", () => {
+    const [placed] = boxesOf([
+      textBoxEvent(10, 0, [340, 128], [240, 40], [10, 6, 20, 8]),
+      insertCharEvent(11, "H", null, 10),
+    ]);
+    expect(placed.x).toBeCloseTo((340 + 20) * k - 4, 1);
+    expect(placed.y).toBeCloseTo((128 + 10) * k - 2, 1);
+    expect(placed.w).toBeCloseTo((240 - 28) * k + 8, 1);
+    expect(placed.h).toBeCloseTo((40 - 16) * k + 4, 1);
   });
 
   it("leaves out a character that was removed, and takes back one that was revived", () => {
@@ -356,9 +373,9 @@ describe("a note's typed text", () => {
       movePositionEvent(20, 10, 0, [200, 300]),
       resizeBlockEvent(21, 10, [100, 50]),
     ]);
-    expect(moved.x).toBeCloseTo(200 * k, 1);
-    expect(moved.y).toBeCloseTo(300 * k, 1);
-    expect(moved.w).toBeCloseTo(100 * k, 1);
+    expect(moved.x).toBeCloseTo((200 + 5) * k - 4, 1);
+    expect(moved.y).toBeCloseTo((300 + 3) * k - 2, 1);
+    expect(moved.w).toBeCloseTo((100 - 10) * k + 8, 1);
   });
 
   it("moves a drawn line with a ModifyPositions event too", () => {
@@ -398,11 +415,69 @@ describe("a note's typed text", () => {
   });
 });
 
+describe("a note's typed body text and its margins", () => {
+  const k = 1053 / 612;
+  const typed = [insertStringEvent(11, "Hi", null, null)];
+  const bodyOf = (events: Parameters<typeof noteWith>[0], pages = 0) =>
+    readNotabilityNtb(noteWith(events), "Body").doc.pages[pages].textBoxes;
+
+  it("starts at the 36 margin from the left and the top, inside a column 36 in from each side", () => {
+    const [body] = bodyOf([documentEvent(612, 792), createPageEvent(2, 612, 792), ...typed]);
+    expect(body.x).toBeCloseTo(36 * k - 4, 1);
+    expect(body.y).toBeCloseTo(36 * k - 2, 1);
+    expect(body.w).toBeCloseTo((612 - 72) * k + 8, 1);
+  });
+
+  it("moves a line that would start below the bottom margin to the next page's top margin", () => {
+    // Lines advance by the default 20 of spacing from 36: the 36th starts at 736, the 37th at 756.
+    const lines = Array.from({ length: 37 }, (_, i) => String(i + 1)).join("\n");
+    const note = [
+      documentEvent(612, 792),
+      createPageEvent(2, 612, 792, { count: 2 }),
+      insertStringEvent(11, lines, null, null),
+    ];
+    const first = bodyOf(note, 0);
+    const second = bodyOf(note, 1);
+    expect(first[0].text.split("\n")).toHaveLength(36);
+    expect(second[0].text).toBe("37");
+    expect(second[0].y).toBeCloseTo(36 * k - 2, 1);
+  });
+
+  it("takes a page's own margins before the document's, and the document's before 36", () => {
+    const own: [number, number, number, number] = [50, 60, 70, 80];
+    const doc: [number, number, number, number] = [10, 20, 30, 40];
+    const pageOwn = bodyOf([
+      documentEvent(612, 792, doc),
+      createPageEvent(2, 612, 792, { margins: own }),
+      ...typed,
+    ])[0];
+    expect(pageOwn.x).toBeCloseTo(70 * k - 4, 1);
+    expect(pageOwn.y).toBeCloseTo(50 * k - 2, 1);
+    expect(pageOwn.w).toBeCloseTo((612 - 70 - 80) * k + 8, 1);
+    const wide = bodyOf([documentEvent(612, 792, doc), createPageEvent(2, 612, 792), ...typed])[0];
+    expect(wide.x).toBeCloseTo(30 * k - 4, 1);
+    expect(wide.y).toBeCloseTo(10 * k - 2, 1);
+    expect(wide.w).toBeCloseTo((612 - 30 - 40) * k + 8, 1);
+  });
+
+  it("breaks pages at the bottom margin the page sets", () => {
+    const lines = Array.from({ length: 4 }, (_, i) => String(i + 1)).join("\n");
+    const note = [
+      documentEvent(612, 792),
+      createPageEvent(2, 612, 792, { count: 2, margins: [36, 700, 36, 36] }),
+      insertStringEvent(11, lines, null, null),
+    ];
+    // Lines start at 36, 56 and 76, above 792 - 700 = 92; the fourth would start at 96.
+    expect(bodyOf(note, 0)[0].text.split("\n")).toHaveLength(3);
+    expect(bodyOf(note, 1)[0].text).toBe("4");
+  });
+});
+
 describe("a note's PDF pages", () => {
   const sizes = new Map([[`assets/${"a".repeat(128)}.pdf`, [{ width: 893.04, height: 841.92 }]]]);
   const events = [
     documentEvent(612, 792),
-    createPageEvent(2, 894, 842),
+    createPageEvent(2, 894, 842, { pdf: {} }),
     lineEvent(12, 0, [40, 211], [98, 211], 2, 4),
   ];
 
@@ -431,6 +506,107 @@ describe("a note's PDF pages", () => {
     expect(warnings).not.toContain(
       "The PDF's page sizes could not be read, so its pages are taken as the note's paper size.",
     );
+  });
+});
+
+describe("a note's pages", () => {
+  const sizes = new Map([
+    [
+      `assets/${"a".repeat(128)}.pdf`,
+      Array.from({ length: 10 }, () => ({ width: 595, height: 842 })),
+    ],
+  ]);
+  const pdfOf = (page: { backdrop: { kind: string; page?: number } }): number | null =>
+    page.backdrop.kind === "pdf" ? (page.backdrop.page ?? null) : null;
+  // Run 2 makes three pages of the PDF; run 5 two more (PDF pages 6 and 7), after the first;
+  // run 6 a blank one after the first, later than run 5, so nearer to it; run 7 one after the
+  // last, which is deleted.
+  const events = [
+    documentEvent(612, 792),
+    createPageEvent(2, 595, 842, { count: 3, pdf: {} }),
+    createPageEvent(5, 595, 842, { count: 2, after: [2, 0], pdf: { offset: 5 } }),
+    createPageEvent(6, 595, 842, { after: [2, 0] }),
+    createPageEvent(7, 595, 842, { after: [2, 2], pdf: { offset: 9 } }),
+    deleteEvent(8, [], [], [[7, 0]]),
+  ];
+  const read = (more: Parameters<typeof noteBundle>[0] = []) =>
+    readNotabilityNtb(noteWith([...events, ...more]), "Pages", sizes);
+
+  it("makes a run of pageCount pages, in the order the log gives them", () => {
+    const { pages } = read().doc;
+    // A0, then the later run (6), then run 5, then the rest of run 2; run 7's page is deleted.
+    expect(pages.map(pdfOf)).toEqual([0, null, 5, 6, 1, 2]);
+  });
+
+  it("puts an item on the page its PageLocation names, not the page its index names", () => {
+    const { pages } = read([
+      lineEvent(20, [5, 1], [40, 211], [98, 211], 2, 4),
+      lineEvent(21, [2, 1], [40, 211], [98, 211], 2, 4),
+    ]).doc;
+    expect(pages.map((page) => page.strokes.length)).toEqual([0, 0, 0, 1, 1, 0]);
+  });
+
+  it("leaves out an item on a deleted page, and brings a page back that was undeleted", () => {
+    const more = [lineEvent(20, [7, 0], [40, 211], [98, 211], 2, 4)];
+    const gone = read(more);
+    expect(gone.doc.pages).toHaveLength(6);
+    expect(gone.warnings).toContain("1 item placed past the note's last page was left out.");
+    const back = read([...more.slice(0, 0), deleteEvent(9, [], [], [], [[7, 0]]), ...more]);
+    expect(back.doc.pages).toHaveLength(7);
+    expect(back.doc.pages[6].strokes).toHaveLength(1);
+    expect(pdfOf(back.doc.pages[6])).toBe(9);
+  });
+
+  it("names the deleted pages with the deleted ids", () => {
+    const flat = new FlatBuffer(noteBundle(events));
+    const root = flat.rootTable();
+    const list = root === null ? null : flat.tableVector(root, 6);
+    expect([...deletedIds(flat, list ?? [])]).toEqual(["0:7:0"]);
+  });
+});
+
+describe("a resized block", () => {
+  const k = 1053 / 612;
+  const base = [documentEvent(612, 792), createPageEvent(2, 612, 792)];
+
+  it("is shown at its size times its scale", () => {
+    const { pages } = readNotabilityNtb(
+      noteWith([...base, stickyEvent(10, 0, [100, 100], [240, 240], [0.5, 0.25])]),
+      "Scaled",
+    ).doc;
+    expect(pages[0].images[0].w).toBeCloseTo(120 * k, 1);
+    expect(pages[0].images[0].h).toBeCloseTo(60 * k, 1);
+  });
+
+  it("takes the scale a later ModifyBlock gives", () => {
+    const { pages } = readNotabilityNtb(
+      noteWith([
+        ...base,
+        stickyEvent(10, 0, [100, 100], [240, 240], [0.5, 0.25]),
+        scaleBlockEvent(11, 10, [1, 0.5]),
+      ]),
+      "Rescaled",
+    ).doc;
+    expect(pages[0].images[0].w).toBeCloseTo(240 * k, 1);
+    expect(pages[0].images[0].h).toBeCloseTo(120 * k, 1);
+  });
+
+  it("scales a picture and a text box too", () => {
+    const hex = "bb".repeat(64);
+    const files = ntbFiles({
+      noteBundle: noteBundle([
+        ...base,
+        pictureEvent(10, 0, [100, 100], [400, 200], [0.25, 0.25]),
+        textBoxEvent(11, 0, [300, 300], [200, 100]),
+        insertCharEvent(12, "A", null, 11),
+        scaleBlockEvent(13, 11, [0.5, 2]),
+      ]),
+      [`assets/${hex}.png`]: new Uint8Array([1, 2, 3]),
+    });
+    const [page] = readNotabilityNtb(files, "Scaled").doc.pages;
+    expect(page.images[0].w).toBeCloseTo(100 * k, 1);
+    expect(page.images[0].h).toBeCloseTo(50 * k, 1);
+    expect(page.textBoxes[0].w).toBeCloseTo((100 - 10) * k + 8, 1);
   });
 });
 
@@ -473,16 +649,9 @@ describe("a damaged or crafted note", () => {
     expect(warnings).toContain("1 item placed past the note's last page was left out.");
   });
 
-  it("still takes a page just past the ones the note makes", () => {
+  it("still takes a page just past the ones a note with no CreatePage event makes", () => {
     const { doc, warnings } = readNotabilityNtb(
-      noteWith(
-        [
-          documentEvent(612, 792),
-          createPageEvent(2, 612, 792),
-          lineEvent(12, 2, [40, 211], [98, 211], 2, 4),
-        ],
-        false,
-      ),
+      noteWith([documentEvent(612, 792), lineEvent(12, 2, [40, 211], [98, 211], 2, 4)], false),
       "Margin",
     );
     expect(doc.pages).toHaveLength(3);
@@ -528,14 +697,16 @@ describe("a real .ntb note (Notability 16, shared by the PR's author)", () => {
   // on blank Letter paper. Checked against the note's own thumbnail.png.
   const bytes = new Uint8Array(readFileSync(join(__dirname, "fixtures", "notability-hello.ntb")));
 
-  it("brings over the handwriting and the typed line on one blank page", async () => {
+  it("brings over the handwriting and the typed line on the first of its two blank pages", async () => {
     const batch = await importNotebooks(bytes, "Note 1 Nov 2026.ntb");
     expect(batch.failures).toEqual([]);
     const [result] = batch.results;
     expect(result.title).toBe("Note 1 Nov 2026");
     expect(result.warnings).toEqual([]);
     const [page] = result.doc.pages;
-    expect(result.doc.pages).toHaveLength(1);
+    // The note's CreatePage event makes two pages (`pageCount` 2); the second is empty.
+    expect(result.doc.pages).toHaveLength(2);
+    expect(result.doc.pages[1].strokes).toHaveLength(0);
     expect(page.backdrop.kind).toBe("blank");
     expect(page.strokes).toHaveLength(24);
     expect(page.textBoxes.map((box) => box.text)).toEqual(["Hello this is a test"]);
