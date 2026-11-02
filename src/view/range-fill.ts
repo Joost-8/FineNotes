@@ -18,6 +18,46 @@ export function rangeFillPercent(value: number, min: number, max: number): strin
   return `${Math.round(share * 10000) / 100}%`;
 }
 
+/**
+ * The value a slider takes under a finger at `x` (`range-drag.ts`): the knob's
+ * centre travels from half a knob in from one end of the track to half a knob
+ * in from the other, as the browser draws it, and the value lands on a step
+ * counted from `min` (any value for `step` "any" or 0). A press past either
+ * end takes that end.
+ */
+export function rangeValueAt(
+  x: number,
+  left: number,
+  width: number,
+  min: number,
+  max: number,
+  step: number,
+  knob: number,
+): number {
+  if (!(max > min)) return Number.isFinite(min) ? min : 0;
+  const travel = width - knob;
+  const share = travel > 0 ? (x - left - knob / 2) / travel : x >= left + width / 2 ? 1 : 0;
+  const raw = min + Math.min(1, Math.max(0, share)) * (max - min);
+  if (!(step > 0)) return raw;
+  // The browser keeps a value on the last whole step below `max`.
+  const steps = Math.min(Math.round((raw - min) / step), Math.floor((max - min) / step + 1e-9));
+  const decimals = (String(step).split(".")[1] ?? "").length;
+  return Number((min + steps * step).toFixed(Math.min(decimals + 2, 12)));
+}
+
+/** Where the knob's centre sits for `value`: the inverse of {@link rangeValueAt}. */
+export function rangeKnobX(
+  value: number,
+  left: number,
+  width: number,
+  min: number,
+  max: number,
+  knob: number,
+): number {
+  const share = max > min ? Math.min(1, Math.max(0, (value - min) / (max - min))) : 0;
+  return left + knob / 2 + share * Math.max(0, width - knob);
+}
+
 /** Bring a slider's filled part in line with its value. */
 export function syncRangeFill(range: HTMLInputElement): void {
   range.setCssProps({

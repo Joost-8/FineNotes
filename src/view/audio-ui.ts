@@ -17,6 +17,7 @@ import { type App, FuzzySuggestModal, Menu, setIcon } from "obsidian";
 import { describeRecording, formatClock } from "../audio/recording";
 import type { Recording } from "../model/document";
 import { swallowGhostClick } from "./ghost-click";
+import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 
 /** `setIcon`, with a text fallback for mobile builds where an icon comes up blank. */
@@ -212,6 +213,7 @@ export class AudioPlayerBar {
       type: "range",
       attr: { min: "0", max: "0", step: "0.1", value: "0", "aria-label": "Position" },
     });
+    dragRange(this.scrubber);
     this.timeEl = row.createDiv({ cls: "goodobsidian-player-time" });
     if (hooks.onReplay) {
       // Ink replay: what was not written yet at this moment shows pale.

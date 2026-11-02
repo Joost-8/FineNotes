@@ -133,6 +133,7 @@ export default defineConfig({
         "src/model/calc-ink.ts",
         "src/model/answer-glyphs.ts",
         "src/recognition/hwr/learned-model.ts",
+        "src/recognition/hwr/learn-window-model.ts",
         "src/model/vault-folders.ts",
         "src/recognition/registry.ts",
         "src/recognition/manual.ts",

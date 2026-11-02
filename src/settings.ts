@@ -24,27 +24,19 @@ import {
   readCorrections,
   swapWithPrevious,
   symbolsToWrite,
-  writePracticePage,
-  writeSymbolPractice,
 } from "./view/handwriting-learning";
 import {
-  MIN_PRACTICE_LINES,
   type PracticeSheet,
   deleteQuestion,
-  RELEARN_AFTER,
-  correctionsText,
   learnInfoText,
   learnSummary,
   learnedBadge,
   learnedResult,
   learnedStatus,
-  nextSheetAction,
-  sheetText,
-  sheetUse,
   newCorrections,
   undoText,
 } from "./recognition/hwr/learned-model";
-import { PRACTICE_SETS, isSymbolSet } from "./recognition/practice";
+import { PRACTICE_SETS } from "./recognition/practice";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
 import {
   type App,
@@ -87,6 +79,7 @@ import {
   type SettingsSection,
   changesTabLayout,
   endpointWarning,
+  handwritingReaderOf,
   paperWidthFrom,
   parseColorList,
   sectionOpen,
@@ -140,7 +133,7 @@ import { SavedPenModal } from "./view/saved-pen-modal";
 import type { BarrelAction } from "./input/pen-modifiers";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
-import { PEN_OPTIONS_ON_WRITE_NAMES } from "./view/tool-return";
+import { learnWindow } from "./recognition/hwr/learn-window-model";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -217,7 +210,15 @@ const PEN_CURSOR_NAMES: Record<PenCursorStyle, string> = {
   ink: "Ink dot",
   crosshair: "Crosshair",
   arrow: "Arrow",
+  none: "None",
 };
+
+/** "Read handwriting with", as its dropdown and the section's status name the choices. */
+const READER_NAMES = {
+  off: "Off",
+  grape: "Grape",
+  mine: "Your model",
+} as const;
 
 /** "Updates": how a newer FineNotes is told, as its dropdown names the choices. */
 const UPDATE_CHOICES = {
@@ -341,25 +342,14 @@ const DESC = {
   stylusClick:
     "What a click of the side button does with the pen held just above the page, not " +
     "touching it. A second click closes the menu again.",
-  tuckPenOptionsOnWrite:
-    "As soon as the pen or highlighter starts writing, the options under the tool bar (pen " +
-    "type, widths and colors) tuck away, as a second tap on the pen does. Until you tap " +
-    "the pen: they stay away until you tap it. Until the pen lifts: they come back by " +
-    "themselves a second after the pen leaves the page. The other tools keep theirs.",
-  straightHighlighter:
-    "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
-    "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
   lassoAnyPart:
     "On (the default), the lasso takes a stroke or shape when any part of it is inside the loop or " +
     "touches its line, as Notability does. Off, at least half of it must be inside, as in " +
     "Goodnotes. Pictures and text boxes are taken by their middle either way.",
-  zoomBoxAutoAdvance:
-    "Auto-advance is the double-arrow button on the Zoom box's bar. When it is on and a " +
-    "stroke reaches the right part of the box, the box moves right; at the end of the line " +
-    "it wraps to the next. This sets how wide that right part is.",
   penCursor:
     "On a computer, the pointer over the page while a pen, the highlighter or the laser is " +
-    "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, or the arrow.",
+    "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, the " +
+    "arrow, or none at all (the laser keeps its point).",
   checkForUpdates:
     "Once a day, FineNotes reads the number of its newest release from GitHub " +
     "(github.com/Joost-8/FineNotes) and puts a dot on the toolbar's gear when it is newer. " +
@@ -461,7 +451,7 @@ const MODEL_PURPOSE = {
   grape:
     "Grape (handwriting recognizer model) reads your handwriting: notebook search and Obsidian's search find it, and a lassoed heading or word fills in its title or link.",
   learned:
-    "Grape tuned to your own handwriting, learned on this device from the practice sheets you write (Learn your handwriting, below).",
+    "Grape tuned to your own handwriting, learned on this device from the practice sheets you write (Learn your handwriting, under AI and handwriting).",
 };
 
 /** How a model's state reads at a glance: the colour of the dot before its state. */
@@ -555,13 +545,21 @@ function infoToggle(buttonParent: HTMLElement, textParent: HTMLElement, text: st
 
 /**
  * Give a drawn settings row its ⓘ: after its name, opening `text` under its
- * description. Once per row.
+ * description. A row that has one keeps it and takes the new text. When
+ * Obsidian draws the row again (each `update()`), `setName` empties the
+ * name and takes the button with it, and the old text stays behind: both
+ * are made again, so the ⓘ says what the row says now.
  */
 export function addInfo(settingEl: HTMLElement, text: string): void {
-  if (settingEl.hasClass(INFO_CLS)) return;
   const nameEl = settingEl.querySelector<HTMLElement>(".setting-item-name");
   const infoEl = settingEl.querySelector<HTMLElement>(".setting-item-info");
   if (!nameEl || !infoEl) return;
+  const more = infoEl.querySelector<HTMLElement>(".goodobsidian-info-text");
+  if (more && nameEl.querySelector(".goodobsidian-info")) {
+    if (more.textContent !== text) more.setText(text);
+    return;
+  }
+  more?.remove();
   settingEl.addClass(INFO_CLS);
   infoToggle(nameEl, infoEl, text);
 }
@@ -696,10 +694,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     return this.infos.get(name);
   }
 
-  /** Give every drawn row that has an ⓘ text and no button yet its button. */
+  /** Give every drawn row that has an ⓘ text its button, with the text it has now. */
   private decorate(): void {
     for (const el of Array.from(this.containerEl.querySelectorAll<HTMLElement>(".setting-item"))) {
-      if (el.hasClass(INFO_CLS)) continue;
       const name = el.querySelector(".setting-item-name")?.textContent?.trim();
       const text = name ? this.infos.get(name) : undefined;
       if (text) addInfo(el, text);
@@ -920,6 +917,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   override getControlValue(key: string): unknown {
     if (key === "checkForUpdates") return updateChoiceOf(this.plugin.settings);
+    if (key === "handwritingOnDevice") {
+      return handwritingReaderOf(this.plugin.settings, this.ownModelHere());
+    }
     return shownValue(this.plugin.settings, key);
   }
 
@@ -952,6 +952,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.update();
       return;
     }
+    if (key === "handwritingOnDevice") {
+      // Saved by the plugin, which offers Grape if it is needed now.
+      await this.plugin.setHandwritingReader(String(value));
+      // Its rows show only while something reads.
+      this.update();
+      return;
+    }
     if (key === "pressureWidth") {
       // Saved by the plugin, which redraws every open notebook's ink.
       await this.plugin.setPressureWidth(value as boolean);
@@ -968,6 +975,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       // An approval still pending in the browser would otherwise land on the
       // vendor the user just left.
       this.plugin.cancelOpenRouterConnect();
+      // Saved by the plugin, which keeps the key and model of the one left.
+      await this.plugin.switchLlmVendor(value as LlmVendor);
+      this.update();
+      return;
     }
     storeShownValue(this.plugin.settings, key, value);
     await this.plugin.saveSettings();
@@ -975,7 +986,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     if (key === "speechModel") this.plugin.speech.store();
     if (changesTabLayout(key)) this.update();
     // Turned on: Grape is needed now, so offer it if it is not here.
-    if ((key === "handwritingOnDevice" || key === "checkHandwrittenWords") && value === true) {
+    if (key === "checkHandwrittenWords" && value === true) {
       await this.plugin.grape.model.check();
       this.plugin.grape.offer("ask");
     }
@@ -1063,16 +1074,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "fingers",
           "tap",
         ]),
-        this.more("writing", "Pen options, text boxes, colors, highlighter, lasso"),
-        this.info(
-          dropdown(
-            "tuckPenOptionsOnWrite",
-            "Hide pen options while writing",
-            "",
-            PEN_OPTIONS_ON_WRITE_NAMES,
-            ["pen", "options", "pill", "hide", "tuck", "toolbar"],
-          ),
-          DESC.tuckPenOptionsOnWrite,
+        this.more(
+          "writing",
+          Platform.isMobile ? "Text boxes, colors, lasso" : "Text boxes, colors, lasso, cursor",
         ),
         this.info(
           toggle("textDragSize", "Drag to size text boxes", "", [
@@ -1087,21 +1091,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           drawnRow("Custom colors", "", (s) => this.drawCustomColors(s), ["palette"]),
           DESC.customColors,
         ),
-        controlRow(
-          "Highlighter opacity",
-          "",
-          // In percent; data.json keeps 0–1 (settings-data.ts converts).
-          { type: "slider", key: "highlighterAlpha", min: 10, max: 100, step: 5 },
-          ["transparency", "alpha"],
-        ),
-        this.info(
-          toggle("straightHighlighter", "Straighten highlighter strokes", "", [
-            "highlighter",
-            "straight",
-            "line",
-          ]),
-          DESC.straightHighlighter,
-        ),
         this.info(
           toggle("lassoTouches", "Lasso takes what it touches", "", [
             "lasso",
@@ -1110,30 +1099,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "notability",
           ]),
           DESC.lassoAnyPart,
-        ),
-        controlRow(
-          "Zoom box line spacing",
-          "Page px added after each line; negative overlaps.",
-          { type: "slider", key: "zoomBoxLineStep", min: -50, max: 100, step: 5 },
-          ["magnifier", "zoom", "line", "spacing", "offset", "overlap"],
-        ),
-        this.info(
-          controlRow(
-            "Zoom box auto-advance threshold",
-            "Triggers in the right percentage; 33% means the right third.",
-            { type: "slider", key: "zoomBoxAutoAdvanceThreshold", min: 10, max: 50, step: 1 },
-            [
-              "magnifier",
-              "zoom",
-              "advance",
-              "threshold",
-              "trigger",
-              "percentage",
-              "line",
-              "scroll",
-            ],
-          ),
-          DESC.zoomBoxAutoAdvance,
         ),
         {
           ...this.info(
@@ -1858,9 +1823,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     ];
     return this.section(
       "ai",
-      "AI with your own key",
+      "AI and handwriting",
       "sparkles",
       [
+        ...this.handwritingRows(),
         drawnRow(
           "Set up an AI service",
           "Transcribe, ask and make pictures with your own key.",
@@ -1870,8 +1836,117 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
         ...rows.map(fold),
       ],
-      () => [{ text: folded() ? "Not set up" : VENDORS[settings.llmVendor].label }],
+      () => [
+        {
+          text: `${READER_NAMES[handwritingReaderOf(settings, this.ownModelHere())]} · ${
+            folded() ? "AI not set up" : VENDORS[settings.llmVendor].label
+          }`,
+        },
+      ],
     );
+  }
+
+  /** Whether a model learned from the user's handwriting is on this device. */
+  private ownModelHere(): boolean {
+    return this.learningState?.files.current ?? false;
+  }
+
+  /**
+   * Reading handwriting on this device, at the head of "AI and handwriting":
+   * which model reads (none, Grape, or the one learned from the user's own
+   * writing: one choice where there were two switches in two places), and
+   * while one does, what else reads with it. The models themselves are
+   * downloaded and managed under "Models on this device".
+   */
+  private handwritingRows(): SettingDefinition[] {
+    const { settings } = this.plugin;
+    const reading = (): boolean => settings.handwritingOnDevice !== false;
+    // Whether "Your model" is offered depends on the files: the tab is
+    // rebuilt once they are read. Only while the tab is on screen: Obsidian
+    // also asks for the rows when the plugin loads, for its search, and
+    // state read then would be shown, out of date, when the tab opens.
+    if (this.containerEl.isConnected) this.loadLearning();
+    const choices: Record<string, string> = { off: READER_NAMES.off, grape: READER_NAMES.grape };
+    if (this.ownModelHere()) choices.mine = READER_NAMES.mine;
+    return [
+      this.info(
+        // One choice stored as two switches: getControlValue and
+        // storeControlValue read and write both under this key.
+        controlRow(
+          "Read handwriting with",
+          "",
+          { type: "dropdown", key: "handwritingOnDevice", options: choices },
+          [
+            "read handwriting on this device",
+            "read with my model",
+            "handwriting model",
+            "handwriting",
+            "recognition",
+            "grape",
+            "learned",
+            "search",
+            "offline",
+          ],
+        ),
+        "Reads your notebooks on this device, so search, links and titles find your " +
+          "handwriting; nothing leaves the device. Grape is FineNotes' own model; your model is " +
+          "Grape after it learned your handwriting from the practice sheets (Learn your " +
+          "handwriting, below). In beta: it misreads some words, more so in small or hurried " +
+          "writing.",
+      ),
+      {
+        ...this.info(
+          toggle("checkHandwrittenWords", "Underline words it may have misread", "", [
+            "handwriting",
+            "spelling",
+            "correct",
+            "misread",
+            "underline",
+          ]),
+          "A test. After a page is read, words it is not sure of get a dotted underline. Tap " +
+            "one with a finger to correct the reading, confirm it, or ignore the word; " +
+            "learning your handwriting uses your answers too. Uses the word list built into " +
+            "FineNotes, plus your own words.txt in the plugin's handwriting folder.",
+        ),
+        visible: reading,
+      },
+      {
+        ...this.info(
+          toggle("calcNotes", "Calculate lines that end in =", "", [
+            "calculation notes",
+            "calculate",
+            "calculator",
+            "maths",
+            "math",
+            "sum",
+            "equals",
+            "answer",
+          ]),
+          CALC_NOTES_INFO,
+        ),
+        visible: reading,
+      },
+      this.info(
+        drawnRow(
+          "Learn your handwriting",
+          "",
+          (s) => this.drawLearnRow(s),
+          [
+            "write the practice sheets",
+            "learn my handwriting",
+            "handwriting",
+            "practice",
+            "sheet",
+            "learn",
+            "personal",
+            "fine-tune",
+            "recognition",
+          ],
+          reading,
+        ),
+        this.learnInfo(),
+      ),
+    ];
   }
 
   /** Ideas, bugs, support and FineNotes' accounts: one line of links at the very end. */
@@ -2001,49 +2076,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           `${MODEL_PURPOSE.grape} ${download}`,
         ),
         this.info(
-          toggle("handwritingOnDevice", "Read handwriting on this device (beta)", "", [
-            "handwriting",
-            "recognition",
-            "search",
-            "offline",
-          ]),
-          "Reads your notebooks with Grape, or with your own model below. In beta: it " +
-            "misreads some words, more so in small or hurried writing, so check what it reads " +
-            "before relying on it.",
-        ),
-        {
-          ...this.info(
-            toggle("checkHandwrittenWords", "Underline words it may have misread", "", [
-              "handwriting",
-              "spelling",
-              "correct",
-              "misread",
-              "underline",
-            ]),
-            "A test. After a page is read, words it is not sure of get a dotted underline. Tap " +
-              "one with a finger to correct the reading, confirm it, or ignore the word; " +
-              "learning your handwriting uses your answers too. Uses the word list built into " +
-              "FineNotes, plus your own words.txt in the plugin's handwriting folder.",
-          ),
-          visible: reading,
-        },
-        {
-          ...this.info(
-            toggle("calcNotes", "Calculate lines that end in =", "", [
-              "calculation notes",
-              "calculate",
-              "calculator",
-              "maths",
-              "math",
-              "sum",
-              "equals",
-              "answer",
-            ]),
-            CALC_NOTES_INFO,
-          ),
-          visible: reading,
-        },
-        this.info(
           drawnRow(
             "Your handwriting model",
             "",
@@ -2071,41 +2103,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]
             .filter(Boolean)
             .join(" "),
-        ),
-        {
-          ...this.info(
-            toggle("useLearnedHandwriting", "Read with my model", "", [
-              "handwriting",
-              "learned",
-              "personal",
-              "grape",
-              "fine-tune",
-            ]),
-            "On: your notebooks are read with the model learned from your handwriting. Off: " +
-              "with Grape alone. Switching it off keeps your model on this device, ready to " +
-              "switch on again.",
-          ),
-          visible: () => reading() && onDevice,
-        },
-        this.info(
-          drawnRow(
-            "Learn your handwriting",
-            "",
-            (s) => this.drawLearnRow(s),
-            [
-              "write the practice sheets",
-              "learn my handwriting",
-              "handwriting",
-              "practice",
-              "sheet",
-              "learn",
-              "personal",
-              "fine-tune",
-              "recognition",
-            ],
-            reading,
-          ),
-          this.learnInfo(),
         ),
         ...others.map((store) =>
           this.info(
@@ -2336,72 +2333,61 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /**
-   * "Learn your handwriting": how far it has come, a button for the next
-   * practice sheet and one to learn, and the sheets as chips under the row,
-   * each opening its sheet. While a run is on, the learn button shows its
-   * progress, filling up as a bar, and Stop ends it; closing the settings
-   * leaves it running.
+   * "Learn your handwriting": how far it has come, and one button that opens
+   * the Learn your handwriting window, named for its next step (Write sheet
+   * 1, Learn now). While a run is on it shows the progress, filling up as a
+   * bar; Stop is in the window. Closing the settings leaves a run going.
    */
   private drawLearnRow(setting: Setting): void {
     setting.settingEl.addClass("goodobsidian-learn-step");
-    removeOwn(setting.settingEl, "goodobsidian-sheet-chips");
     const learning = this.learningState;
     if (!learning) {
       this.loadLearning();
       return;
     }
-    const host = this.plugin.learningHost();
     const learner = this.plugin.learner;
-    const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
-    const lines = learning.sheets.reduce((sum, sheet) => sum + sheet.written, 0);
-    const enough = lines + learning.answeredAt.length >= MIN_PRACTICE_LINES;
     setting.setDesc(learnSummary(learning.sheets, PRACTICE_SETS.length));
-    const next = nextSheetAction(learning.sheets, PRACTICE_SETS.length);
-    setting.addButton((b) => {
-      b.setButtonText(next.label).onClick(async () => {
+    // One button: the window's next step, which it opens (view/learn-window.ts).
+    setting.addButton((open) => {
+      open.buttonEl.addClass("goodobsidian-learn-button");
+      // Filled, as the next step; while a run is on, the bar fills it instead.
+      open.setCta();
+      open.onClick(() => {
         this.plugin.closeSettings();
-        if (next.kind === "continue") await this.app.workspace.openLinkText(next.path, "", false);
-        else await writePracticePage(host);
-      });
-      // The first thing to do, until there is enough to learn from.
-      if (!enough) b.setCta();
-    });
-    setting.addButton((learn) => {
-      learn.buttonEl.addClass("goodobsidian-learn-button");
-      learn.onClick(() => void learner.start());
-      if (enough) learn.setCta();
-      const stop = setting.controlEl.createEl("button", {
-        text: "Stop",
-        cls: "goodobsidian-learn-stop",
+        this.plugin.openLearnWindow();
       });
       const show = (): void => {
         const progress = learner.progress;
-        learn.setDisabled(progress !== null || !enough);
-        learn.setButtonText(
-          progress
-            ? progressLabel(progress, Date.now())
-            : learning.files.current
-              ? "Learn again"
-              : "Learn now",
+        const view = learnWindow({
+          sheets: learning.sheets,
+          sets: PRACTICE_SETS.length,
+          corrections: learning.answeredAt.length,
+          run: progress,
+          result: null,
+          symbolsWanted: false,
+          now: Date.now(),
+        });
+        const next = view.buttons.find((button) => button.cta) ?? view.buttons[0];
+        open.setButtonText(
+          progress ? progressLabel(progress, Date.now()) : (next?.label ?? "Open"),
         );
-        learn.buttonEl.setCssProps({
+        open.buttonEl.toggleClass("mod-cta", progress === null);
+        open.buttonEl.setCssProps({
           "--gob-learn-progress": progress
             ? `${Math.round((100 * progress.step) / progress.steps)}%`
             : "0%",
         });
-        learn.buttonEl.toggleClass("is-learning", progress !== null);
-        stop.toggleClass("is-hidden", progress === null);
+        open.buttonEl.toggleClass("is-learning", progress !== null);
       };
-      stop.addEventListener("click", () => learner.stop());
       let running = learner.progress !== null;
       const unsubscribe = learner.subscribe(() => {
         // The tab was closed or redrawn: this row is gone.
-        if (!learn.buttonEl.isConnected) {
+        if (!open.buttonEl.isConnected) {
           unsubscribe();
           return;
         }
         const now = learner.progress !== null;
-        // A run ended: the model, its sheets and the buttons change with it.
+        // A run ended: the model and its sheets change with it.
         if (running && !now) {
           unsubscribe();
           this.reloadLearning();
@@ -2412,68 +2398,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       });
       show();
     });
-    const list = setting.settingEl.createDiv({ cls: "goodobsidian-sheet-chips" });
-    for (const sheet of learning.sheets) {
-      const use = sheetUse(sheet, record);
-      const done = sheet.written >= sheet.prompts;
-      const chip = list.createEl("button", {
-        cls: `goodobsidian-sheet-chip clickable-icon${use === "used" ? " is-used" : ""}`,
-      });
-      chip.setAttribute("aria-label", `${sheet.title}: ${sheetText(sheet, use)}`);
-      setIcon(
-        chip.createSpan({ cls: "goodobsidian-sheet-mark" }),
-        use === "used" ? "circle-check" : done || sheet.written > 0 ? "circle-dot" : "circle",
-      );
-      chip.createSpan({
-        cls: "goodobsidian-sheet-title",
-        text: isSymbolSet(sheet.set) ? "Symbols" : sheet.set ? `Sheet ${sheet.set}` : sheet.title,
-      });
-      chip.createSpan({
-        cls: "goodobsidian-sheet-state",
-        text: `${sheet.written}/${sheet.prompts}`,
-      });
-      chip.addEventListener("click", () => {
-        this.plugin.closeSettings();
-        void this.app.workspace.openLinkText(sheet.path, "", false);
-      });
-    }
-    // The symbol sheet sits among the sheets from the start: learning takes
-    // the text sheets, the symbol sheet, or both, whichever were written.
-    // Beside a symbol sheet written before symbols were added, a chip writes
-    // a sheet of just those.
-    const added = learning.newSymbols;
-    if (!learning.sheets.some((sheet) => isSymbolSet(sheet.set)) || (added && added.length > 0)) {
-      const chip = list.createEl("button", { cls: "goodobsidian-sheet-chip clickable-icon" });
-      chip.setAttribute(
-        "aria-label",
-        added && added.length > 0
-          ? `Write the ${added.length} symbols added since your symbol sheet: links and maths signs`
-          : "Write the symbol sheet: digits, operators and signs",
-      );
-      setIcon(chip.createSpan({ cls: "goodobsidian-sheet-mark" }), "circle-plus");
-      chip.createSpan({
-        cls: "goodobsidian-sheet-title",
-        text: added && added.length > 0 ? "New symbols" : "Symbols",
-      });
-      chip.addEventListener("click", () => {
-        this.plugin.closeSettings();
-        void writeSymbolPractice(host);
-      });
-    }
-    // The corrected words the model has not learned from, toward the next
-    // round: a tracker, not a button.
-    const fresh = newCorrections(learning.answeredAt, record);
-    const words = list.createDiv({
-      cls: `goodobsidian-sheet-chip goodobsidian-words-chip${fresh >= RELEARN_AFTER ? " is-due" : ""}`,
-      attr: { role: "img" },
-    });
-    words.setAttribute(
-      "aria-label",
-      correctionsText(fresh, learning.answeredAt.length, record !== undefined),
-    );
-    setIcon(words.createSpan({ cls: "goodobsidian-sheet-mark" }), "spell-check");
-    words.createSpan({ cls: "goodobsidian-sheet-title", text: "Words" });
-    words.createSpan({ cls: "goodobsidian-sheet-state", text: `${fresh}/${RELEARN_AFTER}` });
   }
 
   /** Swap the learned model for the one before the last learning; swapping again goes forward. */

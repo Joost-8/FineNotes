@@ -81,7 +81,6 @@ const { MANUAL_PROVIDER_ID } = await import("../../src/recognition/manual");
 const { GRAPE_MODEL } = await import("../../src/recognition/hwr/grape-model");
 const { speechAsset } = await import("../../src/audio/speech-models");
 const { savedPenLabel } = await import("../../src/model/saved-pens");
-const { SYMBOL_SET } = await import("../../src/recognition/practice");
 
 type Settings = typeof DEFAULT_SETTINGS;
 type FakeSetting = InstanceType<typeof Setting>;
@@ -157,6 +156,13 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       settings.debugHud = on;
       return Promise.resolve();
     }),
+    // As the plugin: both stored switches, and Grape offered when it reads.
+    setHandwritingReader: vi.fn((choice: string) => {
+      settings.handwritingOnDevice = choice !== "off";
+      if (choice !== "off") settings.useLearnedHandwriting = choice === "mine";
+      if (choice !== "off") calls.push("grape:offer:ask");
+      return Promise.resolve();
+    }),
     setPressureWidth: vi.fn((on: boolean) => {
       calls.push(`pressureWidth:${on}`);
       settings.pressureWidth = on;
@@ -229,6 +235,12 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
     closeSettings: vi.fn(() => calls.push("closeSettings")),
     modelReleased: vi.fn((id: string) => calls.push(`released:${id}`)),
     cancelOpenRouterConnect: vi.fn(() => calls.push("cancelConnect")),
+    openLearnWindow: vi.fn(() => calls.push("learnWindow")),
+    switchLlmVendor: vi.fn((vendor: Settings["llmVendor"]) => {
+      calls.push("save");
+      settings.llmVendor = vendor;
+      return Promise.resolve();
+    }),
     startOpenRouterConnect: vi.fn(() => {
       calls.push("startConnect");
       return Promise.resolve();
@@ -347,7 +359,7 @@ function blockAfter(all: Row[], name: string, skip = 0): Def {
   return def;
 }
 
-const AI = "AI with your own key";
+const AI = "AI and handwriting";
 /** One row per default saved pen, named as the pen. */
 const DEFAULT_PEN_NAMES = DEFAULT_SETTINGS.savedPens.map((pen) => savedPenLabel(pen));
 const MODELS = "Models on this device";
@@ -405,11 +417,14 @@ const MODEL_ROWS = [
   ["Voice · Whisper base", "render"],
   ["Size and language", "render"],
   ["Handwriting · Grape 2.0", "render"],
-  ["Read handwriting on this device (beta)", "toggle:handwritingOnDevice"],
+  ["Your handwriting model", "render"],
+] as const;
+
+/** The head of "AI and handwriting": reading handwriting on this device. */
+const READING_ROWS = [
+  ["Read handwriting with", "dropdown:handwritingOnDevice"],
   ["Underline words it may have misread", "toggle:checkHandwrittenWords"],
   ["Calculate lines that end in =", "toggle:calcNotes"],
-  ["Your handwriting model", "render"],
-  ["Read with my model", "toggle:useLearnedHandwriting"],
   ["Learn your handwriting", "render"],
 ] as const;
 
@@ -427,14 +442,9 @@ describe("the rows", () => {
       ...DEFAULT_PEN_NAMES.map((name) => [WRITING, name, "render"]),
       [WRITING, "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
       [WRITING, "More", "action"],
-      [WRITING, "Hide pen options while writing", "dropdown:tuckPenOptionsOnWrite"],
       [WRITING, "Drag to size text boxes", "toggle:textDragSize"],
       [WRITING, "Custom colors", "render"],
-      [WRITING, "Highlighter opacity", "slider:highlighterAlpha"],
-      [WRITING, "Straighten highlighter strokes", "toggle:straightHighlighter"],
       [WRITING, "Lasso takes what it touches", "toggle:lassoTouches"],
-      [WRITING, "Zoom box line spacing", "slider:zoomBoxLineStep"],
-      [WRITING, "Zoom box auto-advance threshold", "slider:zoomBoxAutoAdvanceThreshold"],
       [WRITING, "Cursor over the page", "dropdown:penCursor"],
       ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
       [PAGES, "Page appearance", "dropdown:pageAppearance"],
@@ -449,6 +459,7 @@ describe("the rows", () => {
       [PAGES, "New notebook button in the file explorer", "toggle:showNewNotebookInExplorer"],
       [PAGES, "Show notebook folders as notebooks", "toggle:folderNotebooks"],
       ...MODEL_ROWS.map(([name, kind]) => [MODELS, name, kind]),
+      ...READING_ROWS.map(([name, kind]) => [AI, name, kind]),
       [AI, "Set up an AI service", "render"],
       [AI, "AI service", "dropdown:llmVendor"],
       [AI, "Endpoint URL", "render"],
@@ -504,13 +515,11 @@ describe("the rows", () => {
     // Rows whose name says it all have no line at all, and an ⓘ for the rest.
     const { tab } = makeTab(makePlugin());
     const all = rows(tab);
-    expect(named(all, "Hide pen options while writing").desc).toBeUndefined();
-    expect(tab.infoOf("Hide pen options while writing")).toMatch(/second tap on the pen/);
+    expect(named(all, "Read handwriting with").desc).toBeUndefined();
+    expect(tab.infoOf("Read handwriting with")).toMatch(/your model is Grape after it learned/);
     expect(tab.infoOf("Page appearance")).toMatch(/⋯ menu/);
     expect(tab.infoOf("Folder for recordings")).toMatch(/^Audio recorded .* own folder/);
     expect(tab.infoOf("Start with")).toBeUndefined();
-    // Auto-advance is switched on the Zoom box's bar; its threshold row says so.
-    expect(tab.infoOf("Zoom box auto-advance threshold")).toMatch(/button on the Zoom box's bar/);
   });
 
   it("finds every merged or renamed setting by its old words", () => {
@@ -555,10 +564,10 @@ describe("the rows", () => {
       SIZES.map((s) => [String(s), String(s)]),
     );
     expect(start.colors).toHaveLength(1);
-    expect(named(all, "Hide pen options while writing").control?.options).toEqual({
-      off: "Never",
-      "until-tap": "Until you tap the pen",
-      "until-lift": "Until the pen lifts",
+    // Your model is offered once there is one (the learned-model tests below).
+    expect(named(all, "Read handwriting with").control?.options).toEqual({
+      off: "Off",
+      grape: "Grape",
     });
     expect(Object.keys(named(all, "Page appearance").control?.options ?? {})).toEqual([
       "light",
@@ -580,8 +589,20 @@ describe("the rows", () => {
       ["google", "Google (Gemini)"],
       ["openrouter", "OpenRouter"],
     ]);
-    const slider = named(all, "Highlighter opacity").control;
-    expect([slider?.min, slider?.max, slider?.step]).toEqual([10, 100, 5]);
+    // These live where they are used now: the pen menu and the Zoom box's gear.
+    for (const moved of [
+      "Hide pen options while writing",
+      "Highlighter opacity",
+      "Straighten highlighter strokes",
+      "Zoom box line spacing",
+      "Zoom box auto-advance threshold",
+      "Read with my model",
+    ]) {
+      expect(
+        all.some((row) => row.def.name === moved),
+        moved,
+      ).toBe(false);
+    }
   });
 
   it("names the vendor's default model where a model can be typed", () => {
@@ -613,10 +634,14 @@ const DEFAULT_MODEL_ROWS = [
   "Voice · Whisper base",
   "Size and language",
   "Handwriting · Grape 2.0",
-  "Read handwriting on this device (beta)",
+  "Your handwriting model",
+];
+
+/** The head of "AI and handwriting" shown by default: Grape reads. */
+const DEFAULT_READING_ROWS = [
+  "Read handwriting with",
   "Underline words it may have misread",
   "Calculate lines that end in =",
-  "Your handwriting model",
   "Learn your handwriting",
 ];
 
@@ -642,14 +667,9 @@ describe("which rows show", () => {
       ...SAVED_PEN_ROWS,
       "Two-finger double-tap to undo",
       "More",
-      "Hide pen options while writing",
       "Drag to size text boxes",
       "Custom colors",
-      "Highlighter opacity",
-      "Straighten highlighter strokes",
       "Lasso takes what it touches",
-      "Zoom box line spacing",
-      "Zoom box auto-advance threshold",
       "Cursor over the page",
       ...SHORTCUT_VISIBLE,
       "Page appearance",
@@ -666,6 +686,7 @@ describe("which rows show", () => {
       // The models' introduction.
       expect.stringMatching(/^\(block \d+\)$/),
       ...DEFAULT_MODEL_ROWS,
+      ...DEFAULT_READING_ROWS,
       "Set up an AI service",
       "Pressure-sensitive pens",
       "Pencil tilt",
@@ -1277,6 +1298,24 @@ describe("the ⓘ after a row's name", () => {
     buttons[0].dispatch("keydown", { key: "Enter" });
     expect(text?.hasClass("is-hidden")).toBe(true);
   });
+
+  it("says what the row says now when Obsidian draws the row again", () => {
+    const row = new Setting();
+    row.setName("Learn your handwriting");
+    addInfo(row.settingEl as never, "Has: 0 copied lines.");
+    // Each update() draws the row again: setName empties the name, ⓘ and all.
+    row.setName("Learn your handwriting");
+    addInfo(row.settingEl as never, "Has: 20 copied lines.");
+    expect(row.nameEl.findAll("goodobsidian-info")).toHaveLength(1);
+    const texts = row.infoEl.findAll("goodobsidian-info-text");
+    expect(texts.map((t) => t.text)).toEqual(["Has: 20 copied lines."]);
+    // Drawn again with the button still there: only the text changes.
+    addInfo(row.settingEl as never, "Has: 21 copied lines.");
+    expect(row.nameEl.findAll("goodobsidian-info")).toHaveLength(1);
+    expect(row.infoEl.findAll("goodobsidian-info-text").map((t) => t.text)).toEqual([
+      "Has: 21 copied lines.",
+    ]);
+  });
 });
 
 describe("callout blocks", () => {
@@ -1439,6 +1478,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
       ink: "Ink dot",
       crosshair: "Crosshair",
       arrow: "Arrow",
+      none: "None",
     });
     expect(cursor.aliases).toEqual(expect.arrayContaining(["cursor", "pointer", "crosshair"]));
     expect(shown(cursor)).toBe(true);
@@ -1693,7 +1733,7 @@ describe("folding sections", () => {
     const plugin = makePlugin({ settingsOpen: ["writing", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
     expect([...new Set(headings)]).toEqual([WRITING, ADVANCED, ""]);
-    expect(headings.filter((h) => h === WRITING)).toHaveLength(21);
+    expect(headings.filter((h) => h === WRITING)).toHaveLength(16);
   });
 
   it("keeps a folded section's rows, so search still finds them", () => {
@@ -1732,7 +1772,7 @@ describe("folding sections", () => {
       ["goodobsidian-status-part", "is-ready"],
       ["goodobsidian-status-part", "is-ready"],
     ]);
-    expect(status(ai)).toBe("Not set up");
+    expect(status(ai)).toBe("Grape · AI not set up");
     expect(status(advanced)).toBe("");
     // The state follows a change made in the tab.
     await tab.setControlValue("defaultSize", "8");
@@ -1926,13 +1966,13 @@ describe("Models on this device", () => {
     const all = rows(makeTab(plugin).tab);
     const at = all.findIndex((r) => r.def.name === "Calculate lines that end in =");
     expect(shown(all[at].def)).toBe(true);
-    expect(all[at + 1].def.name).toBe("Your handwriting model");
+    expect(all[at + 1].def.name).toBe("Learn your handwriting");
   });
 
   it("offers Grape when reading or underlining is switched on", async () => {
     const plugin = makePlugin({ handwritingOnDevice: false });
     const { tab } = makeTab(plugin);
-    await tab.setControlValue("handwritingOnDevice", true);
+    await tab.setControlValue("handwritingOnDevice", "grape");
     await tab.setControlValue("checkHandwrittenWords", true);
     await tab.setControlValue("checkHandwrittenWords", false);
     expect(plugin.calls.filter((c) => c.startsWith("grape:offer"))).toEqual([
@@ -1985,27 +2025,39 @@ describe("the learned handwriting model", () => {
     expect(await learnedMenu(tab)).toBeUndefined();
     const learn = renderRow(named(rows(tab), LEARN));
     expect(learn.descEl.text).toBe("0 of 3 sheets · 0 lines");
-    expect(learn.buttons.map((b) => [b.text, b.cta])).toEqual([
-      ["Write sheet 1", true],
-      ["Learn now", false],
-    ]);
-    expect(learn.buttons[1].disabled).toBe(true);
+    // One button, named for the window's next step.
+    expect(learn.buttons.map((b) => [b.text, b.cta])).toEqual([["Write sheet 1", true]]);
     expect(tab.infoOf(LEARN)).toMatch(/^Needs: at least 10 copied lines or corrected words\./);
     expect(tab.infoOf(LEARN)).toMatch(/Next: 10 more lines or words, then Learn now\.$/);
   });
 
-  it("offers the symbol sheet beside the text sheets, before either is written", async () => {
+  it("reads the vault only while the tab is on screen, not for Obsidian's search", async () => {
+    // Obsidian asks for the rows when the plugin loads; what was read then
+    // was shown when the tab opened, long after (Sheet 1 written, 0 lines).
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    const { tab } = makeTab(plugin);
+    const reader = () => named(rows(tab), "Read handwriting with").control?.options;
+    expect(reader()).not.toHaveProperty("mine");
+    await flush();
+    expect(plugin.calls).not.toContain("update");
+    expect(reader()).not.toHaveProperty("mine");
+    // On screen, it reads them and draws the rows again with what it found.
+    (tab.containerEl as unknown as { isConnected: boolean }).isConnected = true;
+    reader();
+    await flush();
+    expect(plugin.calls).toContain("update");
+    expect(reader()).toHaveProperty("mine", "Your model");
+  });
+
+  it("opens the Learn your handwriting window from its button, closing the settings", async () => {
     const plugin = makePlugin();
     const { tab } = await loaded(plugin);
     const learn = renderRow(named(rows(tab), LEARN));
-    const chips = learn.settingEl.findAll("goodobsidian-sheet-chip");
-    // The symbol sheet, then the tracker of corrected words toward the next round.
-    expect(chips.map((c) => c.textContent)).toEqual(["Symbols", "Words0/50"]);
-    expect(chips[1].attrs["aria-label"]).toMatch(/^Corrected words: none yet\./);
-    chips[0].dispatch("click");
-    await flush();
-    expect(plugin.calls).toContain("closeSettings");
-    expect(plugin.calls).toContain(`practice:${SYMBOL_SET}`);
+    await learn.buttons[0].click();
+    expect(plugin.calls.slice(-2)).toEqual(["closeSettings", "learnWindow"]);
+    // The sheets and the symbol sheet are in the window now, not chips here.
+    expect(learn.settingEl.findAll("goodobsidian-sheet-chip")).toEqual([]);
   });
 
   it("tracks the corrected words the model has not learned from, toward the next round", async () => {
@@ -2029,13 +2081,7 @@ describe("the learned handwriting model", () => {
       }),
     );
     const { tab } = await loaded(plugin);
-    const learn = renderRow(named(rows(tab), LEARN));
-    const words = learn.settingEl.findAll("goodobsidian-words-chip");
-    expect(words.map((c) => c.textContent)).toEqual(["Words2/50"]);
-    expect(words[0].attrs["aria-label"]).toBe(
-      "Corrected words: 2 new since your model learned, of 3 saved. " +
-        "At 50 new words, FineNotes offers to learn again.",
-    );
+    renderRow(named(rows(tab), LEARN));
     expect(tab.infoOf(LEARN)).toContain("and 3 corrected words (2 new since your model learned)");
     expect(tab.infoOf(LEARN)).toContain("Next: 7 more lines or words, then Learn now.");
   });
@@ -2048,7 +2094,11 @@ describe("the learned handwriting model", () => {
     expect(head.descEl.textContent).toBe("In use · 9.8 % → 4.1 % · 1 KB");
     expect(tab.infoOf(LEARNED)).toContain("learned 21 Oct 2026 from 240 of your lines");
     expect(tab.infoOf(LEARNED)).toContain("58 % fewer mistakes.");
-    expect(visible(tab)).toContain("Read with my model");
+    // A learned model here is offered as what reads, and reads by default.
+    expect(named(rows(tab), "Read handwriting with").control?.options).toMatchObject({
+      mine: "Your model",
+    });
+    expect(tab.getControlValue("handwritingOnDevice")).toBe("mine");
     expect((await learnedMenu(tab))?.items.map((i) => i.title)).toEqual(["Delete…"]);
   });
 
@@ -2056,8 +2106,9 @@ describe("the learned handwriting model", () => {
     const plugin = makePlugin({ grape2Model: record });
     plugin.files.set(MODEL, "abcd");
     const { tab } = await loaded(plugin);
-    await tab.setControlValue("useLearnedHandwriting", false);
+    await tab.setControlValue("handwritingOnDevice", "grape");
     expect(plugin.settings.useLearnedHandwriting).toBe(false);
+    expect(plugin.settings.handwritingOnDevice).toBe(true);
     expect(plugin.files.has(MODEL)).toBe(true);
     expect(plugin.settings.grape2Model).toBe(record);
     expect(plugin.calls.filter((c) => c.startsWith("rm:"))).toEqual([]);

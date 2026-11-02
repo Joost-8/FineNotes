@@ -2563,6 +2563,12 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   cursor: var(--goodobsidian-pen-cursor-drawing, crosshair);
 }
 
+/* "None": no pointer over the page while a pen is in hand, for a pen
+   display that shows the nib itself. Space's hand still wins. */
+.goodobsidian-surface.is-no-cursor .goodobsidian-scroll:not(.is-hand, .is-hand-dragging) {
+  cursor: none;
+}
+
 /* On a tablet the thumbs are a readout, not a control: a palm rests on the
    edge of the page and the Pencil starts strokes there, and both belong to
    the page (palm rejection, the stylus touch guards). */
@@ -2742,48 +2748,6 @@ body.is-mobile .goodobsidian-scrollthumb {
 
 .goodobsidian-learn-step > .setting-item-control {
   flex: none;
-}
-
-.goodobsidian-sheet-chips {
-  flex: 1 0 100%;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-4-2);
-  margin-top: var(--size-4-2);
-}
-
-button.goodobsidian-sheet-chip.clickable-icon,
-.goodobsidian-sheet-chip.goodobsidian-words-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--size-2-3);
-  width: auto;
-  height: 32px;
-  padding: 0 var(--size-4-3);
-  border-radius: 999px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  font-size: var(--font-ui-small);
-}
-
-.goodobsidian-sheet-mark {
-  display: flex;
-  color: var(--text-faint);
-  --icon-size: 14px;
-}
-
-.goodobsidian-sheet-chip.is-used .goodobsidian-sheet-mark {
-  color: var(--color-green);
-}
-
-/* Enough corrected words for the next learning round. */
-.goodobsidian-words-chip.is-due .goodobsidian-sheet-mark {
-  color: var(--interactive-accent);
-}
-
-.goodobsidian-sheet-state {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 /* The endpoint URL row: its field goes under the name, full width, so a long
@@ -3564,7 +3528,8 @@ body,
 }
 
 .goodobsidian-popover input[type="range"].goodobsidian-width-range,
-.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range {
+.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
+.goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -3579,7 +3544,8 @@ body,
 
 /* How tall each slider's input (its touch target) is. */
 .goodobsidian-popover input[type="range"].goodobsidian-width-range,
-.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range {
+.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
+.goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range {
   --gob-slider-height: var(--gob-touch);
 }
 
@@ -3596,6 +3562,8 @@ input[type="range"].goodobsidian-player-scrubber {
    `input[type='range']` rules. */
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+.goodobsidian-zoombox-settings
+  input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
   height: var(--gob-slider-height);
   border: none;
@@ -3620,6 +3588,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track 
    its own slider), which put ours 9 px above the bar: `top` is reset. */
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+.goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   top: 0;
   width: 16px;
@@ -3636,6 +3605,8 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
 
 .goodobsidian-popover input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+.goodobsidian-zoombox-settings
+  input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
   top: 0;
@@ -3648,6 +3619,7 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
     transition: none;
   }
@@ -5622,6 +5594,25 @@ button.goodobsidian-imagemenu-swatch {
 /* A switch row (Corrections): the switch sits at the row's right edge. */
 .goodobsidian-aimenu .goodobsidian-aimenu-row .goodobsidian-switch {
   margin-left: auto;
+}
+
+/* "Read with": the icon and name as any row, its choices at the right end
+   where a switch sits. */
+.goodobsidian-aimenu .goodobsidian-aimenu-choice {
+  min-height: var(--gob-touch);
+  padding: 6px;
+}
+
+.goodobsidian-aimenu-choice .goodobsidian-aimenu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* As the rows beside it, which are buttons and take Obsidian's button weight. */
+  font-size: var(--font-ui-medium);
+  font-weight: var(--input-font-weight);
+}
+
+.goodobsidian-aimenu-choice .goodobsidian-segmented {
+  flex: 0 0 auto;
 }
 
 .goodobsidian-aimenu .goodobsidian-aimenu-row:disabled {
@@ -10826,8 +10817,8 @@ button.goodobsidian-sticker-cell.clickable-icon:hover {
 }
 
 /*
- * Settings → Models on this device → Learn now, while a run is on: it fills
- * from the left as it goes (--gob-learn-progress), and Stop shows beside it.
+ * Settings → AI and handwriting → Learn your handwriting's button, while a
+ * run is on: it fills from the left as it goes (--gob-learn-progress).
  */
 button.goodobsidian-learn-button.is-learning {
   background: linear-gradient(
@@ -10838,10 +10829,6 @@ button.goodobsidian-learn-button.is-learning {
   color: var(--text-normal);
   cursor: default;
   opacity: 1;
-}
-
-button.goodobsidian-learn-stop.is-hidden {
-  display: none;
 }
 
 /* ------------------------------------------- highlighting a PDF's text */
@@ -13959,6 +13946,23 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
 }
 
+/* The gear's panel: line spacing and the auto-advance zone, under the
+   bar's right end, over the magnified page (the window clips it). */
+.goodobsidian-zoombox-settings {
+  position: absolute;
+  top: 40px;
+  right: 8px;
+  z-index: 1;
+  width: min(240px, calc(100% - 16px));
+  padding: 6px 12px 2px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  cursor: auto;
+  touch-action: none;
+}
+
 /* The drag grip at the head of the bar; the bar itself drags too. */
 .goodobsidian-zoombox-drag {
   display: inline-flex;
@@ -14378,6 +14382,174 @@ button.clickable-icon.goodobsidian-calc-bkey.is-wide {
 /* Beside another switch, the tapes switch is the last one pushed left. */
 .goodobsidian-ask-actions button:has(+ button.goodobsidian-export-tapes) {
   margin-right: 0;
+}
+
+/* ------------------------------------------- Learn your handwriting */
+
+/* The window (view/learn-window.ts): the lead, the three sheets as marks,
+   what there is to learn from, a run's bar, and the next step as the one
+   filled button. */
+.goodobsidian-learn-window {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.goodobsidian-learn-window .modal-title {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.goodobsidian-learn-icon {
+  display: flex;
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-learn-lead,
+.goodobsidian-learn-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-learn-note {
+  margin-top: var(--size-4-3);
+}
+
+.goodobsidian-learn-sheets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--size-4-2);
+  margin: var(--size-4-4) 0 var(--size-4-2);
+}
+
+.goodobsidian-learn-sheet {
+  padding: var(--size-4-2) var(--size-2-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+
+.goodobsidian-learn-sheet-mark {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--size-2-1);
+  color: var(--text-faint);
+  font-size: var(--font-ui-medium);
+  line-height: 1;
+}
+
+/* Written: a green check; the next to write: dashed in the accent. */
+.goodobsidian-learn-sheet.is-done {
+  border-color: var(--color-green);
+  color: var(--text-normal);
+}
+
+.goodobsidian-learn-sheet.is-done .goodobsidian-learn-sheet-mark {
+  color: var(--color-green);
+}
+
+.goodobsidian-learn-sheet.is-started,
+.goodobsidian-learn-sheet.is-next {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.goodobsidian-learn-sheet.is-next {
+  border-style: dashed;
+}
+
+.goodobsidian-learn-sheet.is-started .goodobsidian-learn-sheet-mark,
+.goodobsidian-learn-sheet.is-next .goodobsidian-learn-sheet-mark {
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-learn-sheet-detail {
+  font-variant-numeric: tabular-nums;
+}
+
+button.goodobsidian-learn-extra.clickable-icon {
+  width: auto;
+  height: 28px;
+  margin-bottom: var(--size-4-2);
+  padding: 0 var(--size-4-3);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-learn-count {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--size-4-2) 0;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-learn-count b {
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-learn-big {
+  margin: var(--size-4-3) 0 var(--size-2-2);
+  font-size: 26px;
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-learn-unit {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-normal);
+}
+
+.goodobsidian-learn-meter {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--background-modifier-border);
+}
+
+.goodobsidian-learn-meter > div {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--interactive-accent);
+}
+
+/* A practice sheet's "Learn my handwriting", on its bar before ⋯: outlined
+   with a count until there is enough to learn from, then filled. */
+button.goodobsidian-learn-sheet.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-3);
+  width: auto;
+  height: 34px;
+  margin: 0 var(--size-2-2);
+  padding: 0 var(--size-4-3);
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--interactive-accent);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+}
+
+button.goodobsidian-learn-sheet.clickable-icon.is-ready {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-learn-sheet-icon {
+  display: flex;
+  --icon-size: 16px;
+}
+
+.goodobsidian-learn-sheet-count {
+  font-weight: var(--font-normal);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
 }
 
 /* A text box whose words a search found (#112): the box's shown copy, laid
