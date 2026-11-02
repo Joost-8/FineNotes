@@ -10,6 +10,13 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Import Notability's new .ntb notes**
+  ([#90](https://github.com/Joost-8/FineNotes/pull/90), thanks
+  [@fariszyzy](https://github.com/fariszyzy)). A `.ntb` file, a zip of
+  them, or an Auto-backup in the new format now imports like a `.note`:
+  handwriting, highlights and shapes, typed text and text boxes, pictures,
+  sticky notes, lined and graph paper, and PDF pages with the ink on the
+  words it marked.
 - **Get the font an imported note was typed in.** When a text box names a
   font this device lacks, the ⚠ beside it in the font menu becomes a
   download, and the import result offers it too. Open-licence fonts (Caveat,
