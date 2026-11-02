@@ -1,4 +1,5 @@
 import { type App, type Component, MarkdownRenderer, Modal } from "obsidian";
+import { t } from "../i18n/translate";
 
 /**
  * "What's new in FineNotes": release notes from the bundled changelog,
@@ -15,7 +16,7 @@ export class WhatsNewModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText("What's new in FineNotes");
+    this.titleEl.setText(t("settings.whatsNew.title"));
     this.modalEl.addClass("goodobsidian-whats-new", "goodobsidian-dialog");
     void MarkdownRenderer.render(this.app, this.notes, this.contentEl, "", this.owner);
   }
