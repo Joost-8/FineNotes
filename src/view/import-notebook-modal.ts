@@ -44,6 +44,8 @@ import {
   stripInkSuffix,
 } from "../model/new-notebook";
 import { buildInkFile } from "../model/serialize";
+import { downloadLabel, familiesIn } from "../model/font-catalogue";
+import { vaultFonts } from "./font-store";
 import { errorMessage } from "../util/errors";
 import { saveImageAttachment } from "./image-import";
 import { isPdf, readPdf } from "../import/pdf";
@@ -461,6 +463,13 @@ export class ImportNotebookModal extends Modal {
       );
     }
 
+    // Fonts the notebooks name that this device lacks, with their download.
+    void listMissingFonts(
+      this.app,
+      el.createDiv(),
+      written.map(({ result }) => result),
+    );
+
     const buttons = new Setting(el);
     const first = written[0];
     if (first) {
@@ -488,6 +497,62 @@ export class ImportNotebookModal extends Modal {
           .setButtonText("Done")
           .onClick(() => this.close()),
       );
+  }
+}
+
+/**
+ * A row for each font the imported notebooks name that this device lacks and
+ * FineNotes can fetch (font-store.ts), with the download the font menu also
+ * offers. Fonts fetched before, on this device or another, are read from the
+ * vault first and get no row.
+ */
+async function listMissingFonts(
+  app: App,
+  el: HTMLElement,
+  results: readonly ImportResult[],
+): Promise<void> {
+  const fonts = vaultFonts(app);
+  const families = familiesIn(results.flatMap((result) => result.doc.pages));
+  await fonts.use(families).catch(() => false);
+  for (const family of families) {
+    const source = fonts.source(family);
+    if (!source || fonts.state(family) !== "fetchable") continue;
+    const row = new Setting(el).setName(family).setDesc("Not on this device");
+    row.descEl.addClass("mod-warning");
+    const mark = row.nameEl.createSpan({ cls: "goodobsidian-import-mark", prepend: true });
+    setIcon(mark, "alert-triangle");
+    const label = downloadLabel(source);
+    row.addExtraButton((button) => {
+      let busy = false;
+      button.extraSettingsEl.addClass("goodobsidian-import-font-get");
+      button
+        .setIcon("download")
+        .setTooltip(label)
+        .onClick(() => {
+          if (busy) return;
+          busy = true;
+          button.extraSettingsEl.addClass("is-busy");
+          button.setIcon("loader");
+          void fonts
+            .fetch(family)
+            .then(() => {
+              // Done: the warning goes, a check takes its place.
+              setIcon(mark, "check");
+              row.setDesc("");
+              row.descEl.removeClass("mod-warning");
+              button.extraSettingsEl.remove();
+            })
+            .catch((error: unknown) => {
+              new Notice(
+                `FineNotes: couldn't get ${source.font.family} — ${errorMessage(error)}`,
+                8000,
+              );
+              busy = false;
+              button.extraSettingsEl.removeClass("is-busy");
+              button.setIcon("download");
+            });
+        });
+    });
   }
 }
 

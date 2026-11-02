@@ -38,6 +38,7 @@ import {
   WorkspaceLeaf,
   normalizePath,
 } from "obsidian";
+import { disposeVaultFonts } from "./view/font-store";
 import {
   ICON_IMPORT_NOTEBOOK,
   ICON_IMPORT_NOTEBOOK_SVG,
@@ -415,6 +416,8 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.setUpReadingGuard();
+    // Fonts fetched for text boxes leave the document with the plugin.
+    this.register(disposeVaultFonts);
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);

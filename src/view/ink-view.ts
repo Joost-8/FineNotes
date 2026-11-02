@@ -368,6 +368,8 @@ import { penCursorStyleOf } from "./pen-cursor";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
 import { obsidianOpenUri } from "../model/home-link";
+import { familiesIn } from "../model/font-catalogue";
+import { vaultFonts } from "./font-store";
 
 /** Quiet time after the page being read changes before it is remembered. */
 const LAST_PAGE_DEBOUNCE_MS = 500;
@@ -853,6 +855,10 @@ export class InkView extends TextFileView {
     this.surface?.setDocument(this.doc);
     this.sidebar?.setDocument(this.doc);
     this.syncSingle();
+    // Fonts fetched for this vault that the notebook's boxes need, from the vault.
+    void vaultFonts(this.app)
+      .use(familiesIn(this.doc.pages))
+      .catch(() => undefined);
   }
 
   /**
@@ -878,6 +884,13 @@ export class InkView extends TextFileView {
   override async onOpen(): Promise<void> {
     this.buildDom();
     this.mounted = true;
+    // A font fetched or read from the vault: boxes set in it wrap anew.
+    this.register(
+      vaultFonts(this.app).onLoad(() => {
+        this.surface?.fontsLoaded();
+        this.sidebar?.invalidate();
+      }),
+    );
     // The file loaded before the view opened: put it on its page now.
     if (this.loadedPath !== null) this.applyPendingPage();
     void this.plugin.maybeShowScribbleNotice();
