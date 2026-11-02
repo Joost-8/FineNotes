@@ -8,6 +8,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-11-02
+
+Page margins, cover tape, fills, path arrows, hearts, arcs and folded or
+typed-on sticky notes store something older versions cannot show: a
+notebook that uses margins or tape opens read-only in FineNotes 2.6 and
+earlier, and the rest show as ordinary ink. Update FineNotes on every
+device first.
+
 ### Added
 
 - **Import Notability's new .ntb notes**
@@ -163,6 +171,59 @@ extracted from the matching section of this file by `release.yml`.
   button in Export as PDF leaves out the paper's lines, grid, dots and
   texture: ink, text, pictures and PDF pages stay, on the paper's colour.
   The choice is kept for the next export.
+- **Margin.** ⋯ → Margin gives a page room to write beside its PDF or paper:
+  on the left, the right or both, 10 to 60 % of the page wide, on plain,
+  lined, grid or dotted paper, for this page, the PDF pages or all pages (PDF
+  pages by default in a notebook of slides and handwritten pages). The PDF or
+  paper keeps its size and place, and a margin on the left moves everything on
+  the page with it, so ink stays on the words it was written over. The page
+  changes as you choose and the slide stays on screen while the width is
+  dragged; one undo takes it all back. The slider never makes a margin
+  narrower than what is written in it; No margin asks first and deletes what
+  lies wholly in it (one undo brings it back). It exports with the page to PDF
+  and pictures; in a notebook with margins, a button in the export dialog
+  steps through all margins, only those with ink, and none.
+- **Hold an export button to see what it does.** A long press on any button
+  in the export dialog shows its description, since a finger cannot hover.
+  Built on Faris's pull request #92.
+- **Draw with a finger**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). ⋯ › Draw
+  with finger lets one finger write while two pan, for when the Pencil is
+  flat or away. The Pencil's first touch turns it off again.
+- **Ask AI about a selection**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). The lasso
+  menu has Ask AI, which sends just the selection as a picture. A new chat
+  now starts without the page, unless "Ask AI starts on the open page" is on.
+- **Whisper large-v3-turbo**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)), on the
+  desktop: the most accurate on-device transcription, kept outside the vault
+  so sync never carries its 574 MB. Every speech model is checked when it
+  loads and downloaded again if a sync replaced it.
+- **The transcript in the Recordings card**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). A
+  recording's card in the sidebar shows its transcript; tap a time to play
+  from there.
+- **Import PDF in the New notebook dialog.** A button at the end of the
+  Paper row makes a notebook of a PDF's pages, from your files or the vault.
+- **Cover tape side handles.** A selected tape has a handle on each end and
+  each long edge: drag one to make the tape longer or taller.
+- **Arrows on the pen and colour rows, for a mouse.** Where a row hides
+  more, an arrow at its faded end slides it on; the wheel scrolls it too.
+- **Links for the iPad's Shortcuts.** `obsidian://finenotes?do=new` opens
+  New notebook (`&last` makes one with your last choices), and
+  `?do=pdf&file=…` makes a notebook from a PDF in the vault and opens it.
+- **The FineNotes inbox.** A PDF saved into the hidden FineNotes inbox
+  folder (from Shortcuts, Files or a file manager) becomes a notebook by
+  itself, in your new-notebook folder.
+- **Drop a PDF on a notebook** to add all its pages after the last one.
+  Dragging from Obsidian's file list works on the iPad too: the drop no
+  longer lands on the file drawer's backdrop.
+- **Laser pointer options**
+  ([#89](https://github.com/Joost-8/FineNotes/pull/89), thanks
+  [@volychev](https://github.com/volychev)). Pick its default colour, which
+  its button shows, and how many dots its trail drops (0 for a smooth beam)
+  under Settings › Writing › More.
+- **No cursor over the page**, on a computer: Cursor › None.
 
 ### Changed
 
@@ -179,9 +240,35 @@ extracted from the matching section of this file by `release.yml`.
   the same way, with a finger, the pen and the Hand tool, or Space held,
   adds the coasting speed to its own, as on an iPhone, so a long notebook
   goes by in a few flicks. Before, every flick started again from rest.
+- **Settings sit where they are used.** Highlighter opacity and Straighten
+  lines are in the highlighter's own settings (pen menu, highlighter in
+  hand); the Zoom box's line spacing and auto-advance zone behind a gear on
+  its bar.
+- **Read with: Off, Grape or Mine.** Reading handwriting on this device
+  and reading with your own model are one choice now, in the AI menu and in
+  Settings › AI and handwriting, whose reading rows need no key.
+- **Each AI service keeps its own model** when you switch between them.
+- **Lasso Screenshot includes the page under the selection**, PDF too
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)); one switch
+  takes ink only, as before.
+- **Learn your handwriting in one window**, and sliders drag at once.
+- **New notebook in the file explorer is on by default** for new installs.
 
 ### Fixed
 
+- **Dragging a slider no longer opens Obsidian's sidebars**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). A finger
+  drag on a size slider, or anywhere on the tool bars and the recording
+  player, was taken as a swipe.
+- **Sticker previews fit their boxes**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)).
+- **Stroke stabilisation works on the iPad**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). It reaches
+  twice as far, so a Pencil's longer wobbles are steadied too.
+- **The highlighter finds the text of large PDFs**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). A PDF whose
+  text failed to load once is read again a little later, instead of never
+  until the notebook reopens.
 - **Tap a sticky note again to type on it.** A tap selected a note with
   text, and every tap after that only kept it selected, so its text could
   only be reached with the Text tool. Now a second tap on a selected note
@@ -208,27 +295,6 @@ extracted from the matching section of this file by `release.yml`.
   relative to itself when it opens, wherever its folder now is, and saves
   the corrected paths. Names with accents (ü, é) are saved in one spelling,
   so they are found on every system.
-  A notebook with a page margin opens read-only in FineNotes 2.6 and earlier,
-  which would re-fit its PDF away from the ink. Update FineNotes on every
-  device first.
-
-### Added
-
-- **Margin.** ⋯ → Margin gives a page room to write beside its PDF or paper:
-  on the left, the right or both, 10 to 60 % of the page wide, on plain,
-  lined, grid or dotted paper, for this page, the PDF pages or all pages (PDF
-  pages by default in a notebook of slides and handwritten pages). The PDF or
-  paper keeps its size and place, and a margin on the left moves everything on
-  the page with it, so ink stays on the words it was written over. The page
-  changes as you choose and the slide stays on screen while the width is
-  dragged; one undo takes it all back. The slider never makes a margin
-  narrower than what is written in it; No margin asks first and deletes what
-  lies wholly in it (one undo brings it back). It exports with the page to PDF
-  and pictures; in a notebook with margins, a button in the export dialog
-  steps through all margins, only those with ink, and none.
-- **Hold an export button to see what it does.** A long press on any button
-  in the export dialog shows its description, since a finger cannot hover.
-  Built on Faris's pull request #92.
 
 ## [2.6.0] - 2026-10-30
 
