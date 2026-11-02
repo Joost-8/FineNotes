@@ -105,6 +105,13 @@ import {
   extractOpenRouterKey,
   generateCodeVerifier,
 } from "./recognition/openrouter-auth";
+import { INBOX_FOLDER, InboxRuns, isInboxPdf } from "./model/inbox";
+import {
+  FINENOTES_LINK_ACTION,
+  parseFinenotesLink,
+  pdfByName,
+  pdfCandidates,
+} from "./model/finenotes-link";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { WhatsNewModal } from "./ui/whats-new-modal";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
@@ -222,6 +229,10 @@ const GRAPE_BRIDGE_DELAY_MS = 8000;
 
 /** How long after the layout is ready the daily update check runs: off the startup path. */
 const UPDATE_CHECK_DELAY_MS = 20_000;
+/** How long an `obsidian://finenotes?do=pdf` link waits for its file to reach the vault. */
+const PDF_LINK_WAIT_MS = 15_000;
+/** How long an inbox notebook waits for a link to claim it before a notice says it is there. */
+const INBOX_LINK_GRACE_MS = 1500;
 /** This device's record of the last update check (update-notice.ts). */
 const UPDATE_KEY = "finenotes:update-check";
 
@@ -519,6 +530,7 @@ export default class GoodObsidianPlugin extends Plugin {
     // once, in the background and well after startup (grape-files.ts).
     this.app.workspace.onLayoutReady(() => {
       this.startup.mark("layout ready");
+      this.startInbox();
       const timer = window.setTimeout(() => {
         const began = performance.now();
         void this.grape.bridge().finally(() => {
@@ -549,6 +561,11 @@ export default class GoodObsidianPlugin extends Plugin {
     // obsidian://goodobsidian-openrouter with a one-time code.
     this.registerObsidianProtocolHandler(OPENROUTER_CALLBACK_ACTION, (params) => {
       void this.handleOpenRouterCallback(params);
+    });
+    // obsidian://finenotes?do=… from the Shortcuts app (finenotes-link.ts).
+    // A cold start can hand the link over before the workspace is up.
+    this.registerObsidianProtocolHandler(FINENOTES_LINK_ACTION, (params) => {
+      this.app.workspace.onLayoutReady(() => void this.handleFinenotesLink(params));
     });
     this.startup.mark("onload done");
   }
@@ -2517,34 +2534,39 @@ export default class GoodObsidianPlugin extends Plugin {
    * the last notebook choices for size and folder layout. The PDF is only
    * read: it stays where it is, and the notebook follows it if it moves.
    */
-  async createNotebookFromPdf(pdf: TFile): Promise<void> {
-    const choices: NotebookChoices = {
-      ...parseNotebookChoices(this.settings.lastNotebookChoices),
-      type: "notebook",
-    };
+  async createNotebookFromPdf(pdf: TFile, open = true): Promise<TFile | null> {
     const folder = pdf.parent && !pdf.parent.isRoot() ? pdf.parent.path : "";
-    await this.createNotebookFromPdfBytes(
+    return this.createNotebookFromPdfBytes(
       pdf.basename,
-      choices,
+      this.pdfNotebookChoices(),
       folder,
       () => this.app.vault.readBinary(pdf),
       pdf.path,
+      open,
     );
+  }
+
+  /** The last notebook choices, as a notebook (a PDF's pages are never a single page). */
+  private pdfNotebookChoices(): NotebookChoices {
+    return { ...parseNotebookChoices(this.settings.lastNotebookChoices), type: "notebook" };
   }
 
   /**
    * A new notebook whose pages are a PDF's. `pdf` is the vault path of a PDF
    * already in the vault, which the notebook reads where it is; or the name of
    * one from the device, whose bytes are saved beside the notebook first (a
-   * notebook keeps its own files).
+   * notebook keeps its own files); or a vault PDF to `move` in beside it (the
+   * inbox's). `folder` undefined is the new-notebook folder. The notebook, or
+   * `null` when none was made.
    */
   private async createNotebookFromPdfBytes(
     title: string,
     choices: NotebookChoices,
-    folder: string,
+    folder: string | undefined,
     read: () => Promise<ArrayBuffer>,
-    pdf: string | { name: string },
-  ): Promise<void> {
+    pdf: string | { name: string } | { move: TFile },
+    open = true,
+  ): Promise<TFile | null> {
     const progress = new Notice("FineNotes: reading PDF pages…", 0);
     let sizes: Array<{ width: number; height: number }>;
     let bytes: ArrayBuffer;
@@ -2554,32 +2576,219 @@ export default class GoodObsidianPlugin extends Plugin {
       sizes = await measurePdfPages(bytes.slice(0));
     } catch (error) {
       new Notice(`FineNotes: couldn't read the PDF — ${errorMessage(error)}`, 8000);
-      return;
+      return null;
     } finally {
       progress.hide();
     }
     if (sizes.length === 0) {
       new Notice("FineNotes: that PDF has no pages.");
-      return;
+      return null;
     }
+    const ownFolder = this.settings.notebookOwnFolder;
     if (typeof pdf === "string") {
-      await this.createNotebook(title, choices, folder, (heading, attachments) =>
-        buildPdfNotebook(choices, heading, attachments, pdf, sizes),
+      return this.createNotebook(
+        title,
+        choices,
+        folder,
+        (heading, attachments) => buildPdfNotebook(choices, heading, attachments, pdf, sizes),
+        ownFolder,
+        open,
       );
-      return;
     }
-    await this.createNotebook(title, choices, folder, async (heading, attachments, home) => {
-      const dir = attachments?.images ?? home;
-      if (dir && !this.app.vault.getFolderByPath(dir)) {
-        await this.app.vault.createFolder(dir).catch(() => undefined);
+    return this.createNotebook(
+      title,
+      choices,
+      folder,
+      async (heading, attachments, home) => {
+        const dir = attachments?.images ?? home;
+        if (dir && !this.app.vault.getFolderByPath(dir)) {
+          await this.app.vault.createFolder(dir).catch(() => undefined);
+        }
+        const stem = sanitizeFileName("move" in pdf ? pdf.move.basename : pdf.name) || "PDF";
+        let path = normalizePath(joinVaultPath(dir, `${stem}.pdf`));
+        for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) {
+          path = normalizePath(joinVaultPath(dir, `${stem} ${n}.pdf`));
+        }
+        if ("move" in pdf) await this.app.fileManager.renameFile(pdf.move, path);
+        else await this.app.vault.createBinary(path, bytes);
+        return buildPdfNotebook(choices, heading, attachments, path, sizes);
+      },
+      ownFolder,
+      open,
+    );
+  }
+
+  // --- The FineNotes inbox (inbox.ts) -------------------------------------------
+
+  /** Each inbox PDF's notebook, shared by the folder watcher and a link that names it. */
+  private readonly inboxRuns = new InboxRuns<TFile | null>();
+  /** Inbox PDFs are read one at a time: each one runs pdf.js over the whole file. */
+  private inboxQueue: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Make the inbox if it is missing, turn what already waits in it into
+   * notebooks, and watch it: a file that arrives (created, or moved in), and
+   * a return to the app, since iPadOS may only show Obsidian a file saved by
+   * another app once it is in front again.
+   */
+  private startInbox(): void {
+    const arrived = (file: TAbstractFile): void => {
+      if (file instanceof TFile && isInboxPdf(file.path)) void this.inboxArrived(file);
+    };
+    this.registerEvent(this.app.vault.on("create", arrived));
+    this.registerEvent(this.app.vault.on("rename", arrived));
+    // A plugin built in a test has no document.
+    if (typeof document !== "undefined") {
+      this.registerDomEvent(document, "visibilitychange", () => {
+        if (document.visibilityState === "visible") this.sweepInbox();
+      });
+    }
+    void (async () => {
+      if (!this.app.vault.getFolderByPath(INBOX_FOLDER)) {
+        await this.app.vault.createFolder(INBOX_FOLDER).catch(() => undefined);
       }
-      const stem = sanitizeFileName(pdf.name) || "PDF";
-      let path = normalizePath(joinVaultPath(dir, `${stem}.pdf`));
-      for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) {
-        path = normalizePath(joinVaultPath(dir, `${stem} ${n}.pdf`));
-      }
-      await this.app.vault.createBinary(path, bytes);
-      return buildPdfNotebook(choices, heading, attachments, path, sizes);
+      this.sweepInbox();
+    })();
+  }
+
+  private sweepInbox(): void {
+    for (const file of this.app.vault.getFolderByPath(INBOX_FOLDER)?.children ?? []) {
+      if (file instanceof TFile && isInboxPdf(file.path)) void this.inboxArrived(file);
+    }
+  }
+
+  /**
+   * The notebook an inbox PDF becomes: made in the new-notebook folder (the
+   * root when none is set), with the PDF moved in beside it, so the inbox is
+   * empty again. Started once, however many times the PDF is seen.
+   */
+  private importInbox(pdf: TFile): Promise<TFile | null> {
+    return this.inboxRuns.run(pdf.path, () => {
+      const run = this.inboxQueue.then(() =>
+        // Gone meanwhile (the user moved it, or another run took it): nothing to do.
+        this.app.vault.getFileByPath(pdf.path) === pdf
+          ? this.createNotebookFromPdfBytes(
+              pdf.basename,
+              this.pdfNotebookChoices(),
+              // The new-notebook folder, or the root: not the folder of
+              // whatever happens to be open, which an arrival knows nothing of.
+              targetFolder(this.settings.newNotebookFolder, ""),
+              () => this.app.vault.readBinary(pdf),
+              { move: pdf },
+              false,
+            )
+          : null,
+      );
+      this.inboxQueue = run.catch(() => undefined);
+      return run;
     });
+  }
+
+  /**
+   * A PDF that turned up in the inbox by itself. A link that named it opens
+   * its notebook; otherwise a notice says it is there, without leaving the
+   * page being written on.
+   */
+  private async inboxArrived(pdf: TFile): Promise<void> {
+    const path = pdf.path;
+    const notebook = await this.importInbox(pdf);
+    if (!notebook) return;
+    // A link usually lands with the file or just after it: give it a moment.
+    await new Promise((resolve) => window.setTimeout(resolve, INBOX_LINK_GRACE_MS));
+    if (this.inboxRuns.claimed(path)) return;
+    const notice = new Notice(`FineNotes: ${stripInkSuffix(notebook.name)} is ready.`, 8000);
+    notice.messageEl.addEventListener("click", () => void this.showNotebook(notebook));
+  }
+
+  /** Open `file` as a notebook in the current tab. */
+  private async showNotebook(file: TFile): Promise<void> {
+    const tab = this.app.workspace.getLeaf(false);
+    await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
+    await this.app.workspace.revealLeaf(tab);
+  }
+
+  /**
+   * The notebook a `do=pdf` link asks for. The inbox may have taken the PDF
+   * already, or take it while the link waits for the file to show up; then
+   * the link opens what the inbox made. A PDF anywhere else becomes a
+   * notebook beside it, as "New notebook from PDF" does.
+   */
+  private async notebookForPdfLink(file: string): Promise<TFile | null> {
+    const known = this.inboxRuns.claim(file);
+    if (known) return known;
+    const pdf = await this.waitForPdf(file);
+    if (!pdf) return null;
+    const meanwhile = this.inboxRuns.claim(file);
+    if (meanwhile) return meanwhile;
+    if (isInboxPdf(pdf.path)) {
+      const run = this.importInbox(pdf);
+      // Ours to open: the watcher, which sees it too, stays quiet.
+      return this.inboxRuns.claim(pdf.path) ?? run;
+    }
+    return this.createNotebookFromPdf(pdf, false);
+  }
+
+  // --- obsidian://finenotes links ------------------------------------------------
+
+  private async handleFinenotesLink(params: Record<string, string>): Promise<void> {
+    const request = parseFinenotesLink(params);
+    if (request.do === "new" && !request.last) {
+      this.openNewNotebookDialog(request.folder ?? "");
+    } else if (request.do === "new") {
+      await this.createNotebook(
+        request.name,
+        parseNotebookChoices(this.settings.lastNotebookChoices),
+        request.folder,
+      );
+    } else if (request.do === "pdf") {
+      const notebook = await this.notebookForPdfLink(request.file);
+      if (notebook) await this.showNotebook(notebook);
+    } else {
+      new Notice(`FineNotes: this link asks for ${request.what}, which FineNotes doesn't know.`);
+    }
+  }
+
+  /**
+   * The vault PDF a link names. A shortcut saves the file and opens the link
+   * at once, so Obsidian may not have seen the file yet: look again every
+   * half second for up to PDF_LINK_WAIT_MS. When it never shows up, say
+   * whether it is on disk at all, which tells "not indexed" from "not there".
+   */
+  private async waitForPdf(file: string): Promise<TFile | null> {
+    const find = (): TFile | null => {
+      for (const path of pdfCandidates(file)) {
+        const found = this.app.vault.getFileByPath(normalizePath(path));
+        if (found) return found;
+      }
+      const pdfs = this.app.vault
+        .getFiles()
+        .filter((f) => f.extension.toLowerCase() === "pdf")
+        .map((f) => ({ path: f.path, name: f.name, mtime: f.stat.mtime }));
+      const byName = pdfByName(file, pdfs);
+      return byName ? this.app.vault.getFileByPath(byName) : null;
+    };
+    let found = find();
+    if (found) return found;
+    const waiting = new Notice(`FineNotes: waiting for ${file}…`, 0);
+    try {
+      const until = Date.now() + PDF_LINK_WAIT_MS;
+      while (!found && Date.now() < until) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        found = find();
+      }
+    } finally {
+      waiting.hide();
+    }
+    if (found) return found;
+    const onDisk = await Promise.all(
+      pdfCandidates(file).map((path) => this.app.vault.adapter.exists(normalizePath(path))),
+    );
+    new Notice(
+      onDisk.some(Boolean)
+        ? `FineNotes: ${file} is in the vault's folder, but Obsidian hasn't picked it up yet. Try the link again in a moment.`
+        : `FineNotes: there is no ${file} in this vault.`,
+      10000,
+    );
+    return null;
   }
 }
