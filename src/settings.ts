@@ -926,10 +926,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     return [
       // Only while one is out: the tab is rebuilt when checking is switched.
       ...(update !== null ? [updateRow] : []),
-      this.info(
-        drawnRow(t("language.name"), "", (s) => this.drawLanguage(s), LANGUAGE_ALIASES),
-        t("language.info"),
-      ),
       block((el) => {
         const box = el.createDiv({ cls: "goodobsidian-callout" });
         const line = box.createDiv({ cls: "goodobsidian-callout-title", text: title });
@@ -944,6 +940,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           this.refreshDomState();
         });
       }, shown),
+      // Below the notices, above the sections: found without opening one.
+      this.info(
+        drawnRow(t("language.name"), "", (s) => this.drawLanguage(s), LANGUAGE_ALIASES),
+        t("language.info"),
+      ),
     ];
   }
 

@@ -437,6 +437,7 @@ describe("the rows", () => {
     const label = VENDORS.anthropic.label;
     expect(rows(tab).map((r) => [r.heading, r.def.name || "(block)", kind(r.def)])).toEqual([
       ["", "(block)", "render"],
+      ["", "Language", "render"],
       [WRITING, "Start with", "render"],
       [WRITING, "Saved pens", "render"],
       ...DEFAULT_PEN_NAMES.map((name) => [WRITING, name, "render"]),
@@ -664,6 +665,7 @@ describe("which rows show", () => {
 
   it("by default: no iPad tip, and the AI group folded into one row", () => {
     expect(visibleNames(makePlugin(), false)).toEqual([
+      "Language",
       "Start with",
       ...SAVED_PEN_ROWS,
       "Two-finger double-tap to undo",
@@ -1745,18 +1747,18 @@ function unfoldedRows(tab: InstanceType<typeof GoodObsidianSettingTab>): Row[] {
 const HEADINGS = [WRITING, SHORTCUTS, PAGES, MODELS, AI, ADVANCED];
 
 describe("folding sections", () => {
-  it("folds every section at first, leaving only their headers and the footer", () => {
+  it("folds every section at first, leaving only their headers, the Language row and the footer", () => {
     const { tab } = makeTab(makePlugin(), false);
     expect(groups(tab).map((g) => [g.heading, g.cls])).toEqual(
       HEADINGS.map((h) => [h, "goodobsidian-section is-folded"]),
     );
-    expect(unfoldedRows(tab).map((r) => r.def.name)).toEqual([FOOTER]);
+    expect(unfoldedRows(tab).map((r) => r.def.name)).toEqual(["Language", FOOTER]);
   });
 
   it("shows the rows of the sections that are open", () => {
     const plugin = makePlugin({ settingsOpen: ["writing", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
-    expect([...new Set(headings)]).toEqual([WRITING, ADVANCED, ""]);
+    expect([...new Set(headings)]).toEqual(["", WRITING, ADVANCED]);
     expect(headings.filter((h) => h === WRITING)).toHaveLength(16);
   });
 
