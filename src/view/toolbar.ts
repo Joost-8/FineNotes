@@ -641,6 +641,8 @@ export interface ToolbarCallbacks {
   onShare?: (anchor: HTMLElement) => void;
   /** Open the ⋯ panel for the page being read; `anchor` is the button. */
   onMore?: (anchor: HTMLElement) => void;
+  /** A practice sheet's "Learn my handwriting": opens the Learn your handwriting window. */
+  onLearnHandwriting?: () => void;
   /** The options pill was placed (it may have moved); `chromeSpans` says where. */
   onPillPlaced?: () => void;
   /** The user dragged the options pill to `dock`; the host keeps it for this device. */
@@ -962,6 +964,9 @@ export class Toolbar {
   private beyondWriting: HTMLElement[] = [];
   /** A practice file: only what writing needs ({@link setPractice}). */
   private practice = false;
+  /** A practice file's "Learn my handwriting", shown only there; its count beside it. */
+  private learnButton: HTMLButtonElement | null = null;
+  private learnCount: HTMLElement | null = null;
   private undoButton: HTMLButtonElement | null = null;
   private redoButton: HTMLButtonElement | null = null;
   /** Width of a panel docked at the host's left edge; the pill stays clear of it. */
@@ -1267,6 +1272,7 @@ export class Toolbar {
     }
     this.addPageButton = this.foldButton(doc, FOLD_RANK.addPage, "plus", "Add page", cb.onAddPage);
     keep(this.foldButton(doc, FOLD_RANK.share, "share", "Export as PDF", cb.onShare));
+    if (cb.onLearnHandwriting) this.buildLearnButton(doc, cb.onLearnHandwriting);
     this.moreButton = this.barButton(doc, "more-horizontal", "More", cb.onMore);
     this.settingsButton = this.foldButton(
       doc,
@@ -5420,6 +5426,7 @@ export class Toolbar {
     if (on === this.practice) return;
     this.practice = on;
     for (const button of this.beyondWriting) button.toggle(!on);
+    this.learnButton?.toggle(on);
     this.fitBar(this.indicatorTool);
     if (on && this.activePenType().tool === "highlighter") this.choosePenType(PEN_TYPES[0]);
     this.closePopover();
@@ -5431,6 +5438,31 @@ export class Toolbar {
 
   private activePenType(): PenTypeSpec {
     return penTypeFor(this.state);
+  }
+
+  /**
+   * "Learn my handwriting" on a practice sheet's bar, before ⋯: the way on
+   * from the sheet. Outlined with a count until there is enough to learn
+   * from, then filled ({@link setLearnCount}).
+   */
+  private buildLearnButton(parent: HTMLElement, open: () => void): void {
+    const button = parent.createEl("button", { cls: "goodobsidian-learn-sheet clickable-icon" });
+    iconOrText(button.createSpan({ cls: "goodobsidian-learn-sheet-icon" }), "graduation-cap", "");
+    button.createSpan({ cls: "goodobsidian-learn-sheet-label", text: "Learn my handwriting" });
+    this.learnCount = button.createSpan({ cls: "goodobsidian-learn-sheet-count" });
+    button.addEventListener("click", open);
+    button.toggle(this.practice);
+    this.learnButton = button;
+  }
+
+  /** The practice sheet's button: how much there is to learn from, and whether it is enough. */
+  setLearnCount(count: string, ready: boolean): void {
+    this.learnCount?.setText(count);
+    this.learnButton?.toggleClass("is-ready", ready);
+    this.learnButton?.setAttribute(
+      "aria-label",
+      ready ? `Learn my handwriting, ${count}` : `Learn my handwriting: ${count} lines so far`,
+    );
   }
 
   /**

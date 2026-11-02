@@ -81,7 +81,6 @@ const { MANUAL_PROVIDER_ID } = await import("../../src/recognition/manual");
 const { GRAPE_MODEL } = await import("../../src/recognition/hwr/grape-model");
 const { speechAsset } = await import("../../src/audio/speech-models");
 const { savedPenLabel } = await import("../../src/model/saved-pens");
-const { SYMBOL_SET } = await import("../../src/recognition/practice");
 
 type Settings = typeof DEFAULT_SETTINGS;
 type FakeSetting = InstanceType<typeof Setting>;
@@ -236,6 +235,7 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
     closeSettings: vi.fn(() => calls.push("closeSettings")),
     modelReleased: vi.fn((id: string) => calls.push(`released:${id}`)),
     cancelOpenRouterConnect: vi.fn(() => calls.push("cancelConnect")),
+    openLearnWindow: vi.fn(() => calls.push("learnWindow")),
     switchLlmVendor: vi.fn((vendor: Settings["llmVendor"]) => {
       calls.push("save");
       settings.llmVendor = vendor;
@@ -2007,27 +2007,20 @@ describe("the learned handwriting model", () => {
     expect(await learnedMenu(tab)).toBeUndefined();
     const learn = renderRow(named(rows(tab), LEARN));
     expect(learn.descEl.text).toBe("0 of 3 sheets · 0 lines");
-    expect(learn.buttons.map((b) => [b.text, b.cta])).toEqual([
-      ["Write sheet 1", true],
-      ["Learn now", false],
-    ]);
-    expect(learn.buttons[1].disabled).toBe(true);
+    // One button, named for the window's next step.
+    expect(learn.buttons.map((b) => [b.text, b.cta])).toEqual([["Write sheet 1", true]]);
     expect(tab.infoOf(LEARN)).toMatch(/^Needs: at least 10 copied lines or corrected words\./);
     expect(tab.infoOf(LEARN)).toMatch(/Next: 10 more lines or words, then Learn now\.$/);
   });
 
-  it("offers the symbol sheet beside the text sheets, before either is written", async () => {
+  it("opens the Learn your handwriting window from its button, closing the settings", async () => {
     const plugin = makePlugin();
     const { tab } = await loaded(plugin);
     const learn = renderRow(named(rows(tab), LEARN));
-    const chips = learn.settingEl.findAll("goodobsidian-sheet-chip");
-    // The symbol sheet, then the tracker of corrected words toward the next round.
-    expect(chips.map((c) => c.textContent)).toEqual(["Symbols", "Words0/50"]);
-    expect(chips[1].attrs["aria-label"]).toMatch(/^Corrected words: none yet\./);
-    chips[0].dispatch("click");
-    await flush();
-    expect(plugin.calls).toContain("closeSettings");
-    expect(plugin.calls).toContain(`practice:${SYMBOL_SET}`);
+    await learn.buttons[0].click();
+    expect(plugin.calls.slice(-2)).toEqual(["closeSettings", "learnWindow"]);
+    // The sheets and the symbol sheet are in the window now, not chips here.
+    expect(learn.settingEl.findAll("goodobsidian-sheet-chip")).toEqual([]);
   });
 
   it("tracks the corrected words the model has not learned from, toward the next round", async () => {
@@ -2051,13 +2044,7 @@ describe("the learned handwriting model", () => {
       }),
     );
     const { tab } = await loaded(plugin);
-    const learn = renderRow(named(rows(tab), LEARN));
-    const words = learn.settingEl.findAll("goodobsidian-words-chip");
-    expect(words.map((c) => c.textContent)).toEqual(["Words2/50"]);
-    expect(words[0].attrs["aria-label"]).toBe(
-      "Corrected words: 2 new since your model learned, of 3 saved. " +
-        "At 50 new words, FineNotes offers to learn again.",
-    );
+    renderRow(named(rows(tab), LEARN));
     expect(tab.infoOf(LEARN)).toContain("and 3 corrected words (2 new since your model learned)");
     expect(tab.infoOf(LEARN)).toContain("Next: 7 more lines or words, then Learn now.");
   });

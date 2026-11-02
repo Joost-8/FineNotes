@@ -113,6 +113,8 @@ export interface AiMenuItem {
   enabled: boolean;
   /** Shown under a disabled entry. */
   reason: string;
+  /** Shown under an enabled entry: where it stands. */
+  detail?: string;
   /** Rendered below a divider, after the actions. */
   footer?: boolean;
   /** Which section: the on-device reader, or the features that need a key (the default). */
@@ -218,45 +220,26 @@ function deviceItems(ctx: AiMenuContext): AiMenuItem[] {
       on: device.calculating,
     },
   ];
-  if (device.learning !== null) {
-    items.push({
-      id: "learn",
-      label: `Learning your handwriting · ${Math.round(device.learning)} %`,
-      icon: "graduation-cap",
-      enabled: false,
-      reason: "Runs in the background; stop it in Settings, Handwriting",
-      section: "device",
-    });
-  } else if (device.practiceFiles === 0) {
-    items.push({
-      id: "practice",
-      label: "Teach it your handwriting…",
-      icon: "graduation-cap",
-      enabled: true,
-      reason: "",
-      section: "device",
-    });
-  } else {
-    items.push(
-      {
-        id: "learn",
-        label: device.learned ? "Learn my handwriting again" : "Learn my handwriting",
-        icon: "graduation-cap",
-        enabled: true,
-        reason: "",
-        section: "device",
-      },
-      {
-        id: "practice",
-        label: "Write another practice set",
-        icon: "pen-line",
-        enabled: true,
-        reason: "",
-        section: "device",
-      },
-    );
-  }
+  // One row for the whole of learning: it opens the Learn your handwriting
+  // window, which shows the next step (view/learn-window.ts).
+  items.push({
+    id: "learn-window",
+    label: "Learn your handwriting…",
+    icon: "graduation-cap",
+    enabled: true,
+    reason: "",
+    detail: learnDetail(device),
+    section: "device",
+  });
   return items;
+}
+
+/** Where learning stands, under its row: a run's share, or what there is so far. */
+function learnDetail(device: DeviceReading): string {
+  if (device.learning !== null) return `Learning · ${Math.round(device.learning)} %`;
+  if (device.learned) return "Learned · learn again for more";
+  if (device.practiceFiles === 0) return "Copy a few lines to start";
+  return `${device.practiceFiles} practice sheet${device.practiceFiles === 1 ? "" : "s"}`;
 }
 
 /**

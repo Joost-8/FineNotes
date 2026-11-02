@@ -2750,48 +2750,6 @@ body.is-mobile .goodobsidian-scrollthumb {
   flex: none;
 }
 
-.goodobsidian-sheet-chips {
-  flex: 1 0 100%;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-4-2);
-  margin-top: var(--size-4-2);
-}
-
-button.goodobsidian-sheet-chip.clickable-icon,
-.goodobsidian-sheet-chip.goodobsidian-words-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--size-2-3);
-  width: auto;
-  height: 32px;
-  padding: 0 var(--size-4-3);
-  border-radius: 999px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  font-size: var(--font-ui-small);
-}
-
-.goodobsidian-sheet-mark {
-  display: flex;
-  color: var(--text-faint);
-  --icon-size: 14px;
-}
-
-.goodobsidian-sheet-chip.is-used .goodobsidian-sheet-mark {
-  color: var(--color-green);
-}
-
-/* Enough corrected words for the next learning round. */
-.goodobsidian-words-chip.is-due .goodobsidian-sheet-mark {
-  color: var(--interactive-accent);
-}
-
-.goodobsidian-sheet-state {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
 /* The endpoint URL row: its field goes under the name, full width, so a long
    URL stays readable on a phone. */
 .goodobsidian-wide-text {
@@ -10768,8 +10726,8 @@ button.goodobsidian-sticker-cell.clickable-icon:hover {
 }
 
 /*
- * Settings → Models on this device → Learn now, while a run is on: it fills
- * from the left as it goes (--gob-learn-progress), and Stop shows beside it.
+ * Settings → AI and handwriting → Learn your handwriting's button, while a
+ * run is on: it fills from the left as it goes (--gob-learn-progress).
  */
 button.goodobsidian-learn-button.is-learning {
   background: linear-gradient(
@@ -10780,10 +10738,6 @@ button.goodobsidian-learn-button.is-learning {
   color: var(--text-normal);
   cursor: default;
   opacity: 1;
-}
-
-button.goodobsidian-learn-stop.is-hidden {
-  display: none;
 }
 
 /* ------------------------------------------- highlighting a PDF's text */
@@ -14337,4 +14291,172 @@ button.clickable-icon.goodobsidian-calc-bkey.is-wide {
 /* Beside another switch, the tapes switch is the last one pushed left. */
 .goodobsidian-ask-actions button:has(+ button.goodobsidian-export-tapes) {
   margin-right: 0;
+}
+
+/* ------------------------------------------- Learn your handwriting */
+
+/* The window (view/learn-window.ts): the lead, the three sheets as marks,
+   what there is to learn from, a run's bar, and the next step as the one
+   filled button. */
+.goodobsidian-learn-window {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.goodobsidian-learn-window .modal-title {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.goodobsidian-learn-icon {
+  display: flex;
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-learn-lead,
+.goodobsidian-learn-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-learn-note {
+  margin-top: var(--size-4-3);
+}
+
+.goodobsidian-learn-sheets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--size-4-2);
+  margin: var(--size-4-4) 0 var(--size-4-2);
+}
+
+.goodobsidian-learn-sheet {
+  padding: var(--size-4-2) var(--size-2-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+
+.goodobsidian-learn-sheet-mark {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--size-2-1);
+  color: var(--text-faint);
+  font-size: var(--font-ui-medium);
+  line-height: 1;
+}
+
+/* Written: a green check; the next to write: dashed in the accent. */
+.goodobsidian-learn-sheet.is-done {
+  border-color: var(--color-green);
+  color: var(--text-normal);
+}
+
+.goodobsidian-learn-sheet.is-done .goodobsidian-learn-sheet-mark {
+  color: var(--color-green);
+}
+
+.goodobsidian-learn-sheet.is-started,
+.goodobsidian-learn-sheet.is-next {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.goodobsidian-learn-sheet.is-next {
+  border-style: dashed;
+}
+
+.goodobsidian-learn-sheet.is-started .goodobsidian-learn-sheet-mark,
+.goodobsidian-learn-sheet.is-next .goodobsidian-learn-sheet-mark {
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-learn-sheet-detail {
+  font-variant-numeric: tabular-nums;
+}
+
+button.goodobsidian-learn-extra.clickable-icon {
+  width: auto;
+  height: 28px;
+  margin-bottom: var(--size-4-2);
+  padding: 0 var(--size-4-3);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-learn-count {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--size-4-2) 0;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-learn-count b {
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-learn-big {
+  margin: var(--size-4-3) 0 var(--size-2-2);
+  font-size: 26px;
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-learn-unit {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-normal);
+}
+
+.goodobsidian-learn-meter {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--background-modifier-border);
+}
+
+.goodobsidian-learn-meter > div {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--interactive-accent);
+}
+
+/* A practice sheet's "Learn my handwriting", on its bar before ⋯: outlined
+   with a count until there is enough to learn from, then filled. */
+button.goodobsidian-learn-sheet.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-3);
+  width: auto;
+  height: 34px;
+  margin: 0 var(--size-2-2);
+  padding: 0 var(--size-4-3);
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--interactive-accent);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+}
+
+button.goodobsidian-learn-sheet.clickable-icon.is-ready {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-learn-sheet-icon {
+  display: flex;
+  --icon-size: 16px;
+}
+
+.goodobsidian-learn-sheet-count {
+  font-weight: var(--font-normal);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
 }

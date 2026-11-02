@@ -56,9 +56,10 @@ describe("the practice file", () => {
       .map((line) => line.text)
       .join(" ");
     expect(words).toMatch(/Handwriting practice/);
-    expect(words).toMatch(/Learn now/);
-    expect(words).toMatch(/Keep this file/);
-    expect(words).toMatch(/set 1 of 3/);
+    // The way on is the sheet's own button, not a settings path.
+    expect(words).toMatch(/Tap Learn my handwriting at the top/);
+    expect(words).not.toMatch(/Settings/);
+    expect(words).toMatch(/set 1 of 3/i);
     expect(promptsOf(cover)).toEqual([]);
     expect(pages.flatMap(promptsOf).map((line) => line.text)).toEqual(PRACTICE_LINES);
     expect(pages.every((p) => p.backdrop.kind === "ruled-wide")).toBe(true);
@@ -204,7 +205,7 @@ describe("the symbol sheet", () => {
       .map((line) => line.text)
       .join(" ");
     expect(words).toMatch(/Symbol practice/);
-    expect(words).toMatch(/Learn now/);
+    expect(words).toMatch(/Tap Learn my handwriting at the top/);
     expect(words).not.toMatch(/set \d of/);
     const prompts = pages.flatMap(promptsOf);
     expect(prompts.map((line) => line.text)).toEqual(SYMBOL_LINES.map((line) => line.symbol));
