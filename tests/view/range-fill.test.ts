@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { rangeFillPercent, rangeValueAt, syncRangeFill } from "../../src/view/range-fill";
+import {
+  rangeFillPercent,
+  rangeKnobX,
+  rangeValueAt,
+  syncRangeFill,
+} from "../../src/view/range-fill";
 
 describe("syncRangeFill", () => {
   it("writes the fill from the input's value, min and max", () => {
@@ -93,6 +98,28 @@ describe("rangeValueAt", () => {
     expect(at(208, 0, 0)).toBe(0);
     expect(rangeValueAt(104, 100, 10, 0, 10, 1, 16)).toBe(0);
     expect(rangeValueAt(105, 100, 10, 0, 10, 1, 16)).toBe(10);
+  });
+});
+
+describe("rangeKnobX", () => {
+  it("puts the knob where rangeValueAt reads it back", () => {
+    for (const value of [0, 10, 35, 50, 99, 100]) {
+      const x = rangeKnobX(value, 100, 216, 0, 100, 16);
+      expect(rangeValueAt(x, 100, 216, 0, 100, 1, 16)).toBe(value);
+    }
+  });
+
+  it("keeps the knob on the bar for a value out of range or an empty range", () => {
+    expect(rangeKnobX(-5, 100, 216, 0, 100, 16)).toBe(108);
+    expect(rangeKnobX(500, 100, 216, 0, 100, 16)).toBe(308);
+    expect(rangeKnobX(3, 100, 216, 3, 3, 16)).toBe(108);
+  });
+
+  it("gives every value its own place on the bar, not only the two ends", () => {
+    // The iPad bug: a knob read as wide as the bar left only min and max.
+    const seen = new Set<number>();
+    for (let x = 100; x <= 316; x += 4) seen.add(rangeValueAt(x, 100, 216, 0, 100, 1, 16));
+    expect(seen.size).toBeGreaterThan(40);
   });
 });
 

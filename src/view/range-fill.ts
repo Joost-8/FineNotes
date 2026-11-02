@@ -45,6 +45,19 @@ export function rangeValueAt(
   return Number((min + steps * step).toFixed(Math.min(decimals + 2, 12)));
 }
 
+/** Where the knob's centre sits for `value`: the inverse of {@link rangeValueAt}. */
+export function rangeKnobX(
+  value: number,
+  left: number,
+  width: number,
+  min: number,
+  max: number,
+  knob: number,
+): number {
+  const share = max > min ? Math.min(1, Math.max(0, (value - min) / (max - min))) : 0;
+  return left + knob / 2 + share * Math.max(0, width - knob);
+}
+
 /** Bring a slider's filled part in line with its value. */
 export function syncRangeFill(range: HTMLInputElement): void {
   range.setCssProps({

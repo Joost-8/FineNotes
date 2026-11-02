@@ -1,7 +1,8 @@
 /**
  * Every slider is dragged by its own pointer events (FineNotes discussion
  * #107): a press anywhere on the bar puts the knob there, and it follows the
- * finger, Pencil or mouse until lifted, firing `input` at each step and
+ * finger, Pencil or mouse until lifted (a press on the knob takes it where
+ * it is, without a jump), firing `input` at each step and
  * `change` once at the end, as the browser's own slider does.
  *
  * Left to WebKit, a slider on the iPad only took a drag that started on its
@@ -11,10 +12,18 @@
  * recogniser is told to leave the slider alone (`data-ignore-swipe`).
  */
 
-import { rangeValueAt } from "./range-fill";
+import { rangeKnobX, rangeValueAt } from "./range-fill";
 
-/** The knob's width when the stylesheet does not say: ours is 16 px. */
-const DEFAULT_KNOB_PX = 16;
+/**
+ * The knob's width, as styles.css draws it. Not read from the page: WebKit
+ * on the iPad answers `getComputedStyle(range, "::-webkit-slider-thumb")`
+ * with the whole input's width, which left the knob no travel, and every
+ * press snapped to min or max.
+ */
+const KNOB_PX = 16;
+
+/** A press this close to the knob's centre takes the knob where it is, px. */
+const GRAB_PX = 22;
 
 /** Make `range` follow a press anywhere on its bar. Call it once per slider. */
 export function dragRange(range: HTMLInputElement): void {
@@ -29,7 +38,8 @@ export function dragRange(range: HTMLInputElement): void {
 
   let held: number | null = null;
   let startValue = "";
-  let knob = DEFAULT_KNOB_PX;
+  /** How far from the knob's centre the press took it, so it does not jump. */
+  let grab = 0;
 
   const moveTo = (x: number): void => {
     const box = range.getBoundingClientRect();
@@ -41,7 +51,7 @@ export function dragRange(range: HTMLInputElement): void {
       Number(range.min || 0),
       Number(range.max || 100),
       step,
-      knob,
+      KNOB_PX,
     );
     const next = String(value);
     if (next === range.value) return;
@@ -54,17 +64,26 @@ export function dragRange(range: HTMLInputElement): void {
     event.preventDefault();
     held = event.pointerId;
     startValue = range.value;
-    const shown = parseFloat(range.win.getComputedStyle(range, "::-webkit-slider-thumb").width);
-    knob = Number.isFinite(shown) && shown > 0 ? shown : DEFAULT_KNOB_PX;
+    const box = range.getBoundingClientRect();
+    const knobX = rangeKnobX(
+      Number(range.value),
+      box.left,
+      box.width,
+      Number(range.min || 0),
+      Number(range.max || 100),
+      KNOB_PX,
+    );
+    // On the knob: it is held where it was touched. Elsewhere: it comes to the press.
+    grab = Math.abs(event.clientX - knobX) <= GRAB_PX ? event.clientX - knobX : 0;
     try {
       range.setPointerCapture(event.pointerId);
     } catch {
       // A pointer the browser does not know (a synthetic one) cannot be captured.
     }
-    moveTo(event.clientX);
+    moveTo(event.clientX - grab);
   });
   range.addEventListener("pointermove", (event) => {
-    if (event.pointerId === held) moveTo(event.clientX);
+    if (event.pointerId === held) moveTo(event.clientX - grab);
   });
   const end = (event: PointerEvent): void => {
     if (event.pointerId !== held) return;
