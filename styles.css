@@ -3529,7 +3529,8 @@ body,
 
 .goodobsidian-popover input[type="range"].goodobsidian-width-range,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
-.goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range {
+.goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
+.goodobsidian-margin input[type="range"].goodobsidian-width-range {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -3545,7 +3546,8 @@ body,
 /* How tall each slider's input (its touch target) is. */
 .goodobsidian-popover input[type="range"].goodobsidian-width-range,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
-.goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range {
+.goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
+.goodobsidian-margin input[type="range"].goodobsidian-width-range {
   --gob-slider-height: var(--gob-touch);
 }
 
@@ -3564,6 +3566,7 @@ input[type="range"].goodobsidian-player-scrubber {
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-zoombox-settings
   input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+.goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
   height: var(--gob-slider-height);
   border: none;
@@ -3589,6 +3592,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track 
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+.goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   top: 0;
   width: 16px;
@@ -3607,6 +3611,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-zoombox-settings
   input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+.goodobsidian-margin input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
   top: 0;
@@ -3620,6 +3625,7 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
     transition: none;
   }
@@ -3733,6 +3739,49 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   font-size: var(--font-ui-medium);
   font-weight: var(--font-semibold, 600);
   text-align: center;
+}
+
+/* The Margin popover (`margin-popover.ts`): the add-page sheet's look, tighter. */
+.goodobsidian-addpage.goodobsidian-margin {
+  padding: 12px;
+}
+
+.goodobsidian-margin-sides button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.goodobsidian-margin-width {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.goodobsidian-margin-width .goodobsidian-width-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.goodobsidian-margin-readout {
+  flex: 0 0 auto;
+  min-width: 3.2em;
+  text-align: right;
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-margin-readout.is-faint {
+  color: var(--text-faint);
+}
+
+.goodobsidian-margin-all {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: var(--font-ui-small);
 }
 
 .goodobsidian-addpage-heading {
@@ -9308,6 +9357,14 @@ input[type="range"].goodobsidian-player-scrubber {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The Margin row's state at its end: "Right 33 %". */
+.goodobsidian-more-value {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
 }
 
 .goodobsidian-more .goodobsidian-more-row.is-danger {

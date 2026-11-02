@@ -201,19 +201,19 @@ extracted from the matching section of this file by `release.yml`.
   relative to itself when it opens, wherever its folder now is, and saves
   the corrected paths. Names with accents (ü, é) are saved in one spelling,
   so they are found on every system.
-A notebook with a widened PDF page opens read-only in FineNotes 2.6 and
-earlier, which would re-fit its PDF away from the ink. Update FineNotes on
-every device first.
+  A notebook with a page margin opens read-only in FineNotes 2.6 and earlier,
+  which would re-fit its PDF away from the ink. Update FineNotes on every
+  device first.
 
 ### Added
 
-- **Add space left or right of a page.** A page added sideways: Add Page
-  now offers Left and Right beside Before, After and Last page. Pick one and
-  a template, as for a new page; a strip of that paper is added beside the
-  page, at the page's own size or, from More from templates, at the size
-  chosen there. The page's own paper or PDF stays where it was, so ink stays
-  on the words it was written over; space on the left moves everything on
-  the page right with it. One undo takes that strip away.
+- **Margin.** ⋯ → Margin gives a page room to write beside its PDF or paper:
+  on the left, the right or both, 10 to 60 % of the page wide, on this page or
+  on all pages. The PDF or paper keeps its size and place, and a margin on the
+  left moves everything on the page with it, so ink stays on the words it was
+  written over. The page changes as you choose; one undo takes it all back. A
+  margin is never made narrower than what is written in it. Built on Faris's
+  pull request #92.
 
 ## [2.6.0] - 2026-10-30
 

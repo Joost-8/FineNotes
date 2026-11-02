@@ -65,7 +65,6 @@ import {
   type ShapeConnector,
   type PageGeometry,
   type PdfFrame,
-  type SidePaper,
   type Recording,
   type PracticeInfo,
   type PrintedText,
@@ -184,7 +183,6 @@ interface StoredPage {
   backdrop: Backdrop;
   epoch?: number;
   bookmarked?: boolean;
-  sidePapers?: SidePaper[];
   tab?: string;
   title?: string;
   sections?: PageSection[];
@@ -349,7 +347,6 @@ function storePage(page: Page): StoredPage {
     backdrop: page.backdrop,
     epoch: isEpoch(page.epoch) ? Math.round(page.epoch) : undefined,
     bookmarked: page.bookmarked === true ? true : undefined,
-    sidePapers: page.sidePapers && page.sidePapers.length > 0 ? page.sidePapers : undefined,
     tab: readTabColor(page.tab),
     title: normalizePageTitle(page.title),
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
@@ -863,7 +860,7 @@ function isPositive(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-/** A PDF backdrop's frame (Add space), only when it is a usable rectangle. */
+/** A backdrop's frame (a page with a margin), only when it is a usable rectangle. */
 function normalizeFrame(raw: unknown): { frame?: PdfFrame } {
   if (!isRecord(raw)) return {};
   const { x, y, width, height } = raw;
@@ -871,22 +868,6 @@ function normalizeFrame(raw: unknown): { frame?: PdfFrame } {
     return {};
   if (!isPositive(width) || !isPositive(height)) return {};
   return { frame: { x, y, width, height } };
-}
-
-/** A widened page's side papers (Add space): each a usable strip with a paper template. */
-function sidePapersOf(raw: unknown): { sidePapers?: SidePaper[] } {
-  if (!Array.isArray(raw)) return {};
-  const papers: SidePaper[] = [];
-  for (const item of raw) {
-    if (!isRecord(item) || typeof item.x !== "number" || !Number.isFinite(item.x)) continue;
-    if (!isPositive(item.width)) continue;
-    const backdrop = normalizeBackdrop(item.backdrop);
-    if (backdrop.kind === "pdf") continue;
-    // The strip itself says where the paper lies; a frame inside it means nothing.
-    const { frame: _frame, ...paper } = backdrop;
-    papers.push({ x: item.x, width: item.width, backdrop: paper });
-  }
-  return papers.length > 0 ? { sidePapers: papers } : {};
 }
 
 function normalizeBackdrop(raw: unknown): Backdrop {
@@ -1135,7 +1116,6 @@ function normalizePage(
     ...(isEpoch(page.epoch) ? { epoch: Math.round(page.epoch) } : {}),
     // Only a literal `true`: anything else in the file is "not bookmarked".
     ...(page.bookmarked === true ? { bookmarked: true as const } : {}),
-    ...sidePapersOf(page.sidePapers),
     ...(readTabColor(page.tab) ? { tab: readTabColor(page.tab) } : {}),
     ...titleOf(page.title),
     ...sectionsOf(page.sections, seenSections),

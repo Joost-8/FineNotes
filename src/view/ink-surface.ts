@@ -3254,6 +3254,27 @@ export class InkSurface {
     this.changed();
   }
 
+  /**
+   * Take back `previous` if it is still the newest step, then make `next` in
+   * its place (none: just take it back): one step that a live control keeps
+   * changing, such as the Margin popover. Returns whether `previous` was
+   * taken back; it was not if another step came after it.
+   */
+  replaceCommand(previous: Command | null, next: Command | null): boolean {
+    const place = this.readingPlace();
+    const took = previous !== null && this.history.withdraw(this.doc, previous);
+    if (next) {
+      this.applyCommand(next);
+      return took;
+    }
+    this.strokeIndex.rebuild(this.doc.pages);
+    this.renderer?.invalidateAll();
+    this.layout();
+    if (previous?.keepsReading) this.keepReading(place);
+    this.changed();
+    return took;
+  }
+
   /** The page being read and where the view is on it, to come back to after pages move. */
   private readingPlace(): { page: Page; y: number } | null {
     const page = this.doc.pages[this.pageIndex];

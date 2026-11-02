@@ -1,13 +1,13 @@
 /**
- * Add space on a notebook's surface: after the page widens, and after an
- * undo takes the space back, the surface lays the pages out again
+ * A margin on a notebook's surface: after the page widens, and after an
+ * undo takes the margin back, the surface lays the pages out again
  * (`layoutStale`), so the page's box follows its size instead of keeping the
  * old one on screen (the page stayed wide after Undo on the iPad).
  */
 import { describe, expect, it, vi } from "vitest";
 import { emptyDocument } from "../../src/model/document";
 import { History } from "../../src/model/history";
-import { AddPageSpace } from "../../src/model/side-space";
+import { SetPageMargin } from "../../src/model/page-margin";
 import { layoutPages } from "../../src/canvas/page-layout";
 
 vi.mock("obsidian", () => ({
@@ -23,8 +23,8 @@ function layoutStale(surface: object): boolean {
   return fn.call(surface);
 }
 
-describe("Add space on the surface", () => {
-  it("lays the page out again after Add space and after its undo", () => {
+describe("A margin on the surface", () => {
+  it("lays the page out again after a margin and after its undo", () => {
     const doc = emptyDocument();
     doc.pages[0].backdrop = { kind: "pdf", path: "Slides.pdf", page: 0 };
     const history = new History();
@@ -38,7 +38,10 @@ describe("Add space on the surface", () => {
     }) as Record<string, unknown>;
     const width = doc.pages[0].geometry.width;
 
-    history.push(doc, new AddPageSpace(doc.pages[0], "left", { kind: "blank" }));
+    history.push(
+      doc,
+      new SetPageMargin([{ page: doc.pages[0], margin: { left: width, right: 0 } }]),
+    );
     expect(doc.pages[0].geometry.width).toBe(width * 2);
     expect(layoutStale(surface)).toBe(true);
     surface.pageLayout = layoutPages(doc.pages);

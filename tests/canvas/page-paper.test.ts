@@ -25,13 +25,9 @@ function recordingContext(): { ctx: CanvasRenderingContext2D; at: () => number }
 }
 
 describe("paintPagePaper", () => {
-  it("paints a widened paper page's own paper in its frame and each side paper in its strip", () => {
+  it("paints a paper page with a margin in its frame only, leaving the margin plain", () => {
     const page = blankPage("p1", { width: 2600, height: 1400 });
     page.backdrop = { kind: "ruled-wide", frame: { x: 600, y: 0, width: 1000, height: 1400 } };
-    page.sidePapers = [
-      { x: 0, width: 600, backdrop: { kind: "squared" } },
-      { x: 1600, width: 1000, backdrop: { kind: "dotted" } },
-    ];
     const { ctx, at } = recordingContext();
     const calls: Array<{ kind: string; x: number; width: number }> = [];
     const painter: BackdropPainter = {
@@ -40,14 +36,10 @@ describe("paintPagePaper", () => {
       }),
     };
     paintPagePaper(painter, ctx, page, 1, { deviceScale: 1, paper: LIGHT_PAPER });
-    expect(calls).toEqual([
-      { kind: "ruled-wide", x: 600, width: 1000 },
-      { kind: "squared", x: 0, width: 600 },
-      { kind: "dotted", x: 1600, width: 1000 },
-    ]);
+    expect(calls).toEqual([{ kind: "ruled-wide", x: 600, width: 1000 }]);
   });
 
-  it("paints a page that was never widened as it always did", () => {
+  it("paints a page without a margin as it always did", () => {
     const page = blankPage();
     const { ctx } = recordingContext();
     const painter: BackdropPainter = { paint: vi.fn() };

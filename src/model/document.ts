@@ -306,9 +306,9 @@ export const RULINGS: readonly Ruling[] = [
 export interface SyntheticBackdrop {
   kind: Ruling;
   /**
-   * Where this paper lies on a page widened with Add space, page px: the
-   * page's own paper keeps its first size there, and the side papers beside
-   * it ({@link Page.sidePapers}) have papers of their own. Absent: the whole page.
+   * Where this paper lies on a page with a margin (`model/page-margin.ts`),
+   * page px: the paper keeps its first size there, and the margin beside it
+   * is plain paper. Absent: the whole page.
    */
   frame?: PdfFrame;
   /** Rule/grid pitch in page px. Ignored for "blank". Default per ruling. */
@@ -417,15 +417,6 @@ export function pdfFrameOf(backdrop: Backdrop, geometry: PageGeometry): PdfFrame
 }
 
 export type Backdrop = SyntheticBackdrop | PdfBackdrop;
-
-/** A strip of a widened page with a paper of its own ({@link Page.sidePapers}). */
-export interface SidePaper {
-  /** Its left edge and width, page px; it runs the page's full height. */
-  x: number;
-  width: number;
-  /** A paper template: a PDF cannot be a side paper. */
-  backdrop: SyntheticBackdrop;
-}
 
 export interface ImageElement {
   id: string;
@@ -759,12 +750,6 @@ export interface Page {
    * bookmarked pages only. Stored only as `true`; absent means not.
    */
   bookmarked?: true;
-  /**
-   * Papers beside the page's own, added with Add space (a page added
-   * sideways), left to right. Each is a strip of the page, full height, with
-   * a template of its own. Absent: none.
-   */
-  sidePapers?: SidePaper[];
   /** A coloured tab the notebook can be opened at (`model/page-tabs`), `#rrggbb`. */
   tab?: string;
   /**
