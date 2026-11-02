@@ -28,6 +28,7 @@
 
 import { type App, Component, Keymap, type TAbstractFile, TFile } from "obsidian";
 import type { PaperTheme } from "../canvas/backdrop";
+import { t } from "../i18n/translate";
 import { DEFAULT_PAGE_GEOMETRY, type Page } from "../model/document";
 import { pageSignature } from "../model/page-signature";
 import { parseInkFile } from "../model/serialize";
@@ -439,12 +440,18 @@ export class PageEmbeds extends Component {
 /** Why an embed shows a link instead of its page. */
 type LinkReason = "missing-page" | "no-pages" | "missing-file" | "unreadable";
 
-const LINK_TITLES: Record<LinkReason, (page: number) => string> = {
-  "missing-page": (page) => `This notebook has no page ${page}.`,
-  "no-pages": () => "This notebook has no pages.",
-  "missing-file": () => "This notebook is not in the vault.",
-  unreadable: () => "This notebook could not be read.",
-};
+function linkTitle(reason: LinkReason, page: number): string {
+  switch (reason) {
+    case "missing-page":
+      return t("view.pageEmbed.missingPage", { page });
+    case "no-pages":
+      return t("view.pageEmbed.noPages");
+    case "missing-file":
+      return t("view.pageEmbed.missingFile");
+    case "unreadable":
+      return t("view.pageEmbed.unreadable");
+  }
+}
 
 /**
  * One `![[Notebook#page=N]]`: the page painted into a canvas, or, when there
@@ -549,7 +556,7 @@ class NotebookPageEmbed extends Component {
       href: this.ctx.linktext,
     });
     link.dataset.href = this.ctx.linktext;
-    link.setAttribute("title", LINK_TITLES[reason](this.target.page));
+    link.setAttribute("title", linkTitle(reason, this.target.page));
     link.toggleClass("is-unresolved", reason === "missing-file");
     link.addEventListener("click", (event) => this.open(event));
     this.linkEl = link;

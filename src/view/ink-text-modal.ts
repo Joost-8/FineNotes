@@ -27,6 +27,7 @@
  */
 
 import { type App, Modal } from "obsidian";
+import { t } from "../i18n/translate";
 import { inkTextLines } from "../model/ink-to-text";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
@@ -51,14 +52,16 @@ export class InkTextModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-contents-modal");
-    this.titleEl.setText(this.correcting ? "Correct" : "Turn into text");
+    this.titleEl.setText(
+      this.correcting ? t("view.inkText.correct") : t("view.inkText.turnIntoText"),
+    );
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
     const field = body.createEl("textarea", {
       cls: "goodobsidian-ask-input",
       attr: {
-        placeholder: "What the ink says",
-        "aria-label": "Text",
+        placeholder: t("view.inkText.placeholder"),
+        "aria-label": t("view.inkText.fieldLabel"),
         maxlength: String(MAX_INK_TEXT),
         enterkeyhint: "done",
         autocomplete: "off",
@@ -68,11 +71,11 @@ export class InkTextModal extends Modal {
     this.keyboard.watch(field, field);
 
     const actions = body.createDiv({ cls: "goodobsidian-ask-actions" });
-    const cancel = actions.createEl("button", { text: "Cancel" });
+    const cancel = actions.createEl("button", { text: t("common.cancel") });
     cancel.addEventListener("click", () => this.close());
     const done = actions.createEl("button", {
       cls: "mod-cta",
-      text: this.correcting ? "Save" : "Replace",
+      text: this.correcting ? t("common.save") : t("view.inkText.replace"),
     });
     const sync = (): void => {
       done.disabled = inkTextLines(field.value).length === 0;

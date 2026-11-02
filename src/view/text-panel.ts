@@ -8,6 +8,7 @@
  * the panel can never break the properties block.
  */
 
+import { t } from "../i18n/translate";
 import { splitFrontmatter } from "../model/serialize";
 
 export class TextPanel {
@@ -21,11 +22,11 @@ export class TextPanel {
     this.el = parent.createDiv({ cls: "goodobsidian-textpanel" });
     this.el.createDiv({
       cls: "goodobsidian-textpanel-label",
-      text: "Text layer: the transcription, your [[links]] and #tags, all searchable",
+      text: t("view.textPanel.label"),
     });
     this.field = this.el.createEl("textarea", {
       cls: "goodobsidian-textpanel-input",
-      attr: { placeholder: "Type or transcribe here: key points, [[links]], #tags…" },
+      attr: { placeholder: t("view.textPanel.placeholder") },
     });
   }
 

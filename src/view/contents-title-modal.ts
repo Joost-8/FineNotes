@@ -16,6 +16,7 @@
  */
 
 import { type App, Modal } from "obsidian";
+import { t } from "../i18n/translate";
 import { MAX_PAGE_TITLE_LENGTH, normalizePageTitle } from "../model/contents";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
@@ -44,16 +45,17 @@ export class ContentsTitleModal extends Modal {
 
   override onOpen(): void {
     const renaming = this.current !== undefined;
-    const fallback = this.section ? `Section on page ${this.index + 1}` : `Page ${this.index + 1}`;
+    const page = this.index + 1;
+    const fallback = this.section
+      ? t("view.contentsTitle.sectionFallback", { page })
+      : t("view.contentsTitle.pageFallback", { page });
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-contents-modal");
-    this.titleEl.setText(renaming ? "Rename in contents" : "Add to contents");
+    this.titleEl.setText(renaming ? t("view.contents.rename") : t("view.contents.add"));
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
     body.createDiv({
       cls: "goodobsidian-ask-note",
-      text: this.section
-        ? "Listed in the Contents tab with its page, and marked by a ribbon in the margin."
-        : "Listed in the Contents tab of the page sidebar, where it starts a section.",
+      text: this.section ? t("view.contentsTitle.sectionNote") : t("view.contentsTitle.pageNote"),
     });
     const row = body.createDiv({ cls: "goodobsidian-contents-field-row" });
     const field = row.createEl("input", {
@@ -62,8 +64,8 @@ export class ContentsTitleModal extends Modal {
       attr: {
         placeholder: fallback,
         "aria-label": this.section
-          ? `Title for a section on page ${this.index + 1}`
-          : `Title for page ${this.index + 1}`,
+          ? t("view.contentsTitle.sectionLabel", { page })
+          : t("view.contentsTitle.pageLabel", { page }),
         maxlength: String(MAX_PAGE_TITLE_LENGTH),
         enterkeyhint: "done",
         autocomplete: "off",
@@ -85,11 +87,11 @@ export class ContentsTitleModal extends Modal {
     this.keyboard.watch(field, row);
 
     const actions = body.createDiv({ cls: "goodobsidian-ask-actions" });
-    const cancel = actions.createEl("button", { text: "Cancel" });
+    const cancel = actions.createEl("button", { text: t("common.cancel") });
     cancel.addEventListener("click", () => this.close());
     const done = actions.createEl("button", {
       cls: "mod-cta",
-      text: renaming ? "Save" : "Add",
+      text: renaming ? t("common.save") : t("view.contentsTitle.add"),
     });
     const finish = (): void => {
       const title = normalizePageTitle(field.value) ?? fallback;

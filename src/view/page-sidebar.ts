@@ -59,6 +59,7 @@
  */
 
 import { Menu, setIcon } from "obsidian";
+import { t, tn } from "../i18n/translate";
 import {
   FILE_KINDS,
   FILE_KIND_EMPTY,
@@ -176,11 +177,11 @@ export interface PageSidebarRenderOptions {
 /** The sidebar's panes: the page thumbnails, the contents, or the note's files. */
 export type SidebarTab = "pages" | "contents" | "files";
 
-const TAB_TITLES: Record<SidebarTab, string> = {
-  pages: "Pages",
-  contents: "Contents",
-  files: "Files",
-};
+function tabTitle(tab: SidebarTab): string {
+  if (tab === "pages") return t("view.sidebar.pages");
+  if (tab === "contents") return t("view.sidebar.contents");
+  return t("view.sidebar.files");
+}
 
 /**
  * Which pages the Pages tab shows: GoodNotes' "All pages" / "Bookmarks only",
@@ -188,20 +189,21 @@ const TAB_TITLES: Record<SidebarTab, string> = {
  */
 export type PageFilter = "all" | "bookmarks" | "contents";
 
-const FILTERS: Record<PageFilter, { label: string; icon: string; empty: string }> = {
-  all: { label: "All pages", icon: "files", empty: "" },
-  bookmarks: {
-    label: "Bookmarks only",
-    icon: "bookmark",
-    empty:
-      "No bookmarked pages yet. Tap the ribbon on a page, or bookmark it from ⋯ in the toolbar or its ⌄ menu.",
-  },
-  contents: {
-    label: "In the contents",
+function filterInfo(filter: PageFilter): { label: string; icon: string; empty: string } {
+  if (filter === "all") return { label: t("view.sidebar.filterAll"), icon: "files", empty: "" };
+  if (filter === "bookmarks") {
+    return {
+      label: t("view.sidebar.filterBookmarks"),
+      icon: "bookmark",
+      empty: t("view.sidebar.filterBookmarksEmpty"),
+    };
+  }
+  return {
+    label: t("view.sidebar.filterContents"),
     icon: "list",
-    empty: "No pages in the contents yet. Give a page a title, or add a heading, from its ⌄ menu.",
-  },
-};
+    empty: t("view.sidebar.filterContentsEmpty"),
+  };
+}
 
 /** Whether `page` passes `filter`. */
 export function pagePassesFilter(page: Page, filter: PageFilter): boolean {
@@ -361,7 +363,7 @@ export class PageSidebar {
   ) {
     this.el = host.createDiv({ cls: "goodobsidian-pagesidebar is-hidden" });
     this.el.setAttribute("role", "navigation");
-    this.el.setAttribute("aria-label", "Pages");
+    this.el.setAttribute("aria-label", t("view.sidebar.pages"));
     // Header and tabs stay put while the thumbnails scroll under them.
     const top = this.el.createDiv({ cls: "goodobsidian-pagesidebar-top" });
     const head = top.createDiv({ cls: "goodobsidian-pagesidebar-head" });
@@ -373,10 +375,13 @@ export class PageSidebar {
       cls: "goodobsidian-pagesidebar-textbutton goodobsidian-pagesidebar-selectall clickable-icon",
     });
     this.selectAllButton.addEventListener("click", () => this.toggleSelectAll());
-    this.titleEl = head.createDiv({ cls: "goodobsidian-pagesidebar-title", text: "Pages" });
+    this.titleEl = head.createDiv({
+      cls: "goodobsidian-pagesidebar-title",
+      text: t("view.sidebar.pages"),
+    });
     const close = head.createEl("button", {
       cls: "goodobsidian-pagesidebar-close clickable-icon",
-      attr: { "aria-label": "Close sidebar", title: "Close sidebar" },
+      attr: { "aria-label": t("view.sidebar.close"), title: t("view.sidebar.close") },
     });
     setIcon(close, "x");
     close.addEventListener("click", () => this.callbacks.onClose());
@@ -394,7 +399,7 @@ export class PageSidebar {
       ["contents", "table-of-contents"],
       ["files", "folder"],
     ] as const) {
-      const label = TAB_TITLES[tab];
+      const label = tabTitle(tab);
       const button = tabs.createEl("button", {
         cls: "goodobsidian-pagesidebar-tab clickable-icon",
         attr: { role: "tab", "aria-label": label, title: label },
@@ -424,7 +429,7 @@ export class PageSidebar {
     });
     this.contentsEmpty = this.contentsEl.createDiv({
       cls: "goodobsidian-contents-empty",
-      text: "Nothing in the contents yet. Give a page a title here, from ⋯ in the toolbar, or from its ⌄ menu, and it starts a section.",
+      text: t("view.sidebar.contentsEmpty"),
     });
     this.contentsAdd = this.contentsEl.createEl("button", {
       cls: "goodobsidian-contents-add clickable-icon",
@@ -437,7 +442,7 @@ export class PageSidebar {
     this.filesEl = this.el.createDiv({ cls: "goodobsidian-pagesidebar-files" });
     this.kindSelect = this.filesEl.createEl("select", {
       cls: "dropdown goodobsidian-files-kind",
-      attr: { "aria-label": "Kind of file" },
+      attr: { "aria-label": t("view.sidebar.kindOfFile") },
     });
     for (const kind of FILE_KINDS) {
       this.kindSelect.createEl("option", { value: kind, text: FILE_KIND_LABELS[kind] });
@@ -453,14 +458,14 @@ export class PageSidebar {
     });
     this.selectBar = this.el.createDiv({
       cls: "goodobsidian-pagesidebar-selectbar is-hidden",
-      attr: { role: "toolbar", "aria-label": "Selected pages" },
+      attr: { role: "toolbar", "aria-label": t("view.sidebar.selectedPages") },
     });
     for (const [action, icon, label] of [
-      ["move", "arrow-up-down", "Move"],
-      ["duplicate", "copy", "Duplicate"],
-      ["bookmark", "bookmark", "Bookmark"],
-      ["export", "share", "Export"],
-      ["delete", "trash-2", "Delete"],
+      ["move", "arrow-up-down", t("view.sidebar.move")],
+      ["duplicate", "copy", t("common.duplicate")],
+      ["bookmark", "bookmark", t("view.sidebar.bookmark")],
+      ["export", "share", t("view.sidebar.export")],
+      ["delete", "trash-2", t("common.delete")],
     ] as const) {
       const button = this.selectBar.createEl("button", {
         cls: "goodobsidian-pagesidebar-selectbar-button clickable-icon",
@@ -486,10 +491,10 @@ export class PageSidebar {
     // button a filled background, and on iPad 20 px of side padding, which
     // left a 36 px icon button no room at all for its icon.
     this.addTile = this.grid.createEl("button", { cls: "goodobsidian-thumb-add clickable-icon" });
-    this.addTile.setAttribute("aria-label", "Add page");
+    this.addTile.setAttribute("aria-label", t("view.sidebar.addPage"));
     const plus = this.addTile.createSpan({ cls: "goodobsidian-thumb-add-icon" });
     setIcon(plus, "plus");
-    this.addTile.createSpan({ text: "Add page" });
+    this.addTile.createSpan({ text: t("view.sidebar.addPage") });
     this.addTile.addEventListener("click", () => this.callbacks.onAddPage(this.addTile));
 
     this.drag = new PageDrag(this.el, this.grid, {
@@ -802,7 +807,7 @@ export class PageSidebar {
     this.pagesEl.toggleClass("is-hidden", tab !== "pages");
     this.contentsEl.toggleClass("is-hidden", tab !== "contents");
     this.filesEl.toggleClass("is-hidden", tab !== "files");
-    const title = TAB_TITLES[tab];
+    const title = tabTitle(tab);
     this.el.setAttribute("aria-label", title);
     this.titleEl.setText(title);
     this.syncChrome();
@@ -910,8 +915,8 @@ export class PageSidebar {
     for (const filter of ["all", "bookmarks", "contents"] as const) {
       menu.addItem((item) =>
         item
-          .setTitle(FILTERS[filter].label)
-          .setIcon(FILTERS[filter].icon)
+          .setTitle(filterInfo(filter).label)
+          .setIcon(filterInfo(filter).icon)
           .setChecked(this.filter === filter)
           .onClick(() => this.setFilter(filter)),
       );
@@ -928,21 +933,24 @@ export class PageSidebar {
   private applyFilter(): void {
     const pages = this.doc?.pages ?? [];
     const filtered = this.filter !== "all";
-    this.filterLabel.setText(FILTERS[this.filter].label);
+    this.filterLabel.setText(filterInfo(this.filter).label);
     this.filterChip.toggleClass("is-filtered", filtered);
     let shown = 0;
     this.thumbs.forEach((view, index) => {
       const page = pages[index];
       const marked = page?.bookmarked === true;
       view.ribbon.toggleClass("is-outline", !marked);
-      view.ribbon.setAttribute("title", marked ? "Remove bookmark" : "Bookmark page");
+      view.ribbon.setAttribute(
+        "title",
+        marked ? t("view.sidebar.removeBookmark") : t("view.sidebar.bookmarkPage"),
+      );
       const passes = !filtered || (page !== undefined && pagePassesFilter(page, this.filter));
       if (passes) shown++;
       view.root.toggleClass("is-hidden", !passes);
     });
     this.addTile.toggleClass("is-hidden", filtered || this.single);
     const none = filtered && this.doc !== null && shown === 0;
-    this.emptyEl.setText(FILTERS[this.filter].empty);
+    this.emptyEl.setText(filterInfo(this.filter).empty);
     this.emptyEl.toggleClass("is-hidden", !none);
     if (this.open) this.schedulePaint();
   }
@@ -1100,7 +1108,7 @@ export class PageSidebar {
       view.name.toggleClass("is-hidden", title === "");
       view.name.setAttribute(
         "aria-label",
-        entries > 1 ? `${title}, and ${entries - 1} more in the contents` : title,
+        entries > 1 ? t("view.sidebar.moreInContents", { title, count: entries - 1 }) : title,
       );
       view.canvas.setCssStyles({ aspectRatio: aspectOf(pages[index]) });
     });
@@ -1171,7 +1179,7 @@ export class PageSidebar {
       const fold = row.createEl("button", {
         cls: "goodobsidian-contents-fold clickable-icon",
         attr: {
-          "aria-label": "Show or hide this page's headings",
+          "aria-label": t("view.sidebar.toggleHeadings"),
           "aria-expanded": String(!folded),
         },
       });
@@ -1183,7 +1191,10 @@ export class PageSidebar {
     const go = row.createEl("button", { cls: "goodobsidian-contents-entry clickable-icon" });
     go.createSpan({ cls: "goodobsidian-contents-title", text: entry.title });
     go.createSpan({ cls: "goodobsidian-contents-page", text: String(entry.index + 1) });
-    go.setAttribute("aria-label", `${entry.title}, page ${entry.index + 1}`);
+    go.setAttribute(
+      "aria-label",
+      t("view.sidebar.entryLabel", { title: entry.title, page: entry.index + 1 }),
+    );
     const section = entry.section;
     go.addEventListener("click", () => {
       if (section) this.callbacks.onSelectSection?.(entry.index, section);
@@ -1191,7 +1202,7 @@ export class PageSidebar {
     });
     const more = row.createEl("button", { cls: "goodobsidian-contents-more clickable-icon" });
     setIcon(more, "chevron-down");
-    more.setAttribute("aria-label", "Contents entry options");
+    more.setAttribute("aria-label", t("view.sidebar.entryOptions"));
     more.addEventListener("click", (event) => {
       if (section) this.showSectionMenu(entry.index, section, event, more);
       else this.showContentsMenu(entry.index, event, more);
@@ -1208,9 +1219,11 @@ export class PageSidebar {
     const act = (action: SectionAction) => () =>
       this.callbacks.onSectionAction?.(action, index, section, anchor);
     const menu = new Menu();
-    menu.addItem((item) => item.setTitle("Rename").setIcon("pencil").onClick(act("rename")));
     menu.addItem((item) =>
-      item.setTitle("Remove from contents").setIcon("list-x").onClick(act("remove")),
+      item.setTitle(t("common.rename")).setIcon("pencil").onClick(act("rename")),
+    );
+    menu.addItem((item) =>
+      item.setTitle(t("view.contents.remove")).setIcon("list-x").onClick(act("remove")),
     );
     menu.showAtMouseEvent(event);
   }
@@ -1224,15 +1237,17 @@ export class PageSidebar {
   private syncContentsAdd(): void {
     const page = this.doc?.pages[this.current];
     this.contentsAdd.toggleClass("is-hidden", this.board || !page || page.title !== undefined);
-    this.contentsAddLabel.setText(`Add page ${this.current + 1} to contents`);
+    this.contentsAddLabel.setText(t("view.sidebar.addPageToContents", { page: this.current + 1 }));
   }
 
   private showContentsMenu(index: number, event: MouseEvent, anchor: HTMLElement): void {
     const act = (action: PageAction) => () => this.callbacks.onPageAction(action, index, anchor);
     const menu = new Menu();
-    menu.addItem((item) => item.setTitle("Rename").setIcon("pencil").onClick(act("contents")));
     menu.addItem((item) =>
-      item.setTitle("Remove from contents").setIcon("list-x").onClick(act("contents-remove")),
+      item.setTitle(t("common.rename")).setIcon("pencil").onClick(act("contents")),
+    );
+    menu.addItem((item) =>
+      item.setTitle(t("view.contents.remove")).setIcon("list-x").onClick(act("contents-remove")),
     );
     menu.showAtMouseEvent(event);
   }
@@ -1255,7 +1270,7 @@ export class PageSidebar {
     const count = name.createSpan({ cls: "goodobsidian-thumb-count" });
     const more = footer.createEl("button", { cls: "goodobsidian-thumb-more clickable-icon" });
     setIcon(more, "chevron-down");
-    more.setAttribute("aria-label", "Page options");
+    more.setAttribute("aria-label", t("view.sidebar.pageOptions"));
 
     const view: ThumbView = {
       root,
@@ -1531,14 +1546,14 @@ export class PageSidebar {
     const whole = this.selected.size >= (this.doc?.pages.length ?? 0);
     menu.addItem((item) =>
       item
-        .setTitle("Move to the start")
+        .setTitle(t("view.sidebar.moveToStart"))
         .setIcon("arrow-up-to-line")
         .setDisabled(whole)
         .onClick(() => this.selectionAction("move-start", anchor)),
     );
     menu.addItem((item) =>
       item
-        .setTitle("Move to the end")
+        .setTitle(t("view.sidebar.moveToEnd"))
         .setIcon("arrow-down-to-line")
         .setDisabled(whole)
         .onClick(() => this.selectionAction("move-end", anchor)),
@@ -1546,7 +1561,7 @@ export class PageSidebar {
     menu.addSeparator();
     menu.addItem((item) =>
       item
-        .setTitle("To another notebook…")
+        .setTitle(t("view.sidebar.toAnotherNotebook"))
         .setIcon("folder-input")
         .onClick(() => this.selectionAction("move-to", anchor)),
     );
@@ -1584,26 +1599,26 @@ export class PageSidebar {
     const overview = this.overview;
     const selecting = this.selecting;
     setIcon(this.expandButton, overview ? "minimize-2" : "maximize-2");
-    const expandLabel = overview ? "Back to the sidebar" : "Show all pages";
+    const expandLabel = overview ? t("view.sidebar.backToSidebar") : t("view.sidebar.showAllPages");
     this.expandButton.setAttribute("aria-label", expandLabel);
     this.expandButton.setAttribute("title", expandLabel);
     this.expandButton.toggleClass("is-hidden", this.single || selecting);
     this.closeButton.toggleClass("is-hidden", overview || selecting);
     this.tabsEl.toggleClass("is-hidden", overview);
     this.selectButton.toggleClass("is-hidden", !overview && !selecting);
-    this.selectButton.setText(selecting ? "Done" : "Select");
+    this.selectButton.setText(selecting ? t("common.done") : t("view.sidebar.select"));
     this.selectButton.toggleClass("is-done", selecting);
     this.selectAllButton.toggleClass("is-hidden", !selecting);
     const shown = this.shownThumbs().length;
     const all = shown > 0 && this.selected.size >= shown;
-    this.selectAllButton.setText(all ? "Deselect all" : "Select all");
+    this.selectAllButton.setText(all ? t("view.sidebar.deselectAll") : t("view.sidebar.selectAll"));
     const count = this.selected.size;
     if (selecting) {
       this.titleEl.setText(
-        count === 0 ? "Select pages" : count === 1 ? "1 page" : `${count} pages`,
+        count === 0 ? t("view.sidebar.selectPages") : tn("view.sidebar.pageCount", count),
       );
     } else {
-      this.titleEl.setText(TAB_TITLES[this.tab]);
+      this.titleEl.setText(tabTitle(this.tab));
     }
     this.selectBar.toggleClass("is-hidden", !selecting);
     // Moving or deleting every page means nothing (and a notebook keeps one).
@@ -1616,7 +1631,7 @@ export class PageSidebar {
     const bookmark = this.selectBarButtons.get("bookmark");
     if (bookmark) {
       const marked = count > 0 && [...this.selected].every((page) => page.bookmarked === true);
-      const label = marked ? "Remove bookmark" : "Bookmark";
+      const label = marked ? t("view.sidebar.removeBookmark") : t("view.sidebar.bookmark");
       bookmark.setAttribute("aria-label", label);
       bookmark.querySelector(".goodobsidian-pagesidebar-selectbar-label")?.setText(label);
       const icon = bookmark.querySelector<HTMLElement>(".goodobsidian-pagesidebar-selectbar-icon");
@@ -1633,7 +1648,11 @@ export class PageSidebar {
     if (this.fixed) {
       // A practice file: rubbing a page out is the one thing to do to it.
       menu.addItem((item) =>
-        item.setTitle("Clear page").setIcon("x-circle").setWarning(true).onClick(act("clear")),
+        item
+          .setTitle(t("view.sidebar.clearPage"))
+          .setIcon("x-circle")
+          .setWarning(true)
+          .onClick(act("clear")),
       );
       menu.showAtMouseEvent(event);
       return;
@@ -1641,14 +1660,14 @@ export class PageSidebar {
     const marked = this.doc?.pages[index]?.bookmarked === true;
     menu.addItem((item) =>
       item
-        .setTitle(marked ? "Remove bookmark" : "Bookmark page")
+        .setTitle(marked ? t("view.sidebar.removeBookmark") : t("view.sidebar.bookmarkPage"))
         .setIcon(marked ? "bookmark-minus" : "bookmark")
         .onClick(act("bookmark")),
     );
     if (!this.single) {
       menu.addItem((item) =>
         item
-          .setTitle("Select pages")
+          .setTitle(t("view.sidebar.selectPages"))
           .setIcon("check-circle")
           .onClick(() => this.beginSelecting(index)),
       );
@@ -1656,69 +1675,75 @@ export class PageSidebar {
     const titled = this.doc?.pages[index]?.title !== undefined;
     menu.addItem((item) =>
       item
-        .setTitle(titled ? "Rename in contents" : "Add to contents")
+        .setTitle(titled ? t("view.contents.rename") : t("view.contents.add"))
         .setIcon(titled ? "pencil" : "list-plus")
         .onClick(act("contents")),
     );
     if (titled) {
       menu.addItem((item) =>
-        item.setTitle("Remove from contents").setIcon("list-x").onClick(act("contents-remove")),
+        item.setTitle(t("view.contents.remove")).setIcon("list-x").onClick(act("contents-remove")),
       );
     }
     if (!this.single) {
       const tabbed = this.doc?.pages[index]?.tab !== undefined;
       menu.addItem((item) =>
         item
-          .setTitle(tabbed ? "Remove page tab" : "Add page tab")
+          .setTitle(tabbed ? t("view.sidebar.removeTab") : t("view.sidebar.addTab"))
           .setIcon("tag")
           .onClick(act("tab")),
       );
     }
     menu.addItem((item) =>
-      item.setTitle("Copy link to page").setIcon("link").onClick(act("copy-link")),
+      item.setTitle(t("view.sidebar.copyLink")).setIcon("link").onClick(act("copy-link")),
     );
     menu.addSeparator();
     if (this.single) {
       menu.addItem((item) =>
         item
-          .setTitle("Convert to notebook")
+          .setTitle(t("view.sidebar.convert"))
           .setIcon("book-open")
           .onClick(act("convert-to-notebook")),
       );
       menu.addSeparator();
     } else {
       menu.addItem((item) =>
-        item.setTitle("Add page before").setIcon("file-plus").onClick(act("add-before")),
+        item.setTitle(t("view.sidebar.addBefore")).setIcon("file-plus").onClick(act("add-before")),
       );
       menu.addItem((item) =>
-        item.setTitle("Add page after").setIcon("file-plus-2").onClick(act("add-after")),
+        item.setTitle(t("view.sidebar.addAfter")).setIcon("file-plus-2").onClick(act("add-after")),
       );
       menu.addSeparator();
       menu.addItem((item) =>
-        item.setTitle("Duplicate page").setIcon("copy").onClick(act("duplicate")),
+        item.setTitle(t("view.sidebar.duplicatePage")).setIcon("copy").onClick(act("duplicate")),
       );
     }
     // A cover is not paper: it changes design and colour, not template.
     if (cover) {
       menu.addItem((item) =>
-        item.setTitle("Change cover").setIcon("palette").onClick(act("change-cover")),
+        item
+          .setTitle(t("view.sidebar.changeCover"))
+          .setIcon("palette")
+          .onClick(act("change-cover")),
       );
     } else {
       menu.addItem((item) =>
-        item.setTitle("Change template").setIcon("layout-template").onClick(act("change-template")),
+        item
+          .setTitle(t("view.sidebar.changeTemplate"))
+          .setIcon("layout-template")
+          .onClick(act("change-template")),
       );
     }
     if (!this.single) {
       menu.addItem((item) =>
         item
-          .setTitle("Move up")
+          .setTitle(t("view.sidebar.moveUp"))
           .setIcon("arrow-up")
           .setDisabled(index <= 0)
           .onClick(act("move-up")),
       );
       menu.addItem((item) =>
         item
-          .setTitle("Move down")
+          .setTitle(t("view.sidebar.moveDown"))
           .setIcon("arrow-down")
           .setDisabled(index >= total - 1)
           .onClick(act("move-down")),
@@ -1726,11 +1751,15 @@ export class PageSidebar {
     }
     menu.addSeparator();
     menu.addItem((item) =>
-      item.setTitle("Clear page").setIcon("x-circle").setWarning(true).onClick(act("clear")),
+      item
+        .setTitle(t("view.sidebar.clearPage"))
+        .setIcon("x-circle")
+        .setWarning(true)
+        .onClick(act("clear")),
     );
     menu.addItem((item) =>
       item
-        .setTitle("Delete page")
+        .setTitle(t("view.sidebar.deletePage"))
         .setIcon("trash-2")
         .setWarning(true)
         .setDisabled(total <= 1)

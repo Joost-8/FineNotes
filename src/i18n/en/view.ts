@@ -1,2 +1,349 @@
 /** English texts for the view area. Every key starts with "view.". See ../README.md. */
-export const view = {} as const;
+export const view = {
+  // Contents (model/contents.ts labels, the contents dialog)
+  "view.contents.add": "Add to contents",
+  "view.contents.rename": "Rename in contents",
+  "view.contents.remove": "Remove from contents",
+  "view.contents.change": "Change contents",
+  "view.contentsTitle.add": "Add",
+  "view.contentsTitle.pageFallback": "Page {page}",
+  "view.contentsTitle.sectionFallback": "Section on page {page}",
+  "view.contentsTitle.pageNote":
+    "Listed in the Contents tab of the page sidebar, where it starts a section.",
+  "view.contentsTitle.sectionNote":
+    "Listed in the Contents tab with its page, and marked by a ribbon in the margin.",
+  "view.contentsTitle.pageLabel": "Title for page {page}",
+  "view.contentsTitle.sectionLabel": "Title for a section on page {page}",
+
+  // Comment dialog
+  "view.comment.title": "Comment",
+  "view.comment.newTitle": "New comment on page {page}",
+  "view.comment.fromAi": "From the AI",
+  "view.comment.yours": "Yours",
+  "view.comment.page": "page {page}",
+  "view.comment.resolved": "Resolved",
+  "view.comment.placeholder": "What is this about?",
+  "view.comment.reopen": "Reopen",
+  "view.comment.resolve": "Resolve",
+  "view.comment.add": "Add",
+
+  // Turn ink into text
+  "view.inkText.correct": "Correct",
+  "view.inkText.turnIntoText": "Turn into text",
+  "view.inkText.placeholder": "What the ink says",
+  "view.inkText.fieldLabel": "Text",
+  "view.inkText.replace": "Replace",
+
+  // Notebook search
+  "view.search.placeholder": "Search this notebook",
+  "view.search.kindHandwriting": "Handwriting",
+  "view.search.kindText": "Text",
+  "view.search.kindPdf": "PDF",
+  "view.search.page": "Page {page}",
+  "view.search.matches.one": "{count} match",
+  "view.search.matches.other": "{count} matches",
+  "view.search.hintTranscribed":
+    "Search the transcribed handwriting, typed text and PDF text on every page.",
+  "view.search.hintUntranscribed":
+    "Search typed text and PDF text on every page. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).",
+  "view.search.noneTranscribed": "No page has all of these words.",
+  "view.search.noneUntranscribed":
+    "No page has all of these words in typed or PDF text. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).",
+
+  // Text layer panel
+  "view.textPanel.label": "Text layer: the transcription, your [[links]] and #tags, all searchable",
+  "view.textPanel.placeholder": "Type or transcribe here: key points, [[links]], #tags…",
+
+  // Move or copy pages to another notebook
+  "view.movePages.title": "Move to another notebook",
+  "view.movePages.modeLabel": "Move or copy",
+  "view.movePages.move": "Move",
+  "view.movePages.find": "Find a notebook",
+  "view.movePages.listLabel": "Notebooks",
+  "view.movePages.confirmMove.one": "Move {count} page",
+  "view.movePages.confirmMove.other": "Move {count} pages",
+  "view.movePages.confirmCopy.one": "Copy {count} page",
+  "view.movePages.confirmCopy.other": "Copy {count} pages",
+  "view.movePages.titleMove.one": "Move {count} page to another notebook",
+  "view.movePages.titleMove.other": "Move {count} pages to another notebook",
+  "view.movePages.titleCopy.one": "Copy {count} page to another notebook",
+  "view.movePages.titleCopy.other": "Copy {count} pages to another notebook",
+  "view.movePages.copyNote": "The pages stay here as well.",
+  "view.movePages.moveNote":
+    "Undo (Cmd/Ctrl+Z) brings the pages back here; the copy in the other notebook stays until you delete it.",
+  "view.movePages.lastUsed": "Last used",
+  "view.movePages.more": "{count} more. Keep typing to narrow the list.",
+  "view.movePages.none": "No notebook by that name.",
+  "view.movePages.newNotebook": "New notebook",
+  "view.movePages.newTitlePlaceholder": "Notebook title",
+  "view.movePages.newTitleLabel": "Title of the new notebook",
+  "view.movePages.pickFirst": "Pick a notebook first.",
+
+  // Screenshot dialog
+  "view.screenshot.title": "Screenshot",
+  "view.screenshot.alt": "The selection as a picture",
+  "view.screenshot.pageBehind": "Page behind",
+  "view.screenshot.share": "Share…",
+  "view.screenshot.saveImage": "Save image",
+  "view.screenshot.saveFailed": "The picture could not be saved.",
+  "view.screenshot.saved": "Saved {path}",
+  "view.screenshot.copyFailed": "The picture could not be copied.",
+  "view.screenshot.copied": "Copied as a picture",
+
+  // The notebook view: notices and labels (ink-view.ts)
+  "view.notebook": "Notebook",
+  "view.notice.plain": "FineNotes: {message}",
+  "view.notice.readOnly": "FineNotes: this notebook is read-only until its ink loads cleanly.",
+  "view.notice.readOnlySetting":
+    "FineNotes: this notebook is read-only. Turn that off in its settings (the gear).",
+  "view.notice.heldLoad":
+    "FineNotes: this notebook's ink did not load, perhaps because the file has not finished syncing. Nothing on disk has changed. The notebook stays read-only until it loads cleanly: reopen it once the sync is done.",
+  "view.notice.newerFormat":
+    "FineNotes: this notebook uses something a newer FineNotes added. It stays read-only here, so nothing in it is lost: update FineNotes to edit it.",
+  "view.clipboardUnavailable": "FineNotes could not use the clipboard here.",
+  "view.bookmarkPages": "Bookmark pages",
+  "view.removeBookmarks": "Remove bookmarks",
+
+  // Transcription
+  "view.transcribe.running": "FineNotes: a transcription is already running.",
+  "view.transcribe.manual": "FineNotes: manual transcription — type it in the text-layer panel.",
+  "view.transcribe.progress": "FineNotes: transcribing…",
+  "view.transcribe.cleared.one":
+    "FineNotes: cleared the transcription of a page that no longer has any writing.",
+  "view.transcribe.cleared.other":
+    "FineNotes: cleared the transcription of {count} pages that no longer have any writing.",
+  "view.transcribe.upToDate": "FineNotes: the transcription is already up to date.",
+  "view.transcribe.nothing": "FineNotes: nothing to transcribe yet.",
+  "view.transcribe.progressPage": "FineNotes: transcribing page {page}… Tap to stop.",
+  "view.transcribe.progressPageOf":
+    "FineNotes: transcribing page {page} ({n} of {total})… Tap to stop.",
+  "view.transcribe.failed": "FineNotes: transcription failed on page {page}: {message}",
+  "view.transcribe.failedSaved.one":
+    "FineNotes: transcription failed on page {page}: {message} (the {count} page before it were saved)",
+  "view.transcribe.failedSaved.other":
+    "FineNotes: transcription failed on page {page}: {message} (the {count} pages before it were saved)",
+  "view.transcribe.stopped": "FineNotes: stopped — transcribed {done} of {total} pages.",
+  "view.transcribe.done.one":
+    "FineNotes: transcribed the page into the text layer — review and edit it.",
+  "view.transcribe.done.other":
+    "FineNotes: transcribed {count} pages into the text layer — review and edit it.",
+  "view.transcribe.skipped.one": "{count} unchanged page skipped.",
+  "view.transcribe.skipped.other": "{count} unchanged pages skipped.",
+
+  // Ask AI: what the chat lists as done, and the consent text
+  "view.ask.chatUnreadable": "FineNotes: that chat could not be read.",
+  "view.ask.consentTitle": "Asking about your notes",
+  "view.ask.consentWhat": "images of the pages you pick, together with your question,",
+  "view.ask.practiceLabel": "Add practice page",
+  "view.ask.markLabel": "Mark",
+  "view.ask.doneTextBox": "Added a text box on page {page}",
+  "view.ask.doneAddPage": "Added page {page}",
+  "view.ask.doneGoTo": "Went to page {page}",
+  "view.ask.doneDrew": "Drew on page {page}",
+  "view.ask.doneTitled": "Titled page {page} “{title}”",
+  "view.ask.doneUntitled": "Removed page {page}'s title",
+  "view.ask.doneContents": "Added “{title}” to the contents",
+  "view.ask.doneBookmarked": "Bookmarked page {page}",
+  "view.ask.doneUnbookmarked": "Unbookmarked page {page}",
+  "view.ask.doneMoved": "Moved page {page} to {to}",
+  "view.ask.doneTable": "Added a table on page {page}",
+  "view.ask.donePractice": "Added practice page {page}",
+  "view.ask.doneComment": "Commented on page {page}",
+  "view.ask.doneHighlighted": "Highlighted part of page {page}",
+  "view.ask.doneBoxed": "Boxed part of page {page}",
+  "view.ask.doneCircled": "Circled part of page {page}",
+  "view.ask.doneHighlightedComment": "Highlighted part of page {page} and commented",
+  "view.ask.doneBoxedComment": "Boxed part of page {page} and commented",
+  "view.ask.doneCircledComment": "Circled part of page {page} and commented",
+
+  // Pictures, PDFs, stickers, scans
+  "view.image.chooseService": "FineNotes: choose an image service in settings first.",
+  "view.image.consentTitle": "Generating an image",
+  "view.image.consentWhat": "the description you typed",
+  "view.image.saved": "FineNotes: picture saved to {path}.",
+  "view.image.insert": "Insert image",
+  "view.image.adding": "FineNotes: adding the picture…",
+  "view.image.addFailed": "FineNotes: couldn't add that picture — {message}",
+  "view.image.pasteFailed": "FineNotes: couldn't paste that picture — {message}",
+  "view.image.placeFailed": "FineNotes: couldn't place {name} — {message}",
+  "view.pdf.fromFiles": "From files",
+  "view.pdf.fromVault": "From vault",
+  "view.pdf.insert": "Insert PDF",
+  "view.pdf.board": "A board has no pages for a PDF's pages. Pictures can go on it.",
+  "view.pdf.singleImport": "Convert this single page to a notebook before importing a PDF.",
+  "view.pdf.singleAdd":
+    "A PDF adds pages, and this is a single page. Convert it to a notebook first.",
+  "view.pdf.readFailed": "FineNotes: couldn't read {name} — {message}",
+  "view.pdf.reading": "FineNotes: reading PDF pages…",
+  "view.pdf.importFailed": "FineNotes: couldn't import PDF — {message}",
+  "view.pdf.importLabel": "Import PDF",
+  "view.pdf.missingSource": "Missing PDF source — {path}",
+  "view.sticker.saved": "FineNotes: saved as a sticker in {folder} ({name}).",
+  "view.sticker.saveFailed": "FineNotes: couldn't save the sticker — {message}",
+  "view.scan.singlePage":
+    "This is a single page, so the scan was placed on it. Convert it to a notebook to scan into new pages.",
+  "view.screenshot.failed": "Couldn't take the screenshot",
+  "view.screenshot.selectionFailed": "Couldn't take a picture of the selection",
+
+  // Handwriting words
+  "view.word.unreadable": "FineNotes: could not read this handwriting.",
+  "view.word.none": "FineNotes: no handwritten word read there.",
+
+  // Templates
+  "view.template.saving": "FineNotes: saving the template…",
+  "view.template.saved": "FineNotes: saved the template as {path}.",
+  "view.template.savedMissing":
+    "FineNotes: saved the template as {path}. {count} missing picture(s) were left out.",
+  "view.template.saveFailed": "FineNotes: couldn't save the template — {message}",
+  "view.template.savingPage": "FineNotes: saving the page as a template…",
+  "view.template.savePageFailed": "FineNotes: couldn't save the page as a template — {message}",
+  "view.template.gone": "FineNotes: that template's file is gone from the vault.",
+  "view.template.useFailed": "FineNotes: couldn't use that template — {message}",
+
+  // Renaming, files, practice files, single pages, links
+  "view.rename.exists": 'FineNotes: "{path}" already exists. Choose another name.',
+  "view.rename.failed": "FineNotes: could not rename the notebook — {message}",
+  "view.files.gone": "FineNotes: {path} is not in the vault any more.",
+  "view.files.serverTranscript": "Handwriting, from the transcript server",
+  "view.practice.penOnly": "A practice file is for copying its lines: pen and eraser only.",
+  "view.practice.fixedPages": "A practice file keeps its pages as they are.",
+  "view.single.converted":
+    "This page is now a notebook: add pages from the toolbar or the page panel.",
+  "view.single.board": "A board has one page, which grows as you write near its edge.",
+  "view.single.page": "This is a single page. Convert it to a notebook to add pages.",
+  "view.link.label": "Link",
+  "view.link.removeLabel": "Remove link",
+  "view.link.pageCopied": "Link to page {page} copied.",
+  "view.link.homeCopied":
+    "Link copied. On an iPad, paste it into a Shortcuts shortcut's Open URLs, then add the shortcut to your Home Screen.",
+  "view.task.label": "Task",
+
+  // Deleting pages
+  "view.deletePage.done": "Deleted page {page}. Undo (Cmd/Ctrl+Z) brings it back.",
+  "view.deletePages.title.one": "Delete {count} page?",
+  "view.deletePages.title.other": "Delete {count} pages?",
+  "view.deletePages.message.one":
+    "Everything on this page goes with it. Undo (Cmd/Ctrl+Z) brings it back.",
+  "view.deletePages.message.other":
+    "Everything on these {count} pages goes with it. Undo (Cmd/Ctrl+Z) brings it back.",
+  "view.deletePages.done.one": "Deleted {count} page. Undo (Cmd/Ctrl+Z) brings it back.",
+  "view.deletePages.done.other": "Deleted {count} pages. Undo (Cmd/Ctrl+Z) brings them back.",
+
+  // Moving pages between notebooks
+  "view.transfer.readOnly": "This notebook is read-only, so its pages can be copied but not moved.",
+  "view.transfer.allPages": "These are all the pages here, so they can be copied but not moved.",
+  "view.transfer.notReady": "that notebook is not ready yet.",
+  "view.transfer.damaged": "that notebook could not be loaded safely.",
+  "view.transfer.changedSince":
+    "FineNotes: this notebook changed since, so the pages stay in {title} as well. Delete them there if you do not want them.",
+  "view.transfer.undoFailed": "FineNotes: could not take the pages out of {title} — {message}",
+  "view.transfer.refuseSingle": "That is a single page, which takes no more pages.",
+  "view.transfer.refusePractice": "A practice set has fixed pages.",
+  "view.transfer.refuseReadOnly": "That notebook is read-only.",
+  "view.transfer.receive.one": "Receive page",
+  "view.transfer.receive.other": "Receive pages",
+  "view.transfer.copied.one": "Copied {count} page to {destination}.",
+  "view.transfer.copied.other": "Copied {count} pages to {destination}.",
+  "view.transfer.moved.one": "Moved {count} page to {destination}.",
+  "view.transfer.moved.other": "Moved {count} pages to {destination}.",
+
+  // "Hide pen options while writing" choices
+  "view.penOptions.never": "Never",
+  "view.penOptions.untilTap": "Until you tap the pen",
+  "view.penOptions.untilLift": "Until the pen lifts",
+
+  // Embedded pages in ordinary notes
+  "view.pageEmbed.missingPage": "This notebook has no page {page}.",
+  "view.pageEmbed.noPages": "This notebook has no pages.",
+  "view.pageEmbed.missingFile": "This notebook is not in the vault.",
+  "view.pageEmbed.unreadable": "This notebook could not be read.",
+
+  // Page sidebar
+  "view.sidebar.pages": "Pages",
+  "view.sidebar.contents": "Contents",
+  "view.sidebar.files": "Files",
+  "view.sidebar.close": "Close sidebar",
+  "view.sidebar.filterAll": "All pages",
+  "view.sidebar.filterBookmarks": "Bookmarks only",
+  "view.sidebar.filterBookmarksEmpty":
+    "No bookmarked pages yet. Tap the ribbon on a page, or bookmark it from ⋯ in the toolbar or its ⌄ menu.",
+  "view.sidebar.filterContents": "In the contents",
+  "view.sidebar.filterContentsEmpty":
+    "No pages in the contents yet. Give a page a title, or add a heading, from its ⌄ menu.",
+  "view.sidebar.contentsEmpty":
+    "Nothing in the contents yet. Give a page a title here, from ⋯ in the toolbar, or from its ⌄ menu, and it starts a section.",
+  "view.sidebar.kindOfFile": "Kind of file",
+  "view.sidebar.selectedPages": "Selected pages",
+  "view.sidebar.move": "Move",
+  "view.sidebar.bookmark": "Bookmark",
+  "view.sidebar.export": "Export",
+  "view.sidebar.addPage": "Add page",
+  "view.sidebar.removeBookmark": "Remove bookmark",
+  "view.sidebar.bookmarkPage": "Bookmark page",
+  "view.sidebar.toggleHeadings": "Show or hide this page's headings",
+  "view.sidebar.entryLabel": "{title}, page {page}",
+  "view.sidebar.entryOptions": "Contents entry options",
+  "view.sidebar.pageOptions": "Page options",
+  "view.sidebar.addPageToContents": "Add page {page} to contents",
+  "view.sidebar.moreInContents": "{title}, and {count} more in the contents",
+  "view.sidebar.moveToStart": "Move to the start",
+  "view.sidebar.moveToEnd": "Move to the end",
+  "view.sidebar.toAnotherNotebook": "To another notebook…",
+  "view.sidebar.backToSidebar": "Back to the sidebar",
+  "view.sidebar.showAllPages": "Show all pages",
+  "view.sidebar.select": "Select",
+  "view.sidebar.selectAll": "Select all",
+  "view.sidebar.deselectAll": "Deselect all",
+  "view.sidebar.selectPages": "Select pages",
+  "view.sidebar.pageCount.one": "{count} page",
+  "view.sidebar.pageCount.other": "{count} pages",
+  "view.sidebar.clearPage": "Clear page",
+  "view.sidebar.removeTab": "Remove page tab",
+  "view.sidebar.addTab": "Add page tab",
+  "view.sidebar.copyLink": "Copy link to page",
+  "view.sidebar.convert": "Convert to notebook",
+  "view.sidebar.addBefore": "Add page before",
+  "view.sidebar.addAfter": "Add page after",
+  "view.sidebar.duplicatePage": "Duplicate page",
+  "view.sidebar.changeCover": "Change cover",
+  "view.sidebar.changeTemplate": "Change template",
+  "view.sidebar.moveUp": "Move up",
+  "view.sidebar.moveDown": "Move down",
+  "view.sidebar.deletePage": "Delete page",
+
+  // The ⋯ panel
+  "view.morePanel.clearBoard": "Clear board",
+  "view.morePanel.clearPage": "Clear page",
+  "view.morePanel.page": "Page {page}",
+  "view.morePanel.removeBookmark": "Remove bookmark",
+  "view.morePanel.bookmark": "Bookmark page",
+  "view.morePanel.copyLink": "Copy link to page",
+  "view.morePanel.duplicatePage": "Duplicate page",
+  "view.morePanel.changeCover": "Change cover",
+  "view.morePanel.changeTemplate": "Change template",
+  "view.morePanel.margin": "Margin",
+  "view.morePanel.marginLeft": "Left {percent} %",
+  "view.morePanel.marginRight": "Right {percent} %",
+  "view.morePanel.marginBoth": "Both {percent} %",
+  "view.morePanel.saveTemplate": "Save page as template",
+  "view.morePanel.clearOrDelete": "Clear or delete page",
+  "view.morePanel.deletePage": "Delete page",
+  "view.morePanel.lightPages": "Light pages",
+  "view.morePanel.darkPages": "Dark pages",
+  "view.morePanel.shortcuts": "Keyboard shortcuts",
+  "view.morePanel.homeLink": "Copy home screen link",
+  "view.morePanel.darkPdf": "Dark PDF pages",
+  "view.morePanel.drawWithFinger": "Draw with finger",
+  "view.morePanel.desk": "Desk",
+  "view.morePanel.toolbar": "Toolbar",
+  "view.morePanel.goToPage": "Go to page",
+  "view.morePanel.pageNumberLabel": "Page number, 1 to {total}",
+  "view.morePanel.dockTop": "Toolbar at the top",
+  "view.morePanel.dockBottom": "Toolbar at the bottom",
+  "view.morePanel.dockLeft": "Toolbar on the left",
+  "view.morePanel.dockRight": "Toolbar on the right",
+  "view.morePanel.deskAuto": "Desk with the pages",
+  "view.morePanel.deskLight": "Light desk",
+  "view.morePanel.deskDark": "Dark desk",
+  "view.morePanel.deskCustom": "Desk in a colour of your own",
+} as const;
