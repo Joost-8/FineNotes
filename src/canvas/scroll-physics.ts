@@ -40,6 +40,15 @@ export const SPRING_OMEGA = 0.018;
 export const VELOCITY_WINDOW_MS = 100;
 /** A finger that rested this long before lifting releases with no velocity. */
 export const VELOCITY_STALE_MS = 60;
+/**
+ * A flick that catches a fling and lets go within this long (ms), the same
+ * way, adds the fling's speed to its own, as on iOS: flicking again and again
+ * speeds a long document up instead of starting from rest each time
+ * (FineNotes#110).
+ */
+export const FLING_BOOST_MS = 400;
+/** No fling, however many flicks build it up, goes faster than this (px/ms). */
+export const MAX_FLING_SPEED = 12;
 /** Frame gaps longer than this are clamped, so a stalled tab does not teleport. */
 export const MAX_STEP_MS = 64;
 /** How far, in log units, a pinch may stretch past its zoom limits: ln(1.6). */
@@ -177,6 +186,10 @@ interface Drag {
   baseX: number;
   baseY: number;
   lock: AxisLock;
+  /** When the finger went down, and the speed of the fling it caught (0 without one). */
+  t0: number;
+  carryX: number;
+  carryY: number;
 }
 
 interface AxisStep {
@@ -224,6 +237,8 @@ export class KineticScroller {
   /** A fixed-length glide ({@link glideTo}); takes precedence over everything but a drag. */
   private glide: Glide | null = null;
   private animating = false;
+  /** Held past its range at rest by {@link stretchTo}, until {@link release}. */
+  private stretched = false;
   private lastStepT = -1;
   private readonly tracker = new VelocityTracker();
 
@@ -297,7 +312,7 @@ export class KineticScroller {
       this.glide.toY = clamp(this.glide.toY, this.minY, this.maxY);
     }
     // Nobody is holding it and nothing is moving it: it must sit in bounds.
-    if (!this.drag && !this.animating) {
+    if (!this.drag && !this.animating && !this.stretched) {
       this.x = clamp(this.x, this.minX, this.maxX);
       this.y = clamp(this.y, this.minY, this.maxY);
     }
@@ -342,8 +357,35 @@ export class KineticScroller {
     }
   }
 
+  /**
+   * Hold the content at a position past its range, at rest, as a wheel's
+   * pull past the last page stretches it (no finger to drag it there).
+   * {@link release} lets it spring back; any other move ends it too.
+   */
+  stretchTo(x: number, y: number): void {
+    if (this.drag) return;
+    this.stop();
+    this.x = x;
+    this.y = y;
+    this.stretched = true;
+  }
+
+  /** Whether a {@link stretchTo} holds the content. */
+  get isStretched(): boolean {
+    return this.stretched;
+  }
+
+  /** Let a {@link stretchTo} go: it springs back into the range from rest. */
+  release(t: number): void {
+    if (!this.stretched) return;
+    this.stretched = false;
+    this.animating = this.isOverscrolled;
+    this.lastStepT = t;
+  }
+
   /** Cancel any fling. The position stays where it is. */
   stop(): void {
+    this.stretched = false;
     this.animating = false;
     this.vx = 0;
     this.vy = 0;
@@ -425,7 +467,17 @@ export class KineticScroller {
   }
 
   dragStart(fingerX: number, fingerY: number, t: number): void {
-    // Touching the screen stops a fling dead, as it does on iOS.
+    // Touching the screen stops a fling dead, as it does on iOS; a flick that
+    // follows may take its speed on (`dragEnd`). A snap, a glide or the spring
+    // back from an edge is no fling.
+    const coasting =
+      this.animating &&
+      this.glide === null &&
+      this.targetX === null &&
+      this.targetY === null &&
+      !this.isOverscrolled;
+    const carryX = coasting ? this.vx : 0;
+    const carryY = coasting ? this.vy : 0;
     this.stop();
     this.drag = {
       originX: fingerX,
@@ -433,6 +485,9 @@ export class KineticScroller {
       baseX: this.rawFromDisplayed(this.x, this.minX, this.maxX, this.viewW, this.bounceX),
       baseY: this.rawFromDisplayed(this.y, this.minY, this.maxY, this.viewH, this.bounceY),
       lock: "undecided",
+      t0: t,
+      carryX,
+      carryY,
     };
     this.tracker.reset();
     this.tracker.add(t, fingerX, fingerY);
@@ -467,6 +522,10 @@ export class KineticScroller {
     if (drag.lock === "y" || !this.bounceX) vx = 0;
     if (Math.abs(vx) < MIN_FLING_SPEED) vx = 0;
     if (Math.abs(vy) < MIN_FLING_SPEED) vy = 0;
+    if (t - drag.t0 <= FLING_BOOST_MS) {
+      vx = boosted(vx, drag.carryX);
+      vy = boosted(vy, drag.carryY);
+    }
     // Let go while stretched: it springs back, it does not fling on that axis.
     if (this.x < this.minX || this.x > this.maxX) vx = 0;
     if (this.y < this.minY || this.y > this.maxY) vy = 0;
@@ -556,6 +615,12 @@ function decideLock(dx: number, dy: number, canScrollX: boolean): AxisLock {
   if (Math.abs(dx) <= Math.abs(dy) * tan) return "y";
   if (Math.abs(dy) <= Math.abs(dx) * tan) return "x";
   return "free";
+}
+
+/** A release speed with a caught fling's added, when both go the same way. */
+function boosted(v: number, carry: number): number {
+  if (v === 0 || Math.sign(v) !== Math.sign(carry)) return v;
+  return clamp(v + carry, -MAX_FLING_SPEED, MAX_FLING_SPEED);
 }
 
 /** One axis, one frame, on the critically damped spring towards `target`. */

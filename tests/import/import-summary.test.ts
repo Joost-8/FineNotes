@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { importNotebooks } from "../../src/import/import-notebook";
 import {
   describeImport,
+  foldersDownTo,
+  importFolder,
   importHeading,
   isImportFileName,
   progressText,
@@ -100,5 +102,24 @@ describe("withPageText", () => {
     const { doc } = (await notebook(1, 0)).results[0];
     expect(withPageText("# Bio\n", doc)).toBe("# Bio\n");
     expect(withPageText("# Bio\n", doc, ["  "])).toBe("# Bio\n");
+  });
+});
+
+describe("importFolder", () => {
+  it("puts a backup's folders under the chosen one", () => {
+    expect(importFolder("Imports", { folder: "Math/Exams" })).toBe("Imports/Math/Exams");
+    expect(importFolder("", { folder: "Math" })).toBe("Math");
+    expect(importFolder("Imports", {})).toBe("Imports");
+  });
+
+  it("names each folder as a file would be, and never climbs out", () => {
+    expect(importFolder("Imports", { folder: "Q1: Math?/../.hidden/ " })).toBe(
+      "Imports/Q1 Math/hidden",
+    );
+  });
+
+  it("lists every folder down to a path", () => {
+    expect(foldersDownTo("a/b/c")).toEqual(["a", "a/b", "a/b/c"]);
+    expect(foldersDownTo("")).toEqual([]);
   });
 });

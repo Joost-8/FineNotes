@@ -47,6 +47,14 @@ describe("Apple LZ4 frames", () => {
     expect(text(decodeAppleLz4(joined))).toBe("abcd");
   });
 
+  it("lets a block's matches reach back into the blocks before it", () => {
+    const a = bv4Block([0x30, ...bytes("abc")], 3);
+    // No literals, then a 9-byte match 3 back: in the first block.
+    const b = bv4Block([0x05, 3, 0], 9);
+    const joined = new Uint8Array([...a.subarray(0, a.length - 4), ...b]);
+    expect(text(decodeAppleLz4(joined))).toBe("abc".repeat(4));
+  });
+
   it("refuses malformed frames", () => {
     expect(isAppleLz4(new Uint8Array([1, 2]))).toBe(false);
     expect(isAppleLz4(bytes("nope"))).toBe(false);
@@ -65,6 +73,11 @@ describe("Apple LZ4 frames", () => {
     expect(() => decodeBlock(new Uint8Array([0x20, 0x61]), 3)).toThrow(Lz4Error);
     expect(() => decodeBlock(new Uint8Array([0xf0]), 20)).toThrow(Lz4Error);
     expect(() => decodeBlock(new Uint8Array([0x10, 0x61, 1]), 5)).toThrow(Lz4Error);
+    // A block that claims more than it could expand to is refused unallocated.
+    expect(() => decodeBlock(new Uint8Array([0x10, 0x61]), 0xffffffff)).toThrow(
+      "raw size too large",
+    );
+    expect(() => decodeAppleLz4(bv4Block([0x10, 0x61], 0x7fffffff))).toThrow("raw size too large");
   });
 });
 

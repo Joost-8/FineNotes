@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   AXIS_LOCK_DISTANCE,
   DECELERATION_RATE,
+  FLING_BOOST_MS,
   GLIDE_MS,
   KineticScroller,
+  MAX_FLING_SPEED,
   MAX_STEP_MS,
   VelocityTracker,
   ZOOM_STRETCH,
@@ -301,6 +303,85 @@ describe("KineticScroller: flinging", () => {
     expect(s.position.y).toBe(caught);
   });
 
+  describe("flicking again while it coasts (FineNotes#110)", () => {
+    /** A long notebook, so no flick reaches the end. */
+    function longDoc(): KineticScroller {
+      const s = new KineticScroller();
+      s.setExtent({
+        contentWidth: 900,
+        contentHeight: 200_000,
+        viewportWidth: 1180,
+        viewportHeight: 820,
+      });
+      return s;
+    }
+
+    /** A quick upward flick starting at `t`: the finger leaves at 3.75 px/ms. */
+    function flick(s: KineticScroller, t: number, direction = 1): void {
+      s.dragStart(500, 600, t);
+      for (let i = 1; i <= 5; i++) s.dragMove(500, 600 - direction * i * 60, t + i * 16);
+      s.dragEnd(t + 80);
+    }
+
+    function coast(s: KineticScroller, from: number, to: number): void {
+      for (let t = from; t <= to; t += 16) s.step(t);
+    }
+
+    it("adds the fling's speed to the next flick the same way", () => {
+      const s = longDoc();
+      flick(s, 0);
+      expect(s.velocity.y).toBeCloseTo(3.75, 5);
+      coast(s, 96, 208);
+      const coasting = s.velocity.y;
+      expect(coasting).toBeGreaterThan(1);
+      flick(s, 220);
+      expect(s.velocity.y).toBeCloseTo(3.75 + coasting, 5);
+    });
+
+    it("builds up over several flicks, never past the cap", () => {
+      const s = longDoc();
+      let t = 0;
+      const speeds: number[] = [];
+      for (let n = 0; n < 12; n++) {
+        flick(s, t);
+        speeds.push(s.velocity.y);
+        coast(s, t + 96, t + 176);
+        t += 190;
+      }
+      expect(speeds[3]).toBeGreaterThan(speeds[0] * 2);
+      expect(Math.max(...speeds)).toBeLessThanOrEqual(MAX_FLING_SPEED);
+      expect(speeds.at(-1)).toBe(MAX_FLING_SPEED);
+    });
+
+    it("a flick the other way only reverses it, at its own speed", () => {
+      const s = longDoc();
+      s.setPosition(0, 50_000);
+      flick(s, 0);
+      coast(s, 96, 208);
+      flick(s, 220, -1);
+      expect(s.velocity.y).toBeCloseTo(-3.75, 5);
+    });
+
+    it("a slow drag that catches it keeps only its own speed", () => {
+      const s = longDoc();
+      flick(s, 0);
+      coast(s, 96, 208);
+      s.dragStart(500, 600, 220);
+      s.dragMove(500, 590, 220 + FLING_BOOST_MS);
+      for (let i = 1; i <= 5; i++) s.dragMove(500, 590 - i * 60, 220 + FLING_BOOST_MS + i * 16);
+      s.dragEnd(220 + FLING_BOOST_MS + 80);
+      expect(s.velocity.y).toBeCloseTo(3.75, 5);
+    });
+
+    it("a glide caught mid-way is no fling to build on", () => {
+      const s = longDoc();
+      s.glideTo(0, 20_000, 0);
+      coast(s, 16, 160);
+      flick(s, 170);
+      expect(s.velocity.y).toBeCloseTo(3.75, 5);
+    });
+  });
+
   it("never teleports after a stalled frame", () => {
     const s = tallNarrow();
     s.dragStart(500, 600, 0);
@@ -539,5 +620,60 @@ describe("glideTo from a start outside the range", () => {
     expect(s.position.x).toBeLessThan(3000);
     s.step(300);
     expect(s.position.x).toBe(3000);
+  });
+});
+
+describe("stretchTo: a wheel's pull past the end (FineNotes#111)", () => {
+  /** Run frames until it rests; returns the frame count. */
+  const settle = (s: KineticScroller, t0: number): number => {
+    let frames = 0;
+    for (let t = t0 + 16; s.step(t) && frames < 500; t += 16) frames++;
+    return frames;
+  };
+
+  it("holds the content past its end at rest, through a re-layout", () => {
+    const s = tallNarrow();
+    const maxY = s.bounds.maxY;
+    s.stretchTo(0, maxY + 80);
+    expect(s.isStretched).toBe(true);
+    expect(s.isAnimating).toBe(false);
+    expect(s.overscrollEnd.y).toBe(80);
+    s.setExtent({
+      contentWidth: 900,
+      contentHeight: 3000,
+      viewportWidth: 1180,
+      viewportHeight: 820,
+    });
+    expect(s.overscrollEnd.y).toBe(80);
+  });
+
+  it("springs back into the range once released", () => {
+    const s = tallNarrow();
+    const maxY = s.bounds.maxY;
+    s.stretchTo(0, maxY + 80);
+    s.release(0);
+    expect(s.isStretched).toBe(false);
+    expect(s.isAnimating).toBe(true);
+    expect(settle(s, 0)).toBeLessThan(500);
+    expect(s.position.y).toBeCloseTo(maxY, 0);
+  });
+
+  it("ends with any other move, and a release after it does nothing", () => {
+    const s = tallNarrow();
+    const maxY = s.bounds.maxY;
+    s.stretchTo(0, maxY + 80);
+    s.scrollBy(0, -100);
+    expect(s.isStretched).toBe(false);
+    expect(s.position.y).toBe(maxY - 20);
+    s.release(0);
+    expect(s.isAnimating).toBe(false);
+  });
+
+  it("never takes the content from a finger", () => {
+    const s = tallNarrow();
+    s.dragStart(500, 500, 0);
+    s.stretchTo(0, s.bounds.maxY + 80);
+    expect(s.isStretched).toBe(false);
+    expect(s.overscrollEnd.y).toBe(0);
   });
 });
