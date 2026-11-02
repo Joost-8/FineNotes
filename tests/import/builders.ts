@@ -108,9 +108,17 @@ export function tplStroke(samples: Array<[number, number, number]>, stride: 5 | 
     out.push(...le32(vals.length));
     for (const v of vals) out.push(...u16(v));
   };
-  arrayV([0]); // segment kinds
-  arrayU(stride === 7 ? [1, 2, samples[0]?.[2] ?? 1, 0] : [1, 2, 3]); // first centreline point
-  arrayU([]); // centreline
+  // The centreline through the samples: a move to the first, then straight
+  // curves (the control point halfway) to each next one; x, y, half-width.
+  const [first, ...rest] = samples;
+  arrayV(first ? [0, ...rest.map(() => 1)] : []);
+  arrayU(first ? [...first] : []);
+  arrayU(
+    rest.flatMap(([x, y, h], i) => {
+      const [px, py, ph] = samples[i];
+      return [(px + x) / 2, (py + y) / 2, (ph + h) / 2, x, y, h];
+    }),
+  );
   arrayV([]);
   arrayV([]);
   arrayU([]);
@@ -122,6 +130,44 @@ export function tplStroke(samples: Array<[number, number, number]>, stride: 5 | 
     ),
   );
   arrayV(samples.map(() => 1));
+  const bytes = new Uint8Array(out);
+  new DataView(bytes.buffer).setUint32(4, bytes.length, true);
+  return bytes;
+}
+
+/**
+ * A stroke that is only its centreline, as most real strokes are: verbs (`0`
+ * move, `1` curve; `2` and `3` the same with widths), the floats of their
+ * moves and of their curves. As structs (`vuA(v)A(S(uu))A(S(uuuu))`, verbs 0
+ * and 1 only) or as the flat ten arrays behind a width, the samples empty.
+ * `tail` adds the newer `vA(f)` ending, empty.
+ */
+export function tplCentreline(spec: {
+  width: number;
+  structs: boolean;
+  verbs: number[];
+  moves: number[];
+  curves: number[];
+  tail?: boolean;
+}): Uint8Array {
+  const sig =
+    (spec.structs ? "vuA(v)A(S(uu))A(S(uuuu))" : "vuA(v)A(u)A(u)A(v)A(v)A(u)A(u)A(u)A(u)A(v)") +
+    (spec.tail ? "vA(f)" : "");
+  const out: number[] = [...ascii("tpl\0"), 0, 0, 0, 0, ...ascii(sig), 0];
+  const u16 = (n: number): number[] => [n & 255, (n >> 8) & 255];
+  const f32 = (v: number): number[] => {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setFloat32(0, v, true);
+    return [...b];
+  };
+  out.push(...u16(1), ...f32(spec.width));
+  out.push(...le32(spec.verbs.length), ...spec.verbs.flatMap(u16));
+  const items = (floats: number[], per: number): number =>
+    spec.structs ? floats.length / per : floats.length;
+  out.push(...le32(items(spec.moves, 2)), ...spec.moves.flatMap(f32));
+  out.push(...le32(items(spec.curves, 4)), ...spec.curves.flatMap(f32));
+  if (!spec.structs) for (let i = 0; i < 7; i++) out.push(...le32(0));
+  if (spec.tail) out.push(...u16(1), ...le32(0));
   const bytes = new Uint8Array(out);
   new DataView(bytes.buffer).setUint32(4, bytes.length, true);
   return bytes;
@@ -167,6 +213,8 @@ export interface GnStroke {
   schema25?: number;
   /** A lasso move: field 6. */
   offset?: [number, number];
+  /** The stroke's data as it is, in place of a layout made from `samples`. */
+  tpl?: Uint8Array;
 }
 
 /** A Goodnotes text box (kind 21) or comment (kind 20). */
@@ -199,6 +247,17 @@ export interface GnImage {
   frame: [number, number, number, number];
   /** Deleted in Goodnotes: still in the file, its header marked `{3: 1}`. */
   removed?: boolean;
+  /** Turned: field 3, its centre, its own size and the turn in radians (`frame` its bounds). */
+  turned?: { centre: [number, number]; size: [number, number]; rotation: number };
+}
+
+/** An older text box (kind 8): its frame and its RTF. */
+export interface GnRtfText {
+  id: string;
+  frame: [number, number, number, number];
+  rtf: string;
+  /** Field 7, the background. */
+  fill?: [number, number, number, number];
 }
 
 export interface GnPage {
@@ -213,9 +272,14 @@ export interface GnPage {
   unbookmarked?: boolean;
   /** Removed and put back again (a 56 with the flag off). */
   restored?: boolean;
+  /** Given another paper (a 3 each), at these clocks (the page itself is at 1). */
+  paperChanges?: Array<{ template: string; clock: number }>;
+  /** Moved: a 55 with a new order key. */
+  moved?: { order: string; clock: number };
   strokes?: GnStroke[];
   images?: GnImage[];
   texts?: GnText[];
+  rtfTexts?: GnRtfText[];
   /** Bodies of element kinds the importer does not know. */
   unknown?: number;
 }
@@ -382,7 +446,32 @@ export function goodnotesFiles(spec: {
         },
       ],
     ]);
+  // A page's paper changed (3) or the page moved (55): `{3: {1: value, 2: clock}}`.
+  const change = (id: string, kind: number, value: string, at: number): Uint8Array =>
+    pb([
+      [1, { str: id }],
+      [
+        kind,
+        {
+          msg: [
+            [1, { str: doc }],
+            [2, { str: id }],
+            [
+              3,
+              {
+                msg: [
+                  [1, { str: value }],
+                  [2, clock(at)],
+                ],
+              },
+            ],
+          ],
+        },
+      ],
+    ]);
   for (const p of spec.pages) {
+    for (const c of p.paperChanges ?? []) events.push(change(p.id, 3, c.template, c.clock));
+    if (p.moved) events.push(change(p.id, 55, p.moved.order, p.moved.clock));
     if (p.deleted || p.restored) events.push(flag(p.id, 56, true));
     if (p.restored) events.push(flag(p.id, 56, false));
     if (p.bookmarked || p.unbookmarked) events.push(flag(p.id, 57, true));
@@ -445,12 +534,13 @@ export function goodnotesFiles(spec: {
                   2,
                   {
                     bytes: bv4Raw(
-                      s.schema25 !== undefined
-                        ? tplStroke25(
-                            s.samples.map(([x, y]): [number, number] => [x, y]),
-                            s.schema25,
-                          )
-                        : tplStroke(s.samples, s.stride),
+                      s.tpl ??
+                        (s.schema25 !== undefined
+                          ? tplStroke25(
+                              s.samples.map(([x, y]): [number, number] => [x, y]),
+                              s.schema25,
+                            )
+                          : tplStroke(s.samples, s.stride)),
                     ),
                   },
                 ],
@@ -518,7 +608,76 @@ export function goodnotesFiles(spec: {
                     ],
                   },
                 ],
+                ...(im.turned
+                  ? [
+                      [
+                        3,
+                        {
+                          msg: [
+                            [
+                              1,
+                              {
+                                msg: [
+                                  [1, { f32: im.turned.centre[0] }],
+                                  [2, { f32: im.turned.centre[1] }],
+                                ],
+                              },
+                            ],
+                            [
+                              2,
+                              {
+                                msg: [
+                                  [1, { f32: im.turned.size[0] }],
+                                  [2, { f32: im.turned.size[1] }],
+                                ],
+                              },
+                            ],
+                            [3, { f32: im.turned.rotation }],
+                          ],
+                        },
+                      ] as PbField,
+                    ]
+                  : []),
                 [4, { str: im.attachment }],
+              ],
+            },
+          ],
+        ]),
+      );
+    }
+    for (const t of p.rtfTexts ?? []) {
+      const [x, y, w, h] = t.frame;
+      const pair = (a: number, b: number): PbValue => ({
+        msg: [
+          [1, { f32: a }],
+          [2, { f32: b }],
+        ],
+      });
+      records.push(
+        pb([
+          [1, { str: t.id }],
+          [2, clock(2)],
+        ]),
+      );
+      records.push(
+        pb([
+          [
+            8,
+            {
+              msg: [
+                [1, { str: t.id }],
+                [
+                  2,
+                  {
+                    msg: [
+                      [1, pair(x, y)],
+                      [2, pair(w, h)],
+                    ],
+                  },
+                ],
+                [6, { str: t.rtf }],
+                [7, { msg: (t.fill ?? [1, 1, 1, 0]).map((v, i): PbField => [i + 1, { f32: v }]) }],
+                [10, { f32: 10 }],
               ],
             },
           ],

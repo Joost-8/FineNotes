@@ -261,7 +261,7 @@ import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../mode
 import { SetSingle, changeCover } from "../model/notebook-commands";
 import { drawnBounds, isBoard } from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
-import { relinkDocument } from "../model/moved-files";
+import { nearbyTarget, relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
 import { SetJoinedPages, joinedPagesOf } from "../model/joined-pages";
 import { type NotebookInfo, NoteSettingsModal } from "./note-settings-modal";
@@ -760,12 +760,23 @@ export class InkView extends TextFileView {
     this.scheduleDeviceReading(DEVICE_READ_OPEN_MS);
   }
 
-  /** Relink this note's paths from the plugin's log of moved files; how many changed. */
+  /**
+   * Relink this note's paths from the plugin's log of moved files, or, for a
+   * note that came in from outside with its files, relative to the note
+   * itself; how many changed.
+   */
   private relinkDoc(): number {
     if (this.guard.locked) return 0;
+    const notePath = this.file?.path;
+    if (!notePath) return 0;
     const log = this.plugin.fileMoves.log();
-    if (log.length === 0) return 0;
-    const relinked = relinkDocument(this.doc, (path) => this.plugin.fileMoves.relink(path, log));
+    const exists = (path: string): boolean => this.app.vault.getAbstractFileByPath(path) !== null;
+    const relinked = relinkDocument(
+      this.doc,
+      (path) =>
+        (log.length > 0 ? this.plugin.fileMoves.relink(path, log) : undefined) ??
+        nearbyTarget(notePath, exists, path),
+    );
     // Paths rewritten in place, on any page: nothing else can tell the save cache.
     if (relinked > 0) this.encoder.touchAll();
     return relinked;
