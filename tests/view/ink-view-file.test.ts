@@ -64,7 +64,9 @@ let plugin: ReturnType<typeof fakePlugin>;
 
 function openView(bytesOnDisk: number | null = 100, settings: Record<string, unknown> = {}): View {
   plugin = fakePlugin(settings);
-  const view = new InkView(new WorkspaceLeaf({}) as never, plugin as never);
+  // An empty vault: a path the note holds is found nowhere, nearby or not.
+  const app = { vault: { getAbstractFileByPath: () => null } };
+  const view = new InkView(new WorkspaceLeaf(app) as never, plugin as never);
   if (bytesOnDisk !== null) {
     (view as unknown as { file: TFile }).file = new TFile("Physics.notebook.md", bytesOnDisk);
   }

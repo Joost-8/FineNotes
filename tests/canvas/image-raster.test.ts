@@ -250,6 +250,10 @@ describe("naming and paths", () => {
     expect(attachmentBaseName("C:\\Users\\me\\scan.png", when)).toBe("scan");
   });
 
+  it("spells letters with marks composed, as other systems may", () => {
+    expect(attachmentBaseName("Lu\u0308ckentext.pdf", when)).toBe("L\u00fcckentext");
+  });
+
   it("strips characters Obsidian refuses, and leading dots", () => {
     expect(attachmentBaseName("a/b:c?.png", when)).toBe("b c");
     expect(attachmentBaseName("#tag [x]|y.png", when)).toBe("tag x y");

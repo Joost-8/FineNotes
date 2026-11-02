@@ -132,6 +132,7 @@ import {
   notebookPaths,
   parseNotebookChoices,
   parseNotebookTemplate,
+  sanitizeFileName,
   stripInkSuffix,
   targetFolder,
   uniqueFileName,
@@ -2054,6 +2055,22 @@ export default class GoodObsidianPlugin extends Plugin {
       papers: library,
       onClosed: () => cache.destroy(),
       onImport: (folder) => this.openImportNotebook(folder),
+      onImportPdf: ({ title, choices, folder }, source) => {
+        this.settings.lastNotebookChoices = { ...choices };
+        void this.saveSettings();
+        const name = source.file.name.replace(/\.pdf$/i, "");
+        const read = (): Promise<ArrayBuffer> =>
+          source.kind === "vault"
+            ? this.app.vault.readBinary(source.file)
+            : source.file.arrayBuffer();
+        void this.createNotebookFromPdfBytes(
+          title.trim() || name,
+          { ...choices, type: "notebook" },
+          folder,
+          read,
+          source.kind === "vault" ? source.file.path : { name },
+        );
+      },
       onCreate: ({ title, choices, folder, template }) => {
         this.settings.lastNotebookChoices = { ...choices };
         // A board takes no template: the notebook's last one stays remembered.
@@ -2428,10 +2445,40 @@ export default class GoodObsidianPlugin extends Plugin {
    * read: it stays where it is, and the notebook follows it if it moves.
    */
   async createNotebookFromPdf(pdf: TFile): Promise<void> {
+    const choices: NotebookChoices = {
+      ...parseNotebookChoices(this.settings.lastNotebookChoices),
+      type: "notebook",
+    };
+    const folder = pdf.parent && !pdf.parent.isRoot() ? pdf.parent.path : "";
+    await this.createNotebookFromPdfBytes(
+      pdf.basename,
+      choices,
+      folder,
+      () => this.app.vault.readBinary(pdf),
+      pdf.path,
+    );
+  }
+
+  /**
+   * A new notebook whose pages are a PDF's. `pdf` is the vault path of a PDF
+   * already in the vault, which the notebook reads where it is; or the name of
+   * one from the device, whose bytes are saved beside the notebook first (a
+   * notebook keeps its own files).
+   */
+  private async createNotebookFromPdfBytes(
+    title: string,
+    choices: NotebookChoices,
+    folder: string,
+    read: () => Promise<ArrayBuffer>,
+    pdf: string | { name: string },
+  ): Promise<void> {
     const progress = new Notice("FineNotes: reading PDF pages…", 0);
     let sizes: Array<{ width: number; height: number }>;
+    let bytes: ArrayBuffer;
     try {
-      sizes = await measurePdfPages(await this.app.vault.readBinary(pdf));
+      bytes = await read();
+      // pdf.js may take the buffer it is given: measure a copy, keep the original.
+      sizes = await measurePdfPages(bytes.slice(0));
     } catch (error) {
       new Notice(`FineNotes: couldn't read the PDF — ${errorMessage(error)}`, 8000);
       return;
@@ -2442,13 +2489,24 @@ export default class GoodObsidianPlugin extends Plugin {
       new Notice("FineNotes: that PDF has no pages.");
       return;
     }
-    const choices: NotebookChoices = {
-      ...parseNotebookChoices(this.settings.lastNotebookChoices),
-      type: "notebook",
-    };
-    const folder = pdf.parent && !pdf.parent.isRoot() ? pdf.parent.path : "";
-    await this.createNotebook(pdf.basename, choices, folder, (heading, attachments) =>
-      buildPdfNotebook(choices, heading, attachments, pdf.path, sizes),
-    );
+    if (typeof pdf === "string") {
+      await this.createNotebook(title, choices, folder, (heading, attachments) =>
+        buildPdfNotebook(choices, heading, attachments, pdf, sizes),
+      );
+      return;
+    }
+    await this.createNotebook(title, choices, folder, async (heading, attachments, home) => {
+      const dir = attachments?.images ?? home;
+      if (dir && !this.app.vault.getFolderByPath(dir)) {
+        await this.app.vault.createFolder(dir).catch(() => undefined);
+      }
+      const stem = sanitizeFileName(pdf.name) || "PDF";
+      let path = normalizePath(joinVaultPath(dir, `${stem}.pdf`));
+      for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) {
+        path = normalizePath(joinVaultPath(dir, `${stem} ${n}.pdf`));
+      }
+      await this.app.vault.createBinary(path, bytes);
+      return buildPdfNotebook(choices, heading, attachments, path, sizes);
+    });
   }
 }

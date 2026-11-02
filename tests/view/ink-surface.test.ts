@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PointerDebugRecord } from "../../src/input/pointer-controller";
 import { type InkRun, type InkTracer, inkRuns, penOptions } from "../../src/ink/freehand";
 import { StrokeBuilder } from "../../src/ink/stroke-builder";
-import { layoutPages } from "../../src/canvas/page-layout";
+import { WHEEL_PULL_REST, layoutPages } from "../../src/canvas/page-layout";
 import { History } from "../../src/model/history";
 import { type ShortcutTable, shortcutTable, withShortcut } from "../../src/model/shortcut-bindings";
 import {
@@ -100,6 +100,7 @@ describe("wheel zoom", () => {
       direction: "vertical",
       applyZoom,
       scroller: { bounds: { maxY: 200 }, scrollBy },
+      wheelPull: WHEEL_PULL_REST,
       flashChrome: vi.fn(),
       requestFrame: frame,
     });

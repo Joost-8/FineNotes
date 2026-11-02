@@ -280,8 +280,13 @@ const GENERIC_NAME = /^(image|photo|img|picture|capture|pasted image|untitled)$/
  * A readable base name (no extension) for a saved picture: the picked file's
  * own name, cleaned, or `Image 20260922-153012` when that name is missing or
  * generic (the iPad camera calls every photo "image.jpg").
+ *
+ * Composed (NFC): a name from macOS or an iPad spells "ü" as "u" and a mark,
+ * and a vault synced to or copied onto another system may get it composed,
+ * so a stored path spelled the other way would no longer find its file.
  */
 export function attachmentBaseName(suggested: string, now: Date): string {
+  suggested = suggested.normalize("NFC");
   const leaf = suggested.slice(
     Math.max(suggested.lastIndexOf("/"), suggested.lastIndexOf("\\")) + 1,
   );
