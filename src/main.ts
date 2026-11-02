@@ -59,6 +59,7 @@ import {
   switchLlmVendor,
 } from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
+import { LearnWindow } from "./view/learn-window";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
 import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
@@ -964,6 +965,11 @@ export default class GoodObsidianPlugin extends Plugin {
       await this.grape.model.check();
       this.grape.offer("ask");
     }
+  }
+
+  /** The Learn your handwriting window: the AI menu's row, the settings, a practice sheet's button. */
+  openLearnWindow(): void {
+    new LearnWindow(this.app, this).open();
   }
 
   /** Keep the calculator's switches and history (model/calculator-store.ts). */

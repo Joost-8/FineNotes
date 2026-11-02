@@ -183,29 +183,31 @@ describe("the handwriting section, on this device", () => {
       section: "device",
     });
     expect(items[1]).toMatchObject({ id: "calc-notes", label: "Calculations", on: true });
-    expect(items[2]).toMatchObject({ id: "practice", label: "Teach it your handwriting…" });
+    expect(items[2]).toMatchObject({
+      id: "learn-window",
+      label: "Learn your handwriting…",
+      detail: "Copy a few lines to start",
+    });
   });
 
-  it("learns once there is a practice file, again once learned, and shows a run in progress", () => {
+  it("has one row for learning, which says where it stands and opens the window", () => {
     expect(deviceIds(context({ device: device({ practiceFiles: 1 }) }))).toEqual([
       "check-words",
       "calc-notes",
-      "learn",
-      "practice",
+      "learn-window",
     ]);
-    const again = byId(
-      buildAiMenu(context({ device: device({ practiceFiles: 2, learned: true }) })),
+    const detail = (fields: Partial<DeviceReading>) =>
+      byId(buildAiMenu(context({ device: device(fields) })))["learn-window"];
+    expect(detail({ practiceFiles: 2 }).detail).toBe("2 practice sheets");
+    expect(detail({ practiceFiles: 1, learned: true }).detail).toBe(
+      "Learned · learn again for more",
     );
-    expect(again.learn.label).toBe("Learn my handwriting again");
-    expect(again.practice.label).toBe("Write another practice set");
-    const running = byId(
-      buildAiMenu(context({ device: device({ practiceFiles: 1, learning: 34.4 }) })),
-    );
-    expect(running.learn).toMatchObject({
-      label: "Learning your handwriting · 34 %",
-      enabled: false,
+    // A run going: the row still opens the window, where Stop is.
+    expect(detail({ practiceFiles: 1, learning: 34.4 })).toMatchObject({
+      label: "Learn your handwriting…",
+      detail: "Learning · 34 %",
+      enabled: true,
     });
-    expect(running.practice).toBeUndefined();
   });
 
   it("offers corrections as a switch showing the setting, not reading the page", () => {
