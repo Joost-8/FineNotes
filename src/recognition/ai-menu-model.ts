@@ -17,6 +17,7 @@
  * No DOM, no Obsidian.
  */
 
+import { t, tn } from "../i18n/translate";
 import { type ImageVendor, canGenerateImages, imageUnsupportedReason } from "./ai-image";
 import { audioUnsupportedReason, canTranscribeAudio } from "./audio-request";
 import { type LlmVendor, VENDORS, chatCompletionsUrl } from "./llm-request";
@@ -50,10 +51,12 @@ export interface Availability {
 const OK: Availability = { enabled: true, reason: "" };
 const no = (reason: string): Availability => ({ enabled: false, reason });
 
-/** "an OpenAI key", "a Google key" … for reasons. */
-function keyPhrase(vendor: LlmVendor): string {
+/** "Needs an OpenAI key", "Needs a Google key" … for reasons; `forImages` adds " for images". */
+function needsKey(vendor: LlmVendor, forImages: boolean): string {
   const name = VENDORS[vendor].label.replace(/\s*\(.*\)$/, "");
-  return `${/^[AEIOU]/i.test(name) ? "an" : "a"} ${name} key`;
+  const an = /^[AEIOU]/i.test(name);
+  if (forImages) return t(an ? "ai.menu.needsKeyImagesAn" : "ai.menu.needsKeyImagesA", { name });
+  return t(an ? "ai.menu.needsKeyAn" : "ai.menu.needsKeyA", { name });
 }
 
 function endpointUsable(baseUrl: string): boolean {
@@ -74,16 +77,16 @@ export function resolveImageVendor(choice: ImageVendorChoice, textVendor: LlmVen
 export function textAvailability(setup: AiSetup): Availability {
   const vendor = VENDORS[setup.vendor];
   if (vendor.userEndpoint) {
-    return endpointUsable(setup.baseUrl) ? OK : no("Needs your endpoint's URL in settings");
+    return endpointUsable(setup.baseUrl) ? OK : no(t("ai.menu.needsEndpoint"));
   }
-  return setup.hasKey(setup.vendor) ? OK : no(`Needs ${keyPhrase(setup.vendor)}`);
+  return setup.hasKey(setup.vendor) ? OK : no(needsKey(setup.vendor, false));
 }
 
 /** Image generation, with whichever vendor the setting resolves to. */
 export function imageAvailability(setup: AiSetup): Availability {
   const vendor = resolveImageVendor(setup.imageVendor, setup.vendor);
   if (!canGenerateImages(vendor)) return no(imageUnsupportedReason(vendor));
-  return setup.hasKey(vendor) ? OK : no(`Needs ${keyPhrase(vendor)} for images`);
+  return setup.hasKey(vendor) ? OK : no(needsKey(vendor, true));
 }
 
 /** Audio transcription with the text vendor (for the audio feature). */
@@ -191,7 +194,7 @@ function deviceItems(ctx: AiMenuContext): AiMenuItem[] {
     return [
       {
         id: "device-settings",
-        label: "Read handwriting on this device…",
+        label: t("ai.menu.readOnDevice"),
         icon: "scan-text",
         enabled: true,
         reason: "",
@@ -203,19 +206,19 @@ function deviceItems(ctx: AiMenuContext): AiMenuItem[] {
     ...(reader ? [reader] : []),
     {
       id: "check-words",
-      label: "Corrections",
+      label: t("ai.menu.corrections"),
       icon: "spell-check",
       enabled: true,
-      reason: "Underline words it may have misread; tap one to correct it",
+      reason: t("ai.menu.correctionsHint"),
       section: "device",
       on: device.checkingWords,
     },
     {
       id: "calc-notes",
-      label: "Calculations",
+      label: t("ai.menu.calculations"),
       icon: "equal",
       enabled: true,
-      reason: "Answer lines that end in =",
+      reason: t("ai.menu.calculationsHint"),
       section: "device",
       on: device.calculating,
     },
@@ -224,7 +227,7 @@ function deviceItems(ctx: AiMenuContext): AiMenuItem[] {
   // window, which shows the next step (view/learn-window.ts).
   items.push({
     id: "learn-window",
-    label: "Learn your handwriting…",
+    label: t("ai.menu.learn"),
     icon: "graduation-cap",
     enabled: true,
     reason: "",
@@ -236,10 +239,12 @@ function deviceItems(ctx: AiMenuContext): AiMenuItem[] {
 
 /** Where learning stands, under its row: a run's share, or what there is so far. */
 function learnDetail(device: DeviceReading): string {
-  if (device.learning !== null) return `Learning · ${Math.round(device.learning)} %`;
-  if (device.learned) return "Learned · learn again for more";
-  if (device.practiceFiles === 0) return "Copy a few lines to start";
-  return `${device.practiceFiles} practice sheet${device.practiceFiles === 1 ? "" : "s"}`;
+  if (device.learning !== null) {
+    return t("ai.menu.learning", { percent: Math.round(device.learning) });
+  }
+  if (device.learned) return t("ai.menu.learned");
+  if (device.practiceFiles === 0) return t("ai.menu.copyToStart");
+  return tn("ai.menu.practiceSheets", device.practiceFiles);
 }
 
 /**
@@ -249,13 +254,13 @@ function learnDetail(device: DeviceReading): string {
 function readerItem(reading: HandwritingReading | undefined): AiMenuItem | null {
   if (!reading) return null;
   const choices = [
-    { id: "off", label: "Off" },
+    { id: "off", label: t("common.off") },
     { id: "grape", label: "Grape" },
-    ...(reading.ownModel ? [{ id: "mine", label: "Mine" }] : []),
+    ...(reading.ownModel ? [{ id: "mine", label: t("ai.menu.mine") }] : []),
   ];
   return {
     id: "reader",
-    label: "Read with",
+    label: t("ai.menu.readWith"),
     icon: "scan-text",
     enabled: true,
     reason: "",
@@ -287,10 +292,10 @@ function speechItems(ctx: AiMenuContext): AiMenuItem[] {
     return [
       {
         id: "transcribe-device-cancel",
-        label: `Stop transcribing · ${Math.round(ctx.transcribing)} %`,
+        label: t("ai.menu.stopTranscribing", { percent: Math.round(ctx.transcribing) }),
         icon: "square",
         enabled: true,
-        reason: "Transcribing a recording on this device",
+        reason: t("ai.menu.transcribingNow"),
         section: "device",
       },
     ];
@@ -299,10 +304,10 @@ function speechItems(ctx: AiMenuContext): AiMenuItem[] {
   return [
     {
       id: "transcribe-device",
-      label: "Transcribe on this device…",
+      label: t("ai.menu.transcribeOnDevice"),
       icon: "audio-waveform",
       enabled: ctx.recordings > 0,
-      reason: ctx.recordings > 0 ? "" : "No recordings in this note yet — tap the mic to record",
+      reason: ctx.recordings > 0 ? "" : t("ai.menu.noRecordings"),
       section: "device",
     },
   ];
@@ -315,17 +320,17 @@ function keyItems(ctx: AiMenuContext): AiMenuItem[] {
   // One way into the chat, whose page picker chooses what it is about.
   items.push({
     id: "ask",
-    label: "Ask…",
+    label: t("ai.menu.ask"),
     icon: "messages-square",
     ...gate(
       text,
       ctx.notebookAskable,
-      ctx.multiPage ? "This notebook is empty" : "This page is empty",
+      ctx.multiPage ? t("ai.menu.notebookEmpty") : t("ai.menu.pageEmpty"),
     ),
   });
   items.push({
     id: "generate-image",
-    label: "Generate image…",
+    label: t("ai.menu.generateImage"),
     icon: "image-plus",
     ...imageAvailability(ctx.setup),
   });
@@ -333,18 +338,14 @@ function keyItems(ctx: AiMenuContext): AiMenuItem[] {
   if (ctx.recordings !== undefined) {
     items.push({
       id: "transcribe-recording",
-      label: "Transcribe recording…",
+      label: t("ai.menu.transcribeRecording"),
       icon: "mic",
-      ...gate(
-        audioAvailability(ctx.setup),
-        ctx.recordings > 0,
-        "No recordings in this note yet — tap the mic to record",
-      ),
+      ...gate(audioAvailability(ctx.setup), ctx.recordings > 0, t("ai.menu.noRecordings")),
     });
   }
   items.push({
     id: "settings",
-    label: text.enabled ? "AI settings…" : "Set up AI…",
+    label: text.enabled ? t("ai.menu.settings") : t("ai.menu.setUp"),
     icon: "settings",
     enabled: true,
     reason: "",

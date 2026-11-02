@@ -10,6 +10,7 @@
  */
 
 import type { RequestUrlResponse } from "obsidian";
+import { t } from "../i18n/translate";
 import { postBytes, postJson } from "./http";
 import { errorMessage } from "../util/errors";
 import {
@@ -68,10 +69,10 @@ export function targetLabel(config: Pick<AiVendorConfig, "vendor" | "baseUrl">):
 export function assertConfigured(config: AiVendorConfig): void {
   const vendor = VENDORS[config.vendor];
   if (vendor.userEndpoint && !config.baseUrl.trim()) {
-    throw new Error("no endpoint URL set — add one in FineNotes settings.");
+    throw new Error(t("ai.client.noEndpoint"));
   }
   if (vendor.requiresKey && !config.apiKey.trim()) {
-    throw new Error(`no API key set for ${targetLabel(config)} — add one in FineNotes settings.`);
+    throw new Error(t("ai.client.noKey", { label: targetLabel(config) }));
   }
 }
 
@@ -94,10 +95,10 @@ export async function sendVendorRequest(
     const message = errorMessage(err, "");
     const detail = message ? ` (${message})` : "";
     throw new Error(
-      vendor.userEndpoint
-        ? `could not reach ${label} — is the server running and reachable ` +
-            `from this device?${detail}`
-        : `could not reach ${label} — check your network connection.${detail}`,
+      t(vendor.userEndpoint ? "ai.client.unreachableOwn" : "ai.client.unreachable", {
+        label,
+        detail,
+      }),
     );
   }
 
@@ -107,7 +108,7 @@ export async function sendVendorRequest(
   try {
     return response.json as unknown;
   } catch {
-    throw new Error(`${label} returned an unreadable response.`);
+    throw new Error(t("ai.client.unreadable", { label }));
   }
 }
 
@@ -125,11 +126,8 @@ function failedStatus(label: string, userEndpoint: boolean, response: RequestUrl
     // proxy it sends back an empty 403.
     return new Error(
       userEndpoint
-        ? `${label} denied the request (HTTP ${status}). A self-hosted server does that when it ` +
-            "wants an API key (add one in settings), or when it only answers requests from its " +
-            "own machine, which a tunnel or proxy is not: Ollama needs OLLAMA_HOST=0.0.0.0 or " +
-            "network exposure switched on. SELF_HOSTING.md walks through both."
-        : `${label} did not accept the API key — check it in FineNotes settings.`,
+        ? t("ai.client.deniedOwn", { label, status })
+        : t("ai.client.deniedKey", { label }),
     );
   }
   let body: unknown;
@@ -139,7 +137,11 @@ function failedStatus(label: string, userEndpoint: boolean, response: RequestUrl
     body = undefined; // not JSON: the status is all there is to go on
   }
   const detail = extractLlmErrorMessage(body);
-  return new Error(`${label} request failed (HTTP ${status})${detail ? `: ${detail}` : "."}`);
+  return new Error(
+    detail
+      ? t("ai.client.requestFailedDetail", { label, status, detail })
+      : t("ai.client.requestFailed", { label, status }),
+  );
 }
 
 /** A sent chat: the reply, its text as it goes into the note, and whether it was cut off. */
@@ -201,13 +203,9 @@ export async function transcribePageImage(
   const reply = await sendChat(config, "", [question]);
   const label = targetLabel(config);
   if (reply.cutOff) {
-    throw new Error(
-      `${label} hit FineNotes's ${MAX_OUTPUT_TOKENS}-token output limit before finishing, ` +
-        "so its partial transcription was thrown away. Transcribe a page with less on it, or " +
-        "choose a model that does not spend its output on reasoning.",
-    );
+    throw new Error(t("ai.client.transcriptionCutOff", { label, max: MAX_OUTPUT_TOKENS }));
   }
-  if (!reply.text) throw new Error(`${label} returned no transcription.`);
+  if (!reply.text) throw new Error(t("ai.client.noTranscription", { label }));
   return reply.text;
 }
 
@@ -223,17 +221,13 @@ export async function askAi(
   const { json, text, cutOff } = await sendChat(config, system, turns, true);
   const label = targetLabel(config);
   const refusal = extractRefusal(config.vendor, json);
-  if (refusal) throw new Error(`${label}: ${refusal}.`);
+  if (refusal) throw new Error(t("ai.client.refusal", { label, reason: refusal }));
   if (cutOff) {
     // A partial answer is still worth reading, but not without saying so.
-    if (text) return `${text}\n\n*(The answer was cut off at ${MAX_OUTPUT_TOKENS} tokens.)*`;
-    throw new Error(
-      `${label} used up FineNotes's ${MAX_OUTPUT_TOKENS}-token output limit before ` +
-        "answering. Ask about fewer pages, or pick a model that does not spend its output " +
-        "budget on reasoning.",
-    );
+    if (text) return `${text}\n\n${t("ai.client.answerCutOff", { max: MAX_OUTPUT_TOKENS })}`;
+    throw new Error(t("ai.client.outputLimit", { label, max: MAX_OUTPUT_TOKENS }));
   }
-  if (!text) throw new Error(`${label} returned no answer.`);
+  if (!text) throw new Error(t("ai.client.noAnswer", { label }));
   return text;
 }
 
@@ -300,24 +294,20 @@ export async function askAiWithTools(
     const body = dialect.body(baseBody, more, round >= ASK_MAX_TOOL_ROUNDS);
     const json = await sendVendorRequest(config, () => postJson(base.url, base.headers, body));
     const refusal = extractRefusal(config.vendor, json);
-    if (refusal) throw new Error(`${label}: ${refusal}.`);
+    if (refusal) throw new Error(t("ai.client.refusal", { label, reason: refusal }));
     const uses = dialect.calls(json);
     if (uses.length === 0) {
       const text = cleanTranscription(extractLlmText(config.vendor, json));
       if (isTruncatedLlmResponse(config.vendor, json)) {
         if (text) {
           return {
-            text: `${text}\n\n*(The answer was cut off at ${MAX_OUTPUT_TOKENS} tokens.)*`,
+            text: `${text}\n\n${t("ai.client.answerCutOff", { max: MAX_OUTPUT_TOKENS })}`,
             actions,
           };
         }
-        throw new Error(
-          `${label} used up FineNotes's ${MAX_OUTPUT_TOKENS}-token output limit before ` +
-            "answering. Ask about fewer pages, or pick a model that does not spend its output " +
-            "budget on reasoning.",
-        );
+        throw new Error(t("ai.client.outputLimit", { label, max: MAX_OUTPUT_TOKENS }));
       }
-      if (!text && actions.length === 0) throw new Error(`${label} returned no answer.`);
+      if (!text && actions.length === 0) throw new Error(t("ai.client.noAnswer", { label }));
       return { text, actions };
     }
     more.push(...dialect.reply(json));
@@ -364,7 +354,7 @@ export async function generateImage(
   const target = { vendor: config.vendor, baseUrl: "" };
   const label = targetLabel(target);
   if (!config.apiKey.trim()) {
-    throw new Error(`no API key set for ${label} — add one in FineNotes settings.`);
+    throw new Error(t("ai.client.noKey", { label }));
   }
   const request = buildImageRequest({
     vendor: config.vendor,
@@ -379,13 +369,15 @@ export async function generateImage(
   const image = extractGeneratedImage(config.vendor, json);
   if (!image) {
     const why = describeMissingImage(config.vendor, json);
-    throw new Error(`${label} returned no image${why ? `: ${why}` : "."}`);
+    throw new Error(
+      why ? t("ai.client.noImageWhy", { label, why }) : t("ai.client.noImage", { label }),
+    );
   }
   let bytes: Uint8Array;
   try {
     bytes = base64ToBytes(image.base64);
   } catch {
-    throw new Error(`${label} returned an image FineNotes could not decode.`);
+    throw new Error(t("ai.client.undecodable", { label }));
   }
   return { bytes, mimeType: image.mimeType };
 }
@@ -438,19 +430,18 @@ export async function transcribeAudio(
     boundary: makeBoundary(boundaryBytes),
     language: config.language,
   });
-  onProgress?.(`Uploading ${(bytes.byteLength / (1024 * 1024)).toFixed(1)} MB to ${label}…`);
+  onProgress?.(
+    t("ai.client.uploading", { size: (bytes.byteLength / (1024 * 1024)).toFixed(1), label }),
+  );
   const pending = sendVendorRequest(config, () =>
     postBytes(request.url, request.headers, request.contentType, request.body),
   );
-  onProgress?.("Waiting for the transcript…");
+  onProgress?.(t("ai.client.waiting"));
   const json = await pending;
   if (vendor === "google" && isTruncatedLlmResponse("google", json)) {
-    throw new Error(
-      `${label} hit the ${AUDIO_MAX_OUTPUT_TOKENS}-token output limit before the end of the ` +
-        "recording. Transcribe shorter parts.",
-    );
+    throw new Error(t("ai.client.audioLimit", { label, max: AUDIO_MAX_OUTPUT_TOKENS }));
   }
   const text = extractAudioTranscript(vendor, json);
-  if (!text) throw new Error(`${label} returned no transcript.`);
+  if (!text) throw new Error(t("ai.client.noTranscript", { label }));
   return text;
 }

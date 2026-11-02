@@ -6,6 +6,7 @@
  */
 
 import { type App, Modal } from "obsidian";
+import { t } from "../i18n/translate";
 import type { ImageAspect } from "../recognition/ai-image";
 import { errorMessage } from "../util/errors";
 
@@ -19,11 +20,13 @@ export interface GenerateImageHost {
   generate: (prompt: string, aspect: ImageAspect) => Promise<boolean>;
 }
 
-const ASPECTS: ReadonlyArray<{ id: ImageAspect; label: string }> = [
-  { id: "square", label: "Square" },
-  { id: "landscape", label: "Landscape" },
-  { id: "portrait", label: "Portrait" },
-];
+function aspects(): ReadonlyArray<{ id: ImageAspect; label: string }> {
+  return [
+    { id: "square", label: t("ai.genimage.square") },
+    { id: "landscape", label: t("ai.genimage.landscape") },
+    { id: "portrait", label: t("ai.genimage.portrait") },
+  ];
+}
 
 export class GenerateImageModal extends Modal {
   private aspect: ImageAspect;
@@ -42,17 +45,17 @@ export class GenerateImageModal extends Modal {
   override onOpen(): void {
     this.closed = false;
     this.modalEl.addClass("goodobsidian-genimage-modal", "goodobsidian-dialog");
-    this.titleEl.setText("Generate image");
+    this.titleEl.setText(t("ai.genimage.title"));
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("goodobsidian-ask");
 
     const input = contentEl.createEl("textarea", { cls: "goodobsidian-ask-input" });
-    input.placeholder = "Describe the picture — e.g. a labelled diagram of a plant cell";
+    input.placeholder = t("ai.genimage.placeholder");
     input.rows = 4;
 
     const seg = contentEl.createDiv({ cls: "goodobsidian-segmented" });
-    for (const { id, label } of ASPECTS) {
+    for (const { id, label } of aspects()) {
       const button = seg.createEl("button", { cls: "clickable-icon", text: label });
       button.addEventListener("click", () => {
         if (this.busy) return;
@@ -65,16 +68,17 @@ export class GenerateImageModal extends Modal {
 
     contentEl.createDiv({
       cls: "goodobsidian-ask-note",
-      text:
-        `Sends your description to ${this.host.target}. The picture is saved with this ` +
-        `note's images and placed on page ${this.host.pageNumber}.`,
+      text: t("ai.genimage.note", { target: this.host.target, page: this.host.pageNumber }),
     });
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
 
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
-    const cancel = actions.createEl("button", { text: "Cancel" });
+    const cancel = actions.createEl("button", { text: t("common.cancel") });
     cancel.addEventListener("click", () => this.close());
-    const generate = actions.createEl("button", { cls: "mod-cta", text: "Generate" });
+    const generate = actions.createEl("button", {
+      cls: "mod-cta",
+      text: t("ai.genimage.generate"),
+    });
 
     const run = async (): Promise<void> => {
       const prompt = input.value.trim();
@@ -85,7 +89,7 @@ export class GenerateImageModal extends Modal {
       this.busy = true;
       generate.disabled = true;
       status.removeClass("is-error");
-      status.setText("Generating… this can take up to a minute.");
+      status.setText(t("ai.genimage.working"));
       try {
         const placed = await this.host.generate(prompt, this.aspect);
         if (this.closed) return;

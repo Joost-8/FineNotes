@@ -18,6 +18,7 @@
  */
 
 import { setIcon } from "obsidian";
+import { t } from "../i18n/translate";
 import type { AiMenuItem } from "../recognition/ai-menu-model";
 import { menuAnchor, menuPlace } from "./bar-dock-model";
 
@@ -38,7 +39,7 @@ export class AiMenuPopover {
   ) {
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-aimenu" });
     this.el.setAttribute("role", "menu");
-    this.el.setAttribute("aria-label", "AI");
+    this.el.setAttribute("aria-label", t("ai.menu.title"));
     this.build(items, keyFolded);
     this.place();
     this.installDismiss();
@@ -60,13 +61,13 @@ export class AiMenuPopover {
   }
 
   private build(items: readonly AiMenuItem[], keyFolded: boolean): void {
-    this.el.createDiv({ cls: "goodobsidian-addpage-title", text: "AI" });
+    this.el.createDiv({ cls: "goodobsidian-addpage-title", text: t("ai.menu.title") });
     const device = items.filter((item) => item.section === "device");
     const key = items.filter((item) => item.section !== "device");
     if (key.length > 0) this.keySection(key, keyFolded);
     if (device.length > 0) {
-      const heading = this.heading(this.el, "Handwriting · on this device");
-      heading.createSpan({ cls: "goodobsidian-beta-tag", text: "Beta" });
+      const heading = this.heading(this.el, t("ai.menu.deviceHeading"));
+      heading.createSpan({ cls: "goodobsidian-beta-tag", text: t("ai.menu.beta") });
       this.rows(this.el, device);
     }
     // Set up, the key's settings row ends the menu, below both sections.
@@ -80,7 +81,7 @@ export class AiMenuPopover {
   /** The features that need a key; with `keyFolded`, one row that opens them in place. */
   private keySection(key: readonly AiMenuItem[], keyFolded: boolean): void {
     if (!keyFolded) {
-      this.heading(this.el, "With your own AI key");
+      this.heading(this.el, t("ai.menu.keyHeading"));
       this.rows(
         this.el,
         key.filter((item) => !item.footer),
@@ -95,10 +96,10 @@ export class AiMenuPopover {
     const chevron = toggle.createSpan({ cls: "goodobsidian-addpage-row-icon" });
     setIcon(chevron, "chevron-right");
     const text = toggle.createSpan({ cls: "goodobsidian-aimenu-text" });
-    text.createSpan({ cls: "goodobsidian-aimenu-label", text: "With your own AI key" });
+    text.createSpan({ cls: "goodobsidian-aimenu-label", text: t("ai.menu.keyHeading") });
     text.createSpan({
       cls: "goodobsidian-aimenu-reason",
-      text: "Transcribe, ask about pages and make images. Needs an API key.",
+      text: t("ai.menu.keyHint"),
     });
     const body = this.el.createDiv({ cls: "goodobsidian-aimenu-folded is-hidden" });
     this.rows(body, key);

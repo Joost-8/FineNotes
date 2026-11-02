@@ -19,6 +19,7 @@
  */
 
 import { type App, Notice, type TFile, normalizePath, setIcon } from "obsidian";
+import { t } from "../i18n/translate";
 import {
   type CorrectionsFile,
   correctionLines,
@@ -327,7 +328,7 @@ export async function deleteLearnedModel(host: LearningHost): Promise<void> {
   delete host.settings[previousKey(host.baseId)];
   await host.saveSettings();
   host.reloadReader();
-  new Notice("FineNotes: deleted your learned handwriting model. Reading uses Grape alone.");
+  new Notice(t("ai.learning.deleted"));
 }
 
 /**
@@ -354,7 +355,7 @@ export async function swapWithPrevious(host: LearningHost): Promise<void> {
   host.settings.useLearnedHandwriting = true;
   await host.saveSettings();
   host.reloadReader();
-  new Notice("FineNotes: swapped your learned handwriting model for the one before it.");
+  new Notice(t("ai.learning.swapped"));
 }
 
 /** Save a tuned model: the old one becomes the previous one. */
@@ -387,7 +388,7 @@ export function showRelearnNotice(fresh: number, learned: boolean, learn: () => 
       words.createDiv({ cls: "goodobsidian-relearn-notice-body", text: text.body });
       const button = card.createEl("button", {
         cls: "goodobsidian-relearn-notice-button mod-cta",
-        text: learned ? "Learn again" : "Learn now",
+        text: learned ? t("ai.learning.learnAgain") : t("ai.learn.learnNow"),
       });
       button.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -410,9 +411,9 @@ export interface LearningProgress {
 /** "Learning · 34 % · about 2 min left": what the Learn now button says while it runs. */
 export function progressLabel(progress: LearningProgress, at: number): string {
   const share = Math.round((100 * progress.step) / progress.steps);
-  if (progress.step === 0) return "Learning · starting…";
+  if (progress.step === 0) return t("ai.learning.starting");
   const left = ((at - progress.startedAt) / progress.step) * (progress.steps - progress.step);
-  return `Learning · ${share} % · about ${Math.max(1, Math.round(left / 60000))} min left`;
+  return t("ai.learning.progress", { share, minutes: Math.max(1, Math.round(left / 60000)) });
 }
 
 /**
@@ -454,15 +455,12 @@ export class HandwritingLearner {
     const corrections = await readCorrectionLines(host);
     const lines = [...practice.lines, ...corrections];
     if (lines.length < MIN_PRACTICE_LINES) {
-      new Notice(
-        `FineNotes: copy or correct at least ${MIN_PRACTICE_LINES} lines or words first; ${lines.length} so far.`,
-        8000,
-      );
+      new Notice(t("ai.learning.needMore", { min: MIN_PRACTICE_LINES, count: lines.length }), 8000);
       return;
     }
     const base = await host.baseModel();
     if (!base) {
-      new Notice("FineNotes: learning starts from Grape, which is not downloaded yet.", 8000);
+      new Notice(t("ai.learning.noBase"), 8000);
       return;
     }
     // The learned model this run would replace: the new one must beat it too.
@@ -491,10 +489,7 @@ export class HandwritingLearner {
       // The corrections are untouched: they still count as new, for the next run.
       if (!this.stopped) {
         this.tell({ kind: "failed", message: errorMessage(error) }, () => {
-          new Notice(
-            `FineNotes: learning stopped — ${errorMessage(error)}. Your sheets and corrected words are kept.`,
-            10000,
-          );
+          new Notice(t("ai.learning.stoppedError", { message: errorMessage(error) }), 10000);
         });
       }
       this.finish();
@@ -513,9 +508,7 @@ export class HandwritingLearner {
     if (!this.current) return;
     this.stopped = true;
     this.finish();
-    new Notice(
-      "FineNotes: stopped learning your handwriting. Nothing was changed; your corrected words are kept.",
-    );
+    new Notice(t("ai.learning.stopped"));
   }
 
   private finish(): void {
@@ -535,7 +528,7 @@ export class HandwritingLearner {
   ): Promise<void> {
     if (!tuned) {
       this.tell({ kind: "nothing" }, () => {
-        new Notice("FineNotes: there was nothing to learn from in the practice lines.", 10000);
+        new Notice(t("ai.learning.nothing"), 10000);
       });
       return;
     }
@@ -546,10 +539,7 @@ export class HandwritingLearner {
       this.tell(
         { kind: "kept", tested: tuned.heldOut, kept: rival, learned: after, mine: true },
         () => {
-          new Notice(
-            `FineNotes: on ${tuned.heldOut} test lines the new reader got ${after} % of characters wrong, against ${rival} % with the one you have, so FineNotes keeps the one you have. Correct more words or write another practice set, and try again.`,
-            0,
-          );
+          new Notice(t("ai.learning.keptMine", { tested: tuned.heldOut, after, rival }), 0);
         },
       );
       return;
@@ -566,7 +556,11 @@ export class HandwritingLearner {
         },
         () => {
           new Notice(
-            `FineNotes: on ${tuned.heldOut} test lines the learned reader got ${after} % of characters wrong, against ${before} % with the built-in one, so FineNotes keeps ${mine ? "the one you have" : "the built-in one"}. Copy more practice lines (another set helps) and try again.`,
+            t(mine ? "ai.learning.keptYours" : "ai.learning.keptBuiltIn", {
+              tested: tuned.heldOut,
+              after,
+              before,
+            }),
             0,
           );
         },
@@ -576,9 +570,15 @@ export class HandwritingLearner {
     try {
       await saveLearned(host, tuned);
     } catch (error) {
-      this.tell({ kind: "failed", message: `Could not save it: ${errorMessage(error)}` }, () => {
-        new Notice(`FineNotes: could not save the learned model — ${errorMessage(error)}`, 10000);
-      });
+      this.tell(
+        {
+          kind: "failed",
+          message: t("ai.learning.saveFailedShort", { message: errorMessage(error) }),
+        },
+        () => {
+          new Notice(t("ai.learning.saveFailed", { message: errorMessage(error) }), 10000);
+        },
+      );
       return;
     }
     // The replaced model's record goes with its file, to personal-prev.bin.
@@ -601,10 +601,7 @@ export class HandwritingLearner {
     host.reloadReader();
     this.emit();
     this.tell({ kind: "better", tested: tuned.heldOut, before, after }, () => {
-      new Notice(
-        `FineNotes learned your handwriting: on ${tuned.heldOut} test lines it now gets ${after} % of characters wrong, against ${before} % before.`,
-        0,
-      );
+      new Notice(t("ai.learning.learned", { tested: tuned.heldOut, after, before }), 0);
     });
   }
 

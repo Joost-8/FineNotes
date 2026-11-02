@@ -16,6 +16,7 @@
  */
 
 import { Notice, Platform } from "obsidian";
+import { t } from "../i18n/translate";
 import { type SpeechSegment, SPEECH_RATE, downmix, resample } from "../audio/speech-chunks";
 import {
   type SpeechModelId,
@@ -109,7 +110,7 @@ export class DeviceTranscriber {
   /** Transcribe a recording. Resolves once it is done, declined, refused or stopped. */
   async start(job: DeviceJob): Promise<void> {
     if (this.current) {
-      new Notice("FineNotes: a recording is already being transcribed on this device.");
+      new Notice(t("ai.device.busy"));
       return;
     }
     const app = this.host.app;
@@ -119,22 +120,17 @@ export class DeviceTranscriber {
     if (verdict.kind === "too-long") {
       new Notice(
         verdict.byModel
-          ? `FineNotes: this recording is longer than ${verdict.limitMinutes} minutes, too long ` +
-              `for ${info.label}, which would take hours. Choose a smaller voice model ` +
-              "(Settings → FineNotes → Models on this device), or use an AI key."
-          : `FineNotes: this recording is longer than ${verdict.limitMinutes} minutes, too long to ` +
-              "transcribe on this device. Use an AI key or your own server (Settings → FineNotes → AI).",
+          ? t("ai.device.tooLongModel", { minutes: verdict.limitMinutes, model: info.label })
+          : t("ai.device.tooLong", { minutes: verdict.limitMinutes }),
         12000,
       );
       return;
     }
     if (verdict.kind === "warn") {
       const ok = await ConfirmModal.confirm(app, {
-        title: "Transcribe a long recording?",
-        message:
-          `On this device this takes about ${verdict.minutes} minutes and uses battery. ` +
-          "Keep Obsidian open meanwhile; you can go on writing, and stop it at any time.",
-        cta: "Transcribe",
+        title: t("ai.device.longTitle"),
+        message: t("ai.device.longMessage", { minutes: verdict.minutes }),
+        cta: t("ai.audio.transcribe"),
       });
       if (!ok) return;
     }
@@ -142,21 +138,18 @@ export class DeviceTranscriber {
     await store.check();
     if (store.state.kind !== "ready") {
       const ok = await ConfirmModal.confirm(app, {
-        title: `Download ${info.label}?`,
-        message:
-          `Transcribing on this device needs the ${info.label} speech model ` +
-          `(${formatSize(totalBytes(store.asset))}), downloaded once from GitHub. ` +
-          (store.asset.deviceOnly
-            ? "It stays on this computer, outside the vault, so it does not sync. "
-            : "It stays in FineNotes' folder in this vault, so it syncs with it. ") +
-          "Nothing you record is sent anywhere.",
-        cta: "Download",
+        title: t("ai.device.downloadTitle", { model: info.label }),
+        message: t(
+          store.asset.deviceOnly ? "ai.device.downloadMessageLocal" : "ai.device.downloadMessage",
+          { model: info.label, size: formatSize(totalBytes(store.asset)) },
+        ),
+        cta: t("ai.device.downloadCta"),
       });
       if (!ok) return;
     }
 
     this.cancelled = false;
-    this.current = { path: job.path, status: "Starting…", percent: 0 };
+    this.current = { path: job.path, status: t("ai.device.starting"), percent: 0 };
     this.showNotice();
     try {
       if (store.state.kind !== "ready") {
@@ -165,40 +158,37 @@ export class DeviceTranscriber {
         if (this.cancelled) throw new SpeechCancelled();
         if (!ok) throw new Error(stateText(store.asset, store.state));
       }
-      this.update("Preparing the recording…");
+      this.update(t("ai.device.preparing"));
       const samples = await decodeForSpeech(await job.read());
       if (this.cancelled) throw new SpeechCancelled();
       const { SpeechClient } = await import("./speech-client");
       this.client ??= new SpeechClient(async () => {
         const bytes = await verifiedBytes(this.store(), store.asset.files[1].name);
-        if (!bytes) throw new Error("the speech recognizer's files are missing");
+        if (!bytes) throw new Error(t("ai.device.runtimeMissing"));
         return new TextDecoder().decode(bytes);
       });
-      this.update("Loading the speech model…");
+      this.update(t("ai.device.loading"));
       const client = this.client;
       await client.ensureModel(id, async () => {
         const bytes = await verifiedBytes(store);
-        if (!bytes) throw new Error("the speech model is missing");
+        if (!bytes) throw new Error(t("ai.device.modelMissing"));
         return bytes;
       });
       const language = speechLanguage(this.host.speechSettings().language);
       const result = await client.transcribe(samples, language, (p) =>
-        this.update(`Transcribing on this device… ${p.percent}%`, p.percent),
+        this.update(t("ai.device.transcribing", { percent: p.percent }), p.percent),
       );
       if (result.segments.length === 0) {
-        new Notice("FineNotes: no speech was heard in this recording.", 8000);
+        new Notice(t("ai.device.noSpeech"), 8000);
         return;
       }
       const path = await job.finish(result.segments, result.language);
-      new Notice(`FineNotes: transcript saved to ${path}.`, 8000);
+      new Notice(t("ai.device.saved", { path }), 8000);
     } catch (error) {
       if (error instanceof SpeechCancelled || this.cancelled) {
-        new Notice("FineNotes: transcription stopped.");
+        new Notice(t("ai.device.stopped"));
       } else {
-        new Notice(
-          `FineNotes: transcription on this device failed — ${errorMessage(error)}`,
-          12000,
-        );
+        new Notice(t("ai.device.failed", { message: errorMessage(error) }), 12000);
       }
     } finally {
       this.current = null;
@@ -217,7 +207,7 @@ export class DeviceTranscriber {
   private update(status: string, percent = this.current?.percent ?? 0): void {
     if (!this.current) return;
     this.current = { ...this.current, status, percent };
-    this.noticeText?.setText(`FineNotes: ${status}`);
+    this.noticeText?.setText(t("ai.rec.notice", { text: status }));
     this.emit();
   }
 
@@ -225,10 +215,10 @@ export class DeviceTranscriber {
   private showNotice(): void {
     const fragment = createFragment();
     const wrap = fragment.createDiv({ cls: "goodobsidian-speech-notice" });
-    this.noticeText = wrap.createSpan({ text: "FineNotes: starting…" });
+    this.noticeText = wrap.createSpan({ text: t("ai.device.noticeStarting") });
     const stop = wrap.createEl("button", {
       cls: "goodobsidian-speech-notice-stop clickable-icon",
-      text: "Stop",
+      text: t("ai.learn.stop"),
     });
     stop.addEventListener("click", (event) => {
       event.stopPropagation();

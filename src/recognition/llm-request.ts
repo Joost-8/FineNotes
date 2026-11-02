@@ -9,6 +9,8 @@
  * `ai-client.ts`. No DOM, no Obsidian, no network.
  */
 
+import { t } from "../i18n/translate";
+
 /** The id `settings.recognitionProviderId` stores for cloud AI. */
 export const LLM_PROVIDER_ID = "llm-byok";
 
@@ -95,7 +97,9 @@ export const VENDORS: Record<LlmVendor, VendorDescriptor> = {
   openrouter: {
     ...CLOUD,
     oauthConnect: true,
-    label: "OpenRouter (any model)",
+    get label() {
+      return t("ai.vendor.openrouter");
+    },
     defaultModel: "google/gemini-3.5-flash",
     dialect: "openai",
     url: () => "https://openrouter.ai/api/v1/chat/completions",
@@ -110,7 +114,9 @@ export const VENDORS: Record<LlmVendor, VendorDescriptor> = {
     requiresKey: false,
     userEndpoint: true,
     oauthConnect: false,
-    label: "Custom endpoint (OpenAI-compatible)",
+    get label() {
+      return t("ai.vendor.custom");
+    },
     defaultModel: "qwen2.5vl:7b",
     dialect: "openai",
     url: ({ baseUrl }) => chatCompletionsUrl(baseUrl ?? ""),
@@ -127,7 +133,16 @@ function perVendor<T>(pick: (vendor: VendorDescriptor) => T): Record<LlmVendor, 
 }
 
 /** The labels by vendor id, in the table's order (the settings dropdown). */
-export const VENDOR_LABELS: Record<LlmVendor, string> = perVendor((vendor) => vendor.label);
+export const VENDOR_LABELS: Record<LlmVendor, string> = vendorLabels();
+
+/** The labels as getters: a label is read when shown, in the language then in use. */
+function vendorLabels(): Record<LlmVendor, string> {
+  const out = {} as Record<LlmVendor, string>;
+  for (const id of Object.keys(VENDORS) as LlmVendor[]) {
+    Object.defineProperty(out, id, { enumerable: true, get: () => VENDORS[id].label });
+  }
+  return out;
+}
 
 /** The default models by vendor id; the settings let the user choose another. */
 export const DEFAULT_MODELS: Record<LlmVendor, string> = perVendor((vendor) => vendor.defaultModel);
@@ -167,7 +182,7 @@ export interface LlmHttpRequest {
  */
 export function jsonEndpoint(target: VendorTarget): Omit<LlmHttpRequest, "body"> {
   const vendor = VENDORS[target.vendor];
-  if (vendor.requiresKey && target.apiKey.trim() === "") throw new Error("missing API key");
+  if (vendor.requiresKey && target.apiKey.trim() === "") throw new Error(t("ai.client.missingKey"));
   return {
     url: vendor.url(target),
     headers: { ...vendor.headers(target.apiKey), "content-type": "application/json" },
@@ -234,11 +249,10 @@ export function openAiEndpointUrl(baseUrl: string, suffix: string): string {
   const text = baseUrl.trim();
   const url = parseUrl(text);
   if (!url) {
-    const examples = "http://localhost:11434/v1 or https://yourbox.your-tailnet.ts.net/v1";
-    throw new Error(`invalid endpoint URL "${text}" — write it out in full, such as ${examples}`);
+    throw new Error(t("ai.vendor.invalidUrl", { url: text }));
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`an endpoint URL starts with http:// or https:// — "${text}" does not`);
+    throw new Error(t("ai.vendor.badScheme", { url: text }));
   }
   // The suffix goes on the path, so that a gateway's query string
   // (?api-version=…) stays after it.
@@ -274,7 +288,7 @@ export function describeLlmTarget(vendor: LlmVendor, baseUrl = ""): string {
   const { label, userEndpoint } = VENDORS[vendor];
   if (!userEndpoint) return label;
   const url = parseUrl(baseUrl);
-  return url ? `your configured endpoint (${url.host})` : "your configured endpoint";
+  return url ? t("ai.vendor.endpointHost", { host: url.host }) : t("ai.vendor.endpoint");
 }
 
 // --- Replies -----------------------------------------------------------------------

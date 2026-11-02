@@ -7,6 +7,8 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { t, tn } from "../../i18n/translate";
+
 /** A practice sheet as learning used it: its vault path and the lines copied on it then. */
 export interface LearnedSource {
   path: string;
@@ -71,35 +73,52 @@ export function relearnDue(fresh: number, total: number, remindedAt: number | un
 
 /** "Corrected words: 17 not learned yet…": the corrections chip's label. */
 export function correctionsText(fresh: number, total: number, model: boolean): string {
-  if (total === 0) {
-    return "Corrected words: none yet. Tap an underlined word in a notebook to correct it.";
-  }
-  const learned = model ? " since your model learned" : "";
-  return (
-    `Corrected words: ${fresh} new${learned}, of ${total} saved. ` +
-    `At ${RELEARN_AFTER} new words, FineNotes offers to learn again.`
-  );
+  if (total === 0) return t("ai.learned.correctionsNone");
+  return t(model ? "ai.learned.correctionsSinceModel" : "ai.learned.corrections", {
+    fresh,
+    total,
+    after: RELEARN_AFTER,
+  });
 }
 
 /** The reminder's words, for `fresh` new corrected words: a title and one line under it. */
 export function relearnText(fresh: number, learned: boolean): { title: string; body: string } {
   return learned
     ? {
-        title: "Learn your handwriting again",
-        body: `${fresh} words corrected since the last time.`,
+        title: t("ai.learned.relearnAgainTitle"),
+        body: t("ai.learned.relearnAgainBody", { fresh }),
       }
     : {
-        title: "Learn your handwriting",
-        body: `${fresh} words corrected: enough to learn from.`,
+        title: t("ai.learn.title"),
+        body: t("ai.learned.relearnBody", { fresh }),
       };
+}
+
+const MONTH_KEYS = [
+  "ai.month.jan",
+  "ai.month.feb",
+  "ai.month.mar",
+  "ai.month.apr",
+  "ai.month.may",
+  "ai.month.jun",
+  "ai.month.jul",
+  "ai.month.aug",
+  "ai.month.sep",
+  "ai.month.oct",
+  "ai.month.nov",
+  "ai.month.dec",
+] as const;
+
+/** The short name of a month (0 for January) in the language in use: "Oct". */
+export function monthName(index: number): string {
+  return t(MONTH_KEYS[index] ?? "ai.month.jan");
 }
 
 /** "21 Oct 2026": a learned date as the settings show it, the same on every device. */
 export function learnedDate(iso: string): string {
   const [year, month, day] = iso.slice(0, 10).split("-").map(Number);
-  const months = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
   if (!year || !month || !day || month > 12) return iso.slice(0, 10);
-  return `${day} ${months[month - 1]} ${year}`;
+  return t("ai.learned.date", { day, month: monthName(month - 1), year });
 }
 
 /** How many fewer characters it gets wrong than Grape alone, in whole %; 0 when not fewer. */
@@ -110,18 +129,24 @@ export function fewerMistakes(model: Pick<LearnedModel, "before" | "after">): nu
 
 /** "learned 21 Oct 2026 from 240 of your lines": when and from how much. */
 export function learnedFrom(model: LearnedModel): string {
-  const words = model.corrections ? ` and ${plural(model.corrections, "corrected word")}` : "";
-  return `learned ${learnedDate(model.learnedAt)} from ${model.lines} of your lines${words}`;
+  const date = learnedDate(model.learnedAt);
+  if (!model.corrections) return t("ai.learned.from", { date, lines: model.lines });
+  return t("ai.learned.fromWords", {
+    date,
+    lines: model.lines,
+    words: tn("ai.learn.correctedWords", model.corrections),
+  });
 }
 
 /** "On 60 test lines it gets 4.1 % of characters wrong, against 9.8 % with Grape alone: 58 % fewer mistakes." */
 export function learnedResult(model: LearnedModel): string {
   const fewer = fewerMistakes(model);
-  return (
-    `On ${model.tested} test lines it gets ${model.after} % of characters wrong, against ` +
-    `${model.before} % with Grape alone` +
-    (fewer > 0 ? `: ${fewer} % fewer mistakes.` : ".")
-  );
+  return t(fewer > 0 ? "ai.learned.resultFewer" : "ai.learned.result", {
+    tested: model.tested,
+    after: model.after,
+    before: model.before,
+    fewer,
+  });
 }
 
 /** What the learned model's row says about it, given whether its file is on this device. */
@@ -134,14 +159,21 @@ export function learnedStatus(
     return model
       ? {
           tone: "missing",
-          text: `Its file is not on this device (${learnedFrom(model)}). Reading uses Grape alone until sync brings it.`,
+          text: t("ai.learned.fileMissing", { from: learnedFrom(model) }),
         }
-      : { tone: "missing", text: "Not learned yet." };
+      : { tone: "missing", text: t("ai.learned.notLearnedDot") };
   }
-  const when = model ? `, ${learnedFrom(model)}` : "";
-  return inUse
-    ? { tone: "ready", text: `On this device and in use${when}.` }
-    : { tone: "off", text: `On this device, switched off: reading uses Grape alone${when}.` };
+  const from = model ? learnedFrom(model) : "";
+  if (inUse) {
+    return {
+      tone: "ready",
+      text: model ? t("ai.learned.inUseFrom", { from }) : t("ai.learned.inUse"),
+    };
+  }
+  return {
+    tone: "off",
+    text: model ? t("ai.learned.switchedOffFrom", { from }) : t("ai.learned.switchedOff"),
+  };
 }
 
 /**
@@ -155,12 +187,17 @@ export function learnedBadge(
   inUse: boolean,
 ): { tone: "ready" | "off" | "missing"; text: string } {
   if (!onDevice) {
-    return { tone: "missing", text: model ? "Not on this device yet" : "Not learned yet" };
+    return {
+      tone: "missing",
+      text: model ? t("ai.learned.badgeNotHere") : t("ai.learned.badgeNotLearned"),
+    };
   }
-  if (!inUse) return { tone: "off", text: "Off · Grape alone" };
+  if (!inUse) return { tone: "off", text: t("ai.learned.badgeOff") };
   return {
     tone: "ready",
-    text: model ? `In use · ${model.before} % → ${model.after} %` : "In use",
+    text: model
+      ? t("ai.learned.badgeInUseResult", { before: model.before, after: model.after })
+      : t("ai.learned.badgeInUse"),
   };
 }
 
@@ -168,7 +205,7 @@ export function learnedBadge(
 export function learnSummary(sheets: readonly PracticeSheet[], sets: number): string {
   const written = writtenSets(sheets, sets);
   const lines = sheets.reduce((sum, sheet) => sum + sheet.written, 0);
-  return `${written} of ${sets} sheets · ${plural(lines, "line")}`;
+  return t("ai.learn.summary", { written, sets, lines: tn("ai.learn.lines", lines) });
 }
 
 /** Whether a sheet is one of the `sets` text sets (not the symbol sheet, not a legacy notebook). */
@@ -216,17 +253,17 @@ export function sheetUse(sheet: PracticeSheet, model: LearnedModel | undefined):
 export function sheetText(sheet: PracticeSheet, use: SheetUse): string {
   const copied =
     sheet.written === 0
-      ? "nothing copied yet"
+      ? t("ai.learn.copiedNone")
       : sheet.written >= sheet.prompts
-        ? `all ${sheet.prompts} lines copied`
-        : `${sheet.written} of ${sheet.prompts} lines copied`;
+        ? t("ai.learn.copiedAll", { prompts: sheet.prompts })
+        : t("ai.learn.copiedSome", { written: sheet.written, prompts: sheet.prompts });
   switch (use) {
     case "used":
-      return `${copied} · in your learned model`;
+      return t("ai.learn.sheetLine", { copied, use: t("ai.learn.sheetUsed") });
     case "more":
-      return `${copied} · in your learned model, with fewer lines: learn again to use the rest`;
+      return t("ai.learn.sheetLine", { copied, use: t("ai.learn.sheetMore") });
     case "new":
-      return `${copied} · not in your learned model yet`;
+      return t("ai.learn.sheetLine", { copied, use: t("ai.learn.sheetNew") });
     case "unknown":
       return copied;
   }
@@ -261,13 +298,15 @@ export function nextSheetAction(
       kind: "continue",
       path: unfinished.path,
       label: isTextSheet(unfinished, sets)
-        ? `Continue sheet ${unfinished.set}`
-        : `Continue ${unfinished.title}`,
+        ? t("ai.learn.continueSheet", { set: unfinished.set ?? 0 })
+        : t("ai.learn.continueTitle", { title: unfinished.title }),
     };
   for (let set = 1; set <= sets; set++) {
-    if (!sheets.some((s) => s.set === set)) return { kind: "write", label: `Write sheet ${set}` };
+    if (!sheets.some((s) => s.set === set)) {
+      return { kind: "write", label: t("ai.learn.writeSheet", { set }) };
+    }
   }
-  return { kind: "write", label: "Write another sheet" };
+  return { kind: "write", label: t("ai.learn.writeAnother") };
 }
 
 /** What learning has to go on, for `learnInfoText`. */
@@ -290,56 +329,45 @@ export interface LearnFacts {
 export function learnInfoText(facts: LearnFacts): string {
   const { sheets, sets, corrections, fresh, model } = facts;
   const lines = sheets.reduce((sum, sheet) => sum + sheet.written, 0);
-  const needs =
-    `Needs: at least ${MIN_PRACTICE_LINES} copied lines or corrected words. Copy the grey ` +
-    "lines of a practice sheet in your everyday handwriting, and tap underlined words in " +
-    "your notes to correct them.";
-  const since = facts.onDevice && model ? ` (${fresh} new since your model learned)` : "";
+  const needs = t("ai.learn.infoNeeds", { min: MIN_PRACTICE_LINES });
+  const hasVars = {
+    lines: tn("ai.learn.copiedLines", lines),
+    written: writtenSets(sheets, sets),
+    sets,
+    words: tn("ai.learn.correctedWords", corrections),
+    fresh,
+  };
   const has =
-    `Has: ${plural(lines, "copied line")} on ${writtenSets(sheets, sets)} of ${sets} sheets, ` +
-    `and ${plural(corrections, "corrected word")}${since}. ` +
-    "Corrections are kept, also when a learning run fails or is stopped.";
+    facts.onDevice && model ? t("ai.learn.infoHasSince", hasVars) : t("ai.learn.infoHas", hasVars);
   let next: string;
   if (lines + corrections < MIN_PRACTICE_LINES) {
-    next = `Next: ${MIN_PRACTICE_LINES - lines - corrections} more lines or words, then Learn now.`;
+    next = t("ai.learn.infoNextMore", { count: MIN_PRACTICE_LINES - lines - corrections });
   } else if (!facts.onDevice || !model) {
-    next =
-      "Next: Learn now. It takes a few minutes on this device, and keeps the result only " +
-      "if it reads your test lines better than Grape alone.";
+    next = t("ai.learn.infoNextLearn");
   } else if (fresh === 0 && model.sources && !hasUnusedLines(sheets, model)) {
-    next = "Next: your model has all of it. Write another sheet or correct more words first.";
+    next = t("ai.learn.infoNextAll");
   } else {
     const left = Math.max(0, RELEARN_AFTER - fresh);
     next =
-      (left > 0
-        ? `Next: after ${plural(left, "more corrected word")}, FineNotes offers to learn again; `
-        : "Next: enough new words to learn again; ") +
-      "Learn again starts it now. The model you have stays to go back to.";
+      left > 0
+        ? t("ai.learn.infoNextAfter", { words: tn("ai.learn.moreCorrectedWords", left) })
+        : t("ai.learn.infoNextEnough");
   }
   return [needs, has, next].join(" ");
 }
 
 /** The confirmation before deleting the learned model. */
 export function deleteQuestion(model: LearnedModel | undefined, previous: boolean): string {
-  const what = model ? `It was ${learnedFrom(model)}. ` : "";
-  const files = previous
-    ? "Its file and the one before it are deleted from this vault"
-    : "Its file is deleted from this vault";
-  return (
-    `${what}${files}, and through sync from your other devices; reading goes back to Grape ` +
-    "alone. Your practice sheets stay, so you can learn again, which takes a few minutes. " +
-    "To stop using it but keep it, switch off “Read with my learned model” instead."
-  );
+  if (model) {
+    return t(previous ? "ai.learned.deleteWasPrevious" : "ai.learned.deleteWas", {
+      from: learnedFrom(model),
+    });
+  }
+  return t(previous ? "ai.learned.deletePrevious" : "ai.learned.delete");
 }
 
 /** What "Go back to the previous model" says about the model it goes back to. */
 export function undoText(previous: LearnedModel | undefined): string {
-  const which = previous
-    ? `the one ${learnedFrom(previous)}, which got ${previous.after} % of characters wrong`
-    : "the one you had before the last learning";
-  return `Swap your learned model for ${which}. Your current one is kept, so you can swap back.`;
-}
-
-function plural(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+  if (!previous) return t("ai.learned.undoLast");
+  return t("ai.learned.undo", { from: learnedFrom(previous), after: previous.after });
 }

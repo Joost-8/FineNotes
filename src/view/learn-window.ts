@@ -11,6 +11,7 @@
  */
 
 import { type App, Modal, setIcon } from "obsidian";
+import { t } from "../i18n/translate";
 import { PRACTICE_SETS } from "../recognition/practice";
 import {
   type LearnAction,
@@ -122,14 +123,14 @@ export class LearnWindow extends Modal {
       const { before, after } = this.result;
       const big = contentEl.createDiv({ cls: "goodobsidian-learn-big" });
       big.createSpan({ text: `${before} % → ${after} %` });
-      big.createSpan({ cls: "goodobsidian-learn-unit", text: " mistakes" });
+      big.createSpan({ cls: "goodobsidian-learn-unit", text: ` ${t("ai.learnWin.mistakes")}` });
     } else if (view.phase === "kept" && this.result?.kind === "kept") {
       const { kept, learned, mine } = this.result;
       const big = contentEl.createDiv({ cls: "goodobsidian-learn-big" });
       big.createSpan({ text: `${kept} %` });
       big.createSpan({
         cls: "goodobsidian-learn-unit",
-        text: ` with ${mine ? "your model" : "Grape"} · ${learned} % learned`,
+        text: ` ${t(mine ? "ai.learnWin.keptMine" : "ai.learnWin.keptGrape", { learned })}`,
       });
     } else if (view.marks.length > 0) this.drawSheets(contentEl, view, material);
     if (view.note) contentEl.createDiv({ cls: "goodobsidian-learn-note", text: view.note });
@@ -149,16 +150,16 @@ export class LearnWindow extends Modal {
       const sign = cell.createDiv({ cls: "goodobsidian-learn-sheet-mark" });
       if (mark.state === "done") setIcon(sign, "check");
       else sign.setText(String(mark.set));
-      cell.createDiv({ text: `Sheet ${mark.set}` });
+      cell.createDiv({ text: t("ai.learnWin.sheet", { set: mark.set }) });
       if (mark.detail)
         cell.createDiv({ cls: "goodobsidian-learn-sheet-detail", text: mark.detail });
     }
     if (view.symbols) {
       const symbols = parent.createEl("button", {
         cls: "goodobsidian-learn-extra clickable-icon",
-        text: "+ Symbols sheet",
+        text: t("ai.learnWin.symbolsSheet"),
       });
-      symbols.setAttribute("aria-label", "Write the symbol sheet: digits, operators and signs");
+      symbols.setAttribute("aria-label", t("ai.learnWin.symbolsTip"));
       symbols.addEventListener("click", () => void this.act({ kind: "symbols" }));
     }
     const count = (label: string, value: string): void => {
@@ -167,10 +168,12 @@ export class LearnWindow extends Modal {
       line.createEl("b", { text: value });
     };
     count(
-      "Lines copied",
-      view.missing > 0 ? `${view.lines} · ${view.missing} more needed` : String(view.lines),
+      t("ai.learnWin.linesCopied"),
+      view.missing > 0
+        ? t("ai.learnWin.moreNeeded", { lines: view.lines, missing: view.missing })
+        : String(view.lines),
     );
-    count("Words you corrected", String(material.corrections));
+    count(t("ai.learnWin.wordsCorrected"), String(material.corrections));
   }
 
   private drawRun(parent: HTMLElement, view: LearnWindowView): void {
@@ -178,7 +181,10 @@ export class LearnWindow extends Modal {
     big.createSpan({ text: `${view.percent} %` });
     big.createSpan({
       cls: "goodobsidian-learn-unit",
-      text: view.minutesLeft === null ? " · starting" : ` · about ${view.minutesLeft} min left`,
+      text:
+        view.minutesLeft === null
+          ? ` ${t("ai.learnWin.starting")}`
+          : ` ${t("ai.learnWin.minutesLeft", { minutes: view.minutesLeft })}`,
     });
     const meter = parent.createDiv({ cls: "goodobsidian-learn-meter" });
     meter.createDiv().setCssProps({ width: `${view.percent}%` });

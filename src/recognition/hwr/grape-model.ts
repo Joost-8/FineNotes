@@ -10,6 +10,7 @@
  */
 
 import type { ModelAsset } from "../../downloads/model-manifest";
+import { t } from "../../i18n/translate";
 import { BUNDLE_FORMAT_INPUT } from "./bundle";
 
 /**
@@ -19,10 +20,12 @@ import { BUNDLE_FORMAT_INPUT } from "./bundle";
  */
 export const GRAPE_MODEL: ModelAsset = {
   id: "grape-2",
-  label: "Grape (handwriting recognizer model)",
-  purpose:
-    "It reads your handwriting on this device for search, titles and links; what you " +
-    "write never leaves the device.",
+  get label() {
+    return t("ai.grape.label");
+  },
+  get purpose() {
+    return t("ai.grape.purpose");
+  },
   version: "2.0",
   format: BUNDLE_FORMAT_INPUT,
   folder: "handwriting/grape-2",
