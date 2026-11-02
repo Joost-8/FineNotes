@@ -92,9 +92,8 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     const entry = await this.pdf.renderExact(
       backdrop.path,
       backdrop.page,
-      geometry,
+      inFrame(backdrop, geometry).geometry,
       deviceScale,
-      backdrop.frame,
     );
     this.exact = { path: backdrop.path, page: backdrop.page, entry };
   }
@@ -152,9 +151,14 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     const offScreen: PdfRasterRequest[] = [];
     const shown: PdfShownArea[] = [];
     const centres = new Map<string, { x: number; y: number }>();
-    for (const { backdrop, geometry, region } of visible) {
-      if (backdrop.kind !== "pdf") continue;
+    for (const item of visible) {
+      if (item.backdrop.kind !== "pdf") continue;
+      const at = inFrame(item.backdrop, item.geometry, item.region);
+      const { backdrop, geometry } = at;
+      const region = at.region ?? item.region;
       pages.push(this.pageImage(backdrop, geometry, deviceScale));
+      // Only the margin of a page is in view: no detail of its PDF is wanted.
+      if (region.maxX <= region.minX || region.maxY <= region.minY) continue;
       const view = visiblePdfArea(geometry, region, deviceScale)?.region;
       if (!view) continue;
       // Without the worker a moving view wants no detail: a patch still
@@ -217,8 +221,9 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     const room = (this.pdf?.memoryBudget.soft ?? 0) * NEAR_SHARE;
     const out: PdfRasterRequest[] = [];
     let bytes = 0;
-    for (const { backdrop, geometry } of near) {
-      if (backdrop.kind !== "pdf") continue;
+    for (const item of near) {
+      if (item.backdrop.kind !== "pdf") continue;
+      const { backdrop, geometry } = inFrame(item.backdrop, item.geometry);
       const scale = pageRasterScale(geometry, level);
       const cost = geometry.width * scale * geometry.height * scale * 4;
       // Always the next one, however large.
@@ -249,6 +254,21 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     const theme = target?.paper ?? this.theme;
     if (backdrop.kind !== "pdf") {
       drawSynthetic(ctx, backdrop, geometry, theme, weight, target?.region);
+      return;
+    }
+    if (backdrop.frame) {
+      const at = inFrame(backdrop, geometry, target?.region);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(backdrop.frame.x, backdrop.frame.y, at.geometry.width, at.geometry.height);
+      ctx.clip();
+      ctx.translate(backdrop.frame.x, backdrop.frame.y);
+      const { region: _region, ...rest } = target ?? { deviceScale: this.scale };
+      this.paint(ctx, at.backdrop, at.geometry, weight, {
+        ...rest,
+        ...(at.region ? { region: at.region } : {}),
+      });
+      ctx.restore();
       return;
     }
     // Inverted or kept, the page is painted as it is first.
@@ -324,13 +344,19 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       return;
     }
     if (backdrop.annotations === false) this.pdf.skipAnnotations(backdrop.path);
-    const entry = await this.pdf.resolve(
-      backdrop.path,
-      backdrop.page,
-      this.scale,
-      areaFor(backdrop, geometry),
-    );
-    this.paintEntry(ctx, entry, geometry, this.theme, [], backdrop.frame);
+    const at = inFrame(backdrop, geometry);
+    const entry = await this.pdf.resolve(backdrop.path, backdrop.page, this.scale, {
+      geometry: at.geometry,
+    });
+    const frame = backdrop.frame;
+    if (!frame) {
+      this.paintEntry(ctx, entry, geometry, this.theme, []);
+      return;
+    }
+    ctx.save();
+    ctx.translate(frame.x, frame.y);
+    this.paintEntry(ctx, entry, at.geometry, this.theme, []);
+    ctx.restore();
   }
 
   /** Paint a rasterised page on `paper`; each `drawImage` it makes is added to `draws`. */
@@ -366,9 +392,37 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
   }
 }
 
-/** The render area of a PDF backdrop on a page: its frame goes with it (Add space). */
+/** The render area of a PDF backdrop on a page: its frame goes with it. */
 function areaFor(backdrop: PdfBackdrop, geometry: PageGeometry): PdfRenderArea {
   return backdrop.frame ? { geometry, frame: backdrop.frame } : { geometry };
+}
+
+/**
+ * A PDF page on a page with a margin, as the page it was before the margin:
+ * the frame's own size, no frame, and `region` moved into the frame. Its
+ * rasters are then the ones that page had, so adding or resizing a margin
+ * never renders the PDF again and the slide stays on screen while the
+ * margin's width is dragged (it went blank at every step, Joost 2026-11-02).
+ */
+function inFrame(
+  backdrop: PdfBackdrop,
+  geometry: PageGeometry,
+  region?: Bounds,
+): { backdrop: PdfBackdrop; geometry: PageGeometry; region?: Bounds } {
+  const frame = backdrop.frame;
+  if (!frame) return { backdrop, geometry, ...(region ? { region } : {}) };
+  const { frame: _frame, ...plain } = backdrop;
+  const local = region && {
+    minX: Math.max(0, region.minX - frame.x),
+    minY: Math.max(0, region.minY - frame.y),
+    maxX: Math.min(frame.width, region.maxX - frame.x),
+    maxY: Math.min(frame.height, region.maxY - frame.y),
+  };
+  return {
+    backdrop: plain,
+    geometry: { ...geometry, width: frame.width, height: frame.height },
+    ...(local ? { region: local } : {}),
+  };
 }
 
 function missingLabel(path: string): string {

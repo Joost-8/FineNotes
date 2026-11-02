@@ -5206,7 +5206,7 @@ export class InkView extends TextFileView {
       return { left, right, percent };
     };
     let step: SetPageMargin | null = null;
-    const change = (choice: MarginChoice): void => {
+    const apply = (choice: MarginChoice): void => {
       const scope = new Set(choice.all ? pages : [page]);
       const targets = pages.map((p) => ({
         page: p,
@@ -5231,6 +5231,21 @@ export class InkView extends TextFileView {
       }
       this.requestSave();
     };
+    // A slider sends many inputs a frame; each one relays out every page. Only
+    // the newest choice of a frame is applied (it felt laggy, Joost 2026-11-02).
+    let pending: MarginChoice | null = null;
+    let frame = 0;
+    const flush = (): void => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = 0;
+      const next = pending;
+      pending = null;
+      if (next) apply(next);
+    };
+    const change = (choice: MarginChoice): void => {
+      pending = choice;
+      if (!frame) frame = window.requestAnimationFrame(flush);
+    };
     this.marginPopover = new MarginPopover(anchor, {
       initial: {
         side: marginSideOf(here),
@@ -5249,6 +5264,7 @@ export class InkView extends TextFileView {
       floor,
       onChange: change,
       onClose: () => {
+        flush();
         this.marginPopover = null;
       },
     });
