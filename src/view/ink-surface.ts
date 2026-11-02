@@ -39,6 +39,7 @@ import { type PdfRenderArea, boundsMeet } from "../canvas/pdf-raster";
  */
 
 import { Notice, Platform, setIcon } from "obsidian";
+import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import {
   DEFAULT_HIGHLIGHTER_ALPHA,
@@ -8025,6 +8026,7 @@ export class InkSurface {
       type: "range",
       attr: { "aria-label": spec.label },
     });
+    dragRange(range);
     range.min = String(spec.min);
     range.max = String(spec.max);
     range.step = String(spec.step);

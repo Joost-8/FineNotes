@@ -191,6 +191,7 @@ import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
 import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
+import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import { clampEraserSize, eraserStops, quickEraserSizes } from "../model/eraser-sizes";
 import { PANEL_SLIDE_MS, prefersReducedMotion, springCurve } from "./motion";
@@ -3583,6 +3584,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Font size" },
     });
+    dragRange(range);
     range.min = "0";
     range.max = String(SIZE_SLIDER_STEPS);
     range.step = "1";
@@ -3913,6 +3915,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Stroke width" },
     });
+    dragRange(range);
     // Stops, not widths: the pens' fine end steps in 0.05 mm, the rest in
     // half px (FineNotes#7). The highlighter keeps the thinnest preset.
     const highlighter =
@@ -4118,6 +4121,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Eraser size" },
     });
+    dragRange(range);
     const stops = eraserStops();
     range.min = "0";
     range.max = String(stops.length - 1);
@@ -4479,6 +4483,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Highlighter opacity" },
     });
+    dragRange(range);
     range.min = "10";
     range.max = "100";
     range.step = "5";
@@ -4541,6 +4546,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": `Stroke stabilization, ${spec.label}` },
     });
+    dragRange(range);
     range.min = "0";
     range.max = "100";
     range.step = "1";
@@ -4633,6 +4639,7 @@ export class Toolbar {
           title: "Straight lines only ↔ looser shapes",
         },
       });
+      dragRange(range);
       setIcon(bar.createSpan({ attr: { "aria-hidden": "true" } }), "waves");
       range.min = "10";
       range.max = "100";
