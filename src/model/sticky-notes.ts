@@ -116,6 +116,28 @@ export function isFolded(image: ImageElement): boolean {
 }
 
 /**
+ * Whether a press on a selected element's frame, now lifted, was a tap on an
+ * open sticky note's paper: it never moved (`lifted`), grabbed no handle,
+ * and no second finger joined it. Such a tap types on the note.
+ */
+export function tapTypesOnNote(press: {
+  image: ImageElement;
+  part: string;
+  lifted: boolean;
+  crowded?: boolean;
+}): boolean {
+  const { image } = press;
+  return (
+    image.sticky !== undefined &&
+    !isFolded(image) &&
+    image.locked !== true &&
+    press.part === "body" &&
+    !press.lifted &&
+    press.crowded !== true
+  );
+}
+
+/**
  * Whether `element` (a stroke or a text box) is on a note of `page` that is
  * folded away, so nothing but the note's own opening may reach it.
  */

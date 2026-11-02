@@ -491,6 +491,7 @@ import {
   noteOfText,
   noteTextFrame,
   shownAt,
+  tapTypesOnNote,
   textOfNote,
   withNoteInk,
   withNoteText,
@@ -1361,6 +1362,8 @@ interface ImageDrag {
   finger?: boolean;
   /** The knob's turn settles here, when the knob was grabbed. */
   turn?: TurnSnap;
+  /** Another finger joined it, so its lift is no tap. */
+  crowded?: boolean;
 }
 
 /**
@@ -16640,6 +16643,8 @@ export class InkSurface {
     let view: TextBoxView | undefined;
     for (let i = page.textBoxes.length - 1; i >= 0 && !view; i--) {
       const textBox = page.textBoxes[i];
+      // A note's text is the note's: the tap selects the note, and a second one types.
+      if (noteOfText(page, textBox) !== null) continue;
       const f = this.textBoxFrameOf(page.id, textBox);
       if (p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + f.h) {
         view = this.textBoxInputs.get(`${page.id}:${textBox.id}`);
@@ -17349,6 +17354,7 @@ export class InkSurface {
     if (this.imageDrag) {
       // A second finger beside the one dragging it: a turn of the picture.
       if (finger && this.imageDrag.finger === true) this.addFrameFinger(this.imageFrameEl, event);
+      this.imageDrag.crowded = true;
       return;
     }
     const box = this.boxForPage(sel.pageId);
@@ -17439,7 +17445,21 @@ export class InkSurface {
     if (!drag || event.pointerId !== drag.pointerId) return;
     event.stopPropagation();
     this.endImageDrag(true);
+    if (event.type === "pointerup" && tapTypesOnNote(drag)) this.typeOnSelectedNote(drag);
   };
+
+  /**
+   * A second tap on a selected sticky note types on it, as a second tap on
+   * a selected text box does: in its text, or in a new box made for it. The
+   * note is let go of first, so its frame and bar give way to the text pill.
+   * Synchronous inside the pointerup, or iPadOS raises no keyboard.
+   */
+  private typeOnSelectedNote(drag: ImageDrag): void {
+    const box = this.boxForPage(drag.pageId);
+    if (!box || this.callbacks.isLocked?.()) return;
+    this.deselectImage();
+    this.editNoteTextAt(box, drag.from);
+  }
 
   /** Where a dragged picture's middle may go: its page, or with the pages joined, every page. */
   private imageRoom(box: PageBox): { width: number; height: number; minX: number; minY: number } {

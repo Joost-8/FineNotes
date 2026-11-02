@@ -182,6 +182,13 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Tap a sticky note again to type on it.** A tap selected a note with
+  text, and every tap after that only kept it selected, so its text could
+  only be reached with the Text tool. Now a second tap on a selected note
+  types in its text (or starts it), with the lasso, the Pencil, a finger or
+  a mouse, as a second tap on a text box does. A finger tap on a note's text
+  selects the note, as a lasso tap does, instead of picking up the text on
+  its own.
 - **PDFs stay as they are when you pick another page appearance**
   ([#67](https://github.com/Joost-8/FineNotes/discussions/67)). Page
   appearance and the PDF choice were one list, so picking Match Obsidian

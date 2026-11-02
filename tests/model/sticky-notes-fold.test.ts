@@ -37,6 +37,7 @@ import {
   readStickyPaper,
   relinkNoteInk,
   shownAt,
+  tapTypesOnNote,
   textOfNote,
   withNoteText,
 } from "../../src/model/sticky-notes";
@@ -368,5 +369,29 @@ describe("on disk", () => {
     };
     expect(older.paper).toEqual({ color: "#fde68a" });
     expect(older.box).toMatchObject({ x: 112, y: 228, w: 176, text: "Check the sign" });
+  });
+});
+
+describe("a second tap on a selected note types on it", () => {
+  const note = newStickyNote("n1", { x: 0, y: 0, w: 120, h: 120 }, DEFAULT_STICKY_COLOR);
+  const tap = { image: note, part: "body", lifted: false };
+
+  it("types after a tap on the paper", () => {
+    expect(tapTypesOnNote(tap)).toBe(true);
+  });
+
+  it("not after a drag, a handle, or a second finger", () => {
+    expect(tapTypesOnNote({ ...tap, lifted: true })).toBe(false);
+    expect(tapTypesOnNote({ ...tap, part: "se" })).toBe(false);
+    expect(tapTypesOnNote({ ...tap, part: "rotate" })).toBe(false);
+    expect(tapTypesOnNote({ ...tap, crowded: true })).toBe(false);
+  });
+
+  it("not on a picture, a folded note or a locked one", () => {
+    const { sticky: _sticky, ...picture } = note;
+    expect(tapTypesOnNote({ ...tap, image: picture })).toBe(false);
+    const folded = { ...note, sticky: { color: DEFAULT_STICKY_COLOR, folded: true as const } };
+    expect(tapTypesOnNote({ ...tap, image: folded })).toBe(false);
+    expect(tapTypesOnNote({ ...tap, image: { ...note, locked: true } })).toBe(false);
   });
 });
