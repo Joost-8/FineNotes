@@ -54,7 +54,7 @@ import { normalizePageTitle } from "../model/contents";
 import { textSegments } from "../model/text-links";
 import { decodeAppleLz4 } from "./apple-lz4";
 import {
-  fontFor,
+  importedFont,
   hexColor,
   ImportTally,
   median,
@@ -822,8 +822,8 @@ function textBoxOf(body: Message, typed: Typed, k: number, id: string): TextBoxE
     fontSize: round2(Math.max(12, fontSize(attrs, store) * k)),
   };
   if (!fixed) box.fit = true;
-  const typeface = fontFor(attrs?.string(30) ?? store.message(5)?.message(1)?.string(30));
-  if (typeface !== "sans") box.font = typeface;
+  // The font each box was written in, over the nearest typeface (discussion #107).
+  Object.assign(box, importedFont(attrs?.string(30) ?? store.message(5)?.message(1)?.string(30)));
   const fill = rgba(body.message(30)?.message(1)?.message(1), true);
   if (fill) box.fill = fill;
   return box;

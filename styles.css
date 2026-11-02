@@ -5063,6 +5063,77 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   text-align: left;
 }
 
+/* The font menu (discussion #107): one list, each name in its face, the
+   built-in six then the device's own. The heading stays at the top while
+   the popover scrolls, with the loupe that opens the search field. A long
+   name is cut, so the popover keeps near its width. */
+.goodobsidian-text-popover .goodobsidian-font-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  background: var(--gob-pop-bg);
+}
+
+.goodobsidian-text-popover .goodobsidian-font-head .goodobsidian-popover-label {
+  flex: 1 1 auto;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-search.clickable-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-text-popover .goodobsidian-font-list {
+  max-width: 240px;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-list .goodobsidian-text-option {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 40px;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-list .goodobsidian-text-option.is-family {
+  display: flex;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-busy {
+  min-height: 40px;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-none {
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* A named family this device lacks: shown in the fallback, and marked. */
+.goodobsidian-text-popover .goodobsidian-text-option .goodobsidian-font-missing {
+  display: inline-flex;
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option .goodobsidian-font-missing svg {
+  width: 16px;
+  height: 16px;
+}
+
 .goodobsidian-text-popover .goodobsidian-text-option.is-size {
   padding: 0;
   font-variant-numeric: tabular-nums;
@@ -7248,6 +7319,71 @@ textarea.goodobsidian-chat-input:focus-visible {
   height: 10px;
   border-color: var(--gob-mark);
   background: var(--interactive-accent);
+}
+
+/* PDF text held on (discussion #107): a tint over each selected line, and a
+   handle at either end as iPadOS draws them, a bar the line's height with a
+   knob above the start and below the end. The handle's box is 44 px wide, a
+   finger's target; only the bar and the knob are drawn. */
+.goodobsidian-text-pick {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-text-pick.is-hidden,
+.goodobsidian-text-pick-handle.is-hidden {
+  display: none;
+}
+
+.goodobsidian-text-pick-line {
+  position: absolute;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+}
+
+.goodobsidian-text-pick-handle {
+  position: absolute;
+  box-sizing: content-box;
+  width: 44px;
+  /* The height is the line's; the padding reaches past the knob. */
+  padding: 16px 0;
+  margin: -16px 0 0 -22px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: col-resize;
+}
+
+.goodobsidian-text-pick-handle::before {
+  content: "";
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 21px;
+  width: 2px;
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-text-pick-knob {
+  position: absolute;
+  left: 17px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  box-shadow: var(--gob-shadow-mark);
+}
+
+.goodobsidian-text-pick-handle.is-start .goodobsidian-text-pick-knob {
+  top: 7px;
+}
+
+.goodobsidian-text-pick-handle.is-end .goodobsidian-text-pick-knob {
+  bottom: 7px;
+}
+
+.goodobsidian-text-pick-handle.is-dragging .goodobsidian-text-pick-knob {
+  transform: scale(1.3);
 }
 
 /* While a point is dragged, the frame and its handles step aside (the frame

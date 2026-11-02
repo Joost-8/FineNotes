@@ -370,6 +370,16 @@ import {
   textUnder,
 } from "../canvas/pdf-text";
 import { type PageLink, linkAt, notebookPageOf } from "../canvas/pdf-links";
+import {
+  type PickEnd,
+  type TextPick,
+  dragPickEnd,
+  handleTarget,
+  pickBounds,
+  pickHandles,
+  pickWord,
+} from "../canvas/text-pick";
+import { TextPickView } from "./text-pick-view";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
 import {
@@ -1286,6 +1296,8 @@ const PASTE_EVENT_WAIT_MS = 120;
 const IMAGE_CHROME_CLEAR_PX = 10;
 /** Room kept between a tap-and-hold's spot and its bar: clear of a fingertip, screen px. */
 const PRESS_CLEAR_PX = 28;
+/** Room kept between selected PDF text and its bar: clear of a handle's knob, screen px. */
+const TEXT_KNOB_CLEAR_PX = 12;
 /** The rotate knob's drawn radius, screen px; its target is the 44 px hit area. */
 const ROTATE_KNOB_RADIUS_PX = 14;
 /** How long a lasso drawn round nothing stays, then how long it fades (Joost's Goodnotes recording). */
@@ -1380,6 +1392,19 @@ interface PressMenu {
    * the pen goes through to the page, which closes the bar.
    */
   provisional: boolean;
+  /**
+   * PDF text the hold landed on (discussion #107): the word is selected, as
+   * iPadOS selects it, with a handle at either end and Copy in the bar.
+   */
+  text: PressText | null;
+}
+
+/** A press menu's selected PDF text, and the handle being dragged, if one is. */
+interface PressText {
+  layout: TextLayout;
+  pick: TextPick;
+  /** The handle a pointer holds, and where it took it from (page px, handle less pointer). */
+  drag: { end: PickEnd; grab: Pt } | null;
 }
 
 const NO_IMAGES: ReadonlySet<ImageElement> = new Set();
@@ -1744,6 +1769,16 @@ export class InkSurface {
    * handles, until the next tap beside it.
    */
   private heldText: TextBoxView | null = null;
+  /**
+   * The box being typed in when a field of the text pill took the focus
+   * (the font search), and what was selected in it: still the box the pill
+   * acts on, until `textFieldDone`.
+   */
+  private textFieldBox: {
+    view: TextBoxView;
+    start: number | null;
+    end: number | null;
+  } | null = null;
   /**
    * The tool a finger tap on a box replaced with the lasso, to come back to
    * when the box is let go (`fingerHoldsTextBox`); kept while it is typed in
@@ -2224,6 +2259,8 @@ export class InkSurface {
    */
   private selectionOutline: { loop: number[]; count: number } | null = null;
   private readonly actionBar: SelectionActionBar;
+  /** A press menu's PDF text selection: its tint and handles (`PressMenu.text`). */
+  private readonly textPickView: TextPickView;
   private readonly palette: readonly string[];
 
   // Placed images (0.5). One image is selected at a time, held by identity
@@ -2757,6 +2794,11 @@ export class InkSurface {
       this.selectionFrameEl.addEventListener(type, this.onSelectionFinger);
     }
     this.actionBar = new SelectionActionBar(this.selectionUiEl, "Selection");
+    this.textPickView = new TextPickView(this.selectionUiEl, {
+      grab: (end, x, y) => this.grabTextHandle(end, x, y),
+      drag: (x, y) => this.dragTextHandle(x, y),
+      release: () => this.releaseTextHandle(),
+    });
     // With the lasso, a text box is something to select, not to type in.
     this.surfaceEl.toggleClass("is-lasso", toolState.tool === "select");
     this.surfaceEl.toggleClass("is-text-tool", toolState.tool === "text");
@@ -3037,6 +3079,7 @@ export class InkSurface {
     this.cancelGroupDrag();
     this.endCrop(false);
     this.actionBar.destroy();
+    this.textPickView.destroy();
     this.zoomResize?.disconnect();
     this.zoomResize = null;
     if (this.zoomPaintFrame) window.cancelAnimationFrame(this.zoomPaintFrame);
@@ -5921,6 +5964,12 @@ export class InkSurface {
         this.removeIfEmpty(view);
         return;
       }
+      // Into a field of the text pill (the font search): the box stays the
+      // one being edited, and gets the focus back when the field is done.
+      if (keepsTextEditing(event.relatedTarget)) {
+        this.textFieldBox = { view, start: input.selectionStart, end: input.selectionEnd };
+        return;
+      }
       this.endTextEditing(view);
     });
     // Enter on a list line continues the list; on an empty item, ends it.
@@ -6803,6 +6852,7 @@ export class InkSurface {
         this.fingerTap =
           this.penPanning || this.scroller.isAnimating || this.handHeld ? null : { x, y, t };
         if (this.fingerTap && !this.lasso) {
+          this.readTextUnder(x, y);
           this.fingerHold.begin(x, y, t);
           this.startPress(() => this.fingerHeld(), FINGER_HOLD_MS);
         }
@@ -11143,12 +11193,16 @@ export class InkSurface {
     this.clearSelection();
     this.deselectImage();
     const top = topImageAt(page.images, p, PEN_TAP_TOLERANCE_PX / this.gestureScale);
+    const locked = top?.locked === true ? top : null;
+    const ink = this.strokeAt(page, p, PEN_TAP_TOLERANCE_PX / this.gestureScale);
     this.pressMenu = {
       pageId: page.id,
       at: { x: p.x, y: p.y },
-      locked: top?.locked === true ? top : null,
-      ink: this.strokeAt(page, p, PEN_TAP_TOLERANCE_PX / this.gestureScale),
+      locked,
+      ink,
       provisional,
+      // Held on a PDF's text, and on no ink but a highlight: the word is selected.
+      text: locked || (ink && !isHighlight(ink)) ? null : this.pressedText(box.index, p),
     };
     this.syncActionBar();
   }
@@ -12002,11 +12056,14 @@ export class InkSurface {
     const press = crop || group || image ? null : this.pressMenu;
     const pageId = crop?.pageId ?? group?.pageId ?? image?.pageId ?? press?.pageId ?? "";
     const box = this.boxForPage(pageId);
+    this.syncTextPick(press, box);
     const dragging =
       this.groupDrag?.lifted === true ||
       this.imageDrag?.lifted === true ||
       this.pointDrag?.lifted === true ||
-      this.linkDrag?.lifted === true;
+      this.linkDrag?.lifted === true ||
+      // As on iPadOS, the bar steps aside while a handle is dragged.
+      press?.text?.drag != null;
     let bounds: Bounds | null = null;
     let clearAbove = SELECTION_PAD_PX;
     let clearBelow = SELECTION_PAD_PX;
@@ -12024,6 +12081,11 @@ export class InkSurface {
       bounds = this.imageChromeBounds(image.image);
       clearAbove = clearBelow = IMAGE_CHROME_CLEAR_PX;
       this.actionBar.setActions(this.imageActions(image));
+    } else if (press?.text) {
+      // Right above the selected text, clear of the handles' knobs.
+      bounds = pickBounds(press.text.pick);
+      clearAbove = clearBelow = TEXT_KNOB_CLEAR_PX;
+      this.actionBar.setActions(this.textPressActions(press));
     } else if (press) {
       bounds = { minX: press.at.x, minY: press.at.y, maxX: press.at.x, maxY: press.at.y };
       // Clear of the pen tip or the fingertip resting on that spot.
@@ -12683,6 +12745,114 @@ export class InkSurface {
   }
 
   /** A tap-and-hold's bar: Unlock on a locked picture, else Paste. */
+  /**
+   * Selected PDF text's bar: Copy, as iPadOS offers it over read-only text;
+   * what a hold offers anywhere else (Paste, Text box, Comment) is in its
+   * "…" menu, so a page of dense text still has them.
+   */
+  private textPressActions(press: PressMenu): SelectionAction[] {
+    const text = press.text;
+    const copy: SelectionAction = {
+      id: "copy-text",
+      icon: "copy",
+      label: "Copy",
+      group: "press",
+      bar: true,
+      menu: "none",
+      showLabel: true,
+      enabled: text !== null && text.pick.text !== "",
+      run: () => {
+        if (text) this.copyText(text.pick.text);
+        this.clearSelection();
+      },
+    };
+    const rest = this.pressActions(press).filter((action) => action.id !== "select-page");
+    return [copy, ...rest.map((action) => ({ ...action, bar: false, menu: "row" as const }))];
+  }
+
+  /** The word of page `index`'s PDF text at page point `p`, or null when there is none. */
+  private pressedText(index: number, p: Pt): PressText | null {
+    if (this.practice) return null;
+    const layout = this.pageText(index);
+    const pick = layout ? pickWord(layout, p, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
+    return layout && pick ? { layout, pick, drag: null } : null;
+  }
+
+  /**
+   * Page text that was still being read when a finger held on it: while
+   * that finger is down, the bar it opened becomes the text's.
+   */
+  private pressTextReady(path: string, pdfPage: number): void {
+    const press = this.pressMenu;
+    if (
+      !press?.provisional ||
+      press.text ||
+      press.locked ||
+      (press.ink && !isHighlight(press.ink))
+    ) {
+      return;
+    }
+    const page = this.doc.pages.find((candidate) => candidate.id === press.pageId);
+    const backdrop = page?.backdrop;
+    if (!page || backdrop?.kind !== "pdf" || backdrop.path !== path || backdrop.page !== pdfPage) {
+      return;
+    }
+    press.text = this.pressedText(this.doc.pages.indexOf(page), press.at);
+    if (press.text) this.syncActionBar();
+  }
+
+  /**
+   * A finger came down at client (`x`, `y`): have the PDF text of the page
+   * under it read, so that a hold there can select it.
+   */
+  private readTextUnder(x: number, y: number): void {
+    if (!this.textSource) return;
+    const at = this.toLayout(x, y);
+    const box = boxAtPoint(this.pageLayout, at.x, at.y);
+    if (box) this.pageText(box.index);
+  }
+
+  /** Draw the press menu's PDF text selection, or take it away. */
+  private syncTextPick(press: PressMenu | null, box: PageBox | null): void {
+    const text = press?.text;
+    if (!text || !box) {
+      this.textPickView.hide();
+      return;
+    }
+    this.textPickView.show(text.pick, box.x, box.y, this.unitScale);
+  }
+
+  /** A handle of the selected PDF text was taken at client (`x`, `y`). */
+  private grabTextHandle(end: PickEnd, x: number, y: number): void {
+    const press = this.pressMenu;
+    const box = press ? this.boxForPage(press.pageId) : null;
+    const handles = press?.text ? pickHandles(press.text.pick) : null;
+    if (!press?.text || !box || !handles) return;
+    const h = handles[end];
+    const at = this.pagePoint(box, x, y);
+    press.text.drag = { end, grab: { x: h.x - at.x, y: (h.top + h.bottom) / 2 - at.y } };
+    this.syncActionBar();
+  }
+
+  private dragTextHandle(x: number, y: number): void {
+    const press = this.pressMenu;
+    const text = press?.text;
+    const box = press ? this.boxForPage(press.pageId) : null;
+    if (!text?.drag || !box) return;
+    const to = handleTarget(this.pagePoint(box, x, y), text.drag.grab);
+    const pick = dragPickEnd(text.layout, text.pick, text.drag.end, to);
+    if (pick.start === text.pick.start && pick.end === text.pick.end) return;
+    text.pick = pick;
+    this.syncTextPick(press, box);
+  }
+
+  private releaseTextHandle(): void {
+    const text = this.pressMenu?.text;
+    if (!text?.drag) return;
+    text.drag = null;
+    this.syncActionBar();
+  }
+
   private pressActions(press: PressMenu): SelectionAction[] {
     const locked = press.locked;
     if (locked) {
@@ -13035,6 +13205,13 @@ export class InkSurface {
   /** Cmd/Ctrl + C, X or V on the page. Returns whether it was taken. */
   private clipboardKey(event: KeyboardEvent): boolean {
     const key = event.key.toLowerCase();
+    const picked = this.pressMenu?.text?.pick.text;
+    if (key === "c" && picked) {
+      event.preventDefault();
+      this.copyText(picked);
+      this.clearSelection();
+      return true;
+    }
     if (key === "c" || key === "x") {
       if (this.cropping || !this.hasSelection()) return false;
       event.preventDefault();
@@ -13746,6 +13923,7 @@ export class InkSurface {
    * followed now, if it was moments ago and the page is still there.
    */
   pdfTextReady(path: string, pdfPage: number): void {
+    this.pressTextReady(path, pdfPage);
     const tap = this.pendingLinkTap;
     const backdrop = tap?.page.backdrop;
     if (!tap || backdrop?.kind !== "pdf" || backdrop.path !== path || backdrop.page !== pdfPage) {
@@ -17602,8 +17780,37 @@ export class InkSurface {
    * another tool).
    */
   private textTargetView(): TextBoxView | null {
-    const view = this.editingTextView() ?? this.heldText;
+    const view = this.editingTextView() ?? this.heldText ?? this.textFieldBox?.view ?? null;
     return view && this.liveTextBox(view.pageId, view.id) ? view : null;
+  }
+
+  /**
+   * A field of the text pill that took the focus from a box is done with it
+   * (`keepsTextEditing`), and focus goes to `to`, if anywhere. Back to
+   * nowhere (a pick, Escape, the menu closing) the box takes it back, with
+   * the text it had selected, and is still being edited: an unpinned Text
+   * tool does not hand back. Into another field it ends editing, as a blur
+   * would have; into a box, that box takes over.
+   */
+  textFieldDone(to: Element | null): void {
+    const kept = this.textFieldBox;
+    if (!kept) return;
+    this.textFieldBox = null;
+    const { view, start, end } = kept;
+    if (to === view.input) return;
+    if (onTextBox(to)) {
+      this.removeIfEmpty(view);
+      return;
+    }
+    const editable =
+      to instanceof HTMLElement &&
+      (to.isContentEditable || to.tagName === "INPUT" || to.tagName === "TEXTAREA");
+    if (editable || !this.liveTextBox(view.pageId, view.id)) {
+      this.endTextEditing(view);
+      return;
+    }
+    view.input.focus({ preventScroll: true });
+    if (start !== null && end !== null) view.input.setSelectionRange(start, end);
   }
 
   /** Tell the host the style of the box the pill acts on, after something may have changed it. */
@@ -17987,6 +18194,14 @@ function now(): number {
 }
 
 /** Whether an event's target is a page text box, or inside one. */
+/**
+ * Whether focus went to a field that keeps the box being edited (the text
+ * pill's font search marks itself with `data-goodobsidian-keeps-text`).
+ */
+function keepsTextEditing(target: EventTarget | null): boolean {
+  return (target as Element | null)?.closest?.("[data-goodobsidian-keeps-text]") != null;
+}
+
 function onTextBox(target: EventTarget | null): boolean {
   return (target as Element | null)?.closest(".goodobsidian-page-textbox") != null;
 }

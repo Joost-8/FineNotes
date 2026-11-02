@@ -533,6 +533,12 @@ export interface TextBoxElement {
   // stored: a style flag is either `true` or absent.
   /** Typeface; absent means `"sans"`. */
   font?: TextFont;
+  /**
+   * A font family by name (2.7, discussion #107): shown in it where the
+   * device has it, in `font` where it does not (`text-family.ts`). Absent:
+   * `font` alone.
+   */
+  family?: string;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;

@@ -26,6 +26,20 @@ extracted from the matching section of this file by `release.yml`.
   ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). Select
   pages in the page overview and choose Export: the dialog shows just those
   pages and asks only for the format, not for the pages again.
+- **Select a PDF's text by holding it**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). Hold a
+  finger on a word of a PDF page, with any tool, and the word is selected,
+  as on the iPad: drag the handles at either end to take more or less, and
+  Copy sits right above it. Paste, Text box and Comment are in its ⋯ menu.
+  A right-click does the same on a computer, and so does the lasso's
+  Pencil held still.
+- **Every font on your device for text boxes**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). The font
+  menu has More fonts: the computer's own fonts, or on the iPad the ones
+  it has built in, each shown in itself. A device without the font shows
+  the box in the font it was picked over, and the menu marks it; so does
+  FineNotes 2.6 and earlier. Text boxes imported from Goodnotes and
+  Notability keep the font they were written in, too.
 - **Hearts.** Draw a heart, round or tall, and hold, or with Auto shape
   on, and it snaps to a clean heart; the Shape tool has one too, after the
   star.

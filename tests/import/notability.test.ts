@@ -381,10 +381,13 @@ describe("readNotability", () => {
     expect(result.warnings).toEqual([]);
     const [first, second, box] = boxes;
     expect(first).toMatchObject({ id: "t1", color: "#000000" });
+    // Notability names PostScript fonts: kept as their family (discussion #107).
+    expect(first.family).toBe("Helvetica Neue");
+    expect(first.font).toBeUndefined();
     expect(first.y).toBeCloseTo(2 * 12 * 1.2 * K, 1);
     expect(first.x).toBeCloseTo(15 * K, 1);
     expect(first.w).toBeCloseTo((WIDTH - 30) * K, 1);
-    expect(second).toMatchObject({ color: "#0000ff", font: "mono" });
+    expect(second).toMatchObject({ color: "#0000ff", font: "mono", family: "Courier" });
     // Four 12-point lines, then an empty one in the 24-point run.
     expect(second.y).toBeCloseTo((4 * 12 + 24) * 1.2 * K, 1);
     expect(second.fontSize).toBeCloseTo(24 * K, 1);

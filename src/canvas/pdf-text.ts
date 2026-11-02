@@ -311,6 +311,15 @@ function charIn(layout: TextLayout, line: TextLine, x: number): number {
   return best;
 }
 
+/**
+ * The caret nearest page point (`x`, `y`): in the line nearest it, before
+ * the first character whose middle is past `x`. -1 when the page has no text.
+ */
+export function caretAt(layout: TextLayout, x: number, y: number): number {
+  const index = nearestLine(layout, x, y);
+  return index < 0 ? -1 : caretIn(layout, layout.lines[index], x);
+}
+
 function lineOf(layout: TextLayout, index: number): TextLine | null {
   return layout.lines.find((line) => index >= line.start && index < line.end) ?? null;
 }
