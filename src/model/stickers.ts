@@ -9,15 +9,42 @@
  */
 
 import { DEFAULT_STICKER_FOLDER } from "./vault-folders";
+import { EN } from "../i18n/en";
+import { type TextKey, t } from "../i18n/translate";
 
 export type StickerCategory = "arrows" | "labels" | "tape" | "icons" | "doodles";
 
-export const STICKER_CATEGORIES: ReadonlyArray<{ id: StickerCategory; label: string }> = [
-  { id: "arrows", label: "Arrows" },
-  { id: "labels", label: "Labels" },
-  { id: "tape", label: "Tape" },
-  { id: "icons", label: "Icons" },
-  { id: "doodles", label: "Doodles" },
+export const STICKER_CATEGORIES: ReadonlyArray<{ id: StickerCategory; readonly label: string }> = [
+  {
+    id: "arrows",
+    get label() {
+      return t("notebooks.stickerCategory.arrows");
+    },
+  },
+  {
+    id: "labels",
+    get label() {
+      return t("notebooks.stickerCategory.labels");
+    },
+  },
+  {
+    id: "tape",
+    get label() {
+      return t("notebooks.stickerCategory.tape");
+    },
+  },
+  {
+    id: "icons",
+    get label() {
+      return t("notebooks.stickerCategory.icons");
+    },
+  },
+  {
+    id: "doodles",
+    get label() {
+      return t("notebooks.stickerCategory.doodles");
+    },
+  },
 ];
 
 /** The colours a sticker is drawn in: `ink` for lines, `tint` for soft fills. */
@@ -28,7 +55,10 @@ export interface StickerInk {
 
 export interface Sticker {
   id: string;
-  name: string;
+  /** The key of the English name, which names the file a placed sticker is saved as. */
+  nameKey: TextKey;
+  /** The name shown, in the language in use. */
+  readonly name: string;
   category: StickerCategory;
   /** The SVG's own size, which is also the size it is placed at, in page px. */
   w: number;
@@ -82,7 +112,10 @@ export const STICKERS: readonly Sticker[] = [
   // --- Arrows: drawn as by hand, an open head.
   {
     id: "arrow-curve",
-    name: "Curved arrow",
+    nameKey: "notebooks.sticker.curvedArrow",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "arrows",
     w: 120,
     h: 70,
@@ -90,7 +123,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "arrow-loop",
-    name: "Loop arrow",
+    nameKey: "notebooks.sticker.loopArrow",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "arrows",
     w: 130,
     h: 70,
@@ -100,7 +136,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "arrow-straight",
-    name: "Arrow",
+    nameKey: "notebooks.sticker.arrow",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "arrows",
     w: 120,
     h: 30,
@@ -108,7 +147,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "arrow-double",
-    name: "Two-way arrow",
+    nameKey: "notebooks.sticker.twoWayArrow",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "arrows",
     w: 120,
     h: 30,
@@ -116,7 +158,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "arrow-turn",
-    name: "Turning arrow",
+    nameKey: "notebooks.sticker.turningArrow",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "arrows",
     w: 80,
     h: 90,
@@ -125,7 +170,10 @@ export const STICKERS: readonly Sticker[] = [
   // --- Labels: a soft fill with an ink edge, room to write on.
   {
     id: "label-banner",
-    name: "Banner",
+    nameKey: "notebooks.sticker.banner",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "labels",
     w: 200,
     h: 60,
@@ -136,7 +184,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "label-tag",
-    name: "Tag",
+    nameKey: "notebooks.sticker.tag",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "labels",
     w: 150,
     h: 56,
@@ -147,7 +198,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "label-bubble",
-    name: "Speech bubble",
+    nameKey: "notebooks.sticker.speechBubble",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "labels",
     w: 150,
     h: 100,
@@ -159,7 +213,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "label-note",
-    name: "Sticky note",
+    nameKey: "notebooks.sticker.stickyNote",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "labels",
     w: 120,
     h: 120,
@@ -170,7 +227,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "label-circle",
-    name: "Number badge",
+    nameKey: "notebooks.sticker.numberBadge",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "labels",
     w: 60,
     h: 60,
@@ -180,7 +240,10 @@ export const STICKERS: readonly Sticker[] = [
   // --- Tape: a translucent strip with a pattern.
   {
     id: "tape-plain",
-    name: "Plain tape",
+    nameKey: "notebooks.sticker.plainTape",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "tape",
     w: 205,
     h: 36,
@@ -188,7 +251,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "tape-stripes",
-    name: "Striped tape",
+    nameKey: "notebooks.sticker.stripedTape",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "tape",
     w: 205,
     h: 36,
@@ -200,7 +266,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "tape-dots",
-    name: "Dotted tape",
+    nameKey: "notebooks.sticker.dottedTape",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "tape",
     w: 205,
     h: 36,
@@ -214,7 +283,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "tape-grid",
-    name: "Grid tape",
+    nameKey: "notebooks.sticker.gridTape",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "tape",
     w: 205,
     h: 36,
@@ -228,7 +300,10 @@ export const STICKERS: readonly Sticker[] = [
   // --- Icons.
   {
     id: "icon-star",
-    name: "Star",
+    nameKey: "notebooks.sticker.star",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "icons",
     w: 60,
     h: 60,
@@ -239,7 +314,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "icon-heart",
-    name: "Heart",
+    nameKey: "notebooks.sticker.heart",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "icons",
     w: 60,
     h: 56,
@@ -251,7 +329,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "icon-check",
-    name: "Check",
+    nameKey: "notebooks.sticker.check",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "icons",
     w: 60,
     h: 60,
@@ -261,7 +342,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "icon-idea",
-    name: "Light bulb",
+    nameKey: "notebooks.sticker.lightBulb",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "icons",
     w: 56,
     h: 70,
@@ -273,7 +357,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "icon-warning",
-    name: "Warning",
+    nameKey: "notebooks.sticker.warning",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "icons",
     w: 64,
     h: 58,
@@ -289,7 +376,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "icon-pin",
-    name: "Pin",
+    nameKey: "notebooks.sticker.pin",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "icons",
     w: 48,
     h: 64,
@@ -300,7 +390,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "icon-bookmark",
-    name: "Bookmark",
+    nameKey: "notebooks.sticker.bookmark",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "icons",
     w: 40,
     h: 64,
@@ -311,7 +404,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "icon-flower",
-    name: "Flower",
+    nameKey: "notebooks.sticker.flower",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "icons",
     w: 64,
     h: 64,
@@ -331,7 +427,10 @@ export const STICKERS: readonly Sticker[] = [
   // --- Doodles: ink only.
   {
     id: "doodle-sparkles",
-    name: "Sparkles",
+    nameKey: "notebooks.sticker.sparkles",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "doodles",
     w: 70,
     h: 64,
@@ -343,7 +442,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "doodle-swash",
-    name: "Underline swash",
+    nameKey: "notebooks.sticker.underlineSwash",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "doodles",
     w: 200,
     h: 30,
@@ -351,7 +453,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "doodle-circle",
-    name: "Scribbled circle",
+    nameKey: "notebooks.sticker.scribbledCircle",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "doodles",
     w: 140,
     h: 80,
@@ -364,7 +469,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "doodle-squiggle",
-    name: "Squiggle divider",
+    nameKey: "notebooks.sticker.squiggleDivider",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "doodles",
     w: 200,
     h: 24,
@@ -376,7 +484,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "doodle-dots",
-    name: "Dot divider",
+    nameKey: "notebooks.sticker.dotDivider",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "doodles",
     w: 200,
     h: 16,
@@ -389,7 +500,10 @@ export const STICKERS: readonly Sticker[] = [
   },
   {
     id: "doodle-bracket",
-    name: "Bracket",
+    nameKey: "notebooks.sticker.bracket",
+    get name() {
+      return t(this.nameKey);
+    },
     category: "doodles",
     w: 40,
     h: 140,
@@ -432,7 +546,8 @@ export function stickerSvg(sticker: Sticker, color: string): string {
 
 /** A file name for a placed sticker: its name and colour, so a folder of them reads well. */
 export function stickerFileName(sticker: Sticker, color: string): string {
-  return `Sticker ${sticker.name} ${stickerInk(color).ink.slice(1)}`;
+  // The English name, so one sticker is one file whatever language a device shows.
+  return `Sticker ${EN[sticker.nameKey]} ${stickerInk(color).ink.slice(1)}`;
 }
 
 /** Where the user's sticker collections live until they choose another folder. */

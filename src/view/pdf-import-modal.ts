@@ -2,6 +2,7 @@ import { type App, FuzzySuggestModal, Modal, Notice, Setting, type TFile } from 
 import { allPages, parsePageRange } from "../export/page-range";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { errorMessage } from "../util/errors";
+import { t } from "../i18n/translate";
 
 export class VaultPdfSuggestModal extends FuzzySuggestModal<TFile> {
   constructor(
@@ -9,7 +10,7 @@ export class VaultPdfSuggestModal extends FuzzySuggestModal<TFile> {
     private readonly pick: (file: TFile) => void,
   ) {
     super(app);
-    this.setPlaceholder("Find a PDF in the vault…");
+    this.setPlaceholder(t("notebooks.pdfImport.find"));
   }
   getItems(): TFile[] {
     return this.app.vault.getFiles().filter((file) => file.extension.toLowerCase() === "pdf");
@@ -39,27 +40,27 @@ export class PdfImportModal extends Modal {
   }
 
   override onOpen(): void {
-    this.titleEl.setText("Import PDF");
+    this.titleEl.setText(t("notebooks.pdfImport.title"));
     this.modalEl.addClass("goodobsidian-dialog");
     this.contentEl.createEl("p", {
-      text: `${this.name} · ${this.total} pages. Added after the current page; the original PDF is preserved.`,
+      text: t("notebooks.pdfImport.summary", { name: this.name, total: this.total }),
     });
     this.keyboard = new DialogKeyboard(this.modalEl);
-    new Setting(this.contentEl).setName("Pages").addDropdown((dropdown) =>
+    new Setting(this.contentEl).setName(t("notebooks.pdfImport.pages")).addDropdown((dropdown) =>
       dropdown
-        .addOption("all", "All pages")
-        .addOption("custom", "Selected pages")
+        .addOption("all", t("notebooks.pdfImport.allPages"))
+        .addOption("custom", t("notebooks.pdfImport.selectedPages"))
         .onChange((value) => {
           this.all = value === "all";
           row.settingEl.toggle(!this.all);
         }),
     );
     const row = new Setting(this.contentEl)
-      .setName("Page range")
-      .setDesc("For example: 1-3, 5. Pages are imported in the order entered.");
+      .setName(t("notebooks.pdfImport.range"))
+      .setDesc(t("notebooks.pdfImport.rangeInfo"));
     row.settingEl.toggle(false);
     row.addText((field) => {
-      field.setPlaceholder("1-3, 5").onChange((value) => {
+      field.setPlaceholder(t("notebooks.pdfImport.rangePlaceholder")).onChange((value) => {
         this.range = value;
       });
       this.keyboard?.watch(field.inputEl, row.settingEl);
@@ -68,25 +69,24 @@ export class PdfImportModal extends Modal {
       .addButton((button) =>
         button
           .setClass("clickable-icon")
-          .setButtonText("Import")
+          .setButtonText(t("notebooks.pdfImport.import"))
           .setCta()
           .onClick(async () => {
             if (this.busy) return;
             const result = this.all
               ? { ok: true as const, pages: allPages(this.total) }
-              : parsePageRange(this.range, this.total);
+              : parsePageRange(this.range, this.total, "import");
             if (!result.ok) {
-              new Notice(result.error.replace(/export/g, "import").replace(/notebook/g, "PDF"));
+              new Notice(result.error);
               return;
             }
             this.busy = true;
             button.setDisabled(true);
             try {
               if (await this.insert(result.pages)) this.close();
-              else
-                new Notice("PDF import stopped: the notebook is no longer available for editing.");
+              else new Notice(t("notebooks.pdfImport.stopped"));
             } catch (error) {
-              new Notice(`FineNotes: couldn't import PDF — ${errorMessage(error)}`, 8000);
+              new Notice(t("notebooks.pdfImport.failed", { reason: errorMessage(error) }), 8000);
             } finally {
               this.busy = false;
               button.setDisabled(false);
@@ -96,7 +96,7 @@ export class PdfImportModal extends Modal {
       .addButton((button) =>
         button
           .setClass("clickable-icon")
-          .setButtonText("Cancel")
+          .setButtonText(t("common.cancel"))
           .onClick(() => {
             if (!this.busy) this.close();
           }),

@@ -6,6 +6,7 @@
 import { type InkDocument, TEXT_FONT_STACKS, type TextFont } from "../model/document";
 import { DEVICE_FONT_CANDIDATES, cleanFamily } from "../model/text-family";
 import { PAGE_PX_PER_MM } from "../model/units";
+import { t } from "../i18n/translate";
 
 export type ImportSource =
   | "goodnotes"
@@ -61,10 +62,12 @@ export interface ImportResult {
 export function onPages(pages: Iterable<number>): string {
   const sorted = [...new Set(pages)].sort((a, b) => a - b);
   if (sorted.length === 0) return "";
-  if (sorted.length === 1) return ` (page ${sorted[0]})`;
-  const shown = sorted.slice(0, 6).join(", ");
-  const more = sorted.length > 6 ? ` and ${sorted.length - 6} more` : "";
-  return ` (pages ${shown}${more})`;
+  if (sorted.length === 1) return ` ${t("notebooks.import.onPage", { page: sorted[0] })}`;
+  const list = sorted.slice(0, 6).join(", ");
+  if (sorted.length > 6) {
+    return ` ${t("notebooks.import.onPagesMore", { pages: list, more: sorted.length - 6 })}`;
+  }
+  return ` ${t("notebooks.import.onPages", { pages: list })}`;
 }
 
 /** Things counted while converting, with the pages they were on. */
@@ -89,7 +92,8 @@ export class ImportTally {
     if (!entry) return null;
     const text = sentence(entry.n);
     const pages = onPages(entry.pages);
-    return text.endsWith(".") ? `${text.slice(0, -1)}${pages}.` : `${text}${pages}`;
+    const stop = /[.。]$/.exec(text);
+    return stop ? `${text.slice(0, -1)}${pages}${stop[0]}` : `${text}${pages}`;
   }
 }
 

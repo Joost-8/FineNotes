@@ -218,6 +218,7 @@ import {
 } from "./model/calculator-store";
 import { writeSystemText } from "./view/system-clipboard";
 import { InterfaceLanguage } from "./view/interface-language";
+import { t, tn } from "./i18n/translate";
 
 /** How many times the Text tool's hint pill is shown before it stops by itself. */
 const TEXT_HINT_SHOWS = 3;
@@ -240,11 +241,6 @@ const UPDATE_KEY = "finenotes:update-check";
 /** How long after load the main thread is watched for stalls (startup-log.ts), and how often. */
 const STARTUP_WATCH_MS = 90_000;
 const STARTUP_TICK_MS = 250;
-
-/** What the Text tool's hint says: what a tap and a drag do with it. */
-const TEXT_HINT = "Tap to add a text box. It grows as you type.";
-/** Where Make shapes lives, said once: the first time a pen stroke snaps (FineNotes#84). */
-const SHAPE_HINT = "When strokes become shapes: tap the pen in hand, then Pen gestures.";
 
 /**
  * What `runRecognition` transcribes: the notebook view. An interface so the
@@ -450,7 +446,7 @@ export default class GoodObsidianPlugin extends Plugin {
       registerImageMenuEntry({
         id: "generate-ai",
         icon: "sparkles",
-        label: "Generate with AI",
+        label: t("notebooks.imageMenu.generateAi"),
         order: 50,
         isAvailable: () => this.imageAiConfig() !== null,
         run: () => this.app.workspace.getActiveViewOfType(InkView)?.openGenerateImage(),
@@ -462,7 +458,7 @@ export default class GoodObsidianPlugin extends Plugin {
       registerImageMenuEntry({
         id: "scan",
         icon: "scan-line",
-        label: "Scan document",
+        label: t("notebooks.imageMenu.scan"),
         order: 40,
         run: () => this.app.workspace.getActiveViewOfType(InkView)?.scanDocument(),
       }),
@@ -473,7 +469,7 @@ export default class GoodObsidianPlugin extends Plugin {
           const folder = file instanceof TFolder ? file : file.parent;
           menu.addItem((item) =>
             item
-              .setTitle("New notebook")
+              .setTitle(t("notebooks.menu.newNotebook"))
               .setIcon(ICON_NEW_NOTEBOOK)
               .setSection("action-primary")
               .onClick(() =>
@@ -483,7 +479,7 @@ export default class GoodObsidianPlugin extends Plugin {
           // Right below it: a notebook from another app, into the folder clicked.
           menu.addItem((item) =>
             item
-              .setTitle("Import notebook (beta)…")
+              .setTitle(t("notebooks.menu.importNotebook"))
               .setIcon(ICON_IMPORT_NOTEBOOK)
               .setSection("action-primary")
               .onClick(() =>
@@ -494,7 +490,7 @@ export default class GoodObsidianPlugin extends Plugin {
         if (!(file instanceof TFile) || file.extension.toLowerCase() !== "pdf") return;
         menu.addItem((item) =>
           item
-            .setTitle("New notebook from PDF")
+            .setTitle(t("notebooks.menu.newFromPdf"))
             .setIcon(ICON_NEW_NOTEBOOK)
             .onClick(() => void this.createNotebookFromPdf(file)),
         );
@@ -502,7 +498,7 @@ export default class GoodObsidianPlugin extends Plugin {
         if (!view) return;
         menu.addItem((item) =>
           item
-            .setTitle("Import PDF into notebook")
+            .setTitle(t("notebooks.menu.importPdfInto"))
             .setIcon("file-text")
             .onClick(() => void view.importVaultPdf(file.path)),
         );
@@ -562,7 +558,9 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.workspace.on("layout-change", () => this.syncExplorerNotebookButton()),
     );
     this.app.workspace.onLayoutReady(() => this.syncExplorerNotebookButton());
-    this.addRibbonIcon(ICON_NEW_NOTEBOOK, "New notebook", () => this.openNewNotebookDialog());
+    this.addRibbonIcon(ICON_NEW_NOTEBOOK, t("notebooks.ribbon.newNotebook"), () =>
+      this.openNewNotebookDialog(),
+    );
     this.addCommands();
 
     this.settingTab = new GoodObsidianSettingTab(this.app, this);
@@ -615,74 +613,80 @@ export default class GoodObsidianPlugin extends Plugin {
     // The id predates the dialog; kept so existing hotkeys still work.
     this.addCommand({
       id: "create-handwriting-note",
-      name: "New notebook or page…",
+      name: t("notebooks.command.newNotebookOrPage"),
       callback: () => this.openNewNotebookDialog(),
     });
 
     this.addCommand({
       id: "create-notebook-with-last-settings",
-      name: "Create notebook with last settings",
+      name: t("notebooks.command.createWithLastSettings"),
       callback: () => void this.createNotebookWithLastSettings(),
     });
 
     this.addCommand({
       id: "show-welcome",
-      name: "Show the welcome",
+      name: t("notebooks.command.showWelcome"),
       callback: () => this.showWelcome(),
     });
 
     this.addCommand({
       id: "create-notebook-from-pdf",
-      name: "New notebook from a PDF in the vault…",
+      name: t("notebooks.command.newFromPdf"),
       callback: () =>
         new VaultPdfSuggestModal(this.app, (file) => void this.createNotebookFromPdf(file)).open(),
     });
 
     this.notebookCommand(
       "convert-to-notebook",
-      "Convert single page to notebook",
+      t("notebooks.command.convertToNotebook"),
       (view) => view.convertToNotebook(),
       (view) => view.isSinglePage && !view.isBoard,
     );
-    this.notebookCommand("scan-document", "Scan document into this notebook", (view) =>
+    this.notebookCommand("scan-document", t("notebooks.command.scanDocument"), (view) =>
       view.scanDocument(),
     );
-    this.notebookCommand("import-pdf", "Import PDF…", (view) => view.importPdf());
+    this.notebookCommand("import-pdf", t("notebooks.command.importPdf"), (view) =>
+      view.importPdf(),
+    );
     // An endless board (FineNotes#46) has no pages to add, link to or save as a template.
     const pages = (view: InkView): boolean => !view.isBoard;
     this.notebookCommand(
       "import-vault-pdf",
-      "Import PDF from vault…",
+      t("notebooks.command.importVaultPdf"),
       (view) => view.importPdf(true),
       pages,
     );
-    this.notebookCommand("search-notebook", "Search this notebook…", (view) => view.openSearch());
+    this.notebookCommand("search-notebook", t("notebooks.command.searchNotebook"), (view) =>
+      view.openSearch(),
+    );
     this.notebookCommand(
       "copy-page-link",
-      "Copy link to current page",
+      t("notebooks.command.copyPageLink"),
       (view) => view.copyPageLink(),
       pages,
     );
-    this.notebookCommand("copy-highlighted-text", "Copy highlighted text on this page", (view) =>
+    this.notebookCommand("copy-highlighted-text", t("notebooks.command.copyHighlighted"), (view) =>
       view.copyHighlightedText(),
     );
     // No default hotkey: desktop users give it one (FineNotes#42).
     this.notebookCommand(
       "turn-selection-into-text",
-      "Turn selection into text",
+      t("notebooks.command.selectionToText"),
       (view) => view.turnSelectionIntoText(),
       (view) => view.hasInkSelected,
     );
-    this.notebookCommand("export-pdf", "Export…", (view) => view.exportPdf());
+    this.notebookCommand("export-pdf", t("notebooks.command.exportPdf"), (view) =>
+      view.exportPdf(),
+    );
     this.notebookCommand(
       "save-as-template",
-      "Save notebook as template…",
+      t("notebooks.command.saveAsTemplate"),
       (view) => view.saveAsTemplate(),
       pages,
     );
     this.notebookCommand(
       "save-page-as-template",
-      "Save page as template",
+      t("notebooks.command.savePageAsTemplate"),
       (view) => {
         const shown = view.currentPageInk();
         if (shown) void view.savePageAsTemplate(shown.number - 1);
@@ -691,7 +695,7 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.addCommand({
       id: "new-from-template",
-      name: "New notebook from template…",
+      name: t("notebooks.command.newFromTemplate"),
       callback: () =>
         new TemplateFileSuggestModal(this.app, (file) =>
           this.openImportNotebook("", [
@@ -701,18 +705,18 @@ export default class GoodObsidianPlugin extends Plugin {
     });
     this.addCommand({
       id: "template-gallery",
-      name: "Browse template gallery…",
+      name: t("notebooks.command.templateGallery"),
       callback: () => void this.openTemplateGallery(),
     });
     this.addCommand({
       id: "share-template",
-      name: "Share a template with the community…",
+      name: t("notebooks.command.shareTemplate"),
       callback: () => void this.openShareTemplate(),
     });
 
     this.addCommand({
       id: "toggle-canvas-markdown-view",
-      name: "Switch between notebook and Markdown view",
+      name: t("notebooks.command.switchView"),
       checkCallback: (checking) => {
         const leaf = this.switchableLeaf();
         if (leaf && !checking) void this.switchView(leaf);
@@ -720,65 +724,65 @@ export default class GoodObsidianPlugin extends Plugin {
       },
     });
 
-    this.notebookCommand("toggle-text-layer", "Show or hide the text layer", (view) =>
+    this.notebookCommand("toggle-text-layer", t("notebooks.command.toggleTextLayer"), (view) =>
       view.toggleTextPanel(),
     );
-    this.notebookCommand(
-      "recognize-handwriting",
-      "Transcribe this notebook's handwriting",
-      (view) => this.runRecognition(view),
+    this.notebookCommand("recognize-handwriting", t("notebooks.command.transcribe"), (view) =>
+      this.runRecognition(view),
     );
     this.addCommand({
       id: "write-handwriting-practice",
-      name: "Write a handwriting practice set",
+      name: t("notebooks.command.practiceSet"),
       callback: () => void writePracticePage(this.learningHost()),
     });
     this.addCommand({
       id: "write-symbol-practice",
-      name: "Write the symbol practice sheet (digits, operators, signs)",
+      name: t("notebooks.command.symbolPractice"),
       callback: () => void writeSymbolPractice(this.learningHost()),
     });
     this.addCommand({
       id: "learn-handwriting",
-      name: "Learn my handwriting from the practice files",
+      name: t("notebooks.command.learnHandwriting"),
       callback: () => void this.learner.start(),
     });
-    this.notebookCommand("show-keyboard-shortcuts", "Show keyboard shortcuts", (view) =>
-      view.toggleShortcuts(),
+    this.notebookCommand(
+      "show-keyboard-shortcuts",
+      t("notebooks.command.keyboardShortcuts"),
+      (view) => view.toggleShortcuts(),
     );
     this.notebookCommand(
       "read-handwriting-on-device",
-      "Show this page read on this device",
+      t("notebooks.command.readOnDevice"),
       (view) => this.readOnDevice(view),
       () => this.settings.handwritingOnDevice !== false,
     );
-    this.notebookCommand("fit-reset-view", "Fit the page and go to the top", (view) =>
+    this.notebookCommand("fit-reset-view", t("notebooks.command.fitReset"), (view) =>
       view.resetView(),
     );
-    this.notebookCommand("zoom-in", "Zoom in", (view) => view.zoomIn());
-    this.notebookCommand("zoom-out", "Zoom out", (view) => view.zoomOut());
+    this.notebookCommand("zoom-in", t("notebooks.command.zoomIn"), (view) => view.zoomIn());
+    this.notebookCommand("zoom-out", t("notebooks.command.zoomOut"), (view) => view.zoomOut());
 
     this.addCommand({
       id: "toggle-only-stylus-mode",
-      name: "Turn Stylus-only mode on or off",
+      name: t("notebooks.command.stylusOnly"),
       callback: () => void this.setOnlyStylusMode(!this.stylusOnly),
     });
 
     this.addCommand({
       id: "toggle-input-debug-overlay",
-      name: "Show or hide the input debug overlay",
+      name: t("notebooks.command.debugOverlay"),
       callback: () => void this.setDebugHud(!this.settings.debugHud, true),
     });
 
     this.addCommand({
       id: "copy-shape-diagnostics",
-      name: "Copy shape diagnostics",
+      name: t("notebooks.command.shapeDiagnostics"),
       callback: () => void this.copyShapeDiagnostics(),
     });
 
     this.addCommand({
       id: "view-changelog",
-      name: "Show the changelog",
+      name: t("notebooks.command.changelog"),
       callback: () => this.showChangelog(releasedChangelog(changelogMd)),
     });
   }
@@ -1051,13 +1055,7 @@ export default class GoodObsidianPlugin extends Plugin {
     const crash = this.readingGuard.crash;
     if (!crash) return;
     const name = crash.path.split("/").pop() ?? crash.path;
-    new Notice(
-      `FineNotes: Obsidian closed while page ${crash.page} of "${name}" was being read on this ` +
-        "device. That page is skipped until it changes, and reading on this device is paused " +
-        'until Obsidian restarts. If this happens again, turn off "Read handwriting on this ' +
-        'device" in the settings.',
-      20_000,
-    );
+    new Notice(t("notebooks.notice.readingCrash", { page: crash.page, name }), 20_000);
   }
 
   // --- API keys and AI configuration -----------------------------------------
@@ -1080,12 +1078,7 @@ export default class GoodObsidianPlugin extends Plugin {
     if (moved === 0) return;
     await this.saveSettings();
     if (this.keys.secure) {
-      new Notice(
-        `FineNotes moved your API ${moved === 1 ? "key" : "keys"} out of this vault's ` +
-          "plugin data into Obsidian's keychain (Settings → Keychain). If another device " +
-          "asks for a key, enter it there once.",
-        12000,
-      );
+      new Notice(tn("notebooks.notice.keysMoved", moved), 12000);
     }
   }
 
@@ -1111,7 +1104,7 @@ export default class GoodObsidianPlugin extends Plugin {
       this.settings.llmApiKey = "";
       void this.saveSettings();
     }
-    if (!ok) new Notice("FineNotes could not store the API key. Try again, or restart Obsidian.");
+    if (!ok) new Notice(t("notebooks.notice.keyNotStored"));
     return ok;
   }
 
@@ -1140,7 +1133,7 @@ export default class GoodObsidianPlugin extends Plugin {
       void this.saveSettings();
     }
     if (!this.keys.remove(slot)) {
-      new Notice("FineNotes could not remove the key here — remove it under Settings → Keychain.");
+      new Notice(t("notebooks.notice.keyNotRemoved"));
     }
   }
 
@@ -1203,17 +1196,13 @@ export default class GoodObsidianPlugin extends Plugin {
     const custom = VENDORS[target.vendor].userEndpoint;
     if (this.consentedTo(target.vendor)) return true;
     const confirmed = await ConfirmModal.confirm(this.app, {
-      title: custom ? "Send to your endpoint?" : "Send to a cloud AI service?",
-      message:
-        `${action} sends ${what} to ${targetLabel(target)}` +
-        (custom
-          ? ". It leaves this app for that request only — where it goes is up to whoever " +
-            "operates that server. "
-          : " using your API key. It leaves your device for that request only. ") +
-        "FineNotes asks once per vault: after this, the AI features you start send what " +
-        "they need without asking again. Nothing is sent unless you start it, and manual " +
-        "transcription never uses the network.",
-      cta: "Send",
+      title: custom ? t("notebooks.consent.titleCustom") : t("notebooks.consent.titleCloud"),
+      message: t(custom ? "notebooks.consent.messageCustom" : "notebooks.consent.messageCloud", {
+        action,
+        what,
+        target: targetLabel(target),
+      }),
+      cta: t("notebooks.consent.send"),
     });
     if (!confirmed) return false;
     this.settings[custom ? "customConsentGiven" : "cloudConsentGiven"] = true;
@@ -1241,7 +1230,8 @@ export default class GoodObsidianPlugin extends Plugin {
       throw new Error(`${audioUnsupportedReason(config.vendor)}.`);
     }
     assertConfigured(config);
-    if (!(await this.confirmAiSend(config, "Transcribing a recording", "the audio file"))) {
+    const action = t("notebooks.consent.audioAction");
+    if (!(await this.confirmAiSend(config, action, t("notebooks.consent.audioWhat")))) {
       return null;
     }
     return transcribeAudio(config, bytes, mimeType, onProgress);
@@ -1276,7 +1266,7 @@ export default class GoodObsidianPlugin extends Plugin {
       setting.openTabById(this.manifest.id);
       return;
     }
-    new Notice("Open Settings → FineNotes to set up AI.");
+    new Notice(t("notebooks.notice.openAiSettings"));
   }
 
   /**
@@ -1544,7 +1534,7 @@ export default class GoodObsidianPlugin extends Plugin {
     if (settings.textHintDismissed || settings.textHintShown >= TEXT_HINT_SHOWS) return;
     settings.textHintShown += 1;
     void this.saveSettings();
-    surface.showTextHint(TEXT_HINT, () => {
+    surface.showTextHint(t("notebooks.hint.text"), () => {
       settings.textHintDismissed = true;
       void this.saveSettings();
     });
@@ -1559,7 +1549,7 @@ export default class GoodObsidianPlugin extends Plugin {
     if (this.settings.shapeHintShown) return;
     this.settings.shapeHintShown = true;
     void this.saveSettings();
-    surface.showTextHint(SHAPE_HINT, () => undefined);
+    surface.showTextHint(t("notebooks.hint.shape"), () => undefined);
   }
 
   /**
@@ -1573,12 +1563,7 @@ export default class GoodObsidianPlugin extends Plugin {
     if (!onIPad || this.settings.scribbleNoticeShown) return;
     this.settings.scribbleNoticeShown = true;
     await this.saveSettings();
-    new Notice(
-      "FineNotes: if strokes go missing while you write, switch off Scribble in the " +
-        "iPad's Settings → Apple Pencil. iPadOS reads fast Pencil strokes as its own " +
-        "handwriting input and can keep them from the page.",
-      0,
-    );
+    new Notice(t("notebooks.notice.scribble"), 0);
   }
 
   /**
@@ -1597,9 +1582,8 @@ export default class GoodObsidianPlugin extends Plugin {
     if (background) return Promise.resolve(this.consentedTo(this.settings.llmVendor));
     return this.confirmAiSend(
       this.textAiConfig(),
-      "Transcription",
-      "an image of each page that changed since it was last transcribed (its ink, typed " +
-        "text and paper), one page per request,",
+      t("notebooks.consent.pagesAction"),
+      t("notebooks.consent.pagesWhat"),
     );
   }
 
@@ -1645,7 +1629,7 @@ export default class GoodObsidianPlugin extends Plugin {
     // The key is OpenRouter's, whatever vendor was picked while the browser was open.
     this.settings.llmVendor = "openrouter";
     await this.saveSettings();
-    new Notice("FineNotes is now connected to OpenRouter.");
+    new Notice(t("notebooks.openRouter.connected"));
     // The settings may be open behind the notice: show them the new key.
     const tab = this.settingTab;
     if (tab && tab.containerEl.isConnected) tab.refresh();
@@ -1656,14 +1640,10 @@ export default class GoodObsidianPlugin extends Plugin {
    * whether it works or not: a code can be exchanged once.
    */
   private async exchangeOpenRouterCode(code: string | undefined): Promise<OpenRouterOutcome> {
-    if (!code) return { problem: "OpenRouter sent no sign-in code back. Try Connect again." };
+    if (!code) return { problem: t("notebooks.openRouter.noCode") };
     const verifier = this.openRouterVerifier;
     if (verifier === null) {
-      return {
-        problem:
-          "FineNotes was not waiting for an OpenRouter sign-in. Start again with " +
-          "Connect in the settings.",
-      };
+      return { problem: t("notebooks.openRouter.notWaiting") };
     }
     this.openRouterVerifier = null;
     const request = buildKeyExchangeRequest(code, verifier);
@@ -1671,18 +1651,19 @@ export default class GoodObsidianPlugin extends Plugin {
     try {
       reply = await postJson(request.url, request.headers, request.body);
     } catch {
-      return { problem: "Could not reach openrouter.ai. Check the connection and try again." };
+      return { problem: t("notebooks.openRouter.unreachable") };
     }
     const succeeded = reply.status >= 200 && reply.status < 300;
-    if (!succeeded)
-      return { problem: `OpenRouter refused the key exchange (HTTP ${reply.status}).` };
+    if (!succeeded) {
+      return { problem: t("notebooks.openRouter.refused", { status: reply.status }) };
+    }
     let key = "";
     try {
       key = extractOpenRouterKey(reply.json);
     } catch {
       // A body that is not JSON carries no key either.
     }
-    return key ? { key } : { problem: "OpenRouter sent no API key back. Try connecting again." };
+    return key ? { key } : { problem: t("notebooks.openRouter.noKey") };
   }
 
   // --- Diagnostics ----------------------------------------------------------------
@@ -1692,7 +1673,9 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.debugHud = enabled;
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.setDebug(enabled);
-    if (announce) new Notice(`FineNotes: input debug overlay ${enabled ? "shown" : "hidden"}.`);
+    if (announce) {
+      new Notice(t(enabled ? "notebooks.notice.debugShown" : "notebooks.notice.debugHidden"));
+    }
   }
 
   /** Read the page in view on this device and show what it says, line by line. */
@@ -1867,7 +1850,7 @@ export default class GoodObsidianPlugin extends Plugin {
     const view = this.app.workspace.getActiveViewOfType(InkView) ?? this.openNotebooks()[0];
     const report = view?.exportDiagnostics();
     if (!report) {
-      new Notice("Open a handwriting note and draw a few shapes first.");
+      new Notice(t("notebooks.notice.drawShapesFirst"));
       return;
     }
     const path = normalizePath("FineNotes shape diagnostics.md");
@@ -1882,7 +1865,11 @@ export default class GoodObsidianPlugin extends Plugin {
     } catch {
       // iOS refuses clipboard writes outside a direct user gesture; the note is the fallback.
     }
-    new Notice(`Shape diagnostics ${copied ? "copied, and " : ""}saved to "${path}".`);
+    new Notice(
+      t(copied ? "notebooks.notice.diagnosticsCopied" : "notebooks.notice.diagnosticsSaved", {
+        path,
+      }),
+    );
   }
 
   // --- Which view a note opens in ---------------------------------------------------
@@ -2003,17 +1990,14 @@ export default class GoodObsidianPlugin extends Plugin {
     // Empty means FineNotes' own gallery; another address is another gallery.
     const url = this.settings.templateGalleryUrl.trim() || DEFAULT_GALLERY_URL;
     if (!/^https:\/\//i.test(url)) {
-      new Notice(
-        "FineNotes: a template gallery's address must start with https:// (Settings → Pages and notebooks).",
-        8000,
-      );
+      new Notice(t("notebooks.notice.galleryHttps"), 8000);
       return false;
     }
     let entries: GalleryEntry[];
     try {
       entries = readGalleryIndex((await requestUrl({ url })).json);
     } catch (error) {
-      new Notice(`FineNotes: couldn't read the template gallery — ${errorMessage(error)}`, 8000);
+      new Notice(t("notebooks.notice.galleryUnreadable", { reason: errorMessage(error) }), 8000);
       return false;
     }
     // Settles once the gallery is closed: true when a paper went into My templates.
@@ -2040,7 +2024,7 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Add a gallery template: a paper to My templates, a notebook as a new notebook. True for a paper added. */
   private async installTemplate(entry: GalleryEntry): Promise<boolean> {
-    const progress = new Notice(`FineNotes: downloading “${entry.name}”…`, 0);
+    const progress = new Notice(t("notebooks.notice.templateDownloading", { name: entry.name }), 0);
     try {
       const bytes = (await requestUrl({ url: entry.download })).arrayBuffer;
       // A paper goes into My templates, checked by its bytes there (PDF,
@@ -2064,7 +2048,10 @@ export default class GoodObsidianPlugin extends Plugin {
       this.openImportNotebook("", [{ name, read: () => Promise.resolve(bytes) }]);
       return false;
     } catch (error) {
-      new Notice(`FineNotes: couldn't download that template — ${errorMessage(error)}`, 8000);
+      new Notice(
+        t("notebooks.notice.templateDownloadFailed", { reason: errorMessage(error) }),
+        8000,
+      );
       return false;
     } finally {
       progress.hide();
@@ -2247,12 +2234,7 @@ export default class GoodObsidianPlugin extends Plugin {
       (url, template, author) => {
         this.app.saveLocalStorage(SHARE_AUTHOR_KEY, author);
         window.open(url);
-        new Notice(
-          `FineNotes: in the form on GitHub, attach “${template.path}” under Files, then submit. ` +
-            "A bot replies there in a minute or two. If GitHub's app shows a plain issue " +
-            "instead of the form, open the link in Safari.",
-          20000,
-        );
+        new Notice(t("notebooks.notice.shareForm", { path: template.path }), 20000);
       },
       typeof saved === "string" ? saved : "",
     ).open();
@@ -2281,7 +2263,7 @@ export default class GoodObsidianPlugin extends Plugin {
     }
     const source = this.app.vault.getFileByPath(template.path);
     if (!source) {
-      new Notice("FineNotes: that template's file is gone from the vault.");
+      new Notice(t("notebooks.notice.templateGone"));
       return;
     }
     const sizes = (await library.list())
@@ -2323,7 +2305,10 @@ export default class GoodObsidianPlugin extends Plugin {
       const from = this.app.vault.getAbstractFileByPath(pair.from);
       if (!from || this.app.vault.getAbstractFileByPath(pair.to)) return;
       this.app.fileManager.renameFile(from, pair.to).catch((error: unknown) => {
-        new Notice(`FineNotes: could not rename ${pair.from} — ${errorMessage(error)}`, 8000);
+        new Notice(
+          t("notebooks.notice.renameFailed", { path: pair.from, reason: errorMessage(error) }),
+          8000,
+        );
       });
     }, 0);
   }
@@ -2384,7 +2369,7 @@ export default class GoodObsidianPlugin extends Plugin {
       await this.app.workspace.revealLeaf(tab);
       return file;
     } catch (error) {
-      new Notice(`FineNotes: could not create the notebook — ${errorMessage(error)}`, 8000);
+      new Notice(t("notebooks.notice.createFailed", { reason: errorMessage(error) }), 8000);
       return null;
     }
   }
@@ -2535,7 +2520,7 @@ export default class GoodObsidianPlugin extends Plugin {
       await this.app.workspace.revealLeaf(tab);
       return file;
     } catch (error) {
-      new Notice(`FineNotes: could not create the practice file — ${errorMessage(error)}`, 8000);
+      new Notice(t("notebooks.notice.practiceFailed", { reason: errorMessage(error) }), 8000);
       return null;
     }
   }
@@ -2578,7 +2563,7 @@ export default class GoodObsidianPlugin extends Plugin {
     pdf: string | { name: string } | { move: TFile },
     open = true,
   ): Promise<TFile | null> {
-    const progress = new Notice("FineNotes: reading PDF pages…", 0);
+    const progress = new Notice(t("notebooks.notice.readingPdf"), 0);
     let sizes: Array<{ width: number; height: number }>;
     let bytes: ArrayBuffer;
     try {
@@ -2586,13 +2571,13 @@ export default class GoodObsidianPlugin extends Plugin {
       // pdf.js may take the buffer it is given: measure a copy, keep the original.
       sizes = await measurePdfPages(bytes.slice(0));
     } catch (error) {
-      new Notice(`FineNotes: couldn't read the PDF — ${errorMessage(error)}`, 8000);
+      new Notice(t("notebooks.notice.pdfUnreadable", { reason: errorMessage(error) }), 8000);
       return null;
     } finally {
       progress.hide();
     }
     if (sizes.length === 0) {
-      new Notice("FineNotes: that PDF has no pages.");
+      new Notice(t("notebooks.notice.pdfEmpty"));
       return null;
     }
     const ownFolder = this.settings.notebookOwnFolder;
@@ -2707,7 +2692,10 @@ export default class GoodObsidianPlugin extends Plugin {
     // A link usually lands with the file or just after it: give it a moment.
     await new Promise((resolve) => window.setTimeout(resolve, INBOX_LINK_GRACE_MS));
     if (this.inboxRuns.claimed(path)) return;
-    const notice = new Notice(`FineNotes: ${stripInkSuffix(notebook.name)} is ready.`, 8000);
+    const notice = new Notice(
+      t("notebooks.notice.notebookReady", { name: stripInkSuffix(notebook.name) }),
+      8000,
+    );
     notice.messageEl.addEventListener("click", () => void this.showNotebook(notebook));
   }
 
@@ -2755,7 +2743,7 @@ export default class GoodObsidianPlugin extends Plugin {
       const notebook = await this.notebookForPdfLink(request.file);
       if (notebook) await this.showNotebook(notebook);
     } else {
-      new Notice(`FineNotes: this link asks for ${request.what}, which FineNotes doesn't know.`);
+      new Notice(t("notebooks.notice.linkUnknown", { what: request.what }));
     }
   }
 
@@ -2780,7 +2768,7 @@ export default class GoodObsidianPlugin extends Plugin {
     };
     let found = find();
     if (found) return found;
-    const waiting = new Notice(`FineNotes: waiting for ${file}…`, 0);
+    const waiting = new Notice(t("notebooks.notice.waitingForPdf", { file }), 0);
     try {
       const until = Date.now() + PDF_LINK_WAIT_MS;
       while (!found && Date.now() < until) {
@@ -2796,8 +2784,8 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     new Notice(
       onDisk.some(Boolean)
-        ? `FineNotes: ${file} is in the vault's folder, but Obsidian hasn't picked it up yet. Try the link again in a moment.`
-        : `FineNotes: there is no ${file} in this vault.`,
+        ? t("notebooks.notice.pdfNotIndexed", { file })
+        : t("notebooks.notice.pdfMissing", { file }),
       10000,
     );
     return null;

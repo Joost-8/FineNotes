@@ -52,6 +52,7 @@ import { isPdf, readPdf } from "../import/pdf";
 import { readPdfPages } from "./pdf-reading";
 import { FolderSuggestModal } from "./folder-suggest";
 import { measurePdfPages, rasterizePdfFirstPage } from "./pdf-pages";
+import { t, tn } from "../i18n/translate";
 
 export interface ImportNotebookOptions {
   /** Where new notebooks go (vault-relative, "" for the root). */
@@ -165,7 +166,10 @@ export class ImportNotebookModal extends Modal {
   /** The dialog's title at each step, tagged as a beta. */
   private showTitle(text: string): void {
     this.titleEl.setText(text);
-    this.titleEl.createSpan({ cls: "goodobsidian-beta-tag", text: "Beta" });
+    this.titleEl.createSpan({
+      cls: "goodobsidian-beta-tag",
+      text: t("notebooks.importModal.beta"),
+    });
   }
 
   // --- Step 1: choose files ---------------------------------------------------
@@ -177,7 +181,7 @@ export class ImportNotebookModal extends Modal {
    * export help. On a narrow screen the columns stack.
    */
   private showPicker(): void {
-    this.titleEl.setText("Import notebooks");
+    this.titleEl.setText(t("notebooks.importModal.title"));
     const el = this.contentEl;
     el.empty();
     const cols = el.createDiv({ cls: "goodobsidian-import-cols" });
@@ -188,15 +192,17 @@ export class ImportNotebookModal extends Modal {
     setIcon(zone.createDiv({ cls: "goodobsidian-import-drop-icon" }), "file-up");
     zone.createDiv({
       cls: "goodobsidian-import-drop-title",
-      text: Platform.isPhone ? "Choose notebooks" : "Drop files or a .zip",
+      text: Platform.isPhone
+        ? t("notebooks.importModal.dropPhone")
+        : t("notebooks.importModal.drop"),
     });
     zone.createDiv({
       cls: "goodobsidian-import-drop-desc",
-      text: "Notebook files or a PDF, several at once",
+      text: t("notebooks.importModal.dropInfo"),
     });
     const choose = zone.createEl("button", {
       cls: "mod-cta clickable-icon goodobsidian-import-drop-button",
-      text: "Choose files",
+      text: t("notebooks.importModal.chooseFiles"),
       attr: { type: "button" },
     });
     choose.addEventListener("click", () => {
@@ -212,7 +218,10 @@ export class ImportNotebookModal extends Modal {
       attr: { type: "button" },
     });
     setIcon(vault.createSpan({ cls: "goodobsidian-import-row-icon" }), "folder-open");
-    vault.createSpan({ cls: "goodobsidian-import-row-label", text: "From this vault" });
+    vault.createSpan({
+      cls: "goodobsidian-import-row-label",
+      text: t("notebooks.importModal.fromVault"),
+    });
     setIcon(vault.createSpan({ cls: "goodobsidian-import-row-icon is-trailing" }), "chevron-right");
     vault.addEventListener("click", () => {
       new VaultImportSuggestModal(this.app, (file) => {
@@ -222,35 +231,45 @@ export class ImportNotebookModal extends Modal {
 
     // What comes over.
     const what = cols.createDiv({ cls: "goodobsidian-import-what" });
-    what.createDiv({ cls: "goodobsidian-import-what-title", text: "What comes over" });
-    for (const line of ["Handwriting, still editable", "Paper and templates", "Pictures"]) {
+    what.createDiv({
+      cls: "goodobsidian-import-what-title",
+      text: t("notebooks.importModal.whatTitle"),
+    });
+    for (const line of [
+      t("notebooks.importModal.whatInk"),
+      t("notebooks.importModal.whatPaper"),
+      t("notebooks.importModal.whatPictures"),
+    ]) {
       const item = what.createDiv({ cls: "goodobsidian-import-what-item" });
       setIcon(item.createSpan({ cls: "goodobsidian-import-what-check" }), "check");
       item.createSpan({ text: line });
     }
     what.createDiv({
       cls: "goodobsidian-import-what-apps",
-      text: "From Goodnotes, Freenotes, Notability and more.",
+      text: t("notebooks.importModal.whatApps"),
     });
     // A PDF's own content is never turned back into ink: say so before anyone picks one.
     const pdf = what.createDiv({ cls: "goodobsidian-import-what-note" });
     setIcon(pdf.createSpan({ cls: "goodobsidian-import-what-note-icon" }), "file-text");
     pdf.createSpan({
-      text: "A PDF comes in as it is: you can write over its pages, but what's already on them can't be edited.",
+      text: t("notebooks.importModal.pdfNote"),
     });
 
     // Where to, and help.
     const footer = el.createDiv({ cls: "goodobsidian-import-footer" });
-    footer.createSpan({ cls: "goodobsidian-import-footer-label", text: "Save to" });
+    footer.createSpan({
+      cls: "goodobsidian-import-footer-label",
+      text: t("notebooks.importModal.saveTo"),
+    });
     const folder = footer.createEl("button", {
       cls: "goodobsidian-import-folder clickable-icon",
-      attr: { type: "button", "aria-label": "Choose the folder to save to" },
+      attr: { type: "button", "aria-label": t("notebooks.importModal.chooseFolder") },
     });
     setIcon(folder.createSpan({ cls: "goodobsidian-import-folder-icon" }), "folder");
     const folderName = folder.createSpan({ cls: "goodobsidian-import-folder-name" });
     setIcon(folder.createSpan({ cls: "goodobsidian-import-folder-icon" }), "chevron-down");
     const showFolder = (): void => {
-      folderName.setText(this.folder || "Vault's top folder");
+      folderName.setText(this.folder || t("notebooks.importModal.topFolder"));
     };
     showFolder();
     folder.addEventListener("click", () => {
@@ -260,14 +279,14 @@ export class ImportNotebookModal extends Modal {
           this.folder = normalizeFolder(path);
           showFolder();
         },
-        "Choose a folder for the imported notebooks",
+        t("notebooks.importModal.folderPlaceholder"),
         this.folder,
       ).open();
     });
 
     const helpToggle = footer.createEl("button", {
       cls: "goodobsidian-import-help-toggle clickable-icon",
-      text: "How do I export?",
+      text: t("notebooks.importModal.howToExport"),
       attr: { type: "button", "aria-expanded": "false" },
     });
     const help = el.createDiv({ cls: "goodobsidian-import-help is-hidden" });
@@ -278,30 +297,19 @@ export class ImportNotebookModal extends Modal {
     });
     const steps = help.createEl("ul");
     steps.createEl("li", {
-      text:
-        "Goodnotes: in the library tap Select, pick notebooks or whole folders, tap Export and " +
-        "choose the Goodnotes format. Several at once come as one .zip, folders and all. An " +
-        "auto-backup .zip in Goodnotes format works too.",
+      text: t("notebooks.importModal.helpGoodnotes"),
     });
     steps.createEl("li", {
-      text:
-        "Notability: share or export a note in the Note (.note) or the new (.ntb) format. For " +
-        "everything at once, turn on Auto-backup with either format.",
+      text: t("notebooks.importModal.helpNotability"),
     });
     steps.createEl("li", {
-      text:
-        "Xournal++ and Saber: the notebook file itself (.xopp, .xoj, .sbn2, .sba). reMarkable: " +
-        "export a notebook as .rmdoc. Supernote: the .note file from the device. FreeNotes: " +
-        "share a notebook as a .freenotes file.",
+      text: t("notebooks.importModal.helpFiles"),
     });
     steps.createEl("li", {
-      text:
-        "Noteful: export a notebook in the Noteful format (.noteful), or make a backup and pick its " +
-        "files. Any other app (Apple Notes, Noteshelf, Nebo, CollaNote…): export a PDF. A PDF " +
-        "stays a PDF: you write over its pages, but its own handwriting and text can't be edited.",
+      text: t("notebooks.importModal.helpNoteful"),
     });
     steps.createEl("li", {
-      text: "Save the file to this vault's folder or to Files, then choose it here.",
+      text: t("notebooks.importModal.helpSave"),
     });
   }
   // --- Step 2: convert and save ------------------------------------------------
@@ -311,7 +319,7 @@ export class ImportNotebookModal extends Modal {
     this.busy = true;
     const el = this.contentEl;
     el.empty();
-    this.showTitle("Importing…");
+    this.showTitle(t("notebooks.importModal.importing"));
     const status = el.createEl("p");
     const batch: ImportBatch = { results: [], failures: [] };
     const written: Array<{ result: ImportResult; file: TFile }> = [];
@@ -343,7 +351,7 @@ export class ImportNotebookModal extends Modal {
         } catch (error) {
           batch.failures.push({
             name: picked.name,
-            reason: `It could not be read (${errorMessage(error)}).`,
+            reason: t("notebooks.import.couldNotRead", { reason: errorMessage(error) }),
           });
           continue;
         }
@@ -356,9 +364,7 @@ export class ImportNotebookModal extends Modal {
     if (this.closed) {
       // Closed mid-import: what was saved stays, and the user is told so.
       if (written.length > 0) {
-        new Notice(
-          `Import stopped. ${written.length} notebook${written.length === 1 ? " was" : "s were"} imported.`,
-        );
+        new Notice(tn("notebooks.importModal.stopped", written.length));
       }
       return;
     }
@@ -447,7 +453,7 @@ export class ImportNotebookModal extends Modal {
       row.addButton((button) =>
         button
           .setClass("clickable-icon")
-          .setButtonText("Open")
+          .setButtonText(t("notebooks.importModal.open"))
           .onClick(() => {
             this.close();
             void this.options.open(file);
@@ -476,7 +482,11 @@ export class ImportNotebookModal extends Modal {
       buttons.addButton((button) =>
         button
           .setClass("clickable-icon")
-          .setButtonText(written.length === 1 ? "Open notebook" : "Open the first")
+          .setButtonText(
+            written.length === 1
+              ? t("notebooks.importModal.openNotebook")
+              : t("notebooks.importModal.openFirst"),
+          )
           .setCta()
           .onClick(() => {
             this.close();
@@ -488,13 +498,13 @@ export class ImportNotebookModal extends Modal {
       .addButton((button) =>
         button
           .setClass("clickable-icon")
-          .setButtonText("Import more")
+          .setButtonText(t("notebooks.importModal.more"))
           .onClick(() => this.showPicker()),
       )
       .addButton((button) =>
         button
           .setClass("clickable-icon")
-          .setButtonText("Done")
+          .setButtonText(t("common.done"))
           .onClick(() => this.close()),
       );
   }
@@ -517,7 +527,7 @@ async function listMissingFonts(
   for (const family of families) {
     const source = fonts.source(family);
     if (!source || fonts.state(family) !== "fetchable") continue;
-    const row = new Setting(el).setName(family).setDesc("Not on this device");
+    const row = new Setting(el).setName(family).setDesc(t("notebooks.importModal.fontMissing"));
     row.descEl.addClass("mod-warning");
     const mark = row.nameEl.createSpan({ cls: "goodobsidian-import-mark", prepend: true });
     setIcon(mark, "alert-triangle");
@@ -544,7 +554,10 @@ async function listMissingFonts(
             })
             .catch((error: unknown) => {
               new Notice(
-                `FineNotes: couldn't get ${source.font.family} — ${errorMessage(error)}`,
+                t("notebooks.importModal.fontFailed", {
+                  family: source.font.family,
+                  reason: errorMessage(error),
+                }),
                 8000,
               );
               busy = false;
@@ -569,7 +582,7 @@ class VaultImportSuggestModal extends FuzzySuggestModal<TFile> {
     private readonly pick: (file: TFile) => void,
   ) {
     super(app);
-    this.setPlaceholder("Find a .goodnotes, .note, .ntb or .zip file in the vault…");
+    this.setPlaceholder(t("notebooks.importModal.findFile"));
   }
   getItems(): TFile[] {
     return this.app.vault.getFiles().filter((file) => isImportFileName(file.name));

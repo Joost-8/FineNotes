@@ -52,6 +52,7 @@ import {
   type ImportAttachment,
   type ImportResult,
 } from "./import-types";
+import { t, tn } from "../i18n/translate";
 
 export class SaberError extends Error {}
 
@@ -107,7 +108,7 @@ export function readSaberArchive(
   fallbackTitle: string,
 ): ImportResult {
   const root = packageRoot(files, "main.sbn2");
-  if (root === null) throw new SaberError("not a Saber archive");
+  if (root === null) throw new SaberError(t("notebooks.import.saber.notArchive"));
   const main = `${root}main.sbn2`;
   const assets = new Map<string, Uint8Array>();
   for (const [name, bytes] of files) {
@@ -127,7 +128,8 @@ export function readSaber(
   assets: ReadonlyMap<string, Uint8Array> = new Map(),
 ): ImportResult {
   const root = parse(bytes);
-  if (root === undefined || !isSaberRoot(root)) throw new SaberError("not a Saber note");
+  if (root === undefined || !isSaberRoot(root))
+    throw new SaberError(t("notebooks.import.saber.notNote"));
   return new Converter(root, fallbackTitle, assets).run();
 }
 
@@ -209,31 +211,21 @@ class Converter {
 
     const warnings: string[] = [];
     if (this.version > SABER_VERSION) {
-      warnings.push(
-        "This note was saved by a newer version of Saber; some of it may not have come over.",
-      );
+      warnings.push(t("notebooks.import.saber.newer"));
     }
-    if (this.unreadable > 0)
-      warnings.push(`${plural(this.unreadable, "stroke")} could not be read.`);
+    if (this.unreadable > 0) {
+      warnings.push(tn("notebooks.import.saber.unreadable", this.unreadable));
+    }
     if (this.missingPictures > 0) {
-      warnings.push(
-        `${plural(this.missingPictures, "picture was", "pictures were")} not found in the file. ` +
-          "Export the note from Saber as a .sba file to bring pictures over.",
-      );
+      warnings.push(tn("notebooks.import.saber.missingPictures", this.missingPictures));
     }
     if (this.missingPdfs > 0) {
-      warnings.push(
-        `${plural(this.missingPdfs, "page is", "pages are")} drawn on a PDF that was not found ` +
-          "in the file; they were left blank.",
-      );
+      warnings.push(tn("notebooks.import.saber.missingPdfs", this.missingPdfs));
     }
     if (this.skipped > 0) {
-      warnings.push(
-        `${plural(this.skipped, "item")} (SVG pictures or PDFs placed on a page) could not be brought over yet.`,
-      );
+      warnings.push(tn("notebooks.import.saber.skipped", this.skipped));
     }
-    if (this.formatted)
-      warnings.push("Typed text came over as plain text; its formatting was not brought over.");
+    if (this.formatted) warnings.push(t("notebooks.import.saber.formatted"));
 
     const doc: InkDocument = {
       version: SCHEMA_VERSION,
@@ -681,8 +673,4 @@ function dicts(v: BsonValue | undefined): Dict[] {
 
 function round4(v: number): number {
   return Math.round(v * 10000) / 10000;
-}
-
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
 }

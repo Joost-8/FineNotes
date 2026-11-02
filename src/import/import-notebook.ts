@@ -32,7 +32,7 @@
 import { unzipSync } from "fflate";
 import { isFreenotes, readFreenotes } from "./freenotes";
 import { isGoodnotes, readGoodnotes } from "./goodnotes";
-import { plural, type ImportResult } from "./import-types";
+import { type ImportResult } from "./import-types";
 import type { TextBoxElement } from "../model/document";
 import { isNotability, notabilityPdfFiles, readNotability, type PdfPageSize } from "./notability";
 import {
@@ -53,6 +53,7 @@ import { isSaber, isSaberArchive, readSaber, readSaberArchive } from "./saber";
 import { isSupernote, readSupernote } from "./supernote";
 import { isXournal, readXournal } from "./xournal";
 import { TEMPLATE_EXTENSION, isTemplatePackage, readTemplatePackage } from "./template-package";
+import { t, tn } from "../i18n/translate";
 
 export type { ImportAttachment, ImportResult, ImportSource } from "./import-types";
 export { relinkAttachments } from "./import-types";
@@ -93,8 +94,6 @@ function extensionOf(name: string): string | null {
   const ext = leaf.slice(dot + 1).toLowerCase();
   return IMPORT_EXTENSIONS.includes(ext) ? ext : null;
 }
-
-const NOT_A_NOTEBOOK = "It is not a notebook FineNotes can import.";
 
 /** A converter for a file read whole: whether it is one, and how to read it. */
 interface SingleFile {
@@ -189,7 +188,7 @@ export async function importNotebooks(
   if (batch.results.length === 0 && batch.failures.length === 0 && !options.cancelled?.()) {
     batch.failures.push({
       name: fileName,
-      reason: "No notebook FineNotes can import was found in it.",
+      reason: t("notebooks.import.nothingFound"),
     });
   }
   return batch;
@@ -213,7 +212,10 @@ async function fromBytes(
     try {
       result = single.read(bytes, baseName(fileName) || "Imported notebook");
     } catch (e) {
-      batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
+      batch.failures.push({
+        name: fileName,
+        reason: t("notebooks.import.couldNotRead", { reason: errorText(e) }),
+      });
       return;
     }
     await deliver(result, folder, batch, options);
@@ -221,7 +223,7 @@ async function fromBytes(
   }
   const names = entryNames(bytes);
   if (!names) {
-    batch.failures.push({ name: fileName, reason: NOT_A_NOTEBOOK });
+    batch.failures.push({ name: fileName, reason: t("notebooks.import.notImportable") });
     return;
   }
   await collect(bytes, names, fileName, batch, depth, options, folder);
@@ -277,7 +279,10 @@ async function collect(
     try {
       files = readEntries(bytes, () => true);
     } catch (e) {
-      batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
+      batch.failures.push({
+        name: fileName,
+        reason: t("notebooks.import.couldNotRead", { reason: errorText(e) }),
+      });
       return;
     }
     await convert(files, fileName, batch, options, folder);
@@ -301,7 +306,10 @@ async function collect(
     try {
       inner = readEntries(bytes, (n) => n === name).get(name);
     } catch (e) {
-      batch.failures.push({ name, reason: `It could not be read (${errorText(e)}).` });
+      batch.failures.push({
+        name,
+        reason: t("notebooks.import.couldNotRead", { reason: errorText(e) }),
+      });
       continue;
     }
     if (!inner || inner.length === 0) continue;
@@ -315,7 +323,10 @@ async function collect(
       const entries = readEntries(bytes, (n) => n.startsWith(prefix) && !n.endsWith("/"));
       files = new Map([...entries].map(([n, data]) => [n.slice(prefix.length), data]));
     } catch (e) {
-      batch.failures.push({ name: pkg, reason: `It could not be read (${errorText(e)}).` });
+      batch.failures.push({
+        name: pkg,
+        reason: t("notebooks.import.couldNotRead", { reason: errorText(e) }),
+      });
       continue;
     }
     if (
@@ -384,7 +395,10 @@ async function convert(
       result = readNotability(files, title, await measurePdfs(notabilityPdfFiles(files), options));
     }
   } catch (e) {
-    batch.failures.push({ name: fileName, reason: `It could not be read (${errorText(e)}).` });
+    batch.failures.push({
+      name: fileName,
+      reason: t("notebooks.import.couldNotRead", { reason: errorText(e) }),
+    });
     return;
   }
   await deliver(result, folder, batch, options);
@@ -429,7 +443,7 @@ async function deliver(
     } catch (e) {
       batch.failures.push({
         name: result.title,
-        reason: `It could not be saved (${errorText(e)}).`,
+        reason: t("notebooks.import.couldNotSave", { reason: errorText(e) }),
       });
       return;
     } finally {
@@ -462,9 +476,8 @@ function errorText(e: unknown): string {
 
 /** "page 3" or "pages 1, 4". */
 function pagesText(pages: ReadonlySet<number>): string {
-  return pages.size === 1
-    ? `page ${[...pages][0]}`
-    : `pages ${[...pages].sort((a, b) => a - b).join(", ")}`;
+  const list = [...pages].sort((a, b) => a - b).join(", ");
+  return tn("notebooks.import.pagesList", pages.size, { pages: list });
 }
 
 /**
@@ -525,16 +538,10 @@ async function inkFromPaper(
     });
   }
   if (moved.size > 0) {
-    result.warnings.push(
-      "Handwriting saved in the paper PDF as annotations came over as strokes " +
-        `(${pagesText(moved)}).`,
-    );
+    result.warnings.push(t("notebooks.import.annotationsMoved", { pages: pagesText(moved) }));
   }
   if (kept.size > 0) {
-    result.warnings.push(
-      "Handwriting saved in the paper PDF as annotations stays part of the paper, " +
-        `as the PDF also holds typed text, shapes or form fields (${pagesText(kept)}).`,
-    );
+    result.warnings.push(t("notebooks.import.annotationsKept", { pages: pagesText(kept) }));
   }
 }
 
@@ -596,7 +603,7 @@ async function picturesFromPdfs(
       y: image.y,
       w: Math.max(80, image.w),
       h: Math.max(24, image.h),
-      text: `A PDF was placed here: ${image.path}, saved next to this notebook.`,
+      text: t("notebooks.import.pdfPlaced", { path: image.path }),
       color: "#444444",
       fontSize: 16,
       fill: "#f2f2f2",
@@ -610,15 +617,11 @@ async function picturesFromPdfs(
   );
   result.attachments = result.attachments.filter((a) => !(pngs.get(a.name) && !papers.has(a.name)));
   if (shown.size > 0) {
-    result.warnings.push(
-      `${plural(shownCount, "PDF placed as a picture", "PDFs placed as pictures")} came over ` +
-        `as an image of its first page (${pagesText(shown)}).`,
-    );
+    result.warnings.push(tn("notebooks.import.pdfShown", shownCount, { pages: pagesText(shown) }));
   }
   if (noted.size > 0) {
     result.warnings.push(
-      `${plural(pictures.length - shownCount, "PDF placed as a picture", "PDFs placed as pictures")} could not ` +
-        `be shown; a note on the page says where it was saved (${pagesText(noted)}).`,
+      tn("notebooks.import.pdfNoted", pictures.length - shownCount, { pages: pagesText(noted) }),
     );
   }
 }

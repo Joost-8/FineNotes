@@ -9,6 +9,7 @@
  */
 
 import { AbstractInputSuggest, type App, FuzzySuggestModal, type TFolder } from "obsidian";
+import { t } from "../i18n/translate";
 
 /** How a folder reads in a list: its path, or "/" for the vault root. */
 export function folderLabel(folder: TFolder): string {
@@ -31,7 +32,7 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
   constructor(
     app: App,
     private readonly onChoose: (path: string) => void,
-    placeholder = "Choose a folder for the new notebook",
+    placeholder = t("notebooks.folder.choose"),
     private readonly initial = "",
   ) {
     super(app);

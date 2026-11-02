@@ -1,5 +1,6 @@
 import { setIcon } from "obsidian";
 import { ICON_NEW_NOTEBOOK } from "../constants";
+import { t } from "../i18n/translate";
 
 /** Obsidian exposes explorer leaves, but no API for adding a button to their bar. */
 export class FileExplorerNotebookButton {
@@ -28,7 +29,11 @@ export class FileExplorerNotebookButton {
       if (this.buttons.has(bar)) continue;
       const button = bar.createEl("button", {
         cls: "clickable-icon nav-action-button goodobsidian-new-notebook",
-        attr: { type: "button", "aria-label": "New notebook", title: "New notebook" },
+        attr: {
+          type: "button",
+          "aria-label": t("notebooks.explorer.newNotebook"),
+          title: t("notebooks.explorer.newNotebook"),
+        },
       });
       setIcon(button, ICON_NEW_NOTEBOOK);
       button.addEventListener("click", this.createNotebook);

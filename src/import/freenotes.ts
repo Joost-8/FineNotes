@@ -36,7 +36,6 @@ import {
   median,
   packageRoot,
   pageScale,
-  plural,
   pressureForWidth,
   round2,
   sniffFile,
@@ -44,6 +43,7 @@ import {
   type ImportResult,
 } from "./import-types";
 import { Message, ProtobufError } from "./protobuf";
+import { t, tn } from "../i18n/translate";
 
 export class FreenotesError extends Error {}
 
@@ -93,7 +93,7 @@ export function readFreenotes(
   fallbackTitle: string,
 ): ImportResult {
   const root = packageRoot(files, "document.dat");
-  if (root === null) throw new FreenotesError("not a FreeNotes notebook");
+  if (root === null) throw new FreenotesError(t("notebooks.import.freenotes.notNotebook"));
   const title = fallbackTitle.replace(/\.frnote$/i, "") || "Imported notebook";
   return new Converter(files, root, title).run();
 }
@@ -204,7 +204,7 @@ class Converter {
 
   run(): ImportResult {
     const notebook = notebookOf(this.file("document.dat") ?? new Uint8Array());
-    if (!notebook) throw new FreenotesError("its page list could not be read");
+    if (!notebook) throw new FreenotesError(t("notebooks.import.freenotes.noPageList"));
     const sizes = this.pageSizes();
 
     const entries = repeated(notebook, 1)
@@ -214,27 +214,16 @@ class Converter {
 
     const warnings: string[] = [];
     if (this.skipped > 0) {
-      warnings.push(
-        `${plural(this.skipped, "item")} (pictures, text or other objects) could not be brought over yet.`,
-      );
+      warnings.push(tn("notebooks.import.freenotes.skipped", this.skipped));
     }
     if (this.missingInk > 0) {
-      warnings.push(
-        `The ink of ${plural(this.missingInk, "page was", "pages were")} not found in the file; ` +
-          `${this.missingInk === 1 ? "it was" : "they were"} left blank.`,
-      );
+      warnings.push(tn("notebooks.import.freenotes.missingInk", this.missingInk));
     }
     if (this.missingPdfs > 0) {
-      warnings.push(
-        `${plural(this.missingPdfs, "page is", "pages are")} drawn on a PDF that was not found ` +
-          `in the file; ${this.missingPdfs === 1 ? "it was" : "they were"} left blank.`,
-      );
+      warnings.push(tn("notebooks.import.freenotes.missingPdfs", this.missingPdfs));
     }
     if (this.unknownPaper > 0) {
-      warnings.push(
-        `The paper of ${plural(this.unknownPaper, "page")} is not one FineNotes knows; ` +
-          "it came over as blank paper.",
-      );
+      warnings.push(tn("notebooks.import.freenotes.unknownPaper", this.unknownPaper));
     }
 
     const doc: InkDocument = {

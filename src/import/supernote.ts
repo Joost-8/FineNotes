@@ -33,6 +33,7 @@ import { SCHEMA_VERSION } from "../constants";
 import { normalizePageTitle } from "../model/contents";
 import { encodePng } from "./png-encode";
 import { pageScale, type ImportAttachment, type ImportResult } from "./import-types";
+import { t, tn } from "../i18n/translate";
 
 export class SupernoteError extends Error {}
 
@@ -68,6 +69,7 @@ const X2_SIGNATURE = 20230015;
 /** `SN_ASA_COMPRESS` pages are stored this many px tall (16 more than shown). */
 const ASA_STORED_HEIGHT = 1888;
 
+/** The warning's English text; it is shown through `notebooks.import.supernote.bitmap`. */
 export const SUPERNOTE_BITMAP_WARNING =
   "Supernote handwriting comes over as pictures of each page; it can be written over but not edited stroke by stroke.";
 
@@ -84,7 +86,7 @@ export function isSupernote(bytes: Uint8Array): boolean {
 }
 
 export function readSupernote(bytes: Uint8Array, fallbackTitle: string): ImportResult {
-  if (!isSupernote(bytes)) throw new SupernoteError("not a Supernote note");
+  if (!isSupernote(bytes)) throw new SupernoteError(t("notebooks.import.supernote.notNote"));
   const original = ascii(bytes, 0, 12) === "SN_FILE_ASA_";
   const x2 = !original && Number(ascii(bytes, 16, 24)) >= X2_SIGNATURE;
   const file = new BlockReader(bytes);
@@ -100,14 +102,16 @@ export function readSupernote(bytes: Uint8Array, fallbackTitle: string): ImportR
       .sort(([a], [b]) => Number(a.slice(4)) - Number(b.slice(4)))
       .flatMap(([, values]) => values.map((v) => file.tags(address(v))));
   } catch (e) {
-    throw new SupernoteError(`the note's index could not be read: ${(e as Error).message}`);
+    throw new SupernoteError(
+      t("notebooks.import.supernote.indexUnreadable", { reason: (e as Error).message }),
+    );
   }
-  if (pageTags.length === 0) throw new SupernoteError("the note has no pages");
+  if (pageTags.length === 0) throw new SupernoteError(t("notebooks.import.supernote.noPages"));
 
   const device = deviceFor(first(header, "APPLY_EQUIPMENT") ?? "");
   const k = pageScale(device.width, device.widthMm);
   const name = fallbackTitle;
-  const warnings = [SUPERNOTE_BITMAP_WARNING];
+  const warnings = [t("notebooks.import.supernote.bitmap")];
   const attachments: ImportAttachment[] = [];
   let unreadable = 0;
   let templated = 0;
@@ -146,24 +150,18 @@ export function readSupernote(bytes: Uint8Array, fallbackTitle: string): ImportR
   });
 
   if (addTitles(file, footer, pages)) {
-    warnings.push(
-      "Supernote titles are handwriting: they are listed in the contents by page, not by their words.",
-    );
+    warnings.push(t("notebooks.import.supernote.titles"));
   }
   if (unreadable > 0) {
-    warnings.push(
-      `${unreadable} layer${unreadable === 1 ? "" : "s"} of handwriting could not be read.`,
-    );
+    warnings.push(tn("notebooks.import.supernote.unreadable", unreadable));
   }
   if (templated > 0) {
-    warnings.push(
-      `${templated} page${templated === 1 ? "" : "s"} had a template, which comes over as blank paper.`,
-    );
+    warnings.push(tn("notebooks.import.supernote.templated", templated));
   }
   const links = [...footer.entries()]
     .filter(([key]) => key.startsWith("LINK"))
     .reduce((sum, [, values]) => sum + values.length, 0);
-  if (links > 0) warnings.push(`${links} link${links === 1 ? "" : "s"} could not be brought over.`);
+  if (links > 0) warnings.push(tn("notebooks.import.supernote.links", links));
 
   const doc: InkDocument = {
     version: SCHEMA_VERSION,
