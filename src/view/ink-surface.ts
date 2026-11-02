@@ -3906,6 +3906,13 @@ export class InkSurface {
     this.renderHud();
   }
 
+  /** A line in the debug HUD for something the view saw, such as a drop. */
+  debugMark(label: string): void {
+    if (!this.debug) return;
+    this.hud.mark(label);
+    this.renderHud();
+  }
+
   /**
    * A key pressed while the notebook has the focus (the host decides which
    * element listens). Returns whether the surface took it. Keys typed into a

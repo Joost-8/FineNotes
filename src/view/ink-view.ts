@@ -5618,21 +5618,31 @@ export class InkView extends TextFileView {
       (file) =>
         isPdf(file) || isImagePath(file.name) || normalizeMime(file.type).startsWith("image/"),
     );
-    const path = vaultPathFromDrop(
-      transfer.getData("text/plain") || transfer.getData("text/uri-list"),
-    );
+    // A drag from Obsidian's file list: on the iPad, WebKit keeps a drag's
+    // text from the page once its types say "Files", so the file comes from
+    // Obsidian's drag manager, where Obsidian's own views read it.
+    const dragged = draggedVaultFiles(this.app);
+    const text = transfer.getData("text/plain") || transfer.getData("text/uri-list");
+    const path = dragged.length ? null : vaultPathFromDrop(text);
     const resolved =
       path &&
       (this.app.vault.getFileByPath(path) ??
         this.app.metadataCache.getFirstLinkpathDest(path, this.file?.path ?? ""));
-    const vaultFile =
-      resolved && (/\.pdf$/i.test(resolved.path) || isImagePath(resolved.path)) ? resolved : null;
-    if (!files.length && !vaultFile) return;
+    const vaultFiles = (dragged.length ? dragged : resolved ? [resolved] : []).filter(
+      (file) => /\.pdf$/i.test(file.path) || isImagePath(file.path),
+    );
+    this.surface?.debugMark(
+      `drop types=${transfer.types.join(",") || "-"} files=${transfer.files.length} ` +
+        `text=${text ? "yes" : "no"} vault=${vaultFiles.length}`,
+    );
+    if (!files.length && !vaultFiles.length) return;
     event.preventDefault();
     event.stopPropagation();
-    if (vaultFile) {
-      if (/\.pdf$/i.test(vaultFile.path)) await this.importVaultPdf(vaultFile.path, false);
-      else await this.insertImageFromVault(vaultFile.path);
+    if (vaultFiles.length) {
+      for (const file of vaultFiles) {
+        if (/\.pdf$/i.test(file.path)) await this.importVaultPdf(file.path, false);
+        else await this.insertImageFromVault(file.path);
+      }
       return;
     }
     const note = this.file;
@@ -5914,4 +5924,25 @@ function markStroke(
     pts: presetGeometry(preset, { x: cx - hw, y: cy - hh }, { x: cx + hw, y: cy + hh }, 0.5),
     shape: preset,
   };
+}
+
+/**
+ * The vault files Obsidian is dragging now (one file, or a selection from its
+ * file list), read from its drag manager, which is not in the public API: an
+ * empty list when there is none, or when a later Obsidian changes its shape.
+ */
+function draggedVaultFiles(app: unknown): TFile[] {
+  const draggable = (
+    app as {
+      dragManager?: { draggable?: { type?: unknown; file?: unknown; files?: unknown } | null };
+    }
+  ).dragManager?.draggable;
+  if (!draggable) return [];
+  const all: unknown[] =
+    draggable.type === "file"
+      ? [draggable.file]
+      : draggable.type === "files" && Array.isArray(draggable.files)
+        ? draggable.files
+        : [];
+  return all.filter((file): file is TFile => file instanceof TFile);
 }

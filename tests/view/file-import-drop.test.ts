@@ -80,6 +80,28 @@ describe("file drop routing", () => {
     expect(vaultPdf).toHaveBeenCalledWith("Lecture.pdf", false);
     expect(pdf).not.toHaveBeenCalled();
   });
+  it("takes a file dragged from Obsidian's file list when the drop carries no text (iPad)", async () => {
+    const { internal, vaultPdf, drop } = setup();
+    const app = (internal as unknown as { app: object }).app;
+    Object.assign(app, {
+      dragManager: { draggable: { type: "file", file: new TFile("Lecture.pdf", 100) } },
+    });
+    await drop();
+    expect(vaultPdf).toHaveBeenCalledWith("Lecture.pdf", false);
+  });
+  it("takes every PDF and picture of a dragged selection, in order, and skips notes", async () => {
+    const { internal, vaultPdf, vaultImage, drop } = setup("ignored.pdf");
+    const app = (internal as unknown as { app: object }).app;
+    const files = [
+      new TFile("Lecture.pdf", 100),
+      new TFile("note.md", 100),
+      new TFile("photo.png", 100),
+    ];
+    Object.assign(app, { dragManager: { draggable: { type: "files", files } } });
+    await drop();
+    expect(vaultPdf).toHaveBeenCalledExactlyOnceWith("Lecture.pdf", false);
+    expect(vaultImage).toHaveBeenCalledExactlyOnceWith("photo.png");
+  });
   it.each([
     ["![[photo.png|Photo]]", ""],
     ["", "obsidian://open?vault=School&file=photo.png"],
