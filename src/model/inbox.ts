@@ -21,7 +21,7 @@ export const INBOX_FOLDER = "FineNotes inbox";
  */
 export const SHORTCUT_NEW_NOTEBOOK_URL =
   "https://www.icloud.com/shortcuts/cdeb33cd23444704b9e94b065ff899e3";
-export const SHORTCUT_PDF_URL = "https://www.icloud.com/shortcuts/7463fc5ca5104861b28108d3e3e9938f";
+export const SHORTCUT_PDF_URL = "https://www.icloud.com/shortcuts/cd6784b331634661a7d46b4d050798bf";
 
 /** How long a link may still find the notebook an inbox PDF became, by the PDF's name. */
 export const INBOX_MEMORY_MS = 2 * 60_000;

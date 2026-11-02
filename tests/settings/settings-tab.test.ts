@@ -816,7 +816,7 @@ describe("which rows show", () => {
       for (const button of row.extras) await button.click();
       expect(opened).toEqual([
         "https://www.icloud.com/shortcuts/cdeb33cd23444704b9e94b065ff899e3",
-        "https://www.icloud.com/shortcuts/7463fc5ca5104861b28108d3e3e9938f",
+        "https://www.icloud.com/shortcuts/cd6784b331634661a7d46b4d050798bf",
       ]);
     } finally {
       vi.unstubAllGlobals();
