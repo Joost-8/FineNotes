@@ -3378,6 +3378,18 @@ export class InkView extends TextFileView {
         event.preventDefault();
     });
     this.registerDomEvent(root, "drop", (event) => void this.handleFileDrop(event));
+    // On a tablet the file list is a drawer, and while it is open Obsidian's
+    // `.workspace-drawer-backdrop` covers the page, so a file dragged out of
+    // it is dropped on the backdrop, outside this view. Take a drop on that
+    // backdrop whose point lies over this view; a drop in the drawer itself
+    // (moving a file to a folder) is the file list's.
+    this.registerDomEvent(document, "drop", (event) => {
+      const target = event.target;
+      if (event.defaultPrevented || !(target instanceof Element)) return;
+      if (!target.matches(".workspace-drawer-backdrop")) return;
+      if (!pointInside(root.getBoundingClientRect(), event.clientX, event.clientY)) return;
+      void this.handleFileDrop(event);
+    });
 
     // First layout pass: the pill has no measured size until the view is in
     // the document, so its restored position can only be applied after a frame.
@@ -5945,4 +5957,16 @@ function draggedVaultFiles(app: unknown): TFile[] {
         ? draggable.files
         : [];
   return all.filter((file): file is TFile => file instanceof TFile);
+}
+
+/** Whether (x, y) lies inside `rect`; a rect with no size (a hidden view) holds nothing. */
+function pointInside(rect: DOMRect, x: number, y: number): boolean {
+  return (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    x >= rect.left &&
+    x < rect.right &&
+    y >= rect.top &&
+    y < rect.bottom
+  );
 }
