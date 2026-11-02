@@ -166,6 +166,7 @@ describe("the handwriting section, on this device", () => {
     practiceFiles: 0,
     learning: null,
     checkingWords: false,
+    calculating: true,
     ...fields,
   });
   const deviceIds = (ctx: AiMenuContext) =>
@@ -181,28 +182,32 @@ describe("the handwriting section, on this device", () => {
       on: false,
       section: "device",
     });
-    expect(items[1]).toMatchObject({ id: "practice", label: "Teach it your handwriting…" });
+    expect(items[1]).toMatchObject({ id: "calc-notes", label: "Calculations", on: true });
+    expect(items[2]).toMatchObject({
+      id: "learn-window",
+      label: "Learn your handwriting…",
+      detail: "Copy a few lines to start",
+    });
   });
 
-  it("learns once there is a practice file, again once learned, and shows a run in progress", () => {
+  it("has one row for learning, which says where it stands and opens the window", () => {
     expect(deviceIds(context({ device: device({ practiceFiles: 1 }) }))).toEqual([
       "check-words",
-      "learn",
-      "practice",
+      "calc-notes",
+      "learn-window",
     ]);
-    const again = byId(
-      buildAiMenu(context({ device: device({ practiceFiles: 2, learned: true }) })),
+    const detail = (fields: Partial<DeviceReading>) =>
+      byId(buildAiMenu(context({ device: device(fields) })))["learn-window"];
+    expect(detail({ practiceFiles: 2 }).detail).toBe("2 practice sheets");
+    expect(detail({ practiceFiles: 1, learned: true }).detail).toBe(
+      "Learned · learn again for more",
     );
-    expect(again.learn.label).toBe("Learn my handwriting again");
-    expect(again.practice.label).toBe("Write another practice set");
-    const running = byId(
-      buildAiMenu(context({ device: device({ practiceFiles: 1, learning: 34.4 }) })),
-    );
-    expect(running.learn).toMatchObject({
-      label: "Learning your handwriting · 34 %",
-      enabled: false,
+    // A run going: the row still opens the window, where Stop is.
+    expect(detail({ practiceFiles: 1, learning: 34.4 })).toMatchObject({
+      label: "Learn your handwriting…",
+      detail: "Learning · 34 %",
+      enabled: true,
     });
-    expect(running.practice).toBeUndefined();
   });
 
   it("offers corrections as a switch showing the setting, not reading the page", () => {
@@ -215,6 +220,23 @@ describe("the handwriting section, on this device", () => {
 
   it("points to the setting when the reader is off", () => {
     expect(deviceIds(context())).toEqual(["device-settings"]);
+  });
+
+  it("leads with Read with: Off, Grape, and Mine once a model has been learned", () => {
+    const reading = { value: "grape" as const, ownModel: false };
+    const items = buildAiMenu(context({ device: device(), reading }));
+    expect(items[0]).toMatchObject({ id: "reader", label: "Read with", value: "grape" });
+    expect(items[0].choices?.map((c) => c.label)).toEqual(["Off", "Grape"]);
+    const mine = byId(
+      buildAiMenu(context({ device: device(), reading: { value: "mine", ownModel: true } })),
+    );
+    expect(mine.reader.choices?.map((c) => c.id)).toEqual(["off", "grape", "mine"]);
+    expect(mine.reader.value).toBe("mine");
+    // Switched off, the choice is all the section shows, so it can be switched on again here.
+    const off = buildAiMenu(context({ reading: { value: "off", ownModel: false } }));
+    expect(off.filter((i) => i.section === "device").map((i) => [i.id, i.value])).toEqual([
+      ["reader", "off"],
+    ]);
   });
 });
 

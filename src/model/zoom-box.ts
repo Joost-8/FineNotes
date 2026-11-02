@@ -336,6 +336,14 @@ export function zoomAutoAdvanceDue(x: number, box: ZoomRect, threshold = 33): bo
   return x >= box.x + box.w * (1 - zoomAutoAdvanceThreshold(threshold) / 100);
 }
 
+/** The line spacing as the Zoom box's settings show it: signed, in page px. */
+export function zoomLineStepText(step: number): string {
+  const px = Number.isFinite(step) ? Math.round(step) : 0;
+  if (px > 0) return `+${px} px`;
+  // A typographic minus, as a number reads.
+  return px < 0 ? `−${-px} px` : "0 px";
+}
+
 /** Clamp the user setting for the portion of the box that triggers advance. */
 export function zoomAutoAdvanceThreshold(value = 33): number {
   return Number.isFinite(value) ? Math.max(10, Math.min(50, value)) : 33;

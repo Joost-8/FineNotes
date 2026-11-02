@@ -194,6 +194,7 @@ import { hiddenEnds, pageScroll, scrollToShow } from "./swatch-drag-model";
 import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
+import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import { clampEraserSize, eraserStops, quickEraserSizes } from "../model/eraser-sizes";
 import { PANEL_SLIDE_MS, prefersReducedMotion, springCurve } from "./motion";
@@ -644,6 +645,8 @@ export interface ToolbarCallbacks {
   onShare?: (anchor: HTMLElement) => void;
   /** Open the ⋯ panel for the page being read; `anchor` is the button. */
   onMore?: (anchor: HTMLElement) => void;
+  /** A practice sheet's "Learn my handwriting": opens the Learn your handwriting window. */
+  onLearnHandwriting?: () => void;
   /** The options pill was placed (it may have moved); `chromeSpans` says where. */
   onPillPlaced?: () => void;
   /** The user dragged the options pill to `dock`; the host keeps it for this device. */
@@ -986,6 +989,9 @@ export class Toolbar {
   private beyondWriting: HTMLElement[] = [];
   /** A practice file: only what writing needs ({@link setPractice}). */
   private practice = false;
+  /** A practice file's "Learn my handwriting", shown only there; its count beside it. */
+  private learnButton: HTMLButtonElement | null = null;
+  private learnCount: HTMLElement | null = null;
   private undoButton: HTMLButtonElement | null = null;
   private redoButton: HTMLButtonElement | null = null;
   /** Width of a panel docked at the host's left edge; the pill stays clear of it. */
@@ -1299,6 +1305,7 @@ export class Toolbar {
     }
     this.addPageButton = this.foldButton(doc, FOLD_RANK.addPage, "plus", "Add page", cb.onAddPage);
     keep(this.foldButton(doc, FOLD_RANK.share, "share", "Export", cb.onShare));
+    if (cb.onLearnHandwriting) this.buildLearnButton(doc, cb.onLearnHandwriting);
     this.moreButton = this.barButton(doc, "more-horizontal", "More", cb.onMore);
     if (this.options.fingerDrawing === true) this.setFingerDrawing(true);
     this.settingsButton = this.foldButton(
@@ -3695,6 +3702,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Font size" },
     });
+    dragRange(range);
     range.min = "0";
     range.max = String(SIZE_SLIDER_STEPS);
     range.step = "1";
@@ -4133,6 +4141,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Stroke width" },
     });
+    dragRange(range);
     // Stops, not widths: the pens' fine end steps in 0.05 mm, the rest in
     // half px (FineNotes#7). The highlighter keeps the thinnest preset.
     const highlighter =
@@ -4338,6 +4347,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Eraser size" },
     });
+    dragRange(range);
     const stops = eraserStops();
     range.min = "0";
     range.max = String(stops.length - 1);
@@ -4638,9 +4648,10 @@ export class Toolbar {
 
   /**
    * The pen in hand's own settings, behind "Pen settings" in the pen type
-   * menu, then two that hold for every pen: "Hide pen options while
-   * writing" with its three choices, and "Back to the pen" with its four,
-   * each one row with its choice in a dropdown.
+   * menu (the highlighter's opacity and straightening too, which were in
+   * Obsidian's settings until 2.7), then two that hold for every pen: "Hide
+   * pen options while writing" with its three choices, and "Back to the
+   * pen" with its four, each one row with its choice in a dropdown.
    */
   private renderPenSettings(body: HTMLElement, back: () => void): void {
     this.popoverPageHead(body, `${this.activePenType().label} settings`, "Back to pen types", back);
@@ -4648,6 +4659,9 @@ export class Toolbar {
     const prefs = this.callbacks.penPreferences?.();
     const save = this.callbacks.onPenPreferences;
     if (!prefs || !save) return;
+    if (this.activePenType().tool === "highlighter") {
+      this.renderHighlighterLook(body, prefs, save);
+    }
     body.createDiv({ cls: "goodobsidian-popover-divider" });
     this.choiceMenu<PenOptionsOnWrite>(
       body,
@@ -4672,6 +4686,46 @@ export class Toolbar {
       cls: "goodobsidian-popover-hint",
       text: "After the eraser, lasso, text or shape tool, go back to the pen you had.",
     });
+  }
+
+  /**
+   * The highlighter's opacity, 10-100%, and whether a stroke drawn along a
+   * line straightens when the pen lifts. Opacity is how every highlight is
+   * drawn, those on the page too, so it is saved when the slider is let go
+   * rather than redrawing every page at each step.
+   */
+  private renderHighlighterLook(
+    body: HTMLElement,
+    prefs: PenPreferences,
+    save: (patch: Partial<PenPreferences>) => void,
+  ): void {
+    body.createDiv({ cls: "goodobsidian-popover-divider" });
+    const head = body.createDiv({ cls: "goodobsidian-width-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: "Opacity" });
+    const readout = head.createDiv({ cls: "goodobsidian-width-readout" });
+    const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
+    const range = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": "Highlighter opacity" },
+    });
+    dragRange(range);
+    range.min = "10";
+    range.max = "100";
+    range.step = "5";
+    const show = (percent: number): void => {
+      range.value = String(percent);
+      range.setAttribute("aria-valuetext", `${percent}%`);
+      readout.setText(`${percent}%`);
+      syncRangeFill(range);
+    };
+    show(Math.round(prefs.highlighterAlpha * 100));
+    range.addEventListener("input", () => show(Number(range.value)));
+    range.addEventListener("change", () => save({ highlighterAlpha: Number(range.value) / 100 }));
+    const list = body.createDiv({ cls: "goodobsidian-switch-list" });
+    this.switchRow(list, "Straighten lines", prefs.straightHighlighter, (on) =>
+      save({ straightHighlighter: on }),
+    );
   }
 
   /**
@@ -4718,6 +4772,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": `Stroke stabilization, ${spec.label}` },
     });
+    dragRange(range);
     range.min = "0";
     range.max = "100";
     range.step = "1";
@@ -4810,6 +4865,7 @@ export class Toolbar {
           title: "Straight lines only ↔ looser shapes",
         },
       });
+      dragRange(range);
       setIcon(bar.createSpan({ attr: { "aria-hidden": "true" } }), "waves");
       range.min = "10";
       range.max = "100";
@@ -5600,6 +5656,7 @@ export class Toolbar {
     if (on === this.practice) return;
     this.practice = on;
     for (const button of this.beyondWriting) button.toggle(!on);
+    this.learnButton?.toggle(on);
     this.fitBar(this.indicatorTool);
     if (on && this.activePenType().tool === "highlighter") this.choosePenType(PEN_TYPES[0]);
     this.closePopover();
@@ -5611,6 +5668,31 @@ export class Toolbar {
 
   private activePenType(): PenTypeSpec {
     return penTypeFor(this.state);
+  }
+
+  /**
+   * "Learn my handwriting" on a practice sheet's bar, before ⋯: the way on
+   * from the sheet. Outlined with a count until there is enough to learn
+   * from, then filled ({@link setLearnCount}).
+   */
+  private buildLearnButton(parent: HTMLElement, open: () => void): void {
+    const button = parent.createEl("button", { cls: "goodobsidian-learn-sheet clickable-icon" });
+    iconOrText(button.createSpan({ cls: "goodobsidian-learn-sheet-icon" }), "graduation-cap", "");
+    button.createSpan({ cls: "goodobsidian-learn-sheet-label", text: "Learn my handwriting" });
+    this.learnCount = button.createSpan({ cls: "goodobsidian-learn-sheet-count" });
+    button.addEventListener("click", open);
+    button.toggle(this.practice);
+    this.learnButton = button;
+  }
+
+  /** The practice sheet's button: how much there is to learn from, and whether it is enough. */
+  setLearnCount(count: string, ready: boolean): void {
+    this.learnCount?.setText(count);
+    this.learnButton?.toggleClass("is-ready", ready);
+    this.learnButton?.setAttribute(
+      "aria-label",
+      ready ? `Learn my handwriting, ${count}` : `Learn my handwriting: ${count} lines so far`,
+    );
   }
 
   /**
