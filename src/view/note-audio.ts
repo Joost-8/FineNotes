@@ -31,6 +31,7 @@
 import { type App, Notice, Platform, type TFile, normalizePath } from "obsidian";
 import {
   RecordingClock,
+  type TranscriptParagraph,
   audioMimeForExtension,
   baseNameOf,
   buildTranscriptNote,
@@ -39,6 +40,7 @@ import {
   nextRecordingId,
   seekTargetMs,
   strokeTime,
+  transcriptParagraphs,
   transcriptPathFor,
   transcriptText,
   uploadSizeProblem,
@@ -133,6 +135,11 @@ export class NoteAudio {
     this.touchedAt = performance.now();
   };
   private panel: RecordingsPanel | null = null;
+  /** Transcript notes read for the panel, by path: the version read (mtime) and its paragraphs. */
+  private readonly transcripts = new Map<
+    string,
+    { mtime: number; paragraphs?: TranscriptParagraph[] }
+  >();
   private transcribing = false;
   private alive = true;
   private readonly unsubscribeSpeech: () => void;
@@ -419,7 +426,7 @@ export class NoteAudio {
   /** Build the recordings list into `container` (the page sidebar's Audio tab). */
   attachPanel(container: HTMLElement): void {
     this.panel = new RecordingsPanel(container, {
-      play: (recording) => this.play(recording),
+      play: (recording, fromMs) => this.play(recording, fromMs),
       transcribe: (recording) => void this.transcribe(recording),
       transcribeOnDevice: (recording) => void this.transcribeOnDevice(recording),
       stopDevice: () => this.host.plugin.speech.cancel(),
@@ -454,13 +461,43 @@ export class NoteAudio {
     const job = this.host.plugin.speech.running;
     return [...this.recordings()]
       .sort((a, b) => b.start - a.start)
-      .map((recording) => ({
-        recording,
-        available: vault.getFileByPath(recording.path) !== null,
-        hasTranscript:
-          recording.transcript !== undefined && vault.getFileByPath(recording.transcript) !== null,
-        deviceStatus: job && job.path === recording.path ? job.status : undefined,
-      }));
+      .map((recording) => {
+        const transcript = recording.transcript ? vault.getFileByPath(recording.transcript) : null;
+        return {
+          recording,
+          available: vault.getFileByPath(recording.path) !== null,
+          hasTranscript: transcript !== null,
+          transcript: transcript ? this.transcriptOf(transcript) : undefined,
+          deviceStatus: job && job.path === recording.path ? job.status : undefined,
+        };
+      });
+  }
+
+  /**
+   * A transcript note's paragraphs for the panel, as last read. A note not
+   * read yet, or changed since, is read now and the panel redrawn when it
+   * arrives; meanwhile the last version read (if any) shows.
+   */
+  private transcriptOf(file: TFile): TranscriptParagraph[] | undefined {
+    const cached = this.transcripts.get(file.path);
+    const mtime = file.stat.mtime;
+    if (cached && cached.mtime === mtime) return cached.paragraphs;
+    const entry: { mtime: number; paragraphs?: TranscriptParagraph[] } = {
+      mtime,
+      paragraphs: cached?.paragraphs,
+    };
+    this.transcripts.set(file.path, entry);
+    this.host.app.vault
+      .cachedRead(file)
+      .then((markdown) => {
+        if (this.transcripts.get(file.path) !== entry) return;
+        entry.paragraphs = transcriptParagraphs(markdown);
+        if (this.alive) this.panel?.render(this.entries(), this.transcribeState());
+      })
+      .catch(() => {
+        // Unreadable: the box shows no text; Open transcript note still works.
+      });
+    return entry.paragraphs;
   }
 
   private remove(recording: Recording): void {

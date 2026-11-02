@@ -110,11 +110,16 @@ export function formatPageRange(pages: readonly number[]): string {
  * range. The title is sanitised as a new notebook's is.
  */
 export function exportBaseName(title: string, pages: readonly number[], total: number): string {
-  const base = sanitizeFileName(stripInkSuffix(title)) || "Notebook";
+  const base = exportTitle(title);
   if (pages.length === total && total > 0) return base;
   const range = formatPageRange(pages).replace(/, /g, ",");
   const noun = pages.length === 1 ? "page" : "pages";
   // A long scattered selection would make an unwieldy name.
   const label = range.length <= 40 ? `${noun} ${range}` : `${pages.length} pages`;
   return `${base} (${label})`;
+}
+
+/** The notebook's name as an export's file names start: sanitised, never empty. */
+export function exportTitle(title: string): string {
+  return sanitizeFileName(stripInkSuffix(title)) || "Notebook";
 }

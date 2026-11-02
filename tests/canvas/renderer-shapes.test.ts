@@ -200,3 +200,42 @@ describe("a styled shape", () => {
     expect(tiles).toEqual(thumb);
   });
 });
+
+describe("a path arrow (discussion #107)", () => {
+  const elbow: Stroke = {
+    id: "elbow",
+    color: "#1971c2",
+    size: 2,
+    tool: "pen",
+    shape: "path",
+    heads: { end: "open" },
+    radius: 14,
+    pts: flat([
+      [40, 100],
+      [200, 100],
+      [200, 300],
+      [360, 300],
+    ]),
+  };
+
+  it("keeps its corners, rounds them, and heads its last run", () => {
+    expect(decorOf(elbow)).toEqual({ kind: "path", radius: 14, heads: { end: "open" } });
+    renderPageThumbnail(log.canvas("thumb"), page([elbow]), backdrop, 400, 1, {
+      usePressure: false,
+    });
+    // Two rounded corners on the one outline, from its start to its tip.
+    const outline = made.find((path) => path.d.startsWith("M 40 100"));
+    expect(outline?.d.match(/ A /g)).toHaveLength(2);
+    expect(outline?.d.endsWith("L 360 300")).toBe(true);
+    // The V points along the last run (level), not from the start to the tip.
+    const vee = made.find((path) => /^M \S+ \S+ L 360 300 L \S+ \S+$/.test(path.d));
+    const [, ax, ay, , , , , bx, by] = vee!.d.split(" ");
+    expect(Number(ax)).toBeLessThan(360);
+    expect(Number(bx)).toBeLessThan(360);
+    expect(Number(ay) - 300).toBeCloseTo(300 - Number(by), 6);
+  });
+
+  it("without heads or corners, is plain shape ink", () => {
+    expect(decorOf({ shape: "path" })).toBeNull();
+  });
+});

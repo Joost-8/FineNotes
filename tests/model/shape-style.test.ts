@@ -365,3 +365,58 @@ describe("saving a styled shape", () => {
     expect(Object.keys(back)).toEqual(["id", "color", "size", "tool", "pts", "shape"]);
   });
 });
+
+describe("a path arrow's style (discussion #107)", () => {
+  const path = (extra: Partial<Stroke> = {}): Stroke => ({
+    id: "p",
+    color: "#000000",
+    size: 2,
+    tool: "pen",
+    shape: "path",
+    heads: { end: "open" },
+    radius: ROUND_RADIUS,
+    pts: flat([
+      [0, 0],
+      [100, 0],
+      [100, 80],
+      [200, 80],
+    ]),
+    ...extra,
+  });
+
+  it("takes heads and corners, never a fill: it is open", () => {
+    expect(canHaveHeads("path")).toBe(true);
+    expect(canRound("path")).toBe(true);
+    expect(canFill("path")).toBe(false);
+    expect(headsOf(path())).toEqual({ end: "open" });
+    expect(headsOf(path({ heads: undefined }))).toBeNull();
+  });
+
+  it("changes its heads in place, keeping every corner", () => {
+    const s = path();
+    expect(applyShapeStyle(s, { heads: { start: "filled", end: "filled" } })).toBe(true);
+    expect(s.shape).toBe("path");
+    expect(s.pts).toEqual(path().pts);
+    expect(s.heads).toEqual({ start: "filled", end: "filled" });
+    applyShapeStyle(s, { heads: null, radius: null });
+    expect(s.heads).toBeUndefined();
+    expect(s.radius).toBeUndefined();
+  });
+
+  it("drawn with the Shape tool, takes the arrow preset's heads", () => {
+    const keep = path();
+    styleNewShape(keep, {});
+    expect(keep).toEqual(path());
+    const filled = path();
+    styleNewShape(filled, { heads: { end: "filled" } });
+    expect(filled.heads).toEqual({ end: "filled" });
+    expect(filled.shape).toBe("path");
+  });
+
+  it("saves and loads with its head and corners", () => {
+    const { doc } = docWith([path()]);
+    const back = decodeDocument(encodeDocument(doc)).pages[0].strokes[0];
+    expect(back).toMatchObject({ shape: "path", heads: { end: "open" }, radius: ROUND_RADIUS });
+    expect(back.pts.length).toBe(12);
+  });
+});

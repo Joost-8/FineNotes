@@ -314,7 +314,9 @@ export type ShapeKind =
   | "sector" // closed: centre, arc, centre (a half turn is a semicircle closed by its diameter)
   // added 2026-10-31
   | "segment" // closed: an arc and the straight chord that closes it (a dome)
-  | "angle"; // open: two straight legs meeting square at a corner
+  | "angle" // open: two straight legs meeting square at a corner
+  // added 2026-11-01 (discussion #107)
+  | "path"; // open: an arrow along a path, straight runs at corners or a smooth curve
 
 export interface ShapeResult {
   kind: ShapeKind;
@@ -322,6 +324,9 @@ export interface ShapeResult {
   pts: number[];
   /** 0..1. Below `minConfidence` the caller must keep the raw stroke. */
   confidence: number;
+  /** A `path`'s style, for the stroke to carry (2026-11-01): its head, and its corners. */
+  heads?: { start?: "open" | "filled"; end?: "open" | "filled" };
+  radius?: number;
 }
 
 export interface RecognizeOptions {
@@ -386,6 +391,7 @@ The renderer depends on these layouts; they are contract, not implementation.
 | `sector`                         | closed: the centre, the arc as `arc` lays it out, the centre     |
 | `segment`                        | closed: the arc as `arc` lays it out, then its first point again |
 | `angle`                          | 3 points: `[end, corner, end]`, the legs exactly square          |
+| `path`                           | open: an elbow's start, corners and end; or a curve, ≥ 25 points |
 
 A recognised `heart` and `sector` begin at the vertex nearest pen-down (a
 sector's outline then need not start at its centre); the Shape tool's
@@ -411,6 +417,39 @@ ink; held, any orientation, from 50 page px. A leg within 8° of level or
 upright is put on it. An `angle` takes no fill. Older versions read both
 kinds as freehand ink.
 
+A `path` (2026-11-01, discussion #107) is an arrow drawn along a path: a
+held stroke whose end is a head — a V (both barbs, as the straight arrow's)
+or the retrace gesture (pull back a little and hold, as for the straight
+retrace arrow: at least 12 page px, within 20° of straight back along the
+last 16 page px of ink before the turn, at most 35 % of the path's length
+and no further than its ink runs straight behind the turn) — and whose body
+is not one straight run. Held only,
+and only when neither the retrace arrow nor the straight arrow takes the
+stroke: those keep every stroke they took before. A confident one is the
+stroke, as the retrace arrow is.
+
+- **Straight runs** (an elbow, an S, stairs, a Z; 2–6 runs, corners turning
+  30–140°, each corner sharp in the ink and on it) become the run lines'
+  corners: `[start, corner, …, end]`, each run within 8° of level or
+  upright put on it. The stroke gets `radius` 14 (the rounded corners).
+- **A smooth curve** (no corner, a turn of 30–300° in all) becomes the ink
+  smoothed, a sample at most every 8 page px and at least 24 of them.
+- Either gets `heads: { end: "open" }`. The head is not in `pts`: it is drawn
+  from `heads` along the path's own last stretch (its last segment, or half
+  a head back, whichever is shorter), sized by the path's whole length, and
+  can be changed like a line's (`start`, `filled`). `recognizeAtZoom`
+  divides `radius` by the zoom, as it does the points.
+- Refused, structurally: a head whose ink is not straight strokes between
+  the tip and the barbs' ends (a written 6 ends in a loop), whose ink comes
+  back near the body, or a body that crosses itself. Measured on the UJI pen
+  characters (11 640 handwritten characters, every stroke read as held):
+  0.13 % of strokes at 80 page px tall and 0.33 % at 160 became a path,
+  most of the latter the corpus's lift tails read as a retrace (a hold has
+  none); the same strokes already snapped to some shape 33–41 % of the time.
+  A written stem retraced to its end (d, a, u, 4) is not a pull-back: it
+  comes back as far as the stem runs, or further.
+- Older versions read a `path` as freehand ink, without its head.
+
 ### A shape's style (v9)
 
 A shape may also carry a style, all optional, and a stroke without them is
@@ -419,8 +458,8 @@ drawn exactly as before (`src/model/shape-style.ts`, `src/canvas/shape-decor.ts`
 ```ts
 fill?: string;          // "#rrggbb" or "#rrggbbaa"; closed kinds only, painted under the outline
 dash?: "dash" | "dot";  // the outline; absent is solid
-radius?: number;        // page px; rect, triangle, diamond, polygon, star; scales with a resize
-heads?: { start?: "open" | "filled"; end?: "open" | "filled" };  // `line` only
+radius?: number;        // page px; rect, triangle, diamond, polygon, star, path; scales with a resize
+heads?: { start?: "open" | "filled"; end?: "open" | "filled" };  // `line` and `path`
 ```
 
 - The style is drawn at paint time, never stored in `pts`: the layouts above
@@ -783,6 +822,7 @@ ignore them.
 | Field                                                                         | Meaning                                                                                                                                                                                                                                               |
 | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `TextBoxElement.font?: TextFont`                                              | one of `TEXT_FONTS`; absent = `"sans"`. Families installed on iPadOS, macOS **and** Windows only (`TEXT_FONT_STACKS`)                                                                                                                                 |
+| `TextBoxElement.family?: string`                                              | a font family by name (#107): shown over `font` where the device has it, else in `font`; older builds ignore it. One name (`cleanFamily`), at most 64 characters, no quote, comma or generic family, else dropped on load                             |
 | `bold? italic? underline? strike?: boolean`                                   | whole-box style; stored only as `true`, never `false`                                                                                                                                                                                                 |
 | `align?: TextAlign`                                                           | `left` (absent) · `center` · `right` · `justify`                                                                                                                                                                                                      |
 | `lineHeight?: number`                                                         | multiple of the font size, 0.8–3; absent = 1.25                                                                                                                                                                                                       |

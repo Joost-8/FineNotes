@@ -51,6 +51,11 @@ export interface ModelAsset {
   suffix?: string;
   /** Bytes per range request; `CHUNK_BYTES` when unset (a large model wants a few MB). */
   chunkBytes?: number;
+  /**
+   * Kept on this device, outside the vault (downloads/device-folder.ts), so
+   * no vault sync carries it: for a model only a desktop can run.
+   */
+  deviceOnly?: boolean;
 }
 
 /** The model's total size in bytes. */
