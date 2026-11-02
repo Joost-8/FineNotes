@@ -17,6 +17,13 @@ extracted from the matching section of this file by `release.yml`.
   handwriting, highlights and shapes, typed text and text boxes, pictures,
   sticky notes, lined and graph paper, and PDF pages with the ink on the
   words it marked.
+- **Get the font an imported note was typed in.** When a text box names a
+  font this device lacks, the ⚠ beside it in the font menu becomes a
+  download, and the import result offers it too. Open-licence fonts (Caveat,
+  Patrick Hand, Lato and 20 more) come as themselves. Apple's fonts may not
+  be passed on, so Notability's Chalkboard SE gets Comic Relief instead,
+  sized to wrap where it did. Fonts go in `FineNotes assets/Fonts` with
+  their licence, so one download reaches every device the vault syncs to.
 - **Search the text of your PDFs**
   ([#112](https://github.com/Joost-8/FineNotes/discussions/112)). The
   notebook search finds words printed on a notebook's PDF pages, marked PDF

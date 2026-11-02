@@ -5136,6 +5136,30 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   height: 16px;
 }
 
+/* ...that FineNotes can fetch: the mark is a download, tapped on its own.
+   In the row's own colour: the box's family is the selected, accent-filled row. */
+.goodobsidian-text-popover .goodobsidian-text-option .goodobsidian-font-missing.is-fetch {
+  cursor: pointer;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-missing.is-busy svg,
+.goodobsidian-import-font-get.is-busy svg {
+  animation: goodobsidian-spin 1s linear infinite;
+}
+
+@keyframes goodobsidian-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-text-popover .goodobsidian-font-missing.is-busy svg,
+  .goodobsidian-import-font-get.is-busy svg {
+    animation: none;
+  }
+}
+
 .goodobsidian-text-popover .goodobsidian-text-option.is-size {
   padding: 0;
   font-variant-numeric: tabular-nums;

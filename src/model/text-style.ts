@@ -23,6 +23,7 @@ import {
   type TextFont,
 } from "./document";
 import { cleanFamily, familyStack } from "./text-family";
+import { standInFaceOf } from "./font-catalogue";
 
 /** Line height of a box with no `lineHeight`, as a multiple of its font size (§6). */
 export const DEFAULT_LINE_HEIGHT = 1.25;
@@ -548,9 +549,13 @@ export function fontOf(style: Pick<TextStyle, "font">): TextFont {
 
 /**
  * CSS / canvas font-family list for a style: its `family`, if it names one,
- * then its typeface's. A real family list, never `var(--…)`: canvas string
- * properties do not resolve CSS variables.
+ * then the stand-in FineNotes can fetch for that family (font-catalogue.ts;
+ * skipped by the browser until it is loaded), then its typeface's. A real
+ * family list, never `var(--…)`: canvas string properties do not resolve
+ * CSS variables.
  */
 export function fontFamilyOf(style: Pick<TextStyle, "font" | "family">): string {
-  return familyStack(style.family, TEXT_FONT_STACKS[fontOf(style)]);
+  const typeface = TEXT_FONT_STACKS[fontOf(style)];
+  const standIn = standInFaceOf(style.family);
+  return familyStack(style.family, standIn ? `"${standIn}", ${typeface}` : typeface);
 }
