@@ -1298,6 +1298,24 @@ describe("the ⓘ after a row's name", () => {
     buttons[0].dispatch("keydown", { key: "Enter" });
     expect(text?.hasClass("is-hidden")).toBe(true);
   });
+
+  it("says what the row says now when Obsidian draws the row again", () => {
+    const row = new Setting();
+    row.setName("Learn your handwriting");
+    addInfo(row.settingEl as never, "Has: 0 copied lines.");
+    // Each update() draws the row again: setName empties the name, ⓘ and all.
+    row.setName("Learn your handwriting");
+    addInfo(row.settingEl as never, "Has: 20 copied lines.");
+    expect(row.nameEl.findAll("goodobsidian-info")).toHaveLength(1);
+    const texts = row.infoEl.findAll("goodobsidian-info-text");
+    expect(texts.map((t) => t.text)).toEqual(["Has: 20 copied lines."]);
+    // Drawn again with the button still there: only the text changes.
+    addInfo(row.settingEl as never, "Has: 21 copied lines.");
+    expect(row.nameEl.findAll("goodobsidian-info")).toHaveLength(1);
+    expect(row.infoEl.findAll("goodobsidian-info-text").map((t) => t.text)).toEqual([
+      "Has: 21 copied lines.",
+    ]);
+  });
 });
 
 describe("callout blocks", () => {
@@ -2014,6 +2032,25 @@ describe("the learned handwriting model", () => {
     expect(learn.buttons[1].disabled).toBe(true);
     expect(tab.infoOf(LEARN)).toMatch(/^Needs: at least 10 copied lines or corrected words\./);
     expect(tab.infoOf(LEARN)).toMatch(/Next: 10 more lines or words, then Learn now\.$/);
+  });
+
+  it("reads the vault only while the tab is on screen, not for Obsidian's search", async () => {
+    // Obsidian asks for the rows when the plugin loads; what was read then
+    // was shown when the tab opened, long after (Sheet 1 written, 0 lines).
+    const plugin = makePlugin({ grape2Model: record });
+    plugin.files.set(MODEL, "abcd");
+    const { tab } = makeTab(plugin);
+    const reader = () => named(rows(tab), "Read handwriting with").control?.options;
+    expect(reader()).not.toHaveProperty("mine");
+    await flush();
+    expect(plugin.calls).not.toContain("update");
+    expect(reader()).not.toHaveProperty("mine");
+    // On screen, it reads them and draws the rows again with what it found.
+    (tab.containerEl as unknown as { isConnected: boolean }).isConnected = true;
+    reader();
+    await flush();
+    expect(plugin.calls).toContain("update");
+    expect(reader()).toHaveProperty("mine", "Your model");
   });
 
   it("offers the symbol sheet beside the text sheets, before either is written", async () => {

@@ -552,13 +552,21 @@ function infoToggle(buttonParent: HTMLElement, textParent: HTMLElement, text: st
 
 /**
  * Give a drawn settings row its ⓘ: after its name, opening `text` under its
- * description. Once per row.
+ * description. A row that has one keeps it and takes the new text. When
+ * Obsidian draws the row again (each `update()`), `setName` empties the
+ * name and takes the button with it, and the old text stays behind: both
+ * are made again, so the ⓘ says what the row says now.
  */
 export function addInfo(settingEl: HTMLElement, text: string): void {
-  if (settingEl.hasClass(INFO_CLS)) return;
   const nameEl = settingEl.querySelector<HTMLElement>(".setting-item-name");
   const infoEl = settingEl.querySelector<HTMLElement>(".setting-item-info");
   if (!nameEl || !infoEl) return;
+  const more = infoEl.querySelector<HTMLElement>(".goodobsidian-info-text");
+  if (more && nameEl.querySelector(".goodobsidian-info")) {
+    if (more.textContent !== text) more.setText(text);
+    return;
+  }
+  more?.remove();
   settingEl.addClass(INFO_CLS);
   infoToggle(nameEl, infoEl, text);
 }
@@ -693,10 +701,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     return this.infos.get(name);
   }
 
-  /** Give every drawn row that has an ⓘ text and no button yet its button. */
+  /** Give every drawn row that has an ⓘ text its button, with the text it has now. */
   private decorate(): void {
     for (const el of Array.from(this.containerEl.querySelectorAll<HTMLElement>(".setting-item"))) {
-      if (el.hasClass(INFO_CLS)) continue;
       const name = el.querySelector(".setting-item-name")?.textContent?.trim();
       const text = name ? this.infos.get(name) : undefined;
       if (text) addInfo(el, text);
@@ -1862,8 +1869,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const { settings } = this.plugin;
     const reading = (): boolean => settings.handwritingOnDevice !== false;
     // Whether "Your model" is offered depends on the files: the tab is
-    // rebuilt once they are read.
-    this.loadLearning();
+    // rebuilt once they are read. Only while the tab is on screen: Obsidian
+    // also asks for the rows when the plugin loads, for its search, and
+    // state read then would be shown, out of date, when the tab opens.
+    if (this.containerEl.isConnected) this.loadLearning();
     const choices: Record<string, string> = { off: READER_NAMES.off, grape: READER_NAMES.grape };
     if (this.ownModelHere()) choices.mine = READER_NAMES.mine;
     return [
