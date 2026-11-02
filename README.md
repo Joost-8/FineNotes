@@ -529,7 +529,7 @@ telemetry, no ads and no account. Your handwriting is read by Grape
 (handwriting recognizer model) on the device; practice files and what Grape
 learns from them stay in your vault.
 
-The network is used in four cases, all optional.
+The network is used in five cases, all optional.
 
 **Grape (handwriting recognizer model).** It is downloaded rather than built
 into the plugin, to keep the plugin small:
@@ -558,6 +558,15 @@ its list of templates, their preview pictures, and the one template you
 choose to add. Nothing about you or your vault is sent. A template is only
 accepted if it is a PDF, PNG, JPEG or WebP file of at most 40 MB, or a
 FineNotes template file, so nothing in it can run.
+
+**The interface language.** English is built in. When FineNotes is shown in
+another language (Settings → Language, or Obsidian itself in that language),
+the words for it are downloaded once from FineNotes' own repository on GitHub
+(`raw.githubusercontent.com/Joost-8/FineNotes/<version>/src/i18n/locales/<language>.json`,
+about 200 KB) and kept in the plugin's folder, so the language opens offline
+from then on; a plugin update fetches the new version's words once.
+Nothing about you or your vault is sent; GitHub sees your IP address, as with
+any download. Without the download FineNotes stays in English.
 
 **Checking for updates.** Once a day at most, FineNotes reads the version
 number in its own `manifest.json` on GitHub

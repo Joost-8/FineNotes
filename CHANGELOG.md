@@ -8,6 +8,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **FineNotes in your language.** Settings → Language offers the 43
+  languages Obsidian itself comes in, each named in its own language, and
+  follows Obsidian's language unless you pick another. Menus, buttons,
+  tooltips, dialogs, notices and settings change; your notes and
+  handwriting never do. A language's words download once (about 200 KB) and
+  then work offline; after a change, **Relaunch** shows it everywhere.
+
 ## [2.7.0] - 2026-11-02
 
 Page margins, cover tape, fills, path arrows, hearts, arcs and folded or
