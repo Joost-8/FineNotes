@@ -113,12 +113,20 @@ export interface AiMenuItem {
   enabled: boolean;
   /** Shown under a disabled entry. */
   reason: string;
+  /** Shown under an enabled entry: where it stands. */
+  detail?: string;
   /** Rendered below a divider, after the actions. */
   footer?: boolean;
   /** Which section: the on-device reader, or the features that need a key (the default). */
   section?: "device" | "key";
   /** A switch rather than an action: its state. A tap flips it and leaves the menu open. */
   on?: boolean;
+  /**
+   * A choice rather than an action: its options, shown side by side, and
+   * {@link value} the one picked. A tap picks one and leaves the menu open.
+   */
+  choices?: ReadonlyArray<{ id: string; label: string }>;
+  value?: string;
 }
 
 /** The on-device reader's state, for its section of the menu. */
@@ -131,6 +139,15 @@ export interface DeviceReading {
   learning: number | null;
   /** Words it may have misread are underlined, to correct with a tap. */
   checkingWords: boolean;
+  /** Lines that end in = are worked out and answered on the page. */
+  calculating: boolean;
+}
+
+/** What reads handwriting on this device: nothing, Grape, or the model learned from the user's. */
+export interface HandwritingReading {
+  value: "off" | "grape" | "mine";
+  /** A model learned from the user's handwriting is here, so "Mine" can be picked. */
+  ownModel: boolean;
 }
 
 export interface AiMenuContext {
@@ -145,8 +162,10 @@ export interface AiMenuContext {
    * greyed out, saying why.
    */
   recordings?: number;
-  /** The on-device reader; absent when it is switched off in the settings. */
+  /** The on-device reader; absent when it is switched off. */
   device?: DeviceReading;
+  /** Which model reads, as the section's first row picks it; absent, the row is left out. */
+  reading?: HandwritingReading;
   /** Progress of an on-device transcription running now, 0..100; absent when none runs. */
   transcribing?: number;
 }
@@ -166,7 +185,9 @@ export function aiKeyFolded(setup: AiSetup): boolean {
  */
 function deviceItems(ctx: AiMenuContext): AiMenuItem[] {
   const device = ctx.device;
+  const reader = readerItem(ctx.reading);
   if (!device) {
+    if (reader) return [reader];
     return [
       {
         id: "device-settings",
@@ -179,6 +200,7 @@ function deviceItems(ctx: AiMenuContext): AiMenuItem[] {
     ];
   }
   const items: AiMenuItem[] = [
+    ...(reader ? [reader] : []),
     {
       id: "check-words",
       label: "Corrections",
@@ -188,46 +210,59 @@ function deviceItems(ctx: AiMenuContext): AiMenuItem[] {
       section: "device",
       on: device.checkingWords,
     },
-  ];
-  if (device.learning !== null) {
-    items.push({
-      id: "learn",
-      label: `Learning your handwriting · ${Math.round(device.learning)} %`,
-      icon: "graduation-cap",
-      enabled: false,
-      reason: "Runs in the background; stop it in Settings, Handwriting",
-      section: "device",
-    });
-  } else if (device.practiceFiles === 0) {
-    items.push({
-      id: "practice",
-      label: "Teach it your handwriting…",
-      icon: "graduation-cap",
+    {
+      id: "calc-notes",
+      label: "Calculations",
+      icon: "equal",
       enabled: true,
-      reason: "",
+      reason: "Answer lines that end in =",
       section: "device",
-    });
-  } else {
-    items.push(
-      {
-        id: "learn",
-        label: device.learned ? "Learn my handwriting again" : "Learn my handwriting",
-        icon: "graduation-cap",
-        enabled: true,
-        reason: "",
-        section: "device",
-      },
-      {
-        id: "practice",
-        label: "Write another practice set",
-        icon: "pen-line",
-        enabled: true,
-        reason: "",
-        section: "device",
-      },
-    );
-  }
+      on: device.calculating,
+    },
+  ];
+  // One row for the whole of learning: it opens the Learn your handwriting
+  // window, which shows the next step (view/learn-window.ts).
+  items.push({
+    id: "learn-window",
+    label: "Learn your handwriting…",
+    icon: "graduation-cap",
+    enabled: true,
+    reason: "",
+    detail: learnDetail(device),
+    section: "device",
+  });
   return items;
+}
+
+/** Where learning stands, under its row: a run's share, or what there is so far. */
+function learnDetail(device: DeviceReading): string {
+  if (device.learning !== null) return `Learning · ${Math.round(device.learning)} %`;
+  if (device.learned) return "Learned · learn again for more";
+  if (device.practiceFiles === 0) return "Copy a few lines to start";
+  return `${device.practiceFiles} practice sheet${device.practiceFiles === 1 ? "" : "s"}`;
+}
+
+/**
+ * "Read with": Off, Grape, or Mine once a model has been learned from the
+ * user's handwriting. One choice for what were two switches in the settings.
+ */
+function readerItem(reading: HandwritingReading | undefined): AiMenuItem | null {
+  if (!reading) return null;
+  const choices = [
+    { id: "off", label: "Off" },
+    { id: "grape", label: "Grape" },
+    ...(reading.ownModel ? [{ id: "mine", label: "Mine" }] : []),
+  ];
+  return {
+    id: "reader",
+    label: "Read with",
+    icon: "scan-text",
+    enabled: true,
+    reason: "",
+    section: "device",
+    choices,
+    value: reading.value === "mine" && !reading.ownModel ? "grape" : reading.value,
+  };
 }
 
 function gate(base: Availability, contentOk: boolean, emptyReason: string): Availability {
@@ -235,7 +270,10 @@ function gate(base: Availability, contentOk: boolean, emptyReason: string): Avai
   return contentOk ? OK : no(emptyReason);
 }
 
-/** The AI menu's entries, in order, with availability: the device's section, then the key's. */
+/**
+ * The AI menu's entries with availability: the device's section, then the
+ * key's. The menu shows the key's first (`view/ai-menu.ts`).
+ */
 export function buildAiMenu(ctx: AiMenuContext): AiMenuItem[] {
   return [...deviceItems(ctx), ...speechItems(ctx), ...keyItems(ctx)];
 }

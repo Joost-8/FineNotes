@@ -16,6 +16,7 @@ import {
   setIcon,
   Setting,
   type TFile,
+  TFolder,
 } from "obsidian";
 import {
   IMPORT_EXTENSIONS,
@@ -26,6 +27,8 @@ import {
 } from "../import/import-notebook";
 import {
   describeImport,
+  foldersDownTo,
+  importFolder,
   importHeading,
   isImportFileName,
   progressText,
@@ -41,6 +44,8 @@ import {
   stripInkSuffix,
 } from "../model/new-notebook";
 import { buildInkFile } from "../model/serialize";
+import { downloadLabel, familiesIn } from "../model/font-catalogue";
+import { vaultFonts } from "./font-store";
 import { errorMessage } from "../util/errors";
 import { saveImageAttachment } from "./image-import";
 import { isPdf, readPdf } from "../import/pdf";
@@ -280,8 +285,8 @@ export class ImportNotebookModal extends Modal {
     });
     steps.createEl("li", {
       text:
-        "Notability: share or export a note in the Note format. For everything at once, turn " +
-        "on Auto-backup with the Note format.",
+        "Notability: share or export a note in the Note (.note) or the new (.ntb) format. For " +
+        "everything at once, turn on Auto-backup with either format.",
     });
     steps.createEl("li", {
       text:
@@ -328,6 +333,7 @@ export class ImportNotebookModal extends Modal {
             one = await importNotebooks(bytes, picked.name, {
               measurePdf: (pdf) => measurePdfPages(ownBuffer(pdf)),
               rasterizePdf: (pdf) => rasterizePdfFirstPage(pdf),
+              readPdfInk: async (pdf) => (await readPdfPages(pdf)).pages,
               onResult: async (result) => {
                 written.push({ result, file: await this.save(result) });
               },
@@ -359,10 +365,14 @@ export class ImportNotebookModal extends Modal {
     this.showResults(batch, written);
   }
 
-  /** Write one converted notebook and its attachments; returns the notebook file. */
+  /**
+   * Write one converted notebook and its attachments; returns the notebook
+   * file. A notebook from a backup's folder goes in that folder, made under
+   * the chosen one.
+   */
   private async save(result: ImportResult): Promise<TFile> {
     const vault = this.app.vault;
-    const dir = normalizeFolder(this.folder);
+    const dir = await this.makeFolders(importFolder(this.folder, result));
     const parent = dir ? vault.getFolderByPath(dir) : vault.getRoot();
     const taken = new Set(parent?.children.map((child) => child.name) ?? []);
     const paths = notebookPaths(dir, result.title, "notebook", this.options.ownFolder, taken);
@@ -396,6 +406,26 @@ export class ImportNotebookModal extends Modal {
     );
     const content = buildInkFile(body, result.doc);
     return vault.create(notePath, content);
+  }
+
+  /**
+   * Make every folder down to `path` that is missing; returns the path as the
+   * vault spells it. A folder that differs only in case is the same folder on
+   * Windows, macOS and iOS, so it is used instead of made.
+   */
+  private async makeFolders(path: string): Promise<string> {
+    const vault = this.app.vault;
+    let made = "";
+    for (const wanted of foldersDownTo(normalizeFolder(path))) {
+      const name = wanted.slice(wanted.lastIndexOf("/") + 1);
+      const parent = made ? vault.getFolderByPath(made) : vault.getRoot();
+      const same = parent?.children.find(
+        (child) => child instanceof TFolder && child.name.toLowerCase() === name.toLowerCase(),
+      );
+      made = same ? same.path : joinVaultPath(made, name);
+      if (!vault.getFolderByPath(made)) await vault.createFolder(made);
+    }
+    return made;
   }
 
   // --- Step 3: what came over ----------------------------------------------------
@@ -433,6 +463,13 @@ export class ImportNotebookModal extends Modal {
       );
     }
 
+    // Fonts the notebooks name that this device lacks, with their download.
+    void listMissingFonts(
+      this.app,
+      el.createDiv(),
+      written.map(({ result }) => result),
+    );
+
     const buttons = new Setting(el);
     const first = written[0];
     if (first) {
@@ -463,6 +500,62 @@ export class ImportNotebookModal extends Modal {
   }
 }
 
+/**
+ * A row for each font the imported notebooks name that this device lacks and
+ * FineNotes can fetch (font-store.ts), with the download the font menu also
+ * offers. Fonts fetched before, on this device or another, are read from the
+ * vault first and get no row.
+ */
+async function listMissingFonts(
+  app: App,
+  el: HTMLElement,
+  results: readonly ImportResult[],
+): Promise<void> {
+  const fonts = vaultFonts(app);
+  const families = familiesIn(results.flatMap((result) => result.doc.pages));
+  await fonts.use(families).catch(() => false);
+  for (const family of families) {
+    const source = fonts.source(family);
+    if (!source || fonts.state(family) !== "fetchable") continue;
+    const row = new Setting(el).setName(family).setDesc("Not on this device");
+    row.descEl.addClass("mod-warning");
+    const mark = row.nameEl.createSpan({ cls: "goodobsidian-import-mark", prepend: true });
+    setIcon(mark, "alert-triangle");
+    const label = downloadLabel(source);
+    row.addExtraButton((button) => {
+      let busy = false;
+      button.extraSettingsEl.addClass("goodobsidian-import-font-get");
+      button
+        .setIcon("download")
+        .setTooltip(label)
+        .onClick(() => {
+          if (busy) return;
+          busy = true;
+          button.extraSettingsEl.addClass("is-busy");
+          button.setIcon("loader");
+          void fonts
+            .fetch(family)
+            .then(() => {
+              // Done: the warning goes, a check takes its place.
+              setIcon(mark, "check");
+              row.setDesc("");
+              row.descEl.removeClass("mod-warning");
+              button.extraSettingsEl.remove();
+            })
+            .catch((error: unknown) => {
+              new Notice(
+                `FineNotes: couldn't get ${source.font.family} — ${errorMessage(error)}`,
+                8000,
+              );
+              busy = false;
+              button.extraSettingsEl.removeClass("is-busy");
+              button.setIcon("download");
+            });
+        });
+    });
+  }
+}
+
 /** The bytes as an ArrayBuffer of their own, copied only when they share one. */
 function ownBuffer(bytes: Uint8Array): ArrayBuffer {
   const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
@@ -476,7 +569,7 @@ class VaultImportSuggestModal extends FuzzySuggestModal<TFile> {
     private readonly pick: (file: TFile) => void,
   ) {
     super(app);
-    this.setPlaceholder("Find a .goodnotes, .note or .zip file in the vault…");
+    this.setPlaceholder("Find a .goodnotes, .note, .ntb or .zip file in the vault…");
   }
   getItems(): TFile[] {
     return this.app.vault.getFiles().filter((file) => isImportFileName(file.name));

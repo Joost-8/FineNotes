@@ -3,7 +3,8 @@
  * every converter shares. Pure.
  */
 
-import type { InkDocument, TextFont } from "../model/document";
+import { type InkDocument, TEXT_FONT_STACKS, type TextFont } from "../model/document";
+import { DEVICE_FONT_CANDIDATES, cleanFamily } from "../model/text-family";
 import { PAGE_PX_PER_MM } from "../model/units";
 
 export type ImportSource =
@@ -35,6 +36,11 @@ export interface ImportResult {
   app?: string;
   /** The notebook's title in the other app (or the file's name). */
   title: string;
+  /**
+   * Where the notebook sat inside a backup zip, `/` between folders
+   * (`Math/Algebra`), the zip's own wrapper folder left out; absent at its top.
+   */
+  folder?: string;
   /** Ready for `buildInkFile` once its attachment paths are relinked. */
   doc: InkDocument;
   attachments: ImportAttachment[];
@@ -152,7 +158,7 @@ export function packageRoot(
   for (const name of files.keys()) {
     const parts = name.split("/");
     if (parts[parts.length - 1] !== keyFile || parts.length > 2) continue;
-    if (parts.length === 2 && /\.(goodnotes|note)$/i.test(parts[0])) continue;
+    if (parts.length === 2 && /\.(goodnotes|note|ntb)$/i.test(parts[0])) continue;
     return parts.length === 1 ? "" : `${parts[0]}/`;
   }
   return null;
@@ -174,6 +180,10 @@ export function sniffFile(bytes: Uint8Array): { mime: string; ext: string } {
     return { mime: "audio/mp4", ext: "m4a" };
   }
   if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return { mime: "image/webp", ext: "webp" };
+  // JPEG 2000, as iPad scans and Goodnotes pictures often are: a box `jP  `.
+  if (ascii(4, 8) === "jP  " && b[8] === 0x0d && b[9] === 0x0a) {
+    return { mime: "image/jp2", ext: "jp2" };
+  }
   return { mime: "application/octet-stream", ext: "bin" };
 }
 
@@ -214,14 +224,75 @@ export function plural(n: number, one: string, many = `${one}s`): string {
 /** The FineNotes typeface nearest to a font family another app names. */
 export function fontFor(family: string | undefined): TextFont {
   const name = (family ?? "").toLowerCase();
-  if (/courier|mono|menlo|typewriter/.test(name)) return "mono";
+  if (/courier|mono|menlo|monaco|consolas|typewriter|andale|cascadia/.test(name)) return "mono";
   if (/times/.test(name)) return "times";
   if (/verdana/.test(name)) return "verdana";
   if (/trebuchet/.test(name)) return "trebuchet";
-  if (/georgia|serif|garamond|baskerville|palatino/.test(name) && !/sans/.test(name)) {
-    return "serif";
-  }
+  const serif =
+    /georgia|serif|garamond|baskerville|palatino|didot|bodoni|hoefler|cochin|charter|caslon|stix|cambria|constantia|book ?antiqua|minion|merriweather|playfair/;
+  if (serif.test(name) && !/sans/.test(name)) return "serif";
   return "sans";
+}
+
+/**
+ * PostScript names that do not become their family by splitting at the
+ * case changes (`familyOfPostScript`), from Apple's list of iPadOS fonts.
+ */
+const POSTSCRIPT_FAMILIES: Readonly<Record<string, string>> = {
+  AcademyEngravedLetPlain: "Academy Engraved LET",
+  ArialRoundedMTBold: "Arial Rounded MT Bold",
+  BodoniSvtyTwoITCTT: "Bodoni 72",
+  BodoniSvtyTwoOSITCTT: "Bodoni 72 Oldstyle",
+  BodoniSvtyTwoSCITCTT: "Bodoni 72 Smallcaps",
+  BradleyHandITCTT: "Bradley Hand",
+  HiraMaruProN: "Hiragino Maru Gothic ProN",
+  HiraMinProN: "Hiragino Mincho ProN",
+  PartyLetPlain: "Party LET",
+  PingFangHK: "PingFang HK",
+  PingFangSC: "PingFang SC",
+  PingFangTC: "PingFang TC",
+  SavoyeLetPlain: "Savoye LET",
+};
+
+/**
+ * The family a PostScript font name belongs to, as iPadOS and macOS name
+ * it: `HelveticaNeue-Bold` is Helvetica Neue, `TimesNewRomanPSMT` Times New
+ * Roman, `ChalkboardSE-Regular` Chalkboard SE. The style after the hyphen
+ * is dropped, as are Monotype's `PSMT`/`MT` tags; the rest splits where the
+ * case changes, keeping capitals together (SE, UCAS, DIN).
+ */
+export function familyOfPostScript(name: string): string {
+  const base = name.split("-")[0];
+  const known = POSTSCRIPT_FAMILIES[base];
+  if (known) return known;
+  const bare = base.replace(/(?:PSMT|PS|MT)$/, "") || base;
+  return bare.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
+}
+
+/** The system font, which an app names but no font list holds: shown as Sans. */
+const SYSTEM_FONT = /^(?:\.|system\b|SFUI|SFPro|SF-|SF Pro|San Francisco|AppleSystemUI)/i;
+
+/**
+ * How a text box shows a font another app names (discussion #107): its
+ * `family`, so a device that has the font shows it, over the FineNotes
+ * typeface nearest to it, which every device has and which stands in for
+ * it elsewhere. Goodnotes names a family ("Helvetica Neue"), Notability a
+ * PostScript font ("HelveticaNeue-Bold"). No family for the system font, or
+ * for one a typeface is already exactly (Arial, Georgia, Courier New…).
+ */
+export function importedFont(name: string | undefined): { font?: TextFont; family?: string } {
+  const raw = (name ?? "").trim();
+  if (raw === "" || SYSTEM_FONT.test(raw)) return {};
+  // A family's own name stays as it is, even one with capitals inside (SimSun).
+  const known = DEVICE_FONT_CANDIDATES.find((f) => f.toLowerCase() === raw.toLowerCase());
+  const family = cleanFamily(known ?? (raw.includes(" ") ? raw : familyOfPostScript(raw)));
+  const font = fontFor(family ?? raw);
+  const out: { font?: TextFont; family?: string } = font === "sans" ? {} : { font };
+  const stack = TEXT_FONT_STACKS[font];
+  if (family && !stack.startsWith(`${family},`) && !stack.startsWith(`"${family}",`)) {
+    out.family = family;
+  }
+  return out;
 }
 
 /** `#rrggbb` from colour channels in 0..1. */

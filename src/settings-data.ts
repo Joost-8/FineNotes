@@ -28,6 +28,7 @@ import {
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { BarrelAction } from "./input/pen-modifiers";
+import type { ExportFormat } from "./export/export-choice";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import { type BarItemId, DEFAULT_BAR } from "./view/toolbar-layout";
@@ -145,6 +146,11 @@ export interface GoodObsidianSettings {
   llmVendor: LlmVendor;
   /** Empty for the vendor's default model. */
   llmModel: string;
+  /**
+   * The model typed for each vendor the user left, so a look at another
+   * service and back does not lose it ({@link switchLlmVendor}).
+   */
+  llmModels: Partial<Record<LlmVendor, string>>;
   /** With OpenRouter, serve the model only from providers that do not say they compress it. */
   openRouterSkipCompressed: boolean;
   /**
@@ -173,6 +179,11 @@ export interface GoodObsidianSettings {
   askSaveChats: boolean;
   /** Where Ask opens: a window over the notebook, or a sidebar beside the page. */
   askLayout: "window" | "sidebar";
+  /**
+   * A new Ask AI chat starts with the page being read picked. Off by default
+   * (Joost, discussion #107): a chat sends a page only when the user picks one.
+   */
+  askAttachPage: boolean;
   /** The user agreed that cloud AI sends their pages off the device. */
   cloudConsentGiven: boolean;
   /** The same agreement, given separately for the custom endpoint. */
@@ -327,6 +338,8 @@ export interface GoodObsidianSettings {
   deskColor: string;
   /** Export as PDF leaves out the paper's lines, grid, dots and texture. */
   exportPlainPaper: boolean;
+  /** The export dialog's format, as last picked: PDF, PNG or JPG. Checked where it is read. */
+  exportFormat: ExportFormat;
 
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
@@ -443,6 +456,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
+  llmModels: {},
   openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
@@ -453,6 +467,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   imageAspect: "square",
   askSaveChats: false,
   askLayout: "window",
+  askAttachPage: false,
   cloudConsentGiven: false,
   customConsentGiven: false,
   autoRecognize: false,
@@ -487,7 +502,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   speechLanguage: "auto",
   notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
-  showNewNotebookInExplorer: false,
+  showNewNotebookInExplorer: true,
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
@@ -495,6 +510,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   desk: "auto",
   deskColor: LIGHT_PAPER.desk,
   exportPlainPaper: false,
+  exportFormat: "pdf",
 
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],
@@ -621,6 +637,46 @@ export interface PenPreferences {
   snapCurve: number;
   tuckOnWrite: PenOptionsOnWrite;
   returnToPen: ReturnToPen;
+  /** {@link GoodObsidianSettings.highlighterAlpha}, 0.1–1. */
+  highlighterAlpha: number;
+  /** {@link GoodObsidianSettings.straightHighlighter}. */
+  straightHighlighter: boolean;
+}
+
+/**
+ * What reads handwriting on this device, as one choice: nothing, Grape, or
+ * the model learned from the user's own handwriting. It stands for two
+ * stored switches, `handwritingOnDevice` and `useLearnedHandwriting`, which
+ * read as one question in two places until 2.7.
+ */
+export type HandwritingReader = "off" | "grape" | "mine";
+
+/** The choice the two switches add up to; "mine" only while a learned model is here. */
+export function handwritingReaderOf(
+  settings: Pick<GoodObsidianSettings, "handwritingOnDevice" | "useLearnedHandwriting">,
+  ownModel: boolean,
+): HandwritingReader {
+  if (settings.handwritingOnDevice === false) return "off";
+  return ownModel && settings.useLearnedHandwriting !== false ? "mine" : "grape";
+}
+
+/** Store a reader choice. Off keeps the learned model's switch as it was, for coming back. */
+export function storeHandwritingReader(
+  settings: Pick<GoodObsidianSettings, "handwritingOnDevice" | "useLearnedHandwriting">,
+  choice: unknown,
+): void {
+  if (choice === "off") {
+    settings.handwritingOnDevice = false;
+    return;
+  }
+  settings.handwritingOnDevice = true;
+  settings.useLearnedHandwriting = choice === "mine";
+}
+
+/** A stored highlighter opacity, 10–100% in steps of 5; anything else reads as the default. */
+export function highlighterAlphaOf(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_HIGHLIGHTER_ALPHA;
+  return Math.min(1, Math.max(0.1, Math.round(value * 20) / 20));
 }
 
 /** The highlighter's tips, as the pen menu offers them. */
@@ -691,6 +747,8 @@ export function penPreferencesOf(
     | "returnToPenOnReselect"
     | "returnToPenAfterUse"
     | "highlighterTip"
+    | "highlighterAlpha"
+    | "straightHighlighter"
   >,
 ): PenPreferences {
   return {
@@ -699,6 +757,8 @@ export function penPreferencesOf(
     snapCurve: snapCurveOf(settings.snapCurvatureThreshold),
     tuckOnWrite: penOptionsOnWriteOf(settings.tuckPenOptionsOnWrite),
     returnToPen: returnToPenOf(settings),
+    highlighterAlpha: highlighterAlphaOf(settings.highlighterAlpha),
+    straightHighlighter: settings.straightHighlighter !== false,
   };
 }
 
@@ -714,6 +774,35 @@ export function storePenPreferences(
   }
   if ("returnToPen" in patch) storeReturnToPen(settings, patch.returnToPen);
   if ("highlighterTip" in patch) settings.highlighterTip = highlighterTipOf(patch.highlighterTip);
+  if ("highlighterAlpha" in patch) {
+    settings.highlighterAlpha = highlighterAlphaOf(patch.highlighterAlpha);
+  }
+  if ("straightHighlighter" in patch) {
+    settings.straightHighlighter = patch.straightHighlighter !== false;
+  }
+}
+
+/**
+ * Change the AI service, keeping what was set up for the one left: its
+ * model is remembered and the next one's comes back, so trying another
+ * service and returning costs nothing. The keys are kept per service by the
+ * key store already; the one key that is not (`llmApiKey`, from before 0.5,
+ * meaning "the service chosen") is the caller's to pin to `from` first.
+ */
+export function switchLlmVendor(
+  settings: Pick<GoodObsidianSettings, "llmVendor" | "llmModel" | "llmModels">,
+  next: LlmVendor,
+): void {
+  const from = settings.llmVendor;
+  if (from === next) return;
+  const models = { ...(settings.llmModels ?? {}) };
+  const typed = settings.llmModel.trim();
+  if (typed) models[from] = typed;
+  else delete models[from];
+  settings.llmVendor = next;
+  settings.llmModel = models[next] ?? "";
+  delete models[next];
+  settings.llmModels = models;
 }
 
 /** The vault-wide folders for each kind of file, as `resolveAttachmentFolder` takes them. */

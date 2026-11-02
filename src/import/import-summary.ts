@@ -1,9 +1,10 @@
 /**
- * The words the import dialog shows: what was picked, what came over. Pure,
- * so the dialog's text is tested without a DOM.
+ * The words the import dialog shows: what was picked, what came over, and
+ * where each notebook goes. Pure, so the dialog is tested without a DOM.
  */
 
 import type { InkDocument } from "../model/document";
+import { joinVaultPath, normalizeFolder, sanitizeFileName } from "../model/new-notebook";
 import {
   pageContentHash,
   pageKeys,
@@ -47,6 +48,24 @@ export function importHeading(batch: ImportBatch): string {
 }
 
 export { isImportFileName };
+
+/**
+ * The vault folder one notebook goes in: the chosen folder, then the folders
+ * it sat in inside the backup zip, each named as a file would be.
+ */
+export function importFolder(target: string, result: Pick<ImportResult, "folder">): string {
+  const inside = (result.folder ?? "")
+    .split("/")
+    .map(sanitizeFileName)
+    .filter((name) => name !== "");
+  return inside.length > 0 ? joinVaultPath(target, inside.join("/")) : normalizeFolder(target);
+}
+
+/** Every folder down to `path`, outermost first: `a`, `a/b`, `a/b/c`. */
+export function foldersDownTo(path: string): string[] {
+  const parts = path.split("/").filter((part) => part !== "");
+  return parts.map((_, i) => parts.slice(0, i + 1).join("/"));
+}
 
 /**
  * Files dropped on the import dialog: the ones it can import, and a line for

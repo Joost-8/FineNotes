@@ -58,6 +58,7 @@ import {
   tableOfValues,
   valueOfLine,
 } from "../model/graph-sample";
+import { dragRange } from "./range-drag";
 
 /** Desmos' order of colours; lighter ones on dark paper. */
 export const CURVES_LIGHT = ["#2d70b3", "#c74440", "#388c46", "#6042a6", "#e07400", "#1a1a1a"];
@@ -835,6 +836,7 @@ export class GraphPanel {
         "aria-label": `Slider ${slider.name}`,
       },
     });
+    dragRange(range);
     range.value = `${slider.value}`;
     range.addEventListener("input", () => {
       slider.value = Number(range.value);

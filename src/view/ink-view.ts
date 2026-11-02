@@ -65,8 +65,21 @@ import {
 import { adoptTaskStates, notebookTasks, syncTaskIndex } from "../recognition/task-index";
 import { makeTask } from "../model/tasks";
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
-import { type DeviceReading, aiKeyFolded, buildAiMenu } from "../recognition/ai-menu-model";
-import { learnedRecord, practiceFiles, writePracticePage } from "./handwriting-learning";
+import {
+  type DeviceReading,
+  type HandwritingReading,
+  aiKeyFolded,
+  buildAiMenu,
+  textAvailability,
+} from "../recognition/ai-menu-model";
+import {
+  learnedRecord,
+  practiceFiles,
+  practiceSheets,
+  readCorrections,
+} from "./handwriting-learning";
+import { sheetButton } from "../recognition/hwr/learn-window-model";
+import { practiceLines } from "../recognition/practice";
 import { CalcNotes } from "./calc-notes";
 import {
   type ChatImage,
@@ -113,7 +126,8 @@ import {
   saveImageAttachment,
 } from "./image-import";
 import { copyPictureToSystemClipboard, writePngToClipboard } from "./picture-clipboard";
-import { ScreenshotModal } from "./screenshot-modal";
+import { type ScreenshotPicture, ScreenshotModal } from "./screenshot-modal";
+import { pageCrop } from "./screenshot-crop";
 import {
   ImageMenuPopover,
   type ImageMenuContext,
@@ -189,7 +203,7 @@ import {
   notebookImages,
   recordingTranscripts,
 } from "../model/notebook-files";
-import { pdfsBehind } from "../recognition/ask-attachments";
+import { attachmentFromBytes, pdfsBehind } from "../recognition/ask-attachments";
 import { chatsFolderFor } from "../recognition/ask-chat-file";
 import { type AskPagesResult, AskSession } from "../recognition/ask-session";
 import { GenerateImageModal } from "./generate-image-modal";
@@ -261,7 +275,7 @@ import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../mode
 import { SetSingle, changeCover } from "../model/notebook-commands";
 import { drawnBounds, isBoard } from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
-import { relinkDocument } from "../model/moved-files";
+import { nearbyTarget, relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
 import { SetJoinedPages, joinedPagesOf } from "../model/joined-pages";
 import { type NotebookInfo, NoteSettingsModal } from "./note-settings-modal";
@@ -270,9 +284,12 @@ import { coverColorOfDocument, notebookName, renamePlan } from "../model/noteboo
 import { ExportPdfModal } from "./export-modal";
 import { penGesturesOf } from "../ink/pen-gestures";
 import { NotebookSearchModal } from "./search-modal";
+import { layoutPlainText, pdfHitRects } from "../search/pdf-hits";
 import {
   type PageText,
   collectPageText,
+  holdsPhrase,
+  matchText,
   searchPages,
   pageFromSubpath,
   pageInThisNotebook,
@@ -280,8 +297,14 @@ import {
   transcriptSidecarPath,
 } from "../search/notebook-search";
 import { pageLinkLabel } from "./page-embed-model";
-import { type PdfExportSources, exportPagesToPdf, paintPagePreview } from "./pdf-export";
+import {
+  type PdfExportSources,
+  exportPagesToImages,
+  exportPagesToPdf,
+  paintPagePreview,
+} from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
+import { exportFormatOf, exportTarget, mimeTypeOf } from "../export/export-choice";
 import { normalizeFolder, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
@@ -332,6 +355,7 @@ import type { GoodObsidianSettings } from "../settings";
 import {
   attachmentDefaults,
   greyWhileErasingOf,
+  handwritingReaderOf,
   penPreferencesOf,
   snapCurveOf,
   highlighterTipOf,
@@ -344,6 +368,8 @@ import { penCursorStyleOf } from "./pen-cursor";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
 import { obsidianOpenUri } from "../model/home-link";
+import { familiesIn } from "../model/font-catalogue";
+import { vaultFonts } from "./font-store";
 
 /** Quiet time after the page being read changes before it is remembered. */
 const LAST_PAGE_DEBOUNCE_MS = 500;
@@ -354,6 +380,8 @@ const READ_ONLY_NOTICE = "FineNotes: this notebook is read-only until its ink lo
 const WORD_CHECK_WAIT_MS = 1500;
 /** How long after one "this notebook is read-only" notice the next may show, ms. */
 const READ_ONLY_NOTICE_MS = 4000;
+/** PDF pages read for search between refreshes of an open search list (#112). */
+const PDF_SEARCH_BATCH = 8;
 /** How long after a notebook opens "Update available" appears, ms: once the bar is laid out. */
 const UPDATE_TIP_DELAY_MS = 1500;
 
@@ -503,6 +531,8 @@ export class InkView extends TextFileView {
   private pdfCache: PdfBackdropCache | null = null;
   /** The PDF pages' text, for the highlighter that snaps to it and for Copy text. */
   private pdfText: PdfTextCache | null = null;
+  /** PDF pages' printed text for search, by `path:page` (#112). */
+  private readonly pdfSearchText = new Map<string, string>();
   /** Whether this view holds a use of the shared PDF worker (`acquirePdfWorker`). */
   private pdfWorkerHeld = false;
   /** The search box's last query, for the next search. */
@@ -760,12 +790,23 @@ export class InkView extends TextFileView {
     this.scheduleDeviceReading(DEVICE_READ_OPEN_MS);
   }
 
-  /** Relink this note's paths from the plugin's log of moved files; how many changed. */
+  /**
+   * Relink this note's paths from the plugin's log of moved files, or, for a
+   * note that came in from outside with its files, relative to the note
+   * itself; how many changed.
+   */
   private relinkDoc(): number {
     if (this.guard.locked) return 0;
+    const notePath = this.file?.path;
+    if (!notePath) return 0;
     const log = this.plugin.fileMoves.log();
-    if (log.length === 0) return 0;
-    const relinked = relinkDocument(this.doc, (path) => this.plugin.fileMoves.relink(path, log));
+    const exists = (path: string): boolean => this.app.vault.getAbstractFileByPath(path) !== null;
+    const relinked = relinkDocument(
+      this.doc,
+      (path) =>
+        (log.length > 0 ? this.plugin.fileMoves.relink(path, log) : undefined) ??
+        nearbyTarget(notePath, exists, path),
+    );
     // Paths rewritten in place, on any page: nothing else can tell the save cache.
     if (relinked > 0) this.encoder.touchAll();
     return relinked;
@@ -814,6 +855,10 @@ export class InkView extends TextFileView {
     this.surface?.setDocument(this.doc);
     this.sidebar?.setDocument(this.doc);
     this.syncSingle();
+    // Fonts fetched for this vault that the notebook's boxes need, from the vault.
+    void vaultFonts(this.app)
+      .use(familiesIn(this.doc.pages))
+      .catch(() => undefined);
   }
 
   /**
@@ -839,6 +884,13 @@ export class InkView extends TextFileView {
   override async onOpen(): Promise<void> {
     this.buildDom();
     this.mounted = true;
+    // A font fetched or read from the vault: boxes set in it wrap anew.
+    this.register(
+      vaultFonts(this.app).onLoad(() => {
+        this.surface?.fontsLoaded();
+        this.sidebar?.invalidate();
+      }),
+    );
     // The file loaded before the view opened: put it on its page now.
     if (this.loadedPath !== null) this.applyPendingPage();
     void this.plugin.maybeShowScribbleNotice();
@@ -963,7 +1015,17 @@ export class InkView extends TextFileView {
    * items now, so the choice of placing them does not change with the mode.
    */
   setOnlyStylusMode(on: boolean): void {
-    this.toolbar?.setOnlyStylusMode(on);
+    this.toolbar?.setOnlyStylusMode(on && this.plugin.stylusOnly);
+    this.surface?.onlyStylusChanged();
+  }
+
+  /**
+   * Fingers started or stopped drawing (`input/finger-draw.ts`): the ⋯
+   * button is lit while they do, and Stylus only rests meanwhile.
+   */
+  setFingerDrawing(on: boolean): void {
+    this.toolbar?.setFingerDrawing(on);
+    this.toolbar?.setOnlyStylusMode(this.plugin.stylusOnly);
     this.surface?.onlyStylusChanged();
   }
 
@@ -1148,6 +1210,12 @@ export class InkView extends TextFileView {
     const tool = this.toolState.tool;
     if (tool !== "pen" && tool !== "highlighter") return;
     this.plugin.saveLastPen(penOfState(this.toolState));
+  }
+
+  /** The highlighter's opacity changed in some notebook's pen menu: redraw the highlights. */
+  setHighlighterAlpha(): void {
+    this.surface?.setHighlighterAlpha(this.settings.highlighterAlpha);
+    this.updateSidebarRendering();
   }
 
   /** The pressure setting changed: the pen in hand widens with pressure if it is a pressure pen. */
@@ -1384,6 +1452,7 @@ export class InkView extends TextFileView {
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
       device: this.deviceReading(),
+      reading: this.handwritingReading(),
       transcribing: this.plugin.speech.running?.percent,
     });
     const setup = this.plugin.aiSetup();
@@ -1394,8 +1463,29 @@ export class InkView extends TextFileView {
       aiKeyFolded(setup),
       (id, on) => {
         if (id === "check-words") void this.plugin.setWordChecking(on);
+        if (id === "calc-notes") {
+          this.settings.calcNotes = on;
+          void this.plugin.saveSettings();
+        }
+      },
+      (id, value) => {
+        if (id !== "reader") return;
+        void this.plugin.setHandwritingReader(value).then(() => {
+          // Off and on change what the section offers: draw it again in place.
+          if (this.aiMenu?.isOpen) {
+            this.aiMenu.close();
+            this.aiMenu = null;
+            this.openAiMenu(anchor);
+          }
+        });
       },
     );
+  }
+
+  /** Which model reads handwriting here, for the AI menu's "Read with". */
+  private handwritingReading(): HandwritingReading {
+    const ownModel = learnedRecord(this.settings, this.plugin.grape.id) !== undefined;
+    return { value: handwritingReaderOf(this.settings, ownModel), ownModel };
   }
 
   /**
@@ -1566,6 +1656,7 @@ export class InkView extends TextFileView {
       practiceFiles: practiceFiles(this.plugin.learningHost()).length,
       learning: progress ? (100 * progress.step) / progress.steps : null,
       checkingWords: this.settings.checkHandwrittenWords === true,
+      calculating: this.settings.calcNotes === true,
     };
   }
 
@@ -1575,8 +1666,7 @@ export class InkView extends TextFileView {
    */
   private aiActions(): Record<string, () => void> {
     return {
-      learn: () => void this.plugin.learner.start(),
-      practice: () => void writePracticePage(this.plugin.learningHost()),
+      "learn-window": () => this.plugin.openLearnWindow(),
       "device-settings": () => this.plugin.openSettingsTab(),
       "transcribe-recording": () => this.audio?.transcribeFromMenu(),
       "transcribe-device": () => this.audio?.transcribeOnDeviceFromMenu(),
@@ -1712,7 +1802,8 @@ export class InkView extends TextFileView {
   /**
    * This notebook's conversation, kept while the notebook is open so closing
    * the dialog loses neither the chat nor the draft. Before anything is
-   * asked, it follows the page being read.
+   * asked or attached, it follows the page being read (or picks no page,
+   * when the setting says not to attach it).
    */
   private askConversation(): AskSession {
     const current = (this.surface?.currentPage ?? 0) + 1;
@@ -1737,12 +1828,18 @@ export class InkView extends TextFileView {
           readFile: (path) => readAttachment(this.app, path),
           now: () => new Date(),
         },
-        { page: current, totalPages: this.doc.pages.length, save: this.settings.askSaveChats },
+        {
+          page: current,
+          totalPages: this.doc.pages.length,
+          save: this.settings.askSaveChats,
+          attachPage: this.settings.askAttachPage,
+        },
       );
       this.askSession = session;
     } else {
       session.setTotalPages(this.doc.pages.length);
-      if (session.empty) session.newChat(current);
+      session.attachPage = this.settings.askAttachPage;
+      session.follow(current);
     }
     return session;
   }
@@ -2052,10 +2149,12 @@ export class InkView extends TextFileView {
 
   /**
    * The notebook's text, page by page, for searching: its text boxes, the
-   * note's text layer, and the transcript sidecar, beside the note first
-   * (where the server keeps one) and then in the notebook's Transcripts.
+   * note's text layer, the transcript sidecar, beside the note first
+   * (where the server keeps one) and then in the notebook's Transcripts, and
+   * its PDF pages' printed text (#112). With `readPdf` false, only the PDF
+   * text already read is in it ({@link readPdfSearchText} reads the rest).
    */
-  private async notebookTextIndex(): Promise<PageText[]> {
+  private async notebookTextIndex(readPdf = true): Promise<PageText[]> {
     const note = this.file;
     let sidecar: string | null = null;
     const sidecarFile = note
@@ -2071,7 +2170,34 @@ export class InkView extends TextFileView {
       }
     }
     const doc = this.surface?.document ?? this.doc;
-    return collectPageText(doc.pages, readTextSection(this.noteBody), sidecar);
+    if (readPdf) await this.readPdfSearchText(doc.pages);
+    return collectPageText(doc.pages, readTextSection(this.noteBody), sidecar, (page) =>
+      page.backdrop.kind === "pdf"
+        ? this.pdfSearchText.get(`${page.backdrop.path}:${page.backdrop.page}`)
+        : undefined,
+    );
+  }
+
+  /**
+   * Read the printed text of every PDF page not read for search yet, in
+   * page order; `onProgress` hears every few pages, so an open search list
+   * can fill in as they come.
+   */
+  private async readPdfSearchText(pages: readonly Page[], onProgress?: () => void): Promise<void> {
+    const cache = this.pdfText;
+    if (!cache) return;
+    let fresh = 0;
+    for (const page of pages) {
+      const backdrop = page.backdrop;
+      if (backdrop.kind !== "pdf") continue;
+      const key = `${backdrop.path}:${backdrop.page}`;
+      if (this.pdfSearchText.has(key)) continue;
+      const layout = await cache.layout(backdrop, page.geometry);
+      if (this.pdfText !== cache) return;
+      this.pdfSearchText.set(key, layoutPlainText(layout));
+      if (++fresh % PDF_SEARCH_BATCH === 0) onProgress?.();
+    }
+    if (fresh % PDF_SEARCH_BATCH !== 0) onProgress?.();
   }
 
   /**
@@ -2782,6 +2908,7 @@ export class InkView extends TextFileView {
           ? () => this.plugin.toggleFullScreen()
           : undefined,
         onTextStyle: (patch) => this.surface?.applyTextStyle(patch),
+        onTextFieldDone: (to) => this.surface?.textFieldDone(to),
         onTextSizePreview: (fontSize) => this.surface?.previewTextSize(fontSize),
         onTextList: (kind) => void this.surface?.applyTextList(kind),
         onTextDelete: () => void this.surface?.deleteEditingTextBox(),
@@ -2827,6 +2954,7 @@ export class InkView extends TextFileView {
         onShare: () => this.exportPdf(),
         onSearch: () => void this.openSearch(),
         onMore: (anchor) => this.toggleMorePanel(anchor),
+        onLearnHandwriting: () => this.plugin.openLearnWindow(),
         onPillPlaced: () => this.surface?.placeToasts(),
         onPillDock: (dock) => this.plugin.setPillDock(dock),
         onOnlyStylusMode: (on) => void this.plugin.setOnlyStylusMode(on),
@@ -2852,7 +2980,8 @@ export class InkView extends TextFileView {
         barDock: this.plugin.barDock,
         items: this.settings.toolbarItems,
         offItems: this.settings.toolbarOff,
-        onlyStylusMode: this.settings.onlyStylusMode === true,
+        onlyStylusMode: this.plugin.stylusOnly,
+        fingerDrawing: this.plugin.fingerDrawing,
         laserColor: () => this.settings.laserDefaultColor,
       },
     );
@@ -2961,7 +3090,12 @@ export class InkView extends TextFileView {
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),
         onSaveSticker: (png, width, height) => void this.saveSticker(png, width, height),
-        onScreenshot: (png, width, height) => this.showScreenshot(png, width, height),
+        onScreenshot: (png, width, height, at) =>
+          at
+            ? void this.screenshotSelection({ png, width, height }, at.pageIndex, at.bounds)
+            : this.showScreenshot({ png, width, height }),
+        onAskAboutSelection: (index, bounds) => void this.askAboutSelection(index, bounds),
+        canAskAi: () => textAvailability(this.plugin.aiSetup()).enabled,
         onRegionScreenshot: (index, bounds) => void this.screenshotRegion(index, bounds),
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onChange: (pages) => {
@@ -3000,12 +3134,19 @@ export class InkView extends TextFileView {
         textDragSize: () => this.settings.textDragSize === true,
         fingerTapUndo: () => this.settings.fingerTapUndo !== false,
         lassoAnyPart: () => this.settings.lassoTouches !== false,
-        onlyStylusMode: () => this.settings.onlyStylusMode === true,
+        onlyStylusMode: () => this.plugin.stylusOnly,
+        fingerDrawing: () => this.plugin.fingerDrawing,
+        onPenReturned: () => this.plugin.setFingerDrawing(false),
         zoomBoxLineStep: () => this.settings.zoomBoxLineStep,
         zoomBoxAutoAdvance: () => this.settings.zoomBoxAutoAdvance === true,
         zoomBoxAutoAdvanceThreshold: () => this.settings.zoomBoxAutoAdvanceThreshold,
         onZoomBoxAutoAdvance: (on) => {
           this.settings.zoomBoxAutoAdvance = on;
+          void this.plugin.saveSettings();
+        },
+        onZoomBoxSettings: ({ lineStep, threshold }) => {
+          if (lineStep !== undefined) this.settings.zoomBoxLineStep = lineStep;
+          if (threshold !== undefined) this.settings.zoomBoxAutoAdvanceThreshold = threshold;
           void this.plugin.saveSettings();
         },
         onShortcuts: () => this.toggleShortcuts(),
@@ -3051,7 +3192,11 @@ export class InkView extends TextFileView {
           }).open();
         },
         onSuggestedLink: (index, strokeIds, target) => this.linkInk(index, strokeIds, null, target),
-        onHistoryChange: (canUndo, canRedo) => this.toolbar?.setHistoryState(canUndo, canRedo),
+        onHistoryChange: (canUndo, canRedo) => {
+          this.toolbar?.setHistoryState(canUndo, canRedo);
+          // A line copied or erased on a practice sheet: its Learn button counts it.
+          this.syncLearnButton();
+        },
         onAddPageRequested: (afterIndex) => this.addPage(afterIndex, true),
         // Pulled past the last page: a blank page on the last page's paper,
         // then glide onto it, as GoodNotes does.
@@ -3153,7 +3298,11 @@ export class InkView extends TextFileView {
     // Likewise a PDF: one moved back, or synced in, is read again instead
     // of staying "missing".
     const pdfFileChanged = (path: string): void => {
-      if (/\.pdf$/i.test(path)) this.pdfText?.forget(path);
+      if (/\.pdf$/i.test(path)) {
+        this.pdfText?.forget(path);
+        for (const key of [...this.pdfSearchText.keys()])
+          if (key.startsWith(`${path}:`)) this.pdfSearchText.delete(key);
+      }
       if (!/\.pdf$/i.test(path) || !this.pdfCache?.forget(path)) return;
       this.surface?.repaint();
       this.sidebar?.invalidate();
@@ -3297,35 +3446,86 @@ export class InkView extends TextFileView {
 
   /**
    * A lasso drawn round nothing asked for a screenshot (ink-surface.ts,
-   * showEmptyLasso): the patch of page `index` inside `bounds`, drawn as an
-   * export draws it (paper, PDF, ink), sharp at up to three times its size.
+   * showEmptyLasso): the patch of page `index` inside `bounds`, as the page
+   * shows it.
    */
   private async screenshotRegion(index: number, bounds: Bounds): Promise<void> {
+    const shot = await this.pagePicture(index, bounds);
+    if (shot) this.showScreenshot(shot);
+    else new Notice("Couldn't take the screenshot");
+  }
+
+  /**
+   * The lasso's Screenshot (ink-surface.ts, showSelectionScreenshot): the
+   * patch of page `index` the selection covers, with the page behind it
+   * (paper, PDF, everything drawn there); the dialog's switch shows `inkOnly`,
+   * the selection on its own, instead (FineNotes discussion #107).
+   */
+  private async screenshotSelection(
+    inkOnly: ScreenshotPicture,
+    index: number,
+    bounds: Bounds,
+  ): Promise<void> {
+    const shot = await this.pagePicture(index, bounds);
+    this.showScreenshot(shot ?? inkOnly, shot ? inkOnly : undefined);
+  }
+
+  /**
+   * The lasso's Ask AI (FineNotes discussion #107): the selection as the
+   * page shows it, attached to the chat in place of its page, and the chat
+   * opened on it.
+   */
+  private async askAboutSelection(index: number, bounds: Bounds): Promise<void> {
+    if (this.isDamaged()) return;
+    const shot = await this.pagePicture(index, bounds);
+    const file = shot
+      ? attachmentFromBytes("Selection.png", new Uint8Array(await shot.png.arrayBuffer()))
+      : null;
+    if (!file) {
+      new Notice("Couldn't take a picture of the selection");
+      return;
+    }
+    const refusal = this.askConversation().attachInstead(file);
+    if (refusal) new Notice(refusal);
+    this.openAsk();
+  }
+
+  /**
+   * The patch of page `index` inside `bounds`, drawn as an export draws it
+   * (paper, PDF, ink), sharp at up to three times its size; null when none
+   * of it is on the page or it could not be drawn.
+   */
+  private async pagePicture(index: number, bounds: Bounds): Promise<ScreenshotPicture | null> {
     const page = this.doc.pages[index];
-    if (!page) return;
+    if (!page) return null;
     const { width, height } = page.geometry;
-    const x0 = Math.max(0, bounds.minX);
-    const y0 = Math.max(0, bounds.minY);
-    const w = Math.min(width, bounds.maxX) - x0;
-    const h = Math.min(height, bounds.maxY) - y0;
-    if (!(w >= 1) || !(h >= 1)) return;
-    // The whole page is painted, so its side caps the scale as well as the patch's.
-    const dpr = Math.min(3, 2048 / Math.max(w, h), 4096 / Math.max(width, height));
+    const crop = pageCrop(bounds, width, height);
+    if (!crop) return null;
     const canvas = createEl("canvas");
     const out = createEl("canvas");
     try {
-      await paintPagePreview(canvas, page, this.previewSources(), width, dpr);
-      out.width = Math.max(1, Math.round(w * dpr));
-      out.height = Math.max(1, Math.round(h * dpr));
+      await paintPagePreview(canvas, page, this.previewSources(), width, crop.scale);
+      out.width = Math.max(1, Math.round(crop.width * crop.scale));
+      out.height = Math.max(1, Math.round(crop.height * crop.scale));
       const kx = canvas.width / width;
       const ky = canvas.height / height;
       out
         .getContext("2d")
-        ?.drawImage(canvas, x0 * kx, y0 * ky, w * kx, h * ky, 0, 0, out.width, out.height);
+        ?.drawImage(
+          canvas,
+          crop.x * kx,
+          crop.y * ky,
+          crop.width * kx,
+          crop.height * ky,
+          0,
+          0,
+          out.width,
+          out.height,
+        );
       const png = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, "image/png"));
-      if (png) this.showScreenshot(png, Math.round(w), Math.round(h));
+      return png ? { png, width: Math.round(crop.width), height: Math.round(crop.height) } : null;
     } catch {
-      new Notice("Couldn't take the screenshot");
+      return null;
     } finally {
       canvas.width = canvas.height = 0;
       out.width = out.height = 0;
@@ -3511,13 +3711,19 @@ export class InkView extends TextFileView {
    */
   async openSearch(): Promise<void> {
     if (!this.file || !this.surface) return;
-    const pages = await this.notebookTextIndex();
-    new NotebookSearchModal(this.app, {
+    const pages = await this.notebookTextIndex(false);
+    const modal = new NotebookSearchModal(this.app, {
       index: pages,
       initial: this.lastSearch,
       onQuery: (query) => (this.lastSearch = query),
       goTo: (index, query) => void this.showSearchHits(index, query),
-    }).open();
+    });
+    modal.open();
+    // The PDF pages not read yet join the list as they are read (#112).
+    const doc = this.surface.document;
+    void this.readPdfSearchText(doc.pages, () => {
+      void this.notebookTextIndex(false).then((index) => modal.setIndex(index));
+    });
   }
 
   /**
@@ -3549,14 +3755,26 @@ export class InkView extends TextFileView {
       }
     }
     // The page's transcript finds the words this device misread (2.5.2).
-    const transcript = (await this.notebookTextIndex())[index]?.sources
+    const pageText = (await this.notebookTextIndex(false))[index];
+    const transcript = pageText?.sources
       .filter((source) => source.kind === "handwriting")
       .map((source) => source.text)
       .join("\n");
+    // A page holding the words as typed ("recipe for defining") lights
+    // that phrase, wherever it is, and not each word on its own.
+    const phrase = holdsPhrase(pageText, query);
     if (this.surface !== surface || !surface.document.pages.includes(page)) return;
-    const words = lineHits(query, lines, (ids) => inkBounds(page, ids), transcript);
-    const { boxes } = pageHits(query, [], page.textBoxes);
-    surface.setSearchHits(page.id, words, boxes);
+    const words = lineHits(query, lines, (ids) => inkBounds(page, ids), transcript, phrase);
+    const { boxes } = pageHits(query, [], page.textBoxes, phrase);
+    // The PDF's printed words, lit as handwriting is (#112).
+    const backdrop = page.backdrop;
+    const printed =
+      backdrop.kind === "pdf" && this.pdfText
+        ? pdfHitRects(query, await this.pdfText.layout(backdrop, page.geometry), phrase)
+        : [];
+    if (this.surface !== surface || !surface.document.pages.includes(page)) return;
+    // In a text box, the words themselves light, as in the list.
+    surface.setSearchHits(page.id, words, boxes, printed, (text) => matchText(text, query, phrase));
   }
 
   /**
@@ -3686,14 +3904,16 @@ export class InkView extends TextFileView {
     }
   }
 
-  // --- Export as PDF -----------------------------------------------------------
+  // --- Export --------------------------------------------------------------------
 
   /**
    * The share button: export the notebook, the page being read, or chosen
-   * pages as a PDF, then open or share it. Saved in the note's "PDF exports"
-   * folder (the gear), created if it is missing, or else next to the note.
-   * Read-only on the note, but refused while it is protected: its pages may
-   * not be the pages on disk.
+   * pages as a PDF or as pictures (PNG, JPG), then open or share them.
+   * `chosen` (the overview's selection) exports those pages without asking
+   * for them again. Saved in the note's "PDF exports" folder (the gear),
+   * created if it is missing, or else next to the note; several pictures go
+   * into a new folder there. Read-only on the note, but refused while it is
+   * protected: its pages may not be the pages on disk.
    */
   exportPdf(chosen?: readonly number[]): void {
     // TODO(#46 phase 4): a board exports as one PDF page the size of its
@@ -3727,6 +3947,11 @@ export class InkView extends TextFileView {
       pageSize: (i) => doc.pages[i]?.geometry ?? { width: 0, height: 0 },
       folder: exports ?? null,
       chosen,
+      format: exportFormatOf(this.settings.exportFormat),
+      setFormat: (format) => {
+        this.settings.exportFormat = format;
+        void this.plugin.saveSettings();
+      },
       paintPreview: async (canvas, i, cssWidth) => {
         const page = doc.pages[i];
         if (page) {
@@ -3748,31 +3973,61 @@ export class InkView extends TextFileView {
             },
           }
         : {}),
-      fileNameFor: (pages) =>
-        uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken()),
-      export: async (pages, onProgress, cancelled) => {
-        const bytes = await exportPagesToPdf(
-          pages.map((i) => doc.pages[i]),
-          exported(),
-          { title: stripInkSuffix(note.basename), onProgress, cancelled },
-        );
-        // Named at save time, not when the dialog opened: another export may
-        // have taken the name since.
-        const name = uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken());
-        const path = normalizePath(folder ? `${folder}/${name}` : name);
-        if (exports !== undefined && !this.app.vault.getFolderByPath(exports)) {
+      targetFor: (pages, format) => exportTarget(note.basename, pages, total, format, taken()),
+      export: async (pages, format, onProgress, cancelled) => {
+        const inFolder = (name: string, dir = folder): string =>
+          normalizePath(dir ? `${dir}/${name}` : name);
+        const ensureFolder = async (path: string | undefined): Promise<void> => {
+          if (path === undefined || this.app.vault.getFolderByPath(path)) return;
           try {
-            await this.app.vault.createFolder(exports);
+            await this.app.vault.createFolder(path);
           } catch {
             // Created meanwhile.
           }
+        };
+        const type = mimeTypeOf(format);
+        if (format === "pdf") {
+          const bytes = await exportPagesToPdf(
+            pages.map((i) => doc.pages[i]),
+            exported(),
+            { title: stripInkSuffix(note.basename), onProgress, cancelled },
+          );
+          // Named at save time, not when the dialog opened: another export may
+          // have taken the name since.
+          const name = uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken());
+          const path = inFolder(name);
+          await ensureFolder(exports);
+          const buffer = bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          ) as ArrayBuffer;
+          await this.app.vault.createBinary(path, buffer);
+          return { paths: [path], where: path, files: [new File([buffer], name, { type })] };
         }
-        const buffer = bytes.buffer.slice(
-          bytes.byteOffset,
-          bytes.byteOffset + bytes.byteLength,
-        ) as ArrayBuffer;
-        await this.app.vault.createBinary(path, buffer);
-        return { path, name, bytes: buffer };
+        // Pictures: one file, or a new folder of them. Named at save time too.
+        const target = exportTarget(note.basename, pages, total, format, taken());
+        await ensureFolder(exports);
+        const dir = target.kind === "folder" ? inFolder(target.folder) : folder;
+        if (target.kind === "folder") await ensureFolder(dir);
+        const names = target.kind === "folder" ? target.names : [target.name];
+        const paths: string[] = [];
+        const files: File[] = [];
+        await exportPagesToImages(
+          pages.map((i) => doc.pages[i]),
+          exported(),
+          format,
+          {
+            onProgress,
+            cancelled,
+            save: async (i, picture) => {
+              const path = inFolder(names[i], dir);
+              await this.app.vault.createBinary(path, await picture.arrayBuffer());
+              paths.push(path);
+              files.push(new File([picture], names[i], { type }));
+            },
+          },
+        );
+        return { paths, where: target.kind === "folder" ? dir : paths[0], files };
       },
       open: (path) => {
         const file = this.app.vault.getFileByPath(path);
@@ -3829,6 +4084,7 @@ export class InkView extends TextFileView {
     this.sidebar?.setBoard(this.isBoard);
     // A practice file has the pen and the eraser, and nothing else.
     this.toolbar?.setPractice(practice);
+    if (practice) void this.loadLearnElsewhere();
     // A PDF's pages become pages: a board has none to add.
     this.toolbar?.setInsertPdfVisible(!this.isBoard);
     this.surface?.setPractice(practice ? deviceKind() : null);
@@ -3836,6 +4092,32 @@ export class InkView extends TextFileView {
       this.addPagePopover?.popover.close();
       this.addPagePopover = null;
     }
+  }
+
+  /**
+   * What the other practice sheets and the corrected words hold toward
+   * learning, read when a practice sheet opens; this sheet's own lines are
+   * counted live ({@link syncLearnButton}).
+   */
+  private learnElsewhere = { lines: 0, corrections: 0 };
+
+  private async loadLearnElsewhere(): Promise<void> {
+    const host = this.plugin.learningHost();
+    const [sheets, corrections] = await Promise.all([practiceSheets(host), readCorrections(host)]);
+    const here = this.file?.path;
+    this.learnElsewhere = {
+      lines: sheets.filter((s) => s.path !== here).reduce((sum, s) => sum + s.written, 0),
+      corrections: corrections.corrections.length,
+    };
+    this.syncLearnButton();
+  }
+
+  /** The practice sheet's Learn button: lines copied here and elsewhere, against the 10 needed. */
+  private syncLearnButton(): void {
+    if (!this.isPractice) return;
+    const lines = practiceLines(this.doc).length + this.learnElsewhere.lines;
+    const { count, ready } = sheetButton(lines, this.learnElsewhere.corrections);
+    this.toolbar?.setLearnCount(count, ready);
   }
 
   /** A practice file says no to anything but writing; true when it did. */
@@ -4022,34 +4304,41 @@ export class InkView extends TextFileView {
   /**
    * The lasso's Screenshot: the picture in a small dialog, to copy, or to
    * share through the system's share sheet (or save into the notebook's
-   * pictures folder where the platform cannot share a file).
+   * pictures folder where the platform cannot share a file). With `inkOnly`,
+   * a switch in it leaves the page behind out.
    */
-  private showScreenshot(png: Blob, width: number, height: number): void {
+  private showScreenshot(shot: ScreenshotPicture, inkOnly?: ScreenshotPicture): void {
     const note = this.file;
-    new ScreenshotModal(this.app, png, "Screenshot.png", {
-      copy: (picture) => writePngToClipboard(Promise.resolve(picture)),
-      save: async (picture) => {
-        if (!note) return null;
-        try {
-          const prepared = { bytes: await picture.arrayBuffer(), mime: "image/png", ext: "png" };
-          const folder = this.attachmentFolder("images");
-          // "Biology.notebook" names the notebook "Biology".
-          const name = `${note.basename.replace(/\.[^.]*$/, "")} screenshot.png`;
-          return (
-            await saveImageAttachment(
-              this.app,
-              { ...prepared, width, height },
-              name,
-              note.path,
-              folder,
-            )
-          ).path;
-        } catch {
-          return null;
-        }
+    new ScreenshotModal(
+      this.app,
+      shot,
+      "Screenshot.png",
+      {
+        copy: (picture) => writePngToClipboard(Promise.resolve(picture)),
+        save: async ({ png, width, height }) => {
+          if (!note) return null;
+          try {
+            const prepared = { bytes: await png.arrayBuffer(), mime: "image/png", ext: "png" };
+            const folder = this.attachmentFolder("images");
+            // "Biology.notebook" names the notebook "Biology".
+            const name = `${note.basename.replace(/\.[^.]*$/, "")} screenshot.png`;
+            return (
+              await saveImageAttachment(
+                this.app,
+                { ...prepared, width, height },
+                name,
+                note.path,
+                folder,
+              )
+            ).path;
+          } catch {
+            return null;
+          }
+        },
+        tell: (text) => new Notice(text),
       },
-      tell: (text) => new Notice(text),
-    }).open();
+      inkOnly,
+    ).open();
   }
 
   /**
@@ -4128,7 +4417,7 @@ export class InkView extends TextFileView {
         this.audio?.toggleRecording();
         return true;
       case "bar.stylus":
-        void this.plugin.setOnlyStylusMode(!this.settings.onlyStylusMode);
+        void this.plugin.setOnlyStylusMode(!this.plugin.stylusOnly);
         return true;
       default:
         return false;
@@ -4740,6 +5029,7 @@ export class InkView extends TextFileView {
         },
         folded: this.toolbar?.foldedItems() ?? [],
         barDock: this.plugin.barDock,
+        fingerDrawing: this.plugin.fingerDrawing,
       },
       {
         paintThumbnail: (canvas, at, width) => this.sidebar?.paintThumbnail(canvas, at, width),
@@ -4772,6 +5062,9 @@ export class InkView extends TextFileView {
         showShortcuts: () => this.toggleShortcuts(),
         copyHomeLink: () => this.copyHomeLink(),
         setBarDock: (dock) => this.plugin.setBarDock(dock),
+        // Where touch exists: on a desktop the mouse draws already.
+        setFingerDrawing:
+          navigator.maxTouchPoints > 0 ? (on) => this.plugin.setFingerDrawing(on) : undefined,
       },
     );
   }

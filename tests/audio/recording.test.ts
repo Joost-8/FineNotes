@@ -19,12 +19,16 @@ import {
   findRecordingAt,
   formatClock,
   formatRecordingDate,
+  isShortTranscript,
   nextRecordingId,
   recordedFormat,
   recorderMimeCandidates,
   recordingBaseName,
   seekTargetMs,
   strokeTime,
+  SHORT_TRANSCRIPT_WORDS,
+  transcriptLead,
+  transcriptParagraphs,
   transcriptPathFor,
   transcriptText,
   uploadSizeProblem,
@@ -341,5 +345,64 @@ describe("transcriptText", () => {
   it("is empty when nothing was said", () => {
     expect(transcriptText(note(""))).toBe("");
     expect(transcriptText("")).toBe("");
+  });
+});
+
+describe("transcriptParagraphs", () => {
+  it("reads each paragraph's time, past an hour too, and keeps one with none", () => {
+    expect(
+      transcriptParagraphs(
+        "# R — transcript\n\nRecorded 22 Sep.\n\n![[R.m4a]]\n\n[0:00] Hi.\n\n" +
+          "[1:05] Limits.\n\nMy own note.\n\n[1:02:09] The end.\n\n[2:00]",
+      ),
+    ).toEqual([
+      { atMs: 0, text: "Hi." },
+      { atMs: 65_000, text: "Limits." },
+      { text: "My own note." },
+      { atMs: 3_729_000, text: "The end." },
+    ]);
+  });
+
+  it("takes a bracket that is no time as text", () => {
+    expect(transcriptParagraphs("[laughs] Fine.")).toEqual([{ text: "[laughs] Fine." }]);
+  });
+});
+
+describe("short transcripts and their lead", () => {
+  const words = (n: number, from = 0): string =>
+    Array.from({ length: n }, (_, i) => `w${from + i}`).join(" ");
+
+  it("calls a transcript short up to the limit, across paragraphs", () => {
+    const half = SHORT_TRANSCRIPT_WORDS / 2;
+    expect(isShortTranscript([])).toBe(true);
+    expect(isShortTranscript([{ text: words(half) }, { text: words(half) }])).toBe(true);
+    expect(isShortTranscript([{ text: words(half) }, { text: words(half + 1) }])).toBe(false);
+  });
+
+  it("cuts the lead at a word, keeping the times of the paragraphs it shows", () => {
+    expect(
+      transcriptLead(
+        [
+          { atMs: 0, text: words(3) },
+          { atMs: 5000, text: words(4, 3) },
+        ],
+        5,
+      ),
+    ).toEqual([
+      { atMs: 0, text: "w0 w1 w2" },
+      { atMs: 5000, text: "w3 w4 …" },
+    ]);
+  });
+
+  it("marks more to come when the lead ends exactly at a paragraph", () => {
+    expect(transcriptLead([{ text: words(2) }, { text: words(2, 2) }], 2)).toEqual([
+      { text: "w0 w1 …" },
+    ]);
+  });
+
+  it("is the whole transcript when it fits", () => {
+    const all = [{ text: words(2) }, { atMs: 1000, text: words(2, 2) }];
+    expect(transcriptLead(all, 4)).toEqual(all);
+    expect(transcriptLead([], 4)).toEqual([]);
   });
 });

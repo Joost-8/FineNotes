@@ -38,6 +38,7 @@ import {
   WorkspaceLeaf,
   normalizePath,
 } from "obsidian";
+import { disposeVaultFonts } from "./view/font-store";
 import {
   ICON_IMPORT_NOTEBOOK,
   ICON_IMPORT_NOTEBOOK_SVG,
@@ -54,9 +55,12 @@ import {
   type PenPreferences,
   loadSnapSettings,
   shownPaperTheme,
+  storeHandwritingReader,
   storePenPreferences,
+  switchLlmVendor,
 } from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
+import { LearnWindow } from "./view/learn-window";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
 import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
@@ -138,6 +142,7 @@ import {
   notebookPaths,
   parseNotebookChoices,
   parseNotebookTemplate,
+  sanitizeFileName,
   stripInkSuffix,
   targetFolder,
   uniqueFileName,
@@ -419,6 +424,8 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.setUpReadingGuard();
+    // Fonts fetched for text boxes leave the document with the plugin.
+    this.register(disposeVaultFonts);
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
@@ -651,7 +658,7 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => view.turnSelectionIntoText(),
       (view) => view.hasInkSelected,
     );
-    this.notebookCommand("export-pdf", "Export as PDF…", (view) => view.exportPdf());
+    this.notebookCommand("export-pdf", "Export…", (view) => view.exportPdf());
     this.notebookCommand(
       "save-as-template",
       "Save notebook as template…",
@@ -739,7 +746,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.addCommand({
       id: "toggle-only-stylus-mode",
       name: "Turn Stylus-only mode on or off",
-      callback: () => void this.setOnlyStylusMode(!this.settings.onlyStylusMode),
+      callback: () => void this.setOnlyStylusMode(!this.stylusOnly),
     });
 
     this.addCommand({
@@ -833,6 +840,10 @@ export default class GoodObsidianPlugin extends Plugin {
       ? Math.max(-50, Math.min(100, lineStep))
       : 0;
     this.settings.openRouterSkipCompressed = this.settings.openRouterSkipCompressed === true;
+    const models: unknown = this.settings.llmModels;
+    if (typeof models !== "object" || models === null || Array.isArray(models)) {
+      this.settings.llmModels = {};
+    }
     this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
     this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
@@ -959,6 +970,25 @@ export default class GoodObsidianPlugin extends Plugin {
     for (const view of this.openNotebooks()) view.wordCheckingChanged();
   }
 
+  /**
+   * Read handwriting on this device with nothing, Grape, or the model
+   * learned from the user's (the AI menu's "Read with", the settings' "Read
+   * handwriting with"). Grape is offered for download if it is needed now.
+   */
+  async setHandwritingReader(choice: string): Promise<void> {
+    storeHandwritingReader(this.settings, choice);
+    await this.saveSettings();
+    if (choice !== "off") {
+      await this.grape.model.check();
+      this.grape.offer("ask");
+    }
+  }
+
+  /** The Learn your handwriting window: the AI menu's row, the settings, a practice sheet's button. */
+  openLearnWindow(): void {
+    new LearnWindow(this.app, this).open();
+  }
+
   /** Keep the calculator's switches and history (model/calculator-store.ts). */
   saveCalculator(data: CalculatorData): void {
     this.settings.calculator = data;
@@ -1068,6 +1098,24 @@ export default class GoodObsidianPlugin extends Plugin {
     }
     if (!ok) new Notice("FineNotes could not store the API key. Try again, or restart Obsidian.");
     return ok;
+  }
+
+  /**
+   * Change the AI service and keep what the one left was set up with: its
+   * key stays in its own slot, and its model comes back when it is chosen
+   * again. A key from before 0.5 means "the service chosen", so it is
+   * pinned to the service being left before the choice moves.
+   */
+  async switchLlmVendor(next: LlmVendor): Promise<void> {
+    const from = this.settings.llmVendor;
+    const legacy = this.settings.llmApiKey.trim();
+    if (legacy && from !== next && !VENDORS[from].userEndpoint) {
+      // Kept in `from`'s own slot (unless one is there already), it no
+      // longer means "whichever service is chosen", so it must not follow.
+      if (this.keys.get(from) || this.storeApiKey(from, legacy)) this.settings.llmApiKey = "";
+    }
+    switchLlmVendor(this.settings, next);
+    await this.saveSettings();
   }
 
   /** Forget a key. */
@@ -1265,8 +1313,13 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Store what a pen menu changed for every pen, and give it to every open notebook. */
   savePenPreferences(patch: Partial<PenPreferences>): void {
+    const alpha = this.settings.highlighterAlpha;
     storePenPreferences(this.settings, patch);
-    for (const view of this.openNotebooks()) view.syncPenPreferences();
+    for (const view of this.openNotebooks()) {
+      view.syncPenPreferences();
+      // Opacity is how highlights already on the page are drawn too.
+      if (this.settings.highlighterAlpha !== alpha) view.setHighlighterAlpha();
+    }
     void this.saveSettings();
   }
 
@@ -1426,8 +1479,29 @@ export default class GoodObsidianPlugin extends Plugin {
     const layout = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
     if (on && isItemOff(layout, "stylus")) return;
     this.settings.onlyStylusMode = on;
+    // Asking for the pen alone means the Pencil is in hand: fingers stop drawing.
+    if (on) this.setFingerDrawing(false);
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.setOnlyStylusMode(on);
+  }
+
+  /**
+   * Fingers draw while the Pencil is away (`input/finger-draw.ts`, the ⋯
+   * panel's "Draw with finger"). Not a setting: the first pen event ends it,
+   * and so does closing Obsidian. While it is on, Stylus-only mode rests.
+   */
+  fingerDrawing = false;
+
+  /** Whether only the pen acts on the page now: the setting, unless fingers draw. */
+  get stylusOnly(): boolean {
+    return this.settings.onlyStylusMode === true && !this.fingerDrawing;
+  }
+
+  /** Fingers start or stop drawing, in every open notebook at once. */
+  setFingerDrawing(on: boolean): void {
+    if (this.fingerDrawing === on) return;
+    this.fingerDrawing = on;
+    for (const view of this.openNotebooks()) view.setFingerDrawing(on);
   }
 
   /** Remember the lasso's type and what it picks up, for the next session. */
@@ -2067,6 +2141,22 @@ export default class GoodObsidianPlugin extends Plugin {
       papers: library,
       onClosed: () => cache.destroy(),
       onImport: (folder) => this.openImportNotebook(folder),
+      onImportPdf: ({ title, choices, folder }, source) => {
+        this.settings.lastNotebookChoices = { ...choices };
+        void this.saveSettings();
+        const name = source.file.name.replace(/\.pdf$/i, "");
+        const read = (): Promise<ArrayBuffer> =>
+          source.kind === "vault"
+            ? this.app.vault.readBinary(source.file)
+            : source.file.arrayBuffer();
+        void this.createNotebookFromPdfBytes(
+          title.trim() || name,
+          { ...choices, type: "notebook" },
+          folder,
+          read,
+          source.kind === "vault" ? source.file.path : { name },
+        );
+      },
       onCreate: ({ title, choices, folder, template }) => {
         this.settings.lastNotebookChoices = { ...choices };
         // A board takes no template: the notebook's last one stays remembered.
@@ -2441,10 +2531,40 @@ export default class GoodObsidianPlugin extends Plugin {
    * read: it stays where it is, and the notebook follows it if it moves.
    */
   async createNotebookFromPdf(pdf: TFile): Promise<void> {
+    const choices: NotebookChoices = {
+      ...parseNotebookChoices(this.settings.lastNotebookChoices),
+      type: "notebook",
+    };
+    const folder = pdf.parent && !pdf.parent.isRoot() ? pdf.parent.path : "";
+    await this.createNotebookFromPdfBytes(
+      pdf.basename,
+      choices,
+      folder,
+      () => this.app.vault.readBinary(pdf),
+      pdf.path,
+    );
+  }
+
+  /**
+   * A new notebook whose pages are a PDF's. `pdf` is the vault path of a PDF
+   * already in the vault, which the notebook reads where it is; or the name of
+   * one from the device, whose bytes are saved beside the notebook first (a
+   * notebook keeps its own files).
+   */
+  private async createNotebookFromPdfBytes(
+    title: string,
+    choices: NotebookChoices,
+    folder: string,
+    read: () => Promise<ArrayBuffer>,
+    pdf: string | { name: string },
+  ): Promise<void> {
     const progress = new Notice("FineNotes: reading PDF pages…", 0);
     let sizes: Array<{ width: number; height: number }>;
+    let bytes: ArrayBuffer;
     try {
-      sizes = await measurePdfPages(await this.app.vault.readBinary(pdf));
+      bytes = await read();
+      // pdf.js may take the buffer it is given: measure a copy, keep the original.
+      sizes = await measurePdfPages(bytes.slice(0));
     } catch (error) {
       new Notice(`FineNotes: couldn't read the PDF — ${errorMessage(error)}`, 8000);
       return;
@@ -2455,14 +2575,25 @@ export default class GoodObsidianPlugin extends Plugin {
       new Notice("FineNotes: that PDF has no pages.");
       return;
     }
-    const choices: NotebookChoices = {
-      ...parseNotebookChoices(this.settings.lastNotebookChoices),
-      type: "notebook",
-    };
-    const folder = pdf.parent && !pdf.parent.isRoot() ? pdf.parent.path : "";
-    await this.createNotebook(pdf.basename, choices, folder, (heading, attachments) =>
-      buildPdfNotebook(choices, heading, attachments, pdf.path, sizes),
-    );
+    if (typeof pdf === "string") {
+      await this.createNotebook(title, choices, folder, (heading, attachments) =>
+        buildPdfNotebook(choices, heading, attachments, pdf, sizes),
+      );
+      return;
+    }
+    await this.createNotebook(title, choices, folder, async (heading, attachments, home) => {
+      const dir = attachments?.images ?? home;
+      if (dir && !this.app.vault.getFolderByPath(dir)) {
+        await this.app.vault.createFolder(dir).catch(() => undefined);
+      }
+      const stem = sanitizeFileName(pdf.name) || "PDF";
+      let path = normalizePath(joinVaultPath(dir, `${stem}.pdf`));
+      for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) {
+        path = normalizePath(joinVaultPath(dir, `${stem} ${n}.pdf`));
+      }
+      await this.app.vault.createBinary(path, bytes);
+      return buildPdfNotebook(choices, heading, attachments, path, sizes);
+    });
   }
 
   // --- obsidian://finenotes links ------------------------------------------------

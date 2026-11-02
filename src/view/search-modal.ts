@@ -7,7 +7,7 @@
  *
  * What is searched is decided in `src/search/notebook-search.ts`: the
  * page's transcription (the note's text layer, and the transcript server's
- * `.transcript.md` file) and its typed text boxes.
+ * `.transcript.md` file), its typed text boxes and its PDF's printed text.
  */
 
 import { type App, SuggestModal } from "obsidian";
@@ -20,6 +20,12 @@ import {
 } from "../search/notebook-search";
 import { DialogKeyboard } from "./dialog-keyboard";
 
+const KIND_LABELS: Record<SearchHit["snippets"][number]["kind"], string> = {
+  handwriting: "Handwriting",
+  text: "Text",
+  pdf: "PDF",
+};
+
 export interface NotebookSearchHost {
   index: readonly PageText[];
   /** The last query, so searching again carries on where it left off. */
@@ -30,7 +36,8 @@ export interface NotebookSearchHost {
 }
 
 export class NotebookSearchModal extends SuggestModal<SearchHit> {
-  private readonly transcribed: boolean;
+  private transcribed: boolean;
+  private index: readonly PageText[];
   /**
    * Keeps Obsidian's keyboard cap off the notebook behind the list while the
    * keyboard is up, so the page is still there — at its size — to turn to.
@@ -42,6 +49,7 @@ export class NotebookSearchModal extends SuggestModal<SearchHit> {
     private readonly host: NotebookSearchHost,
   ) {
     super(app);
+    this.index = host.index;
     this.transcribed = hasTranscripts(host.index);
     this.keyboard = new DialogKeyboard(this.modalEl);
     this.modalEl.addClass("goodobsidian-search-modal");
@@ -66,10 +74,19 @@ export class NotebookSearchModal extends SuggestModal<SearchHit> {
     this.keyboard.end();
   }
 
+  /** More of the notebook was read (a PDF's pages): search it again as typed. */
+  setIndex(index: readonly PageText[]): void {
+    this.index = index;
+    this.transcribed = hasTranscripts(index);
+    if (this.inputEl.isConnected && this.inputEl.value) {
+      this.inputEl.dispatchEvent(new Event("input"));
+    }
+  }
+
   getSuggestions(query: string): SearchHit[] {
     this.host.onQuery(query);
     this.emptyStateText = this.hint(query);
-    return searchPages(this.host.index, query);
+    return searchPages(this.index, query);
   }
 
   renderSuggestion(hit: SearchHit, el: HTMLElement): void {
@@ -84,7 +101,7 @@ export class NotebookSearchModal extends SuggestModal<SearchHit> {
       const line = el.createDiv({ cls: "goodobsidian-search-snippet" });
       line.createSpan({
         cls: "goodobsidian-search-kind",
-        text: snippet.kind === "handwriting" ? "Handwriting" : "Text",
+        text: KIND_LABELS[snippet.kind],
       });
       line.appendText(snippet.before);
       line.createSpan({ cls: "suggestion-highlight", text: snippet.match });
@@ -100,11 +117,11 @@ export class NotebookSearchModal extends SuggestModal<SearchHit> {
   private hint(query: string): string {
     if (queryTerms(query).length === 0) {
       return this.transcribed
-        ? "Search the transcribed handwriting and typed text on every page."
-        : "Search typed text on every page. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).";
+        ? "Search the transcribed handwriting, typed text and PDF text on every page."
+        : "Search typed text and PDF text on every page. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).";
     }
     return this.transcribed
       ? "No page has all of these words."
-      : "No page has all of these words in typed text. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).";
+      : "No page has all of these words in typed or PDF text. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).";
   }
 }

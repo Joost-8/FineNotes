@@ -1,7 +1,7 @@
 /**
  * The PDF text cache, with pdf.js faked: a page is read once, laid out on
  * the page it backs, never read while the pen writes, and a page that cannot
- * be read is kept as having no text, so the highlighter stays freehand.
+ * be read stays freehand for a while and is then tried again (#107).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,6 +65,9 @@ function cache(file: object | null = {}): InstanceType<typeof PdfTextCache> {
   };
   return new PdfTextCache(app as never);
 }
+
+/** Let the queue of reads run out. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** Resolve when `c` says a page landed. */
 function landed(c: InstanceType<typeof PdfTextCache>): Promise<{ path: string; page: number }> {
@@ -133,6 +136,46 @@ describe("PdfTextCache", () => {
     expect(pdf.reads).toBe(1);
   });
 
+  it("waits for a page's text when search asks for it, reading it once (#112)", async () => {
+    pdf.items = [
+      {
+        str: "Signals",
+        transform: [20, 0, 0, 20, 100, 700],
+        width: 70,
+        height: 20,
+        fontName: "f1",
+      },
+    ];
+    const c = cache();
+    const [one, two] = await Promise.all([
+      c.layout(BACKDROP, GEOMETRY),
+      c.layout(BACKDROP, GEOMETRY),
+    ]);
+    expect(one.lines).toHaveLength(1);
+    expect(two).toBe(one);
+    expect(pdf.reads).toBe(1);
+    // Read: answered at once.
+    expect(await c.layout(BACKDROP, GEOMETRY)).toBe(one);
+  });
+
+  it("answers a waiting search with no text when the PDF cannot be read or the cache goes", async () => {
+    expect((await cache(null).layout(BACKDROP, GEOMETRY)).lines).toEqual([]);
+    const c = cache();
+    c.setHeld(true);
+    const waiting = c.layout(BACKDROP, GEOMETRY);
+    c.destroy();
+    expect((await waiting).lines).toEqual([]);
+    expect((await c.layout(BACKDROP, GEOMETRY)).lines).toEqual([]);
+  });
+
+  it("answers a search at once on a page that failed a moment ago, without reading it again", async () => {
+    pdf.fail = true;
+    const c = cache();
+    expect((await c.layout(BACKDROP, GEOMETRY)).lines).toEqual([]);
+    expect((await c.layout(BACKDROP, GEOMETRY)).lines).toEqual([]);
+    expect(pdf.reads).toBe(1);
+  });
+
   it("reads nothing while the pen writes, and what was asked for once it lifts", async () => {
     const c = cache();
     c.setHeld(true);
@@ -156,24 +199,65 @@ describe("PdfTextCache", () => {
     expect(pdf.cMapPacked).toBe(true);
   });
 
-  it("keeps a page it cannot read as having no text: nothing snaps there", async () => {
-    pdf.fail = true;
-    const c = cache();
-    const ready = landed(c);
-    c.request(BACKDROP);
-    await ready;
-    expect(c.peek(BACKDROP, GEOMETRY)).toEqual({ chars: [], lines: [] });
+  it("tries a page it could not read again after a while, not keeping it as textless", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      pdf.fail = true;
+      const c = cache();
+      c.request(BACKDROP);
+      await settle();
+      expect(c.peek(BACKDROP, GEOMETRY)).toBeNull();
+      expect(pdf.reads).toBe(1);
+      // Asked again at once (every pen-down asks): not read again yet.
+      c.request(BACKDROP);
+      await settle();
+      expect(pdf.reads).toBe(1);
+
+      pdf.fail = false;
+      vi.advanceTimersByTime(16_000);
+      const ready = landed(c);
+      c.request(BACKDROP);
+      await ready;
+      expect(pdf.reads).toBe(2);
+      expect(c.peek(BACKDROP, GEOMETRY)).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("has no text for a missing file or a page past the end", async () => {
-    const missing = cache(null);
-    let ready = landed(missing);
-    missing.request(BACKDROP);
-    await ready;
-    expect(missing.peek(BACKDROP, GEOMETRY)?.lines).toEqual([]);
+  it("opens a PDF that would not open again after a while (a large one on an iPad, #107)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      let file: object | null = null;
+      const app = {
+        vault: {
+          getFileByPath: () => file,
+          readBinary: () => Promise.resolve(new ArrayBuffer(8)),
+        },
+      };
+      const c = new PdfTextCache(app as never);
+      c.request(BACKDROP);
+      await settle();
+      expect(c.peek(BACKDROP, GEOMETRY)).toBeNull();
+      file = {};
+      c.request(BACKDROP);
+      await settle();
+      expect(pdf.opened).toBe(0);
 
+      vi.advanceTimersByTime(16_000);
+      const ready = landed(c);
+      c.request(BACKDROP);
+      await ready;
+      expect(pdf.opened).toBe(1);
+      expect(c.peek(BACKDROP, GEOMETRY)?.lines).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("has no text for a page past the end", async () => {
     const c = cache();
-    ready = landed(c);
+    const ready = landed(c);
     c.request({ ...BACKDROP, page: 7 });
     await ready;
     expect(c.peek({ ...BACKDROP, page: 7 }, GEOMETRY)?.lines).toEqual([]);

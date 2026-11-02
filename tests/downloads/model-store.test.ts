@@ -299,6 +299,33 @@ describe("AssetStore", () => {
     expect(files.size).toBe(0);
   });
 
+  it("checks a file on every read: one a sync replaced or removed is not used, and downloads anew", async () => {
+    const { deps, files, srv } = fakes({
+      others: new Map([["https://example.test/dec.bin", SECOND]]),
+    });
+    files.set("grape-1.0.bin", FILE.slice());
+    files.set("dec-1.0.bin", SECOND.slice());
+    const store = new AssetStore(PAIR, deps);
+    expect((await store.check()).kind).toBe("ready");
+    // Replaced behind the store's back, after it looked: a partial copy.
+    files.set("grape-1.0.bin", FILE.slice(0, 1000));
+    expect(await store.bytes()).toBeNull();
+    expect(store.state.kind).toBe("missing");
+    expect(await store.download()).toBe(true);
+    expect(sha((await store.bytes()) ?? new ArrayBuffer(0))).toBe(sha(FILE));
+    // Same length, other bytes.
+    const other = SECOND.slice();
+    other[7] ^= 1;
+    files.set("dec-1.0.bin", other);
+    expect(await store.bytes("dec-1.0.bin")).toBeNull();
+    // Removed.
+    expect(await store.download()).toBe(true);
+    files.delete("grape-1.0.bin");
+    expect(await store.bytes()).toBeNull();
+    expect(store.state.kind).toBe("missing");
+    expect(srv.requests.length).toBeGreaterThan(0);
+  });
+
   it("has only the main file of an older version", async () => {
     const { deps, files } = fakes();
     files.set("grape-0.9.bin", makeFile(1, 100));
