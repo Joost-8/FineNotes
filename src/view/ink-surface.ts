@@ -924,6 +924,13 @@ export interface InkSurfaceCallbacks {
    * toolbar and the settings may switch it while the note is open.
    */
   onlyStylusMode?: () => boolean;
+  /**
+   * Fingers draw while the Pencil is away (`input/finger-draw.ts`): one
+   * finger writes, two pan and pinch. Read live.
+   */
+  fingerDrawing?: () => boolean;
+  /** A pen event came while fingers draw: the Pencil is back, so the mode ends. */
+  onPenReturned?: () => void;
   /** Page px added after each Zoom box line; negative overlaps the next line. */
   zoomBoxLineStep?: () => number;
   /** Whether the Zoom box advances after a stroke reaches its threshold. */
@@ -2787,6 +2794,7 @@ export class InkSurface {
         handHeld: () => this.handHeld,
         route: (event) => this.pressRoute(event),
         onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
+        fingerDraws: () => this.callbacks.fingerDrawing?.() === true,
         stylusClicks: () => this.stylusClickWanted(),
       },
     );
@@ -6750,6 +6758,7 @@ export class InkSurface {
 
   private readonly pointerCallbacks: PointerControllerCallbacks = {
     onStylusClick: (clientX, clientY) => this.stylusClicked(clientX, clientY),
+    onPenReturned: () => this.callbacks.onPenReturned?.(),
     onStart: (sample, press) => {
       this.strokeInBox = false;
       this.penStart(sample, press);
