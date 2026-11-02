@@ -175,6 +175,7 @@ export default defineConfig({
         "src/export/pdf-composer.ts",
         "src/export/annotation-layers.ts",
         "src/export/page-range.ts",
+        "src/export/export-choice.ts",
         "src/search/notebook-search.ts",
         "src/search/hit-strokes.ts",
         "src/search/link-choices.ts",

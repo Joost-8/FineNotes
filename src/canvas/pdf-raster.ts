@@ -5,6 +5,12 @@ export interface PdfRenderArea {
   geometry: PageGeometry;
   /** Absent for a whole page; supplied for detail, the visible area of a page that needs it. */
   region?: Bounds;
+  /**
+   * A whole page for an image export, drawn once at exactly the scale asked
+   * for: the whole-page bounds would resample an A4 page from 1.64 to 2
+   * device px per page px, which blurs small print (FineNotes#80).
+   */
+  exact?: boolean;
 }
 
 export interface PdfRasterPlan {
@@ -24,6 +30,12 @@ const MAX_PATCH_PIXELS = 4_000_000;
  */
 const DETAIL_MAX_PIXELS = 9_000_000;
 const DETAIL_MAX_EDGE = 4096;
+/**
+ * An export's raster, the bounds `exportPixelScale` keeps a page inside
+ * (`src/export/pdf-writer.ts`): it is drawn once and released at once.
+ */
+const EXACT_MAX_PIXELS = 12_000_000;
+const EXACT_MAX_EDGE = 4096;
 
 export function planPdfRaster(
   source: PageGeometry,
@@ -46,11 +58,12 @@ export function planPdfRaster(
   const h = Math.min(geometry.height, region.maxY) - y;
   if (!(w > 0 && h > 0 && Number.isFinite(w * h))) throw new Error("PDF patch has no usable size");
   const detail = area.region !== undefined;
-  const scale = Math.min(
-    deviceScale,
-    (detail ? DETAIL_MAX_EDGE : MAX_PATCH_EDGE) / Math.max(w, h),
-    Math.sqrt((detail ? DETAIL_MAX_PIXELS : MAX_PATCH_PIXELS) / (w * h)),
-  );
+  const [maxEdge, maxPixels] = area.exact
+    ? [EXACT_MAX_EDGE, EXACT_MAX_PIXELS]
+    : detail
+      ? [DETAIL_MAX_EDGE, DETAIL_MAX_PIXELS]
+      : [MAX_PATCH_EDGE, MAX_PATCH_PIXELS];
+  const scale = Math.min(deviceScale, maxEdge / Math.max(w, h), Math.sqrt(maxPixels / (w * h)));
   const width = Math.max(1, Math.ceil(w * scale));
   const height = Math.max(1, Math.ceil(h * scale));
   return {

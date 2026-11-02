@@ -16,6 +16,16 @@ extracted from the matching section of this file by `release.yml`.
   stretches, the same ring as a finger's pull fills, and when you stop a new
   page is added. A scroll that only runs into the end, and Ctrl+wheel zoom,
   add nothing. As with the finger's pull, a single page never grows.
+- **Export pages as pictures**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). Export
+  now offers PDF, PNG or JPG. One page becomes one picture; several go into
+  a new folder, one picture per page, named after the notebook and the page
+  number. Pictures are 2 pixels per page pixel (2048 × 2896 for A4), and
+  PDF pages under the ink are drawn sharp at that size.
+- **Export the pages you selected**
+  ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). Select
+  pages in the page overview and choose Export: the dialog shows just those
+  pages and asks only for the format, not for the pages again.
 - **Hearts.** Draw a heart, round or tall, and hold, or with Auto shape
   on, and it snaps to a clean heart; the Shape tool has one too, after the
   star.

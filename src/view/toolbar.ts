@@ -1272,7 +1272,7 @@ export class Toolbar {
       );
     }
     this.addPageButton = this.foldButton(doc, FOLD_RANK.addPage, "plus", "Add page", cb.onAddPage);
-    keep(this.foldButton(doc, FOLD_RANK.share, "share", "Export as PDF", cb.onShare));
+    keep(this.foldButton(doc, FOLD_RANK.share, "share", "Export", cb.onShare));
     this.moreButton = this.barButton(doc, "more-horizontal", "More", cb.onMore);
     if (this.options.fingerDrawing === true) this.setFingerDrawing(true);
     this.settingsButton = this.foldButton(

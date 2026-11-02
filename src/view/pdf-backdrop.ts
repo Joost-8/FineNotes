@@ -312,7 +312,7 @@ export class PdfBackdropCache {
     budget: PdfMemoryBudget = lowMemoryDevice() ? PDF_BUDGET_LOW : PDF_BUDGET,
   ) {
     this.budget = budget;
-    this.entries = new ByteLru<Cached>(budget.hard, (cached) => release(cached.entry));
+    this.entries = new ByteLru<Cached>(budget.hard, (cached) => releasePdfEntry(cached.entry));
   }
 
   /** What the cache keeps now (for tests and diagnostics). */
@@ -586,6 +586,25 @@ export class PdfBackdropCache {
     return result;
   }
 
+  /**
+   * One whole page drawn at exactly `deviceScale` device px per page px, for
+   * an image export (`PdfRenderArea.exact`): past the queue, never cached,
+   * and the caller's to free with {@link releasePdfEntry}. Never rejects.
+   */
+  async renderExact(
+    path: string,
+    page: number,
+    geometry: PageGeometry,
+    deviceScale: number,
+  ): Promise<PdfEntry> {
+    if (this.destroyed) return { ok: false, reason: "Cache closed" };
+    try {
+      return await this.rasterise(path, page, deviceScale, { geometry, exact: true });
+    } catch (error) {
+      return { ok: false, reason: errorMessage(error) };
+    }
+  }
+
   private cancel(job: RasterWork): void {
     job.cancelled = true;
     const queued = this.queue.indexOf(job);
@@ -611,7 +630,7 @@ export class PdfBackdropCache {
         .then((entry) => {
           this.running.delete(job);
           const refused = !entry.ok && entry.retry === true;
-          if (job.cancelled || this.destroyed) release(entry);
+          if (job.cancelled || this.destroyed) releasePdfEntry(entry);
           else if (refused) this.inflight.delete(job.key);
           else this.store(job.key, entry, job.path, job.page, job.area, job.dprScale);
           if (this.work.get(job.key) === job) this.work.delete(job.key);
@@ -745,7 +764,7 @@ export class PdfBackdropCache {
   ): void {
     this.inflight.delete(key);
     if (this.destroyed) {
-      release(entry);
+      releasePdfEntry(entry);
       return;
     }
     if (entry.ok) this.refused.delete(key);
@@ -958,7 +977,7 @@ function bytesOf(entry: PdfEntry): number {
 }
 
 /** Give a dropped raster's memory back now; iOS holds canvas memory until then. */
-function release(entry: PdfEntry): void {
+export function releasePdfEntry(entry: PdfEntry): void {
   if (!entry.ok) return;
   const { canvas } = entry;
   if ("close" in canvas) canvas.close();
