@@ -25,6 +25,7 @@
  */
 
 import { type App, Modal, setIcon } from "obsidian";
+import { t } from "../i18n/translate";
 import {
   ALWAYS_SHOWN,
   BAR_ITEMS,
@@ -56,7 +57,7 @@ export class CustomizeToolbarModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-customize-modal");
-    this.titleEl.setText("Customize toolbar");
+    this.titleEl.setText(t("toolbar.customize.title"));
     this.listEl = this.contentEl.createDiv({ cls: "goodobsidian-customize-body" });
     this.render();
   }
@@ -81,28 +82,31 @@ export class CustomizeToolbarModal extends Modal {
     const body = this.listEl;
     if (!body) return;
     body.empty();
-    body.createDiv({ cls: "goodobsidian-customize-label", text: "On the toolbar" });
+    body.createDiv({ cls: "goodobsidian-customize-label", text: t("toolbar.customize.onToolbar") });
     const bar = body.createDiv({ cls: "goodobsidian-customize-list is-shown" });
     bar.setAttribute("role", "list");
     this.layout.bar.forEach((id, index) => this.barRow(bar, id, index));
 
     const menu = menuItems(this.layout);
     if (menu.length > 0) {
-      body.createDiv({ cls: "goodobsidian-customize-label", text: "In More tools" });
+      body.createDiv({
+        cls: "goodobsidian-customize-label",
+        text: t("toolbar.customize.inMoreTools"),
+      });
       const list = this.list(body);
       for (const id of menu) this.menuRow(list, id);
     }
 
     const hidden = BAR_ITEMS.filter((id) => this.layout.off.includes(id));
     if (hidden.length > 0) {
-      body.createDiv({ cls: "goodobsidian-customize-label", text: "Hidden" });
+      body.createDiv({ cls: "goodobsidian-customize-label", text: t("toolbar.customize.hidden") });
       const list = this.list(body);
       for (const id of hidden) this.hiddenRow(list, id);
     }
 
     const reset = body.createEl("button", {
       cls: "goodobsidian-customize-reset mod-warning",
-      text: "Reset toolbar",
+      text: t("toolbar.customize.reset"),
     });
     reset.disabled = sameLayout(defaultLayout(), this.layout);
     reset.addEventListener("click", () => this.set(defaultLayout()));
@@ -151,21 +155,35 @@ export class CustomizeToolbarModal extends Modal {
       // Keeps the column: the pen has no way off the bar.
       row.createSpan({ cls: "goodobsidian-customize-toggle is-blank" });
     } else {
-      this.mover(row, id, "menu", "circle-minus", "is-remove", `Move ${name} to More tools`);
+      this.mover(
+        row,
+        id,
+        "menu",
+        "circle-minus",
+        "is-remove",
+        t("toolbar.customize.moveToMoreTools", { name }),
+      );
     }
     this.rowStart(row, id);
     const grip = row.createSpan({ cls: "goodobsidian-customize-grip" });
     setIcon(grip, "grip-vertical");
-    grip.setAttribute("aria-label", `Move ${name}`);
+    grip.setAttribute("aria-label", t("toolbar.customize.move", { name }));
     grip.addEventListener("pointerdown", (event) => this.startDrag(event, list, row, index));
   }
 
   private menuRow(list: HTMLElement, id: BarItemId): void {
     const row = this.row(list);
     const name = BAR_ITEM_LABELS[id];
-    this.mover(row, id, "bar", "circle-plus", "is-add", `Put ${name} on the toolbar`);
+    this.mover(
+      row,
+      id,
+      "bar",
+      "circle-plus",
+      "is-add",
+      t("toolbar.customize.putOnToolbar", { name }),
+    );
     this.rowStart(row, id);
-    this.mover(row, id, "off", "eye-off", "is-off", `Hide ${name}`);
+    this.mover(row, id, "off", "eye-off", "is-off", t("toolbar.customize.hide", { name }));
   }
 
   private hiddenRow(list: HTMLElement, id: BarItemId): void {
@@ -176,7 +194,7 @@ export class CustomizeToolbarModal extends Modal {
       "menu",
       "circle-plus",
       "is-add",
-      `Add ${BAR_ITEM_LABELS[id]} to More tools`,
+      t("toolbar.customize.addToMoreTools", { name: BAR_ITEM_LABELS[id] }),
     );
     this.rowStart(row, id);
   }

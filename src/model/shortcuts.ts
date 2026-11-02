@@ -10,6 +10,8 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { type TextKey, t } from "../i18n/translate";
+
 /** A modifier, by the name the shortcuts are written with. */
 export type Modifier = "Mod" | "Alt" | "Shift";
 
@@ -41,70 +43,79 @@ export interface ShortcutGroup {
 }
 
 const key = (...keys: string[]): ShortcutWay => ({ keys });
-const held = (keys: string[], gesture: string): ShortcutWay => ({ keys, gesture });
+/** Keys held while the pen does something; the gesture is read in the language in use. */
+const held = (keys: string[], gesture: TextKey): ShortcutWay => ({
+  keys,
+  get gesture() {
+    return t(gesture);
+  },
+});
+/** A gesture with no key to hold. */
+const gesture = (name: TextKey): ShortcutWay => held([], name);
+
+/** A line of the list: its action is read in the language in use. */
+const line = (
+  action: TextKey,
+  ways: readonly ShortcutWay[],
+  more: Pick<Shortcut, "range" | "binding"> = {},
+): Shortcut => ({
+  get action() {
+    return t(action);
+  },
+  ways,
+  ...more,
+});
+
+/** A group of the list: its title is read in the language in use. */
+const group = (title: TextKey, shortcuts: readonly Shortcut[]): ShortcutGroup => ({
+  get title() {
+    return t(title);
+  },
+  shortcuts,
+});
 
 /** Every shortcut, grouped as the settings list them. */
 export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
-  {
-    title: "Tools",
-    shortcuts: [
-      { action: "Pen", ways: [key("P"), key("W")], binding: "tool.pen" },
-      { action: "Highlighter", ways: [key("H")], binding: "tool.highlighter" },
-      { action: "Eraser", ways: [key("E")], binding: "tool.eraser" },
-      { action: "Lasso", ways: [key("V")], binding: "tool.select" },
-      { action: "Shapes", ways: [key("S")], binding: "tool.shape" },
-      { action: "Text box", ways: [key("T")], binding: "tool.text" },
-      {
-        action: "Laser pointer: a trail that fades, never saved",
-        ways: [key("L")],
-        binding: "tool.laser",
-      },
-    ],
-  },
-  {
-    title: "Pens",
-    shortcuts: [
-      {
-        action: "Saved pens 1 to 8",
-        ways: [key("1"), key("8")],
-        range: true,
-        binding: "pen.saved",
-      },
-      { action: "Erase, with the eraser's settings", ways: [held(["Shift"], "write")] },
-    ],
-  },
-  {
-    title: "Selection and editing",
-    shortcuts: [
-      { action: "Lasso select", ways: [held(["Mod"], "write")] },
-      {
-        action: "Select everything on the page; Delete then clears it",
-        ways: [key("Mod", "A")],
-        binding: "edit.select-all",
-      },
-      { action: "Undo", ways: [key("Mod", "Z")], binding: "edit.undo" },
-      { action: "Redo", ways: [key("Mod", "Shift", "Z")], binding: "edit.redo" },
-    ],
-  },
-  {
-    title: "View and zoom",
-    shortcuts: [
-      { action: "Zoom in or out about the pen", ways: [held(["Alt"], "write up or down")] },
-      { action: "Move the page", ways: [held(["Space"], "drag")], binding: "tool.pan" },
-      { action: "Previous and next page", ways: [key("Page Up"), key("Page Down")] },
-      { action: "Show or hide this list", ways: [key("?")], binding: "view.shortcuts" },
-    ],
-  },
-  {
-    title: "Stylus",
-    shortcuts: [
-      { action: "Erase", ways: [{ keys: [], gesture: "Write with the eraser end" }] },
-      {
-        action: "Move the page, with a pen or mouse",
-        ways: [{ keys: [], gesture: "Drag beside the page" }],
-      },
-    ],
-  },
+  group("toolbar.shortcut.group.tools", [
+    line("toolbar.tool.pen", [key("P"), key("W")], { binding: "tool.pen" }),
+    line("toolbar.tool.highlighter", [key("H")], { binding: "tool.highlighter" }),
+    line("toolbar.tool.eraser", [key("E")], { binding: "tool.eraser" }),
+    line("toolbar.tool.lasso", [key("V")], { binding: "tool.select" }),
+    line("toolbar.tool.shapes", [key("S")], { binding: "tool.shape" }),
+    line("toolbar.tool.textBox", [key("T")], { binding: "tool.text" }),
+    line("toolbar.shortcut.sheet.laser", [key("L")], { binding: "tool.laser" }),
+  ]),
+  group("toolbar.shortcut.group.pens", [
+    line("toolbar.shortcut.sheet.savedPens", [key("1"), key("8")], {
+      range: true,
+      binding: "pen.saved",
+    }),
+    line("toolbar.shortcut.sheet.eraseWithSettings", [
+      held(["Shift"], "toolbar.shortcut.gesture.write"),
+    ]),
+  ]),
+  group("toolbar.shortcut.group.selectionEditing", [
+    line("toolbar.shortcut.sheet.lassoSelect", [held(["Mod"], "toolbar.shortcut.gesture.write")]),
+    line("toolbar.shortcut.sheet.selectAll", [key("Mod", "A")], { binding: "edit.select-all" }),
+    line("common.undo", [key("Mod", "Z")], { binding: "edit.undo" }),
+    line("common.redo", [key("Mod", "Shift", "Z")], { binding: "edit.redo" }),
+  ]),
+  group("toolbar.shortcut.group.viewZoom", [
+    line("toolbar.shortcut.sheet.zoomAboutPen", [
+      held(["Alt"], "toolbar.shortcut.gesture.writeUpOrDown"),
+    ]),
+    line("toolbar.shortcut.sheet.movePage", [held(["Space"], "toolbar.shortcut.gesture.drag")], {
+      binding: "tool.pan",
+    }),
+    line("toolbar.shortcut.sheet.previousNext", [key("Page Up"), key("Page Down")]),
+    line("toolbar.shortcut.sheet.toggleList", [key("?")], { binding: "view.shortcuts" }),
+  ]),
+  group("toolbar.shortcut.group.stylus", [
+    line("toolbar.shortcut.sheet.erase", [gesture("toolbar.shortcut.gesture.eraserEnd")]),
+    line("toolbar.shortcut.sheet.movePageWithPen", [
+      gesture("toolbar.shortcut.gesture.dragBeside"),
+    ]),
+  ]),
 ];
 
 const APPLE: Record<Modifier, string> = { Mod: "⌘", Alt: "⌥", Shift: "⇧" };
@@ -142,5 +153,6 @@ export function wayText(way: ShortcutWay, apple: boolean): string {
 
 /** A shortcut's ways as plain text: "P or W", "1 – 8". */
 export function shortcutText(shortcut: Shortcut, apple: boolean): string {
-  return shortcut.ways.map((way) => wayText(way, apple)).join(shortcut.range ? " – " : " or ");
+  const joiner = shortcut.range ? " – " : ` ${t("toolbar.shortcut.or")} `;
+  return shortcut.ways.map((way) => wayText(way, apple)).join(joiner);
 }

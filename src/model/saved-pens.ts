@@ -12,6 +12,7 @@
  */
 
 import { SIZES } from "../constants";
+import { t } from "../i18n/translate";
 import { parseHexColor } from "./colors";
 import { FINE_PEN_MIN, chosenWidth, widthStops } from "./pen-widths";
 import { formatMm, mmToPage, pageToMm } from "./units";
@@ -22,11 +23,21 @@ export type SavedPenType = (typeof SAVED_PEN_TYPES)[number];
 
 /** Each pen type's name, as the toolbar's pen menu shows it. */
 export const SAVED_PEN_NAMES: Readonly<Record<SavedPenType, string>> = {
-  fountain: "Fountain pen",
-  ball: "Ball pen",
-  brush: "Brush pen",
-  calligraphy: "Calligraphy pen",
-  highlighter: "Highlighter",
+  get fountain() {
+    return t("toolbar.pen.fountain");
+  },
+  get ball() {
+    return t("toolbar.pen.ball");
+  },
+  get brush() {
+    return t("toolbar.pen.brush");
+  },
+  get calligraphy() {
+    return t("toolbar.pen.calligraphy");
+  },
+  get highlighter() {
+    return t("toolbar.pen.highlighter");
+  },
 };
 
 /**
@@ -213,7 +224,10 @@ export function defaultWidthText(tool: string, size: number): string {
 
 /** What a pen is called in a list, by the width of its ink: "Highlighter, 4.10 mm". */
 export function savedPenLabel(pen: SavedPen): string {
-  return `${SAVED_PEN_NAMES[pen.type]}, ${mmText(pen.size, SAVED_PEN_SCALE[pen.type])} mm`;
+  return t("toolbar.savedPen.label", {
+    name: SAVED_PEN_NAMES[pen.type],
+    mm: mmText(pen.size, SAVED_PEN_SCALE[pen.type]),
+  });
 }
 
 /**
