@@ -13,7 +13,7 @@
 
 import type { TextBoxElement } from "../model/document";
 import type { ReadWord } from "../recognition/hwr/corrections";
-import { fold, queryTerms } from "./notebook-search";
+import { type TextSpan, fold, matchFolded, matchText, queryTerms } from "./notebook-search";
 
 export interface PageHits {
   /** The strokes of each word found, in reading order. */
@@ -289,7 +289,7 @@ function alignInto(needle: string, hay: string): number[] | null {
  * against the reading, letter by letter, to say which ink it is.
  */
 function transcriptHits(
-  terms: readonly string[],
+  spansOf: (folded: string) => TextSpan[],
   transcript: string,
   lines: readonly ReadLine[],
   placedOf: (line: number) => Placed | null,
@@ -313,33 +313,31 @@ function transcriptHits(
     for (const at of letters.at) source.push({ line: index, at: f.map[at] });
   });
   const out: string[][] = [];
-  for (const term of terms) {
-    for (let at = folded.indexOf(term); at >= 0; at = folded.indexOf(term, at + 1)) {
-      const a = letterAt[at];
-      const b = letterAt[at + term.length];
-      if (b <= a) continue;
-      const lo = Math.max(0, a - CONTEXT);
-      const hi = Math.min(said.text.length, b + CONTEXT);
-      const match = alignInto(said.text.slice(lo, hi), read);
-      if (!match) continue;
-      // The word's letters in the reading, as a character range per line.
-      const ranges = new Map<number, { from: number; to: number }>();
-      for (const j of match.slice(a - lo, b - lo)) {
-        if (j < 0) continue;
-        const { line, at: c } = source[j];
-        const range = ranges.get(line);
-        if (range) {
-          range.from = Math.min(range.from, c);
-          range.to = Math.max(range.to, c);
-        } else ranges.set(line, { from: c, to: c });
-      }
-      const ink: string[] = [];
-      for (const [line, range] of ranges) {
-        const placed = placedOf(line);
-        if (placed) ink.push(...inkOfRange(placed, range.from, range.to));
-      }
-      if (ink.length > 0) out.push(ink);
+  for (const span of spansOf(folded)) {
+    const a = letterAt[span.start];
+    const b = letterAt[span.end];
+    if (b <= a) continue;
+    const lo = Math.max(0, a - CONTEXT);
+    const hi = Math.min(said.text.length, b + CONTEXT);
+    const match = alignInto(said.text.slice(lo, hi), read);
+    if (!match) continue;
+    // The word's letters in the reading, as a character range per line.
+    const ranges = new Map<number, { from: number; to: number }>();
+    for (const j of match.slice(a - lo, b - lo)) {
+      if (j < 0) continue;
+      const { line, at: c } = source[j];
+      const range = ranges.get(line);
+      if (range) {
+        range.from = Math.min(range.from, c);
+        range.to = Math.max(range.to, c);
+      } else ranges.set(line, { from: c, to: c });
     }
+    const ink: string[] = [];
+    for (const [line, range] of ranges) {
+      const placed = placedOf(line);
+      if (placed) ink.push(...inkOfRange(placed, range.from, range.to));
+    }
+    if (ink.length > 0) out.push(ink);
   }
   return out;
 }
@@ -351,12 +349,17 @@ function transcriptHits(
  * a transcript, every place the transcript holds the query, wherever the
  * device read it differently. With neither, a word of the reading misread
  * by a letter or two (by length) counts.
+ *
+ * With `phrase` (the page holds the query as typed, "recipe for
+ * defining"), the ink of each place the phrase is written lights as one,
+ * across lines too; when it is not found there, the words light one by one.
  */
 export function lineHits(
   query: string,
   lines: readonly ReadLine[],
   boundsOf: (strokeIds: readonly string[]) => Box | null,
   transcript = "",
+  phrase = false,
 ): string[][] {
   const terms = queryTerms(query);
   if (terms.length === 0) return [];
@@ -365,6 +368,14 @@ export function lineHits(
     if (!placedLines.has(index)) placedLines.set(index, placeLine(lines[index], boundsOf));
     return placedLines.get(index) ?? null;
   };
+  if (phrase) {
+    const spansOf = (folded: string): TextSpan[] => matchFolded(folded, query, true);
+    const found = unique([
+      ...phraseInReading(spansOf, lines, placedOf),
+      ...transcriptHits(spansOf, transcript, lines, placedOf),
+    ]);
+    if (found.length > 0) return found;
+  }
   const exact = (token: string): boolean => terms.some((term) => fold(token).text.includes(term));
   const near = (token: string): boolean => {
     const word = bare(token);
@@ -385,9 +396,52 @@ export function lineHits(
     });
     return out;
   };
-  const hits = [...found(exact), ...transcriptHits(terms, transcript, lines, placedOf)];
+  const everyTerm = (folded: string): TextSpan[] =>
+    terms.flatMap((term) => {
+      const spans: TextSpan[] = [];
+      for (let at = folded.indexOf(term); at >= 0; at = folded.indexOf(term, at + 1)) {
+        spans.push({ start: at, end: at + term.length });
+      }
+      return spans;
+    });
+  const hits = [...found(exact), ...transcriptHits(everyTerm, transcript, lines, placedOf)];
   if (hits.length === 0) return found(near);
-  // The reading and the transcript often find the same word: light it once.
+  return unique(hits);
+}
+
+/** The ink of each place the device's reading holds the phrase, lines read as one text. */
+function phraseInReading(
+  spansOf: (folded: string) => TextSpan[],
+  lines: readonly ReadLine[],
+  placedOf: (line: number) => Placed | null,
+): string[][] {
+  // The lines as one text, a line break between them, and where each starts.
+  const starts: number[] = [];
+  let text = "";
+  lines.forEach((line, index) => {
+    if (index > 0) text += "\n";
+    starts.push(text.length);
+    text += line.text;
+  });
+  const folded = fold(text);
+  const out: string[][] = [];
+  for (const span of spansOf(folded.text)) {
+    const from = folded.map[span.start];
+    const to = span.end < folded.map.length ? folded.map[span.end] : text.length;
+    const ink: string[] = [];
+    lines.forEach((line, index) => {
+      const a = Math.max(from, starts[index]) - starts[index];
+      const b = Math.min(to, starts[index] + line.text.length) - starts[index];
+      const placed = a < b ? placedOf(index) : null;
+      if (placed) ink.push(...inkOfRange(placed, a, b - 1));
+    });
+    if (ink.length > 0) out.push(ink);
+  }
+  return out;
+}
+
+/** Each group of ink once, its ids once: the reading and the transcript often find the same. */
+function unique(hits: readonly string[][]): string[][] {
   const seen = new Set<string>();
   const out: string[][] = [];
   for (const ink of hits) {
@@ -405,13 +459,11 @@ export function pageHits(
   query: string,
   words: readonly ReadWord[],
   boxes: readonly Pick<TextBoxElement, "id" | "text">[],
+  phrase = false,
 ): PageHits {
   const terms = queryTerms(query);
   if (terms.length === 0) return { words: [], boxes: [] };
-  const holds = (text: string): boolean => {
-    const folded = fold(text).text;
-    return terms.some((term) => folded.includes(term));
-  };
+  const holds = (text: string): boolean => matchText(text, query, phrase).length > 0;
   return {
     words: words
       .filter((word) => word.strokeIds.length > 0 && holds(word.text))

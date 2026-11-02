@@ -10,9 +10,68 @@ import {
   cleanMoveLog,
   followMoves,
   movedTarget,
+  nearbyTarget,
   recordMove,
   relinkDocument,
 } from "../../src/model/moved-files";
+
+describe("nearbyTarget", () => {
+  const vault = new Set([
+    "School/8d/Bio/Heft/Heft.notebook.md",
+    "School/8d/Bio/Heft/Images/Heft - paper 1.pdf",
+    "School/8d/Bio/Heft/Images/Lückentext.png",
+    "School/8d/Bio/Heft/Images",
+    "School/8d/Bio/shared.pdf",
+    "Other/Heft - paper 2.pdf",
+  ]);
+  const exists = (path: string): boolean => vault.has(path);
+  const note = "School/8d/Bio/Heft/Heft.notebook.md";
+
+  it("finds the note's files where it was copied to, by their path's tail", () => {
+    expect(nearbyTarget(note, exists, "8d/Bio/Heft/Images/Heft - paper 1.pdf")).toBe(
+      "School/8d/Bio/Heft/Images/Heft - paper 1.pdf",
+    );
+    expect(nearbyTarget(note, exists, "Old/Images/Heft - paper 1.pdf")).toBe(
+      "School/8d/Bio/Heft/Images/Heft - paper 1.pdf",
+    );
+    // A folder above the note's own.
+    expect(nearbyTarget(note, exists, "8d/Bio/shared.pdf")).toBe("School/8d/Bio/shared.pdf");
+  });
+
+  it("finds either Unicode spelling", () => {
+    expect(nearbyTarget(note, exists, "8d/Bio/Heft/Images/Lückentext.png")).toBe(
+      "School/8d/Bio/Heft/Images/Lückentext.png",
+    );
+  });
+
+  it("leaves a path that leads somewhere, and never guesses by name across the vault", () => {
+    expect(nearbyTarget(note, exists, "School/8d/Bio/shared.pdf")).toBeUndefined();
+    expect(nearbyTarget(note, exists, "Elsewhere/Heft - paper 2.pdf")).toBeUndefined();
+    expect(nearbyTarget(note, exists, "Elsewhere/shared.pdf")).toBeUndefined();
+    expect(nearbyTarget(note, exists, "")).toBeUndefined();
+  });
+
+  it("never takes a file from a folder beside the note's, as another notebook's", () => {
+    const shelf = new Set([
+      "School/Math/Algebra/Algebra.notebook.md",
+      "School/Math/Images/page 1.png",
+      "School/Math/Geometry/Images/page 2.png",
+      "School/Math/syllabus.pdf",
+    ]);
+    const at = (path: string): boolean => shelf.has(path);
+    const algebra = "School/Math/Algebra/Algebra.notebook.md";
+    expect(nearbyTarget(algebra, at, "Old/Images/page 1.png")).toBeUndefined();
+    expect(nearbyTarget(algebra, at, "Geometry/Images/page 2.png")).toBeUndefined();
+    // Directly in a folder above it is the note's course, and found.
+    expect(nearbyTarget(algebra, at, "Old/Math/syllabus.pdf")).toBe("School/Math/syllabus.pdf");
+  });
+
+  it("finds a file named alone beside the note", () => {
+    const flat = (path: string): boolean => path === "Notes/a.png";
+    expect(nearbyTarget("Notes/X.notebook.md", flat, "Attachments/a.png")).toBe("Notes/a.png");
+    expect(nearbyTarget("Notes/Sub/X.notebook.md", flat, "Attachments/a.png")).toBeUndefined();
+  });
+});
 
 describe("recordMove", () => {
   it("appends a move", () => {

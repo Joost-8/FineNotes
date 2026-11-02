@@ -26,6 +26,9 @@ interface Annotation {
   quadPoints?: PointList | readonly PointList[];
 }
 
+/** Annotations that draw nothing on the page itself. */
+const UNDRAWN = new Set(["Link", "Popup"]);
+
 interface PageLike {
   getViewport(params: { scale: number }): Viewport;
   getAnnotations(params?: { intent?: string }): Promise<Annotation[]>;
@@ -59,11 +62,18 @@ export async function readPdfPages(
       const viewport = page.getViewport({ scale: 1 });
       const annotations = await page.getAnnotations({ intent: "display" }).catch(() => []);
       const inks: PdfInkReading[] = [];
+      let others = 0;
       for (const a of annotations) {
         const ink = readAnnotation(a, viewport);
         if (ink) inks.push(ink);
+        else if (!UNDRAWN.has(a.subtype ?? "")) others++;
       }
-      pages.push({ width: viewport.width, height: viewport.height, inks });
+      pages.push({
+        width: viewport.width,
+        height: viewport.height,
+        inks,
+        ...(others > 0 ? { others } : {}),
+      });
       page.cleanup?.();
     }
     // The app that wrote it, from the PDF's Creator and Producer entries.

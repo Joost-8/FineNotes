@@ -369,11 +369,13 @@ import {
 } from "../model/document";
 import {
   type TextLayout,
+  type TextRect,
   type TextSelection,
   selectText,
   textMarkNote,
   textUnder,
 } from "../canvas/pdf-text";
+import type { TextSpan } from "../search/notebook-search";
 import { type PageLink, linkAt, notebookPageOf } from "../canvas/pdf-links";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
@@ -2271,7 +2273,13 @@ export class InkSurface {
   /** A box beside each handwritten task, which a tap ticks (2.5). */
   private readonly taskMarks: HTMLElement[] = [];
   /** What the search result last opened found on its page, lit until the page is touched (2.5). */
-  private searchHits: { pageId: string; words: string[][]; boxes: string[] } | null = null;
+  private searchHits: {
+    pageId: string;
+    words: string[][];
+    boxes: string[];
+    /** Printed words of the page's PDF, in page space (#112). */
+    printed: TextRect[];
+  } | null = null;
   private readonly searchMarks: HTMLElement[] = [];
   /** Ink a playing recording has not reached yet, drawn pale (2.5). */
   private fadedStrokes: ReadonlySet<string> = new Set();
@@ -13484,20 +13492,32 @@ export class InkSurface {
 
   /**
    * Light up what a search found on a page (2.5): each word's ink under a
-   * soft highlight, and each text box holding the words, and glide to the
-   * first of them. They stay until the page is next touched or edited, or
-   * another search is opened; `null` puts them out.
+   * soft highlight, each text box holding the words, and the words printed
+   * on its PDF (`printed`, under the same highlight), and glide to the
+   * first of them. In a text box the words themselves light, where
+   * `matchIn` finds them in what the box shows; a box where it finds none
+   * (the words are in a link's target) lights whole. They stay until the
+   * page is next touched or edited, or another search is opened; `null`
+   * puts them out.
    */
-  setSearchHits(pageId: string | null, words: string[][] = [], boxes: string[] = []): void {
+  setSearchHits(
+    pageId: string | null,
+    words: string[][] = [],
+    boxes: string[] = [],
+    printed: TextRect[] = [],
+    matchIn: ((text: string) => TextSpan[]) | null = null,
+  ): void {
     const had = this.searchHits !== null;
     this.searchHits =
-      pageId !== null && (words.length > 0 || boxes.length > 0) ? { pageId, words, boxes } : null;
+      pageId !== null && (words.length > 0 || boxes.length > 0 || printed.length > 0)
+        ? { pageId, words, boxes, printed }
+        : null;
     if (!had && !this.searchHits) return;
     for (const view of this.textBoxInputs.values()) {
-      view.root.toggleClass(
-        "is-search-hit",
-        this.searchHits?.pageId === view.pageId && this.searchHits.boxes.includes(view.id),
-      );
+      const hit =
+        this.searchHits?.pageId === view.pageId && this.searchHits.boxes.includes(view.id);
+      const marked = this.markSearchWords(view, hit ? matchIn : null);
+      view.root.toggleClass("is-search-hit", hit && !marked);
     }
     this.syncSectionRibbons();
     const hits = this.searchHits;
@@ -13505,10 +13525,11 @@ export class InkSurface {
     const index = this.doc.pages.findIndex((page) => page.id === hits.pageId);
     const page = this.doc.pages[index];
     if (!page) return;
-    // Glide to the first hit: the highest word, or the highest box.
+    // Glide to the first hit: the highest word, box or printed word.
     const tops = [
       ...hits.words.flatMap((ids) => inkBounds(page, ids)?.minY ?? []),
       ...page.textBoxes.filter((box) => hits.boxes.includes(box.id)).map((box) => box.y),
+      ...hits.printed.map((rect) => rect.y),
     ];
     if (tops.length > 0) this.goToPagePoint(index, Math.min(...tops), true);
     // The next press on the page puts them out.
@@ -13518,7 +13539,55 @@ export class InkSurface {
     });
   }
 
-  /** A soft highlight over each word the last search found. Returns how many are shown. */
+  /**
+   * Mark what `matchIn` finds in a text box's shown text, each match in a
+   * span laid exactly over its words in the textarea (the shown copy wraps
+   * as the textarea does); `null` takes the marks away. Whether any is shown.
+   */
+  private markSearchWords(
+    view: TextBoxView,
+    matchIn: ((text: string) => TextSpan[]) | null,
+  ): boolean {
+    const had = view.root.hasClass("has-search-words");
+    if (!had && !matchIn) return false;
+    // Built afresh from the text: no marks, then this search's.
+    view.shownText = null;
+    this.renderShownText(view, view.input.value);
+    const spans = matchIn ? matchIn(view.shown.textContent ?? "") : [];
+    view.root.toggleClass("has-search-words", spans.length > 0);
+    if (spans.length === 0) return false;
+    const nodes: Array<{ node: Text; start: number }> = [];
+    const walker = view.shown.ownerDocument.createTreeWalker(view.shown, NodeFilter.SHOW_TEXT);
+    let at = 0;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node as Text;
+      nodes.push({ node: text, start: at });
+      at += text.length;
+    }
+    // Last node first, each node's pieces last first, so offsets hold.
+    for (const { node, start } of nodes.reverse()) {
+      const pieces = spans
+        .map((span) => [
+          Math.max(span.start, start) - start,
+          Math.min(span.end, start + node.length) - start,
+        ])
+        .filter(([a, b]) => a < b)
+        .reverse();
+      for (const [a, b] of pieces) {
+        node.splitText(b);
+        const word = node.splitText(a);
+        const mark = createSpan({ cls: "goodobsidian-search-word" });
+        word.replaceWith(mark);
+        mark.append(word);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * A soft highlight over each word the last search found, handwritten or
+   * printed. Returns how many are shown.
+   */
   private syncSearchMarks(): number {
     let used = 0;
     const hits = this.searchHits;
@@ -13526,9 +13595,11 @@ export class InkSurface {
     const page = hits ? this.doc.pages.find((p) => p.id === hits.pageId) : undefined;
     if (hits && box && page) {
       const scale = this.unitScale;
-      for (const ids of hits.words) {
-        const bounds = inkBounds(page, ids);
-        if (!bounds) continue;
+      const marked = [
+        ...hits.words.flatMap((ids) => inkBounds(page, ids) ?? []),
+        ...hits.printed.map((r) => ({ minX: r.x, minY: r.y, maxX: r.x + r.w, maxY: r.y + r.h })),
+      ];
+      for (const bounds of marked) {
         let mark = this.searchMarks[used];
         if (!mark) {
           mark = this.sectionRibbonsEl.createDiv({ cls: "goodobsidian-search-mark" });
