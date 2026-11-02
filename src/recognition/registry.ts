@@ -4,6 +4,7 @@
  * of the one to use. Pure: no DOM, no Obsidian.
  */
 
+import { t } from "../i18n/translate";
 import type { RecognitionProvider } from "./provider";
 import { MANUAL_PROVIDER_ID, manualProvider } from "./manual";
 import { LLM_PROVIDER_ID } from "./llm-request";
@@ -26,12 +27,9 @@ export function resolveProvider(
   return registry.get(id) ?? registry.get(MANUAL_PROVIDER_ID) ?? manualProvider;
 }
 
-const LABELS: ReadonlyMap<string, string> = new Map([
-  [MANUAL_PROVIDER_ID, "Manual — you type the text yourself"],
-  [LLM_PROVIDER_ID, "Cloud AI — with your own API key"],
-]);
-
 /** The engine's name in the settings dropdown; an unknown id shows as itself. */
 export function providerLabel(id: string): string {
-  return LABELS.get(id) ?? id;
+  if (id === MANUAL_PROVIDER_ID) return t("ai.provider.manual");
+  if (id === LLM_PROVIDER_ID) return t("ai.provider.cloud");
+  return id;
 }

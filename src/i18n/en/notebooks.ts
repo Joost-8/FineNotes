@@ -876,4 +876,7 @@ export const notebooks = {
   "notebooks.paperDesign.side.bottom": "Bottom",
   "notebooks.paperDesign.side.left": "Left",
   "notebooks.paperDesign.side.both": "Both",
+  "notebooks.untitled.page": "Untitled page",
+  "notebooks.untitled.board": "Untitled board",
+  "notebooks.untitled.notebook": "Untitled notebook",
 } as const;

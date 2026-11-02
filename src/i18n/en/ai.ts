@@ -545,4 +545,6 @@ export const ai = {
   "ai.month.oct": "Oct",
   "ai.month.nov": "Nov",
   "ai.month.dec": "Dec",
+  "ai.provider.manual": "Manual — you type the text yourself",
+  "ai.provider.cloud": "Cloud AI — with your own API key",
 } as const;
