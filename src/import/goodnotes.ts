@@ -1303,8 +1303,8 @@ function readRtfBox(body: Message, k: number, id: string): TextBoxElement | null
   if (!rtf.text.includes("\n") && height !== undefined && height - 2 * inset < 1.8 * fontSize) {
     box.fit = true;
   }
-  const typeface = fontFor(rtf.font);
-  if (typeface !== "sans") box.font = typeface;
+  // The font it was written in, over the nearest typeface (discussion #107).
+  Object.assign(box, importedFont(rtf.font));
   const fill = rgba(body.message(7), true);
   if (fill) box.fill = fill;
   return box;

@@ -726,7 +726,9 @@ describe("readGoodnotes: newer notebooks", () => {
         text: "Gefährdungen\nzweite Zeile",
         color: "#c80000",
         fontSize: at(24),
+        // Courier itself, over the monospace it falls back to (discussion #107).
         font: "mono",
+        family: "Courier",
       },
       {
         // One line in Goodnotes: it grows with its text, in whatever font stands in.
