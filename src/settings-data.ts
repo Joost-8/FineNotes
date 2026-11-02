@@ -28,7 +28,7 @@ import {
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { BarrelAction } from "./input/pen-modifiers";
-import type { ExportFormat } from "./export/export-choice";
+import type { ExportFormat, ExportMargins } from "./export/export-choice";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import { type BarItemId, DEFAULT_BAR } from "./view/toolbar-layout";
@@ -340,6 +340,8 @@ export interface GoodObsidianSettings {
   exportPlainPaper: boolean;
   /** The export dialog's format, as last picked: PDF, PNG or JPG. Checked where it is read. */
   exportFormat: ExportFormat;
+  /** Which page margins an export keeps, as last picked. Checked where it is read. */
+  exportMargins: ExportMargins;
 
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
@@ -511,6 +513,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   deskColor: LIGHT_PAPER.desk,
   exportPlainPaper: false,
   exportFormat: "pdf",
+  exportMargins: "all",
 
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],

@@ -149,6 +149,7 @@ const FRESH_INSTALL = {
   deskColor: "#3b3e45",
   exportPlainPaper: false,
   exportFormat: "pdf",
+  exportMargins: "all",
 
   savedPens: [
     { type: "ball", color: "#1971c2", size: 2 },
@@ -279,6 +280,7 @@ const USED_VAULT = {
   deskColor: "#204060",
   exportPlainPaper: true,
   exportFormat: "png",
+  exportMargins: "inked",
 
   savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
   toolbarItems: ["pen", "sticky", "select", "ruler"],

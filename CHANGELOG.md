@@ -217,7 +217,10 @@ extracted from the matching section of this file by `release.yml`.
   dragged; one undo takes it all back. The slider never makes a margin
   narrower than what is written in it; No margin asks first and deletes what
   lies wholly in it (one undo brings it back). It exports with the page to PDF
-  and pictures.
+  and pictures; in a notebook with margins, a button in the export dialog
+  steps through all margins, only those with ink, and none.
+- **Hold an export button to see what it does.** A long press on any button
+  in the export dialog shows its description, since a finger cannot hover.
   Built on Faris's pull request #92.
 
 ## [2.6.0] - 2026-10-30

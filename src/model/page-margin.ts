@@ -241,6 +241,31 @@ export function marginStrips(page: Page): PdfFrame[] {
   return strips;
 }
 
+/** Whether anything on `page` reaches into its margin. */
+export function marginHasContent(page: Page): boolean {
+  const floor = marginFloor(page);
+  return floor.left > 0 || floor.right > 0;
+}
+
+/** Whether `page` has a margin at all. */
+export function hasMargin(page: Page): boolean {
+  const { left, right } = marginOf(page);
+  return left > 0 || right > 0;
+}
+
+/**
+ * `page` as it was before its margins, for an export: a copy, its margins
+ * closed and what lay wholly in them left out ({@link SetPageMargin} with
+ * `dropContent`). The page itself is not touched.
+ */
+export function withoutMargins(page: Page): Page {
+  if (!hasMargin(page)) return page;
+  const copy = structuredClone(page);
+  const doc = { pages: [copy] } as unknown as InkDocument;
+  new SetPageMargin([{ page: copy, margin: { left: 0, right: 0 } }], true).apply(doc);
+  return copy;
+}
+
 /** The page as it was before any margin: what a new page after it takes. */
 export function unmarginedGeometry(page: Page): PageGeometry {
   const frame = page.backdrop.frame;

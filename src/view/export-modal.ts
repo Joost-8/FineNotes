@@ -26,9 +26,12 @@
  */
 
 import { type App, Modal, setIcon } from "obsidian";
+import { holdForHint } from "./hold-hint";
 import {
   EXPORT_FORMATS,
+  EXPORT_MARGINS,
   type ExportFormat,
+  type ExportMargins,
   type ExportTarget,
   exportOpening,
   exportSummary,
@@ -99,7 +102,48 @@ export interface ExportPdfHost {
    * has a tape; previews are painted again after.
    */
   setWithoutTapes?: (without: boolean) => void;
+  /** Which page margins export; remembered by the host. */
+  margins?: ExportMargins;
+  /**
+   * The margins button was pressed: remember its new choice. Given only when
+   * the notebook has a margin; previews are painted again after, and their
+   * shapes follow `pageSize`.
+   */
+  setMargins?: (margins: ExportMargins) => void;
 }
+
+/** The margins button's icon and name for each choice: the name is its tooltip. */
+const MARGIN_LOOKS: Record<ExportMargins, { icon: string; label: string; hint: string }> = {
+  all: {
+    icon: "panel-right",
+    label: "Margins: all",
+    hint: "Margins: all are exported. Tap to keep only those with ink.",
+  },
+  inked: {
+    icon: "panel-right-dashed",
+    label: "Margins: only those with ink",
+    hint: "Margins: only those with ink are exported. Tap to leave all out.",
+  },
+  none: {
+    icon: "square",
+    label: "Margins: none",
+    hint: "Margins: none; pages export as they were before. Tap to export all.",
+  },
+};
+
+/** What each page choice does, shown on a long press (`holdForHint`). */
+const SCOPE_HINTS: Record<ExportScope, string> = {
+  all: "Export every page of the notebook.",
+  current: "Export only the page you are on.",
+  custom: "Pick the pages to export: tap them, or type them.",
+};
+
+/** What each format makes, shown on a long press. */
+const FORMAT_HINTS: Record<ExportFormat, string> = {
+  pdf: "One PDF file. Slides stay real PDF, their text selectable.",
+  png: "One picture per page, sharp, larger files.",
+  jpg: "One picture per page, smaller files.",
+};
 
 /** Width of a page tile in the grid, CSS px; the grid fits as many per row as it can. */
 const TILE_WIDTH = 112;
@@ -183,6 +227,7 @@ export class ExportPdfModal extends Modal {
           this.pageScope = id;
           sync(true);
         });
+        holdForHint(button, () => SCOPE_HINTS[id]);
         this.scopeButtons.set(id, button);
       }
     }
@@ -191,6 +236,8 @@ export class ExportPdfModal extends Modal {
     const bar = contentEl.createDiv({ cls: "goodobsidian-export-choose" });
     const selectAll = bar.createEl("button", { cls: "clickable-icon", text: "Select all" });
     const selectNone = bar.createEl("button", { cls: "clickable-icon", text: "None" });
+    holdForHint(selectAll, () => "Select every page.");
+    holdForHint(selectNone, () => "Clear the selection.");
     const field = bar.createEl("input", {
       cls: "goodobsidian-export-range",
       type: "text",
@@ -212,9 +259,12 @@ export class ExportPdfModal extends Modal {
     const formats = this.formatControl(actions, () => sync(false));
     const template = this.templateSwitch(actions);
     const tapes = this.tapesSwitch(actions);
+    const margins = this.marginsSwitch(actions);
     const cancel = actions.createEl("button", { text: "Cancel" });
     cancel.addEventListener("click", () => this.close());
+    holdForHint(cancel, () => "Close without exporting.");
     const go = actions.createEl("button", { cls: "mod-cta", text: "Export" });
+    holdForHint(go, () => "Make the files and save them in the vault.");
 
     /** A typed range that does not parse, shown instead of the summary. */
     let rangeError: string | null = null;
@@ -314,6 +364,7 @@ export class ExportPdfModal extends Modal {
       for (const button of formats) button.disabled = true;
       if (template) template.disabled = true;
       if (tapes) tapes.disabled = true;
+      if (margins) margins.disabled = true;
       status.removeClass("is-error");
       try {
         const saved = await this.host.export(
@@ -337,6 +388,7 @@ export class ExportPdfModal extends Modal {
         for (const button of formats) button.disabled = false;
         if (template) template.disabled = false;
         if (tapes) tapes.disabled = false;
+        if (margins) margins.disabled = false;
         sync(false);
       }
     };
@@ -362,6 +414,7 @@ export class ExportPdfModal extends Modal {
     };
     const buttons = EXPORT_FORMATS.map((format) => {
       const button = seg.createEl("button", { cls: "clickable-icon", text: formatLabel(format) });
+      holdForHint(button, () => FORMAT_HINTS[format]);
       button.addEventListener("click", () => {
         if (this.busy || this.format === format) return;
         this.format = format;
@@ -389,6 +442,11 @@ export class ExportPdfModal extends Modal {
       attr: { "aria-label": "Template background" },
     });
     setIcon(button, "grid");
+    holdForHint(button, () =>
+      plain
+        ? "Plain paper: lines, grid and dots are left out. Tap to export them."
+        : "Template: the paper's lines, grid and dots are exported. Tap for plain paper.",
+    );
     const show = (): void => {
       button.toggleClass("is-active", !plain);
       button.setAttribute("aria-pressed", String(!plain));
@@ -418,6 +476,11 @@ export class ExportPdfModal extends Modal {
       attr: { "aria-label": "Cover tapes" },
     });
     setIcon(button, "bandage");
+    holdForHint(button, () =>
+      without
+        ? "Cover tapes: left out, so what is under them shows. Tap to export them."
+        : "Cover tapes: exported as they are. Tap to leave them out.",
+    );
     const show = (): void => {
       button.toggleClass("is-active", !without);
       button.setAttribute("aria-pressed", String(!without));
@@ -428,6 +491,34 @@ export class ExportPdfModal extends Modal {
       without = !without;
       show();
       set(without);
+      this.repaintPreviews();
+    });
+    return button;
+  }
+
+  /**
+   * The margins button, beside the actions, only in a notebook with margins:
+   * each press steps on, all margins, only those with ink, none, and round
+   * again; its icon and tooltip say which, lit while any margin exports.
+   */
+  private marginsSwitch(parent: HTMLElement): HTMLButtonElement | null {
+    const set = this.host.setMargins;
+    if (!set) return null;
+    let margins = this.host.margins ?? "all";
+    const button = parent.createEl("button", { cls: "clickable-icon goodobsidian-export-margins" });
+    holdForHint(button, () => MARGIN_LOOKS[margins].hint);
+    const show = (): void => {
+      const look = MARGIN_LOOKS[margins];
+      setIcon(button, look.icon);
+      button.setAttribute("aria-label", look.label);
+      button.toggleClass("is-active", margins !== "none");
+    };
+    show();
+    button.addEventListener("click", () => {
+      if (this.busy) return;
+      margins = EXPORT_MARGINS[(EXPORT_MARGINS.indexOf(margins) + 1) % EXPORT_MARGINS.length];
+      show();
+      set(margins);
       this.repaintPreviews();
     });
     return button;
@@ -637,7 +728,13 @@ class PageGrid {
   /** Paint the tiles near the view again (the export's look changed); the rest when they near it. */
   repaint(): void {
     // A tile being painted now is found unpainted again when its paint ends.
-    for (const tile of this.tiles) tile.painted = false;
+    for (const tile of this.tiles) {
+      tile.painted = false;
+      // A page can change shape (its margins left out).
+      tile.canvas.parentElement?.setCssStyles({
+        aspectRatio: aspectOf(this.host.pageSize(tile.page)),
+      });
+    }
     void this.paintNear();
   }
 

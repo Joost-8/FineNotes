@@ -189,6 +189,7 @@ import {
   marginFor,
   marginOf,
   frameWidth,
+  hasMargin,
   marginPaperOf,
   marginRuling,
   marginPercentOf,
@@ -319,10 +320,17 @@ import {
   type PdfExportSources,
   exportPagesToImages,
   exportPagesToPdf,
+  keepsMargins,
   paintPagePreview,
 } from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
-import { exportFormatOf, exportTarget, mimeTypeOf } from "../export/export-choice";
+import {
+  type ExportMargins,
+  exportFormatOf,
+  exportMarginsOf,
+  exportTarget,
+  mimeTypeOf,
+} from "../export/export-choice";
 import { normalizeFolder, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
@@ -3960,13 +3968,20 @@ export class InkView extends TextFileView {
       ...preview,
       plainPaper: this.settings.exportPlainPaper === true,
       withoutTapes: this.settings.exportWithoutTapes === true,
+      margins: exportMarginsOf(this.settings.exportMargins),
     });
     const taped = doc.pages.some((page) => page.strokes.some(isTape));
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",
       pageCount: total,
       currentPage: Math.max(0, Math.min(total - 1, this.surface?.currentPage ?? 0)),
-      pageSize: (i) => doc.pages[i]?.geometry ?? { width: 0, height: 0 },
+      // As the page exports: without its margins when they are left out.
+      pageSize: (i) => {
+        const page = doc.pages[i];
+        if (!page) return { width: 0, height: 0 };
+        const margins = exportMarginsOf(this.settings.exportMargins);
+        return keepsMargins(page, margins) ? page.geometry : unmarginedGeometry(page);
+      },
       folder: exports ?? null,
       chosen,
       format: exportFormatOf(this.settings.exportFormat),
@@ -3987,6 +4002,15 @@ export class InkView extends TextFileView {
         void this.plugin.saveSettings();
       },
       withoutTapes: this.settings.exportWithoutTapes === true,
+      ...(doc.pages.some(hasMargin)
+        ? {
+            margins: exportMarginsOf(this.settings.exportMargins),
+            setMargins: (margins: ExportMargins) => {
+              this.settings.exportMargins = margins;
+              void this.plugin.saveSettings();
+            },
+          }
+        : {}),
       ...(taped
         ? {
             setWithoutTapes: (without: boolean) => {

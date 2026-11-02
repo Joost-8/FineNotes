@@ -3,6 +3,9 @@ import { emptyDocument, pdfFrameOf, type InkDocument, type Page } from "../../sr
 import {
   SetPageMargin,
   contentCutBy,
+  hasMargin,
+  marginHasContent,
+  withoutMargins,
   keepContent,
   marginFloor,
   marginFor,
@@ -179,6 +182,33 @@ describe("closing a margin with ink in it", () => {
     new SetPageMargin([{ page, margin: { left: 0, right: 0 } }]).apply(doc);
     expect(marginOf(page).right).toBe(202);
     expect(page.strokes.map((s) => s.id)).toContain("r");
+  });
+});
+
+describe("a page without its margins, for an export", () => {
+  it("is a copy as the page was before its margins, and the page keeps them", () => {
+    const { doc, page } = pdfDoc();
+    new SetPageMargin([{ page, margin: { left: 200, right: 0 }, paper: "lined" }]).apply(doc);
+    expect(hasMargin(page)).toBe(true);
+    expect(marginHasContent(page)).toBe(false);
+    page.strokes.push({ id: "m", color: "#000", size: 4, tool: "pen", pts: [50, 100, 0.5] });
+    expect(marginHasContent(page)).toBe(true);
+    const plain = withoutMargins(page);
+    expect(plain).not.toBe(page);
+    expect(plain.geometry.width).toBe(1000);
+    expect(plain.backdrop.frame).toBeUndefined();
+    expect(plain.backdrop.marginPaper).toBeUndefined();
+    expect(plain.strokes.map((s) => s.id)).toEqual(["s1"]);
+    expect(plain.strokes[0].pts[0]).toBe(100);
+    // The notebook's own page is untouched.
+    expect(page.geometry.width).toBe(1200);
+    expect(page.strokes.map((s) => s.id)).toEqual(["s1", "m"]);
+    expect(page.strokes[0].pts[0]).toBe(300);
+  });
+
+  it("is the page itself when it has no margin", () => {
+    const { page } = pdfDoc();
+    expect(withoutMargins(page)).toBe(page);
   });
 });
 
