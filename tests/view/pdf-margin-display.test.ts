@@ -8,6 +8,7 @@ import { type PdfBackdropCache } from "../../src/view/pdf-backdrop";
 import { wholePageScale } from "../../src/canvas/pdf-raster";
 vi.mock("obsidian", () => import("./fake-obsidian"));
 const { VaultBackdropRenderer } = await import("../../src/view/backdrop-renderer");
+const { InkSurface } = await import("../../src/view/ink-surface");
 
 const plain = { kind: "pdf" as const, path: "Slides.pdf", page: 3 };
 const before = { width: 1000, height: 1400 };
@@ -74,6 +75,33 @@ describe("a PDF page with a margin", () => {
     expect(ctx.translate).toHaveBeenCalledWith(400, 0);
     expect(cache.peek).toHaveBeenCalledWith(plain.path, plain.page, expect.any(Number), {
       geometry: before,
+    });
+  });
+
+  it("repaints when that image lands, though the page is wider than it", () => {
+    const page = {
+      id: "p1",
+      geometry: { width: 1330, height: 1400 },
+      backdrop: { ...plain, frame: { x: 330, y: 0, width: 1000, height: 1400 } },
+      strokes: [],
+      images: [],
+      textBoxes: [],
+    };
+    const renderer = { refreshPage: vi.fn(), invalidateBackdrop: vi.fn() };
+    const surface = Object.assign(Object.create(InkSurface.prototype) as object, {
+      doc: { pages: [page] },
+      renderer,
+      requestFrame: vi.fn(),
+    }) as unknown as { pdfPageReady: (path: string, page: number, area?: unknown) => void };
+    surface.pdfPageReady(plain.path, plain.page, { geometry: before });
+    expect(renderer.refreshPage).toHaveBeenCalledWith(0);
+    const region = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+    surface.pdfPageReady(plain.path, plain.page, { geometry: before, region });
+    expect(renderer.invalidateBackdrop).toHaveBeenCalledWith(0, {
+      minX: 330,
+      minY: 0,
+      maxX: 430,
+      maxY: 100,
     });
   });
 });

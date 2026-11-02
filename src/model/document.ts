@@ -311,6 +311,8 @@ export interface SyntheticBackdrop {
    * is plain paper. Absent: the whole page.
    */
   frame?: PdfFrame;
+  /** The paper drawn in the margin beside the frame; absent: plain. */
+  marginPaper?: MarginPaper;
   /** Rule/grid pitch in page px. Ignored for "blank". Default per ruling. */
   spacing?: number;
   /** Rule colour, hex. Default per ruling. */
@@ -398,7 +400,12 @@ export interface PdfBackdrop {
    * space. Absent means the whole page, as before.
    */
   frame?: PdfFrame;
+  /** The paper drawn in the margin beside the frame; absent: plain. */
+  marginPaper?: MarginPaper;
 }
+
+/** A margin's paper (`model/page-margin.ts`); absent on a backdrop means plain. */
+export type MarginPaper = "lined" | "grid" | "dotted";
 
 /**
  * A rectangle of a page, page px: where a page's own paper or PDF lies on a

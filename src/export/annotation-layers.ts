@@ -2,10 +2,17 @@
 import type { Page } from "../model/document";
 import { isNoteInk, noteIdsOf } from "../model/sticky-notes";
 import { tapesLast } from "../model/cover-tape";
+import { marginBackdrop } from "../model/page-margin";
 
 export interface AnnotationLayer {
   page: Page;
   multiply: boolean;
+  /**
+   * The margin's paper (`model/page-margin`) and nothing else: the bottom
+   * layer, so every other layer lies over it and no layer's paper covers
+   * another's ink. Only this layer draws it.
+   */
+  paper?: true;
 }
 
 export function* annotationLayers(page: Page): Generator<AnnotationLayer> {
@@ -16,6 +23,20 @@ export function* annotationLayers(page: Page): Generator<AnnotationLayer> {
   const ink = tapesLast(
     notes ? page.strokes.filter((stroke) => !isNoteInk(stroke, notes)) : page.strokes,
   );
+  if (marginBackdrop(page)) {
+    yield {
+      page: {
+        ...page,
+        strokes: [],
+        images: [],
+        textBoxes: [],
+        ...(page.tables ? { tables: [] } : {}),
+        ...(page.graphs ? { graphs: [] } : {}),
+      },
+      multiply: false,
+      paper: true,
+    };
+  }
   // Pictures, tables, graphs and text boxes in one layer under the ink; the
   // ink's layers carry none of them, so none is painted twice or over the ink.
   if (page.images.length || page.textBoxes.length || page.tables?.length || page.graphs?.length) {

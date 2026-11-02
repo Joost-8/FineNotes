@@ -1,6 +1,7 @@
 /**
  * A page's margin: room to write beside its PDF or paper. The page grows to
- * the left, the right or both by plain paper, and its own PDF or paper keeps
+ * the left, the right or both by paper of its own (plain, lined, grid or
+ * dotted: {@link MarginPaper}), and its own PDF or paper keeps
  * its size and place in a frame ({@link Backdrop.frame}), so it is not
  * stretched or re-fitted to the wider page. A margin on the left moves
  * everything on the page right by as much, so ink stays on the words it was
@@ -16,7 +17,16 @@
  */
 
 import type { Command } from "./commands";
-import type { Backdrop, InkDocument, Page, PageGeometry } from "./document";
+import type {
+  Backdrop,
+  InkDocument,
+  MarginPaper,
+  Page,
+  PageGeometry,
+  PdfFrame,
+  Ruling,
+  SyntheticBackdrop,
+} from "./document";
 import { POINT_STRIDE, pdfFrameOf } from "./document";
 import { TranslateElements } from "./selection-commands";
 
@@ -27,6 +37,21 @@ export interface PageMargin {
 }
 
 export type MarginSide = "none" | "left" | "right" | "both";
+
+/** Which pages a choice in the Margin popover reaches. */
+export type MarginScope = "page" | "pdf" | "all";
+
+/** The paper a margin is drawn on: Plain (no lines) or one of {@link MarginPaper}. */
+export type MarginPaperChoice = "plain" | MarginPaper;
+
+export const MARGIN_PAPERS: readonly MarginPaperChoice[] = ["plain", "lined", "grid", "dotted"];
+
+/** The ruling each margin paper is drawn with. */
+const MARGIN_RULING: Record<MarginPaper, Ruling> = {
+  lined: "ruled-wide",
+  grid: "squared",
+  dotted: "dotted",
+};
 
 /** The margin slider's range and start, in % of the frame's width. */
 export const MARGIN_MIN_PERCENT = 10;
@@ -125,6 +150,38 @@ export function keepContent(page: Page, margin: PageMargin): PageMargin {
   return { left: Math.max(margin.left, floor.left), right: Math.max(margin.right, floor.right) };
 }
 
+/** The ruling a margin paper is drawn with; null for plain. */
+export function marginRuling(paper: MarginPaperChoice): Ruling | null {
+  return paper === "plain" ? null : MARGIN_RULING[paper];
+}
+
+/** The page's margin paper. */
+export function marginPaperOf(page: Page): MarginPaperChoice {
+  return page.backdrop.marginPaper ?? "plain";
+}
+
+/**
+ * The paper to draw in the margins, or null for plain paper (nothing to
+ * draw: the page is filled with its paper colour already). A paper page's
+ * colour goes with it, so its margin is the same sheet.
+ */
+export function marginBackdrop(page: Page): SyntheticBackdrop | null {
+  const paper = page.backdrop.marginPaper;
+  if (!paper || !page.backdrop.frame) return null;
+  const colour = page.backdrop.kind !== "pdf" ? page.backdrop.paperColor : undefined;
+  return { kind: MARGIN_RULING[paper], ...(colour ? { paperColor: colour } : {}) };
+}
+
+/** The margins of `page` as rectangles, page px, left first: none without a margin. */
+export function marginStrips(page: Page): PdfFrame[] {
+  const { left, right } = marginOf(page);
+  const height = page.geometry.height;
+  const strips: PdfFrame[] = [];
+  if (left > 0) strips.push({ x: 0, y: 0, width: left, height });
+  if (right > 0) strips.push({ x: page.geometry.width - right, y: 0, width: right, height });
+  return strips;
+}
+
 /** The page as it was before any margin: what a new page after it takes. */
 export function unmarginedGeometry(page: Page): PageGeometry {
   const frame = page.backdrop.frame;
@@ -132,10 +189,10 @@ export function unmarginedGeometry(page: Page): PageGeometry {
   return { ...page.geometry, width: frame.width };
 }
 
-/** A backdrop without the frame a margin keeps it in: for a new page made from it. */
+/** A backdrop without its margin (frame and margin paper): for a new page made from it. */
 export function withoutFrame<T extends Backdrop>(backdrop: T): T {
-  if (!backdrop.frame) return backdrop;
-  const { frame: _frame, ...rest } = backdrop;
+  if (!backdrop.frame && !backdrop.marginPaper) return backdrop;
+  const { frame: _frame, marginPaper: _paper, ...rest } = backdrop;
   return rest as T;
 }
 
@@ -156,7 +213,14 @@ export class SetPageMargin implements Command {
     moved: TranslateElements | null;
   }> = [];
 
-  constructor(private readonly targets: ReadonlyArray<{ page: Page; margin: PageMargin }>) {}
+  /** `paper`: the margin's paper; absent keeps the one the page has. */
+  constructor(
+    private readonly targets: ReadonlyArray<{
+      page: Page;
+      margin: PageMargin;
+      paper?: MarginPaperChoice;
+    }>,
+  ) {}
 
   /** The page's id when the step changes one page, so undo shows it. */
   get pageId(): string | undefined {
@@ -165,12 +229,16 @@ export class SetPageMargin implements Command {
 
   apply(doc: InkDocument): void {
     this.done = [];
-    for (const { page, margin } of this.targets) {
+    for (const { page, margin, paper } of this.targets) {
       // By identity, like the other page commands: ids can repeat within a file.
       if (!doc.pages.includes(page)) continue;
       const next = keepContent(page, margin);
       const old = marginOf(page);
-      if (next.left === old.left && next.right === old.right) continue;
+      const none = next.left === 0 && next.right === 0;
+      // No margin, no margin paper: it is chosen again with the next margin.
+      const nextPaper = none ? "plain" : (paper ?? marginPaperOf(page));
+      if (next.left === old.left && next.right === old.right && nextPaper === marginPaperOf(page))
+        continue;
       const record = {
         page,
         geometry: page.geometry,
@@ -182,10 +250,15 @@ export class SetPageMargin implements Command {
       const frame = pdfFrameOf(page.backdrop, page.geometry);
       const width = frame.width;
       const fullHeight = frame.y === 0 && frame.height === page.geometry.height;
-      if (next.left === 0 && next.right === 0 && fullHeight) {
+      if (none && fullHeight) {
         page.backdrop = withoutFrame(page.backdrop);
       } else {
-        page.backdrop = { ...page.backdrop, frame: { ...frame, x: next.left } };
+        const { marginPaper: _paper, ...rest } = page.backdrop;
+        page.backdrop = {
+          ...rest,
+          frame: { ...frame, x: next.left },
+          ...(nextPaper !== "plain" ? { marginPaper: nextPaper } : {}),
+        };
       }
       page.geometry = { ...page.geometry, width: next.left + width + next.right };
       const dx = next.left - old.left;

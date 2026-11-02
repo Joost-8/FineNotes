@@ -65,4 +65,23 @@ describe("PDF annotation layers", () => {
     page.strokes.push(stroke("s1", "highlighter"));
     expect([...annotationLayers(page)].map((layer) => layer.multiply)).toEqual([true]);
   });
+
+  it("puts a margin's paper in a bottom layer of its own, also on a page with no ink", () => {
+    const page = blankPage("p1", { width: 1300, height: 1400 });
+    page.backdrop = {
+      kind: "pdf",
+      path: "Slides.pdf",
+      page: 0,
+      frame: { x: 0, y: 0, width: 1000, height: 1400 },
+      marginPaper: "lined",
+    };
+    expect([...annotationLayers(page)].map((layer) => layer.paper === true)).toEqual([true]);
+    page.strokes.push(stroke("s1", "pen"));
+    const layers = [...annotationLayers(page)];
+    expect(layers.map((layer) => layer.paper === true)).toEqual([true, false]);
+    expect(layers[0].page.strokes).toEqual([]);
+    // A plain margin needs no layer.
+    page.backdrop = { ...page.backdrop, marginPaper: undefined };
+    expect([...annotationLayers(page)].map((layer) => layer.paper === true)).toEqual([false]);
+  });
 });

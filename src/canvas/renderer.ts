@@ -37,6 +37,7 @@
  * cross-device ink-drift fix the whole product rests on.
  */
 
+import { marginBackdrop, marginStrips } from "../model/page-margin";
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
 import { LIGHT_PAPER, type PaperTheme, deskFor, pageLook, shownColor } from "./backdrop";
 import { erasingLook } from "./erase-look";
@@ -390,8 +391,10 @@ export function paperColorOf(page: Page, theme: PaperTheme): string {
 
 /**
  * A page's paper through `painter`. On a page with a margin
- * (`model/page-margin.ts`) a paper page keeps its ruling in its frame and the
- * margin stays plain paper (a PDF is fitted into its frame by the painter).
+ * (`model/page-margin.ts`) a paper page keeps its ruling in its frame (a PDF
+ * is fitted into its frame by the painter) and each margin is drawn on its
+ * own paper, plain unless one was chosen. `marginsOnly`: just the margins,
+ * for an export's ink layer laid over the PDF page.
  */
 export function paintPagePaper(
   painter: BackdropPainter,
@@ -399,8 +402,16 @@ export function paintPagePaper(
   page: Page,
   weight: number,
   target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+  marginsOnly = false,
 ): void {
   const { backdrop, geometry } = page;
+  const margin = marginBackdrop(page);
+  if (margin) {
+    for (const strip of marginStrips(page)) {
+      paintInStrip(painter, ctx, margin, strip, weight, target);
+    }
+  }
+  if (marginsOnly) return;
   if (backdrop.kind !== "pdf" && backdrop.frame) {
     paintInStrip(painter, ctx, backdrop, backdrop.frame, weight, target);
   } else {
@@ -3334,6 +3345,16 @@ export function renderPageThumbnail(
       paper: options.paper ?? LIGHT_PAPER,
     });
     if (options.furniture) paintFurniture(ctx, page.geometry, options.furniture, look.night);
+  } else if (marginBackdrop(page)) {
+    // Over a PDF drawn elsewhere (export): the margin's paper is not the PDF's, so it comes along.
+    paintPagePaper(
+      painter,
+      ctx,
+      page,
+      Math.max(1, (0.5 * width) / cssWidth),
+      { deviceScale: k, paper: options.paper ?? LIGHT_PAPER },
+      true,
+    );
   }
   const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
   // A sticky note keeps its colour on dark pages, so its ink keeps its own too.

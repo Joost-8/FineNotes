@@ -59,8 +59,11 @@ export interface PdfExportSources {
 /** `page` as `sources` paint it: on plain paper when they ask for it. */
 function pageOf(page: Page, sources: PdfExportSources): Page {
   if (!sources.plainPaper) return page;
-  const backdrop = plainBackdrop(page.backdrop);
-  return backdrop === page.backdrop ? page : { ...page, backdrop };
+  // A margin's lines are a template too: on plain paper the margin is plain.
+  const { marginPaper: _margin, ...backdrop } = plainBackdrop(page.backdrop);
+  return backdrop.kind === page.backdrop.kind && !page.backdrop.marginPaper
+    ? page
+    : { ...page, backdrop };
 }
 
 /** `page` as `sources` export it: without its cover tapes when they ask. */
@@ -281,13 +284,22 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
 }
 
 /** Transparent ink/text/pictures only; source PDF content is composed separately. */
-async function renderAnnotationPng(page: Page, sources: PdfExportSources): Promise<Uint8Array> {
+async function renderAnnotationPng(
+  page: Page,
+  sources: PdfExportSources,
+  paper = false,
+): Promise<Uint8Array> {
   const scale = exportPixelScale(page.geometry.width, page.geometry.height);
   if (!scale) throw new Error("A page has no size");
   if (sources.images) await sources.images.prepare(page.images, scale);
   const canvas = createEl("canvas");
   try {
-    renderPageThumbnail(canvas, page, { paint: () => undefined }, page.geometry.width * scale, 1, {
+    // The margin's paper is a layer of its own (`annotationLayers`): a painter
+    // with no PDF draws it there, and every other layer has no paper at all.
+    const margins = new VaultBackdropRenderer(null);
+    margins.theme = sources.paper;
+    const painter = paper ? margins : { paint: () => undefined };
+    renderPageThumbnail(canvas, page, painter, page.geometry.width * scale, 1, {
       transparent: true,
       usePressure: sources.usePressure,
       highlighterAlpha: sources.highlighterAlpha,
@@ -317,6 +329,9 @@ async function* renderAnnotationLayers(
   for (const layer of annotationLayers(page)) {
     if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
     await new Promise((resolve) => window.setTimeout(resolve, 0));
-    yield { png: await renderAnnotationPng(layer.page, sources), multiply: layer.multiply };
+    yield {
+      png: await renderAnnotationPng(layer.page, sources, layer.paper === true),
+      multiply: layer.multiply,
+    };
   }
 }

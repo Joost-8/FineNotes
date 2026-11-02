@@ -64,6 +64,7 @@ import {
   type InkTask,
   type ShapeConnector,
   type PageGeometry,
+  type MarginPaper,
   type PdfFrame,
   type Recording,
   type PracticeInfo,
@@ -870,6 +871,12 @@ function normalizeFrame(raw: unknown): { frame?: PdfFrame } {
   return { frame: { x, y, width, height } };
 }
 
+/** A margin's paper, only a known one and only beside a frame. */
+function normalizeMarginPaper(raw: unknown, frame: unknown): { marginPaper?: MarginPaper } {
+  if (!normalizeFrame(frame).frame) return {};
+  return raw === "lined" || raw === "grid" || raw === "dotted" ? { marginPaper: raw } : {};
+}
+
 function normalizeBackdrop(raw: unknown): Backdrop {
   const b = isRecord(raw) ? raw : {};
   if (b.kind === "pdf") {
@@ -883,6 +890,7 @@ function normalizeBackdrop(raw: unknown): Backdrop {
         ...(b.annotations === false ? { annotations: false as const } : {}),
         ...(b.template === true ? { template: true as const } : {}),
         ...normalizeFrame(b.frame),
+        ...normalizeMarginPaper(b.marginPaper, b.frame),
       };
     }
     return { kind: "blank" };
@@ -897,6 +905,7 @@ function normalizeBackdrop(raw: unknown): Backdrop {
       ...(printed.length > 0 ? { printed } : {}),
       ...readPaperExtras(b),
       ...normalizeFrame(b.frame),
+      ...normalizeMarginPaper(b.marginPaper, b.frame),
     };
   }
   // Unknown ruling from a newer build: keep the page, lose only the paper.

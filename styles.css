@@ -3776,12 +3776,38 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   color: var(--text-faint);
 }
 
-.goodobsidian-margin-all {
+.goodobsidian-margin-papers {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+/* `button:not(.clickable-icon)` would pad and shade it: it carries clickable-icon. */
+.goodobsidian-margin-papers .goodobsidian-margin-paper {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: var(--font-ui-small);
+  justify-content: center;
+  height: auto;
+  padding: 3px;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.goodobsidian-margin-paper canvas {
+  display: block;
+  width: 56px;
+  border-radius: 5px;
+  box-shadow: 0 0 0 1px var(--gob-line);
+}
+
+.goodobsidian-margin-paper.is-active {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+.goodobsidian-margin-scope button {
+  font-size: var(--font-ui-smaller);
+  padding: 0 4px;
+  white-space: normal;
+  line-height: 1.15;
 }
 
 .goodobsidian-addpage-heading {

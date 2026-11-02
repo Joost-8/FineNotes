@@ -5,7 +5,10 @@ import {
   keepContent,
   marginFloor,
   marginFor,
+  marginBackdrop,
   marginOf,
+  marginPaperOf,
+  marginStrips,
   marginPercentOf,
   marginSideOf,
   unmarginedGeometry,
@@ -116,6 +119,64 @@ describe("SetPageMargin", () => {
     const width = page.geometry.width;
     new SetPageMargin([{ page, margin: { left: 0, right: 100 } }]).apply(doc);
     expect(page.backdrop).toMatchObject({ kind: "ruled-wide", frame: { x: 0, width } });
+  });
+});
+
+describe("margin paper", () => {
+  it("keeps the paper with the margin, draws it in each margin, and drops it with the margin", () => {
+    const { doc, page } = pdfDoc();
+    const history = new History();
+    history.push(
+      doc,
+      new SetPageMargin([{ page, margin: { left: 200, right: 300 }, paper: "grid" }]),
+    );
+    expect(marginPaperOf(page)).toBe("grid");
+    expect(marginBackdrop(page)).toEqual({ kind: "squared" });
+    expect(marginStrips(page)).toEqual([
+      { x: 0, y: 0, width: 200, height: 1400 },
+      { x: 1200, y: 0, width: 300, height: 1400 },
+    ]);
+    // Absent paper keeps the one there; a new width keeps the grid.
+    new SetPageMargin([{ page, margin: { left: 0, right: 300 } }]).apply(doc);
+    expect(marginPaperOf(page)).toBe("grid");
+    new SetPageMargin([{ page, margin: { left: 0, right: 0 } }]).apply(doc);
+    expect(page.backdrop.marginPaper).toBeUndefined();
+    expect(marginBackdrop(page)).toBeNull();
+  });
+
+  it("changes the paper alone as a step, and plain stores nothing", () => {
+    const { doc, page } = pdfDoc();
+    new SetPageMargin([{ page, margin: { left: 0, right: 300 }, paper: "lined" }]).apply(doc);
+    const plain = new SetPageMargin([{ page, margin: { left: 0, right: 300 }, paper: "plain" }]);
+    plain.apply(doc);
+    expect(plain.changedAny).toBe(true);
+    expect(page.backdrop.marginPaper).toBeUndefined();
+    plain.invert(doc);
+    expect(page.backdrop.marginPaper).toBe("lined");
+  });
+
+  it("takes a paper page's colour into its margin", () => {
+    const doc = emptyDocument();
+    const page = doc.pages[0];
+    page.backdrop = { kind: "ruled-wide", paperColor: "#fdf3d8" };
+    new SetPageMargin([{ page, margin: { left: 0, right: 100 }, paper: "dotted" }]).apply(doc);
+    expect(marginBackdrop(page)).toEqual({ kind: "dotted", paperColor: "#fdf3d8" });
+  });
+
+  it("round-trips, and is dropped without a frame or when unknown", () => {
+    const { doc, page } = pdfDoc();
+    new SetPageMargin([{ page, margin: { left: 0, right: 300 }, paper: "lined" }]).apply(doc);
+    expect(decodeDocument(encodeDocument(doc)).pages[0].backdrop.marginPaper).toBe("lined");
+    page.backdrop = { ...page.backdrop, marginPaper: "wavy" as never };
+    expect(decodeDocument(encodeDocument(doc)).pages[0].backdrop.marginPaper).toBeUndefined();
+    page.backdrop = { kind: "pdf", path: "Slides.pdf", page: 0, marginPaper: "grid" };
+    expect(decodeDocument(encodeDocument(doc)).pages[0].backdrop.marginPaper).toBeUndefined();
+  });
+
+  it("is not carried to a new page", () => {
+    const { doc, page } = pdfDoc();
+    new SetPageMargin([{ page, margin: { left: 0, right: 300 }, paper: "grid" }]).apply(doc);
+    expect(withoutFrame(page.backdrop)).toEqual({ kind: "pdf", path: "Slides.pdf", page: 0 });
   });
 });
 

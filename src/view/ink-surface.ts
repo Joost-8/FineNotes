@@ -367,6 +367,7 @@ import {
   type TableElement,
   type TextBoxElement,
   type Tool,
+  pdfFrameOf,
   strokeBounds,
   strokeCount,
   type PageComment,
@@ -6684,16 +6685,22 @@ export class InkSurface {
     this.doc.pages.forEach((page, index) => {
       const backdrop = page.backdrop;
       if (backdrop.kind !== "pdf" || backdrop.path !== path || backdrop.page !== pdfPage) return;
-      if (
-        area &&
-        (area.geometry.width !== page.geometry.width ||
-          area.geometry.height !== page.geometry.height)
-      )
+      // A page with a margin draws its PDF as the page it was before the
+      // margin (`backdrop-renderer.ts`): it is the frame's size that matches.
+      const frame = pdfFrameOf(backdrop, page.geometry);
+      if (area && (area.geometry.width !== frame.width || area.geometry.height !== frame.height))
         return;
       // Only the PDF changed: painted again in place, a few tiles a frame,
       // and no ink reaches further for it.
-      if (area?.region) renderer.invalidateBackdrop(index, area.region);
-      else renderer.refreshPage(index);
+      if (area?.region) {
+        const r = area.region;
+        renderer.invalidateBackdrop(index, {
+          minX: r.minX + frame.x,
+          minY: r.minY + frame.y,
+          maxX: r.maxX + frame.x,
+          maxY: r.maxY + frame.y,
+        });
+      } else renderer.refreshPage(index);
       shown = true;
     });
     if (shown) this.requestFrame();

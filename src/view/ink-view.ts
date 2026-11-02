@@ -188,7 +188,11 @@ import {
   marginFor,
   marginOf,
   frameWidth,
+  marginPaperOf,
+  marginRuling,
   marginPercentOf,
+  type MarginPaperChoice,
+  type MarginScope,
   marginSideOf,
   unmarginedGeometry,
   withoutFrame,
@@ -331,7 +335,7 @@ import { InkTextModal } from "./ink-text-modal";
 import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
-import { type MarginChoice, MarginPopover } from "./margin-popover";
+import { MARGIN_SWATCH_CSS_WIDTH, type MarginChoice, MarginPopover } from "./margin-popover";
 import { CoverPopover } from "./cover-picker";
 import { LIGHT_PAPER, type PaperTheme, paperTheme } from "../canvas/backdrop";
 import { lassoFilterOf, lassoModeOf } from "../canvas/lasso";
@@ -5187,15 +5191,20 @@ export class InkView extends TextFileView {
     const pages = doc.pages.filter(
       (p) => p.backdrop.kind === "pdf" || !isCoverRuling(p.backdrop.kind),
     );
-    const before = new Map(pages.map((p) => [p, marginOf(p)] as const));
+    const pdfPages = pages.filter((p) => p.backdrop.kind === "pdf");
+    const reach = (scope: MarginScope): Page[] =>
+      scope === "all" ? pages : scope === "pdf" ? pdfPages : [page];
+    const before = new Map(
+      pages.map((p) => [p, { margin: marginOf(p), paper: marginPaperOf(p) }] as const),
+    );
     const same = (a: PageMargin, b: PageMargin): boolean =>
       a.left === b.left && a.right === b.right;
     const here = marginOf(page);
-    const floor = (all: boolean): { left: boolean; right: boolean; percent: number } => {
+    const floor = (scope: MarginScope): { left: boolean; right: boolean; percent: number } => {
       let left = false;
       let right = false;
       let percent = 0;
-      for (const p of all ? pages : [page]) {
+      for (const p of reach(scope)) {
         const f = marginFloor(p);
         const width = frameWidth(p);
         left ||= f.left > 0;
@@ -5207,22 +5216,29 @@ export class InkView extends TextFileView {
     };
     let step: SetPageMargin | null = null;
     const apply = (choice: MarginChoice): void => {
-      const scope = new Set(choice.all ? pages : [page]);
-      const targets = pages.map((p) => ({
-        page: p,
-        margin: scope.has(p)
-          ? marginFor(p, choice.side, choice.percent)
-          : (before.get(p) ?? marginOf(p)),
-      }));
-      const unchanged = targets.every(({ page: p, margin }) =>
-        same(margin, before.get(p) ?? margin),
-      );
+      const scope = new Set(reach(choice.scope));
+      const targets = pages.map((p) => {
+        const was = before.get(p) ?? { margin: marginOf(p), paper: marginPaperOf(p) };
+        return scope.has(p)
+          ? { page: p, margin: marginFor(p, choice.side, choice.percent), paper: choice.paper }
+          : { page: p, margin: was.margin, paper: was.paper };
+      });
+      const unchanged = targets.every(({ page: p, margin, paper }) => {
+        const was = before.get(p);
+        return (
+          !was || (same(margin, was.margin) && (paper === was.paper || choice.side === "none"))
+        );
+      });
       const next = unchanged ? null : new SetPageMargin(targets);
       const took = surface.replaceCommand(step, next);
       if (!next && step && !took) {
         // Something else was done meanwhile: put the margins back as a step of its own.
         const back = new SetPageMargin(
-          pages.map((p) => ({ page: p, margin: before.get(p) ?? marginOf(p) })),
+          pages.map((p) => ({
+            page: p,
+            margin: before.get(p)?.margin ?? marginOf(p),
+            paper: before.get(p)?.paper ?? marginPaperOf(p),
+          })),
         );
         surface.applyCommand(back);
         step = back;
@@ -5246,21 +5262,27 @@ export class InkView extends TextFileView {
       pending = choice;
       if (!frame) frame = window.requestAnimationFrame(flush);
     };
+    // "PDF pages" only where it differs from both other choices.
+    const scopes: MarginScope[] = [
+      "page",
+      ...(pdfPages.length > 1 && pdfPages.length < pages.length ? (["pdf"] as const) : []),
+      ...(pages.length > 1 ? (["all"] as const) : []),
+    ];
     this.marginPopover = new MarginPopover(anchor, {
       initial: {
         side: marginSideOf(here),
         percent: marginPercentOf(page) || MARGIN_DEFAULT_PERCENT,
-        // A slide deck wants one margin: All pages starts on for a PDF whose pages all match.
-        all:
-          pages.length > 1 &&
-          page.backdrop.kind === "pdf" &&
-          pages.every(
-            (p) =>
-              marginSideOf(marginOf(p)) === marginSideOf(here) &&
-              marginPercentOf(p) === marginPercentOf(page),
-          ),
+        paper: marginPaperOf(page),
+        // Slides want one margin and the handwritten pages between them none.
+        scope:
+          page.backdrop.kind === "pdf" && pdfPages.length > 1
+            ? scopes.includes("pdf")
+              ? "pdf"
+              : "all"
+            : "page",
       },
-      canAll: pages.length > 1,
+      scopes,
+      paintPaper: (canvas, paper) => this.paintMarginSwatch(canvas, paper),
       floor,
       onChange: change,
       onClose: () => {
@@ -5292,7 +5314,10 @@ export class InkView extends TextFileView {
         if (!this.surface || this.isProtected()) return;
         // The same size keeps the page's margin: the new paper goes in its frame.
         const frame = geometry ? undefined : page.backdrop.frame;
-        const next = frame ? { ...withoutFrame(backdrop), frame } : withoutFrame(backdrop);
+        const marginPaper = page.backdrop.marginPaper;
+        const next = frame
+          ? { ...withoutFrame(backdrop), frame, ...(marginPaper ? { marginPaper } : {}) }
+          : withoutFrame(backdrop);
         this.surface.applyCommand(new SetPageTemplate(page, next, geometry ?? undefined));
         this.rememberTemplate(backdrop);
         this.requestSave();
@@ -5370,6 +5395,12 @@ export class InkView extends TextFileView {
       usePressure: false,
       highlighterAlpha: this.settings.highlighterAlpha,
     });
+  }
+
+  /** A Margin popover swatch: a patch of the margin paper, drawn as the page draws it. */
+  private paintMarginSwatch(canvas: HTMLCanvasElement, paper: MarginPaperChoice): void {
+    const kind = marginRuling(paper) ?? "blank";
+    this.paintPaperThumbnail(canvas, { kind }, { width: 150, height: 90 }, MARGIN_SWATCH_CSS_WIDTH);
   }
 
   /**
