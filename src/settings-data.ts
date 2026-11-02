@@ -487,7 +487,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   speechLanguage: "auto",
   notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
-  showNewNotebookInExplorer: false,
+  showNewNotebookInExplorer: true,
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,

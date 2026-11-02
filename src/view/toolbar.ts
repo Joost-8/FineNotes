@@ -187,7 +187,7 @@ import {
   sideLift,
   uprightButtonSize,
 } from "./bar-dock-model";
-import { hiddenEnds, scrollToShow } from "./swatch-drag-model";
+import { hiddenEnds, pageScroll, scrollToShow } from "./swatch-drag-model";
 import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
@@ -851,6 +851,19 @@ const PILL_MORPH_MS = 300;
 
 /** How wide the colour row's faded ends are, CSS px (styles.css); a chosen colour is kept clear of them. */
 const COLOR_ROW_FADE_PX = 14;
+
+/** A mouse wheel turned over `row`, a sideways row, scrolls it sideways. */
+function wheelScrollsSideways(row: HTMLElement): void {
+  row.addEventListener(
+    "wheel",
+    (event) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      row.scrollLeft += event.deltaY;
+      event.preventDefault();
+    },
+    { passive: false },
+  );
+}
 
 /** How many colours an upright pill shows; the rest are behind its ⌄. */
 const UPRIGHT_COLORS = 3;
@@ -2282,12 +2295,14 @@ export class Toolbar {
    * view, and fade the ends that hide more, as the colour row does.
    */
   private fitPenRow(row: HTMLElement, upright: boolean): void {
+    const arrows = this.rowArrows(row, upright);
     const fade = (): void => {
       const ends = upright
         ? hiddenEnds(row.scrollTop, row.clientHeight, row.scrollHeight)
         : hiddenEnds(row.scrollLeft, row.clientWidth, row.scrollWidth);
       row.toggleClass("has-more-start", ends.start);
       row.toggleClass("has-more-end", ends.end);
+      arrows(ends);
     };
     const chosen = this.penTypeButtons.get(this.activePenType().id);
     if (upright) {
@@ -2315,10 +2330,81 @@ export class Toolbar {
     }
     this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
     fade();
+    // The pill may still settle round it: place the arrows again once it has.
+    window.requestAnimationFrame(fade);
     row.addEventListener("scroll", () => {
       this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
       fade();
     });
+    if (!upright) wheelScrollsSideways(row);
+  }
+
+  /**
+   * An arrow on each end of `row` that hides more, for a mouse, which cannot
+   * swipe it (shown on a computer only, styles.css): a click slides the row
+   * on by what shows. They sit beside the row rather than in it, so its
+   * faded ends do not fade them too. Returns what shows and places them for
+   * the ends that hide more.
+   */
+  private rowArrows(
+    row: HTMLElement,
+    upright: boolean,
+  ): (ends: { start: boolean; end: boolean }) => void {
+    const make = (dir: -1 | 1): HTMLButtonElement => {
+      const button = createEl("button", {
+        cls: `goodobsidian-row-arrow clickable-icon is-hidden ${dir < 0 ? "is-start" : "is-end"}`,
+      });
+      const icon = upright
+        ? dir < 0
+          ? "chevron-up"
+          : "chevron-down"
+        : dir < 0
+          ? "chevron-left"
+          : "chevron-right";
+      iconOrText(button, icon, dir < 0 ? "‹" : "›");
+      button.setAttribute("aria-label", dir < 0 ? "Show earlier" : "Show more");
+      button.addEventListener("click", () => {
+        if (upright) {
+          const top = pageScroll(
+            row.scrollTop,
+            row.clientHeight,
+            row.scrollHeight,
+            dir,
+            COLOR_ROW_FADE_PX,
+          );
+          row.scrollTo({ top, behavior: "smooth" });
+        } else {
+          const left = pageScroll(
+            row.scrollLeft,
+            row.clientWidth,
+            row.scrollWidth,
+            dir,
+            COLOR_ROW_FADE_PX,
+          );
+          row.scrollTo({ left, behavior: "smooth" });
+        }
+      });
+      return button;
+    };
+    const start = make(-1);
+    const end = make(1);
+    row.after(start, end);
+    return (ends) => {
+      start.toggleClass("is-hidden", !ends.start);
+      end.toggleClass("is-hidden", !ends.end);
+      // The row's own box in the pill, which both share as offset parent.
+      const x = row.offsetLeft;
+      const y = row.offsetTop;
+      const w = row.offsetWidth;
+      const h = row.offsetHeight;
+      if (upright) {
+        start.setCssStyles({ left: `${x + w / 2}px`, top: `${y}px` });
+        end.setCssStyles({ left: `${x + w / 2}px`, top: `${y + h}px` });
+      } else {
+        start.setCssStyles({ left: `${x}px`, top: `${y + h / 2}px` });
+        end.setCssStyles({ left: `${x + w}px`, top: `${y + h / 2}px` });
+      }
+    };
   }
 
   /**
@@ -2457,10 +2543,12 @@ export class Toolbar {
    * ends that hide more. A wheel scrolls it sideways, for a mouse.
    */
   private fitColorRow(row: HTMLElement): void {
+    const arrows = this.rowArrows(row, false);
     const fade = (): void => {
       const ends = hiddenEnds(row.scrollLeft, row.clientWidth, row.scrollWidth);
       row.toggleClass("has-more-start", ends.start);
       row.toggleClass("has-more-end", ends.end);
+      arrows(ends);
     };
     row.scrollLeft = this.revealNewColor ? row.scrollWidth : this.colorRowScroll;
     this.revealNewColor = false;
@@ -2482,6 +2570,7 @@ export class Toolbar {
       fade();
     };
     showChosen();
+    window.requestAnimationFrame(fade);
     // The row gives way when the pill has too little room, which can settle
     // after it was built (the pill is placed afterwards): look again then.
     this.colorRowWatch?.disconnect();
@@ -2499,15 +2588,7 @@ export class Toolbar {
       this.colorRowScroll = row.scrollLeft;
       fade();
     });
-    row.addEventListener(
-      "wheel",
-      (event) => {
-        if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-        row.scrollLeft += event.deltaY;
-        event.preventDefault();
-      },
-      { passive: false },
-    );
+    wheelScrollsSideways(row);
   }
 
   /** Remember the ink in hand (colour, row and width) as the active pen type's own. */
