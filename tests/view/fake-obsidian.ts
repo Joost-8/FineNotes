@@ -273,6 +273,13 @@ export function requireApiVersion(_version: string): boolean {
 
 export function setIcon(): void {}
 
+/** Every tooltip shown with `displayTooltip`, as its text. */
+export const tooltips: string[] = [];
+
+export function displayTooltip(_el: unknown, content: string): void {
+  tooltips.push(content);
+}
+
 /** No icon set under Node: callers fall back as for an unknown icon. */
 export function getIcon(): null {
   return null;

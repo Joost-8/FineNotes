@@ -201,6 +201,27 @@ extracted from the matching section of this file by `release.yml`.
   relative to itself when it opens, wherever its folder now is, and saves
   the corrected paths. Names with accents (ü, é) are saved in one spelling,
   so they are found on every system.
+  A notebook with a page margin opens read-only in FineNotes 2.6 and earlier,
+  which would re-fit its PDF away from the ink. Update FineNotes on every
+  device first.
+
+### Added
+
+- **Margin.** ⋯ → Margin gives a page room to write beside its PDF or paper:
+  on the left, the right or both, 10 to 60 % of the page wide, on plain,
+  lined, grid or dotted paper, for this page, the PDF pages or all pages (PDF
+  pages by default in a notebook of slides and handwritten pages). The PDF or
+  paper keeps its size and place, and a margin on the left moves everything on
+  the page with it, so ink stays on the words it was written over. The page
+  changes as you choose and the slide stays on screen while the width is
+  dragged; one undo takes it all back. The slider never makes a margin
+  narrower than what is written in it; No margin asks first and deletes what
+  lies wholly in it (one undo brings it back). It exports with the page to PDF
+  and pictures; in a notebook with margins, a button in the export dialog
+  steps through all margins, only those with ink, and none.
+- **Hold an export button to see what it does.** A long press on any button
+  in the export dialog shows its description, since a finger cannot hover.
+  Built on Faris's pull request #92.
 
 ## [2.6.0] - 2026-10-30
 

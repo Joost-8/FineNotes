@@ -37,6 +37,7 @@
  * cross-device ink-drift fix the whole product rests on.
  */
 
+import { marginBackdrop, marginStrips } from "../model/page-margin";
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
 import { LIGHT_PAPER, type PaperTheme, deskFor, pageLook, shownColor } from "./backdrop";
 import { erasingLook } from "./erase-look";
@@ -386,6 +387,67 @@ const EMPTY_IDS: ReadonlySet<string> = new Set();
  */
 export function paperColorOf(page: Page, theme: PaperTheme): string {
   return pageLook(page.backdrop, theme).paper;
+}
+
+/**
+ * A page's paper through `painter`. On a page with a margin
+ * (`model/page-margin.ts`) a paper page keeps its ruling in its frame (a PDF
+ * is fitted into its frame by the painter) and each margin is drawn on its
+ * own paper, plain unless one was chosen. `marginsOnly`: just the margins,
+ * for an export's ink layer laid over the PDF page.
+ */
+export function paintPagePaper(
+  painter: BackdropPainter,
+  ctx: CanvasRenderingContext2D,
+  page: Page,
+  weight: number,
+  target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+  marginsOnly = false,
+): void {
+  const { backdrop, geometry } = page;
+  const margin = marginBackdrop(page);
+  if (margin) {
+    for (const strip of marginStrips(page)) {
+      paintInStrip(painter, ctx, margin, strip, weight, target);
+    }
+  }
+  if (marginsOnly) return;
+  if (backdrop.kind !== "pdf" && backdrop.frame) {
+    paintInStrip(painter, ctx, backdrop, backdrop.frame, weight, target);
+  } else {
+    painter.paint(ctx, backdrop, geometry, weight, target);
+  }
+}
+
+/** One paper drawn as a page of its own, moved into `strip` and clipped to it. */
+function paintInStrip(
+  painter: BackdropPainter,
+  ctx: CanvasRenderingContext2D,
+  backdrop: Backdrop,
+  strip: { x: number; y: number; width: number; height: number },
+  weight: number,
+  target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(strip.x, strip.y, strip.width, strip.height);
+  ctx.clip();
+  ctx.translate(strip.x, strip.y);
+  const region = target.region;
+  painter.paint(ctx, backdrop, { width: strip.width, height: strip.height }, weight, {
+    ...target,
+    ...(region
+      ? {
+          region: {
+            minX: region.minX - strip.x,
+            minY: region.minY - strip.y,
+            maxX: region.maxX - strip.x,
+            maxY: region.maxY - strip.y,
+          },
+        }
+      : {}),
+  });
+  ctx.restore();
 }
 
 /**
@@ -2253,11 +2315,13 @@ export class Renderer {
     ctx.fillRect(0, 0, box.width, box.height);
     // A 1 page-px rule vanishes at preview scale; keep rules about half a
     // device pixel wide there, as the sidebar thumbnails do.
-    this.painter?.paint(ctx, page.backdrop, page.geometry, Math.max(1, 0.5 / level), {
-      deviceScale: level,
-      paper: this.paper,
-      ...(painterRegion && Number.isFinite(region.minX) ? { region } : {}),
-    });
+    if (this.painter) {
+      paintPagePaper(this.painter, ctx, page, Math.max(1, 0.5 / level), {
+        deviceScale: level,
+        paper: this.paper,
+        ...(painterRegion && Number.isFinite(region.minX) ? { region } : {}),
+      });
+    }
     if (this.doc) {
       const texts = furnitureText(this.doc, box.index, this.notebookTitle);
       paintFurniture(ctx, page.geometry, texts, pageLook(page.backdrop, this.paper).night);
@@ -3276,11 +3340,21 @@ export function renderPageThumbnail(
   // A 1 page-px rule is about a tenth of a CSS pixel at thumbnail size and
   // would vanish; draw rules roughly half a CSS pixel wide instead.
   if (!options.transparent) {
-    painter.paint(ctx, page.backdrop, page.geometry, Math.max(1, (0.5 * width) / cssWidth), {
+    paintPagePaper(painter, ctx, page, Math.max(1, (0.5 * width) / cssWidth), {
       deviceScale: k,
       paper: options.paper ?? LIGHT_PAPER,
     });
     if (options.furniture) paintFurniture(ctx, page.geometry, options.furniture, look.night);
+  } else if (marginBackdrop(page)) {
+    // Over a PDF drawn elsewhere (export): the margin's paper is not the PDF's, so it comes along.
+    paintPagePaper(
+      painter,
+      ctx,
+      page,
+      Math.max(1, (0.5 * width) / cssWidth),
+      { deviceScale: k, paper: options.paper ?? LIGHT_PAPER },
+      true,
+    );
   }
   const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
   // A sticky note keeps its colour on dark pages, so its ink keeps its own too.

@@ -180,6 +180,25 @@ import type { GraphElement } from "../model/document";
 import type { GraphSpec } from "../model/graph";
 import { type Stroke } from "../model/document";
 import { AddStrokeToPage } from "../model/page-commands";
+import {
+  MARGIN_DEFAULT_PERCENT,
+  type PageMargin,
+  SetPageMargin,
+  contentCutBy,
+  marginFloor,
+  marginFor,
+  marginOf,
+  frameWidth,
+  hasMargin,
+  marginPaperOf,
+  marginRuling,
+  marginPercentOf,
+  type MarginPaperChoice,
+  type MarginScope,
+  marginSideOf,
+  unmarginedGeometry,
+  withoutFrame,
+} from "../model/page-margin";
 import { AddTable } from "../model/table-commands";
 import { setCellText } from "../model/table";
 import { nextTableId } from "../model/table";
@@ -301,10 +320,17 @@ import {
   type PdfExportSources,
   exportPagesToImages,
   exportPagesToPdf,
+  keepsMargins,
   paintPagePreview,
 } from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
-import { exportFormatOf, exportTarget, mimeTypeOf } from "../export/export-choice";
+import {
+  type ExportMargins,
+  exportFormatOf,
+  exportMarginsOf,
+  exportTarget,
+  mimeTypeOf,
+} from "../export/export-choice";
 import { normalizeFolder, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
@@ -318,6 +344,7 @@ import { InkTextModal } from "./ink-text-modal";
 import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
+import { MARGIN_SWATCH_CSS_WIDTH, type MarginChoice, MarginPopover } from "./margin-popover";
 import { CoverPopover } from "./cover-picker";
 import { LIGHT_PAPER, type PaperTheme, paperTheme } from "../canvas/backdrop";
 import { lassoFilterOf, lassoModeOf } from "../canvas/lasso";
@@ -522,6 +549,7 @@ export class InkView extends TextFileView {
   private shortcuts: ShortcutsModal | null = null;
   private addPagePopover: { popover: AddPagePopover; anchor: HTMLElement } | null = null;
   private coverPopover: { popover: CoverPopover; anchor: HTMLElement } | null = null;
+  private marginPopover: MarginPopover | null = null;
   private aiMenu: AiMenuPopover | null = null;
   private calculator: CalculatorPopover | null = null;
   /** The graph popped out of the calculator, floating over the notebook. */
@@ -1064,6 +1092,8 @@ export class InkView extends TextFileView {
     this.addPagePopover = null;
     this.coverPopover?.popover.close();
     this.coverPopover = null;
+    this.marginPopover?.close();
+    this.marginPopover = null;
     this.imageMenu?.popover.close();
     this.imageMenu = null;
     this.aiMenu?.close();
@@ -3938,13 +3968,20 @@ export class InkView extends TextFileView {
       ...preview,
       plainPaper: this.settings.exportPlainPaper === true,
       withoutTapes: this.settings.exportWithoutTapes === true,
+      margins: exportMarginsOf(this.settings.exportMargins),
     });
     const taped = doc.pages.some((page) => page.strokes.some(isTape));
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",
       pageCount: total,
       currentPage: Math.max(0, Math.min(total - 1, this.surface?.currentPage ?? 0)),
-      pageSize: (i) => doc.pages[i]?.geometry ?? { width: 0, height: 0 },
+      // As the page exports: without its margins when they are left out.
+      pageSize: (i) => {
+        const page = doc.pages[i];
+        if (!page) return { width: 0, height: 0 };
+        const margins = exportMarginsOf(this.settings.exportMargins);
+        return keepsMargins(page, margins) ? page.geometry : unmarginedGeometry(page);
+      },
       folder: exports ?? null,
       chosen,
       format: exportFormatOf(this.settings.exportFormat),
@@ -3965,6 +4002,15 @@ export class InkView extends TextFileView {
         void this.plugin.saveSettings();
       },
       withoutTapes: this.settings.exportWithoutTapes === true,
+      ...(doc.pages.some(hasMargin)
+        ? {
+            margins: exportMarginsOf(this.settings.exportMargins),
+            setMargins: (margins: ExportMargins) => {
+              this.settings.exportMargins = margins;
+              void this.plugin.saveSettings();
+            },
+          }
+        : {}),
       ...(taped
         ? {
             setWithoutTapes: (without: boolean) => {
@@ -5020,6 +5066,11 @@ export class InkView extends TextFileView {
         board: this.isBoard,
         fixed: this.isPractice,
         clearable: page.strokes.length > 0,
+        ...(page.backdrop.kind !== "pdf" && isCoverRuling(page.backdrop.kind)
+          ? {}
+          : {
+              margin: { side: marginSideOf(marginOf(page)), percent: marginPercentOf(page) },
+            }),
         darkPages: surface.paperTheme.night === true,
         darkPdf: this.settings.invertPdfPages !== false,
         desk: {
@@ -5039,6 +5090,7 @@ export class InkView extends TextFileView {
         duplicate: (at) => act("duplicate", at),
         // A cover opens its picker on ⋯ itself: the row it was chosen from is gone.
         saveAsTemplate: (at) => void this.savePageAsTemplate(at),
+        openMargin: (at) => this.openMarginPopover(at, anchor),
         changeTemplate: (at) => {
           const target = doc.pages[at];
           const cover =
@@ -5127,12 +5179,13 @@ export class InkView extends TextFileView {
     if (!page) return;
     // A cover is not paper: next to one, offer the notebook's paper.
     const paper = paperPageFor(this.doc.pages, at);
-    // A page of My templates is repeated in its own shape.
+    // A page of My templates is repeated in its own shape. Beside a page with
+    // a margin, a new page takes the page's first size, not the margin.
     const shapeOf = (backdrop: Backdrop): PageGeometry =>
-      backdrop.kind === "pdf" && paper ? paper.geometry : page.geometry;
+      backdrop.kind === "pdf" && paper ? unmarginedGeometry(paper) : unmarginedGeometry(page);
     const popover = new AddPagePopover(anchor, {
-      current: paper?.backdrop ?? { kind: "blank" },
-      geometry: page.geometry,
+      current: withoutFrame(paper?.backdrop ?? { kind: "blank" }),
+      geometry: unmarginedGeometry(page),
       recent: this.loadRecentTemplates(),
       templateNames: this.templateNames(),
       position,
@@ -5142,6 +5195,139 @@ export class InkView extends TextFileView {
       onMore: (at) => this.openTemplatePicker("add", ref, at),
     });
     this.addPagePopover = { popover, anchor };
+  }
+
+  /**
+   * The Margin popover for page `at`, from the ⋯ panel, on ⋯ itself. Every
+   * choice reaches the page at once, and the whole visit is one undo step:
+   * each change takes back the last one and makes the new one in its place.
+   */
+  private openMarginPopover(at: number, anchor: HTMLElement): void {
+    if (this.marginPopover?.isOpen) {
+      this.marginPopover.close();
+      return;
+    }
+    const surface = this.surface;
+    if (!surface || this.isProtected() || this.refusePractice()) return;
+    const doc = surface.document;
+    const page = doc.pages[at];
+    if (!page) return;
+    // A cover is not paper: it never gets a margin, not even with All pages.
+    const pages = doc.pages.filter(
+      (p) => p.backdrop.kind === "pdf" || !isCoverRuling(p.backdrop.kind),
+    );
+    const pdfPages = pages.filter((p) => p.backdrop.kind === "pdf");
+    const reach = (scope: MarginScope): Page[] =>
+      scope === "all" ? pages : scope === "pdf" ? pdfPages : [page];
+    const before = new Map(
+      pages.map((p) => [p, { margin: marginOf(p), paper: marginPaperOf(p) }] as const),
+    );
+    const same = (a: PageMargin, b: PageMargin): boolean =>
+      a.left === b.left && a.right === b.right;
+    const here = marginOf(page);
+    const floors = new Map(pages.map((p) => [p, marginFloor(p)] as const));
+    const floor = (scope: MarginScope): { left: boolean; right: boolean; percent: number } => {
+      let left = false;
+      let right = false;
+      let percent = 0;
+      for (const p of reach(scope)) {
+        // As it was when the popover opened: a deletion earlier in the visit
+        // is taken back by the next choice, and its ink with it.
+        const f = floors.get(p) ?? marginFloor(p);
+        const width = frameWidth(p);
+        left ||= f.left > 0;
+        right ||= f.right > 0;
+        if (width > 0)
+          percent = Math.max(percent, Math.ceil((Math.max(f.left, f.right) / width) * 100));
+      }
+      return { left, right, percent };
+    };
+    let step: SetPageMargin | null = null;
+    const apply = (choice: MarginChoice): void => {
+      const scope = new Set(reach(choice.scope));
+      const targets = pages.map((p) => {
+        const was = before.get(p) ?? { margin: marginOf(p), paper: marginPaperOf(p) };
+        return scope.has(p)
+          ? { page: p, margin: marginFor(p, choice.side, choice.percent), paper: choice.paper }
+          : { page: p, margin: was.margin, paper: was.paper };
+      });
+      const unchanged = targets.every(({ page: p, margin, paper }) => {
+        const was = before.get(p);
+        return (
+          !was || (same(margin, was.margin) && (paper === was.paper || choice.side === "none"))
+        );
+      });
+      const next = unchanged ? null : new SetPageMargin(targets, choice.drop === true);
+      const took = surface.replaceCommand(step, next);
+      if (!next && step && !took) {
+        // Something else was done meanwhile: put the margins back as a step of its own.
+        const back = new SetPageMargin(
+          pages.map((p) => ({
+            page: p,
+            margin: before.get(p)?.margin ?? marginOf(p),
+            paper: before.get(p)?.paper ?? marginPaperOf(p),
+          })),
+        );
+        surface.applyCommand(back);
+        step = back;
+      } else {
+        step = next;
+      }
+      this.requestSave();
+    };
+    // A slider sends many inputs a frame; each one relays out every page. Only
+    // the newest choice of a frame is applied (it felt laggy, Joost 2026-11-02).
+    let pending: MarginChoice | null = null;
+    let frame = 0;
+    const flush = (): void => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = 0;
+      const next = pending;
+      pending = null;
+      if (next) apply(next);
+    };
+    const change = (choice: MarginChoice): void => {
+      pending = choice;
+      if (!frame) frame = window.requestAnimationFrame(flush);
+    };
+    // "PDF pages" only where it differs from both other choices.
+    const scopes: MarginScope[] = [
+      "page",
+      ...(pdfPages.length > 1 && pdfPages.length < pages.length ? (["pdf"] as const) : []),
+      ...(pages.length > 1 ? (["all"] as const) : []),
+    ];
+    this.marginPopover = new MarginPopover(anchor, {
+      initial: {
+        side: marginSideOf(here),
+        percent: marginPercentOf(page) || MARGIN_DEFAULT_PERCENT,
+        paper: marginPaperOf(page),
+        // Slides want one margin and the handwritten pages between them none.
+        scope:
+          page.backdrop.kind === "pdf" && pdfPages.length > 1
+            ? scopes.includes("pdf")
+              ? "pdf"
+              : "all"
+            : "page",
+      },
+      scopes,
+      paintPaper: (canvas, paper) => this.paintMarginSwatch(canvas, paper),
+      floor,
+      cut: (scope) => {
+        let items = 0;
+        let pagesCut = 0;
+        for (const p of reach(scope)) {
+          const n = contentCutBy(p, { left: 0, right: 0 });
+          items += n;
+          if (n > 0) pagesCut++;
+        }
+        return { items, pages: pagesCut };
+      },
+      onChange: change,
+      onClose: () => {
+        flush();
+        this.marginPopover = null;
+      },
+    });
   }
 
   /** The full template picker, to add a page or to change page `ref`'s template. */
@@ -5154,17 +5340,23 @@ export class InkView extends TextFileView {
     const reference = mode === "add" ? paperTemplateFor(this.doc.pages, ref) : page.backdrop;
     const picker = new TemplatePickerModal(this.app, {
       mode,
-      initial: reference.kind === "pdf" ? { kind: "blank" } : reference,
-      geometry: page.geometry,
+      initial: reference.kind === "pdf" ? { kind: "blank" } : withoutFrame(reference),
+      geometry: unmarginedGeometry(page),
       papers: this.paperLibrary(),
       onApplyPaper: (entry) => void this.applyPaper(entry, mode, position, ref),
       onApply: ({ backdrop, geometry }) => {
         if (mode === "add") {
-          this.addTemplatePage(backdrop, geometry ?? page.geometry, position, ref);
+          this.addTemplatePage(backdrop, geometry ?? unmarginedGeometry(page), position, ref);
           return;
         }
         if (!this.surface || this.isProtected()) return;
-        this.surface.applyCommand(new SetPageTemplate(page, backdrop, geometry ?? undefined));
+        // The same size keeps the page's margin: the new paper goes in its frame.
+        const frame = geometry ? undefined : page.backdrop.frame;
+        const marginPaper = page.backdrop.marginPaper;
+        const next = frame
+          ? { ...withoutFrame(backdrop), frame, ...(marginPaper ? { marginPaper } : {}) }
+          : withoutFrame(backdrop);
+        this.surface.applyCommand(new SetPageTemplate(page, next, geometry ?? undefined));
         this.rememberTemplate(backdrop);
         this.requestSave();
       },
@@ -5241,6 +5433,12 @@ export class InkView extends TextFileView {
       usePressure: false,
       highlighterAlpha: this.settings.highlighterAlpha,
     });
+  }
+
+  /** A Margin popover swatch: a patch of the margin paper, drawn as the page draws it. */
+  private paintMarginSwatch(canvas: HTMLCanvasElement, paper: MarginPaperChoice): void {
+    const kind = marginRuling(paper) ?? "blank";
+    this.paintPaperThumbnail(canvas, { kind }, { width: 150, height: 90 }, MARGIN_SWATCH_CSS_WIDTH);
   }
 
   /**
@@ -5363,7 +5561,8 @@ export class InkView extends TextFileView {
     if (!this.surface || this.isProtected() || this.refuseSinglePage()) return;
     const doc = this.surface.document;
     const index = insertIndexFor(position, ref, doc.pages.length);
-    const insert = pageFromTemplate(doc, index, backdrop, geometry);
+    // A page made from a page with a margin is a page of its own, not framed.
+    const insert = pageFromTemplate(doc, index, withoutFrame(backdrop), geometry);
     this.surface.applyCommand(new AddPage(insert.index, insert.page));
     // Glide onto the new page, as GoodNotes does after "Add page".
     this.surface.goToPage(insert.index, true);

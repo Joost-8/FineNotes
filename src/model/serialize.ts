@@ -64,6 +64,8 @@ import {
   type InkTask,
   type ShapeConnector,
   type PageGeometry,
+  type MarginPaper,
+  type PdfFrame,
   type Recording,
   type PracticeInfo,
   type PrintedText,
@@ -395,6 +397,7 @@ function featuresOf(doc: InkDocument): FormatFeature[] {
   if (doc.pages.some((page) => liveConnectors(page).length > 0)) features.push("connectors");
   if (doc.pages.some((page) => page.strokes.some(hasTilt))) features.push("tilt");
   if (doc.pages.some((page) => page.strokes.some(isTape))) features.push("tape");
+  if (doc.pages.some((page) => page.backdrop.frame)) features.push("side-space");
   return features;
 }
 
@@ -854,6 +857,26 @@ function normalizeGeometry(raw: unknown, fallbackWidth: number): PageGeometry {
   };
 }
 
+function isPositive(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+/** A backdrop's frame (a page with a margin), only when it is a usable rectangle. */
+function normalizeFrame(raw: unknown): { frame?: PdfFrame } {
+  if (!isRecord(raw)) return {};
+  const { x, y, width, height } = raw;
+  if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y))
+    return {};
+  if (!isPositive(width) || !isPositive(height)) return {};
+  return { frame: { x, y, width, height } };
+}
+
+/** A margin's paper, only a known one and only beside a frame. */
+function normalizeMarginPaper(raw: unknown, frame: unknown): { marginPaper?: MarginPaper } {
+  if (!normalizeFrame(frame).frame) return {};
+  return raw === "lined" || raw === "grid" || raw === "dotted" ? { marginPaper: raw } : {};
+}
+
 function normalizeBackdrop(raw: unknown): Backdrop {
   const b = isRecord(raw) ? raw : {};
   if (b.kind === "pdf") {
@@ -866,6 +889,8 @@ function normalizeBackdrop(raw: unknown): Backdrop {
         page: Math.max(0, Math.round(num(b.page, 0))),
         ...(b.annotations === false ? { annotations: false as const } : {}),
         ...(b.template === true ? { template: true as const } : {}),
+        ...normalizeFrame(b.frame),
+        ...normalizeMarginPaper(b.marginPaper, b.frame),
       };
     }
     return { kind: "blank" };
@@ -879,6 +904,8 @@ function normalizeBackdrop(raw: unknown): Backdrop {
       ...(typeof b.paperColor === "string" ? { paperColor: b.paperColor } : {}),
       ...(printed.length > 0 ? { printed } : {}),
       ...readPaperExtras(b),
+      ...normalizeFrame(b.frame),
+      ...normalizeMarginPaper(b.marginPaper, b.frame),
     };
   }
   // Unknown ruling from a newer build: keep the page, lose only the paper.

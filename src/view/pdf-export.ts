@@ -16,7 +16,7 @@
  */
 
 import { annotationLayers } from "../export/annotation-layers";
-import { type ExportFormat, mimeTypeOf } from "../export/export-choice";
+import { type ExportFormat, type ExportMargins, mimeTypeOf } from "../export/export-choice";
 import { type PdfAnnotationRaster, PdfComposer } from "../export/pdf-composer";
 import type { PaperTheme } from "../canvas/backdrop";
 import { renderPageThumbnail } from "../canvas/renderer";
@@ -29,6 +29,7 @@ import {
 } from "../export/pdf-writer";
 import { isTape } from "../model/cover-tape";
 import type { Page } from "../model/document";
+import { hasMargin, marginHasContent, withoutMargins } from "../model/page-margin";
 import { plainBackdrop } from "../model/templates";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import type { VaultImageCache } from "./image-cache";
@@ -54,13 +55,30 @@ export interface PdfExportSources {
   plainPaper?: boolean;
   /** Leave the cover tapes out (`model/cover-tape`), so what is under them shows. */
   withoutTapes?: boolean;
+  /** Which page margins to keep (`model/page-margin`); absent keeps them all. */
+  margins?: ExportMargins;
+}
+
+/** Whether `page` exports as it is under `margins`, or without its margins. */
+export function keepsMargins(page: Page, margins: ExportMargins = "all"): boolean {
+  if (margins === "all" || !hasMargin(page)) return true;
+  return margins === "inked" && marginHasContent(page);
+}
+
+/** `page` with the margins `sources` keep: all, only those with ink, or none. */
+function withMarginsOf(page: Page, sources: PdfExportSources): Page {
+  return keepsMargins(page, sources.margins) ? page : withoutMargins(page);
 }
 
 /** `page` as `sources` paint it: on plain paper when they ask for it. */
-function pageOf(page: Page, sources: PdfExportSources): Page {
+function pageOf(original: Page, sources: PdfExportSources): Page {
+  const page = withMarginsOf(original, sources);
   if (!sources.plainPaper) return page;
-  const backdrop = plainBackdrop(page.backdrop);
-  return backdrop === page.backdrop ? page : { ...page, backdrop };
+  // A margin's lines are a template too: on plain paper the margin is plain.
+  const { marginPaper: _margin, ...backdrop } = plainBackdrop(page.backdrop);
+  return backdrop.kind === page.backdrop.kind && !page.backdrop.marginPaper
+    ? page
+    : { ...page, backdrop };
 }
 
 /** `page` as `sources` export it: without its cover tapes when they ask. */
@@ -88,15 +106,17 @@ export async function exportPagesToPdf(
   if (hasPdf && !sources.readPdf) throw new Error("PDF source reader unavailable");
   const composer = hasPdf ? await PdfComposer.create(options.title, sources.readPdf!) : null;
   for (const [i, original] of pages.entries()) {
-    const page = withTapesOf(original, sources);
     if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
     options.onProgress?.(i, pages.length);
     // Let the dialog paint its progress before the next page blocks the thread.
     await new Promise((resolve) => window.setTimeout(resolve, 0));
-    if (composer && page.backdrop.kind === "pdf") {
+    if (composer && original.backdrop.kind === "pdf") {
+      // Margins and plain paper reach a PDF page here; a picture page gets
+      // them in paintForExport, which asks the furniture for the original.
+      const page = withTapesOf(pageOf(original, sources), sources);
       await composer.addPdf(page, () => renderAnnotationLayers(page, sources, options));
     } else {
-      const rendered = await renderPageJpeg(page, sources);
+      const rendered = await renderPageJpeg(original, sources);
       if (composer) await composer.addImage(rendered);
       else out.push(rendered);
     }
@@ -281,13 +301,22 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
 }
 
 /** Transparent ink/text/pictures only; source PDF content is composed separately. */
-async function renderAnnotationPng(page: Page, sources: PdfExportSources): Promise<Uint8Array> {
+async function renderAnnotationPng(
+  page: Page,
+  sources: PdfExportSources,
+  paper = false,
+): Promise<Uint8Array> {
   const scale = exportPixelScale(page.geometry.width, page.geometry.height);
   if (!scale) throw new Error("A page has no size");
   if (sources.images) await sources.images.prepare(page.images, scale);
   const canvas = createEl("canvas");
   try {
-    renderPageThumbnail(canvas, page, { paint: () => undefined }, page.geometry.width * scale, 1, {
+    // The margin's paper is a layer of its own (`annotationLayers`): a painter
+    // with no PDF draws it there, and every other layer has no paper at all.
+    const margins = new VaultBackdropRenderer(null);
+    margins.theme = sources.paper;
+    const painter = paper ? margins : { paint: () => undefined };
+    renderPageThumbnail(canvas, page, painter, page.geometry.width * scale, 1, {
       transparent: true,
       usePressure: sources.usePressure,
       highlighterAlpha: sources.highlighterAlpha,
@@ -317,6 +346,9 @@ async function* renderAnnotationLayers(
   for (const layer of annotationLayers(page)) {
     if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
     await new Promise((resolve) => window.setTimeout(resolve, 0));
-    yield { png: await renderAnnotationPng(layer.page, sources), multiply: layer.multiply };
+    yield {
+      png: await renderAnnotationPng(layer.page, sources, layer.paper === true),
+      multiply: layer.multiply,
+    };
   }
 }

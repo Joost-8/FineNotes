@@ -58,6 +58,7 @@ describe("PDF backdrop display", () => {
         },
       ],
       [{ path: backdrop.path, page: backdrop.page, dprScale: 8, geometry, region }],
+      2,
     );
     expect(cache.detailPatches).toHaveBeenCalledWith(backdrop.path, backdrop.page, 8, geometry);
     expect(ctx.drawImage).toHaveBeenCalledWith(base, 0, 0, 1200, 1600);
@@ -84,6 +85,7 @@ describe("PDF backdrop display", () => {
     expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith(
       [pageImage(8)],
       [{ path: backdrop.path, page: backdrop.page, dprScale: 8, geometry, region }],
+      1,
     );
   });
   it("draws only the cached patches that meet a tile", () => {
@@ -146,7 +148,7 @@ describe("PDF backdrop display", () => {
         deviceScale: 1.3712,
         region: { ...region, minX: i },
       });
-    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(1.3712)], []);
+    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(1.3712)], [], 1);
     expect(cache.request).toHaveBeenCalledWith(backdrop.path, backdrop.page, 1.3712, { geometry });
     expect(new Set(cache.request.mock.calls.map((args) => JSON.stringify(args))).size).toBe(1);
   });
@@ -168,7 +170,7 @@ describe("PDF backdrop display", () => {
       painter.paint(context(), backdrop, geometry, 1, { deviceScale: level, region });
     }
     // The page image asked for once settled; no detail at all.
-    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(1)], []);
+    expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(1)], [], 1);
     expect(new Set(cache.request.mock.calls.map((args) => JSON.stringify(args))).size).toBe(1);
     // Settled past what a whole page can be, the page image is the sharpest one.
     painter.prepare([{ backdrop, geometry, region }], 8, false);
@@ -226,6 +228,7 @@ describe("PDF backdrop display", () => {
       expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith(
         [pageImage(1.36, sheet, a4)],
         [],
+        1,
       );
       expect(cache.detailPatches).not.toHaveBeenCalled();
     });
@@ -398,7 +401,7 @@ describe("PDF backdrop display", () => {
       painter.prepare([{ backdrop, geometry, region: view }], 16, true, true);
       expect(cache.setVisibleRegions).not.toHaveBeenCalled();
       painter.prepare([{ backdrop, geometry, region: view }], 1.4, false, false);
-      expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(1.4)], []);
+      expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(1.4)], [], 1);
     });
 
     it("without the worker, asks for detail only once the view rests", () => {
@@ -407,7 +410,7 @@ describe("PDF backdrop display", () => {
       painter.prepare([{ backdrop, geometry, region: view }], 8, false, true);
       // The page image only, and no detail wanted: a patch still drawing on
       // this thread is let go of, for the frames of the scroll.
-      expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(8)], []);
+      expect(cache.setVisibleRegions).toHaveBeenCalledExactlyOnceWith([pageImage(8)], [], 1);
       expect(cache.detailCovers).not.toHaveBeenCalled();
       painter.prepare([{ backdrop, geometry, region: view }], 8, false, false);
       expect(cache.detailCovers).toHaveBeenCalledOnce();

@@ -305,6 +305,14 @@ export const RULINGS: readonly Ruling[] = [
 /** Procedurally drawn paper. Cheap; redraw freely. */
 export interface SyntheticBackdrop {
   kind: Ruling;
+  /**
+   * Where this paper lies on a page with a margin (`model/page-margin.ts`),
+   * page px: the paper keeps its first size there, and the margin beside it
+   * is plain paper. Absent: the whole page.
+   */
+  frame?: PdfFrame;
+  /** The paper drawn in the margin beside the frame; absent: plain. */
+  marginPaper?: MarginPaper;
   /** Rule/grid pitch in page px. Ignored for "blank". Default per ruling. */
   spacing?: number;
   /** Rule colour, hex. Default per ruling. */
@@ -386,6 +394,33 @@ export interface PdfBackdrop {
    * a page added after this one repeats it. Stored only as `true`.
    */
   template?: true;
+  /**
+   * Where the PDF page is fitted, in page px, when it does not fill the page:
+   * a page widened with Add space keeps its PDF where it was, beside the new
+   * space. Absent means the whole page, as before.
+   */
+  frame?: PdfFrame;
+  /** The paper drawn in the margin beside the frame; absent: plain. */
+  marginPaper?: MarginPaper;
+}
+
+/** A margin's paper (`model/page-margin.ts`); absent on a backdrop means plain. */
+export type MarginPaper = "lined" | "grid" | "dotted";
+
+/**
+ * A rectangle of a page, page px: where a page's own paper or PDF lies on a
+ * page widened with Add space ({@link PdfBackdrop.frame}).
+ */
+export interface PdfFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Where a page's backdrop lies on a page of `geometry`: its frame, or the whole page. */
+export function pdfFrameOf(backdrop: Backdrop, geometry: PageGeometry): PdfFrame {
+  return backdrop.frame ?? { x: 0, y: 0, width: geometry.width, height: geometry.height };
 }
 
 export type Backdrop = SyntheticBackdrop | PdfBackdrop;

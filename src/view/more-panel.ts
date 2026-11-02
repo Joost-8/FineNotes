@@ -10,6 +10,7 @@
  *   │ Copy link to page                   │
  *   │ Duplicate page                      │
  *   │ Change template (or cover)          │
+ *   │ Margin                  (Right 33 %)│
  *   │ Save page as template               │
  *   │ Go to page                  (1 – 9) │
  *   └─────────────────────────────────────┘
@@ -43,6 +44,11 @@ import { type BarDock, menuAnchor, menuPlace, menuRoom } from "./bar-dock-model"
 export interface MorePanelPage {
   /** Zero-based index of the page the panel is about. */
   index: number;
+  /**
+   * The page's margin, shown at the end of its row ("Right 33 %"); absent
+   * where a page cannot have one (a cover).
+   */
+  margin?: { side: "none" | "left" | "right" | "both"; percent: number };
   total: number;
   bookmarked: boolean;
   /** Listed in the notebook's contents (it has a title). */
@@ -83,6 +89,8 @@ export interface MorePanelActions {
   copyLink: (index: number) => void;
   duplicate: (index: number) => void;
   changeTemplate: (index: number, anchor: HTMLElement) => void;
+  /** Open the Margin popover for the page (on ⋯ itself: the row goes with the panel). */
+  openMargin?: (index: number) => void;
   /** Keep the page as a paper in My templates (not offered on a cover). */
   saveAsTemplate?: (index: number) => void;
   goToPage: (index: number) => void;
@@ -243,6 +251,19 @@ export class MorePanel {
       text: page.cover ? "Change cover" : "Change template",
       run: (button) => actions.changeTemplate(page.index, button),
     });
+    const openMargin = actions.openMargin;
+    if (openMargin && page.margin) {
+      const row = this.row(card, {
+        icon: "panel-right",
+        text: "Margin",
+        run: () => openMargin(page.index),
+      });
+      const { side, percent } = page.margin;
+      if (side !== "none") {
+        const name = { left: "Left", right: "Right", both: "Both" }[side];
+        row.createSpan({ cls: "goodobsidian-more-value", text: `${name} ${percent} %` });
+      }
+    }
     const save = actions.saveAsTemplate;
     if (save && !page.cover) {
       this.row(card, {

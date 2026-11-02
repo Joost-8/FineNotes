@@ -58,6 +58,7 @@ import {
   decorOf,
   inkReach,
   penFor,
+  paintPagePaper,
   paperColorOf,
   renderPageThumbnail,
   tableLayoutOf,
@@ -366,6 +367,7 @@ import {
   type TableElement,
   type TextBoxElement,
   type Tool,
+  pdfFrameOf,
   strokeBounds,
   strokeCount,
   type PageComment,
@@ -3251,6 +3253,27 @@ export class InkSurface {
     this.layout();
     if (command.keepsReading) this.keepReading(place);
     this.changed();
+  }
+
+  /**
+   * Take back `previous` if it is still the newest step, then make `next` in
+   * its place (none: just take it back): one step that a live control keeps
+   * changing, such as the Margin popover. Returns whether `previous` was
+   * taken back; it was not if another step came after it.
+   */
+  replaceCommand(previous: Command | null, next: Command | null): boolean {
+    const place = this.readingPlace();
+    const took = previous !== null && this.history.withdraw(this.doc, previous);
+    if (next) {
+      this.applyCommand(next);
+      return took;
+    }
+    this.strokeIndex.rebuild(this.doc.pages);
+    this.renderer?.invalidateAll();
+    this.layout();
+    if (previous?.keepsReading) this.keepReading(place);
+    this.changed();
+    return took;
   }
 
   /** The page being read and where the view is on it, to come back to after pages move. */
@@ -6599,11 +6622,13 @@ export class InkSurface {
     ctx.clip();
     ctx.fillStyle = paperColorOf(page, this.paper);
     ctx.fillRect(0, 0, page.geometry.width, page.geometry.height);
-    this.backdropPainter?.paint(ctx, page.backdrop, page.geometry, 1, {
-      deviceScale: s,
-      region,
-      paper: this.paper,
-    });
+    if (this.backdropPainter) {
+      paintPagePaper(this.backdropPainter, ctx, page, 1, {
+        deviceScale: s,
+        region,
+        paper: this.paper,
+      });
+    }
     ctx.restore();
     return true;
   }
@@ -6660,16 +6685,22 @@ export class InkSurface {
     this.doc.pages.forEach((page, index) => {
       const backdrop = page.backdrop;
       if (backdrop.kind !== "pdf" || backdrop.path !== path || backdrop.page !== pdfPage) return;
-      if (
-        area &&
-        (area.geometry.width !== page.geometry.width ||
-          area.geometry.height !== page.geometry.height)
-      )
+      // A page with a margin draws its PDF as the page it was before the
+      // margin (`backdrop-renderer.ts`): it is the frame's size that matches.
+      const frame = pdfFrameOf(backdrop, page.geometry);
+      if (area && (area.geometry.width !== frame.width || area.geometry.height !== frame.height))
         return;
       // Only the PDF changed: painted again in place, a few tiles a frame,
       // and no ink reaches further for it.
-      if (area?.region) renderer.invalidateBackdrop(index, area.region);
-      else renderer.refreshPage(index);
+      if (area?.region) {
+        const r = area.region;
+        renderer.invalidateBackdrop(index, {
+          minX: r.minX + frame.x,
+          minY: r.minY + frame.y,
+          maxX: r.maxX + frame.x,
+          maxY: r.maxY + frame.y,
+        });
+      } else renderer.refreshPage(index);
       shown = true;
     });
     if (shown) this.requestFrame();
@@ -17607,7 +17638,13 @@ export class InkSurface {
       (this.board &&
         box !== undefined &&
         page !== undefined &&
-        (box.width !== page.geometry.width || box.height !== page.geometry.height))
+        (box.width !== page.geometry.width || box.height !== page.geometry.height)) ||
+      // A page changed size (Add space, a template with another size) or an
+      // undo took that back: its box must follow, or it keeps the old size on screen.
+      this.pageLayout.boxes.some((b, i) => {
+        const g = this.doc.pages[i]?.geometry;
+        return g !== undefined && (b.width !== g.width || b.height !== g.height);
+      })
     );
   }
 

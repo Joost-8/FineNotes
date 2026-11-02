@@ -90,7 +90,7 @@ export function linksOnPage(
   links: readonly PdfLink[],
   viewport: Matrix,
   source: { width: number; height: number },
-  geometry: { width: number; height: number },
+  geometry: { width: number; height: number; x?: number; y?: number },
 ): PageLink[] {
   const m = pdfToPage(viewport, source, geometry);
   return links.map(({ rect, target }) => {

@@ -19,6 +19,21 @@ export function exportFormatOf(value: unknown): ExportFormat {
   return EXPORT_FORMATS.find((format) => format === value) ?? "pdf";
 }
 
+/**
+ * Which page margins (`model/page-margin`) an export keeps: all of them,
+ * only those with something written in them, or none (the pages as they
+ * were before their margins, what lay wholly in a margin left out).
+ */
+export type ExportMargins = "all" | "inked" | "none";
+
+/** The order the export dialog's margins button steps through. */
+export const EXPORT_MARGINS: readonly ExportMargins[] = ["all", "inked", "none"];
+
+/** A stored margins choice, or `all` for anything else. */
+export function exportMarginsOf(value: unknown): ExportMargins {
+  return EXPORT_MARGINS.find((margins) => margins === value) ?? "all";
+}
+
 /** `PDF`, `PNG`, `JPG`: the control's labels and the folder's suffix. */
 export function formatLabel(format: ExportFormat): string {
   return format.toUpperCase();
