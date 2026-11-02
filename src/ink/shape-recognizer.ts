@@ -3166,12 +3166,30 @@ const PATH_BARB_MAX_BEND = 0.2;
 const PATH_TIP_SLACK_PX = 5;
 const PATH_TIP_SLACK_FRACTION = 0.25;
 /**
- * A path's retrace comes back at least this share of its last run (with the
- * held floor, {@link RETRACE_HELD_MIN_PX}). Lower than the straight one's:
- * that guards a lift's flick, and a path arrow is only read on a hold; a
- * 40 px retrace on the reporter's 335 px last run is 12 %.
+ * A path's retrace (pull back a little, then hold) is read with the
+ * straight arrow's held floor and angle ({@link RETRACE_HELD_MIN_PX},
+ * {@link RETRACE_MAX_ANGLE_DEG}), against the way the ink arrives at the
+ * turn over this many px: short, so that on a curve it is the end's tangent.
+ * Over 40 px of an r 80 curve the chord was 14° off it, and Joost's
+ * retraces lean up to 13° on their own (2026-11-02).
  */
-const PATH_RETRACE_MIN_FRACTION = 0.05;
+const PATH_RETRACE_TANGENT_PX = 16;
+/**
+ * The retrace may wander this many px more than its straight span. The
+ * pen's step aside at the turn and Pencil tremor add 4-8 px to an 18-26 px
+ * retrace: {@link RETRACE_MAX_DETOUR} alone refused one in eight.
+ */
+const PATH_RETRACE_SLACK_PX = 8;
+/**
+ * A retrace comes back at most this share of the whole path, and at most
+ * as far as the ink behind the turn runs straight. A written stem retraced
+ * to its end and beyond (d, a, u, 4, 9 in the UJI pen characters, read as
+ * held) came back 0.32-0.40 of its letter and 1.5 of its run (medians); the
+ * pull-backs of Joost's recording, grafted onto paths, at most 0.31 and 1.07
+ * (p95 0.16 and 0.72): 44 px back on a 140 px L. Measured 2026-11-02.
+ */
+const PATH_RETRACE_MAX_BODY = 0.35;
+const PATH_RETRACE_MAX_RUN = 1;
 
 /** An elbow has two runs at least, and at most this many. */
 const PATH_MAX_RUNS = 6;
@@ -3305,8 +3323,8 @@ function simplifyIndices(points: readonly Pt[], tolerance: number): number[] {
 }
 
 /** Unit direction the ink runs in, over {@link PATH_TANGENT_PX} up to index `at`. */
-function directionInto(points: readonly Pt[], at: number): Pt | null {
-  const from = indexAtLength(points, at, PATH_TANGENT_PX, -1);
+function directionInto(points: readonly Pt[], at: number, over = PATH_TANGENT_PX): Pt | null {
+  const from = indexAtLength(points, at, over, -1);
   const fit = fitLine(points.slice(from, at + 1));
   if (!fit || fit.span < PATH_MIN_BARB_PX) return null;
   return { x: (fit.b.x - fit.a.x) / fit.span, y: (fit.b.y - fit.a.y) / fit.span };
@@ -3427,47 +3445,58 @@ function pathHeadV(points: readonly Pt[], near: number, bodyLength: number): Pat
 }
 
 /**
- * How far back from index `at` the ink runs straight along `u`: the walk
- * stops where it strays from the line through the tip by more than
- * max(4 px, 6 % of the way back).
+ * How far back from the turn at index `at` the ink runs straight: along the
+ * line fitted to the ink just before it, until the ink strays from that line
+ * by more than max(4 px, 6 % of the way back). Measured from the line, not
+ * the turn: the pen steps aside as it turns, and a turn sample a few px off
+ * the line ended the walk at once.
  */
-function straightReach(points: readonly Pt[], at: number, u: Pt): number {
-  const tip = points[at];
-  let reach = 0;
+function straightRun(points: readonly Pt[], at: number): number {
+  const fit = fitLine(points.slice(indexAtLength(points, at, PATH_TANGENT_PX, -1), at + 1));
+  if (!fit || fit.span === 0) return 0;
+  const ux = (fit.b.x - fit.a.x) / fit.span;
+  const uy = (fit.b.y - fit.a.y) / fit.span;
+  const front = (points[at].x - fit.a.x) * ux + (points[at].y - fit.a.y) * uy;
+  let run = 0;
   for (let i = at - 1; i >= 0; i--) {
-    const dx = points[i].x - tip.x;
-    const dy = points[i].y - tip.y;
-    const back = -(dx * u.x + dy * u.y);
-    if (Math.abs(dx * u.y - dy * u.x) > Math.max(4, 0.06 * Math.max(0, back))) break;
-    reach = Math.max(reach, back);
+    const dx = points[i].x - fit.a.x;
+    const dy = points[i].y - fit.a.y;
+    const back = front - (dx * ux + dy * uy);
+    if (Math.abs(dx * uy - dy * ux) > Math.max(4, 0.06 * Math.max(0, back))) break;
+    run = Math.max(run, back);
   }
-  return reach;
+  return run;
 }
 
 /**
- * Apple Notes' gesture at the end of a path: back a little way along the
- * last run, then hold. The same gates as {@link retraceArrowCandidate},
- * against the last run's length instead of the whole shaft's.
+ * Apple Notes' gesture at the end of a path: back a little way, then hold,
+ * as a straight arrow ends ({@link retraceArrowCandidate}): the same held
+ * floor and angle, against the way the ink arrives at the turn
+ * ({@link PATH_RETRACE_TANGENT_PX}). Not all the way back: at most
+ * {@link PATH_RETRACE_MAX_BODY} of the path, and no further than its ink
+ * runs straight behind the turn ({@link PATH_RETRACE_MAX_RUN}).
  */
-function pathHeadRetrace(points: readonly Pt[], near: number): PathHead | null {
+function pathHeadRetrace(points: readonly Pt[], near: number, bodyLength: number): PathHead | null {
   const n = points.length;
   const u0 = directionBefore(points, near);
   if (!u0) return null;
   const turn = tipNear(points, near, u0);
   if (turn < 2 || turn >= n - 1) return null;
-  const u = directionInto(points, turn) ?? u0;
-  const run = straightReach(points, turn, u);
+  const u = directionInto(points, turn, PATH_RETRACE_TANGENT_PX) ?? u0;
   const back = trimHook(points.slice(turn), false);
   const end = back[back.length - 1];
   const along = -((end.x - points[turn].x) * u.x + (end.y - points[turn].y) * u.y);
-  if (along < Math.max(RETRACE_HELD_MIN_PX, PATH_RETRACE_MIN_FRACTION * run)) return null;
-  if (along > RETRACE_MAX_FRACTION * run) return null;
+  if (along < RETRACE_HELD_MIN_PX) return null;
+  if (along > PATH_RETRACE_MAX_BODY * bodyLength) return null;
+  if (along > PATH_RETRACE_MAX_RUN * straightRun(points, turn)) return null;
   const backFit = fitLine(back);
   if (!backFit) return null;
   const bx = backFit.b.x - backFit.a.x;
   const by = backFit.b.y - backFit.a.y;
   if (angleBetweenDeg(bx, by, -u.x, -u.y) > RETRACE_MAX_ANGLE_DEG) return null;
-  if (detourOf(back, dist(back[0], end)) > RETRACE_MAX_DETOUR) return null;
+  const span = dist(back[0], end);
+  const slack = Math.max((RETRACE_MAX_DETOUR - 1) * span, PATH_RETRACE_SLACK_PX);
+  if (pathLength(back) - span > slack) return null;
   return { tip: turn, score: 1, reach: along };
 }
 
@@ -3689,7 +3718,7 @@ function pathArrowCandidate(points: readonly Pt[], pressure: number): ShapeResul
   for (let k = 2; k <= PATH_TIP_CANDIDATES + 1 && corners.length - k > 0; k++) {
     const near = corners[corners.length - k];
     const length = pathLength(points.slice(0, near + 1));
-    for (const head of [pathHeadV(points, near, length), pathHeadRetrace(points, near)]) {
+    for (const head of [pathHeadV(points, near, length), pathHeadRetrace(points, near, length)]) {
       if (!head || tried.has(head.tip)) continue;
       tried.add(head.tip);
       const result = pathArrowFrom(points, head, pressure);

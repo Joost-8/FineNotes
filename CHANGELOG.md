@@ -12,7 +12,7 @@ extracted from the matching section of this file by `release.yml`.
 
 - **Arrows along a path**
   ([#107](https://github.com/Joost-8/FineNotes/discussions/107)). Draw a
-  path with turns or a curve, finish it with an arrowhead (or go back a
+  path with turns or a curve, finish it with an arrowhead (or pull back a
   little way along the last stretch, as for a straight arrow) and hold: it
   snaps to clean straight runs with small rounded corners, the runs level
   and upright when nearly so, or to a smooth curve, with the head along its

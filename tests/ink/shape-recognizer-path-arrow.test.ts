@@ -11,9 +11,11 @@
  * held or lifted. The discriminators were printed across classes before the
  * gates were set (CLAUDE.md); the UJI pen characters (11 640 handwritten
  * characters, every stroke read as held) were run outside the suite, since
- * the corpus lives in the private research folder: 0.09 % of their strokes
- * at 80 page px tall became a path (0.3 % at 160, mostly the corpus's lift
- * tails read as a retrace, which a hold has none of).
+ * the corpus lives in the private research folder: 0.13 % of their strokes
+ * at 80 page px tall became a path (0.33 % at 160, mostly the corpus's lift
+ * tails read as a retrace, which a hold has none of). The pull-back's gates
+ * were set the same way (2026-11-02): Joost's measured retraces and the
+ * recording's real ones grafted onto every path, against the UJI strokes.
  */
 
 import { readFileSync } from "node:fs";
@@ -157,17 +159,191 @@ describe("an elbow with a head becomes a path of straight runs", () => {
     }
     expect(pathRate(cases)).toBe(1);
   });
+});
 
-  it("snaps the retrace gesture at the end of an elbow (back along the last run, then hold)", () => {
-    let seed = 1;
+/**
+ * Joost's held retraces on straight arrows, traced out of his recording
+ * (2026-10-01, `shape-recognizer-star-arrow`): back 18-44 px, 3-13° off
+ * the line, the pen stepping a px or two aside as it turns.
+ */
+const PULL_BACKS: Array<[number, number]> = [
+  [22, 13],
+  [26, 13],
+  [21, 7],
+  [18, 10],
+  [24, 4],
+  [34, 3],
+  [36, 13],
+  [44, 10],
+];
+
+/**
+ * The retraces of the recording's real arrows, from the turn on, in the
+ * shaft's frame (x back along it, y to its left), to graft onto a path.
+ */
+function realPullBacks(): Pt[][] {
+  const { strokes } = JSON.parse(
+    readFileSync("tests/ink/fixtures/real-pencil-arrows-ipad.json", "utf8"),
+  ) as { strokes: Array<{ points: number[][] }> };
+  return strokes.map((s) => {
+    const p = s.points.map(([x, y]) => ({ x, y }));
+    let turn = 0;
+    for (let i = 1; i < p.length; i++) {
+      const d = (q: Pt): number => Math.hypot(q.x - p[0].x, q.y - p[0].y);
+      if (d(p[i]) > d(p[turn])) turn = i;
+    }
+    const ux = (p[turn].x - p[0].x) / Math.hypot(p[turn].x - p[0].x, p[turn].y - p[0].y);
+    const uy = (p[turn].y - p[0].y) / Math.hypot(p[turn].x - p[0].x, p[turn].y - p[0].y);
+    return p.slice(turn + 1).map((q) => {
+      const dx = q.x - p[turn].x;
+      const dy = q.y - p[turn].y;
+      return { x: -(dx * ux + dy * uy), y: dx * uy - dy * ux };
+    });
+  });
+}
+
+/** `body` with a real retrace grafted onto its end, along its last stretch (mirrored on `flip`). */
+function withRealPullBack(body: readonly Pt[], back: readonly Pt[], flip: boolean): Pt[] {
+  const tip = body[body.length - 1];
+  const prev = body[body.length - 2];
+  const l = Math.hypot(tip.x - prev.x, tip.y - prev.y);
+  const ux = (tip.x - prev.x) / l;
+  const uy = (tip.y - prev.y) / l;
+  const s = flip ? -1 : 1;
+  return [
+    ...body,
+    ...back.map((q) => ({
+      x: tip.x - ux * q.x - uy * q.y * s,
+      y: tip.y - uy * q.x + ux * q.y * s,
+    })),
+  ];
+}
+
+describe("pull back a little and hold: the retrace ends any path as it ends a line", () => {
+  const BODIES = [...ELBOWS, ...CURVES];
+
+  it("snaps every path, pulled back as Joost pulls back a straight arrow, in every direction", () => {
+    let snapped = 0;
+    let all = 0;
+    for (const [name, body] of BODIES) {
+      const cases: number[][] = [];
+      let seed = 1;
+      for (const [len, dev] of PULL_BACKS) {
+        for (const side of [1, -1]) {
+          for (const deg of DIRECTIONS) {
+            const head: HeadStyle = { kind: "retrace", len, dev: side * dev, offset: 2 };
+            const corners = seed % 2 ? {} : { round: 12 };
+            cases.push(drawn(body, head, corners, deg, seed % 3 === 0, seed++));
+          }
+        }
+      }
+      // A retrace 13° off a curve's end reads up to 22° off its last 16 px
+      // and is refused, as the straight arrow refuses past 20°.
+      const rate = pathRate(cases);
+      expect(rate, name).toBeGreaterThanOrEqual(0.95);
+      snapped += rate * cases.length;
+      all += cases.length;
+    }
+    expect(snapped / all).toBeGreaterThanOrEqual(0.98);
+  });
+
+  it("snaps every path ended with one of the recording's real retraces", () => {
+    const backs = realPullBacks();
+    expect(backs).toHaveLength(9);
+    let snapped = 0;
+    let all = 0;
+    for (const [name, body] of BODIES) {
+      const cases: number[][] = [];
+      let seed = 1;
+      for (const back of backs) {
+        for (const deg of [0, 90, 135, 250]) {
+          const poly = turned(
+            withRealPullBack(handPath(body), back, seed % 2 === 0),
+            deg,
+            400,
+            400,
+          );
+          cases.push(pencilInk(poly, seed++, { hook: seed % 2 ? 12 : 0 }));
+        }
+      }
+      const rate = pathRate(cases);
+      expect(rate, name).toBeGreaterThanOrEqual(0.9);
+      snapped += rate * cases.length;
+      all += cases.length;
+    }
+    expect(snapped / all).toBeGreaterThanOrEqual(0.97);
+  });
+
+  it("snaps a curve whose retrace follows the curve back instead of its tangent", () => {
     const cases: number[][] = [];
-    for (const [name, body] of ELBOWS) {
-      if (name === "short L") continue; // 40 px back is two thirds of its 60 px last run: doubled
-      for (const deg of DIRECTIONS) {
-        cases.push(drawn(body, { kind: "retrace", len: 40 }, {}, deg, deg % 2 === 0, seed++));
+    let seed = 1;
+    for (const [, body] of CURVES) {
+      for (const len of [20, 35]) {
+        // Back along the ideal curve itself, `len` px.
+        const back: Pt[] = [];
+        let left = len;
+        for (let i = body.length - 1; i > 0 && left > 0; i--) {
+          const seg = Math.hypot(body[i].x - body[i - 1].x, body[i].y - body[i - 1].y);
+          const t = Math.min(1, left / seg);
+          back.push({
+            x: body[i].x + (body[i - 1].x - body[i].x) * t,
+            y: body[i].y + (body[i - 1].y - body[i].y) * t,
+          });
+          left -= seg;
+        }
+        for (const deg of DIRECTIONS) {
+          const poly = turned([...body, ...back], deg, CENTRE.x, CENTRE.y, seed % 2 === 0);
+          cases.push(pencilInk(poly, seed++));
+        }
       }
     }
-    expect(pathRate(cases)).toBeGreaterThanOrEqual(0.95);
+    expect(pathRate(cases)).toBeGreaterThanOrEqual(0.97);
+  });
+
+  it("puts the head where the pen turned, pointing the way the path was going", () => {
+    for (const seed of [1, 2, 3]) {
+      const head: HeadStyle = { kind: "retrace", len: 24, dev: 10, offset: 2 };
+      const result = recognizeShape(drawn(S, head, {}, 0, false, seed), { held: true });
+      expect(result?.kind).toBe("path");
+      const v = xy(result!.pts);
+      expect(v).toHaveLength(4);
+      expect(Math.hypot(v[3].x - 760, v[3].y - 515)).toBeLessThan(8);
+      expect(v[3].x).toBeGreaterThan(v[2].x);
+      expect(result!.heads).toEqual({ end: "open" });
+    }
+  });
+
+  it("a path the pen settles back on a few px as it stops has no head", () => {
+    let seed = 1;
+    for (const [name, body] of BODIES) {
+      for (const len of [3, 6, 9]) {
+        for (const deg of [0, 135, 250]) {
+          const head: HeadStyle = { kind: "retrace", len, dev: 8, offset: 1 };
+          const pts = drawn(body, head, {}, deg, false, seed++);
+          expect(recognizeShape(pts, { held: true })?.kind, `${name} ${len} px`).not.toBe("path");
+        }
+      }
+    }
+  });
+
+  it("a retrace that leaves at a barb's angle, or doubles back over most of the path, is no head", () => {
+    let seed = 1;
+    for (const [name, body] of BODIES) {
+      for (const deg of [0, 135, 250]) {
+        const barb = drawn(
+          body,
+          { kind: "retrace", len: 30, dev: 30, offset: 0 },
+          {},
+          deg,
+          false,
+          seed++,
+        );
+        expect(recognizeShape(barb, { held: true })?.kind, `${name} 30°`).not.toBe("path");
+      }
+    }
+    // Out and all the way back along an elbow's last run, past its corner.
+    const doubled = drawn(ELBOWS[0][1], { kind: "retrace", len: 330 }, {}, 0, false, 7);
+    expect(recognizeShape(doubled, { held: true })?.kind).not.toBe("path");
   });
 });
 

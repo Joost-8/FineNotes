@@ -419,8 +419,11 @@ kinds as freehand ink.
 
 A `path` (2026-11-01, discussion #107) is an arrow drawn along a path: a
 held stroke whose end is a head — a V (both barbs, as the straight arrow's)
-or the retrace gesture (back along the last run at least 12 page px and 5 %
-of it, at most 60 %) — and whose body is not one straight run. Held only,
+or the retrace gesture (pull back a little and hold, as for the straight
+retrace arrow: at least 12 page px, within 20° of straight back along the
+last 16 page px of ink before the turn, at most 35 % of the path's length
+and no further than its ink runs straight behind the turn) — and whose body
+is not one straight run. Held only,
 and only when neither the retrace arrow nor the straight arrow takes the
 stroke: those keep every stroke they took before. A confident one is the
 stroke, as the retrace arrow is.
@@ -440,9 +443,11 @@ stroke, as the retrace arrow is.
   the tip and the barbs' ends (a written 6 ends in a loop), whose ink comes
   back near the body, or a body that crosses itself. Measured on the UJI pen
   characters (11 640 handwritten characters, every stroke read as held):
-  0.08 % of strokes at 80 page px tall and 0.3 % at 160 became a path, most
-  of the latter the corpus's lift tails read as a retrace (a hold has none);
-  the same strokes already snapped to some shape 33–41 % of the time.
+  0.13 % of strokes at 80 page px tall and 0.33 % at 160 became a path,
+  most of the latter the corpus's lift tails read as a retrace (a hold has
+  none); the same strokes already snapped to some shape 33–41 % of the time.
+  A written stem retraced to its end (d, a, u, 4) is not a pull-back: it
+  comes back as far as the stem runs, or further.
 - Older versions read a `path` as freehand ink, without its head.
 
 ### A shape's style (v9)

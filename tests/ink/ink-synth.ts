@@ -616,6 +616,10 @@ export interface HeadStyle {
   deg?: number;
   /** The second barb's length over the first's. */
   ratio?: number;
+  /** A retrace's deviation from straight back, degrees (sign picks the side). */
+  dev?: number;
+  /** A retrace's sideways step at the turn, px, to the side of `dev`. */
+  offset?: number;
 }
 
 /** `body` (an ideal path) with a head drawn at its end in one stroke. */
@@ -636,7 +640,11 @@ export function withHead(body: readonly Pt[], head: HeadStyle = {}): Pt[] {
   };
   const kind = head.kind ?? "v";
   if (kind === "retrace") {
-    return [...body, { x: tip.x + back.x * len, y: tip.y + back.y * len }];
+    const a = Math.atan2(back.y, back.x) + ((head.dev ?? 0) * Math.PI) / 180;
+    const side = Math.sign(head.dev ?? 0) || 1;
+    const step = (head.offset ?? 0) * side;
+    const turn = { x: tip.x - back.y * step, y: tip.y + back.x * step };
+    return [...body, turn, { x: turn.x + len * Math.cos(a), y: turn.y + len * Math.sin(a) }];
   }
   if (kind === "one-barb") return [...body, barb(1)];
   const second = barb(-1, head.ratio ?? 1);
