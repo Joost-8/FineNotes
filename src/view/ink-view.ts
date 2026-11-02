@@ -67,11 +67,19 @@ import { makeTask } from "../model/tasks";
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
 import {
   type DeviceReading,
+  type HandwritingReading,
   aiKeyFolded,
   buildAiMenu,
   textAvailability,
 } from "../recognition/ai-menu-model";
-import { learnedRecord, practiceFiles, writePracticePage } from "./handwriting-learning";
+import {
+  learnedRecord,
+  practiceFiles,
+  practiceSheets,
+  readCorrections,
+} from "./handwriting-learning";
+import { sheetButton } from "../recognition/hwr/learn-window-model";
+import { practiceLines } from "../recognition/practice";
 import { CalcNotes } from "./calc-notes";
 import {
   type ChatImage,
@@ -347,6 +355,7 @@ import type { GoodObsidianSettings } from "../settings";
 import {
   attachmentDefaults,
   greyWhileErasingOf,
+  handwritingReaderOf,
   penPreferencesOf,
   snapCurveOf,
   highlighterTipOf,
@@ -1203,6 +1212,12 @@ export class InkView extends TextFileView {
     this.plugin.saveLastPen(penOfState(this.toolState));
   }
 
+  /** The highlighter's opacity changed in some notebook's pen menu: redraw the highlights. */
+  setHighlighterAlpha(): void {
+    this.surface?.setHighlighterAlpha(this.settings.highlighterAlpha);
+    this.updateSidebarRendering();
+  }
+
   /** The pressure setting changed: the pen in hand widens with pressure if it is a pressure pen. */
   setPressureWidth(enabled: boolean): void {
     this.surface?.setPressure(enabled && penTypeFor(this.toolState).pressure);
@@ -1437,6 +1452,7 @@ export class InkView extends TextFileView {
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
       device: this.deviceReading(),
+      reading: this.handwritingReading(),
       transcribing: this.plugin.speech.running?.percent,
     });
     const setup = this.plugin.aiSetup();
@@ -1447,8 +1463,29 @@ export class InkView extends TextFileView {
       aiKeyFolded(setup),
       (id, on) => {
         if (id === "check-words") void this.plugin.setWordChecking(on);
+        if (id === "calc-notes") {
+          this.settings.calcNotes = on;
+          void this.plugin.saveSettings();
+        }
+      },
+      (id, value) => {
+        if (id !== "reader") return;
+        void this.plugin.setHandwritingReader(value).then(() => {
+          // Off and on change what the section offers: draw it again in place.
+          if (this.aiMenu?.isOpen) {
+            this.aiMenu.close();
+            this.aiMenu = null;
+            this.openAiMenu(anchor);
+          }
+        });
       },
     );
+  }
+
+  /** Which model reads handwriting here, for the AI menu's "Read with". */
+  private handwritingReading(): HandwritingReading {
+    const ownModel = learnedRecord(this.settings, this.plugin.grape.id) !== undefined;
+    return { value: handwritingReaderOf(this.settings, ownModel), ownModel };
   }
 
   /**
@@ -1619,6 +1656,7 @@ export class InkView extends TextFileView {
       practiceFiles: practiceFiles(this.plugin.learningHost()).length,
       learning: progress ? (100 * progress.step) / progress.steps : null,
       checkingWords: this.settings.checkHandwrittenWords === true,
+      calculating: this.settings.calcNotes === true,
     };
   }
 
@@ -1628,8 +1666,7 @@ export class InkView extends TextFileView {
    */
   private aiActions(): Record<string, () => void> {
     return {
-      learn: () => void this.plugin.learner.start(),
-      practice: () => void writePracticePage(this.plugin.learningHost()),
+      "learn-window": () => this.plugin.openLearnWindow(),
       "device-settings": () => this.plugin.openSettingsTab(),
       "transcribe-recording": () => this.audio?.transcribeFromMenu(),
       "transcribe-device": () => this.audio?.transcribeOnDeviceFromMenu(),
@@ -2917,6 +2954,7 @@ export class InkView extends TextFileView {
         onShare: () => this.exportPdf(),
         onSearch: () => void this.openSearch(),
         onMore: (anchor) => this.toggleMorePanel(anchor),
+        onLearnHandwriting: () => this.plugin.openLearnWindow(),
         onPillPlaced: () => this.surface?.placeToasts(),
         onPillDock: (dock) => this.plugin.setPillDock(dock),
         onOnlyStylusMode: (on) => void this.plugin.setOnlyStylusMode(on),
@@ -3106,6 +3144,11 @@ export class InkView extends TextFileView {
           this.settings.zoomBoxAutoAdvance = on;
           void this.plugin.saveSettings();
         },
+        onZoomBoxSettings: ({ lineStep, threshold }) => {
+          if (lineStep !== undefined) this.settings.zoomBoxLineStep = lineStep;
+          if (threshold !== undefined) this.settings.zoomBoxAutoAdvanceThreshold = threshold;
+          void this.plugin.saveSettings();
+        },
         onShortcuts: () => this.toggleShortcuts(),
         shortcuts: () => this.plugin.shortcuts.table,
         onShortcutAction: (id) => this.runShortcutAction(id),
@@ -3149,7 +3192,11 @@ export class InkView extends TextFileView {
           }).open();
         },
         onSuggestedLink: (index, strokeIds, target) => this.linkInk(index, strokeIds, null, target),
-        onHistoryChange: (canUndo, canRedo) => this.toolbar?.setHistoryState(canUndo, canRedo),
+        onHistoryChange: (canUndo, canRedo) => {
+          this.toolbar?.setHistoryState(canUndo, canRedo);
+          // A line copied or erased on a practice sheet: its Learn button counts it.
+          this.syncLearnButton();
+        },
         onAddPageRequested: (afterIndex) => this.addPage(afterIndex, true),
         // Pulled past the last page: a blank page on the last page's paper,
         // then glide onto it, as GoodNotes does.
@@ -4037,6 +4084,7 @@ export class InkView extends TextFileView {
     this.sidebar?.setBoard(this.isBoard);
     // A practice file has the pen and the eraser, and nothing else.
     this.toolbar?.setPractice(practice);
+    if (practice) void this.loadLearnElsewhere();
     // A PDF's pages become pages: a board has none to add.
     this.toolbar?.setInsertPdfVisible(!this.isBoard);
     this.surface?.setPractice(practice ? deviceKind() : null);
@@ -4044,6 +4092,32 @@ export class InkView extends TextFileView {
       this.addPagePopover?.popover.close();
       this.addPagePopover = null;
     }
+  }
+
+  /**
+   * What the other practice sheets and the corrected words hold toward
+   * learning, read when a practice sheet opens; this sheet's own lines are
+   * counted live ({@link syncLearnButton}).
+   */
+  private learnElsewhere = { lines: 0, corrections: 0 };
+
+  private async loadLearnElsewhere(): Promise<void> {
+    const host = this.plugin.learningHost();
+    const [sheets, corrections] = await Promise.all([practiceSheets(host), readCorrections(host)]);
+    const here = this.file?.path;
+    this.learnElsewhere = {
+      lines: sheets.filter((s) => s.path !== here).reduce((sum, s) => sum + s.written, 0),
+      corrections: corrections.corrections.length,
+    };
+    this.syncLearnButton();
+  }
+
+  /** The practice sheet's Learn button: lines copied here and elsewhere, against the 10 needed. */
+  private syncLearnButton(): void {
+    if (!this.isPractice) return;
+    const lines = practiceLines(this.doc).length + this.learnElsewhere.lines;
+    const { count, ready } = sheetButton(lines, this.learnElsewhere.corrections);
+    this.toolbar?.setLearnCount(count, ready);
   }
 
   /** A practice file says no to anything but writing; true when it did. */

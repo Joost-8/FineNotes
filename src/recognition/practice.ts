@@ -263,39 +263,19 @@ export const PRACTICE_PREFIX = "practice-";
 const PROMPT_COLOR = "#7a7a7a";
 const HEADING_COLOR = "#2b2b2b";
 
-/** The cover's words, as headed paragraphs. `{set}` and `{sets}` are filled in. */
+/**
+ * The cover's words: what to do, and where to go once done (the Learn button
+ * on the sheet's own bar). What learning keeps, and learning again, are in
+ * the Learn your handwriting window, where they apply.
+ */
 const COVER: readonly { heading?: string; text: string }[] = [
   {
-    heading: "How to do it",
     text:
-      "1. On the next pages, each grey line has an empty line under it.\n" +
-      "2. Copy each grey line onto the empty line below it, in your normal handwriting, " +
-      "at your normal size and speed.\n" +
-      "3. Copy it exactly, punctuation included. Made a mistake? Erase it and write it again. " +
-      "Skipping a line is fine.\n" +
-      "4. Write only on the empty lines. This file only has the pen and the eraser, on purpose.",
+      "Copy each grey line onto the empty line under it, in your normal writing, at your " +
+      "normal size. Skip any line you like; erase and write again if you slip.",
   },
-  {
-    heading: "When you are done",
-    text:
-      "Open Settings, FineNotes, Handwriting, and tap Learn now. It takes a few minutes on " +
-      "this device, and you can go on writing in other notes meanwhile. FineNotes keeps what " +
-      "it learned only if it reads your writing better than before, and shows you the result.",
-  },
-  {
-    heading: "Afterwards",
-    text:
-      "Keep this file: every time FineNotes learns again (after you have corrected more " +
-      "words, or after an update), it starts from scratch and learns from every sheet you " +
-      "have written, so a deleted sheet is forgotten. For better results, write another set " +
-      "(this is set {set} of {sets}): each has different lines.",
-  },
-  {
-    heading: "Your data",
-    text:
-      "Everything stays on this device and in your vault. This file holds your strokes " +
-      "(their positions, pressure and timing) and the lines you copied, nothing else.",
-  },
+  { text: "Done? Tap Learn my handwriting at the top." },
+  { text: "Everything stays on this device and in your vault." },
 ];
 
 /**
@@ -330,14 +310,14 @@ const SYMBOL_COVER: readonly { heading?: string; text: string }[] = [
       "3. One symbol per line, nothing else. Made a mistake? Erase it and write it again. " +
       "Skipping a line is fine.",
   },
-  COVER[1],
   {
     heading: "What it is for",
     text:
       "FineNotes learns how you write digits, operators and signs, so it reads your maths " +
       "better. Calculation notes, when on, also write their answers in your own hand with it.",
   },
-  COVER[3],
+  COVER[1],
+  COVER[2],
 ];
 
 /** The cover: a title, the set, and what to do, printed on plain paper. */

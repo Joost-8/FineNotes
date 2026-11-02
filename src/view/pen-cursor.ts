@@ -15,9 +15,9 @@
 import { parseCssColor } from "../canvas/night";
 
 /** What the setting "Cursor over the page" shows while a pen is in hand. */
-export type PenCursorStyle = "ink" | "crosshair" | "arrow";
+export type PenCursorStyle = "ink" | "crosshair" | "arrow" | "none";
 
-export const PEN_CURSOR_STYLES: readonly PenCursorStyle[] = ["ink", "crosshair", "arrow"];
+export const PEN_CURSOR_STYLES: readonly PenCursorStyle[] = ["ink", "crosshair", "arrow", "none"];
 
 /**
  * A stored cursor setting as one. Before FineNotes#27 it was a boolean, "Crosshair
