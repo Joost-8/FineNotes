@@ -74,7 +74,6 @@ import {
   median,
   packageRoot,
   pageScale,
-  plural,
   pressureForWidth,
   round2,
   sniffFile,
@@ -82,6 +81,7 @@ import {
   type ImportResult,
 } from "./import-types";
 import { Message, splitDelimited } from "./protobuf";
+import { t, tn } from "../i18n/translate";
 
 export class GoodnotesError extends Error {}
 
@@ -154,7 +154,7 @@ export function readGoodnotes(
   fileTitle: string,
 ): ImportResult {
   const root = findRoot(files);
-  if (root === null) throw new GoodnotesError("not a Goodnotes notebook");
+  if (root === null) throw new GoodnotesError(t("notebooks.import.goodnotes.notNotebook"));
   const file = (path: string): Uint8Array | undefined => files.get(root + path);
 
   let title = "";
@@ -275,7 +275,7 @@ export function readGoodnotes(
   const live = [...pages.values()]
     .filter((p) => !p.deleted)
     .sort((a, b) => compareKeys(a.order, b.order) || a.created - b.created);
-  if (live.length === 0) throw new GoodnotesError("the notebook has no pages");
+  if (live.length === 0) throw new GoodnotesError(t("notebooks.import.goodnotes.noPages"));
 
   // A template the package does not carry (one of Goodnotes' built-in ones)
   // gets the paper most of the other pages have.
@@ -465,47 +465,18 @@ export function readGoodnotes(
 
   const warnings: string[] = [];
   if (missingPaper > 0) {
-    warnings.push(
-      `${plural(missingPaper, "page uses", "pages use")} a Goodnotes paper that is not in the file; ` +
-        "the notebook's usual paper was used instead.",
-    );
+    warnings.push(tn("notebooks.import.goodnotes.missingPaper", missingPaper));
   }
   const lines = [
-    tally.line("unreadable", (n) => `${plural(n, "stroke")} could not be read.`),
-    tally.line("shapes", (n) => `${plural(n, "shape")} came over as outlines.`),
-    tally.line(
-      "fills",
-      (n) => `${plural(n, "shape's fill", "shapes' fills")} could not be kept, only the outline.`,
-    ),
-    tally.line(
-      "comments",
-      (n) => `${plural(n, "comment")} came over as a text box with the author's name.`,
-    ),
-    tally.line(
-      "links",
-      (n) =>
-        `${plural(n, "text box keeps a link", "text boxes keep a link")} written after the words, ` +
-        "which cannot hold one.",
-    ),
-    tally.line(
-      "elsewhere",
-      (n) =>
-        `${plural(n, "text box links", "text boxes link")} to another Goodnotes notebook; ` +
-        "those words came over without the link.",
-    ),
-    tally.line(
-      "mixed",
-      (n) =>
-        `${plural(n, "text box has", "text boxes have")} words in more than one colour; ` +
-        "a text box here has one, so the first was kept.",
-    ),
-    tally.line(
-      "jpeg2000",
-      (n) =>
-        `${plural(n, "picture is", "pictures are")} JPEG 2000, ` +
-        "which Obsidian cannot show until converted to PNG or JPEG.",
-    ),
-    tally.line("other", (n) => `${plural(n, "other item")} could not be brought over yet.`),
+    tally.line("unreadable", (n) => tn("notebooks.import.goodnotes.unreadable", n)),
+    tally.line("shapes", (n) => tn("notebooks.import.goodnotes.shapes", n)),
+    tally.line("fills", (n) => tn("notebooks.import.goodnotes.fills", n)),
+    tally.line("comments", (n) => tn("notebooks.import.goodnotes.comments", n)),
+    tally.line("links", (n) => tn("notebooks.import.goodnotes.links", n)),
+    tally.line("elsewhere", (n) => tn("notebooks.import.goodnotes.elsewhere", n)),
+    tally.line("mixed", (n) => tn("notebooks.import.goodnotes.mixed", n)),
+    tally.line("jpeg2000", (n) => tn("notebooks.import.goodnotes.jpeg2000", n)),
+    tally.line("other", (n) => tn("notebooks.import.goodnotes.other", n)),
   ];
   for (const line of lines) if (line) warnings.push(line);
 

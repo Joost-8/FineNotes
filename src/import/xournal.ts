@@ -47,6 +47,7 @@ import {
   type ImportAttachment,
   type ImportResult,
 } from "./import-types";
+import { t, tn } from "../i18n/translate";
 
 export class XournalError extends Error {}
 
@@ -121,7 +122,7 @@ function openContainer(bytes: Uint8Array): Container {
   if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
     const files = new Map(Object.entries(unzipSync(bytes)));
     const content = files.get("content.xml");
-    if (!content) throw new XournalError("the zip has no content.xml");
+    if (!content) throw new XournalError(t("notebooks.import.xournal.noContent"));
     return { xml: strFromU8(content), files };
   }
   return { xml: strFromU8(bytes), files: new Map() };
@@ -279,9 +280,11 @@ export function readXournal(bytes: Uint8Array, fallbackTitle: string): ImportRes
     container = openContainer(bytes);
     root = rootOf(container.xml);
   } catch (e) {
-    throw new XournalError(`the file could not be read: ${(e as Error).message}`);
+    throw new XournalError(
+      t("notebooks.import.xournal.unreadable", { reason: (e as Error).message }),
+    );
   }
-  if (!root) throw new XournalError("not a Xournal notebook");
+  if (!root) throw new XournalError(t("notebooks.import.xournal.notNotebook"));
 
   const ownTitle = elements(root, "title").map(textOf)[0]?.trim() ?? "";
   const name = ownTitle && !BOILERPLATE_TITLE.test(ownTitle) ? ownTitle : fallbackTitle;
@@ -399,29 +402,23 @@ export function readXournal(bytes: Uint8Array, fallbackTitle: string): ImportRes
     }
     return page;
   });
-  if (pages.length === 0) throw new XournalError("the notebook has no pages");
+  if (pages.length === 0) throw new XournalError(t("notebooks.import.xournal.noPages"));
 
   const warnings: string[] = [];
   if (missingPdf > 0) {
-    warnings.push(
-      `${plural(missingPdf, "page", "pages")} used a PDF that is not in the file; ` +
-        `${missingPdf === 1 ? "it has" : "they have"} blank paper.`,
-    );
+    warnings.push(tn("notebooks.import.xournal.missingPdf", missingPdf));
   }
   if (missingPicture > 0) {
-    warnings.push(
-      `${plural(missingPicture, "page", "pages")} used a background picture that is not in the file; ` +
-        `${missingPicture === 1 ? "it has" : "they have"} blank paper.`,
-    );
+    warnings.push(tn("notebooks.import.xournal.missingPicture", missingPicture));
   }
-  if (unreadableStrokes > 0)
-    warnings.push(`${plural(unreadableStrokes, "stroke")} could not be read.`);
-  if (unreadablePictures > 0)
-    warnings.push(`${plural(unreadablePictures, "picture")} could not be read.`);
+  if (unreadableStrokes > 0) {
+    warnings.push(tn("notebooks.import.xournal.unreadableStrokes", unreadableStrokes));
+  }
+  if (unreadablePictures > 0) {
+    warnings.push(tn("notebooks.import.xournal.unreadablePictures", unreadablePictures));
+  }
   if (skipped > 0) {
-    warnings.push(
-      `${plural(skipped, "item")} (LaTeX, links or other elements) could not be brought over yet.`,
-    );
+    warnings.push(tn("notebooks.import.xournal.skipped", skipped));
   }
 
   const doc: InkDocument = {
@@ -599,8 +596,4 @@ export function decodeBase64(text: string): Uint8Array | null {
     }
   }
   return out;
-}
-
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
 }

@@ -15,6 +15,7 @@
 
 import { type App, Modal, Setting } from "obsidian";
 import { WELCOME_TITLE } from "../model/welcome";
+import { t } from "../i18n/translate";
 
 export interface WelcomeActions {
   // Properties holding functions, not methods (CLAUDE.md: a callback is a value).
@@ -36,34 +37,32 @@ export class WelcomeModal extends Modal {
     this.titleEl.setText(WELCOME_TITLE);
     const el = this.contentEl;
     el.createEl("p", {
-      text:
-        "Handwritten notebooks with real pages, as in Goodnotes. Each notebook is a file " +
-        "in this vault, on your device.",
+      text: t("notebooks.welcome.intro"),
     });
     this.choice(
-      "Take the tour",
-      "A short notebook that shows the tools. Write in it as much as you like.",
-      "Open",
+      t("notebooks.welcome.tour"),
+      t("notebooks.welcome.tourInfo"),
+      t("notebooks.welcome.tourButton"),
       true,
       this.actions.openTour,
     );
     this.choice(
-      "Bring your notebooks",
-      "From Goodnotes, Notability, Noteful, reMarkable and more, with your handwriting still editable.",
-      "Import…",
+      t("notebooks.welcome.bring"),
+      t("notebooks.welcome.bringInfo"),
+      t("notebooks.welcome.bringButton"),
       false,
       this.actions.importNotebooks,
     );
     this.choice(
-      "Start fresh",
-      "A new notebook, with the cover and paper you choose.",
-      "New notebook",
+      t("notebooks.welcome.fresh"),
+      t("notebooks.welcome.freshInfo"),
+      t("notebooks.welcome.freshButton"),
       false,
       this.actions.newNotebook,
     );
     el.createEl("p", {
       cls: "goodobsidian-welcome-hint",
-      text: "To see this again, run the command “FineNotes: Show the welcome”.",
+      text: t("notebooks.welcome.hint", { command: t("notebooks.command.showWelcome") }),
     });
   }
 

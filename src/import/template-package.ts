@@ -21,6 +21,7 @@ import { strFromU8, strToU8, zipSync } from "fflate";
 import type { InkDocument } from "../model/document";
 import { decodeDocument, encodeDocument } from "../model/serialize";
 import { type ImportResult, sniffFile } from "./import-types";
+import { t } from "../i18n/translate";
 
 export const TEMPLATE_EXTENSION = "finetemplate";
 /** The package layout this code writes and reads. */
@@ -34,11 +35,44 @@ const ASSETS = "assets/";
 /** What may be done with a template, said up front so nobody has to guess. */
 export type TemplateLicence = "personal" | "commercial" | "cc-by" | "cc0";
 
-export const TEMPLATE_LICENCES: ReadonlyArray<{ id: TemplateLicence; label: string }> = [
-  { id: "personal", label: "Personal use only" },
-  { id: "commercial", label: "Personal and commercial use" },
-  { id: "cc-by", label: "CC BY 4.0 (share and adapt, with credit)" },
-  { id: "cc0", label: "CC0 (no rights reserved)" },
+/**
+ * `label` is the English name the gallery's submission form lists (it is sent
+ * as the form's value, so it never changes with the language); `title` is the
+ * name shown to the person, in the language in use.
+ */
+export const TEMPLATE_LICENCES: ReadonlyArray<{
+  id: TemplateLicence;
+  label: string;
+  readonly title: string;
+}> = [
+  {
+    id: "personal",
+    label: "Personal use only",
+    get title() {
+      return t("notebooks.licence.personal");
+    },
+  },
+  {
+    id: "commercial",
+    label: "Personal and commercial use",
+    get title() {
+      return t("notebooks.licence.commercial");
+    },
+  },
+  {
+    id: "cc-by",
+    label: "CC BY 4.0 (share and adapt, with credit)",
+    get title() {
+      return t("notebooks.licence.ccBy");
+    },
+  },
+  {
+    id: "cc0",
+    label: "CC0 (no rights reserved)",
+    get title() {
+      return t("notebooks.licence.cc0");
+    },
+  },
 ];
 
 export interface TemplateManifest {
@@ -196,9 +230,9 @@ export function readTemplatePackage(
   title: string,
 ): ImportResult {
   const manifest = templateManifestOf(files);
-  if (!manifest) throw new Error("its manifest is missing or unreadable");
+  if (!manifest) throw new Error(t("notebooks.import.template.noManifest"));
   const payload = files.get(NOTEBOOK);
-  if (!payload) throw new Error("it holds no notebook");
+  if (!payload) throw new Error(t("notebooks.import.template.noNotebook"));
   const doc = decodeDocument(strFromU8(payload));
   const attachments = [...files.entries()]
     .filter(([name]) => name.startsWith(ASSETS) && name.length > ASSETS.length)
@@ -206,7 +240,12 @@ export function readTemplatePackage(
   const warnings: string[] = [];
   if (manifest.licence === "personal") {
     warnings.push(
-      `“${manifest.name}”${manifest.author ? ` by ${manifest.author}` : ""} is for personal use only.`,
+      manifest.author
+        ? t("notebooks.import.template.personalBy", {
+            name: manifest.name,
+            author: manifest.author,
+          })
+        : t("notebooks.import.template.personal", { name: manifest.name }),
     );
   }
   return { source: "template", title: manifest.name || title, doc, attachments, warnings };
@@ -220,12 +259,42 @@ export type GalleryKind = "paper" | "notebook";
 
 /** The categories a gallery groups templates under; anything else is "other". */
 export const GALLERY_CATEGORIES: ReadonlyArray<{ id: string; label: string }> = [
-  { id: "planner", label: "Planners" },
-  { id: "study", label: "Study" },
-  { id: "journal", label: "Journals" },
-  { id: "work", label: "Work" },
-  { id: "paper", label: "Papers" },
-  { id: "other", label: "Other" },
+  {
+    id: "planner",
+    get label() {
+      return t("notebooks.gallery.category.planner");
+    },
+  },
+  {
+    id: "study",
+    get label() {
+      return t("notebooks.gallery.category.study");
+    },
+  },
+  {
+    id: "journal",
+    get label() {
+      return t("notebooks.gallery.category.journal");
+    },
+  },
+  {
+    id: "work",
+    get label() {
+      return t("notebooks.gallery.category.work");
+    },
+  },
+  {
+    id: "paper",
+    get label() {
+      return t("notebooks.gallery.category.paper");
+    },
+  },
+  {
+    id: "other",
+    get label() {
+      return t("notebooks.gallery.category.other");
+    },
+  },
 ];
 
 /**
@@ -334,9 +403,24 @@ export function readGalleryIndex(raw: unknown): GalleryEntry[] {
 export type GallerySort = "popular" | "new" | "name";
 
 export const GALLERY_SORTS: ReadonlyArray<{ id: GallerySort; label: string }> = [
-  { id: "popular", label: "Popular" },
-  { id: "new", label: "New" },
-  { id: "name", label: "A–Z" },
+  {
+    id: "popular",
+    get label() {
+      return t("notebooks.gallery.sort.popular");
+    },
+  },
+  {
+    id: "new",
+    get label() {
+      return t("notebooks.gallery.sort.new");
+    },
+  },
+  {
+    id: "name",
+    get label() {
+      return t("notebooks.gallery.sort.name");
+    },
+  },
 ];
 
 /**

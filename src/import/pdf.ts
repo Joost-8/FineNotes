@@ -15,6 +15,7 @@ import { DEFAULT_PAGE_GEOMETRY, type Page, type Stroke } from "../model/document
 import { pdfPageGeometry } from "../model/scan-commands";
 import type { ImportResult } from "./import-types";
 import { hexColor, round2 } from "./import-types";
+import { t } from "../i18n/translate";
 
 /** One annotation that becomes ink. Points are in PDF points, from the page's top-left. */
 export interface PdfInkReading {
@@ -87,8 +88,8 @@ export function readPdf(
   fallbackTitle: string,
   madeBy = "",
 ): ImportResult {
-  if (!isPdf(bytes)) throw new PdfImportError("not a PDF");
-  if (pages.length === 0) throw new PdfImportError("the PDF has no pages");
+  if (!isPdf(bytes)) throw new PdfImportError(t("notebooks.import.pdf.notPdf"));
+  if (pages.length === 0) throw new PdfImportError(t("notebooks.import.pdf.noPages"));
   const title = fallbackTitle;
   const fileName = `${title}.pdf`;
   let strokeN = 0;
@@ -122,10 +123,7 @@ export function readPdf(
 
   const warnings: string[] = [];
   if (inkPages === 0) {
-    warnings.push(
-      "The PDF has no handwriting saved as annotations, so its pages are the paper; " +
-        "anything written on them is part of the page and can be written over, not edited.",
-    );
+    warnings.push(t("notebooks.import.pdf.noInk"));
   }
   return {
     source: "pdf",

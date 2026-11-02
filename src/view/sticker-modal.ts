@@ -26,6 +26,7 @@ import {
   type StickerCategory,
   stickerSvg,
 } from "../model/stickers";
+import { t } from "../i18n/translate";
 
 /** What the user picked: a built-in sticker in a colour, or a file of theirs. */
 export type StickerChoice =
@@ -54,7 +55,7 @@ export class StickerModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-sticker-modal");
-    this.titleEl.setText("Stickers");
+    this.titleEl.setText(t("notebooks.stickerModal.title"));
     this.render();
   }
 
@@ -89,19 +90,19 @@ export class StickerModal extends Modal {
       ...STICKER_CATEGORIES.map((c) => ({ id: c.id, label: c.label })),
       ...collections.map((c) => ({ id: `mine:${c.name}`, label: c.name })),
     ];
-    if (!tabs.some((t) => t.id === this.tab)) this.tab = "arrows";
+    if (!tabs.some((entry) => entry.id === this.tab)) this.tab = "arrows";
 
     const chips = body.createDiv({ cls: "goodobsidian-sticker-tabs", attr: { role: "tablist" } });
-    for (const t of tabs) {
+    for (const entry of tabs) {
       const chip = chips.createEl("button", {
         cls: "goodobsidian-sticker-tab clickable-icon",
-        text: t.label,
-        attr: { role: "tab", "aria-selected": String(t.id === this.tab) },
+        text: entry.label,
+        attr: { role: "tab", "aria-selected": String(entry.id === this.tab) },
       });
-      chip.toggleClass("is-active", t.id === this.tab);
+      chip.toggleClass("is-active", entry.id === this.tab);
       chip.addEventListener("click", () => {
-        this.tab = t.id;
-        lastTab = t.id;
+        this.tab = entry.id;
+        lastTab = entry.id;
         this.render();
       });
     }
@@ -129,8 +130,8 @@ export class StickerModal extends Modal {
     body.createDiv({
       cls: "goodobsidian-sticker-hint",
       text: collections.length
-        ? `Your own stickers live in “${this.folder}”: one folder per collection.`
-        : `Lasso anything and choose “Save as sticker” to start your own collection in “${this.folder}”.`,
+        ? t("notebooks.stickerModal.hintOwn", { folder: this.folder })
+        : t("notebooks.stickerModal.hintStart", { folder: this.folder }),
     });
   }
 
@@ -140,7 +141,10 @@ export class StickerModal extends Modal {
       if (color === "#ffffff") continue;
       const swatch = row.createEl("button", {
         cls: "goodobsidian-sticker-swatch clickable-icon",
-        attr: { "aria-label": `Colour ${color}`, "aria-pressed": String(color === this.color) },
+        attr: {
+          "aria-label": t("notebooks.stickerModal.colour", { color }),
+          "aria-pressed": String(color === this.color),
+        },
       });
       swatch
         .createSpan({ cls: "goodobsidian-sticker-swatch-disc" })

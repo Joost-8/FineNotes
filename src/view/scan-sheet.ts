@@ -42,6 +42,7 @@ import {
 import { pickImageFile, releaseCanvas } from "./image-import";
 import { type EncodedScan, decodePhoto, encodeScan, paint } from "./scan-io";
 import { errorMessage } from "../util/errors";
+import { t, tn } from "../i18n/translate";
 
 export interface ScanSheetHost {
   /**
@@ -71,12 +72,14 @@ const LOUPE_ZOOM = 3;
 const LOUPE_LIFT = 92;
 const LOUPE_OUTSIDE: readonly [number, number, number, number] = [96, 96, 96, 255];
 
-const CORNER_NAMES = [
-  "Top-left corner",
-  "Top-right corner",
-  "Bottom-right corner",
-  "Bottom-left corner",
-];
+function cornerNames(): string[] {
+  return [
+    t("notebooks.scan.cornerTopLeft"),
+    t("notebooks.scan.cornerTopRight"),
+    t("notebooks.scan.cornerBottomRight"),
+    t("notebooks.scan.cornerBottomLeft"),
+  ];
+}
 
 /** The filter chosen last, kept for the session: most people scan everything the same way. */
 let lastFilter: ScanFilter = "colour";
@@ -146,7 +149,7 @@ export class ScanSheet extends Modal {
   override onOpen(): void {
     this.closed = false;
     this.modalEl.addClass("goodobsidian-scan-modal");
-    this.titleEl.setText("Scan document");
+    this.titleEl.setText(t("notebooks.scan.title"));
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("goodobsidian-scan");
@@ -179,7 +182,7 @@ export class ScanSheet extends Modal {
     // While Add is running the scans are already on their way in; closing
     // the sheet then does not stop them, so nothing was discarded.
     if (!this.inserted && !this.busy && unsaved > 0) {
-      new Notice(`Scan discarded: ${unsaved} page${unsaved === 1 ? " was" : "s were"} not added.`);
+      new Notice(tn("notebooks.scan.discarded", unsaved));
     }
   }
 
@@ -201,7 +204,7 @@ export class ScanSheet extends Modal {
     const overlay = stage.createSvg("svg", { cls: "goodobsidian-scan-overlay" });
     this.maskPath = overlay.createSvg("path", { cls: "goodobsidian-scan-mask" });
     this.outline = overlay.createSvg("polygon", { cls: "goodobsidian-scan-outline" });
-    CORNER_NAMES.forEach((name, index) => {
+    cornerNames().forEach((name, index) => {
       const handle = stage.createDiv({
         cls: "goodobsidian-scan-handle",
         attr: { "aria-label": name, role: "button" },
@@ -235,8 +238,12 @@ export class ScanSheet extends Modal {
     setIcon(this.emptyEl.createDiv({ cls: "goodobsidian-scan-empty-icon" }), "scan-line");
     this.emptyText = this.emptyEl.createDiv({ cls: "goodobsidian-scan-empty-text" });
     const actions = this.emptyEl.createDiv({ cls: "goodobsidian-scan-empty-actions" });
-    if (Platform.isMobile) this.button(actions, "camera", "Take photo", () => this.pickPhoto(true));
-    const choose = Platform.isMobile ? "Choose photo" : "Choose picture";
+    if (Platform.isMobile) {
+      this.button(actions, "camera", t("notebooks.scan.takePhoto"), () => this.pickPhoto(true));
+    }
+    const choose = Platform.isMobile
+      ? t("notebooks.scan.choosePhoto")
+      : t("notebooks.scan.choosePicture");
     this.button(actions, "image", choose, () => this.pickPhoto(false));
     this.statusEl = stage.createDiv({ cls: "goodobsidian-scan-status is-hidden" });
   }
@@ -253,10 +260,12 @@ export class ScanSheet extends Modal {
     this.retakeButton = this.button(
       bar,
       Platform.isMobile ? "camera" : "image",
-      Platform.isMobile ? "Retake" : "Replace",
+      Platform.isMobile ? t("notebooks.scan.retake") : t("notebooks.scan.replace"),
       () => this.pickPhoto(this.capture),
     );
-    this.rotateButton = this.button(bar, "rotate-cw", "Rotate", () => this.rotate());
+    this.rotateButton = this.button(bar, "rotate-cw", t("notebooks.scan.rotate"), () =>
+      this.rotate(),
+    );
     const filters = bar.createDiv({ cls: "goodobsidian-segmented goodobsidian-scan-filters" });
     for (const { id, label } of SCAN_FILTERS) {
       const button = filters.createEl("button", { cls: "clickable-icon", text: label });
@@ -266,9 +275,16 @@ export class ScanSheet extends Modal {
     this.syncFilterButtons();
     bar.createDiv({ cls: "goodobsidian-scan-spacer" });
     if (this.host.multiPage) {
-      this.nextButton = this.button(bar, "plus", "Next page", () => this.keepAndNext());
+      this.nextButton = this.button(bar, "plus", t("notebooks.scan.nextPage"), () =>
+        this.keepAndNext(),
+      );
     }
-    this.addButton = this.button(bar, "check", "Add page", () => void this.finish());
+    this.addButton = this.button(
+      bar,
+      "check",
+      t("notebooks.scan.addPage"),
+      () => void this.finish(),
+    );
     this.addButton.addClass("goodobsidian-scan-primary");
     this.addLabel =
       this.addButton.querySelector(".goodobsidian-scan-button-label") ?? this.addButton;
@@ -297,11 +313,11 @@ export class ScanSheet extends Modal {
       bytes = await file.arrayBuffer();
     } catch {
       if (token === this.loadToken && !this.closed) {
-        this.setStatus("Couldn't read that file. Try another one.", true);
+        this.setStatus(t("notebooks.scan.fileUnreadable"), true);
       }
       return;
     }
-    this.setStatus("Reading the photo…");
+    this.setStatus(t("notebooks.scan.reading"));
     try {
       const photo = await decodePhoto(bytes, file.type);
       if (token !== this.loadToken || this.closed) return;
@@ -309,7 +325,7 @@ export class ScanSheet extends Modal {
       this.setStatus("");
     } catch {
       if (token !== this.loadToken || this.closed) return;
-      this.setStatus("Couldn't read that picture. Try another one.", true);
+      this.setStatus(t("notebooks.scan.pictureUnreadable"), true);
     }
   }
 
@@ -511,10 +527,10 @@ export class ScanSheet extends Modal {
     this.captionEl.toggleClass("is-error", !ok);
     this.captionEl.setText(
       !ok
-        ? "The corners don't make a page shape — drag them onto the page's corners."
+        ? t("notebooks.scan.captionBad")
         : this.detected
-          ? "Page found. Drag a corner to adjust it."
-          : "Drag the corners onto the page's corners.",
+          ? t("notebooks.scan.captionFound")
+          : t("notebooks.scan.captionDrag"),
     );
     if (!ok) return;
     let source = photo;
@@ -610,7 +626,7 @@ export class ScanSheet extends Modal {
     if (scan) this.keep(scan);
     if (this.kept.length === 0) return;
     this.setBusy(true);
-    this.setStatus("Adding…");
+    this.setStatus(t("notebooks.scan.adding"));
     try {
       const items = await Promise.all(this.kept);
       if (this.closed) return;
@@ -620,11 +636,11 @@ export class ScanSheet extends Modal {
         return;
       }
       if (this.closed) return;
-      this.setStatus("The scan wasn't added.", true);
+      this.setStatus(t("notebooks.scan.notAdded"), true);
     } catch (error) {
       if (this.closed) return;
       const message = errorMessage(error);
-      this.setStatus(`Couldn't add the scan — ${message}`, true);
+      this.setStatus(t("notebooks.scan.addFailed", { reason: message }), true);
     }
     this.setBusy(false);
   }
@@ -650,9 +666,7 @@ export class ScanSheet extends Modal {
     this.emptyEl.toggleClass("is-hidden", has);
     const ready = this.keptPages;
     this.emptyText.setText(
-      ready > 0
-        ? `${ready} page${ready === 1 ? "" : "s"} ready. Take the next photo, or add ${ready === 1 ? "it" : "them"}.`
-        : "Take a photo of a page, or choose one.",
+      ready > 0 ? tn("notebooks.scan.ready", ready) : t("notebooks.scan.empty"),
     );
     this.retakeButton.disabled = this.busy || !has;
     this.rotateButton.disabled = this.busy || !has;
@@ -661,7 +675,11 @@ export class ScanSheet extends Modal {
     const count = ready + (usable ? 1 : 0);
     this.addButton.disabled = this.busy || count === 0;
     this.addLabel.setText(
-      !this.host.multiPage ? "Add to page" : count > 1 ? `Add ${count} pages` : "Add page",
+      !this.host.multiPage
+        ? t("notebooks.scan.addToPage")
+        : count > 1
+          ? t("notebooks.scan.addPages", { count })
+          : t("notebooks.scan.addPage"),
     );
   }
 }

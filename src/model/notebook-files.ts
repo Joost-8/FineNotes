@@ -10,6 +10,7 @@
  */
 
 import type { InkDocument } from "./document";
+import { t, tn } from "../i18n/translate";
 
 export type FileKind = "recordings" | "images" | "transcripts" | "chats" | "exports";
 
@@ -22,20 +23,40 @@ export const FILE_KINDS: readonly FileKind[] = [
 ];
 
 export const FILE_KIND_LABELS: Readonly<Record<FileKind, string>> = {
-  recordings: "Recordings",
-  images: "Pictures and PDFs",
-  transcripts: "Transcripts",
-  chats: "AI chats",
-  exports: "Exports",
+  get recordings() {
+    return t("notebooks.files.kind.recordings");
+  },
+  get images() {
+    return t("notebooks.files.kind.images");
+  },
+  get transcripts() {
+    return t("notebooks.files.kind.transcripts");
+  },
+  get chats() {
+    return t("notebooks.files.kind.chats");
+  },
+  get exports() {
+    return t("notebooks.files.kind.exports");
+  },
 };
 
 /** What the list says when a kind has nothing yet. */
 export const FILE_KIND_EMPTY: Readonly<Record<FileKind, string>> = {
-  recordings: "No recordings yet.",
-  images: "No pictures or PDFs in this notebook yet.",
-  transcripts: "No transcripts yet. Transcribe a recording, and it is listed here.",
-  chats: "No saved AI chats yet.",
-  exports: "No PDF exports yet.",
+  get recordings() {
+    return t("notebooks.files.empty.recordings");
+  },
+  get images() {
+    return t("notebooks.files.empty.images");
+  },
+  get transcripts() {
+    return t("notebooks.files.empty.transcripts");
+  },
+  get chats() {
+    return t("notebooks.files.empty.chats");
+  },
+  get exports() {
+    return t("notebooks.files.empty.exports");
+  },
 };
 
 /** Obsidian icon names, matching the notebook folder's own folders in the explorer. */
@@ -72,8 +93,9 @@ export function pagesDetail(pages: readonly number[]): string {
   if (pages.length === 0) return "";
   const shown = pages.slice(0, 3).map((page) => String(page + 1));
   const more = pages.length - shown.length;
-  const list = shown.join(", ") + (more > 0 ? ` and ${more} more` : "");
-  return `${pages.length === 1 ? "Page" : "Pages"} ${list}`;
+  const numbers = shown.join(", ");
+  const list = more > 0 ? t("notebooks.files.pagesMore", { pages: numbers, more }) : numbers;
+  return tn("notebooks.files.pagesDetail", pages.length, { list });
 }
 
 /**
@@ -107,7 +129,7 @@ export function recordingTranscripts(doc: InkDocument): FileRow[] {
     const path = recording.transcript;
     if (!path || seen.has(path)) continue;
     seen.add(path);
-    rows.push({ path, detail: "From a recording" });
+    rows.push({ path, detail: t("notebooks.files.fromRecording") });
   }
   return rows;
 }

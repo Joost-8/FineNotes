@@ -8,6 +8,7 @@
 
 import { uniqueFileName } from "../model/new-notebook";
 import { type ExportScope, exportBaseName, exportTitle, formatPageRange } from "./page-range";
+import { t, tn } from "../i18n/translate";
 
 export type ExportFormat = "pdf" | "png" | "jpg";
 
@@ -143,26 +144,40 @@ export interface ExportSummary {
  */
 export function exportSummary(s: ExportSummary): string {
   const n = s.pages.length;
-  const count = n === 1 ? "1 page" : `${n} pages`;
+  const count = tn("notebooks.export.summary.pages", n);
   let which = "";
   if (s.picked) {
     const range = formatPageRange(s.pages);
     // A folder of pictures is named by page, so their order says nothing.
     const reordered =
       s.target.kind === "file" && s.pages.some((page, i) => i > 0 && page < s.pages[i - 1]);
-    which = reordered ? ` (${range}, in that order)` : ` (${range})`;
+    which = ` ${t(
+      reordered ? "notebooks.export.summary.whichOrdered" : "notebooks.export.summary.which",
+      { range },
+    )}`;
   }
   const saved =
     s.target.kind === "file"
-      ? `saved as “${s.target.name}”`
-      : `saved as ${n} ${formatLabel(s.format)} images in “${s.target.folder}”`;
-  const where = s.folder !== null ? `in “${s.folder}”` : `next to this ${s.noun}`;
-  return `${count}${which}, ${saved} ${where}.`;
+      ? t("notebooks.export.summary.savedFile", { name: s.target.name })
+      : t("notebooks.export.summary.savedImages", {
+          count: n,
+          format: formatLabel(s.format),
+          folder: s.target.folder,
+        });
+  const where =
+    s.folder !== null
+      ? t("notebooks.export.summary.inFolder", { folder: s.folder })
+      : t(
+          s.noun === "page"
+            ? "notebooks.export.summary.nextToPage"
+            : "notebooks.export.summary.nextToNotebook",
+        );
+  return t("notebooks.export.summary", { count, which, saved, where });
 }
 
 /** What the dialog says once the files are saved. */
 export function savedText(paths: readonly string[], where: string): string {
   return paths.length === 1
-    ? `Saved “${paths[0]}”.`
-    : `Saved ${paths.length} images in “${where}”.`;
+    ? t("notebooks.export.savedOne", { path: paths[0] })
+    : t("notebooks.export.savedMany", { count: paths.length, where });
 }

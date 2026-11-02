@@ -21,6 +21,7 @@ import {
 import type { CoverChoice } from "../model/new-notebook";
 import { COVER_COLORS, COVER_SECTIONS } from "../model/templates";
 import { installPopoverDismiss, paintTemplatePreview, placePopover } from "./template-picker";
+import { t } from "../i18n/translate";
 
 export interface CoverPickerOptions {
   design: CoverChoice;
@@ -78,8 +79,8 @@ export class CoverPicker {
           cls: "goodobsidian-template-preview goodobsidian-cover-none",
         });
         setIcon(preview, "ban");
-        root.createDiv({ cls: "goodobsidian-template-name", text: "No cover" });
-        root.setAttribute("aria-label", "No cover");
+        root.createDiv({ cls: "goodobsidian-template-name", text: t("notebooks.cover.none") });
+        root.setAttribute("aria-label", t("notebooks.cover.none"));
         root.addEventListener("click", () => this.pick("none", this.paperColor));
         this.designs.set("none", { root, canvas: null, preview });
       }
@@ -101,7 +102,7 @@ export class CoverPicker {
 
     this.colorRow = this.el.createDiv({ cls: "goodobsidian-coverpicker-colors" });
     this.colorRow.setAttribute("role", "group");
-    this.colorRow.setAttribute("aria-label", "Cover colour");
+    this.colorRow.setAttribute("aria-label", t("notebooks.cover.colour"));
     for (const color of COVER_COLORS) {
       const swatch = this.colorRow.createEl("button", {
         cls: "goodobsidian-cover-swatch clickable-icon",
@@ -191,8 +192,8 @@ export class CoverPopover {
   constructor(anchor: HTMLElement, options: CoverPopoverOptions) {
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-coverpopover" });
     this.el.setAttribute("role", "dialog");
-    this.el.setAttribute("aria-label", "Change cover");
-    this.el.createDiv({ cls: "goodobsidian-addpage-title", text: "Change cover" });
+    this.el.setAttribute("aria-label", t("notebooks.cover.change"));
+    this.el.createDiv({ cls: "goodobsidian-addpage-title", text: t("notebooks.cover.change") });
     const kind = options.backdrop.kind;
     new CoverPicker(this.el, {
       design: isCoverRuling(kind) ? kind : "cover-plain",

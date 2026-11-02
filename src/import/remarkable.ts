@@ -43,6 +43,7 @@ import {
   type ImportAttachment,
   type ImportResult,
 } from "./import-types";
+import { t, tn } from "../i18n/translate";
 
 export class RemarkableError extends Error {}
 
@@ -673,7 +674,7 @@ export function readRemarkableDocument(
   fallbackTitle: string,
 ): ImportResult {
   const found = findContent(files);
-  if (!found) throw new RemarkableError("not a reMarkable document");
+  if (!found) throw new RemarkableError(t("notebooks.import.remarkable.notDocument"));
   const { prefix, uuid, content } = found;
   const base = `${prefix}${uuid}`;
 
@@ -692,7 +693,7 @@ export function readRemarkableDocument(
       .sort()
       .map((n, i) => ({ id: n.slice(folder.length, -".rm".length), pdfPage: i }));
   }
-  if (refs.length === 0) throw new RemarkableError("the document has no pages");
+  if (refs.length === 0) throw new RemarkableError(t("notebooks.import.remarkable.noPages"));
 
   const tally = newTally();
   const attachments: ImportAttachment[] = [];
@@ -704,7 +705,7 @@ export function readRemarkableDocument(
     pdfName = `${title}.${ext}`;
     attachments.push({ name: pdfName, bytes: pdfBytes, mime });
   } else if (files.has(`${base}.epub`)) {
-    warnings.push("The book's own pages could not be brought over; only the handwriting was.");
+    warnings.push(t("notebooks.import.remarkable.book"));
   }
 
   const counter = { n: 0 };
@@ -733,28 +734,18 @@ export function readRemarkableDocument(
   };
 }
 
-function warningsOf(t: Tally): string[] {
+function warningsOf(counts: Tally): string[] {
   const out: string[] = [];
-  if (t.unreadable > 0)
-    out.push(
-      `${plural(t.unreadable, "page")} could not be read and ${t.unreadable === 1 ? "was" : "were"} left blank.`,
-    );
-  if (t.damaged > 0)
-    out.push(`Part of the ink could not be read (${plural(t.damaged, "damaged block")}).`);
-  if (t.erasers > 0) {
-    out.push(
-      `${plural(t.erasers, "eraser stroke")} ${t.erasers === 1 ? "was" : "were"} left out; ink rubbed out with ${t.erasers === 1 ? "it" : "them"} may show again.`,
-    );
+  if (counts.unreadable > 0) {
+    out.push(tn("notebooks.import.remarkable.unreadable", counts.unreadable));
   }
-  if (t.highlights > 0)
-    out.push(`${plural(t.highlights, "text highlight")} could not be brought over yet.`);
-  if (t.text > 0) out.push("Typed text could not be brought over yet.");
-  if (t.anchoredToText > 0)
-    out.push("Some ink was placed next to typed text and may sit higher on the page than it did.");
-  if (t.hidden > 0) out.push(`Ink on ${plural(t.hidden, "hidden layer")} was left out.`);
+  if (counts.damaged > 0) out.push(tn("notebooks.import.remarkable.damaged", counts.damaged));
+  if (counts.erasers > 0) out.push(tn("notebooks.import.remarkable.erasers", counts.erasers));
+  if (counts.highlights > 0) {
+    out.push(tn("notebooks.import.remarkable.highlights", counts.highlights));
+  }
+  if (counts.text > 0) out.push(t("notebooks.import.remarkable.text"));
+  if (counts.anchoredToText > 0) out.push(t("notebooks.import.remarkable.anchored"));
+  if (counts.hidden > 0) out.push(tn("notebooks.import.remarkable.hidden", counts.hidden));
   return out;
-}
-
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
 }

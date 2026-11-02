@@ -33,6 +33,7 @@ import { imageMimeOf, loadImage, pickImageFile, releaseCanvas } from "./image-im
 import { measurePdfPages } from "./pdf-pages";
 import type { PaperLibraryHost } from "./template-picker";
 import { ConfirmModal } from "./template-ui";
+import { t, tn } from "../i18n/translate";
 
 /**
  * The names of the templates in My templates now ({@link paperName}), from
@@ -96,10 +97,9 @@ export class VaultPaperLibrary implements PaperLibraryHost {
     return new Promise((resolve) => {
       new ConfirmModal(
         this.app,
-        "Delete template",
-        `Delete “${name}”${pages > 1 ? ` and its ${pages} pages` : ""} from My templates? ` +
-          "It goes to the trash. Notebooks that use it keep their own copy.",
-        "Delete",
+        t("notebooks.library.deleteTitle"),
+        tn("notebooks.library.deleteMessage", Math.max(1, pages), { name }),
+        t("common.delete"),
         (yes) => {
           if (!yes) {
             resolve(false);
@@ -108,11 +108,11 @@ export class VaultPaperLibrary implements PaperLibraryHost {
           void this.app.fileManager.trashFile(file).then(
             () => {
               this.sizes.delete(path);
-              new Notice(`FineNotes: “${name}” was deleted from My templates.`);
+              new Notice(t("notebooks.library.deleted", { name }));
               resolve(true);
             },
             (error: unknown) => {
-              new Notice(`FineNotes: couldn't delete that template — ${String(error)}`);
+              new Notice(t("notebooks.library.deleteFailed", { reason: String(error) }));
               resolve(false);
             },
           );
@@ -205,11 +205,11 @@ export class VaultPaperLibrary implements PaperLibraryHost {
       }
       this.sizes.delete(target);
       if (path) this.sizes.delete(path);
-      new Notice(`FineNotes: "${name}" is in My templates.`);
+      new Notice(t("notebooks.library.saved", { name }));
       return designEntry(target, saved);
     } catch (error) {
       new Notice(
-        `FineNotes: couldn't save that paper — ${String((error as Error).message ?? error)}`,
+        t("notebooks.library.saveFailed", { reason: String((error as Error).message ?? error) }),
       );
       return null;
     }
@@ -261,27 +261,23 @@ export class VaultPaperLibrary implements PaperLibraryHost {
    */
   private async add(bytes: ArrayBuffer, name: string, label: string): Promise<boolean> {
     try {
-      if (bytes.byteLength > MAX_PAPER_BYTES) throw new Error("the file is larger than 40 MB");
+      if (bytes.byteLength > MAX_PAPER_BYTES) throw new Error(t("notebooks.library.tooLarge"));
       const kind = paperFileKind(new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 16)));
-      if (!kind) throw new Error("only PDF, PNG, JPEG and WebP files can be templates");
+      if (!kind) throw new Error(t("notebooks.library.wrongKind"));
       const pdf = kind === "pdf" ? new Uint8Array(bytes) : await pictureAsPdf(bytes, label);
       const pages = await measurePdfPages(pdf.slice().buffer);
-      if (pages.length === 0) throw new Error("it has no pages");
+      if (pages.length === 0) throw new Error(t("notebooks.library.noPages"));
       const folder = this.folder;
       if (!this.app.vault.getFolderByPath(folder)) {
         await this.app.vault.createFolder(folder).catch(() => undefined);
       }
       const path = this.freePath(folder, paperName(name));
       await this.app.vault.createBinary(path, pdf.slice().buffer);
-      new Notice(
-        pages.length === 1
-          ? `FineNotes: "${paperName(name)}" is in My templates.`
-          : `FineNotes: the ${pages.length} pages of "${paperName(name)}" are in My templates.`,
-      );
+      new Notice(tn("notebooks.library.added", pages.length, { name: paperName(name) }));
       return true;
     } catch (error) {
       new Notice(
-        `FineNotes: couldn't add that as a template — ${String((error as Error).message ?? error)}`,
+        t("notebooks.library.addFailed", { reason: String((error as Error).message ?? error) }),
       );
       return false;
     }
@@ -307,7 +303,7 @@ async function pictureAsPdf(bytes: ArrayBuffer, label: string): Promise<Uint8Arr
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("this device could not draw the picture");
+    if (!ctx) throw new Error(t("notebooks.library.cannotDraw"));
     // See-through parts land on white, as on paper.
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
@@ -341,7 +337,7 @@ class PaperSourceSuggestModal extends FuzzySuggestModal<TFile> {
     private readonly onPick: (file: TFile) => void,
   ) {
     super(app);
-    this.setPlaceholder("Find a PDF or picture to use as a template…");
+    this.setPlaceholder(t("notebooks.library.find"));
   }
 
   getItems(): TFile[] {

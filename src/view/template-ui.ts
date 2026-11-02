@@ -28,6 +28,7 @@ import {
   TEMPLATE_LICENCES,
   type TemplateLicence,
 } from "../import/template-package";
+import { t, tn } from "../i18n/translate";
 
 export interface TemplateDetails {
   name: string;
@@ -58,48 +59,46 @@ export class SaveTemplateModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-template-save");
-    this.titleEl.setText("Save as template");
+    this.titleEl.setText(t("notebooks.templateUi.saveTitle"));
     const el = this.contentEl;
     el.createDiv({
       cls: "setting-item-description",
-      text:
-        "One file holding the notebook and its pictures, to keep or to share. Anyone who opens it " +
-        "gets a new notebook of their own.",
+      text: t("notebooks.templateUi.saveIntro"),
     });
     new Setting(el)
-      .setName("Name")
+      .setName(t("notebooks.templateUi.name"))
       .addText((text) => text.setValue(this.details.name).onChange((v) => (this.details.name = v)));
-    new Setting(el).setName("Author").addText((text) =>
+    new Setting(el).setName(t("notebooks.templateUi.author")).addText((text) =>
       text
-        .setPlaceholder("Your name")
+        .setPlaceholder(t("notebooks.templateUi.yourName"))
         .setValue(this.details.author)
         .onChange((v) => (this.details.author = v)),
     );
     new Setting(el)
-      .setName("Description")
+      .setName(t("notebooks.templateUi.description"))
       .addTextArea((text) =>
         text.setValue(this.details.description).onChange((v) => (this.details.description = v)),
       );
     new Setting(el)
-      .setName("Version")
+      .setName(t("notebooks.templateUi.version"))
       .addText((text) =>
         text.setValue(this.details.version).onChange((v) => (this.details.version = v)),
       );
     new Setting(el)
-      .setName("Licence")
-      .setDesc("What others may do with it. Shown to whoever opens it.")
+      .setName(t("notebooks.templateUi.licence"))
+      .setDesc(t("notebooks.templateUi.licenceInfo"))
       .addDropdown((dropdown) => {
-        for (const l of TEMPLATE_LICENCES) dropdown.addOption(l.id, l.label);
+        for (const l of TEMPLATE_LICENCES) dropdown.addOption(l.id, l.title);
         dropdown
           .setValue(this.details.licence)
           .onChange((v) => (this.details.licence = v as TemplateLicence));
       });
     new Setting(el)
-      .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
+      .addButton((b) => b.setButtonText(t("common.cancel")).onClick(() => this.close()))
       .addButton((b) =>
         b
           .setCta()
-          .setButtonText("Save")
+          .setButtonText(t("common.save"))
           .onClick(() => {
             if (!this.details.name.trim()) return;
             this.close();
@@ -120,7 +119,7 @@ export class TemplateFileSuggestModal extends FuzzySuggestModal<TFile> {
     private readonly choose: (file: TFile) => void,
   ) {
     super(app);
-    this.setPlaceholder("New notebook from template…");
+    this.setPlaceholder(t("notebooks.command.newFromTemplate"));
   }
 
   override getItems(): TFile[] {
@@ -144,8 +143,8 @@ export class TemplateFileSuggestModal extends FuzzySuggestModal<TFile> {
 /** A gallery's templates: preview, name, author, licence; Install starts a notebook from one. */
 /** "1.2k downloads", "1 download", "No downloads yet". */
 function downloadsLabel(n: number): string {
-  if (n <= 0) return "No downloads yet";
-  return `${formatDownloads(n)} download${n === 1 ? "" : "s"}`;
+  if (n <= 0) return t("notebooks.templateUi.noDownloads");
+  return tn("notebooks.templateUi.downloads", n, { count: formatDownloads(n) });
 }
 
 export class TemplateGalleryModal extends Modal {
@@ -172,7 +171,7 @@ export class TemplateGalleryModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-template-gallery");
-    this.titleEl.setText("Template gallery");
+    this.titleEl.setText(t("notebooks.templateUi.galleryTitle"));
     this.showBrowse();
   }
 
@@ -188,11 +187,11 @@ export class TemplateGalleryModal extends Modal {
     const head = el.createDiv({ cls: "goodobsidian-gallery-head" });
     head.createSpan({
       cls: "setting-item-description",
-      text: "Free templates shared by people who use FineNotes.",
+      text: t("notebooks.templateUi.galleryIntro"),
     });
     const onShare = this.onShare;
     if (onShare) {
-      const share = head.createEl("button", { text: "Share yours…" });
+      const share = head.createEl("button", { text: t("notebooks.templateUi.shareYours") });
       share.addEventListener("click", () => {
         this.close();
         onShare();
@@ -201,14 +200,17 @@ export class TemplateGalleryModal extends Modal {
     if (shown.length === 0) {
       el.createDiv({
         cls: "setting-item-description",
-        text: "This gallery lists no templates yet.",
+        text: t("notebooks.templateUi.galleryEmpty"),
       });
       return;
     }
     const search = el.createEl("input", {
       cls: "goodobsidian-gallery-search",
       type: "search",
-      attr: { placeholder: "Search templates", "aria-label": "Search templates" },
+      attr: {
+        placeholder: t("notebooks.templateUi.search"),
+        "aria-label": t("notebooks.templateUi.search"),
+      },
     });
     search.value = this.query;
     search.addEventListener("input", () => {
@@ -219,7 +221,7 @@ export class TemplateGalleryModal extends Modal {
     const chips = filters.createDiv({ cls: "goodobsidian-gallery-chips" });
     const used = GALLERY_CATEGORIES.filter((c) => shown.some((e) => e.category === c.id));
     const chipButtons: HTMLElement[] = [];
-    for (const category of [{ id: "all", label: "All" }, ...used]) {
+    for (const category of [{ id: "all", label: t("notebooks.templateUi.all") }, ...used]) {
       const chip = chips.createEl("button", {
         cls: "goodobsidian-gallery-chip clickable-icon",
         text: category.label,
@@ -267,7 +269,7 @@ export class TemplateGalleryModal extends Modal {
       this.sort,
     );
     if (matching.length === 0) {
-      grid.createDiv({ cls: "setting-item-description", text: "No templates match." });
+      grid.createDiv({ cls: "setting-item-description", text: t("notebooks.templateUi.noMatch") });
       return;
     }
     for (const entry of matching) {
@@ -279,11 +281,17 @@ export class TemplateGalleryModal extends Modal {
       const src = entry.preview || entry.previews[0];
       if (src) cover.createEl("img", { attr: { src, alt: "", loading: "lazy" } });
       if (entry.pages > 1) {
-        cover.createSpan({ cls: "goodobsidian-gallery-badge", text: `${entry.pages} pages` });
+        cover.createSpan({
+          cls: "goodobsidian-gallery-badge",
+          text: t("notebooks.templateUi.pagesBadge", { count: entry.pages }),
+        });
       }
       card.createDiv({ cls: "goodobsidian-gallery-card-name", text: entry.name });
       card.createDiv({ cls: "goodobsidian-gallery-card-meta", text: entry.author });
-      const where = entry.shop && !entry.download ? "In the creator's shop" : "Free";
+      const where =
+        entry.shop && !entry.download
+          ? t("notebooks.templateUi.inShop")
+          : t("notebooks.templateUi.free");
       card.createDiv({
         cls: "goodobsidian-gallery-card-meta",
         text: [where, entry.download ? downloadsLabel(entry.downloads) : ""]
@@ -307,23 +315,29 @@ export class TemplateGalleryModal extends Modal {
     el.addClass("is-detail");
     const back = el.createEl("button", {
       cls: "goodobsidian-gallery-back clickable-icon",
-      attr: { "aria-label": "Back to the gallery" },
+      attr: { "aria-label": t("notebooks.templateUi.backToGallery") },
     });
     setIcon(back.createSpan({ cls: "goodobsidian-gallery-back-icon" }), "chevron-left");
-    back.createSpan({ text: "Gallery" });
+    back.createSpan({ text: t("notebooks.templateUi.gallery") });
     back.addEventListener("click", () => this.showBrowse());
 
     const head = el.createDiv({ cls: "goodobsidian-gallery-detail-head" });
     const titles = head.createDiv({ cls: "goodobsidian-gallery-detail-titles" });
     titles.createDiv({ cls: "goodobsidian-gallery-detail-name", text: entry.name });
     if (entry.author) {
-      titles.createDiv({ cls: "goodobsidian-gallery-detail-author", text: `by ${entry.author}` });
+      titles.createDiv({
+        cls: "goodobsidian-gallery-detail-author",
+        text: t("notebooks.templateUi.by", { author: entry.author }),
+      });
     }
     const actions = head.createDiv({ cls: "goodobsidian-gallery-detail-actions" });
     if (entry.download) {
       const add = actions.createEl("button", {
         cls: "mod-cta",
-        text: entry.kind === "notebook" ? "Use template" : "Add to My templates",
+        text:
+          entry.kind === "notebook"
+            ? t("notebooks.templateUi.use")
+            : t("notebooks.templateUi.addToMine"),
       });
       add.addEventListener("click", () => {
         this.close();
@@ -331,7 +345,7 @@ export class TemplateGalleryModal extends Modal {
       });
     }
     if (entry.shop) {
-      const shop = actions.createEl("button", { text: "Get it from the creator" });
+      const shop = actions.createEl("button", { text: t("notebooks.templateUi.getFromCreator") });
       shop.addEventListener("click", () => this.openShop(entry.shop));
     }
 
@@ -343,14 +357,18 @@ export class TemplateGalleryModal extends Modal {
         const page = strip.createDiv({ cls: "goodobsidian-gallery-page" });
         // The first few at once, so the page never opens empty; the rest as swiped to.
         page.createDiv({ cls: "goodobsidian-gallery-page-frame" }).createEl("img", {
-          attr: { src, alt: `Page ${i + 1}`, loading: i < 4 ? "eager" : "lazy" },
+          attr: {
+            src,
+            alt: t("notebooks.export.page", { page: i + 1 }),
+            loading: i < 4 ? "eager" : "lazy",
+          },
         });
         page.createDiv({ cls: "goodobsidian-gallery-page-number", text: String(i + 1) });
       });
       if (entry.pages > pages.length) {
         el.createDiv({
           cls: "goodobsidian-gallery-more",
-          text: `The first ${pages.length} of ${entry.pages} pages.`,
+          text: t("notebooks.templateUi.firstPages", { shown: pages.length, count: entry.pages }),
         });
       }
     }
@@ -365,12 +383,21 @@ export class TemplateGalleryModal extends Modal {
       facts.createSpan({ cls: "goodobsidian-gallery-fact-label", text: label });
       facts.createSpan({ text: value });
     };
-    fact("Pages", String(entry.pages));
-    if (entry.download) fact("Downloads", downloadsLabel(entry.downloads));
-    fact("Kind", entry.kind === "notebook" ? "A whole notebook" : "Paper: every page to use");
+    fact(t("notebooks.templateUi.factPages"), String(entry.pages));
+    if (entry.download)
+      fact(t("notebooks.templateUi.factDownloads"), downloadsLabel(entry.downloads));
+    fact(
+      t("notebooks.templateUi.factKind"),
+      entry.kind === "notebook"
+        ? t("notebooks.templateUi.kindNotebook")
+        : t("notebooks.templateUi.kindPaper"),
+    );
     const category = GALLERY_CATEGORIES.find((c) => c.id === entry.category)?.label;
-    if (category) fact("Category", category);
-    fact("Licence", TEMPLATE_LICENCES.find((l) => l.id === entry.licence)?.label ?? "");
+    if (category) fact(t("notebooks.templateUi.factCategory"), category);
+    fact(
+      t("notebooks.templateUi.licence"),
+      TEMPLATE_LICENCES.find((l) => l.id === entry.licence)?.title ?? "",
+    );
     if (entry.tags.length > 0) {
       const tags = about.createDiv({ cls: "goodobsidian-gallery-tags" });
       for (const tag of entry.tags) tags.createSpan({ cls: "goodobsidian-gallery-tag", text: tag });
@@ -381,6 +408,26 @@ export class TemplateGalleryModal extends Modal {
     this.listEl = null;
     this.contentEl.empty();
     this.onClosed?.();
+  }
+}
+
+/** A share category's name for the person, in the language in use. */
+function shareCategoryLabel(category: { id: string; label: string }): string {
+  switch (category.id) {
+    case "planner":
+      return t("notebooks.shareCategory.planner");
+    case "study":
+      return t("notebooks.shareCategory.study");
+    case "journal":
+      return t("notebooks.shareCategory.journal");
+    case "work":
+      return t("notebooks.shareCategory.work");
+    case "paper":
+      return t("notebooks.shareCategory.paper");
+    case "other":
+      return t("notebooks.shareCategory.other");
+    default:
+      return category.label;
   }
 }
 
@@ -420,27 +467,27 @@ export class ShareTemplateModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-share-template");
-    this.titleEl.setText("Share a template");
+    this.titleEl.setText(t("notebooks.templateUi.shareTitle"));
     const el = this.contentEl;
     el.empty();
     if (!this.chosen) {
       el.createDiv({
         cls: "setting-item-description",
-        text: "My templates is empty. Bring in a PDF or picture, or save a page as a template, then share it.",
+        text: t("notebooks.templateUi.shareEmpty"),
       });
       return;
     }
     el.createDiv({
       cls: "setting-item-description goodobsidian-share-intro",
-      text:
-        "Everyone who uses FineNotes can find it in the template gallery once it is reviewed. " +
-        "FineNotes opens the submission form on GitHub with this filled in; you attach the file " +
-        "there and send it. You need a free GitHub account.",
+      text: t("notebooks.templateUi.shareIntro"),
     });
     let nameField: { setValue(value: string): unknown } | null = null;
-    new Setting(el).setName("Template").addDropdown((dropdown) => {
-      for (const t of this.templates) {
-        dropdown.addOption(t.path, `${t.name} (${t.pages} page${t.pages === 1 ? "" : "s"})`);
+    new Setting(el).setName(t("notebooks.templateUi.template")).addDropdown((dropdown) => {
+      for (const template of this.templates) {
+        dropdown.addOption(
+          template.path,
+          tn("notebooks.templateUi.shareOption", template.pages, { name: template.name }),
+        );
       }
       dropdown.setValue(this.chosen?.path ?? "");
       dropdown.onChange((path) => {
@@ -452,44 +499,44 @@ export class ShareTemplateModal extends Modal {
         this.renderFile();
       });
     });
-    new Setting(el).setName("Name").addText((text) => {
+    new Setting(el).setName(t("notebooks.templateUi.name")).addText((text) => {
       nameField = text;
       text.setValue(this.details.name).onChange((v) => (this.details.name = v));
     });
     new Setting(el)
-      .setName("Your name, as it shows")
+      .setName(t("notebooks.templateUi.yourNameShown"))
       .addText((text) =>
         text.setValue(this.details.author).onChange((v) => (this.details.author = v)),
       );
-    new Setting(el).setName("Category").addDropdown((dropdown) => {
-      for (const c of SHARE_CATEGORIES) dropdown.addOption(c.id, c.label);
+    new Setting(el).setName(t("notebooks.templateUi.factCategory")).addDropdown((dropdown) => {
+      for (const c of SHARE_CATEGORIES) dropdown.addOption(c.id, shareCategoryLabel(c));
       dropdown.setValue(this.details.category);
       dropdown.onChange((v) => (this.details.category = v));
     });
-    new Setting(el).setName("Licence").addDropdown((dropdown) => {
-      for (const l of TEMPLATE_LICENCES) dropdown.addOption(l.id, l.label);
+    new Setting(el).setName(t("notebooks.templateUi.licence")).addDropdown((dropdown) => {
+      for (const l of TEMPLATE_LICENCES) dropdown.addOption(l.id, l.title);
       dropdown.setValue(this.details.licence);
       dropdown.onChange((v) => (this.details.licence = v as TemplateLicence));
     });
     new Setting(el)
-      .setName("Description")
+      .setName(t("notebooks.templateUi.description"))
       .addTextArea((text) => text.onChange((v) => (this.details.description = v)));
     new Setting(el)
-      .setName("Tags")
-      .setDesc("A few words, separated by commas.")
+      .setName(t("notebooks.templateUi.tags"))
+      .setDesc(t("notebooks.templateUi.tagsInfo"))
       .addText((text) => text.onChange((v) => (this.details.tags = v)));
     this.fileEl = el.createDiv({ cls: "goodobsidian-share-file" });
     this.renderFile();
     new Setting(el)
-      .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
+      .addButton((b) => b.setButtonText(t("common.cancel")).onClick(() => this.close()))
       .addButton((b) =>
         b
           .setCta()
-          .setButtonText("Open the form on GitHub")
+          .setButtonText(t("notebooks.templateUi.openForm"))
           .onClick(() => {
             const problems = shareProblems(this.details);
             if (problems.length > 0 || !this.chosen) {
-              new Notice(problems.join(" ") || "Choose a template.");
+              new Notice(problems.join(" ") || t("notebooks.templateUi.chooseTemplate"));
               return;
             }
             const chosen = this.chosen;
@@ -506,7 +553,10 @@ export class ShareTemplateModal extends Modal {
     const el = this.fileEl;
     if (!el || !this.chosen) return;
     el.empty();
-    el.createDiv({ cls: "goodobsidian-share-file-label", text: "On GitHub, attach this file:" });
+    el.createDiv({
+      cls: "goodobsidian-share-file-label",
+      text: t("notebooks.templateUi.attachFile"),
+    });
     el.createDiv({ cls: "goodobsidian-share-file-path", text: this.chosen.path });
   }
 
@@ -535,7 +585,7 @@ export class ConfirmModal extends Modal {
     this.titleEl.setText(this.title);
     this.contentEl.createEl("p", { text: this.message });
     new Setting(this.contentEl)
-      .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
+      .addButton((b) => b.setButtonText(t("common.cancel")).onClick(() => this.close()))
       .addButton((b) =>
         b
           .setButtonText(this.confirmLabel)

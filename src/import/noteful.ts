@@ -45,6 +45,7 @@ import {
   type ImportResult,
 } from "./import-types";
 import { NotefulError, NotefulMessage, readFields, type NotefulSpan } from "./noteful-fields";
+import { t, tn } from "../i18n/translate";
 
 export { NotefulError } from "./noteful-fields";
 
@@ -99,7 +100,7 @@ function liveItems(collection: NotefulMessage | undefined): NotefulMessage[] {
 
 /** Convert one notebook. `fallbackTitle` is used when it has no name of its own. */
 export function readNoteful(bytes: Uint8Array, fallbackTitle: string): ImportResult {
-  if (!isNoteful(bytes)) throw new NotefulError("not a Noteful notebook");
+  if (!isNoteful(bytes)) throw new NotefulError(t("notebooks.import.noteful.notNotebook"));
   const records = readIndex(bytes);
   const named = (prefix: string): NotefulMessage | undefined => {
     for (const [name, span] of records) {
@@ -114,13 +115,13 @@ export function readNoteful(bytes: Uint8Array, fallbackTitle: string): ImportRes
 
   const title = named("n:")?.string(3)?.trim() || fallbackTitle;
   const doc = named("d:");
-  if (!doc) throw new NotefulError("the notebook has no document record");
+  if (!doc) throw new NotefulError(t("notebooks.import.noteful.noDocument"));
 
   const pages = liveItems(doc.message(2))
     .map((page, index) => ({ page, index, key: page.string(5) ?? "" }))
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.index - b.index))
     .map(({ page }) => page);
-  if (pages.length === 0) throw new NotefulError("the notebook has no pages");
+  if (pages.length === 0) throw new NotefulError(t("notebooks.import.noteful.noPages"));
 
   const attachments: ImportAttachment[] = [];
   const attached = new Map<string, string>();
@@ -167,17 +168,13 @@ export function readNoteful(bytes: Uint8Array, fallbackTitle: string): ImportRes
 
   const warnings: string[] = [];
   if (tally.lostStrokes > 0) {
-    warnings.push(`${plural(tally.lostStrokes, "page")} had ink that could not all be read.`);
+    warnings.push(tn("notebooks.import.noteful.lostStrokes", tally.lostStrokes));
   }
   if (tally.skipped > 0) {
-    warnings.push(
-      `${plural(tally.skipped, "item")} (shapes or other elements) could not be brought over yet.`,
-    );
+    warnings.push(tn("notebooks.import.noteful.skipped", tally.skipped));
   }
   if (tally.missing > 0) {
-    warnings.push(
-      `${plural(tally.missing, "picture or paper", "pictures or papers")} were not in the file.`,
-    );
+    warnings.push(tn("notebooks.import.noteful.missing", tally.missing));
   }
 
   const result: InkDocument = {
@@ -436,8 +433,4 @@ function pathStroke(body: NotefulMessage, left: number, top: number): Omit<Strok
     tool: "pen",
     pts,
   };
-}
-
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
 }

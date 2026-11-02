@@ -14,6 +14,7 @@ import {
 import { writeTextSection } from "../recognition/text-layer";
 import { type ImportBatch, isImportFileName } from "./import-notebook";
 import type { ImportResult, ImportSource } from "./import-types";
+import { t, tn } from "../i18n/translate";
 
 export const SOURCE_NAMES: Readonly<Record<ImportSource, string>> = {
   goodnotes: "Goodnotes",
@@ -24,8 +25,12 @@ export const SOURCE_NAMES: Readonly<Record<ImportSource, string>> = {
   remarkable: "reMarkable",
   supernote: "Supernote",
   freenotes: "FreeNotes",
-  template: "FineNotes template",
-  pdf: "a PDF",
+  get template() {
+    return t("notebooks.import.source.template");
+  },
+  get pdf() {
+    return t("notebooks.import.source.pdf");
+  },
 };
 
 /** "5 pages · from Goodnotes · 12 pictures" for one imported notebook. */
@@ -33,18 +38,18 @@ export function describeImport(result: ImportResult): string {
   const pages = result.doc.pages.length;
   const pictures = result.doc.pages.reduce((n, p) => n + p.images.length, 0);
   const parts = [
-    `${pages} page${pages === 1 ? "" : "s"}`,
-    `from ${result.app ?? SOURCE_NAMES[result.source]}`,
+    tn("notebooks.import.summary.pages", pages),
+    t("notebooks.import.summary.from", { app: result.app ?? SOURCE_NAMES[result.source] }),
   ];
-  if (pictures > 0) parts.push(`${pictures} picture${pictures === 1 ? "" : "s"}`);
+  if (pictures > 0) parts.push(tn("notebooks.import.summary.pictures", pictures));
   return parts.join(" · ");
 }
 
 /** The results screen's heading. */
 export function importHeading(batch: ImportBatch): string {
   const done = batch.results.length;
-  if (done === 0) return "Nothing was imported";
-  return `Imported ${done} notebook${done === 1 ? "" : "s"}`;
+  if (done === 0) return t("notebooks.import.summary.nothing");
+  return tn("notebooks.import.summary.imported", done);
 }
 
 export { isImportFileName };
@@ -77,21 +82,23 @@ export function sortDropped<T extends { name: string }>(
   const accepted = files.filter((f) => isImportFileName(f.name));
   const others = files.filter((f) => !isImportFileName(f.name)).map((f) => f.name);
   if (others.length === 0) return { accepted, refused: "" };
+  const names = others.slice(0, 2).join(", ");
   const named =
-    others.slice(0, 2).join(", ") + (others.length > 2 ? ` and ${others.length - 2} more` : "");
-  const one = others.length === 1;
+    others.length > 2
+      ? t("notebooks.import.summary.namesMore", { names, more: others.length - 2 })
+      : names;
   return {
     accepted,
-    refused: `${named} ${one ? "is not a notebook" : "are not notebooks"} FineNotes can import, so ${
-      one ? "it was" : "they were"
-    } left out.`,
+    refused: tn("notebooks.import.summary.refused", others.length, { names: named }),
   };
 }
 
 /** "Importing 2 of 5…" while files are read. */
 export function progressText(index: number, total: number, name: string): string {
   const leaf = name.split(/[\\/]/).pop() ?? name;
-  return total > 1 ? `Importing ${index + 1} of ${total}: ${leaf}…` : `Importing ${leaf}…`;
+  return total > 1
+    ? t("notebooks.import.summary.progressOf", { index: index + 1, total, name: leaf })
+    : t("notebooks.import.summary.progress", { name: leaf });
 }
 
 /**
