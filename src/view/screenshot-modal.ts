@@ -22,6 +22,7 @@
  */
 
 import { type App, Modal, setIcon } from "obsidian";
+import { t } from "../i18n/translate";
 import { errorMessage } from "../util/errors";
 
 /** What the dialog's second choice is on this platform. */
@@ -91,11 +92,11 @@ export class ScreenshotModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-screenshot-modal");
-    this.titleEl.setText("Screenshot");
+    this.titleEl.setText(t("view.screenshot.title"));
     const body = this.contentEl;
     const preview = body.createDiv({ cls: "goodobsidian-screenshot-preview" });
     const img = preview.createEl("img", {
-      attr: { src: this.urlOf(this.shown), alt: "The selection as a picture" },
+      attr: { src: this.urlOf(this.shown), alt: t("view.screenshot.alt") },
     });
     const status = body.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = body.createDiv({ cls: "goodobsidian-ask-actions" });
@@ -105,7 +106,7 @@ export class ScreenshotModal extends Modal {
       // The page behind it: lit while it shows, off for the selection alone.
       const page = actions.createEl("button", {
         cls: "clickable-icon goodobsidian-screenshot-page",
-        attr: { "aria-label": "Page behind" },
+        attr: { "aria-label": t("view.screenshot.pageBehind") },
       });
       setIcon(page, "layers");
       const sync = (): void => {
@@ -129,7 +130,7 @@ export class ScreenshotModal extends Modal {
       file(),
     );
     if (second === "share") {
-      const share = actions.createEl("button", { text: "Share…" });
+      const share = actions.createEl("button", { text: t("view.screenshot.share") });
       share.addEventListener("click", () => {
         navigator.share({ files: [file()], title: this.name }).then(
           () => this.close(),
@@ -142,29 +143,29 @@ export class ScreenshotModal extends Modal {
         );
       });
     } else {
-      const save = actions.createEl("button", { text: "Save image" });
+      const save = actions.createEl("button", { text: t("view.screenshot.saveImage") });
       save.addEventListener("click", () => {
         void this.host.save(this.shown).then((path) => {
           if (!path) {
             status.addClass("is-error");
-            status.setText("The picture could not be saved.");
+            status.setText(t("view.screenshot.saveFailed"));
             return;
           }
           this.close();
-          this.host.tell(`Saved ${path}`);
+          this.host.tell(t("view.screenshot.saved", { path }));
         });
       });
     }
-    const copy = actions.createEl("button", { cls: "mod-cta", text: "Copy" });
+    const copy = actions.createEl("button", { cls: "mod-cta", text: t("common.copy") });
     copy.addEventListener("click", () => {
       void this.host.copy(this.shown.png).then((copied) => {
         if (!copied) {
           status.addClass("is-error");
-          status.setText("The picture could not be copied.");
+          status.setText(t("view.screenshot.copyFailed"));
           return;
         }
         this.close();
-        this.host.tell("Copied as a picture");
+        this.host.tell(t("view.screenshot.copied"));
       });
     });
   }

@@ -1,4 +1,5 @@
 /** Optional secondary-tool transitions. Pure: no DOM or Obsidian. */
+import { t } from "../i18n/translate";
 import { rejoinsStroke } from "../input/pen-rejoin";
 import type { ActiveTool } from "./toolbar";
 
@@ -111,9 +112,15 @@ export const PEN_OPTIONS_ON_WRITE: readonly PenOptionsOnWrite[] = [
 
 /** The choices as the settings tab and the pen menu name them. */
 export const PEN_OPTIONS_ON_WRITE_NAMES: Record<PenOptionsOnWrite, string> = {
-  off: "Never",
-  "until-tap": "Until you tap the pen",
-  "until-lift": "Until the pen lifts",
+  get off() {
+    return t("view.penOptions.never");
+  },
+  get "until-tap"() {
+    return t("view.penOptions.untilTap");
+  },
+  get "until-lift"() {
+    return t("view.penOptions.untilLift");
+  },
 };
 
 /**

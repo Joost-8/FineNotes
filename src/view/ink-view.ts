@@ -392,6 +392,7 @@ import {
   shownPaperTheme,
 } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
+import { t, tn } from "../i18n/translate";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
 import { obsidianOpenUri } from "../model/home-link";
@@ -401,8 +402,6 @@ import { vaultFonts } from "./font-store";
 /** Quiet time after the page being read changes before it is remembered. */
 const LAST_PAGE_DEBOUNCE_MS = 500;
 
-/** Shown when an edit is refused because the note's load was held. */
-const READ_ONLY_NOTICE = "FineNotes: this notebook is read-only until its ink loads cleanly.";
 /** How long the page in view must stay before it is checked for misread words, ms. */
 const WORD_CHECK_WAIT_MS = 1500;
 /** How long after one "this notebook is read-only" notice the next may show, ms. */
@@ -411,17 +410,6 @@ const READ_ONLY_NOTICE_MS = 4000;
 const PDF_SEARCH_BATCH = 8;
 /** How long after a notebook opens "Update available" appears, ms: once the bar is laid out. */
 const UPDATE_TIP_DELAY_MS = 1500;
-
-/** Shown once when a load is held (see load-guard.ts). */
-const HELD_LOAD_NOTICE =
-  "FineNotes: this notebook's ink did not load, perhaps because the file has not " +
-  "finished syncing. Nothing on disk has changed. The notebook stays read-only until it " +
-  "loads cleanly: reopen it once the sync is done.";
-
-/** The same, for a notebook a newer FineNotes wrote with something this one cannot keep. */
-const NEWER_FORMAT_NOTICE =
-  "FineNotes: this notebook uses something a newer FineNotes added. It stays read-only " +
-  "here, so nothing in it is lost: update FineNotes to edit it.";
 
 /**
  * The tools as the settings left them, for a view that has just opened: the
@@ -710,7 +698,7 @@ export class InkView extends TextFileView {
   }
 
   override getDisplayText(): string {
-    return this.file?.basename ?? "Notebook";
+    return this.file?.basename ?? t("view.notebook");
   }
 
   /** The note was renamed or moved: a header's `{title}` and the thumbnails follow. */
@@ -794,7 +782,9 @@ export class InkView extends TextFileView {
     });
     if (held) {
       const newer = payload !== undefined && needsNewerReader(payload);
-      new Notice(newer ? NEWER_FORMAT_NOTICE : HELD_LOAD_NOTICE, 10000);
+      // Shown once when a load is held (see load-guard.ts); the second text is
+      // for a notebook a newer FineNotes wrote with something this one cannot keep.
+      new Notice(newer ? t("view.notice.newerFormat") : t("view.notice.heldLoad"), 10000);
     }
     this.noteBody = body;
     this.doc = doc ?? this.blankNotebook();
@@ -1311,17 +1301,17 @@ export class InkView extends TextFileView {
     auto = false,
   ): Promise<void> {
     if (this.guard.locked) {
-      if (!auto) new Notice(READ_ONLY_NOTICE);
+      if (!auto) new Notice(t("view.notice.readOnly"));
       return;
     }
     if (this.transcription) {
-      if (!auto) new Notice("FineNotes: a transcription is already running.");
+      if (!auto) new Notice(t("view.transcribe.running"));
       return;
     }
     if (provider.id === MANUAL_PROVIDER_ID) {
       if (!auto) {
         if (!this.textPanelOpen) this.toggleTextPanel();
-        new Notice("FineNotes: manual transcription — type it in the text-layer panel.");
+        new Notice(t("view.transcribe.manual"));
       }
       return;
     }
@@ -1349,14 +1339,10 @@ export class InkView extends TextFileView {
       if (!auto) {
         new Notice(
           cleared.length > 0
-            ? `FineNotes: cleared the transcription of ${
-                cleared.length === 1
-                  ? "a page that no longer has any writing"
-                  : `${cleared.length} pages that no longer have any writing`
-              }.`
+            ? tn("view.transcribe.cleared", cleared.length)
             : unchanged > 0
-              ? "FineNotes: the transcription is already up to date."
-              : "FineNotes: nothing to transcribe yet.",
+              ? t("view.transcribe.upToDate")
+              : t("view.transcribe.nothing"),
         );
       }
       return;
@@ -1364,7 +1350,7 @@ export class InkView extends TextFileView {
 
     const run = { cancelled: false };
     this.transcription = run;
-    const progress = auto ? null : new Notice("FineNotes: transcribing…", 0);
+    const progress = auto ? null : new Notice(t("view.transcribe.progress"), 0);
     progress?.messageEl.addEventListener("click", () => {
       run.cancelled = true;
     });
@@ -1375,15 +1361,22 @@ export class InkView extends TextFileView {
         if (run.cancelled) break;
         const index = this.doc.pages.indexOf(page);
         if (index < 0) continue; // deleted while the others were transcribed
-        const count = work.length > 1 ? ` (${done + 1} of ${work.length})` : "";
-        progress?.setMessage(`FineNotes: transcribing page ${index + 1}${count}… Tap to stop.`);
+        progress?.setMessage(
+          work.length > 1
+            ? t("view.transcribe.progressPageOf", {
+                page: index + 1,
+                n: done + 1,
+                total: work.length,
+              })
+            : t("view.transcribe.progressPage", { page: index + 1 }),
+        );
         const hash = pageContentHash(page);
         try {
           const image = provider.requiresNetwork ? await this.renderForAi(page) : null;
           const result = await provider.recognize({
             strokes: page.strokes,
             pageImage: image ?? undefined,
-            onProgress: (message) => progress?.setMessage(`FineNotes: ${message}`),
+            onProgress: (message) => progress?.setMessage(t("view.notice.plain", { message })),
           });
           // The note was closed meanwhile: there is no body left to write into.
           if (!this.mounted) break;
@@ -1404,23 +1397,22 @@ export class InkView extends TextFileView {
     }
 
     if (failure) {
+      const failed = { page: failure.page, message: failure.message };
       new Notice(
-        `FineNotes: transcription failed on page ${failure.page}: ${failure.message}` +
-          (done > 0 ? ` (the ${done} page${done === 1 ? "" : "s"} before it were saved)` : ""),
+        done > 0
+          ? tn("view.transcribe.failedSaved", done, failed)
+          : t("view.transcribe.failed", failed),
         10000,
       );
       return;
     }
     if (auto) return;
     if (done > 0 && !this.textPanelOpen) this.toggleTextPanel();
-    const skipped =
-      unchanged > 0 ? ` ${unchanged} unchanged page${unchanged === 1 ? "" : "s"} skipped.` : "";
-    new Notice(
+    const summary =
       run.cancelled && done < work.length
-        ? `FineNotes: stopped — transcribed ${done} of ${work.length} pages.${skipped}`
-        : `FineNotes: transcribed ${done === 1 ? "the page" : `${done} pages`} into the ` +
-            `text layer — review and edit it.${skipped}`,
-    );
+        ? t("view.transcribe.stopped", { done, total: work.length })
+        : tn("view.transcribe.done", done);
+    new Notice(unchanged > 0 ? `${summary} ${tn("view.transcribe.skipped", unchanged)}` : summary);
   }
 
   /**
@@ -1817,7 +1809,7 @@ export class InkView extends TextFileView {
       openSaved: async (path) => {
         const chat = await readChat(this.app, path);
         if (!chat) {
-          new Notice("FineNotes: that chat could not be read.");
+          new Notice(t("view.ask.chatUnreadable"));
           return;
         }
         session.load(chat, path);
@@ -1845,8 +1837,8 @@ export class InkView extends TextFileView {
           confirm: () =>
             this.plugin.confirmAiSend(
               this.plugin.textAiConfig(),
-              "Asking about your notes",
-              "images of the pages you pick, together with your question,",
+              t("view.ask.consentTitle"),
+              t("view.ask.consentWhat"),
             ),
           preparePages: (numbers) =>
             this.collectAskPages(
@@ -1945,7 +1937,7 @@ export class InkView extends TextFileView {
         this.requestSave();
         return {
           text: `Added the text box near the top of page ${call.page}.`,
-          done: `Added a text box on page ${call.page}`,
+          done: t("view.ask.doneTextBox", { page: call.page }),
         };
       }
       case "add_page": {
@@ -1959,12 +1951,15 @@ export class InkView extends TextFileView {
         if (this.doc.pages.length === before) return { text: "No page was added.", isError: true };
         return {
           text: `Added page ${call.after + 1} after page ${call.after}. Pages after it moved up by one.`,
-          done: `Added page ${call.after + 1}`,
+          done: t("view.ask.doneAddPage", { page: call.after + 1 }),
         };
       }
       case "go_to_page":
         surface?.goToPage(call.page - 1, true);
-        return { text: `Showing page ${call.page}.`, done: `Went to page ${call.page}` };
+        return {
+          text: `Showing page ${call.page}.`,
+          done: t("view.ask.doneGoTo", { page: call.page }),
+        };
       case "insert_drawing": {
         const refused = editRefused();
         if (refused) return refused;
@@ -1978,7 +1973,7 @@ export class InkView extends TextFileView {
         if (!placed) return { text: "The drawing could not be placed.", isError: true };
         return {
           text: `Placed the drawing on page ${call.page}, saved as ${placed.path}.`,
-          done: `Drew on page ${call.page}`,
+          done: t("view.ask.doneDrew", { page: call.page }),
         };
       }
       default:
@@ -2010,11 +2005,11 @@ export class InkView extends TextFileView {
         return call.title
           ? {
               text: `Page ${call.page} is now “${call.title}” in the contents.`,
-              done: `Titled page ${call.page} “${call.title}”`,
+              done: t("view.ask.doneTitled", { page: call.page, title: call.title }),
             }
           : {
               text: `Page ${call.page} has no title now.`,
-              done: `Removed page ${call.page}'s title`,
+              done: t("view.ask.doneUntitled", { page: call.page }),
             };
       }
       case "add_section": {
@@ -2030,7 +2025,7 @@ export class InkView extends TextFileView {
         );
         return {
           text: `Added “${call.title}” to the contents, on page ${call.page}.`,
-          done: `Added “${call.title}” to the contents`,
+          done: t("view.ask.doneContents", { title: call.title }),
         };
       }
       case "bookmark_page": {
@@ -2038,10 +2033,13 @@ export class InkView extends TextFileView {
         if (!page) break;
         apply(new SetPageBookmark(page, call.bookmarked));
         return call.bookmarked
-          ? { text: `Bookmarked page ${call.page}.`, done: `Bookmarked page ${call.page}` }
+          ? {
+              text: `Bookmarked page ${call.page}.`,
+              done: t("view.ask.doneBookmarked", { page: call.page }),
+            }
           : {
               text: `Page ${call.page} has no bookmark now.`,
-              done: `Unbookmarked page ${call.page}`,
+              done: t("view.ask.doneUnbookmarked", { page: call.page }),
             };
       }
       case "move_page": {
@@ -2050,7 +2048,7 @@ export class InkView extends TextFileView {
         this.sidebar?.flush();
         return {
           text: `Page ${call.page} is now page ${call.to}; the pages between moved by one.`,
-          done: `Moved page ${call.page} to ${call.to}`,
+          done: t("view.ask.doneMoved", { page: call.page, to: call.to }),
         };
       }
       case "add_table": {
@@ -2078,7 +2076,7 @@ export class InkView extends TextFileView {
         apply(new AddTable(page.id, table));
         return {
           text: `Added a ${rows}×${cols} table on page ${call.page}.`,
-          done: `Added a table on page ${call.page}`,
+          done: t("view.ask.doneTable", { page: call.page }),
         };
       }
       case "add_practice_page": {
@@ -2113,13 +2111,13 @@ export class InkView extends TextFileView {
             new AddTextBoxToPage(page.id, box(top + i * slot, `${i + 1}. ${question}`, 22)),
           );
         });
-        apply(new CompositeCommand("Add practice page", parts));
+        apply(new CompositeCommand(t("view.ask.practiceLabel"), parts));
         surface.goToPage(insert.index, true);
         return {
           text:
             `Added practice page ${insert.index + 1} with ${call.questions.length} ` +
             `question${call.questions.length === 1 ? "" : "s"}, on the same paper as page ${call.after}.`,
-          done: `Added practice page ${insert.index + 1}`,
+          done: t("view.ask.donePractice", { page: insert.index + 1 }),
         };
       }
       case "mark_area": {
@@ -2136,12 +2134,25 @@ export class InkView extends TextFileView {
         if (call.comment) {
           parts.push(new AddComment(page.id, this.aiComment(doc, page, x1, y0, call.comment)));
         }
-        apply(new CompositeCommand("Mark", parts));
+        apply(new CompositeCommand(t("view.ask.markLabel"), parts));
         const what =
           call.shape === "highlight" ? "Highlighted" : call.shape === "box" ? "Boxed" : "Circled";
         return {
           text: `${what} that part of page ${call.page}${call.comment ? ", with the comment beside it" : ""}.`,
-          done: `${what} part of page ${call.page}${call.comment ? " and commented" : ""}`,
+          done: t(
+            call.comment
+              ? call.shape === "highlight"
+                ? "view.ask.doneHighlightedComment"
+                : call.shape === "box"
+                  ? "view.ask.doneBoxedComment"
+                  : "view.ask.doneCircledComment"
+              : call.shape === "highlight"
+                ? "view.ask.doneHighlighted"
+                : call.shape === "box"
+                  ? "view.ask.doneBoxed"
+                  : "view.ask.doneCircled",
+            { page: call.page },
+          ),
         };
       }
       case "add_comment": {
@@ -2156,7 +2167,7 @@ export class InkView extends TextFileView {
         );
         return {
           text: `Pinned the comment on page ${call.page}; the user opens it by tapping its marker.`,
-          done: `Commented on page ${call.page}`,
+          done: t("view.ask.doneComment", { page: call.page }),
         };
       }
       default:
@@ -2326,7 +2337,7 @@ export class InkView extends TextFileView {
     if (this.isProtected()) return;
     const config = this.plugin.imageAiConfig();
     if (!config) {
-      new Notice("FineNotes: choose an image service in settings first.");
+      new Notice(t("view.image.chooseService"));
       return;
     }
     const target = { vendor: config.vendor, baseUrl: "" };
@@ -2339,8 +2350,8 @@ export class InkView extends TextFileView {
         void this.plugin.saveSettings();
         const confirmed = await this.plugin.confirmAiSend(
           target,
-          "Generating an image",
-          "the description you typed",
+          t("view.image.consentTitle"),
+          t("view.image.consentWhat"),
         );
         if (!confirmed) return false;
         const picture = await generateImage(config, prompt, aspect);
@@ -2361,7 +2372,7 @@ export class InkView extends TextFileView {
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const name = generatedImageName(prompt, new Date(), picture.mimeType);
     const placed = await this.insertImageBytes(buffer as ArrayBuffer, picture.mimeType, name);
-    if (placed) new Notice(`FineNotes: picture saved to ${placed.path}.`);
+    if (placed) new Notice(t("view.image.saved", { path: placed.path }));
   }
 
   /**
@@ -2667,8 +2678,8 @@ export class InkView extends TextFileView {
       const missing = error instanceof Error && error.name === "ModelNotDownloadedError";
       new Notice(
         missing
-          ? `FineNotes: ${errorMessage(error)}`
-          : "FineNotes: could not read this handwriting.",
+          ? t("view.notice.plain", { message: errorMessage(error) })
+          : t("view.word.unreadable"),
         8000,
       );
       return;
@@ -2688,7 +2699,7 @@ export class InkView extends TextFileView {
     const at = found ? surface.wordInk(index, found.word.strokeIds) : null;
     if (!found || !at) {
       surface.setActiveWordFlag(null);
-      new Notice("FineNotes: no handwritten word read there.");
+      new Notice(t("view.word.none"));
       return;
     }
     this.openWordCard(page, found.word, found.suggestion, at, true);
@@ -3448,7 +3459,7 @@ export class InkView extends TextFileView {
   private async writeTemplate(details: TemplateDetails): Promise<void> {
     const doc = this.surface?.document;
     if (!doc) return;
-    const progress = new Notice("FineNotes: saving the template…", 0);
+    const progress = new Notice(t("view.template.saving"), 0);
     try {
       const paths = new Set<string>();
       for (const page of doc.pages) {
@@ -3477,10 +3488,14 @@ export class InkView extends TextFileView {
       // A buffer of its own: the vault takes an ArrayBuffer, not a view on one.
       const buffer = new Uint8Array(bytes).buffer;
       const file = await this.app.vault.createBinary(normalizePath(`${folder}/${name}`), buffer);
-      const left = missing.length ? ` ${missing.length} missing picture(s) were left out.` : "";
-      new Notice(`FineNotes: saved the template as ${file.path}.${left}`, 8000);
+      new Notice(
+        missing.length
+          ? t("view.template.savedMissing", { path: file.path, count: missing.length })
+          : t("view.template.saved", { path: file.path }),
+        8000,
+      );
     } catch (error) {
-      new Notice(`FineNotes: couldn't save the template — ${errorMessage(error)}`, 8000);
+      new Notice(t("view.template.saveFailed", { message: errorMessage(error) }), 8000);
     } finally {
       progress.hide();
     }
@@ -3494,7 +3509,7 @@ export class InkView extends TextFileView {
   private async screenshotRegion(index: number, bounds: Bounds): Promise<void> {
     const shot = await this.pagePicture(index, bounds);
     if (shot) this.showScreenshot(shot);
-    else new Notice("Couldn't take the screenshot");
+    else new Notice(t("view.screenshot.failed"));
   }
 
   /**
@@ -3524,7 +3539,7 @@ export class InkView extends TextFileView {
       ? attachmentFromBytes("Selection.png", new Uint8Array(await shot.png.arrayBuffer()))
       : null;
     if (!file) {
-      new Notice("Couldn't take a picture of the selection");
+      new Notice(t("view.screenshot.selectionFailed"));
       return;
     }
     const refusal = this.askConversation().attachInstead(file);
@@ -3668,13 +3683,13 @@ export class InkView extends TextFileView {
     const from = vault.getAbstractFileByPath(plan.from);
     if (!from) return;
     if (vault.getAbstractFileByPath(plan.to)) {
-      new Notice(`FineNotes: "${plan.to}" already exists. Choose another name.`);
+      new Notice(t("view.rename.exists", { path: plan.to }));
       return;
     }
     try {
       await fileManager.renameFile(from, plan.to);
     } catch (error) {
-      new Notice(`FineNotes: could not rename the notebook — ${errorMessage(error)}`, 8000);
+      new Notice(t("view.rename.failed", { message: errorMessage(error) }), 8000);
     }
   }
 
@@ -3697,7 +3712,7 @@ export class InkView extends TextFileView {
       case "transcripts": {
         const sidecars = [transcriptSidecarPath(note.path), folderNotebookSidecarPath(note.path)]
           .filter((path): path is string => path !== null)
-          .map((path) => ({ path, detail: "Handwriting, from the transcript server" }));
+          .map((path) => ({ path, detail: t("view.files.serverTranscript") }));
         return [...recordingTranscripts(doc), ...sidecars].filter(exists);
       }
       case "chats": {
@@ -3738,7 +3753,7 @@ export class InkView extends TextFileView {
     }
     const file = this.app.vault.getFileByPath(row.path);
     if (!file) {
-      new Notice(`FineNotes: ${row.path} is not in the vault any more.`);
+      new Notice(t("view.files.gone", { path: row.path }));
       return;
     }
     void this.app.workspace.getLeaf("tab").openFile(file);
@@ -4181,7 +4196,7 @@ export class InkView extends TextFileView {
   /** A practice file says no to anything but writing; true when it did. */
   private refusePractice(): boolean {
     if (!this.isPractice) return false;
-    new Notice("A practice file is for copying its lines: pen and eraser only.");
+    new Notice(t("view.practice.penOnly"));
     return true;
   }
 
@@ -4192,7 +4207,7 @@ export class InkView extends TextFileView {
     // Through the surface's stack, so Cmd/Ctrl+Z makes it a single page again;
     // its onChange re-syncs the chrome and saves.
     this.surface.applyCommand(new SetSingle(false));
-    new Notice("This page is now a notebook: add pages from the toolbar or the page panel.");
+    new Notice(t("view.single.converted"));
   }
 
   /**
@@ -4201,13 +4216,13 @@ export class InkView extends TextFileView {
    */
   private refuseSinglePage(): boolean {
     if (this.isPractice) {
-      new Notice("A practice file keeps its pages as they are.");
+      new Notice(t("view.practice.fixedPages"));
       return true;
     }
     if (!this.isSinglePage) return false;
     // A board grows by itself as it is written on (FineNotes#46).
-    if (this.isBoard) new Notice("A board has one page, which grows as you write near its edge.");
-    else new Notice("This is a single page. Convert it to a notebook to add pages.");
+    if (this.isBoard) new Notice(t("view.single.board"));
+    else new Notice(t("view.single.page"));
     return true;
   }
 
@@ -4316,7 +4331,7 @@ export class InkView extends TextFileView {
         if (!surface.document.pages.includes(page)) return;
         const commands = linkStrokes(surface.document, page, touchedInk(strokeIds, read), target);
         if (commands.length === 0) return;
-        const label = target === null ? "Remove link" : "Link";
+        const label = target === null ? t("view.link.removeLabel") : t("view.link.label");
         surface.applyCommand(new CompositeCommand(label, commands));
         this.requestSave();
       },
@@ -4349,7 +4364,7 @@ export class InkView extends TextFileView {
       if (read) this.recordEdits(page, read.words, text);
       const commands = makeTask(surface.document, page, touchedInk(strokeIds, read), text);
       if (commands.length === 0) return;
-      surface.applyCommand(new CompositeCommand("Task", commands));
+      surface.applyCommand(new CompositeCommand(t("view.task.label"), commands));
       this.requestSave();
     });
     modal.open();
@@ -4789,7 +4804,7 @@ export class InkView extends TextFileView {
         if (doc.pages.length <= 1) return;
         surface.applyCommand(new RemovePage(index));
         surface.goToPage(Math.min(index, doc.pages.length - 1));
-        new Notice(`Deleted page ${index + 1}. Undo (Cmd/Ctrl+Z) brings it back.`);
+        new Notice(t("view.deletePage.done", { page: index + 1 }));
         break;
     }
     this.requestSave();
@@ -4834,9 +4849,9 @@ export class InkView extends TextFileView {
     if (pages.length === 0) return;
     let copyOnly: string | null = null;
     if (isReadOnly(surface.document)) {
-      copyOnly = "This notebook is read-only, so its pages can be copied but not moved.";
+      copyOnly = t("view.transfer.readOnly");
     } else if (pages.length >= surface.document.pages.length) {
-      copyOnly = "These are all the pages here, so they can be copied but not moved.";
+      copyOnly = t("view.transfer.allPages");
     }
     new MovePagesModal(this.app, {
       count: pages.length,
@@ -4866,7 +4881,7 @@ export class InkView extends TextFileView {
         ? await this.plugin.sendPagesToNewNotebook(destination.title, here)
         : await this.plugin.sendPages(destination.target.path, here);
     if (typeof receipt === "string") {
-      new Notice(`FineNotes: ${receipt}`, 8000);
+      new Notice(t("view.notice.plain", { message: receipt }), 8000);
       return;
     }
     this.plugin.rememberTransferTarget(receipt.path);
@@ -4889,7 +4904,7 @@ export class InkView extends TextFileView {
         fragment.createSpan({ text: message });
         const undo = fragment.createEl("button", {
           cls: "goodobsidian-notice-action clickable-icon",
-          text: "Undo",
+          text: t("common.undo"),
         });
         undo.addEventListener("click", () => {
           notice.hide();
@@ -4909,10 +4924,7 @@ export class InkView extends TextFileView {
     if (removal) {
       // Here first: the copy over there is the only other copy of these pages.
       if (this.surface !== surface || !surface.isLatest(removal)) {
-        new Notice(
-          `FineNotes: this notebook changed since, so the pages stay in ${receipt.title} as well. Delete them there if you do not want them.`,
-          10000,
-        );
+        new Notice(t("view.transfer.changedSince", { title: receipt.title }), 10000);
         return;
       }
       surface.undo();
@@ -4923,7 +4935,7 @@ export class InkView extends TextFileView {
       await receipt.undo();
     } catch (error) {
       new Notice(
-        `FineNotes: could not take the pages out of ${receipt.title} — ${errorMessage(error)}`,
+        t("view.transfer.undoFailed", { title: receipt.title, message: errorMessage(error) }),
         8000,
       );
     }
@@ -4936,8 +4948,8 @@ export class InkView extends TextFileView {
    */
   receivePages(pages: readonly Page[]): { undo: () => Promise<void> } | string {
     const surface = this.surface;
-    if (!surface) return "that notebook is not ready yet.";
-    if (this.isDamaged()) return "that notebook could not be loaded safely.";
+    if (!surface) return t("view.transfer.notReady");
+    if (this.isDamaged()) return t("view.transfer.damaged");
     const refusal = transferRefusal(surface.document);
     if (refusal) return refusal;
     const command = new ReceivePages(pages);
@@ -4984,7 +4996,7 @@ export class InkView extends TextFileView {
       case "bookmark": {
         // Like the page menu: all bookmarked already takes the bookmarks off.
         const on = !pages.every((page) => page.bookmarked === true);
-        const label = on ? "Bookmark pages" : "Remove bookmarks";
+        const label = on ? t("view.bookmarkPages") : t("view.removeBookmarks");
         surface.applyCommand(
           new CompositeCommand(
             label,
@@ -4996,19 +5008,16 @@ export class InkView extends TextFileView {
       case "delete": {
         const n = pages.length;
         if (n >= surface.document.pages.length) return;
-        const what = n === 1 ? "this page" : `these ${n} pages`;
         void ConfirmModal.confirm(this.app, {
-          title: n === 1 ? "Delete 1 page?" : `Delete ${n} pages?`,
-          message: `Everything on ${what} goes with it. Undo (Cmd/Ctrl+Z) brings it back.`,
-          cta: "Delete",
+          title: tn("view.deletePages.title", n),
+          message: tn("view.deletePages.message", n),
+          cta: t("common.delete"),
         }).then((yes) => {
           if (!yes || this.surface !== surface || this.isProtected()) return;
           surface.applyCommand(new RemovePages(pages));
           this.sidebar?.flush();
           this.requestSave();
-          new Notice(
-            `Deleted ${n === 1 ? "1 page" : `${n} pages`}. Undo (Cmd/Ctrl+Z) brings ${n === 1 ? "it" : "them"} back.`,
-          );
+          new Notice(tn("view.deletePages.done", n));
         });
         return;
       }
@@ -5039,8 +5048,8 @@ export class InkView extends TextFileView {
       pageLinkLabel(file.basename, page),
     );
     void writeSystemText(link).then(
-      () => new Notice(`Link to page ${page} copied.`),
-      () => new Notice("FineNotes could not use the clipboard here."),
+      () => new Notice(t("view.link.pageCopied", { page })),
+      () => new Notice(t("view.clipboardUnavailable")),
     );
   }
 
@@ -5142,13 +5151,8 @@ export class InkView extends TextFileView {
     if (!file) return;
     const link = obsidianOpenUri(this.app.vault.getName(), file.path);
     void writeSystemText(link).then(
-      () =>
-        new Notice(
-          "Link copied. On an iPad, paste it into a Shortcuts shortcut's Open URLs, " +
-            "then add the shortcut to your Home Screen.",
-          8000,
-        ),
-      () => new Notice("FineNotes could not use the clipboard here."),
+      () => new Notice(t("view.link.homeCopied"), 8000),
+      () => new Notice(t("view.clipboardUnavailable")),
     );
   }
 
@@ -5388,12 +5392,12 @@ export class InkView extends TextFileView {
     const library = this.paperLibrary();
     if (!note || !page || !library) return;
     const name = page.title?.trim() || `${stripInkSuffix(note.basename)} page ${index + 1}`;
-    const progress = new Notice("FineNotes: saving the page as a template…", 0);
+    const progress = new Notice(t("view.template.savingPage"), 0);
     try {
       const bytes = await exportPagesToPdf([page], this.previewSources(), { title: name });
       await library.addPdf(bytes, name);
     } catch (error) {
-      new Notice(`FineNotes: couldn't save the page as a template — ${errorMessage(error)}`, 8000);
+      new Notice(t("view.template.savePageFailed", { message: errorMessage(error) }), 8000);
     } finally {
       progress.hide();
     }
@@ -5471,7 +5475,7 @@ export class InkView extends TextFileView {
     if (mode === "add" && this.refuseSinglePage()) return;
     const source = this.app.vault.getFileByPath(entry.path);
     if (!source) {
-      new Notice("FineNotes: that template's file is gone from the vault.");
+      new Notice(t("view.template.gone"));
       return;
     }
     let path: string;
@@ -5505,7 +5509,7 @@ export class InkView extends TextFileView {
           )
         ).path;
     } catch (error) {
-      new Notice(`FineNotes: couldn't use that template — ${errorMessage(error)}`, 8000);
+      new Notice(t("view.template.useFailed", { message: errorMessage(error) }), 8000);
       return;
     }
     // The view may have changed while the copy saved.
@@ -5599,11 +5603,16 @@ export class InkView extends TextFileView {
     if (this.isProtected() || !this.file) return;
     const entries = pdf
       ? [
-          { id: "files", icon: "file-text", label: "From files", run: () => this.importPdf() },
+          {
+            id: "files",
+            icon: "file-text",
+            label: t("view.pdf.fromFiles"),
+            run: () => this.importPdf(),
+          },
           {
             id: "vault",
             icon: "folder-open",
-            label: "From vault",
+            label: t("view.pdf.fromVault"),
             run: () => this.importPdf(true),
           },
         ]
@@ -5612,7 +5621,7 @@ export class InkView extends TextFileView {
       anchor,
       entries,
       this.imageMenuContext(),
-      pdf ? "Insert PDF" : "Insert image",
+      pdf ? t("view.pdf.insert") : t("view.image.insert"),
     );
     this.imageMenu = { popover, anchor };
   }
@@ -5672,7 +5681,7 @@ export class InkView extends TextFileView {
     const note = this.file;
     const surface = this.surface;
     if (!note || !surface) return null;
-    const progress = new Notice("FineNotes: adding the picture…", 0);
+    const progress = new Notice(t("view.image.adding"), 0);
     try {
       const prepared = await prepareImageBytes(bytes, mime);
       const file = await saveImageAttachment(
@@ -5686,7 +5695,7 @@ export class InkView extends TextFileView {
       return this.placeImage(file.path, prepared.width, prepared.height, options);
     } catch (error) {
       const message = errorMessage(error);
-      new Notice(`FineNotes: couldn't add that picture — ${message}`, 8000);
+      new Notice(t("view.image.addFailed", { message }), 8000);
       return null;
     } finally {
       progress.hide();
@@ -5707,7 +5716,7 @@ export class InkView extends TextFileView {
       bytes = await file.arrayBuffer();
     } catch (error) {
       const message = errorMessage(error);
-      new Notice(`FineNotes: couldn't paste that picture — ${message}`, 8000);
+      new Notice(t("view.image.pasteFailed", { message }), 8000);
       return;
     }
     const options = at ? { pageIndex: at.pageIndex, center: { x: at.x, y: at.y } } : {};
@@ -5735,7 +5744,7 @@ export class InkView extends TextFileView {
       return this.placeImage(file.path, size.width, size.height, options);
     } catch (error) {
       const message = errorMessage(error);
-      new Notice(`FineNotes: couldn't place ${file.name} — ${message}`, 8000);
+      new Notice(t("view.image.placeFailed", { name: file.name, message }), 8000);
       return null;
     }
   }
@@ -5783,9 +5792,9 @@ export class InkView extends TextFileView {
     try {
       const prepared = { bytes: png, mime: "image/png", ext: "png", width, height };
       const file = await saveImageAttachment(this.app, prepared, "Sticker", note.path, folder);
-      new Notice(`FineNotes: saved as a sticker in ${folder} (${file.basename}).`);
+      new Notice(t("view.sticker.saved", { folder, name: file.basename }));
     } catch (error) {
-      new Notice(`FineNotes: couldn't save the sticker — ${errorMessage(error)}`, 8000);
+      new Notice(t("view.sticker.saveFailed", { message: errorMessage(error) }), 8000);
     }
   }
 
@@ -5793,11 +5802,11 @@ export class InkView extends TextFileView {
   importPdf(fromVault = false): void {
     if (this.isProtected() || !this.file || !this.surface || this.refusePractice()) return;
     if (this.isBoard) {
-      new Notice("A board has no pages for a PDF's pages. Pictures can go on it.");
+      new Notice(t("view.pdf.board"));
       return;
     }
     if (this.isSinglePage) {
-      new Notice("Convert this single page to a notebook before importing a PDF.");
+      new Notice(t("view.pdf.singleImport"));
       return;
     }
     if (fromVault) {
@@ -5867,7 +5876,10 @@ export class InkView extends TextFileView {
           if (this.file !== note || this.surface !== surface || this.isProtected()) return;
           await this.insertImageBytes(bytes, file.type, file.name);
         } catch (error) {
-          new Notice(`FineNotes: couldn't read ${file.name} — ${errorMessage(error)}`, 8000);
+          new Notice(
+            t("view.pdf.readFailed", { name: file.name, message: errorMessage(error) }),
+            8000,
+          );
         }
       }
     }
@@ -5887,10 +5899,10 @@ export class InkView extends TextFileView {
     const surface = this.surface;
     if (!note || !surface || this.isProtected()) return;
     if (this.isSinglePage) {
-      new Notice("Convert this single page to a notebook before importing a PDF.");
+      new Notice(t("view.pdf.singleImport"));
       return;
     }
-    const progress = new Notice("FineNotes: reading PDF pages…", 0);
+    const progress = new Notice(t("view.pdf.reading"), 0);
     try {
       const bytes = await read();
       const pages = await measurePdfPages(bytes);
@@ -5898,16 +5910,20 @@ export class InkView extends TextFileView {
       const item: ScanItem = { kind: "pdf", bytes, name, savedPath, pages: [] };
       if (!ask) {
         item.pages = pages.map((size, page) => ({ ...size, page }));
-        await this.insertScans([item], "Import PDF", surface.document.pages.length - 1);
+        await this.insertScans(
+          [item],
+          t("view.pdf.importLabel"),
+          surface.document.pages.length - 1,
+        );
         return;
       }
       new PdfImportModal(this.app, name, pages.length, async (indices) => {
         if (this.file !== note || this.surface !== surface || this.isProtected()) return false;
         item.pages = indices.map((page) => ({ ...pages[page], page }));
-        return this.insertScans([item], "Import PDF");
+        return this.insertScans([item], t("view.pdf.importLabel"));
       }).open();
     } catch (error) {
-      new Notice(`FineNotes: couldn't import PDF — ${errorMessage(error)}`, 8000);
+      new Notice(t("view.pdf.importFailed", { message: errorMessage(error) }), 8000);
     } finally {
       progress.hide();
     }
@@ -5989,7 +6005,7 @@ export class InkView extends TextFileView {
     const first = insert?.placed[0];
     if (!insert || !first) {
       if (this.isSinglePage) {
-        new Notice("A PDF adds pages, and this is a single page. Convert it to a notebook first.");
+        new Notice(t("view.pdf.singleAdd"));
       }
       return false;
     }
@@ -5998,10 +6014,7 @@ export class InkView extends TextFileView {
     if (first.imageId) surface.selectImage(first.pageId, first.imageId);
     this.requestSave();
     if (!insert.addedPages) {
-      new Notice(
-        "This is a single page, so the scan was placed on it. " +
-          "Convert it to a notebook to scan into new pages.",
-      );
+      new Notice(t("view.scan.singlePage"));
     }
     return true;
   }
@@ -6019,9 +6032,7 @@ export class InkView extends TextFileView {
     const now = Date.now();
     if (now - this.readOnlyNoticeAt > READ_ONLY_NOTICE_MS) {
       this.readOnlyNoticeAt = now;
-      new Notice(
-        "FineNotes: this notebook is read-only. Turn that off in its settings (the gear).",
-      );
+      new Notice(t("view.notice.readOnlySetting"));
     }
     return true;
   }
@@ -6029,7 +6040,7 @@ export class InkView extends TextFileView {
   /** Whether the notebook's ink failed to load, so it must not even be saved over. */
   private isDamaged(): boolean {
     if (!this.guard.locked) return false;
-    new Notice(READ_ONLY_NOTICE);
+    new Notice(t("view.notice.readOnly"));
     return true;
   }
 
