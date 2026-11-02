@@ -802,6 +802,28 @@ describe("which rows show", () => {
     expect(shown(rows(makeTab(makePlugin()).tab)[0].def)).toBe(false);
   });
 
+  it("offers the two Shortcuts-app shortcuts on Apple devices only, as icons that open them", async () => {
+    expect(rows(makeTab(makePlugin()).tab).some((r) => r.def.name === "Shortcuts app")).toBe(false);
+    Platform.isIosApp = true;
+    const opened: string[] = [];
+    vi.stubGlobal("window", { open: (url: string) => opened.push(url) });
+    try {
+      const row = renderRow(named(rows(makeTab(makePlugin()).tab), "Shortcuts app"));
+      expect(row.extras.map((b) => [b.icon, b.tooltip])).toEqual([
+        ["notebook-pen", "Add the New notebook shortcut"],
+        ["file-input", "Add the PDF to notebook shortcut"],
+      ]);
+      for (const button of row.extras) await button.click();
+      expect(opened).toEqual([
+        "https://www.icloud.com/shortcuts/cdeb33cd23444704b9e94b065ff899e3",
+        "https://www.icloud.com/shortcuts/7463fc5ca5104861b28108d3e3e9938f",
+      ]);
+    } finally {
+      vi.unstubAllGlobals();
+      Platform.isIosApp = false;
+    }
+  });
+
   it("offers automatic recognition only with Cloud AI", () => {
     const plugin = makePlugin({ recognitionProviderId: LLM_PROVIDER_ID });
     expect(visibleNames(plugin)).toContain("Recognize automatically");
