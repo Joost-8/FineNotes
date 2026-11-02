@@ -24,27 +24,19 @@ import {
   readCorrections,
   swapWithPrevious,
   symbolsToWrite,
-  writePracticePage,
-  writeSymbolPractice,
 } from "./view/handwriting-learning";
 import {
-  MIN_PRACTICE_LINES,
   type PracticeSheet,
   deleteQuestion,
-  RELEARN_AFTER,
-  correctionsText,
   learnInfoText,
   learnSummary,
   learnedBadge,
   learnedResult,
   learnedStatus,
-  nextSheetAction,
-  sheetText,
-  sheetUse,
   newCorrections,
   undoText,
 } from "./recognition/hwr/learned-model";
-import { PRACTICE_SETS, isSymbolSet } from "./recognition/practice";
+import { PRACTICE_SETS } from "./recognition/practice";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
 import {
   type App,
@@ -141,6 +133,7 @@ import { SavedPenModal } from "./view/saved-pen-modal";
 import type { BarrelAction } from "./input/pen-modifiers";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
+import { learnWindow } from "./recognition/hwr/learn-window-model";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -2331,72 +2324,61 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /**
-   * "Learn your handwriting": how far it has come, a button for the next
-   * practice sheet and one to learn, and the sheets as chips under the row,
-   * each opening its sheet. While a run is on, the learn button shows its
-   * progress, filling up as a bar, and Stop ends it; closing the settings
-   * leaves it running.
+   * "Learn your handwriting": how far it has come, and one button that opens
+   * the Learn your handwriting window, named for its next step (Write sheet
+   * 1, Learn now). While a run is on it shows the progress, filling up as a
+   * bar; Stop is in the window. Closing the settings leaves a run going.
    */
   private drawLearnRow(setting: Setting): void {
     setting.settingEl.addClass("goodobsidian-learn-step");
-    removeOwn(setting.settingEl, "goodobsidian-sheet-chips");
     const learning = this.learningState;
     if (!learning) {
       this.loadLearning();
       return;
     }
-    const host = this.plugin.learningHost();
     const learner = this.plugin.learner;
-    const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
-    const lines = learning.sheets.reduce((sum, sheet) => sum + sheet.written, 0);
-    const enough = lines + learning.answeredAt.length >= MIN_PRACTICE_LINES;
     setting.setDesc(learnSummary(learning.sheets, PRACTICE_SETS.length));
-    const next = nextSheetAction(learning.sheets, PRACTICE_SETS.length);
-    setting.addButton((b) => {
-      b.setButtonText(next.label).onClick(async () => {
+    // One button: the window's next step, which it opens (view/learn-window.ts).
+    setting.addButton((open) => {
+      open.buttonEl.addClass("goodobsidian-learn-button");
+      // Filled, as the next step; while a run is on, the bar fills it instead.
+      open.setCta();
+      open.onClick(() => {
         this.plugin.closeSettings();
-        if (next.kind === "continue") await this.app.workspace.openLinkText(next.path, "", false);
-        else await writePracticePage(host);
-      });
-      // The first thing to do, until there is enough to learn from.
-      if (!enough) b.setCta();
-    });
-    setting.addButton((learn) => {
-      learn.buttonEl.addClass("goodobsidian-learn-button");
-      learn.onClick(() => void learner.start());
-      if (enough) learn.setCta();
-      const stop = setting.controlEl.createEl("button", {
-        text: "Stop",
-        cls: "goodobsidian-learn-stop",
+        this.plugin.openLearnWindow();
       });
       const show = (): void => {
         const progress = learner.progress;
-        learn.setDisabled(progress !== null || !enough);
-        learn.setButtonText(
-          progress
-            ? progressLabel(progress, Date.now())
-            : learning.files.current
-              ? "Learn again"
-              : "Learn now",
+        const view = learnWindow({
+          sheets: learning.sheets,
+          sets: PRACTICE_SETS.length,
+          corrections: learning.answeredAt.length,
+          run: progress,
+          result: null,
+          symbolsWanted: false,
+          now: Date.now(),
+        });
+        const next = view.buttons.find((button) => button.cta) ?? view.buttons[0];
+        open.setButtonText(
+          progress ? progressLabel(progress, Date.now()) : (next?.label ?? "Open"),
         );
-        learn.buttonEl.setCssProps({
+        open.buttonEl.toggleClass("mod-cta", progress === null);
+        open.buttonEl.setCssProps({
           "--gob-learn-progress": progress
             ? `${Math.round((100 * progress.step) / progress.steps)}%`
             : "0%",
         });
-        learn.buttonEl.toggleClass("is-learning", progress !== null);
-        stop.toggleClass("is-hidden", progress === null);
+        open.buttonEl.toggleClass("is-learning", progress !== null);
       };
-      stop.addEventListener("click", () => learner.stop());
       let running = learner.progress !== null;
       const unsubscribe = learner.subscribe(() => {
         // The tab was closed or redrawn: this row is gone.
-        if (!learn.buttonEl.isConnected) {
+        if (!open.buttonEl.isConnected) {
           unsubscribe();
           return;
         }
         const now = learner.progress !== null;
-        // A run ended: the model, its sheets and the buttons change with it.
+        // A run ended: the model and its sheets change with it.
         if (running && !now) {
           unsubscribe();
           this.reloadLearning();
@@ -2407,68 +2389,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       });
       show();
     });
-    const list = setting.settingEl.createDiv({ cls: "goodobsidian-sheet-chips" });
-    for (const sheet of learning.sheets) {
-      const use = sheetUse(sheet, record);
-      const done = sheet.written >= sheet.prompts;
-      const chip = list.createEl("button", {
-        cls: `goodobsidian-sheet-chip clickable-icon${use === "used" ? " is-used" : ""}`,
-      });
-      chip.setAttribute("aria-label", `${sheet.title}: ${sheetText(sheet, use)}`);
-      setIcon(
-        chip.createSpan({ cls: "goodobsidian-sheet-mark" }),
-        use === "used" ? "circle-check" : done || sheet.written > 0 ? "circle-dot" : "circle",
-      );
-      chip.createSpan({
-        cls: "goodobsidian-sheet-title",
-        text: isSymbolSet(sheet.set) ? "Symbols" : sheet.set ? `Sheet ${sheet.set}` : sheet.title,
-      });
-      chip.createSpan({
-        cls: "goodobsidian-sheet-state",
-        text: `${sheet.written}/${sheet.prompts}`,
-      });
-      chip.addEventListener("click", () => {
-        this.plugin.closeSettings();
-        void this.app.workspace.openLinkText(sheet.path, "", false);
-      });
-    }
-    // The symbol sheet sits among the sheets from the start: learning takes
-    // the text sheets, the symbol sheet, or both, whichever were written.
-    // Beside a symbol sheet written before symbols were added, a chip writes
-    // a sheet of just those.
-    const added = learning.newSymbols;
-    if (!learning.sheets.some((sheet) => isSymbolSet(sheet.set)) || (added && added.length > 0)) {
-      const chip = list.createEl("button", { cls: "goodobsidian-sheet-chip clickable-icon" });
-      chip.setAttribute(
-        "aria-label",
-        added && added.length > 0
-          ? `Write the ${added.length} symbols added since your symbol sheet: links and maths signs`
-          : "Write the symbol sheet: digits, operators and signs",
-      );
-      setIcon(chip.createSpan({ cls: "goodobsidian-sheet-mark" }), "circle-plus");
-      chip.createSpan({
-        cls: "goodobsidian-sheet-title",
-        text: added && added.length > 0 ? "New symbols" : "Symbols",
-      });
-      chip.addEventListener("click", () => {
-        this.plugin.closeSettings();
-        void writeSymbolPractice(host);
-      });
-    }
-    // The corrected words the model has not learned from, toward the next
-    // round: a tracker, not a button.
-    const fresh = newCorrections(learning.answeredAt, record);
-    const words = list.createDiv({
-      cls: `goodobsidian-sheet-chip goodobsidian-words-chip${fresh >= RELEARN_AFTER ? " is-due" : ""}`,
-      attr: { role: "img" },
-    });
-    words.setAttribute(
-      "aria-label",
-      correctionsText(fresh, learning.answeredAt.length, record !== undefined),
-    );
-    setIcon(words.createSpan({ cls: "goodobsidian-sheet-mark" }), "spell-check");
-    words.createSpan({ cls: "goodobsidian-sheet-title", text: "Words" });
-    words.createSpan({ cls: "goodobsidian-sheet-state", text: `${fresh}/${RELEARN_AFTER}` });
   }
 
   /** Swap the learned model for the one before the last learning; swapping again goes forward. */

@@ -139,6 +139,9 @@ export class AiMenuPopover {
       setIcon(icon, item.icon);
       const text = row.createSpan({ cls: "goodobsidian-aimenu-text" });
       text.createSpan({ cls: "goodobsidian-aimenu-label", text: item.label });
+      if (item.enabled && item.detail) {
+        text.createSpan({ cls: "goodobsidian-aimenu-reason", text: item.detail });
+      }
       if (!item.enabled) {
         row.disabled = true;
         row.setAttribute("aria-disabled", "true");

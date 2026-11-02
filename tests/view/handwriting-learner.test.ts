@@ -133,4 +133,29 @@ describe("learning from corrected words", () => {
     expect(Date.parse(record.learnedAt)).toBeGreaterThanOrEqual(before - 1);
     expect(newCorrections(check.answeredAt, record)).toBe(0);
   });
+
+  it("tells an open Learn window how a run ended, in place of a notice", async () => {
+    const { check, learner } = setUp();
+    await correctTwelve(check);
+    const told: unknown[] = [];
+    const stop = learner.present((result) => told.push(result));
+    worker.run = () =>
+      Promise.resolve({
+        better: true,
+        before: { errors: 2, chars: 20 },
+        after: { errors: 1, chars: 20 },
+        heldOut: 3,
+        trained: 9,
+        bytes: new Uint8Array(4),
+      });
+    await learner.start();
+    expect(told).toEqual([{ kind: "better", tested: 3, before: 10, after: 5 }]);
+    expect(notices).toHaveLength(0);
+    // No window open: the notice again.
+    stop();
+    worker.run = () => Promise.reject(new Error("out of memory"));
+    await learner.start();
+    expect(told).toHaveLength(1);
+    expect(notices.at(-1)?.message).toMatch(/out of memory/);
+  });
 });
