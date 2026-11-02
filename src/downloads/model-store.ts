@@ -167,14 +167,40 @@ export class AssetStore {
   /**
    * The bytes of a file of the model (the main one by default); null when
    * the model is not usable. An older version has only its main file.
+   *
+   * A file of the current version is checked by size and SHA-256 on every
+   * read, not only when the folder was looked at: a sync may have replaced
+   * or removed it since. One that no longer matches (or is gone) is not
+   * returned, and the folder is looked at again, so the state says it is
+   * missing and a download fetches it anew.
    */
   async bytes(name?: string): Promise<ArrayBuffer | null> {
     const main = await this.file();
     if (!main) return null;
-    if (name === undefined || name === this.asset.files[0]?.name) return this.deps.read(main);
-    if (this.current.kind !== "ready" || !this.asset.files.some((f) => f.name === name))
+    const isMain = name === undefined || name === this.asset.files[0]?.name;
+    if (
+      !isMain &&
+      (this.current.kind !== "ready" || !this.asset.files.some((f) => f.name === name))
+    )
       return null;
-    return this.deps.read(name);
+    const path = isMain ? main : name;
+    const pinned =
+      this.current.kind === "ready" ? this.asset.files.find((f) => f.name === path) : undefined;
+    let data: ArrayBuffer;
+    try {
+      data = await this.deps.read(path);
+    } catch {
+      await this.check(true);
+      return null;
+    }
+    if (
+      pinned &&
+      (data.byteLength !== pinned.bytes || (await this.deps.sha256(data)) !== pinned.sha256)
+    ) {
+      await this.check(true);
+      return null;
+    }
+    return data;
   }
 
   /**

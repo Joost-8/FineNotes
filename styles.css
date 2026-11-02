@@ -7930,6 +7930,63 @@ input[type="range"].goodobsidian-player-scrubber {
   overflow-wrap: anywhere;
 }
 
+/* The transcript in the recording's box: whole when short, else its lead
+   with the rest behind the chevron, scrolling inside the box when open. */
+.goodobsidian-recordings-transcript {
+  display: flex;
+  flex-direction: column;
+}
+
+.goodobsidian-recordings-transcript-text {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.goodobsidian-recordings-transcript-text p {
+  margin: 0 0 6px;
+}
+
+.goodobsidian-recordings-transcript-text p:last-child {
+  margin-bottom: 0;
+}
+
+.goodobsidian-recordings-transcript.is-lead .goodobsidian-recordings-transcript-text {
+  cursor: pointer;
+}
+
+.goodobsidian-recordings-transcript.is-open .goodobsidian-recordings-transcript-text {
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.goodobsidian-recordings-time {
+  margin-right: 6px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-recordings-time.is-playable {
+  color: var(--text-accent);
+  cursor: pointer;
+}
+
+.goodobsidian-recordings .goodobsidian-recordings-transcript-toggle.clickable-icon {
+  align-self: center;
+  min-width: var(--gob-touch-compact);
+  min-height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
 /* Transcribing on this device: the recording's progress, with Stop. */
 .goodobsidian-recordings-device {
   display: flex;

@@ -14,7 +14,14 @@
  */
 
 import { type App, FuzzySuggestModal, Menu, setIcon } from "obsidian";
-import { describeRecording, formatClock } from "../audio/recording";
+import {
+  type TranscriptParagraph,
+  describeRecording,
+  formatClock,
+  isShortTranscript,
+  transcriptLead,
+} from "../audio/recording";
+import { formatStamp } from "../audio/speech-chunks";
 import type { Recording } from "../model/document";
 import { swallowGhostClick } from "./ghost-click";
 import { syncRangeFill } from "./range-fill";
@@ -418,13 +425,16 @@ export interface RecordingEntry {
   available: boolean;
   /** Whether its transcript note is (only then are there Transcript and Paste buttons). */
   hasTranscript: boolean;
+  /** The transcript note's paragraphs, once read; shown in the recording's box. */
+  transcript?: readonly TranscriptParagraph[];
   /** What an on-device transcription of it is doing now, when one runs. */
   deviceStatus?: string;
 }
 
 export interface RecordingsActions {
   // Properties holding functions, not methods (CLAUDE.md: a callback is a value).
-  play: (recording: Recording) => void;
+  /** Play from the start, or from `fromMs` (a time in its transcript). */
+  play: (recording: Recording, fromMs?: number) => void;
   transcribe: (recording: Recording) => void;
   /** Transcribe with the speech model on this device (no key, nothing sent). */
   transcribeOnDevice: (recording: Recording) => void;
@@ -450,7 +460,9 @@ export interface TranscribeState {
  * The note's recordings, newest first, in the page sidebar's Audio tab — where
  * GoodNotes keeps them (2026-09-22, from Joost's screenshot). Each has Play,
  * Transcribe (only when the AI set up can transcribe speech; otherwise a line
- * under the hint says what it needs), Transcript (once there is one) and
+ * under the hint says what it needs), its transcript (once there is one:
+ * whole when short, else its first lines with the rest a tap away, each
+ * paragraph's time playing from there; the note itself an icon away) and
  * Remove from note; a Record button sits at the foot. The sidebar is outside the surface that cancels
  * Pencil touches, so `click` is right here.
  */
@@ -461,6 +473,10 @@ export class RecordingsPanel {
   private readonly recordButton: HTMLButtonElement;
   private readonly recordLabel: HTMLElement;
   private readonly recordIcon: HTMLElement;
+  /** Recordings (by path) whose long transcript is open in full. */
+  private readonly openTranscripts = new Set<string>();
+  /** How far each open transcript is scrolled, kept across redraws (progress redraws often). */
+  private readonly transcriptScroll = new Map<string, number>();
 
   constructor(
     parent: HTMLElement,
@@ -519,6 +535,12 @@ export class RecordingsPanel {
         cls: "goodobsidian-recordings-missing",
         text: `The audio file is missing: ${recording.path}`,
       });
+    }
+    if (entry.transcript && entry.transcript.length > 0) {
+      const box = block.appendChild(this.transcriptBox(entry, entry.transcript));
+      const top = this.transcriptScroll.get(recording.path);
+      const text = box.querySelector<HTMLElement>(".goodobsidian-recordings-transcript-text");
+      if (top !== undefined && text) text.scrollTop = top;
     }
     const row = block.createDiv({ cls: "goodobsidian-recordings-actions" });
     // `short` is shown beside the icon; without it the button is icon-only.
@@ -585,7 +607,8 @@ export class RecordingsPanel {
       row.lastElementChild?.addClass("goodobsidian-recordings-transcribe");
     }
     if (entry.hasTranscript) {
-      act("external-link", "Open transcript", "Transcript", () =>
+      // Its text is in the box now: the note is an icon away.
+      act("external-link", "Open transcript note", "", () =>
         this.actions.openTranscript(recording),
       );
       act("clipboard-paste", "Paste transcript onto the page", "", () =>
@@ -593,6 +616,73 @@ export class RecordingsPanel {
       );
     }
     act("trash-2", "Remove from note", "", () => this.actions.remove(recording), true, head);
+  }
+
+  /**
+   * The transcript in the recording's box: whole when short; else its lead,
+   * which a tap opens in full (scrolling in the box), and a chevron closes.
+   * A paragraph's time plays the recording from there.
+   */
+  private transcriptBox(
+    entry: RecordingEntry,
+    paragraphs: readonly TranscriptParagraph[],
+  ): HTMLElement {
+    const { recording } = entry;
+    const short = isShortTranscript(paragraphs);
+    const open = !short && this.openTranscripts.has(recording.path);
+    const box = createDiv({ cls: "goodobsidian-recordings-transcript" });
+    const text = box.createDiv({ cls: "goodobsidian-recordings-transcript-text" });
+    for (const paragraph of short || open ? paragraphs : transcriptLead(paragraphs)) {
+      const p = text.createEl("p");
+      const at = paragraph.atMs;
+      if (at !== undefined) {
+        const stamp = formatStamp(at);
+        const time = p.createSpan({ cls: "goodobsidian-recordings-time", text: stamp });
+        if (entry.available) {
+          time.addClass("is-playable");
+          time.setAttribute("role", "button");
+          time.setAttribute("tabindex", "0");
+          time.setAttribute("aria-label", `Play from ${stamp}`);
+          const play = (event: Event): void => {
+            event.stopPropagation();
+            this.actions.play(recording, at);
+          };
+          time.addEventListener("click", play);
+          time.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") play(event);
+          });
+        }
+      }
+      p.appendText(paragraph.text);
+    }
+    if (short) return box;
+    box.addClass(open ? "is-open" : "is-lead");
+    if (open) {
+      text.addEventListener("scroll", () =>
+        this.transcriptScroll.set(recording.path, text.scrollTop),
+      );
+    }
+    const toggle = (): void => {
+      this.transcriptScroll.delete(recording.path);
+      if (open) this.openTranscripts.delete(recording.path);
+      else this.openTranscripts.add(recording.path);
+      box.replaceWith(this.transcriptBox(entry, paragraphs));
+    };
+    const chevron = box.createEl("button", {
+      cls: "goodobsidian-recordings-transcript-toggle clickable-icon",
+      attr: {
+        "aria-label": open ? "Show less of the transcript" : "Show the whole transcript",
+        "aria-expanded": String(open),
+      },
+    });
+    iconInto(chevron, open ? "chevron-up" : "chevron-down", open ? "▴" : "▾");
+    chevron.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggle();
+    });
+    // Closed, the whole lead opens it; open, the text stays put for reading and selecting.
+    if (!open) text.addEventListener("click", toggle);
+    return box;
   }
 }
 

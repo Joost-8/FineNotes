@@ -116,6 +116,7 @@ import {
   SPEECH_LANGUAGES,
   effectiveSpeechModel,
   speechAsset,
+  speechChoiceLabel,
   speechModelInfo,
   speechModelsFor,
 } from "./audio/speech-models";
@@ -2000,8 +2001,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           "Tiny is quickest; base is more accurate and the default." +
             (mobile
-              ? " Small is offered on desktop only: it needs more memory than an iPad has to spare."
-              : " Small is the most accurate and about three times slower than base.") +
+              ? " Small and large-v3-turbo are offered on desktop only: they need more memory than an iPad has to spare. When a computer chose one, this iPad uses base."
+              : " Small is more accurate and about three times slower than base. Large-v3-turbo is the most accurate and very slow here: a recording takes about seven times its length to transcribe, so it takes recordings up to 20 minutes. It stays on this computer, outside the vault, so it never syncs to an iPad, which uses base instead.") +
             " A new size downloads the first time you use it. For long lectures an AI key or your own server is faster. Detect finds the language of most recordings; choosing it helps with short ones.",
         ),
         this.info(
@@ -2163,7 +2164,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const mobile = Platform.isMobile;
     setting.addDropdown((d) => {
       for (const m of speechModelsFor(mobile)) {
-        d.addOption(m.id, `${m.label} (${formatSize(totalBytes(speechAsset(m.id)))})`);
+        d.addOption(m.id, speechChoiceLabel(m.id, formatSize(totalBytes(speechAsset(m.id)))));
       }
       d.selectEl.setAttribute("aria-label", "Voice model size");
       d.setValue(effectiveSpeechModel(settings.speechModel, mobile));
