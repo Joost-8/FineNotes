@@ -16,6 +16,7 @@
  */
 
 import { ICON_STYLUS_ONLY } from "../constants";
+import { t } from "../i18n/translate";
 
 /** Every item the tool bar's centre can show. */
 export type BarItemId =
@@ -76,22 +77,54 @@ export const ALWAYS_SHOWN: BarItemId = "pen";
 
 /** What each item is called, in the bar's tooltip, the menu and the list. */
 export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
-  select: "Lasso",
-  pen: "Pen",
-  eraser: "Eraser",
-  text: "Text",
-  shape: "Shapes",
-  pan: "Hand",
-  zoom: "Magnifier",
-  stylus: "Stylus only",
-  image: "Image",
-  pdf: "PDF",
-  sticker: "Stickers",
-  sticky: "Sticky notes",
-  ruler: "Ruler",
-  tape: "Cover tape",
-  record: "Record audio",
-  fill: "Fill",
+  get select() {
+    return t("toolbar.tool.lasso");
+  },
+  get pen() {
+    return t("toolbar.tool.pen");
+  },
+  get eraser() {
+    return t("toolbar.tool.eraser");
+  },
+  get text() {
+    return t("toolbar.tool.text");
+  },
+  get shape() {
+    return t("toolbar.tool.shapes");
+  },
+  get pan() {
+    return t("toolbar.tool.hand");
+  },
+  get zoom() {
+    return t("toolbar.tool.magnifier");
+  },
+  get stylus() {
+    return t("toolbar.tool.stylusOnly");
+  },
+  get image() {
+    return t("toolbar.tool.image");
+  },
+  get pdf() {
+    return t("toolbar.tool.pdf");
+  },
+  get sticker() {
+    return t("toolbar.tool.stickers");
+  },
+  get sticky() {
+    return t("toolbar.tool.stickyNotes");
+  },
+  get ruler() {
+    return t("toolbar.tool.ruler");
+  },
+  get tape() {
+    return t("toolbar.tool.coverTape");
+  },
+  get record() {
+    return t("toolbar.tool.recordAudio");
+  },
+  get fill() {
+    return t("toolbar.tool.fill");
+  },
 };
 
 /** Each item's icon: its bar button's, in the menu and the list too. */
