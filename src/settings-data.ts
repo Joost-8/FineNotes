@@ -324,6 +324,8 @@ export interface GoodObsidianSettings {
   speechModel?: string;
   /** The spoken language as an ISO 639-1 code, or "auto" to detect it. */
   speechLanguage?: string;
+  /** The interface language: a code from `INTERFACE_LANGUAGES`, or "auto" to follow Obsidian. */
+  interfaceLanguage?: string;
 
   // Dark pages (#25): a view setting. What is stored never changes.
   /** Light pages, dark pages, or following Obsidian's theme. Checked where it is read. */
@@ -502,6 +504,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   calcNotes: true,
   speechModel: "whisper-base",
   speechLanguage: "auto",
+  interfaceLanguage: "auto",
   notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: true,

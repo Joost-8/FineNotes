@@ -217,6 +217,7 @@ import {
   renameCalculatorHistory,
 } from "./model/calculator-store";
 import { writeSystemText } from "./view/system-clipboard";
+import { InterfaceLanguage } from "./view/interface-language";
 
 /** How many times the Text tool's hint pill is shown before it stops by itself. */
 const TEXT_HINT_SHOWS = 3;
@@ -328,6 +329,14 @@ export default class GoodObsidianPlugin extends Plugin {
     save: (record) => this.app.saveLocalStorage(UPDATE_KEY, record),
   });
 
+  /** The language of the interface, and getting its table (interface-language.ts). */
+  readonly language = new InterfaceLanguage({
+    version: this.manifest.version,
+    pluginDir: () => this.pluginDir,
+    adapter: this.app.vault.adapter,
+    chosen: () => this.settings.interfaceLanguage,
+  });
+
   /** The first 90 s: steps and main-thread stalls, for the diagnostics export (startup-log.ts). */
   readonly startup = new StartupLog(() => performance.now());
 
@@ -415,6 +424,8 @@ export default class GoodObsidianPlugin extends Plugin {
     this.providers.set(cloud.id, cloud);
 
     await this.loadSettings();
+    // Before anything with words in it is made.
+    await this.language.start();
     this.installFullScreen();
     // The chosen speech model shows under Settings › Models on this device from the start.
     this.speech.store();

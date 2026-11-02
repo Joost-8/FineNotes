@@ -38,6 +38,8 @@ import {
 } from "./recognition/hwr/learned-model";
 import { PRACTICE_SETS } from "./recognition/practice";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
+import { t } from "./i18n/translate";
+import { LANGUAGE_ALIASES, drawLanguageRow } from "./view/language-row";
 import {
   type App,
   type ExtraButtonComponent,
@@ -1030,6 +1032,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     return [
       // Only while one is out: the tab is rebuilt when checking is switched.
       ...(update !== null ? [updateRow] : []),
+      this.info(
+        drawnRow(t("language.name"), "", (s) => this.drawLanguage(s), LANGUAGE_ALIASES),
+        t("language.info"),
+      ),
       block((el) => {
         const box = el.createDiv({ cls: "goodobsidian-callout" });
         const line = box.createDiv({ cls: "goodobsidian-callout-title", text: title });
@@ -2197,6 +2203,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       d.selectEl.setAttribute("aria-label", "Spoken language");
       d.setValue(settings.speechLanguage ?? SPEECH_LANGUAGES[0].code);
       d.onChange((value) => void this.setControlValue("speechLanguage", value));
+    });
+  }
+
+  /** The interface language: stored, its table fetched, and the tab drawn in it. */
+  private drawLanguage(setting: Setting): void {
+    drawLanguageRow(setting, {
+      chosen: () => this.plugin.settings.interfaceLanguage,
+      choose: async (code) => {
+        this.plugin.settings.interfaceLanguage = code;
+        await this.plugin.saveSettings();
+        return this.plugin.language.apply();
+      },
+      redraw: () => this.update(),
     });
   }
 

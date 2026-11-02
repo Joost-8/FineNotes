@@ -11,6 +11,9 @@ export default defineConfig({
       include: [
         "src/changelog.ts",
         "src/settings-data.ts",
+        "src/i18n/languages.ts",
+        "src/i18n/translate.ts",
+        "src/i18n/table-file.ts",
         "src/model/**/*.ts",
         "src/import/**/*.ts",
         "src/ink/freehand.ts",
