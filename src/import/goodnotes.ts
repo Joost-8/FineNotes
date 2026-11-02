@@ -68,7 +68,7 @@ import { normalizePageTitle } from "../model/contents";
 import { textSegments } from "../model/text-links";
 import { decodeAppleLz4 } from "./apple-lz4";
 import {
-  fontFor,
+  importedFont,
   hexColor,
   ImportTally,
   median,
@@ -1035,8 +1035,8 @@ function textBoxOf(body: Message, typed: Typed, k: number, id: string): TextBoxE
     fontSize: round2(Math.max(12, fontSize(attrs, store) * k)),
   };
   if (!fixed) box.fit = true;
-  const typeface = fontFor(attrs?.string(30) ?? store.message(5)?.message(1)?.string(30));
-  if (typeface !== "sans") box.font = typeface;
+  // The font each box was written in, over the nearest typeface (discussion #107).
+  Object.assign(box, importedFont(attrs?.string(30) ?? store.message(5)?.message(1)?.string(30)));
   const fill = rgba(body.message(30)?.message(1)?.message(1), true);
   if (fill) box.fill = fill;
   return box;
@@ -1303,8 +1303,8 @@ function readRtfBox(body: Message, k: number, id: string): TextBoxElement | null
   if (!rtf.text.includes("\n") && height !== undefined && height - 2 * inset < 1.8 * fontSize) {
     box.fit = true;
   }
-  const typeface = fontFor(rtf.font);
-  if (typeface !== "sans") box.font = typeface;
+  // The font it was written in, over the nearest typeface (discussion #107).
+  Object.assign(box, importedFont(rtf.font));
   const fill = rgba(body.message(7), true);
   if (fill) box.fill = fill;
   return box;

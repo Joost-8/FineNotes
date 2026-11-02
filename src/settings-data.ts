@@ -28,6 +28,7 @@ import {
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { BarrelAction } from "./input/pen-modifiers";
+import type { ExportFormat } from "./export/export-choice";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
 import { type BarItemId, DEFAULT_BAR } from "./view/toolbar-layout";
@@ -173,6 +174,11 @@ export interface GoodObsidianSettings {
   askSaveChats: boolean;
   /** Where Ask opens: a window over the notebook, or a sidebar beside the page. */
   askLayout: "window" | "sidebar";
+  /**
+   * A new Ask AI chat starts with the page being read picked. Off by default
+   * (Joost, discussion #107): a chat sends a page only when the user picks one.
+   */
+  askAttachPage: boolean;
   /** The user agreed that cloud AI sends their pages off the device. */
   cloudConsentGiven: boolean;
   /** The same agreement, given separately for the custom endpoint. */
@@ -327,6 +333,8 @@ export interface GoodObsidianSettings {
   deskColor: string;
   /** Export as PDF leaves out the paper's lines, grid, dots and texture. */
   exportPlainPaper: boolean;
+  /** The export dialog's format, as last picked: PDF, PNG or JPG. Checked where it is read. */
+  exportFormat: ExportFormat;
 
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
@@ -453,6 +461,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   imageAspect: "square",
   askSaveChats: false,
   askLayout: "window",
+  askAttachPage: false,
   cloudConsentGiven: false,
   customConsentGiven: false,
   autoRecognize: false,
@@ -495,6 +504,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   desk: "auto",
   deskColor: LIGHT_PAPER.desk,
   exportPlainPaper: false,
+  exportFormat: "pdf",
 
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],

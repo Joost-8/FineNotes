@@ -461,6 +461,7 @@ describe("the rows", () => {
       [AI, "Handwriting recognition", "dropdown:recognitionProviderId"],
       [AI, "Recognize automatically", "toggle:autoRecognize"],
       [AI, "More", "action"],
+      [AI, "Ask AI starts on the open page", "toggle:askAttachPage"],
       [AI, "Skip compressed providers", "toggle:openRouterSkipCompressed"],
       [AI, "Image generation", "dropdown:imageVendor"],
       [AI, "(block)", "render"],
@@ -694,6 +695,7 @@ describe("which rows show", () => {
       `${label} API key`,
       "Handwriting recognition",
       "More",
+      "Ask AI starts on the open page",
       "Image generation",
       // Claude makes no pictures: the callout saying so.
       expect.stringMatching(/^\(block \d+\)$/),
@@ -823,10 +825,10 @@ describe("which rows show", () => {
       return all.find((r) => r.heading === AI && r.def.name === "More")?.def.desc;
     };
     expect(visibleNames(makePlugin({ llmVendor: "openrouter" }))).toContain(toggle);
-    expect(aiMore("openrouter")).toBe("OpenRouter providers; pictures: service, model and key");
+    expect(aiMore("openrouter")).toBe("OpenRouter providers; Ask's page; pictures and their key");
     for (const vendor of ["anthropic", "openai", "google", "custom"] as const) {
       expect(visibleNames(makePlugin({ llmVendor: vendor })), vendor).not.toContain(toggle);
-      expect(aiMore(vendor), vendor).toBe("Pictures: service, model and key");
+      expect(aiMore(vendor), vendor).toBe("Ask's page; pictures: service, model and key");
     }
   });
 

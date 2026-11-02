@@ -116,6 +116,7 @@ import {
   SPEECH_LANGUAGES,
   effectiveSpeechModel,
   speechAsset,
+  speechChoiceLabel,
   speechModelInfo,
   speechModelsFor,
 } from "./audio/speech-models";
@@ -323,6 +324,10 @@ const DESC = {
   openRouter:
     "Get a key for your OpenRouter account from the browser, without copying and pasting " +
     "it. You approve it on openrouter.ai, and nothing is sent before you do.",
+  askAttachPage:
+    "A new chat in Ask AI starts with the page you are on picked, so the first question is " +
+    "about it. Off (the default), it starts with no page: pick pages in the chat, attach a " +
+    "file, or select something with the lasso and choose Ask AI.",
   openRouterSkipCompressed:
     "OpenRouter serves a model through several providers. Some run compressed (fp4) versions " +
     "that are cheaper but read handwriting less accurately. This skips the ones that say they " +
@@ -1810,8 +1815,17 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.more(
         "ai",
         vendor === "openrouter"
-          ? "OpenRouter providers; pictures: service, model and key"
-          : "Pictures: service, model and key",
+          ? "OpenRouter providers; Ask's page; pictures and their key"
+          : "Ask's page; pictures: service, model and key",
+      ),
+      this.info(
+        toggle("askAttachPage", "Ask AI starts on the open page", "", [
+          "attach page",
+          "current page",
+          "Ask AI",
+          "chat",
+        ]),
+        DESC.askAttachPage,
       ),
       {
         ...this.info(
@@ -1987,8 +2001,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           "Tiny is quickest; base is more accurate and the default." +
             (mobile
-              ? " Small is offered on desktop only: it needs more memory than an iPad has to spare."
-              : " Small is the most accurate and about three times slower than base.") +
+              ? " Small and large-v3-turbo are offered on desktop only: they need more memory than an iPad has to spare. When a computer chose one, this iPad uses base."
+              : " Small is more accurate and about three times slower than base. Large-v3-turbo is the most accurate and very slow here: a recording takes about seven times its length to transcribe, so it takes recordings up to 20 minutes. It stays on this computer, outside the vault, so it never syncs to an iPad, which uses base instead.") +
             " A new size downloads the first time you use it. For long lectures an AI key or your own server is faster. Detect finds the language of most recordings; choosing it helps with short ones.",
         ),
         this.info(
@@ -2150,7 +2164,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const mobile = Platform.isMobile;
     setting.addDropdown((d) => {
       for (const m of speechModelsFor(mobile)) {
-        d.addOption(m.id, `${m.label} (${formatSize(totalBytes(speechAsset(m.id)))})`);
+        d.addOption(m.id, speechChoiceLabel(m.id, formatSize(totalBytes(speechAsset(m.id)))));
       }
       d.selectEl.setAttribute("aria-label", "Voice model size");
       d.setValue(effectiveSpeechModel(settings.speechModel, mobile));

@@ -78,6 +78,14 @@ interface PageText {
 /** Pages whose text is kept. A lecture deck is a few dozen; text is small. */
 const MAX_PAGES = 200;
 
+/**
+ * How long a PDF that failed to open, or a page that failed to read, waits
+ * before it is tried again, ms. A large PDF can fail to open on an iPad
+ * short of memory; kept as failed, its highlighter never snapped again
+ * until the notebook was reopened (#107).
+ */
+const RETRY_MS = 15_000;
+
 const EMPTY: PageText = {
   items: [],
   links: [],
@@ -123,6 +131,8 @@ export class PdfTextCache {
   private readonly waiters = new Map<string, Array<() => void>>();
   private readonly deferred = new Map<string, PdfBackdrop>();
   private readonly documents = new Map<string, Promise<PdfDocumentLike | null>>();
+  /** Per page key, or per path for a PDF that would not open: when it failed. */
+  private readonly failed = new Map<string, number>();
   /** One page is read at a time, behind this. */
   private queue: Promise<void> = Promise.resolve();
   private held = false;
@@ -173,8 +183,9 @@ export class PdfTextCache {
       list.push(resolve);
       this.waiters.set(key, list);
       this.request(backdrop);
-      // Destroyed, or nothing to read: nobody would answer.
-      if (this.destroyed) this.wake(key);
+      // Destroyed, or nothing to read (it failed a moment ago and waits to
+      // be tried again): nobody would answer.
+      if (this.destroyed || (!this.inflight.has(key) && !this.deferred.has(key))) this.wake(key);
     });
     return this.peek(backdrop, geometry) ?? { chars: [], lines: [] };
   }
@@ -184,15 +195,24 @@ export class PdfTextCache {
     if (this.destroyed) return;
     const key = pageKey(backdrop.path, backdrop.page);
     if (this.pages.has(key) || this.inflight.has(key)) return;
+    if (this.failedRecently(key) || this.failedRecently(backdrop.path)) return;
     if (this.held) {
       this.deferred.set(key, backdrop);
       return;
     }
     this.inflight.add(key);
     this.queue = this.queue.then(async () => {
-      const text = await this.read(backdrop).catch(() => EMPTY);
+      const text = await this.read(backdrop).catch(() => null);
       this.inflight.delete(key);
       if (this.destroyed) return;
+      // A read that threw is tried again later, not kept as a page without
+      // text; a search waiting on it gets no text this time.
+      if (!text) {
+        this.failed.set(key, Date.now());
+        this.wake(key);
+        return;
+      }
+      this.failed.delete(key);
       this.store(key, text);
       this.wake(key);
       this.onReady?.(backdrop.path, backdrop.page);
@@ -212,6 +232,8 @@ export class PdfTextCache {
   /** The file changed or went: read its text afresh next time. */
   forget(path: string): void {
     const prefix = `${path}:`;
+    this.failed.delete(path);
+    for (const key of [...this.failed.keys()]) if (key.startsWith(prefix)) this.failed.delete(key);
     for (const key of [...this.pages.keys()]) if (key.startsWith(prefix)) this.pages.delete(key);
     for (const key of [...this.layouts.keys()])
       if (key.startsWith(prefix)) this.layouts.delete(key);
@@ -227,6 +249,7 @@ export class PdfTextCache {
       void doc.then((d) => d?.destroy()).catch(() => undefined);
     }
     this.documents.clear();
+    this.failed.clear();
     this.pages.clear();
     this.layouts.clear();
     this.onReady = null;
@@ -251,10 +274,21 @@ export class PdfTextCache {
     }
   }
 
-  private async read(backdrop: PdfBackdrop): Promise<PageText> {
+  /** True while `key` (a page, or a PDF's path) failed less than {@link RETRY_MS} ago. */
+  private failedRecently(key: string): boolean {
+    const at = this.failed.get(key);
+    if (at === undefined) return false;
+    if (Date.now() - at < RETRY_MS) return true;
+    this.failed.delete(key);
+    return false;
+  }
+
+  private async read(backdrop: PdfBackdrop): Promise<PageText | null> {
     const doc = await this.document(backdrop.path);
+    // Not opened: tried again later (`failed` holds the path), not kept as empty.
+    if (!doc) return null;
     const number = backdrop.page + 1;
-    if (!doc || !Number.isInteger(number) || number < 1 || number > doc.numPages) return EMPTY;
+    if (!Number.isInteger(number) || number < 1 || number > doc.numPages) return EMPTY;
     const page = await doc.getPage(number);
     try {
       const viewport = page.getViewport({ scale: 1 });
@@ -292,8 +326,15 @@ export class PdfTextCache {
   private document(path: string): Promise<PdfDocumentLike | null> {
     let doc = this.documents.get(path);
     if (!doc) {
-      doc = this.open(path).catch(() => null);
-      this.documents.set(path, doc);
+      const opening = this.open(path).catch(() => null);
+      doc = opening;
+      this.documents.set(path, opening);
+      // A PDF that would not open is forgotten, to be opened again after a while.
+      void opening.then((opened) => {
+        if (opened || this.documents.get(path) !== opening) return;
+        this.documents.delete(path);
+        this.failed.set(path, Date.now());
+      });
     }
     return doc;
   }
@@ -305,7 +346,9 @@ export class PdfTextCache {
     const bytes = await this.app.vault.readBinary(file);
     this.lib ??= loadPdfJs().then((value: unknown) => value as PdfJsLike);
     const lib = await this.lib;
-    // pdf.js may detach the buffer it is handed: a private copy (CLAUDE.md).
-    return await lib.getDocument({ data: new Uint8Array(bytes.slice(0)), ...pdfAssets() }).promise;
+    // pdf.js may detach the buffer it is handed; nothing here reads the
+    // bytes again, so they are handed over without a copy, which a large
+    // PDF on an iPad has no memory to spare for (#107).
+    return await lib.getDocument({ data: new Uint8Array(bytes), ...pdfAssets() }).promise;
   }
 }

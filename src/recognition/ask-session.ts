@@ -89,6 +89,11 @@ export class AskSession {
   attachments: ChatFile[] = [];
   /** The page picker's list of the notebook's PDFs was closed; it stays closed. */
   pdfListClosed = false;
+  /**
+   * A new chat starts with the page being read picked; false (the setting
+   * "Attach the page", FineNotes discussion #107) starts it with none.
+   */
+  attachPage: boolean;
   private created: string | null = null;
   /** Bumped by every new chat, so an answer to an old one is dropped. */
   private generation = 0;
@@ -96,11 +101,17 @@ export class AskSession {
 
   constructor(
     private readonly deps: AskSessionDeps,
-    options: { page: number; totalPages: number; save: boolean },
+    options: { page: number; totalPages: number; save: boolean; attachPage?: boolean },
   ) {
-    this.selected = [options.page];
     this.totalPages = options.totalPages;
     this.save = options.save;
+    this.attachPage = options.attachPage !== false;
+    this.selected = this.startPages(options.page);
+  }
+
+  /** What a new chat on `page` starts with picked. */
+  private startPages(page: number): number[] {
+    return this.attachPage && page >= 1 && page <= this.totalPages ? [page] : [];
   }
 
   get busy(): boolean {
@@ -126,6 +137,21 @@ export class AskSession {
   attach(file: ChatFile): string | null {
     const refusal = attachRefusal(file, [...this.attachments, ...this.sentFiles]);
     if (refusal) return refusal;
+    this.attachments = [...this.attachments, file];
+    this.changed();
+    return null;
+  }
+
+  /**
+   * Attach `file` to the next question in place of the pages picked for it
+   * (the lasso's Ask AI sends the selection, not its whole page): pages the
+   * chat already has stay picked. Resolves to why it cannot be, or null.
+   */
+  attachInstead(file: ChatFile): string | null {
+    const refusal = attachRefusal(file, [...this.attachments, ...this.sentFiles]);
+    if (refusal) return refusal;
+    const sent = this.sentPages;
+    this.selected = this.selected.filter((p) => sent.has(p));
     this.attachments = [...this.attachments, file];
     this.changed();
     return null;
@@ -179,7 +205,10 @@ export class AskSession {
     this.setSelection(this.selected);
   }
 
-  /** Start over on `page`. The saved file of the old chat stays. */
+  /**
+   * Start over on `page` (with no page picked when `attachPage` is off).
+   * The saved file of the old chat stays.
+   */
   newChat(page: number): void {
     if (this.busy) return;
     this.generation++;
@@ -188,8 +217,18 @@ export class AskSession {
     this.savedPath = null;
     this.created = null;
     this.attachments = [];
-    this.selected = page >= 1 && page <= this.totalPages ? [page] : [];
+    this.selected = this.startPages(page);
     this.changed();
+  }
+
+  /**
+   * Before anything is asked or attached, the chat follows the page being
+   * read: it starts as a new chat on `page` would. Once a file is attached,
+   * what is picked is the user's (or the lasso's) and stays.
+   */
+  follow(page: number): void {
+    if (!this.empty || this.attachments.length > 0) return;
+    this.setSelection(this.startPages(page));
   }
 
   /** Continue a saved chat. The pages its questions sent stay picked. */

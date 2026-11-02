@@ -554,3 +554,112 @@ export function handSector(
   const run = Math.min(seg, overshoot * r * 2);
   return [...closed, { x: a.x + ((b.x - a.x) * run) / seg, y: a.y + ((b.y - a.y) * run) / seg }];
 }
+
+// --- Arrows along a path (2026-11-01, discussion #107) ---------------------
+//
+// No real Pencil path arrow has been traced yet. These model the reporter's
+// pictures (an S of straight runs at right angles, the first run a few
+// degrees off level) and what the recordings showed of real ink in
+// general: corners the pen rounds or runs past before it turns, a pen-down
+// hook (`pencilInk`), Pencil density and tremor.
+
+export interface PathStyle {
+  /** Corner rounding, px: the pen turns along a quarter-ish arc of this radius. */
+  round?: number;
+  /** Run on past each corner by this many px before turning back onto the next run. */
+  overrun?: number;
+}
+
+/**
+ * The polyline through `corners` as a hand draws it: each corner rounded by
+ * `round` px, or overrun by `overrun` px and turned from there.
+ */
+export function handPath(corners: readonly Pt[], style: PathStyle = {}): Pt[] {
+  const out: Pt[] = [{ ...corners[0] }];
+  for (let i = 1; i < corners.length - 1; i++) {
+    const a = corners[i - 1];
+    const c = corners[i];
+    const b = corners[i + 1];
+    const la = Math.hypot(c.x - a.x, c.y - a.y);
+    const lb = Math.hypot(b.x - c.x, b.y - c.y);
+    const ua = { x: (c.x - a.x) / la, y: (c.y - a.y) / la };
+    const ub = { x: (b.x - c.x) / lb, y: (b.y - c.y) / lb };
+    const r = Math.min(style.round ?? 0, la / 3, lb / 3);
+    if (style.overrun) {
+      out.push({ x: c.x + ua.x * style.overrun, y: c.y + ua.y * style.overrun });
+    } else if (r > 0) {
+      // A quadratic through the corner, from r before it to r after it.
+      const p0 = { x: c.x - ua.x * r, y: c.y - ua.y * r };
+      const p2 = { x: c.x + ub.x * r, y: c.y + ub.y * r };
+      for (let k = 0; k <= 8; k++) {
+        const t = k / 8;
+        const s = 1 - t;
+        out.push({
+          x: s * s * p0.x + 2 * s * t * c.x + t * t * p2.x,
+          y: s * s * p0.y + 2 * s * t * c.y + t * t * p2.y,
+        });
+      }
+      continue;
+    }
+    out.push({ ...c });
+  }
+  out.push({ ...corners[corners.length - 1] });
+  return out;
+}
+
+export interface HeadStyle {
+  /** "v": tip, barb, back to the tip, barb. "open": tip, barb, across to the other barb. "retrace": back along the last run. */
+  kind?: "v" | "open" | "retrace" | "one-barb";
+  /** Barb length, px (or how far back for a retrace). */
+  len?: number;
+  /** Half-angle between each barb and the shaft, degrees. */
+  deg?: number;
+  /** The second barb's length over the first's. */
+  ratio?: number;
+  /** A retrace's deviation from straight back, degrees (sign picks the side). */
+  dev?: number;
+  /** A retrace's sideways step at the turn, px, to the side of `dev`. */
+  offset?: number;
+}
+
+/** `body` (an ideal path) with a head drawn at its end in one stroke. */
+export function withHead(body: readonly Pt[], head: HeadStyle = {}): Pt[] {
+  const tip = body[body.length - 1];
+  const prev = body[body.length - 2];
+  const l = Math.hypot(tip.x - prev.x, tip.y - prev.y);
+  const back = { x: (prev.x - tip.x) / l, y: (prev.y - tip.y) / l };
+  const len = head.len ?? 28;
+  const deg = ((head.deg ?? 30) * Math.PI) / 180;
+  const barb = (sign: number, k = 1): Pt => {
+    const c = Math.cos(sign * deg);
+    const s = Math.sin(sign * deg);
+    return {
+      x: tip.x + len * k * (back.x * c - back.y * s),
+      y: tip.y + len * k * (back.x * s + back.y * c),
+    };
+  };
+  const kind = head.kind ?? "v";
+  if (kind === "retrace") {
+    const a = Math.atan2(back.y, back.x) + ((head.dev ?? 0) * Math.PI) / 180;
+    const side = Math.sign(head.dev ?? 0) || 1;
+    const step = (head.offset ?? 0) * side;
+    const turn = { x: tip.x - back.y * step, y: tip.y + back.x * step };
+    return [...body, turn, { x: turn.x + len * Math.cos(a), y: turn.y + len * Math.sin(a) }];
+  }
+  if (kind === "one-barb") return [...body, barb(1)];
+  const second = barb(-1, head.ratio ?? 1);
+  if (kind === "open") return [...body, barb(1), second];
+  return [...body, barb(1), { ...tip }, second];
+}
+
+/** `poly` turned by `deg` about (`cx`, `cy`), and mirrored across x first when `mirror`. */
+export function turned(
+  poly: readonly Pt[],
+  deg: number,
+  cx: number,
+  cy: number,
+  mirror = false,
+): Pt[] {
+  const src = mirror ? poly.map((p) => ({ x: 2 * cx - p.x, y: p.y })) : poly;
+  return rotate(src, deg, cx, cy);
+}

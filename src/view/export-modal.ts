@@ -1,6 +1,7 @@
 /**
- * The toolbar's share button: "Export as PDF", as in GoodNotes. What will be
- * exported is shown, not described:
+ * The toolbar's share button: "Export", as in GoodNotes, as one PDF or as a
+ * picture per page (PNG or JPG; the format control beside the actions,
+ * remembered by the host). What will be exported is shown, not described:
  *
  * - **All pages** — every page in a scrollable grid, all ticked.
  * - **This page** — the page being read, large.
@@ -11,15 +12,29 @@
  *   place in it. A tap on a page under All pages switches here with that
  *   page unticked.
  *
+ * Pages chosen beforehand (the overview's selection) are not asked for
+ * again: the dialog opens on just those pages, with only the format and
+ * the switches left to choose (discussion #107, point 17).
+ *
  * Previews are painted as the file will look, only for tiles near the
  * visible part of the grid, and freed again when scrolled far away: a
  * 200-page notebook must not hold 200 canvases on an iPad.
  *
- * The PDF is saved next to the notebook (never over an existing file); then
- * it can be opened in Obsidian or handed to the system share sheet.
+ * The file is saved next to the notebook (never over an existing file), or
+ * several pictures into a new folder there; then a single file can be
+ * opened in Obsidian, and any of them handed to the system share sheet.
  */
 
 import { type App, Modal, setIcon } from "obsidian";
+import {
+  EXPORT_FORMATS,
+  type ExportFormat,
+  type ExportTarget,
+  exportOpening,
+  exportSummary,
+  formatLabel,
+  savedText,
+} from "../export/export-choice";
 import {
   type ExportScope,
   allPages,
@@ -32,12 +47,13 @@ import { onEnterKey } from "./enter-key";
 import { releaseCanvas } from "./image-import";
 import { errorMessage } from "../util/errors";
 
-export interface ExportedPdf {
-  /** Vault path it was saved at. */
-  path: string;
-  /** File name, for the share sheet. */
-  name: string;
-  bytes: ArrayBuffer;
+export interface ExportedFiles {
+  /** Vault paths saved at, one per file, in export order. */
+  paths: string[];
+  /** The one file's path, or the folder holding the pictures. */
+  where: string;
+  /** The same files, for the share sheet. */
+  files: File[];
 }
 
 export interface ExportPdfHost {
@@ -50,19 +66,24 @@ export interface ExportPdfHost {
   pageSize: (index: number) => { width: number; height: number };
   /** The note's "PDF exports" folder, or `null` when PDFs are saved next to the note. */
   folder: string | null;
-  /** Pages already chosen (the overview's selection): opens on Choose pages with these ticked. */
+  /** Pages already chosen (the overview's selection): the dialog shows only these, not the chooser. */
   chosen?: readonly number[];
+  /** The format last exported in; PDF when not given. */
+  format?: ExportFormat;
+  /** The format control was changed: remember it. */
+  setFormat?: (format: ExportFormat) => void;
   /** Paint page `index`'s preview into `canvas`, `cssWidth` CSS px wide, as it will export. */
   paintPreview: (canvas: HTMLCanvasElement, index: number, cssWidth: number) => Promise<void>;
-  /** The file name the pages would be saved under. */
-  fileNameFor: (pages: readonly number[]) => string;
+  /** The file, or folder of pictures, the pages would be saved as. */
+  targetFor: (pages: readonly number[], format: ExportFormat) => ExportTarget;
   /** Render and save; `onProgress` counts finished pages. Rejects with an `AbortError` when cancelled. */
   export: (
     pages: readonly number[],
+    format: ExportFormat,
     onProgress: (done: number, total: number) => void,
     cancelled: () => boolean,
-  ) => Promise<ExportedPdf>;
-  /** Open the saved PDF in Obsidian. */
+  ) => Promise<ExportedFiles>;
+  /** Open a saved file in Obsidian. */
   open: (path: string) => void;
   /**
    * Whether pages export on plain paper, their template (lines, grid, dots)
@@ -90,6 +111,9 @@ export class ExportPdfModal extends Modal {
   private pageScope: ExportScope;
   /** The ticked pages under Choose pages, in the order they will export. */
   private chosen: number[];
+  /** The pages were chosen before the dialog opened: show them, do not ask again. */
+  private readonly preset: boolean;
+  private format: ExportFormat;
   /** Where a shift-click span starts: the last page tapped. */
   private anchor: number | null = null;
   private busy = false;
@@ -106,15 +130,17 @@ export class ExportPdfModal extends Modal {
   ) {
     super(app);
     this.keyboard = new DialogKeyboard(this.modalEl);
-    const chosen = (host.chosen ?? []).filter((i) => i >= 0 && i < host.pageCount);
-    this.pageScope = chosen.length > 0 ? "custom" : host.pageCount > 1 ? "all" : "current";
-    this.chosen = chosen.length > 0 ? [...chosen] : [host.currentPage];
+    const opening = exportOpening(host.chosen, host.pageCount, host.currentPage);
+    this.preset = opening.preset;
+    this.pageScope = opening.scope;
+    this.chosen = opening.chosen;
+    this.format = host.format ?? "pdf";
   }
 
   override onOpen(): void {
     this.closed = false;
     this.modalEl.addClass("goodobsidian-export-modal", "goodobsidian-dialog");
-    this.titleEl.setText("Export as PDF");
+    this.titleEl.setText("Export");
     this.renderChoose();
   }
 
@@ -143,7 +169,7 @@ export class ExportPdfModal extends Modal {
     this.scopeButtons.clear();
     const { pageCount, currentPage } = this.host;
 
-    if (pageCount > 1) {
+    if (pageCount > 1 && !this.preset) {
       const seg = contentEl.createDiv({ cls: "goodobsidian-segmented goodobsidian-export-scope" });
       const scopes: ReadonlyArray<{ id: ExportScope; label: string }> = [
         { id: "all", label: `All ${pageCount} pages` },
@@ -183,6 +209,7 @@ export class ExportPdfModal extends Modal {
     const summary = contentEl.createDiv({ cls: "goodobsidian-ask-note" });
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
+    const formats = this.formatControl(actions, () => sync(false));
     const template = this.templateSwitch(actions);
     const tapes = this.tapesSwitch(actions);
     const cancel = actions.createEl("button", { text: "Cancel" });
@@ -234,12 +261,15 @@ export class ExportPdfModal extends Modal {
         button.toggleClass("is-active", id === this.pageScope);
         button.setAttribute("aria-pressed", String(id === this.pageScope));
       }
-      bar.toggleClass("is-hidden", this.pageScope !== "custom");
+      bar.toggleClass("is-hidden", this.pageScope !== "custom" || this.preset);
       if (this.pageScope === "custom" && document.activeElement !== field) {
         field.value = formatPageRange(this.chosen);
       }
 
-      if (this.pageScope === "current") {
+      if (this.preset) {
+        // Only the pages chosen, as they will export; nothing to tick.
+        this.grid ??= new PageGrid(stage, this.host, null, this.chosen);
+      } else if (this.pageScope === "current") {
         this.grid?.setHidden(true);
         this.showSingle(stage);
       } else {
@@ -258,20 +288,15 @@ export class ExportPdfModal extends Modal {
       } else if (n === 0) {
         summary.setText("Tap the pages to export.");
       } else {
-        // Say the order when it is not the notebook's own.
-        const reordered = pages.some((page, i) => i > 0 && page < pages[i - 1]);
-        const which =
-          this.pageScope !== "custom"
-            ? ""
-            : reordered
-              ? ` (${formatPageRange(pages)}, in that order)`
-              : ` (${formatPageRange(pages)})`;
         summary.setText(
-          `${n === 1 ? "1 page" : `${n} pages`}${which}, saved as ` +
-            `“${this.host.fileNameFor(pages)}” ` +
-            (this.host.folder !== null
-              ? `in “${this.host.folder}”.`
-              : `next to this ${this.host.noun}.`),
+          exportSummary({
+            pages,
+            picked: this.pageScope === "custom",
+            target: this.host.targetFor(pages, this.format),
+            format: this.format,
+            folder: this.host.folder,
+            noun: this.host.noun,
+          }),
         );
       }
       go.disabled = n === 0 || rangeError !== null || this.busy;
@@ -286,12 +311,14 @@ export class ExportPdfModal extends Modal {
       go.disabled = true;
       contentEl.addClass("is-busy");
       for (const button of this.scopeButtons.values()) button.disabled = true;
+      for (const button of formats) button.disabled = true;
       if (template) template.disabled = true;
       if (tapes) tapes.disabled = true;
       status.removeClass("is-error");
       try {
         const saved = await this.host.export(
           pages,
+          this.format,
           (done, total) => {
             if (this.closed) return;
             status.setText(done < total ? `Rendering page ${done + 1} of ${total}…` : "Saving…");
@@ -307,6 +334,7 @@ export class ExportPdfModal extends Modal {
         status.addClass("is-error");
         status.setText(errorMessage(error));
         for (const button of this.scopeButtons.values()) button.disabled = false;
+        for (const button of formats) button.disabled = false;
         if (template) template.disabled = false;
         if (tapes) tapes.disabled = false;
         sync(false);
@@ -314,6 +342,37 @@ export class ExportPdfModal extends Modal {
     };
     go.addEventListener("click", () => void run());
     sync(true);
+  }
+
+  /**
+   * PDF / PNG / JPG, at the start of the actions: one PDF, or a picture of
+   * each page. `changed` runs after a pick, for the summary to follow.
+   */
+  private formatControl(parent: HTMLElement, changed: () => void): HTMLButtonElement[] {
+    const seg = parent.createDiv({
+      cls: "goodobsidian-segmented goodobsidian-export-format",
+      attr: { role: "group", "aria-label": "Format" },
+    });
+    const show = (): void => {
+      buttons.forEach((button, i) => {
+        const on = EXPORT_FORMATS[i] === this.format;
+        button.toggleClass("is-active", on);
+        button.setAttribute("aria-pressed", String(on));
+      });
+    };
+    const buttons = EXPORT_FORMATS.map((format) => {
+      const button = seg.createEl("button", { cls: "clickable-icon", text: formatLabel(format) });
+      button.addEventListener("click", () => {
+        if (this.busy || this.format === format) return;
+        this.format = format;
+        this.host.setFormat?.(format);
+        show();
+        changed();
+      });
+      return button;
+    });
+    show();
+    return buttons;
   }
 
   /**
@@ -408,24 +467,27 @@ export class ExportPdfModal extends Modal {
 
   // --- Saved -----------------------------------------------------------------
 
-  private renderDone(saved: ExportedPdf): void {
+  private renderDone(saved: ExportedFiles): void {
     this.busy = false;
     this.keyboard.end();
     this.disposePreviews();
     const { contentEl } = this;
     contentEl.empty();
     contentEl.removeClass("is-busy");
-    contentEl.createDiv({ cls: "goodobsidian-export-done", text: `Saved “${saved.path}”.` });
+    contentEl.createDiv({
+      cls: "goodobsidian-export-done",
+      text: savedText(saved.paths, saved.where),
+    });
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
 
-    const file = shareableFile(saved);
-    if (file) {
+    if (canShareFiles(saved.files)) {
       // A fresh tap: the share sheet needs a user gesture, which the export's
       // own tap has long since spent.
       const share = actions.createEl("button", { text: "Share…" });
       share.addEventListener("click", () => {
-        navigator.share({ files: [file], title: saved.name }).catch((error: unknown) => {
+        const one = saved.files.length === 1 ? { title: saved.files[0].name } : {};
+        navigator.share({ files: saved.files, ...one }).catch((error: unknown) => {
           // Dismissing the sheet rejects with AbortError; that is not a failure.
           if (error instanceof DOMException && error.name === "AbortError") return;
           status.addClass("is-error");
@@ -433,11 +495,14 @@ export class ExportPdfModal extends Modal {
         });
       });
     }
-    const open = actions.createEl("button", { text: "Open" });
-    open.addEventListener("click", () => {
-      this.close();
-      this.host.open(saved.path);
-    });
+    // A folder of pictures has no one file to open.
+    if (saved.paths.length === 1) {
+      const open = actions.createEl("button", { text: "Open" });
+      open.addEventListener("click", () => {
+        this.close();
+        this.host.open(saved.paths[0]);
+      });
+    }
     const done = actions.createEl("button", { cls: "mod-cta", text: "Done" });
     done.addEventListener("click", () => this.close());
   }
@@ -446,6 +511,8 @@ export class ExportPdfModal extends Modal {
 // --- The page grid -------------------------------------------------------------
 
 interface Tile {
+  /** The page it shows, 0-based. */
+  page: number;
   root: HTMLElement;
   canvas: HTMLCanvasElement;
   /** Near the visible part of the grid: keep it painted. */
@@ -455,7 +522,8 @@ interface Tile {
 
 /**
  * Every page as a tile, like the page sidebar's thumbnails, in a grid that
- * scrolls. Tiles are painted one at a time while near the visible part and
+ * scrolls; or, without `onTap`, only `only`'s pages in their order, to be
+ * looked at, not ticked. Tiles are painted one at a time while near the visible part and
  * freed when scrolled well away; their frames keep the page's shape either
  * way, so freeing one never moves the grid.
  */
@@ -469,12 +537,18 @@ class PageGrid {
   constructor(
     parent: HTMLElement,
     private readonly host: ExportPdfHost,
-    onTap: (index: number, extend: boolean) => void,
+    onTap: ((index: number, extend: boolean) => void) | null,
+    only?: readonly number[],
   ) {
     this.el = parent.createDiv({ cls: "goodobsidian-export-grid" });
-    this.el.setAttribute("role", "listbox");
     this.el.setAttribute("aria-label", "Pages");
-    this.el.setAttribute("aria-multiselectable", "true");
+    if (onTap) {
+      this.el.setAttribute("role", "listbox");
+      this.el.setAttribute("aria-multiselectable", "true");
+    } else {
+      this.el.setAttribute("role", "list");
+      this.el.addClass("is-shown");
+    }
     this.observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -491,23 +565,32 @@ class PageGrid {
       { root: this.el, rootMargin: "300px 0px" },
     );
 
-    for (let index = 0; index < host.pageCount; index++) {
+    for (const index of only ?? allPages(host.pageCount)) {
       const root = this.el.createDiv({ cls: "goodobsidian-thumb goodobsidian-export-tile" });
-      if (index === host.currentPage) root.addClass("is-current");
-      // `clickable-icon`: Obsidian restyles every other button (and pads it
-      // 20 px on iPad).
-      const frame = root.createEl("button", {
-        cls: "goodobsidian-thumb-frame clickable-icon",
-        attr: { role: "option", "aria-label": `Page ${index + 1}` },
-      });
+      const label = `Page ${index + 1}`;
+      let frame: HTMLElement;
+      if (onTap) {
+        if (index === host.currentPage) root.addClass("is-current");
+        // `clickable-icon`: Obsidian restyles every other button (and pads it
+        // 20 px on iPad).
+        frame = root.createEl("button", {
+          cls: "goodobsidian-thumb-frame clickable-icon",
+          attr: { role: "option", "aria-label": label },
+        });
+        frame.addEventListener("click", (event) => onTap(index, event.shiftKey));
+      } else {
+        root.setAttribute("role", "listitem");
+        frame = root.createDiv({ cls: "goodobsidian-thumb-frame", attr: { "aria-label": label } });
+      }
       frame.setCssStyles({ aspectRatio: aspectOf(host.pageSize(index)) });
       const canvas = frame.createEl("canvas", { cls: "goodobsidian-thumb-canvas" });
-      const check = frame.createSpan({ cls: "goodobsidian-export-check" });
-      setIcon(check.createSpan({ cls: "goodobsidian-export-check-icon" }), "check");
-      check.createSpan({ cls: "goodobsidian-export-order" });
+      if (onTap) {
+        const check = frame.createSpan({ cls: "goodobsidian-export-check" });
+        setIcon(check.createSpan({ cls: "goodobsidian-export-check-icon" }), "check");
+        check.createSpan({ cls: "goodobsidian-export-order" });
+      }
       root.createDiv({ cls: "goodobsidian-thumb-number", text: String(index + 1) });
-      frame.addEventListener("click", (event) => onTap(index, event.shiftKey));
-      this.tiles.push({ root, canvas, near: false, painted: false });
+      this.tiles.push({ page: index, root, canvas, near: false, painted: false });
       this.observer.observe(root);
     }
   }
@@ -523,7 +606,8 @@ class PageGrid {
   setSelection(order: readonly number[], choosing: boolean): void {
     this.el.toggleClass("is-choosing", choosing);
     const place = new Map(order.map((page, i) => [page, i + 1]));
-    this.tiles.forEach((tile, index) => {
+    this.tiles.forEach((tile) => {
+      const index = tile.page;
       const at = place.get(index);
       tile.root.toggleClass("is-selected", at !== undefined);
       const frame = tile.root.querySelector("button");
@@ -541,7 +625,7 @@ class PageGrid {
 
   /** Scroll the grid (only the grid) so page `index` is in view. */
   reveal(index: number): void {
-    const tile = this.tiles[index];
+    const tile = this.tiles.find((t) => t.page === index);
     if (!tile) return;
     const box = this.el.getBoundingClientRect();
     const at = tile.root.getBoundingClientRect();
@@ -570,12 +654,11 @@ class PageGrid {
     try {
       for (;;) {
         if (this.destroyed) return;
-        const index = this.tiles.findIndex((t) => t.near && !t.painted);
-        if (index < 0) return;
-        const tile = this.tiles[index];
+        const tile = this.tiles.find((t) => t.near && !t.painted);
+        if (!tile) return;
         tile.painted = true;
         try {
-          await this.host.paintPreview(tile.canvas, index, TILE_WIDTH);
+          await this.host.paintPreview(tile.canvas, tile.page, TILE_WIDTH);
         } catch {
           // A page that cannot be previewed stays blank; the export says why.
         }
@@ -595,15 +678,14 @@ function aspectOf(size: { width: number; height: number }): string {
   return size.width > 0 && size.height > 0 ? `${size.width} / ${size.height}` : "1 / 1.414";
 }
 
-/** The PDF as a `File` the platform's share sheet will take, or `null` where there is none. */
-function shareableFile(saved: ExportedPdf): File | null {
+/** Whether the platform's share sheet takes these files; there may be none. */
+function canShareFiles(files: File[]): boolean {
   if (typeof navigator.share !== "function" || typeof navigator.canShare !== "function") {
-    return null;
+    return false;
   }
   try {
-    const file = new File([saved.bytes], saved.name, { type: "application/pdf" });
-    return navigator.canShare({ files: [file] }) ? file : null;
+    return files.length > 0 && navigator.canShare({ files });
   } catch {
-    return null;
+    return false;
   }
 }

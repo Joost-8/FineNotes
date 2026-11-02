@@ -84,8 +84,14 @@ export interface AskAiHost {
   rememberSave: (save: boolean) => void;
 }
 
-/** What the empty thread offers to ask, for one page or several; a tap sends it. */
+/**
+ * What the empty thread offers to ask, for one page, several, or only an
+ * attached file (the lasso's Ask AI sends its selection as one); a tap
+ * sends it. With nothing picked or attached (a new chat, unless the setting
+ * picks the open page) there is nothing to ask about yet: no suggestions.
+ */
 const SUGGESTIONS = {
+  none: [],
   one: [
     "Summarise this page",
     "Explain this step by step",
@@ -97,6 +103,12 @@ const SUGGESTIONS = {
     "What are the key ideas?",
     "Make practice questions",
     "What should I review?",
+  ],
+  file: [
+    "What does this say?",
+    "Explain this step by step",
+    "Check my work for mistakes",
+    "Quiz me on this",
   ],
 } as const;
 
@@ -155,8 +167,8 @@ export class AskChat {
   /** The question waiting for its answer (or failed), drawn after the turns. */
   private outstandingEl: HTMLElement | null = null;
   private outstandingKey = "";
-  /** Whether the empty thread's suggestions are for one page. */
-  private emptyForOne: boolean | null = null;
+  /** What the empty thread's suggestions are for. */
+  private emptyFor: keyof typeof SUGGESTIONS | null = null;
 
   private readonly keyboard: DialogKeyboard;
 
@@ -429,7 +441,7 @@ export class AskChat {
     const sent = session.sentPages;
     const fresh = session.selected.filter((p) => !sent.has(p));
     const saved = session.save ? " Saved in AI chats." : "";
-    if (session.selected.length === 0 && sent.size === 0) {
+    if (session.selected.length === 0 && sent.size === 0 && session.attachments.length === 0) {
       return `Pick the pages to ask about.${saved}`;
     }
     // Saying it can use the notebook also tells which build is running.
@@ -710,7 +722,7 @@ export class AskChat {
       thread.empty();
       this.outstandingEl = null;
       this.outstandingKey = "";
-      this.emptyForOne = null;
+      this.emptyFor = null;
       this.shownTexts = [];
     }
     const added = texts.length > this.shownTexts.length;
@@ -726,15 +738,17 @@ export class AskChat {
     this.shownTexts = texts;
 
     if (session.empty) {
-      const one = session.selected.length <= 1;
-      if (this.emptyForOne !== one) {
+      const count = session.selected.length;
+      const kind =
+        count > 1 ? "many" : count === 1 ? "one" : session.attachments.length ? "file" : "none";
+      if (this.emptyFor !== kind) {
         thread.querySelector(".goodobsidian-chat-empty")?.remove();
-        this.renderEmpty(thread, one);
-        this.emptyForOne = one;
+        this.renderEmpty(thread, kind);
+        this.emptyFor = kind;
       }
-    } else if (this.emptyForOne !== null) {
+    } else if (this.emptyFor !== null) {
       thread.querySelector(".goodobsidian-chat-empty")?.remove();
-      this.emptyForOne = null;
+      this.emptyFor = null;
     }
 
     const outstanding = session.outstanding;
@@ -754,15 +768,19 @@ export class AskChat {
   }
 
   /** The thread before the first question: what this is, and a few questions to start with. */
-  private renderEmpty(thread: HTMLElement, one: boolean): void {
+  private renderEmpty(thread: HTMLElement, kind: keyof typeof SUGGESTIONS): void {
     const empty = thread.createDiv({ cls: "goodobsidian-chat-empty" });
     setIcon(empty.createDiv({ cls: "goodobsidian-chat-empty-icon" }), "sparkles");
-    empty.createDiv({
-      cls: "goodobsidian-chat-empty-title",
-      text: one ? "Ask about this page" : "Ask about these pages",
-    });
+    const title = {
+      none: "Ask about your notes",
+      one: "Ask about this page",
+      many: "Ask about these pages",
+      file: "Ask about this",
+    };
+    empty.createDiv({ cls: "goodobsidian-chat-empty-title", text: title[kind] });
+    if (SUGGESTIONS[kind].length === 0) return;
     const chips = empty.createDiv({ cls: "goodobsidian-chat-suggestions" });
-    for (const text of one ? SUGGESTIONS.one : SUGGESTIONS.many) {
+    for (const text of SUGGESTIONS[kind]) {
       const chip = chips.createEl("button", { cls: "goodobsidian-chat-suggestion clickable-icon" });
       chip.setText(text);
       chip.addEventListener("click", () => this.submit(text));

@@ -5093,6 +5093,77 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   text-align: left;
 }
 
+/* The font menu (discussion #107): one list, each name in its face, the
+   built-in six then the device's own. The heading stays at the top while
+   the popover scrolls, with the loupe that opens the search field. A long
+   name is cut, so the popover keeps near its width. */
+.goodobsidian-text-popover .goodobsidian-font-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  background: var(--gob-pop-bg);
+}
+
+.goodobsidian-text-popover .goodobsidian-font-head .goodobsidian-popover-label {
+  flex: 1 1 auto;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-search.clickable-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-text-popover .goodobsidian-font-list {
+  max-width: 240px;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-list .goodobsidian-text-option {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 40px;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-list .goodobsidian-text-option.is-family {
+  display: flex;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-busy {
+  min-height: 40px;
+}
+
+.goodobsidian-text-popover .goodobsidian-font-none {
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* A named family this device lacks: shown in the fallback, and marked. */
+.goodobsidian-text-popover .goodobsidian-text-option .goodobsidian-font-missing {
+  display: inline-flex;
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.goodobsidian-text-popover .goodobsidian-text-option .goodobsidian-font-missing svg {
+  width: 16px;
+  height: 16px;
+}
+
 .goodobsidian-text-popover .goodobsidian-text-option.is-size {
   padding: 0;
   font-variant-numeric: tabular-nums;
@@ -7290,6 +7361,71 @@ textarea.goodobsidian-chat-input:focus-visible {
   background: var(--interactive-accent);
 }
 
+/* PDF text held on (discussion #107): a tint over each selected line, and a
+   handle at either end as iPadOS draws them, a bar the line's height with a
+   knob above the start and below the end. The handle's box is 44 px wide, a
+   finger's target; only the bar and the knob are drawn. */
+.goodobsidian-text-pick {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-text-pick.is-hidden,
+.goodobsidian-text-pick-handle.is-hidden {
+  display: none;
+}
+
+.goodobsidian-text-pick-line {
+  position: absolute;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+}
+
+.goodobsidian-text-pick-handle {
+  position: absolute;
+  box-sizing: content-box;
+  width: 44px;
+  /* The height is the line's; the padding reaches past the knob. */
+  padding: 16px 0;
+  margin: -16px 0 0 -22px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: col-resize;
+}
+
+.goodobsidian-text-pick-handle::before {
+  content: "";
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 21px;
+  width: 2px;
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-text-pick-knob {
+  position: absolute;
+  left: 17px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  box-shadow: var(--gob-shadow-mark);
+}
+
+.goodobsidian-text-pick-handle.is-start .goodobsidian-text-pick-knob {
+  top: 7px;
+}
+
+.goodobsidian-text-pick-handle.is-end .goodobsidian-text-pick-knob {
+  bottom: 7px;
+}
+
+.goodobsidian-text-pick-handle.is-dragging .goodobsidian-text-pick-knob {
+  transform: scale(1.3);
+}
+
 /* While a point is dragged, the frame and its handles step aside (the frame
    keeps the pointer capture, so it stays in the layout). */
 .goodobsidian-selection-frame.is-pointing {
@@ -7968,6 +8104,63 @@ input[type="range"].goodobsidian-player-scrubber {
   color: var(--text-error);
   font-size: var(--font-ui-smaller);
   overflow-wrap: anywhere;
+}
+
+/* The transcript in the recording's box: whole when short, else its lead
+   with the rest behind the chevron, scrolling inside the box when open. */
+.goodobsidian-recordings-transcript {
+  display: flex;
+  flex-direction: column;
+}
+
+.goodobsidian-recordings-transcript-text {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.goodobsidian-recordings-transcript-text p {
+  margin: 0 0 6px;
+}
+
+.goodobsidian-recordings-transcript-text p:last-child {
+  margin-bottom: 0;
+}
+
+.goodobsidian-recordings-transcript.is-lead .goodobsidian-recordings-transcript-text {
+  cursor: pointer;
+}
+
+.goodobsidian-recordings-transcript.is-open .goodobsidian-recordings-transcript-text {
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.goodobsidian-recordings-time {
+  margin-right: 6px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-recordings-time.is-playable {
+  color: var(--text-accent);
+  cursor: pointer;
+}
+
+.goodobsidian-recordings .goodobsidian-recordings-transcript-toggle.clickable-icon {
+  align-self: center;
+  min-width: var(--gob-touch-compact);
+  min-height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
 }
 
 /* Transcribing on this device: the recording's progress, with Stop. */
@@ -9496,6 +9689,34 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   -webkit-user-select: text;
 }
 
+/* PDF / PNG / JPG, first in the actions; they wrap under it on a narrow
+   split view rather than squeeze. */
+.goodobsidian-export-modal .goodobsidian-ask-actions {
+  flex-wrap: wrap;
+}
+
+.goodobsidian-ask-actions .goodobsidian-export-format {
+  flex: 0 0 auto;
+  margin-right: auto;
+}
+
+/* Beside a switch, the last switch is the one pushed left. */
+.goodobsidian-ask-actions .goodobsidian-export-format:has(+ button) {
+  margin-right: 0;
+}
+
+.goodobsidian-ask-actions .goodobsidian-export-format button {
+  flex: 0 0 auto;
+  min-height: 0;
+  height: calc(var(--gob-touch) - 6px);
+  padding: 0 12px;
+}
+
+/* Pages chosen beforehand: shown as they will export, nothing to tap. */
+.goodobsidian-export-grid.is-shown .goodobsidian-thumb-frame {
+  cursor: default;
+}
+
 /* The lasso's Screenshot: the picture it makes, then Copy and Share. */
 .goodobsidian-screenshot-preview {
   display: flex;
@@ -9509,6 +9730,22 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   max-height: min(50vh, 420px);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
+}
+
+/* The page-behind switch, at the start of the actions: lit while the
+   picture shows the page (paper, PDF) behind the selection; off, the
+   selection alone. As the export dialog's template switch. */
+.goodobsidian-ask-actions button.goodobsidian-screenshot-page {
+  width: var(--gob-touch);
+  margin-right: auto;
+  padding: 0;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-muted);
+}
+
+.goodobsidian-ask-actions button.goodobsidian-screenshot-page.is-active {
+  background: hsla(var(--interactive-accent-hsl), 0.15);
+  color: var(--interactive-accent);
 }
 
 /* ------------------------------------------------ search this notebook */
@@ -10746,6 +10983,7 @@ button.goodobsidian-sticker-swatch.is-active .goodobsidian-sticker-swatch-disc {
 
 /* Previews on paper white whatever the theme: that is where they go. */
 button.goodobsidian-sticker-cell.clickable-icon {
+  position: relative;
   height: 96px;
   padding: 10px;
   border-radius: var(--gob-radius-m);
@@ -10757,9 +10995,13 @@ button.goodobsidian-sticker-cell.clickable-icon:hover {
   box-shadow: inset 0 0 0 2px var(--interactive-accent);
 }
 
+/* Sized by the cell itself: with `max-height: 100%` of the button's content
+   box, a tall sticker ran out of its cell on the iPad (#107). */
 .goodobsidian-sticker-cell img {
-  max-width: 100%;
-  max-height: 100%;
+  position: absolute;
+  inset: 10px;
+  width: calc(100% - 20px);
+  height: calc(100% - 20px);
   object-fit: contain;
   pointer-events: none;
 }

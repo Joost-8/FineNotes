@@ -392,6 +392,26 @@ export function buildTranscriptNote(input: TranscriptNoteInput): string {
  * apart by a blank line. Empty when nothing is left.
  */
 export function transcriptText(markdown: string): string {
+  return transcriptParagraphs(markdown)
+    .map((paragraph) => paragraph.text)
+    .join("\n\n");
+}
+
+/** A paragraph of a transcript note, with the time it starts at when the note says (`[1:05] `). */
+export interface TranscriptParagraph {
+  /** Ms from the recording's start; absent for a paragraph with no time in front. */
+  atMs?: number;
+  text: string;
+}
+
+const STAMP = /^\[(?:(\d+):)?(\d{1,2}):(\d{2})\]\s*/;
+
+/**
+ * The paragraphs of a transcript note, as {@link transcriptText} reads them,
+ * each with the time that led it. For showing the transcript in the
+ * recording's box, where a time plays from there.
+ */
+export function transcriptParagraphs(markdown: string): TranscriptParagraph[] {
   let body = markdown.replace(/\r\n?/g, "\n");
   body = body.replace(/^---\n[\s\S]*?\n---(\n|$)/, "");
   const paragraphs = body
@@ -402,10 +422,65 @@ export function transcriptText(markdown: string): string {
   if (/^# .*— transcript$/.test(paragraphs[0] ?? "")) paragraphs.shift();
   if (/^Recorded /.test(paragraphs[0] ?? "")) paragraphs.shift();
   if (/^!(\[\[[^\]]*\]\]|\[[^\]]*\]\([^)]*\))$/.test(paragraphs[0] ?? "")) paragraphs.shift();
-  return paragraphs
-    .map((paragraph) => paragraph.replace(/^\[(\d+:)?\d{1,2}:\d{2}\]\s*/, ""))
-    .filter((paragraph) => paragraph.length > 0)
-    .join("\n\n");
+  const out: TranscriptParagraph[] = [];
+  for (const paragraph of paragraphs) {
+    const stamp = STAMP.exec(paragraph);
+    const text = stamp ? paragraph.slice(stamp[0].length) : paragraph;
+    if (text.length === 0) continue;
+    if (!stamp) {
+      out.push({ text });
+      continue;
+    }
+    const [, h, m, s] = stamp;
+    out.push({ atMs: ((Number(h ?? 0) * 60 + Number(m)) * 60 + Number(s)) * 1000, text });
+  }
+  return out;
+}
+
+/** A transcript this many words or fewer shows whole in the recording's box. */
+export const SHORT_TRANSCRIPT_WORDS = 60;
+/** A longer one shows its first this many words, the rest a tap away. */
+export const TRANSCRIPT_LEAD_WORDS = 24;
+
+function wordCount(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+/** Whether a transcript is short enough to show whole in the recording's box. */
+export function isShortTranscript(paragraphs: readonly TranscriptParagraph[]): boolean {
+  let words = 0;
+  for (const paragraph of paragraphs) {
+    words += wordCount(paragraph.text);
+    if (words > SHORT_TRANSCRIPT_WORDS) return false;
+  }
+  return true;
+}
+
+/**
+ * The start of a transcript: its paragraphs up to `words` words, the last
+ * one cut at a word and ending in "…" when there is more.
+ */
+export function transcriptLead(
+  paragraphs: readonly TranscriptParagraph[],
+  words = TRANSCRIPT_LEAD_WORDS,
+): TranscriptParagraph[] {
+  const out: TranscriptParagraph[] = [];
+  let left = words;
+  for (const paragraph of paragraphs) {
+    if (left <= 0) {
+      const last = out[out.length - 1];
+      if (last) out[out.length - 1] = { ...last, text: `${last.text} …` };
+      break;
+    }
+    const parts = paragraph.text.split(/\s+/).filter(Boolean);
+    if (parts.length > left) {
+      out.push({ ...paragraph, text: `${parts.slice(0, left).join(" ")} …` });
+      break;
+    }
+    out.push(paragraph);
+    left -= parts.length;
+  }
+  return out;
 }
 
 /** One buffer of every chunk, in order: the fallback writes a recording in one go. */
