@@ -166,6 +166,7 @@ describe("the handwriting section, on this device", () => {
     practiceFiles: 0,
     learning: null,
     checkingWords: false,
+    calculating: true,
     ...fields,
   });
   const deviceIds = (ctx: AiMenuContext) =>
@@ -181,12 +182,14 @@ describe("the handwriting section, on this device", () => {
       on: false,
       section: "device",
     });
-    expect(items[1]).toMatchObject({ id: "practice", label: "Teach it your handwriting…" });
+    expect(items[1]).toMatchObject({ id: "calc-notes", label: "Calculations", on: true });
+    expect(items[2]).toMatchObject({ id: "practice", label: "Teach it your handwriting…" });
   });
 
   it("learns once there is a practice file, again once learned, and shows a run in progress", () => {
     expect(deviceIds(context({ device: device({ practiceFiles: 1 }) }))).toEqual([
       "check-words",
+      "calc-notes",
       "learn",
       "practice",
     ]);
@@ -215,6 +218,23 @@ describe("the handwriting section, on this device", () => {
 
   it("points to the setting when the reader is off", () => {
     expect(deviceIds(context())).toEqual(["device-settings"]);
+  });
+
+  it("leads with Read with: Off, Grape, and Mine once a model has been learned", () => {
+    const reading = { value: "grape" as const, ownModel: false };
+    const items = buildAiMenu(context({ device: device(), reading }));
+    expect(items[0]).toMatchObject({ id: "reader", label: "Read with", value: "grape" });
+    expect(items[0].choices?.map((c) => c.label)).toEqual(["Off", "Grape"]);
+    const mine = byId(
+      buildAiMenu(context({ device: device(), reading: { value: "mine", ownModel: true } })),
+    );
+    expect(mine.reader.choices?.map((c) => c.id)).toEqual(["off", "grape", "mine"]);
+    expect(mine.reader.value).toBe("mine");
+    // Switched off, the choice is all the section shows, so it can be switched on again here.
+    const off = buildAiMenu(context({ reading: { value: "off", ownModel: false } }));
+    expect(off.filter((i) => i.section === "device").map((i) => [i.id, i.value])).toEqual([
+      ["reader", "off"],
+    ]);
   });
 });
 

@@ -65,7 +65,12 @@ import {
 import { adoptTaskStates, notebookTasks, syncTaskIndex } from "../recognition/task-index";
 import { makeTask } from "../model/tasks";
 import { type RenderedPage, renderPageForAi } from "../recognition/page-render";
-import { type DeviceReading, aiKeyFolded, buildAiMenu } from "../recognition/ai-menu-model";
+import {
+  type DeviceReading,
+  type HandwritingReading,
+  aiKeyFolded,
+  buildAiMenu,
+} from "../recognition/ai-menu-model";
 import { learnedRecord, practiceFiles, writePracticePage } from "./handwriting-learning";
 import { CalcNotes } from "./calc-notes";
 import {
@@ -332,6 +337,7 @@ import type { GoodObsidianSettings } from "../settings";
 import {
   attachmentDefaults,
   greyWhileErasingOf,
+  handwritingReaderOf,
   penPreferencesOf,
   snapCurveOf,
   highlighterTipOf,
@@ -1150,6 +1156,12 @@ export class InkView extends TextFileView {
     this.plugin.saveLastPen(penOfState(this.toolState));
   }
 
+  /** The highlighter's opacity changed in some notebook's pen menu: redraw the highlights. */
+  setHighlighterAlpha(): void {
+    this.surface?.setHighlighterAlpha(this.settings.highlighterAlpha);
+    this.updateSidebarRendering();
+  }
+
   /** The pressure setting changed: the pen in hand widens with pressure if it is a pressure pen. */
   setPressureWidth(enabled: boolean): void {
     this.surface?.setPressure(enabled && penTypeFor(this.toolState).pressure);
@@ -1384,6 +1396,7 @@ export class InkView extends TextFileView {
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
       device: this.deviceReading(),
+      reading: this.handwritingReading(),
       transcribing: this.plugin.speech.running?.percent,
     });
     const setup = this.plugin.aiSetup();
@@ -1394,8 +1407,29 @@ export class InkView extends TextFileView {
       aiKeyFolded(setup),
       (id, on) => {
         if (id === "check-words") void this.plugin.setWordChecking(on);
+        if (id === "calc-notes") {
+          this.settings.calcNotes = on;
+          void this.plugin.saveSettings();
+        }
+      },
+      (id, value) => {
+        if (id !== "reader") return;
+        void this.plugin.setHandwritingReader(value).then(() => {
+          // Off and on change what the section offers: draw it again in place.
+          if (this.aiMenu?.isOpen) {
+            this.aiMenu.close();
+            this.aiMenu = null;
+            this.openAiMenu(anchor);
+          }
+        });
       },
     );
+  }
+
+  /** Which model reads handwriting here, for the AI menu's "Read with". */
+  private handwritingReading(): HandwritingReading {
+    const ownModel = learnedRecord(this.settings, this.plugin.grape.id) !== undefined;
+    return { value: handwritingReaderOf(this.settings, ownModel), ownModel };
   }
 
   /**
@@ -1566,6 +1600,7 @@ export class InkView extends TextFileView {
       practiceFiles: practiceFiles(this.plugin.learningHost()).length,
       learning: progress ? (100 * progress.step) / progress.steps : null,
       checkingWords: this.settings.checkHandwrittenWords === true,
+      calculating: this.settings.calcNotes === true,
     };
   }
 
@@ -3006,6 +3041,11 @@ export class InkView extends TextFileView {
         zoomBoxAutoAdvanceThreshold: () => this.settings.zoomBoxAutoAdvanceThreshold,
         onZoomBoxAutoAdvance: (on) => {
           this.settings.zoomBoxAutoAdvance = on;
+          void this.plugin.saveSettings();
+        },
+        onZoomBoxSettings: ({ lineStep, threshold }) => {
+          if (lineStep !== undefined) this.settings.zoomBoxLineStep = lineStep;
+          if (threshold !== undefined) this.settings.zoomBoxAutoAdvanceThreshold = threshold;
           void this.plugin.saveSettings();
         },
         onShortcuts: () => this.toggleShortcuts(),

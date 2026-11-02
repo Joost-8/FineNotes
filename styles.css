@@ -2563,6 +2563,12 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   cursor: var(--goodobsidian-pen-cursor-drawing, crosshair);
 }
 
+/* "None": no pointer over the page while a pen is in hand, for a pen
+   display that shows the nib itself. Space's hand still wins. */
+.goodobsidian-surface.is-no-cursor .goodobsidian-scroll:not(.is-hand, .is-hand-dragging) {
+  cursor: none;
+}
+
 /* On a tablet the thumbs are a readout, not a control: a palm rests on the
    edge of the page and the Pencil starts strokes there, and both belong to
    the page (palm rejection, the stylus touch guards). */
@@ -3564,7 +3570,8 @@ body,
 }
 
 .goodobsidian-popover input[type="range"].goodobsidian-width-range,
-.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range {
+.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
+.goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -3579,7 +3586,8 @@ body,
 
 /* How tall each slider's input (its touch target) is. */
 .goodobsidian-popover input[type="range"].goodobsidian-width-range,
-.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range {
+.goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
+.goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range {
   --gob-slider-height: var(--gob-touch);
 }
 
@@ -3596,6 +3604,8 @@ input[type="range"].goodobsidian-player-scrubber {
    `input[type='range']` rules. */
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+.goodobsidian-zoombox-settings
+  input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
   height: var(--gob-slider-height);
   border: none;
@@ -3620,6 +3630,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track 
    its own slider), which put ours 9 px above the bar: `top` is reset. */
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+.goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   top: 0;
   width: 16px;
@@ -3636,6 +3647,8 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
 
 .goodobsidian-popover input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+.goodobsidian-zoombox-settings
+  input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
   top: 0;
@@ -3648,6 +3661,7 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
     transition: none;
   }
@@ -5592,6 +5606,25 @@ button.goodobsidian-imagemenu-swatch {
 /* A switch row (Corrections): the switch sits at the row's right edge. */
 .goodobsidian-aimenu .goodobsidian-aimenu-row .goodobsidian-switch {
   margin-left: auto;
+}
+
+/* "Read with": the icon and name as any row, its choices at the right end
+   where a switch sits. */
+.goodobsidian-aimenu .goodobsidian-aimenu-choice {
+  min-height: var(--gob-touch);
+  padding: 6px;
+}
+
+.goodobsidian-aimenu-choice .goodobsidian-aimenu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* As the rows beside it, which are buttons and take Obsidian's button weight. */
+  font-size: var(--font-ui-medium);
+  font-weight: var(--input-font-weight);
+}
+
+.goodobsidian-aimenu-choice .goodobsidian-segmented {
+  flex: 0 0 auto;
 }
 
 .goodobsidian-aimenu .goodobsidian-aimenu-row:disabled {
@@ -13866,6 +13899,23 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   color: var(--interactive-accent);
   background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+}
+
+/* The gear's panel: line spacing and the auto-advance zone, under the
+   bar's right end, over the magnified page (the window clips it). */
+.goodobsidian-zoombox-settings {
+  position: absolute;
+  top: 40px;
+  right: 8px;
+  z-index: 1;
+  width: min(240px, calc(100% - 16px));
+  padding: 6px 12px 2px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  cursor: auto;
+  touch-action: none;
 }
 
 /* The drag grip at the head of the bar; the bar itself drags too. */

@@ -870,6 +870,19 @@ describe("loading settings", () => {
     expect(plugin.apiKeyFor("custom")).toBe("");
   });
 
+  it("keeps the key and model of the AI service left when another is tried", async () => {
+    await load({ llmApiKey: "legacy", llmVendor: "anthropic", lastSeenVersion: VERSION });
+    plugin.settings.llmModel = "claude-opus-5-5";
+    // Wherever the old key was left by loading, a look at OpenAI must not lose it.
+    plugin.settings.llmApiKey = "legacy";
+    await plugin.switchLlmVendor("openai");
+    expect(plugin.apiKeyFor("openai")).toBe("");
+    expect(plugin.settings.llmModel).toBe("");
+    await plugin.switchLlmVendor("anthropic");
+    expect(plugin.apiKeyFor("anthropic")).toBe("legacy");
+    expect(plugin.settings.llmModel).toBe("claude-opus-5-5");
+  });
+
   it("lands a removed recognition provider on Manual and drops its settings", async () => {
     await load({
       recognitionProviderId: "trocr-local",

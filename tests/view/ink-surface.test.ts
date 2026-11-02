@@ -2630,10 +2630,17 @@ describe("pens and shortcuts (FineNotes#25)", () => {
   it("shows the crosshair for the pens only, and only when it is picked", () => {
     const classes = new Map<string, boolean>();
     const surface = surfaceWith({
-      toolState: { tool: "pen" },
+      toolState: { tool: "pen", penType: "ball", color: "#2563eb", size: 4 },
+      doc: { pages: [{ backdrop: { kind: "blank" } }] },
+      pageIndex: 0,
+      paper: { night: false, paper: "#ffffff" },
+      baseScale: 1,
+      userZoom: 1,
+      pinch: null,
       surfaceEl: {
         toggleClass: (name: string, on: boolean) => classes.set(name, on),
         removeClass: (name: string) => classes.set(name, false),
+        setCssProps: () => undefined,
       },
     });
     run(surface, "setPenCursor", "crosshair");
@@ -2647,6 +2654,15 @@ describe("pens and shortcuts (FineNotes#25)", () => {
     expect(classes.get("is-laser")).toBe(true);
     run(surface, "setPenCursor", "arrow");
     expect(classes.get("is-pen-cursor")).toBe(false);
+    expect(classes.get("is-ink-cursor")).toBe(false);
+    expect(classes.get("is-no-cursor")).toBe(false);
+    // With None the laser keeps its glowing point; the pens show nothing.
+    run(surface, "setPenCursor", "none");
+    expect(classes.get("is-no-cursor")).toBe(false);
+    expect(classes.get("is-ink-cursor")).toBe(true);
+    (surface.toolState as { tool: string }).tool = "pen";
+    run(surface, "syncPenCursor");
+    expect(classes.get("is-no-cursor")).toBe(true);
     expect(classes.get("is-ink-cursor")).toBe(false);
   });
 

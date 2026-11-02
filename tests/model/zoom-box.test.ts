@@ -10,6 +10,7 @@ import {
   dragZoomBoxAcrossPages,
   newLineAcrossPages,
   pinchZoomBox,
+  zoomLineStepText,
   magnifierTap,
   placedZoomBox,
   zoomWindowFirstPlace,
@@ -474,5 +475,14 @@ describe("pinching in the Zoom box window", () => {
   it("ignores a pinch it cannot read", () => {
     expect(pinchZoomBox(start, 0, 800, 1000)).toBe(start);
     expect(pinchZoomBox(start, Number.NaN, 800, 1000)).toBe(start);
+  });
+});
+
+describe("zoomLineStepText", () => {
+  it("names the line spacing signed, in page px", () => {
+    expect(zoomLineStepText(20)).toBe("+20 px");
+    expect(zoomLineStepText(0)).toBe("0 px");
+    expect(zoomLineStepText(-15)).toBe("−15 px");
+    expect(zoomLineStepText(Number.NaN)).toBe("0 px");
   });
 });
