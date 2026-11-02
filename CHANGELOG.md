@@ -15,6 +15,12 @@ extracted from the matching section of this file by `release.yml`.
   go into the same folders under the folder you import to, instead of all
   into one. A folder that only wraps everything else is left out, and a ZIP
   inside the ZIP becomes a folder of its own.
+- **Scroll on past the last page to add one**, on a computer
+  ([#111](https://github.com/Joost-8/FineNotes/issues/111)). At the end of a
+  notebook, keep turning the mouse wheel or swiping the touchpad: the page
+  stretches, the same ring as a finger's pull fills, and when you stop a new
+  page is added. A scroll that only runs into the end, and Ctrl+wheel zoom,
+  add nothing. As with the finger's pull, a single page never grows.
 - **Hearts.** Draw a heart, round or tall, and hold, or with Auto shape
   on, and it snaps to a clean heart; the Shape tool has one too, after the
   star.
@@ -111,6 +117,11 @@ extracted from the matching section of this file by `release.yml`.
   Settings → Writing is gone; the double-arrow button on the Zoom box's bar
   turns it on and off as before, and keeps the setting you had. The
   threshold row's ⓘ says where the button is.
+- **Flicking again while the page coasts speeds it up**
+  ([#110](https://github.com/Joost-8/FineNotes/issues/110)). A quick flick
+  the same way, with a finger, the pen and the Hand tool, or Space held,
+  adds the coasting speed to its own, as on an iPhone, so a long notebook
+  goes by in a few flicks. Before, every flick started again from rest.
 
 ### Fixed
 

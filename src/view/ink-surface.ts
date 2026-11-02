@@ -211,6 +211,11 @@ import {
   PULL_ADD_PAGE_PX,
   rowEdgeTurn,
   pullAddAllowed,
+  WHEEL_PULL_PAUSE_MS,
+  WHEEL_PULL_REST,
+  type WheelPull,
+  wheelPullProgress,
+  wheelPullStep,
   rowTurnsPages,
   scrollTopForPage,
   inkBeyondPage,
@@ -1833,6 +1838,10 @@ export class InkSurface {
   private wheelZoomTimer = 0;
   /** A wheel or trackpad scroll across a row of pages settles on a page when it stops. */
   private wheelSnapTimer = 0;
+  /** A wheel or touchpad pull past the last page (`wheelPullStep`), FineNotes#111. */
+  private wheelPull: WheelPull = WHEEL_PULL_REST;
+  /** Fires once the wheel has paused: a full pull adds its page then. */
+  private wheelPullTimer = 0;
   /** Whether the view is still moving; zoomed-in PDF detail waits until it rests. */
   private readonly viewRest = new ViewRest();
   /** One more frame once the view has rested, to render the PDF detail it held back. */
@@ -2969,6 +2978,7 @@ export class InkSurface {
     this.watchTypingKeyboard(false);
     window.clearTimeout(this.textPillSettleTimer);
     window.clearTimeout(this.wheelSnapTimer);
+    window.clearTimeout(this.wheelPullTimer);
     this.cancelPendingReturn();
     window.clearTimeout(this.detailRestTimer);
     this.hideOffPage();
@@ -3558,7 +3568,10 @@ export class InkSurface {
   /** Let (or stop) a pull past the last page add a page. The host knows single pages. */
   setPullToAddPage(enabled: boolean): void {
     this.pullAddEnabled = enabled;
-    if (!enabled) this.pullAdd.hide();
+    if (!enabled) {
+      this.endWheelPull();
+      this.pullAdd.hide();
+    }
   }
 
   /** Which way this notebook's pages run. */
@@ -5085,6 +5098,8 @@ export class InkSurface {
     this.releaseBoardHold();
     const unit = event.deltaMode === 1 ? WHEEL_LINE_PX : event.deltaMode === 2 ? this.cssH : 1;
     if (event.ctrlKey || event.metaKey) {
+      // A zoom is never a pull.
+      this.endWheelPull();
       const factor = wheelZoomFactor(event.deltaY * unit);
       this.applyZoom(this.clampZoom(this.userZoom * factor), event.clientX, event.clientY);
       window.clearTimeout(this.wheelZoomTimer);
@@ -5104,7 +5119,8 @@ export class InkSurface {
       dx = dy;
       dy = 0;
     }
-    this.scroller.scrollBy(dx, dy);
+    // A pull past the last page holds the page stretched instead of scrolling.
+    if (!this.feedWheelPull(row ? dx : dy, row ? dy : dx)) this.scroller.scrollBy(dx, dy);
     this.flashChrome();
     this.requestFrame();
     if (row && this.turnsPages) {
@@ -5114,9 +5130,77 @@ export class InkSurface {
       this.wheelSnapTimer = window.setTimeout(() => {
         this.wheelSnapTimer = 0;
         if (!this.isScrollIdle || this.direction !== "horizontal") return;
+        // A wheel's pull past the last page holds it; its own pause lets go.
+        if (this.scroller.isStretched) return;
         this.snapToPage(0, this.pageIndex);
       }, WHEEL_SNAP_MS);
     }
+  }
+
+  /**
+   * Count a wheel event towards pulling in a page past the last one, as a
+   * finger's pull does (FineNotes#111): read before the event scrolls, so
+   * only a wheel that is already at the end pulls. Never while the view
+   * still glides on its own (a fling, a page settling). While it pulls, the
+   * page stands stretched past its end as far as a finger's pull this far
+   * along would have stretched it, and the event does not scroll: returns
+   * whether it took the event.
+   */
+  private feedWheelPull(along: number, across: number): boolean {
+    if (!this.pullAddEnabled || this.touchPanning) return false;
+    const stretched = this.scroller.isStretched;
+    this.wheelPull = wheelPullStep(this.wheelPull, {
+      t: now(),
+      along,
+      across,
+      atEnd: this.isScrollIdle && this.atPullEnd(),
+    });
+    window.clearTimeout(this.wheelPullTimer);
+    this.wheelPullTimer = window.setTimeout(() => {
+      this.wheelPullTimer = 0;
+      const pulled =
+        wheelPullProgress(this.wheelPull) >= 1 && !this.touchPanning && this.atPullEnd();
+      this.endWheelPull();
+      this.requestFrame();
+      if (pulled && this.pullAddEnabled) this.callbacks.onPullAddPage?.();
+    }, WHEEL_PULL_PAUSE_MS);
+    const progress = wheelPullProgress(this.wheelPull);
+    if (progress > 0) {
+      const strip =
+        progress * (this.direction === "horizontal" ? ROW_PULL_ADD_PX : PULL_ADD_PAGE_PX);
+      const { x, y } = this.scroller.position;
+      const bounds = this.scroller.bounds;
+      if (this.direction === "horizontal") this.scroller.stretchTo(bounds.maxX + strip, y);
+      else this.scroller.stretchTo(x, bounds.maxY + strip);
+      return true;
+    }
+    // The pull ended (the wheel turned back, or ran across): the page springs
+    // back, and this event goes into that rather than into a jump.
+    if (stretched) {
+      this.scroller.release(now());
+      return true;
+    }
+    return false;
+  }
+
+  /** Forget the wheel's pull, take its ring down and let the page spring back. */
+  private endWheelPull(): void {
+    window.clearTimeout(this.wheelPullTimer);
+    this.wheelPullTimer = 0;
+    if (this.wheelPull === WHEEL_PULL_REST) return;
+    this.wheelPull = WHEEL_PULL_REST;
+    this.scroller.release(now());
+    this.pullAdd.hide();
+  }
+
+  /** Whether the view sits at the notebook's end, where a wheel pull may add a page. */
+  private atPullEnd(): boolean {
+    // Zoomed in, a row is held to one page: its end is the notebook's only on the last page.
+    if (this.heldRow && this.heldIndex() !== this.doc.pages.length - 1) return false;
+    // Within a pixel: a row's page snaps a fraction short of the range's end.
+    const { x, y } = this.scroller.position;
+    const bounds = this.scroller.bounds;
+    return this.direction === "horizontal" ? x >= bounds.maxX - 1 : y >= bounds.maxY - 1;
   }
 
   /**
@@ -5309,6 +5393,11 @@ export class InkSurface {
 
   /** Keep the pull-to-add ring in step with the stretch while a finger holds it. */
   private syncPullAdd(): void {
+    const wheel = wheelPullProgress(this.wheelPull);
+    if (this.pullAddEnabled && !this.touchPanning && wheel > 0) {
+      this.pullAdd.update(this.direction, this.pullOverscroll(), wheel);
+      return;
+    }
     if (!this.pullAddEnabled || !this.touchPanning || !this.pullAllowed()) {
       this.pullAdd.hide();
       return;
