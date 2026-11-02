@@ -120,6 +120,7 @@ import {
   arrowHead,
   dashPattern,
   outlineOps,
+  pathHeads,
   pointsOf,
 } from "./shape-decor";
 import {
@@ -191,7 +192,9 @@ export function decorOf(stroke: {
   const radius =
     canRound(kind) && stroke.radius !== undefined && stroke.radius > 0 ? stroke.radius : undefined;
   const heads =
-    kind === "line" && (stroke.heads?.start || stroke.heads?.end) ? stroke.heads : undefined;
+    (kind === "line" || kind === "path") && (stroke.heads?.start || stroke.heads?.end)
+      ? stroke.heads
+      : undefined;
   if (!fill && !stroke.dash && !radius && !heads) return null;
   return {
     kind,
@@ -3159,7 +3162,12 @@ function paintShape(
   const closed = isClosedLoop(pts);
   let line = pts;
   const heads: Array<{ points: Array<{ x: number; y: number }>; filled: boolean }> = [];
-  if (decor.heads) {
+  if (decor.heads && decor.kind === "path") {
+    // Its heads follow its own end runs, and it keeps its corners.
+    const headed = pathHeads(pts, width, decor.heads);
+    line = headed.pts;
+    heads.push(...headed.heads);
+  } else if (decor.heads) {
     const points = pointsOf(pts);
     const first = points[0];
     const last = points[points.length - 1];
