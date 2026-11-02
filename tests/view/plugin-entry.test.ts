@@ -500,11 +500,20 @@ describe("registration", () => {
       return flush();
     }
 
-    it("makes a notebook once the workspace is up", async () => {
+    it("opens the New notebook window once the workspace is up", async () => {
+      await load({ lastSeenVersion: VERSION });
+      const dialog = vi.spyOn(plugin, "openNewNotebookDialog").mockImplementation(() => undefined);
+      await link({ do: "new", folder: "School" });
+      expect(dialog).not.toHaveBeenCalled();
+      app.workspace.fireLayoutReady();
+      await flush();
+      expect(dialog).toHaveBeenCalledWith("School");
+    });
+
+    it("makes a notebook with the last choices, skipping the window", async () => {
       await load({ lastSeenVersion: VERSION });
       const created = (app.vault as unknown as { created: { path: string }[] }).created;
-      await link({ do: "new", name: "Physics", folder: "School" });
-      expect(created).toEqual([]);
+      await link({ do: "new", name: "Physics", folder: "School", last: "true" });
       app.workspace.fireLayoutReady();
       await flush();
       expect(created.map((c) => c.path)).toEqual(["School/Physics/Physics.notebook.md"]);

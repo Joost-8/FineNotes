@@ -2,21 +2,24 @@
  * `obsidian://finenotes?do=…`: what a link from the Shortcuts app (or a
  * bookmark, or a launcher on a computer) asks FineNotes to do.
  *
- * - `do=new` — a notebook with the last notebook choices; `name` and
- *   `folder` optional (the new-notebook folder unless given).
+ * - `do=new` — the New notebook window, in `folder` if given. With `last`
+ *   it skips the window: a notebook with the last choices, named `name`.
  * - `do=pdf&file=Inbox/Lecture.pdf` — a notebook from a PDF in the vault,
  *   beside it, opened at its first page. A shortcut that has just saved the
  *   file passes its vault path; `.pdf` may be left off, and a bare name is
  *   looked for anywhere in the vault.
  *
- * Obsidian itself reads `vault`, and opens that vault first.
+ * Obsidian itself reads `vault`. On mobile, a `vault` that is not the open
+ * vault's name (as it is called on that device) reloads the app to open
+ * that vault, and the link never arrives: leave it out with one vault.
+ * A parameter with no value (`&last`) arrives as "true".
  */
 
 /** The `obsidian://` action. Protocol actions are one name per plugin. */
 export const FINENOTES_LINK_ACTION = "finenotes";
 
 export type LinkRequest =
-  | { do: "new"; name: string; folder?: string }
+  | { do: "new"; name: string; folder?: string; last: boolean }
   | { do: "pdf"; file: string }
   | { do: "unknown"; what: string };
 
@@ -27,7 +30,8 @@ export function parseFinenotesLink(
   const what = (params.do ?? "").trim().toLowerCase();
   if (what === "new") {
     const folder = cleanPath(params.folder ?? "");
-    return { do: "new", name: (params.name ?? "").trim(), ...(folder ? { folder } : {}) };
+    const last = params.last !== undefined && params.last.toLowerCase() !== "false";
+    return { do: "new", name: (params.name ?? "").trim(), ...(folder ? { folder } : {}), last };
   }
   if (what === "pdf") {
     const file = cleanPath(params.file ?? "");

@@ -2469,7 +2469,9 @@ export default class GoodObsidianPlugin extends Plugin {
 
   private async handleFinenotesLink(params: Record<string, string>): Promise<void> {
     const request = parseFinenotesLink(params);
-    if (request.do === "new") {
+    if (request.do === "new" && !request.last) {
+      this.openNewNotebookDialog(request.folder ?? "");
+    } else if (request.do === "new") {
       await this.createNotebook(
         request.name,
         parseNotebookChoices(this.settings.lastNotebookChoices),

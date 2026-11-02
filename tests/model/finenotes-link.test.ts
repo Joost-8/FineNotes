@@ -3,12 +3,20 @@ import { parseFinenotesLink, pdfByName, pdfCandidates } from "../../src/model/fi
 
 describe("parseFinenotesLink", () => {
   it("reads a new notebook, with and without a name and folder", () => {
-    expect(parseFinenotesLink({ do: "new" })).toEqual({ do: "new", name: "" });
+    expect(parseFinenotesLink({ do: "new" })).toEqual({ do: "new", name: "", last: false });
     expect(parseFinenotesLink({ do: "NEW", name: " Physics ", folder: "/School/Y2/" })).toEqual({
       do: "new",
       name: "Physics",
       folder: "School/Y2",
+      last: false,
     });
+  });
+
+  it("skips the window with last, given bare or as true", () => {
+    // Obsidian hands a bare `&last` over as "true".
+    expect(parseFinenotesLink({ do: "new", last: "true" })).toMatchObject({ last: true });
+    expect(parseFinenotesLink({ do: "new", last: "1" })).toMatchObject({ last: true });
+    expect(parseFinenotesLink({ do: "new", last: "false" })).toMatchObject({ last: false });
   });
 
   it("reads a PDF path as a shortcut writes it", () => {
