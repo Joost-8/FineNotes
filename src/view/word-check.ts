@@ -18,6 +18,7 @@
  */
 
 import { type App, Modal, Notice, normalizePath } from "obsidian";
+import { t } from "../i18n/translate";
 import {
   type CorrectionKind,
   type CorrectionsFile,
@@ -169,10 +170,7 @@ export class WordCheck {
     if (!this.words || this.words.size === 0) {
       if (!this.toldNoList) {
         this.toldNoList = true;
-        new Notice(
-          `FineNotes: checking words needs a word list at ${wordListPath(this.pluginDir())}.`,
-          10000,
-        );
+        new Notice(t("ai.word.noList", { path: wordListPath(this.pluginDir()) }), 10000);
       }
       return [];
     }
@@ -228,20 +226,20 @@ export class WordCheck {
       void this.answer(word, kind, text).then(done);
     const correct: WordPopoverRow = {
       icon: "pencil",
-      label: "Type what it says…",
+      label: t("ai.word.type"),
       run: () => new WordCorrectionModal(this.app, read, (text) => reply("misread", text)).open(),
     };
     const wrote: WordPopoverRow = {
       icon: "check",
-      label: `It says “${read}”`,
-      sub: !misread && found?.words[0] ? `Closest word: ${found.words[0]}` : undefined,
+      label: t("ai.word.itSays", { word: read }),
+      sub: !misread && found?.words[0] ? t("ai.word.closest", { word: found.words[0] }) : undefined,
       run: () => reply("mistake", read),
     };
     // Stored as "ignore", the kind's name since the first corrections files.
     const add: WordPopoverRow = {
       icon: "eye-off",
-      label: "Add to dictionary",
-      sub: "Never underline it again",
+      label: t("ai.word.addToDictionary"),
+      sub: t("ai.word.neverUnderline"),
       run: () => reply("ignore", read),
     };
     return new WordPopover(
@@ -289,7 +287,7 @@ export class WordCheck {
     try {
       await this.save();
     } catch (error) {
-      new Notice(`FineNotes: could not save the correction — ${errorMessage(error)}`, 8000);
+      new Notice(t("ai.word.saveFailed", { message: errorMessage(error) }), 8000);
       return;
     }
     this.answered(this.count);
@@ -311,22 +309,22 @@ class WordCorrectionModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog");
-    this.titleEl.setText("What does it say?");
+    this.titleEl.setText(t("ai.word.title"));
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
     body.createDiv({
       cls: "goodobsidian-ask-note",
-      text: "Type the word as you wrote it. FineNotes learns your handwriting from it.",
+      text: t("ai.word.note"),
     });
     const row = body.createDiv({ cls: "goodobsidian-contents-field-row" });
     const field = row.createEl("input", {
       cls: "goodobsidian-contents-field",
       type: "text",
-      attr: { "aria-label": "The word", autocapitalize: "none", spellcheck: "false" },
+      attr: { "aria-label": t("ai.word.field"), autocapitalize: "none", spellcheck: "false" },
     });
     field.value = this.read;
     this.keyboard.watch(field, row);
-    const save = row.createEl("button", { cls: "mod-cta", text: "Save" });
+    const save = row.createEl("button", { cls: "mod-cta", text: t("common.save") });
     const done = () => {
       const text = field.value.trim();
       if (!text) return;

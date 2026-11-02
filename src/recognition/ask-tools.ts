@@ -17,6 +17,7 @@
  * Pure: no DOM, no Obsidian, no network.
  */
 
+import { t, tn } from "../i18n/translate";
 import { ASK_MAX_PAGES } from "./ai-chat";
 import { isRecord } from "./llm-request";
 
@@ -487,33 +488,35 @@ export function parseToolCall(
 export function toolStatus(call: AskToolCall): string {
   switch (call.tool) {
     case "read_pages":
-      return `Reading ${pagesWord(call.pages)}…`;
+      return t("ai.tool.reading", { pages: pagesWord(call.pages) });
     case "search_notebook":
-      return `Searching for “${call.query}”…`;
+      return t("ai.tool.searching", { query: call.query });
     case "add_text_box":
-      return `Writing on page ${call.page}…`;
+      return t("ai.tool.writing", { page: call.page });
     case "add_page":
-      return "Adding a page…";
+      return t("ai.tool.addingPage");
     case "go_to_page":
-      return `Going to page ${call.page}…`;
+      return t("ai.tool.goingTo", { page: call.page });
     case "insert_drawing":
-      return `Drawing on page ${call.page}…`;
+      return t("ai.tool.drawing", { page: call.page });
     case "set_page_title":
-      return `Titling page ${call.page}…`;
+      return t("ai.tool.titling", { page: call.page });
     case "add_section":
-      return `Adding “${call.title}” to the contents…`;
+      return t("ai.tool.addingSection", { title: call.title });
     case "bookmark_page":
-      return `${call.bookmarked ? "Bookmarking" : "Unbookmarking"} page ${call.page}…`;
+      return t(call.bookmarked ? "ai.tool.bookmarking" : "ai.tool.unbookmarking", {
+        page: call.page,
+      });
     case "move_page":
-      return `Moving page ${call.page}…`;
+      return t("ai.tool.moving", { page: call.page });
     case "add_table":
-      return `Making a table on page ${call.page}…`;
+      return t("ai.tool.makingTable", { page: call.page });
     case "add_practice_page":
-      return "Making a practice page…";
+      return t("ai.tool.makingPractice");
     case "mark_area":
-      return `Marking page ${call.page}…`;
+      return t("ai.tool.marking", { page: call.page });
     case "add_comment":
-      return `Commenting on page ${call.page}…`;
+      return t("ai.tool.commenting", { page: call.page });
   }
 }
 
@@ -541,8 +544,14 @@ function boxOf(
 
 /** "page 3", "pages 2, 5 and 7". */
 function pagesWord(pages: readonly number[]): string {
-  if (pages.length === 1) return `page ${pages[0]}`;
-  return `pages ${pages.slice(0, -1).join(", ")} and ${pages[pages.length - 1]}`;
+  const list =
+    pages.length <= 1
+      ? pages.join("")
+      : t("ai.list.and", {
+          head: pages.slice(0, -1).join(", "),
+          last: pages[pages.length - 1] ?? "",
+        });
+  return tn("ai.ask.pagesPhrase", pages.length, { list });
 }
 
 /** Search hits as the model reads them: page numbers and the words around each match. */

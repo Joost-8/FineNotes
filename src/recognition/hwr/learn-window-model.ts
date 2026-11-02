@@ -8,6 +8,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { t, tn } from "../../i18n/translate";
 import {
   MIN_PRACTICE_LINES,
   type PracticeSheet,
@@ -133,14 +134,14 @@ export function learnWindow(facts: LearnWindowFacts): LearnWindowView {
     return {
       ...base,
       phase: "running",
-      title: "Learning your handwriting",
-      lead: `From ${from}.`,
+      title: t("ai.learn.runningTitle"),
+      lead: t("ai.learn.runningLead", { from }),
       percent,
       minutesLeft: left,
-      note: "You can close this window and keep writing; the AI menu shows how far it is.",
+      note: t("ai.learn.runningNote"),
       buttons: [
-        { label: "Close", action: { kind: "close" }, cta: false },
-        { label: "Stop", action: { kind: "stop" }, cta: false },
+        { label: t("common.close"), action: { kind: "close" }, cta: false },
+        { label: t("ai.learn.stop"), action: { kind: "stop" }, cta: false },
       ],
     };
   }
@@ -154,27 +155,24 @@ export function learnWindow(facts: LearnWindowFacts): LearnWindowView {
     return {
       ...base,
       phase: "better",
-      title: "It reads you better",
-      lead: `Tested on ${result.tested} of your lines it had not seen.`,
-      note:
-        `${fewerMistakes(result)} % fewer mistakes; it now reads with your model. For more, ` +
-        "write another sheet or correct more words, then learn again.",
+      title: t("ai.learn.betterTitle"),
+      lead: t("ai.learn.testedLead", { tested: result.tested }),
+      note: t("ai.learn.betterNote", { percent: fewerMistakes(result) }),
       buttons: [
-        { label: "Go back to Grape", action: { kind: "grape" }, cta: false },
-        { label: "Done", action: { kind: "close" }, cta: true },
+        { label: t("ai.learn.backToGrape"), action: { kind: "grape" }, cta: false },
+        { label: t("common.done"), action: { kind: "close" }, cta: true },
       ],
     };
   }
   if (result?.kind === "kept") {
-    const kept = result.mine ? "your model" : "Grape";
     return {
       ...base,
       phase: "kept",
-      title: `${result.mine ? "Your model" : "Grape"} still reads you better`,
-      lead: `Tested on ${result.tested} of your lines it had not seen.`,
-      note: `Nothing changed: ${kept} stays. Another sheet usually helps: more lines, other words.`,
+      title: t(result.mine ? "ai.learn.keptMineTitle" : "ai.learn.keptGrapeTitle"),
+      lead: t("ai.learn.testedLead", { tested: result.tested }),
+      note: t(result.mine ? "ai.learn.keptMineNote" : "ai.learn.keptGrapeNote"),
       buttons: [
-        { label: "Close", action: { kind: "close" }, cta: false },
+        { label: t("common.close"), action: { kind: "close" }, cta: false },
         { ...write, cta: true },
       ],
     };
@@ -183,15 +181,15 @@ export function learnWindow(facts: LearnWindowFacts): LearnWindowView {
     return {
       ...base,
       phase: "failed",
-      title: "Learning stopped",
+      title: t("ai.learn.stoppedTitle"),
       lead:
         result.kind === "failed"
-          ? `${result.message}.`
-          : "There was nothing to learn from in the copied lines.",
-      note: "Your sheets and corrected words are kept.",
+          ? t("ai.learn.failedLead", { message: result.message })
+          : t("ai.learn.nothingLead"),
+      note: t("ai.learn.stoppedNote"),
       buttons: [
-        { label: "Close", action: { kind: "close" }, cta: false },
-        { label: "Try again", action: { kind: "learn" }, cta: true },
+        { label: t("common.close"), action: { kind: "close" }, cta: false },
+        { label: t("common.retry"), action: { kind: "learn" }, cta: true },
       ],
     };
   }
@@ -201,10 +199,8 @@ export function learnWindow(facts: LearnWindowFacts): LearnWindowView {
     return {
       ...base,
       phase: "start",
-      title: "Learn your handwriting",
-      lead:
-        "Copy a few lines, and FineNotes learns to read your writing better. It all happens " +
-        "on this device.",
+      title: t("ai.learn.title"),
+      lead: t("ai.learn.startLead"),
       marks,
       symbols,
       buttons: [{ ...write, cta: true }],
@@ -213,15 +209,12 @@ export function learnWindow(facts: LearnWindowFacts): LearnWindowView {
   return {
     ...base,
     phase: "ready",
-    title: "Learn your handwriting",
-    lead: `Ready to learn from ${from}.`,
+    title: t("ai.learn.title"),
+    lead: t("ai.learn.readyLead", { from }),
     marks,
     symbols,
-    note:
-      "It takes a few minutes in the background, so you can keep writing, and keeps the " +
-      "result only if it reads you better than now. Keep your sheets: each run learns from " +
-      "all of them.",
-    buttons: [write, { label: "Learn now", action: { kind: "learn" }, cta: true }],
+    note: t("ai.learn.readyNote"),
+    buttons: [write, { label: t("ai.learn.learnNow"), action: { kind: "learn" }, cta: true }],
   };
 }
 
@@ -244,11 +237,11 @@ function sheetMarks(
     const written = own.reduce((sum, sheet) => sum + sheet.written, 0);
     const prompts = own.reduce((sum, sheet) => sum + sheet.prompts, 0);
     if (prompts > 0 && written >= prompts) {
-      marks.push({ set, state: "done", detail: `${written} lines` });
+      marks.push({ set, state: "done", detail: tn("ai.learn.lines", written) });
     } else if (written > 0) {
-      marks.push({ set, state: "started", detail: `${written} of ${prompts}` });
+      marks.push({ set, state: "started", detail: t("ai.learn.ofCount", { written, prompts }) });
     } else if (set === nextSet) {
-      marks.push({ set, state: "next", detail: "to write" });
+      marks.push({ set, state: "next", detail: t("ai.learn.toWrite") });
     } else {
       marks.push({ set, state: "todo", detail: "" });
     }
@@ -258,9 +251,12 @@ function sheetMarks(
 
 /** "30 lines and 4 corrected words". */
 function materialText(lines: number, corrections: number): string {
-  const copied = `${lines} line${lines === 1 ? "" : "s"}`;
+  const copied = tn("ai.learn.lines", lines);
   if (corrections === 0) return copied;
-  return `${copied} and ${corrections} corrected word${corrections === 1 ? "" : "s"}`;
+  return t("ai.learn.linesAndWords", {
+    lines: copied,
+    words: tn("ai.learn.correctedWords", corrections),
+  });
 }
 
 /**
@@ -271,5 +267,5 @@ export function sheetButton(lines: number, corrections: number): { count: string
   const total = lines + corrections;
   if (total < MIN_PRACTICE_LINES)
     return { count: `${total} / ${MIN_PRACTICE_LINES}`, ready: false };
-  return { count: `${lines} line${lines === 1 ? "" : "s"}`, ready: true };
+  return { count: tn("ai.learn.lines", lines), ready: true };
 }

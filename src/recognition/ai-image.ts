@@ -23,6 +23,7 @@
  * No DOM, no Obsidian, no network.
  */
 
+import { t } from "../i18n/translate";
 import { type LlmHttpRequest, type LlmVendor, VENDORS, isRecord } from "./llm-request";
 
 export type ImageVendor = "openai" | "google" | "openrouter";
@@ -67,9 +68,9 @@ export function canGenerateImages(vendor: LlmVendor): vendor is ImageVendor {
 export function imageUnsupportedReason(vendor: LlmVendor): string {
   if (canGenerateImages(vendor)) return "";
   if (vendor === "anthropic") {
-    return "Claude cannot make images — needs an OpenAI, Google or OpenRouter key";
+    return t("ai.image.claudeUnsupported");
   }
-  return "Needs an OpenAI, Google or OpenRouter key";
+  return t("ai.image.needsKey");
 }
 
 export interface ImageRequestInput {
@@ -82,9 +83,9 @@ export interface ImageRequestInput {
 
 /** Build the vendor's HTTP request. Throws on a missing key or an empty prompt. */
 export function buildImageRequest(input: ImageRequestInput): LlmHttpRequest {
-  if (!input.apiKey.trim()) throw new Error("missing API key");
+  if (!input.apiKey.trim()) throw new Error(t("ai.client.missingKey"));
   const prompt = input.prompt.trim();
-  if (!prompt) throw new Error("describe the image first");
+  if (!prompt) throw new Error(t("ai.image.describeFirst"));
   const vendor = VENDORS[input.vendor];
   const headers = { ...vendor.headers(input.apiKey), "content-type": "application/json" };
 
@@ -183,7 +184,7 @@ export function describeMissingImage(vendor: ImageVendor, json: unknown): string
   if (!isRecord(json) || vendor !== "google") return "";
   const feedback = json.promptFeedback;
   if (isRecord(feedback) && typeof feedback.blockReason === "string") {
-    return `the prompt was blocked (${feedback.blockReason})`;
+    return t("ai.image.blocked", { reason: feedback.blockReason });
   }
   const candidate = firstOf(json.candidates);
   if (!isRecord(candidate)) return "";
@@ -195,7 +196,9 @@ export function describeMissingImage(vendor: ImageVendor, json: unknown): string
     .trim();
   if (text) return text.length > 300 ? `${text.slice(0, 300)}…` : text;
   const reason = candidate.finishReason;
-  return typeof reason === "string" && reason !== "STOP" ? `no image (${reason})` : "";
+  return typeof reason === "string" && reason !== "STOP"
+    ? t("ai.image.noImageReason", { reason })
+    : "";
 }
 
 /**

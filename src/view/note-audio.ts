@@ -29,6 +29,7 @@
  */
 
 import { type App, Notice, Platform, type TFile, normalizePath } from "obsidian";
+import { t } from "../i18n/translate";
 import {
   RecordingClock,
   type TranscriptParagraph,
@@ -187,7 +188,7 @@ export class NoteAudio {
     const file = this.host.file();
     if (!file) return;
     if (this.host.isLocked()) {
-      new Notice("FineNotes: this note is protected until its ink data loads cleanly.");
+      new Notice(t("ai.rec.protected"));
       return;
     }
     const recorder = new AudioRecorder(this.host.app, this.clock);
@@ -199,7 +200,7 @@ export class NoteAudio {
     try {
       await started;
     } catch (error) {
-      new Notice(`FineNotes: couldn't start recording — ${errorMessage(error)}.`, 10000);
+      new Notice(t("ai.rec.startFailed", { message: errorMessage(error) }), 10000);
       return;
     } finally {
       this.starting = false;
@@ -229,7 +230,7 @@ export class NoteAudio {
       .stop()
       .then((result) => this.finishRecording(result, reason))
       .catch((error) => {
-        new Notice(`FineNotes: the recording could not be saved — ${errorMessage(error)}.`, 0);
+        new Notice(t("ai.rec.saveFailed", { message: errorMessage(error) }), 0);
       })
       .finally(() => {
         // Never left set: the mic would refuse every tap after this one.
@@ -250,9 +251,9 @@ export class NoteAudio {
     if (!recorder) return;
     if (this.clock.elapsed() >= DISCARD_CONFIRM_MS) {
       const sure = await ConfirmModal.confirm(this.host.app, {
-        title: "Discard this recording?",
-        message: `${formatClock(this.clock.elapsed())} of audio will be deleted and not added to the note.`,
-        cta: "Discard",
+        title: t("ai.rec.discardTitle"),
+        message: t("ai.rec.discardMessage", { length: formatClock(this.clock.elapsed()) }),
+        cta: t("ai.rec.discardCta"),
       });
       // Stopped or discarded some other way while the question was up.
       if (!sure || this.recorder !== recorder) return;
@@ -266,10 +267,10 @@ export class NoteAudio {
       .then(async ({ saved }) => {
         const file = saved ? this.host.app.vault.getFileByPath(saved.path) : null;
         if (file) await this.host.app.fileManager.trashFile(file);
-        new Notice("FineNotes: recording discarded.");
+        new Notice(t("ai.rec.discarded"));
       })
       .catch((error) => {
-        new Notice(`FineNotes: the recording could not be discarded — ${errorMessage(error)}.`, 0);
+        new Notice(t("ai.rec.discardFailed", { message: errorMessage(error) }), 0);
       })
       .finally(() => {
         if (this.finishing === finishing) this.finishing = null;
@@ -282,9 +283,7 @@ export class NoteAudio {
     const { saved, problem } = result;
     if (!saved) {
       new Notice(
-        problem
-          ? `FineNotes: the recording could not be saved — ${problem}.`
-          : "FineNotes: nothing was recorded.",
+        problem ? t("ai.rec.saveFailed", { message: problem }) : t("ai.rec.nothingRecorded"),
         10000,
       );
       return;
@@ -305,26 +304,25 @@ export class NoteAudio {
     }
     const why: Record<StopReason, string> = {
       user: "",
-      hidden:
-        "Recording stopped: Obsidian went to the background (the screen locked, or you " +
-        "switched apps). ",
-      closed: "Recording stopped because the note was closed. ",
-      "file-changed": "Recording stopped because this note changed on disk (a sync?). ",
-      error: "Recording stopped: the recorder reported an error. ",
-      "track-ended": "Recording stopped: the microphone stopped sending sound. ",
-      "write-failed": `Recording stopped: the audio could not be written (${problem ?? "unknown"}). `,
+      hidden: t("ai.rec.stopHidden"),
+      closed: t("ai.rec.stopClosed"),
+      "file-changed": t("ai.rec.stopChanged"),
+      error: t("ai.rec.stopError"),
+      "track-ended": t("ai.rec.stopMic"),
+      "write-failed": t("ai.rec.stopWrite", { problem: problem ?? t("ai.rec.unknown") }),
     };
     const where = linked
-      ? `${length} saved to ${saved.path}. ` +
-        (reason === "user"
-          ? "Play it from the Audio tab in the page sidebar; Undo takes it off this note " +
-            "(the file stays)."
-          : "It is in this note's recordings (the Audio tab in the page sidebar).")
-      : `${length} saved to ${saved.path}, but it could not be added to the note.`;
+      ? t(reason === "user" ? "ai.rec.savedPlay" : "ai.rec.savedListed", {
+          length,
+          path: saved.path,
+        })
+      : t("ai.rec.savedNotAdded", { length, path: saved.path });
     const trouble =
-      problem && reason !== "write-failed" ? ` Part of it may be missing: ${problem}.` : "";
+      problem && reason !== "write-failed" ? t("ai.rec.partMissing", { problem }) : "";
     new Notice(
-      `FineNotes: ${why[reason]}${where}${trouble}`,
+      t("ai.rec.notice", {
+        text: [why[reason], where, trouble].filter((part) => part !== "").join(" "),
+      }),
       reason === "user" && !trouble ? 8000 : 0,
     );
   }
@@ -352,14 +350,14 @@ export class NoteAudio {
   private explainLimit(screenOn: boolean): void {
     if (limitExplained) return;
     limitExplained = true;
-    const device = Platform.isTablet ? "iPad" : Platform.isPhone ? "phone" : "";
+    const device = Platform.isTablet
+      ? "iPad"
+      : Platform.isPhone
+        ? t("ai.rec.devicePhone")
+        : t("ai.rec.deviceOther");
     const message = Platform.isMobile
-      ? `FineNotes is recording. Recording stops if the ${device || "device"} locks or you ` +
-        "leave Obsidian — " +
-        (screenOn
-          ? "the screen is kept on while it records."
-          : "keep the screen on (Settings → Display & Brightness → Auto-Lock → Never).")
-      : "FineNotes is recording. It stops when you tap the mic again or close this note.";
+      ? t(screenOn ? "ai.rec.limitScreenOn" : "ai.rec.limitScreenOff", { device })
+      : t("ai.rec.limitDesktop");
     new Notice(message, 12000);
   }
 
@@ -504,16 +502,13 @@ export class NoteAudio {
     const surface = this.host.surface();
     if (!surface) return;
     if (this.host.isLocked()) {
-      new Notice("FineNotes: this note is protected until its ink data loads cleanly.");
+      new Notice(t("ai.rec.protected"));
       return;
     }
     const playing = this.player?.recording;
     if (playing && sameRecording(playing, recording)) this.closePlayer();
     surface.applyCommand(new RemoveRecording(recording));
-    new Notice(
-      `FineNotes: removed from this note — the audio stays in ${recording.path}. ` +
-        "Undo brings it back.",
-    );
+    new Notice(t("ai.rec.removed", { path: recording.path }));
   }
 
   private openTranscript(recording: Recording): void {
@@ -526,21 +521,21 @@ export class NoteAudio {
   private async pasteTranscript(recording: Recording): Promise<void> {
     const { app } = this.host;
     if (this.host.isLocked()) {
-      new Notice("FineNotes: this note is protected until its ink data loads cleanly.");
+      new Notice(t("ai.rec.protected"));
       return;
     }
     const file = recording.transcript ? app.vault.getFileByPath(recording.transcript) : null;
     if (!file) {
-      new Notice("FineNotes: this recording's transcript note is missing.");
+      new Notice(t("ai.rec.transcriptMissing"));
       return;
     }
     const text = transcriptText(await app.vault.cachedRead(file));
     if (!text) {
-      new Notice("FineNotes: the transcript is empty.");
+      new Notice(t("ai.rec.transcriptEmpty"));
       return;
     }
     if (!this.alive || !this.host.insertText(text)) {
-      new Notice("FineNotes: couldn't paste the transcript here.");
+      new Notice(t("ai.rec.pasteFailed"));
     }
   }
 
@@ -549,7 +544,7 @@ export class NoteAudio {
   /** Play `recording` from `fromMs` in the player bar, opening it if needed. */
   private play(recording: Recording, fromMs = 0): void {
     if (this.recorder || this.starting) {
-      new Notice("FineNotes: stop recording before playing one back.");
+      new Notice(t("ai.rec.stopFirst"));
       return;
     }
     const player = this.load(recording);
@@ -562,7 +557,7 @@ export class NoteAudio {
   private load(recording: Recording): AudioPlayerBar | null {
     const file = this.host.app.vault.getFileByPath(recording.path);
     if (!file) {
-      new Notice(`FineNotes: the audio file is missing — ${recording.path}.`);
+      new Notice(t("ai.rec.fileMissing", { path: recording.path }));
       return null;
     }
     const player = this.openPlayer();
@@ -650,16 +645,12 @@ export class NoteAudio {
     if (!player) return false;
     const at = strokeTime(page, stroke);
     if (at === null) {
-      player.hint("That ink has no time stamp — it was written before version 0.5.");
+      player.hint(t("ai.rec.noTimestamp"));
       return false;
     }
     const hit = findRecordingAt(this.recordings(), at, player.recording?.id);
     if (!hit) {
-      player.hint(
-        this.recordings().length > 1
-          ? "That was written outside every recording in this note."
-          : "That was written outside this recording — there is nothing to play there.",
-      );
+      player.hint(this.recordings().length > 1 ? t("ai.rec.outsideAll") : t("ai.rec.outsideThis"));
       return false;
     }
     const loaded = this.load(hit.recording);
@@ -667,7 +658,7 @@ export class NoteAudio {
     const target = seekTargetMs(hit.offsetMs, hit.recording.duration);
     loaded.seek(target);
     loaded.play();
-    loaded.hint(`Playing from ${formatClock(target)}, just before that was written.`);
+    loaded.hint(t("ai.rec.playingFrom", { time: formatClock(target) }));
     return true;
   }
 
@@ -677,7 +668,7 @@ export class NoteAudio {
   transcribeFromMenu(): void {
     const recordings = this.recordings();
     if (recordings.length === 0) {
-      new Notice("FineNotes: this note has no recordings yet — tap the mic to record.");
+      new Notice(t("ai.rec.noRecordings"));
       return;
     }
     if (recordings.length === 1) {
@@ -693,7 +684,7 @@ export class NoteAudio {
   transcribeOnDeviceFromMenu(): void {
     const recordings = this.recordings();
     if (recordings.length === 0) {
-      new Notice("FineNotes: this note has no recordings yet — tap the mic to record.");
+      new Notice(t("ai.rec.noRecordings"));
       return;
     }
     if (recordings.length === 1) {
@@ -713,21 +704,19 @@ export class NoteAudio {
   async transcribeOnDevice(recording: Recording): Promise<void> {
     const { app, plugin } = this.host;
     if (this.host.isLocked()) {
-      new Notice("FineNotes: this note is protected until its ink data loads cleanly.");
+      new Notice(t("ai.rec.protected"));
       return;
     }
     const audio = app.vault.getFileByPath(recording.path);
     if (!audio) {
-      new Notice(`FineNotes: the audio file is missing — ${recording.path}.`);
+      new Notice(t("ai.rec.fileMissing", { path: recording.path }));
       return;
     }
     if (recording.transcript && app.vault.getFileByPath(recording.transcript)) {
       const again = await ConfirmModal.confirm(app, {
-        title: "Transcribe again?",
-        message:
-          "This recording already has a transcript. A new one is written as a separate " +
-          "note; the old one stays.",
-        cta: "Transcribe",
+        title: t("ai.rec.againTitle"),
+        message: t("ai.rec.againMessage"),
+        cta: t("ai.audio.transcribe"),
       });
       if (!again) return;
     }
@@ -763,50 +752,45 @@ export class NoteAudio {
   async transcribe(recording: Recording): Promise<void> {
     const { app, plugin } = this.host;
     if (this.transcribing) {
-      new Notice("FineNotes: a recording is already being transcribed.");
+      new Notice(t("ai.rec.busy"));
       return;
     }
     if (this.host.isLocked()) {
-      new Notice("FineNotes: this note is protected until its ink data loads cleanly.");
+      new Notice(t("ai.rec.protected"));
       return;
     }
     const audio = app.vault.getFileByPath(recording.path);
     if (!audio) {
-      new Notice(`FineNotes: the audio file is missing — ${recording.path}.`);
+      new Notice(t("ai.rec.fileMissing", { path: recording.path }));
       return;
     }
     const availability = audioAvailability(plugin.aiSetup());
     if (!availability.enabled) {
-      new Notice(
-        `FineNotes: can't transcribe audio — ${availability.reason}. Set it up in AI settings.`,
-        10000,
-      );
+      new Notice(t("ai.rec.cannotTranscribe", { reason: availability.reason }), 10000);
       return;
     }
     const tooBig = uploadSizeProblem(plugin.settings.llmVendor, audio.stat.size);
     if (tooBig) {
-      new Notice(`FineNotes: ${tooBig}`, 12000);
+      new Notice(t("ai.rec.notice", { text: tooBig }), 12000);
       return;
     }
     if (recording.transcript && app.vault.getFileByPath(recording.transcript)) {
       const again = await ConfirmModal.confirm(app, {
-        title: "Transcribe again?",
-        message:
-          "This recording already has a transcript. A new one is written as a separate " +
-          "note; the old one stays.",
-        cta: "Transcribe",
+        title: t("ai.rec.againTitle"),
+        message: t("ai.rec.againMessage"),
+        cta: t("ai.audio.transcribe"),
       });
       if (!again) return;
     }
 
     this.transcribing = true;
-    const progress = new Notice("FineNotes: preparing the recording…", 0);
+    const progress = new Notice(t("ai.rec.preparing"), 0);
     try {
       const bytes = await app.vault.readBinary(audio);
       const text = await plugin.transcribeAudioFile(
         bytes,
         audioMimeForExtension(audio.extension) ?? "audio/mp4",
-        (message) => progress.setMessage(`FineNotes: ${message}`),
+        (message) => progress.setMessage(t("ai.rec.notice", { text: message })),
       );
       if (text === null) return; // They declined to send it.
       const path = await this.writeTranscript(
@@ -820,9 +804,9 @@ export class NoteAudio {
       if (surface && !this.host.isLocked()) {
         surface.applyCommand(new SetRecordingTranscript(recording, path));
       }
-      new Notice(`FineNotes: transcript saved to ${path}.`, 8000);
+      new Notice(t("ai.device.saved", { path }), 8000);
     } catch (error) {
-      new Notice(`FineNotes: transcription failed — ${errorMessage(error)}`, 12000);
+      new Notice(t("ai.rec.transcribeFailed", { message: errorMessage(error) }), 12000);
     } finally {
       progress.hide();
       this.transcribing = false;

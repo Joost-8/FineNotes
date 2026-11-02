@@ -6,6 +6,7 @@
  * Pure: no DOM, no Obsidian, no network.
  */
 
+import { t } from "../i18n/translate";
 import type { Backdrop } from "../model/document";
 import { type ChatFile, PDF_MIME } from "./ai-chat";
 import { bytesToBase64 } from "./audio-request";
@@ -113,13 +114,12 @@ export function sameAttachment(a: ChatFile, b: ChatFile): boolean {
  * and sent), or null when it can.
  */
 export function attachRefusal(file: ChatFile, held: readonly ChatFile[]): string | null {
-  if (held.some((other) => sameAttachment(other, file))) return `${file.name} is already attached.`;
+  if (held.some((other) => sameAttachment(other, file))) {
+    return t("ai.attach.already", { name: file.name });
+  }
   const total = held.reduce((sum, f) => sum + attachmentBytes(f), attachmentBytes(file));
   if (total > ATTACH_MAX_BYTES) {
-    return (
-      `${file.name} is too big: a chat's files can add up to ${sizeLabel(ATTACH_MAX_BYTES)}, ` +
-      "since every question sends them again."
-    );
+    return t("ai.attach.tooBig", { name: file.name, max: sizeLabel(ATTACH_MAX_BYTES) });
   }
   return null;
 }

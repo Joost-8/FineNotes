@@ -7,6 +7,7 @@
  * final text (selection-words.ts `editedWords`).
  */
 
+import { t } from "../i18n/translate";
 import { replaceToken } from "../recognition/hwr/selection-words";
 
 export interface SpellingFix {
@@ -35,7 +36,7 @@ export class SpellingRows {
   private row(fix: SpellingFix): void {
     const row = this.el.createDiv({ cls: "goodobsidian-spelling-row" });
     row.dataset.token = fix.token;
-    row.createSpan({ cls: "goodobsidian-spelling-label", text: "Did you mean" });
+    row.createSpan({ cls: "goodobsidian-spelling-label", text: t("ai.spelling.before") });
     fix.words.forEach((word, i) => {
       // `clickable-icon`: Obsidian pads any other button 20 px on iPad.
       const chip = row.createEl("button", {
@@ -50,7 +51,7 @@ export class SpellingRows {
         this.field.focus();
       });
     });
-    row.createSpan({ cls: "goodobsidian-spelling-label", text: "?" });
+    row.createSpan({ cls: "goodobsidian-spelling-label", text: t("ai.spelling.after") });
   }
 
   private prune(): void {

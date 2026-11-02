@@ -20,6 +20,7 @@ import {
   type SpeechRequest,
   type SpeechResult,
 } from "../audio/speech-protocol";
+import { t } from "../i18n/translate";
 import type { SpeechSegment } from "../audio/speech-chunks";
 
 /** A worker left idle this long is let go, with its model. */
@@ -74,7 +75,7 @@ export class SpeechClient {
     };
     worker.onerror = (event) => {
       event.preventDefault();
-      this.stop(new Error(event.message || "the speech recognizer stopped (out of memory?)"));
+      this.stop(new Error(event.message || t("ai.speech.stopped")));
     };
     this.worker = worker;
     return worker;
@@ -93,10 +94,7 @@ export class SpeechClient {
           const id = this.nextId++;
           const timer =
             timeoutMs > 0
-              ? window.setTimeout(
-                  () => this.stop(new Error("the speech recognizer did not answer")),
-                  timeoutMs,
-                )
+              ? window.setTimeout(() => this.stop(new Error(t("ai.speech.noAnswer"))), timeoutMs)
               : 0;
           this.pending.set(id, { resolve, reject, timer, onProgress });
           worker.postMessage({ [SPEECH_TAG]: true, id, ...request }, transfer);

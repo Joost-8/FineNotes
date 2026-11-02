@@ -16,6 +16,8 @@
 
 import type { Page, Recording, Stroke } from "../model/document";
 import { GOOGLE_INLINE_MAX_BYTES, OPENAI_AUDIO_MAX_BYTES } from "../recognition/audio-request";
+import { t } from "../i18n/translate";
+import { monthName } from "../recognition/hwr/learned-model";
 import type { LlmVendor } from "../recognition/llm-request";
 
 /**
@@ -159,13 +161,11 @@ export function formatClock(ms: number): string {
     : `${pad2(minutes)}:${pad2(seconds)}`;
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** `22 Sep 2026, 14:05`, in local time. English, like the rest of the interface. */
+/** `22 Sep 2026, 14:05`, in local time, with the month in the interface language. */
 export function formatRecordingDate(ms: number): string {
   const date = new Date(ms);
   return (
-    `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}, ` +
+    `${date.getDate()} ${monthName(date.getMonth())} ${date.getFullYear()}, ` +
     `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
   );
 }
@@ -317,16 +317,9 @@ export function uploadSizeProblem(vendor: LlmVendor, bytes: number): string | nu
   const limit = audioUploadLimit(vendor);
   if (limit === null || bytes <= limit) return null;
   if (vendor === "google") {
-    return (
-      `This recording is ${megabytes(bytes)}, and Gemini takes at most about ` +
-      `${megabytes(limit)} in one request. Use an OpenAI key (up to 25 MB), or record ` +
-      "shorter parts."
-    );
+    return t("ai.audio.uploadGemini", { size: megabytes(bytes), max: megabytes(limit) });
   }
-  return (
-    `This recording is ${megabytes(bytes)}, and OpenAI takes at most ${megabytes(limit)}. ` +
-    "Record shorter parts."
-  );
+  return t("ai.audio.uploadOpenai", { size: megabytes(bytes), max: megabytes(limit) });
 }
 
 /** Split a vault path into its folder (`""` at the root) and its file name. */
