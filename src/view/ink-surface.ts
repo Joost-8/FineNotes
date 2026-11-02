@@ -3357,6 +3357,17 @@ export class InkSurface {
     this.requestFrame();
   }
 
+  /**
+   * A font finished loading (view/font-store.ts): text set in it wraps
+   * differently now, though no box's style changed, so every box is measured
+   * again and the canvas text repainted.
+   */
+  fontsLoaded(): void {
+    for (const view of this.textBoxInputs.values()) view.measuredAt = "";
+    this.syncTextBoxes();
+    this.repaint();
+  }
+
   /** The document being edited: the one object every edit changes in place. */
   get document(): InkDocument {
     return this.doc;

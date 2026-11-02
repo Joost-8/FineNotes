@@ -87,8 +87,11 @@ import {
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import { TAPE_COLORS, TAPE_HEIGHTS, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { magnifierTap, zoomButtonState } from "../model/zoom-box";
-import { setIcon } from "obsidian";
+import { Notice, setIcon } from "obsidian";
 import { deviceFamilies, hasFamily } from "./device-fonts";
+import { loadedVaultFonts } from "./font-store";
+import { errorMessage } from "../util/errors";
+import { downloadLabel } from "../model/font-catalogue";
 import { familyStack, matchesFamily } from "../model/text-family";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
@@ -3555,6 +3558,70 @@ export class Toolbar {
     return button;
   }
 
+  /**
+   * The mark after a box's family in the font menu: none where the device
+   * draws it, a download where FineNotes can fetch it or a stand-in
+   * (font-store.ts; a tap fetches it), ⚠ where it falls back to `fallback`.
+   */
+  private markFamily(
+    button: HTMLElement,
+    family: string,
+    fallback: string,
+    refresh: () => void,
+  ): void {
+    const fonts = loadedVaultFonts();
+    const state = fonts ? fonts.state(family) : hasFamily(family) ? "installed" : "missing";
+    if (state === "installed") return;
+    const source = fonts?.source(family);
+    if (state === "loaded") {
+      // Drawn by FineNotes: in the family itself, or in its stand-in.
+      if (source?.sizeAdjust !== undefined) {
+        button.setAttr(
+          "aria-label",
+          `${family}. Not on this device: shown in ${source.font.family}`,
+        );
+      }
+      return;
+    }
+    const mark = button.createSpan({ cls: "goodobsidian-font-missing" });
+    if (state === "missing" || !fonts || !source) {
+      const missing = `Not on this device: shown in ${fallback}`;
+      button.setAttr("aria-label", `${family}. ${missing}`);
+      mark.setAttr("title", missing);
+      setIcon(mark, "alert-triangle");
+      return;
+    }
+    const label = downloadLabel(source);
+    mark.addClass("is-fetch");
+    mark.setAttrs({ role: "button", tabindex: "0", "aria-label": label, title: label });
+    setIcon(mark, "download");
+    let busy = false;
+    const get = (event: Event): void => {
+      // The mark is inside the option: picking the font is not what it does.
+      event.preventDefault();
+      event.stopPropagation();
+      if (busy) return;
+      busy = true;
+      mark.addClass("is-busy");
+      setIcon(mark, "loader");
+      fonts
+        .fetch(family)
+        .catch((error: unknown) => {
+          new Notice(
+            `FineNotes: couldn't get ${source.font.family} — ${errorMessage(error)}`,
+            8000,
+          );
+        })
+        .finally(() => {
+          if (button.isConnected) refresh();
+        });
+    };
+    mark.addEventListener("click", get);
+    mark.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") get(event);
+    });
+  }
+
   /** A button inside a text popover. */
   private textOption(
     parent: HTMLElement,
@@ -3746,15 +3813,7 @@ export class Toolbar {
           this.closePopover(),
         );
         button.setCssStyles({ fontFamily: fontFamilyOf(style) });
-        if (!hasFamily(family)) {
-          const missing = `Not on this device: shown in ${TEXT_FONT_LABELS[current]}`;
-          button.setAttr("aria-label", `${family}. ${missing}`);
-          const mark = button.createSpan({
-            cls: "goodobsidian-font-missing",
-            attr: { title: missing },
-          });
-          setIcon(mark, "alert-triangle");
-        }
+        this.markFamily(button, family, TEXT_FONT_LABELS[current], fill);
       }
       for (const font of TEXT_FONTS) {
         if (!shown(TEXT_FONT_LABELS[font])) continue;
