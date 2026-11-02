@@ -165,6 +165,54 @@ describe("PdfBackdropCache", () => {
     expect(c.peek("a.pdf", 3, 1)?.ok).toBe(true);
   });
 
+  it("renders the sidebar's thumbnails after what is on screen and before what may come next", async () => {
+    const c = cache();
+    const g = { geometry: { width: 600, height: 800 } };
+    pdf.blocked = true;
+    // Two renders hold both slots, so everything after waits in the queue.
+    c.request("a.pdf", 30, 2, g);
+    c.request("a.pdf", 31, 2, g);
+    await settle();
+    c.request("a.pdf", 10, 0.25, g);
+    c.request("a.pdf", 11, 0.25, g);
+    // On screen: page 0's image; what may come next: page 1's image.
+    c.setVisibleRegions(
+      [
+        { path: "a.pdf", page: 0, dprScale: 1, area: g },
+        { path: "a.pdf", page: 1, dprScale: 1.5, area: g },
+      ],
+      [],
+      1,
+    );
+    for (let i = 0; i < 6; i++) {
+      pdf.tasks[i]?.finish();
+      await settle();
+    }
+    expect(pdf.calls.slice(2).map((call) => call.viewport.width)).toEqual([600, 150, 150, 900]);
+  });
+
+  it("draws a thumbnail from a sharper image of its page instead of rendering it again", async () => {
+    const c = cache();
+    const geometry = { width: 600, height: 800 };
+    await c.resolve("a.pdf", 0, 1, { geometry });
+    expect(pdf.renders).toBe(1);
+    const thumbs = new VaultBackdropRenderer(c);
+    const drawImage = vi.fn();
+    const ctx = { fillRect: vi.fn(), drawImage, save: vi.fn(), restore: vi.fn() };
+    thumbs.paint(ctx as never, { kind: "pdf", path: "a.pdf", page: 0 }, geometry, 1, {
+      deviceScale: 0.25,
+    });
+    await settle();
+    expect(drawImage).toHaveBeenCalledTimes(1);
+    expect(pdf.renders).toBe(1);
+    // A page never drawn sharper is rendered for its thumbnail, as before.
+    thumbs.paint(ctx as never, { kind: "pdf", path: "a.pdf", page: 1 }, geometry, 1, {
+      deviceScale: 0.25,
+    });
+    await settle();
+    expect(pdf.renders).toBe(2);
+  });
+
   it("keeps more than eight thumbnail-sized pages", async () => {
     const c = cache();
     for (let page = 0; page < 14; page++) c.request("a.pdf", page, 0.5);

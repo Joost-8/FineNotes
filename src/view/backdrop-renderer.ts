@@ -191,10 +191,8 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     }
     this.centres = centres;
     const coming = this.nearImages(near, deviceScale);
-    this.pdf.setVisibleRegions(
-      [...pages, ...coming.slice(0, 1), ...detail, ...coming.slice(1), ...offScreen],
-      shown,
-    );
+    const now = [...pages, ...coming.slice(0, 1), ...detail];
+    this.pdf.setVisibleRegions([...now, ...coming.slice(1), ...offScreen], shown, now.length);
   }
 
   /** The request for a page's image at `level`: the key {@link paint} looks for. */
@@ -291,8 +289,18 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       exact && exact.path === backdrop.path && exact.page === backdrop.page
         ? exact.entry
         : this.pdf.peek(backdrop.path, backdrop.page, scale, area);
+    // Only for a painter with no view of its own (thumbnails): the view's
+    // painter asks for its exact level, which keeps detail tiles in step.
+    const sharper =
+      entry || this.level !== null
+        ? null
+        : this.pdf.peekNearest(backdrop.path, backdrop.page, scale, area, true);
     if (entry) this.paintEntry(ctx, entry, geometry, paper, draws, backdrop.frame);
-    else {
+    else if (sharper) {
+      // A thumbnail of a page the view already drew sharper: drawn from that,
+      // never rendered again for itself.
+      this.paintEntry(ctx, sharper, geometry, paper, draws, backdrop.frame);
+    } else {
       // Not rasterised at this scale yet: the page at another scale if one is
       // cached (a zoom just changed it), else plain paper; repaint when the
       // bitmap arrives.

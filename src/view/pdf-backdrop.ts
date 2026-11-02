@@ -359,7 +359,13 @@ export class PdfBackdropCache {
    * without this the page showed as blank paper until pdf.js caught up — a
    * second or more on an iPad. Misses (`ok: false`) are never returned.
    */
-  peekNearest(path: string, page: number, dprScale: number, area?: PdfRenderArea): PdfEntry | null {
+  peekNearest(
+    path: string,
+    page: number,
+    dprScale: number,
+    area?: PdfRenderArea,
+    aboveOnly = false,
+  ): PdfEntry | null {
     // rasterKey around its scale.
     const prefix = `${path}:${page}:`;
     const suffix = area ? `:${pdfAreaKey(area)}` : "";
@@ -376,7 +382,7 @@ export class PdfBackdropCache {
         if (!above || scale < above.scale) above = { scale, cached };
       } else if (!below || scale > below.scale) below = { scale, cached };
     }
-    const best = above ?? below;
+    const best = aboveOnly ? above : (above ?? below);
     if (!best) return null;
     best.cached.lastUsed = now();
     return best.cached.entry;
@@ -406,7 +412,11 @@ export class PdfBackdropCache {
    * cover the view), and so is the most recently drawn rest, up to
    * the budget's `keepDetail`.
    */
-  setVisibleRegions(requests: PdfRasterRequest[], shown: PdfShownArea[] = []): void {
+  setVisibleRegions(
+    requests: PdfRasterRequest[],
+    shown: PdfShownArea[] = [],
+    ahead = requests.length,
+  ): void {
     if (this.destroyed) return;
     const wanted = new Set(
       requests.map(({ path, page, dprScale, area }) => rasterKey(path, page, dprScale, area)),
@@ -458,14 +468,16 @@ export class PdfBackdropCache {
     // cancelled job, in the order asked (nearest the middle of the view first).
     for (const request of requests)
       this.request(request.path, request.page, request.dprScale, request.area);
+    // From `ahead` on, the requests are for what may come on screen next
+    // (tiles just off it, the next pages): the sidebar's thumbnails, asked for
+    // separately and on screen now, go before them, in the order they were
+    // asked (the sort is stable). Behind them, they waited seconds on the iPad.
     const rank = new Map(
-      requests.map((r, i) => [rasterKey(r.path, r.page, r.dprScale, r.area), i] as const),
+      requests.map(
+        (r, i) => [rasterKey(r.path, r.page, r.dprScale, r.area), i < ahead ? i : i + 1] as const,
+      ),
     );
-    this.queue.sort(
-      (a, b) =>
-        (rank.get(a.key) ?? Number.POSITIVE_INFINITY) -
-        (rank.get(b.key) ?? Number.POSITIVE_INFINITY),
-    );
+    this.queue.sort((a, b) => (rank.get(a.key) ?? ahead) - (rank.get(b.key) ?? ahead));
     this.drain();
   }
 
