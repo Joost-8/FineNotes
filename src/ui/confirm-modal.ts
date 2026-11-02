@@ -1,4 +1,5 @@
 import { type App, Modal, Setting } from "obsidian";
+import { t } from "../i18n/translate";
 
 /** What a confirmation asks, and the word on the button that says yes. */
 export interface ConfirmOptions {
@@ -44,7 +45,9 @@ export class ConfirmModal extends Modal {
           .setButtonText(cta)
           .onClick(() => this.answerAndClose(true)),
       )
-      .addButton((no) => no.setButtonText("Cancel").onClick(() => this.answerAndClose(false)));
+      .addButton((no) =>
+        no.setButtonText(t("common.cancel")).onClick(() => this.answerAndClose(false)),
+      );
   }
 
   override onClose(): void {
