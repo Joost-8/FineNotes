@@ -520,19 +520,51 @@ describe("registration", () => {
       expect(created.map((c) => c.path)).toEqual(["School/Physics/Physics.notebook.md"]);
     });
 
-    it("makes a notebook from the PDF a bare name points to", async () => {
+    type Inner = {
+      createNotebookFromPdf(f: unknown, open?: boolean): Promise<unknown>;
+      createNotebookFromPdfBytes(...args: unknown[]): Promise<unknown>;
+      showNotebook(f: unknown): Promise<void>;
+    };
+
+    it("makes a notebook from the PDF a bare name points to, and opens it", async () => {
       await load({ lastSeenVersion: VERSION });
-      const pdf = app.addFile("Inbox/Lecture 7.pdf");
-      const fromPdf = vi
-        .spyOn(
-          plugin as unknown as { createNotebookFromPdf(f: unknown): Promise<void> },
-          "createNotebookFromPdf",
-        )
-        .mockResolvedValue();
+      const pdf = app.addFile("School/Lecture 7.pdf");
+      const notebook = new TFile("School/Lecture 7.notebook.md");
+      const inner = plugin as unknown as Inner;
+      const fromPdf = vi.spyOn(inner, "createNotebookFromPdf").mockResolvedValue(notebook);
+      const show = vi.spyOn(inner, "showNotebook").mockResolvedValue();
       await link({ do: "pdf", file: "Lecture 7" });
       app.workspace.fireLayoutReady();
       await flush();
-      expect(fromPdf).toHaveBeenCalledWith(pdf);
+      expect(fromPdf).toHaveBeenCalledWith(pdf, false);
+      expect(show).toHaveBeenCalledWith(notebook);
+    });
+
+    it("makes the inbox folder once the workspace is up", async () => {
+      await load({ lastSeenVersion: VERSION });
+      const vault = app.vault as unknown as { createFolder(path: string): Promise<void> };
+      const made = vi.spyOn(vault, "createFolder");
+      app.workspace.fireLayoutReady();
+      await flush();
+      expect(made).toHaveBeenCalledWith("FineNotes inbox");
+    });
+
+    it("turns an inbox PDF a link names into one notebook, moving the PDF out", async () => {
+      await load({ lastSeenVersion: VERSION });
+      const pdf = app.addFile("FineNotes inbox/Lecture 7.pdf");
+      const notebook = new TFile("Notebooks/Lecture 7/Lecture 7.notebook.md");
+      const inner = plugin as unknown as Inner;
+      const make = vi.spyOn(inner, "createNotebookFromPdfBytes").mockResolvedValue(notebook);
+      const show = vi.spyOn(inner, "showNotebook").mockResolvedValue();
+      // The watcher finds it on start, and the link names it too: one notebook.
+      await link({ do: "pdf", file: "Lecture 7" });
+      app.workspace.fireLayoutReady();
+      await flush();
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+      expect(make).toHaveBeenCalledTimes(1);
+      expect(make.mock.calls[0][4]).toEqual({ move: pdf });
+      expect(make.mock.calls[0][5]).toBe(false);
+      expect(show).toHaveBeenCalledWith(notebook);
     });
   });
 

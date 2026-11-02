@@ -14840,3 +14840,10 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
 .goodobsidian-page-textbox.has-links .goodobsidian-search-word {
   color: inherit;
 }
+
+/* The FineNotes inbox (src/model/inbox.ts) empties itself: out of sight in
+   the file list, so nobody files anything there by hand. The iPad's Files
+   app and Shortcuts still see it. */
+.nav-folder:has(> .nav-folder-title[data-path="FineNotes inbox"]) {
+  display: none;
+}
