@@ -563,6 +563,24 @@ describe("a note's pages", () => {
     const list = root === null ? null : flat.tableVector(root, 6);
     expect([...deletedIds(flat, list ?? [])]).toEqual(["0:7:0"]);
   });
+
+  it("leaves out a run's empty paper pages at the end, as Notability's export does", () => {
+    const pagesOf = (more: Parameters<typeof noteBundle>[0]) =>
+      readNotabilityNtb(
+        noteWith([documentEvent(612, 792), createPageEvent(2, 612, 792, { count: 2 }), ...more]),
+        "New",
+      ).doc.pages;
+    const line = (id: number, page: [number, number]) =>
+      lineEvent(id, page, [40, 211], [98, 211], 2, 4);
+    // A new note's run of two, written on the first page only: one page.
+    expect(pagesOf([line(20, [2, 0])])).toHaveLength(1);
+    // Something on the second page keeps it.
+    expect(pagesOf([line(20, [2, 1])])).toHaveLength(2);
+    // A blank page added on its own stays, and so does the page before it.
+    expect(
+      pagesOf([line(20, [2, 0]), createPageEvent(3, 612, 792, { after: [2, 1] })]),
+    ).toHaveLength(3);
+  });
 });
 
 describe("a resized block", () => {
@@ -697,16 +715,16 @@ describe("a real .ntb note (Notability 16, shared by the PR's author)", () => {
   // on blank Letter paper. Checked against the note's own thumbnail.png.
   const bytes = new Uint8Array(readFileSync(join(__dirname, "fixtures", "notability-hello.ntb")));
 
-  it("brings over the handwriting and the typed line on the first of its two blank pages", async () => {
+  it("brings over the handwriting and the typed line on one blank page", async () => {
     const batch = await importNotebooks(bytes, "Note 1 Nov 2026.ntb");
     expect(batch.failures).toEqual([]);
     const [result] = batch.results;
     expect(result.title).toBe("Note 1 Nov 2026");
     expect(result.warnings).toEqual([]);
     const [page] = result.doc.pages;
-    // The note's CreatePage event makes two pages (`pageCount` 2); the second is empty.
-    expect(result.doc.pages).toHaveLength(2);
-    expect(result.doc.pages[1].strokes).toHaveLength(0);
+    // The note's CreatePage event makes two pages (`pageCount` 2); the second is empty and
+    // left out, as Notability's own PDF export of this note has one page.
+    expect(result.doc.pages).toHaveLength(1);
     expect(page.backdrop.kind).toBe("blank");
     expect(page.strokes).toHaveLength(24);
     expect(page.textBoxes.map((box) => box.text)).toEqual(["Hello this is a test"]);

@@ -659,6 +659,8 @@ interface NotePage {
   size: Pt | null;
   /** Its own margins, when the CreatePage event sets them. */
   margins: Margins | null;
+  /** How many pages the CreatePage event that made it made. */
+  runSize: number;
 }
 
 /** The pages of a note in order, with the deleted ones left out. */
@@ -814,7 +816,7 @@ function pageSetOf(
     const keys: string[] = [];
     for (let i = 0; i < count; i++) {
       keys.push(`${id}:${i}`);
-      made.set(`${id}:${i}`, { asset, pdfPage: offset + i, size, margins });
+      made.set(`${id}:${i}`, { asset, pdfPage: offset + i, size, margins, runSize: count });
     }
     const after = pageKeyOf(flat, payload, 0);
     const anchor = after === null ? -1 : order.indexOf(after);
@@ -2230,7 +2232,7 @@ export function readNotabilityNtb(
     if (i < note.pageSet.pages.length) return note.pageSet.pages[i];
     const sizes = singlePdf === null ? undefined : pdfSizes.get(singlePdf);
     if (singlePdf === null || (sizes !== undefined && i >= sizes.length)) return null;
-    return { asset: singlePdf, pdfPage: i, size: null, margins: null };
+    return { asset: singlePdf, pdfPage: i, size: null, margins: null, runSize: 1 };
   };
   /** The PDF page shown on page `i`, with its size, or `null` for a page with none. */
   const pdfOn = (
@@ -2321,7 +2323,22 @@ export function readNotabilityNtb(
   // run of its typed text. Without runs, a thing placed further past them than
   // PAGE_MARGIN is corrupt (a page index from a damaged or crafted file) and is
   // left out; with them, a thing on a page the note does not have is.
-  let made = Math.max(1, note.pageSet.pages.length);
+  // A run of paper pages may end in pages nothing is on: a new note starts with
+  // two, and Notability's own export of it shows one. Those are left out, past
+  // the last page anything is on; a blank page added on its own (a run of one
+  // page) stays.
+  let used = -1;
+  for (const { page } of [...note.curves, ...note.pictures, ...note.stickies, ...note.boxes]) {
+    used = Math.max(used, page);
+  }
+  for (const { page } of [...boxTexts, ...blocks]) used = Math.max(used, page);
+  let listed = note.pageSet.pages.length;
+  while (listed > Math.max(1, used + 1)) {
+    const last = note.pageSet.pages[listed - 1];
+    if (last.asset !== null || last.runSize < 2) break;
+    listed--;
+  }
+  let made = Math.max(1, listed);
   for (const block of blocks) made = Math.max(made, block.page + 1);
   if (singlePdf !== null) made = Math.max(made, pdfSizes.get(singlePdf)?.length ?? 0);
   const pageLimit = Math.min(MAX_PAGES, made + PAGE_MARGIN);
