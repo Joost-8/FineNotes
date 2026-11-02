@@ -56,3 +56,20 @@ export function scrollToShow(
   if (end > scrollLeft + clientWidth) return end - clientWidth;
   return scrollLeft;
 }
+
+/**
+ * Where an arrow on a row's cut end scrolls it (`dir` -1 back, 1 on): by
+ * what shows, less the two faded `inset`s, so the item cut at the far end
+ * comes in whole; never past either end.
+ */
+export function pageScroll(
+  scrollLeft: number,
+  clientWidth: number,
+  scrollWidth: number,
+  dir: -1 | 1,
+  inset = 0,
+): number {
+  const step = Math.max(1, clientWidth - 2 * inset);
+  const max = Math.max(0, scrollWidth - clientWidth);
+  return Math.min(max, Math.max(0, scrollLeft + dir * step));
+}

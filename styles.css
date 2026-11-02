@@ -9954,6 +9954,57 @@ button.goodobsidian-color-delete.clickable-icon {
   flex: none;
 }
 
+/* An arrow on a pen or colour row's cut end, for a mouse, which cannot
+   swipe the row (toolbar.ts, rowArrows): over the faded end, beside the
+   row rather than in it so the row's fade leaves it alone. Only on a
+   computer; a finger swipes. */
+.goodobsidian-options button.goodobsidian-row-arrow {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .goodobsidian-options button.goodobsidian-row-arrow {
+    display: inline-flex;
+    position: absolute;
+    z-index: 2;
+    min-width: 0;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--gob-line);
+    border-radius: 50%;
+    background: var(--gob-pill-bg);
+    box-shadow: var(--gob-shadow-raised);
+    color: var(--text-normal);
+    translate: 0 -50%;
+  }
+
+  .goodobsidian-options button.goodobsidian-row-arrow.is-end {
+    translate: -100% -50%;
+  }
+
+  .goodobsidian-options.is-upright button.goodobsidian-row-arrow.is-start {
+    translate: -50% 0;
+  }
+
+  .goodobsidian-options.is-upright button.goodobsidian-row-arrow.is-end {
+    translate: -50% -100%;
+  }
+
+  .goodobsidian-options button.goodobsidian-row-arrow:hover:not(:disabled) {
+    background: var(--gob-well);
+  }
+
+  .goodobsidian-options button.goodobsidian-row-arrow.is-hidden {
+    display: none;
+  }
+
+  .goodobsidian-options button.goodobsidian-row-arrow svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
 /* A colour held to be dragged off: it fades where it was, and a copy of
    its disc follows the finger, shrinking once it is clear of the pill. */
 .goodobsidian-options .goodobsidian-swatch.is-lifted {
