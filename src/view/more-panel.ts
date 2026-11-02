@@ -17,6 +17,7 @@
  *   │ Dark PDF pages                   ✓  │  (only while pages are dark)
  *   │ Desk             [◐] [○] [●] [◍]    │
  *   │ Toolbar          [▔] [▁] [▏] [▕]    │
+ *   │ Draw with finger                 ✓  │  (only where there is touch)
  *   │ Keyboard shortcuts                  │
  *   │ Copy home screen link               │
  *   Clear or delete page
@@ -69,6 +70,8 @@ export interface MorePanelPage {
   folded?: FoldedBarItem[];
   /** Where the tool bar rests on this device (bar-dock-model.ts), for its row. */
   barDock?: BarDock;
+  /** Fingers draw while the Pencil is away (`input/finger-draw.ts`). */
+  fingerDrawing?: boolean;
 }
 
 export interface MorePanelActions {
@@ -97,6 +100,8 @@ export interface MorePanelActions {
   copyHomeLink: () => void;
   /** Put the tool bar at `dock`, on this device. Without it the row is not offered. */
   setBarDock?: (dock: BarDock) => void;
+  /** Let a finger draw until the Pencil writes again, or stop. Without it (no touch) the row is not offered. */
+  setFingerDrawing?: (on: boolean) => void;
 }
 
 /** The tool bar's places in the Toolbar row, each its Lucide panel icon. */
@@ -283,6 +288,7 @@ export class MorePanel {
     if (page.darkPages) this.darkPdfRow(view);
     this.deskRow(view);
     this.barDockRow(view);
+    this.fingerDrawRow(view);
     this.row(view, {
       icon: "keyboard",
       text: "Keyboard shortcuts",
@@ -321,6 +327,32 @@ export class MorePanel {
       on = !on;
       show(on);
       set(on);
+    });
+  }
+
+  /**
+   * "Draw with finger", where there is touch: for when the Pencil's battery
+   * is flat, as Notability's "Disconnect Apple Pencil". A check while it is
+   * on; switched on, the panel goes, so the finger can write at once. The
+   * Pencil writing again ends it on its own (`input/finger-draw.ts`).
+   */
+  private fingerDrawRow(parent: HTMLElement): void {
+    const set = this.actions.setFingerDrawing;
+    if (!set) return;
+    const on = this.page.fingerDrawing === true;
+    const button = parent.createEl("button", {
+      cls: "goodobsidian-more-row is-switch clickable-icon",
+    });
+    setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), "pointer");
+    button.createSpan({ cls: "goodobsidian-more-label", text: "Draw with finger" });
+    const mark = button.createSpan({ cls: "goodobsidian-more-check" });
+    setIcon(mark, "check");
+    mark.toggleClass("is-hidden", !on);
+    button.setAttribute("role", "switch");
+    button.setAttribute("aria-checked", String(on));
+    button.addEventListener("click", () => {
+      this.close();
+      set(!on);
     });
   }
 

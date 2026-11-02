@@ -13,7 +13,9 @@
  * could scroll turns into a scroll, which cancels the stroke part-way; the
  * price is that the fingers' movement is ours to report. With Stylus-only
  * mode on, every pointer but the pen is ignored instead (`roleOf`), so a
- * resting hand has nothing to move.
+ * resting hand has nothing to move. While fingers draw (the Pencil is away,
+ * `finger-draw.ts`), one finger writes and two pan and pinch, until the
+ * first pen event.
  *
  * Two quirks of the iPad shape the stroke's lifecycle:
  *
@@ -31,9 +33,10 @@
  */
 
 import { altitudeOf } from "../ink/tilt";
+import { endsFingerDrawing, fingerDrawRole, fingerWrites } from "./finger-draw";
 import { FingerGesture, type PinchInfo } from "./finger-gesture";
 import { MultiFingerTap, type TapReport } from "./multi-finger-tap";
-import { roleOf } from "./palm-rejection";
+import { type PointerRole, roleOf } from "./palm-rejection";
 import type { PressInput } from "./pen-modifiers";
 import { freshSamples, type RawSample } from "./repeat-samples";
 import { StylusClicks } from "./stylus-click";
@@ -151,6 +154,8 @@ export interface PointerControllerCallbacks {
   onDebug?(record: PointerDebugRecord): void;
   /** The pen's side button was clicked in the air, here (client px; `stylus-click.ts`). */
   onStylusClick?(clientX: number, clientY: number): void;
+  /** A pen event came while fingers draw: the Pencil is back, and finger drawing ends. */
+  onPenReturned?(): void;
 }
 
 /**
@@ -164,6 +169,8 @@ export interface PointerControllerOptions {
   route?: (event: PointerEvent) => PressRoute;
   /** Stylus-only mode: every pointer but the pen is ignored on the page. */
   onlyStylus?: () => boolean;
+  /** Fingers draw (`finger-draw.ts`): one finger writes, two pan and pinch. Wins over Stylus-only. */
+  fingerDraws?: () => boolean;
   /** A touch point on a control layered over the page may still be handled. */
   touchTarget?: (event: PointerEvent) => boolean;
   /** A click of the pen's side button is wanted: only then is a press of it in the air held back. */
@@ -191,6 +198,12 @@ export class PointerController {
   private readonly clicks = new StylusClicks();
   /** A press of the side button in the air, held back until it is a click or a stroke. */
   private held: PointerEvent | null = null;
+  /**
+   * While fingers draw, a lone finger held back until it writes or a second
+   * joins it (`finger-draw.ts`), with each move it made and the samples it carried.
+   */
+  private waiting: { down: PointerEvent; moves: Array<[PointerEvent, PointerEvent[]]> } | null =
+    null;
   private readonly handlers: Record<Phase, (event: PointerEvent) => void>;
 
   constructor(
@@ -254,9 +267,14 @@ export class PointerController {
     return this.options.route?.(event) ?? "draw";
   }
 
-  /** Only a pen acts on the page. */
+  /** Only a pen acts on the page; never while fingers draw. */
   private onlyStylus(): boolean {
-    return this.options.onlyStylus?.() === true;
+    return this.options.onlyStylus?.() === true && !this.fingerDraws();
+  }
+
+  /** The Pencil is away: one finger writes, two pan and pinch. */
+  private fingerDraws(): boolean {
+    return this.options.fingerDraws?.() === true;
   }
 
   /** A touch point on a page control is allowed through Stylus-only mode. */
@@ -311,6 +329,7 @@ export class PointerController {
    * there is down until it lifts, so its moves are no click.
    */
   penElsewhere(event: PointerEvent): void {
+    this.notePenReturned(event);
     if (event.pointerType !== "pen" || this.held !== null) return;
     if (event.type === "pointermove") this.hearHover(event);
     else if (event.type === "pointerdown") this.clicks.landed();
@@ -333,7 +352,6 @@ export class PointerController {
   }
 
   private pressed(event: PointerEvent): void {
-    const { pointerId, clientX, clientY, timeStamp } = event;
     this.notePenSeen(event);
     if (event.pointerType === "pen") this.clicks.landed();
     const onlyStylus = this.onlyStylus() && !this.touchTarget(event);
@@ -342,7 +360,16 @@ export class PointerController {
       if (onlyStylus) event.preventDefault();
       return;
     }
-    const role = roleOf(event.pointerType, this.stroke !== null, onlyStylus);
+    if (event.pointerType === "touch" && this.fingerDraws() && !this.touchTarget(event)) {
+      this.fingerDrawPressed(event);
+      return;
+    }
+    this.take(event, roleOf(event.pointerType, this.stroke !== null, onlyStylus), onlyStylus);
+  }
+
+  /** A press, given its role: a stroke, a pan, a finger, or nothing. */
+  private take(event: PointerEvent, role: PointerRole, onlyStylus: boolean): void {
+    const { pointerId, clientX, clientY, timeStamp } = event;
     const free = role === "draw" && this.stroke === null;
     const route = free ? (this.handHeld() ? "pan" : this.pressRoute(event)) : "draw";
     if (route === "ignore" || role === "ignore") {
@@ -361,19 +388,75 @@ export class PointerController {
     } else if (role === "draw") {
       this.beginStroke(event);
     } else if (role === "finger") {
-      // Every finger counts towards a tap, also one the scroll gesture leaves out.
-      this.taps.down(pointerId, clientX, clientY, timeStamp);
-      if (this.fingers.down(pointerId, clientX, clientY, timeStamp)) {
-        // Capture, so a fast swipe that leaves the pane still scrolls it.
-        this.element.setPointerCapture(pointerId);
-      }
-      // After the gesture has heard of the finger, so a hold it began counts it.
-      this.listener.onFingerContact?.(event.width, event.height);
+      this.fingerDown(event, event);
     }
+  }
+
+  /** A finger joins the scroll and zoom gesture, at `at` (where it landed, or where it is now). */
+  private fingerDown(event: PointerEvent, at: PointerEvent): void {
+    const { pointerId } = event;
+    // Every finger counts towards a tap, also one the scroll gesture leaves out.
+    this.taps.down(pointerId, at.clientX, at.clientY, at.timeStamp);
+    if (this.fingers.down(pointerId, at.clientX, at.clientY, at.timeStamp)) {
+      // Capture, so a fast swipe that leaves the pane still scrolls it.
+      this.element.setPointerCapture(pointerId);
+    }
+    // After the gesture has heard of the finger, so a hold it began counts it.
+    this.listener.onFingerContact?.(event.width, event.height);
+  }
+
+  /**
+   * A finger lands while fingers draw (`finger-draw.ts`): a lone one waits to
+   * write; a second beside it makes the pair a pan or pinch; beside a finger
+   * that writes it is the hand, and plays no part.
+   */
+  private fingerDrawPressed(event: PointerEvent): void {
+    const waiting = this.waiting;
+    const role = fingerDrawRole({
+      waiting: waiting !== null,
+      gesture: this.fingers.active,
+      stroke: this.stroke !== null,
+    });
+    if (role === "ignore") return;
+    if (role === "wait") {
+      this.waiting = { down: event, moves: [] };
+      event.preventDefault();
+      this.element.setPointerCapture(event.pointerId);
+      return;
+    }
+    if (waiting && role === "pair") {
+      this.waiting = null;
+      // The waiting finger joins from where it is now, so the page does not jump.
+      this.fingerDown(waiting.down, waiting.moves.at(-1)?.[0] ?? waiting.down);
+    }
+    this.fingerDown(event, event);
+  }
+
+  /**
+   * The waiting finger writes, as the pen would have from where it landed:
+   * its press, then every move it made while it waited, drawn at once.
+   */
+  private writeWaiting(): void {
+    const waiting = this.waiting;
+    if (!waiting) return;
+    this.waiting = null;
+    // The press takes the pointer again if it draws or pans; otherwise it is let go.
+    this.releaseCapture(waiting.down.pointerId);
+    this.take(waiting.down, "draw", false);
+    for (const [move, taken] of waiting.moves) this.moved(move, taken);
+  }
+
+  /** A pen landed on a finger still waiting: that was the hand, not a finger writing. */
+  private dropWaiting(): void {
+    const waiting = this.waiting;
+    if (!waiting) return;
+    this.waiting = null;
+    this.releaseCapture(waiting.down.pointerId);
   }
 
   private beginStroke(event: PointerEvent): void {
     for (const finger of this.fingers.cancel()) this.releaseCapture(finger);
+    if (event.pointerType === "pen") this.dropWaiting();
     // A pen on the page means the fingers were the writing hand, not a tap.
     this.taps.penDown();
     if (this.stroke !== null) {
@@ -395,11 +478,20 @@ export class PointerController {
     this.listener.onStart(this.sample(event), press);
   }
 
-  private moved(event: PointerEvent): void {
+  private moved(event: PointerEvent, taken = event.getCoalescedEvents?.() ?? []): void {
     this.notePenSeen(event);
     if (this.held?.pointerId === event.pointerId) {
       this.heldMoved(event);
       return;
+    }
+    const waiting = this.waiting;
+    if (waiting?.down.pointerId === event.pointerId) {
+      if (!fingerWrites(event.timeStamp - waiting.down.timeStamp, false)) {
+        waiting.moves.push([event, taken]);
+        event.preventDefault();
+        return;
+      }
+      this.writeWaiting();
     }
     if (event.pointerId !== this.stroke) {
       // Stylus-only mode: a finger already down when the mode came on must
@@ -412,7 +504,6 @@ export class PointerController {
       return;
     }
     event.preventDefault();
-    const taken = event.getCoalescedEvents?.() ?? [];
     // Where the browser has no coalesced list, the event is the one sample.
     const events = taken.length > 0 ? taken : [event];
     const raw = events.map(rawOf);
@@ -459,6 +550,14 @@ export class PointerController {
       return;
     }
     if (event.pointerType === "pen") this.clicks.lifted(event.timeStamp);
+    if (this.waiting?.down.pointerId === id) {
+      // Lifted before it wrote: a tap, as the pen's. Cancelled, it never was.
+      if (cancelled) {
+        this.dropWaiting();
+        return;
+      }
+      this.writeWaiting();
+    }
     if (id !== this.stroke) {
       // A cancelled finger counts as lifted (`multi-finger-tap.ts` says why).
       if (cancelled) this.taps.cancel(id, event.timeStamp);
@@ -498,6 +597,12 @@ export class PointerController {
 
   private notePenSeen(event: PointerEvent): void {
     if (event.pointerType === "pen") this.penSeenAt = event.timeStamp;
+    this.notePenReturned(event);
+  }
+
+  /** Any pen event while fingers draw: the Pencil is back (`finger-draw.ts`). */
+  private notePenReturned(event: PointerEvent): void {
+    if (endsFingerDrawing(event.pointerType) && this.fingerDraws()) this.listener.onPenReturned?.();
   }
 
   /** One position with a fraction is enough: this device's pen does not round. */

@@ -49,6 +49,7 @@ import {
   relearnText,
 } from "../recognition/hwr/learned-model";
 import { errorMessage } from "../util/errors";
+import type { LearnResult } from "../recognition/hwr/learn-window-model";
 
 export { type LearnedModel, MIN_PRACTICE_LINES };
 
@@ -424,6 +425,7 @@ export class HandwritingLearner {
   private current: LearningProgress | null = null;
   private stopped = false;
   private readonly listeners = new Set<() => void>();
+  private readonly presenters = new Set<(result: LearnResult) => void>();
 
   constructor(private readonly host: () => LearningHost) {}
 
@@ -488,10 +490,12 @@ export class HandwritingLearner {
     } catch (error) {
       // The corrections are untouched: they still count as new, for the next run.
       if (!this.stopped) {
-        new Notice(
-          `FineNotes: learning stopped — ${errorMessage(error)}. Your sheets and corrected words are kept.`,
-          10000,
-        );
+        this.tell({ kind: "failed", message: errorMessage(error) }, () => {
+          new Notice(
+            `FineNotes: learning stopped — ${errorMessage(error)}. Your sheets and corrected words are kept.`,
+            10000,
+          );
+        });
       }
       this.finish();
       return;
@@ -530,29 +534,51 @@ export class HandwritingLearner {
     startedAt: number,
   ): Promise<void> {
     if (!tuned) {
-      new Notice("FineNotes: there was nothing to learn from in the practice lines.", 10000);
+      this.tell({ kind: "nothing" }, () => {
+        new Notice("FineNotes: there was nothing to learn from in the practice lines.", 10000);
+      });
       return;
     }
     const before = percent(tuned.before);
     const after = percent(tuned.after);
     if (!tuned.better && tuned.rival && tuned.after.errors < tuned.before.errors) {
-      new Notice(
-        `FineNotes: on ${tuned.heldOut} test lines the new reader got ${after} % of characters wrong, against ${percent(tuned.rival)} % with the one you have, so FineNotes keeps the one you have. Correct more words or write another practice set, and try again.`,
-        0,
+      const rival = percent(tuned.rival);
+      this.tell(
+        { kind: "kept", tested: tuned.heldOut, kept: rival, learned: after, mine: true },
+        () => {
+          new Notice(
+            `FineNotes: on ${tuned.heldOut} test lines the new reader got ${after} % of characters wrong, against ${rival} % with the one you have, so FineNotes keeps the one you have. Correct more words or write another practice set, and try again.`,
+            0,
+          );
+        },
       );
       return;
     }
     if (!tuned.better) {
-      new Notice(
-        `FineNotes: on ${tuned.heldOut} test lines the learned reader got ${after} % of characters wrong, against ${before} % with the built-in one, so FineNotes keeps ${tuned.rival ? "the one you have" : "the built-in one"}. Copy more practice lines (another set helps) and try again.`,
-        0,
+      const mine = tuned.rival !== undefined && tuned.rival !== null;
+      this.tell(
+        {
+          kind: "kept",
+          tested: tuned.heldOut,
+          kept: mine && tuned.rival ? percent(tuned.rival) : before,
+          learned: after,
+          mine,
+        },
+        () => {
+          new Notice(
+            `FineNotes: on ${tuned.heldOut} test lines the learned reader got ${after} % of characters wrong, against ${before} % with the built-in one, so FineNotes keeps ${mine ? "the one you have" : "the built-in one"}. Copy more practice lines (another set helps) and try again.`,
+            0,
+          );
+        },
       );
       return;
     }
     try {
       await saveLearned(host, tuned);
     } catch (error) {
-      new Notice(`FineNotes: could not save the learned model — ${errorMessage(error)}`, 10000);
+      this.tell({ kind: "failed", message: `Could not save it: ${errorMessage(error)}` }, () => {
+        new Notice(`FineNotes: could not save the learned model — ${errorMessage(error)}`, 10000);
+      });
       return;
     }
     // The replaced model's record goes with its file, to personal-prev.bin.
@@ -574,10 +600,29 @@ export class HandwritingLearner {
     await host.saveSettings();
     host.reloadReader();
     this.emit();
-    new Notice(
-      `FineNotes learned your handwriting: on ${tuned.heldOut} test lines it now gets ${after} % of characters wrong, against ${before} % before.`,
-      0,
-    );
+    this.tell({ kind: "better", tested: tuned.heldOut, before, after }, () => {
+      new Notice(
+        `FineNotes learned your handwriting: on ${tuned.heldOut} test lines it now gets ${after} % of characters wrong, against ${before} % before.`,
+        0,
+      );
+    });
+  }
+
+  /**
+   * While a Learn your handwriting window is open, it tells how a run ended
+   * (`show`); with none open, a notice does. Returns the unsubscribe.
+   */
+  present(show: (result: LearnResult) => void): () => void {
+    this.presenters.add(show);
+    return () => this.presenters.delete(show);
+  }
+
+  private tell(result: LearnResult, notice: () => void): void {
+    if (this.presenters.size === 0) {
+      notice();
+      return;
+    }
+    for (const show of [...this.presenters]) show(result);
   }
 
   dispose(): void {
@@ -585,5 +630,6 @@ export class HandwritingLearner {
     this.client = null;
     this.current = null;
     this.listeners.clear();
+    this.presenters.clear();
   }
 }

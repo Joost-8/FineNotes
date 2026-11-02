@@ -11,6 +11,7 @@ import {
   cornerRadius,
   dashPattern,
   outlineOps,
+  pathHeads,
   pointsOf,
 } from "../../src/canvas/shape-decor";
 
@@ -148,5 +149,65 @@ describe("dashPattern", () => {
 
   it("keeps a usable pattern for a hairline", () => {
     expect(dashPattern("dash", 0)).toEqual([1, 1.5]);
+  });
+});
+
+describe("pathHeads (discussion #107)", () => {
+  // An S of runs: right, down, right.
+  const s = flat([
+    [0, 0],
+    [200, 0],
+    [200, 100],
+    [400, 100],
+  ]);
+
+  it("points the head along the last run, not along the line between the ends", () => {
+    const { pts, heads } = pathHeads(s, 2, { end: "open" });
+    expect(pts).toEqual(s);
+    expect(heads).toHaveLength(1);
+    const [a, tip, b] = heads[0].points;
+    expect(tip).toEqual({ x: 400, y: 100 });
+    // Both barbs lie behind the tip, symmetric about the run (y = 100).
+    expect(a.x).toBeLessThan(400);
+    expect(b.x).toBeLessThan(400);
+    expect(a.y - 100).toBeCloseTo(100 - b.y, 6);
+    expect(Math.hypot(a.x - 400, a.y - 100)).toBeCloseTo(HEAD_MAX, 6);
+  });
+
+  it("cuts the path back to a filled head's base, and heads its start along the first run", () => {
+    const { pts, heads } = pathHeads(s, 2, { start: "open", end: "filled" });
+    expect(heads).toHaveLength(2);
+    const filled = heads.find((h) => h.filled)!;
+    const last = pts.slice(-3);
+    expect(last[0]).toBeCloseTo(filled.stop.x, 6);
+    expect(last[1]).toBeCloseTo(100, 6);
+    expect(last[0]).toBeLessThan(400);
+    // The corners are kept.
+    expect(pts.slice(3, 9)).toEqual([200, 0, 0.5, 200, 100, 0.5]);
+    const start = heads.find((h) => !h.filled)!;
+    expect(start.points[1]).toEqual({ x: 0, y: 0 });
+    expect(start.points[0].x).toBeGreaterThan(0);
+  });
+
+  it("on a curve, follows its last segment: the tangent at the tip", () => {
+    const curve: Array<[number, number]> = [];
+    for (let i = 0; i <= 40; i++) {
+      const t = (Math.PI / 2) * (i / 40);
+      curve.push([100 * Math.cos(t), 100 * Math.sin(t)]);
+    }
+    const { heads } = pathHeads(flat(curve), 2, { end: "open" });
+    const [a, tip, b] = heads[0].points;
+    // The quarter circle ends at (0, 100) heading in -x: barbs behind it, in +x.
+    expect(tip.x).toBeCloseTo(0, 6);
+    expect(a.x).toBeGreaterThan(0);
+    expect(b.x).toBeGreaterThan(0);
+    expect(Math.abs(a.y - 100 - (100 - b.y))).toBeLessThan(2);
+  });
+
+  it("leaves a path too short for a head as it is", () => {
+    expect(pathHeads(flat([[5, 5]]), 2, { end: "open" })).toEqual({
+      pts: flat([[5, 5]]),
+      heads: [],
+    });
   });
 });

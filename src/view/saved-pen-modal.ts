@@ -34,6 +34,7 @@ import { renderColorPicker } from "./color-picker";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { penGlyph, penSample } from "./pen-glyph-svg";
+import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 
 export interface SavedPenModalOptions {
@@ -102,6 +103,7 @@ export class SavedPenModal extends Modal {
       cls: "goodobsidian-width-range",
       type: "range",
     });
+    dragRange(range);
     range.setAttribute("aria-label", "Width");
     range.min = "0";
     range.step = "1";

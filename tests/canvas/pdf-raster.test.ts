@@ -59,6 +59,21 @@ describe("PDF display raster planning", () => {
     });
     expect(edge.width).toBe(48);
   });
+  it("draws an export's whole page at exactly its scale, past the whole-page bounds", () => {
+    const a4 = { width: 1024, height: 1448 };
+    const plan = planPdfRaster({ width: 595, height: 842 }, 2, { geometry: a4, exact: true });
+    expect(plan.width).toBe(2048);
+    expect(plan.height).toBe(2896);
+    expect(plan.box).toEqual({ x: 0, y: 0, w: 1024, h: 1448 });
+    // Without it, the same page is bounded at 4 MP and drawn softer.
+    expect(planPdfRaster({ width: 595, height: 842 }, 2, { geometry: a4 }).width).toBeLessThan(
+      1700,
+    );
+    // Still bounded, as the export itself is.
+    const huge = planPdfRaster(source, 40, { geometry, exact: true });
+    expect(huge.width * huge.height).toBeLessThanOrEqual(12_010_000);
+    expect(Math.max(huge.width, huge.height)).toBeLessThanOrEqual(4096);
+  });
   it("distinguishes page geometries and visible regions in cache keys", () => {
     const area = { geometry, region: { minX: 0, minY: 0, maxX: 256, maxY: 256 } };
     expect(pdfAreaKey(area)).not.toBe(pdfAreaKey({ geometry }));

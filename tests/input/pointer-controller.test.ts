@@ -20,6 +20,7 @@ import {
   type PointerSample,
   type PressRoute,
 } from "../../src/input/pointer-controller";
+import { FINGER_JOIN_MS } from "../../src/input/finger-draw";
 import { MENU_AFTER_LIFT_MS } from "../../src/input/stylus-click";
 
 type Listener = (event: unknown) => void;
@@ -136,6 +137,8 @@ class Rig {
   readonly hand = { held: false };
   /** Stylus-only mode on (the toolbar's switch). */
   readonly onlyStylus = { on: false };
+  /** Fingers draw (the Pencil is away); a pen event turns it off, as the plugin does. */
+  readonly fingerDraw = { on: false };
 
   constructor(only?: "required") {
     const log = this.log;
@@ -164,6 +167,10 @@ class Rig {
             onPinch: (i) => log.push(`pinch x${i.scaleFactor} at ${i.centerX},${i.centerY}`),
             onPinchEnd: () => log.push("pinchEnd"),
             onFingerDoubleTap: (fingers) => log.push(`doubleTap ${fingers}`),
+            onPenReturned: () => {
+              log.push("penReturned");
+              this.fingerDraw.on = false;
+            },
             onDebug: (r) => {
               this.records.push(r);
               log.push(
@@ -179,6 +186,7 @@ class Rig {
         handHeld: () => this.hand.held,
         route: () => "draw",
         onlyStylus: () => this.onlyStylus.on,
+        fingerDraws: () => this.fingerDraw.on,
       },
     );
     this.controller.attach();
@@ -809,6 +817,158 @@ describe("pen and fingers together", () => {
     rig.pen("pointermove", 1, { x: 0, y: 0, t: 1000 });
     rig.fire("pointerdown", 10, "touch", { x: 1, y: 2, t: 1001, width: 30, height: 120 });
     expect(rig.take()).toEqual(["panStart 1,2 t=1001"]);
+  });
+});
+
+describe("fingers drawing while the Pencil is away (finger-draw.ts)", () => {
+  /** The log without the HUD's lines. */
+  const said = (rig: Rig): string[] => rig.take().filter((line) => !line.startsWith("debug"));
+
+  function drawing(): Rig {
+    const rig = new Rig();
+    rig.fingerDraw.on = true;
+    return rig;
+  }
+
+  it("one finger writes after the wait, with every sample it made meanwhile", () => {
+    const rig = drawing();
+    const down = rig.finger("pointerdown", 10, 0, 0, 1000);
+    rig.finger("pointermove", 10, 5, 0, 1030);
+    rig.finger("pointermove", 10, 10, 0, 1060);
+    // Waiting for a second finger: nothing drawn, nothing panned yet.
+    expect(said(rig)).toEqual([]);
+    expect(down.prevented).toBe(true);
+    expect(rig.captured).toEqual([10]);
+    rig.finger("pointermove", 10, 20, 0, 1000 + FINGER_JOIN_MS);
+    expect(said(rig)).toEqual([
+      "start 1000,2000 p=0.5 tilt=0,0",
+      "move [1005,2000 p=0.5 tilt=0,0]",
+      "move [1010,2000 p=0.5 tilt=0,0]",
+      "move [1020,2000 p=0.5 tilt=0,0]",
+    ]);
+    rig.finger("pointermove", 10, 30, 0, 1120);
+    rig.finger("pointerup", 10, 30, 0, 1130);
+    expect(said(rig)).toEqual(["move [1030,2000 p=0.5 tilt=0,0]", "end 1030,2000 p=0.5 tilt=0,0"]);
+    expect(rig.captured).toEqual([]);
+  });
+
+  it("a finger that lifts within the wait taps as the pen would", () => {
+    const rig = drawing();
+    rig.finger("pointerdown", 10, 4, 4, 1000);
+    rig.finger("pointerup", 10, 4, 4, 1040);
+    expect(said(rig)).toEqual(["start 1004,2004 p=0.5 tilt=0,0", "end 1004,2004 p=0.5 tilt=0,0"]);
+    expect(rig.captured).toEqual([]);
+  });
+
+  it("two fingers landing together pan and pinch, from where the first one is", () => {
+    const rig = drawing();
+    rig.finger("pointerdown", 10, 0, 0, 1000);
+    rig.finger("pointermove", 10, 2, 0, 1020);
+    rig.finger("pointerdown", 11, 100, 0, 1040);
+    expect(said(rig)).toEqual(["panStart 2,0 t=1020", "pinchStart 51,0", "panStart 51,0 t=1040"]);
+    expect(rig.captured).toEqual([10, 11]);
+    rig.finger("pointermove", 11, 198, 0, 1200);
+    expect(said(rig)).toEqual(["pinch x2 at 100,0", "panMove 100,0 t=1200"]);
+    // One lifted, the other carries on panning: it never starts to write.
+    rig.finger("pointerup", 11, 198, 0, 1300);
+    rig.finger("pointermove", 10, 12, 0, 1400);
+    rig.finger("pointerup", 10, 12, 0, 1500);
+    expect(said(rig)).toEqual([
+      "pinchEnd",
+      "panStart 2,0 t=1300",
+      "panMove 12,0 t=1400",
+      "panEnd t=1500",
+    ]);
+    expect(rig.captured).toEqual([]);
+  });
+
+  it("a two-finger double tap still undoes", () => {
+    const rig = drawing();
+    for (const [first, t] of [
+      [1, 1000],
+      [3, 1250],
+    ]) {
+      rig.finger("pointerdown", first, 200, 300, t);
+      rig.finger("pointerdown", first + 1, 260, 300, t + 5);
+      rig.finger("pointerup", first, 200, 300, t + 100);
+      rig.finger("pointerup", first + 1, 260, 300, t + 105);
+    }
+    expect(rig.take().filter((line) => line.startsWith("doubleTap"))).toEqual(["doubleTap 2"]);
+  });
+
+  it("a touch beside a finger that writes is the hand, palm or not: it plays no part", () => {
+    const rig = drawing();
+    rig.finger("pointerdown", 10, 0, 0, 1000);
+    rig.finger("pointermove", 10, 10, 0, 1000 + FINGER_JOIN_MS);
+    rig.take();
+    rig.fire("pointerdown", 11, "touch", { x: 300, y: 300, t: 1200, width: 90, height: 120 });
+    rig.finger("pointermove", 11, 320, 320, 1210);
+    rig.finger("pointerup", 11, 320, 320, 1220);
+    rig.finger("pointermove", 10, 20, 0, 1230);
+    expect(said(rig)).toEqual(["move [1020,2000 p=0.5 tilt=0,0]"]);
+    expect(rig.captured).toEqual([10]);
+  });
+
+  it("a palm landing on its own writes, as any finger would: palm rejection is off", () => {
+    const rig = drawing();
+    rig.fire("pointerdown", 10, "touch", { x: 0, y: 0, t: 1000, width: 90, height: 120 });
+    rig.finger("pointermove", 10, 3, 3, 1000 + FINGER_JOIN_MS);
+    expect(said(rig)[0]).toBe("start 1000,2000 p=0.5 tilt=0,0");
+  });
+
+  it("the first pen event ends it, and the pen writes as always", () => {
+    const rig = drawing();
+    rig.pen("pointerdown", 1, { x: 0, y: 0, t: 1000 });
+    expect(said(rig)).toEqual(["penReturned", "start 1000,2000 p=0.5 tilt=0,0"]);
+    expect(rig.fingerDraw.on).toBe(false);
+    rig.pen("pointerup", 1, { x: 0, y: 0, t: 1010 });
+    rig.take();
+    // Fingers scroll again.
+    rig.finger("pointerdown", 10, 1, 2, 2000);
+    expect(said(rig)).toEqual(["panStart 1,2 t=2000"]);
+  });
+
+  it("a hovering pen ends it too, and so does a pen over the tool bar", () => {
+    const rig = drawing();
+    rig.pen("pointermove", 1, { x: 0, y: 0, t: 1000 });
+    expect(said(rig)).toEqual(["penReturned"]);
+    rig.fingerDraw.on = true;
+    rig.controller.penElsewhere(eventFor(1, "pen", { x: 0, y: 0 }) as unknown as PointerEvent);
+    expect(said(rig)).toEqual(["penReturned"]);
+  });
+
+  it("a pen landing on a finger still waiting takes it for the hand", () => {
+    const rig = drawing();
+    rig.finger("pointerdown", 10, 300, 300, 1000);
+    rig.pen("pointerdown", 1, { x: 0, y: 0, t: 1020 });
+    expect(said(rig)).toEqual(["penReturned", "start 1000,2000 p=0.5 tilt=0,0"]);
+    rig.finger("pointermove", 10, 320, 320, 1200);
+    rig.finger("pointerup", 10, 320, 320, 1300);
+    expect(said(rig)).toEqual([]);
+    expect(rig.captured).toEqual([1]);
+  });
+
+  it("a waiting finger the browser cancels never wrote", () => {
+    const rig = drawing();
+    rig.finger("pointerdown", 10, 0, 0, 1000);
+    rig.finger("pointercancel", 10, 0, 0, 1030);
+    expect(said(rig)).toEqual([]);
+    expect(rig.captured).toEqual([]);
+  });
+
+  it("wins over Stylus-only mode while it is on", () => {
+    const rig = drawing();
+    rig.onlyStylus.on = true;
+    rig.finger("pointerdown", 10, 0, 0, 1000);
+    rig.finger("pointerup", 10, 0, 0, 1020);
+    expect(said(rig)).toEqual(["start 1000,2000 p=0.5 tilt=0,0", "end 1000,2000 p=0.5 tilt=0,0"]);
+  });
+
+  it("leaves a mouse drawing as it always does, and never ends the mode", () => {
+    const rig = drawing();
+    rig.fire("pointerdown", 2, "mouse", { x: 0, y: 0, t: 1000 });
+    expect(said(rig)).toEqual(["start 1000,2000 p=0.5 tilt=0,0"]);
+    expect(rig.fingerDraw.on).toBe(true);
   });
 });
 

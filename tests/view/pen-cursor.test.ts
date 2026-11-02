@@ -41,6 +41,7 @@ describe("penCursorStyleOf", () => {
     expect(penCursorStyleOf("ink")).toBe("ink");
     expect(penCursorStyleOf("crosshair")).toBe("crosshair");
     expect(penCursorStyleOf("arrow")).toBe("arrow");
+    expect(penCursorStyleOf("none")).toBe("none");
     expect(penCursorStyleOf(undefined)).toBe("ink");
     expect(penCursorStyleOf("dot")).toBe("ink");
     expect(penCursorStyleOf(1)).toBe("ink");

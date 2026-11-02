@@ -532,6 +532,9 @@ describe("readGoodnotes: what real notebooks hold", () => {
     expect(grown).toMatchObject({ id: "t2", text: "Test ", fit: true, color: "#000000" });
     expect(grown.fill).toBeUndefined();
     expect(grown.font).toBeUndefined();
+    // The box's own font, Goodnotes' default, kept over Sans (discussion #107).
+    expect(grown.family).toBe("Helvetica Neue");
+    expect(fixed.family).toBeUndefined();
     expect(grown.w).toBeCloseTo(51 * K, 1);
     expect(grown.fontSize).toBeCloseTo(Math.max(12, 24 * K), 1);
     // The PDF picture is kept as a picture: `importNotebooks` makes an image of it.
@@ -723,7 +726,9 @@ describe("readGoodnotes: newer notebooks", () => {
         text: "Gefährdungen\nzweite Zeile",
         color: "#c80000",
         fontSize: at(24),
+        // Courier itself, over the monospace it falls back to (discussion #107).
         font: "mono",
+        family: "Courier",
       },
       {
         // One line in Goodnotes: it grows with its text, in whatever font stands in.

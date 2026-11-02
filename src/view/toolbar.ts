@@ -88,6 +88,8 @@ import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import { TAPE_COLORS, TAPE_HEIGHTS, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { magnifierTap, zoomButtonState } from "../model/zoom-box";
 import { setIcon } from "obsidian";
+import { deviceFamilies, hasFamily } from "./device-fonts";
+import { familyStack, matchesFamily } from "../model/text-family";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
@@ -125,6 +127,7 @@ import {
   sliderAtSize,
   type TextStyle,
   type TextStylePatch,
+  fontFamilyOf,
   fontOf,
   lineHeightOf,
   textStyleKey,
@@ -191,6 +194,7 @@ import { hiddenEnds, pageScroll, scrollToShow } from "./swatch-drag-model";
 import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
+import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import { clampEraserSize, eraserStops, quickEraserSizes } from "../model/eraser-sizes";
 import { PANEL_SLIDE_MS, prefersReducedMotion, springCurve } from "./motion";
@@ -641,6 +645,8 @@ export interface ToolbarCallbacks {
   onShare?: (anchor: HTMLElement) => void;
   /** Open the ⋯ panel for the page being read; `anchor` is the button. */
   onMore?: (anchor: HTMLElement) => void;
+  /** A practice sheet's "Learn my handwriting": opens the Learn your handwriting window. */
+  onLearnHandwriting?: () => void;
   /** The options pill was placed (it may have moved); `chromeSpans` says where. */
   onPillPlaced?: () => void;
   /** The user dragged the options pill to `dock`; the host keeps it for this device. */
@@ -648,6 +654,12 @@ export interface ToolbarCallbacks {
   // --- The Text tool (0.5).
   /** A text control changed: apply `patch` to the box being edited, if there is one. */
   onTextStyle?: (patch: TextStylePatch) => void;
+  /**
+   * A field in the text pill (the font search), which took the focus from
+   * the box being styled, is done; focus went to `to`, if anywhere. The
+   * host gives the box its focus back (`InkSurface.textFieldDone`).
+   */
+  onTextFieldDone?: (to: Element | null) => void;
   /**
    * The size slider is being dragged: show the box at `fontSize` without a
    * step of undo (`null`: back to its own size). The size is stored, as one
@@ -755,6 +767,8 @@ export interface ToolbarOptions {
   offItems?: readonly BarItemId[];
   /** Stylus-only mode is on, so its toolbar toggle starts on. */
   onlyStylusMode?: boolean;
+  /** Fingers draw (the Pencil is away), so ⋯, where that is switched, starts lit. */
+  fingerDrawing?: boolean;
   /** The laser pointer's colour, read live so its pill follows Settings, even while it shows. */
   laserColor?: () => string;
 }
@@ -975,6 +989,9 @@ export class Toolbar {
   private beyondWriting: HTMLElement[] = [];
   /** A practice file: only what writing needs ({@link setPractice}). */
   private practice = false;
+  /** A practice file's "Learn my handwriting", shown only there; its count beside it. */
+  private learnButton: HTMLButtonElement | null = null;
+  private learnCount: HTMLElement | null = null;
   private undoButton: HTMLButtonElement | null = null;
   private redoButton: HTMLButtonElement | null = null;
   /** Width of a panel docked at the host's left edge; the pill stays clear of it. */
@@ -999,6 +1016,10 @@ export class Toolbar {
   private readonly leavingPopovers = new Map<HTMLElement, number>();
   /** Redraws the open text popover's body in place after a change it made. */
   private popoverRender: (() => void) | null = null;
+  /** The device's fonts for the font menu (`deviceFamilies`), once read. */
+  private deviceFonts: string[] | null = null;
+  /** The font search has the focus it took from the box being styled. */
+  private textFieldOpen = false;
   /** Redraws the open width or eraser-size popover's marks for a new zoom. */
   private sizeMarksRender: (() => void) | null = null;
   /**
@@ -1056,6 +1077,10 @@ export class Toolbar {
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
     this.optionsEl.setAttribute("aria-label", "Tool options");
+    // A finger drag on a bar, the pill or a popover's slider is ours, not
+    // one of Obsidian's swipes, which would open a sidebar (CLAUDE.md).
+    this.barEl.dataset.ignoreSwipe = "true";
+    this.optionsEl.dataset.ignoreSwipe = "true";
 
     this.pillDock = offeredDock(options.pillDock);
     this.optionsEl.addClass(`is-dock-${this.pillDock}`);
@@ -1279,8 +1304,10 @@ export class Toolbar {
       );
     }
     this.addPageButton = this.foldButton(doc, FOLD_RANK.addPage, "plus", "Add page", cb.onAddPage);
-    keep(this.foldButton(doc, FOLD_RANK.share, "share", "Export as PDF", cb.onShare));
+    keep(this.foldButton(doc, FOLD_RANK.share, "share", "Export", cb.onShare));
+    if (cb.onLearnHandwriting) this.buildLearnButton(doc, cb.onLearnHandwriting);
     this.moreButton = this.barButton(doc, "more-horizontal", "More", cb.onMore);
+    if (this.options.fingerDrawing === true) this.setFingerDrawing(true);
     this.settingsButton = this.foldButton(
       doc,
       FOLD_RANK.settings,
@@ -1648,6 +1675,17 @@ export class Toolbar {
     stylus.setAttribute("aria-pressed", String(on));
     stylus.setAttribute("aria-label", on ? "Stylus only: on" : "Stylus only: off");
     this.syncAccessoriesMark();
+  }
+
+  /**
+   * Light ⋯ while fingers draw (`input/finger-draw.ts`), as the accessories
+   * button lights for a mode its menu lists: ⋯ is where it is switched off.
+   */
+  setFingerDrawing(on: boolean): void {
+    const more = this.moreButton;
+    if (!more) return;
+    more.toggleClass("is-on", on);
+    more.setAttribute("aria-label", on ? "More · drawing with a finger" : "More");
   }
 
   /** Light the accessories button while one of the items its menu lists is on. */
@@ -3437,13 +3475,13 @@ export class Toolbar {
     caretIn(size);
 
     // The font's name, set in that font, as GoodNotes shows it.
-    const font = fontOf(style);
-    const fontButton = this.textControl("is-drop is-font", `Font: ${TEXT_FONT_LABELS[font]}`, (b) =>
+    const fontName = style.family ?? TEXT_FONT_LABELS[fontOf(style)];
+    const fontButton = this.textControl("is-drop is-font", `Font: ${fontName}`, (b) =>
       this.toggleTextPopover("font", b, (body) => this.renderTextFonts(body)),
     );
     fontButton
-      .createSpan({ cls: "goodobsidian-text-drop-label", text: TEXT_FONT_LABELS[font] })
-      .setCssStyles({ fontFamily: TEXT_FONT_STACKS[font] });
+      .createSpan({ cls: "goodobsidian-text-drop-label", text: fontName })
+      .setCssStyles({ fontFamily: fontFamilyOf(style) });
     caretIn(fontButton);
 
     const format = this.textControl("is-format", "Bold, italic, underline, strikethrough", (b) =>
@@ -3664,6 +3702,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Font size" },
     });
+    dragRange(range);
     range.min = "0";
     range.max = String(SIZE_SLIDER_STEPS);
     range.step = "1";
@@ -3688,16 +3727,124 @@ export class Toolbar {
     }
   }
 
+  /**
+   * The font menu (discussion #107): one list to scroll, each name in its
+   * own face. The named family in use on top (marked when this device lacks
+   * it), the six fonts every device has, then the device's own, read when
+   * the menu opens. The loupe beside the heading opens a field that narrows
+   * the list as it is typed in; Return takes the first name left. The field
+   * takes the focus from the box being styled, which stays the one being
+   * edited and gets it back once the field is done (`onTextFieldDone`). A
+   * family is shown over the typeface it was picked on, which is what a
+   * device without it shows.
+   */
   private renderTextFonts(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Font" });
-    const current = fontOf(this.shownTextStyle());
-    for (const font of TEXT_FONTS) {
-      const button = this.textOption(body, "is-wide", TEXT_FONT_LABELS[font], () =>
-        this.pickText({ font }),
-      );
-      button.setCssStyles({ fontFamily: TEXT_FONT_STACKS[font] });
-      button.toggleClass("is-active", font === current);
+    const style = this.shownTextStyle();
+    const current = fontOf(style);
+    const family = style.family;
+    const head = body.createDiv({ cls: "goodobsidian-font-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: "Font" });
+    const list = body.createDiv({ cls: "goodobsidian-font-list" });
+    let query = "";
+    const fill = (): void => {
+      list.empty();
+      const shown = (name: string): boolean => matchesFamily(name, query);
+      if (family && shown(family)) {
+        const button = this.textOption(list, "is-wide is-family is-active", family, () =>
+          this.closePopover(),
+        );
+        button.setCssStyles({ fontFamily: fontFamilyOf(style) });
+        if (!hasFamily(family)) {
+          const missing = `Not on this device: shown in ${TEXT_FONT_LABELS[current]}`;
+          button.setAttr("aria-label", `${family}. ${missing}`);
+          const mark = button.createSpan({
+            cls: "goodobsidian-font-missing",
+            attr: { title: missing },
+          });
+          setIcon(mark, "alert-triangle");
+        }
+      }
+      for (const font of TEXT_FONTS) {
+        if (!shown(TEXT_FONT_LABELS[font])) continue;
+        const button = this.textOption(list, "is-wide", TEXT_FONT_LABELS[font], () =>
+          this.pickText({ font, family: null }),
+        );
+        button.setCssStyles({ fontFamily: TEXT_FONT_STACKS[font] });
+        button.toggleClass("is-active", !family && font === current);
+      }
+      const families = this.deviceFonts;
+      const mine = families?.filter((name) => shown(name) && name !== family) ?? [];
+      // Fonts of this device alone: another device may show the box in its fallback.
+      if (!families || mine.length > 0) {
+        list.createDiv({ cls: "goodobsidian-popover-label", text: "On this device" });
+      }
+      if (!families) list.createDiv({ cls: "goodobsidian-font-busy" });
+      for (const name of mine) {
+        const button = this.textOption(list, "is-wide", name, () =>
+          this.pickText({ family: name }),
+        );
+        button.setCssStyles({ fontFamily: familyStack(name, TEXT_FONT_STACKS[current]) });
+      }
+      if (list.childElementCount === 0) {
+        list.createDiv({ cls: "goodobsidian-font-none", text: "No font by that name" });
+      }
+    };
+    fill();
+    // Read from the tap that opened the menu: the desktop app's font list needs one.
+    if (!this.deviceFonts) {
+      void deviceFamilies().then((families) => {
+        this.deviceFonts = families;
+        if (list.isConnected) fill();
+      });
     }
+    const loupe = head.createEl("button", {
+      cls: "goodobsidian-font-search clickable-icon",
+      attr: { "aria-label": "Search fonts", title: "Search fonts" },
+    });
+    setIcon(loupe, "search");
+    loupe.addEventListener("click", () => {
+      loupe.remove();
+      const field = head.createEl("input", {
+        cls: "goodobsidian-font-field",
+        attr: {
+          type: "search",
+          placeholder: "Font name",
+          "aria-label": "Search fonts",
+          enterkeyhint: "go",
+          autocomplete: "off",
+          autocapitalize: "off",
+          spellcheck: "false",
+          // The box being styled keeps editing while this has the focus.
+          "data-goodobsidian-keeps-text": "",
+        },
+      });
+      field.addEventListener("input", () => {
+        query = field.value;
+        fill();
+        list.scrollTop = 0;
+      });
+      onEnterKey(field, () => list.querySelector<HTMLButtonElement>("button")?.click());
+      field.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.closePopover();
+      });
+      field.addEventListener("blur", (event) => this.textFieldDone(event.relatedTarget));
+      if (this.popover) {
+        this.popoverKeyboard = new DialogKeyboard(this.popover, { pad: true });
+        this.popoverKeyboard.watch(field, head);
+      }
+      this.textFieldOpen = true;
+      field.focus();
+    });
+  }
+
+  /** The font search let go of the focus: the box it took it from gets it back. */
+  private textFieldDone(to: EventTarget | null): void {
+    if (!this.textFieldOpen) return;
+    this.textFieldOpen = false;
+    this.callbacks.onTextFieldDone?.(to instanceof Element ? to : null);
   }
 
   /** The named styles, each shown in its own look; a pick applies it and closes. */
@@ -3994,6 +4141,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Stroke width" },
     });
+    dragRange(range);
     // Stops, not widths: the pens' fine end steps in 0.05 mm, the rest in
     // half px (FineNotes#7). The highlighter keeps the thinnest preset.
     const highlighter =
@@ -4199,6 +4347,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": "Eraser size" },
     });
+    dragRange(range);
     const stops = eraserStops();
     range.min = "0";
     range.max = String(stops.length - 1);
@@ -4499,9 +4648,10 @@ export class Toolbar {
 
   /**
    * The pen in hand's own settings, behind "Pen settings" in the pen type
-   * menu, then two that hold for every pen: "Hide pen options while
-   * writing" with its three choices, and "Back to the pen" with its four,
-   * each one row with its choice in a dropdown.
+   * menu (the highlighter's opacity and straightening too, which were in
+   * Obsidian's settings until 2.7), then two that hold for every pen: "Hide
+   * pen options while writing" with its three choices, and "Back to the
+   * pen" with its four, each one row with its choice in a dropdown.
    */
   private renderPenSettings(body: HTMLElement, back: () => void): void {
     this.popoverPageHead(body, `${this.activePenType().label} settings`, "Back to pen types", back);
@@ -4509,6 +4659,9 @@ export class Toolbar {
     const prefs = this.callbacks.penPreferences?.();
     const save = this.callbacks.onPenPreferences;
     if (!prefs || !save) return;
+    if (this.activePenType().tool === "highlighter") {
+      this.renderHighlighterLook(body, prefs, save);
+    }
     body.createDiv({ cls: "goodobsidian-popover-divider" });
     this.choiceMenu<PenOptionsOnWrite>(
       body,
@@ -4533,6 +4686,46 @@ export class Toolbar {
       cls: "goodobsidian-popover-hint",
       text: "After the eraser, lasso, text or shape tool, go back to the pen you had.",
     });
+  }
+
+  /**
+   * The highlighter's opacity, 10-100%, and whether a stroke drawn along a
+   * line straightens when the pen lifts. Opacity is how every highlight is
+   * drawn, those on the page too, so it is saved when the slider is let go
+   * rather than redrawing every page at each step.
+   */
+  private renderHighlighterLook(
+    body: HTMLElement,
+    prefs: PenPreferences,
+    save: (patch: Partial<PenPreferences>) => void,
+  ): void {
+    body.createDiv({ cls: "goodobsidian-popover-divider" });
+    const head = body.createDiv({ cls: "goodobsidian-width-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: "Opacity" });
+    const readout = head.createDiv({ cls: "goodobsidian-width-readout" });
+    const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
+    const range = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": "Highlighter opacity" },
+    });
+    dragRange(range);
+    range.min = "10";
+    range.max = "100";
+    range.step = "5";
+    const show = (percent: number): void => {
+      range.value = String(percent);
+      range.setAttribute("aria-valuetext", `${percent}%`);
+      readout.setText(`${percent}%`);
+      syncRangeFill(range);
+    };
+    show(Math.round(prefs.highlighterAlpha * 100));
+    range.addEventListener("input", () => show(Number(range.value)));
+    range.addEventListener("change", () => save({ highlighterAlpha: Number(range.value) / 100 }));
+    const list = body.createDiv({ cls: "goodobsidian-switch-list" });
+    this.switchRow(list, "Straighten lines", prefs.straightHighlighter, (on) =>
+      save({ straightHighlighter: on }),
+    );
   }
 
   /**
@@ -4579,6 +4772,7 @@ export class Toolbar {
       type: "range",
       attr: { "aria-label": `Stroke stabilization, ${spec.label}` },
     });
+    dragRange(range);
     range.min = "0";
     range.max = "100";
     range.step = "1";
@@ -4671,6 +4865,7 @@ export class Toolbar {
           title: "Straight lines only ↔ looser shapes",
         },
       });
+      dragRange(range);
       setIcon(bar.createSpan({ attr: { "aria-hidden": "true" } }), "waves");
       range.min = "10";
       range.max = "100";
@@ -4750,6 +4945,7 @@ export class Toolbar {
     // Appended to the host, not to a bar: either bar would clip it.
     const popover = this.host.createDiv({ cls: "goodobsidian-popover" });
     popover.setAttribute("role", "dialog");
+    popover.dataset.ignoreSwipe = "true";
     // Removed with the popover, so its listeners need no disposer.
     this.keepFocus(popover, false);
     const body = popover.createDiv({ cls: "goodobsidian-popover-body" });
@@ -4806,6 +5002,8 @@ export class Toolbar {
 
   private closePopover(): void {
     const kind = this.popoverKind;
+    // The font search goes with it: the box it took the focus from takes it back.
+    this.textFieldDone(null);
     this.popoverKeyboard?.end();
     this.popoverKeyboard = null;
     if (this.popover) this.shrinkPopover(this.popover);
@@ -5458,6 +5656,7 @@ export class Toolbar {
     if (on === this.practice) return;
     this.practice = on;
     for (const button of this.beyondWriting) button.toggle(!on);
+    this.learnButton?.toggle(on);
     this.fitBar(this.indicatorTool);
     if (on && this.activePenType().tool === "highlighter") this.choosePenType(PEN_TYPES[0]);
     this.closePopover();
@@ -5469,6 +5668,31 @@ export class Toolbar {
 
   private activePenType(): PenTypeSpec {
     return penTypeFor(this.state);
+  }
+
+  /**
+   * "Learn my handwriting" on a practice sheet's bar, before ⋯: the way on
+   * from the sheet. Outlined with a count until there is enough to learn
+   * from, then filled ({@link setLearnCount}).
+   */
+  private buildLearnButton(parent: HTMLElement, open: () => void): void {
+    const button = parent.createEl("button", { cls: "goodobsidian-learn-sheet clickable-icon" });
+    iconOrText(button.createSpan({ cls: "goodobsidian-learn-sheet-icon" }), "graduation-cap", "");
+    button.createSpan({ cls: "goodobsidian-learn-sheet-label", text: "Learn my handwriting" });
+    this.learnCount = button.createSpan({ cls: "goodobsidian-learn-sheet-count" });
+    button.addEventListener("click", open);
+    button.toggle(this.practice);
+    this.learnButton = button;
+  }
+
+  /** The practice sheet's button: how much there is to learn from, and whether it is enough. */
+  setLearnCount(count: string, ready: boolean): void {
+    this.learnCount?.setText(count);
+    this.learnButton?.toggleClass("is-ready", ready);
+    this.learnButton?.setAttribute(
+      "aria-label",
+      ready ? `Learn my handwriting, ${count}` : `Learn my handwriting: ${count} lines so far`,
+    );
   }
 
   /**

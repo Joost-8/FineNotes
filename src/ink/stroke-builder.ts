@@ -112,9 +112,13 @@ const MIN_STABILIZE_HALF = 2;
  * Stroke stabilization at 100%: the window's reach each side, screen px. It
  * is also how far the settled ink trails the pen. Goodnotes at 100% revises
  * the last ~2 mm of a stroke (about 10 px on an iPad), measured from Joost's
- * recording, 2026-10-18.
+ * recording, 2026-10-18. But a quadratic window reaching 10 px only steadies
+ * a wobble shorter than ~12 px, and a Pencil's wobble is longer: on the iPad
+ * even 100% looked like nothing (#107). Reaching 20 px, the whole slider is
+ * felt: 10% already halves a 12 px wobble, and 100% takes a 25 px one away,
+ * at the cost of rounding small loops (a 4 px loop by ~14% at 20%).
  */
-export const STABILIZE_MAX_PX = 10;
+export const STABILIZE_MAX_PX = 20;
 
 /** The reach of the setting's lowest step, screen px. */
 const STABILIZE_MIN_PX = 1.5;

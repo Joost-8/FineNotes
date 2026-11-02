@@ -44,7 +44,7 @@ import { SCHEMA_VERSION } from "../constants";
 import { PAGE_SIZES } from "../model/templates";
 import { isDict, parseBinaryPlist, unarchive, type PlistValue } from "./bplist";
 import {
-  fontFor,
+  importedFont,
   hexColor,
   imageSize,
   ImportTally,
@@ -816,8 +816,8 @@ function textBox(
     color: style.color,
     fontSize: style.size,
   };
-  const font = fontFor(style.family);
-  if (font !== "sans") box.font = font;
+  // The font the box was written in, over the nearest typeface (discussion #107).
+  Object.assign(box, importedFont(style.family));
   return box;
 }
 

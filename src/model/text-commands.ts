@@ -27,6 +27,7 @@ const STYLE_KEYS = [
   "color",
   "fontSize",
   "font",
+  "family",
   "bold",
   "italic",
   "underline",
