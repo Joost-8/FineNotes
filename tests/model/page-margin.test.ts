@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyDocument, pdfFrameOf, type InkDocument, type Page } from "../../src/model/document";
 import {
   SetPageMargin,
+  contentCutBy,
   keepContent,
   marginFloor,
   marginFor,
@@ -119,6 +120,65 @@ describe("SetPageMargin", () => {
     const width = page.geometry.width;
     new SetPageMargin([{ page, margin: { left: 0, right: 100 } }]).apply(doc);
     expect(page.backdrop).toMatchObject({ kind: "ruled-wide", frame: { x: 0, width } });
+  });
+});
+
+describe("closing a margin with ink in it", () => {
+  it("deletes what lies wholly in the margin, keeps what reaches onto the page, and undo brings both back", () => {
+    const { doc, page } = pdfDoc();
+    new SetPageMargin([{ page, margin: { left: 300, right: 400 } }]).apply(doc);
+    // In the left margin, in the right margin, and an arrow from the right margin onto the slide.
+    page.strokes.push({
+      id: "l",
+      color: "#000",
+      size: 4,
+      tool: "pen",
+      pts: [50, 100, 0.5, 200, 120, 0.5],
+    });
+    page.strokes.push({
+      id: "r",
+      color: "#000",
+      size: 4,
+      tool: "pen",
+      pts: [1400, 100, 0.5, 1600, 90, 0.5],
+    });
+    page.strokes.push({
+      id: "a",
+      color: "#000",
+      size: 4,
+      tool: "pen",
+      pts: [1500, 300, 0.5, 1200, 310, 0.5],
+    });
+    page.textBoxes.push({ id: "t2", x: 1350, y: 500, w: 200, h: 40, text: "Note" } as never);
+    expect(contentCutBy(page, { left: 0, right: 0 })).toBe(3);
+    const history = new History();
+    history.push(doc, new SetPageMargin([{ page, margin: { left: 0, right: 0 } }], true));
+    expect(marginOf(page)).toEqual({ left: 0, right: 0 });
+    expect(page.geometry.width).toBe(1000);
+    expect(page.strokes.map((s) => s.id)).toEqual(["s1", "a"]);
+    expect(page.textBoxes.map((t) => t.id)).toEqual(["t1"]);
+    // What stayed moved left with the slide: the arrow now runs off its right edge.
+    expect(page.strokes[1].pts[0]).toBe(1200);
+    history.undo(doc);
+    expect(marginOf(page)).toEqual({ left: 300, right: 400 });
+    expect(page.strokes.map((s) => s.id)).toEqual(["s1", "l", "r", "a"]);
+    expect(page.strokes[1].pts[0]).toBe(50);
+    expect(page.textBoxes.map((t) => t.id)).toEqual(["t1", "t2"]);
+  });
+
+  it("keeps the margin as wide as its ink unless told to delete", () => {
+    const { doc, page } = pdfDoc();
+    new SetPageMargin([{ page, margin: { left: 0, right: 400 } }]).apply(doc);
+    page.strokes.push({
+      id: "r",
+      color: "#000",
+      size: 4,
+      tool: "pen",
+      pts: [1100, 100, 0.5, 1200, 90, 0.5],
+    });
+    new SetPageMargin([{ page, margin: { left: 0, right: 0 } }]).apply(doc);
+    expect(marginOf(page).right).toBe(202);
+    expect(page.strokes.map((s) => s.id)).toContain("r");
   });
 });
 

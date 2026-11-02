@@ -214,8 +214,10 @@ extracted from the matching section of this file by `release.yml`.
   paper keeps its size and place, and a margin on the left moves everything on
   the page with it, so ink stays on the words it was written over. The page
   changes as you choose and the slide stays on screen while the width is
-  dragged; one undo takes it all back. A margin is never made narrower than
-  what is written in it, and it exports with the page to PDF and pictures.
+  dragged; one undo takes it all back. The slider never makes a margin
+  narrower than what is written in it; No margin asks first and deletes what
+  lies wholly in it (one undo brings it back). It exports with the page to PDF
+  and pictures.
   Built on Faris's pull request #92.
 
 ## [2.6.0] - 2026-10-30

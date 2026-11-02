@@ -184,6 +184,7 @@ import {
   MARGIN_DEFAULT_PERCENT,
   type PageMargin,
   SetPageMargin,
+  contentCutBy,
   marginFloor,
   marginFor,
   marginOf,
@@ -5200,12 +5201,15 @@ export class InkView extends TextFileView {
     const same = (a: PageMargin, b: PageMargin): boolean =>
       a.left === b.left && a.right === b.right;
     const here = marginOf(page);
+    const floors = new Map(pages.map((p) => [p, marginFloor(p)] as const));
     const floor = (scope: MarginScope): { left: boolean; right: boolean; percent: number } => {
       let left = false;
       let right = false;
       let percent = 0;
       for (const p of reach(scope)) {
-        const f = marginFloor(p);
+        // As it was when the popover opened: a deletion earlier in the visit
+        // is taken back by the next choice, and its ink with it.
+        const f = floors.get(p) ?? marginFloor(p);
         const width = frameWidth(p);
         left ||= f.left > 0;
         right ||= f.right > 0;
@@ -5229,7 +5233,7 @@ export class InkView extends TextFileView {
           !was || (same(margin, was.margin) && (paper === was.paper || choice.side === "none"))
         );
       });
-      const next = unchanged ? null : new SetPageMargin(targets);
+      const next = unchanged ? null : new SetPageMargin(targets, choice.drop === true);
       const took = surface.replaceCommand(step, next);
       if (!next && step && !took) {
         // Something else was done meanwhile: put the margins back as a step of its own.
@@ -5284,6 +5288,16 @@ export class InkView extends TextFileView {
       scopes,
       paintPaper: (canvas, paper) => this.paintMarginSwatch(canvas, paper),
       floor,
+      cut: (scope) => {
+        let items = 0;
+        let pagesCut = 0;
+        for (const p of reach(scope)) {
+          const n = contentCutBy(p, { left: 0, right: 0 });
+          items += n;
+          if (n > 0) pagesCut++;
+        }
+        return { items, pages: pagesCut };
+      },
       onChange: change,
       onClose: () => {
         flush();

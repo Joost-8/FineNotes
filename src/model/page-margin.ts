@@ -115,8 +115,12 @@ export function marginFloor(page: Page): PageMargin {
   };
 }
 
-/** The leftmost and rightmost x anything on the page covers, or null for an empty page. */
-function contentEdges(page: Page): { minX: number; maxX: number } | null {
+/** What a page holds, each kind of element by its list. */
+type Kind = "strokes" | "images" | "textBoxes" | "tables" | "graphs";
+const KINDS: readonly Kind[] = ["strokes", "images", "textBoxes", "tables", "graphs"];
+
+/** The leftmost and rightmost x an element covers, page px; null for nothing. */
+function spanOf(kind: Kind, element: unknown): { minX: number; maxX: number } | null {
   let minX = Infinity;
   let maxX = -Infinity;
   const take = (a: number, b: number): void => {
@@ -124,24 +128,79 @@ function contentEdges(page: Page): { minX: number; maxX: number } | null {
     minX = Math.min(minX, a);
     maxX = Math.max(maxX, b);
   };
-  for (const stroke of page.strokes) {
+  if (kind === "strokes") {
+    const stroke = element as Page["strokes"][number];
     const reach = stroke.size / 2;
     const pts = stroke.pts;
     const usable = pts.length - (pts.length % POINT_STRIDE);
     for (let i = 0; i < usable; i += POINT_STRIDE) take(pts[i] - reach, pts[i] + reach);
-  }
-  for (const image of page.images) {
+  } else if (kind === "images") {
+    const image = element as Page["images"][number];
     const turn = ((image.rotation ?? 0) * Math.PI) / 180;
     const half = (image.w * Math.abs(Math.cos(turn)) + image.h * Math.abs(Math.sin(turn))) / 2;
     const cx = image.x + image.w / 2;
     take(cx - half, cx + half);
-  }
-  for (const box of page.textBoxes) take(box.x, box.x + box.w);
-  for (const table of page.tables ?? []) {
+  } else if (kind === "textBoxes") {
+    const box = element as Page["textBoxes"][number];
+    take(box.x, box.x + box.w);
+  } else if (kind === "tables") {
+    const table = element as NonNullable<Page["tables"]>[number];
     take(table.x, table.x + table.cols.reduce((sum, col) => sum + col, 0));
+  } else {
+    const graph = element as NonNullable<Page["graphs"]>[number];
+    take(graph.x, graph.x + graph.w);
   }
-  for (const graph of page.graphs ?? []) take(graph.x, graph.x + graph.w);
   return Number.isFinite(minX) ? { minX, maxX } : null;
+}
+
+function listOf(page: Page, kind: Kind): readonly unknown[] {
+  return (page[kind] as readonly unknown[] | undefined) ?? [];
+}
+
+/** The leftmost and rightmost x anything on the page covers, or null for an empty page. */
+function contentEdges(page: Page): { minX: number; maxX: number } | null {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (const kind of KINDS) {
+    for (const element of listOf(page, kind)) {
+      const span = spanOf(kind, element);
+      if (!span) continue;
+      minX = Math.min(minX, span.minX);
+      maxX = Math.max(maxX, span.maxX);
+    }
+  }
+  return Number.isFinite(minX) ? { minX, maxX } : null;
+}
+
+/**
+ * Whether `span` lies wholly in what narrowing `page`'s margin to `next`
+ * cuts away: left of the new left edge or right of the new right edge.
+ */
+function cutAway(page: Page, next: PageMargin, span: { minX: number; maxX: number }): boolean {
+  const old = marginOf(page);
+  const leftCut = old.left - next.left;
+  const rightCut = old.right - next.right;
+  return (
+    (leftCut > 0 && span.maxX <= leftCut) ||
+    (rightCut > 0 && span.minX >= page.geometry.width - rightCut)
+  );
+}
+
+/**
+ * How many things (strokes, pictures, text boxes, tables, graphs) lie wholly
+ * in the part of `page`'s margin that narrowing it to `next` takes away:
+ * what closing it would delete. Something that reaches onto the rest of the
+ * page is not counted, and stays.
+ */
+export function contentCutBy(page: Page, next: PageMargin): number {
+  let count = 0;
+  for (const kind of KINDS) {
+    for (const element of listOf(page, kind)) {
+      const span = spanOf(kind, element);
+      if (span && cutAway(page, next, span)) count++;
+    }
+  }
+  return count;
 }
 
 /** The margin asked for, never narrower than {@link marginFloor}. */
@@ -211,6 +270,7 @@ export class SetPageMargin implements Command {
     comments: number[];
     sections: number[];
     moved: TranslateElements | null;
+    lists: Partial<Record<Kind, unknown[]>> | null;
   }> = [];
 
   /** `paper`: the margin's paper; absent keeps the one the page has. */
@@ -220,6 +280,13 @@ export class SetPageMargin implements Command {
       margin: PageMargin;
       paper?: MarginPaperChoice;
     }>,
+    /**
+     * Narrow the margins even past what is written in them, deleting what
+     * lies wholly in the part taken away (`contentCutBy`); something that
+     * reaches onto the rest of the page stays, cut off at its edge. Without
+     * it the margin is kept as wide as its content.
+     */
+    private readonly dropContent = false,
   ) {}
 
   /** The page's id when the step changes one page, so undo shows it. */
@@ -232,7 +299,7 @@ export class SetPageMargin implements Command {
     for (const { page, margin, paper } of this.targets) {
       // By identity, like the other page commands: ids can repeat within a file.
       if (!doc.pages.includes(page)) continue;
-      const next = keepContent(page, margin);
+      const next = this.dropContent ? margin : keepContent(page, margin);
       const old = marginOf(page);
       const none = next.left === 0 && next.right === 0;
       // No margin, no margin paper: it is chosen again with the next margin.
@@ -246,7 +313,23 @@ export class SetPageMargin implements Command {
         comments: (page.comments ?? []).map((comment) => comment.x),
         sections: (page.sections ?? []).map((section) => section.x),
         moved: null as TranslateElements | null,
+        lists: null as Partial<Record<Kind, unknown[]>> | null,
       };
+      if (this.dropContent && contentCutBy(page, next) > 0) {
+        // Each list as it was, so undo puts every element back in its place.
+        const lists: Partial<Record<Kind, unknown[]>> = {};
+        for (const kind of KINDS) {
+          const list = page[kind] as unknown[] | undefined;
+          if (!list) continue;
+          lists[kind] = list;
+          const kept = list.filter((element) => {
+            const span = spanOf(kind, element);
+            return !span || !cutAway(page, next, span);
+          });
+          (page as unknown as Record<Kind, unknown[]>)[kind] = kept;
+        }
+        record.lists = lists;
+      }
       const frame = pdfFrameOf(page.backdrop, page.geometry);
       const width = frame.width;
       const fullHeight = frame.y === 0 && frame.height === page.geometry.height;
@@ -289,6 +372,12 @@ export class SetPageMargin implements Command {
       const { page } = record;
       if (!doc.pages.includes(page)) continue;
       record.moved?.invert(doc);
+      if (record.lists) {
+        for (const kind of KINDS) {
+          const list = record.lists[kind];
+          if (list) (page as unknown as Record<Kind, unknown[]>)[kind] = list;
+        }
+      }
       (page.comments ?? []).forEach((comment, at) => {
         comment.x = record.comments[at] ?? comment.x;
       });

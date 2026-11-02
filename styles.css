@@ -3776,6 +3776,32 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   color: var(--text-faint);
 }
 
+.goodobsidian-margin-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--gob-well);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-margin-confirm.is-hidden {
+  display: none;
+}
+
+.goodobsidian-margin-confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Obsidian fills mod-warning red; here only its text is (ledger 2026-10-14). */
+.goodobsidian-margin-confirm-buttons button.mod-warning {
+  background: var(--interactive-normal);
+  color: var(--text-error);
+}
+
 .goodobsidian-margin-papers {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
