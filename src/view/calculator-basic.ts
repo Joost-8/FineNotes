@@ -11,6 +11,7 @@
  * become a click: CLAUDE.md).
  */
 
+import { t } from "../i18n/translate";
 import { fittedFontSize } from "../model/calculator-keys";
 import {
   BASIC_START,
@@ -58,22 +59,24 @@ const digit = (d: number): PadKey => ({
 });
 
 /** The keypad, row by row, as the iPhone lays it out in portrait. */
-const PAD: readonly (readonly PadKey[])[] = [
-  [
-    { label: "AC", aria: "Clear", key: { clear: true }, tone: "fn" },
-    { label: "±", aria: "Change sign", key: { negate: true }, tone: "fn" },
-    { label: "%", aria: "Percent", key: { percent: true }, tone: "fn" },
-    op("÷", "Divide"),
-  ],
-  [digit(7), digit(8), digit(9), op("×", "Multiply")],
-  [digit(4), digit(5), digit(6), op("−", "Subtract")],
-  [digit(1), digit(2), digit(3), op("+", "Add")],
-  [
-    { ...digit(0), wide: true },
-    { label: ".", aria: "Decimal point", key: { point: true }, tone: "digit" },
-    { label: "=", aria: "Equals", key: { equals: true }, tone: "equals" },
-  ],
-];
+function padKeys(): readonly (readonly PadKey[])[] {
+  return [
+    [
+      { label: "AC", aria: t("calculator.padClear"), key: { clear: true }, tone: "fn" },
+      { label: "±", aria: t("calculator.padChangeSign"), key: { negate: true }, tone: "fn" },
+      { label: "%", aria: t("calculator.padPercent"), key: { percent: true }, tone: "fn" },
+      op("÷", t("calculator.padDivide")),
+    ],
+    [digit(7), digit(8), digit(9), op("×", t("calculator.padMultiply"))],
+    [digit(4), digit(5), digit(6), op("−", t("calculator.padSubtract"))],
+    [digit(1), digit(2), digit(3), op("+", t("calculator.padAdd"))],
+    [
+      { ...digit(0), wide: true },
+      { label: ".", aria: t("calculator.padDecimalPoint"), key: { point: true }, tone: "digit" },
+      { label: "=", aria: t("calculator.padEquals"), key: { equals: true }, tone: "equals" },
+    ],
+  ];
+}
 
 /** Basic's sum outlives the window, as the scientific answer does. */
 let kept: BasicState = BASIC_START;
@@ -100,7 +103,7 @@ export class BasicPad {
     this.padEl = padParent.createDiv({ cls: "goodobsidian-calc-basic-pad" });
     const grid = this.padEl.createDiv({ cls: "goodobsidian-calc-basic-grid" });
     let clearKey: HTMLButtonElement | null = null;
-    for (const row of PAD) {
+    for (const row of padKeys()) {
       for (const pad of row) {
         const button = host.button(
           grid,
@@ -155,7 +158,10 @@ export class BasicPad {
     this.numberEl.toggleClass("is-error", kept.error);
     const label = clearLabel(kept);
     this.clearKey.setText(label);
-    this.clearKey.setAttribute("aria-label", label === "C" ? "Clear entry" : "All clear");
+    this.clearKey.setAttribute(
+      "aria-label",
+      label === "C" ? t("calculator.padClearEntry") : t("calculator.padAllClear"),
+    );
     const lit = activeOp(kept);
     for (const [o, button] of this.opKeys) {
       button.toggleClass("is-active", o === lit);

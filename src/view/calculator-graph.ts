@@ -29,6 +29,7 @@
 
 import { setIcon } from "obsidian";
 import { paintGraphGeometry, pointLabel, preparedOf } from "../canvas/graph-painter";
+import { type TextKey, t } from "../i18n/translate";
 import type { AngleMode } from "../model/calculator";
 import {
   type GraphRange,
@@ -180,11 +181,9 @@ export class GraphPanel {
     this.list = this.el.createDiv({ cls: "goodobsidian-calc-functions" });
     this.canvas = this.wrap.createEl("canvas");
     this.canvas.setAttribute("role", "img");
-    this.canvas.setAttribute("aria-label", "Graph");
-    this.overlayButton("settings-2", "View: grid, numbers, axes, range", "is-view", () =>
-      this.toggleView(),
-    );
-    this.overlayButton("maximize-2", "Fit the graph", "is-fit", () => this.reset());
+    this.canvas.setAttribute("aria-label", t("calculator.graph"));
+    this.overlayButton("settings-2", t("calculator.viewHelp"), "is-view", () => this.toggleView());
+    this.overlayButton("maximize-2", t("calculator.fitGraph"), "is-fit", () => this.reset());
     this.viewPanel = this.wrap.createDiv({ cls: "goodobsidian-calc-view is-hidden" });
     this.recompile();
     this.renderList();
@@ -523,11 +522,23 @@ export class GraphPanel {
     panel.empty();
     const spec = this.state.spec;
     const toggles: Array<[string, boolean, (on: boolean) => void]> = [
-      ["Grid", spec.grid !== false, (on) => (on ? delete spec.grid : (spec.grid = false))],
-      ["Numbers", spec.labels !== false, (on) => (on ? delete spec.labels : (spec.labels = false))],
-      ["1:1 axes", spec.square === true, (on) => (on ? (spec.square = true) : delete spec.square)],
       [
-        "π ticks",
+        t("calculator.gridToggle"),
+        spec.grid !== false,
+        (on) => (on ? delete spec.grid : (spec.grid = false)),
+      ],
+      [
+        t("calculator.numbersToggle"),
+        spec.labels !== false,
+        (on) => (on ? delete spec.labels : (spec.labels = false)),
+      ],
+      [
+        t("calculator.squareAxes"),
+        spec.square === true,
+        (on) => (on ? (spec.square = true) : delete spec.square),
+      ],
+      [
+        t("calculator.piTicks"),
         spec.piTicks === true,
         (on) => (on ? (spec.piTicks = true) : delete spec.piTicks),
       ],
@@ -545,18 +556,18 @@ export class GraphPanel {
     const r = this.range();
     const inputs = new Map<keyof GraphRange, HTMLInputElement>();
     for (const [key, label] of [
-      ["xMin", "x from"],
-      ["xMax", "to"],
-      ["yMin", "y from"],
-      ["yMax", "to"],
+      ["xMin", t("calculator.rangeXFrom")],
+      ["xMax", t("calculator.rangeTo")],
+      ["yMin", t("calculator.rangeYFrom")],
+      ["yMax", t("calculator.rangeTo")],
     ] as const) {
       const field = fields.createEl("label", { cls: "goodobsidian-calc-field" });
       field.createSpan({ text: label });
-      inputs.set(key, this.numberInput(field, r[key], `${key}`));
+      inputs.set(key, this.numberInput(field, r[key], t(FIELD_NAMES[key])));
     }
     const apply = panel.createEl("button", {
       cls: "clickable-icon goodobsidian-calc-apply",
-      text: "Set range",
+      text: t("calculator.setRange"),
     });
     apply.addEventListener("click", () => {
       const read = (key: keyof GraphRange): number => Number(inputs.get(key)?.value);
@@ -628,8 +639,8 @@ export class GraphPanel {
       const dot = row.createEl("button", {
         cls: "clickable-icon goodobsidian-calc-swatch",
         attr: {
-          "aria-label": line.hidden ? "Show this line" : "Hide this line",
-          title: line.hidden ? "Show" : "Hide",
+          "aria-label": line.hidden ? t("calculator.showLine") : t("calculator.hideLine"),
+          title: line.hidden ? t("calculator.show") : t("calculator.hide"),
         },
       });
       dot.setCssStyles({ color: entry.color });
@@ -641,7 +652,7 @@ export class GraphPanel {
       const text = row.createEl("button", {
         cls: "clickable-icon goodobsidian-calc-function-text",
       });
-      text.setAttribute("aria-label", `Edit ${line.text}`);
+      text.setAttribute("aria-label", t("calculator.editLine", { text: line.text }));
       this.host.drawMath(text.createDiv({ cls: "goodobsidian-calc-math" }), line.text);
       const plot = entry.compiled.plot;
       if (plot.kind === "error") {
@@ -654,7 +665,7 @@ export class GraphPanel {
       const more = row.createEl("button", {
         cls: "clickable-icon goodobsidian-calc-more",
         attr: {
-          "aria-label": "Options for this line",
+          "aria-label": t("calculator.lineOptions"),
           "aria-expanded": String(this.openOptions === line.id),
         },
       });
@@ -688,8 +699,8 @@ export class GraphPanel {
       cls: "clickable-icon goodobsidian-calc-function goodobsidian-calc-add",
     });
     setIcon(add.createSpan({ cls: "goodobsidian-calc-add-icon" }), "plus");
-    add.createSpan({ cls: "goodobsidian-calc-add-text", text: "Expression" });
-    add.setAttribute("aria-label", "Add an expression");
+    add.createSpan({ cls: "goodobsidian-calc-add-text", text: t("calculator.expression") });
+    add.setAttribute("aria-label", t("calculator.addExpression"));
     add.disabled = lines.length >= MAX_LINES;
     add.addEventListener("click", () => this.host.editLine(null));
   }
@@ -714,13 +725,13 @@ export class GraphPanel {
       chip.disabled = !enabled;
       return chip;
     };
-    toggle("Dashed", line.style === "dashed", () => {
+    toggle(t("calculator.optDashed"), line.style === "dashed", () => {
       if (line.style === "dashed") delete line.style;
       else line.style = "dashed";
     });
     for (const [label, width] of [
-      ["Thin", 1.25],
-      ["Bold", 4],
+      [t("calculator.optThin"), 1.25],
+      [t("calculator.optBold"), 4],
     ] as const) {
       toggle(label, line.width === width, () => {
         if (line.width === width) delete line.width;
@@ -730,7 +741,7 @@ export class GraphPanel {
     const view = this.range();
     const mid = Number(((view.xMin + view.xMax) / 2).toPrecision(3));
     toggle(
-      "Derivative",
+      t("calculator.optDerivative"),
       line.derivative === true,
       () => {
         if (line.derivative) delete line.derivative;
@@ -739,7 +750,7 @@ export class GraphPanel {
       isFunction,
     );
     toggle(
-      "Tangent",
+      t("calculator.optTangent"),
       line.tangentAt !== undefined,
       () => {
         if (line.tangentAt !== undefined) delete line.tangentAt;
@@ -748,7 +759,7 @@ export class GraphPanel {
       isFunction,
     );
     toggle(
-      "∫ Area",
+      t("calculator.optArea"),
       line.area !== undefined,
       () => {
         if (line.area) delete line.area;
@@ -757,7 +768,7 @@ export class GraphPanel {
       isFunction,
     );
     toggle(
-      "Table",
+      t("calculator.optTable"),
       line.table === true,
       () => {
         if (line.table) delete line.table;
@@ -765,9 +776,14 @@ export class GraphPanel {
       },
       isFunction,
     );
-    toggle("Up", false, () => this.move(index, -1), index > 0);
-    toggle("Down", false, () => this.move(index, 1), index < this.lines().length - 1);
-    const remove = toggle("Delete", false, () => {
+    toggle(t("calculator.optUp"), false, () => this.move(index, -1), index > 0);
+    toggle(
+      t("calculator.optDown"),
+      false,
+      () => this.move(index, 1),
+      index < this.lines().length - 1,
+    );
+    const remove = toggle(t("common.delete"), false, () => {
       this.lines().splice(index, 1);
       const spec = this.state.spec;
       if (spec.pins) spec.pins = spec.pins.filter((pin) => pin.line !== line.id);
@@ -787,12 +803,12 @@ export class GraphPanel {
       });
     };
     if (line.tangentAt !== undefined) {
-      numberField("Tangent at x =", line.tangentAt, (v) => (line.tangentAt = v));
+      numberField(t("calculator.tangentAtX"), line.tangentAt, (v) => (line.tangentAt = v));
     }
     const area = line.area;
     if (area) {
-      numberField("∫ from", area[0], (v) => (area[0] = v));
-      numberField("to", area[1], (v) => (area[1] = v));
+      numberField(t("calculator.areaFrom"), area[0], (v) => (area[0] = v));
+      numberField(t("calculator.rangeTo"), area[1], (v) => (area[1] = v));
     }
   }
 
@@ -817,7 +833,10 @@ export class GraphPanel {
     // The name folds out min, step and max: they are set once, the slider is used often.
     const value = top.createEl("button", {
       cls: "clickable-icon goodobsidian-calc-slider-value",
-      attr: { "aria-label": `Range of ${slider.name}`, "aria-expanded": String(open) },
+      attr: {
+        "aria-label": t("calculator.sliderRange", { name: slider.name }),
+        "aria-expanded": String(open),
+      },
     });
     value.addEventListener("click", () => {
       this.openBounds = open ? null : slider.name;
@@ -833,7 +852,7 @@ export class GraphPanel {
         min: `${slider.min}`,
         max: `${slider.max}`,
         step: slider.step > 0 ? `${slider.step}` : "any",
-        "aria-label": `Slider ${slider.name}`,
+        "aria-label": t("calculator.sliderAria", { name: slider.name }),
       },
     });
     dragRange(range);
@@ -847,7 +866,10 @@ export class GraphPanel {
     const play = top.createEl("button", {
       cls: "clickable-icon goodobsidian-calc-play",
       attr: {
-        "aria-label": this.playing === slider.name ? `Stop ${slider.name}` : `Play ${slider.name}`,
+        "aria-label":
+          this.playing === slider.name
+            ? t("calculator.stopSlider", { name: slider.name })
+            : t("calculator.playSlider", { name: slider.name }),
       },
     });
     setIcon(play, this.playing === slider.name ? "pause" : "play");
@@ -855,13 +877,17 @@ export class GraphPanel {
     if (!open) return;
     const bounds = row.createDiv({ cls: "goodobsidian-calc-slider-bounds" });
     for (const [key, label] of [
-      ["min", "min"],
-      ["step", "step"],
-      ["max", "max"],
+      ["min", t("calculator.boundMin")],
+      ["step", t("calculator.boundStep")],
+      ["max", t("calculator.boundMax")],
     ] as const) {
       const field = bounds.createEl("label", { cls: "goodobsidian-calc-field" });
       field.createSpan({ text: label });
-      const input = this.numberInput(field, slider[key], `${slider.name} ${label}`);
+      const input = this.numberInput(
+        field,
+        slider[key],
+        t("calculator.sliderBoundAria", { name: slider.name, label }),
+      );
       input.addEventListener("change", () => {
         const v = Number(input.value);
         if (!Number.isFinite(v) || (key === "step" && v < 0)) return;
@@ -892,7 +918,7 @@ export class GraphPanel {
       });
       const remove = row.createEl("button", {
         cls: "clickable-icon goodobsidian-calc-more",
-        attr: { "aria-label": `Remove point ${pin.name}` },
+        attr: { "aria-label": t("calculator.removePoint", { name: pin.name }) },
       });
       setIcon(remove, "x");
       remove.addEventListener("click", () => {
@@ -1109,7 +1135,10 @@ export class GraphPanel {
       }
     }
     if (best) {
-      const label = `${poiName(best)} ${pointLabel(best.x, best.y)}`;
+      const label = t("calculator.poiLabel", {
+        name: poiName(best),
+        point: pointLabel(best.x, best.y),
+      });
       const index = this.lines().findIndex((l) => l.id === this.state.selected);
       const color = index >= 0 ? this.colorOf(index) : this.colors().poi;
       return { x: best.x, y: best.y, color, label };
@@ -1158,7 +1187,10 @@ export class GraphPanel {
       const pin = pins[onPin];
       const y = valueOfLine(prepared, pin.line, pin.x);
       const index = this.lines().findIndex((l) => l.id === pin.line);
-      const label = `${pin.name ?? ""} ${pointLabel(pin.x, y)}`.trim();
+      const label = t("calculator.poiLabel", {
+        name: pin.name ?? "",
+        point: pointLabel(pin.x, y),
+      }).trim();
       this.marker = { x: pin.x, y, color: this.colorOf(index), label, line: pin.line };
       this.schedule();
       return;
@@ -1199,6 +1231,14 @@ function listPoint(x: number, y: number): string {
   return `(${short(x)}, ${short(y)})`;
 }
 
+/** The spoken names of the view range fields, by field. */
+const FIELD_NAMES = {
+  xMin: "calculator.fieldXMin",
+  xMax: "calculator.fieldXMax",
+  yMin: "calculator.fieldYMin",
+  yMax: "calculator.fieldYMax",
+} as const satisfies Record<keyof GraphRange, TextKey>;
+
 function midpoint(a: Pointer, b: Pointer): Pointer {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
@@ -1206,14 +1246,14 @@ function midpoint(a: Pointer, b: Pointer): Pointer {
 function poiName(poi: Poi): string {
   switch (poi.kind) {
     case "root":
-      return "Root";
+      return t("calculator.poiRoot");
     case "max":
-      return "Max";
+      return t("calculator.poiMax");
     case "min":
-      return "Min";
+      return t("calculator.poiMin");
     case "intercept":
-      return "y-intercept";
+      return t("calculator.poiYIntercept");
     default:
-      return "Crossing";
+      return t("calculator.poiCrossing");
   }
 }

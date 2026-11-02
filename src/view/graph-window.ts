@@ -23,6 +23,7 @@
  * inside the view through a split view or a rotation.
  */
 
+import { t } from "../i18n/translate";
 import type { AngleMode } from "../model/calculator";
 import type { WindowPlace } from "../model/calculator-store";
 import type { GraphSpec } from "../model/graph";
@@ -54,13 +55,13 @@ export class GraphWindow {
     this.frame = new FloatingWindow({
       container: host.container,
       cls: "goodobsidian-graph-window",
-      title: "Graph",
-      label: "Graph window",
+      title: t("calculator.graph"),
+      label: t("calculator.graphWindow"),
       buttons: host.insertGraph
         ? [
             {
               icon: "copy-plus",
-              label: "Insert graph: put a copy on the page",
+              label: t("calculator.insertGraphCopy"),
               run: () => {
                 const spec = this.panel.spec();
                 if ((spec.lines ?? []).length > 0) host.insertGraph?.(spec);
@@ -69,7 +70,7 @@ export class GraphWindow {
           ]
         : [],
       minimise: true,
-      closeLabel: "Close the graph window",
+      closeLabel: t("calculator.closeGraphWindow"),
       place: () => host.place(),
       savePlace: (place) => host.savePlace(place),
       onClose: () => this.close(),

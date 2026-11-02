@@ -16,6 +16,7 @@
  *   changes and bisection, given as decimals.
  */
 
+import { t } from "../../i18n/translate";
 import {
   AlgebraError,
   type Expr,
@@ -84,7 +85,7 @@ export interface SolveOptions {
 export function solveEquation(lhs: Expr, rhs: Expr, options: SolveOptions = {}): Solution {
   const v = options.v ?? "x";
   const angle = options.angle ?? "rad";
-  if (free(lhs, v) && free(rhs, v)) throw new AlgebraError(`No ${v} to solve for`);
+  if (free(lhs, v) && free(rhs, v)) throw new AlgebraError(t("calculator.algNoVariable", { v }));
   const steps: SolveStep[] = [];
   const x = sym(v);
 
@@ -99,19 +100,24 @@ export function solveEquation(lhs: Expr, rhs: Expr, options: SolveOptions = {}):
   if (denominators.length > 0) {
     const lcd = mul(...denominators);
     current = mulOut(expr, lcd);
-    steps.push({ rule: `Multiply both sides by ${plain(lcd)}`, math: [pair(current, ZERO)] });
+    steps.push({
+      rule: t("calculator.algMultiplyBoth", { value: plain(lcd) }),
+      math: [pair(current, ZERO)],
+    });
   }
   const poly = toPoly(current, v);
   if (!poly) return numeric(sub(lhs, rhs), v, angle, steps);
   expr = fromPoly(poly, v);
   if (steps.length === 0 || !samePrinted(expr, current)) {
-    steps.push({ rule: "Move everything to one side", math: [pair(expr, ZERO)] });
+    steps.push({ rule: t("calculator.algMoveAllOneSide"), math: [pair(expr, ZERO)] });
   }
   const p = trim(poly);
   const deg = degree(p);
   let result: Solution;
-  if (deg < 0) result = { values: [], approx: false, message: `Every ${v} is a solution`, steps };
-  else if (deg === 0) result = { values: [], approx: false, message: "No solution", steps };
+  if (deg < 0)
+    result = { values: [], approx: false, message: t("calculator.algEverySolution", { v }), steps };
+  else if (deg === 0)
+    result = { values: [], approx: false, message: t("calculator.algNoSolution"), steps };
   else if (deg === 1) result = linearSolve(p, v, steps);
   else result = polySolve(p, v, steps);
   // A solution that makes a denominator zero is not one.
@@ -125,10 +131,16 @@ export function solveEquation(lhs: Expr, rhs: Expr, options: SolveOptions = {}):
     if (kept.length < result.values.length) {
       const dropped = result.values.filter((s) => !kept.includes(s));
       steps.push({
-        rule: `${dropped.map((s) => `${v} = ${plain(s)}`).join(", ")} makes a denominator zero`,
+        rule: t("calculator.algMakesDenominatorZero", {
+          list: dropped.map((s) => `${v} = ${plain(s)}`).join(", "),
+        }),
         math: answerExpr(kept, v),
       });
-      result = { ...result, values: kept, message: kept.length === 0 ? "No solution" : undefined };
+      result = {
+        ...result,
+        values: kept,
+        message: kept.length === 0 ? t("calculator.algNoSolution") : undefined,
+      };
     }
   }
   return result;
@@ -172,12 +184,15 @@ function linearSolve(p: Q[], v: string, steps: SolveStep[]): Solution {
   const x = sym(v);
   if (b.n !== 0n)
     steps.push({
-      rule: `Move ${plain(numQ(b))} to the other side`,
+      rule: t("calculator.algMoveToOtherSide", { value: plain(numQ(b)) }),
       math: [pair(mul(numQ(a), x), numQ(qneg(b)))],
     });
   const root = qdiv(qneg(b), a);
   if (!(a.n === 1n && a.d === 1n))
-    steps.push({ rule: `Divide both sides by ${plain(numQ(a))}`, math: [pair(x, numQ(root))] });
+    steps.push({
+      rule: t("calculator.algDivideBoth", { value: plain(numQ(a)) }),
+      math: [pair(x, numQ(root))],
+    });
   return { values: [numQ(root)], approx: false, steps };
 }
 
@@ -193,10 +208,10 @@ function polySolve(p: Q[], v: string, steps: SolveStep[]): Solution {
     for (const { root, times } of linear) factors.push(pow(linearFactor(root, v), num(times)));
     if (restDeg > 0) factors.push(fromPoly(rest, v));
     const factored = mul(...factors);
-    steps.push({ rule: "Factor", math: [pair(factored, ZERO)] });
+    steps.push({ rule: t("calculator.algFactor"), math: [pair(factored, ZERO)] });
     const each = linear.map(({ root }) => pair(linearFactor(root, v), ZERO));
     if (restDeg > 0) each.push(pair(fromPoly(rest, v), ZERO));
-    steps.push({ rule: "A product is zero when one of its factors is", math: orExpr(each) });
+    steps.push({ rule: t("calculator.algProductZero"), math: orExpr(each) });
   }
   let approx = false;
   if (restDeg === 2 && linear.length > 0) {
@@ -208,8 +223,9 @@ function polySolve(p: Q[], v: string, steps: SolveStep[]): Solution {
     approx = found.length > 0;
   }
   values.sort((a, b) => evaluate(a) - evaluate(b));
-  if (values.length === 0) return { values, approx: false, message: "No real solution", steps };
-  steps.push({ rule: "Solve each", math: answerExpr(values, v) });
+  if (values.length === 0)
+    return { values, approx: false, message: t("calculator.algNoRealSolution"), steps };
+  steps.push({ rule: t("calculator.algSolveEach"), math: answerExpr(values, v) });
   void x;
   return { values, approx, steps };
 }
@@ -225,12 +241,19 @@ function quadraticFormula(p: Q[], v: string, steps: SolveStep[]): Solution {
   const [c, b, a] = p;
   const disc = qsub(qmul(b, b), qmul(q(4), qmul(a, c)));
   steps.push({
-    rule: `Quadratic formula with a = ${plain(numQ(a))}, b = ${plain(numQ(b))}, c = ${plain(numQ(c))}`,
+    rule: t("calculator.algQuadraticFormula", {
+      a: plain(numQ(a)),
+      b: plain(numQ(b)),
+      c: plain(numQ(c)),
+    }),
     math: [formulaText(a, b, disc, v)],
   });
   if (disc.n < 0n) {
-    steps.push({ rule: `b² − 4ac = ${plain(numQ(disc))} is negative`, math: answerExpr([], v) });
-    return { values: [], approx: false, message: "No real solution", steps };
+    steps.push({
+      rule: t("calculator.algDiscriminantNegative", { value: plain(numQ(disc)) }),
+      math: answerExpr([], v),
+    });
+    return { values: [], approx: false, message: t("calculator.algNoRealSolution"), steps };
   }
   const root = sqrt(numQ(disc));
   const two = numQ(qmul(q(2), a));
@@ -244,7 +267,7 @@ function quadraticFormula(p: Q[], v: string, steps: SolveStep[]): Solution {
       : div(add(numQ(qneg(b)), sign < 0 ? neg(root) : root), two);
   const values = disc.n === 0n ? [first] : [value(-1), value(1)];
   values.sort((x, y) => evaluate(x) - evaluate(y));
-  steps.push({ rule: "Simplify", math: answerExpr(values, v) });
+  steps.push({ rule: t("calculator.algSimplify"), math: answerExpr(values, v) });
   return { values, approx: false, steps };
 }
 
@@ -293,7 +316,10 @@ function isolate(
       const moved = add(...rest);
       r = sub(r, moved);
       l = inner;
-      steps.push({ rule: `Subtract ${plain(moved)} from both sides`, math: [pair(l, r)] });
+      steps.push({
+        rule: t("calculator.algSubtractBoth", { value: plain(moved) }),
+        math: [pair(l, r)],
+      });
       continue;
     }
     if (l.t === "mul") {
@@ -303,7 +329,10 @@ function isolate(
       const by = mul(...rest);
       r = div(r, by);
       l = inner;
-      steps.push({ rule: `Divide both sides by ${plain(by)}`, math: [pair(l, r)] });
+      steps.push({
+        rule: t("calculator.algDivideBoth", { value: plain(by) }),
+        math: [pair(l, r)],
+      });
       continue;
     }
     if (l.t === "pow") {
@@ -312,34 +341,27 @@ function isolate(
         const n = l.exp;
         if (n.t === "num" && qint(n.v) && n.v.n % 2n === 0n) {
           if (evaluate(r) < 0)
-            return { values: [], approx: false, message: "No real solution", steps };
+            return { values: [], approx: false, message: t("calculator.algNoRealSolution"), steps };
           const root = pow(r, div(ONE, n));
           if (isNum(root, 0)) {
             l = l.base;
             r = ZERO;
-            steps.push({ rule: `Take the ${ordinal(n)} root`, math: [pair(l, r)] });
+            steps.push({ rule: takeRoot(n, false), math: [pair(l, r)] });
             continue;
           }
-          return branches(
-            l.base,
-            [root, neg(root)],
-            v,
-            angle,
-            steps,
-            `Take the ${ordinal(n)} root of both sides`,
-          );
+          return branches(l.base, [root, neg(root)], v, angle, steps, takeRoot(n, true));
         }
         if (n.t === "num" && n.v.n < 0n && evaluate(r) === 0)
-          return { values: [], approx: false, message: "No solution", steps };
+          return { values: [], approx: false, message: t("calculator.algNoSolution"), steps };
         if (n.t === "num" && n.v.d === 2n && evaluate(r) < 0)
-          return { values: [], approx: false, message: "No real solution", steps };
+          return { values: [], approx: false, message: t("calculator.algNoRealSolution"), steps };
         r = pow(r, div(ONE, n));
         l = l.base;
         steps.push({
           rule:
             n.t === "num" && n.v.n === 1n && n.v.d === 2n
-              ? "Square both sides"
-              : `Raise both sides to the power ${plain(div(ONE, n))}`,
+              ? t("calculator.algSquareBoth")
+              : t("calculator.algRaiseToPower", { value: plain(div(ONE, n)) }),
           math: [pair(l, r)],
         });
         continue;
@@ -347,7 +369,7 @@ function isolate(
       if (free(l.base, v)) {
         // a^u = r → u = ln(r)/ln(a); e^u = r → u = ln(r).
         if (evaluate(r) <= 0)
-          return { values: [], approx: false, message: "No real solution", steps };
+          return { values: [], approx: false, message: t("calculator.algNoRealSolution"), steps };
         const base = l.base;
         const exact = exactLog(base, r);
         r =
@@ -357,8 +379,8 @@ function isolate(
         steps.push({
           rule:
             base.t === "sym" && base.name === "e"
-              ? "Take ln of both sides"
-              : `Take the logarithm base ${plain(base)}`,
+              ? t("calculator.algTakeLn")
+              : t("calculator.algTakeLog", { base: plain(base) }),
           math: [pair(l, r)],
         });
         continue;
@@ -371,16 +393,17 @@ function isolate(
         case "ln":
           r = pow(sym("e"), r);
           l = inner;
-          steps.push({ rule: "Raise e to both sides", math: [pair(l, r)] });
+          steps.push({ rule: t("calculator.algRaiseE"), math: [pair(l, r)] });
           continue;
         case "log":
           r = pow(num(10), r);
           l = inner;
-          steps.push({ rule: "Raise 10 to both sides", math: [pair(l, r)] });
+          steps.push({ rule: t("calculator.algRaiseTen"), math: [pair(l, r)] });
           continue;
         case "abs":
-          if (evaluate(r) < 0) return { values: [], approx: false, message: "No solution", steps };
-          return branches(inner, [r, neg(r)], v, angle, steps, "An absolute value is r or −r");
+          if (evaluate(r) < 0)
+            return { values: [], approx: false, message: t("calculator.algNoSolution"), steps };
+          return branches(inner, [r, neg(r)], v, angle, steps, t("calculator.algAbsolute"));
         case "sin":
         case "cos":
         case "tan":
@@ -412,14 +435,18 @@ function branches(
   }
   const unique = values.filter((a, i) => values.findIndex((b) => plain(b) === plain(a)) === i);
   unique.sort((a, b) => evaluate(a) - evaluate(b));
-  steps.push({ rule: "Solve each", math: answerExpr(unique, v) });
+  steps.push({ rule: t("calculator.algSolveEach"), math: answerExpr(unique, v) });
   return { values: unique, approx: false, steps };
 }
 
-function ordinal(n: Expr): string {
-  if (isNum(n, 2)) return "square";
-  if (isNum(n, 3)) return "cube";
-  return `${plain(n)}th`;
+function takeRoot(n: Expr, ofBoth: boolean): string {
+  if (isNum(n, 2))
+    return t(ofBoth ? "calculator.algTakeSquareRootBoth" : "calculator.algTakeSquareRoot");
+  if (isNum(n, 3))
+    return t(ofBoth ? "calculator.algTakeCubeRootBoth" : "calculator.algTakeCubeRoot");
+  return t(ofBoth ? "calculator.algTakeNthRootBoth" : "calculator.algTakeNthRoot", {
+    n: plain(n),
+  });
 }
 
 /** log_base(r) when it is a whole or simple number: 2^x = 16 → x = 4. */
@@ -443,7 +470,7 @@ function trigFamily(
 ): Solution | null {
   const value = evaluate(r);
   if (name !== "tan" && Math.abs(value) > 1 + 1e-12)
-    return { values: [], approx: false, message: "No real solution", steps };
+    return { values: [], approx: false, message: t("calculator.algNoRealSolution"), steps };
   const k = sym("k");
   const full = angle === "deg" ? num(360) : mul(num(2), PI);
   const half = angle === "deg" ? num(180) : PI;
@@ -458,7 +485,7 @@ function trigFamily(
   else if (name === "cos") rights = [add(base, mul(full, k)), add(neg(base), mul(full, k))];
   else rights = [add(base, mul(half, k))];
   steps.push({
-    rule: `Every angle with ${name} = ${plain(r)}, k any whole number`,
+    rule: t("calculator.algEveryAngle", { name, value: plain(r) }),
     math: orExpr(rights.map((right) => pair(inner, right))),
   });
   const values: Expr[] = [];
@@ -468,7 +495,8 @@ function trigFamily(
     values.push(...solved.values);
   }
   const unique = values.filter((a, i) => values.findIndex((b) => plain(b) === plain(a)) === i);
-  if (unique.length > 1) steps.push({ rule: "Solve each", math: answerExpr(unique, v) });
+  if (unique.length > 1)
+    steps.push({ rule: t("calculator.algSolveEach"), math: answerExpr(unique, v) });
   return { values: unique, approx: false, integer: "k", steps };
 }
 
@@ -558,12 +586,12 @@ function numeric(e: Expr, v: string, angle: "deg" | "rad", steps: SolveStep[]): 
   };
   const roots = numericRoots(f);
   if (roots.length === 0)
-    return { values: [], approx: true, message: "No solution found between −100 and 100", steps };
-  if (roots.length > 12) throw new AlgebraError("Too many solutions to list");
+    return { values: [], approx: true, message: t("calculator.algNoSolutionRange"), steps };
+  if (roots.length > 12) throw new AlgebraError(t("calculator.algTooManySolutions"));
   return {
     values: roots.map((r) => num(Math.round(r * 1e9), 1e9)),
     approx: true,
-    steps: [...steps, { rule: "Found numerically", math: answerExpr([], v) }],
+    steps: [...steps, { rule: t("calculator.algFoundNumerically"), math: answerExpr([], v) }],
   };
 }
 
