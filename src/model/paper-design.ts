@@ -30,6 +30,7 @@ import type { PaperEntry } from "./paper-library";
 import { PAGE_SIZES, sizeGeometry } from "./templates";
 import { DEFAULT_MARGIN_LINE_COLOR } from "./paper-extras";
 import { mmToPage } from "./units";
+import { t } from "../i18n/translate";
 
 export { DEFAULT_MARGIN_LINE_COLOR };
 
@@ -175,7 +176,14 @@ export function designBackdrop(design: PaperDesign): SyntheticBackdrop {
 /** My templates' entry for the design saved at `path`. */
 export function designEntry(path: string, design: PaperDesign): PaperEntry {
   const { width, height } = designGeometry(design);
-  return { path, page: 0, width, height, name: design.name || "Paper", design };
+  return {
+    path,
+    page: 0,
+    width,
+    height,
+    name: design.name || t("notebooks.paperDesign.defaultName"),
+    design,
+  };
 }
 
 // --- The file ------------------------------------------------------------------
@@ -292,28 +300,24 @@ function mm(value: number): string {
   return `${Number(value.toFixed(1))} mm`;
 }
 
-const SIDE_NAMES: Readonly<Record<PaperSide | MarginLineSides, string>> = {
-  top: "Top",
-  right: "Right",
-  bottom: "Bottom",
-  left: "Left",
-  both: "Both",
-};
+function sideName(side: PaperSide | MarginLineSides): string {
+  return t(`notebooks.paperDesign.side.${side}`);
+}
 
 /** The margins as their folded heading shows them: "None", "20 mm", or each side's. */
 export function marginsSummary(margins: Record<PaperSide, number>): string {
   const values = PAPER_SIDES.map((side) => margins[side]);
-  if (values.every((v) => v === 0)) return "None";
+  if (values.every((v) => v === 0)) return t("notebooks.paperDesign.none");
   if (values.every((v) => v === values[0])) return mm(values[0]);
   return `${values.map((v) => Number(v.toFixed(1))).join(" · ")} mm`;
 }
 
 /** The blank band as its heading shows it: "None" or "Bottom · 50 mm". */
 export function blankSummary(blank: PaperDesign["blank"]): string {
-  return blank ? `${SIDE_NAMES[blank.side]} · ${mm(blank.size)}` : "None";
+  return blank ? `${sideName(blank.side)} · ${mm(blank.size)}` : t("notebooks.paperDesign.none");
 }
 
 /** The margin line as its heading shows it: "None" or "Left · 25 mm". */
 export function marginLineSummary(line: PaperDesign["marginLine"]): string {
-  return line ? `${SIDE_NAMES[line.sides]} · ${mm(line.inset)}` : "None";
+  return line ? `${sideName(line.sides)} · ${mm(line.inset)}` : t("notebooks.paperDesign.none");
 }

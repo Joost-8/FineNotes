@@ -333,4 +333,17 @@ export const settings = {
   "settings.feedback.ideas": "Ideas and questions",
   "settings.feedback.bug": "Report a bug",
   "settings.feedback.support": "Support FineNotes",
+  "settings.download.offline": "Downloads when you're online.",
+  "settings.download.http": "GitHub did not send the file ({detail}). Try again later.",
+  "settings.download.damaged": "The download arrived damaged. Try again.",
+  "settings.download.storage": "The file could not be saved: {detail}",
+  "settings.download.checking": "Checking…",
+  "settings.download.missing": "Not downloaded yet ({size}).",
+  "settings.download.outdated":
+    "Version {old} is on this device; {version} is ready to download ({size}).",
+  "settings.download.unusable":
+    "Version {old} no longer works with this FineNotes: download {version} ({size}).",
+  "settings.download.progress": "Downloading… {percent}% of {size}",
+  "settings.download.verifying": "Checking the download…",
+  "settings.download.ready": "Version {version}, {size}, on this device.",
 } as const;

@@ -869,4 +869,11 @@ export const notebooks = {
   "notebooks.picker.apply": "Apply",
   "notebooks.picker.anyPaper": "Any paper colour",
   "notebooks.picker.anyLine": "Any line colour",
+  "notebooks.paperDesign.none": "None",
+  "notebooks.paperDesign.defaultName": "Paper",
+  "notebooks.paperDesign.side.top": "Top",
+  "notebooks.paperDesign.side.right": "Right",
+  "notebooks.paperDesign.side.bottom": "Bottom",
+  "notebooks.paperDesign.side.left": "Left",
+  "notebooks.paperDesign.side.both": "Both",
 } as const;

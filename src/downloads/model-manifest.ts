@@ -208,13 +208,13 @@ export function formatSize(bytes: number): string {
 export function failureText(reason: FailReason, detail: string): string {
   switch (reason) {
     case "offline":
-      return "Downloads when you're online.";
+      return t("settings.download.offline");
     case "http":
-      return `GitHub did not send the file (${detail}). Try again later.`;
+      return t("settings.download.http", { detail });
     case "damaged":
-      return "The download arrived damaged. Try again.";
+      return t("settings.download.damaged");
     case "storage":
-      return `The file could not be saved: ${detail}`;
+      return t("settings.download.storage", { detail });
   }
 }
 
@@ -223,19 +223,30 @@ export function stateText(asset: ModelAsset, state: AssetState): string {
   const size = formatSize(totalBytes(asset));
   switch (state.kind) {
     case "unknown":
-      return "Checking…";
+      return t("settings.download.checking");
     case "missing":
-      return `Not downloaded yet (${size}).`;
+      return t("settings.download.missing", { size });
     case "outdated":
       return state.older.usable
-        ? `Version ${state.older.version} is on this device; ${asset.version} is ready to download (${size}).`
-        : `Version ${state.older.version} no longer works with this FineNotes: download ${asset.version} (${size}).`;
+        ? t("settings.download.outdated", {
+            old: state.older.version,
+            version: asset.version,
+            size,
+          })
+        : t("settings.download.unusable", {
+            old: state.older.version,
+            version: asset.version,
+            size,
+          });
     case "downloading":
-      return `Downloading… ${percent(state.received, state.total || totalBytes(asset))}% of ${size}`;
+      return t("settings.download.progress", {
+        percent: percent(state.received, state.total || totalBytes(asset)),
+        size,
+      });
     case "verifying":
-      return "Checking the download…";
+      return t("settings.download.verifying");
     case "ready":
-      return `Version ${asset.version}, ${size}, on this device.`;
+      return t("settings.download.ready", { version: asset.version, size });
     case "failed":
       return failureText(state.reason, state.detail);
   }
@@ -270,3 +281,4 @@ export function toHex(bytes: ArrayBuffer | Uint8Array): string {
   for (const b of view) out += b.toString(16).padStart(2, "0");
   return out;
 }
+import { t } from "../i18n/translate";
