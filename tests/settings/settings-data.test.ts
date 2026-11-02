@@ -23,6 +23,8 @@ import {
   laserDefaultColorOf,
   openSectionsOf,
   pagesAreDark,
+  handwritingReaderOf,
+  highlighterAlphaOf,
   highlighterTipOf,
   penPreferencesOf,
   paperWidthFrom,
@@ -36,7 +38,9 @@ import {
   shownPaperTheme,
   shownValue,
   pageAppearanceOf,
+  storeHandwritingReader,
   storePenPreferences,
+  switchLlmVendor,
   storeReturnToPen,
   storeShownValue,
   withSection,
@@ -85,6 +89,7 @@ const FRESH_INSTALL = {
   updateReminders: true,
   llmVendor: "anthropic",
   llmModel: "",
+  llmModels: {},
   openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
@@ -223,6 +228,7 @@ const USED_VAULT = {
   updateReminders: false,
   llmVendor: "custom",
   llmModel: "llava:13b",
+  llmModels: { openai: "gpt-4o" },
   openRouterSkipCompressed: true,
   llmApiKey: "sk-ant-legacy",
   llmBaseUrl: "http://nas.local:11434/v1",
@@ -633,6 +639,8 @@ describe("choices that set two switches", () => {
       tuckOnWrite: "off",
       returnToPen: "never",
       highlighterTip: "round",
+      highlighterAlpha: 0.4,
+      straightHighlighter: true,
     });
     storePenPreferences(settings, { tuckOnWrite: "until-lift" });
     expect(penPreferencesOf(settings)).toEqual({
@@ -641,6 +649,8 @@ describe("choices that set two switches", () => {
       tuckOnWrite: "until-lift",
       returnToPen: "never",
       highlighterTip: "round",
+      highlighterAlpha: 0.4,
+      straightHighlighter: true,
     });
     storePenPreferences(settings, { snapMode: "disabled", snapCurve: 30, returnToPen: "both" });
     expect([settings.snapMode, settings.drawAndHold]).toEqual(["disabled", false]);
@@ -654,9 +664,61 @@ describe("choices that set two switches", () => {
       tuckOnWrite: "until-lift",
       returnToPen: "both",
       highlighterTip: "round",
+      highlighterAlpha: 0.4,
+      straightHighlighter: true,
     });
     storePenPreferences(settings, { tuckOnWrite: "until-tap" });
     expect(settings.tuckPenOptionsOnWrite).toBe("until-tap");
+  });
+
+  it("keeps the highlighter's opacity and straightening from its own settings page", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    storePenPreferences(settings, { highlighterAlpha: 0.63, straightHighlighter: false });
+    // Opacity steps by 5%, as the slider does.
+    expect(settings.highlighterAlpha).toBe(0.65);
+    expect(settings.straightHighlighter).toBe(false);
+    storePenPreferences(settings, { highlighterAlpha: 0 });
+    expect(settings.highlighterAlpha).toBe(0.1);
+    expect(highlighterAlphaOf(4)).toBe(1);
+    expect(highlighterAlphaOf("half")).toBe(0.4);
+    expect(penPreferencesOf(settings)).toMatchObject({
+      highlighterAlpha: 0.1,
+      straightHighlighter: false,
+    });
+  });
+
+  it("keeps each AI service's model when another is tried and the first chosen again", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.llmModel = " claude-opus-5-5 ";
+    switchLlmVendor(settings, "openai");
+    expect([settings.llmVendor, settings.llmModel]).toEqual(["openai", ""]);
+    settings.llmModel = "gpt-4o";
+    switchLlmVendor(settings, "anthropic");
+    expect([settings.llmVendor, settings.llmModel]).toEqual(["anthropic", "claude-opus-5-5"]);
+    expect(settings.llmModels).toEqual({ openai: "gpt-4o" });
+    // An emptied model is the service's default, so nothing is kept for it.
+    settings.llmModel = "";
+    switchLlmVendor(settings, "openai");
+    expect(settings.llmModels).toEqual({});
+    expect(settings.llmModel).toBe("gpt-4o");
+    switchLlmVendor(settings, "openai");
+    expect(settings.llmModel).toBe("gpt-4o");
+  });
+
+  it("reads handwriting on this device as one choice, stored as its two switches", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    expect(handwritingReaderOf(settings, false)).toBe("grape");
+    expect(handwritingReaderOf(settings, true)).toBe("mine");
+    storeHandwritingReader(settings, "grape");
+    expect([settings.handwritingOnDevice, settings.useLearnedHandwriting]).toEqual([true, false]);
+    expect(handwritingReaderOf(settings, true)).toBe("grape");
+    storeHandwritingReader(settings, "mine");
+    storeHandwritingReader(settings, "off");
+    // Off leaves the learned model's switch as it was, for coming back.
+    expect([settings.handwritingOnDevice, settings.useLearnedHandwriting]).toEqual([false, true]);
+    expect(handwritingReaderOf(settings, true)).toBe("off");
+    storeHandwritingReader(settings, "nonsense");
+    expect(handwritingReaderOf(settings, false)).toBe("grape");
   });
 
   it("keeps the highlighter's tip, reading anything but the chisel as round", () => {

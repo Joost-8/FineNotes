@@ -87,6 +87,7 @@ import {
   type SettingsSection,
   changesTabLayout,
   endpointWarning,
+  handwritingReaderOf,
   paperWidthFrom,
   parseColorList,
   sectionOpen,
@@ -140,7 +141,6 @@ import { SavedPenModal } from "./view/saved-pen-modal";
 import type { BarrelAction } from "./input/pen-modifiers";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
-import { PEN_OPTIONS_ON_WRITE_NAMES } from "./view/tool-return";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -217,7 +217,15 @@ const PEN_CURSOR_NAMES: Record<PenCursorStyle, string> = {
   ink: "Ink dot",
   crosshair: "Crosshair",
   arrow: "Arrow",
+  none: "None",
 };
+
+/** "Read handwriting with", as its dropdown and the section's status name the choices. */
+const READER_NAMES = {
+  off: "Off",
+  grape: "Grape",
+  mine: "Your model",
+} as const;
 
 /** "Updates": how a newer FineNotes is told, as its dropdown names the choices. */
 const UPDATE_CHOICES = {
@@ -341,25 +349,14 @@ const DESC = {
   stylusClick:
     "What a click of the side button does with the pen held just above the page, not " +
     "touching it. A second click closes the menu again.",
-  tuckPenOptionsOnWrite:
-    "As soon as the pen or highlighter starts writing, the options under the tool bar (pen " +
-    "type, widths and colors) tuck away, as a second tap on the pen does. Until you tap " +
-    "the pen: they stay away until you tap it. Until the pen lifts: they come back by " +
-    "themselves a second after the pen leaves the page. The other tools keep theirs.",
-  straightHighlighter:
-    "A highlighter stroke drawn along a line becomes a perfectly straight line when you lift " +
-    "the pen. While you draw it follows your hand, and a curve stays as you drew it.",
   lassoAnyPart:
     "On (the default), the lasso takes a stroke or shape when any part of it is inside the loop or " +
     "touches its line, as Notability does. Off, at least half of it must be inside, as in " +
     "Goodnotes. Pictures and text boxes are taken by their middle either way.",
-  zoomBoxAutoAdvance:
-    "Auto-advance is the double-arrow button on the Zoom box's bar. When it is on and a " +
-    "stroke reaches the right part of the box, the box moves right; at the end of the line " +
-    "it wraps to the next. This sets how wide that right part is.",
   penCursor:
     "On a computer, the pointer over the page while a pen, the highlighter or the laser is " +
-    "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, or the arrow.",
+    "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, the " +
+    "arrow, or none at all (the laser keeps its point).",
   checkForUpdates:
     "Once a day, FineNotes reads the number of its newest release from GitHub " +
     "(github.com/Joost-8/FineNotes) and puts a dot on the toolbar's gear when it is newer. " +
@@ -461,7 +458,7 @@ const MODEL_PURPOSE = {
   grape:
     "Grape (handwriting recognizer model) reads your handwriting: notebook search and Obsidian's search find it, and a lassoed heading or word fills in its title or link.",
   learned:
-    "Grape tuned to your own handwriting, learned on this device from the practice sheets you write (Learn your handwriting, below).",
+    "Grape tuned to your own handwriting, learned on this device from the practice sheets you write (Learn your handwriting, under AI and handwriting).",
 };
 
 /** How a model's state reads at a glance: the colour of the dot before its state. */
@@ -920,6 +917,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   override getControlValue(key: string): unknown {
     if (key === "checkForUpdates") return updateChoiceOf(this.plugin.settings);
+    if (key === "handwritingOnDevice") {
+      return handwritingReaderOf(this.plugin.settings, this.ownModelHere());
+    }
     return shownValue(this.plugin.settings, key);
   }
 
@@ -952,6 +952,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.update();
       return;
     }
+    if (key === "handwritingOnDevice") {
+      // Saved by the plugin, which offers Grape if it is needed now.
+      await this.plugin.setHandwritingReader(String(value));
+      // Its rows show only while something reads.
+      this.update();
+      return;
+    }
     if (key === "pressureWidth") {
       // Saved by the plugin, which redraws every open notebook's ink.
       await this.plugin.setPressureWidth(value as boolean);
@@ -968,6 +975,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       // An approval still pending in the browser would otherwise land on the
       // vendor the user just left.
       this.plugin.cancelOpenRouterConnect();
+      // Saved by the plugin, which keeps the key and model of the one left.
+      await this.plugin.switchLlmVendor(value as LlmVendor);
+      this.update();
+      return;
     }
     storeShownValue(this.plugin.settings, key, value);
     await this.plugin.saveSettings();
@@ -975,7 +986,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     if (key === "speechModel") this.plugin.speech.store();
     if (changesTabLayout(key)) this.update();
     // Turned on: Grape is needed now, so offer it if it is not here.
-    if ((key === "handwritingOnDevice" || key === "checkHandwrittenWords") && value === true) {
+    if (key === "checkHandwrittenWords" && value === true) {
       await this.plugin.grape.model.check();
       this.plugin.grape.offer("ask");
     }
@@ -1063,16 +1074,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "fingers",
           "tap",
         ]),
-        this.more("writing", "Pen options, text boxes, colors, highlighter, lasso"),
-        this.info(
-          dropdown(
-            "tuckPenOptionsOnWrite",
-            "Hide pen options while writing",
-            "",
-            PEN_OPTIONS_ON_WRITE_NAMES,
-            ["pen", "options", "pill", "hide", "tuck", "toolbar"],
-          ),
-          DESC.tuckPenOptionsOnWrite,
+        this.more(
+          "writing",
+          Platform.isMobile ? "Text boxes, colors, lasso" : "Text boxes, colors, lasso, cursor",
         ),
         this.info(
           toggle("textDragSize", "Drag to size text boxes", "", [
@@ -1087,21 +1091,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           drawnRow("Custom colors", "", (s) => this.drawCustomColors(s), ["palette"]),
           DESC.customColors,
         ),
-        controlRow(
-          "Highlighter opacity",
-          "",
-          // In percent; data.json keeps 0–1 (settings-data.ts converts).
-          { type: "slider", key: "highlighterAlpha", min: 10, max: 100, step: 5 },
-          ["transparency", "alpha"],
-        ),
-        this.info(
-          toggle("straightHighlighter", "Straighten highlighter strokes", "", [
-            "highlighter",
-            "straight",
-            "line",
-          ]),
-          DESC.straightHighlighter,
-        ),
         this.info(
           toggle("lassoTouches", "Lasso takes what it touches", "", [
             "lasso",
@@ -1110,30 +1099,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "notability",
           ]),
           DESC.lassoAnyPart,
-        ),
-        controlRow(
-          "Zoom box line spacing",
-          "Page px added after each line; negative overlaps.",
-          { type: "slider", key: "zoomBoxLineStep", min: -50, max: 100, step: 5 },
-          ["magnifier", "zoom", "line", "spacing", "offset", "overlap"],
-        ),
-        this.info(
-          controlRow(
-            "Zoom box auto-advance threshold",
-            "Triggers in the right percentage; 33% means the right third.",
-            { type: "slider", key: "zoomBoxAutoAdvanceThreshold", min: 10, max: 50, step: 1 },
-            [
-              "magnifier",
-              "zoom",
-              "advance",
-              "threshold",
-              "trigger",
-              "percentage",
-              "line",
-              "scroll",
-            ],
-          ),
-          DESC.zoomBoxAutoAdvance,
         ),
         {
           ...this.info(
@@ -1858,9 +1823,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     ];
     return this.section(
       "ai",
-      "AI with your own key",
+      "AI and handwriting",
       "sparkles",
       [
+        ...this.handwritingRows(),
         drawnRow(
           "Set up an AI service",
           "Transcribe, ask and make pictures with your own key.",
@@ -1870,8 +1836,115 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
         ...rows.map(fold),
       ],
-      () => [{ text: folded() ? "Not set up" : VENDORS[settings.llmVendor].label }],
+      () => [
+        {
+          text: `${READER_NAMES[handwritingReaderOf(settings, this.ownModelHere())]} · ${
+            folded() ? "AI not set up" : VENDORS[settings.llmVendor].label
+          }`,
+        },
+      ],
     );
+  }
+
+  /** Whether a model learned from the user's handwriting is on this device. */
+  private ownModelHere(): boolean {
+    return this.learningState?.files.current ?? false;
+  }
+
+  /**
+   * Reading handwriting on this device, at the head of "AI and handwriting":
+   * which model reads (none, Grape, or the one learned from the user's own
+   * writing: one choice where there were two switches in two places), and
+   * while one does, what else reads with it. The models themselves are
+   * downloaded and managed under "Models on this device".
+   */
+  private handwritingRows(): SettingDefinition[] {
+    const { settings } = this.plugin;
+    const reading = (): boolean => settings.handwritingOnDevice !== false;
+    // Whether "Your model" is offered depends on the files: the tab is
+    // rebuilt once they are read.
+    this.loadLearning();
+    const choices: Record<string, string> = { off: READER_NAMES.off, grape: READER_NAMES.grape };
+    if (this.ownModelHere()) choices.mine = READER_NAMES.mine;
+    return [
+      this.info(
+        // One choice stored as two switches: getControlValue and
+        // storeControlValue read and write both under this key.
+        controlRow(
+          "Read handwriting with",
+          "",
+          { type: "dropdown", key: "handwritingOnDevice", options: choices },
+          [
+            "read handwriting on this device",
+            "read with my model",
+            "handwriting model",
+            "handwriting",
+            "recognition",
+            "grape",
+            "learned",
+            "search",
+            "offline",
+          ],
+        ),
+        "Reads your notebooks on this device, so search, links and titles find your " +
+          "handwriting; nothing leaves the device. Grape is FineNotes' own model; your model is " +
+          "Grape after it learned your handwriting from the practice sheets (Learn your " +
+          "handwriting, below). In beta: it misreads some words, more so in small or hurried " +
+          "writing.",
+      ),
+      {
+        ...this.info(
+          toggle("checkHandwrittenWords", "Underline words it may have misread", "", [
+            "handwriting",
+            "spelling",
+            "correct",
+            "misread",
+            "underline",
+          ]),
+          "A test. After a page is read, words it is not sure of get a dotted underline. Tap " +
+            "one with a finger to correct the reading, confirm it, or ignore the word; " +
+            "learning your handwriting uses your answers too. Uses the word list built into " +
+            "FineNotes, plus your own words.txt in the plugin's handwriting folder.",
+        ),
+        visible: reading,
+      },
+      {
+        ...this.info(
+          toggle("calcNotes", "Calculate lines that end in =", "", [
+            "calculation notes",
+            "calculate",
+            "calculator",
+            "maths",
+            "math",
+            "sum",
+            "equals",
+            "answer",
+          ]),
+          CALC_NOTES_INFO,
+        ),
+        visible: reading,
+      },
+      this.info(
+        drawnRow(
+          "Learn your handwriting",
+          "",
+          (s) => this.drawLearnRow(s),
+          [
+            "write the practice sheets",
+            "learn my handwriting",
+            "handwriting",
+            "practice",
+            "sheet",
+            "learn",
+            "personal",
+            "fine-tune",
+            "recognition",
+          ],
+          reading,
+        ),
+        this.learnInfo(),
+      ),
+    ];
   }
 
   /** Ideas, bugs, support and FineNotes' accounts: one line of links at the very end. */
@@ -2001,49 +2074,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           `${MODEL_PURPOSE.grape} ${download}`,
         ),
         this.info(
-          toggle("handwritingOnDevice", "Read handwriting on this device (beta)", "", [
-            "handwriting",
-            "recognition",
-            "search",
-            "offline",
-          ]),
-          "Reads your notebooks with Grape, or with your own model below. In beta: it " +
-            "misreads some words, more so in small or hurried writing, so check what it reads " +
-            "before relying on it.",
-        ),
-        {
-          ...this.info(
-            toggle("checkHandwrittenWords", "Underline words it may have misread", "", [
-              "handwriting",
-              "spelling",
-              "correct",
-              "misread",
-              "underline",
-            ]),
-            "A test. After a page is read, words it is not sure of get a dotted underline. Tap " +
-              "one with a finger to correct the reading, confirm it, or ignore the word; " +
-              "learning your handwriting uses your answers too. Uses the word list built into " +
-              "FineNotes, plus your own words.txt in the plugin's handwriting folder.",
-          ),
-          visible: reading,
-        },
-        {
-          ...this.info(
-            toggle("calcNotes", "Calculate lines that end in =", "", [
-              "calculation notes",
-              "calculate",
-              "calculator",
-              "maths",
-              "math",
-              "sum",
-              "equals",
-              "answer",
-            ]),
-            CALC_NOTES_INFO,
-          ),
-          visible: reading,
-        },
-        this.info(
           drawnRow(
             "Your handwriting model",
             "",
@@ -2071,41 +2101,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]
             .filter(Boolean)
             .join(" "),
-        ),
-        {
-          ...this.info(
-            toggle("useLearnedHandwriting", "Read with my model", "", [
-              "handwriting",
-              "learned",
-              "personal",
-              "grape",
-              "fine-tune",
-            ]),
-            "On: your notebooks are read with the model learned from your handwriting. Off: " +
-              "with Grape alone. Switching it off keeps your model on this device, ready to " +
-              "switch on again.",
-          ),
-          visible: () => reading() && onDevice,
-        },
-        this.info(
-          drawnRow(
-            "Learn your handwriting",
-            "",
-            (s) => this.drawLearnRow(s),
-            [
-              "write the practice sheets",
-              "learn my handwriting",
-              "handwriting",
-              "practice",
-              "sheet",
-              "learn",
-              "personal",
-              "fine-tune",
-              "recognition",
-            ],
-            reading,
-          ),
-          this.learnInfo(),
         ),
         ...others.map((store) =>
           this.info(

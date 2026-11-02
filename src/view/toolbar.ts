@@ -4418,9 +4418,10 @@ export class Toolbar {
 
   /**
    * The pen in hand's own settings, behind "Pen settings" in the pen type
-   * menu, then two that hold for every pen: "Hide pen options while
-   * writing" with its three choices, and "Back to the pen" with its four,
-   * each one row with its choice in a dropdown.
+   * menu (the highlighter's opacity and straightening too, which were in
+   * Obsidian's settings until 2.7), then two that hold for every pen: "Hide
+   * pen options while writing" with its three choices, and "Back to the
+   * pen" with its four, each one row with its choice in a dropdown.
    */
   private renderPenSettings(body: HTMLElement, back: () => void): void {
     this.popoverPageHead(body, `${this.activePenType().label} settings`, "Back to pen types", back);
@@ -4428,6 +4429,9 @@ export class Toolbar {
     const prefs = this.callbacks.penPreferences?.();
     const save = this.callbacks.onPenPreferences;
     if (!prefs || !save) return;
+    if (this.activePenType().tool === "highlighter") {
+      this.renderHighlighterLook(body, prefs, save);
+    }
     body.createDiv({ cls: "goodobsidian-popover-divider" });
     this.choiceMenu<PenOptionsOnWrite>(
       body,
@@ -4452,6 +4456,45 @@ export class Toolbar {
       cls: "goodobsidian-popover-hint",
       text: "After the eraser, lasso, text or shape tool, go back to the pen you had.",
     });
+  }
+
+  /**
+   * The highlighter's opacity, 10-100%, and whether a stroke drawn along a
+   * line straightens when the pen lifts. Opacity is how every highlight is
+   * drawn, those on the page too, so it is saved when the slider is let go
+   * rather than redrawing every page at each step.
+   */
+  private renderHighlighterLook(
+    body: HTMLElement,
+    prefs: PenPreferences,
+    save: (patch: Partial<PenPreferences>) => void,
+  ): void {
+    body.createDiv({ cls: "goodobsidian-popover-divider" });
+    const head = body.createDiv({ cls: "goodobsidian-width-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: "Opacity" });
+    const readout = head.createDiv({ cls: "goodobsidian-width-readout" });
+    const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
+    const range = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": "Highlighter opacity" },
+    });
+    range.min = "10";
+    range.max = "100";
+    range.step = "5";
+    const show = (percent: number): void => {
+      range.value = String(percent);
+      range.setAttribute("aria-valuetext", `${percent}%`);
+      readout.setText(`${percent}%`);
+      syncRangeFill(range);
+    };
+    show(Math.round(prefs.highlighterAlpha * 100));
+    range.addEventListener("input", () => show(Number(range.value)));
+    range.addEventListener("change", () => save({ highlighterAlpha: Number(range.value) / 100 }));
+    const list = body.createDiv({ cls: "goodobsidian-switch-list" });
+    this.switchRow(list, "Straighten lines", prefs.straightHighlighter, (on) =>
+      save({ straightHighlighter: on }),
+    );
   }
 
   /**

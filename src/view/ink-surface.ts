@@ -39,6 +39,7 @@ import { type PdfRenderArea, boundsMeet } from "../canvas/pdf-raster";
  */
 
 import { Notice, Platform, setIcon } from "obsidian";
+import { syncRangeFill } from "./range-fill";
 import {
   DEFAULT_HIGHLIGHTER_ALPHA,
   FALLBACK_PRESSURE,
@@ -76,6 +77,7 @@ import {
   zoomCatcherWanted,
   zoomDeskColor,
   zoomTargetPress,
+  zoomLineStepText,
   zoomView,
   zoomViewPoint,
   zoomViewPointFree,
@@ -932,6 +934,8 @@ export interface InkSurfaceCallbacks {
   zoomBoxAutoAdvanceThreshold?: () => number;
   /** The Zoom box's auto-advance button changed the setting. */
   onZoomBoxAutoAdvance?: (on: boolean) => void;
+  /** The Zoom box's gear changed its line spacing or auto-advance zone. */
+  onZoomBoxSettings?: (patch: { lineStep?: number; threshold?: number }) => void;
   /**
    * Whether there is anything to undo or redo changed, so a host can grey
    * out its Undo and Redo buttons. Sent once on construction too.
@@ -1929,6 +1933,8 @@ export class InkSurface {
   private zoomFrame: FloatingWindow | null = null;
   private zoomCanvas: HTMLCanvasElement | null = null;
   private zoomReadout: HTMLElement | null = null;
+  /** The panel the Zoom box's gear opens, while it is open. */
+  private zoomSettingsEl: HTMLElement | null = null;
   /** Where the floating window was last put; the surface keeps it while it is open. */
   private zoomPlace: WindowPlace | null = null;
   /**
@@ -3403,6 +3409,16 @@ export class InkSurface {
    * changes: tiles and page previews are emptied, since they hold colour;
    * the stroke outlines they are drawn from hold none and stay.
    */
+  /** Draw highlighter ink this see-through (0.1–1), on the page and under the cursor. */
+  setHighlighterAlpha(alpha: number): void {
+    const renderer = this.renderer;
+    if (!renderer || renderer.highlighterAlpha === alpha) return;
+    renderer.highlighterAlpha = alpha;
+    renderer.invalidateAll();
+    this.syncInkCursor();
+    this.requestFrame();
+  }
+
   setPaperTheme(theme: PaperTheme): void {
     if (theme === this.paper) return;
     this.paper = theme;
@@ -4073,11 +4089,21 @@ export class InkSurface {
     this.syncInkCursor();
   }
 
+  /**
+   * The cursor the tool in hand wears. "None" hides the pens' pointer, but
+   * the laser's glowing point is what the laser shows, so it keeps it.
+   */
+  private shownCursor(): PenCursorStyle {
+    return this.penCursor === "none" && this.toolState.tool === "laser" ? "ink" : this.penCursor;
+  }
+
   private syncPenCursor(): void {
     const tool = this.toolState.tool;
     const pen = cursorToolOf(tool) !== null;
-    this.surfaceEl.toggleClass("is-pen-cursor", this.penCursor === "crosshair" && pen);
-    this.surfaceEl.toggleClass("is-ink-cursor", this.penCursor === "ink" && pen);
+    const style = this.shownCursor();
+    this.surfaceEl.toggleClass("is-pen-cursor", style === "crosshair" && pen);
+    this.surfaceEl.toggleClass("is-ink-cursor", style === "ink" && pen);
+    this.surfaceEl.toggleClass("is-no-cursor", style === "none" && pen);
     this.surfaceEl.toggleClass("is-laser", tool === "laser");
     this.syncInkCursor();
   }
@@ -4089,7 +4115,7 @@ export class InkSurface {
    * zoom step; skipped during a pinch, and drawn once it ends.
    */
   private syncInkCursor(): void {
-    if (this.penCursor !== "ink" || this.pinch) return;
+    if (this.shownCursor() !== "ink" || this.pinch) return;
     const tool = cursorToolOf(this.toolState.tool);
     if (!tool) return;
     const page = this.doc.pages[this.pageIndex];
@@ -4112,7 +4138,7 @@ export class InkSurface {
 
   /** A pen or mouse is down on the page, or lifted: the ink cursor shrinks to a dot meanwhile. */
   private markDrawing(on: boolean): void {
-    if (this.penCursor === "ink") this.surfaceEl.toggleClass("is-drawing", on);
+    if (this.shownCursor() === "ink") this.surfaceEl.toggleClass("is-drawing", on);
   }
 
   /** A key let go anywhere: space ends the hand (FineNotes#7), a held tool returns. */
@@ -7584,6 +7610,7 @@ export class InkSurface {
     this.zoomCanvas = null;
     this.zoomReadout = null;
     this.zoomReadoutText = "";
+    this.zoomSettingsEl = null;
     // The mode stays: the next tap on the Magnifier opens a box again.
     this.syncZoomCatcher();
     if (notify) this.callbacks.onZoomBoxChange?.(false);
@@ -7595,7 +7622,9 @@ export class InkSurface {
     const frame = new FloatingWindow({
       container: this.surfaceEl,
       cls: "goodobsidian-zoombox-window",
-      title: "Zoom box",
+      // No title on the bar: the grip and the magnified page say what it
+      // is, and its seven buttons need the room. Its name stays for screen readers.
+      title: "",
       label: "Zoom box",
       closeLabel: "Close zoom box",
       min: { w: 304, h: 160 },
@@ -7619,6 +7648,7 @@ export class InkSurface {
         },
         { icon: "minus", label: "Zoom out", run: () => this.scaleZoomWindow(1 / ZOOM_STEP) },
         { icon: "plus", label: "Zoom in", run: () => this.scaleZoomWindow(ZOOM_STEP) },
+        { icon: "settings", label: "Zoom box settings", run: () => this.toggleZoomSettings() },
       ],
       // Open at the bottom, above the options pill, and centred.
       firstPlace: (bounds) => zoomWindowFirstPlace(bounds),
@@ -7665,7 +7695,11 @@ export class InkSurface {
     );
     input.attach();
     this.zoomInput = input;
-    canvas.addEventListener("pointerdown", (event) => this.onZoomPanDown(event));
+    canvas.addEventListener("pointerdown", (event) => {
+      // Writing or panning in the window puts the gear's panel away.
+      this.closeZoomSettings();
+      this.onZoomPanDown(event);
+    });
     canvas.addEventListener("pointermove", (event) => this.onZoomPanMove(event));
     for (const type of ["pointerup", "pointercancel"] as const) {
       canvas.addEventListener(type, (event) => this.onZoomPanUp(event));
@@ -7916,6 +7950,94 @@ export class InkSurface {
     this.placeZoomBoxOn(next);
     this.ensureZoomTargetVisible();
     this.requestFrame();
+  }
+
+  /**
+   * The gear at the bar's right end: line spacing and how wide the
+   * auto-advance zone is, two sliders in a panel under the bar (they were
+   * rows in Obsidian's settings until 2.7). A second tap, or a touch in the
+   * window, puts it away.
+   */
+  private toggleZoomSettings(): void {
+    if (this.zoomSettingsEl) {
+      this.closeZoomSettings();
+      return;
+    }
+    const frame = this.zoomFrame;
+    if (!frame) return;
+    const panel = frame.el.createDiv({ cls: "goodobsidian-zoombox-settings" });
+    panel.setAttribute("role", "group");
+    panel.setAttribute("aria-label", "Zoom box settings");
+    this.zoomSettingsEl = panel;
+    this.zoomSettingSlider(panel, {
+      label: "Line spacing",
+      min: -50,
+      max: 100,
+      step: 5,
+      value: this.zoomLineStep(),
+      text: zoomLineStepText,
+      save: (lineStep) => this.callbacks.onZoomBoxSettings?.({ lineStep }),
+    });
+    this.zoomSettingSlider(panel, {
+      label: "Auto-advance zone",
+      min: 10,
+      max: 50,
+      step: 1,
+      value: this.zoomAutoAdvanceThreshold(),
+      text: (percent) => `${percent}%`,
+      save: (threshold) => this.callbacks.onZoomBoxSettings?.({ threshold }),
+    });
+    this.syncZoomSettingsButton();
+  }
+
+  private closeZoomSettings(): void {
+    if (!this.zoomSettingsEl) return;
+    this.zoomSettingsEl.remove();
+    this.zoomSettingsEl = null;
+    this.syncZoomSettingsButton();
+  }
+
+  private syncZoomSettingsButton(): void {
+    const gear = this.zoomFrame?.el.querySelector<HTMLElement>('[aria-label="Zoom box settings"]');
+    const open = this.zoomSettingsEl !== null;
+    gear?.toggleClass("is-active", open);
+    gear?.setAttribute("aria-expanded", String(open));
+  }
+
+  /** One slider of the gear's panel, styled as the pen menu's: name, value, track. */
+  private zoomSettingSlider(
+    panel: HTMLElement,
+    spec: {
+      label: string;
+      min: number;
+      max: number;
+      step: number;
+      value: number;
+      text: (value: number) => string;
+      save: (value: number) => void;
+    },
+  ): void {
+    const head = panel.createDiv({ cls: "goodobsidian-width-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: spec.label });
+    const readout = head.createDiv({ cls: "goodobsidian-width-readout" });
+    const range = panel.createDiv({ cls: "goodobsidian-width-slider" }).createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": spec.label },
+    });
+    range.min = String(spec.min);
+    range.max = String(spec.max);
+    range.step = String(spec.step);
+    const show = (value: number): void => {
+      range.value = String(value);
+      range.setAttribute("aria-valuetext", spec.text(value));
+      readout.setText(spec.text(value));
+      syncRangeFill(range);
+    };
+    show(spec.value);
+    range.addEventListener("input", () => show(Number(range.value)));
+    // Saved once the slider is let go, not at every step of the drag.
+    range.addEventListener("change", () => spec.save(Number(range.value)));
   }
 
   /** The user's page-px offset between Zoom box lines, clamped as the setting is. */
