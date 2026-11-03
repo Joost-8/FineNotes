@@ -31,6 +31,7 @@
   "license": "GPL-3.0-or-later",
   "dependencies": {
     "fflate": "0.8.3",
+    "onnxruntime-web": "1.30.0",
     "pdf-lib": "1.17.1"
   },
   "devDependencies": {
