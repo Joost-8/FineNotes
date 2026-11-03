@@ -226,6 +226,7 @@ import {
   isItemOff,
   migrateLayout,
   normalizeLayout,
+  placeOf,
 } from "./view/toolbar-layout";
 import {
   type CalculatorData,
@@ -663,7 +664,7 @@ export default class GoodObsidianPlugin extends Plugin {
     setting?.openTabById(this.manifest.id);
   }
 
-  private async openLibrary(): Promise<void> {
+  async openLibrary(): Promise<void> {
     const open = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
     const leaf = open ?? this.app.workspace.getLeaf("tab");
     if (!open) {
@@ -928,6 +929,12 @@ export default class GoodObsidianPlugin extends Plugin {
       saved !== null && "toolbarLayout" in saved
         ? normalizeLayout(this.settings.toolbarLayout)
         : migrateLayout(loaded.toolbarItems, loaded.toolbarOff, loaded.toolbarHome);
+    // The Home button (2.8) joins a bar customized before it: once, at the
+    // front of the start; a person who moves it away is not asked again.
+    if (saved !== null && !("toolbarHomeAdded" in saved) && placeOf(toolbar, "home") === "menu") {
+      toolbar.start.unshift("home");
+    }
+    this.settings.toolbarHomeAdded = true;
     this.settings.toolbarLayout = toolbar;
     delete loaded.toolbarItems;
     delete loaded.toolbarOff;

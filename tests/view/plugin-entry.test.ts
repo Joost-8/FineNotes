@@ -1427,7 +1427,7 @@ describe("Stylus only shown nowhere", () => {
       toolbarHome: [],
     } as never);
     expect(plugin.settings.toolbarLayout).toEqual({
-      start: ["thumbnails", "search", "ai", "undo", "redo"],
+      start: ["home", "thumbnails", "search", "ai", "undo", "redo"],
       middle: ["pen", "sticky", "select", "ruler", "accessories"],
       end: ["fullscreen", "addPage", "share", "more", "settings"],
       off: ["pan", "record"],

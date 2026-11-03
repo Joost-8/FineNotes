@@ -353,6 +353,8 @@ export interface GoodObsidianSettings {
    * `toolbarItems`, `toolbarOff` and `toolbarHome`, read once on load.
    */
   toolbarLayout: ToolbarLayout;
+  /** The Home button has been put on a bar customized before it existed (once). */
+  toolbarHomeAdded: boolean;
   /** Notebooks and folders starred in the library, by vault path. Cleaned where read. */
   libraryStars: string[];
   /** The colour and icon chosen for library folders, by vault path. Cleaned where read. */
@@ -521,6 +523,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
 
   savedPens: defaultSavedPens(),
   toolbarLayout: defaultLayout(),
+  toolbarHomeAdded: true,
   libraryStars: [],
   libraryFolders: {},
   barrelButton: "erase",

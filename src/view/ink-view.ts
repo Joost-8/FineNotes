@@ -2939,6 +2939,7 @@ export class InkView extends TextFileView {
           this.plugin.saveLasso(mode, filter);
         },
         onToggleThumbnails: () => this.toggleSidebar(),
+        onHome: () => void this.plugin.openLibrary(),
         onFullScreen: this.plugin.fullScreenOffered
           ? () => this.plugin.toggleFullScreen()
           : undefined,
