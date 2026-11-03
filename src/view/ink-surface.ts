@@ -1314,6 +1314,10 @@ const IMAGE_CHROME_CLEAR_PX = 10;
 const PRESS_CLEAR_PX = 28;
 /** Room kept between selected PDF text and its bar: clear of a handle's knob, screen px. */
 const TEXT_KNOB_CLEAR_PX = 12;
+/** Device-local mark that the right-click-to-select hint has been shown. */
+const PDF_SELECT_HINT_KEY = "finenotes-pdf-select-hint";
+/** The hint shows at most once a session, mark or no mark. */
+let pdfSelectHintDone = false;
 /** The rotate knob's drawn radius, screen px; its target is the 44 px hit area. */
 const ROTATE_KNOB_RADIUS_PX = 14;
 /** How long a lasso drawn round nothing stays, then how long it fades (Joost's Goodnotes recording). */
@@ -9194,6 +9198,7 @@ export class InkSurface {
       return;
     }
     if (this.startTextMark(box, at)) return;
+    if (sample.pointerType === "mouse") this.hintTextSelect(box, at);
     const resumed = this.resumeLifted(box, at);
     const builder = resumed ?? new StrokeBuilder(this.builderOpts());
     builder.add({ ...sample, ...at });
@@ -10528,6 +10533,25 @@ export class InkSurface {
     this.textMark = { layout, from: at, selection };
     this.showTextMark(box);
     return true;
+  }
+
+  /**
+   * A mouse writing on a PDF's text may have meant to select it: say once
+   * that a right-click does (a plain drag is ink, the mouse being the pen).
+   */
+  private hintTextSelect(box: PageBox, at: Pt): void {
+    if (this.practice || pdfSelectHintDone) return;
+    if (this.pageAt(box.index)?.backdrop.kind !== "pdf") return;
+    const layout = this.pageText(box.index);
+    if (!layout || !selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX))) return;
+    pdfSelectHintDone = true;
+    try {
+      if (window.localStorage.getItem(PDF_SELECT_HINT_KEY)) return;
+      window.localStorage.setItem(PDF_SELECT_HINT_KEY, "1");
+    } catch {
+      // No storage here: the hint then shows once a session.
+    }
+    new Notice("To select PDF text, right-click a word, then drag its handles.", 8000);
   }
 
   /** Say on the debug overlay what the highlighter did where it came down. */
