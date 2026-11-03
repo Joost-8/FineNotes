@@ -40,7 +40,7 @@ import {
   readLinks,
 } from "../canvas/pdf-links";
 import { type PageGeometry, type PdfBackdrop, pdfFrameOf } from "../model/document";
-import { mergedItems, needsOcr } from "../recognition/ocr/ocr-words";
+import { mergedItems, nativeBoxes, needsOcr } from "../recognition/ocr/ocr-words";
 import type { OcrOwner, OcrService } from "./ocr-service";
 
 // The slice of pdf.js used here (`loadPdfJs()` is typed `Promise<any>`).
@@ -395,7 +395,10 @@ export class PdfTextCache implements OcrOwner {
       return mergedItems(native, found, viewport, source);
     }
     this.scanned.set(key, { kind: "pdf", path: backdrop.path, page: backdrop.page });
-    ocr.want(this, backdrop.path, backdrop.page, pages);
+    ocr.want(this, backdrop.path, backdrop.page, pages, {
+      items: native.length,
+      rects: nativeBoxes(native, viewport, source),
+    });
     return native;
   }
 

@@ -182,6 +182,8 @@ export default defineConfig({
         "src/recognition/ocr/ctc-words.ts",
         "src/recognition/ocr/reading-order.ts",
         "src/recognition/ocr/pipeline.ts",
+        "src/recognition/ocr/word-edges.ts",
+        "src/view/ocr-service.ts",
         "src/audio/recording.ts",
         "src/audio/replay.ts",
         "src/audio/speech-chunks.ts",

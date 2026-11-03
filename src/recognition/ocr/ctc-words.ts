@@ -29,10 +29,15 @@ export interface CropWord {
   x1: number;
   conf: number;
   min: number;
+  /** The middles of its first and last characters in the crop, px. */
+  first?: number;
+  last?: number;
 }
 
 export interface CropLine {
   words: CropWord[];
+  /** The line's character-to-character distance (median), px. */
+  pitch?: number;
   /** Mean confidence of all the characters of its words; 0 without words. */
   conf: number;
 }
@@ -73,6 +78,13 @@ export function ctcDecode(
   return out;
 }
 
+/**
+ * CTC emits a character a little before its glyph's middle: measured on
+ * rendered pages against the true word boxes, the right edge came out
+ * 0.6 pt (a tenth of a character pitch) short, the left edge true.
+ */
+export const RIGHT_BIAS = 0.1;
+
 function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -82,9 +94,9 @@ function median(values: number[]): number {
 /**
  * Split characters into words at the space characters and place each word:
  * a character sits at the middle of its time steps, and a word runs from half
- * a character-to-character distance before its first character's middle to
- * the same after its last, clamped to the crop and kept clear of its
- * neighbours.
+ * the line's median character-to-character distance before its first
+ * character's middle to the same after its last, clamped to the crop and
+ * kept clear of its neighbours.
  */
 export function wordsOf(chars: readonly CtcChar[], cropWidth: number): CropLine {
   const groups: CtcChar[][] = [];
@@ -108,13 +120,17 @@ export function wordsOf(chars: readonly CtcChar[], cropWidth: number): CropLine 
   const words: CropWord[] = groups.map((g) => {
     const first = middle(g[0]);
     const last = middle(g[g.length - 1]);
-    const before = g.length > 1 ? (middle(g[1]) - first) / 2 : pitch / 2;
-    const after = g.length > 1 ? (last - middle(g[g.length - 2])) / 2 : pitch / 2;
+    // A character's peak is near its middle: the word reaches half the line's
+    // usual character-to-character distance beyond the first and the last.
+    const before = pitch / 2;
+    const after = pitch / 2 + RIGHT_BIAS * pitch;
     const confs = g.map((c) => c.conf);
     return {
       text: g.map((c) => c.ch).join(""),
       x0: Math.max(0, first - before),
       x1: Math.min(cropWidth, last + after),
+      first,
+      last,
       conf: confs.reduce((s, v) => s + v, 0) / confs.length,
       min: Math.min(...confs),
     };
@@ -125,5 +141,5 @@ export function wordsOf(chars: readonly CtcChar[], cropWidth: number): CropLine 
     if (b.x0 < a.x1) a.x1 = b.x0 = (a.x1 + b.x0) / 2;
   }
   const all = groups.flat();
-  return { words, conf: all.reduce((s, c) => s + c.conf, 0) / all.length };
+  return { words, pitch, conf: all.reduce((s, c) => s + c.conf, 0) / all.length };
 }

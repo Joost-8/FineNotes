@@ -285,3 +285,13 @@ export function needsOcr(
   const layout = layoutText(native, pdfToPage(viewport, source, source));
   return isSparse(layout, source.width, source.height, tuning);
 }
+
+/** The page's own words as rectangles in the page's points, for masking them out of a raster. */
+export function nativeBoxes(
+  native: readonly PdfTextItem[],
+  viewport: Matrix,
+  source: { width: number; height: number },
+): { x0: number; y0: number; x1: number; y1: number }[] {
+  if (native.length === 0) return [];
+  return nativeRects(layoutText(native, pdfToPage(viewport, source, source)));
+}

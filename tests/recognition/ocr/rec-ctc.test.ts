@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ctcDecode, wordsOf } from "../../../src/recognition/ocr/ctc-words";
+import { RIGHT_BIAS, ctcDecode, wordsOf } from "../../../src/recognition/ocr/ctc-words";
 import {
   REC_BATCH,
   REC_HEIGHT,
@@ -84,11 +84,11 @@ describe("CTC decoding with positions and confidences", () => {
     const line = wordsOf(ctcDecode(probs(steps), 14, C, ALPHABET), 14 * REC_STRIDE);
     expect(line.words.map((w) => w.text)).toEqual(["ab", "cd"]);
     const [ab, cd] = line.words;
-    // Middles: a 2.5*8=20, b 4.5*8=36, c 9.5*8=76, d 11.5*8=92; half a pitch (8) either side.
+    // Middles: a 2.5*8=20, b 4.5*8=36, c 9.5*8=76, d 11.5*8=92; half a pitch (8) either side, the right edge a little more.
     expect(ab.x0).toBeCloseTo(12, 5);
-    expect(ab.x1).toBeCloseTo(44, 5);
+    expect(ab.x1).toBeCloseTo(44 + RIGHT_BIAS * 16, 5);
     expect(cd.x0).toBeCloseTo(68, 5);
-    expect(cd.x1).toBeCloseTo(100, 5);
+    expect(cd.x1).toBeCloseTo(100 + RIGHT_BIAS * 16, 5);
     expect(ab.conf).toBeCloseTo(0.925, 5);
     expect(ab.min).toBeCloseTo(0.9, 5);
     expect(cd.min).toBeCloseTo(0.6, 5);

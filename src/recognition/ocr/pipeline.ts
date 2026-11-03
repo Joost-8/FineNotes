@@ -12,6 +12,7 @@
  */
 
 import { type CropLine, ctcDecode, wordsOf } from "./ctc-words";
+import { snapWords } from "./word-edges";
 import { type TextBox, findTextBoxes } from "./db";
 import { type DetTile, planTiles, stitchProbability, tileTensor } from "./det";
 import type { OcrLine, OcrPage, OcrWord } from "./ocr-words";
@@ -117,7 +118,9 @@ export async function readPage(
         (n + 1) * out.steps * out.classes,
       );
       const chars = ctcDecode(rows, steps, out.classes, options.alphabet);
-      const line = wordsOf(chars, crop.width);
+      const loose = wordsOf(chars, crop.width);
+      // The words' ends are moved to the ink they were read from.
+      const line = snapWords(loose, crop.data, crop.width, loose.pitch ?? REC_STRIDE * 3);
       lines[crop.index] = pageLine(line, boxes[crop.index], crop.width, options.scale);
     });
   }

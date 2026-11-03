@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isBlank } from "../../../src/recognition/ocr/blank";
+import { hasInkOutside, isBlank } from "../../../src/recognition/ocr/blank";
 import {
   OCR_CACHE_FORMAT,
   cacheFolder,
@@ -121,6 +121,38 @@ describe("blank pages", () => {
     expect(isBlank(ink)).toBe(false);
     // Transparent counts as white.
     expect(isBlank(new Uint8ClampedArray(400))).toBe(true);
+  });
+});
+
+describe("ink beyond a page's own text", () => {
+  const W = 100;
+  const H = 100;
+  const white = (): Uint8ClampedArray => new Uint8ClampedArray(W * H * 4).fill(255);
+  const ink = (img: Uint8ClampedArray, x0: number, y0: number, x1: number, y1: number): void => {
+    for (let y = y0; y < y1; y++)
+      for (let x = x0; x < x1; x++) img.fill(40, (y * W + x) * 4, (y * W + x) * 4 + 3);
+  };
+
+  it("is none when everything dark is under the page's own text", () => {
+    const img = white();
+    ink(img, 40, 90, 50, 96); // a page number
+    expect(hasInkOutside(img, W, [])).toBe(true);
+    expect(hasInkOutside(img, W, [{ x0: 40, y0: 90, x1: 50, y1: 96 }])).toBe(false);
+    // The text's grey edges are masked too.
+    ink(img, 39, 89, 40, 97);
+    expect(hasInkOutside(img, W, [{ x0: 40, y0: 90, x1: 50, y1: 96 }])).toBe(false);
+  });
+
+  it("is there when something else is on the page", () => {
+    const img = white();
+    ink(img, 40, 90, 50, 96);
+    ink(img, 10, 20, 80, 24); // a line of print
+    expect(hasInkOutside(img, W, [{ x0: 40, y0: 90, x1: 50, y1: 96 }])).toBe(true);
+  });
+
+  it("is none for an empty image or width", () => {
+    expect(hasInkOutside(new Uint8ClampedArray(0), W, [])).toBe(false);
+    expect(hasInkOutside(white(), 0, [])).toBe(false);
   });
 });
 

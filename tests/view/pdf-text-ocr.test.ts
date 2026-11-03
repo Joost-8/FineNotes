@@ -60,6 +60,7 @@ const SCANNED: OcrPage = {
 function fakeOcr(found: OcrPage | null = null, enabled = true) {
   const calls = {
     wanted: [] as [string, number, number][],
+    natives: [] as { items: number; rects: unknown[] }[],
     settled: [] as number[],
     attached: [] as string[],
     focused: [] as [string, number][],
@@ -72,8 +73,16 @@ function fakeOcr(found: OcrPage | null = null, enabled = true) {
     },
     attach: (_owner: unknown, path: string) => calls.attached.push(path),
     cached: () => Promise.resolve(found),
-    want: (_owner: unknown, path: string, page: number, pages: number) =>
-      calls.wanted.push([path, page, pages]),
+    want: (
+      _owner: unknown,
+      path: string,
+      page: number,
+      pages: number,
+      native: { items: number; rects: unknown[] },
+    ) => {
+      calls.wanted.push([path, page, pages]);
+      calls.natives.push(native);
+    },
     settled: (_path: string, page: number) => calls.settled.push(page),
     focus: (path: string, page: number) => calls.focused.push([path, page]),
     hold: (_owner: unknown, held: boolean) => calls.held.push(held),
@@ -152,6 +161,27 @@ describe("PdfTextCache with OCR", () => {
     await settle();
     const layout = cache.peek(BACKDROP, GEOMETRY);
     expect(layout && layoutPlainText(layout).split("\n").sort()).toEqual(["7", "Water quality"]);
+  });
+
+  it("tells the service what text a sparse page has of its own, so it can read only what is missing", async () => {
+    pdf.items = [
+      { str: "7", transform: [14, 0, 0, 14, 197, 20], width: 7, height: 14, fontName: "f1" },
+    ];
+    const { service, calls } = fakeOcr(null);
+    const cache = cacheWith(service);
+    cache.request(BACKDROP);
+    await settle();
+    expect(calls.wanted).toEqual([["Scan.pdf", 0, 3]]);
+    expect(calls.natives[0].items).toBe(1);
+    expect(calls.natives[0].rects).toHaveLength(1);
+    expect(calls.natives[0].rects[0]).toMatchObject({ x0: 197 });
+  });
+
+  it("tells it a page with no text at all has none", async () => {
+    const { service, calls } = fakeOcr(null);
+    cacheWith(service).request(BACKDROP);
+    await settle();
+    expect(calls.natives).toEqual([{ items: 0, rects: [] }]);
   });
 
   it("never asks about a page with text of its own", async () => {

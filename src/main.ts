@@ -190,6 +190,7 @@ import { GrapeFiles } from "./view/grape-files";
 import { StartupLog } from "./view/startup-log";
 import { DeviceTranscriber } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
+import { obsidianOcrDeps } from "./view/ocr-deps";
 import { OcrService } from "./view/ocr-service";
 import { OcrStatus } from "./view/ocr-status";
 import { OCR_MODEL } from "./recognition/ocr/ocr-model";
@@ -330,12 +331,14 @@ export default class GoodObsidianPlugin extends Plugin {
    * Reading scanned PDF pages on this device, for the notebooks that have
    * them open (ocr-service.ts); its model is offered when first needed.
    */
-  readonly ocr = new OcrService({
-    app: this.app,
-    pluginDir: () => this.pluginDir,
-    models: this.models,
-    enabled: () => this.settings.ocrScannedPdfs !== false,
-  });
+  readonly ocr = new OcrService(
+    obsidianOcrDeps({
+      app: this.app,
+      pluginDir: () => this.pluginDir,
+      models: this.models,
+      enabled: () => this.settings.ocrScannedPdfs !== false,
+    }).deps,
+  );
 
   /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
   readonly grape = new GrapeFiles(this.models);
