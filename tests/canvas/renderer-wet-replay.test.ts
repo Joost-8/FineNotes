@@ -119,19 +119,15 @@ describe("paintWetInto", () => {
     expect(log).toContainEqual(["setLineDash", [1.5, 1]]);
   });
 
-  it("draws a sticky note's ink in its own colour on a dark page", () => {
+  it("draws wet ink as the dark page shows it, over a sticky note too", () => {
     const renderer = setup();
     renderer.paper = paperTheme(true);
     const page = { id: "p1", backdrop: { type: "blank" }, strokes: [], images: [], textBoxes: [] };
     renderer.renderBackdrops({ pages: [page, { ...page, id: "p2" }] } as unknown as InkDocument);
-    const colour = (onNote: boolean): unknown => {
-      renderer.renderWetRuns(0, runs, { ...style, color: "#1a1a1a" }, onNote);
-      const ctx = recorder([]);
-      renderer.paintWetInto(ctx, LAYOUT.boxes[0], 4);
-      return ctx.strokeStyle;
-    };
-    expect(colour(true)).toBe("#1a1a1a");
-    expect(colour(false)).not.toBe("#1a1a1a");
+    renderer.renderWetRuns(0, runs, { ...style, color: "#1a1a1a" });
+    const ctx = recorder([]);
+    renderer.paintWetInto(ctx, LAYOUT.boxes[0], 4);
+    expect(ctx.strokeStyle).not.toBe("#1a1a1a");
   });
 
   it("has nothing to draw once the layer is cleared", () => {

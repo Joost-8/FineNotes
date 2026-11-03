@@ -27,6 +27,12 @@ extracted from the matching section of this file by `release.yml`.
   longer shows in steps outside it.
 - **Dragging a colour off the bar is smooth.** The held colour follows the
   finger exactly instead of trailing behind it.
+### Fixed
+
+- On a dark page, a sticky note's ink, text and paper are shown as the rest of the page is, so
+  ink and text never change colour when they land on a note.
+- A text box laid over a sticky note folds away with it and comes back when it opens; one dropped
+  on an open note becomes its text.
 
 ## [2.7.0] - 2026-11-02
 
