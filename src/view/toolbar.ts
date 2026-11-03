@@ -80,10 +80,15 @@ import {
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
   type BarItemId,
-  DEFAULT_BAR,
+  type ToolbarLayout,
+  ZONES,
+  type Zone,
+  barItems as layoutBarItems,
+  defaultLayout,
   menuItems,
   normalizeLayout,
 } from "./toolbar-layout";
+import { ToolbarEditor } from "./toolbar-edit";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import { TAPE_COLORS, TAPE_HEIGHTS, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { magnifierTap, zoomButtonState } from "../model/zoom-box";
@@ -196,6 +201,7 @@ import {
   sideLift,
   uprightButtonSize,
 } from "./bar-dock-model";
+import { NO_PILL_ROW, type PillRow, pageTopShift, pillRow, pillRowEdge } from "./pill-row-model";
 import { hiddenEnds, pageScroll, scrollToShow } from "./swatch-drag-model";
 import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
@@ -778,6 +784,11 @@ export interface ToolbarCallbacks {
   onPillPlaced?: () => void;
   /** The user dragged the options pill to `dock`; the host keeps it for this device. */
   onPillDock?: (dock: PillDock) => void;
+  /**
+   * The docked pill's row (pill-row-model.ts) changed, moving the page's top
+   * by `shift` px (down positive): the surface keeps the spot read still.
+   */
+  onPillRow?: (shift: number) => void;
   // --- The Text tool (0.5).
   /** A text control changed: apply `patch` to the box being edited, if there is one. */
   onTextStyle?: (patch: TextStylePatch) => void;
@@ -860,8 +871,16 @@ export interface ToolbarCallbacks {
   onStickyColor?: (color: string) => void;
   /** The sticky notes button was tapped while a note waited to be placed: it waits no more. */
   onStickyCancel?: () => void;
-  /** Open "Customize toolbar". Without it the accessories menu has no such row. */
-  onCustomize?: () => void;
+  /**
+   * Customize toolbar (`toolbar-edit.ts`) moved a button: hosts keep the new
+   * layout and show it in every notebook. Without it the More tools menu has
+   * no "Customize toolbar" row.
+   */
+  onLayout?: (layout: ToolbarLayout) => void;
+  /** Customize toolbar moved the bar to another edge (`bar-dock-model.ts`). */
+  onSetBarDock?: (dock: BarDock) => void;
+  /** Customize toolbar switched "Dock tool options" (`pill-row-model.ts`). */
+  onSetPillRow?: (on: boolean) => void;
   /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
   onRulerChange?: (kind: RulerKind, snap: number) => void;
   /** Stylus-only mode's toolbar button was tapped: turn the mode on or off. */
@@ -888,10 +907,10 @@ export interface ToolbarOptions {
   pillDock?: PillDock;
   /** Where the tool bar rests (`bar-dock-model.ts`); along the top by default. */
   barDock?: BarDock;
-  /** The tools the bar shows, left to right (`toolbar-layout.ts`); the default bar when absent. */
-  items?: readonly BarItemId[];
-  /** The tools shown nowhere, not even in the accessories menu; none when absent. */
-  offItems?: readonly BarItemId[];
+  /** "Dock tool options": the pill by the bar is a row the page starts past (`pill-row-model.ts`). */
+  pillRow?: boolean;
+  /** Where every button is (`toolbar-layout.ts`); the default layout when absent. */
+  layout?: ToolbarLayout;
   /** Stylus-only mode is on, so its toolbar toggle starts on. */
   onlyStylusMode?: boolean;
   /** Fingers draw (the Pencil is away), so ⋯, where that is switched, starts lit. */
@@ -1034,6 +1053,12 @@ export class Toolbar {
   private readonly barEl: HTMLElement;
   /** Tier 2: the active tool's options pill. */
   private readonly optionsEl: HTMLElement;
+  /** The room the docked pill takes from the page, in the bar's colour (`pill-row-model.ts`). */
+  private readonly rowEl: HTMLElement;
+  /** "Dock tool options" is on, on this device. */
+  private pillRowOn = false;
+  /** The row as shown now. */
+  private row: PillRow = NO_PILL_ROW;
 
   // The buttons that each stand for one choice, keyed by it. `syncActive`
   // marks the one matching the state; the pill's are rebuilt with the pill.
@@ -1077,14 +1102,16 @@ export class Toolbar {
     FoldedBarItem & { rank: number; button: HTMLElement; tool?: ActiveTool }
   > = [];
   private moreButton: HTMLButtonElement | null = null;
-  /** Each centre item's button, for showing, hiding and ordering them (`setItems`). */
+  /** Every button the bar has, by its item, for placing them (`setLayout`). */
   private readonly barItems = new Map<BarItemId, HTMLButtonElement>();
-  /** What a tap on each centre item does, run from the accessories menu with its button. */
+  /** What a tap on each button does, run from the More tools menu with its button. */
   private readonly itemRuns = new Map<BarItemId, (anchor: HTMLElement) => void>();
-  /** The centre items shown, left to right. */
-  private items: BarItemId[] = [...DEFAULT_BAR];
-  /** The centre items shown nowhere, not even in the accessories menu. */
-  private offItems: BarItemId[] = [];
+  /** Where every button is now (`toolbar-layout.ts`). */
+  private layoutNow: ToolbarLayout = defaultLayout();
+  /** The bar's three zones, start to end. */
+  private zoneEls: Partial<Record<Zone, HTMLElement>> = {};
+  /** Customize toolbar while it is open. */
+  private editor: ToolbarEditor | null = null;
   /** The last button of the tools: the items off the bar and "Customize toolbar". */
   private accessoriesButton: HTMLButtonElement | null = null;
   /** Stylus-only mode's state, for its button's toggle and on/off mark. */
@@ -1194,12 +1221,15 @@ export class Toolbar {
     this.palette = [...palette];
     this.optionsTool = state.tool;
     this.onlyStylusOn = options.onlyStylusMode === true;
-    this.optionsVisible = !STARTS_TUCKED.has(optionsKey(state.tool));
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
     this.barEl.setAttribute("aria-label", t("toolbar.barLabel"));
     this.barDock = parseBarDock(options.barDock);
     this.applyBarDock();
+    // In the flow after the bar (before it along the bottom, styles.css), so
+    // the page body gives it its height.
+    this.rowEl = host.createDiv({ cls: "goodobsidian-pill-row" });
+    this.pillRowOn = options.pillRow === true;
     // The pill always floats over the page (styles.css, `.is-floating`).
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
@@ -1210,6 +1240,8 @@ export class Toolbar {
     this.optionsEl.dataset.ignoreSwipe = "true";
 
     this.pillDock = offeredDock(options.pillDock);
+    // Docked, the pen's pill covers nothing: it need not start tucked away.
+    this.optionsVisible = !this.startsTucked(state.tool);
     this.optionsEl.addClass(`is-dock-${this.pillDock}`);
     this.optionsEl.toggleClass("is-upright", isUpright(this.pillDock));
     bindPillDrag(this.optionsEl, {
@@ -1297,9 +1329,38 @@ export class Toolbar {
     // `undefined` is load-bearing — barButton disables a button that has no
     // handler, which is how the not-yet-implemented tools render greyed out.
     const cb = this.callbacks;
-    const left = this.barEl.createDiv({ cls: "goodobsidian-bar-group" });
+    // Three zones along the bar (toolbar-layout.ts): the start, the writing
+    // tools centred in the middle, the document's actions at the end. Every
+    // button is built once; `setLayout` puts each in its zone and place.
+    const start = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-start" });
+    const tools = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-tools" });
+    const doc = this.barEl.createDiv({ cls: "goodobsidian-bar-group goodobsidian-bar-doc" });
+    this.zoneEls = { start, middle: tools, end: doc };
+    this.toolsGroup = tools;
+    // First in its group, so every button paints over it; it follows the
+    // tool in hand into whichever zone that is (`placeIndicator`).
+    this.toolIndicator = tools.createDiv({ cls: "goodobsidian-tool-indicator is-hidden" });
+    const beyond: HTMLElement[] = [];
+    this.beyondWriting = beyond;
+    const keep = (button: HTMLElement): void => {
+      beyond.push(button);
+    };
+    // Every button, by its item; `run` is what the More tools menu does with it.
+    const item = (
+      id: BarItemId,
+      button: HTMLButtonElement,
+      run: ((anchor: HTMLElement) => void) | undefined,
+      kept = true,
+    ): HTMLButtonElement => {
+      this.barItems.set(id, button);
+      button.setAttribute("data-item", id);
+      if (run) this.itemRuns.set(id, run);
+      if (kept) keep(button);
+      return button;
+    };
+
     this.thumbnailsButton = this.barButton(
-      left,
+      start,
       "panel-left",
       t("toolbar.pageThumbnails"),
       cb.onToggleThumbnails,
@@ -1311,65 +1372,54 @@ export class Toolbar {
       t("toolbar.pageThumbnails"),
       cb.onToggleThumbnails,
     );
-    const beyond: HTMLElement[] = [];
-    this.beyondWriting = beyond;
-    const keep = (button: HTMLElement): void => {
-      beyond.push(button);
-    };
-    keep(
-      this.foldButton(left, FOLD_RANK.search, "search", t("toolbar.searchNotebook"), cb.onSearch),
+    item("thumbnails", this.thumbnailsButton, cb.onToggleThumbnails, false);
+    const search = cb.onSearch;
+    item(
+      "search",
+      this.foldButton(start, FOLD_RANK.search, "search", t("toolbar.searchNotebook"), search),
+      search,
     );
-    keep(this.foldButton(left, FOLD_RANK.ai, "sparkles", t("toolbar.ai"), cb.onAi));
-    keep(
+    item("ai", this.foldButton(start, FOLD_RANK.ai, "sparkles", t("toolbar.ai"), cb.onAi), cb.onAi);
+    item(
+      "calculator",
       this.foldButton(
-        left,
+        start,
         FOLD_RANK.calculator,
         "calculator",
         t("toolbar.calculator"),
         cb.onCalculator,
       ),
+      cb.onCalculator,
+    );
+    const undo = (): void => this.callbacks.onUndo();
+    const redo = (): void => this.callbacks.onRedo();
+    this.undoButton = item(
+      "undo",
+      this.barButton(start, "undo-2", t("toolbar.undoTip"), undo),
+      undo,
+      false,
+    );
+    this.redoButton = item(
+      "redo",
+      this.foldButton(start, FOLD_RANK.redo, "redo-2", t("toolbar.redoTip"), redo),
+      redo,
+      false,
     );
 
-    const history = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-centre" });
-    this.undoButton = this.barButton(history, "undo-2", t("toolbar.undoTip"), () =>
-      this.callbacks.onUndo(),
-    );
-    this.redoButton = this.foldButton(history, FOLD_RANK.redo, "redo-2", t("toolbar.redoTip"), () =>
-      this.callbacks.onRedo(),
-    );
-
-    // The writing tools, centred on the bar (styles.css), as GoodNotes has them.
-    const tools = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-tools" });
-    this.toolsGroup = tools;
-    // First, so every button paints over it.
-    this.toolIndicator = tools.createDiv({ cls: "goodobsidian-tool-indicator is-hidden" });
-    // Every item is built once; `setItems` shows, hides and orders them.
-    const item = (
-      id: BarItemId,
-      button: HTMLButtonElement,
-      run: ((anchor: HTMLElement) => void) | undefined,
-    ): void => {
-      this.barItems.set(id, button);
-      if (run && !button.disabled) this.itemRuns.set(id, run);
-      if (id !== "pen" && id !== "eraser") keep(button);
-    };
     const tool = (id: ActiveTool & BarItemId, icon: string, label: string): void => {
       const button = this.addToolButton(tools, id, icon, label);
-      item(id, button, (anchor) => this.tapTool(id, anchor));
+      item(id, button, (anchor) => this.tapTool(id, anchor), id !== "pen" && id !== "eraser");
     };
     tool("select", "lasso", t("toolbar.tip.lasso"));
     tool("pen", "pen-tool", t("toolbar.tip.pen"));
     tool("eraser", "eraser", t("toolbar.tip.eraser"));
     tool("text", "type", t("toolbar.tip.textBox"));
     tool("shape", "shapes", t("toolbar.tip.shapes"));
-    // Page navigation tools. Off the bar by default: they wait in the
-    // accessories menu until "Customize toolbar" puts them on the bar.
+    // Page navigation tools. In More tools by default.
     tool("pan", "hand", t("toolbar.tip.hand"));
     tool("zoom", "zoom-in", t("toolbar.tip.magnifier"));
-    // Off the bar by default too: Customize toolbar puts it there.
     tool("fill", "paint-bucket", t("toolbar.tool.fill"));
-    // Cover tape: strips over the page that a tap shows through. In the
-    // accessories menu until put on the bar.
+    // Cover tape: strips over the page that a tap shows through.
     tool("tape", "bandage", t("toolbar.tool.coverTape"));
     if (cb.onOnlyStylusMode) {
       const toggle = (): void => this.toggleOnlyStylusMode();
@@ -1390,11 +1440,7 @@ export class Toolbar {
       icon: string,
       label: string,
       handler: ((anchor: HTMLElement) => void) | undefined,
-    ): HTMLButtonElement => {
-      const button = this.foldButton(tools, rank, icon, label, handler);
-      item(id, button, handler);
-      return button;
-    };
+    ): HTMLButtonElement => item(id, this.foldButton(tools, rank, icon, label, handler), handler);
     action("image", FOLD_RANK.image, "image", t("toolbar.insertImage"), cb.onInsertImage);
     this.insertPdfButton = action(
       "pdf",
@@ -1403,9 +1449,8 @@ export class Toolbar {
       t("toolbar.insertPdf"),
       cb.onInsertPdf,
     );
-    if (cb.onStickers) {
+    if (cb.onStickers)
       action("sticker", FOLD_RANK.sticker, "sticker", t("toolbar.tool.stickers"), cb.onStickers);
-    }
     if (cb.onStickyColor) {
       this.stickyButton = action(
         "sticky",
@@ -1424,50 +1469,67 @@ export class Toolbar {
       t("toolbar.tool.recordAudio"),
       cb.onRecord,
     );
-    // Last, Goodnotes' accessories: what the bar does not show, and the way
-    // to choose what it shows. It never folds, as ⋯ never does.
+    // Goodnotes' accessories: what the bar does not show, and the way to
+    // choose what it shows. Pinned to the bar, and it never folds, as ⋯
+    // never does.
     const accessories = this.barButton(tools, "toolbox", t("toolbar.moreTools"), (button) =>
       this.toggleAccessories(button),
     );
     accessories.addClass("has-caret", "goodobsidian-accessories-button");
     iconOrText(accessories.createSpan({ cls: "goodobsidian-tool-caret" }), "chevron-down", "");
     accessories.setAttribute("aria-haspopup", "menu");
-    this.accessoriesButton = accessories;
-    keep(accessories);
-    this.setItems(this.options.items ?? DEFAULT_BAR, this.options.offItems ?? [], false);
+    this.accessoriesButton = item("accessories", accessories, undefined);
 
-    // The document's own actions, right: full screen (tablets), add a page,
+    // The document's own actions: full screen (tablets), add a page,
     // GoodNotes' share button (export as PDF), its ⋯ sheet for the page
-    // being read (bookmark, duplicate, go to page, clear, delete), then,
-    // rightmost, the note's own settings.
-    const doc = this.barEl.createDiv({ cls: "goodobsidian-bar-group goodobsidian-bar-doc" });
+    // being read (bookmark, duplicate, go to page, clear, delete), then the
+    // note's own settings.
     if (cb.onFullScreen) {
-      this.fullScreenButton = this.foldButton(
-        doc,
-        FOLD_RANK.fullScreen,
-        "maximize-2",
-        t("toolbar.fullScreen"),
+      this.fullScreenButton = item(
+        "fullscreen",
+        this.foldButton(
+          doc,
+          FOLD_RANK.fullScreen,
+          "maximize-2",
+          t("toolbar.fullScreen"),
+          cb.onFullScreen,
+        ),
         cb.onFullScreen,
+        false,
       );
     }
-    this.addPageButton = this.foldButton(
-      doc,
-      FOLD_RANK.addPage,
-      "plus",
-      t("toolbar.addPage"),
+    this.addPageButton = item(
+      "addPage",
+      this.foldButton(doc, FOLD_RANK.addPage, "plus", t("toolbar.addPage"), cb.onAddPage),
       cb.onAddPage,
+      false,
     );
-    keep(this.foldButton(doc, FOLD_RANK.share, "share", t("toolbar.export"), cb.onShare));
+    item(
+      "share",
+      this.foldButton(doc, FOLD_RANK.share, "share", t("toolbar.export"), cb.onShare),
+      cb.onShare,
+    );
     if (cb.onLearnHandwriting) this.buildLearnButton(doc, cb.onLearnHandwriting);
-    this.moreButton = this.barButton(doc, "more-horizontal", t("common.more"), cb.onMore);
-    if (this.options.fingerDrawing === true) this.setFingerDrawing(true);
-    this.settingsButton = this.foldButton(
-      doc,
-      FOLD_RANK.settings,
-      "settings",
-      t("toolbar.notebookSettings"),
-      cb.onSettings,
+    this.moreButton = item(
+      "more",
+      this.barButton(doc, "more-horizontal", t("common.more"), cb.onMore),
+      undefined,
+      false,
     );
+    if (this.options.fingerDrawing === true) this.setFingerDrawing(true);
+    this.settingsButton = item(
+      "settings",
+      this.foldButton(
+        doc,
+        FOLD_RANK.settings,
+        "settings",
+        t("toolbar.notebookSettings"),
+        cb.onSettings,
+      ),
+      cb.onSettings,
+      false,
+    );
+    this.setLayout(this.options.layout ?? defaultLayout(), false);
     this.watchCrowding();
   }
 
@@ -1848,7 +1910,7 @@ export class Toolbar {
 
   /** Light the accessories button while one of the items its menu lists is on. */
   private syncAccessoriesMark(): void {
-    const listed = menuItems({ bar: this.items, off: this.offItems });
+    const listed = menuItems(this.layout);
     const hiddenOn = (["ruler", "sticky", "stylus"] as const).some((id) => {
       const button = this.barItems.get(id);
       return button !== undefined && button.hasClass("is-on") && listed.includes(id);
@@ -1857,42 +1919,101 @@ export class Toolbar {
   }
 
   /**
-   * Show the centre items `items`, left to right, and take the rest off the
-   * bar: they wait in the accessories menu, except the `off` ones, which are
-   * shown nowhere. Unknown or unavailable items are skipped; the pen always
-   * shows (`normalizeLayout`). `relayout` refits the bar and moves the
+   * Put every button where `layout` says (`toolbar-layout.ts`): each zone's
+   * buttons in order, the rest off the bar (`is-unlisted`), waiting in More
+   * tools unless shown nowhere. Buttons this bar does not have (no handler
+   * for them here) are skipped. `relayout` refits the bar and moves the
    * indicator, as a live change needs.
    */
-  setItems(items: readonly BarItemId[], off: readonly BarItemId[] = [], relayout = true): void {
-    const layout = normalizeLayout(items, off);
-    const shown = layout.bar.filter((id) => this.barItems.has(id));
-    this.items = shown;
-    this.offItems = layout.off;
-    const tools = this.toolsGroup;
-    if (!tools) return;
-    for (const [id, button] of this.barItems)
-      button.toggleClass("is-unlisted", !shown.includes(id));
-    for (const id of shown) {
-      const button = this.barItems.get(id);
-      if (button) tools.appendChild(button);
+  setLayout(raw: ToolbarLayout, relayout = true): void {
+    const layout = normalizeLayout(raw);
+    this.layoutNow = layout;
+    const onBar = new Set(layoutBarItems(layout));
+    for (const zone of ZONES) {
+      const el = this.zoneEls[zone];
+      if (!el) return;
+      for (const id of layout[zone]) {
+        const button = this.barItems.get(id);
+        if (button) el.appendChild(button);
+      }
     }
-    if (this.accessoriesButton) tools.appendChild(this.accessoriesButton);
+    for (const [id, button] of this.barItems) button.toggleClass("is-unlisted", !onBar.has(id));
+    // A practice sheet's button sits just before ⋯, wherever ⋯ is.
+    const learn = this.learnButton;
+    const more = this.moreButton;
+    if (learn && more?.parentElement) more.parentElement.insertBefore(learn, more);
     this.syncAccessoriesMark();
     if (this.popoverKind === "accessories") this.popoverRender?.();
+    this.editor?.refresh();
     if (!relayout) return;
     const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
     this.fitBar(tool);
     this.placeIndicator(tool, null);
   }
 
-  /** The centre items the bar shows now, left to right; hidden ones are those it has but does not show. */
-  get shownItems(): readonly BarItemId[] {
-    return this.items;
+  /** The buttons its More tools menu lists now, in catalogue order. */
+  get menuListed(): readonly BarItemId[] {
+    return menuItems(this.layout).filter((id) => this.itemRuns.has(id));
   }
 
-  /** The centre items its accessories menu lists now, in catalogue order. */
-  get menuListed(): readonly BarItemId[] {
-    return menuItems({ bar: this.items, off: this.offItems }).filter((id) => this.itemRuns.has(id));
+  /** Where every button is now. */
+  get layout(): ToolbarLayout {
+    return this.layoutNow;
+  }
+
+  /**
+   * Open Customize toolbar (`toolbar-edit.ts`): the bar's own edit mode.
+   * Without a host to keep the layout (`onLayout`) there is none.
+   */
+  startCustomize(): void {
+    const save = this.callbacks.onLayout;
+    if (!save || this.editor) return;
+    this.closePopover();
+    this.editor = new ToolbarEditor({
+      bar: this.barEl,
+      host: this.host,
+      zones: () => this.zoneEls,
+      button: (id) => this.barItems.get(id),
+      has: (id) => this.barItems.has(id),
+      layout: () => this.layoutNow,
+      apply: (layout) => {
+        this.setLayout(layout);
+        save(layout);
+      },
+      foldsNow: () => this.markFolds(),
+      barDock: () => this.barDock,
+      pillRow: () => this.pillRowOn,
+      setBarDock: this.callbacks.onSetBarDock,
+      setPillRow: this.callbacks.onSetPillRow,
+      done: () => {
+        this.editor = null;
+        this.measureBar();
+      },
+    });
+    this.markFolds();
+  }
+
+  /** Close Customize toolbar, if it is open. */
+  stopCustomize(): void {
+    this.editor?.finish();
+  }
+
+  /** Whether Customize toolbar is open. */
+  get customizing(): boolean {
+    return this.editor !== null;
+  }
+
+  /**
+   * In Customize toolbar every button shows, so it can be moved: what would
+   * fold into ⋯ at this width is marked (`will-fold`) instead of hidden.
+   */
+  private markFolds(): void {
+    this.fitBar(this.indicatorTool);
+    for (const item of this.foldable) {
+      const folded = item.button.hasClass("is-overflowed");
+      item.button.removeClass("is-overflowed");
+      item.button.toggleClass("will-fold", folded);
+    }
   }
 
   /**
@@ -1928,7 +2049,7 @@ export class Toolbar {
           run(anchor);
         });
       }
-      if (this.callbacks.onCustomize) {
+      if (this.callbacks.onLayout) {
         if (hidden.length > 0) body.createDiv({ cls: "goodobsidian-popover-divider" });
         const customize = body.createEl("button", {
           cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-accessory-row",
@@ -1938,7 +2059,7 @@ export class Toolbar {
         customize.createSpan({ text: t("toolbar.customize.title") });
         customize.addEventListener("click", () => {
           this.closePopover();
-          this.callbacks.onCustomize?.();
+          this.startCustomize();
         });
       }
       this.keepPopoverInside(anchor);
@@ -2254,13 +2375,24 @@ export class Toolbar {
    * picked ({@link STARTS_TUCKED}). Highlighter is a pen type, so the two
    * share one memory.
    */
+  /**
+   * Whether `tool`'s pill starts tucked away when picked ({@link STARTS_TUCKED}):
+   * not while it docks as a row, where it covers no writing and tucking it
+   * would only move the page at every switch to the pen.
+   */
+  private startsTucked(tool: ActiveTool): boolean {
+    return (
+      STARTS_TUCKED.has(optionsKey(tool)) &&
+      pillRowEdge(this.pillRowOn, this.pillDock, this.barDock) === null
+    );
+  }
+
   private leaveToolFor(next: ActiveTool): void {
     if (optionsKey(next) === optionsKey(this.optionsTool)) return;
     this.tuckedByStroke = false;
     if (this.optionsVisible) this.tuckedTools.delete(optionsKey(this.optionsTool));
     else this.tuckedTools.add(optionsKey(this.optionsTool));
-    const remembered =
-      !this.tuckedTools.has(optionsKey(next)) && !STARTS_TUCKED.has(optionsKey(next));
+    const remembered = !this.tuckedTools.has(optionsKey(next)) && !this.startsTucked(next);
     this.optionsVisible = optionsAfterSwitch(
       this.optionsVisible,
       remembered,
@@ -5507,6 +5639,7 @@ export class Toolbar {
     // A bar moved from top to bottom keeps its size, so its observer is quiet.
     this.measureBar();
     this.applyPosition();
+    this.editor?.refresh();
   }
 
   /**
@@ -5544,6 +5677,43 @@ export class Toolbar {
     this.callbacks.onPillPlaced?.();
   }
 
+  /**
+   * "Dock tool options" was switched on this device (main.ts, `pillRow`):
+   * the pill by the bar becomes a row the page starts past, or floats again.
+   */
+  setPillRow(on: boolean): void {
+    if (on === this.pillRowOn) return;
+    this.pillRowOn = on;
+    this.applyPosition();
+    this.editor?.refresh();
+  }
+
+  /**
+   * Give the docked pill's row its room (`pill-row-model.ts`): the row's
+   * height, which the page body gives up, and `is-docked` on the pill, which
+   * then sits in it. It is placed where it floated: `pageArea` already puts
+   * it `EDGE_INSET` clear of the bar, and the row is that inset either side
+   * of it. `anchored`: floating by a text box, where the row keeps its room.
+   */
+  private syncPillRow(shown: boolean, height: number, anchored = false): void {
+    const next = pillRow({
+      edge: pillRowEdge(this.pillRowOn, this.pillDock, this.barDock),
+      shown,
+      anchored,
+      height,
+      gap: EDGE_INSET,
+      previous: this.row,
+    });
+    this.optionsEl.toggleClass("is-docked", next.edge !== null && !anchored);
+    const before = this.row;
+    if (next.edge === before.edge && next.room === before.room) return;
+    this.row = next;
+    this.host.toggleClass("goodobsidian-has-pill-row", next.edge !== null);
+    this.rowEl.setCssStyles({ height: `${next.room}px` });
+    const shift = pageTopShift(before, next);
+    if (shift !== 0) this.callbacks.onPillRow?.(shift);
+  }
+
   /** The bar and the pill as shown, as vertical spans in screen px (`toastSide`). */
   chromeSpans(): Array<{ top: number; bottom: number }> {
     // An upright bar stands beside the page, clear of a toast centred on it.
@@ -5568,6 +5738,7 @@ export class Toolbar {
     this.optionsEl.toggleClass("is-offscreen", anchored === "hidden");
     if (anchored === "hidden") {
       this.clearForPill(null, hostBox);
+      this.syncPillRow(false, 0, true);
       return;
     }
     if (anchored) {
@@ -5576,6 +5747,7 @@ export class Toolbar {
         top: `${Math.round(anchored.top)}px`,
       });
       this.clearForPill(null, hostBox);
+      this.syncPillRow(false, 0, true);
       return;
     }
     const area = this.pillArea(hostBox, pill.width);
@@ -5589,8 +5761,10 @@ export class Toolbar {
       top: `${Math.round(place.top)}px`,
     });
     const shown = !this.optionsEl.hasClass("is-collapsed") && !this.optionsEl.hasClass("is-hidden");
+    this.syncPillRow(shown, pill.height);
+    // Docked, the page already ends at the row: nothing on it need step aside.
     this.clearForPill(
-      shown
+      shown && this.row.edge === null
         ? {
             left: place.left,
             top: place.top,
@@ -5824,7 +5998,10 @@ export class Toolbar {
     this.optionsEl.toggleClass("is-collapsed", !visible);
     // Tucked away, it leaves its edge to the counter and the readout again.
     if (visible) this.applyPosition();
-    else this.clearForPill(null, this.host.getBoundingClientRect());
+    else {
+      this.clearForPill(null, this.host.getBoundingClientRect());
+      this.syncPillRow(false, 0);
+    }
   }
 
   /**
@@ -6010,11 +6187,12 @@ export class Toolbar {
    */
   private toolPlaces(): ToolPlaces | null {
     const indicator = this.toolIndicator;
-    if (!indicator || indicator.hasClass("is-hidden") || !this.toolsGroup) return null;
+    const group = indicator?.parentElement;
+    if (!indicator || indicator.hasClass("is-hidden") || !group) return null;
     const box = indicator.getBoundingClientRect();
     if (box.width === 0) return null;
     const contents = new Map<Element, { left: number; top: number }>();
-    for (const button of Array.from(this.toolsGroup.children)) {
+    for (const button of Array.from(group.children)) {
       if (button === indicator) continue;
       for (const child of Array.from(button.children)) {
         const at = child.getBoundingClientRect();
@@ -6046,7 +6224,13 @@ export class Toolbar {
     // indicator, and the button's own active square shows (styles.css).
     const shown = target !== undefined && target.offsetWidth > 0;
     indicator.toggleClass("is-hidden", !shown);
-    this.toolsGroup?.toggleClass("has-indicator", shown);
+    // Positioned in its group's box: it moves into the group of the button
+    // it marks, first so the buttons paint over it.
+    const group = target?.parentElement;
+    if (shown && group && indicator.parentElement !== group) group.prepend(indicator);
+    for (const zone of Object.values(this.zoneEls)) {
+      zone?.toggleClass("has-indicator", shown && zone === indicator.parentElement);
+    }
     if (!target || !shown) return;
     indicator.setCssStyles({
       left: `${target.offsetLeft}px`,
@@ -6150,7 +6334,8 @@ export class Toolbar {
    * options while writing").
    */
   tuckOptions(): void {
-    if (!this.optionsVisible) return;
+    // A docked pill covers no ink, and tucking it would move the page each stroke.
+    if (!this.optionsVisible || this.row.edge !== null) return;
     this.optionsVisible = false;
     this.tuckedByStroke = true;
     this.showOptions(false);

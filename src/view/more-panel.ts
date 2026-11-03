@@ -17,7 +17,6 @@
  *   ┌ Dark pages / Light pages            ┐
  *   │ Dark PDF pages                   ✓  │  (only while pages are dark)
  *   │ Desk             [◐] [○] [●] [◍]    │
- *   │ Toolbar          [▔] [▁] [▏] [▕]    │
  *   │ Draw with finger                 ✓  │  (only where there is touch)
  *   │ Keyboard shortcuts                  │
  *   │ Copy home screen link               │
@@ -40,7 +39,7 @@ import { onEnterKey } from "./enter-key";
 import type { FoldedBarItem } from "./toolbar";
 import type { DeskChoice } from "../settings-data";
 import { DARK_PAPER, LIGHT_DESK, LIGHT_PAPER } from "../canvas/backdrop";
-import { type BarDock, menuAnchor, menuPlace, menuRoom } from "./bar-dock-model";
+import { menuAnchor, menuPlace, menuRoom } from "./bar-dock-model";
 
 export interface MorePanelPage {
   /** Zero-based index of the page the panel is about. */
@@ -75,8 +74,6 @@ export interface MorePanelPage {
   desk?: { choice: DeskChoice; color: string };
   /** Tool bar buttons folded in here because the bar had no room for them. */
   folded?: FoldedBarItem[];
-  /** Where the tool bar rests on this device (bar-dock-model.ts), for its row. */
-  barDock?: BarDock;
   /** Fingers draw while the Pencil is away (`input/finger-draw.ts`). */
   fingerDrawing?: boolean;
 }
@@ -107,20 +104,8 @@ export interface MorePanelActions {
   showShortcuts: () => void;
   /** Copy the link that opens this notebook from a home-screen shortcut. */
   copyHomeLink: () => void;
-  /** Put the tool bar at `dock`, on this device. Without it the row is not offered. */
-  setBarDock?: (dock: BarDock) => void;
   /** Let a finger draw until the Pencil writes again, or stop. Without it (no touch) the row is not offered. */
   setFingerDrawing?: (on: boolean) => void;
-}
-
-/** The tool bar's places in the Toolbar row, each its Lucide panel icon. */
-function barDocks(): ReadonlyArray<{ dock: BarDock; label: string }> {
-  return [
-    { dock: "top", label: t("view.morePanel.dockTop") },
-    { dock: "bottom", label: t("view.morePanel.dockBottom") },
-    { dock: "left", label: t("view.morePanel.dockLeft") },
-    { dock: "right", label: t("view.morePanel.dockRight") },
-  ];
 }
 
 /** The desks in the Desk row, in order. */
@@ -320,7 +305,6 @@ export class MorePanel {
     });
     if (page.darkPages) this.darkPdfRow(view);
     this.deskRow(view);
-    this.barDockRow(view);
     this.fingerDrawRow(view);
     this.row(view, {
       icon: "keyboard",
@@ -464,37 +448,6 @@ export class MorePanel {
       }
     }
     mark();
-  }
-
-  /**
-   * "Toolbar": where the tool bar rests on this device (FineNotes#50), as
-   * four panel icons at the row's end, the one in use marked. A choice moves
-   * the bar this panel hangs from, so the panel closes first.
-   */
-  private barDockRow(parent: HTMLElement): void {
-    const set = this.actions.setBarDock;
-    if (!set) return;
-    const row = parent.createDiv({ cls: "goodobsidian-more-row is-bar-dock" });
-    setIcon(row.createSpan({ cls: "goodobsidian-more-icon" }), "layout-panel-top");
-    row.createSpan({ cls: "goodobsidian-more-label", text: t("view.morePanel.toolbar") });
-    const places = row.createDiv({ cls: "goodobsidian-more-docks" });
-    places.setAttribute("role", "radiogroup");
-    places.setAttribute("aria-label", t("view.morePanel.toolbar"));
-    for (const { dock, label } of barDocks()) {
-      const button = places.createEl("button", {
-        cls: "goodobsidian-more-dock clickable-icon",
-      });
-      setIcon(button, `panel-${dock}`);
-      const chosen = dock === (this.page.barDock ?? "top");
-      button.toggleClass("is-active", chosen);
-      button.setAttribute("role", "radio");
-      button.setAttribute("aria-checked", String(chosen));
-      button.setAttribute("aria-label", label);
-      button.addEventListener("click", () => {
-        this.close();
-        set(dock);
-      });
-    }
   }
 
   private group(): HTMLElement {

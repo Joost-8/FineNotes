@@ -169,6 +169,14 @@ export interface ScrollExtent {
    */
   freeAxes?: boolean;
   /**
+   * With no sideways room to scroll (an `x` range of zero, such as a column
+   * held centred at fit-to-width), a drag that is not plainly sideways moves
+   * only up and down, and a sideways one only stretches and springs back, as
+   * Goodnotes holds a page to the window (discussion #43). Without it such a
+   * diagonal drag locks to neither axis and drifts sideways too.
+   */
+  diagonalsScrollY?: boolean;
+  /**
    * Extra room to scroll past the content's bottom edge, px: the on-screen
    * keyboard's height while a text box is edited, so a box low on a page
    * that fits the screen (a cover) can still be lifted above it.
@@ -226,6 +234,8 @@ export class KineticScroller {
   private bounceX = false;
   /** No axis lock: every drag moves both ways (`ScrollExtent.freeAxes`). */
   private freeAxes = false;
+  /** `ScrollExtent.diagonalsScrollY`. */
+  private diagonalsScrollY = false;
   /** Vertical always stretches, as GoodNotes does even on a one-page note. */
   private readonly bounceY = true;
   private drag: Drag | null = null;
@@ -302,6 +312,7 @@ export class KineticScroller {
       this.maxY = Math.max(rangeY.min, rangeY.max) + trailY;
     }
     this.freeAxes = extent.freeAxes === true;
+    this.diagonalsScrollY = extent.diagonalsScrollY === true;
     this.bounceX =
       extent.alwaysBounceX === true ||
       extent.contentWidth + lead + trail > extent.viewportWidth + 0.5;
@@ -493,6 +504,15 @@ export class KineticScroller {
     this.tracker.add(t, fingerX, fingerY);
   }
 
+  /**
+   * Let the drag in progress move both ways from now on, whatever axis it
+   * locked to: a pinch's fingers carry the page wherever they go, and past
+   * the range it stretches and springs back on release.
+   */
+  freeDrag(): void {
+    if (this.drag) this.drag.lock = "free";
+  }
+
   dragMove(fingerX: number, fingerY: number, t: number): void {
     const drag = this.drag;
     if (!drag) return;
@@ -501,6 +521,9 @@ export class KineticScroller {
     const dy = drag.originY - fingerY;
     if (drag.lock === "undecided" && Math.hypot(dx, dy) >= AXIS_LOCK_DISTANCE) {
       drag.lock = this.freeAxes ? "free" : decideLock(dx, dy, this.bounceX);
+      if (drag.lock === "free" && this.diagonalsScrollY && this.maxX - this.minX < 0.5) {
+        drag.lock = "y";
+      }
     }
     const useX = drag.lock === "x" || drag.lock === "free" || drag.lock === "undecided";
     const useY = drag.lock !== "x";

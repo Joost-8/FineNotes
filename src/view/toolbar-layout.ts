@@ -1,16 +1,19 @@
 /**
- * Which tools the tool bar shows, in what order, which wait in its
- * accessories menu ("More tools"), and which are hidden altogether: the
- * model behind "Customize toolbar", after Goodnotes' own (Joost's recording,
- * 2026-10-25), in one list rather than its two tabs.
+ * Where every button of the tool bar is: the model behind "Customize
+ * toolbar" (discussion #43), the bar's own edit mode.
  *
- * Every item has one of three places. The bar's centre holds the items in
- * `bar` order, left to right; the items in `off` are shown nowhere; every
- * other item is hidden from the bar and waits in the accessories menu (the
- * last button of the centre group), in catalogue order. So a layout stored
- * before `off` existed keeps its meaning: what was hidden is in the menu.
- * The pen never leaves the bar: a bar needs a writing tool, and Goodnotes
- * keeps at least one too.
+ * The bar has three zones, left to right (top to bottom when it stands
+ * upright): `start` (the pages, search, AI, the calculator, undo and redo),
+ * `middle` (the writing tools, centred, as in Goodnotes) and `end` (the
+ * document's actions, ⋯ and the notebook's settings). Every button can go to
+ * any place in any zone, into the More tools menu (the toolbox), or out of
+ * sight (`off`). More tools holds every known button that is neither in a
+ * zone nor off, in catalogue order, so a button added in a later version
+ * lands there in a layout saved before it existed.
+ *
+ * Three buttons are pinned to the bar, in any zone: the pen (a bar needs a
+ * writing tool), the toolbox (its menu is the way into this mode) and ⋯ (the
+ * notebook's own menu). A layout missing one puts it back.
  *
  * PURE: no DOM, no Obsidian.
  */
@@ -18,7 +21,7 @@
 import { ICON_STYLUS_ONLY } from "../constants";
 import { t } from "../i18n/translate";
 
-/** Every item the tool bar's centre can show. */
+/** Every button the tool bar can show. */
 export type BarItemId =
   | "select"
   | "pen"
@@ -35,9 +38,21 @@ export type BarItemId =
   | "ruler"
   | "tape"
   | "record"
-  | "fill";
+  | "fill"
+  | "calculator"
+  | "thumbnails"
+  | "search"
+  | "ai"
+  | "undo"
+  | "redo"
+  | "fullscreen"
+  | "addPage"
+  | "share"
+  | "settings"
+  | "accessories"
+  | "more";
 
-/** Every item, in the order the hidden list and the accessories menu give them. */
+/** Every button, in the order the More tools menu and the Hidden shelf give them. */
 export const BAR_ITEMS: readonly BarItemId[] = [
   "select",
   "pen",
@@ -55,27 +70,91 @@ export const BAR_ITEMS: readonly BarItemId[] = [
   "tape",
   "record",
   "fill",
+  "calculator",
+  "thumbnails",
+  "search",
+  "ai",
+  "undo",
+  "redo",
+  "fullscreen",
+  "addPage",
+  "share",
+  "settings",
+  "accessories",
+  "more",
 ];
+
+/** The bar's zones, in the order they run along it. */
+export type Zone = "start" | "middle" | "end";
+export const ZONES: readonly Zone[] = ["start", "middle", "end"];
+
+/** What each zone is called in edit mode, for a bar along an edge and an upright one. */
+export const ZONE_LABELS: Record<Zone, { across: string; upright: string }> = {
+  start: {
+    get across() {
+      return t("toolbar.zone.start");
+    },
+    get upright() {
+      return t("toolbar.zone.top");
+    },
+  },
+  middle: {
+    get across() {
+      return t("toolbar.zone.middle");
+    },
+    get upright() {
+      return t("toolbar.zone.middle");
+    },
+  },
+  end: {
+    get across() {
+      return t("toolbar.zone.end");
+    },
+    get upright() {
+      return t("toolbar.zone.bottom");
+    },
+  },
+};
+
+/** Every button's place: the three zones in order, and the buttons shown nowhere. */
+export interface ToolbarLayout {
+  start: BarItemId[];
+  middle: BarItemId[];
+  end: BarItemId[];
+  off: BarItemId[];
+}
+
+/** Where a button is. */
+export type ItemPlace = Zone | "menu" | "off";
 
 /**
- * The bar a new install starts with; the hand, the magnifier, Stylus-only mode,
- * stickers, sticky notes, the ruler, cover tape, the mic and the fill bucket
- * wait in the menu, and nothing is off.
+ * The bar a new install starts with, as it looked before it could be
+ * customized; the hand, the magnifier, Stylus-only mode, stickers, sticky
+ * notes, the ruler, cover tape, the mic and the fill bucket wait in More
+ * tools, and nothing is off.
  */
-export const DEFAULT_BAR: readonly BarItemId[] = [
-  "select",
-  "pen",
-  "eraser",
-  "text",
-  "shape",
-  "image",
-  "pdf",
-];
+export function defaultLayout(): ToolbarLayout {
+  return {
+    start: ["thumbnails", "search", "ai", "calculator", "undo", "redo"],
+    middle: ["select", "pen", "eraser", "text", "shape", "image", "pdf", "accessories"],
+    end: ["fullscreen", "addPage", "share", "more", "settings"],
+    off: [],
+  };
+}
 
-/** The item that can never leave the bar. */
-export const ALWAYS_SHOWN: BarItemId = "pen";
+/** The buttons that never leave the bar, and the zone each goes back to if lost. */
+export const PINNED: Readonly<Partial<Record<BarItemId, Zone>>> = {
+  pen: "middle",
+  accessories: "middle",
+  more: "end",
+};
 
-/** What each item is called, in the bar's tooltip, the menu and the list. */
+/** Whether `id` must stay on the bar. */
+export function isPinned(id: BarItemId): boolean {
+  return PINNED[id] !== undefined;
+}
+
+/** What each button is called, in its tooltip, the menus and edit mode. */
 export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
   get select() {
     return t("toolbar.tool.lasso");
@@ -125,9 +204,45 @@ export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
   get fill() {
     return t("toolbar.tool.fill");
   },
+  get calculator() {
+    return t("toolbar.calculator");
+  },
+  get thumbnails() {
+    return t("toolbar.pageThumbnails");
+  },
+  get search() {
+    return t("toolbar.item.search");
+  },
+  get ai() {
+    return t("toolbar.ai");
+  },
+  get undo() {
+    return t("common.undo");
+  },
+  get redo() {
+    return t("common.redo");
+  },
+  get fullscreen() {
+    return t("toolbar.fullScreen");
+  },
+  get addPage() {
+    return t("toolbar.addPage");
+  },
+  get share() {
+    return t("toolbar.export");
+  },
+  get settings() {
+    return t("toolbar.notebookSettings");
+  },
+  get accessories() {
+    return t("toolbar.moreTools");
+  },
+  get more() {
+    return t("common.more");
+  },
 };
 
-/** Each item's icon: its bar button's, in the menu and the list too. */
+/** Each button's icon, in the menus and edit mode as on the bar. */
 export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
   select: "lasso",
   pen: "pen-tool",
@@ -145,117 +260,190 @@ export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
   tape: "bandage",
   record: "mic",
   fill: "paint-bucket",
+  calculator: "calculator",
+  thumbnails: "panel-left",
+  search: "search",
+  ai: "sparkles",
+  undo: "undo-2",
+  redo: "redo-2",
+  fullscreen: "maximize-2",
+  addPage: "plus",
+  share: "share",
+  settings: "settings",
+  accessories: "toolbox",
+  more: "more-horizontal",
 };
 
 function isBarItem(value: unknown): value is BarItemId {
   return typeof value === "string" && (BAR_ITEMS as readonly string[]).includes(value);
 }
 
-/**
- * The shown items a stored value names: known ids, each once, the pen
- * among them (put back first if it went missing). Anything that is not a
- * list (a new install, a damaged file) is the default bar.
- */
-export function normalizeBar(raw: unknown): BarItemId[] {
-  if (!Array.isArray(raw)) return [...DEFAULT_BAR];
-  const shown: BarItemId[] = [];
-  for (const value of raw) if (isBarItem(value) && !shown.includes(value)) shown.push(value);
-  if (!shown.includes(ALWAYS_SHOWN)) shown.unshift(ALWAYS_SHOWN);
-  return shown;
+/** Known ids from a stored list, each once and not already `taken`, in their order. */
+function readList(raw: unknown, taken: Set<BarItemId>): BarItemId[] {
+  const out: BarItemId[] = [];
+  if (!Array.isArray(raw)) return out;
+  for (const value of raw) {
+    if (!isBarItem(value) || taken.has(value)) continue;
+    taken.add(value);
+    out.push(value);
+  }
+  return out;
 }
 
-/** The items off the bar (in the menu or not shown), in catalogue order. */
-export function hiddenItems(shown: readonly BarItemId[]): BarItemId[] {
-  return BAR_ITEMS.filter((id) => !shown.includes(id));
-}
-
-/** Where an item is: on the bar, in the accessories menu, or not shown at all. */
-export type ItemPlace = "bar" | "menu" | "off";
-
-/** Every item's place: the bar, left to right, and the items shown nowhere. */
-export interface ToolbarLayout {
-  bar: BarItemId[];
-  off: BarItemId[];
-}
-
-/** A new install's layout: the default bar, the rest in the menu. */
-export function defaultLayout(): ToolbarLayout {
-  return { bar: [...DEFAULT_BAR], off: [] };
+/** A pinned button that went missing goes back to its zone: the pen first, the rest last. */
+function restorePinned(layout: ToolbarLayout): void {
+  for (const id of BAR_ITEMS) {
+    const zone = PINNED[id];
+    if (!zone || ZONES.some((z) => layout[z].includes(id))) continue;
+    if (id === "pen") layout[zone].unshift(id);
+    else layout[zone].push(id);
+  }
 }
 
 /**
- * The layout two stored values name: `bar` as `normalizeBar` reads it, and
- * of `off` the known items that are not on the bar, each once, in catalogue
- * order. The pen is never off. Anything that is not a list is no item off,
- * as a layout stored before there was an "off" means.
+ * The layout a stored value names: in each zone the known buttons, each
+ * once across all of them, in their order; of `off` the known buttons not
+ * in a zone and not pinned, in catalogue order; every pinned button on the
+ * bar. Anything that is not an object (a new install, a damaged file) is
+ * the default layout.
  */
-export function normalizeLayout(bar: unknown, off: unknown): ToolbarLayout {
-  const shown = normalizeBar(bar);
-  const listed = Array.isArray(off) ? off : [];
-  return {
-    bar: shown,
-    off: BAR_ITEMS.filter((id) => listed.includes(id) && !shown.includes(id)),
+export function normalizeLayout(raw: unknown): ToolbarLayout {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return defaultLayout();
+  const stored = raw as Record<string, unknown>;
+  const taken = new Set<BarItemId>();
+  const layout: ToolbarLayout = {
+    start: readList(stored.start, taken),
+    middle: readList(stored.middle, taken),
+    end: readList(stored.end, taken),
+    off: [],
   };
+  const off = readList(stored.off, taken);
+  layout.off = BAR_ITEMS.filter((id) => off.includes(id) && !isPinned(id));
+  restorePinned(layout);
+  return layout;
+}
+
+/**
+ * The layout the three settings of 2.7 and before name (`toolbarItems`,
+ * the tools on the bar; `toolbarOff`, the tools hidden; `toolbarHome`, the
+ * calculator at the top left, from this release's first pass): those tools
+ * in the middle, the toolbox after them, and the rest of the bar as it was
+ * built then. Nobody's bar changes on update.
+ */
+export function migrateLayout(items: unknown, off: unknown, home?: unknown): ToolbarLayout {
+  const base = defaultLayout();
+  const tools = Array.isArray(items)
+    ? items.filter(isBarItem)
+    : base.middle.filter((id) => id !== "accessories");
+  const hidden = Array.isArray(off) ? off.filter(isBarItem) : [];
+  const calculatorHome =
+    !tools.includes("calculator") &&
+    !hidden.includes("calculator") &&
+    (!Array.isArray(home) || home.includes("calculator"));
+  return normalizeLayout({
+    start: base.start.filter((id) => id !== "calculator" || calculatorHome),
+    middle: [...tools, "accessories"],
+    end: base.end,
+    off: hidden,
+  });
 }
 
 /** Where `id` is in `layout`. */
 export function placeOf(layout: ToolbarLayout, id: BarItemId): ItemPlace {
-  if (layout.bar.includes(id)) return "bar";
+  for (const zone of ZONES) if (layout[zone].includes(id)) return zone;
   return layout.off.includes(id) ? "off" : "menu";
 }
 
-/** The items the accessories menu lists, in catalogue order. */
+/** Every button on the bar, in zone order. */
+export function barItems(layout: ToolbarLayout): BarItemId[] {
+  return [...layout.start, ...layout.middle, ...layout.end];
+}
+
+/** The buttons the More tools menu lists, in catalogue order. */
 export function menuItems(layout: ToolbarLayout): BarItemId[] {
   return BAR_ITEMS.filter((id) => placeOf(layout, id) === "menu");
 }
 
-/**
- * `layout` with `id` moved to `place`. An item put on the bar goes to its
- * right end, where Goodnotes adds it; one already there keeps its place. The
- * pen stays on the bar.
- */
-export function placeItem(layout: ToolbarLayout, id: BarItemId, place: ItemPlace): ToolbarLayout {
-  if (id === ALWAYS_SHOWN || placeOf(layout, id) === place) {
-    return { bar: [...layout.bar], off: [...layout.off] };
-  }
-  const bar = layout.bar.filter((item) => item !== id);
-  const off = layout.off.filter((item) => item !== id);
-  if (place === "bar") bar.push(id);
-  if (place === "off") off.push(id);
-  return { bar, off: BAR_ITEMS.filter((item) => off.includes(item)) };
+/** The buttons shown nowhere, in catalogue order. */
+export function offItems(layout: ToolbarLayout): BarItemId[] {
+  return BAR_ITEMS.filter((id) => layout.off.includes(id));
 }
 
-/** `shown` with the item at `from` moved to `to` (both clamped into the list). */
-export function moveItem(shown: readonly BarItemId[], from: number, to: number): BarItemId[] {
-  const next = [...shown];
-  if (next.length === 0) return next;
-  const a = Math.max(0, Math.min(next.length - 1, Math.round(from)));
-  const b = Math.max(0, Math.min(next.length - 1, Math.round(to)));
-  const [item] = next.splice(a, 1);
-  next.splice(b, 0, item);
+/** A copy of `layout`. */
+export function copyLayout(layout: ToolbarLayout): ToolbarLayout {
+  return {
+    start: [...layout.start],
+    middle: [...layout.middle],
+    end: [...layout.end],
+    off: [...layout.off],
+  };
+}
+
+/** Where a button can be sent: a place in a zone, the menu, or out of sight. */
+export type Target = { zone: Zone; index: number } | "menu" | "off";
+
+/**
+ * `layout` with `id` moved to `target`. In a zone, `index` counts the
+ * zone's buttons without `id` itself and is clamped into it. A pinned button
+ * sent to the menu or off stays where it is. `layout` is not changed.
+ */
+export function moveTo(layout: ToolbarLayout, id: BarItemId, target: Target): ToolbarLayout {
+  const next = copyLayout(layout);
+  if (typeof target === "string" && isPinned(id)) return next;
+  for (const zone of ZONES) next[zone] = next[zone].filter((item) => item !== id);
+  next.off = next.off.filter((item) => item !== id);
+  if (target === "off")
+    next.off = BAR_ITEMS.filter((item) => item === id || next.off.includes(item));
+  else if (target !== "menu") {
+    const list = next[target.zone];
+    const index = Math.max(0, Math.min(list.length, Math.round(target.index)));
+    list.splice(index, 0, id);
+  }
   return next;
 }
 
 /**
- * Where a row dragged in a list of `rows` rows of `rowHeight` px lands, its
- * middle `offset` px below the list's top: the index its middle is over.
+ * `layout` with `id` one place along the bar (`step` -1: toward the start,
+ * +1: toward the end), crossing into the next zone at a zone's end; a
+ * button already first or last on the bar stays. A button off the bar
+ * stays where it is too.
  */
-export function dropIndex(offset: number, rowHeight: number, rows: number): number {
-  if (!(rowHeight > 0) || rows <= 0) return 0;
-  return Math.max(0, Math.min(rows - 1, Math.floor(offset / rowHeight)));
+export function stepItem(layout: ToolbarLayout, id: BarItemId, step: -1 | 1): ToolbarLayout {
+  const place = placeOf(layout, id);
+  if (place === "menu" || place === "off") return copyLayout(layout);
+  const at = layout[place].indexOf(id);
+  const z = ZONES.indexOf(place);
+  if (step < 0 && at > 0) return moveTo(layout, id, { zone: place, index: at - 1 });
+  if (step > 0 && at < layout[place].length - 1) {
+    return moveTo(layout, id, { zone: place, index: at + 1 });
+  }
+  const neighbour = ZONES[z + step];
+  if (!neighbour) return copyLayout(layout);
+  // Into the next zone: at its near end.
+  return moveTo(layout, id, { zone: neighbour, index: step < 0 ? layout[neighbour].length : 0 });
 }
 
-/** Whether two bars show the same items in the same order. */
-export function sameBar(a: readonly BarItemId[], b: readonly BarItemId[]): boolean {
+/**
+ * Where a button dropped at `pos` along a zone lands: the number of the
+ * zone's buttons (by their middles, `centres`, in order) before it.
+ */
+export function slotAt(centres: readonly number[], pos: number): number {
+  let index = 0;
+  while (index < centres.length && centres[index] < pos) index += 1;
+  return index;
+}
+
+/** Whether two lists hold the same buttons in the same order. */
+function sameList(a: readonly BarItemId[], b: readonly BarItemId[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
-/** Whether two layouts put every item in the same place, the bar in the same order. */
+/** Whether two layouts put every button in the same place, in the same order. */
 export function sameLayout(a: ToolbarLayout, b: ToolbarLayout): boolean {
-  return sameBar(a.bar, b.bar) && sameBar(a.off, b.off);
+  return ZONES.every((zone) => sameList(a[zone], b[zone])) && sameList(a.off, b.off);
 }
 
-// --- An item shown nowhere has nothing left on --------------------------------
+// --- A button shown nowhere has nothing left on -------------------------------
 
 /** The bar item a tool belongs to: the highlighter and the laser are the pen's. */
 export function barItemOfTool(tool: string): BarItemId | null {
@@ -300,17 +488,17 @@ export interface EndedEffects {
 
 /**
  * The effects to end under `layout` (Joost, 2026-10-30): an item shown
- * nowhere ("off" in Customize toolbar) leaves nothing on, since no button
- * would show it or turn it off. A tool of its in hand gives way to the pen;
- * Stylus-only mode goes off, the ruler away, a recording stops (and is
- * saved), a sticky note waiting to be placed is dropped. An item in the
- * accessories menu is still reachable, and keeps its effect.
+ * nowhere leaves nothing on, since no button would show it or turn it off.
+ * A tool of its in hand gives way to the pen; Stylus-only mode goes off,
+ * the ruler away, a recording stops (and is saved), a sticky note waiting
+ * to be placed is dropped. An item in the More tools menu is still
+ * reachable, and keeps its effect.
  */
 export function effectsOfOffItems(layout: ToolbarLayout, live: ItemEffects): EndedEffects {
   const off = (id: BarItemId): boolean => layout.off.includes(id);
   const item = barItemOfTool(live.tool);
   return {
-    pen: item !== null && item !== ALWAYS_SHOWN && off(item),
+    pen: item !== null && !isPinned(item) && off(item),
     onlyStylus: live.onlyStylus && off("stylus"),
     ruler: live.rulerOut && off("ruler"),
     recording: live.recording && off("record"),
