@@ -835,6 +835,9 @@ export class InkView extends TextFileView {
       (path) =>
         (log.length > 0 ? this.plugin.fileMoves.relink(path, log) : undefined) ??
         nearbyTarget(notePath, exists, path),
+      (path) =>
+        (log.length > 0 ? this.plugin.fileMoves.relinkFolder(path, log) : undefined) ??
+        nearbyTarget(notePath, exists, path),
     );
     // Paths rewritten in place, on any page: nothing else can tell the save cache.
     if (relinked > 0) this.encoder.touchAll();

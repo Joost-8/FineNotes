@@ -127,6 +127,22 @@ describe("FileMoveTracker", () => {
     );
   });
 
+  it("takes a closed board's folders along with its renamed folder, before they exist", async () => {
+    const doc = emptyDocument();
+    doc.folders = { images: "Ideas/Images", exports: "Ideas/Exports" };
+    const { tracker, files } = setUp({ "Ideas/Ideas.notebook.md": buildInkFile("# Ideas", doc) });
+    files["Plans/Plans.notebook.md"] = files["Ideas/Ideas.notebook.md"];
+    delete files["Ideas/Ideas.notebook.md"];
+    files["Plans"] = "";
+    tracker.renamed({ path: "Plans" } as TAbstractFile, "Ideas");
+    await vi.advanceTimersByTimeAsync(RELINK_DELAY_MS);
+    await tracker.flush();
+    expect(parseInkFile(files["Plans/Plans.notebook.md"]).doc?.folders).toEqual({
+      images: "Plans/Images",
+      exports: "Plans/Exports",
+    });
+  });
+
   it("does nothing more when only a notebook was renamed", async () => {
     const { tracker, move, relinkOpen } = setUp({ "A.notebook.md": noteWithPdf("a.pdf") });
     move(tracker, "A.notebook.md", "B.notebook.md");
