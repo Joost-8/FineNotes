@@ -8,6 +8,7 @@
  * `tests/settings/settings-data.test.ts` pins all of it.
  */
 
+import type { FolderStyles } from "./model/library-style";
 import { type ShapeToolStyle } from "./model/shape-style";
 import type { LearnedModel } from "./recognition/hwr/learned-model";
 import {
@@ -352,6 +353,10 @@ export interface GoodObsidianSettings {
    * `toolbarItems`, `toolbarOff` and `toolbarHome`, read once on load.
    */
   toolbarLayout: ToolbarLayout;
+  /** Notebooks and folders starred in the library, by vault path. Cleaned where read. */
+  libraryStars: string[];
+  /** The colour and icon chosen for library folders, by vault path. Cleaned where read. */
+  libraryFolders: FolderStyles;
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
@@ -516,6 +521,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
 
   savedPens: defaultSavedPens(),
   toolbarLayout: defaultLayout(),
+  libraryStars: [],
+  libraryFolders: {},
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",
   penCursor: "ink",

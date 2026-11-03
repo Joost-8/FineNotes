@@ -1597,12 +1597,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "Add New notebook to the file explorer menu. New notebooks start in the selected folder.",
         ),
         this.info(
-          toggle("showNewNotebookInExplorer", "New notebook button in the file explorer", "", [
+          toggle("showNewNotebookInExplorer", "Library button in the file explorer", "", [
             "toolbar",
             "file explorer",
+            "library",
             "new notebook",
           ]),
-          "Add a New notebook button beside New note and New folder in the file explorer.",
+          "Add a button that opens the notebook library, beside New note and New folder in the file explorer.",
         ),
         this.info(
           toggle("folderNotebooks", "Show notebook folders as notebooks", "", [

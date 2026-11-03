@@ -369,6 +369,7 @@ import { PANEL_SLIDE_MS, type PageSnapshot } from "./motion";
 import {
   type LastPages,
   forgetInLastPages,
+  LAST_PAGES_KEY,
   lastPageIndex,
   parseLastPages,
   rememberPage,
@@ -3902,11 +3903,9 @@ export class InkView extends TextFileView {
 
   // --- Where each notebook was left ---------------------------------------------
 
-  private static readonly LAST_PAGES_KEY = "goodobsidian:last-pages";
-
   /** This device's map of where each notebook was left (vault-scoped local storage). */
   private loadLastPages(): LastPages {
-    const raw: unknown = this.app.loadLocalStorage(InkView.LAST_PAGES_KEY);
+    const raw: unknown = this.app.loadLocalStorage(LAST_PAGES_KEY);
     if (typeof raw !== "string") return parseLastPages(null);
     try {
       return parseLastPages(JSON.parse(raw));
@@ -3916,7 +3915,7 @@ export class InkView extends TextFileView {
   }
 
   private saveLastPages(map: LastPages): void {
-    this.app.saveLocalStorage(InkView.LAST_PAGES_KEY, JSON.stringify(map));
+    this.app.saveLocalStorage(LAST_PAGES_KEY, JSON.stringify(map));
   }
 
   /** The page being read changed: remember it, once the reader settles. */

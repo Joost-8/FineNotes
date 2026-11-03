@@ -20,7 +20,8 @@ export interface WelcomeActions {
   // Properties holding functions, not methods (CLAUDE.md: a callback is a value).
   openTour: () => void;
   importNotebooks: () => void;
-  newNotebook: () => void;
+  /** Opens Home, the notebook library, where New makes a notebook. */
+  openHome: () => void;
 }
 
 export class WelcomeModal extends Modal {
@@ -56,10 +57,10 @@ export class WelcomeModal extends Modal {
     );
     this.choice(
       "Start fresh",
-      "A new notebook, with the cover and paper you choose.",
-      "New notebook",
+      "Home holds your notebooks. Its New button makes one, with the cover and paper you choose.",
+      "Open Home",
       false,
-      this.actions.newNotebook,
+      this.actions.openHome,
     );
     el.createEl("p", {
       cls: "goodobsidian-welcome-hint",

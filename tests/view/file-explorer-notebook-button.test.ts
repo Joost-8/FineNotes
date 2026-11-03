@@ -58,7 +58,7 @@ describe("file explorer notebook button", () => {
     const controller = new FileExplorerNotebookButton(create);
     controller.sync(containers(container), true);
     controller.sync(containers(container), true);
-    expect(labels(bar)).toEqual(["New note", "New folder", "New notebook", "Sort", "Collapse"]);
+    expect(labels(bar)).toEqual(["New note", "New folder", "Notebook library", "Sort", "Collapse"]);
     expect(bar.nodes[2].cls).toContain("clickable-icon");
     expect(bar.nodes[2].attrs.type).toBe("button");
     bar.nodes[2].click();
@@ -68,12 +68,12 @@ describe("file explorer notebook button", () => {
     const { container, bar } = explorer();
     const controller = new FileExplorerNotebookButton(vi.fn());
     controller.sync(containers(container), false);
-    expect(labels(bar)).not.toContain("New notebook");
+    expect(labels(bar)).not.toContain("Notebook library");
     controller.sync(containers(container), true);
     controller.sync(containers(container), false);
-    expect(labels(bar)).not.toContain("New notebook");
+    expect(labels(bar)).not.toContain("Notebook library");
     controller.sync(containers(container), true);
-    expect(labels(bar).filter((label) => label === "New notebook")).toHaveLength(1);
+    expect(labels(bar).filter((label) => label === "Notebook library")).toHaveLength(1);
   });
   it("tracks each explorer and cleans up closed leaves and plugin unload", () => {
     const first = explorer();
@@ -81,12 +81,12 @@ describe("file explorer notebook button", () => {
     const controller = new FileExplorerNotebookButton(vi.fn());
     controller.sync(containers(first.container, second.container), true);
     controller.sync(containers(second.container), true);
-    expect(labels(first.bar)).not.toContain("New notebook");
-    expect(labels(second.bar)).toContain("New notebook");
+    expect(labels(first.bar)).not.toContain("Notebook library");
+    expect(labels(second.bar)).toContain("Notebook library");
     controller.destroy();
     controller.destroy();
     controller.sync(containers(second.container), true);
-    expect(labels(second.bar)).not.toContain("New notebook");
+    expect(labels(second.bar)).not.toContain("Notebook library");
   });
   it("tolerates unavailable bars and restores a button removed by an explorer redraw", () => {
     const { container, bar } = explorer();
@@ -95,6 +95,6 @@ describe("file explorer notebook button", () => {
     controller.sync(containers(container), true);
     bar.nodes[2].remove();
     controller.sync(containers(container), true);
-    expect(labels(bar).filter((label) => label === "New notebook")).toHaveLength(1);
+    expect(labels(bar).filter((label) => label === "Notebook library")).toHaveLength(1);
   });
 });
