@@ -442,6 +442,7 @@ describe("registration", () => {
         "create-handwriting-note",
         "create-notebook-from-pdf",
         "create-notebook-with-last-settings",
+        "customize-toolbar",
         "export-pdf",
         "fit-reset-view",
         "import-pdf",
@@ -1401,10 +1402,34 @@ describe("Stylus only shown nowhere", () => {
     await load({ lastSeenVersion: VERSION, onlyStylusMode: true });
     const a = vi.fn();
     inkLeaf(app.addFile("A.notebook.md"), { setOnlyStylusMode: a, setToolbarItems: vi.fn() });
-    plugin.saveToolbarLayout({ bar: ["pen", "select"], off: ["stylus"], home: [] });
+    plugin.saveToolbarLayout({
+      start: [],
+      middle: ["pen", "select", "accessories"],
+      end: ["more"],
+      off: ["stylus"],
+    });
     await flush();
     expect(plugin.settings.onlyStylusMode).toBe(false);
     expect(a).toHaveBeenCalledWith(false);
+  });
+
+  it("reads the tool lists of 2.7 and before as the bar they showed, and drops them", async () => {
+    await load({
+      lastSeenVersion: VERSION,
+      toolbarItems: ["pen", "sticky", "select", "ruler"],
+      toolbarOff: ["pan", "record"],
+      toolbarHome: [],
+    } as never);
+    expect(plugin.settings.toolbarLayout).toEqual({
+      start: ["thumbnails", "search", "ai", "undo", "redo"],
+      middle: ["pen", "sticky", "select", "ruler", "accessories"],
+      end: ["fullscreen", "addPage", "share", "more", "settings"],
+      off: ["pan", "record"],
+    });
+    const settings = plugin.settings as unknown as Record<string, unknown>;
+    expect(settings).not.toHaveProperty("toolbarItems");
+    expect(settings).not.toHaveProperty("toolbarOff");
+    expect(settings).not.toHaveProperty("toolbarHome");
   });
 
   it("cannot be turned on by its command while off", async () => {

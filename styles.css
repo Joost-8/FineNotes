@@ -318,20 +318,38 @@ body:not(.is-mobile) .goodobsidian-view {
   display: none;
 }
 
+/* Three zones (toolbar-layout.ts): the start, the writing tools centred
+   on the bar, the document's actions at the end. Positioned, so the tool
+   indicator can stand in any of them. */
 .goodobsidian-bar-group {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--gob-gap);
   flex: 0 0 auto;
 }
 
-/* Left: pages, search and AI, then undo and redo after a hairline. The
-   writing tools are centred on the bar, and the document's actions (add
-   page, share, ⋯, settings) sit right. */
-.goodobsidian-bar-group.is-centre {
-  margin: 0;
-  padding-left: 8px;
-  border-left: 1px solid var(--gob-line);
+/* Undo after a hairline, wherever it follows a button that is not redo
+   (by default: pages, search, AI and the calculator, then undo and redo). */
+.goodobsidian-toolbar
+  .goodobsidian-bar-group
+  > button[data-item]:not([data-item="undo"]):not([data-item="redo"])
+  + button[data-item="undo"] {
+  position: relative;
+  margin-left: 9px;
+}
+
+.goodobsidian-toolbar
+  .goodobsidian-bar-group
+  > button[data-item]:not([data-item="undo"]):not([data-item="redo"])
+  + button[data-item="undo"]::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 20%;
+  bottom: 20%;
+  width: 1px;
+  background: var(--gob-line);
 }
 
 .goodobsidian-bar-group.is-tools {
@@ -11305,10 +11323,8 @@ button.goodobsidian-learn-button.is-learning {
   display: none;
 }
 
-.goodobsidian-toolbar .goodobsidian-bar-group.is-tools.has-indicator button.is-active,
-.goodobsidian-toolbar
-  .goodobsidian-bar-group.is-tools.has-indicator
-  button.is-active:hover:not(:disabled) {
+.goodobsidian-toolbar .goodobsidian-bar-group.has-indicator button.is-active,
+.goodobsidian-toolbar .goodobsidian-bar-group.has-indicator button.is-active:hover:not(:disabled) {
   background: transparent;
 }
 
@@ -14528,10 +14544,23 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   flex-direction: column;
 }
 
-.goodobsidian-toolbar.is-upright .goodobsidian-bar-group.is-centre {
-  padding: 8px 0 0;
-  border-left: none;
-  border-top: 1px solid var(--gob-line);
+.goodobsidian-toolbar.is-upright
+  .goodobsidian-bar-group
+  > button[data-item]:not([data-item="undo"]):not([data-item="redo"])
+  + button[data-item="undo"] {
+  margin: 9px 0 0;
+}
+
+.goodobsidian-toolbar.is-upright
+  .goodobsidian-bar-group
+  > button[data-item]:not([data-item="undo"]):not([data-item="redo"])
+  + button[data-item="undo"]::before {
+  left: 20%;
+  right: 20%;
+  top: -6px;
+  bottom: auto;
+  width: auto;
+  height: 1px;
 }
 
 .goodobsidian-toolbar.is-upright .goodobsidian-bar-group.goodobsidian-bar-doc {
@@ -15003,4 +15032,314 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
    app and Shortcuts still see it. */
 .nav-folder:has(> .nav-folder-title[data-path="FineNotes inbox"]) {
   display: none;
+}
+
+/* ------------------------------------------ Customize toolbar (toolbar-edit.ts) */
+
+/* The bar being customized sits over a dimmed page that takes no ink; its
+   zones are dashed and named, and every button is a chip to pick up. */
+.goodobsidian-toolbar.is-editing {
+  z-index: 32;
+  overflow: visible;
+  touch-action: none;
+}
+
+.goodobsidian-toolbar.is-editing .goodobsidian-tool-indicator {
+  display: none;
+}
+
+.goodobsidian-toolbar.is-editing .goodobsidian-bar-group.is-zone {
+  min-width: calc(var(--gob-touch) + 12px);
+  min-height: var(--gob-touch);
+  padding: 14px 4px 4px;
+  border-radius: 10px;
+  outline: 1.5px dashed var(--background-modifier-border-hover);
+  outline-offset: 0;
+}
+
+/* A crowded bar's tools group is unpositioned (it follows the start):
+   positioned here, which moves nothing, so its name sits on it. */
+.goodobsidian-toolbar.is-editing.is-crowded .goodobsidian-bar-group.is-tools {
+  position: relative;
+  inset: auto;
+}
+
+.goodobsidian-toolbar.is-editing .goodobsidian-bar-group.is-zone::before {
+  content: attr(data-zone-label);
+  position: absolute;
+  top: 2px;
+  left: 8px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.goodobsidian-toolbar.is-editing button.goodobsidian-tool[data-item] {
+  cursor: grab;
+  background: var(--background-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+/* Pinned to the bar: it moves along it, never off it. A dot says so. */
+/* Over the press highlight that every bar button's ::after otherwise is. */
+.goodobsidian-toolbar.is-editing button.goodobsidian-tool.is-pinned::after {
+  content: "";
+  position: absolute;
+  inset: auto 3px 3px auto;
+  z-index: 1;
+  opacity: 1;
+  transform: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-toolbar.is-editing button.goodobsidian-tool.is-pinned {
+  position: relative;
+}
+
+/* Would fold into ⋯ at this width once the mode closes. */
+.goodobsidian-toolbar.is-editing button.goodobsidian-tool.will-fold {
+  outline: 1.5px dashed var(--text-faint);
+  outline-offset: -2px;
+}
+
+.goodobsidian-toolbar.is-editing button.goodobsidian-tool.is-drag-source {
+  opacity: 0.25;
+}
+
+.goodobsidian-edit-gap {
+  flex: 0 0 auto;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  box-sizing: border-box;
+  border: 2px solid var(--interactive-accent);
+  border-radius: var(--gob-tool-radius);
+  background: hsla(var(--interactive-accent-hsl), 0.12);
+}
+
+.goodobsidian-edit-ghost {
+  position: fixed;
+  z-index: var(--layer-tooltip);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--gob-tool-radius, 10px);
+  background: var(--background-primary);
+  color: var(--icon-color);
+  box-shadow: var(--shadow-l);
+  transform: translate(-50%, -60%) scale(1.15);
+  pointer-events: none;
+}
+
+.goodobsidian-edit-ghost svg {
+  width: 20px;
+  height: 20px;
+}
+
+.goodobsidian-edit-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 31;
+  background: rgba(0, 0, 0, 0.28);
+  touch-action: none;
+}
+
+.goodobsidian-edit-tray {
+  position: absolute;
+  z-index: 33;
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: min(760px, calc(100% - 16px));
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: var(--background-primary);
+  box-shadow: var(--shadow-l);
+  touch-action: none;
+}
+
+.goodobsidian-edit-tray.is-beside {
+  left: auto;
+  transform: none;
+  width: min(420px, calc(100% - 96px));
+}
+
+.goodobsidian-edit-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.goodobsidian-edit-spacer {
+  flex: 1 1 auto;
+}
+
+.goodobsidian-edit-docks {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+button.goodobsidian-edit-dock {
+  width: 34px;
+  height: 30px;
+  color: var(--icon-color);
+}
+
+button.goodobsidian-edit-dock.is-active {
+  background: var(--background-primary);
+  color: var(--interactive-accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+button.goodobsidian-edit-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 6px;
+  white-space: normal;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-edit-toggle {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--background-modifier-border-hover);
+}
+
+.goodobsidian-edit-toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s ease;
+}
+
+.goodobsidian-edit-toggle.is-on {
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-edit-toggle.is-on::after {
+  left: 14px;
+}
+
+button.goodobsidian-edit-reset {
+  height: 30px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+button.goodobsidian-edit-reset:disabled {
+  opacity: 0.4;
+}
+
+button.goodobsidian-edit-done {
+  width: 40px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+button.goodobsidian-edit-done:hover {
+  background: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-edit-shelf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: var(--background-secondary);
+}
+
+.goodobsidian-edit-shelf.is-target {
+  outline: 2px solid var(--interactive-accent);
+}
+
+.goodobsidian-edit-shelf-name {
+  flex: 0 0 84px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.goodobsidian-edit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+button.goodobsidian-edit-chip {
+  width: 40px;
+  height: 40px;
+  cursor: grab;
+  background: var(--background-primary);
+  color: var(--icon-color);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.goodobsidian-edit-shelf.is-off button.goodobsidian-edit-chip {
+  opacity: 0.6;
+}
+
+.goodobsidian-edit-empty {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.goodobsidian-edit-menu {
+  position: absolute;
+  z-index: 34;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: var(--background-primary);
+  box-shadow: var(--shadow-l);
+}
+
+button.goodobsidian-edit-menu-row {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  padding: 7px 8px;
+  white-space: normal;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-edit-menu-icon {
+  display: inline-flex;
+  color: var(--icon-color);
 }

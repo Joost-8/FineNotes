@@ -17,7 +17,6 @@
  *   ┌ Dark pages / Light pages            ┐
  *   │ Dark PDF pages                   ✓  │  (only while pages are dark)
  *   │ Desk             [◐] [○] [●] [◍]    │
- *   │ Toolbar          [▔] [▁] [▏] [▕]    │
  *   │ Draw with finger                 ✓  │  (only where there is touch)
  *   │ Keyboard shortcuts                  │
  *   │ Copy home screen link               │
@@ -39,7 +38,7 @@ import { onEnterKey } from "./enter-key";
 import type { FoldedBarItem } from "./toolbar";
 import type { DeskChoice } from "../settings-data";
 import { DARK_PAPER, LIGHT_DESK, LIGHT_PAPER } from "../canvas/backdrop";
-import { type BarDock, menuAnchor, menuPlace, menuRoom } from "./bar-dock-model";
+import { menuAnchor, menuPlace, menuRoom } from "./bar-dock-model";
 
 export interface MorePanelPage {
   /** Zero-based index of the page the panel is about. */
@@ -74,10 +73,6 @@ export interface MorePanelPage {
   desk?: { choice: DeskChoice; color: string };
   /** Tool bar buttons folded in here because the bar had no room for them. */
   folded?: FoldedBarItem[];
-  /** Where the tool bar rests on this device (bar-dock-model.ts), for its row. */
-  barDock?: BarDock;
-  /** "Dock tool options" is on, on this device (pill-row-model.ts). */
-  pillRow?: boolean;
   /** Fingers draw while the Pencil is away (`input/finger-draw.ts`). */
   fingerDrawing?: boolean;
 }
@@ -108,21 +103,9 @@ export interface MorePanelActions {
   showShortcuts: () => void;
   /** Copy the link that opens this notebook from a home-screen shortcut. */
   copyHomeLink: () => void;
-  /** Put the tool bar at `dock`, on this device. Without it the row is not offered. */
-  setBarDock?: (dock: BarDock) => void;
-  /** Dock the tool options as a row by the bar, or let them float. Without it the row is not offered. */
-  setPillRow?: (on: boolean) => void;
   /** Let a finger draw until the Pencil writes again, or stop. Without it (no touch) the row is not offered. */
   setFingerDrawing?: (on: boolean) => void;
 }
-
-/** The tool bar's places in the Toolbar row, each its Lucide panel icon. */
-const BAR_DOCKS: ReadonlyArray<{ dock: BarDock; label: string }> = [
-  { dock: "top", label: "Toolbar at the top" },
-  { dock: "bottom", label: "Toolbar at the bottom" },
-  { dock: "left", label: "Toolbar on the left" },
-  { dock: "right", label: "Toolbar on the right" },
-];
 
 /** The desks in the Desk row, in order. */
 const DESKS: ReadonlyArray<{ choice: DeskChoice; label: string }> = [
@@ -312,8 +295,6 @@ export class MorePanel {
     });
     if (page.darkPages) this.darkPdfRow(view);
     this.deskRow(view);
-    this.barDockRow(view);
-    this.pillRowRow(view);
     this.fingerDrawRow(view);
     this.row(view, {
       icon: "keyboard",
@@ -371,36 +352,6 @@ export class MorePanel {
     });
     setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), "pointer");
     button.createSpan({ cls: "goodobsidian-more-label", text: "Draw with finger" });
-    const mark = button.createSpan({ cls: "goodobsidian-more-check" });
-    setIcon(mark, "check");
-    mark.toggleClass("is-hidden", !on);
-    button.setAttribute("role", "switch");
-    button.setAttribute("aria-checked", String(on));
-    button.addEventListener("click", () => {
-      this.close();
-      set(!on);
-    });
-  }
-
-  /**
-   * "Dock tool options" (discussion #43): the pill by the bar becomes a row
-   * the page starts past, so it covers no writing (pill-row-model.ts). A
-   * switch under "Toolbar", like "Draw with finger"; only while the bar runs
-   * along the top or bottom, the only places a row exists.
-   */
-  private pillRowRow(parent: HTMLElement): void {
-    const set = this.actions.setPillRow;
-    const bar = this.page.barDock ?? "top";
-    if (!set || (bar !== "top" && bar !== "bottom")) return;
-    const on = this.page.pillRow === true;
-    const button = parent.createEl("button", {
-      cls: "goodobsidian-more-row is-switch clickable-icon",
-    });
-    setIcon(
-      button.createSpan({ cls: "goodobsidian-more-icon" }),
-      bar === "top" ? "panel-top-open" : "panel-bottom-open",
-    );
-    button.createSpan({ cls: "goodobsidian-more-label", text: "Dock tool options" });
     const mark = button.createSpan({ cls: "goodobsidian-more-check" });
     setIcon(mark, "check");
     mark.toggleClass("is-hidden", !on);
@@ -487,37 +438,6 @@ export class MorePanel {
       }
     }
     mark();
-  }
-
-  /**
-   * "Toolbar": where the tool bar rests on this device (FineNotes#50), as
-   * four panel icons at the row's end, the one in use marked. A choice moves
-   * the bar this panel hangs from, so the panel closes first.
-   */
-  private barDockRow(parent: HTMLElement): void {
-    const set = this.actions.setBarDock;
-    if (!set) return;
-    const row = parent.createDiv({ cls: "goodobsidian-more-row is-bar-dock" });
-    setIcon(row.createSpan({ cls: "goodobsidian-more-icon" }), "layout-panel-top");
-    row.createSpan({ cls: "goodobsidian-more-label", text: "Toolbar" });
-    const places = row.createDiv({ cls: "goodobsidian-more-docks" });
-    places.setAttribute("role", "radiogroup");
-    places.setAttribute("aria-label", "Toolbar");
-    for (const { dock, label } of BAR_DOCKS) {
-      const button = places.createEl("button", {
-        cls: "goodobsidian-more-dock clickable-icon",
-      });
-      setIcon(button, `panel-${dock}`);
-      const chosen = dock === (this.page.barDock ?? "top");
-      button.toggleClass("is-active", chosen);
-      button.setAttribute("role", "radio");
-      button.setAttribute("aria-checked", String(chosen));
-      button.setAttribute("aria-label", label);
-      button.addEventListener("click", () => {
-        this.close();
-        set(dock);
-      });
-    }
   }
 
   private group(): HTMLElement {
