@@ -140,6 +140,7 @@ import type { RulerKind } from "./canvas/ruler-geometry";
 import {
   DEFAULT_NOTEBOOK_CHOICES,
   type NotebookChoices,
+  type NotebookType,
   buildNewDocument,
   buildPdfNotebook,
   cleanTitle,
@@ -440,7 +441,21 @@ export default class GoodObsidianPlugin extends Plugin {
       VIEW_TYPE_LIBRARY,
       (leaf) =>
         new LibraryView(leaf, {
-          newNotebook: () => this.openNewNotebookDialog(),
+          newNotebook: (folder) => this.openNewNotebookDialog(folder),
+          newBoard: (folder) => this.openNewNotebookDialog(folder, "endless"),
+          importPdf: (source, folder) => {
+            const name = source.file.name.replace(/\.pdf$/i, "");
+            void this.createNotebookFromPdfBytes(
+              name,
+              this.pdfNotebookChoices(),
+              folder,
+              () =>
+                source.kind === "vault"
+                  ? this.app.vault.readBinary(source.file)
+                  : source.file.arrayBuffer(),
+              source.kind === "vault" ? source.file.path : { name },
+            );
+          },
           stars: () => this.settings.libraryStars,
           setStars: (stars) => {
             this.settings.libraryStars = stars;
@@ -2164,7 +2179,7 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** The "New notebook" dialog, preset with the last choices and the default folder. */
-  openNewNotebookDialog(folder?: string): void {
+  openNewNotebookDialog(folder?: string, kind?: NotebookType): void {
     // My templates' previews: a PDF cache of the dialog's own, let go when it closes.
     const cache = new PdfBackdropCache(this.app);
     const painter = new VaultBackdropRenderer(cache);
@@ -2185,7 +2200,10 @@ export default class GoodObsidianPlugin extends Plugin {
       });
     });
     const modal = new NewNotebookModal(this.app, {
-      choices: parseNotebookChoices(this.settings.lastNotebookChoices),
+      choices: {
+        ...parseNotebookChoices(this.settings.lastNotebookChoices),
+        ...(kind ? { type: kind } : {}),
+      },
       template: parseNotebookTemplate(this.settings.lastNotebookTemplate),
       folder: folder ?? this.newNotebookFolder(),
       papers: library,

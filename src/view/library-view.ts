@@ -50,6 +50,8 @@ import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { thumbnailRasterScale } from "./page-sidebar";
 import { FolderSuggestModal } from "./folder-suggest";
 import { RenameModal } from "./rename-modal";
+import { pickImageFile } from "./image-import";
+import { VaultPdfSuggestModal } from "./pdf-import-modal";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
 import {
@@ -71,7 +73,14 @@ import {
 
 /** What the view needs from the plugin. */
 export interface LibraryHost {
-  newNotebook(): void;
+  /** The New notebook / New board dialogs, made in `folder` ("" the root). */
+  newNotebook(folder: string): void;
+  newBoard(folder: string): void;
+  /** A notebook whose pages are the chosen PDF's, made in `folder`. */
+  importPdf(
+    source: { kind: "file"; file: File } | { kind: "vault"; file: TFile },
+    folder: string,
+  ): void;
   /** The starred notebooks and folders, by vault path. */
   stars(): readonly string[];
   setStars(stars: string[]): void;
@@ -182,11 +191,12 @@ export class LibraryView extends ItemView {
     sort.addEventListener("click", (event) => this.openSortMenu(event));
 
     const add = head.createEl("button", {
-      cls: "clickable-icon",
-      attr: { "aria-label": "New notebook" },
+      cls: "goodobsidian-library-new",
+      attr: { type: "button", "aria-haspopup": "menu" },
     });
-    setIcon(add, "plus");
-    add.addEventListener("click", () => this.host.newNotebook());
+    setIcon(add.createSpan({ cls: "goodobsidian-library-new-icon" }), "plus");
+    add.createSpan({ text: "New" });
+    add.addEventListener("click", (event) => this.openNewMenu(event));
 
     this.bodyEl = root.createDiv({ cls: "goodobsidian-library-body" });
 
@@ -324,7 +334,7 @@ export class LibraryView extends ItemView {
       const empty = this.bodyEl.createDiv({ cls: "goodobsidian-library-empty" });
       empty.createDiv({ text: "No notebooks yet." });
       const button = empty.createEl("button", { text: "New notebook", cls: "mod-cta" });
-      button.addEventListener("click", () => this.host.newNotebook());
+      button.addEventListener("click", () => this.host.newNotebook(this.folder));
       return;
     }
 
@@ -374,7 +384,9 @@ export class LibraryView extends ItemView {
         }
       }
     }
-    const folders = here.folders.filter((f) => !shownFolders.has(f.path));
+    const folders = [...here.folders, ...this.emptyFolders(here.folders)].filter(
+      (f) => !shownFolders.has(f.path),
+    );
     if (folders.length > 0) {
       this.label("Folders");
       const row = this.bodyEl.createDiv({ cls: "goodobsidian-library-grid" });
@@ -385,6 +397,23 @@ export class LibraryView extends ItemView {
     if (rest.length > 0) {
       this.grid(sortEntries(rest, this.sort), SORTS.find((s) => s.by === this.sort)?.label ?? "");
     }
+  }
+
+  /** Folders directly in this one that hold no file at all: made here, and waiting for a notebook. */
+  private emptyFolders(listed: readonly { path: string }[]): FolderTile[] {
+    const root = this.app.vault.getFolderByPath(this.folder === "" ? "/" : this.folder);
+    if (!root) return [];
+    const holdsFiles = (folder: TFolder): boolean =>
+      folder.children.some((c) => c instanceof TFile || (c instanceof TFolder && holdsFiles(c)));
+    return root.children
+      .filter(
+        (c): c is TFolder =>
+          c instanceof TFolder &&
+          !c.name.startsWith(".") &&
+          !holdsFiles(c) &&
+          !listed.some((l) => l.path === c.path),
+      )
+      .map((c) => ({ path: c.path, name: c.name, count: 0 }));
   }
 
   private label(text: string): void {
@@ -446,7 +475,10 @@ export class LibraryView extends ItemView {
     this.nameRow(caption, folder.name, (event) => this.openFolderMenu(event, folder));
     caption.createDiv({
       cls: "goodobsidian-library-when",
-      text: `${folder.count} ${folder.count === 1 ? "notebook" : "notebooks"}`,
+      text:
+        folder.count === 0
+          ? "Empty"
+          : `${folder.count} ${folder.count === 1 ? "notebook" : "notebooks"}`,
     });
     const open = (): void => this.openFolder(folder.path);
     card.addEventListener("click", open);
@@ -620,6 +652,76 @@ export class LibraryView extends ItemView {
       );
     }
     menu.showAtMouseEvent(event);
+  }
+
+  /** What the New button offers: a notebook, a board, a PDF's pages as a notebook, a folder. */
+  private openNewMenu(event: MouseEvent): void {
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item
+        .setTitle("New notebook")
+        .setIcon("notebook-pen")
+        .onClick(() => this.host.newNotebook(this.folder)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("New board")
+        .setIcon("infinity")
+        .onClick(() => this.host.newBoard(this.folder)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Import PDF…")
+        .setIcon("file-up")
+        .onClick(() => this.choosePdf(event)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("New folder")
+        .setIcon("folder-plus")
+        .onClick(() => this.newFolder()),
+    );
+    this.show(menu, event);
+  }
+
+  /** A PDF from the device or from the vault. */
+  private choosePdf(event: MouseEvent): void {
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item
+        .setTitle("From files")
+        .setIcon("file-text")
+        .onClick(() => {
+          void pickImageFile(this.contentEl, false, "application/pdf,.pdf").then((file) => {
+            if (file) this.host.importPdf({ kind: "file", file }, this.folder);
+          });
+        }),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("From vault")
+        .setIcon("folder-open")
+        .onClick(() => {
+          new VaultPdfSuggestModal(this.app, (file) =>
+            this.host.importPdf({ kind: "vault", file }, this.folder),
+          ).open();
+        }),
+    );
+    this.show(menu, event);
+  }
+
+  /** A new, empty folder here; it shows as a tile until something is put in it. */
+  private newFolder(): void {
+    new RenameModal(this.app, "New folder", (typed) => {
+      const name = cleanName(typed);
+      if (name === "") return;
+      const path = this.folder === "" ? name : `${this.folder}/${name}`;
+      if (this.app.vault.getAbstractFileByPath(path)) {
+        new Notice(`"${name}" already exists here.`);
+        return;
+      }
+      void this.app.vault.createFolder(path).then(() => this.refreshSoon());
+    }).open();
   }
 
   /** Where a menu opened by a tap on a button sits: under it. */

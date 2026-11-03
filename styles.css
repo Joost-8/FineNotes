@@ -15158,6 +15158,40 @@ button.goodobsidian-library-caret .svg-icon {
   width: 14px;
   height: 14px;
 }
+/* The New button: the accent colour as a stadium, straight sides and half circles at the ends. */
+button.goodobsidian-library-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px 0 12px;
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 14px;
+  font-weight: 650;
+  transition:
+    transform 0.2s var(--gob-ease),
+    background-color 0.2s;
+}
+button.goodobsidian-library-new:active {
+  transform: scale(0.95);
+}
+.goodobsidian-library-new-icon {
+  display: inline-flex;
+}
+.goodobsidian-library-new-icon .svg-icon {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.4;
+}
+@media (hover: hover) {
+  button.goodobsidian-library-new:hover {
+    background: var(--interactive-accent-hover);
+  }
+}
 .goodobsidian-library-swatch {
   display: inline-block;
   width: 14px;
