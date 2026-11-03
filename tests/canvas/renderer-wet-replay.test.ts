@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Renderer } from "../../src/canvas/renderer";
 import type { DocumentLayout } from "../../src/canvas/page-layout";
 import type { InkRun } from "../../src/ink/freehand";
-import { paperTheme } from "../../src/canvas/backdrop";
+import { paperTheme, shownColor } from "../../src/canvas/backdrop";
 import type { InkDocument } from "../../src/model/document";
 
 type Call = [string, ...unknown[]];
@@ -119,14 +119,22 @@ describe("paintWetInto", () => {
     expect(log).toContainEqual(["setLineDash", [1.5, 1]]);
   });
 
-  it("draws wet ink as the dark page shows it, over a sticky note too", () => {
+  it("draws wet ink over a sticky note in the colour its committed ink is shown in", () => {
     const renderer = setup();
     renderer.paper = paperTheme(true);
-    const page = { id: "p1", backdrop: { type: "blank" }, strokes: [], images: [], textBoxes: [] };
+    const note = { id: "n1", path: "", x: 0, y: 0, w: 400, h: 400, sticky: { color: "#fde68a" } };
+    const page = {
+      id: "p1",
+      backdrop: { type: "blank" },
+      strokes: [],
+      images: [note],
+      textBoxes: [],
+    };
     renderer.renderBackdrops({ pages: [page, { ...page, id: "p2" }] } as unknown as InkDocument);
     renderer.renderWetRuns(0, runs, { ...style, color: "#1a1a1a" });
     const ctx = recorder([]);
     renderer.paintWetInto(ctx, LAYOUT.boxes[0], 4);
+    expect(ctx.strokeStyle).toBe(shownColor("#1a1a1a", true));
     expect(ctx.strokeStyle).not.toBe("#1a1a1a");
   });
 
