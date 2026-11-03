@@ -130,7 +130,7 @@ import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
-import { HOME_FILE, HOME_FILE_TEXT } from "./model/home-file";
+import { HOME_FILE, HOME_FILE_TEXT, isOwnHomeText } from "./model/home-file";
 import { folderStylesOf } from "./model/library-style";
 import { prepareImageBytes } from "./view/image-import";
 import { LibraryView } from "./view/library-view";
@@ -246,6 +246,8 @@ const GRAPE_BRIDGE_DELAY_MS = 8000;
 
 /** How long after the layout is ready the daily update check runs: off the startup path. */
 const UPDATE_CHECK_DELAY_MS = 20_000;
+/** How long a new install waits before making the Home note: a vault syncing in has notes by then. */
+const HOME_FILE_DELAY_MS = 5000;
 /** How long an `obsidian://finenotes?do=pdf` link waits for its file to reach the vault. */
 const PDF_LINK_WAIT_MS = 15_000;
 /** How long an inbox notebook waits for a link to claim it before a notice says it is there. */
@@ -2037,17 +2039,24 @@ export default class GoodObsidianPlugin extends Plugin {
       const welcome = shouldShowWelcome(this.firstInstall, this.hasNotebooks());
       void this.showWhatsNew();
       if (welcome) this.showWelcome();
-      if (this.firstInstall) void this.makeHomeFile();
+      // A vault with notes is not new to Obsidian, whatever the plugin's data says.
+      if (this.firstInstall && this.app.vault.getMarkdownFiles().length === 0) {
+        const timer = window.setTimeout(() => void this.makeHomeFile(), HOME_FILE_DELAY_MS);
+        this.register(() => window.clearTimeout(timer));
+      }
     });
-    // Opening the Home file opens the library instead.
+    // Opening FineNotes' own Home note opens the library instead.
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
         if (file?.path !== HOME_FILE) return;
-        this.app.workspace.iterateAllLeaves((leaf) => {
-          const open = (leaf.view as { file?: TFile | null }).file;
-          if (leaf.view.getViewType() === "markdown" && open?.path === HOME_FILE) leaf.detach();
+        void this.app.vault.cachedRead(file).then((text) => {
+          if (!isOwnHomeText(text)) return;
+          this.app.workspace.iterateAllLeaves((leaf) => {
+            const open = (leaf.view as { file?: TFile | null }).file;
+            if (leaf.view.getViewType() === "markdown" && open?.path === HOME_FILE) leaf.detach();
+          });
+          void this.openLibrary();
         });
-        void this.openLibrary();
       }),
     );
   }
@@ -2055,10 +2064,14 @@ export default class GoodObsidianPlugin extends Plugin {
   /**
    * A note called Home at the vault's root for someone new to Obsidian: it
    * opens the library, so there is always a file to click when the welcome
-   * is closed. Made once, on a new install; deleting it changes nothing.
+   * is closed. Made once, on a new install, a moment after start: a second
+   * device whose vault is still syncing in has notes by then, and makes none.
+   * Deleting it changes nothing.
    */
   private async makeHomeFile(): Promise<void> {
     if (this.app.vault.getAbstractFileByPath(HOME_FILE)) return;
+    // Notebooks may be the new user's own by now (the welcome makes one); notes came with a sync.
+    if (this.app.vault.getMarkdownFiles().some((file) => !this.isInkFile(file))) return;
     try {
       await this.app.vault.create(HOME_FILE, HOME_FILE_TEXT);
     } catch {
