@@ -967,15 +967,15 @@ export class LibraryView extends ItemView {
     ).open();
   }
 
+  /** One question naming what goes, then the picked notebooks (and folders, all but the user's other files) go. */
   private deleteSelected(): void {
-    const paths = [...this.selected];
-    void (async () => {
-      for (const path of paths) {
-        const item = this.app.vault.getAbstractFileByPath(path);
-        if (item) await this.app.fileManager.promptForDeletion(item);
-      }
-      this.setSelecting(false);
-    })();
+    const picked = [...this.selected].map((path) => ({
+      path,
+      folder: this.app.vault.getAbstractFileByPath(path) instanceof TFolder,
+    }));
+    void this.actions.trash(picked).then((gone) => {
+      if (gone) this.setSelecting(false);
+    });
   }
 
   /** What the New button offers: a notebook, a board, a PDF's pages as a notebook, a folder. */
@@ -1173,7 +1173,8 @@ export class LibraryView extends ItemView {
         .setTitle("Delete")
         .setIcon("trash-2")
         .onClick(() => {
-          void this.app.fileManager.promptForDeletion(target).then((gone) => {
+          // Its notebooks go; the folder too only when nothing of the user's is left in it.
+          void this.actions.trash([{ path: target.path, folder: true }]).then((gone) => {
             if (gone) this.refreshSoon();
           });
         }),

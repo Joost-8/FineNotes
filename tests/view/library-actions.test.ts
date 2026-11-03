@@ -120,3 +120,46 @@ describe("Delete", () => {
     expect(files()).toHaveLength(2);
   });
 });
+
+describe("Delete on a folder tile, and of several at once", () => {
+  it("trashes a folder of notebooks whole", async () => {
+    const { actions, files, trashed } = setUp([...physics("Uni"), "Uni/Algebra.notebook.md"]);
+    expect(await actions.trash([{ path: "Uni", folder: true }])).toBe(true);
+    expect(trashed).toEqual(["Uni"]);
+    expect(files()).toEqual([]);
+  });
+
+  it("trashes only the notebooks of a folder that holds the user's other notes, and says so", async () => {
+    const { actions, files, asked } = setUp([
+      ...physics("Uni"),
+      "Uni/Algebra.notebook.md",
+      "Uni/Syllabus.md",
+      "Uni/Week 1/Reading.pdf",
+    ]);
+    expect(await actions.trash([{ path: "Uni", folder: true }])).toBe(true);
+    expect(files()).toEqual(["Uni/Syllabus.md", "Uni/Week 1/Reading.pdf"]);
+    expect(asked).toHaveLength(1);
+    expect(asked[0].message).toContain("2 other files stay where they are.");
+  });
+
+  it("asks one question for several picked items, naming them", async () => {
+    const { actions, files, asked } = setUp([
+      ...physics(""),
+      "Algebra.notebook.md",
+      "Chem.page.md",
+      "Notes.md",
+    ]);
+    await actions.trash([
+      { path: "Physics/Physics.notebook.md", folder: false },
+      { path: "Algebra.notebook.md", folder: false },
+      { path: "Chem.page.md", folder: false },
+    ]);
+    expect(asked).toEqual([
+      {
+        title: "Delete 3 notebooks?",
+        message: '"Physics", "Algebra" and "Chem" will be deleted, with their files.',
+      },
+    ]);
+    expect(files()).toEqual(["Notes.md"]);
+  });
+});
