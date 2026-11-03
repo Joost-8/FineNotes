@@ -140,6 +140,9 @@ describe("transferRefusal", () => {
   it("accepts a notebook and refuses a single page, a practice set and a read-only one", () => {
     expect(transferRefusal(notebook(1))).toBeNull();
     expect(transferRefusal({ ...notebook(1), single: true })).toMatch(/single page/);
+    expect(transferRefusal({ ...notebook(1), single: true, endless: true })).toBe(
+      "That is a board, which takes no pages.",
+    );
     expect(transferRefusal({ ...notebook(1), readOnly: true })).toMatch(/read-only/);
     expect(transferRefusal({ ...notebook(1), practice: {} as never })).toMatch(/practice/);
   });
