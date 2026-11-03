@@ -81,6 +81,7 @@ import {
   BAR_ITEM_LABELS,
   type BarItemId,
   DEFAULT_BAR,
+  type ToolbarLayout,
   menuItems,
   normalizeLayout,
 } from "./toolbar-layout";
@@ -768,6 +769,8 @@ export interface ToolbarOptions {
   items?: readonly BarItemId[];
   /** The tools shown nowhere, not even in the accessories menu; none when absent. */
   offItems?: readonly BarItemId[];
+  /** The tools at their home off the centre (the calculator); every one off the bar and not hidden when absent. */
+  homeItems?: readonly BarItemId[];
   /** Stylus-only mode is on, so its toolbar toggle starts on. */
   onlyStylusMode?: boolean;
   /** Fingers draw (the Pencil is away), so ⋯, where that is switched, starts lit. */
@@ -957,10 +960,13 @@ export class Toolbar {
   private readonly barItems = new Map<BarItemId, HTMLButtonElement>();
   /** What a tap on each centre item does, run from the accessories menu with its button. */
   private readonly itemRuns = new Map<BarItemId, (anchor: HTMLElement) => void>();
+  /** Where each `HOME_ITEMS` button goes back to when it is not on the bar. */
+  private readonly itemHomes = new Map<BarItemId, HTMLElement>();
   /** The centre items shown, left to right. */
   private items: BarItemId[] = [...DEFAULT_BAR];
   /** The centre items shown nowhere, not even in the accessories menu. */
   private offItems: BarItemId[] = [];
+  private homeAt: BarItemId[] = [];
   /** The last button of the tools: the items off the bar and "Customize toolbar". */
   private accessoriesButton: HTMLButtonElement | null = null;
   /** Stylus-only mode's state, for its button's toggle and on/off mark. */
@@ -1194,7 +1200,18 @@ export class Toolbar {
     };
     keep(this.foldButton(left, FOLD_RANK.search, "search", "Search this notebook", cb.onSearch));
     keep(this.foldButton(left, FOLD_RANK.ai, "sparkles", "AI", cb.onAi));
-    keep(this.foldButton(left, FOLD_RANK.calculator, "calculator", "Calculator", cb.onCalculator));
+    // At home here, last of the group; Customize toolbar can put it among the tools.
+    const calculator = this.foldButton(
+      left,
+      FOLD_RANK.calculator,
+      "calculator",
+      "Calculator",
+      cb.onCalculator,
+    );
+    keep(calculator);
+    this.barItems.set("calculator", calculator);
+    if (cb.onCalculator && !calculator.disabled) this.itemRuns.set("calculator", cb.onCalculator);
+    this.itemHomes.set("calculator", left);
 
     const history = this.barEl.createDiv({ cls: "goodobsidian-bar-group is-centre" });
     this.undoButton = this.barButton(history, "undo-2", "Undo (Cmd/Ctrl+Z)", () =>
@@ -1290,7 +1307,12 @@ export class Toolbar {
     accessories.setAttribute("aria-haspopup", "menu");
     this.accessoriesButton = accessories;
     keep(accessories);
-    this.setItems(this.options.items ?? DEFAULT_BAR, this.options.offItems ?? [], false);
+    this.setItems(
+      this.options.items ?? DEFAULT_BAR,
+      this.options.offItems ?? [],
+      this.options.homeItems,
+      false,
+    );
 
     // The document's own actions, right: full screen (tablets), add a page,
     // GoodNotes' share button (export as PDF), its ⋯ sheet for the page
@@ -1693,7 +1715,7 @@ export class Toolbar {
 
   /** Light the accessories button while one of the items its menu lists is on. */
   private syncAccessoriesMark(): void {
-    const listed = menuItems({ bar: this.items, off: this.offItems });
+    const listed = menuItems(this.layout);
     const hiddenOn = (["ruler", "sticky", "stylus"] as const).some((id) => {
       const button = this.barItems.get(id);
       return button !== undefined && button.hasClass("is-on") && listed.includes(id);
@@ -1704,19 +1726,29 @@ export class Toolbar {
   /**
    * Show the centre items `items`, left to right, and take the rest off the
    * bar: they wait in the accessories menu, except the `off` ones, which are
-   * shown nowhere. Unknown or unavailable items are skipped; the pen always
-   * shows (`normalizeLayout`). `relayout` refits the bar and moves the
-   * indicator, as a live change needs.
+   * shown nowhere, and the `home` ones, which show at their own home (the
+   * calculator, beside search and AI). Unknown or unavailable items are
+   * skipped; the pen always shows (`normalizeLayout`). `relayout` refits the
+   * bar and moves the indicator, as a live change needs.
    */
-  setItems(items: readonly BarItemId[], off: readonly BarItemId[] = [], relayout = true): void {
-    const layout = normalizeLayout(items, off);
+  setItems(
+    items: readonly BarItemId[],
+    off: readonly BarItemId[] = [],
+    home?: readonly BarItemId[],
+    relayout = true,
+  ): void {
+    const layout = normalizeLayout(items, off, home);
     const shown = layout.bar.filter((id) => this.barItems.has(id));
     this.items = shown;
     this.offItems = layout.off;
+    this.homeAt = layout.home;
     const tools = this.toolsGroup;
     if (!tools) return;
-    for (const [id, button] of this.barItems)
-      button.toggleClass("is-unlisted", !shown.includes(id));
+    for (const [id, button] of this.barItems) {
+      const at = this.itemHomes.get(id);
+      if (at && !shown.includes(id)) at.appendChild(button);
+      button.toggleClass("is-unlisted", !shown.includes(id) && !layout.home.includes(id));
+    }
     for (const id of shown) {
       const button = this.barItems.get(id);
       if (button) tools.appendChild(button);
@@ -1737,7 +1769,12 @@ export class Toolbar {
 
   /** The centre items its accessories menu lists now, in catalogue order. */
   get menuListed(): readonly BarItemId[] {
-    return menuItems({ bar: this.items, off: this.offItems }).filter((id) => this.itemRuns.has(id));
+    return menuItems(this.layout).filter((id) => this.itemRuns.has(id));
+  }
+
+  /** Every item's place as the bar shows it now. */
+  private get layout(): ToolbarLayout {
+    return { bar: this.items, off: this.offItems, home: this.homeAt };
   }
 
   /**

@@ -1161,13 +1161,14 @@ export class InkView extends TextFileView {
    */
   /** Show the tool bar's tools in their places (Customize toolbar, here or in another notebook). */
   setToolbarItems(layout: ToolbarLayout): void {
-    this.toolbar?.setItems(layout.bar, layout.off);
-    this.endOffItemEffects(normalizeLayout(layout.bar, layout.off));
+    this.toolbar?.setItems(layout.bar, layout.off, layout.home);
+    this.endOffItemEffects(normalizeLayout(layout.bar, layout.off, layout.home));
   }
 
   /** The tool bar's layout as the settings hold it. */
   private toolbarLayout(): ToolbarLayout {
-    return normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+    const settings = this.settings;
+    return normalizeLayout(settings.toolbarItems, settings.toolbarOff, settings.toolbarHome);
   }
 
   /** Whether `item` is shown nowhere: its effect may not be turned on (`isItemOff`). */
@@ -1208,7 +1209,7 @@ export class InkView extends TextFileView {
     const settings = this.settings;
     new CustomizeToolbarModal(
       this.app,
-      { bar: settings.toolbarItems, off: settings.toolbarOff },
+      normalizeLayout(settings.toolbarItems, settings.toolbarOff, settings.toolbarHome),
       (layout) => this.plugin.saveToolbarLayout(layout),
     ).open();
   }
@@ -3010,6 +3011,7 @@ export class InkView extends TextFileView {
         barDock: this.plugin.barDock,
         items: this.settings.toolbarItems,
         offItems: this.settings.toolbarOff,
+        homeItems: this.settings.toolbarHome,
         onlyStylusMode: this.plugin.stylusOnly,
         fingerDrawing: this.plugin.fingerDrawing,
         laserColor: () => this.settings.laserDefaultColor,

@@ -20,6 +20,7 @@ describe("PDF toolbar button", () => {
       options: {},
       barItems: new Map(),
       itemRuns: new Map(),
+      itemHomes: new Map(),
       foldable: [],
       watchCrowding: vi.fn(),
       barButton: (

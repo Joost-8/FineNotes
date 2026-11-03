@@ -1323,7 +1323,7 @@ describe("Stylus only shown nowhere", () => {
     await load({ lastSeenVersion: VERSION, onlyStylusMode: true });
     const a = vi.fn();
     inkLeaf(app.addFile("A.notebook.md"), { setOnlyStylusMode: a, setToolbarItems: vi.fn() });
-    plugin.saveToolbarLayout({ bar: ["pen", "select"], off: ["stylus"] });
+    plugin.saveToolbarLayout({ bar: ["pen", "select"], off: ["stylus"], home: [] });
     await flush();
     expect(plugin.settings.onlyStylusMode).toBe(false);
     expect(a).toHaveBeenCalledWith(false);

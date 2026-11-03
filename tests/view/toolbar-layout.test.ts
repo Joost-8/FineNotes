@@ -9,12 +9,14 @@ import {
   BAR_ITEMS,
   BAR_ITEM_LABELS,
   DEFAULT_BAR,
+  HOME_ITEMS,
   barItemOfTool,
   defaultLayout,
   effectsOfOffItems,
   isItemOff,
   dropIndex,
   hiddenItems,
+  homeItems,
   menuItems,
   moveItem,
   normalizeBar,
@@ -64,7 +66,9 @@ describe("the default bar", () => {
       "tape",
       "record",
       "fill",
+      "calculator",
     ]);
+    expect(menuItems(defaultLayout())).not.toContain("calculator");
   });
 
   it("names every item", () => {
@@ -75,14 +79,18 @@ describe("the default bar", () => {
 describe("normalizeLayout", () => {
   it("reads a layout stored before items could be off: every hidden item is in the menu", () => {
     const layout = normalizeLayout(["pen", "sticky", "select", "ruler"], undefined);
-    expect(layout).toEqual({ bar: ["pen", "sticky", "select", "ruler"], off: [] });
-    expect(menuItems(layout)).toEqual(hiddenItems(layout.bar));
+    expect(layout).toEqual({
+      bar: ["pen", "sticky", "select", "ruler"],
+      off: [],
+      home: ["calculator"],
+    });
+    expect([...menuItems(layout), ...layout.home]).toEqual(hiddenItems(layout.bar));
     expect(placeOf(layout, "eraser")).toBe("menu");
   });
 
   it("is the default layout for a new install", () => {
     expect(normalizeLayout(undefined, undefined)).toEqual(defaultLayout());
-    expect(defaultLayout()).toEqual({ bar: DEFAULT_BAR, off: [] });
+    expect(defaultLayout()).toEqual({ bar: DEFAULT_BAR, off: [], home: HOME_ITEMS });
   });
 
   it("drops unknown items, repeats, the pen and items on the bar from off", () => {
@@ -148,7 +156,7 @@ describe("three places", () => {
     expect(placeItem(defaultLayout(), ALWAYS_SHOWN, "off")).toEqual(defaultLayout());
     expect(placeItem(defaultLayout(), ALWAYS_SHOWN, "menu")).toEqual(defaultLayout());
     const moved = moveItem(DEFAULT_BAR, 0, 3);
-    expect(placeItem({ bar: moved, off: [] }, "select", "bar").bar).toEqual(moved);
+    expect(placeItem({ bar: moved, off: [], home: [] }, "select", "bar").bar).toEqual(moved);
   });
 
   it("does not change the layout it was given", () => {
@@ -156,6 +164,57 @@ describe("three places", () => {
     placeItem(layout, "pan", "bar");
     placeItem(layout, "eraser", "off");
     expect(layout).toEqual(defaultLayout());
+  });
+});
+
+describe("the calculator's home (discussion #43)", () => {
+  it("is at home by default: not on the bar, in the menu or off", () => {
+    expect(HOME_ITEMS).toEqual(["calculator"]);
+    const layout = defaultLayout();
+    expect(placeOf(layout, "calculator")).toBe("home");
+    expect(homeItems(layout)).toEqual(["calculator"]);
+    expect(menuItems(layout)).not.toContain("calculator");
+  });
+
+  it("is at home in a layout stored before there was a home", () => {
+    expect(normalizeLayout(DEFAULT_BAR, [])).toEqual(defaultLayout());
+    expect(normalizeLayout(DEFAULT_BAR, [], "damaged")).toEqual(defaultLayout());
+  });
+
+  it("goes on the bar at its right end, and keeps its place when reordered", () => {
+    const on = placeItem(defaultLayout(), "calculator", "bar");
+    expect(on.bar.at(-1)).toBe("calculator");
+    expect(homeItems(on)).toEqual([]);
+    const moved = { ...on, bar: moveItem(on.bar, on.bar.length - 1, 3) };
+    expect(moved.bar[3]).toBe("calculator");
+    expect(normalizeLayout(moved.bar, moved.off, moved.home)).toEqual(moved);
+  });
+
+  it("goes into the menu and off like any item, and back home", () => {
+    const menu = placeItem(defaultLayout(), "calculator", "menu");
+    expect(placeOf(menu, "calculator")).toBe("menu");
+    expect(menuItems(menu).at(-1)).toBe("calculator");
+    expect(homeItems(menu)).toEqual([]);
+    const off = placeItem(menu, "calculator", "off");
+    expect(placeOf(off, "calculator")).toBe("off");
+    expect(isItemOff(off, "calculator")).toBe(true);
+    expect(placeItem(off, "calculator", "home")).toEqual(defaultLayout());
+    // Read back as stored: an empty home keeps it in the menu, off keeps it off.
+    expect(normalizeLayout(menu.bar, menu.off, menu.home)).toEqual(menu);
+    expect(normalizeLayout(off.bar, off.off)).toEqual(off);
+    // A home that names it while it is on the bar or off does not move it.
+    const on = placeItem(defaultLayout(), "calculator", "bar");
+    expect(normalizeLayout(on.bar, on.off, ["calculator"])).toEqual(on);
+  });
+
+  it("is the only item with a home: another sent there goes to the menu", () => {
+    const layout = placeItem(defaultLayout(), "eraser", "home");
+    expect(placeOf(layout, "eraser")).toBe("menu");
+    expect(normalizeLayout(DEFAULT_BAR, [], ["eraser"]).home).toEqual([]);
+  });
+
+  it("reads a stored bar that holds it", () => {
+    expect(normalizeBar(["pen", "calculator", "eraser"])).toEqual(["pen", "calculator", "eraser"]);
   });
 });
 
@@ -231,7 +290,9 @@ describe("an item shown nowhere has nothing left on", () => {
   it("keeps what an item in the menu or on the bar turned on: its button still shows it", () => {
     // Nothing off: the menu and the bar both still reach every item.
     expect(effectsOfOffItems(defaultLayout(), everything)).toEqual(none);
-    expect(effectsOfOffItems({ bar: ["pen", "eraser"], off: [] }, everything)).toEqual(none);
+    expect(effectsOfOffItems({ bar: ["pen", "eraser"], off: [], home: [] }, everything)).toEqual(
+      none,
+    );
   });
 
   it("ends nothing that is not on, and never takes the pen away", () => {

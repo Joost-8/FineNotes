@@ -41,6 +41,7 @@ describe("Customize toolbar", () => {
     expect((modal.titleEl as unknown as FakeEl).text).toBe("Customize toolbar");
     expect(lists()).toEqual({
       "On the toolbar": ["Lasso", "Pen", "Eraser", "Text", "Shapes", "Image", "PDF"],
+      "At the top left": ["Calculator"],
       "In More tools": [
         "Hand",
         "Magnifier",
@@ -56,7 +57,44 @@ describe("Customize toolbar", () => {
   });
 
   it("leaves out the Hidden section while nothing is hidden", () => {
-    expect(Object.keys(open().lists())).toEqual(["On the toolbar", "In More tools"]);
+    expect(Object.keys(open().lists())).toEqual([
+      "On the toolbar",
+      "At the top left",
+      "In More tools",
+    ]);
+  });
+
+  it("puts the calculator among the tools and sends it back to the top left", () => {
+    const { changes, lists, rowOf } = open();
+    rowOf("Calculator")?.find("is-add")?.dispatch("click");
+    expect(changes.at(-1)?.bar.at(-1)).toBe("calculator");
+    expect(lists()["On the toolbar"]?.at(-1)).toBe("Calculator");
+    expect(lists()["At the top left"]).toBeUndefined();
+    const back = rowOf("Calculator")?.find("is-remove");
+    back?.dispatch("click");
+    expect(changes.at(-1)).toEqual(defaultLayout());
+    expect(lists()["At the top left"]).toEqual(["Calculator"]);
+    expect(lists()["In More tools"]).not.toContain("Calculator");
+  });
+
+  it("sends the calculator into More tools, hides it, and brings it home a place at a time", () => {
+    const { changes, lists, rowOf } = open();
+    rowOf("Calculator")?.find("is-aside")?.dispatch("click");
+    expect(lists()["At the top left"]).toBeUndefined();
+    expect(lists()["In More tools"]?.at(-1)).toBe("Calculator");
+    rowOf("Calculator")?.find("is-off")?.dispatch("click");
+    expect(lists().Hidden).toEqual(["Calculator"]);
+    expect(changes.at(-1)?.off).toEqual(["calculator"]);
+    rowOf("Calculator")?.find("is-add")?.dispatch("click");
+    expect(lists()["In More tools"]?.at(-1)).toBe("Calculator");
+    rowOf("Calculator")?.find("is-add")?.dispatch("click");
+    expect(changes.at(-1)).toEqual(defaultLayout());
+  });
+
+  it("offers the top left to no other tool", () => {
+    const { rowOf } = open();
+    expect(rowOf("Hand")?.find("is-aside")).toBeUndefined();
+    expect(rowOf("Eraser")?.find("is-aside")).toBeUndefined();
   });
 
   it("moves a tool live: off the bar into More tools, then hidden, then back", () => {
@@ -65,6 +103,7 @@ describe("Customize toolbar", () => {
     expect(changes.at(-1)).toEqual({
       bar: ["select", "pen", "text", "shape", "image", "pdf"],
       off: [],
+      home: ["calculator"],
     });
     rowOf("Eraser")?.find("is-off")?.dispatch("click");
     expect(changes.at(-1)?.off).toEqual(["eraser"]);
@@ -82,7 +121,7 @@ describe("Customize toolbar", () => {
   });
 
   it("resets to the default bar with nothing hidden", () => {
-    const { changes, modal } = open({ bar: ["pen", "pan"], off: ["record"] });
+    const { changes, modal } = open({ bar: ["pen", "pan"], off: ["record"], home: [] });
     const reset = (modal.contentEl as unknown as FakeEl).find("goodobsidian-customize-reset");
     reset?.dispatch("click");
     expect(changes.at(-1)).toEqual(defaultLayout());

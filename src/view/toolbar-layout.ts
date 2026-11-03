@@ -12,6 +12,12 @@
  * The pen never leaves the bar: a bar needs a writing tool, and Goodnotes
  * keeps at least one too.
  *
+ * The calculator has a fourth place, its home (discussion #43): the bar's
+ * left group, beside search and AI, where it starts. It can go anywhere
+ * another item can, and back home; no other item can go there. `home` lists
+ * the home items at home, and a layout stored before it existed has every
+ * home item off the bar at home.
+ *
  * PURE: no DOM, no Obsidian.
  */
 
@@ -34,7 +40,8 @@ export type BarItemId =
   | "ruler"
   | "tape"
   | "record"
-  | "fill";
+  | "fill"
+  | "calculator";
 
 /** Every item, in the order the hidden list and the accessories menu give them. */
 export const BAR_ITEMS: readonly BarItemId[] = [
@@ -54,6 +61,7 @@ export const BAR_ITEMS: readonly BarItemId[] = [
   "tape",
   "record",
   "fill",
+  "calculator",
 ];
 
 /**
@@ -70,6 +78,9 @@ export const DEFAULT_BAR: readonly BarItemId[] = [
   "image",
   "pdf",
 ];
+
+/** Items with a home of their own off the bar, where they start. */
+export const HOME_ITEMS: readonly BarItemId[] = ["calculator"];
 
 /** The item that can never leave the bar. */
 export const ALWAYS_SHOWN: BarItemId = "pen";
@@ -92,6 +103,7 @@ export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
   tape: "Cover tape",
   record: "Record audio",
   fill: "Fill",
+  calculator: "Calculator",
 };
 
 /** Each item's icon: its bar button's, in the menu and the list too. */
@@ -112,6 +124,7 @@ export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
   tape: "bandage",
   record: "mic",
   fill: "paint-bucket",
+  calculator: "calculator",
 };
 
 function isBarItem(value: unknown): value is BarItemId {
@@ -131,44 +144,59 @@ export function normalizeBar(raw: unknown): BarItemId[] {
   return shown;
 }
 
-/** The items off the bar (in the menu or not shown), in catalogue order. */
+/** The items off the bar (in the menu, not shown or at home), in catalogue order. */
 export function hiddenItems(shown: readonly BarItemId[]): BarItemId[] {
   return BAR_ITEMS.filter((id) => !shown.includes(id));
 }
 
-/** Where an item is: on the bar, in the accessories menu, or not shown at all. */
-export type ItemPlace = "bar" | "menu" | "off";
+/**
+ * Where an item is: on the bar, in the accessories menu, not shown at all,
+ * or (`HOME_ITEMS` only) in its own home off the bar.
+ */
+export type ItemPlace = "bar" | "menu" | "off" | "home";
 
-/** Every item's place: the bar, left to right, and the items shown nowhere. */
+/** Every item's place: the bar, left to right, the items shown nowhere, the home items at home. */
 export interface ToolbarLayout {
   bar: BarItemId[];
   off: BarItemId[];
+  home: BarItemId[];
 }
 
-/** A new install's layout: the default bar, the rest in the menu. */
+/** A new install's layout: the default bar, the home items at home, the rest in the menu. */
 export function defaultLayout(): ToolbarLayout {
-  return { bar: [...DEFAULT_BAR], off: [] };
+  return { bar: [...DEFAULT_BAR], off: [], home: [...HOME_ITEMS] };
 }
 
 /**
- * The layout two stored values name: `bar` as `normalizeBar` reads it, and
+ * The layout three stored values name: `bar` as `normalizeBar` reads it, and
  * of `off` the known items that are not on the bar, each once, in catalogue
  * order. The pen is never off. Anything that is not a list is no item off,
- * as a layout stored before there was an "off" means.
+ * as a layout stored before there was an "off" means. `home` keeps the home
+ * items it lists that are neither on the bar nor off; not a list, it is
+ * every such home item, as a layout stored before there was a "home" means.
  */
-export function normalizeLayout(bar: unknown, off: unknown): ToolbarLayout {
+export function normalizeLayout(bar: unknown, off: unknown, home?: unknown): ToolbarLayout {
   const shown = normalizeBar(bar);
   const listed = Array.isArray(off) ? off : [];
+  const hidden = BAR_ITEMS.filter((id) => listed.includes(id) && !shown.includes(id));
+  const away = HOME_ITEMS.filter((id) => !shown.includes(id) && !hidden.includes(id));
   return {
     bar: shown,
-    off: BAR_ITEMS.filter((id) => listed.includes(id) && !shown.includes(id)),
+    off: hidden,
+    home: Array.isArray(home) ? away.filter((id) => home.includes(id)) : away,
   };
 }
 
 /** Where `id` is in `layout`. */
 export function placeOf(layout: ToolbarLayout, id: BarItemId): ItemPlace {
   if (layout.bar.includes(id)) return "bar";
-  return layout.off.includes(id) ? "off" : "menu";
+  if (layout.off.includes(id)) return "off";
+  return layout.home.includes(id) ? "home" : "menu";
+}
+
+/** The home items at home, in catalogue order. */
+export function homeItems(layout: ToolbarLayout): BarItemId[] {
+  return HOME_ITEMS.filter((id) => placeOf(layout, id) === "home");
 }
 
 /** The items the accessories menu lists, in catalogue order. */
@@ -179,17 +207,25 @@ export function menuItems(layout: ToolbarLayout): BarItemId[] {
 /**
  * `layout` with `id` moved to `place`. An item put on the bar goes to its
  * right end, where Goodnotes adds it; one already there keeps its place. The
- * pen stays on the bar.
+ * pen stays on the bar. Only a `HOME_ITEMS` item can go home; any other
+ * sent there goes to the menu.
  */
 export function placeItem(layout: ToolbarLayout, id: BarItemId, place: ItemPlace): ToolbarLayout {
+  if (place === "home" && !HOME_ITEMS.includes(id)) place = "menu";
   if (id === ALWAYS_SHOWN || placeOf(layout, id) === place) {
-    return { bar: [...layout.bar], off: [...layout.off] };
+    return { bar: [...layout.bar], off: [...layout.off], home: [...layout.home] };
   }
   const bar = layout.bar.filter((item) => item !== id);
   const off = layout.off.filter((item) => item !== id);
+  const home = layout.home.filter((item) => item !== id);
   if (place === "bar") bar.push(id);
   if (place === "off") off.push(id);
-  return { bar, off: BAR_ITEMS.filter((item) => off.includes(item)) };
+  if (place === "home") home.push(id);
+  return {
+    bar,
+    off: BAR_ITEMS.filter((item) => off.includes(item)),
+    home: HOME_ITEMS.filter((item) => home.includes(item)),
+  };
 }
 
 /** `shown` with the item at `from` moved to `to` (both clamped into the list). */
@@ -219,7 +255,7 @@ export function sameBar(a: readonly BarItemId[], b: readonly BarItemId[]): boole
 
 /** Whether two layouts put every item in the same place, the bar in the same order. */
 export function sameLayout(a: ToolbarLayout, b: ToolbarLayout): boolean {
-  return sameBar(a.bar, b.bar) && sameBar(a.off, b.off);
+  return sameBar(a.bar, b.bar) && sameBar(a.off, b.off) && sameBar(a.home, b.home);
 }
 
 // --- An item shown nowhere has nothing left on --------------------------------

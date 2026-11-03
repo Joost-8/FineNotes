@@ -815,9 +815,14 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.foldedSettingsSections;
     // A list of its own, read as pens: the default's must stay as it is.
     this.settings.savedPens = savedPensOf(this.settings.savedPens);
-    const toolbar = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+    const toolbar = normalizeLayout(
+      this.settings.toolbarItems,
+      this.settings.toolbarOff,
+      this.settings.toolbarHome,
+    );
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
+    this.settings.toolbarHome = toolbar.home;
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
     if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
     // A Zoom box line step outside the slider's range is a hand-edited file,
@@ -1439,9 +1444,10 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Customize toolbar changed the bar or its menu: every open notebook shows the new one. */
   saveToolbarLayout(layout: ToolbarLayout): void {
-    const toolbar = normalizeLayout(layout.bar, layout.off);
+    const toolbar = normalizeLayout(layout.bar, layout.off, layout.home);
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
+    this.settings.toolbarHome = toolbar.home;
     void this.saveSettings();
     // Each notebook ends what an item now shown nowhere left on (effectsOfOffItems).
     for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
@@ -1463,7 +1469,11 @@ export default class GoodObsidianPlugin extends Plugin {
    */
   async setOnlyStylusMode(on: boolean): Promise<void> {
     // Shown nowhere, Stylus only stays off: a command must not turn it on unseen.
-    const layout = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+    const layout = normalizeLayout(
+      this.settings.toolbarItems,
+      this.settings.toolbarOff,
+      this.settings.toolbarHome,
+    );
     if (on && isItemOff(layout, "stylus")) return;
     this.settings.onlyStylusMode = on;
     // Asking for the pen alone means the Pencil is in hand: fingers stop drawing.

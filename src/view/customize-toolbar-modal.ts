@@ -10,6 +10,8 @@
  *   (−)  ⌇  Lasso                                   ⋮⋮
  *        ✎  Pen                                     ⋮⋮   (the pen never leaves)
  *   …
+ *   AT THE TOP LEFT
+ *   (+)  🖩  Calculator                          (toolbox)
  *   IN MORE TOOLS
  *   (+)  ✋  Hand                               (eye-off)
  *   …
@@ -20,7 +22,11 @@
  * A row's grip drags it to another place on the bar (top is leftmost). (−)
  * moves a bar item into More tools, (+) moves an item one place up (from
  * More tools onto the bar's right end, from Hidden into More tools), and
- * the crossed eye hides an item of More tools. Every change is live: it
+ * the crossed eye hides an item of More tools. The calculator has a place
+ * more, its home beside search and AI (`HOME_ITEMS`), listed under "At the
+ * top left" after the bar: there (+) puts it among the tools and the
+ * toolbox sends it into More tools, whose (+) brings it home. One place up
+ * is home, as for any item. Every change is live: it
  * goes to `onChange` at once, and every open notebook's bar follows.
  */
 
@@ -33,8 +39,10 @@ import {
   type BarItemId,
   type ItemPlace,
   type ToolbarLayout,
+  HOME_ITEMS,
   defaultLayout,
   dropIndex,
+  homeItems,
   menuItems,
   moveItem,
   placeItem,
@@ -51,7 +59,7 @@ export class CustomizeToolbarModal extends Modal {
     private readonly onChange: (layout: ToolbarLayout) => void,
   ) {
     super(app);
-    this.layout = { bar: [...layout.bar], off: [...layout.off] };
+    this.layout = { bar: [...layout.bar], off: [...layout.off], home: [...layout.home] };
   }
 
   override onOpen(): void {
@@ -69,7 +77,7 @@ export class CustomizeToolbarModal extends Modal {
   private set(layout: ToolbarLayout): void {
     if (sameLayout(layout, this.layout)) return;
     this.layout = layout;
-    this.onChange({ bar: [...layout.bar], off: [...layout.off] });
+    this.onChange({ bar: [...layout.bar], off: [...layout.off], home: [...layout.home] });
     this.render();
   }
 
@@ -85,6 +93,13 @@ export class CustomizeToolbarModal extends Modal {
     const bar = body.createDiv({ cls: "goodobsidian-customize-list is-shown" });
     bar.setAttribute("role", "list");
     this.layout.bar.forEach((id, index) => this.barRow(bar, id, index));
+
+    const home = homeItems(this.layout);
+    if (home.length > 0) {
+      body.createDiv({ cls: "goodobsidian-customize-label", text: "At the top left" });
+      const list = this.list(body);
+      for (const id of home) this.homeRow(list, id);
+    }
 
     const menu = menuItems(this.layout);
     if (menu.length > 0) {
@@ -150,6 +165,8 @@ export class CustomizeToolbarModal extends Modal {
     if (id === ALWAYS_SHOWN) {
       // Keeps the column: the pen has no way off the bar.
       row.createSpan({ cls: "goodobsidian-customize-toggle is-blank" });
+    } else if (HOME_ITEMS.includes(id)) {
+      this.mover(row, id, "home", "circle-minus", "is-remove", `Move ${name} back to the top left`);
     } else {
       this.mover(row, id, "menu", "circle-minus", "is-remove", `Move ${name} to More tools`);
     }
@@ -163,9 +180,27 @@ export class CustomizeToolbarModal extends Modal {
   private menuRow(list: HTMLElement, id: BarItemId): void {
     const row = this.row(list);
     const name = BAR_ITEM_LABELS[id];
-    this.mover(row, id, "bar", "circle-plus", "is-add", `Put ${name} on the toolbar`);
+    if (HOME_ITEMS.includes(id)) {
+      this.mover(row, id, "home", "circle-plus", "is-add", `Put ${name} back at the top left`);
+    } else {
+      this.mover(row, id, "bar", "circle-plus", "is-add", `Put ${name} on the toolbar`);
+    }
     this.rowStart(row, id);
     this.mover(row, id, "off", "eye-off", "is-off", `Hide ${name}`);
+  }
+
+  private homeRow(list: HTMLElement, id: BarItemId): void {
+    const row = this.row(list);
+    this.mover(
+      row,
+      id,
+      "bar",
+      "circle-plus",
+      "is-add",
+      `Put ${BAR_ITEM_LABELS[id]} among the tools`,
+    );
+    this.rowStart(row, id);
+    this.mover(row, id, "menu", "toolbox", "is-aside", `Move ${BAR_ITEM_LABELS[id]} to More tools`);
   }
 
   private hiddenRow(list: HTMLElement, id: BarItemId): void {

@@ -14151,8 +14151,10 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   color: var(--color-green);
 }
 
-/* Last in a More tools row, where a bar row has its grip: hide it. */
-.goodobsidian-customize-toggle.is-off {
+/* Last in a More tools row, where a bar row has its grip: hide it. In the
+   calculator's row at the top left: send it to More tools. */
+.goodobsidian-customize-toggle.is-off,
+.goodobsidian-customize-toggle.is-aside {
   margin-right: -4px;
   color: var(--text-faint);
 }

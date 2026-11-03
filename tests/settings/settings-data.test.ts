@@ -163,6 +163,7 @@ const FRESH_INSTALL = {
   ],
   toolbarItems: ["select", "pen", "eraser", "text", "shape", "image", "pdf"],
   toolbarOff: [],
+  toolbarHome: ["calculator"],
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",
   penCursor: "ink",
@@ -285,6 +286,8 @@ const USED_VAULT = {
   savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
   toolbarItems: ["pen", "sticky", "select", "ruler"],
   toolbarOff: ["pan", "record"],
+  // The calculator in More tools, not at its home beside search and AI.
+  toolbarHome: [],
   lastPen: { type: "highlighter", color: "#fab005", size: 8 },
   barrelButton: "pan",
   stylusButtonClick: "none",
