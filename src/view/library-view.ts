@@ -44,7 +44,6 @@ import {
   FOLDER_ICONS,
   type FolderStyles,
   cleanName,
-  freeName,
   moveStyles,
   movePaths,
   withFolderStyle,
@@ -53,6 +52,7 @@ import { PdfBackdropCache } from "./pdf-backdrop";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { thumbnailRasterScale } from "./page-sidebar";
 import { FolderSuggestModal } from "./folder-suggest";
+import { LibraryActions } from "./library-actions";
 import { RenameModal } from "./rename-modal";
 import { pickImageFile } from "./image-import";
 import { VaultPdfSuggestModal } from "./pdf-import-modal";
@@ -139,6 +139,8 @@ export class LibraryView extends ItemView {
   private pullEl!: HTMLElement;
   private query = "";
   private readonly reads = new Map<string, Read>();
+  /** Move, Duplicate and Delete, on a notebook's own folder when it has one. */
+  private readonly actions: LibraryActions;
   private reading = false;
   private closed = false;
   private paintTimer = 0;
@@ -155,6 +157,7 @@ export class LibraryView extends ItemView {
   ) {
     super(leaf);
     this.navigation = true;
+    this.actions = new LibraryActions(this.app, (path) => this.isNotebookPath(path));
   }
 
   getViewType(): string {
@@ -289,6 +292,10 @@ export class LibraryView extends ItemView {
     } catch {
       return parseLastPages(null);
     }
+  }
+
+  private isNotebookPath(path: string): boolean {
+    return path.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX);
   }
 
   private notebookFiles(): TFile[] {
@@ -705,13 +712,13 @@ export class LibraryView extends ItemView {
 
   // --- Dragging into folders ----------------------------------------------------
 
-  /** A notebook or folder lifted by a drag; dropped on a folder tile it moves in. */
+  /** A notebook (its own folder, when it has one) or folder lifted by a drag; dropped on a folder tile it moves in. */
   private dragging: string | null = null;
 
   private makeDraggable(card: HTMLElement, path: string): void {
     card.draggable = true;
     card.addEventListener("dragstart", (event) => {
-      this.dragging = path;
+      this.dragging = this.actions.unit(path);
       event.dataTransfer?.setData("text/plain", path);
       if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
       card.addClass("is-dragging");
@@ -727,10 +734,7 @@ export class LibraryView extends ItemView {
 
   /** Whether what is being dragged may go into `folder`. */
   private canDropInto(folder: string): boolean {
-    const path = this.dragging;
-    if (path === null) return false;
-    if (folderOf(path) === folder) return false;
-    return folder !== path && !folder.startsWith(`${path}/`);
+    return this.dragging !== null && LibraryActions.canMove(this.dragging, folder);
   }
 
   private makeDropTarget(el: HTMLElement, where: string | (() => string)): void {
@@ -750,14 +754,7 @@ export class LibraryView extends ItemView {
       const allowed = this.canDropInto(folder);
       this.dragging = null;
       if (path === null || !allowed) return;
-      const item = this.app.vault.getAbstractFileByPath(path);
-      if (!item) return;
-      const target = folder === "" ? item.name : `${folder}/${item.name}`;
-      if (this.app.vault.getAbstractFileByPath(target)) {
-        new Notice(`"${item.name}" already exists there.`);
-        return;
-      }
-      void this.app.fileManager.renameFile(item, target);
+      void this.actions.move(path, folder);
     });
   }
 
@@ -955,16 +952,11 @@ export class LibraryView extends ItemView {
       this.app,
       (dest) => {
         const dir = dest === "/" ? "" : dest;
-        for (const path of [...this.selected]) {
-          const item = this.app.vault.getAbstractFileByPath(path);
-          if (!item || folderOf(path) === dir) continue;
-          if (item instanceof TFolder && (dir === item.path || dir.startsWith(`${item.path}/`)))
-            continue;
-          const target = dir ? `${dir}/${item.name}` : item.name;
-          if (this.app.vault.getAbstractFileByPath(target)) continue;
-          void this.app.fileManager.renameFile(item, target);
-        }
+        const paths = [...this.selected];
         this.setSelecting(false);
+        void (async () => {
+          for (const path of paths) await this.actions.move(path, dir);
+        })();
       },
       `Move ${this.selected.size} items to…`,
       this.folder,
@@ -1108,7 +1100,7 @@ export class LibraryView extends ItemView {
       item
         .setTitle("Duplicate")
         .setIcon("copy-plus")
-        .onClick(() => void this.duplicate(file, entry.title)),
+        .onClick(() => void this.actions.duplicate(file.path)),
     );
     menu.addItem((item) =>
       item
@@ -1134,7 +1126,7 @@ export class LibraryView extends ItemView {
         .setTitle("Delete")
         .setIcon("trash-2")
         .onClick(() => {
-          void this.app.fileManager.promptForDeletion(file).then((gone) => {
+          void this.actions.trash([{ path: file.path, folder: false }]).then((gone) => {
             if (gone) this.refreshSoon();
           });
         }),
@@ -1239,34 +1231,14 @@ export class LibraryView extends ItemView {
     }).open();
   }
 
-  private async duplicate(file: TFile, title: string): Promise<void> {
-    const parent = file.parent?.path ?? "";
-    const dir = parent === "/" ? "" : parent;
-    const name = freeName(
-      `${title} copy`,
-      NOTEBOOK_FILE_SUFFIX,
-      (n) => this.app.vault.getAbstractFileByPath(dir ? `${dir}/${n}` : n) !== null,
-    );
-    await this.app.vault.copy(file, dir ? `${dir}/${name}` : name);
-  }
-
-  /** Pick a folder, and put the file or folder inside it. */
+  /** Pick a folder, and put the notebook (with its own folder) or folder inside it. */
   private move(file: TFile | TFolder, from: string): void {
     new FolderSuggestModal(
       this.app,
       (dest) => {
         const dir = dest === "/" ? "" : dest;
         if (dir === from) return;
-        if (file instanceof TFolder && (dir === file.path || dir.startsWith(`${file.path}/`))) {
-          new Notice("A folder cannot go inside itself.");
-          return;
-        }
-        const path = dir ? `${dir}/${file.name}` : file.name;
-        if (this.app.vault.getAbstractFileByPath(path)) {
-          new Notice(`"${file.name}" already exists there.`);
-          return;
-        }
-        void this.app.fileManager.renameFile(file, path);
+        void this.actions.move(file.path, dir);
       },
       `Move ${file.name} to…`,
       from,
