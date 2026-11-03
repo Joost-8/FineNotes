@@ -16,7 +16,9 @@
  * are read one at a time, newest first, with a yield between each so a big
  * vault never holds the main thread, and a read is kept until the file's
  * size or time changes. Until a notebook is read it shows its name on a grey
- * cover.
+ * cover; a read redraws that notebook's cards where they stand, and the page
+ * is put in order once the reading ends. A hidden Home tab reads nothing: a
+ * change waits until the tab is shown.
  */
 
 import {
@@ -146,7 +148,13 @@ export class LibraryView extends ItemView {
   private reading: Promise<void> | null = null;
   private again = false;
   private closed = false;
-  private paintTimer = 0;
+  /** A vault change came while the tab was hidden: read when it is shown again. */
+  private stale = false;
+  /** What the last paint showed (notebook paths, `folder:` paths): shown again, it does not fade in again. */
+  private painted = new Set<string>();
+  private before = new Set<string>();
+  /** Each notebook's cards on the page now, to draw one again where it stands. */
+  private cards = new Map<string, { el: HTMLElement; leftAt?: number }[]>();
   private pdf: PdfBackdropCache | null = null;
   private workerHeld = false;
   private refreshTimer = 0;
@@ -186,7 +194,7 @@ export class LibraryView extends ItemView {
     if (saved.layout === "list" || saved.layout === "grid") this.layout = saved.layout;
     if (typeof saved.folder === "string") this.folder = saved.folder;
     if (SORTS.some((s) => s.by === saved.sort)) this.sort = saved.sort as LibrarySort;
-    this.paintNow();
+    this.paintNow(true);
     await super.setState(state, result);
   }
 
@@ -216,7 +224,7 @@ export class LibraryView extends ItemView {
     });
     input.addEventListener("input", () => {
       this.query = input.value;
-      this.paintNow();
+      this.paintNow(true);
     });
 
     const sort = head.createEl("button", {
@@ -249,9 +257,18 @@ export class LibraryView extends ItemView {
     this.barEl = root.createDiv({ cls: "goodobsidian-library-bar is-hidden" });
 
     // A deleted note's frontmatter may be gone already: one read before counts too.
+    this.watchVault();
+    this.paintNow();
+    void this.readStale();
+  }
+
+  /** Vault changes repaint and read, and showing the tab catches up on what came while it was hidden. */
+  private watchVault(): void {
     const touched = (file: TAbstractFile): void => {
-      if (!(file instanceof TFile) || this.reads.has(file.path) || this.isNotebook(file))
-        this.refreshSoon();
+      if (file instanceof TFile && !this.reads.has(file.path) && !this.isNotebook(file)) return;
+      // A notebook saved while Home is a tab in the background is read when Home is shown.
+      if (this.containerEl.isShown()) this.refreshSoon();
+      else this.stale = true;
     };
     this.registerEvent(this.app.vault.on("create", touched));
     this.registerEvent(this.app.vault.on("delete", touched));
@@ -262,12 +279,11 @@ export class LibraryView extends ItemView {
     // A notebook read since: its place has moved.
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
-        if (leaf === this.leaf) this.paintNow();
+        if (leaf !== this.leaf) return;
+        if (this.stale) this.refreshNow();
+        else this.paintNow();
       }),
     );
-
-    this.paintNow();
-    void this.readStale();
   }
 
   override async onClose(): Promise<void> {
@@ -276,7 +292,6 @@ export class LibraryView extends ItemView {
     this.pdf = null;
     if (this.workerHeld) releasePdfWorker();
     this.workerHeld = false;
-    window.clearTimeout(this.paintTimer);
     window.clearTimeout(this.refreshTimer);
   }
 
@@ -312,23 +327,23 @@ export class LibraryView extends ItemView {
   }
 
   private entries(): LibraryEntry[] {
-    return this.notebookFiles().map((file) => {
-      const read = this.reads.get(file.path);
-      const fresh = read && read.mtime === file.stat.mtime && read.size === file.stat.size;
-      const entry = fresh
-        ? read.entry
-        : (read?.entry ?? placeholderEntry(file.path, file.stat.mtime));
-      return { ...entry, created: file.stat.ctime };
-    });
+    return this.notebookFiles().map((file) => this.entryOf(file));
+  }
+
+  /** What a notebook's card shows: its last read, or its file's facts until it is read. */
+  private entryOf(file: TFile): LibraryEntry {
+    const read = this.reads.get(file.path);
+    const fresh = read && read.mtime === file.stat.mtime && read.size === file.stat.size;
+    const entry = fresh
+      ? read.entry
+      : (read?.entry ?? placeholderEntry(file.path, file.stat.mtime));
+    return { ...entry, created: file.stat.ctime };
   }
 
   /** A change in the vault: repaint at once, read what changed a moment later. */
   private refreshSoon(): void {
     window.clearTimeout(this.refreshTimer);
-    this.refreshTimer = window.setTimeout(() => {
-      this.paintNow();
-      void this.readStale();
-    }, 400);
+    this.refreshTimer = window.setTimeout(() => this.refreshNow(), 400);
   }
 
   /**
@@ -357,6 +372,12 @@ export class LibraryView extends ItemView {
     }
   }
 
+  /**
+   * One pass over what changed. The first few reads repaint the page (the
+   * Continue strip is made of them); the rest redraw their own cards, and
+   * the page is put in order once at the end. A page rebuilt under a finger
+   * loses its tap, and every card on it would fade in again.
+   */
   private async readRound(): Promise<void> {
     const live = new Set<string>();
     const stale: TFile[] = [];
@@ -367,6 +388,8 @@ export class LibraryView extends ItemView {
     }
     for (const path of [...this.reads.keys()]) if (!live.has(path)) this.reads.delete(path);
     stale.sort((a, b) => b.stat.mtime - a.stat.mtime);
+    let count = 0;
+    let unsorted = false;
     for (const file of stale) {
       if (this.closed) return;
       const { mtime, size } = file.stat;
@@ -377,24 +400,46 @@ export class LibraryView extends ItemView {
         entry = placeholderEntry(file.path, mtime);
       }
       this.reads.set(file.path, { mtime, size, entry });
-      this.paintSoon();
+      count++;
+      unsorted = count !== CONTINUE_COUNT;
+      if (unsorted) this.redrawCards(file);
+      else this.paintNow();
       // Let the app breathe between notebooks.
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     }
+    if (unsorted && !this.closed) this.paintNow();
   }
 
   // --- Painting ---------------------------------------------------------------
 
-  private paintSoon(): void {
-    if (this.paintTimer) return;
-    this.paintTimer = window.setTimeout(() => {
-      this.paintTimer = 0;
-      this.paintNow();
-    }, 150);
+  /** One notebook's cards drawn again where they stand: nothing else on the page moves or fades in. */
+  private redrawCards(file: TFile): void {
+    const shown = this.cards.get(file.path);
+    if (!shown) return;
+    this.cards.delete(file.path);
+    const entry = this.entryOf(file);
+    for (const { el, leftAt } of shown) {
+      const parent = el.parentElement;
+      if (!parent) continue;
+      el.replaceWith(this.card(parent, entry, leftAt, true));
+    }
   }
 
-  private paintNow(): void {
+  /** A card put on the page: it fades in only when the last paint did not show it, or `animate` said so. */
+  private enter(card: HTMLElement, key: string, settled = this.before.has(key)): void {
+    this.painted.add(key);
+    card.toggleClass("is-settled", settled);
+  }
+
+  /**
+   * The page drawn anew. `animate`: every card fades in, as on opening a
+   * folder or a new sort; otherwise only cards the page did not show before.
+   */
+  private paintNow(animate = false): void {
     if (!this.bodyEl) return;
+    this.before = animate ? new Set() : this.painted;
+    this.painted = new Set();
+    this.cards.clear();
     const searching = this.query.trim() !== "";
     this.titleEl.setText(
       this.folder === ""
@@ -545,6 +590,7 @@ export class LibraryView extends ItemView {
       cls: "goodobsidian-library-card",
       attr: { role: "button", tabindex: "0", "aria-label": folder.name },
     });
+    this.enter(card, `folder:${folder.path}`);
     const style = this.host.folderStyles()[folder.path] ?? {};
     const cover = card.createDiv({ cls: "goodobsidian-library-cover is-folder" });
     cover.style.setProperty("--gob-folder", style.color ?? DEFAULT_FOLDER_COLOR);
@@ -645,12 +691,22 @@ export class LibraryView extends ItemView {
     return cache;
   }
 
-  /** A cover with its caption. With `leftAt` (the index it was left on) it shows where the reader is. */
-  private card(parent: HTMLElement, entry: LibraryEntry, leftAt?: number): void {
+  /**
+   * A cover with its caption. With `leftAt` (the index it was left on) it
+   * shows where the reader is. `settled`: drawn again in place, no fade-in.
+   */
+  private card(
+    parent: HTMLElement,
+    entry: LibraryEntry,
+    leftAt?: number,
+    settled?: boolean,
+  ): HTMLElement {
     const card = parent.createDiv({
       cls: "goodobsidian-library-card",
       attr: { role: "button", tabindex: "0", "aria-label": entry.title },
     });
+    this.enter(card, entry.path, settled);
+    this.cards.set(entry.path, [...(this.cards.get(entry.path) ?? []), { el: card, leftAt }]);
     const cover = card.createDiv({ cls: "goodobsidian-library-cover" });
     const palette = coverPalette(entry.color);
     cover.style.setProperty("--gob-cover", palette.base);
@@ -707,6 +763,7 @@ export class LibraryView extends ItemView {
       event.preventDefault();
       this.openCardMenu(event, entry);
     });
+    return card;
   }
 
   // --- Menus and navigation -----------------------------------------------------
@@ -789,7 +846,7 @@ export class LibraryView extends ItemView {
       ".goodobsidian-library-search input",
     );
     if (input) input.value = "";
-    this.paintNow();
+    this.paintNow(true);
     this.app.workspace.requestSaveLayout();
   }
 
@@ -814,7 +871,7 @@ export class LibraryView extends ItemView {
           .setChecked(this.layout === layout)
           .onClick(() => {
             this.layout = layout;
-            this.paintNow();
+            this.paintNow(true);
             this.app.workspace.requestSaveLayout();
           }),
       );
@@ -828,7 +885,7 @@ export class LibraryView extends ItemView {
         item.onClick(() => {
           this.reverse = current ? !this.reverse : false;
           this.sort = option.by;
-          this.paintNow();
+          this.paintNow(true);
           this.app.workspace.requestSaveLayout();
         });
       });
@@ -904,6 +961,7 @@ export class LibraryView extends ItemView {
   /** Repaint and read again whatever changed, at once. */
   private refreshNow(): void {
     window.clearTimeout(this.refreshTimer);
+    this.stale = false;
     this.paintNow();
     void this.readStale();
   }

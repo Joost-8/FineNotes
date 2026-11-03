@@ -15964,6 +15964,10 @@ button.goodobsidian-library-star:active {
   -webkit-tap-highlight-color: transparent;
   animation: gob-library-in 0.35s var(--gob-ease) both;
 }
+/* Drawn again where it stood (a read, a star): no second fade-in. */
+.goodobsidian-library-card.is-settled {
+  animation: none;
+}
 .goodobsidian-library-card:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 4px;

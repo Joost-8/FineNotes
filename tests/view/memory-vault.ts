@@ -126,6 +126,8 @@ export function memoryVault(paths: string[]) {
   return {
     app,
     trashed,
+    /** Fire a vault event, as a sync or another view would. */
+    emit,
     /** Every file, sorted. */
     files: () => [...nodes.keys()].filter((p) => nodes.get(p) instanceof TFile).sort(),
     /** Every folder, sorted. */

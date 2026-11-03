@@ -12,6 +12,8 @@ const { LibraryView } = await import("../../src/view/library-view");
 const { memoryVault } = await import("./memory-vault");
 
 interface Inside {
+  watchVault(): void;
+  stale: boolean;
   entries(): { path: string; title: string }[];
   reads: Map<string, { mtime: number; entry: { pages: number } }>;
   readStale(): Promise<void>;
@@ -19,7 +21,13 @@ interface Inside {
 
 function viewOn(paths: string[]) {
   const vault = memoryVault(paths);
-  const app = { ...vault.app, loadLocalStorage: () => null };
+  const leafHandlers: ((leaf: unknown) => void)[] = [];
+  const workspace = {
+    on: (_name: string, handler: (leaf: unknown) => void) => leafHandlers.push(handler),
+    /** The user taps a tab. */
+    activate: (leaf: unknown) => leafHandlers.forEach((handler) => handler(leaf)),
+  };
+  const app = { ...vault.app, workspace, loadLocalStorage: () => null };
   // The plugin's isInkFile, by name only: these fakes have no frontmatter.
   const host = {
     isInkFile: (file: FakeFile) => /.(notebook|page|practice|ink).md$/i.test(file.name),
@@ -73,5 +81,49 @@ describe("what the library lists", () => {
         .map((e) => e.title)
         .sort(),
     ).toEqual(["Old notes", "Physics", "Sketch"]);
+  });
+});
+
+describe("a Home tab in the background", () => {
+  it("reads nothing while hidden, and catches up when it is shown", async () => {
+    const { app, vault, view, inside } = viewOn(["A.notebook.md"]);
+    await inside.readStale();
+    let shown = false;
+    Object.assign(view, { containerEl: { isShown: () => shown } });
+    inside.watchVault();
+    const read = app.vault.cachedRead;
+    const asked: string[] = [];
+    app.vault.cachedRead = async (file: FakeFile) => {
+      asked.push(file.path);
+      return read(file);
+    };
+    const a = app.vault.getFileByPath("A.notebook.md")!;
+    // Written in, a stroke at a time, while the library waits in another tab.
+    for (let mtime = 1; mtime <= 3; mtime++) {
+      (a.stat as { mtime: number }).mtime = mtime;
+      vault.emit("modify", a);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(asked).toEqual([]);
+    expect(inside.stale).toBe(true);
+    shown = true;
+    app.workspace.activate(view.leaf);
+    await inside.readStale();
+    expect(asked).toEqual(["A.notebook.md"]);
+    expect(inside.reads.get("A.notebook.md")?.mtime).toBe(3);
+    expect(inside.stale).toBe(false);
+  });
+
+  it("reads a change at once when it is the tab on screen", async () => {
+    const { app, vault, view, inside } = viewOn(["A.notebook.md"]);
+    await inside.readStale();
+    Object.assign(view, { containerEl: { isShown: () => true } });
+    inside.watchVault();
+    const a = app.vault.getFileByPath("A.notebook.md")!;
+    (a.stat as { mtime: number }).mtime = 7;
+    vault.emit("modify", a);
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    await inside.readStale();
+    expect(inside.reads.get("A.notebook.md")?.mtime).toBe(7);
   });
 });
