@@ -731,16 +731,28 @@ export class CalculatorPopover {
     if (entries.length === 0) {
       list.createDiv({
         cls: "goodobsidian-calc-empty",
-        text: "No sums yet in this notebook. Tap a line to use its answer.",
+        text: "No sums yet in this notebook.",
       });
       return;
     }
+    // As in Apple's Calculator: the sum brings the sum back, the answer only the answer.
     for (const line of entries) {
-      const row = this.button(list, "", () => this.useHistory(line), "goodobsidian-calc-line");
-      const expr = row.createDiv({ cls: "goodobsidian-calc-line-expr goodobsidian-calc-math" });
-      this.drawMath(expr, line.expr);
-      row.createSpan({ cls: "goodobsidian-calc-line-result", text: `= ${line.result}` });
-      row.setAttribute("aria-label", `${line.expr} equals ${line.result}`);
+      const row = list.createDiv({ cls: "goodobsidian-calc-line" });
+      const sum = this.button(
+        row,
+        "",
+        () => this.useExpression(line),
+        "goodobsidian-calc-line-expr",
+      );
+      this.drawMath(sum.createDiv({ cls: "goodobsidian-calc-math" }), line.expr);
+      sum.setAttribute("aria-label", `Edit ${line.expr}`);
+      const answer = this.button(
+        row,
+        `= ${line.result}`,
+        () => this.useHistory(line),
+        "goodobsidian-calc-line-result",
+      );
+      answer.setAttribute("aria-label", `Use ${line.result}`);
     }
     this.button(
       this.bodyEl,
@@ -942,6 +954,15 @@ export class CalculatorPopover {
     this.pane = "keys";
     if (this.entry.fresh) this.exprAns = session.ans;
     this.entry = typeInto(this.entry, line.result, false);
+    this.render();
+  }
+
+  /** The sum back on the display, to change and work out again (its `Ans` was spelt out when kept). */
+  private useExpression(line: CalcEntry): void {
+    this.pane = "keys";
+    this.exprAns = session.ans;
+    this.entry = { expr: line.expr, cursor: line.expr.length, fresh: false };
+    this.error = "";
     this.render();
   }
 
@@ -1292,6 +1313,12 @@ export class CalculatorPopover {
     display.addEventListener("pointerup", (event) => {
       const tapped = from !== null && !swiped;
       from = null;
+      // After =, a tap on the sum above the answer brings it back to change.
+      if (tapped && this.entry.fresh && this.exprEl.contains(event.target as Node | null)) {
+        const { expr } = this.entry;
+        this.useExpression(this.shownLine ?? { expr, result: "" });
+        return;
+      }
       if (!tapped || this.entry.fresh || this.tapSlot(event)) return;
       // A tap on the display away from every box: the cursor after
       // everything shown, past the brackets the display draws closed.
