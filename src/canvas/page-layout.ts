@@ -407,8 +407,12 @@ export function rowTurnsPages(zoom: number, floor: number): boolean {
   return zoom <= floor * ROW_PAGING_ZOOM;
 }
 
-/** Screen px of desk a zoomed-in page can be pulled past its edge by, before it bounces. */
-export const ROW_PAGE_EDGE_PX = 24;
+/**
+ * Screen px of desk a zoomed-in page may rest past its edge: none, as in
+ * Goodnotes (Joost's recording, 2026-11-03). A pull past the edge stretches
+ * the row and springs back flush; no strip of desk stays beside the page.
+ */
+export const ROW_PAGE_EDGE_PX = 0;
 
 /**
  * The scroll x range (screen px) that keeps a zoomed-in row on page `index`:

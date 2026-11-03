@@ -14548,9 +14548,11 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
    actions at its foot. What does not fit folds into ⋯ as along the top
    (fitBar measures down the bar); anything still taller scrolls. */
 .goodobsidian-toolbar.is-upright {
+  /* Full-size buttons; fitUprightBar shrinks them inline only when the bar is too tall. */
+  --gob-bar-button: 48px;
   flex-direction: column;
   min-height: 0;
-  min-width: var(--gob-bar-h);
+  min-width: 62px;
   padding: 10px 6px;
   overflow-x: hidden;
   overflow-y: auto;
@@ -14561,6 +14563,39 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
 
 .goodobsidian-toolbar.is-upright::-webkit-scrollbar {
   display: none;
+}
+
+/* While the bar is edited, a bar too tall (or too wide) for its room has a
+   scroll bar of its own, always shown, so nothing in it is out of reach. */
+.goodobsidian-customizing .goodobsidian-toolbar.is-upright {
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+  scrollbar-width: auto;
+  scrollbar-color: var(--background-modifier-border-hover) var(--background-secondary);
+  padding-right: 2px;
+}
+.goodobsidian-customizing .goodobsidian-toolbar.is-upright::-webkit-scrollbar {
+  display: block;
+  width: 10px;
+}
+.goodobsidian-customizing .goodobsidian-toolbar.is-upright::-webkit-scrollbar-track {
+  border-radius: 5px;
+  background: var(--background-secondary);
+}
+.goodobsidian-customizing .goodobsidian-toolbar.is-upright::-webkit-scrollbar-thumb {
+  border-radius: 5px;
+  background: var(--background-modifier-border-hover);
+}
+.goodobsidian-customizing .goodobsidian-toolbar:not(.is-upright) {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  touch-action: pan-x;
+}
+
+/* A finger drags a button from the button itself, and scrolls from anywhere else. */
+.goodobsidian-customizing .goodobsidian-toolbar [data-item] {
+  touch-action: none;
 }
 
 /* A bar that scrolls says so: the end with more beyond it fades out, and a
@@ -15228,10 +15263,10 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
   left: 50%;
   transform: translateX(-50%);
   box-sizing: border-box;
-  width: min(760px, calc(100% - 16px));
+  width: min(860px, calc(100% - 24px));
   display: grid;
-  gap: 8px;
-  padding: 10px;
+  gap: 12px;
+  padding: 16px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 12px;
   background: var(--background-primary);
@@ -15252,7 +15287,7 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
 .goodobsidian-edit-tray.is-beside {
   left: auto;
   transform: none;
-  width: min(420px, calc(100% - 96px));
+  width: min(540px, calc(100% - 120px));
 }
 
 .goodobsidian-edit-head {
@@ -15352,9 +15387,9 @@ button.goodobsidian-edit-done:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 48px;
-  padding: 4px 8px;
-  border-radius: 10px;
+  min-height: 60px;
+  padding: 6px 12px;
+  border-radius: 12px;
   background: var(--background-secondary);
 }
 
@@ -15379,8 +15414,8 @@ button.goodobsidian-edit-done:hover {
 }
 
 button.goodobsidian-edit-chip {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   cursor: grab;
   background: var(--background-primary);
   color: var(--icon-color);

@@ -192,10 +192,10 @@ export function menuAnchor(anchor: MenuAnchor): { side: PopoverSide; box: Box } 
   return { side, box };
 }
 
-/** An upright bar's buttons at full size, px (`--gob-touch`). */
-export const UPRIGHT_BUTTON_MAX = 44;
+/** An upright bar's buttons at full size, px (`--gob-bar-button`, styles.css). */
+export const UPRIGHT_BUTTON_MAX = 48;
 /** The smallest an upright bar's buttons get before the bar scrolls instead, px. */
-export const UPRIGHT_BUTTON_MIN = 32;
+export const UPRIGHT_BUTTON_MIN = 40;
 
 /**
  * The size of an upright bar's buttons, px, so its `count` buttons fit a bar
