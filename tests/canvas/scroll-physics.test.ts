@@ -677,3 +677,97 @@ describe("stretchTo: a wheel's pull past the end (FineNotes#111)", () => {
     expect(s.overscrollEnd.y).toBe(0);
   });
 });
+
+describe("a column held to the pane's width (discussion #43)", () => {
+  /**
+   * Pages down at the double tap's fit-to-width: the layout, with its side
+   * margins, is wider than the pane, but the page is exactly as wide, so
+   * the x range is one point, the centre.
+   */
+  function heldColumn(diagonalsScrollY = true): KineticScroller {
+    const s = new KineticScroller();
+    s.setExtent({
+      contentWidth: 1400,
+      contentHeight: 6000,
+      viewportWidth: 1180,
+      viewportHeight: 820,
+      rangeX: { min: 110, max: 110 },
+      diagonalsScrollY,
+    });
+    s.setPosition(0, 1000);
+    return s;
+  }
+
+  /** Run frames until it rests. */
+  const settle = (s: KineticScroller, t0: number): void => {
+    for (let t = t0 + 16, frames = 0; s.step(t) && frames < 500; t += 16) frames++;
+  };
+
+  it("starts centred", () => {
+    expect(heldColumn().position.x).toBe(110);
+  });
+
+  it("moves a diagonal drag only down", () => {
+    const s = heldColumn();
+    s.dragStart(500, 500, 0);
+    s.dragMove(480, 480, 16);
+    expect(s.axisLock).toBe("y");
+    s.dragMove(400, 300, 32);
+    expect(s.position).toEqual({ x: 110, y: 1200 });
+    s.dragEnd(48);
+    settle(s, 48);
+    expect(s.position.x).toBe(110);
+  });
+
+  it("stretches a sideways pull and springs back to the centre", () => {
+    const s = heldColumn();
+    s.dragStart(500, 500, 0);
+    s.dragMove(500 - AXIS_LOCK_DISTANCE - 2, 501, 16);
+    expect(s.axisLock).toBe("x");
+    s.dragMove(300, 501, 32);
+    // Rubber-banded: it gives, but less than the finger went.
+    expect(s.position.x).toBeGreaterThan(110);
+    expect(s.position.x).toBeLessThan(110 + 200);
+    expect(s.position.y).toBe(1000);
+    s.dragEnd(400);
+    settle(s, 400);
+    expect(s.position.x).toBe(110);
+  });
+
+  it("without the option a diagonal drag is free, as before", () => {
+    const s = heldColumn(false);
+    s.dragStart(500, 500, 0);
+    s.dragMove(480, 480, 16);
+    expect(s.axisLock).toBe("free");
+  });
+
+  it("leaves a diagonal free where there is room to pan sideways", () => {
+    const s = new KineticScroller();
+    s.setExtent({
+      contentWidth: 2400,
+      contentHeight: 6000,
+      viewportWidth: 1180,
+      viewportHeight: 820,
+      rangeX: { min: 200, max: 1020 },
+      diagonalsScrollY: true,
+    });
+    s.setPosition(500, 1000);
+    s.dragStart(500, 500, 0);
+    s.dragMove(480, 480, 16);
+    expect(s.axisLock).toBe("free");
+    expect(s.position).toEqual({ x: 520, y: 1020 });
+  });
+
+  it("freeDrag lets a pinch's drag move both ways from where it is", () => {
+    const s = heldColumn();
+    s.freeDrag(); // no drag: nothing happens
+    s.dragStart(500, 500, 0);
+    s.dragMove(500, 480, 16);
+    expect(s.axisLock).toBe("y");
+    s.freeDrag();
+    expect(s.axisLock).toBe("free");
+    s.dragMove(480, 480, 32);
+    expect(s.position.x).toBeGreaterThan(110);
+    expect(s.position.y).toBe(1020);
+  });
+});

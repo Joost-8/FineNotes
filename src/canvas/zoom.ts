@@ -157,6 +157,18 @@ export function pageFillZoom(
 }
 
 /**
+ * The user zoom at which a page `width` layout px wide, shown at
+ * `baseScale`, is exactly as wide as a pane `paneWidth` CSS px: where a
+ * double tap zooms a page in a notebook whose pages run down, whatever the
+ * page's shape (a landscape slide too), as Goodnotes fits a page to the
+ * window (discussion #43). Never past {@link MAX_SCALE}.
+ */
+export function pageWidthZoom(width: number, baseScale: number, paneWidth: number): number {
+  if (!(width > 0) || !(baseScale > 0) || !(paneWidth > 0)) return 1;
+  return Math.min(MAX_SCALE, paneWidth / (width * baseScale));
+}
+
+/**
  * Where a one-finger double tap zooms: to `fill`, the page covering the
  * pane ({@link pageFillZoom}), from anywhere else, and from there back to
  * the whole page (`floor`).

@@ -1037,6 +1037,11 @@ export class InkView extends TextFileView {
     this.toolbar?.setBarDock(dock);
   }
 
+  /** "Dock tool options" was switched (the plugin's, per device): this notebook's pill follows. */
+  showPillRow(on: boolean): void {
+    this.toolbar?.setPillRow(on);
+  }
+
   /**
    * Stylus-only mode was switched here or through the toolbar: its toggle
    * follows in this notebook. The hand and magnifier are ordinary toolbar
@@ -2988,6 +2993,7 @@ export class InkView extends TextFileView {
         onLearnHandwriting: () => this.plugin.openLearnWindow(),
         onPillPlaced: () => this.surface?.placeToasts(),
         onPillDock: (dock) => this.plugin.setPillDock(dock),
+        onPillRow: (shift) => this.surface?.followTopShift(shift),
         onOnlyStylusMode: (on) => void this.plugin.setOnlyStylusMode(on),
         onZoomIn: () => this.surface?.zoomIn(),
         onZoomOut: () => this.surface?.zoomOut(),
@@ -3009,6 +3015,7 @@ export class InkView extends TextFileView {
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
         pillDock: this.plugin.pillDock,
         barDock: this.plugin.barDock,
+        pillRow: this.plugin.pillRow,
         items: this.settings.toolbarItems,
         offItems: this.settings.toolbarOff,
         homeItems: this.settings.toolbarHome,
@@ -3410,6 +3417,18 @@ export class InkView extends TextFileView {
         event.preventDefault();
     });
     this.registerDomEvent(root, "drop", (event) => void this.handleFileDrop(event));
+    // On a tablet the file list is a drawer, and while it is open Obsidian's
+    // `.workspace-drawer-backdrop` covers the page, so a file dragged out of
+    // it is dropped on the backdrop, outside this view. Take a drop on that
+    // backdrop whose point lies over this view; a drop in the drawer itself
+    // (moving a file to a folder) is the file list's.
+    this.registerDomEvent(document, "drop", (event) => {
+      const target = event.target;
+      if (event.defaultPrevented || !(target instanceof Element)) return;
+      if (!target.matches(".workspace-drawer-backdrop")) return;
+      if (!pointInside(root.getBoundingClientRect(), event.clientX, event.clientY)) return;
+      void this.handleFileDrop(event);
+    });
 
     // First layout pass: the pill has no measured size until the view is in
     // the document, so its restored position can only be applied after a frame.
@@ -5082,6 +5101,7 @@ export class InkView extends TextFileView {
         },
         folded: this.toolbar?.foldedItems() ?? [],
         barDock: this.plugin.barDock,
+        pillRow: this.plugin.pillRow,
         fingerDrawing: this.plugin.fingerDrawing,
       },
       {
@@ -5116,6 +5136,7 @@ export class InkView extends TextFileView {
         showShortcuts: () => this.toggleShortcuts(),
         copyHomeLink: () => this.copyHomeLink(),
         setBarDock: (dock) => this.plugin.setBarDock(dock),
+        setPillRow: (on) => this.plugin.setPillRow(on),
         // Where touch exists: on a desktop the mouse draws already.
         setFingerDrawing:
           navigator.maxTouchPoints > 0 ? (on) => this.plugin.setFingerDrawing(on) : undefined,
@@ -5799,10 +5820,14 @@ export class InkView extends TextFileView {
     }
   }
 
-  async importVaultPdf(path: string): Promise<void> {
+  /**
+   * A PDF already in the vault, referenced where it is. `ask` false (a drop)
+   * adds every page after the last one, with no page picker.
+   */
+  async importVaultPdf(path: string, ask = true): Promise<void> {
     const file = this.app.vault.getFileByPath(path);
     if (!file) return;
-    await this.preparePdfImport(() => this.app.vault.readBinary(file), file.name, path);
+    await this.preparePdfImport(() => this.app.vault.readBinary(file), file.name, path, ask);
   }
 
   private async handleFileDrop(event: DragEvent): Promise<void> {
@@ -5815,28 +5840,38 @@ export class InkView extends TextFileView {
       (file) =>
         isPdf(file) || isImagePath(file.name) || normalizeMime(file.type).startsWith("image/"),
     );
-    const path = vaultPathFromDrop(
-      transfer.getData("text/plain") || transfer.getData("text/uri-list"),
-    );
+    // A drag from Obsidian's file list: on the iPad, WebKit keeps a drag's
+    // text from the page once its types say "Files", so the file comes from
+    // Obsidian's drag manager, where Obsidian's own views read it.
+    const dragged = draggedVaultFiles(this.app);
+    const text = transfer.getData("text/plain") || transfer.getData("text/uri-list");
+    const path = dragged.length ? null : vaultPathFromDrop(text);
     const resolved =
       path &&
       (this.app.vault.getFileByPath(path) ??
         this.app.metadataCache.getFirstLinkpathDest(path, this.file?.path ?? ""));
-    const vaultFile =
-      resolved && (/\.pdf$/i.test(resolved.path) || isImagePath(resolved.path)) ? resolved : null;
-    if (!files.length && !vaultFile) return;
+    const vaultFiles = (dragged.length ? dragged : resolved ? [resolved] : []).filter(
+      (file) => /\.pdf$/i.test(file.path) || isImagePath(file.path),
+    );
+    this.surface?.debugMark(
+      `drop types=${transfer.types.join(",") || "-"} files=${transfer.files.length} ` +
+        `text=${text ? "yes" : "no"} vault=${vaultFiles.length}`,
+    );
+    if (!files.length && !vaultFiles.length) return;
     event.preventDefault();
     event.stopPropagation();
-    if (vaultFile) {
-      if (/\.pdf$/i.test(vaultFile.path)) await this.importVaultPdf(vaultFile.path);
-      else await this.insertImageFromVault(vaultFile.path);
+    if (vaultFiles.length) {
+      for (const file of vaultFiles) {
+        if (/\.pdf$/i.test(file.path)) await this.importVaultPdf(file.path, false);
+        else await this.insertImageFromVault(file.path);
+      }
       return;
     }
     const note = this.file;
     const surface = this.surface;
     for (const file of files) {
       if (this.file !== note || this.surface !== surface || this.isProtected()) return;
-      if (isPdf(file)) await this.importPdfFile(file);
+      if (isPdf(file)) await this.importPdfFile(file, false);
       else {
         try {
           const bytes = await file.arrayBuffer();
@@ -5849,14 +5884,15 @@ export class InkView extends TextFileView {
     }
   }
 
-  private async importPdfFile(file: File): Promise<void> {
-    await this.preparePdfImport(() => file.arrayBuffer(), file.name);
+  private async importPdfFile(file: File, ask = true): Promise<void> {
+    await this.preparePdfImport(() => file.arrayBuffer(), file.name, undefined, ask);
   }
 
   private async preparePdfImport(
     read: () => Promise<ArrayBuffer>,
     name: string,
     savedPath?: string,
+    ask = true,
   ): Promise<void> {
     const note = this.file;
     const surface = this.surface;
@@ -5871,6 +5907,11 @@ export class InkView extends TextFileView {
       const pages = await measurePdfPages(bytes);
       if (this.file !== note || this.surface !== surface || this.isProtected()) return;
       const item: ScanItem = { kind: "pdf", bytes, name, savedPath, pages: [] };
+      if (!ask) {
+        item.pages = pages.map((size, page) => ({ ...size, page }));
+        await this.insertScans([item], "Import PDF", surface.document.pages.length - 1);
+        return;
+      }
       new PdfImportModal(this.app, name, pages.length, async (indices) => {
         if (this.file !== note || this.surface !== surface || this.isProtected()) return false;
         item.pages = indices.map((page) => ({ ...pages[page], page }));
@@ -5914,7 +5955,12 @@ export class InkView extends TextFileView {
    * A file saved before a later one failed keeps its path, so trying Add
    * again does not save it twice.
    */
-  private async insertScans(items: ScanItem[], label?: string): Promise<boolean> {
+  private async insertScans(
+    items: ScanItem[],
+    label?: string,
+    /** The page they go after; the one in view unless given. */
+    after?: number,
+  ): Promise<boolean> {
     const note = this.file;
     if (!note || !this.surface || this.isProtected()) return false;
     const originalSurface = this.surface;
@@ -5950,7 +5996,7 @@ export class InkView extends TextFileView {
     const surface = this.surface;
     if (!surface || surface !== originalSurface || this.file !== note || this.isProtected())
       return false;
-    const insert = buildScanInsert(surface.document, surface.currentPage, saved, label);
+    const insert = buildScanInsert(surface.document, after ?? surface.currentPage, saved, label);
     const first = insert?.placed[0];
     if (!insert || !first) {
       if (this.isSinglePage) {
@@ -6100,4 +6146,37 @@ function markStroke(
     pts: presetGeometry(preset, { x: cx - hw, y: cy - hh }, { x: cx + hw, y: cy + hh }, 0.5),
     shape: preset,
   };
+}
+
+/**
+ * The vault files Obsidian is dragging now (one file, or a selection from its
+ * file list), read from its drag manager, which is not in the public API: an
+ * empty list when there is none, or when a later Obsidian changes its shape.
+ */
+function draggedVaultFiles(app: unknown): TFile[] {
+  const draggable = (
+    app as {
+      dragManager?: { draggable?: { type?: unknown; file?: unknown; files?: unknown } | null };
+    }
+  ).dragManager?.draggable;
+  if (!draggable) return [];
+  const all: unknown[] =
+    draggable.type === "file"
+      ? [draggable.file]
+      : draggable.type === "files" && Array.isArray(draggable.files)
+        ? draggable.files
+        : [];
+  return all.filter((file): file is TFile => file instanceof TFile);
+}
+
+/** Whether (x, y) lies inside `rect`; a rect with no size (a hidden view) holds nothing. */
+function pointInside(rect: DOMRect, x: number, y: number): boolean {
+  return (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    x >= rect.left &&
+    x < rect.right &&
+    y >= rect.top &&
+    y < rect.bottom
+  );
 }

@@ -50,7 +50,8 @@ import {
   type SettingDefinitionItem,
   setIcon,
 } from "obsidian";
-import { SIZES } from "./constants";
+import { ICON_NEW_NOTEBOOK, SIZES } from "./constants";
+import { SHORTCUT_NEW_NOTEBOOK_URL, SHORTCUT_PDF_URL } from "./model/inbox";
 import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-folders";
 import type GoodObsidianPlugin from "./main";
 import { normalizeFolder } from "./model/new-notebook";
@@ -300,7 +301,16 @@ const DESC = {
     "around the pages, are in the notebook's ⋯ menu.",
   notebookFolder:
     "Where the New notebook dialog puts new notebooks and pages. Leave empty to use the " +
-    "folder of the note that is open.",
+    "folder of the note that is open. Notebooks made from PDFs in the FineNotes inbox go " +
+    "here too, or to the vault's root when this is empty.",
+  shortcutsApp:
+    "Two shortcuts for Apple's Shortcuts app. The notebook adds “New notebook”, a button " +
+    "for your Home Screen that opens the New notebook window. The other adds “New FineNotes " +
+    "notebook” to the share sheet: share a PDF from any app and it opens as a notebook. It " +
+    "saves the PDF in the FineNotes inbox, a folder FineNotes keeps at the vault's root and " +
+    "hides in the file list; when Shortcuts asks for a folder, or in the shortcut's Save " +
+    "File step, pick that folder in your vault. A PDF you save there yourself becomes a " +
+    "notebook too.",
   customColors:
     "Your own colors, as hex separated by commas, such as #ff8800, #00ccaa. Each keeps a " +
     "spot in the pen's color row, after the default ink color (four at most), and appears " +
@@ -1527,6 +1537,21 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           DESC.notebookFolder,
         ),
+        // Shortcuts exist on Apple devices only.
+        ...(this.apple
+          ? [
+              this.info(
+                drawnRow("Shortcuts app", "", (s) => this.drawShortcutLinks(s), [
+                  "shortcuts",
+                  "share sheet",
+                  "home screen",
+                  "pdf",
+                  "inbox",
+                ]),
+                DESC.shortcutsApp,
+              ),
+            ]
+          : []),
         this.info(
           toggle("notebookOwnFolder", "Each notebook gets its own folder", "", [
             "folder",
@@ -2522,6 +2547,22 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /** "New notebooks go in" (0.5): a text field with folder type-ahead. */
+  /** The two published shortcuts: each opens its iCloud page, where Shortcuts adds it. */
+  private drawShortcutLinks(setting: Setting): void {
+    setting.addExtraButton((button) =>
+      button
+        .setIcon(ICON_NEW_NOTEBOOK)
+        .setTooltip("Add the New notebook shortcut")
+        .onClick(() => window.open(SHORTCUT_NEW_NOTEBOOK_URL)),
+    );
+    setting.addExtraButton((button) =>
+      button
+        .setIcon("file-input")
+        .setTooltip("Add the PDF to notebook shortcut")
+        .onClick(() => window.open(SHORTCUT_PDF_URL)),
+    );
+  }
+
   private drawNotebookFolder(setting: Setting): void {
     setting.addText((text) => {
       text

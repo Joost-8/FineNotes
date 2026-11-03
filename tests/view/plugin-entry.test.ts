@@ -480,14 +480,92 @@ describe("registration", () => {
     expect((command as { hotkeys?: unknown } | undefined)?.hotkeys).toBeUndefined();
   });
 
-  it("registers the notebook view, the ribbon button and the OpenRouter callback", async () => {
+  it("registers the notebook view, the ribbon button and the two link handlers", async () => {
     await load();
     expect([...registered.views.keys()]).toEqual([INK]);
     expect(registered.ribbon.map((r) => r.icon)).toEqual(["notebook-pen"]);
     expect(registered.ribbon[0].title).toBe("New notebook");
     // The import icon is FineNotes' own, so it must be registered before use.
     expect(addedIcons.has("finenotes-notebook-import")).toBe(true);
-    expect([...registered.protocolHandlers.keys()]).toEqual(["goodobsidian-openrouter"]);
+    expect([...registered.protocolHandlers.keys()]).toEqual([
+      "goodobsidian-openrouter",
+      "finenotes",
+    ]);
+  });
+
+  describe("obsidian://finenotes links", () => {
+    function link(params: Record<string, string>): Promise<void> {
+      const handler = registered.protocolHandlers.get("finenotes");
+      if (!handler) throw new Error("no handler");
+      handler({ action: "finenotes", ...params });
+      return flush();
+    }
+
+    it("opens the New notebook window once the workspace is up", async () => {
+      await load({ lastSeenVersion: VERSION });
+      const dialog = vi.spyOn(plugin, "openNewNotebookDialog").mockImplementation(() => undefined);
+      await link({ do: "new", folder: "School" });
+      expect(dialog).not.toHaveBeenCalled();
+      app.workspace.fireLayoutReady();
+      await flush();
+      expect(dialog).toHaveBeenCalledWith("School");
+    });
+
+    it("makes a notebook with the last choices, skipping the window", async () => {
+      await load({ lastSeenVersion: VERSION });
+      const created = (app.vault as unknown as { created: { path: string }[] }).created;
+      await link({ do: "new", name: "Physics", folder: "School", last: "true" });
+      app.workspace.fireLayoutReady();
+      await flush();
+      expect(created.map((c) => c.path)).toEqual(["School/Physics/Physics.notebook.md"]);
+    });
+
+    type Inner = {
+      createNotebookFromPdf(f: unknown, open?: boolean): Promise<unknown>;
+      createNotebookFromPdfBytes(...args: unknown[]): Promise<unknown>;
+      showNotebook(f: unknown): Promise<void>;
+    };
+
+    it("makes a notebook from the PDF a bare name points to, and opens it", async () => {
+      await load({ lastSeenVersion: VERSION });
+      const pdf = app.addFile("School/Lecture 7.pdf");
+      const notebook = new TFile("School/Lecture 7.notebook.md");
+      const inner = plugin as unknown as Inner;
+      const fromPdf = vi.spyOn(inner, "createNotebookFromPdf").mockResolvedValue(notebook);
+      const show = vi.spyOn(inner, "showNotebook").mockResolvedValue();
+      await link({ do: "pdf", file: "Lecture 7" });
+      app.workspace.fireLayoutReady();
+      await flush();
+      expect(fromPdf).toHaveBeenCalledWith(pdf, false);
+      expect(show).toHaveBeenCalledWith(notebook);
+    });
+
+    it("makes the inbox folder once the workspace is up", async () => {
+      await load({ lastSeenVersion: VERSION });
+      const vault = app.vault as unknown as { createFolder(path: string): Promise<void> };
+      const made = vi.spyOn(vault, "createFolder");
+      app.workspace.fireLayoutReady();
+      await flush();
+      expect(made).toHaveBeenCalledWith("FineNotes inbox");
+    });
+
+    it("turns an inbox PDF a link names into one notebook, moving the PDF out", async () => {
+      await load({ lastSeenVersion: VERSION });
+      const pdf = app.addFile("FineNotes inbox/Lecture 7.pdf");
+      const notebook = new TFile("Notebooks/Lecture 7/Lecture 7.notebook.md");
+      const inner = plugin as unknown as Inner;
+      const make = vi.spyOn(inner, "createNotebookFromPdfBytes").mockResolvedValue(notebook);
+      const show = vi.spyOn(inner, "showNotebook").mockResolvedValue();
+      // The watcher finds it on start, and the link names it too: one notebook.
+      await link({ do: "pdf", file: "Lecture 7" });
+      app.workspace.fireLayoutReady();
+      await flush();
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+      expect(make).toHaveBeenCalledTimes(1);
+      expect(make.mock.calls[0][4]).toEqual({ move: pdf });
+      expect(make.mock.calls[0][5]).toBe(false);
+      expect(show).toHaveBeenCalledWith(notebook);
+    });
   });
 
   it("opens the import dialog on the folder it was asked for", async () => {
