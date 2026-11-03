@@ -70,6 +70,12 @@ export interface NewNotebookOptions {
   template?: { path: string; page: number } | null;
   /** Preselected folder: the setting, or the active file's folder. */
   folder: string;
+  /**
+   * Where a folder picked in the dialog really takes the notebook (the host
+   * steps out of a notebook's own folder), so the chip shows that. Left
+   * out, the folder picked.
+   */
+  placeFolder?: (folder: string) => string;
   onCreate: (request: NewNotebookRequest) => void;
   /**
    * "Import from another app…", under the title: closes the dialog and imports
@@ -505,7 +511,8 @@ export class NewNotebookModal extends Modal {
       new FolderSuggestModal(
         this.app,
         (path) => {
-          this.folder = normalizeFolder(path);
+          const picked = normalizeFolder(path);
+          this.folder = normalizeFolder(this.options.placeFolder?.(picked) ?? picked);
           this.syncFolder();
         },
         undefined,

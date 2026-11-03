@@ -111,6 +111,24 @@ describe("a new board", () => {
     expect(isBoard(buildNewDocument(DEFAULT_NOTEBOOK_CHOICES, "x"))).toBe(false);
   });
 
+  it("gets its own folder but no empty folders for files it has not saved yet (#43)", () => {
+    const paths = notebookPaths("Lectures", "Ideas", "endless", true, new Set());
+    expect(paths.folder).toBe("Lectures/Ideas");
+    expect(paths.fileName).toBe("Ideas.notebook.md");
+    expect(paths.folders).toEqual(["Lectures", "Lectures/Ideas"]);
+    // Its pictures and the rest still go in its folder, made on first save.
+    expect(paths.attachments).toEqual({
+      images: "Lectures/Ideas/Images",
+      audio: "Lectures/Ideas/Recordings",
+      transcripts: "Lectures/Ideas/Transcripts",
+      chats: "Lectures/Ideas/AI chats",
+      exports: "Lectures/Ideas/Exports",
+    });
+    expect(notebookPaths("", "Ideas", "endless", true, new Set()).folders).toEqual(["Ideas"]);
+    // A notebook keeps making its five up front.
+    expect(notebookPaths("", "Ideas", "notebook", true, new Set()).folders).toHaveLength(6);
+  });
+
   it("is remembered as the choice for next time, with its own paper", () => {
     expect(parseNotebookChoices({ type: "endless" }).type).toBe("endless");
     expect(parseNotebookChoices({ type: "single" }).type).toBe("notebook");

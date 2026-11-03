@@ -68,6 +68,27 @@ export function isFolderNotebook(notePath: string): boolean {
   return folder !== "" && stripInkSuffix(name).toLowerCase() === folder.toLowerCase();
 }
 
+/**
+ * The folder a new notebook made "in" `folder` really goes in: `folder`
+ * itself, unless it is a notebook's own folder or lies inside one (its
+ * `Transcripts/`, say), in which case the folder that notebook lives in. A
+ * notebook's own folder holds that notebook and its files, never another
+ * notebook (FineNotes discussion #43: a board made while a notebook was open
+ * landed beside that notebook's `AI chats/`). `isNotebookFolder` says
+ * whether a vault folder is one (`folderNotebookName` over its entries).
+ * The deepest such folder decides, so a user's own folder that happens to
+ * hold a notebook of its name further up is left alone.
+ */
+export function outsideNotebookFolder(
+  folder: string,
+  isNotebookFolder: (path: string) => boolean,
+): string {
+  for (let path = folder; path !== ""; path = parentPath(path)) {
+    if (isNotebookFolder(path)) return parentPath(path);
+  }
+  return folder;
+}
+
 /** Obsidian icon names for a notebook and for the folders inside one. */
 export const NOTEBOOK_ICON = "notebook";
 const OWN_FOLDER_ICONS: Readonly<Record<string, string>> = {

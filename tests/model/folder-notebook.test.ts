@@ -3,6 +3,7 @@ import {
   folderNotebookName,
   followPairRename,
   isFolderNotebook,
+  outsideNotebookFolder,
   ownFolderIcon,
 } from "../../src/model/folder-notebook";
 
@@ -96,5 +97,33 @@ describe("followPairRename", () => {
       ]),
     ).toBeUndefined();
     expect(followPairRename("A/Physics", "A/Mechanics", true, [dir("Images")])).toBeUndefined();
+  });
+});
+
+describe("outsideNotebookFolder", () => {
+  const notebooks = new Set(["Untitled notebook", "MVKN90/MVKN90 - Föreläsningar"]);
+  const isNotebook = (path: string) => notebooks.has(path);
+
+  it("steps out of a notebook's own folder to the folder it lives in (#43)", () => {
+    expect(outsideNotebookFolder("Untitled notebook", isNotebook)).toBe("");
+    expect(outsideNotebookFolder("MVKN90/MVKN90 - Föreläsningar", isNotebook)).toBe("MVKN90");
+  });
+
+  it("steps out from inside one, such as its AI chats or Exports", () => {
+    expect(outsideNotebookFolder("MVKN90/MVKN90 - Föreläsningar/AI chats", isNotebook)).toBe(
+      "MVKN90",
+    );
+    expect(outsideNotebookFolder("Untitled notebook/Exports/Week 1", isNotebook)).toBe("");
+  });
+
+  it("leaves any other folder, and the root, as it is", () => {
+    expect(outsideNotebookFolder("MVKN90", isNotebook)).toBe("MVKN90");
+    expect(outsideNotebookFolder("Lectures/Week 1", isNotebook)).toBe("Lectures/Week 1");
+    expect(outsideNotebookFolder("", isNotebook)).toBe("");
+  });
+
+  it("steps out of the deepest notebook folder only", () => {
+    const nested = (path: string) => path === "Course" || path === "Course/Week";
+    expect(outsideNotebookFolder("Course/Week/Images", nested)).toBe("Course");
   });
 });

@@ -101,6 +101,7 @@ const { default: GoodObsidianPlugin } = await import("../../src/main");
 const { InkView } = await import("../../src/view/ink-view");
 const { DEFAULT_SETTINGS } = await import("../../src/settings");
 const { codeChallenge } = await import("../../src/recognition/openrouter-auth");
+const { DEFAULT_NOTEBOOK_CHOICES } = await import("../../src/model/new-notebook");
 
 type Plugin = InstanceType<typeof GoodObsidianPlugin>;
 
@@ -418,6 +419,65 @@ describe("New notebook context menu", () => {
     expect(menuFor(folder, "file-explorer")).toHaveLength(0);
     plugin.settings.showNewNotebookInContextMenu = false;
     expect(menuFor(folder)).toHaveLength(0);
+  });
+});
+
+describe("New notebook, never inside another notebook's own folder (#43)", () => {
+  /** A vault: `MVKN90/Course/` is the notebook `Course.notebook.md`'s own folder. */
+  function vaultWithNotebookFolder(active: string | null) {
+    const folder = (path: string, children: Array<TFile | TFolder>) =>
+      Object.assign(new TFolder(path), { name: path.slice(path.lastIndexOf("/") + 1), children });
+    const chats = folder("MVKN90/Course/AI chats", [new TFile("MVKN90/Course/AI chats/Q.md")]);
+    const own = folder("MVKN90/Course", [new TFile("MVKN90/Course/Course.notebook.md"), chats]);
+    const course = folder("MVKN90", [own]);
+    const folders = new Map<string, TFolder>([
+      ["MVKN90", course],
+      ["MVKN90/Course", own],
+      ["MVKN90/Course/AI chats", chats],
+    ]);
+    const vault = app.vault as unknown as {
+      getFolderByPath(path: string): TFolder | null;
+      createFolder(path: string): Promise<void>;
+    };
+    vault.getFolderByPath = (path) => folders.get(path) ?? null;
+    const made = vi.spyOn(vault, "createFolder");
+    if (active) {
+      const file = new TFile(active);
+      file.parent = folders.get(active.slice(0, active.lastIndexOf("/"))) ?? null;
+      (app.workspace as unknown as { getActiveFile: () => TFile }).getActiveFile = () => file;
+    }
+    return made;
+  }
+  const inner = () =>
+    plugin as unknown as {
+      createNotebook(title: string, choices: unknown, folder?: string): Promise<TFile | null>;
+    };
+  const board = { ...DEFAULT_NOTEBOOK_CHOICES, type: "endless" as const };
+
+  it("with a notebook open, the default folder is the one it lives in", async () => {
+    await load();
+    const made = vaultWithNotebookFolder("MVKN90/Course/Course.notebook.md");
+    const file = await inner().createNotebook("Test2", board);
+    expect(file?.path).toBe("MVKN90/Test2/Test2.notebook.md");
+    // A board makes its own folder only: no empty AI chats, Exports, …
+    expect(made.mock.calls.map(([path]) => path)).toEqual(["MVKN90/Test2"]);
+  });
+
+  it("with one of a notebook's own files open (a saved chat), too", async () => {
+    await load();
+    vaultWithNotebookFolder("MVKN90/Course/AI chats/Q.md");
+    const file = await inner().createNotebook("Notes", DEFAULT_NOTEBOOK_CHOICES);
+    expect(file?.path).toBe("MVKN90/Notes/Notes.notebook.md");
+  });
+
+  it("a folder given as a notebook's own folder is stepped out of too", async () => {
+    await load();
+    vaultWithNotebookFolder(null);
+    const file = await inner().createNotebook("Notes", board, "MVKN90/Course");
+    expect(file?.path).toBe("MVKN90/Notes/Notes.notebook.md");
+    expect((await inner().createNotebook("Plain", board, "MVKN90"))?.path).toBe(
+      "MVKN90/Plain/Plain.notebook.md",
+    );
   });
 });
 

@@ -18,7 +18,11 @@ import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-regi
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import { WordCheck } from "./view/word-check";
-import { followPairRename } from "./model/folder-notebook";
+import {
+  folderNotebookName,
+  followPairRename,
+  outsideNotebookFolder,
+} from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
 import { tapeColorOf, tapeHeightOf } from "./model/cover-tape";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
@@ -1972,7 +1976,7 @@ export default class GoodObsidianPlugin extends Plugin {
   openImportNotebook(folder = "", preset?: readonly PickedFile[]): void {
     openImportNotebookModal(this.app, {
       ...(preset ? { preset } : {}),
-      folder: folder || this.newNotebookFolder(),
+      folder: folder ? this.outsideNotebook(folder) : this.newNotebookFolder(),
       ownFolder: this.settings.notebookOwnFolder,
       open: async (file) => {
         const tab = this.app.workspace.getLeaf(false);
@@ -2141,7 +2145,10 @@ export default class GoodObsidianPlugin extends Plugin {
     const modal = new NewNotebookModal(this.app, {
       choices: parseNotebookChoices(this.settings.lastNotebookChoices),
       template: parseNotebookTemplate(this.settings.lastNotebookTemplate),
-      folder: folder ?? this.newNotebookFolder(),
+      // A folder given (the file list's right-click, a link) is stepped out
+      // of a notebook's own folder too, so the chip shows where it will go.
+      folder: folder === undefined ? this.newNotebookFolder() : this.outsideNotebook(folder),
+      placeFolder: (picked) => this.outsideNotebook(picked),
       papers: library,
       onClosed: () => cache.destroy(),
       onImport: (folder) => this.openImportNotebook(folder),
@@ -2317,11 +2324,31 @@ export default class GoodObsidianPlugin extends Plugin {
     }, 0);
   }
 
-  /** The setting's folder, or the active file's (the behaviour before the setting existed). */
+  /**
+   * The setting's folder, or the active file's (the behaviour before the
+   * setting existed); out of a notebook's own folder either way.
+   */
   private newNotebookFolder(): string {
     const parent = this.app.workspace.getActiveFile()?.parent;
     const active = parent && !parent.isRoot() ? parent.path : "";
-    return targetFolder(this.settings.newNotebookFolder, active);
+    return this.outsideNotebook(targetFolder(this.settings.newNotebookFolder, active));
+  }
+
+  /**
+   * `folder`, or the folder the notebook lives in when `folder` is (or lies
+   * in) a notebook's own folder: a new notebook never goes in another's
+   * (discussion #43, where the active notebook's folder was the default).
+   */
+  private outsideNotebook(folder: string): string {
+    return outsideNotebookFolder(normalizeFolder(folder), (path) => {
+      const dir = this.app.vault.getFolderByPath(path);
+      if (!dir) return false;
+      const entries = dir.children.map((child) => ({
+        name: child.name,
+        folder: child instanceof TFolder,
+      }));
+      return folderNotebookName(dir.name, entries) !== undefined;
+    });
   }
 
   /**
@@ -2348,7 +2375,7 @@ export default class GoodObsidianPlugin extends Plugin {
     /** Open it in the current tab; false leaves the view where it is. */
     open = true,
   ): Promise<TFile | null> {
-    const dir = normalizeFolder(folder ?? this.newNotebookFolder());
+    const dir = this.outsideNotebook(folder ?? this.newNotebookFolder());
     try {
       const parent = dir ? this.app.vault.getFolderByPath(dir) : this.app.vault.getRoot();
       const taken = new Set(parent?.children.map((child) => child.name) ?? []);
