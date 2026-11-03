@@ -14493,6 +14493,16 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   box-shadow: none;
 }
 
+/* The row is the width of the page, so the pill uses it: every pen type, and
+   up to fifteen colours (as many as fit; the rest are a swipe away). */
+.goodobsidian-options.is-docked .goodobsidian-pen-types {
+  max-width: none;
+}
+
+.goodobsidian-options.is-docked .goodobsidian-pen-colors {
+  max-width: calc(var(--gob-touch-compact) * 15);
+}
+
 /* At a side: the view becomes two columns, the bar spanning every row of
    the other (the page, then the text layer under it). */
 .goodobsidian-view.goodobsidian-bar-at-left,

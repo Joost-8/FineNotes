@@ -798,6 +798,8 @@ export interface ToolbarOptions {
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
 const EDGE_INSET = 8;
+/** The room round a docked pill, px: the row is only as tall as the pill and this either side. */
+const DOCKED_INSET = 3;
 /** How often a floating text pill looks for the keyboard (see `watchKeyboard`). */
 const KEYBOARD_WATCH_MS = 250;
 /**
@@ -5476,7 +5478,7 @@ export class Toolbar {
       shown,
       anchored,
       height,
-      gap: EDGE_INSET,
+      gap: this.pillInset(),
       previous: this.row,
     });
     this.optionsEl.toggleClass("is-docked", next.edge !== null && !anchored);
@@ -5505,6 +5507,12 @@ export class Toolbar {
   private placePill(): void {
     // A glide in progress would be measured as the pill's size.
     this.stopPillMorph();
+    // Docked, the pill is as wide as the row allows: measure it so.
+    this.optionsEl.toggleClass(
+      "is-docked",
+      pillRowEdge(this.pillRowOn, this.pillDock, this.barDock) !== null &&
+        !this.optionsEl.hasClass("is-anchored"),
+    );
     this.fitTextPill();
     const hostBox = this.host.getBoundingClientRect();
     const pill = this.optionsEl.getBoundingClientRect();
@@ -5530,7 +5538,7 @@ export class Toolbar {
     this.optionsEl.setCssProps({
       "--gob-pill-room": `${Math.max(0, Math.round(area.bottom - area.top - 2 * EDGE_INSET))}px`,
     });
-    const place = dockPlace(this.pillDock, area, pill.width, pill.height, EDGE_INSET);
+    const place = dockPlace(this.pillDock, area, pill.width, pill.height, this.pillInset());
     this.optionsEl.setCssStyles({
       left: `${Math.round(place.left)}px`,
       top: `${Math.round(place.top)}px`,
@@ -5594,10 +5602,17 @@ export class Toolbar {
         right: hostBox.width - pad(style?.paddingRight),
         bottom: this.pageBottom(hostBox),
       },
-      EDGE_INSET,
+      this.pillInset(),
       this.leftInset,
       pillWidth,
     );
+  }
+
+  /** How far the pill rests from the bar: less when it is docked in a row of its own. */
+  private pillInset(): number {
+    return pillRowEdge(this.pillRowOn, this.pillDock, this.barDock) === null
+      ? EDGE_INSET
+      : DOCKED_INSET;
   }
 
   /** The pill was carried and let go at (`x`, `y`), host px: rest it at the nearest place. */
