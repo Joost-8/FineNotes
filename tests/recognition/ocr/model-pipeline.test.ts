@@ -132,6 +132,26 @@ describe("reading a page image", () => {
     expect(keptLines(page)).toHaveLength(2);
   });
 
+  it("puts the words of a region back on the page: its origin is added to every box", async () => {
+    const bars = [{ x: 40, y: 60, w: 300, h: 10, text: "label" }];
+    const at = async (origin?: { x: number; y: number }) =>
+      (
+        await readPage(image, fakeBackend(bars, alphabet), {
+          scale: 2,
+          pageWidth: 612,
+          pageHeight: 866,
+          origin,
+          alphabet,
+        })
+      ).lines[0].words[0].box;
+    const home = await at();
+    const shifted = await at({ x: 120.5, y: 300.25 });
+    expect(shifted[0]).toBeCloseTo(home[0] + 120.5, 6);
+    expect(shifted[2]).toBeCloseTo(home[2] + 120.5, 6);
+    expect(shifted[1]).toBeCloseTo(home[1] + 300.25, 6);
+    expect(shifted[3]).toBeCloseTo(home[3] + 300.25, 6);
+  });
+
   it("rejects a class count the dictionary does not match (a damaged or wrong file)", async () => {
     const backend = fakeBackend([{ x: 40, y: 60, w: 300, h: 10, text: "abc" }], alphabet);
     await expect(

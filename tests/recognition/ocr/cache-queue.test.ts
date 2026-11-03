@@ -246,3 +246,78 @@ describe("which page is read next", () => {
     expect(q.nextProbe(true)).toBeNull();
   });
 });
+
+describe("the OCR cache records what kind of page it is", () => {
+  const regions = [{ x0: 10.04, y0: 20.06, x1: 200, y1: 180.5, dpi: 349.7 }];
+
+  it("stores the condition, the regions read and their words", () => {
+    const file = withPage(emptyCache(), 9, {
+      ...sample,
+      condition: "TEXT_WITH_FIGURES",
+      regions,
+    });
+    const back = cachedPage(parseCache(serializeCache(file)), 9);
+    expect(back?.condition).toBe("TEXT_WITH_FIGURES");
+    expect(back?.regions).toEqual([{ x0: 10, y0: 20.1, x1: 200, y1: 180.5, dpi: 350 }]);
+    expect(back?.lines[0].words).toHaveLength(2);
+  });
+
+  it("records a TEXT_ONLY page with nothing in it, and that costs nothing to find again", () => {
+    const file = withPage(emptyCache(), 4, {
+      condition: "TEXT_ONLY",
+      regions: [],
+      imageWidth: 0,
+      imageHeight: 0,
+      pageWidth: 612,
+      pageHeight: 866,
+      lines: [],
+    });
+    const back = parseCache(serializeCache(file));
+    expect(cachedPage(back, 4)).toMatchObject({ condition: "TEXT_ONLY", regions: [], lines: [] });
+  });
+
+  it("reads a page stored without a condition as a scan of the whole page", () => {
+    const stored = cachedPage(withPage(emptyCache(), 0, sample), 0);
+    expect(stored?.condition).toBe("SCANNED");
+    expect(stored?.regions).toEqual([{ x0: 0, y0: 0, x1: 594.1, y1: 840.5, dpi: null }]);
+  });
+
+  it("treats an entry of the old format, or of an unknown condition, as a miss", () => {
+    const current = JSON.parse(serializeCache(withPage(emptyCache(), 0, sample))) as {
+      format: number;
+      pages: Record<string, Record<string, unknown>>;
+    };
+    expect(parseCache(JSON.stringify({ ...current, format: 1 })).pages).toEqual({});
+    current.pages["0"].condition = "SOMETHING_ELSE";
+    expect(parseCache(JSON.stringify(current)).pages).toEqual({});
+    delete current.pages["0"].condition;
+    expect(parseCache(JSON.stringify(current)).pages).toEqual({});
+  });
+
+  it("looks again at a TEXT_ONLY page recorded under other classification rules, not at a read one", () => {
+    const text = serializeCache(
+      withPage(withPage(emptyCache(), 1, { ...sample, condition: "TEXT_ONLY", lines: [] }), 2, {
+        ...sample,
+        condition: "TEXT_WITH_FIGURES",
+        regions,
+      }),
+    );
+    const raw = JSON.parse(text) as { pages: Record<string, { rules: number }> };
+    raw.pages["1"].rules = 0;
+    raw.pages["2"].rules = 0;
+    const back = parseCache(JSON.stringify(raw));
+    expect(cachedPage(back, 1)).toBeNull();
+    expect(cachedPage(back, 2)).not.toBeNull();
+  });
+
+  it("drops damaged regions but keeps the page", () => {
+    const raw = JSON.parse(
+      serializeCache(
+        withPage(emptyCache(), 0, { ...sample, condition: "TEXT_WITH_FIGURES", regions }),
+      ),
+    ) as { pages: Record<string, { regions: unknown[] }> };
+    raw.pages["0"].regions.push({ x0: 5, y0: 5, x1: 1, y1: 1, dpi: null }, "x", null);
+    const page = cachedPage(parseCache(JSON.stringify(raw)), 0);
+    expect(page?.regions).toHaveLength(1);
+  });
+});

@@ -109,6 +109,7 @@ async function read(request: Extract<OcrRequest, { type: "read" }>): Promise<Ocr
     scale: request.scale,
     pageWidth: request.pageWidth,
     pageHeight: request.pageHeight,
+    origin: request.origin,
     alphabet,
     onStep: (step, ms) => {
       steps[step] = ms;

@@ -98,18 +98,20 @@ export class OcrClient {
   }
 
   /**
-   * Read a page image. `bitmap` is handed over (and closed by the worker,
-   * or here when the worker cannot take it).
+   * Read a page image, or one region of a page (`origin`: where its corner
+   * lies on the page, points). `bitmap` is handed over (and closed by the
+   * worker, or here when the worker cannot take it).
    */
   async read(
     bitmap: ImageBitmap,
     scale: number,
     pageWidth: number,
     pageHeight: number,
+    origin?: { x: number; y: number },
   ): Promise<{ page: OcrPage; steps: Record<string, number> }> {
     try {
       const result = await this.send(
-        { type: "read", bitmap, scale, pageWidth, pageHeight },
+        { type: "read", bitmap, scale, pageWidth, pageHeight, origin },
         [bitmap],
         READ_TIMEOUT_MS,
       );

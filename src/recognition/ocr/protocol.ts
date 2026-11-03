@@ -29,6 +29,8 @@ export type OcrRequest =
       scale: number;
       pageWidth: number;
       pageHeight: number;
+      /** Where the image's corner lies on the page, points (a region of it); absent: the page's corner. */
+      origin?: { x: number; y: number };
     };
 
 export interface OcrReadResult {

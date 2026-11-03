@@ -28,6 +28,7 @@
  */
 
 import type { PixelRect } from "../recognition/ocr/blank";
+import { type PagePlan, type Region, settledCondition } from "../recognition/ocr/figures";
 import {
   type OcrCacheFile,
   cacheFolder,
@@ -47,7 +48,7 @@ import {
   OCR_WASM_FILE,
 } from "../recognition/ocr/ocr-model";
 import { OcrQueue, type PageRef } from "../recognition/ocr/ocr-queue";
-import type { OcrPage } from "../recognition/ocr/ocr-words";
+import type { OcrLine, OcrPage } from "../recognition/ocr/ocr-words";
 import type { OcrFiles } from "../recognition/ocr/protocol";
 import { errorMessage } from "../util/errors";
 
@@ -73,10 +74,13 @@ export interface RasterShot {
   scale: number;
   pageWidth: number;
   pageHeight: number;
+  /** For a region of the page: where its corner lies on the page, points. */
+  origin?: { x: number; y: number };
 }
 
 export interface RasterLike {
-  render(path: string, page: number): Promise<RasterShot>;
+  /** The page, or only `region` of it (points) at the resolution its picture has. */
+  render(path: string, page: number, region?: Region): Promise<RasterShot>;
   release(path: string): void;
   dispose(): void;
 }
@@ -89,6 +93,7 @@ export interface ClientLike {
     scale: number,
     pageWidth: number,
     pageHeight: number,
+    origin?: { x: number; y: number },
   ): Promise<{ page: OcrPage; steps: Record<string, number> }>;
   dispose(): void;
 }
@@ -108,6 +113,11 @@ export interface NativeInfo {
   /** How many text items the page has of its own. */
   items: number;
   rects: PixelRect[];
+  /**
+   * What the page is and which areas are to be read (figures.ts). Absent: a
+   * page read whole, as pages were before pictures were looked at.
+   */
+  plan?: PagePlan;
 }
 
 /**
@@ -118,6 +128,8 @@ export interface OcrDeps {
   pluginDir(): string;
   /** The setting "Read scanned PDF pages". */
   enabled(): boolean;
+  /** The setting "Also read text inside figures" (only in effect while `enabled`). */
+  figures(): boolean;
   store: ModelStoreLike;
   /** Show the model's download card (unless declined). */
   offer(): void;
@@ -200,6 +212,11 @@ export class OcrService {
   /** Whether scanned pages are read at all (the setting, and no run of failures). */
   get enabled(): boolean {
     return !this.disposed && this.deps.enabled() && this.failures < MAX_FAILURES;
+  }
+
+  /** Whether the text inside pictures is read too (the setting, on top of {@link enabled}). */
+  get figures(): boolean {
+    return this.enabled && this.deps.figures();
   }
 
   /** Called with the progress whenever it changes; returns the unsubscribe. */
@@ -318,6 +335,42 @@ export class OcrService {
   /** Page `page` of `path` needs no reading (it has text of its own, or was probed). */
   settled(path: string, page: number): void {
     this.queue.markProbed(path, page);
+  }
+
+  /**
+   * Page `page` of `path` was looked at and has nothing to read (`TEXT_ONLY`:
+   * text of its own, no figure). It is recorded, so that opening the PDF
+   * again costs nothing: no operators, no raster, no model.
+   */
+  async recordTextOnly(
+    path: string,
+    page: number,
+    size: { width: number; height: number },
+  ): Promise<void> {
+    this.queue.markProbed(path, page);
+    try {
+      const key = await this.deps.hashOf(path);
+      const file = await this.load(key);
+      if (cachedPage(file, page)) return;
+      this.caches.set(
+        key,
+        Promise.resolve(
+          withPage(file, page, {
+            condition: "TEXT_ONLY",
+            regions: [],
+            imageWidth: 0,
+            imageHeight: 0,
+            pageWidth: size.width,
+            pageHeight: size.height,
+            lines: [],
+          }),
+        ),
+      );
+      this.dirty.add(key);
+      this.scheduleSave();
+    } catch (error) {
+      console.warn("FineNotes: could not record a page that needs no reading", error);
+    }
   }
 
   /** Forget what was read of `path` (all of it, on disk too); the notebooks ask for it again. */
@@ -446,14 +499,33 @@ export class OcrService {
     }
   }
 
-  private emptyPage(shot: RasterShot): OcrPage {
+  private emptyPage(shot: RasterShot, condition: PagePlan["condition"]): OcrPage {
     return {
       imageWidth: shot.bitmap.width,
       imageHeight: shot.bitmap.height,
       pageWidth: shot.pageWidth,
       pageHeight: shot.pageHeight,
       lines: [],
+      condition,
+      regions: [],
     };
+  }
+
+  /** What to do with a page asked for without a plan: read it whole, as before pictures were looked at. */
+  private planOf(native: NativeInfo): PagePlan {
+    return (
+      native.plan ?? {
+        condition: native.items > 0 ? "SCANNED" : "NO_TEXT_NO_IMAGE_NOT_BLANK",
+        regions: [],
+        checkRest: false,
+        known: false,
+      }
+    );
+  }
+
+  /** Whether the work on a page should stop now: the pen is down, or nobody shows its PDF. */
+  private interrupted(path: string): boolean {
+    return this.disposed || !this.enabled || this.holders.size > 0 || !this.ownerOf(path);
   }
 
   private async process(job: PageRef): Promise<void> {
@@ -470,44 +542,12 @@ export class OcrService {
         this.waitingForModel.set(ref, { path, page, native });
         return;
       }
-      const shot = await this.deps.raster.render(path, page);
-      let result: OcrPage;
-      try {
-        const masked = native.rects.map((r) => ({
-          x0: r.x0 * shot.scale,
-          y0: r.y0 * shot.scale,
-          x1: r.x1 * shot.scale,
-          y1: r.y1 * shot.scale,
-        }));
-        if (!(await this.deps.hasInk(shot.bitmap, masked))) {
-          // Nothing to read, or nothing beyond the page's own text: remembered
-          // as read, so it is not drawn again.
-          result = this.emptyPage(shot);
-          shot.bitmap.close();
-        } else {
-          if (!(await this.modelReady())) {
-            // Offered; the page waits for the model.
-            shot.bitmap.close();
-            this.natives.set(ref, native);
-            this.queue.add(path, page);
-            this.parked = true;
-            return;
-          }
-          const started = this.deps.now();
-          const client = await this.worker();
-          await client.ensureModel(`${OCR_MODEL.id}:${OCR_MODEL.version}`, () => this.readModel());
-          // The worker takes the bitmap and closes it.
-          const read = await client.read(shot.bitmap, shot.scale, shot.pageWidth, shot.pageHeight);
-          result = read.page;
-          console.debug(
-            `FineNotes: read scanned page ${page + 1} of ${path} in ${this.deps.now() - started} ms`,
-            read.steps,
-          );
-        }
-      } catch (error) {
-        shot.bitmap.close();
-        throw error;
-      }
+      const plan = this.planOf(native);
+      const result =
+        plan.condition === "TEXT_WITH_FIGURES" && !plan.checkRest
+          ? await this.readRegions(job, native, plan)
+          : await this.readWhole(job, native, plan);
+      if (!result) return;
       this.failures = 0;
       this.caches.set(key, Promise.resolve(withPage(await this.load(key), page, result)));
       this.dirty.add(key);
@@ -517,6 +557,139 @@ export class OcrService {
     for (const [owner, paths] of this.owners) if (paths.has(path)) owner.ocrReady(path, page);
   }
 
+  /** The page was left (to be read when the model is here, or the pen lifts): queued again. */
+  private requeue(job: PageRef, native: NativeInfo, parked: boolean): void {
+    if (!this.ownerOf(job.path)) return;
+    this.natives.set(refKey(job.path, job.page), native);
+    this.queue.add(job.path, job.page);
+    if (parked) this.parked = true;
+  }
+
+  /**
+   * The whole page: drawn, checked for ink beyond its own text (and beyond
+   * its figures, for a page that has some but little text), read if it has
+   * any. Null when it was left for later (the model is not here, or the pen
+   * went down).
+   */
+  private async readWhole(
+    job: PageRef,
+    native: NativeInfo,
+    plan: PagePlan,
+  ): Promise<OcrPage | null> {
+    const { path, page } = job;
+    const shot = await this.deps.raster.render(path, page);
+    try {
+      const masks: PixelRect[] = native.rects;
+      // A sparse page with figures: its figures are not "the rest".
+      const covered = plan.checkRest ? [...masks, ...plan.regions] : masks;
+      const masked = covered.map((r) => ({
+        x0: r.x0 * shot.scale,
+        y0: r.y0 * shot.scale,
+        x1: r.x1 * shot.scale,
+        y1: r.y1 * shot.scale,
+      }));
+      if (!(await this.deps.hasInk(shot.bitmap, masked))) {
+        // Nothing to read, or nothing beyond the page's own text: remembered
+        // as read, so it is not drawn again.
+        const empty = this.emptyPage(shot, settledCondition(plan, native.items > 0, false));
+        shot.bitmap.close();
+        if (plan.checkRest) return await this.readRegions(job, native, plan);
+        return empty;
+      }
+      if (!(await this.modelReady())) {
+        // Offered; the page waits for the model.
+        shot.bitmap.close();
+        this.requeue(job, native, true);
+        return null;
+      }
+      const started = this.deps.now();
+      const client = await this.worker();
+      await client.ensureModel(`${OCR_MODEL.id}:${OCR_MODEL.version}`, () => this.readModel());
+      // The worker takes the bitmap and closes it.
+      const read = await client.read(shot.bitmap, shot.scale, shot.pageWidth, shot.pageHeight);
+      console.debug(
+        `FineNotes: read scanned page ${page + 1} of ${path} in ${this.deps.now() - started} ms`,
+        read.steps,
+      );
+      return {
+        ...read.page,
+        condition: settledCondition(plan, native.items > 0, true),
+        regions: [{ x0: 0, y0: 0, x1: shot.pageWidth, y1: shot.pageHeight, dpi: null }],
+      };
+    } catch (error) {
+      shot.bitmap.close();
+      throw error;
+    }
+  }
+
+  /**
+   * Only the plan's regions (the figures), one at a time: each drawn at its
+   * own resolution, checked for ink beyond the page's own text, read, its
+   * words put back on the page. Null when it was left for later.
+   */
+  private async readRegions(
+    job: PageRef,
+    native: NativeInfo,
+    plan: PagePlan,
+  ): Promise<OcrPage | null> {
+    const { path, page } = job;
+    if (!(await this.modelReady(native.items === 0))) {
+      // Only a page with no text at all may make the model be offered; the others wait for it.
+      if (native.items > 0) this.waitingForModel.set(refKey(path, page), { path, page, native });
+      else this.requeue(job, native, true);
+      return null;
+    }
+    const started = this.deps.now();
+    const lines: OcrLine[] = [];
+    const size = { imageWidth: 0, imageHeight: 0, pageWidth: 0, pageHeight: 0 };
+    let loaded = false;
+    for (const region of plan.regions) {
+      if (this.interrupted(path)) {
+        this.requeue(job, native, false);
+        return null;
+      }
+      const shot = await this.deps.raster.render(path, page, region);
+      try {
+        size.imageWidth = Math.max(size.imageWidth, shot.bitmap.width);
+        size.imageHeight = Math.max(size.imageHeight, shot.bitmap.height);
+        size.pageWidth = shot.pageWidth;
+        size.pageHeight = shot.pageHeight;
+        const ox = shot.origin?.x ?? 0;
+        const oy = shot.origin?.y ?? 0;
+        const masked = native.rects.map((r) => ({
+          x0: (r.x0 - ox) * shot.scale,
+          y0: (r.y0 - oy) * shot.scale,
+          x1: (r.x1 - ox) * shot.scale,
+          y1: (r.y1 - oy) * shot.scale,
+        }));
+        if (!(await this.deps.hasInk(shot.bitmap, masked))) {
+          shot.bitmap.close();
+          continue;
+        }
+        const client = await this.worker();
+        if (!loaded) {
+          await client.ensureModel(`${OCR_MODEL.id}:${OCR_MODEL.version}`, () => this.readModel());
+          loaded = true;
+        }
+        const read = await client.read(
+          shot.bitmap,
+          shot.scale,
+          shot.pageWidth,
+          shot.pageHeight,
+          shot.origin,
+        );
+        lines.push(...read.page.lines);
+      } catch (error) {
+        shot.bitmap.close();
+        throw error;
+      }
+    }
+    console.debug(
+      `FineNotes: read ${plan.regions.length} figure area(s) of page ${page + 1} of ${path} in ${this.deps.now() - started} ms`,
+    );
+    return { ...size, lines, condition: "TEXT_WITH_FIGURES", regions: plan.regions };
+  }
+
   // --- The model --------------------------------------------------------------
 
   private async worker(): Promise<ClientLike> {
@@ -524,10 +697,13 @@ export class OcrService {
     return this.client;
   }
 
-  /** True when the model is here; otherwise offers the download card and says false. */
-  private async modelReady(): Promise<boolean> {
+  /**
+   * True when the model is here; otherwise says false, after offering the
+   * download card unless `offer` is false.
+   */
+  private async modelReady(offer = true): Promise<boolean> {
     if ((await this.deps.store.file()) !== null) return true;
-    this.deps.offer();
+    if (offer) this.deps.offer();
     return false;
   }
 

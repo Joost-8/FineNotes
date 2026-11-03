@@ -39,6 +39,36 @@ const PAGE: OcrPage = {
 };
 const NONE: NativeInfo = { items: 0, rects: [] };
 
+const region = (x0: number, y0: number, x1: number, y1: number, dpi: number | null = 300) => ({
+  x0,
+  y0,
+  x1,
+  y1,
+  dpi,
+});
+/** A page with 40 words of its own and two pictures to read (a lecture slide). */
+const FIGURES: NativeInfo = {
+  items: 40,
+  rects: [{ x0: 20, y0: 30, x1: 120, y1: 50 }],
+  plan: {
+    condition: "TEXT_WITH_FIGURES",
+    regions: [region(10, 100, 150, 200), region(160, 100, 290, 380)],
+    checkRest: false,
+    known: true,
+  },
+};
+/** A page with no text at all and a picture covering part of it. */
+const FIGURE_ONLY: NativeInfo = {
+  items: 0,
+  rects: [],
+  plan: {
+    condition: "TEXT_WITH_FIGURES",
+    regions: [region(10, 100, 150, 200)],
+    checkRest: true,
+    known: true,
+  },
+};
+
 function rig(options: { ready?: boolean; ink?: boolean } = {}) {
   const log = {
     rendered: [] as string[],
@@ -50,8 +80,18 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
     released: [] as string[],
     masked: [] as unknown[],
     writes: [] as string[],
+    origins: [] as unknown[],
   };
-  const state = { ready: options.ready ?? true, ink: options.ink ?? true, failRender: false };
+  const state = {
+    ready: options.ready ?? true,
+    ink: options.ink ?? true,
+    failRender: false,
+    /** Decides whether a raster has ink, when set (called in order); else `ink`. */
+    inkOf: null as null | ((call: number) => boolean),
+    inkCalls: 0,
+    /** Runs after each region is read (the pen may go down, say). */
+    afterRead: null as null | (() => void),
+  };
   let t = 1_000_000;
   const timers: { at: number; fn: () => void; live: boolean }[] = [];
   const files = new Map<string, string>();
@@ -70,20 +110,31 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
   const deps: OcrDeps = {
     pluginDir: () => PLUGIN,
     enabled: () => true,
+    figures: () => true,
     store,
     offer: () => {
       log.offers++;
     },
     raster: {
-      render: (path, page) => {
-        log.rendered.push(`${path}#${page}`);
+      render: (path, page, region) => {
+        log.rendered.push(
+          region
+            ? `${path}#${page}@${region.x0},${region.y0},${region.x1},${region.y1}`
+            : `${path}#${page}`,
+        );
         if (state.failRender) return Promise.reject(new Error("no canvas"));
         const bitmap = {
-          width: 600,
+          width: region ? 300 : 600,
           height: 800,
           close: () => log.closed++,
         } as unknown as ImageBitmap;
-        return Promise.resolve({ bitmap, scale: 2, pageWidth: 300, pageHeight: 400 });
+        return Promise.resolve({
+          bitmap,
+          scale: 2,
+          pageWidth: 300,
+          pageHeight: 400,
+          ...(region ? { origin: { x: region.x0, y: region.y0 } } : {}),
+        });
       },
       release: (path) => {
         log.released.push(path);
@@ -96,15 +147,17 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
           log.ensured++;
           return Promise.resolve();
         },
-        read: (bitmap) => {
+        read: (bitmap, _scale, _w, _h, origin) => {
           log.read.push(String(bitmap.width));
+          log.origins.push(origin ?? null);
+          state.afterRead?.();
           return Promise.resolve({ page: PAGE, steps: {} });
         },
         dispose: () => undefined,
       }),
     hasInk: (_bitmap, masked) => {
       log.masked.push(masked);
-      return Promise.resolve(state.ink);
+      return Promise.resolve(state.inkOf ? state.inkOf(state.inkCalls++) : state.ink);
     },
     hashOf: (path) => Promise.resolve(hashOf(path)),
     files: {
@@ -438,5 +491,225 @@ describe("OcrService", () => {
     await r.settle();
     expect(seen).toContain("0/1*");
     expect(r.service.progress().active).toBe(false);
+  });
+
+  describe("pages with text of their own", () => {
+    it("a TEXT_ONLY page is recorded and never drawn, read or offered, and costs nothing on reopen", async () => {
+      const r = rig({ ready: false });
+      await r.service.recordTextOnly("a.pdf", 2, { width: 612, height: 866 });
+      await r.advance(SAVE_MS + 10);
+      expect(r.log.rendered).toEqual([]);
+      expect(r.log.read).toEqual([]);
+      expect(r.log.ensured).toBe(0);
+      expect(r.log.offers).toBe(0);
+      expect(await r.service.cached("a.pdf", 2)).toMatchObject({
+        condition: "TEXT_ONLY",
+        regions: [],
+        lines: [],
+        pageWidth: 612,
+      });
+      // The sidecar carries the classification.
+      const saved = parseCache(r.files.get(sidecar("a.pdf")) ?? "");
+      expect(saved.pages["2"]).toMatchObject({ condition: "TEXT_ONLY", regions: [] });
+      // A second look at the same page changes nothing and writes nothing.
+      r.log.writes.length = 0;
+      await r.service.recordTextOnly("a.pdf", 2, { width: 612, height: 866 });
+      await r.advance(SAVE_MS + 10);
+      expect(r.log.writes).toEqual([]);
+    });
+
+    it("a TEXT_WITH_FIGURES page draws exactly its regions, one at a time, and reads each there", async () => {
+      const r = rig();
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      await r.settle();
+      // No whole-page raster; the regions, in order, at their own origins.
+      expect(r.log.rendered).toEqual(["a.pdf#0@10,100,150,200", "a.pdf#0@160,100,290,380"]);
+      expect(r.log.read).toEqual(["300", "300"]);
+      expect(r.log.origins).toEqual([
+        { x: 10, y: 100 },
+        { x: 160, y: 100 },
+      ]);
+      // The page's own text is masked out of each region's raster, in that raster's pixels.
+      expect(r.log.masked).toEqual([
+        [{ x0: 20, y0: -140, x1: 220, y1: -100 }],
+        [{ x0: -280, y0: -140, x1: -80, y1: -100 }],
+      ]);
+      expect(r.owner.ready).toEqual(["a.pdf#0"]);
+      const stored = await r.service.cached("a.pdf", 0);
+      expect(stored).toMatchObject({ condition: "TEXT_WITH_FIGURES" });
+      expect(stored?.regions).toHaveLength(2);
+      expect(stored?.lines).toHaveLength(2);
+      expect(r.log.offers).toBe(0);
+    });
+
+    it("never offers the model, nor draws anything, until it is here; then reads the figures", async () => {
+      const r = rig({ ready: false });
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      await r.settle();
+      expect(r.log.offers).toBe(0);
+      expect(r.log.rendered).toEqual([]);
+      expect(r.service.progress().active).toBe(false);
+      r.makeReady();
+      await r.settle();
+      expect(r.log.rendered).toEqual(["a.pdf#0@10,100,150,200", "a.pdf#0@160,100,290,380"]);
+      expect(r.log.offers).toBe(0);
+      expect(r.owner.ready).toEqual(["a.pdf#0"]);
+    });
+
+    it("the waiting-for-model re-queue covers figure pages along with the others", async () => {
+      const r = rig({ ready: false });
+      r.service.focus("a.pdf", 1);
+      r.service.want(r.owner, "a.pdf", 0, 4, FIGURES);
+      r.service.want(r.owner, "a.pdf", 1, 4, {
+        ...FIGURES,
+        plan: { ...FIGURES.plan!, regions: [region(1, 2, 80, 90)] },
+      });
+      r.service.want(r.owner, "a.pdf", 2, 4, { items: 3, rects: [] });
+      await r.settle();
+      expect(r.log.rendered).toEqual([]);
+      r.makeReady();
+      await r.advance(IDLE_MS + 2000);
+      expect(r.log.rendered.sort()).toEqual(
+        [
+          "a.pdf#0@10,100,150,200",
+          "a.pdf#0@160,100,290,380",
+          "a.pdf#1@1,2,80,90",
+          "a.pdf#2",
+        ].sort(),
+      );
+      expect(r.owner.ready.sort()).toEqual(["a.pdf#0", "a.pdf#1", "a.pdf#2"]);
+      expect(r.log.offers).toBe(0);
+    });
+
+    it("a figure area with no ink beyond the page's own text is not sent to the reader", async () => {
+      const r = rig();
+      r.state.inkOf = (call) => call === 1;
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      await r.settle();
+      expect(r.log.rendered).toHaveLength(2);
+      expect(r.log.read).toEqual(["300"]);
+      expect(r.log.closed).toBe(1);
+      expect((await r.service.cached("a.pdf", 0))?.regions).toHaveLength(2);
+    });
+
+    it("leaves the page when the pen goes down between two areas, and finishes it when it lifts", async () => {
+      const r = rig();
+      r.service.focus("a.pdf", 0);
+      r.state.afterRead = () => {
+        r.state.afterRead = null;
+        r.service.hold(r.owner, true);
+      };
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      await r.settle();
+      expect(r.log.rendered).toEqual(["a.pdf#0@10,100,150,200"]);
+      expect(await r.service.cached("a.pdf", 0)).toBeNull();
+      expect(r.owner.ready).toEqual([]);
+      r.service.hold(r.owner, false);
+      await r.settle();
+      expect(r.log.rendered).toEqual([
+        "a.pdf#0@10,100,150,200",
+        "a.pdf#0@10,100,150,200",
+        "a.pdf#0@160,100,290,380",
+      ]);
+      expect(r.owner.ready).toEqual(["a.pdf#0"]);
+      expect((await r.service.cached("a.pdf", 0))?.lines).toHaveLength(2);
+    });
+
+    it("stops a page's regions when no notebook shows its PDF any more", async () => {
+      const r = rig();
+      r.service.focus("a.pdf", 0);
+      r.state.afterRead = () => {
+        r.state.afterRead = null;
+        r.service.release(r.owner);
+      };
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      await r.settle();
+      await r.advance(IDLE_MS + 2000);
+      expect(r.log.rendered).toEqual(["a.pdf#0@10,100,150,200"]);
+      expect(r.service.progress().active).toBe(false);
+    });
+
+    it("a failed region fails the page like any other: logged, retried after a minute", async () => {
+      const r = rig();
+      r.state.failRender = true;
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      await r.settle();
+      expect(r.log.rendered).toHaveLength(1);
+      expect(r.log.notices).toHaveLength(1);
+      r.state.failRender = false;
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      await r.settle();
+      expect(r.log.rendered).toHaveLength(1);
+      await r.advance(RETRY_MS + 1);
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      await r.settle();
+      expect(r.log.read).toHaveLength(2);
+    });
+
+    it("a page with no text at all and a picture checks the rest of it first, offers the model, and reads the picture alone when nothing else has ink", async () => {
+      const r = rig({ ready: false });
+      // Ink only inside the picture: the page, picture masked, has none.
+      // (the page is checked again once the model is here.)
+      r.state.inkOf = (call) => call >= 2;
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURE_ONLY);
+      await r.settle();
+      // The page, its picture masked out (the region, in the raster's pixels at scale 2).
+      expect(r.log.rendered).toEqual(["a.pdf#0"]);
+      expect(r.log.masked[0]).toEqual([{ x0: 20, y0: 200, x1: 300, y1: 400 }]);
+      expect(r.log.offers).toBe(1);
+      r.makeReady();
+      await r.settle();
+      expect(r.log.rendered).toEqual(["a.pdf#0", "a.pdf#0", "a.pdf#0@10,100,150,200"]);
+      expect(r.log.read).toEqual(["300"]);
+      expect((await r.service.cached("a.pdf", 0))?.condition).toBe("TEXT_WITH_FIGURES");
+    });
+
+    it("a page of figures and other ink is read whole, as a scan", async () => {
+      const r = rig();
+      r.state.ink = true;
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURE_ONLY);
+      await r.settle();
+      expect(r.log.rendered).toEqual(["a.pdf#0"]);
+      expect(r.log.read).toEqual(["600"]);
+      expect((await r.service.cached("a.pdf", 0))?.condition).toBe("TEXT_WITH_FIGURES");
+    });
+
+    it("keeps the condition a page was classified as when it is read whole", async () => {
+      const r = rig();
+      const scanned: NativeInfo = {
+        items: 0,
+        rects: [],
+        plan: {
+          condition: "SCANNED",
+          regions: [region(0, 0, 300, 400, null)],
+          checkRest: false,
+          known: true,
+        },
+      };
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, scanned);
+      await r.settle();
+      expect(await r.service.cached("a.pdf", 0)).toMatchObject({
+        condition: "SCANNED",
+        regions: [{ x0: 0, y0: 0, x1: 300, y1: 400 }],
+      });
+      // And a blank one is BLANK.
+      const b = rig({ ink: false });
+      b.service.focus("a.pdf", 0);
+      b.service.want(b.owner, "a.pdf", 0, 3, scanned);
+      await b.settle();
+      expect(await b.service.cached("a.pdf", 0)).toMatchObject({ condition: "BLANK", regions: [] });
+    });
+
+    it("reports the setting: figures need the OCR on as well", () => {
+      const r = rig();
+      expect(r.service.figures).toBe(true);
+    });
   });
 });

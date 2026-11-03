@@ -336,6 +336,12 @@ export interface GoodObsidianSettings {
    * once the user has agreed to download the model. On unless false.
    */
   ocrScannedPdfs: boolean;
+  /**
+   * With OCR on, the text inside the pictures of PDF pages that have text of
+   * their own (figure labels) is read too, in the pictures' areas only. On
+   * unless false.
+   */
+  ocrFigureText: boolean;
   /** Export as PDF leaves the cover tapes out, so what is under them shows. */
   exportWithoutTapes: boolean;
   /** The desk around the pages: as the page appearance has it, light, dark, or `deskColor`. */
@@ -514,6 +520,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   pageAppearance: "light",
   invertPdfPages: true,
   ocrScannedPdfs: true,
+  ocrFigureText: true,
   exportWithoutTapes: false,
   desk: "auto",
   deskColor: LIGHT_PAPER.desk,
@@ -957,6 +964,7 @@ const CONVERSIONS: Record<
   pageAppearance: { show: pageAppearanceOf, store: pageAppearanceOf },
   invertPdfPages: { show: (on) => on !== false, store: (on) => on !== false },
   ocrScannedPdfs: { show: (on) => on !== false, store: (on) => on !== false },
+  ocrFigureText: { show: (on) => on !== false, store: (on) => on !== false },
 };
 
 /** A stored page appearance, with anything unknown read as light. */

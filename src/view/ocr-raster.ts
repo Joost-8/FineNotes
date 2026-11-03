@@ -10,6 +10,7 @@
 
 import { type App, type TFile, loadPdfJs } from "obsidian";
 import { rasterScale } from "../recognition/ocr/det";
+import { type Region, regionRaster } from "../recognition/ocr/figures";
 import {
   PdfCanvasUnavailable,
   type PdfWorker,
@@ -25,12 +26,18 @@ export interface OcrRaster {
   scale: number;
   pageWidth: number;
   pageHeight: number;
+  /** For a region of the page: where its top-left corner lies on the page, in points. */
+  origin?: { x: number; y: number };
 }
 
 // The slice of pdf.js used on this thread.
 interface PdfPageLike {
   getViewport(params: { scale: number }): { width: number; height: number };
-  render(params: { canvasContext: CanvasRenderingContext2D; viewport: unknown }): {
+  render(params: {
+    canvasContext: CanvasRenderingContext2D;
+    viewport: unknown;
+    transform?: number[];
+  }): {
     promise: Promise<unknown>;
   };
   cleanup?: () => void;
@@ -97,28 +104,55 @@ export class OcrRasteriser {
     return doc;
   }
 
-  /** Page `page` (0-based) of `path` as an image; throws when it cannot be drawn. */
-  async render(path: string, page: number): Promise<OcrRaster> {
+  /**
+   * Page `page` (0-based) of `path` as an image, or, with `region`, only
+   * that area of it (points), at the resolution {@link regionRaster} picks;
+   * throws when it cannot be drawn.
+   */
+  async render(path: string, page: number, region?: Region): Promise<OcrRaster> {
     const worker = await this.shared();
     if (worker?.alive) {
       try {
-        return await this.renderInWorker(worker, path, page);
+        return await this.renderInWorker(worker, path, page, region);
       } catch (error) {
         // Out of canvas memory is no reason to try again on this thread.
         if (error instanceof PdfCanvasUnavailable) throw error;
         if (worker.alive) throw error;
       }
     }
-    return await this.renderOnThread(path, page);
+    return await this.renderOnThread(path, page, region);
   }
 
-  private async renderInWorker(worker: PdfWorker, path: string, page: number): Promise<OcrRaster> {
+  private async renderInWorker(
+    worker: PdfWorker,
+    path: string,
+    page: number,
+    region?: Region,
+  ): Promise<OcrRaster> {
     const pages = await this.openInWorker(worker, path);
     if (pages === null) throw new Error(`missing PDF ${path}`);
     if (!Number.isInteger(page) || page < 0 || page >= pages) {
       throw new Error(`page ${page + 1} is outside ${path}`);
     }
     const size = await worker.pageSize(path, page);
+    if (region) {
+      const r = regionRaster(region);
+      // The page drawn at `r.scale`, shifted so the region's corner is the canvas's.
+      const render = worker.render(path, page, {
+        sourceScale: r.scale,
+        width: r.width,
+        height: r.height,
+        transform: [1, 0, 0, 1, -region.x0 * r.scale, -region.y0 * r.scale],
+      });
+      const bitmap = await render.promise;
+      return {
+        bitmap,
+        scale: r.scale,
+        pageWidth: size.width,
+        pageHeight: size.height,
+        origin: { x: region.x0, y: region.y0 },
+      };
+    }
     const scale = rasterScale(size.width, size.height);
     const render = worker.render(path, page, {
       sourceScale: scale,
@@ -129,7 +163,7 @@ export class OcrRasteriser {
     return { bitmap, scale, pageWidth: size.width, pageHeight: size.height };
   }
 
-  private async renderOnThread(path: string, page: number): Promise<OcrRaster> {
+  private async renderOnThread(path: string, page: number, region?: Region): Promise<OcrRaster> {
     const doc = await this.openOnThread(path);
     if (!doc) throw new Error(`missing PDF ${path}`);
     if (!Number.isInteger(page) || page < 0 || page >= doc.numPages) {
@@ -138,22 +172,33 @@ export class OcrRasteriser {
     const pdfPage = await doc.getPage(page + 1);
     try {
       const base = pdfPage.getViewport({ scale: 1 });
-      const scale = rasterScale(base.width, base.height);
+      const r = region ? regionRaster(region) : null;
+      const scale = r ? r.scale : rasterScale(base.width, base.height);
       const viewport = pdfPage.getViewport({ scale });
       // Obsidian's global createEl, not document.createElement: it returns a
       // detached element, which is what an offscreen target must be.
       const canvas = createEl("canvas");
-      canvas.width = Math.max(1, Math.round(viewport.width));
-      canvas.height = Math.max(1, Math.round(viewport.height));
+      canvas.width = r ? r.width : Math.max(1, Math.round(viewport.width));
+      canvas.height = r ? r.height : Math.max(1, Math.round(viewport.height));
       const context = canvas.getContext("2d");
       if (!context) {
         canvas.width = canvas.height = 0;
         throw new PdfCanvasUnavailable();
       }
       try {
-        await pdfPage.render({ canvasContext: context, viewport }).promise;
+        await pdfPage.render({
+          canvasContext: context,
+          viewport,
+          ...(region ? { transform: [1, 0, 0, 1, -region.x0 * scale, -region.y0 * scale] } : {}),
+        }).promise;
         const bitmap = await createImageBitmap(canvas);
-        return { bitmap, scale, pageWidth: base.width, pageHeight: base.height };
+        return {
+          bitmap,
+          scale,
+          pageWidth: base.width,
+          pageHeight: base.height,
+          ...(region ? { origin: { x: region.x0, y: region.y0 } } : {}),
+        };
       } finally {
         // iOS keeps a canvas's memory until it is emptied.
         canvas.width = canvas.height = 0;

@@ -22,6 +22,7 @@ export interface ObsidianOcrHost {
   pluginDir(): string;
   models: ModelRegistry;
   enabled(): boolean;
+  figures(): boolean;
 }
 
 export function obsidianOcrDeps(host: ObsidianOcrHost): { deps: OcrDeps; store: AssetStore } {
@@ -32,6 +33,7 @@ export function obsidianOcrDeps(host: ObsidianOcrHost): { deps: OcrDeps; store: 
   const deps: OcrDeps = {
     pluginDir: () => host.pluginDir(),
     enabled: () => host.enabled(),
+    figures: () => host.figures(),
     store,
     offer: () => host.models.offer(OCR_MODEL.id, "auto"),
     raster: new OcrRasteriser(app),

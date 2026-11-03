@@ -142,6 +142,17 @@ describe("OCR text beside a page's own", () => {
     expect(dropCovered([[word("a", 100, 0, 110, 10)]], [])).toHaveLength(1);
   });
 
+  it("drops a word that several native words cover together, though none does alone", () => {
+    const rects = [
+      { x0: 0, y0: 0, x1: 10, y1: 10 },
+      { x0: 12, y0: 0, x1: 22, y1: 10 },
+      { x0: 24, y0: 0, x1: 34, y1: 10 },
+    ];
+    // 34 wide, 88 percent of it under the three words; each alone covers 29 percent.
+    expect(dropCovered([[word("span", 0, 0, 34, 10)]], rects)).toEqual([]);
+    expect(dropCovered([[word("span", 0, 0, 34, 10)]], rects.slice(0, 1))).toHaveLength(1);
+  });
+
   it("changes nothing on a page with enough text of its own", () => {
     const items: PdfTextItem[] = [];
     for (let i = 0; i < 40; i++)
@@ -245,5 +256,47 @@ describe("OCR words as text items", () => {
     expect(invertMatrix([0, 0, 0, 0, 0, 0])).toBeNull();
     expect(wordItems(lines, [0, 0, 0, 0, 0, 0])).toEqual([]);
     expect(wordItems([[word("x", 5, 5, 5, 20)], [word("", 1, 1, 9, 9)]], VIEWPORT)).toEqual([]);
+  });
+});
+
+describe("OCR words from the figures of a page with text of its own", () => {
+  const dense: PdfTextItem[] = [];
+  for (let i = 0; i < 40; i++)
+    dense.push(
+      native("The quick brown fox jumps over the lazy dog and runs", 20, 520 - i * 12, 355),
+    );
+  const figures = (...lines: OcrLine[]): OcrPage => ({
+    ...page(...lines),
+    condition: "TEXT_WITH_FIGURES",
+    regions: [{ x0: 0, y0: 0, x1: 400, y1: 560, dpi: null }],
+  });
+
+  it("adds the confident words, never the unsure ones nor those over the page's own text", () => {
+    const ocr = figures(
+      line(0.97, word("Bladder", 100, 505, 160, 517)), // over the first line of native text? y 505..517 -> native line 0
+      line(0.97, word("Pubic", 100, 20, 140, 32), word("bone", 146, 20, 180, 32)),
+      line(0.5, word("scribble", 200, 20, 260, 32, 0.99, 0.99)),
+      line(0.97, word("maybe", 300, 20, 340, 32, 0.8, 0.7)),
+    );
+    const merged = mergedItems(dense, ocr, VIEWPORT, SOURCE);
+    const added = merged.slice(dense.length).map((i) => i.str);
+    expect(added).toEqual(["Pubic", "bone"]);
+    expect(merged.slice(0, dense.length)).toEqual(dense);
+  });
+
+  it("is left out when the setting is off, and for TEXT_ONLY and BLANK pages", () => {
+    const ocr = figures(line(0.97, word("Pubic", 100, 20, 140, 32)));
+    expect(mergedItems(dense, ocr, VIEWPORT, SOURCE, OCR_TUNING, false)).toEqual(dense);
+    expect(mergedItems(dense, { ...ocr, condition: "TEXT_ONLY" }, VIEWPORT, SOURCE)).toEqual(dense);
+    expect(mergedItems(dense, { ...ocr, condition: "BLANK" }, VIEWPORT, SOURCE)).toEqual(dense);
+  });
+
+  it("a whole-page reading is still added only while the page's own text is sparse", () => {
+    const ocr = {
+      ...figures(line(0.97, word("Pubic", 100, 20, 140, 32))),
+      condition: "SCANNED" as const,
+    };
+    expect(mergedItems(dense, ocr, VIEWPORT, SOURCE)).toEqual(dense);
+    expect(mergedItems([], ocr, VIEWPORT, SOURCE).map((i) => i.str)).toEqual(["Pubic"]);
   });
 });

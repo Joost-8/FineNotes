@@ -12,15 +12,25 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { CLASSIFY_VERSION, PAGE_CONDITIONS, type PageCondition, type Region } from "./figures";
 import { OCR_MODEL_VERSION } from "./ocr-model";
 import type { OcrLine, OcrPage, OcrWord } from "./ocr-words";
 
 /** The sidecar's format number: a different one is not read. */
-export const OCR_CACHE_FORMAT = 1;
+export const OCR_CACHE_FORMAT = 2;
 
-/** A page as stored: what was read, and by which model. */
+/**
+ * A page as stored: what kind of page it is, the areas that were read, the
+ * raw words found there, and by which model. A `TEXT_ONLY` page has no
+ * areas and no words: it is recorded so that opening the PDF again costs
+ * nothing.
+ */
 export interface StoredPage extends OcrPage {
   model: string;
+  condition: PageCondition;
+  regions: Region[];
+  /** The classification rules in force when the page was recorded (`CLASSIFY_VERSION`). */
+  rules: number;
 }
 
 export interface OcrCacheFile {
@@ -68,10 +78,26 @@ function wordOf(raw: unknown): OcrWord | null {
   return { text: r.text, box: [x0, y0, x1, y1], conf, min };
 }
 
+function regionOf(raw: unknown): Region | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const x0 = num(r.x0);
+  const y0 = num(r.y0);
+  const x1 = num(r.x1);
+  const y1 = num(r.y1);
+  if (x0 === null || y0 === null || x1 === null || y1 === null) return null;
+  if (!(x1 > x0) || !(y1 > y0)) return null;
+  return { x0, y0, x1, y1, dpi: num(r.dpi) };
+}
+
 function pageOf(raw: unknown): StoredPage | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.model !== "string" || !Array.isArray(r.lines)) return null;
+  const condition = PAGE_CONDITIONS.find((c) => c === r.condition);
+  const rules = num(r.rules);
+  if (!condition || rules === null || !Array.isArray(r.regions)) return null;
+  const regions = (r.regions as unknown[]).map(regionOf).filter((x): x is Region => x !== null);
   const imageWidth = num(r.imageWidth);
   const imageHeight = num(r.imageHeight);
   const pageWidth = num(r.pageWidth);
@@ -88,7 +114,17 @@ function pageOf(raw: unknown): StoredPage | null {
     const words = (l.words as unknown[]).map(wordOf).filter((w): w is OcrWord => w !== null);
     if (words.length > 0) lines.push({ conf, words });
   }
-  return { model: r.model, imageWidth, imageHeight, pageWidth, pageHeight, lines };
+  return {
+    model: r.model,
+    condition,
+    regions,
+    rules,
+    imageWidth,
+    imageHeight,
+    pageWidth,
+    pageHeight,
+    lines,
+  };
 }
 
 /**
@@ -121,14 +157,20 @@ export function serializeCache(file: OcrCacheFile): string {
   return JSON.stringify(file);
 }
 
-/** The page as read by this build's model, or null (not read, or read by another model). */
+/**
+ * The page as recorded by this build's model, or null (not recorded, read
+ * by another model, or recorded as `TEXT_ONLY` under other classification
+ * rules, which costs only a look at the page again).
+ */
 export function cachedPage(
   file: OcrCacheFile,
   page: number,
   model: string = OCR_MODEL_VERSION,
-): OcrPage | null {
+): StoredPage | null {
   const stored = file.pages[String(page)];
-  return stored && stored.model === model ? stored : null;
+  if (!stored || stored.model !== model) return null;
+  if (stored.condition === "TEXT_ONLY" && stored.rules !== CLASSIFY_VERSION) return null;
+  return stored;
 }
 
 /** Boxes to a tenth of a point and confidences to the thousandth: the sidecar stays small. */
@@ -136,6 +178,13 @@ function rounded(page: OcrPage): OcrPage {
   const tenth = (v: number): number => Math.round(v * 10) / 10;
   return {
     ...page,
+    regions: page.regions?.map((r) => ({
+      x0: tenth(r.x0),
+      y0: tenth(r.y0),
+      x1: tenth(r.x1),
+      y1: tenth(r.y1),
+      dpi: r.dpi === null ? null : Math.round(r.dpi),
+    })),
     lines: page.lines.map((line) => ({
       conf: line.conf,
       words: line.words.map((w) => ({
@@ -148,17 +197,29 @@ function rounded(page: OcrPage): OcrPage {
   };
 }
 
-/** `file` with `page` read by `model` stored. */
+/**
+ * `file` with `page` stored, as read by `model`. A page without a condition
+ * (a plain whole-page reading) is a `SCANNED` page of the whole page.
+ */
 export function withPage(
   file: OcrCacheFile,
   index: number,
   page: OcrPage,
   model: string = OCR_MODEL_VERSION,
 ): OcrCacheFile {
-  return {
-    format: file.format,
-    pages: { ...file.pages, [String(index)]: { ...rounded(page), model } },
+  const condition = page.condition ?? "SCANNED";
+  const regions = page.regions ?? [
+    { x0: 0, y0: 0, x1: page.pageWidth, y1: page.pageHeight, dpi: null },
+  ];
+  const read = rounded({ ...page, condition, regions });
+  const stored: StoredPage = {
+    ...read,
+    condition,
+    regions: read.regions ?? [],
+    model,
+    rules: CLASSIFY_VERSION,
   };
+  return { format: file.format, pages: { ...file.pages, [String(index)]: stored } };
 }
 
 /**

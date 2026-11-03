@@ -15,6 +15,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import type { PageCondition, Region } from "./figures";
 import {
   type Matrix,
   type PdfTextItem,
@@ -48,6 +49,10 @@ export interface OcrPage {
   pageWidth: number;
   pageHeight: number;
   lines: OcrLine[];
+  /** What kind of page it is (see figures.ts); absent on a page read before pictures were looked at. */
+  condition?: PageCondition;
+  /** The areas that were read, in the page's points; the whole page for a scan. */
+  regions?: Region[];
 }
 
 /**
@@ -67,6 +72,32 @@ export const OCR_TUNING = {
   sparseChars: 40,
   /** An OCR word is dropped when this much of it lies over the page's own text. */
   overlap: 0.3,
+
+  // Figures (figures.ts). These decide which areas are read, so unlike the
+  // numbers above a change needs `CLASSIFY_VERSION` bumped to take effect on
+  // pages already recorded as having nothing to read.
+
+  /**
+   * A picture narrower or shorter than this is not a figure, pt (0.5 in):
+   * icons, logos, bullets and badges (the "★" marks of a lecture deck are
+   * 8 to 20 pt), while the smallest figure with labels seen in the lecture
+   * PDFs is 190 pt on its short side.
+   */
+  figureMinSide: 36,
+  /** A picture covering less of the page than this is not a figure either (a logo as wide as a line). */
+  figureMinAreaShare: 0.015,
+  /** Pictures this close, pt, are one figure (a picture cut into strips touches itself). */
+  figureMergeGap: 3,
+  /** A figure's area is read this much wider on every side, pt: labels sit at the edge of a picture. */
+  figurePad: 6,
+  /** A sparse page with a picture covering this share of it is a scan: the whole page is read. */
+  scannedShare: 0.6,
+  /** A figure is drawn at its stored resolution, but at least this ... (the page rate, OCR_DPI) */
+  figureMinDpi: 170,
+  /** ... and at most this, dpi: past it the recogniser gains nothing and memory is lost. */
+  figureMaxDpi: 300,
+  /** ... and never with a side longer than this, px (OCR_MAX_EDGE: memory on a phone). */
+  figureMaxEdge: 2200,
 } as const;
 
 export type OcrTuning = { [K in keyof typeof OCR_TUNING]: number };
@@ -157,10 +188,24 @@ function overlapShare(word: Rect, other: Rect): number {
   return Math.max(inter / a, inter / (a + b - inter));
 }
 
+/** The share of `word` that lies under `others` together (they do not overlap each other). */
+function coveredShare(word: Rect, others: readonly Rect[]): number {
+  const area = (word.x1 - word.x0) * (word.y1 - word.y0);
+  if (!(area > 0)) return 0;
+  let covered = 0;
+  for (const o of others) {
+    const w = Math.min(word.x1, o.x1) - Math.max(word.x0, o.x0);
+    const h = Math.min(word.y1, o.y1) - Math.max(word.y0, o.y0);
+    if (w > 0 && h > 0) covered += w * h;
+  }
+  return Math.min(1, covered / area);
+}
+
 /**
  * The OCR lines without the words that lie over the page's own text
- * (`tuning.overlap` of the word, or as IoU): the page's own text always
- * wins, and nothing is read twice.
+ * (`tuning.overlap` of the word under one native word or under all of them
+ * together, or as IoU): the page's own text always wins, and nothing is
+ * read twice.
  */
 export function dropCovered(
   lines: readonly OcrWord[][],
@@ -172,7 +217,10 @@ export function dropCovered(
   for (const line of lines) {
     const kept = line.filter((w) => {
       const r = { x0: w.box[0], y0: w.box[1], x1: w.box[2], y1: w.box[3] };
-      return !native.some((n) => overlapShare(r, n) >= tuning.overlap);
+      if (native.some((n) => overlapShare(r, n) >= tuning.overlap)) return false;
+      // A word across several native words (a label read as one word over a
+      // line of text) is covered by all of them together.
+      return coveredShare(r, native) < tuning.overlap;
     });
     if (kept.length > 0) out.push(kept);
   }
@@ -252,9 +300,12 @@ function multiplyMatrices(a: Matrix, b: Matrix): Matrix {
 }
 
 /**
- * What a page reads as: its own text items, and, when the page is sparse
- * (nothing, or a page number on a scan), the OCR words that are not over
- * that text. Pages with enough text of their own come back unchanged.
+ * What a page reads as: its own text items, plus the OCR words that are not
+ * over that text. Which pages take OCR words: a page read whole (a scan,
+ * only while its own text is still sparse) and a page whose figures were
+ * read (`TEXT_WITH_FIGURES`, unless `figures` is false: the setting is off).
+ * Every OCR word has passed the confidence filter and none lies over the
+ * page's own text. Pages with nothing read come back unchanged.
  */
 export function mergedItems(
   native: readonly PdfTextItem[],
@@ -262,11 +313,14 @@ export function mergedItems(
   viewport: Matrix,
   source: { width: number; height: number },
   tuning: OcrTuning = OCR_TUNING,
+  figures = true,
 ): PdfTextItem[] {
-  if (!ocr) return [...native];
+  if (!ocr || ocr.condition === "TEXT_ONLY" || ocr.condition === "BLANK") return [...native];
+  const ofFigures = ocr.condition === "TEXT_WITH_FIGURES";
+  if (ofFigures && !figures) return [...native];
   const toView = pdfToPage(viewport, source, source);
   const layout = layoutText(native, toView);
-  if (!isSparse(layout, source.width, source.height, tuning)) return [...native];
+  if (!ofFigures && !isSparse(layout, source.width, source.height, tuning)) return [...native];
   const lines = dropCovered(keptLines(ocr, tuning), nativeRects(layout), tuning);
   return [...native, ...wordItems(lines, viewport)];
 }

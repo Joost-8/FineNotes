@@ -337,6 +337,7 @@ export default class GoodObsidianPlugin extends Plugin {
       pluginDir: () => this.pluginDir,
       models: this.models,
       enabled: () => this.settings.ocrScannedPdfs !== false,
+      figures: () => this.settings.ocrFigureText !== false,
     }).deps,
   );
 

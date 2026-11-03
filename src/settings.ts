@@ -1539,6 +1539,23 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]),
           "A PDF page that is a picture of text (a scan) has no text to search, snap the highlighter to or copy. With this on, FineNotes reads such pages on this device, only for PDFs open in a notebook: the page in view first, then the rest of that PDF while you are not writing. Printed text only; messy handwriting is left alone. Nothing downloads until you agree: the first scanned page offers the reader model (Models on this device). What was read is kept in the plugin folder (ocr) and syncs with your vault. “Re-read scanned pages of this PDF” in the command palette reads a PDF again.",
         ),
+        {
+          ...this.info(
+            toggle("ocrFigureText", "Also read text inside figures", "", [
+              "ocr",
+              "figure",
+              "figures",
+              "picture",
+              "image",
+              "diagram",
+              "label",
+              "labels",
+              "search",
+            ]),
+            "Lecture PDFs have text of their own, but the labels inside their pictures (an anatomy figure, a chart) are only pixels, so search cannot find them. With this on, FineNotes reads inside the pictures, and only there, once the reader model is on this device: it never makes the model be offered for a page that has text of its own, and never reads the text a page already has. Only in effect while “Read scanned PDF pages” is on.",
+          ),
+          visible: () => settings.ocrScannedPdfs !== false,
+        },
         this.more("pages", "Folders, templates, file explorer"),
         this.info(
           drawnRow("New notebooks go in", "", (s) => this.drawNotebookFolder(s), [

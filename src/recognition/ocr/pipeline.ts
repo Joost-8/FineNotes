@@ -51,6 +51,12 @@ export interface ReadOptions {
   /** The page in points, at scale 1. */
   pageWidth: number;
   pageHeight: number;
+  /**
+   * Where the image's top-left corner lies on the page, in points: set when
+   * the image is one region of the page (image-area OCR), so the words come
+   * back in the page's space. Default: the page's own corner.
+   */
+  origin?: { x: number; y: number };
   alphabet: readonly string[];
   /** Asked between steps; true stops the page with {@link OcrCancelled}. */
   cancelled?: () => boolean;
@@ -121,7 +127,13 @@ export async function readPage(
       const loose = wordsOf(chars, crop.width);
       // The words' ends are moved to the ink they were read from.
       const line = snapWords(loose, crop.data, crop.width, loose.pitch ?? REC_STRIDE * 3);
-      lines[crop.index] = pageLine(line, boxes[crop.index], crop.width, options.scale);
+      lines[crop.index] = pageLine(
+        line,
+        boxes[crop.index],
+        crop.width,
+        options.scale,
+        options.origin ?? { x: 0, y: 0 },
+      );
     });
   }
   options.onStep?.("recognise", Date.now() - t0);
@@ -135,7 +147,13 @@ export async function readPage(
 }
 
 /** A recognised crop's words as boxes in the page's points. */
-function pageLine(line: CropLine, box: TextBox, cropW: number, scale: number): OcrLine | undefined {
+function pageLine(
+  line: CropLine,
+  box: TextBox,
+  cropW: number,
+  scale: number,
+  origin: { x: number; y: number },
+): OcrLine | undefined {
   if (line.words.length === 0) return undefined;
   const cos = Math.cos(box.angle);
   const sin = Math.sin(box.angle);
@@ -158,7 +176,12 @@ function pageLine(line: CropLine, box: TextBox, cropW: number, scale: number): O
     }
     return {
       text: w.text,
-      box: [x0 / scale, y0 / scale, x1 / scale, y1 / scale],
+      box: [
+        x0 / scale + origin.x,
+        y0 / scale + origin.y,
+        x1 / scale + origin.x,
+        y1 / scale + origin.y,
+      ],
       conf: round(w.conf),
       min: round(w.min),
     };

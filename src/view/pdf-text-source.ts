@@ -40,7 +40,9 @@ import {
   readLinks,
 } from "../canvas/pdf-links";
 import { type PageGeometry, type PdfBackdrop, pdfFrameOf } from "../model/document";
-import { mergedItems, nativeBoxes, needsOcr } from "../recognition/ocr/ocr-words";
+import { classifyPage } from "../recognition/ocr/figures";
+import { isSparse, mergedItems, nativeBoxes } from "../recognition/ocr/ocr-words";
+import { type OperatorPageLike, readFigures } from "./pdf-figures";
 import type { OcrOwner, OcrService } from "./ocr-service";
 
 // The slice of pdf.js used here (`loadPdfJs()` is typed `Promise<any>`).
@@ -59,6 +61,7 @@ interface PdfPageLike {
   getViewport(params: { scale: number }): { width: number; height: number; transform: number[] };
   getTextContent(): Promise<TextContentLike>;
   getAnnotations?: () => Promise<LinkAnnotationLike[]>;
+  getOperatorList?: OperatorPageLike["getOperatorList"];
   cleanup?: () => void;
 }
 
@@ -71,6 +74,8 @@ interface PdfDocumentLike {
 }
 
 interface PdfJsLike {
+  /** pdf.js's operator numbers, for finding the pictures on a page. */
+  OPS?: Record<string, unknown>;
   getDocument(src: { data: Uint8Array } & PdfAssets): { promise: Promise<PdfDocumentLike> };
 }
 
@@ -359,7 +364,7 @@ export class PdfTextCache implements OcrOwner {
       const source = { width: viewport.width, height: viewport.height };
       const native = readTextItems(content);
       return {
-        items: await this.withOcr(backdrop, doc.numPages, native, matrix, source),
+        items: await this.withOcr(backdrop, doc.numPages, native, matrix, source, page),
         links,
         viewport: matrix,
         source,
@@ -371,8 +376,15 @@ export class PdfTextCache implements OcrOwner {
 
   /**
    * The page's own text items, plus the OCR text where the page has too
-   * little of its own: from the cache at once, or queued (the page then
-   * reads as it does without, until `ocrReady`). Never waits for OCR.
+   * little of its own, or pictures to read: from the cache at once, or
+   * queued (the page then reads as it does without, until `ocrReady`).
+   * Never waits for OCR.
+   *
+   * What the page is (recognition/ocr/figures.ts) comes from the cache if
+   * it was looked at before, else from its text and the pictures its
+   * drawing operators place on it: a page with text of its own and no
+   * picture worth reading (`TEXT_ONLY`) is recorded as that and costs
+   * nothing on the next opening.
    */
   private async withOcr(
     backdrop: PdfBackdrop,
@@ -380,10 +392,19 @@ export class PdfTextCache implements OcrOwner {
     native: PdfTextItem[],
     viewport: Matrix,
     source: { width: number; height: number },
+    page: PdfPageLike,
   ): Promise<PdfTextItem[]> {
     const ocr = this.ocr;
-    if (!ocr?.enabled || !needsOcr(native, viewport, source)) {
-      ocr?.settled(backdrop.path, backdrop.page);
+    if (!ocr?.enabled) return native;
+    const figures = ocr.figures === true;
+    const sparse = isSparse(
+      layoutText(native, pdfToPage(viewport, source, source)),
+      source.width,
+      source.height,
+    );
+    // Pictures are not looked at (the setting is off): only sparse pages are read, as before.
+    if (!sparse && !figures) {
+      ocr.settled(backdrop.path, backdrop.page);
       return native;
     }
     const key = pageKey(backdrop.path, backdrop.page);
@@ -391,15 +412,34 @@ export class PdfTextCache implements OcrOwner {
     const found = await ocr.cached(backdrop.path, backdrop.page);
     if (found) {
       ocr.settled(backdrop.path, backdrop.page);
-      this.scanned.set(key, { kind: "pdf", path: backdrop.path, page: backdrop.page });
-      return mergedItems(native, found, viewport, source);
+      if (found.condition !== "TEXT_ONLY" && found.condition !== "BLANK") {
+        this.scanned.set(key, { kind: "pdf", path: backdrop.path, page: backdrop.page });
+      }
+      return mergedItems(native, found, viewport, source, undefined, figures);
+    }
+    const operators = figures ? page.getOperatorList?.bind(page) : undefined;
+    const scan = operators
+      ? await readFigures({ getOperatorList: operators }, await this.operators(), viewport, source)
+      : null;
+    const plan = classifyPage(sparse, scan, source);
+    if (plan.condition === "TEXT_ONLY") {
+      ocr.settled(backdrop.path, backdrop.page);
+      // Only a page whose pictures were looked at is known to need nothing.
+      if (plan.known) void ocr.recordTextOnly(backdrop.path, backdrop.page, source);
+      return native;
     }
     this.scanned.set(key, { kind: "pdf", path: backdrop.path, page: backdrop.page });
     ocr.want(this, backdrop.path, backdrop.page, pages, {
       items: native.length,
       rects: nativeBoxes(native, viewport, source),
+      plan,
     });
     return native;
+  }
+
+  /** pdf.js's operator numbers. */
+  private async operators(): Promise<Record<string, unknown> | undefined> {
+    return (await this.lib)?.OPS;
   }
 
   /** A page's links, each destination resolved to a page of the same PDF. */
