@@ -150,9 +150,14 @@ export function browse(entries: readonly LibraryEntry[], folder: string): Listin
  * The notebooks as the library files them: a folder that holds a single
  * notebook (a notebook in a folder of its own, say) is not worth a visit, so
  * its notebook is filed in the folder above, and above that while that one
- * holds no other either. Only `folder` changes, never `path`.
+ * holds no other either. A folder in `kept` (one the user made or styled in
+ * the library) stays a folder however few it holds. Only `folder` changes,
+ * never `path`.
  */
-export function hoistSingles(entries: readonly LibraryEntry[]): LibraryEntry[] {
+export function hoistSingles(
+  entries: readonly LibraryEntry[],
+  kept: (folder: string) => boolean = () => false,
+): LibraryEntry[] {
   const counts = new Map<string, number>();
   for (const entry of entries) {
     for (let at = entry.folder; at !== ""; at = folderOf(at))
@@ -160,7 +165,7 @@ export function hoistSingles(entries: readonly LibraryEntry[]): LibraryEntry[] {
   }
   return entries.map((entry) => {
     let folder = entry.folder;
-    while (folder !== "" && counts.get(folder) === 1) folder = folderOf(folder);
+    while (folder !== "" && counts.get(folder) === 1 && !kept(folder)) folder = folderOf(folder);
     return folder === entry.folder ? entry : { ...entry, folder };
   });
 }

@@ -403,7 +403,11 @@ export class LibraryView extends ItemView {
 
     const left = this.lastPages();
     const stars = this.host.stars();
-    const here = browse(hoistSingles(all), this.folder);
+    const made = this.host.folderStyles();
+    const here = browse(
+      hoistSingles(all, (folder) => made[folder] !== undefined),
+      this.folder,
+    );
     if (this.folder === "" && stars.length > 0) {
       const books = all.filter((e) => isStarred(stars, e.path));
       const folders = stars
@@ -1112,7 +1116,7 @@ export class LibraryView extends ItemView {
       item
         .setTitle("Move")
         .setIcon("folder-input")
-        .onClick(() => this.move(file, entry.folder)),
+        .onClick(() => this.move(file)),
     );
     menu.addSeparator();
     menu.addItem((item) =>
@@ -1161,7 +1165,7 @@ export class LibraryView extends ItemView {
       item
         .setTitle("Move")
         .setIcon("folder-input")
-        .onClick(() => this.move(target, folderOf(folder.path))),
+        .onClick(() => this.move(target)),
     );
     menu.addSeparator();
     menu.addItem((item) =>
@@ -1231,17 +1235,17 @@ export class LibraryView extends ItemView {
     }).open();
   }
 
-  /** Pick a folder, and put the notebook (with its own folder) or folder inside it. */
-  private move(file: TFile | TFolder, from: string): void {
+  /**
+   * Pick a folder, and put the notebook (with its own folder) or folder
+   * inside it. The picker starts at the folder it really is in, which for a
+   * notebook filed above its folder (`hoistSingles`) is not the one it shows in.
+   */
+  private move(file: TFile | TFolder): void {
     new FolderSuggestModal(
       this.app,
-      (dest) => {
-        const dir = dest === "/" ? "" : dest;
-        if (dir === from) return;
-        void this.actions.move(file.path, dir);
-      },
+      (dest) => void this.actions.move(file.path, dest === "/" ? "" : dest),
       `Move ${file.name} to…`,
-      from,
+      folderOf(this.actions.unit(file.path)),
     ).open();
   }
 
