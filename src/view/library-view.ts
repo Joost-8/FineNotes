@@ -139,7 +139,9 @@ export class LibraryView extends ItemView {
   private readonly reads = new Map<string, Read>();
   /** Move, Duplicate and Delete, on a notebook's own folder when it has one. */
   private readonly actions: LibraryActions;
-  private reading = false;
+  /** The read under way, if any; `again` asks it for one more round when it ends. */
+  private reading: Promise<void> | null = null;
+  private again = false;
   private closed = false;
   private paintTimer = 0;
   private pdf: PdfBackdropCache | null = null;
@@ -323,37 +325,55 @@ export class LibraryView extends ItemView {
     }, 400);
   }
 
-  /** Read every notebook whose file changed since it was last read, newest first, one at a time. */
-  private async readStale(): Promise<void> {
-    if (this.reading) return;
-    this.reading = true;
+  /**
+   * Read every notebook whose file changed since it was last read, newest
+   * first, one at a time. A change while it reads makes it go round once
+   * more when it ends, so nothing that changed meanwhile is missed.
+   */
+  private readStale(): Promise<void> {
+    if (this.reading) {
+      this.again = true;
+      return this.reading;
+    }
+    this.reading = this.readLoop();
+    return this.reading;
+  }
+
+  private async readLoop(): Promise<void> {
     try {
-      const live = new Set<string>();
-      const stale: TFile[] = [];
-      for (const file of this.notebookFiles()) {
-        live.add(file.path);
-        const read = this.reads.get(file.path);
-        if (!read || read.mtime !== file.stat.mtime || read.size !== file.stat.size)
-          stale.push(file);
-      }
-      for (const path of [...this.reads.keys()]) if (!live.has(path)) this.reads.delete(path);
-      stale.sort((a, b) => b.stat.mtime - a.stat.mtime);
-      for (const file of stale) {
-        if (this.closed) return;
-        const { mtime, size } = file.stat;
-        let entry: LibraryEntry;
-        try {
-          entry = entryFromText(file.path, mtime, await this.app.vault.cachedRead(file));
-        } catch {
-          entry = placeholderEntry(file.path, mtime);
-        }
-        this.reads.set(file.path, { mtime, size, entry });
-        this.paintSoon();
-        // Let the app breathe between notebooks.
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-      }
+      do {
+        this.again = false;
+        await this.readRound();
+      } while (this.again && !this.closed);
     } finally {
-      this.reading = false;
+      // Cleared in the same step as the last look at `again`: no change lands in between.
+      this.reading = null;
+    }
+  }
+
+  private async readRound(): Promise<void> {
+    const live = new Set<string>();
+    const stale: TFile[] = [];
+    for (const file of this.notebookFiles()) {
+      live.add(file.path);
+      const read = this.reads.get(file.path);
+      if (!read || read.mtime !== file.stat.mtime || read.size !== file.stat.size) stale.push(file);
+    }
+    for (const path of [...this.reads.keys()]) if (!live.has(path)) this.reads.delete(path);
+    stale.sort((a, b) => b.stat.mtime - a.stat.mtime);
+    for (const file of stale) {
+      if (this.closed) return;
+      const { mtime, size } = file.stat;
+      let entry: LibraryEntry;
+      try {
+        entry = entryFromText(file.path, mtime, await this.app.vault.cachedRead(file));
+      } catch {
+        entry = placeholderEntry(file.path, mtime);
+      }
+      this.reads.set(file.path, { mtime, size, entry });
+      this.paintSoon();
+      // Let the app breathe between notebooks.
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     }
   }
 
