@@ -11,14 +11,76 @@
  *
  * An endless board (FineNotes#46) is one page, so its page says nothing:
  * it keeps the point in the middle of the view, in page px, and the zoom,
- * which on a board is real size and so means the same on every pane.
+ * which on a board is real size and so means the same on every pane. Page
+ * px on a board do not hold still: growing left or up moves everything on
+ * it by whole blocks, on whichever device the writing happened. So the spot
+ * also keeps something drawn on the board (`anchor`), and follows it when it
+ * moved by whole blocks since.
  */
+
+import { BOARD_BLOCK } from "./board";
+import type { Page } from "./document";
 
 /** Where a board was left: the page point in the middle of the view, and the zoom. */
 export interface BoardSpot {
   x: number;
   y: number;
   zoom: number;
+  /** Something drawn on the board, and where it was then; absent on an empty board. */
+  anchor?: SpotAnchor;
+}
+
+/** One stroke, picture or text box, by id, and its page point when the spot was kept. */
+export interface SpotAnchor {
+  kind: "stroke" | "image" | "text";
+  id: string;
+  x: number;
+  y: number;
+}
+
+const ANCHOR_KINDS: readonly string[] = ["stroke", "image", "text"];
+
+/**
+ * Something on `page` to keep a spot by, where it is now: its first stroke,
+ * else its first picture, else its first text box. The oldest of each, as
+ * the one least likely to be erased.
+ */
+export function spotAnchor(page: Page): SpotAnchor | undefined {
+  const stroke = page.strokes.find((s) => s.pts.length >= 2);
+  if (stroke) return { kind: "stroke", id: stroke.id, x: stroke.pts[0], y: stroke.pts[1] };
+  const image = page.images[0];
+  if (image) return { kind: "image", id: image.id, x: image.x, y: image.y };
+  const text = page.textBoxes[0];
+  if (text) return { kind: "text", id: text.id, x: text.x, y: text.y };
+  return undefined;
+}
+
+/**
+ * `spot` on `page` as it is now: moved as far as its anchor moved, when that
+ * is by whole blocks each way (the board grew left or up since). Any other
+ * move is the user's (a lasso), and an anchor no longer there says nothing:
+ * the spot then stays as it was kept.
+ */
+export function anchoredSpot(spot: BoardSpot, page: Page): BoardSpot {
+  const { anchor } = spot;
+  if (!anchor) return spot;
+  const now = anchorNow(page, anchor);
+  if (!now) return spot;
+  const dx = now.x - anchor.x;
+  const dy = now.y - anchor.y;
+  if (dx % BOARD_BLOCK !== 0 || dy % BOARD_BLOCK !== 0 || (dx === 0 && dy === 0)) return spot;
+  return { ...spot, x: spot.x + dx, y: spot.y + dy, anchor: { ...anchor, x: now.x, y: now.y } };
+}
+
+/** Where `anchor`'s element is on `page` now, or `undefined` when it is gone. */
+function anchorNow(page: Page, anchor: SpotAnchor): { x: number; y: number } | undefined {
+  if (anchor.kind === "stroke") {
+    const stroke = page.strokes.find((s) => s.id === anchor.id && s.pts.length >= 2);
+    return stroke ? { x: stroke.pts[0], y: stroke.pts[1] } : undefined;
+  }
+  const list = anchor.kind === "image" ? page.images : page.textBoxes;
+  const found = list.find((item) => item.id === anchor.id);
+  return found ? { x: found.x, y: found.y } : undefined;
 }
 
 /** Where one notebook was left. */
@@ -61,7 +123,20 @@ function parseSpot(raw: unknown): BoardSpot | undefined {
   const { x, y, zoom } = raw as Record<string, unknown>;
   if (typeof x !== "number" || typeof y !== "number" || typeof zoom !== "number") return undefined;
   if (![x, y, zoom].every(Number.isFinite) || !(zoom > 0)) return undefined;
-  return { x, y, zoom };
+  const anchor = parseAnchor((raw as Record<string, unknown>).anchor);
+  return { x, y, zoom, ...(anchor ? { anchor } : {}) };
+}
+
+/** A stored spot's anchor, or `undefined` (a spot kept before anchors, or a broken one). */
+function parseAnchor(raw: unknown): SpotAnchor | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const { kind, id, x, y } = raw as Record<string, unknown>;
+  if (typeof kind !== "string" || !ANCHOR_KINDS.includes(kind)) return undefined;
+  if (typeof id !== "string" || !id || typeof x !== "number" || typeof y !== "number") {
+    return undefined;
+  }
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined;
+  return { kind: kind as SpotAnchor["kind"], id, x, y };
 }
 
 /**

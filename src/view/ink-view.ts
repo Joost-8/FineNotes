@@ -374,12 +374,14 @@ import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/save
 import { PANEL_SLIDE_MS, type PageSnapshot } from "./motion";
 import {
   type LastPages,
+  anchoredSpot,
   forgetInLastPages,
   lastPageIndex,
   parseLastPages,
   rememberPage,
   lastBoardSpot,
   renameInLastPages,
+  spotAnchor,
 } from "../model/last-page";
 import { NoteAudio } from "./note-audio";
 import { LoadGuard } from "./load-guard";
@@ -3936,7 +3938,7 @@ export class InkView extends TextFileView {
       // A board goes back to where it was left on its one page.
       const spot =
         this.isBoard && subpath === null ? lastBoardSpot(this.loadLastPages(), path) : null;
-      if (spot) surface.showBoardSpot(spot);
+      if (spot && pages[0]) surface.showBoardSpot(anchoredSpot(spot, pages[0]));
       else index ??= lastPageIndex(this.loadLastPages(), path, pages);
     }
     if (index !== null) surface.goToPage(index);
@@ -3984,7 +3986,9 @@ export class InkView extends TextFileView {
     const index = surface.currentPage;
     const page = surface.document.pages[index];
     if (!page) return;
-    const spot = surface.boardSpot() ?? undefined;
+    const at = surface.boardSpot();
+    const anchor = at ? spotAnchor(page) : undefined;
+    const spot = at ? { ...at, ...(anchor ? { anchor } : {}) } : undefined;
     this.saveLastPages(rememberPage(this.loadLastPages(), path, page.id, index, Date.now(), spot));
   }
 
