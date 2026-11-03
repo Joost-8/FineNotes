@@ -14488,6 +14488,52 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   border-top-color: transparent;
 }
 
+/* By a bar at a side the row is a column of its own: beside the bar, then the
+   page. The bar's hairline moves to the column's far side. */
+.goodobsidian-view.goodobsidian-bar-at-left.goodobsidian-has-pill-row {
+  grid-template-columns: auto auto minmax(0, 1fr);
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right.goodobsidian-has-pill-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left.goodobsidian-has-pill-row > .goodobsidian-body,
+.goodobsidian-view.goodobsidian-bar-at-left.goodobsidian-has-pill-row > .goodobsidian-textpanel {
+  grid-column: 3;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-pill-row {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  border-bottom: none;
+  border-right: var(--gob-bar-border);
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right.goodobsidian-has-pill-row > .goodobsidian-toolbar {
+  grid-column: 3;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-pill-row {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  border-bottom: none;
+  border-left: var(--gob-bar-border);
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left.goodobsidian-has-pill-row > .goodobsidian-toolbar {
+  border-right-color: transparent;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right.goodobsidian-has-pill-row > .goodobsidian-toolbar {
+  border-left-color: transparent;
+}
+
+/* The docked column has the page's whole height: every pen type shows. */
+.goodobsidian-options.is-docked.is-upright .goodobsidian-pen-types {
+  max-height: none;
+}
+
 /* In the row it rests on the bar's band, not over the page: no shadow. */
 .goodobsidian-options.is-floating.is-docked {
   box-shadow: none;

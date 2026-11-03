@@ -233,7 +233,7 @@ export class ToolbarEditor {
       }
     }
     const setRow = this.h.setPillRow;
-    if (setRow && (dock === "top" || dock === "bottom")) {
+    if (setRow) {
       const on = this.h.pillRow();
       const row = head.createEl("button", { cls: "goodobsidian-edit-switch clickable-icon" });
       row.createSpan({ cls: "goodobsidian-edit-toggle" }).toggleClass("is-on", on);

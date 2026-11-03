@@ -936,6 +936,8 @@ export class Toolbar {
   private readonly rowEl: HTMLElement;
   /** "Dock tool options" is on, on this device. */
   private pillRowOn = false;
+  /** Where the pill rested before "Dock tool options" brought it to the bar, to give back when it is off. */
+  private pillDockBefore: PillDock | null = null;
   /** The row as shown now. */
   private row: PillRow = NO_PILL_ROW;
 
@@ -1123,6 +1125,11 @@ export class Toolbar {
     this.optionsEl.dataset.ignoreSwipe = "true";
 
     this.pillDock = offeredDock(options.pillDock);
+    // Docked, the pill rests where the bar does (`followBar`).
+    if (this.pillRowOn) {
+      this.pillDockBefore = this.pillDock;
+      this.pillDock = offeredDock(this.barDock);
+    }
     // Docked, the pen's pill covers nothing: it need not start tucked away.
     this.optionsVisible = !this.startsTucked(state.tool);
     this.optionsEl.addClass(`is-dock-${this.pillDock}`);
@@ -5417,6 +5424,24 @@ export class Toolbar {
   }
 
   /**
+   * With "Dock tool options" on, the pill rests by the bar, wherever the bar
+   * is: a column beside a bar at a side, a row under or over one along an
+   * edge. Off again, it goes back to where it was left. A pill carried
+   * elsewhere meanwhile floats there (`pillRowEdge`).
+   */
+  private followBar(): void {
+    if (this.pillRowOn) {
+      this.pillDockBefore ??= this.pillDock;
+      const bar = offeredDock(this.barDock);
+      if (this.pillDock !== bar) this.setPillDock(bar);
+    } else if (this.pillDockBefore !== null) {
+      const before = this.pillDockBefore;
+      this.pillDockBefore = null;
+      this.setPillDock(before);
+    }
+  }
+
+  /**
    * Rest the bar at `dock`, as the setting on this device says (main.ts,
    * `barDock`). The page area gives way on that side, and the surface lays
    * out again through its own ResizeObserver, keeping the page point it showed.
@@ -5427,6 +5452,7 @@ export class Toolbar {
     this.closePopover();
     this.barDock = next;
     this.applyBarDock();
+    this.followBar();
     // A bar moved from top to bottom keeps its size, so its observer is quiet.
     this.measureBar();
     this.applyPosition();
@@ -5475,6 +5501,7 @@ export class Toolbar {
   setPillRow(on: boolean): void {
     if (on === this.pillRowOn) return;
     this.pillRowOn = on;
+    this.followBar();
     this.applyPosition();
     this.editor?.refresh();
   }
@@ -5487,6 +5514,7 @@ export class Toolbar {
    * of it. `anchored`: floating by a text box, where the row keeps its room.
    */
   private syncPillRow(shown: boolean, height: number, anchored = false): void {
+    // `height` is the pill's thickness across the row: its height, or its width at a side.
     const next = pillRow({
       edge: pillRowEdge(this.pillRowOn, this.pillDock, this.barDock),
       shown,
@@ -5500,7 +5528,11 @@ export class Toolbar {
     if (next.edge === before.edge && next.room === before.room) return;
     this.row = next;
     this.host.toggleClass("goodobsidian-has-pill-row", next.edge !== null);
-    this.rowEl.setCssStyles({ height: `${next.room}px` });
+    const side = next.edge === "left" || next.edge === "right";
+    this.rowEl.setCssStyles({
+      height: side || next.edge === null ? "" : `${next.room}px`,
+      width: side ? `${next.room}px` : "",
+    });
     const shift = pageTopShift(before, next);
     if (shift !== 0) this.callbacks.onPillRow?.(shift);
   }
@@ -5558,7 +5590,7 @@ export class Toolbar {
       top: `${Math.round(place.top)}px`,
     });
     const shown = !this.optionsEl.hasClass("is-collapsed") && !this.optionsEl.hasClass("is-hidden");
-    this.syncPillRow(shown, pill.height);
+    this.syncPillRow(shown, isUpright(this.pillDock) ? pill.width : pill.height);
     // Docked, the page already ends at the row: nothing on it need step aside.
     this.clearForPill(
       shown && this.row.edge === null
