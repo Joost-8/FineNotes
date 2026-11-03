@@ -157,7 +157,7 @@ describe("Delete on a folder tile, and of several at once", () => {
     expect(asked).toEqual([
       {
         title: "Delete 3 notebooks?",
-        message: '"Physics", "Algebra" and "Chem" will be deleted, with their files.',
+        message: '"Algebra", "Chem" and "Physics" will be deleted, with their files.',
       },
     ]);
     expect(files()).toEqual(["Notes.md"]);

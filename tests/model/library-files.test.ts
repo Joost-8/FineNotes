@@ -169,8 +169,8 @@ describe("trashQuestion", () => {
     );
   });
 
-  it("shortens a long list", () => {
-    const notebooks = ["A", "B", "C", "D", "E", "F"].map((n) => `${n}.notebook.md`);
+  it("shortens a long list, A to Z", () => {
+    const notebooks = ["F", "B", "C", "D", "E", "A"].map((n) => `${n}.notebook.md`);
     const q = trashQuestion({ trash: notebooks, notebooks, kept: 1 });
     expect(q.message).toBe(
       '"A", "B", "C" and 3 more will be deleted, with their files. 1 other file stays where it is.',

@@ -131,7 +131,10 @@ export function trashPlan(
 
 /** The question a Delete asks before it does anything: what goes, and what stays. */
 export function trashQuestion(plan: TrashPlan): { title: string; message: string } {
-  const names = plan.notebooks.map((p) => `"${stripInkSuffix(baseName(p))}"`);
+  const names = plan.notebooks
+    .map((p) => stripInkSuffix(baseName(p)))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
+    .map((name) => `"${name}"`);
   const count = names.length;
   const shown = count > 4 ? [...names.slice(0, 3), `${count - 3} more`] : names;
   const list = shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}` : shown[0];
