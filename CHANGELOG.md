@@ -8,8 +8,25 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Ask AI on an empty lasso.** A lasso drawn round nothing offers Ask AI
+  about that patch of page beside Screenshot, while an AI service is set up.
+
 ### Fixed
 
+- **Colours on dark pages show what lands.** The colour picker, the text,
+  fill, border, shape and Fill tool colours, the lasso's ink colours and a
+  table cell's colours show each colour as the dark page shows it (a
+  highlighter's as a highlight shows), as the pen's swatches already did.
+  What is picked is still the true colour.
+- **The eraser's ring reads on any paper.** In the size preview and on the
+  page it is a dark ring in a white halo, visible on dark pages too.
+- **A fill no longer pokes out past its outline.** It is tucked under the
+  outline only as far as the middle of the ink, so a thin pen's fill no
+  longer shows in steps outside it.
+- **Dragging a colour off the bar is smooth.** The held colour follows the
+  finger exactly instead of trailing behind it.
 - **Boards land where you expect, and stay tidy**
   ([#43](https://github.com/Joost-8/FineNotes/discussions/43)). A new board
   or notebook is never made inside another notebook's own folder, wherever
@@ -32,25 +49,6 @@ extracted from the matching section of this file by `release.yml`.
 - On a board, page-only things are gone: page numbers and the header,
   Scan document, Import PDF and Copy highlighted text. The New board dialog
   no longer offers Import from another app, which always makes a notebook.
-### Added
-
-- **Ask AI on an empty lasso.** A lasso drawn round nothing offers Ask AI
-  about that patch of page beside Screenshot, while an AI service is set up.
-
-### Fixed
-
-- **Colours on dark pages show what lands.** The colour picker, the text,
-  fill, border, shape and Fill tool colours, the lasso's ink colours and a
-  table cell's colours show each colour as the dark page shows it (a
-  highlighter's as a highlight shows), as the pen's swatches already did.
-  What is picked is still the true colour.
-- **The eraser's ring reads on any paper.** In the size preview and on the
-  page it is a dark ring in a white halo, visible on dark pages too.
-- **A fill no longer pokes out past its outline.** It is tucked under the
-  outline only as far as the middle of the ink, so a thin pen's fill no
-  longer shows in steps outside it.
-- **Dragging a colour off the bar is smooth.** The held colour follows the
-  finger exactly instead of trailing behind it.
 
 ## [2.7.0] - 2026-11-02
 
