@@ -37,16 +37,23 @@ export function bindSwatchDrag(swatch: HTMLElement, options: SwatchDragOptions):
   let touchId: number | null = null;
   let ghost: HTMLElement | null = null;
   let swallowUntil = 0;
+  /** The pill's box, measured once at the lift: it stays put while a colour is held. */
+  let barBox: DOMRect | null = null;
+  let off = false;
 
+  // Only the place is written per move, and nothing is measured: a layout
+  // read between style writes on every move made the drag stutter.
   const place = (x: number, y: number): void => {
     if (!ghost) return;
-    ghost.setCssProps({ "--gob-ghost-x": `${x}px`, "--gob-ghost-y": `${y}px` });
-    const box = options.bar().getBoundingClientRect();
-    ghost.toggleClass("is-off", offBar(box, x, y));
+    ghost.setCssStyles({ translate: `${x}px ${y}px` });
+    const nowOff = barBox !== null && offBar(barBox, x, y);
+    if (nowOff !== off) ghost.toggleClass("is-off", (off = nowOff));
   };
 
   const lift = (x: number, y: number): void => {
     timer = 0;
+    barBox = options.bar().getBoundingClientRect();
+    off = false;
     ghost = document.body.createDiv({ cls: "goodobsidian-swatch-ghost" });
     // The disc's own colour: the one inline style, as the swatch has.
     ghost.setCssStyles({ backgroundColor: getComputedStyle(swatch).backgroundColor });
@@ -63,7 +70,9 @@ export function bindSwatchDrag(swatch: HTMLElement, options: SwatchDragOptions):
     ghost = null;
     swatch.removeClass("is-lifted");
     swallowUntil = Date.now() + SWALLOW_CLICK_MS;
-    if (!cancelled && offBar(options.bar().getBoundingClientRect(), x, y)) options.onRemove();
+    const box = barBox;
+    barBox = null;
+    if (!cancelled && box && offBar(box, x, y)) options.onRemove();
   };
 
   const press = (x: number, y: number): void => {

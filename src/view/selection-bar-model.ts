@@ -27,6 +27,8 @@ export interface ActionSwatches {
   custom?: (color: string) => void;
   /** Offer to pick the colour from the page; the host arms its eyedropper and applies the pick. */
   eyedropper?: () => void;
+  /** How the page shows ink of a colour (dark pages); the swatches are drawn so. */
+  shown?: (color: string) => string;
 }
 
 /** One thing the selection's bar or menu can do. */

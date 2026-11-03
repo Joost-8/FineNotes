@@ -6,8 +6,9 @@
  * memory and time are bounded whatever the page holds), the ink is widened
  * by the gap tolerance so small gaps in a hand-drawn outline close, the
  * region round the tap is flooded, grown back by the same amount over the
- * paper (not over the ink), tucked one cell under the ink, and its outer
- * boundary traced and simplified. Holes are ignored: writing inside the
+ * paper (not over the ink), tucked under the ink as far as its centreline
+ * and no further (so it never shows past the outline's outer edge), and its
+ * outer boundary traced and simplified. Holes are ignored: writing inside the
  * outline stays on top of the fill, which is drawn behind the ink.
  *
  * A region that reaches the page's edge is not closed, and is refused.
@@ -88,14 +89,15 @@ export function fillGrid(
 /**
  * Mark every cell the ink touches (1), conservatively: a cell whose centre
  * lies within the ink's radius plus half a cell's diagonal of a segment, so
- * a thin diagonal line still blocks a 4-connected flood.
+ * a thin diagonal line still blocks a 4-connected flood. `share` narrows
+ * the ink to that part of its radius (the band round its centreline).
  */
-export function rasterInk(grid: FillGrid, ink: readonly FillInk[]): Uint8Array {
+export function rasterInk(grid: FillGrid, ink: readonly FillInk[], share = 1): Uint8Array {
   const { w, h, scale } = grid;
   const mask = new Uint8Array(w * h);
   const slack = Math.SQRT1_2;
   for (const line of ink) {
-    const r = Math.max(0, line.radius) * scale + slack;
+    const r = Math.max(0, line.radius) * share * scale + slack;
     const pts = line.pts;
     const usable = pts.length - (pts.length % STRIDE);
     if (usable < STRIDE) continue;
@@ -278,6 +280,43 @@ export function grow(
   }
 }
 
+/**
+ * Spread `region` 4-connected into the cells `into` allows, at most `steps`
+ * cells from where it was; in place. Edge steps only, so a band one cell
+ * thick that blocks a 4-connected flood blocks this too.
+ */
+export function spread(
+  grid: FillGrid,
+  region: Uint8Array,
+  steps: number,
+  into: (k: number) => boolean,
+): void {
+  const { w } = grid;
+  let frontier: number[] = [];
+  for (let k = 0; k < region.length; k++) if (region[k]) frontier.push(k);
+  for (let s = 0; s < steps && frontier.length > 0; s++) {
+    const next: number[] = [];
+    for (const k of frontier) {
+      const i = k % w;
+      const around = [
+        i > 0 ? k - 1 : -1,
+        i < w - 1 ? k + 1 : -1,
+        k >= w ? k - w : -1,
+        k + w < region.length ? k + w : -1,
+      ];
+      for (const n of around) {
+        if (n < 0 || region[n] || !into(n)) continue;
+        region[n] = 1;
+        next.push(n);
+      }
+    }
+    frontier = next;
+  }
+}
+
+/** The ink's centre band, as a share of its radius: what a fill may not tuck past. */
+const CORE_SHARE = 0.4;
+
 const DX = [1, 0, -1, 0];
 const DY = [0, 1, 0, -1];
 
@@ -434,8 +473,16 @@ export function bucketFill(req: FillRequest): FillResult {
     if (!region.open) grow(grid, region.region, Math.ceil(reach), (k) => mask[k] === 0);
   }
   if (region.open) return { ok: false, reason: "open" };
-  // Then a cell under the ink, so no paper shows between the two.
-  grow(grid, region.region, 2, () => true);
+  // Then under the ink, so no paper shows between the two, but only as far
+  // as its centreline: past it the fill would show beyond the outline's
+  // outer edge (Joost's iPad, 2026-11-03: a thin pen's fill poked out in
+  // steps all round). The centre band stops it; the cap on the steps stops
+  // it going round a stroke's end, whose band joins both sides.
+  const core = rasterInk(grid, req.ink, CORE_SHARE);
+  let widest = 0;
+  for (const line of req.ink) widest = Math.max(widest, line.radius);
+  spread(grid, region.region, Math.ceil(widest * scale) + 1, (k) => mask[k] === 1 && !core[k]);
+  spread(grid, region.region, 1, (k) => core[k] === 1);
   let cells = 0;
   for (let k = 0; k < region.region.length; k++) cells += region.region[k];
   const corners = traceOutline(grid, region.region);
