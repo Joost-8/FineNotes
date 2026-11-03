@@ -1064,6 +1064,8 @@ export class Toolbar {
 
   /** The active tool remains active when its options are tucked away. */
   private optionsVisible: boolean;
+  /** The tool's pill was showing when Customize toolbar opened: it comes back when that closes. */
+  private optionsBeforeCustomize = false;
   /** Tools whose options were tucked away when they were left: they come back tucked. */
   private readonly tuckedTools = new Set<ActiveTool>();
   /** A stroke tucked the options away ({@link tuckOptions}), not a tap: they may come back. */
@@ -1826,6 +1828,13 @@ export class Toolbar {
     const save = this.callbacks.onLayout;
     if (!save || this.editor) return;
     this.closePopover();
+    // The tool's pill is put away while the bar is edited, so it takes none
+    // of the room the edit mode uses.
+    this.optionsBeforeCustomize = this.optionsVisible;
+    if (this.optionsVisible) {
+      this.optionsVisible = false;
+      this.showOptions(false);
+    }
     this.editor = new ToolbarEditor({
       bar: this.barEl,
       host: this.host,
@@ -1844,6 +1853,11 @@ export class Toolbar {
       setPillRow: this.callbacks.onSetPillRow,
       done: () => {
         this.editor = null;
+        if (this.optionsBeforeCustomize) {
+          this.optionsBeforeCustomize = false;
+          this.optionsVisible = true;
+          this.showOptions(true);
+        }
         this.measureBar();
       },
     });
