@@ -131,6 +131,7 @@ import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import { HOME_FILE, HOME_FILE_TEXT } from "./model/home-file";
 import { folderStylesOf } from "./model/library-style";
+import { prepareImageBytes } from "./view/image-import";
 import { LibraryView } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
 import { PageEmbeds } from "./view/page-embed";
@@ -143,6 +144,7 @@ import {
   type NotebookChoices,
   type NotebookType,
   buildNewDocument,
+  buildImageNotebook,
   buildPdfNotebook,
   cleanTitle,
   joinVaultPath,
@@ -445,6 +447,7 @@ export default class GoodObsidianPlugin extends Plugin {
           newNotebook: (folder) => this.openNewNotebookDialog(folder),
           newBoard: (folder) => this.openNewNotebookDialog(folder, "endless"),
           importFromApp: (folder) => this.openImportNotebook(folder),
+          importImage: (file, folder) => void this.createNotebookFromImage(file, folder),
           openSettings: () => this.openOwnSettings(),
           importPdf: (source, folder) => {
             const name = source.file.name.replace(/\.pdf$/i, "");
@@ -2651,6 +2654,46 @@ export default class GoodObsidianPlugin extends Plugin {
       () => this.app.vault.readBinary(pdf),
       pdf.path,
       open,
+    );
+  }
+
+  /**
+   * A new notebook with a picture on its first page (Home › New › Add image),
+   * made with the last notebook choices; the picture is prepared as an
+   * inserted one is and saved beside the notebook's attachments.
+   */
+  private async createNotebookFromImage(file: File, folder: string): Promise<void> {
+    const choices = this.pdfNotebookChoices();
+    let prepared: Awaited<ReturnType<typeof prepareImageBytes>>;
+    try {
+      prepared = await prepareImageBytes(await file.arrayBuffer(), file.type);
+    } catch (error) {
+      new Notice(`FineNotes: couldn't read the picture — ${errorMessage(error)}`, 8000);
+      return;
+    }
+    const name = file.name.replace(/\.[^.]+$/, "");
+    await this.createNotebook(
+      name,
+      choices,
+      folder,
+      async (heading, attachments, home) => {
+        const dir = attachments?.images ?? home;
+        if (dir && !this.app.vault.getFolderByPath(dir)) {
+          await this.app.vault.createFolder(dir).catch(() => undefined);
+        }
+        const stem = sanitizeFileName(name) || "Picture";
+        let path = normalizePath(joinVaultPath(dir, `${stem}.${prepared.ext}`));
+        for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) {
+          path = normalizePath(joinVaultPath(dir, `${stem} ${n}.${prepared.ext}`));
+        }
+        await this.app.vault.createBinary(path, prepared.bytes);
+        return buildImageNotebook(choices, heading, attachments, path, {
+          width: prepared.width,
+          height: prepared.height,
+        });
+      },
+      this.settings.notebookOwnFolder,
+      true,
     );
   }
 

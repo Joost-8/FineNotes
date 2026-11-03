@@ -11,6 +11,7 @@
  * the view supplies what exists on disk and does the writing.
  */
 
+import { newImageElement, placeImageBox } from "./images";
 import {
   FRONTMATTER_FLAG,
   INK_FILE_SUFFIXES,
@@ -422,6 +423,24 @@ export function buildNewDocument(
     return doc;
   }
   doc.pages.push(page("p1", geometry, paper));
+  return doc;
+}
+
+/**
+ * A new notebook with one picture on its first page: the cover and paper the
+ * choices name, and the picture at `path` (a file in the vault) placed on the
+ * first page after the cover, fitted and centred as an inserted picture is.
+ */
+export function buildImageNotebook(
+  choices: NotebookChoices,
+  title: string,
+  attachments: AttachmentFolders | undefined,
+  path: string,
+  natural: { width: number; height: number },
+): InkDocument {
+  const doc = buildNewDocument({ ...choices, type: "notebook" }, title, attachments);
+  const first = doc.pages[doc.pages.length - 1];
+  if (first) first.images.push(newImageElement(doc, path, placeImageBox(natural, first.geometry)));
   return doc;
 }
 

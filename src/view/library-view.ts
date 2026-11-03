@@ -83,6 +83,8 @@ export interface LibraryHost {
   newBoard(folder: string): void;
   /** The import dialog for Goodnotes, Notability and other apps, into `folder`. */
   importFromApp(folder: string): void;
+  /** A notebook with this picture on its first page, made in `folder`. */
+  importImage(file: File, folder: string): void;
   /** FineNotes' own page in Obsidian's settings. */
   openSettings(): void;
   /** A notebook whose pages are the chosen PDF's, made in `folder`. */
@@ -930,6 +932,16 @@ export class LibraryView extends ItemView {
         .setTitle("Import PDF…")
         .setIcon("file-up")
         .onClick(() => this.choosePdf(event)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Add image…")
+        .setIcon("image-plus")
+        .onClick(() => {
+          void pickImageFile(this.contentEl, false).then((file) => {
+            if (file) this.host.importImage(file, this.folder);
+          });
+        }),
     );
     menu.addItem((item) =>
       item
