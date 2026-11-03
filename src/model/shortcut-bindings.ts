@@ -56,12 +56,23 @@ export type ShortcutInput = ShortcutKeyInput | ShortcutButtonInput;
 /** Press switches to a tool; hold lends it until the input is let go. */
 export type ShortcutMode = "press" | "hold";
 
+/** The table's headings, in order, by the key of their name. */
+export const SHORTCUT_GROUP_KEYS = [
+  "toolbar.shortcut.group.tools",
+  "toolbar.shortcut.group.savedPens",
+  "toolbar.shortcut.group.selectionEditing",
+  "toolbar.shortcut.group.viewZoom",
+] as const satisfies readonly TextKey[];
+
+/** One heading of the table. Compare these, never the translated names. */
+export type ShortcutGroupKey = (typeof SHORTCUT_GROUP_KEYS)[number];
+
 export interface ShortcutAction {
   /** Stable id: what `localStorage` and the runtime dispatch name. */
   id: string;
   label: string;
-  /** The table's heading. */
-  group: string;
+  /** The table's heading; `t(groupKey)` is its name. */
+  groupKey: ShortcutGroupKey;
   /** What the row's ⓘ says, when the label alone is not enough. */
   hint?: string;
   /**
@@ -98,9 +109,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.pen");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("p"), key("w")],
     defaultMode: "press",
@@ -110,9 +119,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.highlighter");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("h")],
     defaultMode: "press",
@@ -122,9 +129,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.eraser");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("e")],
     defaultMode: "press",
@@ -134,9 +139,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.lasso");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("v")],
     defaultMode: "press",
@@ -146,9 +149,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.shapes");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("s")],
     defaultMode: "press",
@@ -158,9 +159,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.text");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("t")],
     defaultMode: "press",
@@ -170,9 +169,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.laserPointer");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     get hint() {
       return t("toolbar.shortcut.hint.laser");
     },
@@ -185,9 +182,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.hand");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     get hint() {
       return t("toolbar.shortcut.hint.hand");
     },
@@ -200,9 +195,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.magnifier");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: NO_INPUTS,
     defaultMode: "hold",
@@ -216,9 +209,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
       get label() {
         return t("toolbar.shortcut.savedPen", { number });
       },
-      get group() {
-        return t("toolbar.shortcut.group.savedPens");
-      },
+      groupKey: "toolbar.shortcut.group.savedPens",
       holdable: false,
       defaults: [key(String(number))],
       defaultMode: "press",
@@ -231,9 +222,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("common.undo");
     },
-    get group() {
-      return t("toolbar.shortcut.group.selectionEditing");
-    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("z", "Mod")],
     defaultMode: "press",
@@ -243,9 +232,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("common.redo");
     },
-    get group() {
-      return t("toolbar.shortcut.group.selectionEditing");
-    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("z", "Mod", "Shift")],
     defaultMode: "press",
@@ -255,9 +242,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.shortcut.selectAll");
     },
-    get group() {
-      return t("toolbar.shortcut.group.selectionEditing");
-    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("a", "Mod")],
     defaultMode: "press",
@@ -267,9 +252,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.shortcut.deleteSelection");
     },
-    get group() {
-      return t("toolbar.shortcut.group.selectionEditing");
-    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("Delete"), key("Backspace")],
     defaultMode: "press",
@@ -280,9 +263,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("common.copy");
     },
-    get group() {
-      return t("toolbar.shortcut.group.selectionEditing");
-    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("c", "Mod")],
     defaultMode: "press",
@@ -293,9 +274,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("common.cut");
     },
-    get group() {
-      return t("toolbar.shortcut.group.selectionEditing");
-    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("x", "Mod")],
     defaultMode: "press",
@@ -306,9 +285,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("common.paste");
     },
-    get group() {
-      return t("toolbar.shortcut.group.selectionEditing");
-    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("v", "Mod")],
     defaultMode: "press",
@@ -319,9 +296,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.shortcut.turnIntoText");
     },
-    get group() {
-      return t("toolbar.shortcut.group.selectionEditing");
-    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -333,9 +308,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.zoomIn");
     },
-    get group() {
-      return t("toolbar.shortcut.group.viewZoom");
-    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -345,9 +318,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.zoomOut");
     },
-    get group() {
-      return t("toolbar.shortcut.group.viewZoom");
-    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -357,9 +328,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.shortcut.fitPage");
     },
-    get group() {
-      return t("toolbar.shortcut.group.viewZoom");
-    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -369,9 +338,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.shortcut.nextPage");
     },
-    get group() {
-      return t("toolbar.shortcut.group.viewZoom");
-    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: [key("PageDown")],
     defaultMode: "press",
@@ -381,9 +348,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.shortcut.previousPage");
     },
-    get group() {
-      return t("toolbar.shortcut.group.viewZoom");
-    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: [key("PageUp")],
     defaultMode: "press",
@@ -393,9 +358,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.fullScreen");
     },
-    get group() {
-      return t("toolbar.shortcut.group.viewZoom");
-    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -405,9 +368,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.shortcut.showSheet");
     },
-    get group() {
-      return t("toolbar.shortcut.group.viewZoom");
-    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: [key("?")],
     defaultMode: "press",
@@ -419,9 +380,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.insertImage");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -431,9 +390,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.insertPdf");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -443,9 +400,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.stickers");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -455,9 +410,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.stickyNotes");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -467,9 +420,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.ruler");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -479,9 +430,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.tool.recordAudio");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -491,9 +440,7 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     get label() {
       return t("toolbar.shortcut.stylusOnlyMode");
     },
-    get group() {
-      return t("toolbar.shortcut.group.tools");
-    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -509,19 +456,12 @@ export const SHORTCUT_ACTIONS_BY_ID: ReadonlyMap<string, ShortcutAction> = new M
 export const SHORTCUT_ACTION_GROUPS: readonly {
   title: string;
   actions: readonly ShortcutAction[];
-}[] = (
-  [
-    "toolbar.shortcut.group.tools",
-    "toolbar.shortcut.group.savedPens",
-    "toolbar.shortcut.group.selectionEditing",
-    "toolbar.shortcut.group.viewZoom",
-  ] as const satisfies readonly TextKey[]
-).map((key) => ({
+}[] = SHORTCUT_GROUP_KEYS.map((key) => ({
   get title() {
     return t(key);
   },
   get actions() {
-    return SHORTCUT_ACTIONS.filter((action) => action.group === t(key));
+    return SHORTCUT_ACTIONS.filter((action) => action.groupKey === key);
   },
 }));
 
@@ -1065,9 +1005,9 @@ export function boundShortcutGroups(
       action: row.action.label,
       ways: row.inputs.map((input) => ({ keys: sheetKeys(input), gesture })),
     };
-    const group = out.find((candidate) => candidate.title === row.action.group);
+    const group = out.find((candidate) => candidate.title === t(row.action.groupKey));
     if (group) group.shortcuts.push(line);
-    else out.push({ title: row.action.group, shortcuts: [line] });
+    else out.push({ title: t(row.action.groupKey), shortcuts: [line] });
   }
   return out;
 }

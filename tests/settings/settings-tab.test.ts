@@ -8,6 +8,8 @@
  * without (the paper-width limits, a vendor's default model).
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetState, ModelAsset } from "../../src/downloads/model-manifest";
 
@@ -70,6 +72,7 @@ const { DEFAULT_SETTINGS, GoodObsidianSettingTab, addInfo, shortcutList } =
   await import("../../src/settings");
 const { ShortcutStore } = await import("../../src/view/shortcut-store");
 const { SHORTCUT_ACTIONS } = await import("../../src/model/shortcut-bindings");
+const { t, useLanguage } = await import("../../src/i18n/translate");
 const { ShortcutsModal } = await import("../../src/ui/shortcuts-modal");
 const { SIZES } = await import("../../src/constants");
 const { DEFAULT_MODELS, LLM_PROVIDER_ID, VENDOR_LABELS, VENDORS } =
@@ -371,9 +374,17 @@ const FOOTER = "Feedback and community";
 
 /** The tools, in view in Shortcuts; every other action is under its More. */
 const SHORTCUT_TOOLS = SHORTCUT_ACTIONS.filter((action) => action.id.startsWith("tool."));
-const SHORTCUT_MORE = ["Selection and editing", "View and zoom", "Tools", "Saved pens"].flatMap(
-  (group) =>
-    SHORTCUT_ACTIONS.filter((action) => action.group === group && !SHORTCUT_TOOLS.includes(action)),
+const SHORTCUT_MORE = (
+  [
+    "toolbar.shortcut.group.selectionEditing",
+    "toolbar.shortcut.group.viewZoom",
+    "toolbar.shortcut.group.tools",
+    "toolbar.shortcut.group.savedPens",
+  ] as const
+).flatMap((group) =>
+  SHORTCUT_ACTIONS.filter(
+    (action) => action.groupKey === group && !SHORTCUT_TOOLS.includes(action),
+  ),
 );
 
 /**
@@ -432,6 +443,25 @@ const READING_ROWS = [
 const ONE_LINE = 60;
 
 describe("the rows", () => {
+  it("list every shortcut under More in another language too", () => {
+    const count = () => {
+      const heading = t("settings.shortcuts.heading");
+      return rows(makeTab(makePlugin()).tab).filter((r) => r.heading === heading).length;
+    };
+    const english = count();
+    const german = JSON.parse(
+      readFileSync(join(__dirname, "../../src/i18n/locales/de.json"), "utf8"),
+    ) as Record<string, string>;
+    useLanguage("de", german);
+    try {
+      expect(t("settings.shortcuts.heading")).not.toBe(SHORTCUTS);
+      expect(count()).toBe(english);
+    } finally {
+      useLanguage("en");
+    }
+    expect(english).toBe(SHORTCUT_ROWS.length);
+  });
+
   it("come in this order, grouped under these headings", () => {
     const { tab } = makeTab(makePlugin());
     const label = VENDORS.anthropic.label;

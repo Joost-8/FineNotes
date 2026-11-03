@@ -93,6 +93,7 @@ import {
 import { SHORTCUT_GROUPS, shortcutText } from "./model/shortcuts";
 import {
   type ShortcutAction,
+  type ShortcutGroupKey,
   type ShortcutRow,
   SHORTCUT_ACTIONS,
   inputCaps,
@@ -250,7 +251,12 @@ function stylusClickNames(): Record<StylusClickAction, string> {
 }
 
 /** Shortcuts → More: the actions after the tools, in this order. */
-const SHORTCUT_MORE_ORDER = ["Selection and editing", "View and zoom", "Tools", "Saved pens"];
+const SHORTCUT_MORE_ORDER: readonly ShortcutGroupKey[] = [
+  "toolbar.shortcut.group.selectionEditing",
+  "toolbar.shortcut.group.viewZoom",
+  "toolbar.shortcut.group.tools",
+  "toolbar.shortcut.group.savedPens",
+];
 
 /**
  * The keyboard and stylus shortcuts as plain text, one `[keys, action]` pair
@@ -270,9 +276,9 @@ export function shortcutList(apple: boolean): Array<[string, string]> {
 function shortcutAliases(action: ShortcutAction): string[] {
   const words = action.label
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean);
-  return [action.group.toLowerCase(), ...words, "shortcut", "key", "hotkey", "stylus"];
+  return [t(action.groupKey).toLowerCase(), ...words, "shortcut", "key", "hotkey", "stylus"];
 }
 
 /** The tools an ink note can open with, as the dropdown names them. */
@@ -1207,7 +1213,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private shortcutsGroup(): SettingDefinitionItem {
     const tools = SHORTCUT_ACTIONS.filter((action) => action.id.startsWith("tool."));
     const rest = SHORTCUT_MORE_ORDER.flatMap((group) =>
-      SHORTCUT_ACTIONS.filter((action) => action.group === group && !tools.includes(action)),
+      SHORTCUT_ACTIONS.filter((action) => action.groupKey === group && !tools.includes(action)),
     );
     return this.section(
       "shortcuts",
