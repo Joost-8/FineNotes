@@ -492,6 +492,7 @@ export default class GoodObsidianPlugin extends Plugin {
             await leaf.openFile(file);
             if (leaf.view instanceof InkView) leaf.view.exportPdf();
           },
+          isInkFile: (file) => this.isInkFile(file),
         }),
     );
     // FineNotes' own icons, before any button that uses them is made.

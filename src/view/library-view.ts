@@ -32,7 +32,7 @@ import {
 } from "obsidian";
 import {
   ICON_IMPORT_NOTEBOOK,
-  NOTEBOOK_FILE_SUFFIX,
+  PRACTICE_FILE_SUFFIX,
   VIEW_TYPE_INK,
   VIEW_TYPE_LIBRARY,
 } from "../constants";
@@ -55,6 +55,7 @@ import { RenameModal } from "./rename-modal";
 import { pickImageFile } from "./image-import";
 import { VaultPdfSuggestModal } from "./pdf-import-modal";
 import { INBOX_FOLDER } from "../model/inbox";
+import { inkFileSuffix } from "../model/new-notebook";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
 import {
@@ -98,6 +99,8 @@ export interface LibraryHost {
   setFolderStyles(styles: FolderStyles): void;
   /** Open a notebook and start its "Export as PDF". */
   exportPdf(file: TFile): Promise<void>;
+  /** Whether a file is an ink note: a notebook, a single page, a board, or a pre-0.2 `.ink.md`. */
+  isInkFile(file: TFile): boolean;
 }
 
 /** A folder as the library lists it. */
@@ -245,10 +248,10 @@ export class LibraryView extends ItemView {
     this.watchPull(this.bodyEl);
     this.barEl = root.createDiv({ cls: "goodobsidian-library-bar is-hidden" });
 
+    // A deleted note's frontmatter may be gone already: one read before counts too.
     const touched = (file: TAbstractFile): void => {
-      if (file instanceof TFile && file.name.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX))
+      if (!(file instanceof TFile) || this.reads.has(file.path) || this.isNotebook(file))
         this.refreshSoon();
-      else if (!(file instanceof TFile)) this.refreshSoon();
     };
     this.registerEvent(this.app.vault.on("create", touched));
     this.registerEvent(this.app.vault.on("delete", touched));
@@ -290,19 +293,22 @@ export class LibraryView extends ItemView {
     }
   }
 
+  /** A notebook the library lists: any ink note but a handwriting practice sheet, outside the inbox. */
+  private isNotebook(file: TFile): boolean {
+    return (
+      this.host.isInkFile(file) &&
+      !file.name.toLowerCase().endsWith(PRACTICE_FILE_SUFFIX) &&
+      !file.path.startsWith(`${INBOX_FOLDER}/`)
+    );
+  }
+
   private isNotebookPath(path: string): boolean {
-    return path.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX);
+    const file = this.app.vault.getFileByPath(path);
+    return file !== null && this.isNotebook(file);
   }
 
   private notebookFiles(): TFile[] {
-    return this.app.vault
-      .getFiles()
-      .filter(
-        (f) =>
-          f.extension === "md" &&
-          f.name.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX) &&
-          !f.path.startsWith(`${INBOX_FOLDER}/`),
-      );
+    return this.app.vault.getFiles().filter((f) => this.isNotebook(f));
   }
 
   private entries(): LibraryEntry[] {
@@ -425,7 +431,7 @@ export class LibraryView extends ItemView {
     if (this.folder === "" && stars.length > 0) {
       const books = all.filter((e) => isStarred(stars, e.path));
       const folders = stars
-        .filter((path) => !path.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX))
+        .filter((path) => this.app.vault.getAbstractFileByPath(path) instanceof TFolder)
         .map((path) => this.folderTile(all, path))
         .filter((f): f is FolderTile => f !== null);
       if (books.length + folders.length > 0) {
@@ -1112,7 +1118,9 @@ export class LibraryView extends ItemView {
       item
         .setTitle("Rename")
         .setIcon("pencil")
-        .onClick(() => this.rename(file, entry.title, NOTEBOOK_FILE_SUFFIX)),
+        .onClick(() =>
+          this.rename(file, entry.title, inkFileSuffix(file.name) ?? `.${file.extension}`),
+        ),
     );
     menu.addItem((item) =>
       item

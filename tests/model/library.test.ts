@@ -54,6 +54,12 @@ describe("entryFromText", () => {
     expect(read).toEqual(placeholderEntry("Notes/Plain.notebook.md", 9));
     expect(read.pages).toBe(0);
   });
+
+  it("names a single page, a pre-0.2 note and one marked ink in its frontmatter by their names", () => {
+    expect(placeholderEntry("Sketch.page.md", 1).title).toBe("Sketch");
+    expect(placeholderEntry("Old.ink.md", 1).title).toBe("Old");
+    expect(placeholderEntry("Marked.md", 1).title).toBe("Marked");
+  });
 });
 
 describe("browse", () => {

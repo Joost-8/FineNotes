@@ -9,7 +9,7 @@
  */
 
 import { type PageGeometry, type PdfBackdrop, isCoverRuling } from "./document";
-import { stripInkSuffix } from "./new-notebook";
+import { inkFileSuffix, stripInkSuffix } from "./new-notebook";
 import { parseInkFile } from "./serialize";
 
 /** What the library knows of one notebook. */
@@ -40,7 +40,7 @@ export interface LibraryEntry {
 export function placeholderEntry(path: string, edited: number): LibraryEntry {
   return {
     path,
-    title: stripInkSuffix(baseName(path)),
+    title: titleOf(baseName(path)),
     folder: folderOf(path),
     pages: 0,
     color: FALLBACK_COLOR,
@@ -49,6 +49,11 @@ export function placeholderEntry(path: string, edited: number): LibraryEntry {
     covered: false,
     edited,
   };
+}
+
+/** A notebook's name: its file's without the ink suffix, or the ".md" of one marked ink in its frontmatter. */
+function titleOf(name: string): string {
+  return inkFileSuffix(name) ? stripInkSuffix(name) : name.replace(/.md$/i, "");
 }
 
 /** Cover colour for a notebook with none to read. */

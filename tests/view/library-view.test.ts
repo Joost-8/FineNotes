@@ -12,6 +12,7 @@ const { LibraryView } = await import("../../src/view/library-view");
 const { memoryVault } = await import("./memory-vault");
 
 interface Inside {
+  entries(): { path: string; title: string }[];
   reads: Map<string, { mtime: number; entry: { pages: number } }>;
   readStale(): Promise<void>;
 }
@@ -19,7 +20,11 @@ interface Inside {
 function viewOn(paths: string[]) {
   const vault = memoryVault(paths);
   const app = { ...vault.app, loadLocalStorage: () => null };
-  const view = new LibraryView(new WorkspaceLeaf(app) as never, {} as never);
+  // The plugin's isInkFile, by name only: these fakes have no frontmatter.
+  const host = {
+    isInkFile: (file: FakeFile) => /.(notebook|page|practice|ink).md$/i.test(file.name),
+  };
+  const view = new LibraryView(new WorkspaceLeaf(app) as never, host as never);
   return { vault, app, view, inside: view as unknown as Inside };
 }
 
@@ -49,5 +54,24 @@ describe("reading notebooks", () => {
     await Promise.all([first, second]);
     expect(inside.reads.get("B.notebook.md")?.mtime).toBe(50);
     expect(asked.filter((p) => p === "B.notebook.md")).toHaveLength(2);
+  });
+});
+
+describe("what the library lists", () => {
+  it("lists every kind of notebook, but not practice sheets or the inbox", () => {
+    const { inside } = viewOn([
+      "Physics.notebook.md",
+      "Sketch.page.md",
+      "Old notes.ink.md",
+      "Plain note.md",
+      "FineNotes assets/Handwriting sheets/Handwriting practice 1.practice.md",
+      "FineNotes inbox/Scan.notebook.md",
+    ]);
+    expect(
+      inside
+        .entries()
+        .map((e) => e.title)
+        .sort(),
+    ).toEqual(["Old notes", "Physics", "Sketch"]);
   });
 });
