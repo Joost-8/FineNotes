@@ -566,7 +566,7 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.workspace.on("layout-change", () => this.syncExplorerNotebookButton()),
     );
     this.app.workspace.onLayoutReady(() => this.syncExplorerNotebookButton());
-    this.addRibbonIcon(ICON_NEW_NOTEBOOK, "New notebook", () => this.openNewNotebookDialog());
+    // The library is the way in: notebooks are made there (its +), not from a ribbon icon of their own.
     this.addRibbonIcon("library", "Notebook library", () => void this.openLibrary());
     this.addCommands();
 

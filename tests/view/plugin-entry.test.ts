@@ -484,8 +484,8 @@ describe("registration", () => {
   it("registers the notebook view, the ribbon button and the two link handlers", async () => {
     await load();
     expect([...registered.views.keys()]).toEqual([INK, "finenotes-library"]);
-    expect(registered.ribbon.map((r) => r.icon)).toEqual(["notebook-pen", "library"]);
-    expect(registered.ribbon[0].title).toBe("New notebook");
+    expect(registered.ribbon.map((r) => r.icon)).toEqual(["library"]);
+    expect(registered.ribbon[0].title).toBe("Notebook library");
     // The import icon is FineNotes' own, so it must be registered before use.
     expect(addedIcons.has("finenotes-notebook-import")).toBe(true);
     expect([...registered.protocolHandlers.keys()]).toEqual([
