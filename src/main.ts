@@ -19,8 +19,8 @@ import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import { WordCheck } from "./view/word-check";
 import {
-  folderNotebookName,
   followPairRename,
+  isNotebookOwnFolder,
   outsideNotebookFolder,
 } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
@@ -2361,9 +2361,11 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * `folder`, or the folder the notebook lives in when `folder` is (or lies
-   * in) a notebook's own folder: a new notebook never goes in another's
-   * (discussion #43, where the active notebook's folder was the default).
+   * `folder`, or the folder the notebook lives in when `folder` is a
+   * notebook's own folder or one of its folders for files: a new notebook
+   * never goes in another's (discussion #43, where the active notebook's
+   * folder was the default). Whether the explorer shows such folders as
+   * notebooks does not matter: the folder is the notebook's either way.
    */
   private outsideNotebook(folder: string): string {
     return outsideNotebookFolder(normalizeFolder(folder), (path) => {
@@ -2373,7 +2375,7 @@ export default class GoodObsidianPlugin extends Plugin {
         name: child.name,
         folder: child instanceof TFolder,
       }));
-      return folderNotebookName(dir.name, entries) !== undefined;
+      return isNotebookOwnFolder(dir.name, entries);
     });
   }
 

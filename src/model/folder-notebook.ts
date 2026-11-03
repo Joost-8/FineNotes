@@ -15,6 +15,7 @@ import {
   OWN_FOLDER_EXPORTS,
   OWN_FOLDER_IMAGES,
   OWN_FOLDER_TRANSCRIPTS,
+  OWN_FOLDERS,
   inkFileSuffix,
   stripInkSuffix,
 } from "./new-notebook";
@@ -69,22 +70,46 @@ export function isFolderNotebook(notePath: string): boolean {
 }
 
 /**
+ * Whether a folder called `folderName` holding `entries` is a notebook's own
+ * folder: it holds the notebook named after it (`folderNotebookName`) and no
+ * other notebook. A folder with more notebooks in it is the user's, even when
+ * one of them shares its name (notebooks made without folders of their own).
+ */
+export function isNotebookOwnFolder(folderName: string, entries: readonly FolderEntry[]): boolean {
+  const own = folderNotebookName(folderName, entries);
+  if (own === undefined) return false;
+  return !entries.some(({ name, folder }) => !folder && name !== own && inkFileSuffix(name));
+}
+
+/** Whether `name` is one of the folders a notebook keeps its files in (`Images`, …). */
+function isOwnSubfolder(name: string): boolean {
+  const key = name.toLowerCase();
+  return OWN_FOLDERS.some((sub) => sub.toLowerCase() === key);
+}
+
+/**
  * The folder a new notebook made "in" `folder` really goes in: `folder`
- * itself, unless it is a notebook's own folder or lies inside one (its
- * `Transcripts/`, say), in which case the folder that notebook lives in. A
- * notebook's own folder holds that notebook and its files, never another
- * notebook (FineNotes discussion #43: a board made while a notebook was open
- * landed beside that notebook's `AI chats/`). `isNotebookFolder` says
- * whether a vault folder is one (`folderNotebookName` over its entries).
- * The deepest such folder decides, so a user's own folder that happens to
- * hold a notebook of its name further up is left alone.
+ * itself, unless it is a notebook's own folder or lies inside one of its
+ * folders for files (its `Transcripts/`, say, or a folder in that), in which
+ * case the folder that notebook lives in. A notebook's own folder holds that
+ * notebook and its files, never another notebook (FineNotes discussion #43: a
+ * board made while a notebook was open landed beside that notebook's
+ * `AI chats/`). `isNotebookFolder` says whether a vault folder is one
+ * (`isNotebookOwnFolder` over its entries). Any other folder is the user's
+ * and is left alone, even inside a folder that holds a notebook of its name
+ * (`Uni/Math` beside `Uni/Uni.page.md`). The deepest notebook folder decides.
  */
 export function outsideNotebookFolder(
   folder: string,
   isNotebookFolder: (path: string) => boolean,
 ): string {
-  for (let path = folder; path !== ""; path = parentPath(path)) {
-    if (isNotebookFolder(path)) return parentPath(path);
+  if (folder === "") return folder;
+  if (isNotebookFolder(folder)) return parentPath(folder);
+  const segments = folder.split("/");
+  for (let n = segments.length - 1; n >= 1; n--) {
+    if (!isOwnSubfolder(segments[n])) continue;
+    const notebook = segments.slice(0, n).join("/");
+    if (isNotebookFolder(notebook)) return parentPath(notebook);
   }
   return folder;
 }
