@@ -9,6 +9,9 @@
 /** The view type id of the notebook view; saved in workspace layouts. */
 export const VIEW_TYPE_INK = "goodobsidian-view";
 
+/** The view type id of the notebook library; saved in workspace layouts. */
+export const VIEW_TYPE_LIBRARY = "finenotes-library";
+
 /**
  * The plugin id every release before the public one used. Settings saved
  * under it are carried over once when the plugin runs under a new id.

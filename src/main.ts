@@ -47,6 +47,7 @@ import {
   ICON_STYLUS_ONLY_SVG,
   PREVIOUS_PLUGIN_ID,
   VIEW_TYPE_INK,
+  VIEW_TYPE_LIBRARY,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
 import { laserDefaultColorOf } from "./settings-data";
@@ -125,6 +126,7 @@ import {
 import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
+import { LibraryView } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
 import { PageEmbeds } from "./view/page-embed";
 import type { EraserMode } from "./view/toolbar";
@@ -430,6 +432,10 @@ export default class GoodObsidianPlugin extends Plugin {
     // Fonts fetched for text boxes leave the document with the plugin.
     this.register(disposeVaultFonts);
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
+    this.registerView(
+      VIEW_TYPE_LIBRARY,
+      (leaf) => new LibraryView(leaf, { newNotebook: () => this.openNewNotebookDialog() }),
+    );
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
     addIcon(ICON_STYLUS_ONLY, ICON_STYLUS_ONLY_SVG);
@@ -552,6 +558,7 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.app.workspace.onLayoutReady(() => this.syncExplorerNotebookButton());
     this.addRibbonIcon(ICON_NEW_NOTEBOOK, "New notebook", () => this.openNewNotebookDialog());
+    this.addRibbonIcon("library", "Notebook library", () => void this.openLibrary());
     this.addCommands();
 
     this.settingTab = new GoodObsidianSettingTab(this.app, this);
@@ -594,6 +601,14 @@ export default class GoodObsidianPlugin extends Plugin {
     this.register(() => window.clearTimeout(timer));
   }
 
+  /** The notebook library: the tab that is already open, or a new one. */
+  private async openLibrary(): Promise<void> {
+    const open = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
+    const leaf = open ?? this.app.workspace.getLeaf("tab");
+    if (!open) await leaf.setViewState({ type: VIEW_TYPE_LIBRARY, active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
   // --- Commands ---------------------------------------------------------------
 
   /**
@@ -612,6 +627,12 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "create-notebook-with-last-settings",
       name: "Create notebook with last settings",
       callback: () => void this.createNotebookWithLastSettings(),
+    });
+
+    this.addCommand({
+      id: "open-library",
+      name: "Open the notebook library",
+      callback: () => void this.openLibrary(),
     });
 
     this.addCommand({

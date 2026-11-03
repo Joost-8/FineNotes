@@ -241,6 +241,19 @@ class Shell {
   constructor(..._args: unknown[]) {}
 }
 
+/** A view that is only constructed here, never opened. */
+export class ItemView extends Component {
+  readonly contentEl: unknown = {};
+  readonly containerEl: unknown = {};
+  navigation = true;
+  app: unknown;
+
+  constructor(public leaf: WorkspaceLeaf) {
+    super();
+    this.app = leaf.app;
+  }
+}
+
 export class Modal extends Shell {
   open(): void {}
   close(): void {}

@@ -448,6 +448,7 @@ describe("registration", () => {
         "import-vault-pdf",
         "learn-handwriting",
         "new-from-template",
+        "open-library",
         "read-handwriting-on-device",
         "recognize-handwriting",
         "scan-document",
@@ -482,8 +483,8 @@ describe("registration", () => {
 
   it("registers the notebook view, the ribbon button and the two link handlers", async () => {
     await load();
-    expect([...registered.views.keys()]).toEqual([INK]);
-    expect(registered.ribbon.map((r) => r.icon)).toEqual(["notebook-pen"]);
+    expect([...registered.views.keys()]).toEqual([INK, "finenotes-library"]);
+    expect(registered.ribbon.map((r) => r.icon)).toEqual(["notebook-pen", "library"]);
     expect(registered.ribbon[0].title).toBe("New notebook");
     // The import icon is FineNotes' own, so it must be registered before use.
     expect(addedIcons.has("finenotes-notebook-import")).toBe(true);
