@@ -17,6 +17,12 @@ const pdf = {
     argsArray: unknown[];
   } | null,
   operatorCalls: 0,
+  /** Text of a page (1-based) that differs from `items`. */
+  itemsByPage: {} as Record<number, unknown[]>,
+  /** How many times a page's text was asked for; past `allowCalls` the answer waits for `gate`. */
+  textCalls: 0,
+  allowCalls: Number.POSITIVE_INFINITY,
+  gate: null as Promise<void> | null,
 };
 // pdf.js's numbers for the operators the figure finder reads.
 const OPS = { save: 10, restore: 11, transform: 12, paintImageXObject: 30 };
@@ -29,14 +35,18 @@ vi.mock("obsidian", async () => ({
       getDocument: () => ({
         promise: Promise.resolve({
           numPages: pdf.pages,
-          getPage: () =>
+          getPage: (n: number) =>
             Promise.resolve({
               getViewport: ({ scale }: { scale: number }) => ({
                 width: 400 * scale,
                 height: 560 * scale,
                 transform: [scale, 0, 0, -scale, 0, 560 * scale],
               }),
-              getTextContent: () => Promise.resolve({ items: pdf.items, styles: {} }),
+              getTextContent: async () => {
+                pdf.textCalls++;
+                if (pdf.textCalls > pdf.allowCalls && pdf.gate) await pdf.gate;
+                return { items: pdf.itemsByPage[n] ?? pdf.items, styles: {} };
+              },
               getOperatorList: () => {
                 pdf.operatorCalls++;
                 return pdf.ops
@@ -132,7 +142,10 @@ function cacheWith(
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {
-  vi.stubGlobal("window", { location: { origin: "app://obsidian.md" } });
+  vi.stubGlobal("window", {
+    location: { origin: "app://obsidian.md" },
+    setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
+  });
 });
 
 afterEach(() => {
@@ -140,6 +153,10 @@ afterEach(() => {
   pdf.items = [];
   pdf.ops = { fnArray: [], argsArray: [] };
   pdf.operatorCalls = 0;
+  pdf.itemsByPage = {};
+  pdf.textCalls = 0;
+  pdf.allowCalls = Number.POSITIVE_INFINITY;
+  pdf.gate = null;
 });
 
 describe("PdfTextCache with OCR", () => {
@@ -421,7 +438,12 @@ describe("PdfTextCache with OCR", () => {
         Promise.resolve(lexicon),
       );
       withList.request(BACKDROP);
-      await settle();
+      // The PDF's whole vocabulary is read in the background first; the page is merged again after.
+      for (let i = 0; i < 200; i++) {
+        await settle();
+        const now = withList.peek(BACKDROP, GEOMETRY);
+        if (now && layoutPlainText(now).includes("External")) break;
+      }
       const layoutWith = withList.peek(BACKDROP, GEOMETRY);
       expect(layoutWith && layoutPlainText(layoutWith).split("\n")).toContain("External");
 
@@ -477,6 +499,143 @@ describe("PdfTextCache with OCR", () => {
       await settle();
       const plan = (calls.natives[0] as { plan?: { condition: string } }).plan;
       expect(plan?.condition).toBe("SCANNED");
+    });
+  });
+
+  describe("the PDF's vocabulary", () => {
+    const line = (str: string, yUp: number): unknown => ({
+      str,
+      transform: [10, 0, 0, 10, 20, yUp],
+      width: str.length * 5.5,
+      height: 10,
+      fontName: "f1",
+    });
+    /** Three pages; only the third (index 2) has the word "external" in its own text. */
+    const setup = (): void => {
+      pdf.itemsByPage = {
+        1: [line("the anatomy of the bladder is shown", 500)],
+        2: [line("a page about the sling procedure", 500)],
+        3: [line("the external sphincter closes the urethra", 500)],
+      };
+    };
+    const misread: OcrPage = {
+      imageWidth: 600,
+      imageHeight: 450,
+      pageWidth: 400,
+      pageHeight: 560,
+      condition: "TEXT_WITH_FIGURES",
+      regions: [{ x0: 94, y0: 104, x1: 306, y1: 266, dpi: 300 }],
+      lines: [
+        {
+          conf: 0.98,
+          words: [{ text: "Extemal", box: [150, 340, 200, 352], conf: 0.98, min: 0.9 }],
+        },
+      ],
+    };
+    const lexicon = new Set(
+      Array.from({ length: 1200 }, (_, i) => `word${"abcdefghij"[i % 10]}${i}`),
+    );
+    const backdrop = (page: number) => ({ kind: "pdf" as const, path: "Scan.pdf", page });
+    const lines = (cache: InstanceType<typeof PdfTextCache>, page: number): string[] => {
+      const layout = cache.peek(backdrop(page), GEOMETRY);
+      return layout ? layoutPlainText(layout).split("\n") : [];
+    };
+    /** Wait, a tick at a time, until `done` holds (or give up). */
+    const until = async (done: () => boolean): Promise<void> => {
+      for (let i = 0; i < 200 && !done(); i++) await settle();
+    };
+    const open = () =>
+      cacheWith(fakeOcr(misread, true, true).service, () => Promise.resolve(lexicon));
+
+    it("gives the same text whichever page was read first", async () => {
+      setup();
+      const finals: string[][][] = [];
+      for (const order of [
+        [0, 1, 2],
+        [2, 1, 0],
+      ]) {
+        const cache = open();
+        for (const page of order) {
+          cache.request(backdrop(page));
+          await until(() => cache.peek(backdrop(page), GEOMETRY) !== null);
+        }
+        await until(() => [0, 1, 2].every((p) => lines(cache, p).includes("External")));
+        finals.push([0, 1, 2].map((p) => lines(cache, p)));
+        cache.destroy();
+      }
+      expect(finals[0]).toEqual(finals[1]);
+      expect(finals[0][0]).toContain("External");
+      expect(finals[0][0]).not.toContain("Extemal");
+    });
+
+    it("shows the words as read until the vocabulary is complete, then reads the page again", async () => {
+      setup();
+      // The first answer is the page's own (call 1); the vocabulary's pages wait for the gate.
+      pdf.allowCalls = 1;
+      let release = (): void => undefined;
+      pdf.gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const cache = open();
+      const landed: number[] = [];
+      cache.onReady = (_path, page) => landed.push(page);
+      cache.request(backdrop(0));
+      await until(() => cache.peek(backdrop(0), GEOMETRY) !== null);
+      expect(lines(cache, 0)).toContain("Extemal");
+      expect(lines(cache, 0)).not.toContain("External");
+      const before = landed.length;
+      release();
+      await until(() => lines(cache, 0).includes("External"));
+      expect(lines(cache, 0)).not.toContain("Extemal");
+      // The page was announced again, as when OCR text arrives.
+      expect(landed.length).toBeGreaterThan(before);
+      cache.destroy();
+    });
+
+    it("reads the vocabulary's pages only while the pen is up", async () => {
+      setup();
+      pdf.allowCalls = 1;
+      let release = (): void => undefined;
+      pdf.gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const cache = open();
+      cache.request(backdrop(0));
+      await until(() => cache.peek(backdrop(0), GEOMETRY) !== null);
+      // Down on the pen: the page being read finishes, the next waits.
+      cache.setHeld(true);
+      release();
+      await until(() => pdf.textCalls >= 2);
+      for (let i = 0; i < 20; i++) await settle();
+      expect(pdf.textCalls).toBe(2);
+      expect(lines(cache, 0)).toContain("Extemal");
+      cache.setHeld(false);
+      await until(() => lines(cache, 0).includes("External"));
+      // Three pages of vocabulary, and the page that carries the words read again.
+      expect(pdf.textCalls).toBe(5);
+      cache.destroy();
+    });
+
+    it("stops reading when the PDF is let go or the cache closes", async () => {
+      for (const stop of ["forget", "destroy"] as const) {
+        pdf.textCalls = 0;
+        setup();
+        pdf.allowCalls = 1;
+        let release = (): void => undefined;
+        pdf.gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const cache = open();
+        cache.request(backdrop(0));
+        await until(() => cache.peek(backdrop(0), GEOMETRY) !== null);
+        if (stop === "forget") cache.forget("Scan.pdf");
+        else cache.destroy();
+        release();
+        for (let i = 0; i < 20; i++) await settle();
+        // The page in hand was finished; no page after it was asked for.
+        expect(pdf.textCalls).toBe(2);
+        cache.destroy();
+      }
     });
   });
 });

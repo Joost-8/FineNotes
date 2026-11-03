@@ -147,6 +147,13 @@ async function bundledLexicon(): Promise<ReadonlySet<string> | null> {
   }
 }
 
+/** A PDF's own words, as far as they are read. */
+interface Vocabulary {
+  words: Set<string>;
+  complete: boolean;
+  cancelled: boolean;
+}
+
 function pageKey(path: string, page: number): string {
   return `${path}:${page}`;
 }
@@ -175,8 +182,14 @@ export class PdfTextCache implements OcrOwner {
   /** Pages whose OCR text arrived while they were being read: read again afterwards. */
   private readonly again = new Set<string>();
 
-  /** Each PDF's own words (four letters or more, lower case), from the pages read so far. */
-  private readonly vocabularies = new Map<string, Set<string>>();
+  /**
+   * Each PDF's own words (four letters or more, lower case), from the text of
+   * all its pages, read in the background. Corrections wait for it to be
+   * complete, so what a page reads as never depends on which page was read first.
+   */
+  private readonly vocabularies = new Map<string, Vocabulary>();
+  /** Vocabulary builders waiting for the pen to lift. */
+  private readonly unheld: Array<() => void> = [];
   private lexicon: Promise<ReadonlySet<string> | null> | null = null;
 
   constructor(
@@ -318,6 +331,7 @@ export class PdfTextCache implements OcrOwner {
     if (this.held === held) return;
     this.held = held;
     if (held) return;
+    for (const wake of this.unheld.splice(0)) wake();
     const waiting = [...this.deferred.values()];
     this.deferred.clear();
     for (const backdrop of waiting) this.request(backdrop);
@@ -329,7 +343,7 @@ export class PdfTextCache implements OcrOwner {
     this.failed.delete(path);
     for (const key of [...this.failed.keys()]) if (key.startsWith(prefix)) this.failed.delete(key);
     for (const key of [...this.pages.keys()]) if (key.startsWith(prefix)) this.pages.delete(key);
-    this.vocabularies.delete(path);
+    this.dropVocabulary(path);
     for (const key of [...this.layouts.keys()])
       if (key.startsWith(prefix)) this.layouts.delete(key);
     for (const key of [...this.scanned.keys()])
@@ -352,7 +366,7 @@ export class PdfTextCache implements OcrOwner {
     this.failed.clear();
     this.pages.clear();
     this.layouts.clear();
-    this.vocabularies.clear();
+    for (const path of [...this.vocabularies.keys()]) this.dropVocabulary(path);
     this.onReady = null;
     for (const key of [...this.waiters.keys()]) this.wake(key);
   }
@@ -404,7 +418,6 @@ export class PdfTextCache implements OcrOwner {
       const matrix: Matrix = [t[0], t[1], t[2], t[3], t[4], t[5]];
       const source = { width: viewport.width, height: viewport.height };
       const native = readTextItems(content);
-      this.learnWords(backdrop.path, native, matrix, source);
       return {
         items: await this.withOcr(backdrop, doc.numPages, native, matrix, source, page),
         links,
@@ -483,27 +496,82 @@ export class PdfTextCache implements OcrOwner {
     return native;
   }
 
-  /** The words of a page's own text join its PDF's vocabulary. */
-  private learnWords(
-    path: string,
-    native: PdfTextItem[],
-    viewport: Matrix,
-    source: { width: number; height: number },
-  ): void {
-    if (!this.ocr?.enabled || native.length === 0) return;
-    let vocabulary = this.vocabularies.get(path);
-    if (!vocabulary) this.vocabularies.set(path, (vocabulary = new Set()));
-    for (const w of wordsOfLayout(layoutText(native, pdfToPage(viewport, source, source)))) {
-      vocabulary.add(w);
-    }
-  }
-
-  /** The PDF's words and the English list, for correcting what OCR misread; null without the list. */
+  /**
+   * The PDF's words and the English list, for correcting what OCR misread;
+   * undefined until the whole PDF's vocabulary has been read (the words then
+   * show as read, and the pages are merged again when it is complete), and
+   * without the list.
+   */
   private async dictionary(path: string) {
     this.lexicon ??= this.words().catch(() => null);
     const lexicon = await this.lexicon;
+    if (!lexicon) return undefined;
+    let vocabulary = this.vocabularies.get(path);
+    if (!vocabulary) {
+      vocabulary = { words: new Set(), complete: false, cancelled: false };
+      this.vocabularies.set(path, vocabulary);
+      void this.buildVocabulary(path, vocabulary);
+    }
+    return vocabulary.complete ? { vocabulary: vocabulary.words, lexicon } : undefined;
+  }
+
+  /** The vocabulary of `path` is let go (the file changed, or the cache is closing): its build stops. */
+  private dropVocabulary(path: string): void {
     const vocabulary = this.vocabularies.get(path);
-    return lexicon && vocabulary ? { vocabulary, lexicon } : undefined;
+    if (vocabulary) vocabulary.cancelled = true;
+    this.vocabularies.delete(path);
+    for (const wake of this.unheld.splice(0)) wake();
+  }
+
+  /** Resolves when the pen is up, or `stop` says so (at once if it is up). */
+  private async penUp(stop: () => boolean): Promise<void> {
+    while (this.held && !stop()) await new Promise<void>((resolve) => this.unheld.push(resolve));
+  }
+
+  /**
+   * Read the own text of every page of `path`, one page at a time and only
+   * while the pen is up (text only: no raster, no model), into `vocabulary`.
+   * When it is complete the pages that carry OCR words are read again, so
+   * they take its corrections.
+   */
+  private async buildVocabulary(path: string, vocabulary: Vocabulary): Promise<void> {
+    const stop = (): boolean => vocabulary.cancelled || this.destroyed;
+    try {
+      const doc = await this.document(path);
+      if (!doc) throw new Error("not opened");
+      for (let n = 1; n <= doc.numPages; n++) {
+        await this.penUp(stop);
+        if (stop()) return;
+        const page = await doc.getPage(n);
+        try {
+          const viewport = page.getViewport({ scale: 1 });
+          const t = viewport.transform;
+          if (t.length >= 6 && viewport.width > 0 && viewport.height > 0) {
+            const matrix: Matrix = [t[0], t[1], t[2], t[3], t[4], t[5]];
+            const source = { width: viewport.width, height: viewport.height };
+            const items = readTextItems(await page.getTextContent());
+            const layout = layoutText(items, pdfToPage(matrix, source, source));
+            for (const word of wordsOfLayout(layout)) vocabulary.words.add(word);
+          }
+        } finally {
+          page.cleanup?.();
+        }
+        // The next page after the pen and the queue had a turn.
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        if (stop()) return;
+      }
+      vocabulary.complete = true;
+      for (const key of [...this.scanned.keys()]) {
+        if (key.startsWith(`${path}:`)) this.ocrReady(path, Number(key.slice(path.length + 1)));
+      }
+    } catch {
+      // Tried again the next time a page needs it, after a while: its words show as read meanwhile.
+      if (this.vocabularies.get(path) === vocabulary) {
+        window.setTimeout(() => {
+          if (this.vocabularies.get(path) === vocabulary) this.vocabularies.delete(path);
+        }, RETRY_MS);
+      }
+    }
   }
 
   /** pdf.js's operator numbers. */

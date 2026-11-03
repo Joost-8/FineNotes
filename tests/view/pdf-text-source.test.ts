@@ -78,7 +78,10 @@ function landed(c: InstanceType<typeof PdfTextCache>): Promise<{ path: string; p
 }
 
 beforeEach(() => {
-  vi.stubGlobal("window", { location: { origin: "app://obsidian.md" } });
+  vi.stubGlobal("window", {
+    location: { origin: "app://obsidian.md" },
+    setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
+  });
 });
 
 afterEach(() => {

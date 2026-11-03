@@ -454,9 +454,22 @@ taken off, nor a word that differs only in its last letter ("slings"/"sling", "c
 are different words); and the OCR word has a case style to keep (all capitals, a capital first letter, or
 lower case). Distances cost 1 for an edit, `correctConfusion` (0.4) for rn/m, cl/d, vv/w, li/h in either
 direction and I/l/1 and O/0, and `correctDoubled` (0.5) for a doubled letter or a missing double.
-The PDF's vocabulary is the lower-case words of four letters or more of every page whose own text has
-been read so far (a PDF being browsed learns as it goes; a page already merged is not merged again when a
-later page adds words).
+**The vocabulary is the whole PDF's, independent of reading order.** It is the lower-case words of four
+letters or more of the own text of every page of the PDF, read in the background the first time a page
+with OCR words needs a dictionary: one page at a time (`getTextContent` only: no raster, no model),
+only while the pen is up, and stopped at once if the PDF is let go or the cache closes. It is kept in
+memory per PDF, not in the sidecar: reading a page's text takes a few milliseconds (the 16 pages of
+53.pdf in well under a second), so storing it would only grow the sidecar, and a file that changes
+simply drops it. Until it is complete, OCR words show as read (uncorrected). When it completes, every
+page of that PDF that carries OCR words is read again through the path an OCR result takes (`ocrReady`),
+so its layout and search text are made again with the final vocabulary. What a page reads as therefore
+depends only on the PDF and the settings, never on which page was opened first.
+
+Measured with the real modules on 53.pdf, the pages focused in the order 1 to 16 and in the order 16 to 1:
+the text of all 16 pages as the product shows it (layout and search text) is identical, equal to the text
+computed directly with the whole vocabulary; the kept words, the four corrections and every search hit
+("Bladder" 90, "sling" 10, "urethra" 54, "Pubic bone" 13) are identical; recall is 145 / 171 = 84.8%,
+precision 406 / 416 = 97.6% and CER 1.21% in both orders.
 
 Every correction made on 53.pdf (raw to corrected), with the whole PDF's vocabulary:
 
@@ -517,7 +530,5 @@ labels at 8 pt; the text is 46 lines of Helvetica over the picture), through the
   remaining misses (see the diagnosis table); label recall on the lecture figures is 84.8%, one label
   under the 85% aimed for.
 - Clip paths other than the page edge are not tracked.
-- Settings changes apply to the next time a page is read; a notebook already open
-  keeps the text it has until the page is read again.
 - Hashing a PDF to name its cache reads its bytes once; very large PDFs on a phone
   pay for that once per file version.
