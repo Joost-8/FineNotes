@@ -14553,6 +14553,46 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   display: none;
 }
 
+/* A bar that scrolls says so: the end with more beyond it fades out, and a
+   thin thumb shows (toolbar.ts, syncScrollCues). */
+.goodobsidian-toolbar.is-upright.can-scroll-up,
+.goodobsidian-toolbar.is-upright.can-scroll-down {
+  scrollbar-width: thin;
+  scrollbar-color: var(--background-modifier-border-hover) transparent;
+  --gob-fade-top: 0px;
+  --gob-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--gob-fade-top),
+    #000 calc(100% - var(--gob-fade-bottom)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--gob-fade-top),
+    #000 calc(100% - var(--gob-fade-bottom)),
+    transparent 100%
+  );
+}
+.goodobsidian-toolbar.is-upright.can-scroll-up {
+  --gob-fade-top: 26px;
+}
+.goodobsidian-toolbar.is-upright.can-scroll-down {
+  --gob-fade-bottom: 26px;
+}
+.goodobsidian-toolbar.is-upright.can-scroll-up::-webkit-scrollbar,
+.goodobsidian-toolbar.is-upright.can-scroll-down::-webkit-scrollbar {
+  display: block;
+  width: 4px;
+}
+.goodobsidian-toolbar.is-upright.can-scroll-up::-webkit-scrollbar-thumb,
+.goodobsidian-toolbar.is-upright.can-scroll-down::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: var(--background-modifier-border-hover);
+}
+
 .goodobsidian-toolbar.is-upright.is-dock-left {
   border-right: var(--gob-bar-border);
 }

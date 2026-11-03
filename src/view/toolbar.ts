@@ -1101,6 +1101,8 @@ export class Toolbar {
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
     this.barEl.setAttribute("aria-label", "Handwriting tools");
+    // An upright bar taller than its room scrolls: say so at the ends it can go.
+    this.barEl.addEventListener("scroll", () => this.syncScrollCues(), { passive: true });
     this.barDock = parseBarDock(options.barDock);
     this.applyBarDock();
     // In the flow after the bar (before it along the bottom, styles.css), so
@@ -1411,6 +1413,7 @@ export class Toolbar {
     };
     const measure = (): void => {
       this.fitBar(this.indicatorTool);
+      this.syncScrollCues();
       // The buttons moved with the bar: the indicator follows, without a slide.
       this.placeIndicator(this.indicatorTool, null);
       this.placeUpdateTip();
@@ -1470,6 +1473,21 @@ export class Toolbar {
     this.moreButton?.toggleClass(
       "has-mark",
       this.foldedItems().some((item) => item.marked),
+    );
+  }
+
+  /**
+   * Mark which ends of a scrolling upright bar have more beyond them
+   * (`can-scroll-up`, `can-scroll-down`): styles.css fades those ends and
+   * shows a thin scroll thumb, so a hidden button is known to be there.
+   */
+  private syncScrollCues(): void {
+    const bar = this.barEl;
+    const scrolls = isBarUpright(this.barDock) && bar.scrollHeight > bar.clientHeight + 1;
+    bar.toggleClass("can-scroll-up", scrolls && bar.scrollTop > 1);
+    bar.toggleClass(
+      "can-scroll-down",
+      scrolls && bar.scrollTop + bar.clientHeight < bar.scrollHeight - 1,
     );
   }
 
