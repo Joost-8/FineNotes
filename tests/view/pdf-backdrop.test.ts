@@ -198,7 +198,15 @@ describe("PdfBackdropCache", () => {
     expect(pdf.renders).toBe(1);
     const thumbs = new VaultBackdropRenderer(c);
     const drawImage = vi.fn();
-    const ctx = { fillRect: vi.fn(), drawImage, save: vi.fn(), restore: vi.fn() };
+    const ctx = {
+      fillRect: vi.fn(),
+      drawImage,
+      save: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      restore: vi.fn(),
+    };
     thumbs.paint(ctx as never, { kind: "pdf", path: "a.pdf", page: 0 }, geometry, 1, {
       deviceScale: 0.25,
     });
@@ -436,6 +444,9 @@ describe("63-page deck at DPR 2", () => {
       fillRect: vi.fn(),
       drawImage: vi.fn(),
       save: vi.fn(),
+      beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
       restore: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
     for (let page = 0; page < 12; page++) c.request("slides.pdf", page, 0.25, { geometry });
@@ -491,6 +502,9 @@ describe("pages across, zoomed until the neighbours show", () => {
     fillRect: vi.fn(),
     drawImage: vi.fn(),
     save: vi.fn(),
+    beginPath: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
     restore: vi.fn(),
   } as unknown as CanvasRenderingContext2D;
   const side = (page: number, region: Record<string, number>) => ({
@@ -536,6 +550,35 @@ describe("pages across, zoomed until the neighbours show", () => {
     // Two strips' images are cheap; the three-page view costs about the page read.
     expect(c.bytes).toBeLessThan(70 * 1000 * 1000);
     expect(patches.length).toBeLessThanOrEqual(1);
+    c.destroy();
+  });
+
+  it("clips a page to its edge, so a raster rounded up cannot poke past it and stay light", async () => {
+    const c = cache();
+    pdf.pages = 63;
+    const painter = new VaultBackdropRenderer(c);
+    // 1000 x 1333 at 1.4 rounds up to 1400 x 1867 device px: a box past the edge.
+    const odd = { width: 1000, height: 1333 };
+    const backdrop = { kind: "pdf" as const, path: "slides.pdf", page: 3 };
+    c.request("slides.pdf", 3, 1.4, { geometry: odd });
+    await settle();
+    const calls: string[] = [];
+    const log = (name: string) => () => calls.push(name);
+    const recorder = {
+      save: log("save"),
+      restore: log("restore"),
+      beginPath: log("beginPath"),
+      clip: log("clip"),
+      rect: (...args: number[]) => calls.push(`rect ${args.join(",")}`),
+      fillRect: log("fillRect"),
+      drawImage: log("drawImage"),
+    } as unknown as CanvasRenderingContext2D;
+    painter.paint(recorder, backdrop, odd, 1, { deviceScale: 1.4 });
+    const draw = calls.indexOf("drawImage");
+    expect(draw).toBeGreaterThan(-1);
+    expect(calls.slice(0, draw)).toContain("rect 0,0,1000,1333");
+    expect(calls.slice(0, draw)).toContain("clip");
+    expect(calls.lastIndexOf("restore")).toBeGreaterThan(draw);
     c.destroy();
   });
 
@@ -618,6 +661,9 @@ describe("the page while a zoom's new scale renders", () => {
       const drawn: unknown[] = [];
       const ctx = {
         save: () => undefined,
+        beginPath: () => undefined,
+        rect: () => undefined,
+        clip: () => undefined,
         restore: () => undefined,
         fillRect: () => undefined,
         drawImage: (canvas: unknown) => drawn.push(canvas),
@@ -643,6 +689,9 @@ describe("the page while a zoom's new scale renders", () => {
     let drawn = 0;
     const ctx = {
       save: () => undefined,
+      beginPath: () => undefined,
+      rect: () => undefined,
+      clip: () => undefined,
       restore: () => undefined,
       fillRect: () => undefined,
       drawImage: () => drawn++,

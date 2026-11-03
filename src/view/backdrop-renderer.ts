@@ -336,6 +336,13 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       return;
     }
     const draws: PdfDraw[] = [];
+    // A raster's box is rounded up to whole px, so it can reach past the
+    // page's right and bottom edge; the inversion stops at the edge, and the
+    // overspill stayed light as a white line round a dark thumbnail.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, geometry.width, geometry.height);
+    ctx.clip();
     if (backdrop.annotations === false) this.pdf.skipAnnotations(backdrop.path);
     const scale =
       this.level !== null
@@ -389,6 +396,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
         draws.push({ source: canvas, x: box.x, y: box.y, w: box.w, h: box.h });
       }
     }
+    ctx.restore();
     if (invert) invertPdfArea(ctx, geometry.width, geometry.height, draws);
   }
 

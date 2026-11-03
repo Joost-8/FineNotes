@@ -23,6 +23,9 @@ function context() {
     fillRect: vi.fn(),
     drawImage: vi.fn(),
     save: vi.fn(),
+    beginPath: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
     restore: vi.fn(),
   } as unknown as CanvasRenderingContext2D;
 }
