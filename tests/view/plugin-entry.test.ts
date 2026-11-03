@@ -669,7 +669,10 @@ describe("registration", () => {
         await load();
         const home = app.addFile("Home.md", undefined, text);
         const leaf = markdownLeaf(home);
-        const detach = vi.fn();
+        // Closed only once the library is open: closing the only tab first leaves nowhere to open it.
+        const detach = vi.fn(() =>
+          expect(viewStateCalls.some((c) => c.state.type === "finenotes-library")).toBe(true),
+        );
         Object.assign(leaf, { detach });
         Object.assign(leaf.view as object, { getViewType: () => "markdown" });
         viewStateCalls.length = 0;

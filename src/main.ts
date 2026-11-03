@@ -2058,13 +2058,17 @@ export default class GoodObsidianPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
         if (file?.path !== HOME_FILE) return;
-        void this.app.vault.cachedRead(file).then((text) => {
+        void this.app.vault.cachedRead(file).then(async (text) => {
           if (!isOwnHomeText(text)) return;
+          const home: WorkspaceLeaf[] = [];
           this.app.workspace.iterateAllLeaves((leaf) => {
             const open = (leaf.view as { file?: TFile | null }).file;
-            if (leaf.view.getViewType() === "markdown" && open?.path === HOME_FILE) leaf.detach();
+            if (leaf.view.getViewType() === "markdown" && open?.path === HOME_FILE) home.push(leaf);
           });
-          void this.openLibrary();
+          // The library first: with the Home note the only tab, closing it first
+          // leaves no tab group to open the library in ("No tab group found").
+          await this.openLibrary();
+          for (const leaf of home) leaf.detach();
         });
       }),
     );
