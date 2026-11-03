@@ -485,6 +485,96 @@ describe("63-page deck at DPR 2", () => {
   });
 });
 
+describe("pages across, zoomed until the neighbours show", () => {
+  const geometry = { width: 1200, height: 1600 };
+  const ctx = {
+    fillRect: vi.fn(),
+    drawImage: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+  } as unknown as CanvasRenderingContext2D;
+  const side = (page: number, region: Record<string, number>) => ({
+    backdrop: { kind: "pdf" as const, path: "slides.pdf", page },
+    geometry,
+    region: region as never,
+  });
+  /** The centre page whole, a sliver of the one before and of the one after. */
+  const view = () => [
+    side(22, { minX: 1000, minY: 0, maxX: 1200, maxY: 1600 }),
+    side(23, { minX: 0, minY: 0, maxX: 1200, maxY: 1600 }),
+    side(24, { minX: 0, minY: 0, maxX: 200, maxY: 1600 }),
+  ];
+
+  /** Frames of the view at rest: ask, draw, let the renders land. */
+  async function rest(
+    painter: InstanceType<typeof VaultBackdropRenderer>,
+    level: number,
+    pages = view(),
+  ): Promise<void> {
+    for (let frame = 0; frame < 4; frame++) {
+      painter.prepare(pages, level, false);
+      for (const v of pages)
+        painter.paint(ctx, v.backdrop, geometry, 1, { deviceScale: level, region: v.region });
+      await settle();
+      clock += 100;
+    }
+  }
+
+  it("holds the neighbours' strips at a reduced image, with no detail", async () => {
+    const c = cache();
+    pdf.pages = 63;
+    const painter = new VaultBackdropRenderer(c);
+    await rest(painter, 2);
+    // Renders at 1 or less device px per page px are the side pages' whole
+    // images; at 2, the page being read (its image at the sharpest 1.44, then
+    // detail). Nothing else: no patch of a neighbour.
+    const widths = pdf.calls.map((call) => call.viewport.width);
+    const sideImages = widths.filter((w) => w <= 600 * 2 * 1 + 1e-6);
+    expect(sideImages).toHaveLength(2);
+    const patches = pdf.calls.filter((call) => call.transform && call.transform[4] !== 0);
+    expect(pdf.renders).toBeLessThanOrEqual(4);
+    // Two strips' images are cheap; the three-page view costs about the page read.
+    expect(c.bytes).toBeLessThan(70 * 1000 * 1000);
+    expect(patches.length).toBeLessThanOrEqual(1);
+    c.destroy();
+  });
+
+  it("settles, and stays within the budget the single page needs", async () => {
+    const c = cache();
+    pdf.pages = 63;
+    const painter = new VaultBackdropRenderer(c);
+    for (const level of [1.4, 2, 3]) {
+      await rest(painter, level);
+      const renders = pdf.renders;
+      await rest(painter, level);
+      expect(pdf.renders).toBe(renders);
+      expect(c.bytes).toBeLessThan(PDF_BUDGET.hard);
+    }
+    c.destroy();
+  });
+
+  it("gives a page its full image once most of it shows, and keeps it reduced until then", async () => {
+    const c = cache();
+    pdf.pages = 63;
+    const painter = new VaultBackdropRenderer(c);
+    const shown = (share: number) => [
+      side(22, { minX: 1200 * (1 - share), minY: 0, maxX: 1200, maxY: 1600 }),
+      side(23, { minX: 0, minY: 0, maxX: 1200, maxY: 1600 }),
+    ];
+    await rest(painter, 1.4, shown(0.3));
+    expect(pdf.calls.some((call) => Math.abs(call.viewport.width - 600 * 2 * 1) < 1e-6)).toBe(true);
+    // 45% shows: still a side page, so the pan across 40% does not swap rasters.
+    const before = pdf.renders;
+    await rest(painter, 1.4, shown(0.45));
+    expect(pdf.renders).toBe(before);
+    await rest(painter, 1.4, shown(0.6));
+    expect(pdf.calls.some((call) => Math.abs(call.viewport.width - 600 * 2 * 1.4) < 1e-6)).toBe(
+      true,
+    );
+    c.destroy();
+  });
+});
+
 // Joost's iPad recording of 1.0.4-beta.2: after a zoom, slides went blank
 // white until pdf.js finished the new scale.
 describe("the page while a zoom's new scale renders", () => {
