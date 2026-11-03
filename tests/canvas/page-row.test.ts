@@ -354,7 +354,7 @@ describe("one page per screen", () => {
     expect(rowTurnsPages(2, 0.5)).toBe(false);
   });
 
-  it("holds a zoomed-in row to its page's edges, plus a little desk", () => {
+  it("holds a zoomed-in row flush to its page's edges: no strip of desk at rest", () => {
     const layout = layoutPages(pages([1024, 1448], [1024, 1448]), { direction: "horizontal" });
     const scale = 2;
     const paneWidth = 1000;
@@ -362,6 +362,9 @@ describe("one page per screen", () => {
     const range = rowPageScrollRange(layout, 1, scale, paneWidth);
     expect(range.min).toBe(box.x * scale - ROW_PAGE_EDGE_PX);
     expect(range.max).toBe((box.x + box.width) * scale - paneWidth + ROW_PAGE_EDGE_PX);
+    // Goodnotes leaves no desk beside a held page (recording, 2026-11-03).
+    expect(ROW_PAGE_EDGE_PX).toBe(0);
+    expect(range.min).toBe(box.x * scale);
     // Out-of-range indexes clamp to a real page.
     expect(rowPageScrollRange(layout, 9, scale, paneWidth)).toEqual(range);
   });

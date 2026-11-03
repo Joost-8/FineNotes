@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Renderer } from "../../src/canvas/renderer";
 import type { DocumentLayout } from "../../src/canvas/page-layout";
 import type { InkRun } from "../../src/ink/freehand";
-import { paperTheme } from "../../src/canvas/backdrop";
+import { paperTheme, shownColor } from "../../src/canvas/backdrop";
 import type { InkDocument } from "../../src/model/document";
 
 type Call = [string, ...unknown[]];
@@ -119,19 +119,23 @@ describe("paintWetInto", () => {
     expect(log).toContainEqual(["setLineDash", [1.5, 1]]);
   });
 
-  it("draws a sticky note's ink in its own colour on a dark page", () => {
+  it("draws wet ink over a sticky note in the colour its committed ink is shown in", () => {
     const renderer = setup();
     renderer.paper = paperTheme(true);
-    const page = { id: "p1", backdrop: { type: "blank" }, strokes: [], images: [], textBoxes: [] };
-    renderer.renderBackdrops({ pages: [page, { ...page, id: "p2" }] } as unknown as InkDocument);
-    const colour = (onNote: boolean): unknown => {
-      renderer.renderWetRuns(0, runs, { ...style, color: "#1a1a1a" }, onNote);
-      const ctx = recorder([]);
-      renderer.paintWetInto(ctx, LAYOUT.boxes[0], 4);
-      return ctx.strokeStyle;
+    const note = { id: "n1", path: "", x: 0, y: 0, w: 400, h: 400, sticky: { color: "#fde68a" } };
+    const page = {
+      id: "p1",
+      backdrop: { type: "blank" },
+      strokes: [],
+      images: [note],
+      textBoxes: [],
     };
-    expect(colour(true)).toBe("#1a1a1a");
-    expect(colour(false)).not.toBe("#1a1a1a");
+    renderer.renderBackdrops({ pages: [page, { ...page, id: "p2" }] } as unknown as InkDocument);
+    renderer.renderWetRuns(0, runs, { ...style, color: "#1a1a1a" });
+    const ctx = recorder([]);
+    renderer.paintWetInto(ctx, LAYOUT.boxes[0], 4);
+    expect(ctx.strokeStyle).toBe(shownColor("#1a1a1a", true));
+    expect(ctx.strokeStyle).not.toBe("#1a1a1a");
   });
 
   it("has nothing to draw once the layer is cleared", () => {

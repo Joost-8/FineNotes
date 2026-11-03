@@ -387,6 +387,56 @@ export function shownAt(
   return top?.front !== true;
 }
 
+// --- Text laid over a note -------------------------------------------------------
+
+/** What {@link adoptText} changed on a text box, to put back on undo. */
+export interface TextAdoption {
+  textBox: TextBoxElement;
+  x: number;
+  y: number;
+  onSticky: string | undefined;
+}
+
+/** A text box's middle, page px; a box that grows with its text is taken as its lines are tall. */
+function textCentre(box: TextBoxElement): { x: number; y: number } {
+  const lines = box.text.split("\n").length;
+  const h = box.h ?? box.fontSize * 1.4 * lines;
+  return { x: box.x + box.w / 2, y: box.y + h / 2 };
+}
+
+/**
+ * Make `box` the text of the open note it lies over, if any: the topmost
+ * note under the box's middle ({@link noteAt}). A box that is already some
+ * note's text, or a mirror, is left alone. The box is moved to where the
+ * note's text stands (unturned on the note, {@link noteTextToPage}), so it
+ * stays where it is seen. Returns what to put back, or `null` if nothing
+ * changed.
+ */
+export function adoptText(page: Page, box: TextBoxElement): TextAdoption | null {
+  if (box.onSticky !== undefined || (box.join !== undefined && box.join !== "")) return null;
+  const c = textCentre(box);
+  const note = noteAt(page, c.x, c.y);
+  if (!note) return null;
+  const undo: TextAdoption = { textBox: box, x: box.x, y: box.y, onSticky: box.onSticky };
+  const back = invert(noteTextToPage(note));
+  if (back) {
+    const at = applyAffine(back, c.x, c.y);
+    box.x += at.x - c.x;
+    box.y += at.y - c.y;
+  }
+  box.onSticky = note.id;
+  return undo;
+}
+
+/** Put back what {@link adoptText} changed. */
+export function releaseText(adoption: TextAdoption): void {
+  const { textBox, x, y, onSticky } = adoption;
+  textBox.x = x;
+  textBox.y = y;
+  if (onSticky === undefined) delete textBox.onSticky;
+  else textBox.onSticky = onSticky;
+}
+
 // --- Selections, copies, deletes ------------------------------------------------
 
 /** The elements of a selection this module looks at. */
@@ -594,6 +644,8 @@ export class MoveNoteInk implements Command {
 export class SetNoteFolded implements Command {
   readonly label: string;
   private previous: StickyPaper | null = null;
+  /** Text boxes folded in with the note, which lay over it. */
+  private adopted: TextAdoption[] = [];
 
   constructor(
     readonly pageId: string,
@@ -605,11 +657,20 @@ export class SetNoteFolded implements Command {
 
   apply(doc: InkDocument): void {
     this.previous = null;
+    this.adopted = [];
     const page = pageById(doc, this.pageId);
     const paper = this.note.sticky;
     if (!page || !page.images.includes(this.note) || !paper) return;
     if ((paper.folded === true) === this.folded) return;
     this.previous = paper;
+    // Whatever lies on an open note folds away with it, and opens with it.
+    if (this.folded) {
+      for (const box of page.textBoxes) {
+        const taken = noteAt(page, textCentre(box).x, textCentre(box).y) === this.note;
+        const adoption = taken ? adoptText(page, box) : null;
+        if (adoption) this.adopted.push(adoption);
+      }
+    }
     this.note.sticky = this.folded ? { ...paper, folded: true } : { color: paper.color };
   }
 
@@ -617,6 +678,8 @@ export class SetNoteFolded implements Command {
     if (!this.previous || !pageById(doc, this.pageId)) return;
     this.note.sticky = this.previous;
     this.previous = null;
+    for (const adoption of this.adopted) releaseText(adoption);
+    this.adopted = [];
   }
 }
 
