@@ -44,8 +44,6 @@ import {
   FOLDER_ICONS,
   type FolderStyles,
   cleanName,
-  moveStyles,
-  movePaths,
   withFolderStyle,
 } from "../model/library-style";
 import { PdfBackdropCache } from "./pdf-backdrop";
@@ -252,12 +250,8 @@ export class LibraryView extends ItemView {
     };
     this.registerEvent(this.app.vault.on("create", touched));
     this.registerEvent(this.app.vault.on("delete", touched));
-    this.registerEvent(
-      this.app.vault.on("rename", (file, oldPath) => {
-        this.follow(oldPath, file.path);
-        touched(file);
-      }),
-    );
+    // Stars and folder looks follow renames and deletes in the plugin (main.ts), Home open or not.
+    this.registerEvent(this.app.vault.on("rename", touched));
     this.registerEvent(this.app.vault.on("modify", touched));
 
     // A notebook read since: its place has moved.
@@ -1248,15 +1242,5 @@ export class LibraryView extends ItemView {
       `Move ${file.name} to…`,
       folderOf(this.actions.unit(file.path)),
     ).open();
-  }
-
-  /** Stars and folder looks go with a file or folder that was renamed or moved. */
-  private follow(from: string, to: string): void {
-    const stars = this.host.stars();
-    const moved = movePaths(stars, from, to);
-    if (moved.some((p, i) => p !== stars[i])) this.host.setStars(moved);
-    const styles = this.host.folderStyles();
-    const restyled = moveStyles(styles, from, to);
-    if (JSON.stringify(restyled) !== JSON.stringify(styles)) this.host.setFolderStyles(restyled);
   }
 }

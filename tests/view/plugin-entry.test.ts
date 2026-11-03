@@ -139,6 +139,7 @@ function fakeApp(
   const stored = new Map(Object.entries(local));
   const frontmatter = new Map<string, Record<string, unknown>>();
   const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
+  const vaultHandlers = new Map<string, ((...args: unknown[]) => void)[]>();
   const ready: (() => void)[] = [];
   const secrets = new Map<string, string>();
   const created: { path: string; content: string }[] = [];
@@ -176,7 +177,13 @@ function fakeApp(
   return {
     workspace,
     vault: {
-      on: (name: string) => ({ name }),
+      on(name: string, callback: (...args: unknown[]) => void) {
+        vaultHandlers.set(name, [...(vaultHandlers.get(name) ?? []), callback]);
+        return { name };
+      },
+      trigger(name: string, ...args: unknown[]) {
+        for (const callback of vaultHandlers.get(name) ?? []) callback(...args);
+      },
       getAbstractFileByPath: (path: string) => files.get(path) ?? null,
       getFileByPath: (path: string) => files.get(path) ?? null,
       getMarkdownFiles: () => [...files.values()].filter((file) => file.extension === "md"),
@@ -672,6 +679,37 @@ describe("registration", () => {
         expect(viewStateCalls.some((c) => c.state.type === "finenotes-library")).toBe(takenOver);
       }
     });
+  });
+
+  it("keeps the library's stars and folder looks with renames and deletes, Home open or not", async () => {
+    await load({
+      libraryStars: ["Uni/Physics/Physics.notebook.md", "Uni", "Other.notebook.md"],
+      libraryFolders: { Uni: { color: "#4a7df0" }, "Uni/Week 1": { icon: "code" } },
+    });
+    // No Home tab is open: the plugin itself follows the vault.
+    expect(app.workspace.leaves).toEqual([]);
+    const vault = app.vault as unknown as { trigger(name: string, ...args: unknown[]): void };
+    const settings = () => plugin.settings;
+
+    vault.trigger("rename", Object.assign(new TFolder("School"), { children: [] }), "Uni");
+    expect(settings().libraryStars).toEqual([
+      "School/Physics/Physics.notebook.md",
+      "School",
+      "Other.notebook.md",
+    ]);
+    expect(settings().libraryFolders).toEqual({
+      School: { color: "#4a7df0" },
+      "School/Week 1": { icon: "code" },
+    });
+
+    vault.trigger("delete", new TFolder("School/Physics"));
+    expect(settings().libraryStars).toEqual(["School", "Other.notebook.md"]);
+    vault.trigger("delete", new TFile("Other.notebook.md"));
+    vault.trigger("delete", new TFolder("School"));
+    expect(settings().libraryStars).toEqual([]);
+    expect(settings().libraryFolders).toEqual({});
+    await flush();
+    expect(registered.stored).toMatchObject({ libraryStars: [], libraryFolders: {} });
   });
 
   it("builds an InkView for a leaf", async () => {

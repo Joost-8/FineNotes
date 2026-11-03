@@ -131,7 +131,13 @@ import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import { HOME_FILE, HOME_FILE_TEXT, isOwnHomeText } from "./model/home-file";
-import { folderStylesOf } from "./model/library-style";
+import {
+  dropPaths,
+  dropStyles,
+  folderStylesOf,
+  movePaths,
+  moveStyles,
+} from "./model/library-style";
 import { prepareImageBytes } from "./view/image-import";
 import { LibraryView } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
@@ -572,10 +578,12 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.vault.on("rename", (file, oldPath) => {
         this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
+        this.libraryPathChanged(oldPath, file.path);
         this.calculatorFileMoved(oldPath, file.path);
         this.practiceNotebookMoved(oldPath, file.path);
       }),
     );
+    this.registerEvent(this.app.vault.on("delete", (file) => this.libraryPathChanged(file.path)));
     this.register(() => this.fileMoves.destroy());
     this.wordCheck.answered = (count) => this.remindToRelearn(count);
     // The reader's and the learner's workers end with the plugin.
@@ -2481,6 +2489,24 @@ export default class GoodObsidianPlugin extends Plugin {
         new Notice(`FineNotes: could not rename ${pair.from} — ${errorMessage(error)}`, 8000);
       });
     }, 0);
+  }
+
+  /**
+   * The library's stars and folder looks follow a file or folder renamed or
+   * moved to `to`, and go with one deleted (no `to`). Here rather than in
+   * the library, so they follow while Home is closed too.
+   */
+  private libraryPathChanged(from: string, to?: string): void {
+    const { libraryStars: stars, libraryFolders: styles } = this.settings;
+    const nextStars = to === undefined ? dropPaths(stars, from) : movePaths(stars, from, to);
+    const nextStyles = to === undefined ? dropStyles(styles, from) : moveStyles(styles, from, to);
+    const starsChanged =
+      nextStars.length !== stars.length || nextStars.some((p, i) => p !== stars[i]);
+    const stylesChanged = JSON.stringify(nextStyles) !== JSON.stringify(styles);
+    if (!starsChanged && !stylesChanged) return;
+    this.settings.libraryStars = nextStars;
+    this.settings.libraryFolders = nextStyles;
+    void this.saveSettings();
   }
 
   /** The setting's folder, or the active file's (the behaviour before the setting existed). */
