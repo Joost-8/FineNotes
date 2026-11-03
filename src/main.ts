@@ -64,6 +64,7 @@ import { LearnWindow } from "./view/learn-window";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
 import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
+import { parsePillRowOn } from "./view/pill-row-model";
 import { ShortcutStore } from "./view/shortcut-store";
 import { buildInkFile, parseInkFile } from "./model/serialize";
 import {
@@ -210,7 +211,12 @@ import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
-import { type ToolbarLayout, isItemOff, normalizeLayout } from "./view/toolbar-layout";
+import {
+  type ToolbarLayout,
+  isItemOff,
+  migrateLayout,
+  normalizeLayout,
+} from "./view/toolbar-layout";
 import {
   type CalculatorData,
   parseCalculatorData,
@@ -646,6 +652,10 @@ export default class GoodObsidianPlugin extends Plugin {
       pages,
     );
     this.notebookCommand("search-notebook", "Search this notebook…", (view) => view.openSearch());
+    // The way in besides the More tools menu, whatever the bar shows.
+    this.notebookCommand("customize-toolbar", "Customize toolbar", (view) =>
+      view.customizeToolbar(),
+    );
     this.notebookCommand(
       "copy-page-link",
       "Copy link to current page",
@@ -832,9 +842,16 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.foldedSettingsSections;
     // A list of its own, read as pens: the default's must stay as it is.
     this.settings.savedPens = savedPensOf(this.settings.savedPens);
-    const toolbar = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
-    this.settings.toolbarItems = toolbar.bar;
-    this.settings.toolbarOff = toolbar.off;
+    // The whole bar's layout (discussion #43) replaced the tools' three
+    // lists: a vault that has only those is read as the bar it showed.
+    const toolbar =
+      saved !== null && "toolbarLayout" in saved
+        ? normalizeLayout(this.settings.toolbarLayout)
+        : migrateLayout(loaded.toolbarItems, loaded.toolbarOff, loaded.toolbarHome);
+    this.settings.toolbarLayout = toolbar;
+    delete loaded.toolbarItems;
+    delete loaded.toolbarOff;
+    delete loaded.toolbarHome;
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
     if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
     // A Zoom box line step outside the slider's range is a hand-edited file,
@@ -1456,9 +1473,8 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Customize toolbar changed the bar or its menu: every open notebook shows the new one. */
   saveToolbarLayout(layout: ToolbarLayout): void {
-    const toolbar = normalizeLayout(layout.bar, layout.off);
-    this.settings.toolbarItems = toolbar.bar;
-    this.settings.toolbarOff = toolbar.off;
+    const toolbar = normalizeLayout(layout);
+    this.settings.toolbarLayout = toolbar;
     void this.saveSettings();
     // Each notebook ends what an item now shown nowhere left on (effectsOfOffItems).
     for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
@@ -1480,8 +1496,7 @@ export default class GoodObsidianPlugin extends Plugin {
    */
   async setOnlyStylusMode(on: boolean): Promise<void> {
     // Shown nowhere, Stylus only stays off: a command must not turn it on unseen.
-    const layout = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
-    if (on && isItemOff(layout, "stylus")) return;
+    if (on && isItemOff(this.settings.toolbarLayout, "stylus")) return;
     this.settings.onlyStylusMode = on;
     // Asking for the pen alone means the Pencil is in hand: fingers stop drawing.
     if (on) this.setFingerDrawing(false);
@@ -1808,6 +1823,28 @@ export default class GoodObsidianPlugin extends Plugin {
     this.pillDockSeen = dock;
     this.app.saveLocalStorage(GoodObsidianPlugin.PILL_DOCK_KEY, dock);
     for (const view of this.openNotebooks()) view.showPillDock(dock);
+  }
+
+  private static readonly PILL_ROW_KEY = "goodobsidian:pill-row";
+
+  /**
+   * "Dock tool options" (pill-row-model.ts): the pill by a bar along the top
+   * or bottom becomes a row the page starts past. Off until chosen, so no
+   * one's page moves; kept per device, as the bar's and the pill's places are.
+   */
+  get pillRow(): boolean {
+    this.pillRowSeen ??= parsePillRowOn(this.app.loadLocalStorage(GoodObsidianPlugin.PILL_ROW_KEY));
+    return this.pillRowSeen;
+  }
+
+  private pillRowSeen: boolean | null = null;
+
+  /** The ⋯ panel switched "Dock tool options": keep it on this device, in every open notebook. */
+  setPillRow(on: boolean): void {
+    if (on === this.pillRow) return;
+    this.pillRowSeen = on;
+    this.app.saveLocalStorage(GoodObsidianPlugin.PILL_ROW_KEY, on ? "on" : null);
+    for (const view of this.openNotebooks()) view.showPillRow(on);
   }
 
   private static readonly BAR_DOCK_KEY = "goodobsidian:bar-dock";

@@ -161,8 +161,12 @@ const FRESH_INSTALL = {
     { type: "brush", color: "#9c36b5", size: 3 },
     { type: "highlighter", color: "#fab005", size: 5 },
   ],
-  toolbarItems: ["select", "pen", "eraser", "text", "shape", "image", "pdf"],
-  toolbarOff: [],
+  toolbarLayout: {
+    start: ["thumbnails", "search", "ai", "calculator", "undo", "redo"],
+    middle: ["select", "pen", "eraser", "text", "shape", "image", "pdf", "accessories"],
+    end: ["fullscreen", "addPage", "share", "more", "settings"],
+    off: [],
+  },
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",
   penCursor: "ink",
@@ -283,8 +287,13 @@ const USED_VAULT = {
   exportMargins: "inked",
 
   savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
-  toolbarItems: ["pen", "sticky", "select", "ruler"],
-  toolbarOff: ["pan", "record"],
+  // Undo among the tools, the calculator in More tools, the hand and the mic hidden.
+  toolbarLayout: {
+    start: ["thumbnails", "search", "ai", "redo"],
+    middle: ["pen", "undo", "sticky", "select", "ruler", "accessories"],
+    end: ["fullscreen", "addPage", "share", "more", "settings"],
+    off: ["pan", "record"],
+  },
   lastPen: { type: "highlighter", color: "#fab005", size: 8 },
   barrelButton: "pan",
   stylusButtonClick: "none",

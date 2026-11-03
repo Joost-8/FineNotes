@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REJOIN_MS } from "../../src/input/pen-rejoin";
 import type { ActiveTool } from "../../src/view/toolbar";
+import { NO_PILL_ROW } from "../../src/view/pill-row-model";
 vi.mock("obsidian", () => import("./fake-obsidian"));
 const { Toolbar } = await import("../../src/view/toolbar");
 const { InkSurface } = await import("../../src/view/ink-surface");
@@ -340,6 +341,8 @@ describe("secondary tool integration", () => {
       optionsVisible: true,
       tuckedTools: new Set(),
       optionsTool: "pen",
+      // Not docked as a row (pill-row-model.ts): a docked pill never tucks.
+      row: NO_PILL_ROW,
       callbacks: { returnToPenOnReselect: () => true, onToolChange: vi.fn() },
       closePopover: vi.fn(),
       showOptions: vi.fn(),
@@ -395,6 +398,8 @@ describe("secondary tool integration", () => {
       optionsVisible: true,
       tuckedTools: new Set(),
       optionsTool: "pen",
+      // Not docked as a row (pill-row-model.ts): a docked pill never tucks.
+      row: NO_PILL_ROW,
       callbacks: { returnToPenOnReselect: () => true, onToolChange: vi.fn() },
       closePopover: vi.fn(),
       showOptions,
@@ -427,6 +432,7 @@ describe("secondary tool integration", () => {
       tuckedTools: new Set(),
       tuckedByStroke: false,
       optionsTool: "pen",
+      row: NO_PILL_ROW,
       callbacks: { returnToPenOnReselect: () => false, onToolChange: vi.fn() },
       closePopover: vi.fn(),
       showOptions,

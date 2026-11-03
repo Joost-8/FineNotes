@@ -31,7 +31,7 @@ import type { BarrelAction } from "./input/pen-modifiers";
 import type { ExportFormat, ExportMargins } from "./export/export-choice";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
-import { type BarItemId, DEFAULT_BAR } from "./view/toolbar-layout";
+import { type ToolbarLayout, defaultLayout } from "./view/toolbar-layout";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import { DEFAULT_SHAPE_COLOR, parseHexColor } from "./model/colors";
 import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-folders";
@@ -347,12 +347,11 @@ export interface GoodObsidianSettings {
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
   savedPens: SavedPen[];
   /**
-   * The tools the bar shows, left to right ("Customize toolbar"); the rest wait
-   * in its More tools menu, except those in `toolbarOff`.
+   * Where every button of the tool bar is, in its three zones, More tools or
+   * hidden ("Customize toolbar", `toolbar-layout.ts`). Replaced
+   * `toolbarItems`, `toolbarOff` and `toolbarHome`, read once on load.
    */
-  toolbarItems: BarItemId[];
-  /** The tools shown nowhere, neither on the bar nor in its menu (`toolbar-layout.ts`). */
-  toolbarOff: BarItemId[];
+  toolbarLayout: ToolbarLayout;
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
@@ -516,8 +515,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   exportMargins: "all",
 
   savedPens: defaultSavedPens(),
-  toolbarItems: [...DEFAULT_BAR],
-  toolbarOff: [],
+  toolbarLayout: defaultLayout(),
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",
   penCursor: "ink",

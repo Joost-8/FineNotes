@@ -7,6 +7,7 @@ import {
   anchorScrollDelta,
   doubleTapZoom,
   pageFillZoom,
+  pageWidthZoom,
   zoomAnchorFor,
   pinchOpensOverview,
   fitPageZoom,
@@ -190,5 +191,24 @@ describe("zoomAnchorFor", () => {
 
   it("is null when the scale does not change", () => {
     expect(zoomAnchorFor(10, 1, 20, 1)).toBeNull();
+  });
+});
+
+describe("pageWidthZoom (discussion #43)", () => {
+  it("makes the page exactly as wide as the pane, portrait or landscape", () => {
+    for (const w of [1000, 1920]) {
+      const zoom = pageWidthZoom(w, 0.5, 1180);
+      expect(w * 0.5 * zoom).toBeCloseTo(1180, 9);
+    }
+  });
+
+  it("is never past MAX_SCALE", () => {
+    expect(pageWidthZoom(10, 0.1, 1180)).toBe(MAX_SCALE);
+  });
+
+  it("is 1 for a degenerate input", () => {
+    expect(pageWidthZoom(0, 0.5, 1180)).toBe(1);
+    expect(pageWidthZoom(1000, 0, 1180)).toBe(1);
+    expect(pageWidthZoom(1000, 0.5, NaN)).toBe(1);
   });
 });
