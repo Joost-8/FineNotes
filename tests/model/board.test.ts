@@ -20,6 +20,7 @@ import {
   drawnBounds,
   isBoard,
   isNoGrowth,
+  textLinesHeight,
 } from "../../src/model/board";
 import { type InkDocument, type Page, type Stroke } from "../../src/model/document";
 import { AttachedStep, History } from "../../src/model/history";
@@ -43,6 +44,9 @@ const board = (
 function stroke(id: string, pts: number[], size = 4): Stroke {
   return { id, color: "#000000", size, tool: "pen", pts };
 }
+
+/** A text box's text of twenty short lines. */
+const twentyLines = (): string => Array.from({ length: 20 }, (_, i) => `Line ${i}`).join("\n");
 
 /** A board with one of every kind of element, at known places. */
 function fullBoard(): InkDocument {
@@ -185,6 +189,20 @@ describe("drawnBounds", () => {
     expect(drawnBounds(page)).toEqual({ minX: 10, minY: 10, maxX: 60, maxY: 35 });
   });
 
+  it("takes a self-sizing text box's every line, or the height it is given", () => {
+    const page = board().pages[0];
+    const text = twentyLines();
+    page.textBoxes.push({ id: "t", x: 10, y: 10, w: 300, text, color: "#000", fontSize: 20 });
+    // 20 lines of 20 px at 1.25, not one line.
+    expect(drawnBounds(page)?.maxY).toBe(10 + 20 * 25);
+    expect(textLinesHeight(page.textBoxes[0])).toBe(500);
+    // The renderer's height, wrapping included, when the caller can measure.
+    expect(drawnBounds(page, () => 670)?.maxY).toBe(680);
+    // A box the user sized keeps its own.
+    page.textBoxes[0].h = 90;
+    expect(drawnBounds(page, () => 670)?.maxY).toBe(100);
+  });
+
   it("skips coordinates that are not numbers, and a ragged tail", () => {
     const page = board().pages[0];
     page.strokes.push(stroke("s", [Number.NaN, 5, 0.5, 10, 20, 0.5, 99], 0));
@@ -193,6 +211,28 @@ describe("drawnBounds", () => {
 });
 
 describe("boardDrawing: the drawing alone, for an export or the AI", () => {
+  it("keeps all of a long self-sizing text box, measured as painted", () => {
+    const page = board().pages[0];
+    const { width, height } = page.geometry;
+    const text = twentyLines();
+    page.textBoxes.push({
+      id: "t",
+      x: width / 2,
+      y: height / 2,
+      w: 300,
+      text,
+      color: "#000",
+      fontSize: 20,
+    });
+    const measured = boardDrawingBox(page, () => 670);
+    expect(measured.y + measured.height).toBeGreaterThanOrEqual(
+      height / 2 + 670 + BOARD_CUT_MARGIN,
+    );
+    // Without a canvas, every line still counts.
+    const counted = boardDrawingBox(page);
+    expect(counted.y + counted.height).toBeGreaterThanOrEqual(height / 2 + 500 + BOARD_CUT_MARGIN);
+  });
+
   /** {@link fullBoard}, its drawing moved off the corner, as a board's sits in its middle. */
   function middleBoard(shift = 2000): InkDocument {
     const doc = fullBoard();

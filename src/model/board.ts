@@ -28,6 +28,7 @@ import {
   type PageGeometry,
   type PageSection,
   type Ruling,
+  type TextBoxElement,
   POINT_STRIDE,
   pageById,
 } from "./document";
@@ -75,10 +76,14 @@ export function boardStartGeometry(): PageGeometry {
  * reaches (half its width past the centreline), pictures as their turned
  * rectangles cover, text boxes, tables and graphs by their frames, comments
  * as points. `null` when the page is empty. A text box that sizes itself has
- * no stored height; one line of its font stands in for it, close enough to
- * decide when to grow.
+ * no stored height: `textHeight` gives it. Measuring needs a canvas, so the
+ * default ({@link textLinesHeight}) counts the text's lines without wrapping
+ * them, close enough to decide when to grow; a cut for export measures.
  */
-export function drawnBounds(page: Page): Bounds | null {
+export function drawnBounds(
+  page: Page,
+  textHeight: (text: TextBoxElement) => number = textLinesHeight,
+): Bounds | null {
   const box: Bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   const take = (minX: number, minY: number, maxX: number, maxY: number): void => {
     if (![minX, minY, maxX, maxY].every(Number.isFinite)) return;
@@ -107,8 +112,7 @@ export function drawnBounds(page: Page): Bounds | null {
     take(cx - hx, cy - hy, cx + hx, cy + hy);
   }
   for (const text of page.textBoxes) {
-    const h = text.h ?? text.fontSize * (text.lineHeight ?? DEFAULT_LINE_HEIGHT);
-    take(text.x, text.y, text.x + text.w, text.y + h);
+    take(text.x, text.y, text.x + text.w, text.y + (text.h ?? textHeight(text)));
   }
   for (const table of page.tables ?? []) {
     const size = tableFloorSize(table);
@@ -120,6 +124,16 @@ export function drawnBounds(page: Page): Bounds | null {
   }
   for (const comment of page.comments ?? []) take(comment.x, comment.y, comment.x, comment.y);
   return box.minX <= box.maxX && box.minY <= box.maxY ? box : null;
+}
+
+/**
+ * A self-sizing text box's height without a canvas: one line of its font for
+ * each line of its text, as if none wrapped. Never less than one line, as
+ * the textarea is.
+ */
+export function textLinesHeight(text: TextBoxElement): number {
+  const lines = Math.max(1, text.text.split("\n").length);
+  return lines * text.fontSize * (text.lineHeight ?? DEFAULT_LINE_HEIGHT);
 }
 
 // --- The growth rule -----------------------------------------------------------
@@ -298,9 +312,13 @@ export const BOARD_CUT_MARGIN = 160;
  * The part of a board's page that holds its drawing, page px: what is drawn
  * with {@link BOARD_CUT_MARGIN} round it, out to whole
  * {@link BOARD_CUT_STEP}s, inside the page. An empty board gives one block
- * in its middle.
+ * in its middle. `textHeight` measures self-sizing text boxes, as in
+ * {@link drawnBounds}: pass the renderer's, or a long one is cut off.
  */
-export function boardDrawingBox(page: Page): {
+export function boardDrawingBox(
+  page: Page,
+  textHeight?: (text: TextBoxElement) => number,
+): {
   x: number;
   y: number;
   width: number;
@@ -309,7 +327,7 @@ export function boardDrawingBox(page: Page): {
   const { width, height } = page.geometry;
   const down = (v: number): number => Math.floor(v / BOARD_CUT_STEP) * BOARD_CUT_STEP;
   const up = (v: number): number => Math.ceil(v / BOARD_CUT_STEP) * BOARD_CUT_STEP;
-  const drawn = drawnBounds(page) ?? {
+  const drawn = drawnBounds(page, textHeight) ?? {
     minX: width / 2 - BOARD_BLOCK / 2 + BOARD_CUT_MARGIN,
     minY: height / 2 - BOARD_BLOCK / 2 + BOARD_CUT_MARGIN,
     maxX: width / 2 + BOARD_BLOCK / 2 - BOARD_CUT_MARGIN,

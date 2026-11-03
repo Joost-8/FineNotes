@@ -105,7 +105,7 @@ import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { measurePdfPages } from "./pdf-pages";
 import { VaultPaperLibrary, templateNamesIn } from "./paper-library-host";
-import { renderPageThumbnail } from "../canvas/renderer";
+import { paintedTextHeight, renderPageThumbnail } from "../canvas/renderer";
 import {
   PAPER_COPY_PREFIX,
   type PaperEntry,
@@ -292,7 +292,13 @@ import {
 } from "../model/document";
 import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
-import { boardDrawing, drawnBounds, isBoard } from "../model/board";
+import {
+  boardDrawing,
+  boardDrawingBox,
+  drawnBounds,
+  isBoard,
+  textLinesHeight,
+} from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { nearbyTarget, relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
@@ -1456,6 +1462,26 @@ export class InkView extends TextFileView {
     this.requestBodySave();
   }
 
+  /** Canvas used only to measure text boxes that grow with their text. */
+  private measureCtx: CanvasRenderingContext2D | null = null;
+
+  /** A text box's height as the page paints it (`paintedTextHeight`). */
+  private textHeight(text: TextBoxElement): number {
+    this.measureCtx ??= createEl("canvas").getContext("2d");
+    return this.measureCtx ? paintedTextHeight(this.measureCtx, text) : textLinesHeight(text);
+  }
+
+  /**
+   * A board's page cut down to its drawing (`boardDrawing`), or to `area`;
+   * its long text boxes measured, so the cut holds all of their text.
+   */
+  private boardDrawing(
+    page: Page,
+    area?: { x: number; y: number; width: number; height: number },
+  ): Page {
+    return boardDrawing(page, area ?? boardDrawingBox(page, (text) => this.textHeight(text)));
+  }
+
   /**
    * The page as the reader sees it, sized for a vision model. A board's
    * drawing alone, or the part of it in `area` (page px): the whole page
@@ -1466,7 +1492,7 @@ export class InkView extends TextFileView {
     area?: { x: number; y: number; width: number; height: number },
   ): Promise<RenderedPage | null> {
     if (!this.backdrops) return null;
-    return renderPageForAi(this.isBoard ? boardDrawing(page, area) : page, this.backdrops, {
+    return renderPageForAi(this.isBoard ? this.boardDrawing(page, area) : page, this.backdrops, {
       usePressure: this.settings.pressureWidth,
       highlighterAlpha: this.settings.highlighterAlpha,
       // Pictures the page shows are part of what the model should see. One
@@ -2317,7 +2343,11 @@ export class InkView extends TextFileView {
     if (!page) return false;
     const view = surface.visiblePageRect(index);
     const frame = below
-      ? textBoxBelow(page.geometry, view, drawnBounds(page)?.maxY ?? null)
+      ? textBoxBelow(
+          page.geometry,
+          view,
+          drawnBounds(page, (t) => this.textHeight(t))?.maxY ?? null,
+        )
       : textBoxFrame(page.geometry, view);
     const box: TextBoxElement = {
       id: nextElementId(surface.document, "t"),
@@ -3987,7 +4017,7 @@ export class InkView extends TextFileView {
     // A board (FineNotes#46) exports as one page the size of its drawing,
     // not metres of empty paper around it.
     const doc: Pick<InkDocument, "pages"> = isBoard(open)
-      ? { pages: open.pages.map((page) => boardDrawing(page)) }
+      ? { pages: open.pages.map((page) => this.boardDrawing(page)) }
       : open;
     const total = doc.pages.length;
     if (total === 0) return;
