@@ -120,6 +120,25 @@ export function browse(entries: readonly LibraryEntry[], folder: string): Listin
   return { folders, notebooks };
 }
 
+/**
+ * The notebooks as the library files them: a folder that holds a single
+ * notebook (a notebook in a folder of its own, say) is not worth a visit, so
+ * its notebook is filed in the folder above, and above that while that one
+ * holds no other either. Only `folder` changes, never `path`.
+ */
+export function hoistSingles(entries: readonly LibraryEntry[]): LibraryEntry[] {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    for (let at = entry.folder; at !== ""; at = folderOf(at))
+      counts.set(at, (counts.get(at) ?? 0) + 1);
+  }
+  return entries.map((entry) => {
+    let folder = entry.folder;
+    while (folder !== "" && counts.get(folder) === 1) folder = folderOf(folder);
+    return folder === entry.folder ? entry : { ...entry, folder };
+  });
+}
+
 /** The folders leading to `folder`, outermost first: "A/B" gives A, A/B. */
 export function crumbs(folder: string): LibraryFolder[] {
   const parts = folder === "" ? [] : folder.split("/");

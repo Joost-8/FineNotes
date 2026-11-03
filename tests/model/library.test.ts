@@ -13,6 +13,7 @@ import {
   crumbs,
   entryFromText,
   folderOf,
+  hoistSingles,
   placeholderEntry,
   readProgress,
   searchEntries,
@@ -183,5 +184,39 @@ describe("continueEntries with reading", () => {
     const list = [entry("a.notebook.md", 100), entry("b.notebook.md", 50)];
     const readAt = (path: string): number => (path === "b.notebook.md" ? 200 : 0);
     expect(continueEntries(list, 2, readAt).map((e) => e.title)).toEqual(["b", "a"]);
+  });
+});
+
+describe("hoistSingles", () => {
+  it("files a notebook that is alone in its folder one level up, as far as it stays alone", () => {
+    const list = [
+      entry("Algebra/Algebra.notebook.md", 1),
+      entry("Uni/Year 1/Probability/Probability.notebook.md", 2),
+      entry("Uni/Year 1/Other.notebook.md", 3),
+      entry("Uni/Year 2/A.notebook.md", 4),
+      entry("Uni/Year 2/B.notebook.md", 5),
+    ];
+    const out = hoistSingles(list);
+    expect(out.map((e) => e.folder)).toEqual([
+      "",
+      "Uni/Year 1",
+      "Uni/Year 1",
+      "Uni/Year 2",
+      "Uni/Year 2",
+    ]);
+    expect(out.map((e) => e.path)).toEqual(list.map((e) => e.path));
+  });
+
+  it("leaves a folder of several alone, and the root's notebooks", () => {
+    const list = [
+      entry("Root.notebook.md", 1),
+      entry("F/A.notebook.md", 2),
+      entry("F/B.notebook.md", 3),
+    ];
+    expect(hoistSingles(list).map((e) => e.folder)).toEqual(["", "F", "F"]);
+  });
+
+  it("collapses a lone notebook inside a folder of folders up to the root", () => {
+    expect(hoistSingles([entry("A/B/C.notebook.md", 1)])[0].folder).toBe("");
   });
 });

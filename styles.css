@@ -14980,20 +14980,27 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
   flex-direction: column;
   padding: 0;
   overflow: hidden;
+  --gob-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 .goodobsidian-library-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 20px 8px;
+  gap: 6px;
+  padding: 14px 20px 10px;
   flex: none;
+  /* Content scrolls under a frosted bar, as in Apple's apps. */
+  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+  -webkit-backdrop-filter: saturate(1.6) blur(18px);
+  backdrop-filter: saturate(1.6) blur(18px);
+  z-index: 1;
 }
 .goodobsidian-library-title {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: var(--font-ui-large);
-  font-weight: var(--font-semibold);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -15005,13 +15012,20 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 220px;
+  width: 190px;
   max-width: 40%;
+  height: 32px;
   padding: 0 10px;
-  border-radius: var(--radius-s);
-  background: var(--background-modifier-form-field);
-  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
   color: var(--text-faint);
+  transition:
+    width 0.25s var(--gob-ease),
+    background-color 0.2s;
+}
+.goodobsidian-library-search:focus-within {
+  width: 260px;
+  background: color-mix(in srgb, var(--text-normal) 10%, transparent);
 }
 .goodobsidian-library-search .svg-icon {
   width: 14px;
@@ -15020,6 +15034,7 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
 .goodobsidian-library-search input {
   flex: 1;
   min-width: 0;
+  height: 100%;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -15031,118 +15046,153 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 20px 32px;
+  padding: 0 20px 32px;
 }
 .goodobsidian-library-label {
-  margin: 16px 0 8px;
-  font-size: var(--font-ui-smaller);
-  font-weight: var(--font-semibold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  margin: 18px 0 10px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text-normal);
 }
-.goodobsidian-library-grid,
+.goodobsidian-library-grid {
+  display: grid;
+  gap: 18px 14px;
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+}
 .goodobsidian-library-recent {
   display: grid;
-  gap: 20px 16px;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-}
-.goodobsidian-library-recent {
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  padding: 14px;
-  border-radius: var(--radius-l);
-  background: var(--background-secondary);
+  gap: 18px 14px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
 }
 .goodobsidian-library-folders {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 button.goodobsidian-library-folder {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
+  gap: 7px;
   width: auto;
-  height: auto;
-  padding: 10px 12px;
-  text-align: left;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  background: var(--background-secondary);
+  height: 32px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: 16px;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  transition:
+    transform 0.2s var(--gob-ease),
+    background-color 0.2s;
+}
+button.goodobsidian-library-folder:active {
+  transform: scale(0.96);
 }
 .goodobsidian-library-folder-icon {
   display: inline-flex;
   color: var(--interactive-accent);
 }
+.goodobsidian-library-folder-icon .svg-icon {
+  width: 15px;
+  height: 15px;
+}
 .goodobsidian-library-folder-name {
-  font-weight: var(--font-semibold);
-  white-space: normal;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .goodobsidian-library-folder-count {
+  color: var(--text-faint);
   font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
 }
 .goodobsidian-library-card {
   min-width: 0;
   cursor: pointer;
-  border-radius: var(--radius-m);
+  border-radius: 10px;
+  -webkit-tap-highlight-color: transparent;
+  animation: gob-library-in 0.35s var(--gob-ease) both;
 }
 .goodobsidian-library-card:focus-visible {
   outline: 2px solid var(--interactive-accent);
-  outline-offset: 3px;
+  outline-offset: 4px;
 }
 .goodobsidian-library-cover {
   position: relative;
   display: flex;
   align-items: flex-end;
   aspect-ratio: 3 / 4;
-  padding: 10px 10px 10px 16px;
+  padding: 10px 9px 10px 15px;
   overflow: hidden;
-  border-radius: 3px 8px 8px 3px;
-  background: var(--gob-cover, var(--background-modifier-border));
+  border-radius: 4px 10px 10px 4px;
+  background: linear-gradient(
+    155deg,
+    var(--gob-cover-hi, var(--gob-cover)) 0%,
+    var(--gob-cover) 45%,
+    var(--gob-cover-lo, var(--gob-cover)) 100%
+  );
   color: var(--gob-cover-ink, var(--text-on-accent));
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.14),
-    0 4px 10px rgba(0, 0, 0, 0.1);
+    0 0 0 0.5px rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.12),
+    0 6px 14px -4px rgba(0, 0, 0, 0.28);
+  transition:
+    transform 0.3s var(--gob-ease),
+    box-shadow 0.3s var(--gob-ease);
 }
+/* The spine: a darker band and a hairline of light beside it. */
 .goodobsidian-library-cover::before {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
-  width: 8px;
-  background: var(--gob-cover-spine, rgba(0, 0, 0, 0.18));
+  width: 7px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.06));
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.18);
+}
+/* A soft sheen across the top, as on a book jacket. */
+.goodobsidian-library-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 38%);
+  pointer-events: none;
 }
 .goodobsidian-library-cover-title {
   position: relative;
-  font-weight: var(--font-semibold);
+  z-index: 1;
+  font-size: 13px;
+  font-weight: 650;
   line-height: 1.2;
+  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
-.goodobsidian-library-pages {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  min-width: 18px;
-  padding: 0 6px;
-  border-radius: 9px;
-  text-align: center;
-  font-size: var(--font-ui-smaller);
-  background: rgba(0, 0, 0, 0.38);
-  color: #fff;
-}
 .goodobsidian-library-caption {
-  margin-top: 6px;
+  margin-top: 8px;
+  padding: 0 2px;
 }
 .goodobsidian-library-name {
-  font-weight: var(--font-semibold);
+  font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .goodobsidian-library-when {
-  font-size: var(--font-ui-smaller);
+  font-size: 11.5px;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.goodobsidian-library-progress {
+  height: 3px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-normal) 12%, transparent);
+  overflow: hidden;
+}
+.goodobsidian-library-progress > div {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--interactive-accent);
 }
 .goodobsidian-library-empty {
   display: flex;
@@ -15154,27 +15204,33 @@ button.goodobsidian-library-folder {
 }
 @media (hover: hover) {
   .goodobsidian-library-card:hover .goodobsidian-library-cover {
-    transform: translateY(-2px);
+    transform: translateY(-3px) scale(1.015);
+    box-shadow:
+      0 0 0 0.5px rgba(0, 0, 0, 0.12),
+      0 2px 4px rgba(0, 0, 0, 0.12),
+      0 12px 22px -6px rgba(0, 0, 0, 0.34);
+  }
+  button.goodobsidian-library-folder:hover {
+    background: color-mix(in srgb, var(--text-normal) 12%, transparent);
   }
 }
-.goodobsidian-library-cover {
-  transition: transform 0.12s ease;
+.goodobsidian-library-card:active .goodobsidian-library-cover {
+  transform: scale(0.97);
+  transition-duration: 0.1s;
+}
+@keyframes gob-library-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .goodobsidian-library-cover {
+  .goodobsidian-library-card {
+    animation: none;
+  }
+  .goodobsidian-library-cover,
+  .goodobsidian-library-search,
+  button.goodobsidian-library-folder {
     transition: none;
   }
-}
-
-.goodobsidian-library-progress {
-  height: 4px;
-  margin-top: 6px;
-  border-radius: 2px;
-  background: var(--background-modifier-border);
-  overflow: hidden;
-}
-.goodobsidian-library-progress > div {
-  height: 100%;
-  border-radius: 2px;
-  background: var(--interactive-accent);
 }

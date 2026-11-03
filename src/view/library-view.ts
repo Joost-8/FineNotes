@@ -38,6 +38,7 @@ import {
   browse,
   continueEntries,
   crumbs,
+  hoistSingles,
   entryFromText,
   readProgress,
   placeholderEntry,
@@ -286,7 +287,7 @@ export class LibraryView extends ItemView {
     }
 
     const left = this.lastPages();
-    const here = browse(all, this.folder);
+    const here = browse(hoistSingles(all), this.folder);
     // What Continue shows is not listed again below it.
     const shown = new Set<string>();
     if (this.folder === "") {
@@ -310,12 +311,8 @@ export class LibraryView extends ItemView {
       for (const folder of here.folders) {
         const el = row.createEl("button", { cls: "clickable-icon goodobsidian-library-folder" });
         setIcon(el.createSpan({ cls: "goodobsidian-library-folder-icon" }), "folder");
-        const text = el.createDiv();
-        text.createDiv({ cls: "goodobsidian-library-folder-name", text: folder.name });
-        text.createDiv({
-          cls: "goodobsidian-library-folder-count",
-          text: `${folder.count} ${folder.count === 1 ? "notebook" : "notebooks"}`,
-        });
+        el.createSpan({ cls: "goodobsidian-library-folder-name", text: folder.name });
+        el.createSpan({ cls: "goodobsidian-library-folder-count", text: String(folder.count) });
         el.addEventListener("click", () => this.openFolder(folder.path));
       }
     }
@@ -346,9 +343,9 @@ export class LibraryView extends ItemView {
     cover.style.setProperty("--gob-cover", palette.base);
     cover.style.setProperty("--gob-cover-ink", palette.title);
     cover.style.setProperty("--gob-cover-spine", palette.spine);
+    cover.style.setProperty("--gob-cover-hi", palette.sheenLight);
+    cover.style.setProperty("--gob-cover-lo", palette.sheenDark);
     cover.createSpan({ cls: "goodobsidian-library-cover-title", text: entry.title });
-    if (entry.pages > 0)
-      cover.createSpan({ cls: "goodobsidian-library-pages", text: String(entry.pages) });
     const caption = card.createDiv({ cls: "goodobsidian-library-caption" });
     caption.createDiv({ cls: "goodobsidian-library-name", text: entry.title });
     const when = whenText(entry.edited, Date.now());
@@ -370,7 +367,13 @@ export class LibraryView extends ItemView {
     } else {
       caption.createDiv({
         cls: "goodobsidian-library-when",
-        text: entry.folder !== "" && this.query.trim() !== "" ? `${entry.folder} · ${when}` : when,
+        text: [
+          entry.folder !== "" && this.query.trim() !== "" ? entry.folder : "",
+          entry.pages > 0 ? `${entry.pages} ${entry.pages === 1 ? "page" : "pages"}` : "",
+          when,
+        ]
+          .filter(Boolean)
+          .join(" · "),
       });
     }
 
