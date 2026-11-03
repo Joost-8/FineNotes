@@ -41,6 +41,8 @@ import {
 } from "../canvas/pdf-links";
 import { type PageGeometry, type PdfBackdrop, pdfFrameOf } from "../model/document";
 import { classifyPage } from "../recognition/ocr/figures";
+import { wordsOfLayout } from "../recognition/ocr/ocr-text";
+import { parseWordList } from "../recognition/hwr/corrections";
 import { isSparse, mergedItems, nativeBoxes } from "../recognition/ocr/ocr-words";
 import { type OperatorPageLike, readFigures } from "./pdf-figures";
 import type { OcrOwner, OcrService } from "./ocr-service";
@@ -133,6 +135,18 @@ export function readTextItems(content: TextContentLike): PdfTextItem[] {
   return items;
 }
 
+/** The English word list bundled with the plugin, or null when it cannot be read (no corrections then). */
+async function bundledLexicon(): Promise<ReadonlySet<string> | null> {
+  try {
+    const { default: text } = await import("../../models/words.txt");
+    const words = parseWordList(text);
+    // Not the list itself (a build that hands back a path): too small to say what is a word.
+    return words.size > 1000 ? words : null;
+  } catch {
+    return null;
+  }
+}
+
 function pageKey(path: string, page: number): string {
   return `${path}:${page}`;
 }
@@ -161,9 +175,15 @@ export class PdfTextCache implements OcrOwner {
   /** Pages whose OCR text arrived while they were being read: read again afterwards. */
   private readonly again = new Set<string>();
 
+  /** Each PDF's own words (four letters or more, lower case), from the pages read so far. */
+  private readonly vocabularies = new Map<string, Set<string>>();
+  private lexicon: Promise<ReadonlySet<string> | null> | null = null;
+
   constructor(
     private readonly app: App,
     private readonly ocr: OcrService | null = null,
+    /** The English word list a corrected word must not be in. */
+    private readonly words: () => Promise<ReadonlySet<string> | null> = bundledLexicon,
   ) {}
 
   /**
@@ -309,6 +329,7 @@ export class PdfTextCache implements OcrOwner {
     this.failed.delete(path);
     for (const key of [...this.failed.keys()]) if (key.startsWith(prefix)) this.failed.delete(key);
     for (const key of [...this.pages.keys()]) if (key.startsWith(prefix)) this.pages.delete(key);
+    this.vocabularies.delete(path);
     for (const key of [...this.layouts.keys()])
       if (key.startsWith(prefix)) this.layouts.delete(key);
     for (const key of [...this.scanned.keys()])
@@ -331,6 +352,7 @@ export class PdfTextCache implements OcrOwner {
     this.failed.clear();
     this.pages.clear();
     this.layouts.clear();
+    this.vocabularies.clear();
     this.onReady = null;
     for (const key of [...this.waiters.keys()]) this.wake(key);
   }
@@ -382,6 +404,7 @@ export class PdfTextCache implements OcrOwner {
       const matrix: Matrix = [t[0], t[1], t[2], t[3], t[4], t[5]];
       const source = { width: viewport.width, height: viewport.height };
       const native = readTextItems(content);
+      this.learnWords(backdrop.path, native, matrix, source);
       return {
         items: await this.withOcr(backdrop, doc.numPages, native, matrix, source, page),
         links,
@@ -434,7 +457,11 @@ export class PdfTextCache implements OcrOwner {
       if (found.condition !== "TEXT_ONLY" && found.condition !== "BLANK") {
         this.scanned.set(key, { kind: "pdf", path: backdrop.path, page: backdrop.page });
       }
-      return mergedItems(native, found, viewport, source, undefined, figures);
+      const dictionary =
+        found.condition === "TEXT_ONLY" || found.condition === "BLANK"
+          ? undefined
+          : await this.dictionary(backdrop.path);
+      return mergedItems(native, found, viewport, source, undefined, figures, dictionary);
     }
     const operators = figures ? page.getOperatorList?.bind(page) : undefined;
     const scan = operators
@@ -454,6 +481,29 @@ export class PdfTextCache implements OcrOwner {
       plan,
     });
     return native;
+  }
+
+  /** The words of a page's own text join its PDF's vocabulary. */
+  private learnWords(
+    path: string,
+    native: PdfTextItem[],
+    viewport: Matrix,
+    source: { width: number; height: number },
+  ): void {
+    if (!this.ocr?.enabled || native.length === 0) return;
+    let vocabulary = this.vocabularies.get(path);
+    if (!vocabulary) this.vocabularies.set(path, (vocabulary = new Set()));
+    for (const w of wordsOfLayout(layoutText(native, pdfToPage(viewport, source, source)))) {
+      vocabulary.add(w);
+    }
+  }
+
+  /** The PDF's words and the English list, for correcting what OCR misread; null without the list. */
+  private async dictionary(path: string) {
+    this.lexicon ??= this.words().catch(() => null);
+    const lexicon = await this.lexicon;
+    const vocabulary = this.vocabularies.get(path);
+    return lexicon && vocabulary ? { vocabulary, lexicon } : undefined;
   }
 
   /** pdf.js's operator numbers. */

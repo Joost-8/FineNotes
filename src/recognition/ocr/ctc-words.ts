@@ -32,6 +32,8 @@ export interface CropWord {
   /** The middles of its first and last characters in the crop, px. */
   first?: number;
   last?: number;
+  /** Where each character after the first begins, px of the crop: halfway between its middle and the one before's. */
+  cuts?: number[];
 }
 
 export interface CropLine {
@@ -131,6 +133,7 @@ export function wordsOf(chars: readonly CtcChar[], cropWidth: number): CropLine 
       x1: Math.min(cropWidth, last + after),
       first,
       last,
+      cuts: g.slice(1).map((c, i) => (middle(c) + middle(g[i])) / 2),
       conf: confs.reduce((s, v) => s + v, 0) / confs.length,
       min: Math.min(...confs),
     };

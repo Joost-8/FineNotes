@@ -75,7 +75,10 @@ function wordOf(raw: unknown): OcrWord | null {
   if (b.some((v) => v === null) || conf === null || min === null) return null;
   const [x0, y0, x1, y1] = b as [number, number, number, number];
   if (!(x1 > x0) || !(y1 > y0)) return null;
-  return { text: r.text, box: [x0, y0, x1, y1], conf, min };
+  const cuts = Array.isArray(r.cuts) ? (r.cuts as unknown[]).map(num) : null;
+  const word: OcrWord = { text: r.text, box: [x0, y0, x1, y1], conf, min };
+  if (cuts && cuts.every((c): c is number => c !== null)) word.cuts = cuts;
+  return word;
 }
 
 function regionOf(raw: unknown): Region | null {
@@ -192,6 +195,7 @@ function rounded(page: OcrPage): OcrPage {
         box: [tenth(w.box[0]), tenth(w.box[1]), tenth(w.box[2]), tenth(w.box[3])],
         conf: w.conf,
         min: w.min,
+        ...(w.cuts ? { cuts: w.cuts.map(tenth) } : {}),
       })),
     })),
   };

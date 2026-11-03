@@ -16,6 +16,7 @@ import { snapWords } from "./word-edges";
 import { type DbOptions, type TextBox, findTextBoxes } from "./db";
 import { type DetTile, planTiles, stitchProbability, tileTensor } from "./det";
 import { OCR_TUNING, type OcrLine, type OcrPage, type OcrWord } from "./ocr-words";
+import { needsNormalising } from "./ocr-text";
 import { readingOrder } from "./reading-order";
 import {
   REC_CORE,
@@ -208,8 +209,17 @@ function pageLine(
         y1 = Math.max(y1, y);
       }
     }
+    // Where its characters start, for a word the reading will split (a circled number glued to a word).
+    const cuts =
+      w.cuts && needsNormalising(w.text)
+        ? w.cuts.map((c) => {
+            const u = (c / cropW) * box.w - box.w / 2;
+            return round2((box.cx + u * cos) / scale + origin.x);
+          })
+        : undefined;
     return {
       text: w.text,
+      ...(cuts ? { cuts } : {}),
       box: [
         x0 / scale + origin.x,
         y0 / scale + origin.y,
@@ -221,6 +231,10 @@ function pageLine(
     };
   });
   return { conf: round(line.conf), words };
+}
+
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
 }
 
 function round(v: number): number {

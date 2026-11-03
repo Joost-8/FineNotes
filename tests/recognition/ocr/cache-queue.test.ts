@@ -375,3 +375,36 @@ describe("content outside masked areas (edges, not ink)", () => {
     expect(hasEdgesOutside(strokes, W, [{ x0: 15, y0: 35, x1: 50, y1: 50 }])).toBe(true);
   });
 });
+
+describe("the OCR cache keeps character positions of words that need them", () => {
+  it("round-trips cuts to a tenth, and drops damaged ones", () => {
+    const page: OcrPage = {
+      ...sample,
+      lines: [
+        {
+          conf: 0.9,
+          words: [
+            {
+              text: "\u2460Before",
+              box: [10, 20, 70, 32],
+              conf: 0.95,
+              min: 0.9,
+              cuts: [22.04, 30, 36, 42, 48, 58.26],
+            },
+            { text: "plain", box: [80, 20, 100, 32], conf: 0.95, min: 0.9 },
+          ],
+        },
+      ],
+    };
+    const back = cachedPage(parseCache(serializeCache(withPage(emptyCache(), 0, page))), 0);
+    expect(back?.lines[0].words[0].cuts).toEqual([22, 30, 36, 42, 48, 58.3]);
+    expect(back?.lines[0].words[1].cuts).toBeUndefined();
+    const raw = JSON.parse(serializeCache(withPage(emptyCache(), 0, page))) as {
+      pages: Record<string, { lines: { words: { cuts?: unknown }[] }[] }>;
+    };
+    raw.pages["0"].lines[0].words[0].cuts = [1, "x"];
+    const damaged = cachedPage(parseCache(JSON.stringify(raw)), 0);
+    expect(damaged?.lines[0].words[0].text).toBe("\u2460Before");
+    expect(damaged?.lines[0].words[0].cuts).toBeUndefined();
+  });
+});

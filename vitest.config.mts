@@ -173,6 +173,8 @@ export default defineConfig({
         "src/recognition/hwr/recognizer.ts",
         "src/recognition/ocr/ocr-model.ts",
         "src/recognition/ocr/ocr-words.ts",
+        "src/recognition/ocr/ocr-text.ts",
+        "src/recognition/ocr/figures.ts",
         "src/recognition/ocr/ocr-cache.ts",
         "src/recognition/ocr/ocr-queue.ts",
         "src/recognition/ocr/blank.ts",

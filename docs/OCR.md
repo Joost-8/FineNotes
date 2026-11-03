@@ -183,34 +183,42 @@ one at a time:
 `OCR_TUNING` (`ocr-words.ts`) and the other constants. "Measured" refers to the
 lecture documents below or the synthetic page.
 
-| name                                                          | value                   | meaning, and why                                                                                                                                                    |
-| ------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `wordMean`                                                    | 0.85                    | a word's mean character confidence at least this; the scribble test kept none and the printed page lost none                                                        |
-| `wordMin`                                                     | 0.5                     | the least character at least this                                                                                                                                   |
-| `lineMean`                                                    | 0.75                    | a line below this is dropped whole                                                                                                                                  |
-| `sparseAreaShare`                                             | 0.02                    | native text covering under 2% of the page is sparse                                                                                                                 |
-| `sparseChars`                                                 | 40                      | fewer characters is sparse (a page number, a header)                                                                                                                |
-| `overlap`                                                     | 0.3                     | share of an OCR word under native text that drops it                                                                                                                |
-| `figureMinSide`                                               | 36 pt                   | a picture under 0.5 in on either side is an icon, logo, bullet or badge; the smallest figure with labels in the lecture PDFs is 116 pt                              |
-| `figureMinAreaShare`                                          | 0.015                   | under 1.5% of the page is not a figure either                                                                                                                       |
-| `figureMergeGap`                                              | 3 pt                    | pictures this close are one figure (strips)                                                                                                                         |
-| `figurePad`                                                   | 6 pt                    | a label at the picture's edge is still read                                                                                                                         |
-| `scannedShare`                                                | 0.6                     | a sparse page with a picture over 60% of it is a scan                                                                                                               |
-| `figureMinDpi` / `figureMaxDpi`                               | 170 / 300               | raster resolution follows the picture, clamped; every figure in the lecture PDFs is stored above 300 dpi, so all were read at 300 dpi                               |
-| `figureMaxEdge`                                               | 2200 px                 | longest side of a region raster (memory on a phone)                                                                                                                 |
-| `OCR_DPI` / `OCR_MAX_EDGE`                                    | 170 / 2200              | whole-page raster                                                                                                                                                   |
-| `DET_TILE_SIDE` / `DET_TILE_OVERLAP`                          | 800 / 96 px             | smaller tiles than 1280 cut peak memory by about 270 MB with the same accuracy                                                                                      |
-| `DB_THRESHOLD`, `DB_BOX_SCORE`, `DB_UNCLIP_RATIO`, `MAX_TILT` | 0.3, 0.6, 1.5, 0.26 rad | PaddleOCR's own post-processing values; tilt is about 15 degrees                                                                                                    |
-| `MIN_PIXELS`, `MIN_SIDE`, `MIN_GROWN_SIDE`, `MIN_ELONGATION`  | 12 px, 3 px, 6 px, 2    | box finder: a blob under 12 pixels, under 3 px thick, or under 6 px thick after growing is noise; a blob less than 2x longer than thick has no direction of its own |
-| `MASK_PAD`                                                    | 2 px                    | native text rectangles are widened by this when masked out of an ink or edge check                                                                                  |
-| `MAX_IMAGES`                                                  | 1000                    | images read from one page's operators; more is a pattern, not a figure                                                                                              |
-| `REC_CORE`                                                    | 1.2                     | see the variant table                                                                                                                                               |
-| `REC_STRIDE`, `REC_BATCH`                                     | 8, 4                    | pixels per CTC time step; recogniser batches of 4 for memory                                                                                                        |
-| `RIGHT_BIAS`                                                  | 0.1                     | a tenth more on a word's right edge                                                                                                                                 |
-| `CLASSIFY_VERSION`                                            | 1                       | bump when the classification rules change: a `TEXT_ONLY` page recorded under older rules is looked at again                                                         |
-| `IDLE_MS`                                                     | 3000                    | pages away from the one in view wait until nothing happened for this long                                                                                           |
-| `RETRY_MS`, `MAX_FAILURES`                                    | 60 s, 4                 | a failed page is not retried for a minute; four failures in a row and OCR rests for the session                                                                     |
-| `SAVE_MS`                                                     | 2500                    | the cache is written this long after the last page                                                                                                                  |
+| name                                                                           | value                   | meaning, and why                                                                                                                                                    |
+| ------------------------------------------------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wordMean`                                                                     | 0.85                    | a word's mean character confidence at least this; the scribble test kept none and the printed page lost none                                                        |
+| `wordMin`                                                                      | 0.5                     | the least character at least this                                                                                                                                   |
+| `lineMean`                                                                     | 0.75                    | a line below this is dropped whole                                                                                                                                  |
+| `sparseAreaShare`                                                              | 0.02                    | native text covering under 2% of the page is sparse                                                                                                                 |
+| `sparseChars`                                                                  | 40                      | fewer characters is sparse (a page number, a header)                                                                                                                |
+| `overlap`                                                                      | 0.3                     | share of an OCR word under native text that drops it                                                                                                                |
+| `figureMinSide`                                                                | 36 pt                   | a picture under 0.5 in on either side is an icon, logo, bullet or badge; the smallest figure with labels in the lecture PDFs is 116 pt                              |
+| `figureMinAreaShare`                                                           | 0.015                   | under 1.5% of the page is not a figure either                                                                                                                       |
+| `figureMergeGap`                                                               | 3 pt                    | pictures this close are one figure (strips)                                                                                                                         |
+| `figurePad`                                                                    | 6 pt                    | a label at the picture's edge is still read                                                                                                                         |
+| `scannedShare`                                                                 | 0.6                     | a sparse page with a picture over 60% of it is a scan                                                                                                               |
+| `figureMinDpi` / `figureMaxDpi`                                                | 170 / 300               | raster resolution follows the picture, clamped; every figure in the lecture PDFs is stored above 300 dpi, so all were read at 300 dpi                               |
+| `figureMaxEdge`                                                                | 2200 px                 | longest side of a region raster (memory on a phone)                                                                                                                 |
+| `OCR_DPI` / `OCR_MAX_EDGE`                                                     | 170 / 2200              | whole-page raster                                                                                                                                                   |
+| `DET_TILE_SIDE` / `DET_TILE_OVERLAP`                                           | 800 / 96 px             | smaller tiles than 1280 cut peak memory by about 270 MB with the same accuracy                                                                                      |
+| `DB_THRESHOLD`, `DB_BOX_SCORE`, `DB_UNCLIP_RATIO`, `MAX_TILT`                  | 0.3, 0.6, 1.5, 0.26 rad | PaddleOCR's own post-processing values; tilt is about 15 degrees                                                                                                    |
+| `MIN_PIXELS`, `MIN_SIDE`, `MIN_GROWN_SIDE`, `MIN_ELONGATION`                   | 12 px, 3 px, 6 px, 2    | box finder: a blob under 12 pixels, under 3 px thick, or under 6 px thick after growing is noise; a blob less than 2x longer than thick has no direction of its own |
+| `MASK_PAD`                                                                     | 2 px                    | native text rectangles are widened by this when masked out of an ink or edge check                                                                                  |
+| `MAX_IMAGES`                                                                   | 1000                    | images read from one page's operators; more is a pattern, not a figure                                                                                              |
+| `REC_CORE`                                                                     | 1.2                     | see the variant table                                                                                                                                               |
+| `REC_STRIDE`, `REC_BATCH`                                                      | 8, 4                    | pixels per CTC time step; recogniser batches of 4 for memory                                                                                                        |
+| `REC_RETRY`                                                                    | 1.0, 1.4                | the `REC_CORE` values a line the reader was unsure of is read again with; see the table of what was tried                                                           |
+| `INK_LEVEL`, `BLANK_SHARE`                                                     | 225, 0.0002             | a pixel darker than 225 is ink; under 0.02% ink a page is blank                                                                                                     |
+| `EDGE_STEP`, `EDGE_SHARE`                                                      | 40 levels, 0.0004       | an edge is a luminance step of 40 between neighbours; 0.04% of the area as edges is content (a backdrop has none)                                                   |
+| ink / edge check copy                                                          | 256 / 640 px            | the longest side of the copy the ink check, and the edge check (which needs small print to survive), look at                                                        |
+| `IDLE_RELEASE_MS`                                                              | 2 min                   | the OCR worker, and its models, are let go after this idle                                                                                                          |
+| `correctMinLetters`, `correctMaxEdit`, `correctMaxEditLong`, `correctLongFrom` | 5, 1, 2, 9              | a misread word of 5 letters or more is corrected within one weighted edit (two from 9 letters); shorter words have too many neighbours                              |
+| `correctConfusion`, `correctDoubled`                                           | 0.4, 0.5                | cost of a classic confusion (rn/m, cl/d, vv/w, li/h, I/l/1, O/0) and of a doubled or missing double letter, against 1 for any other edit                            |
+| enclosed-symbol width                                                          | 1.6 letters             | how wide a symbol is taken to be when a word was stored without character positions                                                                                 |
+| `RIGHT_BIAS`                                                                   | 0.1                     | a tenth more on a word's right edge                                                                                                                                 |
+| `CLASSIFY_VERSION`                                                             | 1                       | bump when the classification rules change: a `TEXT_ONLY` page recorded under older rules is looked at again                                                         |
+| `IDLE_MS`                                                                      | 3000                    | pages away from the one in view wait until nothing happened for this long                                                                                           |
+| `RETRY_MS`, `MAX_FAILURES`                                                     | 60 s, 4                 | a failed page is not retried for a minute; four failures in a row and OCR rests for the session                                                                     |
+| `SAVE_MS`                                                                      | 2500                    | the cache is written this long after the last page                                                                                                                  |
 
 **REC_CORE variants** (synthetic scan pages, Chromium, real models; CER of all words
 on `a-scan`, `a-scan-1col`; double-letter words exact): 1.0: 0.50%, 0.78%, 18/21;
@@ -357,21 +365,30 @@ Ground truth was transcribed by eye from 4x and 10x renders of all 17 figure are
 printed lines, 460 words). Matching is case-insensitive, ignores punctuation and ignores spaces (so
 "250ml" matches "250 ml"). The headline is the full ground truth.
 
-| measure                                                                   | round 1           | now                   |
-| ------------------------------------------------------------------------- | ----------------- | --------------------- |
-| **label recall** (found exactly)                                          | 131 / 171 = 76.6% | **134 / 171 = 78.4%** |
-| printed lines found exactly                                               | 189 / 230 = 82.2% | 192 / 230 = 83.5%     |
-| exact or near-miss (at most 40% character edits)                          | 147 / 171 = 86.0% | 149 / 171 = 87.1%     |
-| CER over matched labels                                                   | 2.89%             | 1.80%                 |
-| kept words that belong to a real label (misreads included)                | 390 / 400 = 97.5% | 397 / 409 = 97.1%     |
-| kept words in an exactly-read label                                       | 343 / 400 = 85.8% | 354 / 409 = 86.6%     |
-| kept words in no label                                                    | 10                | 12                    |
-| secondary: recall excluding the 14 single panel letters (A. B. ... a b c) | 131 / 157 = 83.4% | 131 / 157 = 83.4%     |
-| secondary: circled step numbers left out of the ground truth              | 137 / 171 = 80.1% | 141 / 171 = 82.5%     |
-| secondary: strict word boundaries ("250ml" is a miss)                     | 122 / 171 = 71.3% | 125 / 171 = 73.1%     |
+| measure                                                                   | round 1           | round 2           | now                   |
+| ------------------------------------------------------------------------- | ----------------- | ----------------- | --------------------- |
+| **label recall** (found exactly)                                          | 131 / 171 = 76.6% | 134 / 171 = 78.4% | **145 / 171 = 84.8%** |
+| printed lines found exactly                                               | 189 / 230 = 82.2% | 192 / 230 = 83.5% | 203 / 230 = 88.3%     |
+| exact or near-miss (at most 40% character edits)                          | 147 / 171 = 86.0% | 149 / 171 = 87.1% | 150 / 171 = 87.7%     |
+| CER over matched labels                                                   | 2.89%             | 1.80%             | **1.21%**             |
+| kept words that belong to a real label (misreads included)                | 390 / 400 = 97.5% | 397 / 409 = 97.1% | **406 / 416 = 97.6%** |
+| kept words in an exactly-read label                                       | 343 / 400 = 85.8% | 354 / 409 = 86.6% | 384 / 416 = 92.3%     |
+| kept words in no label                                                    | 10                | 12                | 10                    |
+| wrong corrections                                                         |                   |                   | 0 of 4                |
+| secondary: recall excluding the 14 single panel letters (A. B. ... a b c) | 131 / 157 = 83.4% | 131 / 157 = 83.4% | 142 / 157 = 90.4%     |
 
-The target of 85% label recall is **not met** (78.4%; 83.4% without the single panel letters; 87.9%
-without those and the circled step numbers, which are icons). Precision stayed above 95%.
+Each change separately and together (the same 17 figures, read once; normalisation and correction are
+read-time only, so one reading gives all rows):
+
+|                            | recall                | precision (real label) | CER of matched labels |
+| -------------------------- | --------------------- | ---------------------- | --------------------- |
+| neither (round 2)          | 134 / 171 = 78.4%     | 397 / 409 = 97.1%      | 1.80%                 |
+| Unicode normalisation only | 141 / 171 = 82.5%     | 404 / 416 = 97.1%      | 1.46%                 |
+| vocabulary correction only | 138 / 171 = 80.7%     | 399 / 409 = 97.6%      | 1.54%                 |
+| **both**                   | **145 / 171 = 84.8%** | **406 / 416 = 97.6%**  | **1.21%**             |
+
+The target of 85% label recall is **missed by one label**: 145 of 171 is 84.8%, and 146 would be 85.4%.
+Without the 14 single panel letters it is 90.4%. Precision stayed above 95% and no correction was wrong.
 
 **Where the missed labels were lost** (diagnosed before anything was changed, each figure read
 alone, 39 misses of 171; instrumented box finder, annotated renders of the figures):
@@ -411,6 +428,53 @@ It lifted the CER of matched labels from 2.89% to 1.80%. The synthetic page with
 keeps 0 of 7 regions, and no other synthetic number moved. The remaining misses are the box finder
 and the recogniser's limit on glyphs a few pixels across, which a threshold does not fix.
 
+### Unicode normalisation and vocabulary correction
+
+Both happen when a page is read (`readableLines` in `ocr-words.ts`, the code in `ocr-text.ts`), never in
+the cache, which keeps the raw words; a changed word keeps what was read in `raw` in memory.
+
+**Normalisation.** NFKC for ligatures (U+FB00 to U+FB06), fullwidth forms (U+FF01 to U+FF5E) and the
+ideographic space. An enclosed number or letter (circled, parenthesised, dingbat: U+2460 to U+24FF and
+friends) becomes a word of its own: "①Before" is "1" and "Before", and the word's box is cut where the
+recogniser put the symbol. The cache stores, for a word that has such a character, where each character
+starts (`cuts`, from the CTC time steps; other words carry none); a word stored without them is cut in
+proportion to its characters, a symbol counting 1.6 letters. A ligature or fullwidth character expands in
+place and the box does not change. Search folds native text with `fold()` (NFKD, no accents, lower
+case) and OCR text goes through the same fold, so "1 before" is found in both; native text is not
+changed.
+
+**Vocabulary correction.** A reader that takes "m" for "rn" makes a word that is in no dictionary
+("Extemal"). A word is corrected to a word of the same PDF's own text only when all of these hold:
+it is made of letters (punctuation around it is kept); it has 5 letters or more
+(`correctMinLetters`); it is in neither the PDF's vocabulary nor the English list the plugin already
+ships (`models/words.txt`, about 25 000 words, read once when first needed; without it nothing is
+corrected); exactly one word of the PDF is nearest; the weighted distance is at most 1 (5 to 8
+letters) or 2 (9 or more, `correctLongFrom`); the candidate is not the word with an ending added or
+taken off, nor a word that differs only in its last letter ("slings"/"sling", "cystoscope"/"cystoscopy"
+are different words); and the OCR word has a case style to keep (all capitals, a capital first letter, or
+lower case). Distances cost 1 for an edit, `correctConfusion` (0.4) for rn/m, cl/d, vv/w, li/h in either
+direction and I/l/1 and O/0, and `correctDoubled` (0.5) for a doubled letter or a missing double.
+The PDF's vocabulary is the lower-case words of four letters or more of every page whose own text has
+been read so far (a PDF being browsed learns as it goes; a page already merged is not merged again when a
+later page adds words).
+
+Every correction made on 53.pdf (raw to corrected), with the whole PDF's vocabulary:
+
+| page | read          | corrected to |
+| ---- | ------------- | ------------ |
+| 2    | Extemal       | External     |
+| 2    | Extemal       | External     |
+| 10   | Augumentation | Augmentation |
+| 10   | augumentation | augmentation |
+
+All four are right. A first version also changed "Cystoscope" (a correct label) to "Cystoscopy", which
+the native text uses; that cost one label and is why a word that differs only in its last letter is
+never corrected.
+
+The synthetic pages (the clean, noisy and one-column pages) have no native text, so their vocabulary is
+empty and the corrector changed 0 of their 221, 219 and 176 words; the merge page has a native "7" and
+changed 0 of 219.
+
 ### Pages with a picture behind the text
 
 A slide background, a watermark or a paper texture is a picture over most of the page under text
@@ -446,11 +510,12 @@ labels at 8 pt; the text is 46 lines of Helvetica over the picture), through the
   photograph with detail is read whole, once per page.
 - Vertical and rotated text (more than 15 degrees) is dropped; CJK is untested.
 - Double letters are right on the test pages but are the recogniser's weakest point,
-  and so are single letters and symbols (circled digits, "Delta") on busy backgrounds.
-- A circled step number is read as a symbol glued to the word, so a label that starts with one is not an exact match.
+  and so are single letters and symbols ("Delta") on busy backgrounds.
+- A circled step number is split from its word at read time (see above); an icon that is read as a letter
+  (a pink cross read as "X") is not.
 - Panel letters and single letters on photographs, and labels crossed by drawing lines, are the main
-  remaining misses (see the diagnosis table); label recall on the lecture figures is 78.4%, below the
-  85% aimed for.
+  remaining misses (see the diagnosis table); label recall on the lecture figures is 84.8%, one label
+  under the 85% aimed for.
 - Clip paths other than the page edge are not tracked.
 - Settings changes apply to the next time a page is read; a notebook already open
   keeps the text it has until the page is read again.

@@ -19,7 +19,8 @@ extracted from the matching section of this file by `release.yml`.
   the download to be offered. _Also read text inside figures_ (on by default,
   under _Read scanned PDF pages_). The cache sidecar is now format 2: pages
   read before are read again. A picture behind the text (a slide background, a watermark) is
-  skipped unless it has content beyond the text, lines the reader was unsure of are read a second time, and
+  skipped unless it has content beyond the text, lines the reader was unsure of are read a second time, circled step numbers become words of
+  their own, a word misread as a near neighbour of a word in the same PDF ("Extemal") is corrected, and
   the setting takes effect without reopening a notebook. Details and measurements:
   [docs/OCR.md](docs/OCR.md).
 - **Scanned PDF pages are read on your device.** A PDF page that is a picture

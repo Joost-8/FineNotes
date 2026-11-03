@@ -118,11 +118,15 @@ function fakeOcr(found: OcrPage | null = null, enabled = true, figures = false) 
   return { service, calls, flags };
 }
 
-function cacheWith(service: unknown) {
+function cacheWith(
+  service: unknown,
+  // No English list unless a test brings one (the real one is a lazy import).
+  words: () => Promise<ReadonlySet<string> | null> = () => Promise.resolve(null),
+) {
   const app = {
     vault: { getFileByPath: () => ({}), readBinary: () => Promise.resolve(new ArrayBuffer(8)) },
   };
-  return new PdfTextCache(app as never, service as never);
+  return new PdfTextCache(app as never, service as never, words);
 }
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -387,6 +391,46 @@ describe("PdfTextCache with OCR", () => {
       await settle();
       expect(calls.recorded).toEqual([]);
       expect(calls.wanted).toEqual([]);
+    });
+
+    it("corrects a misread figure word to a word of the PDF's own text, when the English list is there", async () => {
+      // Page text mentions "external" (in a line of its own text); the figure's label was read "Extemal".
+      pdf.items = [
+        ...text(),
+        {
+          str: "the external sphincter and the bladder",
+          transform: [10, 0, 0, 10, 20, 400],
+          width: 190,
+          height: 10,
+          fontName: "f1",
+        },
+      ];
+      const misread: OcrPage = {
+        ...LABELS,
+        lines: [
+          {
+            conf: 0.98,
+            words: [{ text: "Extemal", box: [150, 340, 200, 352], conf: 0.98, min: 0.9 }],
+          },
+        ],
+      };
+      const lexicon = new Set(
+        Array.from({ length: 1200 }, (_, i) => `word${"abcdefghij"[i % 10]}${i}`),
+      );
+      const withList = cacheWith(fakeOcr(misread, true, true).service, () =>
+        Promise.resolve(lexicon),
+      );
+      withList.request(BACKDROP);
+      await settle();
+      const layoutWith = withList.peek(BACKDROP, GEOMETRY);
+      expect(layoutWith && layoutPlainText(layoutWith).split("\n")).toContain("External");
+
+      // Without the list nothing is corrected: the guard against real words cannot be made.
+      const without = cacheWith(fakeOcr(misread, true, true).service, () => Promise.resolve(null));
+      without.request(BACKDROP);
+      await settle();
+      const layoutWithout = without.peek(BACKDROP, GEOMETRY);
+      expect(layoutWithout && layoutPlainText(layoutWithout).split("\n")).toContain("Extemal");
     });
 
     it("takes the setting at once: turned on, the pages shown are looked at; turned off, figure words are hidden", async () => {

@@ -16,6 +16,7 @@
  */
 
 import type { PageCondition, Region } from "./figures";
+import { type Dictionary, type ReadWord, correctLines, normaliseLines } from "./ocr-text";
 import {
   type Matrix,
   type PdfTextItem,
@@ -32,6 +33,13 @@ export interface OcrWord {
   conf: number;
   /** The least of its characters' confidences. */
   min: number;
+  /**
+   * Page x of the start of each character after the first (`text.length - 1`
+   * numbers, in code points), kept only for a word with a character the
+   * reading normalises (`ocr-text.ts`), so it can be split where the
+   * recogniser put the symbol.
+   */
+  cuts?: number[];
 }
 
 /** A line of words, left to right, and the mean confidence of all its characters. */
@@ -99,6 +107,21 @@ export const OCR_TUNING = {
   figureMaxDpi: 300,
   /** ... and never with a side longer than this, px (OCR_MAX_EDGE: memory on a phone). */
   figureMaxEdge: 2200,
+
+  // Correcting a misread word to a word of the same PDF (ocr-text.ts). Read-time
+  // only: the cache keeps the raw words, so these need no new reading.
+
+  /** Only a word of this many letters or more is corrected: short words have too many near neighbours. */
+  correctMinLetters: 5,
+  /** The farthest a word of 5 to 8 letters may be from the word it is corrected to: one edit. */
+  correctMaxEdit: 1,
+  /** ... and of a word of {@link correctLongFrom} letters or more: a longer word can hold two. */
+  correctMaxEditLong: 2,
+  correctLongFrom: 9,
+  /** What a classic confusion costs against 1 for any other edit: rn/m, cl/d, vv/w, li/h, I/l/1, O/0. */
+  correctConfusion: 0.4,
+  /** What a doubled letter, or a missing one the word doubles, costs. */
+  correctDoubled: 0.5,
 } as const;
 
 export type OcrTuning = { [K in keyof typeof OCR_TUNING]: number };
@@ -208,13 +231,13 @@ function coveredShare(word: Rect, others: readonly Rect[]): number {
  * together, or as IoU): the page's own text always wins, and nothing is
  * read twice.
  */
-export function dropCovered(
-  lines: readonly OcrWord[][],
+export function dropCovered<W extends OcrWord>(
+  lines: readonly W[][],
   native: readonly Rect[],
   tuning: OcrTuning = OCR_TUNING,
-): OcrWord[][] {
+): W[][] {
   if (native.length === 0) return lines.map((l) => [...l]);
-  const out: OcrWord[][] = [];
+  const out: W[][] = [];
   for (const line of lines) {
     const kept = line.filter((w) => {
       const r = { x0: w.box[0], y0: w.box[1], x1: w.box[2], y1: w.box[3] };
@@ -315,6 +338,7 @@ export function mergedItems(
   source: { width: number; height: number },
   tuning: OcrTuning = OCR_TUNING,
   figures = true,
+  dictionary?: Dictionary,
 ): PdfTextItem[] {
   if (!ocr || ocr.condition === "TEXT_ONLY" || ocr.condition === "BLANK") return [...native];
   const ofFigures = ocr.condition === "TEXT_WITH_FIGURES";
@@ -322,8 +346,27 @@ export function mergedItems(
   const toView = pdfToPage(viewport, source, source);
   const layout = layoutText(native, toView);
   if (!ofFigures && !isSparse(layout, source.width, source.height, tuning)) return [...native];
-  const lines = dropCovered(keptLines(ocr, tuning), nativeRects(layout), tuning);
-  return [...native, ...wordItems(lines, viewport)];
+  return [
+    ...native,
+    ...wordItems(readableLines(ocr, nativeRects(layout), tuning, dictionary), viewport),
+  ];
+}
+
+/**
+ * The lines OCR contributes to a page: those that pass the confidence
+ * filter, with their Unicode normalised, none over the page's own text, and
+ * (given the PDF's `dictionary`) each misread word corrected to the one word
+ * of the PDF it is a cheap misreading of. Corrected and normalised words keep
+ * what was read in `raw`.
+ */
+export function readableLines(
+  ocr: OcrPage,
+  native: readonly Rect[],
+  tuning: OcrTuning = OCR_TUNING,
+  dictionary?: Dictionary,
+): ReadWord[][] {
+  const lines = dropCovered(normaliseLines(keptLines(ocr, tuning)), native, tuning);
+  return dictionary ? correctLines(lines, dictionary, tuning) : lines;
 }
 
 /**

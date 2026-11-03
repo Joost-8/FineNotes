@@ -187,6 +187,30 @@ describe("reading a page image", () => {
     expect(calls).toBe(6);
   });
 
+  it("keeps where each character starts, in page points, for a word with an enclosed number", async () => {
+    const alpha = [...alphabet, "\u2460"];
+    const bars = [{ x: 40, y: 60, w: 300, h: 10, text: "\u2460ab cd" }];
+    const page = await readPage(image, fakeBackend(bars, alpha), {
+      scale: 2,
+      pageWidth: 300,
+      pageHeight: 200,
+      alphabet: alpha,
+      retry: [],
+    });
+    const [glued, plain] = page.lines[0].words;
+    expect(glued.text).toBe("\u2460ab");
+    expect(glued.cuts).toHaveLength(2);
+    const [x0, , x1] = glued.box;
+    for (const c of glued.cuts ?? []) {
+      expect(c).toBeGreaterThan(x0);
+      expect(c).toBeLessThan(x1);
+    }
+    expect(glued.cuts?.[0]).toBeLessThan(glued.cuts?.[1] ?? 0);
+    // A word with nothing to normalise carries no positions.
+    expect(plain.text).toBe("cd");
+    expect(plain.cuts).toBeUndefined();
+  });
+
   it("rejects a class count the dictionary does not match (a damaged or wrong file)", async () => {
     const backend = fakeBackend([{ x: 40, y: 60, w: 300, h: 10, text: "abc" }], alphabet);
     await expect(
