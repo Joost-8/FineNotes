@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { boxBounds, findTextBoxes } from "../../../src/recognition/ocr/db";
 import {
+  DET_TILE_SIDE,
   OCR_MAX_EDGE,
   planTiles,
   rasterScale,
@@ -36,13 +37,14 @@ describe("tiles for the detector", () => {
     expect(tiles).toEqual([{ x: 0, y: 0, w: 500, h: 300, padW: 512, padH: 320 }]);
   });
 
-  it("cuts a page at 170 dpi into overlapping tiles no larger than 1280 that cover it", () => {
+  it("cuts a page at 170 dpi into overlapping tiles no larger than DET_TILE_SIDE that cover it", () => {
     const tiles = planTiles(1403, 1984);
-    expect(tiles.length).toBe(4);
+    expect(DET_TILE_SIDE).toBe(800);
+    expect(tiles.length).toBe(6);
     const covered = new Uint8Array(1403 * 1984);
     for (const t of tiles) {
-      expect(t.padW).toBeLessThanOrEqual(1280);
-      expect(t.padH).toBeLessThanOrEqual(1280);
+      expect(t.padW).toBeLessThanOrEqual(DET_TILE_SIDE);
+      expect(t.padH).toBeLessThanOrEqual(DET_TILE_SIDE);
       expect(t.padW % 32).toBe(0);
       expect(t.padH % 32).toBe(0);
       expect(t.x + t.w).toBeLessThanOrEqual(1403);

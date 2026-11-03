@@ -12,8 +12,8 @@
  * PURE: no DOM, no Obsidian, no onnxruntime.
  */
 
-/** The longest side of a tile, a multiple of 32: bounds the detector's memory. */
-export const DET_TILE_SIDE = 1280;
+/** The longest side of a tile, a multiple of 32: bounds the detector's memory (measured: 1280 took 270 MB more than 800 on an A4 page). */
+export const DET_TILE_SIDE = 800;
 /** How far neighbouring tiles overlap, px. */
 export const DET_TILE_OVERLAP = 96;
 const MULTIPLE = 32;

@@ -17,8 +17,8 @@ export const REC_HEIGHT = 48;
 export const REC_MAX_WIDTH = 3200;
 /** The recogniser downsamples its input's width by this much: one time step per 8 px. */
 export const REC_STRIDE = 8;
-/** A batch takes this many lines at most ... */
-export const REC_BATCH = 8;
+/** A batch takes this many lines at most (the memory of a batch grows with it) ... */
+export const REC_BATCH = 4;
 /** ... and its widest crop is at most this much wider than its narrowest. */
 const BATCH_WIDTH_RATIO = 1.35;
 
