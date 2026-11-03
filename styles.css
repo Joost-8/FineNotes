@@ -14410,9 +14410,48 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
 
 /* Along the bottom: after the page and the text layer, its hairline above. */
 .goodobsidian-view.goodobsidian-bar-at-bottom > .goodobsidian-toolbar {
+  order: 2;
+  border-bottom: none;
+  border-top: var(--gob-bar-border);
+}
+
+/* "Dock tool options" (discussion #43, toolbar.ts syncPillRow): the pill by
+   a bar along the top or bottom sits in a row of the bar's own colour, which
+   the page body gives its height to, so the pill covers no writing. One
+   band: the hairline moves from the bar to the row's far side. The pill is
+   still placed by toolbar.ts, over the row; the row only holds the room. */
+.goodobsidian-pill-row {
+  display: none;
+  position: relative;
+  z-index: 18;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  background: var(--gob-bar-bg);
+  border-bottom: var(--gob-bar-border);
+}
+
+.goodobsidian-view.goodobsidian-has-pill-row > .goodobsidian-pill-row {
+  display: block;
+}
+
+.goodobsidian-view.goodobsidian-has-pill-row > .goodobsidian-toolbar {
+  border-bottom-color: transparent;
+}
+
+/* Along the bottom the row is above the bar, its hairline above it. */
+.goodobsidian-view.goodobsidian-bar-at-bottom > .goodobsidian-pill-row {
   order: 1;
   border-bottom: none;
   border-top: var(--gob-bar-border);
+}
+
+.goodobsidian-view.goodobsidian-bar-at-bottom.goodobsidian-has-pill-row > .goodobsidian-toolbar {
+  border-top-color: transparent;
+}
+
+/* In the row it rests on the bar's band, not over the page: no shadow. */
+.goodobsidian-options.is-floating.is-docked {
+  box-shadow: none;
 }
 
 /* At a side: the view becomes two columns, the bar spanning every row of

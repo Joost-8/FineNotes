@@ -76,6 +76,8 @@ export interface MorePanelPage {
   folded?: FoldedBarItem[];
   /** Where the tool bar rests on this device (bar-dock-model.ts), for its row. */
   barDock?: BarDock;
+  /** "Dock tool options" is on, on this device (pill-row-model.ts). */
+  pillRow?: boolean;
   /** Fingers draw while the Pencil is away (`input/finger-draw.ts`). */
   fingerDrawing?: boolean;
 }
@@ -108,6 +110,8 @@ export interface MorePanelActions {
   copyHomeLink: () => void;
   /** Put the tool bar at `dock`, on this device. Without it the row is not offered. */
   setBarDock?: (dock: BarDock) => void;
+  /** Dock the tool options as a row by the bar, or let them float. Without it the row is not offered. */
+  setPillRow?: (on: boolean) => void;
   /** Let a finger draw until the Pencil writes again, or stop. Without it (no touch) the row is not offered. */
   setFingerDrawing?: (on: boolean) => void;
 }
@@ -309,6 +313,7 @@ export class MorePanel {
     if (page.darkPages) this.darkPdfRow(view);
     this.deskRow(view);
     this.barDockRow(view);
+    this.pillRowRow(view);
     this.fingerDrawRow(view);
     this.row(view, {
       icon: "keyboard",
@@ -366,6 +371,36 @@ export class MorePanel {
     });
     setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), "pointer");
     button.createSpan({ cls: "goodobsidian-more-label", text: "Draw with finger" });
+    const mark = button.createSpan({ cls: "goodobsidian-more-check" });
+    setIcon(mark, "check");
+    mark.toggleClass("is-hidden", !on);
+    button.setAttribute("role", "switch");
+    button.setAttribute("aria-checked", String(on));
+    button.addEventListener("click", () => {
+      this.close();
+      set(!on);
+    });
+  }
+
+  /**
+   * "Dock tool options" (discussion #43): the pill by the bar becomes a row
+   * the page starts past, so it covers no writing (pill-row-model.ts). A
+   * switch under "Toolbar", like "Draw with finger"; only while the bar runs
+   * along the top or bottom, the only places a row exists.
+   */
+  private pillRowRow(parent: HTMLElement): void {
+    const set = this.actions.setPillRow;
+    const bar = this.page.barDock ?? "top";
+    if (!set || (bar !== "top" && bar !== "bottom")) return;
+    const on = this.page.pillRow === true;
+    const button = parent.createEl("button", {
+      cls: "goodobsidian-more-row is-switch clickable-icon",
+    });
+    setIcon(
+      button.createSpan({ cls: "goodobsidian-more-icon" }),
+      bar === "top" ? "panel-top-open" : "panel-bottom-open",
+    );
+    button.createSpan({ cls: "goodobsidian-more-label", text: "Dock tool options" });
     const mark = button.createSpan({ cls: "goodobsidian-more-check" });
     setIcon(mark, "check");
     mark.toggleClass("is-hidden", !on);

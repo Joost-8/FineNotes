@@ -64,6 +64,7 @@ import { LearnWindow } from "./view/learn-window";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
 import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
+import { parsePillRowOn } from "./view/pill-row-model";
 import { ShortcutStore } from "./view/shortcut-store";
 import { buildInkFile, parseInkFile } from "./model/serialize";
 import {
@@ -1808,6 +1809,28 @@ export default class GoodObsidianPlugin extends Plugin {
     this.pillDockSeen = dock;
     this.app.saveLocalStorage(GoodObsidianPlugin.PILL_DOCK_KEY, dock);
     for (const view of this.openNotebooks()) view.showPillDock(dock);
+  }
+
+  private static readonly PILL_ROW_KEY = "goodobsidian:pill-row";
+
+  /**
+   * "Dock tool options" (pill-row-model.ts): the pill by a bar along the top
+   * or bottom becomes a row the page starts past. Off until chosen, so no
+   * one's page moves; kept per device, as the bar's and the pill's places are.
+   */
+  get pillRow(): boolean {
+    this.pillRowSeen ??= parsePillRowOn(this.app.loadLocalStorage(GoodObsidianPlugin.PILL_ROW_KEY));
+    return this.pillRowSeen;
+  }
+
+  private pillRowSeen: boolean | null = null;
+
+  /** The ⋯ panel switched "Dock tool options": keep it on this device, in every open notebook. */
+  setPillRow(on: boolean): void {
+    if (on === this.pillRow) return;
+    this.pillRowSeen = on;
+    this.app.saveLocalStorage(GoodObsidianPlugin.PILL_ROW_KEY, on ? "on" : null);
+    for (const view of this.openNotebooks()) view.showPillRow(on);
   }
 
   private static readonly BAR_DOCK_KEY = "goodobsidian:bar-dock";

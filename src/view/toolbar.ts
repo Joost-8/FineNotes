@@ -193,6 +193,7 @@ import {
   sideLift,
   uprightButtonSize,
 } from "./bar-dock-model";
+import { NO_PILL_ROW, type PillRow, pageTopShift, pillRow, pillRowEdge } from "./pill-row-model";
 import { hiddenEnds, pageScroll, scrollToShow } from "./swatch-drag-model";
 import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
@@ -654,6 +655,11 @@ export interface ToolbarCallbacks {
   onPillPlaced?: () => void;
   /** The user dragged the options pill to `dock`; the host keeps it for this device. */
   onPillDock?: (dock: PillDock) => void;
+  /**
+   * The docked pill's row (pill-row-model.ts) changed, moving the page's top
+   * by `shift` px (down positive): the surface keeps the spot read still.
+   */
+  onPillRow?: (shift: number) => void;
   // --- The Text tool (0.5).
   /** A text control changed: apply `patch` to the box being edited, if there is one. */
   onTextStyle?: (patch: TextStylePatch) => void;
@@ -764,6 +770,8 @@ export interface ToolbarOptions {
   pillDock?: PillDock;
   /** Where the tool bar rests (`bar-dock-model.ts`); along the top by default. */
   barDock?: BarDock;
+  /** "Dock tool options": the pill by the bar is a row the page starts past (`pill-row-model.ts`). */
+  pillRow?: boolean;
   /** The tools the bar shows, left to right (`toolbar-layout.ts`); the default bar when absent. */
   items?: readonly BarItemId[];
   /** The tools shown nowhere, not even in the accessories menu; none when absent. */
@@ -910,6 +918,12 @@ export class Toolbar {
   private readonly barEl: HTMLElement;
   /** Tier 2: the active tool's options pill. */
   private readonly optionsEl: HTMLElement;
+  /** The room the docked pill takes from the page, in the bar's colour (`pill-row-model.ts`). */
+  private readonly rowEl: HTMLElement;
+  /** "Dock tool options" is on, on this device. */
+  private pillRowOn = false;
+  /** The row as shown now. */
+  private row: PillRow = NO_PILL_ROW;
 
   // The buttons that each stand for one choice, keyed by it. `syncActive`
   // marks the one matching the state; the pill's are rebuilt with the pill.
@@ -1070,12 +1084,15 @@ export class Toolbar {
     this.palette = [...palette];
     this.optionsTool = state.tool;
     this.onlyStylusOn = options.onlyStylusMode === true;
-    this.optionsVisible = !STARTS_TUCKED.has(optionsKey(state.tool));
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
     this.barEl.setAttribute("aria-label", "Handwriting tools");
     this.barDock = parseBarDock(options.barDock);
     this.applyBarDock();
+    // In the flow after the bar (before it along the bottom, styles.css), so
+    // the page body gives it its height.
+    this.rowEl = host.createDiv({ cls: "goodobsidian-pill-row" });
+    this.pillRowOn = options.pillRow === true;
     // The pill always floats over the page (styles.css, `.is-floating`).
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
@@ -1086,6 +1103,8 @@ export class Toolbar {
     this.optionsEl.dataset.ignoreSwipe = "true";
 
     this.pillDock = offeredDock(options.pillDock);
+    // Docked, the pen's pill covers nothing: it need not start tucked away.
+    this.optionsVisible = !this.startsTucked(state.tool);
     this.optionsEl.addClass(`is-dock-${this.pillDock}`);
     this.optionsEl.toggleClass("is-upright", isUpright(this.pillDock));
     bindPillDrag(this.optionsEl, {
@@ -2093,13 +2112,24 @@ export class Toolbar {
    * picked ({@link STARTS_TUCKED}). Highlighter is a pen type, so the two
    * share one memory.
    */
+  /**
+   * Whether `tool`'s pill starts tucked away when picked ({@link STARTS_TUCKED}):
+   * not while it docks as a row, where it covers no writing and tucking it
+   * would only move the page at every switch to the pen.
+   */
+  private startsTucked(tool: ActiveTool): boolean {
+    return (
+      STARTS_TUCKED.has(optionsKey(tool)) &&
+      pillRowEdge(this.pillRowOn, this.pillDock, this.barDock) === null
+    );
+  }
+
   private leaveToolFor(next: ActiveTool): void {
     if (optionsKey(next) === optionsKey(this.optionsTool)) return;
     this.tuckedByStroke = false;
     if (this.optionsVisible) this.tuckedTools.delete(optionsKey(this.optionsTool));
     else this.tuckedTools.add(optionsKey(this.optionsTool));
-    const remembered =
-      !this.tuckedTools.has(optionsKey(next)) && !STARTS_TUCKED.has(optionsKey(next));
+    const remembered = !this.tuckedTools.has(optionsKey(next)) && !this.startsTucked(next);
     this.optionsVisible = optionsAfterSwitch(
       this.optionsVisible,
       remembered,
@@ -5298,6 +5328,42 @@ export class Toolbar {
     this.callbacks.onPillPlaced?.();
   }
 
+  /**
+   * "Dock tool options" was switched on this device (main.ts, `pillRow`):
+   * the pill by the bar becomes a row the page starts past, or floats again.
+   */
+  setPillRow(on: boolean): void {
+    if (on === this.pillRowOn) return;
+    this.pillRowOn = on;
+    this.applyPosition();
+  }
+
+  /**
+   * Give the docked pill's row its room (`pill-row-model.ts`): the row's
+   * height, which the page body gives up, and `is-docked` on the pill, which
+   * then sits in it. It is placed where it floated: `pageArea` already puts
+   * it `EDGE_INSET` clear of the bar, and the row is that inset either side
+   * of it. `anchored`: floating by a text box, where the row keeps its room.
+   */
+  private syncPillRow(shown: boolean, height: number, anchored = false): void {
+    const next = pillRow({
+      edge: pillRowEdge(this.pillRowOn, this.pillDock, this.barDock),
+      shown,
+      anchored,
+      height,
+      gap: EDGE_INSET,
+      previous: this.row,
+    });
+    this.optionsEl.toggleClass("is-docked", next.edge !== null && !anchored);
+    const before = this.row;
+    if (next.edge === before.edge && next.room === before.room) return;
+    this.row = next;
+    this.host.toggleClass("goodobsidian-has-pill-row", next.edge !== null);
+    this.rowEl.setCssStyles({ height: `${next.room}px` });
+    const shift = pageTopShift(before, next);
+    if (shift !== 0) this.callbacks.onPillRow?.(shift);
+  }
+
   /** The bar and the pill as shown, as vertical spans in screen px (`toastSide`). */
   chromeSpans(): Array<{ top: number; bottom: number }> {
     // An upright bar stands beside the page, clear of a toast centred on it.
@@ -5322,6 +5388,7 @@ export class Toolbar {
     this.optionsEl.toggleClass("is-offscreen", anchored === "hidden");
     if (anchored === "hidden") {
       this.clearForPill(null, hostBox);
+      this.syncPillRow(false, 0, true);
       return;
     }
     if (anchored) {
@@ -5330,6 +5397,7 @@ export class Toolbar {
         top: `${Math.round(anchored.top)}px`,
       });
       this.clearForPill(null, hostBox);
+      this.syncPillRow(false, 0, true);
       return;
     }
     const area = this.pillArea(hostBox, pill.width);
@@ -5343,8 +5411,10 @@ export class Toolbar {
       top: `${Math.round(place.top)}px`,
     });
     const shown = !this.optionsEl.hasClass("is-collapsed") && !this.optionsEl.hasClass("is-hidden");
+    this.syncPillRow(shown, pill.height);
+    // Docked, the page already ends at the row: nothing on it need step aside.
     this.clearForPill(
-      shown
+      shown && this.row.edge === null
         ? {
             left: place.left,
             top: place.top,
@@ -5578,7 +5648,10 @@ export class Toolbar {
     this.optionsEl.toggleClass("is-collapsed", !visible);
     // Tucked away, it leaves its edge to the counter and the readout again.
     if (visible) this.applyPosition();
-    else this.clearForPill(null, this.host.getBoundingClientRect());
+    else {
+      this.clearForPill(null, this.host.getBoundingClientRect());
+      this.syncPillRow(false, 0);
+    }
   }
 
   /**
@@ -5898,7 +5971,8 @@ export class Toolbar {
    * options while writing").
    */
   tuckOptions(): void {
-    if (!this.optionsVisible) return;
+    // A docked pill covers no ink, and tucking it would move the page each stroke.
+    if (!this.optionsVisible || this.row.edge !== null) return;
     this.optionsVisible = false;
     this.tuckedByStroke = true;
     this.showOptions(false);

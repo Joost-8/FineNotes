@@ -392,6 +392,7 @@ import {
   pickWord,
 } from "../canvas/text-pick";
 import { TextPickView } from "./text-pick-view";
+import { followTopShift as offsetAfterTopShift } from "./pill-row-model";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
 import {
@@ -4463,6 +4464,9 @@ export class InkSurface {
     if (size === "retry") window.requestAnimationFrame(() => this.layout());
     if (size !== "layout") return;
     this.hudLayouts += 1;
+    // Only a pane that lost or gained that much height at its top moved with the row.
+    const topShift = Math.abs(this.cssH - cssH - this.topShift) < 1.5 ? this.topShift : 0;
+    this.topShift = 0;
     // A row zoomed in keeps the spot in the middle of the pane in the middle
     // when the pane changes width (the sidebar, the Ask AI panel, a rotation,
     // Split View): the scale and the gap between pages both follow the width,
@@ -4515,7 +4519,9 @@ export class InkSurface {
     // A row fits one page (and its margins) to the pane, not the whole row.
     const fit = this.pageLayout.fitWidth;
     this.baseScale = fit > 0 ? Math.min(1, cssW / fit) : 1;
-    this.updateZoomFloor(cssH);
+    // The options row opening or closing is no new pane: the page keeps its
+    // size, as for the keyboard, and only moves (`followTopShift` below).
+    this.updateZoomFloor(cssH, topShift !== 0);
     if (direction === "horizontal") {
       // One page per screen, as GoodNotes: now the floor is known, space the
       // pages so a centred page's neighbours sit just off the pane. The gap
@@ -4532,6 +4538,13 @@ export class InkSurface {
     if (anchored && priorScale > 0 && Math.abs(scale / priorScale - 1) > 1e-6) {
       const ratio = scale / priorScale;
       this.scroller.setPosition(priorAt.x * ratio, priorAt.y * ratio);
+    }
+    if (anchored && topShift !== 0) {
+      const at = this.scroller.position;
+      this.scroller.setPosition(
+        at.x,
+        offsetAfterTopShift(at.y, topShift, this.scroller.bounds.minY),
+      );
     }
     const rowSpot =
       rowAnchor && !turned && !this.atZoomFloor ? this.pageLayout.boxes[rowAnchor.index] : null;
@@ -4757,6 +4770,20 @@ export class InkSurface {
   /** A layout was asked for while the page was hidden (`layout`): do it on showing. */
   private layoutWhenShown = false;
   /**
+   * How far the pane's top moved down since the last layout, px, because
+   * the docked options row (pill-row-model.ts) opened or closed above it.
+   */
+  private topShift = 0;
+
+  /**
+   * The docked options row above the page opened (`shift` > 0) or closed:
+   * the next layout keeps the spot being read still on screen rather than
+   * letting it ride down or up with the pane's top (`followTopShift`).
+   */
+  followTopShift(shift: number): void {
+    this.topShift += shift;
+  }
+  /**
    * The page a zoomed-in row is held to (`ensurePaperSize`). Its own field,
    * not `pageIndex`: the page indicator rewrites `pageIndex` from what is on
    * screen while the view glides to a new page, and the hold must not follow
@@ -4779,8 +4806,9 @@ export class InkSurface {
    * height. The first layout opens at the floor, as GoodNotes opens a page;
    * afterwards a view sitting at the floor stays there when the pane changes
    * shape (a rotation), and a view below the new floor is lifted onto it.
+   * `hold`: the pane changed for the docked options row, which leaves both.
    */
-  private updateZoomFloor(cssH: number): void {
+  private updateZoomFloor(cssH: number, hold = false): void {
     let tallest = 0;
     for (const box of this.pageLayout.boxes) tallest = Math.max(tallest, box.height);
     const step = nextZoomFloor({
@@ -4789,7 +4817,7 @@ export class InkSurface {
       newFloor: fitPageZoom(tallest, this.baseScale, cssH),
       initialised: this.zoomInitialised,
       // A pane made short by the keyboard must not re-fit the page into it.
-      keyboard: document.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
+      keyboard: hold || document.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
     });
     this.minZoom = step.floor;
     this.zoomInitialised = true;

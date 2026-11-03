@@ -1037,6 +1037,11 @@ export class InkView extends TextFileView {
     this.toolbar?.setBarDock(dock);
   }
 
+  /** "Dock tool options" was switched (the plugin's, per device): this notebook's pill follows. */
+  showPillRow(on: boolean): void {
+    this.toolbar?.setPillRow(on);
+  }
+
   /**
    * Stylus-only mode was switched here or through the toolbar: its toggle
    * follows in this notebook. The hand and magnifier are ordinary toolbar
@@ -2987,6 +2992,7 @@ export class InkView extends TextFileView {
         onLearnHandwriting: () => this.plugin.openLearnWindow(),
         onPillPlaced: () => this.surface?.placeToasts(),
         onPillDock: (dock) => this.plugin.setPillDock(dock),
+        onPillRow: (shift) => this.surface?.followTopShift(shift),
         onOnlyStylusMode: (on) => void this.plugin.setOnlyStylusMode(on),
         onZoomIn: () => this.surface?.zoomIn(),
         onZoomOut: () => this.surface?.zoomOut(),
@@ -3008,6 +3014,7 @@ export class InkView extends TextFileView {
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
         pillDock: this.plugin.pillDock,
         barDock: this.plugin.barDock,
+        pillRow: this.plugin.pillRow,
         items: this.settings.toolbarItems,
         offItems: this.settings.toolbarOff,
         onlyStylusMode: this.plugin.stylusOnly,
@@ -5092,6 +5099,7 @@ export class InkView extends TextFileView {
         },
         folded: this.toolbar?.foldedItems() ?? [],
         barDock: this.plugin.barDock,
+        pillRow: this.plugin.pillRow,
         fingerDrawing: this.plugin.fingerDrawing,
       },
       {
@@ -5126,6 +5134,7 @@ export class InkView extends TextFileView {
         showShortcuts: () => this.toggleShortcuts(),
         copyHomeLink: () => this.copyHomeLink(),
         setBarDock: (dock) => this.plugin.setBarDock(dock),
+        setPillRow: (on) => this.plugin.setPillRow(on),
         // Where touch exists: on a desktop the mouse draws already.
         setFingerDrawing:
           navigator.maxTouchPoints > 0 ? (on) => this.plugin.setFingerDrawing(on) : undefined,
