@@ -9,7 +9,8 @@
 //
 // English lives in TypeScript (src/i18n/en), so it is bundled in memory with
 // esbuild and imported from a data URL. Exits 1 when a table has a key
-// English does not (a renamed key left behind); missing keys are only listed.
+// English does not (a renamed key left behind), or a plural form that stands
+// for several numbers without {count}; missing keys are only listed.
 import esbuild from "esbuild";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -52,6 +53,31 @@ if (englishDir) {
   }
 }
 
+// The plural forms of `code` that more than one whole number selects. Each
+// must write {count} when English's .other does: Russian's "one" is also 21
+// and 101, so a literal 1 there is wrong. English's one and Arabic's zero,
+// one and two stand for a single number and may spell it out.
+const manyNumberForms = (code) => {
+  const rules = new Intl.PluralRules(code);
+  const seen = new Map();
+  const numbers = [...Array(1001).keys(), 1e6, 2e6, 1e7];
+  for (const n of numbers) {
+    const form = rules.select(n);
+    seen.set(form, (seen.get(form) ?? 0) + 1);
+  }
+  return new Set([...seen].filter(([, count]) => count > 1).map(([form]) => form));
+};
+const hasCount = (text) => /\{count\}/.test(text);
+const countless = (code, table) => {
+  const many = manyNumberForms(code);
+  return Object.keys(table).filter((key) => {
+    const base = baseOf(key);
+    const form = key.slice(key.lastIndexOf(".") + 1);
+    if (!base || !many.has(form)) return false;
+    return hasCount(EN[`${base}.other`]) && !hasCount(table[key]);
+  });
+};
+
 const dir = path.join(root, "src/i18n/locales");
 const missingDir = option("--missing");
 if (missingDir) mkdirSync(missingDir, { recursive: true });
@@ -74,12 +100,14 @@ for (const file of files) {
       : typeof table[key] === "string";
   };
   const missing = [...english].filter((k) => !present(k));
-  stale += extra.length;
+  const noCount = countless(code, table);
+  stale += extra.length + noCount.length;
   console.log(
     `${code.padEnd(6)} ${String(english.size - missing.length).padStart(5)}/${english.size}` +
       (missing.length ? `  missing ${missing.length}` : "") +
       (extra.length ? `  UNKNOWN ${extra.length}: ${extra.slice(0, 5).join(", ")}` : ""),
   );
+  for (const key of noCount) console.log(`       NO {count}: ${key}: ${table[key]}`);
   if (missingDir && missing.length) {
     writeFileSync(
       path.join(missingDir, `${code}.json`),

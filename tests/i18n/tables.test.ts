@@ -17,6 +17,32 @@ function pluralOther(key: string): string | null {
   return Object.prototype.hasOwnProperty.call(english, other) ? other : null;
 }
 
+/**
+ * The plural forms of `code` that more than one whole number selects (French
+ * "many" is a million and up): all but English's one, Arabic's zero, one and
+ * two, and forms it never uses.
+ */
+function manyNumberForms(code: string): Set<string> {
+  const rules = new Intl.PluralRules(code);
+  const seen = new Map<string, number>();
+  const numbers = [...Array(1001).keys(), 1e6, 2e6, 1e7];
+  for (const n of numbers) {
+    const form = rules.select(n);
+    seen.set(form, (seen.get(form) ?? 0) + 1);
+  }
+  return new Set([...seen].filter(([, count]) => count > 1).map(([form]) => form));
+}
+
+describe("manyNumberForms", () => {
+  it("leaves out forms that stand for one number", () => {
+    expect(manyNumberForms("en")).toEqual(new Set(["other"]));
+    expect(manyNumberForms("ru")).toEqual(new Set(["one", "few", "many"]));
+    expect(manyNumberForms("fr")).toEqual(new Set(["one", "many", "other"]));
+    expect(manyNumberForms("ar")).toEqual(new Set(["few", "many", "other"]));
+    expect(manyNumberForms("ms")).toEqual(new Set(["other"]));
+  });
+});
+
 describe("the English tables", () => {
   it("keep each key in the area it is named after, and no key twice", () => {
     let total = 0;
@@ -76,6 +102,19 @@ describe.each(files)("locales/%s", (file) => {
       const want = placeholdersOf(source).filter((p) => p !== "count");
       const got = placeholdersOf(text as string).filter((p) => p !== "count");
       expect(got, `${code}: ${key}`).toEqual(want);
+    }
+  });
+
+  it("writes {count} in every plural form that stands for more than one number", () => {
+    // Russian's "one" is also 21 and 101: only a form that is a single
+    // number (English's 1, Arabic's 0 and 2) may spell it out.
+    const many = manyNumberForms(code);
+    for (const [key, text] of Object.entries(table)) {
+      const form = key.slice(key.lastIndexOf(".") + 1);
+      const other = pluralOther(key);
+      if (!other || !many.has(form)) continue;
+      if (!placeholdersOf(english[other] ?? "").includes("count")) continue;
+      expect(placeholdersOf(text as string), `${code}: ${key}`).toContain("count");
     }
   });
 
