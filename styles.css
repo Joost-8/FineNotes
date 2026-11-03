@@ -14529,6 +14529,17 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   border-left-color: transparent;
 }
 
+/* Every colour, two to a line, in the docked column. */
+.goodobsidian-pen-colors.is-grid {
+  display: grid;
+  grid-template-columns: repeat(2, var(--gob-touch-compact));
+  min-width: 0;
+  max-width: none;
+  overflow: visible;
+  mask-image: none;
+  touch-action: auto;
+}
+
 /* The docked column has the page's whole height: every pen type shows. */
 .goodobsidian-options.is-docked.is-upright .goodobsidian-pen-types {
   max-height: none;

@@ -2349,18 +2349,22 @@ export class Toolbar {
   private buildPenOptions(): void {
     const active = this.activePenType();
     // Upright at a side, the pill folds as GoodNotes' does: the widths are
-    // one button, and the colours three and a ⌄.
+    // one button, and the colours three and a ⌄. Docked in a column of its
+    // own (`roomy`) it has the page's whole height: all the widths, and every
+    // colour in a grid.
     const upright = isUpright(this.pillDock);
+    const roomy = upright && this.dockedAtSide();
+    const folded = upright && !roomy;
     this.buildPenRow(upright);
     // The rest of the old pen menu: the laser pointer, the pen's settings and
     // the pen gestures. A practice sheet has none of them.
-    if (!upright && !this.practice) {
+    if (!folded && !this.practice) {
       this.chevron("Pen options", (button) => this.openPenMenu(button));
     }
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    if (upright) {
+    if (folded) {
       const width = this.state.size;
       const button = widthButton(
         this.optionsEl,
@@ -2394,7 +2398,13 @@ export class Toolbar {
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
     const colors = this.quickColors();
-    if (upright) {
+    if (roomy) {
+      // Every colour, two to a line, and the "+" after the last.
+      const grid = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors is-grid" });
+      grid.dataset.ignoreSwipe = "true";
+      for (const color of colors) this.penSwatch(grid, color, colors);
+      if (colors.length < PEN_ROW_MAX) this.addColorButton(grid);
+    } else if (folded) {
       // The chosen colour and its neighbours; the ⌄ holds the whole row.
       const chosen = colors.findIndex((c) => sameColor(c, this.state.color));
       const first = colorWindow(colors.length, chosen, UPRIGHT_COLORS);
@@ -3217,7 +3227,7 @@ export class Toolbar {
     const modeButton = this.optionsEl.createEl("button", { cls: "goodobsidian-erasermode" });
     const modeIcon = modeButton.createSpan({ cls: "goodobsidian-erasermode-icon" });
     eraserModeIcon(modeIcon, mode.id, mode.label);
-    modeButton.createSpan({ text: mode.label });
+    // The icon says it, the name is its label: the pill takes no room for words.
     const modeCaret = modeButton.createSpan({ cls: "goodobsidian-erasermode-caret" });
     iconOrText(modeCaret, "chevron-down", "");
     modeButton.setAttribute("aria-label", `Eraser mode: ${mode.label}`);
@@ -3252,7 +3262,6 @@ export class Toolbar {
     const icon =
       filter === "highlighter" ? "highlighter" : filter === "pen" ? "pen-line" : "layers";
     iconOrText(filterIcon, icon, ERASER_FILTER_LABELS[filter]);
-    filterButton.createSpan({ text: ERASER_FILTER_LABELS[filter] });
     const filterCaret = filterButton.createSpan({ cls: "goodobsidian-erasermode-caret" });
     iconOrText(filterCaret, "chevron-down", "");
     filterButton.toggleClass("is-filtered", filter !== "all");
@@ -3261,9 +3270,10 @@ export class Toolbar {
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const clear = this.optionsEl.createEl("button", {
-      cls: "goodobsidian-text-button",
-      text: "Clear page",
+      cls: "goodobsidian-text-button clickable-icon",
     });
+    iconOrText(clear, "trash-2", "Clear page");
+    clear.setAttribute("aria-label", "Clear page");
     clear.addEventListener("click", () => this.callbacks.onClear());
   }
 
@@ -3707,7 +3717,7 @@ export class Toolbar {
     // Labelled, as GoodNotes has it; a pane too narrow for the whole pill
     // (fitTextPill) drops the label and keeps the icon.
     iconOrText(pin.createSpan({ cls: "goodobsidian-text-pin-icon" }), "pin", "Pin");
-    pin.createSpan({ cls: "goodobsidian-text-pin-label", text: "Pin Text tool" });
+    // The pin alone, named by its label: the pill takes no room for words.
     pin.toggleClass("is-active", pinned);
     pin.setAttribute("aria-pressed", String(pinned));
 
@@ -5502,6 +5512,8 @@ export class Toolbar {
     if (on === this.pillRowOn) return;
     this.pillRowOn = on;
     this.followBar();
+    // Beside a bar at a side the pill's contents differ docked and floating.
+    if (isUpright(this.pillDock)) this.buildOptions();
     this.applyPosition();
     this.editor?.refresh();
   }
@@ -5652,6 +5664,12 @@ export class Toolbar {
       this.leftInset,
       pillWidth,
     );
+  }
+
+  /** Whether the pill is docked in a column beside a bar at a side (`pillRowEdge`). */
+  private dockedAtSide(): boolean {
+    const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
+    return edge === "left" || edge === "right";
   }
 
   /** How far the pill rests from the bar: less when it is docked in a row of its own. */
