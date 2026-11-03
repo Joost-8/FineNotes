@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { RIGHT_BIAS, ctcDecode, wordsOf } from "../../../src/recognition/ocr/ctc-words";
 import {
   REC_BATCH,
+  REC_CORE,
   REC_HEIGHT,
   REC_MAX_WIDTH,
   REC_STRIDE,
@@ -130,8 +131,9 @@ describe("CTC decoding with positions and confidences", () => {
 
 describe("the recogniser's input", () => {
   it("scales a line to height 48, keeping its aspect ratio, in multiples of 8, capped", () => {
-    expect(cropWidth({ w: 480, h: 48 })).toBe(480);
-    expect(cropWidth({ w: 500, h: 50 })).toBe(480);
+    // The box is read at REC_CORE of its height, so the crop is that much wider.
+    expect(cropWidth({ w: 480, h: 48 })).toBe(Math.ceil((480 * REC_CORE) / 8) * 8);
+    expect(cropWidth({ w: 480, h: 48 })).toBe(cropWidth({ w: 500, h: 50 }));
     expect(cropWidth({ w: 10, h: 100 })).toBe(16);
     expect(cropWidth({ w: 100000, h: 20 })).toBe(REC_MAX_WIDTH);
   });

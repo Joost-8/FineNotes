@@ -171,6 +171,8 @@ export class OcrService {
   private readonly failed = new Map<string, number>();
   /** What the queued pages have of their own text. */
   private readonly natives = new Map<string, NativeInfo>();
+  /** Pages with text of their own that were left because the model was not here: read once it is. */
+  private readonly waitingForModel = new Map<string, PageRef & { native: NativeInfo }>();
   private pumping = false;
   private parked = false;
   private lastActivity = Number.NEGATIVE_INFINITY;
@@ -186,10 +188,10 @@ export class OcrService {
   constructor(private readonly deps: OcrDeps) {
     // The model arriving (from the card, or the settings) un-parks the queue.
     this.unsubscribe = deps.store.subscribe(() => {
-      if (deps.store.state.kind === "ready" && this.parked) {
-        this.parked = false;
-        this.pump();
-      }
+      if (deps.store.state.kind !== "ready") return;
+      this.parked = false;
+      this.requeueWaiting();
+      this.pump();
     });
   }
 
@@ -223,6 +225,20 @@ export class OcrService {
     let paths = this.owners.get(owner);
     if (!paths) this.owners.set(owner, (paths = new Set()));
     paths.add(path);
+  }
+
+  /**
+   * The model arrived: the pages left for want of it are queued again, in the
+   * queue's usual order, if some open notebook still shows their PDF.
+   */
+  private requeueWaiting(): void {
+    for (const [key, waiting] of [...this.waitingForModel]) {
+      this.waitingForModel.delete(key);
+      if (!this.ownerOf(waiting.path)) continue;
+      this.natives.set(key, waiting.native);
+      this.queue.add(waiting.path, waiting.page);
+    }
+    this.emit();
   }
 
   /** `owner` is gone (its notebook closed): PDFs nobody else shows are dropped. */
@@ -450,7 +466,10 @@ export class OcrService {
     if (!cachedPage(file, page)) {
       // A page with text of its own is read only if the model is here already;
       // only a page with none at all may make it be offered.
-      if (native.items > 0 && (await this.deps.store.file()) === null) return;
+      if (native.items > 0 && (await this.deps.store.file()) === null) {
+        this.waitingForModel.set(ref, { path, page, native });
+        return;
+      }
       const shot = await this.deps.raster.render(path, page);
       let result: OcrPage;
       try {

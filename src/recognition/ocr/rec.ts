@@ -15,6 +15,20 @@ import type { TextBox } from "./db";
 export const REC_HEIGHT = 48;
 /** The widest crop, px (a wider line is squeezed): bounds a batch's memory. */
 export const REC_MAX_WIDTH = 3200;
+/**
+ * The detector's box (grown by the unclip distance, so taller than the
+ * text) is divided in height by this before the crop is scaled to
+ * {@link REC_HEIGHT}, keeping the glyphs larger: more time steps per
+ * character, so a doubled letter keeps the blank between its two copies.
+ * Measured on the rendered test pages (clean, noisy two-column, single
+ * column; character error 1 = off, 1.1, 1.2, 1.3): noisy 0.50, 0.00, 0.14,
+ * 0.36 %; single column 0.78, 0.09, 0.44, 0.17 %; clean 0.00 throughout
+ * (1.1 let one page-number line fall under the confidence filter, so 1.2
+ * is the one with no regression anywhere). Recognition time +13 % at 1.2.
+ * Stretching the width instead (1.15, 1.3) helped less: noisy 0.07, 0.43 %;
+ * single column 0.61, 0.52 %.
+ */
+export const REC_CORE = 1.2;
 /** The recogniser downsamples its input's width by this much: one time step per 8 px. */
 export const REC_STRIDE = 8;
 /** A batch takes this many lines at most (the memory of a batch grows with it) ... */
@@ -32,7 +46,7 @@ export interface RecCrop {
 
 /** The width a box is cropped to: its aspect ratio at {@link REC_HEIGHT}, multiple of 8, capped. */
 export function cropWidth(box: Pick<TextBox, "w" | "h">): number {
-  const ideal = Math.ceil((REC_HEIGHT * box.w) / Math.max(1, box.h));
+  const ideal = Math.ceil((REC_HEIGHT * box.w) / Math.max(1, box.h / REC_CORE));
   return Math.min(
     REC_MAX_WIDTH,
     Math.max(REC_STRIDE * 2, Math.ceil(ideal / REC_STRIDE) * REC_STRIDE),
@@ -56,9 +70,9 @@ export function cropLine(
   const cos = Math.cos(box.angle);
   const sin = Math.sin(box.angle);
   const sx = box.w / w;
-  const sy = box.h / REC_HEIGHT;
+  const sy = box.h / REC_CORE / REC_HEIGHT;
   for (let y = 0; y < REC_HEIGHT; y++) {
-    const v = (y + 0.5) * sy - box.h / 2;
+    const v = (y + 0.5) * sy - box.h / REC_CORE / 2;
     for (let x = 0; x < w; x++) {
       const u = (x + 0.5) * sx - box.w / 2;
       // The source point, minus a half pixel so pixel centres sit on integers.

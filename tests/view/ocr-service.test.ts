@@ -342,6 +342,40 @@ describe("OcrService", () => {
     expect(r.log.read).toEqual([]);
   });
 
+  it("reads a page left for want of the model once the model arrives, without a reopen", async () => {
+    const native = { items: 2, rects: [{ x0: 10, y0: 20, x1: 30, y1: 40 }] };
+    const r = rig({ ready: false });
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, native);
+    r.service.want(r.owner, "a.pdf", 1, 3, NONE);
+    await r.settle();
+    // The mixed page waits; the scanned one is offered and parked.
+    expect(r.log.rendered).toEqual(["a.pdf#1"]);
+    expect(r.log.offers).toBe(1);
+    expect(r.log.read).toEqual([]);
+    r.makeReady();
+    await r.settle();
+    // Both, in the queue's order (the page in view first), the mixed one only because it has ink beyond its text.
+    expect(r.log.rendered).toEqual(["a.pdf#1", "a.pdf#0", "a.pdf#1"]);
+    expect(r.log.read).toHaveLength(2);
+    expect(r.owner.ready.sort()).toEqual(["a.pdf#0", "a.pdf#1"]);
+    expect(r.log.offers).toBe(1);
+  });
+
+  it("does not read a page left for the model if no open notebook uses its PDF any more", async () => {
+    const native = { items: 2, rects: [] };
+    const r = rig({ ready: false });
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, native);
+    await r.settle();
+    r.service.release(r.owner);
+    r.makeReady();
+    await r.settle();
+    expect(r.log.rendered).toEqual([]);
+    expect(r.log.read).toEqual([]);
+    expect(r.service.progress().active).toBe(false);
+  });
+
   it("reads a page with text of its own, when the model is here, only if there is ink beyond that text", async () => {
     const native = { items: 2, rects: [{ x0: 10, y0: 20, x1: 30, y1: 40 }] };
     const r = rig({ ink: false });
