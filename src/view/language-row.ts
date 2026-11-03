@@ -57,11 +57,14 @@ export function drawLanguageRow(setting: Setting, host: LanguageRowHost): void {
     d.onChange((value) => {
       d.setDisabled(true);
       setting.setDesc(t("language.downloading"));
-      void host.choose(value).then((ok) => {
-        changed = true;
-        failed = !ok;
-        host.redraw();
-      });
+      void host
+        .choose(value)
+        .catch(() => false)
+        .then((ok) => {
+          changed = true;
+          failed = !ok;
+          host.redraw();
+        });
     });
   });
   if (failed) setting.setDesc(t("language.failed"));

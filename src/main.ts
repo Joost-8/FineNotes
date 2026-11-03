@@ -218,6 +218,7 @@ import {
 } from "./model/calculator-store";
 import { writeSystemText } from "./view/system-clipboard";
 import { InterfaceLanguage } from "./view/interface-language";
+import { EN } from "./i18n/en";
 import { t, tn } from "./i18n/translate";
 
 /** How many times the Text tool's hint pill is shown before it stops by itself. */
@@ -558,9 +559,11 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.workspace.on("layout-change", () => this.syncExplorerNotebookButton()),
     );
     this.app.workspace.onLayoutReady(() => this.syncExplorerNotebookButton());
-    this.addRibbonIcon(ICON_NEW_NOTEBOOK, t("notebooks.ribbon.newNotebook"), () =>
+    // Obsidian keeps a ribbon icon's place (hidden, moved) by its title, so the
+    // title stays English; the tooltip shows the language in use.
+    this.addRibbonIcon(ICON_NEW_NOTEBOOK, EN["notebooks.ribbon.newNotebook"], () =>
       this.openNewNotebookDialog(),
-    );
+    ).setAttribute("aria-label", t("notebooks.ribbon.newNotebook"));
     this.addCommands();
 
     this.settingTab = new GoodObsidianSettingTab(this.app, this);

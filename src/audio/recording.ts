@@ -161,11 +161,33 @@ export function formatClock(ms: number): string {
     : `${pad2(minutes)}:${pad2(seconds)}`;
 }
 
-/** `22 Sep 2026, 14:05`, in local time, with the month in the interface language. */
-export function formatRecordingDate(ms: number): string {
+/** Month names as a transcript note writes them: notes stay in English, whatever the interface. */
+const NOTE_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/**
+ * `22 Sep 2026, 14:05`, in local time, with the month in the interface
+ * language, or as `month` names it.
+ */
+export function formatRecordingDate(
+  ms: number,
+  month: (index: number) => string = monthName,
+): string {
   const date = new Date(ms);
   return (
-    `${date.getDate()} ${monthName(date.getMonth())} ${date.getFullYear()}, ` +
+    `${date.getDate()} ${month(date.getMonth())} ${date.getFullYear()}, ` +
     `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
   );
 }
@@ -370,7 +392,7 @@ export interface TranscriptNoteInput {
 export function buildTranscriptNote(input: TranscriptNoteInput): string {
   return (
     `# ${input.title} — transcript\n\n` +
-    `Recorded ${formatRecordingDate(input.start)} (${formatClock(input.duration)}) with ` +
+    `Recorded ${formatRecordingDate(input.start, (i) => NOTE_MONTHS[i] ?? "")} (${formatClock(input.duration)}) with ` +
     `${input.notebookLink}.${input.via ? ` ${input.via}` : ""}\n\n` +
     `${input.audioEmbed}\n\n` +
     `${input.text.trim()}\n`

@@ -7931,6 +7931,8 @@ export class InkSurface {
       const plus = buttonLabelled(bar, t("surface.zoomBox.zoomIn"));
       if (plus) bar.insertBefore(this.zoomReadout, plus);
       this.zoomAutoAdvanceButton = buttonLabelled(bar, t("surface.zoomBox.autoAdvance"));
+      // Found again later by a mark, not by its label: the language may change in between.
+      buttonLabelled(bar, t("surface.zoomBox.settings"))?.setAttribute("data-zoombox-settings", "");
       this.syncZoomAutoAdvanceButton();
     }
     const canvas = frame.body.createEl("canvas", {
@@ -8255,7 +8257,7 @@ export class InkSurface {
 
   private syncZoomSettingsButton(): void {
     const gear = this.zoomFrame
-      ? buttonLabelled(this.zoomFrame.el, t("surface.zoomBox.settings"))
+      ? this.zoomFrame.el.querySelector<HTMLButtonElement>("button[data-zoombox-settings]")
       : null;
     const open = this.zoomSettingsEl !== null;
     gear?.toggleClass("is-active", open);

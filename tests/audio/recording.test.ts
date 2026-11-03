@@ -4,6 +4,7 @@
  * upload limits and the transcript note.
  */
 
+import { useLanguage } from "../../src/i18n/translate";
 import { describe, expect, it } from "vitest";
 import {
   RECORDER_MIME_TYPES,
@@ -269,6 +270,26 @@ describe("upload limits", () => {
 });
 
 describe("buildTranscriptNote", () => {
+  it("writes the month in English whatever the interface language", () => {
+    useLanguage("de", { "ai.month.sep": "Sept." });
+    try {
+      const note = buildTranscriptNote({
+        title: "R",
+        start: new Date(2026, 8, 22, 14, 5).getTime(),
+        duration: 1000,
+        notebookLink: "[[A]]",
+        audioEmbed: "![[a.m4a]]",
+        text: "x",
+      });
+      expect(note).toContain("Recorded 22 Sep 2026, 14:05");
+      expect(formatRecordingDate(new Date(2026, 8, 22, 14, 5).getTime())).toBe(
+        "22 Sept. 2026, 14:05",
+      );
+    } finally {
+      useLanguage("en");
+    }
+  });
+
   it("is a heading, a link back, the audio, then the text", () => {
     const start = new Date(2026, 8, 22, 14, 5).getTime();
     const note = buildTranscriptNote({
