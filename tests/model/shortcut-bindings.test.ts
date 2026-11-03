@@ -391,6 +391,26 @@ describe("the ? sheet", () => {
     expect(line(groups, "Saved pen 2")?.ways).toEqual([{ keys: ["Q"] }]);
     expect(line(groups, "Saved pen 8")?.ways).toEqual([{ keys: ["8"] }]);
   });
+
+  it("lists a row the sheet has no line for once it has a key", () => {
+    const overrides = withShortcut(
+      withShortcut({}, "tool.zoom", { type: "key", key: "z", mods: [] }, "hold"),
+      "view.fullscreen",
+      { type: "key", key: "f", mods: ["Mod", "Shift"] },
+      "press",
+    );
+    const groups = boundShortcutGroups(shortcutTable(overrides), SHORTCUT_GROUPS);
+    const tools = groups.find((group) => group.title === "Tools");
+    expect(tools?.shortcuts.at(-1)).toEqual({
+      action: "Magnifier",
+      ways: [{ keys: ["Z"], gesture: "hold" }],
+    });
+    expect(line(groups, "Full screen")?.ways).toEqual([
+      { keys: ["Mod", "Shift", "F"], gesture: undefined },
+    ]);
+    // A row with no key is not listed.
+    expect(line(groups, "Zoom in")).toBeUndefined();
+  });
 });
 
 describe("buttons", () => {

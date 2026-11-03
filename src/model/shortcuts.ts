@@ -82,6 +82,14 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
         ways: [key("Mod", "A")],
         binding: "edit.select-all",
       },
+      {
+        action: "Delete the selection",
+        ways: [key("Delete"), key("Backspace")],
+        binding: "edit.delete",
+      },
+      { action: "Copy", ways: [key("Mod", "C")], binding: "edit.copy" },
+      { action: "Cut", ways: [key("Mod", "X")], binding: "edit.cut" },
+      { action: "Paste", ways: [key("Mod", "V")], binding: "edit.paste" },
       { action: "Undo", ways: [key("Mod", "Z")], binding: "edit.undo" },
       { action: "Redo", ways: [key("Mod", "Shift", "Z")], binding: "edit.redo" },
     ],
@@ -89,9 +97,13 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   {
     title: "View and zoom",
     shortcuts: [
-      { action: "Zoom in or out about the pen", ways: [held(["Alt"], "write up or down")] },
+      {
+        action: "Zoom about the pen, or draw the Zoom box",
+        ways: [held(["Alt"], "drag")],
+      },
       { action: "Move the page", ways: [held(["Space"], "drag")], binding: "tool.pan" },
-      { action: "Previous and next page", ways: [key("Page Up"), key("Page Down")] },
+      { action: "Previous page", ways: [key("Page Up")], binding: "view.previous-page" },
+      { action: "Next page", ways: [key("Page Down")], binding: "view.next-page" },
       { action: "Show or hide this list", ways: [key("?")], binding: "view.shortcuts" },
     ],
   },
