@@ -166,6 +166,7 @@ import {
 } from "../model/colors";
 import { bindSwatchDrag } from "./swatch-drag";
 import { shownColor } from "../canvas/backdrop";
+import { nightHighlighter } from "../canvas/night";
 import { bindPenTypeDrag } from "./pen-type-drag";
 import { movePenType, penTypeOrderOf, shownPenTypes } from "../model/pen-type-order";
 import { bindPillDrag } from "./pill-drag";
@@ -2301,7 +2302,7 @@ export class Toolbar {
       const spec = PEN_TYPES.find((type) => type.id === id);
       if (!spec) continue;
       const pen = row.createEl("button", { cls: "goodobsidian-pentype clickable-icon" });
-      pen.append(penGlyph(spec.id, this.shown(this.inkColorOf(spec))));
+      pen.append(penGlyph(spec.id, this.shown(this.inkColorOf(spec), spec.tool === "highlighter")));
       pen.setAttribute("aria-label", spec.label);
       pen.setAttribute("title", spec.label);
       pen.addEventListener("click", () => {
@@ -2667,6 +2668,8 @@ export class Toolbar {
     // Pointing at its swatch, as Notability's picker does.
     this.popover?.addClass("is-color-popover", "has-arrow");
     renderColorPicker(body, {
+      // The laser's trail is drawn in its true colour on any page.
+      shown: (color) => (kind === "laser-color" ? color : this.shown(color)),
       current,
       extra: this.pickerExtras(current),
       recent: this.state.recentColors ?? [],
@@ -2850,7 +2853,9 @@ export class Toolbar {
     const colorButton = this.optionsEl.createEl("button", {
       cls: "goodobsidian-shape-color clickable-icon",
     });
-    colorButton.createSpan({ cls: "goodobsidian-text-disc" }).setCssStyles({ background: color });
+    colorButton
+      .createSpan({ cls: "goodobsidian-text-disc" })
+      .setCssStyles({ background: this.shown(color, false) });
     caretIn(colorButton);
     colorButton.setAttribute("aria-label", `Fill colour ${color}`);
     colorButton.setAttribute("title", "Fill colour");
@@ -3138,7 +3143,9 @@ export class Toolbar {
     const button = this.optionsEl.createEl("button", {
       cls: "goodobsidian-shape-color clickable-icon",
     });
-    button.createSpan({ cls: "goodobsidian-text-disc" }).setCssStyles({ background: color });
+    button
+      .createSpan({ cls: "goodobsidian-text-disc" })
+      .setCssStyles({ background: this.shown(color, false) });
     caretIn(button);
     button.setAttribute("aria-label", `Shape colour ${color}`);
     button.setAttribute("title", "Shape colour");
@@ -3466,7 +3473,9 @@ export class Toolbar {
       this.toggleTextPopover("color", b, (body) => this.renderTextColors(body)),
     );
     // The disc *is* the text colour: a value, not chrome.
-    color.createSpan({ cls: "goodobsidian-text-disc" }).setCssStyles({ background: style.color });
+    color
+      .createSpan({ cls: "goodobsidian-text-disc" })
+      .setCssStyles({ background: this.shown(style.color, false) });
     caretIn(color);
 
     // To one decimal: a box resized before sizes were rounded may hold more.
@@ -3736,6 +3745,7 @@ export class Toolbar {
   private renderTextColors(body: HTMLElement): void {
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Colour" });
     renderColorPicker(body, {
+      shown: (color) => this.shown(color, false),
       current: this.shownTextStyle().color,
       extra: this.pickerExtras(this.shownTextStyle().color),
       recent: this.state.recentColors ?? [],
@@ -3988,6 +3998,7 @@ export class Toolbar {
   private renderTextFills(body: HTMLElement): void {
     body.createDiv({ cls: "goodobsidian-popover-label", text: "Box fill" });
     renderColorPicker(body, {
+      shown: (color) => this.shown(color, false),
       current: this.shownTextStyle().fill ?? null,
       allowNone: true,
       // The soft fills first-class: they are what a box is usually filled with.
@@ -4056,6 +4067,7 @@ export class Toolbar {
     const current = style.border?.color ?? style.color;
     // A colour picked with no border adds a thin one in that colour.
     renderColorPicker(body, {
+      shown: (color) => this.shown(color, false),
       current: style.border ? current : null,
       extra: this.pickerExtras(current),
       recent: this.state.recentColors ?? [],
@@ -5888,7 +5900,10 @@ export class Toolbar {
       if (!button.isConnected) continue;
       const spec = PEN_TYPES.find((type) => type.id === id);
       const glyph = button.querySelector("svg");
-      if (spec && glyph) glyph.replaceWith(penGlyph(spec.id, this.shown(this.inkColorOf(spec))));
+      if (spec && glyph)
+        glyph.replaceWith(
+          penGlyph(spec.id, this.shown(this.inkColorOf(spec), spec.tool === "highlighter")),
+        );
     }
   }
 
@@ -5928,9 +5943,12 @@ export class Toolbar {
     this.syncActive();
   }
 
-  /** `color` as the page shows ink of it. */
-  private shown(color: string): string {
-    return shownColor(color, this.night);
+  /**
+   * `color` as the page shows ink of it: a highlighter's own way on dark
+   * pages (`nightHighlighter`), every other ink's `shownColor`.
+   */
+  private shown(color: string, highlighter = this.state.tool === "highlighter"): string {
+    return this.night && highlighter ? nightHighlighter(color) : shownColor(color, this.night);
   }
 
   /** Take on a state the host changed (a shortcut, an undo, another note's defaults). */

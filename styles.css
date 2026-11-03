@@ -939,7 +939,12 @@ body:not(.is-mobile) .goodobsidian-view {
 /* The eraser's footprint on the page while erasing, so its size is legible. */
 .goodobsidian-eraser-cursor {
   position: absolute;
-  border: 1.5px solid var(--text-muted);
+  /* A dark ring in a white halo (as the pen crosshair), so it reads on
+     white, dark and coloured paper alike. */
+  border: 1.5px solid rgba(0, 0, 0, 0.8);
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.9),
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.9);
   border-radius: 50%;
   /* An outline only: the page's lines show through, to judge the size by. */
   background: none;
@@ -3703,9 +3708,13 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
 .goodobsidian-size-preview-eraser {
   flex: none;
   box-sizing: border-box;
-  border: 1.5px solid rgba(0, 0, 0, 0.45);
+  /* The page's eraser ring: dark in a white halo, legible on any paper. */
+  border: 1.5px solid rgba(0, 0, 0, 0.8);
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.9),
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.9);
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(128, 128, 128, 0.18);
 }
 
 /* ------------------------------------------------ add page + templates */
@@ -10389,17 +10398,20 @@ button.goodobsidian-color-delete.clickable-icon {
   border-radius: 50%;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
   pointer-events: none;
-  transform: translate(calc(var(--gob-ghost-x, 0px) - 50%), calc(var(--gob-ghost-y, 0px) - 50%))
-    scale(1.15);
+  /* Its place (`translate`, set per move by swatch-drag.ts) follows the
+     finger exactly; only its size and fade ease. A transition on the place
+     restarted with every move, so it trailed and stuttered. */
+  margin: -15px 0 0 -15px;
+  scale: 1.15;
+  will-change: translate;
   transition:
-    transform 0.15s ease,
+    scale 0.15s ease,
     opacity 0.15s ease;
 }
 
 .goodobsidian-swatch-ghost.is-off {
   opacity: 0.55;
-  transform: translate(calc(var(--gob-ghost-x, 0px) - 50%), calc(var(--gob-ghost-y, 0px) - 50%))
-    scale(0.7);
+  scale: 0.7;
 }
 
 /* The shape pill's colour: a disc of the shapes' colour and a caret. */
