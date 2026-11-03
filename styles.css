@@ -15525,6 +15525,7 @@ button.goodobsidian-edit-menu-row {
 .goodobsidian-edit-menu-icon {
   display: inline-flex;
   color: var(--icon-color);
+}
 
 /* --- Notebook library (src/view/library-view.ts) ------------------------- */
 
