@@ -62,6 +62,11 @@ export interface ColorPickerOptions {
    * GoodNotes' picker can. Offered only when the host passes it.
    */
   onDelete?: () => void;
+  /**
+   * How the page shows ink of a colour (on dark pages, `shownColor`). The
+   * swatches are drawn so; what is picked is still the true colour.
+   */
+  shown?: (color: string) => string;
 }
 
 /**
@@ -82,6 +87,7 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
   noFocus(body);
 
   const tap = options.tap ?? clickTap;
+  const shown = options.shown ?? ((color: string) => color);
   // Everything the custom colour replaces while it shows.
   const presets: HTMLElement[] = [];
   const offered: string[] = [];
@@ -95,13 +101,15 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
     for (const hex of notebook) {
       if (offered.includes(hex)) continue;
       offered.push(hex);
-      swatch(row, hex, sameColor(hex, options.current), tap, () => options.onPick(hex));
+      swatch(row, hex, shown(hex), sameColor(hex, options.current), tap, () => options.onPick(hex));
     }
   }
   const grid = body.createDiv({ cls: "goodobsidian-color-grid" });
   presets.push(grid);
   if (options.allowNone) {
-    const none = swatch(grid, null, options.current === null, tap, () => options.onPick(null));
+    const none = swatch(grid, null, null, options.current === null, tap, () =>
+      options.onPick(null),
+    );
     none.addClass("is-none");
     none.setAttribute("aria-label", t("toolbar.color.none"));
     none.setAttribute("title", t("toolbar.color.none"));
@@ -110,7 +118,7 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
     const hex = parseHexColor(color);
     if (!hex || offered.includes(hex)) continue;
     offered.push(hex);
-    swatch(grid, hex, sameColor(hex, options.current), tap, () => options.onPick(hex));
+    swatch(grid, hex, shown(hex), sameColor(hex, options.current), tap, () => options.onPick(hex));
   }
 
   const recent = options.recent.filter((c) => !offered.includes(c));
@@ -121,7 +129,9 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
     const row = body.createDiv({ cls: "goodobsidian-color-grid is-recent" });
     presets.push(row);
     for (const color of recent) {
-      swatch(row, color, sameColor(color, options.current), tap, () => options.onPick(color));
+      swatch(row, color, shown(color), sameColor(color, options.current), tap, () =>
+        options.onPick(color),
+      );
     }
   }
 
@@ -305,10 +315,11 @@ function eyedropperButton(parent: HTMLElement, tap: TapBinder, run: () => void):
   return button;
 }
 
-/** A round swatch; `null` is "none", drawn crossed out. */
+/** A round swatch of `color`, drawn in `shown`; `null` is "none", drawn crossed out. */
 function swatch(
   parent: HTMLElement,
   color: string | null,
+  shown: string | null,
   active: boolean,
   tap: TapBinder,
   onPick: () => void,
@@ -316,7 +327,7 @@ function swatch(
   const button = parent.createEl("button", { cls: "goodobsidian-color-swatch clickable-icon" });
   const disc = button.createSpan({ cls: "goodobsidian-color-disc" });
   // The disc *is* the colour: a value, not chrome.
-  if (color) disc.setCssStyles({ background: color });
+  if (shown) disc.setCssStyles({ background: shown });
   if (color) {
     button.setAttribute("aria-label", color);
     button.setAttribute("title", color.toUpperCase());

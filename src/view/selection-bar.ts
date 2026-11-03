@@ -382,7 +382,7 @@ export class SelectionActionBar {
       // a value, not chrome.
       const swatch = this.button(row, "goodobsidian-selection-swatch", color);
       swatch.createSpan({ cls: "goodobsidian-selection-swatch-disc" }).setCssStyles({
-        background: color,
+        background: swatches.shown?.(color) ?? color,
       });
       swatch.toggleClass("is-active", color.toLowerCase() === current);
       swatch.toggleClass("is-extra", !shown.has(color));

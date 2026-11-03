@@ -128,6 +128,40 @@ describe("bucketFill", () => {
     }
   });
 
+  it("never shows past the outline's outer edge, thin ink or thick, with a hook at its start", () => {
+    // A hand-drawn loop: wobbly, its start hooked out across the line.
+    const xy: number[] = [];
+    const n = 120;
+    for (let i = 0; i <= n + 6; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const r = 70 + 2.5 * Math.sin(a * 7) + 1.5 * Math.sin(a * 13 + 1);
+      xy.push(200 + r * Math.cos(a), 150 + r * Math.sin(a));
+    }
+    xy.unshift(200 + 82, 150 - 4);
+    const centre = line(xy).pts.filter((_, i) => i % 3 !== 2);
+    const toLine = (x: number, y: number): number => {
+      let best = Infinity;
+      for (let i = 0; i + 3 < centre.length; i += 2) {
+        const [ax, ay, bx, by] = [centre[i], centre[i + 1], centre[i + 2], centre[i + 3]];
+        const dx = bx - ax;
+        const dy = by - ay;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
+        best = Math.min(best, Math.hypot(ax + t * dx - x, ay + t * dy - y));
+      }
+      return best;
+    };
+    for (const radius of [0.8, 1.5, 4]) {
+      const result = bucketFill({ ...PAGE, ink: [line(xy, radius)], x: 200, y: 150, gap: 4 });
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      for (let i = 0; i < result.outline.length; i += 2) {
+        const [x, y] = [result.outline[i], result.outline[i + 1]];
+        // Inside the centreline, or under the ink's inner half: never near its outer edge.
+        if (!insidePolygon(centre, x, y)) expect(toLine(x, y)).toBeLessThan(radius * 0.5 + 0.8);
+      }
+    }
+  });
+
   it("fills a circle to about its area", () => {
     const result = bucketFill({ ...PAGE, ink: [circle(200, 150, 60)], x: 200, y: 150, gap: 4 });
     expect(result.ok).toBe(true);

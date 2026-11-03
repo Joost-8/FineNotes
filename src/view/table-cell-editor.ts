@@ -55,6 +55,8 @@ export interface CellEditorCallbacks {
   onAction: (action: TableAction) => void;
   /** A swatch was picked for the cell's text: a colour, or `null` for the table's own. */
   onColor: (color: string | null) => void;
+  /** How the page shows text of a colour (dark pages); the swatches are drawn so. */
+  shown?: (color: string) => string;
   /** A grip was pressed: drag column `index`'s right edge or row `index`'s bottom edge. */
   onGrip: (kind: "col" | "row", index: number, event: PointerEvent) => void;
 }
@@ -303,9 +305,13 @@ export class TableCellEditor {
     const bold = this.buttons.get("bold");
     bold?.toggleClass("is-active", at.bold);
     bold?.setAttribute("aria-pressed", String(at.bold));
-    this.colorDisc.setCssStyles({ backgroundColor: at.style.color });
+    this.colorDisc.setCssStyles({ backgroundColor: this.asShown(at.style.color) });
     this.syncSwatches(at.colors, at.cellColor);
     this.placeGrips(at);
+  }
+
+  private asShown(color: string): string {
+    return this.callbacks.shown?.(color) ?? color;
   }
 
   /** Open or close the row of swatches under the bar. */
@@ -321,7 +327,8 @@ export class TableCellEditor {
    * away); the cell's colour is ringed.
    */
   private syncSwatches(colors: readonly string[], current: string | null): void {
-    const key = colors.join();
+    // With the page's look, so dark pages turning on redraws the discs.
+    const key = `${colors.join()}|${this.asShown("#000000")}`;
     if (key !== this.swatchKey) {
       this.swatchKey = key;
       this.swatchRow.empty();
@@ -332,7 +339,7 @@ export class TableCellEditor {
         });
         swatch.dataset.color = color;
         swatch.createSpan({ cls: "goodobsidian-table-swatch-disc" }).setCssStyles({
-          backgroundColor: color,
+          backgroundColor: this.asShown(color),
         });
         onPress(swatch, () => this.callbacks.onColor(i === 0 ? null : color));
       });
