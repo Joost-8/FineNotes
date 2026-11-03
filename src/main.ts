@@ -2478,8 +2478,11 @@ export default class GoodObsidianPlugin extends Plugin {
         content,
       );
       if (!open) return file;
-      // Straight into the notebook view, in the current tab, focused.
-      const tab = this.app.workspace.getLeaf(false);
+      // Straight into the notebook view, in the current tab, focused; made
+      // from Home it gets a tab of its own, so Home stays where it is.
+      const fromHome =
+        this.app.workspace.getMostRecentLeaf()?.view.getViewType() === VIEW_TYPE_LIBRARY;
+      const tab = this.app.workspace.getLeaf(fromHome ? "tab" : false);
       await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
       await this.app.workspace.revealLeaf(tab);
       return file;

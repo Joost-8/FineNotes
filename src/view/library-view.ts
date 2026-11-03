@@ -136,6 +136,7 @@ export class LibraryView extends ItemView {
   private selecting = false;
   private readonly selected = new Set<string>();
   private barEl!: HTMLElement;
+  private pullEl!: HTMLElement;
   private query = "";
   private readonly reads = new Map<string, Read>();
   private reading = false;
@@ -217,13 +218,6 @@ export class LibraryView extends ItemView {
     setIcon(sort, "arrow-up-down");
     sort.addEventListener("click", (event) => this.openSortMenu(event));
 
-    const gear = head.createEl("button", {
-      cls: "clickable-icon",
-      attr: { "aria-label": "FineNotes settings" },
-    });
-    setIcon(gear, "settings");
-    gear.addEventListener("click", () => this.host.openSettings());
-
     const add = head.createEl("button", {
       cls: "goodobsidian-library-new",
       attr: { type: "button", "aria-haspopup": "menu" },
@@ -232,7 +226,18 @@ export class LibraryView extends ItemView {
     add.createSpan({ text: "New" });
     add.addEventListener("click", (event) => this.openNewMenu(event));
 
+    const gear = head.createEl("button", {
+      cls: "clickable-icon",
+      attr: { "aria-label": "FineNotes settings" },
+    });
+    setIcon(gear, "settings");
+    gear.addEventListener("click", () => this.host.openSettings());
+
     this.bodyEl = root.createDiv({ cls: "goodobsidian-library-body" });
+    this.pullEl = root.createDiv({ cls: "goodobsidian-library-pull" });
+    setIcon(this.pullEl, "refresh-cw");
+    root.insertBefore(this.pullEl, this.bodyEl);
+    this.watchPull(this.bodyEl);
     this.barEl = root.createDiv({ cls: "goodobsidian-library-bar is-hidden" });
 
     const touched = (file: TAbstractFile): void => {
@@ -390,9 +395,6 @@ export class LibraryView extends ItemView {
     const left = this.lastPages();
     const stars = this.host.stars();
     const here = browse(hoistSingles(all), this.folder);
-    // What a row above shows is not listed again below it.
-    const shown = new Set<string>();
-    const shownFolders = new Set<string>();
     if (this.folder === "" && stars.length > 0) {
       const books = all.filter((e) => isStarred(stars, e.path));
       const folders = stars
@@ -404,17 +406,15 @@ export class LibraryView extends ItemView {
         const row = this.bodyEl.createDiv({ cls: this.gridClass() });
         for (const folder of folders) {
           this.folderCard(row, folder);
-          shownFolders.add(folder.path);
         }
         for (const entry of books) {
           this.card(row, entry, left[entry.path]?.index);
-          shown.add(entry.path);
         }
       }
     }
     if (this.folder === "") {
       const recent = continueEntries(
-        all.filter((e) => e.pages > 0 && !shown.has(e.path)),
+        all.filter((e) => e.pages > 0),
         CONTINUE_COUNT,
         (path) => left[path]?.at ?? 0,
       );
@@ -423,20 +423,17 @@ export class LibraryView extends ItemView {
         const row = this.bodyEl.createDiv({ cls: "goodobsidian-library-recent" });
         for (const entry of recent) {
           this.card(row, entry, left[entry.path]?.index);
-          shown.add(entry.path);
         }
       }
     }
-    const folders = [...here.folders, ...this.emptyFolders(here.folders)].filter(
-      (f) => !shownFolders.has(f.path),
-    );
+    const folders = [...here.folders, ...this.emptyFolders(here.folders)];
     if (folders.length > 0) {
       this.label("Folders");
       const row = this.bodyEl.createDiv({ cls: this.gridClass() });
       for (const folder of starredFirst(folders, stars, (f) => f.path))
         this.folderCard(row, folder);
     }
-    const rest = here.notebooks.filter((e) => !shown.has(e.path));
+    const rest = here.notebooks;
     if (rest.length > 0) {
       this.grid(
         sortEntries(rest, this.sort, this.reverse),
@@ -449,6 +446,8 @@ export class LibraryView extends ItemView {
   private emptyFolders(listed: readonly { path: string }[]): FolderTile[] {
     const root = this.app.vault.getFolderByPath(this.folder === "" ? "/" : this.folder);
     if (!root) return [];
+    // Only folders made here: an empty folder of the vault's own is not a notebook shelf.
+    const made = this.host.folderStyles();
     const holdsFiles = (folder: TFolder): boolean =>
       folder.children.some((c) => c instanceof TFile || (c instanceof TFolder && holdsFiles(c)));
     return root.children
@@ -457,6 +456,7 @@ export class LibraryView extends ItemView {
           c instanceof TFolder &&
           !c.name.startsWith(".") &&
           c.path !== INBOX_FOLDER &&
+          made[c.path] !== undefined &&
           !holdsFiles(c) &&
           !listed.some((l) => l.path === c.path),
       )
@@ -817,6 +817,72 @@ export class LibraryView extends ItemView {
       : "goodobsidian-library-grid";
   }
 
+  // --- Pull to refresh ------------------------------------------------------------
+
+  /** Reread the vault's notebooks: a pull down from the top of the list, as in any list on an iPad. */
+  private watchPull(body: HTMLElement): void {
+    const THRESHOLD = 90;
+    let startY = 0;
+    let pull = 0;
+    let tracking = false;
+    const show = (amount: number): void => {
+      const shown = Math.min(amount, THRESHOLD * 1.4) * 0.5;
+      this.pullEl.setCssProps({ "--gob-pull": `${shown}px` });
+      this.pullEl.toggleClass("is-ready", amount >= THRESHOLD);
+      this.pullEl.toggleClass("is-pulling", amount > 4);
+    };
+    body.addEventListener(
+      "touchstart",
+      (event) => {
+        tracking = body.scrollTop <= 0 && event.touches.length === 1;
+        startY = event.touches[0]?.clientY ?? 0;
+        pull = 0;
+      },
+      { passive: true },
+    );
+    body.addEventListener(
+      "touchmove",
+      (event) => {
+        if (!tracking) return;
+        const dy = (event.touches[0]?.clientY ?? 0) - startY;
+        if (dy <= 0 || body.scrollTop > 0) {
+          pull = 0;
+          show(0);
+          return;
+        }
+        pull = dy;
+        show(pull);
+      },
+      { passive: true },
+    );
+    const end = (): void => {
+      if (!tracking) return;
+      tracking = false;
+      const refresh = pull >= THRESHOLD;
+      pull = 0;
+      if (refresh) {
+        this.pullEl.addClass("is-spinning");
+        this.pullEl.setCssProps({ "--gob-pull": "36px" });
+        this.refreshNow();
+        window.setTimeout(() => {
+          this.pullEl.removeClass("is-spinning", "is-pulling", "is-ready");
+          show(0);
+        }, 700);
+      } else {
+        show(0);
+      }
+    };
+    body.addEventListener("touchend", end, { passive: true });
+    body.addEventListener("touchcancel", end, { passive: true });
+  }
+
+  /** Repaint and read again whatever changed, at once. */
+  private refreshNow(): void {
+    window.clearTimeout(this.refreshTimer);
+    this.paintNow();
+    void this.readStale();
+  }
+
   // --- Picking several ----------------------------------------------------------
 
   private setSelecting(on: boolean): void {
@@ -997,7 +1063,16 @@ export class LibraryView extends ItemView {
           new Notice(`"${name}" already exists here.`);
           return;
         }
-        void this.app.vault.createFolder(path).then(() => this.refreshSoon());
+        void this.app.vault.createFolder(path).then(() => {
+          // Its look is its record here: a folder with one shows while it is empty.
+          this.host.setFolderStyles(
+            withFolderStyle(this.host.folderStyles(), path, {
+              color: DEFAULT_FOLDER_COLOR,
+              icon: DEFAULT_FOLDER_ICON,
+            }),
+          );
+          this.refreshSoon();
+        });
       },
       "New folder",
       "Create",

@@ -15313,6 +15313,47 @@ button.goodobsidian-library-bar-done {
   border-radius: 999px;
   padding: 0 18px;
 }
+/* Pull to refresh: a small arrow that opens above the list while it is pulled. */
+.goodobsidian-library-pull {
+  --gob-pull: 0px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--gob-pull);
+  overflow: hidden;
+  color: var(--text-muted);
+  opacity: 0;
+  transition:
+    height 0.2s var(--gob-ease),
+    opacity 0.2s;
+}
+.goodobsidian-library-pull.is-pulling {
+  opacity: 1;
+  transition: none;
+}
+.goodobsidian-library-pull.is-spinning {
+  opacity: 1;
+  transition: height 0.2s var(--gob-ease);
+}
+.goodobsidian-library-pull .svg-icon {
+  width: 20px;
+  height: 20px;
+  transition: transform 0.2s;
+}
+.goodobsidian-library-pull.is-ready .svg-icon {
+  transform: rotate(180deg);
+  color: var(--interactive-accent);
+}
+.goodobsidian-library-pull.is-spinning .svg-icon {
+  color: var(--interactive-accent);
+  animation: gob-library-spin 0.8s linear infinite;
+}
+@keyframes gob-library-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .goodobsidian-library-swatch {
   display: inline-block;
   width: 14px;

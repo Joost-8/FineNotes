@@ -166,6 +166,7 @@ function fakeApp(
     },
     getActiveFile: () => null,
     getLeaf: () => new WorkspaceLeaf(),
+    getMostRecentLeaf: () => null,
     revealLeaf: () => Promise.resolve(),
   };
   return {
