@@ -433,11 +433,13 @@ export class LibraryView extends ItemView {
       for (const folder of starredFirst(folders, stars, (f) => f.path))
         this.folderCard(row, folder);
     }
-    const rest = here.notebooks;
+    // At the top, every notebook in the vault, under the folders; inside a folder, its own.
+    const atTop = this.folder === "";
+    const rest = atTop ? all : here.notebooks;
     if (rest.length > 0) {
       this.grid(
         sortEntries(rest, this.sort, this.reverse),
-        SORTS.find((s) => s.by === this.sort)?.label ?? "",
+        atTop ? "All notebooks" : (SORTS.find((s) => s.by === this.sort)?.label ?? ""),
       );
     }
   }
