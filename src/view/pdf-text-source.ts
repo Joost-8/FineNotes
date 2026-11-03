@@ -120,8 +120,13 @@ export function readTextItems(content: TextContentLike): PdfTextItem[] {
       height,
     };
     const style = typeof raw.fontName === "string" ? content.styles?.[raw.fontName] : undefined;
-    if (typeof style?.ascent === "number") item.ascent = style.ascent;
-    if (typeof style?.descent === "number") item.descent = style.descent;
+    // pdf.js reports NaN for the ascent of a font it has no metrics for.
+    if (typeof style?.ascent === "number" && Number.isFinite(style.ascent)) {
+      item.ascent = style.ascent;
+    }
+    if (typeof style?.descent === "number" && Number.isFinite(style.descent)) {
+      item.descent = style.descent;
+    }
     if (style?.vertical === true) item.vertical = true;
     items.push(item);
   }

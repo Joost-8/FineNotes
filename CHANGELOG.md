@@ -10,6 +10,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Text inside the pictures of PDF pages is read too.** A lecture PDF has a text
+  layer, but the labels in its figures ("Bladder", "Pubic bone") are pixels and
+  could not be searched. FineNotes now finds the pictures from the PDF's own
+  drawing operators, reads only inside them (never the text the page already
+  has), and a page with no picture worth reading costs nothing and is remembered
+  as such. Only when the reader model is already on the device; it never causes
+  the download to be offered. _Also read text inside figures_ (on by default,
+  under _Read scanned PDF pages_). The cache sidecar is now format 2: pages
+  read before are read again. Details and measurements: [docs/OCR.md](docs/OCR.md).
 - **Scanned PDF pages are read on your device.** A PDF page that is a picture
   of printed text (a scan, or a scan with only a page number on it) now gets
   search, the text-snapping highlighter and Copy text, as PDFs with real text

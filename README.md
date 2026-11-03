@@ -106,8 +106,10 @@ Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Andro
   a page you can write on.
 - Scanned PDF pages are read on your device (PaddleOCR, a one-time 35.7 MB
   download that you agree to first), so search, the highlighter that snaps to
-  text and Copy text work on them too. Printed text only; messy handwriting is
-  left alone.
+  text and Copy text work on them too. Labels inside the pictures of PDFs that
+  have text are read too (only inside the pictures, never the text already
+  there). Printed text only; messy handwriting is left alone. How it works, its
+  numbers and its limits: [docs/OCR.md](docs/OCR.md).
 
 **Audio**
 

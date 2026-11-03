@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { layoutText } from "../../src/canvas/pdf-text";
 
 const pdf = {
   opened: 0,
@@ -105,6 +106,35 @@ describe("readTextItems", () => {
     expect(items[0]).toMatchObject({ str: "Hello", ascent: 0.9, descent: -0.3 });
     expect(Number.isNaN(items[1].transform[3])).toBe(true);
     expect(items[2].vertical).toBe(true);
+  });
+});
+
+describe("readTextItems with fonts pdf.js has no metrics for", () => {
+  it("leaves out a NaN ascent or descent, so the page still lays out (default metrics)", () => {
+    const items = readTextItems({
+      items: [
+        { str: "S", transform: [9.5, 0, 0, 9.5, 43, 790], width: 6, height: 9.5, fontName: "f2" },
+      ],
+      styles: { f2: { ascent: Number.NaN, descent: Number.NaN } },
+    });
+    expect(items[0].ascent).toBeUndefined();
+    expect(items[0].descent).toBeUndefined();
+    const layout = layoutText(items, [1, 0, 0, -1, 0, 866]);
+    expect(layout.chars.map((c) => c.ch).join("")).toBe("S");
+    // Even an item handed a NaN descent directly is placed.
+    const direct = layoutText(
+      [
+        {
+          str: "S",
+          transform: [9.5, 0, 0, 9.5, 43, 790],
+          width: 6,
+          height: 9.5,
+          descent: Number.NaN,
+        },
+      ],
+      [1, 0, 0, -1, 0, 866],
+    );
+    expect(direct.chars).toHaveLength(1);
   });
 });
 

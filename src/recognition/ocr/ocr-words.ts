@@ -79,9 +79,10 @@ export const OCR_TUNING = {
 
   /**
    * A picture narrower or shorter than this is not a figure, pt (0.5 in):
-   * icons, logos, bullets and badges (the "★" marks of a lecture deck are
-   * 8 to 20 pt), while the smallest figure with labels seen in the lecture
-   * PDFs is 190 pt on its short side.
+   * icons, logos, bullets and badges. Measured on the lecture PDFs: every
+   * figure with labels is at least 116 pt (1.6 in) on its short side, and
+   * the badges are drawn as vectors, so the number is a principled floor
+   * (the smallest print a reader could still be asked to read), not fitted.
    */
   figureMinSide: 36,
   /** A picture covering less of the page than this is not a figure either (a logo as wide as a line). */
