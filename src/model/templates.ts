@@ -554,6 +554,8 @@ export interface PaperColor {
   paper: string;
   /** Rule colour, when the paper theme's default would not read on it. */
   rule?: string;
+  /** Earlier fills of this paper, which pages already written still carry. */
+  former?: readonly string[];
 }
 
 export const PAPER_COLORS: readonly PaperColor[] = [
@@ -569,7 +571,8 @@ export const PAPER_COLORS: readonly PaperColor[] = [
     get label() {
       return t("notebooks.paperKind.yellow");
     },
-    paper: "#fbf8ed",
+    paper: "#f9f1d3",
+    former: ["#fbf8ed"],
   },
   {
     id: "dark",
@@ -584,8 +587,9 @@ export const PAPER_COLORS: readonly PaperColor[] = [
 /** Which paper colour a backdrop is on. Anything unrecognised reads as white. */
 export function paperColorOf(backdrop: Backdrop): PaperColorId {
   if (backdrop.kind === "pdf" || !backdrop.paperColor) return "white";
+  const fill = backdrop.paperColor.toLowerCase();
   const match = PAPER_COLORS.find(
-    (c) => c.paper.toLowerCase() === backdrop.paperColor?.toLowerCase(),
+    (c) => c.paper.toLowerCase() === fill || c.former?.includes(fill),
   );
   return match?.id ?? "white";
 }

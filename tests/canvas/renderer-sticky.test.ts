@@ -2,12 +2,12 @@
  * Sticky notes on canvas: the paper is painted (no image painter needed),
  * and a note's ink is drawn with its note, clipped to it, in the tiles, the
  * thumbnails (and so the PDF export and the AI's page render), the lasso's
- * drag preview and a picture drag's draft. It keeps its colours on dark
- * pages, as its paper does.
+ * drag preview and a picture drag's draft. On dark pages it is shown as the
+ * page is (paper, ink and text), so content never changes colour on a note.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DARK_PAPER } from "../../src/canvas/backdrop";
+import { DARK_PAPER, shownColor } from "../../src/canvas/backdrop";
 import type { DocumentLayout } from "../../src/canvas/page-layout";
 import { Renderer, renderPageThumbnail } from "../../src/canvas/renderer";
 import { paintStickyPaper, traceNote, withinNote } from "../../src/canvas/sticky-paper";
@@ -101,15 +101,17 @@ describe("a thumbnail (sidebar, PDF export, AI render)", () => {
     expect(at(`fillStyle=${PAPER}`)).toBeLessThan(at(`strokeStyle=${ON_NOTE}`));
   });
 
-  it("keeps a note's ink in its own colour on a dark page, as the note keeps its paper", () => {
+  it("shows a note's paper and ink as the dark page shows them, so nothing changes colour on the note", () => {
     renderPageThumbnail(log.canvas("t"), page(false), { paint: () => undefined }, 400, 1, {
       usePressure: false,
       paper: DARK_PAPER,
     });
     const m = marks(log.lines, "t");
-    expect(m.count(ON_NOTE)).toBe(1);
-    // The page's own ink is shown for the dark page.
+    expect(m.count(ON_NOTE)).toBe(0);
     expect(m.count(ON_PAGE)).toBe(0);
+    expect(m.count(shownColor(ON_NOTE, true))).toBe(1);
+    expect(m.count(shownColor(ON_PAGE, true))).toBe(1);
+    expect(log.lines.some((l) => l.includes(`fillStyle=${shownColor(PAPER, true)}`))).toBe(true);
   });
 
   it("draws ink whose note is gone as page ink", () => {
@@ -294,6 +296,19 @@ describe("a note's typed text, and a folded note (FineNotes#94)", () => {
     return log.lines;
   };
   const at = (lines: readonly string[], s: string) => lines.findIndex((l) => l.includes(s));
+
+  it("shows the note's text in the colour the dark page shows, as the page's own text", () => {
+    renderPageThumbnail(log.canvas("t"), withText(), { paint: () => undefined }, 400, 1, {
+      usePressure: false,
+      paper: DARK_PAPER,
+    });
+    const colourOf = (text: string): string => {
+      const line = log.lines.find((l) => l.includes(`fillText "${text}"`)) ?? "";
+      return /fillStyle=(#[0-9a-f]+)/.exec(line)?.[1] ?? "";
+    };
+    expect(colourOf("On the note")).toBe(shownColor("#1f2430", true));
+    expect(colourOf("On the note")).toBe(colourOf("On the page"));
+  });
 
   it("draws the note's text with the note, clipped and over its ink, once", () => {
     const lines = thumb(withText());

@@ -22,19 +22,21 @@ describe("pillRowEdge", () => {
   it("is off when docking is off, wherever the pill rests", () => {
     expect(pillRowEdge(false, "top", "top")).toBeNull();
     expect(pillRowEdge(false, "bottom", "bottom")).toBeNull();
+    expect(pillRowEdge(false, "left", "left")).toBeNull();
   });
 
-  it("takes the bar's edge when the pill rests by a bar along the top or bottom", () => {
+  it("takes the bar's edge when the pill rests by the bar, at any of the four edges", () => {
     expect(pillRowEdge(true, "top", "top")).toBe("top");
     expect(pillRowEdge(true, "bottom", "bottom")).toBe("bottom");
+    expect(pillRowEdge(true, "left", "left")).toBe("left");
+    expect(pillRowEdge(true, "right", "right")).toBe("right");
   });
 
-  it("leaves an upright bar's pill and a pill carried to another edge floating", () => {
-    expect(pillRowEdge(true, "left", "left")).toBeNull();
-    expect(pillRowEdge(true, "right", "right")).toBeNull();
+  it("leaves a pill carried to another edge than the bar's floating", () => {
     expect(pillRowEdge(true, "bottom", "top")).toBeNull();
     expect(pillRowEdge(true, "top", "bottom")).toBeNull();
     expect(pillRowEdge(true, "top", "left")).toBeNull();
+    expect(pillRowEdge(true, "left", "right")).toBeNull();
   });
 });
 

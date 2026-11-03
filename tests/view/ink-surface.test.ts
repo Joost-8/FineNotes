@@ -2101,6 +2101,28 @@ describe("the wet stroke", () => {
     expect(frame()).toEqual([{ width: 3, pts: [0, 0, 2.5, 0, 5, 0] }]);
   });
 
+  it("tells the renderer nothing about sticky notes: wet and dry ink share one colour mapping", () => {
+    const calls: unknown[][] = [];
+    const builder = new StrokeBuilder({ minDistance: 1, pressureEnabled: false });
+    const note = { id: "n1", path: "", x: 0, y: 0, w: 100, h: 100, sticky: { color: "#fde68a" } };
+    const surface = surfaceWith({
+      wetFrame: 7,
+      wetTracer: null,
+      wetRevision: -1,
+      builder,
+      activePage: { index: 0 },
+      snap: null,
+      doc: { pages: [{ images: [note] }] },
+      renderer: { renderWetRuns: (...args: unknown[]) => calls.push(args) },
+      currentStyle: () => ({ color: "#000", size: 3, tool: "pen", usePressure: false }),
+    });
+    builder.add({ x: 10, y: 10, pressure: 0.5 });
+    builder.add({ x: 15, y: 10, pressure: 0.5 });
+    run(surface, "drawWet");
+    // page, runs, style: a fourth argument could make a note's live ink differ from its committed ink.
+    expect(calls[calls.length - 1]).toHaveLength(3);
+  });
+
   it("traces each kept point once, and a finished stroke looks as it did wet", () => {
     const { builder, surface, frame } = writing(true);
     const pts = [0, 0, 0.3, 4, 1, 0.35, 8, 3, 0.45, 12, 2, 0.4, 16, 5, 0.3];

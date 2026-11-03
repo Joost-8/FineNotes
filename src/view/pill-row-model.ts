@@ -1,8 +1,8 @@
 /**
  * The options pill docked as a row (PURE), after Goodnotes (discussion #43):
- * with "Dock tool options" on, a pill resting by a tool bar along the top or
- * the bottom no longer floats over the page. The bar grows a row of its own
- * colour that holds the pill, and the page starts past it, so the first line
+ * with "Dock tool options" on, a pill resting by the tool bar, wherever the
+ * bar is, no longer floats over the page. The bar grows a row (a column, by a
+ * bar at a side) of its own colour that holds the pill, and the page starts past it, so the first line
  * of writing is never under the pen's colours.
  *
  * The row is as tall as what it shows: the pill and a gap either side of it.
@@ -10,18 +10,21 @@
  * While the pill floats by a text box (`anchored`) the row keeps the room it
  * had, so tapping into a box does not move the page under the finger.
  *
- * Only by a bar along an edge: an upright pill or bar stands beside the
- * page, where it covers no line, and a pill at another edge than the bar's
- * is one the user carried away from it.
+ * Only by the bar: a pill at another edge than the bar's is one the user
+ * carried away from it, and floats where it was left.
  */
 
 import type { BarDock } from "./bar-dock-model";
 import type { PillDock } from "./pill-dock-model";
 
 /** Which edge of the page the row takes, or none. */
-export type PillRowEdge = "top" | "bottom" | null;
+export type PillRowEdge = "top" | "bottom" | "left" | "right" | null;
 
-/** The row as shown: the edge it takes from the page and how many px. */
+/**
+ * The row as shown: the edge it takes from the page and how many px. Along
+ * the top or bottom it is a row, as tall as `room`; at a side it is a column
+ * of the same make, as wide.
+ */
 export interface PillRow {
   edge: PillRowEdge;
   room: number;
@@ -34,15 +37,14 @@ export function parsePillRowOn(raw: unknown): boolean {
   return raw === true || raw === "on";
 }
 
-/** The edge the row takes, when docking is on and the pill rests by a bar along an edge. */
+/** The edge the row takes, when docking is on and the pill rests by the bar, wherever the bar is. */
 export function pillRowEdge(on: boolean, pill: PillDock, bar: BarDock): PillRowEdge {
-  if (!on || pill !== bar) return null;
-  return bar === "top" || bar === "bottom" ? bar : null;
+  return on && pill === bar ? bar : null;
 }
 
 /**
- * The row for a pill `height` px tall at its place, `gap` px from the bar
- * and from the page. `shown` is false while the pill is tucked away or has
+ * The row for a pill `height` px thick at its place (tall along the top or
+ * bottom, wide at a side), `gap` px from the bar and from the page. `shown` is false while the pill is tucked away or has
  * nothing to show; `anchored` while it floats by a text box, when the row
  * keeps `previous` (as long as it is on the same edge).
  */

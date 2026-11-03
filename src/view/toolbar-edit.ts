@@ -243,7 +243,7 @@ export class ToolbarEditor {
       }
     }
     const setRow = this.h.setPillRow;
-    if (setRow && (dock === "top" || dock === "bottom")) {
+    if (setRow) {
       const on = this.h.pillRow();
       const row = head.createEl("button", { cls: "goodobsidian-edit-switch clickable-icon" });
       row.createSpan({ cls: "goodobsidian-edit-toggle" }).toggleClass("is-on", on);
@@ -298,12 +298,22 @@ export class ToolbarEditor {
     const bar = this.h.bar.getBoundingClientRect();
     const dock = this.h.barDock();
     const style: Record<string, string> = { top: "", bottom: "", left: "", right: "" };
+    // Clear of the bar, so the bar can be seen and scrolled while this is open.
     const margin = 8;
-    if (dock === "top") style.top = `${Math.round(bar.bottom - host.top + margin)}px`;
-    else if (dock === "bottom") style.bottom = `${Math.round(host.bottom - bar.top + margin)}px`;
+    const gap = 28;
+    if (dock === "top") style.top = `${Math.round(bar.bottom - host.top + gap)}px`;
+    else if (dock === "bottom") style.bottom = `${Math.round(host.bottom - bar.top + gap)}px`;
     else style.top = `${margin}px`;
-    if (dock === "left") style.left = `${Math.round(bar.right - host.left + margin)}px`;
-    else if (dock === "right") style.right = `${Math.round(host.right - bar.left + margin)}px`;
+    if (dock === "left") style.left = `${Math.round(bar.right - host.left + gap)}px`;
+    else if (dock === "right") style.right = `${Math.round(host.right - bar.left + gap)}px`;
+    // Never taller than the room it has: past that it scrolls (styles.css).
+    const room =
+      dock === "top"
+        ? host.bottom - bar.bottom - gap - margin
+        : dock === "bottom"
+          ? bar.top - host.top - gap - margin
+          : host.height - 2 * margin;
+    style.maxHeight = `${Math.max(120, Math.round(room))}px`;
     this.tray.setCssStyles(style);
     this.tray.toggleClass("is-beside", isBarUpright(dock));
   }

@@ -921,6 +921,8 @@ export interface ToolbarOptions {
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
 const EDGE_INSET = 8;
+/** The room round a docked pill, px: the row is only as tall as the pill and this either side. */
+const DOCKED_INSET = 3;
 /** How often a floating text pill looks for the keyboard (see `watchKeyboard`). */
 const KEYBOARD_WATCH_MS = 250;
 /**
@@ -1057,6 +1059,10 @@ export class Toolbar {
   private readonly rowEl: HTMLElement;
   /** "Dock tool options" is on, on this device. */
   private pillRowOn = false;
+  /** How far the docked side pill's colour column is scrolled. */
+  private colorColumnScroll = 0;
+  /** Where the pill rested before "Dock tool options" brought it to the bar, to give back when it is off. */
+  private pillDockBefore: PillDock | null = null;
   /** The row as shown now. */
   private row: PillRow = NO_PILL_ROW;
 
@@ -1185,6 +1191,8 @@ export class Toolbar {
 
   /** The active tool remains active when its options are tucked away. */
   private optionsVisible: boolean;
+  /** The tool's pill was showing when Customize toolbar opened: it comes back when that closes. */
+  private optionsBeforeCustomize = false;
   /** Tools whose options were tucked away when they were left: they come back tucked. */
   private readonly tuckedTools = new Set<ActiveTool>();
   /** A stroke tucked the options away ({@link tuckOptions}), not a tap: they may come back. */
@@ -1224,6 +1232,8 @@ export class Toolbar {
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
     this.barEl.setAttribute("aria-label", t("toolbar.barLabel"));
+    // An upright bar taller than its room scrolls: say so at the ends it can go.
+    this.barEl.addEventListener("scroll", () => this.syncScrollCues(), { passive: true });
     this.barDock = parseBarDock(options.barDock);
     this.applyBarDock();
     // In the flow after the bar (before it along the bottom, styles.css), so
@@ -1240,6 +1250,11 @@ export class Toolbar {
     this.optionsEl.dataset.ignoreSwipe = "true";
 
     this.pillDock = offeredDock(options.pillDock);
+    // Docked, the pill rests where the bar does (`followBar`).
+    if (this.pillRowOn) {
+      this.pillDockBefore = this.pillDock;
+      this.pillDock = offeredDock(this.barDock);
+    }
     // Docked, the pen's pill covers nothing: it need not start tucked away.
     this.optionsVisible = !this.startsTucked(state.tool);
     this.optionsEl.addClass(`is-dock-${this.pillDock}`);
@@ -1569,6 +1584,7 @@ export class Toolbar {
     };
     const measure = (): void => {
       this.fitBar(this.indicatorTool);
+      this.syncScrollCues();
       // The buttons moved with the bar: the indicator follows, without a slide.
       this.placeIndicator(this.indicatorTool, null);
       this.placeUpdateTip();
@@ -1628,6 +1644,21 @@ export class Toolbar {
     this.moreButton?.toggleClass(
       "has-mark",
       this.foldedItems().some((item) => item.marked),
+    );
+  }
+
+  /**
+   * Mark which ends of a scrolling upright bar have more beyond them
+   * (`can-scroll-up`, `can-scroll-down`): styles.css fades those ends and
+   * shows a thin scroll thumb, so a hidden button is known to be there.
+   */
+  private syncScrollCues(): void {
+    const bar = this.barEl;
+    const scrolls = isBarUpright(this.barDock) && bar.scrollHeight > bar.clientHeight + 1;
+    bar.toggleClass("can-scroll-up", scrolls && bar.scrollTop > 1);
+    bar.toggleClass(
+      "can-scroll-down",
+      scrolls && bar.scrollTop + bar.clientHeight < bar.scrollHeight - 1,
     );
   }
 
@@ -1969,6 +2000,13 @@ export class Toolbar {
     const save = this.callbacks.onLayout;
     if (!save || this.editor) return;
     this.closePopover();
+    // The tool's pill is put away while the bar is edited, so it takes none
+    // of the room the edit mode uses.
+    this.optionsBeforeCustomize = this.optionsVisible;
+    if (this.optionsVisible) {
+      this.optionsVisible = false;
+      this.showOptions(false);
+    }
     this.editor = new ToolbarEditor({
       bar: this.barEl,
       host: this.host,
@@ -1987,6 +2025,11 @@ export class Toolbar {
       setPillRow: this.callbacks.onSetPillRow,
       done: () => {
         this.editor = null;
+        if (this.optionsBeforeCustomize) {
+          this.optionsBeforeCustomize = false;
+          this.optionsVisible = true;
+          this.showOptions(true);
+        }
         this.measureBar();
       },
     });
@@ -2477,18 +2520,22 @@ export class Toolbar {
   private buildPenOptions(): void {
     const active = this.activePenType();
     // Upright at a side, the pill folds as GoodNotes' does: the widths are
-    // one button, and the colours three and a ⌄.
+    // one button, and the colours three and a ⌄. Docked in a column of its
+    // own (`roomy`) it has the page's whole height: all the widths, and every
+    // colour in a grid.
     const upright = isUpright(this.pillDock);
+    const roomy = upright && this.dockedAtSide();
+    const folded = upright && !roomy;
     this.buildPenRow(upright);
     // The rest of the old pen menu: the laser pointer, the pen's settings and
     // the pen gestures. A practice sheet has none of them.
-    if (!upright && !this.practice) {
+    if (!folded && !this.practice) {
       this.chevron(t("toolbar.penOptions"), (button) => this.openPenMenu(button));
     }
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    if (upright) {
+    if (folded) {
       const width = this.state.size;
       const button = widthButton(
         this.optionsEl,
@@ -2522,7 +2569,15 @@ export class Toolbar {
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
     const colors = this.quickColors();
-    if (upright) {
+    if (roomy) {
+      // Every colour in one column, four showing and the rest a swipe away,
+      // and the "+" after the last.
+      const grid = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors is-column" });
+      grid.dataset.ignoreSwipe = "true";
+      for (const color of colors) this.penSwatch(grid, color, colors);
+      if (colors.length < PEN_ROW_MAX) this.addColorButton(grid);
+      this.fitColorColumn(grid);
+    } else if (folded) {
       // The chosen colour and its neighbours; the ⌄ holds the whole row.
       const chosen = colors.findIndex((c) => sameColor(c, this.state.color));
       const first = colorWindow(colors.length, chosen, UPRIGHT_COLORS);
@@ -2874,6 +2929,38 @@ export class Toolbar {
     this.keepPenInk();
     this.buildOptions();
     this.syncActive();
+  }
+
+  /**
+   * The docked side pill's colour column: kept where it was scrolled, with
+   * the chosen colour in view, and the ends that hide more faded.
+   */
+  private fitColorColumn(column: HTMLElement): void {
+    const fade = (): void => {
+      const ends = hiddenEnds(column.scrollTop, column.clientHeight, column.scrollHeight);
+      column.toggleClass("has-more-start", ends.start);
+      column.toggleClass("has-more-end", ends.end);
+    };
+    column.scrollTop = this.colorColumnScroll;
+    const chosen = this.colorSwatches.get(
+      [...this.colorSwatches.keys()].find((c) => sameColor(c, this.state.color)) ?? "",
+    );
+    if (chosen) {
+      column.scrollTop = scrollToShow(
+        column.scrollTop,
+        column.clientHeight,
+        chosen.offsetTop - column.offsetTop,
+        chosen.offsetHeight,
+        COLOR_ROW_FADE_PX,
+      );
+    }
+    this.colorColumnScroll = column.scrollTop;
+    fade();
+    window.requestAnimationFrame(fade);
+    column.addEventListener("scroll", () => {
+      this.colorColumnScroll = column.scrollTop;
+      fade();
+    });
   }
 
   /**
@@ -3350,7 +3437,7 @@ export class Toolbar {
     const modeButton = this.optionsEl.createEl("button", { cls: "goodobsidian-erasermode" });
     const modeIcon = modeButton.createSpan({ cls: "goodobsidian-erasermode-icon" });
     eraserModeIcon(modeIcon, mode.id, mode.label);
-    modeButton.createSpan({ text: mode.label });
+    // The icon says it, the name is its label: the pill takes no room for words.
     const modeCaret = modeButton.createSpan({ cls: "goodobsidian-erasermode-caret" });
     iconOrText(modeCaret, "chevron-down", "");
     modeButton.setAttribute("aria-label", t("toolbar.eraser.modeTip", { mode: mode.label }));
@@ -3385,7 +3472,6 @@ export class Toolbar {
     const icon =
       filter === "highlighter" ? "highlighter" : filter === "pen" ? "pen-line" : "layers";
     iconOrText(filterIcon, icon, ERASER_FILTER_LABELS[filter]);
-    filterButton.createSpan({ text: ERASER_FILTER_LABELS[filter] });
     const filterCaret = filterButton.createSpan({ cls: "goodobsidian-erasermode-caret" });
     iconOrText(filterCaret, "chevron-down", "");
     filterButton.toggleClass("is-filtered", filter !== "all");
@@ -3397,9 +3483,10 @@ export class Toolbar {
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const clear = this.optionsEl.createEl("button", {
-      cls: "goodobsidian-text-button",
-      text: t("toolbar.eraser.clearPage"),
+      cls: "goodobsidian-text-button clickable-icon",
     });
+    iconOrText(clear, "trash-2", t("toolbar.eraser.clearPage"));
+    clear.setAttribute("aria-label", t("toolbar.eraser.clearPage"));
     clear.addEventListener("click", () => this.callbacks.onClear());
   }
 
@@ -3884,7 +3971,7 @@ export class Toolbar {
       "pin",
       t("toolbar.text.pinShort"),
     );
-    pin.createSpan({ cls: "goodobsidian-text-pin-label", text: t("toolbar.text.pin") });
+    // The pin alone, named by its label: the pill takes no room for words.
     pin.toggleClass("is-active", pinned);
     pin.setAttribute("aria-pressed", String(pinned));
 
@@ -5626,6 +5713,24 @@ export class Toolbar {
   }
 
   /**
+   * With "Dock tool options" on, the pill rests by the bar, wherever the bar
+   * is: a column beside a bar at a side, a row under or over one along an
+   * edge. Off again, it goes back to where it was left. A pill carried
+   * elsewhere meanwhile floats there (`pillRowEdge`).
+   */
+  private followBar(): void {
+    if (this.pillRowOn) {
+      this.pillDockBefore ??= this.pillDock;
+      const bar = offeredDock(this.barDock);
+      if (this.pillDock !== bar) this.setPillDock(bar);
+    } else if (this.pillDockBefore !== null) {
+      const before = this.pillDockBefore;
+      this.pillDockBefore = null;
+      this.setPillDock(before);
+    }
+  }
+
+  /**
    * Rest the bar at `dock`, as the setting on this device says (main.ts,
    * `barDock`). The page area gives way on that side, and the surface lays
    * out again through its own ResizeObserver, keeping the page point it showed.
@@ -5636,6 +5741,7 @@ export class Toolbar {
     this.closePopover();
     this.barDock = next;
     this.applyBarDock();
+    this.followBar();
     // A bar moved from top to bottom keeps its size, so its observer is quiet.
     this.measureBar();
     this.applyPosition();
@@ -5684,6 +5790,9 @@ export class Toolbar {
   setPillRow(on: boolean): void {
     if (on === this.pillRowOn) return;
     this.pillRowOn = on;
+    this.followBar();
+    // Beside a bar at a side the pill's contents differ docked and floating.
+    if (isUpright(this.pillDock)) this.buildOptions();
     this.applyPosition();
     this.editor?.refresh();
   }
@@ -5696,12 +5805,13 @@ export class Toolbar {
    * of it. `anchored`: floating by a text box, where the row keeps its room.
    */
   private syncPillRow(shown: boolean, height: number, anchored = false): void {
+    // `height` is the pill's thickness across the row: its height, or its width at a side.
     const next = pillRow({
       edge: pillRowEdge(this.pillRowOn, this.pillDock, this.barDock),
       shown,
       anchored,
       height,
-      gap: EDGE_INSET,
+      gap: this.pillInset(),
       previous: this.row,
     });
     this.optionsEl.toggleClass("is-docked", next.edge !== null && !anchored);
@@ -5709,7 +5819,11 @@ export class Toolbar {
     if (next.edge === before.edge && next.room === before.room) return;
     this.row = next;
     this.host.toggleClass("goodobsidian-has-pill-row", next.edge !== null);
-    this.rowEl.setCssStyles({ height: `${next.room}px` });
+    const side = next.edge === "left" || next.edge === "right";
+    this.rowEl.setCssStyles({
+      height: side || next.edge === null ? "" : `${next.room}px`,
+      width: side ? `${next.room}px` : "",
+    });
     const shift = pageTopShift(before, next);
     if (shift !== 0) this.callbacks.onPillRow?.(shift);
   }
@@ -5730,6 +5844,12 @@ export class Toolbar {
   private placePill(): void {
     // A glide in progress would be measured as the pill's size.
     this.stopPillMorph();
+    // Docked, the pill is as wide as the row allows: measure it so.
+    this.optionsEl.toggleClass(
+      "is-docked",
+      pillRowEdge(this.pillRowOn, this.pillDock, this.barDock) !== null &&
+        !this.optionsEl.hasClass("is-anchored"),
+    );
     this.fitTextPill();
     const hostBox = this.host.getBoundingClientRect();
     const pill = this.optionsEl.getBoundingClientRect();
@@ -5755,13 +5875,13 @@ export class Toolbar {
     this.optionsEl.setCssProps({
       "--gob-pill-room": `${Math.max(0, Math.round(area.bottom - area.top - 2 * EDGE_INSET))}px`,
     });
-    const place = dockPlace(this.pillDock, area, pill.width, pill.height, EDGE_INSET);
+    const place = dockPlace(this.pillDock, area, pill.width, pill.height, this.pillInset());
     this.optionsEl.setCssStyles({
       left: `${Math.round(place.left)}px`,
       top: `${Math.round(place.top)}px`,
     });
     const shown = !this.optionsEl.hasClass("is-collapsed") && !this.optionsEl.hasClass("is-hidden");
-    this.syncPillRow(shown, pill.height);
+    this.syncPillRow(shown, isUpright(this.pillDock) ? pill.width : pill.height);
     // Docked, the page already ends at the row: nothing on it need step aside.
     this.clearForPill(
       shown && this.row.edge === null
@@ -5819,10 +5939,23 @@ export class Toolbar {
         right: hostBox.width - pad(style?.paddingRight),
         bottom: this.pageBottom(hostBox),
       },
-      EDGE_INSET,
+      this.pillInset(),
       this.leftInset,
       pillWidth,
     );
+  }
+
+  /** Whether the pill is docked in a column beside a bar at a side (`pillRowEdge`). */
+  private dockedAtSide(): boolean {
+    const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
+    return edge === "left" || edge === "right";
+  }
+
+  /** How far the pill rests from the bar: less when it is docked in a row of its own. */
+  private pillInset(): number {
+    return pillRowEdge(this.pillRowOn, this.pillDock, this.barDock) === null
+      ? EDGE_INSET
+      : DOCKED_INSET;
   }
 
   /** The pill was carried and let go at (`x`, `y`), host px: rest it at the nearest place. */

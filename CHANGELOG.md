@@ -18,6 +18,26 @@ extracted from the matching section of this file by `release.yml`.
   then work offline; after a change, **Relaunch** shows it everywhere.
 - **Ask AI on an empty lasso.** A lasso drawn round nothing offers Ask AI
   about that patch of page beside Screenshot, while an AI service is set up.
+- **Dock tool options on every side.** With the tool bar at the left or
+  right, the options pill docks as a column beside it and the page starts past
+  it. While it is on, the pill rests by the bar wherever the bar is, and goes
+  back to where it was when it is off. Docked beside a bar at a side it shows
+  every pen type, all the widths and the colours in one column of four, the
+  rest a swipe away.
+
+### Changed
+
+- **Yellow paper is yellower.** Pages that had the pale fill still read as
+  Yellow Paper.
+- **A side tool bar is bigger and scrolls.** Its buttons are 48 px and shrink
+  no further than 40 before the bar scrolls; the end with more beyond it fades
+  and a thin thumb shows. Customize toolbar scrolls the bar with a scroll bar
+  of its own, its tray scrolls when it is taller than its room and sits
+  further from the bar, and the tool's pill is put away while it is open.
+- **The eraser's mode, layer and Clear page, and the text pin, are icons.**
+  Their names are their tooltips, so the pills take no room for words.
+- **A zoomed-in page of a row rests flush.** No strip of desk stays beside it
+  after a swipe; a pull past the edge still stretches and springs back.
 
 ### Fixed
 
@@ -33,6 +53,10 @@ extracted from the matching section of this file by `release.yml`.
   longer shows in steps outside it.
 - **Dragging a colour off the bar is smooth.** The held colour follows the
   finger exactly instead of trailing behind it.
+- On a dark page, a sticky note's ink, text and paper are shown as the rest of the page is, so
+  ink and text never change colour when they land on a note.
+- A text box laid over a sticky note folds away with it and comes back when it opens; one dropped
+  on an open note becomes its text.
 
 ## [2.7.0] - 2026-11-02
 

@@ -49,6 +49,37 @@ import {
  */
 const NEAR_SHARE = 0.6;
 
+/**
+ * A page of which less than this share shows (the neighbour beside the page
+ * being read) is a side page. Once one, it stays one until more than
+ * {@link SIDE_LEAVE} shows, so a pan across the line does not swap its raster.
+ */
+const SIDE_ENTER = 0.4;
+const SIDE_LEAVE = 0.5;
+/**
+ * A side page's image is at most this sharp (device px per page px) and it
+ * asks for no detail: its A4-sized raster and patch cost about as much as the
+ * page being read, three times over with both neighbours showing.
+ */
+const SIDE_SCALE = 1;
+
+/** The page px of the page that `region` shows. */
+function shownArea(geometry: PageGeometry, region: Bounds): number {
+  const w = Math.min(geometry.width, region.maxX) - Math.max(0, region.minX);
+  const h = Math.min(geometry.height, region.maxY) - Math.max(0, region.minY);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+/** Bytes of a whole-page raster of `geometry` at `scale`. */
+function imageBytes(geometry: PageGeometry, scale: number): number {
+  return geometry.width * scale * geometry.height * scale * 4;
+}
+
+/** The key of one PDF page in {@link VaultBackdropRenderer}'s sets and maps. */
+function pageKey(backdrop: { path: string; page: number }): string {
+  return `${backdrop.page}:${backdrop.path}`;
+}
+
 export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter {
   /**
    * Paper colours, where a paint names none (`target.paper`) and for
@@ -67,6 +98,8 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
   private level: number | null = null;
   /** Each PDF page's view centre at the last prepare, for the way the view moves. */
   private centres = new Map<string, { x: number; y: number }>();
+  /** The pages that are side pages as of the last prepare ({@link SIDE_ENTER}). */
+  private sides = new Set<string>();
   /** The one PDF page {@link prepareExact} drew for an export. */
   private exact: { path: string; page: number; entry: PdfEntry } | null = null;
 
@@ -152,12 +185,27 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     const offScreen: PdfRasterRequest[] = [];
     const shown: PdfShownArea[] = [];
     const centres = new Map<string, { x: number; y: number }>();
+    const sides = new Set<string>();
+    // The page being read shows the most; only a page showing less than it,
+    // and little of itself, is a side page. A lone page zoomed far in is not.
+    const shows = (at: ReturnType<typeof inFrame>, item: { region: Bounds }) =>
+      shownArea(at.geometry, at.region ?? item.region);
+    let most = 0;
+    for (const item of visible) {
+      if (item.backdrop.kind !== "pdf") continue;
+      most = Math.max(most, shows(inFrame(item.backdrop, item.geometry, item.region), item));
+    }
     for (const item of visible) {
       if (item.backdrop.kind !== "pdf") continue;
       const at = inFrame(item.backdrop, item.geometry, item.region);
       const { backdrop, geometry } = at;
       const region = at.region ?? item.region;
-      pages.push(this.pageImage(backdrop, geometry, deviceScale));
+      const side = shows(at, item) < most && this.isSide(backdrop, geometry, region);
+      if (side) sides.add(pageKey(backdrop));
+      const image = this.pageImage(backdrop, geometry, deviceScale, side);
+      pages.push(image);
+      // A side page shows only a strip: its reduced image is all it gets.
+      if (side) continue;
       // Only the margin of a page is in view: no detail of its PDF is wanted.
       if (region.maxX <= region.minX || region.maxY <= region.minY) continue;
       const view = visiblePdfArea(geometry, region, deviceScale)?.region;
@@ -191,6 +239,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       if (area) detail.push({ path, page, dprScale: deviceScale, area });
     }
     this.centres = centres;
+    this.sides = sides;
     const coming = this.nearImages(near, deviceScale);
     const now = [...pages, ...coming.slice(0, 1), ...detail];
     this.pdf.setVisibleRegions([...now, ...coming.slice(1), ...offScreen], shown, now.length);
@@ -201,15 +250,25 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     backdrop: PdfBackdrop,
     geometry: PageGeometry,
     level: number,
+    side = false,
   ): PdfRasterRequest {
     // Before it is drawn, so it is drawn as it will be painted.
     if (backdrop.annotations === false) this.pdf?.skipAnnotations(backdrop.path);
+    const whole = pageRasterScale(geometry, level);
     return {
       path: backdrop.path,
       page: backdrop.page,
-      dprScale: pageRasterScale(geometry, level),
+      dprScale: side ? Math.min(whole, SIDE_SCALE) : whole,
       area: areaFor(backdrop, geometry),
     };
+  }
+
+  /** Whether the page, with `region` of it in view, is a side page (see {@link SIDE_ENTER}). */
+  private isSide(backdrop: PdfBackdrop, geometry: PageGeometry, region: Bounds): boolean {
+    const area = geometry.width * geometry.height;
+    if (!(area > 0)) return false;
+    const share = shownArea(geometry, region) / area;
+    return share < (this.sides.has(pageKey(backdrop)) ? SIDE_LEAVE : SIDE_ENTER);
   }
 
   /** The images of the `near` PDF pages, in order, up to {@link NEAR_SHARE} of the cache. */
@@ -223,8 +282,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     for (const item of near) {
       if (item.backdrop.kind !== "pdf") continue;
       const { backdrop, geometry } = inFrame(item.backdrop, item.geometry);
-      const scale = pageRasterScale(geometry, level);
-      const cost = geometry.width * scale * geometry.height * scale * 4;
+      const cost = imageBytes(geometry, pageRasterScale(geometry, level));
       // Always the next one, however large.
       if (out.length > 0 && bytes + cost > room) break;
       bytes += cost;
@@ -279,10 +337,19 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
       return;
     }
     const draws: PdfDraw[] = [];
+    // A raster's box is rounded up to whole px, so it can reach past the
+    // page's right and bottom edge; the inversion stops at the edge, and the
+    // overspill stayed light as a white line round a dark thumbnail.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, geometry.width, geometry.height);
+    ctx.clip();
     if (backdrop.annotations === false) this.pdf.skipAnnotations(backdrop.path);
     const scale =
       this.level !== null
-        ? pageRasterScale(geometry, this.level)
+        ? this.sides.has(pageKey(backdrop))
+          ? Math.min(pageRasterScale(geometry, this.level), SIDE_SCALE)
+          : pageRasterScale(geometry, this.level)
         : quantiseScale(target?.deviceScale ?? this.scale);
     const area = areaFor(backdrop, geometry);
     const exact = this.exact;
@@ -330,6 +397,7 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
         draws.push({ source: canvas, x: box.x, y: box.y, w: box.w, h: box.h });
       }
     }
+    ctx.restore();
     if (invert) invertPdfArea(ctx, geometry.width, geometry.height, draws);
   }
 

@@ -6348,6 +6348,15 @@ export class InkSurface {
           ...(f.fit ? { fit: true as const } : {}),
         };
         this.pushTextCommand(key, new SetTextBoxFrame(view.pageId, view.id, frame));
+        // Dropped on a sticky note, the box is now drawn with the note: paint its tiles again.
+        const home = this.boxForPage(view.pageId);
+        const page = home ? this.pageAt(home.index) : null;
+        const dropped = page?.textBoxes.find((t) => t.id === view.id);
+        const owner = page && dropped ? noteOfText(page, dropped) : null;
+        if (home && owner) {
+          this.renderer?.invalidateRegion(home.index, imageBounds(transformOf(owner)));
+          this.renderDry();
+        }
         this.changed();
       }
       this.syncTextBoxes();
@@ -6895,23 +6904,12 @@ export class InkSurface {
       shape: kind,
       ...decor,
     });
-    this.renderer?.renderWet(
-      pageIndex,
-      shape.pts,
-      { ...style, shape: true, decor: decorOf(shape) },
-      this.wetOnNote(pageIndex, pts),
-    );
+    this.renderer?.renderWet(pageIndex, shape.pts, {
+      ...style,
+      shape: true,
+      decor: decorOf(shape),
+    });
     this.requestZoomPaint();
-  }
-
-  /**
-   * Whether the stroke in flight, starting at `pts`' first point, will be a
-   * sticky note's ink, as `commitStroke` decides it: drawn then as the note
-   * draws it, never in a dark page's inverted colour (white on yellow).
-   */
-  private wetOnNote(pageIndex: number, pts: readonly number[]): boolean {
-    const page = this.doc.pages[pageIndex];
-    return page !== undefined && pts.length >= 3 && noteAt(page, pts[0], pts[1]) !== null;
   }
 
   /** Settings for a new stroke's sampling, from the pen as it is now. */
@@ -9879,7 +9877,7 @@ export class InkSurface {
     // changes nothing kept.
     const open = runs[runs.length - 1];
     if (open) for (const tip of builder.tail) open.pts.push(tip[0], tip[1]);
-    this.renderer?.renderWetRuns(box.index, runs, style, this.wetOnNote(box.index, pts));
+    this.renderer?.renderWetRuns(box.index, runs, style);
     this.requestZoomPaint();
   }
 
