@@ -10,7 +10,7 @@
  */
 
 import type { RequestUrlResponse } from "obsidian";
-import { t } from "../i18n/translate";
+import { english, t } from "../i18n/translate";
 import { postBytes, postJson } from "./http";
 import { errorMessage } from "../util/errors";
 import {
@@ -216,7 +216,7 @@ export async function askAi(
   config: AiVendorConfig,
   system: string,
   turns: readonly ChatTurn[],
-): Promise<string> {
+): Promise<AskAnswer> {
   // Every follow-up resends the pages, so the conversation is worth caching.
   const { json, text, cutOff } = await sendChat(config, system, turns, true);
   const label = targetLabel(config);
@@ -224,11 +224,23 @@ export async function askAi(
   if (refusal) throw new Error(t("ai.client.refusal", { label, reason: refusal }));
   if (cutOff) {
     // A partial answer is still worth reading, but not without saying so.
-    if (text) return `${text}\n\n${t("ai.client.answerCutOff", { max: MAX_OUTPUT_TOKENS })}`;
+    if (text) return { ...cutOffAnswer(text), actions: [], notes: [] };
     throw new Error(t("ai.client.outputLimit", { label, max: MAX_OUTPUT_TOKENS }));
   }
   if (!text) throw new Error(t("ai.client.noAnswer", { label }));
-  return text;
+  return { text, actions: [], notes: [] };
+}
+
+/**
+ * A cut-off answer, saying so: in English for the model, which reads it
+ * again with the next question, and in the interface's language as shown.
+ */
+function cutOffAnswer(text: string): { text: string; shown: string } {
+  const vars = { max: MAX_OUTPUT_TOKENS };
+  return {
+    text: `${text}\n\n${english("ai.client.answerCutOff", vars)}`,
+    shown: `${text}\n\n${t("ai.client.answerCutOff", vars)}`,
+  };
 }
 
 // --- Ask, with the notebook's tools ----------------------------------------------
@@ -247,8 +259,14 @@ export interface AskToolOutcome {
 
 /** An answer, and what Claude did in the notebook on the way to it. */
 export interface AskAnswer {
+  /** For the model: the answer, with any note of ours in English. */
   text: string;
+  /** For the chat, where it differs from `text`: our note in the interface's language. */
+  shown?: string;
+  /** For the chat: each action's `done`, in the interface's language. */
   actions: string[];
+  /** For the model: what each action did, as its result said it (English). */
+  notes: string[];
 }
 
 /**
@@ -289,6 +307,7 @@ export async function askAiWithTools(
   const label = targetLabel(config);
   const more: unknown[] = [];
   const actions: string[] = [];
+  const notes: string[] = [];
   for (let round = 0; ; round++) {
     // Out of rounds: answer now, with what has been found.
     const body = dialect.body(baseBody, more, round >= ASK_MAX_TOOL_ROUNDS);
@@ -299,16 +318,11 @@ export async function askAiWithTools(
     if (uses.length === 0) {
       const text = cleanTranscription(extractLlmText(config.vendor, json));
       if (isTruncatedLlmResponse(config.vendor, json)) {
-        if (text) {
-          return {
-            text: `${text}\n\n${t("ai.client.answerCutOff", { max: MAX_OUTPUT_TOKENS })}`,
-            actions,
-          };
-        }
+        if (text) return { ...cutOffAnswer(text), actions, notes };
         throw new Error(t("ai.client.outputLimit", { label, max: MAX_OUTPUT_TOKENS }));
       }
       if (!text && actions.length === 0) throw new Error(t("ai.client.noAnswer", { label }));
-      return { text, actions };
+      return { text, actions, notes };
     }
     more.push(...dialect.reply(json));
     const results: ToolResult[] = [];
@@ -325,7 +339,10 @@ export async function askAiWithTools(
           outcome = { text: `It failed: ${errorMessage(error)}`, isError: true };
         }
       }
-      if (outcome.done) actions.push(outcome.done);
+      if (outcome.done) {
+        actions.push(outcome.done);
+        notes.push(outcome.text);
+      }
       results.push({ use, text: outcome.text, images: outcome.images, isError: outcome.isError });
     }
     more.push(...dialect.results(results));

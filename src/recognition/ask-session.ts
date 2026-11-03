@@ -29,7 +29,7 @@ import {
 } from "./ai-chat";
 import { attachRefusal } from "./ask-attachments";
 import type { SavedChat } from "./ask-chat-file";
-import { t, tn } from "../i18n/translate";
+import { english, t, tn } from "../i18n/translate";
 import { errorMessage } from "../util/errors";
 
 export interface AskPagesResult {
@@ -54,7 +54,12 @@ export interface AskSessionDeps {
   ask: (
     turns: readonly ChatTurn[],
     onStatus: (status: string) => void,
-  ) => Promise<{ text: string; actions?: readonly string[] }>;
+  ) => Promise<{
+    text: string;
+    shown?: string;
+    actions?: readonly string[];
+    notes?: readonly string[];
+  }>;
   /** Write the chat; `path` is where it was written before (null the first time). Resolves to its path. */
   save: (chat: SavedChat, path: string | null) => Promise<string>;
   /** Remove a saved chat's file. */
@@ -312,14 +317,23 @@ export class AskSession {
       if (stale()) return;
       const actions = answer.actions ?? [];
       // An answer is never empty in the history: the API refuses an empty turn.
-      const said = answer.text.trim() || actions.join("\n") || t("ai.ask.done");
+      // What goes back to the model stays English (the tools' own results);
+      // the chat shows the same in the interface's language.
+      const answered = answer.text.trim();
+      const said = answered || answer.notes?.join("\n") || english("ai.ask.done");
+      const shown = answer.shown?.trim() || answered || actions.join("\n") || t("ai.ask.done");
       this.created ??= this.deps.now().toISOString();
       // Only a question that was answered joins the history, so a failed one
       // can simply be asked again.
       this.turns = [
         ...history,
         turn,
-        { role: "assistant", text: said, ...(actions.length ? { actions } : {}) },
+        {
+          role: "assistant",
+          text: said,
+          ...(shown !== said ? { shown } : {}),
+          ...(actions.length ? { actions } : {}),
+        },
       ];
       this.attachments = this.attachments.filter((f) => !files.includes(f));
       this.outstanding = null;

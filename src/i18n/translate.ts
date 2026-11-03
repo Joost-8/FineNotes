@@ -53,6 +53,11 @@ export function t(key: TextKey, vars?: TextVars): string {
   return fill(lookup(key) ?? key, vars);
 }
 
+/** The English text for `key`, whatever the language: for what is sent to the AI. */
+export function english(key: TextKey, vars?: TextVars): string {
+  return fill(ENGLISH[key] ?? key, vars);
+}
+
 /** The plural form of `key` for `count`, with `{count}` filled. */
 export function tn(key: PluralKey, count: number, vars?: TextVars): string {
   const base: string = key;

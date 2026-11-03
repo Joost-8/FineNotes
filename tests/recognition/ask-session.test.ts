@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ASK_MAX_PAGES, type ChatTurn } from "../../src/recognition/ai-chat";
 import type { SavedChat } from "../../src/recognition/ask-chat-file";
+import { useLanguage } from "../../src/i18n/translate";
 import {
   AskSession,
   type AskSessionDeps,
@@ -278,19 +279,37 @@ describe("AskSession tools", () => {
         asked.push([...turns]);
         onStatus("Reading page 5…");
         seen.push(holder.session?.outstanding?.status ?? "");
-        return Promise.resolve({ text: "", actions: ["Added a text box on page 5"] });
+        return Promise.resolve({
+          text: "",
+          actions: ["Added a text box on page 5"],
+          notes: ["Added the text box near the top of page 5."],
+        });
       },
     });
     const session = open(deps);
     holder.session = session;
     await session.send("Write a summary on page 5");
     expect(seen).toEqual(["Reading page 5…"]);
-    // An answer that is only actions still has words in the history.
+    // An answer that is only actions still has words in the history: the
+    // tools' own English results, sent; the chat shows the actions.
     expect(session.turns[1]).toEqual({
       role: "assistant",
-      text: "Added a text box on page 5",
+      text: "Added the text box near the top of page 5.",
+      shown: "Added a text box on page 5",
       actions: ["Added a text box on page 5"],
     });
+  });
+
+  it("keeps the history in English when the interface is not", async () => {
+    useLanguage("de", { "ai.ask.done": "Erledigt." });
+    try {
+      const { deps } = setup({ ask: () => Promise.resolve({ text: "" }) });
+      const session = open(deps);
+      await session.send("Tidy up");
+      expect(session.turns[1]).toEqual({ role: "assistant", text: "Done.", shown: "Erledigt." });
+    } finally {
+      useLanguage("en");
+    }
   });
 });
 

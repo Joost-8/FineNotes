@@ -91,6 +91,7 @@ import { type AskToolCall, searchResultText } from "../recognition/ask-tools";
 import { generatedImageName } from "../recognition/ai-image";
 import { nextElementId, textBoxBelow, textBoxFrame } from "../recognition/ai-placement";
 import {
+  type AskAnswer,
   type AskToolOutcome,
   type GeneratedPicture,
   askAi,
@@ -1878,7 +1879,7 @@ export class InkView extends TextFileView {
   private askWithTools(
     turns: readonly ChatTurn[],
     onStatus: (status: string) => void,
-  ): Promise<{ text: string; actions?: readonly string[] }> {
+  ): Promise<AskAnswer> {
     const config = this.plugin.textAiConfig();
     const system = buildAskSystemPrompt();
     const withTools = askAiWithTools(config, `${system}\n${buildAskToolsPrompt()}`, turns, {
@@ -1888,7 +1889,7 @@ export class InkView extends TextFileView {
     });
     if (config.vendor !== "custom") return withTools;
     // A self-hosted server may not do tools: then it answers from what was sent.
-    return withTools.catch(() => askAi(config, system, turns).then((text) => ({ text })));
+    return withTools.catch(() => askAi(config, system, turns));
   }
 
   /** Run one of the AI's notebook tools (`ask-tools.ts`). */
