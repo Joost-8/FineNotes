@@ -6,7 +6,7 @@
  */
 
 import { type App, Notice, normalizePath } from "obsidian";
-import { type PixelRect, hasInkOutside } from "../recognition/ocr/blank";
+import { type PixelRect, hasEdgesOutside, hasInkOutside } from "../recognition/ocr/blank";
 import { OCR_MODEL } from "../recognition/ocr/ocr-model";
 import { toHex } from "../downloads/model-manifest";
 import type { AssetStore } from "../downloads/model-store";
@@ -16,6 +16,8 @@ import type { OcrDeps } from "./ocr-service";
 
 /** The longest side of the copy of a page checked for ink, px. */
 const INK_EDGE = 256;
+/** ... and of a copy checked for edges, which needs the strokes of small print to survive, px. */
+const EDGE_EDGE = 640;
 
 export interface ObsidianOcrHost {
   app: App;
@@ -41,8 +43,8 @@ export function obsidianOcrDeps(host: ObsidianOcrHost): { deps: OcrDeps; store: 
       const { OcrClient } = await import("../recognition/ocr/client");
       return new OcrClient();
     },
-    hasInk: async (bitmap: ImageBitmap, masked: PixelRect[]) => {
-      const k = Math.min(1, INK_EDGE / Math.max(bitmap.width, bitmap.height));
+    hasInk: async (bitmap: ImageBitmap, masked: PixelRect[], edges = false) => {
+      const k = Math.min(1, (edges ? EDGE_EDGE : INK_EDGE) / Math.max(bitmap.width, bitmap.height));
       const w = Math.max(1, Math.round(bitmap.width * k));
       const h = Math.max(1, Math.round(bitmap.height * k));
       const canvas = createEl("canvas");
@@ -62,7 +64,8 @@ export function obsidianOcrDeps(host: ObsidianOcrHost): { deps: OcrDeps; store: 
           x1: r.x1 * k,
           y1: r.y1 * k,
         }));
-        return hasInkOutside(context.getImageData(0, 0, w, h).data, w, scaled);
+        const pixels = context.getImageData(0, 0, w, h).data;
+        return edges ? hasEdgesOutside(pixels, w, scaled) : hasInkOutside(pixels, w, scaled);
       } finally {
         canvas.width = canvas.height = 0;
       }

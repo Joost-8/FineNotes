@@ -18,7 +18,10 @@ extracted from the matching section of this file by `release.yml`.
   as such. Only when the reader model is already on the device; it never causes
   the download to be offered. _Also read text inside figures_ (on by default,
   under _Read scanned PDF pages_). The cache sidecar is now format 2: pages
-  read before are read again. Details and measurements: [docs/OCR.md](docs/OCR.md).
+  read before are read again. A picture behind the text (a slide background, a watermark) is
+  skipped unless it has content beyond the text, lines the reader was unsure of are read a second time, and
+  the setting takes effect without reopening a notebook. Details and measurements:
+  [docs/OCR.md](docs/OCR.md).
 - **Scanned PDF pages are read on your device.** A PDF page that is a picture
   of printed text (a scan, or a scan with only a page number on it) now gets
   search, the text-snapping highlighter and Copy text, as PDFs with real text

@@ -585,7 +585,13 @@ describe("control values", () => {
 
   it("rebuilds the tab only for the keys that add or remove rows", () => {
     // pressureWidth shows or hides its warning.
-    for (const key of ["recognitionProviderId", "llmVendor", "imageVendor", "pressureWidth"]) {
+    for (const key of [
+      "recognitionProviderId",
+      "llmVendor",
+      "imageVendor",
+      "pressureWidth",
+      "ocrScannedPdfs",
+    ]) {
       expect(changesTabLayout(key)).toBe(true);
     }
     for (const key of ["llmModel", "llmBaseUrl", "debugHud", "paperWidth", "defaultTool"]) {

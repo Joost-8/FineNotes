@@ -381,3 +381,31 @@ describe("the raster of a region", () => {
     expect(OCR_TUNING.figureMinDpi).toBe(170);
   });
 });
+
+describe("a picture behind the page's text", () => {
+  const bg = image(0, 0, 612, 866);
+  const figure = image(100, 300, 200, 150);
+
+  it("is not merged with the figures on it", () => {
+    const scan = scanFigures([...bg, ...figure], VIEW, PAGE);
+    expect(scan.figures).toHaveLength(2);
+    expect(scan.figures.map(box)).toEqual(expect.arrayContaining([[0, 0, 612, 866]]));
+  });
+
+  it("is a flagged region of a page with text, whole and apart from the padded figures", () => {
+    const scan = scanFigures([...bg, ...figure], VIEW, PAGE);
+    const plan = classifyPage(false, scan, PAGE);
+    expect(plan.condition).toBe("TEXT_WITH_FIGURES");
+    const plain = plan.regions.filter((r) => !r.backdrop);
+    const back = plan.regions.filter((r) => r.backdrop);
+    expect(back).toHaveLength(1);
+    expect(box(back[0])).toEqual([0, 0, 612, 866]);
+    expect(plain.map(box)).toEqual([[94, 410, 306, 572]]);
+  });
+
+  it("a sparse page with such a picture is still a scan", () => {
+    const plan = classifyPage(true, scanFigures(bg, VIEW, PAGE), PAGE);
+    expect(plan.condition).toBe("SCANNED");
+    expect(plan.regions.every((r) => !r.backdrop)).toBe(true);
+  });
+});

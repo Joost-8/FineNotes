@@ -39,10 +39,15 @@ export interface TextBox {
   score: number;
 }
 
+/** Why a blob was not made a text line (for diagnostics and tests). */
+export type DbRejection = "pixels" | "score" | "side" | "vertical" | "tilt" | "grown";
+
 export interface DbOptions {
   threshold?: number;
   boxScore?: number;
   unclipRatio?: number;
+  /** Called with each blob that was left out, and why; its box in pixels `[x0, y0, x1, y1]`. */
+  onReject?: (why: DbRejection, bounds: [number, number, number, number], score: number) => void;
 }
 
 /**
@@ -58,6 +63,7 @@ export function findTextBoxes(
   const threshold = options.threshold ?? DB_THRESHOLD;
   const minScore = options.boxScore ?? DB_BOX_SCORE;
   const ratio = options.unclipRatio ?? DB_UNCLIP_RATIO;
+  const reject = options.onReject;
   const size = width * height;
   const seen = new Uint8Array(size);
   const queue = new Int32Array(size);
@@ -98,7 +104,14 @@ export function findTextBoxes(
         }
       }
     }
-    if (n < MIN_PIXELS || sum / n < minScore) continue;
+    if (n < MIN_PIXELS) {
+      reject?.("pixels", blobBounds(queue, n, width), sum / n);
+      continue;
+    }
+    if (sum / n < minScore) {
+      reject?.("score", blobBounds(queue, n, width), sum / n);
+      continue;
+    }
     const mx = sx / n;
     const my = sy / n;
     const vxx = sxx / n - mx * mx;
@@ -109,7 +122,10 @@ export function findTextBoxes(
     let cos = Math.cos(angle);
     let sin = Math.sin(angle);
     let box = extents(queue, n, width, cos, sin);
-    if (box.w < MIN_SIDE || box.h < MIN_SIDE) continue;
+    if (box.w < MIN_SIDE || box.h < MIN_SIDE) {
+      reject?.("side", blobBounds(queue, n, width), sum / n);
+      continue;
+    }
     if (box.w < box.h * MIN_ELONGATION && box.h < box.w * MIN_ELONGATION) {
       angle = 0;
       cos = 1;
@@ -117,13 +133,20 @@ export function findTextBoxes(
       box = extents(queue, n, width, cos, sin);
     } else if (box.h > box.w) {
       // Text runs along the long side: a tall blob is vertical text.
+      reject?.("vertical", blobBounds(queue, n, width), sum / n);
       continue;
     }
-    if (Math.abs(angle) > MAX_TILT) continue;
+    if (Math.abs(angle) > MAX_TILT) {
+      reject?.("tilt", blobBounds(queue, n, width), sum / n);
+      continue;
+    }
     const d = (box.w * box.h * ratio) / (2 * (box.w + box.h));
     const w = box.w + 2 * d;
     const h = box.h + 2 * d;
-    if (Math.min(w, h) < MIN_GROWN_SIDE) continue;
+    if (Math.min(w, h) < MIN_GROWN_SIDE) {
+      reject?.("grown", blobBounds(queue, n, width), sum / n);
+      continue;
+    }
     boxes.push({
       cx: box.u * cos - box.v * sin,
       cy: box.u * sin + box.v * cos,
@@ -134,6 +157,23 @@ export function findTextBoxes(
     });
   }
   return boxes;
+}
+
+/** The pixel bounds of a blob, `[x0, y0, x1, y1]` (far edges). */
+function blobBounds(queue: Int32Array, n: number, width: number): [number, number, number, number] {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const y = (queue[i] / width) | 0;
+    const x = queue[i] - y * width;
+    if (x < x0) x0 = x;
+    if (x + 1 > x1) x1 = x + 1;
+    if (y < y0) y0 = y;
+    if (y + 1 > y1) y1 = y + 1;
+  }
+  return [x0, y0, x1, y1];
 }
 
 /** The blob's size along the axes (`cos`, `sin`) and (-`sin`, `cos`), and its centre in that frame. */

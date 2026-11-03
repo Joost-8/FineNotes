@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasInkOutside, isBlank } from "../../../src/recognition/ocr/blank";
+import { hasEdgesOutside, hasInkOutside, isBlank } from "../../../src/recognition/ocr/blank";
 import {
   OCR_CACHE_FORMAT,
   cacheFolder,
@@ -319,5 +319,59 @@ describe("the OCR cache records what kind of page it is", () => {
     raw.pages["0"].regions.push({ x0: 5, y0: 5, x1: 1, y1: 1, dpi: null }, "x", null);
     const page = cachedPage(parseCache(JSON.stringify(raw)), 0);
     expect(page?.regions).toHaveLength(1);
+  });
+});
+
+describe("content outside masked areas (edges, not ink)", () => {
+  const W = 100;
+  const H = 100;
+  const fill = (grey: (x: number, y: number) => number): Uint8ClampedArray => {
+    const data = new Uint8ClampedArray(W * H * 4);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        data[i] = data[i + 1] = data[i + 2] = grey(x, y);
+        data[i + 3] = 255;
+      }
+    }
+    return data;
+  };
+
+  it("finds no content in a plain, dark or gradient fill, though a dark one is all ink", () => {
+    expect(
+      hasEdgesOutside(
+        fill(() => 120),
+        W,
+        [],
+      ),
+    ).toBe(false);
+    expect(
+      hasEdgesOutside(
+        fill((x) => 60 + x),
+        W,
+        [],
+      ),
+    ).toBe(false);
+    expect(
+      hasEdgesOutside(
+        fill((x, y) => 200 + ((x * 7 + y * 13) % 9)),
+        W,
+        [],
+      ),
+    ).toBe(false);
+    expect(
+      hasInkOutside(
+        fill(() => 120),
+        W,
+        [],
+      ),
+    ).toBe(true);
+  });
+
+  it("finds content in strokes, unless they are under a masked rectangle", () => {
+    const strokes = fill((x, y) => (y >= 40 && y < 44 && x >= 20 && x < 80 ? 20 : 235));
+    expect(hasEdgesOutside(strokes, W, [])).toBe(true);
+    expect(hasEdgesOutside(strokes, W, [{ x0: 15, y0: 35, x1: 85, y1: 50 }])).toBe(false);
+    expect(hasEdgesOutside(strokes, W, [{ x0: 15, y0: 35, x1: 50, y1: 50 }])).toBe(true);
   });
 });

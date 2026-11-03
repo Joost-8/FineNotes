@@ -264,6 +264,20 @@ export class PdfTextCache implements OcrOwner {
     for (const b of [backdrop, ...near]) this.request(b);
   }
 
+  /**
+   * A setting that decides what OCR reads changed: every page of which the
+   * text is kept is read again, so it is classified, queued or shown under
+   * the new setting (what OCR read earlier stays in the cache).
+   */
+  ocrSettingsChanged(): void {
+    if (this.destroyed) return;
+    for (const key of [...this.pages.keys()]) {
+      const at = key.lastIndexOf(":");
+      const page = Number(key.slice(at + 1));
+      if (Number.isInteger(page)) this.request({ kind: "pdf", path: key.slice(0, at), page }, true);
+    }
+  }
+
   /** OCR read a page this cache queued: read its text again, with it. */
   ocrReady(path: string, page: number): void {
     const key = pageKey(path, page);

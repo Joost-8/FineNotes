@@ -65,6 +65,12 @@ export interface Rect {
 /** A rectangle to read, and the resolution of the picture inside it, dots per inch (null: not known). */
 export interface Region extends Rect {
   dpi: number | null;
+  /**
+   * A picture over most of the page under text of its own: a slide background,
+   * a watermark, a paper texture. It is read only if it has content beyond the
+   * page's own text and the other figures (see `hasEdgesOutside`).
+   */
+  backdrop?: true;
 }
 
 /** An image placed on the page: where, and at what resolution it was stored. */
@@ -317,7 +323,17 @@ export function scanFigures(
   tuning: OcrTuning = OCR_TUNING,
 ): FigureScan {
   const drawn = collectImages(ops, viewport, page);
-  const merged = mergeImages(drawn, tuning.figureMergeGap);
+  // A backdrop is not merged with the figures on it: they stay readable apart.
+  const area = page.width * page.height;
+  const isBackdrop = (b: Rect): boolean =>
+    area > 0 && ((b.x1 - b.x0) * (b.y1 - b.y0)) / area >= tuning.scannedShare;
+  const merged = [
+    ...mergeImages(
+      drawn.filter((b) => !isBackdrop(b)),
+      tuning.figureMergeGap,
+    ),
+    ...mergeImages(drawn.filter(isBackdrop), tuning.figureMergeGap),
+  ];
   return {
     figures: merged.filter((b) => isFigureSized(b, page, tuning)),
     skipped: merged.filter((b) => !isFigureSized(b, page, tuning)),
@@ -343,6 +359,27 @@ export function padRegions(
     dpi: r.dpi,
   }));
   return mergeImages(padded, 0);
+}
+
+/**
+ * The areas to read for these figures: padded and merged, except a backdrop
+ * (a figure over most of the page), which stays whole and apart, flagged.
+ */
+function regionsOf(
+  figures: readonly PageImage[],
+  tuning: OcrTuning,
+  page: { width: number; height: number },
+): Region[] {
+  const area = page.width * page.height;
+  const isBackdrop = (b: Rect): boolean =>
+    area > 0 && ((b.x1 - b.x0) * (b.y1 - b.y0)) / area >= tuning.scannedShare;
+  const plain = padRegions(
+    figures.filter((f) => !isBackdrop(f)),
+    tuning.figurePad,
+    page,
+  );
+  const backdrops = figures.filter(isBackdrop).map((f) => ({ ...f, backdrop: true as const }));
+  return [...plain, ...backdrops];
 }
 
 /** What a page is, and what is to be read of it. */
@@ -380,7 +417,7 @@ export function classifyPage(
       ? { condition: "SCANNED", regions: whole, checkRest: false, known: false }
       : { condition: "TEXT_ONLY", regions: [], checkRest: false, known: false };
   }
-  const regions = padRegions(scan.figures, tuning.figurePad, page);
+  const regions = regionsOf(scan.figures, tuning, page);
   if (!sparse) {
     return regions.length > 0
       ? { condition: "TEXT_WITH_FIGURES", regions, checkRest: false, known: true }

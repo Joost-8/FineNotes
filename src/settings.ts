@@ -997,6 +997,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
     storeShownValue(this.plugin.settings, key, value);
     await this.plugin.saveSettings();
+    // Pages already shown take it at once, without a reopen.
+    if (key === "ocrScannedPdfs" || key === "ocrFigureText") this.plugin.ocr.settingsChanged();
     // A newly chosen speech model is registered before the tab is rebuilt, so its row shows it.
     if (key === "speechModel") this.plugin.speech.store();
     if (changesTabLayout(key)) this.update();

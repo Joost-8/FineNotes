@@ -81,6 +81,7 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
     masked: [] as unknown[],
     writes: [] as string[],
     origins: [] as unknown[],
+    edges: [] as boolean[],
   };
   const state = {
     ready: options.ready ?? true,
@@ -89,6 +90,7 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
     /** Decides whether a raster has ink, when set (called in order); else `ink`. */
     inkOf: null as null | ((call: number) => boolean),
     inkCalls: 0,
+    figures: true,
     /** Runs after each region is read (the pen may go down, say). */
     afterRead: null as null | (() => void),
   };
@@ -110,7 +112,7 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
   const deps: OcrDeps = {
     pluginDir: () => PLUGIN,
     enabled: () => true,
-    figures: () => true,
+    figures: () => state.figures,
     store,
     offer: () => {
       log.offers++;
@@ -155,8 +157,9 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
         },
         dispose: () => undefined,
       }),
-    hasInk: (_bitmap, masked) => {
+    hasInk: (_bitmap, masked, edges) => {
       log.masked.push(masked);
+      log.edges.push(edges === true);
       return Promise.resolve(state.inkOf ? state.inkOf(state.inkCalls++) : state.ink);
     },
     hashOf: (path) => Promise.resolve(hashOf(path)),
@@ -195,6 +198,10 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
   const service = new OcrService(deps);
   const owner = {
     ready: [] as string[],
+    changed: 0,
+    ocrSettingsChanged() {
+      this.changed++;
+    },
     ocrReady(path: string, page: number) {
       this.ready.push(`${path}#${page}`);
     },
@@ -705,6 +712,135 @@ describe("OcrService", () => {
       b.service.want(b.owner, "a.pdf", 0, 3, scanned);
       await b.settle();
       expect(await b.service.cached("a.pdf", 0)).toMatchObject({ condition: "BLANK", regions: [] });
+    });
+
+    it("a plain background under dense text is looked at for content, found empty, and never read", async () => {
+      const r = rig();
+      r.state.ink = false;
+      const page: NativeInfo = {
+        items: 400,
+        rects: [{ x0: 20, y0: 30, x1: 280, y1: 380 }],
+        plan: {
+          condition: "TEXT_WITH_FIGURES",
+          regions: [{ ...region(0, 0, 300, 400, null), backdrop: true }],
+          checkRest: false,
+          known: true,
+        },
+      };
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, page);
+      await r.settle();
+      expect(r.log.rendered).toEqual(["a.pdf#0@0,0,300,400"]);
+      expect(r.log.edges).toEqual([true]);
+      expect(r.log.read).toEqual([]);
+      expect(r.log.offers).toBe(0);
+      // Recorded as read, with nothing found, so it is not drawn again.
+      expect(await r.service.cached("a.pdf", 0)).toMatchObject({
+        condition: "TEXT_WITH_FIGURES",
+        lines: [],
+      });
+      expect(r.owner.ready).toEqual(["a.pdf#0"]);
+    });
+
+    it("a background, dense text and one real figure: the figure is read, the background only for what is not the figure", async () => {
+      const figure = region(100, 150, 200, 250, 300);
+      const backdrop = { ...region(0, 0, 300, 400, null), backdrop: true as const };
+      const page: NativeInfo = {
+        items: 400,
+        rects: [{ x0: 20, y0: 30, x1: 280, y1: 100 }],
+        plan: {
+          condition: "TEXT_WITH_FIGURES",
+          // The backdrop is listed first, but the figure is read first.
+          regions: [backdrop, figure],
+          checkRest: false,
+          known: true,
+        },
+      };
+      const r = rig();
+      // Content in the figure; none on the backdrop beyond the text and the figure.
+      r.state.inkOf = (call) => call === 0;
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, page);
+      await r.settle();
+      expect(r.log.rendered).toEqual(["a.pdf#0@100,150,200,250", "a.pdf#0@0,0,300,400"]);
+      expect(r.log.read).toEqual(["300"]);
+      // The backdrop's check leaves out the page's text and the figure (in its raster's pixels, scale 2).
+      expect(r.log.masked[1]).toEqual([
+        { x0: 40, y0: 60, x1: 560, y1: 200 },
+        { x0: 200, y0: 300, x1: 400, y1: 500 },
+      ]);
+      expect((await r.service.cached("a.pdf", 0))?.lines).toHaveLength(1);
+    });
+
+    it("what a backdrop's reading finds inside a figure is not kept twice", async () => {
+      // The reader's one word lies at (10..60, 10..24) in whatever it reads: inside this figure.
+      const figure = region(0, 0, 80, 50, 300);
+      const backdrop = { ...region(0, 0, 300, 400, null), backdrop: true as const };
+      const page: NativeInfo = {
+        items: 400,
+        rects: [],
+        plan: {
+          condition: "TEXT_WITH_FIGURES",
+          regions: [figure, backdrop],
+          checkRest: false,
+          known: true,
+        },
+      };
+      const r = rig();
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, page);
+      await r.settle();
+      expect(r.log.read).toEqual(["300", "300"]);
+      expect((await r.service.cached("a.pdf", 0))?.lines).toHaveLength(1);
+    });
+
+    it("tells the notebooks when a setting changed, so they read their pages again", async () => {
+      const r = rig();
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+      await r.settle();
+      r.service.settingsChanged();
+      expect(r.owner.changed).toBe(1);
+    });
+
+    it("leaves a figure page queued under the setting once it is off, and drops those waiting for the model", async () => {
+      const r = rig();
+      r.service.hold(r.owner, true);
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      r.state.figures = false;
+      r.service.settingsChanged();
+      r.service.hold(r.owner, false);
+      await r.settle();
+      expect(r.log.rendered).toEqual([]);
+      expect(r.service.figures).toBe(false);
+
+      const w = rig({ ready: false });
+      w.service.focus("a.pdf", 0);
+      w.service.want(w.owner, "a.pdf", 0, 3, FIGURES);
+      w.service.want(w.owner, "a.pdf", 1, 3, { items: 3, rects: [] });
+      await w.settle();
+      w.state.figures = false;
+      w.service.settingsChanged();
+      w.makeReady();
+      await w.settle();
+      // The page with text and no figure plan is still read; the figure page is not.
+      expect(w.log.rendered).toEqual(["a.pdf#1"]);
+    });
+
+    it("reads figure pages again once the setting is back on", async () => {
+      const r = rig();
+      r.state.figures = false;
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      await r.settle();
+      expect(r.log.rendered).toEqual([]);
+      r.state.figures = true;
+      r.service.settingsChanged();
+      // The notebook reads the page's text again and asks again.
+      r.service.want(r.owner, "a.pdf", 0, 3, FIGURES);
+      await r.settle();
+      expect(r.log.rendered).toHaveLength(2);
     });
 
     it("reports the setting: figures need the OCR on as well", () => {

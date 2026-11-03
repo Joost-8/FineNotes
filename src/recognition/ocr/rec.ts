@@ -29,6 +29,15 @@ export const REC_MAX_WIDTH = 3200;
  * single column 0.61, 0.52 %.
  */
 export const REC_CORE = 1.2;
+/**
+ * A line the first reading was unsure of (a word under the confidence
+ * filter, or no word) is read again with the box taken to be this many times
+ * the text's height, and the reading with the most trusted characters is
+ * kept. On the lecture figures (171 labels) one more reading at 1.0 and at 1.4
+ * lifted exactly-read labels from 132 to 134 with precision unchanged (98.1%);
+ * only lines the filter would have distrusted cost the extra time.
+ */
+export const REC_RETRY: readonly number[] = [1.0, 1.4];
 /** The recogniser downsamples its input's width by this much: one time step per 8 px. */
 export const REC_STRIDE = 8;
 /** A batch takes this many lines at most (the memory of a batch grows with it) ... */
@@ -45,8 +54,8 @@ export interface RecCrop {
 }
 
 /** The width a box is cropped to: its aspect ratio at {@link REC_HEIGHT}, multiple of 8, capped. */
-export function cropWidth(box: Pick<TextBox, "w" | "h">): number {
-  const ideal = Math.ceil((REC_HEIGHT * box.w) / Math.max(1, box.h / REC_CORE));
+export function cropWidth(box: Pick<TextBox, "w" | "h">, core = REC_CORE): number {
+  const ideal = Math.ceil((REC_HEIGHT * box.w) / Math.max(1, box.h / core));
   return Math.min(
     REC_MAX_WIDTH,
     Math.max(REC_STRIDE * 2, Math.ceil(ideal / REC_STRIDE) * REC_STRIDE),
@@ -63,16 +72,17 @@ export function cropLine(
   height: number,
   box: TextBox,
   index: number,
+  core = REC_CORE,
 ): RecCrop {
-  const w = cropWidth(box);
+  const w = cropWidth(box, core);
   const plane = REC_HEIGHT * w;
   const data = new Float32Array(3 * plane);
   const cos = Math.cos(box.angle);
   const sin = Math.sin(box.angle);
   const sx = box.w / w;
-  const sy = box.h / REC_CORE / REC_HEIGHT;
+  const sy = box.h / core / REC_HEIGHT;
   for (let y = 0; y < REC_HEIGHT; y++) {
-    const v = (y + 0.5) * sy - box.h / REC_CORE / 2;
+    const v = (y + 0.5) * sy - box.h / core / 2;
     for (let x = 0; x < w; x++) {
       const u = (x + 0.5) * sx - box.w / 2;
       // The source point, minus a half pixel so pixel centres sit on integers.

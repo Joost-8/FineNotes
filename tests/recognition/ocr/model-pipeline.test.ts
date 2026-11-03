@@ -152,6 +152,41 @@ describe("reading a page image", () => {
     expect(shifted[3]).toBeCloseTo(home[3] + 300.25, 6);
   });
 
+  it("reads a line the first reading was unsure of again, and keeps the better reading", async () => {
+    // The recogniser is unsure the first time (a batch of one line each time) and sure the second.
+    const bars = [{ x: 40, y: 60, w: 300, h: 10, text: "label" }];
+    const inner = fakeBackend(bars, alphabet);
+    let calls = 0;
+    const backend = {
+      ...inner,
+      detect: inner.detect,
+      async recognize(data: Float32Array, n: number, width: number) {
+        calls++;
+        const out = await inner.recognize(data, n, width);
+        if (calls === 1) {
+          // Spread the winner's probability thin: 0.6 each.
+          for (let i = 0; i < out.probs.length; i++) if (out.probs[i] > 0.9) out.probs[i] = 0.6;
+        }
+        return out;
+      },
+    };
+    const opts = { scale: 2, pageWidth: 300, pageHeight: 200, alphabet };
+    const unsure = await readPage(image, backend, { ...opts, retry: [] });
+    expect(keptLines(unsure)).toHaveLength(0);
+    calls = 0;
+    const again = await readPage(image, backend, { ...opts, retry: [1.0] });
+    expect(calls).toBe(2);
+    expect(
+      keptLines(again)
+        .flat()
+        .map((w) => w.text),
+    ).toEqual(["label"]);
+    // A line that is sure the first time is not read again.
+    calls = 5;
+    await readPage(image, backend, { ...opts, retry: [1.0, 1.4] });
+    expect(calls).toBe(6);
+  });
+
   it("rejects a class count the dictionary does not match (a damaged or wrong file)", async () => {
     const backend = fakeBackend([{ x: 40, y: 60, w: 300, h: 10, text: "abc" }], alphabet);
     await expect(

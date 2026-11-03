@@ -58,6 +58,8 @@ export interface OcrOwner {
   ocrReady(path: string, page: number): void;
   /** Read the page's text to find out whether it needs OCR (the service found nothing else to do). */
   ocrProbe(path: string, page: number): Promise<void>;
+  /** A setting that decides what is read changed: read the pages shown again, with it. */
+  ocrSettingsChanged?(): void;
 }
 
 /** What the service needs of the model's store (an `AssetStore`). */
@@ -136,8 +138,12 @@ export interface OcrDeps {
   raster: RasterLike;
   /** The worker's client, made when first needed. */
   client(): Promise<ClientLike>;
-  /** Whether the raster has ink outside `masked` (rectangles in the raster's pixels). */
-  hasInk(bitmap: ImageBitmap, masked: PixelRect[]): Promise<boolean>;
+  /**
+   * Whether the raster has ink outside `masked` (rectangles in the raster's
+   * pixels); with `edges`, whether it has content (strokes, not a smooth
+   * fill, however dark) outside them.
+   */
+  hasInk(bitmap: ImageBitmap, masked: PixelRect[], edges?: boolean): Promise<boolean>;
   /** The SHA-256 of the PDF's bytes. */
   hashOf(path: string): Promise<string>;
   files: FilesLike;
@@ -167,6 +173,13 @@ export const SAVE_MS = 2500;
 const PROBE_PAUSE_MS = 40;
 /** Failures in a row after which OCR rests for the session. */
 export const MAX_FAILURES = 4;
+
+/** Whether the centre of `box` lies inside `r`. */
+function inside(box: readonly number[], r: PixelRect): boolean {
+  const cx = (box[0] + box[2]) / 2;
+  const cy = (box[1] + box[3]) / 2;
+  return cx >= r.x0 && cx <= r.x1 && cy >= r.y0 && cy <= r.y1;
+}
 
 function refKey(path: string, page: number): string {
   return `${path}:${page}`;
@@ -256,6 +269,25 @@ export class OcrService {
       this.queue.add(waiting.path, waiting.page);
     }
     this.emit();
+  }
+
+  /**
+   * "Read scanned PDF pages" or "Also read text inside figures" changed.
+   * Open notebooks read their pages' text again (a page not looked at under
+   * the new setting is classified now; what was read is kept, and shown only
+   * while the setting allows), and what was queued for a setting that is now
+   * off is left.
+   */
+  settingsChanged(): void {
+    if (this.disposed) return;
+    if (!this.figures) {
+      for (const [key, waiting] of [...this.waitingForModel]) {
+        if (waiting.native.plan?.condition === "TEXT_WITH_FIGURES")
+          this.waitingForModel.delete(key);
+      }
+    }
+    for (const owner of [...this.owners.keys()]) owner.ocrSettingsChanged?.();
+    this.pump();
   }
 
   /** `owner` is gone (its notebook closed): PDFs nobody else shows are dropped. */
@@ -535,6 +567,8 @@ export class OcrService {
     const ref = refKey(path, page);
     const native = this.natives.get(ref) ?? { items: 0, rects: [] };
     this.natives.delete(ref);
+    // Queued while "Also read text inside figures" was on, and it is off now: left alone.
+    if (native.plan?.condition === "TEXT_WITH_FIGURES" && !this.figures) return;
     if (!cachedPage(file, page)) {
       // A page with text of its own is read only if the model is here already;
       // only a page with none at all may make it be offered.
@@ -643,7 +677,10 @@ export class OcrService {
     const lines: OcrLine[] = [];
     const size = { imageWidth: 0, imageHeight: 0, pageWidth: 0, pageHeight: 0 };
     let loaded = false;
-    for (const region of plan.regions) {
+    // The figures first, then a backdrop (whose ink check leaves them out).
+    const figures = plan.regions.filter((r) => !r.backdrop);
+    const ordered = [...figures, ...plan.regions.filter((r) => r.backdrop)];
+    for (const region of ordered) {
       if (this.interrupted(path)) {
         this.requeue(job, native, false);
         return null;
@@ -656,13 +693,16 @@ export class OcrService {
         size.pageHeight = shot.pageHeight;
         const ox = shot.origin?.x ?? 0;
         const oy = shot.origin?.y ?? 0;
-        const masked = native.rects.map((r) => ({
+        // The page's own text is not read again; nor are the figures on a backdrop.
+        const covered: PixelRect[] = region.backdrop ? [...native.rects, ...figures] : native.rects;
+        const masked = covered.map((r) => ({
           x0: (r.x0 - ox) * shot.scale,
           y0: (r.y0 - oy) * shot.scale,
           x1: (r.x1 - ox) * shot.scale,
           y1: (r.y1 - oy) * shot.scale,
         }));
-        if (!(await this.deps.hasInk(shot.bitmap, masked))) {
+        // Content, not ink: a plain, gradient or textured fill under the text is not a figure.
+        if (!(await this.deps.hasInk(shot.bitmap, masked, true))) {
           shot.bitmap.close();
           continue;
         }
@@ -678,7 +718,13 @@ export class OcrService {
           shot.pageHeight,
           shot.origin,
         );
-        lines.push(...read.page.lines);
+        for (const line of read.page.lines) {
+          // What a backdrop's reading found inside a figure was read there, at its own resolution.
+          const words = region.backdrop
+            ? line.words.filter((w) => !figures.some((f) => inside(w.box, f)))
+            : line.words;
+          if (words.length > 0) lines.push({ ...line, words });
+        }
       } catch (error) {
         shot.bitmap.close();
         throw error;

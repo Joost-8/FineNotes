@@ -13,11 +13,20 @@
 
 import { type CropLine, ctcDecode, wordsOf } from "./ctc-words";
 import { snapWords } from "./word-edges";
-import { type TextBox, findTextBoxes } from "./db";
+import { type DbOptions, type TextBox, findTextBoxes } from "./db";
 import { type DetTile, planTiles, stitchProbability, tileTensor } from "./det";
-import type { OcrLine, OcrPage, OcrWord } from "./ocr-words";
+import { OCR_TUNING, type OcrLine, type OcrPage, type OcrWord } from "./ocr-words";
 import { readingOrder } from "./reading-order";
-import { REC_STRIDE, type RecCrop, batchByWidth, batchTensor, cropLine, cropWidth } from "./rec";
+import {
+  REC_CORE,
+  REC_RETRY,
+  REC_STRIDE,
+  type RecCrop,
+  batchByWidth,
+  batchTensor,
+  cropLine,
+  cropWidth,
+} from "./rec";
 
 /** The two networks. Tensors are `float32`; the backend owns nothing it is handed. */
 export interface OcrBackend {
@@ -58,6 +67,14 @@ export interface ReadOptions {
    */
   origin?: { x: number; y: number };
   alphabet: readonly string[];
+  /** Overrides of the box finder's numbers (experiments and tests). */
+  db?: DbOptions;
+  /**
+   * Read lines the first reading was unsure of again with these `REC_CORE`
+   * values (default {@link REC_RETRY}), keeping the reading with the most characters that pass the
+   * confidence filter.
+   */
+  retry?: readonly number[];
   /** Asked between steps; true stops the page with {@link OcrCancelled}. */
   cancelled?: () => boolean;
   /** Called with a short note when a step finishes (timings, for the accuracy check). */
@@ -68,7 +85,7 @@ export interface ReadOptions {
 export async function detectBoxes(
   image: OcrImage,
   backend: OcrBackend,
-  options: Pick<ReadOptions, "cancelled" | "onStep"> = {},
+  options: Pick<ReadOptions, "cancelled" | "onStep" | "db"> = {},
 ): Promise<TextBox[]> {
   const { width, height } = image;
   const map = new Float32Array(width * height);
@@ -79,7 +96,7 @@ export async function detectBoxes(
   }
   options.onStep?.("detect", Date.now() - t0);
   const t1 = Date.now();
-  const boxes = readingOrder(findTextBoxes(map, width, height));
+  const boxes = readingOrder(findTextBoxes(map, width, height, options.db));
   options.onStep?.("boxes", Date.now() - t1);
   return boxes;
 }
@@ -104,36 +121,53 @@ export async function readPage(
   const boxes = await detectBoxes(image, backend, options);
   const t0 = Date.now();
   const lines: (OcrLine | undefined)[] = new Array<OcrLine | undefined>(boxes.length);
-  const widths = boxes.map((b) => cropWidth(b));
-  for (const batch of batchByWidth(widths)) {
-    if (options.cancelled?.()) throw new OcrCancelled();
-    const crops: RecCrop[] = batch.map((i) =>
-      cropLine(image.data, image.width, image.height, boxes[i], i),
-    );
-    const input = batchTensor(crops);
-    const out = await backend.recognize(input.data, crops.length, input.width);
-    if (out.classes !== options.alphabet.length) {
-      throw new Error(
-        `the recogniser has ${out.classes} classes, its dictionary ${options.alphabet.length}`,
+  const origin = options.origin ?? { x: 0, y: 0 };
+  /** Read the lines `indices` with the box taken to be `core` times the text's height; `store` gets each result. */
+  const recognise = async (
+    indices: readonly number[],
+    core: number,
+    store: (index: number, line: OcrLine | undefined) => void,
+  ): Promise<void> => {
+    const widths = indices.map((i) => cropWidth(boxes[i], core));
+    for (const batch of batchByWidth(widths)) {
+      if (options.cancelled?.()) throw new OcrCancelled();
+      const crops: RecCrop[] = batch.map((k) =>
+        cropLine(image.data, image.width, image.height, boxes[indices[k]], indices[k], core),
       );
+      const input = batchTensor(crops);
+      const out = await backend.recognize(input.data, crops.length, input.width);
+      if (out.classes !== options.alphabet.length) {
+        throw new Error(
+          `the recogniser has ${out.classes} classes, its dictionary ${options.alphabet.length}`,
+        );
+      }
+      crops.forEach((crop, n) => {
+        const steps = Math.min(out.steps, Math.ceil(crop.width / REC_STRIDE));
+        const rows = out.probs.subarray(
+          n * out.steps * out.classes,
+          (n + 1) * out.steps * out.classes,
+        );
+        const chars = ctcDecode(rows, steps, out.classes, options.alphabet);
+        const loose = wordsOf(chars, crop.width);
+        // The words' ends are moved to the ink they were read from.
+        const line = snapWords(loose, crop.data, crop.width, loose.pitch ?? REC_STRIDE * 3);
+        store(crop.index, pageLine(line, boxes[crop.index], crop.width, options.scale, origin));
+      });
     }
-    crops.forEach((crop, n) => {
-      const steps = Math.min(out.steps, Math.ceil(crop.width / REC_STRIDE));
-      const rows = out.probs.subarray(
-        n * out.steps * out.classes,
-        (n + 1) * out.steps * out.classes,
-      );
-      const chars = ctcDecode(rows, steps, out.classes, options.alphabet);
-      const loose = wordsOf(chars, crop.width);
-      // The words' ends are moved to the ink they were read from.
-      const line = snapWords(loose, crop.data, crop.width, loose.pitch ?? REC_STRIDE * 3);
-      lines[crop.index] = pageLine(
-        line,
-        boxes[crop.index],
-        crop.width,
-        options.scale,
-        options.origin ?? { x: 0, y: 0 },
-      );
+  };
+  await recognise(
+    boxes.map((_, i) => i),
+    REC_CORE,
+    (i, line) => {
+      lines[i] = line;
+    },
+  );
+  // A line the reader was unsure of is read again with the box taken a little
+  // taller and shorter; the reading with the most trusted text is kept.
+  for (const core of options.retry ?? REC_RETRY) {
+    const unsure = boxes.map((_, i) => i).filter((i) => !isTrusted(lines[i]));
+    await recognise(unsure, core, (i, line) => {
+      if (trusted(line) > trusted(lines[i])) lines[i] = line;
     });
   }
   options.onStep?.("recognise", Date.now() - t0);
@@ -191,4 +225,18 @@ function pageLine(
 
 function round(v: number): number {
   return Math.round(v * 1000) / 1000;
+}
+
+/** How many characters of a line the confidence filter would keep (0 for no line). */
+function trusted(line: OcrLine | undefined): number {
+  if (!line || line.conf < OCR_TUNING.lineMean) return 0;
+  return line.words
+    .filter((w) => w.conf >= OCR_TUNING.wordMean && w.min >= OCR_TUNING.wordMin)
+    .reduce((n, w) => n + w.text.length, 0);
+}
+
+/** Whether every word of the line passes the filter: nothing to read again. */
+function isTrusted(line: OcrLine | undefined): boolean {
+  if (!line || line.conf < OCR_TUNING.lineMean) return false;
+  return line.words.every((w) => w.conf >= OCR_TUNING.wordMean && w.min >= OCR_TUNING.wordMin);
 }

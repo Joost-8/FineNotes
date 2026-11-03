@@ -76,6 +76,7 @@ const SCANNED: OcrPage = {
 
 /** An OCR service that remembers what it was asked. */
 function fakeOcr(found: OcrPage | null = null, enabled = true, figures = false) {
+  const flags = { figures };
   const calls = {
     recorded: [] as number[],
     wanted: [] as [string, number, number][],
@@ -91,7 +92,7 @@ function fakeOcr(found: OcrPage | null = null, enabled = true, figures = false) 
       return enabled;
     },
     get figures() {
-      return enabled && figures;
+      return enabled && flags.figures;
     },
     recordTextOnly: (_path: string, page: number) => {
       calls.recorded.push(page);
@@ -114,7 +115,7 @@ function fakeOcr(found: OcrPage | null = null, enabled = true, figures = false) 
     hold: (_owner: unknown, held: boolean) => calls.held.push(held),
     release: () => calls.released++,
   };
-  return { service, calls };
+  return { service, calls, flags };
 }
 
 function cacheWith(service: unknown) {
@@ -386,6 +387,37 @@ describe("PdfTextCache with OCR", () => {
       await settle();
       expect(calls.recorded).toEqual([]);
       expect(calls.wanted).toEqual([]);
+    });
+
+    it("takes the setting at once: turned on, the pages shown are looked at; turned off, figure words are hidden", async () => {
+      pdf.items = text();
+      pdf.ops = picture();
+      const off = fakeOcr(null, true, false);
+      const cache = cacheWith(off.service);
+      cache.request(BACKDROP);
+      await settle();
+      expect(pdf.operatorCalls).toBe(0);
+      expect(off.calls.wanted).toEqual([]);
+      off.flags.figures = true;
+      cache.ocrSettingsChanged();
+      await settle();
+      expect(pdf.operatorCalls).toBe(1);
+      expect(off.calls.wanted).toEqual([["Scan.pdf", 0, 3]]);
+
+      const on = fakeOcr(LABELS, true, true);
+      const other = cacheWith(on.service);
+      other.request(BACKDROP);
+      await settle();
+      expect(other.peek(BACKDROP, GEOMETRY)?.lines).toHaveLength(11);
+      on.flags.figures = false;
+      other.ocrSettingsChanged();
+      await settle();
+      // Hidden, not deleted: the cache still has them, and turning it on shows them again.
+      expect(other.peek(BACKDROP, GEOMETRY)?.lines).toHaveLength(10);
+      on.flags.figures = true;
+      other.ocrSettingsChanged();
+      await settle();
+      expect(other.peek(BACKDROP, GEOMETRY)?.lines).toHaveLength(11);
     });
 
     it("a sparse page with pictures sends its plan too, and a scan with one big picture is SCANNED", async () => {

@@ -186,3 +186,30 @@ describe("reading order", () => {
     expect(readingOrder([line(1, 1)])).toHaveLength(1);
   });
 });
+
+describe("blobs left out of the text lines", () => {
+  it("are reported with the reason and their pixel bounds", () => {
+    const width = 120;
+    const height = 60;
+    const prob = new Float32Array(width * height);
+    const paint = (x0: number, y0: number, x1: number, y1: number, p: number): void => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) prob[y * width + x] = p;
+    };
+    paint(10, 10, 90, 22, 0.9); // a line
+    paint(100, 5, 102, 7, 0.9); // a speck
+    paint(10, 40, 60, 52, 0.45); // unsure
+    paint(105, 20, 115, 58, 0.9); // tall: vertical text (leans past the tilt limit)
+    const left: [string, number[]][] = [];
+    const boxes = findTextBoxes(prob, width, height, {
+      onReject: (why, bounds) => left.push([why, bounds]),
+    });
+    expect(boxes).toHaveLength(1);
+    expect(left).toEqual(
+      expect.arrayContaining([
+        ["pixels", [100, 5, 102, 7]],
+        ["score", [10, 40, 60, 52]],
+        ["tilt", [105, 20, 115, 58]],
+      ]),
+    );
+  });
+});
