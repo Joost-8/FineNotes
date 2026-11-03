@@ -1582,12 +1582,12 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(pc["Saved pens 1 to 8"]).toBe("1 – 8");
     expect(pc.Redo).toBe("Ctrl + Shift + Z");
     expect(mac.Redo).toBe("⌘ ⇧ Z");
-    expect(pc["Zoom in or out about the pen"]).toBe("Alt + write up or down");
-    expect(mac["Zoom in or out about the pen"]).toBe("⌥ + write up or down");
+    expect(pc["Zoom about the pen, or draw the Zoom box"]).toBe("Alt + drag");
+    expect(mac["Zoom about the pen, or draw the Zoom box"]).toBe("⌥ + drag");
     expect(pc["Lasso select"]).toBe("Ctrl + write");
     expect(pc.Erase).toBe("Write with the eraser end");
     expect(pc["Show or hide this list"]).toBe("?");
-    expect(shortcutList(false)).toHaveLength(19);
+    expect(shortcutList(false)).toHaveLength(24);
   });
 
   it("draws each action as its name and a key slot, no line under it", () => {

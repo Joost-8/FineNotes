@@ -1314,6 +1314,10 @@ const IMAGE_CHROME_CLEAR_PX = 10;
 const PRESS_CLEAR_PX = 28;
 /** Room kept between selected PDF text and its bar: clear of a handle's knob, screen px. */
 const TEXT_KNOB_CLEAR_PX = 12;
+/** Device-local mark that the right-click-to-select hint has been shown. */
+const PDF_SELECT_HINT_KEY = "finenotes-pdf-select-hint";
+/** The hint shows at most once a session, mark or no mark. */
+let pdfSelectHintDone = false;
 /** The rotate knob's drawn radius, screen px; its target is the 44 px hit area. */
 const ROTATE_KNOB_RADIUS_PX = 14;
 /** How long a lasso drawn round nothing stays, then how long it fades (Joost's Goodnotes recording). */
@@ -4080,16 +4084,19 @@ export class InkSurface {
     const tool = shortcutTool(row.action.id);
     if (!tool) return;
     if (this.practice && !isPracticeTool(tool)) return;
-    if (this.callbacks.toolOff?.(tool) === true) return;
     const mod = input.mods.includes("Mod");
     const key = input.type === "key" ? input.key : null;
     const bit = input.type === "button" ? buttonBit(input.button) : 0;
     const by = { key, pointerId: pointerId ?? null, bit, mod, tool };
+    // Space's hand works with the Hand button off the bar, as Alt's zoom
+    // does without the Magnifier: it leaves nothing on once let go, which
+    // is all an item shown nowhere must not do (#88).
     if (tool === "pan") {
       this.heldShortcut = { ...by, back: null };
       this.setHand(true);
       return;
     }
+    if (this.callbacks.toolOff?.(tool) === true) return;
     const inHand = this.pendingHeldTool ?? this.toolState.tool;
     this.heldShortcut = { ...by, back: inHand === tool ? null : inHand };
     if (inHand !== tool) this.switchHeldTool(tool);
@@ -6802,12 +6809,23 @@ export class InkSurface {
       shape: kind,
       ...decor,
     });
-    this.renderer?.renderWet(pageIndex, shape.pts, {
-      ...style,
-      shape: true,
-      decor: decorOf(shape),
-    });
+    this.renderer?.renderWet(
+      pageIndex,
+      shape.pts,
+      { ...style, shape: true, decor: decorOf(shape) },
+      this.wetOnNote(pageIndex, pts),
+    );
     this.requestZoomPaint();
+  }
+
+  /**
+   * Whether the stroke in flight, starting at `pts`' first point, will be a
+   * sticky note's ink, as `commitStroke` decides it: drawn then as the note
+   * draws it, never in a dark page's inverted colour (white on yellow).
+   */
+  private wetOnNote(pageIndex: number, pts: readonly number[]): boolean {
+    const page = this.doc.pages[pageIndex];
+    return page !== undefined && pts.length >= 3 && noteAt(page, pts[0], pts[1]) !== null;
   }
 
   /** Settings for a new stroke's sampling, from the pen as it is now. */
@@ -8371,7 +8389,7 @@ export class InkSurface {
    * to the next page past the end of this one (Goodnotes). Fingers do not
    * write in the box. In Stylus-only mode they do nothing here: the hand
    * rests in the window to write, and the frame on the page still moves by
-   * finger (`zoomWindowPans`). With the Hand in hand the Pencil and a mouse
+   * finger (`zoomWindowPans`). With the Hand in hand, or Space held, the Pencil and a mouse
    * drag it as well. A second finger turns the drag into a pinch, which
    * magnifies as Goodnotes' window does (`pinchZoomBox`).
    */
@@ -8379,7 +8397,9 @@ export class InkSurface {
     const state = this.zoomBox;
     const canvas = this.zoomCanvas;
     const onlyStylus = this.callbacks.onlyStylusMode?.() === true;
-    if (!zoomWindowPans(event.pointerType, this.toolState.tool, onlyStylus)) return;
+    // Space held is the Hand for the press, in the window as on the page.
+    const tool = this.handHeld ? "pan" : this.toolState.tool;
+    if (!zoomWindowPans(event.pointerType, tool, onlyStylus)) return;
     if (event.pointerType === "touch") {
       this.zoomTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
@@ -8674,7 +8694,7 @@ export class InkSurface {
    */
   private zoomBoxRoute(event: PointerEvent): PressRoute {
     const { tool } = this.toolState;
-    if (tool === "zoom" || tool === "pan") return "ignore";
+    if (tool === "zoom" || tool === "pan" || this.handHeld) return "ignore";
     const state = this.zoomBox;
     const canvas = this.zoomCanvas;
     if (!state || !canvas) return "ignore";
@@ -9194,6 +9214,7 @@ export class InkSurface {
       return;
     }
     if (this.startTextMark(box, at)) return;
+    if (sample.pointerType === "mouse") this.hintTextSelect(box, at);
     const resumed = this.resumeLifted(box, at);
     const builder = resumed ?? new StrokeBuilder(this.builderOpts());
     builder.add({ ...sample, ...at });
@@ -9739,7 +9760,7 @@ export class InkSurface {
     // changes nothing kept.
     const open = runs[runs.length - 1];
     if (open) for (const tip of builder.tail) open.pts.push(tip[0], tip[1]);
-    this.renderer?.renderWetRuns(box.index, runs, style);
+    this.renderer?.renderWetRuns(box.index, runs, style, this.wetOnNote(box.index, pts));
     this.requestZoomPaint();
   }
 
@@ -10528,6 +10549,25 @@ export class InkSurface {
     this.textMark = { layout, from: at, selection };
     this.showTextMark(box);
     return true;
+  }
+
+  /**
+   * A mouse writing on a PDF's text may have meant to select it: say once
+   * that a right-click does (a plain drag is ink, the mouse being the pen).
+   */
+  private hintTextSelect(box: PageBox, at: Pt): void {
+    if (this.practice || pdfSelectHintDone) return;
+    if (this.pageAt(box.index)?.backdrop.kind !== "pdf") return;
+    const layout = this.pageText(box.index);
+    if (!layout || !selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX))) return;
+    pdfSelectHintDone = true;
+    try {
+      if (window.localStorage.getItem(PDF_SELECT_HINT_KEY)) return;
+      window.localStorage.setItem(PDF_SELECT_HINT_KEY, "1");
+    } catch {
+      // No storage here: the hint then shows once a session.
+    }
+    new Notice("To select PDF text, right-click a word, then drag its handles.", 8000);
   }
 
   /** Say on the debug overlay what the highlighter did where it came down. */
