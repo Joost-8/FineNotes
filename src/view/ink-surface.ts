@@ -11626,21 +11626,28 @@ export class InkSurface {
     svg.append(path);
     el.append(svg);
     const shoot = this.callbacks.onRegionScreenshot;
-    if (shoot) {
+    // Ask AI about the patch too, as a lasso round ink offers, while an AI
+    // service is set up (Joost, 2026-11-03).
+    const ask = this.callbacks.canAskAi?.() ? this.callbacks.onAskAboutSelection : undefined;
+    if (shoot || ask) {
       const pill = el.createDiv({ cls: "goodobsidian-empty-lasso-pill theme-dark" });
       pill.setCssStyles({
         left: `${((box.x + end.x) * scale + EMPTY_LASSO_PILL_OFFSET_PX).toFixed(1)}px`,
         top: `${((box.y + end.y) * scale + EMPTY_LASSO_PILL_OFFSET_PX).toFixed(1)}px`,
       });
-      const button = pill.createEl("button", {
-        cls: "goodobsidian-empty-lasso-shot clickable-icon",
-        attr: { "aria-label": "Screenshot" },
-      });
-      iconInto(button, "camera", "");
-      onTap(button, () => {
-        this.dropEmptyLasso();
-        shoot(box.index, bounds);
-      });
+      const action = (label: string, icon: string, run: () => void): void => {
+        const button = pill.createEl("button", {
+          cls: "goodobsidian-empty-lasso-shot clickable-icon",
+          attr: { "aria-label": label },
+        });
+        iconInto(button, icon, "");
+        onTap(button, () => {
+          this.dropEmptyLasso();
+          run();
+        });
+      };
+      if (shoot) action("Screenshot", "camera", () => shoot(box.index, bounds));
+      if (ask) action("Ask AI", "messages-square", () => ask(box.index, bounds));
     }
     const win = this.surfaceEl.ownerDocument.defaultView ?? window;
     this.emptyLasso = {
@@ -12708,6 +12715,7 @@ export class InkSurface {
           ],
           current: sel.strokes.every((stroke) => stroke.color === first) ? first : null,
           pick: (color) => this.recolorSelection(color),
+          shown: (color) => shownColor(color, this.paperTheme.night === true),
           custom: (color) => this.recolorCustom(color),
           // The selection stays while the page is tapped: the eyedropper takes that press.
           eyedropper: () =>
@@ -17895,6 +17903,7 @@ export class InkSurface {
       onEscape: () => this.endCellEdit(true),
       onAction: (action) => this.tableAction(action),
       onColor: (color) => this.colorCell(color),
+      shown: (color) => shownColor(color, this.paperTheme.night === true),
       onGrip: (kind, index, event) => this.startGripDrag(kind, index, event),
     }));
     editor.input.value = this.cellEdit.before;
