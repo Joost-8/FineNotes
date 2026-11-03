@@ -13050,29 +13050,38 @@ button.clickable-icon.goodobsidian-calc-insert.goodobsidian-calc-insert-steps {
   font-size: 0.6em;
 }
 
-button.clickable-icon.goodobsidian-calc-line {
+/* A history line: the sum (tap to edit it again) over its answer (tap to use it). */
+.goodobsidian-calc-line {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
-  height: auto;
-  min-height: var(--gob-touch);
-  padding: 6px 10px;
-  border-radius: var(--gob-radius-m);
   font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-calc-line + .goodobsidian-calc-line {
+  margin-top: 8px;
+}
+
+button.clickable-icon.goodobsidian-calc-line-expr,
+button.clickable-icon.goodobsidian-calc-line-result {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  min-height: calc(var(--gob-touch) / 2 + 4px);
+  padding: 2px 10px;
+  border-radius: var(--gob-radius-m);
   text-align: right;
   white-space: normal;
 }
 
-.goodobsidian-calc-line-expr {
-  max-width: 100%;
+button.clickable-icon.goodobsidian-calc-line-expr {
   overflow: hidden;
   color: var(--text-muted);
   font-size: 15px;
 }
 
-.goodobsidian-calc-line-result {
+button.clickable-icon.goodobsidian-calc-line-result {
   color: var(--text-normal);
   font-size: 17px;
   font-weight: var(--font-semibold, 600);
