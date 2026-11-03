@@ -1219,7 +1219,7 @@ export class PageSidebar {
    * "Add page N to contents", for the page being read, unless it is listed
    * already. Not on a board: its contents are its headings.
    * TODO(#46 phase 4): a board's entries drop their page number and page
-   * menu, and a tap flies to the heading.
+   * menu (a tap already goes to the heading, x and y).
    */
   private syncContentsAdd(): void {
     const page = this.doc?.pages[this.current];

@@ -2,7 +2,7 @@
  * The file explorer shows a notebook's own folder as the notebook
  * (`model/folder-notebook.ts`): the notebook file is not listed inside it, a
  * tap on the folder's name opens the notebook (its arrow still opens the
- * folder), notebooks get a notebook icon, and the folders inside one get an
+ * folder, and is hidden while the folder holds nothing else), notebooks get a notebook icon, and the folders inside one get an
  * icon for what they hold.
  *
  * Read from Obsidian 1.14's `app.js`, none of it public API:
@@ -50,6 +50,8 @@ type Wrapped = ExplorerView & { [WRAPPED]?: () => void };
 /** The icon element this added to a row, so it is made once and can be taken away. */
 const ICON_CLASS = "goodobsidian-explorer-icon";
 const NOTEBOOK_ROW_CLASS = "goodobsidian-folder-notebook";
+/** On a notebook row whose folder holds only the notebook (a new board): no arrow to an empty list. */
+const ALONE_CLASS = "is-notebook-alone";
 
 export class ExplorerFolderNotebooks {
   private readonly wrapped = new Set<Wrapped>();
@@ -93,7 +95,7 @@ export class ExplorerFolderNotebooks {
       view.containerEl?.querySelectorAll(`.${ICON_CLASS}`).forEach((el) => el.remove());
       view.containerEl
         ?.querySelectorAll(`.${NOTEBOOK_ROW_CLASS}`)
-        .forEach((el) => el.removeClass(NOTEBOOK_ROW_CLASS));
+        .forEach((el) => el.removeClass(NOTEBOOK_ROW_CLASS, ALONE_CLASS));
       sortAgain(view);
     }
     this.wrapped.clear();
@@ -147,13 +149,16 @@ function decorate(item: ExplorerItem, inNotebook: boolean): void {
   const file = item.file;
   let icon: string | undefined;
   let notebookFolder = false;
+  let alone = false;
   if (file instanceof TFolder) {
     notebookFolder = notebookOf(file) !== null;
+    alone = notebookFolder && file.children.length === 1;
     icon = notebookFolder ? NOTEBOOK_ICON : inNotebook ? ownFolderIcon(file.name) : undefined;
   } else if (file instanceof TFile && inkFileSuffix(file.name)) {
     icon = NOTEBOOK_ICON;
   }
   row.toggleClass(NOTEBOOK_ROW_CLASS, notebookFolder);
+  row.toggleClass(ALONE_CLASS, alone);
   let el = row.querySelector<HTMLElement>(`:scope > .${ICON_CLASS}`);
   if (!icon) {
     el?.remove();

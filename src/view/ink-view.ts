@@ -292,7 +292,7 @@ import {
 } from "../model/document";
 import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
-import { drawnBounds, isBoard } from "../model/board";
+import { boardDrawing, drawnBounds, isBoard } from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { nearbyTarget, relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
@@ -1455,7 +1455,8 @@ export class InkView extends TextFileView {
   /** The page as the reader sees it, sized for a vision model. */
   private async renderForAi(page: Page): Promise<RenderedPage | null> {
     if (!this.backdrops) return null;
-    return renderPageForAi(page, this.backdrops, {
+    // A board's drawing alone: the whole page would shrink its writing past reading.
+    return renderPageForAi(this.isBoard ? boardDrawing(page) : page, this.backdrops, {
       usePressure: this.settings.pressureWidth,
       highlighterAlpha: this.settings.highlighterAlpha,
       // Pictures the page shows are part of what the model should see. One
@@ -3071,7 +3072,7 @@ export class InkView extends TextFileView {
         onSelectPage: (index, fromOverview) => this.surface?.goToPage(index, !fromOverview),
         onPageAction: (action, index, anchor) => this.pageAction(action, index, anchor),
         onSelectSection: (index, section, fromOverview) =>
-          this.surface?.goToPagePoint(index, section.y, !fromOverview),
+          this.surface?.goToPagePoint(index, section.y, !fromOverview, section.x),
         onSectionAction: (action, index, section) => this.sectionAction(action, index, section),
         onAddPage: (anchor) => this.openAddPage(anchor, this.doc.pages.length - 1, "last"),
         onClose: () => {
@@ -3605,6 +3606,7 @@ export class InkView extends TextFileView {
     };
     new NoteSettingsModal(this.app, {
       single: this.isSinglePage,
+      board: this.isBoard,
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
       joinedPages: () => joinedPagesOf(this.surface?.document ?? this.doc),
@@ -3776,8 +3778,8 @@ export class InkView extends TextFileView {
    * reading only the text boxes light up.
    */
   private async showSearchHits(index: number, query: string): Promise<void> {
-    // TODO(#46 phase 4): on a board, search flies to the word itself; going
-    // to its page shows nothing there, the board being one page.
+    // On a board, going to its page does nothing: the hits, once lit, take
+    // the view to the first of them (`setSearchHits`).
     const surface = this.surface;
     const page = surface?.document.pages[index];
     if (!surface || !page) return;
@@ -3958,12 +3960,14 @@ export class InkView extends TextFileView {
    * protected: its pages may not be the pages on disk.
    */
   exportPdf(chosen?: readonly number[]): void {
-    // TODO(#46 phase 4): a board exports as one PDF page the size of its
-    // drawing, with no "This page" or "Choose pages"; today it is the whole
-    // (mostly empty) page.
     const note = this.file;
     if (this.isDamaged() || !note) return;
-    const doc = this.surface?.document ?? this.doc;
+    const open = this.surface?.document ?? this.doc;
+    // A board (FineNotes#46) exports as one page the size of its drawing,
+    // not metres of empty paper around it.
+    const doc: Pick<InkDocument, "pages"> = isBoard(open)
+      ? { pages: open.pages.map(boardDrawing) }
+      : open;
     const total = doc.pages.length;
     if (total === 0) return;
     const exports = this.attachmentFolder("exports");

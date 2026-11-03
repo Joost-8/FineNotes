@@ -3692,13 +3692,22 @@ export class InkSurface {
   /**
    * Go to a point inside page `index` (page px): the page, scrolled so the
    * point sits a little below the top of the view. A row of pages turns to
-   * the page and goes no further.
+   * the page and goes no further. On a board, `pointX` given, the point
+   * goes to the middle of the pane.
    */
-  goToPagePoint(index: number, y: number, animate = false): void {
+  goToPagePoint(index: number, y: number, animate = false, pointX?: number): void {
     const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
     const box = this.pageLayout.boxes[clamped];
-    // TODO(#46 phase 4): a heading on a board flies to its point, x and y,
-    // and the zoom that shows it; for now the view only moves up or down.
+    // A board (FineNotes#46) is one wide page: given an x too, the point
+    // goes to the middle of the pane, at the zoom it is read at.
+    if (this.board && box && pointX !== undefined) {
+      const at = boardScrollToCentre({ x: pointX, y }, this.scale, this.cssW, this.cssH);
+      if (animate) this.scroller.glideTo(at.x, at.y, now());
+      else this.scroller.setPosition(at.x, at.y);
+      this.syncViewport();
+      this.requestFrame();
+      return;
+    }
     if (this.board && box) {
       const top = (Math.max(0, y) - SECTION_LEAD_PX / this.unitScale) * this.scale;
       const x = this.scroller.position.x;
@@ -13955,13 +13964,23 @@ export class InkSurface {
     const index = this.doc.pages.findIndex((page) => page.id === hits.pageId);
     const page = this.doc.pages[index];
     if (!page) return;
-    // Glide to the first hit: the highest word, box or printed word.
-    const tops = [
-      ...hits.words.flatMap((ids) => inkBounds(page, ids)?.minY ?? []),
-      ...page.textBoxes.filter((box) => hits.boxes.includes(box.id)).map((box) => box.y),
-      ...hits.printed.map((rect) => rect.y),
+    // Glide to the first hit: the highest word, box or printed word (on a
+    // board, to the hit itself: its page runs as far across as down).
+    const spots = [
+      ...hits.words.flatMap((ids) => {
+        const b = inkBounds(page, ids);
+        return b ? [{ x: (b.minX + b.maxX) / 2, y: b.minY }] : [];
+      }),
+      ...page.textBoxes
+        .filter((box) => hits.boxes.includes(box.id))
+        .map((box) => ({ x: box.x + box.w / 2, y: box.y })),
+      ...hits.printed.map((rect) => ({ x: rect.x + rect.w / 2, y: rect.y })),
     ];
-    if (tops.length > 0) this.goToPagePoint(index, Math.min(...tops), true);
+    const first = spots.reduce<{ x: number; y: number } | null>(
+      (best, spot) => (best && best.y <= spot.y ? best : spot),
+      null,
+    );
+    if (first) this.goToPagePoint(index, first.y, true, this.board ? first.x : undefined);
     // The next press on the page puts them out.
     this.surfaceEl.addEventListener("pointerdown", () => this.setSearchHits(null), {
       capture: true,

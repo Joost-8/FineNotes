@@ -8,6 +8,24 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Boards land where you expect, and stay tidy**
+  ([#43](https://github.com/Joost-8/FineNotes/discussions/43)). A new board
+  or notebook is never made inside another notebook's own folder, wherever
+  the folder came from: the open notebook, a right-click, or a folder picked
+  in the New notebook or Import dialog. A board makes only its own folder;
+  its Images, Exports and other folders appear when something is saved
+  there, and until then the file list shows no arrow beside it.
+- **Exporting a board** gives one page the size of the drawing, not a 1 m
+  page with the drawing small in its middle. The AI reads the drawing the
+  same way, so handwriting on a board is large enough to read.
+- **Search and the contents on a board** go to the word or heading itself,
+  across as well as down.
+- On a board, page-only things are gone: page numbers and the header,
+  Scan document, Import PDF and Copy highlighted text. The New board dialog
+  no longer offers Import from another app, which always makes a notebook.
+
 ## [2.7.0] - 2026-11-02
 
 Page margins, cover tape, fills, path arrows, hearts, arcs and folded or

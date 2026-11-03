@@ -9,8 +9,12 @@ import { describe, expect, it } from "vitest";
 import {
   BOARD_BLOCK,
   BOARD_MAX_BLOCKS,
+  BOARD_CUT_MARGIN,
+  BOARD_CUT_STEP,
   BOARD_START_BLOCKS,
   GrowBoard,
+  boardDrawing,
+  boardDrawingBox,
   boardGrowth,
   boardStartGeometry,
   drawnBounds,
@@ -185,6 +189,77 @@ describe("drawnBounds", () => {
     const page = board().pages[0];
     page.strokes.push(stroke("s", [Number.NaN, 5, 0.5, 10, 20, 0.5, 99], 0));
     expect(drawnBounds(page)).toEqual({ minX: 10, minY: 20, maxX: 10, maxY: 20 });
+  });
+});
+
+describe("boardDrawing: the drawing alone, for an export or the AI", () => {
+  /** {@link fullBoard}, its drawing moved off the corner, as a board's sits in its middle. */
+  function middleBoard(shift = 2000): InkDocument {
+    const doc = fullBoard();
+    const page = doc.pages[0];
+    for (const s of page.strokes) s.pts = s.pts.map((v, i) => (i % 3 === 2 ? v : v + shift));
+    for (const list of [page.images, page.textBoxes, page.tables ?? [], page.comments ?? []]) {
+      for (const item of list) {
+        item.x += shift;
+        item.y += shift;
+      }
+    }
+    for (const section of page.sections ?? []) {
+      section.x += shift;
+      section.y += shift;
+    }
+    return doc;
+  }
+
+  it("cuts the page down to what is drawn, a margin round it, in whole steps", () => {
+    const page = middleBoard().pages[0];
+    const box = boardDrawingBox(page);
+    const drawn = drawnBounds(page)!;
+    for (const v of [box.x, box.y, box.width, box.height]) expect(v % BOARD_CUT_STEP).toBe(0);
+    expect(box.x).toBeLessThanOrEqual(drawn.minX - BOARD_CUT_MARGIN);
+    expect(box.y).toBeLessThanOrEqual(drawn.minY - BOARD_CUT_MARGIN);
+    expect(box.x + box.width).toBeGreaterThanOrEqual(drawn.maxX + BOARD_CUT_MARGIN);
+    expect(box.y + box.height).toBeGreaterThanOrEqual(drawn.maxY + BOARD_CUT_MARGIN);
+    expect(box.width).toBeLessThan(page.geometry.width);
+  });
+
+  it("moves everything by the cut, on a copy, leaving the page alone", () => {
+    const doc = middleBoard();
+    const page = doc.pages[0];
+    const before = snapshot(doc);
+    const box = boardDrawingBox(page);
+    expect(box.x).toBeGreaterThan(0);
+    const cut = boardDrawing(page);
+    expect(snapshot(doc)).toBe(before);
+    expect(cut.geometry).toMatchObject({ width: box.width, height: box.height });
+    expect(cut.strokes[0].pts[0]).toBe(page.strokes[0].pts[0] - box.x);
+    expect(cut.strokes[0].pts[1]).toBe(page.strokes[0].pts[1] - box.y);
+    expect(cut.images[0].x).toBe(page.images[0].x - box.x);
+    expect(cut.textBoxes[0].y).toBe(page.textBoxes[0].y - box.y);
+    expect(cut.tables?.[0].x).toBe(page.tables![0].x - box.x);
+    expect(cut.comments?.[0].x).toBe(page.comments![0].x - box.x);
+    expect(cut.sections?.[0].y).toBe(page.sections![0].y - box.y);
+    // Everything drawn is on the cut page, inside its margin.
+    const inside = drawnBounds(cut)!;
+    expect(inside.minX).toBeGreaterThanOrEqual(BOARD_CUT_MARGIN);
+    expect(inside.maxY).toBeLessThanOrEqual(box.height - BOARD_CUT_MARGIN);
+  });
+
+  it("an empty board gives one block from its middle", () => {
+    const page = board().pages[0];
+    const box = boardDrawingBox(page);
+    expect(box.width).toBe(BOARD_BLOCK);
+    expect(box.height).toBe(BOARD_BLOCK);
+    expect(box.x + box.width / 2).toBe(page.geometry.width / 2);
+  });
+
+  it("never reaches past the page", () => {
+    const doc = board();
+    const page = doc.pages[0];
+    page.strokes.push(stroke("edge", [2, 3, 0.5, page.geometry.width - 1, 50, 0.5]));
+    const box = boardDrawingBox(page);
+    expect(box).toEqual({ x: 0, y: 0, width: page.geometry.width, height: box.height });
+    expect(boardDrawing(page).strokes[0].pts[0]).toBe(2);
   });
 });
 

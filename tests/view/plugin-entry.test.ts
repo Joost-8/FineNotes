@@ -51,7 +51,11 @@ const hooks = vi.hoisted(() => ({
   confirms: 0,
   post: null as null | ((url: string, headers: unknown, body: unknown) => Promise<unknown>),
   posts: [] as { url: string; headers: unknown; body: unknown }[],
-  imports: [] as { folder: string; ownFolder: boolean }[],
+  imports: [] as {
+    folder: string;
+    ownFolder: boolean;
+    placeFolder?: (folder: string) => string;
+  }[],
   welcomes: 0,
 }));
 
@@ -77,7 +81,7 @@ vi.mock("../../src/ui/confirm-modal", () => ({
   },
 }));
 vi.mock("../../src/view/import-notebook-modal", () => ({
-  openImportNotebookModal: (_app: unknown, options: { folder: string; ownFolder: boolean }) => {
+  openImportNotebookModal: (_app: unknown, options: (typeof hooks.imports)[number]) => {
     hooks.imports.push(options);
   },
 }));
@@ -102,6 +106,7 @@ const { InkView } = await import("../../src/view/ink-view");
 const { DEFAULT_SETTINGS } = await import("../../src/settings");
 const { codeChallenge } = await import("../../src/recognition/openrouter-auth");
 const { DEFAULT_NOTEBOOK_CHOICES } = await import("../../src/model/new-notebook");
+const { NewNotebookModal } = await import("../../src/view/new-notebook-modal");
 
 type Plugin = InstanceType<typeof GoodObsidianPlugin>;
 
@@ -470,6 +475,39 @@ describe("New notebook, never inside another notebook's own folder (#43)", () =>
     expect(file?.path).toBe("MVKN90/Notes/Notes.notebook.md");
   });
 
+  it("the dialog's folder chip, given or picked, shows the folder it really goes in", async () => {
+    await load();
+    vaultWithNotebookFolder("MVKN90/Course/Course.notebook.md");
+    const shown: { folder: string; placeFolder?: (folder: string) => string }[] = [];
+    const open = vi.spyOn(NewNotebookModal.prototype, "open").mockImplementation(function (
+      this: InstanceType<typeof NewNotebookModal>,
+    ) {
+      const self = this as unknown as {
+        folder: string;
+        options: { placeFolder?: (folder: string) => string };
+      };
+      shown.push({ folder: self.folder, placeFolder: self.options.placeFolder });
+    });
+    plugin.openNewNotebookDialog();
+    plugin.openNewNotebookDialog("MVKN90/Course/AI chats");
+    expect(shown.map((s) => s.folder)).toEqual(["MVKN90", "MVKN90"]);
+    // A folder picked with the chip: a notebook's own folder is stepped out of.
+    expect(shown[0].placeFolder?.("MVKN90/Course")).toBe("MVKN90");
+    expect(shown[0].placeFolder?.("MVKN90")).toBe("MVKN90");
+    expect(shown[0].placeFolder?.("School")).toBe("School");
+    open.mockRestore();
+  });
+
+  it("the import dialog's folder, given or picked, too", async () => {
+    await load();
+    vaultWithNotebookFolder(null);
+    hooks.imports.length = 0;
+    plugin.openImportNotebook("MVKN90/Course");
+    expect(hooks.imports[0].folder).toBe("MVKN90");
+    expect(hooks.imports[0].placeFolder?.("MVKN90/Course/AI chats")).toBe("MVKN90");
+    expect(hooks.imports[0].placeFolder?.("School")).toBe("School");
+  });
+
   it("a folder given as a notebook's own folder is stepped out of too", async () => {
     await load();
     vaultWithNotebookFolder(null);
@@ -701,16 +739,21 @@ describe("notebook commands", () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["copy-page-link", "import-vault-pdf", "save-as-template", "save-page-as-template"])(
-    "%s is not offered on an endless board, which has no pages",
-    async (id) => {
-      await load();
-      app.workspace.active = inkView({ isSinglePage: true, isBoard: true });
-      expect(offered(id)).toBe(false);
-      app.workspace.active = inkView({ isSinglePage: false, isBoard: false });
-      expect(offered(id)).toBe(true);
-    },
-  );
+  it.each([
+    "copy-page-link",
+    "import-vault-pdf",
+    "import-pdf",
+    "scan-document",
+    "copy-highlighted-text",
+    "save-as-template",
+    "save-page-as-template",
+  ])("%s is not offered on an endless board, which has no pages", async (id) => {
+    await load();
+    app.workspace.active = inkView({ isSinglePage: true, isBoard: true });
+    expect(offered(id)).toBe(false);
+    app.workspace.active = inkView({ isSinglePage: false, isBoard: false });
+    expect(offered(id)).toBe(true);
+  });
 
   it("convert-to-notebook is offered only on a single page", async () => {
     await load();

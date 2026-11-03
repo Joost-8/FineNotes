@@ -457,6 +457,8 @@ export default class GoodObsidianPlugin extends Plugin {
         icon: "scan-line",
         label: "Scan document",
         order: 40,
+        // A scan fills its page, and a board's page is metres across (FineNotes#46).
+        isAvailable: () => this.app.workspace.getActiveViewOfType(InkView)?.isBoard !== true,
         run: () => this.app.workspace.getActiveViewOfType(InkView)?.scanDocument(),
       }),
     );
@@ -637,12 +639,16 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => view.convertToNotebook(),
       (view) => view.isSinglePage && !view.isBoard,
     );
-    this.notebookCommand("scan-document", "Scan document into this notebook", (view) =>
-      view.scanDocument(),
-    );
-    this.notebookCommand("import-pdf", "Import PDF…", (view) => view.importPdf());
-    // An endless board (FineNotes#46) has no pages to add, link to or save as a template.
+    // An endless board (FineNotes#46) has no pages to add, scan or import
+    // onto, link to or save as a template, and never a PDF's text.
     const pages = (view: InkView): boolean => !view.isBoard;
+    this.notebookCommand(
+      "scan-document",
+      "Scan document into this notebook",
+      (view) => view.scanDocument(),
+      pages,
+    );
+    this.notebookCommand("import-pdf", "Import PDF…", (view) => view.importPdf(), pages);
     this.notebookCommand(
       "import-vault-pdf",
       "Import PDF from vault…",
@@ -656,8 +662,11 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => view.copyPageLink(),
       pages,
     );
-    this.notebookCommand("copy-highlighted-text", "Copy highlighted text on this page", (view) =>
-      view.copyHighlightedText(),
+    this.notebookCommand(
+      "copy-highlighted-text",
+      "Copy highlighted text on this page",
+      (view) => view.copyHighlightedText(),
+      pages,
     );
     // No default hotkey: desktop users give it one (FineNotes#42).
     this.notebookCommand(
@@ -1978,6 +1987,7 @@ export default class GoodObsidianPlugin extends Plugin {
       ...(preset ? { preset } : {}),
       folder: folder ? this.outsideNotebook(folder) : this.newNotebookFolder(),
       ownFolder: this.settings.notebookOwnFolder,
+      placeFolder: (picked) => this.outsideNotebook(picked),
       open: async (file) => {
         const tab = this.app.workspace.getLeaf(false);
         await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
