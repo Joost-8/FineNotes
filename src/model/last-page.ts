@@ -8,7 +8,18 @@
  * (CLAUDE.md, "Coordinates that depend on pane width cannot survive sync").
  * The view keeps the map per device, in Obsidian's vault-scoped local
  * storage; nothing is written into the note.
+ *
+ * An endless board (FineNotes#46) is one page, so its page says nothing:
+ * it keeps the point in the middle of the view, in page px, and the zoom,
+ * which on a board is real size and so means the same on every pane.
  */
+
+/** Where a board was left: the page point in the middle of the view, and the zoom. */
+export interface BoardSpot {
+  x: number;
+  y: number;
+  zoom: number;
+}
 
 /** Where one notebook was left. */
 export interface LastPage {
@@ -18,6 +29,8 @@ export interface LastPage {
   index: number;
   /** When it was recorded (ms since the epoch), for pruning the oldest. */
   at: number;
+  /** On a board, where on its page. */
+  spot?: BoardSpot;
 }
 
 /** Notebook path → where it was left. */
@@ -36,15 +49,25 @@ export function parseLastPages(raw: unknown): LastPages {
     if (typeof page !== "string" || !page) continue;
     if (typeof index !== "number" || !Number.isInteger(index) || index < 0) continue;
     if (typeof at !== "number" || !Number.isFinite(at)) continue;
-    out[path] = { page, index, at };
+    const spot = parseSpot((value as Record<string, unknown>).spot);
+    out[path] = { page, index, at, ...(spot ? { spot } : {}) };
   }
   return out;
 }
 
+/** A stored board spot, or `undefined` when it is not a whole one. */
+function parseSpot(raw: unknown): BoardSpot | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const { x, y, zoom } = raw as Record<string, unknown>;
+  if (typeof x !== "number" || typeof y !== "number" || typeof zoom !== "number") return undefined;
+  if (![x, y, zoom].every(Number.isFinite) || !(zoom > 0)) return undefined;
+  return { x, y, zoom };
+}
+
 /**
- * Record that `path` was left on page `pageId` (at `index`), at time `at`.
- * Returns a new map, pruned to {@link LAST_PAGES_MAX} by dropping the
- * longest unread.
+ * Record that `path` was left on page `pageId` (at `index`), at time `at`,
+ * and on a board at `spot`. Returns a new map, pruned to
+ * {@link LAST_PAGES_MAX} by dropping the longest unread.
  */
 export function rememberPage(
   map: LastPages,
@@ -52,11 +75,13 @@ export function rememberPage(
   pageId: string,
   index: number,
   at: number,
+  spot?: BoardSpot,
 ): LastPages {
   const next: LastPages = Object.create(null) as LastPages;
   Object.assign(next, map);
   if (!path || !pageId || !Number.isInteger(index) || index < 0) return next;
-  next[path] = { page: pageId, index, at };
+  const kept = parseSpot(spot);
+  next[path] = { page: pageId, index, at, ...(kept ? { spot: kept } : {}) };
   const paths = Object.keys(next);
   if (paths.length > LAST_PAGES_MAX) {
     paths.sort((a, b) => next[a].at - next[b].at);
@@ -100,6 +125,11 @@ export function lastPageIndex(
   const byId = pages.findIndex((page) => page.id === entry.page);
   if (byId >= 0) return byId;
   return entry.index < pages.length ? entry.index : null;
+}
+
+/** Where the board at `path` was left, or `null` (open it on its middle). */
+export function lastBoardSpot(map: LastPages, path: string): BoardSpot | null {
+  return (hasEntry(map, path) ? map[path].spot : undefined) ?? null;
 }
 
 /** An own entry: a path like "constructor" must not find Object.prototype's. */

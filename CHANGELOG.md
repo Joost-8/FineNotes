@@ -21,7 +21,14 @@ extracted from the matching section of this file by `release.yml`.
   page with the drawing small in its middle. The AI reads the drawing the
   same way, so handwriting on a board is large enough to read.
 - **Search and the contents on a board** go to the word or heading itself,
-  across as well as down.
+  across as well as down. The contents list no page numbers on a board.
+- **Ask on a board** sends what is on screen with each question, instead of
+  asking you to pick pages from a board that has one.
+- **A board reopens where you left it**, at the zoom you left it at, as a
+  notebook reopens on its page.
+- **Fit on a board** is called Fit drawing (the zoom's button) and "Fit the
+  whole drawing on screen" (the command palette), which is what it does.
+- **Send pages to…** no longer lists boards, which take no pages.
 - On a board, page-only things are gone: page numbers and the header,
   Scan document, Import PDF and Copy highlighted text. The New board dialog
   no longer offers Import from another app, which always makes a notebook.

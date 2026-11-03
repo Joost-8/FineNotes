@@ -11,12 +11,11 @@
  * the lasso's move ({@link TranslateElements}), which already covers every
  * kind of element. Pure.
  *
- * Export and what the AI reads take the drawing alone ({@link boardDrawing});
- * search and the contents go to the word or heading, x and y. Still
- * page-shaped, for phase 4 of the issue (each marked `TODO(#46 phase 4)`
- * where it lives): Ask AI (what is on screen), Grape's reading (by area, not
- * the whole page), where a board opens (where it was left), and the
- * home-screen thumbnail (the whole drawing).
+ * Export and what the AI reads take the drawing alone ({@link boardDrawing}),
+ * Ask what is on screen; search and the contents go to the word or heading,
+ * x and y. Still page-shaped, for phase 4 of the issue (each marked
+ * `TODO(#46 phase 4)` where it lives): Grape's reading (by area, not the
+ * whole page) and the home-screen thumbnail (the whole drawing).
  * Phase 5 measures a full board zoomed out on the iPad and adds the notice.
  */
 
@@ -327,10 +326,13 @@ export function boardDrawingBox(page: Page): {
  * A board's page cut down to its drawing ({@link boardDrawingBox}), for an
  * export or for the AI to read: a copy, everything on it moved by the cut,
  * so a PDF page is the size of the drawing and not metres of empty paper.
- * The page itself is not touched.
+ * `box` cuts another part out (what is on screen, for Ask). The page itself
+ * is not touched.
  */
-export function boardDrawing(page: Page): Page {
-  const box = boardDrawingBox(page);
+export function boardDrawing(
+  page: Page,
+  box: { x: number; y: number; width: number; height: number } = boardDrawingBox(page),
+): Page {
   const { width, height } = page.geometry;
   if (box.x === 0 && box.y === 0 && box.width === width && box.height === height) return page;
   const copy = structuredClone(page);

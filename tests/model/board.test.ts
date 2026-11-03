@@ -245,6 +245,14 @@ describe("boardDrawing: the drawing alone, for an export or the AI", () => {
     expect(inside.maxY).toBeLessThanOrEqual(box.height - BOARD_CUT_MARGIN);
   });
 
+  it("cuts out another box when given one (what is on screen, for Ask)", () => {
+    const page = middleBoard().pages[0];
+    const screen = { x: 2050, y: 2150, width: 400, height: 300 };
+    const cut = boardDrawing(page, screen);
+    expect(cut.geometry).toMatchObject({ width: 400, height: 300 });
+    expect(cut.strokes[0].pts[0]).toBe(page.strokes[0].pts[0] - 2050);
+  });
+
   it("an empty board gives one block from its middle", () => {
     const page = board().pages[0];
     const box = boardDrawingBox(page);

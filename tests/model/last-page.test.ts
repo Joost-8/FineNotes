@@ -3,6 +3,7 @@ import {
   LAST_PAGES_MAX,
   type LastPages,
   forgetInLastPages,
+  lastBoardSpot,
   lastPageIndex,
   parseLastPages,
   rememberPage,
@@ -84,5 +85,38 @@ describe("last page", () => {
     expect(parseLastPages(null)).toEqual({});
     expect(parseLastPages([1, 2])).toEqual({});
     expect(parseLastPages("text")).toEqual({});
+  });
+});
+
+describe("where a board was left", () => {
+  it("keeps the point in the middle of the view and the zoom, through a reload", () => {
+    const map = rememberPage({}, "Boards/Map.notebook.md", "p1", 0, 1000, {
+      x: 3100,
+      y: 2400.5,
+      zoom: 0.5,
+    });
+    const back = parseLastPages(JSON.parse(JSON.stringify(map)));
+    expect(lastBoardSpot(back, "Boards/Map.notebook.md")).toEqual({
+      x: 3100,
+      y: 2400.5,
+      zoom: 0.5,
+    });
+    // A notebook keeps no spot, and an unknown file has none.
+    expect(
+      lastBoardSpot(rememberPage(back, "N.notebook.md", "p2", 1, 2000), "N.notebook.md"),
+    ).toBeNull();
+    expect(lastBoardSpot(back, "constructor")).toBeNull();
+  });
+
+  it("drops a spot that is not a whole one", () => {
+    for (const spot of [
+      { x: 1, y: 2 },
+      { x: 1, y: 2, zoom: 0 },
+      { x: NaN, y: 2, zoom: 1 },
+      "here",
+    ]) {
+      const map = parseLastPages({ "B.notebook.md": { page: "p1", index: 0, at: 1, spot } });
+      expect(map["B.notebook.md"]).toEqual({ page: "p1", index: 0, at: 1 });
+    }
   });
 });

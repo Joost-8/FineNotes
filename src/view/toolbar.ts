@@ -992,6 +992,8 @@ export class Toolbar {
   private beyondWriting: HTMLElement[] = [];
   /** A practice file: only what writing needs ({@link setPractice}). */
   private practice = false;
+  /** An endless board ({@link setBoard}). */
+  private board = false;
   /** A practice file's "Learn my handwriting", shown only there; its count beside it. */
   private learnButton: HTMLButtonElement | null = null;
   private learnCount: HTMLElement | null = null;
@@ -2929,7 +2931,8 @@ export class Toolbar {
     this.barButton(
       this.optionsEl,
       "maximize-2",
-      "Fit page",
+      // A board fits its whole drawing (FineNotes#46).
+      this.board ? "Fit drawing" : "Fit page",
       cb.onZoomFit ? () => cb.onZoomFit?.() : undefined,
     );
     this.barButton(
@@ -5698,6 +5701,11 @@ export class Toolbar {
   setAddPageVisible(visible: boolean): void {
     this.addPageButton?.toggle(visible);
     this.fitBar(this.indicatorTool);
+  }
+
+  /** An endless board (FineNotes#46): its zoom's fit button fits the drawing. */
+  setBoard(board: boolean): void {
+    this.board = board;
   }
 
   /** Offer Insert PDF, or not (an endless board, FineNotes#46). Pictures stay. */

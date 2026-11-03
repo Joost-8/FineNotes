@@ -175,6 +175,8 @@ import { buildDesignedNotebook } from "./model/paper-design";
 const SHARE_AUTHOR_KEY = "finenotes:share-author";
 /** The notebooks pages were sent to last, in this device's local storage. */
 const RECENT_TARGETS_KEY = "goodobsidian:move-targets";
+/** The notebook files this device has seen are endless boards (FineNotes#46), by path. */
+const BOARDS_KEY = "goodobsidian:boards";
 
 /** Pages were added to a notebook; `undo` takes exactly those pages (or the new notebook) away. */
 export interface TransferReceipt {
@@ -521,6 +523,10 @@ export default class GoodObsidianPlugin extends Plugin {
         this.keepFolderNotebookPaired(file, oldPath);
         this.calculatorFileMoved(oldPath, file.path);
         this.practiceNotebookMoved(oldPath, file.path);
+        if (this.knownBoards().has(oldPath)) {
+          this.noteBoard(oldPath, false);
+          this.noteBoard(file.path, true);
+        }
       }),
     );
     this.register(() => this.fileMoves.destroy());
@@ -754,8 +760,18 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => this.readOnDevice(view),
       () => this.settings.handwritingOnDevice !== false,
     );
-    this.notebookCommand("fit-reset-view", "Fit the page and go to the top", (view) =>
-      view.resetView(),
+    this.notebookCommand(
+      "fit-reset-view",
+      "Fit the page and go to the top",
+      (view) => view.resetView(),
+      pages,
+    );
+    // The same on a board (FineNotes#46), which has no page or top to go to.
+    this.notebookCommand(
+      "fit-board-drawing",
+      "Fit the whole drawing on screen",
+      (view) => view.resetView(),
+      (view) => view.isBoard,
     );
     this.notebookCommand("zoom-in", "Zoom in", (view) => view.zoomIn());
     this.notebookCommand("zoom-out", "Zoom out", (view) => view.zoomOut());
@@ -2403,6 +2419,7 @@ export default class GoodObsidianPlugin extends Plugin {
         normalizePath(joinVaultPath(paths.folder, name)),
         content,
       );
+      if (choices.type === "endless") this.noteBoard(file.path, true);
       if (!open) return file;
       // Straight into the notebook view, in the current tab, focused.
       const tab = this.app.workspace.getLeaf(false);
@@ -2417,8 +2434,13 @@ export default class GoodObsidianPlugin extends Plugin {
 
   // --- Pages sent to another notebook (FineNotes#33) ---------------------------
 
-  /** Every notebook pages could be sent to: not a single page, not a practice set. */
+  /**
+   * Every notebook pages could be sent to: not a single page, not a practice
+   * set, and not a board this device has seen (a board is a `.notebook.md`
+   * too, and only its file's ink says so).
+   */
   transferTargets(): TransferTarget[] {
+    const boards = this.knownBoards();
     return this.app.vault
       .getMarkdownFiles()
       .filter((file) => {
@@ -2426,7 +2448,8 @@ export default class GoodObsidianPlugin extends Plugin {
         return (
           this.isInkFile(file) &&
           !name.endsWith(SINGLE_PAGE_FILE_SUFFIX) &&
-          !name.endsWith(PRACTICE_FILE_SUFFIX)
+          !name.endsWith(PRACTICE_FILE_SUFFIX) &&
+          !boards.has(file.path)
         );
       })
       .map((file) => ({
@@ -2434,6 +2457,35 @@ export default class GoodObsidianPlugin extends Plugin {
         title: stripInkSuffix(file.name),
         mtime: file.stat.mtime,
       }));
+  }
+
+  /** {@link BOARDS_KEY}, read once. */
+  private boards: Set<string> | null = null;
+
+  /** The paths of the boards this device has opened or made (vault-scoped local storage). */
+  knownBoards(): ReadonlySet<string> {
+    if (!this.boards) {
+      const raw: unknown = this.app.loadLocalStorage(BOARDS_KEY);
+      let list: unknown = [];
+      try {
+        list = typeof raw === "string" ? JSON.parse(raw) : [];
+      } catch {
+        // Unreadable: start again; opening a board adds it back.
+      }
+      this.boards = new Set(
+        Array.isArray(list) ? list.filter((p): p is string => typeof p === "string") : [],
+      );
+    }
+    return this.boards;
+  }
+
+  /** Whether the notebook at `path` is a board, as a view or a new file just showed. */
+  noteBoard(path: string, board: boolean): void {
+    const boards = this.knownBoards() as Set<string>;
+    if (!path || boards.has(path) === board) return;
+    if (board) boards.add(path);
+    else boards.delete(path);
+    this.app.saveLocalStorage(BOARDS_KEY, JSON.stringify([...boards]));
   }
 
   /** The notebooks pages went to last, most recent first (kept on this device). */

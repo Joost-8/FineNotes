@@ -3617,9 +3617,8 @@ export class InkSurface {
 
   /**
    * The view a notebook opens at. A board: the writing size (100%) on the
-   * middle of its drawing. Anything else: {@link resetView}, the page fitted.
-   * TODO(#46 phase 4): a board opens where it was left, as a notebook opens
-   * on the page it was left at (`last-page.ts` keeps a page index only).
+   * middle of its drawing (the view puts it where it was left after, with
+   * {@link showBoardSpot}). Anything else: {@link resetView}, the page fitted.
    */
   showHome(): void {
     if (!this.board) {
@@ -3633,6 +3632,41 @@ export class InkSurface {
     this.centreBoard(false);
     this.reportStatus();
     // The zoom jumped without a layout: the size marks follow it.
+    this.reportSizeScale();
+  }
+
+  /**
+   * On a board: the page point in the middle of the pane, page px, and the
+   * zoom, to reopen it there ({@link showBoardSpot}); `null` elsewhere.
+   */
+  boardSpot(): { x: number; y: number; zoom: number } | null {
+    if (!this.board || this.cssW === 0 || this.cssH === 0) return null;
+    const scale = this.unitScale;
+    const at = this.scroller.position;
+    return {
+      x: (at.x + this.cssW / 2) / scale,
+      y: (at.y + this.cssH / 2) / scale,
+      zoom: this.userZoom,
+    };
+  }
+
+  /** Show a board as it was left: `spot` ({@link boardSpot}) in the middle, at its zoom. */
+  showBoardSpot(spot: { x: number; y: number; zoom: number }): void {
+    const page = this.doc.pages[0];
+    if (!this.board || !page) return;
+    this.pinch = null;
+    this.zoomAnim = null;
+    this.userZoom = this.clampZoom(spot.zoom);
+    this.ensurePaperSize();
+    const x = Math.min(Math.max(0, spot.x), page.geometry.width);
+    const y = Math.min(Math.max(0, spot.y), page.geometry.height);
+    const at = boardScrollToCentre({ x, y }, this.scale, this.cssW, this.cssH);
+    this.scroller.setPosition(at.x, at.y);
+    this.syncViewport();
+    // The readout names this zoom, not the 100% the board opened at.
+    this.flashChrome(true);
+    this.requestFrame();
+    this.reportStatus();
     this.reportSizeScale();
   }
 

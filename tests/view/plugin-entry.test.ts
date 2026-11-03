@@ -541,6 +541,7 @@ describe("registration", () => {
         "create-notebook-from-pdf",
         "create-notebook-with-last-settings",
         "export-pdf",
+        "fit-board-drawing",
         "fit-reset-view",
         "import-pdf",
         "import-vault-pdf",
@@ -753,6 +754,29 @@ describe("notebook commands", () => {
     expect(offered(id)).toBe(false);
     app.workspace.active = inkView({ isSinglePage: false, isBoard: false });
     expect(offered(id)).toBe(true);
+  });
+
+  it("the fit command is named for what it does: the page, or a board's drawing", async () => {
+    await load();
+    app.workspace.active = inkView({ isSinglePage: true, isBoard: true, resetView: vi.fn() });
+    expect(offered("fit-reset-view")).toBe(false);
+    expect(offered("fit-board-drawing")).toBe(true);
+    app.workspace.active = inkView({ isSinglePage: false, isBoard: false, resetView: vi.fn() });
+    expect(offered("fit-reset-view")).toBe(true);
+    expect(offered("fit-board-drawing")).toBe(false);
+  });
+
+  it("pages are never offered to be sent to a board this device has seen", async () => {
+    await load();
+    app.addFile("Notes/Physics.notebook.md");
+    app.addFile("Boards/Map/Map.notebook.md");
+    const titles = () => plugin.transferTargets().map((t) => t.path);
+    expect(titles()).toContain("Boards/Map/Map.notebook.md");
+    plugin.noteBoard("Boards/Map/Map.notebook.md", true);
+    expect(titles()).toEqual(["Notes/Physics.notebook.md"]);
+    // A board turned back into a notebook is a target again.
+    plugin.noteBoard("Boards/Map/Map.notebook.md", false);
+    expect(titles()).toContain("Boards/Map/Map.notebook.md");
   });
 
   it("convert-to-notebook is offered only on a single page", async () => {
