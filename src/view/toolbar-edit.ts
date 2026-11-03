@@ -294,6 +294,14 @@ export class ToolbarEditor {
     else style.top = `${margin}px`;
     if (dock === "left") style.left = `${Math.round(bar.right - host.left + margin)}px`;
     else if (dock === "right") style.right = `${Math.round(host.right - bar.left + margin)}px`;
+    // Never taller than the room it has: past that it scrolls (styles.css).
+    const room =
+      dock === "top"
+        ? host.bottom - bar.bottom - 2 * margin
+        : dock === "bottom"
+          ? bar.top - host.top - 2 * margin
+          : host.height - 2 * margin;
+    style.maxHeight = `${Math.max(120, Math.round(room))}px`;
     this.tray.setCssStyles(style);
     this.tray.toggleClass("is-beside", isBarUpright(dock));
   }

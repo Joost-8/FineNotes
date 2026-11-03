@@ -15236,6 +15236,16 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
   border-radius: 12px;
   background: var(--background-primary);
   box-shadow: var(--shadow-l);
+  /* Taller than the room (a bar at a side, a short window): the tray scrolls.
+     A finger drags a button from the buttons themselves, and scrolls from
+     anywhere else on the tray. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  touch-action: pan-y;
+}
+
+.goodobsidian-edit-tray [data-item] {
   touch-action: none;
 }
 
