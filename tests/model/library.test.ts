@@ -14,6 +14,7 @@ import {
   entryFromText,
   folderOf,
   placeholderEntry,
+  readProgress,
   searchEntries,
   sortEntries,
   whenText,
@@ -158,5 +159,29 @@ describe("whenText", () => {
     expect(whenText(at(2026, 9, 30, 9), now)).toBe("Fri");
     expect(whenText(at(2026, 9, 25, 9), now)).toBe("Oct 25");
     expect(whenText(at(2025, 11, 24, 9), now)).toBe("Dec 24, 2025");
+  });
+});
+
+describe("readProgress", () => {
+  const book = { ...placeholderEntry("a.notebook.md", 1), pages: 10, covered: true };
+  it("counts pages without the cover", () => {
+    expect(readProgress(book, 5)).toEqual({ page: 5, of: 10, ratio: 0.5 });
+    expect(readProgress({ ...book, covered: false }, 4)).toEqual({ page: 5, of: 10, ratio: 0.5 });
+  });
+  it("has nothing for a notebook never read, left on its cover, or with no pages", () => {
+    expect(readProgress(book, undefined)).toBeNull();
+    expect(readProgress(book, 0)).toBeNull();
+    expect(readProgress({ ...book, pages: 0 }, 3)).toBeNull();
+  });
+  it("stops at the last page when pages were deleted since", () => {
+    expect(readProgress(book, 99)).toEqual({ page: 10, of: 10, ratio: 1 });
+  });
+});
+
+describe("continueEntries with reading", () => {
+  it("puts a notebook read after another was edited first", () => {
+    const list = [entry("a.notebook.md", 100), entry("b.notebook.md", 50)];
+    const readAt = (path: string): number => (path === "b.notebook.md" ? 200 : 0);
+    expect(continueEntries(list, 2, readAt).map((e) => e.title)).toEqual(["b", "a"]);
   });
 });

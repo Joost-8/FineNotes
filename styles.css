@@ -15165,3 +15165,16 @@ button.goodobsidian-library-folder {
     transition: none;
   }
 }
+
+.goodobsidian-library-progress {
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+.goodobsidian-library-progress > div {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+}

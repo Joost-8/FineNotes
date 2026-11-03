@@ -26,6 +26,8 @@ export interface LibraryEntry {
   color: string;
   /** Whether any page is a PDF. */
   hasPdf: boolean;
+  /** Whether the first page is a cover, which `pages` does not count. */
+  covered: boolean;
   /** Last edit, ms since the epoch. */
   edited: number;
 }
@@ -39,6 +41,7 @@ export function placeholderEntry(path: string, edited: number): LibraryEntry {
     pages: 0,
     color: FALLBACK_COLOR,
     hasPdf: false,
+    covered: false,
     edited,
   };
 }
@@ -72,6 +75,7 @@ export function entryFromText(path: string, edited: number, markdown: string): L
     pages: doc.pages.length - (covered ? 1 : 0),
     color: tint !== undefined && HEX.test(tint) ? tint.toLowerCase() : FALLBACK_COLOR,
     hasPdf: doc.pages.some((p) => p.backdrop.kind === "pdf"),
+    covered,
   };
 }
 
@@ -146,9 +150,41 @@ export function searchEntries(entries: readonly LibraryEntry[], query: string): 
   });
 }
 
-/** The `count` notebooks edited last, newest first. */
-export function continueEntries(entries: readonly LibraryEntry[], count = 3): LibraryEntry[] {
-  return sortEntries(entries, "edited").slice(0, count);
+/**
+ * The `count` notebooks touched last, newest first: edited, or read to the
+ * time `readAt` gives for it, whichever is later.
+ */
+export function continueEntries(
+  entries: readonly LibraryEntry[],
+  count = 3,
+  readAt: (path: string) => number = () => 0,
+): LibraryEntry[] {
+  const last = (e: LibraryEntry): number => Math.max(e.edited, readAt(e.path));
+  return [...entries]
+    .sort((a, b) => last(b) - last(a) || a.title.localeCompare(b.title))
+    .slice(0, count);
+}
+
+/** How far into a notebook the reader got. */
+export interface Progress {
+  /** The page being read, 1-based, not counting a cover. */
+  page: number;
+  /** Of how many. */
+  of: number;
+  /** `page / of`, 0 to 1. */
+  ratio: number;
+}
+
+/**
+ * Where the reader is in `entry`, from the index of the page they left it on
+ * (a cover counts as index 0). `null` when there is no record, the notebook
+ * has no pages yet, or the reader never got past the cover.
+ */
+export function readProgress(entry: LibraryEntry, leftAt: number | undefined): Progress | null {
+  if (leftAt === undefined || entry.pages < 1) return null;
+  const page = Math.min(entry.pages, leftAt + 1 - (entry.covered ? 1 : 0));
+  if (page < 1) return null;
+  return { page, of: entry.pages, ratio: page / entry.pages };
 }
 
 const DAY = 86_400_000;

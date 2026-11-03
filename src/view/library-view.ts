@@ -31,6 +31,7 @@ import {
 } from "obsidian";
 import { NOTEBOOK_FILE_SUFFIX, VIEW_TYPE_LIBRARY } from "../constants";
 import { coverPalette } from "../model/cover";
+import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
 import {
   type LibraryEntry,
   type LibrarySort,
@@ -38,6 +39,7 @@ import {
   continueEntries,
   crumbs,
   entryFromText,
+  readProgress,
   placeholderEntry,
   searchEntries,
   sortEntries,
@@ -158,6 +160,13 @@ export class LibraryView extends ItemView {
     this.registerEvent(this.app.vault.on("rename", touched));
     this.registerEvent(this.app.vault.on("modify", touched));
 
+    // A notebook read since: its place has moved.
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", (leaf) => {
+        if (leaf === this.leaf) this.paintNow();
+      }),
+    );
+
     this.paintNow();
     void this.readStale();
   }
@@ -169,6 +178,17 @@ export class LibraryView extends ItemView {
   }
 
   // --- Data -------------------------------------------------------------------
+
+  /** Where this device left each notebook (the notebook view keeps the map). */
+  private lastPages(): LastPages {
+    const raw: unknown = this.app.loadLocalStorage(LAST_PAGES_KEY);
+    if (typeof raw !== "string") return parseLastPages(null);
+    try {
+      return parseLastPages(JSON.parse(raw));
+    } catch {
+      return parseLastPages(null);
+    }
+  }
 
   private notebookFiles(): TFile[] {
     return this.app.vault
@@ -265,6 +285,7 @@ export class LibraryView extends ItemView {
       return;
     }
 
+    const left = this.lastPages();
     const here = browse(all, this.folder);
     // What Continue shows is not listed again below it.
     const shown = new Set<string>();
@@ -272,12 +293,13 @@ export class LibraryView extends ItemView {
       const recent = continueEntries(
         all.filter((e) => e.pages > 0),
         CONTINUE_COUNT,
+        (path) => left[path]?.at ?? 0,
       );
       if (recent.length > 0) {
         this.label("Continue");
         const row = this.bodyEl.createDiv({ cls: "goodobsidian-library-recent" });
         for (const entry of recent) {
-          this.card(row, entry);
+          this.card(row, entry, left[entry.path]?.index);
           shown.add(entry.path);
         }
       }
@@ -313,7 +335,8 @@ export class LibraryView extends ItemView {
     for (const entry of entries) this.card(grid, entry);
   }
 
-  private card(parent: HTMLElement, entry: LibraryEntry): void {
+  /** A cover with its caption. With `leftAt` (the index it was left on) it shows where the reader is. */
+  private card(parent: HTMLElement, entry: LibraryEntry, leftAt?: number): void {
     const card = parent.createDiv({
       cls: "goodobsidian-library-card",
       attr: { role: "button", tabindex: "0", "aria-label": entry.title },
@@ -329,10 +352,27 @@ export class LibraryView extends ItemView {
     const caption = card.createDiv({ cls: "goodobsidian-library-caption" });
     caption.createDiv({ cls: "goodobsidian-library-name", text: entry.title });
     const when = whenText(entry.edited, Date.now());
-    caption.createDiv({
-      cls: "goodobsidian-library-when",
-      text: entry.folder !== "" && this.query.trim() !== "" ? `${entry.folder} · ${when}` : when,
-    });
+    const progress = readProgress(entry, leftAt);
+    if (progress) {
+      caption.createDiv({
+        cls: "goodobsidian-library-when",
+        text: `Page ${progress.page} of ${progress.of} · ${when}`,
+      });
+      const track = caption.createDiv({
+        cls: "goodobsidian-library-progress",
+        attr: {
+          role: "progressbar",
+          "aria-valuenow": String(progress.page),
+          "aria-valuemax": String(progress.of),
+        },
+      });
+      track.createDiv().style.width = `${Math.round(progress.ratio * 100)}%`;
+    } else {
+      caption.createDiv({
+        cls: "goodobsidian-library-when",
+        text: entry.folder !== "" && this.query.trim() !== "" ? `${entry.folder} · ${when}` : when,
+      });
+    }
 
     const open = (event: MouseEvent | KeyboardEvent): void => {
       const file = this.app.vault.getFileByPath(entry.path);
