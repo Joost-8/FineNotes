@@ -2774,6 +2774,48 @@ input.goodobsidian-color-list.is-invalid {
   border-color: var(--text-error);
 }
 
+/* The Language row, above the sections: a line like their headers (no
+   card, the heading's type and inset, the same gap to the next one), its
+   choice muted beside it like a header's state. */
+.setting-group:has(.goodobsidian-language-row) > .setting-items {
+  border-color: transparent;
+  background-color: transparent;
+}
+
+.setting-group .setting-item.goodobsidian-language-row {
+  align-items: center;
+  padding: 0 var(--size-4-4);
+}
+
+.goodobsidian-language-row .setting-item-name {
+  color: var(--setting-group-heading-color);
+  font-size: var(--setting-group-heading-size);
+  font-weight: var(--setting-group-heading-weight);
+}
+
+.goodobsidian-language-row .setting-item-control select.dropdown {
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-normal);
+}
+
+.goodobsidian-language-row .setting-item-control select.dropdown:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.vertical-tab-content:not(:has(.goodobsidian-fold-header .goodobsidian-section-icon))
+  .goodobsidian-language-row
+  .goodobsidian-section-icon {
+  display: none;
+}
+
+.setting-group:has(.goodobsidian-language-row) + .setting-group.goodobsidian-section.is-folded {
+  margin-top: var(--size-4-4);
+}
+
 /* Sections that fold. The header is the control (the chevron is its
    visible sign); a folded section shows its header only. Hidden by class,
    never by `visible`, so Obsidian's search still finds every row. The

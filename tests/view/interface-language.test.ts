@@ -7,6 +7,7 @@ let obsidianLanguage = "de";
 vi.mock("obsidian", () => ({
   getLanguage: () => obsidianLanguage,
   requestUrl: (param: unknown) => request(param) as Promise<unknown>,
+  setIcon: () => undefined,
 }));
 
 const { InterfaceLanguage } = await import("../../src/view/interface-language");
@@ -153,10 +154,21 @@ function fakeSetting() {
     selectEl: { setAttribute: (_n: string, v: string) => (dropdown.label = v) },
   };
   const buttons: string[] = [];
+  const classes: string[] = [];
+  const icons: string[] = [];
   const setting = {
     desc: "",
     dropdown,
     buttons,
+    classes,
+    icons,
+    settingEl: { addClass: (cls: string) => classes.push(cls) },
+    nameEl: {
+      querySelector: (sel: string) =>
+        icons.length > 0 && sel.includes("section-icon") ? {} : null,
+      createSpan: ({ cls }: { cls: string }) => (icons.push(cls), {}),
+      prepend: () => undefined,
+    },
     addDropdown(fn: (d: typeof dropdown) => void) {
       fn(dropdown);
       return this;
@@ -188,6 +200,15 @@ describe("the Language row", () => {
     expect(s.dropdown.value).toBe("auto");
     expect(s.dropdown.label).toBe("Language");
     expect(s.buttons).toEqual([]);
+  });
+
+  it("is drawn as a section header's line, with one icon however often it is drawn", () => {
+    const s = fakeSetting();
+    const host = { chosen: () => undefined, choose: vi.fn(), redraw: vi.fn() };
+    drawLanguageRow(s as never, host);
+    drawLanguageRow(s as never, host);
+    expect(s.classes).toContain("goodobsidian-language-row");
+    expect(s.icons).toEqual(["goodobsidian-section-icon"]);
   });
 
   it("shows a stored choice, and an unknown one as Follow Obsidian", () => {
