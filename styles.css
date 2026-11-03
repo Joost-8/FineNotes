@@ -14529,15 +14529,25 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   border-left-color: transparent;
 }
 
-/* Every colour, two to a line, in the docked column. */
-.goodobsidian-pen-colors.is-grid {
-  display: grid;
-  grid-template-columns: repeat(2, var(--gob-touch-compact));
+/* Every colour in one column in the docked side pill: four showing, the rest
+   a swipe away, the ends that hide more faded. */
+.goodobsidian-pen-colors.is-column {
+  flex-direction: column;
+  flex: none;
   min-width: 0;
   max-width: none;
-  overflow: visible;
-  mask-image: none;
-  touch-action: auto;
+  max-height: calc(var(--gob-touch-compact) * 4);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  mask-image: linear-gradient(
+    180deg,
+    var(--gob-fade-start) 0,
+    #000 12px,
+    #000 calc(100% - 12px),
+    var(--gob-fade-end) 100%
+  );
 }
 
 /* The docked column has the page's whole height: every pen type shows. */

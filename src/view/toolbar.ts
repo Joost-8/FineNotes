@@ -936,6 +936,8 @@ export class Toolbar {
   private readonly rowEl: HTMLElement;
   /** "Dock tool options" is on, on this device. */
   private pillRowOn = false;
+  /** How far the docked side pill's colour column is scrolled. */
+  private colorColumnScroll = 0;
   /** Where the pill rested before "Dock tool options" brought it to the bar, to give back when it is off. */
   private pillDockBefore: PillDock | null = null;
   /** The row as shown now. */
@@ -2399,11 +2401,13 @@ export class Toolbar {
 
     const colors = this.quickColors();
     if (roomy) {
-      // Every colour, two to a line, and the "+" after the last.
-      const grid = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors is-grid" });
+      // Every colour in one column, four showing and the rest a swipe away,
+      // and the "+" after the last.
+      const grid = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors is-column" });
       grid.dataset.ignoreSwipe = "true";
       for (const color of colors) this.penSwatch(grid, color, colors);
       if (colors.length < PEN_ROW_MAX) this.addColorButton(grid);
+      this.fitColorColumn(grid);
     } else if (folded) {
       // The chosen colour and its neighbours; the ⌄ holds the whole row.
       const chosen = colors.findIndex((c) => sameColor(c, this.state.color));
@@ -2751,6 +2755,38 @@ export class Toolbar {
     this.keepPenInk();
     this.buildOptions();
     this.syncActive();
+  }
+
+  /**
+   * The docked side pill's colour column: kept where it was scrolled, with
+   * the chosen colour in view, and the ends that hide more faded.
+   */
+  private fitColorColumn(column: HTMLElement): void {
+    const fade = (): void => {
+      const ends = hiddenEnds(column.scrollTop, column.clientHeight, column.scrollHeight);
+      column.toggleClass("has-more-start", ends.start);
+      column.toggleClass("has-more-end", ends.end);
+    };
+    column.scrollTop = this.colorColumnScroll;
+    const chosen = this.colorSwatches.get(
+      [...this.colorSwatches.keys()].find((c) => sameColor(c, this.state.color)) ?? "",
+    );
+    if (chosen) {
+      column.scrollTop = scrollToShow(
+        column.scrollTop,
+        column.clientHeight,
+        chosen.offsetTop - column.offsetTop,
+        chosen.offsetHeight,
+        COLOR_ROW_FADE_PX,
+      );
+    }
+    this.colorColumnScroll = column.scrollTop;
+    fade();
+    window.requestAnimationFrame(fade);
+    column.addEventListener("scroll", () => {
+      this.colorColumnScroll = column.scrollTop;
+      fade();
+    });
   }
 
   /**
