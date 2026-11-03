@@ -18,6 +18,7 @@ import {
   PAGE_MARGIN_X_RATIO,
   PAGE_MARGIN_Y,
   boxAtPoint,
+  columnScrollRangeX,
   currentPageIndex,
   inkBeyondPage,
   fitScale,
@@ -385,5 +386,51 @@ describe("inkBeyondPage", () => {
   it("skips non-finite points and a ragged tail", () => {
     expect(inkBeyondPage([NaN, 5000, 0.5, 10, 10, 0.5, 9000], 1024, 1448)).toBe(0);
     expect(inkBeyondPage([10, Infinity, 0.5, 2000, 10], 1024, 1448)).toBe(0);
+  });
+});
+
+describe("columnScrollRangeX (discussion #43)", () => {
+  it("holds a page exactly as wide as the pane centred", () => {
+    const layout = layoutPages(uniform());
+    const box = layout.boxes[0];
+    const pane = 1180;
+    const scale = pane / box.width;
+    const range = columnScrollRangeX(layout, scale, pane);
+    expect(range.min).toBe(range.max);
+    // Centred: the page's left edge on the pane's.
+    expect(range.min).toBeCloseTo(box.x * scale, 9);
+  });
+
+  it("holds a column narrower than the pane centred too", () => {
+    const layout = layoutPages(uniform());
+    const range = columnScrollRangeX(layout, 0.5, 1180);
+    expect(range.min).toBe(range.max);
+    expect(range.min).toBeCloseTo((layout.width * 0.5 - 1180) / 2, 9);
+  });
+
+  it("zoomed in, pans from the pages' left edge to their right, not onto the desk", () => {
+    const layout = layoutPages(pages([1024, 1448], [1920, 1080]));
+    const scale = 1.5;
+    const range = columnScrollRangeX(layout, scale, 1180);
+    const left = Math.min(...layout.boxes.map((b) => b.x));
+    const right = Math.max(...layout.boxes.map((b) => b.x + b.width));
+    expect(range.min).toBeCloseTo(left * scale, 9);
+    expect(range.max).toBeCloseTo(right * scale - 1180, 9);
+    expect(range.min).toBeGreaterThan(0);
+    expect(range.max).toBeLessThan(layout.width * scale - 1180);
+  });
+
+  it("forgives half a pixel of rounding", () => {
+    const layout = layoutPages(uniform());
+    const box = layout.boxes[0];
+    const range = columnScrollRangeX(layout, (1180 + 0.4) / box.width, 1180);
+    expect(range.min).toBe(range.max);
+  });
+
+  it("an empty notebook is held centred on its margins", () => {
+    const layout = layoutPages([]);
+    const range = columnScrollRangeX(layout, 1, 1180);
+    expect(range.min).toBe(range.max);
+    expect(range.min).toBeCloseTo(layout.width / 2 - 590, 9);
   });
 });

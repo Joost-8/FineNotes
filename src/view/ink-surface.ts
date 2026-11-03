@@ -206,6 +206,7 @@ import {
   layoutPages,
   pageSnapIndex,
   pullAddProgress,
+  columnScrollRangeX,
   rowPageScrollRange,
   rowScrollInsets,
   rowScrollXForPage,
@@ -300,6 +301,7 @@ import {
   wheelZoomFactor,
   doubleTapZoom,
   pageFillZoom,
+  pageWidthZoom,
   zoomAnchorFor,
 } from "../canvas/zoom";
 import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physics";
@@ -4840,8 +4842,11 @@ export class InkSurface {
     // neighbours show beside the page; letting go settles on the page then
     // in the middle (`onPinchEnd`). Joined pages are never held (`heldRow`).
     const last = this.pageLayout.boxes.length - 1;
-    const rangeX =
-      row && !this.turnsPages && last >= 0
+    // Pages down: held centred while the pages fit the pane's width, and
+    // never panned onto the desk beside them (discussion #43, as Goodnotes).
+    const rangeX = !row
+      ? columnScrollRangeX(this.pageLayout, scale, this.cssW)
+      : !this.turnsPages && last >= 0
         ? this.pinch || this.joined
           ? {
               min: rowPageScrollRange(this.pageLayout, 0, scale, this.cssW).min,
@@ -4862,6 +4867,8 @@ export class InkSurface {
       // Even a one-page row stretches sideways, so it can be pulled to add a page.
       alwaysBounceX: row,
       rangeX,
+      // Held centred, a diagonal drag scrolls only down (Goodnotes).
+      diagonalsScrollY: !row,
       // While a box is typed in, room to lift it above the keyboard: a page
       // that fits the screen (a cover, a single page) has none of its own.
       trailY: this.typingField() ? keyboardHeight() : 0,
@@ -7006,6 +7013,9 @@ export class InkSurface {
       window.clearTimeout(this.wheelSnapTimer);
       this.releaseBoardHold();
       this.scroller.dragStart(x, y, t);
+      // Pages down: a pinch's fingers carry the page both ways, even where
+      // the column is held centred (it springs back when they let go).
+      if (this.pinch && this.direction !== "horizontal") this.scroller.freeDrag();
       this.requestFrame();
     },
     onPanMove: (x, y, t) => {
@@ -16535,7 +16545,8 @@ export class InkSurface {
 
   /**
    * One finger tapped twice where nothing took the taps: zoom until the
-   * tapped page covers the pane, its left edge on the pane's and the tapped
+   * tapped page is as wide as the pane (pages down) or covers it (a row),
+   * its left edge on the pane's and the tapped
    * spot as high as it was (inside the page), so nothing but the page shows;
    * from there, back to the whole page, centred. Zoom and scroll land as one
    * motion: the zoom turns about the point the move leaves in place
@@ -16557,11 +16568,15 @@ export class InkSurface {
     const box =
       boxAtPoint(this.pageLayout, at.x, at.y) ?? this.pageLayout.boxes[this.pageIndex] ?? null;
     if (!box) return;
-    const fill = pageFillZoom(box.width, box.height, this.baseScale, this.cssW, this.cssH);
+    const row = this.direction === "horizontal";
+    // Pages down: the page exactly as wide as the pane, whatever its shape
+    // (discussion #43); a row's page covers the pane.
+    const fill = row
+      ? pageFillZoom(box.width, box.height, this.baseScale, this.cssW, this.cssH)
+      : pageWidthZoom(box.width, this.baseScale, this.cssW);
     const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom, fill));
     if (Math.abs(target - this.userZoom) < 1e-3) return;
     const rect = this.surfaceEl.getBoundingClientRect();
-    const row = this.direction === "horizontal";
     const settle: ZoomSettle = {
       index: box.index,
       local: this.toPage(box, at),
