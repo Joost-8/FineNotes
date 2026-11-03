@@ -201,6 +201,7 @@ export const surface = {
   "surface.pdf.noCanvas": "No canvas memory for the PDF page",
   "surface.pdf.missing": "Missing PDF — {path}",
   "surface.pdf.pageOutside": "Page {page} is outside {path} ({pages} pages)",
+  "surface.pdf.selectHint": "To select PDF text, right-click a word, then drag its handles.",
   "surface.margin.title": "Margin",
   "surface.margin.keep": "Keep",
   "surface.margin.width": "Margin width",

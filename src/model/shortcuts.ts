@@ -97,17 +97,22 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   group("toolbar.shortcut.group.selectionEditing", [
     line("toolbar.shortcut.sheet.lassoSelect", [held(["Mod"], "toolbar.shortcut.gesture.write")]),
     line("toolbar.shortcut.sheet.selectAll", [key("Mod", "A")], { binding: "edit.select-all" }),
+    line("toolbar.shortcut.deleteSelection", [key("Delete"), key("Backspace")], {
+      binding: "edit.delete",
+    }),
+    line("common.copy", [key("Mod", "C")], { binding: "edit.copy" }),
+    line("common.cut", [key("Mod", "X")], { binding: "edit.cut" }),
+    line("common.paste", [key("Mod", "V")], { binding: "edit.paste" }),
     line("common.undo", [key("Mod", "Z")], { binding: "edit.undo" }),
     line("common.redo", [key("Mod", "Shift", "Z")], { binding: "edit.redo" }),
   ]),
   group("toolbar.shortcut.group.viewZoom", [
-    line("toolbar.shortcut.sheet.zoomAboutPen", [
-      held(["Alt"], "toolbar.shortcut.gesture.writeUpOrDown"),
-    ]),
+    line("toolbar.shortcut.sheet.zoomAboutPen", [held(["Alt"], "toolbar.shortcut.gesture.drag")]),
     line("toolbar.shortcut.sheet.movePage", [held(["Space"], "toolbar.shortcut.gesture.drag")], {
       binding: "tool.pan",
     }),
-    line("toolbar.shortcut.sheet.previousNext", [key("Page Up"), key("Page Down")]),
+    line("toolbar.shortcut.previousPage", [key("Page Up")], { binding: "view.previous-page" }),
+    line("toolbar.shortcut.nextPage", [key("Page Down")], { binding: "view.next-page" }),
     line("toolbar.shortcut.sheet.toggleList", [key("?")], { binding: "view.shortcuts" }),
   ]),
   group("toolbar.shortcut.group.stylus", [

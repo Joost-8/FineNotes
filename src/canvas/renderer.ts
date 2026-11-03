@@ -2911,8 +2911,8 @@ export class Renderer {
   }
 
   /** Draw the in-progress stroke (page space) on the wet layer. */
-  renderWet(pageIndex: number, pts: number[], style: StrokeStyle): void {
-    this.renderWetMany(pageIndex, [pts], style);
+  renderWet(pageIndex: number, pts: number[], style: StrokeStyle, onNote = false): void {
+    this.renderWetMany(pageIndex, [pts], style, onNote);
   }
 
   /**
@@ -3008,15 +3008,22 @@ export class Renderer {
   /**
    * Draw several in-progress strokes at once on the wet layer — a table being
    * dragged out, which is an outline plus its row and column lines.
+   * `onNote`: they are written on a sticky note, whose ink a dark page
+   * does not invert.
    */
-  renderWetMany(pageIndex: number, strokes: readonly number[][], style: StrokeStyle): void {
+  renderWetMany(
+    pageIndex: number,
+    strokes: readonly number[][],
+    style: StrokeStyle,
+    onNote = false,
+  ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
-    const night = this.nightAt(pageIndex);
+    const night = !onNote && this.nightAt(pageIndex);
     const paint = (c: CanvasRenderingContext2D): void => {
       for (const pts of strokes) fillStroke(c, pts, style, this.highlighterAlpha, night);
     };
@@ -3052,16 +3059,23 @@ export class Renderer {
 
   /**
    * Draw the handwriting being written, already traced into `runs` (page
-   * space), on the wet layer, painted as a stored stroke of `style` is.
+   * space), on the wet layer, painted as a stored stroke of `style` is:
+   * not inverted for a dark page when it is written on a sticky note
+   * (`onNote`), whose paper stays light.
    */
-  renderWetRuns(pageIndex: number, runs: readonly InkRun[], style: StrokeStyle): void {
+  renderWetRuns(
+    pageIndex: number,
+    runs: readonly InkRun[],
+    style: StrokeStyle,
+    onNote = false,
+  ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
     this.wipe(ctx);
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
-    const night = this.nightAt(pageIndex);
+    const night = !onNote && this.nightAt(pageIndex);
     const paint = (c: CanvasRenderingContext2D): void => {
       paintStroke(c, { runs }, style, this.highlighterAlpha, night);
     };

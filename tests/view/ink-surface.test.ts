@@ -680,6 +680,22 @@ describe("the user's shortcut table", () => {
     ]);
   });
 
+  it("holds Space's hand with the Hand off the bar, and not a hidden eraser", () => {
+    const table = shortcutTable(withShortcut({}, "tool.eraser", keyOf("r"), "hold"));
+    const { surface, toolState, calls, key } = holding(table);
+    surface.callbacks = {
+      ...(surface.callbacks as object),
+      toolOff: (tool: string) => tool === "pan" || tool === "eraser",
+    };
+    key("keydown", " ");
+    expect(calls).toEqual(["setHand(true)"]);
+    key("keyup", " ");
+    expect(calls.at(-1)).toBe("setHand(false)");
+    key("keydown", "r");
+    expect(toolState.tool).toBe("pen");
+    expect(surface.heldShortcut).toBeNull();
+  });
+
   it("holds Shapes with the Shape tool's own colour", () => {
     const { surface, key } = holding(
       shortcutTable(withShortcut({}, "tool.shape", keyOf("r"), "hold")),
@@ -2066,6 +2082,7 @@ describe("the wet stroke", () => {
       builder,
       activePage: { index: 0 },
       snap: null,
+      doc: { pages: [{ images: [] }] },
       renderer: { renderWetRuns: (_page: number, runs: InkRun[]) => drawn.push(runs) },
       currentStyle: () => ({ color: "#000", size: 3, tool: "pen", usePressure: pressure }),
     });
@@ -3129,6 +3146,17 @@ describe("writing in the Zoom box", () => {
     expect(run(s, "zoomBoxRoute", pen(200, 20))).toBe("ignore");
     s.toolState = { tool: "zoom" };
     expect(run(s, "zoomBoxRoute", pen(200, 200))).toBe("ignore");
+  });
+
+  it("moves the view, not writes, with Space held", () => {
+    const s = boxSurface({
+      zoomCanvas: {
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 400 }),
+      },
+      handHeld: true,
+    });
+    const pen = { pointerType: "pen", button: 0, buttons: 1, clientX: 200, clientY: 200 };
+    expect(run(s, "zoomBoxRoute", pen as PointerEvent)).toBe("ignore");
   });
 
   it("keeps a tap in the box a dot", () => {
