@@ -8,7 +8,7 @@
  * No DOM, no Obsidian.
  */
 
-import { isCoverRuling } from "./document";
+import { type PageGeometry, type PdfBackdrop, isCoverRuling } from "./document";
 import { stripInkSuffix } from "./new-notebook";
 import { parseInkFile } from "./serialize";
 
@@ -26,6 +26,8 @@ export interface LibraryEntry {
   color: string;
   /** Whether any page is a PDF. */
   hasPdf: boolean;
+  /** The PDF page a notebook opens on (its first page past the cover), when that page is a PDF's: its cover picture. */
+  pdf: LibraryPdf | null;
   /** Whether the first page is a cover, which `pages` does not count. */
   covered: boolean;
   /** Last edit, ms since the epoch. */
@@ -41,6 +43,7 @@ export function placeholderEntry(path: string, edited: number): LibraryEntry {
     pages: 0,
     color: FALLBACK_COLOR,
     hasPdf: false,
+    pdf: null,
     covered: false,
     edited,
   };
@@ -62,6 +65,26 @@ export function folderOf(path: string): string {
   return cut < 0 ? "" : path.slice(0, cut);
 }
 
+/** A PDF page in the vault, and the size of the notebook page it fills. */
+export interface LibraryPdf {
+  path: string;
+  /** 0-based. */
+  page: number;
+  width: number;
+  height: number;
+}
+
+function firstPdf(
+  page: { backdrop: { kind: string }; geometry: PageGeometry } | undefined,
+): LibraryPdf | null {
+  const backdrop = page?.backdrop;
+  if (!page || !backdrop || backdrop.kind !== "pdf") return null;
+  const pdf = backdrop as unknown as PdfBackdrop;
+  const { width, height } = page.geometry;
+  if (!(width > 0) || !(height > 0)) return null;
+  return { path: pdf.path, page: pdf.page, width, height };
+}
+
 /** `entry` read from the note's text. An unreadable note keeps its placeholder. */
 export function entryFromText(path: string, edited: number, markdown: string): LibraryEntry {
   const base = placeholderEntry(path, edited);
@@ -75,6 +98,7 @@ export function entryFromText(path: string, edited: number, markdown: string): L
     pages: doc.pages.length - (covered ? 1 : 0),
     color: tint !== undefined && HEX.test(tint) ? tint.toLowerCase() : FALLBACK_COLOR,
     hasPdf: doc.pages.some((p) => p.backdrop.kind === "pdf"),
+    pdf: firstPdf(doc.pages[covered ? 1 : 0]),
     covered,
   };
 }

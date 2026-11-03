@@ -42,6 +42,8 @@ import { disposeVaultFonts } from "./view/font-store";
 import {
   ICON_IMPORT_NOTEBOOK,
   ICON_IMPORT_NOTEBOOK_SVG,
+  ICON_LIBRARY,
+  ICON_LIBRARY_SVG,
   ICON_NEW_NOTEBOOK,
   ICON_STYLUS_ONLY,
   ICON_STYLUS_ONLY_SVG,
@@ -127,6 +129,7 @@ import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
+import { folderStylesOf } from "./model/library-style";
 import { LibraryView } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
 import { PageEmbeds } from "./view/page-embed";
@@ -443,10 +446,21 @@ export default class GoodObsidianPlugin extends Plugin {
             this.settings.libraryStars = stars;
             void this.saveSettings();
           },
+          folderStyles: () => this.settings.libraryFolders,
+          setFolderStyles: (styles) => {
+            this.settings.libraryFolders = styles;
+            void this.saveSettings();
+          },
+          exportPdf: async (file) => {
+            const leaf = this.app.workspace.getLeaf("tab");
+            await leaf.openFile(file);
+            if (leaf.view instanceof InkView) leaf.view.exportPdf();
+          },
         }),
     );
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
+    addIcon(ICON_LIBRARY, ICON_LIBRARY_SVG);
     addIcon(ICON_STYLUS_ONLY, ICON_STYLUS_ONLY_SVG);
     // The image menu's "Generate with AI" row: the same modal as the AI menu,
     // listed only when an image service is configured.
@@ -567,7 +581,7 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.app.workspace.onLayoutReady(() => this.syncExplorerNotebookButton());
     // The library is the way in: notebooks are made there (its +), not from a ribbon icon of their own.
-    this.addRibbonIcon("library", "Notebook library", () => void this.openLibrary());
+    this.addRibbonIcon(ICON_LIBRARY, "Notebook library", () => void this.openLibrary());
     this.addCommands();
 
     this.settingTab = new GoodObsidianSettingTab(this.app, this);
@@ -866,6 +880,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
+    this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
     if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
     // A Zoom box line step outside the slider's range is a hand-edited file,

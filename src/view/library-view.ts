@@ -23,24 +23,45 @@ import {
   ItemView,
   Keymap,
   Menu,
+  Notice,
   type TAbstractFile,
   TFile,
+  TFolder,
   type ViewStateResult,
   type WorkspaceLeaf,
   setIcon,
 } from "obsidian";
-import { NOTEBOOK_FILE_SUFFIX, VIEW_TYPE_LIBRARY } from "../constants";
+import { ICON_LIBRARY, NOTEBOOK_FILE_SUFFIX, VIEW_TYPE_LIBRARY } from "../constants";
 import { coverPalette } from "../model/cover";
+import {
+  DEFAULT_FOLDER_COLOR,
+  DEFAULT_FOLDER_ICON,
+  FOLDER_COLORS,
+  FOLDER_ICONS,
+  type FolderStyles,
+  cleanName,
+  freeName,
+  moveStyles,
+  movePaths,
+  withFolderStyle,
+} from "../model/library-style";
+import { PdfBackdropCache } from "./pdf-backdrop";
+import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
+import { thumbnailRasterScale } from "./page-sidebar";
+import { FolderSuggestModal } from "./folder-suggest";
+import { RenameModal } from "./rename-modal";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
 import {
   type LibraryEntry,
+  type LibraryPdf,
   type LibrarySort,
   browse,
   continueEntries,
   crumbs,
   hoistSingles,
   entryFromText,
+  folderOf,
   readProgress,
   placeholderEntry,
   searchEntries,
@@ -54,6 +75,11 @@ export interface LibraryHost {
   /** The starred notebooks and folders, by vault path. */
   stars(): readonly string[];
   setStars(stars: string[]): void;
+  /** The colour and icon chosen for folders, by vault path. */
+  folderStyles(): FolderStyles;
+  setFolderStyles(styles: FolderStyles): void;
+  /** Open a notebook and start its "Export as PDF". */
+  exportPdf(file: TFile): Promise<void>;
 }
 
 /** A folder as the library lists it. */
@@ -79,7 +105,7 @@ interface Read {
 }
 
 export class LibraryView extends ItemView {
-  override icon = "library";
+  override icon = ICON_LIBRARY;
   private folder = "";
   private sort: LibrarySort = "edited";
   private query = "";
@@ -87,6 +113,8 @@ export class LibraryView extends ItemView {
   private reading = false;
   private closed = false;
   private paintTimer = 0;
+  private pdf: PdfBackdropCache | null = null;
+  private workerHeld = false;
   private refreshTimer = 0;
   private upEl!: HTMLElement;
   private titleEl!: HTMLElement;
@@ -169,7 +197,12 @@ export class LibraryView extends ItemView {
     };
     this.registerEvent(this.app.vault.on("create", touched));
     this.registerEvent(this.app.vault.on("delete", touched));
-    this.registerEvent(this.app.vault.on("rename", touched));
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        this.follow(oldPath, file.path);
+        touched(file);
+      }),
+    );
     this.registerEvent(this.app.vault.on("modify", touched));
 
     // A notebook read since: its place has moved.
@@ -185,6 +218,10 @@ export class LibraryView extends ItemView {
 
   override async onClose(): Promise<void> {
     this.closed = true;
+    this.pdf?.destroy();
+    this.pdf = null;
+    if (this.workerHeld) releasePdfWorker();
+    this.workerHeld = false;
     window.clearTimeout(this.paintTimer);
     window.clearTimeout(this.refreshTimer);
   }
@@ -391,17 +428,22 @@ export class LibraryView extends ItemView {
     star.addEventListener("keydown", (event) => event.stopPropagation());
   }
 
-  /** A folder as a tile like a cover: a folder glyph, its name and how many notebooks it holds. */
+  /** A folder as a tile: a coloured folder with its icon, a star, and its name with a ⌄ for its menu. */
   private folderCard(parent: HTMLElement, folder: FolderTile): void {
     const card = parent.createDiv({
       cls: "goodobsidian-library-card",
       attr: { role: "button", tabindex: "0", "aria-label": folder.name },
     });
+    const style = this.host.folderStyles()[folder.path] ?? {};
     const cover = card.createDiv({ cls: "goodobsidian-library-cover is-folder" });
-    setIcon(cover.createSpan({ cls: "goodobsidian-library-folder-glyph" }), "folder");
-    this.starButton(cover, folder.path, folder.name);
+    cover.style.setProperty("--gob-folder", style.color ?? DEFAULT_FOLDER_COLOR);
+    const art = cover.createDiv({ cls: "goodobsidian-library-folder-art" });
+    art.createDiv({ cls: "goodobsidian-library-folder-back" });
+    const front = art.createDiv({ cls: "goodobsidian-library-folder-front" });
+    setIcon(front, style.icon ?? DEFAULT_FOLDER_ICON);
+    this.starButton(art, folder.path, folder.name);
     const caption = card.createDiv({ cls: "goodobsidian-library-caption" });
-    caption.createDiv({ cls: "goodobsidian-library-name", text: folder.name });
+    this.nameRow(caption, folder.name, (event) => this.openFolderMenu(event, folder));
     caption.createDiv({
       cls: "goodobsidian-library-when",
       text: `${folder.count} ${folder.count === 1 ? "notebook" : "notebooks"}`,
@@ -414,6 +456,75 @@ export class LibraryView extends ItemView {
         open();
       }
     });
+    card.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      this.openFolderMenu(event, folder);
+    });
+  }
+
+  /** The name, and beside it the ⌄ that opens the item's menu. */
+  private nameRow(
+    caption: HTMLElement,
+    name: string,
+    menu: (event: MouseEvent | KeyboardEvent) => void,
+  ): void {
+    const row = caption.createDiv({ cls: "goodobsidian-library-name-row" });
+    row.createDiv({ cls: "goodobsidian-library-name", text: name });
+    const caret = row.createEl("button", {
+      cls: "clickable-icon goodobsidian-library-caret",
+      attr: { type: "button", "aria-label": `Options for ${name}`, "aria-haspopup": "menu" },
+    });
+    setIcon(caret, "chevron-down");
+    caret.addEventListener("click", (event) => {
+      event.stopPropagation();
+      menu(event);
+    });
+    caret.addEventListener("keydown", (event) => event.stopPropagation());
+  }
+
+  /** The notebook's first PDF page as its cover, drawn once the page is rendered; the title shows until then. */
+  private paintPdfCover(cover: HTMLElement, pdf: LibraryPdf): void {
+    cover.addClass("is-pdf");
+    const canvas = cover.createEl("canvas", { cls: "goodobsidian-library-pdf" });
+    const dpr = window.devicePixelRatio || 1;
+    const cache = this.pdfCache();
+    void cache
+      .resolve(
+        pdf.path,
+        pdf.page,
+        thumbnailRasterScale(dpr),
+        {
+          geometry: { width: pdf.width, height: pdf.height },
+        },
+        true,
+      )
+      .then((entry) => {
+        if (!entry.ok || !canvas.isConnected) return;
+        const w = 240;
+        const h = Math.max(1, Math.round((w * pdf.height) / pdf.width));
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(entry.canvas, 0, 0, canvas.width, canvas.height);
+        cover.addClass("is-ready");
+      });
+  }
+
+  /** The PDF raster cache, made with the first PDF cover, rendering in the shared worker once it is up. */
+  private pdfCache(): PdfBackdropCache {
+    if (this.pdf) return this.pdf;
+    const cache = new PdfBackdropCache(this.app);
+    this.pdf = cache;
+    if (!this.workerHeld) {
+      this.workerHeld = true;
+      void acquirePdfWorker().then((worker) => {
+        if (worker && this.pdf === cache) cache.setWorker(worker);
+      });
+    }
+    return cache;
   }
 
   /** A cover with its caption. With `leftAt` (the index it was left on) it shows where the reader is. */
@@ -430,9 +541,10 @@ export class LibraryView extends ItemView {
     cover.style.setProperty("--gob-cover-hi", palette.sheenLight);
     cover.style.setProperty("--gob-cover-lo", palette.sheenDark);
     cover.createSpan({ cls: "goodobsidian-library-cover-title", text: entry.title });
+    if (entry.pdf) this.paintPdfCover(cover, entry.pdf);
     this.starButton(cover, entry.path, entry.title);
     const caption = card.createDiv({ cls: "goodobsidian-library-caption" });
-    caption.createDiv({ cls: "goodobsidian-library-name", text: entry.title });
+    this.nameRow(caption, entry.title, (event) => this.openCardMenu(event, entry));
     const when = whenText(entry.edited, Date.now());
     const progress = readProgress(entry, leftAt);
     if (progress) {
@@ -510,10 +622,46 @@ export class LibraryView extends ItemView {
     menu.showAtMouseEvent(event);
   }
 
-  private openCardMenu(event: MouseEvent, entry: LibraryEntry): void {
+  /** Where a menu opened by a tap on a button sits: under it. */
+  private show(menu: Menu, event: MouseEvent | KeyboardEvent): void {
+    const target = event.currentTarget;
+    if (event.detail === 0 && target instanceof HTMLElement) {
+      const rect = target.getBoundingClientRect();
+      menu.showAtPosition({ x: rect.left, y: rect.bottom });
+    } else if (event instanceof MouseEvent) {
+      menu.showAtMouseEvent(event);
+    }
+  }
+
+  private openCardMenu(event: MouseEvent | KeyboardEvent, entry: LibraryEntry): void {
     const file = this.app.vault.getFileByPath(entry.path);
     if (!file) return;
     const menu = new Menu();
+    menu.addItem((item) =>
+      item
+        .setTitle("Rename")
+        .setIcon("pencil")
+        .onClick(() => this.rename(file, entry.title, NOTEBOOK_FILE_SUFFIX)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Duplicate")
+        .setIcon("copy-plus")
+        .onClick(() => void this.duplicate(file, entry.title)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Export as PDF")
+        .setIcon("file-up")
+        .onClick(() => void this.host.exportPdf(file)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Move")
+        .setIcon("folder-input")
+        .onClick(() => this.move(file, entry.folder)),
+    );
+    menu.addSeparator();
     menu.addItem((item) =>
       item
         .setTitle("Open in new tab")
@@ -530,6 +678,147 @@ export class LibraryView extends ItemView {
           });
         }),
     );
-    menu.showAtMouseEvent(event);
+    this.show(menu, event);
+  }
+
+  private openFolderMenu(event: MouseEvent | KeyboardEvent, folder: FolderTile): void {
+    const target = this.app.vault.getFolderByPath(folder.path);
+    if (!target) return;
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item
+        .setTitle("Customize color…")
+        .setIcon("palette")
+        .onClick(() => this.chooseColor(event, folder.path)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Set icon…")
+        .setIcon("smile")
+        .onClick(() => this.chooseIcon(event, folder.path)),
+    );
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item
+        .setTitle("Rename")
+        .setIcon("pencil")
+        .onClick(() => this.rename(target, folder.name, "")),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Move")
+        .setIcon("folder-input")
+        .onClick(() => this.move(target, folderOf(folder.path))),
+    );
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item
+        .setTitle("Delete")
+        .setIcon("trash-2")
+        .onClick(() => {
+          void this.app.fileManager.promptForDeletion(target).then((gone) => {
+            if (gone) this.refreshSoon();
+          });
+        }),
+    );
+    this.show(menu, event);
+  }
+
+  /** The colours as a menu of their own, the current one ticked. */
+  private chooseColor(event: MouseEvent | KeyboardEvent, path: string): void {
+    const now = this.host.folderStyles()[path]?.color ?? DEFAULT_FOLDER_COLOR;
+    const menu = new Menu();
+    for (const option of FOLDER_COLORS) {
+      menu.addItem((item) => {
+        item
+          .setTitle(option.name)
+          .setChecked(option.color === now)
+          .onClick(() => this.styleFolder(path, { color: option.color }));
+        const swatch = createSpan({ cls: "goodobsidian-library-swatch" });
+        swatch.style.background = option.color;
+        (item as unknown as { dom: HTMLElement }).dom.prepend(swatch);
+      });
+    }
+    this.show(menu, event);
+  }
+
+  private chooseIcon(event: MouseEvent | KeyboardEvent, path: string): void {
+    const now = this.host.folderStyles()[path]?.icon ?? DEFAULT_FOLDER_ICON;
+    const menu = new Menu();
+    for (const option of FOLDER_ICONS) {
+      menu.addItem((item) =>
+        item
+          .setTitle(option.name)
+          .setIcon(option.id)
+          .setChecked(option.id === now)
+          .onClick(() => this.styleFolder(path, { icon: option.id })),
+      );
+    }
+    this.show(menu, event);
+  }
+
+  private styleFolder(path: string, change: { color?: string; icon?: string }): void {
+    this.host.setFolderStyles(withFolderStyle(this.host.folderStyles(), path, change));
+    this.paintNow();
+  }
+
+  // --- Changing files ---------------------------------------------------------
+
+  private rename(file: TFile | TFolder, current: string, suffix: string): void {
+    new RenameModal(this.app, current, (typed) => {
+      const name = cleanName(typed);
+      if (name === "" || name === current) return;
+      const parent = file.parent?.path ?? "";
+      const path = [parent === "/" ? "" : parent, `${name}${suffix}`].filter(Boolean).join("/");
+      if (this.app.vault.getAbstractFileByPath(path)) {
+        new Notice(`"${name}" already exists here.`);
+        return;
+      }
+      void this.app.fileManager.renameFile(file, path);
+    }).open();
+  }
+
+  private async duplicate(file: TFile, title: string): Promise<void> {
+    const parent = file.parent?.path ?? "";
+    const dir = parent === "/" ? "" : parent;
+    const name = freeName(
+      `${title} copy`,
+      NOTEBOOK_FILE_SUFFIX,
+      (n) => this.app.vault.getAbstractFileByPath(dir ? `${dir}/${n}` : n) !== null,
+    );
+    await this.app.vault.copy(file, dir ? `${dir}/${name}` : name);
+  }
+
+  /** Pick a folder, and put the file or folder inside it. */
+  private move(file: TFile | TFolder, from: string): void {
+    new FolderSuggestModal(
+      this.app,
+      (dest) => {
+        const dir = dest === "/" ? "" : dest;
+        if (dir === from) return;
+        if (file instanceof TFolder && (dir === file.path || dir.startsWith(`${file.path}/`))) {
+          new Notice("A folder cannot go inside itself.");
+          return;
+        }
+        const path = dir ? `${dir}/${file.name}` : file.name;
+        if (this.app.vault.getAbstractFileByPath(path)) {
+          new Notice(`"${file.name}" already exists there.`);
+          return;
+        }
+        void this.app.fileManager.renameFile(file, path);
+      },
+      `Move ${file.name} to…`,
+      from,
+    ).open();
+  }
+
+  /** Stars and folder looks go with a file or folder that was renamed or moved. */
+  private follow(from: string, to: string): void {
+    const stars = this.host.stars();
+    const moved = movePaths(stars, from, to);
+    if (moved.some((p, i) => p !== stars[i])) this.host.setStars(moved);
+    const styles = this.host.folderStyles();
+    const restyled = moveStyles(styles, from, to);
+    if (JSON.stringify(restyled) !== JSON.stringify(styles)) this.host.setFolderStyles(restyled);
   }
 }

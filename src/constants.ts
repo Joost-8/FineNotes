@@ -223,3 +223,14 @@ export const ICON_STYLUS_ONLY_SVG =
   '<path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>' +
   '<path d="m2 2 20 20"/>' +
   "</g>";
+
+/** The library's own ribbon icon: books on a shelf, filled so it reads heavier than the outline icons round it. */
+export const ICON_LIBRARY = "finenotes-library";
+export const ICON_LIBRARY_SVG =
+  '<g transform="scale(4.1667)" stroke-linecap="round" stroke-linejoin="round">' +
+  '<rect x="3" y="4" width="5" height="16" rx="1.2" fill="currentColor"/>' +
+  '<rect x="9.5" y="2.5" width="5" height="17.5" rx="1.2" fill="currentColor" opacity="0.55"/>' +
+  '<rect x="16" y="5" width="5" height="15" rx="1.2" fill="none" stroke="currentColor" ' +
+  'stroke-width="2" transform="rotate(-12 18.5 12.5)"/>' +
+  '<path d="M2 21.5h20" fill="none" stroke="currentColor" stroke-width="2"/>' +
+  "</g>";
