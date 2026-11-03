@@ -83,6 +83,8 @@ export interface LibraryHost {
   newBoard(folder: string): void;
   /** The import dialog for Goodnotes, Notability and other apps, into `folder`. */
   importFromApp(folder: string): void;
+  /** FineNotes' own page in Obsidian's settings. */
+  openSettings(): void;
   /** A notebook whose pages are the chosen PDF's, made in `folder`. */
   importPdf(
     source: { kind: "file"; file: File } | { kind: "vault"; file: TFile },
@@ -212,6 +214,13 @@ export class LibraryView extends ItemView {
     });
     setIcon(sort, "arrow-up-down");
     sort.addEventListener("click", (event) => this.openSortMenu(event));
+
+    const gear = head.createEl("button", {
+      cls: "clickable-icon",
+      attr: { "aria-label": "FineNotes settings" },
+    });
+    setIcon(gear, "settings");
+    gear.addEventListener("click", () => this.host.openSettings());
 
     const add = head.createEl("button", {
       cls: "goodobsidian-library-new",

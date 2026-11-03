@@ -1189,9 +1189,10 @@ const TOUR: readonly TourPage[] = [
         "Pages",
       );
       s.card(
-        "Each notebook is a file in this vault, the folder Obsidian keeps your notes in. Its " +
-          "notebook button makes a new one with a cover, a paper and a size of your choice; or " +
-          "press and hold a folder and choose New notebook. Any paper can be any colour, with " +
+        "Each notebook is a file in this vault, the folder Obsidian keeps your notes in. Home, " +
+          "the library icon in the left bar, shows them all as covers; its New button makes a " +
+          "new one with a cover, a paper and a size of your choice; or press and hold a folder " +
+          "and choose New notebook. Any paper can be any colour, with " +
           "its lines in their own colour, closer together or further apart.",
         "Notebooks",
       );
@@ -1662,7 +1663,7 @@ const TOUR: readonly TourPage[] = [
           "• Noteful, Xournal++, Saber, reMarkable, Supernote and FreeNotes: their own " +
           "notebook files come over too.\n" +
           "• Anything else, such as Apple Notes: export a PDF, and write over its pages.\n" +
-          "Then choose New notebook › Import from another app. Your handwriting stays editable.",
+          "Then open Home and choose New › Import from another app. Your handwriting stays editable.",
         "Bring your notebooks over",
       );
       s.card(

@@ -598,13 +598,17 @@ describe("registration", () => {
     });
   });
 
-  it("makes no notebook by itself, on a first install or an update", async () => {
-    for (const stored of [null, { lastSeenVersion: "0.1.0" }]) {
+  it("makes no notebook by itself; a first install gets the Home note, an update nothing", async () => {
+    for (const [stored, expected] of [
+      [null, ["Home.md"]],
+      [{ lastSeenVersion: "0.1.0" }, []],
+    ] as const) {
       await load(stored);
       app.workspace.fireLayoutReady();
       await flush();
-      const created = (app.vault as unknown as { created: unknown[] }).created;
-      expect(created).toEqual([]);
+      const created = (app.vault as unknown as { created: { path: string }[] }).created;
+      expect(created.map((c) => c.path)).toEqual(expected);
+      created.length = 0;
     }
   });
 

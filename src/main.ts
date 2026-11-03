@@ -129,6 +129,7 @@ import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
+import { HOME_FILE, HOME_FILE_TEXT } from "./model/home-file";
 import { folderStylesOf } from "./model/library-style";
 import { LibraryView } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
@@ -264,8 +265,8 @@ export interface RecognitionTarget {
 type OpenRouterOutcome = { key: string } | { problem: string };
 
 export default class GoodObsidianPlugin extends Plugin {
-  private readonly explorerNotebookButton = new FileExplorerNotebookButton(() =>
-    this.openNewNotebookDialog(),
+  private readonly explorerNotebookButton = new FileExplorerNotebookButton(
+    () => void this.openLibrary(),
   );
 
   private readonly explorerFolderNotebooks = new ExplorerFolderNotebooks({
@@ -444,6 +445,7 @@ export default class GoodObsidianPlugin extends Plugin {
           newNotebook: (folder) => this.openNewNotebookDialog(folder),
           newBoard: (folder) => this.openNewNotebookDialog(folder, "endless"),
           importFromApp: (folder) => this.openImportNotebook(folder),
+          openSettings: () => this.openOwnSettings(),
           importPdf: (source, folder) => {
             const name = source.file.name.replace(/\.pdf$/i, "");
             void this.createNotebookFromPdfBytes(
@@ -641,6 +643,17 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** The notebook library: the tab that is already open, or a new one. */
+  /** FineNotes' own page in Obsidian's settings. */
+  private openOwnSettings(): void {
+    const setting = (
+      this.app as unknown as {
+        setting?: { open(): void; openTabById(id: string): void };
+      }
+    ).setting;
+    setting?.open();
+    setting?.openTabById(this.manifest.id);
+  }
+
   private async openLibrary(): Promise<void> {
     const open = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
     const leaf = open ?? this.app.workspace.getLeaf("tab");
@@ -1979,7 +1992,33 @@ export default class GoodObsidianPlugin extends Plugin {
       const welcome = shouldShowWelcome(this.firstInstall, this.hasNotebooks());
       void this.showWhatsNew();
       if (welcome) this.showWelcome();
+      if (this.firstInstall) void this.makeHomeFile();
     });
+    // Opening the Home file opens the library instead.
+    this.registerEvent(
+      this.app.workspace.on("file-open", (file) => {
+        if (file?.path !== HOME_FILE) return;
+        this.app.workspace.iterateAllLeaves((leaf) => {
+          const open = (leaf.view as { file?: TFile | null }).file;
+          if (leaf.view.getViewType() === "markdown" && open?.path === HOME_FILE) leaf.detach();
+        });
+        void this.openLibrary();
+      }),
+    );
+  }
+
+  /**
+   * A note called Home at the vault's root for someone new to Obsidian: it
+   * opens the library, so there is always a file to click when the welcome
+   * is closed. Made once, on a new install; deleting it changes nothing.
+   */
+  private async makeHomeFile(): Promise<void> {
+    if (this.app.vault.getAbstractFileByPath(HOME_FILE)) return;
+    try {
+      await this.app.vault.create(HOME_FILE, HOME_FILE_TEXT);
+    } catch {
+      // A name taken at the same moment: no home file is no harm.
+    }
   }
 
   /** Whether `file` is an ink note (see `isInkNote`). */
@@ -2136,7 +2175,7 @@ export default class GoodObsidianPlugin extends Plugin {
     new WelcomeModal(this.app, {
       openTour: () => void this.openWelcomeTour(),
       importNotebooks: () => this.openImportNotebook(),
-      newNotebook: () => this.openNewNotebookDialog(),
+      openHome: () => void this.openLibrary(),
     }).open();
   }
 
