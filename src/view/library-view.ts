@@ -31,6 +31,7 @@ import {
 } from "obsidian";
 import { NOTEBOOK_FILE_SUFFIX, VIEW_TYPE_LIBRARY } from "../constants";
 import { coverPalette } from "../model/cover";
+import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
 import {
   type LibraryEntry,
@@ -50,6 +51,16 @@ import {
 /** What the view needs from the plugin. */
 export interface LibraryHost {
   newNotebook(): void;
+  /** The starred notebooks and folders, by vault path. */
+  stars(): readonly string[];
+  setStars(stars: string[]): void;
+}
+
+/** A folder as the library lists it. */
+interface FolderTile {
+  path: string;
+  name: string;
+  count: number;
 }
 
 const SORTS: ReadonlyArray<{ by: LibrarySort; label: string; icon: string }> = [
@@ -287,12 +298,33 @@ export class LibraryView extends ItemView {
     }
 
     const left = this.lastPages();
+    const stars = this.host.stars();
     const here = browse(hoistSingles(all), this.folder);
-    // What Continue shows is not listed again below it.
+    // What a row above shows is not listed again below it.
     const shown = new Set<string>();
+    const shownFolders = new Set<string>();
+    if (this.folder === "" && stars.length > 0) {
+      const books = all.filter((e) => isStarred(stars, e.path));
+      const folders = stars
+        .filter((path) => !path.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX))
+        .map((path) => this.folderTile(all, path))
+        .filter((f): f is FolderTile => f !== null);
+      if (books.length + folders.length > 0) {
+        this.label("Favorites");
+        const row = this.bodyEl.createDiv({ cls: "goodobsidian-library-grid" });
+        for (const folder of folders) {
+          this.folderCard(row, folder);
+          shownFolders.add(folder.path);
+        }
+        for (const entry of books) {
+          this.card(row, entry, left[entry.path]?.index);
+          shown.add(entry.path);
+        }
+      }
+    }
     if (this.folder === "") {
       const recent = continueEntries(
-        all.filter((e) => e.pages > 0),
+        all.filter((e) => e.pages > 0 && !shown.has(e.path)),
         CONTINUE_COUNT,
         (path) => left[path]?.at ?? 0,
       );
@@ -305,16 +337,12 @@ export class LibraryView extends ItemView {
         }
       }
     }
-    if (here.folders.length > 0) {
+    const folders = here.folders.filter((f) => !shownFolders.has(f.path));
+    if (folders.length > 0) {
       this.label("Folders");
-      const row = this.bodyEl.createDiv({ cls: "goodobsidian-library-folders" });
-      for (const folder of here.folders) {
-        const el = row.createEl("button", { cls: "clickable-icon goodobsidian-library-folder" });
-        setIcon(el.createSpan({ cls: "goodobsidian-library-folder-icon" }), "folder");
-        el.createSpan({ cls: "goodobsidian-library-folder-name", text: folder.name });
-        el.createSpan({ cls: "goodobsidian-library-folder-count", text: String(folder.count) });
-        el.addEventListener("click", () => this.openFolder(folder.path));
-      }
+      const row = this.bodyEl.createDiv({ cls: "goodobsidian-library-grid" });
+      for (const folder of starredFirst(folders, stars, (f) => f.path))
+        this.folderCard(row, folder);
     }
     const rest = here.notebooks.filter((e) => !shown.has(e.path));
     if (rest.length > 0) {
@@ -329,7 +357,63 @@ export class LibraryView extends ItemView {
   private grid(entries: LibraryEntry[], label: string): void {
     this.label(label);
     const grid = this.bodyEl.createDiv({ cls: "goodobsidian-library-grid" });
-    for (const entry of entries) this.card(grid, entry);
+    for (const entry of starredFirst(entries, this.host.stars(), (e) => e.path)) {
+      this.card(grid, entry);
+    }
+  }
+
+  /** A starred folder as a tile: how many notebooks it holds, or null when it holds none now. */
+  private folderTile(all: LibraryEntry[], path: string): FolderTile | null {
+    const count = all.filter((e) => e.folder === path || e.folder.startsWith(`${path}/`)).length;
+    if (count === 0) return null;
+    return { path, name: path.split("/").pop() ?? path, count };
+  }
+
+  /** The star in a cover's top right corner: on for a starred item, a tap toggles it. */
+  private starButton(cover: HTMLElement, path: string, title: string): void {
+    const on = isStarred(this.host.stars(), path);
+    const star = cover.createEl("button", {
+      cls: "clickable-icon goodobsidian-library-star",
+      attr: {
+        type: "button",
+        "aria-label": on ? `Remove ${title} from favorites` : `Add ${title} to favorites`,
+        "aria-pressed": String(on),
+      },
+    });
+    star.toggleClass("is-on", on);
+    setIcon(star, "star");
+    // The card opens on a tap; the star must not.
+    star.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.host.setStars(toggleStar(this.host.stars(), path));
+      this.paintNow();
+    });
+    star.addEventListener("keydown", (event) => event.stopPropagation());
+  }
+
+  /** A folder as a tile like a cover: a folder glyph, its name and how many notebooks it holds. */
+  private folderCard(parent: HTMLElement, folder: FolderTile): void {
+    const card = parent.createDiv({
+      cls: "goodobsidian-library-card",
+      attr: { role: "button", tabindex: "0", "aria-label": folder.name },
+    });
+    const cover = card.createDiv({ cls: "goodobsidian-library-cover is-folder" });
+    setIcon(cover.createSpan({ cls: "goodobsidian-library-folder-glyph" }), "folder");
+    this.starButton(cover, folder.path, folder.name);
+    const caption = card.createDiv({ cls: "goodobsidian-library-caption" });
+    caption.createDiv({ cls: "goodobsidian-library-name", text: folder.name });
+    caption.createDiv({
+      cls: "goodobsidian-library-when",
+      text: `${folder.count} ${folder.count === 1 ? "notebook" : "notebooks"}`,
+    });
+    const open = (): void => this.openFolder(folder.path);
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
   }
 
   /** A cover with its caption. With `leftAt` (the index it was left on) it shows where the reader is. */
@@ -346,6 +430,7 @@ export class LibraryView extends ItemView {
     cover.style.setProperty("--gob-cover-hi", palette.sheenLight);
     cover.style.setProperty("--gob-cover-lo", palette.sheenDark);
     cover.createSpan({ cls: "goodobsidian-library-cover-title", text: entry.title });
+    this.starButton(cover, entry.path, entry.title);
     const caption = card.createDiv({ cls: "goodobsidian-library-caption" });
     caption.createDiv({ cls: "goodobsidian-library-name", text: entry.title });
     const when = whenText(entry.edited, Date.now());

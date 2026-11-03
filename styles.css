@@ -15065,44 +15065,61 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
   gap: 18px 14px;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
 }
-.goodobsidian-library-folders {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.goodobsidian-library-cover.is-folder {
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--interactive-accent) 13%, var(--background-secondary));
+  color: var(--interactive-accent);
 }
-button.goodobsidian-library-folder {
+.goodobsidian-library-cover.is-folder::before,
+.goodobsidian-library-cover.is-folder::after {
+  display: none;
+}
+.goodobsidian-library-folder-glyph {
+  display: inline-flex;
+}
+.goodobsidian-library-folder-glyph .svg-icon {
+  width: 46px;
+  height: 46px;
+  stroke-width: 1.5;
+}
+/* The star, top right of every notebook and folder. */
+button.goodobsidian-library-star {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  width: auto;
-  height: 32px;
-  padding: 0 12px 0 10px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 0;
-  border-radius: 16px;
+  border-radius: 50%;
   box-shadow: none;
-  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  background: rgba(0, 0, 0, 0.24);
+  color: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   transition:
     transform 0.2s var(--gob-ease),
     background-color 0.2s;
 }
-button.goodobsidian-library-folder:active {
-  transform: scale(0.96);
-}
-.goodobsidian-library-folder-icon {
-  display: inline-flex;
-  color: var(--interactive-accent);
-}
-.goodobsidian-library-folder-icon .svg-icon {
+button.goodobsidian-library-star .svg-icon {
   width: 15px;
   height: 15px;
 }
-.goodobsidian-library-folder-name {
-  font-weight: 600;
-  white-space: nowrap;
+button.goodobsidian-library-star.is-on {
+  color: #f5b82e;
 }
-.goodobsidian-library-folder-count {
-  color: var(--text-faint);
-  font-size: var(--font-ui-smaller);
+button.goodobsidian-library-star.is-on .svg-icon {
+  fill: currentColor;
+}
+button.goodobsidian-library-star:active {
+  transform: scale(0.88);
 }
 .goodobsidian-library-card {
   min-width: 0;
@@ -15210,9 +15227,6 @@ button.goodobsidian-library-folder:active {
       0 2px 4px rgba(0, 0, 0, 0.12),
       0 12px 22px -6px rgba(0, 0, 0, 0.34);
   }
-  button.goodobsidian-library-folder:hover {
-    background: color-mix(in srgb, var(--text-normal) 12%, transparent);
-  }
 }
 .goodobsidian-library-card:active .goodobsidian-library-cover {
   transform: scale(0.97);
@@ -15230,7 +15244,7 @@ button.goodobsidian-library-folder:active {
   }
   .goodobsidian-library-cover,
   .goodobsidian-library-search,
-  button.goodobsidian-library-folder {
+  button.goodobsidian-library-star {
     transition: none;
   }
 }

@@ -353,6 +353,8 @@ export interface GoodObsidianSettings {
   toolbarItems: BarItemId[];
   /** The tools shown nowhere, neither on the bar nor in its menu (`toolbar-layout.ts`). */
   toolbarOff: BarItemId[];
+  /** Notebooks and folders starred in the library, by vault path. Cleaned where read. */
+  libraryStars: string[];
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
@@ -518,6 +520,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   savedPens: defaultSavedPens(),
   toolbarItems: [...DEFAULT_BAR],
   toolbarOff: [],
+  libraryStars: [],
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",
   penCursor: "ink",

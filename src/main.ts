@@ -126,6 +126,7 @@ import {
 import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
+import { starsOf } from "./model/favorites";
 import { LibraryView } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
 import { PageEmbeds } from "./view/page-embed";
@@ -434,7 +435,15 @@ export default class GoodObsidianPlugin extends Plugin {
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
     this.registerView(
       VIEW_TYPE_LIBRARY,
-      (leaf) => new LibraryView(leaf, { newNotebook: () => this.openNewNotebookDialog() }),
+      (leaf) =>
+        new LibraryView(leaf, {
+          newNotebook: () => this.openNewNotebookDialog(),
+          stars: () => this.settings.libraryStars,
+          setStars: (stars) => {
+            this.settings.libraryStars = stars;
+            void this.saveSettings();
+          },
+        }),
     );
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
@@ -856,6 +865,7 @@ export default class GoodObsidianPlugin extends Plugin {
     const toolbar = normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
     this.settings.toolbarItems = toolbar.bar;
     this.settings.toolbarOff = toolbar.off;
+    this.settings.libraryStars = starsOf(this.settings.libraryStars);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
     if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
     // A Zoom box line step outside the slider's range is a hand-edited file,
