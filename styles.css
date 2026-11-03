@@ -15192,6 +15192,127 @@ button.goodobsidian-library-new:active {
     background: var(--interactive-accent-hover);
   }
 }
+/* Menus opened in the library: a row is a finger's size. */
+.menu.goodobsidian-library-menu {
+  min-width: 240px;
+  padding: 6px;
+}
+.menu.goodobsidian-library-menu .menu-item {
+  min-height: 48px;
+  padding: 0 14px;
+  gap: 12px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+.menu.goodobsidian-library-menu .menu-item-icon .svg-icon {
+  width: 20px;
+  height: 20px;
+}
+.menu.goodobsidian-library-menu .menu-separator {
+  margin: 6px 4px;
+}
+.goodobsidian-library-card.is-dragging {
+  opacity: 0.45;
+}
+.goodobsidian-library-card.is-drop .goodobsidian-library-cover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px var(--interactive-accent);
+}
+.goodobsidian-library-up.is-drop {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+/* List layout: one row per notebook, its cover small on the left. */
+.goodobsidian-library-grid.is-list {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+.is-list .goodobsidian-library-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 8px;
+  border-radius: 12px;
+}
+.is-list .goodobsidian-library-cover {
+  flex: none;
+  width: 44px;
+}
+.is-list .goodobsidian-library-cover-title {
+  display: none;
+}
+.is-list .goodobsidian-library-caption {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+.is-list .goodobsidian-library-folder-art {
+  width: 100%;
+  margin-top: 0;
+}
+.is-list .goodobsidian-library-folder-front .svg-icon {
+  display: none;
+}
+/* Picking several. */
+.goodobsidian-library.is-selecting .goodobsidian-library-star,
+.goodobsidian-library.is-selecting .goodobsidian-library-caret {
+  display: none;
+}
+.goodobsidian-library-card.is-selected .goodobsidian-library-cover::after {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--interactive-accent) 38%, transparent);
+  outline: 3px solid var(--interactive-accent);
+  outline-offset: -3px;
+}
+.is-list .goodobsidian-library-card.is-selected {
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+}
+.goodobsidian-library-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 20px 12px;
+  padding: 8px 10px 8px 16px;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  box-shadow:
+    0 0 0 0.5px var(--background-modifier-border),
+    0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.goodobsidian-library-bar.is-hidden {
+  display: none;
+}
+.goodobsidian-library-bar-count {
+  flex: 1;
+  font-weight: 600;
+}
+button.goodobsidian-library-bar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  box-shadow: none;
+}
+button.goodobsidian-library-bar-button.is-danger {
+  color: var(--text-error);
+}
+button.goodobsidian-library-bar-button:disabled {
+  opacity: 0.4;
+}
+button.goodobsidian-library-bar-done {
+  height: 40px;
+  border-radius: 999px;
+  padding: 0 18px;
+}
 .goodobsidian-library-swatch {
   display: inline-block;
   width: 14px;

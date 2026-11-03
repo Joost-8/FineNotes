@@ -32,6 +32,8 @@ export interface LibraryEntry {
   covered: boolean;
   /** Last edit, ms since the epoch. */
   edited: number;
+  /** When the file was made, ms since the epoch; the library fills it from the file. */
+  created?: number;
 }
 
 /** A notebook the library has not read yet: its file's facts only. */
@@ -169,18 +171,24 @@ export function crumbs(folder: string): LibraryFolder[] {
   return parts.map((name, i) => ({ name, path: parts.slice(0, i + 1).join("/"), count: 0 }));
 }
 
-export type LibrarySort = "edited" | "name" | "pages";
+export type LibrarySort = "edited" | "created" | "name" | "pages";
 
 /** A sorted copy: newest first, A to Z, or most pages first. Ties fall back to the name. */
-export function sortEntries(entries: readonly LibraryEntry[], by: LibrarySort): LibraryEntry[] {
+export function sortEntries(
+  entries: readonly LibraryEntry[],
+  by: LibrarySort,
+  reverse = false,
+): LibraryEntry[] {
   const name = (a: LibraryEntry, b: LibraryEntry): number =>
     a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
   const order: Record<LibrarySort, (a: LibraryEntry, b: LibraryEntry) => number> = {
     edited: (a, b) => b.edited - a.edited || name(a, b),
+    created: (a, b) => (b.created ?? b.edited) - (a.created ?? a.edited) || name(a, b),
     name,
     pages: (a, b) => b.pages - a.pages || name(a, b),
   };
-  return [...entries].sort(order[by]);
+  const sorted = [...entries].sort(order[by]);
+  return reverse ? sorted.reverse() : sorted;
 }
 
 /** Notebooks whose title or folder holds every word of `query`; all of them for an empty query. */

@@ -21,7 +21,6 @@
 
 import {
   ItemView,
-  Keymap,
   Menu,
   Notice,
   type TAbstractFile,
@@ -31,7 +30,12 @@ import {
   type WorkspaceLeaf,
   setIcon,
 } from "obsidian";
-import { ICON_LIBRARY, NOTEBOOK_FILE_SUFFIX, VIEW_TYPE_LIBRARY } from "../constants";
+import {
+  ICON_IMPORT_NOTEBOOK,
+  NOTEBOOK_FILE_SUFFIX,
+  VIEW_TYPE_INK,
+  VIEW_TYPE_LIBRARY,
+} from "../constants";
 import { coverPalette } from "../model/cover";
 import {
   DEFAULT_FOLDER_COLOR,
@@ -52,6 +56,7 @@ import { FolderSuggestModal } from "./folder-suggest";
 import { RenameModal } from "./rename-modal";
 import { pickImageFile } from "./image-import";
 import { VaultPdfSuggestModal } from "./pdf-import-modal";
+import { INBOX_FOLDER } from "../model/inbox";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
 import {
@@ -76,6 +81,8 @@ export interface LibraryHost {
   /** The New notebook / New board dialogs, made in `folder` ("" the root). */
   newNotebook(folder: string): void;
   newBoard(folder: string): void;
+  /** The import dialog for Goodnotes, Notability and other apps, into `folder`. */
+  importFromApp(folder: string): void;
   /** A notebook whose pages are the chosen PDF's, made in `folder`. */
   importPdf(
     source: { kind: "file"; file: File } | { kind: "vault"; file: TFile },
@@ -98,10 +105,11 @@ interface FolderTile {
   count: number;
 }
 
-const SORTS: ReadonlyArray<{ by: LibrarySort; label: string; icon: string }> = [
-  { by: "edited", label: "Last edited", icon: "clock" },
-  { by: "name", label: "Name", icon: "arrow-down-a-z" },
-  { by: "pages", label: "Pages", icon: "files" },
+const SORTS: ReadonlyArray<{ by: LibrarySort; label: string }> = [
+  { by: "created", label: "Date created" },
+  { by: "edited", label: "Last edited" },
+  { by: "name", label: "Name" },
+  { by: "pages", label: "Pages" },
 ];
 
 /** How many notebooks the Continue strip shows. */
@@ -114,9 +122,16 @@ interface Read {
 }
 
 export class LibraryView extends ItemView {
-  override icon = ICON_LIBRARY;
+  override icon = "house";
   private folder = "";
   private sort: LibrarySort = "edited";
+  /** The sort turned around: oldest first, Z to A, fewest pages first. */
+  private reverse = false;
+  private layout: "grid" | "list" = "grid";
+  /** Picking notebooks and folders for a Move, Star or Delete of several at once. */
+  private selecting = false;
+  private readonly selected = new Set<string>();
+  private barEl!: HTMLElement;
   private query = "";
   private readonly reads = new Map<string, Read>();
   private reading = false;
@@ -142,15 +157,22 @@ export class LibraryView extends ItemView {
   }
 
   getDisplayText(): string {
-    return this.folder === "" ? "Notebooks" : (this.folder.split("/").pop() ?? "Notebooks");
+    return "Home";
   }
 
   override getState(): Record<string, unknown> {
-    return { folder: this.folder, sort: this.sort };
+    return { folder: this.folder, sort: this.sort, reverse: this.reverse, layout: this.layout };
   }
 
   override async setState(state: unknown, result: ViewStateResult): Promise<void> {
-    const saved = (state ?? {}) as { folder?: unknown; sort?: unknown };
+    const saved = (state ?? {}) as {
+      folder?: unknown;
+      sort?: unknown;
+      reverse?: unknown;
+      layout?: unknown;
+    };
+    this.reverse = saved.reverse === true;
+    if (saved.layout === "list" || saved.layout === "grid") this.layout = saved.layout;
     if (typeof saved.folder === "string") this.folder = saved.folder;
     if (SORTS.some((s) => s.by === saved.sort)) this.sort = saved.sort as LibrarySort;
     this.paintNow();
@@ -168,6 +190,7 @@ export class LibraryView extends ItemView {
       attr: { "aria-label": "Up one folder" },
     });
     setIcon(this.upEl, "arrow-left");
+    this.makeDropTarget(this.upEl, () => this.folder.split("/").slice(0, -1).join("/"));
     this.upEl.addEventListener("click", () =>
       this.openFolder(this.folder.split("/").slice(0, -1).join("/")),
     );
@@ -199,6 +222,7 @@ export class LibraryView extends ItemView {
     add.addEventListener("click", (event) => this.openNewMenu(event));
 
     this.bodyEl = root.createDiv({ cls: "goodobsidian-library-body" });
+    this.barEl = root.createDiv({ cls: "goodobsidian-library-bar is-hidden" });
 
     const touched = (file: TAbstractFile): void => {
       if (file instanceof TFile && file.name.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX))
@@ -252,14 +276,22 @@ export class LibraryView extends ItemView {
   private notebookFiles(): TFile[] {
     return this.app.vault
       .getFiles()
-      .filter((f) => f.extension === "md" && f.name.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX));
+      .filter(
+        (f) =>
+          f.extension === "md" &&
+          f.name.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX) &&
+          !f.path.startsWith(`${INBOX_FOLDER}/`),
+      );
   }
 
   private entries(): LibraryEntry[] {
     return this.notebookFiles().map((file) => {
       const read = this.reads.get(file.path);
       const fresh = read && read.mtime === file.stat.mtime && read.size === file.stat.size;
-      return fresh ? read.entry : (read?.entry ?? placeholderEntry(file.path, file.stat.mtime));
+      const entry = fresh
+        ? read.entry
+        : (read?.entry ?? placeholderEntry(file.path, file.stat.mtime));
+      return { ...entry, created: file.stat.ctime };
     });
   }
 
@@ -339,7 +371,7 @@ export class LibraryView extends ItemView {
     }
 
     if (searching) {
-      const found = sortEntries(searchEntries(all, this.query), this.sort);
+      const found = sortEntries(searchEntries(all, this.query), this.sort, this.reverse);
       this.grid(found, found.length === 0 ? "No notebook matches." : "Results");
       return;
     }
@@ -358,7 +390,7 @@ export class LibraryView extends ItemView {
         .filter((f): f is FolderTile => f !== null);
       if (books.length + folders.length > 0) {
         this.label("Favorites");
-        const row = this.bodyEl.createDiv({ cls: "goodobsidian-library-grid" });
+        const row = this.bodyEl.createDiv({ cls: this.gridClass() });
         for (const folder of folders) {
           this.folderCard(row, folder);
           shownFolders.add(folder.path);
@@ -389,13 +421,16 @@ export class LibraryView extends ItemView {
     );
     if (folders.length > 0) {
       this.label("Folders");
-      const row = this.bodyEl.createDiv({ cls: "goodobsidian-library-grid" });
+      const row = this.bodyEl.createDiv({ cls: this.gridClass() });
       for (const folder of starredFirst(folders, stars, (f) => f.path))
         this.folderCard(row, folder);
     }
     const rest = here.notebooks.filter((e) => !shown.has(e.path));
     if (rest.length > 0) {
-      this.grid(sortEntries(rest, this.sort), SORTS.find((s) => s.by === this.sort)?.label ?? "");
+      this.grid(
+        sortEntries(rest, this.sort, this.reverse),
+        SORTS.find((s) => s.by === this.sort)?.label ?? "",
+      );
     }
   }
 
@@ -410,6 +445,7 @@ export class LibraryView extends ItemView {
         (c): c is TFolder =>
           c instanceof TFolder &&
           !c.name.startsWith(".") &&
+          c.path !== INBOX_FOLDER &&
           !holdsFiles(c) &&
           !listed.some((l) => l.path === c.path),
       )
@@ -422,7 +458,7 @@ export class LibraryView extends ItemView {
 
   private grid(entries: LibraryEntry[], label: string): void {
     this.label(label);
-    const grid = this.bodyEl.createDiv({ cls: "goodobsidian-library-grid" });
+    const grid = this.bodyEl.createDiv({ cls: this.gridClass() });
     for (const entry of starredFirst(entries, this.host.stars(), (e) => e.path)) {
       this.card(grid, entry);
     }
@@ -480,7 +516,9 @@ export class LibraryView extends ItemView {
           ? "Empty"
           : `${folder.count} ${folder.count === 1 ? "notebook" : "notebooks"}`,
     });
-    const open = (): void => this.openFolder(folder.path);
+    card.toggleClass("is-selected", this.selected.has(folder.path));
+    const open = (): void =>
+      this.selecting ? this.toggleSelected(card, folder.path) : this.openFolder(folder.path);
     card.addEventListener("click", open);
     card.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -488,6 +526,8 @@ export class LibraryView extends ItemView {
         open();
       }
     });
+    this.makeDraggable(card, folder.path);
+    this.makeDropTarget(card, folder.path);
     card.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       this.openFolderMenu(event, folder);
@@ -606,17 +646,17 @@ export class LibraryView extends ItemView {
       });
     }
 
-    const open = (event: MouseEvent | KeyboardEvent): void => {
-      const file = this.app.vault.getFileByPath(entry.path);
-      if (file) void this.app.workspace.getLeaf(Keymap.isModEvent(event)).openFile(file);
-    };
+    card.toggleClass("is-selected", this.selected.has(entry.path));
+    const open = (): void =>
+      this.selecting ? this.toggleSelected(card, entry.path) : this.openNotebook(entry.path);
     card.addEventListener("click", open);
     card.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        open(event);
+        open();
       }
     });
+    this.makeDraggable(card, entry.path);
     card.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       this.openCardMenu(event, entry);
@@ -624,6 +664,87 @@ export class LibraryView extends ItemView {
   }
 
   // --- Menus and navigation -----------------------------------------------------
+
+  /**
+   * A notebook in a tab of its own, or the tab it is already in: the library
+   * stays where it is, so it is always one tap back.
+   */
+  private openNotebook(path: string): void {
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return;
+    let existing: WorkspaceLeaf | null = null;
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf.view.getViewType() !== VIEW_TYPE_INK) return;
+      if ((leaf.view as { file?: TFile | null }).file?.path === path) existing = leaf;
+    });
+    if (existing) void this.app.workspace.revealLeaf(existing);
+    else void this.app.workspace.getLeaf("tab").openFile(file);
+  }
+
+  /** A menu with room for a finger: every row is tall (styles.css). */
+  private newMenu(): Menu {
+    const menu = new Menu();
+    (menu as unknown as { dom?: HTMLElement }).dom?.addClass("goodobsidian-library-menu");
+    return menu;
+  }
+
+  // --- Dragging into folders ----------------------------------------------------
+
+  /** A notebook or folder lifted by a drag; dropped on a folder tile it moves in. */
+  private dragging: string | null = null;
+
+  private makeDraggable(card: HTMLElement, path: string): void {
+    card.draggable = true;
+    card.addEventListener("dragstart", (event) => {
+      this.dragging = path;
+      event.dataTransfer?.setData("text/plain", path);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+      card.addClass("is-dragging");
+    });
+    card.addEventListener("dragend", () => {
+      this.dragging = null;
+      card.removeClass("is-dragging");
+      this.contentEl
+        .querySelectorAll(".is-drop")
+        .forEach((el) => (el as HTMLElement).removeClass("is-drop"));
+    });
+  }
+
+  /** Whether what is being dragged may go into `folder`. */
+  private canDropInto(folder: string): boolean {
+    const path = this.dragging;
+    if (path === null) return false;
+    if (folderOf(path) === folder) return false;
+    return folder !== path && !folder.startsWith(`${path}/`);
+  }
+
+  private makeDropTarget(el: HTMLElement, where: string | (() => string)): void {
+    const dest = (): string => (typeof where === "function" ? where() : where);
+    el.addEventListener("dragover", (event) => {
+      if (!this.canDropInto(dest())) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      el.addClass("is-drop");
+    });
+    el.addEventListener("dragleave", () => el.removeClass("is-drop"));
+    el.addEventListener("drop", (event) => {
+      event.preventDefault();
+      el.removeClass("is-drop");
+      const folder = dest();
+      const path = this.dragging;
+      const allowed = this.canDropInto(folder);
+      this.dragging = null;
+      if (path === null || !allowed) return;
+      const item = this.app.vault.getAbstractFileByPath(path);
+      if (!item) return;
+      const target = folder === "" ? item.name : `${folder}/${item.name}`;
+      if (this.app.vault.getAbstractFileByPath(target)) {
+        new Notice(`"${item.name}" already exists there.`);
+        return;
+      }
+      void this.app.fileManager.renameFile(item, target);
+    });
+  }
 
   private openFolder(folder: string): void {
     this.folder = folder;
@@ -636,27 +757,153 @@ export class LibraryView extends ItemView {
     this.app.workspace.requestSaveLayout();
   }
 
+  /** The view menu: pick several, grid or list, and what the order follows (a second tap turns it around). */
   private openSortMenu(event: MouseEvent): void {
-    const menu = new Menu();
-    for (const option of SORTS) {
+    const menu = this.newMenu();
+    menu.addItem((item) =>
+      item
+        .setTitle(this.selecting ? "Stop selecting" : "Select items")
+        .setIcon("circle-check")
+        .onClick(() => this.setSelecting(!this.selecting)),
+    );
+    menu.addSeparator();
+    for (const [layout, label, icon] of [
+      ["grid", "Grid", "layout-grid"],
+      ["list", "List", "list"],
+    ] as const) {
       menu.addItem((item) =>
         item
-          .setTitle(option.label)
-          .setIcon(option.icon)
-          .setChecked(this.sort === option.by)
+          .setTitle(label)
+          .setIcon(icon)
+          .setChecked(this.layout === layout)
           .onClick(() => {
-            this.sort = option.by;
+            this.layout = layout;
             this.paintNow();
             this.app.workspace.requestSaveLayout();
           }),
       );
     }
-    menu.showAtMouseEvent(event);
+    menu.addSeparator();
+    for (const option of SORTS) {
+      const current = this.sort === option.by;
+      menu.addItem((item) => {
+        item.setTitle(option.label).setChecked(current);
+        if (current) item.setIcon(this.reverse ? "chevron-up" : "chevron-down");
+        item.onClick(() => {
+          this.reverse = current ? !this.reverse : false;
+          this.sort = option.by;
+          this.paintNow();
+          this.app.workspace.requestSaveLayout();
+        });
+      });
+    }
+    this.show(menu, event);
+  }
+
+  private gridClass(): string {
+    return this.layout === "list"
+      ? "goodobsidian-library-grid is-list"
+      : "goodobsidian-library-grid";
+  }
+
+  // --- Picking several ----------------------------------------------------------
+
+  private setSelecting(on: boolean): void {
+    this.selecting = on;
+    this.selected.clear();
+    this.contentEl.toggleClass("is-selecting", on);
+    this.syncBar();
+    this.paintNow();
+  }
+
+  /** A tap in picking mode: the item is in or out; the card shows a tick. */
+  private toggleSelected(card: HTMLElement, path: string): void {
+    if (this.selected.has(path)) this.selected.delete(path);
+    else this.selected.add(path);
+    card.toggleClass("is-selected", this.selected.has(path));
+    this.syncBar();
+  }
+
+  /** The bar of what can be done with the picked items; shown only while picking. */
+  private syncBar(): void {
+    const bar = this.barEl;
+    bar.empty();
+    bar.toggleClass("is-hidden", !this.selecting);
+    if (!this.selecting) return;
+    const count = this.selected.size;
+    bar.createSpan({
+      cls: "goodobsidian-library-bar-count",
+      text: count === 0 ? "Select items" : `${count} selected`,
+    });
+    const act = (label: string, icon: string, run: () => void, danger = false): void => {
+      const button = bar.createEl("button", {
+        cls: `clickable-icon goodobsidian-library-bar-button${danger ? " is-danger" : ""}`,
+        attr: { type: "button", "aria-label": label },
+      });
+      setIcon(button.createSpan(), icon);
+      button.createSpan({ text: label });
+      button.disabled = count === 0;
+      button.addEventListener("click", run);
+    };
+    act("Star", "star", () => this.starSelected());
+    act("Move", "folder-input", () => this.moveSelected());
+    act("Delete", "trash-2", () => this.deleteSelected(), true);
+    const done = bar.createEl("button", {
+      cls: "mod-cta goodobsidian-library-bar-done",
+      text: "Done",
+    });
+    done.addEventListener("click", () => this.setSelecting(false));
+  }
+
+  private starSelected(): void {
+    let stars = [...this.host.stars()];
+    const all = [...this.selected].every((p) => stars.includes(p));
+    for (const path of this.selected) {
+      stars = all
+        ? stars.filter((x) => x !== path)
+        : stars.includes(path)
+          ? stars
+          : [...stars, path];
+    }
+    this.host.setStars(stars);
+    this.setSelecting(false);
+  }
+
+  private moveSelected(): void {
+    new FolderSuggestModal(
+      this.app,
+      (dest) => {
+        const dir = dest === "/" ? "" : dest;
+        for (const path of [...this.selected]) {
+          const item = this.app.vault.getAbstractFileByPath(path);
+          if (!item || folderOf(path) === dir) continue;
+          if (item instanceof TFolder && (dir === item.path || dir.startsWith(`${item.path}/`)))
+            continue;
+          const target = dir ? `${dir}/${item.name}` : item.name;
+          if (this.app.vault.getAbstractFileByPath(target)) continue;
+          void this.app.fileManager.renameFile(item, target);
+        }
+        this.setSelecting(false);
+      },
+      `Move ${this.selected.size} items to…`,
+      this.folder,
+    ).open();
+  }
+
+  private deleteSelected(): void {
+    const paths = [...this.selected];
+    void (async () => {
+      for (const path of paths) {
+        const item = this.app.vault.getAbstractFileByPath(path);
+        if (item) await this.app.fileManager.promptForDeletion(item);
+      }
+      this.setSelecting(false);
+    })();
   }
 
   /** What the New button offers: a notebook, a board, a PDF's pages as a notebook, a folder. */
   private openNewMenu(event: MouseEvent): void {
-    const menu = new Menu();
+    const menu = this.newMenu();
     menu.addItem((item) =>
       item
         .setTitle("New notebook")
@@ -677,6 +924,12 @@ export class LibraryView extends ItemView {
     );
     menu.addItem((item) =>
       item
+        .setTitle("Import from another app…")
+        .setIcon(ICON_IMPORT_NOTEBOOK)
+        .onClick(() => this.host.importFromApp(this.folder)),
+    );
+    menu.addItem((item) =>
+      item
         .setTitle("New folder")
         .setIcon("folder-plus")
         .onClick(() => this.newFolder()),
@@ -686,7 +939,7 @@ export class LibraryView extends ItemView {
 
   /** A PDF from the device or from the vault. */
   private choosePdf(event: MouseEvent): void {
-    const menu = new Menu();
+    const menu = this.newMenu();
     menu.addItem((item) =>
       item
         .setTitle("From files")
@@ -712,16 +965,22 @@ export class LibraryView extends ItemView {
 
   /** A new, empty folder here; it shows as a tile until something is put in it. */
   private newFolder(): void {
-    new RenameModal(this.app, "New folder", (typed) => {
-      const name = cleanName(typed);
-      if (name === "") return;
-      const path = this.folder === "" ? name : `${this.folder}/${name}`;
-      if (this.app.vault.getAbstractFileByPath(path)) {
-        new Notice(`"${name}" already exists here.`);
-        return;
-      }
-      void this.app.vault.createFolder(path).then(() => this.refreshSoon());
-    }).open();
+    new RenameModal(
+      this.app,
+      "New folder",
+      (typed) => {
+        const name = cleanName(typed);
+        if (name === "") return;
+        const path = this.folder === "" ? name : `${this.folder}/${name}`;
+        if (this.app.vault.getAbstractFileByPath(path)) {
+          new Notice(`"${name}" already exists here.`);
+          return;
+        }
+        void this.app.vault.createFolder(path).then(() => this.refreshSoon());
+      },
+      "New folder",
+      "Create",
+    ).open();
   }
 
   /** Where a menu opened by a tap on a button sits: under it. */
@@ -738,7 +997,7 @@ export class LibraryView extends ItemView {
   private openCardMenu(event: MouseEvent | KeyboardEvent, entry: LibraryEntry): void {
     const file = this.app.vault.getFileByPath(entry.path);
     if (!file) return;
-    const menu = new Menu();
+    const menu = this.newMenu();
     menu.addItem((item) =>
       item
         .setTitle("Rename")
@@ -786,7 +1045,7 @@ export class LibraryView extends ItemView {
   private openFolderMenu(event: MouseEvent | KeyboardEvent, folder: FolderTile): void {
     const target = this.app.vault.getFolderByPath(folder.path);
     if (!target) return;
-    const menu = new Menu();
+    const menu = this.newMenu();
     menu.addItem((item) =>
       item
         .setTitle("Customize color…")
@@ -829,7 +1088,7 @@ export class LibraryView extends ItemView {
   /** The colours as a menu of their own, the current one ticked. */
   private chooseColor(event: MouseEvent | KeyboardEvent, path: string): void {
     const now = this.host.folderStyles()[path]?.color ?? DEFAULT_FOLDER_COLOR;
-    const menu = new Menu();
+    const menu = this.newMenu();
     for (const option of FOLDER_COLORS) {
       menu.addItem((item) => {
         item
@@ -846,7 +1105,7 @@ export class LibraryView extends ItemView {
 
   private chooseIcon(event: MouseEvent | KeyboardEvent, path: string): void {
     const now = this.host.folderStyles()[path]?.icon ?? DEFAULT_FOLDER_ICON;
-    const menu = new Menu();
+    const menu = this.newMenu();
     for (const option of FOLDER_ICONS) {
       menu.addItem((item) =>
         item

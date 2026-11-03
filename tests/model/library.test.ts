@@ -119,6 +119,16 @@ describe("sortEntries", () => {
     sortEntries(list, "name");
     expect(list).toEqual(copy);
   });
+
+  it("sorts by creation, and turns any order around", () => {
+    const made = [
+      { ...entry("old.notebook.md", 9), created: 1 },
+      { ...entry("new.notebook.md", 2), created: 5 },
+    ];
+    expect(sortEntries(made, "created").map((e) => e.title)).toEqual(["new", "old"]);
+    expect(sortEntries(made, "created", true).map((e) => e.title)).toEqual(["old", "new"]);
+    expect(sortEntries(made, "name", true).map((e) => e.title)).toEqual(["old", "new"]);
+  });
 });
 
 describe("searchEntries", () => {

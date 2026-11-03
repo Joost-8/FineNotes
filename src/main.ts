@@ -443,6 +443,7 @@ export default class GoodObsidianPlugin extends Plugin {
         new LibraryView(leaf, {
           newNotebook: (folder) => this.openNewNotebookDialog(folder),
           newBoard: (folder) => this.openNewNotebookDialog(folder, "endless"),
+          importFromApp: (folder) => this.openImportNotebook(folder),
           importPdf: (source, folder) => {
             const name = source.file.name.replace(/\.pdf$/i, "");
             void this.createNotebookFromPdfBytes(
@@ -643,7 +644,11 @@ export default class GoodObsidianPlugin extends Plugin {
   private async openLibrary(): Promise<void> {
     const open = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
     const leaf = open ?? this.app.workspace.getLeaf("tab");
-    if (!open) await leaf.setViewState({ type: VIEW_TYPE_LIBRARY, active: true });
+    if (!open) {
+      await leaf.setViewState({ type: VIEW_TYPE_LIBRARY, active: true });
+      // Pinned: a link or a notebook never replaces it.
+      leaf.setPinned(true);
+    }
     await this.app.workspace.revealLeaf(leaf);
   }
 
