@@ -10,6 +10,20 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Scanned PDF pages are read on your device.** A PDF page that is a picture
+  of printed text (a scan, or a scan with only a page number on it) now gets
+  search, the text-snapping highlighter and Copy text, as PDFs with real text
+  do. The reader is PaddleOCR PP-OCRv5 (mobile) running with ONNX Runtime Web
+  in a background worker, on iPhone, iPad, Android and desktop. It is a
+  35.7 MB download that is offered the first time a scanned page needs it;
+  nothing downloads before you agree, and you can turn it off with _Read
+  scanned PDF pages_ (Pages and notebooks). It reads only PDFs open in a
+  notebook, the page in view first, then its neighbours, then the rest of
+  that PDF while you are not writing, one page at a time. Messy handwriting
+  is left alone: only words the reader is sure of are used. What was read is
+  kept once per PDF in the plugin folder (`ocr`), so it syncs and a second
+  device needs neither the download nor a second reading. _Re-read scanned
+  pages of this PDF_ in the command palette reads a PDF again.
 - **Ask AI on an empty lasso.** A lasso drawn round nothing offers Ask AI
   about that patch of page beside Screenshot, while an AI service is set up.
 - **Dock tool options on every side.** With the tool bar at the left or

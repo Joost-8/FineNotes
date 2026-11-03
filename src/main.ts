@@ -190,6 +190,9 @@ import { GrapeFiles } from "./view/grape-files";
 import { StartupLog } from "./view/startup-log";
 import { DeviceTranscriber } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
+import { OcrService } from "./view/ocr-service";
+import { OcrStatus } from "./view/ocr-status";
+import { OCR_MODEL } from "./recognition/ocr/ocr-model";
 import { HandwritingReader } from "./view/handwriting";
 import { ReadingGuard } from "./recognition/reading-guard";
 import {
@@ -321,6 +324,17 @@ export default class GoodObsidianPlugin extends Plugin {
       model: this.settings.speechModel,
       language: this.settings.speechLanguage,
     }),
+  });
+
+  /**
+   * Reading scanned PDF pages on this device, for the notebooks that have
+   * them open (ocr-service.ts); its model is offered when first needed.
+   */
+  readonly ocr = new OcrService({
+    app: this.app,
+    pluginDir: () => this.pluginDir,
+    models: this.models,
+    enabled: () => this.settings.ocrScannedPdfs !== false,
   });
 
   /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
@@ -530,8 +544,11 @@ export default class GoodObsidianPlugin extends Plugin {
       this.learner.dispose();
       this.handwriting.dispose();
       this.speech.dispose();
+      this.ocr.dispose();
       this.models.dispose();
     });
+    const ocrStatus = new OcrStatus(this.ocr);
+    this.register(() => ocrStatus.dispose());
     // A release that still bundles Grape writes it to the handwriting folder,
     // once, in the background and well after startup (grape-files.ts).
     this.app.workspace.onLayoutReady(() => {
@@ -750,6 +767,9 @@ export default class GoodObsidianPlugin extends Plugin {
       "Show this page read on this device",
       (view) => this.readOnDevice(view),
       () => this.settings.handwritingOnDevice !== false,
+    );
+    this.notebookCommand("reread-scanned-pages", "Re-read scanned pages of this PDF", (view) =>
+      view.rereadScannedPages(),
     );
     this.notebookCommand("fit-reset-view", "Fit the page and go to the top", (view) =>
       view.resetView(),
@@ -982,6 +1002,7 @@ export default class GoodObsidianPlugin extends Plugin {
   modelReleased(id: string): void {
     if (id === "grape" || id === "grape-2") this.handwriting.dispose();
     if (id.startsWith("whisper-")) this.speech.release();
+    if (id === OCR_MODEL.id) this.ocr.releaseModel();
   }
 
   /** Switch corrections (underlined misreads) on or off, and show it in every open notebook. */

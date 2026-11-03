@@ -1526,6 +1526,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           (s) => this.drawPaperWidth(s),
           ["canvas size", "page width"],
         ),
+        this.info(
+          toggle("ocrScannedPdfs", "Read scanned PDF pages (on-device OCR)", "", [
+            "ocr",
+            "scan",
+            "scanned",
+            "pdf",
+            "text",
+            "search",
+            "highlighter",
+            "copy text",
+          ]),
+          "A PDF page that is a picture of text (a scan) has no text to search, snap the highlighter to or copy. With this on, FineNotes reads such pages on this device, only for PDFs open in a notebook: the page in view first, then the rest of that PDF while you are not writing. Printed text only; messy handwriting is left alone. Nothing downloads until you agree: the first scanned page offers the reader model (Models on this device). What was read is kept in the plugin folder (ocr) and syncs with your vault. “Re-read scanned pages of this PDF” in the command palette reads a PDF again.",
+        ),
         this.more("pages", "Folders, templates, file explorer"),
         this.info(
           drawnRow("New notebooks go in", "", (s) => this.drawNotebookFolder(s), [

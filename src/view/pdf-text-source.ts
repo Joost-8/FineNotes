@@ -12,9 +12,15 @@
  * It opens its own read-only copy of each PDF it is asked about, through
  * Obsidian's bundled pdf.js (`loadPdfJs`), so it is independent of where the
  * pages are rasterised. The parsing runs in pdf.js's own worker; only the
- * text items cross to this thread. A page that fails to read, or has no text
- * (a scan), is kept as empty: nothing snaps, and the highlighter stays
- * freehand there.
+ * text items cross to this thread. A page that fails to read is kept as
+ * empty: nothing snaps, and the highlighter stays freehand there.
+ *
+ * A page with no text of its own, or hardly any (a scan, perhaps with a page
+ * number on it), is read by OCR on this device when that is on
+ * (`ocr-service.ts`): what was read before comes from the cache at once and
+ * is merged with the page's own text (its own always wins); otherwise the
+ * page is queued, stays as it is meanwhile, and is read again, with the OCR
+ * text, when the service has read it (`ocrReady`).
  */
 
 import { type App, type TFile, loadPdfJs } from "obsidian";
@@ -34,6 +40,8 @@ import {
   readLinks,
 } from "../canvas/pdf-links";
 import { type PageGeometry, type PdfBackdrop, pdfFrameOf } from "../model/document";
+import { mergedItems, needsOcr } from "../recognition/ocr/ocr-words";
+import type { OcrOwner, OcrService } from "./ocr-service";
 
 // The slice of pdf.js used here (`loadPdfJs()` is typed `Promise<any>`).
 interface TextContentLike {
@@ -119,7 +127,7 @@ function pageKey(path: string, page: number): string {
   return `${path}:${page}`;
 }
 
-export class PdfTextCache {
+export class PdfTextCache implements OcrOwner {
   /** A page's text was read: whatever waits on it can look again. */
   onReady: ((path: string, page: number) => void) | null = null;
 
@@ -138,8 +146,15 @@ export class PdfTextCache {
   private held = false;
   private lib: Promise<PdfJsLike> | null = null;
   private destroyed = false;
+  /** Pages queued for OCR, by key: the backdrop to read again when they were read. */
+  private readonly scanned = new Map<string, PdfBackdrop>();
+  /** Pages whose OCR text arrived while they were being read: read again afterwards. */
+  private readonly again = new Set<string>();
 
-  constructor(private readonly app: App) {}
+  constructor(
+    private readonly app: App,
+    private readonly ocr: OcrService | null = null,
+  ) {}
 
   /**
    * The page's text laid out on a page of `geometry`, or null when it has
@@ -192,11 +207,18 @@ export class PdfTextCache {
     return this.peek(backdrop, geometry) ?? { chars: [], lines: [] };
   }
 
-  /** Read the page's text in the background, unless it is read or being read. */
-  request(backdrop: PdfBackdrop): void {
+  /**
+   * Read the page's text in the background, unless it is read or being read
+   * (`force`: read it again, keeping what is known until the new text lands).
+   */
+  request(backdrop: PdfBackdrop, force = false): void {
     if (this.destroyed) return;
     const key = pageKey(backdrop.path, backdrop.page);
-    if (this.pages.has(key) || this.inflight.has(key)) return;
+    if (this.inflight.has(key)) {
+      if (force) this.again.add(key);
+      return;
+    }
+    if (this.pages.has(key) && !force) return;
     if (this.failedRecently(key) || this.failedRecently(backdrop.path)) return;
     if (this.held) {
       this.deferred.set(key, backdrop);
@@ -218,11 +240,37 @@ export class PdfTextCache {
       this.store(key, text);
       this.wake(key);
       this.onReady?.(backdrop.path, backdrop.page);
+      if (this.again.delete(key)) this.request(backdrop, true);
     });
+  }
+
+  /**
+   * The notebook is on this page: its text, and its neighbours' (`near`),
+   * are read now, so a scanned page is queued for OCR in the right order.
+   */
+  focus(backdrop: PdfBackdrop, near: readonly PdfBackdrop[] = []): void {
+    if (this.destroyed) return;
+    this.ocr?.focus(backdrop.path, backdrop.page);
+    for (const b of [backdrop, ...near]) this.request(b);
+  }
+
+  /** OCR read a page this cache queued: read its text again, with it. */
+  ocrReady(path: string, page: number): void {
+    const key = pageKey(path, page);
+    const backdrop = this.scanned.get(key);
+    if (backdrop) this.request(backdrop, true);
+  }
+
+  /** The OCR service asks about a page it was not told of: read it, so a scan is found. */
+  async ocrProbe(path: string, page: number): Promise<void> {
+    if (this.destroyed || this.pages.has(pageKey(path, page))) return;
+    const text = await this.read({ kind: "pdf", path, page }).catch(() => null);
+    if (text && !this.destroyed) this.store(pageKey(path, page), text);
   }
 
   /** While the pen writes nothing is read; letting go reads what was asked for meanwhile. */
   setHeld(held: boolean): void {
+    this.ocr?.hold(this, held);
     if (this.held === held) return;
     this.held = held;
     if (held) return;
@@ -239,6 +287,8 @@ export class PdfTextCache {
     for (const key of [...this.pages.keys()]) if (key.startsWith(prefix)) this.pages.delete(key);
     for (const key of [...this.layouts.keys()])
       if (key.startsWith(prefix)) this.layouts.delete(key);
+    for (const key of [...this.scanned.keys()])
+      if (key.startsWith(prefix)) this.scanned.delete(key);
     const doc = this.documents.get(path);
     this.documents.delete(path);
     void doc?.then((d) => d?.destroy()).catch(() => undefined);
@@ -246,6 +296,9 @@ export class PdfTextCache {
 
   destroy(): void {
     this.destroyed = true;
+    this.ocr?.release(this);
+    this.scanned.clear();
+    this.again.clear();
     this.deferred.clear();
     for (const doc of this.documents.values()) {
       void doc.then((d) => d?.destroy()).catch(() => undefined);
@@ -266,6 +319,10 @@ export class PdfTextCache {
 
   private store(key: string, text: PageText): void {
     this.pages.set(key, text);
+    // A page read again (with OCR text) is laid out afresh.
+    for (const layoutKey of [...this.layouts.keys()]) {
+      if (layoutKey.startsWith(`${key}:`)) this.layouts.delete(layoutKey);
+    }
     while (this.pages.size > MAX_PAGES) {
       const oldest = this.pages.keys().next().value;
       if (oldest === undefined) break;
@@ -298,15 +355,48 @@ export class PdfTextCache {
       if (t.length < 6 || !(viewport.width > 0) || !(viewport.height > 0)) return EMPTY;
       const content = await page.getTextContent();
       const links = await this.readPageLinks(doc, page).catch(() => [] as PdfLink[]);
+      const matrix: Matrix = [t[0], t[1], t[2], t[3], t[4], t[5]];
+      const source = { width: viewport.width, height: viewport.height };
+      const native = readTextItems(content);
       return {
-        items: readTextItems(content),
+        items: await this.withOcr(backdrop, doc.numPages, native, matrix, source),
         links,
-        viewport: [t[0], t[1], t[2], t[3], t[4], t[5]],
-        source: { width: viewport.width, height: viewport.height },
+        viewport: matrix,
+        source,
       };
     } finally {
       page.cleanup?.();
     }
+  }
+
+  /**
+   * The page's own text items, plus the OCR text where the page has too
+   * little of its own: from the cache at once, or queued (the page then
+   * reads as it does without, until `ocrReady`). Never waits for OCR.
+   */
+  private async withOcr(
+    backdrop: PdfBackdrop,
+    pages: number,
+    native: PdfTextItem[],
+    viewport: Matrix,
+    source: { width: number; height: number },
+  ): Promise<PdfTextItem[]> {
+    const ocr = this.ocr;
+    if (!ocr?.enabled || !needsOcr(native, viewport, source)) {
+      ocr?.settled(backdrop.path, backdrop.page);
+      return native;
+    }
+    const key = pageKey(backdrop.path, backdrop.page);
+    ocr.attach(this, backdrop.path);
+    const found = await ocr.cached(backdrop.path, backdrop.page);
+    if (found) {
+      ocr.settled(backdrop.path, backdrop.page);
+      this.scanned.set(key, { kind: "pdf", path: backdrop.path, page: backdrop.page });
+      return mergedItems(native, found, viewport, source);
+    }
+    this.scanned.set(key, { kind: "pdf", path: backdrop.path, page: backdrop.page });
+    ocr.want(this, backdrop.path, backdrop.page, pages);
+    return native;
   }
 
   /** A page's links, each destination resolved to a page of the same PDF. */

@@ -451,6 +451,7 @@ describe("registration", () => {
         "new-from-template",
         "read-handwriting-on-device",
         "recognize-handwriting",
+        "reread-scanned-pages",
         "scan-document",
         "save-as-template",
         "save-page-as-template",
