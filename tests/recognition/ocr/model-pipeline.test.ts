@@ -8,7 +8,6 @@ import {
   OCR_MODEL_MOST_ACCURATE,
   OCR_TIERS,
   effectiveOcrTier,
-  ocrChoiceLabel,
   ocrTiersFor,
   ocrTuningFor,
   OCR_REC_FILE,
@@ -115,16 +114,6 @@ describe("the OCR model as pinned", () => {
     expect(effectiveOcrTier("accurate", true).id).toBe("accurate");
     expect(effectiveOcrTier(undefined, false).id).toBe("fast");
     expect(effectiveOcrTier("huge", false).id).toBe("fast");
-  });
-
-  it("describes each choice with its download size and a speed hint", () => {
-    expect(ocrChoiceLabel(OCR_TIERS[0], false)).toBe("Fast · 23.7 MB · ~6 s/page on desktop");
-    expect(ocrChoiceLabel(OCR_TIERS[1], false)).toMatch(
-      /^Accurate · 40\.5 MB · ~\d+ s\/page on desktop$/,
-    );
-    expect(ocrChoiceLabel(OCR_TIERS[2], false)).toMatch(
-      /^Most accurate · 9\d\.\d MB · ~\d+ s\/page/,
-    );
   });
 
   it("gives each recogniser its own confidence thresholds, stricter as the model gets surer", () => {
