@@ -5623,6 +5623,25 @@ export class Toolbar {
    * pill centred on the page, so in portrait on an iPad (an ~820 px pane)
    * the ~370 px picker would hang some 60 px off the right edge.
    */
+  /**
+   * Hold a popover to `room` px: its body scrolls inside the popover, so the
+   * arrow outside the box is never clipped. Taller rooms leave it alone.
+   */
+  private limitPopoverHeight(popover: HTMLElement, room: number): void {
+    const body = popover.querySelector<HTMLElement>(".goodobsidian-popover-body");
+    if (!body) {
+      if (popover.offsetHeight > room) popover.setCssStyles({ maxHeight: `${Math.round(room)}px` });
+      return;
+    }
+    body.setCssStyles({ maxHeight: "", overflowY: "" });
+    const chrome = popover.offsetHeight - body.offsetHeight;
+    if (popover.offsetHeight <= room) return;
+    body.setCssStyles({
+      maxHeight: `${Math.max(120, Math.round(room - chrome))}px`,
+      overflowY: "auto",
+    });
+  }
+
   private keepPopoverInside(anchor: HTMLElement): void {
     const popover = this.popover;
     if (!popover) return;
@@ -5639,7 +5658,7 @@ export class Toolbar {
       const top = area.top;
       const floor = Math.max(top, area.bottom - EDGE_INSET);
       const room = floor - top;
-      if (popover.offsetHeight > room) popover.setCssStyles({ maxHeight: `${Math.round(room)}px` });
+      this.limitPopoverHeight(popover, room);
       const height = Math.min(popover.offsetHeight, room);
       const centre = anchorBox.top - hostBox.top + anchorBox.height / 2;
       const lift = sideLift(centre, height, top, floor);
@@ -5647,6 +5666,13 @@ export class Toolbar {
       popover.setCssStyles({ top: `${Math.round(centre + lift)}px` });
       return;
     }
+    // Above or below its button: as tall as the room on that side, and the
+    // rows scroll past it (a bar with everything moved into More tools).
+    const gap = 16;
+    const roomVertical = popover.hasClass("opens-up")
+      ? anchorBox.top - hostBox.top - EDGE_INSET - gap
+      : hostBox.bottom - anchorBox.bottom - EDGE_INSET - gap;
+    this.limitPopoverHeight(popover, roomVertical);
     const box = popover.getBoundingClientRect();
     let shift = 0;
     if (box.right > hostBox.right - EDGE_INSET) shift = hostBox.right - EDGE_INSET - box.right;

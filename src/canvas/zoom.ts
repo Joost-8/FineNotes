@@ -90,6 +90,16 @@ export function nextZoomFloor(options: {
  * about 0.8 of it: well past a zoom-out that only overshoots the fit on its
  * way back (Joost, 2026-10-21).
  */
+/**
+ * The zoom that keeps a page the size it is on screen when the pane it fits
+ * changes width (the page sidebar opening): the fit scale follows the pane,
+ * so the same zoom factor would shrink the page with it. Never below the floor.
+ */
+export function zoomKeepingScale(priorScale: number, baseScale: number, floor: number): number {
+  if (!(priorScale > 0) || !(baseScale > 0)) return floor;
+  return Math.max(floor, priorScale / baseScale);
+}
+
 export const OVERVIEW_PINCH_ZOOM = 0.5;
 
 /** Whether a pinch whose fingers ask for zoom `raw` (unstretched) opens the overview. */
