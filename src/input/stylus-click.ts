@@ -222,6 +222,16 @@ export class StylusClicks {
   }
 
   /**
+   * The hovering moves have the side button down, the pen not on the glass.
+   * Android's WebView shows the button nowhere else: a pen touching down
+   * with it held is a plain press with the contact bit, so this is how that
+   * press is known to be the button's (FineNotes#149).
+   */
+  get barrelHeld(): boolean {
+    return this.barrelInAir;
+  }
+
+  /**
    * A `pointerup` or `pointercancel` of a pen not held back, at this time
    * (ms): whatever the hovering moves were watching is over, so the moves
    * that follow it with the button up are no click. (A press this page never
