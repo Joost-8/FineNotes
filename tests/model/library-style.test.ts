@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   FOLDER_COLORS,
+  dropPaths,
+  dropStyles,
   cleanName,
   folderStylesOf,
   freeName,
@@ -56,5 +58,17 @@ describe("names", () => {
     const taken = new Set(["A.md", "A 2.md"]);
     expect(freeName("A", ".md", (p) => taken.has(p))).toBe("A 3.md");
     expect(freeName("B", ".md", (p) => taken.has(p))).toBe("B.md");
+  });
+});
+
+describe("dropPaths and dropStyles", () => {
+  it("forget a deleted path and everything below it, and nothing else", () => {
+    expect(dropPaths(["Uni", "Uni/A.notebook.md", "University", "B.notebook.md"], "Uni")).toEqual([
+      "University",
+      "B.notebook.md",
+    ]);
+    expect(
+      dropStyles({ Uni: { color: "#4a7df0" }, "Uni/Week": {}, Unit: { icon: "code" } }, "Uni"),
+    ).toEqual({ Unit: { icon: "code" } });
   });
 });

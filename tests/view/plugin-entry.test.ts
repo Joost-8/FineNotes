@@ -133,7 +133,7 @@ interface FakeApp {
     trigger(name: string, ...args: unknown[]): void;
     fireLayoutReady(): void;
   };
-  addFile(path: string, frontmatter?: Record<string, unknown>): TFile;
+  addFile(path: string, frontmatter?: Record<string, unknown>, text?: string): TFile;
   secrets: Map<string, string>;
 }
 
@@ -145,9 +145,11 @@ function fakeApp(
   const stored = new Map(Object.entries(local));
   const frontmatter = new Map<string, Record<string, unknown>>();
   const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
+  const vaultHandlers = new Map<string, ((...args: unknown[]) => void)[]>();
   const ready: (() => void)[] = [];
   const secrets = new Map<string, string>();
   const created: { path: string; content: string }[] = [];
+  const texts = new Map<string, string>();
   const workspace = {
     leaves: [] as WorkspaceLeaf[],
     active: null as unknown,
@@ -171,6 +173,9 @@ function fakeApp(
       return workspace.active instanceof type ? workspace.active : null;
     },
     getActiveFile: () => null,
+    iterateAllLeaves(callback: (leaf: WorkspaceLeaf) => void) {
+      for (const leaf of [...workspace.leaves]) callback(leaf);
+    },
     getLeaf: () => new WorkspaceLeaf(),
     getMostRecentLeaf: () => null,
     revealLeaf: () => Promise.resolve(),
@@ -178,7 +183,13 @@ function fakeApp(
   return {
     workspace,
     vault: {
-      on: (name: string) => ({ name }),
+      on(name: string, callback: (...args: unknown[]) => void) {
+        vaultHandlers.set(name, [...(vaultHandlers.get(name) ?? []), callback]);
+        return { name };
+      },
+      trigger(name: string, ...args: unknown[]) {
+        for (const callback of vaultHandlers.get(name) ?? []) callback(...args);
+      },
       getAbstractFileByPath: (path: string) => files.get(path) ?? null,
       getFileByPath: (path: string) => files.get(path) ?? null,
       getMarkdownFiles: () => [...files.values()].filter((file) => file.extension === "md"),
@@ -190,8 +201,10 @@ function fakeApp(
       getFolderByPath: () => null,
       createFolder: () => Promise.resolve(),
       created,
+      cachedRead: (file: TFile) => Promise.resolve(texts.get(file.path) ?? ""),
       create(path: string, content: string) {
         created.push({ path, content });
+        texts.set(path, content);
         const file = new TFile(path);
         files.set(path, file);
         return Promise.resolve(file);
@@ -215,10 +228,11 @@ function fakeApp(
     secrets,
     loadLocalStorage: (key: string): unknown => stored.get(key) ?? null,
     saveLocalStorage: (key: string, value: string) => stored.set(key, value),
-    addFile(path: string, fm?: Record<string, unknown>) {
+    addFile(path: string, fm?: Record<string, unknown>, text?: string) {
       const file = new TFile(path);
       files.set(path, file);
       if (fm) frontmatter.set(path, fm);
+      if (text !== undefined) texts.set(path, text);
       return file;
     },
   };
@@ -700,18 +714,112 @@ describe("registration", () => {
     });
   });
 
-  it("makes no notebook by itself; a first install gets the Home note, an update nothing", async () => {
-    for (const [stored, expected] of [
-      [null, ["Home.md"]],
-      [{ lastSeenVersion: "0.1.0" }, []],
-    ] as const) {
+  describe("the Home note", () => {
+    const created = () => (app.vault as unknown as { created: { path: string }[] }).created;
+
+    afterEach(() => vi.useRealTimers());
+    // The simple look's hint comes up during the wait on a first install.
+    beforeEach(() => {
+      vi.stubGlobal("createFragment", (build: (fragment: unknown) => void) => {
+        build({ createDiv: () => ({}), createEl: () => ({ addEventListener: () => {} }) });
+        return "fragment";
+      });
+    });
+
+    /** Load, lay out, and let the Home note's wait run out; `before` sets the vault up first. */
+    async function start(stored: unknown, before: () => void = () => {}): Promise<void> {
       await load(stored);
+      before();
+      vi.useFakeTimers();
       app.workspace.fireLayoutReady();
+      await vi.advanceTimersByTimeAsync(5000);
+      vi.useRealTimers();
       await flush();
-      const created = (app.vault as unknown as { created: { path: string }[] }).created;
-      expect(created.map((c) => c.path)).toEqual(expected);
-      created.length = 0;
     }
+
+    it("makes no notebook by itself; a first install in an empty vault gets the Home note", async () => {
+      await start(null);
+      expect(created().map((c) => c.path)).toEqual(["Home.md"]);
+      const text = (app.vault as unknown as { created: { content: string }[] }).created[0].content;
+      expect(text).toContain("finenotes-home: true");
+    });
+
+    it("is not made on an update", async () => {
+      await start({ lastSeenVersion: "0.1.0" });
+      expect(created()).toEqual([]);
+    });
+
+    it("is not made in a vault that already has notes or notebooks, though the plugin is new there", async () => {
+      await start(null, () => app.addFile("Daily/2026-11-03.md"));
+      expect(created()).toEqual([]);
+      await start(null, () => app.addFile("Physics/Physics.notebook.md"));
+      expect(created()).toEqual([]);
+    });
+
+    it("is not made when notes sync in while it waits (a second device)", async () => {
+      await load(null);
+      vi.useFakeTimers();
+      app.workspace.fireLayoutReady();
+      app.addFile("Lectures/Week 1.md");
+      await vi.advanceTimersByTimeAsync(5000);
+      vi.useRealTimers();
+      await flush();
+      expect(created()).toEqual([]);
+    });
+
+    it("opens the library in place of FineNotes' own Home note only", async () => {
+      const { HOME_FILE_TEXT } = await import("../../src/model/home-file");
+      for (const [text, takenOver] of [
+        [HOME_FILE_TEXT, true],
+        ["# Home\n\nMy own start page.\n", false],
+      ] as const) {
+        await load();
+        const home = app.addFile("Home.md", undefined, text);
+        const leaf = markdownLeaf(home);
+        // Closed only once the library is open: closing the only tab first leaves nowhere to open it.
+        const detach = vi.fn(() =>
+          expect(viewStateCalls.some((c) => c.state.type === "finenotes-library")).toBe(true),
+        );
+        Object.assign(leaf, { detach });
+        Object.assign(leaf.view as object, { getViewType: () => "markdown" });
+        viewStateCalls.length = 0;
+        app.workspace.trigger("file-open", home);
+        await flush();
+        expect(detach).toHaveBeenCalledTimes(takenOver ? 1 : 0);
+        expect(viewStateCalls.some((c) => c.state.type === "finenotes-library")).toBe(takenOver);
+      }
+    });
+  });
+
+  it("keeps the library's stars and folder looks with renames and deletes, Home open or not", async () => {
+    await load({
+      libraryStars: ["Uni/Physics/Physics.notebook.md", "Uni", "Other.notebook.md"],
+      libraryFolders: { Uni: { color: "#4a7df0" }, "Uni/Week 1": { icon: "code" } },
+    });
+    // No Home tab is open: the plugin itself follows the vault.
+    expect(app.workspace.leaves).toEqual([]);
+    const vault = app.vault as unknown as { trigger(name: string, ...args: unknown[]): void };
+    const settings = () => plugin.settings;
+
+    vault.trigger("rename", Object.assign(new TFolder("School"), { children: [] }), "Uni");
+    expect(settings().libraryStars).toEqual([
+      "School/Physics/Physics.notebook.md",
+      "School",
+      "Other.notebook.md",
+    ]);
+    expect(settings().libraryFolders).toEqual({
+      School: { color: "#4a7df0" },
+      "School/Week 1": { icon: "code" },
+    });
+
+    vault.trigger("delete", new TFolder("School/Physics"));
+    expect(settings().libraryStars).toEqual(["School", "Other.notebook.md"]);
+    vault.trigger("delete", new TFile("Other.notebook.md"));
+    vault.trigger("delete", new TFolder("School"));
+    expect(settings().libraryStars).toEqual([]);
+    expect(settings().libraryFolders).toEqual({});
+    await flush();
+    expect(registered.stored).toMatchObject({ libraryStars: [], libraryFolders: {} });
   });
 
   it("builds an InkView for a leaf", async () => {
