@@ -8,6 +8,8 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-11-04
+
 ### Added
 
 - **FineNotes in your language.** Settings → Language offers the 43
