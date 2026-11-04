@@ -306,8 +306,8 @@ may instead download the PP-OCRv6 small or medium recogniser with their
 dictionary (PP-OCRv6_small_rec.ort, PP-OCRv6_medium_rec.ort, ppocrv6_dict.txt). The files are the ones
 published unchanged in https://github.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr-models
 (Apache-2.0; the detector also in the npm package pdfmarkdown-ppocrv5-models
-1.0.0) and are served from the data-only branch "ocr-models" of the FineNotes
-repository (folders ppocrv6-1, ppocrv6-small-1 and ppocrv6-medium-1, each carrying the licence text and a notice).
+1.0.0) and are served as assets of the release "ocr-1" of the repository
+Joost-8/FineNotes-templates, which carries the licence text and a notice.
 No part of them is in main.js.
 
 PaddleOCR, Copyright (c) PaddlePaddle Authors.

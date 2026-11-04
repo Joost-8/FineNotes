@@ -248,3 +248,38 @@ describe("aiKeyFolded", () => {
     expect(aiKeyFolded(setup({ imageVendor: "openai", keys: ["openai"] }))).toBe(false);
   });
 });
+
+describe("scanned pages", () => {
+  it("has no row in a notebook without PDF pages", () => {
+    const ids = buildAiMenu(context()).map((i) => i.id);
+    expect(ids).not.toContain("scan-pdf");
+    expect(ids).not.toContain("scan-pdf-download");
+  });
+
+  it("is a switch like Corrections once the reader is here, last in the on-device section", () => {
+    const items = buildAiMenu(context({ scan: { on: true, ready: true } }));
+    const device = items.filter((i) => i.section === "device");
+    expect(device[device.length - 1]).toMatchObject({
+      id: "scan-pdf",
+      label: "Scanned pages",
+      on: true,
+      enabled: true,
+    });
+    expect(byId(buildAiMenu(context({ scan: { on: false, ready: true } })))["scan-pdf"].on).toBe(
+      false,
+    );
+  });
+
+  it("is the download, marked with the download symbol, until the reader is here", () => {
+    for (const on of [true, false]) {
+      const items = byId(buildAiMenu(context({ scan: { on, ready: false } })));
+      expect(items["scan-pdf"]).toBeUndefined();
+      expect(items["scan-pdf-download"]).toMatchObject({
+        mark: "download",
+        enabled: true,
+        section: "device",
+      });
+      expect(items["scan-pdf-download"].on).toBeUndefined();
+    }
+  });
+});

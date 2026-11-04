@@ -8,22 +8,6 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
-### Changed
-
-- **Scanned-page reader: faster, smaller, and more accurate.** The OCR model is now
-  PaddleOCR PP-OCRv5 (mobile) for finding lines and PP-OCRv6 (tiny) for reading them.
-  A page takes about 5.5 s instead of 12 s, the download is 23.7 MB instead of 35.8 MB,
-  and on the test pages and the lecture figures it reads more labels correctly (86.0%
-  against 84.8%). The model comes from this repository (branch `ocr-models`), no longer
-  from a CDN: a device that has the old model is offered the new download once, and
-  pages read before are read again. The reader's dictionary has no Japanese kana
-  (Latin with accents, Greek, symbols and 6,174 Chinese characters are in it). The
-  handwriting filter is stricter to match the new reader's higher confidences.
-  Measurements and the options that were tried: [docs/OCR.md](docs/OCR.md#model-choice).
-- **The OCR model is chosen under Models on this device, like the voice model.** The PDF section's
-  "OCR model" row is gone: "Scanned pages · <choice>" shows the chosen model's download, and "OCR model size"
-  under it lists Fast, Accurate and Most accurate with their sizes.
-
 ### Added
 
 - **FineNotes in your language.** Settings → Language offers the 43
@@ -79,18 +63,23 @@ extracted from the matching section of this file by `release.yml`.
   [docs/OCR.md](docs/OCR.md).
 - **Scanned PDF pages are read on your device.** A PDF page that is a picture
   of printed text (a scan, or a scan with only a page number on it) now gets
+- **Scanned PDF pages are read on your device.** A PDF page that is a picture of
+  text, and the labels inside the pictures of pages that have text, now get
   search, the text-snapping highlighter and Copy text, as PDFs with real text
-  do. The reader is PaddleOCR PP-OCRv5 (mobile) running with ONNX Runtime Web
-  in a background worker, on iPhone, iPad, Android and desktop. It is a
-  23.7 MB download that is offered the first time a scanned page needs it;
-  nothing downloads before you agree, and you can turn it off with _Read
-  scanned PDF pages_ (Pages and notebooks). It reads only PDFs open in a
-  notebook, the page in view first, then its neighbours, then the rest of
-  that PDF while you are not writing, one page at a time. Messy handwriting
-  is left alone: only words the reader is sure of are used. What was read is
-  kept once per PDF in the plugin folder (`ocr`), so it syncs and a second
-  device needs neither the download nor a second reading. _Re-read scanned
-  pages of this PDF_ in the command palette reads a PDF again.
+  do: press and hold a word, or right-click it, to select it. It happens by
+  itself for PDFs open in a notebook, the page in view first, then its
+  neighbours, then the rest while you are not writing. The first time a page
+  needs it you are asked which reader to download, with what each costs: Fast
+  (23.7 MB, recommended), Accurate (40.5 MB, about 2× slower per page) or, on a
+  computer, Most accurate (95.9 MB, about 8× slower, kept off your vault).
+  Nothing downloads before you agree. A ring turns beside the page counter
+  while pages are read. _Scanned pages_ in the AI menu switches it off and on;
+  pages already read are kept per PDF in the plugin folder (`ocr`), so they sync
+  and are never read twice unless you choose _Re-read scanned pages of this PDF_
+  or a different reader. Printed text only; messy handwriting is left alone.
+  The readers are PaddleOCR on ONNX Runtime Web in a background worker, on
+  iPhone, iPad, Android and desktop. Details and measurements:
+  [docs/OCR.md](docs/OCR.md).
 - **Ask AI on an empty lasso.** A lasso drawn round nothing offers Ask AI
   about that patch of page beside Screenshot, while an AI service is set up.
 - **Dock tool options on every side.** With the tool bar at the left or
@@ -120,7 +109,7 @@ extracted from the matching section of this file by `release.yml`.
   compressed and counts a byte range in compressed bytes, and jsDelivr sends the WebAssembly
   file brotli-compressed even when asked not to. Downloads now ask for no compression, a
   range whose total is not the file's size makes the download fetch that file once in one
-  piece, and the WebAssembly file is served from this repository's `ocr-models` branch.
+  piece, and the readers and the WebAssembly file are release assets of the templates repository, like the voice models.
 - **Colours on dark pages show what lands.** The colour picker, the text,
   fill, border, shape and Fill tool colours, the lasso's ink colours and a
   table cell's colours show each colour as the dark page shows it (a

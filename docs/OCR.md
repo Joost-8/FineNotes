@@ -25,13 +25,21 @@ contributors and for users who want to know exactly what it does.
   and no Japanese kana, and it is untested), tell double letters reliably, or read pages in the background of
   PDFs nobody has open. No run on a real iPad yet (see Known limits).
 
-Settings (Pages and notebooks): **Read scanned PDF pages (on-device OCR)**
-(`ocrScannedPdfs`, default on) and, under it, **Also read text inside figures**
-(`ocrFigureText`, default on, only in effect while the first is on). Both take effect without reopening a notebook: turned on, the pages shown are
-looked at now (and those waiting for the model join its queue); turned off, figure words already in the
-cache are hidden from layout and search at read time, not deleted, and what was queued for them is left.
-The reader is chosen in **Models on this device**: the row **Scanned pages · <choice>** (its download, as Voice has) and, under it, **OCR model size** (`ocrModel`: `fast` by default, `accurate`, `most-accurate`), both shown while OCR is on; see "Choosing a model".
-The command **Re-read scanned pages of this PDF** forgets that PDF's cache and reads it again.
+There is one switch, **Scanned pages** at the bottom of the AI menu in a notebook that has PDF pages
+(`ocrScannedPdfs`, default on). It covers scanned pages and the text inside figures together. Turned off, nothing
+is read and figure words already in the cache are hidden from layout and search at read time, not deleted;
+turned on, the pages shown are looked at now. Pages already read are never read again by switching it off and
+on, by closing and reopening a notebook, or by a restart: they come from the cache (`tests/view/ocr-service.test.ts`,
+"reads a page once"). Only the command **Re-read scanned pages of this PDF**, or choosing a different reader,
+reads them again.
+
+Until the reader is on the device the AI menu's row is its download, marked with the download symbol. The first
+page with no text of its own, and a tap on that row, open a question (`view/ocr-offer.ts`) that lists the readers
+with their size and what each costs, Fast ticked and marked as recommended; Download starts the one ticked, and
+Not now from the automatic question turns the switch off until the AI menu turns it on. The chosen reader is
+`ocrModel` (`fast` by default, `accurate`, `most-accurate`); the row **Scanned pages · <choice>** in **Models on
+this device** shows its download and is where it is removed (asked again, with the choice, at the next scanned
+page). While pages are read a ring turns beside the page counter (`view/ocr-status.ts`). See "Choosing a model".
 
 ## Page conditions
 
@@ -230,10 +238,11 @@ the value with all double letters right and no cost on the clean page.
 ## Model files
 
 Downloaded on first use into `<plugin>/ocr/ppocrv6-1/`, never bundled, each pinned by
-exact size and SHA-256 (`ocr-model.ts`), over https. The three model files come from the
-data-only branch `ocr-models` of this repository (folder `ppocrv6-1`, with the Apache-2.0
-licence text and a notice) through `raw.githubusercontent.com`, which supports range
-requests and has no bandwidth budget (not Git LFS, not Hugging Face); the wasm from the same branch (folder `runtime`, because jsDelivr serves it brotli-compressed even for `Accept-Encoding: identity`, which breaks a ranged download; every request also sends `Accept-Encoding: identity`):
+exact size and SHA-256 (`ocr-model.ts`), over https. All files are assets of the release `ocr-1` of
+`Joost-8/FineNotes-templates` (the repository the voice models come from), with the Apache-2.0 licence text and a
+notice; a release asset answers a byte range with the file's own bytes, uncompressed (not Git LFS, not Hugging Face,
+not jsDelivr, which serves the wasm brotli-compressed even for `Accept-Encoding: identity`). Every request also
+sends `Accept-Encoding: identity`:
 
 | file                            | bytes      | SHA-256                | source, licence                                                                                      |
 | ------------------------------- | ---------- | ---------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -349,16 +358,14 @@ the old `ocr/ppocrv5` folder is not deleted), and `OCR_MODEL_VERSION` `ppocrv6-t
 by `ppocrv5-mobile-1` is read again). `alphabetFrom` appends the space. `OCR_TUNING.wordMean` 0.85 to 0.90 and
 `lineMean` 0.75 to 0.90. Nothing else.
 
-**Hosting.** The three model files are on the orphan branch `ocr-models` of this repository, folder `ppocrv6-1`
-(also `LICENSE`, the Apache-2.0 text, and `NOTICE.txt`), fetched from
-`https://raw.githubusercontent.com/fariszyzy/FineNotes/ocr-models/ppocrv6-1/<file>`. Not from `media.githubusercontent.com`
-(the model repository's Git LFS bandwidth budget) and not from Hugging Face. Every URL was checked: 200 with the
-exact byte count and SHA-256, `accept-ranges: bytes`, and `Range: bytes=0-99` answers 206 with 100 bytes.
+**Hosting.** Every file is an asset of the release `ocr-1` of `Joost-8/FineNotes-templates`, with `LICENSE` (the
+Apache-2.0 text) and `NOTICE.txt`. Checked after the upload: each file's SHA-256 matches the pin, and
+`Range: bytes=0-99` answers 206 with 100 bytes, a `Content-Range` total equal to the file's size, and no
+`Content-Encoding`.
 
 ## Choosing a model
 
-The setting **OCR model size** (Settings, Models on this device, under **Scanned pages · <choice>**, shown only
-while OCR is on) has three choices. All three use the PP-OCRv5 mobile detector (the v6 detectors failed the IoU floor,
+The question about which reader to download (see the top of this document) has three choices. All three use the PP-OCRv5 mobile detector (the v6 detectors failed the IoU floor,
 see "Model choice") and differ in the recogniser.
 
 | choice                      | recogniser               | download (with detector and wasm) | wasm heap after load / peak (one page) | det + rec, dense A4 page | 53.pdf labels exact | 53.pdf precision | marks kept (96) | where                   |
@@ -413,8 +420,9 @@ entry holds none, and an entry of a version this build does not know cannot be j
 Tests: `tests/view/ocr-service.test.ts` ("the choice of model"), `tests/view/pdf-text-ocr.test.ts` and
 `tests/recognition/ocr/cache-queue.test.ts`.
 
-**Remove other OCR models** (the trash button in the setting's row) removes the choices not in use and the
-obsolete folder `ocr/ppocrv5`; only that button deletes anything, and the detector and wasm stay. A download in
+**Remove other OCR models** (`view/ocr-models.ts`; the trash button on the row **Scanned pages · <choice>** in Models
+on this device) removes the choices not in use and the
+obsolete folder `ocr/ppocrv5`; only it deletes anything, and the detector and wasm stay. A download in
 flight is left running. `tests/view/ocr-models-integration.test.ts` runs it against the real `ModelRegistry` stores
 over a fake vault adapter holding the real file names in the real folders: with Accurate in use, Fast's own
 files (tiny recogniser and dictionary) go and the shared detector and wasm in `ocr/ppocrv6-1` and Accurate's

@@ -19,12 +19,12 @@ import { OCR_TUNING, keptLines } from "../../../src/recognition/ocr/ocr-words";
 import { REC_STRIDE } from "../../../src/recognition/ocr/rec";
 
 describe("the OCR model as pinned", () => {
-  it("pins every file by exact size and a lower-case SHA-256, over https (all from this repository's data branch: never a CDN that compresses a ranged body)", () => {
+  it("pins every file by exact size and a lower-case SHA-256, over https (all assets of one release of the templates repository: never a CDN that compresses a ranged body)", () => {
     for (const file of OCR_MODEL.files) {
       expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(file.bytes).toBeGreaterThan(0);
       expect(file.url).toMatch(
-        /^https:\/\/raw\.githubusercontent\.com\/fariszyzy\/FineNotes\/ocr-models\/(ppocrv6-1|runtime)\//,
+        /^https:\/\/github\.com\/Joost-8\/FineNotes-templates\/releases\/download\/ocr-1\//,
       );
       // Never LFS (media.githubusercontent.com) or Hugging Face.
       expect(file.url).not.toMatch(/media\.githubusercontent|huggingface/);
@@ -46,7 +46,7 @@ describe("the OCR model as pinned", () => {
     };
     const pinned = pkg.dependencies["onnxruntime-web"];
     expect(pinned).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(OCR_WASM_FILE.url).toContain(`/runtime/ort-wasm-simd-threaded-${pinned}.wasm`);
+    expect(OCR_WASM_FILE.url).toContain(`/ort-wasm-simd-threaded-${pinned}.wasm`);
     const installed = JSON.parse(
       readFileSync("node_modules/onnxruntime-web/package.json", "utf8"),
     ) as {
@@ -61,7 +61,7 @@ describe("the OCR model as pinned", () => {
         expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
         expect(file.bytes).toBeLessThan(100_000_000);
         expect(file.url).toMatch(
-          /^https:\/\/raw\.githubusercontent\.com\/fariszyzy\/FineNotes\/ocr-models\/(ppocrv6-small-1|ppocrv6-medium-1|ppocrv6-1|runtime)\//,
+          /^https:\/\/github\.com\/Joost-8\/FineNotes-templates\/releases\/download\/ocr-1\//,
         );
       }
     }

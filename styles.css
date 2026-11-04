@@ -15991,6 +15991,29 @@ button.goodobsidian-library-bar-done {
     transform: rotate(360deg);
   }
 }
+
+/* ------------------------------------------- reading scanned PDF pages */
+/* A ring beside the page counter while pages are read; the counter stays up meanwhile. */
+body.goodobsidian-ocr-reading .goodobsidian-pageindicator.is-idle {
+  opacity: 1;
+}
+body.goodobsidian-ocr-reading .goodobsidian-pageindicator:not(.is-hidden)::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: goodobsidian-ocr-spin 0.9s linear infinite;
+}
+@keyframes goodobsidian-ocr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 /* An update is out: the same stadium as New, in a quieter fill. */
 button.goodobsidian-library-update {
   display: inline-flex;
@@ -16215,4 +16238,55 @@ button.goodobsidian-library-star:active {
   button.goodobsidian-library-star {
     transition: none;
   }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.goodobsidian-ocr-reading .goodobsidian-pageindicator::before {
+    animation: none;
+    border-top-color: currentColor;
+  }
+}
+
+/* The question about which reader to download. */
+.goodobsidian-ocr-offer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.goodobsidian-ocr-offer-row {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.goodobsidian-ocr-offer-row:has(input:checked) {
+  border-color: var(--interactive-accent);
+}
+.goodobsidian-ocr-offer-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  font-weight: 600;
+}
+.goodobsidian-ocr-offer-size {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.goodobsidian-ocr-offer-pick {
+  color: var(--interactive-accent);
+  font-size: var(--font-ui-smaller);
+}
+.goodobsidian-ocr-offer-down {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.goodobsidian-aimenu-mark {
+  margin-left: auto;
+  color: var(--interactive-accent);
+  display: inline-flex;
 }

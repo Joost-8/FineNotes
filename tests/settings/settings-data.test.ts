@@ -146,7 +146,6 @@ const FRESH_INSTALL = {
   pageAppearance: "light",
   invertPdfPages: true,
   ocrScannedPdfs: true,
-  ocrFigureText: true,
   ocrModel: "fast",
   exportWithoutTapes: false,
   desk: "auto",
@@ -290,7 +289,6 @@ const USED_VAULT = {
   pageAppearance: "system",
   invertPdfPages: false,
   ocrScannedPdfs: false,
-  ocrFigureText: false,
   ocrModel: "accurate",
   exportWithoutTapes: true,
   desk: "custom",
@@ -604,7 +602,6 @@ describe("control values", () => {
       "llmVendor",
       "imageVendor",
       "pressureWidth",
-      "ocrScannedPdfs",
       "ocrModel",
     ]) {
       expect(changesTabLayout(key)).toBe(true);

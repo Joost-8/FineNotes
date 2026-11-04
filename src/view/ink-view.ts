@@ -1564,6 +1564,14 @@ export class InkView extends TextFileView {
       recordings: doc.recordings?.length ?? 0,
       device: this.deviceReading(),
       reading: this.handwritingReading(),
+      ...(doc.pages.some((p) => p.backdrop.kind === "pdf")
+        ? {
+            scan: {
+              on: this.settings.ocrScannedPdfs !== false,
+              ready: this.plugin.ocrReaderReady(),
+            },
+          }
+        : {}),
       transcribing: this.plugin.speech.running?.percent,
     });
     const setup = this.plugin.aiSetup();
@@ -1574,6 +1582,7 @@ export class InkView extends TextFileView {
       aiKeyFolded(setup),
       (id, on) => {
         if (id === "check-words") void this.plugin.setWordChecking(on);
+        if (id === "scan-pdf") void this.plugin.setScanning(on);
         if (id === "calc-notes") {
           this.settings.calcNotes = on;
           void this.plugin.saveSettings();
@@ -1778,6 +1787,7 @@ export class InkView extends TextFileView {
   private aiActions(): Record<string, () => void> {
     return {
       "learn-window": () => this.plugin.openLearnWindow(),
+      "scan-pdf-download": () => this.plugin.offerOcrReader(true),
       "device-settings": () => this.plugin.openSettingsTab(),
       "transcribe-recording": () => this.audio?.transcribeFromMenu(),
       "transcribe-device": () => this.audio?.transcribeOnDeviceFromMenu(),

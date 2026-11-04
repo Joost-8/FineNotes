@@ -216,9 +216,11 @@ import { DeviceTranscriber } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
 import { obsidianOcrDeps } from "./view/ocr-deps";
 import { cleanupText, removeOtherOcrModels } from "./view/ocr-models";
+import { OcrOfferModal } from "./view/ocr-offer";
+import { isBusy } from "./downloads/model-manifest";
 import { OcrService } from "./view/ocr-service";
 import { OcrStatus } from "./view/ocr-status";
-import { OCR_TIERS, effectiveOcrTier } from "./recognition/ocr/ocr-model";
+import { OCR_TIERS, effectiveOcrTier, ocrTiersFor } from "./recognition/ocr/ocr-model";
 import { HandwritingReader } from "./view/handwriting";
 import { ReadingGuard } from "./recognition/reading-guard";
 import {
@@ -368,9 +370,9 @@ export default class GoodObsidianPlugin extends Plugin {
       pluginDir: () => this.pluginDir,
       models: this.models,
       enabled: () => this.settings.ocrScannedPdfs !== false,
-      figures: () => this.settings.ocrFigureText !== false,
       tier: () => effectiveOcrTier(this.settings.ocrModel, Platform.isMobile),
       mobile: () => Platform.isMobile,
+      offer: (ask) => this.offerOcrReader(ask),
     }).deps,
   );
 
@@ -1187,6 +1189,59 @@ export default class GoodObsidianPlugin extends Plugin {
       removeFolder: (folder) => adapter.rmdir(path(folder), true),
     });
     new Notice(cleanupText(result));
+  }
+
+  /** Whether the reader for scanned PDF pages is on this device (the AI menu shows a download mark if not). */
+  ocrReaderReady(): boolean {
+    const tier = effectiveOcrTier(this.settings.ocrModel, Platform.isMobile);
+    return this.models.get(tier.asset.id)?.state.kind === "ready";
+  }
+
+  /** The AI menu's switch for reading scanned PDF pages. Pages read before stay read. */
+  async setScanning(on: boolean): Promise<void> {
+    this.settings.ocrScannedPdfs = on;
+    await this.saveSettings();
+    this.ocr.settingsChanged();
+  }
+
+  private ocrOfferOpen = false;
+  private ocrOfferDeclined = false;
+
+  /**
+   * Ask which reader to download (ocr-offer.ts). Offered by the service when
+   * a page with no text first needs it ("auto": once per session, and Not now
+   * turns reading off until the AI menu turns it on) or from the AI menu
+   * ("ask": always).
+   */
+  offerOcrReader(ask: boolean): void {
+    if (this.ocrOfferOpen || (!ask && this.ocrOfferDeclined)) return;
+    const mobile = Platform.isMobile;
+    const chosen = effectiveOcrTier(this.settings.ocrModel, mobile);
+    const store = this.models.get(chosen.asset.id);
+    if (store && (store.state.kind === "ready" || isBusy(store.state))) return;
+    this.ocrOfferOpen = true;
+    new OcrOfferModal(this.app, ocrTiersFor(mobile), chosen.id, {
+      download: (id) => {
+        this.ocrOfferOpen = false;
+        const tier = effectiveOcrTier(id, mobile);
+        this.settings.ocrModel = tier.id;
+        this.settings.ocrScannedPdfs = true;
+        void this.saveSettings();
+        const target = this.models.get(tier.asset.id);
+        // The card shows the progress; the service reads the pages once it is ready.
+        this.models.offer(tier.asset.id, "ask");
+        void target?.download();
+        this.ocr.modelChanged();
+      },
+      notNow: () => {
+        this.ocrOfferOpen = false;
+        this.ocrOfferDeclined = true;
+        if (ask) return;
+        this.settings.ocrScannedPdfs = false;
+        void this.saveSettings();
+        this.ocr.settingsChanged();
+      },
+    }).open();
   }
 
   /** Switch corrections (underlined misreads) on or off, and show it in every open notebook. */

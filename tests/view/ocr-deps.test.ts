@@ -30,7 +30,7 @@ function fakeStore(asset: ModelAsset) {
 
 function setup(chosen: string, mobile = false) {
   const stores = new Map<string, ReturnType<typeof fakeStore>>();
-  const offers: [string, string][] = [];
+  const offers: boolean[] = [];
   const host = {
     app: { vault: { adapter: {} } },
     pluginDir: () => "plugins/finenotes",
@@ -40,10 +40,9 @@ function setup(chosen: string, mobile = false) {
         stores.set(asset.id, store);
         return store;
       },
-      offer: (id: string, how: string) => offers.push([id, how]),
     },
+    offer: (ask: boolean) => offers.push(ask),
     enabled: () => true,
-    figures: () => true,
     tier: () => effectiveOcrTier(chosen, mobile),
     mobile: () => mobile,
   };
@@ -78,10 +77,8 @@ describe("obsidianOcrDeps", () => {
     });
     r.deps.offer();
     r.deps.offer(true);
-    expect(r.offers).toEqual([
-      ["ocr-ppocrv6-medium", "auto"],
-      ["ocr-ppocrv6-medium", "ask"],
-    ]);
+    // The question about which reader to download is the plugin's (ocr-offer.ts).
+    expect(r.offers).toEqual([false, true]);
   });
 
   it("hears any model arrive and stops hearing when told to", () => {

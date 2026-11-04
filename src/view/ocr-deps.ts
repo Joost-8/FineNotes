@@ -24,7 +24,8 @@ export interface ObsidianOcrHost {
   pluginDir(): string;
   models: ModelRegistry;
   enabled(): boolean;
-  figures(): boolean;
+  /** Ask which reader to download (view/ocr-offer.ts); `ask` is set when the user asked for it. */
+  offer(ask: boolean): void;
   /** The model the setting "OCR model" chooses (one offered on this device). */
   tier(): OcrTier;
   /** Whether this device is a phone or tablet: the largest model is not registered there. */
@@ -79,9 +80,10 @@ export function obsidianOcrDeps(host: ObsidianOcrHost): { deps: OcrDeps; store: 
   const deps: OcrDeps = {
     pluginDir: () => host.pluginDir(),
     enabled: () => host.enabled(),
-    figures: () => host.figures(),
+    // Text inside pictures is read whenever reading is on.
+    figures: () => true,
     store,
-    offer: (ask) => host.models.offer(host.tier().asset.id, ask ? "ask" : "auto"),
+    offer: (ask) => host.offer(ask === true),
     model: (): ActiveOcrModel => {
       const tier = host.tier();
       return {

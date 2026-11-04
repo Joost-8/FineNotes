@@ -1,68 +1,52 @@
 /**
- * The small, non-blocking note "Reading scanned pages 3/40" while the OCR
- * service (ocr-service.ts) is reading a PDF: an Obsidian notice that stays up
- * only while there is work, appears after a moment (a single quick page shows
- * nothing), and can be tapped away. It is told nothing it can block on.
+ * Progress of reading scanned pages, as a mark and not a sentence: a ring
+ * turns beside the page counter while the OCR service (ocr-service.ts) has
+ * pages to read, and goes when it has none. It appears after a moment, so a
+ * single quick page shows nothing. The ring itself is CSS on the body class
+ * `goodobsidian-ocr-reading` (styles.css, end of file).
  */
 
-import { Notice } from "obsidian";
-import type { OcrProgress, OcrService } from "./ocr-service";
+import type { OcrService } from "./ocr-service";
 
-/** Work shorter than this shows no note, ms. */
-const SHOW_AFTER_MS = 1500;
+/** Work shorter than this shows no ring, ms. */
+export const SHOW_AFTER_MS = 1500;
 
-/** The note's text for a progress, or null when there is none to show. */
-export function statusText(progress: OcrProgress): string | null {
-  if (!progress.active || progress.total <= 0) return null;
-  const at = Math.min(progress.total, progress.done + 1);
-  return `FineNotes: reading scanned pages ${at}/${progress.total}`;
-}
+/** The body class that turns the ring on. */
+export const READING_CLASS = "goodobsidian-ocr-reading";
 
 export class OcrStatus {
-  private notice: Notice | null = null;
   private timer = 0;
-  private last: OcrProgress = { active: false, done: 0, total: 0 };
-  private dismissed = false;
+  private shown = false;
   private readonly unsubscribe: () => void;
 
   constructor(service: OcrService) {
-    this.unsubscribe = service.subscribe((progress) => this.update(progress));
+    this.unsubscribe = service.subscribe((progress) => this.update(progress.active));
   }
 
-  private update(progress: OcrProgress): void {
-    this.last = progress;
-    const text = statusText(progress);
-    if (text === null) {
+  private update(active: boolean): void {
+    if (!active) {
       window.clearTimeout(this.timer);
       this.timer = 0;
-      this.notice?.hide();
-      this.notice = null;
-      this.dismissed = false;
+      this.hide();
       return;
     }
-    if (this.notice) {
-      this.notice.messageEl.setText(text);
-      return;
-    }
-    if (this.timer || this.dismissed) return;
+    if (this.timer || this.shown) return;
     this.timer = window.setTimeout(() => {
       this.timer = 0;
-      const now = statusText(this.last);
-      if (now === null) return;
-      const notice = new Notice(now, 0);
-      // Tapped away: it stays away until this run of work is over.
-      notice.containerEl.addEventListener("click", () => {
-        this.dismissed = true;
-        this.notice = null;
-      });
-      this.notice = notice;
+      this.shown = true;
+      document.body.addClass(READING_CLASS);
     }, SHOW_AFTER_MS);
+  }
+
+  private hide(): void {
+    if (!this.shown) return;
+    this.shown = false;
+    document.body.removeClass(READING_CLASS);
   }
 
   dispose(): void {
     window.clearTimeout(this.timer);
     this.unsubscribe();
-    this.notice?.hide();
-    this.notice = null;
+    this.hide();
   }
 }

@@ -6,20 +6,19 @@
  * `<plugin>/ocr/ppocrv6-1/`, never bundled, each file pinned by exact size
  * and SHA-256.
  *
- * - The three model files are PaddleOCR's weights (Apache-2.0) in ONNX
- *   Runtime's `.ort` format, unchanged from the files of
+ * - The model files are PaddleOCR's weights (Apache-2.0) in ONNX Runtime's
+ *   `.ort` format, unchanged from the files of
  *   github.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr-models (the detector: from
- *   the npm package pdfmarkdown-ppocrv5-models 1.0.0). They are served from the
- *   data-only branch `ocr-models` of this repository (folder `ppocrv6-1`, with
- *   the licence), over raw.githubusercontent.com, which supports range
- *   requests and has no bandwidth budget.
+ *   the npm package pdfmarkdown-ppocrv5-models 1.0.0). They are release assets
+ *   of Joost-8/FineNotes-templates (`ocr-1`, beside the speech models), with
+ *   the licence text and a notice. A release asset answers a byte range with
+ *   the file's own bytes, uncompressed.
  * - `ort-wasm-simd-threaded.wasm` is the binary of onnxruntime-web 1.30.0
  *   (MIT, the version package.json pins) that its JavaScript, bundled into
  *   the OCR worker, expects: the worker is handed its bytes (`wasmBinary`),
- *   never a URL (ocr/worker.ts). The same bytes are served from the folder
- *   `runtime` of the `ocr-models` branch: jsDelivr sends it brotli-compressed
- *   even for `Accept-Encoding: identity`, and a range of a compressed body
- *   counts compressed bytes.
+ *   never a URL (ocr/worker.ts). It is a release asset of the same release
+ *   (jsDelivr sends it brotli-compressed even for `Accept-Encoding: identity`,
+ *   and a range of a compressed body counts compressed bytes).
  *
  * PURE: data only.
  */
@@ -27,27 +26,25 @@
 import type { ModelAsset, ModelFile } from "../../downloads/model-manifest";
 import { OCR_TUNING, type OcrTuning } from "./ocr-words";
 
-const BRANCH = "https://raw.githubusercontent.com/fariszyzy/FineNotes/ocr-models";
-const MODELS = `${BRANCH}/ppocrv6-1`;
-const RUNTIME = `${BRANCH}/runtime`;
+const RELEASE = "https://github.com/Joost-8/FineNotes-templates/releases/download/ocr-1";
 
 export const OCR_DET_FILE: ModelFile = {
   name: "PP-OCRv5_mobile_det_infer.ort",
-  url: `${MODELS}/PP-OCRv5_mobile_det_infer.ort`,
+  url: `${RELEASE}/PP-OCRv5_mobile_det_infer.ort`,
   bytes: 4_896_928,
   sha256: "30acfc4e21f2a23669d01a75aaeb92190f96874613108a0f7086bed264420abc",
 };
 
 export const OCR_REC_FILE: ModelFile = {
   name: "PP-OCRv6_tiny_rec.ort",
-  url: `${MODELS}/PP-OCRv6_tiny_rec.ort`,
+  url: `${RELEASE}/PP-OCRv6_tiny_rec.ort`,
   bytes: 4_530_048,
   sha256: "efc46adf1bde1e05b58748268abb0e71791bfa8616c435676bbca13d1ea47767",
 };
 
 export const OCR_DICT_FILE: ModelFile = {
   name: "ppocrv6_tiny_dict.txt",
-  url: `${MODELS}/ppocrv6_tiny_dict.txt`,
+  url: `${RELEASE}/ppocrv6_tiny_dict.txt`,
   bytes: 27_157,
   sha256: "2f3717bbd530b681b6db3be35cc485e8a41a932b9558b833986bf0894eb21f2d",
 };
@@ -55,7 +52,7 @@ export const OCR_DICT_FILE: ModelFile = {
 /** onnxruntime-web 1.30.0's WebAssembly binary (the plain CPU build `onnxruntime-web/wasm` uses). */
 export const OCR_WASM_FILE: ModelFile = {
   name: "ort-wasm-simd-threaded.wasm",
-  url: `${RUNTIME}/ort-wasm-simd-threaded-1.30.0.wasm`,
+  url: `${RELEASE}/ort-wasm-simd-threaded-1.30.0.wasm`,
   bytes: 14_239_897,
   sha256: "3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2",
 };
@@ -80,7 +77,7 @@ export interface OcrConfidence {
 /** PP-OCRv6 small recogniser (21.3 MB), hosted beside the tiny one's folder. */
 export const OCR_SMALL_REC_FILE: ModelFile = {
   name: "PP-OCRv6_small_rec.ort",
-  url: `${BRANCH}/ppocrv6-small-1/PP-OCRv6_small_rec.ort`,
+  url: `${RELEASE}/PP-OCRv6_small_rec.ort`,
   bytes: 21_290_816,
   sha256: "40bccd9fa3ae2d14d724bf9d020c8f0edfc801489477b92f7449162a538366df",
 };
@@ -88,7 +85,7 @@ export const OCR_SMALL_REC_FILE: ModelFile = {
 /** The small and the medium recogniser share this dictionary (18,709 lines; the space is the last class). */
 export const OCR_SMALL_DICT_FILE: ModelFile = {
   name: "ppocrv6_dict.txt",
-  url: `${BRANCH}/ppocrv6-small-1/ppocrv6_dict.txt`,
+  url: `${RELEASE}/ppocrv6_dict.txt`,
   bytes: 74_948,
   sha256: "41557512862dfe31970cf22407742b629725461dd84c0d8771bde9c87c2202c8",
 };
@@ -96,14 +93,14 @@ export const OCR_SMALL_DICT_FILE: ModelFile = {
 /** PP-OCRv6 medium recogniser (76.7 MB, desktop only). */
 export const OCR_MEDIUM_REC_FILE: ModelFile = {
   name: "PP-OCRv6_medium_rec.ort",
-  url: `${BRANCH}/ppocrv6-medium-1/PP-OCRv6_medium_rec.ort`,
+  url: `${RELEASE}/PP-OCRv6_medium_rec.ort`,
   bytes: 76_691_568,
   sha256: "14bf37252c87d2359764466c751d17787a28c9c5cbd5d64059a6f49b9dbd4ab4",
 };
 
 export const OCR_MEDIUM_DICT_FILE: ModelFile = {
   name: "ppocrv6_dict.txt",
-  url: `${BRANCH}/ppocrv6-medium-1/ppocrv6_dict.txt`,
+  url: `${RELEASE}/ppocrv6_dict.txt`,
   bytes: 74_948,
   sha256: "41557512862dfe31970cf22407742b629725461dd84c0d8771bde9c87c2202c8",
 };
@@ -180,6 +177,8 @@ export interface OcrTier {
    * thread, a laptop): the speed hint beside the choice (docs/OCR.md).
    */
   secondsPerPage: number;
+  /** What choosing it costs, in a few words, for the download offer (docs/OCR.md, "Choosing a model"). */
+  downside: string;
 }
 
 /**
@@ -201,6 +200,7 @@ export const OCR_TIERS: readonly OcrTier[] = [
     confidence: { wordMean: 0.9, lineMean: 0.95, wordMin: 0.5 },
     desktopOnly: false,
     secondsPerPage: 6,
+    downside: "Misses a few more small words, mostly in figures.",
   },
   {
     id: "accurate",
@@ -212,6 +212,7 @@ export const OCR_TIERS: readonly OcrTier[] = [
     confidence: { wordMean: 0.95, lineMean: 0.95, wordMin: 0.5 },
     desktopOnly: false,
     secondsPerPage: 14,
+    downside: "About 2× slower per page, and a bigger download.",
   },
   {
     id: "most-accurate",
@@ -224,6 +225,7 @@ export const OCR_TIERS: readonly OcrTier[] = [
     confidence: { wordMean: 0.95, lineMean: 0.98, wordMin: 0.9 },
     desktopOnly: true,
     secondsPerPage: 48,
+    downside: "About 8× slower per page. Stays on this computer; it never syncs to an iPad.",
   },
 ];
 

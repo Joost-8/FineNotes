@@ -104,13 +104,13 @@ Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Andro
 - Scan a document with the camera.
 - Bring in a PDF, such as lecture slides or a worksheet: every PDF page becomes
   a page you can write on.
-- Scanned PDF pages are read on your device (PaddleOCR, a one-time 23.7 MB
-  download that you agree to first; _OCR model_ in the settings offers
-  Accurate, 40.5 MB, and, on a computer only, Most accurate, 95.9 MB), so search, the highlighter that snaps to
-  text and Copy text work on them too. Labels inside the pictures of PDFs that
-  have text are read too (only inside the pictures, never the text already
-  there). Printed text only; messy handwriting is left alone. How it works, its
-  numbers and its limits: [docs/OCR.md](docs/OCR.md).
+- Scanned PDF pages, and the labels inside PDF pictures, are read on your device
+  (PaddleOCR; the first time you are asked which reader to download, Fast at
+  23.7 MB being the recommended one), so search, the highlighter that snaps to
+  text and Copy text work on them too. Press and hold a word, or right-click it,
+  to select it. The _Scanned pages_ switch is in the AI menu. Printed text only;
+  messy handwriting is left alone. How it works, its numbers and its limits:
+  [docs/OCR.md](docs/OCR.md).
 
 **Audio**
 

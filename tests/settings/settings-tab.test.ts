@@ -445,7 +445,6 @@ const MODEL_ROWS = [
   ["Handwriting · Grape 2.0", "render"],
   ["Your handwriting model", "render"],
   ["Scanned pages · Fast", "render"],
-  ["OCR model size", "render"],
 ] as const;
 
 /** The head of "AI and handwriting": reading handwriting on this device. */
@@ -498,8 +497,6 @@ describe("the rows", () => {
       ...SHORTCUT_ROWS.map(([heading, name, kind]) => [heading, name, kind]),
       [PAGES, "Page appearance", "dropdown:pageAppearance"],
       [PAGES, "Paper width", "render"],
-      [PAGES, "Read scanned PDF pages (on-device OCR)", "toggle:ocrScannedPdfs"],
-      [PAGES, "Also read text inside figures", "toggle:ocrFigureText"],
       [PAGES, "More", "action"],
       [PAGES, "New notebooks go in", "render"],
       [PAGES, "Each notebook gets its own folder", "toggle:notebookOwnFolder"],
@@ -688,7 +685,6 @@ const DEFAULT_MODEL_ROWS = [
   "Handwriting · Grape 2.0",
   "Your handwriting model",
   "Scanned pages · Fast",
-  "OCR model size",
 ];
 
 /** The head of "AI and handwriting" shown by default: Grape reads. */
@@ -730,8 +726,6 @@ describe("which rows show", () => {
       ...SHORTCUT_VISIBLE,
       "Page appearance",
       "Paper width",
-      "Read scanned PDF pages (on-device OCR)",
-      "Also read text inside figures",
       "More",
       "New notebooks go in",
       "Each notebook gets its own folder",
@@ -2029,37 +2023,16 @@ describe("Models on this device", () => {
   });
 
   describe("OCR model", () => {
-    const OCR = "OCR model size";
     const SCANNED = "Scanned pages · Fast";
 
-    it("offers three choices with their size, Fast first, and stores a pick", async () => {
-      const plugin = makePlugin();
-      const def = named(rows(makeTab(plugin).tab), OCR);
-      const row = renderRow(def);
-      expect(row.dropdowns[0].value).toBe("fast");
-      expect(row.dropdowns[0].options).toEqual({
-        fast: "Fast (23.7 MB)",
-        accurate: "Accurate (40.5 MB)",
-        "most-accurate": "Most accurate (95.9 MB)",
-      });
-      // On a computer the row says nothing under its name; the long text is behind the ⓘ.
-      expect(def.desc).toBeUndefined();
-      await row.dropdowns[0].pick("accurate");
-      expect(plugin.settings.ocrModel).toBe("accurate");
-      // The new reader is offered and used at once, and the settings were saved.
-      expect(plugin.calls).toEqual(expect.arrayContaining(["save", "ocr:model"]));
-      // The tab is drawn again, so "Scanned pages · Accurate" names the row.
-      expect(plugin.calls).toContain("update");
-    });
-
-    it("is one row in Models on this device, under the chosen model's download", () => {
+    it("is one row in Models on this device, with no choice, switch or cleanup button of its own", () => {
       const { tab } = makeTab(makePlugin());
       const all = rows(tab);
-      expect(named(all, SCANNED)).toBeDefined();
       expect(all.find((r) => r.def.name === SCANNED)?.heading).toBe(MODELS);
-      expect(all.find((r) => r.def.name === OCR)?.heading).toBe(MODELS);
       expect(tab.infoOf(SCANNED)).toMatch(/^The OCR model reads the printed text/);
-      expect(tab.infoOf(OCR)).toMatch(/^Fast is the small model/);
+      // The switch is in the AI menu and the choice in the download offer (ocr-offer.ts).
+      const names = all.map((r) => r.def.name);
+      expect(names.filter((n) => /OCR|scanned pdf|figures/i.test(n))).toEqual([]);
     });
 
     it("names the row after the chosen model and shows that model's download", () => {
@@ -2080,57 +2053,22 @@ describe("Models on this device", () => {
         .filter((r) => r.heading === MODELS)
         .map((r) => r.def.name);
       for (const tier of OCR_TIERS) expect(names).not.toContain(tier.asset.label);
-      expect(names.filter((n) => n.includes("OCR") || n.startsWith("Scanned"))).toEqual([
-        SCANNED,
-        OCR,
-      ]);
+      expect(names.filter((n) => n.includes("OCR") || n.startsWith("Scanned"))).toEqual([SCANNED]);
     });
 
-    it("sits under the reader's download, in Models on this device, only while OCR is on", () => {
-      const off = makePlugin({ ocrScannedPdfs: false });
-      const offRows = rows(makeTab(off).tab);
-      expect(shown(named(offRows, SCANNED))).toBe(false);
-      expect(shown(named(offRows, OCR))).toBe(false);
+    it("has the button that removes the other OCR models, and only that button", async () => {
       const plugin = makePlugin();
-      const all = rows(makeTab(plugin).tab);
-      const names = all.map((r) => r.def.name);
-      expect(names[names.indexOf(SCANNED) + 1]).toBe(OCR);
-      expect(names.indexOf(OCR)).toBeGreaterThan(names.indexOf("Your handwriting model"));
-      expect(shown(named(all, SCANNED))).toBe(true);
-      expect(shown(named(all, OCR))).toBe(true);
-      // Not in the PDF section any more.
-      expect(all.filter((r) => r.heading === PAGES).map((r) => r.def.name)).not.toContain(OCR);
-    });
-
-    it("hides the largest model on a phone or tablet and says how much slower Accurate is", async () => {
-      Platform.isMobile = true;
-      try {
-        // Even a vault whose settings (synced) chose it shows Fast there.
-        const plugin = makePlugin({ ocrModel: "most-accurate" });
-        const all = rows(makeTab(plugin).tab);
-        const def = named(all, OCR);
-        const row = renderRow(def);
-        expect(Object.keys(row.dropdowns[0].options)).toEqual(["fast", "accurate"]);
-        expect(row.dropdowns[0].value).toBe("fast");
-        expect(row.dropdowns[0].options.fast).toBe("Fast (23.7 MB)");
-        expect(def.desc).toBe(
-          "Accurate is about 2× slower per page than Fast (desktop measurement).",
-        );
-        expect(def.desc?.length ?? 0).toBeLessThanOrEqual(ONE_LINE + 10);
-        expect(named(all, SCANNED).name).toBe(SCANNED);
-      } finally {
-        Platform.isMobile = false;
-      }
-    });
-
-    it("has a button that removes the other models, and only that button", async () => {
-      const plugin = makePlugin();
-      const row = renderRow(named(rows(makeTab(plugin).tab), OCR));
-      expect(row.extras[0].tooltip).toBe("Remove other OCR models");
-      await row.dropdowns[0].pick("accurate");
+      const row = renderRow(named(rows(makeTab(plugin).tab), SCANNED));
+      const trash = row.extras.find((e) => e.tooltip === "Remove other OCR models");
+      if (!trash) throw new Error("no trash button");
       expect(plugin.removeOtherOcrModels).not.toHaveBeenCalled();
-      await row.extras[0].click();
+      await trash.click();
       expect(plugin.removeOtherOcrModels).toHaveBeenCalledTimes(1);
+    });
+
+    it("stays shown when reading is switched off, so the model can still be removed", () => {
+      const off = makePlugin({ ocrScannedPdfs: false });
+      expect(shown(named(rows(makeTab(off).tab), SCANNED))).toBe(true);
     });
   });
 

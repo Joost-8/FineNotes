@@ -288,6 +288,24 @@ describe("OcrService", () => {
     expect(r.owner.ready).toEqual(["a.pdf#0"]);
   });
 
+  it("reads a page once: a switch off and on, a closed notebook and a reopened one read nothing again", async () => {
+    const r = rig();
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+    await r.settle();
+    expect(r.log.rendered).toEqual(["a.pdf#0"]);
+    // The AI menu's switch: off, then on (both end in settingsChanged).
+    r.service.settingsChanged();
+    r.service.settingsChanged();
+    // The notebook closes and opens again.
+    r.service.release(r.owner);
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+    await r.advance(IDLE_MS + 2000);
+    expect(r.log.rendered).toEqual(["a.pdf#0"]);
+    expect(r.owner.ready).toContain("a.pdf#0");
+  });
+
   it("reads the page in view, then its neighbours, then the rest of the PDF once idle", async () => {
     const r = rig();
     // Asked for together (the pen is down meanwhile), so the order is the queue's.
