@@ -87,6 +87,10 @@ export interface LibraryHost {
   importImage(file: File, folder: string): void;
   /** FineNotes' own page in Obsidian's settings. */
   openSettings(): void;
+  /** The newer FineNotes that is out, or null. */
+  update(): string | null;
+  /** Open FineNotes' page under Community plugins, with Obsidian's Update button. */
+  openUpdate(): void;
   /** A notebook whose pages are the chosen PDF's, made in `folder`. */
   importPdf(
     source: { kind: "file"; file: File } | { kind: "vault"; file: TFile },
@@ -137,6 +141,7 @@ export class LibraryView extends ItemView {
   private readonly selected = new Set<string>();
   private barEl!: HTMLElement;
   private pullEl!: HTMLElement;
+  private updateEl!: HTMLElement;
   private query = "";
   private readonly reads = new Map<string, Read>();
   private reading = false;
@@ -219,6 +224,14 @@ export class LibraryView extends ItemView {
     });
     setIcon(sort, "arrow-up-down");
     sort.addEventListener("click", (event) => this.openSortMenu(event));
+
+    this.updateEl = head.createEl("button", {
+      cls: "goodobsidian-library-update is-hidden",
+      attr: { type: "button" },
+    });
+    setIcon(this.updateEl.createSpan({ cls: "goodobsidian-library-new-icon" }), "arrow-up-circle");
+    this.updateEl.createSpan({ text: "Update" });
+    this.updateEl.addEventListener("click", () => this.host.openUpdate());
 
     const add = head.createEl("button", {
       cls: "goodobsidian-library-new",
@@ -377,6 +390,9 @@ export class LibraryView extends ItemView {
             .join(" / "),
     );
     this.upEl.toggleClass("is-hidden", this.folder === "");
+    const update = this.host.update();
+    this.updateEl.toggleClass("is-hidden", update === null);
+    if (update !== null) this.updateEl.setAttribute("aria-label", `FineNotes ${update} is out`);
     this.bodyEl.empty();
 
     const all = this.entries();
