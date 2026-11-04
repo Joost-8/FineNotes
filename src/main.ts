@@ -154,6 +154,7 @@ import {
   buildImageNotebook,
   buildPdfNotebook,
   cleanTitle,
+  dialogChoices,
   joinVaultPath,
   newNoteBody,
   normalizeFolder,
@@ -2293,8 +2294,11 @@ export default class GoodObsidianPlugin extends Plugin {
     return paths;
   }
 
-  /** The "New notebook" dialog, preset with the last choices and the default folder. */
-  openNewNotebookDialog(folder?: string, kind?: NotebookType): void {
+  /**
+   * The "New notebook" dialog, preset with the last choices and the default
+   * folder. It opens as a notebook unless asked for a board, whatever was made last.
+   */
+  openNewNotebookDialog(folder?: string, kind: NotebookType = "notebook"): void {
     // My templates' previews: a PDF cache of the dialog's own, let go when it closes.
     const cache = new PdfBackdropCache(this.app);
     const painter = new VaultBackdropRenderer(cache);
@@ -2315,10 +2319,7 @@ export default class GoodObsidianPlugin extends Plugin {
       });
     });
     const modal = new NewNotebookModal(this.app, {
-      choices: {
-        ...parseNotebookChoices(this.settings.lastNotebookChoices),
-        ...(kind ? { type: kind } : {}),
-      },
+      choices: dialogChoices(this.settings.lastNotebookChoices, kind),
       template: parseNotebookTemplate(this.settings.lastNotebookTemplate),
       folder: folder ?? this.newNotebookFolder(),
       papers: library,

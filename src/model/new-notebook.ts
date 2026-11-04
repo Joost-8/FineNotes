@@ -118,6 +118,16 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   return out;
 }
 
+/**
+ * What the New notebook dialog opens with: the remembered paper, cover and
+ * size, as the kind the entry asked for. The kind is never the remembered
+ * one: New notebook opens a notebook right after a board was made, and New
+ * board a board.
+ */
+export function dialogChoices(raw: unknown, kind: NotebookType = "notebook"): NotebookChoices {
+  return { ...parseNotebookChoices(raw), type: kind };
+}
+
 /** The My templates entry the dialog made a notebook of last time. */
 export interface NotebookTemplateChoice {
   /** Vault path of the library's PDF. */
