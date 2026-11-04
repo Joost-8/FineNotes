@@ -188,6 +188,8 @@ export class LibraryView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("goodobsidian-library");
+    // Obsidian opens the command palette on a pull down; this list pulls to refresh instead.
+    root.dataset.ignoreSwipe = "true";
 
     const head = root.createDiv({ cls: "goodobsidian-library-head" });
     this.upEl = head.createEl("button", {
