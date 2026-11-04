@@ -34,6 +34,17 @@ export function modelFolder(pluginDir: string, asset: ModelAsset): string {
   return normalizePath(`${pluginDir}/${asset.folder}`);
 }
 
+/** The total in a `Content-Range: bytes 0-99/14239897` header (any case of the name), or undefined. */
+export function contentRangeTotal(headers: Record<string, string> | undefined): number | undefined {
+  if (!headers) return undefined;
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() !== "content-range") continue;
+    const match = /\/(\d+)\s*$/.exec(value);
+    return match ? Number(match[1]) : undefined;
+  }
+  return undefined;
+}
+
 /** The network, the hash and the clock, through Obsidian: the same wherever the files are kept. */
 function networkDeps(
   formatOf: (data: ArrayBuffer) => number | null,
@@ -43,10 +54,19 @@ function networkDeps(
       const answer = await requestUrl({
         url,
         method: "GET",
-        headers: range ? { Range: `bytes=${range.start}-${range.end}` } : undefined,
+        // Never a compressed body: a CDN that compresses counts a range in
+        // compressed bytes, and the file would arrive damaged.
+        headers: {
+          "Accept-Encoding": "identity",
+          ...(range ? { Range: `bytes=${range.start}-${range.end}` } : {}),
+        },
         throw: false,
       });
-      return { status: answer.status, body: answer.arrayBuffer };
+      return {
+        status: answer.status,
+        body: answer.arrayBuffer,
+        total: contentRangeTotal(answer.headers),
+      };
     },
     sha256: async (data) => toHex(await crypto.subtle.digest("SHA-256", data)),
     formatOf,

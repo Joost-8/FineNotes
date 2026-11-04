@@ -49,16 +49,25 @@ const PAIR: ModelAsset = {
 
 interface Server {
   /** Answer for each request, in turn; "fail" rejects (offline). "ok" and afterwards: the range asked for. */
-  script: ("ok" | "fail" | number | "full" | "short")[];
+  script: ("ok" | "fail" | number | "full" | "short" | "compressed")[];
   body: Uint8Array;
   /** Bodies of other URLs. */
   others: Map<string, Uint8Array>;
   requests: { start: number; end: number }[];
+  /** Requests without a range. */
+  whole: number;
 }
 
 function fakes(server: Partial<Server> = {}) {
   const files = new Map<string, Uint8Array>();
-  const srv: Server = { script: [], body: FILE, others: new Map(), requests: [], ...server };
+  const srv: Server = {
+    script: [],
+    body: FILE,
+    others: new Map(),
+    requests: [],
+    whole: 0,
+    ...server,
+  };
   const writes: string[] = [];
   const deps: AssetStoreDeps = {
     list: () => Promise.resolve([...files.keys()]),
@@ -84,6 +93,7 @@ function fakes(server: Partial<Server> = {}) {
       return Promise.resolve();
     },
     get: (url, range) => {
+      if (!range) srv.whole++;
       const body = srv.others.get(url) ?? srv.body;
       const r = range ?? { start: 0, end: body.byteLength - 1 };
       srv.requests.push(r);
@@ -94,6 +104,13 @@ function fakes(server: Partial<Server> = {}) {
       if (step === "full") return Promise.resolve({ status: 200, body: body.slice().buffer });
       const piece = body.slice(r.start, r.end + 1);
       if (step === "short") return Promise.resolve({ status: 206, body: piece.slice(1).buffer });
+      // A CDN that compressed the body: the range counts compressed bytes, and so does the total.
+      if (step === "compressed")
+        return Promise.resolve({
+          status: 206,
+          body: piece.buffer,
+          total: Math.floor(body.byteLength / 2),
+        });
       return Promise.resolve({ status: 206, body: piece.buffer });
     },
     sha256: (data) => Promise.resolve(sha(data)),
@@ -191,11 +208,31 @@ describe("AssetStore", () => {
     expect(srv.requests[0]?.start).toBe(0);
   });
 
-  it("refuses a short piece", async () => {
-    const { deps } = fakes({ script: ["short"] });
+  it("asks for the file once in one piece when a piece arrives short, and verifies it as usual", async () => {
+    const { deps, srv } = fakes({ script: ["short"] });
+    const store = new AssetStore(ASSET, deps);
+    expect(await store.download()).toBe(true);
+    expect(srv.whole).toBe(1);
+  });
+
+  it("falls back to one request when the Content-Range total is not the file's size", async () => {
+    const { deps, srv, files } = fakes({ script: ["compressed"] });
+    const store = new AssetStore(ASSET, deps);
+    expect(await store.download()).toBe(true);
+    expect(srv.whole).toBe(1);
+    expect(files.get(ASSET.files[0].name)).toEqual(FILE);
+  });
+
+  it("does not fall back more than once, and a damaged fallback fails and can be tried again", async () => {
+    const { deps, srv } = fakes({ script: ["short", "short"] });
     const store = new AssetStore(ASSET, deps);
     expect(await store.download()).toBe(false);
     expect(store.state).toMatchObject({ kind: "failed", reason: "damaged" });
+    expect(srv.whole).toBe(1);
+    srv.script.length = 0;
+    srv.requests.length = 0;
+    expect(await store.download()).toBe(true);
+    expect(srv.requests[0]?.start).toBe(0);
   });
 
   it("reports a write that fails", async () => {
