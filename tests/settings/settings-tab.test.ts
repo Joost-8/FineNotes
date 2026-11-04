@@ -80,6 +80,7 @@ const { providerLabel } = await import("../../src/recognition/registry");
 const { MANUAL_PROVIDER_ID } = await import("../../src/recognition/manual");
 const { GRAPE_MODEL } = await import("../../src/recognition/hwr/grape-model");
 const { speechAsset } = await import("../../src/audio/speech-models");
+const { OCR_TIERS } = await import("../../src/recognition/ocr/ocr-model");
 const { savedPenLabel } = await import("../../src/model/saved-pens");
 
 type Settings = typeof DEFAULT_SETTINGS;
@@ -124,6 +125,9 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
   const deviceStorage = new Map<string, string>();
   const grapeStore = fakeStore(GRAPE_MODEL, calls);
   const speechStore = fakeStore(speechAsset("whisper-base"), calls);
+  // One store per OCR choice, as obsidianOcrDeps registers them (the chosen one is used).
+  const ocrStores = OCR_TIERS.map((t) => fakeStore(t.asset, calls));
+  const stores = [grapeStore, speechStore, ...ocrStores];
   /** The vault the learning rows look in: practice files and model files by path. */
   const files = new Map<string, string>();
   const learnerListeners = new Set<() => void>();
@@ -177,7 +181,10 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       calls.push("ocr:removeOthers");
       return Promise.resolve();
     }),
-    models: { all: () => [grapeStore, speechStore] },
+    models: {
+      all: () => [...stores],
+      get: (id: string) => stores.find((s) => s.asset.id === id),
+    },
     speech: { store: () => speechStore },
     grape: {
       model: grapeStore,
@@ -426,6 +433,8 @@ const MODEL_ROWS = [
   ["Size and language", "render"],
   ["Handwriting · Grape 2.0", "render"],
   ["Your handwriting model", "render"],
+  ["Scanned pages · Fast", "render"],
+  ["OCR model size", "render"],
 ] as const;
 
 /** The head of "AI and handwriting": reading handwriting on this device. */
@@ -459,7 +468,6 @@ describe("the rows", () => {
       [PAGES, "Paper width", "render"],
       [PAGES, "Read scanned PDF pages (on-device OCR)", "toggle:ocrScannedPdfs"],
       [PAGES, "Also read text inside figures", "toggle:ocrFigureText"],
-      [PAGES, "OCR model", "render"],
       [PAGES, "More", "action"],
       [PAGES, "New notebooks go in", "render"],
       [PAGES, "Each notebook gets its own folder", "toggle:notebookOwnFolder"],
@@ -647,6 +655,8 @@ const DEFAULT_MODEL_ROWS = [
   "Size and language",
   "Handwriting · Grape 2.0",
   "Your handwriting model",
+  "Scanned pages · Fast",
+  "OCR model size",
 ];
 
 /** The head of "AI and handwriting" shown by default: Grape reads. */
@@ -688,7 +698,6 @@ describe("which rows show", () => {
       "Paper width",
       "Read scanned PDF pages (on-device OCR)",
       "Also read text inside figures",
-      "OCR model",
       "More",
       "New notebooks go in",
       "Each notebook gets its own folder",
@@ -1986,17 +1995,18 @@ describe("Models on this device", () => {
   });
 
   describe("OCR model", () => {
-    const OCR = "OCR model";
+    const OCR = "OCR model size";
+    const SCANNED = "Scanned pages · Fast";
 
-    it("offers three choices with their size and speed, Fast first, and stores a pick", async () => {
+    it("offers three choices with their size, Fast first, and stores a pick", async () => {
       const plugin = makePlugin();
       const def = named(rows(makeTab(plugin).tab), OCR);
       const row = renderRow(def);
       expect(row.dropdowns[0].value).toBe("fast");
       expect(row.dropdowns[0].options).toEqual({
-        fast: "Fast · 23.7 MB · ~6 s/page on desktop",
-        accurate: "Accurate · 40.5 MB · ~14 s/page on desktop",
-        "most-accurate": "Most accurate · 95.9 MB · ~48 s/page on desktop",
+        fast: "Fast (23.7 MB)",
+        accurate: "Accurate (40.5 MB)",
+        "most-accurate": "Most accurate (95.9 MB)",
       });
       // On a computer the row says nothing under its name; the long text is behind the ⓘ.
       expect(def.desc).toBeUndefined();
@@ -2004,18 +2014,58 @@ describe("Models on this device", () => {
       expect(plugin.settings.ocrModel).toBe("accurate");
       // The new reader is offered and used at once, and the settings were saved.
       expect(plugin.calls).toEqual(expect.arrayContaining(["save", "ocr:model"]));
-      expect(plugin.calls).not.toContain("update");
+      // The tab is drawn again, so "Scanned pages · Accurate" names the row.
+      expect(plugin.calls).toContain("update");
     });
 
-    it("sits right under the OCR switches, only while OCR is on", () => {
-      const off = makePlugin({ ocrScannedPdfs: false });
-      const { tab } = makeTab(off);
-      expect(shown(named(rows(tab), "Also read text inside figures"))).toBe(false);
-      expect(shown(named(rows(tab), OCR))).toBe(false);
+    it("is one row in Models on this device, under the chosen model's download", () => {
+      const { tab } = makeTab(makePlugin());
+      const all = rows(tab);
+      expect(named(all, SCANNED)).toBeDefined();
+      expect(all.find((r) => r.def.name === SCANNED)?.heading).toBe(MODELS);
+      expect(all.find((r) => r.def.name === OCR)?.heading).toBe(MODELS);
+      expect(tab.infoOf(SCANNED)).toMatch(/^The OCR model reads the printed text/);
+      expect(tab.infoOf(OCR)).toMatch(/^Fast is the small model/);
+    });
+
+    it("names the row after the chosen model and shows that model's download", () => {
+      const plugin = makePlugin({ ocrModel: "accurate" });
+      const accurate = plugin.models.get("ocr-ppocrv6-small");
+      if (!accurate) throw new Error("no accurate store");
+      accurate.state = { kind: "missing" };
+      const row = renderRow(named(rows(makeTab(plugin).tab), "Scanned pages · Accurate"));
+      expect(row.descEl.find("goodobsidian-model-status")?.textContent).toBe(
+        "Not downloaded yet (40.5 MB).",
+      );
+      expect(row.buttons.map((b) => b.text)).toEqual(["Download"]);
+    });
+
+    it("keeps no row for any OCR choice in the list of other models", () => {
       const plugin = makePlugin();
-      const names = rows(makeTab(plugin).tab).map((r) => r.def.name);
-      expect(names[names.indexOf("Also read text inside figures") + 1]).toBe(OCR);
-      expect(shown(named(rows(makeTab(plugin).tab), OCR))).toBe(true);
+      const names = rows(makeTab(plugin).tab)
+        .filter((r) => r.heading === MODELS)
+        .map((r) => r.def.name);
+      for (const tier of OCR_TIERS) expect(names).not.toContain(tier.asset.label);
+      expect(names.filter((n) => n.includes("OCR") || n.startsWith("Scanned"))).toEqual([
+        SCANNED,
+        OCR,
+      ]);
+    });
+
+    it("sits under the reader's download, in Models on this device, only while OCR is on", () => {
+      const off = makePlugin({ ocrScannedPdfs: false });
+      const offRows = rows(makeTab(off).tab);
+      expect(shown(named(offRows, SCANNED))).toBe(false);
+      expect(shown(named(offRows, OCR))).toBe(false);
+      const plugin = makePlugin();
+      const all = rows(makeTab(plugin).tab);
+      const names = all.map((r) => r.def.name);
+      expect(names[names.indexOf(SCANNED) + 1]).toBe(OCR);
+      expect(names.indexOf(OCR)).toBeGreaterThan(names.indexOf("Your handwriting model"));
+      expect(shown(named(all, SCANNED))).toBe(true);
+      expect(shown(named(all, OCR))).toBe(true);
+      // Not in the PDF section any more.
+      expect(all.filter((r) => r.heading === PAGES).map((r) => r.def.name)).not.toContain(OCR);
     });
 
     it("hides the largest model on a phone or tablet and says how much slower Accurate is", async () => {
@@ -2023,15 +2073,17 @@ describe("Models on this device", () => {
       try {
         // Even a vault whose settings (synced) chose it shows Fast there.
         const plugin = makePlugin({ ocrModel: "most-accurate" });
-        const def = named(rows(makeTab(plugin).tab), OCR);
+        const all = rows(makeTab(plugin).tab);
+        const def = named(all, OCR);
         const row = renderRow(def);
         expect(Object.keys(row.dropdowns[0].options)).toEqual(["fast", "accurate"]);
         expect(row.dropdowns[0].value).toBe("fast");
-        expect(row.dropdowns[0].options.fast).toMatch(/s\/page on a laptop$/);
+        expect(row.dropdowns[0].options.fast).toBe("Fast (23.7 MB)");
         expect(def.desc).toBe(
           "Accurate is about 2× slower per page than Fast (desktop measurement).",
         );
         expect(def.desc?.length ?? 0).toBeLessThanOrEqual(ONE_LINE + 10);
+        expect(named(all, SCANNED).name).toBe(SCANNED);
       } finally {
         Platform.isMobile = false;
       }

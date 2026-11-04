@@ -24,12 +24,7 @@
  * PURE: data only.
  */
 
-import {
-  type ModelAsset,
-  type ModelFile,
-  formatSize,
-  totalBytes,
-} from "../../downloads/model-manifest";
+import type { ModelAsset, ModelFile } from "../../downloads/model-manifest";
 import { OCR_TUNING, type OcrTuning } from "./ocr-words";
 
 const BRANCH = "https://raw.githubusercontent.com/fariszyzy/FineNotes/ocr-models";
@@ -258,9 +253,3 @@ export const OCR_OBSOLETE_FOLDERS: readonly string[] = ["ocr/ppocrv5"];
 export const OCR_ACCURATE_SLOWDOWN = Math.round(
   OCR_TIERS[1].secondsPerPage / OCR_TIERS[0].secondsPerPage,
 );
-
-/** A choice as the setting lists it: "Fast · 23.7 MB · ~6 s/page on desktop". */
-export function ocrChoiceLabel(tier: OcrTier, mobile: boolean): string {
-  const where = mobile ? "on a laptop" : "on desktop";
-  return `${tier.label} · ${formatSize(totalBytes(tier.asset))} · ~${tier.secondsPerPage} s/page ${where}`;
-}

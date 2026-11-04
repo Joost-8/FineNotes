@@ -1008,6 +1008,8 @@ export function changesTabLayout(key: string): boolean {
     key === "imageVendor" ||
     key === "pressureWidth" ||
     key === "speechModel" ||
+    // The row "Scanned pages · <choice>" is named by it.
+    key === "ocrModel" ||
     key === "useLearnedHandwriting" ||
     // "Also read text inside figures" shows only while this is on.
     key === "ocrScannedPdfs"
