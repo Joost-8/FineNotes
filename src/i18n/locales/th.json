@@ -1538,8 +1538,6 @@
   "notebooks.untitled.page": "หน้าไม่มีชื่อ",
   "notebooks.untitled.board": "กระดานไม่มีชื่อ",
   "notebooks.untitled.notebook": "สมุดบันทึกไม่มีชื่อ",
-  "notebooks.simpleLook.notice": "เปิดมุมมองเรียบง่ายอยู่: แถบด้านข้าง ริบบอน และแถบต่าง ๆ ของ Obsidian ถูกซ่อนไว้ หากต้องการกลับไปใช้ Obsidian ปกติ ให้ปิดมุมมองเรียบง่ายในการตั้งค่าของ FineNotes",
-  "notebooks.simpleLook.openSettings": "เปิดการตั้งค่า",
   "notebooks.home.title": "หน้าแรก",
   "notebooks.home.heading": "สมุดบันทึก",
   "notebooks.home.up": "ขึ้นไปหนึ่งโฟลเดอร์",

@@ -1913,8 +1913,6 @@
   "notebooks.untitled.page": "صفحة بلا عنوان",
   "notebooks.untitled.board": "لوحة بلا عنوان",
   "notebooks.untitled.notebook": "دفتر بلا عنوان",
-  "notebooks.simpleLook.notice": "المظهر البسيط مفعّل: الأشرطة الجانبية والشريط الأيسر والأشرطة في Obsidian مخفية. لإعادة Obsidian المعتاد، أوقف المظهر البسيط من إعدادات FineNotes.",
-  "notebooks.simpleLook.openSettings": "فتح الإعدادات",
   "notebooks.home.title": "الرئيسية",
   "notebooks.home.heading": "الدفاتر",
   "notebooks.home.up": "إلى المجلد الأعلى",

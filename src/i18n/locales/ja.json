@@ -1538,8 +1538,6 @@
   "notebooks.untitled.page": "無題のページ",
   "notebooks.untitled.board": "無題のボード",
   "notebooks.untitled.notebook": "無題のノートブック",
-  "notebooks.simpleLook.notice": "シンプル表示がオンです: Obsidianのサイドバー、リボン、バーを隠しています。通常のObsidianに戻すには、FineNotesの設定でシンプル表示をオフにしてください。",
-  "notebooks.simpleLook.openSettings": "設定を開く",
   "notebooks.home.title": "ホーム",
   "notebooks.home.heading": "ノートブック",
   "notebooks.home.up": "1つ上のフォルダへ",

@@ -1538,8 +1538,6 @@
   "notebooks.untitled.page": "未命名页面",
   "notebooks.untitled.board": "未命名白板",
   "notebooks.untitled.notebook": "未命名笔记本",
-  "notebooks.simpleLook.notice": "简洁外观已开启：Obsidian 的侧边栏、功能区和栏已隐藏。要恢复普通的 Obsidian，请在 FineNotes 设置中关闭“简洁外观”。",
-  "notebooks.simpleLook.openSettings": "打开设置",
   "notebooks.home.title": "主页",
   "notebooks.home.heading": "笔记本",
   "notebooks.home.up": "返回上一级文件夹",

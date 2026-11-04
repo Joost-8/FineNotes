@@ -74,6 +74,10 @@ export const ai = {
   "ai.ask.notePickSaved": "Pick the pages to ask about. Saved in AI chats.",
   "ai.ask.noteAsking": "Asking {target}. It can use your notebook.",
   "ai.ask.noteAskingSaved": "Asking {target}. It can use your notebook. Saved in AI chats.",
+  "ai.ask.noteScreen":
+    "Sends what is on screen to {target} with your question. It can use your notebook.",
+  "ai.ask.noteScreenSaved":
+    "Sends what is on screen to {target} with your question. It can use your notebook. Saved in AI chats.",
   "ai.ask.noteSends": "Sends {pages} to {target} with your question. It can use your notebook.",
   "ai.ask.noteSendsSaved":
     "Sends {pages} to {target} with your question. It can use your notebook. Saved in AI chats.",
@@ -93,6 +97,7 @@ export const ai = {
   "ai.ask.emptyNone": "Ask about your notes",
   "ai.ask.emptyOne": "Ask about this page",
   "ai.ask.emptyMany": "Ask about these pages",
+  "ai.ask.emptyScreen": "Ask about what is on screen",
   "ai.ask.emptyFile": "Ask about this",
   "ai.ask.suggestOne.summarise": "Summarise this page",
   "ai.ask.suggestOne.explain": "Explain this step by step",
@@ -102,6 +107,10 @@ export const ai = {
   "ai.ask.suggestMany.keyIdeas": "What are the key ideas?",
   "ai.ask.suggestMany.practice": "Make practice questions",
   "ai.ask.suggestMany.review": "What should I review?",
+  "ai.ask.suggestScreen.explain": "Explain what is on screen",
+  "ai.ask.suggestScreen.summarise": "Summarise this",
+  "ai.ask.suggestScreen.check": "Check my work for mistakes",
+  "ai.ask.suggestScreen.quiz": "Quiz me on this",
   "ai.ask.suggestFile.says": "What does this say?",
   "ai.ask.suggestFile.explain": "Explain this step by step",
   "ai.ask.suggestFile.check": "Check my work for mistakes",
@@ -119,6 +128,7 @@ export const ai = {
   "ai.ask.reading": "Reading {items}…",
   "ai.ask.pickFirst": "pick a page or attach a file to ask about first.",
   "ai.ask.nothingToSend": "there is nothing on these pages to send.",
+  "ai.ask.nothingOnScreen": "there is nothing on screen to send.",
   "ai.ask.done": "Done.",
   "ai.attach.already": "{name} is already attached.",
   "ai.attach.tooBig":

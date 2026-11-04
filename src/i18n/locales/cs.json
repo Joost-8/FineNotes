@@ -1763,8 +1763,6 @@
   "notebooks.untitled.page": "Stránka bez názvu",
   "notebooks.untitled.board": "Tabule bez názvu",
   "notebooks.untitled.notebook": "Sešit bez názvu",
-  "notebooks.simpleLook.notice": "Jednoduchý vzhled je zapnutý: postranní panely, panel nástrojů a lišty Obsidianu jsou skryté. Běžný Obsidian vrátíte vypnutím Jednoduchého vzhledu v nastavení FineNotes.",
-  "notebooks.simpleLook.openSettings": "Otevřít nastavení",
   "notebooks.home.title": "Domů",
   "notebooks.home.heading": "Sešity",
   "notebooks.home.up": "O složku výš",

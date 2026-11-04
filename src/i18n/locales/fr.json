@@ -1613,8 +1613,6 @@
   "notebooks.untitled.page": "Page sans titre",
   "notebooks.untitled.board": "Toile sans titre",
   "notebooks.untitled.notebook": "Carnet sans titre",
-  "notebooks.simpleLook.notice": "L'apparence simple est activée : les barres latérales, le ruban et les barres d'Obsidian sont masqués. Pour retrouver l'Obsidian habituel, désactivez l'apparence simple dans les réglages de FineNotes.",
-  "notebooks.simpleLook.openSettings": "Ouvrir les réglages",
   "notebooks.home.title": "Accueil",
   "notebooks.home.heading": "Carnets",
   "notebooks.home.up": "Dossier parent",

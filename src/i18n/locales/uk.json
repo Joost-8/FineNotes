@@ -1625,8 +1625,6 @@
   "notebooks.untitled.page": "Сторінка без назви",
   "notebooks.untitled.board": "Дошка без назви",
   "notebooks.untitled.notebook": "Блокнот без назви",
-  "notebooks.simpleLook.notice": "Простий вигляд увімкнено: бічні панелі, стрічка та рядки Obsidian приховано. Щоб повернути звичайний Obsidian, вимкніть «Простий вигляд» у налаштуваннях FineNotes.",
-  "notebooks.simpleLook.openSettings": "Відкрити налаштування",
   "notebooks.home.title": "Головна",
   "notebooks.home.heading": "Блокноти",
   "notebooks.home.up": "На папку вище",

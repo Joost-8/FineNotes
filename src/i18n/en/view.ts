@@ -238,6 +238,7 @@ export const view = {
     "FineNotes: this notebook changed since, so the pages stay in {title} as well. Delete them there if you do not want them.",
   "view.transfer.undoFailed": "FineNotes: could not take the pages out of {title} — {message}",
   "view.transfer.refuseSingle": "That is a single page, which takes no more pages.",
+  "view.transfer.refuseBoard": "That is a board, which takes no pages.",
   "view.transfer.refusePractice": "A practice set has fixed pages.",
   "view.transfer.refuseReadOnly": "That notebook is read-only.",
   "view.transfer.receive.one": "Receive page",

@@ -9,7 +9,8 @@
  *
  * The ∞ switches it to an endless board (FineNotes#46): the header says
  * "New board", and cover, size, colour, orientation and the templates give
- * way to three cards, Blank, Dotted and Squared, on white paper.
+ * way to three cards, Blank, Dotted and Squared, on white paper. The import
+ * link goes too: an import always makes a notebook.
  *
  * Laid out for an iPad in either orientation, and usable with the on-screen
  * keyboard up: Create sits in the header, Return in the title creates, and
@@ -71,6 +72,12 @@ export interface NewNotebookOptions {
   template?: { path: string; page: number } | null;
   /** Preselected folder: the setting, or the active file's folder. */
   folder: string;
+  /**
+   * Where a folder picked in the dialog really takes the notebook (the host
+   * steps out of a notebook's own folder), so the chip shows that. Left
+   * out, the folder picked.
+   */
+  placeFolder?: (folder: string) => string;
   onCreate: (request: NewNotebookRequest) => void;
   /**
    * "Import from another app…", under the title: closes the dialog and imports
@@ -126,6 +133,8 @@ export class NewNotebookModal extends Modal {
   private boardToggle: HTMLElement | null = null;
   /** Cover and Paper: what a notebook asks and a board does not. */
   private notebookSections: HTMLElement[] = [];
+  /** "Import from another app…": it makes notebooks, so a board hides it. */
+  private importLink: HTMLElement | null = null;
   /** A board's three paper cards. */
   private boardSection: HTMLElement | null = null;
   private boardCards: Array<{ ruling: Ruling; root: HTMLElement }> = [];
@@ -216,6 +225,7 @@ export class NewNotebookModal extends Modal {
     this.coverPicker = null;
     this.grid = null;
     this.notebookSections = [];
+    this.importLink = null;
     this.boardSection = null;
     this.boardCards = [];
     this.templates?.dispose();
@@ -312,6 +322,7 @@ export class NewNotebookModal extends Modal {
     setIcon(link.createSpan({ cls: "goodobsidian-newnb-import-icon" }), ICON_IMPORT_NOTEBOOK);
     link.createSpan({ text: t("notebooks.newNotebook.importApp") });
     link.createSpan({ cls: "goodobsidian-beta-tag", text: t("notebooks.importModal.beta") });
+    this.importLink = link;
     link.addEventListener("click", () => {
       const folder = this.folder;
       this.close();
@@ -489,6 +500,7 @@ export class NewNotebookModal extends Modal {
     );
     this.titleInput?.setAttribute("placeholder", defaultTitle(board ? "endless" : "notebook"));
     for (const section of this.notebookSections) section.toggleClass("is-hidden", board);
+    this.importLink?.toggleClass("is-hidden", board);
     this.boardSection?.toggleClass("is-hidden", !board);
   }
 
@@ -518,7 +530,8 @@ export class NewNotebookModal extends Modal {
       new FolderSuggestModal(
         this.app,
         (path) => {
-          this.folder = normalizeFolder(path);
+          const picked = normalizeFolder(path);
+          this.folder = normalizeFolder(this.options.placeFolder?.(picked) ?? picked);
           this.syncFolder();
         },
         undefined,

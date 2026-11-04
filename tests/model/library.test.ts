@@ -55,6 +55,12 @@ describe("entryFromText", () => {
     expect(read).toEqual(placeholderEntry("Notes/Plain.notebook.md", 9));
     expect(read.pages).toBe(0);
   });
+
+  it("names a single page, a pre-0.2 note and one marked ink in its frontmatter by their names", () => {
+    expect(placeholderEntry("Sketch.page.md", 1).title).toBe("Sketch");
+    expect(placeholderEntry("Old.ink.md", 1).title).toBe("Old");
+    expect(placeholderEntry("Marked.md", 1).title).toBe("Marked");
+  });
 });
 
 describe("browse", () => {
@@ -247,5 +253,15 @@ describe("hoistSingles", () => {
 
   it("collapses a lone notebook inside a folder of folders up to the root", () => {
     expect(hoistSingles([entry("A/B/C.notebook.md", 1)])[0].folder).toBe("");
+  });
+
+  it("keeps a folder made or styled in the library, however few it holds", () => {
+    const made = (folder: string) => folder === "Shelf";
+    // Moved into a new folder: it stays in it, and the folder stays a tile.
+    expect(hoistSingles([entry("Shelf/Algebra.notebook.md", 1)], made)[0].folder).toBe("Shelf");
+    // A notebook with a folder of its own, inside it: filed in it, not above.
+    expect(hoistSingles([entry("Shelf/Physics/Physics.notebook.md", 1)], made)[0].folder).toBe(
+      "Shelf",
+    );
   });
 });

@@ -1688,8 +1688,6 @@
   "notebooks.untitled.page": "Страница без наслова",
   "notebooks.untitled.board": "Табла без наслова",
   "notebooks.untitled.notebook": "Бележница без наслова",
-  "notebooks.simpleLook.notice": "Једноставан изглед је укључен: бочне траке, лева трака и траке програма Obsidian су скривене. Да вратите уобичајени Obsidian, искључите Једноставан изглед у подешавањима апликације FineNotes.",
-  "notebooks.simpleLook.openSettings": "Отвори подешавања",
   "notebooks.home.title": "Почетна",
   "notebooks.home.heading": "Бележнице",
   "notebooks.home.up": "Фасцикла изнад",

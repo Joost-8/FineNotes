@@ -51,7 +51,11 @@ const hooks = vi.hoisted(() => ({
   confirms: 0,
   post: null as null | ((url: string, headers: unknown, body: unknown) => Promise<unknown>),
   posts: [] as { url: string; headers: unknown; body: unknown }[],
-  imports: [] as { folder: string; ownFolder: boolean }[],
+  imports: [] as {
+    folder: string;
+    ownFolder: boolean;
+    placeFolder?: (folder: string) => string;
+  }[],
   welcomes: 0,
 }));
 
@@ -77,7 +81,7 @@ vi.mock("../../src/ui/confirm-modal", () => ({
   },
 }));
 vi.mock("../../src/view/import-notebook-modal", () => ({
-  openImportNotebookModal: (_app: unknown, options: { folder: string; ownFolder: boolean }) => {
+  openImportNotebookModal: (_app: unknown, options: (typeof hooks.imports)[number]) => {
     hooks.imports.push(options);
   },
 }));
@@ -101,6 +105,8 @@ const { default: GoodObsidianPlugin } = await import("../../src/main");
 const { InkView } = await import("../../src/view/ink-view");
 const { DEFAULT_SETTINGS } = await import("../../src/settings");
 const { codeChallenge } = await import("../../src/recognition/openrouter-auth");
+const { DEFAULT_NOTEBOOK_CHOICES } = await import("../../src/model/new-notebook");
+const { NewNotebookModal } = await import("../../src/view/new-notebook-modal");
 
 type Plugin = InstanceType<typeof GoodObsidianPlugin>;
 
@@ -127,7 +133,7 @@ interface FakeApp {
     trigger(name: string, ...args: unknown[]): void;
     fireLayoutReady(): void;
   };
-  addFile(path: string, frontmatter?: Record<string, unknown>): TFile;
+  addFile(path: string, frontmatter?: Record<string, unknown>, text?: string): TFile;
   secrets: Map<string, string>;
 }
 
@@ -139,9 +145,11 @@ function fakeApp(
   const stored = new Map(Object.entries(local));
   const frontmatter = new Map<string, Record<string, unknown>>();
   const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
+  const vaultHandlers = new Map<string, ((...args: unknown[]) => void)[]>();
   const ready: (() => void)[] = [];
   const secrets = new Map<string, string>();
   const created: { path: string; content: string }[] = [];
+  const texts = new Map<string, string>();
   const workspace = {
     leaves: [] as WorkspaceLeaf[],
     active: null as unknown,
@@ -165,6 +173,9 @@ function fakeApp(
       return workspace.active instanceof type ? workspace.active : null;
     },
     getActiveFile: () => null,
+    iterateAllLeaves(callback: (leaf: WorkspaceLeaf) => void) {
+      for (const leaf of [...workspace.leaves]) callback(leaf);
+    },
     getLeaf: () => new WorkspaceLeaf(),
     getMostRecentLeaf: () => null,
     revealLeaf: () => Promise.resolve(),
@@ -172,7 +183,13 @@ function fakeApp(
   return {
     workspace,
     vault: {
-      on: (name: string) => ({ name }),
+      on(name: string, callback: (...args: unknown[]) => void) {
+        vaultHandlers.set(name, [...(vaultHandlers.get(name) ?? []), callback]);
+        return { name };
+      },
+      trigger(name: string, ...args: unknown[]) {
+        for (const callback of vaultHandlers.get(name) ?? []) callback(...args);
+      },
       getAbstractFileByPath: (path: string) => files.get(path) ?? null,
       getFileByPath: (path: string) => files.get(path) ?? null,
       getMarkdownFiles: () => [...files.values()].filter((file) => file.extension === "md"),
@@ -184,8 +201,10 @@ function fakeApp(
       getFolderByPath: () => null,
       createFolder: () => Promise.resolve(),
       created,
+      cachedRead: (file: TFile) => Promise.resolve(texts.get(file.path) ?? ""),
       create(path: string, content: string) {
         created.push({ path, content });
+        texts.set(path, content);
         const file = new TFile(path);
         files.set(path, file);
         return Promise.resolve(file);
@@ -209,10 +228,11 @@ function fakeApp(
     secrets,
     loadLocalStorage: (key: string): unknown => stored.get(key) ?? null,
     saveLocalStorage: (key: string, value: string) => stored.set(key, value),
-    addFile(path: string, fm?: Record<string, unknown>) {
+    addFile(path: string, fm?: Record<string, unknown>, text?: string) {
       const file = new TFile(path);
       files.set(path, file);
       if (fm) frontmatter.set(path, fm);
+      if (text !== undefined) texts.set(path, text);
       return file;
     },
   };
@@ -422,6 +442,98 @@ describe("New notebook context menu", () => {
   });
 });
 
+describe("New notebook, never inside another notebook's own folder (#43)", () => {
+  /** A vault: `MVKN90/Course/` is the notebook `Course.notebook.md`'s own folder. */
+  function vaultWithNotebookFolder(active: string | null) {
+    const folder = (path: string, children: Array<TFile | TFolder>) =>
+      Object.assign(new TFolder(path), { name: path.slice(path.lastIndexOf("/") + 1), children });
+    const chats = folder("MVKN90/Course/AI chats", [new TFile("MVKN90/Course/AI chats/Q.md")]);
+    const own = folder("MVKN90/Course", [new TFile("MVKN90/Course/Course.notebook.md"), chats]);
+    const course = folder("MVKN90", [own]);
+    const folders = new Map<string, TFolder>([
+      ["MVKN90", course],
+      ["MVKN90/Course", own],
+      ["MVKN90/Course/AI chats", chats],
+    ]);
+    const vault = app.vault as unknown as {
+      getFolderByPath(path: string): TFolder | null;
+      createFolder(path: string): Promise<void>;
+    };
+    vault.getFolderByPath = (path) => folders.get(path) ?? null;
+    const made = vi.spyOn(vault, "createFolder");
+    if (active) {
+      const file = new TFile(active);
+      file.parent = folders.get(active.slice(0, active.lastIndexOf("/"))) ?? null;
+      (app.workspace as unknown as { getActiveFile: () => TFile }).getActiveFile = () => file;
+    }
+    return made;
+  }
+  const inner = () =>
+    plugin as unknown as {
+      createNotebook(title: string, choices: unknown, folder?: string): Promise<TFile | null>;
+    };
+  const board = { ...DEFAULT_NOTEBOOK_CHOICES, type: "endless" as const };
+
+  it("with a notebook open, the default folder is the one it lives in", async () => {
+    await load();
+    const made = vaultWithNotebookFolder("MVKN90/Course/Course.notebook.md");
+    const file = await inner().createNotebook("Test2", board);
+    expect(file?.path).toBe("MVKN90/Test2/Test2.notebook.md");
+    // A board makes its own folder only: no empty AI chats, Exports, …
+    expect(made.mock.calls.map(([path]) => path)).toEqual(["MVKN90/Test2"]);
+  });
+
+  it("with one of a notebook's own files open (a saved chat), too", async () => {
+    await load();
+    vaultWithNotebookFolder("MVKN90/Course/AI chats/Q.md");
+    const file = await inner().createNotebook("Notes", DEFAULT_NOTEBOOK_CHOICES);
+    expect(file?.path).toBe("MVKN90/Notes/Notes.notebook.md");
+  });
+
+  it("the dialog's folder chip, given or picked, shows the folder it really goes in", async () => {
+    await load();
+    vaultWithNotebookFolder("MVKN90/Course/Course.notebook.md");
+    const shown: { folder: string; placeFolder?: (folder: string) => string }[] = [];
+    const open = vi.spyOn(NewNotebookModal.prototype, "open").mockImplementation(function (
+      this: InstanceType<typeof NewNotebookModal>,
+    ) {
+      const self = this as unknown as {
+        folder: string;
+        options: { placeFolder?: (folder: string) => string };
+      };
+      shown.push({ folder: self.folder, placeFolder: self.options.placeFolder });
+    });
+    plugin.openNewNotebookDialog();
+    plugin.openNewNotebookDialog("MVKN90/Course/AI chats");
+    expect(shown.map((s) => s.folder)).toEqual(["MVKN90", "MVKN90"]);
+    // A folder picked with the chip: a notebook's own folder is stepped out of.
+    expect(shown[0].placeFolder?.("MVKN90/Course")).toBe("MVKN90");
+    expect(shown[0].placeFolder?.("MVKN90")).toBe("MVKN90");
+    expect(shown[0].placeFolder?.("School")).toBe("School");
+    open.mockRestore();
+  });
+
+  it("the import dialog's folder, given or picked, too", async () => {
+    await load();
+    vaultWithNotebookFolder(null);
+    hooks.imports.length = 0;
+    plugin.openImportNotebook("MVKN90/Course");
+    expect(hooks.imports[0].folder).toBe("MVKN90");
+    expect(hooks.imports[0].placeFolder?.("MVKN90/Course/AI chats")).toBe("MVKN90");
+    expect(hooks.imports[0].placeFolder?.("School")).toBe("School");
+  });
+
+  it("a folder given as a notebook's own folder is stepped out of too", async () => {
+    await load();
+    vaultWithNotebookFolder(null);
+    const file = await inner().createNotebook("Notes", board, "MVKN90/Course");
+    expect(file?.path).toBe("MVKN90/Notes/Notes.notebook.md");
+    expect((await inner().createNotebook("Plain", board, "MVKN90"))?.path).toBe(
+      "MVKN90/Plain/Plain.notebook.md",
+    );
+  });
+});
+
 // --- What onload registers ----------------------------------------------------------
 
 describe("registration", () => {
@@ -445,6 +557,7 @@ describe("registration", () => {
         "create-notebook-with-last-settings",
         "customize-toolbar",
         "export-pdf",
+        "fit-board-drawing",
         "fit-reset-view",
         "import-pdf",
         "import-vault-pdf",
@@ -602,18 +715,112 @@ describe("registration", () => {
     });
   });
 
-  it("makes no notebook by itself; a first install gets the Home note, an update nothing", async () => {
-    for (const [stored, expected] of [
-      [null, ["Home.md"]],
-      [{ lastSeenVersion: "0.1.0" }, []],
-    ] as const) {
+  describe("the Home note", () => {
+    const created = () => (app.vault as unknown as { created: { path: string }[] }).created;
+
+    afterEach(() => vi.useRealTimers());
+    // The simple look's hint comes up during the wait on a first install.
+    beforeEach(() => {
+      vi.stubGlobal("createFragment", (build: (fragment: unknown) => void) => {
+        build({ createDiv: () => ({}), createEl: () => ({ addEventListener: () => {} }) });
+        return "fragment";
+      });
+    });
+
+    /** Load, lay out, and let the Home note's wait run out; `before` sets the vault up first. */
+    async function start(stored: unknown, before: () => void = () => {}): Promise<void> {
       await load(stored);
+      before();
+      vi.useFakeTimers();
       app.workspace.fireLayoutReady();
+      await vi.advanceTimersByTimeAsync(5000);
+      vi.useRealTimers();
       await flush();
-      const created = (app.vault as unknown as { created: { path: string }[] }).created;
-      expect(created.map((c) => c.path)).toEqual(expected);
-      created.length = 0;
     }
+
+    it("makes no notebook by itself; a first install in an empty vault gets the Home note", async () => {
+      await start(null);
+      expect(created().map((c) => c.path)).toEqual(["Home.md"]);
+      const text = (app.vault as unknown as { created: { content: string }[] }).created[0].content;
+      expect(text).toContain("finenotes-home: true");
+    });
+
+    it("is not made on an update", async () => {
+      await start({ lastSeenVersion: "0.1.0" });
+      expect(created()).toEqual([]);
+    });
+
+    it("is not made in a vault that already has notes or notebooks, though the plugin is new there", async () => {
+      await start(null, () => app.addFile("Daily/2026-11-03.md"));
+      expect(created()).toEqual([]);
+      await start(null, () => app.addFile("Physics/Physics.notebook.md"));
+      expect(created()).toEqual([]);
+    });
+
+    it("is not made when notes sync in while it waits (a second device)", async () => {
+      await load(null);
+      vi.useFakeTimers();
+      app.workspace.fireLayoutReady();
+      app.addFile("Lectures/Week 1.md");
+      await vi.advanceTimersByTimeAsync(5000);
+      vi.useRealTimers();
+      await flush();
+      expect(created()).toEqual([]);
+    });
+
+    it("opens the library in place of FineNotes' own Home note only", async () => {
+      const { HOME_FILE_TEXT } = await import("../../src/model/home-file");
+      for (const [text, takenOver] of [
+        [HOME_FILE_TEXT, true],
+        ["# Home\n\nMy own start page.\n", false],
+      ] as const) {
+        await load();
+        const home = app.addFile("Home.md", undefined, text);
+        const leaf = markdownLeaf(home);
+        // Closed only once the library is open: closing the only tab first leaves nowhere to open it.
+        const detach = vi.fn(() =>
+          expect(viewStateCalls.some((c) => c.state.type === "finenotes-library")).toBe(true),
+        );
+        Object.assign(leaf, { detach });
+        Object.assign(leaf.view as object, { getViewType: () => "markdown" });
+        viewStateCalls.length = 0;
+        app.workspace.trigger("file-open", home);
+        await flush();
+        expect(detach).toHaveBeenCalledTimes(takenOver ? 1 : 0);
+        expect(viewStateCalls.some((c) => c.state.type === "finenotes-library")).toBe(takenOver);
+      }
+    });
+  });
+
+  it("keeps the library's stars and folder looks with renames and deletes, Home open or not", async () => {
+    await load({
+      libraryStars: ["Uni/Physics/Physics.notebook.md", "Uni", "Other.notebook.md"],
+      libraryFolders: { Uni: { color: "#4a7df0" }, "Uni/Week 1": { icon: "code" } },
+    });
+    // No Home tab is open: the plugin itself follows the vault.
+    expect(app.workspace.leaves).toEqual([]);
+    const vault = app.vault as unknown as { trigger(name: string, ...args: unknown[]): void };
+    const settings = () => plugin.settings;
+
+    vault.trigger("rename", Object.assign(new TFolder("School"), { children: [] }), "Uni");
+    expect(settings().libraryStars).toEqual([
+      "School/Physics/Physics.notebook.md",
+      "School",
+      "Other.notebook.md",
+    ]);
+    expect(settings().libraryFolders).toEqual({
+      School: { color: "#4a7df0" },
+      "School/Week 1": { icon: "code" },
+    });
+
+    vault.trigger("delete", new TFolder("School/Physics"));
+    expect(settings().libraryStars).toEqual(["School", "Other.notebook.md"]);
+    vault.trigger("delete", new TFile("Other.notebook.md"));
+    vault.trigger("delete", new TFolder("School"));
+    expect(settings().libraryStars).toEqual([]);
+    expect(settings().libraryFolders).toEqual({});
+    await flush();
+    expect(registered.stored).toMatchObject({ libraryStars: [], libraryFolders: {} });
   });
 
   it("builds an InkView for a leaf", async () => {
@@ -650,16 +857,44 @@ describe("notebook commands", () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["copy-page-link", "import-vault-pdf", "save-as-template", "save-page-as-template"])(
-    "%s is not offered on an endless board, which has no pages",
-    async (id) => {
-      await load();
-      app.workspace.active = inkView({ isSinglePage: true, isBoard: true });
-      expect(offered(id)).toBe(false);
-      app.workspace.active = inkView({ isSinglePage: false, isBoard: false });
-      expect(offered(id)).toBe(true);
-    },
-  );
+  it.each([
+    "copy-page-link",
+    "import-vault-pdf",
+    "import-pdf",
+    "scan-document",
+    "copy-highlighted-text",
+    "save-as-template",
+    "save-page-as-template",
+  ])("%s is not offered on an endless board, which has no pages", async (id) => {
+    await load();
+    app.workspace.active = inkView({ isSinglePage: true, isBoard: true });
+    expect(offered(id)).toBe(false);
+    app.workspace.active = inkView({ isSinglePage: false, isBoard: false });
+    expect(offered(id)).toBe(true);
+  });
+
+  it("the fit command is named for what it does: the page, or a board's drawing", async () => {
+    await load();
+    app.workspace.active = inkView({ isSinglePage: true, isBoard: true, resetView: vi.fn() });
+    expect(offered("fit-reset-view")).toBe(false);
+    expect(offered("fit-board-drawing")).toBe(true);
+    app.workspace.active = inkView({ isSinglePage: false, isBoard: false, resetView: vi.fn() });
+    expect(offered("fit-reset-view")).toBe(true);
+    expect(offered("fit-board-drawing")).toBe(false);
+  });
+
+  it("pages are never offered to be sent to a board this device has seen", async () => {
+    await load();
+    app.addFile("Notes/Physics.notebook.md");
+    app.addFile("Boards/Map/Map.notebook.md");
+    const titles = () => plugin.transferTargets().map((t) => t.path);
+    expect(titles()).toContain("Boards/Map/Map.notebook.md");
+    plugin.noteBoard("Boards/Map/Map.notebook.md", true);
+    expect(titles()).toEqual(["Notes/Physics.notebook.md"]);
+    // A board turned back into a notebook is a target again.
+    plugin.noteBoard("Boards/Map/Map.notebook.md", false);
+    expect(titles()).toContain("Boards/Map/Map.notebook.md");
+  });
 
   it("convert-to-notebook is offered only on a single page", async () => {
     await load();

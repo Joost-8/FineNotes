@@ -417,6 +417,7 @@ export const notebooks = {
   "notebooks.command.keyboardShortcuts": "Show keyboard shortcuts",
   "notebooks.command.readOnDevice": "Show this page read on this device",
   "notebooks.command.fitReset": "Fit the page and go to the top",
+  "notebooks.command.fitBoardDrawing": "Fit the whole drawing on screen",
   "notebooks.command.zoomIn": "Zoom in",
   "notebooks.command.zoomOut": "Zoom out",
   "notebooks.command.stylusOnly": "Turn Stylus-only mode on or off",
@@ -648,6 +649,8 @@ export const notebooks = {
   "notebooks.newNotebook.vaultRoot": "Vault root",
   "notebooks.noteSettings.pageTitle": "Page settings",
   "notebooks.noteSettings.title": "Notebook settings",
+  "notebooks.noteSettings.boardTitle": "Board settings",
+  "notebooks.noteSettings.renameBoard": "Rename the board",
   "notebooks.noteSettings.updateOut": "FineNotes {version} is out",
   "notebooks.noteSettings.update": "Update",
   "notebooks.noteSettings.updateOpen": "Open FineNotes in Community plugins to update it",
@@ -887,9 +890,9 @@ export const notebooks = {
   "notebooks.untitled.notebook": "Untitled notebook",
 
   // The simple look's one-time notice (main.ts).
-  "notebooks.simpleLook.notice":
-    "Simple look is on: Obsidian's sidebars, ribbon and bars are hidden. To get normal Obsidian back, turn Simple look off in FineNotes' settings.",
-  "notebooks.simpleLook.openSettings": "Open settings",
+  "notebooks.simpleLook.noticeNew":
+    "This is the new look of FineNotes: Obsidian's sidebars, ribbon and bars are hidden. You can go back to the original any time (Simple look, in FineNotes' settings).",
+  "notebooks.simpleLook.undo": "Undo",
 
   // Home, the notebook library (view/library-view.ts and its models).
   "notebooks.home.title": "Home",
@@ -946,6 +949,18 @@ export const notebooks = {
   "notebooks.home.pictureName": "Picture",
   /** A Duplicate's file name, beside the original. */
   "notebooks.home.copyName": "{name} copy",
+  "notebooks.home.deleteOne": "Delete {name}?",
+  "notebooks.home.deleteNotebooks.one": "Delete {count} notebook?",
+  "notebooks.home.deleteNotebooks.other": "Delete {count} notebooks?",
+  "notebooks.home.deleteFolder": 'Delete the folder "{name}"?',
+  "notebooks.home.deleteFolders.one": "Delete {count} folder?",
+  "notebooks.home.deleteFolders.other": "Delete {count} folders?",
+  "notebooks.home.deleteMore": "{count} more",
+  "notebooks.home.deleteListOne": "{list} will be deleted, with its files.",
+  "notebooks.home.deleteListMany": "{list} will be deleted, with their files.",
+  "notebooks.home.deleteEmptyFolders": "The empty folders will be deleted.",
+  "notebooks.home.keptFiles.one": "{count} other file stays where it is.",
+  "notebooks.home.keptFiles.other": "{count} other files stay where they are.",
   "notebooks.home.colorName.sky": "Sky",
   "notebooks.home.colorName.blue": "Blue",
   "notebooks.home.colorName.violet": "Violet",

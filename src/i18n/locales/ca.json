@@ -1613,8 +1613,6 @@
   "notebooks.untitled.page": "Pàgina sense títol",
   "notebooks.untitled.board": "Pissarra sense títol",
   "notebooks.untitled.notebook": "Quadern sense títol",
-  "notebooks.simpleLook.notice": "L'aspecte simple està activat: les barres laterals, la cinta i les barres d'Obsidian estan amagades. Per recuperar l'Obsidian habitual, desactiva l'aspecte simple als ajustos de FineNotes.",
-  "notebooks.simpleLook.openSettings": "Obre els ajustos",
   "notebooks.home.title": "Inici",
   "notebooks.home.heading": "Quaderns",
   "notebooks.home.up": "Puja una carpeta",

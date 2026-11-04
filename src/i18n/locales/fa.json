@@ -1613,8 +1613,6 @@
   "notebooks.untitled.page": "صفحهٔ بی‌نام",
   "notebooks.untitled.board": "تختهٔ بی‌نام",
   "notebooks.untitled.notebook": "دفترچهٔ بی‌نام",
-  "notebooks.simpleLook.notice": "نمای ساده روشن است: نوارهای کناری، نوار ابزار سمت چپ و نوارهای Obsidian پنهان‌اند. برای بازگرداندن Obsidian معمولی، نمای ساده را در تنظیمات FineNotes خاموش کنید.",
-  "notebooks.simpleLook.openSettings": "باز کردن تنظیمات",
   "notebooks.home.title": "خانه",
   "notebooks.home.heading": "دفترچه‌ها",
   "notebooks.home.up": "یک پوشه بالاتر",

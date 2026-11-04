@@ -1613,8 +1613,6 @@
   "notebooks.untitled.page": "Adsız sayfa",
   "notebooks.untitled.board": "Adsız pano",
   "notebooks.untitled.notebook": "Adsız defter",
-  "notebooks.simpleLook.notice": "Basit görünüm açık: Obsidian'ın kenar çubukları, şeridi ve çubukları gizli. Normal Obsidian'ı geri getirmek için FineNotes ayarlarında Basit görünümü kapat.",
-  "notebooks.simpleLook.openSettings": "Ayarları aç",
   "notebooks.home.title": "Ana sayfa",
   "notebooks.home.heading": "Defterler",
   "notebooks.home.up": "Bir üst klasör",

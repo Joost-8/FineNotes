@@ -224,6 +224,7 @@ export const toolbar = {
   "toolbar.zoom.page": "Page zoom",
   "toolbar.zoom.box": "Zoom box",
   "toolbar.fitPage": "Fit page",
+  "toolbar.fitDrawing": "Fit drawing",
   "toolbar.zoom.note": "Drag up or down to zoom",
   "toolbar.savedPens.none": "No saved pens yet.",
   "toolbar.savedPens.thisSaved": "This pen is saved",

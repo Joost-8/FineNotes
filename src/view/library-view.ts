@@ -16,7 +16,9 @@
  * are read one at a time, newest first, with a yield between each so a big
  * vault never holds the main thread, and a read is kept until the file's
  * size or time changes. Until a notebook is read it shows its name on a grey
- * cover.
+ * cover; a read redraws that notebook's cards where they stand, and the page
+ * is put in order once the reading ends. A hidden Home tab reads nothing: a
+ * change waits until the tab is shown.
  */
 
 import {
@@ -32,7 +34,7 @@ import {
 } from "obsidian";
 import {
   ICON_IMPORT_NOTEBOOK,
-  NOTEBOOK_FILE_SUFFIX,
+  PRACTICE_FILE_SUFFIX,
   VIEW_TYPE_INK,
   VIEW_TYPE_LIBRARY,
 } from "../constants";
@@ -44,20 +46,19 @@ import {
   FOLDER_ICONS,
   type FolderStyles,
   cleanName,
-  freeName,
-  moveStyles,
-  movePaths,
   withFolderStyle,
 } from "../model/library-style";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { thumbnailRasterScale } from "./page-sidebar";
 import { FolderSuggestModal } from "./folder-suggest";
+import { LibraryActions } from "./library-actions";
 import { RenameModal } from "./rename-modal";
 import { pickImageFile } from "./image-import";
 import { VaultPdfSuggestModal } from "./pdf-import-modal";
 import { INBOX_FOLDER } from "../model/inbox";
 import { type TextKey, t, tn } from "../i18n/translate";
+import { inkFileSuffix } from "../model/new-notebook";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
 import {
@@ -105,6 +106,8 @@ export interface LibraryHost {
   setFolderStyles(styles: FolderStyles): void;
   /** Open a notebook and start its "Export as PDF". */
   exportPdf(file: TFile): Promise<void>;
+  /** Whether a file is an ink note: a notebook, a single page, a board, or a pre-0.2 `.ink.md`. */
+  isInkFile(file: TFile): boolean;
 }
 
 /** A folder as the library lists it. */
@@ -146,9 +149,19 @@ export class LibraryView extends ItemView {
   private updateEl!: HTMLElement;
   private query = "";
   private readonly reads = new Map<string, Read>();
-  private reading = false;
+  /** Move, Duplicate and Delete, on a notebook's own folder when it has one. */
+  private readonly actions: LibraryActions;
+  /** The read under way, if any; `again` asks it for one more round when it ends. */
+  private reading: Promise<void> | null = null;
+  private again = false;
   private closed = false;
-  private paintTimer = 0;
+  /** A vault change came while the tab was hidden: read when it is shown again. */
+  private stale = false;
+  /** What the last paint showed (notebook paths, `folder:` paths): shown again, it does not fade in again. */
+  private painted = new Set<string>();
+  private before = new Set<string>();
+  /** Each notebook's cards on the page now, to draw one again where it stands. */
+  private cards = new Map<string, { el: HTMLElement; leftAt?: number }[]>();
   private pdf: PdfBackdropCache | null = null;
   private workerHeld = false;
   private refreshTimer = 0;
@@ -162,6 +175,7 @@ export class LibraryView extends ItemView {
   ) {
     super(leaf);
     this.navigation = true;
+    this.actions = new LibraryActions(this.app, (path) => this.isNotebookPath(path));
   }
 
   getViewType(): string {
@@ -187,7 +201,7 @@ export class LibraryView extends ItemView {
     if (saved.layout === "list" || saved.layout === "grid") this.layout = saved.layout;
     if (typeof saved.folder === "string") this.folder = saved.folder;
     if (SORTS.some((s) => s.by === saved.sort)) this.sort = saved.sort as LibrarySort;
-    this.paintNow();
+    this.paintNow(true);
     await super.setState(state, result);
   }
 
@@ -221,7 +235,7 @@ export class LibraryView extends ItemView {
     });
     input.addEventListener("input", () => {
       this.query = input.value;
-      this.paintNow();
+      this.paintNow(true);
     });
 
     const sort = head.createEl("button", {
@@ -261,30 +275,34 @@ export class LibraryView extends ItemView {
     this.watchPull(this.bodyEl);
     this.barEl = root.createDiv({ cls: "goodobsidian-library-bar is-hidden" });
 
+    // A deleted note's frontmatter may be gone already: one read before counts too.
+    this.watchVault();
+    this.paintNow();
+    void this.readStale();
+  }
+
+  /** Vault changes repaint and read, and showing the tab catches up on what came while it was hidden. */
+  private watchVault(): void {
     const touched = (file: TAbstractFile): void => {
-      if (file instanceof TFile && file.name.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX))
-        this.refreshSoon();
-      else if (!(file instanceof TFile)) this.refreshSoon();
+      if (file instanceof TFile && !this.reads.has(file.path) && !this.isNotebook(file)) return;
+      // A notebook saved while Home is a tab in the background is read when Home is shown.
+      if (this.containerEl.isShown()) this.refreshSoon();
+      else this.stale = true;
     };
     this.registerEvent(this.app.vault.on("create", touched));
     this.registerEvent(this.app.vault.on("delete", touched));
-    this.registerEvent(
-      this.app.vault.on("rename", (file, oldPath) => {
-        this.follow(oldPath, file.path);
-        touched(file);
-      }),
-    );
+    // Stars and folder looks follow renames and deletes in the plugin (main.ts), Home open or not.
+    this.registerEvent(this.app.vault.on("rename", touched));
     this.registerEvent(this.app.vault.on("modify", touched));
 
     // A notebook read since: its place has moved.
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
-        if (leaf === this.leaf) this.paintNow();
+        if (leaf !== this.leaf) return;
+        if (this.stale) this.refreshNow();
+        else this.paintNow();
       }),
     );
-
-    this.paintNow();
-    void this.readStale();
   }
 
   override async onClose(): Promise<void> {
@@ -293,7 +311,6 @@ export class LibraryView extends ItemView {
     this.pdf = null;
     if (this.workerHeld) releasePdfWorker();
     this.workerHeld = false;
-    window.clearTimeout(this.paintTimer);
     window.clearTimeout(this.refreshTimer);
   }
 
@@ -310,83 +327,138 @@ export class LibraryView extends ItemView {
     }
   }
 
+  /** A notebook the library lists: any ink note but a handwriting practice sheet, outside the inbox. */
+  private isNotebook(file: TFile): boolean {
+    return (
+      this.host.isInkFile(file) &&
+      !file.name.toLowerCase().endsWith(PRACTICE_FILE_SUFFIX) &&
+      !file.path.startsWith(`${INBOX_FOLDER}/`)
+    );
+  }
+
+  private isNotebookPath(path: string): boolean {
+    const file = this.app.vault.getFileByPath(path);
+    return file !== null && this.isNotebook(file);
+  }
+
   private notebookFiles(): TFile[] {
-    return this.app.vault
-      .getFiles()
-      .filter(
-        (f) =>
-          f.extension === "md" &&
-          f.name.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX) &&
-          !f.path.startsWith(`${INBOX_FOLDER}/`),
-      );
+    return this.app.vault.getFiles().filter((f) => this.isNotebook(f));
   }
 
   private entries(): LibraryEntry[] {
-    return this.notebookFiles().map((file) => {
-      const read = this.reads.get(file.path);
-      const fresh = read && read.mtime === file.stat.mtime && read.size === file.stat.size;
-      const entry = fresh
-        ? read.entry
-        : (read?.entry ?? placeholderEntry(file.path, file.stat.mtime));
-      return { ...entry, created: file.stat.ctime };
-    });
+    return this.notebookFiles().map((file) => this.entryOf(file));
+  }
+
+  /** What a notebook's card shows: its last read, or its file's facts until it is read. */
+  private entryOf(file: TFile): LibraryEntry {
+    const read = this.reads.get(file.path);
+    const fresh = read && read.mtime === file.stat.mtime && read.size === file.stat.size;
+    const entry = fresh
+      ? read.entry
+      : (read?.entry ?? placeholderEntry(file.path, file.stat.mtime));
+    return { ...entry, created: file.stat.ctime };
   }
 
   /** A change in the vault: repaint at once, read what changed a moment later. */
   private refreshSoon(): void {
     window.clearTimeout(this.refreshTimer);
-    this.refreshTimer = window.setTimeout(() => {
-      this.paintNow();
-      void this.readStale();
-    }, 400);
+    this.refreshTimer = window.setTimeout(() => this.refreshNow(), 400);
   }
 
-  /** Read every notebook whose file changed since it was last read, newest first, one at a time. */
-  private async readStale(): Promise<void> {
-    if (this.reading) return;
-    this.reading = true;
-    try {
-      const live = new Set<string>();
-      const stale: TFile[] = [];
-      for (const file of this.notebookFiles()) {
-        live.add(file.path);
-        const read = this.reads.get(file.path);
-        if (!read || read.mtime !== file.stat.mtime || read.size !== file.stat.size)
-          stale.push(file);
-      }
-      for (const path of [...this.reads.keys()]) if (!live.has(path)) this.reads.delete(path);
-      stale.sort((a, b) => b.stat.mtime - a.stat.mtime);
-      for (const file of stale) {
-        if (this.closed) return;
-        const { mtime, size } = file.stat;
-        let entry: LibraryEntry;
-        try {
-          entry = entryFromText(file.path, mtime, await this.app.vault.cachedRead(file));
-        } catch {
-          entry = placeholderEntry(file.path, mtime);
-        }
-        this.reads.set(file.path, { mtime, size, entry });
-        this.paintSoon();
-        // Let the app breathe between notebooks.
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-      }
-    } finally {
-      this.reading = false;
+  /**
+   * Read every notebook whose file changed since it was last read, newest
+   * first, one at a time. A change while it reads makes it go round once
+   * more when it ends, so nothing that changed meanwhile is missed.
+   */
+  private readStale(): Promise<void> {
+    if (this.reading) {
+      this.again = true;
+      return this.reading;
     }
+    this.reading = this.readLoop();
+    return this.reading;
+  }
+
+  private async readLoop(): Promise<void> {
+    try {
+      do {
+        this.again = false;
+        await this.readRound();
+      } while (this.again && !this.closed);
+    } finally {
+      // Cleared in the same step as the last look at `again`: no change lands in between.
+      this.reading = null;
+    }
+  }
+
+  /**
+   * One pass over what changed. The first few reads repaint the page (the
+   * Continue strip is made of them); the rest redraw their own cards, and
+   * the page is put in order once at the end. A page rebuilt under a finger
+   * loses its tap, and every card on it would fade in again.
+   */
+  private async readRound(): Promise<void> {
+    const live = new Set<string>();
+    const stale: TFile[] = [];
+    for (const file of this.notebookFiles()) {
+      live.add(file.path);
+      const read = this.reads.get(file.path);
+      if (!read || read.mtime !== file.stat.mtime || read.size !== file.stat.size) stale.push(file);
+    }
+    for (const path of [...this.reads.keys()]) if (!live.has(path)) this.reads.delete(path);
+    stale.sort((a, b) => b.stat.mtime - a.stat.mtime);
+    let count = 0;
+    let unsorted = false;
+    for (const file of stale) {
+      if (this.closed) return;
+      const { mtime, size } = file.stat;
+      let entry: LibraryEntry;
+      try {
+        entry = entryFromText(file.path, mtime, await this.app.vault.cachedRead(file));
+      } catch {
+        entry = placeholderEntry(file.path, mtime);
+      }
+      this.reads.set(file.path, { mtime, size, entry });
+      count++;
+      unsorted = count !== CONTINUE_COUNT;
+      if (unsorted) this.redrawCards(file);
+      else this.paintNow();
+      // Let the app breathe between notebooks.
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    }
+    if (unsorted && !this.closed) this.paintNow();
   }
 
   // --- Painting ---------------------------------------------------------------
 
-  private paintSoon(): void {
-    if (this.paintTimer) return;
-    this.paintTimer = window.setTimeout(() => {
-      this.paintTimer = 0;
-      this.paintNow();
-    }, 150);
+  /** One notebook's cards drawn again where they stand: nothing else on the page moves or fades in. */
+  private redrawCards(file: TFile): void {
+    const shown = this.cards.get(file.path);
+    if (!shown) return;
+    this.cards.delete(file.path);
+    const entry = this.entryOf(file);
+    for (const { el, leftAt } of shown) {
+      const parent = el.parentElement;
+      if (!parent) continue;
+      el.replaceWith(this.card(parent, entry, leftAt, true));
+    }
   }
 
-  private paintNow(): void {
+  /** A card put on the page: it fades in only when the last paint did not show it, or `animate` said so. */
+  private enter(card: HTMLElement, key: string, settled = this.before.has(key)): void {
+    this.painted.add(key);
+    card.toggleClass("is-settled", settled);
+  }
+
+  /**
+   * The page drawn anew. `animate`: every card fades in, as on opening a
+   * folder or a new sort; otherwise only cards the page did not show before.
+   */
+  private paintNow(animate = false): void {
     if (!this.bodyEl) return;
+    this.before = animate ? new Set() : this.painted;
+    this.painted = new Set();
+    this.cards.clear();
     const searching = this.query.trim() !== "";
     this.titleEl.setText(
       this.folder === ""
@@ -425,11 +497,15 @@ export class LibraryView extends ItemView {
 
     const left = this.lastPages();
     const stars = this.host.stars();
-    const here = browse(hoistSingles(all), this.folder);
+    const made = this.host.folderStyles();
+    const here = browse(
+      hoistSingles(all, (folder) => made[folder] !== undefined),
+      this.folder,
+    );
     if (this.folder === "" && stars.length > 0) {
       const books = all.filter((e) => isStarred(stars, e.path));
       const folders = stars
-        .filter((path) => !path.toLowerCase().endsWith(NOTEBOOK_FILE_SUFFIX))
+        .filter((path) => this.app.vault.getAbstractFileByPath(path) instanceof TFolder)
         .map((path) => this.folderTile(all, path))
         .filter((f): f is FolderTile => f !== null);
       if (books.length + folders.length > 0) {
@@ -547,6 +623,7 @@ export class LibraryView extends ItemView {
       cls: "goodobsidian-library-card",
       attr: { role: "button", tabindex: "0", "aria-label": folder.name },
     });
+    this.enter(card, `folder:${folder.path}`);
     const style = this.host.folderStyles()[folder.path] ?? {};
     const cover = card.createDiv({ cls: "goodobsidian-library-cover is-folder" });
     cover.style.setProperty("--gob-folder", style.color ?? DEFAULT_FOLDER_COLOR);
@@ -651,12 +728,22 @@ export class LibraryView extends ItemView {
     return cache;
   }
 
-  /** A cover with its caption. With `leftAt` (the index it was left on) it shows where the reader is. */
-  private card(parent: HTMLElement, entry: LibraryEntry, leftAt?: number): void {
+  /**
+   * A cover with its caption. With `leftAt` (the index it was left on) it
+   * shows where the reader is. `settled`: drawn again in place, no fade-in.
+   */
+  private card(
+    parent: HTMLElement,
+    entry: LibraryEntry,
+    leftAt?: number,
+    settled?: boolean,
+  ): HTMLElement {
     const card = parent.createDiv({
       cls: "goodobsidian-library-card",
       attr: { role: "button", tabindex: "0", "aria-label": entry.title },
     });
+    this.enter(card, entry.path, settled);
+    this.cards.set(entry.path, [...(this.cards.get(entry.path) ?? []), { el: card, leftAt }]);
     const cover = card.createDiv({ cls: "goodobsidian-library-cover" });
     const palette = coverPalette(entry.color);
     cover.style.setProperty("--gob-cover", palette.base);
@@ -713,6 +800,7 @@ export class LibraryView extends ItemView {
       event.preventDefault();
       this.openCardMenu(event, entry);
     });
+    return card;
   }
 
   // --- Menus and navigation -----------------------------------------------------
@@ -742,13 +830,13 @@ export class LibraryView extends ItemView {
 
   // --- Dragging into folders ----------------------------------------------------
 
-  /** A notebook or folder lifted by a drag; dropped on a folder tile it moves in. */
+  /** A notebook (its own folder, when it has one) or folder lifted by a drag; dropped on a folder tile it moves in. */
   private dragging: string | null = null;
 
   private makeDraggable(card: HTMLElement, path: string): void {
     card.draggable = true;
     card.addEventListener("dragstart", (event) => {
-      this.dragging = path;
+      this.dragging = this.actions.unit(path);
       event.dataTransfer?.setData("text/plain", path);
       if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
       card.addClass("is-dragging");
@@ -764,10 +852,7 @@ export class LibraryView extends ItemView {
 
   /** Whether what is being dragged may go into `folder`. */
   private canDropInto(folder: string): boolean {
-    const path = this.dragging;
-    if (path === null) return false;
-    if (folderOf(path) === folder) return false;
-    return folder !== path && !folder.startsWith(`${path}/`);
+    return this.dragging !== null && LibraryActions.canMove(this.dragging, folder);
   }
 
   private makeDropTarget(el: HTMLElement, where: string | (() => string)): void {
@@ -787,14 +872,7 @@ export class LibraryView extends ItemView {
       const allowed = this.canDropInto(folder);
       this.dragging = null;
       if (path === null || !allowed) return;
-      const item = this.app.vault.getAbstractFileByPath(path);
-      if (!item) return;
-      const target = folder === "" ? item.name : `${folder}/${item.name}`;
-      if (this.app.vault.getAbstractFileByPath(target)) {
-        new Notice(t("notebooks.home.existsThere", { name: item.name }));
-        return;
-      }
-      void this.app.fileManager.renameFile(item, target);
+      void this.actions.move(path, folder);
     });
   }
 
@@ -805,7 +883,7 @@ export class LibraryView extends ItemView {
       ".goodobsidian-library-search input",
     );
     if (input) input.value = "";
-    this.paintNow();
+    this.paintNow(true);
     this.app.workspace.requestSaveLayout();
   }
 
@@ -830,7 +908,7 @@ export class LibraryView extends ItemView {
           .setChecked(this.layout === layout)
           .onClick(() => {
             this.layout = layout;
-            this.paintNow();
+            this.paintNow(true);
             this.app.workspace.requestSaveLayout();
           }),
       );
@@ -844,7 +922,7 @@ export class LibraryView extends ItemView {
         item.onClick(() => {
           this.reverse = current ? !this.reverse : false;
           this.sort = option.by;
-          this.paintNow();
+          this.paintNow(true);
           this.app.workspace.requestSaveLayout();
         });
       });
@@ -920,6 +998,7 @@ export class LibraryView extends ItemView {
   /** Repaint and read again whatever changed, at once. */
   private refreshNow(): void {
     window.clearTimeout(this.refreshTimer);
+    this.stale = false;
     this.paintNow();
     void this.readStale();
   }
@@ -992,31 +1071,26 @@ export class LibraryView extends ItemView {
       this.app,
       (dest) => {
         const dir = dest === "/" ? "" : dest;
-        for (const path of [...this.selected]) {
-          const item = this.app.vault.getAbstractFileByPath(path);
-          if (!item || folderOf(path) === dir) continue;
-          if (item instanceof TFolder && (dir === item.path || dir.startsWith(`${item.path}/`)))
-            continue;
-          const target = dir ? `${dir}/${item.name}` : item.name;
-          if (this.app.vault.getAbstractFileByPath(target)) continue;
-          void this.app.fileManager.renameFile(item, target);
-        }
+        const paths = [...this.selected];
         this.setSelecting(false);
+        void (async () => {
+          for (const path of paths) await this.actions.move(path, dir);
+        })();
       },
       tn("notebooks.home.moveItems", this.selected.size),
       this.folder,
     ).open();
   }
 
+  /** One question naming what goes, then the picked notebooks (and folders, all but the user's other files) go. */
   private deleteSelected(): void {
-    const paths = [...this.selected];
-    void (async () => {
-      for (const path of paths) {
-        const item = this.app.vault.getAbstractFileByPath(path);
-        if (item) await this.app.fileManager.promptForDeletion(item);
-      }
-      this.setSelecting(false);
-    })();
+    const picked = [...this.selected].map((path) => ({
+      path,
+      folder: this.app.vault.getAbstractFileByPath(path) instanceof TFolder,
+    }));
+    void this.actions.trash(picked).then((gone) => {
+      if (gone) this.setSelecting(false);
+    });
   }
 
   /** What the New button offers: a notebook, a board, a PDF's pages as a notebook, a folder. */
@@ -1139,13 +1213,15 @@ export class LibraryView extends ItemView {
       item
         .setTitle(t("common.rename"))
         .setIcon("pencil")
-        .onClick(() => this.rename(file, entry.title, NOTEBOOK_FILE_SUFFIX)),
+        .onClick(() =>
+          this.rename(file, entry.title, inkFileSuffix(file.name) ?? `.${file.extension}`),
+        ),
     );
     menu.addItem((item) =>
       item
         .setTitle(t("common.duplicate"))
         .setIcon("copy-plus")
-        .onClick(() => void this.duplicate(file, entry.title)),
+        .onClick(() => void this.actions.duplicate(file.path)),
     );
     menu.addItem((item) =>
       item
@@ -1157,7 +1233,7 @@ export class LibraryView extends ItemView {
       item
         .setTitle(t("notebooks.home.move"))
         .setIcon("folder-input")
-        .onClick(() => this.move(file, entry.folder)),
+        .onClick(() => this.move(file)),
     );
     menu.addSeparator();
     menu.addItem((item) =>
@@ -1171,7 +1247,7 @@ export class LibraryView extends ItemView {
         .setTitle(t("common.delete"))
         .setIcon("trash-2")
         .onClick(() => {
-          void this.app.fileManager.promptForDeletion(file).then((gone) => {
+          void this.actions.trash([{ path: file.path, folder: false }]).then((gone) => {
             if (gone) this.refreshSoon();
           });
         }),
@@ -1206,7 +1282,7 @@ export class LibraryView extends ItemView {
       item
         .setTitle(t("notebooks.home.move"))
         .setIcon("folder-input")
-        .onClick(() => this.move(target, folderOf(folder.path))),
+        .onClick(() => this.move(target)),
     );
     menu.addSeparator();
     menu.addItem((item) =>
@@ -1214,7 +1290,8 @@ export class LibraryView extends ItemView {
         .setTitle(t("common.delete"))
         .setIcon("trash-2")
         .onClick(() => {
-          void this.app.fileManager.promptForDeletion(target).then((gone) => {
+          // Its notebooks go; the folder too only when nothing of the user's is left in it.
+          void this.actions.trash([{ path: target.path, folder: true }]).then((gone) => {
             if (gone) this.refreshSoon();
           });
         }),
@@ -1276,47 +1353,17 @@ export class LibraryView extends ItemView {
     }).open();
   }
 
-  private async duplicate(file: TFile, title: string): Promise<void> {
-    const parent = file.parent?.path ?? "";
-    const dir = parent === "/" ? "" : parent;
-    const name = freeName(
-      t("notebooks.home.copyName", { name: title }),
-      NOTEBOOK_FILE_SUFFIX,
-      (n) => this.app.vault.getAbstractFileByPath(dir ? `${dir}/${n}` : n) !== null,
-    );
-    await this.app.vault.copy(file, dir ? `${dir}/${name}` : name);
-  }
-
-  /** Pick a folder, and put the file or folder inside it. */
-  private move(file: TFile | TFolder, from: string): void {
+  /**
+   * Pick a folder, and put the notebook (with its own folder) or folder
+   * inside it. The picker starts at the folder it really is in, which for a
+   * notebook filed above its folder (`hoistSingles`) is not the one it shows in.
+   */
+  private move(file: TFile | TFolder): void {
     new FolderSuggestModal(
       this.app,
-      (dest) => {
-        const dir = dest === "/" ? "" : dest;
-        if (dir === from) return;
-        if (file instanceof TFolder && (dir === file.path || dir.startsWith(`${file.path}/`))) {
-          new Notice(t("notebooks.home.intoItself"));
-          return;
-        }
-        const path = dir ? `${dir}/${file.name}` : file.name;
-        if (this.app.vault.getAbstractFileByPath(path)) {
-          new Notice(t("notebooks.home.existsThere", { name: file.name }));
-          return;
-        }
-        void this.app.fileManager.renameFile(file, path);
-      },
+      (dest) => void this.actions.move(file.path, dest === "/" ? "" : dest),
       t("notebooks.home.moveItem", { name: file.name }),
-      from,
+      folderOf(this.actions.unit(file.path)),
     ).open();
-  }
-
-  /** Stars and folder looks go with a file or folder that was renamed or moved. */
-  private follow(from: string, to: string): void {
-    const stars = this.host.stars();
-    const moved = movePaths(stars, from, to);
-    if (moved.some((p, i) => p !== stars[i])) this.host.setStars(moved);
-    const styles = this.host.folderStyles();
-    const restyled = moveStyles(styles, from, to);
-    if (JSON.stringify(restyled) !== JSON.stringify(styles)) this.host.setFolderStyles(restyled);
   }
 }

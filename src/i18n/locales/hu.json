@@ -1613,8 +1613,6 @@
   "notebooks.untitled.page": "Névtelen oldal",
   "notebooks.untitled.board": "Névtelen tábla",
   "notebooks.untitled.notebook": "Névtelen jegyzetfüzet",
-  "notebooks.simpleLook.notice": "Az egyszerű megjelenés be van kapcsolva: az Obsidian oldalsávjai, szalagja és sávjai el vannak rejtve. A megszokott Obsidian visszahozásához kapcsold ki az Egyszerű megjelenést a FineNotes beállításaiban.",
-  "notebooks.simpleLook.openSettings": "Beállítások megnyitása",
   "notebooks.home.title": "Kezdőlap",
   "notebooks.home.heading": "Jegyzetfüzetek",
   "notebooks.home.up": "Egy mappával feljebb",

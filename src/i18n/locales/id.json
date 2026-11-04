@@ -1538,8 +1538,6 @@
   "notebooks.untitled.page": "Halaman tanpa judul",
   "notebooks.untitled.board": "Papan tanpa judul",
   "notebooks.untitled.notebook": "Buku catatan tanpa judul",
-  "notebooks.simpleLook.notice": "Tampilan sederhana aktif: bilah samping, ribbon, dan bilah Obsidian disembunyikan. Untuk mengembalikan Obsidian seperti biasa, matikan Tampilan sederhana di pengaturan FineNotes.",
-  "notebooks.simpleLook.openSettings": "Buka pengaturan",
   "notebooks.home.title": "Beranda",
   "notebooks.home.heading": "Buku catatan",
   "notebooks.home.up": "Naik satu folder",

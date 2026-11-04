@@ -1613,8 +1613,6 @@
   "notebooks.untitled.page": "Nimetön sivu",
   "notebooks.untitled.board": "Nimetön taulu",
   "notebooks.untitled.notebook": "Nimetön muistikirja",
-  "notebooks.simpleLook.notice": "Yksinkertainen ulkoasu on päällä: Obsidianin sivupalkit, valintanauha ja palkit on piilotettu. Saat tavallisen Obsidianin takaisin kytkemällä yksinkertaisen ulkoasun pois FineNotesin asetuksista.",
-  "notebooks.simpleLook.openSettings": "Avaa asetukset",
   "notebooks.home.title": "Koti",
   "notebooks.home.heading": "Muistikirjat",
   "notebooks.home.up": "Yksi kansio ylöspäin",

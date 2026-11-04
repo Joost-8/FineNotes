@@ -1763,8 +1763,6 @@
   "notebooks.untitled.page": "Страница без названия",
   "notebooks.untitled.board": "Доска без названия",
   "notebooks.untitled.notebook": "Блокнот без названия",
-  "notebooks.simpleLook.notice": "Простой вид включён: боковые панели, лента и строки Obsidian скрыты. Чтобы вернуть обычный Obsidian, отключите «Простой вид» в настройках FineNotes.",
-  "notebooks.simpleLook.openSettings": "Открыть настройки",
   "notebooks.home.title": "Главная",
   "notebooks.home.heading": "Блокноты",
   "notebooks.home.up": "На папку выше",

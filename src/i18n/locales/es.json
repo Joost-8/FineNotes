@@ -1613,8 +1613,6 @@
   "notebooks.untitled.page": "Página sin título",
   "notebooks.untitled.board": "Pizarra sin título",
   "notebooks.untitled.notebook": "Cuaderno sin título",
-  "notebooks.simpleLook.notice": "El aspecto simple está activado: los paneles laterales, la cinta y las barras de Obsidian están ocultos. Para recuperar el Obsidian de siempre, desactiva el aspecto simple en los ajustes de FineNotes.",
-  "notebooks.simpleLook.openSettings": "Abrir ajustes",
   "notebooks.home.title": "Inicio",
   "notebooks.home.heading": "Cuadernos",
   "notebooks.home.up": "Subir una carpeta",

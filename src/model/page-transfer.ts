@@ -20,6 +20,9 @@ import { remapConnectors } from "./connectors";
 
 /** Why a notebook takes no pages, or `null` when it does. */
 export function transferRefusal(doc: InkDocument): string | null {
+  // A board is flagged single too (so builds that know no boards open it as
+  // one page), but it is not one to the user.
+  if (doc.endless) return t("view.transfer.refuseBoard");
   if (doc.single) return t("view.transfer.refuseSingle");
   if (doc.practice) return t("view.transfer.refusePractice");
   if (doc.readOnly) return t("view.transfer.refuseReadOnly");

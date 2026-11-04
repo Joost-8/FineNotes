@@ -1688,8 +1688,6 @@
   "notebooks.untitled.page": "Pagină fără titlu",
   "notebooks.untitled.board": "Tablă fără titlu",
   "notebooks.untitled.notebook": "Caiet fără titlu",
-  "notebooks.simpleLook.notice": "Aspectul simplu este activ: barele laterale, panglica și barele Obsidian sunt ascunse. Ca să revii la Obsidian normal, dezactivează Aspect simplu în setările FineNotes.",
-  "notebooks.simpleLook.openSettings": "Deschide setările",
   "notebooks.home.title": "Acasă",
   "notebooks.home.heading": "Caiete",
   "notebooks.home.up": "Un folder mai sus",

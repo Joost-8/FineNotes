@@ -1613,8 +1613,6 @@
   "notebooks.untitled.page": "Página sem título",
   "notebooks.untitled.board": "Quadro sem título",
   "notebooks.untitled.notebook": "Caderno sem título",
-  "notebooks.simpleLook.notice": "O Visual simples está ativado: as barras laterais, a faixa de opções e as barras do Obsidian estão ocultas. Para repor o Obsidian normal, desative o Visual simples nas definições do FineNotes.",
-  "notebooks.simpleLook.openSettings": "Abrir definições",
   "notebooks.home.title": "Início",
   "notebooks.home.heading": "Cadernos",
   "notebooks.home.up": "Subir uma pasta",
