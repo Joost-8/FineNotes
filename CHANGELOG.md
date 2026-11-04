@@ -8,6 +8,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Correct finds the word you picked.** Lasso a word and choose Correct, or
+  hold a finger on it, and FineNotes now opens the card for the word under
+  your ink even when its reading and its ink do not split into the same
+  number of words, which is most lines of real handwriting. Before, such a
+  line gave "no handwriting word there", or another word. The underlines are
+  unchanged: they still only go on words whose ink is known exactly.
+
 ## [2.8.0] - 2026-11-04
 
 ### Added

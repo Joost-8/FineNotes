@@ -128,6 +128,40 @@ describe("readWords", () => {
   });
 });
 
+describe("readWords, placed along the ink", () => {
+  // One stroke per word group, laid left to right: a stroke "a" is at 0-40, "b" at 50-90.
+  const boxes: Record<string, { minX: number; maxX: number }> = {
+    a: { minX: 0, maxX: 40 },
+    b: { minX: 50, maxX: 90 },
+    c: { minX: 100, maxX: 140 },
+    d: { minX: 150, maxX: 190 },
+  };
+  const boundsOf = (ids: readonly string[]) => {
+    const [first, ...rest] = ids.map((id) => boxes[id]);
+    if (!first) return null;
+    return {
+      minX: Math.min(first.minX, ...rest.map((b) => b.minX)),
+      maxX: Math.max(first.maxX, ...rest.map((b) => b.maxX)),
+    };
+  };
+
+  it("gives a line whose counts differ the ink under each word, so its words can be corrected", () => {
+    // Four ink groups, two words read: each word owns the two groups under its share of the line.
+    const words = readWords([line("hand written", [["a"], ["b"], ["c"], ["d"]])], boundsOf);
+    expect(words.map((w) => [w.text, w.strokeIds])).toEqual([
+      ["hand", ["a", "b"]],
+      ["written", ["c", "d"]],
+    ]);
+    expect(words[1].at).toEqual({ line: 0, start: 5, end: 12 });
+  });
+
+  it("leaves matching lines as they were, and skips mismatched ones without bounds", () => {
+    const lines = [line("two words", [["a"], ["b"]]), line("one", [["c"], ["d"]])];
+    expect(readWords(lines).map((w) => w.text)).toEqual(["two", "words"]);
+    expect(readWords(lines, boundsOf).map((w) => w.text)).toEqual(["two", "words", "one"]);
+  });
+});
+
 describe("plainWord", () => {
   it("is the word as a list holds it, or null for what is not a word", () => {
     expect(plainWord("Hello,")).toBe("hello");

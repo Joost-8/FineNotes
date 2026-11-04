@@ -2693,7 +2693,7 @@ export class InkView extends TextFileView {
   private keepReading(page: Page, hash: string, reading: PageReading): PageWords {
     const entry: PageWords = {
       hash,
-      words: readWords(reading.lines),
+      words: readWords(reading.lines, (ids) => inkBounds(page, ids)),
       read: new Set(reading.lines.flatMap((line) => line.strokeIds)),
       lines: reading.lines.map((line) => line.text),
       readLines: reading.lines.map((line) => ({ text: line.text, words: line.words })),
