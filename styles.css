@@ -2600,7 +2600,12 @@ body.is-mobile .goodobsidian-scrollthumb {
   cursor: auto;
 }
 
-.is-hidden {
+/* Ours, never Obsidian's workspace leaves: stacked tabs put `is-hidden` on
+   the leaves scrolled out of view and hide only what is inside them, so a
+   leaf keeps its width. Taking the whole leaf out changed the stack's width
+   under the trackpad, and the tabs jumped and snapped (FineNotes#147).
+   `:where` keeps the rule at one class, as it was. */
+.is-hidden:where(:not(.workspace-leaf)) {
   display: none;
 }
 
