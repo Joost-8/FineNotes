@@ -22,6 +22,9 @@ export interface WelcomeActions {
   importNotebooks: () => void;
   /** Opens Home, the notebook library, where New makes a notebook. */
   openHome: () => void;
+  /** The simple look: Obsidian's tabs, sidebars and menus hidden. */
+  simpleLook: () => boolean;
+  setSimpleLook: (on: boolean) => void;
 }
 
 export class WelcomeModal extends Modal {
@@ -41,6 +44,15 @@ export class WelcomeModal extends Modal {
         "Handwritten notebooks with real pages, as in Goodnotes. Each notebook is a file " +
         "in this vault, on your device.",
     });
+    new Setting(el)
+      .setName("Simple look")
+      .setDesc(
+        "Hide Obsidian's tabs, sidebars and menus, so FineNotes looks like an app of its own. " +
+          "Switch it any time in FineNotes' settings, from Home's gear.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.actions.simpleLook()).onChange((on) => this.actions.setSimpleLook(on)),
+      );
     this.choice(
       "Take the tour",
       "A short notebook that shows the tools. Write in it as much as you like.",

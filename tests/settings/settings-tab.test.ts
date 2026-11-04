@@ -456,6 +456,7 @@ describe("the rows", () => {
       [PAGES, "Templates folder", "text:templateFolder"],
       [PAGES, "Template gallery", "text:templateGalleryUrl"],
       [PAGES, "New notebook in the right-click menu", "toggle:showNewNotebookInContextMenu"],
+      [PAGES, "Simple look", "toggle:simpleLook"],
       [PAGES, "Library button in the file explorer", "toggle:showNewNotebookInExplorer"],
       [PAGES, "Show notebook folders as notebooks", "toggle:folderNotebooks"],
       ...MODEL_ROWS.map(([name, kind]) => [MODELS, name, kind]),
@@ -682,6 +683,7 @@ describe("which rows show", () => {
       "Templates folder",
       "Template gallery",
       "New notebook in the right-click menu",
+      "Simple look",
       "Library button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.

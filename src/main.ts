@@ -130,6 +130,7 @@ import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
+import { ALL_SIMPLE_CLASSES, simpleClasses, simplePartsOf } from "./model/simple-mode";
 import { HOME_FILE, HOME_FILE_TEXT } from "./model/home-file";
 import { folderStylesOf } from "./model/library-style";
 import { prepareImageBytes } from "./view/image-import";
@@ -444,6 +445,10 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.setUpReadingGuard();
+    this.applySimpleLook();
+    this.register(() => {
+      if (typeof document !== "undefined") document.body.classList.remove(...ALL_SIMPLE_CLASSES);
+    });
     // Fonts fetched for text boxes leave the document with the plugin.
     this.register(disposeVaultFonts);
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
@@ -702,6 +707,12 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "toggle-simple-look",
+      name: "Simple look: hide or show Obsidian's tabs, sidebars and menus",
+      callback: () => this.setSimpleLook(!this.settings.simpleLook),
+    });
+
+    this.addCommand({
       id: "show-welcome",
       name: "Show the welcome",
       callback: () => this.showWelcome(),
@@ -939,6 +950,7 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarItems;
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
+    this.settings.simpleLookParts = simplePartsOf(this.settings.simpleLookParts);
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
@@ -1121,7 +1133,21 @@ export default class GoodObsidianPlugin extends Plugin {
     if (moved) this.saveCalculator(moved);
   }
 
+  /** Wear the body classes the simple look asks for now (none when it is off). */
+  applySimpleLook(): void {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    body.classList.remove(...ALL_SIMPLE_CLASSES);
+    body.classList.add(...simpleClasses(this.settings.simpleLook, this.settings.simpleLookParts));
+  }
+
+  setSimpleLook(on: boolean): void {
+    this.settings.simpleLook = on;
+    void this.saveSettings();
+  }
+
   async saveSettings(): Promise<void> {
+    this.applySimpleLook();
     await this.saveData(this.settings);
     this.syncExplorerNotebookButton();
   }
@@ -2223,6 +2249,8 @@ export default class GoodObsidianPlugin extends Plugin {
       openTour: () => void this.openWelcomeTour(),
       importNotebooks: () => this.openImportNotebook(),
       openHome: () => void this.openLibrary(),
+      simpleLook: () => this.settings.simpleLook,
+      setSimpleLook: (on) => this.setSimpleLook(on),
     }).open();
   }
 
