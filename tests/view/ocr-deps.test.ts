@@ -74,7 +74,7 @@ describe("obsidianOcrDeps", () => {
       version: "ppocrv6-medium-1",
       rec: "PP-OCRv6_medium_rec.ort",
       dict: "ppocrv6_dict.txt",
-      confidence: { wordMean: 0.95, lineMean: 0.95, wordMin: 0.9 },
+      confidence: { wordMean: 0.95, lineMean: 0.98, wordMin: 0.9 },
     });
     r.deps.offer();
     r.deps.offer(true);

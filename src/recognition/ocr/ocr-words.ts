@@ -72,15 +72,16 @@ export const OCR_TUNING = {
    * A word is kept when the mean of its characters' confidences is at least this ...
    * (`wordMean`, `wordMin` and `lineMean` are the Fast model's; the other
    * models have their own, in ocr-model.ts, merged over these.)
-   * Calibrated for PP-OCRv6 tiny (docs/OCR.md, "Model choice"): the 7 scribble
-   * and cursive regions of the test page reach 0.881 at most, printed text
-   * 0.984 at least (v5 multi: scribbles 0.591, printed 0.915).
+   * Calibrated for PP-OCRv6 tiny (docs/OCR.md, "Model choice", re-checked on
+   * the 126-region handwriting test set): marks and garbled handwriting reach
+   * 0.919 at most, printed words 0.922 at least (v5 multi: scribbles 0.591,
+   * printed 0.915).
    */
   wordMean: 0.9,
   /** ... and the least of them is at least this. */
   wordMin: 0.5,
-  /** A line whose mean confidence is below this is dropped whole (scribble lines 0.881 at most, printed 0.997 at least). */
-  lineMean: 0.9,
+  /** A line whose mean confidence is below this is dropped whole (marks and garbled handwriting 0.919 at most, printed lines 0.989 at least). */
+  lineMean: 0.95,
   /** A page's own text is sparse (OCR adds to it) below this share of the page's area ... */
   sparseAreaShare: 0.02,
   /** ... or with fewer characters than this. */

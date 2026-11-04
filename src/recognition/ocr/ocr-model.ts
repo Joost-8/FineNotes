@@ -201,8 +201,9 @@ export const OCR_TIERS: readonly OcrTier[] = [
     rec: OCR_REC_FILE.name,
     dict: OCR_DICT_FILE.name,
     version: OCR_MODEL_VERSION,
-    // The values OCR_TUNING has always had.
-    confidence: { wordMean: 0.9, lineMean: 0.9, wordMin: 0.5 },
+    // The word values OCR_TUNING has always had; the line mean is 0.95 since the
+    // handwriting test set (docs/OCR.md, "Handwriting test set").
+    confidence: { wordMean: 0.9, lineMean: 0.95, wordMin: 0.5 },
     desktopOnly: false,
     secondsPerPage: 6,
   },
@@ -224,7 +225,8 @@ export const OCR_TIERS: readonly OcrTier[] = [
     rec: OCR_MEDIUM_REC_FILE.name,
     dict: OCR_MEDIUM_DICT_FILE.name,
     version: "ppocrv6-medium-1",
-    confidence: { wordMean: 0.95, lineMean: 0.95, wordMin: 0.9 },
+    // The line mean 0.98 since the handwriting test set: a squiggle read as "m" reached 0.977.
+    confidence: { wordMean: 0.95, lineMean: 0.98, wordMin: 0.9 },
     desktopOnly: true,
     secondsPerPage: 48,
   },

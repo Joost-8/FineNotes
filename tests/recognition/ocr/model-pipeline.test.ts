@@ -97,8 +97,14 @@ describe("the OCR model as pinned", () => {
     expect(OCR_MODEL.deviceOnly).toBeUndefined();
     expect(OCR_MODEL_ACCURATE.deviceOnly).toBeUndefined();
     expect(OCR_MODEL_MOST_ACCURATE.deviceOnly).toBe(true);
-    expect(OCR_TIERS[0].confidence).toEqual({ wordMean: 0.9, lineMean: 0.9, wordMin: 0.5 });
+    expect(OCR_TIERS[0].confidence).toEqual({ wordMean: 0.9, lineMean: 0.95, wordMin: 0.5 });
     expect(OCR_TUNING).toMatchObject(OCR_TIERS[0].confidence);
+    // The calibrated numbers (docs/OCR.md, "Handwriting test set"): a change needs a new sweep.
+    expect(OCR_TIERS.map((t) => t.confidence)).toEqual([
+      { wordMean: 0.9, lineMean: 0.95, wordMin: 0.5 },
+      { wordMean: 0.95, lineMean: 0.95, wordMin: 0.5 },
+      { wordMean: 0.95, lineMean: 0.98, wordMin: 0.9 },
+    ]);
   });
 
   it("offers the largest model on a desktop only; anything else chosen is Fast", () => {
@@ -124,10 +130,12 @@ describe("the OCR model as pinned", () => {
   it("gives each recogniser its own confidence thresholds, stricter as the model gets surer", () => {
     const [fast, accurate, best] = OCR_TIERS.map((t) => ocrTuningFor(t));
     expect(accurate.wordMean).toBeGreaterThan(fast.wordMean);
-    expect(accurate.lineMean).toBeGreaterThan(fast.lineMean);
-    // The medium model's scribble "important" reads 0.960 as a whole, so it also asks for a surer
-    // least character (its scribbles reach 0.810, its printed text 0.991).
+    expect(accurate.lineMean).toBeGreaterThanOrEqual(fast.lineMean);
+    // The medium model reads a squiggle as "m" at 0.977 and its printed lines start at 0.998, so its
+    // line mean is higher still; it also asks for a surer least character (marks and handwriting
+    // reach 0.810, its printed text 0.990).
     expect(best.wordMean).toBeGreaterThanOrEqual(accurate.wordMean);
+    expect(best.lineMean).toBeGreaterThan(accurate.lineMean);
     expect(best.wordMin).toBeGreaterThan(accurate.wordMin);
     // Everything else is the shared tuning.
     expect(best.overlap).toBe(OCR_TUNING.overlap);
