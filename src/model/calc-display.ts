@@ -90,6 +90,16 @@ function args(nodes: CalcNode[]): MathBox {
 }
 
 function box(node: CalcNode): MathBox {
+  const inner = shape(node);
+  if (!node.caretBefore && !node.caretAfter) return inner;
+  return row(
+    ...(node.caretBefore ? [{ t: "caret" } as const] : []),
+    inner,
+    ...(node.caretAfter ? [{ t: "caret" } as const] : []),
+  );
+}
+
+function shape(node: CalcNode): MathBox {
   switch (node.k) {
     case "num":
       return text(node.text ?? "", "num");

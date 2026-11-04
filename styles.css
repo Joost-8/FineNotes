@@ -16318,3 +16318,16 @@ button.goodobsidian-library-star:active {
 .goodobsidian-empty-home-icon {
   display: inline-flex;
 }
+
+/* The eraser's mode ("Standard", "Whole stroke") beside its icon: only while
+   it is the tool in hand, and only on a bar along the top or bottom. */
+.goodobsidian-toolbar button .goodobsidian-tool-label {
+  display: none;
+}
+.goodobsidian-toolbar:not(.is-upright) button.is-active .goodobsidian-tool-label {
+  display: inline;
+  margin-inline-start: 6px;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+}
