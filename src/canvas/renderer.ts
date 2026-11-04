@@ -177,6 +177,8 @@ export interface ShapeDecor {
   dash?: ShapeDash;
   radius?: number;
   heads?: ArrowHeads;
+  /** The outline is not drawn: only set with a fill. */
+  noLine?: true;
 }
 
 /** A stroke's decor, or `null` when it is drawn as plain ink. */
@@ -186,6 +188,7 @@ export function decorOf(stroke: {
   dash?: ShapeDash;
   radius?: number;
   heads?: ArrowHeads;
+  noLine?: true;
 }): ShapeDecor | null {
   const kind = stroke.shape;
   if (kind === undefined) return null;
@@ -203,6 +206,8 @@ export function decorOf(stroke: {
     ...(stroke.dash ? { dash: stroke.dash } : {}),
     ...(radius ? { radius } : {}),
     ...(heads ? { heads } : {}),
+    // A shape is never drawn as nothing: no line only while it is filled.
+    ...(fill && stroke.noLine ? { noLine: true as const } : {}),
   };
 }
 
@@ -3262,6 +3267,8 @@ function paintShape(
     ctx.fillStyle = night ? nightColor(color) : color;
     ctx.fill(path);
     ctx.restore();
+    // The line panel's None: the fill alone.
+    if (decor.noLine) return;
   }
   ctx.strokeStyle = ink;
   ctx.lineWidth = width;

@@ -123,6 +123,11 @@ export interface Stroke {
   /** A shape's outline drawn dashed or dotted; absent is solid. */
   dash?: ShapeDash;
   /**
+   * A filled shape drawn without its outline (the line panel's None). Only
+   * while it is filled and closed: a shape is never drawn as nothing.
+   */
+  noLine?: true;
+  /**
    * Corner radius, page px, for a shape with straight edges (rect, triangle,
    * diamond, polygon, star, line): each corner is rounded, never by more than
    * its edges allow. Scales with the shape.

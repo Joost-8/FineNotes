@@ -49,8 +49,10 @@ import {
   HOLD_RADIUS,
   MIN_SAMPLE_DISTANCE,
   PALETTE,
+  SIZES,
   SNAP_CLOSE_TOLERANCE,
 } from "../constants";
+import { widthStops } from "../model/pen-widths";
 import {
   type BackdropPainter,
   type ImagePainter,
@@ -100,6 +102,8 @@ import {
 import {
   ROUND_RADIUS,
   type ShapeStyle,
+  TINT_ALPHA,
+  canFill,
   commonShapeStyle,
   readShapeToolStyle,
   splitFill,
@@ -309,7 +313,7 @@ import {
 import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physics";
 import { pairsAsDoubleTap, type PlainTap } from "../input/multi-finger-tap";
 import { scrollThumb } from "../canvas/scroll-thumb";
-import { WRITING_SCALE, zoomPercent } from "../model/units";
+import { WRITING_SCALE, formatMm, zoomPercent } from "../model/units";
 import { GrowBoard, boardGrowth, drawnBounds, isBoard, isNoGrowth } from "../model/board";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
@@ -451,6 +455,7 @@ import {
   RemoveElements,
   ReshapeStroke,
   RestyleShapes,
+  RewidthStrokes,
   ReorientElements,
   type Reorientation,
   ScaleElements,
@@ -623,7 +628,7 @@ import {
 import { PullAddIndicator } from "./pull-add-indicator";
 import { scrollDirectionOf } from "../model/scroll-direction";
 import { joinedPagesOf } from "../model/joined-pages";
-import type { SelectionAction } from "./selection-bar-model";
+import type { PanelFill, SelectionAction } from "./selection-bar-model";
 import { selectionKind, selectionMenu } from "./selection-kind";
 import { writePngToClipboard } from "./picture-clipboard";
 import { type KeyAction, keyOutcome } from "./surface-keys";
@@ -12881,22 +12886,20 @@ export class InkSurface {
     }
     if (menu.colour && sel.strokes.length > 0) {
       const first = sel.strokes[0].color;
-      actions.push({
+      // First in the bar, a disc of its colour opening the colour panel
+      // (Goodnotes' Change colour): the pens' picker, and a shape's fill below.
+      actions.unshift({
         id: "colour",
         icon: "palette",
         label: t("surface.selectionBar.colour"),
-        group: "style",
+        group: "colour",
+        bar: true,
+        menu: "none",
         swatches: {
-          // The notebook's colours, the palette, then the custom colours picked lately.
-          colors: [
-            ...(this.doc.palette?.colors ?? []).filter(
-              (color) => !this.palette.some((p) => sameColor(p, color)),
-            ),
-            ...this.palette,
-            ...(this.toolState.recentColors ?? []).filter(
-              (color) => !this.palette.some((p) => sameColor(p, color)),
-            ),
-          ],
+          // The palette; the notebook's colours and the recent custom ones have rows of their own.
+          colors: this.palette,
+          notebook: this.doc.palette?.colors ?? [],
+          recent: this.toolState.recentColors ?? [],
           current: sel.strokes.every((stroke) => stroke.color === first) ? first : null,
           pick: (color) => this.recolorSelection(color),
           shown: (color) => shownColor(color, this.paperTheme.night === true),
@@ -12906,6 +12909,7 @@ export class InkSurface {
             this.pickColorFromPage((color) => {
               if (color) this.recolorCustom(color);
             }),
+          ...(menu.shapeStyle ? this.panelFill(sel.strokes) : {}),
         },
       });
     }
@@ -14795,16 +14799,40 @@ export class InkSurface {
   }
 
   /**
-   * The selected shapes' fill, line, corners and arrowheads, as menu rows
-   * with a check on what they have now (none where they differ). Each row
-   * restyles every shape that can take it, as one undo step.
+   * The selected shapes' fill, for the colour panel: on when every shape
+   * that fills is filled, off when none is (mixed otherwise), at the first
+   * fill's opacity. A fill is the shape's own colour; switching it on takes
+   * the opacity shown, a soft tint at first, as the Shape tool's.
+   */
+  private panelFill(strokes: readonly Stroke[]): { fill?: PanelFill } {
+    const shapes = strokes.filter((stroke) => canFill(stroke.shape));
+    if (shapes.length === 0) return {};
+    const filled = shapes.filter((stroke) => stroke.fill !== undefined);
+    const on = filled.length === shapes.length ? true : filled.length === 0 ? false : null;
+    const alpha = filled[0]?.fill ? splitFill(filled[0].fill).alpha : TINT_ALPHA;
+    return {
+      fill: {
+        on,
+        alpha,
+        set: (yes) => this.restyleSelection(yes ? { fillAlpha: alpha } : { fill: null }),
+        setAlpha: (value) => this.restyleSelection({ fillAlpha: value }),
+      },
+    };
+  }
+
+  /**
+   * The selected shapes' line panel (Goodnotes' Stroke settings), opened
+   * from the bar: the line's style (None, for filled shapes only), its
+   * width, and the corners and arrowheads that were the lasso menu's
+   * segmented rows, each with what the shapes have now lit (none where they
+   * differ). Each choice restyles every shape that can take it, as one undo
+   * step. The fill is in the colour panel (`panelFill`), with its opacity.
    */
   private shapeStyleActions(strokes: readonly Stroke[]): SelectionAction[] {
     const common = commonShapeStyle(strokes);
     if (common.shapes === 0) return [];
     const { style } = common;
     const out: SelectionAction[] = [];
-    // One segmented row per property (2.5): eleven check rows had become four lines.
     const row = (
       id: string,
       icon: string,
@@ -14823,67 +14851,60 @@ export class InkSurface {
         run: () => this.restyleSelection(apply),
       });
     };
+    const lineLabel = t("surface.shapeStyle.line");
+    const noLine = style.noLine === true;
+    const filled = this.panelFill(strokes).fill?.on === true;
+    const styles: SelectionAction[] = [];
+    const lineStyle = (
+      id: string,
+      icon: string,
+      label: string,
+      checked: boolean,
+      apply: ShapeStyle,
+      enabled = true,
+    ): void => {
+      styles.push({
+        id,
+        icon,
+        label,
+        group: "style",
+        checked,
+        enabled,
+        run: () => this.restyleSelection(apply),
+      });
+    };
+    // None: the fill alone. Offered only while every shape is filled, so a
+    // shape is never drawn as nothing.
     if (common.fillable) {
-      const fill =
-        style.fill === undefined
-          ? null
-          : style.fill === null
-            ? "none"
-            : splitFill(style.fill).alpha < 1
-              ? "soft"
-              : "solid";
-      row(
-        "fill-none",
-        "square",
-        t("surface.shapeStyle.noFill"),
-        t("surface.shapeStyle.fill"),
-        fill === "none",
-        { fill: null },
-      );
-      row(
-        "fill-soft",
-        "droplet",
-        t("surface.shapeStyle.softFill"),
-        t("surface.shapeStyle.fill"),
-        fill === "soft",
-        { fillFrom: "soft" },
-      );
-      row(
-        "fill-solid",
-        "paint-bucket",
-        t("surface.shapeStyle.solidFill"),
-        t("surface.shapeStyle.fill"),
-        fill === "solid",
-        {
-          fillFrom: "solid",
-        },
+      lineStyle(
+        "line-none",
+        "ban",
+        t("surface.shapeStyle.noLine"),
+        noLine,
+        { noLine: true },
+        filled,
       );
     }
-    row(
+    lineStyle(
       "line-solid",
       "minus",
       t("surface.shapeStyle.solidLine"),
-      t("surface.shapeStyle.line"),
-      style.dash === null,
-      { dash: null },
+      !noLine && style.dash === null,
+      { dash: null, noLine: false },
     );
-    row(
+    lineStyle(
       "line-dash",
       "square-dashed",
       t("surface.shapeStyle.dashedLine"),
-      t("surface.shapeStyle.line"),
-      style.dash === "dash",
-      {
-        dash: "dash",
-      },
+      !noLine && style.dash === "dash",
+      { dash: "dash", noLine: false },
     );
-    row(
+    lineStyle(
       "line-dot",
       "ellipsis",
       t("surface.shapeStyle.dottedLine"),
-      t("surface.shapeStyle.line"),
-      style.dash === "dot",
-      { dash: "dot" },
+      !noLine && style.dash === "dot",
+      { dash: "dot", noLine: false },
     );
     if (common.roundable) {
       const rounded = typeof style.radius === "number" && style.radius > 0;
@@ -14947,7 +14968,44 @@ export class InkSurface {
         },
       );
     }
-    return out;
+    const first = strokes[0]?.size ?? SIZES[0];
+    const stops = widthStops(SIZES, true);
+    return [
+      {
+        id: "line",
+        icon: "align-justify",
+        label: lineLabel,
+        group: "colour",
+        bar: true,
+        menu: "none",
+        line: {
+          styles,
+          width: strokes.every((stroke) => stroke.size === first) ? first : null,
+          stops: stops.includes(first) ? stops : [...stops, first].sort((a, b) => a - b),
+          label: (width) => formatMm(width),
+          setWidth: (width) => this.rewidthSelection(width),
+          rows: out,
+        },
+      },
+    ];
+  }
+
+  /** Give the selected strokes one line width (`RewidthStrokes`), as one undo step. */
+  private rewidthSelection(size: number): void {
+    const sel = this.liveSelection();
+    if (!sel || sel.strokes.length === 0 || this.callbacks.isLocked?.()) return;
+    const before = selectionBounds(sel.strokes, [], []);
+    const command = new RewidthStrokes(sel.pageId, sel.strokes, size);
+    this.history.push(this.doc, command);
+    const box = this.boxForPage(sel.pageId);
+    const after = selectionBounds(sel.strokes, [], []);
+    const dirty = before && after ? unionBounds(before, after) : (before ?? after);
+    if (box && dirty) this.renderer?.invalidateRegion(box.index, dirty);
+    this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
+    this.renderDry();
+    this.syncSelectionOverlay();
+    this.syncActionBar();
+    this.changed([sel.pageId]);
   }
 
   /** Restyle the selected shapes (`RestyleShapes`), as one undo step. */

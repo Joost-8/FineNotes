@@ -3607,6 +3607,7 @@ body,
 .goodobsidian-popover input[type="range"].goodobsidian-width-range,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
+.goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   position: absolute;
   inset: 0;
@@ -3624,6 +3625,7 @@ body,
 .goodobsidian-popover input[type="range"].goodobsidian-width-range,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
+.goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   --gob-slider-height: var(--gob-touch);
 }
@@ -3642,6 +3644,8 @@ input[type="range"].goodobsidian-player-scrubber {
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-zoombox-settings
+  input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+.goodobsidian-colour-panel
   input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
@@ -3669,6 +3673,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track 
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+.goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   top: 0;
@@ -3688,6 +3693,8 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-zoombox-settings
   input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+.goodobsidian-colour-panel
+  input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
@@ -3702,6 +3709,7 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
     transition: none;

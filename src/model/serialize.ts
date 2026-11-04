@@ -167,6 +167,7 @@ interface StoredStroke {
   shape?: string;
   fill?: string;
   dash?: string;
+  noLine?: true;
   radius?: number;
   heads?: { start?: string; end?: string };
   nib?: number;
@@ -246,6 +247,7 @@ function storeStroke(stroke: Stroke): StoredStroke {
     shape: stroke.shape || undefined,
     fill: stroke.fill,
     dash: stroke.dash,
+    noLine: stroke.noLine === true ? true : undefined,
     radius: stroke.radius,
     heads: stroke.heads ? { start: stroke.heads.start, end: stroke.heads.end } : undefined,
     nib: typeof stroke.nib === "number" && Number.isFinite(stroke.nib) ? stroke.nib : undefined,
@@ -390,6 +392,11 @@ function storedConnectors(page: Page): ShapeConnector[] | undefined {
   return live.length > 0 ? live : undefined;
 }
 
+/** Whether a page has anything only `shape-content` readers keep (see format-features). */
+function hasShapeContent(page: Page): boolean {
+  return page.strokes.some((stroke) => stroke.noLine === true);
+}
+
 /** The features a document uses that an older reader would lose. */
 function featuresOf(doc: InkDocument): FormatFeature[] {
   const features: FormatFeature[] = [];
@@ -398,6 +405,7 @@ function featuresOf(doc: InkDocument): FormatFeature[] {
   if (doc.pages.some((page) => page.strokes.some(hasTilt))) features.push("tilt");
   if (doc.pages.some((page) => page.strokes.some(isTape))) features.push("tape");
   if (doc.pages.some((page) => page.backdrop.frame)) features.push("side-space");
+  if (doc.pages.some(hasShapeContent)) features.push("shape-content");
   return features;
 }
 
@@ -780,6 +788,7 @@ function readStroke(raw: unknown, position: number): Stroke | null {
   if (fill) stroke.fill = fill;
   const dash = readDash(raw.dash);
   if (dash) stroke.dash = dash;
+  if (raw.noLine === true) stroke.noLine = true;
   const radius = readRadius(raw.radius);
   if (radius) stroke.radius = radius;
   const heads = readHeads(raw.heads);

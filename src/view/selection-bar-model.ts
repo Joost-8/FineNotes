@@ -29,6 +29,47 @@ export interface ActionSwatches {
   eyedropper?: () => void;
   /** How the page shows ink of a colour (dark pages); the swatches are drawn so. */
   shown?: (color: string) => string;
+  /** The notebook's own colours: the colour panel's row above the common ones. */
+  notebook?: readonly string[];
+  /** Recent custom colours, newest first, for the colour panel. */
+  recent?: readonly string[];
+  /** The selected shapes' fill, set in the colour panel below the colours. */
+  fill?: PanelFill;
+}
+
+/**
+ * A fill in the colour panel, as Goodnotes' Change colour has it: a switch,
+ * and while it is on, the fill's opacity. The fill is the shape's own colour.
+ */
+export interface PanelFill {
+  /** Whether the shapes are filled; `null` when some are and some are not. */
+  on: boolean | null;
+  /** The fill's opacity (0–1), as the slider shows it. */
+  alpha: number;
+  /** Fill the shapes, at `alpha`, or take their fill away. */
+  set: (on: boolean) => void;
+  /** Fill the shapes at this opacity. */
+  setAlpha: (alpha: number) => void;
+}
+
+/**
+ * The line panel, as Goodnotes' Stroke settings has it: the line's styles
+ * as tiles, its width on a slider, then the shape options that were the
+ * lasso menu's (corners, arrowheads) as segmented rows.
+ */
+export interface ActionLine {
+  /** None (a filled shape only), Solid, Dashed, Dotted; the one on is `checked`. */
+  styles: SelectionAction[];
+  /** The width, page px; `null` when the selection mixes widths. */
+  width: number | null;
+  /** The widths the slider stops at, thinnest first. */
+  stops: readonly number[];
+  /** A width as the readout tells it (mm). */
+  label: (width: number) => string;
+  /** Give the selection this width (one undo step, when the knob is let go). */
+  setWidth: (width: number) => void;
+  /** Segmented rows below the width (`segment` names each row). */
+  rows: SelectionAction[];
 }
 
 /** One thing the selection's bar or menu can do. */
@@ -72,8 +113,14 @@ export interface SelectionAction {
    * Absent on plain actions.
    */
   checked?: boolean;
-  /** Draw a row of colour swatches instead of a button (menu only). */
+  /**
+   * Colours to pick from. In the menu, a row of swatches; in the bar
+   * (`bar: true`), a disc of the selection's colour that opens the colour
+   * panel (Goodnotes' Change colour), with the fill below when it has one.
+   */
   swatches?: ActionSwatches;
+  /** In the bar, a button that opens the line panel. */
+  line?: ActionLine;
   /**
    * In the menu, one button of a segmented row with this label: Fill's
    * none · soft · solid, the line styles, Flip's two axes (2.5, so a shape's
@@ -151,7 +198,7 @@ export function barItems(actions: readonly SelectionAction[]): BarItem[] {
   const items = grouped<BarItem>(
     actions,
     barGroup,
-    (a) => a.bar === true && !a.swatches,
+    (a) => a.bar === true,
     (action) => ({ kind: "action", action }),
     { kind: "divider" },
   );
@@ -227,7 +274,19 @@ export function actionsKey(actions: readonly SelectionAction[]): string {
       a.checked ?? null,
       a.segment ?? null,
       a.submenu ? [a.submenu.label, a.submenu.icon] : null,
-      a.swatches ? [a.swatches.colors, a.swatches.current] : null,
+      a.swatches
+        ? [
+            a.swatches.colors,
+            a.swatches.current,
+            a.swatches.fill ? [a.swatches.fill.on, a.swatches.fill.alpha] : null,
+          ]
+        : null,
+      a.line
+        ? [
+            a.line.width,
+            [...a.line.styles, ...a.line.rows].map((b) => [b.id, b.checked ?? null, isEnabled(b)]),
+          ]
+        : null,
     ]),
   );
 }
