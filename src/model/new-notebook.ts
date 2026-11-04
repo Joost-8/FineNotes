@@ -12,6 +12,7 @@
  */
 
 import { newImageElement } from "./images";
+import { t } from "../i18n/translate";
 import {
   FRONTMATTER_FLAG,
   INK_FILE_SUFFIXES,
@@ -227,8 +228,8 @@ export function stripInkSuffix(name: string): string {
 
 /** The name a notebook gets when its title leaves nothing usable. */
 export function defaultTitle(type: NotebookType): string {
-  if (type === "single") return "Untitled page";
-  return type === "endless" ? "Untitled board" : "Untitled notebook";
+  if (type === "single") return t("notebooks.untitled.page");
+  return type === "endless" ? t("notebooks.untitled.board") : t("notebooks.untitled.notebook");
 }
 
 /** The file base name for a title: sanitised, or the default for its type. */

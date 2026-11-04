@@ -5,6 +5,7 @@
  */
 
 import { type App, Modal, Setting } from "obsidian";
+import { t } from "../i18n/translate";
 import { onEnterKey } from "../view/enter-key";
 
 export interface ApiKeyModalOptions {
@@ -54,8 +55,8 @@ export class ApiKeyModal extends Modal {
     onEnterKey(input, save);
 
     new Setting(this.contentEl)
-      .addButton((button) => button.setButtonText("Cancel").onClick(() => this.close()))
-      .addButton((button) => button.setButtonText("Save").setCta().onClick(save));
+      .addButton((button) => button.setButtonText(t("common.cancel")).onClick(() => this.close()))
+      .addButton((button) => button.setButtonText(t("common.save")).setCta().onClick(save));
 
     window.setTimeout(() => input.focus(), 0);
   }

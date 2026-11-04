@@ -32,6 +32,7 @@ import { isImagePath } from "../canvas/image-raster";
 import type { ImageElement } from "../model/document";
 import { pickImageFile } from "./image-import";
 import { menuAnchor, menuPlace } from "./bar-dock-model";
+import { t } from "../i18n/translate";
 
 /** Options for placing a picture; every field is optional. */
 export interface InsertImageOptions {
@@ -124,14 +125,18 @@ export const BUILT_IN_IMAGE_ENTRIES: readonly ImageMenuEntry[] = [
   {
     id: "photos",
     icon: "image",
-    label: "Photos",
+    get label() {
+      return t("surface.imageMenu.photos");
+    },
     order: 10,
     run: (ctx) => void pickAndInsert(ctx, false),
   },
   {
     id: "camera",
     icon: "camera",
-    label: "Take photo",
+    get label() {
+      return t("surface.imageMenu.takePhoto");
+    },
     order: 20,
     // A desktop "capture" input is just a second file dialog.
     isAvailable: () => Platform.isMobile,
@@ -140,7 +145,9 @@ export const BUILT_IN_IMAGE_ENTRIES: readonly ImageMenuEntry[] = [
   {
     id: "vault",
     icon: "folder-open",
-    label: "From vault",
+    get label() {
+      return t("surface.imageMenu.fromVault");
+    },
     order: 30,
     run: (ctx) =>
       new VaultImageSuggestModal(ctx.app, (file) => void ctx.insertVaultFile(file.path)).open(),
@@ -172,7 +179,7 @@ async function pickAndInsert(ctx: ImageMenuContext, capture: boolean): Promise<v
   try {
     bytes = await file.arrayBuffer();
   } catch {
-    new Notice("FineNotes: couldn't read that picture.");
+    new Notice(t("surface.imageMenu.readFailed"));
     return;
   }
   await ctx.insertBytes(bytes, file.type, file.name);
@@ -193,7 +200,7 @@ export class ImageMenuPopover {
     private readonly anchor: HTMLElement,
     entries: readonly ImageMenuEntry[],
     private readonly context: ImageMenuContext,
-    title = "Insert image",
+    title = t("surface.command.insertImage"),
   ) {
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-imagemenu" });
     this.el.setAttribute("role", "menu");
@@ -238,7 +245,10 @@ export class ImageMenuPopover {
     for (const swatch of swatches) {
       const button = host.createEl("button", {
         cls: "goodobsidian-imagemenu-swatch clickable-icon",
-        attr: { "aria-label": `${entry.label}: ${swatch.label}`, role: "menuitem" },
+        attr: {
+          "aria-label": t("surface.imageMenu.swatch", { entry: entry.label, swatch: swatch.label }),
+          role: "menuitem",
+        },
       });
       button.toggleClass("is-last", swatch.color === last);
       button.createSpan({ cls: "goodobsidian-imagemenu-swatch-dot" }).setCssStyles({
@@ -307,7 +317,7 @@ export class VaultImageSuggestModal extends FuzzySuggestModal<TFile> {
     private readonly onPick: (file: TFile) => void,
   ) {
     super(app);
-    this.setPlaceholder("Find a picture in the vault…");
+    this.setPlaceholder(t("surface.imageMenu.findPlaceholder"));
   }
 
   getItems(): TFile[] {

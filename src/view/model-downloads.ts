@@ -28,6 +28,7 @@ import {
 } from "../downloads/model-manifest";
 import { AssetStore, type AssetStoreDeps } from "../downloads/model-store";
 import { deviceFolder } from "../downloads/device-folder";
+import { t } from "../i18n/translate";
 
 /** A model's folder in the vault. */
 export function modelFolder(pluginDir: string, asset: ModelAsset): string {
@@ -158,7 +159,7 @@ function hostOf(asset: ModelAsset): string {
   try {
     return new URL(asset.files[0]?.url ?? "").hostname;
   } catch {
-    return "the internet";
+    return t("settings.models.theInternet");
   }
 }
 
@@ -217,34 +218,36 @@ export class DownloadCard {
           state.kind === "verifying"
             ? 100
             : percent(state.received, state.total || totalBytes(asset));
-        this.titleEl.setText(`Downloading ${asset.label}`);
+        this.titleEl.setText(t("settings.models.downloading", { label: asset.label }));
         this.detailEl.setText(stateText(asset, state));
         this.barEl.setCssProps({ "--gob-download-progress": `${done}%` });
-        this.button("Hide", () => this.close());
+        this.button(t("settings.models.hide"), () => this.close());
         return;
       }
       case "ready":
-        this.titleEl.setText(`${asset.label} is ready`);
-        this.detailEl.setText(`Version ${asset.version} is on this device.`);
+        this.titleEl.setText(t("settings.models.ready", { label: asset.label }));
+        this.detailEl.setText(t("settings.models.readyDetail", { version: asset.version }));
         this.barEl.setCssProps({ "--gob-download-progress": "100%" });
         window.clearTimeout(this.hideTimer);
         this.hideTimer = window.setTimeout(() => this.close(), READY_MS);
         return;
       case "failed":
-        this.titleEl.setText(`${asset.label} did not download`);
+        this.titleEl.setText(t("settings.models.failed", { label: asset.label }));
         this.detailEl.setText(failureText(state.reason, state.detail));
-        this.button("Not now", () => this.notNow());
-        this.button("Try again", () => this.actions.download(), true);
+        this.button(t("settings.models.notNow"), () => this.notNow());
+        this.button(t("common.retry"), () => this.actions.download(), true);
         return;
       default:
         this.titleEl.setText(
           state.kind === "outdated"
-            ? `${asset.label} needs an update: a ${size} download`
-            : `${asset.label} needs a one-time ${size} download`,
+            ? t("settings.models.needsUpdate", { label: asset.label, size })
+            : t("settings.models.needsDownload", { label: asset.label, size }),
         );
-        this.detailEl.setText(`${asset.purpose} It comes from ${hostOf(asset)} once.`);
-        this.button("Not now", () => this.notNow());
-        this.button("Download", () => this.actions.download(), true);
+        this.detailEl.setText(
+          t("settings.models.comesFrom", { purpose: asset.purpose, host: hostOf(asset) }),
+        );
+        this.button(t("settings.models.notNow"), () => this.notNow());
+        this.button(t("settings.models.download"), () => this.actions.download(), true);
     }
   }
 

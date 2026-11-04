@@ -55,6 +55,7 @@ import { type LineBlock, evenBlock } from "./writing-lines";
 import { marginLinePlan, ruledArea } from "../model/paper-extras";
 import { TEXTURES, type TextureRegion, isDarkTextureGround, textureMarks } from "./paper-texture";
 import { NIGHT_PAPER, nightColor, nightRule, paperFlips } from "./night";
+import { t } from "../i18n/translate";
 
 /** Colours a page is painted with. Chrome colours come from Obsidian's CSS vars;
  *  these are the *paper*, which is deliberately theme-independent. */
@@ -491,7 +492,7 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
         }
       }
       ctx.stroke();
-      const labels = WEEKDAYS.map((d, i) => ({ text: d, x: margin + 10, y: top + i * day + 12 }));
+      const labels = weekdays().map((d, i) => ({ text: d, x: margin + 10, y: top + i * day + 12 }));
       paintLabels(ctx, c, labels, Math.min(22, day * 0.2), "left");
       return "painted";
     },
@@ -511,7 +512,7 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
       for (let r = 0; r <= 6; r++) hLine(ctx, margin, width - margin, top + head + r * rowH);
       for (let col = 0; col <= 7; col++) vLine(ctx, margin + col * colW, top, bottom);
       ctx.stroke();
-      const labels = WEEKDAYS.map((d, i) => ({
+      const labels = weekdays().map((d, i) => ({
         text: d,
         x: margin + i * colW + colW / 2,
         y: top + head * 0.25,
@@ -590,8 +591,8 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
         ctx,
         c,
         [
-          { text: "Title", x: margin, y },
-          { text: "Date", x: dateX, y },
+          { text: t("surface.paper.title"), x: margin, y },
+          { text: t("surface.paper.date"), x: dateX, y },
         ],
         size,
         "left",
@@ -714,11 +715,11 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
         ctx,
         c,
         [
-          { text: "Meeting", x: margin, y: first - lift },
-          { text: "Date", x: dateX, y: first - lift },
-          { text: "Attendees", x: margin, y: second - lift },
-          { text: "Notes", x: margin, y: header + size * 0.6 },
-          { text: "Action items", x: margin, y: actions + size * 0.6 },
+          { text: t("surface.paper.meeting"), x: margin, y: first - lift },
+          { text: t("surface.paper.date"), x: dateX, y: first - lift },
+          { text: t("surface.paper.attendees"), x: margin, y: second - lift },
+          { text: t("surface.paper.notes"), x: margin, y: header + size * 0.6 },
+          { text: t("surface.paper.actionItems"), x: margin, y: actions + size * 0.6 },
         ],
         size,
         "left",
@@ -847,9 +848,9 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
         }
         y += c.spacing * 0.6;
       };
-      part("Priorities", 3, true);
-      part("To do", 8, true);
-      part("Notes", Number.POSITIVE_INFINITY, false);
+      part(t("surface.paper.priorities"), 3, true);
+      part(t("surface.paper.toDo"), 8, true);
+      part(t("surface.paper.notes"), Number.POSITIVE_INFINITY, false);
       ctx.stroke();
       ctx.beginPath();
       hLine(ctx, 0, width, header);
@@ -858,7 +859,7 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
       paintLabels(
         ctx,
         c,
-        [{ text: "Date", x: margin, y: c.spacing * 1.6 - size - 5 }, ...labels],
+        [{ text: t("surface.paper.date"), x: margin, y: c.spacing * 1.6 - size - 5 }, ...labels],
         size,
         "left",
       );
@@ -899,8 +900,8 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
         ctx,
         c,
         [
-          { text: "Month", x: margin, y: c.spacing * 1.6 - size - 5 },
-          { text: "Habits", x: margin + 6, y: top + (head - size) / 2 },
+          { text: t("surface.paper.month"), x: margin, y: c.spacing * 1.6 - size - 5 },
+          { text: t("surface.paper.habits"), x: margin + 6, y: top + (head - size) / 2 },
         ],
         size,
         "left",
@@ -941,13 +942,13 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
         }
       }
       ctx.stroke();
-      const names = [...WEEKDAYS, "NOTES"];
+      const names = [...weekdays(), t("surface.paper.notesCaps")];
       const labels = names.map((text, i) => ({
         text,
         x: margin + (i % 2) * colW + 10,
         y: top + Math.floor(i / 2) * rowH + 10,
       }));
-      labels.push({ text: "Week of", x: margin, y: c.spacing * 1.6 - size - 5 });
+      labels.push({ text: t("surface.paper.weekOf"), x: margin, y: c.spacing * 1.6 - size - 5 });
       paintLabels(ctx, c, labels, size, "left");
       return "painted";
     },
@@ -1277,7 +1278,18 @@ export function writingLines(backdrop: Backdrop, geometry: PageGeometry): LineBl
   return blocks.filter((block) => block.baselines.length > 0);
 }
 
-const WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+/** The printed weekday names, in the language in use (read where a page is painted). */
+function weekdays(): string[] {
+  return [
+    t("surface.paper.weekday.mon"),
+    t("surface.paper.weekday.tue"),
+    t("surface.paper.weekday.wed"),
+    t("surface.paper.weekday.thu"),
+    t("surface.paper.weekday.fri"),
+    t("surface.paper.weekday.sat"),
+    t("surface.paper.weekday.sun"),
+  ];
+}
 
 /**
  * One ruled row with a checkbox: the rule at `y`, and a box of side `box`
@@ -1648,7 +1660,12 @@ export class SyntheticBackdropRenderer implements BackdropRenderer {
 
   draw(ctx: CanvasRenderingContext2D, backdrop: Backdrop, geometry: PageGeometry): Promise<void> {
     if (backdrop.kind === "pdf") {
-      drawMissingSource(ctx, geometry, this.theme, `PDF backdrop unavailable — ${backdrop.path}`);
+      drawMissingSource(
+        ctx,
+        geometry,
+        this.theme,
+        t("surface.paper.pdfUnavailable", { path: backdrop.path }),
+      );
     } else {
       drawSynthetic(ctx, backdrop, geometry, this.theme);
     }

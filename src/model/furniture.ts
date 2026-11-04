@@ -11,6 +11,7 @@
 
 import type { Command } from "./commands";
 import { type InkDocument, isCoverRuling } from "./document";
+import { t } from "../i18n/translate";
 
 /** Where page numbers go; absent is none. */
 export type PageNumbers = "center" | "right";
@@ -79,7 +80,7 @@ export function furnitureText(
 
 /** Set (or with `undefined`, clear) the notebook's furniture, as one undo step. */
 export class SetFurniture implements Command {
-  readonly label = "Change header and page numbers";
+  readonly label = t("surface.command.changeFurniture");
   private previous: NotebookFurniture | undefined;
 
   constructor(private readonly furniture: NotebookFurniture | undefined) {}

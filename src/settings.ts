@@ -38,6 +38,8 @@ import {
 } from "./recognition/hwr/learned-model";
 import { PRACTICE_SETS } from "./recognition/practice";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
+import { t } from "./i18n/translate";
+import { LANGUAGE_ALIASES, drawLanguageRow } from "./view/language-row";
 import {
   type App,
   type ExtraButtonComponent,
@@ -91,6 +93,7 @@ import {
 import { SHORTCUT_GROUPS, shortcutText } from "./model/shortcuts";
 import {
   type ShortcutAction,
+  type ShortcutGroupKey,
   type ShortcutRow,
   SHORTCUT_ACTIONS,
   inputCaps,
@@ -150,107 +153,110 @@ interface Callout {
   detail?: string;
 }
 
-const CALLOUTS = {
-  scribble: {
-    title: "iPad: switch off Scribble so no strokes go missing",
-    detail:
-      "Scribble, the iPadOS handwriting feature, can take a fast Apple Pencil stroke for " +
-      "itself before FineNotes sees it. Switch it off in the iPad's Settings app, under " +
-      "Apple Pencil → Scribble.",
-  },
-  incompleteUrl: {
-    title: "This endpoint URL is not complete",
-    detail:
-      "Type the whole address, starting with http:// or https://, such as " +
-      "http://localhost:11434/v1 or https://server.your-tailnet.ts.net/v1.",
-  },
-  plainHttp: {
-    title: "iPhone and iPad often refuse plain HTTP",
-    detail:
-      "To reach this server from a phone or tablet, serve it over HTTPS, for instance with " +
-      "“tailscale serve” or a Cloudflare Tunnel (SELF_HOSTING.md shows how). And on an " +
-      "iPad, “localhost” is the iPad itself, not your server.",
-  },
-  pressure: {
-    title: "Writing is less smooth with pressure on",
-    detail:
-      "A line whose width changes is drawn as short pieces of one width each: slower to " +
-      "draw on a full page, and close up the pieces can show. Switch it off if writing " +
-      "feels less fluid.",
-  },
-  noKeychain: {
-    title: "API keys are stored in this vault's plugin data",
-    detail:
-      "This Obsidian version has no keychain. Obsidian 1.11.4 and newer keep keys outside the vault's files.",
-  },
-} satisfies Record<string, Callout>;
-
-/** "Calculate lines that end in ="'s ⓘ. */
-const CALC_NOTES_INFO =
-  "Write a sum ending in = (12x4 =; an x between numbers is times) and lift the pen: " +
-  "FineNotes reads the line on this device and shows what it read and the answer beside " +
-  "it. Tap that to write the answer after the =, at your writing's size, in your own hand " +
-  "once you have written the symbol practice sheet (a command); keep writing to leave the " +
-  "page as it was. A letter set on a line above (a = 5) can be used. Check what it read " +
-  "before you tap: a misread digit gives a wrong answer.";
+function callouts() {
+  return {
+    scribble: {
+      title: t("settings.callout.scribble.title"),
+      detail: t("settings.callout.scribble.detail"),
+    },
+    incompleteUrl: {
+      title: t("settings.callout.incompleteUrl.title"),
+      detail: t("settings.callout.incompleteUrl.detail"),
+    },
+    plainHttp: {
+      title: t("settings.callout.plainHttp.title"),
+      detail: t("settings.callout.plainHttp.detail"),
+    },
+    pressure: {
+      title: t("settings.callout.pressure.title"),
+      detail: t("settings.callout.pressure.detail"),
+    },
+    noKeychain: {
+      title: t("settings.callout.noKeychain.title"),
+      detail: t("settings.callout.noKeychain.detail"),
+    },
+  } satisfies Record<string, Callout>;
+}
 
 /** Under the Paper width field while what is typed is not a width. */
-const PAPER_WIDTH_ERROR = `Use ${PAPER_WIDTH_RANGE.min} to ${PAPER_WIDTH_RANGE.max}; the last valid width is kept until then.`;
+function paperWidthError(): string {
+  return t("settings.paperWidth.error", {
+    min: PAPER_WIDTH_RANGE.min,
+    max: PAPER_WIDTH_RANGE.max,
+  });
+}
 
 /** The page appearances, as the section's status names them. */
-const PAGE_APPEARANCES: Record<PageAppearance, string> = {
-  light: "Light",
-  dark: "Dark",
-  system: "Match Obsidian",
-};
+function pageAppearances(): Record<PageAppearance, string> {
+  return {
+    light: t("settings.pageAppearance.light"),
+    dark: t("settings.pageAppearance.dark"),
+    system: t("settings.pageAppearance.system"),
+  };
+}
 
 /** The keys whose change redraws every open notebook's pages (`applyPageAppearance`). */
 const PAGE_LOOK_KEYS = new Set(["pageAppearance", "invertPdfPages"]);
 
 /** The cursors over the page, as "Cursor over the page" names them (FineNotes#27). */
-const PEN_CURSOR_NAMES: Record<PenCursorStyle, string> = {
-  ink: "Ink dot",
-  crosshair: "Crosshair",
-  arrow: "Arrow",
-  none: "None",
-};
+function penCursorNames(): Record<PenCursorStyle, string> {
+  return {
+    ink: t("settings.penCursor.ink"),
+    crosshair: t("settings.penCursor.crosshair"),
+    arrow: t("settings.penCursor.arrow"),
+    none: t("settings.penCursor.none"),
+  };
+}
 
 /** "Read handwriting with", as its dropdown and the section's status name the choices. */
-const READER_NAMES = {
-  off: "Off",
-  grape: "Grape",
-  mine: "Your model",
-} as const;
+function readerNames() {
+  return {
+    off: t("common.off"),
+    grape: "Grape",
+    mine: t("settings.reader.mine"),
+  } as const;
+}
 
 /** "Updates": how a newer FineNotes is told, as its dropdown names the choices. */
-const UPDATE_CHOICES = {
-  remind: "Remind me",
-  dot: "Dot on the gear",
-  off: "Off",
-} as const;
+function updateChoices() {
+  return {
+    remind: t("settings.updates.remind"),
+    dot: t("settings.updates.dot"),
+    off: t("common.off"),
+  } as const;
+}
 
 /** The "Updates" choice the two stored switches add up to. */
-function updateChoiceOf(settings: GoodObsidianSettings): keyof typeof UPDATE_CHOICES {
+function updateChoiceOf(settings: GoodObsidianSettings): "remind" | "dot" | "off" {
   if (!settings.checkForUpdates) return "off";
   return settings.updateReminders ? "remind" : "dot";
 }
 
 /** What the barrel button can do, as its dropdown names it. */
-const BARREL_NAMES: Record<BarrelAction, string> = {
-  erase: "Erase",
-  lasso: "Lasso select",
-  pan: "Move the page",
-  none: "Nothing",
-};
+function barrelNames(): Record<BarrelAction, string> {
+  return {
+    erase: t("settings.barrel.erase"),
+    lasso: t("settings.barrel.lasso"),
+    pan: t("settings.barrel.pan"),
+    none: t("settings.barrel.none"),
+  };
+}
 
 /** What a click of the barrel button in the air can do, as its dropdown names it. */
-const STYLUS_CLICK_NAMES: Record<StylusClickAction, string> = {
-  "pen-menu": "Open the pen menu",
-  none: "Nothing",
-};
+function stylusClickNames(): Record<StylusClickAction, string> {
+  return {
+    "pen-menu": t("settings.stylusClick.penMenu"),
+    none: t("settings.stylusClick.none"),
+  };
+}
 
 /** Shortcuts → More: the actions after the tools, in this order. */
-const SHORTCUT_MORE_ORDER = ["Selection and editing", "View and zoom", "Tools", "Saved pens"];
+const SHORTCUT_MORE_ORDER: readonly ShortcutGroupKey[] = [
+  "toolbar.shortcut.group.selectionEditing",
+  "toolbar.shortcut.group.viewZoom",
+  "toolbar.shortcut.group.tools",
+  "toolbar.shortcut.group.savedPens",
+];
 
 /**
  * The keyboard and stylus shortcuts as plain text, one `[keys, action]` pair
@@ -270,133 +276,29 @@ export function shortcutList(apple: boolean): Array<[string, string]> {
 function shortcutAliases(action: ShortcutAction): string[] {
   const words = action.label
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean);
-  return [action.group.toLowerCase(), ...words, "shortcut", "key", "hotkey", "stylus"];
+  return [t(action.groupKey).toLowerCase(), ...words, "shortcut", "key", "hotkey", "stylus"];
 }
 
 /** The tools an ink note can open with, as the dropdown names them. */
-const TOOL_NAMES = { pen: "Pen", highlighter: "Highlighter", eraser: "Eraser", select: "Select" };
-
-/** What each row's ⓘ opens: everything a row's one line leaves out. */
-const DESC = {
-  pressure:
-    "Turn this on to tell the pens apart: the Fountain pen gets wider the harder you press, " +
-    "the Brush pen swells and tapers much more, and the Ball pen stays even. Off, every pen " +
-    "draws one even width, which is the smoothest to write with.",
-  pencilTilt:
-    "Hold the Pencil flat and the Brush pen paints a wider stroke, up to three times its " +
-    "width, for shading. Held as you write, nothing changes. Only pens and tablets that " +
-    "report tilt do this (the Apple Pencil does). Shaded strokes keep their width when this " +
-    "is off. An older FineNotes opens a notebook with them read-only.",
-  textDragSize:
-    "With the Text tool, drag on the page to draw a new text box's size. Off, every new box fits its text as you type. A tap makes a box either way.",
-  desynchronized:
-    "Asks the browser to draw ink with less delay. Switch it off if ink looks garbled on " +
-    "your device; iOS WebKit has had trouble with it.",
-  pageAppearance:
-    "Show pages dark for writing at night: the paper turns dark and ink light, keeping its " +
-    "color. Only the view changes: ink is saved, exported and printed in its true color, " +
-    "and pictures are left as they are. Whether PDF pages turn dark too, and the desk " +
-    "around the pages, are in the notebook's ⋯ menu.",
-  notebookFolder:
-    "Where the New notebook dialog puts new notebooks and pages. Leave empty to use the " +
-    "folder of the note that is open. Notebooks made from PDFs in the FineNotes inbox go " +
-    "here too, or to the vault's root when this is empty.",
-  shortcutsApp:
-    "Two shortcuts for Apple's Shortcuts app. The notebook adds “New notebook”, a button " +
-    "for your Home Screen that opens the New notebook window. The other adds “New FineNotes " +
-    "notebook” to the share sheet: share a PDF from any app and it opens as a notebook. It " +
-    "saves the PDF in the FineNotes inbox, a folder FineNotes keeps at the vault's root and " +
-    "hides in the file list; when Shortcuts asks for a folder, or in the shortcut's Save " +
-    "File step, pick that folder in your vault. A PDF you save there yourself becomes a " +
-    "notebook too.",
-  customColors:
-    "Your own colors, as hex separated by commas, such as #ff8800, #00ccaa. Each keeps a " +
-    "spot in the pen's color row, after the default ink color (four at most), and appears " +
-    "in the color picker.",
-  recognition:
-    "What the “Recognize handwriting” command and automatic recognition use. Manual = you " +
-    "type the transcription; Cloud AI sends an image of each page to the AI service above. " +
-    "The AI menu's Transcribe entries always use AI.",
-  autoRecognize:
-    "Transcribe the page you are writing on in the background about 30 seconds after you " +
-    "stop, and only when it actually changed. Requires the one-time consent (run a " +
-    "transcription by hand once first).",
-  aiService:
-    "Transcribes pages and answers your questions about them, with your own API key. " +
-    "Nothing is sent until you start an AI action, and the first one asks first.",
-  endpoint:
-    "The base URL of an OpenAI-compatible server, with /v1 if the server uses it. Ollama, " +
-    "LM Studio, llama.cpp, vLLM and LocalAI all work; SELF_HOSTING.md in the plugin's " +
-    "repository walks through the setup. For Ask to read pages, pick a vision model; for " +
-    "it to use the notebook (search, add text boxes and pages, draw), the model and server " +
-    "must support tool calling (llama.cpp: start it with --jinja).",
-  openRouter:
-    "Get a key for your OpenRouter account from the browser, without copying and pasting " +
-    "it. You approve it on openrouter.ai, and nothing is sent before you do.",
-  askAttachPage:
-    "A new chat in Ask AI starts with the page you are on picked, so the first question is " +
-    "about it. Off (the default), it starts with no page: pick pages in the chat, attach a " +
-    "file, or select something with the lasso and choose Ask AI.",
-  openRouterSkipCompressed:
-    "OpenRouter serves a model through several providers. Some run compressed (fp4) versions " +
-    "that are cheaper but read handwriting less accurately. This skips the ones that say they " +
-    "are compressed, and OpenRouter picks among the rest as usual. A model that only " +
-    "compressed providers serve then gives no answer.",
-  imageVendor:
-    "Who makes pictures for “Generate image”. Claude and self-hosted endpoints cannot, so " +
-    "with those pick OpenAI, Google or OpenRouter here and add that service's key.",
-  savedPens:
-    "Up to eight pens with their own type, colour and width, picked from the star in the " +
-    "pen's toolbar or with the keys 1 to 8. Add one with + here or with that star; tap one " +
-    "to change it. The arrow restores FineNotes' own eight.",
-  barrel:
-    "What a pen tablet's side button does while you write with it. The eraser end of the " +
-    "pen always erases.",
-  stylusClick:
-    "What a click of the side button does with the pen held just above the page, not " +
-    "touching it. A second click closes the menu again.",
-  lassoAnyPart:
-    "On (the default), the lasso takes a stroke or shape when any part of it is inside the loop or " +
-    "touches its line, as Notability does. Off, at least half of it must be inside, as in " +
-    "Goodnotes. Pictures and text boxes are taken by their middle either way.",
-  penCursor:
-    "On a computer, the pointer over the page while a pen, the highlighter or the laser is " +
-    "in hand: a dot in the ink colour as wide as the pen writes, a small crosshair, the " +
-    "arrow, or none at all (the laser keeps its point).",
-  checkForUpdates:
-    "Once a day, FineNotes reads the number of its newest release from GitHub " +
-    "(github.com/Joost-8/FineNotes) and puts a dot on the toolbar's gear when it is newer. " +
-    'With Remind me, "Update available" also pops up under the gear every other day until ' +
-    "you update. Nothing about you or your notes is sent. Updating is still Obsidian's: its " +
-    "Update button, under Community plugins.",
-  shortcuts:
-    "Tap a key to record a new one; Escape or a tap anywhere cancels. The keys are kept on " +
-    "this device only, so a laptop and a tablet each have their own. A tool with the hand " +
-    "icon on is in hand only while its key is held, then the tool before it is back. Two " +
-    "shortcuts on one key " +
-    "both stop until one of them changes. None act while you type in a text box; ? in a " +
-    "notebook lists them all.",
-  debugHud:
-    "Print the raw pen and touch events over the page: their order, coalesced samples, gaps " +
-    "in time and stroke counts. Turn it on when reporting strokes that go missing or break.",
-};
-
-function modelDesc(vendor: LlmVendor): string {
-  return (
-    `For transcription and questions. Leave empty for the default (${DEFAULT_MODELS[vendor]}). ` +
-    "Any model that reads images will do; a cheaper one, such as claude-haiku-4-5, saves " +
-    "money at some cost in accuracy."
-  );
+function toolNames() {
+  return {
+    pen: t("settings.tool.pen"),
+    highlighter: t("settings.tool.highlighter"),
+    eraser: t("settings.tool.eraser"),
+    select: t("settings.tool.select"),
+  };
 }
 
-const IMAGE_VENDOR_LABELS: Record<ImageVendorChoice, string> = {
-  same: "Same as the AI service",
-  openai: "OpenAI (GPT Image)",
-  google: "Google (Gemini)",
-  openrouter: "OpenRouter",
-};
+function imageVendorLabels(): Record<ImageVendorChoice, string> {
+  return {
+    same: t("settings.imageVendor.same"),
+    openai: "OpenAI (GPT Image)",
+    google: "Google (Gemini)",
+    openrouter: "OpenRouter",
+  };
+}
 
 const REPO_URL = "https://github.com/Joost-8/FineNotes";
 
@@ -460,14 +362,13 @@ function drawnRow(
 }
 
 /** What each on-device model is and does: the start of its row's ⓘ. */
-const MODEL_PURPOSE = {
-  voice:
-    "Whisper (speech recognizer model) turns recordings into text when you pick “Transcribe on this device” on a recording.",
-  grape:
-    "Grape (handwriting recognizer model) reads your handwriting: notebook search and Obsidian's search find it, and a lassoed heading or word fills in its title or link.",
-  learned:
-    "Grape tuned to your own handwriting, learned on this device from the practice sheets you write (Learn your handwriting, under AI and handwriting).",
-};
+function modelPurpose() {
+  return {
+    voice: t("settings.models.purpose.voice"),
+    grape: t("settings.models.purpose.grape"),
+    learned: t("settings.models.purpose.learned"),
+  };
+}
 
 /** How a model's state reads at a glance: the colour of the dot before its state. */
 type ModelTone = "ready" | "off" | "missing" | "busy" | "failed";
@@ -542,7 +443,7 @@ function infoToggle(buttonParent: HTMLElement, textParent: HTMLElement, text: st
   setIcon(button, "info");
   button.setAttribute("role", "button");
   button.setAttribute("tabindex", "0");
-  button.setAttribute("aria-label", "More about this");
+  button.setAttribute("aria-label", t("settings.moreAbout"));
   button.setAttribute("aria-expanded", "false");
   const more = textParent.createDiv({ cls: "goodobsidian-info-text is-hidden", text });
   const flip = (event: Event): void => {
@@ -618,43 +519,41 @@ function callout({ title, detail }: Callout, visible: Visible): SettingDefinitio
 
 // --- The tab -----------------------------------------------------------------
 
-/** Applies to every folder row under Advanced → More: what they do and do not reach. */
-const FOLDER_NOTE =
-  "For notebooks without a folder of their own; a notebook with its own folder keeps its files there. Leave empty for the default.";
-
 /** Advanced: where notebooks without a folder of their own save each kind of file. */
-const FOLDER_ROWS = [
-  [
-    "imagesFolder",
-    "Folder for pictures and PDFs",
-    "Inserted, pasted, scanned and generated pictures, and imported PDFs.",
-    "Obsidian's attachment folder",
-  ],
-  [
-    "recordingsFolder",
-    "Folder for recordings",
-    "Audio recorded with the microphone button.",
-    "Obsidian's attachment folder",
-  ],
-  [
-    "transcriptsFolder",
-    "Folder for recording transcripts",
-    "Notes made by transcribing a recording.",
-    "Next to the recording",
-  ],
-  [
-    "chatsFolder",
-    "Folder for AI chats",
-    "Ask AI conversations you save.",
-    "AI chats, next to the notebook",
-  ],
-  [
-    "exportsFolder",
-    "Folder for PDF exports",
-    "PDFs made with the share button.",
-    "Next to the notebook",
-  ],
-] as const;
+function folderRows() {
+  return [
+    [
+      "imagesFolder",
+      t("settings.folders.images.name"),
+      t("settings.folders.images.desc"),
+      t("settings.folders.images.placeholder"),
+    ],
+    [
+      "recordingsFolder",
+      t("settings.folders.recordings.name"),
+      t("settings.folders.recordings.desc"),
+      t("settings.folders.recordings.placeholder"),
+    ],
+    [
+      "transcriptsFolder",
+      t("settings.folders.transcripts.name"),
+      t("settings.folders.transcripts.desc"),
+      t("settings.folders.transcripts.placeholder"),
+    ],
+    [
+      "chatsFolder",
+      t("settings.folders.chats.name"),
+      t("settings.folders.chats.desc"),
+      t("settings.folders.chats.placeholder"),
+    ],
+    [
+      "exportsFolder",
+      t("settings.folders.exports.name"),
+      t("settings.folders.exports.desc"),
+      t("settings.folders.exports.placeholder"),
+    ],
+  ] as const;
+}
 
 export class GoodObsidianSettingTab extends PluginSettingTab {
   /** The AI group, opened by hand when no AI service is set up. */
@@ -800,7 +699,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       const open = !group.hasClass("is-folded");
       chevron.setAttribute("role", "button");
       chevron.setAttribute("aria-expanded", String(open));
-      chevron.setAttribute("aria-label", `${open ? "Fold" : "Unfold"} ${heading}`);
+      chevron.setAttribute(
+        "aria-label",
+        open ? t("settings.section.fold", { heading }) : t("settings.section.unfold", { heading }),
+      );
     };
     const setOpen = (open: boolean): void => {
       group.toggleClass("is-folded", !open);
@@ -894,7 +796,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    */
   private more(id: SettingsSection, what: string): SettingDefinition {
     return this.disclosure(
-      "More",
+      t("common.more"),
       what,
       (row) => row.closest<HTMLElement>(".setting-group")?.hasClass("is-more-open") ?? false,
       (row, open) => {
@@ -1019,14 +921,14 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const updateRow = block((el) => {
       const box = el.createDiv({ cls: "goodobsidian-callout goodobsidian-update-callout" });
       const line = box.createDiv({ cls: "goodobsidian-callout-title" });
-      line.createSpan({ text: `FineNotes ${update ?? ""} is out` });
-      const open = line.createEl("button", { cls: "mod-cta", text: "Update" });
-      open.setAttribute("aria-label", "Open FineNotes in Community plugins to update it");
+      line.createSpan({ text: t("settings.update.out", { version: update ?? "" }) });
+      const open = line.createEl("button", { cls: "mod-cta", text: t("settings.update.button") });
+      open.setAttribute("aria-label", t("settings.update.tip"));
       open.addEventListener("click", () => window.open(PLUGIN_PAGE_URL));
     });
     const shown = (): boolean =>
       Platform.isIosApp && Platform.isTablet && !this.plugin.settings.scribbleTipDismissed;
-    const { title, detail } = CALLOUTS.scribble;
+    const { title, detail } = callouts().scribble;
     return [
       // Only while one is out: the tab is rebuilt when checking is switched.
       ...(update !== null ? [updateRow] : []),
@@ -1037,16 +939,27 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         const close = line.createSpan({ cls: "goodobsidian-callout-close clickable-icon" });
         setIcon(close, "x");
         close.setAttribute("role", "button");
-        close.setAttribute("aria-label", "Dismiss");
+        close.setAttribute("aria-label", t("common.dismiss"));
         close.addEventListener("click", () => {
           this.plugin.settings.scribbleTipDismissed = true;
           void this.plugin.saveSettings();
           this.refreshDomState();
         });
       }, shown),
+      // Below the notices, above the sections: found without opening one.
       this.info(
-        toggle("simpleLook", "Simple look", "", ["simple", "look", "hide", "sidebar", "ribbon"]),
-        "Hide Obsidian's title bar, status bar, left ribbon and sidebars, and keep the tabs, so FineNotes looks like an app of its own. Turn it off here to bring them back.",
+        drawnRow(t("language.name"), "", (s) => this.drawLanguage(s), LANGUAGE_ALIASES),
+        t("language.info"),
+      ),
+      this.info(
+        toggle("simpleLook", t("settings.simpleLook.name"), "", [
+          "simple",
+          "look",
+          "hide",
+          "sidebar",
+          "ribbon",
+        ]),
+        t("settings.simpleLook.info"),
       ),
     ];
   }
@@ -1056,10 +969,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const settings = this.plugin.settings;
     return this.section(
       "writing",
-      "Writing",
+      t("settings.writing.heading"),
       "pencil",
       [
-        drawnRow("Start with", "", (s) => this.drawStartWith(s), [
+        drawnRow(t("settings.startWith.name"), "", (s) => this.drawStartWith(s), [
           "default tool",
           "default stroke size",
           "pen size",
@@ -1068,7 +981,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "pen color",
         ]),
         this.info(
-          drawnRow("Saved pens", "", (s) => this.drawSavedPensRow(s), [
+          drawnRow(t("settings.savedPens.name"), "", (s) => this.drawSavedPensRow(s), [
             "favorite pens",
             "presets",
             "number key",
@@ -1076,7 +989,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "new pen",
             "restore defaults",
           ]),
-          DESC.savedPens,
+          t("settings.savedPens.info"),
         ),
         ...savedPensOf(settings.savedPens).map((pen, index) =>
           drawnRow(savedPenLabel(pen), "", (s) => this.drawSavedPen(s, pen, index), [
@@ -1086,54 +999,60 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "delete pen",
           ]),
         ),
-        toggle("fingerTapUndo", "Two-finger double-tap to undo", "Three fingers redo.", [
-          "undo",
-          "redo",
-          "gesture",
-          "fingers",
-          "tap",
-        ]),
+        toggle(
+          "fingerTapUndo",
+          t("settings.fingerTapUndo.name"),
+          t("settings.fingerTapUndo.desc"),
+          ["undo", "redo", "gesture", "fingers", "tap"],
+        ),
         this.more(
           "writing",
-          Platform.isMobile ? "Text boxes, colors, lasso" : "Text boxes, colors, lasso, cursor",
+          Platform.isMobile
+            ? t("settings.writing.more.mobile")
+            : t("settings.writing.more.desktop"),
         ),
         this.info(
-          toggle("textDragSize", "Drag to size text boxes", "", [
+          toggle("textDragSize", t("settings.textDragSize.name"), "", [
             "text",
             "text box",
             "size",
             "drag",
           ]),
-          DESC.textDragSize,
+          t("settings.textDragSize.info"),
         ),
         this.info(
-          drawnRow("Custom colors", "", (s) => this.drawCustomColors(s), ["palette"]),
-          DESC.customColors,
+          drawnRow(t("settings.customColors.name"), "", (s) => this.drawCustomColors(s), [
+            "palette",
+          ]),
+          t("settings.customColors.info"),
         ),
         this.info(
-          toggle("lassoTouches", "Lasso takes what it touches", "", [
+          toggle("lassoTouches", t("settings.lassoTouches.name"), "", [
             "lasso",
             "select",
             "selection",
             "notability",
           ]),
-          DESC.lassoAnyPart,
+          t("settings.lassoTouches.info"),
         ),
         {
           ...this.info(
-            dropdown("penCursor", "Cursor over the page", "", PEN_CURSOR_NAMES, [
+            dropdown("penCursor", t("settings.penCursor.name"), "", penCursorNames(), [
               "cursor",
               "pointer",
               "crosshair",
             ]),
-            DESC.penCursor,
+            t("settings.penCursor.info"),
           ),
           visible: !Platform.isMobile,
         },
       ],
       () => [
         {
-          text: `${TOOL_NAMES[settings.defaultTool] ?? TOOL_NAMES.pen} · ${defaultWidthText(settings.defaultTool, settings.defaultSize)}`,
+          text: t("settings.writing.status", {
+            tool: toolNames()[settings.defaultTool] ?? toolNames().pen,
+            width: defaultWidthText(settings.defaultTool, settings.defaultSize),
+          }),
         },
         { color: settings.defaultColor },
       ],
@@ -1151,8 +1070,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       }
     };
     setting.addDropdown((d) => {
-      for (const [id, name] of Object.entries(TOOL_NAMES)) d.addOption(id, name);
-      d.selectEl.setAttribute("aria-label", "Tool");
+      for (const [id, name] of Object.entries(toolNames())) d.addOption(id, name);
+      d.selectEl.setAttribute("aria-label", t("settings.startWith.tool"));
       d.setValue(String(shownValue(settings, "defaultTool")));
       d.onChange((value) => {
         nameSizes(value);
@@ -1163,7 +1082,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       sizes = d.selectEl;
       for (const size of SIZES) d.addOption(String(size), String(size));
       nameSizes(String(shownValue(settings, "defaultTool")));
-      d.selectEl.setAttribute("aria-label", "Stroke size");
+      d.selectEl.setAttribute("aria-label", t("settings.startWith.size"));
       d.setValue(String(shownValue(settings, "defaultSize")));
       d.onChange((value) => void this.setControlValue("defaultSize", value));
     });
@@ -1184,7 +1103,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     setting.addExtraButton((button) =>
       button
         .setIcon("plus")
-        .setTooltip(full ? `Saved pens are full (${MAX_SAVED_PENS})` : "Add a pen")
+        .setTooltip(
+          full
+            ? t("settings.savedPens.full", { max: MAX_SAVED_PENS })
+            : t("settings.savedPens.add"),
+        )
         .setDisabled(full)
         .onClick(() => {
           if (!full) this.openPenDialog(null);
@@ -1193,12 +1116,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     setting.addExtraButton((button) =>
       button
         .setIcon("rotate-ccw")
-        .setTooltip("Restore the default pens")
+        .setTooltip(t("settings.savedPens.restoreTip"))
         .onClick(async () => {
           const yes = await ConfirmModal.confirm(this.app, {
-            title: "Restore the default pens?",
-            message: "Your saved pens are replaced by FineNotes' own eight.",
-            cta: "Restore",
+            title: t("settings.savedPens.restoreTitle"),
+            message: t("settings.savedPens.restoreMessage"),
+            cta: t("settings.savedPens.restore"),
           });
           if (yes) this.savePens(defaultSavedPens());
         }),
@@ -1217,7 +1140,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const name = setting.nameEl;
     const doc = name.ownerDocument;
     name.empty();
-    const label = `Pen ${index + 1}: ${savedPenLabel(pen)}`;
+    const label = t("settings.savedPens.penLabel", {
+      number: index + 1,
+      label: savedPenLabel(pen),
+    });
     const mark = name.createEl("button", { cls: "goodobsidian-saved-pen-mark clickable-icon" });
     mark.setAttribute("aria-label", label);
     mark.setAttribute("title", label);
@@ -1252,7 +1178,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     setting.addExtraButton((button) =>
       button
         .setIcon("trash-2")
-        .setTooltip("Delete")
+        .setTooltip(t("common.delete"))
         .onClick(() =>
           this.savePens(removeSavedPen(savedPensOf(this.plugin.settings.savedPens), index)),
         ),
@@ -1297,11 +1223,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private shortcutsGroup(): SettingDefinitionItem {
     const tools = SHORTCUT_ACTIONS.filter((action) => action.id.startsWith("tool."));
     const rest = SHORTCUT_MORE_ORDER.flatMap((group) =>
-      SHORTCUT_ACTIONS.filter((action) => action.group === group && !tools.includes(action)),
+      SHORTCUT_ACTIONS.filter((action) => action.groupKey === group && !tools.includes(action)),
     );
     return this.section(
       "shortcuts",
-      "Shortcuts",
+      t("settings.shortcuts.heading"),
       "keyboard",
       [
         block(
@@ -1310,42 +1236,46 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
         ...tools.map((action) => this.shortcutRow(action)),
         this.info(
-          dropdown("barrelButton", "Stylus side button", "", BARREL_NAMES, [
+          dropdown("barrelButton", t("settings.barrel.name"), "", barrelNames(), [
             "barrel button",
             "pen tablet",
             "wacom",
             "stylus",
           ]),
-          DESC.barrel,
+          t("settings.barrel.info"),
         ),
         {
           ...this.info(
-            dropdown("stylusButtonClick", "Side button click", "", STYLUS_CLICK_NAMES, [
+            dropdown("stylusButtonClick", t("settings.stylusClick.name"), "", stylusClickNames(), [
               "barrel click",
               "s pen",
               "pen menu",
               "stylus",
             ]),
-            DESC.stylusClick,
+            t("settings.stylusClick.info"),
           ),
           // The Apple Pencil has no side button (`stylus-click.ts`).
           visible: !Platform.isIosApp,
         },
-        this.more("shortcuts", "Editing, view, toolbar, saved pens"),
+        this.more("shortcuts", t("settings.shortcuts.more")),
         ...rest.map((action) => this.shortcutRow(action)),
         this.info(
-          drawnRow("Reset all shortcuts", "", (s) => this.drawResetShortcuts(s), [
+          drawnRow(t("settings.shortcuts.resetAll"), "", (s) => this.drawResetShortcuts(s), [
             "restore keys",
             "default keys",
             "hotkeys",
           ]),
-          DESC.shortcuts,
+          t("settings.shortcuts.info"),
         ),
       ],
       () => {
         const table = this.plugin.shortcuts.table;
-        if (table.conflicts.length > 0) return [{ text: "Clash", tone: "failed" }];
-        return table.customized > 0 ? [{ text: `${table.customized} changed` }] : [];
+        if (table.conflicts.length > 0) {
+          return [{ text: t("settings.shortcuts.clash"), tone: "failed" }];
+        }
+        return table.customized > 0
+          ? [{ text: t("settings.shortcuts.changed", { count: table.customized }) }]
+          : [];
       },
     );
   }
@@ -1370,16 +1300,21 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     if (conflicts.length === 0) return;
     const detail = conflicts
       .map((conflict) => {
-        const names = conflict.rows.map((row) => row.action.label).join(" and ");
-        return `${inputsText([conflict.input], this.apple)}: ${names}`;
+        const names = conflict.rows
+          .map((row) => row.action.label)
+          .reduce((a, b) => t("settings.shortcuts.nameJoin", { a, b }));
+        return t("settings.shortcuts.conflictLine", {
+          keys: inputsText([conflict.input], this.apple),
+          names,
+        });
       })
-      .join(". ");
+      .reduce((a, b) => t("settings.shortcuts.conflictJoin", { a, b }));
     const box = el.createDiv({ cls: "goodobsidian-callout" });
     const line = box.createDiv({
       cls: "goodobsidian-callout-title",
-      text: "Two shortcuts share a key; neither works",
+      text: t("settings.shortcuts.conflict"),
     });
-    infoToggle(line, box, `${detail}. Change or reset one of them.`);
+    infoToggle(line, box, t("settings.shortcuts.conflictDetail", { conflicts: detail }));
   }
 
   /**
@@ -1397,7 +1332,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       setting.addExtraButton((button) =>
         button
           .setIcon("rotate-ccw")
-          .setTooltip("Reset to FineNotes' own key")
+          .setTooltip(t("settings.shortcuts.resetTip"))
           .onClick(() => {
             this.plugin.shortcuts.reset(action.id);
             this.update();
@@ -1409,7 +1344,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       setting.addExtraButton((button) => {
         button
           .setIcon("hand-grab")
-          .setTooltip(hold ? "Only while the key is held" : "Hold the key to use the tool")
+          .setTooltip(hold ? t("settings.shortcuts.holdOn") : t("settings.shortcuts.holdOff"))
           .onClick(() => {
             this.plugin.shortcuts.setMode(action.id, hold ? "press" : "hold");
             this.update();
@@ -1431,13 +1366,21 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const apple = this.apple;
     slot.empty();
     slot.toggleClass("is-conflicted", row.conflicted);
-    slot.setAttribute("aria-label", `${row.action.label}: ${inputsText(row.inputs, apple)}`);
+    slot.setAttribute(
+      "aria-label",
+      t("settings.shortcuts.slotLabel", {
+        action: row.action.label,
+        keys: inputsText(row.inputs, apple),
+      }),
+    );
     if (row.inputs.length === 0) {
       slot.createSpan({ cls: "goodobsidian-shortcut-unset", text: "—" });
       return;
     }
     for (const [index, input] of row.inputs.entries()) {
-      if (index > 0) slot.createSpan({ cls: "goodobsidian-shortcut-sep", text: "or" });
+      if (index > 0) {
+        slot.createSpan({ cls: "goodobsidian-shortcut-sep", text: t("settings.shortcuts.or") });
+      }
       const way = slot.createSpan({ cls: "goodobsidian-shortcut-way" });
       for (const [capIndex, cap] of inputCaps(input, apple).entries()) {
         if (capIndex > 0 && !apple)
@@ -1462,8 +1405,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
     slot.addClass("is-recording");
     slot.empty();
-    slot.setAttribute("aria-label", `${action.label}: press the new key`);
-    slot.createSpan({ cls: "goodobsidian-shortcut-recording", text: "Press a key or button" });
+    slot.setAttribute("aria-label", t("settings.shortcuts.recordLabel", { action: action.label }));
+    slot.createSpan({
+      cls: "goodobsidian-shortcut-recording",
+      text: t("settings.shortcuts.recording"),
+    });
     const doc = setting.settingEl.ownerDocument ?? activeDocument;
     this.shortcutRecorder = recordShortcut(doc, {
       record: (input) => {
@@ -1484,7 +1430,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private drawResetShortcuts(setting: Setting): void {
     setting.addButton((button) =>
       button
-        .setButtonText("Reset")
+        .setButtonText(t("settings.shortcuts.reset"))
         .setDestructive()
         .setDisabled(this.plugin.shortcuts.customized === 0)
         .onClick(() => void this.resetAllShortcuts()),
@@ -1493,9 +1439,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   private async resetAllShortcuts(): Promise<void> {
     const yes = await ConfirmModal.confirm(this.app, {
-      title: "Reset every shortcut on this device?",
-      message: "Every key goes back to FineNotes' own. Other devices keep theirs.",
-      cta: "Reset",
+      title: t("settings.shortcuts.resetTitle"),
+      message: t("settings.shortcuts.resetMessage"),
+      cta: t("settings.shortcuts.reset"),
     });
     if (!yes) return;
     this.plugin.shortcuts.resetAll();
@@ -1512,116 +1458,123 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const settings = this.plugin.settings;
     return this.section(
       "pages",
-      "Pages and notebooks",
+      t("settings.pages.heading"),
       "file-text",
       [
         this.info(
-          dropdown("pageAppearance", "Page appearance", "", PAGE_APPEARANCES, [
+          dropdown("pageAppearance", t("settings.pageAppearance.name"), "", pageAppearances(), [
             "dark mode",
             "night mode",
             "invert",
             "theme",
           ]),
-          DESC.pageAppearance,
+          t("settings.pageAppearance.info"),
         ),
         drawnRow(
-          "Paper width",
-          "In pixels, before it is fitted to the screen.",
+          t("settings.paperWidth.name"),
+          t("settings.paperWidth.desc"),
           (s) => this.drawPaperWidth(s),
           ["canvas size", "page width"],
         ),
-        this.more("pages", "Folders, templates, file explorer"),
+        this.more("pages", t("settings.pages.more")),
         this.info(
-          drawnRow("New notebooks go in", "", (s) => this.drawNotebookFolder(s), [
+          drawnRow(t("settings.notebookFolder.name"), "", (s) => this.drawNotebookFolder(s), [
             "default folder for new notebooks",
             "folder",
             "location",
             "new notebook",
             "new page",
           ]),
-          DESC.notebookFolder,
+          t("settings.notebookFolder.info"),
         ),
         // Shortcuts exist on Apple devices only.
         ...(this.apple
           ? [
               this.info(
-                drawnRow("Shortcuts app", "", (s) => this.drawShortcutLinks(s), [
+                drawnRow(t("settings.shortcutsApp.name"), "", (s) => this.drawShortcutLinks(s), [
                   "shortcuts",
                   "share sheet",
                   "home screen",
                   "pdf",
                   "inbox",
                 ]),
-                DESC.shortcutsApp,
+                t("settings.shortcutsApp.info"),
               ),
             ]
           : []),
         this.info(
-          toggle("notebookOwnFolder", "Each notebook gets its own folder", "", [
+          toggle("notebookOwnFolder", t("settings.notebookOwnFolder.name"), "", [
             "folder",
             "own folder",
             "new notebook",
             "attachments",
           ]),
-          "A folder named after the notebook, holding it and the folders its pictures, recordings, transcripts, AI chats and exports go in. Off: just the notebook file. Notebooks you already have stay as they are.",
+          t("settings.notebookOwnFolder.info"),
         ),
         this.info(
           controlRow(
-            "Stickers folder",
+            t("settings.stickerFolder.name"),
             "",
             { type: "text", key: "stickerFolder", placeholder: DEFAULT_STICKER_FOLDER },
             ["sticker", "collection", "folder"],
           ),
-          "Where your own stickers live, one folder per collection. Stickers you save from a selection go into “My stickers” there.",
+          t("settings.stickerFolder.info"),
         ),
         this.info(
           controlRow(
-            "Templates folder",
+            t("settings.templateFolder.name"),
             "",
             { type: "text", key: "templateFolder", placeholder: DEFAULT_TEMPLATE_FOLDER },
             ["template", "folder", "share"],
           ),
-          "Where Save as template puts .finetemplate files, and New notebook from template looks first.",
+          t("settings.templateFolder.info"),
         ),
         this.info(
           controlRow(
-            "Template gallery",
+            t("settings.templateGallery.name"),
             "",
-            { type: "text", key: "templateGalleryUrl", placeholder: "FineNotes' own gallery" },
+            {
+              type: "text",
+              key: "templateGalleryUrl",
+              placeholder: t("settings.templateGallery.placeholder"),
+            },
             ["template", "gallery", "community", "share"],
           ),
-          "Where Browse template gallery looks. Empty: FineNotes' own gallery on GitHub. Or the address of another gallery's index (a JSON file listing templates).",
+          t("settings.templateGallery.info"),
         ),
         this.info(
-          toggle("showNewNotebookInContextMenu", "New notebook in the right-click menu", "", [
+          toggle("showNewNotebookInContextMenu", t("settings.newNotebookContextMenu.name"), "", [
             "context menu",
             "file explorer",
             "new notebook",
           ]),
-          "Add New notebook to the file explorer menu. New notebooks start in the selected folder.",
+          t("settings.newNotebookContextMenu.info"),
         ),
         this.info(
-          toggle("showNewNotebookInExplorer", "Library button in the file explorer", "", [
+          toggle("showNewNotebookInExplorer", t("settings.libraryExplorer.name"), "", [
             "toolbar",
             "file explorer",
             "library",
             "new notebook",
           ]),
-          "Add a button that opens the notebook library, beside New note and New folder in the file explorer.",
+          t("settings.libraryExplorer.info"),
         ),
         this.info(
-          toggle("folderNotebooks", "Show notebook folders as notebooks", "", [
+          toggle("folderNotebooks", t("settings.folderNotebooks.name"), "", [
             "file explorer",
             "folder",
             "folder note",
             "icons",
           ]),
-          "In the file explorer, a notebook with its own folder shows as that folder: tap its name to open the notebook, or its arrow for its pictures, recordings and other files. Renaming one renames the other.",
+          t("settings.folderNotebooks.info"),
         ),
       ],
       () => [
         {
-          text: `${PAGE_APPEARANCES[settings.pageAppearance] ?? PAGE_APPEARANCES.light} · ${settings.paperWidth} px`,
+          text: t("settings.pages.status", {
+            appearance: pageAppearances()[settings.pageAppearance] ?? pageAppearances().light,
+            width: settings.paperWidth,
+          }),
         },
       ],
     );
@@ -1632,83 +1585,81 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const settings = this.plugin.settings;
     return this.section(
       "advanced",
-      "Advanced",
+      t("settings.advanced.heading"),
       "sliders-horizontal",
       [
         this.info(
-          toggle("pressureWidth", "Pressure-sensitive pens", "", [
+          toggle("pressureWidth", t("settings.pressure.name"), "", [
             "pressure sensitivity",
             "stylus",
             "Apple Pencil",
             "fountain pen",
             "brush pen",
           ]),
-          DESC.pressure,
+          t("settings.pressure.info"),
         ),
-        callout(CALLOUTS.pressure, () => settings.pressureWidth),
+        callout(callouts().pressure, () => settings.pressureWidth),
         this.info(
-          toggle("pencilTilt", "Pencil tilt", "", [
+          toggle("pencilTilt", t("settings.pencilTilt.name"), "", [
             "tilt",
             "shading",
             "Apple Pencil",
             "stylus",
             "brush pen",
           ]),
-          DESC.pencilTilt,
+          t("settings.pencilTilt.info"),
         ),
         this.info(
-          toggle("desynchronizedCanvas", "Desynchronized canvas", "", [
+          toggle("desynchronizedCanvas", t("settings.desynchronized.name"), "", [
             "latency",
             "glitch",
             "artifacts",
           ]),
-          DESC.desynchronized,
+          t("settings.desynchronized.info"),
         ),
         this.info(
-          dropdown("checkForUpdates", "Updates", "", UPDATE_CHOICES, [
+          dropdown("checkForUpdates", t("settings.updates.name"), "", updateChoices(), [
             "check for updates",
             "new version",
             "release",
             "notification",
             "reminder",
           ]),
-          DESC.checkForUpdates,
+          t("settings.updates.info"),
         ),
         this.info(
-          toggle("debugHud", "Input debug overlay", "", [
+          toggle("debugHud", t("settings.debugHud.name"), "", [
             "diagnostics",
             "HUD",
             "troubleshooting",
             "support",
           ]),
-          DESC.debugHud,
+          t("settings.debugHud.info"),
         ),
         this.info(
           controlRow(
-            "Handwriting model file",
+            t("settings.hwrModelFile.name"),
             "",
             { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
             ["handwriting", "recognition", "model"],
           ),
-          "Leave blank to use Grape (handwriting recognizer model). Or give the vault path of " +
-            "another model file, such as one tuned to your handwriting. It is read on this " +
-            "device only.",
+          t("settings.hwrModelFile.info"),
         ),
-        this.more("advanced", "Where files are saved"),
-        ...FOLDER_ROWS.map(([key, name, desc, placeholder]) =>
+        this.more("advanced", t("settings.advanced.more")),
+        ...folderRows().map(([key, name, desc, placeholder]) =>
           this.info(
             controlRow(name, "", { type: "text", key, placeholder }, [
               "folder",
               "attachments",
               "where files are saved",
             ]),
-            `${desc} ${FOLDER_NOTE}`,
+            t("settings.folders.info", { desc, note: t("settings.folders.note") }),
           ),
         ),
       ],
       () => [
-        ...(settings.pressureWidth ? [{ text: "Pressure on" }] : []),
-        ...(settings.pencilTilt ? [{ text: "Tilt on" }] : []),
+        ...(settings.pressureWidth ? [{ text: t("settings.advanced.pressureOn") }] : []),
+        ...(settings.pencilTilt ? [{ text: t("settings.advanced.tiltOn") }] : []),
       ],
     );
   }
@@ -1741,12 +1692,14 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const endpointShows = (warning: ReturnType<typeof endpointWarning>) => () =>
       usingEndpoint() && endpointWarning(settings.llmBaseUrl) === warning;
     const imageModel = makesImages ? DEFAULT_IMAGE_MODELS[imageVendor] : "";
-    const keyName = custom ? "Endpoint API key" : `${VENDORS[vendor].label} API key`;
-    const imageKeyName = `${VENDORS[imageVendor].label} API key for images`;
+    const keyName = custom
+      ? t("settings.ai.endpointKey")
+      : t("settings.ai.keyName", { service: VENDORS[vendor].label });
+    const imageKeyName = t("settings.ai.imageKeyName", { service: VENDORS[imageVendor].label });
 
     const rows: SettingDefinition[] = [
       this.info(
-        dropdown("llmVendor", "AI service", "", VENDOR_LABELS, [
+        dropdown("llmVendor", t("settings.ai.service.name"), "", VENDOR_LABELS, [
           "Anthropic",
           "Claude",
           "OpenAI",
@@ -1755,103 +1708,109 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "OpenRouter",
           "Cloud AI",
         ]),
-        DESC.aiService,
+        t("settings.ai.service.info"),
       ),
       this.info(
         drawnRow(
-          "Endpoint URL",
+          t("settings.ai.endpointUrl.name"),
           "",
           (s) => this.drawEndpointUrl(s),
           ["self-hosted", "local server"],
           usingEndpoint,
         ),
-        DESC.endpoint,
+        t("settings.ai.endpointUrl.info"),
       ),
-      callout(CALLOUTS.incompleteUrl, endpointShows("incomplete")),
-      callout(CALLOUTS.plainHttp, endpointShows("plain-http")),
+      callout(callouts().incompleteUrl, endpointShows("incomplete")),
+      callout(callouts().plainHttp, endpointShows("plain-http")),
       this.info(
         drawnRow(
-          "Connect OpenRouter",
+          t("settings.openRouter.name"),
           "",
           (s) => this.drawOpenRouterConnect(s),
           undefined,
           () => VENDORS[settings.llmVendor].oauthConnect,
         ),
-        DESC.openRouter,
+        t("settings.openRouter.info"),
       ),
       this.info(
-        controlRow("AI model", `Empty: ${DEFAULT_MODELS[vendor]}`, {
-          type: "text",
-          key: "llmModel",
-          placeholder: DEFAULT_MODELS[vendor],
-        }),
-        modelDesc(vendor),
+        controlRow(
+          t("settings.aiModel.name"),
+          t("settings.ai.empty", { model: DEFAULT_MODELS[vendor] }),
+          {
+            type: "text",
+            key: "llmModel",
+            placeholder: DEFAULT_MODELS[vendor],
+          },
+        ),
+        t("settings.aiModel.info", { model: DEFAULT_MODELS[vendor] }),
       ),
       this.info(
         drawnRow(keyName, "", (s) => this.renderKeyRow(s, vendor), ["token", "secret", "API key"]),
         this.keyDesc(vendor, "text"),
       ),
-      callout(CALLOUTS.noKeychain, !this.plugin.keys.secure),
+      callout(callouts().noKeychain, !this.plugin.keys.secure),
       this.info(
-        dropdown("recognitionProviderId", "Handwriting recognition", "", providers, [
+        dropdown("recognitionProviderId", t("settings.recognition.name"), "", providers, [
           "OCR",
           "handwriting to text",
         ]),
-        DESC.recognition,
+        t("settings.recognition.info"),
       ),
       {
         ...this.info(
-          toggle("autoRecognize", "Recognize automatically", "", ["auto recognition"]),
-          DESC.autoRecognize,
+          toggle("autoRecognize", t("settings.autoRecognize.name"), "", ["auto recognition"]),
+          t("settings.autoRecognize.info"),
         ),
         visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
       },
       // OpenRouter's providers and pictures are the AI rows fewest people change.
       this.more(
         "ai",
-        vendor === "openrouter"
-          ? "OpenRouter providers; Ask's page; pictures and their key"
-          : "Ask's page; pictures: service, model and key",
+        vendor === "openrouter" ? t("settings.ai.more.openrouter") : t("settings.ai.more.other"),
       ),
       this.info(
-        toggle("askAttachPage", "Ask AI starts on the open page", "", [
+        toggle("askAttachPage", t("settings.askAttachPage.name"), "", [
           "attach page",
           "current page",
           "Ask AI",
           "chat",
         ]),
-        DESC.askAttachPage,
+        t("settings.askAttachPage.info"),
       ),
       {
         ...this.info(
-          toggle("openRouterSkipCompressed", "Skip compressed providers", "", [
+          toggle("openRouterSkipCompressed", t("settings.openRouterSkipCompressed.name"), "", [
             "provider",
             "quantization",
             "fp4",
             "fp8",
             "OpenRouter",
           ]),
-          DESC.openRouterSkipCompressed,
+          t("settings.openRouterSkipCompressed.info"),
         ),
         visible: () => settings.llmVendor === "openrouter",
       },
       this.info(
-        dropdown("imageVendor", "Image generation", "", IMAGE_VENDOR_LABELS, [
+        dropdown("imageVendor", t("settings.imageVendor.name"), "", imageVendorLabels(), [
           "generate image",
           "picture",
           "DALL-E",
           "GPT Image",
           "Nano Banana",
         ]),
-        DESC.imageVendor,
+        t("settings.imageVendor.info"),
       ),
       callout({ title: `${imageUnsupportedReason(imageVendor)}.` }, !makesImages),
       {
-        ...controlRow("Image model", makesImages ? `Empty: ${imageModel}` : "", {
-          type: "text",
-          key: "imageModel",
-          placeholder: imageModel,
-        }),
+        ...controlRow(
+          t("settings.imageModel.name"),
+          makesImages ? t("settings.ai.empty", { model: imageModel }) : "",
+          {
+            type: "text",
+            key: "imageModel",
+            placeholder: imageModel,
+          },
+        ),
         visible: makesImages,
       },
       this.info(
@@ -1867,13 +1826,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     ];
     return this.section(
       "ai",
-      "AI and handwriting",
+      t("settings.ai.heading"),
       "sparkles",
       [
         ...this.handwritingRows(),
         drawnRow(
-          "Set up an AI service",
-          "Transcribe, ask and make pictures with your own key.",
+          t("settings.ai.setUp.name"),
+          t("settings.ai.setUp.desc"),
           (setting) => this.drawAiFold(setting),
           ["API key", "AI", "transcribe"],
           folded,
@@ -1882,9 +1841,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       ],
       () => [
         {
-          text: `${READER_NAMES[handwritingReaderOf(settings, this.ownModelHere())]} · ${
-            folded() ? "AI not set up" : VENDORS[settings.llmVendor].label
-          }`,
+          text: t("settings.ai.status", {
+            reader: readerNames()[handwritingReaderOf(settings, this.ownModelHere())],
+            service: folded() ? t("settings.ai.notSetUp") : VENDORS[settings.llmVendor].label,
+          }),
         },
       ],
     );
@@ -1910,14 +1870,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     // also asks for the rows when the plugin loads, for its search, and
     // state read then would be shown, out of date, when the tab opens.
     if (this.containerEl.isConnected) this.loadLearning();
-    const choices: Record<string, string> = { off: READER_NAMES.off, grape: READER_NAMES.grape };
-    if (this.ownModelHere()) choices.mine = READER_NAMES.mine;
+    const readers = readerNames();
+    const choices: Record<string, string> = { off: readers.off, grape: readers.grape };
+    if (this.ownModelHere()) choices.mine = readers.mine;
     return [
       this.info(
         // One choice stored as two switches: getControlValue and
         // storeControlValue read and write both under this key.
         controlRow(
-          "Read handwriting with",
+          t("settings.readWith.name"),
           "",
           { type: "dropdown", key: "handwritingOnDevice", options: choices },
           [
@@ -1932,31 +1893,24 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "offline",
           ],
         ),
-        "Reads your notebooks on this device, so search, links and titles find your " +
-          "handwriting; nothing leaves the device. Grape is FineNotes' own model; your model is " +
-          "Grape after it learned your handwriting from the practice sheets (Learn your " +
-          "handwriting, below). In beta: it misreads some words, more so in small or hurried " +
-          "writing.",
+        t("settings.readWith.info"),
       ),
       {
         ...this.info(
-          toggle("checkHandwrittenWords", "Underline words it may have misread", "", [
+          toggle("checkHandwrittenWords", t("settings.checkWords.name"), "", [
             "handwriting",
             "spelling",
             "correct",
             "misread",
             "underline",
           ]),
-          "A test. After a page is read, words it is not sure of get a dotted underline. Tap " +
-            "one with a finger to correct the reading, confirm it, or ignore the word; " +
-            "learning your handwriting uses your answers too. Uses the word list built into " +
-            "FineNotes, plus your own words.txt in the plugin's handwriting folder.",
+          t("settings.checkWords.info"),
         ),
         visible: reading,
       },
       {
         ...this.info(
-          toggle("calcNotes", "Calculate lines that end in =", "", [
+          toggle("calcNotes", t("settings.calcNotes.name"), "", [
             "calculation notes",
             "calculate",
             "calculator",
@@ -1966,13 +1920,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "equals",
             "answer",
           ]),
-          CALC_NOTES_INFO,
+          t("settings.calcNotes.info"),
         ),
         visible: reading,
       },
       this.info(
         drawnRow(
-          "Learn your handwriting",
+          t("settings.learn.name"),
           "",
           (s) => this.drawLearnRow(s),
           [
@@ -1996,7 +1950,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** Ideas, bugs, support and FineNotes' accounts: one line of links at the very end. */
   private footerRow(): SettingDefinition {
     return {
-      name: "Feedback and community",
+      name: t("settings.feedback.name"),
       aliases: [
         "feedback",
         "idea",
@@ -2029,8 +1983,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         // Each link in its own colour: FineNotes' three with an icon, the
         // accounts in their brands' colours. The heart says what it is on its
         // own, so its name is only its tooltip and the line stays one line.
-        const link = (label: string, url: string, icon?: string, iconOnly = false): void => {
-          const key = label.toLowerCase().split(" ")[0];
+        const link = (
+          label: string,
+          key: string,
+          url: string,
+          icon?: string,
+          iconOnly = false,
+        ): void => {
           const button = row.createEl("button", {
             cls: `goodobsidian-footer-link clickable-icon is-${key}`,
           });
@@ -2039,10 +1998,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           else button.createSpan({ text: label });
           button.addEventListener("click", () => window.open(url));
         };
-        link("Ideas and questions", COMMUNITY_LINKS.discussions, "lightbulb");
-        link("Report a bug", COMMUNITY_LINKS.bugReport, "bug");
-        link("Support FineNotes", COMMUNITY_LINKS.support, "heart", true);
-        for (const { label, url } of COMMUNITY_LINKS.social) link(label, url);
+        link(t("settings.feedback.ideas"), "ideas", COMMUNITY_LINKS.discussions, "lightbulb");
+        link(t("settings.feedback.bug"), "report", COMMUNITY_LINKS.bugReport, "bug");
+        link(t("settings.feedback.support"), "support", COMMUNITY_LINKS.support, "heart", true);
+        for (const { label, url } of COMMUNITY_LINKS.social) {
+          link(label, label.toLowerCase().split(" ")[0] ?? "", url);
+        }
       },
     };
   }
@@ -2067,35 +2028,40 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const record = learnedRecord(settings, this.plugin.grape.id);
     const onDevice = learning?.files.current ?? false;
     const mobile = Platform.isMobile;
-    const download =
-      "It downloads once, the first time it is needed, and runs on this device only.";
+    const download = t("settings.models.downloadsOnce");
+    const purpose = modelPurpose();
     const voice = speechModelInfo(effectiveSpeechModel(settings.speechModel, mobile)).label;
     return this.section(
       "on-device",
-      "Models on this device",
+      t("settings.models.heading"),
       "cpu",
       [
         block((el) =>
           el.createDiv({
             cls: "goodobsidian-models-intro",
-            text: "They run here: nothing they read or hear leaves this device.",
+            text: t("settings.models.intro"),
           }),
         ),
         this.info(
-          drawnRow(`Voice · ${voice}`, "", (s) => this.drawDownload(s, speech), [
-            "voice model",
-            "audio",
-            "speech",
-            "whisper",
-            "transcribe",
-            "model",
-            "download",
-            "offline",
-          ]),
-          `${MODEL_PURPOSE.voice} ${download}`,
+          drawnRow(
+            t("settings.models.voiceRow", { voice }),
+            "",
+            (s) => this.drawDownload(s, speech),
+            [
+              "voice model",
+              "audio",
+              "speech",
+              "whisper",
+              "transcribe",
+              "model",
+              "download",
+              "offline",
+            ],
+          ),
+          t("settings.models.withDownload", { purpose: purpose.voice, download }),
         ),
         this.info(
-          drawnRow("Size and language", "", (s) => this.drawSpeechChoices(s), [
+          drawnRow(t("settings.speech.name"), "", (s) => this.drawSpeechChoices(s), [
             "voice model size",
             "spoken language",
             "audio",
@@ -2104,24 +2070,20 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "transcribe",
             "offline",
           ]),
-          "Tiny is quickest; base is more accurate and the default." +
-            (mobile
-              ? " Small and large-v3-turbo are offered on desktop only: they need more memory than an iPad has to spare. When a computer chose one, this iPad uses base."
-              : " Small is more accurate and about three times slower than base. Large-v3-turbo is the most accurate and very slow here: a recording takes about seven times its length to transcribe, so it takes recordings up to 20 minutes. It stays on this computer, outside the vault, so it never syncs to an iPad, which uses base instead.") +
-            " A new size downloads the first time you use it. For long lectures an AI key or your own server is faster. Detect finds the language of most recordings; choosing it helps with short ones.",
+          mobile ? t("settings.speech.info.mobile") : t("settings.speech.info.desktop"),
         ),
         this.info(
           drawnRow(
-            `Handwriting · Grape ${grape.asset.version}`,
+            t("settings.models.grapeRow", { version: grape.asset.version }),
             "",
             (s) => this.drawDownload(s, grape),
             ["handwriting model", "grape", "recognition", "model", "download", "offline"],
           ),
-          `${MODEL_PURPOSE.grape} ${download}`,
+          t("settings.models.withDownload", { purpose: purpose.grape, download }),
         ),
         this.info(
           drawnRow(
-            "Your handwriting model",
+            t("settings.models.learnedName"),
             "",
             (s) => this.drawLearnedModel(s),
             [
@@ -2140,7 +2102,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             reading,
           ),
           [
-            MODEL_PURPOSE.learned,
+            purpose.learned,
             learnedStatus(record, onDevice, settings.useLearnedHandwriting !== false).text,
             record && onDevice ? learnedResult(record) : "",
             learning?.files.previous ? undoText(settings[previousKey(this.plugin.grape.id)]) : "",
@@ -2161,9 +2123,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         ),
       ],
       () => [
-        { text: "Voice", tone: stateTone(speech.state) },
+        { text: t("settings.models.statusVoice"), tone: stateTone(speech.state) },
         {
-          text: "Handwriting",
+          text: t("settings.models.statusHandwriting"),
           tone: reading() ? stateTone(grape.state) : "off",
         },
       ],
@@ -2193,15 +2155,28 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       for (const m of speechModelsFor(mobile)) {
         d.addOption(m.id, speechChoiceLabel(m.id, formatSize(totalBytes(speechAsset(m.id)))));
       }
-      d.selectEl.setAttribute("aria-label", "Voice model size");
+      d.selectEl.setAttribute("aria-label", t("settings.speech.sizeLabel"));
       d.setValue(effectiveSpeechModel(settings.speechModel, mobile));
       d.onChange((value) => void this.setControlValue("speechModel", value));
     });
     setting.addDropdown((d) => {
       for (const l of SPEECH_LANGUAGES) d.addOption(l.code, l.name);
-      d.selectEl.setAttribute("aria-label", "Spoken language");
+      d.selectEl.setAttribute("aria-label", t("settings.speech.languageLabel"));
       d.setValue(settings.speechLanguage ?? SPEECH_LANGUAGES[0].code);
       d.onChange((value) => void this.setControlValue("speechLanguage", value));
+    });
+  }
+
+  /** The interface language: stored, its table fetched, and the tab drawn in it. */
+  private drawLanguage(setting: Setting): void {
+    drawLanguageRow(setting, {
+      chosen: () => this.plugin.settings.interfaceLanguage,
+      choose: async (code) => {
+        this.plugin.settings.interfaceLanguage = code;
+        await this.plugin.saveSettings();
+        return this.plugin.language.apply();
+      },
+      redraw: () => this.update(),
     });
   }
 
@@ -2244,9 +2219,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       setting.controlEl.empty();
       if (isBusy(state) || state.kind === "unknown") return;
       if (state.kind === "ready") {
-        this.addMenuButton(setting, "Re-download or remove", [
+        this.addMenuButton(setting, t("settings.models.redownloadOrRemove"), [
           {
-            title: "Re-download",
+            title: t("settings.models.redownload"),
             icon: "refresh-cw",
             run: () => {
               this.plugin.modelReleased(store.asset.id);
@@ -2254,7 +2229,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             },
           },
           {
-            title: "Remove",
+            title: t("common.remove"),
             icon: "trash-2",
             warning: true,
             run: () => {
@@ -2267,7 +2242,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       }
       setting.addButton((b) =>
         b
-          .setButtonText(state.kind === "failed" ? "Try again" : "Download")
+          .setButtonText(
+            state.kind === "failed" ? t("common.retry") : t("settings.models.download"),
+          )
           .setCta()
           .onClick(() => void store.download()),
       );
@@ -2348,32 +2325,38 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const learning = this.learningState;
     if (!learning) {
       this.loadLearning();
-      modelStatus(setting, "Looking for it…", "busy");
+      modelStatus(setting, t("settings.models.looking"), "busy");
       return;
     }
     const { settings } = this.plugin;
     const record = learnedRecord(settings, this.plugin.grape.id);
     const inUse = settings.useLearnedHandwriting !== false;
     const badge = learnedBadge(record, learning.files.current, inUse);
-    const size = learning.files.current ? ` · ${formatSize(learning.files.bytes)}` : "";
-    modelStatus(setting, badge.text + size, badge.tone);
+    const status = learning.files.current
+      ? t("settings.models.withSize", {
+          status: badge.text,
+          size: formatSize(learning.files.bytes),
+        })
+      : badge.text;
+    modelStatus(setting, status, badge.tone);
     const entries: MenuEntry[] = [];
     if (learning.files.previous) {
       entries.push({
-        title: "Go back to the previous model",
+        title: t("settings.models.goBack"),
         icon: "undo-2",
         run: () => this.swapLearned(),
       });
     }
     if (learning.files.current || learning.files.previous || record) {
       entries.push({
-        title: "Delete…",
+        title: t("settings.models.deleteEllipsis"),
         icon: "trash-2",
         warning: true,
         run: () => this.deleteLearned(),
       });
     }
-    if (entries.length > 0) this.addMenuButton(setting, "Previous model or delete", entries);
+    if (entries.length > 0)
+      this.addMenuButton(setting, t("settings.models.previousOrDelete"), entries);
   }
 
   /**
@@ -2413,7 +2396,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         });
         const next = view.buttons.find((button) => button.cta) ?? view.buttons[0];
         open.setButtonText(
-          progress ? progressLabel(progress, Date.now()) : (next?.label ?? "Open"),
+          progress
+            ? progressLabel(progress, Date.now())
+            : (next?.label ?? t("settings.learn.open")),
         );
         open.buttonEl.toggleClass("mod-cta", progress === null);
         open.buttonEl.setCssProps({
@@ -2456,9 +2441,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const host = this.plugin.learningHost();
     const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
     const yes = await ConfirmModal.confirm(this.app, {
-      title: "Delete your learned handwriting model?",
+      title: t("settings.models.deleteTitle"),
       message: deleteQuestion(record, this.learningState?.files.previous ?? false),
-      cta: "Delete",
+      cta: t("common.delete"),
       warning: true,
     });
     if (!yes) return;
@@ -2471,10 +2456,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** Show or Hide: the AI group's rows, when no AI service is set up. */
   private drawAiFold(setting: Setting): void {
     setting.addButton((b) => {
-      b.setButtonText(this.aiOpen ? "Hide" : "Show");
+      b.setButtonText(this.aiOpen ? t("settings.ai.hide") : t("settings.ai.show"));
       b.onClick(() => {
         this.aiOpen = !this.aiOpen;
-        b.setButtonText(this.aiOpen ? "Hide" : "Show");
+        b.setButtonText(this.aiOpen ? t("settings.ai.hide") : t("settings.ai.show"));
         this.refreshDomState();
       });
     });
@@ -2514,7 +2499,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     removeOwn(setting.descEl, "goodobsidian-field-error");
     const error = setting.descEl.createDiv({
       cls: "goodobsidian-field-error is-hidden",
-      text: PAPER_WIDTH_ERROR,
+      text: paperWidthError(),
     });
     setting.addText((text) => {
       text.setValue(String(this.plugin.settings.paperWidth));
@@ -2546,7 +2531,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private drawOpenRouterConnect(setting: Setting): void {
     const connected = this.plugin.apiKeyFor("openrouter") !== "";
     setting.addButton((button) => {
-      button.setButtonText(connected ? "Reconnect" : "Connect OpenRouter").setCta();
+      button
+        .setButtonText(
+          connected ? t("settings.openRouter.reconnect") : t("settings.openRouter.connect"),
+        )
+        .setCta();
       button.onClick(() => void this.plugin.startOpenRouterConnect());
     });
   }
@@ -2557,13 +2546,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     setting.addExtraButton((button) =>
       button
         .setIcon(ICON_NEW_NOTEBOOK)
-        .setTooltip("Add the New notebook shortcut")
+        .setTooltip(t("settings.shortcutsApp.addNotebook"))
         .onClick(() => window.open(SHORTCUT_NEW_NOTEBOOK_URL)),
     );
     setting.addExtraButton((button) =>
       button
         .setIcon("file-input")
-        .setTooltip("Add the PDF to notebook shortcut")
+        .setTooltip(t("settings.shortcutsApp.addPdf"))
         .onClick(() => window.open(SHORTCUT_PDF_URL)),
     );
   }
@@ -2571,7 +2560,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private drawNotebookFolder(setting: Setting): void {
     setting.addText((text) => {
       text
-        .setPlaceholder("Folder of the open note")
+        .setPlaceholder(t("settings.notebookFolder.placeholder"))
         .setValue(this.plugin.settings.newNotebookFolder)
         .onChange(async (value) => {
           this.plugin.settings.newNotebookFolder = normalizeFolder(value);
@@ -2587,18 +2576,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** What a key row's ⓘ says about where the key lives and where it goes. */
   private keyDesc(slot: LlmVendor, use: "text" | "image"): string {
     if (VENDORS[slot].userEndpoint) {
-      return (
-        "Optional — most self-hosted servers don't need one. Kept apart from your cloud keys " +
-        "and sent only to your endpoint."
-      );
+      return t("settings.key.endpointInfo");
     }
-    const where = this.plugin.keys.secure
-      ? "Kept in Obsidian's keychain (Settings → Keychain), outside this vault's files"
-      : "Stored in this vault's plugin data";
-    const label = VENDORS[slot].label;
-    return use === "image"
-      ? `Your own ${label} key, used only to generate images. ${where}; sent only to ${label}.`
-      : `Your own key. ${where}; sent only to ${label}, and only when you start an AI action.`;
+    const secure = this.plugin.keys.secure;
+    const service = VENDORS[slot].label;
+    if (use === "image") {
+      return secure
+        ? t("settings.key.image.keychain", { service })
+        : t("settings.key.image.vault", { service });
+    }
+    return secure
+      ? t("settings.key.text.keychain", { service })
+      : t("settings.key.text.vault", { service });
   }
 
   /**
@@ -2610,29 +2599,36 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const optional = VENDORS[slot].userEndpoint;
     setting.controlEl.createSpan({
       cls: `goodobsidian-key-status${set ? " is-set" : ""}`,
-      text: set ? "Set" : optional ? "Not set (optional)" : "Not set",
+      text: set
+        ? t("settings.key.set")
+        : optional
+          ? t("settings.key.notSetOptional")
+          : t("settings.key.notSet"),
     });
     setting.addButton((button) => {
-      button.setButtonText(set ? "Replace" : "Add key").onClick(() => this.promptForKey(slot));
+      button
+        .setButtonText(set ? t("settings.key.replace") : t("settings.key.add"))
+        .onClick(() => this.promptForKey(slot));
       if (!set && !optional) button.setCta();
     });
     if (set) {
       // Not styled as destructive: `setWarning` is deprecated, and the
       // confirmation says what removing does.
       setting.addButton((button) => {
-        button.setButtonText("Remove").onClick(() => void this.removeKey(slot));
+        button.setButtonText(t("common.remove")).onClick(() => void this.removeKey(slot));
       });
     }
   }
 
   private promptForKey(slot: LlmVendor): void {
-    const label = VENDORS[slot].userEndpoint ? "Endpoint" : VENDORS[slot].label;
     new ApiKeyModal(this.app, {
-      title: `${label} API key`,
-      placeholder: VENDORS[slot].userEndpoint ? "(usually empty)" : "sk-…",
+      title: VENDORS[slot].userEndpoint
+        ? t("settings.ai.endpointKey")
+        : t("settings.ai.keyName", { service: VENDORS[slot].label }),
+      placeholder: VENDORS[slot].userEndpoint ? t("settings.key.usuallyEmpty") : "sk-…",
       where: this.plugin.keys.secure
-        ? "Saved in Obsidian's keychain on this device, not in the vault's files."
-        : "Saved in this vault's plugin data.",
+        ? t("settings.key.whereKeychain")
+        : t("settings.key.whereVault"),
       onSave: (key) => {
         // Entering a key by hand invalidates any in-flight OpenRouter connect,
         // so a stale browser approval cannot overwrite it later.
@@ -2644,11 +2640,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   private async removeKey(slot: LlmVendor): Promise<void> {
-    const label = VENDORS[slot].userEndpoint ? "endpoint" : VENDORS[slot].label;
     const sure = await ConfirmModal.confirm(this.app, {
-      title: `Remove the ${label} key?`,
-      message: "AI features that need it stop working on this device until you add a key again.",
-      cta: "Remove",
+      title: VENDORS[slot].userEndpoint
+        ? t("settings.key.removeEndpointTitle")
+        : t("settings.key.removeTitle", { service: VENDORS[slot].label }),
+      message: t("settings.key.removeMessage"),
+      cta: t("common.remove"),
     });
     if (!sure) return;
     this.plugin.removeApiKey(slot);

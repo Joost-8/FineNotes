@@ -24,6 +24,7 @@ import {
   TranslateElements,
 } from "../model/selection-commands";
 import type { Pt } from "./lasso";
+import { t } from "../i18n/translate";
 
 /** The fingers must turn this far, degrees, before the selection turns. */
 export const TURN_ENGAGE_DEG = 5;
@@ -141,5 +142,5 @@ export function turnCommand(
   }
   if (dx !== 0 || dy !== 0) parts.push(new TranslateElements(pageId, elements, dx, dy));
   if (parts.length <= 1) return parts[0] ?? null;
-  return new CompositeCommand("Rotate selection", parts);
+  return new CompositeCommand(t("surface.command.rotateSelection"), parts);
 }

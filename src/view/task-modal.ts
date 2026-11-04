@@ -14,6 +14,7 @@
  */
 
 import { type App, Modal } from "obsidian";
+import { t } from "../i18n/translate";
 import { MAX_TASK_TEXT, normalizeTaskText } from "../model/tasks";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
@@ -38,20 +39,20 @@ export class TaskModal extends Modal {
   override onOpen(): void {
     const editing = this.current !== undefined;
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-contents-modal");
-    this.titleEl.setText(editing ? "Edit task" : "Make a task");
+    this.titleEl.setText(editing ? t("ai.task.edit") : t("ai.task.make"));
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
     body.createDiv({
       cls: "goodobsidian-ask-note",
-      text: "A box goes beside the ink, and the task is listed in the note, where the Tasks plugin finds it.",
+      text: t("ai.task.note"),
     });
     const row = body.createDiv({ cls: "goodobsidian-contents-field-row" });
     const field = row.createEl("input", {
       cls: "goodobsidian-contents-field",
       type: "text",
       attr: {
-        placeholder: "What to do",
-        "aria-label": "Task",
+        placeholder: t("ai.task.placeholder"),
+        "aria-label": t("ai.task.label"),
         maxlength: String(MAX_TASK_TEXT),
         enterkeyhint: "done",
         autocomplete: "off",
@@ -66,9 +67,12 @@ export class TaskModal extends Modal {
     this.keyboard.watch(field, row);
 
     const actions = body.createDiv({ cls: "goodobsidian-ask-actions" });
-    const cancel = actions.createEl("button", { text: "Cancel" });
+    const cancel = actions.createEl("button", { text: t("common.cancel") });
     cancel.addEventListener("click", () => this.close());
-    const done = actions.createEl("button", { cls: "mod-cta", text: editing ? "Save" : "Add" });
+    const done = actions.createEl("button", {
+      cls: "mod-cta",
+      text: editing ? t("common.save") : t("ai.task.add"),
+    });
     const finish = (): void => {
       const text = normalizeTaskText(field.value);
       this.close();

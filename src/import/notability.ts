@@ -51,13 +51,13 @@ import {
   median,
   mp4Info,
   packageRoot,
-  plural,
   pressureForWidth,
   round2,
   sniffFile,
   type ImportAttachment,
   type ImportResult,
 } from "./import-types";
+import { t, tn } from "../i18n/translate";
 
 export class NotabilityError extends Error {}
 
@@ -139,13 +139,15 @@ export function readNotability(
   pdfSizes: PdfSizes = new Map(),
 ): ImportResult {
   const sessionPath = findSession(files);
-  if (sessionPath === null) throw new NotabilityError("not a Notability note");
+  if (sessionPath === null) throw new NotabilityError(t("notebooks.import.notability.notNote"));
   const root = sessionPath.slice(0, -"Session.plist".length);
   let tree: PlistValue;
   try {
     tree = unarchive(parseBinaryPlist(files.get(sessionPath) ?? new Uint8Array()));
   } catch (e) {
-    throw new NotabilityError(`Session.plist could not be read: ${(e as Error).message}`);
+    throw new NotabilityError(
+      t("notebooks.import.notability.sessionUnreadable", { reason: (e as Error).message }),
+    );
   }
 
   const session =
@@ -193,10 +195,10 @@ export function readNotability(
     }
   }
   if (unmeasured && pdfNames.size > 0) {
-    warnings.push("The PDF's page sizes could not be read, so its pages may be out of place.");
+    warnings.push(t("notebooks.import.notability.pageSizesOutOfPlace"));
   }
   if ([...pdfNames.values()].some((path) => path === null)) {
-    warnings.push("A PDF the note uses is missing from the file; its pages are blank.");
+    warnings.push(t("notebooks.import.notability.missingPdf"));
   }
   /** The page `y` (document units) falls on, adding Letter pages past the end. */
   const slotAt = (y: number): number => {
@@ -392,30 +394,15 @@ export function readNotability(
     (f) => f.startsWith(`${root}Assets/`) && !f.endsWith("/") && !usedAssets.has(f),
   ).length;
   const lines = [
-    tally.line("missing", (n) => `${plural(n, "picture")} could not be found in the file.`),
-    tally.line(
-      "canvases",
-      (n) =>
-        `${plural(n, "sticky canvas", "sticky canvases")} came over as a coloured box ` +
-        "with its lines and ink.",
-    ),
-    tally.line(
-      "mixed",
-      (n) =>
-        `${plural(n, "text box has", "text boxes have")} words in more than one colour; ` +
-        "a text box here has one, so the first was kept.",
-    ),
-    tally.line("other", (n) => `${plural(n, "other item")} could not be brought over yet.`),
-    tally.line(
-      "recordingLength",
-      (n) => `${plural(n, "recording's", "recordings'")} length could not be read.`,
-    ),
+    tally.line("missing", (n) => tn("notebooks.import.notability.missing", n)),
+    tally.line("canvases", (n) => tn("notebooks.import.notability.canvases", n)),
+    tally.line("mixed", (n) => tn("notebooks.import.notability.mixed", n)),
+    tally.line("other", (n) => tn("notebooks.import.notability.other", n)),
+    tally.line("recordingLength", (n) => tn("notebooks.import.notability.recordingLength", n)),
   ];
   for (const line of lines) if (line) warnings.push(line);
   if (unusedAssets > 0) {
-    warnings.push(
-      `${plural(unusedAssets, "sticker or GIF", "stickers or GIFs")} could not be placed.`,
-    );
+    warnings.push(tn("notebooks.import.notability.unusedAssets", unusedAssets));
   }
   if (
     strokes.length === 0 &&
@@ -424,7 +411,7 @@ export function readNotability(
     pdfNames.size === 0 &&
     recordings.length === 0
   ) {
-    warnings.push("No handwriting was found in this note.");
+    warnings.push(t("notebooks.import.notability.noHandwriting"));
   }
 
   const doc: InkDocument = {

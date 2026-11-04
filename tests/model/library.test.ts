@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { useLanguage } from "../../src/i18n/translate";
 import { blankPage, emptyDocument } from "../../src/model/document";
 import {
   type LibraryEntry,
@@ -176,6 +177,24 @@ describe("whenText", () => {
     expect(whenText(at(2026, 9, 30, 9), now)).toBe("Fri");
     expect(whenText(at(2026, 9, 25, 9), now)).toBe("Oct 25");
     expect(whenText(at(2025, 11, 24, 9), now)).toBe("Dec 24, 2025");
+  });
+  it("speaks the interface language, dates included", () => {
+    useLanguage("de", {
+      "notebooks.home.when.yesterday": "Gestern",
+      "notebooks.home.when.minutes.one": "vor {count} Min.",
+      "notebooks.home.when.minutes.other": "vor {count} Min.",
+    });
+    try {
+      const weekday = new Intl.DateTimeFormat("de", { weekday: "short" });
+      const day = new Intl.DateTimeFormat("de", { month: "short", day: "numeric" });
+      expect(whenText(now - 5 * 60_000, now)).toBe("vor 5 Min.");
+      expect(whenText(at(2026, 10, 3, 23), now)).toBe("Gestern");
+      expect(whenText(at(2026, 10, 1, 9), now)).toBe(weekday.format(at(2026, 10, 1, 9)));
+      expect(whenText(at(2026, 9, 25, 9), now)).toBe(day.format(at(2026, 9, 25, 9)));
+      expect(whenText(at(2026, 9, 25, 9), now)).not.toBe("Oct 25");
+    } finally {
+      useLanguage("en");
+    }
   });
 });
 

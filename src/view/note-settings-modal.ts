@@ -26,6 +26,7 @@ import type { NotebookFurniture } from "../model/furniture";
 import { formatFileSize } from "../model/notebook-info";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
+import { t, tn } from "../i18n/translate";
 
 /** What the summary card shows. */
 export interface NotebookInfo {
@@ -104,7 +105,11 @@ export class NoteSettingsModal extends Modal {
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-note-settings", "goodobsidian-dialog");
     this.titleEl.setText(
-      this.host.board ? "Board settings" : this.host.single ? "Page settings" : "Notebook settings",
+      this.host.board
+        ? t("notebooks.noteSettings.boardTitle")
+        : this.host.single
+          ? t("notebooks.noteSettings.pageTitle")
+          : t("notebooks.noteSettings.title"),
     );
     this.render();
     // A rename is not done when `rename` resolves: a notebook with its own
@@ -151,9 +156,12 @@ export class NoteSettingsModal extends Modal {
       cls: "goodobsidian-callout goodobsidian-update-callout goodobsidian-ns-update",
     });
     const line = box.createDiv({ cls: "goodobsidian-callout-title" });
-    line.createSpan({ text: `FineNotes ${update} is out` });
-    const open = line.createEl("button", { cls: "mod-cta", text: "Update" });
-    open.setAttribute("aria-label", "Open FineNotes in Community plugins to update it");
+    line.createSpan({ text: t("notebooks.noteSettings.updateOut", { version: update }) });
+    const open = line.createEl("button", {
+      cls: "mod-cta",
+      text: t("notebooks.noteSettings.update"),
+    });
+    open.setAttribute("aria-label", t("notebooks.noteSettings.updateOpen"));
     open.addEventListener("click", () => {
       this.close();
       openUpdate();
@@ -162,10 +170,10 @@ export class NoteSettingsModal extends Modal {
     if (!stop || this.host.updateReminders?.() !== true) return;
     const mute = box.createEl("button", {
       cls: "goodobsidian-ns-update-mute clickable-icon",
-      text: "Don't show again",
+      text: t("notebooks.noteSettings.muteUpdate"),
       attr: { type: "button" },
     });
-    mute.setAttribute("aria-label", 'Stop showing "Update available"; the gear\'s dot stays');
+    mute.setAttribute("aria-label", t("notebooks.noteSettings.muteUpdateInfo"));
     mute.addEventListener("click", () => {
       stop();
       mute.remove();
@@ -204,10 +212,10 @@ export class NoteSettingsModal extends Modal {
       attr: {
         type: "text",
         "aria-label": this.host.board
-          ? "Rename the board"
+          ? t("notebooks.noteSettings.renameBoard")
           : this.host.single
-            ? "Rename the page"
-            : "Rename the notebook",
+            ? t("notebooks.noteSettings.renamePage")
+            : t("notebooks.noteSettings.renameNotebook"),
         spellcheck: "false",
       },
     });
@@ -233,30 +241,30 @@ export class NoteSettingsModal extends Modal {
     this.keyboard.watch(field, card);
 
     const facts: string[] = [];
-    if (!this.host.single) facts.push(info.pages === 1 ? "1 page" : `${info.pages} pages`);
+    if (!this.host.single) facts.push(tn("notebooks.noteSettings.pages", info.pages));
     const size = formatFileSize(info.bytes);
     if (size) facts.push(size);
     const edited = shortDate(info.modified);
-    if (edited) facts.push(`edited ${edited}`);
+    if (edited) facts.push(t("notebooks.noteSettings.edited", { date: edited }));
     body.createDiv({ cls: "goodobsidian-ns-facts", text: facts.join(" · ") });
     const folder = body.createDiv({ cls: "goodobsidian-ns-facts" });
     setIcon(folder.createSpan({ cls: "goodobsidian-ns-facts-icon" }), "folder");
-    folder.createSpan({ text: info.folder || "Vault's top folder" });
+    folder.createSpan({ text: info.folder || t("notebooks.importModal.topFolder") });
   }
 
   private renderPages(parent: HTMLElement): void {
-    const group = this.group(parent, "Pages");
+    const group = this.group(parent, t("notebooks.noteSettings.pagesGroup"));
     // A single page has nowhere to scroll to.
     if (!this.host.single) {
-      const row = new Setting(group).setName("Scroll direction");
+      const row = new Setting(group).setName(t("notebooks.noteSettings.scroll"));
       const seg = row.controlEl.createDiv({
         cls: "goodobsidian-ns-segmented",
-        attr: { role: "radiogroup", "aria-label": "Scroll direction" },
+        attr: { role: "radiogroup", "aria-label": t("notebooks.noteSettings.scroll") },
       });
       const current = this.host.scrollDirection();
       for (const [value, label] of [
-        ["vertical", "Vertical"],
-        ["horizontal", "Horizontal"],
+        ["vertical", t("notebooks.noteSettings.vertical")],
+        ["horizontal", t("notebooks.noteSettings.horizontal")],
       ] as const) {
         const button = seg.createEl("button", {
           cls: "goodobsidian-ns-segment clickable-icon",
@@ -281,8 +289,8 @@ export class NoteSettingsModal extends Modal {
     const set = this.host.setJoinedPages;
     if (!get || !set) return;
     new Setting(group)
-      .setName("Join pages")
-      .setDesc("No gap between pages: write across the join.")
+      .setName(t("notebooks.noteSettings.join"))
+      .setDesc(t("notebooks.noteSettings.joinInfo"))
       .addToggle((toggle) =>
         toggle.setValue(get()).onChange((on) => {
           set(on);
@@ -298,13 +306,13 @@ export class NoteSettingsModal extends Modal {
     if (!get || !set) return;
     const current = get();
     new Setting(group)
-      .setName("Page numbers")
-      .setDesc("Not on the cover; in exports too.")
+      .setName(t("notebooks.noteSettings.numbers"))
+      .setDesc(t("notebooks.noteSettings.numbersInfo"))
       .addDropdown((dropdown) =>
         dropdown
-          .addOption("none", "None")
-          .addOption("center", "Bottom centre")
-          .addOption("right", "Bottom right")
+          .addOption("none", t("notebooks.noteSettings.numbersNone"))
+          .addOption("center", t("notebooks.noteSettings.numbersCentre"))
+          .addOption("right", t("notebooks.noteSettings.numbersRight"))
           .setValue(current.numbers ?? "none")
           .onChange((value) => {
             const next = { ...get() };
@@ -314,8 +322,8 @@ export class NoteSettingsModal extends Modal {
           }),
       );
     const header = new Setting(group)
-      .setName("Header")
-      .setDesc("{title}, {page} and {pages} are filled in.")
+      .setName(t("notebooks.noteSettings.header"))
+      .setDesc(t("notebooks.noteSettings.headerInfo"))
       .addText((text) => {
         text.setPlaceholder("{title}").setValue(current.header ?? "");
         // Set when the field is left, not on every key: each change is a step of undo.
@@ -332,10 +340,10 @@ export class NoteSettingsModal extends Modal {
   }
 
   private renderEditing(parent: HTMLElement): void {
-    const group = this.group(parent, "Editing");
+    const group = this.group(parent, t("notebooks.noteSettings.editing"));
     new Setting(group)
-      .setName("Read-only")
-      .setDesc("Scroll, zoom, search and export still work.")
+      .setName(t("notebooks.noteSettings.readOnly"))
+      .setDesc(t("notebooks.noteSettings.readOnlyInfo"))
       .addToggle((toggle) =>
         toggle.setValue(this.host.readOnly()).onChange((on) => {
           this.host.setReadOnly(on);
@@ -348,10 +356,10 @@ export class NoteSettingsModal extends Modal {
   private renderLook(parent: HTMLElement): void {
     const { simpleLook, setSimpleLook } = this.host;
     if (!simpleLook || !setSimpleLook) return;
-    const group = this.group(parent, "Look");
+    const group = this.group(parent, t("notebooks.noteSettings.look"));
     new Setting(group)
-      .setName("Simple look")
-      .setDesc("Hide Obsidian's sidebars, ribbon and bars. Off brings normal Obsidian back.")
+      .setName(t("settings.simpleLook.name"))
+      .setDesc(t("notebooks.noteSettings.simpleLookDesc"))
       .addToggle((toggle) => toggle.setValue(simpleLook()).onChange((on) => setSimpleLook(on)));
   }
 
@@ -361,19 +369,19 @@ export class NoteSettingsModal extends Modal {
     const created = shortDate(info.created, true);
     footer.createSpan({
       cls: "goodobsidian-ns-footer-text",
-      text: created ? `Created ${created}` : "",
+      text: created ? t("notebooks.noteSettings.created", { date: created }) : "",
     });
     const all = footer.createEl("button", {
       cls: "goodobsidian-ns-all clickable-icon",
       attr: { type: "button" },
     });
-    all.createSpan({ text: "All FineNotes settings" });
+    all.createSpan({ text: t("notebooks.noteSettings.allSettings") });
     if (this.host.update) {
       // The gear's dot, carried on to where the update is.
       all.addClass("has-mark");
       all.setAttribute(
         "aria-label",
-        `All FineNotes settings · FineNotes ${this.host.update} is out`,
+        t("notebooks.noteSettings.allSettingsUpdate", { version: this.host.update }),
       );
     }
     setIcon(all.createSpan({ cls: "goodobsidian-ns-all-icon" }), "chevron-right");

@@ -22,6 +22,7 @@
  * No DOM, no Obsidian, no network.
  */
 
+import { t } from "../i18n/translate";
 import {
   type LlmVendor,
   VENDORS,
@@ -61,9 +62,9 @@ export function canTranscribeAudio(vendor: LlmVendor): vendor is AudioVendor {
 export function audioUnsupportedReason(vendor: LlmVendor): string {
   switch (vendor) {
     case "anthropic":
-      return "Claude cannot transcribe audio files — needs an OpenAI or Google key";
+      return t("ai.audio.claudeUnsupported");
     case "openrouter":
-      return "OpenRouter has no audio transcription — needs an OpenAI or Google key";
+      return t("ai.audio.openrouterUnsupported");
     default:
       return "";
   }
@@ -202,8 +203,8 @@ export function bytesToBase64(bytes: Uint8Array): string {
 /** Build the transcription request. Throws with a user-facing reason when it cannot be sent. */
 export function buildAudioRequest(input: AudioRequestInput): AudioHttpRequest {
   const vendor = VENDORS[input.vendor];
-  if (vendor.requiresKey && !input.apiKey.trim()) throw new Error("missing API key");
-  if (input.audio.length === 0) throw new Error("the recording is empty");
+  if (vendor.requiresKey && !input.apiKey.trim()) throw new Error(t("ai.client.missingKey"));
+  if (input.audio.length === 0) throw new Error(t("ai.audio.empty"));
   const model = input.model.trim() || DEFAULT_AUDIO_MODELS[input.vendor];
 
   if (input.vendor === "google") {
@@ -223,9 +224,10 @@ export function buildAudioRequest(input: AudioRequestInput): AudioHttpRequest {
     const json = new TextEncoder().encode(JSON.stringify(body));
     if (json.length > GOOGLE_INLINE_MAX_BYTES) {
       throw new Error(
-        `the recording is ${megabytes(input.audio.length)} — Gemini takes at most about ` +
-          `${megabytes((GOOGLE_INLINE_MAX_BYTES * 3) / 4)} in one request. Use an OpenAI key ` +
-          "(up to 25 MB), or record shorter parts.",
+        t("ai.audio.tooBigGemini", {
+          size: megabytes(input.audio.length),
+          max: megabytes((GOOGLE_INLINE_MAX_BYTES * 3) / 4),
+        }),
       );
     }
     return {
@@ -237,10 +239,7 @@ export function buildAudioRequest(input: AudioRequestInput): AudioHttpRequest {
   }
 
   if (input.vendor === "openai" && input.audio.length > OPENAI_AUDIO_MAX_BYTES) {
-    throw new Error(
-      `the recording is ${megabytes(input.audio.length)} — OpenAI takes at most 25 MB. ` +
-        "Record shorter parts, or at a lower bitrate.",
-    );
+    throw new Error(t("ai.audio.tooBigOpenai", { size: megabytes(input.audio.length) }));
   }
   const parts: MultipartPart[] = [
     { name: "model", value: model },

@@ -5,6 +5,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { t, tn } from "../i18n/translate";
 import { sanitizeFileName, stripInkSuffix } from "../model/new-notebook";
 
 export type ExportScope = "all" | "current" | "custom";
@@ -19,10 +20,17 @@ export type RangeResult = { ok: true; pages: number[] } | { ok: false; error: st
  * order written — that is the order they export in, so `5, 1-3` puts page
  * 5 first and `3-1` runs backwards — each page once, where first named.
  */
-export function parsePageRange(input: string, total: number): RangeResult {
+export function parsePageRange(
+  input: string,
+  total: number,
+  /** Whose pages these are: a notebook's, for export, or a PDF's, for import. */
+  purpose: "export" | "import" = "export",
+): RangeResult {
+  const importing = purpose === "import";
+  const empty = t(importing ? "notebooks.pageRange.emptyImport" : "notebooks.pageRange.empty");
   // `1 – 3` is one span, not three parts.
   const text = input.trim().replace(/\s*[-–—]\s*/g, "-");
-  if (!text) return { ok: false, error: "Type the pages to export, e.g. 1-3, 5" };
+  if (!text) return { ok: false, error: empty };
   // A Set keeps insertion order: the order the pages were written in.
   const picked = new Set<number>();
   for (const part of text.split(/[\s,;]+/)) {
@@ -31,24 +39,25 @@ export function parsePageRange(input: string, total: number): RangeResult {
     let from: number;
     let to: number;
     if (span) {
-      if (!span[1] && !span[2]) return { ok: false, error: `"${part}" is not a page range` };
+      if (!span[1] && !span[2])
+        return { ok: false, error: t("notebooks.pageRange.notRange", { part }) };
       from = span[1] ? Number(span[1]) : 1;
       to = span[2] ? Number(span[2]) : total;
     } else if (/^\d+$/.test(part)) {
       from = to = Number(part);
     } else {
-      return { ok: false, error: `"${part}" is not a page number` };
+      return { ok: false, error: t("notebooks.pageRange.notNumber", { part }) };
     }
-    if (Math.min(from, to) < 1) return { ok: false, error: "Pages are numbered from 1" };
+    if (Math.min(from, to) < 1) return { ok: false, error: t("notebooks.pageRange.fromOne") };
     const last = Math.max(from, to);
     if (last > total) {
-      const has = total === 1 ? "has 1 page" : `has ${total} pages`;
-      return { ok: false, error: `There is no page ${last}: this notebook ${has}` };
+      const key = importing ? "notebooks.pageRange.noPagePdf" : "notebooks.pageRange.noPage";
+      return { ok: false, error: tn(key, total, { last }) };
     }
     const step = from <= to ? 1 : -1;
     for (let p = from; p !== to + step; p += step) picked.add(p - 1);
   }
-  if (picked.size === 0) return { ok: false, error: "Type the pages to export, e.g. 1-3, 5" };
+  if (picked.size === 0) return { ok: false, error: empty };
   return { ok: true, pages: [...picked] };
 }
 

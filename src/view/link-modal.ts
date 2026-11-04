@@ -20,6 +20,7 @@ import { type LinkChoice, type LinkableNote, linkChoices } from "../search/link-
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { type SpellingFix, SpellingRows } from "./spelling-row";
+import { t } from "../i18n/translate";
 
 type PickerItem = LinkChoice | { kind: "remove"; target: string };
 
@@ -53,8 +54,8 @@ export class LinkSuggestModal extends SuggestModal<PickerItem> {
     this.keyboard = new DialogKeyboard(this.modalEl);
     this.modalEl.addClass("goodobsidian-link-modal");
     this.limit = 60;
-    this.setPlaceholder("Link to a note, a heading (Note#Heading) or a web address");
-    this.emptyStateText = "Type a note's name, or a web address.";
+    this.setPlaceholder(t("surface.linkModal.placeholder"));
+    this.emptyStateText = t("surface.linkModal.empty");
     // Obsidian's keymap takes a plain Return; the iPad's Return over the
     // selected reading can come only as a line break (enter-key.ts).
     onEnterKey(
@@ -111,7 +112,7 @@ export class LinkSuggestModal extends SuggestModal<PickerItem> {
     };
     switch (item.kind) {
       case "remove":
-        title.setText("Remove link");
+        title.setText(t("surface.command.removeLink"));
         sub(item.target);
         break;
       case "note":
@@ -124,11 +125,11 @@ export class LinkSuggestModal extends SuggestModal<PickerItem> {
         break;
       case "url":
         title.setText(item.target);
-        sub("Web address");
+        sub(t("surface.linkModal.webAddress"));
         break;
       case "new":
-        title.setText(`Link to “${item.target}”`);
-        sub("A note that does not exist yet");
+        title.setText(t("surface.linkModal.linkTo", { target: item.target }));
+        sub(t("surface.linkModal.noteMissing"));
         break;
     }
   }

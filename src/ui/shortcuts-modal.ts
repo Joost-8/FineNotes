@@ -1,5 +1,6 @@
 import { type App, Modal } from "obsidian";
 
+import { t } from "../i18n/translate";
 import { SHORTCUT_GROUPS, type ShortcutGroup } from "../model/shortcuts";
 import { renderShortcutList } from "../view/shortcut-list";
 
@@ -26,11 +27,11 @@ export class ShortcutsModal extends Modal {
   override onOpen(): void {
     this.shown = true;
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-shortcuts-modal");
-    this.titleEl.setText("Keyboard and stylus shortcuts");
+    this.titleEl.setText(t("settings.shortcuts.title"));
     renderShortcutList(this.contentEl, this.apple, this.groups);
     this.contentEl.createDiv({
       cls: "goodobsidian-shortcuts-hint",
-      text: "Press ? to show or hide this list. None of them act while you type in a text box.",
+      text: t("settings.shortcuts.hint"),
     });
     // ? closes it, as it opened it.
     this.scope.register(null, "?", () => {

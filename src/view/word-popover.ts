@@ -11,6 +11,7 @@
  */
 
 import { setIcon } from "obsidian";
+import { t } from "../i18n/translate";
 
 const POPOVER_WIDTH = 300;
 
@@ -46,7 +47,7 @@ export class WordPopover {
     WordPopover.current = this;
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-wordcheck" });
     this.el.setAttribute("role", "menu");
-    this.el.setAttribute("aria-label", `Read as “${content.read}”`);
+    this.el.setAttribute("aria-label", t("ai.word.readAs", { word: content.read }));
     this.build(content);
     this.place();
     this.installDismiss();
@@ -69,7 +70,7 @@ export class WordPopover {
     this.el.createDiv({ cls: "goodobsidian-wordcheck-read", text: `“${content.read}”` });
     if (content.chips.length > 0) {
       const chips = this.el.createDiv({ cls: "goodobsidian-wordcheck-chips" });
-      chips.setAttribute("aria-label", "Or it may say");
+      chips.setAttribute("aria-label", t("ai.word.orMaySay"));
       content.chips.forEach((word, i) => {
         // `clickable-icon`: Obsidian pads any other button 20 px on iPad.
         const chip = chips.createEl("button", {

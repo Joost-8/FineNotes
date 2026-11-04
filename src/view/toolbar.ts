@@ -93,6 +93,8 @@ import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import { TAPE_COLORS, TAPE_HEIGHTS, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
 import { magnifierTap, zoomButtonState } from "../model/zoom-box";
 import { Notice, setIcon } from "obsidian";
+import { t } from "../i18n/translate";
+
 import { deviceFamilies, hasFamily } from "./device-fonts";
 import { loadedVaultFonts } from "./font-store";
 import { errorMessage } from "../util/errors";
@@ -297,20 +299,54 @@ export interface PenTypeSpec {
 }
 
 export const PEN_TYPES: readonly PenTypeSpec[] = [
-  { id: "fountain", label: "Fountain pen", tool: "pen", pressure: true, sizeScale: 1 },
-  { id: "ball", label: "Ball pen", tool: "pen", pressure: false, sizeScale: 1 },
-  { id: "brush", label: "Brush pen", tool: "pen", pressure: true, sizeScale: 1.8 },
+  {
+    id: "fountain",
+    get label() {
+      return t("toolbar.pen.fountain");
+    },
+    tool: "pen",
+    pressure: true,
+    sizeScale: 1,
+  },
+  {
+    id: "ball",
+    get label() {
+      return t("toolbar.pen.ball");
+    },
+    tool: "pen",
+    pressure: false,
+    sizeScale: 1,
+  },
+  {
+    id: "brush",
+    get label() {
+      return t("toolbar.pen.brush");
+    },
+    tool: "pen",
+    pressure: true,
+    sizeScale: 1.8,
+  },
   // A broad italic nib held at 40°, as calligraphy is taught: thick on the
   // downstrokes, hairline on the upstrokes. Width by direction, not pressure.
   {
     id: "calligraphy",
-    label: "Calligraphy pen",
+    get label() {
+      return t("toolbar.pen.calligraphy");
+    },
     tool: "pen",
     pressure: false,
     sizeScale: 2.6,
     nib: 40,
   },
-  { id: "highlighter", label: "Highlighter", tool: "highlighter", pressure: false, sizeScale: 4 },
+  {
+    id: "highlighter",
+    get label() {
+      return t("toolbar.pen.highlighter");
+    },
+    tool: "highlighter",
+    pressure: false,
+    sizeScale: 4,
+  },
 ];
 
 /**
@@ -372,9 +408,15 @@ const FILL_GAP_ICONS: Record<FillGap, string> = {
 };
 
 const FILL_GAP_LABELS: Record<FillGap, string> = {
-  exact: "Fill closed outlines only",
-  small: "Fill past small gaps",
-  large: "Fill past wide gaps",
+  get exact() {
+    return t("toolbar.fill.gap.exact");
+  },
+  get small() {
+    return t("toolbar.fill.gap.small");
+  },
+  get large() {
+    return t("toolbar.fill.gap.large");
+  },
 };
 
 /** The places the pill can be dragged to: all four (pill-dock-model.ts). */
@@ -408,9 +450,24 @@ export function penOfState(state: ToolbarState): SavedPen {
 export type EraserMode = "standard" | "stroke" | "ruled";
 
 const ERASER_MODES: ReadonlyArray<{ id: EraserMode; label: string }> = [
-  { id: "standard", label: "Standard" },
-  { id: "stroke", label: "Whole stroke" },
-  { id: "ruled", label: "By line (lined paper)" },
+  {
+    id: "standard",
+    get label() {
+      return t("toolbar.eraser.mode.standard");
+    },
+  },
+  {
+    id: "stroke",
+    get label() {
+      return t("toolbar.eraser.mode.stroke");
+    },
+  },
+  {
+    id: "ruled",
+    get label() {
+      return t("toolbar.eraser.mode.ruled");
+    },
+  },
 ];
 
 /** The eraser mode a toolbar state implies. Anything unknown counts as standard. */
@@ -425,9 +482,15 @@ export function eraserFilterFor(state: ToolbarState): EraserFilter {
 }
 
 const ERASER_FILTER_LABELS: Record<EraserFilter, string> = {
-  all: "All ink",
-  highlighter: "Highlighter only",
-  pen: "Pen only",
+  get all() {
+    return t("toolbar.eraser.filter.all");
+  },
+  get highlighter() {
+    return t("toolbar.eraser.filter.highlighter");
+  },
+  get pen() {
+    return t("toolbar.eraser.filter.pen");
+  },
 };
 
 /** The lasso's type a toolbar state implies. `undefined` counts as freehand, GoodNotes' default. */
@@ -441,21 +504,59 @@ export function lassoFilterFor(state: ToolbarState): LassoFilter {
 }
 
 const LASSO_MODE_LABELS: Record<LassoMode, string> = {
-  rect: "Rectangular",
-  freehand: "Freehand",
-  lines: "By line",
-  single: "One item",
+  get rect() {
+    return t("toolbar.lasso.mode.rect");
+  },
+  get freehand() {
+    return t("toolbar.lasso.mode.freehand");
+  },
+  get lines() {
+    return t("toolbar.lasso.mode.lines");
+  },
+  get single() {
+    return t("toolbar.lasso.mode.single");
+  },
+};
+
+/** The lasso button's name for each type: the type is part of a whole sentence. */
+const LASSO_SELECT_TIPS: Record<LassoMode, string> = {
+  get rect() {
+    return t("toolbar.lasso.selectTip.rect");
+  },
+  get freehand() {
+    return t("toolbar.lasso.selectTip.freehand");
+  },
+  get lines() {
+    return t("toolbar.lasso.selectTip.lines");
+  },
+  get single() {
+    return t("toolbar.lasso.selectTip.single");
+  },
 };
 
 /** GoodNotes' "What to include in the selection", less what this plugin does not have. */
 const LASSO_FILTER_LABELS: Record<keyof LassoFilter, string> = {
-  handwriting: "Handwriting",
-  images: "Images",
-  shapes: "Shapes",
-  arrows: "Arrows",
-  textBoxes: "Text boxes",
-  tables: "Tables",
-  graphs: "Graphs",
+  get handwriting() {
+    return t("toolbar.lasso.filter.handwriting");
+  },
+  get images() {
+    return t("toolbar.lasso.filter.images");
+  },
+  get shapes() {
+    return t("toolbar.lasso.filter.shapes");
+  },
+  get arrows() {
+    return t("toolbar.lasso.filter.arrows");
+  },
+  get textBoxes() {
+    return t("toolbar.lasso.filter.textBoxes");
+  },
+  get tables() {
+    return t("toolbar.lasso.filter.tables");
+  },
+  get graphs() {
+    return t("toolbar.lasso.filter.graphs");
+  },
 };
 
 /**
@@ -468,17 +569,39 @@ export function shapeModeFor(state: ToolbarState): ShapeMode {
 }
 
 const SHAPE_LABELS: Record<ShapeMode, string> = {
-  auto: "Auto-shape: draw any shape and it snaps clean",
-  rect: "Square",
-  ellipse: "Circle",
-  triangle: "Triangle",
-  diamond: "Diamond",
-  roundrect: "Rounded square",
-  star: "Star",
-  heart: "Heart",
-  line: "Line: drag from start to end",
-  arrow: "Arrow: drag from tail to tip",
-  table: "Table",
+  get auto() {
+    return t("toolbar.shape.auto");
+  },
+  get rect() {
+    return t("toolbar.shape.rect");
+  },
+  get ellipse() {
+    return t("toolbar.shape.ellipse");
+  },
+  get triangle() {
+    return t("toolbar.shape.triangle");
+  },
+  get diamond() {
+    return t("toolbar.shape.diamond");
+  },
+  get roundrect() {
+    return t("toolbar.shape.roundrect");
+  },
+  get star() {
+    return t("toolbar.shape.star");
+  },
+  get heart() {
+    return t("toolbar.shape.heart");
+  },
+  get line() {
+    return t("toolbar.shape.line");
+  },
+  get arrow() {
+    return t("toolbar.shape.arrow");
+  },
+  get table() {
+    return t("toolbar.shape.table");
+  },
 };
 
 /**
@@ -1112,7 +1235,7 @@ export class Toolbar {
     this.onlyStylusOn = options.onlyStylusMode === true;
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
     this.barEl.setAttribute("role", "toolbar");
-    this.barEl.setAttribute("aria-label", "Handwriting tools");
+    this.barEl.setAttribute("aria-label", t("toolbar.barLabel"));
     // An upright bar taller than its room scrolls: say so at the ends it can go.
     this.barEl.addEventListener("scroll", () => this.syncScrollCues(), { passive: true });
     this.barDock = parseBarDock(options.barDock);
@@ -1124,7 +1247,7 @@ export class Toolbar {
     // The pill always floats over the page (styles.css, `.is-floating`).
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
-    this.optionsEl.setAttribute("aria-label", "Tool options");
+    this.optionsEl.setAttribute("aria-label", t("toolbar.optionsLabel"));
     // A finger drag on a bar, the pill or a popover's slider is ours, not
     // one of Obsidian's swipes, which would open a sidebar (CLAUDE.md).
     this.barEl.dataset.ignoreSwipe = "true";
@@ -1256,44 +1379,51 @@ export class Toolbar {
     };
 
     const home = cb.onHome;
-    if (home) item("home", this.barButton(start, "house", "Home", home), home, false);
+    if (home)
+      item("home", this.barButton(start, "house", t("toolbar.item.home"), home), home, false);
     this.thumbnailsButton = this.barButton(
       start,
       "panel-left",
-      "Page thumbnails",
+      t("toolbar.pageThumbnails"),
       cb.onToggleThumbnails,
     );
     this.fold(
       FOLD_RANK.thumbnails,
       this.thumbnailsButton,
       "panel-left",
-      "Page thumbnails",
+      t("toolbar.pageThumbnails"),
       cb.onToggleThumbnails,
     );
     item("thumbnails", this.thumbnailsButton, cb.onToggleThumbnails, false);
     const search = cb.onSearch;
     item(
       "search",
-      this.foldButton(start, FOLD_RANK.search, "search", "Search this notebook", search),
+      this.foldButton(start, FOLD_RANK.search, "search", t("toolbar.searchNotebook"), search),
       search,
     );
-    item("ai", this.foldButton(start, FOLD_RANK.ai, "sparkles", "AI", cb.onAi), cb.onAi);
+    item("ai", this.foldButton(start, FOLD_RANK.ai, "sparkles", t("toolbar.ai"), cb.onAi), cb.onAi);
     item(
       "calculator",
-      this.foldButton(start, FOLD_RANK.calculator, "calculator", "Calculator", cb.onCalculator),
+      this.foldButton(
+        start,
+        FOLD_RANK.calculator,
+        "calculator",
+        t("toolbar.calculator"),
+        cb.onCalculator,
+      ),
       cb.onCalculator,
     );
     const undo = (): void => this.callbacks.onUndo();
     const redo = (): void => this.callbacks.onRedo();
     this.undoButton = item(
       "undo",
-      this.barButton(start, "undo-2", "Undo (Cmd/Ctrl+Z)", undo),
+      this.barButton(start, "undo-2", t("toolbar.undoTip"), undo),
       undo,
       false,
     );
     this.redoButton = item(
       "redo",
-      this.foldButton(start, FOLD_RANK.redo, "redo-2", "Redo (Cmd/Ctrl+Shift+Z)", redo),
+      this.foldButton(start, FOLD_RANK.redo, "redo-2", t("toolbar.redoTip"), redo),
       redo,
       false,
     );
@@ -1302,22 +1432,22 @@ export class Toolbar {
       const button = this.addToolButton(tools, id, icon, label);
       item(id, button, (anchor) => this.tapTool(id, anchor), id !== "pen" && id !== "eraser");
     };
-    tool("select", "lasso", "Lasso select (V)");
-    tool("pen", "pen-tool", "Pen (P or W)");
-    tool("eraser", "eraser", "Eraser (E)");
-    tool("text", "type", "Text box (T)");
-    tool("shape", "shapes", "Shapes (S)");
+    tool("select", "lasso", t("toolbar.tip.lasso"));
+    tool("pen", "pen-tool", t("toolbar.tip.pen"));
+    tool("eraser", "eraser", t("toolbar.tip.eraser"));
+    tool("text", "type", t("toolbar.tip.textBox"));
+    tool("shape", "shapes", t("toolbar.tip.shapes"));
     // Page navigation tools. In More tools by default.
-    tool("pan", "hand", "Hand — move the page");
-    tool("zoom", "zoom-in", "Magnifier — zoom");
-    tool("fill", "paint-bucket", "Fill");
+    tool("pan", "hand", t("toolbar.tip.hand"));
+    tool("zoom", "zoom-in", t("toolbar.tip.magnifier"));
+    tool("fill", "paint-bucket", t("toolbar.tool.fill"));
     // Cover tape: strips over the page that a tap shows through.
-    tool("tape", "bandage", "Cover tape");
+    tool("tape", "bandage", t("toolbar.tool.coverTape"));
     if (cb.onOnlyStylusMode) {
       const toggle = (): void => this.toggleOnlyStylusMode();
-      const stylus = this.barButton(tools, ICON_STYLUS_ONLY, "Stylus only: off", toggle);
+      const stylus = this.barButton(tools, ICON_STYLUS_ONLY, t("toolbar.stylusOff"), toggle);
       item("stylus", stylus, toggle);
-      this.fold(FOLD_RANK.stylus, stylus, ICON_STYLUS_ONLY, "Stylus only", toggle);
+      this.fold(FOLD_RANK.stylus, stylus, ICON_STYLUS_ONLY, t("toolbar.tool.stylusOnly"), toggle);
       this.setOnlyStylusMode(this.onlyStylusOn);
     }
     if (cb.onRuler) {
@@ -1333,25 +1463,38 @@ export class Toolbar {
       label: string,
       handler: ((anchor: HTMLElement) => void) | undefined,
     ): HTMLButtonElement => item(id, this.foldButton(tools, rank, icon, label, handler), handler);
-    action("image", FOLD_RANK.image, "image", "Insert image", cb.onInsertImage);
-    this.insertPdfButton = action("pdf", FOLD_RANK.pdf, "file-text", "Insert PDF", cb.onInsertPdf);
-    if (cb.onStickers) action("sticker", FOLD_RANK.sticker, "sticker", "Stickers", cb.onStickers);
+    action("image", FOLD_RANK.image, "image", t("toolbar.insertImage"), cb.onInsertImage);
+    this.insertPdfButton = action(
+      "pdf",
+      FOLD_RANK.pdf,
+      "file-text",
+      t("toolbar.insertPdf"),
+      cb.onInsertPdf,
+    );
+    if (cb.onStickers)
+      action("sticker", FOLD_RANK.sticker, "sticker", t("toolbar.tool.stickers"), cb.onStickers);
     if (cb.onStickyColor) {
       this.stickyButton = action(
         "sticky",
         FOLD_RANK.sticky,
         "sticky-note",
-        "Sticky notes",
+        t("toolbar.tool.stickyNotes"),
         (anchor) => this.tapSticky(anchor),
       );
     }
     // The note's recordings live in the page sidebar's Files tab, as in
     // GoodNotes; the mic only starts and stops one.
-    this.recordButton = action("record", FOLD_RANK.record, "mic", "Record audio", cb.onRecord);
+    this.recordButton = action(
+      "record",
+      FOLD_RANK.record,
+      "mic",
+      t("toolbar.tool.recordAudio"),
+      cb.onRecord,
+    );
     // Goodnotes' accessories: what the bar does not show, and the way to
     // choose what it shows. Pinned to the bar, and it never folds, as ⋯
     // never does.
-    const accessories = this.barButton(tools, "toolbox", "More tools", (button) =>
+    const accessories = this.barButton(tools, "toolbox", t("toolbar.moreTools"), (button) =>
       this.toggleAccessories(button),
     );
     accessories.addClass("has-caret", "goodobsidian-accessories-button");
@@ -1366,29 +1509,45 @@ export class Toolbar {
     if (cb.onFullScreen) {
       this.fullScreenButton = item(
         "fullscreen",
-        this.foldButton(doc, FOLD_RANK.fullScreen, "maximize-2", "Full screen", cb.onFullScreen),
+        this.foldButton(
+          doc,
+          FOLD_RANK.fullScreen,
+          "maximize-2",
+          t("toolbar.fullScreen"),
+          cb.onFullScreen,
+        ),
         cb.onFullScreen,
         false,
       );
     }
     this.addPageButton = item(
       "addPage",
-      this.foldButton(doc, FOLD_RANK.addPage, "plus", "Add page", cb.onAddPage),
+      this.foldButton(doc, FOLD_RANK.addPage, "plus", t("toolbar.addPage"), cb.onAddPage),
       cb.onAddPage,
       false,
     );
-    item("share", this.foldButton(doc, FOLD_RANK.share, "share", "Export", cb.onShare), cb.onShare);
+    item(
+      "share",
+      this.foldButton(doc, FOLD_RANK.share, "share", t("toolbar.export"), cb.onShare),
+      cb.onShare,
+    );
     if (cb.onLearnHandwriting) this.buildLearnButton(doc, cb.onLearnHandwriting);
     this.moreButton = item(
       "more",
-      this.barButton(doc, "more-horizontal", "More", cb.onMore),
+      this.barButton(doc, "more-horizontal", t("common.more"), cb.onMore),
       undefined,
       false,
     );
     if (this.options.fingerDrawing === true) this.setFingerDrawing(true);
     this.settingsButton = item(
       "settings",
-      this.foldButton(doc, FOLD_RANK.settings, "settings", "Notebook settings", cb.onSettings),
+      this.foldButton(
+        doc,
+        FOLD_RANK.settings,
+        "settings",
+        t("toolbar.notebookSettings"),
+        cb.onSettings,
+      ),
       cb.onSettings,
       false,
     );
@@ -1540,9 +1699,12 @@ export class Toolbar {
     this.hideUpdateTip();
     // On the body: the bar clips what leaves it (overflow: hidden).
     const tip = anchor.ownerDocument.body.createDiv({ cls: "goodobsidian-update-tip" });
-    const text = tip.createSpan({ cls: "goodobsidian-update-tip-text", text: "Update available" });
+    const text = tip.createSpan({
+      cls: "goodobsidian-update-tip-text",
+      text: t("toolbar.update.available"),
+    });
     text.setAttribute("role", "button");
-    text.setAttribute("aria-label", "Update available: open FineNotes in Community plugins");
+    text.setAttribute("aria-label", t("toolbar.update.availableTip"));
     text.addEventListener("click", () => {
       this.hideUpdateTip();
       open();
@@ -1550,7 +1712,7 @@ export class Toolbar {
     const close = tip.createSpan({ cls: "goodobsidian-update-tip-close" });
     setIcon(close, "x");
     close.setAttribute("role", "button");
-    close.setAttribute("aria-label", "Dismiss");
+    close.setAttribute("aria-label", t("common.dismiss"));
     close.addEventListener("click", () => {
       this.hideUpdateTip();
       dismiss();
@@ -1614,7 +1776,9 @@ export class Toolbar {
     gear.toggleClass("has-mark", version !== null);
     gear.setAttr(
       "aria-label",
-      version === null ? "Notebook settings" : `Notebook settings · FineNotes ${version} is out`,
+      version === null
+        ? t("toolbar.notebookSettings")
+        : t("toolbar.notebookSettingsUpdate", { version }),
     );
     this.moreButton?.toggleClass(
       "has-mark",
@@ -1630,7 +1794,7 @@ export class Toolbar {
     const button = this.fullScreenButton;
     if (!button) return;
     const icon = on ? "minimize-2" : "maximize-2";
-    const label = on ? "Leave full screen" : "Full screen";
+    const label = on ? t("toolbar.leaveFullScreen") : t("toolbar.fullScreen");
     iconOrText(button, icon, label);
     button.setAttr("aria-label", label);
     const item = this.foldable.find((entry) => entry.button === button);
@@ -1703,7 +1867,7 @@ export class Toolbar {
     button.setAttr("aria-label", label);
     if (!handler) {
       button.disabled = true;
-      button.setAttribute("title", `${label} — not available yet`);
+      button.setAttribute("title", t("toolbar.notAvailableYet", { name: label }));
       return button;
     }
     button.addEventListener("click", () => {
@@ -1767,7 +1931,7 @@ export class Toolbar {
     if (!stylus) return;
     stylus.toggleClass("is-on", on);
     stylus.setAttribute("aria-pressed", String(on));
-    stylus.setAttribute("aria-label", on ? "Stylus only: on" : "Stylus only: off");
+    stylus.setAttribute("aria-label", on ? t("toolbar.stylusOn") : t("toolbar.stylusOff"));
     this.syncAccessoriesMark();
   }
 
@@ -1779,7 +1943,7 @@ export class Toolbar {
     const more = this.moreButton;
     if (!more) return;
     more.toggleClass("is-on", on);
-    more.setAttribute("aria-label", on ? "More · drawing with a finger" : "More");
+    more.setAttribute("aria-label", on ? t("toolbar.moreFinger") : t("common.more"));
   }
 
   /** Light the accessories button while one of the items its menu lists is on. */
@@ -1942,7 +2106,7 @@ export class Toolbar {
           attr: { role: "menuitem" },
         });
         iconOrText(customize.createSpan({ cls: "goodobsidian-accessory-icon" }), "settings-2", "");
-        customize.createSpan({ text: "Customize toolbar" });
+        customize.createSpan({ text: t("toolbar.customize.title") });
         customize.addEventListener("click", () => {
           this.closePopover();
           this.startCustomize();
@@ -1965,10 +2129,10 @@ export class Toolbar {
     }
     const body = this.openPopover("sticky", anchor);
     this.popover?.addClass("has-arrow", "goodobsidian-sticky-popover");
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Sticky note" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.sticky.label") });
     const grid = body.createDiv({
       cls: "goodobsidian-sticky-colors",
-      attr: { role: "group", "aria-label": "Sticky note colour" },
+      attr: { role: "group", "aria-label": t("toolbar.sticky.colour") },
     });
     const swatches = new Map<string, HTMLElement>();
     for (const { color, label } of STICKY_COLORS) {
@@ -2001,7 +2165,7 @@ export class Toolbar {
     button.setAttribute("aria-pressed", String(armed));
     button.setAttr(
       "aria-label",
-      armed ? "Sticky notes: tap the page to place one" : "Sticky notes",
+      armed ? t("toolbar.sticky.placeTip") : t("toolbar.tool.stickyNotes"),
     );
     this.syncAccessoriesMark();
     // The note is on the page (or stopped waiting): its colours go.
@@ -2019,8 +2183,8 @@ export class Toolbar {
     const button = parent.createEl("button", {
       cls: "goodobsidian-tool goodobsidian-ruler-button has-caret",
     });
-    iconOrText(button, "ruler", "Ruler");
-    button.setAttr("aria-label", "Ruler");
+    iconOrText(button, "ruler", t("toolbar.tool.ruler"));
+    button.setAttr("aria-label", t("toolbar.tool.ruler"));
     button.setAttribute("aria-pressed", "false");
     iconOrText(button.createSpan({ cls: "goodobsidian-tool-caret" }), "chevron-down", "");
     button.addEventListener("click", (event) => {
@@ -2033,7 +2197,9 @@ export class Toolbar {
       this.closePopover();
       this.callbacks.onRuler?.();
     });
-    this.fold(FOLD_RANK.ruler, button, "ruler", "Ruler", () => this.callbacks.onRuler?.());
+    this.fold(FOLD_RANK.ruler, button, "ruler", t("toolbar.tool.ruler"), () =>
+      this.callbacks.onRuler?.(),
+    );
     this.rulerButton = button;
     return button;
   }
@@ -2089,15 +2255,16 @@ export class Toolbar {
     }
     const steps = body.createDiv({
       cls: "goodobsidian-ruler-snap",
-      attr: { role: "group", "aria-label": "Angle snapping" },
+      attr: { role: "group", "aria-label": t("toolbar.ruler.angleSnapping") },
     });
     iconOrText(steps.createSpan({ cls: "goodobsidian-ruler-snap-icon" }), "magnet", "");
     for (const step of RULER_SNAP_STEPS) {
       const button = steps.createEl("button", {
         cls: "goodobsidian-ruler-snap-step clickable-icon",
-        text: step === 0 ? "Off" : `${step}°`,
+        text: step === 0 ? t("common.off") : `${step}°`,
         attr: {
-          "aria-label": step === 0 ? "No angle snapping" : `Snap to ${step}°`,
+          "aria-label":
+            step === 0 ? t("toolbar.ruler.noSnap") : t("toolbar.ruler.snapTo", { angle: step }),
           "aria-pressed": String(step === snap),
         },
       });
@@ -2144,7 +2311,7 @@ export class Toolbar {
       "--gob-ink": color,
       "--gob-ink-width": `${widthMarkThickness(width)}px`,
     });
-    button.setAttribute("aria-label", `${spec.label} (P or W)`);
+    button.setAttribute("aria-label", t("toolbar.tip.penType", { name: spec.label }));
   }
 
   /**
@@ -2167,7 +2334,7 @@ export class Toolbar {
     // Less margin than the card's, so it is as large as the icons beside it.
     glyph.setAttribute("viewBox", "2.5 2.5 27 27");
     button.prepend(glyph);
-    button.setAttribute("aria-label", `Lasso select: ${LASSO_MODE_LABELS[mode].toLowerCase()} (V)`);
+    button.setAttribute("aria-label", LASSO_SELECT_TIPS[mode]);
   }
 
   /**
@@ -2183,11 +2350,14 @@ export class Toolbar {
     this.eraserIconMode = mode;
     button.empty();
     button.removeClass("goodobsidian-icon-fallback");
-    eraserModeIcon(button, mode, "Eraser");
-    const label = ERASER_MODES.find((m) => m.id === mode)?.label ?? "Standard";
+    eraserModeIcon(button, mode, t("toolbar.tool.eraser"));
     button.setAttribute(
       "aria-label",
-      mode === "standard" ? "Eraser (E)" : `Eraser: ${label.toLowerCase()} (E)`,
+      mode === "standard"
+        ? t("toolbar.tip.eraser")
+        : mode === "stroke"
+          ? t("toolbar.eraser.tip.stroke")
+          : t("toolbar.eraser.tip.ruled"),
     );
   }
 
@@ -2367,7 +2537,7 @@ export class Toolbar {
     // The rest of the old pen menu: the laser pointer, the pen's settings and
     // the pen gestures. A practice sheet has none of them.
     if (!folded && !this.practice) {
-      this.chevron("Pen options", (button) => this.openPenMenu(button));
+      this.chevron(t("toolbar.penOptions"), (button) => this.openPenMenu(button));
     }
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
@@ -2381,7 +2551,7 @@ export class Toolbar {
         this.widthMarks([width]).get(width),
         () => this.toggleWidthList(button),
       );
-      button.setAttribute("aria-label", `Width ${this.widthMm(width)}: more widths`);
+      button.setAttribute("aria-label", t("toolbar.width.moreWidths", { mm: this.widthMm(width) }));
       this.widthButtons.set(width, button);
     } else {
       // Stroke widths, drawn as literal strokes of increasing weight.
@@ -2400,7 +2570,7 @@ export class Toolbar {
         );
         this.widthButtons.set(width, button);
       }
-      this.chevron("More widths", (button) => this.toggleWidthList(button));
+      this.chevron(t("toolbar.width.more"), (button) => this.toggleWidthList(button));
     }
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
@@ -2421,7 +2591,7 @@ export class Toolbar {
       for (const color of colors.slice(first, first + UPRIGHT_COLORS)) {
         this.penSwatch(this.optionsEl, color, colors);
       }
-      this.chevron("All colours", (button) => this.togglePenColorList(button));
+      this.chevron(t("toolbar.color.all"), (button) => this.togglePenColorList(button));
     } else {
       // The colour row, as GoodNotes': as many as the pill has room for, up
       // to ten (styles.css), the rest a swipe away, and the "+" after the
@@ -2442,9 +2612,11 @@ export class Toolbar {
     });
     auto.append(shapeGlyph("auto"));
     const on = this.state.snapMode === "auto";
-    const label = on ? "Auto shape: on" : "Auto shape: off";
-    auto.setAttribute("aria-label", label);
-    auto.setAttribute("title", `${label} — a stroke that is a shape becomes one`);
+    auto.setAttribute("aria-label", on ? t("toolbar.autoShape.on") : t("toolbar.autoShape.off"));
+    auto.setAttribute(
+      "title",
+      on ? t("toolbar.autoShape.onTitle") : t("toolbar.autoShape.offTitle"),
+    );
     auto.setAttribute("aria-pressed", String(on));
     auto.toggleClass("is-active", on);
     auto.addEventListener("click", () => {
@@ -2460,9 +2632,9 @@ export class Toolbar {
       const saved = this.optionsEl.createEl("button", {
         cls: "goodobsidian-saved-pens clickable-icon",
       });
-      iconOrText(saved, "star", "Saved pens");
-      saved.setAttribute("aria-label", "Saved pens (1–8)");
-      saved.setAttribute("title", "Saved pens (1–8)");
+      iconOrText(saved, "star", t("toolbar.savedPens.title"));
+      saved.setAttribute("aria-label", t("toolbar.savedPens.tip"));
+      saved.setAttribute("title", t("toolbar.savedPens.tip"));
       saved.setAttribute("aria-haspopup", "dialog");
       saved.addEventListener("click", () => this.toggleSavedPens(saved));
     }
@@ -2588,7 +2760,10 @@ export class Toolbar {
           ? "chevron-left"
           : "chevron-right";
       iconOrText(button, icon, dir < 0 ? "‹" : "›");
-      button.setAttribute("aria-label", dir < 0 ? "Show earlier" : "Show more");
+      button.setAttribute(
+        "aria-label",
+        dir < 0 ? t("toolbar.row.showEarlier") : t("toolbar.row.showMore"),
+      );
       button.addEventListener("click", () => {
         if (upright) {
           const top = pageScroll(
@@ -2685,8 +2860,8 @@ export class Toolbar {
   private addColorButton(parent: HTMLElement): void {
     const more = parent.createEl("button", { cls: "goodobsidian-color-more clickable-icon" });
     iconOrText(more, "plus", "+");
-    more.setAttribute("aria-label", "Add colour");
-    more.setAttribute("title", "Add colour");
+    more.setAttribute("aria-label", t("toolbar.color.add"));
+    more.setAttribute("title", t("toolbar.color.add"));
     more.addEventListener("click", () =>
       this.toggleColorPopover("pen-color", more, this.state.color, (color) => {
         this.revealNewColor = true;
@@ -2729,7 +2904,7 @@ export class Toolbar {
     if (colors.length < PEN_ROW_MAX) {
       const more = grid.createEl("button", { cls: "goodobsidian-color-more clickable-icon" });
       iconOrText(more, "plus", "+");
-      more.setAttribute("aria-label", "Add colour");
+      more.setAttribute("aria-label", t("toolbar.color.add"));
       more.addEventListener("click", () =>
         this.toggleColorPopover("pen-color", anchor, this.state.color, (color) =>
           this.setPenColor(color),
@@ -2973,7 +3148,7 @@ export class Toolbar {
    * has no stroke and no width, so its colour is all it sets.
    */
   private buildLaserOptions(): void {
-    this.toolNote("pointer", "Laser pointer (L): its trail fades and is never saved");
+    this.toolNote("pointer", t("toolbar.laser.note"));
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const color = this.laserColor();
     const button = this.optionsEl.createEl("button", {
@@ -2981,8 +3156,8 @@ export class Toolbar {
     });
     button.createSpan({ cls: "goodobsidian-text-disc" }).setCssStyles({ background: color });
     caretIn(button);
-    button.setAttribute("aria-label", `Laser colour ${color}`);
-    button.setAttribute("title", "Laser colour");
+    button.setAttribute("aria-label", t("toolbar.laser.colourValue", { color }));
+    button.setAttribute("title", t("toolbar.laser.colour"));
     button.addEventListener("click", () =>
       this.toggleColorPopover("laser-color", button, color, (picked) => this.setLaserColor(picked)),
     );
@@ -3025,8 +3200,8 @@ export class Toolbar {
         cls: "goodobsidian-width goodobsidian-tape-height clickable-icon",
       });
       button.append(tapeHeightGlyph(i));
-      const label = TAPE_HEIGHT_LABELS[i] ?? `${each}`;
-      button.setAttribute("aria-label", `Tape height: ${label}`);
+      const label = tapeHeightLabels()[i] ?? `${each}`;
+      button.setAttribute("aria-label", t("toolbar.tape.height", { label }));
       button.setAttribute("title", label);
       button.toggleClass("is-active", each === height);
       button.addEventListener("click", () => set(color, each));
@@ -3039,7 +3214,7 @@ export class Toolbar {
     const eye = this.barButton(
       this.optionsEl,
       shown ? "eye" : "eye-off",
-      shown ? "Cover the tapes on this page" : "Show the tapes on this page",
+      shown ? t("toolbar.tape.cover") : t("toolbar.tape.show"),
       shown === null
         ? undefined
         : () => {
@@ -3050,12 +3225,12 @@ export class Toolbar {
     eye.addClass("goodobsidian-tape-eye");
     eye.toggleClass("is-on", shown === true);
     eye.setAttribute("aria-pressed", String(shown === true));
-    if (shown === null) eye.setAttribute("title", "No tapes on this page");
+    if (shown === null) eye.setAttribute("title", t("toolbar.tape.none"));
   }
 
   /** The hand has nothing to set: its pill says what dragging does with it. */
   private buildPanOptions(): void {
-    this.toolNote("hand", "Drag to move the page");
+    this.toolNote("hand", t("toolbar.hand.note"));
   }
 
   /**
@@ -3073,8 +3248,8 @@ export class Toolbar {
       .createSpan({ cls: "goodobsidian-text-disc" })
       .setCssStyles({ background: this.shown(color, false) });
     caretIn(colorButton);
-    colorButton.setAttribute("aria-label", `Fill colour ${color}`);
-    colorButton.setAttribute("title", "Fill colour");
+    colorButton.setAttribute("aria-label", t("toolbar.fill.colourValue", { color }));
+    colorButton.setAttribute("title", t("toolbar.fill.colour"));
     colorButton.addEventListener("click", () =>
       this.toggleColorPopover("fill-color", colorButton, color, (picked) => {
         this.state.fillColor = picked;
@@ -3107,8 +3282,8 @@ export class Toolbar {
     const cb = this.callbacks;
     const boxMode = this.state.zoomBox === true;
     for (const mode of [
-      { box: false, label: "Page zoom", icon: "file", fallback: "＋" },
-      { box: true, label: "Zoom box", icon: "scan", fallback: "▣" },
+      { box: false, label: t("toolbar.zoom.page"), icon: "file", fallback: "＋" },
+      { box: true, label: t("toolbar.zoom.box"), icon: "scan", fallback: "▣" },
     ]) {
       const active = boxMode === mode.box;
       const button = this.optionsEl.createEl("button", {
@@ -3144,27 +3319,27 @@ export class Toolbar {
     this.barButton(
       this.optionsEl,
       "zoom-out",
-      "Zoom out",
+      t("toolbar.zoomOut"),
       cb.onZoomOut ? () => cb.onZoomOut?.() : undefined,
     );
     this.barButton(
       this.optionsEl,
       "maximize-2",
       // A board fits its whole drawing (FineNotes#46).
-      this.board ? "Fit drawing" : "Fit page",
+      this.board ? t("toolbar.fitDrawing") : t("toolbar.fitPage"),
       cb.onZoomFit ? () => cb.onZoomFit?.() : undefined,
     );
     this.barButton(
       this.optionsEl,
       "zoom-in",
-      "Zoom in",
+      t("toolbar.zoomIn"),
       cb.onZoomIn ? () => cb.onZoomIn?.() : undefined,
     );
     // Page zoom keeps the note it always had; the Zoom box needs none: the
     // target it draws, and the window, show what a drag did.
     if (!boxMode) {
       this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-      this.toolNote("zoom-in", "Drag up or down to zoom");
+      this.toolNote("zoom-in", t("toolbar.zoom.note"));
     }
   }
 
@@ -3189,7 +3364,7 @@ export class Toolbar {
   }
 
   private renderSavedPens(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Saved pens" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.savedPens.title") });
     const pens = this.callbacks.savedPens?.() ?? [];
     const current = penOfState(this.state);
     const inHand = this.state.tool === "pen" || this.state.tool === "highlighter";
@@ -3208,7 +3383,7 @@ export class Toolbar {
       });
     });
     if (pens.length === 0) {
-      body.createDiv({ cls: "goodobsidian-popover-hint", text: "No saved pens yet." });
+      body.createDiv({ cls: "goodobsidian-popover-hint", text: t("toolbar.savedPens.none") });
     }
     body.createDiv({ cls: "goodobsidian-popover-divider" });
     const saved = pens.some((pen) => samePen(pen, current));
@@ -3217,10 +3392,10 @@ export class Toolbar {
     });
     add.createSpan({
       text: saved
-        ? "This pen is saved"
+        ? t("toolbar.savedPens.thisSaved")
         : pens.length >= MAX_SAVED_PENS
-          ? `Saved pens are full (${MAX_SAVED_PENS})`
-          : "Save current pen",
+          ? t("toolbar.savedPens.full", { max: MAX_SAVED_PENS })
+          : t("toolbar.savedPens.saveCurrent"),
     });
     add.disabled = !inHand || saved || pens.length >= MAX_SAVED_PENS || !this.callbacks.onSavePen;
     add.addEventListener("click", () => {
@@ -3232,7 +3407,7 @@ export class Toolbar {
     const edit = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
     });
-    edit.createSpan({ text: "Edit saved pens" });
+    edit.createSpan({ text: t("toolbar.savedPens.edit") });
     iconOrText(edit.createSpan({ cls: "goodobsidian-popover-link-icon" }), "chevron-right", ">");
     edit.addEventListener("click", () => {
       this.closePopover();
@@ -3273,7 +3448,7 @@ export class Toolbar {
     // The icon says it, the name is its label: the pill takes no room for words.
     const modeCaret = modeButton.createSpan({ cls: "goodobsidian-erasermode-caret" });
     iconOrText(modeCaret, "chevron-down", "");
-    modeButton.setAttribute("aria-label", `Eraser mode: ${mode.label}`);
+    modeButton.setAttribute("aria-label", t("toolbar.eraser.modeTip", { mode: mode.label }));
     modeButton.addEventListener("click", () => this.toggleEraserModeList(modeButton));
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
@@ -3286,14 +3461,14 @@ export class Toolbar {
     for (const size of sizes) {
       const button = this.optionsEl.createEl("button", { cls: "goodobsidian-erasersize" });
       button.append(eraserSizeGlyph(marks.get(size), PILL_ERASER_BOX));
-      button.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
+      button.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
       button.addEventListener("click", () => {
         this.setEraserSize(size);
         this.syncActive();
       });
       this.eraserSizeButtons.set(size, button);
     }
-    this.chevron("Eraser size", (anchor) => this.toggleEraserSizeList(anchor));
+    this.chevron(t("toolbar.eraser.size"), (anchor) => this.toggleEraserSizeList(anchor));
 
     // What it erases: GoodNotes' "Erase highlighter only", and "pen only".
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
@@ -3308,15 +3483,18 @@ export class Toolbar {
     const filterCaret = filterButton.createSpan({ cls: "goodobsidian-erasermode-caret" });
     iconOrText(filterCaret, "chevron-down", "");
     filterButton.toggleClass("is-filtered", filter !== "all");
-    filterButton.setAttribute("aria-label", `Eraser erases: ${ERASER_FILTER_LABELS[filter]}`);
+    filterButton.setAttribute(
+      "aria-label",
+      t("toolbar.eraser.erasesTip", { filter: ERASER_FILTER_LABELS[filter] }),
+    );
     filterButton.addEventListener("click", () => this.toggleEraserFilterList(filterButton));
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const clear = this.optionsEl.createEl("button", {
       cls: "goodobsidian-text-button clickable-icon",
     });
-    iconOrText(clear, "trash-2", "Clear page");
-    clear.setAttribute("aria-label", "Clear page");
+    iconOrText(clear, "trash-2", t("toolbar.eraser.clearPage"));
+    clear.setAttribute("aria-label", t("toolbar.eraser.clearPage"));
     clear.addEventListener("click", () => this.callbacks.onClear());
   }
 
@@ -3364,8 +3542,8 @@ export class Toolbar {
       .createSpan({ cls: "goodobsidian-text-disc" })
       .setCssStyles({ background: this.shown(color, false) });
     caretIn(button);
-    button.setAttribute("aria-label", `Shape colour ${color}`);
-    button.setAttribute("title", "Shape colour");
+    button.setAttribute("aria-label", t("toolbar.shape.colourValue", { color }));
+    button.setAttribute("title", t("toolbar.shape.colour"));
     button.addEventListener("click", () =>
       this.toggleColorPopover("shape-color", button, color, (picked) => {
         this.state.shapeColor = picked;
@@ -3381,8 +3559,8 @@ export class Toolbar {
     });
     styleButton.append(shapeStyleGlyph(readShapeToolStyle(this.state.shapeStyle), color));
     caretIn(styleButton);
-    styleButton.setAttribute("aria-label", "Shape style: fill, line, corners and arrowheads");
-    styleButton.setAttribute("title", "Shape style");
+    styleButton.setAttribute("aria-label", t("toolbar.shape.styleTip"));
+    styleButton.setAttribute("title", t("toolbar.shape.style"));
     styleButton.addEventListener("click", () => this.toggleShapeStylePopover(styleButton));
   }
 
@@ -3435,28 +3613,36 @@ export class Toolbar {
       }
     };
     choices<FillMode | undefined>(
-      "Fill",
+      t("toolbar.tool.fill"),
       [
-        { value: undefined, name: "No fill", glyph: shapeFillGlyph(undefined, color) },
-        { value: "soft", name: "Soft fill", glyph: shapeFillGlyph("soft", color) },
-        { value: "solid", name: "Solid fill", glyph: shapeFillGlyph("solid", color) },
+        {
+          value: undefined,
+          name: t("toolbar.shape.fill.none"),
+          glyph: shapeFillGlyph(undefined, color),
+        },
+        { value: "soft", name: t("toolbar.shape.fill.soft"), glyph: shapeFillGlyph("soft", color) },
+        {
+          value: "solid",
+          name: t("toolbar.shape.fill.solid"),
+          glyph: shapeFillGlyph("solid", color),
+        },
       ],
       style.fill,
       (fill) => set({ fill }),
     );
     choices<ShapeDash | undefined>(
-      "Line",
+      t("toolbar.shape.line.label"),
       [
-        { value: undefined, name: "Solid line", glyph: dashGlyph(undefined) },
-        { value: "dash", name: "Dashed line", glyph: dashGlyph("dash") },
-        { value: "dot", name: "Dotted line", glyph: dashGlyph("dot") },
+        { value: undefined, name: t("toolbar.shape.line.solid"), glyph: dashGlyph(undefined) },
+        { value: "dash", name: t("toolbar.shape.line.dashed"), glyph: dashGlyph("dash") },
+        { value: "dot", name: t("toolbar.shape.line.dotted"), glyph: dashGlyph("dot") },
       ],
       style.dash,
       (dash) => set({ dash }),
     );
     this.switchRow(
       body.createDiv({ cls: "goodobsidian-switch-list goodobsidian-text-switches" }),
-      "Rounded corners",
+      t("toolbar.shape.roundedCorners"),
       style.round === true,
       (on) => set({ round: on ? true : undefined }),
     );
@@ -3468,14 +3654,28 @@ export class Toolbar {
       name: string;
       glyph: SVGElement;
     }> => [
-      { value: undefined, name: `No head at the ${end}`, glyph: headGlyph(end, undefined) },
-      { value: "open", name: `Open head at the ${end}`, glyph: headGlyph(end, "open") },
-      { value: "filled", name: `Filled head at the ${end}`, glyph: headGlyph(end, "filled") },
+      {
+        value: undefined,
+        name: t(end === "start" ? "toolbar.shape.head.noneStart" : "toolbar.shape.head.noneEnd"),
+        glyph: headGlyph(end, undefined),
+      },
+      {
+        value: "open",
+        name: t(end === "start" ? "toolbar.shape.head.openStart" : "toolbar.shape.head.openEnd"),
+        glyph: headGlyph(end, "open"),
+      },
+      {
+        value: "filled",
+        name: t(
+          end === "start" ? "toolbar.shape.head.filledStart" : "toolbar.shape.head.filledEnd",
+        ),
+        glyph: headGlyph(end, "filled"),
+      },
     ];
-    choices("Arrow start", headOptions("start"), heads.start, (start) =>
+    choices(t("toolbar.shape.arrowStart"), headOptions("start"), heads.start, (start) =>
       set({ heads: { ...(start ? { start } : {}), ...(heads.end ? { end: heads.end } : {}) } }),
     );
-    choices("Arrow end", headOptions("end"), heads.end, (end) =>
+    choices(t("toolbar.shape.arrowEnd"), headOptions("end"), heads.end, (end) =>
       set({ heads: { ...(heads.start ? { start: heads.start } : {}), ...(end ? { end } : {}) } }),
     );
   }
@@ -3485,8 +3685,8 @@ export class Toolbar {
     const label = tableSizeLabel(tableSizeFor(this.state));
     this.tableCaption?.setText(label);
     const button = this.shapeButtons.get("table");
-    button?.setAttribute("aria-label", `Table, ${label}: pick a size, then drag on the page`);
-    button?.setAttribute("title", `Table, ${label}`);
+    button?.setAttribute("aria-label", t("toolbar.table.tip", { size: label }));
+    button?.setAttribute("title", t("toolbar.table.title", { size: label }));
   }
 
   /**
@@ -3507,7 +3707,7 @@ export class Toolbar {
     const grid = body.createDiv({ cls: "goodobsidian-table-grid" });
     const cells: Array<{ button: HTMLButtonElement; size: TableSize }> = [];
     const show = (size: TableSize): void => {
-      title.setText(`Table · ${tableSizeLabel(size)}`);
+      title.setText(t("toolbar.table.heading", { size: tableSizeLabel(size) }));
       for (const cell of cells) {
         const inside = cell.size.rows <= size.rows && cell.size.cols <= size.cols;
         cell.button.toggleClass("is-picked", inside);
@@ -3519,7 +3719,7 @@ export class Toolbar {
         const button = grid.createEl("button", {
           cls: "goodobsidian-table-pick clickable-icon",
         });
-        button.setAttribute("aria-label", `${tableSizeLabel(size)} table`);
+        button.setAttribute("aria-label", t("toolbar.table.cell", { size: tableSizeLabel(size) }));
         button.addEventListener("pointerenter", () => show(size));
         button.addEventListener("focus", () => show(size));
         button.addEventListener("click", () => this.pickTableSize(size));
@@ -3529,7 +3729,7 @@ export class Toolbar {
     grid.addEventListener("pointerleave", () => show(tableSizeFor(this.state)));
     this.switchRow(
       body.createDiv({ cls: "goodobsidian-switch-list goodobsidian-text-switches" }),
-      "Header row",
+      t("toolbar.table.headerRow"),
       this.state.tableHeader === true,
       (on) => {
         this.state.tableHeader = on;
@@ -3538,7 +3738,7 @@ export class Toolbar {
     );
     body.createDiv({
       cls: "goodobsidian-popover-hint",
-      text: "Then drag it out on the page, or tap to place it",
+      text: t("toolbar.table.hint"),
     });
     show(tableSizeFor(this.state));
     this.keepPopoverInside(anchor);
@@ -3561,7 +3761,7 @@ export class Toolbar {
   private buildSelectOptions(): void {
     // Repeated selection may now return to Pen, so keep the lasso settings reachable.
     if (this.callbacks.returnToPenOnReselect?.() === true)
-      this.barButton(this.optionsEl, "settings-2", "Lasso options", (button) =>
+      this.barButton(this.optionsEl, "settings-2", t("toolbar.lasso.options"), (button) =>
         this.toggleLassoPopover(button),
       );
   }
@@ -3589,8 +3789,8 @@ export class Toolbar {
   }
 
   private renderLassoOptions(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-title", text: "Lasso tool" });
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Lasso type" });
+    body.createDiv({ cls: "goodobsidian-popover-title", text: t("toolbar.lasso.tool") });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.lasso.type") });
     const types = body.createDiv({ cls: "goodobsidian-lasso-types" });
     const mode = lassoModeFor(this.state);
     for (const option of [...LASSO_MODES].reverse()) {
@@ -3608,7 +3808,7 @@ export class Toolbar {
       });
     }
 
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "What to include in the selection" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.lasso.include") });
     const list = body.createDiv({ cls: "goodobsidian-switch-list" });
     const filter = lassoFilterFor(this.state);
     for (const key of LASSO_FILTER_KEYS) {
@@ -3680,13 +3880,16 @@ export class Toolbar {
     const preset = presetOf(style);
     const styles = this.textControl(
       "is-drop is-preset",
-      `Text style: ${preset?.name ?? "custom"}`,
+      t("toolbar.text.styleTip", { name: preset?.name ?? t("toolbar.text.styleCustom") }),
       (b) => this.toggleTextPopover("preset", b, (body) => this.renderTextPresets(body)),
     );
-    styles.createSpan({ cls: "goodobsidian-text-drop-label", text: preset?.name ?? "Style" });
+    styles.createSpan({
+      cls: "goodobsidian-text-drop-label",
+      text: preset?.name ?? t("toolbar.text.style"),
+    });
     caretIn(styles);
 
-    const color = this.textControl("is-color", "Text colour", (b) =>
+    const color = this.textControl("is-color", t("toolbar.text.colour"), (b) =>
       this.toggleTextPopover("color", b, (body) => this.renderTextColors(body)),
     );
     // The disc *is* the text colour: a value, not chrome.
@@ -3697,23 +3900,27 @@ export class Toolbar {
 
     // To one decimal: a box resized before sizes were rounded may hold more.
     const shownSize = String(Math.round(style.fontSize * 10) / 10);
-    const size = this.textControl("is-drop is-size", `Font size ${shownSize}`, (b) =>
-      this.toggleTextPopover("size", b, (body) => this.renderTextSizes(body)),
+    const size = this.textControl(
+      "is-drop is-size",
+      t("toolbar.text.fontSizeValue", { size: shownSize }),
+      (b) => this.toggleTextPopover("size", b, (body) => this.renderTextSizes(body)),
     );
     size.createSpan({ cls: "goodobsidian-text-drop-label", text: shownSize });
     caretIn(size);
 
     // The font's name, set in that font, as GoodNotes shows it.
     const fontName = style.family ?? TEXT_FONT_LABELS[fontOf(style)];
-    const fontButton = this.textControl("is-drop is-font", `Font: ${fontName}`, (b) =>
-      this.toggleTextPopover("font", b, (body) => this.renderTextFonts(body)),
+    const fontButton = this.textControl(
+      "is-drop is-font",
+      t("toolbar.text.fontValue", { font: fontName }),
+      (b) => this.toggleTextPopover("font", b, (body) => this.renderTextFonts(body)),
     );
     fontButton
       .createSpan({ cls: "goodobsidian-text-drop-label", text: fontName })
       .setCssStyles({ fontFamily: fontFamilyOf(style) });
     caretIn(fontButton);
 
-    const format = this.textControl("is-format", "Bold, italic, underline, strikethrough", (b) =>
+    const format = this.textControl("is-format", t("toolbar.text.formatTip"), (b) =>
       this.toggleTextPopover("format", b, (body) => this.renderTextFormat(body)),
     );
     format.createSpan({ cls: "goodobsidian-text-b", text: "B" });
@@ -3721,16 +3928,20 @@ export class Toolbar {
     format.toggleClass("is-on", !!(style.bold || style.italic || style.underline || style.strike));
 
     const align = style.align ?? "left";
-    this.textControl("is-glyph", `Alignment: ${TEXT_ALIGN_LABELS[align]}`, (b) =>
-      this.toggleTextPopover("align", b, (body) => this.renderTextAlign(body)),
+    this.textControl(
+      "is-glyph",
+      t("toolbar.text.alignValue", { align: TEXT_ALIGN_LABELS[align] }),
+      (b) => this.toggleTextPopover("align", b, (body) => this.renderTextAlign(body)),
     ).append(alignGlyph(align));
 
-    this.textControl("is-glyph", `Line spacing ${formatLineHeight(lineHeightOf(style))}`, (b) =>
-      this.toggleTextPopover("spacing", b, (body) => this.renderTextSpacing(body)),
+    this.textControl(
+      "is-glyph",
+      t("toolbar.text.lineSpacingValue", { value: formatLineHeight(lineHeightOf(style)) }),
+      (b) => this.toggleTextPopover("spacing", b, (body) => this.renderTextSpacing(body)),
     ).append(lineSpacingGlyph());
 
     // Bullets and numbering act on the text under the caret: only while a box is edited.
-    const list = this.textControl("is-glyph", "Bullets and numbering", (b) =>
+    const list = this.textControl("is-glyph", t("toolbar.text.listsTip"), (b) =>
       this.toggleTextPopover("list", b, (body) => this.renderTextLists(body)),
     );
     list.append(listGlyph("bullet"));
@@ -3738,12 +3949,16 @@ export class Toolbar {
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    this.textControl("is-glyph", style.fill ? "Box fill" : "Box fill: none", (b) =>
-      this.toggleTextPopover("fill", b, (body) => this.renderTextFills(body)),
+    this.textControl(
+      "is-glyph",
+      style.fill ? t("toolbar.text.boxFill") : t("toolbar.text.boxFillNone"),
+      (b) => this.toggleTextPopover("fill", b, (body) => this.renderTextFills(body)),
     ).append(fillGlyph(style.fill));
 
-    this.textControl("is-glyph", style.border ? "Box border" : "Box border: none", (b) =>
-      this.toggleTextPopover("border", b, (body) => this.renderTextBorder(body)),
+    this.textControl(
+      "is-glyph",
+      style.border ? t("toolbar.text.boxBorder") : t("toolbar.text.boxBorderNone"),
+      (b) => this.toggleTextPopover("border", b, (body) => this.renderTextBorder(body)),
     ).append(borderGlyph(style.border, style.radius !== undefined));
 
     // "Drag to size text boxes" is a setting (Writing and tools), not a pill
@@ -3752,14 +3967,18 @@ export class Toolbar {
     // GoodNotes' "Pin Text tool". Unpinned, finishing a box hands the page
     // back to the tool used before Text; pinned, Text stays.
     const pinned = this.state.textPinned === true;
-    const pin = this.textControl("is-pin", "Pin Text tool", () => {
+    const pin = this.textControl("is-pin", t("toolbar.text.pin"), () => {
       this.state.textPinned = !pinned;
       this.saveTextTool();
       this.buildOptions();
     });
     // Labelled, as GoodNotes has it; a pane too narrow for the whole pill
     // (fitTextPill) drops the label and keeps the icon.
-    iconOrText(pin.createSpan({ cls: "goodobsidian-text-pin-icon" }), "pin", "Pin");
+    iconOrText(
+      pin.createSpan({ cls: "goodobsidian-text-pin-icon" }),
+      "pin",
+      t("toolbar.text.pinShort"),
+    );
     // The pin alone, named by its label: the pill takes no room for words.
     pin.toggleClass("is-active", pinned);
     pin.setAttribute("aria-pressed", String(pinned));
@@ -3768,10 +3987,14 @@ export class Toolbar {
     // by accident. Only while a box has focus; Undo brings it back.
     if (this.callbacks.onTextDelete) {
       this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-      const remove = this.textControl("is-delete", "Delete text box", () =>
+      const remove = this.textControl("is-delete", t("toolbar.text.deleteBox"), () =>
         this.callbacks.onTextDelete?.(),
       );
-      iconOrText(remove.createSpan({ cls: "goodobsidian-text-pin-icon" }), "trash-2", "Delete");
+      iconOrText(
+        remove.createSpan({ cls: "goodobsidian-text-pin-icon" }),
+        "trash-2",
+        t("common.delete"),
+      );
       remove.disabled = this.textTarget === null;
     }
   }
@@ -3811,15 +4034,15 @@ export class Toolbar {
       if (source?.sizeAdjust !== undefined) {
         button.setAttr(
           "aria-label",
-          `${family}. Not on this device: shown in ${source.font.family}`,
+          t("toolbar.font.notOnDeviceLabel", { family, font: source.font.family }),
         );
       }
       return;
     }
     const mark = button.createSpan({ cls: "goodobsidian-font-missing" });
     if (state === "missing" || !fonts || !source) {
-      const missing = `Not on this device: shown in ${fallback}`;
-      button.setAttr("aria-label", `${family}. ${missing}`);
+      const missing = t("toolbar.font.notOnDevice", { font: fallback });
+      button.setAttr("aria-label", t("toolbar.font.familyNote", { family, note: missing }));
       mark.setAttr("title", missing);
       setIcon(mark, "alert-triangle");
       return;
@@ -3841,7 +4064,7 @@ export class Toolbar {
         .fetch(family)
         .catch((error: unknown) => {
           new Notice(
-            `FineNotes: couldn't get ${source.font.family} — ${errorMessage(error)}`,
+            t("toolbar.font.getFailed", { font: source.font.family, error: errorMessage(error) }),
             8000,
           );
         })
@@ -3960,7 +4183,7 @@ export class Toolbar {
   }
 
   private renderTextColors(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Colour" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.colourLabel") });
     renderColorPicker(body, {
       shown: (color) => this.shown(color, false),
       current: this.shownTextStyle().color,
@@ -3983,7 +4206,7 @@ export class Toolbar {
     // Any size between the smallest and the largest, to one decimal, on a
     // slider above the usual sizes; the box follows it as it moves.
     const head = body.createDiv({ cls: "goodobsidian-width-head" });
-    head.createDiv({ cls: "goodobsidian-popover-label", text: "Size" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.size") });
     const readout = head.createDiv({
       cls: "goodobsidian-text-size-readout",
       text: String(Math.round(current * 10) / 10),
@@ -3994,7 +4217,7 @@ export class Toolbar {
     const range = slider.createEl("input", {
       cls: "goodobsidian-width-range",
       type: "range",
-      attr: { "aria-label": "Font size" },
+      attr: { "aria-label": t("toolbar.text.fontSize") },
     });
     dragRange(range);
     range.min = "0";
@@ -4037,7 +4260,7 @@ export class Toolbar {
     const current = fontOf(style);
     const family = style.family;
     const head = body.createDiv({ cls: "goodobsidian-font-head" });
-    head.createDiv({ cls: "goodobsidian-popover-label", text: "Font" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.font") });
     const list = body.createDiv({ cls: "goodobsidian-font-list" });
     let query = "";
     const fill = (): void => {
@@ -4062,7 +4285,7 @@ export class Toolbar {
       const mine = families?.filter((name) => shown(name) && name !== family) ?? [];
       // Fonts of this device alone: another device may show the box in its fallback.
       if (!families || mine.length > 0) {
-        list.createDiv({ cls: "goodobsidian-popover-label", text: "On this device" });
+        list.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.font.onDevice") });
       }
       if (!families) list.createDiv({ cls: "goodobsidian-font-busy" });
       for (const name of mine) {
@@ -4072,7 +4295,7 @@ export class Toolbar {
         button.setCssStyles({ fontFamily: familyStack(name, TEXT_FONT_STACKS[current]) });
       }
       if (list.childElementCount === 0) {
-        list.createDiv({ cls: "goodobsidian-font-none", text: "No font by that name" });
+        list.createDiv({ cls: "goodobsidian-font-none", text: t("toolbar.font.none") });
       }
     };
     fill();
@@ -4085,7 +4308,7 @@ export class Toolbar {
     }
     const loupe = head.createEl("button", {
       cls: "goodobsidian-font-search clickable-icon",
-      attr: { "aria-label": "Search fonts", title: "Search fonts" },
+      attr: { "aria-label": t("toolbar.font.search"), title: t("toolbar.font.search") },
     });
     setIcon(loupe, "search");
     loupe.addEventListener("click", () => {
@@ -4094,8 +4317,8 @@ export class Toolbar {
         cls: "goodobsidian-font-field",
         attr: {
           type: "search",
-          placeholder: "Font name",
-          "aria-label": "Search fonts",
+          placeholder: t("toolbar.font.namePlaceholder"),
+          "aria-label": t("toolbar.font.search"),
           enterkeyhint: "go",
           autocomplete: "off",
           autocapitalize: "off",
@@ -4135,7 +4358,7 @@ export class Toolbar {
 
   /** The named styles, each shown in its own look; a pick applies it and closes. */
   private renderTextPresets(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Text style" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.styleLabel") });
     const list = body.createDiv({ cls: "goodobsidian-text-presets" });
     const current = presetOf(this.shownTextStyle());
     for (const preset of TEXT_PRESETS) {
@@ -4160,15 +4383,15 @@ export class Toolbar {
   }
 
   private renderTextFormat(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Text style" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.styleLabel") });
     const row = body.createDiv({ cls: "goodobsidian-text-row" });
     const style = this.shownTextStyle();
     const flags = [
-      { key: "bold", glyph: "B", label: "Bold" },
-      { key: "italic", glyph: "I", label: "Italic" },
-      { key: "underline", glyph: "U", label: "Underline" },
-      { key: "strike", glyph: "S", label: "Strikethrough" },
-      { key: "caps", glyph: "AA", label: "All capitals" },
+      { key: "bold", glyph: "B", label: t("toolbar.text.bold") },
+      { key: "italic", glyph: "I", label: t("toolbar.text.italic") },
+      { key: "underline", glyph: "U", label: t("toolbar.text.underline") },
+      { key: "strike", glyph: "S", label: t("toolbar.text.strike") },
+      { key: "caps", glyph: "AA", label: t("toolbar.text.caps") },
     ] as const;
     for (const flag of flags) {
       const on = style[flag.key] === true;
@@ -4184,7 +4407,7 @@ export class Toolbar {
   }
 
   private renderTextAlign(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Alignment" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.alignment") });
     const row = body.createDiv({ cls: "goodobsidian-text-row" });
     const current = this.shownTextStyle().align ?? "left";
     for (const align of TEXT_ALIGNS) {
@@ -4197,13 +4420,13 @@ export class Toolbar {
   }
 
   private renderTextSpacing(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Line spacing" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.lineSpacing") });
     const current = lineHeightOf(this.shownTextStyle());
     for (const lineHeight of LINE_HEIGHTS) {
       // The default is a choice like any other; picking it removes the key.
       const label =
         lineHeight === DEFAULT_LINE_HEIGHT
-          ? `${formatLineHeight(lineHeight)} (default)`
+          ? t("toolbar.text.lineSpacingDefault", { value: formatLineHeight(lineHeight) })
           : formatLineHeight(lineHeight);
       this.textOption(body, "is-wide", label, () => this.pickText({ lineHeight })).toggleClass(
         "is-active",
@@ -4213,7 +4436,7 @@ export class Toolbar {
   }
 
   private renderTextFills(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Box fill" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.boxFill") });
     renderColorPicker(body, {
       shown: (color) => this.shown(color, false),
       current: this.shownTextStyle().fill ?? null,
@@ -4238,10 +4461,10 @@ export class Toolbar {
    */
   private renderTextBorder(body: HTMLElement): void {
     const style = this.shownTextStyle();
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Border" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.border") });
     const row = body.createDiv({ cls: "goodobsidian-text-row" });
     const widths = [
-      { label: "None", width: null },
+      { label: t("toolbar.color.none"), width: null },
       ...TEXT_BORDER_CHOICES.map((width) => ({ label: `${width} px`, width })),
     ];
     for (const { label, width } of widths) {
@@ -4249,14 +4472,17 @@ export class Toolbar {
         this.applyTextPatch({ borderWidth: width }),
       );
       button.append(borderWidthGlyph(width));
-      const name = width === null ? "No border" : `${label} border`;
+      const name =
+        width === null
+          ? t("toolbar.text.noBorder")
+          : t("toolbar.text.borderWidth", { width: label });
       button.setAttribute("aria-label", name);
       button.setAttribute("title", name);
       const on = width === null ? !style.border : style.border?.width === width;
       button.setAttribute("aria-pressed", String(on));
       button.toggleClass("is-active", on);
     }
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Corners" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.corners") });
     const corners = body.createDiv({ cls: "goodobsidian-text-row" });
     for (const { label, radius } of TEXT_CORNER_CHOICES) {
       const on = radius === 0 ? style.radius === undefined : style.radius === radius;
@@ -4264,23 +4490,28 @@ export class Toolbar {
         this.applyTextPatch({ radius: radius === 0 ? null : radius }),
       );
       button.append(cornerGlyph(radius));
-      button.setAttribute("aria-label", `${label} corners`);
-      button.setAttribute("title", `${label} corners`);
+      button.setAttribute("aria-label", t("toolbar.text.cornersValue", { name: label }));
+      button.setAttribute("title", t("toolbar.text.cornersValue", { name: label }));
       button.setAttribute("aria-pressed", String(on));
       button.toggleClass("is-active", on);
     }
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Padding" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.padding") });
     const paddings = body.createDiv({ cls: "goodobsidian-text-row" });
     for (const { label, padding } of TEXT_PADDINGS) {
       const on = padding === 0 ? style.padding === undefined : style.padding === padding;
       const button = this.textOption(paddings, "is-flag is-padding", label, () =>
         this.applyTextPatch({ padding: padding === 0 ? null : padding }),
       );
-      button.setAttribute("aria-label", padding === 0 ? "No padding" : `Padding ${label}`);
+      button.setAttribute(
+        "aria-label",
+        padding === 0
+          ? t("toolbar.text.noPadding")
+          : t("toolbar.text.paddingValue", { name: label }),
+      );
       button.setAttribute("aria-pressed", String(on));
       button.toggleClass("is-active", on);
     }
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Border colour" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.borderColour") });
     const current = style.border?.color ?? style.color;
     // A colour picked with no border adds a thin one in that colour.
     renderColorPicker(body, {
@@ -4301,12 +4532,12 @@ export class Toolbar {
   }
 
   private renderTextLists(body: HTMLElement): void {
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Lists" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.lists") });
     const row = body.createDiv({ cls: "goodobsidian-text-row" });
     const kinds: Array<{ kind: ListKind; label: string }> = [
-      { kind: "bullet", label: "Bullets" },
-      { kind: "number", label: "Numbering" },
-      { kind: "task", label: "Checklist" },
+      { kind: "bullet", label: t("toolbar.text.bullets") },
+      { kind: "number", label: t("toolbar.text.numbering") },
+      { kind: "task", label: t("toolbar.text.checklist") },
     ];
     for (const { kind, label } of kinds) {
       const button = this.textOption(row, "is-flag", "", () => {
@@ -4403,7 +4634,7 @@ export class Toolbar {
     // the same real thickness on every paper size), a reset, a slider whose
     // track widens like the stroke does, and the presets.
     const head = body.createDiv({ cls: "goodobsidian-width-head" });
-    head.createDiv({ cls: "goodobsidian-popover-label", text: "Stroke width" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.width.title") });
     // The width as a field: any width from the thinnest pen to 5 mm can be
     // typed, to a hundredth of a mm (FineNotes#24).
     const readout = head.createDiv({ cls: "goodobsidian-width-readout" });
@@ -4414,20 +4645,20 @@ export class Toolbar {
         inputmode: "decimal",
         spellcheck: "false",
         autocomplete: "off",
-        "aria-label": "Stroke width in millimetres",
+        "aria-label": t("toolbar.width.mmLabel"),
       },
     });
     readout.createSpan({ cls: "goodobsidian-width-unit", text: "mm" });
     const reset = head.createEl("button", {
       cls: "goodobsidian-width-reset clickable-icon",
-      attr: { "aria-label": "Reset stroke width", title: "Reset stroke width" },
+      attr: { "aria-label": t("toolbar.width.reset"), title: t("toolbar.width.reset") },
     });
-    iconOrText(reset, "rotate-ccw", "Reset");
+    iconOrText(reset, "rotate-ccw", t("toolbar.reset"));
     const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
     const range = slider.createEl("input", {
       cls: "goodobsidian-width-range",
       type: "range",
-      attr: { "aria-label": "Stroke width" },
+      attr: { "aria-label": t("toolbar.width.title") },
     });
     dragRange(range);
     // Stops, not widths: the pens' fine end steps in 0.05 mm, the rest in
@@ -4589,7 +4820,7 @@ export class Toolbar {
     const sizes = this.eraserMarks([...this.eraserSizeButtons.keys()], PILL_ERASER_BOX);
     for (const [size, button] of this.eraserSizeButtons) {
       button.querySelector("svg")?.replaceWith(eraserSizeGlyph(sizes.get(size), PILL_ERASER_BOX));
-      button.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
+      button.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
     }
     this.sizeMarksRender?.();
   }
@@ -4622,18 +4853,18 @@ export class Toolbar {
     const body = this.openPopover("eraser-size", anchor);
     body.addClass("goodobsidian-width-popover");
     const head = body.createDiv({ cls: "goodobsidian-width-head" });
-    head.createDiv({ cls: "goodobsidian-popover-label", text: "Eraser size" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.eraser.size") });
     const readout = head.createSpan({ cls: "goodobsidian-width-readout" });
     const reset = head.createEl("button", {
       cls: "goodobsidian-width-reset clickable-icon",
-      attr: { "aria-label": "Reset eraser size", title: "Reset eraser size" },
+      attr: { "aria-label": t("toolbar.eraser.reset"), title: t("toolbar.eraser.reset") },
     });
-    iconOrText(reset, "rotate-ccw", "Reset");
+    iconOrText(reset, "rotate-ccw", t("toolbar.reset"));
     const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
     const range = slider.createEl("input", {
       cls: "goodobsidian-width-range",
       type: "range",
-      attr: { "aria-label": "Eraser size" },
+      attr: { "aria-label": t("toolbar.eraser.size") },
     });
     dragRange(range);
     const stops = eraserStops();
@@ -4665,7 +4896,7 @@ export class Toolbar {
     for (const size of ERASER_SIZES) {
       const preset = row.createEl("button", { cls: "goodobsidian-erasersize" });
       preset.append(eraserSizeGlyph(marks.get(size), POPOVER_ERASER_BOX));
-      preset.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
+      preset.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
       preset.setAttribute("title", this.eraserMm(size));
       preset.addEventListener("click", () => {
         pick(size);
@@ -4680,7 +4911,10 @@ export class Toolbar {
         preset
           .querySelector("svg")
           ?.replaceWith(eraserSizeGlyph(marks.get(size), POPOVER_ERASER_BOX));
-        preset.setAttribute("aria-label", `Eraser size ${this.eraserMm(size)}`);
+        preset.setAttribute(
+          "aria-label",
+          t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }),
+        );
         preset.setAttribute("title", this.eraserMm(size));
       }
       show();
@@ -4710,7 +4944,7 @@ export class Toolbar {
       return;
     }
     const body = this.openPopover("eraser-mode", anchor);
-    body.createDiv({ cls: "goodobsidian-popover-label", text: "Eraser" });
+    body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.tool.eraser") });
     for (const mode of ERASER_MODES) {
       const button = body.createEl("button", {
         cls: "goodobsidian-wide goodobsidian-erasermode-row",
@@ -4732,11 +4966,11 @@ export class Toolbar {
     }
     // How the modes that take ink whole show it going (discussion #51).
     const list = body.createDiv({ cls: "goodobsidian-switch-list" });
-    this.switchRow(list, "Grey out while erasing", this.state.eraserGrey === true, (on) => {
+    this.switchRow(list, t("toolbar.eraser.greyOut"), this.state.eraserGrey === true, (on) => {
       this.state.eraserGrey = on;
       this.callbacks.onEraserGreyChange?.(on);
     });
-    body.createDiv({ cls: "goodobsidian-popover-hint", text: "Whole stroke and By line." });
+    body.createDiv({ cls: "goodobsidian-popover-hint", text: t("toolbar.eraser.greyHint") });
   }
 
   /**
@@ -4758,16 +4992,21 @@ export class Toolbar {
     };
     this.popoverRender = () => {
       body.empty();
-      body.createDiv({ cls: "goodobsidian-popover-label", text: "What the eraser erases" });
+      body.createDiv({
+        cls: "goodobsidian-popover-label",
+        text: t("toolbar.eraser.erasesHeading"),
+      });
       const list = body.createDiv({ cls: "goodobsidian-switch-list" });
       const filter = eraserFilterFor(this.state);
-      this.switchRow(list, "Erase highlighter only", filter === "highlighter", (on) =>
+      this.switchRow(list, t("toolbar.eraser.eraseHighlighter"), filter === "highlighter", (on) =>
         set(on ? "highlighter" : "all"),
       );
-      this.switchRow(list, "Erase pen only", filter === "pen", (on) => set(on ? "pen" : "all"));
+      this.switchRow(list, t("toolbar.eraser.erasePen"), filter === "pen", (on) =>
+        set(on ? "pen" : "all"),
+      );
       body.createDiv({
         cls: "goodobsidian-popover-hint",
-        text: "Pictures and text boxes are never erased.",
+        text: t("toolbar.eraser.neverErased"),
       });
     };
     this.popoverRender();
@@ -4855,7 +5094,7 @@ export class Toolbar {
     laser.toggleClass("is-active", this.state.tool === "laser");
     const laserIcon = laser.createSpan({ cls: "goodobsidian-laser-row-icon" });
     iconOrText(laserIcon, "pointer", "");
-    laser.createSpan({ text: "Laser pointer" });
+    laser.createSpan({ text: t("toolbar.tool.laserPointer") });
     laser.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: "L" });
     laser.addEventListener("click", () => {
       this.closePopover();
@@ -4866,8 +5105,8 @@ export class Toolbar {
       this.syncActive();
     });
     body.createDiv({ cls: "goodobsidian-popover-divider" });
-    this.popoverLink(body, "Pen settings", "sliders-horizontal", openSettings);
-    this.popoverLink(body, "Pen gestures", "signature", openGestures);
+    this.popoverLink(body, t("toolbar.pen.settings"), "sliders-horizontal", openSettings);
+    this.popoverLink(body, t("toolbar.pen.gestures"), "signature", openGestures);
   }
 
   /**
@@ -4880,14 +5119,14 @@ export class Toolbar {
     const save = this.callbacks.onPenPreferences;
     if (!prefs || !save) return false;
     const row = body.createDiv({ cls: "goodobsidian-tip-row" });
-    row.createDiv({ cls: "goodobsidian-popover-label", text: "Tip" });
+    row.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.highlighter.tip") });
     const tips = row.createDiv({
       cls: "goodobsidian-segmented is-icons",
-      attr: { role: "radiogroup", "aria-label": "Highlighter tip" },
+      attr: { role: "radiogroup", "aria-label": t("toolbar.highlighter.tipGroup") },
     });
     const choices: ReadonlyArray<[HighlighterTip, string, string]> = [
-      ["round", "Round tip", "circle"],
-      ["chisel", "Chisel tip", "rectangle-vertical"],
+      ["round", t("toolbar.highlighter.round"), "circle"],
+      ["chisel", t("toolbar.highlighter.chisel"), "rectangle-vertical"],
     ];
     for (const [tip, label, icon] of choices) {
       const on = prefs.highlighterTip === tip;
@@ -4928,7 +5167,7 @@ export class Toolbar {
     const backButton = head.createEl("button", {
       cls: "goodobsidian-popover-back clickable-icon",
     });
-    iconOrText(backButton, "arrow-left", "Back");
+    iconOrText(backButton, "arrow-left", t("toolbar.back"));
     backButton.setAttribute("aria-label", backLabel);
     backButton.addEventListener("click", back);
     head.createDiv({ cls: "goodobsidian-popover-title", text: title });
@@ -4942,7 +5181,12 @@ export class Toolbar {
    * pen" with its four, each one row with its choice in a dropdown.
    */
   private renderPenSettings(body: HTMLElement, back: () => void): void {
-    this.popoverPageHead(body, `${this.activePenType().label} settings`, "Back to pen types", back);
+    this.popoverPageHead(
+      body,
+      t("toolbar.pen.settingsTitle", { name: this.activePenType().label }),
+      t("toolbar.pen.backToTypes"),
+      back,
+    );
     this.renderStabilization(body);
     const prefs = this.callbacks.penPreferences?.();
     const save = this.callbacks.onPenPreferences;
@@ -4953,26 +5197,26 @@ export class Toolbar {
     body.createDiv({ cls: "goodobsidian-popover-divider" });
     this.choiceMenu<PenOptionsOnWrite>(
       body,
-      "Hide pen options while writing",
+      t("toolbar.pen.hideOptions"),
       PEN_OPTIONS_ON_WRITE.map((id) => [id, PEN_OPTIONS_ON_WRITE_NAMES[id]]),
       prefs.tuckOnWrite,
       (choice) => save({ tuckOnWrite: choice }),
     );
     this.choiceMenu<ReturnToPen>(
       body,
-      "Back to the pen",
+      t("toolbar.pen.backToPen"),
       [
-        ["never", "Never"],
-        ["reselect", "Tap the tool again"],
-        ["after-use", "After one use"],
-        ["both", "Both"],
+        ["never", t("toolbar.pen.returnNever")],
+        ["reselect", t("toolbar.pen.returnReselect")],
+        ["after-use", t("toolbar.pen.returnAfterUse")],
+        ["both", t("toolbar.pen.returnBoth")],
       ],
       prefs.returnToPen,
       (choice) => save({ returnToPen: choice }),
     );
     body.createDiv({
       cls: "goodobsidian-popover-hint",
-      text: "After the eraser, lasso, text or shape tool, go back to the pen you had.",
+      text: t("toolbar.pen.returnHint"),
     });
   }
 
@@ -4989,13 +5233,13 @@ export class Toolbar {
   ): void {
     body.createDiv({ cls: "goodobsidian-popover-divider" });
     const head = body.createDiv({ cls: "goodobsidian-width-head" });
-    head.createDiv({ cls: "goodobsidian-popover-label", text: "Opacity" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.highlighter.opacity") });
     const readout = head.createDiv({ cls: "goodobsidian-width-readout" });
     const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
     const range = slider.createEl("input", {
       cls: "goodobsidian-width-range",
       type: "range",
-      attr: { "aria-label": "Highlighter opacity" },
+      attr: { "aria-label": t("toolbar.highlighter.opacityLabel") },
     });
     dragRange(range);
     range.min = "10";
@@ -5011,7 +5255,7 @@ export class Toolbar {
     range.addEventListener("input", () => show(Number(range.value)));
     range.addEventListener("change", () => save({ highlighterAlpha: Number(range.value) / 100 }));
     const list = body.createDiv({ cls: "goodobsidian-switch-list" });
-    this.switchRow(list, "Straighten lines", prefs.straightHighlighter, (on) =>
+    this.switchRow(list, t("toolbar.highlighter.straighten"), prefs.straightHighlighter, (on) =>
       save({ straightHighlighter: on }),
     );
   }
@@ -5052,13 +5296,13 @@ export class Toolbar {
   private renderStabilization(body: HTMLElement): void {
     const spec = this.activePenType();
     const head = body.createDiv({ cls: "goodobsidian-width-head" });
-    head.createDiv({ cls: "goodobsidian-popover-label", text: "Stroke stabilization" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.pen.stabilization") });
     const readout = head.createDiv({ cls: "goodobsidian-width-readout" });
     const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
     const range = slider.createEl("input", {
       cls: "goodobsidian-width-range",
       type: "range",
-      attr: { "aria-label": `Stroke stabilization, ${spec.label}` },
+      attr: { "aria-label": t("toolbar.pen.stabilizationFor", { name: spec.label }) },
     });
     dragRange(range);
     range.min = "0";
@@ -5086,7 +5330,7 @@ export class Toolbar {
     });
     body.createDiv({
       cls: "goodobsidian-popover-hint",
-      text: "Steadies a shaky hand as you write. Higher settings trail the pen a little and round off small loops.",
+      text: t("toolbar.pen.stabilizationHint"),
     });
   }
 
@@ -5115,15 +5359,15 @@ export class Toolbar {
     // One card, as the switches below it: the choice, and its bar.
     const card = body.createDiv({ cls: "goodobsidian-switch-list" });
     const row = card.createDiv({ cls: "goodobsidian-make-shapes" });
-    row.createDiv({ cls: "goodobsidian-popover-label", text: "Make shapes" });
+    row.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.pen.makeShapes") });
     const modes = row.createDiv({
       cls: "goodobsidian-segmented is-icons",
-      attr: { role: "radiogroup", "aria-label": "Make shapes" },
+      attr: { role: "radiogroup", "aria-label": t("toolbar.pen.makeShapes") },
     });
     const choices: ReadonlyArray<[SnapMode, string]> = [
-      ["disabled", "Off"],
-      ["hold", "When I hold the pen still"],
-      ["auto", "When I lift the pen, too"],
+      ["disabled", t("common.off")],
+      ["hold", t("toolbar.pen.makeShapesHold")],
+      ["auto", t("toolbar.pen.makeShapesLift")],
     ];
     for (const [mode, label] of choices) {
       const on = prefs.snapMode === mode;
@@ -5149,8 +5393,8 @@ export class Toolbar {
         cls: "goodobsidian-width-range",
         type: "range",
         attr: {
-          "aria-label": "How curved a stroke may be and still snap",
-          title: "Straight lines only ↔ looser shapes",
+          "aria-label": t("toolbar.pen.snapCurve"),
+          title: t("toolbar.pen.snapCurveTitle"),
         },
       });
       dragRange(range);
@@ -5169,7 +5413,7 @@ export class Toolbar {
     }
     body.createDiv({
       cls: "goodobsidian-popover-hint",
-      text: "Draw a line, circle or polygon and keep the pen still at the end: it snaps to a clean shape.",
+      text: t("toolbar.pen.makeShapesHint"),
     });
   }
 
@@ -5180,7 +5424,7 @@ export class Toolbar {
    * greyed while the first is off, as GoodNotes has it.
    */
   private renderPenGestures(body: HTMLElement, back: () => void): void {
-    this.popoverPageHead(body, "Pen gestures", "Back to pen types", back);
+    this.popoverPageHead(body, t("toolbar.pen.gestures"), t("toolbar.pen.backToTypes"), back);
 
     const prefs = this.callbacks.penPreferences?.();
     const save = this.callbacks.onPenPreferences;
@@ -5194,37 +5438,37 @@ export class Toolbar {
     };
 
     const scribble = body.createDiv({ cls: "goodobsidian-switch-list" });
-    this.switchRow(scribble, "Scribble to erase", gestures.scribbleErase, (on) =>
+    this.switchRow(scribble, t("toolbar.gesture.scribbleErase"), gestures.scribbleErase, (on) =>
       set({ scribbleErase: on }),
     );
     const all = this.switchRow(
       scribble,
-      "Erase shapes and highlighter",
+      t("toolbar.gesture.eraseAll"),
       gestures.scribbleErase && gestures.scribbleErasesAll,
       (on) => set({ scribbleErasesAll: on }),
     );
     all.disabled = !gestures.scribbleErase;
     body.createDiv({
       cls: "goodobsidian-popover-hint",
-      text: "Erase handwriting and drawings by scribbling over them.",
+      text: t("toolbar.gesture.scribbleEraseHint"),
     });
 
     const fill = body.createDiv({ cls: "goodobsidian-switch-list" });
-    this.switchRow(fill, "Scribble to fill", gestures.scribbleFill, (on) =>
+    this.switchRow(fill, t("toolbar.gesture.scribbleFill"), gestures.scribbleFill, (on) =>
       set({ scribbleFill: on }),
     );
     body.createDiv({
       cls: "goodobsidian-popover-hint",
-      text: "Scribble inside a closed outline to fill it.",
+      text: t("toolbar.gesture.scribbleFillHint"),
     });
 
     const lasso = body.createDiv({ cls: "goodobsidian-switch-list" });
-    this.switchRow(lasso, "Circle to lasso", gestures.circleLasso, (on) =>
+    this.switchRow(lasso, t("toolbar.gesture.circleLasso"), gestures.circleLasso, (on) =>
       set({ circleLasso: on }),
     );
     body.createDiv({
       cls: "goodobsidian-popover-hint",
-      text: "Draw around anything, then hold the pen on the loop to select it and move it.",
+      text: t("toolbar.gesture.circleLassoHint"),
     });
   }
 
@@ -6062,7 +6306,10 @@ export class Toolbar {
   private buildLearnButton(parent: HTMLElement, open: () => void): void {
     const button = parent.createEl("button", { cls: "goodobsidian-learn-sheet clickable-icon" });
     iconOrText(button.createSpan({ cls: "goodobsidian-learn-sheet-icon" }), "graduation-cap", "");
-    button.createSpan({ cls: "goodobsidian-learn-sheet-label", text: "Learn my handwriting" });
+    button.createSpan({
+      cls: "goodobsidian-learn-sheet-label",
+      text: t("toolbar.learn.label"),
+    });
     this.learnCount = button.createSpan({ cls: "goodobsidian-learn-sheet-count" });
     button.addEventListener("click", open);
     button.toggle(this.practice);
@@ -6075,7 +6322,7 @@ export class Toolbar {
     this.learnButton?.toggleClass("is-ready", ready);
     this.learnButton?.setAttribute(
       "aria-label",
-      ready ? `Learn my handwriting, ${count}` : `Learn my handwriting: ${count} lines so far`,
+      ready ? t("toolbar.learn.ready", { count }) : t("toolbar.learn.progress", { count }),
     );
   }
 
@@ -6298,7 +6545,10 @@ export class Toolbar {
   setRecording(active: boolean): void {
     this.recordButton?.toggleClass("is-recording", active);
     this.recordButton?.setAttribute("aria-pressed", active ? "true" : "false");
-    this.recordButton?.setAttribute("aria-label", active ? "Stop recording" : "Record audio");
+    this.recordButton?.setAttribute(
+      "aria-label",
+      active ? t("toolbar.recordStop") : t("toolbar.tool.recordAudio"),
+    );
   }
 
   /** Close what is open, drop every listener outside the toolbar, and take both tiers away. */
@@ -6571,7 +6821,10 @@ function eraserSizeGlyph(mark: SizeMark | undefined, box: number): SVGElement {
 }
 
 /** What the tape's three heights are called, to screen readers and on hover. */
-const TAPE_HEIGHT_LABELS = ["Narrow", "Medium", "Wide"];
+/** The names of the cover tape's three heights, narrowest first. */
+function tapeHeightLabels(): string[] {
+  return [t("toolbar.tape.narrow"), t("toolbar.tape.medium"), t("toolbar.tape.wide")];
+}
 
 /** A tape height button's mark: a band, taller for each height. */
 function tapeHeightGlyph(index: number): SVGElement {
@@ -6606,7 +6859,7 @@ function widthButton(
 ): HTMLButtonElement {
   const button = parent.createEl("button", { cls: "goodobsidian-width" });
   button.append(widthGlyph(mark, pen));
-  button.setAttribute("aria-label", `Width ${mm}`);
+  button.setAttribute("aria-label", t("toolbar.width.value", { mm }));
   button.setAttribute("title", mm);
   button.addEventListener("click", onPick);
   return button;

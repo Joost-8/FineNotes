@@ -12,6 +12,7 @@
  * rather than shown, and so is an integrand none of the rules fits.
  */
 
+import { t } from "../../i18n/translate";
 import { type Step, agree, derivative } from "./derive";
 import {
   AlgebraError,
@@ -69,7 +70,7 @@ interface Pending {
 
 /** ∫ f dv with its steps (no + C); throws AlgebraError when no rule fits. */
 export function integrateSteps(f: Expr, v = "x"): { result: Expr; steps: Step[] } {
-  if (size(f) > MAX_SIZE) throw new AlgebraError("Too complex");
+  if (size(f) > MAX_SIZE) throw new AlgebraError(t("calculator.errTooComplex"));
   let current = integral(f, v);
   const steps: Step[] = [];
   const pending: Pending[] = [];
@@ -83,7 +84,10 @@ export function integrateSteps(f: Expr, v = "x"): { result: Expr; steps: Step[] 
       for (const p of done) {
         current = replace(current, sym(p.v), p.by);
         pending.splice(pending.indexOf(p), 1);
-        steps.push({ rule: `Substitute back ${p.v} = ${plain(p.by)}`, expr: current });
+        steps.push({
+          rule: t("calculator.algSubstituteBack", { v: p.v, value: plain(p.by) }),
+          expr: current,
+        });
       }
       continue;
     }
@@ -94,12 +98,16 @@ export function integrateSteps(f: Expr, v = "x"): { result: Expr; steps: Step[] 
       if (!hasIntIn(current, p.v) && !hasInt(current)) {
         current = replace(current, sym(p.v), p.by);
         pending.splice(pending.indexOf(p), 1);
-        steps.push({ rule: `Substitute back ${p.v} = ${plain(p.by)}`, expr: current });
+        steps.push({
+          rule: t("calculator.algSubstituteBack", { v: p.v, value: plain(p.by) }),
+          expr: current,
+        });
       }
     }
   }
-  if (hasInt(current) || pending.length > 0) throw new AlgebraError("Too complex");
-  if (!agree(derivative(current, v), f, v)) throw new AlgebraError("No antiderivative found");
+  if (hasInt(current) || pending.length > 0) throw new AlgebraError(t("calculator.errTooComplex"));
+  if (!agree(derivative(current, v), f, v))
+    throw new AlgebraError(t("calculator.algNoAntiderivative"));
   return { result: current, steps };
 }
 
@@ -149,17 +157,17 @@ export function linear(g: Expr, v: string): { a: Expr; b: Expr } | null {
 function rule(f: Expr, v: string, rules: Set<string>, pending: Pending[], used: Set<string>): Expr {
   const x = sym(v);
   if (free(f, v)) {
-    rules.add("Integral of a constant");
+    rules.add(t("calculator.algIntegralConstant"));
     return mul(f, x);
   }
   if (f.t === "add") {
-    rules.add("Sum rule");
+    rules.add(t("calculator.algSumRule"));
     return add(...f.terms.map((t) => later(t, v)));
   }
   if (f.t === "mul") {
     const constant = f.factors.filter((g) => free(g, v));
     if (constant.length > 0) {
-      rules.add("Constant multiple");
+      rules.add(t("calculator.algConstantMultiple"));
       return mul(...constant, later(mul(...f.factors.filter((g) => !free(g, v))), v));
     }
   }
@@ -171,7 +179,7 @@ function rule(f: Expr, v: string, rules: Set<string>, pending: Pending[], used: 
   // A polynomial in brackets: multiply it out first.
   const poly = toPoly(f, v);
   if (poly && (f.t === "mul" || f.t === "pow")) {
-    rules.add("Expand");
+    rules.add(t("calculator.algExpand"));
     return integral(fromPoly(poly, v), v);
   }
   const rational = rationalRule(f, v);
@@ -181,13 +189,18 @@ function rule(f: Expr, v: string, rules: Set<string>, pending: Pending[], used: 
   }
   const reduced = powerReduction(f, v);
   if (reduced) {
-    rules.add("Power-reduction formula");
+    rules.add(t("calculator.algPowerReduction"));
     return integral(reduced, v);
   }
   const substituted = substitution(f, v, used);
   if (substituted) {
     rules.add(
-      `Substitute ${substituted.u} = ${plain(substituted.g)}, d${substituted.u} = ${plain(substituted.dg)} d${v}`,
+      t("calculator.algSubstitute", {
+        u: substituted.u,
+        g: plain(substituted.g),
+        dg: plain(substituted.dg),
+        v,
+      }),
     );
     pending.push({ v: substituted.u, by: substituted.g });
     used.add(substituted.u);
@@ -195,44 +208,47 @@ function rule(f: Expr, v: string, rules: Set<string>, pending: Pending[], used: 
   }
   const parts = byParts(f, v);
   if (parts) {
-    rules.add(`Integration by parts, u = ${plain(parts.u)}, dv = ${plain(parts.dv)} d${v}`);
+    rules.add(t("calculator.algByParts", { u: plain(parts.u), dv: plain(parts.dv), v }));
     return parts.result;
   }
-  throw new AlgebraError("No antiderivative found");
+  throw new AlgebraError(t("calculator.algNoAntiderivative"));
 }
 
 /** The standard integrals, each with a linear inside a·v + b allowed. */
 function fromTable(f: Expr, v: string): { result: Expr; rule: string } | null {
   const x = sym(v);
   if (f.t === "sym" && f.name === v) {
-    return { result: mul(num(1, 2), pow(x, num(2))), rule: "Power rule" };
+    return { result: mul(num(1, 2), pow(x, num(2))), rule: t("calculator.algPowerRule") };
   }
   if (f.t === "pow") {
     const { base, exp } = f;
     const lin = linear(base, v);
     if (lin && free(exp, v)) {
       if (isNum(exp, -1))
-        return { result: div(fn("ln", fn("abs", base)), lin.a), rule: "Integral of 1/x" };
+        return {
+          result: div(fn("ln", fn("abs", base)), lin.a),
+          rule: t("calculator.algIntegralOneOverX"),
+        };
       const up = add(exp, ONE);
-      return { result: div(pow(base, up), mul(lin.a, up)), rule: "Power rule" };
+      return { result: div(pow(base, up), mul(lin.a, up)), rule: t("calculator.algPowerRule") };
     }
     const linExp = linear(exp, v);
     if (linExp && free(base, v)) {
       const ln = base.t === "sym" && base.name === "e" ? ONE : fn("ln", base);
       return {
         result: div(f, mul(linExp.a, ln)),
-        rule: ln === ONE ? "Integral of eˣ" : "Exponential rule",
+        rule: ln === ONE ? t("calculator.algIntegralEx") : t("calculator.algExponentialRule"),
       };
     }
     // 1/cos²(g) and 1/sin²(g).
     if (isNum(exp, -2) && base.t === "fn") {
       const l = linear(base.arg, v);
       if (l && base.name === "cos")
-        return { result: div(fn("tan", base.arg), l.a), rule: "Integral of sec²" };
+        return { result: div(fn("tan", base.arg), l.a), rule: t("calculator.algIntegralSec2") };
       if (l && base.name === "sin")
         return {
           result: neg(div(fn("cos", base.arg), mul(l.a, fn("sin", base.arg)))),
-          rule: "Integral of csc²",
+          rule: t("calculator.algIntegralCsc2"),
         };
     }
     // 1/(c + d·v²) and 1/√(c − d·v²).
@@ -244,7 +260,7 @@ function fromTable(f: Expr, v: string): { result: Expr; rule: string } | null {
         // ∫ 1/(c + d v²) = atan(v √(d/c)) / √(c d)
         return {
           result: div(fn("atan", mul(x, sqrt(numQ(qdiv(dd, c))))), sqrt(numQ(qmul(c, dd)))),
-          rule: "Integral of 1/(1 + x²)",
+          rule: t("calculator.algIntegralArctan"),
         };
       }
       if (exp.t === "num" && exp.v.n === -1n && exp.v.d === 2n && c.n > 0n && dd.n < 0n) {
@@ -252,7 +268,7 @@ function fromTable(f: Expr, v: string): { result: Expr; rule: string } | null {
         const pos = qneg(dd);
         return {
           result: div(fn("asin", mul(x, sqrt(numQ(qdiv(pos, c))))), sqrt(numQ(pos))),
-          rule: "Integral of 1/√(1 − x²)",
+          rule: t("calculator.algIntegralArcsin"),
         };
       }
     }
@@ -265,7 +281,7 @@ function fromTable(f: Expr, v: string): { result: Expr; rule: string } | null {
         const sk = sqrt(numQ(k));
         return {
           result: div(fn("atan", div(add(x, numQ(h)), sk)), mul(numQ(a), sk)),
-          rule: "Complete the square",
+          rule: t("calculator.algCompleteSquare"),
         };
       }
     }
@@ -278,7 +294,7 @@ function fromTable(f: Expr, v: string): { result: Expr; rule: string } | null {
     const a = lin.a;
     const named = (result: Expr): { result: Expr; rule: string } => ({
       result: div(result, a),
-      rule: `Integral of ${f.name}`,
+      rule: t("calculator.algIntegralOf", { name: f.name }),
     });
     switch (f.name) {
       case "sin":
@@ -336,7 +352,7 @@ function rationalRule(f: Expr, v: string): { result: Expr; rule: string } | null
     const { quotient, remainder } = divide(N, D);
     return {
       result: add(later(fromPoly(quotient, v), v), later(div(fromPoly(remainder, v), Dx), v)),
-      rule: "Polynomial division",
+      rule: t("calculator.algPolynomialDivision"),
     };
   }
   const { linear: roots, rest } = factorPoly(D);
@@ -346,7 +362,7 @@ function rationalRule(f: Expr, v: string): { result: Expr; rule: string } | null
     const terms = roots.map(({ root }) =>
       later(div(numQ(qdiv(evalPoly(N, root), evalPoly(dD, root))), sub(x, numQ(root))), v),
     );
-    return { result: add(...terms), rule: "Partial fractions" };
+    return { result: add(...terms), rule: t("calculator.algPartialFractions") };
   }
   if (trim(D).length === 3 && trim(N).length === 2) {
     // N = α·D′ + β: α ln|D| (the numerator is D's derivative) and an arctangent.
@@ -355,7 +371,7 @@ function rationalRule(f: Expr, v: string): { result: Expr; rule: string } | null
     const beta = qadd(N[0], qneg(qmul(alpha, dD[0])));
     return {
       result: add(mul(numQ(alpha), fn("ln", fn("abs", Dx))), later(div(numQ(beta), Dx), v)),
-      rule: "Split the numerator",
+      rule: t("calculator.algSplitNumerator"),
     };
   }
   return null;

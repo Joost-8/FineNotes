@@ -10,6 +10,7 @@
 import type { Command } from "./commands";
 import type { InkDocument, Page } from "./document";
 import { paletteOf } from "./palette";
+import { t } from "../i18n/translate";
 
 const HEX6 = /^#[0-9a-f]{6}$/i;
 
@@ -30,7 +31,7 @@ export function nextTabColor(doc: Pick<InkDocument, "pages" | "palette">): strin
 
 /** A tab's label: the page's contents title, or "Page N". */
 export function tabLabel(page: Page, index: number): string {
-  return page.title?.trim() || `Page ${index + 1}`;
+  return page.title?.trim() || t("surface.pageTab.default", { n: index + 1 });
 }
 
 /** The tabbed pages in order, with what the view needs to draw each tab. */
@@ -51,7 +52,7 @@ export class SetPageTab implements Command {
     private readonly page: Page,
     private readonly color: string | null,
   ) {
-    this.label = color ? "Add page tab" : "Remove page tab";
+    this.label = color ? t("surface.command.addPageTab") : t("surface.command.removePageTab");
   }
 
   apply(doc: InkDocument): void {

@@ -33,6 +33,7 @@
  */
 
 import { setIcon } from "obsidian";
+import { t } from "../i18n/translate";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import type { FoldedBarItem } from "./toolbar";
@@ -108,12 +109,14 @@ export interface MorePanelActions {
 }
 
 /** The desks in the Desk row, in order. */
-const DESKS: ReadonlyArray<{ choice: DeskChoice; label: string }> = [
-  { choice: "auto", label: "Desk with the pages" },
-  { choice: "light", label: "Light desk" },
-  { choice: "dark", label: "Dark desk" },
-  { choice: "custom", label: "Desk in a colour of your own" },
-];
+function desks(): ReadonlyArray<{ choice: DeskChoice; label: string }> {
+  return [
+    { choice: "auto", label: t("view.morePanel.deskAuto") },
+    { choice: "light", label: t("view.morePanel.deskLight") },
+    { choice: "dark", label: t("view.morePanel.deskDark") },
+    { choice: "custom", label: t("view.morePanel.deskCustom") },
+  ];
+}
 /** The Light and Dark desks' colours, and the usual grey a custom desk starts from. */
 const LIGHT_DESK_DISC = LIGHT_DESK;
 const DARK_DESK_DISC = DARK_PAPER.desk;
@@ -140,7 +143,7 @@ export class MorePanel {
   ) {
     this.el = document.body.createDiv({ cls: "goodobsidian-more" });
     this.el.setAttribute("role", "dialog");
-    this.el.setAttribute("aria-label", "More");
+    this.el.setAttribute("aria-label", t("common.more"));
     this.keyboard = new DialogKeyboard(this.el);
     this.render();
     this.place();
@@ -165,7 +168,7 @@ export class MorePanel {
 
   private render(): void {
     const { page, actions } = this;
-    this.el.createDiv({ cls: "goodobsidian-more-title", text: "More" });
+    this.el.createDiv({ cls: "goodobsidian-more-title", text: t("common.more") });
 
     // The tool bar never scrolls: what did not fit on it is first here.
     const folded = page.folded ?? [];
@@ -185,7 +188,7 @@ export class MorePanel {
       this.viewRows();
       this.row(this.group(), {
         icon: "x-circle",
-        text: "Clear board",
+        text: t("view.morePanel.clearBoard"),
         cls: "is-danger",
         enabled: page.clearable,
         run: () => actions.clear(page.index),
@@ -195,7 +198,10 @@ export class MorePanel {
 
     const card = this.group();
     const head = card.createDiv({ cls: "goodobsidian-more-pagehead" });
-    head.createSpan({ cls: "goodobsidian-more-pagename", text: `Page ${page.index + 1}` });
+    head.createSpan({
+      cls: "goodobsidian-more-pagename",
+      text: t("view.morePanel.page", { page: page.index + 1 }),
+    });
     const thumb = head.createEl("canvas", { cls: "goodobsidian-more-thumb" });
     actions.paintThumbnail(thumb, page.index, THUMB_WIDTH);
 
@@ -203,7 +209,7 @@ export class MorePanel {
       if (page.total > 1) this.goToRow(card);
       this.row(card, {
         icon: "x-circle",
-        text: "Clear page",
+        text: t("view.morePanel.clearPage"),
         cls: "is-danger",
         enabled: page.clearable,
         run: () => actions.clear(page.index),
@@ -212,50 +218,54 @@ export class MorePanel {
     }
     this.row(card, {
       icon: page.bookmarked ? "bookmark-minus" : "bookmark",
-      text: page.bookmarked ? "Remove bookmark" : "Bookmark page",
+      text: page.bookmarked ? t("view.morePanel.removeBookmark") : t("view.morePanel.bookmark"),
       cls: page.bookmarked ? "is-bookmarked" : "",
       run: () => actions.toggleBookmark(page.index),
     });
     this.row(card, {
       icon: page.titled ? "pencil" : "list-plus",
-      text: page.titled ? "Rename in contents" : "Add to contents",
+      text: page.titled ? t("view.contents.rename") : t("view.contents.add"),
       run: () => actions.editTitle(page.index),
     });
     this.row(card, {
       icon: "link",
-      text: "Copy link to page",
+      text: t("view.morePanel.copyLink"),
       run: () => actions.copyLink(page.index),
     });
     if (!page.single) {
       this.row(card, {
         icon: "copy",
-        text: "Duplicate page",
+        text: t("view.morePanel.duplicatePage"),
         run: () => actions.duplicate(page.index),
       });
     }
     this.row(card, {
       icon: page.cover ? "palette" : "layout-template",
-      text: page.cover ? "Change cover" : "Change template",
+      text: page.cover ? t("view.morePanel.changeCover") : t("view.morePanel.changeTemplate"),
       run: (button) => actions.changeTemplate(page.index, button),
     });
     const openMargin = actions.openMargin;
     if (openMargin && page.margin) {
       const row = this.row(card, {
         icon: "panel-right",
-        text: "Margin",
+        text: t("view.morePanel.margin"),
         run: () => openMargin(page.index),
       });
       const { side, percent } = page.margin;
       if (side !== "none") {
-        const name = { left: "Left", right: "Right", both: "Both" }[side];
-        row.createSpan({ cls: "goodobsidian-more-value", text: `${name} ${percent} %` });
+        const key = {
+          left: "view.morePanel.marginLeft",
+          right: "view.morePanel.marginRight",
+          both: "view.morePanel.marginBoth",
+        } as const;
+        row.createSpan({ cls: "goodobsidian-more-value", text: t(key[side], { percent }) });
       }
     }
     const save = actions.saveAsTemplate;
     if (save && !page.cover) {
       this.row(card, {
         icon: "file-plus-2",
-        text: "Save page as template",
+        text: t("view.morePanel.saveTemplate"),
         run: () => save(page.index),
       });
     }
@@ -263,18 +273,18 @@ export class MorePanel {
 
     this.viewRows();
 
-    this.heading("Clear or delete page");
+    this.heading(t("view.morePanel.clearOrDelete"));
     const danger = this.group();
     this.row(danger, {
       icon: "x-circle",
-      text: "Clear page",
+      text: t("view.morePanel.clearPage"),
       cls: "is-danger",
       enabled: page.clearable,
       run: () => actions.clear(page.index),
     });
     this.row(danger, {
       icon: "trash-2",
-      text: "Delete page",
+      text: t("view.morePanel.deletePage"),
       cls: "is-danger",
       enabled: page.total > 1,
       run: () => actions.remove(page.index),
@@ -290,7 +300,7 @@ export class MorePanel {
     const view = this.group();
     this.row(view, {
       icon: page.darkPages ? "sun" : "moon",
-      text: page.darkPages ? "Light pages" : "Dark pages",
+      text: page.darkPages ? t("view.morePanel.lightPages") : t("view.morePanel.darkPages"),
       run: () => actions.toggleDarkPages(),
     });
     if (page.darkPages) this.darkPdfRow(view);
@@ -298,12 +308,12 @@ export class MorePanel {
     this.fingerDrawRow(view);
     this.row(view, {
       icon: "keyboard",
-      text: "Keyboard shortcuts",
+      text: t("view.morePanel.shortcuts"),
       run: () => actions.showShortcuts(),
     });
     this.row(view, {
       icon: "smartphone",
-      text: "Copy home screen link",
+      text: t("view.morePanel.homeLink"),
       run: () => actions.copyHomeLink(),
     });
   }
@@ -320,7 +330,7 @@ export class MorePanel {
       cls: "goodobsidian-more-row is-switch clickable-icon",
     });
     setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), "file-text");
-    button.createSpan({ cls: "goodobsidian-more-label", text: "Dark PDF pages" });
+    button.createSpan({ cls: "goodobsidian-more-label", text: t("view.morePanel.darkPdf") });
     const mark = button.createSpan({ cls: "goodobsidian-more-check" });
     setIcon(mark, "check");
     const show = (on: boolean): void => {
@@ -351,7 +361,7 @@ export class MorePanel {
       cls: "goodobsidian-more-row is-switch clickable-icon",
     });
     setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), "pointer");
-    button.createSpan({ cls: "goodobsidian-more-label", text: "Draw with finger" });
+    button.createSpan({ cls: "goodobsidian-more-label", text: t("view.morePanel.drawWithFinger") });
     const mark = button.createSpan({ cls: "goodobsidian-more-check" });
     setIcon(mark, "check");
     mark.toggleClass("is-hidden", !on);
@@ -375,10 +385,10 @@ export class MorePanel {
     const desk = this.page.desk ?? { choice: "auto", color: CUSTOM_DESK };
     const row = parent.createDiv({ cls: "goodobsidian-more-row is-bar-dock is-desk" });
     setIcon(row.createSpan({ cls: "goodobsidian-more-icon" }), "square-dashed");
-    row.createSpan({ cls: "goodobsidian-more-label", text: "Desk" });
+    row.createSpan({ cls: "goodobsidian-more-label", text: t("view.morePanel.desk") });
     const places = row.createDiv({ cls: "goodobsidian-more-docks" });
     places.setAttribute("role", "radiogroup");
-    places.setAttribute("aria-label", "Desk");
+    places.setAttribute("aria-label", t("view.morePanel.desk"));
     const buttons = new Map<DeskChoice, HTMLButtonElement>();
     let chosen: DeskChoice = desk.choice;
     const mark = (): void => {
@@ -387,7 +397,7 @@ export class MorePanel {
         button.setAttribute("aria-checked", String(choice === chosen));
       }
     };
-    for (const { choice, label } of DESKS) {
+    for (const { choice, label } of desks()) {
       const button = places.createEl("button", {
         cls: "goodobsidian-more-dock clickable-icon",
       });
@@ -482,7 +492,7 @@ export class MorePanel {
     const { total } = this.page;
     const row = parent.createDiv({ cls: "goodobsidian-more-row is-goto" });
     setIcon(row.createSpan({ cls: "goodobsidian-more-icon" }), "arrow-right-to-line");
-    row.createSpan({ cls: "goodobsidian-more-label", text: "Go to page" });
+    row.createSpan({ cls: "goodobsidian-more-label", text: t("view.morePanel.goToPage") });
     const input = row.createEl("input", {
       cls: "goodobsidian-more-goto",
       type: "text",
@@ -490,7 +500,7 @@ export class MorePanel {
         inputmode: "numeric",
         enterkeyhint: "go",
         placeholder: `(1 – ${total})`,
-        "aria-label": `Page number, 1 to ${total}`,
+        "aria-label": t("view.morePanel.pageNumberLabel", { total }),
       },
     });
     const go = (): void => {

@@ -14,6 +14,7 @@
  */
 
 import { type App, FuzzySuggestModal, Menu, setIcon } from "obsidian";
+import { t } from "../i18n/translate";
 import {
   type TranscriptParagraph,
   describeRecording,
@@ -124,18 +125,23 @@ export class RecordingPill {
   constructor(parent: HTMLElement, onStop: () => void, onDiscard: () => void) {
     this.el = parent.createDiv({
       cls: "goodobsidian-rec-pill",
-      attr: { role: "status", "aria-label": "Recording" },
+      attr: { role: "status", "aria-label": t("ai.audio.recording") },
     });
     this.el.createSpan({ cls: "goodobsidian-rec-dot" });
     this.timeEl = this.el.createSpan({ cls: "goodobsidian-rec-time", text: formatClock(0) });
     tapButton(
       this.el,
-      { icon: "trash-2", label: "Discard recording", cls: "goodobsidian-rec-discard" },
+      { icon: "trash-2", label: t("ai.audio.discard"), cls: "goodobsidian-rec-discard" },
       onDiscard,
     );
     tapButton(
       this.el,
-      { icon: "square", label: "Stop recording", text: "Stop", cls: "goodobsidian-rec-stop" },
+      {
+        icon: "square",
+        label: t("ai.audio.stopRecording"),
+        text: t("ai.learn.stop"),
+        cls: "goodobsidian-rec-stop",
+      },
       onStop,
     );
   }
@@ -153,7 +159,7 @@ export class RecordingPill {
 
 /** How long a hint stays before the player's standing hint comes back, ms. */
 const HINT_MS = 4000;
-const STANDING_HINT = "Tap your writing to hear what was said as you wrote it.";
+const standingHint = (): string => t("ai.audio.standingHint");
 
 /** What the page does as a recording plays (2.5): ink replay. */
 export interface PlayerHooks {
@@ -203,24 +209,26 @@ export class AudioPlayerBar {
     this.replayOn = hooks.replay === true;
     this.el = parent.createDiv({
       cls: "goodobsidian-player",
-      attr: { role: "region", "aria-label": "Recording player" },
+      attr: { role: "region", "aria-label": t("ai.audio.player") },
     });
     // Dragging the scrubber must not open one of Obsidian's sidebars.
     this.el.dataset.ignoreSwipe = "true";
     this.hintEl = this.el.createDiv({
       cls: "goodobsidian-player-hint",
       attr: { "aria-live": "polite" },
-      text: STANDING_HINT,
+      text: standingHint(),
     });
     const row = this.el.createDiv({ cls: "goodobsidian-player-row" });
-    this.playButton = tapButton(row, { icon: "play", label: "Play" }, () => this.toggle());
-    tapButton(row, { icon: "rotate-ccw", label: "Back 10 seconds" }, () => this.skip(-10000));
+    this.playButton = tapButton(row, { icon: "play", label: t("ai.audio.play") }, () =>
+      this.toggle(),
+    );
+    tapButton(row, { icon: "rotate-ccw", label: t("ai.audio.back10") }, () => this.skip(-10000));
     const middle = row.createDiv({ cls: "goodobsidian-player-middle" });
     this.titleEl = middle.createDiv({ cls: "goodobsidian-player-title" });
     this.scrubber = middle.createEl("input", {
       cls: "goodobsidian-player-scrubber",
       type: "range",
-      attr: { min: "0", max: "0", step: "0.1", value: "0", "aria-label": "Position" },
+      attr: { min: "0", max: "0", step: "0.1", value: "0", "aria-label": t("ai.audio.position") },
     });
     dragRange(this.scrubber);
     this.timeEl = row.createDiv({ cls: "goodobsidian-player-time" });
@@ -228,7 +236,7 @@ export class AudioPlayerBar {
       // Ink replay: what was not written yet at this moment shows pale.
       this.replayButton = tapButton(
         row,
-        { icon: "pen-line", label: "Replay ink", cls: "goodobsidian-player-replay" },
+        { icon: "pen-line", label: t("ai.audio.replayInk"), cls: "goodobsidian-player-replay" },
         () => {
           this.replayOn = !this.replayOn;
           this.renderReplay();
@@ -237,7 +245,7 @@ export class AudioPlayerBar {
       );
       this.renderReplay();
     }
-    tapButton(row, { icon: "x", label: "Close player" }, onClose);
+    tapButton(row, { icon: "x", label: t("ai.audio.closePlayer") }, onClose);
 
     // The scrubber is the only thing here that takes a drag; nothing below sees it.
     this.scrubber.addEventListener("pointerdown", (event) => event.stopPropagation());
@@ -287,7 +295,7 @@ export class AudioPlayerBar {
       if (pending !== null) this.audio.currentTime = pending / 1000;
     });
     this.audio.addEventListener("error", () => {
-      this.hint("This recording can't be played here — the file may be missing or unreadable.");
+      this.hint(t("ai.audio.cannotPlay"));
     });
   }
 
@@ -331,7 +339,7 @@ export class AudioPlayerBar {
    */
   play(): void {
     this.audio.play().catch(() => {
-      this.hint("Tap ▶ to play.");
+      this.hint(t("ai.audio.tapToPlay"));
     });
   }
 
@@ -345,7 +353,7 @@ export class AudioPlayerBar {
     this.hintEl.setText(text);
     this.hintEl.addClass("is-message");
     this.hintTimer = window.setTimeout(() => {
-      this.hintEl.setText(STANDING_HINT);
+      this.hintEl.setText(standingHint());
       this.hintEl.removeClass("is-message");
     }, HINT_MS);
   }
@@ -415,7 +423,11 @@ export class AudioPlayerBar {
   }
 
   private renderPlaying(playing: boolean): void {
-    setButtonIcon(this.playButton, playing ? "pause" : "play", playing ? "Pause" : "Play");
+    setButtonIcon(
+      this.playButton,
+      playing ? "pause" : "play",
+      playing ? t("ai.audio.pause") : t("ai.audio.play"),
+    );
   }
 }
 
@@ -487,7 +499,7 @@ export class RecordingsPanel {
     const el = parent.createDiv({ cls: "goodobsidian-recordings" });
     el.createDiv({
       cls: "goodobsidian-recordings-hint",
-      text: "Play one, then tap your writing to hear what was said as you wrote it.",
+      text: t("ai.audio.recordingsHint"),
     });
     this.needsEl = el.createDiv({ cls: "goodobsidian-recordings-needs is-hidden" });
     this.list = el.createDiv({ cls: "goodobsidian-recordings-list" });
@@ -511,7 +523,7 @@ export class RecordingsPanel {
     if (entries.length === 0) {
       this.list.createDiv({
         cls: "goodobsidian-recordings-empty",
-        text: "No recordings in this note yet.",
+        text: t("ai.audio.none"),
       });
     }
     for (const entry of entries) this.renderEntry(entry, transcribe.enabled);
@@ -522,8 +534,11 @@ export class RecordingsPanel {
     this.recordButton.toggleClass("is-recording", active);
     this.recordIcon.empty();
     iconInto(this.recordIcon, active ? "square" : "mic", "");
-    this.recordLabel.setText(active ? "Stop" : "Record");
-    this.recordButton.setAttribute("aria-label", active ? "Stop recording" : "Record audio");
+    this.recordLabel.setText(active ? t("ai.learn.stop") : t("ai.audio.record"));
+    this.recordButton.setAttribute(
+      "aria-label",
+      active ? t("ai.audio.stopRecording") : t("ai.audio.recordAudio"),
+    );
   }
 
   private renderEntry(entry: RecordingEntry, canTranscribe: boolean): void {
@@ -535,7 +550,7 @@ export class RecordingsPanel {
     if (!entry.available) {
       block.createDiv({
         cls: "goodobsidian-recordings-missing",
-        text: `The audio file is missing: ${recording.path}`,
+        text: t("ai.audio.fileMissing", { path: recording.path }),
       });
     }
     if (entry.transcript && entry.transcript.length > 0) {
@@ -569,18 +584,31 @@ export class RecordingsPanel {
         if (!button.disabled) run();
       });
     };
-    act("play", "Play", "Play", () => this.actions.play(recording), entry.available);
+    act(
+      "play",
+      t("ai.audio.play"),
+      t("ai.audio.play"),
+      () => this.actions.play(recording),
+      entry.available,
+    );
     if (entry.deviceStatus !== undefined) {
       const status = block.createDiv({ cls: "goodobsidian-recordings-device" });
       status.createSpan({ cls: "goodobsidian-recordings-device-text", text: entry.deviceStatus });
-      act("square", "Stop transcribing", "Stop", () => this.actions.stopDevice(), true, status);
+      act(
+        "square",
+        t("ai.audio.stopTranscribing"),
+        t("ai.learn.stop"),
+        () => this.actions.stopDevice(),
+        true,
+        status,
+      );
     } else {
       // On this device always works; with a key set up as well, ask which.
-      const label = entry.hasTranscript ? "Transcribe again" : "Transcribe";
+      const label = entry.hasTranscript ? t("ai.audio.transcribeAgain") : t("ai.audio.transcribe");
       act(
         "file-text",
         label,
-        "Transcribe",
+        t("ai.audio.transcribe"),
         () => {
           if (!canTranscribe) {
             this.actions.transcribeOnDevice(recording);
@@ -589,13 +617,13 @@ export class RecordingsPanel {
           const menu = new Menu();
           menu.addItem((item) =>
             item
-              .setTitle("On this device")
+              .setTitle(t("ai.audio.onDevice"))
               .setIcon("audio-waveform")
               .onClick(() => this.actions.transcribeOnDevice(recording)),
           );
           menu.addItem((item) =>
             item
-              .setTitle("With your AI key")
+              .setTitle(t("ai.audio.withKey"))
               .setIcon("cloud")
               .onClick(() => this.actions.transcribe(recording)),
           );
@@ -610,14 +638,14 @@ export class RecordingsPanel {
     }
     if (entry.hasTranscript) {
       // Its text is in the box now: the note is an icon away.
-      act("external-link", "Open transcript note", "", () =>
+      act("external-link", t("ai.audio.openTranscript"), "", () =>
         this.actions.openTranscript(recording),
       );
-      act("clipboard-paste", "Paste transcript onto the page", "", () =>
+      act("clipboard-paste", t("ai.audio.pasteTranscript"), "", () =>
         this.actions.pasteTranscript(recording),
       );
     }
-    act("trash-2", "Remove from note", "", () => this.actions.remove(recording), true, head);
+    act("trash-2", t("ai.audio.remove"), "", () => this.actions.remove(recording), true, head);
   }
 
   /**
@@ -644,7 +672,7 @@ export class RecordingsPanel {
           time.addClass("is-playable");
           time.setAttribute("role", "button");
           time.setAttribute("tabindex", "0");
-          time.setAttribute("aria-label", `Play from ${stamp}`);
+          time.setAttribute("aria-label", t("ai.audio.playFrom", { time: stamp }));
           const play = (event: Event): void => {
             event.stopPropagation();
             this.actions.play(recording, at);
@@ -673,7 +701,7 @@ export class RecordingsPanel {
     const chevron = box.createEl("button", {
       cls: "goodobsidian-recordings-transcript-toggle clickable-icon",
       attr: {
-        "aria-label": open ? "Show less of the transcript" : "Show the whole transcript",
+        "aria-label": open ? t("ai.audio.showLess") : t("ai.audio.showAll"),
         "aria-expanded": String(open),
       },
     });
@@ -698,7 +726,7 @@ export class RecordingSuggestModal extends FuzzySuggestModal<Recording> {
     private readonly onPick: (recording: Recording) => void,
   ) {
     super(app);
-    this.setPlaceholder("Which recording should be transcribed?");
+    this.setPlaceholder(t("ai.audio.which"));
   }
 
   getItems(): Recording[] {

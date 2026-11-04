@@ -19,6 +19,7 @@
  */
 
 import { ICON_STYLUS_ONLY } from "../constants";
+import { t } from "../i18n/translate";
 
 /** Every button the tool bar can show. */
 export type BarItemId =
@@ -91,9 +92,30 @@ export const ZONES: readonly Zone[] = ["start", "middle", "end"];
 
 /** What each zone is called in edit mode, for a bar along an edge and an upright one. */
 export const ZONE_LABELS: Record<Zone, { across: string; upright: string }> = {
-  start: { across: "Start", upright: "Top" },
-  middle: { across: "Middle", upright: "Middle" },
-  end: { across: "End", upright: "Bottom" },
+  start: {
+    get across() {
+      return t("toolbar.zone.start");
+    },
+    get upright() {
+      return t("toolbar.zone.top");
+    },
+  },
+  middle: {
+    get across() {
+      return t("toolbar.zone.middle");
+    },
+    get upright() {
+      return t("toolbar.zone.middle");
+    },
+  },
+  end: {
+    get across() {
+      return t("toolbar.zone.end");
+    },
+    get upright() {
+      return t("toolbar.zone.bottom");
+    },
+  },
 };
 
 /** Every button's place: the three zones in order, and the buttons shown nowhere. */
@@ -136,35 +158,93 @@ export function isPinned(id: BarItemId): boolean {
 
 /** What each button is called, in its tooltip, the menus and edit mode. */
 export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
-  select: "Lasso",
-  pen: "Pen",
-  eraser: "Eraser",
-  text: "Text",
-  shape: "Shapes",
-  pan: "Hand",
-  zoom: "Magnifier",
-  stylus: "Stylus only",
-  image: "Image",
-  pdf: "PDF",
-  sticker: "Stickers",
-  sticky: "Sticky notes",
-  ruler: "Ruler",
-  tape: "Cover tape",
-  record: "Record audio",
-  fill: "Fill",
-  calculator: "Calculator",
-  home: "Home",
-  thumbnails: "Page thumbnails",
-  search: "Search",
-  ai: "AI",
-  undo: "Undo",
-  redo: "Redo",
-  fullscreen: "Full screen",
-  addPage: "Add page",
-  share: "Export",
-  settings: "Notebook settings",
-  accessories: "More tools",
-  more: "More",
+  get select() {
+    return t("toolbar.tool.lasso");
+  },
+  get pen() {
+    return t("toolbar.tool.pen");
+  },
+  get eraser() {
+    return t("toolbar.tool.eraser");
+  },
+  get text() {
+    return t("toolbar.tool.text");
+  },
+  get shape() {
+    return t("toolbar.tool.shapes");
+  },
+  get pan() {
+    return t("toolbar.tool.hand");
+  },
+  get zoom() {
+    return t("toolbar.tool.magnifier");
+  },
+  get stylus() {
+    return t("toolbar.tool.stylusOnly");
+  },
+  get image() {
+    return t("toolbar.tool.image");
+  },
+  get pdf() {
+    return t("toolbar.tool.pdf");
+  },
+  get sticker() {
+    return t("toolbar.tool.stickers");
+  },
+  get sticky() {
+    return t("toolbar.tool.stickyNotes");
+  },
+  get ruler() {
+    return t("toolbar.tool.ruler");
+  },
+  get tape() {
+    return t("toolbar.tool.coverTape");
+  },
+  get record() {
+    return t("toolbar.tool.recordAudio");
+  },
+  get fill() {
+    return t("toolbar.tool.fill");
+  },
+  get calculator() {
+    return t("toolbar.calculator");
+  },
+  get home() {
+    return t("toolbar.item.home");
+  },
+  get thumbnails() {
+    return t("toolbar.pageThumbnails");
+  },
+  get search() {
+    return t("toolbar.item.search");
+  },
+  get ai() {
+    return t("toolbar.ai");
+  },
+  get undo() {
+    return t("common.undo");
+  },
+  get redo() {
+    return t("common.redo");
+  },
+  get fullscreen() {
+    return t("toolbar.fullScreen");
+  },
+  get addPage() {
+    return t("toolbar.addPage");
+  },
+  get share() {
+    return t("toolbar.export");
+  },
+  get settings() {
+    return t("toolbar.notebookSettings");
+  },
+  get accessories() {
+    return t("toolbar.moreTools");
+  },
+  get more() {
+    return t("common.more");
+  },
 };
 
 /** Each button's icon, in the menus and edit mode as on the bar. */

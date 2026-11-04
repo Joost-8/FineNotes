@@ -10,6 +10,7 @@
  */
 
 import { baseName, isFolderNotebook, parentPath } from "./folder-notebook";
+import { t, tn } from "../i18n/translate";
 import { freeName } from "./library-style";
 import { NOTEBOOK_FILE_SUFFIX } from "../constants";
 import { OWN_FOLDERS, inkFileSuffix, stripInkSuffix } from "./new-notebook";
@@ -136,28 +137,30 @@ export function trashQuestion(plan: TrashPlan): { title: string; message: string
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
     .map((name) => `"${name}"`);
   const count = names.length;
-  const shown = count > 4 ? [...names.slice(0, 3), `${count - 3} more`] : names;
-  const list = shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}` : shown[0];
+  const shown =
+    count > 4
+      ? [...names.slice(0, 3), t("notebooks.home.deleteMore", { count: count - 3 })]
+      : names;
+  const list =
+    shown.length > 1
+      ? t("ai.list.and", { head: shown.slice(0, -1).join(", "), last: shown.at(-1) ?? "" })
+      : (shown[0] ?? "");
   const folders = plan.trash.filter((p) => !inkFileSuffix(baseName(p)));
   const title =
     count === 1
-      ? `Delete ${names[0]}?`
+      ? t("notebooks.home.deleteOne", { name: names[0] ?? "" })
       : count > 1
-        ? `Delete ${count} notebooks?`
+        ? tn("notebooks.home.deleteNotebooks", count)
         : folders.length === 1
-          ? `Delete the folder "${baseName(folders[0] ?? "")}"?`
-          : `Delete ${folders.length} folders?`;
+          ? t("notebooks.home.deleteFolder", { name: baseName(folders[0] ?? "") })
+          : tn("notebooks.home.deleteFolders", folders.length);
   const parts: string[] = [];
-  if (count > 0)
-    parts.push(`${list} will be deleted, with ${count === 1 ? "its" : "their"} files.`);
-  else parts.push("The empty folders will be deleted.");
-  if (plan.kept > 0) {
+  if (count > 0) {
     parts.push(
-      plan.kept === 1
-        ? "1 other file stays where it is."
-        : `${plan.kept} other files stay where they are.`,
+      t(count === 1 ? "notebooks.home.deleteListOne" : "notebooks.home.deleteListMany", { list }),
     );
-  }
+  } else parts.push(t("notebooks.home.deleteEmptyFolders"));
+  if (plan.kept > 0) parts.push(tn("notebooks.home.keptFiles", plan.kept));
   return { title, message: parts.join(" ") };
 }
 
@@ -180,7 +183,7 @@ export function duplicatePlan(
   taken: (path: string) => boolean,
 ): DuplicatePlan {
   const suffix = inkFileSuffix(baseName(notePath)) ?? NOTEBOOK_FILE_SUFFIX;
-  const base = `${stripInkSuffix(baseName(notePath))} copy`;
+  const base = t("notebooks.home.copyName", { name: stripInkSuffix(baseName(notePath)) });
   if (unit === notePath) {
     const dir = parentPath(notePath);
     return {

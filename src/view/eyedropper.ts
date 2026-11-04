@@ -24,6 +24,7 @@
 import { setIcon } from "obsidian";
 
 import type { EyedropResult } from "../canvas/eyedropper";
+import { t } from "../i18n/translate";
 import { parseHexColor } from "../model/colors";
 import { onTap } from "./selection-bar";
 
@@ -223,7 +224,7 @@ export class Eyedropper {
     const label = loupe.querySelector<HTMLElement>(".goodobsidian-eyedrop-hex");
     // The swatch *is* the colour: a value, not chrome.
     swatch?.setCssStyles({ backgroundColor: picked?.color ?? "" });
-    label?.setText(picked ? picked.color.toUpperCase() : "Off the page");
+    label?.setText(picked ? picked.color.toUpperCase() : t("toolbar.eyedropper.offPage"));
   }
 
   private makeLoupe(): HTMLElement {
@@ -247,12 +248,17 @@ export class Eyedropper {
     const bar = this.host.layer.createDiv({ cls: "goodobsidian-eyedrop-bar" });
     bar.setAttribute("role", "status");
     setIcon(bar.createSpan({ cls: "goodobsidian-eyedrop-bar-icon" }), "pipette");
-    bar.createSpan({ cls: "goodobsidian-eyedrop-bar-text", text: "Tap the page to pick a colour" });
+    bar.createSpan({ cls: "goodobsidian-eyedrop-bar-text", text: t("toolbar.eyedropper.tapPage") });
     if (screenEyeDropper(this.win)) {
-      const screen = this.barButton(bar, "monitor", "Pick from the screen", "From screen");
+      const screen = this.barButton(
+        bar,
+        "monitor",
+        t("toolbar.eyedropper.pickFromScreen"),
+        t("toolbar.eyedropper.fromScreen"),
+      );
       onTap(screen, () => void this.pickFromScreen());
     }
-    const close = this.barButton(bar, "x", "Cancel");
+    const close = this.barButton(bar, "x", t("common.cancel"));
     onTap(close, () => this.cancel());
     this.bar = bar;
   }

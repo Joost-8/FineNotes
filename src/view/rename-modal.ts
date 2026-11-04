@@ -3,6 +3,7 @@
 import { type App, Modal, Platform, Setting } from "obsidian";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
+import { t } from "../i18n/translate";
 
 export class RenameModal extends Modal {
   private done = false;
@@ -12,8 +13,8 @@ export class RenameModal extends Modal {
     app: App,
     private readonly current: string,
     private readonly onRename: (name: string) => void,
-    private readonly heading = "Rename",
-    private readonly action = "Rename",
+    private readonly heading = t("common.rename"),
+    private readonly action = t("common.rename"),
   ) {
     super(app);
     this.keyboard = new DialogKeyboard(this.modalEl);
@@ -25,7 +26,7 @@ export class RenameModal extends Modal {
     const input = this.contentEl.createEl("input", {
       type: "text",
       cls: "goodobsidian-rename-input",
-      attr: { "aria-label": "Name", enterkeyhint: "done" },
+      attr: { "aria-label": t("notebooks.home.nameField"), enterkeyhint: "done" },
     });
     input.value = this.current;
     onEnterKey(input, () => this.submit(input.value));

@@ -12,6 +12,7 @@
  */
 
 import { type App, Modal } from "obsidian";
+import { t } from "../i18n/translate";
 import { MAX_COMMENT_LENGTH } from "../model/comments";
 import type { PageComment } from "../model/document";
 import { DialogKeyboard } from "./dialog-keyboard";
@@ -43,23 +44,26 @@ export class CommentModal extends Modal {
   override onOpen(): void {
     const comment = this.comment;
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-comment-modal");
-    this.titleEl.setText(comment ? "Comment" : `New comment on page ${this.pageNumber}`);
+    this.titleEl.setText(
+      comment ? t("view.comment.title") : t("view.comment.newTitle", { page: this.pageNumber }),
+    );
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
     if (comment) {
-      const by = comment.author === "ai" ? "From the AI" : "Yours";
-      const when = comment.created > 0 ? ` · ${new Date(comment.created).toLocaleString()}` : "";
-      const state = comment.resolved ? " · Resolved" : "";
+      const by = comment.author === "ai" ? t("view.comment.fromAi") : t("view.comment.yours");
+      const parts = [by, t("view.comment.page", { page: this.pageNumber })];
+      if (comment.created > 0) parts.push(new Date(comment.created).toLocaleString());
+      if (comment.resolved) parts.push(t("view.comment.resolved"));
       body.createDiv({
         cls: "goodobsidian-ask-note",
-        text: `${by} · page ${this.pageNumber}${when}${state}`,
+        text: parts.join(" · "),
       });
     }
     const field = body.createEl("textarea", {
       cls: "goodobsidian-ask-input goodobsidian-comment-field",
       attr: {
-        "aria-label": "Comment",
-        placeholder: "What is this about?",
+        "aria-label": t("view.comment.title"),
+        placeholder: t("view.comment.placeholder"),
         maxlength: String(MAX_COMMENT_LENGTH),
       },
     });
@@ -72,7 +76,7 @@ export class CommentModal extends Modal {
     if (comment && this.actions.remove) {
       const remove = actions.createEl("button", {
         cls: "goodobsidian-comment-delete clickable-icon",
-        text: "Delete",
+        text: t("common.delete"),
       });
       remove.addEventListener("click", () => {
         this.actions.remove?.();
@@ -83,7 +87,7 @@ export class CommentModal extends Modal {
       const resolved = comment.resolved === true;
       const toggle = actions.createEl("button", {
         cls: "clickable-icon",
-        text: resolved ? "Reopen" : "Resolve",
+        text: resolved ? t("view.comment.reopen") : t("view.comment.resolve"),
       });
       toggle.addEventListener("click", () => {
         this.saveIfChanged(field.value);
@@ -93,7 +97,7 @@ export class CommentModal extends Modal {
     }
     const save = actions.createEl("button", {
       cls: "mod-cta clickable-icon",
-      text: comment ? "Save" : "Add",
+      text: comment ? t("common.save") : t("view.comment.add"),
     });
     const sync = (): void => {
       save.disabled = !field.value.trim();

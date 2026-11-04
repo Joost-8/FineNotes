@@ -16,6 +16,7 @@
 
 import { type App, Modal } from "obsidian";
 import { SIZES } from "../constants";
+import { t } from "../i18n/translate";
 import { relativeLuminance } from "../model/cover";
 import { nearestStop, widthStops } from "../model/pen-widths";
 import {
@@ -73,7 +74,11 @@ export class SavedPenModal extends Modal {
   override onOpen(): void {
     const { index } = this.options;
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-pen-modal");
-    this.titleEl.setText(index === null ? "New pen" : `Pen ${index + 1}`);
+    this.titleEl.setText(
+      index === null
+        ? t("toolbar.savedPen.newPen")
+        : t("toolbar.savedPen.pen", { number: index + 1 }),
+    );
     const body = this.contentEl;
     body.addClass("goodobsidian-pen-modal-body");
 
@@ -82,7 +87,7 @@ export class SavedPenModal extends Modal {
 
     const types = body.createDiv({ cls: "goodobsidian-pen-modal-types" });
     types.setAttribute("role", "radiogroup");
-    types.setAttribute("aria-label", "Pen type");
+    types.setAttribute("aria-label", t("toolbar.savedPen.penType"));
     const typeButtons = SAVED_PEN_TYPES.map((type) => {
       const button = types.createEl("button", {
         cls: "goodobsidian-pen-modal-type clickable-icon",
@@ -104,7 +109,7 @@ export class SavedPenModal extends Modal {
       type: "range",
     });
     dragRange(range);
-    range.setAttribute("aria-label", "Width");
+    range.setAttribute("aria-label", t("toolbar.savedPen.width"));
     range.min = "0";
     range.step = "1";
     const readout = widthRow.createDiv({ cls: "goodobsidian-width-readout" });
@@ -116,7 +121,7 @@ export class SavedPenModal extends Modal {
     field.setAttribute("enterkeyhint", "done");
     field.setAttribute("autocomplete", "off");
     field.setAttribute("spellcheck", "false");
-    field.setAttribute("aria-label", "Width in millimetres");
+    field.setAttribute("aria-label", t("toolbar.savedPen.widthMm"));
     readout.createSpan({ cls: "goodobsidian-width-unit", text: "mm" });
     this.keyboard.watch(field, widthRow);
     /** The slider's stops for the type in hand: the pens go finer than the highlighter. */
@@ -167,11 +172,11 @@ export class SavedPenModal extends Modal {
     const hint = body.createDiv({ cls: "goodobsidian-pen-modal-hint" });
 
     const actions = body.createDiv({ cls: "goodobsidian-ask-actions" });
-    const cancel = actions.createEl("button", { text: "Cancel" });
+    const cancel = actions.createEl("button", { text: t("common.cancel") });
     cancel.addEventListener("click", () => this.close());
     const save = actions.createEl("button", {
       cls: "mod-cta",
-      text: index === null ? "Add" : "Save",
+      text: index === null ? t("toolbar.savedPen.add") : t("common.save"),
     });
     save.addEventListener("click", () => {
       if (save.disabled) return;
@@ -217,7 +222,7 @@ export class SavedPenModal extends Modal {
       }
       field.removeClass("is-invalid");
       const same = duplicateIndex(this.options.pens, pen, index ?? -1);
-      hint.setText(same >= 0 ? `Same as pen ${same + 1}` : "");
+      hint.setText(same >= 0 ? t("toolbar.savedPen.sameAs", { number: same + 1 }) : "");
       hint.toggleClass("is-hidden", same < 0);
       save.disabled = same >= 0;
     };

@@ -13,6 +13,7 @@
 
 import { setIcon } from "obsidian";
 import type { ScrollDirection } from "../model/document";
+import { t } from "../i18n/translate";
 
 /** Ring diameter, CSS px. */
 const RING = 44;
@@ -78,7 +79,7 @@ export class PullAddIndicator {
     if (armed !== this.armed) {
       this.armed = armed;
       this.el.toggleClass("is-armed", armed);
-      this.labelEl.setText(armed ? "Release to add page" : "Pull to add page");
+      this.labelEl.setText(armed ? t("surface.pullAdd.release") : t("surface.pullAdd.pull"));
     }
     this.progressEl.setAttribute("stroke-dashoffset", `${CIRCUMFERENCE * (1 - progress)}`);
     // In the strip of desk the stretch has revealed: the ring a quarter of

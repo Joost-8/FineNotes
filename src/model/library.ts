@@ -8,6 +8,7 @@
  * No DOM, no Obsidian.
  */
 
+import { localeTag, t, tn } from "../i18n/translate";
 import { type PageGeometry, type PdfBackdrop, isCoverRuling } from "./document";
 import { inkFileSuffix, stripInkSuffix } from "./new-notebook";
 import { parseInkFile } from "./serialize";
@@ -249,20 +250,30 @@ export function readProgress(entry: LibraryEntry, leftAt: number | undefined): P
 }
 
 const DAY = 86_400_000;
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** "2 h ago", "Yesterday", "Mon" within the week, then "Oct 30" (and the year once it is not this one). */
+/**
+ * "2 h ago", "Yesterday", "Mon" within the week, then "Oct 30" (and the year
+ * once it is not this one), in the interface language.
+ */
 export function whenText(edited: number, now: number): string {
   const ago = now - edited;
-  if (ago < 60_000) return "Just now";
-  if (ago < 3_600_000) return `${Math.floor(ago / 60_000)} min ago`;
+  if (ago < 60_000) return t("notebooks.home.when.justNow");
+  if (ago < 3_600_000) return tn("notebooks.home.when.minutes", Math.floor(ago / 60_000));
   const then = new Date(edited);
   const today = new Date(now);
   const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  if (edited >= midnight) return `${Math.floor(ago / 3_600_000)} h ago`;
-  if (edited >= midnight - DAY) return "Yesterday";
-  if (edited >= midnight - 6 * DAY) return WEEKDAYS[then.getDay()] ?? "";
-  const day = `${MONTHS[then.getMonth()]} ${then.getDate()}`;
-  return then.getFullYear() === today.getFullYear() ? day : `${day}, ${then.getFullYear()}`;
+  if (edited >= midnight) return tn("notebooks.home.when.hours", Math.floor(ago / 3_600_000));
+  if (edited >= midnight - DAY) return t("notebooks.home.when.yesterday");
+  if (edited >= midnight - 6 * DAY) return dateText(then, { weekday: "short" });
+  const year = then.getFullYear() === today.getFullYear() ? {} : { year: "numeric" as const };
+  return dateText(then, { month: "short", day: "numeric", ...year });
+}
+
+/** A date as the interface language writes it; US English when `Intl` does not know the language. */
+function dateText(date: Date, options: Intl.DateTimeFormatOptions): string {
+  try {
+    return new Intl.DateTimeFormat(localeTag(), options).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-US", options).format(date);
+  }
 }

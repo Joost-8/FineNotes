@@ -13,15 +13,31 @@
  *   black the way a global threshold would take it.
  */
 
+import { t } from "../i18n/translate";
 import { type RgbaImage, lumaOf } from "./scan-raster";
 
 export type ScanFilter = "colour" | "greyscale" | "bw";
 
 /** The filters in the order the sheet offers them, with their labels. */
 export const SCAN_FILTERS: ReadonlyArray<{ id: ScanFilter; label: string }> = [
-  { id: "colour", label: "Colour" },
-  { id: "greyscale", label: "Greyscale" },
-  { id: "bw", label: "Black & white" },
+  {
+    id: "colour",
+    get label() {
+      return t("notebooks.scanFilter.colour");
+    },
+  },
+  {
+    id: "greyscale",
+    get label() {
+      return t("notebooks.scanFilter.greyscale");
+    },
+  },
+  {
+    id: "bw",
+    get label() {
+      return t("notebooks.scanFilter.bw");
+    },
+  },
 ];
 
 /** Whether `value` names a filter (for a remembered choice read back from storage). */

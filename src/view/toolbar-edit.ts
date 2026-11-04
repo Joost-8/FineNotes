@@ -22,6 +22,7 @@
  */
 
 import { setIcon } from "obsidian";
+import { type TextKey, t } from "../i18n/translate";
 import { type BarDock, isBarUpright } from "./bar-dock-model";
 import {
   BAR_ITEM_ICONS,
@@ -69,12 +70,21 @@ export interface ToolbarEditorHost {
 }
 
 /** The bar's edges, each its Lucide panel icon, as the ⋯ sheet offered them. */
-const BAR_DOCKS: ReadonlyArray<{ dock: BarDock; label: string }> = [
-  { dock: "top", label: "Toolbar at the top" },
-  { dock: "bottom", label: "Toolbar at the bottom" },
-  { dock: "left", label: "Toolbar on the left" },
-  { dock: "right", label: "Toolbar on the right" },
-];
+function barDocks(): ReadonlyArray<{ dock: BarDock; label: string }> {
+  return [
+    { dock: "top", label: t("view.morePanel.dockTop") },
+    { dock: "bottom", label: t("view.morePanel.dockBottom") },
+    { dock: "left", label: t("view.morePanel.dockLeft") },
+    { dock: "right", label: t("view.morePanel.dockRight") },
+  ];
+}
+
+/** A button's way to a zone, named whole so each language can word it. */
+const TO_ZONE: Record<Zone, { across: TextKey; upright: TextKey }> = {
+  start: { across: "toolbar.edit.toStart", upright: "toolbar.edit.toTop" },
+  middle: { across: "toolbar.edit.toMiddle", upright: "toolbar.edit.toMiddle" },
+  end: { across: "toolbar.edit.toEnd", upright: "toolbar.edit.toBottom" },
+};
 
 /** How far a press travels before it is a drag, CSS px. */
 const DRAG_SLOP = 6;
@@ -118,7 +128,7 @@ export class ToolbarEditor {
     this.scrim = h.host.createDiv({ cls: "goodobsidian-edit-scrim" });
     this.tray = h.host.createDiv({ cls: "goodobsidian-edit-tray" });
     this.tray.setAttribute("role", "toolbar");
-    this.tray.setAttribute("aria-label", "Customize toolbar");
+    this.tray.setAttribute("aria-label", t("toolbar.customize.title"));
 
     const swallow = (event: Event): void => {
       event.preventDefault();
@@ -221,8 +231,8 @@ export class ToolbarEditor {
     if (setDock) {
       const places = head.createDiv({ cls: "goodobsidian-edit-docks" });
       places.setAttribute("role", "radiogroup");
-      places.setAttribute("aria-label", "Toolbar");
-      for (const { dock: d, label } of BAR_DOCKS) {
+      places.setAttribute("aria-label", t("view.morePanel.toolbar"));
+      for (const { dock: d, label } of barDocks()) {
         const button = places.createEl("button", { cls: "goodobsidian-edit-dock clickable-icon" });
         setIcon(button, `panel-${d}`);
         button.toggleClass("is-active", d === dock);
@@ -237,7 +247,7 @@ export class ToolbarEditor {
       const on = this.h.pillRow();
       const row = head.createEl("button", { cls: "goodobsidian-edit-switch clickable-icon" });
       row.createSpan({ cls: "goodobsidian-edit-toggle" }).toggleClass("is-on", on);
-      row.createSpan({ text: "Dock tool options" });
+      row.createSpan({ text: t("toolbar.edit.dockOptions") });
       row.setAttribute("role", "switch");
       row.setAttribute("aria-checked", String(on));
       row.addEventListener("click", () => setRow(!on));
@@ -245,23 +255,23 @@ export class ToolbarEditor {
     head.createDiv({ cls: "goodobsidian-edit-spacer" });
     const reset = head.createEl("button", {
       cls: "goodobsidian-edit-reset clickable-icon",
-      text: "Reset",
+      text: t("toolbar.edit.reset"),
     });
     reset.disabled = sameLayout(this.h.layout(), defaultLayout());
     reset.addEventListener("click", () => this.h.apply(defaultLayout()));
     const done = head.createEl("button", { cls: "goodobsidian-edit-done clickable-icon" });
     setIcon(done, "check");
-    done.setAttribute("aria-label", "Done");
+    done.setAttribute("aria-label", t("common.done"));
     done.addEventListener("click", () => this.finish());
 
     const layout = this.h.layout();
     this.menuShelf = this.shelf(
-      "More tools",
+      t("toolbar.moreTools"),
       "menu",
       menuItems(layout).filter((id) => this.h.has(id)),
     );
     this.offShelf = this.shelf(
-      "Hidden",
+      t("toolbar.customize.hidden"),
       "off",
       offItems(layout).filter((id) => this.h.has(id)),
     );
@@ -480,31 +490,31 @@ export class ToolbarEditor {
     if (place !== "menu" && place !== "off") {
       row(
         upright ? "arrow-up" : "arrow-left",
-        upright ? "Move up" : "Move left",
+        upright ? t("toolbar.edit.moveUp") : t("toolbar.edit.moveLeft"),
         stepItem(layout, id, -1),
       );
       row(
         upright ? "arrow-down" : "arrow-right",
-        upright ? "Move down" : "Move right",
+        upright ? t("toolbar.edit.moveDown") : t("toolbar.edit.moveRight"),
         stepItem(layout, id, 1),
       );
     }
     for (const zone of ZONES) {
       if (zone === place) continue;
-      const name = ZONE_LABELS[zone][upright ? "upright" : "across"].toLowerCase();
       row(
         zone === "middle"
           ? "panel-top"
           : zone === "start"
             ? "align-start-vertical"
             : "align-end-vertical",
-        `To the ${name}`,
+        t(TO_ZONE[zone][upright ? "upright" : "across"]),
         moveTo(layout, id, { zone, index: layout[zone].length }),
       );
     }
     if (!isPinned(id)) {
-      if (place !== "menu") row("toolbox", "To More tools", moveTo(layout, id, "menu"));
-      if (place !== "off") row("eye-off", "Hide", moveTo(layout, id, "off"));
+      if (place !== "menu")
+        row("toolbox", t("toolbar.edit.toMoreTools"), moveTo(layout, id, "menu"));
+      if (place !== "off") row("eye-off", t("toolbar.edit.hide"), moveTo(layout, id, "off"));
     }
     const host = this.h.host.getBoundingClientRect();
     const at = anchor.getBoundingClientRect();
@@ -568,7 +578,9 @@ export class ToolbarEditor {
   /** A button's name in edit mode: what pressing it does now. */
   private ariaLabel(id: BarItemId): string {
     const name = BAR_ITEM_LABELS[id];
-    return isPinned(id) ? `${name}, stays on the toolbar` : `Move ${name}`;
+    return isPinned(id)
+      ? t("toolbar.edit.pinned", { name })
+      : t("toolbar.customize.move", { name });
   }
 
   private listen(

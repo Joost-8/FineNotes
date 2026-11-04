@@ -82,7 +82,6 @@ import {
   ImportTally,
   median,
   packageRoot,
-  plural,
   pressureForWidth,
   round2,
   sniffFile,
@@ -90,6 +89,7 @@ import {
   type ImportResult,
 } from "./import-types";
 import type { PdfPageSize } from "./notability";
+import { t, tn } from "../i18n/translate";
 
 export class NtbError extends Error {}
 
@@ -948,11 +948,11 @@ function defaultStyle(): Style {
 /** Reads a note's `noteBundle` and its assets. */
 function parseNote(files: ReadonlyMap<string, Uint8Array>, root: string): Note {
   const bundle = files.get(`${root}noteBundle`);
-  if (!bundle) throw new NtbError("the note has no noteBundle");
+  if (!bundle) throw new NtbError(t("notebooks.import.ntb.noBundle"));
   const flat = new FlatBuffer(bundle);
   const top = flat.rootTable();
   const events = top === null ? null : flat.tableVector(top, 6);
-  if (events === null) throw new NtbError("the note's event list could not be read");
+  if (events === null) throw new NtbError(t("notebooks.import.ntb.noEvents"));
 
   const assets = new Map<string, string>();
   for (const path of files.keys()) {
@@ -2140,7 +2140,7 @@ export function readNotabilityNtb(
   pdfSizes: NtbPdfSizes = new Map(),
 ): ImportResult {
   const root = ntbRoot(files);
-  if (root === null) throw new NtbError("not a Notability .ntb note");
+  if (root === null) throw new NtbError(t("notebooks.import.ntb.notNote"));
   const note = parseNote(files, root);
   const name = fileTitle || "Imported note";
   const warnings: string[] = [];
@@ -2216,16 +2216,14 @@ export function readNotabilityNtb(
     pdfAttachments.set(path, bytes && bytes.length > 0 ? attach(bytes, "PDF") : null);
   }
   if ([...pdfAttachments.values()].some((path) => path === null)) {
-    warnings.push("A PDF the note uses is missing from the file; its pages are blank.");
+    warnings.push(t("notebooks.import.notability.missingPdf"));
   }
   const singlePdf = !note.pageSet.runs && pdfPaths.length === 1 ? pdfPaths[0] : null;
   if (
     pdfPaths.some((path) => !pdfSizes.has(path)) &&
     note.pageSet.pages.every((page) => !page.size)
   ) {
-    warnings.push(
-      "The PDF's page sizes could not be read, so its pages are taken as the note's paper size.",
-    );
+    warnings.push(t("notebooks.import.ntb.pageSizes"));
   }
   /** What shows on page `i`: the note's page, or the one PDF's page `i` in a note with no runs. */
   const pageAt = (i: number): NotePage | null => {
@@ -2469,33 +2467,16 @@ export function readNotabilityNtb(
   // --- What came over another way, or not at all --------------------------------------
   if (note.unplaced > 0) {
     warnings.push(
-      `About ${note.unplaced.toLocaleString("en-US")} characters of typed text could not be placed ` +
-        "(their text box is not in the file); they were left out.",
+      t("notebooks.import.ntb.unplaced", { count: note.unplaced.toLocaleString("en-US") }),
     );
   }
   const lines = [
-    tally.line("missing", (n) => `${plural(n, "picture")} could not be found in the file.`),
-    tally.line(
-      "mixed",
-      (n) =>
-        `${plural(n, "text box has", "text boxes have")} words in more than one colour; ` +
-        "a text box here has one, so the first was kept.",
-    ),
-    tally.line(
-      "rotatedText",
-      (n) => `${plural(n, "rotated text box", "rotated text boxes")} came over upright.`,
-    ),
-    tally.line("dashed", (n) => `${plural(n, "dashed line")} came over solid.`),
-    tally.line(
-      "offPage",
-      (n) =>
-        `${plural(n, "item")} placed past the note's last page ${n === 1 ? "was" : "were"} left out.`,
-    ),
-    tally.line(
-      "stickyRuled",
-      (n) =>
-        `${plural(n, "sticky note's ruling", "sticky notes' ruling")} could not be brought over.`,
-    ),
+    tally.line("missing", (n) => tn("notebooks.import.notability.missing", n)),
+    tally.line("mixed", (n) => tn("notebooks.import.notability.mixed", n)),
+    tally.line("rotatedText", (n) => tn("notebooks.import.ntb.rotatedText", n)),
+    tally.line("dashed", (n) => tn("notebooks.import.ntb.dashed", n)),
+    tally.line("offPage", (n) => tn("notebooks.import.ntb.offPage", n)),
+    tally.line("stickyRuled", (n) => tn("notebooks.import.ntb.stickyRuled", n)),
   ];
   for (const line of lines) if (line) warnings.push(line);
 
@@ -2505,7 +2486,8 @@ export function readNotabilityNtb(
     note.stickies.length +
     boxTexts.length +
     blocks.length;
-  if (drawn === 0 && pdfPaths.length === 0) warnings.push("No handwriting was found in this note.");
+  if (drawn === 0 && pdfPaths.length === 0)
+    warnings.push(t("notebooks.import.notability.noHandwriting"));
 
   const doc: InkDocument = {
     version: SCHEMA_VERSION,

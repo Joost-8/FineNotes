@@ -57,6 +57,7 @@ import { RenameModal } from "./rename-modal";
 import { pickImageFile } from "./image-import";
 import { VaultPdfSuggestModal } from "./pdf-import-modal";
 import { INBOX_FOLDER } from "../model/inbox";
+import { type TextKey, t, tn } from "../i18n/translate";
 import { inkFileSuffix } from "../model/new-notebook";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
@@ -116,11 +117,12 @@ interface FolderTile {
   count: number;
 }
 
-const SORTS: ReadonlyArray<{ by: LibrarySort; label: string }> = [
-  { by: "created", label: "Date created" },
-  { by: "edited", label: "Last edited" },
-  { by: "name", label: "Name" },
-  { by: "pages", label: "Pages" },
+/** The orders on offer, `label` their text key. */
+const SORTS: ReadonlyArray<{ by: LibrarySort; label: TextKey }> = [
+  { by: "created", label: "notebooks.home.sortCreated" },
+  { by: "edited", label: "notebooks.home.sortEdited" },
+  { by: "name", label: "notebooks.home.sortName" },
+  { by: "pages", label: "notebooks.home.sortPages" },
 ];
 
 /** How many notebooks the Continue strip shows. */
@@ -181,7 +183,7 @@ export class LibraryView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Home";
+    return t("notebooks.home.title");
   }
 
   override getState(): Record<string, unknown> {
@@ -213,7 +215,7 @@ export class LibraryView extends ItemView {
     const head = root.createDiv({ cls: "goodobsidian-library-head" });
     this.upEl = head.createEl("button", {
       cls: "clickable-icon goodobsidian-library-up",
-      attr: { "aria-label": "Up one folder" },
+      attr: { "aria-label": t("notebooks.home.up") },
     });
     setIcon(this.upEl, "arrow-left");
     this.makeDropTarget(this.upEl, () => this.folder.split("/").slice(0, -1).join("/"));
@@ -225,7 +227,11 @@ export class LibraryView extends ItemView {
     const search = head.createDiv({ cls: "goodobsidian-library-search" });
     setIcon(search.createSpan(), "search");
     const input = search.createEl("input", {
-      attr: { type: "search", placeholder: "Search", "aria-label": "Search notebooks" },
+      attr: {
+        type: "search",
+        placeholder: t("notebooks.home.search"),
+        "aria-label": t("notebooks.home.searchLabel"),
+      },
     });
     input.addEventListener("input", () => {
       this.query = input.value;
@@ -234,7 +240,7 @@ export class LibraryView extends ItemView {
 
     const sort = head.createEl("button", {
       cls: "clickable-icon",
-      attr: { "aria-label": "Sort" },
+      attr: { "aria-label": t("notebooks.home.sort") },
     });
     setIcon(sort, "arrow-up-down");
     sort.addEventListener("click", (event) => this.openSortMenu(event));
@@ -244,7 +250,7 @@ export class LibraryView extends ItemView {
       attr: { type: "button" },
     });
     setIcon(this.updateEl.createSpan({ cls: "goodobsidian-library-new-icon" }), "arrow-up-circle");
-    this.updateEl.createSpan({ text: "Update" });
+    this.updateEl.createSpan({ text: t("settings.update.button") });
     this.updateEl.addEventListener("click", () => this.host.openUpdate());
 
     const add = head.createEl("button", {
@@ -252,12 +258,12 @@ export class LibraryView extends ItemView {
       attr: { type: "button", "aria-haspopup": "menu" },
     });
     setIcon(add.createSpan({ cls: "goodobsidian-library-new-icon" }), "plus");
-    add.createSpan({ text: "New" });
+    add.createSpan({ text: t("notebooks.home.new") });
     add.addEventListener("click", (event) => this.openNewMenu(event));
 
     const gear = head.createEl("button", {
       cls: "clickable-icon",
-      attr: { "aria-label": "FineNotes settings" },
+      attr: { "aria-label": t("notebooks.home.settings") },
     });
     setIcon(gear, "settings");
     gear.addEventListener("click", () => this.host.openSettings());
@@ -456,7 +462,7 @@ export class LibraryView extends ItemView {
     const searching = this.query.trim() !== "";
     this.titleEl.setText(
       this.folder === ""
-        ? "Notebooks"
+        ? t("notebooks.home.heading")
         : crumbs(this.folder)
             .map((c) => c.name)
             .join(" / "),
@@ -464,21 +470,28 @@ export class LibraryView extends ItemView {
     this.upEl.toggleClass("is-hidden", this.folder === "");
     const update = this.host.update();
     this.updateEl.toggleClass("is-hidden", update === null);
-    if (update !== null) this.updateEl.setAttribute("aria-label", `FineNotes ${update} is out`);
+    if (update !== null)
+      this.updateEl.setAttribute("aria-label", t("settings.update.out", { version: update }));
     this.bodyEl.empty();
 
     const all = this.entries();
     if (all.length === 0) {
       const empty = this.bodyEl.createDiv({ cls: "goodobsidian-library-empty" });
-      empty.createDiv({ text: "No notebooks yet." });
-      const button = empty.createEl("button", { text: "New notebook", cls: "mod-cta" });
+      empty.createDiv({ text: t("notebooks.home.empty") });
+      const button = empty.createEl("button", {
+        text: t("notebooks.menu.newNotebook"),
+        cls: "mod-cta",
+      });
       button.addEventListener("click", () => this.host.newNotebook(this.folder));
       return;
     }
 
     if (searching) {
       const found = sortEntries(searchEntries(all, this.query), this.sort, this.reverse);
-      this.grid(found, found.length === 0 ? "No notebook matches." : "Results");
+      this.grid(
+        found,
+        found.length === 0 ? t("notebooks.home.noMatch") : t("notebooks.home.results"),
+      );
       return;
     }
 
@@ -496,7 +509,7 @@ export class LibraryView extends ItemView {
         .map((path) => this.folderTile(all, path))
         .filter((f): f is FolderTile => f !== null);
       if (books.length + folders.length > 0) {
-        this.label("Favorites");
+        this.label(t("notebooks.home.favorites"));
         const row = this.bodyEl.createDiv({ cls: this.gridClass() });
         for (const folder of folders) {
           this.folderCard(row, folder);
@@ -513,7 +526,7 @@ export class LibraryView extends ItemView {
         (path) => left[path]?.at ?? 0,
       );
       if (recent.length > 0) {
-        this.label("Continue");
+        this.label(t("notebooks.home.continue"));
         const row = this.bodyEl.createDiv({ cls: "goodobsidian-library-recent" });
         for (const entry of recent) {
           this.card(row, entry, left[entry.path]?.index);
@@ -522,7 +535,7 @@ export class LibraryView extends ItemView {
     }
     const folders = [...here.folders, ...this.emptyFolders(here.folders)];
     if (folders.length > 0) {
-      this.label("Folders");
+      this.label(t("notebooks.home.folders"));
       const row = this.bodyEl.createDiv({ cls: this.gridClass() });
       for (const folder of starredFirst(folders, stars, (f) => f.path))
         this.folderCard(row, folder);
@@ -533,7 +546,9 @@ export class LibraryView extends ItemView {
     if (rest.length > 0) {
       this.grid(
         sortEntries(rest, this.sort, this.reverse),
-        atTop ? "All notebooks" : (SORTS.find((s) => s.by === this.sort)?.label ?? ""),
+        atTop
+          ? t("notebooks.home.all")
+          : t(SORTS.find((s) => s.by === this.sort)?.label ?? "notebooks.home.sortEdited"),
       );
     }
   }
@@ -585,7 +600,9 @@ export class LibraryView extends ItemView {
       cls: "clickable-icon goodobsidian-library-star",
       attr: {
         type: "button",
-        "aria-label": on ? `Remove ${title} from favorites` : `Add ${title} to favorites`,
+        "aria-label": on
+          ? t("notebooks.home.starRemove", { name: title })
+          : t("notebooks.home.starAdd", { name: title }),
         "aria-pressed": String(on),
       },
     });
@@ -621,8 +638,8 @@ export class LibraryView extends ItemView {
       cls: "goodobsidian-library-when",
       text:
         folder.count === 0
-          ? "Empty"
-          : `${folder.count} ${folder.count === 1 ? "notebook" : "notebooks"}`,
+          ? t("notebooks.home.folderEmpty")
+          : tn("notebooks.home.folderCount", folder.count),
     });
     card.toggleClass("is-selected", this.selected.has(folder.path));
     const open = (): void =>
@@ -652,7 +669,11 @@ export class LibraryView extends ItemView {
     row.createDiv({ cls: "goodobsidian-library-name", text: name });
     const caret = row.createEl("button", {
       cls: "clickable-icon goodobsidian-library-caret",
-      attr: { type: "button", "aria-label": `Options for ${name}`, "aria-haspopup": "menu" },
+      attr: {
+        type: "button",
+        "aria-label": t("notebooks.home.options", { name }),
+        "aria-haspopup": "menu",
+      },
     });
     setIcon(caret, "chevron-down");
     caret.addEventListener("click", (event) => {
@@ -740,7 +761,7 @@ export class LibraryView extends ItemView {
     if (progress) {
       caption.createDiv({
         cls: "goodobsidian-library-when",
-        text: `Page ${progress.page} of ${progress.of} · ${when}`,
+        text: `${t("notebooks.home.pageOf", { page: progress.page, total: progress.of })} · ${when}`,
       });
       const track = caption.createDiv({
         cls: "goodobsidian-library-progress",
@@ -756,7 +777,7 @@ export class LibraryView extends ItemView {
         cls: "goodobsidian-library-when",
         text: [
           entry.folder !== "" && this.query.trim() !== "" ? entry.folder : "",
-          entry.pages > 0 ? `${entry.pages} ${entry.pages === 1 ? "page" : "pages"}` : "",
+          entry.pages > 0 ? tn("notebooks.home.pageCount", entry.pages) : "",
           when,
         ]
           .filter(Boolean)
@@ -871,14 +892,14 @@ export class LibraryView extends ItemView {
     const menu = this.newMenu();
     menu.addItem((item) =>
       item
-        .setTitle(this.selecting ? "Stop selecting" : "Select items")
+        .setTitle(t(this.selecting ? "notebooks.home.stopSelecting" : "notebooks.home.selectItems"))
         .setIcon("circle-check")
         .onClick(() => this.setSelecting(!this.selecting)),
     );
     menu.addSeparator();
     for (const [layout, label, icon] of [
-      ["grid", "Grid", "layout-grid"],
-      ["list", "List", "list"],
+      ["grid", t("notebooks.home.grid"), "layout-grid"],
+      ["list", t("notebooks.home.list"), "list"],
     ] as const) {
       menu.addItem((item) =>
         item
@@ -896,7 +917,7 @@ export class LibraryView extends ItemView {
     for (const option of SORTS) {
       const current = this.sort === option.by;
       menu.addItem((item) => {
-        item.setTitle(option.label).setChecked(current);
+        item.setTitle(t(option.label)).setChecked(current);
         if (current) item.setIcon(this.reverse ? "chevron-up" : "chevron-down");
         item.onClick(() => {
           this.reverse = current ? !this.reverse : false;
@@ -1009,7 +1030,7 @@ export class LibraryView extends ItemView {
     const count = this.selected.size;
     bar.createSpan({
       cls: "goodobsidian-library-bar-count",
-      text: count === 0 ? "Select items" : `${count} selected`,
+      text: count === 0 ? t("notebooks.home.selectItems") : tn("notebooks.home.selected", count),
     });
     const act = (label: string, icon: string, run: () => void, danger = false): void => {
       const button = bar.createEl("button", {
@@ -1021,12 +1042,12 @@ export class LibraryView extends ItemView {
       button.disabled = count === 0;
       button.addEventListener("click", run);
     };
-    act("Star", "star", () => this.starSelected());
-    act("Move", "folder-input", () => this.moveSelected());
-    act("Delete", "trash-2", () => this.deleteSelected(), true);
+    act(t("notebooks.home.star"), "star", () => this.starSelected());
+    act(t("notebooks.home.move"), "folder-input", () => this.moveSelected());
+    act(t("common.delete"), "trash-2", () => this.deleteSelected(), true);
     const done = bar.createEl("button", {
       cls: "mod-cta goodobsidian-library-bar-done",
-      text: "Done",
+      text: t("common.done"),
     });
     done.addEventListener("click", () => this.setSelecting(false));
   }
@@ -1056,7 +1077,7 @@ export class LibraryView extends ItemView {
           for (const path of paths) await this.actions.move(path, dir);
         })();
       },
-      `Move ${this.selected.size} items to…`,
+      tn("notebooks.home.moveItems", this.selected.size),
       this.folder,
     ).open();
   }
@@ -1077,25 +1098,25 @@ export class LibraryView extends ItemView {
     const menu = this.newMenu();
     menu.addItem((item) =>
       item
-        .setTitle("New notebook")
+        .setTitle(t("notebooks.menu.newNotebook"))
         .setIcon("notebook-pen")
         .onClick(() => this.host.newNotebook(this.folder)),
     );
     menu.addItem((item) =>
       item
-        .setTitle("New board")
+        .setTitle(t("notebooks.newNotebook.board"))
         .setIcon("infinity")
         .onClick(() => this.host.newBoard(this.folder)),
     );
     menu.addItem((item) =>
       item
-        .setTitle("Import PDF…")
+        .setTitle(t("notebooks.command.importPdf"))
         .setIcon("file-up")
         .onClick(() => this.choosePdf(event)),
     );
     menu.addItem((item) =>
       item
-        .setTitle("Add image…")
+        .setTitle(t("notebooks.home.addImage"))
         .setIcon("image-plus")
         .onClick(() => {
           void pickImageFile(this.contentEl, false).then((file) => {
@@ -1105,13 +1126,13 @@ export class LibraryView extends ItemView {
     );
     menu.addItem((item) =>
       item
-        .setTitle("Import from another app…")
+        .setTitle(t("notebooks.newNotebook.importApp"))
         .setIcon(ICON_IMPORT_NOTEBOOK)
         .onClick(() => this.host.importFromApp(this.folder)),
     );
     menu.addItem((item) =>
       item
-        .setTitle("New folder")
+        .setTitle(t("notebooks.home.newFolder"))
         .setIcon("folder-plus")
         .onClick(() => this.newFolder()),
     );
@@ -1123,7 +1144,7 @@ export class LibraryView extends ItemView {
     const menu = this.newMenu();
     menu.addItem((item) =>
       item
-        .setTitle("From files")
+        .setTitle(t("notebooks.newNotebook.fromFiles"))
         .setIcon("file-text")
         .onClick(() => {
           void pickImageFile(this.contentEl, false, "application/pdf,.pdf").then((file) => {
@@ -1133,7 +1154,7 @@ export class LibraryView extends ItemView {
     );
     menu.addItem((item) =>
       item
-        .setTitle("From vault")
+        .setTitle(t("notebooks.newNotebook.fromVault"))
         .setIcon("folder-open")
         .onClick(() => {
           new VaultPdfSuggestModal(this.app, (file) =>
@@ -1148,13 +1169,13 @@ export class LibraryView extends ItemView {
   private newFolder(): void {
     new RenameModal(
       this.app,
-      "New folder",
+      t("notebooks.home.newFolder"),
       (typed) => {
         const name = cleanName(typed);
         if (name === "") return;
         const path = this.folder === "" ? name : `${this.folder}/${name}`;
         if (this.app.vault.getAbstractFileByPath(path)) {
-          new Notice(`"${name}" already exists here.`);
+          new Notice(t("notebooks.home.existsHere", { name }));
           return;
         }
         void this.app.vault.createFolder(path).then(() => {
@@ -1168,8 +1189,8 @@ export class LibraryView extends ItemView {
           this.refreshSoon();
         });
       },
-      "New folder",
-      "Create",
+      t("notebooks.home.newFolder"),
+      t("notebooks.newNotebook.create"),
     ).open();
   }
 
@@ -1190,7 +1211,7 @@ export class LibraryView extends ItemView {
     const menu = this.newMenu();
     menu.addItem((item) =>
       item
-        .setTitle("Rename")
+        .setTitle(t("common.rename"))
         .setIcon("pencil")
         .onClick(() =>
           this.rename(file, entry.title, inkFileSuffix(file.name) ?? `.${file.extension}`),
@@ -1198,32 +1219,32 @@ export class LibraryView extends ItemView {
     );
     menu.addItem((item) =>
       item
-        .setTitle("Duplicate")
+        .setTitle(t("common.duplicate"))
         .setIcon("copy-plus")
         .onClick(() => void this.actions.duplicate(file.path)),
     );
     menu.addItem((item) =>
       item
-        .setTitle("Export as PDF")
+        .setTitle(t("notebooks.home.exportPdf"))
         .setIcon("file-up")
         .onClick(() => void this.host.exportPdf(file)),
     );
     menu.addItem((item) =>
       item
-        .setTitle("Move")
+        .setTitle(t("notebooks.home.move"))
         .setIcon("folder-input")
         .onClick(() => this.move(file)),
     );
     menu.addSeparator();
     menu.addItem((item) =>
       item
-        .setTitle("Open in new tab")
+        .setTitle(t("notebooks.home.openInTab"))
         .setIcon("file-plus")
         .onClick(() => void this.app.workspace.getLeaf("tab").openFile(file)),
     );
     menu.addItem((item) =>
       item
-        .setTitle("Delete")
+        .setTitle(t("common.delete"))
         .setIcon("trash-2")
         .onClick(() => {
           void this.actions.trash([{ path: file.path, folder: false }]).then((gone) => {
@@ -1240,33 +1261,33 @@ export class LibraryView extends ItemView {
     const menu = this.newMenu();
     menu.addItem((item) =>
       item
-        .setTitle("Customize color…")
+        .setTitle(t("notebooks.home.customizeColor"))
         .setIcon("palette")
         .onClick(() => this.chooseColor(event, folder.path)),
     );
     menu.addItem((item) =>
       item
-        .setTitle("Set icon…")
+        .setTitle(t("notebooks.home.setIcon"))
         .setIcon("smile")
         .onClick(() => this.chooseIcon(event, folder.path)),
     );
     menu.addSeparator();
     menu.addItem((item) =>
       item
-        .setTitle("Rename")
+        .setTitle(t("common.rename"))
         .setIcon("pencil")
         .onClick(() => this.rename(target, folder.name, "")),
     );
     menu.addItem((item) =>
       item
-        .setTitle("Move")
+        .setTitle(t("notebooks.home.move"))
         .setIcon("folder-input")
         .onClick(() => this.move(target)),
     );
     menu.addSeparator();
     menu.addItem((item) =>
       item
-        .setTitle("Delete")
+        .setTitle(t("common.delete"))
         .setIcon("trash-2")
         .onClick(() => {
           // Its notebooks go; the folder too only when nothing of the user's is left in it.
@@ -1285,7 +1306,7 @@ export class LibraryView extends ItemView {
     for (const option of FOLDER_COLORS) {
       menu.addItem((item) => {
         item
-          .setTitle(option.name)
+          .setTitle(t(option.name))
           .setChecked(option.color === now)
           .onClick(() => this.styleFolder(path, { color: option.color }));
         const swatch = createSpan({ cls: "goodobsidian-library-swatch" });
@@ -1302,7 +1323,7 @@ export class LibraryView extends ItemView {
     for (const option of FOLDER_ICONS) {
       menu.addItem((item) =>
         item
-          .setTitle(option.name)
+          .setTitle(t(option.name))
           .setIcon(option.id)
           .setChecked(option.id === now)
           .onClick(() => this.styleFolder(path, { icon: option.id })),
@@ -1325,7 +1346,7 @@ export class LibraryView extends ItemView {
       const parent = file.parent?.path ?? "";
       const path = [parent === "/" ? "" : parent, `${name}${suffix}`].filter(Boolean).join("/");
       if (this.app.vault.getAbstractFileByPath(path)) {
-        new Notice(`"${name}" already exists here.`);
+        new Notice(t("notebooks.home.existsHere", { name }));
         return;
       }
       void this.app.fileManager.renameFile(file, path);
@@ -1341,7 +1362,7 @@ export class LibraryView extends ItemView {
     new FolderSuggestModal(
       this.app,
       (dest) => void this.actions.move(file.path, dest === "/" ? "" : dest),
-      `Move ${file.name} to…`,
+      t("notebooks.home.moveItem", { name: file.name }),
       folderOf(this.actions.unit(file.path)),
     ).open();
   }

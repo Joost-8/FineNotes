@@ -39,6 +39,7 @@ import { PAGE_SIZES } from "../model/templates";
 import { pageToMm } from "../model/units";
 import { renderColorMixer } from "./color-picker";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { t } from "../i18n/translate";
 
 export interface PaperDesignerOptions {
   /** The design to start from: a new one, or the one being edited. */
@@ -53,36 +54,134 @@ export interface PaperDesignerOptions {
 
 /** Margin line colours: the school book's soft red first. */
 const MARGIN_LINE_SWATCHES: ReadonlyArray<{ label: string; color: string }> = [
-  { label: "Soft red", color: DEFAULT_MARGIN_LINE_COLOR },
-  { label: "Red", color: "#d9534f" },
-  { label: "Blue", color: "#8fb0dc" },
-  { label: "Grey", color: "#b8bcc4" },
+  {
+    get label() {
+      return t("notebooks.designer.line.softRed");
+    },
+    color: DEFAULT_MARGIN_LINE_COLOR,
+  },
+  {
+    get label() {
+      return t("notebooks.designer.line.red");
+    },
+    color: "#d9534f",
+  },
+  {
+    get label() {
+      return t("notebooks.designer.line.blue");
+    },
+    color: "#8fb0dc",
+  },
+  {
+    get label() {
+      return t("notebooks.designer.line.grey");
+    },
+    color: "#b8bcc4",
+  },
 ];
 
 const RULING_CHOICES: ReadonlyArray<{ id: DesignRuling; icon: string; label: string }> = [
-  { id: "none", icon: "square", label: "No lines" },
-  { id: "lines", icon: "align-justify", label: "Lines" },
-  { id: "squares", icon: "grid", label: "Squares" },
-  { id: "dots", icon: "grip", label: "Dots" },
+  {
+    id: "none",
+    icon: "square",
+    get label() {
+      return t("notebooks.designer.ruling.none");
+    },
+  },
+  {
+    id: "lines",
+    icon: "align-justify",
+    get label() {
+      return t("notebooks.designer.ruling.lines");
+    },
+  },
+  {
+    id: "squares",
+    icon: "grid",
+    get label() {
+      return t("notebooks.designer.ruling.squares");
+    },
+  },
+  {
+    id: "dots",
+    icon: "grip",
+    get label() {
+      return t("notebooks.designer.ruling.dots");
+    },
+  },
 ];
 
 const TEXTURE_CHOICES: ReadonlyArray<{ id: DesignTexture; label: string }> = [
-  { id: "plain", label: "Plain" },
-  { id: "fine", label: "Fine" },
-  { id: "heavy", label: "Heavy" },
+  {
+    id: "plain",
+    get label() {
+      return t("notebooks.designer.texture.plain");
+    },
+  },
+  {
+    id: "fine",
+    get label() {
+      return t("notebooks.designer.texture.fine");
+    },
+  },
+  {
+    id: "heavy",
+    get label() {
+      return t("notebooks.designer.texture.heavy");
+    },
+  },
 ];
 
 const SIDE_CHOICES: ReadonlyArray<{ id: PaperSide; icon: string; label: string }> = [
-  { id: "top", icon: "panel-top", label: "Top" },
-  { id: "right", icon: "panel-right", label: "Right" },
-  { id: "bottom", icon: "panel-bottom", label: "Bottom" },
-  { id: "left", icon: "panel-left", label: "Left" },
+  {
+    id: "top",
+    icon: "panel-top",
+    get label() {
+      return t("notebooks.designer.side.top");
+    },
+  },
+  {
+    id: "right",
+    icon: "panel-right",
+    get label() {
+      return t("notebooks.designer.side.right");
+    },
+  },
+  {
+    id: "bottom",
+    icon: "panel-bottom",
+    get label() {
+      return t("notebooks.designer.side.bottom");
+    },
+  },
+  {
+    id: "left",
+    icon: "panel-left",
+    get label() {
+      return t("notebooks.designer.side.left");
+    },
+  },
 ];
 
 const LINE_SIDE_CHOICES: ReadonlyArray<{ id: MarginLineSides; label: string }> = [
-  { id: "left", label: "Left" },
-  { id: "right", label: "Right" },
-  { id: "both", label: "Both" },
+  {
+    id: "left",
+    get label() {
+      return t("notebooks.designer.side.left");
+    },
+  },
+  {
+    id: "right",
+    get label() {
+      return t("notebooks.designer.side.right");
+    },
+  },
+  {
+    id: "both",
+    get label() {
+      return t("notebooks.designer.side.both");
+    },
+  },
 ];
 
 /** The blank area a design gets when one is first switched on, mm. */
@@ -172,15 +271,15 @@ class PaperDesigner {
     // `clickable-icon` on every button: Obsidian's iPad padding (ledger).
     const back = header.createEl("button", {
       cls: "goodobsidian-paper-designer-back clickable-icon",
-      attr: { "aria-label": "Back", title: "Back" },
+      attr: { "aria-label": t("notebooks.designer.back"), title: t("notebooks.designer.back") },
     });
     setIcon(back, "chevron-left");
     back.addEventListener("click", () => this.finish(false));
     header.createDiv({
       cls: "goodobsidian-paper-designer-title",
-      text: this.options.editing ? "Edit paper" : "New paper",
+      text: this.options.editing ? t("notebooks.designer.edit") : t("notebooks.designer.new"),
     });
-    this.saveButton = header.createEl("button", { cls: "mod-cta", text: "Save" });
+    this.saveButton = header.createEl("button", { cls: "mod-cta", text: t("common.save") });
     this.saveButton.addEventListener("click", () => void this.save());
 
     const body = this.root.createDiv({ cls: "goodobsidian-paper-designer-body" });
@@ -193,7 +292,11 @@ class PaperDesigner {
     const nameRow = controls.createDiv({ cls: "goodobsidian-paper-designer-name-row" });
     const name = nameRow.createEl("input", {
       cls: "goodobsidian-paper-designer-name",
-      attr: { type: "text", placeholder: "Paper name", "aria-label": "Paper name" },
+      attr: {
+        type: "text",
+        placeholder: t("notebooks.designer.name"),
+        "aria-label": t("notebooks.designer.name"),
+      },
     });
     name.value = this.design.name;
     name.addEventListener("input", () => {
@@ -204,16 +307,30 @@ class PaperDesigner {
     });
     this.keyboard.watch(name, nameRow);
 
-    this.buildPaper(this.section(controls, "Paper", true));
-    this.buildLines(this.section(controls, "Lines", true));
+    this.buildPaper(this.section(controls, t("notebooks.designer.paper"), true));
+    this.buildLines(this.section(controls, t("notebooks.designer.lines"), true));
     this.buildMargins(
-      this.section(controls, "Margins", false, () => marginsSummary(this.design.margins), true),
+      this.section(
+        controls,
+        t("notebooks.designer.margins"),
+        false,
+        () => marginsSummary(this.design.margins),
+        true,
+      ),
     );
     this.buildBlank(
-      this.section(controls, "Blank area", false, () => blankSummary(this.design.blank), true),
+      this.section(
+        controls,
+        t("notebooks.designer.blank"),
+        false,
+        () => blankSummary(this.design.blank),
+        true,
+      ),
     );
     this.buildMarginLine(
-      this.section(controls, "Margin line", false, () => marginLineSummary(this.design.marginLine)),
+      this.section(controls, t("notebooks.designer.marginLine"), false, () =>
+        marginLineSummary(this.design.marginLine),
+      ),
     );
   }
 
@@ -253,14 +370,14 @@ class PaperDesigner {
   private buildPaper(el: HTMLElement): void {
     const sizeRow = this.row(el);
     const size = sizeRow.createEl("select", { cls: "dropdown" });
-    size.setAttribute("aria-label", "Page size");
+    size.setAttribute("aria-label", t("notebooks.designer.pageSize"));
     for (const s of PAGE_SIZES) size.createEl("option", { text: s.label, value: s.id });
     size.value = this.design.size;
     size.addEventListener("change", () => this.change(() => (this.design.size = size.value)));
     const orient = sizeRow.createDiv({ cls: "goodobsidian-segmented is-icons" });
     for (const [landscape, icon, label] of [
-      [false, "rectangle-vertical", "Portrait"],
-      [true, "rectangle-horizontal", "Landscape"],
+      [false, "rectangle-vertical", t("notebooks.designer.portrait")],
+      [true, "rectangle-horizontal", t("notebooks.designer.landscape")],
     ] as const) {
       const button = this.choice(orient, label, icon);
       button.addEventListener("click", () =>
@@ -279,7 +396,9 @@ class PaperDesigner {
       },
     );
 
-    const texture = this.row(el, "Texture").createDiv({ cls: "goodobsidian-segmented" });
+    const texture = this.row(el, t("notebooks.designer.texture")).createDiv({
+      cls: "goodobsidian-segmented",
+    });
     for (const option of TEXTURE_CHOICES) {
       const button = this.choice(texture, option.label);
       button.addEventListener("click", () => this.change(() => (this.design.texture = option.id)));
@@ -300,11 +419,11 @@ class PaperDesigner {
       );
       this.syncers.push(() => this.mark(button, this.design.ruling === option.id));
     }
-    const spacing = this.row(el, "Spacing");
+    const spacing = this.row(el, t("notebooks.designer.spacing"));
     this.stepper(
       spacing,
       "spacing",
-      "Spacing",
+      t("notebooks.designer.spacing"),
       () => this.design.spacing,
       (v) => {
         this.design.spacing = v;
@@ -315,7 +434,7 @@ class PaperDesigner {
       "rule",
       [
         // The built-in papers' own rule first: a new design starts on it.
-        { label: "Paper blue-grey", color: DEFAULT_RULE_COLOR },
+        { label: t("notebooks.designer.paperBlueGrey"), color: DEFAULT_RULE_COLOR },
         ...RULE_SWATCHES.flatMap((s) => (s.color ? [{ label: s.label, color: s.color }] : [])),
       ],
       () => this.design.ruleColor,
@@ -337,7 +456,7 @@ class PaperDesigner {
       this.stepper(
         row,
         "margin",
-        `${side.label} margin`,
+        t(`notebooks.designer.margin.${side.id}` as const),
         () => this.design.margins[side.id],
         (v) => {
           this.design.margins[side.id] = v;
@@ -348,11 +467,15 @@ class PaperDesigner {
 
   private buildBlank(el: HTMLElement): void {
     const sides = this.row(el).createDiv({ cls: "goodobsidian-segmented is-icons" });
-    const none = this.choice(sides, "No blank area", "ban");
+    const none = this.choice(sides, t("notebooks.designer.noBlank"), "ban");
     none.addEventListener("click", () => this.change(() => (this.design.blank = null)));
     this.syncers.push(() => this.mark(none, this.design.blank === null));
     for (const side of SIDE_CHOICES) {
-      const button = this.choice(sides, `Blank area at the ${side.label.toLowerCase()}`, side.icon);
+      const button = this.choice(
+        sides,
+        t(`notebooks.designer.blankAt.${side.id}` as const),
+        side.icon,
+      );
       button.addEventListener("click", () =>
         this.change(() => {
           this.design.blank = { side: side.id, size: this.design.blank?.size ?? DEFAULT_BLANK_MM };
@@ -360,11 +483,11 @@ class PaperDesigner {
       );
       this.syncers.push(() => this.mark(button, this.design.blank?.side === side.id));
     }
-    const size = this.row(el, "Size");
+    const size = this.row(el, t("notebooks.designer.size"));
     this.stepper(
       size,
       "blank",
-      "Blank area size",
+      t("notebooks.designer.blankSize"),
       () => this.design.blank?.size ?? 0,
       (v) => {
         if (this.design.blank) this.design.blank.size = v;
@@ -375,7 +498,7 @@ class PaperDesigner {
 
   private buildMarginLine(el: HTMLElement): void {
     const sides = this.row(el).createDiv({ cls: "goodobsidian-segmented" });
-    const none = this.choice(sides, "None");
+    const none = this.choice(sides, t("notebooks.designer.none"));
     none.addEventListener("click", () => this.change(() => (this.design.marginLine = null)));
     this.syncers.push(() => this.mark(none, this.design.marginLine === null));
     for (const option of LINE_SIDE_CHOICES) {
@@ -392,11 +515,11 @@ class PaperDesigner {
       );
       this.syncers.push(() => this.mark(button, this.design.marginLine?.sides === option.id));
     }
-    const inset = this.row(el, "Inset");
+    const inset = this.row(el, t("notebooks.designer.inset"));
     this.stepper(
       inset,
       "inset",
-      "Margin line inset",
+      t("notebooks.designer.lineInset"),
       () => this.design.marginLine?.inset ?? 0,
       (v) => {
         if (this.design.marginLine) this.design.marginLine.inset = v;
@@ -471,7 +594,10 @@ class PaperDesigner {
     }
     const custom = row.createEl("button", {
       cls: "goodobsidian-paper-swatch is-custom clickable-icon",
-      attr: { "aria-label": "Any colour", title: "Any colour" },
+      attr: {
+        "aria-label": t("notebooks.designer.anyColour"),
+        title: t("notebooks.designer.anyColour"),
+      },
     });
     const disc = custom.createSpan({ cls: "goodobsidian-paper-swatch-disc" });
     const own = disc.createSpan({ cls: "goodobsidian-paper-swatch-own" });
@@ -513,16 +639,26 @@ class PaperDesigner {
     const { step } = DESIGN_RANGES[range];
     const minus = box.createEl("button", {
       cls: "clickable-icon",
-      attr: { "aria-label": `${label}: less`, title: "Less" },
+      attr: {
+        "aria-label": t("notebooks.designer.less", { label }),
+        title: t("notebooks.designer.lessTitle"),
+      },
     });
     setIcon(minus, "minus");
     const input = box.createEl("input", {
-      attr: { type: "text", inputmode: "decimal", "aria-label": `${label}, mm` },
+      attr: {
+        type: "text",
+        inputmode: "decimal",
+        "aria-label": t("notebooks.designer.inMm", { label }),
+      },
     });
     box.createSpan({ cls: "goodobsidian-paper-designer-unit", text: "mm" });
     const plus = box.createEl("button", {
       cls: "clickable-icon",
-      attr: { "aria-label": `${label}: more`, title: "More" },
+      attr: {
+        "aria-label": t("notebooks.designer.more", { label }),
+        title: t("notebooks.designer.moreTitle"),
+      },
     });
     setIcon(plus, "plus");
     const put = (value: number): void => {
@@ -591,7 +727,10 @@ class PaperDesigner {
   private async save(): Promise<void> {
     if (this.closed || this.saveButton.disabled) return;
     this.saveButton.disabled = true;
-    const design: PaperDesign = { ...this.design, name: this.design.name || "My paper" };
+    const design: PaperDesign = {
+      ...this.design,
+      name: this.design.name || t("notebooks.designer.defaultName"),
+    };
     const saved = await this.options.save(design).catch(() => false);
     if (saved) this.finish(true);
     else if (!this.closed) this.saveButton.disabled = false;

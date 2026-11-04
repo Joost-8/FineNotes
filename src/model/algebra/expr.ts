@@ -18,6 +18,8 @@
  * anything typed.
  */
 
+import { t } from "../../i18n/translate";
+
 /** An exact fraction in lowest terms, `d > 0`. */
 export interface Q {
   n: bigint;
@@ -94,7 +96,7 @@ function gcd(a: bigint, b: bigint): bigint {
 export function q(n: bigint | number, d: bigint | number = 1n): Q {
   let nn = BigInt(n);
   let dd = BigInt(d);
-  if (dd === 0n) throw new AlgebraError("Divide by zero");
+  if (dd === 0n) throw new AlgebraError(t("calculator.errDivideByZero"));
   if (dd < 0n) {
     nn = -nn;
     dd = -dd;
@@ -103,7 +105,7 @@ export function q(n: bigint | number, d: bigint | number = 1n): Q {
   nn /= g;
   dd /= g;
   if (nn.toString(2).length > MAX_BITS || dd.toString(2).length > MAX_BITS)
-    throw new AlgebraError("Too large");
+    throw new AlgebraError(t("calculator.errTooLarge"));
   return { n: nn, d: dd };
 }
 
@@ -112,7 +114,7 @@ export const qmul = (a: Q, b: Q): Q => q(a.n * b.n, a.d * b.d);
 export const qneg = (a: Q): Q => ({ n: -a.n, d: a.d });
 export const qsub = (a: Q, b: Q): Q => qadd(a, qneg(b));
 export function qdiv(a: Q, b: Q): Q {
-  if (b.n === 0n) throw new AlgebraError("Divide by zero");
+  if (b.n === 0n) throw new AlgebraError(t("calculator.errDivideByZero"));
   return q(a.n * b.d, a.d * b.n);
 }
 export const qeq = (a: Q, b: Q): boolean => a.n === b.n && a.d === b.d;
@@ -126,9 +128,9 @@ export const qnum = (a: Q): number => Number(a.n) / Number(a.d);
 /** `a` to a whole power, exactly; refused when the result would be huge. */
 export function qpow(a: Q, k: bigint): Q {
   if (k < 0n) return qdiv(q(1), qpow(a, -k));
-  if (k > 4096n) throw new AlgebraError("Too large");
+  if (k > 4096n) throw new AlgebraError(t("calculator.errTooLarge"));
   const bits = Math.max(a.n.toString(2).length, a.d.toString(2).length);
-  if (bits * Number(k) > MAX_BITS * 2) throw new AlgebraError("Too large");
+  if (bits * Number(k) > MAX_BITS * 2) throw new AlgebraError(t("calculator.errTooLarge"));
   return q(a.n ** k, a.d ** k);
 }
 
@@ -159,7 +161,7 @@ export function sub(a: Expr, b: Expr): Expr {
 }
 
 export function div(a: Expr, b: Expr): Expr {
-  if (isNum(b, 0)) throw new AlgebraError("Divide by zero");
+  if (isNum(b, 0)) throw new AlgebraError(t("calculator.errDivideByZero"));
   return mul(a, pow(b, num(-1)));
 }
 
@@ -294,7 +296,7 @@ export function pow(base: Expr, exp: Expr): Expr {
     if (isNum(base, 1)) return ONE;
     if (isNum(base, 0)) {
       if (exp.t === "num" && exp.v.n > 0n) return ZERO;
-      throw new AlgebraError("Divide by zero");
+      throw new AlgebraError(t("calculator.errDivideByZero"));
     }
     if (exp.t === "num") return numPower(base.v, exp.v);
   }
@@ -329,7 +331,7 @@ function numPower(b: Q, e: Q): Expr {
   const k = Number(e.d);
   if (b.n < 0n) {
     // An odd root of a negative number is real; an even one is not.
-    if (k % 2 === 0) throw new AlgebraError("Not a real number");
+    if (k % 2 === 0) throw new AlgebraError(t("calculator.errNotReal"));
     return neg(numPower(qneg(b), e));
   }
   if (k > 12) return { t: "pow", base: numQ(b), exp: numQ(e) };
@@ -442,13 +444,13 @@ function exactValue(name: FnName, arg: Expr): Expr | null {
     case "sin":
     case "cos":
     case "tan": {
-      const t = piMultiple(arg);
-      if (!t) return null;
-      const exact = exactTrig(t);
+      const multiple = piMultiple(arg);
+      if (!multiple) return null;
+      const exact = exactTrig(multiple);
       if (!exact) return null;
       if (name === "sin") return exact.sin;
       if (name === "cos") return exact.cos;
-      if (isNum(exact.cos, 0)) throw new AlgebraError("tan is undefined there");
+      if (isNum(exact.cos, 0)) throw new AlgebraError(t("calculator.algTanUndefined"));
       return div(exact.sin, exact.cos);
     }
     case "asin":

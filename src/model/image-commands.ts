@@ -25,6 +25,7 @@ import {
   pageById,
   readImageOpacity,
 } from "./document";
+import { t } from "../i18n/translate";
 
 /** The opacities a picture's menu offers, opaque first. */
 export const IMAGE_OPACITIES: readonly number[] = [1, 0.75, 0.5, 0.25];
@@ -75,7 +76,8 @@ export class ReorderImage implements Command {
     private readonly image: ImageElement,
     private readonly to: ImageLayer,
   ) {
-    this.label = to === "front" ? "Bring to front" : "Send to back";
+    this.label =
+      to === "front" ? t("surface.command.bringToFront") : t("surface.command.sendToBack");
   }
 
   apply(doc: InkDocument): void {
@@ -115,7 +117,7 @@ export class SetImageLocked implements Command {
     private readonly image: ImageElement,
     private readonly locked: boolean,
   ) {
-    this.label = locked ? "Lock image" : "Unlock image";
+    this.label = locked ? t("surface.command.lockImage") : t("surface.command.unlockImage");
   }
 
   apply(doc: InkDocument): void {
@@ -141,7 +143,7 @@ export class SetImageLocked implements Command {
  * deleted, for 1 or anything the model would not keep).
  */
 export class SetImageOpacity implements Command {
-  readonly label = "Change image opacity";
+  readonly label = t("surface.command.changeImageOpacity");
   private previous: { image: ImageElement; saved: ImageElement } | null = null;
 
   constructor(
@@ -182,7 +184,9 @@ export class SetImageFront implements Command {
     private readonly image: ImageElement,
     private readonly front: boolean,
   ) {
-    this.label = front ? "Put image in front of ink" : "Put image behind ink";
+    this.label = front
+      ? t("surface.command.imageInFrontOfInk")
+      : t("surface.command.imageBehindInk");
   }
 
   apply(doc: InkDocument): void {
@@ -219,7 +223,7 @@ export interface ImageCropGeometry {
  * is deleted. The file is never touched; the rotation is left as it is.
  */
 export class CropImage implements Command {
-  readonly label = "Crop image";
+  readonly label = t("surface.command.cropImage");
   private readonly next: ImageCropGeometry;
   private previous: { image: ImageElement; saved: ImageElement } | null = null;
 
@@ -271,7 +275,8 @@ export class FlipImage implements Command {
     private readonly image: ImageElement,
     private readonly axis: FlipAxis,
   ) {
-    this.label = axis === "x" ? "Flip horizontal" : "Flip vertical";
+    this.label =
+      axis === "x" ? t("surface.command.flipHorizontal") : t("surface.command.flipVertical");
   }
 
   apply(doc: InkDocument): void {

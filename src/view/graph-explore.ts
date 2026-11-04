@@ -20,6 +20,7 @@
  * as one of FineNotes' own bars.
  */
 
+import { t } from "../i18n/translate";
 import type { GraphElement } from "../model/document";
 import {
   type GraphView,
@@ -106,13 +107,13 @@ export class GraphExplorer {
     this.ctx = this.canvas.getContext("2d");
     const bar = this.root.createDiv({
       cls: "goodobsidian-selection-bar theme-dark goodobsidian-graph-explore-bar",
-      attr: { role: "toolbar", "aria-label": "Explore graph" },
+      attr: { role: "toolbar", "aria-label": t("calculator.exploreGraph") },
     });
     this.readout = bar.createSpan({ cls: "goodobsidian-graph-explore-readout" });
     bar.createDiv({ cls: "goodobsidian-selection-divider" });
-    const reset = barButton(bar, "Reset view", "rotate-ccw");
+    const reset = barButton(bar, t("calculator.resetView"), "rotate-ccw");
     onTap(reset, () => this.reset());
-    const done = barButton(bar, "Done", "check", true);
+    const done = barButton(bar, t("common.done"), "check", true);
     onTap(done, () => this.close(true));
     bar.addEventListener("pointerdown", (event) => {
       event.stopPropagation();

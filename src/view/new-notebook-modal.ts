@@ -46,6 +46,7 @@ import {
   TemplateGrid,
   paintTemplatePreview,
 } from "./template-picker";
+import { t } from "../i18n/translate";
 
 export interface NewNotebookRequest {
   /** As typed; the plugin cleans it and derives the file name. */
@@ -97,11 +98,12 @@ const BOARD_PREVIEW_WIDTH = 132;
 /** A board's paper cards show a landscape piece of it, 4 by 3. */
 const BOARD_PREVIEW_GEOMETRY: PageGeometry = { width: 560, height: 420 };
 /** The cards' names, in `BOARD_RULINGS` order. */
-const BOARD_PAPER_NAMES: Readonly<Partial<Record<Ruling, string>>> = {
-  blank: "Blank",
-  dotted: "Dotted",
-  squared: "Squared",
-};
+function boardPaperName(ruling: Ruling): string {
+  if (ruling === "blank") return t("notebooks.newNotebook.boardBlank");
+  if (ruling === "dotted") return t("notebooks.newNotebook.boardDotted");
+  if (ruling === "squared") return t("notebooks.newNotebook.boardSquared");
+  return ruling;
+}
 /** How long after the title takes focus the dialog owns scrolling (keyboard animation), ms. */
 const FOCUS_HOLD_MS = 1200;
 /** After closing, the app is held in place until the keyboard is down: at least, at most, ms. */
@@ -240,16 +242,22 @@ export class NewNotebookModal extends Modal {
    * joined in the notebook's own settings (the gear), not here.
    */
   private buildHeader(header: HTMLElement): void {
-    const create = header.createEl("button", { cls: "mod-cta", text: "Create" });
+    const create = header.createEl("button", {
+      cls: "mod-cta",
+      text: t("notebooks.newNotebook.create"),
+    });
     create.addEventListener("click", () => this.create());
-    this.heading = header.createDiv({ cls: "goodobsidian-newnb-heading", text: "New notebook" });
+    this.heading = header.createDiv({
+      cls: "goodobsidian-newnb-heading",
+      text: t("notebooks.newNotebook.heading"),
+    });
     const end = header.createDiv({ cls: "goodobsidian-newnb-header-end" });
     const board = end.createEl("button", {
       cls: "goodobsidian-newnb-board goodobsidian-newnb-choice clickable-icon",
-      attr: { type: "button", "aria-label": "New board" },
+      attr: { type: "button", "aria-label": t("notebooks.newNotebook.board") },
     });
     setIcon(board.createSpan({ cls: "goodobsidian-newnb-choice-icon" }), "infinity");
-    board.createSpan({ text: "New board" });
+    board.createSpan({ text: t("notebooks.newNotebook.board") });
     board.addEventListener("click", () => {
       this.choices.type = this.choices.type === "endless" ? "notebook" : "endless";
       this.syncKind();
@@ -257,7 +265,7 @@ export class NewNotebookModal extends Modal {
     this.boardToggle = board;
     const close = end.createEl("button", {
       cls: "goodobsidian-newnb-close clickable-icon",
-      attr: { type: "button", "aria-label": "Close" },
+      attr: { type: "button", "aria-label": t("common.close") },
     });
     setIcon(close, "x");
     close.addEventListener("click", () => this.close());
@@ -268,7 +276,7 @@ export class NewNotebookModal extends Modal {
       cls: "goodobsidian-newnb-title",
       type: "text",
       attr: {
-        "aria-label": "Title",
+        "aria-label": t("notebooks.newNotebook.titleLabel"),
         enterkeyhint: "done",
         autocapitalize: "sentences",
         placeholder: defaultTitle("notebook"),
@@ -312,8 +320,8 @@ export class NewNotebookModal extends Modal {
       attr: { type: "button" },
     });
     setIcon(link.createSpan({ cls: "goodobsidian-newnb-import-icon" }), ICON_IMPORT_NOTEBOOK);
-    link.createSpan({ text: "Import from another app…" });
-    link.createSpan({ cls: "goodobsidian-beta-tag", text: "Beta" });
+    link.createSpan({ text: t("notebooks.newNotebook.importApp") });
+    link.createSpan({ cls: "goodobsidian-beta-tag", text: t("notebooks.importModal.beta") });
     this.importLink = link;
     link.addEventListener("click", () => {
       const folder = this.folder;
@@ -323,7 +331,7 @@ export class NewNotebookModal extends Modal {
   }
 
   private buildCover(body: HTMLElement): HTMLElement {
-    const section = this.section(body, "Cover");
+    const section = this.section(body, t("notebooks.newNotebook.cover"));
     const color = COVER_COLORS.find((c) => c.id === this.choices.coverColor) ?? COVER_COLORS[0];
     this.coverPicker = new CoverPicker(section, {
       design: this.choices.cover,
@@ -341,7 +349,7 @@ export class NewNotebookModal extends Modal {
   }
 
   private buildPaper(body: HTMLElement): HTMLElement {
-    const section = this.section(body, "Paper");
+    const section = this.section(body, t("notebooks.newNotebook.paper"));
     const controls = section.createDiv({ cls: "goodobsidian-templates-controls" });
     new PaperControls(controls, {
       keepSize: false,
@@ -405,7 +413,7 @@ export class NewNotebookModal extends Modal {
       attr: { type: "button" },
     });
     setIcon(button.createSpan({ cls: "goodobsidian-newnb-import-icon" }), "file-up");
-    button.createSpan({ text: "Import PDF" });
+    button.createSpan({ text: t("notebooks.newNotebook.importPdf") });
     const done = (source: NotebookPdfSource): void => {
       if (this.created) return;
       this.created = true;
@@ -417,7 +425,7 @@ export class NewNotebookModal extends Modal {
       const menu = new Menu();
       menu.addItem((item) =>
         item
-          .setTitle("From files")
+          .setTitle(t("notebooks.newNotebook.fromFiles"))
           .setIcon("file-text")
           .onClick(() => {
             void pickImageFile(this.contentEl, false, "application/pdf,.pdf").then((file) => {
@@ -427,7 +435,7 @@ export class NewNotebookModal extends Modal {
       );
       menu.addItem((item) =>
         item
-          .setTitle("From vault")
+          .setTitle(t("notebooks.newNotebook.fromVault"))
           .setIcon("folder-open")
           .onClick(() => {
             new VaultPdfSuggestModal(this.app, (file) => done({ kind: "vault", file })).open();
@@ -447,7 +455,7 @@ export class NewNotebookModal extends Modal {
     const section = body.createDiv({ cls: "goodobsidian-newnb-section goodobsidian-newnb-boards" });
     const row = section.createDiv({ cls: "goodobsidian-newnb-board-cards" });
     this.boardCards = BOARD_RULINGS.map((ruling) => {
-      const name = BOARD_PAPER_NAMES[ruling] ?? ruling;
+      const name = boardPaperName(ruling);
       const root = row.createEl("button", {
         cls: "goodobsidian-template-card is-large clickable-icon",
         attr: { type: "button", "aria-label": name },
@@ -487,7 +495,9 @@ export class NewNotebookModal extends Modal {
     const board = this.choices.type === "endless";
     this.boardToggle?.toggleClass("is-active", board);
     this.boardToggle?.setAttribute("aria-pressed", String(board));
-    this.heading?.setText(board ? "New board" : "New notebook");
+    this.heading?.setText(
+      board ? t("notebooks.newNotebook.board") : t("notebooks.newNotebook.heading"),
+    );
     this.titleInput?.setAttribute("placeholder", defaultTitle(board ? "endless" : "notebook"));
     for (const section of this.notebookSections) section.toggleClass("is-hidden", board);
     this.importLink?.toggleClass("is-hidden", board);
@@ -512,7 +522,7 @@ export class NewNotebookModal extends Modal {
   /** The folder it is made in, as a chip beside the import link: tap to choose another. */
   private buildFolder(parent: HTMLElement): void {
     const row = parent.createEl("button", { cls: "goodobsidian-newnb-folder clickable-icon" });
-    row.setAttribute("aria-label", "Choose folder");
+    row.setAttribute("aria-label", t("notebooks.newNotebook.chooseFolder"));
     setIcon(row.createSpan({ cls: "goodobsidian-newnb-folder-icon" }), "folder");
     this.folderLabel = row.createSpan({ cls: "goodobsidian-newnb-folder-path" });
     setIcon(row.createSpan({ cls: "goodobsidian-newnb-folder-icon" }), "chevron-right");
@@ -582,8 +592,9 @@ export class NewNotebookModal extends Modal {
   }
 
   private syncFolder(): void {
-    this.folderLabel?.setText(this.folder || "Vault root");
-    this.folderLabel?.parentElement?.setAttribute("title", this.folder || "Vault root");
+    const shown = this.folder || t("notebooks.newNotebook.vaultRoot");
+    this.folderLabel?.setText(shown);
+    this.folderLabel?.parentElement?.setAttribute("title", shown);
   }
 
   private create(): void {

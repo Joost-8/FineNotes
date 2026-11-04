@@ -102,7 +102,7 @@ export class Plugin extends Component {
   readonly views = new Map<string, (leaf: WorkspaceLeaf) => unknown>();
   readonly protocolHandlers = new Map<string, (params: Record<string, string>) => unknown>();
   readonly settingTabs: unknown[] = [];
-  readonly ribbon: { icon: string; title: string; callback: () => unknown }[] = [];
+  readonly ribbon: { icon: string; title: string; callback: () => unknown; label?: string }[] = [];
   /** What `loadData` resolves to: `null` is a vault with no `data.json` yet. */
   stored: unknown = null;
   /** A copy of everything passed to `saveData`, oldest first. */
@@ -125,8 +125,17 @@ export class Plugin extends Component {
   }
 
   addRibbonIcon(icon: string, title: string, callback: () => unknown): unknown {
-    this.ribbon.push({ icon, title, callback });
-    return {};
+    const entry: { icon: string; title: string; callback: () => unknown; label?: string } = {
+      icon,
+      title,
+      callback,
+    };
+    this.ribbon.push(entry);
+    return {
+      setAttribute: (name: string, value: string) => {
+        if (name === "aria-label") entry.label = value;
+      },
+    };
   }
 
   addSettingTab(tab: unknown): void {

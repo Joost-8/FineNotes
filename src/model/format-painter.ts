@@ -29,6 +29,7 @@ import {
   splitFill,
   styleFieldsOf,
 } from "./shape-style";
+import { t } from "../i18n/translate";
 
 /** The look of a piece of ink, as the format painter carries it. */
 export interface InkStyle {
@@ -168,7 +169,7 @@ function restore(stroke: Stroke, saved: Saved): void {
  * leaves the document as it was.
  */
 export class PaintStyle implements Command {
-  readonly label = "Paste style";
+  readonly label = t("surface.command.pasteStyle");
   private readonly targets: Array<{ pageId: string; stroke: Stroke }> = [];
   private readonly seen = new Set<Stroke>();
   private previous: Array<{ stroke: Stroke; saved: Saved }> = [];

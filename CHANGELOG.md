@@ -10,6 +10,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **FineNotes in your language.** Settings → Language offers the 43
+  languages Obsidian itself comes in, each named in its own language, and
+  follows Obsidian's language unless you pick another. Menus, buttons,
+  tooltips, dialogs, notices and settings change; your notes and
+  handwriting never do. A language's words download once (about 200 KB) and
+  then work offline; after a change, **Relaunch** shows it everywhere.
 - **Home: your notebooks as covers.** The library icon (left bar, and the
   file explorer's bar) opens Home in a tab of its own that stays: every
   notebook as a cover, folders as coloured tiles with an icon you choose,

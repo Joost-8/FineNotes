@@ -20,6 +20,7 @@
 
 import { setIcon } from "obsidian";
 
+import { t } from "../i18n/translate";
 import {
   COMMON_COLORS,
   type Hsv,
@@ -92,7 +93,9 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
   const offered: string[] = [];
   const notebook = (options.notebook ?? []).flatMap((c) => parseHexColor(c) ?? []);
   if (notebook.length > 0) {
-    presets.push(body.createDiv({ cls: "goodobsidian-popover-label", text: "This notebook" }));
+    presets.push(
+      body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.color.thisNotebook") }),
+    );
     const row = body.createDiv({ cls: "goodobsidian-color-grid is-notebook" });
     presets.push(row);
     for (const hex of notebook) {
@@ -108,8 +111,8 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
       options.onPick(null),
     );
     none.addClass("is-none");
-    none.setAttribute("aria-label", "None");
-    none.setAttribute("title", "None");
+    none.setAttribute("aria-label", t("toolbar.color.none"));
+    none.setAttribute("title", t("toolbar.color.none"));
   }
   for (const color of [...COMMON_COLORS, ...(options.extra ?? [])]) {
     const hex = parseHexColor(color);
@@ -120,7 +123,9 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
 
   const recent = options.recent.filter((c) => !offered.includes(c));
   if (recent.length > 0) {
-    presets.push(body.createDiv({ cls: "goodobsidian-popover-label", text: "Recent" }));
+    presets.push(
+      body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.color.recent") }),
+    );
     const row = body.createDiv({ cls: "goodobsidian-color-grid is-recent" });
     presets.push(row);
     for (const color of recent) {
@@ -134,15 +139,15 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
   presets.push(foot);
   const toggle = foot.createEl("button", {
     cls: "goodobsidian-color-custom-toggle clickable-icon",
-    text: "Custom colour…",
+    text: t("toolbar.color.customLink"),
   });
   if (options.onEyedropper) eyedropperButton(foot, tap, options.onEyedropper);
   if (options.onDelete) {
     // A word, not a symbol: it removes something (CLAUDE.md, "show more by showing less").
     const remove = foot.createEl("button", {
       cls: "goodobsidian-color-delete clickable-icon",
-      text: "Delete",
-      attr: { "aria-label": "Delete this colour from the row" },
+      text: t("common.delete"),
+      attr: { "aria-label": t("toolbar.color.deleteFromRow") },
     });
     tap(remove, options.onDelete);
   }
@@ -186,12 +191,12 @@ export function renderColorMixer(
   const hsv: Hsv = rgbToHsv(hexToRgb(initial ?? "") ?? { r: 0, g: 0, b: 0 });
 
   const head = mixer.createDiv({ cls: "goodobsidian-color-mixer-head" });
-  head.createDiv({ cls: "goodobsidian-popover-title", text: "Custom colour" });
+  head.createDiv({ cls: "goodobsidian-popover-title", text: t("toolbar.color.custom") });
   if (onEyedropper) eyedropperButton(head, tap, onEyedropper);
   if (onBack) {
     const back = head.createEl("button", {
       cls: "goodobsidian-color-presets clickable-icon",
-      attr: { "aria-label": "Common colours", title: "Common colours" },
+      attr: { "aria-label": t("toolbar.color.common"), title: t("toolbar.color.common") },
     });
     // The dots are colours, not chrome: values, like a swatch's.
     for (const dot of PRESET_DOTS) {
@@ -202,7 +207,7 @@ export function renderColorMixer(
 
   const square = mixer.createDiv({ cls: "goodobsidian-color-sv" });
   square.setAttribute("role", "slider");
-  square.setAttribute("aria-label", "Saturation and brightness");
+  square.setAttribute("aria-label", t("toolbar.color.saturationBrightness"));
   const handle = square.createDiv({ cls: "goodobsidian-color-sv-handle" });
   drag(square, (x, y) => {
     hsv.s = x;
@@ -213,7 +218,7 @@ export function renderColorMixer(
   const hueRow = mixer.createDiv({ cls: "goodobsidian-color-channel is-hue" });
   const hueTrack = hueRow.createDiv({ cls: "goodobsidian-color-track goodobsidian-color-hue" });
   hueTrack.setAttribute("role", "slider");
-  hueTrack.setAttribute("aria-label", "Hue, 0 to 360 degrees");
+  hueTrack.setAttribute("aria-label", t("toolbar.color.hue"));
   hueTrack.setAttribute("aria-valuemin", "0");
   hueTrack.setAttribute("aria-valuemax", "360");
   const hueThumb = hueTrack.createDiv({ cls: "goodobsidian-color-thumb" });
@@ -230,7 +235,7 @@ export function renderColorMixer(
   const hexLabel = field.createSpan({ cls: "goodobsidian-color-hex" });
   const use = foot.createEl("button", {
     cls: "goodobsidian-color-use clickable-icon",
-    attr: { "aria-label": "Use this colour", title: "Use this colour" },
+    attr: { "aria-label": t("toolbar.color.use"), title: t("toolbar.color.use") },
   });
   const preview = use.createSpan({ cls: "goodobsidian-color-preview" });
   setIcon(use, "circle-plus");
@@ -244,7 +249,10 @@ export function renderColorMixer(
     handle.setCssStyles({ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` });
     square.setAttribute(
       "aria-valuetext",
-      `Saturation ${Math.round(hsv.s * 100)}%, brightness ${Math.round(hsv.v * 100)}%`,
+      t("toolbar.color.saturationBrightnessValue", {
+        saturation: Math.round(hsv.s * 100),
+        brightness: Math.round(hsv.v * 100),
+      }),
     );
     hueThumb.setCssStyles({ left: `${(hsv.h / 360) * 100}%` });
     hueTrack.setAttribute("aria-valuenow", String(hue));
@@ -297,7 +305,10 @@ function drag(area: HTMLElement, onValue: (x: number, y: number) => void): void 
 function eyedropperButton(parent: HTMLElement, tap: TapBinder, run: () => void): HTMLElement {
   const button = parent.createEl("button", {
     cls: "goodobsidian-color-eyedropper clickable-icon",
-    attr: { "aria-label": "Pick a colour from the page", title: "Pick a colour from the page" },
+    attr: {
+      "aria-label": t("toolbar.color.pickFromPage"),
+      title: t("toolbar.color.pickFromPage"),
+    },
   });
   setIcon(button, "pipette");
   tap(button, run);

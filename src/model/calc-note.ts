@@ -19,6 +19,7 @@ import {
   type EvalResult,
   evaluate,
   formatValue,
+  isUnknownNameError,
   isRational,
   toFloat,
 } from "./calculator";
@@ -232,7 +233,7 @@ export function variablesOfLines(readings: readonly string[]): Map<string, CalcV
 
 /** Whether a failed sum failed for a name it did not know (so variables may help). */
 export function needsVariables(result: EvalResult): boolean {
-  return !result.ok && result.error.startsWith("Unknown name");
+  return !result.ok && isUnknownNameError(result.error);
 }
 
 /**

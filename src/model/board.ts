@@ -36,6 +36,7 @@ import { graphBounds } from "./graph-element";
 import { TranslateElements } from "./selection-commands";
 import { tableFloorSize } from "./table";
 import { DEFAULT_LINE_HEIGHT } from "./text-style";
+import { t } from "../i18n/translate";
 
 /**
  * The step a board grows by, page px (about 230 mm). A multiple of the dotted
@@ -212,7 +213,7 @@ export function boardGrowth(
  * restores the exact geometry and positions it replaced.
  */
 export class GrowBoard implements Command {
-  readonly label = "Grow board";
+  readonly label = t("surface.command.growBoard");
   private applied: {
     geometry: PageGeometry;
     move: TranslateElements | null;

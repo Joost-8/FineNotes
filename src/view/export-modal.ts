@@ -49,6 +49,7 @@ import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { releaseCanvas } from "./image-import";
 import { errorMessage } from "../util/errors";
+import { t } from "../i18n/translate";
 
 export interface ExportedFiles {
   /** Vault paths saved at, one per file, in export order. */
@@ -116,33 +117,57 @@ export interface ExportPdfHost {
 const MARGIN_LOOKS: Record<ExportMargins, { icon: string; label: string; hint: string }> = {
   all: {
     icon: "panel-right",
-    label: "Margins: all",
-    hint: "Margins: all are exported. Tap to keep only those with ink.",
+    get label() {
+      return t("notebooks.export.margins.all");
+    },
+    get hint() {
+      return t("notebooks.export.margins.allHint");
+    },
   },
   inked: {
     icon: "panel-right-dashed",
-    label: "Margins: only those with ink",
-    hint: "Margins: only those with ink are exported. Tap to leave all out.",
+    get label() {
+      return t("notebooks.export.margins.inked");
+    },
+    get hint() {
+      return t("notebooks.export.margins.inkedHint");
+    },
   },
   none: {
     icon: "square",
-    label: "Margins: none",
-    hint: "Margins: none; pages export as they were before. Tap to export all.",
+    get label() {
+      return t("notebooks.export.margins.none");
+    },
+    get hint() {
+      return t("notebooks.export.margins.noneHint");
+    },
   },
 };
 
 /** What each page choice does, shown on a long press (`holdForHint`). */
 const SCOPE_HINTS: Record<ExportScope, string> = {
-  all: "Export every page of the notebook.",
-  current: "Export only the page you are on.",
-  custom: "Pick the pages to export: tap them, or type them.",
+  get all() {
+    return t("notebooks.export.scopeHint.all");
+  },
+  get current() {
+    return t("notebooks.export.scopeHint.current");
+  },
+  get custom() {
+    return t("notebooks.export.scopeHint.custom");
+  },
 };
 
 /** What each format makes, shown on a long press. */
 const FORMAT_HINTS: Record<ExportFormat, string> = {
-  pdf: "One PDF file. Slides stay real PDF, their text selectable.",
-  png: "One picture per page, sharp, larger files.",
-  jpg: "One picture per page, smaller files.",
+  get pdf() {
+    return t("notebooks.export.formatHint.pdf");
+  },
+  get png() {
+    return t("notebooks.export.formatHint.png");
+  },
+  get jpg() {
+    return t("notebooks.export.formatHint.jpg");
+  },
 };
 
 /** Width of a page tile in the grid, CSS px; the grid fits as many per row as it can. */
@@ -184,7 +209,7 @@ export class ExportPdfModal extends Modal {
   override onOpen(): void {
     this.closed = false;
     this.modalEl.addClass("goodobsidian-export-modal", "goodobsidian-dialog");
-    this.titleEl.setText("Export");
+    this.titleEl.setText(t("notebooks.export.title"));
     this.renderChoose();
   }
 
@@ -216,9 +241,9 @@ export class ExportPdfModal extends Modal {
     if (pageCount > 1 && !this.preset) {
       const seg = contentEl.createDiv({ cls: "goodobsidian-segmented goodobsidian-export-scope" });
       const scopes: ReadonlyArray<{ id: ExportScope; label: string }> = [
-        { id: "all", label: `All ${pageCount} pages` },
-        { id: "current", label: `This page (${currentPage + 1})` },
-        { id: "custom", label: "Choose pages" },
+        { id: "all", label: t("notebooks.export.scopeAll", { count: pageCount }) },
+        { id: "current", label: t("notebooks.export.scopeCurrent", { page: currentPage + 1 }) },
+        { id: "custom", label: t("notebooks.export.scopeCustom") },
       ];
       for (const { id, label } of scopes) {
         const button = seg.createEl("button", { cls: "clickable-icon", text: label });
@@ -234,16 +259,22 @@ export class ExportPdfModal extends Modal {
 
     // Choose pages: select all / none and the typed form of the choice.
     const bar = contentEl.createDiv({ cls: "goodobsidian-export-choose" });
-    const selectAll = bar.createEl("button", { cls: "clickable-icon", text: "Select all" });
-    const selectNone = bar.createEl("button", { cls: "clickable-icon", text: "None" });
-    holdForHint(selectAll, () => "Select every page.");
-    holdForHint(selectNone, () => "Clear the selection.");
+    const selectAll = bar.createEl("button", {
+      cls: "clickable-icon",
+      text: t("notebooks.export.selectAll"),
+    });
+    const selectNone = bar.createEl("button", {
+      cls: "clickable-icon",
+      text: t("notebooks.export.selectNone"),
+    });
+    holdForHint(selectAll, () => t("notebooks.export.selectAllHint"));
+    holdForHint(selectNone, () => t("notebooks.export.selectNoneHint"));
     const field = bar.createEl("input", {
       cls: "goodobsidian-export-range",
       type: "text",
       attr: {
-        placeholder: "Pages, e.g. 1-3, 5",
-        "aria-label": "Pages to export",
+        placeholder: t("notebooks.export.rangePlaceholder"),
+        "aria-label": t("notebooks.export.rangeLabel"),
         autocapitalize: "off",
         autocomplete: "off",
         spellcheck: "false",
@@ -260,11 +291,11 @@ export class ExportPdfModal extends Modal {
     const template = this.templateSwitch(actions);
     const tapes = this.tapesSwitch(actions);
     const margins = this.marginsSwitch(actions);
-    const cancel = actions.createEl("button", { text: "Cancel" });
+    const cancel = actions.createEl("button", { text: t("common.cancel") });
     cancel.addEventListener("click", () => this.close());
-    holdForHint(cancel, () => "Close without exporting.");
-    const go = actions.createEl("button", { cls: "mod-cta", text: "Export" });
-    holdForHint(go, () => "Make the files and save them in the vault.");
+    holdForHint(cancel, () => t("notebooks.export.cancelHint"));
+    const go = actions.createEl("button", { cls: "mod-cta", text: t("notebooks.export.go") });
+    holdForHint(go, () => t("notebooks.export.goHint"));
 
     /** A typed range that does not parse, shown instead of the summary. */
     let rangeError: string | null = null;
@@ -336,7 +367,7 @@ export class ExportPdfModal extends Modal {
       if (rangeError !== null) {
         summary.setText(rangeError);
       } else if (n === 0) {
-        summary.setText("Tap the pages to export.");
+        summary.setText(t("notebooks.export.tapPages"));
       } else {
         summary.setText(
           exportSummary({
@@ -372,7 +403,11 @@ export class ExportPdfModal extends Modal {
           this.format,
           (done, total) => {
             if (this.closed) return;
-            status.setText(done < total ? `Rendering page ${done + 1} of ${total}…` : "Saving…");
+            status.setText(
+              done < total
+                ? t("notebooks.export.rendering", { page: done + 1, total })
+                : t("notebooks.export.saving"),
+            );
           },
           () => this.cancelled,
         );
@@ -403,7 +438,7 @@ export class ExportPdfModal extends Modal {
   private formatControl(parent: HTMLElement, changed: () => void): HTMLButtonElement[] {
     const seg = parent.createDiv({
       cls: "goodobsidian-segmented goodobsidian-export-format",
-      attr: { role: "group", "aria-label": "Format" },
+      attr: { role: "group", "aria-label": t("notebooks.export.format") },
     });
     const show = (): void => {
       buttons.forEach((button, i) => {
@@ -439,13 +474,11 @@ export class ExportPdfModal extends Modal {
     let plain = this.host.plainPaper === true;
     const button = parent.createEl("button", {
       cls: "clickable-icon goodobsidian-export-template",
-      attr: { "aria-label": "Template background" },
+      attr: { "aria-label": t("notebooks.export.template") },
     });
     setIcon(button, "grid");
     holdForHint(button, () =>
-      plain
-        ? "Plain paper: lines, grid and dots are left out. Tap to export them."
-        : "Template: the paper's lines, grid and dots are exported. Tap for plain paper.",
+      plain ? t("notebooks.export.templatePlainHint") : t("notebooks.export.templateHint"),
     );
     const show = (): void => {
       button.toggleClass("is-active", !plain);
@@ -473,13 +506,11 @@ export class ExportPdfModal extends Modal {
     let without = this.host.withoutTapes === true;
     const button = parent.createEl("button", {
       cls: "clickable-icon goodobsidian-export-tapes",
-      attr: { "aria-label": "Cover tapes" },
+      attr: { "aria-label": t("notebooks.export.tapes") },
     });
     setIcon(button, "bandage");
     holdForHint(button, () =>
-      without
-        ? "Cover tapes: left out, so what is under them shows. Tap to export them."
-        : "Cover tapes: exported as they are. Tap to leave them out.",
+      without ? t("notebooks.export.tapesOffHint") : t("notebooks.export.tapesHint"),
     );
     const show = (): void => {
       button.toggleClass("is-active", !without);
@@ -544,7 +575,10 @@ export class ExportPdfModal extends Modal {
     const frame = wrap.createDiv({ cls: "goodobsidian-thumb-frame" });
     frame.setCssStyles({ aspectRatio: aspectOf(this.host.pageSize(index)) });
     const canvas = frame.createEl("canvas", { cls: "goodobsidian-thumb-canvas" });
-    wrap.createDiv({ cls: "goodobsidian-thumb-number", text: `Page ${index + 1}` });
+    wrap.createDiv({
+      cls: "goodobsidian-thumb-number",
+      text: t("notebooks.export.page", { page: index + 1 }),
+    });
     this.single = canvas;
     void this.host.paintPreview(canvas, index, SINGLE_WIDTH).catch(() => undefined);
   }
@@ -575,7 +609,7 @@ export class ExportPdfModal extends Modal {
     if (canShareFiles(saved.files)) {
       // A fresh tap: the share sheet needs a user gesture, which the export's
       // own tap has long since spent.
-      const share = actions.createEl("button", { text: "Share…" });
+      const share = actions.createEl("button", { text: t("notebooks.export.share") });
       share.addEventListener("click", () => {
         const one = saved.files.length === 1 ? { title: saved.files[0].name } : {};
         navigator.share({ files: saved.files, ...one }).catch((error: unknown) => {
@@ -588,13 +622,13 @@ export class ExportPdfModal extends Modal {
     }
     // A folder of pictures has no one file to open.
     if (saved.paths.length === 1) {
-      const open = actions.createEl("button", { text: "Open" });
+      const open = actions.createEl("button", { text: t("notebooks.export.open") });
       open.addEventListener("click", () => {
         this.close();
         this.host.open(saved.paths[0]);
       });
     }
-    const done = actions.createEl("button", { cls: "mod-cta", text: "Done" });
+    const done = actions.createEl("button", { cls: "mod-cta", text: t("common.done") });
     done.addEventListener("click", () => this.close());
   }
 }
@@ -632,7 +666,7 @@ class PageGrid {
     only?: readonly number[],
   ) {
     this.el = parent.createDiv({ cls: "goodobsidian-export-grid" });
-    this.el.setAttribute("aria-label", "Pages");
+    this.el.setAttribute("aria-label", t("notebooks.export.pages"));
     if (onTap) {
       this.el.setAttribute("role", "listbox");
       this.el.setAttribute("aria-multiselectable", "true");
@@ -658,7 +692,7 @@ class PageGrid {
 
     for (const index of only ?? allPages(host.pageCount)) {
       const root = this.el.createDiv({ cls: "goodobsidian-thumb goodobsidian-export-tile" });
-      const label = `Page ${index + 1}`;
+      const label = t("notebooks.export.page", { page: index + 1 });
       let frame: HTMLElement;
       if (onTap) {
         if (index === host.currentPage) root.addClass("is-current");
@@ -706,8 +740,8 @@ class PageGrid {
       frame?.setAttribute(
         "aria-label",
         at !== undefined && choosing
-          ? `Page ${index + 1}, exported as page ${at}`
-          : `Page ${index + 1}`,
+          ? t("notebooks.export.pageAs", { page: index + 1, at })
+          : t("notebooks.export.page", { page: index + 1 }),
       );
       const label = tile.root.querySelector(".goodobsidian-export-order");
       if (label) label.textContent = at !== undefined && choosing ? String(at) : "";

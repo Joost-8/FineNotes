@@ -9,6 +9,7 @@
  * is filled in at once rather than shown as a step of its own.
  */
 
+import { t } from "../../i18n/translate";
 import {
   AlgebraError,
   type Expr,
@@ -54,7 +55,7 @@ export function deriveSteps(e: Expr, v = "x"): { result: Expr; steps: Step[] } {
     current = pass(current, v, rules);
     steps.push({ rule: [...rules].join(", "), expr: current });
   }
-  if (hasD(current)) throw new AlgebraError("Too complex");
+  if (hasD(current)) throw new AlgebraError(t("calculator.errTooComplex"));
   return { result: current, steps };
 }
 
@@ -111,22 +112,22 @@ const isVar = (f: Expr, v: string): boolean => f.t === "sym" && f.name === v;
 /** One rule applied to d/dv(f). */
 function rule(f: Expr, v: string, rules: Set<string>): Expr {
   if (free(f, v)) {
-    rules.add("Derivative of a constant");
+    rules.add(t("calculator.algDerivativeConstant"));
     return ZERO;
   }
   if (isVar(f, v)) {
-    rules.add("Power rule");
+    rules.add(t("calculator.algPowerRule"));
     return ONE;
   }
   switch (f.t) {
     case "add":
-      rules.add("Sum rule");
+      rules.add(t("calculator.algSumRule"));
       return add(...f.terms.map((t) => later(t, v)));
     case "mul": {
       const constant = f.factors.filter((x) => free(x, v));
       const rest = f.factors.filter((x) => !free(x, v));
       if (constant.length > 0) {
-        rules.add("Constant multiple");
+        rules.add(t("calculator.algConstantMultiple"));
         return mul(...constant, later(mul(...rest), v));
       }
       const bottom = rest.filter((x) => x.t === "pow" && x.exp.t === "num" && x.exp.v.n < 0n);
@@ -134,11 +135,11 @@ function rule(f: Expr, v: string, rules: Set<string>): Expr {
         const top = mul(...rest.filter((x) => !bottom.includes(x)));
         const den = mul(...bottom.map((b) => pow(b, num(-1))));
         if (!free(top, v)) {
-          rules.add("Quotient rule");
+          rules.add(t("calculator.algQuotientRule"));
           return div(sub(mul(later(top, v), den), mul(top, later(den, v))), pow(den, num(2)));
         }
       }
-      rules.add("Product rule");
+      rules.add(t("calculator.algProductRule"));
       const [first, ...others] = rest;
       const second = mul(...others);
       return add(mul(later(first, v), second), mul(first, later(second, v)));
@@ -149,35 +150,37 @@ function rule(f: Expr, v: string, rules: Set<string>): Expr {
         // u^n → n·u^(n−1)·u′
         const lowered = exp.t === "num" ? numQ(qsub(exp.v, { n: 1n, d: 1n })) : sub(exp, ONE);
         if (isVar(base, v)) {
-          rules.add("Power rule");
+          rules.add(t("calculator.algPowerRule"));
           return mul(exp, pow(base, lowered));
         }
-        rules.add("Chain rule");
+        rules.add(t("calculator.algChainRule"));
         return mul(exp, pow(base, lowered), later(base, v));
       }
       if (free(base, v)) {
         // a^u → a^u·ln(a)·u′
-        rules.add(isVar(exp, v) ? "Exponential rule" : "Chain rule");
+        rules.add(
+          isVar(exp, v) ? t("calculator.algExponentialRule") : t("calculator.algChainRule"),
+        );
         const log = base.t === "sym" && base.name === "e" ? ONE : fn("ln", base);
         return mul(f, log, later(exp, v));
       }
       // u^w = e^(w ln u): logarithmic differentiation.
-      rules.add("Logarithmic differentiation");
+      rules.add(t("calculator.algLogDifferentiation"));
       return mul(f, later(mul(exp, fn("ln", base)), v));
     }
     case "fn": {
       const inner = f.arg;
       const outer = derivativeOfFunction(f.name, inner);
-      const name = `Derivative of ${f.name}`;
+      const name = t("calculator.algDerivativeOf", { name: f.name });
       if (isVar(inner, v)) {
         rules.add(name);
         return outer;
       }
-      rules.add("Chain rule");
+      rules.add(t("calculator.algChainRule"));
       return mul(outer, later(inner, v));
     }
     default:
-      throw new AlgebraError("Cannot differentiate that");
+      throw new AlgebraError(t("calculator.algCannotDifferentiate"));
   }
 }
 
@@ -215,7 +218,7 @@ export function derivativeOfFunction(name: string, u: Expr): Expr {
     case "abs":
       return div(u, fn("abs", u));
     default:
-      throw new AlgebraError("Cannot differentiate that");
+      throw new AlgebraError(t("calculator.algCannotDifferentiate"));
   }
 }
 
@@ -223,7 +226,7 @@ export function derivativeOfFunction(name: string, u: Expr): Expr {
 function rewriteAll(e: Expr, v: string, rules: Set<string>): { expr: Expr } {
   let current = d(e, v);
   for (let i = 0; i < MAX_STEPS * 4 && hasD(current); i++) current = pass(current, v, rules);
-  if (hasD(current)) throw new AlgebraError("Too complex");
+  if (hasD(current)) throw new AlgebraError(t("calculator.errTooComplex"));
   return { expr: current };
 }
 

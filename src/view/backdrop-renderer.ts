@@ -21,6 +21,7 @@ import {
   fillPaper,
   pageLook,
 } from "../canvas/backdrop";
+import { t } from "../i18n/translate";
 import { type PdfDraw, invertPdfArea } from "../canvas/night";
 import type { BackdropPainter } from "../canvas/renderer";
 import { tilesFor } from "../canvas/pdf-tiles";
@@ -502,5 +503,5 @@ function inFrame(
 }
 
 function missingLabel(path: string): string {
-  return `Missing PDF source — ${path}`;
+  return t("view.pdf.missingSource", { path });
 }

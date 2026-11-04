@@ -16,6 +16,7 @@ const { askAi, askAiWithTools, sendVendorRequest, targetLabel, assertConfigured 
   await import("../../src/recognition/ai-client");
 const { ASK_MAX_TOOL_ROUNDS } = await import("../../src/recognition/ask-tools");
 const { ConnectionError } = await import("../../src/recognition/http");
+const { useLanguage } = await import("../../src/i18n/translate");
 
 const requestUrl = vi.mocked(obsidian.requestUrl);
 let sent: RequestUrlParam[] = [];
@@ -57,7 +58,7 @@ describe("askAi", () => {
   it("sends the system prompt and the turns, and returns the cleaned answer", async () => {
     answer = () =>
       Promise.resolve(response(200, { content: [{ type: "text", text: "  It is a proof. " }] }));
-    expect(await askAi(anthropic, "be brief", question)).toBe("It is a proof.");
+    expect((await askAi(anthropic, "be brief", question)).text).toBe("It is a proof.");
     expect(sent).toHaveLength(1);
     const body = JSON.parse(sent[0].body as string) as Record<string, unknown>;
     expect(body.system).toBe("be brief");
@@ -81,9 +82,17 @@ describe("askAi", () => {
       Promise.resolve(
         response(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }] }),
       );
-    expect(await askAi(openai, "", question)).toBe(
-      "half\n\n*(The answer was cut off at 8192 tokens.)*",
-    );
+    const cut = await askAi(openai, "", question);
+    expect(cut.text).toBe("half\n\n*(The answer was cut off at 8192 tokens.)*");
+    // Shown in the interface's language; sent back to the model in English.
+    useLanguage("de", { "ai.client.answerCutOff": "*(Bei {max} Tokens abgeschnitten.)*" });
+    try {
+      const german = await askAi(openai, "", question);
+      expect(german.text).toBe(cut.text);
+      expect(german.shown).toBe("half\n\n*(Bei 8192 Tokens abgeschnitten.)*");
+    } finally {
+      useLanguage("en");
+    }
     answer = () =>
       Promise.resolve(
         response(200, { choices: [{ message: { content: "" }, finish_reason: "length" }] }),
@@ -132,6 +141,7 @@ describe("askAiWithTools", () => {
     expect(result).toEqual({
       text: "Done: wrote it on page 3.",
       actions: ["Added a text box on page 3"],
+      notes: ["Added."],
     });
     expect(statuses).toEqual(["Reading page 3…", "Writing on page 3…"]);
     const [first, second, third] = bodies();
@@ -284,6 +294,7 @@ describe("askAiWithTools", () => {
       expect(result, config.vendor).toEqual({
         text: "Showing page 2.",
         actions: ["Went to page 2"],
+        notes: ["Showing page 2."],
       });
       const [first, second] = bodies();
       expect(first.tools, config.vendor).toEqual(second.tools);

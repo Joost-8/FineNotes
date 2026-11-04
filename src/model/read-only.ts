@@ -11,6 +11,7 @@
 
 import type { Command } from "./commands";
 import type { InkDocument } from "./document";
+import { t } from "../i18n/translate";
 
 /** Whether a document is read-only; only `true` is. */
 export function isReadOnly(doc: Pick<InkDocument, "readOnly"> | null): boolean {
@@ -28,7 +29,7 @@ export class SetReadOnly implements Command {
   private keyOrder: string[] = [];
 
   constructor(private readonly on: boolean) {
-    this.label = on ? "Make read-only" : "Allow editing";
+    this.label = on ? t("surface.command.makeReadOnly") : t("surface.command.allowEditing");
   }
 
   apply(doc: InkDocument): void {

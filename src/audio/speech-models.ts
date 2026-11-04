@@ -14,6 +14,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { t } from "../i18n/translate";
 import type { ModelAsset, ModelFile } from "../downloads/model-manifest";
 
 export type SpeechModelId = "whisper-tiny" | "whisper-base" | "whisper-small" | "whisper-turbo";
@@ -128,8 +129,8 @@ export const VERY_SLOW_SPEED = 0.5;
 export function speechChoiceLabel(id: SpeechModelId, size: string): string {
   const info = speechModelInfo(id);
   const notes = [size];
-  if (!info.mobile) notes.push("desktop only");
-  if (info.laptopSpeed < VERY_SLOW_SPEED) notes.push("very slow");
+  if (!info.mobile) notes.push(t("ai.speech.desktopOnly"));
+  if (info.laptopSpeed < VERY_SLOW_SPEED) notes.push(t("ai.speech.verySlow"));
   return `${info.label} (${notes.join(", ")})`;
 }
 
@@ -149,8 +150,8 @@ export function speechAsset(id: SpeechModelId): ModelAsset {
   const info = speechModelInfo(id);
   return {
     id,
-    label: `${info.label} (speech recognizer model)`,
-    purpose: "Transcribes recordings on this device, with no key and no server.",
+    label: t("ai.speech.modelLabel", { name: info.label }),
+    purpose: t("ai.speech.purpose"),
     version: "1",
     format: 1,
     folder: `speech-${id.slice("whisper-".length)}`,
@@ -212,24 +213,115 @@ export function lengthVerdict(
 
 /** Languages offered for the recognizer, with "auto" first: ISO 639-1 codes Whisper knows. */
 export const SPEECH_LANGUAGES: readonly { code: string; name: string }[] = [
-  { code: "auto", name: "Detect" },
-  { code: "en", name: "English" },
-  { code: "nl", name: "Dutch" },
-  { code: "de", name: "German" },
-  { code: "fr", name: "French" },
-  { code: "es", name: "Spanish" },
-  { code: "it", name: "Italian" },
-  { code: "pt", name: "Portuguese" },
-  { code: "pl", name: "Polish" },
-  { code: "sv", name: "Swedish" },
-  { code: "tr", name: "Turkish" },
-  { code: "ru", name: "Russian" },
-  { code: "uk", name: "Ukrainian" },
-  { code: "zh", name: "Chinese" },
-  { code: "ja", name: "Japanese" },
-  { code: "ko", name: "Korean" },
-  { code: "ar", name: "Arabic" },
-  { code: "hi", name: "Hindi" },
+  // The names are getters: read when the dropdown is drawn, in the language then in use.
+  {
+    code: "auto",
+    get name() {
+      return t("ai.speechLang.auto");
+    },
+  },
+  {
+    code: "en",
+    get name() {
+      return t("ai.speechLang.en");
+    },
+  },
+  {
+    code: "nl",
+    get name() {
+      return t("ai.speechLang.nl");
+    },
+  },
+  {
+    code: "de",
+    get name() {
+      return t("ai.speechLang.de");
+    },
+  },
+  {
+    code: "fr",
+    get name() {
+      return t("ai.speechLang.fr");
+    },
+  },
+  {
+    code: "es",
+    get name() {
+      return t("ai.speechLang.es");
+    },
+  },
+  {
+    code: "it",
+    get name() {
+      return t("ai.speechLang.it");
+    },
+  },
+  {
+    code: "pt",
+    get name() {
+      return t("ai.speechLang.pt");
+    },
+  },
+  {
+    code: "pl",
+    get name() {
+      return t("ai.speechLang.pl");
+    },
+  },
+  {
+    code: "sv",
+    get name() {
+      return t("ai.speechLang.sv");
+    },
+  },
+  {
+    code: "tr",
+    get name() {
+      return t("ai.speechLang.tr");
+    },
+  },
+  {
+    code: "ru",
+    get name() {
+      return t("ai.speechLang.ru");
+    },
+  },
+  {
+    code: "uk",
+    get name() {
+      return t("ai.speechLang.uk");
+    },
+  },
+  {
+    code: "zh",
+    get name() {
+      return t("ai.speechLang.zh");
+    },
+  },
+  {
+    code: "ja",
+    get name() {
+      return t("ai.speechLang.ja");
+    },
+  },
+  {
+    code: "ko",
+    get name() {
+      return t("ai.speechLang.ko");
+    },
+  },
+  {
+    code: "ar",
+    get name() {
+      return t("ai.speechLang.ar");
+    },
+  },
+  {
+    code: "hi",
+    get name() {
+      return t("ai.speechLang.hi");
+    },
+  },
 ];
 
 /** The code to hand the recognizer: a known one, else "auto". */

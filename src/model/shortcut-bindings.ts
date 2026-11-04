@@ -20,6 +20,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { type TextKey, t } from "../i18n/translate";
 import { type Modifier, type Shortcut, type ShortcutGroup, keyLabel } from "./shortcuts";
 
 /** A stored input's modifiers, named as the reference sheet names them. */
@@ -55,12 +56,23 @@ export type ShortcutInput = ShortcutKeyInput | ShortcutButtonInput;
 /** Press switches to a tool; hold lends it until the input is let go. */
 export type ShortcutMode = "press" | "hold";
 
+/** The table's headings, in order, by the key of their name. */
+export const SHORTCUT_GROUP_KEYS = [
+  "toolbar.shortcut.group.tools",
+  "toolbar.shortcut.group.savedPens",
+  "toolbar.shortcut.group.selectionEditing",
+  "toolbar.shortcut.group.viewZoom",
+] as const satisfies readonly TextKey[];
+
+/** One heading of the table. Compare these, never the translated names. */
+export type ShortcutGroupKey = (typeof SHORTCUT_GROUP_KEYS)[number];
+
 export interface ShortcutAction {
   /** Stable id: what `localStorage` and the runtime dispatch name. */
   id: string;
   label: string;
-  /** The table's heading. */
-  group: string;
+  /** The table's heading; `t(groupKey)` is its name. */
+  groupKey: ShortcutGroupKey;
   /** What the row's ⓘ says, when the label alone is not enough. */
   hint?: string;
   /**
@@ -94,74 +106,96 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   // Tools. The keys are the ones `surface-keys.ts` already listens for.
   {
     id: "tool.pen",
-    label: "Pen",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.pen");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("p"), key("w")],
     defaultMode: "press",
   },
   {
     id: "tool.highlighter",
-    label: "Highlighter",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.highlighter");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("h")],
     defaultMode: "press",
   },
   {
     id: "tool.eraser",
-    label: "Eraser",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.eraser");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("e")],
     defaultMode: "press",
   },
   {
     id: "tool.select",
-    label: "Lasso",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.lasso");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("v")],
     defaultMode: "press",
   },
   {
     id: "tool.shape",
-    label: "Shapes",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.shapes");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("s")],
     defaultMode: "press",
   },
   {
     id: "tool.text",
-    label: "Text",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.text");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: [key("t")],
     defaultMode: "press",
   },
   {
     id: "tool.laser",
-    label: "Laser pointer",
-    group: "Tools",
-    hint: "A trail that fades; never saved",
+    get label() {
+      return t("toolbar.tool.laserPointer");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
+    get hint() {
+      return t("toolbar.shortcut.hint.laser");
+    },
     holdable: true,
     defaults: [key("l")],
     defaultMode: "press",
   },
   {
     id: "tool.pan",
-    label: "Hand",
-    group: "Tools",
-    hint: "Hold to move the page while the pen writes",
+    get label() {
+      return t("toolbar.tool.hand");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
+    get hint() {
+      return t("toolbar.shortcut.hint.hand");
+    },
     holdable: true,
     defaults: [key(" ")],
     defaultMode: "hold",
   },
   {
     id: "tool.zoom",
-    label: "Magnifier",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.magnifier");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: true,
     defaults: NO_INPUTS,
     defaultMode: "hold",
@@ -172,8 +206,10 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     const number = index + 1;
     return {
       id: `pen.saved.${number}`,
-      label: `Saved pen ${number}`,
-      group: "Saved pens",
+      get label() {
+        return t("toolbar.shortcut.savedPen", { number });
+      },
+      groupKey: "toolbar.shortcut.group.savedPens",
       holdable: false,
       defaults: [key(String(number))],
       defaultMode: "press",
@@ -183,32 +219,40 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   // The actions the keyboard already had.
   {
     id: "edit.undo",
-    label: "Undo",
-    group: "Selection and editing",
+    get label() {
+      return t("common.undo");
+    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("z", "Mod")],
     defaultMode: "press",
   },
   {
     id: "edit.redo",
-    label: "Redo",
-    group: "Selection and editing",
+    get label() {
+      return t("common.redo");
+    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("z", "Mod", "Shift")],
     defaultMode: "press",
   },
   {
     id: "edit.select-all",
-    label: "Select everything on the page",
-    group: "Selection and editing",
+    get label() {
+      return t("toolbar.shortcut.selectAll");
+    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("a", "Mod")],
     defaultMode: "press",
   },
   {
     id: "edit.delete",
-    label: "Delete the selection",
-    group: "Selection and editing",
+    get label() {
+      return t("toolbar.shortcut.deleteSelection");
+    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("Delete"), key("Backspace")],
     defaultMode: "press",
@@ -216,8 +260,10 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   },
   {
     id: "edit.copy",
-    label: "Copy",
-    group: "Selection and editing",
+    get label() {
+      return t("common.copy");
+    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("c", "Mod")],
     defaultMode: "press",
@@ -225,8 +271,10 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   },
   {
     id: "edit.cut",
-    label: "Cut",
-    group: "Selection and editing",
+    get label() {
+      return t("common.cut");
+    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("x", "Mod")],
     defaultMode: "press",
@@ -234,8 +282,10 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   },
   {
     id: "edit.paste",
-    label: "Paste",
-    group: "Selection and editing",
+    get label() {
+      return t("common.paste");
+    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: [key("v", "Mod")],
     defaultMode: "press",
@@ -243,8 +293,10 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   },
   {
     id: "edit.turn-into-text",
-    label: "Turn the selection into text",
-    group: "Selection and editing",
+    get label() {
+      return t("toolbar.shortcut.turnIntoText");
+    },
+    groupKey: "toolbar.shortcut.group.selectionEditing",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -253,56 +305,70 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   // View and zoom.
   {
     id: "view.zoom-in",
-    label: "Zoom in",
-    group: "View and zoom",
+    get label() {
+      return t("toolbar.zoomIn");
+    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
   },
   {
     id: "view.zoom-out",
-    label: "Zoom out",
-    group: "View and zoom",
+    get label() {
+      return t("toolbar.zoomOut");
+    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
   },
   {
     id: "view.zoom-fit",
-    label: "Fit the page",
-    group: "View and zoom",
+    get label() {
+      return t("toolbar.shortcut.fitPage");
+    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
   },
   {
     id: "view.next-page",
-    label: "Next page",
-    group: "View and zoom",
+    get label() {
+      return t("toolbar.shortcut.nextPage");
+    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: [key("PageDown")],
     defaultMode: "press",
   },
   {
     id: "view.previous-page",
-    label: "Previous page",
-    group: "View and zoom",
+    get label() {
+      return t("toolbar.shortcut.previousPage");
+    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: [key("PageUp")],
     defaultMode: "press",
   },
   {
     id: "view.fullscreen",
-    label: "Full screen",
-    group: "View and zoom",
+    get label() {
+      return t("toolbar.fullScreen");
+    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
   },
   {
     id: "view.shortcuts",
-    label: "Show the shortcut sheet",
-    group: "View and zoom",
+    get label() {
+      return t("toolbar.shortcut.showSheet");
+    },
+    groupKey: "toolbar.shortcut.group.viewZoom",
     holdable: false,
     defaults: [key("?")],
     defaultMode: "press",
@@ -311,56 +377,70 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   // Tool bar items that are actions rather than tools: they are tools too.
   {
     id: "bar.image",
-    label: "Insert image",
-    group: "Tools",
+    get label() {
+      return t("toolbar.insertImage");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
   },
   {
     id: "bar.pdf",
-    label: "Insert PDF",
-    group: "Tools",
+    get label() {
+      return t("toolbar.insertPdf");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
   },
   {
     id: "bar.sticker",
-    label: "Stickers",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.stickers");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
   },
   {
     id: "bar.sticky",
-    label: "Sticky notes",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.stickyNotes");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
   },
   {
     id: "bar.ruler",
-    label: "Ruler",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.ruler");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
   },
   {
     id: "bar.record",
-    label: "Record audio",
-    group: "Tools",
+    get label() {
+      return t("toolbar.tool.recordAudio");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
   },
   {
     id: "bar.stylus",
-    label: "Stylus only mode",
-    group: "Tools",
+    get label() {
+      return t("toolbar.shortcut.stylusOnlyMode");
+    },
+    groupKey: "toolbar.shortcut.group.tools",
     holdable: false,
     defaults: NO_INPUTS,
     defaultMode: "press",
@@ -376,9 +456,13 @@ export const SHORTCUT_ACTIONS_BY_ID: ReadonlyMap<string, ShortcutAction> = new M
 export const SHORTCUT_ACTION_GROUPS: readonly {
   title: string;
   actions: readonly ShortcutAction[];
-}[] = ["Tools", "Saved pens", "Selection and editing", "View and zoom"].map((title) => ({
-  title,
-  actions: SHORTCUT_ACTIONS.filter((action) => action.group === title),
+}[] = SHORTCUT_GROUP_KEYS.map((key) => ({
+  get title() {
+    return t(key);
+  },
+  get actions() {
+    return SHORTCUT_ACTIONS.filter((action) => action.groupKey === key);
+  },
 }));
 
 // --- Inputs -------------------------------------------------------------------
@@ -536,6 +620,7 @@ export function sameInput(a: ShortcutInput, b: ShortcutInput): boolean {
 
 // --- Labels -------------------------------------------------------------------
 
+/** Key caps that read the same in every language: the key's own name or a glyph. */
 const KEY_NAMES: Record<string, string> = {
   " ": "Space",
   ArrowLeft: "←",
@@ -548,17 +633,24 @@ const KEY_NAMES: Record<string, string> = {
   Backspace: "Backspace",
   Enter: "Return",
   Tab: "Tab",
-  AudioVolumeUp: "Volume Up",
-  AudioVolumeDown: "Volume Down",
-  AudioVolumeMute: "Mute",
-  MediaPlayPause: "Play/Pause",
-  MediaTrackNext: "Next track",
-  MediaTrackPrevious: "Previous track",
+};
+
+/** Media keys are named by what they do, so their caps are words to translate. */
+const MEDIA_KEY_NAMES: Record<string, TextKey> = {
+  AudioVolumeUp: "toolbar.shortcut.cap.volumeUp",
+  AudioVolumeDown: "toolbar.shortcut.cap.volumeDown",
+  AudioVolumeMute: "toolbar.shortcut.cap.mute",
+  MediaPlayPause: "toolbar.shortcut.cap.playPause",
+  MediaTrackNext: "toolbar.shortcut.cap.nextTrack",
+  MediaTrackPrevious: "toolbar.shortcut.cap.previousTrack",
 };
 
 /** A key as its key cap shows it. */
 export function keyCap(value: string): string {
   if (value.length === 1 && /[a-z]/.test(value)) return value.toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(MEDIA_KEY_NAMES, value)) {
+    return t(MEDIA_KEY_NAMES[value]);
+  }
   return KEY_NAMES[value] ?? value;
 }
 
@@ -566,17 +658,19 @@ export function keyCap(value: string): string {
 export function buttonCap(input: ShortcutButtonInput): string {
   switch (input.button) {
     case 1:
-      return "Middle click";
+      return t("toolbar.shortcut.cap.middleClick");
     case 2:
-      return input.pen ? "Side button" : "Right click";
+      return input.pen
+        ? t("toolbar.shortcut.cap.sideButton")
+        : t("toolbar.shortcut.cap.rightClick");
     case 3:
-      return "Back button";
+      return t("toolbar.shortcut.cap.backButton");
     case 4:
-      return "Forward button";
+      return t("toolbar.shortcut.cap.forwardButton");
     case 5:
-      return "Eraser end";
+      return t("toolbar.shortcut.cap.eraserEnd");
     default:
-      return `Button ${input.button}`;
+      return t("toolbar.shortcut.cap.button", { number: input.button });
   }
 }
 
@@ -598,8 +692,8 @@ export function inputText(input: ShortcutInput, apple: boolean): string {
 
 /** A row's input as one line: its ways with "or", or "Not set". */
 export function inputsText(inputs: readonly ShortcutInput[], apple: boolean): string {
-  if (inputs.length === 0) return "Not set";
-  return inputs.map((input) => inputText(input, apple)).join(" or ");
+  if (inputs.length === 0) return t("toolbar.shortcut.notSet");
+  return inputs.map((input) => inputText(input, apple)).join(` ${t("toolbar.shortcut.or")} `);
 }
 
 // --- User changes and the effective table -------------------------------------
@@ -906,14 +1000,14 @@ export function boundShortcutGroups(
   for (const row of table.rows) {
     const { id } = row.action;
     if (listed.has(id) || id.startsWith("pen.saved.") || row.inputs.length === 0) continue;
-    const gesture = row.mode === "hold" ? "hold" : undefined;
+    const gesture = row.mode === "hold" ? t("toolbar.shortcut.gesture.hold") : undefined;
     const line: Shortcut = {
       action: row.action.label,
       ways: row.inputs.map((input) => ({ keys: sheetKeys(input), gesture })),
     };
-    const group = out.find((candidate) => candidate.title === row.action.group);
+    const group = out.find((candidate) => candidate.title === t(row.action.groupKey));
     if (group) group.shortcuts.push(line);
-    else out.push({ title: row.action.group, shortcuts: [line] });
+    else out.push({ title: t(row.action.groupKey), shortcuts: [line] });
   }
   return out;
 }

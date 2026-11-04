@@ -8,6 +8,7 @@
  * numbers as before.
  */
 
+import { t } from "../../i18n/translate";
 import { type CalcNode, type CalcValue, isRational, parseExpression } from "../calculator";
 import {
   AlgebraError,
@@ -32,7 +33,7 @@ import {
 
 function value(v: CalcValue): Expr {
   if (isRational(v)) return numQ(q(v.n, v.d));
-  throw new AlgebraError("Not exact");
+  throw new AlgebraError(t("calculator.algNotExact"));
 }
 
 const FNS = new Set<string>(FN_NAMES);
@@ -46,7 +47,7 @@ export function fromNode(node: CalcNode): Expr {
       if (node.name === "pi") return PI;
       if (node.name === "e") return E;
       if (node.name === "ans" || node.name === "inf" || node.slot !== undefined)
-        throw new AlgebraError("Not symbolic");
+        throw new AlgebraError(t("calculator.algNotSymbolic"));
       if (node.name === "theta") return sym("θ");
       return sym(node.name);
     case "neg":
@@ -66,14 +67,14 @@ export function fromNode(node: CalcNode): Expr {
         case "^":
           return pow(a, b);
         default:
-          throw new AlgebraError("Not symbolic");
+          throw new AlgebraError(t("calculator.algNotSymbolic"));
       }
     }
     case "post":
       if (node.op === "°") return mul(fromNode(node.a), div(PI, num(180)));
-      throw new AlgebraError("Not symbolic");
+      throw new AlgebraError(t("calculator.algNotSymbolic"));
     case "rel":
-      throw new AlgebraError("An equation, not an expression");
+      throw new AlgebraError(t("calculator.algEquationNotExpression"));
     case "call":
       return call(node);
   }
@@ -92,7 +93,7 @@ function call(node: Extract<CalcNode, { k: "call" }>): Expr {
       return pow(E, args[0]);
   }
   if (FNS.has(node.fn) && args.length === 1) return fn(node.fn as FnName, args[0]);
-  throw new AlgebraError("Not symbolic");
+  throw new AlgebraError(t("calculator.algNotSymbolic"));
 }
 
 /** Calculator text as a symbolic expression (letters allowed); throws when it cannot be. */

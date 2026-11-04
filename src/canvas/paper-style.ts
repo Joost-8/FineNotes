@@ -11,6 +11,7 @@
 
 import type { Ruling, SyntheticBackdrop } from "../model/document";
 import { type PaperColorId, templateBackdrop } from "../model/templates";
+import { t } from "../i18n/translate";
 import { resolveSpacing } from "./backdrop";
 
 export interface PaperStyle {
@@ -24,36 +25,146 @@ export interface PaperStyle {
 
 /** Papers the picker offers, light to dark: white, creams, pastels, a grey and a black. */
 export const PAPER_SWATCHES: ReadonlyArray<{ label: string; color: string }> = [
-  { label: "White", color: "#ffffff" },
-  { label: "Ivory", color: "#fbf8ed" },
-  { label: "Cream", color: "#f6efe0" },
-  { label: "Blush", color: "#fcefee" },
-  { label: "Mint", color: "#eef7f1" },
-  { label: "Sky", color: "#edf4fb" },
-  { label: "Lavender", color: "#f3f0fb" },
-  { label: "Stone", color: "#ecebe8" },
-  { label: "Slate", color: "#3a3d44" },
-  { label: "Charcoal", color: "#26272b" },
+  {
+    get label() {
+      return t("notebooks.paperColor.white");
+    },
+    color: "#ffffff",
+  },
+  {
+    get label() {
+      return t("notebooks.paperColor.ivory");
+    },
+    color: "#fbf8ed",
+  },
+  {
+    get label() {
+      return t("notebooks.paperColor.cream");
+    },
+    color: "#f6efe0",
+  },
+  {
+    get label() {
+      return t("notebooks.paperColor.blush");
+    },
+    color: "#fcefee",
+  },
+  {
+    get label() {
+      return t("notebooks.paperColor.mint");
+    },
+    color: "#eef7f1",
+  },
+  {
+    get label() {
+      return t("notebooks.paperColor.sky");
+    },
+    color: "#edf4fb",
+  },
+  {
+    get label() {
+      return t("notebooks.paperColor.lavender");
+    },
+    color: "#f3f0fb",
+  },
+  {
+    get label() {
+      return t("notebooks.paperColor.stone");
+    },
+    color: "#ecebe8",
+  },
+  {
+    get label() {
+      return t("notebooks.paperColor.slate");
+    },
+    color: "#3a3d44",
+  },
+  {
+    get label() {
+      return t("notebooks.paperColor.charcoal");
+    },
+    color: "#26272b",
+  },
 ];
 
 /** Rule colours: the template's own first (`null`), then quiet tones that read on light paper. */
 export const RULE_SWATCHES: ReadonlyArray<{ label: string; color: string | null }> = [
-  { label: "Template's own", color: null },
-  { label: "Soft grey", color: "#d5d8de" },
-  { label: "Blue", color: "#b8cde8" },
-  { label: "Red", color: "#efb8b8" },
-  { label: "Green", color: "#b9dcc4" },
-  { label: "Sepia", color: "#d9c7a8" },
-  { label: "Lavender", color: "#cfc6ea" },
-  { label: "Dark", color: "#9aa0ab" },
+  {
+    get label() {
+      return t("notebooks.ruleColor.templateOwn");
+    },
+    color: null,
+  },
+  {
+    get label() {
+      return t("notebooks.ruleColor.softGrey");
+    },
+    color: "#d5d8de",
+  },
+  {
+    get label() {
+      return t("notebooks.ruleColor.blue");
+    },
+    color: "#b8cde8",
+  },
+  {
+    get label() {
+      return t("notebooks.ruleColor.red");
+    },
+    color: "#efb8b8",
+  },
+  {
+    get label() {
+      return t("notebooks.ruleColor.green");
+    },
+    color: "#b9dcc4",
+  },
+  {
+    get label() {
+      return t("notebooks.ruleColor.sepia");
+    },
+    color: "#d9c7a8",
+  },
+  {
+    get label() {
+      return t("notebooks.ruleColor.lavender");
+    },
+    color: "#cfc6ea",
+  },
+  {
+    get label() {
+      return t("notebooks.ruleColor.dark");
+    },
+    color: "#9aa0ab",
+  },
 ];
 
 /** Spacing steps as multiples of the template's own. */
 export const SPACING_STEPS: ReadonlyArray<{ label: string; k: number }> = [
-  { label: "Tight", k: 0.8 },
-  { label: "Normal", k: 1 },
-  { label: "Roomy", k: 1.25 },
-  { label: "Wide", k: 1.5 },
+  {
+    get label() {
+      return t("notebooks.spacing.tight");
+    },
+    k: 0.8,
+  },
+  {
+    get label() {
+      return t("notebooks.spacing.normal");
+    },
+    k: 1,
+  },
+  {
+    get label() {
+      return t("notebooks.spacing.roomy");
+    },
+    k: 1.25,
+  },
+  {
+    get label() {
+      return t("notebooks.spacing.wide");
+    },
+    k: 1.5,
+  },
 ];
 
 /** A dark paper: one whose rules and default ink need light tones. */

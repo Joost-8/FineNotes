@@ -31,6 +31,7 @@ import {
 import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import { installPopoverDismiss, placePopover } from "./template-picker";
+import { t, tn } from "../i18n/translate";
 
 export interface MarginChoice {
   side: MarginSide;
@@ -74,23 +75,61 @@ export const MARGIN_SWATCH_CSS_WIDTH = 56;
 const POPOVER_WIDTH = 300;
 
 const SIDES: ReadonlyArray<{ side: MarginSide; icon: string; label: string }> = [
-  { side: "none", icon: "square-slash", label: "No margin" },
-  { side: "left", icon: "panel-left", label: "Margin on the left" },
-  { side: "right", icon: "panel-right", label: "Margin on the right" },
-  { side: "both", icon: "columns-3", label: "Margin on both sides" },
+  {
+    side: "none",
+    icon: "square-slash",
+    get label() {
+      return t("surface.margin.none");
+    },
+  },
+  {
+    side: "left",
+    icon: "panel-left",
+    get label() {
+      return t("surface.margin.left");
+    },
+  },
+  {
+    side: "right",
+    icon: "panel-right",
+    get label() {
+      return t("surface.margin.right");
+    },
+  },
+  {
+    side: "both",
+    icon: "columns-3",
+    get label() {
+      return t("surface.margin.both");
+    },
+  },
 ];
 
 const PAPER_NAMES: Record<MarginPaperChoice, string> = {
-  plain: "Plain",
-  lined: "Lined",
-  grid: "Grid",
-  dotted: "Dotted",
+  get plain() {
+    return t("surface.margin.paper.plain");
+  },
+  get lined() {
+    return t("surface.margin.paper.lined");
+  },
+  get grid() {
+    return t("surface.margin.paper.grid");
+  },
+  get dotted() {
+    return t("surface.margin.paper.dotted");
+  },
 };
 
 const SCOPE_NAMES: Record<MarginScope, string> = {
-  page: "This page",
-  pdf: "PDF pages",
-  all: "All pages",
+  get page() {
+    return t("surface.margin.scope.page");
+  },
+  get pdf() {
+    return t("surface.margin.scope.pdf");
+  },
+  get all() {
+    return t("surface.margin.scope.all");
+  },
 };
 
 export class MarginPopover {
@@ -114,7 +153,7 @@ export class MarginPopover {
     this.choice = { ...options.initial, scope };
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-margin" });
     this.el.setAttribute("role", "dialog");
-    this.el.setAttribute("aria-label", "Margin");
+    this.el.setAttribute("aria-label", t("surface.margin.title"));
     this.build();
     this.sync();
     placePopover(this.el, anchor, POPOVER_WIDTH);
@@ -143,7 +182,7 @@ export class MarginPopover {
   private build(): void {
     const seg = this.el.createDiv({ cls: "goodobsidian-segmented goodobsidian-margin-sides" });
     seg.setAttribute("role", "radiogroup");
-    seg.setAttribute("aria-label", "Margin");
+    seg.setAttribute("aria-label", t("surface.margin.title"));
     for (const { side, icon, label } of SIDES) {
       // `clickable-icon`: Obsidian pads every other button 20 px on the iPad.
       const button = seg.createEl("button", { cls: "clickable-icon" });
@@ -162,9 +201,9 @@ export class MarginPopover {
     this.confirm = this.el.createDiv({ cls: "goodobsidian-margin-confirm is-hidden" });
     this.confirmText = this.confirm.createSpan();
     const answers = this.confirm.createDiv({ cls: "goodobsidian-margin-confirm-buttons" });
-    const keep = answers.createEl("button", { text: "Keep" });
+    const keep = answers.createEl("button", { text: t("surface.margin.keep") });
     keep.addEventListener("click", () => this.confirm.addClass("is-hidden"));
-    const remove = answers.createEl("button", { cls: "mod-warning", text: "Delete" });
+    const remove = answers.createEl("button", { cls: "mod-warning", text: t("common.delete") });
     remove.addEventListener("click", () => {
       this.confirm.addClass("is-hidden");
       this.change({ side: "none", drop: true });
@@ -179,7 +218,7 @@ export class MarginPopover {
       attr: { min: String(MARGIN_MIN_PERCENT), max: String(MARGIN_MAX_PERCENT), step: "1" },
     });
     dragRange(this.slider);
-    this.slider.setAttribute("aria-label", "Margin width");
+    this.slider.setAttribute("aria-label", t("surface.margin.width"));
     this.slider.addEventListener("input", () =>
       this.change({ percent: Number(this.slider.value) }),
     );
@@ -188,7 +227,7 @@ export class MarginPopover {
     // The paper: a swatch of each, named in its tooltip.
     const papers = this.el.createDiv({ cls: "goodobsidian-margin-papers" });
     papers.setAttribute("role", "radiogroup");
-    papers.setAttribute("aria-label", "Margin paper");
+    papers.setAttribute("aria-label", t("surface.margin.paperGroup"));
     for (const paper of MARGIN_PAPERS) {
       const button = papers.createEl("button", { cls: "goodobsidian-margin-paper clickable-icon" });
       button.setAttribute("role", "radio");
@@ -205,7 +244,7 @@ export class MarginPopover {
     if (this.options.scopes.length > 1) {
       const scopes = this.el.createDiv({ cls: "goodobsidian-segmented goodobsidian-margin-scope" });
       scopes.setAttribute("role", "radiogroup");
-      scopes.setAttribute("aria-label", "Which pages");
+      scopes.setAttribute("aria-label", t("surface.margin.whichPages"));
       for (const scope of this.options.scopes) {
         const button = scopes.createEl("button", {
           cls: "clickable-icon",
@@ -234,11 +273,10 @@ export class MarginPopover {
       this.change({ side: "none", drop: true });
       return true;
     }
-    const things = items === 1 ? "1 item" : `${items} items`;
     this.confirmText.setText(
       pages > 1
-        ? `Delete ${things} in the margins of ${pages} pages?`
-        : `Delete ${things} in the margin?`,
+        ? tn("surface.margin.deleteInMargins", items, { pages })
+        : tn("surface.margin.deleteInMargin", items),
     );
     this.confirm.removeClass("is-hidden");
     return true;

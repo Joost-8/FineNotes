@@ -14,6 +14,7 @@ import {
   keyName,
   shortcutText,
 } from "../model/shortcuts";
+import { t } from "../i18n/translate";
 
 /**
  * Fill `parent` with the list, keys named for Apple devices (`apple`: ⌘ ⌥ ⇧)
@@ -36,7 +37,10 @@ export function renderShortcutList(
       keys.setAttribute("aria-label", shortcutText(shortcut, apple));
       shortcut.ways.forEach((way, index) => {
         if (index > 0) {
-          keys.createSpan({ cls: "goodobsidian-shortcut-sep", text: shortcut.range ? "–" : "or" });
+          keys.createSpan({
+            cls: "goodobsidian-shortcut-sep",
+            text: shortcut.range ? "–" : t("toolbar.shortcut.or"),
+          });
         }
         drawWay(keys, way, apple);
       });

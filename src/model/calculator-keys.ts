@@ -18,6 +18,7 @@
  * from `Ans`; anything else starts afresh.
  */
 
+import { type TextKey, t } from "../i18n/translate";
 import { ACTIVE_BOX, CARET, type NumberBase, PLACEHOLDER } from "./calculator";
 
 export { ACTIVE_BOX, CARET };
@@ -53,14 +54,47 @@ export interface CalcKey {
 
 export type KeyTab = "basic" | "trig" | "calculus" | "bases" | "memory" | "graph";
 
-/** The tabs, in order; Graph only shows while a graph line is edited. */
+/**
+ * The tabs, in order; Graph only shows while a graph line is edited. Each
+ * name is read when it is asked for (a getter), never when this file loads.
+ */
 export const KEY_TABS: ReadonlyArray<{ id: KeyTab; label: string }> = [
-  { id: "basic", label: "Basic" },
-  { id: "trig", label: "Trig" },
-  { id: "calculus", label: "Calculus" },
-  { id: "bases", label: "Bases" },
-  { id: "memory", label: "Memory" },
-  { id: "graph", label: "Graph" },
+  {
+    id: "basic",
+    get label() {
+      return t("calculator.tabBasic");
+    },
+  },
+  {
+    id: "trig",
+    get label() {
+      return t("calculator.tabTrig");
+    },
+  },
+  {
+    id: "calculus",
+    get label() {
+      return t("calculator.tabCalculus");
+    },
+  },
+  {
+    id: "bases",
+    get label() {
+      return t("calculator.tabBases");
+    },
+  },
+  {
+    id: "memory",
+    get label() {
+      return t("calculator.tabMemory");
+    },
+  },
+  {
+    id: "graph",
+    get label() {
+      return t("calculator.graph");
+    },
+  },
 ];
 
 export function isKeyTab(value: unknown): value is KeyTab {
@@ -80,131 +114,165 @@ function closed(insert: string): string {
   return insert.endsWith("(") ? `${insert}${BOX})` : insert;
 }
 
-const fn = (
-  label: string,
-  insert: string,
-  help: string,
-  extra: Partial<CalcKey> = {},
-): CalcKey => ({
-  label,
-  insert: closed(insert),
-  help,
-  tone: "fn",
-  decimalOnly: true,
-  ...extra,
-});
-const op = (label: string, insert: string, aria: string, help: string): CalcKey => ({
-  label,
-  insert,
-  aria,
-  help,
-  tone: "op",
-  continues: true,
-});
+/**
+ * `key` with its spoken name and help line read from the language when they
+ * are asked for, never when this file loads (the tables below are constants).
+ */
+function worded(key: CalcKey, help?: TextKey | (() => string), aria?: TextKey): CalcKey {
+  if (help !== undefined) {
+    const read = typeof help === "function" ? help : () => t(help);
+    Object.defineProperty(key, "help", { get: read, enumerable: true, configurable: true });
+  }
+  if (aria !== undefined) {
+    Object.defineProperty(key, "aria", {
+      get: () => t(aria),
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  return key;
+}
+
+/** The extras a key may carry: its spoken name is given as a text key. */
+type Extra = Partial<Omit<CalcKey, "aria" | "help">> & { aria?: TextKey };
+
+const fn = (label: string, insert: string, help: TextKey, extra: Extra = {}): CalcKey => {
+  const { aria, ...rest } = extra;
+  return worded(
+    { label, insert: closed(insert), tone: "fn", decimalOnly: true, ...rest },
+    help,
+    aria,
+  );
+};
+const op = (label: string, insert: string, aria: TextKey, help: TextKey): CalcKey =>
+  worded({ label, insert, tone: "op", continues: true }, help, aria);
 const digit = (d: number): CalcKey => ({
   label: d.toString(16).toUpperCase(),
   insert: `${d}`,
   digit: d,
 });
-const hex = (d: number): CalcKey => ({
-  ...digit(d),
-  insert: d.toString(16).toUpperCase(),
-  help: `Hex digit ${d.toString(16).toUpperCase()} (${d}); base 16 only`,
-});
+const hex = (d: number): CalcKey =>
+  worded({ ...digit(d), insert: d.toString(16).toUpperCase() }, () =>
+    t("calculator.helpHexDigit", { letter: d.toString(16).toUpperCase(), value: d }),
+  );
 const anyBase = { decimalOnly: false } as const;
-const baseKey = (base: NumberBase, label: string, help: string): CalcKey => ({
-  label,
-  action: "base",
-  base,
-  help,
-  tone: "mode",
-});
+const baseKey = (base: NumberBase, label: string, help: TextKey): CalcKey =>
+  worded({ label, action: "base", base, tone: "mode" }, help);
 
 /** A function key's rows, six slots each; null is an empty slot. */
 export type KeyRows = ReadonlyArray<ReadonlyArray<CalcKey | null>>;
 
 const BASIC: KeyRows = [
   [
-    fn("x²", "²", "Square what is before it", { aria: "squared", continues: true, ...anyBase }),
-    fn("xʸ", `^(${BOX})`, "To the power of what goes in the box; ▶ comes back down", {
-      aria: "to the power",
+    fn("x²", "²", "calculator.helpSquare", {
+      aria: "calculator.ariaSquared",
       continues: true,
       ...anyBase,
     }),
-    fn("√", `√(`, "Square root", { aria: "square root" }),
-    fn("ⁿ√", `root(${BOX}, ${BOX})`, "root(x, n): the nth root of x", { aria: "nth root" }),
-    fn("x⁻¹", "^(−1)", "One over what is before it", { aria: "reciprocal", continues: true }),
-    fn("π", "π", "Pi, 3.14159…", { aria: "pi" }),
-  ],
-  [
-    fn("ln", "ln(", "Natural logarithm (base e)"),
-    fn("log", "log(", "Logarithm base 10"),
-    fn("eˣ", "e^(", "e to the power", { aria: "e to the power" }),
-    fn("10ˣ", "10^(", "Ten to the power", { aria: "ten to the power" }),
-    fn("e", "e", "Euler's number, 2.71828…"),
-    fn("x", "x", "The variable x: for d/dx, ∫, solve and graphs", { aria: "variable x" }),
-  ],
-  [
-    fn("mod", " mod ", "Remainder: 17 mod 5 = 2 (it takes the sign of the divisor)", {
+    fn("xʸ", `^(${BOX})`, "calculator.helpPower", {
+      aria: "calculator.ariaToThePower",
       continues: true,
       ...anyBase,
     }),
-    fn("|x|", "abs(", "Absolute value: the distance from 0", {
-      aria: "absolute value",
+    fn("√", `√(`, "calculator.helpSquareRoot", { aria: "calculator.ariaSquareRoot" }),
+    fn("ⁿ√", `root(${BOX}, ${BOX})`, "calculator.helpNthRoot", { aria: "calculator.ariaNthRoot" }),
+    fn("x⁻¹", "^(−1)", "calculator.helpReciprocal", {
+      aria: "calculator.ariaReciprocal",
+      continues: true,
+    }),
+    fn("π", "π", "calculator.helpPi", { aria: "calculator.ariaPi" }),
+  ],
+  [
+    fn("ln", "ln(", "calculator.helpLn"),
+    fn("log", "log(", "calculator.helpLog"),
+    fn("eˣ", "e^(", "calculator.helpETo", { aria: "calculator.ariaETo" }),
+    fn("10ˣ", "10^(", "calculator.helpTenTo", { aria: "calculator.ariaTenTo" }),
+    fn("e", "e", "calculator.helpE"),
+    fn("x", "x", "calculator.helpVariableXMany", { aria: "calculator.ariaVariableX" }),
+  ],
+  [
+    fn("mod", " mod ", "calculator.helpMod", {
+      continues: true,
       ...anyBase,
     }),
-    fn("%", "%", "Percent: 50% is 0.5", { aria: "percent", continues: true, ...anyBase }),
-    fn("n!", "!", "Factorial: 5! = 120", { aria: "factorial", continues: true, ...anyBase }),
-    fn("EXP", "E", "Times ten to the power: 3E8 = 300 000 000", {
-      aria: "times ten to the power",
+    fn("|x|", "abs(", "calculator.helpAbsolute", {
+      aria: "calculator.ariaAbsolute",
+      ...anyBase,
     }),
-    fn("logₐ", `log(${BOX}, ${BOX})`, "log(x, b): logarithm of x in base b", {
-      aria: "log in any base",
+    fn("%", "%", "calculator.helpPercent", {
+      aria: "calculator.ariaPercent",
+      continues: true,
+      ...anyBase,
+    }),
+    fn("n!", "!", "calculator.helpFactorial", {
+      aria: "calculator.ariaFactorial",
+      continues: true,
+      ...anyBase,
+    }),
+    fn("EXP", "E", "calculator.helpTimesTen", {
+      aria: "calculator.ariaTimesTen",
+    }),
+    fn("logₐ", `log(${BOX}, ${BOX})`, "calculator.helpLogBase", {
+      aria: "calculator.ariaLogAnyBase",
     }),
   ],
 ];
 
 const TRIG: KeyRows = [
   [
-    {
-      label: "2nd",
-      action: "shift",
-      aria: "second functions",
-      help: "Show the inverses",
-      tone: "mode",
-    },
-    fn("sin", "sin(", "Sine", {
-      shift: fn("sin⁻¹", "asin(", "Inverse sine: the angle whose sine it is"),
+    worded(
+      {
+        label: "2nd",
+        action: "shift",
+        tone: "mode",
+      },
+      "calculator.helpShowInverses",
+      "calculator.ariaSecond",
+    ),
+    fn("sin", "sin(", "calculator.helpSine", {
+      shift: fn("sin⁻¹", "asin(", "calculator.helpArcsine"),
     }),
-    fn("cos", "cos(", "Cosine", { shift: fn("cos⁻¹", "acos(", "Inverse cosine") }),
-    fn("tan", "tan(", "Tangent", { shift: fn("tan⁻¹", "atan(", "Inverse tangent") }),
-    fn("°", "°", "Degrees: sin(30°) works in either angle mode", { continues: true }),
-    {
-      label: "DEG",
-      action: "angle",
-      aria: "degrees or radians",
-      help: "Switch angles between degrees and radians",
-      tone: "mode",
-      decimalOnly: true,
-    },
+    fn("cos", "cos(", "calculator.helpCosine", {
+      shift: fn("cos⁻¹", "acos(", "calculator.helpArccosine"),
+    }),
+    fn("tan", "tan(", "calculator.helpTangent", {
+      shift: fn("tan⁻¹", "atan(", "calculator.helpArctangent"),
+    }),
+    fn("°", "°", "calculator.helpDegrees", { continues: true }),
+    worded(
+      {
+        label: "DEG",
+        action: "angle",
+        tone: "mode",
+        decimalOnly: true,
+      },
+      "calculator.helpSwitchAngles",
+      "calculator.ariaDegRad",
+    ),
   ],
   [
-    fn("sinh", "sinh(", "Hyperbolic sine", {
-      shift: fn("sinh⁻¹", "asinh(", "Inverse hyperbolic sine"),
+    fn("sinh", "sinh(", "calculator.helpSinh", {
+      shift: fn("sinh⁻¹", "asinh(", "calculator.helpAsinh"),
     }),
-    fn("cosh", "cosh(", "Hyperbolic cosine", {
-      shift: fn("cosh⁻¹", "acosh(", "Inverse hyperbolic cosine"),
+    fn("cosh", "cosh(", "calculator.helpCosh", {
+      shift: fn("cosh⁻¹", "acosh(", "calculator.helpAcosh"),
     }),
-    fn("tanh", "tanh(", "Hyperbolic tangent", {
-      shift: fn("tanh⁻¹", "atanh(", "Inverse hyperbolic tangent"),
+    fn("tanh", "tanh(", "calculator.helpTanh", {
+      shift: fn("tanh⁻¹", "atanh(", "calculator.helpAtanh"),
     }),
-    fn("sec", "sec(", "Secant, 1/cos", { shift: fn("sec⁻¹", "asec(", "Inverse secant") }),
-    fn("csc", "csc(", "Cosecant, 1/sin", { shift: fn("csc⁻¹", "acsc(", "Inverse cosecant") }),
-    fn("cot", "cot(", "Cotangent, 1/tan", { shift: fn("cot⁻¹", "acot(", "Inverse cotangent") }),
+    fn("sec", "sec(", "calculator.helpSec", {
+      shift: fn("sec⁻¹", "asec(", "calculator.helpAsec"),
+    }),
+    fn("csc", "csc(", "calculator.helpCsc", {
+      shift: fn("csc⁻¹", "acsc(", "calculator.helpAcsc"),
+    }),
+    fn("cot", "cot(", "calculator.helpCot", {
+      shift: fn("cot⁻¹", "acot(", "calculator.helpAcot"),
+    }),
   ],
   [
-    fn("π", "π", "Pi, 3.14159…", { aria: "pi" }),
-    fn("x", "x", "The variable x", { aria: "variable x" }),
+    fn("π", "π", "calculator.helpPi", { aria: "calculator.ariaPi" }),
+    fn("x", "x", "calculator.helpVariableX", { aria: "calculator.ariaVariableX" }),
     null,
     null,
     null,
@@ -214,23 +282,23 @@ const TRIG: KeyRows = [
 
 const CALCULUS: KeyRows = [
   [
-    fn("d/dx", `d/dx(${BOX})`, "d/dx(f): the derivative of f, with its steps"),
-    fn("∫", `∫(${BOX})`, "∫(f): the antiderivative of f, with its steps"),
-    fn("Σ", `Σ(${BOX}, ${BOX}, ${BOX})`, "Σ(f, a, b): f added up for x = a, a+1, …, b"),
-    fn("Π", `Π(${BOX}, ${BOX}, ${BOX})`, "Π(f, a, b): f multiplied for x = a, a+1, …, b"),
-    fn("lim", `lim(${BOX}, ${BOX})`, "lim(f, a): the value f approaches as x → a (a may be ∞)"),
-    fn("solve", `solve(${BOX} = ${BOX})`, "solve(f = g): every x where f = g, with the steps"),
+    fn("d/dx", `d/dx(${BOX})`, "calculator.helpDeriv"),
+    fn("∫", `∫(${BOX})`, "calculator.helpIntegral"),
+    fn("Σ", `Σ(${BOX}, ${BOX}, ${BOX})`, "calculator.helpSum"),
+    fn("Π", `Π(${BOX}, ${BOX}, ${BOX})`, "calculator.helpProduct"),
+    fn("lim", `lim(${BOX}, ${BOX})`, "calculator.helpLimit"),
+    fn("solve", `solve(${BOX} = ${BOX})`, "calculator.helpSolve"),
   ],
   [
-    fn("x", "x", "The variable x", { aria: "variable x" }),
-    fn("∞", "∞", "Infinity, as a limit's target: lim(1/x, ∞)", { aria: "infinity" }),
-    fn("π", "π", "Pi, 3.14159…", { aria: "pi" }),
-    fn("e", "e", "Euler's number, 2.71828…"),
-    fn("∫ₐᵇ", `∫(${BOX}, ${BOX}, ${BOX})`, "∫(f, a, b): the area under f from x = a to b", {
-      aria: "definite integral",
+    fn("x", "x", "calculator.helpVariableX", { aria: "calculator.ariaVariableX" }),
+    fn("∞", "∞", "calculator.helpInfinity", { aria: "calculator.ariaInfinity" }),
+    fn("π", "π", "calculator.helpPi", { aria: "calculator.ariaPi" }),
+    fn("e", "e", "calculator.helpE"),
+    fn("∫ₐᵇ", `∫(${BOX}, ${BOX}, ${BOX})`, "calculator.helpDefIntegral", {
+      aria: "calculator.ariaDefiniteIntegral",
     }),
-    fn("f′(a)", `d/dx(${BOX}, ${BOX})`, "d/dx(f, a): the slope of f at x = a", {
-      aria: "slope at a point",
+    fn("f′(a)", `d/dx(${BOX}, ${BOX})`, "calculator.helpSlope", {
+      aria: "calculator.ariaSlopeAtPoint",
     }),
   ],
   [null, null, null, null, null, null],
@@ -238,100 +306,119 @@ const CALCULUS: KeyRows = [
 
 const BASES: KeyRows = [
   [
-    baseKey(10, "DEC", "Decimal: base 10"),
-    baseKey(16, "HEX", "Hexadecimal: base 16, digits 0–9 and A–F"),
-    baseKey(2, "BIN", "Binary: base 2, digits 0 and 1"),
-    baseKey(8, "OCT", "Octal: base 8, digits 0–7"),
-    fn("<<", `shl(${BOX}, ${BOX})`, "shl(a, n): shift a left n bits (× 2ⁿ)", { ...anyBase }),
-    fn(">>", `shr(${BOX}, ${BOX})`, "shr(a, n): shift a right n bits (÷ 2ⁿ, rounded down)", {
+    baseKey(10, "DEC", "calculator.helpDecimal"),
+    baseKey(16, "HEX", "calculator.helpHexadecimal"),
+    baseKey(2, "BIN", "calculator.helpBinary"),
+    baseKey(8, "OCT", "calculator.helpOctal"),
+    fn("<<", `shl(${BOX}, ${BOX})`, "calculator.helpShl", { ...anyBase }),
+    fn(">>", `shr(${BOX}, ${BOX})`, "calculator.helpShr", {
       ...anyBase,
     }),
   ],
   [10, 11, 12, 13, 14, 15].map(hex),
   [
-    fn("AND", `and(${BOX}, ${BOX})`, "and(a, b): bits set in both", { ...anyBase }),
-    fn("OR", `or(${BOX}, ${BOX})`, "or(a, b): bits set in either", { ...anyBase }),
-    fn("XOR", `xor(${BOX}, ${BOX})`, "xor(a, b): bits set in one but not both", { ...anyBase }),
-    fn("NOT", "not(", "not(a): every bit flipped, which is −a − 1", { ...anyBase }),
-    fn("mod", " mod ", "Remainder: 17 mod 5 = 2", { continues: true, ...anyBase }),
+    fn("AND", `and(${BOX}, ${BOX})`, "calculator.helpAnd", { ...anyBase }),
+    fn("OR", `or(${BOX}, ${BOX})`, "calculator.helpOr", { ...anyBase }),
+    fn("XOR", `xor(${BOX}, ${BOX})`, "calculator.helpXor", { ...anyBase }),
+    fn("NOT", "not(", "calculator.helpNot", { ...anyBase }),
+    fn("mod", " mod ", "calculator.helpModShort", { continues: true, ...anyBase }),
     null,
   ],
 ];
 
 const MEMORY: KeyRows = [
   [
-    {
-      label: "MC",
-      action: "mc",
-      aria: "memory clear",
-      help: "Memory clear: set the memory to 0",
-      tone: "mode",
-    },
-    {
-      label: "MR",
-      action: "mr",
-      aria: "memory recall",
-      help: "Memory recall: type the stored number (M)",
-      tone: "mode",
-    },
-    {
-      label: "M+",
-      action: "m+",
-      aria: "add to memory",
-      help: "Add the answer on show to the memory",
-      tone: "mode",
-    },
-    {
-      label: "M−",
-      action: "m-",
-      aria: "subtract from memory",
-      help: "Take the answer on show from the memory",
-      tone: "mode",
-    },
-    { label: "Ans", insert: "Ans", aria: "last answer", help: "The last answer", tone: "mode" },
+    worded(
+      {
+        label: "MC",
+        action: "mc",
+        tone: "mode",
+      },
+      "calculator.helpMemoryClear",
+      "calculator.ariaMemoryClear",
+    ),
+    worded(
+      {
+        label: "MR",
+        action: "mr",
+        tone: "mode",
+      },
+      "calculator.helpMemoryRecall",
+      "calculator.ariaMemoryRecall",
+    ),
+    worded(
+      {
+        label: "M+",
+        action: "m+",
+        tone: "mode",
+      },
+      "calculator.helpMemoryAdd",
+      "calculator.ariaAddToMemory",
+    ),
+    worded(
+      {
+        label: "M−",
+        action: "m-",
+        tone: "mode",
+      },
+      "calculator.helpMemorySubtract",
+      "calculator.ariaSubtractFromMemory",
+    ),
+    worded(
+      { label: "Ans", insert: "Ans", tone: "mode" },
+      "calculator.helpLastAnswer",
+      "calculator.ariaLastAnswer",
+    ),
     null,
   ],
   [
-    fn("nCr", `nCr(${BOX}, ${BOX})`, "nCr(n, r): ways to choose r of n, order not counting", {
+    fn("nCr", `nCr(${BOX}, ${BOX})`, "calculator.helpNcr", {
       ...anyBase,
     }),
-    fn("nPr", `nPr(${BOX}, ${BOX})`, "nPr(n, r): ways to arrange r of n, order counting", {
+    fn("nPr", `nPr(${BOX}, ${BOX})`, "calculator.helpNpr", {
       ...anyBase,
     }),
-    fn("n!", "!", "Factorial: 5! = 120", { aria: "factorial", continues: true, ...anyBase }),
-    fn("|x|", "abs(", "Absolute value", { aria: "absolute value", ...anyBase }),
-    fn("rnd", `round(${BOX}, ${BOX})`, "round(x, d): x rounded to d decimals"),
-    fn("mod", " mod ", "Remainder: 17 mod 5 = 2", { continues: true, ...anyBase }),
+    fn("n!", "!", "calculator.helpFactorial", {
+      aria: "calculator.ariaFactorial",
+      continues: true,
+      ...anyBase,
+    }),
+    fn("|x|", "abs(", "calculator.helpAbsoluteShort", {
+      aria: "calculator.ariaAbsolute",
+      ...anyBase,
+    }),
+    fn("rnd", `round(${BOX}, ${BOX})`, "calculator.helpRound"),
+    fn("mod", " mod ", "calculator.helpModShort", { continues: true, ...anyBase }),
   ],
   [null, null, null, null, null, null],
 ];
 
 const GRAPH: KeyRows = [
   [
-    fn("x", "x", "The variable along the x axis"),
-    fn("y", "y", "The variable along the y axis: x² + y² = 25"),
-    fn("=", "=", "An equation: y = …, x = 3, r = …, or any curve in x and y", {
-      aria: "equals sign",
+    fn("x", "x", "calculator.helpGraphX"),
+    fn("y", "y", "calculator.helpGraphY"),
+    fn("=", "=", "calculator.helpEquation", {
+      aria: "calculator.ariaEqualsSign",
     }),
-    fn("<", "<", "Shade where it holds: y < sin x", { aria: "less than" }),
-    fn(">", ">", "Shade where it holds", { aria: "greater than" }),
-    fn("≤", "≤", "Shade where it holds, edge included", { aria: "at most" }),
+    fn("<", "<", "calculator.helpLess", { aria: "calculator.ariaLessThan" }),
+    fn(">", ">", "calculator.helpShade", { aria: "calculator.ariaGreaterThan" }),
+    fn("≤", "≤", "calculator.helpShadeEdge", { aria: "calculator.ariaAtMost" }),
   ],
   [
-    fn("t", "t", "The parameter of a curve (x(t), y(t))"),
-    fn("θ", "θ", "The angle of a polar curve r = f(θ)", { aria: "theta" }),
-    fn("r", "r", "Distance from the origin, for r = f(θ)"),
-    fn("{", "{", "Restrict a curve: sin x {0 < x < 5}", { aria: "open brace" }),
-    fn("}", "}", "End a restriction", { aria: "close brace" }),
-    fn("≥", "≥", "Shade where it holds, edge included", { aria: "at least" }),
+    fn("t", "t", "calculator.helpParameter"),
+    fn("θ", "θ", "calculator.helpTheta", { aria: "calculator.ariaTheta" }),
+    fn("r", "r", "calculator.helpRadius"),
+    fn("{", "{", "calculator.helpRestrict", { aria: "calculator.ariaOpenBrace" }),
+    fn("}", "}", "calculator.helpEndRestriction", { aria: "calculator.ariaCloseBrace" }),
+    fn("≥", "≥", "calculator.helpShadeEdge", { aria: "calculator.ariaAtLeast" }),
   ],
   [
-    fn("a", "a", "A slider: any other letter gets one"),
-    fn("b", "b", "A slider"),
-    fn("k", "k", "A slider"),
-    fn("sin", "sin(", "Sine"),
-    fn("cos", "cos(", "Cosine"),
-    fn("π", "π", "Pi", { aria: "pi" }),
+    fn("a", "a", "calculator.helpSlider"),
+    fn("b", "b", "calculator.helpSliderShort"),
+    fn("k", "k", "calculator.helpSliderShort"),
+    fn("sin", "sin(", "calculator.helpSine"),
+    fn("cos", "cos(", "calculator.helpCosine"),
+    fn("π", "π", "calculator.helpPiShort", { aria: "calculator.ariaPi" }),
   ],
 ];
 
@@ -347,79 +434,101 @@ export const TAB_ROWS: Readonly<Record<KeyTab, KeyRows>> = {
 /** The number pad: five keys a row, the operators on the right. */
 export const NUMBER_ROWS: readonly (readonly CalcKey[])[] = [
   [
-    {
-      label: "AC",
-      action: "clear",
-      aria: "clear",
-      help: "C clears what is typed; AC everything",
-      tone: "mode",
-    },
-    {
-      label: "⌫",
-      action: "back",
-      aria: "delete",
-      help: "Delete one sign (or swipe the display)",
-      tone: "mode",
-    },
-    { label: "(", insert: "(", help: "Open bracket", tone: "mode" },
-    {
-      label: ")",
-      insert: ")",
-      help: "Close bracket (left open ones close at the end)",
-      tone: "mode",
-    },
-    op("÷", "÷", "divided by", "Divide"),
+    worded(
+      {
+        label: "AC",
+        action: "clear",
+        tone: "mode",
+      },
+      "calculator.helpClearKey",
+      "calculator.ariaClear",
+    ),
+    worded(
+      {
+        label: "⌫",
+        action: "back",
+        tone: "mode",
+      },
+      "calculator.helpBackspace",
+      "calculator.ariaDelete",
+    ),
+    worded({ label: "(", insert: "(", tone: "mode" }, "calculator.helpOpenBracket"),
+    worded(
+      {
+        label: ")",
+        insert: ")",
+        tone: "mode",
+      },
+      "calculator.helpCloseBracket",
+    ),
+    op("÷", "÷", "calculator.ariaDividedBy", "calculator.helpDivide"),
   ],
   [
     digit(7),
     digit(8),
     digit(9),
-    { label: "Ans", insert: "Ans", aria: "last answer", help: "The last answer", tone: "mode" },
-    op("×", "×", "times", "Multiply"),
+    worded(
+      { label: "Ans", insert: "Ans", tone: "mode" },
+      "calculator.helpLastAnswer",
+      "calculator.ariaLastAnswer",
+    ),
+    op("×", "×", "calculator.ariaTimes", "calculator.helpMultiply"),
   ],
   [
     digit(4),
     digit(5),
     digit(6),
-    {
-      label: "solve",
-      insert: `solve(${BOX} = ${BOX})`,
-      help: "solve(f = g): every x where f = g, with the steps",
-      tone: "mode",
-      decimalOnly: true,
-    },
-    op("−", "−", "minus", "Subtract"),
+    worded(
+      {
+        label: "solve",
+        insert: `solve(${BOX} = ${BOX})`,
+        tone: "mode",
+        decimalOnly: true,
+      },
+      "calculator.helpSolve",
+    ),
+    op("−", "−", "calculator.ariaMinus", "calculator.helpSubtract"),
   ],
   [
     digit(1),
     digit(2),
     digit(3),
-    {
-      label: "x",
-      insert: "x",
-      aria: "variable x",
-      help: "The variable x",
-      tone: "mode",
-      decimalOnly: true,
-    },
-    op("+", "+", "plus", "Add"),
+    worded(
+      {
+        label: "x",
+        insert: "x",
+        tone: "mode",
+        decimalOnly: true,
+      },
+      "calculator.helpVariableX",
+      "calculator.ariaVariableX",
+    ),
+    op("+", "+", "calculator.ariaPlus", "calculator.helpAdd"),
   ],
   [
     { ...digit(0), span: 2 },
-    { label: ".", insert: ".", aria: "point", help: "Decimal point", decimalOnly: true },
-    {
-      label: ",",
-      insert: ",",
-      aria: "comma, between inputs",
-      help: "Between a function's inputs: log(8, 2)",
-    },
-    {
-      label: "=",
-      action: "equals",
-      aria: "equals",
-      help: "Work it out (or go to the next box)",
-      tone: "equals",
-    },
+    worded(
+      { label: ".", insert: ".", decimalOnly: true },
+      "calculator.helpPoint",
+      "calculator.ariaPoint",
+    ),
+    worded(
+      {
+        label: ",",
+        insert: ",",
+      },
+      "calculator.helpComma",
+      "calculator.ariaComma",
+    ),
+    worded(
+      {
+        label: "=",
+        action: "equals",
+        tone: "equals",
+      },
+      "calculator.helpEqualsKey",
+      "calculator.ariaEquals",
+    ),
   ],
 ];
 
@@ -648,21 +757,21 @@ export function toEnd(entry: Entry): Entry {
 // --- Hints --------------------------------------------------------------------
 
 /** What each function's inputs are, for the line under the display while one is being filled. */
-const HINTS: ReadonlyArray<[RegExp, string]> = [
-  [/solve$/, "solve(f = g): every x where f = g"],
-  [/d\/dx$/, "d/dx(f) is the derivative; d/dx(f, a) the slope at x = a"],
-  [/∫$/, "∫(f) is the antiderivative; ∫(f, a, b) the area from a to b"],
-  [/Σ$/, "Σ(f, a, b): f added for x = a … b; Σ(f, i, a, b) counts with i"],
-  [/Π$/, "Π(f, a, b): f multiplied for x = a … b"],
-  [/lim$/, "lim(f, a): what f tends to as x → a; a may be ∞"],
-  [/(^|[^a-z])log$/, "log(x) is base 10; log(x, b) is base b"],
-  [/root$/, "root(x, n): the nth root of x"],
-  [/round$/, "round(x, d): x to d decimals"],
-  [/nCr$/i, "nCr(n, r): choices of r from n"],
-  [/nPr$/i, "nPr(n, r): arrangements of r from n"],
-  [/(^|[^a-z])and$/, "and(a, b): bitwise AND"],
-  [/(^|[^a-z])x?or$/, "or(a, b) / xor(a, b): bitwise OR / exclusive OR"],
-  [/sh[lr]$/, "shl(a, n) / shr(a, n): shift a by n bits"],
+const HINTS: ReadonlyArray<[RegExp, TextKey]> = [
+  [/solve$/, "calculator.hintSolve"],
+  [/d\/dx$/, "calculator.hintDeriv"],
+  [/∫$/, "calculator.hintIntegral"],
+  [/Σ$/, "calculator.hintSum"],
+  [/Π$/, "calculator.hintProduct"],
+  [/lim$/, "calculator.hintLimit"],
+  [/(^|[^a-z])log$/, "calculator.hintLog"],
+  [/root$/, "calculator.hintRoot"],
+  [/round$/, "calculator.hintRound"],
+  [/nCr$/i, "calculator.hintNcr"],
+  [/nPr$/i, "calculator.hintNpr"],
+  [/(^|[^a-z])and$/, "calculator.hintAnd"],
+  [/(^|[^a-z])x?or$/, "calculator.hintOr"],
+  [/sh[lr]$/, "calculator.hintShift"],
 ];
 
 /** The hint for the function whose inputs the cursor is in; "" when there is none. */
@@ -677,13 +786,13 @@ export function hintFor(entry: Entry): string {
       if (depth === 0) {
         const name = entry.expr.slice(Math.max(0, i - 6), i);
         const hint = HINTS.find(([pattern]) => pattern.test(name));
-        if (hint) return hint[1];
+        if (hint) return t(hint[1]);
       } else {
         depth--;
       }
     }
   }
-  return boxes(entry.expr).length > 0 ? "Fill in the boxes; = goes to the next one" : "";
+  return boxes(entry.expr).length > 0 ? t("calculator.hintFillBoxes") : "";
 }
 
 // --- Elsewhere ----------------------------------------------------------------

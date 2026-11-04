@@ -5,6 +5,7 @@
  */
 
 import { type App, Notice } from "obsidian";
+import { t } from "../i18n/translate";
 import { parentPath } from "../model/folder-notebook";
 import {
   type Picked,
@@ -24,7 +25,7 @@ export class LibraryActions {
     /** Whether the file at a vault path is a notebook. */
     private readonly isNotebook: (path: string) => boolean,
     private readonly ask: AskToTrash = (question) =>
-      ConfirmModal.confirm(app, { ...question, cta: "Delete", warning: true }),
+      ConfirmModal.confirm(app, { ...question, cta: t("common.delete"), warning: true }),
   ) {}
 
   private files(): string[] {
@@ -47,12 +48,12 @@ export class LibraryActions {
     const item = this.app.vault.getAbstractFileByPath(unit);
     if (!item || parentPath(unit) === dir) return false;
     if (!LibraryActions.canMove(unit, dir)) {
-      new Notice("A folder cannot go inside itself.");
+      new Notice(t("notebooks.home.intoItself"));
       return false;
     }
     const target = dir === "" ? item.name : `${dir}/${item.name}`;
     if (this.app.vault.getAbstractFileByPath(target)) {
-      new Notice(`"${item.name}" already exists there.`);
+      new Notice(t("notebooks.home.existsThere", { name: item.name }));
       return false;
     }
     await this.app.fileManager.renameFile(item, target);

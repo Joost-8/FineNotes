@@ -21,78 +21,247 @@ import {
 import { isTemplatePaper } from "./paper-library";
 import { paperExtrasKey, readPaperExtras } from "./paper-extras";
 import { mmToPage } from "./units";
+import { t } from "../i18n/translate";
 
 export interface TemplateEntry {
   ruling: Ruling;
-  name: string;
+  /** The name shown, in the language in use. */
+  readonly name: string;
 }
 
 export interface TemplateSection {
-  title: string;
+  readonly title: string;
   templates: readonly TemplateEntry[];
 }
 
 /** The picker's sections, in GoodNotes' order. Aliases (`lined`, `grid`) are not offered. */
 export const TEMPLATE_SECTIONS: readonly TemplateSection[] = [
   {
-    title: "Essentials",
+    get title() {
+      return t("notebooks.templateSection.essentials");
+    },
     templates: [
-      { ruling: "blank", name: "Blank" },
-      { ruling: "dotted", name: "Dotted Paper" },
-      { ruling: "ruled-narrow", name: "Ruled Narrow" },
-      { ruling: "ruled-wide", name: "Ruled Wide" },
-      { ruling: "squared", name: "Squared Paper" },
+      {
+        ruling: "blank",
+        get name() {
+          return t("notebooks.template.blank");
+        },
+      },
+      {
+        ruling: "dotted",
+        get name() {
+          return t("notebooks.template.dotted");
+        },
+      },
+      {
+        ruling: "ruled-narrow",
+        get name() {
+          return t("notebooks.template.ruledNarrow");
+        },
+      },
+      {
+        ruling: "ruled-wide",
+        get name() {
+          return t("notebooks.template.ruledWide");
+        },
+      },
+      {
+        ruling: "squared",
+        get name() {
+          return t("notebooks.template.squared");
+        },
+      },
     ],
   },
   {
-    title: "Writing papers",
+    get title() {
+      return t("notebooks.templateSection.writing");
+    },
     templates: [
-      { ruling: "cornell", name: "Cornell" },
-      { ruling: "legal", name: "Legal" },
-      { ruling: "single-column", name: "Single Column" },
-      { ruling: "single-column-mix", name: "Single Column Mix" },
-      { ruling: "two-column", name: "Two Column" },
-      { ruling: "three-column", name: "Three Column" },
-      { ruling: "margin-left", name: "Wide Margin Left" },
-      { ruling: "margin-right", name: "Wide Margin Right" },
-      { ruling: "title-date", name: "Title & Date" },
+      {
+        ruling: "cornell",
+        get name() {
+          return t("notebooks.template.cornell");
+        },
+      },
+      {
+        ruling: "legal",
+        get name() {
+          return t("notebooks.template.legal");
+        },
+      },
+      {
+        ruling: "single-column",
+        get name() {
+          return t("notebooks.template.singleColumn");
+        },
+      },
+      {
+        ruling: "single-column-mix",
+        get name() {
+          return t("notebooks.template.singleColumnMix");
+        },
+      },
+      {
+        ruling: "two-column",
+        get name() {
+          return t("notebooks.template.twoColumn");
+        },
+      },
+      {
+        ruling: "three-column",
+        get name() {
+          return t("notebooks.template.threeColumn");
+        },
+      },
+      {
+        ruling: "margin-left",
+        get name() {
+          return t("notebooks.template.marginLeft");
+        },
+      },
+      {
+        ruling: "margin-right",
+        get name() {
+          return t("notebooks.template.marginRight");
+        },
+      },
+      {
+        ruling: "title-date",
+        get name() {
+          return t("notebooks.template.titleDate");
+        },
+      },
     ],
   },
   {
-    title: "Grids",
+    get title() {
+      return t("notebooks.templateSection.grids");
+    },
     templates: [
-      { ruling: "graph", name: "Graph Paper" },
-      { ruling: "isometric", name: "Isometric Grid" },
-      { ruling: "isometric-dots", name: "Isometric Dots" },
-      { ruling: "hexagon", name: "Hexagon Grid" },
+      {
+        ruling: "graph",
+        get name() {
+          return t("notebooks.template.graph");
+        },
+      },
+      {
+        ruling: "isometric",
+        get name() {
+          return t("notebooks.template.isometric");
+        },
+      },
+      {
+        ruling: "isometric-dots",
+        get name() {
+          return t("notebooks.template.isometricDots");
+        },
+      },
+      {
+        ruling: "hexagon",
+        get name() {
+          return t("notebooks.template.hexagon");
+        },
+      },
     ],
   },
   {
-    title: "Planner",
+    get title() {
+      return t("notebooks.templateSection.planner");
+    },
     templates: [
-      { ruling: "todos", name: "Todos" },
-      { ruling: "daily-planner", name: "Daily Planner" },
-      { ruling: "weekly-planner", name: "Weekly Planner" },
-      { ruling: "weekly-grid", name: "Weekly Grid" },
-      { ruling: "monthly-planner", name: "Monthly Planner" },
-      { ruling: "habit-tracker", name: "Habit Tracker" },
-      { ruling: "meeting-notes", name: "Meeting Notes" },
-      { ruling: "accounting", name: "Accounting" },
+      {
+        ruling: "todos",
+        get name() {
+          return t("notebooks.template.todos");
+        },
+      },
+      {
+        ruling: "daily-planner",
+        get name() {
+          return t("notebooks.template.dailyPlanner");
+        },
+      },
+      {
+        ruling: "weekly-planner",
+        get name() {
+          return t("notebooks.template.weeklyPlanner");
+        },
+      },
+      {
+        ruling: "weekly-grid",
+        get name() {
+          return t("notebooks.template.weeklyGrid");
+        },
+      },
+      {
+        ruling: "monthly-planner",
+        get name() {
+          return t("notebooks.template.monthlyPlanner");
+        },
+      },
+      {
+        ruling: "habit-tracker",
+        get name() {
+          return t("notebooks.template.habitTracker");
+        },
+      },
+      {
+        ruling: "meeting-notes",
+        get name() {
+          return t("notebooks.template.meetingNotes");
+        },
+      },
+      {
+        ruling: "accounting",
+        get name() {
+          return t("notebooks.template.accounting");
+        },
+      },
     ],
   },
   {
-    title: "Study & creative",
+    get title() {
+      return t("notebooks.templateSection.study");
+    },
     templates: [
-      { ruling: "handwriting", name: "Handwriting Practice" },
-      { ruling: "storyboard", name: "Storyboard" },
+      {
+        ruling: "handwriting",
+        get name() {
+          return t("notebooks.template.handwriting");
+        },
+      },
+      {
+        ruling: "storyboard",
+        get name() {
+          return t("notebooks.template.storyboard");
+        },
+      },
     ],
   },
   {
-    title: "Music",
+    get title() {
+      return t("notebooks.templateSection.music");
+    },
     templates: [
-      { ruling: "music", name: "Music Paper" },
-      { ruling: "guitar-tab", name: "Guitar Tablature" },
-      { ruling: "music-tab", name: "Score & Tab" },
+      {
+        ruling: "music",
+        get name() {
+          return t("notebooks.template.music");
+        },
+      },
+      {
+        ruling: "guitar-tab",
+        get name() {
+          return t("notebooks.template.guitarTab");
+        },
+      },
+      {
+        ruling: "music-tab",
+        get name() {
+          return t("notebooks.template.musicTab");
+        },
+      },
     ],
   },
 ];
@@ -105,15 +274,52 @@ export const TEMPLATE_SECTIONS: readonly TemplateSection[] = [
  */
 export const COVER_SECTIONS: readonly TemplateSection[] = [
   {
-    title: "Covers",
+    get title() {
+      return t("notebooks.templateSection.covers");
+    },
     templates: [
-      { ruling: "cover-gradient", name: "Soft gradient" },
-      { ruling: "cover-orb", name: "Orb" },
-      { ruling: "cover-split", name: "Duotone split" },
-      { ruling: "cover-contour", name: "Contour lines" },
-      { ruling: "cover-glass", name: "Glass label" },
-      { ruling: "cover-monogram", name: "Big type" },
-      { ruling: "cover-accent", name: "Accent stripe" },
+      {
+        ruling: "cover-gradient",
+        get name() {
+          return t("notebooks.template.coverGradient");
+        },
+      },
+      {
+        ruling: "cover-orb",
+        get name() {
+          return t("notebooks.template.coverOrb");
+        },
+      },
+      {
+        ruling: "cover-split",
+        get name() {
+          return t("notebooks.template.coverSplit");
+        },
+      },
+      {
+        ruling: "cover-contour",
+        get name() {
+          return t("notebooks.template.coverContour");
+        },
+      },
+      {
+        ruling: "cover-glass",
+        get name() {
+          return t("notebooks.template.coverGlass");
+        },
+      },
+      {
+        ruling: "cover-monogram",
+        get name() {
+          return t("notebooks.template.coverMonogram");
+        },
+      },
+      {
+        ruling: "cover-accent",
+        get name() {
+          return t("notebooks.template.coverAccent");
+        },
+      },
     ],
   },
 ];
@@ -123,10 +329,30 @@ export const COVER_TEMPLATES: readonly TemplateEntry[] = COVER_SECTIONS.flatMap(
 
 /** Names of the classic designs, which notebooks made before 2026-10-07 may still carry. */
 export const CLASSIC_COVER_NAMES: readonly TemplateEntry[] = [
-  { ruling: "cover-plain", name: "Plain cover" },
-  { ruling: "cover-label", name: "Label cover" },
-  { ruling: "cover-band", name: "Spine cover" },
-  { ruling: "cover-linen", name: "Linen cover" },
+  {
+    ruling: "cover-plain",
+    get name() {
+      return t("notebooks.template.coverPlain");
+    },
+  },
+  {
+    ruling: "cover-label",
+    get name() {
+      return t("notebooks.template.coverLabel");
+    },
+  },
+  {
+    ruling: "cover-band",
+    get name() {
+      return t("notebooks.template.coverBand");
+    },
+  },
+  {
+    ruling: "cover-linen",
+    get name() {
+      return t("notebooks.template.coverLinen");
+    },
+  },
 ];
 
 export interface CoverColor {
@@ -143,22 +369,118 @@ export interface CoverColor {
  * stored in settings: never rename one, only add.
  */
 export const COVER_COLORS: readonly CoverColor[] = [
-  { id: "navy", label: "Navy", color: "#1f3a5f" },
-  { id: "forest", label: "Forest", color: "#2f5d46" },
-  { id: "burgundy", label: "Burgundy", color: "#7a2537" },
-  { id: "charcoal", label: "Charcoal", color: "#34363b" },
-  { id: "terracotta", label: "Terracotta", color: "#c0643f" },
-  { id: "mustard", label: "Mustard", color: "#d9a93a" },
-  { id: "sage", label: "Sage", color: "#9db59a" },
-  { id: "sky", label: "Sky", color: "#8fb8de" },
-  { id: "ink", label: "Ink", color: "#1d1e22" },
-  { id: "plum", label: "Plum", color: "#5a3a5f" },
-  { id: "teal", label: "Teal", color: "#236b70" },
-  { id: "olive", label: "Olive", color: "#6b6a32" },
-  { id: "kraft", label: "Kraft", color: "#b59a74" },
-  { id: "blush", label: "Blush", color: "#e7b6ae" },
-  { id: "lavender", label: "Lavender", color: "#b8aad8" },
-  { id: "ivory", label: "Ivory", color: "#ece6d6" },
+  {
+    id: "navy",
+    get label() {
+      return t("notebooks.coverColor.navy");
+    },
+    color: "#1f3a5f",
+  },
+  {
+    id: "forest",
+    get label() {
+      return t("notebooks.coverColor.forest");
+    },
+    color: "#2f5d46",
+  },
+  {
+    id: "burgundy",
+    get label() {
+      return t("notebooks.coverColor.burgundy");
+    },
+    color: "#7a2537",
+  },
+  {
+    id: "charcoal",
+    get label() {
+      return t("notebooks.coverColor.charcoal");
+    },
+    color: "#34363b",
+  },
+  {
+    id: "terracotta",
+    get label() {
+      return t("notebooks.coverColor.terracotta");
+    },
+    color: "#c0643f",
+  },
+  {
+    id: "mustard",
+    get label() {
+      return t("notebooks.coverColor.mustard");
+    },
+    color: "#d9a93a",
+  },
+  {
+    id: "sage",
+    get label() {
+      return t("notebooks.coverColor.sage");
+    },
+    color: "#9db59a",
+  },
+  {
+    id: "sky",
+    get label() {
+      return t("notebooks.coverColor.sky");
+    },
+    color: "#8fb8de",
+  },
+  {
+    id: "ink",
+    get label() {
+      return t("notebooks.coverColor.ink");
+    },
+    color: "#1d1e22",
+  },
+  {
+    id: "plum",
+    get label() {
+      return t("notebooks.coverColor.plum");
+    },
+    color: "#5a3a5f",
+  },
+  {
+    id: "teal",
+    get label() {
+      return t("notebooks.coverColor.teal");
+    },
+    color: "#236b70",
+  },
+  {
+    id: "olive",
+    get label() {
+      return t("notebooks.coverColor.olive");
+    },
+    color: "#6b6a32",
+  },
+  {
+    id: "kraft",
+    get label() {
+      return t("notebooks.coverColor.kraft");
+    },
+    color: "#b59a74",
+  },
+  {
+    id: "blush",
+    get label() {
+      return t("notebooks.coverColor.blush");
+    },
+    color: "#e7b6ae",
+  },
+  {
+    id: "lavender",
+    get label() {
+      return t("notebooks.coverColor.lavender");
+    },
+    color: "#b8aad8",
+  },
+  {
+    id: "ivory",
+    get label() {
+      return t("notebooks.coverColor.ivory");
+    },
+    color: "#ece6d6",
+  },
 ];
 
 /** The backdrop of a cover in one of {@link COVER_COLORS}. An unknown id gets the first colour. */
@@ -210,17 +532,17 @@ export function repeatedPaper(backdrop: Backdrop, templateNames: ReadonlySet<str
   return { ...backdrop };
 }
 
-const RULING_NAMES: ReadonlyMap<Ruling, string> = new Map([
-  ...TEMPLATE_SECTIONS.flatMap((s) => s.templates.map((t) => [t.ruling, t.name] as const)),
-  ...COVER_TEMPLATES.map((t) => [t.ruling, t.name] as const),
-  ...CLASSIC_COVER_NAMES.map((t) => [t.ruling, t.name] as const),
-  ["lined", "Ruled Wide"],
-  ["grid", "Squared Paper"],
-]);
-
-/** Display name of a ruling. */
+/** Display name of a ruling, in the language in use. */
 export function templateName(ruling: Ruling): string {
-  return RULING_NAMES.get(ruling) ?? "Paper";
+  // The aliases (`lined`, `grid`) are named as the papers they draw.
+  if (ruling === "lined") return t("notebooks.template.ruledWide");
+  if (ruling === "grid") return t("notebooks.template.squared");
+  const entries = [
+    ...TEMPLATE_SECTIONS.flatMap((s) => s.templates),
+    ...COVER_TEMPLATES,
+    ...CLASSIC_COVER_NAMES,
+  ];
+  return entries.find((entry) => entry.ruling === ruling)?.name ?? t("notebooks.template.paper");
 }
 
 export type PaperColorId = "white" | "yellow" | "dark";
@@ -237,9 +559,29 @@ export interface PaperColor {
 }
 
 export const PAPER_COLORS: readonly PaperColor[] = [
-  { id: "white", label: "White Paper", paper: "#ffffff" },
-  { id: "yellow", label: "Yellow Paper", paper: "#f9f1d3", former: ["#fbf8ed"] },
-  { id: "dark", label: "Dark Paper", paper: "#26272b", rule: "#4a4d56" },
+  {
+    id: "white",
+    get label() {
+      return t("notebooks.paperKind.white");
+    },
+    paper: "#ffffff",
+  },
+  {
+    id: "yellow",
+    get label() {
+      return t("notebooks.paperKind.yellow");
+    },
+    paper: "#f9f1d3",
+    former: ["#fbf8ed"],
+  },
+  {
+    id: "dark",
+    get label() {
+      return t("notebooks.paperKind.dark");
+    },
+    paper: "#26272b",
+    rule: "#4a4d56",
+  },
 ];
 
 /** Which paper colour a backdrop is on. Anything unrecognised reads as white. */
@@ -293,7 +635,9 @@ export const PAGE_SIZES: readonly PageSize[] = [
   // 1024 x 1448 page px is 210 x 297 mm at this scale: A4 (units.ts).
   {
     id: "standard",
-    label: "A4 (Standard)",
+    get label() {
+      return t("notebooks.page.size.standard");
+    },
     width: DEFAULT_PAPER_WIDTH,
     height: DEFAULT_PAGE_HEIGHT,
   },
@@ -401,7 +745,7 @@ export function popoverTemplates(
       ? { kind: "blank" }
       : repeatedPaper(current, templateNames);
   return [
-    { label: "Current template", backdrop: first },
+    { label: t("notebooks.template.current"), backdrop: first },
     ...recent
       .filter((r) => first.kind === "pdf" || !sameTemplate(r, first))
       .map((backdrop) => ({ label: templateName(backdrop.kind), backdrop })),
@@ -411,5 +755,5 @@ export function popoverTemplates(
 /** Subtitle under a template card: its paper colour. */
 export function paperLabel(backdrop: Backdrop): string {
   const id = paperColorOf(backdrop);
-  return PAPER_COLORS.find((c) => c.id === id)?.label ?? "White Paper";
+  return PAPER_COLORS.find((c) => c.id === id)?.label ?? t("notebooks.paperKind.white");
 }

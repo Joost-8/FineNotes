@@ -6,6 +6,7 @@
 
 import type { Command } from "./commands";
 import type { InkDocument } from "./document";
+import { t } from "../i18n/translate";
 
 /** How many steps back undo reaches before the oldest becomes permanent. */
 const DEFAULT_LIMIT = 200;
@@ -208,7 +209,7 @@ function baseOf(command: Command): Command {
  * style", "Redid: Add page". A step with no label says only what happened.
  */
 export function historyNotice(redo: boolean, label: string): string {
-  const verb = redo ? "Redid" : "Undid";
   const what = label.trim();
-  return what === "" ? verb : `${verb}: ${what}`;
+  if (what === "") return t(redo ? "surface.history.redid" : "surface.history.undid");
+  return t(redo ? "surface.history.redidWhat" : "surface.history.undidWhat", { what });
 }

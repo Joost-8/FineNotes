@@ -115,7 +115,7 @@ interface Registered {
   commands: FakeCommand[];
   views: Map<string, unknown>;
   protocolHandlers: Map<string, (params: Record<string, string>) => unknown>;
-  ribbon: { icon: string; title: string; callback: () => unknown }[];
+  ribbon: { icon: string; title: string; callback: () => unknown; label?: string }[];
   stored: unknown;
   saved: Record<string, unknown>[];
   unload(): void;
@@ -602,6 +602,7 @@ describe("registration", () => {
     expect([...registered.views.keys()]).toEqual([INK, "finenotes-library"]);
     expect(registered.ribbon.map((r) => r.icon)).toEqual(["finenotes-library"]);
     expect(registered.ribbon[0].title).toBe("Notebook library");
+    expect(registered.ribbon[0].label).toBe("Notebook library");
     // The import icon is FineNotes' own, so it must be registered before use.
     expect(addedIcons.has("finenotes-notebook-import")).toBe(true);
     expect([...registered.protocolHandlers.keys()]).toEqual([

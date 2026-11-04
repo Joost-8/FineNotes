@@ -15,6 +15,7 @@
 
 import type { Command } from "./commands";
 import type { InkDocument } from "./document";
+import { t } from "../i18n/translate";
 
 /** Whether a document's pages are joined; only `true` is. */
 export function joinedPagesOf(doc: Pick<InkDocument, "joined"> | null): boolean {
@@ -34,7 +35,7 @@ export class SetJoinedPages implements Command {
   private keyOrder: string[] = [];
 
   constructor(private readonly on: boolean) {
-    this.label = on ? "Join pages" : "Set pages apart";
+    this.label = on ? t("surface.command.joinPages") : t("surface.command.setPagesApart");
   }
 
   apply(doc: InkDocument): void {

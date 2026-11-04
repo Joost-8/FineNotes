@@ -29,6 +29,7 @@ import {
 } from "./ai-chat";
 import { attachRefusal } from "./ask-attachments";
 import type { SavedChat } from "./ask-chat-file";
+import { english, t, tn } from "../i18n/translate";
 import { errorMessage } from "../util/errors";
 
 export interface AskPagesResult {
@@ -53,7 +54,12 @@ export interface AskSessionDeps {
   ask: (
     turns: readonly ChatTurn[],
     onStatus: (status: string) => void,
-  ) => Promise<{ text: string; actions?: readonly string[] }>;
+  ) => Promise<{
+    text: string;
+    shown?: string;
+    actions?: readonly string[];
+    notes?: readonly string[];
+  }>;
   /** Write the chat; `path` is where it was written before (null the first time). Resolves to its path. */
   save: (chat: SavedChat, path: string | null) => Promise<string>;
   /** Remove a saved chat's file. */
@@ -285,13 +291,13 @@ export class AskSession {
     ];
     this.outstanding = {
       question: text,
-      status: reading.length ? `Reading ${listPhrase(reading)}…` : "",
+      status: reading.length ? t("ai.ask.reading", { items: listPhrase(reading) }) : "",
     };
     this.changed();
     const stale = (): boolean => generation !== this.generation;
     try {
       if (first && newPages.length === 0 && files.length === 0) {
-        throw new Error("pick a page or attach a file to ask about first.");
+        throw new Error(t("ai.ask.pickFirst"));
       }
       if (!(await this.deps.confirm())) {
         if (!stale()) {
@@ -308,11 +314,7 @@ export class AskSession {
         if (stale()) return;
         if (pages.images.length === 0) {
           if (first && files.length === 0) {
-            throw new Error(
-              this.screen
-                ? "there is nothing on screen to send."
-                : "there is nothing on these pages to send.",
-            );
+            throw new Error(t(this.screen ? "ai.ask.nothingOnScreen" : "ai.ask.nothingToSend"));
           }
         } else {
           turn = this.questionWithPages(text, pages, first);
@@ -329,14 +331,23 @@ export class AskSession {
       if (stale()) return;
       const actions = answer.actions ?? [];
       // An answer is never empty in the history: the API refuses an empty turn.
-      const said = answer.text.trim() || actions.join("\n") || "Done.";
+      // What goes back to the model stays English (the tools' own results);
+      // the chat shows the same in the interface's language.
+      const answered = answer.text.trim();
+      const said = answered || answer.notes?.join("\n") || english("ai.ask.done");
+      const shown = answer.shown?.trim() || answered || actions.join("\n") || t("ai.ask.done");
       this.created ??= this.deps.now().toISOString();
       // Only a question that was answered joins the history, so a failed one
       // can simply be asked again.
       this.turns = [
         ...history,
         turn,
-        { role: "assistant", text: said, ...(actions.length ? { actions } : {}) },
+        {
+          role: "assistant",
+          text: said,
+          ...(shown !== said ? { shown } : {}),
+          ...(actions.length ? { actions } : {}),
+        },
       ];
       this.attachments = this.attachments.filter((f) => !files.includes(f));
       this.outstanding = null;
@@ -474,7 +485,10 @@ function hasData(file: ChatFile): boolean {
 /** "a", "a and b", "a, b and c". */
 function listPhrase(items: readonly string[]): string {
   if (items.length <= 1) return items[0] ?? "";
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+  return t("ai.list.and", {
+    head: items.slice(0, -1).join(", "),
+    last: items[items.length - 1] ?? "",
+  });
 }
 
 /** A turn as the user sees it: the question as typed, or the answer. */
@@ -484,8 +498,7 @@ export function shownText(turn: ChatTurn): string {
 
 /** "page 3", "pages 2, 5 and 7". */
 export function pagesPhrase(pages: readonly number[]): string {
-  if (pages.length === 1) return `page ${pages[0]}`;
-  return `pages ${pages.slice(0, -1).join(", ")} and ${pages[pages.length - 1]}`;
+  return tn("ai.ask.pagesPhrase", pages.length, { list: listPhrase(pages.map(String)) });
 }
 
 /** The line in front of a follow-up that brings more pages into the chat. */

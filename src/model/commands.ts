@@ -22,6 +22,7 @@ import {
   removePageAt,
   strokeById,
 } from "./document";
+import { t } from "../i18n/translate";
 
 /**
  * One undoable edit. `apply` makes the change and `invert` takes it back;
@@ -64,7 +65,7 @@ export interface Command {
 
 /** Insert a page at `index`. Inverse: remove that same page. */
 export class AddPage implements Command {
-  readonly label = "Add page";
+  readonly label = t("surface.command.addPage");
 
   constructor(
     private readonly index: number,
@@ -98,7 +99,7 @@ export class AddPage implements Command {
  * (contracts/api.md §3). When it is a no-op, `invert()` is too.
  */
 export class RemovePage implements Command {
-  readonly label = "Remove page";
+  readonly label = t("surface.command.removePage");
   private removed: Page | null = null;
 
   constructor(private readonly index: number) {}
@@ -116,7 +117,7 @@ export class RemovePage implements Command {
 
 /** Swap a page's backdrop (blank/lined/grid/PDF). Its own inverse. */
 export class SetBackdrop implements Command {
-  readonly label = "Change paper";
+  readonly label = t("surface.command.changePaper");
   private previous: Backdrop | null = null;
 
   constructor(
@@ -141,7 +142,7 @@ export class SetBackdrop implements Command {
 
 /** Place an image on a page. Inverse: remove it again. */
 export class InsertImage implements Command {
-  readonly label = "Insert image";
+  readonly label = t("surface.command.insertImage");
 
   constructor(
     readonly pageId: string,
@@ -183,7 +184,7 @@ export interface ImageTransform {
  * seven positional numbers were too easy to transpose at a call site.
  */
 export class TransformImage implements Command {
-  readonly label = "Transform image";
+  readonly label = t("surface.command.transformImage");
   private readonly next: ImageTransform;
   private previous: ImageTransform | null = null;
 
@@ -223,7 +224,7 @@ function assignTransform(image: ImageElement, box: ImageTransform): void {
 
 /** Remove a placed image, restoring its stacking position on undo. */
 export class RemoveImage implements Command {
-  readonly label = "Delete image";
+  readonly label = t("surface.command.deleteImage");
   private removed: { index: number; image: ImageElement } | null = null;
 
   constructor(
@@ -257,7 +258,7 @@ export class RemoveImage implements Command {
  * `shape`**, so an undone snap is indistinguishable from never having snapped.
  */
 export class SnapStrokeToShape implements Command {
-  readonly label = "Snap to shape";
+  readonly label = t("surface.command.snapToShape");
   private previous: { pts: number[]; shape?: ShapeKind } | null = null;
 
   constructor(

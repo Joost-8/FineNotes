@@ -8,6 +8,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { t } from "../i18n/translate";
 import type { Command } from "./commands";
 import type { InkDocument, Page, PageSection } from "./document";
 
@@ -90,8 +91,8 @@ export class SetPageTitle implements Command {
     title: string | null,
   ) {
     this.title = normalizePageTitle(title);
-    if (this.title === undefined) this.label = "Remove from contents";
-    else this.label = page.title === undefined ? "Add to contents" : "Rename in contents";
+    if (this.title === undefined) this.label = t("view.contents.remove");
+    else this.label = page.title === undefined ? t("view.contents.add") : t("view.contents.rename");
   }
 
   get pageId(): string {
@@ -146,8 +147,8 @@ export class SetSection implements Command {
     private readonly value: Omit<PageSection, "id"> | null,
   ) {
     const exists = page.sections?.some((s) => s.id === id) === true;
-    if (value === null) this.label = "Remove from contents";
-    else this.label = exists ? "Change contents" : "Add to contents";
+    if (value === null) this.label = t("view.contents.remove");
+    else this.label = exists ? t("view.contents.change") : t("view.contents.add");
   }
 
   get pageId(): string {

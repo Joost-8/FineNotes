@@ -5,6 +5,7 @@
  */
 
 import { type App, Modal, Notice, Setting } from "obsidian";
+import { t } from "../i18n/translate";
 import type { HwrModelInfo } from "../recognition/hwr/protocol";
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { errorMessage } from "../util/errors";
@@ -20,20 +21,20 @@ export async function showPageReading(
 ): Promise<void> {
   const current = view.currentPageInk();
   if (!current) {
-    new Notice("FineNotes: no page to read.");
+    new Notice(t("ai.hwr.noPage"));
     return;
   }
   const modal = new HwrReadingModal(app, current.number);
   modal.open();
   try {
-    modal.status("Loading the model…");
+    modal.status(t("ai.hwr.loading"));
     const info = await reader.model();
-    modal.status(`Reading page ${current.number}…`);
+    modal.status(t("ai.hwr.reading", { page: current.number }));
     const started = performance.now();
     const reading = await reader.readPage(current.page.strokes);
     modal.show(info, reading, performance.now() - started);
   } catch (error) {
-    modal.status(`Could not read the page: ${errorMessage(error)}`);
+    modal.status(t("ai.hwr.failed", { message: errorMessage(error) }));
   }
 }
 
@@ -52,13 +53,11 @@ class HwrReadingModal extends Modal {
 
   constructor(app: App, pageNumber: number) {
     super(app);
-    this.titleEl.setText(`Page ${pageNumber}, read on this device`);
+    this.titleEl.setText(t("ai.hwr.title", { page: pageNumber }));
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-hwr");
     this.contentEl.createDiv({
       cls: "goodobsidian-beta-note",
-      text:
-        "Beta: reading handwriting is new in FineNotes and misreads some words. " +
-        "Check the text before you rely on it.",
+      text: t("ai.hwr.betaNote"),
     });
     this.statusEl = this.contentEl.createDiv({
       cls: ["goodobsidian-hwr-meta", "setting-item-description"],
@@ -74,37 +73,50 @@ class HwrReadingModal extends Modal {
     const decode = reading.lines.reduce((ms, l) => ms + l.timings.greedy + l.timings.beam, 0);
     const frames = reading.lines.reduce((n, l) => n + l.frames, 0);
     this.status(
-      `${modelLabel(info.name)} (${info.layers}×${info.hidden} BLSTM${info.lmContexts ? ", 6-gram LM" : ""}, ` +
-        `${info.simd ? "WebAssembly SIMD" : "plain JavaScript"}; ` +
-        `read on this device). ${reading.lines.length} lines, ${frames} frames ` +
-        `in ${Math.round(totalMs)} ms: network ${Math.round(network)} ms, decoding ` +
-        `${Math.round(decode)} ms, lines ${Math.round(reading.segment)} ms.`,
+      t("ai.hwr.summary", {
+        model: modelLabel(info.name),
+        layers: info.layers,
+        hidden: info.hidden,
+        lm: info.lmContexts ? ", 6-gram LM" : "",
+        engine: info.simd ? "WebAssembly SIMD" : "plain JavaScript",
+        lines: reading.lines.length,
+        frames,
+        total: Math.round(totalMs),
+        network: Math.round(network),
+        decode: Math.round(decode),
+        segment: Math.round(reading.segment),
+      }),
     );
     const list = this.contentEl.createDiv({ cls: "goodobsidian-hwr-lines" });
-    if (reading.lines.length === 0) list.createDiv({ text: "No handwriting found on this page." });
+    if (reading.lines.length === 0) list.createDiv({ text: t("ai.hwr.none") });
     for (const line of reading.lines) {
       const row = list.createDiv();
       row.createDiv({ text: line.text || "…" });
       const meta = row.createDiv({ cls: ["goodobsidian-hwr-meta", "setting-item-description"] });
-      if (line.greedy !== line.text) meta.appendText(`as written: ${line.greedy} · `);
+      if (line.greedy !== line.text) {
+        meta.appendText(`${t("ai.hwr.asWritten", { text: line.greedy })} `);
+      }
       meta.appendText(
-        `${line.frames} frames, ${Math.round(line.timings.network)} + ` +
-          `${Math.round(line.timings.greedy + line.timings.beam)} ms`,
+        t("ai.hwr.lineTimes", {
+          frames: line.frames,
+          network: Math.round(line.timings.network),
+          decode: Math.round(line.timings.greedy + line.timings.beam),
+        }),
       );
     }
     new Setting(this.contentEl)
       .addButton((button) =>
-        button.setButtonText("Copy text").onClick(() => {
+        button.setButtonText(t("ai.hwr.copyText")).onClick(() => {
           const text = reading.lines.map((l) => l.text).join("\n");
           writeSystemText(text).then(
-            () => new Notice("FineNotes: page text copied."),
-            () => new Notice("FineNotes: could not copy here; select the text instead."),
+            () => new Notice(t("ai.hwr.copied")),
+            () => new Notice(t("ai.hwr.copyFailed")),
           );
         }),
       )
       .addButton((button) =>
         button
-          .setButtonText("Close")
+          .setButtonText(t("common.close"))
           .setCta()
           .onClick(() => this.close()),
       );

@@ -91,6 +91,7 @@ import { type Worked, readable, work } from "../model/algebra/work";
 import type { GraphSpec } from "../model/graph";
 import { MAX_LINES, newLineId, normalizeGraphSpec } from "../model/graph-lines";
 import { basicKeyFor } from "../model/basic-calc";
+import { t } from "../i18n/translate";
 import { BasicPad } from "./calculator-basic";
 import { GraphPanel, type GraphState, graphChanged, newGraphState } from "./calculator-graph";
 import { FloatingWindow } from "./floating-window";
@@ -258,18 +259,18 @@ export class CalculatorPopover {
     this.frame = new FloatingWindow({
       container,
       cls: "goodobsidian-calc-window",
-      title: options.editGraph ? "Edit graph" : "Calculator",
-      label: "Calculator",
+      title: options.editGraph ? t("calculator.editGraph") : t("calculator.calculator"),
+      label: t("calculator.calculator"),
       buttons: modal
         ? []
         : [
             {
               icon: "calculator",
-              label: "Basic calculator",
+              label: t("calculator.basicCalculator"),
               run: () => this.setMode(this.otherMode()),
             },
           ],
-      closeLabel: "Close the calculator",
+      closeLabel: t("calculator.closeCalculator"),
       min: CALC_WINDOW_MIN,
       firstPlace: defaultCalcPlace,
       place: () => this.data.calcWindow ?? null,
@@ -286,36 +287,36 @@ export class CalculatorPopover {
       "DEG",
       () => this.toggleAngle(),
       "goodobsidian-calc-chip",
-      "Switch angles between degrees and radians",
+      t("calculator.helpSwitchAngles"),
     );
-    this.angleChip.setAttribute("aria-label", "Degrees or radians");
+    this.angleChip.setAttribute("aria-label", t("calculator.degreesOrRadians"));
     this.fractionChip = this.button(
       flags,
       "a/b",
       () => this.toggleFractions(),
       "goodobsidian-calc-chip",
-      "Show answers as fractions",
+      t("calculator.showAnswersAsFractions"),
     );
-    this.fractionChip.setAttribute("aria-label", "Show fractions");
+    this.fractionChip.setAttribute("aria-label", t("calculator.showFractions"));
     this.baseChip = flags.createSpan({ cls: "goodobsidian-calc-flag" });
     this.memoryChip = this.button(
       flags,
       "M",
       () => this.act("mr"),
       "goodobsidian-calc-chip is-memory",
-      "The memory: tap to type it (MR)",
+      t("calculator.memoryChipHelp"),
     );
     this.editChip = this.button(
       flags,
       "",
       () => this.cancelLine(),
       "goodobsidian-calc-chip is-editing",
-      "Stop editing this graph line",
+      t("calculator.stopEditingLine"),
     );
     flags.createDiv({ cls: "goodobsidian-calc-flags-gap" });
     for (const [icon, by, label] of [
-      ["chevron-left", -1, "Cursor left"],
-      ["chevron-right", 1, "Cursor right"],
+      ["chevron-left", -1, t("calculator.cursorLeft")],
+      ["chevron-right", 1, t("calculator.cursorRight")],
     ] as const) {
       const move = this.button(
         flags,
@@ -325,7 +326,7 @@ export class CalculatorPopover {
           this.refresh();
         },
         "goodobsidian-calc-icon is-cursor",
-        `${label}: a box counts as one sign`,
+        t("calculator.cursorHelp", { label }),
       );
       setIcon(move, icon);
       move.setAttribute("aria-label", label);
@@ -340,14 +341,14 @@ export class CalculatorPopover {
           if (this.pane === "graph") this.showPane("graph");
         },
         "goodobsidian-calc-icon is-popout",
-        "Pop the graph out into a window that stays open while you write",
+        t("calculator.popOutHelp"),
       );
       setIcon(out, "picture-in-picture-2");
-      out.setAttribute("aria-label", "Pop out the graph");
+      out.setAttribute("aria-label", t("calculator.popOutGraph"));
     }
-    this.paneButton(flags, "steps", "list-ordered", "Steps");
-    this.paneButton(flags, "graph", "chart-spline", "Graph");
-    this.paneButton(flags, "history", "history", "History");
+    this.paneButton(flags, "steps", "list-ordered", t("calculator.steps"));
+    this.paneButton(flags, "graph", "chart-spline", t("calculator.graph"));
+    this.paneButton(flags, "history", "history", t("calculator.history"));
     this.exprEl = display.createDiv({ cls: "goodobsidian-calc-expr" });
     this.mathEl = this.exprEl.createDiv({ cls: "goodobsidian-calc-math" });
     this.resultEl = display.createDiv({ cls: "goodobsidian-calc-result" });
@@ -361,38 +362,38 @@ export class CalculatorPopover {
     this.insertButtons.push(
       this.button(
         actions,
-        "Insert",
+        t("calculator.insert"),
         () => this.insert(true),
         "goodobsidian-calc-insert",
-        "Put the sum and its answer on the page",
+        t("calculator.insertSumHelp"),
       ),
       this.button(
         actions,
-        "Insert answer",
+        t("calculator.insertAnswer"),
         () => this.insert(false),
         "goodobsidian-calc-insert",
-        "Put only the answer on the page",
+        t("calculator.insertAnswerHelp"),
       ),
     );
-    this.insertButtons[0].setAttribute("aria-label", "Insert the sum and its answer on the page");
-    this.insertButtons[1].setAttribute("aria-label", "Insert only the answer on the page");
+    this.insertButtons[0].setAttribute("aria-label", t("calculator.insertSumAria"));
+    this.insertButtons[1].setAttribute("aria-label", t("calculator.insertAnswerAria"));
     this.graphAction = null;
     if (options.editGraph) {
       this.graphAction = this.button(
         actions,
-        "Update graph",
+        t("calculator.updateGraph"),
         () => this.finishGraph(),
         "goodobsidian-calc-insert",
       );
-      this.graphAction.setAttribute("aria-label", "Update the graph on the page");
+      this.graphAction.setAttribute("aria-label", t("calculator.updateGraphAria"));
     } else if (host.insertGraph) {
       this.graphAction = this.button(
         actions,
-        "Insert graph",
+        t("calculator.insertGraph"),
         () => this.finishGraph(),
         "goodobsidian-calc-insert",
       );
-      this.graphAction.setAttribute("aria-label", "Insert the graph on the page");
+      this.graphAction.setAttribute("aria-label", t("calculator.insertGraphAria"));
     }
 
     this.bodyEl = this.el.createDiv({ cls: "goodobsidian-calc-body" });
@@ -572,7 +573,7 @@ export class CalculatorPopover {
     this.el.toggleClass("is-basic", basic);
     const toggle = this.frame.barButtons[0];
     if (toggle) {
-      const label = basic ? "Scientific calculator" : "Basic calculator";
+      const label = basic ? t("calculator.scientificCalculator") : t("calculator.basicCalculator");
       setIcon(toggle, basic ? "sigma" : "calculator");
       toggle.setAttribute("aria-label", label);
       toggle.setAttribute("title", label);
@@ -674,7 +675,7 @@ export class CalculatorPopover {
   private keyLabel(key: CalcKey): string {
     if (key.action === "clear") return this.clearsAll() ? "AC" : "C";
     if (key.action === "angle") return this.angle() === "deg" ? "DEG" : "RAD";
-    if (key.action === "equals" && this.editingLine !== null) return "Plot";
+    if (key.action === "equals" && this.editingLine !== null) return t("calculator.plot");
     return key.label;
   }
 
@@ -693,17 +694,25 @@ export class CalculatorPopover {
     for (const step of worked.steps) {
       const row = list.createDiv({ cls: "goodobsidian-calc-step" });
       row.createDiv({ cls: "goodobsidian-calc-step-rule", text: step.rule });
-      this.drawLines(row.createDiv({ cls: "goodobsidian-calc-step-math" }), step.math, "or");
+      this.drawLines(
+        row.createDiv({ cls: "goodobsidian-calc-step-math" }),
+        step.math,
+        t("calculator.wordOr"),
+      );
     }
     const answer = list.createDiv({ cls: "goodobsidian-calc-step is-answer" });
-    this.drawLines(answer.createDiv({ cls: "goodobsidian-calc-step-math" }), worked.answer, "or");
+    this.drawLines(
+      answer.createDiv({ cls: "goodobsidian-calc-step-math" }),
+      worked.answer,
+      t("calculator.wordOr"),
+    );
     if (worked.note) answer.createDiv({ cls: "goodobsidian-calc-step-rule", text: worked.note });
     this.button(
       this.bodyEl,
-      "Insert steps",
+      t("calculator.insertSteps"),
       () => this.insertSteps(),
       "goodobsidian-calc-insert goodobsidian-calc-insert-steps",
-      "Put the working and the answer on the page as a text box",
+      t("calculator.insertStepsHelp"),
     );
   }
 
@@ -731,7 +740,7 @@ export class CalculatorPopover {
     if (entries.length === 0) {
       list.createDiv({
         cls: "goodobsidian-calc-empty",
-        text: "No sums yet in this notebook.",
+        text: t("calculator.historyEmpty"),
       });
       return;
     }
@@ -745,18 +754,18 @@ export class CalculatorPopover {
         "goodobsidian-calc-line-expr",
       );
       this.drawMath(sum.createDiv({ cls: "goodobsidian-calc-math" }), line.expr);
-      sum.setAttribute("aria-label", `Edit ${line.expr}`);
+      sum.setAttribute("aria-label", t("calculator.editSum", { expr: line.expr }));
       const answer = this.button(
         row,
         `= ${line.result}`,
         () => this.useHistory(line),
         "goodobsidian-calc-line-result",
       );
-      answer.setAttribute("aria-label", `Use ${line.result}`);
+      answer.setAttribute("aria-label", t("calculator.useAnswer", { result: line.result }));
     }
     this.button(
       this.bodyEl,
-      "Clear history",
+      t("calculator.clearHistory"),
       () => {
         this.save(withoutHistory(this.data, this.host.path));
         this.render();
@@ -909,7 +918,9 @@ export class CalculatorPopover {
     const result = calculate(expr, this.ctx(), this.data.prefs);
     if (!result.ok) {
       this.error =
-        result.error === "Unknown name: x" ? "Has x: open the graph to plot it" : result.error;
+        result.error === t("calculator.errUnknownName", { name: "x" })
+          ? t("calculator.hasXOpenGraph")
+          : result.error;
       this.refresh();
       return false;
     }
@@ -1083,7 +1094,7 @@ export class CalculatorPopover {
     if (value !== null) {
       const text = this.format(value);
       if (text === null) {
-        this.error = "Not a whole number";
+        this.error = t("calculator.errNotWhole");
       } else {
         this.entry = { expr: text, cursor: text.length, fresh: false };
         this.error = "";
@@ -1123,9 +1134,9 @@ export class CalculatorPopover {
     if (!worked) return;
     const lines = [readable(worked.expr)];
     for (const step of worked.steps) {
-      lines.push(step.rule, `   ${step.math.map(readable).join("  or  ")}`);
+      lines.push(step.rule, `   ${step.math.map(readable).join(`  ${t("calculator.wordOr")}  `)}`);
     }
-    lines.push(`Answer: ${worked.answer.map(readable).join(", ")}`);
+    lines.push(t("calculator.answerLine", { answer: worked.answer.map(readable).join(", ") }));
     if (worked.note) lines.push(worked.note);
     if (this.host.insert(lines.join("\n"))) this.close();
   }
@@ -1156,7 +1167,9 @@ export class CalculatorPopover {
     );
     const index = this.graphLines().findIndex((l) => l.id === this.editingLine);
     this.editChip.setText(
-      this.editingLine === "new" ? "New graph line  ✕" : `Graph line ${index + 1}  ✕`,
+      this.editingLine === "new"
+        ? t("calculator.newGraphLine")
+        : t("calculator.graphLineN", { n: index + 1 }),
     );
     this.editChip.toggleClass("is-hidden", !editing || graphing);
     for (const move of Array.from(this.el.querySelectorAll(".is-cursor"))) {
@@ -1166,7 +1179,7 @@ export class CalculatorPopover {
     const clear = this.bodyEl.querySelector<HTMLElement>("[data-clear]");
     if (clear) clear.setText(this.clearsAll() ? "AC" : "C");
     const equalsKey = this.bodyEl.querySelector<HTMLElement>("[data-equals]");
-    if (equalsKey) equalsKey.setText(editing ? "Plot" : "=");
+    if (equalsKey) equalsKey.setText(editing ? t("calculator.plot") : "=");
 
     this.mathEl.empty();
     const expr = this.entry.expr;
@@ -1199,7 +1212,7 @@ export class CalculatorPopover {
       text = "";
     } else if (this.entry.fresh && this.shown !== null) {
       const shown = this.format(this.shown);
-      text = shown ?? "Not a whole number";
+      text = shown ?? t("calculator.errNotWhole");
       if (shown === null) this.resultEl.addClass("is-error");
     } else {
       // A quiet preview while typing; errors wait for =.
@@ -1248,7 +1261,7 @@ export class CalculatorPopover {
   private hint(): string {
     if (this.pane === "graph") return "";
     const worked = this.showing();
-    if (worked) return worked.note ?? (worked.approx ? "Found numerically" : "");
+    if (worked) return worked.note ?? (worked.approx ? t("calculator.algFoundNumerically") : "");
     return hintFor(this.entry);
   }
 

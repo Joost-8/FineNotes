@@ -21,6 +21,7 @@
 import type { Command } from "./commands";
 import { type InkDocument, type TextBoxElement, pageById } from "./document";
 import { type TextStylePatch, applyTextStyle } from "./text-style";
+import { t } from "../i18n/translate";
 
 /** Every key a style change can touch; the inverse restores all of them. */
 const STYLE_KEYS = [
@@ -46,7 +47,7 @@ type StyleSnapshot = Map<(typeof STYLE_KEYS)[number], unknown>;
 
 /** Change the style of one text box on one page. */
 export class SetTextBoxStyle implements Command {
-  readonly label = "Text style";
+  readonly label = t("surface.command.textStyle");
   private previous: StyleSnapshot | null = null;
   /** The box's key order before the change, so undo is `JSON.stringify`-identical. */
   private order: string[] = [];
@@ -123,7 +124,7 @@ export class SetTextBoxText implements Command {
     readonly pageId: string,
     private readonly id: string,
     private readonly text: string,
-    readonly label = "Edit text",
+    readonly label = t("surface.command.editText"),
   ) {}
 
   apply(doc: InkDocument): void {

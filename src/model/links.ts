@@ -11,6 +11,7 @@
 import type { Command } from "./commands";
 import type { InkDocument, InkLink, Page } from "./document";
 import { isExternalTarget, renameTextLinks, textLinkTargets } from "./text-links";
+import { t } from "../i18n/translate";
 
 /** Longest target kept, in UTF-16 units. */
 export const MAX_LINK_TARGET_LENGTH = 2000;
@@ -62,7 +63,8 @@ export class SetLink implements Command {
     private readonly value: Omit<InkLink, "id"> | null,
     label?: string,
   ) {
-    this.label = label ?? (value === null ? "Remove link" : "Link");
+    this.label =
+      label ?? (value === null ? t("surface.command.removeLink") : t("surface.command.link"));
   }
 
   get pageId(): string {
@@ -110,7 +112,7 @@ export function linkStrokes(
   for (const link of page.links ?? []) {
     if (!link.strokes.some((id) => ids.has(id))) continue;
     const rest = link.strokes.filter((id) => !ids.has(id));
-    const label = target === null ? "Remove link" : "Link";
+    const label = target === null ? t("surface.command.removeLink") : t("surface.command.link");
     commands.push(
       new SetLink(page, link.id, rest.length > 0 ? { ...link, strokes: rest } : null, label),
     );

@@ -54,6 +54,7 @@ import {
   sizeGeometry,
   sizeOf,
 } from "../model/templates";
+import { t, tn } from "../i18n/translate";
 
 /** Paint a template preview into `canvas`, `cssWidth` CSS px wide. */
 export function paintTemplatePreview(
@@ -175,7 +176,7 @@ export class AddPagePopover {
     this.position = options.position;
     this.el = document.body.createDiv({ cls: "goodobsidian-addpage" });
     this.el.setAttribute("role", "dialog");
-    this.el.setAttribute("aria-label", "Add page");
+    this.el.setAttribute("aria-label", t("notebooks.picker.addPage"));
     this.build();
     placePopover(this.el, anchor, POPOVER_WIDTH);
     this.dispose.push(
@@ -207,13 +208,16 @@ export class AddPagePopover {
   }
 
   private build(): void {
-    this.el.createDiv({ cls: "goodobsidian-addpage-title", text: "Add Page" });
+    this.el.createDiv({
+      cls: "goodobsidian-addpage-title",
+      text: t("notebooks.picker.addPageTitle"),
+    });
 
     const seg = this.el.createDiv({ cls: "goodobsidian-segmented" });
     const labels: Array<[InsertPosition, string]> = [
-      ["before", "Before"],
-      ["after", "After"],
-      ["last", "Last page"],
+      ["before", t("notebooks.picker.before")],
+      ["after", t("notebooks.picker.after")],
+      ["last", t("notebooks.picker.last")],
     ];
     for (const [pos, label] of labels) {
       // `clickable-icon` on every button in this file: see page-sidebar.ts.
@@ -226,16 +230,16 @@ export class AddPagePopover {
     }
     this.syncSegments();
 
-    this.el.createDiv({ cls: "goodobsidian-addpage-heading", text: "Recent templates" });
+    this.el.createDiv({ cls: "goodobsidian-addpage-heading", text: t("notebooks.picker.recent") });
     this.el.createDiv({
       cls: "goodobsidian-addpage-hint",
-      text: "Templates shown here keep the current page's size.",
+      text: t("notebooks.picker.recentInfo"),
     });
     const cards = this.el.createDiv({ cls: "goodobsidian-addpage-cards" });
     const { current, recent, templateNames } = this.options;
     for (const card of popoverTemplates(current, recent, templateNames)) {
       const button = cards.createEl("button", { cls: "goodobsidian-template-card clickable-icon" });
-      button.setAttribute("aria-label", `Add a page: ${card.label}`);
+      button.setAttribute("aria-label", t("notebooks.picker.addPageWith", { name: card.label }));
       const canvas = button.createEl("canvas", { cls: "goodobsidian-template-preview" });
       const backdrop = card.backdrop;
       if (backdrop.kind === "pdf") {
@@ -247,7 +251,7 @@ export class AddPagePopover {
       button.createDiv({ cls: "goodobsidian-template-name", text: card.label });
       button.createDiv({
         cls: "goodobsidian-template-sub",
-        text: backdrop.kind === "pdf" ? "My templates" : paperLabel(backdrop),
+        text: backdrop.kind === "pdf" ? t("notebooks.picker.mine") : paperLabel(backdrop),
       });
       button.addEventListener("click", () => {
         this.close();
@@ -259,7 +263,7 @@ export class AddPagePopover {
     const more = this.el.createEl("button", { cls: "goodobsidian-addpage-row clickable-icon" });
     const icon = more.createSpan({ cls: "goodobsidian-addpage-row-icon" });
     setIcon(icon, "layout-template");
-    more.createSpan({ text: "More from templates…" });
+    more.createSpan({ text: t("notebooks.picker.more") });
     more.addEventListener("click", () => {
       this.close();
       this.options.onMore(this.position);
@@ -305,8 +309,9 @@ export class PaperControls {
     this.state = { sizeId: options.sizeId, color: options.color, landscape: options.landscape };
 
     const size = bar.createEl("select", { cls: "dropdown" });
-    size.setAttribute("aria-label", "Page size");
-    if (options.keepSize) size.createEl("option", { text: "Current size", value: KEEP_SIZE });
+    size.setAttribute("aria-label", t("notebooks.designer.pageSize"));
+    if (options.keepSize)
+      size.createEl("option", { text: t("notebooks.picker.currentSize"), value: KEEP_SIZE });
     for (const s of PAGE_SIZES) size.createEl("option", { text: s.label, value: s.id });
     size.value = this.state.sizeId;
     size.addEventListener("change", () => {
@@ -316,7 +321,7 @@ export class PaperControls {
     });
 
     const color = bar.createEl("select", { cls: "dropdown" });
-    color.setAttribute("aria-label", "Paper colour");
+    color.setAttribute("aria-label", t("notebooks.picker.paperColour"));
     for (const c of PAPER_COLORS) color.createEl("option", { text: c.label, value: c.id });
     color.value = this.state.color;
     color.addEventListener("change", () => {
@@ -327,10 +332,10 @@ export class PaperControls {
     const orient = bar.createDiv({ cls: "goodobsidian-segmented is-icons" });
     this.portrait = orient.createEl("button", { cls: "clickable-icon" });
     setIcon(this.portrait, "rectangle-vertical");
-    this.portrait.setAttribute("aria-label", "Portrait");
+    this.portrait.setAttribute("aria-label", t("notebooks.designer.portrait"));
     this.landscape = orient.createEl("button", { cls: "clickable-icon" });
     setIcon(this.landscape, "rectangle-horizontal");
-    this.landscape.setAttribute("aria-label", "Landscape");
+    this.landscape.setAttribute("aria-label", t("notebooks.designer.landscape"));
     this.portrait.addEventListener("click", () => this.setLandscape(false));
     this.landscape.addEventListener("click", () => this.setLandscape(true));
     this.syncOrientation();
@@ -586,7 +591,7 @@ export class MyTemplatesSection {
     details.open = true;
     const summary = details.createEl("summary");
     setIcon(summary.createSpan({ cls: "goodobsidian-templates-chevron" }), "chevron-down");
-    summary.createSpan({ text: "My templates" });
+    summary.createSpan({ text: t("notebooks.picker.mine") });
     const refresh = (added: boolean): void => {
       if (added && this.alive) void this.render();
     };
@@ -601,11 +606,11 @@ export class MyTemplatesSection {
       setIcon(button, icon);
       return button;
     };
-    const add = tool("plus", "Add templates");
+    const add = tool("plus", t("notebooks.picker.addTemplates"));
     const share = host.shareTemplate?.bind(host);
     // Only a PDF or picture can go to the community gallery, not a designed paper.
     if (share && entries.some((entry) => !entry.design)) {
-      tool("share-2", "Share a template").addEventListener("click", (event) => {
+      tool("share-2", t("notebooks.picker.share")).addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
         share();
@@ -634,11 +639,20 @@ export class MyTemplatesSection {
         run(button);
       });
     };
-    if (host.saveDesign) item("pencil-ruler", "Design a paper…", () => this.openDesigner(null));
+    if (host.saveDesign)
+      item("pencil-ruler", t("notebooks.picker.design"), () => this.openDesigner(null));
     const browse = host.browseCommunity?.bind(host);
-    if (browse) item("globe", "Community templates…", () => void browse().then(refresh));
-    item("file-up", "From files…", (button) => void host.importFile(button).then(refresh));
-    item("folder-open", "From vault…", () => void host.importFromVault().then(refresh));
+    if (browse) item("globe", t("notebooks.picker.community"), () => void browse().then(refresh));
+    item(
+      "file-up",
+      t("notebooks.picker.fromFiles"),
+      (button) => void host.importFile(button).then(refresh),
+    );
+    item(
+      "folder-open",
+      t("notebooks.picker.fromVault"),
+      () => void host.importFromVault().then(refresh),
+    );
     add.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -654,7 +668,7 @@ export class MyTemplatesSection {
       const pages = counts.get(entry.path) ?? 1;
       const name =
         this.options.wholeFiles && pages > 1
-          ? `${entry.name.replace(/ · 1$/, "")} · ${pages} pages`
+          ? tn("notebooks.picker.namePages", pages, { name: entry.name.replace(/ · 1$/, "") })
           : entry.name;
       // The card and its ⋯ side by side in a frame: a button cannot hold a button.
       const frame = row.createDiv({ cls: "goodobsidian-template-card-frame" });
@@ -673,7 +687,7 @@ export class MyTemplatesSection {
     if (entries.length === 0) {
       row.createDiv({
         cls: "goodobsidian-my-papers-empty",
-        text: "Tap + to design a paper, bring in a PDF or picture, or find one in the community gallery: every page of it is a paper here.",
+        text: t("notebooks.picker.empty"),
       });
     }
     this.sync();
@@ -722,19 +736,24 @@ export class MyTemplatesSection {
     if (!share && !remove && !edit) return;
     const more = frame.createEl("button", {
       cls: "goodobsidian-template-card-more clickable-icon",
-      attr: { "aria-label": "Template options", title: "Template options" },
+      attr: {
+        "aria-label": t("notebooks.picker.options"),
+        title: t("notebooks.picker.options"),
+      },
     });
     setIcon(more, "more-horizontal");
     more.addEventListener("click", (event) => {
       event.stopPropagation();
       const menu = new Menu();
       if (edit) {
-        menu.addItem((item) => item.setTitle("Edit…").setIcon("pencil").onClick(edit));
+        menu.addItem((item) =>
+          item.setTitle(t("notebooks.picker.edit")).setIcon("pencil").onClick(edit),
+        );
       }
       if (share) {
         menu.addItem((item) =>
           item
-            .setTitle("Share…")
+            .setTitle(t("notebooks.picker.shareItem"))
             .setIcon("share-2")
             .onClick(() => share(path)),
         );
@@ -742,7 +761,7 @@ export class MyTemplatesSection {
       if (remove) {
         menu.addItem((item) =>
           item
-            .setTitle(pages > 1 ? `Delete template (${pages} pages)` : "Delete template")
+            .setTitle(tn("notebooks.picker.deleteTemplate", pages))
             .setIcon("trash-2")
             .setWarning(true)
             .onClick(() => {
@@ -815,7 +834,11 @@ export class TemplatePickerModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-templates-modal", "goodobsidian-dialog");
-    this.titleEl.setText(this.options.mode === "add" ? "Paper" : "Change template");
+    this.titleEl.setText(
+      this.options.mode === "add"
+        ? t("notebooks.designer.paper")
+        : t("notebooks.picker.changeTemplate"),
+    );
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("goodobsidian-templates");
@@ -869,9 +892,9 @@ export class TemplatePickerModal extends Modal {
     }
 
     const footer = contentEl.createDiv({ cls: "goodobsidian-templates-footer" });
-    const cancel = footer.createEl("button", { text: "Cancel" });
+    const cancel = footer.createEl("button", { text: t("common.cancel") });
     cancel.addEventListener("click", () => this.close());
-    const apply = footer.createEl("button", { cls: "mod-cta", text: "Apply" });
+    const apply = footer.createEl("button", { cls: "mod-cta", text: t("notebooks.picker.apply") });
     apply.addEventListener("click", () => this.apply());
 
     this.repaint();
@@ -922,18 +945,29 @@ export class TemplatePickerModal extends Modal {
     ).toLowerCase();
 
     const paperRow = el.createDiv({ cls: "goodobsidian-paper-style-row" });
-    paperRow.createSpan({ cls: "goodobsidian-paper-style-label", text: "Paper" });
+    paperRow.createSpan({
+      cls: "goodobsidian-paper-style-label",
+      text: t("notebooks.designer.paper"),
+    });
     for (const swatch of PAPER_SWATCHES) {
       this.swatch(paperRow, swatch.label, swatch.color, swatch.color === shownPaper, () =>
         set({ paper: swatch.color }),
       );
     }
     const paperCustom = !PAPER_SWATCHES.some((s) => s.color === shownPaper);
-    this.customSwatch(paperRow, "paper", "Any paper colour", paperCustom ? shownPaper : null);
+    this.customSwatch(
+      paperRow,
+      "paper",
+      t("notebooks.picker.anyPaper"),
+      paperCustom ? shownPaper : null,
+    );
     this.mixer(el, "paper", shownPaper, (paper) => set({ paper }));
 
     const ruleRow = el.createDiv({ cls: "goodobsidian-paper-style-row" });
-    ruleRow.createSpan({ cls: "goodobsidian-paper-style-label", text: "Lines" });
+    ruleRow.createSpan({
+      cls: "goodobsidian-paper-style-label",
+      text: t("notebooks.designer.lines"),
+    });
     for (const swatch of RULE_SWATCHES) {
       const on = (swatch.color ?? undefined) === this.style.rule;
       const button = this.swatch(ruleRow, swatch.label, swatch.color ?? shownPaper, on, () =>
@@ -943,11 +977,14 @@ export class TemplatePickerModal extends Modal {
     }
     const rule = this.style.rule;
     const ruleCustom = rule !== undefined && !RULE_SWATCHES.some((s) => s.color === rule);
-    this.customSwatch(ruleRow, "rule", "Any line colour", ruleCustom ? rule : null);
+    this.customSwatch(ruleRow, "rule", t("notebooks.picker.anyLine"), ruleCustom ? rule : null);
     this.mixer(el, "rule", rule ?? "#9aa0ab", (color) => set({ rule: color }));
 
     const spacingRow = el.createDiv({ cls: "goodobsidian-paper-style-row" });
-    spacingRow.createSpan({ cls: "goodobsidian-paper-style-label", text: "Spacing" });
+    spacingRow.createSpan({
+      cls: "goodobsidian-paper-style-label",
+      text: t("notebooks.designer.spacing"),
+    });
     const steps = spacingRow.createDiv({ cls: "goodobsidian-segmented" });
     for (const step of SPACING_STEPS) {
       const on = (this.style.spacing ?? 1) === step.k;

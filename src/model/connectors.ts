@@ -25,6 +25,7 @@ import {
   type Stroke,
   pageById,
 } from "./document";
+import { t } from "../i18n/translate";
 
 /** The page's connectors whose two shapes are both on it, in order. */
 export function liveConnectors(page: Page): ShapeConnector[] {
@@ -124,7 +125,7 @@ export function remapConnectors(
  * connectors without the key.
  */
 export class AddLinkedCopy implements Command {
-  readonly label = "Add linked shape";
+  readonly label = t("surface.command.addLinkedShape");
   private hadList = false;
 
   constructor(
@@ -160,7 +161,7 @@ export class AddLinkedCopy implements Command {
  * leaves a page that had no connectors without the key.
  */
 export class AddConnector implements Command {
-  readonly label = "Join shapes";
+  readonly label = t("surface.command.joinShapes");
   private hadList = false;
 
   constructor(
@@ -192,7 +193,7 @@ export class AddConnector implements Command {
  * stay. Undo puts back the very array and kind it had.
  */
 export class RetypeShape implements Command {
-  readonly label = "Change shape";
+  readonly label = t("surface.command.changeShape");
   private previous: { pts: number[]; shape?: ShapeKind } | null = null;
 
   constructor(

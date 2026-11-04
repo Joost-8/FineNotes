@@ -10,6 +10,7 @@
 
 import type { Command } from "./commands";
 import type { InkDocument, ScrollDirection } from "./document";
+import { t } from "../i18n/translate";
 
 /** The direction a document scrolls in; anything but `"horizontal"` is vertical. */
 export function scrollDirectionOf(doc: Pick<InkDocument, "scroll"> | null): ScrollDirection {
@@ -22,7 +23,7 @@ export function scrollDirectionOf(doc: Pick<InkDocument, "scroll"> | null): Scro
  * key order included.
  */
 export class SetScrollDirection implements Command {
-  readonly label = "Change scroll direction";
+  readonly label = t("surface.command.changeScrollDirection");
   private previous: ScrollDirection = "vertical";
   private keyOrder: string[] = [];
 

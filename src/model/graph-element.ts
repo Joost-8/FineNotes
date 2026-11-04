@@ -23,6 +23,7 @@ import { isHexColor } from "./text-style";
 import type { GraphSpec } from "./graph";
 import { normalizeGraphSpec } from "./graph-lines";
 import { LINE_COLORS } from "./graph-sample";
+import { t } from "../i18n/translate";
 
 /** A graph is never smaller than this a side, page px: room for its axes. */
 export const GRAPH_MIN_SIDE = 40;
@@ -259,7 +260,7 @@ export function sameView(a: GraphView, b: GraphView): boolean {
 
 /** Put a graph on a page, above the graphs already there. */
 export class AddGraph implements Command {
-  readonly label = "Add graph";
+  readonly label = t("surface.command.addGraph");
   /** Whether the page had no `graphs` list before, so undo leaves it without one. */
   private created = false;
 
@@ -307,7 +308,9 @@ export class EditGraph implements Command {
     readonly pageId: string,
     private readonly graph: GraphElement,
     private readonly changes: GraphChanges,
-    readonly label = changes.spec ? "Edit graph" : "Move graph view",
+    readonly label = changes.spec
+      ? t("surface.command.editGraph")
+      : t("surface.command.moveGraphView"),
   ) {}
 
   apply(doc: InkDocument): void {

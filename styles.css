@@ -687,7 +687,7 @@ body:not(.is-mobile) .goodobsidian-view {
 .goodobsidian-options .goodobsidian-sep {
   flex: 0 0 auto;
   width: 1px;
-  height: 24px;
+  height: calc(var(--icon-size) + 2 * var(--size-2-2));
   margin: 0 6px;
   background: var(--gob-line);
 }
@@ -1919,7 +1919,7 @@ select.goodobsidian-choice-select {
   align-items: center;
   justify-content: center;
   width: 24px;
-  height: 24px;
+  height: calc(var(--icon-size) + 2 * var(--size-2-2));
   border: 2px solid var(--color-base-00);
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.18);
@@ -2795,6 +2795,60 @@ body.is-mobile .goodobsidian-scrollthumb {
 
 input.goodobsidian-color-list.is-invalid {
   border-color: var(--text-error);
+}
+
+/* The Language row, above the sections: a line like their headers (no
+   card, the heading's type and inset, the same gap to the next one), its
+   choice muted beside it like a header's state. */
+.setting-group:has(.goodobsidian-language-row) > .setting-items {
+  border-color: transparent;
+  background-color: transparent;
+}
+
+.setting-group .setting-item.goodobsidian-language-row {
+  align-items: center;
+  padding: 0 var(--size-4-4);
+}
+
+.goodobsidian-language-row .setting-item-name {
+  color: var(--setting-group-heading-color);
+  font-size: var(--setting-group-heading-size);
+  font-weight: var(--setting-group-heading-weight);
+}
+
+.goodobsidian-language-row .setting-item-control select.dropdown {
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-normal);
+}
+
+/* As tall as a header's chevron (its icon and padding), so the row keeps
+   the headers' pitch on every platform. */
+.goodobsidian-language-row .setting-item-control :is(select.dropdown, button) {
+  height: calc(var(--icon-size) + 2 * var(--size-2-2));
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.goodobsidian-language-row .setting-item-control button {
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-language-row .setting-item-control select.dropdown:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.vertical-tab-content:not(:has(.goodobsidian-fold-header .goodobsidian-section-icon))
+  .goodobsidian-language-row
+  .goodobsidian-section-icon {
+  display: none;
+}
+
+.setting-group:has(.goodobsidian-language-row) + .setting-group.goodobsidian-section.is-folded {
+  margin-top: var(--size-4-4);
 }
 
 /* Sections that fold. The header is the control (the chevron is its
@@ -4531,7 +4585,7 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
 .goodobsidian-newnb-paper-sep {
   align-self: center;
   width: 1px;
-  height: 24px;
+  height: calc(var(--icon-size) + 2 * var(--size-2-2));
   margin: 0 4px;
   background: var(--background-modifier-border);
 }
@@ -7729,7 +7783,7 @@ textarea.goodobsidian-chat-input:focus-visible {
 
 .goodobsidian-selection-bar .goodobsidian-selection-button svg {
   width: 24px;
-  height: 24px;
+  height: calc(var(--icon-size) + 2 * var(--size-2-2));
 }
 
 .goodobsidian-selection-divider {
@@ -8668,7 +8722,7 @@ input[type="range"].goodobsidian-player-scrubber {
 .goodobsidian-crop-handle.is-e::after,
 .goodobsidian-crop-handle.is-w::after {
   width: 4px;
-  height: 24px;
+  height: calc(var(--icon-size) + 2 * var(--size-2-2));
 }
 
 /* A lock on each locked picture, shown only with the lasso. It takes no
@@ -8685,7 +8739,7 @@ input[type="range"].goodobsidian-player-scrubber {
   align-items: center;
   justify-content: center;
   width: 24px;
-  height: 24px;
+  height: calc(var(--icon-size) + 2 * var(--size-2-2));
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   color: var(--gob-mark);
@@ -11123,7 +11177,7 @@ button.goodobsidian-sticker-swatch.clickable-icon {
 
 .goodobsidian-sticker-swatch-disc {
   width: 24px;
-  height: 24px;
+  height: calc(var(--icon-size) + 2 * var(--size-2-2));
   border-radius: 999px;
   /* A ring from the theme, so near-black reads on a dark dialog too. */
   box-shadow: 0 0 0 1px var(--background-modifier-border-hover);

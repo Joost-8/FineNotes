@@ -1,5 +1,6 @@
 import { setIcon } from "obsidian";
 import { ICON_LIBRARY } from "../constants";
+import { t } from "../i18n/translate";
 
 /**
  * A button in the file explorer's bar that opens the notebook library (Home).
@@ -31,7 +32,11 @@ export class FileExplorerNotebookButton {
       if (this.buttons.has(bar)) continue;
       const button = bar.createEl("button", {
         cls: "clickable-icon nav-action-button goodobsidian-new-notebook",
-        attr: { type: "button", "aria-label": "Notebook library", title: "Notebook library" },
+        attr: {
+          type: "button",
+          "aria-label": t("notebooks.explorer.library"),
+          title: t("notebooks.explorer.library"),
+        },
       });
       setIcon(button, ICON_LIBRARY);
       button.addEventListener("click", this.openLibrary);

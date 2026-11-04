@@ -12,6 +12,7 @@
  * Pure: no DOM, no Obsidian, no file system.
  */
 
+import { t, tn } from "../i18n/translate";
 import type { Command } from "./commands";
 import { type InkDocument, type Page, insertPage } from "./document";
 import { relinkNoteInk } from "./sticky-notes";
@@ -21,10 +22,10 @@ import { remapConnectors } from "./connectors";
 export function transferRefusal(doc: InkDocument): string | null {
   // A board is flagged single too (so builds that know no boards open it as
   // one page), but it is not one to the user.
-  if (doc.endless) return "That is a board, which takes no pages.";
-  if (doc.single) return "That is a single page, which takes no more pages.";
-  if (doc.practice) return "A practice set has fixed pages.";
-  if (doc.readOnly) return "That notebook is read-only.";
+  if (doc.endless) return t("view.transfer.refuseBoard");
+  if (doc.single) return t("view.transfer.refuseSingle");
+  if (doc.practice) return t("view.transfer.refusePractice");
+  if (doc.readOnly) return t("view.transfer.refuseReadOnly");
   return null;
 }
 
@@ -128,7 +129,7 @@ export class ReceivePages implements Command {
   private copies: Page[] | null = null;
 
   constructor(private readonly sources: readonly Page[]) {
-    this.label = sources.length === 1 ? "Receive page" : "Receive pages";
+    this.label = tn("view.transfer.receive", sources.length);
   }
 
   /** The pages this command put in the notebook (empty before it ran). */
@@ -213,6 +214,5 @@ export function rememberTarget(recent: readonly string[], path: string, limit = 
 
 /** The notice after a transfer: "Moved 3 pages to Maths." */
 export function transferNotice(count: number, destination: string, copied: boolean): string {
-  const what = count === 1 ? "1 page" : `${count} pages`;
-  return `${copied ? "Copied" : "Moved"} ${what} to ${destination}.`;
+  return tn(copied ? "view.transfer.copied" : "view.transfer.moved", count, { destination });
 }

@@ -40,6 +40,7 @@ import {
   menuLayout,
   placeFloating,
 } from "./selection-bar-model";
+import { t } from "../i18n/translate";
 
 /** Space between the selection (and anything sticking out of it) and the bar, px. */
 const BAR_GAP_PX = 12;
@@ -155,7 +156,11 @@ export class SelectionActionBar {
         continue;
       }
       if (item.kind === "more") {
-        const more = this.button(this.el, "goodobsidian-selection-button is-more", "More");
+        const more = this.button(
+          this.el,
+          "goodobsidian-selection-button is-more",
+          t("common.more"),
+        );
         iconInto(more, ["more-horizontal", "ellipsis"], "…");
         onTap(more, () => this.toggleMenu());
         this.moreButton = more;
@@ -239,7 +244,11 @@ export class SelectionActionBar {
       : undefined;
     if (open?.kind === "submenu") {
       // A sub-panel in place of the menu: a way back, then its rows.
-      const back = this.button(menu, "goodobsidian-selection-row is-back", "Back");
+      const back = this.button(
+        menu,
+        "goodobsidian-selection-row is-back",
+        t("surface.selectionBar.back"),
+      );
       iconInto(back.createSpan({ cls: "goodobsidian-selection-row-icon" }), ["chevron-left"], "‹");
       back.createSpan({ cls: "goodobsidian-selection-row-label", text: open.label });
       onTap(back, () => {
@@ -388,7 +397,7 @@ export class SelectionActionBar {
       const dropper = this.button(
         row,
         "goodobsidian-selection-swatch is-eyedropper is-extra",
-        "Pick from the page",
+        t("surface.selectionBar.pickFromPage"),
       );
       setIcon(dropper.createSpan({ cls: "goodobsidian-selection-swatch-disc" }), "pipette");
       dropper.disabled = !isEnabled(action);
@@ -397,10 +406,16 @@ export class SelectionActionBar {
         if (latest?.swatches?.eyedropper && isEnabled(latest)) latest.swatches.eyedropper();
       });
     }
-    const expand = this.button(row, "goodobsidian-selection-swatch is-expand", "More colours");
+    const expand = this.button(
+      row,
+      "goodobsidian-selection-swatch is-expand",
+      t("surface.selectionBar.moreColours"),
+    );
     const syncExpand = (): void => {
       setIcon(expand, this.swatchesOpen ? "chevron-up" : "chevron-down");
-      const label = this.swatchesOpen ? "Fewer colours" : "More colours";
+      const label = this.swatchesOpen
+        ? t("surface.selectionBar.fewerColours")
+        : t("surface.selectionBar.moreColours");
       expand.setAttribute("aria-label", label);
       expand.setAttribute("title", label);
       expand.setAttribute("aria-expanded", String(this.swatchesOpen));
@@ -417,7 +432,7 @@ export class SelectionActionBar {
     const plus = this.button(
       row,
       "goodobsidian-selection-swatch is-custom is-extra",
-      "Custom colour",
+      t("surface.selectionBar.customColour"),
     );
     plus.createSpan({ cls: "goodobsidian-selection-swatch-disc goodobsidian-color-more" });
     plus.disabled = !isEnabled(action);

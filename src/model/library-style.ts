@@ -4,6 +4,8 @@
  * does to every path the library remembers (stars, folder looks).
  */
 
+import type { TextKey } from "../i18n/translate";
+
 export interface FolderStyle {
   color?: string;
   icon?: string;
@@ -11,33 +13,33 @@ export interface FolderStyle {
 
 export type FolderStyles = Record<string, FolderStyle>;
 
-/** The folder colours on offer; the first is what an unstyled folder wears. */
-export const FOLDER_COLORS: ReadonlyArray<{ id: string; name: string; color: string }> = [
-  { id: "sky", name: "Sky", color: "#3fb6d8" },
-  { id: "blue", name: "Blue", color: "#4a7df0" },
-  { id: "violet", name: "Violet", color: "#8b6cf0" },
-  { id: "pink", name: "Pink", color: "#e8629a" },
-  { id: "red", name: "Red", color: "#e5534b" },
-  { id: "orange", name: "Orange", color: "#f08a3c" },
-  { id: "yellow", name: "Yellow", color: "#e8b630" },
-  { id: "green", name: "Green", color: "#46b86a" },
-  { id: "gray", name: "Gray", color: "#8a929c" },
+/** The folder colours on offer, `name` their text key; the first is what an unstyled folder wears. */
+export const FOLDER_COLORS: ReadonlyArray<{ id: string; name: TextKey; color: string }> = [
+  { id: "sky", name: "notebooks.home.colorName.sky", color: "#3fb6d8" },
+  { id: "blue", name: "notebooks.home.colorName.blue", color: "#4a7df0" },
+  { id: "violet", name: "notebooks.home.colorName.violet", color: "#8b6cf0" },
+  { id: "pink", name: "notebooks.home.colorName.pink", color: "#e8629a" },
+  { id: "red", name: "notebooks.home.colorName.red", color: "#e5534b" },
+  { id: "orange", name: "notebooks.home.colorName.orange", color: "#f08a3c" },
+  { id: "yellow", name: "notebooks.home.colorName.yellow", color: "#e8b630" },
+  { id: "green", name: "notebooks.home.colorName.green", color: "#46b86a" },
+  { id: "gray", name: "notebooks.home.colorName.gray", color: "#8a929c" },
 ];
 
-/** The icons on offer (Lucide names); the first is what an unstyled folder wears. */
-export const FOLDER_ICONS: ReadonlyArray<{ id: string; name: string }> = [
-  { id: "graduation-cap", name: "Study" },
-  { id: "book-open", name: "Reading" },
-  { id: "briefcase", name: "Work" },
-  { id: "flask-conical", name: "Science" },
-  { id: "calculator", name: "Maths" },
-  { id: "code", name: "Code" },
-  { id: "palette", name: "Art" },
-  { id: "music", name: "Music" },
-  { id: "heart", name: "Personal" },
-  { id: "house", name: "Home" },
-  { id: "plane", name: "Travel" },
-  { id: "folder", name: "Plain" },
+/** The icons on offer (Lucide names), `name` their text key; the first is what an unstyled folder wears. */
+export const FOLDER_ICONS: ReadonlyArray<{ id: string; name: TextKey }> = [
+  { id: "graduation-cap", name: "notebooks.home.iconName.study" },
+  { id: "book-open", name: "notebooks.home.iconName.reading" },
+  { id: "briefcase", name: "notebooks.home.iconName.work" },
+  { id: "flask-conical", name: "notebooks.home.iconName.science" },
+  { id: "calculator", name: "notebooks.home.iconName.maths" },
+  { id: "code", name: "notebooks.home.iconName.code" },
+  { id: "palette", name: "notebooks.home.iconName.art" },
+  { id: "music", name: "notebooks.home.iconName.music" },
+  { id: "heart", name: "notebooks.home.iconName.personal" },
+  { id: "house", name: "notebooks.home.iconName.home" },
+  { id: "plane", name: "notebooks.home.iconName.travel" },
+  { id: "folder", name: "notebooks.home.iconName.plain" },
 ];
 
 export const DEFAULT_FOLDER_COLOR = FOLDER_COLORS[0].color;

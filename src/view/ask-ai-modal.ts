@@ -35,6 +35,7 @@ import {
   type TFile,
   setIcon,
 } from "obsidian";
+import { t, tn } from "../i18n/translate";
 import {
   ASK_MAX_PAGES,
   type ChatFile,
@@ -91,34 +92,43 @@ export interface AskAiHost {
  * sends it. With nothing picked or attached (a new chat, unless the setting
  * picks the open page) there is nothing to ask about yet: no suggestions.
  */
-const SUGGESTIONS = {
-  none: [],
-  one: [
-    "Summarise this page",
-    "Explain this step by step",
-    "Check my work for mistakes",
-    "Quiz me on this page",
-  ],
-  many: [
-    "Summarise these pages",
-    "What are the key ideas?",
-    "Make practice questions",
-    "What should I review?",
-  ],
-  /** A board (FineNotes#46): what is on screen goes with each question. */
-  screen: [
-    "Explain what is on screen",
-    "Summarise this",
-    "Check my work for mistakes",
-    "Quiz me on this",
-  ],
-  file: [
-    "What does this say?",
-    "Explain this step by step",
-    "Check my work for mistakes",
-    "Quiz me on this",
-  ],
-} as const;
+type SuggestionKind = "none" | "one" | "many" | "screen" | "file";
+
+function suggestions(kind: SuggestionKind): string[] {
+  switch (kind) {
+    case "none":
+      return [];
+    case "one":
+      return [
+        t("ai.ask.suggestOne.summarise"),
+        t("ai.ask.suggestOne.explain"),
+        t("ai.ask.suggestOne.check"),
+        t("ai.ask.suggestOne.quiz"),
+      ];
+    case "many":
+      return [
+        t("ai.ask.suggestMany.summarise"),
+        t("ai.ask.suggestMany.keyIdeas"),
+        t("ai.ask.suggestMany.practice"),
+        t("ai.ask.suggestMany.review"),
+      ];
+    case "screen":
+      // A board (FineNotes#46): what is on screen goes with each question.
+      return [
+        t("ai.ask.suggestScreen.explain"),
+        t("ai.ask.suggestScreen.summarise"),
+        t("ai.ask.suggestScreen.check"),
+        t("ai.ask.suggestScreen.quiz"),
+      ];
+    case "file":
+      return [
+        t("ai.ask.suggestFile.says"),
+        t("ai.ask.suggestFile.explain"),
+        t("ai.ask.suggestFile.check"),
+        t("ai.ask.suggestFile.quiz"),
+      ];
+  }
+}
 
 /** Tallest the question field grows before it scrolls, px. */
 const INPUT_MAX_PX = 160;
@@ -176,7 +186,7 @@ export class AskChat {
   private outstandingEl: HTMLElement | null = null;
   private outstandingKey = "";
   /** What the empty thread's suggestions are for. */
-  private emptyFor: keyof typeof SUGGESTIONS | null = null;
+  private emptyFor: SuggestionKind | null = null;
 
   private readonly keyboard: DialogKeyboard;
 
@@ -201,25 +211,25 @@ export class AskChat {
     // A board sends what is on screen: there are no pages to pick.
     if (!this.session.screen) this.buildPagesChip(top);
     const tools = top.createDiv({ cls: "goodobsidian-chat-tools" });
-    this.saveButton = this.toolButton(tools, "bookmark", "Save chat", () => {
+    this.saveButton = this.toolButton(tools, "bookmark", t("ai.ask.saveChat"), () => {
       const save = !this.session.save;
       this.host.rememberSave(save);
       void this.session.setSave(save).catch((error: unknown) => {
-        new Notice(`FineNotes: could not ${save ? "save" : "remove"} the chat: ${String(error)}`);
+        new Notice(t(save ? "ai.ask.saveFailed" : "ai.ask.removeFailed", { error: String(error) }));
       });
     });
-    this.chatsButton = this.toolButton(tools, "history", "Chats", (event) => {
+    this.chatsButton = this.toolButton(tools, "history", t("ai.ask.chats"), (event) => {
       void this.showChats(event);
     });
     const other = this.frame.layout === "window" ? "sidebar" : "window";
     this.toolButton(
       tools,
       other === "sidebar" ? "panel-left" : "app-window",
-      other === "sidebar" ? "Show in the sidebar" : "Show as a window",
+      other === "sidebar" ? t("ai.ask.showInSidebar") : t("ai.ask.showAsWindow"),
       () => this.frame.switchLayout(),
       "goodobsidian-chat-layout",
     );
-    this.newChatButton = this.toolButton(tools, "square-pen", "New chat", () => {
+    this.newChatButton = this.toolButton(tools, "square-pen", t("ai.ask.newChat"), () => {
       this.closePicker();
       this.session.newChat(this.host.currentPage());
       this.input?.focus();
@@ -234,7 +244,7 @@ export class AskChat {
     const row = composer.createDiv({ cls: "goodobsidian-chat-compose-row" });
     this.attachButton = row.createEl("button", {
       cls: "goodobsidian-chat-attach clickable-icon",
-      attr: { "aria-label": "Attach a file" },
+      attr: { "aria-label": t("ai.ask.attach") },
     });
     setIcon(this.attachButton, "paperclip");
     this.attachButton.addEventListener("click", () => this.showAttachMenu());
@@ -259,7 +269,7 @@ export class AskChat {
     onEnterKey(input, () => this.submit(), { shiftNewline: true });
     this.sendButton = row.createEl("button", {
       cls: "goodobsidian-chat-send clickable-icon",
-      attr: { "aria-label": "Send" },
+      attr: { "aria-label": t("ai.ask.send") },
     });
     setIcon(this.sendButton, "arrow-up");
     this.sendButton.addEventListener("click", () => this.submit());
@@ -323,14 +333,17 @@ export class AskChat {
     const picker = parent.createDiv({ cls: "goodobsidian-chat-picker is-hidden" });
     const head = picker.createDiv({ cls: "goodobsidian-chat-picker-head" });
     const title = head.createDiv({ cls: "goodobsidian-chat-picker-title" });
-    title.createSpan({ text: "Pages to send" });
+    title.createSpan({ text: t("ai.ask.pagesToSend") });
     this.pickerCount = title.createSpan({ cls: "goodobsidian-chat-picker-count" });
     const only = head.createEl("button", {
       cls: "goodobsidian-chat-picker-link clickable-icon",
-      text: "Only this page",
+      text: t("ai.ask.onlyThisPage"),
     });
     only.addEventListener("click", () => this.session.setSelection([this.host.currentPage()]));
-    const done = head.createEl("button", { cls: "mod-cta clickable-icon", text: "Done" });
+    const done = head.createEl("button", {
+      cls: "mod-cta clickable-icon",
+      text: t("common.done"),
+    });
     done.addEventListener("click", () => this.closePicker());
 
     this.buildPdfList(picker);
@@ -339,7 +352,7 @@ export class AskChat {
     for (let page = 1; page <= this.session.totalPages; page++) {
       const tile = grid.createEl("button", {
         cls: "goodobsidian-chat-tile clickable-icon",
-        attr: { "aria-label": `Page ${page}` },
+        attr: { "aria-label": t("ai.ask.page", { page }) },
       });
       const frame = tile.createDiv({ cls: "goodobsidian-chat-tile-frame" });
       frame.createEl("canvas", { cls: "goodobsidian-chat-tile-thumb" });
@@ -347,19 +360,19 @@ export class AskChat {
       const caption = tile.createDiv({ cls: "goodobsidian-chat-tile-caption" });
       caption.createSpan({ text: String(page) });
       if (page === current)
-        caption.createSpan({ cls: "goodobsidian-chat-tile-tag", text: "This page" });
-      caption.createSpan({ cls: "goodobsidian-chat-tile-sent", text: "In chat" });
+        caption.createSpan({ cls: "goodobsidian-chat-tile-tag", text: t("ai.ask.thisPage") });
+      caption.createSpan({ cls: "goodobsidian-chat-tile-sent", text: t("ai.ask.inChat") });
       if (!this.host.pageHasContent(page)) {
         tile.addClass("is-empty");
         tile.disabled = true;
-        tile.setAttribute("aria-label", `Page ${page}, empty`);
+        tile.setAttribute("aria-label", t("ai.ask.pageEmpty", { page }));
       }
       tile.addEventListener("click", () => this.session.togglePage(page));
       this.tiles.set(page, tile);
     }
     picker.createDiv({
       cls: "goodobsidian-chat-picker-foot",
-      text: `Up to ${ASK_MAX_PAGES} pages. Pages already in the chat stay in it.`,
+      text: t("ai.ask.pickerFoot", { max: ASK_MAX_PAGES }),
     });
     this.pickerEl = picker;
   }
@@ -424,14 +437,14 @@ export class AskChat {
       tile.setAttribute("aria-pressed", String(on));
       if (!tile.hasClass("is-empty")) tile.disabled = session.busy || (!on && full);
     }
-    this.pickerCount?.setText(`${picked.length} of ${ASK_MAX_PAGES}`);
+    this.pickerCount?.setText(t("ai.ask.pickedOf", { count: picked.length, max: ASK_MAX_PAGES }));
     if (this.chipLabel) {
       this.chipLabel.setText(
         picked.length === 0
-          ? "Pick pages"
+          ? t("ai.ask.pickPages")
           : picked.length <= 3
-            ? `${picked.length === 1 ? "Page" : "Pages"} ${picked.join(", ")}`
-            : `${picked.length} pages`,
+            ? tn("ai.ask.pageList", picked.length, { list: picked.join(", ") })
+            : tn("ai.ask.pageCount", picked.length),
       );
     }
     this.pagesButton?.toggleClass("is-many", picked.length > 1);
@@ -449,17 +462,22 @@ export class AskChat {
     const session = this.session;
     const sent = session.sentPages;
     const fresh = session.selected.filter((p) => !sent.has(p));
-    const saved = session.save ? " Saved in AI chats." : "";
-    const tools = " It can use your notebook.";
+    const saved = session.save;
+    const target = this.host.target;
     if (session.screen) {
-      return `Sends what is on screen to ${this.host.target} with your question.${tools}${saved}`;
+      return t(saved ? "ai.ask.noteScreenSaved" : "ai.ask.noteScreen", { target });
     }
     if (session.selected.length === 0 && sent.size === 0 && session.attachments.length === 0) {
-      return `Pick the pages to ask about.${saved}`;
+      return t(saved ? "ai.ask.notePickSaved" : "ai.ask.notePick");
     }
     // Saying it can use the notebook also tells which build is running.
-    if (fresh.length === 0) return `Asking ${this.host.target}.${tools}${saved}`;
-    return `Sends ${pagesPhrase(fresh)} to ${this.host.target} with your question.${tools}${saved}`;
+    if (fresh.length === 0) {
+      return t(saved ? "ai.ask.noteAskingSaved" : "ai.ask.noteAsking", { target });
+    }
+    return t(saved ? "ai.ask.noteSendsSaved" : "ai.ask.noteSends", {
+      pages: pagesPhrase(fresh),
+      target,
+    });
   }
 
   // --- Files ----------------------------------------------------------------
@@ -470,7 +488,7 @@ export class AskChat {
     const menu = new Menu();
     menu.addItem((item) =>
       item
-        .setTitle("From your vault…")
+        .setTitle(t("ai.ask.fromVault"))
         .setIcon("vault")
         .onClick(() => {
           new VaultFileModal(this.app, attachableFiles(this.app), (file) => {
@@ -480,7 +498,7 @@ export class AskChat {
     );
     menu.addItem((item) =>
       item
-        .setTitle("From Files…")
+        .setTitle(t("ai.ask.fromFiles"))
         .setIcon("folder-open")
         .onClick(() => this.fileInput?.click()),
     );
@@ -491,7 +509,7 @@ export class AskChat {
   private async attachVaultFile(path: string): Promise<void> {
     const file = await readAttachment(this.app, path);
     if (!file) {
-      new Notice(`FineNotes: ${fileNameOf(path)} could not be read.`);
+      new Notice(t("ai.ask.unreadable", { name: fileNameOf(path) }));
       return;
     }
     this.attachOrSay(file);
@@ -505,9 +523,7 @@ export class AskChat {
       const file = attachmentFromBytes(picked.name, new Uint8Array(await picked.arrayBuffer()));
       if (file) this.attachOrSay(file);
       else {
-        new Notice(
-          `FineNotes: the AI cannot read ${picked.name}. Attach a PDF, a picture or a text file.`,
-        );
+        new Notice(t("ai.ask.cannotRead", { name: picked.name }));
       }
     }
     // The same file can be picked again after it was taken off.
@@ -516,7 +532,7 @@ export class AskChat {
 
   private attachOrSay(file: ChatFile): void {
     const refusal = this.session.attach(file);
-    if (refusal) new Notice(`FineNotes: ${refusal}`);
+    if (refusal) new Notice(t("ai.ask.refusal", { reason: refusal }));
   }
 
   /** The files on the next question, as chips in the field, each with a ✕. */
@@ -537,7 +553,7 @@ export class AskChat {
       });
       const remove = chip.createEl("button", {
         cls: "goodobsidian-chat-file-remove clickable-icon",
-        attr: { "aria-label": `Remove ${file.name}` },
+        attr: { "aria-label": t("ai.ask.removeFile", { name: file.name }) },
       });
       setIcon(remove, "x");
       remove.disabled = this.session.busy;
@@ -559,14 +575,14 @@ export class AskChat {
     const section = picker.createDiv({ cls: "goodobsidian-chat-pdfs" });
     const head = section.createDiv({ cls: "goodobsidian-chat-pdfs-head" });
     const words = head.createDiv({ cls: "goodobsidian-chat-pdfs-words" });
-    words.createSpan({ cls: "goodobsidian-chat-pdfs-title", text: "PDFs in this notebook" });
+    words.createSpan({ cls: "goodobsidian-chat-pdfs-title", text: t("ai.ask.pdfsTitle") });
     words.createSpan({
       cls: "goodobsidian-chat-pdfs-hint",
-      text: "Attach one and the AI reads its text, not only pictures of the pages.",
+      text: t("ai.ask.pdfsHint"),
     });
     const close = head.createEl("button", {
       cls: "goodobsidian-chat-pdfs-close clickable-icon",
-      attr: { "aria-label": "Hide the PDFs" },
+      attr: { "aria-label": t("ai.ask.hidePdfs") },
     });
     setIcon(close, "x");
     close.addEventListener("click", () => {
@@ -582,7 +598,7 @@ export class AskChat {
       text.createSpan({ cls: "goodobsidian-chat-pdf-name", text: fileNameOf(pdf.path) });
       text.createSpan({
         cls: "goodobsidian-chat-pdf-pages",
-        text: `${pdf.pages.length === 1 ? "Page" : "Pages"} ${pageRanges(pdf.pages)}`,
+        text: tn("ai.ask.pageList", pdf.pages.length, { list: pageRanges(pdf.pages) }),
       });
       const state = row.createSpan({ cls: "goodobsidian-chat-pdf-state" });
       row.addEventListener("click", () => {
@@ -606,13 +622,13 @@ export class AskChat {
       row.setAttribute("aria-pressed", String(attached));
       state.empty();
       if (inChat) {
-        state.setText("In chat");
+        state.setText(t("ai.ask.inChat"));
       } else if (attached) {
         setIcon(state.createSpan(), "check");
-        state.createSpan({ text: "Attached" });
+        state.createSpan({ text: t("ai.ask.attached") });
       } else {
         setIcon(state.createSpan(), "paperclip");
-        state.createSpan({ text: "Attach" });
+        state.createSpan({ text: t("ai.ask.attachShort") });
       }
     }
   }
@@ -642,13 +658,13 @@ export class AskChat {
       this.saveButton.setAttribute("aria-pressed", String(saved));
       this.saveButton.setAttribute(
         "aria-label",
-        saved ? "Saved — tap to stop saving" : "Save chat",
+        saved ? t("ai.ask.savedTip") : t("ai.ask.saveChat"),
       );
       const icon = this.saveButton.querySelector<HTMLElement>(".goodobsidian-chat-tool-icon");
       if (icon) setIcon(icon, saved ? "bookmark-check" : "bookmark");
       this.saveButton
         .querySelector(".goodobsidian-chat-tool-label")
-        ?.setText(saved ? "Saved" : "Save chat");
+        ?.setText(saved ? t("ai.ask.saved") : t("ai.ask.saveChat"));
     }
     if (this.pagesButton) this.pagesButton.disabled = busy;
     if (this.chatsButton) this.chatsButton.disabled = busy;
@@ -663,7 +679,7 @@ export class AskChat {
     this.noteEl?.setText(this.noteText());
     if (this.input) {
       this.input.placeholder =
-        session.turns.length > 0 ? "Ask a follow-up…" : "Ask about your notes…";
+        session.turns.length > 0 ? t("ai.ask.followUp") : t("ai.ask.placeholder");
     }
     this.renderThread();
     this.syncInput();
@@ -787,20 +803,21 @@ export class AskChat {
   }
 
   /** The thread before the first question: what this is, and a few questions to start with. */
-  private renderEmpty(thread: HTMLElement, kind: keyof typeof SUGGESTIONS): void {
+  private renderEmpty(thread: HTMLElement, kind: SuggestionKind): void {
     const empty = thread.createDiv({ cls: "goodobsidian-chat-empty" });
     setIcon(empty.createDiv({ cls: "goodobsidian-chat-empty-icon" }), "sparkles");
     const title = {
-      none: "Ask about your notes",
-      one: "Ask about this page",
-      many: "Ask about these pages",
-      screen: "Ask about what is on screen",
-      file: "Ask about this",
+      none: t("ai.ask.emptyNone"),
+      one: t("ai.ask.emptyOne"),
+      many: t("ai.ask.emptyMany"),
+      screen: t("ai.ask.emptyScreen"),
+      file: t("ai.ask.emptyFile"),
     };
     empty.createDiv({ cls: "goodobsidian-chat-empty-title", text: title[kind] });
-    if (SUGGESTIONS[kind].length === 0) return;
+    const choices = suggestions(kind);
+    if (choices.length === 0) return;
     const chips = empty.createDiv({ cls: "goodobsidian-chat-suggestions" });
-    for (const text of SUGGESTIONS[kind]) {
+    for (const text of choices) {
       const chip = chips.createEl("button", { cls: "goodobsidian-chat-suggestion clickable-icon" });
       chip.setText(text);
       chip.addEventListener("click", () => this.submit(text));
@@ -818,7 +835,7 @@ export class AskChat {
     const column = row.createDiv({ cls: "goodobsidian-chat-question" });
     column.createDiv({ cls: "goodobsidian-chat-bubble", text });
     if (pages?.length) {
-      const label = pages.length === 1 ? `Page ${pages[0]}` : `Pages ${pages.join(", ")}`;
+      const label = tn("ai.ask.pageList", pages.length, { list: pages.join(", ") });
       const meta = column.createDiv({ cls: "goodobsidian-chat-question-pages" });
       setIcon(meta.createSpan(), "file-image");
       meta.createSpan({ text: label });
@@ -841,7 +858,7 @@ export class AskChat {
   private pendingRow(parent: HTMLElement, status: string): void {
     const { body } = this.aiRow(parent);
     const typing = body.createDiv({ cls: "goodobsidian-chat-typing" });
-    typing.setAttribute("aria-label", "Thinking");
+    typing.setAttribute("aria-label", t("ai.ask.thinking"));
     for (let i = 0; i < 3; i++) typing.createSpan({ cls: "goodobsidian-chat-dot" });
     body.createDiv({ cls: "goodobsidian-chat-status", text: status });
   }
@@ -849,10 +866,13 @@ export class AskChat {
   private errorRow(parent: HTMLElement, question: string, message: string): void {
     const { row, body } = this.aiRow(parent);
     row.addClass("is-error");
-    body.createDiv({ cls: "goodobsidian-chat-error", text: `Could not answer: ${message}` });
+    body.createDiv({
+      cls: "goodobsidian-chat-error",
+      text: t("ai.ask.couldNotAnswer", { message }),
+    });
     const retry = body.createEl("button", { cls: "goodobsidian-chat-action clickable-icon" });
     setIcon(retry.createSpan(), "rotate-ccw");
-    retry.createSpan({ text: "Try again" });
+    retry.createSpan({ text: t("common.retry") });
     retry.addEventListener("click", () => this.submit(question));
   }
 
@@ -883,20 +903,20 @@ export class AskChat {
     const actions = body.createDiv({ cls: "goodobsidian-chat-actions" });
     const copy = actions.createEl("button", { cls: "goodobsidian-chat-action clickable-icon" });
     setIcon(copy.createSpan(), "copy");
-    copy.createSpan({ text: "Copy" });
+    copy.createSpan({ text: t("common.copy") });
     copy.addEventListener("click", () => {
       void writeSystemText(markdown).then(
-        () => new Notice("Answer copied."),
-        () => new Notice("FineNotes could not use the clipboard here."),
+        () => new Notice(t("ai.ask.copied")),
+        () => new Notice(t("ai.ask.clipboardFailed")),
       );
     });
 
     const insert = actions.createEl("button", { cls: "goodobsidian-chat-action clickable-icon" });
     setIcon(insert.createSpan(), "text-cursor-input");
-    insert.createSpan({ text: "Insert as text box" });
+    insert.createSpan({ text: t("ai.ask.insertText") });
     insert.addEventListener("click", () => {
       if (this.host.insert(markdownToPlainText(markdown))) {
-        new Notice("Answer added to the page as a text box. Undo removes it.");
+        new Notice(t("ai.ask.insertedText"));
       }
     });
     return row;
@@ -917,7 +937,7 @@ export class AskChat {
       figure.createEl("img", {
         cls: "goodobsidian-chat-figure-img",
         attr: {
-          alt: "A drawing",
+          alt: t("ai.ask.drawingAlt"),
           src: `data:image/svg+xml;base64,${bytesToBase64(new TextEncoder().encode(svg))}`,
         },
       });
@@ -925,10 +945,10 @@ export class AskChat {
         cls: "goodobsidian-chat-action clickable-icon",
       });
       setIcon(insert.createSpan(), "image-plus");
-      insert.createSpan({ text: "Insert on page" });
+      insert.createSpan({ text: t("ai.ask.insertDrawing") });
       insert.addEventListener("click", () => {
         void this.host.insertDrawing(svg).then((placed) => {
-          if (placed) new Notice("Drawing added to the page. Undo removes it.");
+          if (placed) new Notice(t("ai.ask.insertedDrawing"));
         });
       });
     }
@@ -941,9 +961,7 @@ export class AskChat {
     const chats = await this.host.savedChats();
     const menu = new Menu();
     if (chats.length === 0) {
-      menu.addItem((item) =>
-        item.setTitle("No saved chats yet. Turn on Save chat to keep one.").setDisabled(true),
-      );
+      menu.addItem((item) => item.setTitle(t("ai.ask.noSavedChats")).setDisabled(true));
     }
     for (const chat of chats) {
       menu.addItem((item) =>
@@ -1020,7 +1038,7 @@ export class AskAiModal extends Modal {
       "goodobsidian-dialog",
       "goodobsidian-ask-frame",
     );
-    this.titleEl.setText("Ask");
+    this.titleEl.setText(t("ai.ask.title"));
     this.contentEl.empty();
     this.chat = new AskChat(this.app, this.host, {
       el: this.modalEl,
@@ -1076,10 +1094,10 @@ export class AskChatPanel {
     if (this.isOpen) return;
     this.el.empty();
     const head = this.el.createDiv({ cls: "goodobsidian-chatpanel-head" });
-    head.createDiv({ cls: "goodobsidian-chatpanel-title", text: "Ask" });
+    head.createDiv({ cls: "goodobsidian-chatpanel-title", text: t("ai.ask.title") });
     const close = head.createEl("button", {
       cls: "goodobsidian-chatpanel-close clickable-icon",
-      attr: { "aria-label": "Close" },
+      attr: { "aria-label": t("common.close") },
     });
     setIcon(close, "x");
     close.addEventListener("click", () => this.callbacks.onClose());
@@ -1124,7 +1142,7 @@ class VaultFileModal extends FuzzySuggestModal<TFile> {
     private readonly onPick: (file: TFile) => void,
   ) {
     super(app);
-    this.setPlaceholder("Attach a PDF, a picture or a text file…");
+    this.setPlaceholder(t("ai.ask.vaultPlaceholder"));
   }
 
   getItems(): TFile[] {

@@ -11,6 +11,7 @@
  */
 
 import { type App, SuggestModal } from "obsidian";
+import { t, tn } from "../i18n/translate";
 import {
   type PageText,
   type SearchHit,
@@ -20,11 +21,11 @@ import {
 } from "../search/notebook-search";
 import { DialogKeyboard } from "./dialog-keyboard";
 
-const KIND_LABELS: Record<SearchHit["snippets"][number]["kind"], string> = {
-  handwriting: "Handwriting",
-  text: "Text",
-  pdf: "PDF",
-};
+function kindLabel(kind: SearchHit["snippets"][number]["kind"]): string {
+  if (kind === "handwriting") return t("view.search.kindHandwriting");
+  if (kind === "text") return t("view.search.kindText");
+  return t("view.search.kindPdf");
+}
 
 export interface NotebookSearchHost {
   index: readonly PageText[];
@@ -54,7 +55,7 @@ export class NotebookSearchModal extends SuggestModal<SearchHit> {
     this.keyboard = new DialogKeyboard(this.modalEl);
     this.modalEl.addClass("goodobsidian-search-modal");
     this.limit = 500;
-    this.setPlaceholder("Search this notebook");
+    this.setPlaceholder(t("view.search.placeholder"));
     this.emptyStateText = this.hint("");
   }
 
@@ -92,16 +93,16 @@ export class NotebookSearchModal extends SuggestModal<SearchHit> {
   renderSuggestion(hit: SearchHit, el: HTMLElement): void {
     el.addClass("goodobsidian-search-hit");
     const head = el.createDiv({ cls: "goodobsidian-search-page" });
-    head.createSpan({ text: `Page ${hit.pageIndex + 1}` });
+    head.createSpan({ text: t("view.search.page", { page: hit.pageIndex + 1 }) });
     head.createSpan({
       cls: "goodobsidian-search-count",
-      text: hit.count === 1 ? "1 match" : `${hit.count} matches`,
+      text: tn("view.search.matches", hit.count),
     });
     for (const snippet of hit.snippets) {
       const line = el.createDiv({ cls: "goodobsidian-search-snippet" });
       line.createSpan({
         cls: "goodobsidian-search-kind",
-        text: KIND_LABELS[snippet.kind],
+        text: kindLabel(snippet.kind),
       });
       line.appendText(snippet.before);
       line.createSpan({ cls: "suggestion-highlight", text: snippet.match });
@@ -117,11 +118,9 @@ export class NotebookSearchModal extends SuggestModal<SearchHit> {
   private hint(query: string): string {
     if (queryTerms(query).length === 0) {
       return this.transcribed
-        ? "Search the transcribed handwriting, typed text and PDF text on every page."
-        : "Search typed text and PDF text on every page. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).";
+        ? t("view.search.hintTranscribed")
+        : t("view.search.hintUntranscribed");
     }
-    return this.transcribed
-      ? "No page has all of these words."
-      : "No page has all of these words in typed or PDF text. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).";
+    return this.transcribed ? t("view.search.noneTranscribed") : t("view.search.noneUntranscribed");
   }
 }

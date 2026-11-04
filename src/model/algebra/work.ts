@@ -10,6 +10,7 @@
  * - Anything else with x in it: simplified (a polynomial multiplied out).
  */
 
+import { t } from "../../i18n/translate";
 import type { AngleMode, CalcNode } from "../calculator";
 import { evaluate as evaluateNumber, parseExpression } from "../calculator";
 import { fromNode } from "./convert";
@@ -78,7 +79,7 @@ function dispatch(node: CalcNode, expression: string, angle: AngleMode): Worked 
   }
   if (node.k === "call" && node.fn === "solve" && node.args.length === 1) {
     const rel = node.args[0];
-    if (rel.k !== "rel") return { ok: false, error: "solve needs an equation" };
+    if (rel.k !== "rel") return { ok: false, error: t("calculator.errNeedsEquation") };
     return solved(rel, angle);
   }
   if (node.k === "call" && node.fn === "deriv") return derived(node, angle);
@@ -97,7 +98,8 @@ function solved(rel: Extract<CalcNode, { k: "rel" }>, angle: AngleMode): Worked 
     const answer = s.values.map((v) =>
       s.approx ? `x ≈ ${decimal(evaluate(v))}` : `x = ${print(v)}`,
     );
-    const note = s.message ?? (s.integer ? `${s.integer} is any whole number` : undefined);
+    const note =
+      s.message ?? (s.integer ? t("calculator.algAnyWhole", { name: s.integer }) : undefined);
     const single = s.values.length === 1 && !s.integer ? evaluate(s.values[0]) : undefined;
     return {
       ok: true,
@@ -114,8 +116,7 @@ function solved(rel: Extract<CalcNode, { k: "rel" }>, angle: AngleMode): Worked 
 }
 
 function calculusAngle(e: Expr, angle: AngleMode): Worked | null {
-  if (angle === "deg" && hasTrig(e))
-    return { ok: false, error: "Calculus with trig works in radians: switch to RAD" };
+  if (angle === "deg" && hasTrig(e)) return { ok: false, error: t("calculator.algTrigRadians") };
   return null;
 }
 
@@ -134,7 +135,7 @@ function derived(node: Extract<CalcNode, { k: "call" }>, angle: AngleMode): Work
   const value = replace(result, X, at);
   const number = evaluate(value);
   if (!Number.isFinite(number)) return null;
-  shown.push({ rule: `Substitute x = ${print(at)}`, math: [print(value)] });
+  shown.push({ rule: t("calculator.algSubstituteX", { value: print(at) }), math: [print(value)] });
   return { ok: true, answer: [print(value)], steps: shown, approx: false, value: number };
 }
 
@@ -152,14 +153,13 @@ function integrated(
   } catch (error) {
     if (!(error instanceof AlgebraError)) throw error;
     // Without limits there is no number to fall back on.
-    if (node.args.length < 3)
-      return { ok: false, error: "No antiderivative found with the usual rules" };
+    if (node.args.length < 3) return { ok: false, error: t("calculator.algNoAntiderivativeUsual") };
     return null;
   }
   const steps = worked.steps.map((s) => ({ rule: s.rule, math: [print(s.expr)] }));
   if (node.args.length < 3) {
     const withC = add(worked.result, sym("C"));
-    steps.push({ rule: "Add the constant of integration", math: [print(withC)] });
+    steps.push({ rule: t("calculator.algAddConstant"), math: [print(withC)] });
     return { ok: true, answer: [print(withC)], steps, approx: false };
   }
   // ∫(f, a, b) = F(b) − F(a), checked against the numerical integral.
@@ -178,10 +178,10 @@ function integrated(
       : Number(numeric.value.n) / Number(numeric.value.d);
   if (Math.abs(check - number) > 1e-6 * Math.max(1, Math.abs(number))) return null;
   steps.push({
-    rule: `Evaluate from ${print(a)} to ${print(b)}: F(b) − F(a)`,
+    rule: t("calculator.algEvaluateFromTo", { a: print(a), b: print(b) }),
     math: [`(${print(Fb)}) - (${print(Fa)})`],
   });
-  steps.push({ rule: "Simplify", math: [print(exact)] });
+  steps.push({ rule: t("calculator.algSimplify"), math: [print(exact)] });
   return { ok: true, answer: [print(exact)], steps, approx: false, value: number };
 }
 
@@ -189,7 +189,9 @@ function simplified(e: Expr): Worked {
   const poly = toPoly(e);
   const result = poly ? expand(e) : e;
   const steps: WorkedStep[] =
-    print(result) !== print(e) ? [{ rule: "Multiply out", math: [print(result)] }] : [];
+    print(result) !== print(e)
+      ? [{ rule: t("calculator.algMultiplyOut"), math: [print(result)] }]
+      : [];
   return { ok: true, answer: [print(result)], steps, approx: false };
 }
 
