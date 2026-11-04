@@ -73,8 +73,11 @@ export class FileMoveTracker {
   /** Obsidian's `rename` event. */
   renamed(file: TAbstractFile, oldPath: string): void {
     const log = this.log();
-    // A folder's own rename already says where everything inside it went.
-    if (followMoves(log, oldPath) === file.path) {
+    // A folder's own rename already says where everything inside it went. The
+    // same move logged before is not that: its folder was deleted, and a new
+    // one of the same name has taken the same way.
+    const repeat = log.some((move) => move.from === oldPath && move.to === file.path);
+    if (!repeat && followMoves(log, oldPath) === file.path) {
       this.followed = true;
       return;
     }

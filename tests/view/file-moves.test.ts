@@ -164,6 +164,30 @@ describe("FileMoveTracker", () => {
     expect(tracker.relinkFolder("Ideas/Images")).toBe("Uni/Ideas/Images");
   });
 
+  it("takes the same folder move again after the first one's folder was deleted", async () => {
+    const { tracker, files, relinkOpen } = setUp({ "Ideas/Images/a.png": "" });
+    const moveIdeas = () => {
+      files["Uni/Ideas"] = "";
+      tracker.renamed({ path: "Uni/Ideas" } as TAbstractFile, "Ideas");
+      files["Uni/Ideas/Images/a.png"] = files["Ideas/Images/a.png"];
+      delete files["Ideas/Images/a.png"];
+      tracker.renamed({ path: "Uni/Ideas/Images/a.png" } as TAbstractFile, "Ideas/Images/a.png");
+    };
+    moveIdeas();
+    await vi.advanceTimersByTimeAsync(RELINK_DELAY_MS);
+    await tracker.flush();
+    // "Uni/Ideas" deleted; a new "Ideas" made and moved along the same path.
+    delete files["Uni/Ideas"];
+    delete files["Uni/Ideas/Images/a.png"];
+    files["Ideas/Images/a.png"] = "";
+    relinkOpen.mockClear();
+    moveIdeas();
+    expect(relinkOpen).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(RELINK_DELAY_MS);
+    await tracker.flush();
+    expect(relinkOpen).toHaveBeenCalledTimes(2);
+  });
+
   it("does nothing more when only a notebook was renamed", async () => {
     const { tracker, move, relinkOpen } = setUp({ "A.notebook.md": noteWithPdf("a.pdf") });
     move(tracker, "A.notebook.md", "B.notebook.md");
