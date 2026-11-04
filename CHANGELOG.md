@@ -20,6 +20,9 @@ extracted from the matching section of this file by `release.yml`.
   (Latin with accents, Greek, symbols and 6,174 Chinese characters are in it). The
   handwriting filter is stricter to match the new reader's higher confidences.
   Measurements and the options that were tried: [docs/OCR.md](docs/OCR.md#model-choice).
+- **The OCR model is chosen under Models on this device, like the voice model.** The PDF section's
+  "OCR model" row is gone: "Scanned pages · <choice>" shows the chosen model's download, and "OCR model size"
+  under it lists Fast, Accurate and Most accurate with their sizes.
 
 ### Added
 

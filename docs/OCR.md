@@ -30,7 +30,7 @@ Settings (Pages and notebooks): **Read scanned PDF pages (on-device OCR)**
 (`ocrFigureText`, default on, only in effect while the first is on). Both take effect without reopening a notebook: turned on, the pages shown are
 looked at now (and those waiting for the model join its queue); turned off, figure words already in the
 cache are hidden from layout and search at read time, not deleted, and what was queued for them is left.
-**OCR model** (`ocrModel`: `fast` by default, `accurate`, `most-accurate`; shown while OCR is on) chooses the reader; see "Choosing a model".
+The reader is chosen in **Models on this device**: the row **Scanned pages · <choice>** (its download, as Voice has) and, under it, **OCR model size** (`ocrModel`: `fast` by default, `accurate`, `most-accurate`), both shown while OCR is on; see "Choosing a model".
 The command **Re-read scanned pages of this PDF** forgets that PDF's cache and reads it again.
 
 ## Page conditions
@@ -357,8 +357,8 @@ exact byte count and SHA-256, `accept-ranges: bytes`, and `Range: bytes=0-99` an
 
 ## Choosing a model
 
-The setting **OCR model** (Pages and notebooks, under "Also read text inside figures", shown only while OCR
-is on) has three choices. All three use the PP-OCRv5 mobile detector (the v6 detectors failed the IoU floor,
+The setting **OCR model size** (Settings, Models on this device, under **Scanned pages · <choice>**, shown only
+while OCR is on) has three choices. All three use the PP-OCRv5 mobile detector (the v6 detectors failed the IoU floor,
 see "Model choice") and differ in the recogniser.
 
 | choice                      | recogniser               | download (with detector and wasm) | wasm heap after load / peak (one page) | det + rec, dense A4 page | 53.pdf labels exact | 53.pdf precision | marks kept (96) | where                   |
@@ -369,8 +369,8 @@ see "Model choice") and differ in the recogniser.
 
 Measured in the same harness as "Model choice" (Chromium, one wasm thread, the OCR worker, a 4-core Linux
 sandbox; the synthetic A4 page at 170 dpi; 53.pdf is the 171-label ground truth, 17 figure regions, 491 words).
-The speed column is what the setting shows beside each choice ("Fast · 23.7 MB · ~6 s/page on desktop"); a
-real laptop will differ, and an iPad is not measured. 53.pdf OCR and raster time: Fast 16.9 s, Accurate 36.7 s,
+The size column is what the setting shows beside each choice ("Fast (23.7 MB)"); the speed column is the
+measurement behind "slower" in the setting's ⓘ. A real laptop will differ, and an iPad is not measured. 53.pdf OCR and raster time: Fast 16.9 s, Accurate 36.7 s,
 Most accurate 129.9 s. On every synthetic page (clean, noisy two-column, one column, merge page) all three read
 every word exactly after the confidence filter (kept CER 0.00%, double letters 21/21 and 17/17, mean IoU
 0.883 on the noisy page: the detector is the same). The labels exact are at each choice's final thresholds

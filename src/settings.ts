@@ -117,8 +117,8 @@ import {
 import type { AssetStore } from "./downloads/model-store";
 import {
   OCR_ACCURATE_SLOWDOWN,
+  OCR_TIERS,
   effectiveOcrTier,
-  ocrChoiceLabel,
   ocrTiersFor,
 } from "./recognition/ocr/ocr-model";
 import { FolderInputSuggest } from "./view/folder-suggest";
@@ -483,6 +483,7 @@ const MODEL_PURPOSE = {
     "Whisper (speech recognizer model) turns recordings into text when you pick “Transcribe on this device” on a recording.",
   grape:
     "Grape (handwriting recognizer model) reads your handwriting: notebook search and Obsidian's search find it, and a lassoed heading or word fills in its title or link.",
+  ocr: "The OCR model reads the printed text of scanned PDF pages on this device, so search, the text-snapping highlighter and Copy text work on them; the pages never leave the device.",
   learned:
     "Grape tuned to your own handwriting, learned on this device from the practice sheets you write (Learn your handwriting, under AI and handwriting).",
 };
@@ -1578,28 +1579,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ),
           visible: () => settings.ocrScannedPdfs !== false,
         },
-        {
-          ...this.info(
-            drawnRow(
-              "OCR model",
-              Platform.isMobile ? OCR_MOBILE_NOTE : "",
-              (s) => this.drawOcrModel(s),
-              [
-                "ocr",
-                "scan",
-                "scanned",
-                "model",
-                "accurate",
-                "fast",
-                "slower",
-                "download",
-                "remove other ocr models",
-              ],
-            ),
-            OCR_MODEL_INFO,
-          ),
-          visible: () => settings.ocrScannedPdfs !== false,
-        },
         this.more("pages", "Folders, templates, file explorer"),
         this.info(
           drawnRow("New notebooks go in", "", (s) => this.drawNotebookFolder(s), [
@@ -2123,7 +2102,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const settings = this.plugin.settings;
     const mobile = Platform.isMobile;
     setting.addDropdown((d) => {
-      for (const tier of ocrTiersFor(mobile)) d.addOption(tier.id, ocrChoiceLabel(tier, mobile));
+      for (const tier of ocrTiersFor(mobile)) {
+        d.addOption(tier.id, `${tier.label} (${formatSize(totalBytes(tier.asset))})`);
+      }
       d.selectEl.setAttribute("aria-label", "OCR model");
       d.setValue(effectiveOcrTier(settings.ocrModel, mobile).id);
       d.onChange((value) => void this.setControlValue("ocrModel", value));
@@ -2143,14 +2124,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * handwriting recognizer model) and the model learned from the user's
    * handwriting, each one row with its state after a dot, Download while it
    * is missing and the rest in its ⋯ menu; what each is for is behind its
-   * ⓘ. A model a feature registered that is none of these is listed at the
-   * end.
+   * ⓘ. The OCR reader is one row for the chosen model, with its size choice
+   * under it, shown while OCR is on. A model a feature registered that is none
+   * of these is listed at the end.
    */
   private modelsGroup(): SettingDefinitionItem {
     const { settings } = this.plugin;
     const grape = this.plugin.grape.model;
     const speech = this.plugin.speech.store();
-    const others = this.plugin.models.all().filter((s) => s !== grape && s !== speech);
+    // The OCR models have their own rows below, not one row each here.
+    const ocrIds = new Set(OCR_TIERS.map((t) => t.asset.id));
+    const others = this.plugin.models
+      .all()
+      .filter((s) => s !== grape && s !== speech && !ocrIds.has(s.asset.id));
     const reading = (): boolean => settings.handwritingOnDevice !== false;
     const learning = this.learningState;
     const record = learnedRecord(settings, this.plugin.grape.id);
@@ -2159,6 +2145,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const download =
       "It downloads once, the first time it is needed, and runs on this device only.";
     const voice = speechModelInfo(effectiveSpeechModel(settings.speechModel, mobile)).label;
+    const ocrOn = (): boolean => settings.ocrScannedPdfs !== false;
+    const ocrTier = effectiveOcrTier(settings.ocrModel, mobile);
+    const ocrStore = this.plugin.models.get(ocrTier.asset.id);
     return this.section(
       "on-device",
       "Models on this device",
@@ -2236,6 +2225,40 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]
             .filter(Boolean)
             .join(" "),
+        ),
+        ...(ocrStore
+          ? [
+              this.info(
+                drawnRow(
+                  `Scanned pages · ${ocrTier.label}`,
+                  "",
+                  (s) => this.drawDownload(s, ocrStore),
+                  ["ocr", "scan", "scanned", "model", "fast", "accurate", "download", "offline"],
+                  ocrOn,
+                ),
+                `${MODEL_PURPOSE.ocr} ${download}`,
+              ),
+            ]
+          : []),
+        this.info(
+          drawnRow(
+            "OCR model size",
+            mobile ? OCR_MOBILE_NOTE : "",
+            (s) => this.drawOcrModel(s),
+            [
+              "ocr",
+              "scan",
+              "scanned",
+              "model",
+              "accurate",
+              "fast",
+              "slower",
+              "download",
+              "remove other ocr models",
+            ],
+            ocrOn,
+          ),
+          OCR_MODEL_INFO,
         ),
         ...others.map((store) =>
           this.info(

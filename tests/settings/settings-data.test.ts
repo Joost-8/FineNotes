@@ -593,6 +593,7 @@ describe("control values", () => {
       "imageVendor",
       "pressureWidth",
       "ocrScannedPdfs",
+      "ocrModel",
     ]) {
       expect(changesTabLayout(key)).toBe(true);
     }
