@@ -62,6 +62,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **More tools scrolls.** A bar with most of its tools moved into More tools
+  made a menu taller than the screen, and its last rows (and Customize
+  toolbar) could not be reached. The menu now keeps to the room beside its
+  button and scrolls inside it, on a computer and a tablet alike.
+- **The page sidebar no longer shrinks a zoomed page.** Opening it narrows
+  the pane, and a page zoomed in shrank with it, a lot in a notebook that
+  mixes wide slides with narrow pages. The page now keeps the size it has;
+  closing the sidebar gives the same view back.
 - **A language that would not load.** A build made between releases asked GitHub for
   its words under a version tag that did not have them yet, so Spanish stayed
   English after a relaunch. It now takes them from the main branch when the

@@ -304,6 +304,7 @@ import {
   pageFillZoom,
   pageWidthZoom,
   zoomAnchorFor,
+  zoomKeepingScale,
 } from "../canvas/zoom";
 import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physics";
 import { pairsAsDoubleTap, type PlainTap } from "../input/multi-finger-tap";
@@ -4584,6 +4585,7 @@ export class InkSurface {
       this.zoomInitialised && this.direction === "horizontal" && !this.pinch && !this.atZoomFloor
         ? this.rowPointAt(this.cssW / 2, this.cssH / 2)
         : null;
+    const zoomedIn = this.zoomInitialised && !this.atZoomFloor;
     this.cssW = cssW;
     this.cssH = cssH;
     this.ruler?.fitPane();
@@ -4618,6 +4620,16 @@ export class InkSurface {
     // The options row opening or closing is no new pane: the page keeps its
     // size, as for the keyboard, and only moves (`followTopShift` below).
     this.updateZoomFloor(cssH, topShift !== 0);
+    // A panel opening beside a page that is zoomed in keeps the page the size
+    // it was, instead of shrinking it with the pane (a notebook of wide
+    // slides and narrow pages fits so small that the sidebar halved it).
+    if (this.holdScaleOnResize) {
+      this.holdScaleOnResize = false;
+      if (zoomedIn && !turned && !this.pinch && priorScale > 0) {
+        this.zoomAnim = null;
+        this.userZoom = this.clampZoom(zoomKeepingScale(priorScale, this.baseScale, this.minZoom));
+      }
+    }
     if (direction === "horizontal") {
       // One page per screen, as GoodNotes: now the floor is known, space the
       // pages so a centred page's neighbours sit just off the pane. The gap
@@ -4923,6 +4935,13 @@ export class InkSurface {
       this.userZoom = step.zoom;
     }
   }
+
+  /** The next layout keeps a zoomed-in page the size it is, whatever the pane's new width. */
+  keepScaleOnResize(): void {
+    this.holdScaleOnResize = true;
+  }
+
+  private holdScaleOnResize = false;
 
   /** Size the paper (the text boxes' frame) and the scroll range, in scaled px. */
   private ensurePaperSize(): void {
