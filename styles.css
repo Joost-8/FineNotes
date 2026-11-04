@@ -16296,3 +16296,14 @@ button.goodobsidian-library-star:active {
   color: var(--interactive-accent);
   display: inline-flex;
 }
+
+/* Notebooks action on Obsidian's empty tab. */
+.empty-state-action.goodobsidian-empty-home {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-4-2);
+}
+.goodobsidian-empty-home-icon {
+  display: inline-flex;
+}

@@ -8,6 +8,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-11-04
+
+### Added
+
+- **A Notebooks button on the empty tab.** After closing the Home tab, the
+  empty tab now offers Notebooks first, which opens the library in that tab,
+  so you no longer need the command palette to get back.
+
 ### Fixed
 
 - **Correct finds the word you picked.** Lasso a word and choose Correct, or
