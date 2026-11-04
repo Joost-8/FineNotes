@@ -15529,29 +15529,16 @@ button.goodobsidian-edit-menu-row {
 
 /* --- The simple look (model/simple-mode.ts) ----------------------------- */
 
-/* Each piece of Obsidian's own chrome has a switch of its own; nothing is removed. */
-body.goodobsidian-simple-status .status-bar {
+/* Obsidian's own chrome tucked away; the tabs stay. Nothing is removed. */
+body.goodobsidian-simple .status-bar,
+body.goodobsidian-simple .workspace-ribbon,
+body.goodobsidian-simple .workspace-split.mod-left-split,
+body.goodobsidian-simple .workspace-split.mod-right-split,
+body.goodobsidian-simple .workspace-drawer,
+body.goodobsidian-simple .sidebar-toggle-button {
   display: none;
 }
-body.goodobsidian-simple-ribbon .workspace-ribbon {
-  display: none;
-}
-body.goodobsidian-simple-sidebars .workspace-split.mod-left-split,
-body.goodobsidian-simple-sidebars .workspace-split.mod-right-split,
-body.goodobsidian-simple-sidebars .workspace-drawer,
-body.goodobsidian-simple-sidebars .sidebar-toggle-button {
-  display: none;
-}
-/* On a computer the bar keeps its height: the window's own buttons sit in it. */
-body.goodobsidian-simple-tabs .workspace-tab-header-container-inner,
-body.goodobsidian-simple-tabs .workspace-tab-header-new-tab,
-body.goodobsidian-simple-tabs .workspace-tab-header-tab-list {
-  display: none;
-}
-body.goodobsidian-simple-tabs.is-mobile .workspace-tab-header-container {
-  display: none;
-}
-body.goodobsidian-simple-header
+body.goodobsidian-simple
   .workspace-leaf-content:is([data-type="goodobsidian-view"], [data-type="finenotes-library"])
   > .view-header {
   display: none;

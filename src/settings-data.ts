@@ -9,7 +9,6 @@
  */
 
 import type { FolderStyles } from "./model/library-style";
-import { ALL_SIMPLE_PARTS, type SimplePart } from "./model/simple-mode";
 import { type ShapeToolStyle } from "./model/shape-style";
 import type { LearnedModel } from "./recognition/hwr/learned-model";
 import {
@@ -358,8 +357,6 @@ export interface GoodObsidianSettings {
   toolbarHomeAdded: boolean;
   /** The simple look: Obsidian's own chrome hidden (`model/simple-mode.ts`). Off until chosen. */
   simpleLook: boolean;
-  /** Which pieces of Obsidian the simple look hides. Cleaned where read. */
-  simpleLookParts: SimplePart[];
   /** Notebooks and folders starred in the library, by vault path. Cleaned where read. */
   libraryStars: string[];
   /** The colour and icon chosen for library folders, by vault path. Cleaned where read. */
@@ -530,7 +527,6 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   toolbarLayout: defaultLayout(),
   toolbarHomeAdded: true,
   simpleLook: false,
-  simpleLookParts: [...ALL_SIMPLE_PARTS],
   libraryStars: [],
   libraryFolders: {},
   barrelButton: "erase",

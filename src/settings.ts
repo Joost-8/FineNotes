@@ -1044,6 +1044,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           this.refreshDomState();
         });
       }, shown),
+      this.info(
+        toggle("simpleLook", "Simple look", "", ["simple", "look", "hide", "sidebar", "ribbon"]),
+        "Hide Obsidian's title bar, status bar, left ribbon and sidebars, and keep the tabs, so FineNotes looks like an app of its own. Turn it off here to bring them back.",
+      ),
     ];
   }
 
@@ -1595,10 +1599,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "new notebook",
           ]),
           "Add New notebook to the file explorer menu. New notebooks start in the selected folder.",
-        ),
-        this.info(
-          toggle("simpleLook", "Simple look", "", ["simple", "look", "hide", "sidebar", "tabs"]),
-          "Hide Obsidian's title bar, status bar, left ribbon, sidebars and tab bar, so FineNotes looks like an app of its own. Home's gear brings you back to this switch; the command \u201cSimple look\u201d does too.",
         ),
         this.info(
           toggle("showNewNotebookInExplorer", "Library button in the file explorer", "", [

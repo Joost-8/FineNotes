@@ -130,7 +130,7 @@ import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
-import { ALL_SIMPLE_CLASSES, simpleClasses, simplePartsOf } from "./model/simple-mode";
+import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
 import { HOME_FILE, HOME_FILE_TEXT } from "./model/home-file";
 import { folderStylesOf } from "./model/library-style";
 import { prepareImageBytes } from "./view/image-import";
@@ -447,7 +447,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.setUpReadingGuard();
     this.applySimpleLook();
     this.register(() => {
-      if (typeof document !== "undefined") document.body.classList.remove(...ALL_SIMPLE_CLASSES);
+      if (typeof document !== "undefined") document.body.classList.remove(SIMPLE_CLASS);
     });
     // Fonts fetched for text boxes leave the document with the plugin.
     this.register(disposeVaultFonts);
@@ -672,11 +672,9 @@ export default class GoodObsidianPlugin extends Plugin {
   async openLibrary(): Promise<void> {
     const open = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
     const leaf = open ?? this.app.workspace.getLeaf("tab");
-    if (!open) {
-      await leaf.setViewState({ type: VIEW_TYPE_LIBRARY, active: true });
-      // Pinned: a link or a notebook never replaces it.
-      leaf.setPinned(true);
-    }
+    if (!open) await leaf.setViewState({ type: VIEW_TYPE_LIBRARY, active: true });
+    // Pinned, the first tab: a link or a notebook never replaces it.
+    leaf.setPinned(true);
     await this.app.workspace.revealLeaf(leaf);
   }
 
@@ -950,7 +948,6 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarItems;
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
-    this.settings.simpleLookParts = simplePartsOf(this.settings.simpleLookParts);
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
@@ -1137,8 +1134,8 @@ export default class GoodObsidianPlugin extends Plugin {
   applySimpleLook(): void {
     if (typeof document === "undefined") return;
     const body = document.body;
-    body.classList.remove(...ALL_SIMPLE_CLASSES);
-    body.classList.add(...simpleClasses(this.settings.simpleLook, this.settings.simpleLookParts));
+    body.classList.remove(SIMPLE_CLASS);
+    body.classList.add(...simpleClasses(this.settings.simpleLook));
   }
 
   setSimpleLook(on: boolean): void {
@@ -2249,8 +2246,6 @@ export default class GoodObsidianPlugin extends Plugin {
       openTour: () => void this.openWelcomeTour(),
       importNotebooks: () => this.openImportNotebook(),
       openHome: () => void this.openLibrary(),
-      simpleLook: () => this.settings.simpleLook,
-      setSimpleLook: (on) => this.setSimpleLook(on),
     }).open();
   }
 
