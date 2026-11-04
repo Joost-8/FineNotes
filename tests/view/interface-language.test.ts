@@ -110,6 +110,19 @@ describe("InterfaceLanguage.apply", () => {
     expect(currentLanguage()).toBe("en");
   });
 
+  it("takes the table from the main branch when the version's tag has none", async () => {
+    request.mockImplementation((param: { url: string }) =>
+      Promise.resolve(
+        param.url.includes("/main/") ? { status: 200, json: GERMAN } : { status: 404, json: null },
+      ),
+    );
+    const { language, adapter } = make("de");
+    expect(await language.apply()).toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(currentLanguage()).toBe("de");
+    expect(adapter.store.has(CACHE)).toBe(true);
+  });
+
   it("falls back to an older cached table when the fetch fails", async () => {
     const adapter = fakeAdapter({ [CACHE]: JSON.stringify({ version: "2.7.0", texts: GERMAN }) });
     request.mockRejectedValue(new Error("offline"));

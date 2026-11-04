@@ -110,6 +110,11 @@ extracted from the matching section of this file by `release.yml`.
   file brotli-compressed even when asked not to. Downloads now ask for no compression, a
   range whose total is not the file's size makes the download fetch that file once in one
   piece, and the readers and the WebAssembly file are release assets of the templates repository, like the voice models.
+- **A language that would not load.** A build made between releases asked GitHub for
+  its words under a version tag that did not have them yet, so Spanish stayed
+  English after a relaunch. It now takes them from the main branch when the
+  tag has none.
+
 - **Colours on dark pages show what lands.** The colour picker, the text,
   fill, border, shape and Fill tool colours, the lasso's ink colours and a
   table cell's colours show each colour as the dark page shows it (a
