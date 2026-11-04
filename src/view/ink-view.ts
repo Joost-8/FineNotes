@@ -4313,6 +4313,7 @@ export class InkView extends TextFileView {
     this.syncSidebarInset();
     // The surface narrows as the panel opens; its ResizeObserver would catch
     // that a frame late, so lay out now and the page never flashes clipped.
+    this.surface?.keepScaleOnResize();
     this.surface?.layout();
     // The panel slides in (or out) while the page glides beside it, both
     // GoodNotes' 200 ms `ease`, instead of everything jumping in one frame.

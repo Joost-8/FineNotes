@@ -14148,6 +14148,12 @@ button.goodobsidian-ns-update-mute.clickable-icon {
   min-width: 220px;
 }
 
+/* A popover held to its room scrolls its rows, a finger's swipe included. */
+.goodobsidian-popover-body {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 .goodobsidian-accessory-icon {
   display: inline-flex;
   width: 24px;

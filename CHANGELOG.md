@@ -62,6 +62,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **More tools scrolls.** A bar with most of its tools moved into More tools
+  made a menu taller than the screen, and its last rows (and Customize
+  toolbar) could not be reached. The menu now keeps to the room beside its
+  button and scrolls inside it, on a computer and a tablet alike.
+- **The page sidebar no longer shrinks a zoomed page.** Opening it narrows
+  the pane, and a page zoomed in shrank with it, a lot in a notebook that
+  mixes wide slides with narrow pages. The page now keeps the size it has;
+  closing the sidebar gives the same view back.
+
 - **Colours on dark pages show what lands.** The colour picker, the text,
   fill, border, shape and Fill tool colours, the lasso's ink colours and a
   table cell's colours show each colour as the dark page shows it (a

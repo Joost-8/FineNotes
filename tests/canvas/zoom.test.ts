@@ -13,6 +13,7 @@ import {
   fitPageZoom,
   nextZoomFloor,
   wheelZoomFactor,
+  zoomKeepingScale,
 } from "../../src/canvas/zoom";
 
 describe("wheelZoomFactor", () => {
@@ -210,5 +211,17 @@ describe("pageWidthZoom (discussion #43)", () => {
     expect(pageWidthZoom(0, 0.5, 1180)).toBe(1);
     expect(pageWidthZoom(1000, 0, 1180)).toBe(1);
     expect(pageWidthZoom(1000, 0.5, NaN)).toBe(1);
+  });
+});
+
+describe("zoomKeepingScale", () => {
+  it("keeps the on-screen scale: the zoom grows as the fit shrinks", () => {
+    expect(zoomKeepingScale(0.7, 0.182, 1)).toBeCloseTo(0.7 / 0.182, 6);
+  });
+
+  it("never goes below the floor, and ignores what is not a scale", () => {
+    expect(zoomKeepingScale(0.1, 0.5, 1)).toBe(1);
+    expect(zoomKeepingScale(0, 0.5, 1)).toBe(1);
+    expect(zoomKeepingScale(0.7, Number.NaN, 1.2)).toBe(1.2);
   });
 });
