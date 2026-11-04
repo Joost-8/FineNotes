@@ -7,7 +7,8 @@
  * suggestions fill the empty thread.
  *
  * Top left is the page picker: a thumbnail of the page being read, picked
- * when the dialog opens. Tapped, it opens the notebook's own PDFs (any of
+ * when the dialog opens (none on a board, which sends what is on screen
+ * with each question). Tapped, it opens the notebook's own PDFs (any of
  * them can be attached, whichever pages are picked) above a grid of every
  * page to pick up to `ASK_MAX_PAGES`. Each question sends the picked pages
  * the chat has not seen yet, so pages can be added mid-conversation.
@@ -104,6 +105,13 @@ const SUGGESTIONS = {
     "Make practice questions",
     "What should I review?",
   ],
+  /** A board (FineNotes#46): what is on screen goes with each question. */
+  screen: [
+    "Explain what is on screen",
+    "Summarise this",
+    "Check my work for mistakes",
+    "Quiz me on this",
+  ],
   file: [
     "What does this say?",
     "Explain this step by step",
@@ -190,7 +198,8 @@ export class AskChat {
     contentEl.addClass("goodobsidian-chat");
 
     const top = contentEl.createDiv({ cls: "goodobsidian-chat-top" });
-    this.buildPagesChip(top);
+    // A board sends what is on screen: there are no pages to pick.
+    if (!this.session.screen) this.buildPagesChip(top);
     const tools = top.createDiv({ cls: "goodobsidian-chat-tools" });
     this.saveButton = this.toolButton(tools, "bookmark", "Save chat", () => {
       const save = !this.session.save;
@@ -217,7 +226,7 @@ export class AskChat {
     });
 
     this.noteEl = contentEl.createDiv({ cls: "goodobsidian-chat-note" });
-    this.buildPicker(contentEl);
+    if (!this.session.screen) this.buildPicker(contentEl);
     this.threadEl = contentEl.createDiv({ cls: "goodobsidian-chat-thread" });
 
     const composer = contentEl.createDiv({ cls: "goodobsidian-chat-composer" });
@@ -441,11 +450,14 @@ export class AskChat {
     const sent = session.sentPages;
     const fresh = session.selected.filter((p) => !sent.has(p));
     const saved = session.save ? " Saved in AI chats." : "";
+    const tools = " It can use your notebook.";
+    if (session.screen) {
+      return `Sends what is on screen to ${this.host.target} with your question.${tools}${saved}`;
+    }
     if (session.selected.length === 0 && sent.size === 0 && session.attachments.length === 0) {
       return `Pick the pages to ask about.${saved}`;
     }
     // Saying it can use the notebook also tells which build is running.
-    const tools = " It can use your notebook.";
     if (fresh.length === 0) return `Asking ${this.host.target}.${tools}${saved}`;
     return `Sends ${pagesPhrase(fresh)} to ${this.host.target} with your question.${tools}${saved}`;
   }
@@ -739,8 +751,15 @@ export class AskChat {
 
     if (session.empty) {
       const count = session.selected.length;
-      const kind =
-        count > 1 ? "many" : count === 1 ? "one" : session.attachments.length ? "file" : "none";
+      const kind = session.screen
+        ? "screen"
+        : count > 1
+          ? "many"
+          : count === 1
+            ? "one"
+            : session.attachments.length
+              ? "file"
+              : "none";
       if (this.emptyFor !== kind) {
         thread.querySelector(".goodobsidian-chat-empty")?.remove();
         this.renderEmpty(thread, kind);
@@ -775,6 +794,7 @@ export class AskChat {
       none: "Ask about your notes",
       one: "Ask about this page",
       many: "Ask about these pages",
+      screen: "Ask about what is on screen",
       file: "Ask about this",
     };
     empty.createDiv({ cls: "goodobsidian-chat-empty-title", text: title[kind] });

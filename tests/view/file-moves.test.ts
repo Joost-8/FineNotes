@@ -127,6 +127,67 @@ describe("FileMoveTracker", () => {
     );
   });
 
+  it("takes a closed board's folders along with its renamed folder, before they exist", async () => {
+    const doc = emptyDocument();
+    doc.folders = { images: "Ideas/Images", exports: "Ideas/Exports" };
+    const { tracker, files } = setUp({ "Ideas/Ideas.notebook.md": buildInkFile("# Ideas", doc) });
+    files["Plans/Plans.notebook.md"] = files["Ideas/Ideas.notebook.md"];
+    delete files["Ideas/Ideas.notebook.md"];
+    files["Plans"] = "";
+    tracker.renamed({ path: "Plans" } as TAbstractFile, "Ideas");
+    await vi.advanceTimersByTimeAsync(RELINK_DELAY_MS);
+    await tracker.flush();
+    expect(parseInkFile(files["Plans/Plans.notebook.md"]).doc?.folders).toEqual({
+      images: "Plans/Images",
+      exports: "Plans/Exports",
+    });
+  });
+
+  it("tells open notebooks again once a folder's files have all been reported", async () => {
+    const { tracker, files, relinkOpen } = setUp(
+      { "Ideas/Ideas.notebook.md": "", "Ideas/Images/a.png": "" },
+      ["Uni/Ideas/Ideas.notebook.md"],
+    );
+    // Obsidian reports the folder first, while its files still answer at
+    // their old paths, so a relink then finds "Ideas/Images" still there.
+    files["Uni/Ideas"] = "";
+    tracker.renamed({ path: "Uni/Ideas" } as TAbstractFile, "Ideas");
+    expect(relinkOpen).toHaveBeenCalledTimes(1);
+    for (const name of ["Ideas.notebook.md", "Images/a.png"]) {
+      files[`Uni/Ideas/${name}`] = files[`Ideas/${name}`];
+      delete files[`Ideas/${name}`];
+      tracker.renamed({ path: `Uni/Ideas/${name}` } as TAbstractFile, `Ideas/${name}`);
+    }
+    await vi.advanceTimersByTimeAsync(RELINK_DELAY_MS);
+    await tracker.flush();
+    expect(relinkOpen).toHaveBeenCalledTimes(2);
+    expect(tracker.relinkFolder("Ideas/Images")).toBe("Uni/Ideas/Images");
+  });
+
+  it("takes the same folder move again after the first one's folder was deleted", async () => {
+    const { tracker, files, relinkOpen } = setUp({ "Ideas/Images/a.png": "" });
+    const moveIdeas = () => {
+      files["Uni/Ideas"] = "";
+      tracker.renamed({ path: "Uni/Ideas" } as TAbstractFile, "Ideas");
+      files["Uni/Ideas/Images/a.png"] = files["Ideas/Images/a.png"];
+      delete files["Ideas/Images/a.png"];
+      tracker.renamed({ path: "Uni/Ideas/Images/a.png" } as TAbstractFile, "Ideas/Images/a.png");
+    };
+    moveIdeas();
+    await vi.advanceTimersByTimeAsync(RELINK_DELAY_MS);
+    await tracker.flush();
+    // "Uni/Ideas" deleted; a new "Ideas" made and moved along the same path.
+    delete files["Uni/Ideas"];
+    delete files["Uni/Ideas/Images/a.png"];
+    files["Ideas/Images/a.png"] = "";
+    relinkOpen.mockClear();
+    moveIdeas();
+    expect(relinkOpen).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(RELINK_DELAY_MS);
+    await tracker.flush();
+    expect(relinkOpen).toHaveBeenCalledTimes(2);
+  });
+
   it("does nothing more when only a notebook was renamed", async () => {
     const { tracker, move, relinkOpen } = setUp({ "A.notebook.md": noteWithPdf("a.pdf") });
     move(tracker, "A.notebook.md", "B.notebook.md");

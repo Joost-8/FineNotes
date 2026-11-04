@@ -295,7 +295,11 @@ export interface NotebookPaths {
   folder: string;
   /** The notebook file's name, suffix included. */
   fileName: string;
-  /** Every folder the notebook needs, parents first; the caller creates the missing ones. */
+  /**
+   * Every folder to create now, parents first; the caller creates the
+   * missing ones. A board's `attachments` are left out: each is made the
+   * first time something is saved in it.
+   */
   folders: string[];
   /** Where its pictures, recordings, transcripts, AI chats and exports go, with its own folder. */
   attachments?: AttachmentFolders;
@@ -314,6 +318,11 @@ export interface NotebookPaths {
  *   <dir>/<Title>/Transcripts/
  *   <dir>/<Title>/AI chats/
  *   <dir>/<Title>/Exports/
+ *
+ * A board (FineNotes discussion #43) gets the same folder and the same
+ * places for its files, but only the folder is made now: a board is one
+ * drawing, and five empty folders beside it read as clutter, not as the
+ * notebook. Every writer makes its folder when it first saves there.
  */
 export function notebookPaths(
   dir: string,
@@ -345,10 +354,11 @@ export function notebookPaths(
   const [images, audio, transcripts, chats, exports] = OWN_FOLDERS.map((sub) =>
     joinVaultPath(folder, sub),
   );
+  const subfolders = type === "endless" ? [] : [images, audio, transcripts, chats, exports];
   return {
     folder,
     fileName: `${name}${suffix}`,
-    folders: [...(parent ? [parent] : []), folder, images, audio, transcripts, chats, exports],
+    folders: [...(parent ? [parent] : []), folder, ...subfolders],
     attachments: { images, audio, transcripts, chats, exports },
   };
 }

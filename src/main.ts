@@ -18,7 +18,11 @@ import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-regi
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import { WordCheck } from "./view/word-check";
-import { followPairRename } from "./model/folder-notebook";
+import {
+  followPairRename,
+  isNotebookOwnFolder,
+  outsideNotebookFolder,
+} from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
 import { tapeColorOf, tapeHeightOf } from "./model/cover-tape";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
@@ -190,6 +194,8 @@ import { buildDesignedNotebook } from "./model/paper-design";
 const SHARE_AUTHOR_KEY = "finenotes:share-author";
 /** The notebooks pages were sent to last, in this device's local storage. */
 const RECENT_TARGETS_KEY = "goodobsidian:move-targets";
+/** The notebook files this device has seen are endless boards (FineNotes#46), by path. */
+const BOARDS_KEY = "goodobsidian:boards";
 
 /** Pages were added to a notebook; `undo` takes exactly those pages (or the new notebook) away. */
 export interface TransferReceipt {
@@ -532,6 +538,8 @@ export default class GoodObsidianPlugin extends Plugin {
         icon: "scan-line",
         label: "Scan document",
         order: 40,
+        // A scan fills its page, and a board's page is metres across (FineNotes#46).
+        isAvailable: () => this.app.workspace.getActiveViewOfType(InkView)?.isBoard !== true,
         run: () => this.app.workspace.getActiveViewOfType(InkView)?.scanDocument(),
       }),
     );
@@ -595,6 +603,10 @@ export default class GoodObsidianPlugin extends Plugin {
         this.libraryPathChanged(oldPath, file.path);
         this.calculatorFileMoved(oldPath, file.path);
         this.practiceNotebookMoved(oldPath, file.path);
+        if (this.knownBoards().has(oldPath)) {
+          this.noteBoard(oldPath, false);
+          this.noteBoard(file.path, true);
+        }
       }),
     );
     this.registerEvent(this.app.vault.on("delete", (file) => this.libraryPathChanged(file.path)));
@@ -748,12 +760,16 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => view.convertToNotebook(),
       (view) => view.isSinglePage && !view.isBoard,
     );
-    this.notebookCommand("scan-document", "Scan document into this notebook", (view) =>
-      view.scanDocument(),
-    );
-    this.notebookCommand("import-pdf", "Import PDF…", (view) => view.importPdf());
-    // An endless board (FineNotes#46) has no pages to add, link to or save as a template.
+    // An endless board (FineNotes#46) has no pages to add, scan or import
+    // onto, link to or save as a template, and never a PDF's text.
     const pages = (view: InkView): boolean => !view.isBoard;
+    this.notebookCommand(
+      "scan-document",
+      "Scan document into this notebook",
+      (view) => view.scanDocument(),
+      pages,
+    );
+    this.notebookCommand("import-pdf", "Import PDF…", (view) => view.importPdf(), pages);
     this.notebookCommand(
       "import-vault-pdf",
       "Import PDF from vault…",
@@ -771,8 +787,11 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => view.copyPageLink(),
       pages,
     );
-    this.notebookCommand("copy-highlighted-text", "Copy highlighted text on this page", (view) =>
-      view.copyHighlightedText(),
+    this.notebookCommand(
+      "copy-highlighted-text",
+      "Copy highlighted text on this page",
+      (view) => view.copyHighlightedText(),
+      pages,
     );
     // No default hotkey: desktop users give it one (FineNotes#42).
     this.notebookCommand(
@@ -860,8 +879,18 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => this.readOnDevice(view),
       () => this.settings.handwritingOnDevice !== false,
     );
-    this.notebookCommand("fit-reset-view", "Fit the page and go to the top", (view) =>
-      view.resetView(),
+    this.notebookCommand(
+      "fit-reset-view",
+      "Fit the page and go to the top",
+      (view) => view.resetView(),
+      pages,
+    );
+    // The same on a board (FineNotes#46), which has no page or top to go to.
+    this.notebookCommand(
+      "fit-board-drawing",
+      "Fit the whole drawing on screen",
+      (view) => view.resetView(),
+      (view) => view.isBoard,
     );
     this.notebookCommand("zoom-in", "Zoom in", (view) => view.zoomIn());
     this.notebookCommand("zoom-out", "Zoom out", (view) => view.zoomOut());
@@ -967,8 +996,6 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarItems;
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
-    // On for a new install; a vault that updates keeps the Obsidian it knows.
-    if (saved !== null && !("simpleLook" in saved)) this.settings.simpleLook = false;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
@@ -1160,13 +1187,13 @@ export default class GoodObsidianPlugin extends Plugin {
       createFragment((fragment) => {
         fragment.createDiv({
           text:
-            "Simple look is on: Obsidian's sidebars, ribbon and bars are hidden. " +
-            "To get normal Obsidian back, turn Simple look off in FineNotes' settings.",
+            "This is the new look of FineNotes: Obsidian's sidebars, ribbon and bars are " +
+            "hidden. You can go back to the original any time (Simple look, in FineNotes' settings).",
         });
-        const open = fragment.createEl("button", { text: "Open settings" });
-        open.addEventListener("click", () => {
+        const undo = fragment.createEl("button", { text: "Undo" });
+        undo.addEventListener("click", () => {
           notice.hide();
-          this.openSettingsTab();
+          this.setSimpleLook(false);
         });
       }),
       SIMPLE_HINT_MS,
@@ -2211,8 +2238,9 @@ export default class GoodObsidianPlugin extends Plugin {
   openImportNotebook(folder = "", preset?: readonly PickedFile[]): void {
     openImportNotebookModal(this.app, {
       ...(preset ? { preset } : {}),
-      folder: folder || this.newNotebookFolder(),
+      folder: folder ? this.outsideNotebook(folder) : this.newNotebookFolder(),
       ownFolder: this.settings.notebookOwnFolder,
+      placeFolder: (picked) => this.outsideNotebook(picked),
       open: async (file) => {
         const tab = this.app.workspace.getLeaf(false);
         await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
@@ -2383,7 +2411,10 @@ export default class GoodObsidianPlugin extends Plugin {
     const modal = new NewNotebookModal(this.app, {
       choices: dialogChoices(this.settings.lastNotebookChoices, kind),
       template: parseNotebookTemplate(this.settings.lastNotebookTemplate),
-      folder: folder ?? this.newNotebookFolder(),
+      // A folder given (the file list's right-click, a link) is stepped out
+      // of a notebook's own folder too, so the chip shows where it will go.
+      folder: folder === undefined ? this.newNotebookFolder() : this.outsideNotebook(folder),
+      placeFolder: (picked) => this.outsideNotebook(picked),
       papers: library,
       onClosed: () => cache.destroy(),
       onImport: (folder) => this.openImportNotebook(folder),
@@ -2578,11 +2609,33 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
-  /** The setting's folder, or the active file's (the behaviour before the setting existed). */
+  /**
+   * The setting's folder, or the active file's (the behaviour before the
+   * setting existed); out of a notebook's own folder either way.
+   */
   private newNotebookFolder(): string {
     const parent = this.app.workspace.getActiveFile()?.parent;
     const active = parent && !parent.isRoot() ? parent.path : "";
-    return targetFolder(this.settings.newNotebookFolder, active);
+    return this.outsideNotebook(targetFolder(this.settings.newNotebookFolder, active));
+  }
+
+  /**
+   * `folder`, or the folder the notebook lives in when `folder` is a
+   * notebook's own folder or one of its folders for files: a new notebook
+   * never goes in another's (discussion #43, where the active notebook's
+   * folder was the default). Whether the explorer shows such folders as
+   * notebooks does not matter: the folder is the notebook's either way.
+   */
+  private outsideNotebook(folder: string): string {
+    return outsideNotebookFolder(normalizeFolder(folder), (path) => {
+      const dir = this.app.vault.getFolderByPath(path);
+      if (!dir) return false;
+      const entries = dir.children.map((child) => ({
+        name: child.name,
+        folder: child instanceof TFolder,
+      }));
+      return isNotebookOwnFolder(dir.name, entries);
+    });
   }
 
   /**
@@ -2609,7 +2662,7 @@ export default class GoodObsidianPlugin extends Plugin {
     /** Open it in the current tab; false leaves the view where it is. */
     open = true,
   ): Promise<TFile | null> {
-    const dir = normalizeFolder(folder ?? this.newNotebookFolder());
+    const dir = this.outsideNotebook(folder ?? this.newNotebookFolder());
     try {
       const parent = dir ? this.app.vault.getFolderByPath(dir) : this.app.vault.getRoot();
       const taken = new Set(parent?.children.map((child) => child.name) ?? []);
@@ -2627,6 +2680,7 @@ export default class GoodObsidianPlugin extends Plugin {
         normalizePath(joinVaultPath(paths.folder, name)),
         content,
       );
+      if (choices.type === "endless") this.noteBoard(file.path, true);
       if (!open) return file;
       // Straight into the notebook view, in the current tab, focused; made
       // from Home it gets a tab of its own, so Home stays where it is.
@@ -2644,8 +2698,13 @@ export default class GoodObsidianPlugin extends Plugin {
 
   // --- Pages sent to another notebook (FineNotes#33) ---------------------------
 
-  /** Every notebook pages could be sent to: not a single page, not a practice set. */
+  /**
+   * Every notebook pages could be sent to: not a single page, not a practice
+   * set, and not a board this device has seen (a board is a `.notebook.md`
+   * too, and only its file's ink says so).
+   */
   transferTargets(): TransferTarget[] {
+    const boards = this.knownBoards();
     return this.app.vault
       .getMarkdownFiles()
       .filter((file) => {
@@ -2653,7 +2712,8 @@ export default class GoodObsidianPlugin extends Plugin {
         return (
           this.isInkFile(file) &&
           !name.endsWith(SINGLE_PAGE_FILE_SUFFIX) &&
-          !name.endsWith(PRACTICE_FILE_SUFFIX)
+          !name.endsWith(PRACTICE_FILE_SUFFIX) &&
+          !boards.has(file.path)
         );
       })
       .map((file) => ({
@@ -2661,6 +2721,35 @@ export default class GoodObsidianPlugin extends Plugin {
         title: stripInkSuffix(file.name),
         mtime: file.stat.mtime,
       }));
+  }
+
+  /** {@link BOARDS_KEY}, read once. */
+  private boards: Set<string> | null = null;
+
+  /** The paths of the boards this device has opened or made (vault-scoped local storage). */
+  knownBoards(): ReadonlySet<string> {
+    if (!this.boards) {
+      const raw: unknown = this.app.loadLocalStorage(BOARDS_KEY);
+      let list: unknown = [];
+      try {
+        list = typeof raw === "string" ? JSON.parse(raw) : [];
+      } catch {
+        // Unreadable: start again; opening a board adds it back.
+      }
+      this.boards = new Set(
+        Array.isArray(list) ? list.filter((p): p is string => typeof p === "string") : [],
+      );
+    }
+    return this.boards;
+  }
+
+  /** Whether the notebook at `path` is a board, as a view or a new file just showed. */
+  noteBoard(path: string, board: boolean): void {
+    const boards = this.knownBoards() as Set<string>;
+    if (!path || boards.has(path) === board) return;
+    if (board) boards.add(path);
+    else boards.delete(path);
+    this.app.saveLocalStorage(BOARDS_KEY, JSON.stringify([...boards]));
   }
 
   /** The notebooks pages went to last, most recent first (kept on this device). */

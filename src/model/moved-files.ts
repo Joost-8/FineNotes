@@ -88,6 +88,39 @@ export function movedTarget(
 }
 
 /**
+ * The relink for a folder the note saves its files in, or `undefined` to
+ * leave it. Such a folder is made when the first file is saved there, so it
+ * may not exist yet: a board makes only its own folder. It then follows the
+ * nearest folder above it that moved to a place that exists (a board's
+ * folder renamed from "Ideas" to "Plans" takes "Ideas/Images" along to
+ * "Plans/Images"), so the next picture does not bring back the old folder.
+ * Nothing is relinked while the folder, or a folder above it on the way up,
+ * is still there: what is there now is where it saves.
+ */
+export function movedFolderTarget(
+  log: readonly FileMove[],
+  exists: (path: string) => boolean,
+  path: string,
+): string | undefined {
+  const moved = movedTarget(log, exists, path);
+  if (moved !== undefined || !path || exists(path)) return moved;
+  for (let above = parentOf(path); above; above = parentOf(above)) {
+    if (exists(above)) return undefined;
+    const to = followMoves(log, above);
+    if (to !== above && exists(to)) {
+      const target = followMoves(log, path);
+      return target.startsWith(`${to}/`) ? target : undefined;
+    }
+  }
+  return undefined;
+}
+
+/** The folder `path` is in; `""` at the vault's root. */
+function parentOf(path: string): string {
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+}
+
+/**
  * Where a path a note holds is now when nothing is at it and no logged move
  * explains it: the note came in from outside the vault with its files beside
  * it (another vault, a converter, a folder copied in by hand), so its paths
@@ -135,17 +168,20 @@ export function nearbyTarget(
 
 /**
  * Rewrite, in place, every vault path `doc` holds that `relink` has a new
- * path for; the number rewritten. In place on purpose: commands in the undo
- * history hold these same page, picture and recording objects, so undoing an
- * insert puts back the relinked path, not the dead one.
+ * path for; the number rewritten. The folders it saves in go through
+ * `relinkFolder` (`movedFolderTarget`), as they may not exist yet. In place
+ * on purpose: commands in the undo history hold these same page, picture and
+ * recording objects, so undoing an insert puts back the relinked path, not
+ * the dead one.
  */
 export function relinkDocument(
   doc: InkDocument,
   relink: (path: string) => string | undefined,
+  relinkFolder: (path: string) => string | undefined = relink,
 ): number {
   let changed = 0;
-  const swap = (path: string): string => {
-    const to = relink(path);
+  const swap = (path: string, how = relink): string => {
+    const to = how(path);
     if (to === undefined || to === path) return path;
     changed++;
     return to;
@@ -161,7 +197,7 @@ export function relinkDocument(
   if (doc.folders) {
     for (const kind of Object.keys(doc.folders) as Array<keyof typeof doc.folders>) {
       const folder = doc.folders[kind];
-      if (folder !== undefined) doc.folders[kind] = swap(folder);
+      if (folder !== undefined) doc.folders[kind] = swap(folder, relinkFolder);
     }
   }
   return changed;

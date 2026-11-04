@@ -47,15 +47,17 @@ export interface PageTexts {
 /**
  * Page `index`'s header and footer in `doc`, counting pages from the first
  * that is not a cover, so a covered notebook's first page of writing is 1.
+ * None on a board.
  */
 export function furnitureText(
-  doc: Pick<InkDocument, "furniture" | "pages">,
+  doc: Pick<InkDocument, "furniture" | "pages" | "endless">,
   index: number,
   title = "",
 ): PageTexts {
   const furniture = readFurniture(doc.furniture);
   const page = doc.pages[index];
-  if (!furniture || !page || isCoverRuling(page.backdrop.kind)) return {};
+  // A board (FineNotes#46) is one page metres across: no number, no header.
+  if (!furniture || !page || doc.endless || isCoverRuling(page.backdrop.kind)) return {};
   const covers = doc.pages.filter((p, i) => i < index && isCoverRuling(p.backdrop.kind)).length;
   const total = doc.pages.filter((p) => !isCoverRuling(p.backdrop.kind)).length;
   const number = index - covers + 1;

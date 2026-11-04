@@ -9,13 +9,18 @@ import { describe, expect, it } from "vitest";
 import {
   BOARD_BLOCK,
   BOARD_MAX_BLOCKS,
+  BOARD_CUT_MARGIN,
+  BOARD_CUT_STEP,
   BOARD_START_BLOCKS,
   GrowBoard,
+  boardDrawing,
+  boardDrawingBox,
   boardGrowth,
   boardStartGeometry,
   drawnBounds,
   isBoard,
   isNoGrowth,
+  textLinesHeight,
 } from "../../src/model/board";
 import { type InkDocument, type Page, type Stroke } from "../../src/model/document";
 import { AttachedStep, History } from "../../src/model/history";
@@ -39,6 +44,9 @@ const board = (
 function stroke(id: string, pts: number[], size = 4): Stroke {
   return { id, color: "#000000", size, tool: "pen", pts };
 }
+
+/** A text box's text of twenty short lines. */
+const twentyLines = (): string => Array.from({ length: 20 }, (_, i) => `Line ${i}`).join("\n");
 
 /** A board with one of every kind of element, at known places. */
 function fullBoard(): InkDocument {
@@ -111,6 +119,24 @@ describe("a new board", () => {
     expect(isBoard(buildNewDocument(DEFAULT_NOTEBOOK_CHOICES, "x"))).toBe(false);
   });
 
+  it("gets its own folder but no empty folders for files it has not saved yet (#43)", () => {
+    const paths = notebookPaths("Lectures", "Ideas", "endless", true, new Set());
+    expect(paths.folder).toBe("Lectures/Ideas");
+    expect(paths.fileName).toBe("Ideas.notebook.md");
+    expect(paths.folders).toEqual(["Lectures", "Lectures/Ideas"]);
+    // Its pictures and the rest still go in its folder, made on first save.
+    expect(paths.attachments).toEqual({
+      images: "Lectures/Ideas/Images",
+      audio: "Lectures/Ideas/Recordings",
+      transcripts: "Lectures/Ideas/Transcripts",
+      chats: "Lectures/Ideas/AI chats",
+      exports: "Lectures/Ideas/Exports",
+    });
+    expect(notebookPaths("", "Ideas", "endless", true, new Set()).folders).toEqual(["Ideas"]);
+    // A notebook keeps making its five up front.
+    expect(notebookPaths("", "Ideas", "notebook", true, new Set()).folders).toHaveLength(6);
+  });
+
   it("is remembered as the choice for next time, with its own paper", () => {
     expect(parseNotebookChoices({ type: "endless" }).type).toBe("endless");
     expect(parseNotebookChoices({ type: "single" }).type).toBe("notebook");
@@ -163,10 +189,125 @@ describe("drawnBounds", () => {
     expect(drawnBounds(page)).toEqual({ minX: 10, minY: 10, maxX: 60, maxY: 35 });
   });
 
+  it("takes a self-sizing text box's every line, or the height it is given", () => {
+    const page = board().pages[0];
+    const text = twentyLines();
+    page.textBoxes.push({ id: "t", x: 10, y: 10, w: 300, text, color: "#000", fontSize: 20 });
+    // 20 lines of 20 px at 1.25, not one line.
+    expect(drawnBounds(page)?.maxY).toBe(10 + 20 * 25);
+    expect(textLinesHeight(page.textBoxes[0])).toBe(500);
+    // The renderer's height, wrapping included, when the caller can measure.
+    expect(drawnBounds(page, () => 670)?.maxY).toBe(680);
+    // A box the user sized keeps its own.
+    page.textBoxes[0].h = 90;
+    expect(drawnBounds(page, () => 670)?.maxY).toBe(100);
+  });
+
   it("skips coordinates that are not numbers, and a ragged tail", () => {
     const page = board().pages[0];
     page.strokes.push(stroke("s", [Number.NaN, 5, 0.5, 10, 20, 0.5, 99], 0));
     expect(drawnBounds(page)).toEqual({ minX: 10, minY: 20, maxX: 10, maxY: 20 });
+  });
+});
+
+describe("boardDrawing: the drawing alone, for an export or the AI", () => {
+  it("keeps all of a long self-sizing text box, measured as painted", () => {
+    const page = board().pages[0];
+    const { width, height } = page.geometry;
+    const text = twentyLines();
+    page.textBoxes.push({
+      id: "t",
+      x: width / 2,
+      y: height / 2,
+      w: 300,
+      text,
+      color: "#000",
+      fontSize: 20,
+    });
+    const measured = boardDrawingBox(page, () => 670);
+    expect(measured.y + measured.height).toBeGreaterThanOrEqual(
+      height / 2 + 670 + BOARD_CUT_MARGIN,
+    );
+    // Without a canvas, every line still counts.
+    const counted = boardDrawingBox(page);
+    expect(counted.y + counted.height).toBeGreaterThanOrEqual(height / 2 + 500 + BOARD_CUT_MARGIN);
+  });
+
+  /** {@link fullBoard}, its drawing moved off the corner, as a board's sits in its middle. */
+  function middleBoard(shift = 2000): InkDocument {
+    const doc = fullBoard();
+    const page = doc.pages[0];
+    for (const s of page.strokes) s.pts = s.pts.map((v, i) => (i % 3 === 2 ? v : v + shift));
+    for (const list of [page.images, page.textBoxes, page.tables ?? [], page.comments ?? []]) {
+      for (const item of list) {
+        item.x += shift;
+        item.y += shift;
+      }
+    }
+    for (const section of page.sections ?? []) {
+      section.x += shift;
+      section.y += shift;
+    }
+    return doc;
+  }
+
+  it("cuts the page down to what is drawn, a margin round it, in whole steps", () => {
+    const page = middleBoard().pages[0];
+    const box = boardDrawingBox(page);
+    const drawn = drawnBounds(page)!;
+    for (const v of [box.x, box.y, box.width, box.height]) expect(v % BOARD_CUT_STEP).toBe(0);
+    expect(box.x).toBeLessThanOrEqual(drawn.minX - BOARD_CUT_MARGIN);
+    expect(box.y).toBeLessThanOrEqual(drawn.minY - BOARD_CUT_MARGIN);
+    expect(box.x + box.width).toBeGreaterThanOrEqual(drawn.maxX + BOARD_CUT_MARGIN);
+    expect(box.y + box.height).toBeGreaterThanOrEqual(drawn.maxY + BOARD_CUT_MARGIN);
+    expect(box.width).toBeLessThan(page.geometry.width);
+  });
+
+  it("moves everything by the cut, on a copy, leaving the page alone", () => {
+    const doc = middleBoard();
+    const page = doc.pages[0];
+    const before = snapshot(doc);
+    const box = boardDrawingBox(page);
+    expect(box.x).toBeGreaterThan(0);
+    const cut = boardDrawing(page);
+    expect(snapshot(doc)).toBe(before);
+    expect(cut.geometry).toMatchObject({ width: box.width, height: box.height });
+    expect(cut.strokes[0].pts[0]).toBe(page.strokes[0].pts[0] - box.x);
+    expect(cut.strokes[0].pts[1]).toBe(page.strokes[0].pts[1] - box.y);
+    expect(cut.images[0].x).toBe(page.images[0].x - box.x);
+    expect(cut.textBoxes[0].y).toBe(page.textBoxes[0].y - box.y);
+    expect(cut.tables?.[0].x).toBe(page.tables![0].x - box.x);
+    expect(cut.comments?.[0].x).toBe(page.comments![0].x - box.x);
+    expect(cut.sections?.[0].y).toBe(page.sections![0].y - box.y);
+    // Everything drawn is on the cut page, inside its margin.
+    const inside = drawnBounds(cut)!;
+    expect(inside.minX).toBeGreaterThanOrEqual(BOARD_CUT_MARGIN);
+    expect(inside.maxY).toBeLessThanOrEqual(box.height - BOARD_CUT_MARGIN);
+  });
+
+  it("cuts out another box when given one (what is on screen, for Ask)", () => {
+    const page = middleBoard().pages[0];
+    const screen = { x: 2050, y: 2150, width: 400, height: 300 };
+    const cut = boardDrawing(page, screen);
+    expect(cut.geometry).toMatchObject({ width: 400, height: 300 });
+    expect(cut.strokes[0].pts[0]).toBe(page.strokes[0].pts[0] - 2050);
+  });
+
+  it("an empty board gives one block from its middle", () => {
+    const page = board().pages[0];
+    const box = boardDrawingBox(page);
+    expect(box.width).toBe(BOARD_BLOCK);
+    expect(box.height).toBe(BOARD_BLOCK);
+    expect(box.x + box.width / 2).toBe(page.geometry.width / 2);
+  });
+
+  it("never reaches past the page", () => {
+    const doc = board();
+    const page = doc.pages[0];
+    page.strokes.push(stroke("edge", [2, 3, 0.5, page.geometry.width - 1, 50, 0.5]));
+    const box = boardDrawingBox(page);
+    expect(box).toEqual({ x: 0, y: 0, width: page.geometry.width, height: box.height });
+    expect(boardDrawing(page).strokes[0].pts[0]).toBe(2);
   });
 });
 

@@ -23,8 +23,8 @@ extracted from the matching section of this file by `release.yml`.
   opens FineNotes' settings.
 - **Simple look.** Hides Obsidian's title bar, status bar, left ribbon and
   sidebars and keeps the tabs, so FineNotes looks like an app of its own. On
-  for a new install, with a note saying how to get normal Obsidian back; an
-  update leaves a vault as it was. One switch, at the top of FineNotes'
+  for a new install and for a vault that updates, with a note shown once and
+  an Undo in it to go back to the original. One switch, at the top of FineNotes'
   settings and in a notebook's settings; the command "Simple look" too.
 - **Home shows an Update button** when a newer FineNotes is out.
 - **A Home button on the notebook's toolbar,** next to the page sidebar button;
@@ -68,6 +68,28 @@ extracted from the matching section of this file by `release.yml`.
   longer shows in steps outside it.
 - **Dragging a colour off the bar is smooth.** The held colour follows the
   finger exactly instead of trailing behind it.
+- **Boards land where you expect, and stay tidy**
+  ([#43](https://github.com/Joost-8/FineNotes/discussions/43)). A new board
+  or notebook is never made inside another notebook's own folder, wherever
+  the folder came from: the open notebook, a right-click, or a folder picked
+  in the New notebook or Import dialog. A board makes only its own folder;
+  its Images, Exports and other folders appear when something is saved
+  there, and until then the file list shows no arrow beside it.
+- **Exporting a board** gives one page the size of the drawing, not a 1 m
+  page with the drawing small in its middle. The AI reads the drawing the
+  same way, so handwriting on a board is large enough to read.
+- **Search and the contents on a board** go to the word or heading itself,
+  across as well as down. The contents list no page numbers on a board.
+- **Ask on a board** sends what is on screen with each question, instead of
+  asking you to pick pages from a board that has one.
+- **A board reopens where you left it**, at the zoom you left it at, as a
+  notebook reopens on its page.
+- **Fit on a board** is called Fit drawing (the zoom's button) and "Fit the
+  whole drawing on screen" (the command palette), which is what it does.
+- **Send pages to…** no longer lists boards, which take no pages.
+- On a board, page-only things are gone: page numbers and the header,
+  Scan document, Import PDF and Copy highlighted text. The New board dialog
+  no longer offers Import from another app, which always makes a notebook.
 - On a dark page, a sticky note's ink, text and paper are shown as the rest of the page is, so
   ink and text never change colour when they land on a note.
 - A text box laid over a sticky note folds away with it and comes back when it opens; one dropped

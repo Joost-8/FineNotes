@@ -3544,6 +3544,22 @@ function paintTextLines(
   });
 }
 
+/**
+ * How tall {@link paintTextBox} paints a text box: its stored height, or for
+ * one that grows with its text, its lines wrapped at its width, measured
+ * with `ctx`. For a board's drawing cut out for export, which must hold all
+ * of a long box.
+ */
+export function paintedTextHeight(ctx: CanvasRenderingContext2D, typed: TextBoxElement): number {
+  if (typed.h !== undefined) return typed.h;
+  const box = { ...typed, text: shownCase(displayText(typed.text), typed) };
+  ctx.save();
+  ctx.font = canvasFont(box, box.fontSize);
+  const { height } = layoutTextBox(box, (text) => ctx.measureText(text).width);
+  ctx.restore();
+  return height;
+}
+
 /** Laid-out tables by object, kept while nothing their layout depends on changes. */
 const tableLayouts = new WeakMap<TableElement, { key: string; layout: TableLayout }>();
 
