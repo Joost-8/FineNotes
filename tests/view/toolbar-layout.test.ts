@@ -30,7 +30,7 @@ import {
 describe("the default layout", () => {
   it("is the bar as it was built before it could be customized", () => {
     expect(defaultLayout()).toEqual({
-      start: ["thumbnails", "search", "ai", "calculator", "undo", "redo"],
+      start: ["home", "thumbnails", "search", "ai", "calculator", "undo", "redo"],
       middle: ["select", "pen", "eraser", "text", "shape", "image", "pdf", "accessories"],
       end: ["fullscreen", "addPage", "share", "more", "settings"],
       off: [],
@@ -150,7 +150,7 @@ describe("places", () => {
     expect(placeOf(layout, "share")).toBe("end");
     expect(placeOf(layout, "pan")).toBe("menu");
     expect(placeOf(moveTo(layout, "pan", "off"), "pan")).toBe("off");
-    expect(barItems(layout)).toHaveLength(19);
+    expect(barItems(layout)).toHaveLength(20);
   });
 });
 
@@ -209,7 +209,7 @@ describe("stepItem: one place along the bar, as an arrow key moves it", () => {
   });
 
   it("stops at the bar's two ends, and leaves buttons off the bar alone", () => {
-    expect(stepItem(defaultLayout(), "thumbnails", -1)).toEqual(defaultLayout());
+    expect(stepItem(defaultLayout(), "home", -1)).toEqual(defaultLayout());
     expect(stepItem(defaultLayout(), "settings", 1)).toEqual(defaultLayout());
     expect(stepItem(defaultLayout(), "pan", 1)).toEqual(defaultLayout());
   });

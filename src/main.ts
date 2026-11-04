@@ -42,11 +42,14 @@ import { disposeVaultFonts } from "./view/font-store";
 import {
   ICON_IMPORT_NOTEBOOK,
   ICON_IMPORT_NOTEBOOK_SVG,
+  ICON_LIBRARY,
+  ICON_LIBRARY_SVG,
   ICON_NEW_NOTEBOOK,
   ICON_STYLUS_ONLY,
   ICON_STYLUS_ONLY_SVG,
   PREVIOUS_PLUGIN_ID,
   VIEW_TYPE_INK,
+  VIEW_TYPE_LIBRARY,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
 import { laserDefaultColorOf } from "./settings-data";
@@ -126,6 +129,12 @@ import {
 import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
+import { starsOf } from "./model/favorites";
+import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
+import { HOME_FILE, HOME_FILE_TEXT } from "./model/home-file";
+import { folderStylesOf } from "./model/library-style";
+import { prepareImageBytes } from "./view/image-import";
+import { LibraryView } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
 import { PageEmbeds } from "./view/page-embed";
 import type { EraserMode } from "./view/toolbar";
@@ -135,7 +144,9 @@ import type { RulerKind } from "./canvas/ruler-geometry";
 import {
   DEFAULT_NOTEBOOK_CHOICES,
   type NotebookChoices,
+  type NotebookType,
   buildNewDocument,
+  buildImageNotebook,
   buildPdfNotebook,
   cleanTitle,
   joinVaultPath,
@@ -216,6 +227,7 @@ import {
   isItemOff,
   migrateLayout,
   normalizeLayout,
+  placeOf,
 } from "./view/toolbar-layout";
 import {
   type CalculatorData,
@@ -260,9 +272,14 @@ export interface RecognitionTarget {
 /** Where a key exchange with OpenRouter ended: a key, or what to tell the user. */
 type OpenRouterOutcome = { key: string } | { problem: string };
 
+/** How long after start the simple-look note waits, so the welcome is up first, ms. */
+const SIMPLE_HINT_DELAY_MS = 2500;
+/** How long the note stays, ms. */
+const SIMPLE_HINT_MS = 20000;
+
 export default class GoodObsidianPlugin extends Plugin {
-  private readonly explorerNotebookButton = new FileExplorerNotebookButton(() =>
-    this.openNewNotebookDialog(),
+  private readonly explorerNotebookButton = new FileExplorerNotebookButton(
+    () => void this.openLibrary(),
   );
 
   private readonly explorerFolderNotebooks = new ExplorerFolderNotebooks({
@@ -441,11 +458,57 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.setUpReadingGuard();
+    this.applySimpleLook();
+    this.register(() => {
+      if (typeof document !== "undefined") document.body.classList.remove(SIMPLE_CLASS);
+    });
     // Fonts fetched for text boxes leave the document with the plugin.
     this.register(disposeVaultFonts);
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
+    this.registerView(
+      VIEW_TYPE_LIBRARY,
+      (leaf) =>
+        new LibraryView(leaf, {
+          newNotebook: (folder) => this.openNewNotebookDialog(folder),
+          newBoard: (folder) => this.openNewNotebookDialog(folder, "endless"),
+          importFromApp: (folder) => this.openImportNotebook(folder),
+          importImage: (file, folder) => void this.createNotebookFromImage(file, folder),
+          openSettings: () => this.openOwnSettings(),
+          update: () => this.updates.available,
+          openUpdate: () => this.openUpdatePage(),
+          importPdf: (source, folder) => {
+            const name = source.file.name.replace(/\.pdf$/i, "");
+            void this.createNotebookFromPdfBytes(
+              name,
+              this.pdfNotebookChoices(),
+              folder,
+              () =>
+                source.kind === "vault"
+                  ? this.app.vault.readBinary(source.file)
+                  : source.file.arrayBuffer(),
+              source.kind === "vault" ? source.file.path : { name },
+            );
+          },
+          stars: () => this.settings.libraryStars,
+          setStars: (stars) => {
+            this.settings.libraryStars = stars;
+            void this.saveSettings();
+          },
+          folderStyles: () => this.settings.libraryFolders,
+          setFolderStyles: (styles) => {
+            this.settings.libraryFolders = styles;
+            void this.saveSettings();
+          },
+          exportPdf: async (file) => {
+            const leaf = this.app.workspace.getLeaf("tab");
+            await leaf.openFile(file);
+            if (leaf.view instanceof InkView) leaf.view.exportPdf();
+          },
+        }),
+    );
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
+    addIcon(ICON_LIBRARY, ICON_LIBRARY_SVG);
     addIcon(ICON_STYLUS_ONLY, ICON_STYLUS_ONLY_SVG);
     // The image menu's "Generate with AI" row: the same modal as the AI menu,
     // listed only when an image service is configured.
@@ -565,11 +628,14 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.workspace.on("layout-change", () => this.syncExplorerNotebookButton()),
     );
     this.app.workspace.onLayoutReady(() => this.syncExplorerNotebookButton());
+    // The library is the way in: notebooks are made there (its +), not from a ribbon icon of their own.
     // Obsidian keeps a ribbon icon's place (hidden, moved) by its title, so the
     // title stays English; the tooltip shows the language in use.
-    this.addRibbonIcon(ICON_NEW_NOTEBOOK, EN["notebooks.ribbon.newNotebook"], () =>
-      this.openNewNotebookDialog(),
-    ).setAttribute("aria-label", t("notebooks.ribbon.newNotebook"));
+    this.addRibbonIcon(
+      ICON_LIBRARY,
+      EN["notebooks.ribbon.library"],
+      () => void this.openLibrary(),
+    ).setAttribute("aria-label", t("notebooks.ribbon.library"));
     this.addCommands();
 
     this.settingTab = new GoodObsidianSettingTab(this.app, this);
@@ -612,6 +678,27 @@ export default class GoodObsidianPlugin extends Plugin {
     this.register(() => window.clearTimeout(timer));
   }
 
+  /** The notebook library: the tab that is already open, or a new one. */
+  /** FineNotes' own page in Obsidian's settings. */
+  private openOwnSettings(): void {
+    const setting = (
+      this.app as unknown as {
+        setting?: { open(): void; openTabById(id: string): void };
+      }
+    ).setting;
+    setting?.open();
+    setting?.openTabById(this.manifest.id);
+  }
+
+  async openLibrary(): Promise<void> {
+    const open = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
+    const leaf = open ?? this.app.workspace.getLeaf("tab");
+    if (!open) await leaf.setViewState({ type: VIEW_TYPE_LIBRARY, active: true });
+    // Pinned, the first tab: a link or a notebook never replaces it.
+    leaf.setPinned(true);
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
   // --- Commands ---------------------------------------------------------------
 
   /**
@@ -630,6 +717,18 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "create-notebook-with-last-settings",
       name: t("notebooks.command.createWithLastSettings"),
       callback: () => void this.createNotebookWithLastSettings(),
+    });
+
+    this.addCommand({
+      id: "open-library",
+      name: t("notebooks.command.openLibrary"),
+      callback: () => void this.openLibrary(),
+    });
+
+    this.addCommand({
+      id: "toggle-simple-look",
+      name: t("notebooks.command.simpleLook"),
+      callback: () => this.setSimpleLook(!this.settings.simpleLook),
     });
 
     this.addCommand({
@@ -866,10 +965,20 @@ export default class GoodObsidianPlugin extends Plugin {
       saved !== null && "toolbarLayout" in saved
         ? normalizeLayout(this.settings.toolbarLayout)
         : migrateLayout(loaded.toolbarItems, loaded.toolbarOff, loaded.toolbarHome);
+    // The Home button (2.8) joins a bar customized before it: once, at the
+    // front of the start; a person who moves it away is not asked again.
+    if (saved !== null && !("toolbarHomeAdded" in saved) && placeOf(toolbar, "home") === "menu") {
+      toolbar.start.unshift("home");
+    }
+    this.settings.toolbarHomeAdded = true;
     this.settings.toolbarLayout = toolbar;
     delete loaded.toolbarItems;
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
+    // On for a new install; a vault that updates keeps the Obsidian it knows.
+    if (saved !== null && !("simpleLook" in saved)) this.settings.simpleLook = false;
+    this.settings.libraryStars = starsOf(this.settings.libraryStars);
+    this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
     if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
     // A Zoom box line step outside the slider's range is a hand-edited file,
@@ -1050,7 +1159,41 @@ export default class GoodObsidianPlugin extends Plugin {
     if (moved) this.saveCalculator(moved);
   }
 
+  /** Once: the simple look is on, and one switch brings normal Obsidian back. */
+  private sayWhereSimpleLookIs(): void {
+    if (!this.settings.simpleLook || this.settings.simpleLookHinted) return;
+    this.settings.simpleLookHinted = true;
+    void this.saveSettings();
+    const notice: Notice = new Notice(
+      createFragment((fragment) => {
+        fragment.createDiv({
+          text: t("notebooks.simpleLook.notice"),
+        });
+        const open = fragment.createEl("button", { text: t("notebooks.simpleLook.openSettings") });
+        open.addEventListener("click", () => {
+          notice.hide();
+          this.openSettingsTab();
+        });
+      }),
+      SIMPLE_HINT_MS,
+    );
+  }
+
+  /** Wear the body classes the simple look asks for now (none when it is off). */
+  applySimpleLook(): void {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    body.classList.remove(SIMPLE_CLASS);
+    body.classList.add(...simpleClasses(this.settings.simpleLook));
+  }
+
+  setSimpleLook(on: boolean): void {
+    this.settings.simpleLook = on;
+    void this.saveSettings();
+  }
+
   async saveSettings(): Promise<void> {
+    this.applySimpleLook();
     await this.saveData(this.settings);
     this.syncExplorerNotebookButton();
   }
@@ -1951,7 +2094,40 @@ export default class GoodObsidianPlugin extends Plugin {
       const welcome = shouldShowWelcome(this.firstInstall, this.hasNotebooks());
       void this.showWhatsNew();
       if (welcome) this.showWelcome();
+      if (this.firstInstall) void this.makeHomeFile();
+      if (this.settings.simpleLook && !this.settings.simpleLookHinted) {
+        if (typeof window !== "undefined") {
+          // Cleared on unload: a plugin turned off in those seconds says nothing.
+          const hint = window.setTimeout(() => this.sayWhereSimpleLookIs(), SIMPLE_HINT_DELAY_MS);
+          this.register(() => window.clearTimeout(hint));
+        }
+      }
     });
+    // Opening the Home file opens the library instead.
+    this.registerEvent(
+      this.app.workspace.on("file-open", (file) => {
+        if (file?.path !== HOME_FILE) return;
+        this.app.workspace.iterateAllLeaves((leaf) => {
+          const open = (leaf.view as { file?: TFile | null }).file;
+          if (leaf.view.getViewType() === "markdown" && open?.path === HOME_FILE) leaf.detach();
+        });
+        void this.openLibrary();
+      }),
+    );
+  }
+
+  /**
+   * A note called Home at the vault's root for someone new to Obsidian: it
+   * opens the library, so there is always a file to click when the welcome
+   * is closed. Made once, on a new install; deleting it changes nothing.
+   */
+  private async makeHomeFile(): Promise<void> {
+    if (this.app.vault.getAbstractFileByPath(HOME_FILE)) return;
+    try {
+      await this.app.vault.create(HOME_FILE, HOME_FILE_TEXT);
+    } catch {
+      // A name taken at the same moment: no home file is no harm.
+    }
   }
 
   /** Whether `file` is an ink note (see `isInkNote`). */
@@ -2108,7 +2284,7 @@ export default class GoodObsidianPlugin extends Plugin {
     new WelcomeModal(this.app, {
       openTour: () => void this.openWelcomeTour(),
       importNotebooks: () => this.openImportNotebook(),
-      newNotebook: () => this.openNewNotebookDialog(),
+      openHome: () => void this.openLibrary(),
     }).open();
   }
 
@@ -2156,7 +2332,7 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** The "New notebook" dialog, preset with the last choices and the default folder. */
-  openNewNotebookDialog(folder?: string): void {
+  openNewNotebookDialog(folder?: string, kind?: NotebookType): void {
     // My templates' previews: a PDF cache of the dialog's own, let go when it closes.
     const cache = new PdfBackdropCache(this.app);
     const painter = new VaultBackdropRenderer(cache);
@@ -2177,7 +2353,10 @@ export default class GoodObsidianPlugin extends Plugin {
       });
     });
     const modal = new NewNotebookModal(this.app, {
-      choices: parseNotebookChoices(this.settings.lastNotebookChoices),
+      choices: {
+        ...parseNotebookChoices(this.settings.lastNotebookChoices),
+        ...(kind ? { type: kind } : {}),
+      },
       template: parseNotebookTemplate(this.settings.lastNotebookTemplate),
       folder: folder ?? this.newNotebookFolder(),
       papers: library,
@@ -2403,8 +2582,11 @@ export default class GoodObsidianPlugin extends Plugin {
         content,
       );
       if (!open) return file;
-      // Straight into the notebook view, in the current tab, focused.
-      const tab = this.app.workspace.getLeaf(false);
+      // Straight into the notebook view, in the current tab, focused; made
+      // from Home it gets a tab of its own, so Home stays where it is.
+      const fromHome =
+        this.app.workspace.getMostRecentLeaf()?.view.getViewType() === VIEW_TYPE_LIBRARY;
+      const tab = this.app.workspace.getLeaf(fromHome ? "tab" : false);
       await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
       await this.app.workspace.revealLeaf(tab);
       return file;
@@ -2579,6 +2761,46 @@ export default class GoodObsidianPlugin extends Plugin {
       () => this.app.vault.readBinary(pdf),
       pdf.path,
       open,
+    );
+  }
+
+  /**
+   * A new notebook with a picture on its first page (Home › New › Add image),
+   * made with the last notebook choices; the picture is prepared as an
+   * inserted one is and saved beside the notebook's attachments.
+   */
+  private async createNotebookFromImage(file: File, folder: string): Promise<void> {
+    const choices = this.pdfNotebookChoices();
+    let prepared: Awaited<ReturnType<typeof prepareImageBytes>>;
+    try {
+      prepared = await prepareImageBytes(await file.arrayBuffer(), file.type);
+    } catch (error) {
+      new Notice(t("notebooks.home.imageUnreadable", { reason: errorMessage(error) }), 8000);
+      return;
+    }
+    const name = file.name.replace(/\.[^.]+$/, "");
+    await this.createNotebook(
+      name,
+      choices,
+      folder,
+      async (heading, attachments, home) => {
+        const dir = attachments?.images ?? home;
+        if (dir && !this.app.vault.getFolderByPath(dir)) {
+          await this.app.vault.createFolder(dir).catch(() => undefined);
+        }
+        const stem = sanitizeFileName(name) || t("notebooks.home.pictureName");
+        let path = normalizePath(joinVaultPath(dir, `${stem}.${prepared.ext}`));
+        for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) {
+          path = normalizePath(joinVaultPath(dir, `${stem} ${n}.${prepared.ext}`));
+        }
+        await this.app.vault.createBinary(path, prepared.bytes);
+        return buildImageNotebook(choices, heading, attachments, path, {
+          width: prepared.width,
+          height: prepared.height,
+        });
+      },
+      this.settings.notebookOwnFolder,
+      true,
     );
   }
 

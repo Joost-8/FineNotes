@@ -11,6 +11,7 @@
  * the view supplies what exists on disk and does the writing.
  */
 
+import { newImageElement } from "./images";
 import { t } from "../i18n/translate";
 import {
   FRONTMATTER_FLAG,
@@ -423,6 +424,29 @@ export function buildNewDocument(
     return doc;
   }
   doc.pages.push(page("p1", geometry, paper));
+  return doc;
+}
+
+/**
+ * A new notebook that is one picture: a single page the shape of the picture
+ * (as wide as the chosen size, as a PDF's pages are), with the picture at
+ * `path` (a file in the vault) filling it. No cover, no other page.
+ */
+export function buildImageNotebook(
+  choices: NotebookChoices,
+  title: string,
+  attachments: AttachmentFolders | undefined,
+  path: string,
+  natural: { width: number; height: number },
+): InkDocument {
+  const doc = buildNewDocument({ ...choices, type: "notebook", cover: "none" }, title, attachments);
+  const first = doc.pages[0];
+  if (!first || !(natural.width > 0) || !(natural.height > 0)) return doc;
+  first.geometry = pdfPageGeometry(sizeGeometry(choices.size, choices.landscape), natural);
+  first.images.push(
+    newImageElement(doc, path, { x: 0, y: 0, w: first.geometry.width, h: first.geometry.height }),
+  );
+  doc.view.width = first.geometry.width;
   return doc;
 }
 

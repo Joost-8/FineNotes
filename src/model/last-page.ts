@@ -20,6 +20,9 @@ export interface LastPage {
   at: number;
 }
 
+/** The vault-scoped local-storage key of the map, shared by the notebook view and the library. */
+export const LAST_PAGES_KEY = "goodobsidian:last-pages";
+
 /** Notebook path → where it was left. */
 export type LastPages = Record<string, LastPage>;
 

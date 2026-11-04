@@ -16,6 +16,27 @@ extracted from the matching section of this file by `release.yml`.
   tooltips, dialogs, notices and settings change; your notes and
   handwriting never do. A language's words download once (about 200 KB) and
   then work offline; after a change, **Relaunch** shows it everywhere.
+- **Home: your notebooks as covers.** The library icon (left bar, and the
+  file explorer's bar) opens Home in a tab of its own that stays: every
+  notebook as a cover, folders as coloured tiles with an icon you choose,
+  a Continue row showing the page you were on, Favorites (a star on every
+  notebook and folder), search, grid or list, sort, and pick several to move,
+  star or delete. Drag a notebook onto a folder; pull down to refresh. Each
+  one has a ⌄ menu (Rename, Duplicate, Export as PDF, Move; folders: colour,
+  icon). **New** makes a notebook, a board, a notebook of a PDF's pages or of
+  one picture, imports from another app, or makes a folder; a PDF's first
+  page is its cover. A notebook opens in a new tab, so Home stays. Its gear
+  opens FineNotes' settings.
+- **Simple look.** Hides Obsidian's title bar, status bar, left ribbon and
+  sidebars and keeps the tabs, so FineNotes looks like an app of its own. On
+  for a new install, with a note saying how to get normal Obsidian back; an
+  update leaves a vault as it was. One switch, at the top of FineNotes'
+  settings and in a notebook's settings; the command "Simple look" too.
+- **Home shows an Update button** when a newer FineNotes is out.
+- **A Home button on the notebook's toolbar,** next to the page sidebar button;
+  Customize toolbar moves or hides it.
+- **A Home note for a new install** opens the library; delete it whenever
+  you like. The welcome notebook now points at Home.
 - **Ask AI on an empty lasso.** A lasso drawn round nothing offers Ask AI
   about that patch of page beside Screenshot, while an AI service is set up.
 - **Dock tool options on every side.** With the tool bar at the left or

@@ -758,6 +758,8 @@ export interface ToolbarCallbacks {
   /** Add a page; `anchor` is the button, for a popover to hang from. */
   onAddPage?: (anchor: HTMLElement) => void;
   onToggleThumbnails?: () => void;
+  /** Open Home, the notebook library. Without it the bar has no Home button. */
+  onHome?: () => void;
   /** Show the notebook full screen, or leave it. Without it the bar has no such button. */
   onFullScreen?: () => void;
   onSearch?: () => void;
@@ -1374,6 +1376,9 @@ export class Toolbar {
       return button;
     };
 
+    const home = cb.onHome;
+    if (home)
+      item("home", this.barButton(start, "house", t("toolbar.item.home"), home), home, false);
     this.thumbnailsButton = this.barButton(
       start,
       "panel-left",

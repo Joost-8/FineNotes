@@ -166,6 +166,7 @@ function fakeApp(
     },
     getActiveFile: () => null,
     getLeaf: () => new WorkspaceLeaf(),
+    getMostRecentLeaf: () => null,
     revealLeaf: () => Promise.resolve(),
   };
   return {
@@ -449,6 +450,7 @@ describe("registration", () => {
         "import-vault-pdf",
         "learn-handwriting",
         "new-from-template",
+        "open-library",
         "read-handwriting-on-device",
         "recognize-handwriting",
         "scan-document",
@@ -462,6 +464,7 @@ describe("registration", () => {
         "toggle-canvas-markdown-view",
         "toggle-input-debug-overlay",
         "toggle-only-stylus-mode",
+        "toggle-simple-look",
         "toggle-text-layer",
         "turn-selection-into-text",
         "view-changelog",
@@ -483,10 +486,10 @@ describe("registration", () => {
 
   it("registers the notebook view, the ribbon button and the two link handlers", async () => {
     await load();
-    expect([...registered.views.keys()]).toEqual([INK]);
-    expect(registered.ribbon.map((r) => r.icon)).toEqual(["notebook-pen"]);
-    expect(registered.ribbon[0].title).toBe("New notebook");
-    expect(registered.ribbon[0].label).toBe("New notebook");
+    expect([...registered.views.keys()]).toEqual([INK, "finenotes-library"]);
+    expect(registered.ribbon.map((r) => r.icon)).toEqual(["finenotes-library"]);
+    expect(registered.ribbon[0].title).toBe("Notebook library");
+    expect(registered.ribbon[0].label).toBe("Notebook library");
     // The import icon is FineNotes' own, so it must be registered before use.
     expect(addedIcons.has("finenotes-notebook-import")).toBe(true);
     expect([...registered.protocolHandlers.keys()]).toEqual([
@@ -599,13 +602,17 @@ describe("registration", () => {
     });
   });
 
-  it("makes no notebook by itself, on a first install or an update", async () => {
-    for (const stored of [null, { lastSeenVersion: "0.1.0" }]) {
+  it("makes no notebook by itself; a first install gets the Home note, an update nothing", async () => {
+    for (const [stored, expected] of [
+      [null, ["Home.md"]],
+      [{ lastSeenVersion: "0.1.0" }, []],
+    ] as const) {
       await load(stored);
       app.workspace.fireLayoutReady();
       await flush();
-      const created = (app.vault as unknown as { created: unknown[] }).created;
-      expect(created).toEqual([]);
+      const created = (app.vault as unknown as { created: { path: string }[] }).created;
+      expect(created.map((c) => c.path)).toEqual(expected);
+      created.length = 0;
     }
   });
 
@@ -1422,7 +1429,7 @@ describe("Stylus only shown nowhere", () => {
       toolbarHome: [],
     } as never);
     expect(plugin.settings.toolbarLayout).toEqual({
-      start: ["thumbnails", "search", "ai", "undo", "redo"],
+      start: ["home", "thumbnails", "search", "ai", "undo", "redo"],
       middle: ["pen", "sticky", "select", "ruler", "accessories"],
       end: ["fullscreen", "addPage", "share", "more", "settings"],
       off: ["pan", "record"],

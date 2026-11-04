@@ -15580,3 +15580,623 @@ button.goodobsidian-edit-menu-row {
   display: inline-flex;
   color: var(--icon-color);
 }
+
+/* --- The simple look (model/simple-mode.ts) ----------------------------- */
+
+/* Obsidian's own chrome tucked away; the tabs stay. Nothing is removed. */
+body.goodobsidian-simple .status-bar,
+body.goodobsidian-simple .workspace-ribbon,
+body.goodobsidian-simple .workspace-split.mod-left-split,
+body.goodobsidian-simple .workspace-split.mod-right-split,
+body.goodobsidian-simple .workspace-drawer,
+body.goodobsidian-simple .sidebar-toggle-button {
+  display: none;
+}
+body.goodobsidian-simple
+  .workspace-leaf-content:is([data-type="goodobsidian-view"], [data-type="finenotes-library"])
+  > .view-header {
+  display: none;
+}
+
+/* --- Notebook library (src/view/library-view.ts) ------------------------- */
+
+.goodobsidian-library.view-content {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  --gob-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.goodobsidian-library-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 20px 10px;
+  flex: none;
+  /* Content scrolls under a frosted bar, as in Apple's apps. */
+  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+  -webkit-backdrop-filter: saturate(1.6) blur(18px);
+  backdrop-filter: saturate(1.6) blur(18px);
+  z-index: 1;
+}
+.goodobsidian-library-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.goodobsidian-library-up.is-hidden {
+  display: none;
+}
+.goodobsidian-library-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 190px;
+  max-width: 40%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  color: var(--text-faint);
+  transition:
+    width 0.25s var(--gob-ease),
+    background-color 0.2s;
+}
+.goodobsidian-library-search:focus-within {
+  width: 260px;
+  background: color-mix(in srgb, var(--text-normal) 10%, transparent);
+}
+.goodobsidian-library-search .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+.goodobsidian-library-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  /* 16px: iPadOS zooms the page into a smaller field. */
+  font-size: 16px;
+  padding: 0;
+}
+.goodobsidian-library-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 20px 32px;
+}
+.goodobsidian-library-label {
+  margin: 18px 0 10px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text-normal);
+}
+.goodobsidian-library-grid {
+  display: grid;
+  gap: 18px 14px;
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+}
+.goodobsidian-library-recent {
+  display: grid;
+  gap: 18px 14px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+/* A folder: a coloured folder with its icon, as a tile beside the covers. */
+.goodobsidian-library-cover.is-folder {
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+}
+.goodobsidian-library-cover.is-folder::before,
+.goodobsidian-library-cover.is-folder::after {
+  display: none;
+}
+.goodobsidian-library-folder-art {
+  position: relative;
+  width: 92%;
+  aspect-ratio: 1.22;
+  margin-top: 6%;
+}
+.goodobsidian-library-folder-back {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 88%;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--gob-folder) 78%, #000);
+}
+.goodobsidian-library-folder-back::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 99%;
+  width: 40%;
+  height: 12%;
+  border-radius: 8px 8px 0 0;
+  background: inherit;
+}
+.goodobsidian-library-folder-front {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 80%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--gob-folder) 86%, #fff),
+    var(--gob-folder)
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 8px 14px -6px rgba(0, 0, 0, 0.4);
+  color: color-mix(in srgb, var(--gob-folder) 52%, #000);
+}
+.goodobsidian-library-folder-front .svg-icon {
+  width: 34%;
+  height: 34%;
+  stroke-width: 1.7;
+}
+.goodobsidian-library-folder-art button.goodobsidian-library-star {
+  top: 24%;
+  right: 5%;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  color: rgba(255, 255, 255, 0.85);
+}
+.goodobsidian-library-folder-art button.goodobsidian-library-star.is-on {
+  color: #ffd84d;
+}
+.goodobsidian-library-name-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.goodobsidian-library-name-row .goodobsidian-library-name {
+  min-width: 0;
+}
+button.goodobsidian-library-caret {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--interactive-accent);
+}
+button.goodobsidian-library-caret .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+/* The New button: the accent colour as a stadium, straight sides and half circles at the ends. */
+button.goodobsidian-library-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px 0 12px;
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 14px;
+  font-weight: 650;
+  transition:
+    transform 0.2s var(--gob-ease),
+    background-color 0.2s;
+}
+button.goodobsidian-library-new:active {
+  transform: scale(0.95);
+}
+.goodobsidian-library-new-icon {
+  display: inline-flex;
+}
+.goodobsidian-library-new-icon .svg-icon {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.4;
+}
+@media (hover: hover) {
+  button.goodobsidian-library-new:hover {
+    background: var(--interactive-accent-hover);
+  }
+}
+/* Menus opened in the library: a row is a finger's size. */
+.menu.goodobsidian-library-menu {
+  min-width: 240px;
+  padding: 6px;
+}
+.menu.goodobsidian-library-menu .menu-item {
+  min-height: 48px;
+  padding: 0 14px;
+  gap: 12px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+.menu.goodobsidian-library-menu .menu-item-icon .svg-icon {
+  width: 20px;
+  height: 20px;
+}
+.menu.goodobsidian-library-menu .menu-separator {
+  margin: 6px 4px;
+}
+.goodobsidian-library-card.is-dragging {
+  opacity: 0.45;
+}
+.goodobsidian-library-card.is-drop .goodobsidian-library-cover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px var(--interactive-accent);
+}
+.goodobsidian-library-up.is-drop {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+/* List layout: one row per notebook, its cover small on the left. */
+.goodobsidian-library-grid.is-list {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+.is-list .goodobsidian-library-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 8px;
+  border-radius: 12px;
+}
+.is-list .goodobsidian-library-cover {
+  flex: none;
+  width: 44px;
+}
+.is-list .goodobsidian-library-cover-title {
+  display: none;
+}
+.is-list .goodobsidian-library-caption {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+.is-list .goodobsidian-library-folder-art {
+  width: 100%;
+  margin-top: 0;
+}
+.is-list .goodobsidian-library-folder-front .svg-icon {
+  display: none;
+}
+/* Picking several. */
+.goodobsidian-library.is-selecting .goodobsidian-library-star,
+.goodobsidian-library.is-selecting .goodobsidian-library-caret {
+  display: none;
+}
+.goodobsidian-library-card.is-selected .goodobsidian-library-cover::after {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--interactive-accent) 38%, transparent);
+  outline: 3px solid var(--interactive-accent);
+  outline-offset: -3px;
+}
+.is-list .goodobsidian-library-card.is-selected {
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+}
+.goodobsidian-library-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 20px 12px;
+  padding: 8px 10px 8px 16px;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  box-shadow:
+    0 0 0 0.5px var(--background-modifier-border),
+    0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.goodobsidian-library-bar.is-hidden {
+  display: none;
+}
+.goodobsidian-library-bar-count {
+  flex: 1;
+  font-weight: 600;
+}
+button.goodobsidian-library-bar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  box-shadow: none;
+}
+button.goodobsidian-library-bar-button.is-danger {
+  color: var(--text-error);
+}
+button.goodobsidian-library-bar-button:disabled {
+  opacity: 0.4;
+}
+button.goodobsidian-library-bar-done {
+  height: 40px;
+  border-radius: 999px;
+  padding: 0 18px;
+}
+/* Pull to refresh: a small arrow that opens above the list while it is pulled. */
+.goodobsidian-library-pull {
+  --gob-pull: 0px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--gob-pull);
+  overflow: hidden;
+  color: var(--text-muted);
+  opacity: 0;
+  transition:
+    height 0.2s var(--gob-ease),
+    opacity 0.2s;
+}
+.goodobsidian-library-pull.is-pulling {
+  opacity: 1;
+  transition: none;
+}
+.goodobsidian-library-pull.is-spinning {
+  opacity: 1;
+  transition: height 0.2s var(--gob-ease);
+}
+.goodobsidian-library-pull .svg-icon {
+  width: 20px;
+  height: 20px;
+  transition: transform 0.2s;
+}
+.goodobsidian-library-pull.is-ready .svg-icon {
+  transform: rotate(180deg);
+  color: var(--interactive-accent);
+}
+.goodobsidian-library-pull.is-spinning .svg-icon {
+  color: var(--interactive-accent);
+  animation: gob-library-spin 0.8s linear infinite;
+}
+@keyframes gob-library-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* An update is out: the same stadium as New, in a quieter fill. */
+button.goodobsidian-library-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: 999px;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  color: var(--interactive-accent);
+  font-size: 14px;
+  font-weight: 650;
+}
+button.goodobsidian-library-update.is-hidden {
+  display: none;
+}
+button.goodobsidian-library-update:active {
+  transform: scale(0.95);
+}
+.goodobsidian-library-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: -2px;
+}
+.goodobsidian-rename-input {
+  width: 100%;
+  /* 16px: iPadOS zooms the page into a smaller field. */
+  font-size: 16px;
+}
+/* The star, top right of every notebook and folder. */
+button.goodobsidian-library-star {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  background: rgba(0, 0, 0, 0.24);
+  color: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition:
+    transform 0.2s var(--gob-ease),
+    background-color 0.2s;
+}
+button.goodobsidian-library-star .svg-icon {
+  width: 15px;
+  height: 15px;
+}
+button.goodobsidian-library-star.is-on {
+  color: #f5b82e;
+}
+button.goodobsidian-library-star.is-on .svg-icon {
+  fill: currentColor;
+}
+button.goodobsidian-library-star:active {
+  transform: scale(0.88);
+}
+.goodobsidian-library-card {
+  min-width: 0;
+  cursor: pointer;
+  border-radius: 10px;
+  -webkit-tap-highlight-color: transparent;
+  animation: gob-library-in 0.35s var(--gob-ease) both;
+}
+.goodobsidian-library-card:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 4px;
+}
+.goodobsidian-library-cover {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  aspect-ratio: 3 / 4;
+  padding: 10px 9px 10px 15px;
+  overflow: hidden;
+  border-radius: 4px 10px 10px 4px;
+  background: linear-gradient(
+    155deg,
+    var(--gob-cover-hi, var(--gob-cover)) 0%,
+    var(--gob-cover) 45%,
+    var(--gob-cover-lo, var(--gob-cover)) 100%
+  );
+  color: var(--gob-cover-ink, var(--text-on-accent));
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.12),
+    0 6px 14px -4px rgba(0, 0, 0, 0.28);
+  transition:
+    transform 0.3s var(--gob-ease),
+    box-shadow 0.3s var(--gob-ease);
+}
+/* The spine: a darker band and a hairline of light beside it. */
+.goodobsidian-library-cover::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 7px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.06));
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.18);
+}
+/* A soft sheen across the top, as on a book jacket. */
+.goodobsidian-library-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 38%);
+  pointer-events: none;
+}
+/* A notebook of a PDF: its first page is the cover. */
+.goodobsidian-library-cover.is-pdf {
+  padding: 0;
+  background: #fff;
+  border-radius: 4px 10px 10px 4px;
+}
+.goodobsidian-library-cover.is-pdf .goodobsidian-library-pdf {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.goodobsidian-library-cover.is-pdf.is-ready .goodobsidian-library-pdf {
+  opacity: 1;
+}
+.goodobsidian-library-cover.is-pdf .goodobsidian-library-cover-title {
+  color: #666;
+}
+.goodobsidian-library-cover.is-pdf.is-ready .goodobsidian-library-cover-title {
+  display: none;
+}
+.goodobsidian-library-cover-title {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.goodobsidian-library-caption {
+  margin-top: 8px;
+  padding: 0 2px;
+}
+.goodobsidian-library-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.goodobsidian-library-when {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.goodobsidian-library-progress {
+  height: 3px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-normal) 12%, transparent);
+  overflow: hidden;
+}
+.goodobsidian-library-progress > div {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+}
+.goodobsidian-library-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 64px;
+  color: var(--text-muted);
+}
+@media (hover: hover) {
+  .goodobsidian-library-card:hover .goodobsidian-library-cover {
+    transform: translateY(-3px) scale(1.015);
+    box-shadow:
+      0 0 0 0.5px rgba(0, 0, 0, 0.12),
+      0 2px 4px rgba(0, 0, 0, 0.12),
+      0 12px 22px -6px rgba(0, 0, 0, 0.34);
+  }
+}
+.goodobsidian-library-card:active .goodobsidian-library-cover {
+  transform: scale(0.97);
+  transition-duration: 0.1s;
+}
+@keyframes gob-library-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-library-card {
+    animation: none;
+  }
+  .goodobsidian-library-cover,
+  .goodobsidian-library-search,
+  button.goodobsidian-library-star {
+    transition: none;
+  }
+}

@@ -2,7 +2,7 @@
  * The "New notebook" dialog, after GoodNotes' "Create notebook" sheet:
  *
  *   [Create]        New notebook          (∞) (✕)    (sticky: never scrolls away)
- *   Title ______________________________            (focused on open)
+ *   Title ______________________________            (focused on open, on a computer)
  *   Import from another app…      [📁 Lectures/Analysis ›]
  *   Cover   No cover and the classic designs, the patterns, then the colours
  *   Paper   size · colour · orientation, then every template
@@ -20,7 +20,7 @@
  * It only reports the choice; the plugin writes the file.
  */
 
-import { type App, Menu, Modal, type TFile, setIcon } from "obsidian";
+import { type App, Menu, Modal, Platform, type TFile, setIcon } from "obsidian";
 import { ICON_IMPORT_NOTEBOOK } from "../constants";
 import { onEnterKey } from "./enter-key";
 import { BOARD_RULINGS } from "../model/board";
@@ -170,12 +170,15 @@ export class NewNotebookModal extends Modal {
 
     this.repaint();
     this.syncKind();
-    // Focus inside the gesture that opened the dialog: iPadOS raises the
-    // keyboard only for a focus made during a user gesture. Without
-    // `preventScroll`, and without the hold the focus handler starts, WebKit
-    // scrolled the window to "reveal" the title and left it scrolled after
-    // the dialog closed: the new notebook opened pushed off the screen.
-    if (this.titleInput) {
+    // On a computer the title takes focus at once, so typing starts. On a
+    // phone or tablet that raised the on-screen keyboard over the covers
+    // before anyone had chosen to type: there the keyboard comes up when the
+    // title is tapped. Focus inside the gesture that opened the dialog:
+    // iPadOS raises the keyboard only for a focus made during a user gesture.
+    // Without `preventScroll`, and without the hold the focus handler starts,
+    // WebKit scrolled the window to "reveal" the title and left it scrolled
+    // after the dialog closed: the new notebook opened pushed off the screen.
+    if (this.titleInput && !Platform.isMobile) {
       this.openScroll = captureScroll(this.titleInput);
       this.pendingScroll = this.openScroll;
       this.titleInput.focus({ preventScroll: true });

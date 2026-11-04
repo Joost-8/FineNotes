@@ -149,9 +149,12 @@ export const settings = {
   "settings.newNotebookContextMenu.name": "New notebook in the right-click menu",
   "settings.newNotebookContextMenu.info":
     "Add New notebook to the file explorer menu. New notebooks start in the selected folder.",
-  "settings.newNotebookExplorer.name": "New notebook button in the file explorer",
-  "settings.newNotebookExplorer.info":
-    "Add a New notebook button beside New note and New folder in the file explorer.",
+  "settings.libraryExplorer.name": "Library button in the file explorer",
+  "settings.libraryExplorer.info":
+    "Add a button that opens the notebook library, beside New note and New folder in the file explorer.",
+  "settings.simpleLook.name": "Simple look",
+  "settings.simpleLook.info":
+    "Hide Obsidian's title bar, status bar, left ribbon and sidebars, and keep the tabs, so FineNotes looks like an app of its own. Turn it off here to bring them back.",
   "settings.folderNotebooks.name": "Show notebook folders as notebooks",
   "settings.folderNotebooks.info":
     "In the file explorer, a notebook with its own folder shows as that folder: tap its name to open the notebook, or its arrow for its pictures, recordings and other files. Renaming one renames the other.",

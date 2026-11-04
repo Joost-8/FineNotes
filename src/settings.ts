@@ -951,6 +951,16 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         drawnRow(t("language.name"), "", (s) => this.drawLanguage(s), LANGUAGE_ALIASES),
         t("language.info"),
       ),
+      this.info(
+        toggle("simpleLook", t("settings.simpleLook.name"), "", [
+          "simple",
+          "look",
+          "hide",
+          "sidebar",
+          "ribbon",
+        ]),
+        t("settings.simpleLook.info"),
+      ),
     ];
   }
 
@@ -1541,12 +1551,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           t("settings.newNotebookContextMenu.info"),
         ),
         this.info(
-          toggle("showNewNotebookInExplorer", t("settings.newNotebookExplorer.name"), "", [
+          toggle("showNewNotebookInExplorer", t("settings.libraryExplorer.name"), "", [
             "toolbar",
             "file explorer",
+            "library",
             "new notebook",
           ]),
-          t("settings.newNotebookExplorer.info"),
+          t("settings.libraryExplorer.info"),
         ),
         this.info(
           toggle("folderNotebooks", t("settings.folderNotebooks.name"), "", [

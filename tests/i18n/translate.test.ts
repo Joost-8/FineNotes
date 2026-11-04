@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   currentLanguage,
+  localeTag,
   placeholdersOf,
   t,
   tn,
@@ -95,6 +96,20 @@ describe("tn", () => {
   it("fills extra values next to the count", () => {
     useLanguage("de", { "test.pages.other": "{count} Seiten in {name}" });
     expect(tn(KEY, 2, { name: "Mathe" })).toBe("2 Seiten in Mathe");
+  });
+});
+
+describe("localeTag", () => {
+  it("names the language as Intl knows it", () => {
+    expect(localeTag()).toBe("en-US");
+    useLanguage("de", {});
+    expect(localeTag()).toBe("de");
+    useLanguage("kh", {});
+    expect(localeTag()).toBe("km");
+    useLanguage("no", {});
+    expect(localeTag()).toBe("nb");
+    useLanguage("pt-BR", {});
+    expect(localeTag()).toBe("pt-BR");
   });
 });
 

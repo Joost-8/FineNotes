@@ -48,6 +48,15 @@ export function currentLanguage(): string {
   return language;
 }
 
+/**
+ * The language in use as a tag `Intl` knows, for dates. English is US
+ * English ("Oct 30"); Khmer and Norwegian have other codes in Obsidian's list.
+ */
+export function localeTag(): string {
+  const tags: Readonly<Record<string, string>> = { en: "en-US", kh: "km", no: "nb" };
+  return tags[language] ?? language;
+}
+
 /** The text for `key`, filled from `vars`. */
 export function t(key: TextKey, vars?: TextVars): string {
   return fill(lookup(key) ?? key, vars);

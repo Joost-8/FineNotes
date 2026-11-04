@@ -91,6 +91,7 @@ export const toolbar = {
   "toolbar.color.pickFromPage": "Pick a colour from the page",
   "toolbar.customize.title": "Customize toolbar",
   "toolbar.item.search": "Search",
+  "toolbar.item.home": "Home",
   "toolbar.zone.start": "Start",
   "toolbar.zone.top": "Top",
   "toolbar.zone.middle": "Middle",
