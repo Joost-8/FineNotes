@@ -143,6 +143,27 @@ describe("FileMoveTracker", () => {
     });
   });
 
+  it("tells open notebooks again once a folder's files have all been reported", async () => {
+    const { tracker, files, relinkOpen } = setUp(
+      { "Ideas/Ideas.notebook.md": "", "Ideas/Images/a.png": "" },
+      ["Uni/Ideas/Ideas.notebook.md"],
+    );
+    // Obsidian reports the folder first, while its files still answer at
+    // their old paths, so a relink then finds "Ideas/Images" still there.
+    files["Uni/Ideas"] = "";
+    tracker.renamed({ path: "Uni/Ideas" } as TAbstractFile, "Ideas");
+    expect(relinkOpen).toHaveBeenCalledTimes(1);
+    for (const name of ["Ideas.notebook.md", "Images/a.png"]) {
+      files[`Uni/Ideas/${name}`] = files[`Ideas/${name}`];
+      delete files[`Ideas/${name}`];
+      tracker.renamed({ path: `Uni/Ideas/${name}` } as TAbstractFile, `Ideas/${name}`);
+    }
+    await vi.advanceTimersByTimeAsync(RELINK_DELAY_MS);
+    await tracker.flush();
+    expect(relinkOpen).toHaveBeenCalledTimes(2);
+    expect(tracker.relinkFolder("Ideas/Images")).toBe("Uni/Ideas/Images");
+  });
+
   it("does nothing more when only a notebook was renamed", async () => {
     const { tracker, move, relinkOpen } = setUp({ "A.notebook.md": noteWithPdf("a.pdf") });
     move(tracker, "A.notebook.md", "B.notebook.md");

@@ -45,6 +45,8 @@ export class FileMoveTracker {
   private again = false;
   /** Whether the renames since the last pass moved anything but ink notes. */
   private pending = false;
+  /** Whether files were reported after the folder they moved with (see `flush`). */
+  private followed = false;
   private cached: FileMove[] | null = null;
 
   constructor(
@@ -72,7 +74,10 @@ export class FileMoveTracker {
   renamed(file: TAbstractFile, oldPath: string): void {
     const log = this.log();
     // A folder's own rename already says where everything inside it went.
-    if (followMoves(log, oldPath) === file.path) return;
+    if (followMoves(log, oldPath) === file.path) {
+      this.followed = true;
+      return;
+    }
     this.cached = recordMove(log, oldPath, file.path);
     this.app.saveLocalStorage(LOG_KEY, JSON.stringify(this.cached));
     // Renaming a notebook moves nothing a note points at.
@@ -101,6 +106,13 @@ export class FileMoveTracker {
     this.timer = 0;
     if (!this.pending) return this.running ?? Promise.resolve();
     this.pending = false;
+    // Again for the open notebooks: Obsidian reports a moved folder before
+    // the files inside it, and while they still answer at their old paths
+    // nothing there looked moved (a board's Images folder, a PDF inside).
+    if (this.followed) {
+      this.followed = false;
+      this.host.relinkOpen();
+    }
     if (this.running) {
       this.again = true;
       return this.running;
