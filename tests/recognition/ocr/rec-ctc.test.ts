@@ -27,18 +27,18 @@ function probs(steps: [number, number][]): Float32Array {
 }
 
 describe("the recogniser's alphabet", () => {
-  it("is the dictionary's lines, class 0 the blank, the last line the space", () => {
-    const a = alphabetFrom("　\n\nx\ny\n ");
-    expect(a).toEqual(["", "", "x", "y", " "]);
+  it("is the dictionary's lines, class 0 the blank, then the space PaddleOCR appends", () => {
+    expect(alphabetFrom("\n!\nx\ny\n")).toEqual(["", "!", "x", "y", " "]);
   });
 
   it("does not count a trailing line break as a class", () => {
-    expect(alphabetFrom("-\na\nb\n ").length).toBe(4);
-    expect(alphabetFrom("-\na\nb\n \n").length).toBe(4);
+    expect(alphabetFrom("\na\nb").length).toBe(4);
+    expect(alphabetFrom("\na\nb\n").length).toBe(4);
   });
 
   it("splits on line feeds only, so a separator character stays a character", () => {
-    expect(alphabetFrom("-\na b\n ")[1]).toBe("a b");
+    expect(alphabetFrom("\na b\n")[1]).toBe("a b");
+    expect(alphabetFrom("\n\u2028\n")[1]).toBe("\u2028");
   });
 });
 

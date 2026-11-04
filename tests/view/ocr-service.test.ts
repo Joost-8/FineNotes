@@ -377,7 +377,7 @@ describe("OcrService", () => {
     await r.settle();
     expect(r.log.read).toEqual(["600"]);
     expect(r.owner.ready).toEqual(["a.pdf#0"]);
-    expect(OCR_MODEL.id).toBe("ocr-ppocrv5");
+    expect(OCR_MODEL.id).toBe("ocr-ppocrv6");
   });
 
   it("never offers the model for a blank page, which is cached as read", async () => {

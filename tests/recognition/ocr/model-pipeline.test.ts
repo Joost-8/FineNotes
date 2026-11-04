@@ -13,11 +13,15 @@ import { keptLines } from "../../../src/recognition/ocr/ocr-words";
 import { REC_STRIDE } from "../../../src/recognition/ocr/rec";
 
 describe("the OCR model as pinned", () => {
-  it("pins every file by exact size and a lower-case SHA-256, from jsDelivr over https", () => {
+  it("pins every file by exact size and a lower-case SHA-256, over https (the models from this repository's data branch, the wasm from jsDelivr)", () => {
     for (const file of OCR_MODEL.files) {
       expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(file.bytes).toBeGreaterThan(0);
-      expect(file.url).toMatch(/^https:\/\/cdn\.jsdelivr\.net\/npm\/[a-z0-9-]+@\d+\.\d+\.\d+\//);
+      expect(file.url).toMatch(
+        /^https:\/\/(raw\.githubusercontent\.com\/fariszyzy\/FineNotes\/ocr-models\/ppocrv6-1|cdn\.jsdelivr\.net\/npm\/onnxruntime-web@\d+\.\d+\.\d+\/dist)\//,
+      );
+      // Never LFS (media.githubusercontent.com) or Hugging Face.
+      expect(file.url).not.toMatch(/media\.githubusercontent|huggingface/);
       expect(file.url.endsWith(`/${file.name}`)).toBe(true);
     }
     expect(OCR_MODEL.files.map((f) => f.name)).toEqual([
@@ -26,7 +30,7 @@ describe("the OCR model as pinned", () => {
       OCR_DICT_FILE.name,
       OCR_WASM_FILE.name,
     ]);
-    expect(totalBytes(OCR_MODEL)).toBe(4_896_928 + 16_559_278 + 74_014 + 14_239_897);
+    expect(totalBytes(OCR_MODEL)).toBe(4_896_928 + 4_530_048 + 27_157 + 14_239_897);
   });
 
   it("downloads the WebAssembly binary of exactly the onnxruntime-web the build pins", () => {
@@ -47,6 +51,7 @@ describe("the OCR model as pinned", () => {
   it("is listed in THIRD_PARTY_NOTICES", () => {
     const notices = readFileSync("THIRD_PARTY_NOTICES.txt", "utf8");
     expect(notices).toContain("PP-OCRv5");
+    expect(notices).toContain("PP-OCRv6");
     expect(notices).toContain("onnxruntime-web");
   });
 });

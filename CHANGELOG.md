@@ -8,6 +8,19 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Scanned-page reader: faster, smaller, and more accurate.** The OCR model is now
+  PaddleOCR PP-OCRv5 (mobile) for finding lines and PP-OCRv6 (tiny) for reading them.
+  A page takes about 5.5 s instead of 12 s, the download is 23.7 MB instead of 35.8 MB,
+  and on the test pages and the lecture figures it reads more labels correctly (86.0%
+  against 84.8%). The model comes from this repository (branch `ocr-models`), no longer
+  from a CDN: a device that has the old model is offered the new download once, and
+  pages read before are read again. The reader's dictionary has no Japanese kana
+  (Latin with accents, Greek, symbols and 6,174 Chinese characters are in it). The
+  handwriting filter is stricter to match the new reader's higher confidences.
+  Measurements and the options that were tried: [docs/OCR.md](docs/OCR.md#model-choice).
+
 ### Added
 
 - **Text inside the pictures of PDF pages is read too.** A lecture PDF has a text
@@ -28,7 +41,7 @@ extracted from the matching section of this file by `release.yml`.
   search, the text-snapping highlighter and Copy text, as PDFs with real text
   do. The reader is PaddleOCR PP-OCRv5 (mobile) running with ONNX Runtime Web
   in a background worker, on iPhone, iPad, Android and desktop. It is a
-  35.7 MB download that is offered the first time a scanned page needs it;
+  23.7 MB download that is offered the first time a scanned page needs it;
   nothing downloads before you agree, and you can turn it off with _Read
   scanned PDF pages_ (Pages and notebooks). It reads only PDFs open in a
   notebook, the page in view first, then its neighbours, then the rest of

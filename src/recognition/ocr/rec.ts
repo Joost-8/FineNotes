@@ -164,14 +164,16 @@ export function batchTensor(crops: readonly RecCrop[]): { data: Float32Array; wi
 /**
  * The recogniser's classes from its dictionary file: class `k` is line `k`
  * (split on "\n" only: a line may be a character other splitters treat as a
- * break). Line 0 is a placeholder for the CTC blank, class 0, and the last
- * line is the space. Checked against the real model's output: its 18385
- * classes are this file's 18385 lines.
+ * break). Line 0 is empty, the placeholder for the CTC blank (class 0), and
+ * the file has no line for the space: PaddleOCR appends it as the last class
+ * (`use_space_char`). Checked against the real model's output: PP-OCRv6
+ * tiny's 6906 classes are this file's 6905 lines plus the space.
  */
 export function alphabetFrom(dictionary: string): string[] {
   const lines = dictionary.split("\n");
   // A file ending in a line break has one empty line too many.
   if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
   lines[0] = "";
+  lines.push(" ");
   return lines;
 }
