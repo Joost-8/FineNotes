@@ -433,3 +433,38 @@ describe("AskSession conversation", () => {
     expect(deps.preparePages).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("AskSession on a board: what is on screen, with every question", () => {
+  const board = (deps: AskSessionDeps) =>
+    new AskSession(deps, {
+      page: 1,
+      totalPages: 1,
+      save: false,
+      attachPage: false,
+      screen: true,
+    });
+
+  it("sends the board's one page with each question, as the screen is then", async () => {
+    const { deps, asked } = setup();
+    const session = board(deps);
+    // Nothing to pick, whatever "Attach the page" says.
+    expect(session.selected).toEqual([1]);
+    await session.send("What is this?");
+    await session.send("And now?");
+    expect(deps.preparePages).toHaveBeenCalledTimes(2);
+    const [first, second] = [asked[0].at(-1)!, asked[1].at(-1)!];
+    expect(first.text).toMatch(/^The image is what is on screen of an endless board/);
+    expect(first.text).toMatch(/What is this\?$/);
+    expect(second.text).toMatch(/^Another image: what is on screen of the board now\./);
+    expect(second.images).toHaveLength(1);
+  });
+
+  it("says so when nothing is on screen", async () => {
+    const { deps } = setup({
+      preparePages: () => Promise.resolve({ images: [], pageNumbers: [], totalPages: 1 }),
+    });
+    const session = board(deps);
+    await session.send("Hm?");
+    expect(session.outstanding?.error).toBe("there is nothing on screen to send.");
+  });
+});

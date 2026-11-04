@@ -106,7 +106,7 @@ import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { measurePdfPages } from "./pdf-pages";
 import { VaultPaperLibrary, templateNamesIn } from "./paper-library-host";
-import { renderPageThumbnail } from "../canvas/renderer";
+import { paintedTextHeight, renderPageThumbnail } from "../canvas/renderer";
 import {
   PAPER_COPY_PREFIX,
   type PaperEntry,
@@ -293,7 +293,13 @@ import {
 } from "../model/document";
 import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
-import { drawnBounds, isBoard } from "../model/board";
+import {
+  boardDrawing,
+  boardDrawingBox,
+  drawnBounds,
+  isBoard,
+  textLinesHeight,
+} from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { nearbyTarget, relinkDocument } from "../model/moved-files";
 import { SetScrollDirection, scrollDirectionOf } from "../model/scroll-direction";
@@ -369,12 +375,15 @@ import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/save
 import { PANEL_SLIDE_MS, type PageSnapshot } from "./motion";
 import {
   type LastPages,
+  anchoredSpot,
   forgetInLastPages,
   LAST_PAGES_KEY,
   lastPageIndex,
   parseLastPages,
   rememberPage,
+  lastBoardSpot,
   renameInLastPages,
+  spotAnchor,
 } from "../model/last-page";
 import { NoteAudio } from "./note-audio";
 import { LoadGuard } from "./load-guard";
@@ -825,6 +834,9 @@ export class InkView extends TextFileView {
       this.doc,
       (path) =>
         (log.length > 0 ? this.plugin.fileMoves.relink(path, log) : undefined) ??
+        nearbyTarget(notePath, exists, path),
+      (path) =>
+        (log.length > 0 ? this.plugin.fileMoves.relinkFolder(path, log) : undefined) ??
         nearbyTarget(notePath, exists, path),
     );
     // Paths rewritten in place, on any page: nothing else can tell the save cache.
@@ -1450,10 +1462,37 @@ export class InkView extends TextFileView {
     this.requestBodySave();
   }
 
-  /** The page as the reader sees it, sized for a vision model. */
-  private async renderForAi(page: Page): Promise<RenderedPage | null> {
+  /** Canvas used only to measure text boxes that grow with their text. */
+  private measureCtx: CanvasRenderingContext2D | null = null;
+
+  /** A text box's height as the page paints it (`paintedTextHeight`). */
+  private textHeight(text: TextBoxElement): number {
+    this.measureCtx ??= createEl("canvas").getContext("2d");
+    return this.measureCtx ? paintedTextHeight(this.measureCtx, text) : textLinesHeight(text);
+  }
+
+  /**
+   * A board's page cut down to its drawing (`boardDrawing`), or to `area`;
+   * its long text boxes measured, so the cut holds all of their text.
+   */
+  private boardDrawing(
+    page: Page,
+    area?: { x: number; y: number; width: number; height: number },
+  ): Page {
+    return boardDrawing(page, area ?? boardDrawingBox(page, (text) => this.textHeight(text)));
+  }
+
+  /**
+   * The page as the reader sees it, sized for a vision model. A board's
+   * drawing alone, or the part of it in `area` (page px): the whole page
+   * would shrink its writing past reading.
+   */
+  private async renderForAi(
+    page: Page,
+    area?: { x: number; y: number; width: number; height: number },
+  ): Promise<RenderedPage | null> {
     if (!this.backdrops) return null;
-    return renderPageForAi(page, this.backdrops, {
+    return renderPageForAi(this.isBoard ? this.boardDrawing(page, area) : page, this.backdrops, {
       usePressure: this.settings.pressureWidth,
       highlighterAlpha: this.settings.highlighterAlpha,
       // Pictures the page shows are part of what the model should see. One
@@ -1732,8 +1771,6 @@ export class InkView extends TextFileView {
 
   /** Ask, in the layout last chosen: a window, or the sidebar beside the page. */
   private openAsk(): void {
-    // TODO(#46 phase 4): on a board, Ask asks about what is on screen, not
-    // about pages picked from a list.
     if (this.isDamaged()) return;
     if (this.settings.askLayout === "sidebar" && this.chatPanel) {
       this.setChatPanel(true);
@@ -1861,6 +1898,7 @@ export class InkView extends TextFileView {
           totalPages: this.doc.pages.length,
           save: this.settings.askSaveChats,
           attachPage: this.settings.askAttachPage,
+          screen: this.isBoard,
         },
       );
       this.askSession = session;
@@ -2258,10 +2296,13 @@ export class InkView extends TextFileView {
   private async collectAskPages(indexes: readonly number[]): Promise<AskPagesResult> {
     const images: ChatImage[] = [];
     const pageNumbers: number[] = [];
+    // A board is asked about as the screen shows it (FineNotes#46).
+    const seen = this.isBoard ? this.surface?.visiblePageRect(0) : null;
+    const screen = seen ? { x: seen.x, y: seen.y, width: seen.w, height: seen.h } : undefined;
     for (const index of indexes) {
       const page = this.doc.pages[index];
       if (!page) continue;
-      const rendered = await this.renderForAi(page);
+      const rendered = await this.renderForAi(page, screen);
       if (!rendered) continue;
       images.push({ base64: rendered.base64, mimeType: "image/png" });
       pageNumbers.push(index + 1);
@@ -2321,7 +2362,11 @@ export class InkView extends TextFileView {
     if (!page) return false;
     const view = surface.visiblePageRect(index);
     const frame = below
-      ? textBoxBelow(page.geometry, view, drawnBounds(page)?.maxY ?? null)
+      ? textBoxBelow(
+          page.geometry,
+          view,
+          drawnBounds(page, (t) => this.textHeight(t))?.maxY ?? null,
+        )
       : textBoxFrame(page.geometry, view);
     const box: TextBoxElement = {
       id: nextElementId(surface.document, "t"),
@@ -3092,7 +3137,7 @@ export class InkView extends TextFileView {
         onSelectPage: (index, fromOverview) => this.surface?.goToPage(index, !fromOverview),
         onPageAction: (action, index, anchor) => this.pageAction(action, index, anchor),
         onSelectSection: (index, section, fromOverview) =>
-          this.surface?.goToPagePoint(index, section.y, !fromOverview),
+          this.surface?.goToPagePoint(index, section.y, !fromOverview, section.x),
         onSectionAction: (action, index, section) => this.sectionAction(action, index, section),
         onAddPage: (anchor) => this.openAddPage(anchor, this.doc.pages.length - 1, "last"),
         onClose: () => {
@@ -3229,7 +3274,11 @@ export class InkView extends TextFileView {
         onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
         onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
         canCorrectWords: () => this.settings.handwritingOnDevice !== false,
-        onReadingPoint: (index, y) => this.sidebar?.setReadingPoint(index, y),
+        onReadingPoint: (index, y) => {
+          this.sidebar?.setReadingPoint(index, y);
+          // A board never changes page: where it was left is where it was scrolled.
+          if (this.isBoard) this.scheduleLastPage();
+        },
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
         onMakeTask: (index, strokeIds) => this.makeInkTask(index, strokeIds),
@@ -3630,6 +3679,7 @@ export class InkView extends TextFileView {
     };
     new NoteSettingsModal(this.app, {
       single: this.isSinglePage,
+      board: this.isBoard,
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
       joinedPages: () => joinedPagesOf(this.surface?.document ?? this.doc),
@@ -3803,8 +3853,8 @@ export class InkView extends TextFileView {
    * reading only the text boxes light up.
    */
   private async showSearchHits(index: number, query: string): Promise<void> {
-    // TODO(#46 phase 4): on a board, search flies to the word itself; going
-    // to its page shows nothing there, the board being one page.
+    // On a board, going to its page does nothing: the hits, once lit, take
+    // the view to the first of them (`setSearchHits`).
     const surface = this.surface;
     const page = surface?.document.pages[index];
     if (!surface || !page) return;
@@ -3912,7 +3962,11 @@ export class InkView extends TextFileView {
       // A notebook opened anew starts at fit zoom (a board at 100% on its middle),
       // whatever this leaf showed before.
       surface.showHome();
-      index ??= lastPageIndex(this.loadLastPages(), path, pages);
+      // A board goes back to where it was left on its one page.
+      const spot =
+        this.isBoard && subpath === null ? lastBoardSpot(this.loadLastPages(), path) : null;
+      if (spot && pages[0]) surface.showBoardSpot(anchoredSpot(spot, pages[0]));
+      else index ??= lastPageIndex(this.loadLastPages(), path, pages);
     }
     if (index !== null) surface.goToPage(index);
     const search = this.pendingSearch;
@@ -3957,7 +4011,10 @@ export class InkView extends TextFileView {
     const index = surface.currentPage;
     const page = surface.document.pages[index];
     if (!page) return;
-    this.saveLastPages(rememberPage(this.loadLastPages(), path, page.id, index, Date.now()));
+    const at = surface.boardSpot();
+    const anchor = at ? spotAnchor(page) : undefined;
+    const spot = at ? { ...at, ...(anchor ? { anchor } : {}) } : undefined;
+    this.saveLastPages(rememberPage(this.loadLastPages(), path, page.id, index, Date.now(), spot));
   }
 
   /** A note was renamed or deleted: its remembered page follows it, or goes. */
@@ -3983,12 +4040,14 @@ export class InkView extends TextFileView {
    * protected: its pages may not be the pages on disk.
    */
   exportPdf(chosen?: readonly number[]): void {
-    // TODO(#46 phase 4): a board exports as one PDF page the size of its
-    // drawing, with no "This page" or "Choose pages"; today it is the whole
-    // (mostly empty) page.
     const note = this.file;
     if (this.isDamaged() || !note) return;
-    const doc = this.surface?.document ?? this.doc;
+    const open = this.surface?.document ?? this.doc;
+    // A board (FineNotes#46) exports as one page the size of its drawing,
+    // not metres of empty paper around it.
+    const doc: Pick<InkDocument, "pages"> = isBoard(open)
+      ? { pages: open.pages.map((page) => this.boardDrawing(page)) }
+      : open;
     const total = doc.pages.length;
     if (total === 0) return;
     const exports = this.attachmentFolder("exports");
@@ -4170,6 +4229,9 @@ export class InkView extends TextFileView {
     if (practice) void this.loadLearnElsewhere();
     // A PDF's pages become pages: a board has none to add.
     this.toolbar?.setInsertPdfVisible(!this.isBoard);
+    // Nor does it take pages sent from another notebook (`transferTargets`).
+    if (this.file) this.plugin.noteBoard(this.file.path, this.isBoard);
+    this.toolbar?.setBoard(this.isBoard);
     this.surface?.setPractice(practice ? deviceKind() : null);
     if (single || practice) {
       this.addPagePopover?.popover.close();

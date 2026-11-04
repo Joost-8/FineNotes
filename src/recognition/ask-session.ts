@@ -100,6 +100,12 @@ export class AskSession {
    * "Attach the page", FineNotes discussion #107) starts it with none.
    */
   attachPage: boolean;
+  /**
+   * An endless board (FineNotes#46): its one page is sent with every
+   * question, as the screen shows it then (`preparePages` renders what is
+   * in view), so there is nothing to pick and nothing already sent.
+   */
+  readonly screen: boolean;
   private created: string | null = null;
   /** Bumped by every new chat, so an answer to an old one is dropped. */
   private generation = 0;
@@ -107,16 +113,24 @@ export class AskSession {
 
   constructor(
     private readonly deps: AskSessionDeps,
-    options: { page: number; totalPages: number; save: boolean; attachPage?: boolean },
+    options: {
+      page: number;
+      totalPages: number;
+      save: boolean;
+      attachPage?: boolean;
+      screen?: boolean;
+    },
   ) {
     this.totalPages = options.totalPages;
     this.save = options.save;
     this.attachPage = options.attachPage !== false;
+    this.screen = options.screen === true;
     this.selected = this.startPages(options.page);
   }
 
   /** What a new chat on `page` starts with picked. */
   private startPages(page: number): number[] {
+    if (this.screen) return [1];
     return this.attachPage && page >= 1 && page <= this.totalPages ? [page] : [];
   }
 
@@ -269,10 +283,10 @@ export class AskSession {
     const generation = this.generation;
     const first = this.turns.length === 0;
     const sent = this.sentPages;
-    const newPages = this.selected.filter((p) => !sent.has(p));
+    const newPages = this.screen ? [...this.selected] : this.selected.filter((p) => !sent.has(p));
     const files = [...this.attachments];
     const reading = [
-      ...(newPages.length ? [pagesPhrase(newPages)] : []),
+      ...(newPages.length ? [this.screen ? t("ai.ask.screenPhrase") : pagesPhrase(newPages)] : []),
       ...files.map((f) => f.name),
     ];
     this.outstanding = {
@@ -300,7 +314,7 @@ export class AskSession {
         if (stale()) return;
         if (pages.images.length === 0) {
           if (first && files.length === 0) {
-            throw new Error(t("ai.ask.nothingToSend"));
+            throw new Error(t(this.screen ? "ai.ask.nothingOnScreen" : "ai.ask.nothingToSend"));
           }
         } else {
           turn = this.questionWithPages(text, pages, first);
@@ -402,6 +416,21 @@ export class AskSession {
   /** A question carrying page images, with the line that names them. */
   private questionWithPages(question: string, pages: AskPagesResult, first: boolean): ChatTurn {
     const total = pages.totalPages || this.totalPages;
+    if (this.screen) {
+      const line = first
+        ? "The image is what is on screen of an endless board (one large page that grows as it " +
+          "is drawn on), as it was when this question was asked."
+        : "Another image: what is on screen of the board now.";
+      return {
+        role: "user",
+        text: `${line}
+
+${question}`,
+        shown: question,
+        images: pages.images,
+        pages: pages.pageNumbers,
+      };
+    }
     const text = first
       ? buildAskFirstTurn(question, pages.images, pages.pageNumbers, total).text
       : `${addedLine(pages.pageNumbers, total)}\n\n${question}`;

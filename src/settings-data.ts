@@ -357,7 +357,7 @@ export interface GoodObsidianSettings {
   toolbarLayout: ToolbarLayout;
   /** The Home button has been put on a bar customized before it existed (once). */
   toolbarHomeAdded: boolean;
-  /** The simple look: Obsidian's own chrome hidden (`model/simple-mode.ts`). On for a new install; an update leaves a vault as it was. */
+  /** The simple look: Obsidian's own chrome hidden (`model/simple-mode.ts`). On for a new install, and for a vault that updates (with an Undo in the note shown once). */
   simpleLook: boolean;
   /** The note saying how to get normal Obsidian back has been shown (once). */
   simpleLookHinted: boolean;

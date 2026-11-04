@@ -991,6 +991,7 @@ export class PageSidebar {
     this.board = board;
     this.tabButtons.get("pages")?.toggleClass("is-hidden", board);
     this.syncContentsAdd();
+    this.renderContents();
     if (board && this.tab === "pages") this.showTab("contents");
   }
 
@@ -1190,16 +1191,23 @@ export class PageSidebar {
     }
     const go = row.createEl("button", { cls: "goodobsidian-contents-entry clickable-icon" });
     go.createSpan({ cls: "goodobsidian-contents-title", text: entry.title });
-    go.createSpan({ cls: "goodobsidian-contents-page", text: String(entry.index + 1) });
+    // A board is one page: a page number would say nothing.
+    if (!this.board) {
+      go.createSpan({ cls: "goodobsidian-contents-page", text: String(entry.index + 1) });
+    }
     go.setAttribute(
       "aria-label",
-      t("view.sidebar.entryLabel", { title: entry.title, page: entry.index + 1 }),
+      this.board
+        ? entry.title
+        : t("view.sidebar.entryLabel", { title: entry.title, page: entry.index + 1 }),
     );
     const section = entry.section;
     go.addEventListener("click", () => {
       if (section) this.callbacks.onSelectSection?.(entry.index, section);
       else this.callbacks.onSelectPage(entry.index);
     });
+    // A board's page menu holds page actions it has none of; its headings keep theirs.
+    if (this.board && !section) return row;
     const more = row.createEl("button", { cls: "goodobsidian-contents-more clickable-icon" });
     setIcon(more, "chevron-down");
     more.setAttribute("aria-label", t("view.sidebar.entryOptions"));
@@ -1231,8 +1239,6 @@ export class PageSidebar {
   /**
    * "Add page N to contents", for the page being read, unless it is listed
    * already. Not on a board: its contents are its headings.
-   * TODO(#46 phase 4): a board's entries drop their page number and page
-   * menu, and a tap flies to the heading.
    */
   private syncContentsAdd(): void {
     const page = this.doc?.pages[this.current];

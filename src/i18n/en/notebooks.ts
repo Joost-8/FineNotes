@@ -417,6 +417,7 @@ export const notebooks = {
   "notebooks.command.keyboardShortcuts": "Show keyboard shortcuts",
   "notebooks.command.readOnDevice": "Show this page read on this device",
   "notebooks.command.fitReset": "Fit the page and go to the top",
+  "notebooks.command.fitBoard": "Fit the whole drawing on screen",
   "notebooks.command.zoomIn": "Zoom in",
   "notebooks.command.zoomOut": "Zoom out",
   "notebooks.command.stylusOnly": "Turn Stylus-only mode on or off",
@@ -648,6 +649,7 @@ export const notebooks = {
   "notebooks.newNotebook.vaultRoot": "Vault root",
   "notebooks.noteSettings.pageTitle": "Page settings",
   "notebooks.noteSettings.title": "Notebook settings",
+  "notebooks.noteSettings.boardTitle": "Board settings",
   "notebooks.noteSettings.updateOut": "FineNotes {version} is out",
   "notebooks.noteSettings.update": "Update",
   "notebooks.noteSettings.updateOpen": "Open FineNotes in Community plugins to update it",
@@ -658,6 +660,7 @@ export const notebooks = {
   "notebooks.noteSettings.muteUpdateInfo": 'Stop showing "Update available"; the gear\'s dot stays',
   "notebooks.noteSettings.renamePage": "Rename the page",
   "notebooks.noteSettings.renameNotebook": "Rename the notebook",
+  "notebooks.noteSettings.renameBoard": "Rename the board",
   "notebooks.noteSettings.pages.one": "1 page",
   "notebooks.noteSettings.pages.other": "{count} pages",
   "notebooks.noteSettings.edited": "edited {date}",
@@ -886,10 +889,9 @@ export const notebooks = {
   "notebooks.untitled.board": "Untitled board",
   "notebooks.untitled.notebook": "Untitled notebook",
 
-  // The simple look's one-time notice (main.ts).
-  "notebooks.simpleLook.notice":
-    "Simple look is on: Obsidian's sidebars, ribbon and bars are hidden. To get normal Obsidian back, turn Simple look off in FineNotes' settings.",
-  "notebooks.simpleLook.openSettings": "Open settings",
+  // The simple look's one-time notice, with an Undo (main.ts).
+  "notebooks.simpleLook.newLook":
+    "This is the new look of FineNotes: Obsidian's sidebars, ribbon and bars are hidden. You can go back to the original any time (Simple look, in FineNotes' settings).",
 
   // Home, the notebook library (view/library-view.ts and its models).
   "notebooks.home.title": "Home",
@@ -974,4 +976,21 @@ export const notebooks = {
   "notebooks.home.when.hours.one": "{count} h ago",
   "notebooks.home.when.hours.other": "{count} h ago",
   "notebooks.home.when.yesterday": "Yesterday",
+  // The question a Delete asks: what goes, and what stays.
+  "notebooks.home.delete.quoted": '"{name}"',
+  /** "a, b and c": {head} is the items before the last, joined with commas. */
+  "notebooks.home.delete.and": "{head} and {last}",
+  "notebooks.home.delete.more.one": "{count} more",
+  "notebooks.home.delete.more.other": "{count} more",
+  "notebooks.home.delete.titleOne": "Delete {name}?",
+  "notebooks.home.delete.titleNotebooks.one": "Delete {count} notebook?",
+  "notebooks.home.delete.titleNotebooks.other": "Delete {count} notebooks?",
+  "notebooks.home.delete.titleFolder": "Delete the folder {name}?",
+  "notebooks.home.delete.titleFolders.one": "Delete {count} folder?",
+  "notebooks.home.delete.titleFolders.other": "Delete {count} folders?",
+  "notebooks.home.delete.goesOne": "{list} will be deleted, with its files.",
+  "notebooks.home.delete.goesMany": "{list} will be deleted, with their files.",
+  "notebooks.home.delete.foldersGo": "The empty folders will be deleted.",
+  "notebooks.home.delete.kept.one": "{count} other file stays where it is.",
+  "notebooks.home.delete.kept.other": "{count} other files stay where they are.",
 } as const;

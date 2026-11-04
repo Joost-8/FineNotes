@@ -92,6 +92,17 @@ export function moveStyles(styles: FolderStyles, from: string, to: string): Fold
 /** What a file name cannot hold: both slashes (code 92 is the backslash), and the rest. */
 const BAD_NAME_CHARS = `${String.fromCharCode(92)}/:*?"<>|`;
 
+/** `paths` without `gone` and whatever lay below it: what a delete leaves. */
+export function dropPaths(paths: readonly string[], gone: string): string[] {
+  return paths.filter((p) => p !== gone && !p.startsWith(`${gone}/`));
+}
+
+/** The looks without `gone`'s and those of the folders below it. */
+export function dropStyles(styles: FolderStyles, gone: string): FolderStyles {
+  const kept = new Set(dropPaths(Object.keys(styles), gone));
+  return Object.fromEntries(Object.entries(styles).filter(([path]) => kept.has(path)));
+}
+
 /** A name for a file or folder: the typed text without slashes or edge blanks; "" if nothing is left. */
 export function cleanName(raw: string): string {
   let out = "";

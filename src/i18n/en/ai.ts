@@ -70,11 +70,17 @@ export const ai = {
   "ai.ask.pageCount.other": "{count} pages",
   "ai.ask.pagesPhrase.one": "page {list}",
   "ai.ask.pagesPhrase.other": "pages {list}",
+  /** What "Reading {items}…" reads on a board: what is on screen. */
+  "ai.ask.screenPhrase": "the screen",
   "ai.ask.notePick": "Pick the pages to ask about.",
   "ai.ask.notePickSaved": "Pick the pages to ask about. Saved in AI chats.",
   "ai.ask.noteAsking": "Asking {target}. It can use your notebook.",
   "ai.ask.noteAskingSaved": "Asking {target}. It can use your notebook. Saved in AI chats.",
   "ai.ask.noteSends": "Sends {pages} to {target} with your question. It can use your notebook.",
+  "ai.ask.noteScreen":
+    "Sends what is on screen to {target} with your question. It can use your notebook.",
+  "ai.ask.noteScreenSaved":
+    "Sends what is on screen to {target} with your question. It can use your notebook. Saved in AI chats.",
   "ai.ask.noteSendsSaved":
     "Sends {pages} to {target} with your question. It can use your notebook. Saved in AI chats.",
   "ai.ask.fromVault": "From your vault…",
@@ -94,6 +100,9 @@ export const ai = {
   "ai.ask.emptyOne": "Ask about this page",
   "ai.ask.emptyMany": "Ask about these pages",
   "ai.ask.emptyFile": "Ask about this",
+  "ai.ask.emptyScreen": "Ask about what is on screen",
+  "ai.ask.suggestScreen.explain": "Explain what is on screen",
+  "ai.ask.suggestScreen.summarise": "Summarise this",
   "ai.ask.suggestOne.summarise": "Summarise this page",
   "ai.ask.suggestOne.explain": "Explain this step by step",
   "ai.ask.suggestOne.check": "Check my work for mistakes",
@@ -119,6 +128,7 @@ export const ai = {
   "ai.ask.reading": "Reading {items}…",
   "ai.ask.pickFirst": "pick a page or attach a file to ask about first.",
   "ai.ask.nothingToSend": "there is nothing on these pages to send.",
+  "ai.ask.nothingOnScreen": "there is nothing on screen to send.",
   "ai.ask.done": "Done.",
   "ai.attach.already": "{name} is already attached.",
   "ai.attach.tooBig":

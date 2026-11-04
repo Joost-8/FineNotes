@@ -10,7 +10,7 @@
 
 import { localeTag, t, tn } from "../i18n/translate";
 import { type PageGeometry, type PdfBackdrop, isCoverRuling } from "./document";
-import { stripInkSuffix } from "./new-notebook";
+import { inkFileSuffix, stripInkSuffix } from "./new-notebook";
 import { parseInkFile } from "./serialize";
 
 /** What the library knows of one notebook. */
@@ -41,7 +41,7 @@ export interface LibraryEntry {
 export function placeholderEntry(path: string, edited: number): LibraryEntry {
   return {
     path,
-    title: stripInkSuffix(baseName(path)),
+    title: titleOf(baseName(path)),
     folder: folderOf(path),
     pages: 0,
     color: FALLBACK_COLOR,
@@ -50,6 +50,11 @@ export function placeholderEntry(path: string, edited: number): LibraryEntry {
     covered: false,
     edited,
   };
+}
+
+/** A notebook's name: its file's without the ink suffix, or the ".md" of one marked ink in its frontmatter. */
+function titleOf(name: string): string {
+  return inkFileSuffix(name) ? stripInkSuffix(name) : name.replace(/.md$/i, "");
 }
 
 /** Cover colour for a notebook with none to read. */
@@ -151,9 +156,14 @@ export function browse(entries: readonly LibraryEntry[], folder: string): Listin
  * The notebooks as the library files them: a folder that holds a single
  * notebook (a notebook in a folder of its own, say) is not worth a visit, so
  * its notebook is filed in the folder above, and above that while that one
- * holds no other either. Only `folder` changes, never `path`.
+ * holds no other either. A folder in `kept` (one the user made or styled in
+ * the library) stays a folder however few it holds. Only `folder` changes,
+ * never `path`.
  */
-export function hoistSingles(entries: readonly LibraryEntry[]): LibraryEntry[] {
+export function hoistSingles(
+  entries: readonly LibraryEntry[],
+  kept: (folder: string) => boolean = () => false,
+): LibraryEntry[] {
   const counts = new Map<string, number>();
   for (const entry of entries) {
     for (let at = entry.folder; at !== ""; at = folderOf(at))
@@ -161,7 +171,7 @@ export function hoistSingles(entries: readonly LibraryEntry[]): LibraryEntry[] {
   }
   return entries.map((entry) => {
     let folder = entry.folder;
-    while (folder !== "" && counts.get(folder) === 1) folder = folderOf(folder);
+    while (folder !== "" && counts.get(folder) === 1 && !kept(folder)) folder = folderOf(folder);
     return folder === entry.folder ? entry : { ...entry, folder };
   });
 }

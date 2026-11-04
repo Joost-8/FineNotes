@@ -16,6 +16,7 @@ import {
   type FileMove,
   cleanMoveLog,
   followMoves,
+  movedFolderTarget,
   movedTarget,
   recordMove,
   relinkDocument,
@@ -44,6 +45,8 @@ export class FileMoveTracker {
   private again = false;
   /** Whether the renames since the last pass moved anything but ink notes. */
   private pending = false;
+  /** Whether files were reported after the folder they moved with (see `flush`). */
+  private followed = false;
   private cached: FileMove[] | null = null;
 
   constructor(
@@ -70,8 +73,14 @@ export class FileMoveTracker {
   /** Obsidian's `rename` event. */
   renamed(file: TAbstractFile, oldPath: string): void {
     const log = this.log();
-    // A folder's own rename already says where everything inside it went.
-    if (followMoves(log, oldPath) === file.path) return;
+    // A folder's own rename already says where everything inside it went. The
+    // same move logged before is not that: its folder was deleted, and a new
+    // one of the same name has taken the same way.
+    const repeat = log.some((move) => move.from === oldPath && move.to === file.path);
+    if (!repeat && followMoves(log, oldPath) === file.path) {
+      this.followed = true;
+      return;
+    }
     this.cached = recordMove(log, oldPath, file.path);
     this.app.saveLocalStorage(LOG_KEY, JSON.stringify(this.cached));
     // Renaming a notebook moves nothing a note points at.
@@ -89,12 +98,24 @@ export class FileMoveTracker {
     return movedTarget(log, (to) => this.app.vault.getAbstractFileByPath(to) !== null, path);
   }
 
+  /** Where a folder the note saves in moved to, though it may not exist yet (`movedFolderTarget`). */
+  relinkFolder(path: string, log: readonly FileMove[] = this.log()): string | undefined {
+    return movedFolderTarget(log, (to) => this.app.vault.getAbstractFileByPath(to) !== null, path);
+  }
+
   /** Relink the closed notes in the background (open ones relinked as the moves came in). */
   flush(): Promise<void> {
     window.clearTimeout(this.timer);
     this.timer = 0;
     if (!this.pending) return this.running ?? Promise.resolve();
     this.pending = false;
+    // Again for the open notebooks: Obsidian reports a moved folder before
+    // the files inside it, and while they still answer at their old paths
+    // nothing there looked moved (a board's Images folder, a PDF inside).
+    if (this.followed) {
+      this.followed = false;
+      this.host.relinkOpen();
+    }
     if (this.running) {
       this.again = true;
       return this.running;
@@ -123,16 +144,17 @@ export class FileMoveTracker {
     const log = this.log();
     if (log.length === 0) return;
     const relink = (path: string) => this.relink(path, log);
+    const relinkFolder = (path: string) => this.relinkFolder(path, log);
     const width = this.host.paperWidth();
     for (const file of this.app.vault.getMarkdownFiles()) {
       if (!this.host.isInkFile(file) || this.host.openNotePaths().has(file.path)) continue;
       try {
         const { doc } = parseInkFile(await this.app.vault.cachedRead(file), width);
-        if (!doc || relinkDocument(doc, relink) === 0) continue;
+        if (!doc || relinkDocument(doc, relink, relinkFolder) === 0) continue;
         // Read again inside the write, in case the note changed meanwhile.
         await this.app.vault.process(file, (data) => {
           const parsed = parseInkFile(data, width);
-          if (!parsed.doc || relinkDocument(parsed.doc, relink) === 0) return data;
+          if (!parsed.doc || relinkDocument(parsed.doc, relink, relinkFolder) === 0) return data;
           return buildInkFile(parsed.body, parsed.doc);
         });
       } catch {

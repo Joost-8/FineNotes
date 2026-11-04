@@ -119,6 +119,17 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   return out;
 }
 
+/**
+ * What the New notebook dialog opens with: the remembered paper, cover and
+ * size, as the kind the entry asked for. The kind is never the remembered
+ * one: New notebook opens a notebook right after a board was made, and New
+ * board a board. "Create notebook with last settings" and the `last` link
+ * make theirs from it too, so they also make a notebook after a board.
+ */
+export function dialogChoices(raw: unknown, kind: NotebookType = "notebook"): NotebookChoices {
+  return { ...parseNotebookChoices(raw), type: kind };
+}
+
 /** The My templates entry the dialog made a notebook of last time. */
 export interface NotebookTemplateChoice {
   /** Vault path of the library's PDF. */
@@ -285,7 +296,11 @@ export interface NotebookPaths {
   folder: string;
   /** The notebook file's name, suffix included. */
   fileName: string;
-  /** Every folder the notebook needs, parents first; the caller creates the missing ones. */
+  /**
+   * Every folder to create now, parents first; the caller creates the
+   * missing ones. A board's `attachments` are left out: each is made the
+   * first time something is saved in it.
+   */
   folders: string[];
   /** Where its pictures, recordings, transcripts, AI chats and exports go, with its own folder. */
   attachments?: AttachmentFolders;
@@ -304,6 +319,11 @@ export interface NotebookPaths {
  *   <dir>/<Title>/Transcripts/
  *   <dir>/<Title>/AI chats/
  *   <dir>/<Title>/Exports/
+ *
+ * A board (FineNotes discussion #43) gets the same folder and the same
+ * places for its files, but only the folder is made now: a board is one
+ * drawing, and five empty folders beside it read as clutter, not as the
+ * notebook. Every writer makes its folder when it first saves there.
  */
 export function notebookPaths(
   dir: string,
@@ -335,10 +355,11 @@ export function notebookPaths(
   const [images, audio, transcripts, chats, exports] = OWN_FOLDERS.map((sub) =>
     joinVaultPath(folder, sub),
   );
+  const subfolders = type === "endless" ? [] : [images, audio, transcripts, chats, exports];
   return {
     folder,
     fileName: `${name}${suffix}`,
-    folders: [...(parent ? [parent] : []), folder, images, audio, transcripts, chats, exports],
+    folders: [...(parent ? [parent] : []), folder, ...subfolders],
     attachments: { images, audio, transcripts, chats, exports },
   };
 }

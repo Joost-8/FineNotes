@@ -9,6 +9,7 @@ import {
   MOVE_LOG_LIMIT,
   cleanMoveLog,
   followMoves,
+  movedFolderTarget,
   movedTarget,
   nearbyTarget,
   recordMove,
@@ -171,6 +172,72 @@ describe("movedTarget", () => {
     expect(movedTarget(log, () => false, "a.pdf")).toBeUndefined();
     expect(movedTarget(log, () => false, "other.pdf")).toBeUndefined();
     expect(movedTarget(log, () => false, "")).toBeUndefined();
+  });
+});
+
+describe("movedFolderTarget", () => {
+  // A board makes only its own folder; its Images/, Recordings/ … come with the first file.
+  const board = { images: "Ideas/Images", audio: "Ideas/Recordings" };
+
+  it("follows the board's folder renamed, though its own folder is not made yet", () => {
+    const log = [{ from: "Ideas", to: "Plans" }];
+    const exists = (path: string) => path === "Plans" || path === "Plans/Plans.notebook.md";
+    expect(movedFolderTarget(log, exists, board.images)).toBe("Plans/Images");
+    const doc = emptyDocument();
+    doc.folders = { ...board };
+    const relink = (path: string) => movedTarget(log, exists, path);
+    const relinkFolder = (path: string) => movedFolderTarget(log, exists, path);
+    expect(relinkDocument(doc, relink, relinkFolder)).toBe(2);
+    expect(doc.folders).toEqual({ images: "Plans/Images", audio: "Plans/Recordings" });
+  });
+
+  it("follows the board's folder dragged into another folder", () => {
+    const log = [{ from: "Ideas", to: "Archive/2026/Ideas" }];
+    const exists = (path: string) => path === "Archive/2026/Ideas" || path === "Archive/2026";
+    expect(movedFolderTarget(log, exists, board.images)).toBe("Archive/2026/Ideas/Images");
+  });
+
+  it("follows a folder further up, for a folder the user chose", () => {
+    const log = [{ from: "Courses", to: "Uni" }];
+    const exists = (path: string) => path === "Uni";
+    expect(movedFolderTarget(log, exists, "Courses/Physics/Images")).toBe("Uni/Physics/Images");
+  });
+
+  it("takes a folder that moved and exists, as a file", () => {
+    const log = [{ from: "Ideas/Images", to: "Pictures" }];
+    expect(movedFolderTarget(log, (path) => path === "Pictures", board.images)).toBe("Pictures");
+  });
+
+  it("leaves a folder while it, or a folder above it, is still there", () => {
+    const log = [{ from: "Ideas", to: "Plans" }];
+    // A new "Ideas" was made where the old one was: saving there is right.
+    expect(
+      movedFolderTarget(log, (path) => path === "Ideas" || path === "Plans", board.images),
+    ).toBeUndefined();
+    expect(movedFolderTarget(log, () => true, board.images)).toBeUndefined();
+  });
+
+  it("leaves a folder when nothing above it moved, or moved nowhere", () => {
+    expect(movedFolderTarget([], () => false, board.images)).toBeUndefined();
+    const log = [{ from: "Ideas", to: "Plans" }];
+    expect(movedFolderTarget(log, () => false, board.images)).toBeUndefined();
+    expect(movedFolderTarget(log, () => false, "")).toBeUndefined();
+    expect(movedFolderTarget(log, (path) => path === "Plans", "Other/Images")).toBeUndefined();
+  });
+
+  it("is not used for files: a file must exist where it went", () => {
+    const log = [{ from: "Ideas", to: "Plans" }];
+    const doc = emptyDocument();
+    doc.recordings = [{ id: "r1", path: "Ideas/Recordings/r.m4a", start: 0, duration: 1 }];
+    doc.folders = { ...board };
+    const exists = (path: string) => path === "Plans";
+    relinkDocument(
+      doc,
+      (path) => movedTarget(log, exists, path),
+      (path) => movedFolderTarget(log, exists, path),
+    );
+    expect(doc.recordings[0].path).toBe("Ideas/Recordings/r.m4a");
+    expect(doc.folders.images).toBe("Plans/Images");
   });
 });
 

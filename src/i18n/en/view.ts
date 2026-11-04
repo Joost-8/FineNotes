@@ -240,6 +240,7 @@ export const view = {
   "view.transfer.refuseSingle": "That is a single page, which takes no more pages.",
   "view.transfer.refusePractice": "A practice set has fixed pages.",
   "view.transfer.refuseReadOnly": "That notebook is read-only.",
+  "view.transfer.refuseBoard": "That is a board, which takes no pages.",
   "view.transfer.receive.one": "Receive page",
   "view.transfer.receive.other": "Receive pages",
   "view.transfer.copied.one": "Copied {count} page to {destination}.",

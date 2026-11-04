@@ -11448,6 +11448,13 @@ button.goodobsidian-learn-button.is-learning {
   opacity: 1;
 }
 
+/* A notebook's own folder with nothing in it but the notebook (a new board):
+   no arrow to an empty list. Hidden, not removed, so the rows stay aligned,
+   and a tap where it was opens the notebook. */
+.nav-folder-title.goodobsidian-folder-notebook.is-notebook-alone > .collapse-icon {
+  visibility: hidden;
+}
+
 /* The page sidebar's Files tab: a dropdown of kinds, then the Recordings
    panel or a grouped list of rows (icon, name, a line under it). */
 .goodobsidian-pagesidebar-files {
@@ -11842,6 +11849,11 @@ button.goodobsidian-learn-button.is-learning {
 .goodobsidian-newnb-under-title .goodobsidian-newnb-import > span:not([class]) {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* A board hides the import link; the folder chip keeps its place on the right. */
+.goodobsidian-newnb-under-title button.goodobsidian-newnb-import.clickable-icon.is-hidden {
+  display: none;
 }
 
 .goodobsidian-newnb-under-title .goodobsidian-newnb-folder.clickable-icon {
@@ -16055,6 +16067,10 @@ button.goodobsidian-library-star:active {
   border-radius: 10px;
   -webkit-tap-highlight-color: transparent;
   animation: gob-library-in 0.35s var(--gob-ease) both;
+}
+/* Drawn again where it stood (a read, a star): no second fade-in. */
+.goodobsidian-library-card.is-settled {
+  animation: none;
 }
 .goodobsidian-library-card:focus-visible {
   outline: 2px solid var(--interactive-accent);

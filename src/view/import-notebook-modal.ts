@@ -59,6 +59,12 @@ export interface ImportNotebookOptions {
   folder: string;
   /** Give each notebook a folder of its own, as "New notebook" does. */
   ownFolder: boolean;
+  /**
+   * Where a folder picked here really takes the notebooks (the host steps
+   * out of a notebook's own folder), so the button shows that. Left out,
+   * the folder picked.
+   */
+  placeFolder?: (folder: string) => string;
   /** Open a notebook the import wrote. */
   open: (file: TFile) => Promise<void>;
   /** Files already chosen (a template from the vault or a gallery): imported at once. */
@@ -276,7 +282,8 @@ export class ImportNotebookModal extends Modal {
       new FolderSuggestModal(
         this.app,
         (path) => {
-          this.folder = normalizeFolder(path);
+          const picked = normalizeFolder(path);
+          this.folder = normalizeFolder(this.options.placeFolder?.(picked) ?? picked);
           showFolder();
         },
         t("notebooks.importModal.folderPlaceholder"),
