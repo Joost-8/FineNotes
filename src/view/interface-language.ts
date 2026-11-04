@@ -2,7 +2,8 @@
  * Which language FineNotes' interface is in, and getting its table.
  *
  * English is built in. Any other language's table is fetched once from the
- * repository, at the tag of the running version (`table-file.ts`), and kept
+ * repository, at the tag of the running version (`table-file.ts`; the main branch when
+ * that tag has none, as in a build between releases), and kept
  * in the plugin folder, so it opens offline from then on. As in Obsidian, a
  * new language shows everywhere after a relaunch; the settings tab shows it
  * at once. A table that cannot be had leaves the interface in English.
@@ -80,13 +81,23 @@ export class InterfaceLanguage {
     }
   }
 
-  /** Fetch `code`'s table for this version and cache it; null on any failure. */
+  /**
+   * Fetch `code`'s table for this version and cache it; null on any failure.
+   * A version whose tag does not have the table (a build made between
+   * releases) takes it from the main branch instead.
+   */
   private async fetch(code: string): Promise<TextTable | null> {
     try {
-      const response = await withTimeout(
+      let response = await withTimeout(
         requestUrl({ url: tableUrl(this.host.version, code), throw: false }),
         FETCH_TIMEOUT_MS,
       );
+      if (response?.status === 404) {
+        response = await withTimeout(
+          requestUrl({ url: tableUrl("main", code), throw: false }),
+          FETCH_TIMEOUT_MS,
+        );
+      }
       if (!response || response.status !== 200) return null;
       const texts = tableOf(response.json);
       if (!texts) return null;

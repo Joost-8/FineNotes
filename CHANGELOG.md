@@ -62,6 +62,11 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **A language that would not load.** A build made between releases asked GitHub for
+  its words under a version tag that did not have them yet, so Spanish stayed
+  English after a relaunch. It now takes them from the main branch when the
+  tag has none.
+
 - **Colours on dark pages show what lands.** The colour picker, the text,
   fill, border, shape and Fill tool colours, the lasso's ink colours and a
   table cell's colours show each colour as the dark page shows it (a
