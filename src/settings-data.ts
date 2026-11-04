@@ -333,6 +333,24 @@ export interface GoodObsidianSettings {
   pageAppearance: PageAppearance;
   /** With dark pages, PDF pages are inverted too; off, they are shown as they are. */
   invertPdfPages: boolean;
+  /**
+   * Scanned PDF pages (no text of their own, or hardly any) are read on this
+   * device (OCR) for search, the text-snapping highlighter and Copy text,
+   * once the user has agreed to download the model. On unless false.
+   */
+  ocrScannedPdfs: boolean;
+  /**
+   * With OCR on, the text inside the pictures of PDF pages that have text of
+   * their own (figure labels) is read too, in the pictures' areas only. On
+   * unless false.
+   */
+  ocrFigureText: boolean;
+  /**
+   * Which OCR model reads: "fast" (the default), "accurate" or, on desktop
+   * only, "most-accurate" (recognition/ocr/ocr-model.ts). Checked where it is
+   * read: anything else, or a choice this device does not offer, is Fast.
+   */
+  ocrModel: string;
   /** Export as PDF leaves the cover tapes out, so what is under them shows. */
   exportWithoutTapes: boolean;
   /** The desk around the pages: as the page appearance has it, light, dark, or `deskColor`. */
@@ -521,6 +539,9 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
+  ocrScannedPdfs: true,
+  ocrFigureText: true,
+  ocrModel: "fast",
   exportWithoutTapes: false,
   desk: "auto",
   deskColor: LIGHT_PAPER.desk,
@@ -968,6 +989,8 @@ const CONVERSIONS: Record<
   // Anything it does not know is light, as `pagesAreDark` reads it.
   pageAppearance: { show: pageAppearanceOf, store: pageAppearanceOf },
   invertPdfPages: { show: (on) => on !== false, store: (on) => on !== false },
+  ocrScannedPdfs: { show: (on) => on !== false, store: (on) => on !== false },
+  ocrFigureText: { show: (on) => on !== false, store: (on) => on !== false },
 };
 
 /** A stored page appearance, with anything unknown read as light. */
@@ -1004,6 +1027,10 @@ export function changesTabLayout(key: string): boolean {
     key === "imageVendor" ||
     key === "pressureWidth" ||
     key === "speechModel" ||
-    key === "useLearnedHandwriting"
+    // The row "Scanned pages · <choice>" is named by it.
+    key === "ocrModel" ||
+    key === "useLearnedHandwriting" ||
+    // "Also read text inside figures" shows only while this is on.
+    key === "ocrScannedPdfs"
   );
 }

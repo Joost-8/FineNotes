@@ -184,7 +184,9 @@ function placeItem(item: PdfTextItem, toPage: Matrix): ItemBox | null {
   if (!(m[0] > 0) || Math.abs(m[1]) > MAX_SLOPE * m[0] || !(m[3] < 0)) return null;
   const ascent = item.ascent !== undefined && item.ascent > 0 ? item.ascent : DEFAULT_ASCENT;
   const descent =
-    item.descent !== undefined && item.descent !== 0 ? Math.abs(item.descent) : DEFAULT_DESCENT;
+    item.descent !== undefined && Number.isFinite(item.descent) && item.descent !== 0
+      ? Math.abs(item.descent)
+      : DEFAULT_DESCENT;
   const length = (item.width / scaleX) * m[0];
   const x0 = m[4];
   const x1 = x0 + length;

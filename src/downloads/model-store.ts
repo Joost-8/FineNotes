@@ -47,11 +47,46 @@ export interface AssetStoreDeps {
   get(
     url: string,
     range?: { start: number; end: number },
-  ): Promise<{ status: number; body: ArrayBuffer }>;
+  ): Promise<{ status: number; body: ArrayBuffer; total?: number }>;
   sha256(data: ArrayBuffer): Promise<string>;
   /** The format version a stored main file says it is in, or null when it is not this model. */
   formatOf(data: ArrayBuffer): number | null;
   sleep(ms: number): Promise<void>;
+}
+
+type FolderDeps = Pick<AssetStoreDeps, "list" | "read" | "write" | "rename" | "remove">;
+
+/**
+ * A folder's dependencies where some files (`names`) live in another folder:
+ * a name (or its `.download` temporary) goes to `shared`, the rest to `own`.
+ * A listing is both folders', so a shared file already stored by another
+ * model is found and never downloaded again.
+ */
+export function routedFolder(
+  own: FolderDeps,
+  shared: FolderDeps,
+  names: readonly string[],
+): FolderDeps {
+  const sharedNames = new Set(names);
+  const pick = (name: string): FolderDeps =>
+    sharedNames.has(name.endsWith(".download") ? name.slice(0, -".download".length) : name)
+      ? shared
+      : own;
+  return {
+    list: async () => {
+      const [mine, theirs] = await Promise.all([own.list(), shared.list()]);
+      return [
+        ...new Set([
+          ...mine.filter((n) => !sharedNames.has(n)),
+          ...theirs.filter((n) => sharedNames.has(n)),
+        ]),
+      ];
+    },
+    read: (name) => pick(name).read(name),
+    write: (name, data) => pick(name).write(name, data),
+    rename: (from, to) => pick(to).rename(from, to),
+    remove: (name) => pick(name).remove(name),
+  };
 }
 
 /** Tries per byte range before the download is given up, and the waits between them. */
@@ -65,6 +100,14 @@ class DownloadError extends Error {
     super(detail);
   }
 }
+
+/**
+ * A ranged answer that cannot be the bytes asked for: its `Content-Range`
+ * total is not the file's size (a CDN compressed the body and counted the
+ * range in compressed bytes), or the piece is not the length asked for. The
+ * file is then fetched once more as a single request without a range.
+ */
+class RangeMismatch extends Error {}
 
 export class AssetStore {
   private current: AssetState = { kind: "unknown" };
@@ -287,12 +330,42 @@ export class AssetStore {
     this.partialBytes = 0;
   }
 
-  /** Every byte of one file, in ranges, going on from an earlier attempt's. */
+  /**
+   * Every byte of one file, in ranges, going on from an earlier attempt's.
+   * When a server's answer to a range cannot be right (see
+   * {@link RangeMismatch}), the file is asked for again, once, in one piece;
+   * its size and SHA-256 are checked by the caller as always.
+   */
   private async fetchFile(file: ModelFile, before: number, total: number): Promise<ArrayBuffer> {
     if (this.partialFile !== file.name) {
       this.dropPartial();
       this.partialFile = file.name;
     }
+    try {
+      return await this.fetchRanged(file, before, total);
+    } catch (error) {
+      if (!(error instanceof RangeMismatch)) throw error;
+    }
+    this.dropPartial();
+    this.partialFile = file.name;
+    const answer = await this.getWithRetry(file.url);
+    this.partial = [new Uint8Array(answer.body)];
+    this.partialBytes = answer.body.byteLength;
+    this.emit({ type: "progress", received: before + this.partialBytes, total });
+    return this.joined();
+  }
+
+  private joined(): ArrayBuffer {
+    const out = new Uint8Array(this.partialBytes);
+    let o = 0;
+    for (const piece of this.partial) {
+      out.set(piece, o);
+      o += piece.byteLength;
+    }
+    return out.buffer;
+  }
+
+  private async fetchRanged(file: ModelFile, before: number, total: number): Promise<ArrayBuffer> {
     const progress = () =>
       this.emit({ type: "progress", received: before + this.partialBytes, total });
     progress();
@@ -308,31 +381,26 @@ export class AssetStore {
         break;
       }
       const expected = range.end - range.start + 1;
-      if (answer.body.byteLength !== expected) {
-        this.dropPartial();
-        throw new DownloadError("damaged", "a piece arrived short");
-      }
+      if (
+        (answer.total !== undefined && answer.total !== file.bytes) ||
+        answer.body.byteLength !== expected
+      )
+        throw new RangeMismatch();
       this.partial.push(new Uint8Array(answer.body));
       this.partialBytes += expected;
       progress();
     }
-    const out = new Uint8Array(this.partialBytes);
-    let o = 0;
-    for (const piece of this.partial) {
-      out.set(piece, o);
-      o += piece.byteLength;
-    }
-    return out.buffer;
+    return this.joined();
   }
 
   private async getWithRetry(
     url: string,
-    range: { start: number; end: number },
-  ): Promise<{ status: number; body: ArrayBuffer }> {
+    range?: { start: number; end: number },
+  ): Promise<{ status: number; body: ArrayBuffer; total?: number }> {
     let last: DownloadError | null = null;
     for (let attempt = 0; attempt <= RETRY_WAITS_MS.length; attempt++) {
       if (attempt > 0) await this.deps.sleep(RETRY_WAITS_MS[attempt - 1] ?? 0);
-      let answer: { status: number; body: ArrayBuffer };
+      let answer: { status: number; body: ArrayBuffer; total?: number };
       try {
         answer = await this.deps.get(url, range);
       } catch {
@@ -370,8 +438,10 @@ export class AssetStore {
   async remove(): Promise<void> {
     if (isBusy(this.current)) return;
     const names = new Set(await this.names());
+    // Files shared with other models stay: they are theirs too.
+    const shared = new Set(this.asset.shared?.files);
     for (const file of this.asset.files)
-      if (names.has(file.name)) await this.deps.remove(file.name);
+      if (names.has(file.name) && !shared.has(file.name)) await this.deps.remove(file.name);
     for (const other of storedVersions(this.asset, [...names]).others)
       await this.deps.remove(other.file).catch(() => {});
     this.dropPartial();

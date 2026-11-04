@@ -1,5 +1,6 @@
-Third-party notices for the bundled handwriting model, and for the PDF
-composition dependency and its bundled dependencies.
+Third-party notices for the bundled handwriting model, for the PDF
+composition dependency and its bundled dependencies, and for the on-device
+OCR (its bundled runtime and its downloaded models).
 
 
 pdf-lib
@@ -259,6 +260,64 @@ required, and this one is given as attribution.
 Brent's root-finding method in the same file is written from the published
 algorithm (R. P. Brent, "Algorithms for Minimization without Derivatives",
 1973), not copied from an implementation.
+
+
+onnxruntime-web 1.30.0 (bundled in the OCR worker)
+--------------------------------------------------
+
+The scanned-page reader (src/recognition/ocr/worker.ts) runs its networks
+with ONNX Runtime Web, whose JavaScript is bundled into the worker. Its
+WebAssembly binary (ort-wasm-simd-threaded.wasm) is not bundled: it is
+downloaded with the OCR model, from the same release of the package.
+https://github.com/microsoft/onnxruntime
+
+ONNX Runtime Web
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+PaddleOCR PP-OCRv5 mobile detector and PP-OCRv6 tiny, small and medium recognisers (downloaded, not bundled)
+-------------------------------------------------------------------------------------------------------------
+
+The scanned-page reader downloads, on the user's say-so, PaddleOCR's
+PP-OCRv5 mobile text detector (PP-OCRv5_mobile_det_infer.ort) and PP-OCRv6
+tiny text recogniser with its dictionary (PP-OCRv6_tiny_rec.ort,
+ppocrv6_tiny_dict.txt), in ONNX Runtime's .ort format; the setting "OCR model"
+may instead download the PP-OCRv6 small or medium recogniser with their
+dictionary (PP-OCRv6_small_rec.ort, PP-OCRv6_medium_rec.ort, ppocrv6_dict.txt). The files are the ones
+published unchanged in https://github.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr-models
+(Apache-2.0; the detector also in the npm package pdfmarkdown-ppocrv5-models
+1.0.0) and are served from the data-only branch "ocr-models" of the FineNotes
+repository (folders ppocrv6-1, ppocrv6-small-1 and ppocrv6-medium-1, each carrying the licence text and a notice).
+No part of them is in main.js.
+
+PaddleOCR, Copyright (c) PaddlePaddle Authors.
+https://github.com/PaddlePaddle/PaddleOCR
+
+Licensed under the Apache License, Version 2.0:
+https://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, the models are
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.
 
 
 Test-only dependencies (not bundled)

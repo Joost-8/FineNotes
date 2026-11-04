@@ -411,6 +411,8 @@ import { familiesIn } from "../model/font-catalogue";
 import { vaultFonts } from "./font-store";
 
 /** Quiet time after the page being read changes before it is remembered. */
+/** A notebook that has just opened waits this long before its first page's PDF text is read for OCR, ms. */
+const OCR_OPEN_DELAY_MS = 800;
 const LAST_PAGE_DEBOUNCE_MS = 500;
 
 /** How long the page in view must stay before it is checked for misread words, ms. */
@@ -985,6 +987,48 @@ export class InkView extends TextFileView {
       this.optionsReturnTimer = 0;
       this.toolbar?.showTuckedOptions();
     }, PEN_OPTIONS_RETURN_MS);
+  }
+
+  /**
+   * The page in view changed (or the notebook opened): its PDF text, and the
+   * neighbouring pages', are read now, so scanned pages are read by OCR in
+   * the right order (page in view, neighbours, then the rest while idle).
+   */
+  private focusPdfText(index: number): void {
+    const cache = this.pdfText;
+    const pages = this.surface?.document.pages;
+    if (!cache || !pages) return;
+    const backdrops = [index, index + 1, index - 1].flatMap((i) => {
+      const backdrop = pages[i]?.backdrop;
+      return backdrop?.kind === "pdf" ? [backdrop] : [];
+    });
+    const [here, ...near] = backdrops;
+    if (here && pages[index]?.backdrop === here) cache.focus(here, near);
+    else if (here) near.forEach((b) => cache.request(b));
+  }
+
+  /** "Re-read scanned pages of this PDF": forget what OCR read of the PDF in view and read it again. */
+  async rereadScannedPages(): Promise<void> {
+    const pages = this.surface?.document.pages ?? this.doc.pages;
+    const index = this.surface?.currentPage ?? 0;
+    const here = pages[index]?.backdrop;
+    const found =
+      here?.kind === "pdf" ? here : pages.map((p) => p.backdrop).find((b) => b.kind === "pdf");
+    if (found?.kind !== "pdf") {
+      new Notice("FineNotes: this notebook has no PDF pages.");
+      return;
+    }
+    if (!this.plugin.settings.ocrScannedPdfs) {
+      new Notice('FineNotes: "Read scanned PDF pages" is off in the settings.');
+      return;
+    }
+    await this.plugin.ocr.dropCache(found.path);
+    this.pdfText?.forget(found.path);
+    for (const key of [...this.pdfSearchText.keys()]) {
+      if (key.startsWith(`${found.path}:`)) this.pdfSearchText.delete(key);
+    }
+    this.focusPdfText(index);
+    new Notice("FineNotes: reading this PDF's scanned pages again.");
   }
 
   /** The pen touched the page or left it: hold, or let go of, what would stall it. */
@@ -3270,6 +3314,7 @@ export class InkView extends TextFileView {
           this.sidebar?.setCurrentPage(index);
           this.scheduleLastPage();
           this.scheduleWordCheck();
+          this.focusPdfText(index);
         },
         onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
         onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
@@ -3322,10 +3367,19 @@ export class InkView extends TextFileView {
     this.setPenCursor(this.settings.penCursor);
     this.surface.setInkPressure(this.settings.pressureWidth);
     this.pdfText?.destroy();
-    this.pdfText = new PdfTextCache(this.app);
-    // A finger tap on a PDF link that waited for the page to be read.
-    this.pdfText.onReady = (path, page) => this.surface?.pdfTextReady(path, page);
+    this.pdfText = new PdfTextCache(this.app, this.plugin.ocr);
+    // A finger tap on a PDF link that waited for the page to be read; and a
+    // page that was read again with its OCR text is searched again.
+    this.pdfText.onReady = (path, page) => {
+      this.pdfSearchText.delete(`${path}:${page}`);
+      this.surface?.pdfTextReady(path, page);
+    };
     this.surface.setTextSource(this.pdfText);
+    // The page the notebook opens on: a scan there is read first.
+    const openedText = this.pdfText;
+    window.setTimeout(() => {
+      if (this.pdfText === openedText) this.focusPdfText(this.surface?.currentPage ?? 0);
+    }, OCR_OPEN_DELAY_MS);
     // Audio (0.5). Strokes are stamped on the recorder's clock, so ink and
     // audio share one timeline even if the wall clock jumps mid-recording.
     const audio = new NoteAudio({

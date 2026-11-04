@@ -118,6 +118,12 @@ import {
   speechModelsFor,
 } from "./audio/speech-models";
 import type { AssetStore } from "./downloads/model-store";
+import {
+  OCR_ACCURATE_SLOWDOWN,
+  OCR_TIERS,
+  effectiveOcrTier,
+  ocrTiersFor,
+} from "./recognition/ocr/ocr-model";
 import { FolderInputSuggest } from "./view/folder-suggest";
 import { penGlyph, penSample } from "./view/pen-glyph-svg";
 import {
@@ -282,6 +288,18 @@ function shortcutAliases(action: ShortcutAction): string[] {
 }
 
 /** The tools an ink note can open with, as the dropdown names them. */
+/** On a phone or tablet: how much slower Accurate is (docs/OCR.md, "Choosing a model"). */
+const OCR_MOBILE_NOTE = `Accurate is about ${OCR_ACCURATE_SLOWDOWN}× slower per page than Fast (desktop measurement).`;
+
+const OCR_MODEL_INFO =
+  "Fast is the small model FineNotes started with. Accurate reads more of a scan's words correctly and is " +
+  "slower and a bigger download. Most accurate is the largest and slowest, for a computer only: it stays on " +
+  "this computer outside your vault, so it never syncs to an iPad, which uses Fast or Accurate. The detector " +
+  "is shared by all three, so switching downloads only the reader that is missing and keeps the others on this " +
+  "device. Pages already read are read again with the model you pick, as you open them. The trash button " +
+  "removes the models you are not using, and the folder of an old version, to free space.\n\nDownload sizes " +
+  "and times are for a dense A4 page on a laptop with one thread; yours will differ.";
+
 function toolNames() {
   return {
     pen: t("settings.tool.pen"),
@@ -366,6 +384,7 @@ function modelPurpose() {
   return {
     voice: t("settings.models.purpose.voice"),
     grape: t("settings.models.purpose.grape"),
+    ocr: "The OCR model reads the printed text of scanned PDF pages on this device, so search, the text-snapping highlighter and Copy text work on them; the pages never leave the device.",
     learned: t("settings.models.purpose.learned"),
   };
 }
@@ -899,6 +918,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
     storeShownValue(this.plugin.settings, key, value);
     await this.plugin.saveSettings();
+    // Pages already shown take it at once, without a reopen.
+    if (key === "ocrScannedPdfs" || key === "ocrFigureText") this.plugin.ocr.settingsChanged();
+    // The new reader: its download is offered if it is not here, and pages are read with it.
+    if (key === "ocrModel") this.plugin.ocr.modelChanged();
     // A newly chosen speech model is registered before the tab is rebuilt, so its row shows it.
     if (key === "speechModel") this.plugin.speech.store();
     if (changesTabLayout(key)) this.update();
@@ -1476,6 +1499,36 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           (s) => this.drawPaperWidth(s),
           ["canvas size", "page width"],
         ),
+        this.info(
+          toggle("ocrScannedPdfs", "Read scanned PDF pages (on-device OCR)", "", [
+            "ocr",
+            "scan",
+            "scanned",
+            "pdf",
+            "text",
+            "search",
+            "highlighter",
+            "copy text",
+          ]),
+          "A PDF page that is a picture of text (a scan) has no text to search, snap the highlighter to or copy. With this on, FineNotes reads such pages on this device, only for PDFs open in a notebook: the page in view first, then the rest of that PDF while you are not writing. Printed text only; messy handwriting is left alone. Nothing downloads until you agree: the first scanned page offers the reader model (Models on this device). What was read is kept in the plugin folder (ocr) and syncs with your vault. “Re-read scanned pages of this PDF” in the command palette reads a PDF again.",
+        ),
+        {
+          ...this.info(
+            toggle("ocrFigureText", "Also read text inside figures", "", [
+              "ocr",
+              "figure",
+              "figures",
+              "picture",
+              "image",
+              "diagram",
+              "label",
+              "labels",
+              "search",
+            ]),
+            "Lecture PDFs have text of their own, but the labels inside their pictures (an anatomy figure, a chart) are only pixels, so search cannot find them. With this on, FineNotes reads inside the pictures, and only there, once the reader model is on this device: it never makes the model be offered for a page that has text of its own, and never reads the text a page already has. Only in effect while “Read scanned PDF pages” is on.",
+          ),
+          visible: () => settings.ocrScannedPdfs !== false,
+        },
         this.more("pages", t("settings.pages.more")),
         this.info(
           drawnRow(t("settings.notebookFolder.name"), "", (s) => this.drawNotebookFolder(s), [
@@ -2008,6 +2061,28 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     };
   }
 
+  // --- The OCR model --------------------------------------------------------------
+
+  /** The choice of OCR model, and the button that frees the space of the others. */
+  private drawOcrModel(setting: Setting): void {
+    const settings = this.plugin.settings;
+    const mobile = Platform.isMobile;
+    setting.addDropdown((d) => {
+      for (const tier of ocrTiersFor(mobile)) {
+        d.addOption(tier.id, `${tier.label} (${formatSize(totalBytes(tier.asset))})`);
+      }
+      d.selectEl.setAttribute("aria-label", "OCR model");
+      d.setValue(effectiveOcrTier(settings.ocrModel, mobile).id);
+      d.onChange((value) => void this.setControlValue("ocrModel", value));
+    });
+    setting.addExtraButton((b) =>
+      b
+        .setIcon("trash-2")
+        .setTooltip("Remove other OCR models")
+        .onClick(() => void this.plugin.removeOtherOcrModels()),
+    );
+  }
+
   // --- Models on this device ---------------------------------------------------
 
   /**
@@ -2015,14 +2090,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * handwriting recognizer model) and the model learned from the user's
    * handwriting, each one row with its state after a dot, Download while it
    * is missing and the rest in its ⋯ menu; what each is for is behind its
-   * ⓘ. A model a feature registered that is none of these is listed at the
-   * end.
+   * ⓘ. The OCR reader is one row for the chosen model, with its size choice
+   * under it, shown while OCR is on. A model a feature registered that is none
+   * of these is listed at the end.
    */
   private modelsGroup(): SettingDefinitionItem {
     const { settings } = this.plugin;
     const grape = this.plugin.grape.model;
     const speech = this.plugin.speech.store();
-    const others = this.plugin.models.all().filter((s) => s !== grape && s !== speech);
+    // The OCR models have their own rows below, not one row each here.
+    const ocrIds = new Set(OCR_TIERS.map((t) => t.asset.id));
+    const others = this.plugin.models
+      .all()
+      .filter((s) => s !== grape && s !== speech && !ocrIds.has(s.asset.id));
     const reading = (): boolean => settings.handwritingOnDevice !== false;
     const learning = this.learningState;
     const record = learnedRecord(settings, this.plugin.grape.id);
@@ -2031,6 +2111,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const download = t("settings.models.downloadsOnce");
     const purpose = modelPurpose();
     const voice = speechModelInfo(effectiveSpeechModel(settings.speechModel, mobile)).label;
+    const ocrOn = (): boolean => settings.ocrScannedPdfs !== false;
+    const ocrTier = effectiveOcrTier(settings.ocrModel, mobile);
+    const ocrStore = this.plugin.models.get(ocrTier.asset.id);
     return this.section(
       "on-device",
       t("settings.models.heading"),
@@ -2109,6 +2192,40 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ]
             .filter(Boolean)
             .join(" "),
+        ),
+        ...(ocrStore
+          ? [
+              this.info(
+                drawnRow(
+                  `Scanned pages · ${ocrTier.label}`,
+                  "",
+                  (s) => this.drawDownload(s, ocrStore),
+                  ["ocr", "scan", "scanned", "model", "fast", "accurate", "download", "offline"],
+                  ocrOn,
+                ),
+                `${modelPurpose().ocr} ${download}`,
+              ),
+            ]
+          : []),
+        this.info(
+          drawnRow(
+            "OCR model size",
+            mobile ? OCR_MOBILE_NOTE : "",
+            (s) => this.drawOcrModel(s),
+            [
+              "ocr",
+              "scan",
+              "scanned",
+              "model",
+              "accurate",
+              "fast",
+              "slower",
+              "download",
+              "remove other ocr models",
+            ],
+            ocrOn,
+          ),
+          OCR_MODEL_INFO,
         ),
         ...others.map((store) =>
           this.info(
