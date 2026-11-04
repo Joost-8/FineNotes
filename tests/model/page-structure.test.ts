@@ -44,6 +44,13 @@ describe("header and page numbers", () => {
     expect(furnitureText(doc, 3, "Biology").footer).toBe("3");
   });
 
+  it("print nothing on an endless board, one page metres across", () => {
+    const doc = notebook();
+    doc.furniture = { header: "{title}", numbers: "right" };
+    doc.endless = true;
+    expect(furnitureText(doc, 1, "Biology")).toEqual({});
+  });
+
   it("print nothing without furniture, or for a page that is not there", () => {
     expect(furnitureText(notebook(), 1)).toEqual({});
     const doc = notebook();

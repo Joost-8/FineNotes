@@ -7,7 +7,7 @@
  *   [cover] Name (tap to rename)          the notebook itself
  *           23 pages · 911 KB · edited 19 Oct
  *           folder
- *   Pages         Scroll direction · Page numbers · Header
+ *   Pages         Scroll direction · Page numbers · Header   (not on a board)
  *   Editing       Read-only
  *   Created …                    All FineNotes settings ›
  *
@@ -45,6 +45,8 @@ export interface NotebookInfo {
 export interface NoteSettingsHost {
   /** A single page rather than a notebook: only the wording changes. */
   single: boolean;
+  /** An endless board (FineNotes#46, a single page too): no Pages group, it has none. */
+  board?: boolean;
   /** Which way the pages run now. */
   scrollDirection: () => ScrollDirection;
   setScrollDirection: (direction: ScrollDirection) => void;
@@ -101,7 +103,9 @@ export class NoteSettingsModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-note-settings", "goodobsidian-dialog");
-    this.titleEl.setText(this.host.single ? "Page settings" : "Notebook settings");
+    this.titleEl.setText(
+      this.host.board ? "Board settings" : this.host.single ? "Page settings" : "Notebook settings",
+    );
     this.render();
     // A rename is not done when `rename` resolves: a notebook with its own
     // folder renames the folder, and the note follows it a tick later
@@ -128,7 +132,7 @@ export class NoteSettingsModal extends Modal {
     const info = this.host.info();
     this.renderUpdate(contentEl);
     this.renderSummary(contentEl, info);
-    this.renderPages(contentEl);
+    if (!this.host.board) this.renderPages(contentEl);
     this.renderEditing(contentEl);
     this.renderLook(contentEl);
     this.renderFooter(contentEl, info);
@@ -199,7 +203,11 @@ export class NoteSettingsModal extends Modal {
       cls: "goodobsidian-ns-name-input",
       attr: {
         type: "text",
-        "aria-label": this.host.single ? "Rename the page" : "Rename the notebook",
+        "aria-label": this.host.board
+          ? "Rename the board"
+          : this.host.single
+            ? "Rename the page"
+            : "Rename the notebook",
         spellcheck: "false",
       },
     });

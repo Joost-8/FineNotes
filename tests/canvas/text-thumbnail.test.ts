@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { paintTextBox } from "../../src/canvas/renderer";
+import { paintTextBox, paintedTextHeight } from "../../src/canvas/renderer";
 import { TEXT_PAD_X, TEXT_PAD_Y } from "../../src/canvas/text-layout";
 import { TEXT_FONT_STACKS, type TextBoxElement } from "../../src/model/document";
 
@@ -250,5 +250,25 @@ describe("paintTextBox: border and corners", () => {
     const { ctx, painted } = recorder();
     paintTextBox(ctx, box({ border: { width: 2, color: "#1a1a1a" } }), true);
     expect(painted.strokes[0].style).not.toBe("#1a1a1a");
+  });
+});
+
+describe("paintedTextHeight", () => {
+  it("is a self-sizing box's lines, wrapped at its width, as paintTextBox paints it", () => {
+    const { ctx, painted } = recorder();
+    // 20 px monospace: 10 px a character, 20 to a 200 px line; four words fit.
+    const words = box({ text: Array(10).fill("word").join(" "), fill: "#ffff00" });
+    expect(paintedTextHeight(ctx, words)).toBe(3 * 25 + 2 * TEXT_PAD_Y);
+    paintTextBox(ctx, words);
+    expect(painted.fillRects[0].h).toBe(paintedTextHeight(ctx, words));
+    const lines = box({ text: Array.from({ length: 20 }, (_, i) => `Line ${i}`).join("\n") });
+    expect(paintedTextHeight(ctx, lines)).toBe(20 * 25 + 2 * TEXT_PAD_Y);
+  });
+
+  it("is a sized box's own height, and leaves the context's font alone", () => {
+    const { ctx } = recorder();
+    expect(paintedTextHeight(ctx, box({ h: 40, text: "a\nb\nc\nd" }))).toBe(40);
+    paintedTextHeight(ctx, box({ text: "a\nb" }));
+    expect(ctx.font).toBe("10px sans-serif");
   });
 });

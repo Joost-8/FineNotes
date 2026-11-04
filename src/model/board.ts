@@ -11,11 +11,11 @@
  * the lasso's move ({@link TranslateElements}), which already covers every
  * kind of element. Pure.
  *
- * Still page-shaped, for phase 4 of the issue (each marked `TODO(#46 phase
- * 4)` where it lives): Export as PDF (one page the size of the drawing),
- * Ask AI (what is on screen), Grape's reading (by area, not the whole page),
- * search and the contents (fly to the word or heading), where a board opens
- * (where it was left), and the home-screen thumbnail (the whole drawing).
+ * Export and what the AI reads take the drawing alone ({@link boardDrawing}),
+ * Ask what is on screen; search and the contents go to the word or heading,
+ * x and y. Still page-shaped, for phase 4 of the issue (each marked
+ * `TODO(#46 phase 4)` where it lives): Grape's reading (by area, not the
+ * whole page) and the home-screen thumbnail (the whole drawing).
  * Phase 5 measures a full board zoomed out on the iPad and adds the notice.
  */
 
@@ -28,6 +28,7 @@ import {
   type PageGeometry,
   type PageSection,
   type Ruling,
+  type TextBoxElement,
   POINT_STRIDE,
   pageById,
 } from "./document";
@@ -75,10 +76,14 @@ export function boardStartGeometry(): PageGeometry {
  * reaches (half its width past the centreline), pictures as their turned
  * rectangles cover, text boxes, tables and graphs by their frames, comments
  * as points. `null` when the page is empty. A text box that sizes itself has
- * no stored height; one line of its font stands in for it, close enough to
- * decide when to grow.
+ * no stored height: `textHeight` gives it. Measuring needs a canvas, so the
+ * default ({@link textLinesHeight}) counts the text's lines without wrapping
+ * them, close enough to decide when to grow; a cut for export measures.
  */
-export function drawnBounds(page: Page): Bounds | null {
+export function drawnBounds(
+  page: Page,
+  textHeight: (text: TextBoxElement) => number = textLinesHeight,
+): Bounds | null {
   const box: Bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   const take = (minX: number, minY: number, maxX: number, maxY: number): void => {
     if (![minX, minY, maxX, maxY].every(Number.isFinite)) return;
@@ -107,8 +112,7 @@ export function drawnBounds(page: Page): Bounds | null {
     take(cx - hx, cy - hy, cx + hx, cy + hy);
   }
   for (const text of page.textBoxes) {
-    const h = text.h ?? text.fontSize * (text.lineHeight ?? DEFAULT_LINE_HEIGHT);
-    take(text.x, text.y, text.x + text.w, text.y + h);
+    take(text.x, text.y, text.x + text.w, text.y + (text.h ?? textHeight(text)));
   }
   for (const table of page.tables ?? []) {
     const size = tableFloorSize(table);
@@ -120,6 +124,16 @@ export function drawnBounds(page: Page): Bounds | null {
   }
   for (const comment of page.comments ?? []) take(comment.x, comment.y, comment.x, comment.y);
   return box.minX <= box.maxX && box.minY <= box.maxY ? box : null;
+}
+
+/**
+ * A self-sizing text box's height without a canvas: one line of its font for
+ * each line of its text, as if none wrapped. Never less than one line, as
+ * the textarea is.
+ */
+export function textLinesHeight(text: TextBoxElement): number {
+  const lines = Math.max(1, text.text.split("\n").length);
+  return lines * text.fontSize * (text.lineHeight ?? DEFAULT_LINE_HEIGHT);
 }
 
 // --- The growth rule -----------------------------------------------------------
@@ -280,4 +294,84 @@ export class GrowBoard implements Command {
     const { x, y } = this.shift;
     this.onShift?.(-x, -y);
   }
+}
+
+// --- The drawing alone ---------------------------------------------------------
+
+/**
+ * The step a board's drawing is cut out at, page px: a multiple of the
+ * dotted (40) and squared (28) papers' spacing, so the cut keeps the ink on
+ * the same dots and squares.
+ */
+export const BOARD_CUT_STEP = 280;
+
+/** Paper kept round the drawing when it is cut out, at least, page px (about 3 cm). */
+export const BOARD_CUT_MARGIN = 160;
+
+/**
+ * The part of a board's page that holds its drawing, page px: what is drawn
+ * with {@link BOARD_CUT_MARGIN} round it, out to whole
+ * {@link BOARD_CUT_STEP}s, inside the page. An empty board gives one block
+ * in its middle. `textHeight` measures self-sizing text boxes, as in
+ * {@link drawnBounds}: pass the renderer's, or a long one is cut off.
+ */
+export function boardDrawingBox(
+  page: Page,
+  textHeight?: (text: TextBoxElement) => number,
+): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  const { width, height } = page.geometry;
+  const down = (v: number): number => Math.floor(v / BOARD_CUT_STEP) * BOARD_CUT_STEP;
+  const up = (v: number): number => Math.ceil(v / BOARD_CUT_STEP) * BOARD_CUT_STEP;
+  const drawn = drawnBounds(page, textHeight) ?? {
+    minX: width / 2 - BOARD_BLOCK / 2 + BOARD_CUT_MARGIN,
+    minY: height / 2 - BOARD_BLOCK / 2 + BOARD_CUT_MARGIN,
+    maxX: width / 2 + BOARD_BLOCK / 2 - BOARD_CUT_MARGIN,
+    maxY: height / 2 + BOARD_BLOCK / 2 - BOARD_CUT_MARGIN,
+  };
+  const x = Math.max(0, down(drawn.minX - BOARD_CUT_MARGIN));
+  const y = Math.max(0, down(drawn.minY - BOARD_CUT_MARGIN));
+  const right = Math.max(x + BOARD_CUT_STEP, Math.min(width, up(drawn.maxX + BOARD_CUT_MARGIN)));
+  const bottom = Math.max(y + BOARD_CUT_STEP, Math.min(height, up(drawn.maxY + BOARD_CUT_MARGIN)));
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+/**
+ * A board's page cut down to its drawing ({@link boardDrawingBox}), for an
+ * export or for the AI to read: a copy, everything on it moved by the cut,
+ * so a PDF page is the size of the drawing and not metres of empty paper.
+ * `box` cuts another part out (what is on screen, for Ask). The page itself
+ * is not touched.
+ */
+export function boardDrawing(
+  page: Page,
+  box: { x: number; y: number; width: number; height: number } = boardDrawingBox(page),
+): Page {
+  const { width, height } = page.geometry;
+  if (box.x === 0 && box.y === 0 && box.width === width && box.height === height) return page;
+  const copy = structuredClone(page);
+  copy.geometry = { ...copy.geometry, width: box.width, height: box.height };
+  if (box.x === 0 && box.y === 0) return copy;
+  const doc = { pages: [copy] } as unknown as InkDocument;
+  new TranslateElements(
+    copy.id,
+    {
+      strokes: copy.strokes.slice(),
+      images: copy.images.slice(),
+      textBoxes: copy.textBoxes.slice(),
+      tables: (copy.tables ?? []).slice(),
+      graphs: (copy.graphs ?? []).slice(),
+    },
+    -box.x,
+    -box.y,
+  ).apply(doc);
+  for (const item of [...(copy.comments ?? []), ...(copy.sections ?? [])]) {
+    item.x -= box.x;
+    item.y -= box.y;
+  }
+  return copy;
 }
