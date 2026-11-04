@@ -18,6 +18,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { type Box, placeLine } from "../../search/hit-strokes";
 import type { InkStroke } from "./features";
 import type { PageLineReading } from "./recognizer";
 
@@ -171,12 +172,36 @@ export function correctionLines(
  * spaces, against the word stroke groups the line was found with. A line
  * whose counts differ is skipped (the reader joined or split a word), so a
  * word is never tied to the wrong ink.
+ *
+ * With `boundsOf` (a stroke group's extent along the line), a line whose
+ * counts differ is placed along its ink instead, as the search places it
+ * (`placeLine`): each word owns the ink under its share of the line, and a
+ * word with none is left out. Only "Correct" and what lassoed ink says use
+ * this: on a real page most lines are such lines, and without it the ink
+ * of a word was in no word at all. Underlines never do, so a word the
+ * reading may have misread is never underlined on guessed ink.
  */
-export function readWords(lines: readonly PageLineReading[]): ReadWord[] {
+export function readWords(
+  lines: readonly PageLineReading[],
+  boundsOf?: (strokeIds: readonly string[]) => Box | null,
+): ReadWord[] {
   const out: ReadWord[] = [];
   lines.forEach((line, index) => {
     const tokens = [...line.text.matchAll(/\S+/g)];
-    if (tokens.length === 0 || tokens.length !== line.words.length) return;
+    if (tokens.length === 0) return;
+    if (tokens.length !== line.words.length) {
+      const placed = boundsOf ? placeLine({ text: line.text, words: line.words }, boundsOf) : null;
+      placed?.tokens.forEach((m, i) => {
+        const ink = placed.owned[i];
+        if (ink.length === 0) return;
+        out.push({
+          text: m[0],
+          strokeIds: [...ink],
+          at: { line: index, start: m.index ?? 0, end: (m.index ?? 0) + m[0].length },
+        });
+      });
+      return;
+    }
     tokens.forEach((m, i) =>
       out.push({
         text: m[0],

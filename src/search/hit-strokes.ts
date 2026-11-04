@@ -63,7 +63,7 @@ export interface ReadLine {
 }
 
 /** A box, page px. */
-interface Box {
+export interface Box {
   minX: number;
   maxX: number;
 }
@@ -102,7 +102,7 @@ function misreadAllowance(length: number): number {
 }
 
 /** A line's tokens, and the word groups each one owns (by where it falls along the ink). */
-interface Placed {
+export interface Placed {
   tokens: RegExpMatchArray[];
   owned: string[][];
 }
@@ -117,7 +117,7 @@ interface Placed {
  * gap near where its share puts it ({@link wordBreaks}). With fewer groups,
  * every group goes to the word whose span is nearest its middle.
  */
-function placeLine(
+export function placeLine(
   line: ReadLine,
   boundsOf: (strokeIds: readonly string[]) => Box | null,
 ): Placed | null {
