@@ -82,20 +82,15 @@ function curveHandles(pts: readonly number[]): PointHandles | null {
   const y = (i: number): number => pts[i * POINT_STRIDE + 1];
   const closed = Math.hypot(x(0) - x(count - 1), y(0) - y(count - 1)) < 1e-6;
   const n = closed ? count - 1 : count;
-  const along: number[] = [0];
-  for (let i = 1; i < n; i++) {
-    along.push(along[i - 1] + Math.hypot(x(i) - x(i - 1), y(i) - y(i - 1)));
-  }
-  const total = closed ? along[n - 1] + Math.hypot(x(0) - x(n - 1), y(0) - y(n - 1)) : along[n - 1];
-  if (!(total > 0)) return null;
+  // Handles on fixed samples (evenly by index), so after a bend each one is
+  // still on the sample it moved: re-spacing them along the new outline made
+  // the one just dragged jump away from the pen.
   const wanted = closed ? CURVE_HANDLES_CLOSED : CURVE_HANDLES_OPEN;
-  const step = closed ? total / wanted : total / (wanted - 1);
   const at: number[] = [];
   const points: number[][] = [];
   let last = -1;
   for (let k = 0; k < wanted; k++) {
-    let i = last + 1;
-    while (i < n - 1 && along[i] < k * step - 1e-9) i++;
+    const i = closed ? Math.round((k * n) / wanted) : Math.round((k * (n - 1)) / (wanted - 1));
     if (i <= last || i > n - 1) continue;
     last = i;
     at.push(x(i), y(i));
