@@ -90,6 +90,7 @@ export function memoryVault(paths: string[]) {
         return made;
       },
       cachedRead: async (f: TFile) => texts.get(f.path) ?? "",
+      read: async (f: TFile) => texts.get(f.path) ?? "",
     },
     fileManager: {
       renameFile: async (node: Node, to: string) => {
