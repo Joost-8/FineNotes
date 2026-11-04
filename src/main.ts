@@ -131,8 +131,14 @@ import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
-import { HOME_FILE, HOME_FILE_TEXT } from "./model/home-file";
-import { folderStylesOf } from "./model/library-style";
+import { HOME_FILE, HOME_FILE_TEXT, isOwnHomeText } from "./model/home-file";
+import {
+  dropPaths,
+  dropStyles,
+  folderStylesOf,
+  movePaths,
+  moveStyles,
+} from "./model/library-style";
 import { prepareImageBytes } from "./view/image-import";
 import { LibraryView } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
@@ -149,6 +155,7 @@ import {
   buildImageNotebook,
   buildPdfNotebook,
   cleanTitle,
+  dialogChoices,
   joinVaultPath,
   newNoteBody,
   normalizeFolder,
@@ -247,6 +254,8 @@ const GRAPE_BRIDGE_DELAY_MS = 8000;
 
 /** How long after the layout is ready the daily update check runs: off the startup path. */
 const UPDATE_CHECK_DELAY_MS = 20_000;
+/** How long a new install waits before making the Home note: a vault syncing in has notes by then. */
+const HOME_FILE_DELAY_MS = 5000;
 /** How long an `obsidian://finenotes?do=pdf` link waits for its file to reach the vault. */
 const PDF_LINK_WAIT_MS = 15_000;
 /** How long an inbox notebook waits for a link to claim it before a notice says it is there. */
@@ -496,6 +505,7 @@ export default class GoodObsidianPlugin extends Plugin {
             await leaf.openFile(file);
             if (leaf.view instanceof InkView) leaf.view.exportPdf();
           },
+          isInkFile: (file) => this.isInkFile(file),
         }),
     );
     // FineNotes' own icons, before any button that uses them is made.
@@ -582,10 +592,12 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.vault.on("rename", (file, oldPath) => {
         this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
+        this.libraryPathChanged(oldPath, file.path);
         this.calculatorFileMoved(oldPath, file.path);
         this.practiceNotebookMoved(oldPath, file.path);
       }),
     );
+    this.registerEvent(this.app.vault.on("delete", (file) => this.libraryPathChanged(file.path)));
     this.register(() => this.fileMoves.destroy());
     this.wordCheck.answered = (count) => this.remindToRelearn(count);
     // The reader's and the learner's workers end with the plugin.
@@ -2093,22 +2105,34 @@ export default class GoodObsidianPlugin extends Plugin {
       const welcome = shouldShowWelcome(this.firstInstall, this.hasNotebooks());
       void this.showWhatsNew();
       if (welcome) this.showWelcome();
-      if (this.firstInstall) void this.makeHomeFile();
+      // A vault with notes is not new to Obsidian, whatever the plugin's data says.
+      if (this.firstInstall && this.app.vault.getMarkdownFiles().length === 0) {
+        const timer = window.setTimeout(() => void this.makeHomeFile(), HOME_FILE_DELAY_MS);
+        this.register(() => window.clearTimeout(timer));
+      }
       if (this.settings.simpleLook && !this.settings.simpleLookHinted) {
         if (typeof window !== "undefined") {
-          window.setTimeout(() => this.sayWhereSimpleLookIs(), SIMPLE_HINT_DELAY_MS);
+          const hint = window.setTimeout(() => this.sayWhereSimpleLookIs(), SIMPLE_HINT_DELAY_MS);
+          this.register(() => window.clearTimeout(hint));
         }
       }
     });
-    // Opening the Home file opens the library instead.
+    // Opening FineNotes' own Home note opens the library instead.
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
         if (file?.path !== HOME_FILE) return;
-        this.app.workspace.iterateAllLeaves((leaf) => {
-          const open = (leaf.view as { file?: TFile | null }).file;
-          if (leaf.view.getViewType() === "markdown" && open?.path === HOME_FILE) leaf.detach();
+        void this.app.vault.cachedRead(file).then(async (text) => {
+          if (!isOwnHomeText(text)) return;
+          const home: WorkspaceLeaf[] = [];
+          this.app.workspace.iterateAllLeaves((leaf) => {
+            const open = (leaf.view as { file?: TFile | null }).file;
+            if (leaf.view.getViewType() === "markdown" && open?.path === HOME_FILE) home.push(leaf);
+          });
+          // The library first: with the Home note the only tab, closing it first
+          // leaves no tab group to open the library in ("No tab group found").
+          await this.openLibrary();
+          for (const leaf of home) leaf.detach();
         });
-        void this.openLibrary();
       }),
     );
   }
@@ -2116,10 +2140,14 @@ export default class GoodObsidianPlugin extends Plugin {
   /**
    * A note called Home at the vault's root for someone new to Obsidian: it
    * opens the library, so there is always a file to click when the welcome
-   * is closed. Made once, on a new install; deleting it changes nothing.
+   * is closed. Made once, on a new install, a moment after start: a second
+   * device whose vault is still syncing in has notes by then, and makes none.
+   * Deleting it changes nothing.
    */
   private async makeHomeFile(): Promise<void> {
     if (this.app.vault.getAbstractFileByPath(HOME_FILE)) return;
+    // Notebooks may be the new user's own by now (the welcome makes one); notes came with a sync.
+    if (this.app.vault.getMarkdownFiles().some((file) => !this.isInkFile(file))) return;
     try {
       await this.app.vault.create(HOME_FILE, HOME_FILE_TEXT);
     } catch {
@@ -2328,8 +2356,11 @@ export default class GoodObsidianPlugin extends Plugin {
     return paths;
   }
 
-  /** The "New notebook" dialog, preset with the last choices and the default folder. */
-  openNewNotebookDialog(folder?: string, kind?: NotebookType): void {
+  /**
+   * The "New notebook" dialog, preset with the last choices and the default
+   * folder. It opens as a notebook unless asked for a board, whatever was made last.
+   */
+  openNewNotebookDialog(folder?: string, kind: NotebookType = "notebook"): void {
     // My templates' previews: a PDF cache of the dialog's own, let go when it closes.
     const cache = new PdfBackdropCache(this.app);
     const painter = new VaultBackdropRenderer(cache);
@@ -2350,10 +2381,7 @@ export default class GoodObsidianPlugin extends Plugin {
       });
     });
     const modal = new NewNotebookModal(this.app, {
-      choices: {
-        ...parseNotebookChoices(this.settings.lastNotebookChoices),
-        ...(kind ? { type: kind } : {}),
-      },
+      choices: dialogChoices(this.settings.lastNotebookChoices, kind),
       template: parseNotebookTemplate(this.settings.lastNotebookTemplate),
       folder: folder ?? this.newNotebookFolder(),
       papers: library,
@@ -2396,11 +2424,12 @@ export default class GoodObsidianPlugin extends Plugin {
   /**
    * The dialog's last choices without the dialog: the template it made a
    * notebook of last time while that is still in My templates, else the paper.
+   * Always a notebook, even right after a board.
    */
   private async createNotebookWithLastSettings(): Promise<void> {
-    const choices = parseNotebookChoices(this.settings.lastNotebookChoices);
+    const choices = dialogChoices(this.settings.lastNotebookChoices);
     const remembered = parseNotebookTemplate(this.settings.lastNotebookTemplate);
-    if (remembered && choices.type !== "endless") {
+    if (remembered) {
       const library = this.paperLibrary();
       const entries = await library.list().catch(() => []);
       const entry = entries.find((e) => e.path === remembered.path && e.page === remembered.page);
@@ -2529,6 +2558,24 @@ export default class GoodObsidianPlugin extends Plugin {
         new Notice(`FineNotes: could not rename ${pair.from} — ${errorMessage(error)}`, 8000);
       });
     }, 0);
+  }
+
+  /**
+   * The library's stars and folder looks follow a file or folder renamed or
+   * moved to `to`, and go with one deleted (no `to`). Here rather than in
+   * the library, so they follow while Home is closed too.
+   */
+  private libraryPathChanged(from: string, to?: string): void {
+    const { libraryStars: stars, libraryFolders: styles } = this.settings;
+    const nextStars = to === undefined ? dropPaths(stars, from) : movePaths(stars, from, to);
+    const nextStyles = to === undefined ? dropStyles(styles, from) : moveStyles(styles, from, to);
+    const starsChanged =
+      nextStars.length !== stars.length || nextStars.some((p, i) => p !== stars[i]);
+    const stylesChanged = JSON.stringify(nextStyles) !== JSON.stringify(styles);
+    if (!starsChanged && !stylesChanged) return;
+    this.settings.libraryStars = nextStars;
+    this.settings.libraryFolders = nextStyles;
+    void this.saveSettings();
   }
 
   /** The setting's folder, or the active file's (the behaviour before the setting existed). */
@@ -2994,7 +3041,7 @@ export default class GoodObsidianPlugin extends Plugin {
     } else if (request.do === "new") {
       await this.createNotebook(
         request.name,
-        parseNotebookChoices(this.settings.lastNotebookChoices),
+        dialogChoices(this.settings.lastNotebookChoices),
         request.folder,
       );
     } else if (request.do === "pdf") {

@@ -167,6 +167,11 @@ export class WorkspaceLeaf {
     this.state = state;
     return Promise.resolve();
   }
+
+  pinned = false;
+  setPinned(pinned: boolean): void {
+    this.pinned = pinned;
+  }
 }
 
 export class TFolder {
