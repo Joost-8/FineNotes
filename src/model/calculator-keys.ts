@@ -642,6 +642,13 @@ const UNIT = /d\/dx(?=\()|[A-Za-z]+(?=\()|ans|pi|theta|inf|mod/gi;
  */
 export function isStop(expr: string, at: number): boolean {
   if (at < 0 || at > expr.length) return false;
+  // Beside a box the cursor stands on it instead: typing there would not fill it.
+  if (expr[at] !== BOX) {
+    if (expr[at - 1] === BOX) return false;
+    let r = at;
+    while (expr[r] === " ") r++;
+    if (expr[r] === BOX) return false;
+  }
   for (const m of expr.matchAll(UNIT)) {
     const start = m.index ?? 0;
     const end = start + m[0].length;
@@ -667,6 +674,25 @@ function nearestStop(expr: string, at: number): number {
     if (isStop(expr, at + d)) return at + d;
   }
   return Math.max(0, Math.min(expr.length, at));
+}
+
+/**
+ * An operand left empty at `cursor` gets its box back: between separators
+ * (`log(▢, 2)`), and before ÷, × or ^ with nothing left to divide, multiply
+ * or raise (a fraction whose numerator was rubbed out read as raw text).
+ */
+function refillBox(expr: string, cursor: number): string {
+  let l = cursor - 1;
+  while (expr[l] === " ") l--;
+  let r = cursor;
+  while (expr[r] === " ") r++;
+  if (expr[r] === BOX || expr[l] === BOX) return expr;
+  const opens = l < 0 ? false : "(,=".includes(expr[l]);
+  const closes = r >= expr.length || "),=".includes(expr[r]);
+  const between = opens && closes && !(expr[l] === "=" && expr[r] === "=");
+  const lone =
+    (l < 0 || "(,=+−×÷^".includes(expr[l])) && r < expr.length && "÷×^".includes(expr[r]);
+  return between || lone ? expr.slice(0, cursor) + BOX + expr.slice(cursor) : expr;
 }
 
 /** The ")" closing the "(" at `open`, or -1 when it is still open. */
@@ -702,14 +728,18 @@ export function backspace(entry: Entry, deleteLast: (expr: string) => string): E
   if (entry.fresh) return { expr: "", cursor: 0, fresh: false };
   const at = cursorOf(entry);
   if (at === entry.expr.length) {
-    const expr = deleteLast(entry.expr);
+    // One ⌫, one change you can see: `√(` then `√` drew the same empty root twice.
+    const before = stopText(entry.expr, at);
+    let expr = deleteLast(entry.expr);
+    for (let n = 0; n < 3 && expr !== "" && stopText(expr, expr.length) === before; n++) {
+      expr = deleteLast(expr);
+    }
     return { expr, cursor: expr.length, fresh: false };
   }
-  const done = (expr: string, cursor: number): Entry => ({
-    expr,
-    cursor: nearestStop(expr, cursor),
-    fresh: false,
-  });
+  const done = (text: string, cursor: number): Entry => {
+    const expr = refillBox(text, cursor);
+    return { expr, cursor: nearestStop(expr, cursor), fresh: false };
+  };
   // An empty function, sin(▢) with the cursor in its box: ⌫ takes it whole.
   if (entry.expr[at] === BOX && entry.expr[at + 1] === ")" && entry.expr[at - 1] === "(") {
     const name = /(?:[a-zA-Z]+|√|d\/dx|∫|Σ|Π|\^|e\^|10\^)\($/.exec(entry.expr.slice(0, at));
@@ -754,19 +784,7 @@ export function backspace(entry: Entry, deleteLast: (expr: string) => string): E
   if (word) {
     return done(entry.expr.slice(0, word.index) + entry.expr.slice(at), word.index);
   }
-  let expr = entry.expr.slice(0, at - 1) + entry.expr.slice(at);
-  const cursor = at - 1;
-  // An input left empty between its separators (spaces aside) gets its box back.
-  let l = cursor - 1;
-  while (expr[l] === " ") l--;
-  let r = cursor;
-  while (expr[r] === " ") r++;
-  const opens = l < 0 ? false : "(,=".includes(expr[l]);
-  const closes = r >= expr.length || "),=".includes(expr[r]);
-  if (opens && closes && !(expr[l] === "=" && expr[r] === "=")) {
-    expr = expr.slice(0, cursor) + BOX + expr.slice(cursor);
-  }
-  return done(expr, cursor);
+  return done(entry.expr.slice(0, at - 1) + entry.expr.slice(at), at - 1);
 }
 
 /** The expression with the cursor marked in it, for laying out. */
@@ -833,7 +851,7 @@ export function moveCursor(entry: Entry, by: -1 | 1): Entry {
   for (let p = at + by; p >= 0 && p <= entry.expr.length; p += by) {
     if (isStop(entry.expr, p) && stopText(entry.expr, p) !== seen) return { ...entry, cursor: p };
   }
-  return { ...entry, cursor: Math.max(0, Math.min(entry.expr.length, at + by)) };
+  return entry;
 }
 
 /** Brackets opened and not yet closed in `expr`. */

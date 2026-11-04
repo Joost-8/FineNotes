@@ -867,6 +867,8 @@ type Token = (
   /** The typing cursor stands just before / after this token (see {@link attachCaret}). */
   caretBefore?: true;
   caretAfter?: true;
+  /** The cursor stands inside this number, after this many of its signs (`89` with it after the 8). */
+  caretAt?: number;
 };
 
 const OPERATORS = "+-*/^(),!%√=°";
@@ -1049,6 +1051,8 @@ export type CalcNode = CalcShape & {
   /** Display only: the typing cursor stands just before / after this operand. */
   caretBefore?: true;
   caretAfter?: true;
+  /** The cursor stands inside this number, after this many of its signs (`89` with it after the 8). */
+  caretAt?: number;
 };
 
 type CalcShape =
@@ -1206,6 +1210,7 @@ class Parser {
     const node = this.operand();
     if (first?.caretBefore) node.caretBefore = true;
     if (first?.caretAfter || this.closedWithCaret) node.caretAfter = true;
+    if (first?.caretAt !== undefined && node.k === "num") node.caretAt = first.caretAt;
     this.closedWithCaret = false;
     return node;
   }
@@ -1292,6 +1297,15 @@ function attachCaret(tokens: Token[]): Token[] {
     !(after.kind === "name" && after.name === CARET);
   if (!ends && !starts) return tokens;
   const out = tokens.slice();
+  // Inside a number (`8‸9`): one number with the cursor in it, never two that multiply.
+  if (before?.kind === "num" && after?.kind === "num") {
+    out.splice(at - 1, 3, {
+      ...before,
+      text: before.text + after.text,
+      caretAt: before.text.length,
+    });
+    return out;
+  }
   out.splice(at, 1);
   if (ends) out[at - 1] = { ...before, caretAfter: true };
   else out[at] = { ...after, caretBefore: true };

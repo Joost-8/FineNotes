@@ -494,15 +494,20 @@ describe("editing inside what the display draws as one thing", () => {
   });
 
   it("⌫ takes a constant whole and an operator with the empty box after it", () => {
-    expect(backspace(entry("ans÷3", 3), deleteLast)).toEqual(entry("÷3", 0));
+    expect(backspace(entry("ans÷3", 3), deleteLast)).toEqual(entry("▢÷3", 0));
     expect(backspace(entry("89÷▢", 3), deleteLast).expr).toBe("89");
   });
 
   it("draws the cursor inside the fraction it is typing in", () => {
     expect(drawn(entry("89÷8"))).toBe("[89/8|]");
     expect(drawn(entry("89÷8", 3))).toBe("[89/|8]");
-    expect(drawn(entry("12÷(3+4)", 8))).toBe("[12/3+4|]");
-    expect(drawn(entry("2^(3+1)", 7))).toBe("2^{3+1|}");
-    expect(drawn(entry("√(2+3)", 6))).toBe("√{2+3|}");
+    expect(drawn(entry("12÷(3+4)", 7))).toBe("[12/3+4|]");
+    expect(drawn(entry("2^(3+1)", 6))).toBe("2^{3+1|}");
+    // Past the hidden bracket the cursor is out of the fraction, power or root.
+    expect(drawn(entry("12÷(3+4)", 8))).toBe("[12/3+4]|");
+    expect(drawn(entry("2^(3+1)", 7))).toBe("2^{3+1}|");
+    expect(drawn(entry("√(2+3)", 6))).toBe("√{2+3}|");
+    // Inside a number: it stays one number, the cursor in it.
+    expect(drawn(entry("89÷89", 4))).toBe("[89/8|9]");
   });
 });
