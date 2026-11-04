@@ -15,6 +15,7 @@ import { StickerModal } from "./view/sticker-modal";
 import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
 import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-region";
+import { EmptyTabHomeButton } from "./view/empty-tab-home-button";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import { WordCheck } from "./view/word-check";
@@ -312,7 +313,12 @@ export default class GoodObsidianPlugin extends Plugin {
     },
   });
 
+  private readonly emptyTabHome = new EmptyTabHomeButton((leaf) => void this.openLibrary(leaf));
+
   private syncExplorerNotebookButton(): void {
+    this.emptyTabHome.sync(
+      this.app.workspace.getLeavesOfType("empty").map((leaf) => ({ leaf, el: leaf.view.containerEl })),
+    );
     const explorers = this.app.workspace.getLeavesOfType("file-explorer").map((leaf) => leaf.view);
     this.explorerNotebookButton.sync(
       explorers.map((view) => view.containerEl),
@@ -673,6 +679,7 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.register(() => this.explorerNotebookButton.destroy());
+    this.register(() => this.emptyTabHome.destroy());
     this.register(() => this.explorerFolderNotebooks.destroy());
     this.registerEvent(
       this.app.workspace.on("layout-change", () => this.syncExplorerNotebookButton()),
@@ -740,9 +747,9 @@ export default class GoodObsidianPlugin extends Plugin {
     setting?.openTabById(this.manifest.id);
   }
 
-  async openLibrary(): Promise<void> {
+  async openLibrary(into?: WorkspaceLeaf): Promise<void> {
     const open = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
-    const leaf = open ?? this.app.workspace.getLeaf("tab");
+    const leaf = open ?? into ?? this.app.workspace.getLeaf("tab");
     if (!open) await leaf.setViewState({ type: VIEW_TYPE_LIBRARY, active: true });
     // Pinned, the first tab: a link or a notebook never replaces it.
     leaf.setPinned(true);
