@@ -556,7 +556,22 @@ import {
 import { keyboardHeight } from "./keyboard";
 import { type ViewSpot, carriedOutOfSight, revealDelta, showsIn } from "./text-reveal";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
-import { canvasFont, fitTextWidth, textDecorationOf, textInset } from "../canvas/text-layout";
+import {
+  canvasFont,
+  fitTextWidth,
+  layoutTextBox,
+  textDecorationOf,
+  textInset,
+} from "../canvas/text-layout";
+import {
+  grownToFit,
+  holdsBox,
+  holdsStroke,
+  labelArea,
+  labelFrame,
+  labelOf,
+  takesLabel,
+} from "../model/shape-label";
 import { History, historyNotice } from "../model/history";
 import {
   PointerController,
@@ -675,6 +690,8 @@ import {
   CONNECTOR_WIDTH,
   type RoutedConnector,
   connectorBounds,
+  connectorWidth,
+  nearConnector,
   routeConnectors,
 } from "../canvas/connector-paint";
 import {
@@ -682,6 +699,10 @@ import {
   AddLinkedCopy,
   RetypeShape,
   liveConnectors,
+  type ConnectorStyle,
+  RemoveConnector,
+  RestyleConnector,
+  connectorHeads,
   nextConnectorId,
 } from "../model/connectors";
 import { DEFAULT_RULER_SNAP } from "../canvas/ruler-geometry";
@@ -1510,7 +1531,10 @@ interface LassoDraft {
  */
 interface GroupDrag {
   pointerId: number;
+  /** What moves: the selection, and what its closed shapes hold (`withShapeContent`). */
   selection: GroupSelection;
+  /** The selection itself, as it is kept once the drag is over. */
+  own: GroupSelection;
   /** The selection's bounds when the drag began, page space. */
   bounds: Bounds;
   /** Page-local point where the pointer went down. */
@@ -2329,6 +2353,10 @@ export class InkSurface {
   // serves both. Frame, bar and menu are DOM over the page, like the text
   // boxes, so a finger works them as well as the Pencil.
   private selection: GroupSelection | null = null;
+  /** An arrow joining two shapes, picked up on its own (a lasso tap on it), by page and id. */
+  private connectorSel: { pageId: string; id: string } | null = null;
+  /** Its highlight over the page: the route drawn wide in the accent colour. */
+  private connectorMarkEl: SVGSVGElement | null = null;
   /**
    * Whether the selection shows its corner handles (discussion #51, Joost):
    * hidden when a lasso picks something up, shown at once for a lone shape,
@@ -5761,6 +5789,8 @@ export class InkSurface {
 
   /** Keep typed page elements aligned with the canvas across pan and zoom. */
   private syncTextBoxes(): void {
+    // A shape's text is placed where its shape now says, before it is drawn.
+    if (!this.zoomTransient) this.fitShapeLabels();
     const expected = new Set<string>();
     const scale = this.unitScale;
     // Mid-zoom only the pages within a screen of the view are kept in step:
@@ -6262,6 +6292,8 @@ export class InkSurface {
       const live = this.liveTextBox(pageId, textBox.id);
       if (!live) return;
       live.text = input.value;
+      // Typed in a shape: it is re-centred, and the shape grows to hold it.
+      if (live.onShape !== undefined) this.fitShapeLabels(live);
       this.followTextBox(pageId, live);
       this.renderShownText(view, live.text);
       // A fitted box widens with its text: a full sync sets the width first.
@@ -11435,6 +11467,7 @@ export class InkSurface {
     this.groupDrag = {
       pointerId: -1,
       selection: sel,
+      own: sel,
       bounds,
       from: press.at,
       clientX: 0,
@@ -11481,7 +11514,9 @@ export class InkSurface {
     }
     this.groupDrag = {
       pointerId: -1,
-      selection: sel,
+      // The shape it took carries its text and ink (discussion #148).
+      selection: this.withShapeContent(sel),
+      own: sel,
       bounds,
       from: at,
       clientX: 0,
@@ -12012,6 +12047,7 @@ export class InkSurface {
     if (!page) return;
     const tolerance = tolerancePx / this.gestureScale;
     const filter = lassoFilterFor(this.toolState);
+    if (this.tapConnector(page, p, tolerance, filter)) return;
     if (this.tapSelectOn(page, p, tolerance, filter)) return;
     // With the pages joined, what shows here may be the page beside's,
     // running over the join: its owner is picked up, where it is.
@@ -12368,6 +12404,7 @@ export class InkSurface {
 
   /** Let go of the lasso selection, if any, and of the tap-and-hold bar. */
   private clearSelection(): void {
+    this.dropConnector();
     this.dropPickUp();
     this.cancelGroupDrag();
     this.linkBar = null;
@@ -12530,8 +12567,10 @@ export class InkSurface {
     const crop = this.cropping;
     const group = crop ? null : this.liveSelection();
     const image = crop || group ? null : this.liveImageSelection();
-    const press = crop || group || image ? null : this.pressMenu;
-    const pageId = crop?.pageId ?? group?.pageId ?? image?.pageId ?? press?.pageId ?? "";
+    const connector = crop || group || image ? null : this.liveConnector();
+    const press = crop || group || image || connector ? null : this.pressMenu;
+    const pageId =
+      crop?.pageId ?? group?.pageId ?? image?.pageId ?? connector?.pageId ?? press?.pageId ?? "";
     const box = this.boxForPage(pageId);
     this.syncTextPick(press, box);
     const dragging =
@@ -12559,6 +12598,10 @@ export class InkSurface {
       bounds = this.imageChromeBounds(image.image);
       clearAbove = clearBelow = IMAGE_CHROME_CLEAR_PX;
       this.actionBar.setActions(this.imageActions(image));
+    } else if (connector) {
+      bounds = connectorBounds(connector.routed);
+      clearAbove = clearBelow = SELECTION_PAD_PX;
+      this.actionBar.setActions(this.connectorActions(connector.pageId, connector.routed));
     } else if (press?.text) {
       // Right above the selected text, clear of the handles' knobs.
       bounds = pickBounds(press.text.pick);
@@ -12571,6 +12614,7 @@ export class InkSurface {
       this.actionBar.setActions(this.pressActions(press));
     }
     this.actionBar.el.toggleClass("is-provisional", press?.provisional === true);
+    this.syncConnectorMark(connector, box);
     if (!box || !bounds || dragging) {
       this.actionBar.hide();
       this.typeBar?.hide();
@@ -13544,8 +13588,10 @@ export class InkSurface {
    * is never taken: it cannot be selected, and this makes sure.
    */
   private removeSelection(label: string): boolean {
-    const sel = this.liveSelection();
-    if (!sel) return false;
+    const live = this.liveSelection();
+    if (!live) return false;
+    // A shape goes with what it holds: its text and the ink in it (discussion #148).
+    const sel = this.withShapeContent(live);
     const box = this.boxForPage(sel.pageId);
     const bounds = this.groupBounds(sel);
     const elements: PageElements = {
@@ -13581,7 +13627,9 @@ export class InkSurface {
 
   /** Copy the selection. A lone picture is offered to the host for the system clipboard too. */
   private copySelection(): boolean {
-    const group = this.liveSelection();
+    const live = this.liveSelection();
+    // A shape is copied with what it holds (discussion #148).
+    const group = live ? this.withShapeContent(live) : null;
     if (group) {
       const bounds = this.groupBounds(group);
       if (!bounds) return false;
@@ -14783,10 +14831,13 @@ export class InkSurface {
    * Duplicate.
    */
   private duplicateSelection(): void {
-    const sel = this.liveSelection();
-    const box = sel ? this.boxForPage(sel.pageId) : null;
-    const bounds = sel ? this.groupBounds(sel) : null;
-    if (!sel || !box || !bounds || this.callbacks.isLocked?.()) return;
+    const own = this.liveSelection();
+    const box = own ? this.boxForPage(own.pageId) : null;
+    const bounds = own ? this.groupBounds(own) : null;
+    if (!own || !box || !bounds || this.callbacks.isLocked?.()) return;
+    // A shape is duplicated with what it holds (discussion #148); the copy of
+    // the selection itself is selected, its own elements first in each list.
+    const sel = this.withShapeContent(own);
     const d = clampGroupDelta(bounds, DUPLICATE_OFFSET, DUPLICATE_OFFSET, box);
     const copies = copyElements(sel, this.freshIds(), d.dx, d.dy);
     this.history.push(this.doc, new AddElements(sel.pageId, copies));
@@ -14794,7 +14845,16 @@ export class InkSurface {
     this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
     this.renderDry();
     this.syncTextBoxes();
-    this.select(sel.pageId, copies);
+    this.select(
+      sel.pageId,
+      sel === own
+        ? copies
+        : {
+            ...copies,
+            strokes: copies.strokes.slice(0, own.strokes.length),
+            textBoxes: copies.textBoxes.slice(0, own.textBoxes.length),
+          },
+    );
     this.changed([sel.pageId]);
   }
 
@@ -15090,16 +15150,20 @@ export class InkSurface {
     const turn = this.knobGrabbed(bounds, from);
     if (!turn && this.grabShapePoint(event, sel, from)) return;
     if (!turn && this.grabTapeHandle(event, sel, bounds, from)) return;
+    const scale = turn ? null : this.cornerGrabbed(sel, bounds, from);
     this.groupDrag = {
       pointerId: event.pointerId,
-      selection: sel,
+      // A shape's text and the ink written in it move along (discussion #148);
+      // resized, its text keeps its size and wraps again in the new shape.
+      selection: this.withShapeContent(sel, scale === null),
+      own: sel,
       bounds,
       from,
       clientX: event.clientX,
       clientY: event.clientY,
       dx: 0,
       dy: 0,
-      scale: turn ? null : this.cornerGrabbed(sel, bounds, from),
+      scale,
       turn,
       finger,
       lifted: false,
@@ -15197,7 +15261,9 @@ export class InkSurface {
     if (!fingersOnSelection(frame, at, FINGER_TURN_MARGIN_PX / this.unitScale)) return null;
     return {
       pointerId: -1,
-      selection: sel,
+      // A two-finger turn of shapes turns what they hold too (discussion #148).
+      selection: this.withShapeContent(sel),
+      own: sel,
       bounds,
       from: at,
       clientX: x,
@@ -15244,6 +15310,7 @@ export class InkSurface {
     const drag: GroupDrag = {
       pointerId: held.pointerId,
       selection: sel,
+      own: sel,
       bounds,
       from: held.from,
       clientX: held.clientX,
@@ -15683,6 +15750,14 @@ export class InkSurface {
         this.startCellEdit(drag.selection.pageId, table, cell);
         return;
       }
+      // A second tap on a closed shape picked up on its own types in it
+      // (Goodnotes' double tap, discussion #148). Inside the pointerup, for the keyboard.
+      const shape =
+        commit && !drag.scale && !drag.turn && !drag.fingers ? this.loneLabelShape(drag.own) : null;
+      if (shape) {
+        this.editShapeLabel(drag.own.pageId, shape);
+        return;
+      }
       this.syncSelectionOverlay();
       return;
     }
@@ -15746,7 +15821,7 @@ export class InkSurface {
         ),
       );
       this.strokeIndex.refreshPages(this.doc.pages, [pageId, onto.id]);
-      this.selection = { ...drag.selection, pageId: onto.id };
+      this.selection = { ...drag.own, pageId: onto.id };
       const landed = this.groupBounds(this.selection);
       if (landed) this.renderer?.invalidateRegion(onto.index, landed);
     } else if (moved && turn) {
@@ -17301,6 +17376,12 @@ export class InkSurface {
     const filter = { ...lassoFilterFor(this.toolState), handwriting: false };
     const stroke = this.strokeAt(page, p, FINGER_TAP_TOLERANCE_PX / this.unitScale, filter);
     if (!stroke) return false;
+    // The shape already picked up on its own: this second tap types in it.
+    const sel = this.liveSelection();
+    if (sel && sel.pageId === page.id && this.loneLabelShape(sel) === stroke) {
+      this.editShapeLabel(page.id, stroke);
+      return true;
+    }
     this.pickLasso();
     this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
     return true;
@@ -17853,6 +17934,386 @@ export class InkSurface {
     this.endImageDrag(true);
     if (event.type === "pointerup" && tapTypesOnNote(drag)) this.typeOnSelectedNote(drag);
   };
+
+  // --- An arrow joining two shapes, picked up on its own --------------------
+
+  /** The connector picked up, as it is routed now, or `null` when none is (or it is gone). */
+  private liveConnector(): { pageId: string; routed: RoutedConnector } | null {
+    const sel = this.connectorSel;
+    if (!sel) return null;
+    const page = this.doc.pages.find((candidate) => candidate.id === sel.pageId);
+    const routed = page ? routeConnectors(page, undefined, (c) => c.id === sel.id)[0] : undefined;
+    return routed ? { pageId: sel.pageId, routed } : null;
+  }
+
+  /**
+   * A lasso tap on an arrow joining two shapes picks it up on its own, with
+   * its colour, its line and Delete beside it. Ink under the tap wins: an
+   * arrow meets its shapes at their sides.
+   */
+  private tapConnector(page: Page, p: Pt, tolerance: number, filter: LassoFilter): boolean {
+    if (!page.connectors || page.connectors.length === 0) return false;
+    if (this.strokeAt(page, p, tolerance, filter)) return false;
+    const routed = routeConnectors(page);
+    for (let i = routed.length - 1; i >= 0; i--) {
+      if (!nearConnector(routed[i], p.x, p.y, tolerance)) continue;
+      this.connectorSel = { pageId: page.id, id: routed[i].connector.id };
+      this.syncActionBar();
+      return true;
+    }
+    return false;
+  }
+
+  /** Let go of a connector picked up on its own. */
+  private dropConnector(): void {
+    if (!this.connectorSel) return;
+    this.connectorSel = null;
+    this.syncActionBar();
+  }
+
+  /** Draw the picked-up connector's highlight over the page, or hide it. */
+  private syncConnectorMark(
+    picked: { pageId: string; routed: RoutedConnector } | null,
+    box: PageBox | null,
+  ): void {
+    if (!picked || !box) {
+      this.connectorMarkEl?.addClass("is-hidden");
+      return;
+    }
+    const mark = (this.connectorMarkEl ??= this.selectionUiEl.createSvg("svg", {
+      cls: "goodobsidian-connector-mark",
+    }));
+    mark.removeClass("is-hidden");
+    mark.empty();
+    const scale = this.unitScale;
+    const { route } = picked.routed;
+    const points: string[] = [];
+    for (let i = 0; i + 1 < route.length; i += 2) {
+      const x = ((box.x + route[i]) * scale).toFixed(1);
+      const y = ((box.y + route[i + 1]) * scale).toFixed(1);
+      points.push(`${x},${y}`);
+    }
+    mark.createSvg("polyline", {
+      cls: "goodobsidian-connector-mark-line",
+      attr: { points: points.join(" ") },
+    });
+    for (const end of [points[0], points[points.length - 1]]) {
+      if (!end) continue;
+      const [cx, cy] = end.split(",");
+      mark.createSvg("circle", {
+        cls: "goodobsidian-connector-mark-end",
+        attr: { cx, cy, r: "5" },
+      });
+    }
+  }
+
+  /**
+   * The picked-up connector's bar, as Goodnotes': its colour (the colour
+   * panel, without a fill), its line (style, width, arrowheads) and Delete.
+   */
+  private connectorActions(pageId: string, routed: RoutedConnector): SelectionAction[] {
+    const c = routed.connector;
+    const heads = connectorHeads(c);
+    const width = connectorWidth(c);
+    const style = (
+      id: string,
+      icon: string,
+      label: string,
+      checked: boolean,
+      apply: ConnectorStyle,
+      segment?: string,
+    ): SelectionAction => ({
+      id,
+      icon,
+      label,
+      group: "style",
+      checked,
+      ...(segment !== undefined ? { segment } : {}),
+      run: () => this.restyleConnector(apply),
+    });
+    const arrows = t("surface.shapeStyle.arrows");
+    const filled = heads.start === "filled" || heads.end === "filled";
+    const kind = filled ? "filled" : "open";
+    const flip = filled ? "open" : "filled";
+    const start = heads.start;
+    const end = heads.end;
+    const stops = widthStops(SIZES, true);
+    return [
+      {
+        id: "colour",
+        icon: "palette",
+        label: t("surface.selectionBar.colour"),
+        group: "colour",
+        bar: true,
+        menu: "none",
+        swatches: {
+          colors: this.palette,
+          notebook: this.doc.palette?.colors ?? [],
+          recent: this.toolState.recentColors ?? [],
+          current: c.color,
+          pick: (color) => this.restyleConnector({ color }),
+          custom: (color) => this.restyleConnector({ color }),
+          shown: (color) => shownColor(color, this.paperTheme.night === true),
+        },
+      },
+      {
+        id: "line",
+        icon: "align-justify",
+        label: t("surface.shapeStyle.line"),
+        group: "colour",
+        bar: true,
+        menu: "none",
+        line: {
+          styles: [
+            style("line-solid", "minus", t("surface.shapeStyle.solidLine"), !c.dash, {
+              dash: null,
+            }),
+            style(
+              "line-dash",
+              "square-dashed",
+              t("surface.shapeStyle.dashedLine"),
+              c.dash === "dash",
+              { dash: "dash" },
+            ),
+            style("line-dot", "ellipsis", t("surface.shapeStyle.dottedLine"), c.dash === "dot", {
+              dash: "dot",
+            }),
+          ],
+          width,
+          stops: stops.includes(width) ? stops : [...stops, width].sort((a, b) => a - b),
+          label: (w) => formatMm(w),
+          setWidth: (w) => this.restyleConnector({ width: w }),
+          rows: [
+            style(
+              "head-start",
+              "arrow-left",
+              t("surface.shapeStyle.arrowAtStart"),
+              start !== undefined,
+              { heads: { ...(start ? {} : { start: kind }), ...(end ? { end } : {}) } },
+              arrows,
+            ),
+            style(
+              "head-end",
+              "arrow-right",
+              t("surface.shapeStyle.arrowAtEnd"),
+              end !== undefined,
+              { heads: { ...(start ? { start } : {}), ...(end ? {} : { end: kind }) } },
+              arrows,
+            ),
+            style(
+              "head-filled",
+              "triangle",
+              t("surface.shapeStyle.filledArrowheads"),
+              filled,
+              {
+                heads:
+                  start || end
+                    ? { ...(start ? { start: flip } : {}), ...(end ? { end: flip } : {}) }
+                    : { end: "filled" },
+              },
+              arrows,
+            ),
+          ],
+        },
+      },
+      {
+        id: "delete",
+        icon: "trash-2",
+        label: t("common.delete"),
+        group: "edit",
+        bar: true,
+        menu: "none",
+        destructive: true,
+        enabled: this.callbacks.isLocked?.() !== true,
+        run: () => this.deleteConnector(pageId),
+      },
+    ];
+  }
+
+  /** Restyle the picked-up connector (`RestyleConnector`), as one undo step. */
+  private restyleConnector(style: ConnectorStyle): void {
+    const picked = this.liveConnector();
+    if (!picked || this.callbacks.isLocked?.()) return;
+    const before = connectorBounds(picked.routed);
+    this.history.push(
+      this.doc,
+      new RestyleConnector(picked.pageId, picked.routed.connector, style),
+    );
+    const box = this.boxForPage(picked.pageId);
+    const after = connectorBounds(picked.routed);
+    const dirty = before && after ? unionBounds(before, after) : (before ?? after);
+    if (box && dirty) this.renderer?.invalidateRegion(box.index, dirty);
+    this.renderDry();
+    this.syncActionBar();
+    this.changed([picked.pageId]);
+  }
+
+  /** Take the picked-up connector off its page (`RemoveConnector`), as one undo step. */
+  private deleteConnector(pageId: string): void {
+    const picked = this.liveConnector();
+    if (!picked || picked.pageId !== pageId || this.callbacks.isLocked?.()) return;
+    const bounds = connectorBounds(picked.routed);
+    this.history.push(this.doc, new RemoveConnector(pageId, picked.routed.connector));
+    const box = this.boxForPage(pageId);
+    if (box && bounds) this.renderer?.invalidateRegion(box.index, bounds);
+    this.dropConnector();
+    this.renderDry();
+    this.changed([pageId]);
+  }
+
+  // --- Text and ink inside a shape (discussion #148) --------------------------
+
+  /** The selection's one closed shape, when it holds nothing else and text can be typed in it. */
+  private loneLabelShape(sel: GroupSelection): Stroke | null {
+    if (this.practice || this.callbacks.isLocked?.()) return null;
+    const others =
+      sel.images.length +
+      sel.textBoxes.length +
+      (sel.tables?.length ?? 0) +
+      (sel.graphs?.length ?? 0);
+    const stroke = sel.strokes.length === 1 && others === 0 ? sel.strokes[0] : null;
+    return stroke && takesLabel(stroke) ? stroke : null;
+  }
+
+  /**
+   * Type in a closed shape, as Goodnotes' double tap does: in its text, or
+   * in a new box made for it, centred, in the shape's colour, wrapping
+   * inside it. The shape is let go of first, so its frame and bar give way
+   * to the text pill. Synchronous inside the pointerup, or iPadOS raises no
+   * keyboard.
+   */
+  private editShapeLabel(pageId: string, stroke: Stroke): void {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const area = labelArea(stroke);
+    if (!page || !area || isMirror(stroke)) return;
+    this.clearSelection();
+    const existing = labelOf(page.textBoxes, stroke.id);
+    if (existing) {
+      this.syncTextBoxes();
+      const view = this.textBoxInputs.get(`${page.id}:${existing.id}`);
+      if (view) this.focusTextBox(view.input);
+      return;
+    }
+    const style = textStyleOf(this.toolState.textStyle ?? DEFAULT_TEXT_STYLE);
+    const textBox: TextBoxElement = {
+      id: this.textBoxIds.next(),
+      x: area.x,
+      y: area.y,
+      w: area.w,
+      text: "",
+      ...style,
+      // The shape's own colour, centred: as Goodnotes writes in a shape.
+      color: stroke.color,
+      align: "center",
+      onShape: stroke.id,
+    };
+    Object.assign(textBox, labelFrame(area, this.labelTextHeight(textBox, area.w)));
+    const add = new AddTextBoxToPage(page.id, textBox);
+    this.history.push(this.doc, add);
+    this.lastTextBoxAdd = { key: `${page.id}:${textBox.id}`, command: add, followers: [] };
+    this.syncTextBoxes();
+    this.changed([page.id]);
+    const view = this.textBoxInputs.get(`${page.id}:${textBox.id}`);
+    if (view) this.focusTextBox(view.input);
+  }
+
+  /** How tall a shape's text is, page px, wrapped `width` wide as the canvas lays it out. */
+  private labelTextHeight(textBox: TextBoxElement, width: number): number {
+    this.measureCtx ??= createEl("canvas").getContext("2d");
+    const ctx = this.measureCtx;
+    const lines = Math.max(1, textBox.text.split("\n").length);
+    if (!ctx) return textBox.fontSize * 1.25 * lines + 2 * textInset(textBox).y;
+    ctx.font = canvasFont(textBox, textBox.fontSize);
+    const measured = { ...textBox, w: width, text: shownCase(textBox.text, textBox) };
+    delete measured.h;
+    return layoutTextBox(measured, (text) => ctx.measureText(text).width).height;
+  }
+
+  /**
+   * Put every shape's text where its shape says (`model/shape-label.ts`):
+   * as wide as the space inside it, centred in it. The frame is derived, so
+   * it is set in place, outside the undo steps, as typing sets the text;
+   * the tiles where the text was and is are repainted. `grow`, the box being
+   * typed in, may make its shape taller to hold it (also in place, as the
+   * typing that asks for it is).
+   */
+  private fitShapeLabels(grow: TextBoxElement | null = null): void {
+    for (const [index, page] of this.doc.pages.entries()) {
+      for (const textBox of page.textBoxes) {
+        if (textBox.onShape === undefined || isMirror(textBox)) continue;
+        const shape = page.strokes.find((stroke) => stroke.id === textBox.onShape);
+        if (!shape || !takesLabel(shape)) continue;
+        let area = labelArea(shape);
+        if (!area) continue;
+        let height = this.labelTextHeight(textBox, area.w);
+        if (textBox === grow) {
+          const pts = grownToFit(shape, height);
+          if (pts) {
+            const before = selectionBounds([shape], [], []);
+            shape.pts = pts;
+            const after = selectionBounds([shape], [], []);
+            const dirty = before && after ? unionBounds(before, after) : (before ?? after);
+            if (dirty) this.renderer?.invalidateRegion(index, padBounds(dirty, shape.size));
+            this.strokeIndex.refreshPages(this.doc.pages, [page.id]);
+            area = labelArea(shape) ?? area;
+            height = this.labelTextHeight(textBox, area.w);
+          }
+        }
+        const frame = labelFrame(area, height);
+        if (
+          Math.abs(frame.x - textBox.x) < 0.01 &&
+          Math.abs(frame.y - textBox.y) < 0.01 &&
+          Math.abs(frame.w - textBox.w) < 0.01
+        ) {
+          continue;
+        }
+        const was = {
+          minX: textBox.x,
+          minY: textBox.y,
+          maxX: textBox.x + textBox.w,
+          maxY: textBox.y + height,
+        };
+        textBox.x = frame.x;
+        textBox.y = frame.y;
+        textBox.w = frame.w;
+        delete textBox.fit;
+        const now = {
+          minX: frame.x,
+          minY: frame.y,
+          maxX: frame.x + frame.w,
+          maxY: frame.y + height,
+        };
+        this.renderer?.invalidateRegion(index, padBounds(unionBounds(was, now) ?? now, 4));
+      }
+    }
+  }
+
+  /**
+   * A selection, with what its closed shapes hold added (discussion #148:
+   * "content moves along the shape"): their text, and the ink and text
+   * boxes written inside them, whichever came first. Only for a selection of
+   * shapes alone; a lasso round shapes and ink already holds both.
+   */
+  private withShapeContent(sel: GroupSelection, labels = true): GroupSelection {
+    const shapes = sel.strokes.filter(takesLabel);
+    if (shapes.length === 0 || shapes.length !== sel.strokes.length) return sel;
+    const page = this.doc.pages.find((candidate) => candidate.id === sel.pageId);
+    if (!page) return sel;
+    const strokes = new Set(sel.strokes);
+    const boxes = new Set(sel.textBoxes);
+    for (const stroke of page.strokes) {
+      if (strokes.has(stroke) || isMirror(stroke) || stroke.onSticky !== undefined) continue;
+      if (shapes.some((shape) => holdsStroke(shape, stroke))) strokes.add(stroke);
+    }
+    for (const textBox of page.textBoxes) {
+      if (boxes.has(textBox) || isMirror(textBox) || textBox.onSticky !== undefined) continue;
+      if (!labels && shapes.some((shape) => textBox.onShape === shape.id)) continue;
+      const h = this.textBoxFrameOf(page.id, textBox).h;
+      if (shapes.some((shape) => holdsBox(shape, textBox, h))) boxes.add(textBox);
+    }
+    if (strokes.size === sel.strokes.length && boxes.size === sel.textBoxes.length) return sel;
+    return { ...sel, strokes: [...strokes], textBoxes: [...boxes] };
+  }
 
   /**
    * A second tap on a selected sticky note types on it, as a second tap on
@@ -19319,4 +19780,9 @@ function boundsUnion(a: Bounds, b: Bounds): Bounds {
     maxX: Math.max(a.maxX, b.maxX),
     maxY: Math.max(a.maxY, b.maxY),
   };
+}
+
+/** `b` grown by `by` page px on every side. */
+function padBounds(b: Bounds, by: number): Bounds {
+  return { minX: b.minX - by, minY: b.minY - by, maxX: b.maxX + by, maxY: b.maxY + by };
 }

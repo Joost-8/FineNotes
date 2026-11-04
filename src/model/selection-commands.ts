@@ -1011,9 +1011,12 @@ export function copyElements(
   dx: number,
   dy: number,
 ): ElementLists {
+  // A copied shape's text belongs to the copy; a shape left behind keeps its own.
+  const shapes = new Map<string, string>();
   const strokes = elements.strokes.map((stroke) => {
     const copy = structuredClone(stroke);
     copy.id = ids.stroke();
+    shapes.set(stroke.id, copy.id);
     copy.pts = translatePoints(stroke.pts, dx, dy);
     delete copy.t0;
     return copy;
@@ -1034,6 +1037,11 @@ export function copyElements(
     copy.id = ids.textBox();
     copy.x += dx;
     copy.y += dy;
+    if (copy.onShape !== undefined) {
+      const shape = shapes.get(copy.onShape);
+      if (shape) copy.onShape = shape;
+      else delete copy.onShape;
+    }
     return copy;
   });
   relinkNoteInk(textBoxes, owners);

@@ -33,7 +33,7 @@ import { normalizeAttachmentFolders } from "./attachment-folders";
 import { normalizePageTitle, normalizeSections } from "./contents";
 import { normalizeLinks } from "./links";
 import { normalizeTasks } from "./tasks";
-import { liveConnectors, readConnectors } from "./connectors";
+import { isStyledConnector, liveConnectors, readConnectors } from "./connectors";
 import { isTape } from "./cover-tape";
 import { MIN_TEXT_BOX_WIDTH, isCornerRadius, isTextPadding, normalizeBorder } from "./text-style";
 import { SAVE_LEVEL, deflateToBase64, inflateFromBase64 } from "./compress";
@@ -394,7 +394,11 @@ function storedConnectors(page: Page): ShapeConnector[] | undefined {
 
 /** Whether a page has anything only `shape-content` readers keep (see format-features). */
 function hasShapeContent(page: Page): boolean {
-  return page.strokes.some((stroke) => stroke.noLine === true);
+  return (
+    page.strokes.some((stroke) => stroke.noLine === true) ||
+    page.textBoxes.some((box) => box.onShape !== undefined) ||
+    liveConnectors(page).some(isStyledConnector)
+  );
 }
 
 /** The features a document uses that an older reader would lose. */
@@ -988,6 +992,7 @@ function normalizeTextBox(raw: unknown, mintId: () => string): TextBoxElement | 
     fontSize: Math.max(12, num(raw.fontSize, 22)),
     ...normalizeTextStyle(raw),
     ...(typeof raw.onSticky === "string" ? { onSticky: raw.onSticky } : {}),
+    ...(typeof raw.onShape === "string" ? { onShape: raw.onShape } : {}),
   };
 }
 
