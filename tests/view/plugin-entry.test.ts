@@ -619,6 +619,13 @@ describe("registration", () => {
     const created = () => (app.vault as unknown as { created: { path: string }[] }).created;
 
     afterEach(() => vi.useRealTimers());
+    // The simple look's hint comes up during the wait on a first install.
+    beforeEach(() => {
+      vi.stubGlobal("createFragment", (build: (fragment: unknown) => void) => {
+        build({ createDiv: () => ({}), createEl: () => ({ addEventListener: () => {} }) });
+        return "fragment";
+      });
+    });
 
     /** Load, lay out, and let the Home note's wait run out; `before` sets the vault up first. */
     async function start(stored: unknown, before: () => void = () => {}): Promise<void> {

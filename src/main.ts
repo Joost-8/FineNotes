@@ -2112,7 +2112,8 @@ export default class GoodObsidianPlugin extends Plugin {
       }
       if (this.settings.simpleLook && !this.settings.simpleLookHinted) {
         if (typeof window !== "undefined") {
-          window.setTimeout(() => this.sayWhereSimpleLookIs(), SIMPLE_HINT_DELAY_MS);
+          const hint = window.setTimeout(() => this.sayWhereSimpleLookIs(), SIMPLE_HINT_DELAY_MS);
+          this.register(() => window.clearTimeout(hint));
         }
       }
     });
