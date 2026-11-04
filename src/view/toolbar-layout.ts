@@ -39,6 +39,7 @@ export type BarItemId =
   | "record"
   | "fill"
   | "calculator"
+  | "home"
   | "thumbnails"
   | "search"
   | "ai"
@@ -70,6 +71,7 @@ export const BAR_ITEMS: readonly BarItemId[] = [
   "record",
   "fill",
   "calculator",
+  "home",
   "thumbnails",
   "search",
   "ai",
@@ -113,7 +115,7 @@ export type ItemPlace = Zone | "menu" | "off";
  */
 export function defaultLayout(): ToolbarLayout {
   return {
-    start: ["thumbnails", "search", "ai", "calculator", "undo", "redo"],
+    start: ["home", "thumbnails", "search", "ai", "calculator", "undo", "redo"],
     middle: ["select", "pen", "eraser", "text", "shape", "image", "pdf", "accessories"],
     end: ["fullscreen", "addPage", "share", "more", "settings"],
     off: [],
@@ -151,6 +153,7 @@ export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
   record: "Record audio",
   fill: "Fill",
   calculator: "Calculator",
+  home: "Home",
   thumbnails: "Page thumbnails",
   search: "Search",
   ai: "AI",
@@ -183,6 +186,7 @@ export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
   record: "mic",
   fill: "paint-bucket",
   calculator: "calculator",
+  home: "house",
   thumbnails: "panel-left",
   search: "search",
   ai: "sparkles",

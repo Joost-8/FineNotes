@@ -1044,6 +1044,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           this.refreshDomState();
         });
       }, shown),
+      this.info(
+        toggle("simpleLook", "Simple look", "", ["simple", "look", "hide", "sidebar", "ribbon"]),
+        "Hide Obsidian's title bar, status bar, left ribbon and sidebars, and keep the tabs, so FineNotes looks like an app of its own. Turn it off here to bring them back.",
+      ),
     ];
   }
 
@@ -1597,12 +1601,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "Add New notebook to the file explorer menu. New notebooks start in the selected folder.",
         ),
         this.info(
-          toggle("showNewNotebookInExplorer", "New notebook button in the file explorer", "", [
+          toggle("showNewNotebookInExplorer", "Library button in the file explorer", "", [
             "toolbar",
             "file explorer",
+            "library",
             "new notebook",
           ]),
-          "Add a New notebook button beside New note and New folder in the file explorer.",
+          "Add a button that opens the notebook library, beside New note and New folder in the file explorer.",
         ),
         this.info(
           toggle("folderNotebooks", "Show notebook folders as notebooks", "", [

@@ -437,6 +437,7 @@ describe("the rows", () => {
     const label = VENDORS.anthropic.label;
     expect(rows(tab).map((r) => [r.heading, r.def.name || "(block)", kind(r.def)])).toEqual([
       ["", "(block)", "render"],
+      ["", "Simple look", "toggle:simpleLook"],
       [WRITING, "Start with", "render"],
       [WRITING, "Saved pens", "render"],
       ...DEFAULT_PEN_NAMES.map((name) => [WRITING, name, "render"]),
@@ -456,7 +457,7 @@ describe("the rows", () => {
       [PAGES, "Templates folder", "text:templateFolder"],
       [PAGES, "Template gallery", "text:templateGalleryUrl"],
       [PAGES, "New notebook in the right-click menu", "toggle:showNewNotebookInContextMenu"],
-      [PAGES, "New notebook button in the file explorer", "toggle:showNewNotebookInExplorer"],
+      [PAGES, "Library button in the file explorer", "toggle:showNewNotebookInExplorer"],
       [PAGES, "Show notebook folders as notebooks", "toggle:folderNotebooks"],
       ...MODEL_ROWS.map(([name, kind]) => [MODELS, name, kind]),
       ...READING_ROWS.map(([name, kind]) => [AI, name, kind]),
@@ -664,6 +665,7 @@ describe("which rows show", () => {
 
   it("by default: no iPad tip, and the AI group folded into one row", () => {
     expect(visibleNames(makePlugin(), false)).toEqual([
+      "Simple look",
       "Start with",
       ...SAVED_PEN_ROWS,
       "Two-finger double-tap to undo",
@@ -682,7 +684,7 @@ describe("which rows show", () => {
       "Templates folder",
       "Template gallery",
       "New notebook in the right-click menu",
-      "New notebook button in the file explorer",
+      "Library button in the file explorer",
       "Show notebook folders as notebooks",
       // The models' introduction.
       expect.stringMatching(/^\(block \d+\)$/),
@@ -1750,13 +1752,13 @@ describe("folding sections", () => {
     expect(groups(tab).map((g) => [g.heading, g.cls])).toEqual(
       HEADINGS.map((h) => [h, "goodobsidian-section is-folded"]),
     );
-    expect(unfoldedRows(tab).map((r) => r.def.name)).toEqual([FOOTER]);
+    expect(unfoldedRows(tab).map((r) => r.def.name)).toEqual(["Simple look", FOOTER]);
   });
 
   it("shows the rows of the sections that are open", () => {
     const plugin = makePlugin({ settingsOpen: ["writing", "advanced"] });
     const headings = unfoldedRows(makeTab(plugin, false).tab).map((r) => r.heading);
-    expect([...new Set(headings)]).toEqual([WRITING, ADVANCED, ""]);
+    expect([...new Set(headings)]).toEqual(["", WRITING, ADVANCED]);
     expect(headings.filter((h) => h === WRITING)).toHaveLength(16);
   });
 

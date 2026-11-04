@@ -1,12 +1,15 @@
 import { setIcon } from "obsidian";
-import { ICON_NEW_NOTEBOOK } from "../constants";
+import { ICON_LIBRARY } from "../constants";
 
-/** Obsidian exposes explorer leaves, but no API for adding a button to their bar. */
+/**
+ * A button in the file explorer's bar that opens the notebook library (Home).
+ * Obsidian exposes explorer leaves, but no API for adding a button to their bar.
+ */
 export class FileExplorerNotebookButton {
   private destroyed = false;
   private readonly buttons = new Map<HTMLElement, HTMLButtonElement>();
 
-  constructor(private readonly createNotebook: () => void) {}
+  constructor(private readonly openLibrary: () => void) {}
 
   sync(containers: readonly HTMLElement[], enabled: boolean): void {
     if (this.destroyed) return;
@@ -28,10 +31,10 @@ export class FileExplorerNotebookButton {
       if (this.buttons.has(bar)) continue;
       const button = bar.createEl("button", {
         cls: "clickable-icon nav-action-button goodobsidian-new-notebook",
-        attr: { type: "button", "aria-label": "New notebook", title: "New notebook" },
+        attr: { type: "button", "aria-label": "Notebook library", title: "Notebook library" },
       });
-      setIcon(button, ICON_NEW_NOTEBOOK);
-      button.addEventListener("click", this.createNotebook);
+      setIcon(button, ICON_LIBRARY);
+      button.addEventListener("click", this.openLibrary);
       // Beside the built-in New note and New folder buttons.
       bar.insertBefore(button, bar.children.item(2));
       this.buttons.set(bar, button);
