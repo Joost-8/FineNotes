@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OcrPage } from "../../src/recognition/ocr/ocr-words";
+import { OCR_TUNING, type OcrPage } from "../../src/recognition/ocr/ocr-words";
 
 const pdf = {
   pages: 3,
@@ -110,6 +110,7 @@ function fakeOcr(found: OcrPage | null = null, enabled = true, figures = false) 
     },
     attach: (_owner: unknown, path: string) => calls.attached.push(path),
     cached: () => Promise.resolve(found),
+    tuning: () => ({ ...OCR_TUNING }),
     want: (
       _owner: unknown,
       path: string,
@@ -169,6 +170,21 @@ describe("PdfTextCache with OCR", () => {
     expect(layout && layoutPlainText(layout)).toBe("Water quality");
     expect(calls.wanted).toEqual([]);
     expect(calls.settled).toEqual([0]);
+  });
+
+  it("applies the thresholds of the model in use: the same words are trusted by one and not by another", async () => {
+    // SCANNED's words read 0.98 / 0.9 on a line of 0.99; "Water quality" passes the Fast model's 0.90.
+    const { service } = fakeOcr(SCANNED);
+    (service as { tuning: unknown }).tuning = () => ({
+      ...OCR_TUNING,
+      wordMean: 0.99,
+      lineMean: 0.99,
+    });
+    const cache = cacheWith(service);
+    cache.request(BACKDROP);
+    await settle();
+    const layout = cache.peek(BACKDROP, GEOMETRY);
+    expect(layout && layoutPlainText(layout)).toBe("");
   });
 
   it("queues a scan that was not read, stays empty, and reads again when the service says so", async () => {

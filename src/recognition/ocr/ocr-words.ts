@@ -70,6 +70,8 @@ export interface OcrPage {
 export const OCR_TUNING = {
   /**
    * A word is kept when the mean of its characters' confidences is at least this ...
+   * (`wordMean`, `wordMin` and `lineMean` are the Fast model's; the other
+   * models have their own, in ocr-model.ts, merged over these.)
    * Calibrated for PP-OCRv6 tiny (docs/OCR.md, "Model choice"): the 7 scribble
    * and cursive regions of the test page reach 0.881 at most, printed text
    * 0.984 at least (v5 multi: scribbles 0.591, printed 0.915).

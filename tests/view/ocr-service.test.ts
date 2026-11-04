@@ -12,7 +12,7 @@ import {
   serializeCache,
   withPage,
 } from "../../src/recognition/ocr/ocr-cache";
-import { OCR_MODEL } from "../../src/recognition/ocr/ocr-model";
+import { OCR_MODEL, OCR_TIERS } from "../../src/recognition/ocr/ocr-model";
 import type { OcrPage } from "../../src/recognition/ocr/ocr-words";
 import {
   IDLE_MS,
@@ -23,6 +23,7 @@ import {
   OcrService,
   RETRY_MS,
   SAVE_MS,
+  type ActiveOcrModel,
 } from "../../src/view/ocr-service";
 
 const PLUGIN = "plugins/finenotes";
@@ -69,13 +70,30 @@ const FIGURE_ONLY: NativeInfo = {
   },
 };
 
+/** The model of tier `i` of OCR_TIERS, as the service is told about it. */
+function tierModel(i: number): ActiveOcrModel {
+  const tier = OCR_TIERS[i];
+  return {
+    version: tier.version,
+    key: `${tier.asset.id}:${tier.asset.version}`,
+    rec: tier.rec,
+    dict: tier.dict,
+    confidence: tier.confidence,
+  };
+}
+
 function rig(options: { ready?: boolean; ink?: boolean } = {}) {
   const log = {
     rendered: [] as string[],
     closed: 0,
     read: [] as string[],
     ensured: 0,
+    keys: [] as string[],
+    thresholds: [] as unknown[],
+    bytesAsked: [] as (string | undefined)[],
+    checks: 0,
     offers: 0,
+    asked: 0,
     notices: [] as string[],
     released: [] as string[],
     masked: [] as unknown[],
@@ -93,6 +111,8 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
     figures: true,
     /** Runs after each region is read (the pen may go down, say). */
     afterRead: null as null | (() => void),
+    /** The model the setting chooses (the service's default, Fast, when null). */
+    model: null as null | ActiveOcrModel,
   };
   let t = 1_000_000;
   const timers: { at: number; fn: () => void; live: boolean }[] = [];
@@ -103,7 +123,14 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
       return { kind: state.ready ? "ready" : "missing" };
     },
     file: () => Promise.resolve(state.ready ? "x" : null),
-    bytes: () => Promise.resolve(new ArrayBuffer(1)),
+    bytes: (name?: string) => {
+      log.bytesAsked.push(name);
+      return Promise.resolve(new ArrayBuffer(1));
+    },
+    check: () => {
+      log.checks++;
+      return Promise.resolve();
+    },
     subscribe: (l: () => void) => {
       listeners.add(l);
       return () => listeners.delete(l);
@@ -114,9 +141,11 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
     enabled: () => true,
     figures: () => state.figures,
     store,
-    offer: () => {
+    offer: (ask) => {
       log.offers++;
+      if (ask) log.asked++;
     },
+    model: () => state.model ?? tierModel(0),
     raster: {
       render: (path, page, region) => {
         log.rendered.push(
@@ -145,9 +174,11 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
     },
     client: () =>
       Promise.resolve({
-        ensureModel: () => {
+        ensureModel: async (key, read, confidence) => {
           log.ensured++;
-          return Promise.resolve();
+          log.keys.push(key);
+          log.thresholds.push(confidence);
+          await read();
         },
         read: (bitmap, _scale, _w, _h, origin) => {
           log.read.push(String(bitmap.width));
@@ -846,6 +877,110 @@ describe("OcrService", () => {
     it("reports the setting: figures need the OCR on as well", () => {
       const r = rig();
       expect(r.service.figures).toBe(true);
+    });
+  });
+
+  describe("the choice of model", () => {
+    it("reads with the files and thresholds of the model the setting chose", async () => {
+      const r = rig();
+      r.state.model = tierModel(1);
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+      await r.settle();
+      expect(r.log.keys).toEqual(["ocr-ppocrv6-small:1"]);
+      expect(r.log.bytesAsked).toEqual([
+        OCR_TIERS[1].dict,
+        "PP-OCRv5_mobile_det_infer.ort",
+        OCR_TIERS[1].rec,
+        "ort-wasm-simd-threaded.wasm",
+      ]);
+      expect(r.log.thresholds).toEqual([OCR_TIERS[1].confidence]);
+      expect(r.service.tuning()).toMatchObject(OCR_TIERS[1].confidence);
+    });
+
+    it("gives every model its own cache version and its own thresholds", () => {
+      const versions = OCR_TIERS.map((t) => t.version);
+      expect(new Set(versions).size).toBe(OCR_TIERS.length);
+      // An existing install's pages (read by the tiny model) stay valid for Fast.
+      expect(versions[0]).toBe("ppocrv6-tiny-1");
+      expect(new Set(OCR_TIERS.map((t) => `${t.asset.id}:${t.asset.version}`)).size).toBe(3);
+    });
+
+    it("counts pages another model read as not read, and records its own under its version", async () => {
+      const r = rig();
+      r.files.set(sidecar("a.pdf"), serializeCache(withPage(emptyCache(), 0, PAGE)));
+      // Fast read it; Fast still takes it.
+      expect(await r.service.cached("a.pdf", 0)).not.toBeNull();
+      r.state.model = tierModel(1);
+      expect(await r.service.cached("a.pdf", 0)).toBeNull();
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+      await r.settle();
+      expect(r.log.rendered).toEqual(["a.pdf#0"]);
+      await r.advance(SAVE_MS + 1);
+      const saved = parseCache(r.files.get(sidecar("a.pdf")) ?? "");
+      expect(saved.pages["0"]?.model).toBe("ppocrv6-small-1");
+      expect(await r.service.cached("a.pdf", 0)).not.toBeNull();
+      // Back to Fast: that page is Accurate's, so Fast reads it again.
+      r.state.model = tierModel(0);
+      expect(await r.service.cached("a.pdf", 0)).toBeNull();
+    });
+
+    it("offers the new model's download when it is not here, tells the notebooks, and deletes nothing", async () => {
+      const r = rig({ ready: false });
+      r.files.set(sidecar("a.pdf"), serializeCache(withPage(emptyCache(), 0, PAGE)));
+      r.state.model = tierModel(1);
+      r.service.modelChanged();
+      await r.settle();
+      expect(r.log.checks).toBe(1);
+      expect(r.log.asked).toBe(1);
+      expect(r.owner.changed).toBe(0);
+      r.service.attach(r.owner, "a.pdf");
+      r.service.modelChanged();
+      await r.settle();
+      expect(r.owner.changed).toBe(1);
+      // The sidecar is as it was: nothing was thrown away on the switch.
+      expect(parseCache(r.files.get(sidecar("a.pdf")) ?? "").pages["0"]?.model).toBe(
+        "ppocrv6-tiny-1",
+      );
+    });
+
+    it("does not offer a download when the new model is already here, and reads pages that waited", async () => {
+      const r = rig();
+      r.state.model = tierModel(2);
+      r.service.modelChanged();
+      await r.settle();
+      expect(r.log.asked).toBe(0);
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+      await r.settle();
+      expect(r.log.keys).toEqual(["ocr-ppocrv6-medium:1"]);
+    });
+
+    it("applies at once: a failed run is forgiven and the next page loads the new model", async () => {
+      const r = rig();
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 9, NONE);
+      await r.settle();
+      expect(r.log.keys).toEqual(["ocr-ppocrv6:2"]);
+      r.state.model = tierModel(1);
+      r.service.modelChanged();
+      r.service.want(r.owner, "a.pdf", 1, 9, NONE);
+      await r.settle();
+      expect(r.log.keys).toEqual(["ocr-ppocrv6:2", "ocr-ppocrv6-small:1"]);
+    });
+
+    it("does not store a page that was read while the setting changed", async () => {
+      const r = rig();
+      r.state.afterRead = () => {
+        r.state.model = tierModel(1);
+      };
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+      await r.settle();
+      await r.advance(SAVE_MS + 1);
+      expect(r.files.has(sidecar("a.pdf"))).toBe(false);
+      expect(r.owner.ready).toEqual([]);
     });
   });
 });

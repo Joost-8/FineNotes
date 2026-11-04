@@ -103,6 +103,19 @@ describe("the OCR cache file", () => {
     const stale = withPage(emptyCache(), 0, { ...sample, imageWidth: 9 }, "ppocrv5-mobile-0");
     expect(mergeCaches(theirs, stale).pages["0"].imageWidth).toBe(1403);
   });
+
+  it("keeps, for the model in use, what another device read with it over what was read with another", () => {
+    const small = "ppocrv6-small-1";
+    const theirs = withPage(emptyCache(), 0, { ...sample, imageWidth: 5 }, small);
+    const ours = withPage(emptyCache(), 0, { ...sample, imageWidth: 9 });
+    // This device uses the small model: its reading is kept; Fast's page does not replace it.
+    expect(mergeCaches(theirs, ours, small).pages["0"].imageWidth).toBe(5);
+    // This device uses Fast: the small model's page is replaced by Fast's.
+    expect(mergeCaches(theirs, ours).pages["0"].imageWidth).toBe(9);
+    // A page read for the cache's model (a page the switch just read again) replaces any other.
+    const fresh = withPage(emptyCache(), 0, { ...sample, imageWidth: 7 }, small);
+    expect(mergeCaches(ours, fresh, small).pages["0"].imageWidth).toBe(7);
+  });
 });
 
 describe("blank pages", () => {

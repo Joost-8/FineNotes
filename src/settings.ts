@@ -115,6 +115,12 @@ import {
   speechModelsFor,
 } from "./audio/speech-models";
 import type { AssetStore } from "./downloads/model-store";
+import {
+  OCR_ACCURATE_SLOWDOWN,
+  effectiveOcrTier,
+  ocrChoiceLabel,
+  ocrTiersFor,
+} from "./recognition/ocr/ocr-model";
 import { FolderInputSuggest } from "./view/folder-suggest";
 import { penGlyph, penSample } from "./view/pen-glyph-svg";
 import {
@@ -279,6 +285,18 @@ function shortcutAliases(action: ShortcutAction): string[] {
 const TOOL_NAMES = { pen: "Pen", highlighter: "Highlighter", eraser: "Eraser", select: "Select" };
 
 /** What each row's ⓘ opens: everything a row's one line leaves out. */
+/** On a phone or tablet: how much slower Accurate is (docs/OCR.md, "Choosing a model"). */
+const OCR_MOBILE_NOTE = `Accurate is about ${OCR_ACCURATE_SLOWDOWN}× slower per page than Fast.`;
+
+const OCR_MODEL_INFO =
+  "Fast is the small model FineNotes started with. Accurate reads more of a scan's words correctly and is " +
+  "slower and a bigger download. Most accurate is the largest and slowest, for a computer only: it stays on " +
+  "this computer outside your vault, so it never syncs to an iPad, which uses Fast or Accurate. The detector " +
+  "is shared by all three, so switching downloads only the reader that is missing and keeps the others on this " +
+  "device. Pages already read are read again with the model you pick, as you open them. The trash button " +
+  "removes the models you are not using, and the folder of an old version, to free space.\n\nDownload sizes " +
+  "and times are for a dense A4 page on a laptop with one thread; yours will differ.";
+
 const DESC = {
   pressure:
     "Turn this on to tell the pens apart: the Fountain pen gets wider the harder you press, " +
@@ -999,6 +1017,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     await this.plugin.saveSettings();
     // Pages already shown take it at once, without a reopen.
     if (key === "ocrScannedPdfs" || key === "ocrFigureText") this.plugin.ocr.settingsChanged();
+    // The new reader: its download is offered if it is not here, and pages are read with it.
+    if (key === "ocrModel") this.plugin.ocr.modelChanged();
     // A newly chosen speech model is registered before the tab is rebuilt, so its row shows it.
     if (key === "speechModel") this.plugin.speech.store();
     if (changesTabLayout(key)) this.update();
@@ -1558,6 +1578,28 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ),
           visible: () => settings.ocrScannedPdfs !== false,
         },
+        {
+          ...this.info(
+            drawnRow(
+              "OCR model",
+              Platform.isMobile ? OCR_MOBILE_NOTE : "",
+              (s) => this.drawOcrModel(s),
+              [
+                "ocr",
+                "scan",
+                "scanned",
+                "model",
+                "accurate",
+                "fast",
+                "slower",
+                "download",
+                "remove other ocr models",
+              ],
+            ),
+            OCR_MODEL_INFO,
+          ),
+          visible: () => settings.ocrScannedPdfs !== false,
+        },
         this.more("pages", "Folders, templates, file explorer"),
         this.info(
           drawnRow("New notebooks go in", "", (s) => this.drawNotebookFolder(s), [
@@ -2072,6 +2114,26 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         for (const { label, url } of COMMUNITY_LINKS.social) link(label, url);
       },
     };
+  }
+
+  // --- The OCR model --------------------------------------------------------------
+
+  /** The choice of OCR model, and the button that frees the space of the others. */
+  private drawOcrModel(setting: Setting): void {
+    const settings = this.plugin.settings;
+    const mobile = Platform.isMobile;
+    setting.addDropdown((d) => {
+      for (const tier of ocrTiersFor(mobile)) d.addOption(tier.id, ocrChoiceLabel(tier, mobile));
+      d.selectEl.setAttribute("aria-label", "OCR model");
+      d.setValue(effectiveOcrTier(settings.ocrModel, mobile).id);
+      d.onChange((value) => void this.setControlValue("ocrModel", value));
+    });
+    setting.addExtraButton((b) =>
+      b
+        .setIcon("trash-2")
+        .setTooltip("Remove other OCR models")
+        .onClick(() => void this.plugin.removeOtherOcrModels()),
+    );
   }
 
   // --- Models on this device ---------------------------------------------------

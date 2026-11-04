@@ -17,8 +17,8 @@ contributors and for users who want to know exactly what it does.
   that PDF only while idle. A PDF no open notebook uses is dropped from the
   queue. One page (one picture area) at a time; nothing starts while the pen
   writes.
-- Nothing downloads without a yes. The model (23.7 MB) is offered only for a page
-  with no text of its own and some ink.
+- Nothing downloads without a yes. The model (23.7 MB for Fast, the default; see
+  "Choosing a model" for the other two) is offered only for a page with no text of its own and some ink.
 - Printed text only. Messy handwriting is left alone (see the filter below).
 - Does not: read vertical or rotated text (lines leaning more than about 15
   degrees are dropped), read CJK reliably (the dictionary has 6,174 Chinese characters
@@ -30,6 +30,7 @@ Settings (Pages and notebooks): **Read scanned PDF pages (on-device OCR)**
 (`ocrFigureText`, default on, only in effect while the first is on). Both take effect without reopening a notebook: turned on, the pages shown are
 looked at now (and those waiting for the model join its queue); turned off, figure words already in the
 cache are hidden from layout and search at read time, not deleted, and what was queued for them is left.
+**OCR model** (`ocrModel`: `fast` by default, `accurate`, `most-accurate`; shown while OCR is on) chooses the reader; see "Choosing a model".
 The command **Re-read scanned pages of this PDF** forgets that PDF's cache and reads it again.
 
 ## Page conditions
@@ -184,42 +185,42 @@ one at a time:
 `OCR_TUNING` (`ocr-words.ts`) and the other constants. "Measured" refers to the
 lecture documents below or the synthetic page.
 
-| name                                                                           | value                   | meaning, and why                                                                                                                                                                                          |
-| ------------------------------------------------------------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `wordMean`                                                                     | 0.90                    | a word's mean character confidence at least this (was 0.85 for the v5 recogniser): scribbles reach 0.881 at most, printed text 0.984 at least; the scribble test kept none and the printed page lost none |
-| `wordMin`                                                                      | 0.5                     | the least character at least this                                                                                                                                                                         |
-| `lineMean`                                                                     | 0.90                    | a line below this is dropped whole (was 0.75): scribble lines reach 0.881 at most, printed lines 0.997 at least                                                                                           |
-| `sparseAreaShare`                                                              | 0.02                    | native text covering under 2% of the page is sparse                                                                                                                                                       |
-| `sparseChars`                                                                  | 40                      | fewer characters is sparse (a page number, a header)                                                                                                                                                      |
-| `overlap`                                                                      | 0.3                     | share of an OCR word under native text that drops it                                                                                                                                                      |
-| `figureMinSide`                                                                | 36 pt                   | a picture under 0.5 in on either side is an icon, logo, bullet or badge; the smallest figure with labels in the lecture PDFs is 116 pt                                                                    |
-| `figureMinAreaShare`                                                           | 0.015                   | under 1.5% of the page is not a figure either                                                                                                                                                             |
-| `figureMergeGap`                                                               | 3 pt                    | pictures this close are one figure (strips)                                                                                                                                                               |
-| `figurePad`                                                                    | 6 pt                    | a label at the picture's edge is still read                                                                                                                                                               |
-| `scannedShare`                                                                 | 0.6                     | a sparse page with a picture over 60% of it is a scan                                                                                                                                                     |
-| `figureMinDpi` / `figureMaxDpi`                                                | 170 / 300               | raster resolution follows the picture, clamped; every figure in the lecture PDFs is stored above 300 dpi, so all were read at 300 dpi                                                                     |
-| `figureMaxEdge`                                                                | 2200 px                 | longest side of a region raster (memory on a phone)                                                                                                                                                       |
-| `OCR_DPI` / `OCR_MAX_EDGE`                                                     | 170 / 2200              | whole-page raster                                                                                                                                                                                         |
-| `DET_TILE_SIDE` / `DET_TILE_OVERLAP`                                           | 800 / 96 px             | smaller tiles than 1280 cut peak memory by about 270 MB with the same accuracy                                                                                                                            |
-| `DB_THRESHOLD`, `DB_BOX_SCORE`, `DB_UNCLIP_RATIO`, `MAX_TILT`                  | 0.3, 0.6, 1.5, 0.26 rad | PaddleOCR's own post-processing values; tilt is about 15 degrees                                                                                                                                          |
-| `MIN_PIXELS`, `MIN_SIDE`, `MIN_GROWN_SIDE`, `MIN_ELONGATION`                   | 12 px, 3 px, 6 px, 2    | box finder: a blob under 12 pixels, under 3 px thick, or under 6 px thick after growing is noise; a blob less than 2x longer than thick has no direction of its own                                       |
-| `MASK_PAD`                                                                     | 2 px                    | native text rectangles are widened by this when masked out of an ink or edge check                                                                                                                        |
-| `MAX_IMAGES`                                                                   | 1000                    | images read from one page's operators; more is a pattern, not a figure                                                                                                                                    |
-| `REC_CORE`                                                                     | 1.2                     | see the variant table                                                                                                                                                                                     |
-| `REC_STRIDE`, `REC_BATCH`                                                      | 8, 4                    | pixels per CTC time step; recogniser batches of 4 for memory                                                                                                                                              |
-| `REC_RETRY`                                                                    | 1.0, 1.4                | the `REC_CORE` values a line the reader was unsure of is read again with; see the table of what was tried                                                                                                 |
-| `INK_LEVEL`, `BLANK_SHARE`                                                     | 225, 0.0002             | a pixel darker than 225 is ink; under 0.02% ink a page is blank                                                                                                                                           |
-| `EDGE_STEP`, `EDGE_SHARE`                                                      | 40 levels, 0.0004       | an edge is a luminance step of 40 between neighbours; 0.04% of the area as edges is content (a backdrop has none)                                                                                         |
-| ink / edge check copy                                                          | 256 / 640 px            | the longest side of the copy the ink check, and the edge check (which needs small print to survive), look at                                                                                              |
-| `IDLE_RELEASE_MS`                                                              | 2 min                   | the OCR worker, and its models, are let go after this idle                                                                                                                                                |
-| `correctMinLetters`, `correctMaxEdit`, `correctMaxEditLong`, `correctLongFrom` | 5, 1, 2, 9              | a misread word of 5 letters or more is corrected within one weighted edit (two from 9 letters); shorter words have too many neighbours                                                                    |
-| `correctConfusion`, `correctDoubled`                                           | 0.4, 0.5                | cost of a classic confusion (rn/m, cl/d, vv/w, li/h, I/l/1, O/0) and of a doubled or missing double letter, against 1 for any other edit                                                                  |
-| enclosed-symbol width                                                          | 1.6 letters             | how wide a symbol is taken to be when a word was stored without character positions                                                                                                                       |
-| `RIGHT_BIAS`                                                                   | 0.1                     | a tenth more on a word's right edge                                                                                                                                                                       |
-| `CLASSIFY_VERSION`                                                             | 1                       | bump when the classification rules change: a `TEXT_ONLY` page recorded under older rules is looked at again                                                                                               |
-| `IDLE_MS`                                                                      | 3000                    | pages away from the one in view wait until nothing happened for this long                                                                                                                                 |
-| `RETRY_MS`, `MAX_FAILURES`                                                     | 60 s, 4                 | a failed page is not retried for a minute; four failures in a row and OCR rests for the session                                                                                                           |
-| `SAVE_MS`                                                                      | 2500                    | the cache is written this long after the last page                                                                                                                                                        |
+| name                                                                           | value                   | meaning, and why                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wordMean`                                                                     | 0.90                    | a word's mean character confidence at least this (was 0.85 for the v5 recogniser). **Fast's value**: Accurate and Most accurate have their own, see "Choosing a model": scribbles reach 0.881 at most, printed text 0.984 at least; the scribble test kept none and the printed page lost none |
+| `wordMin`                                                                      | 0.5                     | the least character at least this                                                                                                                                                                                                                                                              |
+| `lineMean`                                                                     | 0.90                    | a line below this is dropped whole (was 0.75): scribble lines reach 0.881 at most, printed lines 0.997 at least                                                                                                                                                                                |
+| `sparseAreaShare`                                                              | 0.02                    | native text covering under 2% of the page is sparse                                                                                                                                                                                                                                            |
+| `sparseChars`                                                                  | 40                      | fewer characters is sparse (a page number, a header)                                                                                                                                                                                                                                           |
+| `overlap`                                                                      | 0.3                     | share of an OCR word under native text that drops it                                                                                                                                                                                                                                           |
+| `figureMinSide`                                                                | 36 pt                   | a picture under 0.5 in on either side is an icon, logo, bullet or badge; the smallest figure with labels in the lecture PDFs is 116 pt                                                                                                                                                         |
+| `figureMinAreaShare`                                                           | 0.015                   | under 1.5% of the page is not a figure either                                                                                                                                                                                                                                                  |
+| `figureMergeGap`                                                               | 3 pt                    | pictures this close are one figure (strips)                                                                                                                                                                                                                                                    |
+| `figurePad`                                                                    | 6 pt                    | a label at the picture's edge is still read                                                                                                                                                                                                                                                    |
+| `scannedShare`                                                                 | 0.6                     | a sparse page with a picture over 60% of it is a scan                                                                                                                                                                                                                                          |
+| `figureMinDpi` / `figureMaxDpi`                                                | 170 / 300               | raster resolution follows the picture, clamped; every figure in the lecture PDFs is stored above 300 dpi, so all were read at 300 dpi                                                                                                                                                          |
+| `figureMaxEdge`                                                                | 2200 px                 | longest side of a region raster (memory on a phone)                                                                                                                                                                                                                                            |
+| `OCR_DPI` / `OCR_MAX_EDGE`                                                     | 170 / 2200              | whole-page raster                                                                                                                                                                                                                                                                              |
+| `DET_TILE_SIDE` / `DET_TILE_OVERLAP`                                           | 800 / 96 px             | smaller tiles than 1280 cut peak memory by about 270 MB with the same accuracy                                                                                                                                                                                                                 |
+| `DB_THRESHOLD`, `DB_BOX_SCORE`, `DB_UNCLIP_RATIO`, `MAX_TILT`                  | 0.3, 0.6, 1.5, 0.26 rad | PaddleOCR's own post-processing values; tilt is about 15 degrees                                                                                                                                                                                                                               |
+| `MIN_PIXELS`, `MIN_SIDE`, `MIN_GROWN_SIDE`, `MIN_ELONGATION`                   | 12 px, 3 px, 6 px, 2    | box finder: a blob under 12 pixels, under 3 px thick, or under 6 px thick after growing is noise; a blob less than 2x longer than thick has no direction of its own                                                                                                                            |
+| `MASK_PAD`                                                                     | 2 px                    | native text rectangles are widened by this when masked out of an ink or edge check                                                                                                                                                                                                             |
+| `MAX_IMAGES`                                                                   | 1000                    | images read from one page's operators; more is a pattern, not a figure                                                                                                                                                                                                                         |
+| `REC_CORE`                                                                     | 1.2                     | see the variant table                                                                                                                                                                                                                                                                          |
+| `REC_STRIDE`, `REC_BATCH`                                                      | 8, 4                    | pixels per CTC time step; recogniser batches of 4 for memory                                                                                                                                                                                                                                   |
+| `REC_RETRY`                                                                    | 1.0, 1.4                | the `REC_CORE` values a line the reader was unsure of is read again with; see the table of what was tried                                                                                                                                                                                      |
+| `INK_LEVEL`, `BLANK_SHARE`                                                     | 225, 0.0002             | a pixel darker than 225 is ink; under 0.02% ink a page is blank                                                                                                                                                                                                                                |
+| `EDGE_STEP`, `EDGE_SHARE`                                                      | 40 levels, 0.0004       | an edge is a luminance step of 40 between neighbours; 0.04% of the area as edges is content (a backdrop has none)                                                                                                                                                                              |
+| ink / edge check copy                                                          | 256 / 640 px            | the longest side of the copy the ink check, and the edge check (which needs small print to survive), look at                                                                                                                                                                                   |
+| `IDLE_RELEASE_MS`                                                              | 2 min                   | the OCR worker, and its models, are let go after this idle                                                                                                                                                                                                                                     |
+| `correctMinLetters`, `correctMaxEdit`, `correctMaxEditLong`, `correctLongFrom` | 5, 1, 2, 9              | a misread word of 5 letters or more is corrected within one weighted edit (two from 9 letters); shorter words have too many neighbours                                                                                                                                                         |
+| `correctConfusion`, `correctDoubled`                                           | 0.4, 0.5                | cost of a classic confusion (rn/m, cl/d, vv/w, li/h, I/l/1, O/0) and of a doubled or missing double letter, against 1 for any other edit                                                                                                                                                       |
+| enclosed-symbol width                                                          | 1.6 letters             | how wide a symbol is taken to be when a word was stored without character positions                                                                                                                                                                                                            |
+| `RIGHT_BIAS`                                                                   | 0.1                     | a tenth more on a word's right edge                                                                                                                                                                                                                                                            |
+| `CLASSIFY_VERSION`                                                             | 1                       | bump when the classification rules change: a `TEXT_ONLY` page recorded under older rules is looked at again                                                                                                                                                                                    |
+| `IDLE_MS`                                                                      | 3000                    | pages away from the one in view wait until nothing happened for this long                                                                                                                                                                                                                      |
+| `RETRY_MS`, `MAX_FAILURES`                                                     | 60 s, 4                 | a failed page is not retried for a minute; four failures in a row and OCR rests for the session                                                                                                                                                                                                |
+| `SAVE_MS`                                                                      | 2500                    | the cache is written this long after the last page                                                                                                                                                                                                                                             |
 
 **REC_CORE variants** (synthetic scan pages, Chromium, real models; CER of all words
 on `a-scan`, `a-scan-1col`; double-letter words exact): 1.0: 0.50%, 0.78%, 18/21;
@@ -241,7 +242,8 @@ requests and has no bandwidth budget (not Git LFS, not Hugging Face); the wasm f
 | `ppocrv6_tiny_dict.txt`         | 27,157     | `2f3717bb...eb21f2d`   | its dictionary: 6905 lines, line 0 the blank; PaddleOCR appends the space as the last (6906th) class |
 | `ort-wasm-simd-threaded.wasm`   | 14,239,897 | `3398c10d...78842dee2` | onnxruntime-web 1.30.0, MIT                                                                          |
 
-Total 23.7 MB (was 35.8 MB with the PP-OCRv5 multilingual recogniser). The full hashes are in `src/recognition/ocr/ocr-model.ts` and
+Total 23.7 MB (was 35.8 MB with the PP-OCRv5 multilingual recogniser). That is the **Fast** model. The other two
+choices add one recogniser and one dictionary each, and share the detector and the wasm (see "Choosing a model"). The full hashes are in `src/recognition/ocr/ocr-model.ts` and
 `THIRD_PARTY_NOTICES.txt` lists the licences. The OCR worker is started from a Blob
 URL, one thread, handed the wasm bytes (no SharedArrayBuffer is needed).
 
@@ -353,6 +355,112 @@ by `ppocrv5-mobile-1` is read again). `alphabetFrom` appends the space. `OCR_TUN
 (the model repository's Git LFS bandwidth budget) and not from Hugging Face. Every URL was checked: 200 with the
 exact byte count and SHA-256, `accept-ranges: bytes`, and `Range: bytes=0-99` answers 206 with 100 bytes.
 
+## Choosing a model
+
+The setting **OCR model** (Pages and notebooks, under "Also read text inside figures", shown only while OCR
+is on) has three choices. All three use the PP-OCRv5 mobile detector (the v6 detectors failed the IoU floor,
+see "Model choice") and differ in the recogniser.
+
+| choice                      | recogniser               | download (with detector and wasm) | wasm heap after load / peak (one page) | det + rec, dense A4 page | 53.pdf labels exact | 53.pdf precision | scribbles kept | where                   |
+| --------------------------- | ------------------------ | --------------------------------- | -------------------------------------- | ------------------------ | ------------------- | ---------------- | -------------- | ----------------------- |
+| **Fast** (default)          | PP-OCRv6 tiny, 4.5 MB    | 23.7 MB                           | 33 / 120 MB                            | 3.3 + 2.4 = 5.7 s        | 147 = 86.0%         | 96.3%            | 0 / 7          | every device            |
+| **Accurate**                | PP-OCRv6 small, 21.3 MB  | 40.5 MB                           | 87 / 181 MB                            | 3.4 + 10.4 = 13.8 s      | 151 = 88.3%         | 97.0%            | 0 / 7          | every device            |
+| **Most accurate** (desktop) | PP-OCRv6 medium, 76.7 MB | 95.9 MB                           | 196 / 236 MB                           | 3.2 + 44.3 = 47.5 s      | 151 = 88.3%         | 96.6%            | 0 / 7          | desktop only, off vault |
+
+Measured in the same harness as "Model choice" (Chromium, one wasm thread, the OCR worker, a 4-core Linux
+sandbox; the synthetic A4 page at 170 dpi; 53.pdf is the 171-label ground truth, 17 figure regions, 491 words).
+The speed column is what the setting shows beside each choice ("Fast · 23.7 MB · ~6 s/page on desktop"); a
+real laptop will differ, and an iPad is not measured. 53.pdf OCR and raster time: Fast 16.9 s, Accurate 36.7 s,
+Most accurate 129.9 s. On every synthetic page (clean, noisy two-column, one column, merge page) all three read
+every word exactly after the confidence filter (kept CER 0.00%, double letters 21/21 and 17/17, mean IoU
+0.883 on the noisy page: the detector is the same). The labels exact are at each choice's final thresholds
+below; at the Fast thresholds Accurate would read 154 (90.1%) and Most accurate 153 (89.5%), but would keep
+two of the seven scribbles.
+
+**Rules.**
+
+- Fast is the default and what every existing install uses: same model id (`ocr-ppocrv6`), version, folder and
+  cache version, no download, no behaviour change.
+- Accurate is offered on every platform. On a phone or tablet its row says "Accurate is about 2x slower per page
+  than Fast" (13.8 s against 5.7 s on the laptop; the iPad is not measured).
+- Most accurate is offered on desktop only (`Platform.isMobile` hides it; a vault whose settings chose it
+  and that is opened on a phone uses Fast). Its asset is `deviceOnly`, as the large Whisper model is: it lives in
+  IndexedDB on that computer, outside the vault, so its 76.7 MB never syncs to a phone.
+- The detector and the wasm are one pair of files in `ocr/ppocrv6-1` for all three (`ModelAsset.shared`), found
+  there by every choice: switching never downloads them again, not even for Most accurate (whose own files
+  are outside the vault). A choice's own download is its recogniser and dictionary only, when the detector and wasm
+  are already on the device: Accurate 21.4 MB, Most accurate 76.8 MB.
+- Small and medium share one dictionary, `ppocrv6_dict.txt` (18,709 lines, 400 accented Latin letters, 180 kana,
+  so Japanese is read again with them); tiny has its own 6,905-line one (no kana).
+
+**Switching** (`OcrService.modelChanged`): the new choice's download is offered through the usual card if it is
+not on the device; the other choices' files are kept (nothing is deleted on a switch); the worker lets the old
+model go and loads the new one when the next page is read (no restart of Obsidian); and each choice has its own
+cache version (`ppocrv6-tiny-1`, `ppocrv6-small-1`, `ppocrv6-medium-1`), so pages another choice read count as
+not read and are read again with the chosen one as the notebooks ask for them. A page read while the setting changes is
+dropped, not recorded under the wrong version. The cache holds one entry per page, so switching back re-reads
+the pages once more. While the new model is not on the device, those pages show no OCR text until it arrives.
+**Remove other OCR models** (the trash button in the setting's row) removes the choices not in use and the
+obsolete folder `ocr/ppocrv5`; only that button deletes anything, and the detector and wasm stay.
+
+**Thresholds per recogniser.** A larger recogniser is more confident about everything, scribbles included, so
+the thresholds of the tiny one (0.90 / 0.90 / 0.5) are not safe for the others: at them both keep two of the seven
+scribble regions (the cursive word "important", which they read correctly: 0.908 small, 0.960 medium). Calibration is
+the method of "Model choice": put the threshold between the most confident scribble and the least confident
+printed text, then check figure labels. Distributions (synthetic pages: 844 printed words, 110 printed lines;
+the 7 scribble and cursive regions; before the filter):
+
+| recogniser | printed words: least mean / least character | printed lines: least | scribble words: most mean / most of the least character | scribble lines: most |
+| ---------- | ------------------------------------------- | -------------------- | ------------------------------------------------------- | -------------------- |
+| tiny       | 0.984 / 0.922                               | 0.997                | 0.881 / 0.761                                           | 0.881                |
+| small      | 0.996 / 0.996                               | 1.000                | 0.908 / 0.751                                           | 0.908                |
+| medium     | 0.999 / 0.991                               | 1.000                | 0.960 / 0.810                                           | 0.960                |
+
+(Scribble words of the small and medium models differ slightly from run to run, because a line the filter
+distrusts is read again and the reading that survives depends on the threshold; the figures are from the
+runs at the default thresholds.)
+
+Threshold sweep, each a real run (scribble test page, then 53.pdf). `wordMean` is also `lineMean`; "labels
+exact" and precision as in "Model choice"; the chosen row is bold.
+
+| recogniser | wordMean = lineMean / wordMin | scribbles kept | 53.pdf labels exact | 53.pdf precision |
+| ---------- | ----------------------------- | -------------- | ------------------- | ---------------- |
+| small      | 0.90 / 0.5 (Fast's)           | 2 / 7          | 154 = 90.1%         | 96.4%            |
+| small      | 0.93 / 0.5                    | 0 / 7          | 151 = 88.3%         | 96.6%            |
+| small      | **0.95 / 0.5**                | **0 / 7**      | **151 = 88.3%**     | **97.0%**        |
+| small      | 0.90 / 0.8                    | 0 / 7          | 148 = 86.5%         | 95.7%            |
+| small      | 0.95 / 0.8                    | 0 / 7          | 147 = 86.0%         | 97.0%            |
+| medium     | 0.90 / 0.5 (Fast's)           | 2 / 7          | 153 = 89.5%         | 95.6%            |
+| medium     | 0.90 / 0.9                    | 2 / 7          | 151 = 88.3%         | 95.6%            |
+| medium     | 0.97 / 0.5                    | 0 / 7          | 150 = 87.7%         | 96.8%            |
+| medium     | 0.98 / 0.5                    | 0 / 7          | 148 = 86.5%         | 97.5%            |
+| medium     | **0.95 / 0.9**                | **0 / 7**      | **151 = 88.3%**     | **96.6%**        |
+
+Chosen (`OCR_TIERS` in `ocr-model.ts`; one `OcrConfidence` per recogniser, handed to the worker so the lines
+it reads again are the ones that choice distrusts, and to the text layer so a page is filtered with the thresholds of
+the model that read it): Fast 0.90 / 0.90 / 0.5; **Accurate 0.95 / 0.95 / 0.5** (midway between the most confident
+scribble, 0.908, and the least confident printed word, 0.996); **Most accurate 0.95 / 0.95 / 0.9**. For the medium model
+the mean alone would have to be 0.98 to pass its most confident scribble (0.960), which costs three labels
+(148 against 151); the least character is a second signal with room: its scribbles reach 0.810 and its printed
+text starts at 0.991, so 0.9 sits between them and a word must pass both. On the synthetic pages
+the final thresholds lose no printed word and the kept CER is 0.00% on all three (scribble page: 0 / 7 for all three,
+kept text 0.14% from CER against the printed text only, as before).
+
+No extra signal was needed. A per-character margin (top-1 minus top-2 probability) or an agreement test between
+the `REC_CORE` and `REC_RETRY` readings was considered for the case where a threshold could not separate scribbles
+from printed text; both models separate them on the mean (small) or the mean and the least character (medium), so
+neither was added: unused rules would be untested weight in the worker. The margin is thin for medium (a single
+legible cursive word decides it) and the test page has seven scribble regions; a model with more scribble data
+would be a better basis than this one.
+
+**Is the medium model usable? Yes on a desktop, slowly.** Loads under the single-thread wasm in 0.3 s of
+`ensureModel` (plus reading 77 MB from IndexedDB), wasm heap 196 MB after load and 236 MB peak for a dense page (the
+1 GB limit set for the decision is far off), 47.5 s per dense page (4.1 times the small model, 8.3 times Fast),
+129.9 s for the 17 figure regions of 53.pdf. Its recall on 53.pdf is not above the small model's (151 and 151 at their
+final thresholds; 153 against 154 at Fast's), so what the extra 55 MB and 34 s per page buy is not visible on these
+test pages; the synthetic pages are read perfectly by all three. It is offered because the user asked for it, with
+that measurement beside it.
+
 ## Cache
 
 One JSON sidecar per PDF: `<plugin>/ocr/<SHA-256 of the PDF's bytes>.json`, so it
@@ -361,7 +469,7 @@ zero-based page: the model version, `condition`, `regions` (the page-space rects
 read, with their dpi), the page and image sizes, and the raw lines of words with
 confidences. A `TEXT_ONLY` or `BLANK` page is recorded too, with no regions and no
 words, so reopening a PDF costs nothing: no operators, no raster, no model. Entries
-of format 1, of another model version (the model is `ppocrv6-tiny-1`; pages read with `ppocrv5-mobile-1` are read again), with an unknown condition, or a `TEXT_ONLY`
+of format 1, of another model version (Fast is `ppocrv6-tiny-1`, Accurate `ppocrv6-small-1`, Most accurate `ppocrv6-medium-1`; pages read with another are read again), with an unknown condition, or a `TEXT_ONLY`
 entry recorded under other `CLASSIFY_VERSION` rules are misses. The file is read
 tolerantly (damaged pages and words are dropped), written a pause after the last
 page and never while the pen is held, through a temporary name and then moved, and

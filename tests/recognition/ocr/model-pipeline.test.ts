@@ -4,12 +4,19 @@ import { totalBytes } from "../../../src/downloads/model-manifest";
 import {
   OCR_DET_FILE,
   OCR_MODEL,
+  OCR_MODEL_ACCURATE,
+  OCR_MODEL_MOST_ACCURATE,
+  OCR_TIERS,
+  effectiveOcrTier,
+  ocrChoiceLabel,
+  ocrTiersFor,
+  ocrTuningFor,
   OCR_REC_FILE,
   OCR_DICT_FILE,
   OCR_WASM_FILE,
 } from "../../../src/recognition/ocr/ocr-model";
 import { type OcrBackend, OcrCancelled, readPage } from "../../../src/recognition/ocr/pipeline";
-import { keptLines } from "../../../src/recognition/ocr/ocr-words";
+import { OCR_TUNING, keptLines } from "../../../src/recognition/ocr/ocr-words";
 import { REC_STRIDE } from "../../../src/recognition/ocr/rec";
 
 describe("the OCR model as pinned", () => {
@@ -47,6 +54,84 @@ describe("the OCR model as pinned", () => {
       version: string;
     };
     expect(installed.version).toBe(pinned);
+  });
+
+  it("pins the other two recognisers the same way, each under 100 MB, in folders of its own", () => {
+    for (const asset of [OCR_MODEL_ACCURATE, OCR_MODEL_MOST_ACCURATE]) {
+      for (const file of asset.files) {
+        expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
+        expect(file.bytes).toBeLessThan(100_000_000);
+        expect(file.url).toMatch(
+          /^https:\/\/raw\.githubusercontent\.com\/fariszyzy\/FineNotes\/ocr-models\/(ppocrv6-small-1|ppocrv6-medium-1|ppocrv6-1|runtime)\//,
+        );
+      }
+    }
+    expect(OCR_MODEL_ACCURATE.files.map((f) => f.name)).toEqual([
+      "PP-OCRv6_small_rec.ort",
+      "ppocrv6_dict.txt",
+      OCR_DET_FILE.name,
+      OCR_WASM_FILE.name,
+    ]);
+    expect(totalBytes(OCR_MODEL_ACCURATE)).toBe(21_290_816 + 74_948 + 4_896_928 + 14_239_897);
+    expect(OCR_MODEL_MOST_ACCURATE.files[0].bytes).toBe(76_691_568);
+  });
+
+  it("shares the detector and the wasm between the choices: one file, one URL, one folder", () => {
+    const shared = OCR_TIERS.map((t) =>
+      t.asset.files.filter((f) => f.name === OCR_DET_FILE.name || f.name === OCR_WASM_FILE.name),
+    );
+    for (const files of shared) expect(files).toEqual([OCR_DET_FILE, OCR_WASM_FILE]);
+    for (const { asset } of OCR_TIERS) {
+      expect(asset.shared).toEqual({
+        folder: OCR_MODEL.folder,
+        files: [OCR_DET_FILE.name, OCR_WASM_FILE.name],
+      });
+    }
+    // Different ids and folders for what is not shared, so no file of one is taken for another's.
+    expect(new Set(OCR_TIERS.map((t) => t.asset.id)).size).toBe(3);
+    expect(new Set(OCR_TIERS.map((t) => t.asset.folder)).size).toBe(3);
+  });
+
+  it("keeps Fast exactly as every install has it, and the largest model off the vault", () => {
+    expect(OCR_MODEL).toMatchObject({ id: "ocr-ppocrv6", version: "2", folder: "ocr/ppocrv6-1" });
+    expect(OCR_MODEL.deviceOnly).toBeUndefined();
+    expect(OCR_MODEL_ACCURATE.deviceOnly).toBeUndefined();
+    expect(OCR_MODEL_MOST_ACCURATE.deviceOnly).toBe(true);
+    expect(OCR_TIERS[0].confidence).toEqual({ wordMean: 0.9, lineMean: 0.9, wordMin: 0.5 });
+    expect(OCR_TUNING).toMatchObject(OCR_TIERS[0].confidence);
+  });
+
+  it("offers the largest model on a desktop only; anything else chosen is Fast", () => {
+    expect(ocrTiersFor(false).map((t) => t.id)).toEqual(["fast", "accurate", "most-accurate"]);
+    expect(ocrTiersFor(true).map((t) => t.id)).toEqual(["fast", "accurate"]);
+    expect(effectiveOcrTier("most-accurate", false).id).toBe("most-accurate");
+    expect(effectiveOcrTier("most-accurate", true).id).toBe("fast");
+    expect(effectiveOcrTier("accurate", true).id).toBe("accurate");
+    expect(effectiveOcrTier(undefined, false).id).toBe("fast");
+    expect(effectiveOcrTier("huge", false).id).toBe("fast");
+  });
+
+  it("describes each choice with its download size and a speed hint", () => {
+    expect(ocrChoiceLabel(OCR_TIERS[0], false)).toBe("Fast · 23.7 MB · ~6 s/page on desktop");
+    expect(ocrChoiceLabel(OCR_TIERS[1], false)).toMatch(
+      /^Accurate · 40\.5 MB · ~\d+ s\/page on desktop$/,
+    );
+    expect(ocrChoiceLabel(OCR_TIERS[2], false)).toMatch(
+      /^Most accurate · 9\d\.\d MB · ~\d+ s\/page/,
+    );
+  });
+
+  it("gives each recogniser its own confidence thresholds, stricter as the model gets surer", () => {
+    const [fast, accurate, best] = OCR_TIERS.map((t) => ocrTuningFor(t));
+    expect(accurate.wordMean).toBeGreaterThan(fast.wordMean);
+    expect(accurate.lineMean).toBeGreaterThan(fast.lineMean);
+    // The medium model's scribble "important" reads 0.960 as a whole, so it also asks for a surer
+    // least character (its scribbles reach 0.810, its printed text 0.991).
+    expect(best.wordMean).toBeGreaterThanOrEqual(accurate.wordMean);
+    expect(best.wordMin).toBeGreaterThan(accurate.wordMin);
+    // Everything else is the shared tuning.
+    expect(best.overlap).toBe(OCR_TUNING.overlap);
+    expect(best.sparseChars).toBe(OCR_TUNING.sparseChars);
   });
 
   it("is listed in THIRD_PARTY_NOTICES", () => {
@@ -191,6 +276,33 @@ describe("reading a page image", () => {
     calls = 5;
     await readPage(image, backend, { ...opts, retry: [1.0, 1.4] });
     expect(calls).toBe(6);
+  });
+
+  it("reads a line again by the model's own thresholds: sure for one model, unsure for another", async () => {
+    // The recogniser is 0.95 sure of every character.
+    const bars = [{ x: 40, y: 60, w: 300, h: 10, text: "label" }];
+    const inner = fakeBackend(bars, alphabet);
+    let calls = 0;
+    const backend = {
+      ...inner,
+      detect: inner.detect,
+      recognize(data: Float32Array, n: number, width: number) {
+        calls++;
+        return inner.recognize(data, n, width);
+      },
+    };
+    const opts = { scale: 2, pageWidth: 300, pageHeight: 200, alphabet, retry: [1.0] };
+    await readPage(image, backend, {
+      ...opts,
+      confidence: { wordMean: 0.9, lineMean: 0.9, wordMin: 0.5 },
+    });
+    expect(calls).toBe(1);
+    calls = 0;
+    await readPage(image, backend, {
+      ...opts,
+      confidence: { wordMean: 0.98, lineMean: 0.98, wordMin: 0.5 },
+    });
+    expect(calls).toBe(2);
   });
 
   it("keeps where each character starts, in page points, for a word with an enclosed number", async () => {

@@ -23,6 +23,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Choose the OCR model.** _OCR model_ (Settings, Pages and notebooks, under _Read scanned
+  PDF pages_) has three choices. **Fast** is the default and what you have now: no
+  change. **Accurate** (PP-OCRv6 small, 40.5 MB in all, about 2.3 times slower per page)
+  reads 151 of the 171 labels of the test lecture exactly, against 147. **Most accurate**
+  (PP-OCRv6 medium, 95.9 MB, desktop only, about 8 times slower than Fast) is kept on that
+  computer outside your vault, so it never syncs to an iPad. The detector is shared:
+  switching downloads only the reader that is missing, keeps the others, and takes effect
+  without restarting Obsidian; pages are read again with the model you pick. Each reader has
+  its own confidence thresholds, so none of them keeps scribbles in the scribble test.
+  The trash button beside the setting removes the models you are not using, and the folder
+  of an old version. Measurements and thresholds: [docs/OCR.md](docs/OCR.md#choosing-a-model).
 - **Text inside the pictures of PDF pages is read too.** A lecture PDF has a text
   layer, but the labels in its figures ("Bladder", "Pubic bone") are pixels and
   could not be searched. FineNotes now finds the pictures from the PDF's own
@@ -75,6 +86,11 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **"The download arrived damaged" for the OCR model.** GitHub serves small text files
+  compressed and counts a byte range in compressed bytes, and jsDelivr sends the WebAssembly
+  file brotli-compressed even when asked not to. Downloads now ask for no compression, a
+  range whose total is not the file's size makes the download fetch that file once in one
+  piece, and the WebAssembly file is served from this repository's `ocr-models` branch.
 - **Colours on dark pages show what lands.** The colour picker, the text,
   fill, border, shape and Fill tool colours, the lasso's ink colours and a
   table cell's colours show each colour as the dark page shows it (a

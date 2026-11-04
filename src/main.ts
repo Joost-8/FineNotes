@@ -191,9 +191,10 @@ import { StartupLog } from "./view/startup-log";
 import { DeviceTranscriber } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
 import { obsidianOcrDeps } from "./view/ocr-deps";
+import { cleanupText, removeOtherOcrModels } from "./view/ocr-models";
 import { OcrService } from "./view/ocr-service";
 import { OcrStatus } from "./view/ocr-status";
-import { OCR_MODEL } from "./recognition/ocr/ocr-model";
+import { OCR_TIERS, effectiveOcrTier } from "./recognition/ocr/ocr-model";
 import { HandwritingReader } from "./view/handwriting";
 import { ReadingGuard } from "./recognition/reading-guard";
 import {
@@ -338,6 +339,8 @@ export default class GoodObsidianPlugin extends Plugin {
       models: this.models,
       enabled: () => this.settings.ocrScannedPdfs !== false,
       figures: () => this.settings.ocrFigureText !== false,
+      tier: () => effectiveOcrTier(this.settings.ocrModel, Platform.isMobile),
+      mobile: () => Platform.isMobile,
     }).deps,
   );
 
@@ -1006,7 +1009,20 @@ export default class GoodObsidianPlugin extends Plugin {
   modelReleased(id: string): void {
     if (id === "grape" || id === "grape-2") this.handwriting.dispose();
     if (id.startsWith("whisper-")) this.speech.release();
-    if (id === OCR_MODEL.id) this.ocr.releaseModel();
+    if (OCR_TIERS.some((t) => t.asset.id === id)) this.ocr.releaseModel();
+  }
+
+  /** "Remove other OCR models": every OCR model but the chosen one, and the old version's folder. */
+  async removeOtherOcrModels(): Promise<void> {
+    const active = effectiveOcrTier(this.settings.ocrModel, Platform.isMobile).asset.id;
+    const adapter = this.app.vault.adapter;
+    const path = (folder: string): string => normalizePath(`${this.pluginDir}/${folder}`);
+    const result = await removeOtherOcrModels(active, {
+      store: (id) => this.models.get(id),
+      folderExists: (folder) => adapter.exists(path(folder)),
+      removeFolder: (folder) => adapter.rmdir(path(folder), true),
+    });
+    new Notice(cleanupText(result));
   }
 
   /** Switch corrections (underlined misreads) on or off, and show it in every open notebook. */

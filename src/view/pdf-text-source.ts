@@ -474,7 +474,7 @@ export class PdfTextCache implements OcrOwner {
         found.condition === "TEXT_ONLY" || found.condition === "BLANK"
           ? undefined
           : await this.dictionary(backdrop.path);
-      return mergedItems(native, found, viewport, source, undefined, figures, dictionary);
+      return mergedItems(native, found, viewport, source, ocr.tuning(), figures, dictionary);
     }
     const operators = figures ? page.getOperatorList?.bind(page) : undefined;
     const scan = operators

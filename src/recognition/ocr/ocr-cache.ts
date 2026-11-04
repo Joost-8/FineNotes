@@ -231,11 +231,15 @@ export function withPage(
  * have added pages to): a page of ours replaces theirs, unless theirs was
  * read by this build's model and ours was not.
  */
-export function mergeCaches(theirs: OcrCacheFile, ours: OcrCacheFile): OcrCacheFile {
+export function mergeCaches(
+  theirs: OcrCacheFile,
+  ours: OcrCacheFile,
+  model: string = OCR_MODEL_VERSION,
+): OcrCacheFile {
   const pages = { ...theirs.pages };
   for (const [key, page] of Object.entries(ours.pages)) {
     const other = pages[key];
-    if (other && other.model === OCR_MODEL_VERSION && page.model !== OCR_MODEL_VERSION) continue;
+    if (other && other.model === model && page.model !== model) continue;
     pages[key] = page;
   }
   return { format: OCR_CACHE_FORMAT, pages };

@@ -89,11 +89,19 @@ export class OcrClient {
   }
 
   /** Make sure the worker holds model `key`, reading its files with `read` if not. */
-  async ensureModel(key: string, read: () => Promise<OcrFiles>): Promise<void> {
+  async ensureModel(
+    key: string,
+    read: () => Promise<OcrFiles>,
+    confidence?: { wordMean: number; lineMean: number; wordMin: number },
+  ): Promise<void> {
     if (this.worker && this.loaded === key) return;
     const files = await read();
     this.loaded = "";
-    await this.send({ type: "load", files }, [files.det, files.rec, files.wasm], LOAD_TIMEOUT_MS);
+    await this.send(
+      { type: "load", files, confidence },
+      [files.det, files.rec, files.wasm],
+      LOAD_TIMEOUT_MS,
+    );
     this.loaded = key;
   }
 
