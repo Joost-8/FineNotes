@@ -76,7 +76,16 @@ const RELATION_SIGNS: Readonly<Record<string, string>> = {
 
 /** A user's bracket, dropped where the layout already groups (a numerator, an exponent, under a root). */
 function grouped(node: CalcNode): MathBox {
-  if (node.k === "call" && node.fn === "(") return box(node.args[0]);
+  if (node.k === "call" && node.fn === "(") {
+    // The bracket is not drawn, but a cursor that stood just inside or outside it still is.
+    const inner = box(node.args[0]);
+    if (!node.caretBefore && !node.caretAfter) return inner;
+    return row(
+      ...(node.caretBefore ? [{ t: "caret" } as const] : []),
+      inner,
+      ...(node.caretAfter ? [{ t: "caret" } as const] : []),
+    );
+  }
   return box(node);
 }
 
