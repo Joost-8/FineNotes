@@ -955,8 +955,6 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarItems;
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
-    // On for a new install; a vault that updates keeps the Obsidian it knows.
-    if (saved !== null && !("simpleLook" in saved)) this.settings.simpleLook = false;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
@@ -1148,13 +1146,13 @@ export default class GoodObsidianPlugin extends Plugin {
       createFragment((fragment) => {
         fragment.createDiv({
           text:
-            "Simple look is on: Obsidian's sidebars, ribbon and bars are hidden. " +
-            "To get normal Obsidian back, turn Simple look off in FineNotes' settings.",
+            "This is the new look of FineNotes: Obsidian's sidebars, ribbon and bars are " +
+            "hidden. You can go back to the original any time (Simple look, in FineNotes' settings).",
         });
-        const open = fragment.createEl("button", { text: "Open settings" });
-        open.addEventListener("click", () => {
+        const undo = fragment.createEl("button", { text: "Undo" });
+        undo.addEventListener("click", () => {
           notice.hide();
-          this.openSettingsTab();
+          this.setSimpleLook(false);
         });
       }),
       SIMPLE_HINT_MS,

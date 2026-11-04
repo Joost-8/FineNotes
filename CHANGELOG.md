@@ -23,8 +23,8 @@ extracted from the matching section of this file by `release.yml`.
   opens FineNotes' settings.
 - **Simple look.** Hides Obsidian's title bar, status bar, left ribbon and
   sidebars and keeps the tabs, so FineNotes looks like an app of its own. On
-  for a new install, with a note saying how to get normal Obsidian back; an
-  update leaves a vault as it was. One switch, at the top of FineNotes'
+  for a new install and for a vault that updates, with a note shown once and
+  an Undo in it to go back to the original. One switch, at the top of FineNotes'
   settings and in a notebook's settings; the command "Simple look" too.
 - **Home shows an Update button** when a newer FineNotes is out.
 - **A Home button on the notebook's toolbar,** next to the page sidebar button;
