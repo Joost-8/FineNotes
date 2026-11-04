@@ -47,7 +47,7 @@ export interface AssetStoreDeps {
   get(
     url: string,
     range?: { start: number; end: number },
-  ): Promise<{ status: number; body: ArrayBuffer }>;
+  ): Promise<{ status: number; body: ArrayBuffer; total?: number }>;
   sha256(data: ArrayBuffer): Promise<string>;
   /** The format version a stored main file says it is in, or null when it is not this model. */
   formatOf(data: ArrayBuffer): number | null;
@@ -65,6 +65,14 @@ class DownloadError extends Error {
     super(detail);
   }
 }
+
+/**
+ * A ranged answer that cannot be the bytes asked for: its `Content-Range`
+ * total is not the file's size (a CDN compressed the body and counted the
+ * range in compressed bytes), or the piece is not the length asked for. The
+ * file is then fetched once more as a single request without a range.
+ */
+class RangeMismatch extends Error {}
 
 export class AssetStore {
   private current: AssetState = { kind: "unknown" };
@@ -287,12 +295,42 @@ export class AssetStore {
     this.partialBytes = 0;
   }
 
-  /** Every byte of one file, in ranges, going on from an earlier attempt's. */
+  /**
+   * Every byte of one file, in ranges, going on from an earlier attempt's.
+   * When a server's answer to a range cannot be right (see
+   * {@link RangeMismatch}), the file is asked for again, once, in one piece;
+   * its size and SHA-256 are checked by the caller as always.
+   */
   private async fetchFile(file: ModelFile, before: number, total: number): Promise<ArrayBuffer> {
     if (this.partialFile !== file.name) {
       this.dropPartial();
       this.partialFile = file.name;
     }
+    try {
+      return await this.fetchRanged(file, before, total);
+    } catch (error) {
+      if (!(error instanceof RangeMismatch)) throw error;
+    }
+    this.dropPartial();
+    this.partialFile = file.name;
+    const answer = await this.getWithRetry(file.url);
+    this.partial = [new Uint8Array(answer.body)];
+    this.partialBytes = answer.body.byteLength;
+    this.emit({ type: "progress", received: before + this.partialBytes, total });
+    return this.joined();
+  }
+
+  private joined(): ArrayBuffer {
+    const out = new Uint8Array(this.partialBytes);
+    let o = 0;
+    for (const piece of this.partial) {
+      out.set(piece, o);
+      o += piece.byteLength;
+    }
+    return out.buffer;
+  }
+
+  private async fetchRanged(file: ModelFile, before: number, total: number): Promise<ArrayBuffer> {
     const progress = () =>
       this.emit({ type: "progress", received: before + this.partialBytes, total });
     progress();
@@ -308,31 +346,26 @@ export class AssetStore {
         break;
       }
       const expected = range.end - range.start + 1;
-      if (answer.body.byteLength !== expected) {
-        this.dropPartial();
-        throw new DownloadError("damaged", "a piece arrived short");
-      }
+      if (
+        (answer.total !== undefined && answer.total !== file.bytes) ||
+        answer.body.byteLength !== expected
+      )
+        throw new RangeMismatch();
       this.partial.push(new Uint8Array(answer.body));
       this.partialBytes += expected;
       progress();
     }
-    const out = new Uint8Array(this.partialBytes);
-    let o = 0;
-    for (const piece of this.partial) {
-      out.set(piece, o);
-      o += piece.byteLength;
-    }
-    return out.buffer;
+    return this.joined();
   }
 
   private async getWithRetry(
     url: string,
-    range: { start: number; end: number },
-  ): Promise<{ status: number; body: ArrayBuffer }> {
+    range?: { start: number; end: number },
+  ): Promise<{ status: number; body: ArrayBuffer; total?: number }> {
     let last: DownloadError | null = null;
     for (let attempt = 0; attempt <= RETRY_WAITS_MS.length; attempt++) {
       if (attempt > 0) await this.deps.sleep(RETRY_WAITS_MS[attempt - 1] ?? 0);
-      let answer: { status: number; body: ArrayBuffer };
+      let answer: { status: number; body: ArrayBuffer; total?: number };
       try {
         answer = await this.deps.get(url, range);
       } catch {

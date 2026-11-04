@@ -16,7 +16,10 @@
  * - `ort-wasm-simd-threaded.wasm` is the binary of onnxruntime-web 1.30.0
  *   (MIT, the version package.json pins) that its JavaScript, bundled into
  *   the OCR worker, expects: the worker is handed its bytes (`wasmBinary`),
- *   never a URL (ocr/worker.ts).
+ *   never a URL (ocr/worker.ts). The same bytes are served from the folder
+ *   `runtime` of the `ocr-models` branch: jsDelivr sends it brotli-compressed
+ *   even for `Accept-Encoding: identity`, and a range of a compressed body
+ *   counts compressed bytes.
  *
  * PURE: data only.
  */
@@ -24,7 +27,7 @@
 import type { ModelAsset, ModelFile } from "../../downloads/model-manifest";
 
 const MODELS = "https://raw.githubusercontent.com/fariszyzy/FineNotes/ocr-models/ppocrv6-1";
-const ORT = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist";
+const RUNTIME = "https://raw.githubusercontent.com/fariszyzy/FineNotes/ocr-models/runtime";
 
 export const OCR_DET_FILE: ModelFile = {
   name: "PP-OCRv5_mobile_det_infer.ort",
@@ -50,7 +53,7 @@ export const OCR_DICT_FILE: ModelFile = {
 /** onnxruntime-web 1.30.0's WebAssembly binary (the plain CPU build `onnxruntime-web/wasm` uses). */
 export const OCR_WASM_FILE: ModelFile = {
   name: "ort-wasm-simd-threaded.wasm",
-  url: `${ORT}/ort-wasm-simd-threaded.wasm`,
+  url: `${RUNTIME}/ort-wasm-simd-threaded-1.30.0.wasm`,
   bytes: 14_239_897,
   sha256: "3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2",
 };

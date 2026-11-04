@@ -232,7 +232,7 @@ Downloaded on first use into `<plugin>/ocr/ppocrv6-1/`, never bundled, each pinn
 exact size and SHA-256 (`ocr-model.ts`), over https. The three model files come from the
 data-only branch `ocr-models` of this repository (folder `ppocrv6-1`, with the Apache-2.0
 licence text and a notice) through `raw.githubusercontent.com`, which supports range
-requests and has no bandwidth budget (not Git LFS, not Hugging Face); the wasm from jsDelivr:
+requests and has no bandwidth budget (not Git LFS, not Hugging Face); the wasm from the same branch (folder `runtime`, because jsDelivr serves it brotli-compressed even for `Accept-Encoding: identity`, which breaks a ranged download; every request also sends `Accept-Encoding: identity`):
 
 | file                            | bytes      | SHA-256                | source, licence                                                                                      |
 | ------------------------------- | ---------- | ---------------------- | ---------------------------------------------------------------------------------------------------- |
