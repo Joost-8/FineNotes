@@ -16328,3 +16328,24 @@ button.goodobsidian-library-star:active {
   gap: 0;
   padding: 0 8px;
 }
+
+/* "All notebooks": a heading that folds, its caret beside the words. */
+button.goodobsidian-library-fold {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+button.goodobsidian-library-fold .goodobsidian-library-fold-caret {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+button.goodobsidian-library-fold .svg-icon {
+  width: 16px;
+  height: 16px;
+}

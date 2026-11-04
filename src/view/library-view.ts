@@ -126,6 +126,9 @@ const SORTS: ReadonlyArray<{ by: LibrarySort; label: TextKey }> = [
 ];
 
 /** How many notebooks the Continue strip shows. */
+/** Whether "All notebooks" is folded on this device. */
+const ALL_FOLDED_KEY = "finenotes-library-all-folded";
+
 const CONTINUE_COUNT = 3;
 
 interface Read {
@@ -138,6 +141,8 @@ export class LibraryView extends ItemView {
   override icon = "house";
   private folder = "";
   private sort: LibrarySort = "edited";
+  /** "All notebooks" folded away (this device remembers). */
+  private allFolded = this.app.loadLocalStorage(ALL_FOLDED_KEY) === "1";
   /** The sort turned around: oldest first, Z to A, fewest pages first. */
   private reverse = false;
   private layout: "grid" | "list" = "grid";
@@ -549,6 +554,7 @@ export class LibraryView extends ItemView {
         atTop
           ? t("notebooks.home.all")
           : t(SORTS.find((s) => s.by === this.sort)?.label ?? "notebooks.home.sortEdited"),
+        atTop,
       );
     }
   }
@@ -578,8 +584,27 @@ export class LibraryView extends ItemView {
     this.bodyEl.createDiv({ cls: "goodobsidian-library-label", text });
   }
 
-  private grid(entries: LibraryEntry[], label: string): void {
-    this.label(label);
+  /** A heading with a caret that folds what is under it; the choice is kept on this device. */
+  private foldLabel(text: string): void {
+    const head = this.bodyEl.createEl("button", {
+      cls: "goodobsidian-library-label goodobsidian-library-fold clickable-icon",
+      attr: { type: "button", "aria-expanded": String(!this.allFolded) },
+    });
+    head.createSpan({ text });
+    const caret = head.createSpan({ cls: "goodobsidian-library-fold-caret" });
+    setIcon(caret, this.allFolded ? "chevron-right" : "chevron-down");
+    head.addEventListener("click", () => {
+      this.allFolded = !this.allFolded;
+      this.app.saveLocalStorage(ALL_FOLDED_KEY, this.allFolded ? "1" : "0");
+      this.paintNow();
+    });
+  }
+
+  private grid(entries: LibraryEntry[], label: string, foldable = false): void {
+    if (foldable) {
+      this.foldLabel(label);
+      if (this.allFolded) return;
+    } else this.label(label);
     const grid = this.bodyEl.createDiv({ cls: this.gridClass() });
     for (const entry of starredFirst(entries, this.host.stars(), (e) => e.path)) {
       this.card(grid, entry);
