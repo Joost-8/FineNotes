@@ -83,6 +83,7 @@ const { providerLabel } = await import("../../src/recognition/registry");
 const { MANUAL_PROVIDER_ID } = await import("../../src/recognition/manual");
 const { GRAPE_MODEL } = await import("../../src/recognition/hwr/grape-model");
 const { speechAsset } = await import("../../src/audio/speech-models");
+const { OCR_TIERS } = await import("../../src/recognition/ocr/ocr-model");
 const { savedPenLabel } = await import("../../src/model/saved-pens");
 
 type Settings = typeof DEFAULT_SETTINGS;
@@ -127,6 +128,9 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
   const deviceStorage = new Map<string, string>();
   const grapeStore = fakeStore(GRAPE_MODEL, calls);
   const speechStore = fakeStore(speechAsset("whisper-base"), calls);
+  // One store per OCR choice, as obsidianOcrDeps registers them (the chosen one is used).
+  const ocrStores = OCR_TIERS.map((t) => fakeStore(t.asset, calls));
+  const stores = [grapeStore, speechStore, ...ocrStores];
   /** The vault the learning rows look in: practice files and model files by path. */
   const files = new Map<string, string>();
   const learnerListeners = new Set<() => void>();
@@ -172,7 +176,18 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       return Promise.resolve();
     }),
     files,
-    models: { all: () => [grapeStore, speechStore] },
+    ocr: {
+      settingsChanged: vi.fn(() => calls.push("ocr:settings")),
+      modelChanged: vi.fn(() => calls.push("ocr:model")),
+    },
+    removeOtherOcrModels: vi.fn(() => {
+      calls.push("ocr:removeOthers");
+      return Promise.resolve();
+    }),
+    models: {
+      all: () => [...stores],
+      get: (id: string) => stores.find((s) => s.asset.id === id),
+    },
     speech: { store: () => speechStore },
     grape: {
       model: grapeStore,
@@ -429,6 +444,7 @@ const MODEL_ROWS = [
   ["Size and language", "render"],
   ["Handwriting · Grape 2.0", "render"],
   ["Your handwriting model", "render"],
+  ["Scanned pages · Fast", "render"],
 ] as const;
 
 /** The head of "AI and handwriting": reading handwriting on this device. */
@@ -668,6 +684,7 @@ const DEFAULT_MODEL_ROWS = [
   "Size and language",
   "Handwriting · Grape 2.0",
   "Your handwriting model",
+  "Scanned pages · Fast",
 ];
 
 /** The head of "AI and handwriting" shown by default: Grape reads. */
@@ -2003,6 +2020,56 @@ describe("Models on this device", () => {
     await row.dropdowns[0].pick("whisper-tiny");
     expect(plugin.settings.speechModel).toBe("whisper-tiny");
     expect(plugin.calls).toContain("update");
+  });
+
+  describe("OCR model", () => {
+    const SCANNED = "Scanned pages · Fast";
+
+    it("is one row in Models on this device, with no choice, switch or cleanup button of its own", () => {
+      const { tab } = makeTab(makePlugin());
+      const all = rows(tab);
+      expect(all.find((r) => r.def.name === SCANNED)?.heading).toBe(MODELS);
+      expect(tab.infoOf(SCANNED)).toMatch(/^The OCR model reads the printed text/);
+      // The switch is in the AI menu and the choice in the download offer (ocr-offer.ts).
+      const names = all.map((r) => r.def.name);
+      expect(names.filter((n) => /OCR|scanned pdf|figures/i.test(n))).toEqual([]);
+    });
+
+    it("names the row after the chosen model and shows that model's download", () => {
+      const plugin = makePlugin({ ocrModel: "accurate" });
+      const accurate = plugin.models.get("ocr-ppocrv6-small");
+      if (!accurate) throw new Error("no accurate store");
+      accurate.state = { kind: "missing" };
+      const row = renderRow(named(rows(makeTab(plugin).tab), "Scanned pages · Accurate"));
+      expect(row.descEl.find("goodobsidian-model-status")?.textContent).toBe(
+        "Not downloaded yet (40.5 MB).",
+      );
+      expect(row.buttons.map((b) => b.text)).toEqual(["Download"]);
+    });
+
+    it("keeps no row for any OCR choice in the list of other models", () => {
+      const plugin = makePlugin();
+      const names = rows(makeTab(plugin).tab)
+        .filter((r) => r.heading === MODELS)
+        .map((r) => r.def.name);
+      for (const tier of OCR_TIERS) expect(names).not.toContain(tier.asset.label);
+      expect(names.filter((n) => n.includes("OCR") || n.startsWith("Scanned"))).toEqual([SCANNED]);
+    });
+
+    it("has the button that removes the other OCR models, and only that button", async () => {
+      const plugin = makePlugin();
+      const row = renderRow(named(rows(makeTab(plugin).tab), SCANNED));
+      const trash = row.extras.find((e) => e.tooltip === "Remove other OCR models");
+      if (!trash) throw new Error("no trash button");
+      expect(plugin.removeOtherOcrModels).not.toHaveBeenCalled();
+      await trash.click();
+      expect(plugin.removeOtherOcrModels).toHaveBeenCalledTimes(1);
+    });
+
+    it("stays shown when reading is switched off, so the model can still be removed", () => {
+      const off = makePlugin({ ocrScannedPdfs: false });
+      expect(shown(named(rows(makeTab(off).tab), SCANNED))).toBe(true);
+    });
   });
 
   it("lists a model of another feature at the end", () => {

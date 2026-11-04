@@ -122,6 +122,8 @@ export interface AiMenuItem {
   footer?: boolean;
   /** Which section: the on-device reader, or the features that need a key (the default). */
   section?: "device" | "key";
+  /** A mark at the row's end: the reader still has to be downloaded. */
+  mark?: "download";
   /** A switch rather than an action: its state. A tap flips it and leaves the menu open. */
   on?: boolean;
   /**
@@ -153,6 +155,14 @@ export interface HandwritingReading {
   ownModel: boolean;
 }
 
+/** Reading scanned PDF pages (OCR), for the notebooks that have PDF pages. */
+export interface ScanReading {
+  /** The switch: scanned pages are read. */
+  on: boolean;
+  /** The reader is on this device; if not, the row is the download. */
+  ready: boolean;
+}
+
 export interface AiMenuContext {
   setup: AiSetup;
   /** Some page has anything at all to ask about (the chat picks which). */
@@ -169,6 +179,8 @@ export interface AiMenuContext {
   device?: DeviceReading;
   /** Which model reads, as the section's first row picks it; absent, the row is left out. */
   reading?: HandwritingReading;
+  /** Scanned PDF pages; absent when the notebook has no PDF page, which leaves the row out. */
+  scan?: ScanReading;
   /** Progress of an on-device transcription running now, 0..100; absent when none runs. */
   transcribing?: number;
 }
@@ -280,7 +292,22 @@ function gate(base: Availability, contentOk: boolean, emptyReason: string): Avai
  * key's. The menu shows the key's first (`view/ai-menu.ts`).
  */
 export function buildAiMenu(ctx: AiMenuContext): AiMenuItem[] {
-  return [...deviceItems(ctx), ...speechItems(ctx), ...keyItems(ctx)];
+  return [...deviceItems(ctx), ...speechItems(ctx), ...scanItems(ctx), ...keyItems(ctx)];
+}
+
+/**
+ * Reading scanned PDF pages: a switch like Corrections, last in the on-device
+ * section. Until the reader is on this device the row is its download, marked
+ * with the download symbol, and a tap asks which reader to get.
+ */
+function scanItems(ctx: AiMenuContext): AiMenuItem[] {
+  const scan = ctx.scan;
+  if (!scan) return [];
+  const base = { label: "Scanned pages", icon: "file-scan", enabled: true, reason: "" };
+  if (!scan.ready) {
+    return [{ ...base, id: "scan-pdf-download", mark: "download", section: "device" }];
+  }
+  return [{ ...base, id: "scan-pdf", on: scan.on, section: "device" }];
 }
 
 /**

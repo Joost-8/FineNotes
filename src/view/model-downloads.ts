@@ -26,13 +26,24 @@ import {
   toHex,
   totalBytes,
 } from "../downloads/model-manifest";
-import { AssetStore, type AssetStoreDeps } from "../downloads/model-store";
+import { AssetStore, type AssetStoreDeps, routedFolder } from "../downloads/model-store";
 import { deviceFolder } from "../downloads/device-folder";
 import { t } from "../i18n/translate";
 
 /** A model's folder in the vault. */
 export function modelFolder(pluginDir: string, asset: ModelAsset): string {
   return normalizePath(`${pluginDir}/${asset.folder}`);
+}
+
+/** The total in a `Content-Range: bytes 0-99/14239897` header (any case of the name), or undefined. */
+export function contentRangeTotal(headers: Record<string, string> | undefined): number | undefined {
+  if (!headers) return undefined;
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() !== "content-range") continue;
+    const match = /\/(\d+)\s*$/.exec(value);
+    return match ? Number(match[1]) : undefined;
+  }
+  return undefined;
 }
 
 /** The network, the hash and the clock, through Obsidian: the same wherever the files are kept. */
@@ -44,10 +55,19 @@ function networkDeps(
       const answer = await requestUrl({
         url,
         method: "GET",
-        headers: range ? { Range: `bytes=${range.start}-${range.end}` } : undefined,
+        // Never a compressed body: a CDN that compresses counts a range in
+        // compressed bytes, and the file would arrive damaged.
+        headers: {
+          "Accept-Encoding": "identity",
+          ...(range ? { Range: `bytes=${range.start}-${range.end}` } : {}),
+        },
         throw: false,
       });
-      return { status: answer.status, body: answer.arrayBuffer };
+      return {
+        status: answer.status,
+        body: answer.arrayBuffer,
+        total: contentRangeTotal(answer.headers),
+      };
     },
     sha256: async (data) => toHex(await crypto.subtle.digest("SHA-256", data)),
     formatOf,
@@ -104,12 +124,28 @@ export class ModelRegistry {
     const known = this.stores.get(asset.id);
     if (known) return known;
     const formatOf = options.formatOf ?? (() => asset.format);
-    const store = new AssetStore(
-      asset,
-      asset.deviceOnly
-        ? { ...deviceFolder(asset.folder), ...networkDeps(formatOf) }
-        : vaultDeps(this.app, () => modelFolder(this.pluginDir(), asset), formatOf),
-    );
+    const own = asset.deviceOnly
+      ? { ...deviceFolder(asset.folder), ...networkDeps(formatOf) }
+      : vaultDeps(this.app, () => modelFolder(this.pluginDir(), asset), formatOf);
+    // Files another model shares live in that model's vault folder (even for a
+    // model kept off the vault), so switching between the models downloads them once.
+    const sharing = asset.shared;
+    const deps =
+      sharing && (asset.deviceOnly || sharing.folder !== asset.folder)
+        ? {
+            ...own,
+            ...routedFolder(
+              own,
+              vaultDeps(
+                this.app,
+                () => normalizePath(`${this.pluginDir()}/${sharing.folder}`),
+                formatOf,
+              ),
+              sharing.files,
+            ),
+          }
+        : own;
+    const store = new AssetStore(asset, deps);
     this.stores.set(asset.id, store);
     return store;
   }

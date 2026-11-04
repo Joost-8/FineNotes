@@ -214,6 +214,13 @@ import { GrapeFiles } from "./view/grape-files";
 import { StartupLog } from "./view/startup-log";
 import { DeviceTranscriber } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
+import { obsidianOcrDeps } from "./view/ocr-deps";
+import { cleanupText, removeOtherOcrModels } from "./view/ocr-models";
+import { OcrOfferModal } from "./view/ocr-offer";
+import { isBusy } from "./downloads/model-manifest";
+import { OcrService } from "./view/ocr-service";
+import { OcrStatus } from "./view/ocr-status";
+import { OCR_TIERS, effectiveOcrTier, ocrTiersFor } from "./recognition/ocr/ocr-model";
 import { HandwritingReader } from "./view/handwriting";
 import { ReadingGuard } from "./recognition/reading-guard";
 import {
@@ -352,6 +359,22 @@ export default class GoodObsidianPlugin extends Plugin {
       language: this.settings.speechLanguage,
     }),
   });
+
+  /**
+   * Reading scanned PDF pages on this device, for the notebooks that have
+   * them open (ocr-service.ts); its model is offered when first needed.
+   */
+  readonly ocr = new OcrService(
+    obsidianOcrDeps({
+      app: this.app,
+      pluginDir: () => this.pluginDir,
+      models: this.models,
+      enabled: () => this.settings.ocrScannedPdfs !== false,
+      tier: () => effectiveOcrTier(this.settings.ocrModel, Platform.isMobile),
+      mobile: () => Platform.isMobile,
+      offer: (ask) => this.offerOcrReader(ask),
+    }).deps,
+  );
 
   /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
   readonly grape = new GrapeFiles(this.models);
@@ -625,8 +648,11 @@ export default class GoodObsidianPlugin extends Plugin {
       this.learner.dispose();
       this.handwriting.dispose();
       this.speech.dispose();
+      this.ocr.dispose();
       this.models.dispose();
     });
+    const ocrStatus = new OcrStatus(this.ocr);
+    this.register(() => ocrStatus.dispose());
     // A release that still bundles Grape writes it to the handwriting folder,
     // once, in the background and well after startup (grape-files.ts).
     this.app.workspace.onLayoutReady(() => {
@@ -897,6 +923,9 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => this.readOnDevice(view),
       () => this.settings.handwritingOnDevice !== false,
     );
+    this.notebookCommand("reread-scanned-pages", "Re-read scanned pages of this PDF", (view) =>
+      view.rereadScannedPages(),
+    );
     this.notebookCommand(
       "fit-reset-view",
       t("notebooks.command.fitReset"),
@@ -1146,6 +1175,73 @@ export default class GoodObsidianPlugin extends Plugin {
   modelReleased(id: string): void {
     if (id === "grape" || id === "grape-2") this.handwriting.dispose();
     if (id.startsWith("whisper-")) this.speech.release();
+    if (OCR_TIERS.some((t) => t.asset.id === id)) this.ocr.releaseModel();
+  }
+
+  /** "Remove other OCR models": every OCR model but the chosen one, and the old version's folder. */
+  async removeOtherOcrModels(): Promise<void> {
+    const active = effectiveOcrTier(this.settings.ocrModel, Platform.isMobile).asset.id;
+    const adapter = this.app.vault.adapter;
+    const path = (folder: string): string => normalizePath(`${this.pluginDir}/${folder}`);
+    const result = await removeOtherOcrModels(active, {
+      store: (id) => this.models.get(id),
+      folderExists: (folder) => adapter.exists(path(folder)),
+      removeFolder: (folder) => adapter.rmdir(path(folder), true),
+    });
+    new Notice(cleanupText(result));
+  }
+
+  /** Whether the reader for scanned PDF pages is on this device (the AI menu shows a download mark if not). */
+  ocrReaderReady(): boolean {
+    const tier = effectiveOcrTier(this.settings.ocrModel, Platform.isMobile);
+    return this.models.get(tier.asset.id)?.state.kind === "ready";
+  }
+
+  /** The AI menu's switch for reading scanned PDF pages. Pages read before stay read. */
+  async setScanning(on: boolean): Promise<void> {
+    this.settings.ocrScannedPdfs = on;
+    await this.saveSettings();
+    this.ocr.settingsChanged();
+  }
+
+  private ocrOfferOpen = false;
+  private ocrOfferDeclined = false;
+
+  /**
+   * Ask which reader to download (ocr-offer.ts). Offered by the service when
+   * a page with no text first needs it ("auto": once per session, and Not now
+   * turns reading off until the AI menu turns it on) or from the AI menu
+   * ("ask": always).
+   */
+  offerOcrReader(ask: boolean): void {
+    if (this.ocrOfferOpen || (!ask && this.ocrOfferDeclined)) return;
+    const mobile = Platform.isMobile;
+    const chosen = effectiveOcrTier(this.settings.ocrModel, mobile);
+    const store = this.models.get(chosen.asset.id);
+    if (store && (store.state.kind === "ready" || isBusy(store.state))) return;
+    this.ocrOfferOpen = true;
+    new OcrOfferModal(this.app, ocrTiersFor(mobile), chosen.id, {
+      download: (id) => {
+        this.ocrOfferOpen = false;
+        const tier = effectiveOcrTier(id, mobile);
+        this.settings.ocrModel = tier.id;
+        this.settings.ocrScannedPdfs = true;
+        void this.saveSettings();
+        const target = this.models.get(tier.asset.id);
+        // The card shows the progress; the service reads the pages once it is ready.
+        this.models.offer(tier.asset.id, "ask");
+        void target?.download();
+        this.ocr.modelChanged();
+      },
+      notNow: () => {
+        this.ocrOfferOpen = false;
+        this.ocrOfferDeclined = true;
+        if (ask) return;
+        this.settings.ocrScannedPdfs = false;
+        void this.saveSettings();
+        this.ocr.settingsChanged();
+      },
+    }).open();
   }
 
   /** Switch corrections (underlined misreads) on or off, and show it in every open notebook. */

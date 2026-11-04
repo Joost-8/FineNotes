@@ -145,6 +145,8 @@ const FRESH_INSTALL = {
   folderNotebooks: true,
   pageAppearance: "light",
   invertPdfPages: true,
+  ocrScannedPdfs: true,
+  ocrModel: "fast",
   exportWithoutTapes: false,
   desk: "auto",
   deskColor: "#3b3e45",
@@ -286,6 +288,8 @@ const USED_VAULT = {
   pencilTilt: true,
   pageAppearance: "system",
   invertPdfPages: false,
+  ocrScannedPdfs: false,
+  ocrModel: "accurate",
   exportWithoutTapes: true,
   desk: "custom",
   deskColor: "#204060",
@@ -593,7 +597,13 @@ describe("control values", () => {
 
   it("rebuilds the tab only for the keys that add or remove rows", () => {
     // pressureWidth shows or hides its warning.
-    for (const key of ["recognitionProviderId", "llmVendor", "imageVendor", "pressureWidth"]) {
+    for (const key of [
+      "recognitionProviderId",
+      "llmVendor",
+      "imageVendor",
+      "pressureWidth",
+      "ocrModel",
+    ]) {
       expect(changesTabLayout(key)).toBe(true);
     }
     for (const key of ["llmModel", "llmBaseUrl", "debugHud", "paperWidth", "defaultTool"]) {

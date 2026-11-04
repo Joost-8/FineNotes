@@ -37,6 +37,49 @@ extracted from the matching section of this file by `release.yml`.
   Customize toolbar moves or hides it.
 - **A Home note for a new install** opens the library; delete it whenever
   you like. The welcome notebook now points at Home.
+- **Choose the OCR model.** _OCR model_ (Settings, Pages and notebooks, under _Read scanned
+  PDF pages_) has three choices. **Fast** is the default and what you have now: no
+  change. **Accurate** (PP-OCRv6 small, 40.5 MB in all, about 2.3 times slower per page)
+  reads 151 of the 171 labels of the test lecture exactly, against 147. **Most accurate**
+  (PP-OCRv6 medium, 95.9 MB, desktop only, about 8 times slower than Fast) is kept on that
+  computer outside your vault, so it never syncs to an iPad. The detector is shared:
+  switching downloads only the reader that is missing, keeps the others, and takes effect
+  without restarting Obsidian; pages are read again with the model you pick. Each reader has
+  its own confidence thresholds, so none of them keeps scribbles in the scribble test.
+  The trash button beside the setting removes the models you are not using, and the folder
+  of an old version. Measurements and thresholds: [docs/OCR.md](docs/OCR.md#choosing-a-model).
+- **Text inside the pictures of PDF pages is read too.** A lecture PDF has a text
+  layer, but the labels in its figures ("Bladder", "Pubic bone") are pixels and
+  could not be searched. FineNotes now finds the pictures from the PDF's own
+  drawing operators, reads only inside them (never the text the page already
+  has), and a page with no picture worth reading costs nothing and is remembered
+  as such. Only when the reader model is already on the device; it never causes
+  the download to be offered. _Also read text inside figures_ (on by default,
+  under _Read scanned PDF pages_). The cache sidecar is now format 2: pages
+  read before are read again. A picture behind the text (a slide background, a watermark) is
+  skipped unless it has content beyond the text, lines the reader was unsure of are read a second time, circled step numbers become words of
+  their own, a word misread as a near neighbour of a word in the same PDF ("Extemal") is corrected, and
+  the setting takes effect without reopening a notebook. Details and measurements:
+  [docs/OCR.md](docs/OCR.md).
+- **Scanned PDF pages are read on your device.** A PDF page that is a picture
+  of printed text (a scan, or a scan with only a page number on it) now gets
+- **Scanned PDF pages are read on your device.** A PDF page that is a picture of
+  text, and the labels inside the pictures of pages that have text, now get
+  search, the text-snapping highlighter and Copy text, as PDFs with real text
+  do: press and hold a word, or right-click it, to select it. It happens by
+  itself for PDFs open in a notebook, the page in view first, then its
+  neighbours, then the rest while you are not writing. The first time a page
+  needs it you are asked which reader to download, with what each costs: Fast
+  (23.7 MB, recommended), Accurate (40.5 MB, about 2× slower per page) or, on a
+  computer, Most accurate (95.9 MB, about 8× slower, kept off your vault).
+  Nothing downloads before you agree. A ring turns beside the page counter
+  while pages are read. _Scanned pages_ in the AI menu switches it off and on;
+  pages already read are kept per PDF in the plugin folder (`ocr`), so they sync
+  and are never read twice unless you choose _Re-read scanned pages of this PDF_
+  or a different reader. Printed text only; messy handwriting is left alone.
+  The readers are PaddleOCR on ONNX Runtime Web in a background worker, on
+  iPhone, iPad, Android and desktop. Details and measurements:
+  [docs/OCR.md](docs/OCR.md).
 - **Ask AI on an empty lasso.** A lasso drawn round nothing offers Ask AI
   about that patch of page beside Screenshot, while an AI service is set up.
 - **Dock tool options on every side.** With the tool bar at the left or
@@ -62,6 +105,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **"The download arrived damaged" for the OCR model.** GitHub serves small text files
+  compressed and counts a byte range in compressed bytes, and jsDelivr sends the WebAssembly
+  file brotli-compressed even when asked not to. Downloads now ask for no compression, a
+  range whose total is not the file's size makes the download fetch that file once in one
+  piece, and the readers and the WebAssembly file are release assets of the templates repository, like the voice models.
+- **A language that would not load.** A build made between releases asked GitHub for
+  its words under a version tag that did not have them yet, so Spanish stayed
+  English after a relaunch. It now takes them from the main branch when the
+  tag has none.
 - **More tools scrolls.** A bar with most of its tools moved into More tools
   made a menu taller than the screen, and its last rows (and Customize
   toolbar) could not be reached. The menu now keeps to the room beside its
