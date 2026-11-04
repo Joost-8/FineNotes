@@ -76,6 +76,8 @@ export interface MorePanelPage {
   folded?: FoldedBarItem[];
   /** Fingers draw while the Pencil is away (`input/finger-draw.ts`). */
   fingerDrawing?: boolean;
+  /** Zoomed-in pages across scroll freely, past the page edges (`freePageEdges`). */
+  freePageEdges?: boolean;
 }
 
 export interface MorePanelActions {
@@ -106,6 +108,8 @@ export interface MorePanelActions {
   copyHomeLink: () => void;
   /** Let a finger draw until the Pencil writes again, or stop. Without it (no touch) the row is not offered. */
   setFingerDrawing?: (on: boolean) => void;
+  /** Free the view from the page edges, or hold it to them again. Without it the row is not offered. */
+  setFreePageEdges?: (on: boolean) => void;
 }
 
 /** The desks in the Desk row, in order. */
@@ -306,6 +310,7 @@ export class MorePanel {
     if (page.darkPages) this.darkPdfRow(view);
     this.deskRow(view);
     this.fingerDrawRow(view);
+    this.freeEdgesRow(view);
     this.row(view, {
       icon: "keyboard",
       text: t("view.morePanel.shortcuts"),
@@ -343,6 +348,35 @@ export class MorePanel {
     button.addEventListener("click", () => {
       on = !on;
       show(on);
+      set(on);
+    });
+  }
+
+  /**
+   * "Free page edges": a check while the view may scroll past the page edges
+   * (and the notebook's ends) when zoomed in on pages across. A tap switches it
+   * and the panel stays.
+   */
+  private freeEdgesRow(parent: HTMLElement): void {
+    const set = this.actions.setFreePageEdges;
+    if (!set) return;
+    const button = parent.createEl("button", {
+      cls: "goodobsidian-more-row is-switch clickable-icon",
+    });
+    setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), "move-horizontal");
+    button.createSpan({ cls: "goodobsidian-more-label", text: "Free page edges" });
+    const mark = button.createSpan({ cls: "goodobsidian-more-check" });
+    setIcon(mark, "check");
+    let on = this.page.freePageEdges === true;
+    const show = (): void => {
+      mark.toggleClass("is-hidden", !on);
+      button.setAttribute("role", "switch");
+      button.setAttribute("aria-checked", String(on));
+    };
+    show();
+    button.addEventListener("click", () => {
+      on = !on;
+      show();
       set(on);
     });
   }
