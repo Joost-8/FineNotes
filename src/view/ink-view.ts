@@ -3619,6 +3619,8 @@ export class InkView extends TextFileView {
       joinedPages: () => joinedPagesOf(this.surface?.document ?? this.doc),
       setJoinedPages: (on) => apply(new SetJoinedPages(on)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
+      simpleLook: () => this.plugin.settings.simpleLook,
+      setSimpleLook: (on) => this.plugin.setSimpleLook(on),
       update: this.plugin.updates.available,
       openUpdate: () => this.plugin.openUpdatePage(),
       updateReminders: () => this.plugin.settings.updateReminders,

@@ -130,6 +130,7 @@ import { UpdateNotice } from "./view/update-notice";
 import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
+import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
 import { HOME_FILE, HOME_FILE_TEXT, isOwnHomeText } from "./model/home-file";
 import {
   dropPaths,
@@ -281,6 +282,11 @@ export interface RecognitionTarget {
 
 /** Where a key exchange with OpenRouter ended: a key, or what to tell the user. */
 type OpenRouterOutcome = { key: string } | { problem: string };
+
+/** How long after start the simple-look note waits, so the welcome is up first, ms. */
+const SIMPLE_HINT_DELAY_MS = 2500;
+/** How long the note stays, ms. */
+const SIMPLE_HINT_MS = 20000;
 
 export default class GoodObsidianPlugin extends Plugin {
   private readonly explorerNotebookButton = new FileExplorerNotebookButton(
@@ -453,6 +459,10 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.setUpReadingGuard();
+    this.applySimpleLook();
+    this.register(() => {
+      if (typeof document !== "undefined") document.body.classList.remove(SIMPLE_CLASS);
+    });
     // Fonts fetched for text boxes leave the document with the plugin.
     this.register(disposeVaultFonts);
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
@@ -465,6 +475,8 @@ export default class GoodObsidianPlugin extends Plugin {
           importFromApp: (folder) => this.openImportNotebook(folder),
           importImage: (file, folder) => void this.createNotebookFromImage(file, folder),
           openSettings: () => this.openOwnSettings(),
+          update: () => this.updates.available,
+          openUpdate: () => this.openUpdatePage(),
           importPdf: (source, folder) => {
             const name = source.file.name.replace(/\.pdf$/i, "");
             void this.createNotebookFromPdfBytes(
@@ -712,6 +724,12 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "toggle-simple-look",
+      name: "Simple look: hide or show Obsidian's tabs, sidebars and menus",
+      callback: () => this.setSimpleLook(!this.settings.simpleLook),
+    });
+
+    this.addCommand({
       id: "show-welcome",
       name: "Show the welcome",
       callback: () => this.showWelcome(),
@@ -949,6 +967,8 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarItems;
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
+    // On for a new install; a vault that updates keeps the Obsidian it knows.
+    if (saved !== null && !("simpleLook" in saved)) this.settings.simpleLook = false;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
@@ -1131,7 +1151,43 @@ export default class GoodObsidianPlugin extends Plugin {
     if (moved) this.saveCalculator(moved);
   }
 
+  /** Once: the simple look is on, and one switch brings normal Obsidian back. */
+  private sayWhereSimpleLookIs(): void {
+    if (!this.settings.simpleLook || this.settings.simpleLookHinted) return;
+    this.settings.simpleLookHinted = true;
+    void this.saveSettings();
+    const notice: Notice = new Notice(
+      createFragment((fragment) => {
+        fragment.createDiv({
+          text:
+            "Simple look is on: Obsidian's sidebars, ribbon and bars are hidden. " +
+            "To get normal Obsidian back, turn Simple look off in FineNotes' settings.",
+        });
+        const open = fragment.createEl("button", { text: "Open settings" });
+        open.addEventListener("click", () => {
+          notice.hide();
+          this.openSettingsTab();
+        });
+      }),
+      SIMPLE_HINT_MS,
+    );
+  }
+
+  /** Wear the body classes the simple look asks for now (none when it is off). */
+  applySimpleLook(): void {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    body.classList.remove(SIMPLE_CLASS);
+    body.classList.add(...simpleClasses(this.settings.simpleLook));
+  }
+
+  setSimpleLook(on: boolean): void {
+    this.settings.simpleLook = on;
+    void this.saveSettings();
+  }
+
   async saveSettings(): Promise<void> {
+    this.applySimpleLook();
     await this.saveData(this.settings);
     this.syncExplorerNotebookButton();
   }
@@ -2053,6 +2109,11 @@ export default class GoodObsidianPlugin extends Plugin {
       if (this.firstInstall && this.app.vault.getMarkdownFiles().length === 0) {
         const timer = window.setTimeout(() => void this.makeHomeFile(), HOME_FILE_DELAY_MS);
         this.register(() => window.clearTimeout(timer));
+      }
+      if (this.settings.simpleLook && !this.settings.simpleLookHinted) {
+        if (typeof window !== "undefined") {
+          window.setTimeout(() => this.sayWhereSimpleLookIs(), SIMPLE_HINT_DELAY_MS);
+        }
       }
     });
     // Opening FineNotes' own Home note opens the library instead.

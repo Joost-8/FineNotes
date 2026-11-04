@@ -54,6 +54,9 @@ export interface NoteSettingsHost {
   /** The notebook's header and page numbers, and setting them. */
   furniture?: () => NotebookFurniture;
   setFurniture?: (furniture: NotebookFurniture | undefined) => void;
+  /** The simple look (Obsidian's own bars hidden): one setting for every notebook. */
+  simpleLook?: () => boolean;
+  setSimpleLook?: (on: boolean) => void;
   /** Whether the notebook is read-only, and setting it. */
   readOnly: () => boolean;
   setReadOnly: (on: boolean) => void;
@@ -127,6 +130,7 @@ export class NoteSettingsModal extends Modal {
     this.renderSummary(contentEl, info);
     this.renderPages(contentEl);
     this.renderEditing(contentEl);
+    this.renderLook(contentEl);
     this.renderFooter(contentEl, info);
   }
 
@@ -330,6 +334,17 @@ export class NoteSettingsModal extends Modal {
           this.render();
         }),
       );
+  }
+
+  /** The simple look: it belongs to the app, but the notebook is where one wants it back. */
+  private renderLook(parent: HTMLElement): void {
+    const { simpleLook, setSimpleLook } = this.host;
+    if (!simpleLook || !setSimpleLook) return;
+    const group = this.group(parent, "Look");
+    new Setting(group)
+      .setName("Simple look")
+      .setDesc("Hide Obsidian's sidebars, ribbon and bars. Off brings normal Obsidian back.")
+      .addToggle((toggle) => toggle.setValue(simpleLook()).onChange((on) => setSimpleLook(on)));
   }
 
   /** When it was made, and the way to every other setting. */

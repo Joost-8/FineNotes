@@ -1044,6 +1044,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           this.refreshDomState();
         });
       }, shown),
+      this.info(
+        toggle("simpleLook", "Simple look", "", ["simple", "look", "hide", "sidebar", "ribbon"]),
+        "Hide Obsidian's title bar, status bar, left ribbon and sidebars, and keep the tabs, so FineNotes looks like an app of its own. Turn it off here to bring them back.",
+      ),
     ];
   }
 

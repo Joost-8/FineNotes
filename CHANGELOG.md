@@ -21,6 +21,12 @@ extracted from the matching section of this file by `release.yml`.
   one picture, imports from another app, or makes a folder; a PDF's first
   page is its cover. A notebook opens in a new tab, so Home stays. Its gear
   opens FineNotes' settings.
+- **Simple look.** Hides Obsidian's title bar, status bar, left ribbon and
+  sidebars and keeps the tabs, so FineNotes looks like an app of its own. On
+  for a new install, with a note saying how to get normal Obsidian back; an
+  update leaves a vault as it was. One switch, at the top of FineNotes'
+  settings and in a notebook's settings; the command "Simple look" too.
+- **Home shows an Update button** when a newer FineNotes is out.
 - **A Home button on the notebook's toolbar,** next to the page sidebar button;
   Customize toolbar moves or hides it.
 - **A Home note for a new install** opens the library; delete it whenever

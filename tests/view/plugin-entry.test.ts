@@ -478,6 +478,7 @@ describe("registration", () => {
         "toggle-canvas-markdown-view",
         "toggle-input-debug-overlay",
         "toggle-only-stylus-mode",
+        "toggle-simple-look",
         "toggle-text-layer",
         "turn-selection-into-text",
         "view-changelog",

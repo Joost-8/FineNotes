@@ -15527,6 +15527,23 @@ button.goodobsidian-edit-menu-row {
   color: var(--icon-color);
 }
 
+/* --- The simple look (model/simple-mode.ts) ----------------------------- */
+
+/* Obsidian's own chrome tucked away; the tabs stay. Nothing is removed. */
+body.goodobsidian-simple .status-bar,
+body.goodobsidian-simple .workspace-ribbon,
+body.goodobsidian-simple .workspace-split.mod-left-split,
+body.goodobsidian-simple .workspace-split.mod-right-split,
+body.goodobsidian-simple .workspace-drawer,
+body.goodobsidian-simple .sidebar-toggle-button {
+  display: none;
+}
+body.goodobsidian-simple
+  .workspace-leaf-content:is([data-type="goodobsidian-view"], [data-type="finenotes-library"])
+  > .view-header {
+  display: none;
+}
+
 /* --- Notebook library (src/view/library-view.ts) ------------------------- */
 
 .goodobsidian-library.view-content {
@@ -15907,6 +15924,27 @@ button.goodobsidian-library-bar-done {
   to {
     transform: rotate(360deg);
   }
+}
+/* An update is out: the same stadium as New, in a quieter fill. */
+button.goodobsidian-library-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: 999px;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  color: var(--interactive-accent);
+  font-size: 14px;
+  font-weight: 650;
+}
+button.goodobsidian-library-update.is-hidden {
+  display: none;
+}
+button.goodobsidian-library-update:active {
+  transform: scale(0.95);
 }
 .goodobsidian-library-swatch {
   display: inline-block;
