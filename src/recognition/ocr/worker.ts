@@ -29,6 +29,7 @@ let det: ort.InferenceSession | null = null;
 let rec: ort.InferenceSession | null = null;
 let alphabet: string[] = [];
 let configured = false;
+let confidence: { wordMean: number; lineMean: number; wordMin: number } | undefined;
 
 const backend: OcrBackend = {
   async detect(tensor, width, height) {
@@ -53,7 +54,9 @@ const backend: OcrBackend = {
   },
 };
 
-async function load(files: Extract<OcrRequest, { type: "load" }>["files"]): Promise<OcrResult> {
+async function load(request: Extract<OcrRequest, { type: "load" }>): Promise<OcrResult> {
+  const { files } = request;
+  confidence = request.confidence;
   const t0 = performance.now();
   if (!configured) {
     configured = true;
@@ -111,6 +114,7 @@ async function read(request: Extract<OcrRequest, { type: "read" }>): Promise<Ocr
     pageHeight: request.pageHeight,
     origin: request.origin,
     alphabet,
+    confidence,
     onStep: (step, ms) => {
       steps[step] = ms;
     },
@@ -123,7 +127,7 @@ scope.onmessage = (event) => {
   if (!message || message[OCR_TAG] !== true) return;
   const { id } = message;
   const done = (reply: OcrReply): void => scope.postMessage({ [OCR_TAG]: true, ...reply });
-  const run = message.type === "load" ? load(message.files) : read(message);
+  const run = message.type === "load" ? load(message) : read(message);
   run.then(
     (result) => done({ id, ok: true, result }),
     (error: unknown) =>

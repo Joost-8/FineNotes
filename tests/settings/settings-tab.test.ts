@@ -169,6 +169,14 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
       return Promise.resolve();
     }),
     files,
+    ocr: {
+      settingsChanged: vi.fn(() => calls.push("ocr:settings")),
+      modelChanged: vi.fn(() => calls.push("ocr:model")),
+    },
+    removeOtherOcrModels: vi.fn(() => {
+      calls.push("ocr:removeOthers");
+      return Promise.resolve();
+    }),
     models: { all: () => [grapeStore, speechStore] },
     speech: { store: () => speechStore },
     grape: {
@@ -451,6 +459,7 @@ describe("the rows", () => {
       [PAGES, "Paper width", "render"],
       [PAGES, "Read scanned PDF pages (on-device OCR)", "toggle:ocrScannedPdfs"],
       [PAGES, "Also read text inside figures", "toggle:ocrFigureText"],
+      [PAGES, "OCR model", "render"],
       [PAGES, "More", "action"],
       [PAGES, "New notebooks go in", "render"],
       [PAGES, "Each notebook gets its own folder", "toggle:notebookOwnFolder"],
@@ -679,6 +688,7 @@ describe("which rows show", () => {
       "Paper width",
       "Read scanned PDF pages (on-device OCR)",
       "Also read text inside figures",
+      "OCR model",
       "More",
       "New notebooks go in",
       "Each notebook gets its own folder",
@@ -1973,6 +1983,69 @@ describe("Models on this device", () => {
     await row.dropdowns[0].pick("whisper-tiny");
     expect(plugin.settings.speechModel).toBe("whisper-tiny");
     expect(plugin.calls).toContain("update");
+  });
+
+  describe("OCR model", () => {
+    const OCR = "OCR model";
+
+    it("offers three choices with their size and speed, Fast first, and stores a pick", async () => {
+      const plugin = makePlugin();
+      const def = named(rows(makeTab(plugin).tab), OCR);
+      const row = renderRow(def);
+      expect(row.dropdowns[0].value).toBe("fast");
+      expect(row.dropdowns[0].options).toEqual({
+        fast: "Fast · 23.7 MB · ~6 s/page on desktop",
+        accurate: "Accurate · 40.5 MB · ~14 s/page on desktop",
+        "most-accurate": "Most accurate · 95.9 MB · ~48 s/page on desktop",
+      });
+      // On a computer the row says nothing under its name; the long text is behind the ⓘ.
+      expect(def.desc).toBeUndefined();
+      await row.dropdowns[0].pick("accurate");
+      expect(plugin.settings.ocrModel).toBe("accurate");
+      // The new reader is offered and used at once, and the settings were saved.
+      expect(plugin.calls).toEqual(expect.arrayContaining(["save", "ocr:model"]));
+      expect(plugin.calls).not.toContain("update");
+    });
+
+    it("sits right under the OCR switches, only while OCR is on", () => {
+      const off = makePlugin({ ocrScannedPdfs: false });
+      const { tab } = makeTab(off);
+      expect(shown(named(rows(tab), "Also read text inside figures"))).toBe(false);
+      expect(shown(named(rows(tab), OCR))).toBe(false);
+      const plugin = makePlugin();
+      const names = rows(makeTab(plugin).tab).map((r) => r.def.name);
+      expect(names[names.indexOf("Also read text inside figures") + 1]).toBe(OCR);
+      expect(shown(named(rows(makeTab(plugin).tab), OCR))).toBe(true);
+    });
+
+    it("hides the largest model on a phone or tablet and says how much slower Accurate is", async () => {
+      Platform.isMobile = true;
+      try {
+        // Even a vault whose settings (synced) chose it shows Fast there.
+        const plugin = makePlugin({ ocrModel: "most-accurate" });
+        const def = named(rows(makeTab(plugin).tab), OCR);
+        const row = renderRow(def);
+        expect(Object.keys(row.dropdowns[0].options)).toEqual(["fast", "accurate"]);
+        expect(row.dropdowns[0].value).toBe("fast");
+        expect(row.dropdowns[0].options.fast).toMatch(/s\/page on a laptop$/);
+        expect(def.desc).toBe(
+          "Accurate is about 2× slower per page than Fast (desktop measurement).",
+        );
+        expect(def.desc?.length ?? 0).toBeLessThanOrEqual(ONE_LINE + 10);
+      } finally {
+        Platform.isMobile = false;
+      }
+    });
+
+    it("has a button that removes the other models, and only that button", async () => {
+      const plugin = makePlugin();
+      const row = renderRow(named(rows(makeTab(plugin).tab), OCR));
+      expect(row.extras[0].tooltip).toBe("Remove other OCR models");
+      await row.dropdowns[0].pick("accurate");
+      expect(plugin.removeOtherOcrModels).not.toHaveBeenCalled();
+      await row.extras[0].click();
+      expect(plugin.removeOtherOcrModels).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("lists a model of another feature at the end", () => {

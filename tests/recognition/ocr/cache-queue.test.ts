@@ -10,6 +10,7 @@ import {
   mergeCaches,
   parseCache,
   serializeCache,
+  staleCachedPage,
   withPage,
 } from "../../../src/recognition/ocr/ocr-cache";
 import { OCR_MODEL_VERSION } from "../../../src/recognition/ocr/ocr-model";
@@ -31,6 +32,27 @@ const sample: OcrPage = {
     },
   ],
 };
+
+describe("a page read by another model", () => {
+  const known = ["ppocrv6-tiny-1", "ppocrv6-small-1"];
+  it("is offered while the model in use has not read it, and only if its version is known", () => {
+    const file = withPage(emptyCache(), 0, sample, "ppocrv6-tiny-1");
+    expect(staleCachedPage(file, 0, "ppocrv6-small-1", known)?.model).toBe("ppocrv6-tiny-1");
+    // The model in use read it itself: that is `cachedPage`'s.
+    expect(staleCachedPage(file, 0, "ppocrv6-tiny-1", known)).toBeNull();
+    expect(staleCachedPage(file, 1, "ppocrv6-small-1", known)).toBeNull();
+    const foreign = withPage(emptyCache(), 0, sample, "ppocrv9-x");
+    expect(staleCachedPage(foreign, 0, "ppocrv6-small-1", known)).toBeNull();
+  });
+
+  it("never offers a page that holds no words", () => {
+    const file = withPage(emptyCache(), 0, sample, "ppocrv6-tiny-1");
+    file.pages["0"] = { ...file.pages["0"], condition: "TEXT_ONLY" };
+    expect(staleCachedPage(file, 0, "ppocrv6-small-1", known)).toBeNull();
+    file.pages["0"] = { ...file.pages["0"], condition: "BLANK" };
+    expect(staleCachedPage(file, 0, "ppocrv6-small-1", known)).toBeNull();
+  });
+});
 
 describe("the OCR cache file", () => {
   const key = "a".repeat(64);
@@ -102,6 +124,19 @@ describe("the OCR cache file", () => {
     expect(merged.pages["1"].imageWidth).toBe(1);
     const stale = withPage(emptyCache(), 0, { ...sample, imageWidth: 9 }, "ppocrv5-mobile-0");
     expect(mergeCaches(theirs, stale).pages["0"].imageWidth).toBe(1403);
+  });
+
+  it("keeps, for the model in use, what another device read with it over what was read with another", () => {
+    const small = "ppocrv6-small-1";
+    const theirs = withPage(emptyCache(), 0, { ...sample, imageWidth: 5 }, small);
+    const ours = withPage(emptyCache(), 0, { ...sample, imageWidth: 9 });
+    // This device uses the small model: its reading is kept; Fast's page does not replace it.
+    expect(mergeCaches(theirs, ours, small).pages["0"].imageWidth).toBe(5);
+    // This device uses Fast: the small model's page is replaced by Fast's.
+    expect(mergeCaches(theirs, ours).pages["0"].imageWidth).toBe(9);
+    // A page read for the cache's model (a page the switch just read again) replaces any other.
+    const fresh = withPage(emptyCache(), 0, { ...sample, imageWidth: 7 }, small);
+    expect(mergeCaches(ours, fresh, small).pages["0"].imageWidth).toBe(7);
   });
 });
 

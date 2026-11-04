@@ -342,6 +342,12 @@ export interface GoodObsidianSettings {
    * unless false.
    */
   ocrFigureText: boolean;
+  /**
+   * Which OCR model reads: "fast" (the default), "accurate" or, on desktop
+   * only, "most-accurate" (recognition/ocr/ocr-model.ts). Checked where it is
+   * read: anything else, or a choice this device does not offer, is Fast.
+   */
+  ocrModel: string;
   /** Export as PDF leaves the cover tapes out, so what is under them shows. */
   exportWithoutTapes: boolean;
   /** The desk around the pages: as the page appearance has it, light, dark, or `deskColor`. */
@@ -521,6 +527,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   invertPdfPages: true,
   ocrScannedPdfs: true,
   ocrFigureText: true,
+  ocrModel: "fast",
   exportWithoutTapes: false,
   desk: "auto",
   deskColor: LIGHT_PAPER.desk,

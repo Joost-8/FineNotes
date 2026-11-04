@@ -20,7 +20,12 @@ export interface OcrFiles {
 }
 
 export type OcrRequest =
-  | { type: "load"; files: OcrFiles }
+  | {
+      type: "load";
+      files: OcrFiles;
+      /** The recogniser's confidence thresholds (which lines are read again); default: the Fast model's. */
+      confidence?: { wordMean: number; lineMean: number; wordMin: number };
+    }
   | {
       type: "read";
       /** The page image; transferred and closed by the worker. */

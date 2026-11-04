@@ -52,7 +52,7 @@ const SOURCE = { width: 400, height: 560 };
 
 describe("the confidence filter", () => {
   it("has its numbers in one constant", () => {
-    expect(OCR_TUNING).toMatchObject({ wordMean: 0.9, wordMin: 0.5, lineMean: 0.9 });
+    expect(OCR_TUNING).toMatchObject({ wordMean: 0.9, wordMin: 0.5, lineMean: 0.95 });
   });
 
   it("keeps a word whose characters are sure on average and none is a guess", () => {
@@ -69,10 +69,10 @@ describe("the confidence filter", () => {
     expect(keptLines(p)[0].map((w) => w.text)).toEqual(["fine"]);
   });
 
-  it("drops a whole line whose mean is below 0.9, however sure some words are", () => {
+  it("drops a whole line whose mean is below 0.95, however sure some words are", () => {
     const p = page(
-      line(0.89, word("scribble", 0, 0, 40, 10, 0.99, 0.99)),
-      line(0.9, word("kept", 0, 20, 40, 30)),
+      line(0.94, word("scribble", 0, 0, 40, 10, 0.99, 0.99)),
+      line(0.95, word("kept", 0, 20, 40, 30)),
     );
     expect(keptLines(p).map((l) => l[0].text)).toEqual(["kept"]);
   });

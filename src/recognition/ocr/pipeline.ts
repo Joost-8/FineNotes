@@ -15,7 +15,7 @@ import { type CropLine, ctcDecode, wordsOf } from "./ctc-words";
 import { snapWords } from "./word-edges";
 import { type DbOptions, type TextBox, findTextBoxes } from "./db";
 import { type DetTile, planTiles, stitchProbability, tileTensor } from "./det";
-import { OCR_TUNING, type OcrLine, type OcrPage, type OcrWord } from "./ocr-words";
+import { OCR_TUNING, type OcrLine, type OcrTuning, type OcrPage, type OcrWord } from "./ocr-words";
 import { needsNormalising } from "./ocr-text";
 import { readingOrder } from "./reading-order";
 import {
@@ -76,6 +76,11 @@ export interface ReadOptions {
    * confidence filter.
    */
   retry?: readonly number[];
+  /**
+   * What counts as a trusted line when deciding which lines to read again
+   * (the model's own thresholds, ocr-model.ts); default {@link OCR_TUNING}.
+   */
+  confidence?: Pick<OcrTuning, "wordMean" | "lineMean" | "wordMin">;
   /** Asked between steps; true stops the page with {@link OcrCancelled}. */
   cancelled?: () => boolean;
   /** Called with a short note when a step finishes (timings, for the accuracy check). */
@@ -165,10 +170,11 @@ export async function readPage(
   );
   // A line the reader was unsure of is read again with the box taken a little
   // taller and shorter; the reading with the most trusted text is kept.
+  const confidence = options.confidence ?? OCR_TUNING;
   for (const core of options.retry ?? REC_RETRY) {
-    const unsure = boxes.map((_, i) => i).filter((i) => !isTrusted(lines[i]));
+    const unsure = boxes.map((_, i) => i).filter((i) => !isTrusted(lines[i], confidence));
     await recognise(unsure, core, (i, line) => {
-      if (trusted(line) > trusted(lines[i])) lines[i] = line;
+      if (trusted(line, confidence) > trusted(lines[i], confidence)) lines[i] = line;
     });
   }
   options.onStep?.("recognise", Date.now() - t0);
@@ -241,16 +247,18 @@ function round(v: number): number {
   return Math.round(v * 1000) / 1000;
 }
 
+type Confidence = Pick<OcrTuning, "wordMean" | "lineMean" | "wordMin">;
+
 /** How many characters of a line the confidence filter would keep (0 for no line). */
-function trusted(line: OcrLine | undefined): number {
-  if (!line || line.conf < OCR_TUNING.lineMean) return 0;
+function trusted(line: OcrLine | undefined, c: Confidence): number {
+  if (!line || line.conf < c.lineMean) return 0;
   return line.words
-    .filter((w) => w.conf >= OCR_TUNING.wordMean && w.min >= OCR_TUNING.wordMin)
+    .filter((w) => w.conf >= c.wordMean && w.min >= c.wordMin)
     .reduce((n, w) => n + w.text.length, 0);
 }
 
 /** Whether every word of the line passes the filter: nothing to read again. */
-function isTrusted(line: OcrLine | undefined): boolean {
-  if (!line || line.conf < OCR_TUNING.lineMean) return false;
-  return line.words.every((w) => w.conf >= OCR_TUNING.wordMean && w.min >= OCR_TUNING.wordMin);
+function isTrusted(line: OcrLine | undefined, c: Confidence): boolean {
+  if (!line || line.conf < c.lineMean) return false;
+  return line.words.every((w) => w.conf >= c.wordMean && w.min >= c.wordMin);
 }

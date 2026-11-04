@@ -7,12 +7,12 @@
 
 import { type App, Notice, normalizePath } from "obsidian";
 import { type PixelRect, hasEdgesOutside, hasInkOutside } from "../recognition/ocr/blank";
-import { OCR_MODEL } from "../recognition/ocr/ocr-model";
+import { type OcrTier, ocrTiersFor } from "../recognition/ocr/ocr-model";
 import { toHex } from "../downloads/model-manifest";
 import type { AssetStore } from "../downloads/model-store";
 import type { ModelRegistry } from "./model-downloads";
 import { OcrRasteriser } from "./ocr-raster";
-import type { OcrDeps } from "./ocr-service";
+import type { ActiveOcrModel, ModelStoreLike, OcrDeps } from "./ocr-service";
 
 /** The longest side of the copy of a page checked for ink, px. */
 const INK_EDGE = 256;
@@ -25,11 +25,55 @@ export interface ObsidianOcrHost {
   models: ModelRegistry;
   enabled(): boolean;
   figures(): boolean;
+  /** The model the setting "OCR model" chooses (one offered on this device). */
+  tier(): OcrTier;
+  /** Whether this device is a phone or tablet: the largest model is not registered there. */
+  mobile(): boolean;
 }
 
-export function obsidianOcrDeps(host: ObsidianOcrHost): { deps: OcrDeps; store: AssetStore } {
+/** What the service sees of the models: whichever one the setting chooses now. */
+class ActiveStore implements ModelStoreLike {
+  constructor(
+    private readonly active: () => AssetStore,
+    private readonly all: () => AssetStore[],
+  ) {}
+  get state() {
+    return this.active().state;
+  }
+  file() {
+    return this.active().file();
+  }
+  bytes(name?: string) {
+    return this.active().bytes(name);
+  }
+  check(again?: boolean) {
+    return this.active().check(again);
+  }
+  /** Any model arriving counts: the service looks at whether the one in use is ready. */
+  subscribe(listener: () => void): () => void {
+    const unsubscribers = this.all().map((store) => store.subscribe(listener));
+    return () => {
+      for (const unsubscribe of unsubscribers) unsubscribe();
+    };
+  }
+}
+
+export function obsidianOcrDeps(host: ObsidianOcrHost): { deps: OcrDeps; store: ModelStoreLike } {
   const { app } = host;
-  const store = host.models.register(OCR_MODEL);
+  // Every model this device offers has a store (Settings › Models on this device lists
+  // them); the service uses the one the setting chooses.
+  const stores = new Map(
+    ocrTiersFor(host.mobile()).map((t) => [t.id, host.models.register(t.asset)]),
+  );
+  const storeOf = (tier: OcrTier): AssetStore => {
+    const store = stores.get(tier.id) ?? stores.values().next().value;
+    if (!store) throw new Error("no OCR model is registered");
+    return store;
+  };
+  const store = new ActiveStore(
+    () => storeOf(host.tier()),
+    () => [...stores.values()],
+  );
   const adapter = app.vault.adapter;
   const hashes = new Map<string, { stamp: string; key: Promise<string> }>();
   const deps: OcrDeps = {
@@ -37,7 +81,17 @@ export function obsidianOcrDeps(host: ObsidianOcrHost): { deps: OcrDeps; store: 
     enabled: () => host.enabled(),
     figures: () => host.figures(),
     store,
-    offer: () => host.models.offer(OCR_MODEL.id, "auto"),
+    offer: (ask) => host.models.offer(host.tier().asset.id, ask ? "ask" : "auto"),
+    model: (): ActiveOcrModel => {
+      const tier = host.tier();
+      return {
+        version: tier.version,
+        key: `${tier.asset.id}:${tier.asset.version}`,
+        rec: tier.rec,
+        dict: tier.dict,
+        confidence: tier.confidence,
+      };
+    },
     raster: new OcrRasteriser(app),
     client: async () => {
       const { OcrClient } = await import("../recognition/ocr/client");

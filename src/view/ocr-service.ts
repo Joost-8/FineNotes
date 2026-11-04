@@ -37,18 +37,20 @@ import {
   emptyCache,
   mergeCaches,
   parseCache,
+  type StoredPage,
   serializeCache,
+  staleCachedPage,
   withPage,
 } from "../recognition/ocr/ocr-cache";
 import {
-  OCR_DICT_FILE,
-  OCR_MODEL,
-  OCR_REC_FILE,
   OCR_DET_FILE,
+  OCR_TIERS,
   OCR_WASM_FILE,
+  type OcrConfidence,
+  ocrTuningFor,
 } from "../recognition/ocr/ocr-model";
 import { OcrQueue, type PageRef } from "../recognition/ocr/ocr-queue";
-import type { OcrLine, OcrPage } from "../recognition/ocr/ocr-words";
+import type { OcrLine, OcrPage, OcrTuning } from "../recognition/ocr/ocr-words";
 import type { OcrFiles } from "../recognition/ocr/protocol";
 import { errorMessage } from "../util/errors";
 
@@ -62,12 +64,42 @@ export interface OcrOwner {
   ocrSettingsChanged?(): void;
 }
 
+/**
+ * The OCR model in use now (the setting "OCR model"): what the cache calls
+ * the model that read a page, the worker's key for it, which of its files
+ * are the recogniser and its dictionary, and the thresholds that decide
+ * which of its words are trusted.
+ */
+export interface ActiveOcrModel {
+  /** Recorded with every page read, in the sidecar (ocr-cache.ts). */
+  version: string;
+  /** The worker's key for the model it holds. */
+  key: string;
+  rec: string;
+  dict: string;
+  confidence: OcrConfidence;
+}
+
+/** The Fast model, which is also what a service without a choice uses. */
+const FAST_MODEL: ActiveOcrModel = (() => {
+  const tier = OCR_TIERS[0];
+  return {
+    version: tier.version,
+    key: `${tier.asset.id}:${tier.asset.version}`,
+    rec: tier.rec,
+    dict: tier.dict,
+    confidence: tier.confidence,
+  };
+})();
+
 /** What the service needs of the model's store (an `AssetStore`). */
 export interface ModelStoreLike {
   readonly state: { kind: string };
   file(): Promise<string | null>;
   bytes(name?: string): Promise<ArrayBuffer | null>;
   subscribe(listener: () => void): () => void;
+  /** Look at the model's folder again (after the setting chose it, or a sync). */
+  check?(again?: boolean): Promise<unknown>;
 }
 
 /** A page drawn for OCR (`ocr-raster.ts`). */
@@ -89,7 +121,11 @@ export interface RasterLike {
 
 /** The OCR worker's client (`recognition/ocr/client.ts`). */
 export interface ClientLike {
-  ensureModel(key: string, read: () => Promise<OcrFiles>): Promise<void>;
+  ensureModel(
+    key: string,
+    read: () => Promise<OcrFiles>,
+    confidence?: OcrConfidence,
+  ): Promise<void>;
   read(
     bitmap: ImageBitmap,
     scale: number,
@@ -132,9 +168,12 @@ export interface OcrDeps {
   enabled(): boolean;
   /** The setting "Also read text inside figures" (only in effect while `enabled`). */
   figures(): boolean;
+  /** The store of the model in use now (it follows the setting "OCR model"). */
   store: ModelStoreLike;
-  /** Show the model's download card (unless declined). */
-  offer(): void;
+  /** Show the model's download card (unless declined); `ask`: the user just asked for it. */
+  offer(ask?: boolean): void;
+  /** The model in use now; absent: the Fast model. */
+  model?(): ActiveOcrModel;
   raster: RasterLike;
   /** The worker's client, made when first needed. */
   client(): Promise<ClientLike>;
@@ -209,6 +248,21 @@ export class OcrService {
   private cancelWake: (() => void) | null = null;
   private cancelSave: (() => void) | null = null;
   private readonly unsubscribe: () => void;
+
+  /** The model in use now. */
+  private model(): ActiveOcrModel {
+    return this.deps.model?.() ?? FAST_MODEL;
+  }
+
+  /**
+   * The thresholds of the model that read a page (its `model` version; default:
+   * the model in use), with every other number of OCR_TUNING. A page read by
+   * another model is judged by that model's own confidences.
+   */
+  tuning(model?: string): OcrTuning {
+    const tier = model === undefined ? undefined : OCR_TIERS.find((t) => t.version === model);
+    return ocrTuningFor(tier ?? this.model());
+  }
 
   constructor(private readonly deps: OcrDeps) {
     // The model arriving (from the card, or the settings) un-parks the queue.
@@ -335,9 +389,30 @@ export class OcrService {
   }
 
   /** The page's text read earlier, or null (not read, read by another model, or no way to tell). */
-  async cached(path: string, page: number): Promise<OcrPage | null> {
+  async cached(path: string, page: number): Promise<StoredPage | null> {
     try {
-      return cachedPage(await this.load(await this.deps.hashOf(path)), page);
+      return cachedPage(await this.load(await this.deps.hashOf(path)), page, this.model().version);
+    } catch (error) {
+      console.warn("FineNotes: could not look up scanned-page text", error);
+      return null;
+    }
+  }
+
+  /**
+   * What another model of this build read of the page, while the model in
+   * use has not read it yet (after a switch): still shown, judged by its own
+   * model's thresholds (`tuning(page.model)`), until the new reading replaces
+   * it. Null when there is none.
+   */
+  async cachedStale(path: string, page: number): Promise<StoredPage | null> {
+    try {
+      const file = await this.load(await this.deps.hashOf(path));
+      return staleCachedPage(
+        file,
+        page,
+        this.model().version,
+        OCR_TIERS.map((t) => t.version),
+      );
     } catch (error) {
       console.warn("FineNotes: could not look up scanned-page text", error);
       return null;
@@ -383,19 +458,25 @@ export class OcrService {
     try {
       const key = await this.deps.hashOf(path);
       const file = await this.load(key);
-      if (cachedPage(file, page)) return;
+      const model = this.model().version;
+      if (cachedPage(file, page, model)) return;
       this.caches.set(
         key,
         Promise.resolve(
-          withPage(file, page, {
-            condition: "TEXT_ONLY",
-            regions: [],
-            imageWidth: 0,
-            imageHeight: 0,
-            pageWidth: size.width,
-            pageHeight: size.height,
-            lines: [],
-          }),
+          withPage(
+            file,
+            page,
+            {
+              condition: "TEXT_ONLY",
+              regions: [],
+              imageWidth: 0,
+              imageHeight: 0,
+              pageWidth: size.width,
+              pageHeight: size.height,
+              lines: [],
+            },
+            model,
+          ),
         ),
       );
       this.dirty.add(key);
@@ -423,6 +504,32 @@ export class OcrService {
       console.warn("FineNotes: could not drop the scanned-page cache", error);
     }
     this.emit();
+    this.pump();
+  }
+
+  /**
+   * The setting "OCR model" changed (or the model in use was removed): the
+   * worker lets the old model go and loads the new one when next needed; what
+   * was read by another model counts as not read (the cache records which
+   * model read a page), so the notebooks ask for their pages again, and the
+   * new model is offered if it is not on this device. The old model's files
+   * stay.
+   */
+  modelChanged(): void {
+    if (this.disposed) return;
+    this.releaseModel();
+    this.parked = false;
+    this.failures = 0;
+    this.failed.clear();
+    const { store } = this.deps;
+    void store.check?.(true).then(() => {
+      if (this.disposed) return;
+      if (store.state.kind === "ready") this.requeueWaiting();
+      else if (this.enabled) this.deps.offer(true);
+      this.pump();
+    });
+    // The notebooks read their pages' text again: with the new model's cache entries.
+    for (const owner of [...this.owners.keys()]) owner.ocrSettingsChanged?.();
     this.pump();
   }
 
@@ -565,11 +672,12 @@ export class OcrService {
     const key = await this.deps.hashOf(path);
     const file = await this.load(key);
     const ref = refKey(path, page);
+    const model = this.model();
     const native = this.natives.get(ref) ?? { items: 0, rects: [] };
     this.natives.delete(ref);
     // Queued while "Also read text inside figures" was on, and it is off now: left alone.
     if (native.plan?.condition === "TEXT_WITH_FIGURES" && !this.figures) return;
-    if (!cachedPage(file, page)) {
+    if (!cachedPage(file, page, model.version)) {
       // A page with text of its own is read only if the model is here already;
       // only a page with none at all may make it be offered.
       if (native.items > 0 && (await this.deps.store.file()) === null) {
@@ -579,11 +687,16 @@ export class OcrService {
       const plan = this.planOf(native);
       const result =
         plan.condition === "TEXT_WITH_FIGURES" && !plan.checkRest
-          ? await this.readRegions(job, native, plan)
-          : await this.readWhole(job, native, plan);
+          ? await this.readRegions(job, native, plan, model)
+          : await this.readWhole(job, native, plan, model);
       if (!result) return;
       this.failures = 0;
-      this.caches.set(key, Promise.resolve(withPage(await this.load(key), page, result)));
+      // The setting changed while the page was read: it was read by a model no longer in use.
+      if (this.model().version !== model.version) return;
+      this.caches.set(
+        key,
+        Promise.resolve(withPage(await this.load(key), page, result, model.version)),
+      );
       this.dirty.add(key);
       this.scheduleSave();
     }
@@ -609,6 +722,7 @@ export class OcrService {
     job: PageRef,
     native: NativeInfo,
     plan: PagePlan,
+    model: ActiveOcrModel,
   ): Promise<OcrPage | null> {
     const { path, page } = job;
     const shot = await this.deps.raster.render(path, page);
@@ -627,7 +741,7 @@ export class OcrService {
         // as read, so it is not drawn again.
         const empty = this.emptyPage(shot, settledCondition(plan, native.items > 0, false));
         shot.bitmap.close();
-        if (plan.checkRest) return await this.readRegions(job, native, plan);
+        if (plan.checkRest) return await this.readRegions(job, native, plan, model);
         return empty;
       }
       if (!(await this.modelReady())) {
@@ -638,7 +752,7 @@ export class OcrService {
       }
       const started = this.deps.now();
       const client = await this.worker();
-      await client.ensureModel(`${OCR_MODEL.id}:${OCR_MODEL.version}`, () => this.readModel());
+      await client.ensureModel(model.key, () => this.readModel(model), model.confidence);
       // The worker takes the bitmap and closes it.
       const read = await client.read(shot.bitmap, shot.scale, shot.pageWidth, shot.pageHeight);
       console.debug(
@@ -665,6 +779,7 @@ export class OcrService {
     job: PageRef,
     native: NativeInfo,
     plan: PagePlan,
+    model: ActiveOcrModel,
   ): Promise<OcrPage | null> {
     const { path, page } = job;
     if (!(await this.modelReady(native.items === 0))) {
@@ -708,7 +823,7 @@ export class OcrService {
         }
         const client = await this.worker();
         if (!loaded) {
-          await client.ensureModel(`${OCR_MODEL.id}:${OCR_MODEL.version}`, () => this.readModel());
+          await client.ensureModel(model.key, () => this.readModel(model), model.confidence);
           loaded = true;
         }
         const read = await client.read(
@@ -753,16 +868,16 @@ export class OcrService {
     return false;
   }
 
-  private async readModel(): Promise<OcrFiles> {
+  private async readModel(model: ActiveOcrModel): Promise<OcrFiles> {
     const get = async (name: string): Promise<ArrayBuffer> => {
       const bytes = await this.deps.store.bytes(name);
       if (!bytes) throw new Error(`the OCR model's ${name} is missing or damaged`);
       return bytes;
     };
-    const dict = new TextDecoder("utf-8").decode(await get(OCR_DICT_FILE.name));
+    const dict = new TextDecoder("utf-8").decode(await get(model.dict));
     return {
       det: await get(OCR_DET_FILE.name),
-      rec: await get(OCR_REC_FILE.name),
+      rec: await get(model.rec),
       dict,
       wasm: await get(OCR_WASM_FILE.name),
     };
@@ -814,7 +929,7 @@ export class OcrService {
         const theirs = (await files.exists(file))
           ? parseCache(await files.read(file))
           : emptyCache();
-        const merged = mergeCaches(theirs, ours);
+        const merged = mergeCaches(theirs, ours, this.model().version);
         this.caches.set(key, Promise.resolve(merged));
         // Through a temporary name, then moved into place: a half-written
         // file is never what sync carries off.

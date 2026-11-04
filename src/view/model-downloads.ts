@@ -26,7 +26,7 @@ import {
   toHex,
   totalBytes,
 } from "../downloads/model-manifest";
-import { AssetStore, type AssetStoreDeps } from "../downloads/model-store";
+import { AssetStore, type AssetStoreDeps, routedFolder } from "../downloads/model-store";
 import { deviceFolder } from "../downloads/device-folder";
 
 /** A model's folder in the vault. */
@@ -123,12 +123,28 @@ export class ModelRegistry {
     const known = this.stores.get(asset.id);
     if (known) return known;
     const formatOf = options.formatOf ?? (() => asset.format);
-    const store = new AssetStore(
-      asset,
-      asset.deviceOnly
-        ? { ...deviceFolder(asset.folder), ...networkDeps(formatOf) }
-        : vaultDeps(this.app, () => modelFolder(this.pluginDir(), asset), formatOf),
-    );
+    const own = asset.deviceOnly
+      ? { ...deviceFolder(asset.folder), ...networkDeps(formatOf) }
+      : vaultDeps(this.app, () => modelFolder(this.pluginDir(), asset), formatOf);
+    // Files another model shares live in that model's vault folder (even for a
+    // model kept off the vault), so switching between the models downloads them once.
+    const sharing = asset.shared;
+    const deps =
+      sharing && (asset.deviceOnly || sharing.folder !== asset.folder)
+        ? {
+            ...own,
+            ...routedFolder(
+              own,
+              vaultDeps(
+                this.app,
+                () => normalizePath(`${this.pluginDir()}/${sharing.folder}`),
+                formatOf,
+              ),
+              sharing.files,
+            ),
+          }
+        : own;
+    const store = new AssetStore(asset, deps);
     this.stores.set(asset.id, store);
     return store;
   }

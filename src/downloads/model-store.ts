@@ -54,6 +54,41 @@ export interface AssetStoreDeps {
   sleep(ms: number): Promise<void>;
 }
 
+type FolderDeps = Pick<AssetStoreDeps, "list" | "read" | "write" | "rename" | "remove">;
+
+/**
+ * A folder's dependencies where some files (`names`) live in another folder:
+ * a name (or its `.download` temporary) goes to `shared`, the rest to `own`.
+ * A listing is both folders', so a shared file already stored by another
+ * model is found and never downloaded again.
+ */
+export function routedFolder(
+  own: FolderDeps,
+  shared: FolderDeps,
+  names: readonly string[],
+): FolderDeps {
+  const sharedNames = new Set(names);
+  const pick = (name: string): FolderDeps =>
+    sharedNames.has(name.endsWith(".download") ? name.slice(0, -".download".length) : name)
+      ? shared
+      : own;
+  return {
+    list: async () => {
+      const [mine, theirs] = await Promise.all([own.list(), shared.list()]);
+      return [
+        ...new Set([
+          ...mine.filter((n) => !sharedNames.has(n)),
+          ...theirs.filter((n) => sharedNames.has(n)),
+        ]),
+      ];
+    },
+    read: (name) => pick(name).read(name),
+    write: (name, data) => pick(name).write(name, data),
+    rename: (from, to) => pick(to).rename(from, to),
+    remove: (name) => pick(name).remove(name),
+  };
+}
+
 /** Tries per byte range before the download is given up, and the waits between them. */
 export const RETRY_WAITS_MS = [1000, 3000];
 
@@ -403,8 +438,10 @@ export class AssetStore {
   async remove(): Promise<void> {
     if (isBusy(this.current)) return;
     const names = new Set(await this.names());
+    // Files shared with other models stay: they are theirs too.
+    const shared = new Set(this.asset.shared?.files);
     for (const file of this.asset.files)
-      if (names.has(file.name)) await this.deps.remove(file.name);
+      if (names.has(file.name) && !shared.has(file.name)) await this.deps.remove(file.name);
     for (const other of storedVersions(this.asset, [...names]).others)
       await this.deps.remove(other.file).catch(() => {});
     this.dropPartial();

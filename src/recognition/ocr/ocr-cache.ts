@@ -176,6 +176,25 @@ export function cachedPage(
   return stored;
 }
 
+/**
+ * The page as recorded by another model of this build (a version in
+ * `known`), or null: what a switch of the OCR model keeps showing until the
+ * page is read again with the chosen one. Only a page that carries words
+ * counts (not a `TEXT_ONLY` or `BLANK` record), and never one of a version
+ * this build does not know, whose confidences cannot be judged.
+ */
+export function staleCachedPage(
+  file: OcrCacheFile,
+  page: number,
+  model: string,
+  known: readonly string[],
+): StoredPage | null {
+  const stored = file.pages[String(page)];
+  if (!stored || stored.model === model || !known.includes(stored.model)) return null;
+  if (stored.condition === "TEXT_ONLY" || stored.condition === "BLANK") return null;
+  return stored;
+}
+
 /** Boxes to a tenth of a point and confidences to the thousandth: the sidecar stays small. */
 function rounded(page: OcrPage): OcrPage {
   const tenth = (v: number): number => Math.round(v * 10) / 10;
@@ -231,11 +250,15 @@ export function withPage(
  * have added pages to): a page of ours replaces theirs, unless theirs was
  * read by this build's model and ours was not.
  */
-export function mergeCaches(theirs: OcrCacheFile, ours: OcrCacheFile): OcrCacheFile {
+export function mergeCaches(
+  theirs: OcrCacheFile,
+  ours: OcrCacheFile,
+  model: string = OCR_MODEL_VERSION,
+): OcrCacheFile {
   const pages = { ...theirs.pages };
   for (const [key, page] of Object.entries(ours.pages)) {
     const other = pages[key];
-    if (other && other.model === OCR_MODEL_VERSION && page.model !== OCR_MODEL_VERSION) continue;
+    if (other && other.model === model && page.model !== model) continue;
     pages[key] = page;
   }
   return { format: OCR_CACHE_FORMAT, pages };

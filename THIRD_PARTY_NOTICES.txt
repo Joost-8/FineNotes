@@ -295,17 +295,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-PaddleOCR PP-OCRv5 mobile detector and PP-OCRv6 tiny recogniser (downloaded, not bundled)
--------------------------------------------------------------------------------------------
+PaddleOCR PP-OCRv5 mobile detector and PP-OCRv6 tiny, small and medium recognisers (downloaded, not bundled)
+-------------------------------------------------------------------------------------------------------------
 
 The scanned-page reader downloads, on the user's say-so, PaddleOCR's
 PP-OCRv5 mobile text detector (PP-OCRv5_mobile_det_infer.ort) and PP-OCRv6
 tiny text recogniser with its dictionary (PP-OCRv6_tiny_rec.ort,
-ppocrv6_tiny_dict.txt), in ONNX Runtime's .ort format. The files are the ones
+ppocrv6_tiny_dict.txt), in ONNX Runtime's .ort format; the setting "OCR model"
+may instead download the PP-OCRv6 small or medium recogniser with their
+dictionary (PP-OCRv6_small_rec.ort, PP-OCRv6_medium_rec.ort, ppocrv6_dict.txt). The files are the ones
 published unchanged in https://github.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr-models
 (Apache-2.0; the detector also in the npm package pdfmarkdown-ppocrv5-models
 1.0.0) and are served from the data-only branch "ocr-models" of the FineNotes
-repository (folder ppocrv6-1, which carries the licence text and a notice).
+repository (folders ppocrv6-1, ppocrv6-small-1 and ppocrv6-medium-1, each carrying the licence text and a notice).
 No part of them is in main.js.
 
 PaddleOCR, Copyright (c) PaddlePaddle Authors.
