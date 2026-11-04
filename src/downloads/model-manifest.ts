@@ -210,7 +210,7 @@ export function failureText(reason: FailReason, detail: string): string {
     case "offline":
       return "Downloads when you're online.";
     case "http":
-      return `GitHub did not send the file (${detail}). Try again later.`;
+      return `The download server did not send the file (${detail}). Try again later.`;
     case "damaged":
       return "The download arrived damaged. Try again.";
     case "storage":

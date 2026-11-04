@@ -8,8 +8,48 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Scanned-page reader: faster, smaller, and more accurate.** The OCR model is now
+  PaddleOCR PP-OCRv5 (mobile) for finding lines and PP-OCRv6 (tiny) for reading them.
+  A page takes about 5.5 s instead of 12 s, the download is 23.7 MB instead of 35.8 MB,
+  and on the test pages and the lecture figures it reads more labels correctly (86.0%
+  against 84.8%). The model comes from this repository (branch `ocr-models`), no longer
+  from a CDN: a device that has the old model is offered the new download once, and
+  pages read before are read again. The reader's dictionary has no Japanese kana
+  (Latin with accents, Greek, symbols and 6,174 Chinese characters are in it). The
+  handwriting filter is stricter to match the new reader's higher confidences.
+  Measurements and the options that were tried: [docs/OCR.md](docs/OCR.md#model-choice).
+
 ### Added
 
+- **Text inside the pictures of PDF pages is read too.** A lecture PDF has a text
+  layer, but the labels in its figures ("Bladder", "Pubic bone") are pixels and
+  could not be searched. FineNotes now finds the pictures from the PDF's own
+  drawing operators, reads only inside them (never the text the page already
+  has), and a page with no picture worth reading costs nothing and is remembered
+  as such. Only when the reader model is already on the device; it never causes
+  the download to be offered. _Also read text inside figures_ (on by default,
+  under _Read scanned PDF pages_). The cache sidecar is now format 2: pages
+  read before are read again. A picture behind the text (a slide background, a watermark) is
+  skipped unless it has content beyond the text, lines the reader was unsure of are read a second time, circled step numbers become words of
+  their own, a word misread as a near neighbour of a word in the same PDF ("Extemal") is corrected, and
+  the setting takes effect without reopening a notebook. Details and measurements:
+  [docs/OCR.md](docs/OCR.md).
+- **Scanned PDF pages are read on your device.** A PDF page that is a picture
+  of printed text (a scan, or a scan with only a page number on it) now gets
+  search, the text-snapping highlighter and Copy text, as PDFs with real text
+  do. The reader is PaddleOCR PP-OCRv5 (mobile) running with ONNX Runtime Web
+  in a background worker, on iPhone, iPad, Android and desktop. It is a
+  23.7 MB download that is offered the first time a scanned page needs it;
+  nothing downloads before you agree, and you can turn it off with _Read
+  scanned PDF pages_ (Pages and notebooks). It reads only PDFs open in a
+  notebook, the page in view first, then its neighbours, then the rest of
+  that PDF while you are not writing, one page at a time. Messy handwriting
+  is left alone: only words the reader is sure of are used. What was read is
+  kept once per PDF in the plugin folder (`ocr`), so it syncs and a second
+  device needs neither the download nor a second reading. _Re-read scanned
+  pages of this PDF_ in the command palette reads a PDF again.
 - **Ask AI on an empty lasso.** A lasso drawn round nothing offers Ask AI
   about that patch of page beside Screenshot, while an AI service is set up.
 - **Dock tool options on every side.** With the tool bar at the left or
