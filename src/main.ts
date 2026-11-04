@@ -2362,11 +2362,12 @@ export default class GoodObsidianPlugin extends Plugin {
   /**
    * The dialog's last choices without the dialog: the template it made a
    * notebook of last time while that is still in My templates, else the paper.
+   * Always a notebook, even right after a board.
    */
   private async createNotebookWithLastSettings(): Promise<void> {
-    const choices = parseNotebookChoices(this.settings.lastNotebookChoices);
+    const choices = dialogChoices(this.settings.lastNotebookChoices);
     const remembered = parseNotebookTemplate(this.settings.lastNotebookTemplate);
-    if (remembered && choices.type !== "endless") {
+    if (remembered) {
       const library = this.paperLibrary();
       const entries = await library.list().catch(() => []);
       const entry = entries.find((e) => e.path === remembered.path && e.page === remembered.page);
@@ -2978,7 +2979,7 @@ export default class GoodObsidianPlugin extends Plugin {
     } else if (request.do === "new") {
       await this.createNotebook(
         request.name,
-        parseNotebookChoices(this.settings.lastNotebookChoices),
+        dialogChoices(this.settings.lastNotebookChoices),
         request.folder,
       );
     } else if (request.do === "pdf") {

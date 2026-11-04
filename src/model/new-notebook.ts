@@ -122,7 +122,8 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
  * What the New notebook dialog opens with: the remembered paper, cover and
  * size, as the kind the entry asked for. The kind is never the remembered
  * one: New notebook opens a notebook right after a board was made, and New
- * board a board.
+ * board a board. "Create notebook with last settings" and the `last` link
+ * make theirs from it too, so they also make a notebook after a board.
  */
 export function dialogChoices(raw: unknown, kind: NotebookType = "notebook"): NotebookChoices {
   return { ...parseNotebookChoices(raw), type: kind };
