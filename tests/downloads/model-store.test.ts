@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { type ModelAsset } from "../../src/downloads/model-manifest";
-import { AssetStore, type AssetStoreDeps } from "../../src/downloads/model-store";
+import { AssetStore, type AssetStoreDeps, routedFolder } from "../../src/downloads/model-store";
 
 /** A 2,000-byte "model" with a 4-byte header naming its format. */
 function makeFile(format = 1, size = 2000): Uint8Array {
@@ -49,16 +49,25 @@ const PAIR: ModelAsset = {
 
 interface Server {
   /** Answer for each request, in turn; "fail" rejects (offline). "ok" and afterwards: the range asked for. */
-  script: ("ok" | "fail" | number | "full" | "short")[];
+  script: ("ok" | "fail" | number | "full" | "short" | "compressed")[];
   body: Uint8Array;
   /** Bodies of other URLs. */
   others: Map<string, Uint8Array>;
   requests: { start: number; end: number }[];
+  /** Requests without a range. */
+  whole: number;
 }
 
 function fakes(server: Partial<Server> = {}) {
   const files = new Map<string, Uint8Array>();
-  const srv: Server = { script: [], body: FILE, others: new Map(), requests: [], ...server };
+  const srv: Server = {
+    script: [],
+    body: FILE,
+    others: new Map(),
+    requests: [],
+    whole: 0,
+    ...server,
+  };
   const writes: string[] = [];
   const deps: AssetStoreDeps = {
     list: () => Promise.resolve([...files.keys()]),
@@ -84,6 +93,7 @@ function fakes(server: Partial<Server> = {}) {
       return Promise.resolve();
     },
     get: (url, range) => {
+      if (!range) srv.whole++;
       const body = srv.others.get(url) ?? srv.body;
       const r = range ?? { start: 0, end: body.byteLength - 1 };
       srv.requests.push(r);
@@ -94,6 +104,13 @@ function fakes(server: Partial<Server> = {}) {
       if (step === "full") return Promise.resolve({ status: 200, body: body.slice().buffer });
       const piece = body.slice(r.start, r.end + 1);
       if (step === "short") return Promise.resolve({ status: 206, body: piece.slice(1).buffer });
+      // A CDN that compressed the body: the range counts compressed bytes, and so does the total.
+      if (step === "compressed")
+        return Promise.resolve({
+          status: 206,
+          body: piece.buffer,
+          total: Math.floor(body.byteLength / 2),
+        });
       return Promise.resolve({ status: 206, body: piece.buffer });
     },
     sha256: (data) => Promise.resolve(sha(data)),
@@ -191,11 +208,31 @@ describe("AssetStore", () => {
     expect(srv.requests[0]?.start).toBe(0);
   });
 
-  it("refuses a short piece", async () => {
-    const { deps } = fakes({ script: ["short"] });
+  it("asks for the file once in one piece when a piece arrives short, and verifies it as usual", async () => {
+    const { deps, srv } = fakes({ script: ["short"] });
+    const store = new AssetStore(ASSET, deps);
+    expect(await store.download()).toBe(true);
+    expect(srv.whole).toBe(1);
+  });
+
+  it("falls back to one request when the Content-Range total is not the file's size", async () => {
+    const { deps, srv, files } = fakes({ script: ["compressed"] });
+    const store = new AssetStore(ASSET, deps);
+    expect(await store.download()).toBe(true);
+    expect(srv.whole).toBe(1);
+    expect(files.get(ASSET.files[0].name)).toEqual(FILE);
+  });
+
+  it("does not fall back more than once, and a damaged fallback fails and can be tried again", async () => {
+    const { deps, srv } = fakes({ script: ["short", "short"] });
     const store = new AssetStore(ASSET, deps);
     expect(await store.download()).toBe(false);
     expect(store.state).toMatchObject({ kind: "failed", reason: "damaged" });
+    expect(srv.whole).toBe(1);
+    srv.script.length = 0;
+    srv.requests.length = 0;
+    expect(await store.download()).toBe(true);
+    expect(srv.requests[0]?.start).toBe(0);
   });
 
   it("reports a write that fails", async () => {
@@ -408,5 +445,71 @@ describe("AssetStore", () => {
       { start: 700, end: 1399 },
       { start: 1400, end: 1999 },
     ]);
+  });
+  it("removes a model's own files and leaves the ones it shares with other models", async () => {
+    const shared: ModelAsset = { ...PAIR, shared: { folder: "other", files: ["dec-1.0.bin"] } };
+    const { deps, files } = fakes({ others: new Map([["https://example.test/dec.bin", SECOND]]) });
+    const store = new AssetStore(shared, deps);
+    expect(await store.download()).toBe(true);
+    await store.remove();
+    expect([...files.keys()]).toEqual(["dec-1.0.bin"]);
+    expect(store.state.kind).toBe("missing");
+    // The shared file is still there, so the model needs only its own file again.
+    const again = fakes({ others: new Map([["https://example.test/dec.bin", SECOND]]) });
+    again.files.set("dec-1.0.bin", SECOND);
+    expect(await new AssetStore(shared, again.deps).download()).toBe(true);
+    expect(again.srv.requests.every((r) => r.end < FILE.byteLength)).toBe(true);
+  });
+});
+
+describe("routedFolder", () => {
+  function folder() {
+    const files = new Map<string, string>();
+    const calls: string[] = [];
+    return {
+      files,
+      calls,
+      deps: {
+        list: () => Promise.resolve([...files.keys()]),
+        read: (n: string) => {
+          calls.push(`read ${n}`);
+          return Promise.resolve(new TextEncoder().encode(files.get(n) ?? "").buffer);
+        },
+        write: (n: string, d: ArrayBuffer) => {
+          calls.push(`write ${n}`);
+          files.set(n, new TextDecoder().decode(d));
+          return Promise.resolve();
+        },
+        rename: (a: string, b: string) => {
+          calls.push(`rename ${a} ${b}`);
+          files.set(b, files.get(a) ?? "");
+          files.delete(a);
+          return Promise.resolve();
+        },
+        remove: (n: string) => {
+          calls.push(`remove ${n}`);
+          files.delete(n);
+          return Promise.resolve();
+        },
+      },
+    };
+  }
+
+  it("sends the shared names, and their temporary names, to the shared folder and the rest to its own", async () => {
+    const own = folder();
+    const shared = folder();
+    shared.files.set("det.ort", "d");
+    shared.files.set("tiny-rec.ort", "t");
+    own.files.set("rec.ort", "r");
+    const routed = routedFolder(own.deps, shared.deps, ["det.ort", "wasm"]);
+    // A listing is the own folder's files and only the shared names of the other.
+    expect((await routed.list()).sort()).toEqual(["det.ort", "rec.ort"]);
+    expect(new TextDecoder().decode(await routed.read("det.ort"))).toBe("d");
+    await routed.write("wasm.download", new TextEncoder().encode("w").buffer);
+    await routed.rename("wasm.download", "wasm");
+    await routed.write("rec2.ort.download", new TextEncoder().encode("x").buffer);
+    await routed.remove("det.ort");
+    expect([...shared.files.keys()].sort()).toEqual(["tiny-rec.ort", "wasm"]);
+    expect([...own.files.keys()].sort()).toEqual(["rec.ort", "rec2.ort.download"]);
   });
 });

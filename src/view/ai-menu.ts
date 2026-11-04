@@ -143,6 +143,11 @@ export class AiMenuPopover {
       if (item.enabled && item.detail) {
         text.createSpan({ cls: "goodobsidian-aimenu-reason", text: item.detail });
       }
+      if (item.mark === "download") {
+        const mark = row.createSpan({ cls: "goodobsidian-aimenu-mark" });
+        setIcon(mark, "download");
+        row.setAttribute("aria-label", `${item.label}: download the reader`);
+      }
       if (!item.enabled) {
         row.disabled = true;
         row.setAttribute("aria-disabled", "true");

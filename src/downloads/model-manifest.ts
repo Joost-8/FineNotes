@@ -56,6 +56,14 @@ export interface ModelAsset {
    * no vault sync carries it: for a model only a desktop can run.
    */
   deviceOnly?: boolean;
+  /**
+   * Files of `files` that live in another model's vault folder `folder`
+   * (relative to the plugin's folder), shared with the models that list them
+   * too: they are read from and downloaded to that folder, found there when
+   * it already holds them (no second download), and left alone when this
+   * model is removed.
+   */
+  shared?: { folder: string; files: readonly string[] };
 }
 
 /** The model's total size in bytes. */
