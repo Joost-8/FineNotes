@@ -232,19 +232,22 @@ export interface PaperColor {
   paper: string;
   /** Rule colour, when the paper theme's default would not read on it. */
   rule?: string;
+  /** Earlier fills of this paper, which pages already written still carry. */
+  former?: readonly string[];
 }
 
 export const PAPER_COLORS: readonly PaperColor[] = [
   { id: "white", label: "White Paper", paper: "#ffffff" },
-  { id: "yellow", label: "Yellow Paper", paper: "#fbf8ed" },
+  { id: "yellow", label: "Yellow Paper", paper: "#f9f1d3", former: ["#fbf8ed"] },
   { id: "dark", label: "Dark Paper", paper: "#26272b", rule: "#4a4d56" },
 ];
 
 /** Which paper colour a backdrop is on. Anything unrecognised reads as white. */
 export function paperColorOf(backdrop: Backdrop): PaperColorId {
   if (backdrop.kind === "pdf" || !backdrop.paperColor) return "white";
+  const fill = backdrop.paperColor.toLowerCase();
   const match = PAPER_COLORS.find(
-    (c) => c.paper.toLowerCase() === backdrop.paperColor?.toLowerCase(),
+    (c) => c.paper.toLowerCase() === fill || c.former?.includes(fill),
   );
   return match?.id ?? "white";
 }

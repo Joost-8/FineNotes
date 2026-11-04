@@ -866,7 +866,9 @@ function sheetKeys(input: ShortcutInput): string[] {
  * row the user changed shows the inputs in force (none: the line goes), and
  * a held tool keeps the line's gesture ("Space + drag"). Saved pens are one
  * line, "1 – 8", until one of them is changed; then each is its own. Lines
- * nobody changed stay as written.
+ * nobody changed stay as written. A row the sheet has no line for (the
+ * Magnifier, Full screen, a tool bar button) gets one, under its group,
+ * once it has a key: everything a key does is on the sheet.
  */
 export function boundShortcutGroups(
   table: ShortcutTable,
@@ -896,5 +898,22 @@ export function boundShortcutGroups(
       },
     ];
   };
-  return groups.map((group) => ({ title: group.title, shortcuts: group.shortcuts.flatMap(bound) }));
+  const out = groups.map((group) => ({
+    title: group.title,
+    shortcuts: group.shortcuts.flatMap(bound),
+  }));
+  const listed = new Set(groups.flatMap((group) => group.shortcuts.map((s) => s.binding)));
+  for (const row of table.rows) {
+    const { id } = row.action;
+    if (listed.has(id) || id.startsWith("pen.saved.") || row.inputs.length === 0) continue;
+    const gesture = row.mode === "hold" ? "hold" : undefined;
+    const line: Shortcut = {
+      action: row.action.label,
+      ways: row.inputs.map((input) => ({ keys: sheetKeys(input), gesture })),
+    };
+    const group = out.find((candidate) => candidate.title === row.action.group);
+    if (group) group.shortcuts.push(line);
+    else out.push({ title: row.action.group, shortcuts: [line] });
+  }
+  return out;
 }

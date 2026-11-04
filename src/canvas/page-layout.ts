@@ -407,8 +407,12 @@ export function rowTurnsPages(zoom: number, floor: number): boolean {
   return zoom <= floor * ROW_PAGING_ZOOM;
 }
 
-/** Screen px of desk a zoomed-in page can be pulled past its edge by, before it bounces. */
-export const ROW_PAGE_EDGE_PX = 24;
+/**
+ * Screen px of desk a zoomed-in page may rest past its edge: none, as in
+ * Goodnotes (Joost's recording, 2026-11-03). A pull past the edge stretches
+ * the row and springs back flush; no strip of desk stays beside the page.
+ */
+export const ROW_PAGE_EDGE_PX = 0;
 
 /**
  * The scroll x range (screen px) that keeps a zoomed-in row on page `index`:
@@ -431,6 +435,39 @@ export function rowPageScrollRange(
     return { min: centred, max: centred };
   }
   return { min, max };
+}
+
+/**
+ * The scroll x range (screen px, as the scroller counts it) of pages that
+ * run down, at `scale` screen px per layout px in a pane `paneWidth` wide.
+ * While the widest page fits the pane (at fit-to-width, after the double tap
+ * that fills the width with the page, or anywhere below), the column is held
+ * centred: `min` equals `max`, and a sideways pull only stretches and springs
+ * back, as Goodnotes holds a page to the window (discussion #43). Wider, it
+ * pans from the pages' left edge to their right edge, never onto the desk
+ * beside them (the layout's side margins). Half a px of rounding still fits.
+ */
+export function columnScrollRangeX(
+  layout: DocumentLayout,
+  scale: number,
+  paneWidth: number,
+): { min: number; max: number } {
+  let left = Infinity;
+  let right = -Infinity;
+  for (const box of layout.boxes) {
+    left = Math.min(left, box.x);
+    right = Math.max(right, box.x + box.width);
+  }
+  if (!(right > left)) {
+    left = 0;
+    right = layout.width;
+  }
+  const span = (right - left) * scale;
+  if (span <= paneWidth + 0.5) {
+    const centred = ((left + right) / 2) * scale - paneWidth / 2;
+    return { min: centred, max: centred };
+  }
+  return { min: left * scale, max: right * scale - paneWidth };
 }
 
 /** A release faster than this (px/ms) turns the page even if it moved less than half. */

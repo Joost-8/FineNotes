@@ -24,7 +24,7 @@ import {
   POINT_STRIDE,
   pageById,
 } from "./document";
-import { relinkNoteInk } from "./sticky-notes";
+import { type TextAdoption, adoptText, relinkNoteInk, releaseText } from "./sticky-notes";
 import { isBucketFill } from "./fill-region";
 import { scaleTable, tableFloorSize } from "./table";
 import { restoreTable } from "./table-commands";
@@ -180,6 +180,8 @@ export class TranslateElements implements Command {
     textBoxes: Array<{ textBox: TextBoxElement; x: number; y: number }>;
     tables: Array<{ table: TableElement; x: number; y: number }>;
     graphs: Array<{ graph: GraphElement; x: number; y: number }>;
+    /** Boxes that landed on an open sticky note, which now owns them. */
+    adopted: TextAdoption[];
   } | null = null;
 
   constructor(
@@ -225,12 +227,20 @@ export class TranslateElements implements Command {
         graph.y += dy;
         return saved;
       }),
+      adopted: [],
     };
+    // A box dropped on an open sticky note, without a note of its own going
+    // with it, becomes the note's text: it folds away with it.
+    for (const textBox of on.textBoxes) {
+      const adoption = adoptText(page, textBox);
+      if (adoption) this.moved.adopted.push(adoption);
+    }
   }
 
   invert(doc: InkDocument): void {
     const moved = this.moved;
     if (!moved || !pageById(doc, this.pageId)) return;
+    for (const adoption of moved.adopted) releaseText(adoption);
     for (const { stroke, pts } of moved.strokes) stroke.pts = pts;
     for (const { image, x, y } of moved.images) {
       image.x = x;

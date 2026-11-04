@@ -21,7 +21,7 @@ import {
   POINT_STRIDE,
   pageById,
 } from "./document";
-import { relinkNoteInk } from "./sticky-notes";
+import { type TextAdoption, adoptText, relinkNoteInk, releaseText } from "./sticky-notes";
 import { nextConnectorId, remapConnectors } from "./connectors";
 import { paperPageFor, repeatedPaper } from "./templates";
 
@@ -117,6 +117,8 @@ export class SetTextBoxFrame implements Command {
   private target: TextBoxElement | null = null;
   /** The box's key order before apply: re-adding `h` or `fit` would append it. */
   private keyOrder: string[] = [];
+  /** The note the box was dropped on, which now owns it (`adoptText`). */
+  private adopted: TextAdoption | null = null;
 
   constructor(
     readonly pageId: string,
@@ -131,11 +133,16 @@ export class SetTextBoxFrame implements Command {
     this.previous = frameOf(box);
     this.keyOrder = Object.keys(box);
     setFrame(box, this.frame);
+    // Dropped on an open sticky note, a box becomes its text: it folds with it.
+    const page = pageById(doc, this.pageId);
+    this.adopted = page ? adoptText(page, box) : null;
   }
 
   invert(doc: InkDocument): void {
     const box = this.target ?? this.find(doc);
     if (!box || !this.previous) return;
+    if (this.adopted) releaseText(this.adopted);
+    this.adopted = null;
     setFrame(box, this.previous);
     restoreKeyOrder(box, this.keyOrder);
   }

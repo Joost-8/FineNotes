@@ -142,7 +142,6 @@ import {
   newStickyNote,
   stickyBoxAt,
 } from "../model/sticky-notes";
-import { CustomizeToolbarModal } from "./customize-toolbar-modal";
 import {
   type BarItemId,
   type ToolbarLayout,
@@ -150,6 +149,7 @@ import {
   effectsOfOffItems,
   isItemOff,
   normalizeLayout,
+  sameLayout,
 } from "./toolbar-layout";
 import { needsNewerReader } from "../model/format-features";
 import type { ImageElement, PageSection } from "../model/document";
@@ -1049,6 +1049,11 @@ export class InkView extends TextFileView {
     this.toolbar?.setBarDock(dock);
   }
 
+  /** "Dock tool options" was switched (the plugin's, per device): this notebook's pill follows. */
+  showPillRow(on: boolean): void {
+    this.toolbar?.setPillRow(on);
+  }
+
   /**
    * Stylus-only mode was switched here or through the toolbar: its toggle
    * follows in this notebook. The hand and magnifier are ordinary toolbar
@@ -1171,15 +1176,24 @@ export class InkView extends TextFileView {
    * small crosshair (FineNotes#25) or the arrow. Only on a computer: a
    * finger or the Pencil has no cursor to replace.
    */
-  /** Show the tool bar's tools in their places (Customize toolbar, here or in another notebook). */
+  /** Show the tool bar's buttons in their places (Customize toolbar, here or in another notebook). */
   setToolbarItems(layout: ToolbarLayout): void {
-    this.toolbar?.setItems(layout.bar, layout.off);
-    this.endOffItemEffects(normalizeLayout(layout.bar, layout.off));
+    const toolbar = this.toolbar;
+    // The bar being customized already shows it: it is where the change came from.
+    if (toolbar && !(toolbar.customizing && sameLayout(toolbar.layout, layout))) {
+      toolbar.setLayout(layout);
+    }
+    this.endOffItemEffects(normalizeLayout(layout));
   }
 
   /** The tool bar's layout as the settings hold it. */
   private toolbarLayout(): ToolbarLayout {
-    return normalizeLayout(this.settings.toolbarItems, this.settings.toolbarOff);
+    return normalizeLayout(this.settings.toolbarLayout);
+  }
+
+  /** Open Customize toolbar on this notebook's bar (the command; the More tools menu opens it too). */
+  customizeToolbar(): void {
+    this.toolbar?.startCustomize();
   }
 
   /** Whether `item` is shown nowhere: its effect may not be turned on (`isItemOff`). */
@@ -1213,16 +1227,6 @@ export class InkView extends TextFileView {
     }
     if (end.recording) this.audio?.toggleRecording();
     if (end.sticky) this.armStickyNote(null);
-  }
-
-  /** "Customize toolbar": the bar's tools in their places, changed live and kept for every notebook. */
-  private openCustomizeToolbar(): void {
-    const settings = this.settings;
-    new CustomizeToolbarModal(
-      this.app,
-      { bar: settings.toolbarItems, off: settings.toolbarOff },
-      (layout) => this.plugin.saveToolbarLayout(layout),
-    ).open();
   }
 
   /**
@@ -3019,7 +3023,9 @@ export class InkView extends TextFileView {
         },
         onStickyColor: (color) => this.armStickyNote(color),
         onStickyCancel: () => this.armStickyNote(null),
-        onCustomize: () => this.openCustomizeToolbar(),
+        onLayout: (layout) => this.plugin.saveToolbarLayout(layout),
+        onSetBarDock: (dock) => this.plugin.setBarDock(dock),
+        onSetPillRow: (on) => this.plugin.setPillRow(on),
         onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
         onCalculator: () => this.toggleCalculator(),
@@ -3032,6 +3038,7 @@ export class InkView extends TextFileView {
         onLearnHandwriting: () => this.plugin.openLearnWindow(),
         onPillPlaced: () => this.surface?.placeToasts(),
         onPillDock: (dock) => this.plugin.setPillDock(dock),
+        onPillRow: (shift) => this.surface?.followTopShift(shift),
         onOnlyStylusMode: (on) => void this.plugin.setOnlyStylusMode(on),
         onZoomIn: () => this.surface?.zoomIn(),
         onZoomOut: () => this.surface?.zoomOut(),
@@ -3053,8 +3060,8 @@ export class InkView extends TextFileView {
         reservedColors: [this.settings.defaultColor, ...this.settings.customColors],
         pillDock: this.plugin.pillDock,
         barDock: this.plugin.barDock,
-        items: this.settings.toolbarItems,
-        offItems: this.settings.toolbarOff,
+        pillRow: this.plugin.pillRow,
+        layout: this.toolbarLayout(),
         onlyStylusMode: this.plugin.stylusOnly,
         fingerDrawing: this.plugin.fingerDrawing,
         laserColor: () => this.settings.laserDefaultColor,
@@ -5153,7 +5160,6 @@ export class InkView extends TextFileView {
             deskColorOf({ desk: "custom", deskColor: this.settings.deskColor }) ?? LIGHT_PAPER.desk,
         },
         folded: this.toolbar?.foldedItems() ?? [],
-        barDock: this.plugin.barDock,
         fingerDrawing: this.plugin.fingerDrawing,
       },
       {
@@ -5187,7 +5193,6 @@ export class InkView extends TextFileView {
         },
         showShortcuts: () => this.toggleShortcuts(),
         copyHomeLink: () => this.copyHomeLink(),
-        setBarDock: (dock) => this.plugin.setBarDock(dock),
         // Where touch exists: on a desktop the mouse draws already.
         setFingerDrawing:
           navigator.maxTouchPoints > 0 ? (on) => this.plugin.setFingerDrawing(on) : undefined,

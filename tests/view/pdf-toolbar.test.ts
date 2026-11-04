@@ -14,9 +14,9 @@ describe("PDF toolbar button", () => {
       callbacks: { onInsertImage: vi.fn(), onInsertPdf: importPdf },
       // A group makes the tool indicator as its first child.
       barEl: { createDiv: () => ({ createDiv: () => ({}) }) },
-      addToolButton: vi.fn(() => ({ disabled: false })),
+      addToolButton: vi.fn(() => ({ disabled: false, setAttribute: vi.fn() })),
       addRulerButton: vi.fn(),
-      setItems: vi.fn(),
+      setLayout: vi.fn(),
       options: {},
       barItems: new Map(),
       itemRuns: new Map(),

@@ -206,6 +206,7 @@ import {
   layoutPages,
   pageSnapIndex,
   pullAddProgress,
+  columnScrollRangeX,
   rowPageScrollRange,
   rowScrollInsets,
   rowScrollXForPage,
@@ -300,6 +301,7 @@ import {
   wheelZoomFactor,
   doubleTapZoom,
   pageFillZoom,
+  pageWidthZoom,
   zoomAnchorFor,
 } from "../canvas/zoom";
 import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physics";
@@ -392,6 +394,7 @@ import {
   pickWord,
 } from "../canvas/text-pick";
 import { TextPickView } from "./text-pick-view";
+import { followTopShift as offsetAfterTopShift } from "./pill-row-model";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
 import {
@@ -1314,6 +1317,10 @@ const IMAGE_CHROME_CLEAR_PX = 10;
 const PRESS_CLEAR_PX = 28;
 /** Room kept between selected PDF text and its bar: clear of a handle's knob, screen px. */
 const TEXT_KNOB_CLEAR_PX = 12;
+/** Device-local mark that the right-click-to-select hint has been shown. */
+const PDF_SELECT_HINT_KEY = "finenotes-pdf-select-hint";
+/** The hint shows at most once a session, mark or no mark. */
+let pdfSelectHintDone = false;
 /** The rotate knob's drawn radius, screen px; its target is the 44 px hit area. */
 const ROTATE_KNOB_RADIUS_PX = 14;
 /** How long a lasso drawn round nothing stays, then how long it fades (Joost's Goodnotes recording). */
@@ -4123,16 +4130,19 @@ export class InkSurface {
     const tool = shortcutTool(row.action.id);
     if (!tool) return;
     if (this.practice && !isPracticeTool(tool)) return;
-    if (this.callbacks.toolOff?.(tool) === true) return;
     const mod = input.mods.includes("Mod");
     const key = input.type === "key" ? input.key : null;
     const bit = input.type === "button" ? buttonBit(input.button) : 0;
     const by = { key, pointerId: pointerId ?? null, bit, mod, tool };
+    // Space's hand works with the Hand button off the bar, as Alt's zoom
+    // does without the Magnifier: it leaves nothing on once let go, which
+    // is all an item shown nowhere must not do (#88).
     if (tool === "pan") {
       this.heldShortcut = { ...by, back: null };
       this.setHand(true);
       return;
     }
+    if (this.callbacks.toolOff?.(tool) === true) return;
     const inHand = this.pendingHeldTool ?? this.toolState.tool;
     this.heldShortcut = { ...by, back: inHand === tool ? null : inHand };
     if (inHand !== tool) this.switchHeldTool(tool);
@@ -4506,6 +4516,9 @@ export class InkSurface {
     if (size === "retry") window.requestAnimationFrame(() => this.layout());
     if (size !== "layout") return;
     this.hudLayouts += 1;
+    // Only a pane that lost or gained that much height at its top moved with the row.
+    const topShift = Math.abs(this.cssH - cssH - this.topShift) < 1.5 ? this.topShift : 0;
+    this.topShift = 0;
     // A row zoomed in keeps the spot in the middle of the pane in the middle
     // when the pane changes width (the sidebar, the Ask AI panel, a rotation,
     // Split View): the scale and the gap between pages both follow the width,
@@ -4558,7 +4571,9 @@ export class InkSurface {
     // A row fits one page (and its margins) to the pane, not the whole row.
     const fit = this.pageLayout.fitWidth;
     this.baseScale = fit > 0 ? Math.min(1, cssW / fit) : 1;
-    this.updateZoomFloor(cssH);
+    // The options row opening or closing is no new pane: the page keeps its
+    // size, as for the keyboard, and only moves (`followTopShift` below).
+    this.updateZoomFloor(cssH, topShift !== 0);
     if (direction === "horizontal") {
       // One page per screen, as GoodNotes: now the floor is known, space the
       // pages so a centred page's neighbours sit just off the pane. The gap
@@ -4575,6 +4590,13 @@ export class InkSurface {
     if (anchored && priorScale > 0 && Math.abs(scale / priorScale - 1) > 1e-6) {
       const ratio = scale / priorScale;
       this.scroller.setPosition(priorAt.x * ratio, priorAt.y * ratio);
+    }
+    if (anchored && topShift !== 0) {
+      const at = this.scroller.position;
+      this.scroller.setPosition(
+        at.x,
+        offsetAfterTopShift(at.y, topShift, this.scroller.bounds.minY),
+      );
     }
     const rowSpot =
       rowAnchor && !turned && !this.atZoomFloor ? this.pageLayout.boxes[rowAnchor.index] : null;
@@ -4800,6 +4822,20 @@ export class InkSurface {
   /** A layout was asked for while the page was hidden (`layout`): do it on showing. */
   private layoutWhenShown = false;
   /**
+   * How far the pane's top moved down since the last layout, px, because
+   * the docked options row (pill-row-model.ts) opened or closed above it.
+   */
+  private topShift = 0;
+
+  /**
+   * The docked options row above the page opened (`shift` > 0) or closed:
+   * the next layout keeps the spot being read still on screen rather than
+   * letting it ride down or up with the pane's top (`followTopShift`).
+   */
+  followTopShift(shift: number): void {
+    this.topShift += shift;
+  }
+  /**
    * The page a zoomed-in row is held to (`ensurePaperSize`). Its own field,
    * not `pageIndex`: the page indicator rewrites `pageIndex` from what is on
    * screen while the view glides to a new page, and the hold must not follow
@@ -4822,8 +4858,9 @@ export class InkSurface {
    * height. The first layout opens at the floor, as GoodNotes opens a page;
    * afterwards a view sitting at the floor stays there when the pane changes
    * shape (a rotation), and a view below the new floor is lifted onto it.
+   * `hold`: the pane changed for the docked options row, which leaves both.
    */
-  private updateZoomFloor(cssH: number): void {
+  private updateZoomFloor(cssH: number, hold = false): void {
     let tallest = 0;
     for (const box of this.pageLayout.boxes) tallest = Math.max(tallest, box.height);
     const step = nextZoomFloor({
@@ -4832,7 +4869,7 @@ export class InkSurface {
       newFloor: fitPageZoom(tallest, this.baseScale, cssH),
       initialised: this.zoomInitialised,
       // A pane made short by the keyboard must not re-fit the page into it.
-      keyboard: document.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
+      keyboard: hold || document.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
     });
     this.minZoom = step.floor;
     this.zoomInitialised = true;
@@ -4883,8 +4920,11 @@ export class InkSurface {
     // neighbours show beside the page; letting go settles on the page then
     // in the middle (`onPinchEnd`). Joined pages are never held (`heldRow`).
     const last = this.pageLayout.boxes.length - 1;
-    const rangeX =
-      row && !this.turnsPages && last >= 0
+    // Pages down: held centred while the pages fit the pane's width, and
+    // never panned onto the desk beside them (discussion #43, as Goodnotes).
+    const rangeX = !row
+      ? columnScrollRangeX(this.pageLayout, scale, this.cssW)
+      : !this.turnsPages && last >= 0
         ? this.pinch || this.joined
           ? {
               min: rowPageScrollRange(this.pageLayout, 0, scale, this.cssW).min,
@@ -4905,6 +4945,8 @@ export class InkSurface {
       // Even a one-page row stretches sideways, so it can be pulled to add a page.
       alwaysBounceX: row,
       rangeX,
+      // Held centred, a diagonal drag scrolls only down (Goodnotes).
+      diagonalsScrollY: !row,
       // While a box is typed in, room to lift it above the keyboard: a page
       // that fits the screen (a cover, a single page) has none of its own.
       trailY: this.typingField() ? keyboardHeight() : 0,
@@ -6298,6 +6340,15 @@ export class InkSurface {
           ...(f.fit ? { fit: true as const } : {}),
         };
         this.pushTextCommand(key, new SetTextBoxFrame(view.pageId, view.id, frame));
+        // Dropped on a sticky note, the box is now drawn with the note: paint its tiles again.
+        const home = this.boxForPage(view.pageId);
+        const page = home ? this.pageAt(home.index) : null;
+        const dropped = page?.textBoxes.find((t) => t.id === view.id);
+        const owner = page && dropped ? noteOfText(page, dropped) : null;
+        if (home && owner) {
+          this.renderer?.invalidateRegion(home.index, imageBounds(transformOf(owner)));
+          this.renderDry();
+        }
         this.changed();
       }
       this.syncTextBoxes();
@@ -7049,6 +7100,9 @@ export class InkSurface {
       window.clearTimeout(this.wheelSnapTimer);
       this.releaseBoardHold();
       this.scroller.dragStart(x, y, t);
+      // Pages down: a pinch's fingers carry the page both ways, even where
+      // the column is held centred (it springs back when they let go).
+      if (this.pinch && this.direction !== "horizontal") this.scroller.freeDrag();
       this.requestFrame();
     },
     onPanMove: (x, y, t) => {
@@ -8414,7 +8468,7 @@ export class InkSurface {
    * to the next page past the end of this one (Goodnotes). Fingers do not
    * write in the box. In Stylus-only mode they do nothing here: the hand
    * rests in the window to write, and the frame on the page still moves by
-   * finger (`zoomWindowPans`). With the Hand in hand the Pencil and a mouse
+   * finger (`zoomWindowPans`). With the Hand in hand, or Space held, the Pencil and a mouse
    * drag it as well. A second finger turns the drag into a pinch, which
    * magnifies as Goodnotes' window does (`pinchZoomBox`).
    */
@@ -8422,7 +8476,9 @@ export class InkSurface {
     const state = this.zoomBox;
     const canvas = this.zoomCanvas;
     const onlyStylus = this.callbacks.onlyStylusMode?.() === true;
-    if (!zoomWindowPans(event.pointerType, this.toolState.tool, onlyStylus)) return;
+    // Space held is the Hand for the press, in the window as on the page.
+    const tool = this.handHeld ? "pan" : this.toolState.tool;
+    if (!zoomWindowPans(event.pointerType, tool, onlyStylus)) return;
     if (event.pointerType === "touch") {
       this.zoomTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
@@ -8717,7 +8773,7 @@ export class InkSurface {
    */
   private zoomBoxRoute(event: PointerEvent): PressRoute {
     const { tool } = this.toolState;
-    if (tool === "zoom" || tool === "pan") return "ignore";
+    if (tool === "zoom" || tool === "pan" || this.handHeld) return "ignore";
     const state = this.zoomBox;
     const canvas = this.zoomCanvas;
     if (!state || !canvas) return "ignore";
@@ -9237,6 +9293,7 @@ export class InkSurface {
       return;
     }
     if (this.startTextMark(box, at)) return;
+    if (sample.pointerType === "mouse") this.hintTextSelect(box, at);
     const resumed = this.resumeLifted(box, at);
     const builder = resumed ?? new StrokeBuilder(this.builderOpts());
     builder.add({ ...sample, ...at });
@@ -10571,6 +10628,25 @@ export class InkSurface {
     this.textMark = { layout, from: at, selection };
     this.showTextMark(box);
     return true;
+  }
+
+  /**
+   * A mouse writing on a PDF's text may have meant to select it: say once
+   * that a right-click does (a plain drag is ink, the mouse being the pen).
+   */
+  private hintTextSelect(box: PageBox, at: Pt): void {
+    if (this.practice || pdfSelectHintDone) return;
+    if (this.pageAt(box.index)?.backdrop.kind !== "pdf") return;
+    const layout = this.pageText(box.index);
+    if (!layout || !selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX))) return;
+    pdfSelectHintDone = true;
+    try {
+      if (window.localStorage.getItem(PDF_SELECT_HINT_KEY)) return;
+      window.localStorage.setItem(PDF_SELECT_HINT_KEY, "1");
+    } catch {
+      // No storage here: the hint then shows once a session.
+    }
+    new Notice("To select PDF text, right-click a word, then drag its handles.", 8000);
   }
 
   /** Say on the debug overlay what the highlighter did where it came down. */
@@ -16596,7 +16672,8 @@ export class InkSurface {
 
   /**
    * One finger tapped twice where nothing took the taps: zoom until the
-   * tapped page covers the pane, its left edge on the pane's and the tapped
+   * tapped page is as wide as the pane (pages down) or covers it (a row),
+   * its left edge on the pane's and the tapped
    * spot as high as it was (inside the page), so nothing but the page shows;
    * from there, back to the whole page, centred. Zoom and scroll land as one
    * motion: the zoom turns about the point the move leaves in place
@@ -16618,11 +16695,15 @@ export class InkSurface {
     const box =
       boxAtPoint(this.pageLayout, at.x, at.y) ?? this.pageLayout.boxes[this.pageIndex] ?? null;
     if (!box) return;
-    const fill = pageFillZoom(box.width, box.height, this.baseScale, this.cssW, this.cssH);
+    const row = this.direction === "horizontal";
+    // Pages down: the page exactly as wide as the pane, whatever its shape
+    // (discussion #43); a row's page covers the pane.
+    const fill = row
+      ? pageFillZoom(box.width, box.height, this.baseScale, this.cssW, this.cssH)
+      : pageWidthZoom(box.width, this.baseScale, this.cssW);
     const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom, fill));
     if (Math.abs(target - this.userZoom) < 1e-3) return;
     const rect = this.surfaceEl.getBoundingClientRect();
-    const row = this.direction === "horizontal";
     const settle: ZoomSettle = {
       index: box.index,
       local: this.toPage(box, at),

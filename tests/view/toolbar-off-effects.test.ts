@@ -9,7 +9,10 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
+import type { BarItemId, ToolbarLayout } from "../../src/view/toolbar-layout";
+
 const { InkView } = await import("../../src/view/ink-view");
+const { defaultLayout, moveTo } = await import("../../src/view/toolbar-layout");
 
 interface Live {
   tool: string;
@@ -18,11 +21,16 @@ interface Live {
   stickyArmed: boolean;
 }
 
+/** The default bar with `off` hidden. */
+function withOff(off: string[]): ToolbarLayout {
+  return (off as BarItemId[]).reduce((layout, id) => moveTo(layout, id, "off"), defaultLayout());
+}
+
 function viewWith(off: string[], live: Live) {
   const calls: string[] = [];
   const toolState = { tool: live.tool };
   const members = {
-    settings: { toolbarItems: ["select", "pen", "eraser"], toolbarOff: off },
+    settings: { toolbarLayout: withOff(off) },
     toolState,
     surface: {
       rulerOut: live.rulerOut,
@@ -34,7 +42,8 @@ function viewWith(off: string[], live: Live) {
       setRulerOut: (out: boolean) => calls.push(`setRulerOut(${out})`),
     },
     toolbar: {
-      setItems: () => calls.push("setItems"),
+      setLayout: () => calls.push("setLayout"),
+      customizing: false,
       setState: () => calls.push("toolbar.setState"),
       setRulerOut: (out: boolean) => calls.push(`toolbar.setRulerOut(${out})`),
     },
@@ -50,7 +59,7 @@ function viewWith(off: string[], live: Live) {
     Object.defineProperty(view, key, { value, writable: true, configurable: true });
   }
   const typed = view as unknown as {
-    setToolbarItems(layout: { bar: string[]; off: string[] }): void;
+    setToolbarItems(layout: ToolbarLayout): void;
     runShortcutAction(id: string): boolean;
   };
   return { view: typed, calls, toolState };
@@ -63,10 +72,10 @@ describe("an item turned off in Customize toolbar", () => {
   it("ends what it left on: its tool, the ruler, a recording, a waiting sticky note", () => {
     const off = ["eraser", "ruler", "record", "sticky"];
     const { view, calls, toolState } = viewWith(off, busy);
-    view.setToolbarItems({ bar: ["select", "pen"], off });
+    view.setToolbarItems(withOff(off));
     expect(toolState.tool).toBe("pen");
     expect(calls).toEqual([
-      "setItems",
+      "setLayout",
       "setTool(pen)",
       "toolbar.setState",
       "setRulerOut(false)",
@@ -78,15 +87,15 @@ describe("an item turned off in Customize toolbar", () => {
 
   it("leaves what an item in the menu turned on: its button still shows it", () => {
     const { view, calls } = viewWith([], busy);
-    view.setToolbarItems({ bar: ["select", "pen"], off: [] });
-    expect(calls).toEqual(["setItems"]);
+    view.setToolbarItems(withOff([]));
+    expect(calls).toEqual(["setLayout"]);
   });
 
   it("does nothing when nothing it turns on is on", () => {
     const off = ["eraser", "ruler", "record", "sticky"];
     const { view, calls } = viewWith(off, quiet);
-    view.setToolbarItems({ bar: ["select", "pen"], off });
-    expect(calls).toEqual(["setItems"]);
+    view.setToolbarItems(withOff(off));
+    expect(calls).toEqual(["setLayout"]);
   });
 
   it("takes a shortcut for an item that is off and does nothing with it", () => {

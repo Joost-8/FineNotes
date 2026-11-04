@@ -314,7 +314,7 @@ export interface ImagePainter {
  * thumbnails. The painter draws the crop into that box as usual; the mirror
  * applies to what it drew, which is why a stored crop stays in fractions of
  * the source file. A sticky note's `noteText` is drawn over its ink, turned
- * with the note but never mirrored, in the note's own colours on any page;
+ * with the note but never mirrored, in the colours the page shows;
  * a folded note is only its icon, with neither.
  */
 export function drawPlacedImage(
@@ -324,6 +324,7 @@ export function drawPlacedImage(
   deviceScale: number,
   inkOnNote?: () => void,
   noteText: readonly TextBoxElement[] = [],
+  night = false,
 ): void {
   if (!(image.w > 0) || !(image.h > 0)) return;
   // A sticky note is paper painted here, so it needs no painter.
@@ -332,7 +333,7 @@ export function drawPlacedImage(
   if (sticky?.folded) {
     ctx.save();
     if (image.opacity !== undefined) ctx.globalAlpha *= image.opacity;
-    paintFoldedNote(ctx, image, sticky.color);
+    paintFoldedNote(ctx, image, shownColor(sticky.color, night));
     ctx.restore();
     return;
   }
@@ -345,7 +346,7 @@ export function drawPlacedImage(
     ctx.scale(image.flipX === true ? -1 : 1, image.flipY === true ? -1 : 1);
   }
   ctx.translate(-image.w / 2, -image.h / 2);
-  if (sticky) paintStickyPaper(ctx, image.w, image.h, sticky.color);
+  if (sticky) paintStickyPaper(ctx, image.w, image.h, shownColor(sticky.color, night));
   else painter?.paintImage(ctx, image, deviceScale);
   ctx.restore();
   // The note's ink and text, over its paper and never past its edge.
@@ -356,7 +357,7 @@ export function drawPlacedImage(
       const m = noteTextToPage(image);
       ctx.save();
       ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
-      for (const box of noteText) paintTextBox(ctx, box, false);
+      for (const box of noteText) paintTextBox(ctx, box, night);
       ctx.restore();
     });
   }
@@ -2369,6 +2370,7 @@ export class Renderer {
     front = false,
   ): void {
     const painter = this.imagePainter;
+    const night = pageLook(page.backdrop, this.paper).night;
     for (const image of page.images) {
       if ((image.front === true) !== front) continue;
       if (!painter && !image.sticky) continue;
@@ -2383,7 +2385,7 @@ export class Renderer {
                 stroke,
                 region,
                 ink.usePressure,
-                false,
+                night,
                 ink.hidden,
                 ink.replaced,
                 ink.greyed,
@@ -2398,6 +2400,7 @@ export class Renderer {
         level,
         inkOnNote,
         noteTextOn(page, image, this.hiddenText),
+        night,
       );
     }
   }
@@ -2815,12 +2818,12 @@ export class Renderer {
         if ((image.front === true) !== front) continue;
         const inkOnNote = image.sticky
           ? () => {
-              for (const stroke of strokes) if (stroke.onSticky === image.id) draw(stroke, false);
+              for (const stroke of strokes) if (stroke.onSticky === image.id) draw(stroke, night);
             }
           : undefined;
         // A note's text goes with it, drawn as the tiles draw it.
         const text = onPage ? noteTextOn(onPage, image, this.hiddenText) : [];
-        drawPlacedImage(ctx, image, this.imagePainter, this.deviceScale, inkOnNote, text);
+        drawPlacedImage(ctx, image, this.imagePainter, this.deviceScale, inkOnNote, text, night);
       }
     };
     pictures(false);
@@ -2935,6 +2938,7 @@ export class Renderer {
       this.deviceScale,
       this.draftInk(pageIndex, image, usePressure),
       this.draftText(pageIndex, image),
+      this.nightAt(pageIndex),
     );
     ctx.restore();
     this.setWetVisible(true);
@@ -2955,12 +2959,13 @@ export class Renderer {
     if (!page || !note) return undefined;
     const m: Affine = noteMove(note, draft);
     const ctx = this.wet.ctx;
+    const night = this.nightAt(pageIndex);
     return () => {
       ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
       for (const stroke of page.strokes) {
         if (stroke.onSticky !== note.id) continue;
         const entry = this.pathEntry(stroke, usePressure);
-        paintStroke(ctx, entry, stroke, this.highlighterAlpha, false, decorOf(stroke), stroke.pts);
+        paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
       }
     };
   }
@@ -3357,7 +3362,7 @@ export function renderPageThumbnail(
     );
   }
   const alpha = options.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
-  // A sticky note keeps its colour on dark pages, so its ink keeps its own too.
+  // A sticky note is shown as the page is, so its ink, text and paper follow the page's look.
   const notes = noteIdsOf(page.images);
   const pictures = (front: boolean): void => {
     for (const image of page.images) {
@@ -3366,11 +3371,19 @@ export function renderPageThumbnail(
         ? () => {
             for (const stroke of page.strokes) {
               if (stroke.onSticky !== image.id) continue;
-              fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, false);
+              fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, look.night);
             }
           }
         : undefined;
-      drawPlacedImage(ctx, image, options.images ?? null, k, inkOnNote, noteTextOn(page, image));
+      drawPlacedImage(
+        ctx,
+        image,
+        options.images ?? null,
+        k,
+        inkOnNote,
+        noteTextOn(page, image),
+        look.night,
+      );
     }
   };
   pictures(false);
