@@ -355,8 +355,10 @@ export interface GoodObsidianSettings {
   toolbarLayout: ToolbarLayout;
   /** The Home button has been put on a bar customized before it existed (once). */
   toolbarHomeAdded: boolean;
-  /** The simple look: Obsidian's own chrome hidden (`model/simple-mode.ts`). Off until chosen. */
+  /** The simple look: Obsidian's own chrome hidden (`model/simple-mode.ts`). On for a new install; an update leaves a vault as it was. */
   simpleLook: boolean;
+  /** The note saying how to get normal Obsidian back has been shown (once). */
+  simpleLookHinted: boolean;
   /** Notebooks and folders starred in the library, by vault path. Cleaned where read. */
   libraryStars: string[];
   /** The colour and icon chosen for library folders, by vault path. Cleaned where read. */
@@ -526,7 +528,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   savedPens: defaultSavedPens(),
   toolbarLayout: defaultLayout(),
   toolbarHomeAdded: true,
-  simpleLook: false,
+  simpleLook: true,
+  simpleLookHinted: false,
   libraryStars: [],
   libraryFolders: {},
   barrelButton: "erase",

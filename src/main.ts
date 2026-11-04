@@ -274,6 +274,11 @@ export interface RecognitionTarget {
 /** Where a key exchange with OpenRouter ended: a key, or what to tell the user. */
 type OpenRouterOutcome = { key: string } | { problem: string };
 
+/** How long after start the simple-look note waits, so the welcome is up first, ms. */
+const SIMPLE_HINT_DELAY_MS = 2500;
+/** How long the note stays, ms. */
+const SIMPLE_HINT_MS = 20000;
+
 export default class GoodObsidianPlugin extends Plugin {
   private readonly explorerNotebookButton = new FileExplorerNotebookButton(
     () => void this.openLibrary(),
@@ -461,6 +466,8 @@ export default class GoodObsidianPlugin extends Plugin {
           importFromApp: (folder) => this.openImportNotebook(folder),
           importImage: (file, folder) => void this.createNotebookFromImage(file, folder),
           openSettings: () => this.openOwnSettings(),
+          update: () => this.updates.available,
+          openUpdate: () => this.openUpdatePage(),
           importPdf: (source, folder) => {
             const name = source.file.name.replace(/\.pdf$/i, "");
             void this.createNotebookFromPdfBytes(
@@ -948,6 +955,8 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarItems;
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
+    // On for a new install; a vault that updates keeps the Obsidian it knows.
+    if (saved !== null && !("simpleLook" in saved)) this.settings.simpleLook = false;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
@@ -1128,6 +1137,28 @@ export default class GoodObsidianPlugin extends Plugin {
   private calculatorFileMoved(from: string, to: string): void {
     const moved = renameCalculatorHistory(parseCalculatorData(this.settings.calculator), from, to);
     if (moved) this.saveCalculator(moved);
+  }
+
+  /** Once: the simple look is on, and one switch brings normal Obsidian back. */
+  private sayWhereSimpleLookIs(): void {
+    if (!this.settings.simpleLook || this.settings.simpleLookHinted) return;
+    this.settings.simpleLookHinted = true;
+    void this.saveSettings();
+    const notice: Notice = new Notice(
+      createFragment((fragment) => {
+        fragment.createDiv({
+          text:
+            "Simple look is on: Obsidian's sidebars, ribbon and bars are hidden. " +
+            "To get normal Obsidian back, turn Simple look off in FineNotes' settings.",
+        });
+        const open = fragment.createEl("button", { text: "Open settings" });
+        open.addEventListener("click", () => {
+          notice.hide();
+          this.openSettingsTab();
+        });
+      }),
+      SIMPLE_HINT_MS,
+    );
   }
 
   /** Wear the body classes the simple look asks for now (none when it is off). */
@@ -2063,6 +2094,11 @@ export default class GoodObsidianPlugin extends Plugin {
       void this.showWhatsNew();
       if (welcome) this.showWelcome();
       if (this.firstInstall) void this.makeHomeFile();
+      if (this.settings.simpleLook && !this.settings.simpleLookHinted) {
+        if (typeof window !== "undefined") {
+          window.setTimeout(() => this.sayWhereSimpleLookIs(), SIMPLE_HINT_DELAY_MS);
+        }
+      }
     });
     // Opening the Home file opens the library instead.
     this.registerEvent(
