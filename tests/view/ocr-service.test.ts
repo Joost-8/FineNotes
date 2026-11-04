@@ -970,6 +970,62 @@ describe("OcrService", () => {
       expect(r.log.keys).toEqual(["ocr-ppocrv6:2", "ocr-ppocrv6-small:1"]);
     });
 
+    it("after a switch, the old model's words are still offered (with that model's thresholds) until the new reading is stored", async () => {
+      const r = rig();
+      r.files.set(sidecar("a.pdf"), serializeCache(withPage(emptyCache(), 0, PAGE)));
+      r.state.model = tierModel(2);
+      // Not the new model's page, but still shown; judged by Fast's own thresholds.
+      expect(await r.service.cached("a.pdf", 0)).toBeNull();
+      const stale = await r.service.cachedStale("a.pdf", 0);
+      expect(stale?.model).toBe(OCR_TIERS[0].version);
+      expect(r.service.tuning(stale?.model)).toMatchObject(OCR_TIERS[0].confidence);
+      expect(r.service.tuning()).toMatchObject(OCR_TIERS[2].confidence);
+      // The page is queued for the new model all the same.
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+      await r.settle();
+      expect(r.log.keys).toEqual(["ocr-ppocrv6-medium:1"]);
+      // Its reading replaces the old one.
+      expect((await r.service.cached("a.pdf", 0))?.model).toBe(OCR_TIERS[2].version);
+      expect(await r.service.cachedStale("a.pdf", 0)).toBeNull();
+      await r.advance(SAVE_MS + 1);
+      expect(parseCache(r.files.get(sidecar("a.pdf")) ?? "").pages["0"]?.model).toBe(
+        OCR_TIERS[2].version,
+      );
+    });
+
+    it("a declined download keeps the old words, and the page waits for the model", async () => {
+      const r = rig({ ready: false });
+      r.files.set(sidecar("a.pdf"), serializeCache(withPage(emptyCache(), 0, PAGE)));
+      r.state.model = tierModel(1);
+      r.service.modelChanged();
+      r.service.focus("a.pdf", 0);
+      r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+      await r.settle();
+      await r.advance(SAVE_MS + 1);
+      // Nothing was read, and the old words are still there to show.
+      expect(r.log.read).toEqual([]);
+      expect((await r.service.cachedStale("a.pdf", 0))?.model).toBe(OCR_TIERS[0].version);
+      expect(parseCache(r.files.get(sidecar("a.pdf")) ?? "").pages["0"]?.model).toBe(
+        OCR_TIERS[0].version,
+      );
+      // Later the model arrives: the page is read and replaces them.
+      r.makeReady();
+      await r.settle();
+      expect((await r.service.cached("a.pdf", 0))?.model).toBe(OCR_TIERS[1].version);
+    });
+
+    it("never offers a page of an unknown model version or a page without words as old words", async () => {
+      const r = rig();
+      const file = withPage(emptyCache(), 0, PAGE);
+      file.pages["1"] = { ...file.pages["0"], model: OCR_TIERS[0].version, condition: "BLANK" };
+      file.pages["0"] = { ...file.pages["0"], model: "ppocrv9-future" };
+      r.files.set(sidecar("a.pdf"), serializeCache(file));
+      r.state.model = tierModel(1);
+      expect(await r.service.cachedStale("a.pdf", 0)).toBeNull();
+      expect(await r.service.cachedStale("a.pdf", 1)).toBeNull();
+    });
+
     it("does not store a page that was read while the setting changed", async () => {
       const r = rig();
       r.state.afterRead = () => {

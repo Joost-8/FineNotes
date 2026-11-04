@@ -382,7 +382,7 @@ two of the seven scribbles.
 - Fast is the default and what every existing install uses: same model id (`ocr-ppocrv6`), version, folder and
   cache version, no download, no behaviour change.
 - Accurate is offered on every platform. On a phone or tablet its row says "Accurate is about 2x slower per page
-  than Fast" (13.8 s against 5.7 s on the laptop; the iPad is not measured).
+  than Fast (desktop measurement)" (13.8 s against 5.7 s on the laptop; the iPad is not measured).
 - Most accurate is offered on desktop only (`Platform.isMobile` hides it; a vault whose settings chose it
   and that is opened on a phone uses Fast). Its asset is `deviceOnly`, as the large Whisper model is: it lives in
   IndexedDB on that computer, outside the vault, so its 76.7 MB never syncs to a phone.

@@ -85,7 +85,12 @@ const SCANNED: OcrPage = {
 };
 
 /** An OCR service that remembers what it was asked. */
-function fakeOcr(found: OcrPage | null = null, enabled = true, figures = false) {
+function fakeOcr(
+  found: OcrPage | null = null,
+  enabled = true,
+  figures = false,
+  stale: (OcrPage & { model: string }) | null = null,
+) {
   const flags = { figures };
   const calls = {
     recorded: [] as number[],
@@ -110,7 +115,8 @@ function fakeOcr(found: OcrPage | null = null, enabled = true, figures = false) 
     },
     attach: (_owner: unknown, path: string) => calls.attached.push(path),
     cached: () => Promise.resolve(found),
-    tuning: () => ({ ...OCR_TUNING }),
+    cachedStale: () => Promise.resolve(stale),
+    tuning: (_model?: string) => ({ ...OCR_TUNING }),
     want: (
       _owner: unknown,
       path: string,
@@ -205,6 +211,50 @@ describe("PdfTextCache with OCR", () => {
     expect(await landed).toBe(0);
     const layout = cache.peek(BACKDROP, GEOMETRY);
     expect(layout && layoutPlainText(layout)).toBe("Water quality");
+  });
+
+  it("after a model switch keeps showing the old model's words, judged by its thresholds, while the page is queued; the new reading replaces them", async () => {
+    const OLD = { ...SCANNED, model: "old-model", condition: "SCANNED" };
+    const { service, calls } = fakeOcr(null, true, false, OLD as never);
+    const asked: (string | undefined)[] = [];
+    (service as { tuning: unknown }).tuning = (model?: string) => {
+      asked.push(model);
+      return { ...OCR_TUNING };
+    };
+    const cache = cacheWith(service);
+    cache.request(BACKDROP);
+    await settle();
+    expect(layoutPlainText(cache.peek(BACKDROP, GEOMETRY) as never)).toBe("Water quality");
+    expect(asked).toEqual(["old-model"]);
+    // Still queued for the model in use.
+    expect(calls.wanted).toEqual([["Scan.pdf", 0, 3]]);
+
+    // The new model's reading lands: different words, the old ones gone.
+    const NEW: OcrPage = {
+      ...SCANNED,
+      lines: [
+        { conf: 0.99, words: [{ text: "Fresh", box: [40, 60, 90, 76], conf: 0.99, min: 0.99 }] },
+      ],
+    };
+    const read = fakeOcr(NEW);
+    (service as { cached: unknown }).cached = read.service.cached;
+    (service as { cachedStale: unknown }).cachedStale = () => Promise.resolve(null);
+    cache.ocrReady("Scan.pdf", 0);
+    await settle();
+    expect(layoutPlainText(cache.peek(BACKDROP, GEOMETRY) as never)).toBe("Fresh");
+  });
+
+  it("old words that the old model's own thresholds distrust stay hidden", async () => {
+    const OLD = { ...SCANNED, model: "old-model", condition: "SCANNED" };
+    const { service } = fakeOcr(null, true, false, OLD as never);
+    (service as { tuning: unknown }).tuning = (model?: string) => ({
+      ...OCR_TUNING,
+      ...(model === "old-model" ? { wordMean: 0.999, lineMean: 0.999 } : {}),
+    });
+    const cache = cacheWith(service);
+    cache.request(BACKDROP);
+    await settle();
+    expect(layoutPlainText(cache.peek(BACKDROP, GEOMETRY) as never)).toBe("");
   });
 
   it("keeps a page's own text and adds only OCR words that are not over it (a page number)", async () => {

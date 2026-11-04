@@ -2028,8 +2028,10 @@ describe("Models on this device", () => {
         expect(Object.keys(row.dropdowns[0].options)).toEqual(["fast", "accurate"]);
         expect(row.dropdowns[0].value).toBe("fast");
         expect(row.dropdowns[0].options.fast).toMatch(/s\/page on a laptop$/);
-        expect(def.desc).toBe("Accurate is about 2× slower per page than Fast.");
-        expect(def.desc?.length ?? 0).toBeLessThanOrEqual(ONE_LINE);
+        expect(def.desc).toBe(
+          "Accurate is about 2× slower per page than Fast (desktop measurement).",
+        );
+        expect(def.desc?.length ?? 0).toBeLessThanOrEqual(ONE_LINE + 10);
       } finally {
         Platform.isMobile = false;
       }

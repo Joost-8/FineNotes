@@ -286,7 +286,7 @@ const TOOL_NAMES = { pen: "Pen", highlighter: "Highlighter", eraser: "Eraser", s
 
 /** What each row's ⓘ opens: everything a row's one line leaves out. */
 /** On a phone or tablet: how much slower Accurate is (docs/OCR.md, "Choosing a model"). */
-const OCR_MOBILE_NOTE = `Accurate is about ${OCR_ACCURATE_SLOWDOWN}× slower per page than Fast.`;
+const OCR_MOBILE_NOTE = `Accurate is about ${OCR_ACCURATE_SLOWDOWN}× slower per page than Fast (desktop measurement).`;
 
 const OCR_MODEL_INFO =
   "Fast is the small model FineNotes started with. Accurate reads more of a scan's words correctly and is " +

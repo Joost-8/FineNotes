@@ -474,8 +474,32 @@ export class PdfTextCache implements OcrOwner {
         found.condition === "TEXT_ONLY" || found.condition === "BLANK"
           ? undefined
           : await this.dictionary(backdrop.path);
-      return mergedItems(native, found, viewport, source, ocr.tuning(), figures, dictionary);
+      return mergedItems(
+        native,
+        found,
+        viewport,
+        source,
+        ocr.tuning(found.model),
+        figures,
+        dictionary,
+      );
     }
+    // Read by another model (the setting changed): that text stays until the chosen model's
+    // reading replaces it, and the page is queued below as if it had never been read.
+    const stale = await ocr.cachedStale(backdrop.path, backdrop.page);
+    const showing = async (): Promise<PdfTextItem[]> => {
+      if (!stale) return native;
+      const dictionary = await this.dictionary(backdrop.path);
+      return mergedItems(
+        native,
+        stale,
+        viewport,
+        source,
+        ocr.tuning(stale.model),
+        figures,
+        dictionary,
+      );
+    };
     const operators = figures ? page.getOperatorList?.bind(page) : undefined;
     const scan = operators
       ? await readFigures({ getOperatorList: operators }, await this.operators(), viewport, source)
@@ -493,7 +517,7 @@ export class PdfTextCache implements OcrOwner {
       rects: nativeBoxes(native, viewport, source),
       plan,
     });
-    return native;
+    return showing();
   }
 
   /**

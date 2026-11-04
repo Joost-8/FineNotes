@@ -37,7 +37,9 @@ import {
   emptyCache,
   mergeCaches,
   parseCache,
+  type StoredPage,
   serializeCache,
+  staleCachedPage,
   withPage,
 } from "../recognition/ocr/ocr-cache";
 import {
@@ -252,9 +254,14 @@ export class OcrService {
     return this.deps.model?.() ?? FAST_MODEL;
   }
 
-  /** The thresholds of the model in use, with every other number of OCR_TUNING. */
-  tuning(): OcrTuning {
-    return ocrTuningFor(this.model());
+  /**
+   * The thresholds of the model that read a page (its `model` version; default:
+   * the model in use), with every other number of OCR_TUNING. A page read by
+   * another model is judged by that model's own confidences.
+   */
+  tuning(model?: string): OcrTuning {
+    const tier = model === undefined ? undefined : OCR_TIERS.find((t) => t.version === model);
+    return ocrTuningFor(tier ?? this.model());
   }
 
   constructor(private readonly deps: OcrDeps) {
@@ -382,9 +389,30 @@ export class OcrService {
   }
 
   /** The page's text read earlier, or null (not read, read by another model, or no way to tell). */
-  async cached(path: string, page: number): Promise<OcrPage | null> {
+  async cached(path: string, page: number): Promise<StoredPage | null> {
     try {
       return cachedPage(await this.load(await this.deps.hashOf(path)), page, this.model().version);
+    } catch (error) {
+      console.warn("FineNotes: could not look up scanned-page text", error);
+      return null;
+    }
+  }
+
+  /**
+   * What another model of this build read of the page, while the model in
+   * use has not read it yet (after a switch): still shown, judged by its own
+   * model's thresholds (`tuning(page.model)`), until the new reading replaces
+   * it. Null when there is none.
+   */
+  async cachedStale(path: string, page: number): Promise<StoredPage | null> {
+    try {
+      const file = await this.load(await this.deps.hashOf(path));
+      return staleCachedPage(
+        file,
+        page,
+        this.model().version,
+        OCR_TIERS.map((t) => t.version),
+      );
     } catch (error) {
       console.warn("FineNotes: could not look up scanned-page text", error);
       return null;

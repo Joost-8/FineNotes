@@ -10,6 +10,7 @@ import {
   mergeCaches,
   parseCache,
   serializeCache,
+  staleCachedPage,
   withPage,
 } from "../../../src/recognition/ocr/ocr-cache";
 import { OCR_MODEL_VERSION } from "../../../src/recognition/ocr/ocr-model";
@@ -31,6 +32,27 @@ const sample: OcrPage = {
     },
   ],
 };
+
+describe("a page read by another model", () => {
+  const known = ["ppocrv6-tiny-1", "ppocrv6-small-1"];
+  it("is offered while the model in use has not read it, and only if its version is known", () => {
+    const file = withPage(emptyCache(), 0, sample, "ppocrv6-tiny-1");
+    expect(staleCachedPage(file, 0, "ppocrv6-small-1", known)?.model).toBe("ppocrv6-tiny-1");
+    // The model in use read it itself: that is `cachedPage`'s.
+    expect(staleCachedPage(file, 0, "ppocrv6-tiny-1", known)).toBeNull();
+    expect(staleCachedPage(file, 1, "ppocrv6-small-1", known)).toBeNull();
+    const foreign = withPage(emptyCache(), 0, sample, "ppocrv9-x");
+    expect(staleCachedPage(foreign, 0, "ppocrv6-small-1", known)).toBeNull();
+  });
+
+  it("never offers a page that holds no words", () => {
+    const file = withPage(emptyCache(), 0, sample, "ppocrv6-tiny-1");
+    file.pages["0"] = { ...file.pages["0"], condition: "TEXT_ONLY" };
+    expect(staleCachedPage(file, 0, "ppocrv6-small-1", known)).toBeNull();
+    file.pages["0"] = { ...file.pages["0"], condition: "BLANK" };
+    expect(staleCachedPage(file, 0, "ppocrv6-small-1", known)).toBeNull();
+  });
+});
 
 describe("the OCR cache file", () => {
   const key = "a".repeat(64);

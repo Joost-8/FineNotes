@@ -176,6 +176,25 @@ export function cachedPage(
   return stored;
 }
 
+/**
+ * The page as recorded by another model of this build (a version in
+ * `known`), or null: what a switch of the OCR model keeps showing until the
+ * page is read again with the chosen one. Only a page that carries words
+ * counts (not a `TEXT_ONLY` or `BLANK` record), and never one of a version
+ * this build does not know, whose confidences cannot be judged.
+ */
+export function staleCachedPage(
+  file: OcrCacheFile,
+  page: number,
+  model: string,
+  known: readonly string[],
+): StoredPage | null {
+  const stored = file.pages[String(page)];
+  if (!stored || stored.model === model || !known.includes(stored.model)) return null;
+  if (stored.condition === "TEXT_ONLY" || stored.condition === "BLANK") return null;
+  return stored;
+}
+
 /** Boxes to a tenth of a point and confidences to the thousandth: the sidecar stays small. */
 function rounded(page: OcrPage): OcrPage {
   const tenth = (v: number): number => Math.round(v * 10) / 10;
