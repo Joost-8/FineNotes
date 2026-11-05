@@ -629,12 +629,14 @@ export class LibraryView extends ItemView {
     this.painted = new Set();
     this.cards.clear();
     const searching = this.query.trim() !== "";
+    // With the rail the path is on the left; the title is the open folder's name alone.
+    const names = crumbs(this.folder).map((c) => c.name);
     this.titleEl.setText(
       this.folder === ""
         ? t("notebooks.home.heading")
-        : crumbs(this.folder)
-            .map((c) => c.name)
-            .join(" / "),
+        : this.hasRail()
+          ? (names[names.length - 1] ?? this.folder)
+          : names.join(" / "),
     );
     this.upEl.toggleClass("is-hidden", this.folder === "");
     this.unloadPreviews();
