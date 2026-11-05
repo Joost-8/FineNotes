@@ -16463,3 +16463,8 @@ button.goodobsidian-library-fold .svg-icon {
   width: 16px;
   height: 16px;
 }
+
+/* A PDF cover kept from before (FineNotes#146) shows at once, without the fade. */
+.goodobsidian-library-cover.is-pdf.is-cached .goodobsidian-library-pdf {
+  transition: none;
+}

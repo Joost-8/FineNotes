@@ -8,6 +8,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Home opens at once** (FineNotes#146). PDF covers are kept on this device
+  once they are drawn, so opening Home again, or after restarting the app,
+  shows them straight away instead of rendering every PDF again; only a new
+  or changed PDF is rendered, once. What Home knows of each notebook is kept
+  too, so it reads only the notebooks changed since. Searching and switching
+  tabs no longer redraw the covers. Measured on a desktop with 40 PDF
+  notebooks: covers on screen in 25 ms instead of about 1 s.
+
 ## [2.8.2] - 2026-11-05
 
 ### Added

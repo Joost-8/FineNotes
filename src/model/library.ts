@@ -82,6 +82,19 @@ export interface LibraryPdf {
   height: number;
 }
 
+/**
+ * Where a PDF cover is kept: the page, the PDF file's own mtime and size (a
+ * changed PDF misses) and the cover's width in device px (a new screen
+ * misses).
+ */
+export function coverKey(
+  pdf: LibraryPdf,
+  file: { mtime: number; size: number },
+  px: number,
+): string {
+  return `${pdf.path}#${pdf.page}@${file.mtime}:${file.size}:${Math.round(px)}`;
+}
+
 function firstPdf(
   page: { backdrop: { kind: string }; geometry: PageGeometry } | undefined,
 ): LibraryPdf | null {

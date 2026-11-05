@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { useLanguage } from "../../src/i18n/translate";
 import { blankPage, emptyDocument } from "../../src/model/document";
 import {
+  coverKey,
   type LibraryEntry,
   browse,
   continueEntries,
@@ -263,5 +264,17 @@ describe("hoistSingles", () => {
     expect(hoistSingles([entry("Shelf/Physics/Physics.notebook.md", 1)], made)[0].folder).toBe(
       "Shelf",
     );
+  });
+});
+
+describe("coverKey", () => {
+  const pdf = { path: "Slides.pdf", page: 2, width: 800, height: 600 };
+  it("changes with the PDF file, the page and the cover's size", () => {
+    const base = coverKey(pdf, { mtime: 10, size: 99 }, 480);
+    expect(coverKey(pdf, { mtime: 10, size: 99 }, 480.2)).toBe(base);
+    expect(coverKey(pdf, { mtime: 11, size: 99 }, 480)).not.toBe(base);
+    expect(coverKey(pdf, { mtime: 10, size: 98 }, 480)).not.toBe(base);
+    expect(coverKey({ ...pdf, page: 3 }, { mtime: 10, size: 99 }, 480)).not.toBe(base);
+    expect(coverKey(pdf, { mtime: 10, size: 99 }, 720)).not.toBe(base);
   });
 });

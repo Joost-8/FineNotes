@@ -49,6 +49,7 @@ import {
   withFolderStyle,
 } from "../model/library-style";
 import { PdfBackdropCache } from "./pdf-backdrop";
+import { coverUrlNow, loadCover, loadEntries, saveCover, saveEntries } from "./home-cache";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { thumbnailRasterScale } from "./page-sidebar";
 import { FolderSuggestModal } from "./folder-suggest";
@@ -64,6 +65,7 @@ import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-pa
 import {
   type LibraryEntry,
   type LibraryPdf,
+  coverKey,
   type LibrarySort,
   browse,
   continueEntries,
@@ -136,6 +138,9 @@ interface Read {
   size: number;
   entry: LibraryEntry;
 }
+
+/** Each vault's reads this session, shared by every Home tab: reopening Home reads nothing new. */
+const sessionReads = new Map<string, Map<string, Read>>();
 
 export class LibraryView extends ItemView {
   override icon = "house";
@@ -282,8 +287,33 @@ export class LibraryView extends ItemView {
 
     // A deleted note's frontmatter may be gone already: one read before counts too.
     this.watchVault();
+    // What this device read before: Home opens with every card as it was,
+    // and only notebooks changed since are read again (FineNotes#146).
+    const known = sessionReads.get(this.vaultKey());
+    if (known) for (const [path, read] of known) this.reads.set(path, read);
     this.paintNow();
-    void this.readStale();
+    void this.loadKnown().then(() => this.readStale());
+  }
+
+  /** One key per vault for what Home keeps on this device. */
+  private vaultKey(): string {
+    const app = this.app as unknown as { appId?: unknown; vault: { getName?: () => string } };
+    if (typeof app.appId === "string" && app.appId !== "") return app.appId;
+    return app.vault.getName?.() ?? "vault";
+  }
+
+  /** The entries kept from earlier sessions, merged under any read this session; repaints if any came. */
+  private async loadKnown(): Promise<void> {
+    if (sessionReads.has(this.vaultKey())) return;
+    const kept = await loadEntries(this.vaultKey());
+    if (this.closed || kept.size === 0) return;
+    let added = false;
+    for (const [path, read] of kept) {
+      if (this.reads.has(path)) continue;
+      this.reads.set(path, read);
+      added = true;
+    }
+    if (added) this.paintNow();
   }
 
   /** Vault changes repaint and read, and showing the tab catches up on what came while it was hidden. */
@@ -410,12 +440,21 @@ export class LibraryView extends ItemView {
       const read = this.reads.get(file.path);
       if (!read || read.mtime !== file.stat.mtime || read.size !== file.stat.size) stale.push(file);
     }
-    for (const path of [...this.reads.keys()]) if (!live.has(path)) this.reads.delete(path);
+    const changes = new Map<string, Read | null>();
+    for (const path of [...this.reads.keys()])
+      if (!live.has(path)) {
+        this.reads.delete(path);
+        changes.set(path, null);
+      }
+    sessionReads.set(this.vaultKey(), this.reads);
     stale.sort((a, b) => b.stat.mtime - a.stat.mtime);
     let count = 0;
     let unsorted = false;
     for (const file of stale) {
-      if (this.closed) return;
+      if (this.closed) {
+        saveEntries(this.vaultKey(), changes);
+        return;
+      }
       const { mtime, size } = file.stat;
       let entry: LibraryEntry;
       try {
@@ -423,7 +462,14 @@ export class LibraryView extends ItemView {
       } catch {
         entry = placeholderEntry(file.path, mtime);
       }
-      this.reads.set(file.path, { mtime, size, entry });
+      const read = { mtime, size, entry };
+      this.reads.set(file.path, read);
+      changes.set(file.path, read);
+      // Kept in batches: a reading cut short by closing Home keeps what it read.
+      if (changes.size >= 20) {
+        saveEntries(this.vaultKey(), new Map(changes));
+        changes.clear();
+      }
       count++;
       unsorted = count !== CONTINUE_COUNT;
       if (unsorted) this.redrawCards(file);
@@ -431,6 +477,7 @@ export class LibraryView extends ItemView {
       // Let the app breathe between notebooks.
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     }
+    saveEntries(this.vaultKey(), changes);
     if (unsorted && !this.closed) this.paintNow();
   }
 
@@ -708,16 +755,43 @@ export class LibraryView extends ItemView {
     caret.addEventListener("keydown", (event) => event.stopPropagation());
   }
 
-  /** The notebook's first PDF page as its cover, drawn once the page is rendered; the title shows until then. */
+  /**
+   * The notebook's first PDF page as its cover; the title shows until then.
+   * A cover made before, this session or an earlier one, is a small JPEG
+   * kept on this device (`home-cache.ts`) and shows at once; only a new or
+   * changed PDF is rendered, and that once (FineNotes#146).
+   */
   private paintPdfCover(cover: HTMLElement, pdf: LibraryPdf): void {
     cover.addClass("is-pdf");
-    const canvas = cover.createEl("canvas", { cls: "goodobsidian-library-pdf" });
+    const file = this.app.vault.getFileByPath(pdf.path);
+    if (!file) return;
     const dpr = window.devicePixelRatio || 1;
+    const w = 240;
+    const key = coverKey(pdf, file.stat, w * dpr);
+    const vault = this.vaultKey();
+    const show = (url: string, atOnce: boolean): void => {
+      const img = cover.createEl("img", {
+        cls: "goodobsidian-library-pdf",
+        attr: { alt: "", decoding: "async", draggable: "false" },
+      });
+      img.src = url;
+      if (atOnce) cover.addClass("is-cached");
+      const ready = (): void => {
+        cover.addClass("is-ready");
+      };
+      if (img.complete && img.naturalWidth > 0) ready();
+      else img.addEventListener("load", ready, { once: true });
+    };
+    const now = coverUrlNow(key);
+    if (now) {
+      show(now, true);
+      return;
+    }
     // A library of many PDFs must not open and rasterise them all at once
     // (FineNotes#146: the page lagged, then the app was killed for memory).
-    // A cover starts when it is on screen, and two at a time.
-    const draw = async (): Promise<void> => {
-      if (this.closed || !canvas.isConnected) return;
+    // A cover starts when it is on screen, and new ones render two at a time.
+    const render = async (): Promise<void> => {
+      if (this.closed || !cover.isConnected) return;
       const entry = await this.pdfCache().resolve(
         pdf.path,
         pdf.page,
@@ -725,21 +799,29 @@ export class LibraryView extends ItemView {
         { geometry: { width: pdf.width, height: pdf.height } },
         true,
       );
-      if (!entry.ok || !canvas.isConnected) return;
-      const w = 240;
+      if (!entry.ok) return;
+      const canvas = createEl("canvas");
       const h = Math.max(1, Math.round((w * pdf.height) / pdf.width));
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(entry.canvas, 0, 0, canvas.width, canvas.height);
-      cover.addClass("is-ready");
       // The cover is copied; close the PDF so a library of many keeps none open.
       this.pdf?.forget(pdf.path);
+      const url = await saveCover(vault, key, canvas);
+      canvas.width = canvas.height = 0;
+      if (url && cover.isConnected && !cover.hasClass("is-ready")) show(url, false);
     };
-    const start = (): void => this.queueCover(draw);
+    const start = (): void => {
+      void loadCover(vault, key).then((url) => {
+        if (this.closed || !cover.isConnected) return;
+        if (url) show(url, false);
+        else this.queueCover(render);
+      });
+    };
     if (typeof IntersectionObserver === "undefined") {
       start();
       return;
@@ -750,7 +832,7 @@ export class LibraryView extends ItemView {
         seen.disconnect();
         start();
       },
-      { rootMargin: "200px" },
+      { rootMargin: "400px" },
     );
     seen.observe(cover);
   }
