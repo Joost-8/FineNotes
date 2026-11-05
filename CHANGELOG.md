@@ -8,13 +8,52 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-11-05
+
 ### Added
 
+- **Type inside a shape** (discussion #148). Tap a closed shape to pick it up,
+  then tap it again (or double tap it with a finger) and type: the text is
+  centred, in the shape's colour, and wraps inside it, and the shape grows
+  taller as the text needs. Tap the text later for the text bar. Works for
+  rectangles, circles and ellipses, triangles, diamonds, polygons, stars and
+  rounded rectangles, drawn by snapping or with the Shape tool.
+- **What a shape holds moves with it** (discussion #148). Moving, turning,
+  duplicating, copying, cutting or deleting a shape you picked up on its own
+  takes its text and the ink written inside it along, whether you wrote the
+  ink first or drew the shape first.
+- **A colour panel and a line panel for selections.** The selection bar's
+  colour is now a disc that opens the colour picker; for a shape it also has
+  a Fill switch and the fill's opacity. A second button opens the line panel:
+  None (for a filled shape), solid, dashed or dotted, the width on a slider,
+  and the corners and arrowheads that were in the "…" menu.
+- **Arrows between shapes can be picked up.** Tap the arrow joining two linked
+  shapes with the lasso to change its colour, line, width and arrowheads, or
+  delete it.
 - **Wider margins and free page edges** (discussion #143). A page's margin can now
   be as wide as the page itself (the slider stopped at 60 %). And a new check in
   a notebook's ⋯ panel, Free page edges, lets pages across scroll freely when
   zoomed in, past the page edges and the notebook's ends, instead of stopping at
   the page being read.
+- **Edit points on curved shapes.** Every curved shape has handles along its
+  outline; dragging one bends the shape smoothly.
+- **Home: All notebooks folds away** behind a caret, remembered on each device.
+
+### Fixed
+
+- **Stacked tabs scroll smoothly** (#147). With FineNotes on, scrolling
+  Obsidian's stacked tabs sideways jumped and snapped between tabs, even with
+  no notebook open.
+- **The S Pen's side button erases on Android** (#149). Holding the side button
+  while writing now does what Stylus side button says (erase, lasso, move the
+  page) on Samsung tablets.
+- **Home with many PDFs** (#146). PDF covers are drawn two at a time, only once
+  they are on screen, so a library full of PDFs no longer slows down or crashes
+  the app.
+- **The calculator's cursor** stands inside fractions, powers and roots, keeps
+  digits together, and ⌫ takes back one visible thing at a time.
+- **The eraser's pill** shows its mode titles only along the top or bottom of
+  the screen; at a side it shows icons alone.
 
 ## [2.8.1] - 2026-11-04
 
