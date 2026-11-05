@@ -2993,7 +2993,7 @@ export class InkSurface {
       this.pointerCallbacks,
       {
         handHeld: () => this.handHeld,
-        route: (event) => this.pressRoute(event),
+        route: (event, press) => this.pressRoute(event, press),
         onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
         fingerDraws: () => this.callbacks.fingerDrawing?.() === true,
         stylusClicks: () => this.stylusClickWanted(),
@@ -5016,15 +5016,16 @@ export class InkSurface {
     // neighbours show beside the page; letting go settles on the page then
     // in the middle (`onPinchEnd`). Joined pages are never held (`heldRow`).
     const last = this.pageLayout.boxes.length - 1;
+    const desk = this.freePageEdges ? this.cssW / 2 : 0;
     // Pages down: held centred while the pages fit the pane's width, and
     // never panned onto the desk beside them (discussion #43, as Goodnotes).
     const rangeX = !row
       ? columnScrollRangeX(this.pageLayout, scale, this.cssW)
       : !this.turnsPages && last >= 0
-        ? this.pinch || this.joined
+        ? this.pinch || this.joined || this.freePageEdges
           ? {
-              min: rowPageScrollRange(this.pageLayout, 0, scale, this.cssW).min,
-              max: rowPageScrollRange(this.pageLayout, last, scale, this.cssW).max,
+              min: rowPageScrollRange(this.pageLayout, 0, scale, this.cssW).min - desk,
+              max: rowPageScrollRange(this.pageLayout, last, scale, this.cssW).max + desk,
             }
           : rowPageScrollRange(this.pageLayout, this.heldIndex(), scale, this.cssW)
         : undefined;
@@ -5047,6 +5048,20 @@ export class InkSurface {
       // that fits the screen (a cover, a single page) has none of its own.
       trailY: this.typingField() ? keyboardHeight() : 0,
     });
+  }
+
+  /**
+   * Whether a zoomed-in row may leave the page being read and go half a pane
+   * past the notebook's ends (the setting "Free page edges"), instead of
+   * stopping at the page's edges.
+   */
+  private freePageEdges = false;
+
+  setFreePageEdges(on: boolean): void {
+    if (this.freePageEdges === on) return;
+    this.freePageEdges = on;
+    this.ensurePaperSize();
+    this.requestFrame();
   }
 
   /** At the zoom floor: the whole page on screen. */
@@ -7584,10 +7599,11 @@ export class InkSurface {
    * or with a barrel set to pan it moves the page as a finger does, with a
    * fling (rnote); a barrel set to do nothing, pressed while hovering, is
    * no press at all. Never while text is being typed: a press there is the
-   * text box's, as it always was.
+   * text box's, as it always was. `buttons` is the press as the pointer
+   * controller reads it, with a side button only the hovering moves showed.
    */
-  private pressRoute(event: PointerEvent): PressRoute {
-    if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
+  private pressRoute(event: PointerEvent, buttons: PressInput = event): PressRoute {
+    if (stylusButtonDown(buttons)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
     if (this.stickyPlace && this.placeStickyAt(event.clientX, event.clientY)) return "ignore";
     if (this.editingTextView() || this.heldText || this.cellEdit) return "draw";
     if (this.pressOpensFoldedNote(event)) return "ignore";
@@ -7598,7 +7614,7 @@ export class InkSurface {
     }
     const at = this.toLayout(event.clientX, event.clientY);
     const onPage = boxAtPoint(this.pageLayout, at.x, at.y) !== null;
-    const press = this.withoutBoundButton(event);
+    const press = this.withoutBoundButton(buttons);
     const route = pressOverride(press, { mac: macKeys(), barrel: this.barrel(), onPage });
     if (route === "ignore") return "ignore";
     // The hand tool moves the page wherever the pointer lands, as space does,
@@ -8104,7 +8120,7 @@ export class InkSurface {
       (clientX, clientY) => this.zoomClientToLayout(clientX, clientY),
       this.zoomPointerCallbacks,
       {
-        route: (event) => this.zoomBoxRoute(event),
+        route: (event, press) => this.zoomBoxRoute(event, press),
         onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
         stylusClicks: () => this.stylusClickWanted(),
       },
@@ -8915,7 +8931,7 @@ export class InkSurface {
    * nothing either; anything else draws, through the same `penStart` as the
    * page (a lent eraser or lasso included).
    */
-  private zoomBoxRoute(event: PointerEvent): PressRoute {
+  private zoomBoxRoute(event: PointerEvent, buttons: PressInput = event): PressRoute {
     const { tool } = this.toolState;
     if (tool === "zoom" || tool === "pan" || this.handHeld) return "ignore";
     const state = this.zoomBox;
@@ -8928,8 +8944,8 @@ export class InkSurface {
     if (!zoomViewPoint(state.box, view, event.clientX - rect.left, event.clientY - rect.top)) {
       return "ignore";
     }
-    if (stylusButtonDown(event)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
-    const route = pressOverride(event, { mac: macKeys(), barrel: this.barrel(), onPage: true });
+    if (stylusButtonDown(buttons)) this.stylusMenuUntil = now() + STYLUS_MENU_MS;
+    const route = pressOverride(buttons, { mac: macKeys(), barrel: this.barrel(), onPage: true });
     return route === "ignore" || route === "pan" ? "ignore" : "draw";
   }
 
@@ -13072,7 +13088,9 @@ export class InkSurface {
     // the resize handles, then the "…". A lone shape shows its handles from
     // the start, so it has only the corner points' switch (Joost, 2026-10-30).
     const lone = this.loneShape(sel);
-    if (!lone) {
+    // A curved shape (heart, arc, circle…) has no corner points, but it is a
+    // lone shape all the same: its resize handles stay on, with no switch.
+    if (!lone && !isLoneShape(sel)) {
       actions.push({
         id: "corners",
         icon: "scan",

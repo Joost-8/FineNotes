@@ -7,12 +7,13 @@
  * layout (contracts/api.md §2: an erased piece keeps its kind but not its
  * layout). A handle is a distinct vertex; copies of one point (a closed
  * shape's repeated first point, an arrow's tip) are one handle and move
- * together. Curved kinds — circles, ellipses, rounded rectangles, clouds,
- * hearts, arcs and sectors —
- * get none, pieces included: their points are samples along a curve, and
- * the selection's resize and rotate handles already stretch and turn them.
- * A whole arrow is the one layout recognised, and only after checking it:
- * its tail and tip are handles and the head follows the shaft.
+ * together. Curved kinds (circles, ellipses, rounded rectangles, clouds,
+ * hearts, arcs, sectors, segments) have no corners, so their handles are
+ * spaced evenly along the outline and a drag bends it: the point follows the
+ * pen and its neighbours follow it, less and less (a smooth falloff), so the
+ * outline stays one smooth curve and keeps its kind. A whole arrow is the one
+ * layout recognised, and only after checking it: its tail and tip are handles
+ * and the head follows the shaft.
  *
  * Moving a corner of a whole `rect` or `diamond` makes it a `polygon` (four
  * corners, no longer square), which is what the contract's layout table
@@ -36,7 +37,7 @@ export const MAX_POINT_HANDLES = 12;
 /** A line or an arrow's shaft never gets shorter than this, page px. */
 const MIN_SPAN = 1;
 
-/** Kinds drawn as curves: their points are samples, not corners. */
+/** Kinds drawn as curves: their points are samples, not corners; each gets handles along the outline. */
 const CURVED: ReadonlySet<ShapeKind> = new Set<ShapeKind>([
   "circle",
   "ellipse",
@@ -56,6 +57,77 @@ export interface PointHandles {
   points: number[][];
   /** A whole arrow: handle 0 is its tail, handle 1 its tip, and the head follows. */
   arrow: boolean;
+  /**
+   * A curve: its `n` distinct samples (a closed outline's repeated first point
+   * not counted), whether it is `closed`, and how many samples either side of
+   * a handle follow it (`span`).
+   */
+  curve?: { n: number; closed: boolean; span: number };
+}
+
+/** Handles along a closed curve, and along an open one (ends included). */
+const CURVE_HANDLES_CLOSED = 8;
+const CURVE_HANDLES_OPEN = 5;
+/** Fewer samples than this is not a curve worth bending. */
+const MIN_CURVE_SAMPLES = 8;
+
+/** Evenly spaced handles along a curved shape's outline, or null when it has too few samples. */
+function curveHandles(pts: readonly number[]): PointHandles | null {
+  const count = Math.floor(pts.length / POINT_STRIDE);
+  if (count < MIN_CURVE_SAMPLES) return null;
+  for (let i = 0; i < count; i++) {
+    if (!Number.isFinite(pts[i * POINT_STRIDE] + pts[i * POINT_STRIDE + 1])) return null;
+  }
+  const x = (i: number): number => pts[i * POINT_STRIDE];
+  const y = (i: number): number => pts[i * POINT_STRIDE + 1];
+  const closed = Math.hypot(x(0) - x(count - 1), y(0) - y(count - 1)) < 1e-6;
+  const n = closed ? count - 1 : count;
+  // Handles on fixed samples (evenly by index), so after a bend each one is
+  // still on the sample it moved: re-spacing them along the new outline made
+  // the one just dragged jump away from the pen.
+  const wanted = closed ? CURVE_HANDLES_CLOSED : CURVE_HANDLES_OPEN;
+  const at: number[] = [];
+  const points: number[][] = [];
+  let last = -1;
+  for (let k = 0; k < wanted; k++) {
+    const i = closed ? Math.round((k * n) / wanted) : Math.round((k * (n - 1)) / (wanted - 1));
+    if (i <= last || i > n - 1) continue;
+    last = i;
+    at.push(x(i), y(i));
+    points.push(closed && i === 0 ? [0, count - 1] : [i]);
+  }
+  if (points.length < 3) return null;
+  const span = Math.max(2, Math.round(n / (closed ? points.length : points.length - 1)));
+  return { at, points, arrow: false, curve: { n, closed, span } };
+}
+
+/** `pts` with the curve's sample under handle `handle` pulled to `to`, and its neighbours part of the way. */
+function bendCurve(
+  pts: readonly number[],
+  handles: PointHandles,
+  handle: number,
+  to: Pt,
+): number[] | null {
+  const curve = handles.curve;
+  const centre = handles.points[handle]?.[0];
+  if (!curve || centre === undefined) return null;
+  const dx = to.x - handles.at[handle * 2];
+  const dy = to.y - handles.at[handle * 2 + 1];
+  const out = pts.slice();
+  for (let i = 0; i < curve.n; i++) {
+    const apart = Math.abs(i - centre);
+    const d = curve.closed ? Math.min(apart, curve.n - apart) : apart;
+    if (d >= curve.span) continue;
+    const w = Math.cos((Math.PI / 2) * (d / curve.span)) ** 2;
+    out[i * POINT_STRIDE] = round2(pts[i * POINT_STRIDE] + dx * w);
+    out[i * POINT_STRIDE + 1] = round2(pts[i * POINT_STRIDE + 1] + dy * w);
+  }
+  if (curve.closed) {
+    const last = curve.n * POINT_STRIDE;
+    out[last] = out[0];
+    out[last + 1] = out[1];
+  }
+  return out;
 }
 
 function round2(value: number): number {
@@ -80,7 +152,8 @@ export function pointHandles(
   kind: ShapeKind | undefined,
   pts: readonly number[],
 ): PointHandles | null {
-  if (kind === undefined || CURVED.has(kind)) return null;
+  if (kind === undefined) return null;
+  if (CURVED.has(kind)) return curveHandles(pts);
   const count = Math.floor(pts.length / POINT_STRIDE);
   if (isWholeArrow(kind, pts)) {
     return {
@@ -128,6 +201,10 @@ export function movePoint(
 ): { pts: number[]; kind: ShapeKind } | null {
   const moving = handles.points[handle];
   if (!moving || !Number.isFinite(to.x + to.y)) return null;
+  if (handles.curve) {
+    const bent = bendCurve(pts, handles, handle, to);
+    return bent ? { pts: bent, kind } : null;
+  }
   const x = round2(to.x);
   const y = round2(to.y);
   const out = pts.slice();

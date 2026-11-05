@@ -11,7 +11,7 @@ import {
   pickPointHandle,
   pointHandles,
 } from "../../src/ink/shape-points";
-import { arrowPoints, presetGeometry } from "../../src/ink/shape-geometry";
+import { arcPoints, arrowPoints, presetGeometry } from "../../src/ink/shape-geometry";
 import { recognizeShape } from "../../src/ink/shape-recognizer";
 import { eraseCircleFromStroke } from "../../src/ink/stroke-eraser";
 import type { ShapeKind, Stroke } from "../../src/model/document";
@@ -58,10 +58,46 @@ describe("pointHandles", () => {
     expect(handles.points).toEqual([[0], [1, 2, 4]]);
   });
 
-  it("none for a curve, handwriting, a dot, or more corners than a star", () => {
-    for (const kind of ["circle", "ellipse", "roundrect", "cloud"] as const) {
-      expect(pointHandles(kind, presetGeometry("rect", from, to, 0.5))).toBeNull();
+  it("a curve gets handles along its outline, and a drag bends it smoothly", () => {
+    for (const kind of ["ellipse", "roundrect", "heart"] as const) {
+      const pts = presetGeometry(kind, from, to, 0.5);
+      const handles = pointHandles(kind, pts);
+      expect(handles, kind).not.toBeNull();
+      expect(handles!.curve).toBeDefined();
+      expect(handles!.points.length).toBeGreaterThanOrEqual(3);
+      const moved = movePoint(kind, pts, handles!, 1, {
+        x: handles!.at[2] + 20,
+        y: handles!.at[3] - 10,
+      });
+      expect(moved?.kind).toBe(kind);
+      // The dragged sample went where the pen is; a far one did not move.
+      const i = handles!.points[1][0];
+      expect(moved!.pts[i * 3]).toBeCloseTo(handles!.at[2] + 20, 1);
+      expect(moved!.pts[i * 3 + 1]).toBeCloseTo(handles!.at[3] - 10, 1);
+      const opposite = (1 + Math.floor(handles!.points.length / 2)) % handles!.points.length;
+      const far = handles!.points[opposite][0];
+      expect(moved!.pts[far * 3]).toBe(pts[far * 3]);
+      // A new array, so the renderer traces it again; a closed outline stays closed.
+      expect(moved!.pts).not.toBe(pts);
+      const n = pts.length / 3;
+      expect(moved!.pts[(n - 1) * 3]).toBe(moved!.pts[0]);
+      expect(moved!.pts[(n - 1) * 3 + 1]).toBe(moved!.pts[1]);
     }
+  });
+
+  it("an open arc is bent at its middle without moving its ends", () => {
+    const arc = flat(arcPoints(100, 100, 80, 0, Math.PI));
+    const handles = pointHandles("arc", arc)!;
+    const middle = Math.floor(handles.points.length / 2);
+    const moved = movePoint("arc", arc, handles, middle, {
+      x: handles.at[middle * 2],
+      y: handles.at[middle * 2 + 1] + 30,
+    })!;
+    expect(moved.pts.slice(0, 2)).toEqual(arc.slice(0, 2));
+    expect(moved.pts.slice(-3, -1)).toEqual(arc.slice(-3, -1));
+  });
+
+  it("none for handwriting, a dot, or more corners than a star", () => {
     expect(pointHandles(undefined, [0, 0, 0.5, 10, 10, 0.5])).toBeNull();
     expect(pointHandles("line", [5, 5, 0.5, 5, 5, 0.5])).toBeNull();
     const many: number[] = [];

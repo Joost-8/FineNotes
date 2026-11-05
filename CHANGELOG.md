@@ -8,6 +8,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Wider margins and free page edges** (discussion #143). A page's margin can now
+  be as wide as the page itself (the slider stopped at 60 %). And a new check in
+  a notebook's ⋯ panel, Free page edges, lets pages across scroll freely when
+  zoomed in, past the page edges and the notebook's ends, instead of stopping at
+  the page being read.
+
 ## [2.8.1] - 2026-11-04
 
 ### Added

@@ -56,7 +56,7 @@ const MARGIN_RULING: Record<MarginPaper, Ruling> = {
 
 /** The margin slider's range and start, in % of the frame's width. */
 export const MARGIN_MIN_PERCENT = 10;
-export const MARGIN_MAX_PERCENT = 60;
+export const MARGIN_MAX_PERCENT = 100;
 export const MARGIN_DEFAULT_PERCENT = 33;
 
 const NO_MARGIN: PageMargin = { left: 0, right: 0 };

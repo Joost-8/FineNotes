@@ -166,7 +166,7 @@ export interface PointerControllerOptions {
   /** Space is held: a pen or mouse coming down pans like a finger (FineNotes#7). */
   handHeld?: () => boolean;
   /** Where a pen or mouse press goes otherwise: the margin, a stylus button (FineNotes#25). */
-  route?: (event: PointerEvent) => PressRoute;
+  route?: (event: PointerEvent, press: PressInput) => PressRoute;
   /** Stylus-only mode: every pointer but the pen is ignored on the page. */
   onlyStylus?: () => boolean;
   /** Fingers draw (`finger-draw.ts`): one finger writes, two pan and pinch. Wins over Stylus-only. */
@@ -178,6 +178,11 @@ export interface PointerControllerOptions {
 }
 
 const PHASES = ["pointerdown", "pointermove", "pointerup", "pointercancel"] as const;
+
+/** `buttons` bit of a pen's barrel (secondary) button. */
+const BARREL_BIT = 2;
+/** `buttons` bit of a pen's eraser end. */
+const ERASER_END_BIT = 32;
 type Phase = (typeof PHASES)[number];
 
 export class PointerController {
@@ -198,6 +203,8 @@ export class PointerController {
   private readonly clicks = new StylusClicks();
   /** A press of the side button in the air, held back until it is a click or a stroke. */
   private held: PointerEvent | null = null;
+  /** The pen's last press came down with the side button held in its hovering moves (`pressOf`). */
+  private barrelAtDown = false;
   /**
    * While fingers draw, a lone finger held back until it writes or a second
    * joins it (`finger-draw.ts`), with each move it made and the samples it carried.
@@ -264,7 +271,20 @@ export class PointerController {
 
   /** Where a pen or mouse press goes otherwise (FineNotes#25). */
   private pressRoute(event: PointerEvent): PressRoute {
-    return this.options.route?.(event) ?? "draw";
+    return this.options.route?.(event, this.pressOf(event)) ?? "draw";
+  }
+
+  /**
+   * What a press says of its buttons and keys. A pen that touched down with
+   * the side button held in the hovering moves just before has the barrel's
+   * bit, though its own `buttons` lack it: Android's WebView reports the
+   * button only while the pen hovers (FineNotes#149).
+   */
+  private pressOf(event: PointerEvent): PressInput {
+    const { button, shiftKey, ctrlKey, metaKey, altKey, pointerType } = event;
+    let buttons = event.buttons;
+    if (this.barrelAtDown && (buttons & ERASER_END_BIT) === 0) buttons |= BARREL_BIT;
+    return { pointerType, button, buttons, shiftKey, ctrlKey, metaKey, altKey };
   }
 
   /** Only a pen acts on the page; never while fingers draw. */
@@ -297,6 +317,8 @@ export class PointerController {
     // A browser that sends the held press's touch-down as a press of its own: that one counts.
     if (this.held?.pointerId === event.pointerId) this.held = null;
     const pen = event.pointerType === "pen";
+    // Read before anything below forgets the hovering moves.
+    this.barrelAtDown = pen && this.clicks.barrelHeld;
     if (pen && this.stroke === null && this.held === null && this.stylusClicks()) {
       if (this.clicks.down(event)) {
         this.notePenSeen(event);
@@ -338,8 +360,11 @@ export class PointerController {
 
   /** A hovering pen's move: the side button's click, if it makes one (`stylus-click.ts`). */
   private hearHover(event: PointerEvent): void {
-    if (event.pointerType !== "pen" || this.stroke !== null || !this.stylusClicks()) return;
-    if (this.clicks.hover(event)) this.listener.onStylusClick?.(event.clientX, event.clientY);
+    if (event.pointerType !== "pen" || this.stroke !== null) return;
+    // Always heard, so a pen touching down knows its side button is held
+    // (`pressOf`); reported as a click only when a click is wanted.
+    const click = this.clicks.hover(event);
+    if (click && this.stylusClicks()) this.listener.onStylusClick?.(event.clientX, event.clientY);
   }
 
   /**
@@ -473,9 +498,7 @@ export class PointerController {
     if (pen) this.notePen(event);
     this.rounded = pen && !this.penIsPrecise;
     this.debug("down", event, 0);
-    const { button, buttons, shiftKey, ctrlKey, metaKey, altKey, pointerType } = event;
-    const press = { pointerType, button, buttons, shiftKey, ctrlKey, metaKey, altKey };
-    this.listener.onStart(this.sample(event), press);
+    this.listener.onStart(this.sample(event), this.pressOf(event));
   }
 
   private moved(event: PointerEvent, taken = event.getCoalescedEvents?.() ?? []): void {

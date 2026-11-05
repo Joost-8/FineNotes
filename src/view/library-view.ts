@@ -126,6 +126,9 @@ const SORTS: ReadonlyArray<{ by: LibrarySort; label: TextKey }> = [
 ];
 
 /** How many notebooks the Continue strip shows. */
+/** Whether "All notebooks" is folded on this device. */
+const ALL_FOLDED_KEY = "finenotes-library-all-folded";
+
 const CONTINUE_COUNT = 3;
 
 interface Read {
@@ -138,6 +141,8 @@ export class LibraryView extends ItemView {
   override icon = "house";
   private folder = "";
   private sort: LibrarySort = "edited";
+  /** "All notebooks" folded away (this device remembers). */
+  private allFolded = this.app.loadLocalStorage(ALL_FOLDED_KEY) === "1";
   /** The sort turned around: oldest first, Z to A, fewest pages first. */
   private reverse = false;
   private layout: "grid" | "list" = "grid";
@@ -414,7 +419,7 @@ export class LibraryView extends ItemView {
       const { mtime, size } = file.stat;
       let entry: LibraryEntry;
       try {
-        entry = entryFromText(file.path, mtime, await this.app.vault.cachedRead(file));
+        entry = entryFromText(file.path, mtime, await this.app.vault.read(file));
       } catch {
         entry = placeholderEntry(file.path, mtime);
       }
@@ -549,6 +554,7 @@ export class LibraryView extends ItemView {
         atTop
           ? t("notebooks.home.all")
           : t(SORTS.find((s) => s.by === this.sort)?.label ?? "notebooks.home.sortEdited"),
+        atTop,
       );
     }
   }
@@ -578,8 +584,27 @@ export class LibraryView extends ItemView {
     this.bodyEl.createDiv({ cls: "goodobsidian-library-label", text });
   }
 
-  private grid(entries: LibraryEntry[], label: string): void {
-    this.label(label);
+  /** A heading with a caret that folds what is under it; the choice is kept on this device. */
+  private foldLabel(text: string): void {
+    const head = this.bodyEl.createEl("button", {
+      cls: "goodobsidian-library-label goodobsidian-library-fold clickable-icon",
+      attr: { type: "button", "aria-expanded": String(!this.allFolded) },
+    });
+    head.createSpan({ text });
+    const caret = head.createSpan({ cls: "goodobsidian-library-fold-caret" });
+    setIcon(caret, this.allFolded ? "chevron-right" : "chevron-down");
+    head.addEventListener("click", () => {
+      this.allFolded = !this.allFolded;
+      this.app.saveLocalStorage(ALL_FOLDED_KEY, this.allFolded ? "1" : "0");
+      this.paintNow();
+    });
+  }
+
+  private grid(entries: LibraryEntry[], label: string, foldable = false): void {
+    if (foldable) {
+      this.foldLabel(label);
+      if (this.allFolded) return;
+    } else this.label(label);
     const grid = this.bodyEl.createDiv({ cls: this.gridClass() });
     for (const entry of starredFirst(entries, this.host.stars(), (e) => e.path)) {
       this.card(grid, entry);
@@ -688,30 +713,69 @@ export class LibraryView extends ItemView {
     cover.addClass("is-pdf");
     const canvas = cover.createEl("canvas", { cls: "goodobsidian-library-pdf" });
     const dpr = window.devicePixelRatio || 1;
-    const cache = this.pdfCache();
-    void cache
-      .resolve(
+    // A library of many PDFs must not open and rasterise them all at once
+    // (FineNotes#146: the page lagged, then the app was killed for memory).
+    // A cover starts when it is on screen, and two at a time.
+    const draw = async (): Promise<void> => {
+      if (this.closed || !canvas.isConnected) return;
+      const entry = await this.pdfCache().resolve(
         pdf.path,
         pdf.page,
         thumbnailRasterScale(dpr),
-        {
-          geometry: { width: pdf.width, height: pdf.height },
-        },
+        { geometry: { width: pdf.width, height: pdf.height } },
         true,
-      )
-      .then((entry) => {
-        if (!entry.ok || !canvas.isConnected) return;
-        const w = 240;
-        const h = Math.max(1, Math.round((w * pdf.height) / pdf.width));
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(entry.canvas, 0, 0, canvas.width, canvas.height);
-        cover.addClass("is-ready");
-      });
+      );
+      if (!entry.ok || !canvas.isConnected) return;
+      const w = 240;
+      const h = Math.max(1, Math.round((w * pdf.height) / pdf.width));
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(entry.canvas, 0, 0, canvas.width, canvas.height);
+      cover.addClass("is-ready");
+      // The cover is copied; close the PDF so a library of many keeps none open.
+      this.pdf?.forget(pdf.path);
+    };
+    const start = (): void => this.queueCover(draw);
+    if (typeof IntersectionObserver === "undefined") {
+      start();
+      return;
+    }
+    const seen = new IntersectionObserver(
+      (hits) => {
+        if (!hits.some((hit) => hit.isIntersecting)) return;
+        seen.disconnect();
+        start();
+      },
+      { rootMargin: "200px" },
+    );
+    seen.observe(cover);
+  }
+
+  private readonly coverQueue: Array<() => Promise<void>> = [];
+  private coversRunning = 0;
+
+  /** Runs cover renders two at a time, in the order they came into view. */
+  private queueCover(job: () => Promise<void>): void {
+    this.coverQueue.push(job);
+    this.pumpCovers();
+  }
+
+  private pumpCovers(): void {
+    while (!this.closed && this.coversRunning < 2) {
+      const job = this.coverQueue.shift();
+      if (!job) return;
+      this.coversRunning++;
+      void job()
+        .catch(() => undefined)
+        .finally(() => {
+          this.coversRunning--;
+          this.pumpCovers();
+        });
+    }
   }
 
   /** The PDF raster cache, made with the first PDF cover, rendering in the shared worker once it is up. */

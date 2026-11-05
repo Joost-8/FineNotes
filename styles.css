@@ -2600,7 +2600,12 @@ body.is-mobile .goodobsidian-scrollthumb {
   cursor: auto;
 }
 
-.is-hidden {
+/* Ours, never Obsidian's workspace leaves: stacked tabs put `is-hidden` on
+   the leaves scrolled out of view and hide only what is inside them, so a
+   leaf keeps its width. Taking the whole leaf out changed the stack's width
+   under the trackpad, and the tabs jumped and snapped (FineNotes#147).
+   `:where` keeps the rule at one class, as it was. */
+.is-hidden:where(:not(.workspace-leaf)) {
   display: none;
 }
 
@@ -15666,29 +15671,40 @@ body.goodobsidian-simple
   width: 190px;
   max-width: 40%;
   height: 32px;
-  padding: 0 10px;
-  border-radius: 10px;
+  padding: 0 12px;
+  border-radius: 999px;
   background: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  box-shadow: inset 0 0 0 1px transparent;
   color: var(--text-faint);
   transition:
     width 0.25s var(--gob-ease),
-    background-color 0.2s;
+    background-color 0.2s,
+    box-shadow 0.2s;
 }
 .goodobsidian-library-search:focus-within {
   width: 260px;
   background: color-mix(in srgb, var(--text-normal) 10%, transparent);
+  /* The one ring: the pill itself, never the field inside it. */
+  box-shadow: inset 0 0 0 1.5px var(--interactive-accent);
 }
 .goodobsidian-library-search .svg-icon {
   width: 14px;
   height: 14px;
 }
-.goodobsidian-library-search input {
+/* Obsidian styles input[type="search"] (border, radius, focus ring) at a higher
+   specificity than one class, so the field says everything again. */
+.goodobsidian-library-search input[type="search"],
+.goodobsidian-library-search input[type="search"]:hover,
+.goodobsidian-library-search input[type="search"]:focus,
+.goodobsidian-library-search input[type="search"]:focus-visible {
   flex: 1;
   min-width: 0;
   height: 100%;
   border: 0;
+  border-radius: 0;
   background: transparent;
   box-shadow: none;
+  outline: none;
   /* 16px: iPadOS zooms the page into a smaller field. */
   font-size: 16px;
   padding: 0;
@@ -16415,4 +16431,35 @@ button.goodobsidian-library-star:active {
   fill: var(--background-primary);
   stroke: var(--interactive-accent);
   stroke-width: 2px;
+}
+
+/* The eraser pill's titles ("Standard", "All ink") only while it rests along
+   the top or bottom; upright at a side it is icons alone. */
+.goodobsidian-options.is-upright .goodobsidian-erasermode-label {
+  display: none;
+}
+.goodobsidian-options.is-upright button.goodobsidian-erasermode {
+  gap: 0;
+  padding: 0 8px;
+}
+
+/* "All notebooks": a heading that folds, its caret beside the words. */
+button.goodobsidian-library-fold {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+button.goodobsidian-library-fold .goodobsidian-library-fold-caret {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+button.goodobsidian-library-fold .svg-icon {
+  width: 16px;
+  height: 16px;
 }

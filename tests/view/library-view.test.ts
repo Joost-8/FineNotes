@@ -42,11 +42,11 @@ afterEach(() => vi.unstubAllGlobals());
 describe("reading notebooks", () => {
   it("reads again what changed while a read was under way, rather than dropping the change", async () => {
     const { app, inside } = viewOn(["A.notebook.md", "B.notebook.md"]);
-    const read = app.vault.cachedRead;
+    const read = app.vault.read;
     let release = () => {};
     const held = new Promise<void>((resolve) => (release = resolve));
     const asked: string[] = [];
-    app.vault.cachedRead = async (file: FakeFile) => {
+    app.vault.read = async (file: FakeFile) => {
       asked.push(file.path);
       if (file.path === "B.notebook.md" && asked.length <= 2) await held;
       return read(file);
@@ -91,9 +91,9 @@ describe("a Home tab in the background", () => {
     let shown = false;
     Object.assign(view, { containerEl: { isShown: () => shown } });
     inside.watchVault();
-    const read = app.vault.cachedRead;
+    const read = app.vault.read;
     const asked: string[] = [];
-    app.vault.cachedRead = async (file: FakeFile) => {
+    app.vault.read = async (file: FakeFile) => {
       asked.push(file.path);
       return read(file);
     };
