@@ -54,6 +54,7 @@ import {
 } from "../model/library-style";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { NotebookPages } from "./library-pages";
+import type { Page } from "../model/document";
 import { type Tap, isDoubleTap, railFolders } from "../model/library-rail";
 import { SIMPLE_CLASS } from "../model/simple-mode";
 import { coverUrlNow, loadCover, loadEntries, saveCover, saveEntries } from "./home-cache";
@@ -84,7 +85,6 @@ import {
   fileEntry,
   fileIcon,
   hoistSingles,
-  entryFromText,
   folderOf,
   notePreviewText,
   readProgress,
@@ -495,6 +495,8 @@ export class LibraryView extends ItemView {
   override async onClose(): Promise<void> {
     this.closed = true;
     this.unloadPreviews();
+    this.pagesOf?.dispose();
+    this.pagesOf = null;
     this.pdf?.destroy();
     this.pdf = null;
     if (this.workerHeld) releasePdfWorker();
@@ -643,12 +645,9 @@ export class LibraryView extends ItemView {
         return;
       }
       const { mtime, size } = file.stat;
-      let entry: LibraryEntry;
-      try {
-        entry = entryFromText(file.path, mtime, await this.app.vault.read(file));
-      } catch {
-        entry = placeholderEntry(file.path, mtime);
-      }
+      // Decoded in the read worker; its cover drawn from that same read, never a second one.
+      const { entry, cover } = await this.pages().readEntry(file, mtime);
+      if (cover) await this.keepOwnCover(file, cover).catch(() => undefined);
       const read = { mtime, size, entry };
       this.reads.set(file.path, read);
       changes.set(file.path, read);
@@ -1440,11 +1439,26 @@ export class LibraryView extends ItemView {
    * notebook draws it (design, colour, title). It is drawn once, kept as a
    * small picture on this device, and shown over the plain cover when ready.
    */
+  private ownCoverKey(file: TFile): string {
+    const dpr = window.devicePixelRatio || 1;
+    return `cover:${file.path}@${file.stat.mtime}:${file.stat.size}:${Math.round(COVER_WIDTH * dpr)}`;
+  }
+
+  /** The cover page of a notebook just read, kept as its cover picture unless one is kept already. */
+  private async keepOwnCover(file: TFile, page: Page): Promise<void> {
+    const key = this.ownCoverKey(file);
+    if (coverUrlNow(key)) return;
+    const vault = this.vaultKey();
+    if (await loadCover(vault, key)) return;
+    const canvas = await this.pages().renderOf(page, COVER_WIDTH);
+    await saveCover(vault, key, canvas);
+    canvas.width = canvas.height = 0;
+  }
+
   private paintOwnCover(cover: HTMLElement, entry: LibraryEntry): void {
     const file = this.app.vault.getFileByPath(entry.path);
     if (!file) return;
-    const dpr = window.devicePixelRatio || 1;
-    const key = `cover:${entry.path}@${file.stat.mtime}:${file.stat.size}:${Math.round(COVER_WIDTH * dpr)}`;
+    const key = this.ownCoverKey(file);
     const vault = this.vaultKey();
     const show = (url: string): void => {
       const img = cover.createEl("img", {
@@ -1470,6 +1484,9 @@ export class LibraryView extends ItemView {
         show(kept);
         return;
       }
+      // Not read since it changed: Home's own read draws the cover (keepOwnCover), then this card again.
+      const read = this.reads.get(file.path);
+      if (!read || read.mtime !== file.stat.mtime || read.size !== file.stat.size) return;
       const canvas = await this.pages().render(file, 0, COVER_WIDTH);
       if (!canvas || this.closed) return;
       const url = await saveCover(vault, key, canvas);
@@ -1480,6 +1497,8 @@ export class LibraryView extends ItemView {
 
   /** The preview of `entry`: its cover, facts, Open and ⋯, and (a notebook) its pages to open at. */
   private showPreview(entry: LibraryEntry, leftAt?: number): void {
+    // The last preview's PDFs are closed; its pages are kept as pictures.
+    this.pagesOf?.releasePdfs();
     this.previewPath = entry.path;
     this.contentEl.addClass("has-preview");
     this.contentEl
@@ -1590,6 +1609,7 @@ export class LibraryView extends ItemView {
   private hidePreview(): void {
     if (this.previewPath === null) return;
     this.previewPath = null;
+    this.pagesOf?.releasePdfs();
     this.contentEl.removeClass("has-preview");
     this.previewEl.addClass("is-hidden");
     this.previewEl.empty();

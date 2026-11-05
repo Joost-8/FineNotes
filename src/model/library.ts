@@ -10,7 +10,7 @@
  */
 
 import { localeTag, t, tn } from "../i18n/translate";
-import { type PageGeometry, type PdfBackdrop, isCoverRuling } from "./document";
+import { type InkDocument, type PageGeometry, type PdfBackdrop, isCoverRuling } from "./document";
 import { inkFileSuffix, stripInkSuffix } from "./new-notebook";
 import { parseInkFile } from "./serialize";
 
@@ -212,8 +212,12 @@ function firstPdf(
 
 /** `entry` read from the note's text. An unreadable note keeps its placeholder. */
 export function entryFromText(path: string, edited: number, markdown: string): LibraryEntry {
+  return entryFromDoc(path, edited, parseInkFile(markdown).doc);
+}
+
+/** `entry` of a notebook already read (`null`: unreadable, it keeps its placeholder). */
+export function entryFromDoc(path: string, edited: number, doc: InkDocument | null): LibraryEntry {
   const base = placeholderEntry(path, edited);
-  const doc = parseInkFile(markdown).doc;
   if (!doc || doc.pages.length === 0) return base;
   const first = doc.pages[0];
   const covered = first !== undefined && isCoverRuling(first.backdrop.kind);
