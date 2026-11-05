@@ -276,6 +276,28 @@ export class DropdownComponent extends ValueComponent {
 
 export class ColorComponent extends ValueComponent {}
 
+/** A switch. */
+export class ToggleComponent {
+  value = false;
+  private handler: ((value: boolean) => unknown) | null = null;
+  setValue(value: boolean): this {
+    this.value = value;
+    return this;
+  }
+  getValue(): boolean {
+    return this.value;
+  }
+  onChange(handler: (value: boolean) => unknown): this {
+    this.handler = handler;
+    return this;
+  }
+  /** What a user flipping the switch to `value` would cause. */
+  async flip(value: boolean): Promise<void> {
+    this.value = value;
+    await this.handler?.(value);
+  }
+}
+
 export class ExtraButtonComponent {
   readonly extraSettingsEl: FakeEl;
   constructor(parent?: FakeEl) {
@@ -318,6 +340,7 @@ export class Setting {
   readonly buttons: ButtonComponent[] = [];
   readonly dropdowns: DropdownComponent[] = [];
   readonly colors: ColorComponent[] = [];
+  readonly toggles: ToggleComponent[] = [];
   readonly extras: ExtraButtonComponent[] = [];
 
   /** Every row built so far, for code that builds one inside a dialog. */
@@ -364,6 +387,12 @@ export class Setting {
     const dropdown = new DropdownComponent();
     this.dropdowns.push(dropdown);
     build(dropdown);
+    return this;
+  }
+  addToggle(build: (toggle: ToggleComponent) => unknown): this {
+    const toggle = new ToggleComponent();
+    this.toggles.push(toggle);
+    build(toggle);
     return this;
   }
   addColorPicker(build: (color: ColorComponent) => unknown): this {

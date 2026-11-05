@@ -15614,17 +15614,28 @@ button.goodobsidian-edit-menu-row {
 
 /* --- The simple look (model/simple-mode.ts) ----------------------------- */
 
-/* Obsidian's own chrome tucked away; the tabs stay. Nothing is removed. */
+/* Obsidian's own chrome tucked away: the status bar, the ribbon, the right
+   sidebar, and the left sidebar's tab strip, so the left side shows only the
+   Folders sidebar. The tabs of the main area, the left sidebar itself, its
+   drawer and its toggle stay. Nothing is removed. */
 body.goodobsidian-simple .status-bar,
 body.goodobsidian-simple .workspace-ribbon,
-body.goodobsidian-simple .workspace-split.mod-left-split,
 body.goodobsidian-simple .workspace-split.mod-right-split,
-body.goodobsidian-simple .workspace-drawer,
-body.goodobsidian-simple .sidebar-toggle-button {
+body.goodobsidian-simple .workspace-drawer.mod-right,
+body.goodobsidian-simple .sidebar-toggle-button.mod-right {
   display: none;
 }
+body.goodobsidian-simple .workspace-split.mod-left-split .workspace-tab-header-container {
+  display: none;
+}
+/* The views draw their own title; Obsidian's header above them goes. */
 body.goodobsidian-simple
-  .workspace-leaf-content:is([data-type="goodobsidian-view"], [data-type="finenotes-library"])
+  .workspace-leaf-content:is(
+    [data-type="goodobsidian-view"],
+    [data-type="finenotes-library"],
+    [data-type="finenotes-folders"],
+    [data-type="finenotes-folder-library"]
+  )
   > .view-header {
   display: none;
 }
@@ -16462,4 +16473,2380 @@ button.goodobsidian-library-fold .goodobsidian-library-fold-caret {
 button.goodobsidian-library-fold .svg-icon {
   width: 16px;
   height: 16px;
+}
+
+/* --- Folders sidebar and library (src/view/folder-sidebar) --------------- */
+
+/* Ported unchanged from the Folder Sidebar plugin. Its classes are .folder-*, .fs-* and
+   .fl-*; the only edits are the two data-type selectors, which name FineNotes' view types
+   (finenotes-folders, finenotes-folder-library) so the standalone plugin can stay installed.
+   The rules on body.fs-menu-open .menu apply only while a Folders menu is open. */
+
+/* ==========================================================================
+   Folder Sidebar styles. Flat, bordered and driven by Obsidian's theme variables,
+   so it follows any theme in light and dark mode.
+   Sidebar view: .folder-sidebar-root (fs-* classes). Dropdown menu: .folder-sidebar-menu (on body).
+   ========================================================================== */
+
+.folder-sidebar-root,
+.folder-sidebar-menu,
+.folder-library-root {
+  --fs-indent: 14px;
+  --fs-border: var(--background-modifier-border);
+  --fs-accent: var(--interactive-accent);
+}
+
+/* Remove Obsidian's default leaf padding for this view. */
+.workspace-leaf-content[data-type="finenotes-folders"] .view-content {
+  padding: 0;
+}
+
+.folder-sidebar-root {
+  height: 100%;
+}
+
+/* Column: header, filter, open-folder path, tips, then the one scrolling list. */
+.folder-sidebar-root .fs-pane {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  background-color: var(--background-secondary);
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Header ---- */
+.folder-sidebar-root .fs-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px 2px 14px;
+}
+
+.folder-sidebar-root .fs-header.is-drop-target {
+  background-color: color-mix(in srgb, var(--fs-accent) 12%, transparent);
+}
+
+.folder-sidebar-root .fs-header-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.folder-sidebar-root .fs-header-tools {
+  display: flex;
+  gap: 2px;
+}
+
+.folder-sidebar-root .fs-icon-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.folder-sidebar-root .fs-icon-button:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.folder-sidebar-root .fs-icon-button svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75px;
+}
+
+/* ---- Filter box ---- */
+.folder-sidebar-root .fs-filter {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  margin: 4px 10px 6px;
+}
+
+.folder-sidebar-root .fs-filter-icon {
+  position: absolute;
+  left: 9px;
+  display: flex;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.folder-sidebar-root .fs-filter-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.folder-sidebar-root input.fs-filter-input {
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 32px 0 30px;
+  border: 1px solid var(--fs-border);
+  border-radius: 6px;
+  background-color: var(--background-primary);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: 13px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.folder-sidebar-root input.fs-filter-input:focus {
+  border-color: var(--fs-accent);
+}
+
+.folder-sidebar-root .fs-filter-clear {
+  position: absolute;
+  right: 2px;
+  display: none;
+  width: 28px;
+  height: 28px;
+}
+
+.folder-sidebar-root .fs-pane.has-filter .fs-filter-clear {
+  display: inline-flex;
+}
+
+/* ---- Open-folder path: always visible, so a long scroll never loses its place ---- */
+.folder-sidebar-root .fs-here {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin: 0 10px 4px;
+  padding: 0 2px;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-muted);
+  scrollbar-width: none;
+}
+
+.folder-sidebar-root .fs-here::-webkit-scrollbar {
+  display: none;
+}
+
+.folder-sidebar-root .fs-here.is-hidden {
+  display: none;
+}
+
+.folder-sidebar-root .fs-here-seg {
+  flex: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.folder-sidebar-root .fs-here-seg[role="button"] {
+  cursor: pointer;
+}
+
+.folder-sidebar-root .fs-here-seg[role="button"]:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.folder-sidebar-root .fs-here-seg.is-current {
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.folder-sidebar-root .fs-here-sep {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.folder-sidebar-root .fs-here-sep svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---- First-run tips ---- */
+.folder-sidebar-root .fs-intro {
+  margin: 2px 10px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--fs-border);
+  border-left: 3px solid var(--fs-accent);
+  border-radius: 6px;
+  background-color: var(--background-primary);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.folder-sidebar-root .fs-intro-title {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.folder-sidebar-root .fs-intro-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+}
+
+.folder-sidebar-root .fs-intro-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.folder-sidebar-root .fs-intro-icon {
+  flex: none;
+  display: inline-flex;
+  margin-top: 1px;
+  color: var(--text-faint);
+}
+
+.folder-sidebar-root .fs-intro-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.folder-sidebar-root .fs-text-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--fs-accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.folder-sidebar-root .fs-text-button:hover {
+  background-color: color-mix(in srgb, var(--fs-accent) 10%, transparent);
+}
+
+.folder-sidebar-root .fs-intro-ok {
+  margin: 4px 0 0 -8px;
+}
+
+/* ---- The list (the one scroller; touch drag autoscrolls it) ---- */
+.folder-sidebar-root .fs-list {
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 0 6px 24px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.folder-sidebar-root .fs-list.is-drop-target {
+  background-color: color-mix(in srgb, var(--fs-accent) 8%, transparent);
+}
+
+.folder-sidebar-root .fs-section-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 6px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.folder-sidebar-root .fs-section-chevron {
+  display: inline-flex;
+  transition: transform 0.12s ease;
+}
+
+.folder-sidebar-root .fs-section-label.is-collapsed .fs-section-chevron {
+  transform: rotate(-90deg);
+}
+
+.folder-sidebar-root .fs-section-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.folder-sidebar-root .fs-empty {
+  padding: 16px 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* ---- Rows ---- */
+.folder-sidebar-root .fs-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  margin: 1px 0;
+  border-radius: 6px;
+  color: var(--text-normal);
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+}
+
+/* Color rail on the left edge: shows the folder's color, or the accent on a selected uncolored folder. */
+.folder-sidebar-root .fs-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 3px;
+  background-color: transparent;
+}
+
+.folder-sidebar-root .fs-item.has-color::before {
+  background-color: var(--fs-color);
+}
+
+.folder-sidebar-root .fs-item.is-selected:not(.has-color)::before {
+  background-color: var(--fs-accent);
+}
+
+/* One thin guide per level, drawn under each ancestor's chevron. */
+.folder-sidebar-root .fs-item.fs-in-tree::after {
+  content: "";
+  position: absolute;
+  left: 17px;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--depth, 0) * var(--fs-indent));
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--fs-border) 0,
+    var(--fs-border) 1px,
+    transparent 1px,
+    transparent var(--fs-indent)
+  );
+  pointer-events: none;
+}
+
+.folder-sidebar-root .fs-item:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.folder-sidebar-root .fs-item.is-selected {
+  background-color: var(--background-modifier-active-hover);
+}
+
+.folder-sidebar-root .fs-item.is-selected .fs-title {
+  font-weight: 600;
+}
+
+.folder-sidebar-root .fs-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fs-accent);
+}
+
+.folder-sidebar-root .fs-item.is-drop-target {
+  background-color: color-mix(in srgb, var(--fs-accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px var(--fs-accent);
+}
+
+.folder-sidebar-root .fs-item.is-active:not(.is-selected) .fs-title {
+  color: var(--fs-accent);
+}
+
+.folder-sidebar-root .fs-item-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px calc(8px + var(--depth, 0) * var(--fs-indent));
+  box-sizing: border-box;
+}
+
+/* The one width source for the chevron column; rows without a chevron leave it empty. */
+.folder-sidebar-root .fs-chevron-slot {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.folder-sidebar-root .fs-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.folder-sidebar-root .fs-chevron.is-expanded {
+  transform: rotate(90deg);
+}
+
+.folder-sidebar-root .fs-chevron:hover {
+  color: var(--text-normal);
+}
+
+.folder-sidebar-root .fs-chevron svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2px;
+}
+
+/* Folder glyph, tinted with the folder's color (neutral ink without one). */
+.folder-sidebar-root .fs-glyph {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.folder-sidebar-root .fs-glyph svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75px;
+}
+
+.folder-sidebar-root .fs-item.has-color .fs-glyph {
+  color: var(--fs-color);
+}
+
+.folder-sidebar-root .fs-item.has-color .fs-glyph svg {
+  fill: color-mix(in srgb, var(--fs-color) 22%, transparent);
+}
+
+.folder-sidebar-root .fs-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 1.3;
+}
+
+.folder-sidebar-root .fs-title mark {
+  padding: 0;
+  border-radius: 2px;
+  background-color: color-mix(in srgb, var(--fs-accent) 28%, transparent);
+  color: inherit;
+}
+
+.folder-sidebar-root .fs-title-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.folder-sidebar-root .fs-title-wrap .fs-title {
+  flex: none;
+}
+
+.folder-sidebar-root .fs-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-faint);
+}
+
+.folder-sidebar-root .fs-count {
+  flex: none;
+  min-width: 16px;
+  padding: 0 2px;
+  text-align: right;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+/* One "..." button per row: on hover or focus (desktop), on the selected row only (touch). */
+.folder-sidebar-root .fs-actions {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  display: none;
+  transform: translateY(-50%);
+}
+
+.folder-sidebar-root .fs-item:hover .fs-actions,
+.folder-sidebar-root .fs-item:focus-within .fs-actions {
+  display: flex;
+}
+
+.folder-sidebar-root .fs-item:hover .fs-count,
+.folder-sidebar-root .fs-item:focus-within .fs-count {
+  visibility: hidden;
+}
+
+.folder-sidebar-root .fs-more {
+  background-color: var(--background-secondary);
+}
+
+.folder-sidebar-root .fs-item:hover .fs-more,
+.folder-sidebar-root .fs-item.is-selected .fs-more {
+  background-color: transparent;
+}
+
+/* ---- Inline input (new folder / rename) ---- */
+.folder-sidebar-root input.fs-inline-input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border: 1px solid var(--fs-accent);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  font-size: 14px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.folder-sidebar-root input.fs-inline-input:focus {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fs-accent) 30%, transparent);
+}
+
+.folder-sidebar-root [role="button"]:focus-visible,
+.folder-library-root [role="button"]:focus-visible {
+  outline: 2px solid var(--fs-accent);
+  outline-offset: 1px;
+}
+
+/* ---- Touch and iPad: bigger targets; the "..." shows only on the selected row ---- */
+@media (hover: none) {
+  .folder-sidebar-root .fs-item:hover {
+    background-color: transparent;
+  }
+
+  .folder-sidebar-root .fs-item.is-selected:hover {
+    background-color: var(--background-modifier-active-hover);
+  }
+
+  .folder-sidebar-root .fs-item:hover .fs-actions,
+  .folder-sidebar-root .fs-item:focus-within .fs-actions {
+    display: none;
+  }
+
+  .folder-sidebar-root .fs-item.is-selected .fs-actions {
+    display: flex;
+  }
+
+  .folder-sidebar-root .fs-item:hover .fs-count,
+  .folder-sidebar-root .fs-item:focus-within .fs-count {
+    visibility: visible;
+  }
+
+  .folder-sidebar-root .fs-item.is-selected .fs-count {
+    visibility: hidden;
+  }
+}
+
+body.is-mobile .folder-sidebar-root,
+body.is-tablet .folder-sidebar-root,
+.folder-sidebar-root.is-touch {
+  --fs-indent: 16px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-item,
+body.is-tablet .folder-sidebar-root .fs-item {
+  min-height: 44px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-item:hover:not(.is-selected),
+body.is-tablet .folder-sidebar-root .fs-item:hover:not(.is-selected) {
+  background-color: transparent;
+}
+
+body.is-mobile .folder-sidebar-root .fs-item:hover .fs-actions,
+body.is-tablet .folder-sidebar-root .fs-item:hover .fs-actions {
+  display: none;
+}
+
+body.is-mobile .folder-sidebar-root .fs-item.is-selected .fs-actions,
+body.is-tablet .folder-sidebar-root .fs-item.is-selected .fs-actions {
+  display: flex;
+}
+
+body.is-mobile .folder-sidebar-root .fs-item:hover .fs-count,
+body.is-tablet .folder-sidebar-root .fs-item:hover .fs-count {
+  visibility: visible;
+}
+
+body.is-mobile .folder-sidebar-root .fs-item.is-selected .fs-count,
+body.is-tablet .folder-sidebar-root .fs-item.is-selected .fs-count {
+  visibility: hidden;
+}
+
+body.is-mobile .folder-sidebar-root .fs-item.fs-in-tree::after,
+body.is-tablet .folder-sidebar-root .fs-item.fs-in-tree::after {
+  left: 21px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-item::before,
+body.is-tablet .folder-sidebar-root .fs-item::before {
+  top: 8px;
+  bottom: 8px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-chevron-slot,
+body.is-tablet .folder-sidebar-root .fs-chevron-slot,
+body.is-mobile .folder-sidebar-root .fs-chevron,
+body.is-tablet .folder-sidebar-root .fs-chevron {
+  width: 28px;
+  height: 28px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-chevron svg,
+body.is-tablet .folder-sidebar-root .fs-chevron svg {
+  width: 18px;
+  height: 18px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-glyph svg,
+body.is-tablet .folder-sidebar-root .fs-glyph svg {
+  width: 20px;
+  height: 20px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-title,
+body.is-tablet .folder-sidebar-root .fs-title {
+  font-size: 15px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-icon-button,
+body.is-tablet .folder-sidebar-root .fs-icon-button {
+  width: 44px;
+  height: 44px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-icon-button svg,
+body.is-tablet .folder-sidebar-root .fs-icon-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+body.is-mobile .folder-sidebar-root input.fs-filter-input,
+body.is-tablet .folder-sidebar-root input.fs-filter-input {
+  height: 44px;
+  padding-left: 34px;
+  font-size: 16px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-filter-icon,
+body.is-tablet .folder-sidebar-root .fs-filter-icon {
+  left: 11px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-filter-clear,
+body.is-tablet .folder-sidebar-root .fs-filter-clear {
+  width: 40px;
+  height: 40px;
+}
+
+body.is-mobile .folder-sidebar-root input.fs-inline-input,
+body.is-tablet .folder-sidebar-root input.fs-inline-input {
+  height: 34px;
+  font-size: 16px;
+}
+
+body.is-mobile .folder-sidebar-root .fs-text-button,
+body.is-tablet .folder-sidebar-root .fs-text-button,
+body.is-mobile .folder-sidebar-root .fs-here-seg,
+body.is-tablet .folder-sidebar-root .fs-here-seg {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+body.is-mobile .folder-sidebar-root .fs-here,
+body.is-tablet .folder-sidebar-root .fs-here {
+  font-size: 13px;
+}
+
+/* Touch drag: the floating copy lives on <body>, so it carries its own look. */
+.fl-touch-ghost.fs-item {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  font-size: 14px;
+}
+
+.fl-touch-ghost .fs-item-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+.fl-touch-ghost .fs-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fl-touch-ghost .fs-actions,
+.fl-touch-ghost .fs-chevron-slot,
+.fl-touch-ghost .fs-count {
+  display: none;
+}
+
+.fl-touch-ghost .fs-glyph {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.fl-touch-ghost .fs-glyph svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Shown while an item is lifted: tells a drag apart from the menu. */
+.fl-drag-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: calc(var(--layer-notice, 1000) + 1);
+  padding: 8px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   Folder Library (right pane, folder-library-view).
+   Library view styles.
+   ========================================================================== */
+
+.workspace-leaf-content[data-type="finenotes-folder-library"] .view-content {
+  padding: 0;
+}
+
+.folder-library-root {
+  --fl-fg1: var(--text-normal);
+  --fl-fg2: var(--text-muted);
+  --fl-fg3: var(--text-faint);
+  --fl-bg1: var(--background-primary);
+  --fl-bg2: var(--background-secondary);
+  --fl-bg4: var(--background-modifier-border);
+  --fl-neutral-container: var(--background-modifier-hover);
+  --fl-neutral-container-press: var(--background-modifier-active-hover);
+  --fl-card-bg: var(--background-primary);
+  --fl-shadow-1: none;
+  --fl-shadow-2: none;
+  --fl-thumb-bg: var(--background-secondary);
+  --fl-font: var(--font-interface);
+
+  position: relative;
+  height: 100%;
+  box-sizing: border-box;
+  background-color: var(--fl-bg1);
+  color: var(--fl-fg1);
+  font-family: var(--fl-font);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theme-dark .folder-library-root {
+  --fl-card-bg: var(--background-primary);
+  --fl-thumb-bg: var(--background-secondary-alt);
+}
+
+/* Scroll container and the 880px centered column (FolderPage_pageContent) */
+.folder-library-root .fl-scroll {
+  height: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.folder-library-root .fl-page {
+  width: 100%;
+  max-width: 880px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+  .folder-library-root .fl-scroll {
+    padding: 16px;
+  }
+}
+
+/* Breadcrumbs */
+.folder-library-root .fl-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--fl-fg2);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.folder-library-root .fl-crumb {
+  /* Never let a crumb flex-shrink to nothing; long paths wrap instead (.fl-crumbs wraps). */
+  flex: 0 0 auto;
+  /* Every crumb, the current one too, is the same kind of box, so they share one baseline. */
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  line-height: 16px;
+  max-width: 240px;
+  padding: 4px 6px;
+  margin: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fl-fg2);
+  font: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.folder-library-root .fl-crumb:hover {
+  background-color: var(--fl-neutral-container);
+  color: var(--fl-fg1);
+}
+
+.folder-library-root .fl-crumb-label {
+  min-width: 1ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-library-root .fl-crumb.is-current {
+  color: var(--fl-fg1);
+  font-weight: 600;
+  cursor: default;
+}
+
+.folder-library-root .fl-crumb-sep {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--fl-fg3);
+}
+
+.folder-library-root .fl-crumb-sep svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+/* Section headings: "Notes" / "Folders" (FolderPage_sectionHeader: 17px, weight 500) */
+.folder-library-root .fl-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.folder-library-root .fl-section-header,
+.folder-library-root .fl-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  width: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.folder-library-root .fl-section-title {
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  font-weight: 500;
+  line-height: normal;
+  color: var(--fl-fg1);
+}
+
+/* Grid geometry: gap 16, columns set inline from the container width */
+.folder-library-root .fl-grid {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  width: 100%;
+}
+
+.folder-library-root .fl-grid-item {
+  min-width: 0;
+}
+
+/* Sort button and grid/list segmented control (28px icon button, 0.5px border on the toggle) */
+.folder-library-root .fl-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fl-fg2);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.folder-library-root .fl-icon-button:hover {
+  background-color: var(--fl-neutral-container);
+  color: var(--fl-fg1);
+}
+
+.folder-library-root .fl-icon-button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+/* Library icons come from Obsidian (setIcon), with a stroke heavy enough for the iPad. */
+.folder-library-root .fl-icon-button svg,
+.folder-library-root .fl-seg-icon svg,
+.folder-library-root .fl-options-button svg,
+.folder-library-root .fl-crumb-sep svg,
+.folder-library-root .fl-empty-icon svg {
+  stroke: currentColor;
+  stroke-width: 2px;
+}
+
+.folder-library-root [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.folder-library-root .fl-view-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 0.5px solid var(--fl-bg4);
+  border-radius: 8px;
+}
+
+.folder-library-root .fl-seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fl-fg2);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.folder-library-root .fl-seg:hover,
+.folder-library-root .fl-seg.is-selected {
+  background-color: var(--fl-neutral-container);
+}
+
+.folder-library-root .fl-seg.is-selected {
+  color: var(--fl-fg1);
+}
+
+.folder-library-root .fl-seg-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+}
+
+.folder-library-root .fl-seg-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+/* Folder cards (FolderPage_folderCard: 16px radius, 0.5px border, min-height 105px) */
+.folder-library-root .fl-folder-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  min-height: 105px;
+  box-sizing: border-box;
+  padding: 16px 8px 16px 16px;
+  overflow: hidden;
+  border: 0.5px solid var(--fl-bg4);
+  border-radius: 16px;
+  background-color: var(--fl-card-bg);
+  color: var(--fl-fg1);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: background-color 0.15s;
+}
+
+@media (hover: hover) {
+  .folder-library-root .fl-folder-card:hover {
+    background-color: var(--fl-bg2);
+  }
+}
+
+.folder-library-root .fl-folder-title {
+  max-width: 100%;
+  font-size: 15px;
+  line-height: 15px;
+  font-weight: 700;
+  color: var(--fl-fg1);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.folder-library-root .fl-folder-count {
+  font-size: 15px;
+  line-height: 15px;
+  color: var(--fl-fg2);
+  white-space: nowrap;
+}
+
+/* Note cards (NoteGridCard): 16px radius, level-1 shadow, level-2 on hover */
+.folder-library-root .fl-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background-color: var(--fl-card-bg);
+  box-shadow: var(--fl-shadow-1);
+  transition: box-shadow 0.15s;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+@media (hover: hover) {
+  .folder-library-root .fl-card:hover {
+    box-shadow: var(--fl-shadow-2);
+  }
+}
+
+.folder-library-root .fl-thumb-area {
+  position: relative;
+  flex-shrink: 0;
+  width: 100%;
+  height: 148px;
+  box-sizing: border-box;
+  border-bottom: 0.5px solid var(--fl-bg4);
+  background-color: var(--fl-thumb-bg);
+}
+
+.folder-library-root .fl-thumb-slot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.folder-library-root .fl-thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.folder-library-root .fl-thumb-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  color: var(--fl-fg3);
+}
+
+.folder-library-root .fl-thumb-ext {
+  font-size: 20px;
+  line-height: 20px;
+  font-weight: 700;
+  color: var(--fl-fg2);
+}
+
+.folder-library-root .fl-thumb-file-icon {
+  display: flex;
+  color: var(--fl-fg3);
+}
+
+.folder-library-root .fl-thumb-file-icon svg {
+  width: 28px;
+  height: 28px;
+  display: block;
+}
+
+/* Live markdown preview: rendered at 400px, scaled down by a transform set in JS */
+.folder-library-root .fl-md-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 400px;
+  box-sizing: border-box;
+  padding: 20px;
+  background-color: var(--background-primary);
+  color: var(--fl-fg1);
+  transform-origin: 0 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+.folder-library-root .fl-options-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 8px;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--fl-fg1);
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.folder-library-root .fl-options-button:hover {
+  background-color: var(--fl-neutral-container);
+}
+
+.folder-library-root .fl-options-button:active {
+  background-color: var(--fl-neutral-container-press);
+}
+
+.folder-library-root .fl-options-button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.folder-library-root .fl-card-body {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 16px;
+}
+
+/* Title: 17px medium, 2-line clamp in a 34px box */
+.folder-library-root .fl-card-title {
+  height: 34px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 17px;
+  line-height: 17px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--fl-fg1);
+}
+
+/* List view rows (DateGroupedNoteList): 8px padding, 40px thumbnail, 8px radius */
+.folder-library-root .fl-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folder-library-root .fl-list-item {
+  list-style: none;
+  min-width: 0;
+}
+
+.folder-library-root .fl-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  background-color: transparent;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: background-color 0.15s;
+}
+
+@media (hover: hover) {
+  .folder-library-root .fl-row:hover {
+    background-color: var(--fl-bg2);
+  }
+}
+
+.folder-library-root .fl-row-thumb {
+  position: relative;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  box-sizing: border-box;
+  border: 0.5px solid var(--fl-bg4);
+  border-radius: 8px;
+  background-color: var(--background-primary);
+  overflow: hidden;
+}
+
+.folder-library-root .fl-row-thumb .fl-thumb-ext {
+  font-size: 9px;
+  line-height: 9px;
+}
+
+.folder-library-root .fl-row-thumb .fl-thumb-file-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.folder-library-root .fl-row-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.folder-library-root .fl-row-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  line-height: 15px;
+  font-weight: 500;
+  color: var(--fl-fg1);
+}
+
+.folder-library-root .fl-row-date {
+  font-size: 12px;
+  line-height: 12px;
+  color: var(--fl-fg2);
+  white-space: nowrap;
+}
+
+.folder-library-root .fl-row-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 12px;
+  font-weight: 700;
+  color: var(--fl-fg3);
+  white-space: nowrap;
+}
+
+/* Empty state: centered muted line */
+.folder-library-root .fl-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 160px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  text-align: center;
+  font-size: 15px;
+  line-height: 15px;
+  color: var(--fl-fg2);
+}
+
+.folder-library-root .fl-empty-icon {
+  display: flex;
+  color: var(--fl-fg3);
+}
+
+.folder-library-root .fl-empty-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.folder-library-root .fl-empty-text {
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.folder-library-root .fl-empty-text strong {
+  font-weight: 700;
+  color: var(--fl-fg2);
+}
+
+/* Touch (iPad and phone): no hover, so actions stay visible and targets are at least 32px */
+@media (hover: none) {
+  .folder-library-root .fl-options-button,
+  .folder-library-root .fl-icon-button,
+  .folder-library-root .fl-seg,
+  .folder-library-root .fl-crumb {
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  .folder-library-root .fl-options-button {
+    width: 32px;
+    height: 32px;
+  }
+
+  .folder-library-root .fl-icon-button {
+    width: 32px;
+    height: 32px;
+  }
+
+  .folder-library-root .fl-row {
+    min-height: 56px;
+  }
+}
+
+body.is-mobile .folder-library-root .fl-row,
+body.is-tablet .folder-library-root .fl-row {
+  min-height: 56px;
+}
+
+/* ---- New button, Select toggle, selection mode ---- */
+.folder-library-root .fl-new-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 6px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  margin-left: 4px;
+  border-radius: 10px;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.folder-library-root .fl-new-button:hover {
+  background-color: var(--interactive-accent-hover);
+}
+
+.folder-library-root .fl-new-icon,
+.folder-library-root .fl-text-button-icon,
+.folder-library-root .fl-action-icon,
+.folder-library-root .fl-check-icon {
+  display: inline-flex;
+}
+
+.folder-library-root .fl-new-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 2.5px;
+}
+
+.folder-library-root .fl-text-button {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--fl-fg2);
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.folder-library-root .fl-text-button:hover,
+.folder-library-root .fl-text-button.is-active {
+  background-color: var(--fl-neutral-container);
+  color: var(--fl-fg1);
+}
+
+.folder-library-root .fl-text-button-icon svg,
+.folder-library-root .fl-action-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 2px;
+}
+
+/* Selection indicator: hidden outside selection mode */
+.folder-library-root .fl-check {
+  display: none;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--text-faint);
+  border-radius: 50%;
+  background-color: var(--background-primary);
+  color: transparent;
+  pointer-events: none;
+}
+
+.folder-library-root .fl-check-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 3px;
+}
+
+.folder-library-root .is-selecting .fl-check {
+  display: flex;
+}
+
+.folder-library-root .is-selected > .fl-thumb-area > .fl-check,
+.folder-library-root .fl-row.is-selected > .fl-check {
+  border-color: var(--interactive-accent);
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.folder-library-root .fl-row {
+  position: relative;
+}
+
+.folder-library-root .fl-row.is-selected {
+  background-color: var(--fl-neutral-container);
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.folder-library-root .is-selecting .fl-row {
+  padding-left: 44px;
+}
+
+.folder-library-root .fl-row > .fl-check {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Floating action bar */
+.folder-library-root .fl-action-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  padding: 6px 8px 6px 14px;
+  border-radius: 16px;
+  background-color: var(--background-primary);
+  border: 0.5px solid var(--background-modifier-border);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.folder-library-root .fl-action-count {
+  margin-right: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--fl-fg1);
+}
+
+.folder-library-root .fl-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 14px;
+  white-space: nowrap;
+  color: var(--fl-fg1);
+  cursor: pointer;
+}
+
+.folder-library-root .fl-action:hover {
+  background-color: var(--fl-neutral-container);
+}
+
+.folder-library-root .fl-action-danger {
+  color: var(--text-error);
+}
+
+.folder-library-root .fl-action.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.fl-modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 16px;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  background-color: var(--interactive-normal);
+  color: var(--text-normal);
+}
+
+.fl-modal-btn.mod-warning {
+  background-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+
+@media (hover: none) {
+  .folder-library-root .fl-new-button {
+    height: 36px;
+  }
+
+  .folder-library-root .fl-text-button {
+    min-height: 32px;
+  }
+
+  .folder-library-root .fl-action {
+    min-height: 36px;
+  }
+}
+
+/* Touch drag (iPad): stop iOS from showing its own callout or text selection while holding. */
+body.is-mobile .folder-library-root .fl-card,
+body.is-mobile .folder-library-root .fl-row,
+body.is-mobile .folder-sidebar-root .fs-item {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Item held and ready to drag or open its menu. */
+.fl-touch-armed {
+  transform: scale(1.04);
+  box-shadow: var(--shadow-l);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  position: relative;
+  z-index: 2;
+}
+
+/* Floating copy that follows the finger. */
+.fl-touch-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  margin: 0;
+  transform-origin: center center;
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: var(--layer-notice, 1000);
+  box-shadow: var(--shadow-l);
+  will-change: transform;
+}
+
+/* Library folder cards are drop targets too (same look as the sidebar rows). */
+.folder-library-root .fl-folder-card.is-drop-target {
+  background-color: color-mix(
+    in srgb,
+    var(--accent-accent, var(--interactive-accent)),
+    transparent 85%
+  );
+  box-shadow: inset 0 0 0 1px var(--accent-accent, var(--interactive-accent));
+}
+
+/* ==========================================================================
+   Library look: flat cards with thin borders, a compact header, a command strip and
+   one scrolling row of subfolder tabs. Later rules refine the base styles above.
+   ========================================================================== */
+.folder-library-root .fl-scroll {
+  padding: 20px 24px 48px;
+}
+
+.folder-library-root .fl-page {
+  max-width: 920px;
+  gap: 18px;
+}
+
+/* Header: tinted folder chip, title, then path and counts on one line. */
+.folder-library-root .fl-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.folder-library-root .fl-header-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.folder-library-root .fl-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  box-sizing: border-box;
+  border: 1px solid var(--fs-border);
+  border-radius: 8px;
+  background-color: var(--background-secondary);
+  color: var(--text-faint);
+}
+
+.folder-library-root .fl-chip svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.75px;
+}
+
+.folder-library-root .fl-chip.has-color {
+  border-color: color-mix(in srgb, var(--fs-color) 40%, transparent);
+  background-color: color-mix(in srgb, var(--fs-color) 14%, transparent);
+  color: var(--fs-color);
+}
+
+.folder-library-root .fl-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--fl-fg1);
+}
+
+.folder-library-root .fl-meta {
+  min-width: 0;
+  padding-left: 42px;
+  font-size: 13px;
+  color: var(--fl-fg2);
+}
+
+.folder-library-root .fl-meta .fl-crumbs {
+  gap: 0;
+}
+
+.folder-library-root .fl-meta-counts {
+  padding: 4px 0;
+  color: var(--fl-fg3);
+  white-space: nowrap;
+}
+
+.folder-library-root .fl-meta .fl-crumb-sep {
+  width: 12px;
+  height: 12px;
+}
+
+/* Subfolders: one scrolling row of compact tabs. */
+.folder-library-root .fl-tabs {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.folder-library-root .fl-tab-item {
+  flex: none;
+  min-width: 0;
+}
+
+.folder-library-root .fl-folder-card {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--fs-border);
+  border-radius: 8px;
+  background-color: var(--background-primary);
+}
+
+.folder-library-root .fl-folder-card.has-color {
+  border-left: 3px solid var(--fs-color);
+  padding-left: 8px;
+}
+
+.folder-library-root .fl-folder-card.is-drop-target {
+  background-color: color-mix(in srgb, var(--fs-accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px var(--fs-accent);
+}
+
+.folder-library-root .fl-folder-glyph {
+  flex: none;
+  display: inline-flex;
+  color: var(--fl-fg3);
+}
+
+.folder-library-root .fl-folder-glyph svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75px;
+}
+
+.folder-library-root .fl-folder-card.has-color .fl-folder-glyph {
+  color: var(--fs-color);
+}
+
+.folder-library-root .fl-folder-card.has-color .fl-folder-glyph svg {
+  fill: color-mix(in srgb, var(--fs-color) 22%, transparent);
+}
+
+.folder-library-root .fl-folder-title {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  -webkit-line-clamp: unset;
+}
+
+.folder-library-root .fl-folder-count {
+  font-size: 12px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--fl-fg3);
+}
+
+/* Command strip: Select, sort, view toggle, New. */
+.folder-library-root .fl-toolbar {
+  height: auto;
+  min-height: 42px;
+  box-sizing: border-box;
+  padding: 4px;
+  gap: 2px;
+  flex-wrap: wrap;
+  border: 1px solid var(--fs-border);
+  border-radius: 8px;
+}
+
+.folder-library-root .fl-view-toggle {
+  margin-left: auto;
+}
+
+.folder-library-root .fl-text-button {
+  height: 30px;
+  border-radius: 6px;
+  font-size: 13.5px;
+}
+
+.folder-library-root .fl-text-button.is-primary {
+  color: var(--fs-accent);
+}
+
+.folder-library-root .fl-new-button {
+  height: 30px;
+  padding: 0 10px;
+  margin-left: 4px;
+  border: 1px solid color-mix(in srgb, var(--fs-accent) 45%, transparent);
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--fs-accent);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.folder-library-root .fl-new-button:hover {
+  background-color: color-mix(in srgb, var(--fs-accent) 10%, transparent);
+}
+
+.folder-library-root .fl-new-icon svg {
+  stroke-width: 2px;
+}
+
+/* Note cards ("sheets"): flat, bordered, thumbnail inset like a page on a mat. */
+.folder-library-root .fl-card {
+  border: 1px solid var(--fs-border);
+  border-radius: 10px;
+  box-shadow: none;
+  transition: border-color 0.15s;
+}
+
+@media (hover: hover) {
+  .folder-library-root .fl-card:hover {
+    border-color: var(--text-faint);
+    box-shadow: none;
+  }
+}
+
+.folder-library-root .fl-thumb-area {
+  width: auto;
+  margin: 6px 6px 0;
+  border: 1px solid var(--fs-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.folder-library-root .fl-card-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 4px 8px 10px;
+}
+
+.folder-library-root .fl-card-title {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  min-height: 2.6em;
+  font-size: 13.5px;
+  line-height: 1.3;
+  font-weight: 500;
+}
+
+.folder-library-root .fl-options-button {
+  flex: none;
+  border-radius: 6px;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    background-color 0.1s;
+}
+
+.folder-library-root .fl-card:hover .fl-options-button,
+.folder-library-root .fl-card:focus-within .fl-options-button,
+.folder-library-root .fl-options-button:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .folder-library-root .fl-options-button {
+    opacity: 1;
+  }
+}
+
+body.is-mobile .folder-library-root .fl-options-button,
+body.is-tablet .folder-library-root .fl-options-button {
+  opacity: 1;
+}
+
+.folder-library-root .is-selecting .fl-options-button {
+  display: none;
+}
+
+.folder-library-root .fl-card.is-selected {
+  border-color: var(--fs-accent);
+  box-shadow: inset 0 0 0 1px var(--fs-accent);
+}
+
+/* List view: dense rows with hairline separators. */
+.folder-library-root .fl-list-item {
+  border-bottom: 1px solid var(--fs-border);
+}
+
+.folder-library-root .fl-list-item:last-child {
+  border-bottom: none;
+}
+
+.folder-library-root .fl-row {
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.folder-library-root .fl-row-time {
+  font-weight: 400;
+}
+
+/* Empty state: says what to do next. */
+.folder-library-root .fl-empty {
+  gap: 6px;
+  min-height: 180px;
+  padding: 28px 16px;
+  border: 1px dashed var(--fs-border);
+  border-radius: 10px;
+  line-height: 1.3;
+}
+
+.folder-library-root .fl-empty-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fl-fg1);
+}
+
+.folder-library-root .fl-empty-tip {
+  max-width: 38ch;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--fl-fg2);
+}
+
+.folder-library-root .fl-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.folder-library-root .fl-empty-actions .fl-text-button {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--fs-border);
+}
+
+.folder-library-root .fl-empty-actions .fl-text-button.is-primary {
+  border-color: color-mix(in srgb, var(--fs-accent) 45%, transparent);
+}
+
+/* Touch: every control at least 44px. */
+@media (hover: none) {
+  .folder-library-root .fl-text-button,
+  .folder-library-root .fl-new-button,
+  .folder-library-root .fl-seg {
+    min-height: 44px;
+  }
+
+  .folder-library-root .fl-options-button {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+body.is-mobile .folder-library-root .fl-text-button,
+body.is-tablet .folder-library-root .fl-text-button,
+body.is-mobile .folder-library-root .fl-new-button,
+body.is-tablet .folder-library-root .fl-new-button,
+body.is-mobile .folder-library-root .fl-seg,
+body.is-tablet .folder-library-root .fl-seg,
+body.is-mobile .folder-library-root .fl-folder-card,
+body.is-tablet .folder-library-root .fl-folder-card {
+  min-height: 44px;
+}
+
+body.is-mobile .folder-library-root .fl-options-button,
+body.is-tablet .folder-library-root .fl-options-button {
+  width: 40px;
+  height: 40px;
+}
+
+body.is-mobile .folder-library-root .fl-meta,
+body.is-tablet .folder-library-root .fl-meta {
+  padding-left: 0;
+}
+
+@media (max-width: 600px) {
+  .folder-library-root .fl-scroll {
+    padding: 14px 14px 40px;
+  }
+
+  .folder-library-root .fl-meta {
+    padding-left: 0;
+  }
+}
+
+.folder-library-root .fl-meta-dot {
+  padding: 0 6px;
+  color: var(--fl-fg3);
+}
+
+/* ==========================================================================
+   One look for every menu, dialog and search result.
+   ========================================================================== */
+
+/* Obsidian's menus (and their submenus) while one of ours is open: flat, bordered, themed. */
+body.fs-menu-open .menu {
+  padding: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background-color: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  font-family: var(--font-interface);
+}
+
+body.fs-menu-open .menu .menu-item {
+  border-radius: 6px;
+  color: var(--text-normal);
+  font-size: 14px;
+}
+
+body.fs-menu-open .menu .menu-item:hover,
+body.fs-menu-open .menu .menu-item.selected {
+  background-color: var(--background-modifier-hover);
+}
+
+body.fs-menu-open .menu .menu-item.is-warning,
+body.fs-menu-open .menu .menu-item.is-warning .menu-item-icon {
+  color: var(--text-error);
+}
+
+body.fs-menu-open .menu .menu-item .menu-item-icon {
+  color: var(--text-faint);
+}
+
+body.fs-menu-open .menu .menu-separator {
+  margin: 4px 6px;
+  border-color: var(--background-modifier-border);
+}
+
+body.is-mobile.fs-menu-open .menu .menu-item,
+body.is-tablet.fs-menu-open .menu .menu-item {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+/* A file input kept off screen (iOS needs it in the page to open the picker). */
+.fs-focus-bridge {
+  position: fixed;
+  left: -1000px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Dialogs: color, rename, delete. */
+.fs-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.fs-modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  color: var(--text-normal);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.fs-modal-btn:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.fs-modal-btn.is-primary {
+  border-color: var(--interactive-accent);
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.fs-modal-btn.is-danger {
+  border-color: var(--text-error);
+  background-color: var(--text-error);
+  color: #fff;
+}
+
+body.is-mobile .fs-modal-btn,
+body.is-tablet .fs-modal-btn {
+  min-height: 44px;
+}
+
+.fs-modal-label {
+  margin: 14px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.fs-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.fs-swatch {
+  width: 32px;
+  height: 32px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+body.is-mobile .fs-swatch,
+body.is-tablet .fs-swatch {
+  width: 40px;
+  height: 40px;
+}
+
+.fs-swatch.is-none {
+  border: 1.5px solid var(--text-faint);
+  background-image: linear-gradient(
+    to top right,
+    transparent calc(50% - 1px),
+    var(--text-faint) 50%,
+    transparent calc(50% + 1px)
+  );
+}
+
+.fs-swatch.is-current {
+  box-shadow:
+    0 0 0 2px var(--background-primary),
+    0 0 0 4px var(--interactive-accent);
+}
+
+.fs-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fs-custom-row input.fs-color-input {
+  flex: none;
+  width: 56px;
+  height: 40px;
+  padding: 2px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.fs-custom-row input.fs-hex-input,
+.fs-prompt-modal input.fs-prompt-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background-color: var(--background-primary);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: 16px;
+}
+
+.fs-prompt-modal input.fs-prompt-input {
+  width: 100%;
+}
+
+/* Edit mode: every row shows its "..." in place of the note count. */
+.folder-sidebar-root .fs-pane.is-edit .fs-actions {
+  display: flex;
+}
+
+.folder-sidebar-root .fs-pane.is-edit .fs-count {
+  visibility: hidden;
+}
+
+.folder-sidebar-root .fs-pane.is-edit .fs-more {
+  background-color: transparent;
+}
+
+body.is-mobile .folder-sidebar-root .fs-pane.is-edit .fs-item .fs-actions,
+body.is-tablet .folder-sidebar-root .fs-pane.is-edit .fs-item .fs-actions {
+  display: flex;
+}
+
+body.is-mobile .folder-sidebar-root .fs-pane.is-edit .fs-item .fs-count,
+body.is-tablet .folder-sidebar-root .fs-pane.is-edit .fs-item .fs-count {
+  visibility: hidden;
+}
+
+.folder-sidebar-root .fs-icon-button[aria-pressed="true"] {
+  background-color: color-mix(in srgb, var(--fs-accent) 14%, transparent);
+  color: var(--fs-accent);
+}
+
+/* Typing on iPad: room under the last rows so the field can scroll above the keyboard. */
+.folder-sidebar-root .fs-pane.is-typing .fs-list {
+  padding-bottom: 65vh;
+}
+
+/* Search results inside notes. */
+.folder-sidebar-root .fs-empty.is-small {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.folder-sidebar-root .fs-search {
+  padding-bottom: 8px;
+}
+
+.folder-sidebar-root .fs-search-note {
+  padding: 6px 10px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.folder-sidebar-root .fs-search-note.is-faint {
+  color: var(--text-faint);
+}
+
+.folder-sidebar-root .fs-hit {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 1px 0;
+  padding: 8px 8px 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.folder-sidebar-root .fs-hit:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.folder-sidebar-root .fs-hit:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fs-accent);
+}
+
+.folder-sidebar-root .fs-hit-icon {
+  margin-top: 2px;
+}
+
+.folder-sidebar-root .fs-hit-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.folder-sidebar-root .fs-hit-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.folder-sidebar-root .fs-hit-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.folder-sidebar-root .fs-hit-snippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.folder-sidebar-root .fs-hit mark {
+  padding: 0;
+  border-radius: 2px;
+  background-color: color-mix(in srgb, var(--fs-accent) 28%, transparent);
+  color: inherit;
+}
+
+body.is-mobile .folder-sidebar-root .fs-hit,
+body.is-tablet .folder-sidebar-root .fs-hit {
+  min-height: 44px;
 }

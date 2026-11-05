@@ -53,6 +53,8 @@ import {
   ICON_STYLUS_ONLY,
   ICON_STYLUS_ONLY_SVG,
   PREVIOUS_PLUGIN_ID,
+  VIEW_TYPE_FOLDERS,
+  VIEW_TYPE_FOLDER_LIBRARY,
   VIEW_TYPE_INK,
   VIEW_TYPE_LIBRARY,
 } from "./constants";
@@ -146,6 +148,8 @@ import {
 } from "./model/library-style";
 import { prepareImageBytes } from "./view/image-import";
 import { LibraryView } from "./view/library-view";
+import { FolderSidebarController } from "./view/folder-sidebar/controller";
+import { folderSidebarDataOf } from "./model/folder-sidebar-data";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
 import { PageEmbeds } from "./view/page-embed";
 import type { EraserMode } from "./view/toolbar";
@@ -317,7 +321,9 @@ export default class GoodObsidianPlugin extends Plugin {
 
   private syncExplorerNotebookButton(): void {
     this.emptyTabHome.sync(
-      this.app.workspace.getLeavesOfType("empty").map((leaf) => ({ leaf, el: leaf.view.containerEl })),
+      this.app.workspace
+        .getLeavesOfType("empty")
+        .map((leaf) => ({ leaf, el: leaf.view.containerEl })),
     );
     const explorers = this.app.workspace.getLeavesOfType("file-explorer").map((leaf) => leaf.view);
     this.explorerNotebookButton.sync(
@@ -328,6 +334,13 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   override settings!: GoodObsidianSettings;
+  /**
+   * The Folders sidebar of the simple look and its library (view/folder-sidebar).
+   * Made on load; it acts only while the simple look is on.
+   */
+  folderSidebar!: FolderSidebarController;
+  /** The workspace has been laid out: the Folders sidebar may be put in place. */
+  private layoutIsReady = false;
   /** `![[Notebook#page=3]]` previews in notes; repainted when the page appearance changes. */
   private pageEmbeds: PageEmbeds | null = null;
   /** Transcription engines by id. Manual always; the cloud one is added on load. */
@@ -551,6 +564,31 @@ export default class GoodObsidianPlugin extends Plugin {
           isInkFile: (file) => this.isInkFile(file),
         }),
     );
+    // The Folders sidebar and its library, for the simple look. Their view
+    // types differ from the standalone Folder Sidebar plugin's, so both can be installed.
+    this.folderSidebar = new FolderSidebarController({
+      app: this.app,
+      owner: this,
+      pluginDir: this.pluginDir,
+      host: {
+        openNewNotebookDialog: (folder) => this.openNewNotebookDialog(folder),
+        openImportNotebook: (folder) => this.openImportNotebook(folder),
+      },
+      data: () => this.settings.folderSidebar,
+      save: () => this.saveSettings(),
+    });
+    this.registerView(VIEW_TYPE_FOLDERS, (leaf) => this.folderSidebar.createSidebarView(leaf));
+    this.registerView(VIEW_TYPE_FOLDER_LIBRARY, (leaf) =>
+      this.folderSidebar.createLibraryView(leaf),
+    );
+    this.folderSidebar.followVault();
+    this.register(() => this.folderSidebar.dispose());
+    // On start, and when the simple look is turned on later, the Folders tab
+    // is made once (never again from a layout change, so closing it sticks).
+    this.app.workspace.onLayoutReady(() => {
+      this.layoutIsReady = true;
+      this.syncFolderSidebar();
+    });
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
     addIcon(ICON_LIBRARY, ICON_LIBRARY_SVG);
@@ -748,6 +786,11 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   async openLibrary(into?: WorkspaceLeaf): Promise<void> {
+    // The simple look has a library of its own, opened from the Folders sidebar.
+    if (this.settings.simpleLook) {
+      await this.folderSidebar.openLibrary(into);
+      return;
+    }
     const open = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
     const leaf = open ?? into ?? this.app.workspace.getLeaf("tab");
     if (!open) await leaf.setViewState({ type: VIEW_TYPE_LIBRARY, active: true });
@@ -780,6 +823,27 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "open-library",
       name: t("notebooks.command.openLibrary"),
       callback: () => void this.openLibrary(),
+    });
+
+    // Only while the simple look is on: the Folders sidebar is part of it.
+    this.addCommand({
+      id: "open-folder-sidebar",
+      name: t("notebooks.command.openFolderSidebar"),
+      checkCallback: (checking) => {
+        if (!this.settings.simpleLook) return false;
+        if (!checking) void this.folderSidebar.showSidebar();
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "open-folder-library",
+      name: t("notebooks.command.openFolderLibrary"),
+      checkCallback: (checking) => {
+        if (!this.settings.simpleLook) return false;
+        if (!checking) void this.folderSidebar.openLibrary();
+        return true;
+      },
     });
 
     this.addCommand({
@@ -1052,6 +1116,7 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarHome;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
+    this.settings.folderSidebar = folderSidebarDataOf(saved?.folderSidebar);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
     if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
     // A Zoom box line step outside the slider's range is a hand-edited file,
@@ -1327,6 +1392,16 @@ export default class GoodObsidianPlugin extends Plugin {
     body.classList.add(...simpleClasses(this.settings.simpleLook));
   }
 
+  /**
+   * The Folders sidebar follows the simple look: in the left split and the
+   * search index running while it is on, closed and stopped while it is off.
+   * Waits for the workspace, and does nothing when the answer has not changed.
+   */
+  private syncFolderSidebar(): void {
+    if (!this.layoutIsReady) return;
+    this.folderSidebar.syncSimpleLook(this.settings.simpleLook);
+  }
+
   setSimpleLook(on: boolean): void {
     this.settings.simpleLook = on;
     void this.saveSettings();
@@ -1334,6 +1409,7 @@ export default class GoodObsidianPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     this.applySimpleLook();
+    this.syncFolderSidebar();
     await this.saveData(this.settings);
     this.syncExplorerNotebookButton();
   }
@@ -2792,8 +2868,8 @@ export default class GoodObsidianPlugin extends Plugin {
       if (!open) return file;
       // Straight into the notebook view, in the current tab, focused; made
       // from Home it gets a tab of its own, so Home stays where it is.
-      const fromHome =
-        this.app.workspace.getMostRecentLeaf()?.view.getViewType() === VIEW_TYPE_LIBRARY;
+      const recent = this.app.workspace.getMostRecentLeaf()?.view.getViewType();
+      const fromHome = recent === VIEW_TYPE_LIBRARY || recent === VIEW_TYPE_FOLDER_LIBRARY;
       const tab = this.app.workspace.getLeaf(fromHome ? "tab" : false);
       await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
       await this.app.workspace.revealLeaf(tab);

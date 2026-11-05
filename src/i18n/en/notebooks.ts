@@ -656,6 +656,7 @@ export const notebooks = {
   "notebooks.noteSettings.updateOpen": "Open FineNotes in Community plugins to update it",
   "notebooks.noteSettings.muteUpdate": "Don't show again",
   "notebooks.noteSettings.look": "Look",
+  // Superseded by notebooks.noteSettings.simpleLookFoldersDesc; kept for the locale files.
   "notebooks.noteSettings.simpleLookDesc":
     "Hide Obsidian's sidebars, ribbon and bars. Off brings normal Obsidian back.",
   "notebooks.noteSettings.muteUpdateInfo": 'Stop showing "Update available"; the gear\'s dot stays',
@@ -989,4 +990,10 @@ export const notebooks = {
   "notebooks.home.when.hours.one": "{count} h ago",
   "notebooks.home.when.hours.other": "{count} h ago",
   "notebooks.home.when.yesterday": "Yesterday",
+
+  // --- Folders sidebar commands ---
+  "notebooks.command.openFolderSidebar": "Open the Folders sidebar",
+  "notebooks.command.openFolderLibrary": "Open the Folders library",
+  "notebooks.noteSettings.simpleLookFoldersDesc":
+    "Hide Obsidian's sidebars, ribbon and bars, and show a Folders sidebar. Off brings normal Obsidian back.",
 } as const;

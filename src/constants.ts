@@ -13,6 +13,20 @@ export const VIEW_TYPE_INK = "goodobsidian-view";
 export const VIEW_TYPE_LIBRARY = "finenotes-library";
 
 /**
+ * The view type id of the Folders sidebar of the simple look, in the left
+ * split. Not the standalone Folder Sidebar plugin's id, so both can be
+ * installed at once.
+ */
+export const VIEW_TYPE_FOLDERS = "finenotes-folders";
+
+/**
+ * The view type id of the Folders library, the grid or list of a folder's
+ * notes that the simple look opens in place of the notebook library. Not the
+ * standalone plugin's id either.
+ */
+export const VIEW_TYPE_FOLDER_LIBRARY = "finenotes-folder-library";
+
+/**
  * The plugin id every release before the public one used. Settings saved
  * under it are carried over once when the plugin runs under a new id.
  */

@@ -1,3 +1,5 @@
+import { StubEl } from "./stub-dom";
+
 /**
  * A stand-in for the `obsidian` module, just big enough to load the plugin
  * entry (`src/main.ts`) and the notebook view (`src/view/ink-view.ts`) under
@@ -60,23 +62,38 @@ export class Notice {
 
 export class Component {
   private readonly cleanups: (() => void)[] = [];
+  /** Whether `load()` ran, as a component that is on screen has. */
+  loaded = false;
 
   register(cleanup: () => void): void {
     this.cleanups.push(cleanup);
   }
 
   registerEvent(_ref: unknown): void {}
-  registerDomEvent(..._args: unknown[]): void {}
+
+  /** Listen on an element that can be listened on; anything else is ignored. */
+  registerDomEvent(el: unknown, type: string, callback: (event: never) => unknown): void {
+    const target = el as { addEventListener?: (type: string, callback: unknown) => void } | null;
+    target?.addEventListener?.(type, callback);
+  }
 
   registerInterval(id: number): number {
     return id;
   }
 
   addChild<T>(child: T): T {
+    (child as { load?: () => void }).load?.();
     return child;
   }
 
-  load(): void {}
+  removeChild<T>(child: T): T {
+    (child as { unload?: () => void }).unload?.();
+    return child;
+  }
+
+  load(): void {
+    this.loaded = true;
+  }
 
   /** Run every `register`ed clean-up, newest first, as Obsidian does on unload. */
   unload(): void {
@@ -181,6 +198,12 @@ export class WorkspaceLeaf {
   setPinned(pinned: boolean): void {
     this.pinned = pinned;
   }
+
+  /** How many times the leaf was detached. */
+  detached = 0;
+  detach(): void {
+    this.detached++;
+  }
 }
 
 export class TFolder {
@@ -255,10 +278,15 @@ class Shell {
   constructor(..._args: unknown[]) {}
 }
 
-/** A view that is only constructed here, never opened. */
+/**
+ * A view as Obsidian builds it: `containerEl` (the tab's content) holding
+ * `contentEl`, and `open(parentEl)` as Obsidian's own does it, which puts the
+ * container in the parent, loads the component and then awaits `onOpen()`.
+ * A view that defines its own `open` never gets `onOpen` called: it stays blank.
+ */
 export class ItemView extends Component {
-  readonly contentEl: unknown = {};
-  readonly containerEl: unknown = {};
+  readonly containerEl: StubEl = new StubEl("div", "workspace-leaf-content");
+  readonly contentEl: StubEl = this.containerEl.createDiv("view-content");
   navigation = true;
   app: unknown;
 
@@ -266,6 +294,48 @@ export class ItemView extends Component {
     super();
     this.app = leaf.app;
   }
+
+  async open(parentEl: { appendChild(child: unknown): unknown }): Promise<void> {
+    parentEl.appendChild(this.containerEl);
+    this.load();
+    await this.onOpen();
+  }
+
+  onOpen(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  onClose(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  getState(): Record<string, unknown> {
+    return {};
+  }
+
+  setState(_state: unknown, _result: unknown): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+/** A view of a file. */
+export class FileView extends ItemView {
+  file: TFile | null = null;
+}
+
+/** Obsidian's `debounce`: the function itself, run at once, with the timer methods it has. */
+export function debounce<T extends (...args: never[]) => unknown>(
+  callback: T,
+  _timeout?: number,
+  _resetTimer?: boolean,
+): T & { cancel(): void; run(): void } {
+  const run = ((...args: Parameters<T>) => callback(...args)) as T & {
+    cancel(): void;
+    run(): void;
+  };
+  run.cancel = () => {};
+  run.run = () => {};
+  return run;
 }
 
 export class Modal extends Shell {

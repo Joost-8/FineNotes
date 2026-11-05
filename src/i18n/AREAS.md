@@ -103,11 +103,29 @@ An area's agent edits only these files plus src/i18n/en/<area>.ts.
 - src/view/graph-explore.ts
 - src/view/graph-window.ts
 
-## view (12)
+## view (31)
 
 - src/model/contents.ts
+- src/model/folder-colors.ts
+- src/model/folder-library-order.ts
+- src/model/folder-paths.ts
+- src/model/folder-search.ts
+- src/model/folder-sidebar-data.ts
+- src/model/folder-thumbnail.ts
 - src/view/comment-modal.ts
 - src/view/contents-title-modal.ts
+- src/view/folder-sidebar/context-menu.ts
+- src/view/folder-sidebar/controller.ts
+- src/view/folder-sidebar/files.ts
+- src/view/folder-sidebar/folder-library-view.ts
+- src/view/folder-sidebar/ink-thumbnail.ts
+- src/view/folder-sidebar/modals.ts
+- src/view/folder-sidebar/pdfjs.ts
+- src/view/folder-sidebar/search-index.ts
+- src/view/folder-sidebar/sidebar-view.ts
+- src/view/folder-sidebar/thumbnail-disk-cache.ts
+- src/view/folder-sidebar/thumbnails.ts
+- src/view/folder-sidebar/touch-drag.ts
 - src/view/ink-text-modal.ts
 - src/view/ink-view.ts
 - src/view/more-panel.ts
@@ -132,6 +150,7 @@ An area's agent edits only these files plus src/i18n/en/<area>.ts.
 
 ## settings (6)
 
+- src/view/folder-sidebar/settings-rows.ts
 - src/constants.ts
 - src/settings-data.ts
 - src/settings.ts

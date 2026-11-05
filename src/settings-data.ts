@@ -9,6 +9,7 @@
  */
 
 import type { FolderStyles } from "./model/library-style";
+import { type FolderSidebarData, defaultFolderSidebarData } from "./model/folder-sidebar-data";
 import { type ShapeToolStyle } from "./model/shape-style";
 import type { LearnedModel } from "./recognition/hwr/learned-model";
 import {
@@ -380,6 +381,8 @@ export interface GoodObsidianSettings {
   libraryStars: string[];
   /** The colour and icon chosen for library folders, by vault path. Cleaned where read. */
   libraryFolders: FolderStyles;
+  /** What the Folders sidebar of the simple look shows and remembers (`model/folder-sidebar-data.ts`). Cleaned on load. */
+  folderSidebar: FolderSidebarData;
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
@@ -553,6 +556,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   simpleLookHinted: false,
   libraryStars: [],
   libraryFolders: {},
+  folderSidebar: defaultFolderSidebarData(),
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",
   penCursor: "ink",
@@ -583,6 +587,7 @@ export function laserDefaultColorOf(raw: unknown): string {
  * headings, so a renamed heading keeps its state.
  */
 export const SETTINGS_SECTIONS = [
+  "folders",
   "writing",
   "shortcuts",
   "pages",
@@ -1018,6 +1023,8 @@ export function storeShownValue(settings: GoodObsidianSettings, key: string, sho
  */
 export function changesTabLayout(key: string): boolean {
   return (
+    // The Folders sidebar's section shows only while the simple look is on.
+    key === "simpleLook" ||
     key === "recognitionProviderId" ||
     key === "llmVendor" ||
     key === "imageVendor" ||

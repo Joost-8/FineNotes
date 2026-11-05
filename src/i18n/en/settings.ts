@@ -153,6 +153,8 @@ export const settings = {
   "settings.libraryExplorer.info":
     "Add a button that opens the notebook library, beside New note and New folder in the file explorer.",
   "settings.simpleLook.name": "Simple look",
+  // Superseded by settings.simpleLook.infoFolders (a Folders sidebar is shown). Kept so
+  // the locale files, which still name this key, stay valid; no longer shown.
   "settings.simpleLook.info":
     "Hide Obsidian's title bar, status bar, left ribbon and sidebars, and keep the tabs, so FineNotes looks like an app of its own. Turn it off here to bring them back.",
   "settings.folderNotebooks.name": "Show notebook folders as notebooks",
@@ -349,4 +351,46 @@ export const settings = {
   "settings.download.progress": "Downloading… {percent}% of {size}",
   "settings.download.verifying": "Checking the download…",
   "settings.download.ready": "Version {version}, {size}, on this device.",
+
+  // --- Folders sidebar section (view/folder-sidebar/settings-rows.ts) ---
+  "settings.folderSidebar.showFiles.name": "Show files in sidebar",
+  "settings.folderSidebar.showFiles.desc":
+    "List notes in the sidebar tree as well as folders. Off by default: notes are shown in the library.",
+  "settings.folderSidebar.showCounts.name": "Show note counts",
+  "settings.folderSidebar.showCounts.desc":
+    "Show how many notes each folder holds, at the right of its row.",
+  "settings.folderSidebar.showPinned.name": "Show pinned folders",
+  "settings.folderSidebar.showPinned.desc":
+    "Keep folders you pinned in a section at the top of the sidebar.",
+  "settings.folderSidebar.showRecent.name": "Show recent folders",
+  "settings.folderSidebar.showRecent.desc":
+    "List the last few folders you opened under the pinned ones.",
+  "settings.folderSidebar.autoColor.name": "Color new folders automatically",
+  "settings.folderSidebar.autoColor.desc":
+    "Off: new folders start uncolored and you choose a color when you want one. On: each new folder gets a random color.",
+  "settings.folderSidebar.hideAttachments.name": "Hide attachment folders",
+  "settings.folderSidebar.hideAttachments.desc":
+    "Hide folders named Attachments (where imported notebooks keep their PDFs) from the sidebar and the library. They stay in the vault.",
+  "settings.folderSidebar.searchNotes.name": "Search inside notes",
+  "settings.folderSidebar.searchNotes.desc":
+    "Type 3 or more letters in the filter box to also search the text of notes, notebooks and PDFs. Obsidian's own search cannot read inside notebooks or PDFs.",
+  "settings.folderSidebar.index.name": "Search index",
+  "settings.folderSidebar.index.rebuild": "Rebuild",
+  "settings.folderSidebar.indexed": "{docs} files indexed ({notebooks} notebooks, {pdfs} PDFs)",
+  "settings.folderSidebar.reading.one": "reading {count} more…",
+  "settings.folderSidebar.reading.other": "reading {count} more…",
+  "settings.folderSidebar.unsearchable.one":
+    "{count} scanned PDF has no text yet (open it in FineNotes so it can read it)",
+  "settings.folderSidebar.unsearchable.other":
+    "{count} scanned PDFs have no text yet (open them in FineNotes so it can read them)",
+  "settings.folderSidebar.tooLarge.one": "{count} PDF is too large to index",
+  "settings.folderSidebar.tooLarge.other": "{count} PDFs are too large to index",
+  "settings.folderSidebar.defaultView.name": "Default view",
+  "settings.folderSidebar.defaultView.desc":
+    "Show notes as a grid of thumbnails or as a compact list. You can also switch inside the library.",
+  "settings.folderSidebar.tips.name": "Show tips again",
+  "settings.folderSidebar.tips.desc": "Bring back the short tips card at the top of the sidebar.",
+  "settings.folderSidebar.tips.reset": "Reset tips",
+  "settings.simpleLook.infoFolders":
+    "Hide Obsidian's title bar, status bar, ribbon, right sidebar and the tab bar of the left sidebar, and show a Folders sidebar on the left, so FineNotes looks like an app of its own. Turn it off here to bring them back.",
 } as const;

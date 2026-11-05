@@ -120,6 +120,7 @@ import {
 import type { AssetStore } from "./downloads/model-store";
 import { OCR_TIERS, effectiveOcrTier } from "./recognition/ocr/ocr-model";
 import { FolderInputSuggest } from "./view/folder-suggest";
+import { folderSidebarRows } from "./view/folder-sidebar/settings-rows";
 import { penGlyph, penSample } from "./view/pen-glyph-svg";
 import {
   MAX_SAVED_PENS,
@@ -574,6 +575,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private readonly penRowTargets = new WeakMap<HTMLElement, number>();
   /** The binding slot listening for an input, while one records. */
   private shortcutRecorder: ShortcutRecorder | null = null;
+  /** What to let go of when the tab is closed (the Folders section's index listener). */
+  private readonly hideCallbacks: (() => void)[] = [];
   constructor(
     app: App,
     private readonly plugin: GoodObsidianPlugin,
@@ -820,10 +823,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     this.infos.clear();
     this.statuses.clear();
     this.folds.clear();
+    // The rows are drawn again: what the last ones listened to is let go.
+    for (const cleanup of this.hideCallbacks.splice(0)) cleanup();
     // By theme: writing (pens included), shortcuts, pages, the models on this
     // device, AI, then the switches few people need; feedback last.
     return [
       ...this.topRows(),
+      ...(this.plugin.settings.simpleLook ? [this.foldersGroup()] : []),
       this.writingGroup(),
       this.shortcutsGroup(),
       this.pagesGroup(),
@@ -961,9 +967,29 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           "sidebar",
           "ribbon",
         ]),
-        t("settings.simpleLook.info"),
+        t("settings.simpleLook.infoFolders"),
       ),
     ];
+  }
+
+  /**
+   * The Folders sidebar's rows, under the simple look: the look is what puts
+   * the sidebar on screen, so the section is there only while it is on.
+   */
+  private foldersGroup(): SettingDefinitionItem {
+    return this.section(
+      "folders",
+      t("view.folders.title"),
+      "folder",
+      // A row says its name; the longer explanation waits behind its ⓘ.
+      folderSidebarRows({
+        controller: this.plugin.folderSidebar,
+        onHide: (cleanup) => this.hideCallbacks.push(cleanup),
+      }).map((row) => {
+        const { desc, ...rest } = row;
+        return typeof desc === "string" && desc ? this.info(rest, desc) : row;
+      }),
+    );
   }
 
   /** How the pen, the tools and the gestures behave, and what a new note starts with. */
@@ -2338,6 +2364,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   override hide(): void {
+    for (const cleanup of this.hideCallbacks.splice(0)) cleanup();
     // A binding slot must not keep listening once the tab is gone.
     this.shortcutRecorder?.cancel();
     this.shortcutRecorder = null;

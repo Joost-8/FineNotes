@@ -124,7 +124,46 @@ function fakeStore(asset: ModelAsset, calls: string[]) {
 
 function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, string> = {}) {
   const calls: string[] = [];
-  const settings: Settings = { ...structuredClone(DEFAULT_SETTINGS), ...overrides };
+  // The simple look off, so the rows pinned below are those of the tab without the Folders section.
+  const settings: Settings = {
+    ...structuredClone(DEFAULT_SETTINGS),
+    simpleLook: false,
+    ...overrides,
+  };
+  const searchIndex = {
+    enable: vi.fn(() => calls.push("index:enable")),
+    disable: vi.fn(() => calls.push("index:disable")),
+    rebuild: vi.fn(() => {
+      calls.push("index:rebuild");
+      return Promise.resolve();
+    }),
+    onChange: vi.fn((_listener: () => void) => () => {}),
+    getStatus: () => ({
+      enabled: true,
+      running: false,
+      queued: 0,
+      docs: 12,
+      notebooks: 3,
+      pdfs: 2,
+      unsearchablePdfs: 0,
+      tooLargePdfs: 0,
+    }),
+  };
+  const folderSidebar = {
+    get data() {
+      return settings.folderSidebar;
+    },
+    searchIndex,
+    save: vi.fn(() => {
+      calls.push("folders:save");
+      return Promise.resolve();
+    }),
+    notifyDataChanged: vi.fn(() => calls.push("folders:changed")),
+    setLibraryViewMode: vi.fn((mode: "grid" | "list") => {
+      calls.push(`folders:view:${mode}`);
+      settings.folderSidebar.libraryViewMode = mode;
+    }),
+  };
   const deviceStorage = new Map<string, string>();
   const grapeStore = fakeStore(GRAPE_MODEL, calls);
   const speechStore = fakeStore(speechAsset("whisper-base"), calls);
@@ -137,6 +176,7 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
   const plugin = {
     settings,
     calls,
+    folderSidebar,
     keys: { secure: true },
     shortcuts: new ShortcutStore({
       loadLocalStorage: (key: string) => deviceStorage.get(key) ?? null,
@@ -2281,5 +2321,124 @@ describe("the learned handwriting model", () => {
     expect(plugin.files.get(MODEL)).toBe("old");
     expect(plugin.files.get(PREVIOUS)).toBe("new");
     expect(plugin.settings.grape2Model).toBe(older);
+  });
+});
+
+describe("the Folders section", () => {
+  const FOLDERS = "Folders";
+  const NAMES = [
+    "Show files in sidebar",
+    "Show note counts",
+    "Show pinned folders",
+    "Show recent folders",
+    "Color new folders automatically",
+    "Hide attachment folders",
+    "Search inside notes",
+    "Search index",
+    "Default view",
+    "Show tips again",
+  ];
+  const section = (plugin: Plugin) =>
+    rows(makeTab(plugin).tab).filter((row) => row.heading === FOLDERS);
+
+  it("is there under Simple look, first of the sections, and only while it is on", () => {
+    const on = rows(makeTab(makePlugin({ simpleLook: true })).tab);
+    expect(section(makePlugin({ simpleLook: true })).map((r) => r.def.name)).toEqual(NAMES);
+    const simple = on.findIndex((r) => r.def.name === "Simple look");
+    expect(on[simple + 1]?.heading).toBe(FOLDERS);
+    expect(section(makePlugin({ simpleLook: false }))).toEqual([]);
+  });
+
+  it("is drawn again when Simple look is switched", async () => {
+    const plugin = makePlugin({ simpleLook: true });
+    const { tab } = makeTab(plugin);
+    await tab.setControlValue("simpleLook", false);
+    expect(plugin.calls).toContain("update");
+  });
+
+  it("keeps each row to its name, with the explanation behind its ⓘ", () => {
+    const plugin = makePlugin({ simpleLook: true });
+    const { tab } = makeTab(plugin);
+    for (const { def } of rows(tab).filter((r) => r.heading === FOLDERS)) {
+      expect(def.desc, def.name).toBeUndefined();
+      expect(def.searchable, def.name).not.toBe(false);
+      expect(def.aliases ?? [], def.name).toContain("folders");
+    }
+    expect(tab.infoOf("Show note counts")).toMatch(/how many notes each folder holds/);
+    expect(tab.infoOf("Search inside notes")).toMatch(/Obsidian's own search cannot read inside/);
+    expect(tab.infoOf("Search index")).toBeUndefined();
+  });
+
+  it("stores each switch in the nested object, saves, and tells the views", async () => {
+    const plugin = makePlugin({ simpleLook: true });
+    const { tab } = makeTab(plugin);
+    const all = rows(tab);
+    const flip = async (name: string, on: boolean) =>
+      renderRow(named(all, name)).toggles[0]?.flip(on);
+    expect(renderRow(named(all, "Show note counts")).toggles[0]?.getValue()).toBe(true);
+    expect(renderRow(named(all, "Show files in sidebar")).toggles[0]?.getValue()).toBe(false);
+    await flip("Show files in sidebar", true);
+    await flip("Show note counts", false);
+    await flip("Show pinned folders", false);
+    await flip("Show recent folders", false);
+    await flip("Color new folders automatically", true);
+    await flip("Hide attachment folders", false);
+    expect(plugin.settings.folderSidebar).toMatchObject({
+      showFilesInSidebar: true,
+      showCounts: false,
+      showPinned: false,
+      showRecent: false,
+      autoColorNewFolders: true,
+      hideAttachmentFolders: false,
+    });
+    expect(plugin.calls.filter((c) => c === "folders:save")).toHaveLength(6);
+    expect(plugin.calls.filter((c) => c === "folders:changed")).toHaveLength(6);
+    // Nothing of the sidebar is stored beside the other settings.
+    expect(plugin.settings).not.toHaveProperty("showCounts");
+  });
+
+  it("starts and stops the search index with Search inside notes", async () => {
+    const plugin = makePlugin({ simpleLook: true });
+    const all = rows(makeTab(plugin).tab);
+    const toggle = renderRow(named(all, "Search inside notes")).toggles[0];
+    await toggle?.flip(false);
+    expect(plugin.settings.folderSidebar.searchInNotes).toBe(false);
+    await toggle?.flip(true);
+    expect(plugin.settings.folderSidebar.searchInNotes).toBe(true);
+    expect(plugin.calls.filter((c) => c.startsWith("index:"))).toEqual([
+      "index:disable",
+      "index:enable",
+    ]);
+  });
+
+  it("says what the index holds, follows it, lets go on closing, and rebuilds", async () => {
+    const plugin = makePlugin({ simpleLook: true });
+    const { tab } = makeTab(plugin);
+    const row = renderRow(named(rows(tab), "Search index"));
+    expect(row.descEl.textContent).toBe("12 files indexed (3 notebooks, 2 PDFs).");
+    await row.button("Rebuild").click();
+    expect(plugin.calls).toContain("index:rebuild");
+    const index = plugin.folderSidebar.searchIndex;
+    expect(index.onChange).toHaveBeenCalledTimes(1);
+    // The listener it registered is let go when the tab is redrawn or closed.
+    const stop = vi.fn();
+    index.onChange.mockReturnValueOnce(stop);
+    renderRow(named(rows(tab), "Search index"));
+    rows(tab);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("sets the library's default view, and brings the tips back", async () => {
+    const plugin = makePlugin({ simpleLook: true });
+    const all = rows(makeTab(plugin).tab);
+    const view = renderRow(named(all, "Default view")).dropdowns[0];
+    expect(view?.options).toEqual({ grid: "Grid", list: "List" });
+    expect(view?.value).toBe("grid");
+    await view?.pick("list");
+    expect(plugin.settings.folderSidebar.libraryViewMode).toBe("list");
+    plugin.settings.folderSidebar.seenIntro = true;
+    await renderRow(named(all, "Show tips again")).button("Reset tips").click();
+    expect(plugin.settings.folderSidebar.seenIntro).toBe(false);
+    expect(plugin.calls).toContain("folders:changed");
   });
 });

@@ -359,7 +359,7 @@ export class NoteSettingsModal extends Modal {
     const group = this.group(parent, t("notebooks.noteSettings.look"));
     new Setting(group)
       .setName(t("settings.simpleLook.name"))
-      .setDesc(t("notebooks.noteSettings.simpleLookDesc"))
+      .setDesc(t("notebooks.noteSettings.simpleLookFoldersDesc"))
       .addToggle((toggle) => toggle.setValue(simpleLook()).onChange((on) => setSimpleLook(on)));
   }
 

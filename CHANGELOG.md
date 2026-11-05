@@ -8,6 +8,32 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **A Folders sidebar for the simple look.** With **Simple look** on (Settings,
+  or the **Simple look** command), the left side of Obsidian shows only
+  **Folders**: your vault's folders as a tree, with pinned and recent folders on
+  top, folder colours, note counts, inline new folder and rename, drag and drop
+  to move (on a touch screen: hold a row, then drag), a context menu on every
+  folder, and a filter box that also searches inside notes, notebooks and
+  PDFs, including the text FineNotes read from scanned PDFs. Tapping a folder
+  opens it in the **Folders library**: a grid or list of its notes with
+  thumbnails (notebooks show their first page), sorting, **Select** to move or
+  delete several at once, and **New** for a note, a notebook, or files to
+  import. The notebook library, the toolbar's home button, an empty tab's home
+  button and the **Open the notebook library** command all open the Folders
+  library while the simple look is on; with it off nothing changes. New
+  commands **Open the Folders sidebar** and **Open the Folders library** are
+  there while the simple look is on, and a **Folders** section under it in
+  FineNotes' settings holds the sidebar's options. Turning the simple look off
+  closes the Folders tab and stops its search.
+
+### Changed
+
+- **The simple look keeps the left sidebar**, now holding Folders, and hides
+  its tab strip, the right sidebar, the ribbon and the status bar. Before, it
+  hid both sidebars.
+
 ## [2.8.2] - 2026-11-05
 
 ### Added

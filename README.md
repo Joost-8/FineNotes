@@ -214,6 +214,36 @@ the shortcut's menu. Tapping the icon opens Obsidian straight at that
 notebook. On a computer, the same link works as a desktop shortcut or a
 bookmark.
 
+### Folders and the simple look
+
+**Simple look** (Settings, or the **Simple look: hide or show Obsidian's
+tabs, sidebars and menus** command) hides Obsidian's ribbon, status bar and
+right sidebar, and fills the left sidebar with **Folders**:
+
+- **The tree.** Folders are listed with their note counts. Tap one to open it
+  in the **Folders library**; tap the arrow to open or close it. The pencil at
+  the top shows the ⋯ button on every folder, the folder-plus button makes a folder (it asks
+  for the name in the tree), and long press or right-click a folder for
+  Rename, New subfolder, Pin to top, Color and Delete.
+- **Moving things.** Drag a folder or a note onto a folder to move it, or onto
+  the header to move it to the vault's root. On a touch screen, hold a row
+  until it lifts, then drag; let go without dragging to see its menu.
+- **Pinned and recent** folders sit on top of the tree. Each folder can have a
+  colour from the palette, one of your recent colours, or any hex colour.
+- **Filter and search.** The box filters folders by name. With three letters or
+  more it also searches the text of notes, notebooks (their text boxes) and
+  PDFs, and the text FineNotes read from scanned PDFs once it has read them.
+  The text is indexed on your device, in the background, a few seconds after
+  Obsidian starts; **Settings › FineNotes › Folders** shows how many files are
+  indexed and can rebuild the index.
+- **The library.** Notes show as a grid of thumbnails or a list, sorted by
+  creation date, edit date or name. **Select** lets you move or delete several;
+  **New** makes a note or a notebook, imports a notebook from another app, or
+  copies in files.
+
+Turn Simple look off and Obsidian's own sidebars, ribbon and file explorer
+come back, and the notebook library opens as before.
+
 ## Getting started
 
 1. Open a new notebook, with the notebook button in the left ribbon or the

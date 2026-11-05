@@ -132,6 +132,7 @@ interface FakeApp {
     active: unknown;
     trigger(name: string, ...args: unknown[]): void;
     fireLayoutReady(): void;
+    getLeavesOfType(type: string): WorkspaceLeaf[];
   };
   addFile(path: string, frontmatter?: Record<string, unknown>, text?: string): TFile;
   secrets: Map<string, string>;
@@ -179,6 +180,22 @@ function fakeApp(
     getLeaf: () => new WorkspaceLeaf(),
     getMostRecentLeaf: () => null,
     revealLeaf: () => Promise.resolve(),
+    // The left split's tabs: a new one is in the workspace at once, as Obsidian's is.
+    getLeftLeaf: () => {
+      const leaf = new WorkspaceLeaf(app);
+      Object.assign(leaf, {
+        detach: () => {
+          leaf.detached++;
+          workspace.leaves.splice(workspace.leaves.indexOf(leaf), 1);
+        },
+      });
+      workspace.leaves.push(leaf);
+      return leaf;
+    },
+    detachLeavesOfType(type: string) {
+      for (const leaf of workspace.getLeavesOfType(type)) leaf.detach();
+    },
+    leftSplit: { collapsed: false, collapse: () => {}, expand: () => {} },
   };
   return {
     workspace,
@@ -327,7 +344,11 @@ beforeEach(() => {
   hooks.welcomes = 0;
   opened = hooks.whatsNew;
   openWindow.mockReset();
-  vi.stubGlobal("window", Object.assign(Object.create(globalThis) as object, { open: openWindow }));
+  const stubbedWindow = Object.assign(Object.create(globalThis) as object, { open: openWindow });
+  vi.stubGlobal("window", stubbedWindow);
+  // Obsidian's globals for the active window; the Folders sidebar only reaches them from timers.
+  vi.stubGlobal("activeWindow", stubbedWindow);
+  vi.stubGlobal("activeDocument", { hidden: false });
 });
 
 afterEach(() => {
@@ -563,6 +584,8 @@ describe("registration", () => {
         "import-vault-pdf",
         "learn-handwriting",
         "new-from-template",
+        "open-folder-library",
+        "open-folder-sidebar",
         "open-library",
         "read-handwriting-on-device",
         "recognize-handwriting",
@@ -600,7 +623,12 @@ describe("registration", () => {
 
   it("registers the notebook view, the ribbon button and the two link handlers", async () => {
     await load();
-    expect([...registered.views.keys()]).toEqual([INK, "finenotes-library"]);
+    expect([...registered.views.keys()]).toEqual([
+      INK,
+      "finenotes-library",
+      "finenotes-folders",
+      "finenotes-folder-library",
+    ]);
     expect(registered.ribbon.map((r) => r.icon)).toEqual(["finenotes-library"]);
     expect(registered.ribbon[0].title).toBe("Notebook library");
     expect(registered.ribbon[0].label).toBe("Notebook library");
@@ -769,28 +797,34 @@ describe("registration", () => {
       expect(created()).toEqual([]);
     });
 
-    it("opens the library in place of FineNotes' own Home note only", async () => {
-      const { HOME_FILE_TEXT } = await import("../../src/model/home-file");
-      for (const [text, takenOver] of [
-        [HOME_FILE_TEXT, true],
-        ["# Home\n\nMy own start page.\n", false],
-      ] as const) {
-        await load();
-        const home = app.addFile("Home.md", undefined, text);
-        const leaf = markdownLeaf(home);
-        // Closed only once the library is open: closing the only tab first leaves nowhere to open it.
-        const detach = vi.fn(() =>
-          expect(viewStateCalls.some((c) => c.state.type === "finenotes-library")).toBe(true),
-        );
-        Object.assign(leaf, { detach });
-        Object.assign(leaf.view as object, { getViewType: () => "markdown" });
-        viewStateCalls.length = 0;
-        app.workspace.trigger("file-open", home);
-        await flush();
-        expect(detach).toHaveBeenCalledTimes(takenOver ? 1 : 0);
-        expect(viewStateCalls.some((c) => c.state.type === "finenotes-library")).toBe(takenOver);
-      }
-    });
+    it.each([
+      [false, "finenotes-library"],
+      [true, "finenotes-folder-library"],
+    ])(
+      "opens the library in place of FineNotes' own Home note only (simple look %s)",
+      async (simpleLook, library) => {
+        const { HOME_FILE_TEXT } = await import("../../src/model/home-file");
+        for (const [text, takenOver] of [
+          [HOME_FILE_TEXT, true],
+          ["# Home\n\nMy own start page.\n", false],
+        ] as const) {
+          await load({ simpleLook });
+          const home = app.addFile("Home.md", undefined, text);
+          const leaf = markdownLeaf(home);
+          // Closed only once the library is open: closing the only tab first leaves nowhere to open it.
+          const detach = vi.fn(() =>
+            expect(viewStateCalls.some((c) => c.state.type === library)).toBe(true),
+          );
+          Object.assign(leaf, { detach });
+          Object.assign(leaf.view as object, { getViewType: () => "markdown" });
+          viewStateCalls.length = 0;
+          app.workspace.trigger("file-open", home);
+          await flush();
+          expect(detach).toHaveBeenCalledTimes(takenOver ? 1 : 0);
+          expect(viewStateCalls.some((c) => c.state.type === library)).toBe(takenOver);
+        }
+      },
+    );
   });
 
   it("keeps the library's stars and folder looks with renames and deletes, Home open or not", async () => {
@@ -1058,8 +1092,10 @@ describe("view routing of open leaves", () => {
     const leaf = markdownLeaf(app.addFile("Physics.notebook.md"));
     app.workspace.fireLayoutReady();
     await flush();
-    expect(viewStateCalls.map((c) => c.leaf)).toEqual([leaf]);
-    expect(viewStateCalls[0].state.type).toBe(INK);
+    // The Folders sidebar is put in the left split too (the simple look is on).
+    const routed = viewStateCalls.filter((c) => c.state.type !== "finenotes-folders");
+    expect(routed.map((c) => c.leaf)).toEqual([leaf]);
+    expect(routed[0].state.type).toBe(INK);
   });
 });
 
@@ -1686,5 +1722,339 @@ describe("Stylus only shown nowhere", () => {
   it("is never on at load when its button is off", async () => {
     await load({ lastSeenVersion: VERSION, onlyStylusMode: true, toolbarOff: ["stylus"] });
     expect(plugin.settings.onlyStylusMode).toBe(false);
+  });
+});
+
+describe("the Folders sidebar of the simple look", () => {
+  const SIDEBAR = "finenotes-folders";
+  const FOLDER_LIBRARY = "finenotes-folder-library";
+  const OLD_LIBRARY = "finenotes-library";
+  const sidebars = () => app.workspace.getLeavesOfType(SIDEBAR);
+  const types = () => viewStateCalls.map((c) => c.state.type);
+  const leftLeaf = () =>
+    (app.workspace as unknown as { getLeftLeaf(): WorkspaceLeaf }).getLeftLeaf();
+
+  /** Load as an existing install, with the workspace laid out. */
+  async function ready(stored: Record<string, unknown> = {}): Promise<void> {
+    await load({ lastSeenVersion: VERSION, ...stored });
+    app.workspace.fireLayoutReady();
+    await flush();
+  }
+
+  it("is put in the left split once the workspace is laid out, and not before", async () => {
+    await load({ lastSeenVersion: VERSION });
+    expect(sidebars()).toHaveLength(0);
+    app.workspace.fireLayoutReady();
+    await flush();
+    expect(sidebars()).toHaveLength(1);
+    expect(sidebars()[0].getViewState()).toMatchObject({ type: SIDEBAR, active: true });
+  });
+
+  it("is not there while the simple look is off", async () => {
+    await ready({ simpleLook: false });
+    expect(sidebars()).toHaveLength(0);
+    expect(types()).not.toContain(SIDEBAR);
+  });
+
+  it("goes when the simple look is turned off, and comes back when it is turned on", async () => {
+    await ready();
+    const first = sidebars()[0];
+    plugin.setSimpleLook(false);
+    await flush();
+    expect(sidebars()).toHaveLength(0);
+    expect(first.detached).toBe(1);
+    expect(registered.saved.at(-1)?.simpleLook).toBe(false);
+    plugin.setSimpleLook(true);
+    await flush();
+    expect(sidebars()).toHaveLength(1);
+    expect(sidebars()[0]).not.toBe(first);
+  });
+
+  it("is made by turning the simple look on later, from a start with it off", async () => {
+    await ready({ simpleLook: false });
+    plugin.setSimpleLook(true);
+    await flush();
+    expect(sidebars()).toHaveLength(1);
+  });
+
+  it("makes no second tab when settings are saved again", async () => {
+    await ready();
+    await plugin.saveSettings();
+    await plugin.saveSettings();
+    await flush();
+    expect(sidebars()).toHaveLength(1);
+  });
+
+  it("keeps the first of two Folders tabs when the layout changes (a restored tab joins the new one)", async () => {
+    await ready();
+    const first = sidebars()[0];
+    // Obsidian restores the tab it had turned into an empty one, a moment after onload.
+    const restored = leftLeaf();
+    restored.state = { type: SIDEBAR, state: {} };
+    expect(sidebars()).toHaveLength(2);
+    app.workspace.trigger("layout-change");
+    expect(sidebars()).toEqual([first]);
+    expect(restored.detached).toBe(1);
+  });
+
+  it("does not make a tab again when the person closed it", async () => {
+    await ready();
+    sidebars()[0].detach();
+    app.workspace.trigger("layout-change");
+    app.workspace.trigger("layout-change");
+    await flush();
+    expect(sidebars()).toHaveLength(0);
+  });
+
+  it("leaves Folders tabs alone while the simple look is off", async () => {
+    await ready({ simpleLook: false });
+    const a = leftLeaf();
+    const b = leftLeaf();
+    a.state = b.state = { type: SIDEBAR, state: {} };
+    app.workspace.trigger("layout-change");
+    expect(sidebars()).toHaveLength(2);
+  });
+
+  it("starts the search index four seconds after the simple look is on, not while it is off", async () => {
+    await load({ lastSeenVersion: VERSION, simpleLookHinted: true });
+    const start = vi.spyOn(plugin.folderSidebar.searchIndex, "start").mockResolvedValue();
+    const stop = vi.spyOn(plugin.folderSidebar.searchIndex, "stop");
+    vi.useFakeTimers();
+    app.workspace.fireLayoutReady();
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(start).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(start).toHaveBeenCalledTimes(1);
+    plugin.setSimpleLook(false);
+    expect(stop).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(start).toHaveBeenCalledTimes(1);
+    plugin.setSimpleLook(true);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(start).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it("never starts the search index with the simple look off", async () => {
+    await load({ lastSeenVersion: VERSION, simpleLook: false, simpleLookHinted: true });
+    const start = vi.spyOn(plugin.folderSidebar.searchIndex, "start").mockResolvedValue();
+    vi.useFakeTimers();
+    app.workspace.fireLayoutReady();
+    await vi.advanceTimersByTimeAsync(30000);
+    vi.useRealTimers();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("stops the search index and its timer when the plugin unloads", async () => {
+    await load({ lastSeenVersion: VERSION, simpleLookHinted: true });
+    const start = vi.spyOn(plugin.folderSidebar.searchIndex, "start").mockResolvedValue();
+    const stop = vi.spyOn(plugin.folderSidebar.searchIndex, "stop");
+    vi.useFakeTimers();
+    app.workspace.fireLayoutReady();
+    registered.unload();
+    await vi.advanceTimersByTimeAsync(30000);
+    vi.useRealTimers();
+    expect(start).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalled();
+  });
+
+  describe("commands", () => {
+    it("open the sidebar and the library, and are offered only while the simple look is on", async () => {
+      await ready();
+      expect(offered("open-folder-sidebar")).toBe(true);
+      expect(offered("open-folder-library")).toBe(true);
+      plugin.setSimpleLook(false);
+      expect(offered("open-folder-sidebar")).toBe(false);
+      expect(offered("open-folder-library")).toBe(false);
+      plugin.setSimpleLook(true);
+      expect(offered("open-folder-sidebar")).toBe(true);
+    });
+
+    it("show the sidebar again after it was closed, and open the library", async () => {
+      await ready();
+      sidebars()[0].detach();
+      run("open-folder-sidebar");
+      await flush();
+      expect(sidebars()).toHaveLength(1);
+      viewStateCalls.length = 0;
+      run("open-folder-library");
+      await flush();
+      expect(types()).toEqual([FOLDER_LIBRARY]);
+    });
+
+    it("do nothing while the simple look is off, and the others keep their ids", async () => {
+      await ready({ simpleLook: false });
+      run("open-folder-sidebar");
+      await flush();
+      expect(sidebars()).toHaveLength(0);
+      expect(registered.commands.map((c) => c.id)).toEqual(
+        expect.arrayContaining(["open-library", "toggle-simple-look"]),
+      );
+    });
+
+    it("toggle-simple-look turns the sidebar on and off", async () => {
+      await ready();
+      run("toggle-simple-look");
+      await flush();
+      expect(plugin.settings.simpleLook).toBe(false);
+      expect(sidebars()).toHaveLength(0);
+      run("toggle-simple-look");
+      await flush();
+      expect(sidebars()).toHaveLength(1);
+    });
+  });
+
+  describe("opening the library", () => {
+    it("opens the Folders library while the simple look is on", async () => {
+      await ready();
+      viewStateCalls.length = 0;
+      await plugin.openLibrary();
+      expect(types()).toEqual([FOLDER_LIBRARY]);
+    });
+
+    it("opens FineNotes' notebook library, as before, with it off", async () => {
+      await ready({ simpleLook: false });
+      viewStateCalls.length = 0;
+      await plugin.openLibrary();
+      expect(types()).toEqual([OLD_LIBRARY]);
+    });
+
+    it("follows the simple look when it is switched, in the same session", async () => {
+      await ready();
+      plugin.setSimpleLook(false);
+      viewStateCalls.length = 0;
+      await plugin.openLibrary();
+      expect(types()).toEqual([OLD_LIBRARY]);
+      plugin.setSimpleLook(true);
+      viewStateCalls.length = 0;
+      await plugin.openLibrary();
+      expect(types()).toEqual([FOLDER_LIBRARY]);
+    });
+
+    it("opens in the empty tab it is given (the home button of an empty tab)", async () => {
+      await ready();
+      const into = new WorkspaceLeaf(app);
+      await plugin.openLibrary(into as never);
+      expect(into.getViewState().type).toBe(FOLDER_LIBRARY);
+      const other = new WorkspaceLeaf(app);
+      plugin.setSimpleLook(false);
+      await plugin.openLibrary(other as never);
+      expect(other.getViewState().type).toBe(OLD_LIBRARY);
+    });
+
+    it("does not pin the Folders library, as the notebook library is", async () => {
+      await ready();
+      const into = new WorkspaceLeaf(app);
+      await plugin.openLibrary(into as never);
+      expect(into.pinned).toBe(false);
+      plugin.setSimpleLook(false);
+      const other = new WorkspaceLeaf(app);
+      await plugin.openLibrary(other as never);
+      expect(other.pinned).toBe(true);
+    });
+
+    it("is what the library button and the command open", async () => {
+      await ready();
+      const open = vi.spyOn(plugin, "openLibrary").mockResolvedValue();
+      registered.ribbon[0].callback();
+      expect(open).toHaveBeenCalledTimes(1);
+      run("open-library");
+      expect(open).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("the settings", () => {
+    it("start with the plugin's own defaults on a fresh install", async () => {
+      await load(null);
+      expect(plugin.settings.folderSidebar).toEqual({
+        folderColors: {},
+        expanded: {},
+        showFilesInSidebar: false,
+        hideAttachmentFolders: true,
+        librarySort: "created",
+        librarySortDescending: true,
+        libraryViewMode: "grid",
+        pinned: [],
+        recent: [],
+        showCounts: true,
+        showPinned: true,
+        showRecent: true,
+        autoColorNewFolders: false,
+        seenIntro: false,
+        recentColors: [],
+        searchInNotes: true,
+      });
+    });
+
+    it("are cleaned on load: a wrong kind takes the default, old flags are dropped", async () => {
+      await load({
+        lastSeenVersion: VERSION,
+        folderSidebar: {
+          showCounts: "yes",
+          librarySort: "size",
+          libraryViewMode: "list",
+          pinned: ["A", 3],
+          folderColors: { A: "#c4566f", B: 5 },
+          expanded: { A: true, B: "no" },
+          colorsMigrated: true,
+        },
+      });
+      expect(plugin.settings.folderSidebar).toMatchObject({
+        showCounts: true,
+        librarySort: "created",
+        libraryViewMode: "list",
+        pinned: ["A"],
+        folderColors: { A: "#c4566f" },
+        expanded: { A: true },
+      });
+      expect(plugin.settings.folderSidebar).not.toHaveProperty("colorsMigrated");
+    });
+
+    it("are cleaned when the stored value is not an object at all", async () => {
+      await load({ lastSeenVersion: VERSION, folderSidebar: "broken" });
+      expect(plugin.settings.folderSidebar.showCounts).toBe(true);
+      await load({ lastSeenVersion: VERSION, folderSidebar: [1, 2] });
+      expect(plugin.settings.folderSidebar.pinned).toEqual([]);
+    });
+
+    it("are saved with the plugin's settings, in one nested object", async () => {
+      await ready();
+      plugin.folderSidebar.setFolderColor("School", "#8660a8");
+      plugin.folderSidebar.togglePinned("School");
+      await flush();
+      const saved = registered.saved.at(-1) as { folderSidebar: Record<string, unknown> };
+      expect(saved.folderSidebar).toMatchObject({
+        folderColors: { School: "#8660a8" },
+        pinned: ["School"],
+      });
+      expect(saved).not.toHaveProperty("pinned");
+      expect(saved).not.toHaveProperty("folderColors");
+    });
+
+    it("are not shared between loads", async () => {
+      await load({ lastSeenVersion: VERSION, folderSidebar: { pinned: ["A"] } });
+      plugin.folderSidebar.togglePinned("A");
+      const stored = registered.stored as { folderSidebar: { pinned: string[] } };
+      expect(stored.folderSidebar.pinned).toEqual([]);
+      await load({ lastSeenVersion: VERSION, folderSidebar: { pinned: ["A"] } });
+      expect(plugin.settings.folderSidebar.pinned).toEqual(["A"]);
+    });
+  });
+
+  describe("the host the sidebar is given", () => {
+    it("opens FineNotes' New notebook and Import notebook windows in a folder", async () => {
+      await ready();
+      const dialog = vi.spyOn(plugin, "openNewNotebookDialog").mockImplementation(() => undefined);
+      const importer = vi.spyOn(plugin, "openImportNotebook").mockImplementation(() => undefined);
+      plugin.folderSidebar.host.openNewNotebookDialog("School");
+      plugin.folderSidebar.host.openImportNotebook("School/Maths");
+      expect(dialog).toHaveBeenCalledWith("School");
+      expect(importer).toHaveBeenCalledWith("School/Maths");
+    });
+
+    it("keeps its thumbnails and the OCR cache in this plugin's own folder", async () => {
+      await load();
+      expect(plugin.folderSidebar.pluginDir).toBe(plugin.pluginDir);
+    });
   });
 });
