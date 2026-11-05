@@ -6301,6 +6301,11 @@ export class InkSurface {
       // without changing the width, which the sync's own measure keys on.
       if (live.fit) this.syncTextBoxes();
       if (live.h === undefined) this.autoSize(view, true);
+      // Measured now: fit the shape to the text as the textarea wraps it.
+      if (live.onShape !== undefined) {
+        this.fitShapeLabels(live);
+        this.syncTextBoxes();
+      }
       // A new line can reach under the keyboard.
       this.keepTypingBoxVisible();
       this.reportTextAnchor();
@@ -18245,7 +18250,12 @@ export class InkSurface {
         if (!shape || !takesLabel(shape)) continue;
         let area = labelArea(shape);
         if (!area) continue;
-        let height = this.labelTextHeight(textBox, area.w);
+        // The taller of the canvas's layout and, while it is typed in, the
+        // textarea's own (its font can wrap a word sooner than the canvas's).
+        const typed = this.textBoxInputs.get(`${page.id}:${textBox.id}`);
+        const shown = (): number =>
+          typed && typed.pageH > 0 && typed.pageHText === textBox.text ? typed.pageH : 0;
+        let height = Math.max(this.labelTextHeight(textBox, area.w), shown());
         if (textBox === grow) {
           const pts = grownToFit(shape, height);
           if (pts) {
@@ -18256,7 +18266,7 @@ export class InkSurface {
             if (dirty) this.renderer?.invalidateRegion(index, padBounds(dirty, shape.size));
             this.strokeIndex.refreshPages(this.doc.pages, [page.id]);
             area = labelArea(shape) ?? area;
-            height = this.labelTextHeight(textBox, area.w);
+            height = Math.max(this.labelTextHeight(textBox, area.w), shown());
           }
         }
         const frame = labelFrame(area, height);

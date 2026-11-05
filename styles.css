@@ -16355,8 +16355,26 @@ button.goodobsidian-library-star:active {
   margin: 4px 0 0;
 }
 
-.goodobsidian-colour-panel .goodobsidian-switch-row.clickable-icon {
+.goodobsidian-colour-panel .goodobsidian-switch-list {
+  background: var(--gob-sel-well);
+}
+
+.goodobsidian-colour-panel button.goodobsidian-switch-row.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--gob-touch);
+  padding: 0 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   color: inherit;
+  font-size: var(--font-ui-medium);
+  text-align: left;
+  opacity: 1;
 }
 
 .goodobsidian-colour-panel-opacity {
