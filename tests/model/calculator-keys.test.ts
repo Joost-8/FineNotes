@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type MathBox, layoutWithEnding } from "../../src/model/calc-display";
+import { type MathBox, boxText, layoutWithEnding } from "../../src/model/calc-display";
 import { calculate, deleteLast, parseExpression } from "../../src/model/calculator";
 import {
   ACTIVE_BOX,
@@ -441,5 +441,73 @@ describe("getting out of a bracket, an exponent, a root", () => {
     });
     // A template with more inputs keeps its boxes: ⌫ goes back a box instead.
     expect(backspace({ expr: "root(▢, ▢)", cursor: 8, fresh: false }, deleteLast).cursor).toBe(5);
+  });
+});
+
+describe("editing inside what the display draws as one thing", () => {
+  const entry = (expr: string, cursor?: number): Entry => ({ expr, cursor, fresh: false });
+  const drawn = (e: Entry): string => {
+    const laid = layoutWithEnding(withCursor(e));
+    return laid ? boxText(laid.box) : "RAW";
+  };
+
+  it("never stands inside a function's name or between it and its bracket", () => {
+    let e = entry("sin(30)+d/dx(x, 2)", 0);
+    const stops: number[] = [];
+    for (let n = 0; n < 40; n++) {
+      stops.push(e.cursor ?? 0);
+      const next = moveCursor(e, 1);
+      if (next.cursor === e.cursor) break;
+      e = next;
+    }
+    for (const inside of [1, 2, 3, 9, 10, 11, 12]) expect(stops).not.toContain(inside);
+    expect(stops).toContain(4);
+    expect(stops.at(-1)).toBe(18);
+    // Every place it stops is drawn with a cursor, never as raw text.
+    for (const at of stops) expect(drawn(entry("sin(30)+d/dx(x, 2)", at))).not.toBe("RAW");
+  });
+
+  it("moves one drawn place at a time: past the bracket a denominator hides, past ', '", () => {
+    const next = (expr: string, at: number): number | undefined =>
+      moveCursor(entry(expr, at), 1).cursor;
+    expect(next("12÷(3+4)", 3)).toBe(5);
+    expect(next("log(8, 2)", 5)).toBe(6);
+    expect(next("log(8, 2)", 6)).toBe(8);
+  });
+
+  it("⌫ at the start of a denominator or exponent steps back, never glues digits", () => {
+    expect(backspace(entry("89÷89", 3), deleteLast)).toEqual(entry("89÷89", 2));
+    expect(backspace(entry("2^3", 2), deleteLast)).toEqual(entry("2^3", 1));
+    expect(backspace(entry("12÷(3+4)", 4), deleteLast)).toEqual(entry("12÷(3+4)", 2));
+    expect(backspace(entry("log(8, 2)", 7), deleteLast)).toEqual(entry("log(8, 2)", 5));
+  });
+
+  it("⌫ after a ) steps inside it; after a ( the bracket goes with its partner", () => {
+    expect(backspace(entry("(1+2)×3", 5), deleteLast)).toEqual(entry("(1+2)×3", 4));
+    expect(backspace(entry("(1+2)×3", 1), deleteLast)).toEqual(entry("1+2×3", 0));
+    expect(backspace(entry("√(2+3)", 2), deleteLast)).toEqual(entry("2+3", 0));
+  });
+
+  it("⌫ after a function's bracket drops the function, keeping a single input", () => {
+    expect(backspace(entry("2+sin(30)", 6), deleteLast)).toEqual(entry("2+30", 2));
+    expect(backspace(entry("1+log(8, 2)", 6), deleteLast)).toEqual(entry("1+", 2));
+  });
+
+  it("⌫ takes a constant whole and an operator with the empty box after it", () => {
+    expect(backspace(entry("ans÷3", 3), deleteLast)).toEqual(entry("▢÷3", 0));
+    expect(backspace(entry("89÷▢", 3), deleteLast).expr).toBe("89");
+  });
+
+  it("draws the cursor inside the fraction it is typing in", () => {
+    expect(drawn(entry("89÷8"))).toBe("[89/8|]");
+    expect(drawn(entry("89÷8", 3))).toBe("[89/|8]");
+    expect(drawn(entry("12÷(3+4)", 7))).toBe("[12/3+4|]");
+    expect(drawn(entry("2^(3+1)", 6))).toBe("2^{3+1|}");
+    // Past the hidden bracket the cursor is out of the fraction, power or root.
+    expect(drawn(entry("12÷(3+4)", 8))).toBe("[12/3+4]|");
+    expect(drawn(entry("2^(3+1)", 7))).toBe("2^{3+1}|");
+    expect(drawn(entry("√(2+3)", 6))).toBe("√{2+3}|");
+    // Inside a number: it stays one number, the cursor in it.
+    expect(drawn(entry("89÷89", 4))).toBe("[89/8|9]");
   });
 });

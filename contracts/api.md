@@ -511,8 +511,11 @@ shape selected on its own, with the bar's corner points switch on (off for
 each new selection), shows a handle on each distinct vertex (`src/ink/shape-points.ts`), read
 off its points, not its kind: copies of one point (a closed outline's
 repeated first point) are one handle. Curved kinds (`circle`, `ellipse`,
-`roundrect`, `cloud`) get none, pieces included, nor does anything with more
-than 12 vertices. A whole arrow (its six-point layout, checked) has two, its
+`roundrect`, `cloud`, `heart`, `arc`, `sector`, `segment`) have no corners:
+their handles are spaced evenly along the outline (eight on a closed one,
+five on an open one) and a drag bends it, the points near the handle
+following it with a smooth falloff, the kind kept (pieces included). Anything
+else with more than 12 vertices gets none. A whole arrow (its six-point layout, checked) has two, its
 tail and tip, and its head follows the shaft. Dragging a corner of a whole
 `rect` or `diamond` makes it a `polygon`; every other kind keeps its kind.
 One drag is one `ReshapeStroke` (`selection-commands.ts`), which gives the

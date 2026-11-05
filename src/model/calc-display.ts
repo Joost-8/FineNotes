@@ -75,8 +75,35 @@ const RELATION_SIGNS: Readonly<Record<string, string>> = {
 };
 
 /** A user's bracket, dropped where the layout already groups (a numerator, an exponent, under a root). */
+/**
+ * `node` drawn where the layout groups it (a denominator, an exponent, under
+ * a root), and whether the cursor stood just after its hidden bracket: that
+ * place is outside the group (after the fraction, the power, the root), so
+ * the caller draws it there. Drawn inside, ▶ could never leave the group.
+ */
+function closedGroup(node: CalcNode): { inner: MathBox; after: boolean } {
+  if (node.k === "call" && node.fn === "(" && node.caretAfter) {
+    return { inner: grouped({ ...node, caretAfter: undefined }), after: true };
+  }
+  return { inner: grouped(node), after: false };
+}
+
+/** `b`, with the cursor after it when `after`. */
+function thenCaret(b: MathBox, after: boolean): MathBox {
+  return after ? row(b, { t: "caret" }) : b;
+}
+
 function grouped(node: CalcNode): MathBox {
-  if (node.k === "call" && node.fn === "(") return box(node.args[0]);
+  if (node.k === "call" && node.fn === "(") {
+    // The bracket is not drawn, but a cursor that stood just inside or outside it still is.
+    const inner = box(node.args[0]);
+    if (!node.caretBefore && !node.caretAfter) return inner;
+    return row(
+      ...(node.caretBefore ? [{ t: "caret" } as const] : []),
+      inner,
+      ...(node.caretAfter ? [{ t: "caret" } as const] : []),
+    );
+  }
   return box(node);
 }
 
@@ -90,9 +117,28 @@ function args(nodes: CalcNode[]): MathBox {
 }
 
 function box(node: CalcNode): MathBox {
+  const inner = shape(node);
+  if (!node.caretBefore && !node.caretAfter) return inner;
+  return row(
+    ...(node.caretBefore ? [{ t: "caret" } as const] : []),
+    inner,
+    // d/dx(f, a) ends in "x=a" with no bracket drawn: a gap tells "after it" from "after a".
+    ...(node.caretAfter && node.k === "call" && node.fn === "deriv" ? [text(" ", "op")] : []),
+    ...(node.caretAfter ? [{ t: "caret" } as const] : []),
+  );
+}
+
+function shape(node: CalcNode): MathBox {
   switch (node.k) {
-    case "num":
-      return text(node.text ?? "", "num");
+    case "num": {
+      const s = node.text ?? "";
+      if (node.caretAt === undefined) return text(s, "num");
+      return row(
+        text(s.slice(0, node.caretAt), "num"),
+        { t: "caret" },
+        text(s.slice(node.caretAt), "num"),
+      );
+    }
     case "name":
       if (node.name === PLACEHOLDER) return { t: "slot", index: node.slot };
       if (node.name === ACTIVE_BOX) return { t: "slot", active: true, index: node.slot };
@@ -104,10 +150,14 @@ function box(node: CalcNode): MathBox {
       return row(box(node.a), text(node.op, "op"));
     case "bin":
       switch (node.op) {
-        case "/":
-          return { t: "frac", num: grouped(node.a), den: grouped(node.b) };
-        case "^":
-          return { t: "sup", base: box(node.a), exp: grouped(node.b) };
+        case "/": {
+          const den = closedGroup(node.b);
+          return thenCaret({ t: "frac", num: grouped(node.a), den: den.inner }, den.after);
+        }
+        case "^": {
+          const exp = closedGroup(node.b);
+          return thenCaret({ t: "sup", base: box(node.a), exp: exp.inner }, exp.after);
+        }
         case "*":
           return node.implicit
             ? row(box(node.a), box(node.b))
@@ -129,12 +179,18 @@ function call(node: Extract<CalcNode, { k: "call" }>): MathBox {
   switch (node.fn) {
     case "(":
       return { t: "paren", body: box(a) };
-    case "sqrt":
-      return { t: "root", body: grouped(a) };
-    case "root":
-      return { t: "root", body: grouped(a), index: box(b) };
-    case "abs":
-      return { t: "abs", body: grouped(a) };
+    case "sqrt": {
+      const body = closedGroup(a);
+      return thenCaret({ t: "root", body: body.inner }, body.after);
+    }
+    case "root": {
+      const body = closedGroup(a);
+      return thenCaret({ t: "root", body: body.inner, index: box(b) }, body.after);
+    }
+    case "abs": {
+      const body = closedGroup(a);
+      return thenCaret({ t: "abs", body: body.inner }, body.after);
+    }
     case "integral":
       // ∫(f) without limits; ∫(f, u) in another letter (a substitution's step); ∫(f, a, b) with them.
       if (node.args.length === 1) return { t: "bigop", sym: "∫", body: box(a), tail: "dx" };

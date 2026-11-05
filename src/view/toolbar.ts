@@ -3445,7 +3445,8 @@ export class Toolbar {
     const modeButton = this.optionsEl.createEl("button", { cls: "goodobsidian-erasermode" });
     const modeIcon = modeButton.createSpan({ cls: "goodobsidian-erasermode-icon" });
     eraserModeIcon(modeIcon, mode.id, mode.label);
-    // The icon says it, the name is its label: the pill takes no room for words.
+    // The titles stay on a pill along the top or bottom; an upright pill is icons only (styles.css).
+    modeButton.createSpan({ cls: "goodobsidian-erasermode-label", text: mode.label });
     const modeCaret = modeButton.createSpan({ cls: "goodobsidian-erasermode-caret" });
     iconOrText(modeCaret, "chevron-down", "");
     modeButton.setAttribute("aria-label", t("toolbar.eraser.modeTip", { mode: mode.label }));
@@ -3480,6 +3481,10 @@ export class Toolbar {
     const icon =
       filter === "highlighter" ? "highlighter" : filter === "pen" ? "pen-line" : "layers";
     iconOrText(filterIcon, icon, ERASER_FILTER_LABELS[filter]);
+    filterButton.createSpan({
+      cls: "goodobsidian-erasermode-label",
+      text: ERASER_FILTER_LABELS[filter],
+    });
     const filterCaret = filterButton.createSpan({ cls: "goodobsidian-erasermode-caret" });
     iconOrText(filterCaret, "chevron-down", "");
     filterButton.toggleClass("is-filtered", filter !== "all");

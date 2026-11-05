@@ -859,10 +859,17 @@ const SUM_EXACT_TERMS = 2000;
 
 // --- Tokens -------------------------------------------------------------------
 
-type Token =
+type Token = (
   | { kind: "num"; value: CalcValue; text: string }
   | { kind: "name"; name: string }
-  | { kind: "op"; op: string };
+  | { kind: "op"; op: string }
+) & {
+  /** The typing cursor stands just before / after this token (see {@link attachCaret}). */
+  caretBefore?: true;
+  caretAfter?: true;
+  /** The cursor stands inside this number, after this many of its signs (`89` with it after the 8). */
+  caretAt?: number;
+};
 
 const OPERATORS = "+-*/^(),!%√=°";
 /** Stands for an operand not typed yet, in the natural display (a box). */
@@ -1040,7 +1047,15 @@ function baseLiteral(digits: string, radix: number): CalcValue {
 // --- Syntax tree --------------------------------------------------------------
 
 /** A parsed expression, evaluated as many times as needed (graphs, calculus). */
-export type CalcNode =
+export type CalcNode = CalcShape & {
+  /** Display only: the typing cursor stands just before / after this operand. */
+  caretBefore?: true;
+  caretAfter?: true;
+  /** The cursor stands inside this number, after this many of its signs (`89` with it after the 8). */
+  caretAt?: number;
+};
+
+type CalcShape =
   | { k: "num"; v: CalcValue; text?: string }
   /** `slot`: for a box (▢ or ▣), which box it is in the text, counting from 0. */
   | { k: "name"; name: string; slot?: number }
@@ -1171,19 +1186,36 @@ class Parser {
   private postfix(): CalcNode {
     let node = this.primary();
     for (let op = this.peekOp(); op === "!" || op === "%" || op === "°"; op = this.peekOp()) {
-      this.i++;
+      const sign = this.tokens[this.i++];
       node = { k: "post", op, a: node };
+      if (sign.caretAfter) node.caretAfter = true;
     }
     return node;
   }
 
   /** `)` closes; the end of the input closes too (brackets left open are forgiven). */
   private close(): void {
-    if (this.peekOp() === ")") this.i++;
+    this.closedWithCaret = false;
+    if (this.peekOp() === ")") this.closedWithCaret = this.tokens[this.i++].caretAfter === true;
     else if (this.i < this.tokens.length) fail(t("calculator.errSyntax"));
   }
 
+  /** The ")" the last {@link close} took had the cursor after it. */
+  private closedWithCaret = false;
+
+  /** An operand, with the cursor marked on it where the text had it just before or after. */
   private primary(): CalcNode {
+    const first = this.tokens[this.i];
+    this.closedWithCaret = false;
+    const node = this.operand();
+    if (first?.caretBefore) node.caretBefore = true;
+    if (first?.caretAfter || this.closedWithCaret) node.caretAfter = true;
+    if (first?.caretAt !== undefined && node.k === "num") node.caretAt = first.caretAt;
+    this.closedWithCaret = false;
+    return node;
+  }
+
+  private operand(): CalcNode {
     const tok = this.tokens[this.i];
     if (!tok) fail(t("calculator.errSyntax"));
     this.i++;
@@ -1241,6 +1273,45 @@ class Parser {
   }
 }
 
+/**
+ * The typing cursor (‸) is not an operand: left in the stream, `89÷8‸` read
+ * as (89÷8)·‸ and `89÷‸8` as (89÷‸)·8, so the cursor could not stand in a
+ * denominator and the digit beside it fell out of the fraction. It becomes a
+ * mark on the token it touches (after the one before it, else before the one
+ * after it) and the display draws it inside whatever that operand sits in.
+ * A cursor with nothing to mark, as in `sin(‸)`, stays a name.
+ */
+function attachCaret(tokens: Token[]): Token[] {
+  const at = tokens.findIndex((t) => t.kind === "name" && t.name === CARET);
+  if (at < 0) return tokens;
+  const before = tokens[at - 1];
+  const after = tokens[at + 1];
+  const ends =
+    before !== undefined &&
+    (before.kind === "num" ||
+      (before.kind === "name" && !(after?.kind === "op" && after.op === "(")) ||
+      (before.kind === "op" && ")!%°".includes(before.op)));
+  const starts =
+    after !== undefined &&
+    (after.kind !== "op" || after.op === "(" || after.op === "√") &&
+    !(after.kind === "name" && after.name === CARET);
+  if (!ends && !starts) return tokens;
+  const out = tokens.slice();
+  // Inside a number (`8‸9`): one number with the cursor in it, never two that multiply.
+  if (before?.kind === "num" && after?.kind === "num") {
+    out.splice(at - 1, 3, {
+      ...before,
+      text: before.text + after.text,
+      caretAt: before.text.length,
+    });
+    return out;
+  }
+  out.splice(at, 1);
+  if (ends) out[at - 1] = { ...before, caretAfter: true };
+  else out[at] = { ...after, caretBefore: true };
+  return out;
+}
+
 /** Parse `expression` into a tree; null with the error when it is not one. */
 export function parseExpression(
   expression: string,
@@ -1249,7 +1320,7 @@ export function parseExpression(
 ): { ok: true; node: CalcNode } | { ok: false; error: string } {
   try {
     if (expression.length > MAX_LENGTH) fail(t("calculator.errTooLong"));
-    const tokens = tokenize(expression, base, options.letters === true);
+    const tokens = attachCaret(tokenize(expression, base, options.letters === true));
     return { ok: true, node: new Parser(tokens, options.relations === true).parse() };
   } catch (error) {
     if (error instanceof CalcError) return { ok: false, error: error.message };

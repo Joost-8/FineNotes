@@ -19,6 +19,7 @@
  */
 
 import { type TextKey, t } from "../i18n/translate";
+import { boxText, layoutExpression } from "./calc-display";
 import { ACTIVE_BOX, CARET, type NumberBase, PLACEHOLDER } from "./calculator";
 
 export { ACTIVE_BOX, CARET };
@@ -630,46 +631,160 @@ export function nextBox(entry: Entry): Entry {
   return { ...entry, cursor: next };
 }
 
+/** Names the cursor never stands inside: a function (before its bracket) and a constant. */
+const UNIT = /d\/dx(?=\()|[A-Za-z]+(?=\()|ans|pi|theta|inf|mod/gi;
+
+/**
+ * Whether the cursor can stand at `at` in `expr`: not inside a function's name
+ * or between it and its bracket, and where the display can draw it. Moving
+ * through `sin(` or `d/dx(` one sign at a time stopped on places that showed
+ * the raw text or no cursor at all.
+ */
+export function isStop(expr: string, at: number): boolean {
+  if (at < 0 || at > expr.length) return false;
+  // Beside a box the cursor stands on it instead: typing there would not fill it.
+  if (expr[at] !== BOX) {
+    if (expr[at - 1] === BOX) return false;
+    let r = at;
+    while (expr[r] === " ") r++;
+    if (expr[r] === BOX) return false;
+  }
+  for (const m of expr.matchAll(UNIT)) {
+    const start = m.index ?? 0;
+    const end = start + m[0].length;
+    const bracket = expr[end] === "(";
+    if (at > start && (bracket ? at <= end : at < end)) return false;
+  }
+  const laid = layoutExpression(withCursor({ expr, cursor: at, fresh: false }));
+  if (!laid) return false;
+  const text = boxText(laid);
+  return text.includes("|") || text.includes("■");
+}
+
+/** The expression as drawn with the cursor at `at`. */
+function stopText(expr: string, at: number): string {
+  const laid = layoutExpression(withCursor({ expr, cursor: at, fresh: false }));
+  return laid ? boxText(laid) : "";
+}
+
+/** `at`, or the nearest place the cursor can stand (to the left first). */
+function nearestStop(expr: string, at: number): number {
+  for (let d = 0; d <= expr.length; d++) {
+    if (isStop(expr, at - d)) return at - d;
+    if (isStop(expr, at + d)) return at + d;
+  }
+  return Math.max(0, Math.min(expr.length, at));
+}
+
+/**
+ * An operand left empty at `cursor` gets its box back: between separators
+ * (`log(▢, 2)`), and before ÷, × or ^ with nothing left to divide, multiply
+ * or raise (a fraction whose numerator was rubbed out read as raw text).
+ */
+function refillBox(expr: string, cursor: number): string {
+  let l = cursor - 1;
+  while (expr[l] === " ") l--;
+  let r = cursor;
+  while (expr[r] === " ") r++;
+  if (expr[r] === BOX || expr[l] === BOX) return expr;
+  const opens = l < 0 ? false : "(,=".includes(expr[l]);
+  const closes = r >= expr.length || "),=".includes(expr[r]);
+  const between = opens && closes && !(expr[l] === "=" && expr[r] === "=");
+  const lone =
+    (l < 0 || "(,=+−×÷^".includes(expr[l])) && r < expr.length && "÷×^".includes(expr[r]);
+  return between || lone ? expr.slice(0, cursor) + BOX + expr.slice(cursor) : expr;
+}
+
+/** The ")" closing the "(" at `open`, or -1 when it is still open. */
+function closingBracket(expr: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < expr.length; i++) {
+    if (expr[i] === "(") depth++;
+    else if (expr[i] === ")" && --depth === 0) return i;
+  }
+  return -1;
+}
+
+/** Whether `inner` has a comma outside every bracket of its own. */
+function hasTopLevelComma(inner: string): boolean {
+  let depth = 0;
+  for (const c of inner) {
+    if (c === "(") depth++;
+    else if (c === ")") depth--;
+    else if (c === "," && depth === 0) return true;
+  }
+  return false;
+}
+
 /**
  * ⌫ at the cursor: at the end, the whole function name with its bracket or
- * one sign (`deleteLast`); inside, the sign before the cursor, and a box
- * comes back where an input is left empty.
+ * one sign (`deleteLast`). Inside, it takes apart what the display shows as
+ * one thing at a time: a bracket goes with its partner and a function with
+ * its name; at the start of a denominator, an exponent or a later input it
+ * steps back into what comes before instead of gluing the two together; an
+ * operator goes with the empty box after it.
  */
 export function backspace(entry: Entry, deleteLast: (expr: string) => string): Entry {
   if (entry.fresh) return { expr: "", cursor: 0, fresh: false };
   const at = cursorOf(entry);
   if (at === entry.expr.length) {
-    const expr = deleteLast(entry.expr);
+    // One ⌫, one change you can see: `√(` then `√` drew the same empty root twice.
+    const before = stopText(entry.expr, at);
+    let expr = deleteLast(entry.expr);
+    for (let n = 0; n < 3 && expr !== "" && stopText(expr, expr.length) === before; n++) {
+      expr = deleteLast(expr);
+    }
     return { expr, cursor: expr.length, fresh: false };
   }
+  const done = (text: string, cursor: number): Entry => {
+    const expr = refillBox(text, cursor);
+    return { expr, cursor: nearestStop(expr, cursor), fresh: false };
+  };
   // An empty function, sin(▢) with the cursor in its box: ⌫ takes it whole.
   if (entry.expr[at] === BOX && entry.expr[at + 1] === ")" && entry.expr[at - 1] === "(") {
     const name = /(?:[a-zA-Z]+|√|d\/dx|∫|Σ|Π|\^|e\^|10\^)\($/.exec(entry.expr.slice(0, at));
     const onlyBox = name && !entry.expr.slice(name.index, at).includes(",");
     if (onlyBox && name) {
-      const expr = entry.expr.slice(0, name.index) + entry.expr.slice(at + 2);
-      return { expr, cursor: name.index, fresh: false };
+      return done(entry.expr.slice(0, name.index) + entry.expr.slice(at + 2), name.index);
     }
   }
-  // At a box: go back to the box before, if any, rather than eat the template.
   if (entry.expr[at] === BOX) {
+    // An operator and the box that waits for its operand go together.
+    let j = at - 1;
+    while (j > 0 && entry.expr[j] === " ") j--;
+    if (j >= 0 && "+−×÷^".includes(entry.expr[j])) {
+      return done(entry.expr.slice(0, j) + entry.expr.slice(at + 1), j);
+    }
+    // Otherwise go back to the box before, if any, rather than eat the template.
     const before = boxes(entry.expr).filter((i) => i < at);
     if (before.length > 0) return { ...entry, cursor: before[before.length - 1] };
   }
   if (at === 0) return entry;
-  let expr = entry.expr.slice(0, at - 1) + entry.expr.slice(at);
-  const cursor = at - 1;
-  // An input left empty between its separators (spaces aside) gets its box back.
-  let l = cursor - 1;
-  while (expr[l] === " ") l--;
-  let r = cursor;
-  while (expr[r] === " ") r++;
-  const opens = l < 0 ? false : "(,=".includes(expr[l]);
-  const closes = r >= expr.length || "),=".includes(expr[r]);
-  if (opens && closes && !(expr[l] === "=" && expr[r] === "=")) {
-    expr = expr.slice(0, cursor) + BOX + expr.slice(cursor);
+  let j = at - 1;
+  while (j > 0 && entry.expr[j] === " ") j--;
+  const c = entry.expr[j];
+  // The start of a later input, a denominator or an exponent, or just after a bracket's close:
+  // step back into what comes before (or inside) rather than gluing or unbalancing.
+  if (c === "," || c === "÷" || c === "^" || c === ")") return { ...entry, cursor: j };
+  if (c === "(") {
+    if (entry.expr[j - 1] === "÷" || entry.expr[j - 1] === "^") {
+      return { ...entry, cursor: j - 1 };
+    }
+    const close = closingBracket(entry.expr, j);
+    const inner = entry.expr.slice(j + 1, close < 0 ? entry.expr.length : close);
+    const tail = close < 0 ? "" : entry.expr.slice(close + 1);
+    const name = /(?:d\/dx|[a-zA-Z]+|√|∫|Σ|Π)$/.exec(entry.expr.slice(0, j));
+    const start = name ? name.index : j;
+    // A function with several inputs goes whole; one input, or a bracket, keeps its content.
+    const keep = name && hasTopLevelComma(inner) ? "" : inner;
+    return done(entry.expr.slice(0, start) + keep + tail, start);
   }
-  return { expr, cursor, fresh: false };
+  // A constant goes whole: Ans, π typed as words.
+  const word = /(?:ans|pi|theta|inf|mod)$/i.exec(entry.expr.slice(0, at));
+  if (word) {
+    return done(entry.expr.slice(0, word.index) + entry.expr.slice(at), word.index);
+  }
+  return done(entry.expr.slice(0, at - 1) + entry.expr.slice(at), at - 1);
 }
 
 /** The expression with the cursor marked in it, for laying out. */
@@ -730,7 +845,13 @@ export function moveCursor(entry: Entry, by: -1 | 1): Entry {
     const expr = `${entry.expr})`;
     return { ...entry, expr, cursor: expr.length };
   }
-  return { ...entry, cursor: Math.max(0, Math.min(entry.expr.length, at + by)) };
+  // One stop at a time: not into the middle of a function's name, and past
+  // places the display draws alike (either side of a ", " or a hidden bracket).
+  const seen = stopText(entry.expr, at);
+  for (let p = at + by; p >= 0 && p <= entry.expr.length; p += by) {
+    if (isStop(entry.expr, p) && stopText(entry.expr, p) !== seen) return { ...entry, cursor: p };
+  }
+  return entry;
 }
 
 /** Brackets opened and not yet closed in `expr`. */

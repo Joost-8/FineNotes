@@ -46,6 +46,22 @@ describe("natural display", () => {
     expect(shown("Σ(")).toBe("Σ_{x=□}^{□}□");
   });
 
+  // The cursor stands inside the fraction it types in, and moving it back
+  // through a denominator leaves the digits where they are.
+  it.each([
+    ["89÷8|", "[89/8|]"],
+    ["89÷|8", "[89/|8]"],
+    ["89|÷8", "[89|/8]"],
+    ["|89÷8", "[|89/8]"],
+    ["(1+2)÷(3|)", "[1+2/3|]"],
+    ["1÷3+|1÷6", "[1/3]+[|1/6]"],
+    ["√(2|)", "√{2|}"],
+    ["2^|3", "2^{|3}"],
+    ["sin(|)", "sin(|)"],
+  ])("with the cursor: %s → %s", (marked, want) => {
+    expect(shown(marked.replace("|", "‸"))).toBe(want);
+  });
+
   it("shows hex digits as typed", () => {
     expect(shown("ff+1", 16)).toBe("FF+1");
     expect(shown("0x1f")).toBe("0x1f");

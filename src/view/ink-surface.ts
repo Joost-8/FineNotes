@@ -13034,7 +13034,9 @@ export class InkSurface {
     // the resize handles, then the "…". A lone shape shows its handles from
     // the start, so it has only the corner points' switch (Joost, 2026-10-30).
     const lone = this.loneShape(sel);
-    if (!lone) {
+    // A curved shape (heart, arc, circle…) has no corner points, but it is a
+    // lone shape all the same: its resize handles stay on, with no switch.
+    if (!lone && !isLoneShape(sel)) {
       actions.push({
         id: "corners",
         icon: "scan",
