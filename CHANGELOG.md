@@ -34,6 +34,14 @@ extracted from the matching section of this file by `release.yml`.
   its tab strip, the right sidebar, the ribbon and the status bar. Before, it
   hid both sidebars.
 
+### Fixed
+
+- **The reader download dialog.** Download's text is readable again (it was grey
+  on the accent colour). The dialog now closes as soon as you choose a reader,
+  and the download carries on in the background: a notice says it started and
+  when it is ready, and a card with Try again appears only if it fails. A
+  failed download no longer reopens the dialog by itself.
+
 ## [2.8.2] - 2026-11-05
 
 ### Added

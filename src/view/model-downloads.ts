@@ -6,7 +6,9 @@
  * time a feature needs it.
  *
  * A feature registers its model once (`register`) and asks for it when it
- * needs it (`offer` shows the card). Settings › Models on this device lists every
+ * needs it (`offer` shows the card, or `inBackground` for a download the user
+ * already chose: a notice when it starts and when it is ready, and the card
+ * only if it fails). Settings › Models on this device lists every
  * registered model with its state, size, Download and Remove.
  *
  * - Files come with `requestUrl`: it follows GitHub's redirect to its file
@@ -15,7 +17,7 @@
  *   by itself ("auto"); an offer the user asked for ("ask") always shows.
  */
 
-import { type App, normalizePath, requestUrl, setIcon } from "obsidian";
+import { type App, Notice, normalizePath, requestUrl, setIcon } from "obsidian";
 import {
   type ModelAsset,
   failureText,
@@ -113,6 +115,8 @@ export class ModelRegistry {
   /** Models whose card got "Not now" this session. */
   private readonly declined = new Set<string>();
   private readonly cards = new Map<string, DownloadCard>();
+  /** Unsubscribes of the downloads watched by `inBackground`. */
+  private readonly watching = new Map<string, () => void>();
 
   constructor(
     private readonly app: App,
@@ -176,7 +180,38 @@ export class ModelRegistry {
     this.cards.set(id, card);
   }
 
+  /**
+   * Watch a download the user already chose, without a card: a notice when
+   * it starts and when the model is ready. If it fails, the card is shown
+   * (with Try again). Does nothing extra if a card for the model is up: the
+   * card shows it all.
+   */
+  inBackground(id: string): void {
+    const store = this.stores.get(id);
+    if (!store || this.cards.has(id) || this.watching.has(id)) return;
+    if (store.state.kind === "ready") return;
+    const { label } = store.asset;
+    new Notice(t("settings.models.downloading", { label }));
+    const stop = (): void => {
+      this.watching.get(id)?.();
+      this.watching.delete(id);
+    };
+    const unsubscribe = store.subscribe(() => {
+      const { kind } = store.state;
+      if (kind === "ready") {
+        stop();
+        new Notice(t("settings.models.ready", { label }));
+      } else if (kind === "failed") {
+        stop();
+        this.offer(id, "ask");
+      }
+    });
+    this.watching.set(id, unsubscribe);
+  }
+
   dispose(): void {
+    for (const stop of [...this.watching.values()]) stop();
+    this.watching.clear();
     for (const card of [...this.cards.values()]) card.close();
   }
 }

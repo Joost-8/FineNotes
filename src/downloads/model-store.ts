@@ -128,6 +128,11 @@ export class AssetStore {
     return this.current;
   }
 
+  /** True from the moment `download()` is called until it settles (before the state is busy). */
+  get running(): boolean {
+    return this.downloading !== null;
+  }
+
   /** Called on every change of state; returns the unsubscribe. */
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);

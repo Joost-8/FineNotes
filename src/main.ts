@@ -1290,7 +1290,9 @@ export default class GoodObsidianPlugin extends Plugin {
     const mobile = Platform.isMobile;
     const chosen = effectiveOcrTier(this.settings.ocrModel, mobile);
     const store = this.models.get(chosen.asset.id);
-    if (store && (store.state.kind === "ready" || isBusy(store.state))) return;
+    if (store && (store.state.kind === "ready" || isBusy(store.state) || store.running)) return;
+    // A failed download already has its card with Try again; only the user's own ask shows this again.
+    if (store && !ask && store.state.kind === "failed") return;
     this.ocrOfferOpen = true;
     new OcrOfferModal(this.app, ocrTiersFor(mobile), chosen.id, {
       download: (id) => {
@@ -1300,8 +1302,9 @@ export default class GoodObsidianPlugin extends Plugin {
         this.settings.ocrScannedPdfs = true;
         void this.saveSettings();
         const target = this.models.get(tier.asset.id);
-        // The card shows the progress; the service reads the pages once it is ready.
-        this.models.offer(tier.asset.id, "ask");
+        // The download carries on in the background (a notice when it starts and when
+        // it is ready, the card only if it fails); the service reads the pages once it is ready.
+        this.models.inBackground(tier.asset.id);
         void target?.download();
         this.ocr.modelChanged();
       },

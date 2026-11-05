@@ -4623,16 +4623,18 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   background: var(--background-modifier-hover);
 }
 
-/* A dialog's call-to-action that also carries `clickable-icon` (to escape
+/* A dialog's (or the reader download offer's) call-to-action that also carries `clickable-icon` (to escape
    the iPad's 20 px button padding) would take that class's faint icon
    colour, which on the accent fill is unreadable. */
-.goodobsidian-dialog button.mod-cta.clickable-icon {
+.goodobsidian-dialog button.mod-cta.clickable-icon,
+.goodobsidian-ocr-offer button.mod-cta.clickable-icon {
   padding: 0 var(--size-4-3);
   background-color: var(--interactive-accent);
   color: var(--text-on-accent);
 }
 
-.goodobsidian-dialog button.mod-cta.clickable-icon:hover {
+.goodobsidian-dialog button.mod-cta.clickable-icon:hover,
+.goodobsidian-ocr-offer button.mod-cta.clickable-icon:hover {
   background-color: var(--interactive-accent-hover);
   color: var(--text-on-accent);
 }

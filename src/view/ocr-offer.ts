@@ -65,16 +65,19 @@ export class OcrOfferModal extends Modal {
     buttons
       .createEl("button", { text: "Not now", cls: "clickable-icon" })
       .addEventListener("click", () => {
+        // Close first: the dialog goes even if the action throws.
         this.answered = true;
-        this.actions.notNow();
         this.close();
+        this.actions.notNow();
       });
     buttons
       .createEl("button", { text: "Download", cls: "mod-cta clickable-icon" })
       .addEventListener("click", () => {
+        // Close first: the download carries on in the background, and the
+        // dialog goes even if starting it throws.
         this.answered = true;
-        this.actions.download(this.picked);
         this.close();
+        this.actions.download(this.picked);
       });
   }
 

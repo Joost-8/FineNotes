@@ -243,6 +243,22 @@ describe("AssetStore", () => {
     expect(store.state).toMatchObject({ kind: "failed", reason: "storage", detail: "disk full" });
   });
 
+  it("is running from the call to download() until it settles, before the state is busy", async () => {
+    const { deps } = fakes();
+    const store = new AssetStore(ASSET, deps);
+    expect(store.running).toBe(false);
+    const done = store.download();
+    expect(store.running).toBe(true);
+    expect(store.state.kind).toBe("unknown");
+    await done;
+    expect(store.running).toBe(false);
+    const failing = new AssetStore(ASSET, fakes({ script: [404] }).deps);
+    const attempt = failing.download();
+    expect(failing.running).toBe(true);
+    expect(await attempt).toBe(false);
+    expect(failing.running).toBe(false);
+  });
+
   it("joins a download already running", async () => {
     const { deps, srv } = fakes();
     const store = new AssetStore(ASSET, deps);

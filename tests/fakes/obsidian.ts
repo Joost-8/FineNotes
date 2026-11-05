@@ -445,6 +445,10 @@ export class Modal {
     this.isOpen = false;
     this.onClose();
   }
+  setTitle(title: string): this {
+    this.titleEl.setText(title);
+    return this;
+  }
   onOpen(): void {}
   onClose(): void {}
 }

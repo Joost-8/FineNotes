@@ -346,7 +346,43 @@ export class PluginSettingTab extends Shell {
   readonly containerEl = { isConnected: false };
 }
 export class Setting extends Shell {}
-export class Menu extends Shell {}
+/** A menu that keeps its rows: `null` is a separator. */
+export class Menu {
+  readonly rows: Array<{ title: string; isLabel: boolean; checked: boolean } | null> = [];
+  addItem(build: (item: MenuItem) => unknown): this {
+    const item = new MenuItem();
+    build(item);
+    this.rows.push({ title: item.title, isLabel: item.isLabel, checked: item.checked });
+    return this;
+  }
+  addSeparator(): this {
+    this.rows.push(null);
+    return this;
+  }
+  showAtPosition(): this {
+    return this;
+  }
+}
+export class MenuItem {
+  title = "";
+  isLabel = false;
+  checked = false;
+  setTitle(title: string): this {
+    this.title = title;
+    return this;
+  }
+  setIsLabel(isLabel: boolean): this {
+    this.isLabel = isLabel;
+    return this;
+  }
+  setChecked(checked: boolean): this {
+    this.checked = checked;
+    return this;
+  }
+  onClick(): this {
+    return this;
+  }
+}
 export class SuggestModal extends Modal {}
 export class FuzzySuggestModal extends Modal {}
 export class AbstractInputSuggest extends Shell {}

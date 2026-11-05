@@ -813,7 +813,6 @@ export class FolderLibraryView extends ItemView {
   private openSortMenu(button: HTMLElement): void {
     const { librarySort: sort, librarySortDescending: descending } = this.controller.data;
     const menu = new Menu();
-    menu.addItem((item) => item.setTitle(t("view.folders.sort.by")).setIsLabel(true));
     for (const kind of ["created", "modified", "name"] as const) {
       menu.addItem((item) =>
         item

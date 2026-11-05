@@ -474,7 +474,6 @@ export const view = {
   "view.folders.trashed.other": "Moved {count} notes to the trash",
   "view.folders.options": "Options",
   "view.folders.cannotOpen": "{name} cannot be opened on this device.",
-  "view.folders.sort.by": "Sort by",
   "view.folders.sort.created": "Created Date",
   "view.folders.sort.modified": "Modified Date",
   "view.folders.sort.name": "Name",
