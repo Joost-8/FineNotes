@@ -3557,6 +3557,7 @@ export class InkView extends TextFileView {
     this.setPenCursor(this.settings.penCursor);
     this.surface.setInkPressure(this.settings.pressureWidth);
     this.surface.setFreePageEdges(this.settings.freePageEdges);
+    this.surface.holdFitWidth = () => this.settings.holdFitWidth;
     this.pdfText?.destroy();
     this.pdfText = new PdfTextCache(this.app, this.plugin.ocr);
     // A finger tap on a PDF link that waited for the page to be read; and a

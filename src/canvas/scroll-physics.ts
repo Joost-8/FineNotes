@@ -169,6 +169,12 @@ export interface ScrollExtent {
    */
   freeAxes?: boolean;
   /**
+   * Held centred (`diagonalsScrollY` with a one-point x range), a finger
+   * never moves the content sideways, not even the stretch it springs back
+   * from (the setting "Lock fit to width", discussion #43).
+   */
+  holdX?: boolean;
+  /**
    * With no sideways room to scroll (an `x` range of zero, such as a column
    * held centred at fit-to-width), a drag that is not plainly sideways moves
    * only up and down, and a sideways one only stretches and springs back, as
@@ -236,6 +242,9 @@ export class KineticScroller {
   private freeAxes = false;
   /** `ScrollExtent.diagonalsScrollY`. */
   private diagonalsScrollY = false;
+
+  /** `ScrollExtent.holdX`. */
+  private holdX = false;
   /** Vertical always stretches, as GoodNotes does even on a one-page note. */
   private readonly bounceY = true;
   private drag: Drag | null = null;
@@ -313,6 +322,7 @@ export class KineticScroller {
     }
     this.freeAxes = extent.freeAxes === true;
     this.diagonalsScrollY = extent.diagonalsScrollY === true;
+    this.holdX = extent.holdX === true;
     this.bounceX =
       extent.alwaysBounceX === true ||
       extent.contentWidth + lead + trail > extent.viewportWidth + 0.5;
@@ -519,12 +529,14 @@ export class KineticScroller {
     this.tracker.add(t, fingerX, fingerY);
     const dx = drag.originX - fingerX;
     const dy = drag.originY - fingerY;
-    // Held centred (pages down at fit-to-width): a finger never moves the
-    // page sideways, not even a little before the lock is decided, as in
-    // Goodnotes (discussion #43). A pinch's `freeDrag` still does.
-    const held = this.diagonalsScrollY && this.maxX - this.minX < 0.5;
+    // Held centred (pages down at fit-to-width), a diagonal scrolls only
+    // down; with `holdX` a sideways pull does not move it either, not even a
+    // little before the lock is decided. A pinch's `freeDrag` still does.
+    const centred = this.diagonalsScrollY && this.maxX - this.minX < 0.5;
+    const held = centred && this.holdX;
     if (drag.lock === "undecided" && Math.hypot(dx, dy) >= AXIS_LOCK_DISTANCE) {
       drag.lock = this.freeAxes ? "free" : held ? "y" : decideLock(dx, dy, this.bounceX);
+      if (drag.lock === "free" && centred) drag.lock = "y";
     }
     const useX = drag.lock === "x" || drag.lock === "free" || (drag.lock === "undecided" && !held);
     const useY = drag.lock !== "x";

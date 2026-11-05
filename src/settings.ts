@@ -1612,6 +1612,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           t("settings.pencilTilt.info"),
         ),
         this.info(
+          toggle("holdFitWidth", t("settings.holdFitWidth.name"), "", [
+            "fit to width",
+            "double tap",
+            "scroll sideways",
+            "snap",
+          ]),
+          t("settings.holdFitWidth.info"),
+        ),
+        this.info(
           toggle("desynchronizedCanvas", t("settings.desynchronized.name"), "", [
             "latency",
             "glitch",

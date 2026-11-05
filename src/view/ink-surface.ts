@@ -5173,6 +5173,7 @@ export class InkSurface {
       rangeX,
       // Held centred, a diagonal drag scrolls only down (Goodnotes).
       diagonalsScrollY: !row,
+      holdX: !row && this.holdFitWidth(),
       // While a box is typed in, room to lift it above the keyboard: a page
       // that fits the screen (a cover, a single page) has none of its own.
       trailY: this.typingField() ? keyboardHeight() : 0,
@@ -5185,6 +5186,9 @@ export class InkSurface {
    * stopping at the page's edges.
    */
   private freePageEdges = false;
+
+  /** The setting "Lock fit to width", read at each layout (`ScrollExtent.holdX`). */
+  holdFitWidth: () => boolean = () => false;
 
   setFreePageEdges(on: boolean): void {
     if (this.freePageEdges === on) return;

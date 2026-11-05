@@ -112,10 +112,12 @@ extracted from the matching section of this file by `release.yml`.
   showed in English whatever the interface language, and so did this
   release's new texts; they are now in all 42 languages.
 ### Fixed
+### Added
 
-- **Fit to width holds still.** After a double tap fits the page to the
-  width, a finger no longer moves the page sideways at all, not even the
-  little stretch it gave before (discussion #43). Pinching still does.
+- **Lock fit to width.** A new switch in Settings › Advanced: after a double
+  tap fits the page to the width, a finger no longer moves the page sideways
+  at all (discussion #43). Off, as before, a sideways pull stretches the page
+  and it springs back, as in Goodnotes. Pinching still moves it either way.
 
 ## [2.8.2] - 2026-11-05
 

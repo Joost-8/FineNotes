@@ -684,7 +684,7 @@ describe("a column held to the pane's width (discussion #43)", () => {
    * margins, is wider than the pane, but the page is exactly as wide, so
    * the x range is one point, the centre.
    */
-  function heldColumn(diagonalsScrollY = true): KineticScroller {
+  function heldColumn(diagonalsScrollY = true, holdX = false): KineticScroller {
     const s = new KineticScroller();
     s.setExtent({
       contentWidth: 1400,
@@ -693,6 +693,7 @@ describe("a column held to the pane's width (discussion #43)", () => {
       viewportHeight: 820,
       rangeX: { min: 110, max: 110 },
       diagonalsScrollY,
+      holdX,
     });
     s.setPosition(0, 1000);
     return s;
@@ -719,8 +720,23 @@ describe("a column held to the pane's width (discussion #43)", () => {
     expect(s.position.x).toBe(110);
   });
 
-  it("holds still on a sideways pull, even before the lock is decided", () => {
+  it("stretches a sideways pull and springs back to the centre", () => {
     const s = heldColumn();
+    s.dragStart(500, 500, 0);
+    s.dragMove(500 - AXIS_LOCK_DISTANCE - 2, 501, 16);
+    expect(s.axisLock).toBe("x");
+    s.dragMove(300, 501, 32);
+    // Rubber-banded: it gives, but less than the finger went.
+    expect(s.position.x).toBeGreaterThan(110);
+    expect(s.position.x).toBeLessThan(110 + 200);
+    expect(s.position.y).toBe(1000);
+    s.dragEnd(400);
+    settle(s, 400);
+    expect(s.position.x).toBe(110);
+  });
+
+  it("with holdX holds still on a sideways pull, even before the lock is decided", () => {
+    const s = heldColumn(true, true);
     s.dragStart(500, 500, 0);
     s.dragMove(500 - AXIS_LOCK_DISTANCE + 2, 500, 8);
     expect(s.position.x).toBe(110);
@@ -731,6 +747,14 @@ describe("a column held to the pane's width (discussion #43)", () => {
     s.dragEnd(400);
     settle(s, 400);
     expect(s.position.x).toBe(110);
+  });
+
+  it("with holdX a pinch's freeDrag still moves sideways", () => {
+    const s = heldColumn(true, true);
+    s.dragStart(500, 500, 0);
+    s.freeDrag();
+    s.dragMove(480, 480, 16);
+    expect(s.position.x).toBeGreaterThan(110);
   });
 
   it("without the option a diagonal drag is free, as before", () => {
