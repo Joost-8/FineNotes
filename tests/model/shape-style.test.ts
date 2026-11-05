@@ -16,7 +16,13 @@ import {
 } from "../../src/model/document";
 import { decodeDocument, encodeDocument } from "../../src/model/serialize";
 import { deflateToBase64, inflateFromBase64 } from "../../src/model/compress";
-import { RestyleShapes, ScaleElements, copyElements } from "../../src/model/selection-commands";
+import {
+  RecolorStrokes,
+  RestyleShapes,
+  RewidthStrokes,
+  ScaleElements,
+  copyElements,
+} from "../../src/model/selection-commands";
 import {
   ROUND_RADIUS,
   applyShapeStyle,
@@ -24,6 +30,9 @@ import {
   canHaveHeads,
   canRound,
   commonShapeStyle,
+  FILL_OPACITIES,
+  fillForColor,
+  nearestFillOpacity,
   fillOf,
   headsOf,
   isClosedLoop,
@@ -230,7 +239,12 @@ describe("commonShapeStyle", () => {
     const b = rect("b", { fill: "#ff0000" });
     const c = arrow("c");
     const common = commonShapeStyle([a, b, c]);
-    expect(common.style).toEqual({ fill: "#ff0000", radius: null, heads: { end: "open" } });
+    expect(common.style).toEqual({
+      fill: "#ff0000",
+      noLine: false,
+      radius: null,
+      heads: { end: "open" },
+    });
     expect(common).toMatchObject({ fillable: true, roundable: true, headed: true, shapes: 3 });
   });
 
@@ -418,5 +432,65 @@ describe("a path arrow's style (discussion #107)", () => {
     const back = decodeDocument(encodeDocument(doc)).pages[0].strokes[0];
     expect(back).toMatchObject({ shape: "path", heads: { end: "open" }, radius: ROUND_RADIUS });
     expect(back.pts.length).toBe(12);
+  });
+});
+
+describe("the colour panel's fill and the line panel (2.9)", () => {
+  it("fills a shape with its own colour at the opacity asked for, and undo takes it off", () => {
+    const a = rect("a");
+    const { doc } = docWith([a]);
+    const command = new RestyleShapes("p1", [a], { fillAlpha: 0.5 });
+    command.apply(doc);
+    expect(a.fill).toBe("#1971c280");
+    command.invert(doc);
+    expect(a.fill).toBeUndefined();
+  });
+
+  it("lets a filled shape's fill follow its colour, at the same opacity", () => {
+    const a = rect("a", { fill: "#1971c24d" });
+    const ink: Stroke = { id: "i", color: "#000000", size: 2, tool: "pen", pts: [0, 0, 0.5] };
+    const { doc } = docWith([a, ink]);
+    const command = new RecolorStrokes("p1", [a, ink], "#e03131");
+    command.apply(doc);
+    expect(a.fill).toBe("#e031314d");
+    expect(ink.fill).toBeUndefined();
+    command.invert(doc);
+    expect(a).toMatchObject({ color: "#1971c2", fill: "#1971c24d" });
+    expect(fillForColor(ink, "#e03131")).toBeUndefined();
+  });
+
+  it("hides a filled shape's line, keeps it through a save, and undo shows it again", () => {
+    const a = rect("a", { fill: "#1971c24d" });
+    const { doc, page } = docWith([a]);
+    const command = new RestyleShapes("p1", [a], { noLine: true });
+    command.apply(doc);
+    expect(a.noLine).toBe(true);
+    const back = decodeDocument(encodeDocument(doc));
+    expect(back.pages[0].strokes[0].noLine).toBe(true);
+    command.invert(doc);
+    expect(page.strokes[0].noLine).toBeUndefined();
+    // A line takes no "no line": it has no inside to show instead.
+    const line = arrow("l");
+    expect(applyShapeStyle(line, { noLine: true })).toBe(false);
+  });
+
+  it("gives strokes one width, and undo gives each its own back", () => {
+    const a = rect("a", { size: 2 });
+    const b = rect("b", { size: 5 });
+    const { doc } = docWith([a, b]);
+    const command = new RewidthStrokes("p1", [a, b], 3.5);
+    command.apply(doc);
+    expect([a.size, b.size]).toEqual([3.5, 3.5]);
+    expect(command.changed).toBe(true);
+    command.invert(doc);
+    expect([a.size, b.size]).toEqual([2, 5]);
+  });
+
+  it("stops the opacity slider at tenths", () => {
+    expect(FILL_OPACITIES[0]).toBe(0.1);
+    expect(FILL_OPACITIES.at(-1)).toBe(1);
+    expect(nearestFillOpacity(0.3)).toBe(0.3);
+    expect(nearestFillOpacity(0.33)).toBe(0.3);
+    expect(nearestFillOpacity(0.97)).toBe(1);
   });
 });

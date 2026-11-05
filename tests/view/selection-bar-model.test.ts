@@ -48,9 +48,12 @@ describe("barItems", () => {
     expect(barItems([])).toEqual([]);
   });
 
-  it("never puts a swatch row in the bar", () => {
+  it("puts colours asked for in the bar there as one disc, and leaves the rest to the menu", () => {
     const swatches = { colors: ["#000"], current: null, pick: () => {} };
-    expect(ids(barItems([action("colour", { bar: true, swatches, menu: "none" })]))).toEqual([]);
+    expect(ids(barItems([action("colour", { bar: true, swatches, menu: "none" })]))).toEqual([
+      "colour",
+    ]);
+    expect(ids(barItems([action("note-colour", { swatches })]))).toEqual(["more"]);
   });
 });
 

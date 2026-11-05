@@ -28,10 +28,15 @@
  */
 
 import { setIcon } from "obsidian";
-import { renderColorMixer } from "./color-picker";
+import { renderColorMixer, renderColorPicker } from "./color-picker";
 import type { Bounds } from "../model/document";
+import { FILL_OPACITIES, nearestFillOpacity } from "../model/shape-style";
 import { swallowGhostClick } from "./ghost-click";
+import { dragRange } from "./range-drag";
+import { syncRangeFill } from "./range-fill";
 import {
+  type ActionLine,
+  type PanelFill,
   type SelectionAction,
   actionsKey,
   barItems,
@@ -71,10 +76,18 @@ export class SelectionActionBar {
   private swatchesOpen = false;
   /** The visible area the bar was last placed in, for placing the menu. */
   private visible: Bounds | null = null;
+  /** The colour panel, open from the bar's colour disc; and the entry it belongs to. */
+  private panelEl: HTMLElement | null = null;
+  private panelFor: string | null = null;
   private readonly onOutsideDown = (event: PointerEvent): void => {
     const target = event.target as Node | null;
     if (target && (this.menuEl?.contains(target) || this.moreButton?.contains(target))) return;
     this.closeMenu();
+  };
+  private readonly onOutsidePanel = (event: PointerEvent): void => {
+    const target = event.target as Node | null;
+    if (target && (this.panelEl?.contains(target) || this.panelButton()?.contains(target))) return;
+    this.closePanel();
   };
 
   constructor(
@@ -96,6 +109,7 @@ export class SelectionActionBar {
     this.key = key;
     this.buildBar();
     if (this.menuEl) this.renderMenu();
+    if (this.panelEl) this.renderPanel();
   }
 
   /**
@@ -114,12 +128,19 @@ export class SelectionActionBar {
     this.el.setCssStyles({ left: `${Math.round(at.x)}px`, top: `${Math.round(at.y)}px` });
     this.el.toggleClass("is-below", at.below);
     if (this.menuEl) this.placeMenu();
+    if (this.panelEl) this.placePanel();
   }
 
-  /** Hide the bar and close its menu. */
+  /** Hide the bar and close its menu and colour panel. */
   hide(): void {
     this.closeMenu();
+    this.closePanel();
     this.el.addClass("is-hidden");
+  }
+
+  /** Whether the colour panel is open. */
+  get isPanelOpen(): boolean {
+    return this.panelEl !== null;
   }
 
   get isShown(): boolean {
@@ -140,8 +161,18 @@ export class SelectionActionBar {
     this.parent.ownerDocument.removeEventListener("pointerdown", this.onOutsideDown, true);
   }
 
+  closePanel(): void {
+    if (!this.panelEl) return;
+    this.panelEl.remove();
+    this.panelEl = null;
+    this.panelButton()?.removeClass("is-active");
+    this.panelFor = null;
+    this.parent.ownerDocument.removeEventListener("pointerdown", this.onOutsidePanel, true);
+  }
+
   destroy(): void {
     this.closeMenu();
+    this.closePanel();
     this.el.remove();
   }
 
@@ -167,7 +198,22 @@ export class SelectionActionBar {
         continue;
       }
       const { action } = item;
+      if (action.swatches) {
+        this.colourDisc(action);
+        continue;
+      }
       const button = this.button(this.el, "goodobsidian-selection-button", action.label);
+      if (action.line) {
+        // Opens the line panel, as the colour disc opens the colour panel.
+        button.addClass("is-panel");
+        button.dataset.action = action.id;
+        button.setAttribute("aria-haspopup", "dialog");
+        iconInto(button, iconsFor(action.icon), action.label.slice(0, 2));
+        button.toggleClass("is-active", this.panelFor === action.id);
+        this.decorate(button, action);
+        onTap(button, () => this.togglePanel(action.id));
+        continue;
+      }
       if (action.showLabel) {
         button.addClass("has-label");
         iconInto(
@@ -188,6 +234,26 @@ export class SelectionActionBar {
       this.decorate(button, action);
       onTap(button, () => this.run(action.id, true));
     }
+  }
+
+  /**
+   * The bar's colour: a disc of the selection's colour (a ring of the
+   * common colours when it mixes them) that opens the colour panel.
+   */
+  private colourDisc(action: SelectionAction): void {
+    const swatches = action.swatches;
+    if (!swatches) return;
+    const button = this.button(this.el, "goodobsidian-selection-button is-colour", action.label);
+    button.dataset.action = action.id;
+    button.setAttribute("aria-haspopup", "dialog");
+    const disc = button.createSpan({ cls: "goodobsidian-selection-colour-disc" });
+    const current = swatches.current;
+    // The disc *is* the colour: a value, not chrome.
+    if (current) disc.setCssStyles({ background: swatches.shown?.(current) ?? current });
+    else disc.addClass("is-mixed");
+    button.toggleClass("is-active", this.panelFor === action.id);
+    this.decorate(button, action);
+    onTap(button, () => this.togglePanel(action.id));
   }
 
   /** A button: `clickable-icon` keeps Obsidian's iPad padding off it. */
@@ -217,6 +283,237 @@ export class SelectionActionBar {
     action.run?.();
   }
 
+  // --- The colour panel ------------------------------------------------------
+
+  /** The bar's disc the open panel hangs from. */
+  private panelButton(): HTMLElement | null {
+    if (this.panelFor === null) return null;
+    for (const el of Array.from(this.el.querySelectorAll<HTMLElement>("[data-action]"))) {
+      if (el.dataset.action === this.panelFor) return el;
+    }
+    return null;
+  }
+
+  private togglePanel(id: string): void {
+    if (this.panelEl) {
+      this.closePanel();
+      return;
+    }
+    this.closeMenu();
+    this.panelFor = id;
+    const action = this.actions.find((a) => a.id === id);
+    this.panelEl = this.parent.createDiv({
+      cls: "goodobsidian-selection-menu goodobsidian-colour-panel theme-dark",
+      attr: { role: "dialog", "aria-label": action?.label ?? "" },
+    });
+    stopPageInput(this.panelEl);
+    this.panelButton()?.addClass("is-active");
+    this.renderPanel();
+    this.parent.ownerDocument.addEventListener("pointerdown", this.onOutsidePanel, true);
+  }
+
+  /**
+   * Goodnotes' Change colour: the colours (the same picker as the pens', so
+   * one pattern serves everywhere), then, for shapes that fill, the fill's
+   * switch and its opacity.
+   */
+  private renderPanel(): void {
+    const panel = this.panelEl;
+    const action = this.actions.find((a) => a.id === this.panelFor);
+    if (panel && action?.line) {
+      panel.empty();
+      this.panelButton()?.addClass("is-active");
+      panel.createDiv({ cls: "goodobsidian-colour-panel-title", text: action.label });
+      this.renderLine(panel, action);
+      this.placePanel();
+      return;
+    }
+    const swatches = action?.swatches;
+    if (!panel || !action || !swatches) {
+      this.closePanel();
+      return;
+    }
+    panel.empty();
+    this.panelButton()?.addClass("is-active");
+    panel.createDiv({ cls: "goodobsidian-colour-panel-title", text: action.label });
+    const latest = (): SelectionAction | undefined =>
+      this.actions.find((a) => a.id === action.id && isEnabled(a));
+    const picker = panel.createDiv({ cls: "goodobsidian-colour-panel-picker" });
+    const eyedropper = swatches.eyedropper;
+    renderColorPicker(picker, {
+      current: swatches.current,
+      notebook: swatches.notebook,
+      extra: swatches.colors,
+      recent: swatches.recent ?? [],
+      shown: swatches.shown,
+      onPick: (color) => {
+        if (color) latest()?.swatches?.pick(color);
+      },
+      onCustom: (color) => {
+        const now = latest()?.swatches;
+        (now?.custom ?? now?.pick)?.(color);
+      },
+      ...(eyedropper
+        ? {
+            onEyedropper: () => {
+              // The next tap on the page picks; the panel would cover it.
+              this.closePanel();
+              latest()?.swatches?.eyedropper?.();
+            },
+          }
+        : {}),
+      tap: (button, run) => onTap(button as HTMLButtonElement, run),
+    });
+    if (swatches.fill) this.renderFill(panel, swatches.fill, () => latest()?.swatches?.fill);
+    this.placePanel();
+  }
+
+  /** The fill's switch, and while it is on, its opacity slider. */
+  private renderFill(
+    panel: HTMLElement,
+    fill: PanelFill,
+    latest: () => PanelFill | undefined,
+  ): void {
+    panel.createDiv({ cls: "goodobsidian-selection-menu-divider" });
+    const list = panel.createDiv({ cls: "goodobsidian-switch-list" });
+    const label = t("surface.shapeStyle.fill");
+    const row = list.createEl("button", {
+      cls: "goodobsidian-switch-row clickable-icon",
+      attr: { role: "switch", "aria-checked": String(fill.on === true), "aria-label": label },
+    });
+    row.createSpan({ cls: "goodobsidian-switch-label", text: label });
+    row.createSpan({ cls: "goodobsidian-switch" }).createSpan({ cls: "goodobsidian-switch-thumb" });
+    row.toggleClass("is-on", fill.on === true);
+    onTap(row, () => latest()?.set(fill.on !== true));
+    if (fill.on !== true) return;
+
+    const head = panel.createDiv({
+      cls: "goodobsidian-width-head goodobsidian-colour-panel-opacity",
+    });
+    const opacity = t("surface.selectionBar.segment.opacity");
+    head.createDiv({ cls: "goodobsidian-popover-label", text: opacity });
+    const readout = head.createSpan({ cls: "goodobsidian-width-readout" });
+    const slider = panel.createDiv({ cls: "goodobsidian-width-slider" });
+    const range = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": opacity },
+    });
+    range.min = "0";
+    range.max = String(FILL_OPACITIES.length - 1);
+    range.step = "1";
+    range.value = String(FILL_OPACITIES.indexOf(nearestFillOpacity(fill.alpha)));
+    dragRange(range);
+    const stop = (): number => FILL_OPACITIES[Number(range.value)] ?? 1;
+    const show = (): void => {
+      readout.setText(`${Math.round(stop() * 100)} %`);
+      syncRangeFill(range);
+    };
+    show();
+    range.addEventListener("input", show);
+    // One undo step per drag: the shapes take the opacity the knob is let go at.
+    range.addEventListener("change", () => latest()?.setAlpha(stop()));
+  }
+
+  /**
+   * The line panel: its styles as tiles (None, Solid, Dashed, Dotted), the
+   * width on a slider with its mm readout, then the corners and arrowheads
+   * as the menu drew them. A tap keeps the panel open, to try another.
+   */
+  private renderLine(panel: HTMLElement, action: SelectionAction): void {
+    const line = action.line;
+    if (!line) return;
+    const latest = (): ActionLine | undefined =>
+      this.actions.find((a) => a.id === action.id && isEnabled(a))?.line;
+    const strip = panel.createDiv({ cls: "goodobsidian-selection-tiles is-line-styles" });
+    for (const style of line.styles) {
+      const tile = this.button(strip, "goodobsidian-selection-tile", style.label);
+      iconInto(
+        tile.createSpan({ cls: "goodobsidian-selection-tile-icon" }),
+        iconsFor(style.icon),
+        "",
+      );
+      tile.createSpan({ cls: "goodobsidian-selection-tile-label", text: style.label });
+      tile.toggleClass("is-active", style.checked === true);
+      tile.setAttribute("aria-pressed", String(style.checked === true));
+      this.decorate(tile, style);
+      onTap(tile, () => {
+        const now = latest()?.styles.find((s) => s.id === style.id);
+        if (now && isEnabled(now)) now.run?.();
+      });
+    }
+
+    const head = panel.createDiv({
+      cls: "goodobsidian-width-head goodobsidian-colour-panel-opacity",
+    });
+    const widthLabel = t("toolbar.width.title");
+    head.createDiv({ cls: "goodobsidian-popover-label", text: widthLabel });
+    const readout = head.createSpan({ cls: "goodobsidian-width-readout" });
+    const slider = panel.createDiv({ cls: "goodobsidian-width-slider" });
+    const range = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": widthLabel },
+    });
+    const stops = line.stops;
+    range.min = "0";
+    range.max = String(Math.max(0, stops.length - 1));
+    range.step = "1";
+    range.value = String(nearestIndex(stops, line.width ?? stops[0] ?? 1));
+    dragRange(range);
+    const width = (): number => stops[Number(range.value)] ?? line.width ?? 1;
+    const show = (moved: boolean): void => {
+      readout.setText(line.width === null && !moved ? "–" : line.label(width()));
+      syncRangeFill(range);
+    };
+    show(false);
+    range.addEventListener("input", () => show(true));
+    // One undo step per drag: the width the knob is let go at.
+    range.addEventListener("change", () => latest()?.setWidth(width()));
+
+    const segments: string[] = [];
+    for (const row of line.rows) {
+      if (row.segment !== undefined && !segments.includes(row.segment)) segments.push(row.segment);
+    }
+    if (segments.length > 0) panel.createDiv({ cls: "goodobsidian-selection-menu-divider" });
+    for (const segment of segments) {
+      this.renderSegments(
+        panel,
+        segment,
+        line.rows.filter((row) => row.segment === segment),
+        (id) => {
+          const now = latest()?.rows.find((row) => row.id === id);
+          if (now && isEnabled(now)) now.run?.();
+        },
+      );
+    }
+  }
+
+  /** Hang the panel from the colour disc, below the bar, or above it when there is no room. */
+  private placePanel(): void {
+    const panel = this.panelEl;
+    const disc = this.panelButton();
+    if (!panel || !disc) return;
+    const anchor: Bounds = {
+      minX: this.el.offsetLeft + disc.offsetLeft,
+      minY: this.el.offsetTop,
+      maxX: this.el.offsetLeft + disc.offsetLeft + disc.offsetWidth,
+      maxY: this.el.offsetTop + this.el.offsetHeight,
+    };
+    const visible = this.visible ?? anchor;
+    const below = visible.maxY - EDGE_MARGIN_PX - (anchor.maxY + MENU_GAP_PX);
+    const above = anchor.minY - MENU_GAP_PX - (visible.minY + EDGE_MARGIN_PX);
+    panel.setCssStyles({
+      maxHeight: `${Math.round(Math.max(MENU_MIN_HEIGHT_PX, below, above))}px`,
+    });
+    const at = placeFloating(anchor, { w: panel.offsetWidth, h: panel.offsetHeight }, visible, {
+      gap: MENU_GAP_PX,
+      margin: EDGE_MARGIN_PX,
+      prefer: below >= above ? "below" : "above",
+    });
+    panel.setCssStyles({ left: `${Math.round(at.x)}px`, top: `${Math.round(at.y)}px` });
+  }
+
   // --- The "…" menu -----------------------------------------------------------
 
   private toggleMenu(): void {
@@ -224,6 +521,7 @@ export class SelectionActionBar {
       this.closeMenu();
       return;
     }
+    this.closePanel();
     this.menuEl = this.parent.createDiv({
       cls: "goodobsidian-selection-menu theme-dark",
       attr: { role: "menu" },
@@ -334,7 +632,12 @@ export class SelectionActionBar {
    * A labelled row of icon buttons, the one that is on lit. A tap keeps the
    * menu open, as a swatch does, so a fill and a line can be tried in turn.
    */
-  private renderSegments(menu: HTMLElement, label: string, actions: SelectionAction[]): void {
+  private renderSegments(
+    menu: HTMLElement,
+    label: string,
+    actions: SelectionAction[],
+    run: (id: string) => void = (id) => this.run(id, false),
+  ): void {
     const row = menu.createDiv({ cls: "goodobsidian-selection-segments" });
     row.createSpan({ cls: "goodobsidian-selection-segments-label", text: label });
     const group = row.createDiv({
@@ -355,7 +658,7 @@ export class SelectionActionBar {
         button.toggleClass("is-active", action.checked);
       }
       this.decorate(button, action);
-      onTap(button, () => this.run(action.id, false));
+      onTap(button, () => run(action.id));
     }
   }
 
@@ -484,6 +787,15 @@ export class SelectionActionBar {
     });
     menu.setCssStyles({ left: `${Math.round(at.x)}px`, top: `${Math.round(at.y)}px` });
   }
+}
+
+/** The index of the value in `stops` nearest `value`. */
+function nearestIndex(stops: readonly number[], value: number): number {
+  let best = 0;
+  for (let i = 1; i < stops.length; i++) {
+    if (Math.abs(stops[i] - value) < Math.abs(stops[best] - value)) best = i;
+  }
+  return best;
 }
 
 /**

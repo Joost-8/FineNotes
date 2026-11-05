@@ -32,8 +32,19 @@ import { SCHEMA_VERSION } from "../constants";
  * - `side-space`: a page with a margin keeps its PDF or paper in a frame
  *   (`Backdrop.frame`); an older build would re-fit the PDF to the wider
  *   page, away from the ink written over it, and save it so.
+ * - `shape-content`: what a shape holds and how it is drawn since 2.9: the
+ *   text typed in it (`TextBoxElement.onShape`), a filled shape without its
+ *   line (`Stroke.noLine`), and a connector's own line style; an older build
+ *   would drop each on its next save.
  */
-export const FORMAT_FEATURES = ["sticky", "connectors", "tilt", "tape", "side-space"] as const;
+export const FORMAT_FEATURES = [
+  "sticky",
+  "connectors",
+  "tilt",
+  "tape",
+  "side-space",
+  "shape-content",
+] as const;
 
 export type FormatFeature = (typeof FORMAT_FEATURES)[number];
 

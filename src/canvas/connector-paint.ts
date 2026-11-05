@@ -6,11 +6,11 @@
  * the wet layer while a joined shape is dragged all paint them with this.
  */
 
-import { liveConnectors } from "../model/connectors";
-import type { Bounds, Page, ShapeConnector } from "../model/document";
+import { connectorHeads, liveConnectors } from "../model/connectors";
+import type { ArrowHead, Bounds, Page, ShapeConnector } from "../model/document";
 import { CONNECTOR_STUB, connectorRoute, routeBounds } from "../ink/connector-route";
 import { nightColor } from "./night";
-import { HEAD_MAX, arrowHead } from "./shape-decor";
+import { HEAD_MAX, arrowHead, dashPattern } from "./shape-decor";
 
 /** A connector and the route it takes now, `[x, y, …]` page px. */
 export interface RoutedConnector {
@@ -46,20 +46,36 @@ export function routeConnectors(
 
 /**
  * Every connector is drawn this wide, page px, whatever its shapes' pens
- * (Joost, 2026-10-29: one standard, thin width, elegant rather than thick).
- * A connector's stored `size` is kept for the file, and not drawn.
+ * (Joost, 2026-10-29: one standard, thin width, elegant rather than thick),
+ * until a width is set in its line panel (`ShapeConnector.width`). Its
+ * stored `size` is kept for the file, and not drawn.
  */
 export const CONNECTOR_WIDTH = 1.5;
 
 /** And its open head is at most this long a side, page px: small, as the line is thin. */
 const CONNECTOR_HEAD = 10;
 
-/** What a routed connector covers, its width and head included, page px. */
-export function connectorBounds(routed: RoutedConnector): Bounds | null {
-  return routeBounds(routed.route, CONNECTOR_WIDTH + HEAD_MAX);
+/** The width a connector is drawn at, page px: its own once set, else the standard thin one. */
+export function connectorWidth(connector: ShapeConnector): number {
+  return connector.width ?? CONNECTOR_WIDTH;
 }
 
-/** Paint one routed connector in page space, in its colour (made dark-page legible on `night`). */
+/** The longest side its heads may have, page px: the standard head, larger for a wide line. */
+function headCap(width: number): number {
+  return Math.max(CONNECTOR_HEAD, width * 4);
+}
+
+/** What a routed connector covers, its width and heads included, page px. */
+export function connectorBounds(routed: RoutedConnector): Bounds | null {
+  const width = connectorWidth(routed.connector);
+  return routeBounds(routed.route, width + Math.max(HEAD_MAX, headCap(width)));
+}
+
+/**
+ * Paint one routed connector in page space, in its colour (made dark-page
+ * legible on `night`): the route at its width, dashed or dotted as it says,
+ * and a head at each end it has one (an open one at its end by default).
+ */
 export function paintConnector(
   ctx: CanvasRenderingContext2D,
   routed: RoutedConnector,
@@ -69,34 +85,81 @@ export function paintConnector(
   const n = route.length / 2;
   if (n < 2) return;
   const color = night ? nightColor(connector.color) : connector.color;
-  const width = CONNECTOR_WIDTH;
-  // The arrowhead at the end, along the last run; the line stops at its tip.
-  const tip = { x: route[(n - 1) * 2], y: route[(n - 1) * 2 + 1] };
-  const before = { x: route[(n - 2) * 2], y: route[(n - 2) * 2 + 1] };
-  const last = Math.hypot(tip.x - before.x, tip.y - before.y);
+  const width = connectorWidth(connector);
+  const at = (i: number): { x: number; y: number } => ({ x: route[i * 2], y: route[i * 2 + 1] });
   let total = 0;
   for (let i = 1; i < n; i++) {
     total += Math.hypot(route[i * 2] - route[i * 2 - 2], route[i * 2 + 1] - route[i * 2 - 1]);
   }
-  // A head no longer than the last run, or its barbs would cross the bend,
-  // and never past CONNECTOR_HEAD (arrowHead keeps a side to 45 % of the span).
-  const span = Math.min(total, last / 0.45, CONNECTOR_HEAD / 0.45);
-  const head = arrowHead(before, tip, width, "open", span);
+  // A head no longer than its run, or its barbs would cross the bend, and
+  // never past the cap (arrowHead keeps a side to 45 % of the span).
+  const headAt = (
+    from: { x: number; y: number },
+    tip: { x: number; y: number },
+    kind: ArrowHead,
+  ) => {
+    const run = Math.hypot(tip.x - from.x, tip.y - from.y);
+    const span = Math.min(total, run / 0.45, headCap(width) / 0.45);
+    return arrowHead(from, tip, width, kind, span);
+  };
+  const heads = connectorHeads(connector);
+  const drawn = [
+    heads.end
+      ? { head: headAt(at(n - 2), at(n - 1), heads.end), filled: heads.end === "filled" }
+      : null,
+    heads.start
+      ? { head: headAt(at(1), at(0), heads.start), filled: heads.start === "filled" }
+      : null,
+  ];
   ctx.save();
   ctx.strokeStyle = color;
+  ctx.fillStyle = color;
   ctx.lineWidth = width;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
+  if (connector.dash) ctx.setLineDash(dashPattern(connector.dash, width));
   ctx.beginPath();
   ctx.moveTo(route[0], route[1]);
   for (let i = 1; i < n; i++) ctx.lineTo(route[i * 2], route[i * 2 + 1]);
   ctx.stroke();
-  if (head) {
+  ctx.setLineDash([]);
+  for (const end of drawn) {
+    if (!end?.head) continue;
     ctx.beginPath();
-    head.points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+    end.head.points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+    if (end.filled) {
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.stroke();
   }
   ctx.restore();
+}
+
+/**
+ * Whether page point (x, y) is within `reach` page px of a routed
+ * connector's line: a tap that picks it.
+ */
+export function nearConnector(
+  routed: RoutedConnector,
+  x: number,
+  y: number,
+  reach: number,
+): boolean {
+  const { route } = routed;
+  const r = reach + connectorWidth(routed.connector) / 2;
+  for (let i = 2; i + 1 < route.length; i += 2) {
+    const ax = route[i - 2];
+    const ay = route[i - 1];
+    const bx = route[i];
+    const by = route[i + 1];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = dx * dx + dy * dy;
+    const t = len > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len)) : 0;
+    if (Math.hypot(x - (ax + t * dx), y - (ay + t * dy)) <= r) return true;
+  }
+  return false;
 }
 
 /**

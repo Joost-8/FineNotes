@@ -40,6 +40,7 @@ import {
   type ShapeStyle,
   type StyleFields,
   applyShapeStyle,
+  fillForColor,
   restoreStyleFields,
   styleFieldsOf,
 } from "./shape-style";
@@ -898,11 +899,13 @@ export class RecolorStrokes implements Command {
     const page = pageById(doc, this.pageId);
     if (!page) return;
     for (const stroke of present(page.strokes, this.strokes)) {
-      // A bucket fill is its colour inside and out: both change.
-      const fill = isBucketFill(stroke) && /^#[0-9a-f]{6}$/i.test(this.color);
+      // A bucket fill is its colour inside and out: both change. A filled
+      // shape is filled with its own colour: the fill follows, at its opacity.
+      const bucket = isBucketFill(stroke) && /^#[0-9a-f]{6}$/i.test(this.color);
+      const fill = bucket ? this.color.toLowerCase() : fillForColor(stroke, this.color);
       this.previous.push({ stroke, color: stroke.color, ...(fill ? { fill: stroke.fill } : {}) });
       stroke.color = this.color;
-      if (fill) stroke.fill = this.color.toLowerCase();
+      if (fill) stroke.fill = fill;
     }
   }
 
@@ -912,6 +915,40 @@ export class RecolorStrokes implements Command {
       stroke.color = color;
       if (fill !== undefined) stroke.fill = fill;
     }
+    this.previous = [];
+  }
+}
+
+/** Give selected strokes one line width, page px; undo restores each stroke's own. */
+export class RewidthStrokes implements Command {
+  readonly label = t("surface.command.changeLineWidth");
+  private previous: Array<{ stroke: Stroke; size: number }> = [];
+
+  constructor(
+    readonly pageId: string,
+    private readonly strokes: readonly Stroke[],
+    private readonly size: number,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.previous = [];
+    const page = pageById(doc, this.pageId);
+    if (!page || !(this.size > 0) || !Number.isFinite(this.size)) return;
+    for (const stroke of present(page.strokes, this.strokes)) {
+      if (stroke.size === this.size) continue;
+      this.previous.push({ stroke, size: stroke.size });
+      stroke.size = this.size;
+    }
+  }
+
+  /** Whether applying it changed anything. */
+  get changed(): boolean {
+    return this.previous.length > 0;
+  }
+
+  invert(doc: InkDocument): void {
+    if (!pageById(doc, this.pageId)) return;
+    for (const { stroke, size } of this.previous) stroke.size = size;
     this.previous = [];
   }
 }
@@ -974,9 +1011,12 @@ export function copyElements(
   dx: number,
   dy: number,
 ): ElementLists {
+  // A copied shape's text belongs to the copy; a shape left behind keeps its own.
+  const shapes = new Map<string, string>();
   const strokes = elements.strokes.map((stroke) => {
     const copy = structuredClone(stroke);
     copy.id = ids.stroke();
+    shapes.set(stroke.id, copy.id);
     copy.pts = translatePoints(stroke.pts, dx, dy);
     delete copy.t0;
     return copy;
@@ -997,6 +1037,11 @@ export function copyElements(
     copy.id = ids.textBox();
     copy.x += dx;
     copy.y += dy;
+    if (copy.onShape !== undefined) {
+      const shape = shapes.get(copy.onShape);
+      if (shape) copy.onShape = shape;
+      else delete copy.onShape;
+    }
     return copy;
   });
   relinkNoteInk(textBoxes, owners);

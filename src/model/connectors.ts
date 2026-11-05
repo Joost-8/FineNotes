@@ -14,13 +14,16 @@
  */
 
 import type { Command } from "./commands";
+import { readDash, readHeads } from "./shape-style";
 import {
+  type ArrowHeads,
   CONNECTOR_SIDES,
   type ConnectorEnd,
   type ConnectorSide,
   type InkDocument,
   type Page,
   type ShapeConnector,
+  type ShapeDash,
   type ShapeKind,
   type Stroke,
   pageById,
@@ -80,7 +83,7 @@ export function readConnectors(
   const out: ShapeConnector[] = [];
   for (const item of raw) {
     if (typeof item !== "object" || item === null) continue;
-    const { id, from, to, color, size } = item as Record<string, unknown>;
+    const { id, from, to, color, size, width, dash, heads } = item as Record<string, unknown>;
     if (typeof id !== "string" || id === "" || seen.has(id)) continue;
     const a = readEnd(from, strokeIds);
     const b = readEnd(to, strokeIds);
@@ -88,9 +91,132 @@ export function readConnectors(
     if (typeof color !== "string" || !HEX.test(color)) continue;
     if (typeof size !== "number" || !Number.isFinite(size) || size <= 0) continue;
     seen.add(id);
-    out.push({ id, from: a, to: b, color, size });
+    const style = readConnectorStyle({ width, dash, heads });
+    out.push({ id, from: a, to: b, color, size, ...style });
   }
   return out;
+}
+
+/** A connector's line style as stored: each field only when it is readable. */
+function readConnectorStyle(raw: {
+  width: unknown;
+  dash: unknown;
+  heads: unknown;
+}): Pick<ShapeConnector, "width" | "dash" | "heads"> {
+  const out: Pick<ShapeConnector, "width" | "dash" | "heads"> = {};
+  if (typeof raw.width === "number" && Number.isFinite(raw.width) && raw.width > 0) {
+    out.width = Math.min(MAX_CONNECTOR_WIDTH, raw.width);
+  }
+  const dash = readDash(raw.dash);
+  if (dash) out.dash = dash;
+  // Stored only once set: `{}` is "no heads", which is not the same as absent.
+  if (typeof raw.heads === "object" && raw.heads !== null) out.heads = readHeads(raw.heads) ?? {};
+  return out;
+}
+
+/** The widest a connector is drawn, page px. */
+export const MAX_CONNECTOR_WIDTH = 40;
+
+/** Whether a connector has a style of its own (the `shape-content` format feature). */
+export function isStyledConnector(connector: ShapeConnector): boolean {
+  return (
+    connector.width !== undefined || connector.dash !== undefined || connector.heads !== undefined
+  );
+}
+
+/** What a connector's line panel sets; `null` puts a field back to its default. */
+export interface ConnectorStyle {
+  color?: string;
+  width?: number;
+  dash?: ShapeDash | null;
+  heads?: ArrowHeads | null;
+}
+
+/** The heads a connector shows: an open one at its end unless it says otherwise. */
+export function connectorHeads(connector: ShapeConnector): ArrowHeads {
+  return connector.heads ?? { end: "open" };
+}
+
+type StyleKey = "color" | "width" | "dash" | "heads";
+
+/**
+ * Restyle one connector (its colour, width, dash or heads) as one undo
+ * step; undo puts back exactly the fields it had, absent ones absent.
+ * Held by identity, as the other connector commands are.
+ */
+export class RestyleConnector implements Command {
+  readonly label = t("surface.command.changeShapeStyle");
+  private previous: Partial<Pick<ShapeConnector, StyleKey>> | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly connector: ShapeConnector,
+    private readonly style: ConnectorStyle,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.previous = null;
+    const page = pageById(doc, this.pageId);
+    if (!page || !(page.connectors ?? []).includes(this.connector)) return;
+    const c = this.connector;
+    const before: Partial<Pick<ShapeConnector, StyleKey>> = {};
+    for (const key of ["color", "width", "dash", "heads"] as const) {
+      if (c[key] !== undefined) Object.assign(before, { [key]: structuredClone(c[key]) });
+    }
+    this.previous = before;
+    const { color, width, dash, heads } = this.style;
+    if (color !== undefined && HEX.test(color)) c.color = color.toLowerCase();
+    if (width !== undefined && Number.isFinite(width) && width > 0) {
+      c.width = Math.min(MAX_CONNECTOR_WIDTH, width);
+    }
+    if (dash !== undefined) {
+      if (dash === null) delete c.dash;
+      else c.dash = dash;
+    }
+    if (heads !== undefined) c.heads = heads === null ? {} : { ...heads };
+  }
+
+  invert(doc: InkDocument): void {
+    const before = this.previous;
+    if (!before || !pageById(doc, this.pageId)) return;
+    const c = this.connector;
+    delete c.width;
+    delete c.dash;
+    delete c.heads;
+    Object.assign(c, structuredClone(before));
+    this.previous = null;
+  }
+}
+
+/** Take one connector off its page as one undo step; undo puts it back where it stood. */
+export class RemoveConnector implements Command {
+  readonly label = t("common.delete");
+  private index = -1;
+
+  constructor(
+    readonly pageId: string,
+    private readonly connector: ShapeConnector,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.index = -1;
+    const page = pageById(doc, this.pageId);
+    const list = page?.connectors;
+    if (!page || !list) return;
+    const at = list.indexOf(this.connector);
+    if (at < 0) return;
+    list.splice(at, 1);
+    this.index = at;
+    if (list.length === 0) delete page.connectors;
+  }
+
+  invert(doc: InkDocument): void {
+    const page = pageById(doc, this.pageId);
+    if (!page || this.index < 0) return;
+    const list = (page.connectors ??= []);
+    list.splice(Math.min(this.index, list.length), 0, this.connector);
+    this.index = -1;
+  }
 }
 
 /**

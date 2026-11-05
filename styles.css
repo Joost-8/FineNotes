@@ -3612,6 +3612,7 @@ body,
 .goodobsidian-popover input[type="range"].goodobsidian-width-range,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
+.goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   position: absolute;
   inset: 0;
@@ -3629,6 +3630,7 @@ body,
 .goodobsidian-popover input[type="range"].goodobsidian-width-range,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
+.goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   --gob-slider-height: var(--gob-touch);
 }
@@ -3647,6 +3649,8 @@ input[type="range"].goodobsidian-player-scrubber {
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-zoombox-settings
+  input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+.goodobsidian-colour-panel
   input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
@@ -3674,6 +3678,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track 
 .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+.goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   top: 0;
@@ -3693,6 +3698,8 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-zoombox-settings
   input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+.goodobsidian-colour-panel
+  input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
@@ -3707,6 +3714,7 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   .goodobsidian-popover input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
     transition: none;
@@ -16322,6 +16330,107 @@ button.goodobsidian-library-star:active {
 }
 .goodobsidian-empty-home-icon {
   display: inline-flex;
+}
+
+/* --- The selection's colour and line panels (2.9) ------------------------ */
+
+/* The bar's colour: a disc of the selection's colour, a ring of colours when mixed. */
+.goodobsidian-selection-button.is-colour .goodobsidian-selection-colour-disc {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--color-base-40);
+}
+
+.goodobsidian-selection-colour-disc.is-mixed {
+  background: conic-gradient(#fa5252, #fcc419, #40c057, #228be6, #be4bdb, #fa5252);
+}
+
+.goodobsidian-selection-button.is-colour.is-active .goodobsidian-selection-colour-disc {
+  box-shadow:
+    0 0 0 2px var(--gob-sel-bg),
+    0 0 0 4px var(--color-base-100);
+}
+
+.goodobsidian-selection-button.is-panel.is-active {
+  background: var(--gob-sel-well);
+}
+
+.goodobsidian-selection-menu.goodobsidian-colour-panel {
+  width: min(320px, calc(100vw - 24px));
+  padding: 10px 12px 12px;
+}
+
+.goodobsidian-colour-panel-title {
+  padding: 2px 0 10px;
+  font-weight: var(--font-semibold);
+  text-align: center;
+}
+
+.goodobsidian-colour-panel .goodobsidian-switch-list {
+  margin: 4px 0 0;
+}
+
+.goodobsidian-colour-panel .goodobsidian-switch-list {
+  background: var(--gob-sel-well);
+}
+
+.goodobsidian-colour-panel button.goodobsidian-switch-row.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--gob-touch);
+  padding: 0 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: var(--font-ui-medium);
+  text-align: left;
+  opacity: 1;
+}
+
+.goodobsidian-colour-panel-opacity {
+  margin-top: 6px;
+}
+
+/* The line's styles: the one on is lit, as Goodnotes' Stroke settings. */
+.goodobsidian-selection-menu .goodobsidian-selection-tiles.is-line-styles {
+  margin-bottom: 4px;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon.is-active {
+  background: var(--gob-sel-well);
+  color: var(--interactive-accent);
+}
+
+/* An arrow between two shapes, picked up on its own: its route lit in the accent. */
+.goodobsidian-connector-mark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.goodobsidian-connector-mark-line {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-width: 6px;
+  stroke-opacity: 0.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.goodobsidian-connector-mark-end {
+  fill: var(--background-primary);
+  stroke: var(--interactive-accent);
+  stroke-width: 2px;
 }
 
 /* The eraser pill's titles ("Standard", "All ink") only while it rests along

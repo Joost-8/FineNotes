@@ -33,6 +33,24 @@ export interface ShapeStyle {
    * place of one colour for all (`fill`). Taken over `fill` when both are set.
    */
   fillFrom?: FillMode;
+  /**
+   * Fill each shape with its own line colour at this opacity (0–1), as the
+   * selection's colour panel sets it. Taken over `fill`, after `fillFrom`.
+   */
+  fillAlpha?: number;
+  /** `true` hides a fillable shape's outline (drawn only while filled), `false` shows it. */
+  noLine?: boolean;
+}
+
+/** The opacities the colour panel's fill slider stops at, lowest first. */
+export const FILL_OPACITIES: readonly number[] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
+
+/** The stop of {@link FILL_OPACITIES} nearest `alpha`. */
+export function nearestFillOpacity(alpha: number): number {
+  let best = FILL_OPACITIES[0];
+  for (const stop of FILL_OPACITIES)
+    if (Math.abs(stop - alpha) < Math.abs(best - alpha)) best = stop;
+  return best;
 }
 
 /** How the Shape tool fills: not at all, its colour as a soft tint, or solid. */
@@ -169,6 +187,16 @@ export function withAlpha(hex: string, alpha: number): string {
   return `${base}${a.toString(16).padStart(2, "0")}`;
 }
 
+/**
+ * A shape's fill once its line takes `color`: a shape is filled with its
+ * own colour, so the fill follows it at the same opacity. Undefined when the
+ * stroke has no fill, or is no shape that fills.
+ */
+export function fillForColor(stroke: Stroke, color: string): string | undefined {
+  if (!stroke.fill || !canFill(stroke.shape) || !FILL.test(color)) return undefined;
+  return withAlpha(color, splitFill(stroke.fill).alpha);
+}
+
 /** A fill's colour and alpha (0–1). */
 export function splitFill(fill: string): { color: string; alpha: number } {
   const color = fill.slice(0, 7).toLowerCase();
@@ -192,11 +220,13 @@ export interface StyleFields {
   radius?: number;
   heads?: ArrowHeads;
   shape?: ShapeKind;
+  noLine?: true;
   pts: number[];
 }
 
 export function styleFieldsOf(stroke: Stroke): StyleFields {
   const out: StyleFields = { pts: stroke.pts };
+  if (stroke.noLine) out.noLine = true;
   if (stroke.fill !== undefined) out.fill = stroke.fill;
   if (stroke.dash !== undefined) out.dash = stroke.dash;
   if (stroke.radius !== undefined) out.radius = stroke.radius;
@@ -208,9 +238,10 @@ export function styleFieldsOf(stroke: Stroke): StyleFields {
 /** Put back what {@link styleFieldsOf} took, keys absent then absent again. */
 export function restoreStyleFields(stroke: Stroke, saved: StyleFields): void {
   stroke.pts = saved.pts;
-  for (const key of ["fill", "dash", "radius", "heads", "shape"] as const) {
+  for (const key of ["fill", "dash", "radius", "heads", "shape", "noLine"] as const) {
     if (saved[key] === undefined) delete stroke[key];
   }
+  if (saved.noLine) stroke.noLine = true;
   if (saved.fill !== undefined) stroke.fill = saved.fill;
   if (saved.dash !== undefined) stroke.dash = saved.dash;
   if (saved.radius !== undefined) stroke.radius = saved.radius;
@@ -230,6 +261,9 @@ export function applyShapeStyle(stroke: Stroke, style: ShapeStyle): boolean {
   const before = JSON.stringify(styleFieldsOf(stroke));
   if (style.fillFrom !== undefined && canFill(kind)) {
     stroke.fill = fillOf(stroke.color, style.fillFrom);
+  } else if (style.fillAlpha !== undefined && canFill(kind)) {
+    const alpha = Number.isFinite(style.fillAlpha) ? style.fillAlpha : 1;
+    stroke.fill = withAlpha(stroke.color, Math.min(1, Math.max(0.05, alpha)));
   } else if (style.fill !== undefined && canFill(kind)) {
     const fill = style.fill === null ? undefined : readFill(style.fill);
     if (fill) stroke.fill = fill;
@@ -239,6 +273,10 @@ export function applyShapeStyle(stroke: Stroke, style: ShapeStyle): boolean {
     const dash = style.dash === null ? undefined : readDash(style.dash);
     if (dash) stroke.dash = dash;
     else delete stroke.dash;
+  }
+  if (style.noLine !== undefined && canFill(kind)) {
+    if (style.noLine) stroke.noLine = true;
+    else delete stroke.noLine;
   }
   if (style.radius !== undefined && canRound(kind)) {
     const radius = style.radius === null ? undefined : readRadius(style.radius);
@@ -284,6 +322,8 @@ export function commonShapeStyle(strokes: readonly Stroke[]): {
     style.fill = fillable[0].fill ?? null;
   if (shapes.length > 0 && agree(shapes, (s) => s.dash ?? null) !== undefined)
     style.dash = shapes[0].dash ?? null;
+  if (fillable.length > 0 && agree(fillable, (s) => s.noLine === true) !== undefined)
+    style.noLine = fillable[0].noLine === true;
   if (roundable.length > 0 && agree(roundable, (s) => s.radius ?? null) !== undefined)
     style.radius = roundable[0].radius ?? null;
   if (headed.length > 0 && agree(headed, (s) => headsOf(s)) !== undefined)

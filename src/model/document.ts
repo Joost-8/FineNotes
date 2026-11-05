@@ -123,6 +123,11 @@ export interface Stroke {
   /** A shape's outline drawn dashed or dotted; absent is solid. */
   dash?: ShapeDash;
   /**
+   * A filled shape drawn without its outline (the line panel's None). Only
+   * while it is filled and closed: a shape is never drawn as nothing.
+   */
+  noLine?: true;
+  /**
    * Corner radius, page px, for a shape with straight edges (rect, triangle,
    * diamond, polygon, star, line): each corner is rounded, never by more than
    * its edges allow. Scales with the shape.
@@ -611,6 +616,16 @@ export interface TextBoxElement {
    * own. A box whose note is gone is a plain text box.
    */
   onSticky?: string;
+  /**
+   * The id of the closed shape (a stroke on the same page) this box is the
+   * text typed in (discussion #148, `model/shape-label.ts`). Its `x`, `y`
+   * and `w` are derived from the shape whenever either changes: the text
+   * wraps in the shape and is centred in it, and the shape grows taller when
+   * it no longer fits. Stored in page space, so a reader that does not know
+   * the field keeps a box where the text was. A box whose shape is gone is a
+   * plain text box.
+   */
+  onShape?: string;
 }
 
 /** A text box's border: its width in page px and its colour (hex, as `fill`). */
@@ -812,6 +827,15 @@ export interface ShapeConnector {
   color: string;
   /** Line width, page px. */
   size: number;
+  /**
+   * The width it is drawn at, page px, once set in its line panel (2.9).
+   * Absent: the thin line connectors have always had (`CONNECTOR_WIDTH`).
+   */
+  width?: number;
+  /** Drawn dashed or dotted; absent is solid. */
+  dash?: ShapeDash;
+  /** Its arrowheads, once set in its line panel; absent is an open head at `to`. */
+  heads?: ArrowHeads;
 }
 
 /**
