@@ -8,7 +8,7 @@ import type { TFile as FakeFile } from "./fake-obsidian";
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
 const { WorkspaceLeaf } = await import("./fake-obsidian");
-const { LibraryView } = await import("../../src/view/library-view");
+const { LibraryView, unstackTabsOf } = await import("../../src/view/library-view");
 const { memoryVault } = await import("./memory-vault");
 
 interface Inside {
@@ -151,3 +151,23 @@ describe("a Home tab in the background", () => {
     expect(inside.reads.get("A.notebook.md")?.mtime).toBe(7);
   });
 });
+
+describe("opening a notebook from Home", () => {
+  it("stops a stacked tab group stacking, so the notebook fills the view", () => {
+    const { unstack, leaf } = groupOf(true);
+    unstackTabsOf(leaf as never);
+    expect(unstack).toHaveBeenCalledWith(false);
+  });
+
+  it("leaves a tab group that is not stacked, and a leaf with no group, alone", () => {
+    const { unstack, leaf } = groupOf(false);
+    unstackTabsOf(leaf as never);
+    expect(unstack).not.toHaveBeenCalled();
+    expect(() => unstackTabsOf({ parent: null } as never)).not.toThrow();
+  });
+});
+
+function groupOf(isStacked: boolean) {
+  const unstack = vi.fn();
+  return { unstack, leaf: { parent: { isStacked, setStacked: unstack } } };
+}

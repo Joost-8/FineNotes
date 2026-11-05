@@ -24,6 +24,12 @@ extracted from the matching section of this file by `release.yml`.
   files show a symbol and their extension. Tapping one opens it in Obsidian;
   its ⌄ menu renames, moves or deletes it. What a notebook keeps in its own
   folder (pictures, recordings, transcripts) still shows as the notebook.
+### Fixed
+
+- **A notebook opened from Home fills the screen.** With Obsidian's "Stack
+  tabs" on, it opened beside Home like a split screen; opening a notebook
+  from Home now stops that tab group stacking. Home stays a pinned tab, one
+  tap back.
 
 ## [2.8.2] - 2026-11-05
 

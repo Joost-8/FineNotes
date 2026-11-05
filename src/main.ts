@@ -145,7 +145,7 @@ import {
   moveStyles,
 } from "./model/library-style";
 import { prepareImageBytes } from "./view/image-import";
-import { LibraryView } from "./view/library-view";
+import { LibraryView, unstackTabsOf } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
 import { PageEmbeds } from "./view/page-embed";
 import type { EraserMode } from "./view/toolbar";
@@ -2795,6 +2795,7 @@ export default class GoodObsidianPlugin extends Plugin {
       const fromHome =
         this.app.workspace.getMostRecentLeaf()?.view.getViewType() === VIEW_TYPE_LIBRARY;
       const tab = this.app.workspace.getLeaf(fromHome ? "tab" : false);
+      if (fromHome) unstackTabsOf(tab);
       await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
       await this.app.workspace.revealLeaf(tab);
       return file;
