@@ -137,6 +137,21 @@ interface Read {
   entry: LibraryEntry;
 }
 
+/**
+ * Obsidian's "Stack tabs" shows every tab of a group side by side, so a
+ * notebook opened from Home sat beside it like a split screen. A notebook
+ * from Home takes the whole view: its tab group stops stacking. Read from
+ * Obsidian 1.15's `app.js`, not public API: a tab group has `isStacked` and
+ * `setStacked(on)`.
+ */
+export function unstackTabsOf(leaf: WorkspaceLeaf): void {
+  const group = leaf.parent as unknown as {
+    isStacked?: boolean;
+    setStacked?: (on: boolean) => void;
+  } | null;
+  if (group?.isStacked && typeof group.setStacked === "function") group.setStacked(false);
+}
+
 export class LibraryView extends ItemView {
   override icon = "house";
   private folder = "";
@@ -870,8 +885,8 @@ export class LibraryView extends ItemView {
   // --- Menus and navigation -----------------------------------------------------
 
   /**
-   * A notebook in a tab of its own, or the tab it is already in: the library
-   * stays where it is, so it is always one tap back.
+   * A notebook in a tab of its own, or the tab it is already in, filling the
+   * view: the library stays where it is, so it is always one tap back.
    */
   private openNotebook(path: string): void {
     const file = this.app.vault.getFileByPath(path);
@@ -881,8 +896,10 @@ export class LibraryView extends ItemView {
       if (leaf.view.getViewType() !== VIEW_TYPE_INK) return;
       if ((leaf.view as { file?: TFile | null }).file?.path === path) existing = leaf;
     });
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    unstackTabsOf(leaf);
     if (existing) void this.app.workspace.revealLeaf(existing);
-    else void this.app.workspace.getLeaf("tab").openFile(file);
+    else void leaf.openFile(file);
   }
 
   /** A menu with room for a finger: every row is tall (styles.css). */

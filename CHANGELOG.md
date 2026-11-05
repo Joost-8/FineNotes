@@ -8,6 +8,13 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A notebook opened from Home fills the screen.** With Obsidian's "Stack
+  tabs" on, it opened beside Home like a split screen; opening a notebook
+  from Home now stops that tab group stacking. Home stays a pinned tab, one
+  tap back.
+
 ## [2.8.2] - 2026-11-05
 
 ### Added
