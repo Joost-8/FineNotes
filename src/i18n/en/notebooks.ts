@@ -908,6 +908,7 @@ export const notebooks = {
   "notebooks.home.results": "Results",
   "notebooks.home.favorites": "Favorites",
   "notebooks.home.continue": "Continue",
+  "notebooks.home.recent": "Recent",
   "notebooks.home.open": "Open",
   "notebooks.home.onlyNotebooks": "Notebooks only",
   "notebooks.sidebar.title": "Notebooks",

@@ -22,6 +22,10 @@ extracted from the matching section of this file by `release.yml`.
   The rail has a button of its own to put it away and bring it back; on a
   narrow Home it opens as a drawer over the covers, closing once you pick a
   folder. The sort menu has **Notebooks only**, to hide every other file.
+- **Recent**, under Continue: the six notebooks read or written before
+  those, newest first. Page pictures in Continue and the preview are drawn
+  at the size they are shown, sharp on the iPad, and kept on the device so
+  they show at once the next time.
 - **Notebooks in Obsidian's sidebar.** A Notebooks view sits beside Files,
   Search and Bookmarks in the left sidebar: your folders with only the
   notebooks in them, as the file explorer draws them. A tap opens a notebook,

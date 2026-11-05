@@ -84,10 +84,15 @@ export class NotebookPages {
     if (!ctx) return ink;
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Sharp at the size it is shown: device px per page px, a little over, never past 2.
+    const scale = Math.min(
+      2,
+      Math.max(thumbnailRasterScale(dpr), (cssWidth * dpr * 1.25) / page.geometry.width),
+    );
     const entry = await this.pdf().resolve(
       backdrop.path,
       backdrop.page,
-      thumbnailRasterScale(dpr),
+      scale,
       { geometry: page.geometry },
       true,
     );

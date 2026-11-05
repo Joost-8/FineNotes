@@ -151,6 +151,8 @@ const SORTS: ReadonlyArray<{ by: LibrarySort; label: TextKey }> = [
 const ALL_FOLDED_KEY = "finenotes-library-all-folded";
 
 const CONTINUE_COUNT = 3;
+/** How many notebooks the Recent row shows, after the Continue card's. */
+const RECENT_COUNT = 6;
 
 /** The narrowest Home that has room for the folder rail beside the covers, CSS px; narrower it is a drawer. */
 const RAIL_MIN_WIDTH = 720;
@@ -781,13 +783,22 @@ export class LibraryView extends ItemView {
     if (this.folder === "") {
       const recent = continueEntries(
         all.filter((e) => e.kind === "notebook" && e.pages > 0),
-        CONTINUE_COUNT,
+        CONTINUE_COUNT + RECENT_COUNT,
         (path) => left[path]?.at ?? 0,
       );
       if (recent.length > 0) {
         this.label(t("notebooks.home.continue"));
-        const [first, ...more] = recent;
+        const [first, ...more] = recent.slice(0, CONTINUE_COUNT);
         if (first) this.continueCard(first, left[first.path]?.index, more, left);
+      }
+      // The ones read or written before those, newest first.
+      const earlier = recent.slice(CONTINUE_COUNT);
+      if (earlier.length > 0) {
+        this.label(t("notebooks.home.recent"));
+        const row = this.bodyEl.createDiv({
+          cls: `${this.gridClass()} goodobsidian-library-recent-row`,
+        });
+        for (const entry of earlier) this.card(row, entry, left[entry.path]?.index);
       }
     }
     const folders =
@@ -1416,16 +1427,8 @@ export class LibraryView extends ItemView {
     });
     sheet.addEventListener("click", () => this.openItem(entry, index));
     const file = this.app.vault.getFileByPath(entry.path);
-    if (file) {
-      this.whenSeen(sheet, async () => {
-        const canvas = await this.pages().render(file, index, 320);
-        if (!canvas || !sheet.isConnected) return;
-        canvas.addClass("goodobsidian-library-page-canvas");
-        sheet.empty();
-        sheet.appendChild(canvas);
-        sheet.addClass("is-ready");
-      });
-    }
+    // Drawn at its widest: when the preview opens the card stacks and the page spans it.
+    if (file) this.pagePicture(sheet, file, index, 420);
     if (more.length > 0) {
       const side = hero.createDiv({ cls: "goodobsidian-library-hero-more" });
       for (const next of more) this.card(side, next, left[next.path]?.index);
@@ -1540,14 +1543,48 @@ export class LibraryView extends ItemView {
       sheet.addEventListener("keydown", (event) => {
         if (event.key === "Enter") this.openItem(entry, index);
       });
-      this.whenSeen(sheet, async () => {
-        const canvas = await this.pages().render(file, index, 110);
-        if (!canvas || !sheet.isConnected) return;
-        canvas.addClass("goodobsidian-library-page-canvas");
-        sheet.appendChild(canvas);
-        sheet.addClass("is-ready");
-      });
+      this.pagePicture(sheet, file, index, 110);
     }
+  }
+
+  /**
+   * Page `index` of `file` drawn into `sheet` at the width it is shown
+   * (at least `minWidth` CSS px, at most 420), as a small picture kept on
+   * this device: shown again, it is there at once and nothing is drawn.
+   */
+  private pagePicture(sheet: HTMLElement, file: TFile, index: number, minWidth: number): void {
+    const dpr = window.devicePixelRatio || 1;
+    const show = (url: string): void => {
+      if (!sheet.isConnected) return;
+      const img = createEl("img", {
+        cls: "goodobsidian-library-page-canvas",
+        attr: { alt: "", decoding: "async", draggable: "false" },
+      });
+      img.src = url;
+      sheet.empty();
+      sheet.appendChild(img);
+      sheet.addClass("is-ready");
+    };
+    const keyFor = (width: number): string =>
+      `page:${file.path}#${index}@${file.stat.mtime}:${file.stat.size}:${Math.round(width * dpr)}`;
+    const vault = this.vaultKey();
+    this.whenSeen(sheet, async () => {
+      if (this.closed || !sheet.isConnected) return;
+      // Snapped to 40 px steps, so a pane a few px wider keeps its pictures.
+      const shown = Math.ceil(Math.max(minWidth, sheet.clientWidth) / 40) * 40;
+      const width = Math.min(420, shown);
+      const key = keyFor(width);
+      const kept = coverUrlNow(key) ?? (await loadCover(vault, key));
+      if (kept) {
+        show(kept);
+        return;
+      }
+      const canvas = await this.pages().render(file, index, width);
+      if (!canvas || this.closed) return;
+      const url = await saveCover(vault, key, canvas);
+      canvas.width = canvas.height = 0;
+      if (url) show(url);
+    });
   }
 
   private hidePreview(): void {
