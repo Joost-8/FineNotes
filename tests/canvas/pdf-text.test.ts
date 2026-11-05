@@ -27,6 +27,16 @@ const SOURCE = { width: 600, height: 800 };
 /** The page drawn 1:1, so page px are PDF points with y down. */
 const IDENTITY_PAGE = pdfToPage(VIEWPORT, SOURCE, SOURCE);
 
+/**
+ * A LaTeX slide's item: as {@link item}, with Computer Modern's metrics as
+ * pdf.js reports them (ascent 0.694, descent -0.194). Tighter than the
+ * fallback, so a formula's pieces sit farther apart (FineNotes#159: the
+ * tests passed on the fallback while the app, with these, split formulas).
+ */
+function tex(str: string, x: number, y: number, size = 20, width?: number): PdfTextItem {
+  return { ...item(str, x, y, size, width), ascent: 0.694, descent: -0.194 };
+}
+
 /** Text at baseline `y` (from the page's top, y down), starting at `x`. */
 function item(str: string, x: number, y: number, size = 20, width?: number): PdfTextItem {
   return {
@@ -168,10 +178,10 @@ describe("layoutText", () => {
   it("keeps a fraction's top and bottom in the formula's line", () => {
     const layout = layoutText(
       [
-        item("q =", 140, 400, 11, 20),
-        item("a", 168, 392.5, 11, 5),
-        item("b", 168, 407.5, 11, 5),
-        item("= a div b", 184, 400, 11, 50),
+        tex("q =", 140, 400, 11, 20),
+        tex("a", 168, 392.5, 11, 5),
+        tex("b", 168, 407.5, 11, 5),
+        tex("= a div b", 184, 400, 11, 50),
       ],
       IDENTITY_PAGE,
     );
@@ -179,23 +189,23 @@ describe("layoutText", () => {
     const pick = selectText(layout, { x: 141, y: 396 }, { x: 233, y: 396 });
     expect(pick?.rects).toHaveLength(1);
     // One band from the fraction's top to its bottom.
-    expect(pick?.rects[0].y).toBeLessThan(392.5 - 11 * 0.7);
+    expect(pick?.rects[0].y).toBeCloseTo(392.5 - 11 * 0.694, 1);
     expect((pick?.rects[0].y ?? 0) + (pick?.rects[0].h ?? 0)).toBeGreaterThan(407.5);
   });
 
   it("keeps a sum's limits in the formula's line, glyph by glyph as pdf.js gives them", () => {
     const layout = layoutText(
       [
-        item("x0", 241.5, 616, 10.9, 9),
-        item("=", 254.3, 616, 10.9, 8.5),
-        item("n", 265.8, 603.4, 8, 4.4),
-        item("−", 270.3, 603.4, 8, 6.6),
-        item("1", 276.9, 603.4, 8, 4.2),
-        item("i", 266.7, 628.2, 8, 2),
-        item("=", 269.4, 628.2, 8, 6.6),
-        item("0", 276, 628.2, 8, 4.2),
-        item("x", 282.9, 616, 10.9, 5),
-        item("i", 287.9, 617.7, 8, 2),
+        tex("x0", 241.5, 616, 10.9, 9),
+        tex("=", 254.3, 616, 10.9, 8.5),
+        tex("n", 265.8, 603.4, 8, 4.4),
+        tex("−", 270.3, 603.4, 8, 6.6),
+        tex("1", 276.9, 603.4, 8, 4.2),
+        tex("i", 266.7, 628.2, 8, 2),
+        tex("=", 269.4, 628.2, 8, 6.6),
+        tex("0", 276, 628.2, 8, 4.2),
+        tex("x", 282.9, 616, 10.9, 5),
+        tex("i", 287.9, 617.7, 8, 2),
       ],
       IDENTITY_PAGE,
     );

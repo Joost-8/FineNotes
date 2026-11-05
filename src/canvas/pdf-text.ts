@@ -91,7 +91,7 @@ const MAX_LINE_GAP = 4;
 /** An item this far back over the line's end (in font heights) starts a new line. */
 const MAX_LINE_OVERLAP = 0.5;
 /** A piece of a formula this far above or below the line's band (in font heights) still joins it. */
-const FORMULA_GAP = 0.5;
+const FORMULA_GAP = 1;
 /** A piece of a formula this far right of the piece before it (in font heights) still joins it. */
 const FORMULA_STEP = 1.5;
 /** Clear of the line's band, a piece joins only when its font is at most this share of the line's. */
