@@ -47,6 +47,22 @@ describe("notebookUnit", () => {
 });
 
 describe("notebookOwnedFiles", () => {
+  it("holds a notebook's transcript beside it, in a folder of many", () => {
+    const files = [
+      "Misc/Copy Sheet 2.page.md",
+      "Misc/Copy Sheet 2.transcript.md",
+      "Misc/Test.notebook.md",
+      "Misc/Test.transcript.md",
+      "Misc/Lonely.transcript.md",
+      "Misc/Notes.md",
+    ];
+    const owned = notebookOwnedFiles(files, (p) => /\.(notebook|page)\.md$/.test(p));
+    expect([...owned].sort()).toEqual([
+      "Misc/Copy Sheet 2.transcript.md",
+      "Misc/Test.transcript.md",
+    ]);
+  });
+
   it("holds what a notebook's own folder holds for it, not the notebook", () => {
     const files = ownFolder("Uni", "Physics", ["Physics.transcript.md"]);
     const owned = notebookOwnedFiles(files, isNotebook);

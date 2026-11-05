@@ -16578,7 +16578,8 @@ button.goodobsidian-library-fold .svg-icon {
 .goodobsidian-library.has-rail {
   padding-left: var(--gob-rail-w);
 }
-.goodobsidian-library.has-rail .goodobsidian-library-rail {
+.goodobsidian-library.has-rail .goodobsidian-library-rail,
+.goodobsidian-library.has-drawer .goodobsidian-library-rail {
   position: absolute;
   inset: 0 auto 0 0;
   width: var(--gob-rail-w);
@@ -16847,5 +16848,30 @@ button.goodobsidian-library-preview-close {
 }
 /* The rail shows the folder above; ← Up would say it twice. */
 .goodobsidian-library.has-rail .goodobsidian-library-up {
+  display: none;
+}
+/* The rail's button: on while the rail shows; only in the simple look. */
+button.goodobsidian-library-rail-toggle.is-hidden {
+  display: none;
+}
+button.goodobsidian-library-rail-toggle.is-active {
+  color: var(--interactive-accent);
+}
+/* A narrow Home: the rail is a drawer over the covers. */
+.goodobsidian-library.has-drawer .goodobsidian-library-rail {
+  width: min(300px, 85%);
+  z-index: 4;
+  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
+}
+/* A long name on a PDF's label: two lines at most. */
+.goodobsidian-library-cover.is-pdf.is-ready .goodobsidian-library-cover-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+/* A PDF file (not a notebook) has its name in its caption: no label on the page. */
+.goodobsidian-library-cover.is-file.is-pdf.is-ready .goodobsidian-library-cover-title {
   display: none;
 }

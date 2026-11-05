@@ -80,6 +80,13 @@ export function notebookOwnedFiles(
     if (isFolderNotebook(note) && held.get(folder) === 1) owner.set(folder, note);
   }
   const owned = new Set<string>();
+  // A transcript beside its notebook, in any folder (`X.transcript.md` by `X.page.md`).
+  const sidecars = new Set(
+    notebooks.map((note) =>
+      join(parentPath(note), `${stripInkSuffix(baseName(note))}.transcript.md`).toLowerCase(),
+    ),
+  );
+  for (const path of files) if (sidecars.has(path.toLowerCase())) owned.add(path);
   if (owner.size === 0) return owned;
   for (const path of files) {
     for (let at = parentPath(path); at !== ""; at = parentPath(at)) {

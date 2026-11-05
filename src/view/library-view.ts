@@ -152,8 +152,12 @@ const ALL_FOLDED_KEY = "finenotes-library-all-folded";
 
 const CONTINUE_COUNT = 3;
 
-/** The narrowest Home that has room for the folder rail, CSS px. */
+/** The narrowest Home that has room for the folder rail beside the covers, CSS px; narrower it is a drawer. */
 const RAIL_MIN_WIDTH = 720;
+/** Whether the folder rail is put away on this device (simple look, wide Home). */
+const RAIL_HIDDEN_KEY = "finenotes-library-rail-hidden";
+/** Whether Home lists notebooks only on this device. */
+const ONLY_NOTEBOOKS_KEY = "finenotes-library-only-notebooks";
 /** How many pages the preview's strip shows. */
 const PREVIEW_PAGES = 12;
 /** A cover drawn from the notebook's own cover page, CSS px wide. */
@@ -220,6 +224,15 @@ export class LibraryView extends ItemView {
   private titleEl!: HTMLElement;
   private bodyEl!: HTMLElement;
   private railEl!: HTMLElement;
+  private railButton!: HTMLElement;
+  /** The rail put away by its button (a wide Home); kept on this device. */
+  private railHidden = this.app.loadLocalStorage(RAIL_HIDDEN_KEY) === "1";
+  /** The rail opened as a drawer over a narrow Home. */
+  private drawerOpen = false;
+  /** Home lists notebooks only, no other files (the sort menu); kept on this device. */
+  private onlyNotebooks = this.app.loadLocalStorage(ONLY_NOTEBOOKS_KEY) === "1";
+  /** The simple look as of the last paint, so a change of it repaints. */
+  private simple = false;
   private previewEl!: HTMLElement;
   /** The item the preview shows, or null when it is closed. */
   private previewPath: string | null = null;
@@ -272,6 +285,13 @@ export class LibraryView extends ItemView {
     root.dataset.ignoreSwipe = "true";
 
     const head = root.createDiv({ cls: "goodobsidian-library-head" });
+    // The folder rail's own toggle: Obsidian's sidebar button is hidden in the simple look.
+    this.railButton = head.createEl("button", {
+      cls: "clickable-icon goodobsidian-library-rail-toggle",
+      attr: { type: "button", "aria-label": t("notebooks.home.folders") },
+    });
+    setIcon(this.railButton, "panel-left");
+    this.railButton.addEventListener("click", () => this.toggleRail());
     this.upEl = head.createEl("button", {
       cls: "clickable-icon goodobsidian-library-up",
       attr: { "aria-label": t("notebooks.home.up") },
@@ -336,6 +356,16 @@ export class LibraryView extends ItemView {
     this.railEl = root.createDiv({ cls: "goodobsidian-library-rail" });
     root.insertBefore(this.railEl, head);
     this.previewEl = root.createDiv({ cls: "goodobsidian-library-preview is-hidden" });
+    // A tap beside the drawer puts it away.
+    this.bodyEl.addEventListener(
+      "pointerdown",
+      () => {
+        if (!this.drawerOpen) return;
+        this.drawerOpen = false;
+        this.paintNow();
+      },
+      true,
+    );
     // A tap on the page around the covers closes the preview.
     this.bodyEl.addEventListener("click", (event) => {
       if (
@@ -347,6 +377,12 @@ export class LibraryView extends ItemView {
 
     // A deleted note's frontmatter may be gone already: one read before counts too.
     this.watchVault();
+    // The simple look turned on or off while Home is open: the rail follows at once.
+    const look = new MutationObserver(() => {
+      if (document.body.hasClass(SIMPLE_CLASS) !== this.simple) this.paintNow();
+    });
+    look.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    this.register(() => look.disconnect());
     // What this device read before: Home opens with every card as it was,
     // and only notebooks changed since are read again (FineNotes#146).
     const known = sessionReads.get(this.vaultKey());
@@ -356,14 +392,46 @@ export class LibraryView extends ItemView {
   }
 
   override onResize(): void {
-    if (!this.bodyEl) return;
+    if (!this.bodyEl || this.contentEl.clientWidth === 0) return;
+    const mode = this.railMode();
+    const was = this.contentEl.hasClass("has-rail")
+      ? "side"
+      : this.contentEl.hasClass("has-drawer")
+        ? "drawer"
+        : "none";
     this.contentEl.toggleClass("is-narrow", this.contentEl.clientWidth <= 760);
-    if (this.hasRail() !== this.contentEl.hasClass("has-rail")) this.paintNow();
+    if (mode !== was) this.paintNow();
   }
 
-  /** The folder rail shows in the simple look, where Obsidian's own explorer is hidden, when there is room. */
+  /** Whether Home is too narrow for the rail beside the covers. A hidden Home (no width yet) counts as wide. */
+  private narrowForRail(): boolean {
+    const width = this.contentEl.clientWidth;
+    return width > 0 && width < RAIL_MIN_WIDTH;
+  }
+
+  /**
+   * The folder rail, in the simple look only (where Obsidian's own explorer
+   * is hidden): beside the covers on a wide Home unless put away, or a
+   * drawer over them on a narrow one while it is open.
+   */
+  private railMode(): "side" | "drawer" | "none" {
+    if (!document.body.hasClass(SIMPLE_CLASS)) return "none";
+    if (this.narrowForRail()) return this.drawerOpen ? "drawer" : "none";
+    return this.railHidden ? "none" : "side";
+  }
+
   private hasRail(): boolean {
-    return document.body.hasClass(SIMPLE_CLASS) && this.contentEl.clientWidth >= RAIL_MIN_WIDTH;
+    return this.railMode() === "side";
+  }
+
+  /** The rail's button: put the rail away or bring it back (wide), or open and close the drawer (narrow). */
+  private toggleRail(): void {
+    if (this.narrowForRail()) this.drawerOpen = !this.drawerOpen;
+    else {
+      this.railHidden = !this.railHidden;
+      this.app.saveLocalStorage(RAIL_HIDDEN_KEY, this.railHidden ? "1" : "0");
+    }
+    this.paintNow();
   }
 
   private pages(): NotebookPages {
@@ -647,10 +715,19 @@ export class LibraryView extends ItemView {
     this.bodyEl.empty();
 
     const all = this.entries();
-    const rail = this.hasRail();
+    this.simple = document.body.hasClass(SIMPLE_CLASS);
+    const mode = this.railMode();
+    const rail = mode === "side";
     this.contentEl.toggleClass("has-rail", rail);
+    this.contentEl.toggleClass("has-drawer", mode === "drawer");
     this.contentEl.toggleClass("is-narrow", this.contentEl.clientWidth <= 760);
-    if (rail) this.paintRail(all);
+    this.railButton.toggleClass("is-hidden", !this.simple);
+    this.railButton.toggleClass("is-active", mode !== "none");
+    this.railButton.setAttribute("aria-pressed", String(mode !== "none"));
+    // Folders are filed from every item, then filtered: "Notebooks only" hides files, never moves notebooks.
+    const keep = (e: LibraryEntry): boolean => !this.onlyNotebooks || e.kind === "notebook";
+    if (mode !== "none") this.paintRail(all, keep);
+    else this.railEl.empty();
     if (this.previewPath !== null && !all.some((e) => e.path === this.previewPath))
       this.hidePreview();
     if (all.length === 0) {
@@ -665,7 +742,11 @@ export class LibraryView extends ItemView {
     }
 
     if (searching) {
-      const found = sortEntries(searchEntries(all, this.query), this.sort, this.reverse);
+      const found = sortEntries(
+        searchEntries(all.filter(keep), this.query),
+        this.sort,
+        this.reverse,
+      );
       this.grid(
         found,
         found.length === 0 ? t("notebooks.home.noMatch") : t("notebooks.home.results"),
@@ -677,14 +758,14 @@ export class LibraryView extends ItemView {
     const stars = this.host.stars();
     const made = this.host.folderStyles();
     const here = browse(
-      hoistSingles(all, (folder) => made[folder] !== undefined),
+      hoistSingles(all, (folder) => made[folder] !== undefined).filter(keep),
       this.folder,
     );
     if (this.folder === "" && stars.length > 0) {
       const books = all.filter((e) => isStarred(stars, e.path));
       const folders = stars
         .filter((path) => this.app.vault.getAbstractFileByPath(path) instanceof TFolder)
-        .map((path) => this.folderTile(all, path))
+        .map((path) => this.folderTile(all.filter(keep), path))
         .filter((f): f is FolderTile => f !== null);
       if (books.length + folders.length > 0) {
         this.label(t("notebooks.home.favorites"));
@@ -709,7 +790,8 @@ export class LibraryView extends ItemView {
         if (first) this.continueCard(first, left[first.path]?.index, more, left);
       }
     }
-    const folders = rail ? [] : [...here.folders, ...this.emptyFolders(here.folders)];
+    const folders =
+      rail && this.folder === "" ? [] : [...here.folders, ...this.emptyFolders(here.folders)];
     if (folders.length > 0) {
       this.label(t("notebooks.home.folders"));
       const row = this.bodyEl.createDiv({ cls: this.gridClass() });
@@ -1223,7 +1305,7 @@ export class LibraryView extends ItemView {
   // --- Folder rail, Continue, preview ------------------------------------------
 
   /** Home and the folders, the path to the open one unfolded; a row is a drop target. */
-  private paintRail(all: LibraryEntry[]): void {
+  private paintRail(all: LibraryEntry[], keep: (e: LibraryEntry) => boolean): void {
     const rail = this.railEl;
     rail.empty();
     const styles = this.host.folderStyles();
@@ -1251,14 +1333,18 @@ export class LibraryView extends ItemView {
       el.createSpan({ cls: "goodobsidian-library-rail-name", text: label });
       if (count !== undefined)
         el.createSpan({ cls: "goodobsidian-library-rail-count", text: String(count) });
-      el.addEventListener("click", () => this.openFolder(folder));
+      el.addEventListener("click", () => {
+        // A drawer is put away once a folder is picked, as Obsidian's own is.
+        this.drawerOpen = false;
+        this.openFolder(folder);
+      });
       this.makeDropTarget(el, folder);
       return el;
     };
     row(t("notebooks.home.title"), "house", null, "", 0, this.folder === "");
     rail.createDiv({ cls: "goodobsidian-library-rail-label", text: t("notebooks.home.folders") });
     const made = Object.keys(styles);
-    const listed = hoistSingles(all, (folder) => styles[folder] !== undefined);
+    const listed = hoistSingles(all, (folder) => styles[folder] !== undefined).filter(keep);
     for (const folder of railFolders(listed, this.folder, made)) {
       const el = row(
         folder.name,
@@ -1593,6 +1679,17 @@ export class LibraryView extends ItemView {
           }),
       );
     }
+    menu.addItem((item) =>
+      item
+        .setTitle(t("notebooks.home.onlyNotebooks"))
+        .setIcon("notebook")
+        .setChecked(this.onlyNotebooks)
+        .onClick(() => {
+          this.onlyNotebooks = !this.onlyNotebooks;
+          this.app.saveLocalStorage(ONLY_NOTEBOOKS_KEY, this.onlyNotebooks ? "1" : "0");
+          this.paintNow(true);
+        }),
+    );
     menu.addSeparator();
     for (const option of SORTS) {
       const current = this.sort === option.by;

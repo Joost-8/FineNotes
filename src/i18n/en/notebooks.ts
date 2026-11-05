@@ -909,6 +909,7 @@ export const notebooks = {
   "notebooks.home.favorites": "Favorites",
   "notebooks.home.continue": "Continue",
   "notebooks.home.open": "Open",
+  "notebooks.home.onlyNotebooks": "Notebooks only",
   "notebooks.home.folders": "Folders",
   "notebooks.home.all": "All notebooks",
   /** At the top of Home: the files of the vault's root that are not notebooks. */
