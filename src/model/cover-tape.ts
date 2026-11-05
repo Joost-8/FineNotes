@@ -6,8 +6,11 @@
  *
  * A tape is a stroke with `tool: "tape"` (contracts/api.md §2): its first and
  * last points are the middle of its two ends, and its `size` is its height,
- * page px. Being a stroke, it is selected, moved, turned, resized, coloured,
- * copied, erased and undone as ink is, and mirrored over a join. It is
+ * page px. A straight tape has those two points only; a freehand tape has
+ * more, and is a band `size` tall along the path through them, its ends cut
+ * square (`isFreehandTape`). Being a stroke, it is selected, moved, turned,
+ * resized, coloured, copied, erased and undone as ink is, and mirrored over
+ * a join. It is
  * painted over everything else on the page, as a strip of paper over it.
  *
  * Whether a tape is revealed is never stored: it lives in the view, for this
@@ -46,6 +49,9 @@ export const DEFAULT_TAPE_COLOR = TAPE_COLORS[0];
 /** A drag shorter than this, page px at fit zoom, lays no tape (it was a tap). */
 export const MIN_TAPE_LENGTH = 8;
 
+/** How far a freehand tape's stored path may stray from the drag, page px at fit zoom. */
+export const FREEHAND_TAPE_TOLERANCE = 0.5;
+
 /** Whether a stroke is a cover tape. */
 export function isTape(stroke: { tool: string }): boolean {
   return stroke.tool === "tape";
@@ -55,6 +61,180 @@ export function isTape(stroke: { tool: string }): boolean {
 export interface TapePt {
   x: number;
   y: number;
+}
+
+/** How a new tape is laid: a straight strip from end to end, or along the drag. */
+export type TapeMode = "straight" | "freehand";
+
+/** A stored tape mode, straight for anything else. */
+export function tapeModeOf(mode: unknown): TapeMode {
+  return mode === "freehand" ? "freehand" : "straight";
+}
+
+/** The whole, finite points of `pts`, in order. */
+function pathOf(pts: readonly number[]): TapePt[] {
+  const out: TapePt[] = [];
+  const usable = pts.length - (pts.length % STRIDE);
+  for (let i = 0; i < usable; i += STRIDE) {
+    const x = pts[i];
+    const y = pts[i + 1];
+    if (Number.isFinite(x) && Number.isFinite(y)) out.push({ x, y });
+  }
+  return out;
+}
+
+/** Whether a tape follows a drawn path: more than its two end points. */
+export function isFreehandTape(pts: readonly number[]): boolean {
+  return Math.floor(pts.length / STRIDE) > 2;
+}
+
+/**
+ * The path a freehand tape follows, no two points on one spot; null for a
+ * straight tape, or one with fewer than two distinct points (drawn as a
+ * straight tape).
+ */
+export function tapePath(pts: readonly number[]): TapePt[] | null {
+  if (!isFreehandTape(pts)) return null;
+  const path: TapePt[] = [];
+  for (const p of pathOf(pts)) {
+    const last = path[path.length - 1];
+    if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 1e-6) path.push(p);
+  }
+  return path.length >= 2 ? path : null;
+}
+
+/** The unit normal of each segment of `path` (one fewer than its points). */
+function segmentNormals(path: readonly TapePt[]): TapePt[] {
+  const out: TapePt[] = [];
+  for (let i = 0; i + 1 < path.length; i++) {
+    const dx = path[i + 1].x - path[i].x;
+    const dy = path[i + 1].y - path[i].y;
+    const length = Math.hypot(dx, dy) || 1;
+    out.push({ x: -dy / length, y: dx / length });
+  }
+  return out;
+}
+
+/** The furthest a corner of a freehand tape's outline reaches, in half heights. */
+const MAX_MITER = 2;
+
+/**
+ * Each point of a freehand path moved `offset` page px across it (negative:
+ * to its left): an edge of the band. With `miter` a corner reaches out to
+ * where the two edges meet (capped), for an outline; without it each point
+ * stays `offset` from the path, so a line through them stays inside the
+ * band, for fibres.
+ */
+export function offsetPath(path: readonly TapePt[], offset: number, miter: boolean): TapePt[] {
+  const normals = segmentNormals(path);
+  return path.map((p, i) => {
+    const before = normals[Math.max(0, i - 1)];
+    const after = normals[Math.min(normals.length - 1, i)];
+    let nx = before.x + after.x;
+    let ny = before.y + after.y;
+    const length = Math.hypot(nx, ny);
+    if (length < 1e-6) {
+      nx = after.x;
+      ny = after.y;
+    } else {
+      nx /= length;
+      ny /= length;
+    }
+    const cos = nx * after.x + ny * after.y;
+    const reach = miter ? offset / Math.max(1 / MAX_MITER, cos) : offset;
+    return { x: p.x + nx * reach, y: p.y + ny * reach };
+  });
+}
+
+/**
+ * A tape's outline, page px: a straight tape's four corners
+ * (`tapeCorners`), or round a freehand tape's band, its left edge forward
+ * and its right edge back. Null when it has no points or no height.
+ */
+export function tapePolygon(pts: readonly number[], size: number): TapePt[] | null {
+  const path = tapePath(pts);
+  if (!path) return tapeCorners(pts, size);
+  if (!(size > 0)) return null;
+  const left = offsetPath(path, -size / 2, true);
+  const right = offsetPath(path, size / 2, true);
+  return [...left, ...right.reverse()];
+}
+
+/** Distance from `p` to segment `a`–`b`, and where along it `p` falls (0 at `a`, 1 at `b`). */
+function toSegment(
+  p: TapePt,
+  a: TapePt,
+  b: TapePt,
+): { distance: number; t: number; length: number } {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = Math.hypot(dx, dy);
+  const t = length < 1e-9 ? 0 : ((p.x - a.x) * dx + (p.y - a.y) * dy) / (length * length);
+  const c = Math.max(0, Math.min(1, t));
+  return { distance: Math.hypot(p.x - (a.x + dx * c), p.y - (a.y + dy * c)), t, length };
+}
+
+/** Whether `p` is within `reach` of a freehand path, its ends cut square (`slack` past them at most). */
+function onPath(path: readonly TapePt[], p: TapePt, reach: number, slack: number): boolean {
+  const last = path.length - 2;
+  for (let i = 0; i <= last; i++) {
+    const { distance, t, length } = toSegment(p, path[i], path[i + 1]);
+    if (distance > reach) continue;
+    const past = length > 0 ? slack / length : 0;
+    if (i === 0 && t < -past) continue;
+    if (i === last && t > 1 + past) continue;
+    return true;
+  }
+  return false;
+}
+
+/** Ramer–Douglas–Peucker: the points of `path` that keep it within `tolerance`. */
+function simplify(path: readonly TapePt[], tolerance: number): TapePt[] {
+  const keep = new Uint8Array(path.length);
+  keep[0] = 1;
+  keep[path.length - 1] = 1;
+  const stack: [number, number][] = [[0, path.length - 1]];
+  while (stack.length > 0) {
+    const [from, to] = stack.pop() as [number, number];
+    let worst = -1;
+    let far = 0;
+    for (let i = from + 1; i < to; i++) {
+      const { distance } = toSegment(path[i], path[from], path[to]);
+      if (distance > far) {
+        far = distance;
+        worst = i;
+      }
+    }
+    if (worst >= 0 && far > tolerance) {
+      keep[worst] = 1;
+      stack.push([from, worst], [worst, to]);
+    }
+  }
+  return path.filter((_, i) => keep[i] === 1);
+}
+
+/**
+ * The points of a freehand tape drawn through `samples` (page px): the path
+ * simplified to `tolerance` page px (0: every point, for a draft), at the
+ * neutral pressure a tape keeps.
+ * Null when the path is shorter than `minLength`: a tap lays no tape. A path
+ * that simplifies to one straight line is a straight tape.
+ */
+export function freehandTapePoints(
+  samples: readonly TapePt[],
+  tolerance: number,
+  minLength = MIN_TAPE_LENGTH,
+): number[] | null {
+  const path = samples.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  let length = 0;
+  for (let i = 1; i < path.length; i++) {
+    length += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+  }
+  if (path.length < 2 || !(length >= minLength)) return null;
+  const kept = tolerance > 0 ? simplify(path, tolerance) : path;
+  const out: number[] = [];
+  for (const p of kept) out.push(round2(p.x), round2(p.y), 0.5);
+  return out;
 }
 
 /** The middles of a tape's two ends: its first and last points. Null for no points. */
@@ -107,6 +287,9 @@ export function tapeContains(
   y: number,
   tolerance = 0,
 ): boolean {
+  const path = tapePath(stroke.pts);
+  if (path)
+    return stroke.size > 0 && onPath(path, { x, y }, stroke.size / 2 + tolerance, tolerance);
   const ends = tapeEnds(stroke.pts);
   if (!ends || !(stroke.size > 0)) return false;
   const { a, b } = ends;
@@ -230,7 +413,7 @@ export function tapeClipPath<T extends Pick<Stroke, "tool" | "pts" | "size">>(
   let cut = false;
   for (const stroke of strokes) {
     if (!isTape(stroke) || shown(stroke)) continue;
-    const corners = tapeCorners(stroke.pts, stroke.size);
+    const corners = tapePolygon(stroke.pts, stroke.size);
     if (!corners) continue;
     const xs = corners.map((c) => c.x);
     const ys = corners.map((c) => c.y);
@@ -306,11 +489,25 @@ function tapeAxes(
   return { a, b, ux, uy, nx: -uy, ny: ux };
 }
 
-/** The bounds of a tape's band, page px: its four corners, no caps. Null when it has none. */
+/**
+ * The bounds of a tape's band, page px: a straight tape's four corners, a
+ * freehand tape's path with half its height round it. Null when it has none.
+ */
 export function tapeBounds(
   pts: readonly number[],
   size: number,
 ): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  const path = tapePath(pts);
+  if (path) {
+    if (!(size > 0)) return null;
+    const half = size / 2;
+    return {
+      minX: Math.min(...path.map((p) => p.x)) - half,
+      minY: Math.min(...path.map((p) => p.y)) - half,
+      maxX: Math.max(...path.map((p) => p.x)) + half,
+      maxY: Math.max(...path.map((p) => p.y)) + half,
+    };
+  }
   const corners = tapeCorners(pts, size);
   if (!corners) return null;
   const xs = corners.map((c) => c.x);
@@ -326,13 +523,15 @@ export function tapeBounds(
 /**
  * Where each of a tape's side handles sits, page px: on the middle of each
  * end and of each long edge, `out` further out, so on a level tape they land
- * on the middles of its selection frame's sides.
+ * on the middles of its selection frame's sides. Null for a freehand tape:
+ * it has no straight sides, and resizes as ink does.
  */
 export function tapeHandles(
   pts: readonly number[],
   size: number,
   out = 0,
 ): Record<TapeHandle, TapePt> | null {
+  if (isFreehandTape(pts)) return null;
   const axes = tapeAxes(pts, size);
   if (!axes || !(size > 0)) return null;
   const { a, b, ux, uy, nx, ny } = axes;
@@ -355,7 +554,7 @@ function round2(value: number): number {
  * the tape (the other end stays), a long edge moves across it (the other
  * edge stays), so the tape gets longer or taller without the other changing
  * and without turning. Never shorter than `minLength` nor thinner than
- * `minSize`. Null when the tape has no points or no height.
+ * `minSize`. Null when the tape has no points or no height, or is freehand.
  */
 export function stretchTape(
   pts: readonly number[],
@@ -365,6 +564,7 @@ export function stretchTape(
   minLength: number,
   minSize: number,
 ): { pts: number[]; size: number } | null {
+  if (isFreehandTape(pts)) return null;
   const axes = tapeAxes(pts, size);
   if (!axes || !(size > 0) || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return null;
   let { a, b } = axes;
