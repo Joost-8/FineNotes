@@ -8,6 +8,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Everything since 2.8.0 in your language.** Reading scanned PDF pages (its
+  download offer, menu row, settings row and notices), the Notebooks button on
+  an empty tab, Free page edges, boards, deleting from Home, asking about what
+  is on screen and line width showed in English whatever the interface
+  language; they are now in all 42 languages. Scan document and Import PDF…
+  in the command palette, and the Pages section's More row, are translated
+  again.
+
 ## [2.8.2] - 2026-11-05
 
 ### Added
