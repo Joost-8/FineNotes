@@ -22,6 +22,12 @@ extracted from the matching section of this file by `release.yml`.
   The rail has a button of its own to put it away and bring it back; on a
   narrow Home it opens as a drawer over the covers, closing once you pick a
   folder. The sort menu has **Notebooks only**, to hide every other file.
+- **Notebooks in Obsidian's sidebar.** A Notebooks view sits beside Files,
+  Search and Bookmarks in the left sidebar: your folders with only the
+  notebooks in them, as the file explorer draws them. A tap opens a notebook,
+  a right-click or long press gives Obsidian's own file menu, and its buttons
+  open Home or make a notebook. It is added once; closed, the command "Show
+  notebooks in the sidebar" brings it back.
 - A folder holding only folders no longer opened empty with the rail on,
   and the rail now appears and goes as soon as the simple look is turned on
   or off. A notebook's transcript beside it (`X.transcript.md`) is part of

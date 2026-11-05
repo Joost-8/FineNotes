@@ -1,3 +1,4 @@
+import { NotebooksSidebar, VIEW_TYPE_NOTEBOOKS } from "./view/notebooks-sidebar";
 import {
   DEFAULT_GALLERY_URL,
   type GalleryEntry,
@@ -192,6 +193,8 @@ import { PAPER_COPY_PREFIX, type PaperEntry, paperName } from "./model/paper-lib
 import { buildDesignedNotebook } from "./model/paper-design";
 
 /** Where the name a user shares templates under is remembered, on this device. */
+/** Set once the Notebooks view was added to the left sidebar, on this device. */
+const NOTEBOOKS_SIDEBAR_ADDED_KEY = "finenotes-notebooks-sidebar-added";
 const SHARE_AUTHOR_KEY = "finenotes:share-author";
 /** The notebooks pages were sent to last, in this device's local storage. */
 const RECENT_TARGETS_KEY = "goodobsidian:move-targets";
@@ -553,6 +556,23 @@ export default class GoodObsidianPlugin extends Plugin {
           isInkFile: (file) => this.isInkFile(file),
         }),
     );
+    this.registerView(
+      VIEW_TYPE_NOTEBOOKS,
+      (leaf) =>
+        new NotebooksSidebar(leaf, {
+          isInkFile: (file) => this.isInkFile(file),
+          openLibrary: () => void this.openLibrary(),
+          newNotebook: (folder) => this.openNewNotebookDialog(folder),
+        }),
+    );
+    // Notebooks in Obsidian's left sidebar, once: picked there like Files or
+    // Bookmarks, and closed for good if the user closes it.
+    this.app.workspace.onLayoutReady(() => {
+      if (this.app.loadLocalStorage(NOTEBOOKS_SIDEBAR_ADDED_KEY)) return;
+      this.app.saveLocalStorage(NOTEBOOKS_SIDEBAR_ADDED_KEY, "1");
+      if (this.app.workspace.getLeavesOfType(VIEW_TYPE_NOTEBOOKS).length > 0) return;
+      void this.app.workspace.getLeftLeaf(false)?.setViewState({ type: VIEW_TYPE_NOTEBOOKS });
+    });
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
     addIcon(ICON_LIBRARY, ICON_LIBRARY_SVG);
@@ -749,6 +769,17 @@ export default class GoodObsidianPlugin extends Plugin {
     setting?.openTabById(this.manifest.id);
   }
 
+  /** The Notebooks view in the left sidebar, made if it was closed, and shown. */
+  async showNotebooksSidebar(): Promise<void> {
+    let leaf: WorkspaceLeaf | null =
+      this.app.workspace.getLeavesOfType(VIEW_TYPE_NOTEBOOKS)[0] ?? null;
+    if (!leaf) {
+      leaf = this.app.workspace.getLeftLeaf(false);
+      await leaf?.setViewState({ type: VIEW_TYPE_NOTEBOOKS, active: true });
+    }
+    if (leaf) await this.app.workspace.revealLeaf(leaf);
+  }
+
   async openLibrary(into?: WorkspaceLeaf): Promise<void> {
     const open = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
     const leaf = open ?? into ?? this.app.workspace.getLeaf("tab");
@@ -782,6 +813,12 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "open-library",
       name: t("notebooks.command.openLibrary"),
       callback: () => void this.openLibrary(),
+    });
+
+    this.addCommand({
+      id: "show-notebooks-sidebar",
+      name: t("notebooks.command.showSidebar"),
+      callback: () => void this.showNotebooksSidebar(),
     });
 
     this.addCommand({
