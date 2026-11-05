@@ -11,6 +11,7 @@ export default defineConfig({
       include: [
         "src/changelog.ts",
         "src/settings-data.ts",
+        "src/model/library-rail.ts",
         "src/i18n/languages.ts",
         "src/i18n/translate.ts",
         "src/i18n/table-file.ts",

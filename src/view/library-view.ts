@@ -4,13 +4,15 @@
  * strip of the ones edited last, the vault's folders above them, and a
  * search field and a sort menu at the top.
  *
- *   .goodobsidian-library
+ *   .goodobsidian-library   (.has-rail: the simple look, wide enough; .has-preview)
+ *     .goodobsidian-library-rail      (Home and the folders, in the simple look)
  *     .goodobsidian-library-head   (← up · title · search · sort · New notebook)
  *     .goodobsidian-library-body
  *       .goodobsidian-library-label + .goodobsidian-library-recent   (root, not searching)
  *       .goodobsidian-library-label + .goodobsidian-library-folders
  *       .goodobsidian-library-label + .goodobsidian-library-grid
  *         .goodobsidian-library-card   (.goodobsidian-library-cover + caption)
+ *     .goodobsidian-library-preview   (one tap on a cover: it, its pages, Open; a double tap opens)
  *
  * What a card shows comes from the notebook's file (model/library.ts). Files
  * are read one at a time, newest first, with a yield between each so a big
@@ -51,6 +53,9 @@ import {
   withFolderStyle,
 } from "../model/library-style";
 import { PdfBackdropCache } from "./pdf-backdrop";
+import { NotebookPages } from "./library-pages";
+import { type Tap, isDoubleTap, railFolders } from "../model/library-rail";
+import { SIMPLE_CLASS } from "../model/simple-mode";
 import { coverUrlNow, loadCover, loadEntries, saveCover, saveEntries } from "./home-cache";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { thumbnailRasterScale } from "./page-sidebar";
@@ -147,6 +152,13 @@ const ALL_FOLDED_KEY = "finenotes-library-all-folded";
 
 const CONTINUE_COUNT = 3;
 
+/** The narrowest Home that has room for the folder rail, CSS px. */
+const RAIL_MIN_WIDTH = 720;
+/** How many pages the preview's strip shows. */
+const PREVIEW_PAGES = 12;
+/** A cover drawn from the notebook's own cover page, CSS px wide. */
+const COVER_WIDTH = 240;
+
 interface Read {
   mtime: number;
   size: number;
@@ -207,6 +219,14 @@ export class LibraryView extends ItemView {
   private upEl!: HTMLElement;
   private titleEl!: HTMLElement;
   private bodyEl!: HTMLElement;
+  private railEl!: HTMLElement;
+  private previewEl!: HTMLElement;
+  /** The item the preview shows, or null when it is closed. */
+  private previewPath: string | null = null;
+  /** The last tap on a cover, for a double tap. */
+  private lastTap: Tap | null = null;
+  /** Notebooks read whole, for their cover and page pictures. */
+  private pagesOf: NotebookPages | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -313,6 +333,17 @@ export class LibraryView extends ItemView {
     root.insertBefore(this.pullEl, this.bodyEl);
     this.watchPull(this.bodyEl);
     this.barEl = root.createDiv({ cls: "goodobsidian-library-bar is-hidden" });
+    this.railEl = root.createDiv({ cls: "goodobsidian-library-rail" });
+    root.insertBefore(this.railEl, head);
+    this.previewEl = root.createDiv({ cls: "goodobsidian-library-preview is-hidden" });
+    // A tap on the page around the covers closes the preview.
+    this.bodyEl.addEventListener("click", (event) => {
+      if (
+        event.target === this.bodyEl ||
+        (event.target as HTMLElement).hasClass?.("goodobsidian-library-grid")
+      )
+        this.hidePreview();
+    });
 
     // A deleted note's frontmatter may be gone already: one read before counts too.
     this.watchVault();
@@ -322,6 +353,22 @@ export class LibraryView extends ItemView {
     if (known) for (const [path, read] of known) this.reads.set(path, read);
     this.paintNow();
     void this.loadKnown().then(() => this.readStale());
+  }
+
+  override onResize(): void {
+    if (!this.bodyEl) return;
+    this.contentEl.toggleClass("is-narrow", this.contentEl.clientWidth <= 760);
+    if (this.hasRail() !== this.contentEl.hasClass("has-rail")) this.paintNow();
+  }
+
+  /** The folder rail shows in the simple look, where Obsidian's own explorer is hidden, when there is room. */
+  private hasRail(): boolean {
+    return document.body.hasClass(SIMPLE_CLASS) && this.contentEl.clientWidth >= RAIL_MIN_WIDTH;
+  }
+
+  private pages(): NotebookPages {
+    this.pagesOf ??= new NotebookPages(this.app, () => this.pdfCache());
+    return this.pagesOf;
   }
 
   /** One key per vault for what Home keeps on this device. */
@@ -598,6 +645,12 @@ export class LibraryView extends ItemView {
     this.bodyEl.empty();
 
     const all = this.entries();
+    const rail = this.hasRail();
+    this.contentEl.toggleClass("has-rail", rail);
+    this.contentEl.toggleClass("is-narrow", this.contentEl.clientWidth <= 760);
+    if (rail) this.paintRail(all);
+    if (this.previewPath !== null && !all.some((e) => e.path === this.previewPath))
+      this.hidePreview();
     if (all.length === 0) {
       const empty = this.bodyEl.createDiv({ cls: "goodobsidian-library-empty" });
       empty.createDiv({ text: t("notebooks.home.empty") });
@@ -650,13 +703,11 @@ export class LibraryView extends ItemView {
       );
       if (recent.length > 0) {
         this.label(t("notebooks.home.continue"));
-        const row = this.bodyEl.createDiv({ cls: "goodobsidian-library-recent" });
-        for (const entry of recent) {
-          this.card(row, entry, left[entry.path]?.index);
-        }
+        const [first, ...more] = recent;
+        if (first) this.continueCard(first, left[first.path]?.index, more, left);
       }
     }
-    const folders = [...here.folders, ...this.emptyFolders(here.folders)];
+    const folders = rail ? [] : [...here.folders, ...this.emptyFolders(here.folders)];
     if (folders.length > 0) {
       this.label(t("notebooks.home.folders"));
       const row = this.bodyEl.createDiv({ cls: this.gridClass() });
@@ -1098,7 +1149,8 @@ export class LibraryView extends ItemView {
       cover.style.setProperty("--gob-cover-hi", palette.sheenLight);
       cover.style.setProperty("--gob-cover-lo", palette.sheenDark);
       cover.createSpan({ cls: "goodobsidian-library-cover-title", text: entry.title });
-      if (entry.pdf) this.paintPdfCover(cover, entry.pdf);
+      if (entry.covered) this.paintOwnCover(cover, entry);
+      else if (entry.pdf) this.paintPdfCover(cover, entry.pdf);
     } else this.paintFileCover(cover, entry);
     this.starButton(cover, entry.path, entry.title);
     const caption = card.createDiv({ cls: "goodobsidian-library-caption" });
@@ -1135,13 +1187,27 @@ export class LibraryView extends ItemView {
     }
 
     card.toggleClass("is-selected", this.selected.has(entry.path));
-    const open = (): void =>
-      this.selecting ? this.toggleSelected(card, entry.path) : this.openItem(entry);
-    card.addEventListener("click", open);
+    card.toggleClass("is-previewed", this.previewPath === entry.path);
+    // One tap shows the preview; a second one on the same cover opens it.
+    card.addEventListener("click", () => {
+      if (this.selecting) {
+        this.toggleSelected(card, entry.path);
+        return;
+      }
+      const now = Date.now();
+      if (isDoubleTap(this.lastTap, entry.path, now)) {
+        this.lastTap = null;
+        this.openItem(entry, leftAt);
+        return;
+      }
+      this.lastTap = { key: entry.path, at: now };
+      this.showPreview(entry, leftAt);
+    });
     card.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        open();
+        if (this.selecting) this.toggleSelected(card, entry.path);
+        else this.openItem(entry, leftAt);
       }
     });
     this.makeDraggable(card, entry.path);
@@ -1152,13 +1218,268 @@ export class LibraryView extends ItemView {
     return card;
   }
 
+  // --- Folder rail, Continue, preview ------------------------------------------
+
+  /** Home and the folders, the path to the open one unfolded; a row is a drop target. */
+  private paintRail(all: LibraryEntry[]): void {
+    const rail = this.railEl;
+    rail.empty();
+    const styles = this.host.folderStyles();
+    const row = (
+      label: string,
+      icon: string | null,
+      color: string | null,
+      folder: string,
+      depth: number,
+      on: boolean,
+      count?: number,
+    ): HTMLElement => {
+      const el = rail.createEl("button", {
+        cls: "goodobsidian-library-rail-row clickable-icon",
+        attr: { type: "button", "aria-current": on ? "page" : "false" },
+      });
+      el.toggleClass("is-on", on);
+      el.style.setProperty("--gob-depth", String(depth));
+      if (icon) setIcon(el.createSpan({ cls: "goodobsidian-library-rail-icon" }), icon);
+      else
+        el.createSpan({ cls: "goodobsidian-library-rail-dot" }).style.setProperty(
+          "--gob-folder",
+          color ?? DEFAULT_FOLDER_COLOR,
+        );
+      el.createSpan({ cls: "goodobsidian-library-rail-name", text: label });
+      if (count !== undefined)
+        el.createSpan({ cls: "goodobsidian-library-rail-count", text: String(count) });
+      el.addEventListener("click", () => this.openFolder(folder));
+      this.makeDropTarget(el, folder);
+      return el;
+    };
+    row(t("notebooks.home.title"), "house", null, "", 0, this.folder === "");
+    rail.createDiv({ cls: "goodobsidian-library-rail-label", text: t("notebooks.home.folders") });
+    const made = Object.keys(styles);
+    const listed = hoistSingles(all, (folder) => styles[folder] !== undefined);
+    for (const folder of railFolders(listed, this.folder, made)) {
+      const el = row(
+        folder.name,
+        null,
+        styles[folder.path]?.color ?? null,
+        folder.path,
+        folder.depth,
+        folder.current,
+        folder.count,
+      );
+      el.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        this.openFolderMenu(event, {
+          path: folder.path,
+          name: folder.name,
+          count: folder.count,
+          notebooks: folder.count,
+        });
+      });
+    }
+  }
+
+  /**
+   * The notebook read last as a wide card: its cover, where it was left
+   * (page, folder, when, a bar), Continue, and the page itself; the next
+   * ones read beside it, small.
+   */
+  private continueCard(
+    entry: LibraryEntry,
+    leftAt: number | undefined,
+    more: LibraryEntry[],
+    left: LastPages,
+  ): void {
+    const hero = this.bodyEl.createDiv({ cls: "goodobsidian-library-hero" });
+    this.card(hero, entry, leftAt);
+    const info = hero.createDiv({ cls: "goodobsidian-library-hero-info" });
+    info.createDiv({ cls: "goodobsidian-library-hero-name", text: entry.title });
+    const progress = readProgress(entry, leftAt);
+    info.createDiv({
+      cls: "goodobsidian-library-when",
+      text: [
+        entry.folder === ""
+          ? ""
+          : crumbs(entry.folder)
+              .map((c) => c.name)
+              .join(" › "),
+        progress ? t("notebooks.home.pageOf", { page: progress.page, total: progress.of }) : "",
+        whenText(entry.edited, Date.now()),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    });
+    if (progress) {
+      const track = info.createDiv({ cls: "goodobsidian-library-progress" });
+      track.createDiv().style.width = `${Math.round(progress.ratio * 100)}%`;
+    }
+    const go = info.createEl("button", { cls: "mod-cta", text: t("notebooks.home.continue") });
+    const index = leftAt ?? (entry.covered ? 1 : 0);
+    go.addEventListener("click", () => this.openItem(entry, index));
+    const sheet = hero.createDiv({
+      cls: "goodobsidian-library-hero-page",
+      attr: {
+        role: "button",
+        tabindex: "0",
+        "aria-label": progress
+          ? t("notebooks.home.pageOf", { page: progress.page, total: progress.of })
+          : entry.title,
+      },
+    });
+    sheet.addEventListener("click", () => this.openItem(entry, index));
+    const file = this.app.vault.getFileByPath(entry.path);
+    if (file) {
+      this.whenSeen(sheet, async () => {
+        const canvas = await this.pages().render(file, index, 320);
+        if (!canvas || !sheet.isConnected) return;
+        canvas.addClass("goodobsidian-library-page-canvas");
+        sheet.empty();
+        sheet.appendChild(canvas);
+        sheet.addClass("is-ready");
+      });
+    }
+    if (more.length > 0) {
+      const side = hero.createDiv({ cls: "goodobsidian-library-hero-more" });
+      for (const next of more) this.card(side, next, left[next.path]?.index);
+    }
+  }
+
+  /**
+   * A notebook with a cover page shows that page as its cover, as the
+   * notebook draws it (design, colour, title). It is drawn once, kept as a
+   * small picture on this device, and shown over the plain cover when ready.
+   */
+  private paintOwnCover(cover: HTMLElement, entry: LibraryEntry): void {
+    const file = this.app.vault.getFileByPath(entry.path);
+    if (!file) return;
+    const dpr = window.devicePixelRatio || 1;
+    const key = `cover:${entry.path}@${file.stat.mtime}:${file.stat.size}:${Math.round(COVER_WIDTH * dpr)}`;
+    const vault = this.vaultKey();
+    const show = (url: string): void => {
+      const img = cover.createEl("img", {
+        cls: "goodobsidian-library-own",
+        attr: { alt: "", decoding: "async", draggable: "false" },
+      });
+      img.src = url;
+      const ready = (): void => {
+        cover.addClass("is-own");
+      };
+      if (img.complete && img.naturalWidth > 0) ready();
+      else img.addEventListener("load", ready, { once: true });
+    };
+    const now = coverUrlNow(key);
+    if (now) {
+      show(now);
+      return;
+    }
+    this.whenSeen(cover, async () => {
+      const kept = await loadCover(vault, key);
+      if (this.closed || !cover.isConnected) return;
+      if (kept) {
+        show(kept);
+        return;
+      }
+      const canvas = await this.pages().render(file, 0, COVER_WIDTH);
+      if (!canvas || this.closed) return;
+      const url = await saveCover(vault, key, canvas);
+      canvas.width = canvas.height = 0;
+      if (url && cover.isConnected) show(url);
+    });
+  }
+
+  /** The preview of `entry`: its cover, facts, Open and ⋯, and (a notebook) its pages to open at. */
+  private showPreview(entry: LibraryEntry, leftAt?: number): void {
+    this.previewPath = entry.path;
+    this.contentEl.addClass("has-preview");
+    this.contentEl
+      .querySelectorAll(".goodobsidian-library-card.is-previewed")
+      .forEach((el) => el.removeClass("is-previewed"));
+    for (const { el } of this.cards.get(entry.path) ?? []) el.addClass("is-previewed");
+    const pane = this.previewEl;
+    pane.empty();
+    pane.removeClass("is-hidden");
+    const close = pane.createEl("button", {
+      cls: "clickable-icon goodobsidian-library-preview-close",
+      attr: { type: "button", "aria-label": t("common.close") },
+    });
+    setIcon(close, "x");
+    close.addEventListener("click", () => this.hidePreview());
+
+    const top = pane.createDiv({ cls: "goodobsidian-library-preview-top" });
+    const shown = this.card(top, entry, leftAt, true);
+    shown.removeClass("is-previewed");
+    shown.addClass("is-in-preview");
+    const info = top.createDiv({ cls: "goodobsidian-library-preview-info" });
+    info.createDiv({ cls: "goodobsidian-library-hero-name", text: entry.title });
+    const facts = [
+      entry.folder === ""
+        ? t("notebooks.home.title")
+        : crumbs(entry.folder)
+            .map((c) => c.name)
+            .join(" › "),
+      entry.pages > 0 ? tn("notebooks.home.pageCount", entry.pages) : "",
+      whenText(entry.edited, Date.now()),
+    ].filter(Boolean);
+    for (const fact of facts) info.createDiv({ cls: "goodobsidian-library-when", text: fact });
+    const buttons = info.createDiv({ cls: "goodobsidian-library-preview-buttons" });
+    const open = buttons.createEl("button", { cls: "mod-cta", text: t("notebooks.home.open") });
+    open.addEventListener("click", () => this.openItem(entry, leftAt));
+    const more = buttons.createEl("button", {
+      cls: "clickable-icon",
+      attr: { type: "button", "aria-label": t("common.more"), "aria-haspopup": "menu" },
+    });
+    setIcon(more, "more-horizontal");
+    more.addEventListener("click", (event) => this.openCardMenu(event, entry));
+
+    if (entry.kind !== "notebook") return;
+    const file = this.app.vault.getFileByPath(entry.path);
+    if (!file) return;
+    const strip = pane.createDiv({ cls: "goodobsidian-library-preview-pages" });
+    const first = entry.covered ? 1 : 0;
+    const count = Math.min(entry.pages, PREVIEW_PAGES);
+    for (let i = 0; i < count; i++) {
+      const index = first + i;
+      const sheet = strip.createDiv({
+        cls: "goodobsidian-library-preview-page",
+        attr: {
+          role: "button",
+          tabindex: "0",
+          "aria-label": t("notebooks.home.pageOf", { page: i + 1, total: entry.pages }),
+        },
+      });
+      sheet.toggleClass("is-current", leftAt === index);
+      sheet.addEventListener("click", () => this.openItem(entry, index));
+      sheet.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") this.openItem(entry, index);
+      });
+      this.whenSeen(sheet, async () => {
+        const canvas = await this.pages().render(file, index, 110);
+        if (!canvas || !sheet.isConnected) return;
+        canvas.addClass("goodobsidian-library-page-canvas");
+        sheet.appendChild(canvas);
+        sheet.addClass("is-ready");
+      });
+    }
+  }
+
+  private hidePreview(): void {
+    if (this.previewPath === null) return;
+    this.previewPath = null;
+    this.contentEl.removeClass("has-preview");
+    this.previewEl.addClass("is-hidden");
+    this.previewEl.empty();
+    this.contentEl
+      .querySelectorAll(".goodobsidian-library-card.is-previewed")
+      .forEach((el) => el.removeClass("is-previewed"));
+  }
+
   // --- Menus and navigation -----------------------------------------------------
 
   /**
    * A notebook or file in a tab of its own, or the tab it is already in, filling the
    * view: the library stays where it is, so it is always one tap back.
    */
-  private openItem(entry: LibraryEntry): void {
+  private openItem(entry: LibraryEntry, pageIndex?: number): void {
     const file = this.app.vault.getFileByPath(entry.path);
     if (!file) return;
     const notebook = entry.kind === "notebook";
@@ -1170,8 +1491,12 @@ export class LibraryView extends ItemView {
     });
     const leaf = existing ?? this.app.workspace.getLeaf("tab");
     unstackTabsOf(leaf);
-    if (existing) void this.app.workspace.revealLeaf(existing);
-    else void leaf.openFile(file);
+    // A page picked in the preview or the Continue card: the notebook opens there.
+    const at = pageIndex !== undefined && notebook ? { pageIndex } : undefined;
+    if (existing) {
+      void this.app.workspace.revealLeaf(existing);
+      if (at) leaf.setEphemeralState(at);
+    } else void leaf.openFile(file, at ? { eState: at } : undefined);
   }
 
   /** A menu with room for a finger: every row is tall (styles.css). */
