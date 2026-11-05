@@ -212,6 +212,54 @@ describe("layoutText", () => {
     expect(layout.lines).toHaveLength(1);
   });
 
+  // FineNotes#159, the calculus notes: Word draws an equation a font at a
+  // time, its brackets first, then its letters, then its digits, so the
+  // pass in drawing order made a line of nearly every glyph. Positions from
+  // that PDF's page 27: Luego (f^-1)'(x) = 1 / f'(f^-1(x)).
+  it("joins a formula drawn out of order, a fraction's top and bottom included", () => {
+    const layout = layoutText(
+      [
+        item("Luego", 142, 343, 13, 32),
+        item("(", 180, 345, 22, 6),
+        item(")", 210, 345, 22, 6),
+        item("(", 222, 345, 22, 6),
+        item(")", 236, 345, 22, 6),
+        item("f", 190, 343, 13, 4),
+        item("x", 228, 343, 13, 6),
+        item("'", 216, 343, 13, 3),
+        item("−1", 196, 337, 8, 8),
+        item("=", 248, 343, 13, 8),
+        item("1", 290, 333, 13, 6),
+        item("f ' ( f (x))", 262, 356, 13, 60),
+      ],
+      IDENTITY_PAGE,
+    );
+    expect(layout.lines).toHaveLength(1);
+    const text = rangeText(layout, { start: 0, end: layout.chars.length });
+    // Left to right, whatever order it was drawn in.
+    expect(text.indexOf("Luego")).toBe(0);
+    expect(text.indexOf("=")).toBeLessThan(text.lastIndexOf("f"));
+  });
+
+  it("keeps two columns apart, and stacked lines of a label box, drawn out of order", () => {
+    const columns = layoutText(
+      [
+        item("▪ forwarding: move packets from", 86, 200, 20, 330),
+        item("▪ forwarding: process of getting", 520, 200, 20, 330),
+      ],
+      IDENTITY_PAGE,
+    );
+    expect(columns.lines).toHaveLength(2);
+    const stacked = layoutText(
+      [
+        item("dest.: 255.255.255.255, 67", 520, 300, 12, 150),
+        item("src: 0.0.0.0, 68", 520, 309, 12, 95),
+      ],
+      IDENTITY_PAGE,
+    );
+    expect(stacked.lines).toHaveLength(2);
+  });
+
   it("joins no paragraph's next line, bullet under a heading, or page number to a line", () => {
     const paragraph = layoutText(
       [

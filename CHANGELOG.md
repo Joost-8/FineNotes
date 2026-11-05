@@ -20,7 +20,10 @@ extracted from the matching section of this file by `release.yml`.
 - **The highlighter takes a whole equation.** On a PDF, the text snap now
   treats a formula as one line: a fraction's top and bottom and a sum's
   limits belong to it, so a highlight over an equation is one band instead
-  of scraps at different heights (FineNotes#159).
+  of scraps at different heights (FineNotes#159). This holds for formulas
+  made in Word or MathType too, which a PDF draws a font at a time
+  (brackets, then letters, then digits): pieces join by where they stand on
+  the page, not by the order they were drawn.
 - **The whole-stroke eraser takes a highlight it touches.** It took a
   stroke only near its centre line, so rubbing over a wide highlight (a
   snapped one is as tall as the text) away from its middle left it there.
