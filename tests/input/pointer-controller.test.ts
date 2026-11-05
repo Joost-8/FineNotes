@@ -1350,3 +1350,76 @@ describe("the pen's side button clicked in the air (stylus-click.ts)", () => {
     expect(controller.stylusMenu(2000 + MENU_AFTER_LIFT_MS + 1)).toBe(true);
   });
 });
+
+describe("the side button held as the pen touches down, as Android's WebView reports it (FineNotes#149)", () => {
+  /** A controller that logs the buttons each press is routed and started with. */
+  function barrelRig(clicks: boolean) {
+    const el = new StandInElement();
+    const log: string[] = [];
+    const controller = new PointerController(
+      el as unknown as HTMLElement,
+      toSurface,
+      {
+        onStart: (_s, press) => log.push(`start buttons=${press.buttons}`),
+        onMove: () => undefined,
+        onEnd: () => log.push("end"),
+        onCancel: () => undefined,
+        onPanStart: () => undefined,
+        onPanMove: () => undefined,
+        onPanEnd: () => undefined,
+        onStylusClick: () => log.push("click"),
+      },
+      {
+        route: (_event, press) => {
+          log.push(`route buttons=${press.buttons}`);
+          return "draw";
+        },
+        stylusClicks: () => clicks,
+      },
+    );
+    controller.attach();
+    const fire = (phase: Phase, c: Contact): void => {
+      el.listeners.get(phase)?.(eventFor(1, "pen", c));
+    };
+    return { log, fire };
+  }
+
+  for (const clicks of [true, false]) {
+    it(`gives the press the barrel's bit${clicks ? "" : ", with no click wanted"}`, () => {
+      const { log, fire } = barrelRig(clicks);
+      // Hovering with the button down: the contact bit, no pressure, no press.
+      fire("pointermove", { x: 10, y: 10, t: 0, buttons: 0, pressure: 0 });
+      fire("pointermove", { x: 10, y: 10, t: 20, buttons: 1, pressure: 0 });
+      // Touching down: a plain press, the button nowhere in it.
+      fire("pointerdown", { x: 10, y: 10, t: 60, button: 0, buttons: 1, pressure: 0.4 });
+      fire("pointermove", { x: 30, y: 10, t: 80, buttons: 1, pressure: 0.5 });
+      fire("pointerup", { x: 30, y: 10, t: 100, buttons: 0, pressure: 0 });
+      expect(log).toEqual(["route buttons=3", "start buttons=3", "end"]);
+    });
+  }
+
+  it("leaves a press alone when the hovering moves had no button, and after a lift", () => {
+    const { log, fire } = barrelRig(true);
+    fire("pointermove", { x: 10, y: 10, t: 0, buttons: 0, pressure: 0 });
+    fire("pointerdown", { x: 10, y: 10, t: 40, button: 0, buttons: 1, pressure: 0.4 });
+    fire("pointerup", { x: 10, y: 10, t: 80, buttons: 0, pressure: 0 });
+    // The button held, then let go in the air before the next press.
+    fire("pointermove", { x: 10, y: 10, t: 2000, buttons: 1, pressure: 0 });
+    fire("pointermove", { x: 10, y: 10, t: 4000, buttons: 0, pressure: 0 });
+    fire("pointerdown", { x: 10, y: 10, t: 4040, button: 0, buttons: 1, pressure: 0.4 });
+    expect(log).toEqual([
+      "route buttons=1",
+      "start buttons=1",
+      "end",
+      "route buttons=1",
+      "start buttons=1",
+    ]);
+  });
+
+  it("keeps the eraser end the eraser end", () => {
+    const { log, fire } = barrelRig(true);
+    fire("pointermove", { x: 10, y: 10, t: 0, buttons: 1, pressure: 0 });
+    fire("pointerdown", { x: 10, y: 10, t: 40, button: 5, buttons: 33, pressure: 0.4 });
+    expect(log).toEqual(["route buttons=33", "start buttons=33"]);
+  });
+});
