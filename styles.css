@@ -16649,26 +16649,41 @@ button.goodobsidian-library-rail-row.is-drop {
   color: var(--text-faint);
 }
 
-/* Continue: the notebook read last, wide, with the page it was left on. */
+/* Continue: the notebook read last, wide, with the page it was left on.
+   It lays itself out by the room the body has (rail and preview open take
+   it away): four across when wide, the next reads below when not, and the
+   page under the cover on a narrow body. Names wrap at words, never letters. */
+.goodobsidian-library-body {
+  container: gob-body / inline-size;
+}
 .goodobsidian-library-hero {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr) minmax(0, 280px) auto;
+  grid-template-columns: 140px minmax(200px, 1fr) minmax(0, 300px) auto;
+  grid-template-areas: "cover info page more";
   gap: 20px;
   align-items: end;
   padding: 16px;
   border-radius: 16px;
   background: var(--background-secondary);
 }
+.goodobsidian-library-hero > .goodobsidian-library-card {
+  grid-area: cover;
+}
 .goodobsidian-library-hero > .goodobsidian-library-card .goodobsidian-library-caption {
   display: none;
 }
 .goodobsidian-library-hero-info {
+  grid-area: info;
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
 }
 .goodobsidian-library-hero-info .goodobsidian-library-when {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   white-space: normal;
 }
 .goodobsidian-library-hero-info button.mod-cta {
@@ -16676,15 +16691,23 @@ button.goodobsidian-library-rail-row.is-drop {
   margin-top: 10px;
 }
 .goodobsidian-library-hero-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   font-size: 18px;
   font-weight: 700;
+  line-height: 1.25;
   letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
+/* The whole page at a fixed height, as wide as its shape makes it: never a cropped band. */
 .goodobsidian-library-hero-page {
-  align-self: stretch;
-  max-height: 230px;
-  min-height: 120px;
+  grid-area: page;
+  justify-self: start;
+  height: 220px;
+  min-width: 120px;
+  max-width: 100%;
   overflow: hidden;
   border-radius: 6px;
   background: #fff;
@@ -16698,7 +16721,12 @@ button.goodobsidian-library-rail-row.is-drop {
   width: 100%;
   height: auto;
 }
+.goodobsidian-library-hero-page .goodobsidian-library-page-canvas {
+  width: auto;
+  height: 100%;
+}
 .goodobsidian-library-hero-more {
+  grid-area: more;
   display: flex;
   gap: 14px;
   align-self: end;
@@ -16708,16 +16736,31 @@ button.goodobsidian-library-rail-row.is-drop {
 .goodobsidian-library-hero-more > .goodobsidian-library-card {
   width: 92px;
 }
-@container (max-width: 760px) {
+/* Not wide enough for four: the next reads go below, in a row. */
+@container gob-body (max-width: 1000px) {
   .goodobsidian-library-hero {
-    grid-template-columns: 110px minmax(0, 1fr);
-  }
-  .goodobsidian-library-hero-page {
-    grid-column: 1 / -1;
-    max-height: 180px;
+    grid-template-columns: 130px minmax(200px, 1fr) minmax(0, 280px);
+    grid-template-areas:
+      "cover info page"
+      "more more more";
   }
   .goodobsidian-library-hero-more {
-    display: none;
+    padding: 14px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--background-modifier-border);
+  }
+}
+/* Narrow: the page under the cover and its name. */
+@container gob-body (max-width: 640px) {
+  .goodobsidian-library-hero {
+    grid-template-columns: 110px minmax(0, 1fr);
+    grid-template-areas:
+      "cover info"
+      "page page"
+      "more more";
+  }
+  .goodobsidian-library-hero-page {
+    height: 200px;
   }
 }
 

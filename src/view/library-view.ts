@@ -1426,8 +1426,8 @@ export class LibraryView extends ItemView {
     });
     sheet.addEventListener("click", () => this.openItem(entry, index));
     const file = this.app.vault.getFileByPath(entry.path);
-    // Drawn at its widest: when the preview opens the card stacks and the page spans it.
-    if (file) this.pagePicture(sheet, file, index, 420);
+    // Shown 220 px high, so at most ~300 px wide (a landscape page): drawn that wide.
+    if (file) this.pagePicture(sheet, file, index, 300);
     if (more.length > 0) {
       const side = hero.createDiv({ cls: "goodobsidian-library-hero-more" });
       for (const next of more) this.card(side, next, left[next.path]?.index);
