@@ -146,7 +146,7 @@ export class AiMenuPopover {
       if (item.mark === "download") {
         const mark = row.createSpan({ cls: "goodobsidian-aimenu-mark" });
         setIcon(mark, "download");
-        row.setAttribute("aria-label", `${item.label}: download the reader`);
+        row.setAttribute("aria-label", t("ai.ocr.menuDownload", { label: item.label }));
       }
       if (!item.enabled) {
         row.disabled = true;

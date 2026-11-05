@@ -10,6 +10,7 @@
  */
 
 import { formatSize } from "../downloads/model-manifest";
+import { t, tn } from "../i18n/translate";
 import { OCR_OBSOLETE_FOLDERS, OCR_TIERS } from "../recognition/ocr/ocr-model";
 
 /** What is needed of a registered model's store. */
@@ -76,15 +77,11 @@ export async function removeOtherOcrModels(
 
 /** What the notice says. */
 export function cleanupText(result: OcrCleanupResult): string {
-  if (result.models.length === 0 && result.folders.length === 0) {
-    return "FineNotes: there are no other OCR models on this device.";
-  }
-  const parts: string[] = [];
-  if (result.models.length > 0) {
-    parts.push(
-      `${result.models.length} other OCR model${result.models.length === 1 ? "" : "s"} (${formatSize(result.bytes)})`,
-    );
-  }
-  if (result.folders.length > 0) parts.push("the folder of an old version");
-  return `FineNotes: removed ${parts.join(" and ")}.`;
+  const models = result.models.length;
+  const folders = result.folders.length > 0;
+  if (models === 0) return folders ? t("ai.ocr.removedOldFolder") : t("ai.ocr.noOtherModels");
+  const size = formatSize(result.bytes);
+  return folders
+    ? tn("ai.ocr.removedModelsAndFolder", models, { size })
+    : tn("ai.ocr.removedModels", models, { size });
 }

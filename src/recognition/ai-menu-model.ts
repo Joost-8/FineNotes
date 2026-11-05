@@ -303,7 +303,7 @@ export function buildAiMenu(ctx: AiMenuContext): AiMenuItem[] {
 function scanItems(ctx: AiMenuContext): AiMenuItem[] {
   const scan = ctx.scan;
   if (!scan) return [];
-  const base = { label: "Scanned pages", icon: "file-scan", enabled: true, reason: "" };
+  const base = { label: t("ai.ocr.menuItem"), icon: "file-scan", enabled: true, reason: "" };
   if (!scan.ready) {
     return [{ ...base, id: "scan-pdf-download", mark: "download", section: "device" }];
   }

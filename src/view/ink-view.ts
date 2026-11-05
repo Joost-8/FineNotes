@@ -1015,11 +1015,11 @@ export class InkView extends TextFileView {
     const found =
       here?.kind === "pdf" ? here : pages.map((p) => p.backdrop).find((b) => b.kind === "pdf");
     if (found?.kind !== "pdf") {
-      new Notice("FineNotes: this notebook has no PDF pages.");
+      new Notice(t("view.ocr.noPdfPages"));
       return;
     }
     if (!this.plugin.settings.ocrScannedPdfs) {
-      new Notice('FineNotes: "Read scanned PDF pages" is off in the settings.');
+      new Notice(t("view.ocr.off"));
       return;
     }
     await this.plugin.ocr.dropCache(found.path);
@@ -1028,7 +1028,7 @@ export class InkView extends TextFileView {
       if (key.startsWith(`${found.path}:`)) this.pdfSearchText.delete(key);
     }
     this.focusPdfText(index);
-    new Notice("FineNotes: reading this PDF's scanned pages again.");
+    new Notice(t("view.ocr.rereading"));
   }
 
   /** The pen touched the page or left it: hold, or let go of, what would stall it. */

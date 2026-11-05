@@ -1,5 +1,6 @@
 import { setIcon, type WorkspaceLeaf } from "obsidian";
 import { ICON_LIBRARY } from "../constants";
+import { t } from "../i18n/translate";
 
 /**
  * A "Notebooks" action on Obsidian's empty tab (what you see after closing the Home
@@ -28,13 +29,14 @@ export class EmptyTabHomeButton {
     }
     for (const list of lists) {
       if (this.actions.has(list)) continue;
+      const name = t("notebooks.home.heading");
       const action = list.createDiv({
         cls: "empty-state-action goodobsidian-empty-home",
-        attr: { role: "button", tabindex: "0", "aria-label": "Notebooks" },
+        attr: { role: "button", tabindex: "0", "aria-label": name },
       });
       const icon = action.createSpan({ cls: "goodobsidian-empty-home-icon" });
       setIcon(icon, ICON_LIBRARY);
-      action.createSpan({ text: "Notebooks" });
+      action.createSpan({ text: name });
       const go = () => {
         const leaf = leafOf(list);
         if (leaf) this.openLibrary(leaf);

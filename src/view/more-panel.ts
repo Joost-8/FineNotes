@@ -364,7 +364,7 @@ export class MorePanel {
       cls: "goodobsidian-more-row is-switch clickable-icon",
     });
     setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), "move-horizontal");
-    button.createSpan({ cls: "goodobsidian-more-label", text: "Free page edges" });
+    button.createSpan({ cls: "goodobsidian-more-label", text: t("view.morePanel.freePageEdges") });
     const mark = button.createSpan({ cls: "goodobsidian-more-check" });
     setIcon(mark, "check");
     let on = this.page.freePageEdges === true;

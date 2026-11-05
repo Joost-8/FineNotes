@@ -557,4 +557,33 @@ export const ai = {
   "ai.month.dec": "Dec",
   "ai.provider.manual": "Manual — you type the text yourself",
   "ai.provider.cloud": "Cloud AI — with your own API key",
+  // --- Reading scanned PDF pages (OCR) ---
+  "ai.ocr.menuItem": "Scanned pages",
+  "ai.ocr.menuDownload": "{label}: download the reader",
+  "ai.ocr.modelFast": "Scanned-page reader (OCR model)",
+  "ai.ocr.modelAccurate": "Scanned-page reader, accurate (OCR model)",
+  "ai.ocr.modelMostAccurate": "Scanned-page reader, most accurate (OCR model)",
+  "ai.ocr.purpose":
+    "It reads the printed text of scanned PDF pages on this device, so search, the text-snapping highlighter and Copy text work on them; the pages never leave the device.",
+  "ai.ocr.tierFast": "Fast",
+  "ai.ocr.tierAccurate": "Accurate",
+  "ai.ocr.tierMostAccurate": "Most accurate",
+  "ai.ocr.downsideFast": "Misses a few more small words, mostly in figures.",
+  "ai.ocr.downsideAccurate": "About 2× slower per page, and a bigger download.",
+  "ai.ocr.downsideMostAccurate":
+    "About 8× slower per page. Stays on this computer; it never syncs to an iPad.",
+  "ai.ocr.offerTitle": "Read the text in this PDF?",
+  "ai.ocr.offerBody":
+    "Some pages are pictures. Download a reader to search and copy their text. It runs on this device only.",
+  "ai.ocr.recommended": "Recommended",
+  "ai.ocr.noOtherModels": "FineNotes: there are no other OCR models on this device.",
+  "ai.ocr.removedModels.one": "FineNotes: removed {count} other OCR model ({size}).",
+  "ai.ocr.removedModels.other": "FineNotes: removed {count} other OCR models ({size}).",
+  "ai.ocr.removedOldFolder": "FineNotes: removed the folder of an old version.",
+  "ai.ocr.removedModelsAndFolder.one":
+    "FineNotes: removed {count} other OCR model ({size}) and the folder of an old version.",
+  "ai.ocr.removedModelsAndFolder.other":
+    "FineNotes: removed {count} other OCR models ({size}) and the folder of an old version.",
+  "ai.ocr.pageFailed":
+    "FineNotes: a scanned PDF page could not be read on this device. The page stays as it is; details are in the developer console.",
 } as const;

@@ -293,6 +293,10 @@ export const settings = {
     "Grape (handwriting recognizer model) reads your handwriting: notebook search and Obsidian's search find it, and a lassoed heading or word fills in its title or link.",
   "settings.models.purpose.learned":
     "Grape tuned to your own handwriting, learned on this device from the practice sheets you write (Learn your handwriting, under AI and handwriting).",
+  "settings.models.purpose.ocr":
+    "The OCR model reads the printed text of scanned PDF pages on this device, so search, the text-snapping highlighter and Copy text work on them; the pages never leave the device.",
+  "settings.models.ocrRow": "Scanned pages · {tier}",
+  "settings.models.removeOtherOcr": "Remove other OCR models",
   "settings.models.downloadsOnce":
     "It downloads once, the first time it is needed, and runs on this device only.",
   "settings.models.withDownload": "{purpose} {download}",

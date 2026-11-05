@@ -24,6 +24,7 @@
  */
 
 import type { ModelAsset, ModelFile } from "../../downloads/model-manifest";
+import { t } from "../../i18n/translate";
 import { OCR_TUNING, type OcrTuning } from "./ocr-words";
 
 const RELEASE = "https://github.com/Joost-8/FineNotes-templates/releases/download/ocr-1";
@@ -109,15 +110,15 @@ export const OCR_MEDIUM_DICT_FILE: ModelFile = {
 const SHARED_FOLDER = "ocr/ppocrv6-1";
 const SHARED = { folder: SHARED_FOLDER, files: [OCR_DET_FILE.name, OCR_WASM_FILE.name] } as const;
 
-const PURPOSE =
-  "It reads the printed text of scanned PDF pages on this device, so search, the text-snapping " +
-  "highlighter and Copy text work on them; the pages never leave the device.";
-
 /** Fast: the model every install had before the choice existed (same id, version and folder). */
 export const OCR_MODEL: ModelAsset = {
   id: "ocr-ppocrv6",
-  label: "Scanned-page reader (OCR model)",
-  purpose: PURPOSE,
+  get label() {
+    return t("ai.ocr.modelFast");
+  },
+  get purpose() {
+    return t("ai.ocr.purpose");
+  },
   version: "2",
   format: 1,
   folder: SHARED_FOLDER,
@@ -129,8 +130,12 @@ export const OCR_MODEL: ModelAsset = {
 /** Accurate: the small recogniser with the shared detector. */
 export const OCR_MODEL_ACCURATE: ModelAsset = {
   id: "ocr-ppocrv6-small",
-  label: "Scanned-page reader, accurate (OCR model)",
-  purpose: PURPOSE,
+  get label() {
+    return t("ai.ocr.modelAccurate");
+  },
+  get purpose() {
+    return t("ai.ocr.purpose");
+  },
   version: "1",
   format: 1,
   folder: "ocr/ppocrv6-small-1",
@@ -145,8 +150,12 @@ export const OCR_MODEL_ACCURATE: ModelAsset = {
  */
 export const OCR_MODEL_MOST_ACCURATE: ModelAsset = {
   id: "ocr-ppocrv6-medium",
-  label: "Scanned-page reader, most accurate (OCR model)",
-  purpose: PURPOSE,
+  get label() {
+    return t("ai.ocr.modelMostAccurate");
+  },
+  get purpose() {
+    return t("ai.ocr.purpose");
+  },
   version: "1",
   format: 1,
   folder: "ocr/ppocrv6-medium-1",
@@ -190,7 +199,9 @@ export const OCR_MODEL_VERSION = "ppocrv6-tiny-1";
 export const OCR_TIERS: readonly OcrTier[] = [
   {
     id: "fast",
-    label: "Fast",
+    get label() {
+      return t("ai.ocr.tierFast");
+    },
     asset: OCR_MODEL,
     rec: OCR_REC_FILE.name,
     dict: OCR_DICT_FILE.name,
@@ -200,11 +211,15 @@ export const OCR_TIERS: readonly OcrTier[] = [
     confidence: { wordMean: 0.9, lineMean: 0.95, wordMin: 0.5 },
     desktopOnly: false,
     secondsPerPage: 6,
-    downside: "Misses a few more small words, mostly in figures.",
+    get downside() {
+      return t("ai.ocr.downsideFast");
+    },
   },
   {
     id: "accurate",
-    label: "Accurate",
+    get label() {
+      return t("ai.ocr.tierAccurate");
+    },
     asset: OCR_MODEL_ACCURATE,
     rec: OCR_SMALL_REC_FILE.name,
     dict: OCR_SMALL_DICT_FILE.name,
@@ -212,11 +227,15 @@ export const OCR_TIERS: readonly OcrTier[] = [
     confidence: { wordMean: 0.95, lineMean: 0.95, wordMin: 0.5 },
     desktopOnly: false,
     secondsPerPage: 14,
-    downside: "About 2× slower per page, and a bigger download.",
+    get downside() {
+      return t("ai.ocr.downsideAccurate");
+    },
   },
   {
     id: "most-accurate",
-    label: "Most accurate",
+    get label() {
+      return t("ai.ocr.tierMostAccurate");
+    },
     asset: OCR_MODEL_MOST_ACCURATE,
     rec: OCR_MEDIUM_REC_FILE.name,
     dict: OCR_MEDIUM_DICT_FILE.name,
@@ -225,7 +244,9 @@ export const OCR_TIERS: readonly OcrTier[] = [
     confidence: { wordMean: 0.95, lineMean: 0.98, wordMin: 0.9 },
     desktopOnly: true,
     secondsPerPage: 48,
-    downside: "About 8× slower per page. Stays on this computer; it never syncs to an iPad.",
+    get downside() {
+      return t("ai.ocr.downsideMostAccurate");
+    },
   },
 ];
 
