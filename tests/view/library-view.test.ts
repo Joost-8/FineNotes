@@ -14,7 +14,7 @@ const { memoryVault } = await import("./memory-vault");
 interface Inside {
   watchVault(): void;
   stale: boolean;
-  entries(): { path: string; title: string }[];
+  entries(): { kind: string; path: string; title: string }[];
   reads: Map<string, { mtime: number; entry: { pages: number } }>;
   readStale(): Promise<void>;
 }
@@ -66,21 +66,45 @@ describe("reading notebooks", () => {
 });
 
 describe("what the library lists", () => {
-  it("lists every kind of notebook, but not practice sheets or the inbox", () => {
+  it("lists every kind of notebook, and the vault's other files, but not practice sheets or the inbox", () => {
     const { inside } = viewOn([
       "Physics.notebook.md",
       "Sketch.page.md",
       "Old notes.ink.md",
       "Plain note.md",
+      "Slides.pdf",
       "FineNotes assets/Handwriting sheets/Handwriting practice 1.practice.md",
+      "FineNotes assets/Stickers/star.png",
       "FineNotes inbox/Scan.notebook.md",
+      "FineNotes inbox/photo.jpg",
     ]);
     expect(
       inside
         .entries()
-        .map((e) => e.title)
+        .map((e) => `${e.kind}:${e.title}`)
         .sort(),
-    ).toEqual(["Old notes", "Physics", "Sketch"]);
+    ).toEqual([
+      "note:Plain note",
+      "notebook:Old notes",
+      "notebook:Physics",
+      "notebook:Sketch",
+      "pdf:Slides",
+    ]);
+  });
+
+  it("does not list what a notebook's own folder holds for it", () => {
+    const { inside } = viewOn([
+      "Physics/Physics.notebook.md",
+      "Physics/Images/photo.png",
+      "Physics/Recordings/lecture.webm",
+      "Physics/Syllabus.pdf",
+    ]);
+    expect(
+      inside
+        .entries()
+        .map((e) => e.path)
+        .sort(),
+    ).toEqual(["Physics/Physics.notebook.md", "Physics/Syllabus.pdf"]);
   });
 });
 

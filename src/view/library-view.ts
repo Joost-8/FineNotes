@@ -22,7 +22,9 @@
  */
 
 import {
+  Component,
   ItemView,
+  MarkdownRenderer,
   Menu,
   Notice,
   type TAbstractFile,
@@ -58,6 +60,9 @@ import { RenameModal } from "./rename-modal";
 import { pickImageFile } from "./image-import";
 import { VaultPdfSuggestModal } from "./pdf-import-modal";
 import { INBOX_FOLDER } from "../model/inbox";
+import { ASSETS_FOLDER } from "../model/vault-folders";
+import { HOME_FILE, HOME_FILE_FLAG } from "../model/home-file";
+import { notebookOwnedFiles } from "../model/library-files";
 import { type TextKey, t, tn } from "../i18n/translate";
 import { inkFileSuffix } from "../model/new-notebook";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
@@ -70,9 +75,13 @@ import {
   browse,
   continueEntries,
   crumbs,
+  extensionLabel,
+  fileEntry,
+  fileIcon,
   hoistSingles,
   entryFromText,
   folderOf,
+  notePreviewText,
   readProgress,
   placeholderEntry,
   searchEntries,
@@ -117,7 +126,12 @@ interface FolderTile {
   path: string;
   name: string;
   count: number;
+  /** How many of `count` are notebooks. */
+  notebooks: number;
 }
+
+/** The width a note's preview is laid out at, before it is scaled to its cover. */
+const NOTE_PAGE_WIDTH = 360;
 
 /** The orders on offer, `label` their text key. */
 const SORTS: ReadonlyArray<{ by: LibrarySort; label: TextKey }> = [
@@ -318,16 +332,22 @@ export class LibraryView extends ItemView {
 
   /** Vault changes repaint and read, and showing the tab catches up on what came while it was hidden. */
   private watchVault(): void {
+    // Any file made, gone or renamed is a card; only a notebook's edits change one (a note's
+    // preview catches up at the next paint, not at every save).
+    const listed = (): void => {
+      if (this.containerEl.isShown()) this.refreshSoon();
+      else this.stale = true;
+    };
     const touched = (file: TAbstractFile): void => {
       if (file instanceof TFile && !this.reads.has(file.path) && !this.isNotebook(file)) return;
       // A notebook saved while Home is a tab in the background is read when Home is shown.
       if (this.containerEl.isShown()) this.refreshSoon();
       else this.stale = true;
     };
-    this.registerEvent(this.app.vault.on("create", touched));
-    this.registerEvent(this.app.vault.on("delete", touched));
+    this.registerEvent(this.app.vault.on("create", listed));
+    this.registerEvent(this.app.vault.on("delete", listed));
     // Stars and folder looks follow renames and deletes in the plugin (main.ts), Home open or not.
-    this.registerEvent(this.app.vault.on("rename", touched));
+    this.registerEvent(this.app.vault.on("rename", listed));
     this.registerEvent(this.app.vault.on("modify", touched));
 
     // A notebook read since: its place has moved.
@@ -342,6 +362,7 @@ export class LibraryView extends ItemView {
 
   override async onClose(): Promise<void> {
     this.closed = true;
+    this.unloadPreviews();
     this.pdf?.destroy();
     this.pdf = null;
     if (this.workerHeld) releasePdfWorker();
@@ -380,8 +401,42 @@ export class LibraryView extends ItemView {
     return this.app.vault.getFiles().filter((f) => this.isNotebook(f));
   }
 
+  /**
+   * The vault's other files, shown beside the notebooks: all but ink notes
+   * that are not notebooks, what FineNotes keeps for itself, and what a
+   * notebook with a folder of its own holds (it is the notebook).
+   */
+  private otherFiles(): TFile[] {
+    const all = this.app.vault.getFiles();
+    const notebooks = new Set(all.filter((f) => this.isNotebook(f)).map((f) => f.path));
+    const owned = notebookOwnedFiles(
+      all.map((f) => f.path),
+      (path) => notebooks.has(path),
+    );
+    const inside = (file: TFile, folder: string): boolean => file.path.startsWith(`${folder}/`);
+    // The Home note FineNotes made opens this view: a card for it would open Home again.
+    const ownHome = (file: TFile): boolean =>
+      file.path === HOME_FILE &&
+      this.app.metadataCache.getFileCache(file)?.frontmatter?.[HOME_FILE_FLAG] === true;
+    return all.filter(
+      (f) =>
+        !this.host.isInkFile(f) &&
+        !owned.has(f.path) &&
+        !inside(f, INBOX_FOLDER) &&
+        !inside(f, ASSETS_FOLDER) &&
+        !ownHome(f),
+    );
+  }
+
+  /** Every notebook, and every other file the library shows. */
   private entries(): LibraryEntry[] {
-    return this.notebookFiles().map((file) => this.entryOf(file));
+    return [
+      ...this.notebookFiles().map((file) => this.entryOf(file)),
+      ...this.otherFiles().map((file) => ({
+        ...fileEntry(file.path, file.stat.mtime),
+        created: file.stat.ctime,
+      })),
+    ];
   }
 
   /** What a notebook's card shows: its last read, or its file's facts until it is read. */
@@ -520,6 +575,7 @@ export class LibraryView extends ItemView {
             .join(" / "),
     );
     this.upEl.toggleClass("is-hidden", this.folder === "");
+    this.unloadPreviews();
     const update = this.host.update();
     this.updateEl.toggleClass("is-hidden", update === null);
     if (update !== null)
@@ -573,7 +629,7 @@ export class LibraryView extends ItemView {
     }
     if (this.folder === "") {
       const recent = continueEntries(
-        all.filter((e) => e.pages > 0),
+        all.filter((e) => e.kind === "notebook" && e.pages > 0),
         CONTINUE_COUNT,
         (path) => left[path]?.at ?? 0,
       );
@@ -592,9 +648,15 @@ export class LibraryView extends ItemView {
       for (const folder of starredFirst(folders, stars, (f) => f.path))
         this.folderCard(row, folder);
     }
-    // At the top, every notebook in the vault, under the folders; inside a folder, its own.
+    // At the top, the root's own files, then every notebook in the vault; inside a folder,
+    // its notebooks and files together.
     const atTop = this.folder === "";
-    const rest = atTop ? all : here.notebooks;
+    if (atTop) {
+      const files = here.notebooks.filter((e) => e.kind !== "notebook");
+      if (files.length > 0)
+        this.grid(sortEntries(files, this.sort, this.reverse), t("notebooks.home.files"));
+    }
+    const rest = atTop ? all.filter((e) => e.kind === "notebook") : here.notebooks;
     if (rest.length > 0) {
       this.grid(
         sortEntries(rest, this.sort, this.reverse),
@@ -624,7 +686,7 @@ export class LibraryView extends ItemView {
           !holdsFiles(c) &&
           !listed.some((l) => l.path === c.path),
       )
-      .map((c) => ({ path: c.path, name: c.name, count: 0 }));
+      .map((c) => ({ path: c.path, name: c.name, count: 0, notebooks: 0 }));
   }
 
   private label(text: string): void {
@@ -658,11 +720,16 @@ export class LibraryView extends ItemView {
     }
   }
 
-  /** A starred folder as a tile: how many notebooks it holds, or null when it holds none now. */
+  /** A starred folder as a tile: how many items it holds, or null when it holds none now. */
   private folderTile(all: LibraryEntry[], path: string): FolderTile | null {
-    const count = all.filter((e) => e.folder === path || e.folder.startsWith(`${path}/`)).length;
-    if (count === 0) return null;
-    return { path, name: path.split("/").pop() ?? path, count };
+    const inside = all.filter((e) => e.folder === path || e.folder.startsWith(`${path}/`));
+    if (inside.length === 0) return null;
+    return {
+      path,
+      name: path.split("/").pop() ?? path,
+      count: inside.length,
+      notebooks: inside.filter((e) => e.kind === "notebook").length,
+    };
   }
 
   /** The star in a cover's top right corner: on for a starred item, a tap toggles it. */
@@ -711,7 +778,9 @@ export class LibraryView extends ItemView {
       text:
         folder.count === 0
           ? t("notebooks.home.folderEmpty")
-          : tn("notebooks.home.folderCount", folder.count),
+          : folder.notebooks === folder.count
+            ? tn("notebooks.home.folderCount", folder.count)
+            : tn("notebooks.home.itemCount", folder.count),
     });
     card.toggleClass("is-selected", this.selected.has(folder.path));
     const open = (): void =>
@@ -790,18 +859,23 @@ export class LibraryView extends ItemView {
     // A library of many PDFs must not open and rasterise them all at once
     // (FineNotes#146: the page lagged, then the app was killed for memory).
     // A cover starts when it is on screen, and new ones render two at a time.
+    // A PDF of the vault's own has no notebook page to fit: its page keeps its own size, in
+    // points (a notebook page is ~1024 px wide, a PDF page ~600 pt).
+    const sized = pdf.width > 0 && pdf.height > 0;
     const render = async (): Promise<void> => {
       if (this.closed || !cover.isConnected) return;
       const entry = await this.pdfCache().resolve(
         pdf.path,
         pdf.page,
-        thumbnailRasterScale(dpr),
-        { geometry: { width: pdf.width, height: pdf.height } },
+        sized ? thumbnailRasterScale(dpr) : thumbnailRasterScale(dpr) * 1.7,
+        sized ? { geometry: { width: pdf.width, height: pdf.height } } : undefined,
         true,
       );
       if (!entry.ok) return;
       const canvas = createEl("canvas");
-      const h = Math.max(1, Math.round((w * pdf.height) / pdf.width));
+      const h = sized
+        ? Math.max(1, Math.round((w * pdf.height) / pdf.width))
+        : Math.max(1, Math.round((w * entry.canvas.height) / Math.max(1, entry.canvas.width)));
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       const ctx = canvas.getContext("2d");
@@ -815,13 +889,18 @@ export class LibraryView extends ItemView {
       canvas.width = canvas.height = 0;
       if (url && cover.isConnected && !cover.hasClass("is-ready")) show(url, false);
     };
-    const start = (): void => {
-      void loadCover(vault, key).then((url) => {
-        if (this.closed || !cover.isConnected) return;
-        if (url) show(url, false);
-        else this.queueCover(render);
-      });
-    };
+    // A cover kept on this device needs no render; otherwise it takes its turn in the queue.
+    this.whenSeen(cover, async () => {
+      const url = await loadCover(vault, key);
+      if (this.closed || !cover.isConnected) return;
+      if (url) show(url, false);
+      else await render();
+    });
+  }
+
+  /** `job` queued once `cover` comes near the screen: a big folder never draws every cover at once. */
+  private whenSeen(cover: HTMLElement, job: () => Promise<void>): void {
+    const start = (): void => this.queueCover(job);
     if (typeof IntersectionObserver === "undefined") {
       start();
       return;
@@ -835,6 +914,110 @@ export class LibraryView extends ItemView {
       { rootMargin: "400px" },
     );
     seen.observe(cover);
+  }
+
+  /**
+   * A file's cover: its first page (a note, a PDF), the picture itself, or
+   * a symbol and its extension for a file the library cannot draw. The
+   * name shows until the page is drawn.
+   */
+  private paintFileCover(cover: HTMLElement, entry: LibraryEntry): void {
+    cover.addClass("is-file", entry.kind === "file" ? "is-other" : `is-${entry.kind}`);
+    if (entry.kind === "file") {
+      setIcon(cover.createDiv({ cls: "goodobsidian-library-file-icon" }), fileIcon(entry.path));
+      cover.createSpan({ cls: "goodobsidian-library-file-ext", text: extensionLabel(entry.path) });
+      return;
+    }
+    cover.createSpan({ cls: "goodobsidian-library-cover-title", text: entry.title });
+    if (entry.kind === "pdf" && entry.pdf) this.paintPdfCover(cover, entry.pdf);
+    else if (entry.kind === "image") this.paintImageCover(cover, entry.path);
+    else if (entry.kind === "note") this.paintNoteCover(cover, entry.path);
+  }
+
+  /**
+   * A picture as its own cover, drawn small into a canvas: a folder of
+   * photos must not keep every one decoded at full size (FineNotes#146).
+   */
+  private paintImageCover(cover: HTMLElement, path: string): void {
+    const canvas = cover.createEl("canvas", { cls: "goodobsidian-library-raster" });
+    const draw = async (): Promise<void> => {
+      const file = this.app.vault.getFileByPath(path);
+      if (this.closed || !canvas.isConnected || !file) return;
+      const image = new Image();
+      image.decoding = "async";
+      image.src = this.app.vault.getResourcePath(file);
+      try {
+        await image.decode();
+      } catch {
+        return;
+      }
+      if (!canvas.isConnected || !(image.naturalWidth > 0)) return;
+      // The whole picture, its longer side as long as a cover is tall; never larger than it is.
+      const dpr = window.devicePixelRatio || 1;
+      const fit = Math.min(1, (320 * dpr) / Math.max(image.naturalWidth, image.naturalHeight));
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * fit));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * fit));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      image.src = "";
+      cover.addClass("is-ready");
+    };
+    this.whenSeen(cover, draw);
+  }
+
+  /** What renders the note previews on the page, let go at the next paint. */
+  private previews: Component[] = [];
+
+  private unloadPreviews(): void {
+    for (const preview of this.previews) preview.unload();
+    this.previews = [];
+    // The covers it watched are gone with the page.
+    this.noteObserver?.disconnect();
+  }
+
+  /**
+   * A note's first page: the start of the note rendered as Obsidian renders
+   * it, on a page laid out at a fixed width and scaled to the cover, so it
+   * reads like a small copy of the note. It takes no taps; the card does.
+   */
+  private paintNoteCover(cover: HTMLElement, path: string): void {
+    const page = cover.createDiv({
+      cls: "goodobsidian-library-note markdown-rendered",
+      attr: { "aria-hidden": "true", inert: "" },
+    });
+    page.style.width = `${NOTE_PAGE_WIDTH}px`;
+    const draw = async (): Promise<void> => {
+      const file = this.app.vault.getFileByPath(path);
+      if (this.closed || !page.isConnected || !file) return;
+      const text = notePreviewText(await this.app.vault.cachedRead(file));
+      if (!page.isConnected || text === "") return;
+      const owner = new Component();
+      owner.load();
+      this.previews.push(owner);
+      await MarkdownRenderer.render(this.app, text, page, path, owner);
+      if (!page.isConnected) return;
+      // Its first report scales the page to the cover.
+      this.noteSizes().observe(cover);
+      cover.addClass("is-ready");
+    };
+    this.whenSeen(cover, draw);
+  }
+
+  private noteObserver: ResizeObserver | null = null;
+
+  /** One watcher for every note cover: a page follows its cover when the grid's columns change. */
+  private noteSizes(): ResizeObserver {
+    this.noteObserver ??= new ResizeObserver((changes) => {
+      for (const change of changes) {
+        const cover = change.target as HTMLElement;
+        const page = cover.querySelector<HTMLElement>(".goodobsidian-library-note");
+        const width = cover.clientWidth;
+        if (page && width > 0)
+          page.style.setProperty("--gob-note-scale", String(width / NOTE_PAGE_WIDTH));
+      }
+    });
+    return this.noteObserver;
   }
 
   private readonly coverQueue: Array<() => Promise<void>> = [];
@@ -891,14 +1074,17 @@ export class LibraryView extends ItemView {
     this.enter(card, entry.path, settled);
     this.cards.set(entry.path, [...(this.cards.get(entry.path) ?? []), { el: card, leftAt }]);
     const cover = card.createDiv({ cls: "goodobsidian-library-cover" });
-    const palette = coverPalette(entry.color);
-    cover.style.setProperty("--gob-cover", palette.base);
-    cover.style.setProperty("--gob-cover-ink", palette.title);
-    cover.style.setProperty("--gob-cover-spine", palette.spine);
-    cover.style.setProperty("--gob-cover-hi", palette.sheenLight);
-    cover.style.setProperty("--gob-cover-lo", palette.sheenDark);
-    cover.createSpan({ cls: "goodobsidian-library-cover-title", text: entry.title });
-    if (entry.pdf) this.paintPdfCover(cover, entry.pdf);
+    const notebook = entry.kind === "notebook";
+    if (notebook) {
+      const palette = coverPalette(entry.color);
+      cover.style.setProperty("--gob-cover", palette.base);
+      cover.style.setProperty("--gob-cover-ink", palette.title);
+      cover.style.setProperty("--gob-cover-spine", palette.spine);
+      cover.style.setProperty("--gob-cover-hi", palette.sheenLight);
+      cover.style.setProperty("--gob-cover-lo", palette.sheenDark);
+      cover.createSpan({ cls: "goodobsidian-library-cover-title", text: entry.title });
+      if (entry.pdf) this.paintPdfCover(cover, entry.pdf);
+    } else this.paintFileCover(cover, entry);
     this.starButton(cover, entry.path, entry.title);
     const caption = card.createDiv({ cls: "goodobsidian-library-caption" });
     this.nameRow(caption, entry.title, (event) => this.openCardMenu(event, entry));
@@ -924,6 +1110,8 @@ export class LibraryView extends ItemView {
         text: [
           entry.folder !== "" && this.query.trim() !== "" ? entry.folder : "",
           entry.pages > 0 ? tn("notebooks.home.pageCount", entry.pages) : "",
+          // A note is what a vault is made of; any other file says what it is.
+          notebook || entry.kind === "note" ? "" : extensionLabel(entry.path),
           when,
         ]
           .filter(Boolean)
@@ -933,7 +1121,7 @@ export class LibraryView extends ItemView {
 
     card.toggleClass("is-selected", this.selected.has(entry.path));
     const open = (): void =>
-      this.selecting ? this.toggleSelected(card, entry.path) : this.openNotebook(entry.path);
+      this.selecting ? this.toggleSelected(card, entry.path) : this.openItem(entry);
     card.addEventListener("click", open);
     card.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -952,16 +1140,18 @@ export class LibraryView extends ItemView {
   // --- Menus and navigation -----------------------------------------------------
 
   /**
-   * A notebook in a tab of its own, or the tab it is already in: the library
+   * A notebook or file in a tab of its own, or the tab it is already in: the library
    * stays where it is, so it is always one tap back.
    */
-  private openNotebook(path: string): void {
-    const file = this.app.vault.getFileByPath(path);
+  private openItem(entry: LibraryEntry): void {
+    const file = this.app.vault.getFileByPath(entry.path);
     if (!file) return;
+    const notebook = entry.kind === "notebook";
     let existing: WorkspaceLeaf | null = null;
     this.app.workspace.iterateAllLeaves((leaf) => {
-      if (leaf.view.getViewType() !== VIEW_TYPE_INK) return;
-      if ((leaf.view as { file?: TFile | null }).file?.path === path) existing = leaf;
+      // A notebook only in its own view; any other file in whatever Obsidian opened it with.
+      if (notebook && leaf.view.getViewType() !== VIEW_TYPE_INK) return;
+      if ((leaf.view as { file?: TFile | null }).file?.path === entry.path) existing = leaf;
     });
     if (existing) void this.app.workspace.revealLeaf(existing);
     else void this.app.workspace.getLeaf("tab").openFile(file);
@@ -1363,18 +1553,21 @@ export class LibraryView extends ItemView {
           this.rename(file, entry.title, inkFileSuffix(file.name) ?? `.${file.extension}`),
         ),
     );
-    menu.addItem((item) =>
-      item
-        .setTitle(t("common.duplicate"))
-        .setIcon("copy-plus")
-        .onClick(() => void this.actions.duplicate(file.path)),
-    );
-    menu.addItem((item) =>
-      item
-        .setTitle(t("notebooks.home.exportPdf"))
-        .setIcon("file-up")
-        .onClick(() => void this.host.exportPdf(file)),
-    );
+    // A copy and a PDF export are a notebook's; any other file has Obsidian's own.
+    if (entry.kind === "notebook") {
+      menu.addItem((item) =>
+        item
+          .setTitle(t("common.duplicate"))
+          .setIcon("copy-plus")
+          .onClick(() => void this.actions.duplicate(file.path)),
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle(t("notebooks.home.exportPdf"))
+          .setIcon("file-up")
+          .onClick(() => void this.host.exportPdf(file)),
+      );
+    }
     menu.addItem((item) =>
       item
         .setTitle(t("notebooks.home.move"))

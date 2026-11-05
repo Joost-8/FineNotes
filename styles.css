@@ -16193,6 +16193,101 @@ button.goodobsidian-library-star:active {
 .goodobsidian-library-cover.is-pdf.is-ready .goodobsidian-library-cover-title {
   display: none;
 }
+/* A file that is not a notebook: a sheet, not a book. No spine, no sheen. */
+.goodobsidian-library-cover.is-file {
+  padding: 10px;
+  border-radius: 6px;
+  background: #fff;
+  color: #666;
+}
+.goodobsidian-library-cover.is-file::before,
+.goodobsidian-library-cover.is-file::after {
+  display: none;
+}
+/* A note is as Obsidian shows it: on the theme's own page; so is a file with no page to show. */
+.goodobsidian-library-cover.is-note,
+.goodobsidian-library-cover.is-other {
+  align-items: flex-start;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  box-shadow:
+    0 0 0 0.5px var(--background-modifier-border),
+    0 1px 2px rgba(0, 0, 0, 0.1),
+    0 6px 14px -4px rgba(0, 0, 0, 0.22);
+}
+.goodobsidian-library-note {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  padding: 26px 24px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-normal);
+  transform: scale(var(--gob-note-scale, 0.33));
+  transform-origin: 0 0;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.goodobsidian-library-note > :first-child {
+  margin-top: 0;
+}
+.goodobsidian-library-cover.is-note.is-ready .goodobsidian-library-note {
+  opacity: 1;
+}
+.goodobsidian-library-cover.is-file.is-ready .goodobsidian-library-cover-title {
+  display: none;
+}
+.goodobsidian-library-raster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.goodobsidian-library-cover.is-image.is-ready .goodobsidian-library-raster {
+  opacity: 1;
+}
+/* A file's page is shown whole, as a page: a slide or a screenshot is not cropped like a book's cover. */
+.goodobsidian-library-cover.is-file .goodobsidian-library-pdf,
+.goodobsidian-library-raster {
+  object-fit: contain;
+}
+/* Any other file: its symbol, and the extension that names what it is. */
+.goodobsidian-library-cover.is-other {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.goodobsidian-library-file-icon .svg-icon {
+  width: 34px;
+  height: 34px;
+  stroke-width: 1.5px;
+}
+.goodobsidian-library-file-ext {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+.is-list .goodobsidian-library-cover.is-file {
+  padding: 0;
+}
+/* The star takes the top of a small cover: the symbol sits under it. */
+.is-list .goodobsidian-library-cover.is-other {
+  justify-content: flex-end;
+  padding-bottom: 6px;
+}
+.is-list .goodobsidian-library-file-icon .svg-icon {
+  width: 20px;
+  height: 20px;
+}
+.is-list .goodobsidian-library-file-ext {
+  display: none;
+}
 .goodobsidian-library-cover-title {
   position: relative;
   z-index: 1;
