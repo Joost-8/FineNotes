@@ -111,6 +111,11 @@ extracted from the matching section of this file by `release.yml`.
   scanned PDF pages, boards, deleting from Home, free page edges and more)
   showed in English whatever the interface language, and so did this
   release's new texts; they are now in all 42 languages.
+### Fixed
+
+- **Fit to width holds still.** After a double tap fits the page to the
+  width, a finger no longer moves the page sideways at all, not even the
+  little stretch it gave before (discussion #43). Pinching still does.
 
 ## [2.8.2] - 2026-11-05
 

@@ -519,13 +519,14 @@ export class KineticScroller {
     this.tracker.add(t, fingerX, fingerY);
     const dx = drag.originX - fingerX;
     const dy = drag.originY - fingerY;
+    // Held centred (pages down at fit-to-width): a finger never moves the
+    // page sideways, not even a little before the lock is decided, as in
+    // Goodnotes (discussion #43). A pinch's `freeDrag` still does.
+    const held = this.diagonalsScrollY && this.maxX - this.minX < 0.5;
     if (drag.lock === "undecided" && Math.hypot(dx, dy) >= AXIS_LOCK_DISTANCE) {
-      drag.lock = this.freeAxes ? "free" : decideLock(dx, dy, this.bounceX);
-      if (drag.lock === "free" && this.diagonalsScrollY && this.maxX - this.minX < 0.5) {
-        drag.lock = "y";
-      }
+      drag.lock = this.freeAxes ? "free" : held ? "y" : decideLock(dx, dy, this.bounceX);
     }
-    const useX = drag.lock === "x" || drag.lock === "free" || drag.lock === "undecided";
+    const useX = drag.lock === "x" || drag.lock === "free" || (drag.lock === "undecided" && !held);
     const useY = drag.lock !== "x";
     const rawX = drag.baseX + (useX && this.bounceX ? dx : 0);
     const rawY = drag.baseY + (useY ? dy : 0);

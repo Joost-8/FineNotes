@@ -719,16 +719,15 @@ describe("a column held to the pane's width (discussion #43)", () => {
     expect(s.position.x).toBe(110);
   });
 
-  it("stretches a sideways pull and springs back to the centre", () => {
+  it("holds still on a sideways pull, even before the lock is decided", () => {
     const s = heldColumn();
     s.dragStart(500, 500, 0);
+    s.dragMove(500 - AXIS_LOCK_DISTANCE + 2, 500, 8);
+    expect(s.position.x).toBe(110);
     s.dragMove(500 - AXIS_LOCK_DISTANCE - 2, 501, 16);
-    expect(s.axisLock).toBe("x");
+    expect(s.axisLock).toBe("y");
     s.dragMove(300, 501, 32);
-    // Rubber-banded: it gives, but less than the finger went.
-    expect(s.position.x).toBeGreaterThan(110);
-    expect(s.position.x).toBeLessThan(110 + 200);
-    expect(s.position.y).toBe(1000);
+    expect(s.position).toEqual({ x: 110, y: 999 });
     s.dragEnd(400);
     settle(s, 400);
     expect(s.position.x).toBe(110);
