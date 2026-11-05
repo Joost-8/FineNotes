@@ -21,6 +21,11 @@ extracted from the matching section of this file by `release.yml`.
   treats a formula as one line: a fraction's top and bottom and a sum's
   limits belong to it, so a highlight over an equation is one band instead
   of scraps at different heights (FineNotes#159).
+- **The whole-stroke eraser takes a highlight it touches.** It took a
+  stroke only near its centre line, so rubbing over a wide highlight (a
+  snapped one is as tall as the text) away from its middle left it there.
+  Now touching the ink is enough, as with the standard eraser
+  (FineNotes#159).
 
 ## [2.8.2] - 2026-11-05
 
