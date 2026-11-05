@@ -270,6 +270,8 @@ export interface GoodObsidianSettings {
    * shading (`ink/tilt`). Off, nothing of the tilt is kept. Strokes that
    * kept it are drawn with it either way.
    */
+  /** Zoomed in on pages across, the view may leave the page being read and go past the notebook's ends. */
+  freePageEdges: boolean;
   pencilTilt: boolean;
   /** Selecting an active secondary tool again returns to the pen or highlighter used before. */
   returnToPenOnReselect: boolean;
@@ -517,6 +519,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   templateGalleryUrl: "",
   recentColors: [],
   pressureWidth: false,
+  freePageEdges: false,
   pencilTilt: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,

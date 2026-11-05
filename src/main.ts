@@ -1770,6 +1770,13 @@ export default class GoodObsidianPlugin extends Plugin {
     }
   }
 
+  /** "Free page edges" changed: every open notebook may scroll past its pages' edges. */
+  async setFreePageEdges(on: boolean): Promise<void> {
+    this.settings.freePageEdges = on;
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.setFreePageEdges(on);
+  }
+
   /** "Cursor over the page" changed: every open notebook shows the new cursor. */
   async setPenCursor(style: PenCursorStyle): Promise<void> {
     this.settings.penCursor = style;

@@ -4983,15 +4983,16 @@ export class InkSurface {
     // neighbours show beside the page; letting go settles on the page then
     // in the middle (`onPinchEnd`). Joined pages are never held (`heldRow`).
     const last = this.pageLayout.boxes.length - 1;
+    const desk = this.freePageEdges ? this.cssW / 2 : 0;
     // Pages down: held centred while the pages fit the pane's width, and
     // never panned onto the desk beside them (discussion #43, as Goodnotes).
     const rangeX = !row
       ? columnScrollRangeX(this.pageLayout, scale, this.cssW)
       : !this.turnsPages && last >= 0
-        ? this.pinch || this.joined
+        ? this.pinch || this.joined || this.freePageEdges
           ? {
-              min: rowPageScrollRange(this.pageLayout, 0, scale, this.cssW).min,
-              max: rowPageScrollRange(this.pageLayout, last, scale, this.cssW).max,
+              min: rowPageScrollRange(this.pageLayout, 0, scale, this.cssW).min - desk,
+              max: rowPageScrollRange(this.pageLayout, last, scale, this.cssW).max + desk,
             }
           : rowPageScrollRange(this.pageLayout, this.heldIndex(), scale, this.cssW)
         : undefined;
@@ -5014,6 +5015,20 @@ export class InkSurface {
       // that fits the screen (a cover, a single page) has none of its own.
       trailY: this.typingField() ? keyboardHeight() : 0,
     });
+  }
+
+  /**
+   * Whether a zoomed-in row may leave the page being read and go half a pane
+   * past the notebook's ends (the setting "Free page edges"), instead of
+   * stopping at the page's edges.
+   */
+  private freePageEdges = false;
+
+  setFreePageEdges(on: boolean): void {
+    if (this.freePageEdges === on) return;
+    this.freePageEdges = on;
+    this.ensurePaperSize();
+    this.requestFrame();
   }
 
   /** At the zoom floor: the whole page on screen. */
