@@ -90,6 +90,16 @@ const LINE_OVERLAP = 0.5;
 const MAX_LINE_GAP = 4;
 /** An item this far back over the line's end (in font heights) starts a new line. */
 const MAX_LINE_OVERLAP = 0.5;
+/** A piece of a formula this far above or below the line's band (in font heights) still joins it. */
+const FORMULA_GAP = 0.5;
+/** A piece of a formula this far right of the piece before it (in font heights) still joins it. */
+const FORMULA_STEP = 1.5;
+/** Clear of the line's band, a piece joins only when its font is at most this share of the line's. */
+const FORMULA_SMALLER = 0.85;
+/** A run of glyphs wider than this (in font heights) is text, never a piece to stack a formula's under. */
+const FORMULA_RUN = 6;
+/** Glyphs whose bottoms differ by at most this (in font heights) share a baseline run. */
+const RUN_BASELINE = 0.25;
 /** A gap this wide (in font heights) between two items is a space. */
 const SPACE_GAP = 0.12;
 
@@ -206,13 +216,90 @@ function placeItem(item: PdfTextItem, toPage: Matrix): ItemBox | null {
   return { chars, x0, x1, top, bottom };
 }
 
-/** Whether `box` carries on `line`: the same band, and not far before or after its end. */
-function continuesLine(line: TextLine, box: ItemBox): boolean {
+/**
+ * The glyphs drawn last on one baseline: where that run starts and ends,
+ * and whether it is a piece of a formula off the line's own text (a limit,
+ * a numerator) rather than the line's text.
+ */
+interface Run {
+  x0: number;
+  x1: number;
+  top: number;
+  bottom: number;
+  piece: boolean;
+}
+
+/** `box` added to `run` when it sits on the same baseline, else a new run of it alone. */
+function extendRun(run: Run | null, box: ItemBox, piece: boolean): Run {
+  const height = Math.min(box.bottom - box.top, run ? run.bottom - run.top : Infinity);
+  if (run && Math.abs(box.bottom - run.bottom) <= RUN_BASELINE * height) {
+    return { ...run, x0: Math.min(run.x0, box.x0), x1: Math.max(run.x1, box.x1) };
+  }
+  return { x0: box.x0, x1: box.x1, top: box.top, bottom: box.bottom, piece };
+}
+
+/** Where a line's ink ends: its last character that is not a space (a space item can be page-wide). */
+function inkEnd(chars: readonly TextChar[], line: TextLine): number {
+  for (let i = line.end - 1; i >= line.start; i--) {
+    if (!isSpace(chars[i].ch)) return chars[i].x1;
+  }
+  return line.x0;
+}
+
+/**
+ * Whether `box` carries on `line`: as text on its band, not far before or
+ * after its end, or as a piece of a formula in it ({@link continuesFormula}).
+ */
+function continuesLine(
+  line: TextLine,
+  box: ItemBox,
+  previous: Run | null,
+  lineFont: number,
+  inkX1: number,
+): boolean {
   const height = Math.min(line.bottom - line.top, box.bottom - box.top);
   const overlap = Math.min(line.bottom, box.bottom) - Math.max(line.top, box.top);
-  if (overlap < LINE_OVERLAP * height) return false;
   const gap = box.x0 - line.x1;
-  return gap >= -MAX_LINE_OVERLAP * height && gap <= MAX_LINE_GAP * height;
+  if (
+    overlap >= LINE_OVERLAP * height &&
+    gap >= -MAX_LINE_OVERLAP * height &&
+    gap <= MAX_LINE_GAP * height
+  ) {
+    return true;
+  }
+  // Clear of the band, only a smaller piece (a sum's limits) is the
+  // formula's; a stacked label or the next bullet is set as large.
+  if (overlap <= 0 && box.bottom - box.top > FORMULA_SMALLER * lineFont) return false;
+  return continuesFormula(box, previous, overlap, box.x0 - inkX1, height);
+}
+
+/**
+ * Whether `box` is a piece of the formula the line is in, though it sits
+ * above or below the line's band: a fraction's top or bottom, a sum's
+ * limits. pdf.js gives each such piece as items of its own, and without
+ * this every one was a line of its own, so the highlighter marked an
+ * equation in scraps (FineNotes#159). It joins when it is within half a
+ * height of the band (partly in it, or clear of it in a smaller font) and
+ * either starts just after the line's last glyph, or stands over or under
+ * the piece drawn before it (a sum's lower limit starts under the first
+ * glyph of the upper one). Only under a short piece: the line's own text
+ * above is a heading or the line before in a paragraph, never a numerator.
+ */
+function continuesFormula(
+  box: ItemBox,
+  previous: Run | null,
+  overlap: number,
+  gap: number,
+  height: number,
+): boolean {
+  if (!previous || overlap < -FORMULA_GAP * height) return false;
+  const after = gap >= -MAX_LINE_OVERLAP * height && gap <= FORMULA_STEP * height;
+  const stacked =
+    previous.piece &&
+    previous.x1 - previous.x0 <= FORMULA_RUN * height &&
+    box.x0 >= previous.x0 - MAX_LINE_OVERLAP * height &&
+    box.x0 <= previous.x1 + FORMULA_STEP * height;
+  return after || stacked;
 }
 
 /**
@@ -223,14 +310,22 @@ export function layoutText(items: readonly PdfTextItem[], toPage: Matrix): TextL
   const chars: TextChar[] = [];
   const lines: TextLine[] = [];
   let line: TextLine | null = null;
+  let previous: Run | null = null;
+  let lineFont = 0;
+  let base = { top: 0, bottom: 0 };
   for (const item of items) {
     const box = placeItem(item, toPage);
     if (!box) continue;
-    if (line && continuesLine(line, box)) {
+    const joins = line ? continuesLine(line, box, previous, lineFont, inkEnd(chars, line)) : false;
+    if (line && joins) {
+      // A piece when it sits off the band of the glyph the line began with.
+      const height = box.bottom - box.top;
+      const onBase = Math.min(base.bottom, box.bottom) - Math.max(base.top, box.top);
+      previous = extendRun(previous, box, onBase < LINE_OVERLAP * height);
       const last = chars[chars.length - 1];
       const gap = box.x0 - line.x1;
-      const height = Math.min(line.bottom - line.top, box.bottom - box.top);
-      if (gap > SPACE_GAP * height && !isSpace(last.ch) && !isSpace(box.chars[0].ch)) {
+      const shorter = Math.min(line.bottom - line.top, height);
+      if (gap > SPACE_GAP * shorter && !isSpace(last.ch) && !isSpace(box.chars[0].ch)) {
         chars.push({ ch: " ", x0: line.x1, x1: box.x0, virtual: true });
       }
       chars.push(...box.chars);
@@ -240,6 +335,9 @@ export function layoutText(items: readonly PdfTextItem[], toPage: Matrix): TextL
       line.bottom = Math.max(line.bottom, box.bottom);
       continue;
     }
+    lineFont = box.bottom - box.top;
+    base = { top: box.top, bottom: box.bottom };
+    previous = extendRun(null, box, false);
     const start = chars.length;
     chars.push(...box.chars);
     line = { start, end: chars.length, x0: box.x0, x1: box.x1, top: box.top, bottom: box.bottom };

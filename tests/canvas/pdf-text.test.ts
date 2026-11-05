@@ -162,6 +162,75 @@ describe("layoutText", () => {
     expect(widths[0]).toBeGreaterThan(widths[2]);
   });
 
+  // FineNotes#159: a formula's pieces (a fraction's top and bottom, a sum's
+  // limits) come as items of their own, above and below its band. Shapes
+  // from a LaTeX slide's real items (2WF90 week 1, pages 5 and 6).
+  it("keeps a fraction's top and bottom in the formula's line", () => {
+    const layout = layoutText(
+      [
+        item("q =", 140, 400, 11, 20),
+        item("a", 168, 392.5, 11, 5),
+        item("b", 168, 407.5, 11, 5),
+        item("= a div b", 184, 400, 11, 50),
+      ],
+      IDENTITY_PAGE,
+    );
+    expect(layout.lines).toHaveLength(1);
+    const pick = selectText(layout, { x: 141, y: 396 }, { x: 233, y: 396 });
+    expect(pick?.rects).toHaveLength(1);
+    // One band from the fraction's top to its bottom.
+    expect(pick?.rects[0].y).toBeLessThan(392.5 - 11 * 0.7);
+    expect((pick?.rects[0].y ?? 0) + (pick?.rects[0].h ?? 0)).toBeGreaterThan(407.5);
+  });
+
+  it("keeps a sum's limits in the formula's line, glyph by glyph as pdf.js gives them", () => {
+    const layout = layoutText(
+      [
+        item("x0", 241.5, 616, 10.9, 9),
+        item("=", 254.3, 616, 10.9, 8.5),
+        item("n", 265.8, 603.4, 8, 4.4),
+        item("−", 270.3, 603.4, 8, 6.6),
+        item("1", 276.9, 603.4, 8, 4.2),
+        item("i", 266.7, 628.2, 8, 2),
+        item("=", 269.4, 628.2, 8, 6.6),
+        item("0", 276, 628.2, 8, 4.2),
+        item("x", 282.9, 616, 10.9, 5),
+        item("i", 287.9, 617.7, 8, 2),
+      ],
+      IDENTITY_PAGE,
+    );
+    expect(layout.lines).toHaveLength(1);
+  });
+
+  it("joins no paragraph's next line, bullet under a heading, or page number to a line", () => {
+    const paragraph = layoutText(
+      [
+        item("Pad the shorter operand with", 28, 100, 10.9, 380),
+        item("zeros on the left:", 28, 113, 10.9, 90),
+      ],
+      IDENTITY_PAGE,
+    );
+    expect(paragraph.lines).toHaveLength(2);
+    const bullets = layoutText(
+      [
+        item("example:", 65, 100, 14, 60),
+        item("▪", 70, 114, 10, 6),
+        item("4000 byte datagram", 80, 114, 10, 100),
+      ],
+      IDENTITY_PAGE,
+    );
+    expect(bullets.lines).toHaveLength(2);
+    const footer = layoutText(
+      [
+        item("M(n) = Θ(n2).", 181, 785, 10.9, 90),
+        item(" ", 272.8, 785, 10.9, 166.8),
+        item("12", 439.6, 795.9, 6, 6.4),
+      ],
+      IDENTITY_PAGE,
+    );
+    expect(footer.lines).toHaveLength(2);
+  });
+
   it("is empty for a scanned page: nothing ever snaps", () => {
     const layout = layoutText([], IDENTITY_PAGE);
     expect(layout).toEqual({ chars: [], lines: [] });

@@ -8,6 +8,20 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Snap to PDF text, as a switch.** The highlighter's options have a new
+  switch beside Straighten lines. Off, the highlighter draws freehand on a
+  PDF's text too, straight or free, which marks equations and formulas
+  that the text snap breaks into pieces (FineNotes#159).
+
+### Fixed
+
+- **The highlighter takes a whole equation.** On a PDF, the text snap now
+  treats a formula as one line: a fraction's top and bottom and a sum's
+  limits belong to it, so a highlight over an equation is one band instead
+  of scraps at different heights (FineNotes#159).
+
 ## [2.8.2] - 2026-11-05
 
 ### Added
