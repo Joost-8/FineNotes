@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   duplicatePlan,
+  notebookOwnedFiles,
   notebookUnit,
   trashPlan,
   trashQuestion,
@@ -45,6 +46,38 @@ describe("notebookUnit", () => {
   });
 });
 
+describe("notebookOwnedFiles", () => {
+  it("holds what a notebook's own folder holds for it, not the notebook", () => {
+    const files = ownFolder("Uni", "Physics", ["Physics.transcript.md"]);
+    const owned = notebookOwnedFiles(files, isNotebook);
+    expect([...owned].sort()).toEqual(
+      files.filter((p) => p !== "Uni/Physics/Physics.notebook.md").sort(),
+    );
+  });
+
+  it("leaves the user's own files in that folder, and every file elsewhere", () => {
+    const files = [
+      ...ownFolder("Uni", "Physics", ["Syllabus.pdf", "Week 1/notes.md"]),
+      "Uni/Images/diagram.png",
+      "Uni/Algebra.notebook.md",
+    ];
+    const owned = notebookOwnedFiles(files, isNotebook);
+    expect(owned.has("Uni/Physics/Images/photo.png")).toBe(true);
+    expect(owned.has("Uni/Physics/Syllabus.pdf")).toBe(false);
+    expect(owned.has("Uni/Physics/Week 1/notes.md")).toBe(false);
+    expect(owned.has("Uni/Images/diagram.png")).toBe(false);
+  });
+
+  it("owns nothing for a namesake folder that holds other notebooks too", () => {
+    const files = [
+      "Physics/Physics.notebook.md",
+      "Physics/Images/photo.png",
+      "Physics/Week 2/Optics.notebook.md",
+    ];
+    expect(notebookOwnedFiles(files, isNotebook).size).toBe(0);
+  });
+});
+
 describe("trashPlan", () => {
   it("takes a notebook's own folder whole", () => {
     const files = [...ownFolder("Uni", "Physics"), "Uni/Algebra.notebook.md"];
@@ -56,6 +89,7 @@ describe("trashPlan", () => {
     expect(plan).toEqual({
       trash: ["Uni/Physics"],
       notebooks: ["Uni/Physics/Physics.notebook.md"],
+      files: [],
       kept: 0,
     });
   });
@@ -88,6 +122,7 @@ describe("trashPlan", () => {
     expect(plan).toEqual({
       trash: ["Uni/Algebra.notebook.md"],
       notebooks: ["Uni/Algebra.notebook.md"],
+      files: [],
       kept: 0,
     });
   });
@@ -139,10 +174,32 @@ describe("trashPlan", () => {
     expect(plan.notebooks).toHaveLength(2);
   });
 
-  it("takes nothing that is not a notebook", () => {
-    expect(
-      trashPlan([{ path: "Notes.md", folder: false }], ["Notes.md"], isNotebook).trash,
-    ).toEqual([]);
+  it("takes a file of the user's that was picked, and nothing beside it", () => {
+    const files = ["Uni/Notes.md", "Uni/Slides.pdf", "Uni/A.notebook.md"];
+    expect(trashPlan([{ path: "Uni/Slides.pdf", folder: false }], files, isNotebook)).toEqual({
+      trash: ["Uni/Slides.pdf"],
+      notebooks: [],
+      files: ["Uni/Slides.pdf"],
+      kept: 0,
+    });
+  });
+
+  it("takes nothing that is not in the vault", () => {
+    expect(trashPlan([{ path: "Gone.md", folder: false }], [], isNotebook).trash).toEqual([]);
+  });
+
+  it("still keeps the user's files in a picked folder unless they were picked too", () => {
+    const files = ["F/A.notebook.md", "F/Notes.md", "F/Slides.pdf"];
+    const plan = trashPlan(
+      [
+        { path: "F", folder: true },
+        { path: "F/Slides.pdf", folder: false },
+      ],
+      files,
+      isNotebook,
+    );
+    expect(plan.trash.sort()).toEqual(["F/A.notebook.md", "F/Slides.pdf"]);
+    expect(plan.kept).toBe(1);
   });
 });
 
@@ -151,6 +208,7 @@ describe("trashQuestion", () => {
     const q = trashQuestion({
       trash: ["Uni/Physics"],
       notebooks: ["Uni/Physics/Physics.notebook.md"],
+      files: [],
       kept: 0,
     });
     expect(q.title).toBe('Delete "Physics"?');
@@ -161,6 +219,7 @@ describe("trashQuestion", () => {
     const q = trashQuestion({
       trash: ["Uni/A.notebook.md", "Uni/B.notebook.md"],
       notebooks: ["Uni/A.notebook.md", "Uni/B.notebook.md"],
+      files: [],
       kept: 3,
     });
     expect(q.title).toBe("Delete 2 notebooks?");
@@ -171,14 +230,36 @@ describe("trashQuestion", () => {
 
   it("shortens a long list, A to Z", () => {
     const notebooks = ["F", "B", "C", "D", "E", "A"].map((n) => `${n}.notebook.md`);
-    const q = trashQuestion({ trash: notebooks, notebooks, kept: 1 });
+    const q = trashQuestion({ trash: notebooks, notebooks, files: [], kept: 1 });
     expect(q.message).toBe(
       '"A", "B", "C" and 3 more will be deleted, with their files. 1 other file stays where it is.',
     );
   });
 
+  it("names a file without promising files of its own", () => {
+    const q = trashQuestion({
+      trash: ["Uni/Slides.pdf"],
+      notebooks: [],
+      files: ["Uni/Slides.pdf"],
+      kept: 0,
+    });
+    expect(q.title).toBe('Delete "Slides.pdf"?');
+    expect(q.message).toBe('"Slides.pdf" will be deleted.');
+  });
+
+  it("counts items, not notebooks, when files are among them", () => {
+    const q = trashQuestion({
+      trash: ["A.notebook.md", "Notes.md"],
+      notebooks: ["A.notebook.md"],
+      files: ["Notes.md"],
+      kept: 0,
+    });
+    expect(q.title).toBe("Delete 2 items?");
+    expect(q.message).toBe('"A" and "Notes.md" will be deleted, with their files.');
+  });
+
   it("names an empty folder", () => {
-    const q = trashQuestion({ trash: ["Later"], notebooks: [], kept: 0 });
+    const q = trashQuestion({ trash: ["Later"], notebooks: [], files: [], kept: 0 });
     expect(q.title).toBe('Delete the folder "Later"?');
   });
 });

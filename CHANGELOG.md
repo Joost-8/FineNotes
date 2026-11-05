@@ -8,6 +8,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Home shows every file in a folder, not only notebooks.** Notes, PDFs,
+  pictures and any other file sit beside the notebooks, sorted with them, and
+  every folder that holds something is a folder tile. A note shows its first
+  page as Obsidian renders it, a PDF its first page, a picture itself; other
+  files show a symbol and their extension. Tapping one opens it in Obsidian;
+  its ⌄ menu renames, moves or deletes it. What a notebook keeps in its own
+  folder (pictures, recordings, transcripts) still shows as the notebook.
+
 ## [2.8.2] - 2026-11-05
 
 ### Added

@@ -3,7 +3,8 @@
  *
  * A library entry is one ink note in the vault, read down to what a cover
  * and a caption need: its title, its folder, its page count and the colour
- * of its cover. The folder structure is the vault's own.
+ * of its cover; or one of the vault's other files, shown beside the
+ * notebooks in its folder. The folder structure is the vault's own.
  *
  * No DOM, no Obsidian.
  */
@@ -13,11 +14,19 @@ import { type PageGeometry, type PdfBackdrop, isCoverRuling } from "./document";
 import { inkFileSuffix, stripInkSuffix } from "./new-notebook";
 import { parseInkFile } from "./serialize";
 
-/** What the library knows of one notebook. */
+/**
+ * What a library item is: a notebook, or one of the vault's other files,
+ * which the library shows by what it holds (a note's first page, a PDF's
+ * first page, the picture itself) or, for the rest, by a symbol.
+ */
+export type EntryKind = "notebook" | "note" | "pdf" | "image" | "file";
+
+/** What the library knows of one notebook or file. */
 export interface LibraryEntry {
+  kind: EntryKind;
   /** Vault path, e.g. `Uni/Algebra.notebook.md`. */
   path: string;
-  /** The file's name without its ink suffix. */
+  /** The file's name without its ink suffix, or a file's without its extension. */
   title: string;
   /** The folder it sits in; empty at the vault's root. */
   folder: string;
@@ -40,6 +49,7 @@ export interface LibraryEntry {
 /** A notebook the library has not read yet: its file's facts only. */
 export function placeholderEntry(path: string, edited: number): LibraryEntry {
   return {
+    kind: "notebook",
     path,
     title: titleOf(baseName(path)),
     folder: folderOf(path),
@@ -50,6 +60,99 @@ export function placeholderEntry(path: string, edited: number): LibraryEntry {
     covered: false,
     edited,
   };
+}
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
+
+/** What kind of item a file that is not a notebook is, by its extension. */
+export function fileKind(extension: string): Exclude<EntryKind, "notebook"> {
+  const ext = extension.toLowerCase();
+  if (ext === "md") return "note";
+  if (ext === "pdf") return "pdf";
+  return IMAGE_EXTENSIONS.has(ext) ? "image" : "file";
+}
+
+/** A file name's extension, without the dot; empty for none (a leading dot is part of the name). */
+function extensionOf(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot + 1) : "";
+}
+
+/**
+ * A file of the vault's that is not a notebook, as the library shows it:
+ * named without its extension, a PDF with its first page as its cover.
+ */
+export function fileEntry(path: string, edited: number): LibraryEntry {
+  const name = baseName(path);
+  const extension = extensionOf(name);
+  const kind = fileKind(extension);
+  return {
+    ...placeholderEntry(path, edited),
+    kind,
+    title: extension === "" ? name : name.slice(0, -extension.length - 1),
+    // The page keeps the PDF's own size; the cover reads it as it draws.
+    pdf: kind === "pdf" ? { path, page: 0, width: 0, height: 0 } : null,
+  };
+}
+
+/** A file's extension, upper case, as a caption names it: "PDF", "CANVAS"; empty for none. */
+export function extensionLabel(path: string): string {
+  return extensionOf(baseName(path)).toUpperCase();
+}
+
+const FILE_ICONS: ReadonlyArray<[icon: string, extensions: readonly string[]]> = [
+  ["layout-dashboard", ["canvas"]],
+  ["file-audio", ["mp3", "m4a", "wav", "ogg", "flac", "aac", "3gp"]],
+  ["file-video", ["mp4", "mov", "mkv", "webm", "ogv", "avi"]],
+  ["file-archive", ["zip", "rar", "7z", "tar", "gz"]],
+  ["file-spreadsheet", ["csv", "xlsx", "xls", "ods"]],
+  ["file-code", ["js", "ts", "py", "json", "css", "html", "c", "cpp", "java", "tex"]],
+];
+
+/** The Lucide symbol for a file the library cannot draw a page of. */
+export function fileIcon(path: string): string {
+  const ext = extensionOf(baseName(path)).toLowerCase();
+  return FILE_ICONS.find(([, list]) => list.includes(ext))?.[0] ?? "file";
+}
+
+/** About a page of text: past it the preview, a small page, shows nothing more. */
+const PREVIEW_CHARS = 1800;
+const PREVIEW_LINES = 60;
+
+/**
+ * The part of a note its preview renders: the first page's worth, without
+ * the frontmatter, and without embeds other than pictures, so a preview
+ * never opens a PDF or another note inside it. Cut at a line, and never
+ * inside a code or math block (a block left open would swallow nothing, but
+ * renders as a box of raw text).
+ */
+export function notePreviewText(markdown: string): string {
+  const bare = markdown.charCodeAt(0) === 0xfeff ? markdown.slice(1) : markdown;
+  let text = bare.replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, "");
+  text = text.replace(/!\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g, (embed, target: string) =>
+    IMAGE_EXTENSIONS.has(extensionOf(target.trim()).toLowerCase()) ? embed : "",
+  );
+  const lines = text.split(/\r?\n/);
+  const kept: string[] = [];
+  let length = 0;
+  let fence: string | null = null;
+  for (const line of lines) {
+    const full = length > PREVIEW_CHARS || kept.length >= PREVIEW_LINES;
+    // An open block may run on to its end, but not past twice the page.
+    if ((full && fence === null) || kept.length >= 2 * PREVIEW_LINES) break;
+    kept.push(line);
+    length += line.length + 1;
+    const trimmed = line.trim();
+    const opener = /^(```+|~~~+|\$\$)/.exec(trimmed)?.[1];
+    if (fence === null) {
+      // `$$ x $$` on one line opens and closes.
+      if (opener && !(opener === "$$" && trimmed.length > 2 && trimmed.endsWith("$$"))) {
+        fence = opener;
+      }
+    } else if (opener !== undefined && trimmed.startsWith(fence)) fence = null;
+  }
+  if (fence !== null) kept.push(fence);
+  return kept.join("\n").trim();
 }
 
 /** A notebook's name: its file's without the ink suffix, or the ".md" of one marked ink in its frontmatter. */
@@ -78,6 +181,7 @@ export interface LibraryPdf {
   path: string;
   /** 0-based. */
   page: number;
+  /** 0, with `height`, for a PDF of the vault's own: the page keeps its own size. */
   width: number;
   height: number;
 }
@@ -116,12 +220,15 @@ export function entryFromText(path: string, edited: number, markdown: string): L
 export interface LibraryFolder {
   name: string;
   path: string;
-  /** Notebooks in it and in every folder below it. */
+  /** Items (notebooks and files) in it and in every folder below it. */
   count: number;
+  /** How many of them are notebooks. */
+  notebooks: number;
 }
 
 export interface Listing {
   folders: LibraryFolder[];
+  /** The notebooks and files directly in the folder. */
   notebooks: LibraryEntry[];
 }
 
@@ -130,9 +237,10 @@ function within(path: string, folder: string): boolean {
   return folder === "" || path === folder || path.startsWith(`${folder}/`);
 }
 
-/** The folders directly inside `folder`, and the notebooks directly in it. */
+/** The folders directly inside `folder`, and the notebooks and files directly in it. */
 export function browse(entries: readonly LibraryEntry[], folder: string): Listing {
   const counts = new Map<string, number>();
+  const books = new Map<string, number>();
   const notebooks: LibraryEntry[] = [];
   const prefix = folder === "" ? "" : `${folder}/`;
   for (const entry of entries) {
@@ -143,9 +251,15 @@ export function browse(entries: readonly LibraryEntry[], folder: string): Listin
     }
     const next = entry.folder.slice(prefix.length).split("/")[0] ?? "";
     counts.set(next, (counts.get(next) ?? 0) + 1);
+    if (entry.kind === "notebook") books.set(next, (books.get(next) ?? 0) + 1);
   }
   const folders = [...counts]
-    .map(([name, count]) => ({ name, path: `${prefix}${name}`, count }))
+    .map(([name, count]) => ({
+      name,
+      path: `${prefix}${name}`,
+      count,
+      notebooks: books.get(name) ?? 0,
+    }))
     .sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
     );
@@ -154,11 +268,12 @@ export function browse(entries: readonly LibraryEntry[], folder: string): Listin
 
 /**
  * The notebooks as the library files them: a folder that holds a single
- * notebook (a notebook in a folder of its own, say) is not worth a visit, so
- * its notebook is filed in the folder above, and above that while that one
- * holds no other either. A folder in `kept` (one the user made or styled in
- * the library) stays a folder however few it holds. Only `folder` changes,
- * never `path`.
+ * notebook and nothing else (a notebook in a folder of its own, say) is not
+ * worth a visit, so its notebook is filed in the folder above, and above that
+ * while that one holds no other item either. A folder in `kept` (one the user
+ * made or styled in the library) stays a folder however few it holds. Files
+ * stay where they are: a folder holding one is the vault's own. Only
+ * `folder` changes, never `path`.
  */
 export function hoistSingles(
   entries: readonly LibraryEntry[],
@@ -170,6 +285,7 @@ export function hoistSingles(
       counts.set(at, (counts.get(at) ?? 0) + 1);
   }
   return entries.map((entry) => {
+    if (entry.kind !== "notebook") return entry;
     let folder = entry.folder;
     while (folder !== "" && counts.get(folder) === 1 && !kept(folder)) folder = folderOf(folder);
     return folder === entry.folder ? entry : { ...entry, folder };
@@ -179,7 +295,12 @@ export function hoistSingles(
 /** The folders leading to `folder`, outermost first: "A/B" gives A, A/B. */
 export function crumbs(folder: string): LibraryFolder[] {
   const parts = folder === "" ? [] : folder.split("/");
-  return parts.map((name, i) => ({ name, path: parts.slice(0, i + 1).join("/"), count: 0 }));
+  return parts.map((name, i) => ({
+    name,
+    path: parts.slice(0, i + 1).join("/"),
+    count: 0,
+    notebooks: 0,
+  }));
 }
 
 export type LibrarySort = "edited" | "created" | "name" | "pages";
@@ -202,7 +323,7 @@ export function sortEntries(
   return reverse ? sorted.reverse() : sorted;
 }
 
-/** Notebooks whose title or folder holds every word of `query`; all of them for an empty query. */
+/** Notebooks and files whose title or folder holds every word of `query`; all of them for an empty query. */
 export function searchEntries(entries: readonly LibraryEntry[], query: string): LibraryEntry[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return [...entries];

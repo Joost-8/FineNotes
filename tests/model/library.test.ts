@@ -13,8 +13,13 @@ import {
   continueEntries,
   crumbs,
   entryFromText,
+  extensionLabel,
+  fileEntry,
+  fileIcon,
+  fileKind,
   folderOf,
   hoistSingles,
+  notePreviewText,
   placeholderEntry,
   readProgress,
   searchEntries,
@@ -63,6 +68,62 @@ describe("entryFromText", () => {
   });
 });
 
+describe("fileEntry", () => {
+  it("names a file without its extension and says what kind it is", () => {
+    expect(fileEntry("Uni/N0 Number theory.md", 1)).toMatchObject({
+      kind: "note",
+      title: "N0 Number theory",
+      folder: "Uni",
+      pdf: null,
+    });
+    expect(fileEntry("Uni/Lecture 1.PDF", 1)).toMatchObject({
+      kind: "pdf",
+      title: "Lecture 1",
+      pdf: { path: "Uni/Lecture 1.PDF", page: 0, width: 0, height: 0 },
+    });
+    expect(fileEntry("photo.jpeg", 1).kind).toBe("image");
+    expect(fileEntry("Board.canvas", 1).kind).toBe("file");
+    expect(fileEntry("README", 1)).toMatchObject({ kind: "file", title: "README" });
+    expect(fileEntry(".hidden", 1).title).toBe(".hidden");
+  });
+
+  it("gives files a symbol and a label by extension", () => {
+    expect(fileIcon("Board.canvas")).toBe("layout-dashboard");
+    expect(fileIcon("talk.m4a")).toBe("file-audio");
+    expect(fileIcon("report.docx")).toBe("file");
+    expect(extensionLabel("Uni/report.docx")).toBe("DOCX");
+    expect(extensionLabel("README")).toBe("");
+    expect(fileKind("SVG")).toBe("image");
+  });
+});
+
+describe("notePreviewText", () => {
+  it("drops the frontmatter and the embeds that are not pictures", () => {
+    const text = notePreviewText(
+      "---\ntags: [x]\n---\n# Title\n![[diagram.png|200]]\n![[Lecture.pdf#page=2]]\n![[Other note]]\nBody",
+    );
+    expect(text).toBe("# Title\n![[diagram.png|200]]\n\n\nBody");
+  });
+
+  it("stops after about a page, at a line", () => {
+    const long = Array.from({ length: 200 }, (_, i) => `Line ${i}`).join("\n");
+    const lines = notePreviewText(long).split("\n");
+    expect(lines.length).toBeLessThanOrEqual(61);
+    expect(lines[0]).toBe("Line 0");
+  });
+
+  it("never cuts a math or code block open", () => {
+    const head = Array.from({ length: 58 }, () => "text").join("\n");
+    const math = notePreviewText(`${head}\n$$\na^2\n+ b^2\n= c^2\n$$\nafter`);
+    expect(math.endsWith("= c^2\n$$")).toBe(true);
+    const code = notePreviewText(`${head}\n\`\`\`ts\n${"x\n".repeat(300)}\`\`\``);
+    expect(code.endsWith("```")).toBe(true);
+    expect(code.split("\n").length).toBeLessThanOrEqual(121);
+    // A one-line block closes itself.
+    expect(notePreviewText("$$ x $$\nnext")).toBe("$$ x $$\nnext");
+  });
+});
+
 describe("browse", () => {
   const all = [
     entry("Root.notebook.md", 1),
@@ -76,9 +137,25 @@ describe("browse", () => {
     const root = browse(all, "");
     expect(root.notebooks.map((n) => n.title)).toEqual(["Root"]);
     expect(root.folders).toEqual([
-      { name: "Personal", path: "Personal", count: 1 },
-      { name: "Uni", path: "Uni", count: 3 },
+      { name: "Personal", path: "Personal", count: 1, notebooks: 1 },
+      { name: "Uni", path: "Uni", count: 3, notebooks: 3 },
     ]);
+  });
+
+  it("lists files beside the notebooks, and counts them apart in a folder", () => {
+    const list = [
+      ...all,
+      fileEntry("Uni/Syllabus.pdf", 6),
+      fileEntry("Uni/Year 1/Week 1.md", 7),
+      fileEntry("Course files/slides.pdf", 8),
+    ];
+    const root = browse(list, "");
+    expect(root.folders.map((f) => [f.path, f.count, f.notebooks])).toEqual([
+      ["Course files", 1, 0],
+      ["Personal", 1, 1],
+      ["Uni", 5, 3],
+    ]);
+    expect(browse(list, "Uni").notebooks.map((n) => n.title)).toEqual(["A", "Syllabus"]);
   });
 
   it("counts everything below a folder, and lists its own notebooks", () => {
@@ -253,6 +330,15 @@ describe("hoistSingles", () => {
 
   it("collapses a lone notebook inside a folder of folders up to the root", () => {
     expect(hoistSingles([entry("A/B/C.notebook.md", 1)])[0].folder).toBe("");
+  });
+
+  it("leaves a notebook where it is when a file shares its folder, and never moves a file", () => {
+    const list = [
+      entry("Algebra/Algebra.notebook.md", 1),
+      fileEntry("Algebra/Syllabus.pdf", 2),
+      fileEntry("Exam prep/sheet.pdf", 3),
+    ];
+    expect(hoistSingles(list).map((e) => e.folder)).toEqual(["Algebra", "Algebra", "Exam prep"]);
   });
 
   it("keeps a folder made or styled in the library, however few it holds", () => {
