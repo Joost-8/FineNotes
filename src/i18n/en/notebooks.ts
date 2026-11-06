@@ -390,6 +390,7 @@ export const notebooks = {
   "notebooks.template.current": "Current template",
   "notebooks.command.newNotebookOrPage": "New notebook or page…",
   "notebooks.command.createWithLastSettings": "Create notebook with last settings",
+  "notebooks.command.insertNewNotebook": "Insert a new notebook here",
   "notebooks.command.showWelcome": "Show the welcome",
   "notebooks.command.openLibrary": "Open the notebook library",
   "notebooks.command.simpleLook": "Simple look: hide or show Obsidian's tabs, sidebars and menus",
