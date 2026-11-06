@@ -7506,7 +7506,9 @@ export class InkSurface {
     this.callbacks.onPen?.(true);
     this.pressTool = this.pressOverrideOf(press);
     if (this.pressTool === "zoom" || (this.pressTool === null && this.toolState.tool === "zoom")) {
-      if (this.startZoomMarquee(sample)) return;
+      // Only the Magnifier in hand draws the Zoom box's target; an Alt press
+      // always zooms by dragging, the Zoom box setting or not.
+      if (this.pressTool === null && this.startZoomMarquee(sample)) return;
       this.startZoomDrag(sample, this.pressTool === null);
       return;
     }

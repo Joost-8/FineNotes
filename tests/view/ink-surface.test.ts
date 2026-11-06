@@ -3249,6 +3249,38 @@ describe("writing in the Zoom box", () => {
   });
 });
 
+describe("an Alt press with the Zoom box on", () => {
+  function zoomSurface(tool: string): { s: State; calls: string[] } {
+    const calls: string[] = [];
+    const s = surfaceWith({
+      toolState: { tool, zoomBox: true },
+      zoomBox: null,
+      callbacks: {},
+      pressOverrideOf: (press: { altKey?: boolean }) => (press.altKey ? "zoom" : null),
+      startZoomMarquee: () => {
+        calls.push("marquee");
+        return true;
+      },
+      startZoomDrag: () => void calls.push("drag"),
+      markDrawing: () => undefined,
+      penDown: () => void calls.push("draw"),
+    });
+    return { s, calls };
+  }
+
+  it("zooms by dragging under any tool, never draws the box's target", () => {
+    const { s, calls } = zoomSurface("pen");
+    run(s, "penStart", { x: 10, y: 10 }, { altKey: true });
+    expect(calls).toEqual(["drag"]);
+  });
+
+  it("leaves the target to the Magnifier in hand", () => {
+    const { s, calls } = zoomSurface("zoom");
+    run(s, "penStart", { x: 10, y: 10 }, { altKey: false });
+    expect(calls).toEqual(["marquee"]);
+  });
+});
+
 describe("the Zoom box's first-drag catcher", () => {
   function catcherSurface(onlyStylus: boolean): { s: State; hidden: () => boolean } {
     let hidden = true;
