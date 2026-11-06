@@ -21,6 +21,11 @@
  * cover; a read redraws that notebook's cards where they stand, and the page
  * is put in order once the reading ends. A hidden Home tab reads nothing: a
  * change waits until the tab is shown.
+ *
+ * The same read keeps each notebook's own text (search-store.ts), so a
+ * search finds pages as well as titles: matching notebooks first, then
+ * the pages that hold the words (`src/search/library-search.ts`), each
+ * opening its notebook on that page with the words lit.
  */
 
 import {
@@ -93,6 +98,31 @@ import {
   sortEntries,
   whenText,
 } from "../model/library";
+import {
+  type LibraryBook,
+  type LibraryHit,
+  assemblePages,
+  searchLibrary,
+} from "../search/library-search";
+import {
+  type PageText,
+  folderNotebookSidecarPath,
+  transcriptSidecarPath,
+  transcriptsByKey,
+} from "../search/notebook-search";
+import {
+  type KeptPrinted,
+  type KeptReading,
+  type NotebookTextRecord,
+  loadNotebookTexts,
+  loadPrinted,
+  loadReadings,
+  printedKey,
+  pruneReadings,
+  readingKey,
+  saveNotebookTexts,
+  vaultKeyOf,
+} from "./search-store";
 
 /** What the view needs from the plugin. */
 export interface LibraryHost {
@@ -173,6 +203,23 @@ interface Read {
 
 /** Each vault's reads this session, shared by every Home tab: reopening Home reads nothing new. */
 const sessionReads = new Map<string, Map<string, Read>>();
+/** Each vault's notebooks' own text this session, for searching inside them. */
+const sessionTexts = new Map<string, Map<string, NotebookTextRecord>>();
+/** Pages a search shows at most. */
+const MAX_PAGE_HITS = 40;
+/** How long typing must pause before the pages are searched, ms: titles answer at once. */
+const PAGE_SEARCH_DELAY_MS = 120;
+
+/** What this device worked out about notebooks' pages (search-store.ts), loaded when a search starts. */
+interface SearchExtras {
+  readings: Map<string, KeptReading>;
+  printed: Map<string, KeptPrinted>;
+}
+
+/** The icon a snippet's source shows: handwriting, a text box, a PDF. */
+function snippetIcon(kind: PageText["sources"][number]["kind"]): string {
+  return kind === "handwriting" ? "pen-line" : kind === "text" ? "type" : "file-text";
+}
 
 /**
  * Obsidian's "Stack tabs" shows every tab of a group side by side, so a
@@ -206,6 +253,26 @@ export class LibraryView extends ItemView {
   private updateEl!: HTMLElement;
   private query = "";
   private readonly reads = new Map<string, Read>();
+  /** Each notebook's own text, for searching inside it; valid while its file's time and size match. */
+  private texts = new Map<string, NotebookTextRecord>();
+  /** What this device read on pages (Grape, PDF text); `null` until a search wants it, or after a notebook was visited. */
+  private extras: SearchExtras | null = null;
+  private extrasLoading: Promise<SearchExtras> | null = null;
+  /** The transcript server's transcriptions, by notebook path, as of the sidecar's version. */
+  private readonly sidecars = new Map<string, { stamp: string; byKey: Map<string, string> }>();
+  /** Each notebook's pages as last searched, kept while nothing they are made of changed. */
+  private readonly books = new Map<
+    string,
+    {
+      of: NotebookTextRecord;
+      sidecar: Map<string, string> | undefined;
+      sign: string;
+      pages: PageText[];
+    }
+  >();
+  /** Where the page results go; carried over from paint to paint so typing never blanks them. */
+  private hitsEl: HTMLElement | null = null;
+  private hitsTimer = 0;
   /** Move, Duplicate and Delete, on a notebook's own folder when it has one. */
   private readonly actions: LibraryActions;
   /** The read under way, if any; `again` asks it for one more round when it ends. */
@@ -390,7 +457,7 @@ export class LibraryView extends ItemView {
     const known = sessionReads.get(this.vaultKey());
     if (known) for (const [path, read] of known) this.reads.set(path, read);
     this.paintNow();
-    void this.loadKnown().then(() => this.readStale());
+    void Promise.all([this.loadKnown(), this.loadKnownTexts()]).then(() => this.readStale());
   }
 
   override onResize(): void {
@@ -443,9 +510,7 @@ export class LibraryView extends ItemView {
 
   /** One key per vault for what Home keeps on this device. */
   private vaultKey(): string {
-    const app = this.app as unknown as { appId?: unknown; vault: { getName?: () => string } };
-    if (typeof app.appId === "string" && app.appId !== "") return app.appId;
-    return app.vault.getName?.() ?? "vault";
+    return vaultKeyOf(this.app);
   }
 
   /** The entries kept from earlier sessions, merged under any read this session; repaints if any came. */
@@ -460,6 +525,20 @@ export class LibraryView extends ItemView {
       added = true;
     }
     if (added) this.paintNow();
+  }
+
+  /** The notebooks' text kept from earlier sessions, under any read this session. */
+  private async loadKnownTexts(): Promise<void> {
+    const vault = this.vaultKey();
+    const session = sessionTexts.get(vault);
+    if (session) {
+      this.texts = session;
+      return;
+    }
+    sessionTexts.set(vault, this.texts);
+    const kept = await loadNotebookTexts(vault);
+    for (const [path, record] of kept) if (!this.texts.has(path)) this.texts.set(path, record);
+    if (!this.closed && this.query.trim() !== "") this.paintNow();
   }
 
   /** Vault changes repaint and read, and showing the tab catches up on what came while it was hidden. */
@@ -486,6 +565,8 @@ export class LibraryView extends ItemView {
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
         if (leaf !== this.leaf) return;
+        // A notebook visited meanwhile may have read pages: search what it kept.
+        this.extras = null;
         if (this.stale) this.refreshNow();
         else this.paintNow();
       }),
@@ -626,15 +707,22 @@ export class LibraryView extends ItemView {
     const stale: TFile[] = [];
     for (const file of this.notebookFiles()) {
       live.add(file.path);
-      const read = this.reads.get(file.path);
-      if (!read || read.mtime !== file.stat.mtime || read.size !== file.stat.size) stale.push(file);
+      if (!this.entryFresh(file) || !this.textFresh(file)) stale.push(file);
     }
     const changes = new Map<string, Read | null>();
+    const textChanges = new Map<string, NotebookTextRecord | null>();
     for (const path of [...this.reads.keys()])
       if (!live.has(path)) {
         this.reads.delete(path);
         changes.set(path, null);
       }
+    for (const path of [...this.texts.keys()])
+      if (!live.has(path)) {
+        this.texts.delete(path);
+        textChanges.set(path, null);
+      }
+    // Grape's readings of notebooks gone or renamed are let go.
+    if (textChanges.size > 0) pruneReadings(this.vaultKey(), (path) => live.has(path));
     sessionReads.set(this.vaultKey(), this.reads);
     stale.sort((a, b) => b.stat.mtime - a.stat.mtime);
     let count = 0;
@@ -642,11 +730,27 @@ export class LibraryView extends ItemView {
     for (const file of stale) {
       if (this.closed) {
         saveEntries(this.vaultKey(), changes);
+        saveNotebookTexts(this.vaultKey(), textChanges);
         return;
       }
       const { mtime, size } = file.stat;
+      // Only its text was missing (kept from before searching inside notebooks): its card stays.
+      const textOnly = this.entryFresh(file);
       // Decoded in the read worker; its cover drawn from that same read, never a second one.
-      const { entry, cover } = await this.pages().readEntry(file, mtime);
+      const { entry, cover, text } = await this.pages().readEntry(file, mtime);
+      if (text) {
+        const record = { mtime, size, pages: text };
+        this.texts.set(file.path, record);
+        textChanges.set(file.path, record);
+      }
+      if (textChanges.size >= 20) {
+        saveNotebookTexts(this.vaultKey(), new Map(textChanges));
+        textChanges.clear();
+      }
+      if (textOnly) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        continue;
+      }
       if (cover) await this.keepOwnCover(file, cover).catch(() => undefined);
       const read = { mtime, size, entry };
       this.reads.set(file.path, read);
@@ -664,7 +768,21 @@ export class LibraryView extends ItemView {
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     }
     saveEntries(this.vaultKey(), changes);
+    saveNotebookTexts(this.vaultKey(), textChanges);
     if (unsorted && !this.closed) this.paintNow();
+    else if (textChanges.size > 0 && this.query.trim() !== "") this.schedulePageHits();
+  }
+
+  /** Whether a notebook's card is from its file as it is now. */
+  private entryFresh(file: TFile): boolean {
+    const read = this.reads.get(file.path);
+    return !!read && read.mtime === file.stat.mtime && read.size === file.stat.size;
+  }
+
+  /** Whether a notebook's text for searching is from its file as it is now. */
+  private textFresh(file: TFile): boolean {
+    const text = this.texts.get(file.path);
+    return !!text && text.mtime === file.stat.mtime && text.size === file.stat.size;
   }
 
   // --- Painting ---------------------------------------------------------------
@@ -748,12 +866,19 @@ export class LibraryView extends ItemView {
         this.sort,
         this.reverse,
       );
-      this.grid(
-        found,
-        found.length === 0 ? t("notebooks.home.noMatch") : t("notebooks.home.results"),
-      );
+      // Titles answer at once; the pages holding the words follow under them.
+      if (found.length > 0) this.grid(found, t("notebooks.home.results"));
+      const previous = this.hitsEl;
+      this.hitsEl = this.bodyEl.createDiv({ cls: "goodobsidian-library-hits-area" });
+      this.hitsEl.dataset.titles = String(found.length);
+      // What the last search showed stays until this one's answer replaces it.
+      if (previous) this.hitsEl.append(...Array.from(previous.childNodes));
+      else if (found.length === 0 && this.texts.size === 0) this.noMatch(this.hitsEl);
+      this.schedulePageHits();
       return;
     }
+    this.hitsEl = null;
+    window.clearTimeout(this.hitsTimer);
 
     const left = this.lastPages();
     const stars = this.host.stars();
@@ -1618,13 +1743,162 @@ export class LibraryView extends ItemView {
       .forEach((el) => el.removeClass("is-previewed"));
   }
 
+  // --- Search inside notebooks ---------------------------------------------------
+
+  /** Search the pages a moment after typing pauses. */
+  private schedulePageHits(): void {
+    window.clearTimeout(this.hitsTimer);
+    const query = this.query;
+    this.hitsTimer = window.setTimeout(() => void this.fillPageHits(query), PAGE_SEARCH_DELAY_MS);
+  }
+
+  /** "No notebook matches", once neither a title nor a page did. */
+  private noMatch(el: HTMLElement): void {
+    el.empty();
+    el.createDiv({ cls: "goodobsidian-library-label", text: t("notebooks.home.noMatch") });
+  }
+
+  /** What this device kept about pages, loaded once per search (and again after visiting a notebook). */
+  private searchExtras(): Promise<SearchExtras> {
+    if (this.extras) return Promise.resolve(this.extras);
+    if (!this.extrasLoading) {
+      const vault = this.vaultKey();
+      const loading = Promise.all([loadReadings(vault), loadPrinted(vault)]).then(
+        ([readings, printed]) => {
+          const extras = { readings, printed };
+          if (this.extrasLoading === loading) {
+            this.extras = extras;
+            this.extrasLoading = null;
+          }
+          return extras;
+        },
+      );
+      this.extrasLoading = loading;
+    }
+    return this.extrasLoading;
+  }
+
+  /** The transcript server's transcriptions of a notebook, by page key, if it keeps any. */
+  private async sidecarOf(path: string): Promise<Map<string, string> | undefined> {
+    const file = [transcriptSidecarPath(path), folderNotebookSidecarPath(path)]
+      .map((p) => (p ? this.app.vault.getFileByPath(p) : null))
+      .find((f) => f !== null);
+    if (!file) {
+      this.sidecars.delete(path);
+      return undefined;
+    }
+    const stamp = `${file.path}@${file.stat.mtime}:${file.stat.size}`;
+    const kept = this.sidecars.get(path);
+    if (kept?.stamp === stamp) return kept.byKey;
+    try {
+      const byKey = transcriptsByKey(await this.app.vault.cachedRead(file));
+      this.sidecars.set(path, { stamp, byKey });
+      return byKey;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** A notebook's pages as searched, made again only when something they hold changed. */
+  private bookPages(
+    path: string,
+    record: NotebookTextRecord,
+    extras: SearchExtras,
+    sidecar: Map<string, string> | undefined,
+  ): PageText[] {
+    const reading = (page: { id: string; hash: string }): string | undefined => {
+      const kept = extras.readings.get(readingKey(path, page.id));
+      return kept && kept.hash === page.hash ? kept.text : undefined;
+    };
+    const printed = (pdf: { path: string; page: number }): string | undefined => {
+      const kept = extras.printed.get(printedKey(pdf.path, pdf.page));
+      if (!kept) return undefined;
+      const file = this.app.vault.getFileByPath(pdf.path);
+      return file && kept.stamp === `${file.stat.mtime}:${file.stat.size}` ? kept.text : undefined;
+    };
+    // What this device adds, page by page: unchanged, the pages (and their folded text) are reused.
+    const sign = record.pages
+      .map((p) => `${reading(p)?.length ?? -1}/${p.pdf ? (printed(p.pdf)?.length ?? -1) : -1}`)
+      .join(",");
+    const kept = this.books.get(path);
+    if (kept && kept.of === record && kept.sidecar === sidecar && kept.sign === sign)
+      return kept.pages;
+    const pages = assemblePages(record.pages, { sidecar, reading, printed });
+    this.books.set(path, { of: record, sidecar, sign, pages });
+    return pages;
+  }
+
+  /** The pages holding the query, under the titles that match it. */
+  private async fillPageHits(query: string): Promise<void> {
+    const el = this.hitsEl;
+    if (!el || this.closed) return;
+    const extras = await this.searchExtras();
+    const books: LibraryBook[] = [];
+    // The notebooks edited last first: among equal pages, the one in use now is nearer the top.
+    const files = this.notebookFiles().sort((a, b) => b.stat.mtime - a.stat.mtime);
+    for (const file of files) {
+      const record = this.texts.get(file.path);
+      if (!record) continue;
+      const sidecar = await this.sidecarOf(file.path);
+      books.push({ path: file.path, pages: this.bookPages(file.path, record, extras, sidecar) });
+    }
+    if (el !== this.hitsEl || query !== this.query || this.closed) return;
+    this.renderPageHits(el, searchLibrary(books, query, MAX_PAGE_HITS), query);
+  }
+
+  /** The found pages, grouped by notebook in the order found; a tap opens the notebook there. */
+  private renderPageHits(el: HTMLElement, hits: readonly LibraryHit[], query: string): void {
+    el.empty();
+    if (hits.length === 0) {
+      if (el.dataset.titles === "0") this.noMatch(el);
+      return;
+    }
+    el.createDiv({ cls: "goodobsidian-library-label", text: t("notebooks.home.pages") });
+    const list = el.createDiv({ cls: "goodobsidian-library-hits" });
+    const groups = new Map<string, LibraryHit[]>();
+    for (const hit of hits) {
+      const group = groups.get(hit.path);
+      if (group) group.push(hit);
+      else groups.set(hit.path, [hit]);
+    }
+    for (const [path, group] of groups) {
+      const file = this.app.vault.getFileByPath(path);
+      if (!file) continue;
+      const entry = this.entryOf(file);
+      const book = list.createDiv({ cls: "goodobsidian-library-hit-book" });
+      book.createDiv({ cls: "goodobsidian-library-hit-title", text: entry.title });
+      for (const hit of group) {
+        const row = book.createEl("button", {
+          cls: "goodobsidian-library-hit clickable-icon",
+          attr: { type: "button" },
+        });
+        row.createSpan({
+          cls: "goodobsidian-library-hit-page",
+          text: t("view.search.page", { page: hit.pageIndex + 1 }),
+        });
+        const snippet = hit.snippets[0];
+        if (snippet) {
+          const line = row.createSpan({ cls: "goodobsidian-library-hit-text" });
+          setIcon(
+            line.createSpan({ cls: "goodobsidian-library-hit-kind" }),
+            snippetIcon(snippet.kind),
+          );
+          line.appendText(snippet.before);
+          line.createSpan({ cls: "suggestion-highlight", text: snippet.match });
+          line.appendText(snippet.after);
+        }
+        row.addEventListener("click", () => this.openItem(entry, hit.pageIndex, query));
+      }
+    }
+  }
+
   // --- Menus and navigation -----------------------------------------------------
 
   /**
    * A notebook or file in a tab of its own, or the tab it is already in, filling the
    * view: the library stays where it is, so it is always one tap back.
    */
-  private openItem(entry: LibraryEntry, pageIndex?: number): void {
+  private openItem(entry: LibraryEntry, pageIndex?: number, search?: string): void {
     const file = this.app.vault.getFileByPath(entry.path);
     if (!file) return;
     const notebook = entry.kind === "notebook";
@@ -1637,7 +1911,11 @@ export class LibraryView extends ItemView {
     const leaf = existing ?? this.app.workspace.getLeaf("tab");
     unstackTabsOf(leaf);
     // A page picked in the preview or the Continue card: the notebook opens there.
-    const at = pageIndex !== undefined && notebook ? { pageIndex } : undefined;
+    // A page Home's search found: the notebook lights the words there.
+    const at =
+      pageIndex !== undefined && notebook
+        ? { pageIndex, ...(search ? { search } : {}) }
+        : undefined;
     if (existing) {
       void this.app.workspace.revealLeaf(existing);
       if (at) leaf.setEphemeralState(at);

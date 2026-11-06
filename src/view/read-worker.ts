@@ -11,6 +11,8 @@
 import type { InkDocument } from "../model/document";
 import { entryFromDoc } from "../model/library";
 import { parseInkFile } from "../model/serialize";
+import { readTextSection } from "../recognition/text-layer";
+import { notebookText } from "../search/library-search";
 import { READ_TAG, type ReadReply, type ReadRequest } from "./read-protocol";
 
 interface WorkerScope {
@@ -19,7 +21,8 @@ interface WorkerScope {
 }
 
 const scope = self as unknown as WorkerScope;
-let held: { key: string; doc: InkDocument | null } | null = null;
+/** The last notebook read, with its text layer (all of the note's own text Home's search needs). */
+let held: { key: string; doc: InkDocument | null; layer: string | null } | null = null;
 
 function reply(message: ReadReply): void {
   scope.postMessage({ [READ_TAG]: true, ...message });
@@ -34,7 +37,8 @@ scope.onmessage = (event) => {
         reply({ id: request.id, ok: false, needText: true });
         return;
       }
-      held = { key: request.key, doc: parseInkFile(request.text).doc };
+      const parsed = parseInkFile(request.text);
+      held = { key: request.key, doc: parsed.doc, layer: readTextSection(parsed.body) };
     }
     const doc = held.doc;
     const pages = doc?.pages ?? [];
@@ -49,6 +53,7 @@ scope.onmessage = (event) => {
       ...(request.facts
         ? { entry: entryFromDoc(request.facts.path, request.facts.edited, doc) }
         : {}),
+      ...(request.searchText ? { searchText: notebookText(pages, held.layer) } : {}),
     });
   } catch (error) {
     reply({

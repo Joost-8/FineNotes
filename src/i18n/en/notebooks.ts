@@ -906,6 +906,7 @@ export const notebooks = {
   "notebooks.home.empty": "No notebooks yet.",
   "notebooks.home.noMatch": "No notebook matches.",
   "notebooks.home.results": "Results",
+  "notebooks.home.pages": "Pages",
   "notebooks.home.favorites": "Favorites",
   "notebooks.home.continue": "Continue",
   "notebooks.home.recent": "Recent",

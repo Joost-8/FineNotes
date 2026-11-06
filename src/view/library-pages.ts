@@ -16,6 +16,8 @@
 import type { App, TFile } from "obsidian";
 import { renderPageThumbnail } from "../canvas/renderer";
 import { parseInkFile } from "../model/serialize";
+import { readTextSection } from "../recognition/text-layer";
+import { type IndexedPage, notebookText } from "../search/library-search";
 import type { Page } from "../model/document";
 import { type LibraryEntry, entryFromDoc, placeholderEntry } from "../model/library";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
@@ -71,6 +73,7 @@ export class NotebookPages {
     file: TFile,
     want: number[],
     facts?: { path: string; edited: number },
+    searchText = false,
   ): Promise<ReadResult> {
     const key = `${file.path}@${file.stat.mtime}:${file.stat.size}`;
     // Home's own read takes the file as it is on disk, as it always has; pictures may take Obsidian's copy.
@@ -79,31 +82,40 @@ export class NotebookPages {
     const client = await this.client();
     if (client) {
       try {
-        return await client.read(key, text, want, facts);
+        return await client.read(key, text, want, facts, searchText);
       } catch {
         // The worker stopped: this read and every later one on the main thread.
       }
     }
-    const doc = parseInkFile(await text()).doc;
+    const parsed = parseInkFile(await text());
+    const doc = parsed.doc;
     const pages = doc?.pages ?? [];
     return {
       count: pages.length,
       pages: new Map(want.flatMap((i) => (pages[i] ? [[i, pages[i]] as [number, Page]] : []))),
       ...(facts ? { entry: entryFromDoc(facts.path, facts.edited, doc) } : {}),
+      ...(searchText ? { searchText: notebookText(pages, readTextSection(parsed.body)) } : {}),
     };
   }
 
-  /** Home's own read of a notebook: its facts, and its cover page when it has one. */
+  /**
+   * Home's own read of a notebook: its facts, its cover page when it has
+   * one, and its own text for Home's search (`null` when it could not be read).
+   */
   async readEntry(
     file: TFile,
     edited: number,
-  ): Promise<{ entry: LibraryEntry; cover: Page | null }> {
+  ): Promise<{ entry: LibraryEntry; cover: Page | null; text: IndexedPage[] | null }> {
     try {
-      const result = await this.read(file, [0], { path: file.path, edited });
+      const result = await this.read(file, [0], { path: file.path, edited }, true);
       const entry = result.entry ?? placeholderEntry(file.path, edited);
-      return { entry, cover: entry.covered ? (result.pages.get(0) ?? null) : null };
+      return {
+        entry,
+        cover: entry.covered ? (result.pages.get(0) ?? null) : null,
+        text: result.searchText ?? null,
+      };
     } catch {
-      return { entry: placeholderEntry(file.path, edited), cover: null };
+      return { entry: placeholderEntry(file.path, edited), cover: null, text: null };
     }
   }
 
