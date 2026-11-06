@@ -8,6 +8,57 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Home, redesigned around your notebooks.** In the simple look a folder
+  rail on the left lists Home and your folders, with the path to the open
+  folder unfolded; drop a notebook on a folder to move it there. Every
+  notebook with a cover shows that cover as you designed it, name included,
+  and a PDF notebook its first page with its name on a label. Continue shows
+  the notebook you read last with the page you left it on: tap the page or
+  Continue to go straight back. One tap on a cover shows a preview beside
+  the covers (its pages, folder, size, Open and ⋯); a tap on a page opens the
+  notebook there, and a double tap on a cover opens it.
+  The rail has a button of its own to put it away and bring it back; on a
+  narrow Home it opens as a drawer over the covers, closing once you pick a
+  folder. The sort menu has **Notebooks only**, to hide every other file.
+- **Recent**, under Continue: the six notebooks read or written before
+  those, newest first. Page pictures in Continue and the preview are drawn
+  at the size they are shown, sharp on the iPad, and kept on the device so
+  they show at once the next time.
+- **Notebooks in Obsidian's sidebar.** A Notebooks view sits beside Files,
+  Search and Bookmarks in the left sidebar: your folders with only the
+  notebooks in them, as the file explorer draws them. A tap opens a notebook,
+  a right-click or long press gives Obsidian's own file menu, and its buttons
+  open Home or make a notebook. It is added once; closed, the command "Show
+  notebooks in the sidebar" brings it back.
+- A folder holding only folders no longer opened empty with the rail on,
+  and the rail now appears and goes as soon as the simple look is turned on
+  or off. A notebook's transcript beside it (`X.transcript.md`) is part of
+  the notebook, not a note of its own. A PDF file no longer shows its name
+  twice.
+- **Home opens at once** (FineNotes#146). PDF covers are kept on this device
+  once they are drawn, so opening Home again, or after restarting the app,
+  shows them straight away instead of rendering every PDF again; only a new
+  or changed PDF is rendered, once. What Home knows of each notebook is kept
+  too, so it reads only the notebooks changed since. Searching and switching
+  tabs no longer redraw the covers. Measured on a desktop with 40 PDF
+  notebooks: covers on screen in 25 ms instead of about 1 s.
+- **Home shows every file in a folder, not only notebooks.** Notes, PDFs,
+  pictures and any other file sit beside the notebooks, sorted with them, and
+  every folder that holds something is a folder tile. A note shows its first
+  page as Obsidian renders it, a PDF its first page, a picture itself; other
+  files show a symbol and their extension. Tapping one opens it in Obsidian;
+  its ⌄ menu renames, moves or deletes it. What a notebook keeps in its own
+  folder (pictures, recordings, transcripts) still shows as the notebook.
+
+### Fixed
+
+- **A notebook opened from Home fills the screen.** With Obsidian's "Stack
+  tabs" on, it opened beside Home like a split screen; opening a notebook
+  from Home now stops that tab group stacking. Home stays a pinned tab, one
+  tap back.
+
 ## [2.8.2] - 2026-11-05
 
 ### Added
