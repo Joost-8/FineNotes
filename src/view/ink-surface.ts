@@ -16090,12 +16090,18 @@ export class InkSurface {
     const scale = this.unitScale;
     const k = drag.scale?.k;
     for (const textBox of drag.selection.textBoxes) {
-      const view = this.textBoxInputs.get(`${drag.selection.pageId}:${textBox.id}`);
+      const key = `${drag.selection.pageId}:${textBox.id}`;
+      const view = this.textBoxInputs.get(key);
       const shift = this.dragShift(drag.selection.pageId, textBox);
+      // A turn turns the box too, about its corner, which `shift` carried round.
+      const turn = this.shownTurn(drag.selection.pageId, textBox, key);
       view?.root.setCssStyles({
         left: `${Math.round((box.x + textBox.x + shift.x) * scale)}px`,
         top: `${Math.round((box.y + textBox.y + shift.y) * scale)}px`,
-        ...(k === undefined ? {} : { transform: `scale(${k})`, transformOrigin: "0 0" }),
+        rotate: turnCss(turn),
+        ...(k === undefined
+          ? { transformOrigin: turn !== 0 ? "0 0" : "" }
+          : { transform: `scale(${k})`, transformOrigin: "0 0" }),
       });
     }
   }
