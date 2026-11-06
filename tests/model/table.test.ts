@@ -439,6 +439,7 @@ describe("tables in a lasso selection", () => {
         textBox: () => "t",
         table: () => "g9",
         graph: () => "f9",
+        equation: () => "q1",
       },
       10,
       10,

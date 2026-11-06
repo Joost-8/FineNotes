@@ -32,6 +32,7 @@ export function* annotationLayers(page: Page): Generator<AnnotationLayer> {
         textBoxes: [],
         ...(page.tables ? { tables: [] } : {}),
         ...(page.graphs ? { graphs: [] } : {}),
+        ...(page.equations ? { equations: [] } : {}),
       },
       multiply: false,
       paper: true,
@@ -39,7 +40,13 @@ export function* annotationLayers(page: Page): Generator<AnnotationLayer> {
   }
   // Pictures, tables, graphs and text boxes in one layer under the ink; the
   // ink's layers carry none of them, so none is painted twice or over the ink.
-  if (page.images.length || page.textBoxes.length || page.tables?.length || page.graphs?.length) {
+  if (
+    page.images.length ||
+    page.textBoxes.length ||
+    page.tables?.length ||
+    page.graphs?.length ||
+    page.equations?.length
+  ) {
     yield { page: { ...page, strokes: noteInk }, multiply: false };
   }
   let start = 0;
@@ -54,6 +61,7 @@ export function* annotationLayers(page: Page): Generator<AnnotationLayer> {
         textBoxes: [],
         ...(page.tables ? { tables: [] } : {}),
         ...(page.graphs ? { graphs: [] } : {}),
+        ...(page.equations ? { equations: [] } : {}),
         strokes: ink.slice(start, end),
       },
       multiply,

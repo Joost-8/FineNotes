@@ -303,6 +303,7 @@ describe("shapes through the other commands", () => {
       textBox: () => "ct",
       table: () => "cg",
       graph: () => "cf",
+      equation: () => "q1",
     };
     const [copy] = copyElements({ strokes: [a], images: [], textBoxes: [] }, ids, 5, 5).strokes;
     expect(copy).toMatchObject({ fill: "#ff0000", dash: "dash", radius: 5 });

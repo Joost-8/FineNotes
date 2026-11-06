@@ -686,6 +686,11 @@ export interface ToolbarState {
   lassoFilter?: LassoFilter;
   /** The Text tool's style for new boxes. `undefined` counts as {@link DEFAULT_TEXT_STYLE}. */
   textStyle?: TextStyle;
+  /**
+   * The Text tool places equations (its pill's Σ, discussion #166): a tap on
+   * the page opens the equation editor instead of a text box. `undefined` counts as off.
+   */
+  textEquation?: boolean;
   /** "Pin Text tool": Text stays the tool after a box is finished. `undefined` counts as unpinned. */
   textPinned?: boolean;
   /**
@@ -3969,6 +3974,20 @@ export class Toolbar {
     // "Drag to size text boxes" is a setting (Writing and tools), not a pill
     // button: it is a way of working, set once, not a style of one box.
 
+    // Equation (discussion #166): while on, a tap on the page writes a typed
+    // equation instead of a text box. Only with the Text tool in hand, not
+    // while a box is edited.
+    if (this.state.tool === "text" && this.textTarget === null) {
+      const on = this.state.textEquation === true;
+      const equation = this.textControl("is-glyph is-equation", t("toolbar.text.equation"), () => {
+        this.state.textEquation = !on;
+        this.buildOptions();
+      });
+      equation.createSpan({ cls: "goodobsidian-text-sigma", text: "Σ" });
+      equation.toggleClass("is-active", on);
+      equation.setAttribute("aria-pressed", String(on));
+    }
+
     // GoodNotes' "Pin Text tool". Unpinned, finishing a box hands the page
     // back to the tool used before Text; pinned, Text stays.
     const pinned = this.state.textPinned === true;
@@ -6177,17 +6196,25 @@ export class Toolbar {
   }
 
   /**
-   * On a narrow pane (an iPad in portrait or Split View) the text pill drops
-   * the pin's label and narrows its dropdowns rather than overflow; anything
-   * still too wide scrolls inside the pill instead of leaving the screen.
+   * A text pill too wide for its pane drops the pin's label first (the pin
+   * keeps its icon: an iPad in landscape, since the pill has Σ); on a
+   * narrower pane (portrait, Split View) it also narrows its dropdowns.
+   * Anything still too wide scrolls inside the pill instead of leaving the
+   * screen.
    */
   private fitTextPill(): void {
     const pill = this.optionsEl;
+    pill.removeClass("is-short");
     pill.removeClass("is-compact");
     if (!pill.hasClass("is-text")) return;
     const area = this.pillArea(this.host.getBoundingClientRect(), 0);
     const room = area.right - area.left - 2 * EDGE_INSET;
-    if (pill.scrollWidth > room) pill.addClass("is-compact");
+    if (pill.scrollWidth <= room) return;
+    pill.addClass("is-short");
+    if (pill.scrollWidth > room) {
+      pill.removeClass("is-short");
+      pill.addClass("is-compact");
+    }
   }
 
   // --- Host-facing state ----------------------------------------------------

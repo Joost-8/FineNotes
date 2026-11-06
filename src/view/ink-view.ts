@@ -177,7 +177,10 @@ import {
   nextGraphId,
   specOfGraph,
 } from "../model/graph-element";
-import type { GraphElement } from "../model/document";
+import type { EquationElement, GraphElement } from "../model/document";
+import { AddEquation, EditEquation, makeEquation, nextEquationId } from "../model/equation";
+import { measureEquation } from "../canvas/equation-paint";
+import { EquationEditor } from "./equation-editor";
 import type { GraphSpec } from "../model/graph";
 import { type Stroke } from "../model/document";
 import { AddStrokeToPage } from "../model/page-commands";
@@ -553,6 +556,8 @@ export class InkView extends TextFileView {
   private marginPopover: MarginPopover | null = null;
   private aiMenu: AiMenuPopover | null = null;
   private calculator: CalculatorPopover | null = null;
+  /** The equation window, while one is open (discussion #166). */
+  private equationEditor: EquationEditor | null = null;
   /** The graph popped out of the calculator, floating over the notebook. */
   private graphWindow: GraphWindow | null = null;
   /** The transcription in progress, if any; `cancelled` is set by tapping its notice. */
@@ -1155,6 +1160,8 @@ export class InkView extends TextFileView {
     this.calculator = null;
     this.graphWindow?.close();
     this.graphWindow = null;
+    this.equationEditor?.close();
+    this.equationEditor = null;
     if (this.transcription) this.transcription.cancelled = true;
     this.pdfCache?.destroy();
     this.pdfCache = null;
@@ -1756,6 +1763,73 @@ export class InkView extends TextFileView {
     surface.selectGraph(page.id, graph.id);
     this.requestSave();
     return true;
+  }
+
+  /**
+   * Open the equation window (discussion #166): for `equation`, to change
+   * its source, or for a new one at page point `at` (its left edge, its
+   * middle on the tap), in the Text tool's colour and size. What comes back
+   * is measured here, so the frame stored is the one this device draws.
+   */
+  private openEquation(
+    pageId: string,
+    at: { x: number; y: number },
+    equation: EquationElement | null,
+  ): void {
+    if (this.isProtected()) return;
+    this.equationEditor?.close();
+    const style = textStyleOf(sanitizeTextStyle(this.settings.textStyle));
+    const color = equation?.color ?? style.color;
+    const size = equation?.size ?? style.fontSize;
+    this.equationEditor = new EquationEditor({
+      container: this.contentEl,
+      tex: equation?.tex ?? "",
+      color,
+      size,
+      done: (tex) => {
+        this.equationEditor = null;
+        this.placeEquation(pageId, at, equation, tex, color, size);
+      },
+      cancel: () => {
+        this.equationEditor = null;
+      },
+    });
+  }
+
+  /** Commit what the equation window gave back: a new equation, or the edited one. One undo step. */
+  private placeEquation(
+    pageId: string,
+    at: { x: number; y: number },
+    equation: EquationElement | null,
+    tex: string,
+    color: string,
+    size: number,
+  ): void {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return;
+    const page = surface.document.pages.find((candidate) => candidate.id === pageId);
+    this.measureCtx ??= createEl("canvas").getContext("2d");
+    if (!page || !this.measureCtx) return;
+    const frame = measureEquation(this.measureCtx, tex, size);
+    if (equation) {
+      if (equation.tex === tex) return;
+      surface.applyCommand(new EditEquation(pageId, equation, { tex, ...frame }));
+    } else {
+      const { width, height } = page.geometry;
+      const x = Math.max(0, Math.min(at.x, width - frame.w));
+      const y = Math.max(0, Math.min(at.y - frame.h / 2, height - frame.h));
+      const placed = makeEquation({
+        id: nextEquationId(surface.document),
+        x,
+        y,
+        tex,
+        color,
+        size,
+        ...frame,
+      });
+      surface.applyCommand(new AddEquation(pageId, placed));
+    }
+    this.requestSave();
   }
 
   /** What Edit graph gave back for `graph`: its whole new spec, one undo step. */
@@ -3253,6 +3327,7 @@ export class InkView extends TextFileView {
         canAskAi: () => textAvailability(this.plugin.aiSetup()).enabled,
         onRegionScreenshot: (index, bounds) => void this.screenshotRegion(index, bounds),
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
+        onEquation: (pageId, at, equation) => this.openEquation(pageId, at, equation),
         onChange: (pages) => {
           if (this.surface) this.sidebar?.setDocument(this.surface.document);
           // Undoing or redoing "Convert to notebook" flips `single`.
