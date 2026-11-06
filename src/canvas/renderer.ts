@@ -39,10 +39,11 @@
 
 import { marginBackdrop, marginStrips } from "../model/page-margin";
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
-import { LIGHT_PAPER, type PaperTheme, deskFor, pageLook, shownColor } from "./backdrop";
+import { LIGHT_PAPER, type PaperTheme, deskFor, inkShade, pageLook, shownColor } from "./backdrop";
 import { erasingLook } from "./erase-look";
 import {
   DAY_HIGHLIGHTER_BLEND,
+  type InkShade,
   NIGHT_HIGHLIGHTER_BLEND,
   nightColor,
   nightHighlighter,
@@ -2401,7 +2402,7 @@ export class Renderer {
                 stroke,
                 region,
                 ink.usePressure,
-                night,
+                night ? "night" : "day",
                 ink.hidden,
                 ink.replaced,
                 ink.greyed,
@@ -2482,13 +2483,13 @@ export class Renderer {
     replaced?: ReadonlyMap<string, readonly Stroke[]>,
     greyed?: ReadonlySet<string>,
   ): void {
-    const night = pageLook(page.backdrop, this.paper).night;
+    const shade = inkShade(pageLook(page.backdrop, this.paper));
     // A sticky note's ink is drawn with its note (`paintImages`).
     const notes = noteIdsOf(page.images);
     // A cover tape lies over all the ink, whenever it was laid.
     for (const stroke of tapesLast(page.strokes)) {
       if (isNoteInk(stroke, notes)) continue;
-      this.paintStroke(ctx, stroke, region, usePressure, night, hidden, replaced, greyed);
+      this.paintStroke(ctx, stroke, region, usePressure, shade, hidden, replaced, greyed);
     }
   }
 
@@ -2502,7 +2503,7 @@ export class Renderer {
     stroke: Stroke,
     region: Bounds,
     usePressure: boolean,
-    night: boolean,
+    shade: InkShade,
     hidden?: ReadonlySet<string>,
     replaced?: ReadonlyMap<string, readonly Stroke[]>,
     greyed?: ReadonlySet<string>,
@@ -2519,19 +2520,19 @@ export class Renderer {
         pieces.filter((piece) => !isGrey(piece)),
         region,
         usePressure,
-        night,
+        shade,
         false,
       );
-      this.paintCoat(ctx, pieces.filter(isGrey), region, usePressure, night, true);
+      this.paintCoat(ctx, pieces.filter(isGrey), region, usePressure, shade, true);
       return;
     }
     if (pieces) {
       for (const piece of pieces) {
-        this.paintEntry(ctx, piece, region, usePressure, night, greyed?.has(piece.id) === true);
+        this.paintEntry(ctx, piece, region, usePressure, shade, greyed?.has(piece.id) === true);
       }
       return;
     }
-    this.paintEntry(ctx, stroke, region, usePressure, night, greyed?.has(stroke.id) === true);
+    this.paintEntry(ctx, stroke, region, usePressure, shade, greyed?.has(stroke.id) === true);
   }
 
   private paintEntry(
@@ -2539,7 +2540,7 @@ export class Renderer {
     stroke: Stroke,
     region: Bounds,
     usePressure: boolean,
-    night: boolean,
+    shade: InkShade,
     grey = false,
   ): void {
     const entry = this.pathEntry(stroke, usePressure);
@@ -2557,7 +2558,7 @@ export class Renderer {
       entry,
       look,
       this.highlighterAlpha,
-      night,
+      shade,
       decorOf(look),
       stroke.pts,
       revealed,
@@ -2571,7 +2572,7 @@ export class Renderer {
     pieces: readonly Stroke[],
     region: Bounds,
     usePressure: boolean,
-    night: boolean,
+    shade: InkShade,
     grey: boolean,
   ): void {
     const runs: InkRun[] = [];
@@ -2595,7 +2596,7 @@ export class Renderer {
       { runs, paths },
       grey ? erasingLook(first) : first,
       this.highlighterAlpha,
-      night,
+      shade,
     );
     if (faded) ctx.restore();
   }
@@ -2604,6 +2605,12 @@ export class Renderer {
   private nightAt(pageIndex: number): boolean {
     const page = this.doc?.pages[pageIndex];
     return page ? pageLook(page.backdrop, this.paper).night : false;
+  }
+
+  /** How page `pageIndex` of the document last painted shows its ink (`inkShade`). */
+  private shadeAt(pageIndex: number): InkShade {
+    const page = this.doc?.pages[pageIndex];
+    return page ? inkShade(pageLook(page.backdrop, this.paper)) : "day";
   }
 
   /**
@@ -2850,7 +2857,7 @@ export class Renderer {
       ctx.rotate(turn.angle);
       ctx.translate(-turn.x, -turn.y);
     }
-    const draw = (stroke: Stroke, dark: boolean): void => {
+    const draw = (stroke: Stroke, shade: InkShade): void => {
       const entry = this.pathEntry(stroke, usePressure);
       const revealed = this.tapeRevealed(stroke);
       paintStroke(
@@ -2858,7 +2865,7 @@ export class Renderer {
         entry,
         stroke,
         this.highlighterAlpha,
-        dark,
+        shade,
         decorOf(stroke),
         stroke.pts,
         revealed,
@@ -2871,7 +2878,8 @@ export class Renderer {
         if ((image.front === true) !== front) continue;
         const inkOnNote = image.sticky
           ? () => {
-              for (const stroke of strokes) if (stroke.onSticky === image.id) draw(stroke, night);
+              for (const stroke of strokes)
+                if (stroke.onSticky === image.id) draw(stroke, night ? "night" : "day");
             }
           : undefined;
         // A note's text goes with it, drawn as the tiles draw it.
@@ -2880,7 +2888,8 @@ export class Renderer {
       }
     };
     pictures(false);
-    for (const stroke of tapesLast(strokes)) if (!isNoteInk(stroke, notes)) draw(stroke, night);
+    for (const stroke of tapesLast(strokes))
+      if (!isNoteInk(stroke, notes)) draw(stroke, this.shadeAt(pageIndex));
     pictures(true);
     ctx.restore();
     this.setWetVisible(true);
@@ -2912,7 +2921,7 @@ export class Renderer {
       this.invalidateRegion(pageIndex, bounds);
       return;
     }
-    const night = this.nightAt(pageIndex);
+    const shade = this.shadeAt(pageIndex);
     for (const tile of this.tiles.values()) {
       if (tile.pageId !== box.id || tile.level !== this.level) continue;
       const tr = tile.rect;
@@ -2930,7 +2939,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(0, 0, box.width, box.height);
       ctx.clip();
-      paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
+      paintStroke(ctx, entry, stroke, this.highlighterAlpha, shade, decorOf(stroke), stroke.pts);
       ctx.restore();
     }
     const preview = this.previews.peek(box.id);
@@ -2943,7 +2952,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(0, 0, box.width, box.height);
       ctx.clip();
-      paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
+      paintStroke(ctx, entry, stroke, this.highlighterAlpha, shade, decorOf(stroke), stroke.pts);
       ctx.restore();
     }
     // The tiles under it changed; the rest of the dry layer did not. A
@@ -3018,7 +3027,15 @@ export class Renderer {
       for (const stroke of page.strokes) {
         if (stroke.onSticky !== note.id) continue;
         const entry = this.pathEntry(stroke, usePressure);
-        paintStroke(ctx, entry, stroke, this.highlighterAlpha, night, decorOf(stroke), stroke.pts);
+        paintStroke(
+          ctx,
+          entry,
+          stroke,
+          this.highlighterAlpha,
+          night ? "night" : "day",
+          decorOf(stroke),
+          stroke.pts,
+        );
       }
     };
   }
@@ -3074,9 +3091,9 @@ export class Renderer {
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
-    const night = this.nightAt(pageIndex);
+    const shade = this.shadeAt(pageIndex);
     const paint = (c: CanvasRenderingContext2D): void => {
-      for (const pts of strokes) fillStroke(c, pts, style, this.highlighterAlpha, night);
+      for (const pts of strokes) fillStroke(c, pts, style, this.highlighterAlpha, shade);
     };
     paint(ctx);
     ctx.restore();
@@ -3096,10 +3113,10 @@ export class Renderer {
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
-    const night = this.nightAt(pageIndex);
+    const shade = this.shadeAt(pageIndex);
     const paint = (c: CanvasRenderingContext2D): void => {
       for (const stroke of strokes) {
-        fillStroke(c, stroke.pts, styleOf(stroke, false), this.highlighterAlpha, night);
+        fillStroke(c, stroke.pts, styleOf(stroke, false), this.highlighterAlpha, shade);
       }
     };
     paint(ctx);
@@ -3119,9 +3136,9 @@ export class Renderer {
     if (!box) return;
     this.toLayoutSpace(ctx);
     this.enterWetPage(ctx, box);
-    const night = this.nightAt(pageIndex);
+    const shade = this.shadeAt(pageIndex);
     const paint = (c: CanvasRenderingContext2D): void => {
-      paintStroke(c, { runs }, style, this.highlighterAlpha, night);
+      paintStroke(c, { runs }, style, this.highlighterAlpha, shade);
     };
     paint(ctx);
     ctx.restore();
@@ -3163,8 +3180,8 @@ export function inkReach(stroke: Pick<Stroke, "size" | "tilt" | "shape">): numbe
 
 /**
  * Paint a stroke's runs in its colour, in whatever space `ctx` is in; a
- * highlighter translucent, multiplied into light paper and screened onto a
- * night page (`./night`). A highlighter keeps one width, so it is always one
+ * highlighter translucent, multiplied into light paper and screened onto dark
+ * paper, a night page's or a dark template's (`InkShade`). A highlighter keeps one width, so it is always one
  * run: its overlaps are never painted twice.
  */
 function paintStroke(
@@ -3172,11 +3189,12 @@ function paintStroke(
   ink: { runs: readonly InkRun[]; paths?: readonly Path2D[] },
   style: { color: string; tool: Tool; size?: number },
   highlighterAlpha: number,
-  night = false,
+  shade: InkShade = "day",
   decor: ShapeDecor | null = null,
   pts?: readonly number[],
   revealed = false,
 ): void {
+  const night = shade === "night";
   // A cover tape is a strip laid over the page, not a line of ink.
   if (style.tool === "tape") {
     if (pts) paintTape(ctx, pts, style.size ?? 0, style.color, { revealed, night });
@@ -3187,14 +3205,17 @@ function paintStroke(
   if (highlighter) {
     // Times whatever the caller set: a faded stroke's alpha (replay).
     ctx.globalAlpha *= highlighterAlpha;
-    ctx.globalCompositeOperation = night ? NIGHT_HIGHLIGHTER_BLEND : DAY_HIGHLIGHTER_BLEND;
+    // Multiplied into light paper; on dark paper that would leave it near
+    // black, so it is screened on, by night or on a dark template alike.
+    ctx.globalCompositeOperation =
+      shade === "day" ? DAY_HIGHLIGHTER_BLEND : NIGHT_HIGHLIGHTER_BLEND;
   }
   // Ink colour is absolute (contracts/design-brief.md): a stored colour is
   // never changed, and never remapped to suit the app theme — that is how a
   // note written on one device stays legible on another. Only a night page
   // (dark pages, the view setting) *shows* it through `./night`'s mapping.
-  if (!night) ctx.fillStyle = style.color;
-  else ctx.fillStyle = highlighter ? nightHighlighter(style.color) : nightColor(style.color);
+  if (highlighter && shade !== "day") ctx.fillStyle = nightHighlighter(style.color);
+  else ctx.fillStyle = night ? nightColor(style.color) : style.color;
   if (decor && pts && ink.runs.length > 0) paintShape(ctx, pts, ink.runs[0].width, decor, night);
   else if (highlighter) paintOnce(ctx, ink.runs, ink.paths);
   else paintInk(ctx, ink.runs, ink.paths);
@@ -3343,10 +3364,10 @@ function fillStroke(
   points: number[],
   style: StrokeStyle,
   highlighterAlpha: number,
-  night = false,
+  shade: InkShade = "day",
 ): void {
   const runs = inkRuns(points, penFor(style), style.shape === true, style.tilt);
-  paintStroke(ctx, { runs }, style, highlighterAlpha, night, style.decor ?? null, points);
+  paintStroke(ctx, { runs }, style, highlighterAlpha, shade, style.decor ?? null, points);
 }
 
 export interface ThumbnailOptions {
@@ -3426,7 +3447,13 @@ export function renderPageThumbnail(
         ? () => {
             for (const stroke of page.strokes) {
               if (stroke.onSticky !== image.id) continue;
-              fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, look.night);
+              fillStroke(
+                ctx,
+                stroke.pts,
+                styleOf(stroke, options.usePressure),
+                alpha,
+                look.night ? "night" : "day",
+              );
             }
           }
         : undefined;
@@ -3455,7 +3482,7 @@ export function renderPageThumbnail(
 
   for (const stroke of page.strokes) {
     if (isNoteInk(stroke, notes) || isTape(stroke)) continue;
-    fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, look.night);
+    fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, inkShade(look));
   }
   // Handwriting made a checklist item has its box beside it, in its ink colour.
   for (const task of page.tasks ?? []) paintTaskBox(ctx, page, task, look.night);

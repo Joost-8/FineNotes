@@ -351,7 +351,12 @@ device first.
   beside Scribble to erase.
 - **Cover tape**, for studying, as Goodnotes' tape. Pick Cover tape in More
   tools (or put it on the bar) and drag across what to hide: an opaque strip
-  of tape, in one of six colours and three heights, lies over it. Tap a tape
+  of tape, in one of six colours and three heights, lies over it. The first
+  two buttons in the tape's pill choose a straight strip or a freehand one
+  that follows your drag along a smooth curve, however shaky the hand,
+  the little hook where the pen lands cut off
+  ([#160](https://github.com/Joost-8/FineNotes/discussions/160)); the
+  choice is remembered. Tap a tape
   with a finger, or with the Pencil or mouse, to see what is under it; tap
   again to cover it. The eye in the tape's pill shows or covers every tape
   on the page, and a covered tape hides typed text under it too. Shown
