@@ -8,6 +8,20 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Handwritten sections in ordinary notes**
+  ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167),
+  thanks [@mantomat](https://github.com/mantomat)). `![[Physics.notebook]]`
+  in a note now shows every page of the notebook, one under the other, not
+  only the first; `![[Physics.notebook#page=3]]` still shows one page. A tap
+  on a page opens the notebook at that page, and Back returns to the note.
+  The new command **Insert a new notebook here** makes a notebook named
+  after the note, without a cover, embeds it at the cursor and opens it.
+- **Embedded notebooks in Export to PDF.** A note exported with Obsidian's
+  Export to PDF now prints the pages it embeds, in light paper; before, they
+  came out blank. A page is never cut across two sheets.
+
 ## [2.8.2] - 2026-11-05
 
 ### Added

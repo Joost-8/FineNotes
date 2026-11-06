@@ -561,6 +561,7 @@ describe("registration", () => {
         "fit-reset-view",
         "import-pdf",
         "import-vault-pdf",
+        "insert-new-notebook",
         "learn-handwriting",
         "new-from-template",
         "open-library",

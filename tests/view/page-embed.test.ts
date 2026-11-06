@@ -1,11 +1,41 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PaperTheme } from "../../src/canvas/backdrop";
 import type { EmbedCreator } from "../../src/view/page-embed";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
+/** Each page painted, by its id, the width and the paper it was painted in. */
+const painted: { id: string; cssWidth: number; dpr: number; night: boolean }[] = [];
+vi.mock("../../src/view/pdf-export", () => ({
+  paintPagePreview: (
+    canvas: { width: number; height: number },
+    page: { id: string },
+    sources: { paper: { night: boolean } },
+    cssWidth: number,
+    dpr: number,
+  ) => {
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssWidth * dpr;
+    painted.push({ id: page.id, cssWidth, dpr, night: sources.paper.night });
+    return Promise.resolve();
+  },
+}));
+/** The pages every notebook file decodes to. */
+let notebookPages: { id: string }[] = [];
+vi.mock("../../src/model/serialize", () => ({
+  parseInkFile: () => ({ doc: { pages: notebookPages }, payload: "x" }),
+}));
+vi.mock("../../src/model/page-signature", () => ({
+  pageSignature: (page: { id: string }) => page.id,
+}));
+
 const { TFile } = await import("./fake-obsidian");
 const { PageEmbeds } = await import("../../src/view/page-embed");
 const { LIGHT_PAPER } = await import("../../src/canvas/backdrop");
+
+function page(id: string) {
+  return { id, geometry: { width: 800, height: 1100 }, backdrop: { kind: "paper" }, images: [] };
+}
 
 /** Just enough of an element for the embed to build itself into. */
 function fakeEl(): Record<string, unknown> {
@@ -27,8 +57,34 @@ function fakeEl(): Record<string, unknown> {
       return (el.attrs as Map<string, string>).get(k) ?? null;
     },
     setCssStyles() {},
-    createDiv: () => fakeEl(),
-    createEl: () => fakeEl(),
+    toggleClass() {},
+    dataset: {},
+    children: [] as unknown[],
+    parent: null as unknown,
+    /** Inside Export to PDF's layout. */
+    inPrint: false,
+    listeners: new Map<string, (event: unknown) => void>(),
+    addEventListener(type: string, fn: (event: unknown) => void) {
+      (el.listeners as Map<string, (event: unknown) => void>).set(type, fn);
+    },
+    closest(selector: string) {
+      return selector === ".print" && el.inPrint ? {} : null;
+    },
+    getBoundingClientRect: () => ({ width: 640 }),
+    remove() {
+      const parent = el.parent as { children: unknown[] } | null;
+      if (parent) parent.children = parent.children.filter((c) => c !== el);
+    },
+    createDiv: (options?: { cls?: string }) => child(options),
+    createEl: (_tag: string, options?: { cls?: string }) => child(options),
+  };
+  const child = (options?: string | { cls?: string }) => {
+    const c = fakeEl();
+    const cls = typeof options === "string" ? options : options?.cls;
+    for (const name of cls?.split(" ") ?? []) (c.classes as Set<string>).add(name);
+    c.parent = el;
+    (el.children as unknown[]).push(c);
+    return c;
   };
   return el;
 }
@@ -57,14 +113,26 @@ function registry(): {
 
 const markdownEmbed = { kind: "markdown", loadFile: () => undefined };
 
-function setUp(app: Record<string, unknown> = {}) {
+function setUp(app: Record<string, unknown> = {}, paper: PaperTheme = LIGHT_PAPER) {
   const reg = registry();
   const original = vi.fn(() => markdownEmbed as never);
   reg.registerExtension("md", original);
+  const notebook = new TFile("Physics.notebook.md");
+  const opened: string[] = [];
   const fullApp = {
     embedRegistry: reg,
-    vault: { on: () => ({}) },
-    workspace: { on: () => ({}) },
+    vault: {
+      on: () => ({}),
+      getFileByPath: (path: string) => (path === notebook.path ? notebook : null),
+      cachedRead: () => Promise.resolve("notebook"),
+    },
+    workspace: {
+      on: () => ({}),
+      openLinkText: (link: string) => {
+        opened.push(link);
+        return Promise.resolve();
+      },
+    },
     ...app,
   };
   const embeds = new PageEmbeds({
@@ -73,9 +141,9 @@ function setUp(app: Record<string, unknown> = {}) {
     paperWidth: () => 1024,
     usePressure: () => true,
     highlighterAlpha: () => 0.35,
-    paper: () => LIGHT_PAPER,
+    paper: () => paper,
   });
-  return { reg, original, embeds };
+  return { reg, original, embeds, notebook, opened, app: fullApp };
 }
 
 function ctx(linktext: string) {
@@ -101,7 +169,7 @@ describe("PageEmbeds' hook into Obsidian's embed registry", () => {
     expect(creator(ctx("Physics.notebook#p9"), notebook, "#p9")).not.toBe(markdownEmbed);
     expect(original).not.toHaveBeenCalled();
 
-    // The whole notebook shows its first page.
+    // The whole notebook shows its pages.
     expect(creator(ctx("Physics.notebook"), notebook, "")).not.toBe(markdownEmbed);
     expect(original).not.toHaveBeenCalled();
 
@@ -166,7 +234,117 @@ describe("PageEmbeds' hook into Obsidian's embed registry", () => {
     const page = reg.embedByExtension.md!(c, new TFile("Physics.notebook.md") as never, "#page=1");
     expect(observed).toHaveLength(0);
     void page?.loadFile();
-    // Seen by both observers: on screen, and its width.
-    expect(observed).toEqual([c.containerEl, c.containerEl]);
+    // Its page is seen by both observers: on screen, and its width.
+    const box = (c.containerEl as unknown as { children: unknown[] }).children[0];
+    expect(observed).toEqual([box, box]);
+  });
+});
+
+describe("Notebook embeds' pages", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    painted.length = 0;
+  });
+
+  type Fake = ReturnType<typeof fakeEl>;
+  const pagesOf = (el: unknown): Fake[] =>
+    ((el as Fake).children as Fake[]).filter((c) =>
+      (c.classes as Set<string>).has("goodobsidian-page-embed-page"),
+    );
+  const inPrint = <T extends { containerEl: unknown }>(c: T): T => {
+    (c.containerEl as Fake).inPrint = true;
+    return c;
+  };
+
+  /** Observers that hand the test the intersection callback. */
+  function observers(observed: unknown[] = []) {
+    const reports: ((entries: unknown[]) => void)[] = [];
+    class Observer {
+      constructor(callback: (entries: unknown[]) => void) {
+        reports.push(callback);
+      }
+      observe(el: unknown): void {
+        observed.push(el);
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    vi.stubGlobal("IntersectionObserver", Observer);
+    vi.stubGlobal("ResizeObserver", Observer);
+    vi.stubGlobal("window", { setTimeout, clearTimeout, devicePixelRatio: 1 });
+    return (target: unknown, isIntersecting: boolean) => reports[0]?.([{ target, isIntersecting }]);
+  }
+
+  it("paints every page of a notebook embedded whole for Export to PDF, before loadFile resolves", async () => {
+    notebookPages = [page("a"), page("b"), page("c")];
+    const { reg, embeds, notebook } = setUp();
+    embeds.onload();
+    const c = inPrint(ctx("Physics.notebook"));
+    await reg.embedByExtension.md!(c, notebook as never, "")?.loadFile();
+    expect(painted.map((p) => p.id)).toEqual(["a", "b", "c"]);
+    // Light paper, sharp for paper, at the box's width.
+    expect(painted.every((p) => p.night !== true && p.dpr === 2 && p.cssWidth === 640)).toBe(true);
+    expect(pagesOf(c.containerEl)).toHaveLength(3);
+    expect((c.containerEl as unknown as Fake).classes).toContain("goodobsidian-notebook-embed");
+  });
+
+  it("paints only the page a link names for Export to PDF", async () => {
+    notebookPages = [page("a"), page("b"), page("c")];
+    const { reg, embeds, notebook } = setUp();
+    embeds.onload();
+    const c = inPrint(ctx("Physics.notebook#page=2"));
+    await reg.embedByExtension.md!(c, notebook as never, "#page=2")?.loadFile();
+    expect(painted.map((p) => p.id)).toEqual(["b"]);
+    expect(pagesOf(c.containerEl)).toHaveLength(1);
+  });
+
+  it("prints dark pages light", async () => {
+    notebookPages = [page("a")];
+    const { reg, embeds, notebook } = setUp({}, { ...LIGHT_PAPER, night: true });
+    embeds.onload();
+    const c = inPrint(ctx("Physics.notebook"));
+    await reg.embedByExtension.md!(c, notebook as never, "")?.loadFile();
+    expect(painted).toHaveLength(1);
+    expect(painted[0]?.night).toBeFalsy();
+  });
+
+  it("watches each page of a whole notebook on its own, and opens the page clicked", async () => {
+    const observed: unknown[] = [];
+    const report = observers(observed);
+    notebookPages = [page("a"), page("b")];
+    const { reg, embeds, notebook, opened, app } = setUp();
+    embeds.onload();
+    const c = { ...ctx("Physics.notebook"), app: app as never };
+    void reg.embedByExtension.md!(c, notebook as never, "")?.loadFile();
+    // One page until the notebook is read; it comes on screen.
+    report(pagesOf(c.containerEl)[0], true);
+    await vi.waitFor(() => expect(pagesOf(c.containerEl)).toHaveLength(2));
+    await vi.waitFor(() => expect(painted.map((p) => p.id)).toEqual(["a"]));
+    // The page the read added is watched too, and paints once on screen.
+    const second = pagesOf(c.containerEl)[1];
+    expect(observed).toContain(second);
+    report(second, true);
+    await vi.waitFor(() => expect(painted.map((p) => p.id)).toEqual(["a", "b"]));
+
+    const click = (second!.listeners as Map<string, (e: unknown) => void>).get("click");
+    click?.({ preventDefault() {}, stopPropagation() {} });
+    expect(opened).toEqual(["Physics.notebook#page=2"]);
+  });
+
+  it("takes pages out when the notebook has fewer", async () => {
+    const report = observers();
+    notebookPages = [page("a"), page("b"), page("c")];
+    const { reg, embeds, notebook } = setUp();
+    embeds.onload();
+    const c = ctx("Physics.notebook");
+    void reg.embedByExtension.md!(c, notebook as never, "")?.loadFile();
+    report(pagesOf(c.containerEl)[0], true);
+    await vi.waitFor(() => expect(pagesOf(c.containerEl)).toHaveLength(3));
+
+    // A page deleted in the notebook: the file's next version has two.
+    notebookPages = [page("a"), page("c")];
+    (notebook.stat as { mtime: number }).mtime = 1;
+    report(pagesOf(c.containerEl)[0], true);
+    await vi.waitFor(() => expect(pagesOf(c.containerEl)).toHaveLength(2));
   });
 });

@@ -1,33 +1,40 @@
 /**
- * Page embeds: `![[Physics.notebook#page=3]]` (or `#Page 3`, `#p3`) in an
+ * Notebook embeds: `![[Physics.notebook#page=3]]` (or `#Page 3`, `#p3`) in an
  * ordinary note shows that page of the notebook, read-only, at the note's
- * width; a click opens the notebook there. Paginated notebooks can do this
- * where an infinite canvas cannot: a page has a fixed shape of its own.
+ * width; `![[Physics.notebook]]` shows every page, one under the other
+ * (FineNotes discussion #167). A click opens the notebook at the page
+ * clicked. Paginated notebooks can do this where an infinite canvas cannot:
+ * a page has a fixed shape of its own.
  *
  * The hook. Obsidian builds every `![[…]]` embed, in reading view, live
- * preview, hover previews and canvas cards alike, through one loader that
- * asks its embed registry for the creator registered for the target file's
- * extension (`app.embedRegistry`, read from Obsidian's own `app.js`; core
- * Canvas and Bases register their file types there the same way). A
- * notebook is a `.md` file, so its embeds reach the Markdown creator, which
- * would show the note's text and fail to find a section named "page=3".
- * The plugin puts a creator in front of that one: it takes notebook files
- * whose subpath names a page, or that have none (`![[Physics.notebook]]`
- * shows page 1), and hands everything else, headings included, to the
- * original, untouched. The registry is not public API, so the hook checks its shape
- * first and stands aside when it is not there; Obsidian then shows the
- * Markdown embed it always did.
+ * preview, hover previews, canvas cards and Export to PDF alike, through one
+ * loader that asks its embed registry for the creator registered for the
+ * target file's extension (`app.embedRegistry`, read from Obsidian's own
+ * `app.js`; core Canvas and Bases register their file types there the same
+ * way). A notebook is a `.md` file, so its embeds reach the Markdown creator,
+ * which would show the note's text and fail to find a section named
+ * "page=3". The plugin puts a creator in front of that one: it takes
+ * notebook files whose subpath names a page, or that have none, and hands
+ * everything else, headings included, to the original, untouched. The
+ * registry is not public API, so the hook checks its shape first and stands
+ * aside when it is not there; Obsidian then shows the Markdown embed it
+ * always did.
  *
  * Painting goes through `paintPagePreview`, the export dialog's one-shot
  * page renderer (paper or PDF slide, pictures, text boxes, ink), into one
- * canvas per embed, only once the embed is on screen, one at a time. All
- * embeds share one decoded copy of each notebook, one PDF raster cache and
- * one picture cache, and the canvases of embeds off screen are given back
+ * canvas per page shown, only once that page is on screen, one at a time.
+ * All embeds share one decoded copy of each notebook, one PDF raster cache
+ * and one picture cache, and the canvases of pages off screen are given back
  * past a byte budget, so a note that embeds many pages stays cheap.
+ *
+ * Export to PDF renders the note in a hidden window and waits for every
+ * embed's `loadFile()` (read from `app.js`: the print path collects them in
+ * `promises`), where nothing is ever on screen. An embed inside that print
+ * layout paints every page at once, in light paper, before it resolves.
  */
 
 import { type App, Component, Keymap, type TAbstractFile, TFile } from "obsidian";
-import type { PaperTheme } from "../canvas/backdrop";
+import { LIGHT_PAPER, type PaperTheme } from "../canvas/backdrop";
 import { t } from "../i18n/translate";
 import { DEFAULT_PAGE_GEOMETRY, type Page } from "../model/document";
 import { pageSignature } from "../model/page-signature";
@@ -41,8 +48,12 @@ import {
   embedWidth,
   type EmbedTarget,
   embedLabel,
+  embedPageLabel,
+  embedPageLink,
+  embedPageNumbers,
   embedTarget,
   embedsToRelease,
+  printPaintSize,
 } from "./page-embed-model";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { type PdfExportSources, paintPagePreview } from "./pdf-export";
@@ -86,7 +97,7 @@ function embedRegistryOf(app: App): EmbedRegistry | null {
   return registry as EmbedRegistry;
 }
 
-/** What page embeds need from the plugin. */
+/** What notebook embeds need from the plugin. */
 export interface PageEmbedHost {
   app: App;
   isInkFile(file: TFile): boolean;
@@ -99,20 +110,24 @@ export interface PageEmbedHost {
 
 /** Quiet time after a notebook is saved before its embeds repaint. */
 const CHANGE_DEBOUNCE_MS = 300;
-/** How long the next embed waits for a slow one to finish painting. */
+/** How long the next page waits for a slow one to finish painting. */
 const SLOW_PAINT_MS = 1500;
 
+/** The element of Obsidian's Export to PDF layout (`body > .print`, app.js). */
+const PRINT_LAYOUT = ".print";
+
 /**
- * Every page embed the plugin draws, and what they share. A child of the
+ * Every notebook embed the plugin draws, and what they share. A child of the
  * plugin: the hook comes off with it.
  */
 export class PageEmbeds extends Component {
   /** Each notebook's pages; none for a file without an ink block, `null` for one that would not decode. */
   private readonly notebooks = new SharedNotebooks<readonly Page[] | null>(3);
-  private readonly live = new Set<NotebookPageEmbed>();
-  /** The embeds by the element the observers report. */
-  private readonly byElement = new Map<Element, NotebookPageEmbed>();
-  private readonly queue = new Set<NotebookPageEmbed>();
+  private readonly live = new Set<NotebookEmbed>();
+  /** The pages shown, by the element the observers report. */
+  private readonly byElement = new Map<Element, PageSlot>();
+  /** Pages waiting to paint; `true` paints one even while it is not on screen. */
+  private readonly queue = new Map<PageSlot, boolean>();
   private pumping = false;
   private intersections: IntersectionObserver | null = null;
   private resizes: ResizeObserver | null = null;
@@ -167,9 +182,9 @@ export class PageEmbeds extends Component {
   }
 
   /**
-   * Put the notebook-page creator in front of Obsidian's Markdown one.
-   * Returns what takes it off again. When another plugin has since put its
-   * own creator in front of this one, taking this one out would drop theirs
+   * Put the notebook creator in front of Obsidian's Markdown one. Returns
+   * what takes it off again. When another plugin has since put its own
+   * creator in front of this one, taking this one out would drop theirs
    * too, so it only stands aside: it hands every embed straight on.
    */
   private installHook(): () => void {
@@ -189,70 +204,82 @@ export class PageEmbeds extends Component {
     };
   }
 
-  /** A page embed for `file`, or `null` to leave the embed to Obsidian. */
-  private create(ctx: EmbedContext, file: TFile, subpath: string): NotebookPageEmbed | null {
+  /** A notebook embed for `file`, or `null` to leave the embed to Obsidian. */
+  private create(ctx: EmbedContext, file: TFile, subpath: string): NotebookEmbed | null {
     if (!this.active) return null;
     const target = embedTarget(subpath);
     if (target === null || !this.host.isInkFile(file)) return null;
-    return new NotebookPageEmbed(this, ctx, file, target);
+    return new NotebookEmbed(this, ctx, file, target);
   }
 
   // --- Embeds coming and going ----------------------------------------------------
 
-  /** @internal An embed was built: watch it come on screen. */
-  track(embed: NotebookPageEmbed): void {
+  /** @internal An embed was built: watch its pages come on screen. */
+  track(embed: NotebookEmbed): void {
     if (!this.active) return;
     this.live.add(embed);
-    this.byElement.set(embed.containerEl, embed);
-    this.intersections ??= new IntersectionObserver((entries) => this.onIntersect(entries));
-    this.resizes ??= new ResizeObserver((entries) => this.onResize(entries));
-    this.intersections.observe(embed.containerEl);
-    this.resizes.observe(embed.containerEl);
+    for (const slot of embed.slots) this.trackSlot(slot);
   }
 
   /** @internal An embed was taken down. */
-  untrack(embed: NotebookPageEmbed): void {
+  untrack(embed: NotebookEmbed): void {
     this.live.delete(embed);
-    if (this.byElement.get(embed.containerEl) === embed) this.byElement.delete(embed.containerEl);
-    this.queue.delete(embed);
-    this.intersections?.unobserve(embed.containerEl);
-    this.resizes?.unobserve(embed.containerEl);
+    for (const slot of embed.slots) this.untrackSlot(slot);
+  }
+
+  /** @internal A page of a tracked embed was added. */
+  trackSlot(slot: PageSlot): void {
+    if (!this.active || !this.live.has(slot.embed)) return;
+    this.byElement.set(slot.el, slot);
+    this.intersections ??= new IntersectionObserver((entries) => this.onIntersect(entries));
+    this.resizes ??= new ResizeObserver((entries) => this.onResize(entries));
+    this.intersections.observe(slot.el);
+    this.resizes.observe(slot.el);
+  }
+
+  /** @internal A page of an embed was taken out. */
+  untrackSlot(slot: PageSlot): void {
+    if (this.byElement.get(slot.el) === slot) this.byElement.delete(slot.el);
+    this.queue.delete(slot);
+    this.intersections?.unobserve(slot.el);
+    this.resizes?.unobserve(slot.el);
   }
 
   private onIntersect(entries: IntersectionObserverEntry[]): void {
     const now = performance.now();
     for (const entry of entries) {
-      const embed = this.byElement.get(entry.target);
-      if (!embed) continue;
-      embed.visible = entry.isIntersecting;
-      embed.lastSeen = now;
-      if (embed.visible) this.schedule(embed);
+      const slot = this.byElement.get(entry.target);
+      if (!slot) continue;
+      slot.visible = entry.isIntersecting;
+      slot.lastSeen = now;
+      if (slot.visible) this.schedule(slot);
     }
   }
 
   /** A new width may cross a paint step; `refresh` decides. */
   private onResize(entries: ResizeObserverEntry[]): void {
     for (const entry of entries) {
-      const embed = this.byElement.get(entry.target);
-      if (embed?.visible) this.schedule(embed);
+      const slot = this.byElement.get(entry.target);
+      if (slot?.visible) this.schedule(slot);
     }
   }
 
   // --- Painting -------------------------------------------------------------------
 
-  private schedule(embed: NotebookPageEmbed): void {
-    if (!this.active || !this.live.has(embed)) return;
-    if (embed.busy) {
+  /** Paint `slot` when its turn comes; `force` even while it is not on screen. */
+  private schedule(slot: PageSlot, force = false): void {
+    if (!this.active || !this.live.has(slot.embed) || !slot.attached) return;
+    if (slot.busy) {
       // Refreshed again once the one under way ends.
-      embed.again = true;
+      slot.again = true;
       return;
     }
-    this.queue.add(embed);
+    this.queue.set(slot, force || (this.queue.get(slot) ?? false));
     if (!this.pumping) void this.pump();
   }
 
   /**
-   * One embed at a time, so opening a note full of pages does not stall it.
+   * One page at a time, so opening a note full of pages does not stall it.
    * A page that takes longer than `SLOW_PAINT_MS` (a PDF slide on an older
    * iPad, a picture decode WebKit holds back) keeps painting on its own and
    * lands when ready; the others do not wait behind it.
@@ -261,24 +288,25 @@ export class PageEmbeds extends Component {
     this.pumping = true;
     try {
       for (;;) {
-        const next = this.queue.values().next();
+        const next = this.queue.entries().next();
         if (next.done) break;
-        const embed = next.value;
-        this.queue.delete(embed);
-        if (!embed.visible || !this.live.has(embed) || embed.busy) continue;
-        const run = this.refresh(embed)
+        const [slot, force] = next.value;
+        this.queue.delete(slot);
+        if ((!slot.visible && !force) || !this.live.has(slot.embed) || slot.busy) continue;
+        if (!slot.attached) continue;
+        const run = this.refresh(slot)
           .catch((error: unknown) => {
             console.error("FineNotes: could not draw an embedded page", error);
-            embed.showLink("unreadable");
+            slot.embed.showLink("unreadable");
           })
           .finally(() => {
-            embed.busy = false;
-            if (embed.again) {
-              embed.again = false;
-              if (embed.visible) this.schedule(embed);
+            slot.busy = false;
+            if (slot.again) {
+              slot.again = false;
+              if (slot.visible) this.schedule(slot);
             }
           });
-        embed.busy = true;
+        slot.busy = true;
         let timer = 0;
         await Promise.race([
           run,
@@ -291,37 +319,75 @@ export class PageEmbeds extends Component {
     }
   }
 
-  /** Bring one embed up to date with its file: its page, a link, or nothing to do. */
-  private async refresh(embed: NotebookPageEmbed): Promise<void> {
+  /** Bring one page of an embed up to date with its file: the page, a link, or nothing to do. */
+  private async refresh(slot: PageSlot): Promise<void> {
+    const { embed } = slot;
+    if (!(await this.syncEmbed(embed))) return;
+    if (!this.live.has(embed) || !slot.attached || !slot.page) return;
+    const size = embedPaintSize(slot.boxWidth(), window.devicePixelRatio || 1);
+    if (!size) return;
+    await this.paint(slot, size, this.host.paper());
+    if (!this.live.has(embed)) return;
+    this.trim();
+  }
+
+  /**
+   * Read the embed's notebook if it changed since its pages were set, and
+   * set them. False when the embed shows a link instead (no such file, no
+   * such page, a notebook that will not decode).
+   */
+  private async syncEmbed(embed: NotebookEmbed): Promise<boolean> {
     const { file } = embed;
     if (!this.host.app.vault.getFileByPath(file.path)) {
       embed.showLink("missing-file");
-      return;
+      return false;
     }
     const version = file.stat.mtime;
-    if (embed.version !== version || !embed.page) {
-      const pages = await this.notebook(file, version);
-      if (!this.live.has(embed)) return;
-      embed.version = version;
-      embed.page = pages?.[embed.target.page - 1] ?? null;
-      if (!embed.page) {
-        embed.showLink(!pages ? "unreadable" : pages.length === 0 ? "no-pages" : "missing-page");
-        return;
-      }
+    if (embed.version === version) return !embed.isLink;
+    const pages = await this.notebook(file, version);
+    if (embed.version === version) return !embed.isLink;
+    embed.version = version;
+    const reason = embed.setPages(pages);
+    if (reason) {
+      embed.showLink(reason);
+      return false;
     }
-    const page = embed.page;
-    embed.showPage(page);
-    const size = embedPaintSize(embed.boxWidth(), window.devicePixelRatio || 1);
-    if (!size) return;
-    const paper = this.host.paper();
+    embed.showPages();
+    // Pages the update added that are already on screen are reported by the observer.
+    return true;
+  }
+
+  /** Paint `slot`'s page at `size` in `paper`, unless the canvas already holds just that. */
+  private async paint(
+    slot: PageSlot,
+    size: { cssWidth: number; dpr: number },
+    paper: PaperTheme,
+  ): Promise<void> {
+    const page = slot.page;
+    if (!page) return;
     const look = paper.night ? (paper.keepPdf ? "|dark-keep-pdf" : "|dark") : "";
     const key = `${pageSignature(page)}@${size.cssWidth}x${size.dpr}${look}`;
-    if (key === embed.painted) return;
-    await paintPagePreview(embed.canvas, page, this.sources(page), size.cssWidth, size.dpr);
-    if (!this.live.has(embed)) return;
-    embed.painted = key;
-    embed.bytes = embed.canvas.width * embed.canvas.height * 4;
-    this.trim();
+    if (key === slot.painted) return;
+    await paintPagePreview(slot.canvas, page, this.sources(page, paper), size.cssWidth, size.dpr);
+    slot.painted = key;
+    slot.bytes = slot.canvas.width * slot.canvas.height * 4;
+  }
+
+  /**
+   * An embed in Obsidian's Export to PDF layout: every page painted now, in
+   * light paper (the export is always light), before `loadFile` resolves,
+   * since the export waits for it and nothing there is ever on screen.
+   */
+  async paintForPrint(embed: NotebookEmbed): Promise<void> {
+    try {
+      if (!(await this.syncEmbed(embed))) return;
+      for (const slot of embed.slots) {
+        await this.paint(slot, printPaintSize(slot.boxWidth()), LIGHT_PAPER);
+      }
+    } catch (error) {
+      console.error("FineNotes: could not draw an embedded page for the PDF", error);
+      embed.showLink("unreadable");
+    }
   }
 
   /**
@@ -338,11 +404,11 @@ export class PageEmbeds extends Component {
     });
   }
 
-  private sources(page: Page): PdfExportSources {
+  private sources(page: Page, paper: PaperTheme): PdfExportSources {
     return {
       pdf: page.backdrop.kind === "pdf" ? this.pdfCache() : this.pdf,
       images: page.images.length > 0 ? this.imageCache() : this.images,
-      paper: this.host.paper(),
+      paper,
       usePressure: this.host.usePressure(),
       highlighterAlpha: this.host.highlighterAlpha(),
     };
@@ -367,14 +433,16 @@ export class PageEmbeds extends Component {
     return this.images;
   }
 
-  /** Give back the canvases of embeds off screen once all of them hold too much. */
+  /** Give back the canvases of pages off screen once all of them hold too much. */
   private trim(): void {
-    const painted = [...this.live].filter((embed) => embed.bytes > 0);
-    for (const embed of embedsToRelease(
-      painted.map((e) => ({ key: e, bytes: e.bytes, visible: e.visible, lastSeen: e.lastSeen })),
+    const painted: PageSlot[] = [];
+    for (const embed of this.live)
+      for (const slot of embed.slots) if (slot.bytes > 0) painted.push(slot);
+    for (const slot of embedsToRelease(
+      painted.map((s) => ({ key: s, bytes: s.bytes, visible: s.visible, lastSeen: s.lastSeen })),
       EMBED_CANVAS_BUDGET,
     )) {
-      embed.release();
+      slot.release();
     }
   }
 
@@ -392,7 +460,11 @@ export class PageEmbeds extends Component {
         this.changeTimers.delete(file.path);
         this.notebooks.forget(file.path);
         for (const embed of this.live) {
-          if (embed.file.path === file.path && embed.visible) this.schedule(embed);
+          if (embed.file.path !== file.path) continue;
+          // An embed showing a link has no page on screen to report it: read it anyway.
+          const first = embed.slots[0];
+          if (embed.isLink && first) this.schedule(first, true);
+          for (const slot of embed.slots) if (slot.visible) this.schedule(slot);
         }
       }, CHANGE_DEBOUNCE_MS),
     );
@@ -413,10 +485,11 @@ export class PageEmbeds extends Component {
 
   /**
    * The page appearance may have changed (the setting, or Obsidian's theme
-   * it follows): every embed in view repaints if its look did.
+   * it follows): every page in view repaints if its look did.
    */
   repaintAll(): void {
-    for (const embed of this.live) if (embed.visible) this.schedule(embed);
+    for (const embed of this.live)
+      for (const slot of embed.slots) if (slot.visible) this.schedule(slot);
   }
 
   /** A picture or PDF changed under the pages that show it: they read it afresh. */
@@ -425,19 +498,21 @@ export class PageEmbeds extends Component {
     const pdf = /\.pdf$/i.test(path) && (this.pdf?.forget(path) ?? false);
     if (!picture && !pdf) return;
     for (const embed of this.live) {
-      const page = embed.page;
-      if (!page) continue;
-      const shows =
-        page.images.some((image) => image.path === path) ||
-        (page.backdrop.kind === "pdf" && page.backdrop.path === path);
-      if (!shows) continue;
-      embed.painted = "";
-      if (embed.visible) this.schedule(embed);
+      for (const slot of embed.slots) {
+        const page = slot.page;
+        if (!page) continue;
+        const shows =
+          page.images.some((image) => image.path === path) ||
+          (page.backdrop.kind === "pdf" && page.backdrop.path === path);
+        if (!shows) continue;
+        slot.painted = "";
+        if (slot.visible) this.schedule(slot);
+      }
     }
   }
 }
 
-/** Why an embed shows a link instead of its page. */
+/** Why an embed shows a link instead of its pages. */
 type LinkReason = "missing-page" | "no-pages" | "missing-file" | "unreadable";
 
 function linkTitle(reason: LinkReason, page: number): string {
@@ -454,100 +529,99 @@ function linkTitle(reason: LinkReason, page: number): string {
 }
 
 /**
- * One `![[Notebook#page=N]]`: the page painted into a canvas, or, when there
- * is no such page to show, a plain link to the notebook. What Obsidian's
- * embed loader expects back from a creator: a component with `loadFile()`.
+ * One `![[Notebook#page=N]]` or `![[Notebook]]`: its pages, each painted into
+ * a canvas of its own, or, when there is nothing to show, a plain link to the
+ * notebook. What Obsidian's embed loader expects back from a creator: a
+ * component with `loadFile()`.
  */
-class NotebookPageEmbed extends Component {
+class NotebookEmbed extends Component {
   readonly containerEl: HTMLElement;
-  readonly canvas: HTMLCanvasElement;
-  private readonly pageEl: HTMLElement;
+  /** The pages shown, in order. One until the notebook has been read. */
+  readonly slots: PageSlot[] = [];
   private linkEl: HTMLElement | null = null;
-  /** The page shown, from the file as of `version` (its modification time). */
-  page: Page | null = null;
+  /** The pages are from the file as of `version` (its modification time); -1 for not read yet. */
   version = -1;
-  /** What the canvas holds: the page's signature and the paint size; "" for nothing. */
-  painted = "";
-  bytes = 0;
-  visible = false;
-  lastSeen = 0;
-  /** A refresh is under way; `again` asks for one more after it. */
-  busy = false;
-  again = false;
+  isLink = false;
+  private loaded = false;
 
   constructor(
-    private readonly embeds: PageEmbeds,
-    private readonly ctx: EmbedContext,
+    readonly embeds: PageEmbeds,
+    readonly ctx: EmbedContext,
     readonly file: TFile,
-    /** The page shown (1-based, as the link writes it), or page 1 of the whole notebook. */
     readonly target: EmbedTarget,
   ) {
     super();
     this.containerEl = ctx.containerEl;
     this.containerEl.addClass("goodobsidian-page-embed");
-    // Live preview selects the link's source on a click inside an embed,
-    // except inside an `interactive-child`: a click on the page opens it.
-    this.pageEl = this.containerEl.createDiv({
-      cls: "goodobsidian-page-embed-page interactive-child",
-    });
-    this.pageEl.setAttribute("role", "link");
-    this.pageEl.tabIndex = 0;
-    this.pageEl.setAttribute("aria-label", embedLabel(file.basename, target));
-    this.pageEl.setCssStyles({ aspectRatio: aspectOf(DEFAULT_PAGE_GEOMETRY) });
-    this.canvas = this.pageEl.createEl("canvas", { cls: "goodobsidian-page-embed-canvas" });
-    // No backing store until the page is painted (a canvas starts at 300 x 150).
-    releaseCanvas(this.canvas);
+    if (target.whole) this.containerEl.addClass("goodobsidian-notebook-embed");
+    this.slots.push(new PageSlot(this, target.page));
   }
 
   /** Called by Obsidian's embed loader once the embed is in place. */
   loadFile(): Promise<void> {
-    this.registerDomEvent(this.pageEl, "click", (event) => this.open(event));
-    this.registerDomEvent(this.pageEl, "keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") this.open(event);
-    });
+    this.loaded = true;
+    if (this.containerEl.closest(PRINT_LAYOUT)) return this.embeds.paintForPrint(this);
     this.embeds.track(this);
     return Promise.resolve();
   }
 
   override onunload(): void {
     this.embeds.untrack(this);
-    this.release();
+    for (const slot of this.slots) slot.release();
   }
 
-  private open(event: MouseEvent | KeyboardEvent): void {
+  /**
+   * The notebook's pages: one slot for each page this embed shows, added or
+   * taken out to match. Returns why there is nothing to show, if so.
+   */
+  setPages(pages: readonly Page[] | null): LinkReason | null {
+    if (!pages) return "unreadable";
+    const numbers = embedPageNumbers(this.target, pages.length);
+    if (numbers.length === 0) return "no-pages";
+    while (this.slots.length > numbers.length) {
+      const slot = this.slots.pop();
+      if (!slot) break;
+      this.embeds.untrackSlot(slot);
+      slot.remove();
+    }
+    while (this.slots.length < numbers.length) {
+      const slot = new PageSlot(this, this.slots.length + 1);
+      this.slots.push(slot);
+      if (this.loaded) this.embeds.trackSlot(slot);
+    }
+    numbers.forEach((number, i) =>
+      this.slots[i]?.show(number, pages[number - 1] ?? null, numbers.length),
+    );
+    return this.slots.every((slot) => slot.page) ? null : "missing-page";
+  }
+
+  open(event: MouseEvent | KeyboardEvent, page: number): void {
     event.preventDefault();
     event.stopPropagation();
     void this.ctx.app.workspace.openLinkText(
-      this.ctx.linktext,
+      embedPageLink(this.ctx.linktext, this.target, page),
       this.ctx.sourcePath,
       Keymap.isModEvent(event),
     );
   }
 
-  /** The width the page box has now, CSS px, after the size syntax's cap. */
-  boxWidth(): number {
-    const width = embedWidth(
-      this.containerEl.getAttribute("width"),
-      this.containerEl.getAttribute("alt"),
-    );
-    this.pageEl.setCssStyles({ maxWidth: width === null ? "" : `${width}px` });
-    return this.pageEl.getBoundingClientRect().width;
-  }
-
-  showPage(page: Page): void {
+  showPages(): void {
+    if (!this.isLink) return;
+    this.isLink = false;
     this.linkEl?.remove();
     this.linkEl = null;
     this.containerEl.removeClass("is-link");
-    this.pageEl.removeClass("is-hidden");
-    this.pageEl.setCssStyles({ aspectRatio: aspectOf(page.geometry) });
+    for (const slot of this.slots) slot.el.removeClass("is-hidden");
   }
 
   /** No page to show: a plain link to the notebook, saying why. */
   showLink(reason: LinkReason): void {
-    this.release();
-    this.page = null;
+    for (const slot of this.slots) {
+      slot.release();
+      slot.el.addClass("is-hidden");
+    }
     this.version = -1;
-    this.pageEl.addClass("is-hidden");
+    this.isLink = true;
     this.containerEl.addClass("is-link");
     this.linkEl?.remove();
     const link = this.containerEl.createEl("a", {
@@ -558,8 +632,81 @@ class NotebookPageEmbed extends Component {
     link.dataset.href = this.ctx.linktext;
     link.setAttribute("title", linkTitle(reason, this.target.page));
     link.toggleClass("is-unresolved", reason === "missing-file");
-    link.addEventListener("click", (event) => this.open(event));
+    link.addEventListener("click", (event) => this.open(event, this.target.page));
     this.linkEl = link;
+  }
+}
+
+/** One page of an embed: its box, sized by the page's shape, and the canvas it is painted into. */
+class PageSlot {
+  readonly el: HTMLElement;
+  readonly canvas: HTMLCanvasElement;
+  /** The page's number in the notebook, 1-based. */
+  number: number;
+  page: Page | null = null;
+  /** What the canvas holds: the page's signature and the paint size; "" for nothing. */
+  painted = "";
+  bytes = 0;
+  visible = false;
+  lastSeen = 0;
+  /** A refresh is under way; `again` asks for one more after it. */
+  busy = false;
+  again = false;
+  attached = true;
+
+  constructor(
+    readonly embed: NotebookEmbed,
+    number: number,
+  ) {
+    this.number = number;
+    // Live preview selects the link's source on a click inside an embed,
+    // except inside an `interactive-child`: a click on the page opens it.
+    this.el = embed.containerEl.createDiv({
+      cls: "goodobsidian-page-embed-page interactive-child",
+    });
+    this.el.setAttribute("role", "link");
+    this.el.tabIndex = 0;
+    // Until the notebook is read: its name for one embedded whole, else "Physics, page 3".
+    this.el.setAttribute(
+      "aria-label",
+      embedPageLabel(embed.file.basename, embed.target, number, 1),
+    );
+    this.el.setCssStyles({ aspectRatio: aspectOf(DEFAULT_PAGE_GEOMETRY) });
+    if (embed.isLink) this.el.addClass("is-hidden");
+    this.canvas = this.el.createEl("canvas", { cls: "goodobsidian-page-embed-canvas" });
+    // No backing store until the page is painted (a canvas starts at 300 x 150).
+    releaseCanvas(this.canvas);
+    this.el.addEventListener("click", (event) => this.embed.open(event, this.number));
+    this.el.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") this.embed.open(event, this.number);
+    });
+  }
+
+  /** Show page `number` (`page`, or `null` when the notebook has none such) of `count` shown. */
+  show(number: number, page: Page | null, count: number): void {
+    this.number = number;
+    this.page = page;
+    const { embed } = this;
+    this.el.setAttribute(
+      "aria-label",
+      embedPageLabel(embed.file.basename, embed.target, number, count),
+    );
+    if (page) this.el.setCssStyles({ aspectRatio: aspectOf(page.geometry) });
+  }
+
+  /** The width the page box has now, CSS px, after the size syntax's cap. */
+  boxWidth(): number {
+    const { containerEl } = this.embed;
+    const width = embedWidth(containerEl.getAttribute("width"), containerEl.getAttribute("alt"));
+    this.el.setCssStyles({ maxWidth: width === null ? "" : `${width}px` });
+    return this.el.getBoundingClientRect().width;
+  }
+
+  /** Taken out of the embed: the notebook has fewer pages now. */
+  remove(): void {
+    this.attached = false;
+    this.release();
+    this.el.remove();
   }
 
   /** Give the canvas' pixels back; the page paints again when it is next on screen. */

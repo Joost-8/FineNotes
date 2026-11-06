@@ -1229,6 +1229,22 @@ select.goodobsidian-choice-select {
   box-shadow: 0 0 0 2px var(--interactive-accent);
 }
 
+/* `![[Physics.notebook]]`: every page, one under the other, as the
+   notebook view stacks them. */
+.internal-embed.goodobsidian-notebook-embed:not(.is-link) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+}
+
+/* Export to PDF: a notebook page is never cut across two sheets. */
+@media print {
+  .goodobsidian-page-embed-page {
+    break-inside: avoid;
+    box-shadow: 0 0 0 1px var(--background-modifier-border);
+  }
+}
+
 .goodobsidian-page-embed-page.is-hidden {
   display: none;
 }
