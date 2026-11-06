@@ -23,6 +23,7 @@ import {
   drawSynthetic,
   drawSyntheticRules,
   fillPaper,
+  inkShade,
   pageLook,
   paperTheme,
   resolveSpacing,
@@ -463,6 +464,16 @@ describe("dark pages: pageLook and the paper it paints", () => {
     });
     expect(pageLook(cream, LIGHT_PAPER).paper).toBe(PAPER_PRESETS.cream);
     expect(pageLook(pdf, LIGHT_PAPER).night).toBe(false);
+  });
+
+  it("shows ink as stored on dark paper, but marks it dark for the highlighter", () => {
+    const black = { kind: "blank", paperColor: "#111111" } as const;
+    expect(inkShade(pageLook({ kind: "blank" }, LIGHT_PAPER))).toBe("day");
+    expect(inkShade(pageLook(cream, LIGHT_PAPER))).toBe("day");
+    expect(inkShade(pageLook(pdf, LIGHT_PAPER))).toBe("day");
+    expect(inkShade(pageLook(black, LIGHT_PAPER))).toBe("dark");
+    expect(inkShade(pageLook(black, DARK_PAPER))).toBe("dark");
+    expect(inkShade(pageLook(cream, DARK_PAPER))).toBe("night");
   });
 
   it("inverts light pages, darkens coloured ones and keeps dark ones", () => {

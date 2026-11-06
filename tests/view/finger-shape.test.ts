@@ -126,3 +126,64 @@ describe("a finger tap on a table", () => {
     }
   });
 });
+
+describe("a finger tap inside a closed shape", () => {
+  it("picks the lasso and selects the shape, filled or not", () => {
+    const s = surface("pen");
+    s.liveSelection = () => null;
+    expect(run(s, "fingerPicksShapeInside", page, { x: 200, y: 150 })).toBe(true);
+    expect(s.select).toHaveBeenCalledWith("p1", { strokes: [rect], images: [], textBoxes: [] });
+    expect(s.setTool).toHaveBeenCalledWith("select");
+  });
+
+  it("types in the shape when it is already picked up on its own", () => {
+    const s = surface("pen");
+    s.liveSelection = () => ({ pageId: "p1", strokes: [rect], images: [], textBoxes: [] });
+    s.editShapeLabel = vi.fn();
+    expect(run(s, "fingerPicksShapeInside", page, { x: 200, y: 150 })).toBe(true);
+    expect(s.editShapeLabel).toHaveBeenCalledWith("p1", rect);
+    expect(s.select).not.toHaveBeenCalled();
+  });
+
+  it("does nothing outside it, inside an open shape, with the Text tool, or switched off", () => {
+    const cases: Array<[Fake, { x: number; y: number }]> = [
+      [surface("pen"), { x: 50, y: 150 }],
+      [surface("pen"), { x: 500, y: 120 }],
+      [surface("text"), { x: 200, y: 150 }],
+      [surface("pen", { filter: { shapes: false } }), { x: 200, y: 150 }],
+    ];
+    for (const [s, at] of cases) {
+      s.liveSelection = () => null;
+      expect(run(s, "fingerPicksShapeInside", page, at)).toBe(false);
+      expect(s.select).not.toHaveBeenCalled();
+    }
+  });
+});
+
+describe("a lasso tap inside a closed shape", () => {
+  const all = {
+    handwriting: true,
+    images: true,
+    shapes: true,
+    arrows: true,
+    textBoxes: false,
+    tables: true,
+    graphs: false,
+  };
+
+  it("selects the shape when nothing drawn there was hit", () => {
+    const s = surface("select");
+    expect(run(s, "tapSelectOn", page, { x: 200, y: 150 }, 4, all)).toBe(true);
+    expect(s.select).toHaveBeenCalledWith("p1", { strokes: [rect], images: [], textBoxes: [] });
+  });
+
+  it("leaves a picture inside the shape to be picked up on its own", () => {
+    const s = surface("select");
+    s.setImageSelection = vi.fn();
+    const picture = { id: "i", x: 150, y: 120, w: 60, h: 40 };
+    const withPicture = { ...page, images: [picture] };
+    expect(run(s, "tapSelectOn", withPicture, { x: 170, y: 140 }, 4, all)).toBe(true);
+    expect(s.setImageSelection).toHaveBeenCalledWith("p1", picture);
+    expect(s.select).not.toHaveBeenCalled();
+  });
+});

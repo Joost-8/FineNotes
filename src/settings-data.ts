@@ -215,6 +215,8 @@ export interface GoodObsidianSettings {
   tapeColor?: string;
   /** Cover tape's height, page px. Absent: the medium height. */
   tapeHeight?: number;
+  /** How a new cover tape is laid, "straight" or "freehand". Absent: straight. */
+  tapeMode?: string;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
   /**
