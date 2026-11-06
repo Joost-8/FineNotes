@@ -90,6 +90,28 @@ const LINE_OVERLAP = 0.5;
 const MAX_LINE_GAP = 4;
 /** An item this far back over the line's end (in font heights) starts a new line. */
 const MAX_LINE_OVERLAP = 0.5;
+/** A piece of a formula this far above or below the line's band (in font heights) still joins it. */
+const FORMULA_GAP = 1;
+/** A piece of a formula this far right of the piece before it (in font heights) still joins it. */
+const FORMULA_STEP = 1.5;
+/** Clear of the line's band, a piece joins only when its font is at most this share of the line's. */
+const FORMULA_SMALLER = 0.85;
+/** A run of glyphs wider than this (in font heights) is text, never a piece to stack a formula's under. */
+const FORMULA_RUN = 6;
+/** Two glyphs on one baseline overlapping by more than this share of the narrower are printed over each other. */
+const OVERPRINT = 0.5;
+/** How many times pieces attach to rows: a second round takes a numerator past its row's end. */
+const PIECE_ROUNDS = 2;
+/** A formula's piece is set at most this much larger than the line it hangs on. */
+const PIECE_FONT = 1.05;
+/** Lines drawn apart join as a formula's piece when their bands overlap by at least this share of the shorter. */
+const ROW_PART = 0.25;
+/** A bracket's line joins the text inside it only when its band is at least this much taller. */
+const TALLER = 1.3;
+/** A line on another's band without sharing its baseline keeps its middle this share of its height inside that band. */
+const BAND_MARGIN = 0.2;
+/** Glyphs whose bottoms differ by at most this (in font heights) share a baseline run. */
+const RUN_BASELINE = 0.25;
 /** A gap this wide (in font heights) between two items is a space. */
 const SPACE_GAP = 0.12;
 
@@ -168,6 +190,8 @@ interface ItemBox {
   x1: number;
   top: number;
   bottom: number;
+  /** Where its glyphs stand (y, page space). */
+  baseline: number;
 }
 
 /** An item's characters and band in page space, or null when it cannot be snapped to. */
@@ -203,16 +227,93 @@ function placeItem(item: PdfTextItem, toPage: Matrix): ItemBox | null {
     at += weights[i];
     chars.push({ ch: glyphs[i], x0: from, x1: x0 + (at / total) * length });
   }
-  return { chars, x0, x1, top, bottom };
+  return { chars, x0, x1, top, bottom, baseline: m[5] };
 }
 
-/** Whether `box` carries on `line`: the same band, and not far before or after its end. */
-function continuesLine(line: TextLine, box: ItemBox): boolean {
+/**
+ * The glyphs drawn last on one baseline: where that run starts and ends,
+ * and whether it is a piece of a formula off the line's own text (a limit,
+ * a numerator) rather than the line's text.
+ */
+interface Run {
+  x0: number;
+  x1: number;
+  top: number;
+  bottom: number;
+  piece: boolean;
+}
+
+/** `box` added to `run` when it sits on the same baseline, else a new run of it alone. */
+function extendRun(run: Run | null, box: ItemBox, piece: boolean): Run {
+  const height = Math.min(box.bottom - box.top, run ? run.bottom - run.top : Infinity);
+  if (run && Math.abs(box.bottom - run.bottom) <= RUN_BASELINE * height) {
+    return { ...run, x0: Math.min(run.x0, box.x0), x1: Math.max(run.x1, box.x1) };
+  }
+  return { x0: box.x0, x1: box.x1, top: box.top, bottom: box.bottom, piece };
+}
+
+/** Where a line's ink ends: its last character that is not a space (a space item can be page-wide). */
+function inkEnd(chars: readonly TextChar[], line: TextLine): number {
+  for (let i = line.end - 1; i >= line.start; i--) {
+    if (!isSpace(chars[i].ch)) return chars[i].x1;
+  }
+  return line.x0;
+}
+
+/**
+ * Whether `box` carries on `line`: as text on its band, not far before or
+ * after its end, or as a piece of a formula in it ({@link continuesFormula}).
+ */
+function continuesLine(
+  line: TextLine,
+  box: ItemBox,
+  previous: Run | null,
+  lineFont: number,
+  inkX1: number,
+): boolean {
   const height = Math.min(line.bottom - line.top, box.bottom - box.top);
   const overlap = Math.min(line.bottom, box.bottom) - Math.max(line.top, box.top);
-  if (overlap < LINE_OVERLAP * height) return false;
   const gap = box.x0 - line.x1;
-  return gap >= -MAX_LINE_OVERLAP * height && gap <= MAX_LINE_GAP * height;
+  if (
+    overlap >= LINE_OVERLAP * height &&
+    gap >= -MAX_LINE_OVERLAP * height &&
+    gap <= MAX_LINE_GAP * height
+  ) {
+    return true;
+  }
+  // Clear of the band, only a smaller piece (a sum's limits) is the
+  // formula's; a stacked label or the next bullet is set as large.
+  if (overlap <= 0 && box.bottom - box.top > FORMULA_SMALLER * lineFont) return false;
+  return continuesFormula(box, previous, overlap, box.x0 - inkX1, height);
+}
+
+/**
+ * Whether `box` is a piece of the formula the line is in, though it sits
+ * above or below the line's band: a fraction's top or bottom, a sum's
+ * limits. pdf.js gives each such piece as items of its own, and without
+ * this every one was a line of its own, so the highlighter marked an
+ * equation in scraps (FineNotes#159). It joins when it is within half a
+ * height of the band (partly in it, or clear of it in a smaller font) and
+ * either starts just after the line's last glyph, or stands over or under
+ * the piece drawn before it (a sum's lower limit starts under the first
+ * glyph of the upper one). Only under a short piece: the line's own text
+ * above is a heading or the line before in a paragraph, never a numerator.
+ */
+function continuesFormula(
+  box: ItemBox,
+  previous: Run | null,
+  overlap: number,
+  gap: number,
+  height: number,
+): boolean {
+  if (!previous || overlap < -FORMULA_GAP * height) return false;
+  const after = gap >= -MAX_LINE_OVERLAP * height && gap <= FORMULA_STEP * height;
+  const stacked =
+    previous.piece &&
+    previous.x1 - previous.x0 <= FORMULA_RUN * height &&
+    box.x0 >= previous.x0 - MAX_LINE_OVERLAP * height &&
+    box.x0 <= previous.x1 + FORMULA_STEP * height;
+  return after || stacked;
 }
 
 /**
@@ -223,14 +324,24 @@ export function layoutText(items: readonly PdfTextItem[], toPage: Matrix): TextL
   const chars: TextChar[] = [];
   const lines: TextLine[] = [];
   let line: TextLine | null = null;
+  let previous: Run | null = null;
+  let lineFont = 0;
+  let base = { top: 0, bottom: 0 };
+  const fonts: number[] = [];
+  const baselines: number[] = [];
   for (const item of items) {
     const box = placeItem(item, toPage);
     if (!box) continue;
-    if (line && continuesLine(line, box)) {
+    const joins = line ? continuesLine(line, box, previous, lineFont, inkEnd(chars, line)) : false;
+    if (line && joins) {
+      // A piece when it sits off the band of the glyph the line began with.
+      const height = box.bottom - box.top;
+      const onBase = Math.min(base.bottom, box.bottom) - Math.max(base.top, box.top);
+      previous = extendRun(previous, box, onBase < LINE_OVERLAP * height);
       const last = chars[chars.length - 1];
       const gap = box.x0 - line.x1;
-      const height = Math.min(line.bottom - line.top, box.bottom - box.top);
-      if (gap > SPACE_GAP * height && !isSpace(last.ch) && !isSpace(box.chars[0].ch)) {
+      const shorter = Math.min(line.bottom - line.top, height);
+      if (gap > SPACE_GAP * shorter && !isSpace(last.ch) && !isSpace(box.chars[0].ch)) {
         chars.push({ ch: " ", x0: line.x1, x1: box.x0, virtual: true });
       }
       chars.push(...box.chars);
@@ -240,12 +351,256 @@ export function layoutText(items: readonly PdfTextItem[], toPage: Matrix): TextL
       line.bottom = Math.max(line.bottom, box.bottom);
       continue;
     }
+    lineFont = box.bottom - box.top;
+    base = { top: box.top, bottom: box.bottom };
+    previous = extendRun(null, box, false);
     const start = chars.length;
     chars.push(...box.chars);
     line = { start, end: chars.length, x0: box.x0, x1: box.x1, top: box.top, bottom: box.bottom };
     lines.push(line);
+    fonts.push(lineFont);
+    baselines.push(box.baseline);
   }
-  return { chars, lines };
+  return joinRows({ chars, lines }, fonts, baselines);
+}
+/**
+ * Whether two lines (fonts `fa`, `fb`, baselines `ba`, `bb`: those of the
+ * glyph each began with) stand together and near each other: on one
+ * baseline, or the shorter well inside the taller's band (Word sets a big
+ * bracket on a baseline of its own). Well inside, not half: a tall bracket
+ * stretches its band over half the line above, and a denominator there is
+ * not on its line.
+ */
+function sameBand(
+  chars: readonly TextChar[],
+  a: TextLine,
+  fa: number,
+  ba: number,
+  b: TextLine,
+  fb: number,
+  bb: number,
+): boolean {
+  const font = Math.min(fa, fb);
+  const gap = Math.max(b.x0 - a.x1, a.x0 - b.x1);
+  // On one baseline, side by side, as the pass in drawing order joins items;
+  // text printed over text is not one line.
+  if (Math.abs(ba - bb) <= RUN_BASELINE * font) {
+    return gap <= MAX_LINE_GAP * font && !overprinted(chars, a, b);
+  }
+  // Off the baseline only close, as a formula's pieces are.
+  if (gap > FORMULA_STEP * font) return false;
+  // A bracket set on its own baseline: the shorter line well inside the
+  // taller one's band, and the taller one really taller.
+  const [short, tall] = a.bottom - a.top <= b.bottom - b.top ? [a, b] : [b, a];
+  const height = short.bottom - short.top;
+  if (tall.bottom - tall.top < TALLER * height) return false;
+  const overlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  const middle = (short.top + short.bottom) / 2;
+  return (
+    overlap >= LINE_OVERLAP * height &&
+    middle >= tall.top + BAND_MARGIN * height &&
+    middle <= tall.bottom - BAND_MARGIN * height
+  );
+}
+
+/**
+ * Whether glyphs of two lines on one baseline stand on each other: text
+ * printed over text. Glyph by glyph, not by the lines' spans: a line drawn
+ * out of order has holes that the other line's glyphs fill.
+ */
+function overprinted(chars: readonly TextChar[], a: TextLine, b: TextLine): boolean {
+  for (let i = a.start; i < a.end; i++) {
+    const p = chars[i];
+    if (isSpace(p.ch)) continue;
+    for (let j = b.start; j < b.end; j++) {
+      const q = chars[j];
+      if (isSpace(q.ch)) continue;
+      const overlap = Math.min(p.x1, q.x1) - Math.max(p.x0, q.x0);
+      if (overlap > OVERPRINT * Math.min(p.x1 - p.x0, q.x1 - q.x0)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether line `p` (font `fp`) can be a piece of a formula on line `on`
+ * (font `fon`): partly in its band, starting within its width or just after
+ * it (a fraction ending a formula), and no larger.
+ * Clear of the band it is not one: a formula's big bracket on one line would
+ * reach the letters of the next (Word sets brackets in a font twice the
+ * text's). Nor larger: a tall bracket reaching a denominator is not that
+ * fraction's.
+ */
+function pieceOf(p: TextLine, fp: number, on: TextLine, fon: number): boolean {
+  const height = Math.min(p.bottom - p.top, on.bottom - on.top);
+  const overlap = Math.min(p.bottom, on.bottom) - Math.max(p.top, on.top);
+  return (
+    overlap >= ROW_PART * height &&
+    fp <= PIECE_FONT * fon &&
+    p.x0 >= on.x0 - FORMULA_STEP * fp &&
+    p.x0 <= on.x1 + FORMULA_STEP * fp
+  );
+}
+
+/**
+ * Join the lines that sit together on the page, whatever order the PDF drew
+ * them in, and put each joined line's characters left to right. A formula
+ * set by Word or MathType is drawn a font at a time (its brackets, then its
+ * letters, then its digits), so the pass in drawing order above makes a
+ * line of nearly every glyph, and the highlighter marked it glyph by glyph
+ * (FineNotes#159). First the lines on one band become rows; then each short
+ * piece above or below (a fraction's top or bottom) goes to one row, the one
+ * whose text runs nearest it, so a piece between two rows never joins them.
+ * Lines keep the reading order of the first of each.
+ */
+function joinRows(
+  layout: TextLayout,
+  fonts: readonly number[],
+  baselines: readonly number[],
+): TextLayout {
+  const { lines } = layout;
+  const n = lines.length;
+  if (n < 2) return layout;
+  const parent = lines.map((_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) i = parent[i] = parent[parent[i]];
+    return i;
+  };
+  // A fragment: a line short for its font (a bracket, a letter, "dx"), what
+  // a formula drawn out of order is made of. Text drawn whole comes as long
+  // lines, and is only ever joined to fragments: two long lines side by side
+  // are columns, or a diagram's labels.
+  const fragment = lines.map((line, i) => line.x1 - line.x0 <= FORMULA_RUN * fonts[i]);
+  let joined = false;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (find(i) === find(j) || !(fragment[i] || fragment[j])) continue;
+      if (
+        !sameBand(layout.chars, lines[i], fonts[i], baselines[i], lines[j], fonts[j], baselines[j])
+      ) {
+        continue;
+      }
+      parent[find(j)] = find(i);
+      joined = true;
+    }
+  }
+  // Twice: a numerator centred over its denominator lies past the row's end
+  // until the denominator has joined it.
+  for (let round = 0; round < PIECE_ROUNDS; round++) {
+    // Each row after the first step: its box, its largest font, and where its
+    // text runs (the middle of its lines, weighted by characters).
+    interface Row {
+      box: TextLine;
+      font: number;
+      sum: number;
+      count: number;
+      /** Made of fragments only: it may be a piece of another row. */
+      loose: boolean;
+      /** The baseline of its widest line. */
+      baseline: number;
+      widest: number;
+    }
+    const rows = new Map<number, Row>();
+    for (let i = 0; i < n; i++) {
+      const root = find(i);
+      const line = lines[i];
+      const count = Math.max(1, line.end - line.start);
+      const row = rows.get(root);
+      if (!row) {
+        rows.set(root, {
+          box: { ...line },
+          font: fonts[i],
+          sum: ((line.top + line.bottom) / 2) * count,
+          count,
+          loose: fragment[i],
+          baseline: baselines[i],
+          widest: line.x1 - line.x0,
+        });
+        continue;
+      }
+      row.loose &&= fragment[i];
+      if (line.x1 - line.x0 > row.widest) {
+        row.widest = line.x1 - line.x0;
+        row.baseline = baselines[i];
+      }
+      row.box.x0 = Math.min(row.box.x0, line.x0);
+      row.box.x1 = Math.max(row.box.x1, line.x1);
+      row.box.top = Math.min(row.box.top, line.top);
+      row.box.bottom = Math.max(row.box.bottom, line.bottom);
+      row.font = Math.max(row.font, fonts[i]);
+      row.sum += ((line.top + line.bottom) / 2) * count;
+      row.count += count;
+    }
+    // A short row (a fraction's top or bottom) goes to the row whose text runs
+    // nearest it, among those it is a piece of; as the rows stood after the
+    // first step, so no piece chains two rows together.
+    const attach: Array<[number, number]> = [];
+    for (const [own, piece] of rows) {
+      if (!piece.loose) continue;
+      const centre = (piece.box.top + piece.box.bottom) / 2;
+      let best = -1;
+      let bestDistance = Infinity;
+      for (const [target, row] of rows) {
+        if (target === own || !pieceOf(piece.box, piece.font, row.box, row.font)) continue;
+        // Above or below it: on its own baseline it is text printed over it.
+        if (Math.abs(row.baseline - piece.baseline) <= RUN_BASELINE * piece.font) continue;
+        // Only onto a wider row: of two that overlap, the narrower is the piece.
+        if (row.box.x1 - row.box.x0 <= piece.box.x1 - piece.box.x0) continue;
+        const distance = Math.abs(row.sum / row.count - centre);
+        if (distance < bestDistance) {
+          best = target;
+          bestDistance = distance;
+        }
+      }
+      if (best >= 0) attach.push([own, best]);
+    }
+    for (const [piece, row] of attach) {
+      parent[find(piece)] = find(row);
+      joined = true;
+    }
+  }
+  if (!joined) return layout;
+  const groups = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    const members = groups.get(root);
+    if (members) members.push(i);
+    else groups.set(root, [i]);
+  }
+  const chars: TextChar[] = [];
+  const out: TextLine[] = [];
+  for (const members of [...groups.values()].sort((a, b) => a[0] - b[0])) {
+    const start = chars.length;
+    if (members.length === 1) {
+      const line = lines[members[0]];
+      chars.push(...layout.chars.slice(line.start, line.end));
+      out.push({ ...line, start, end: chars.length });
+      continue;
+    }
+    const font = Math.min(...members.map((i) => fonts[i]));
+    const own = members
+      .flatMap((i) => layout.chars.slice(lines[i].start, lines[i].end))
+      .filter((c) => !c.virtual)
+      .sort((a, b) => a.x0 - b.x0);
+    for (const ch of own) {
+      const last = chars.length > start ? chars[chars.length - 1] : null;
+      // A space where pieces stand apart, as between items on one line.
+      if (last && ch.x0 - last.x1 > SPACE_GAP * font && !isSpace(last.ch) && !isSpace(ch.ch)) {
+        chars.push({ ch: " ", x0: last.x1, x1: ch.x0, virtual: true });
+      }
+      chars.push(ch);
+    }
+    const box = members.map((i) => lines[i]);
+    out.push({
+      start,
+      end: chars.length,
+      x0: Math.min(...box.map((l) => l.x0)),
+      x1: Math.max(...box.map((l) => l.x1)),
+      top: Math.min(...box.map((l) => l.top)),
+      bottom: Math.max(...box.map((l) => l.bottom)),
+    });
+  }
+  return { chars, lines: out };
 }
 
 /** How far `pt` is from a line's box, 0 inside it. */

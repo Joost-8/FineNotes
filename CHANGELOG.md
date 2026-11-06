@@ -10,6 +10,25 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Snap to PDF text, as a switch.** The highlighter's options have a new
+  switch beside Straighten lines. Off, the highlighter draws freehand on a
+  PDF's text too, straight or free, which marks equations and formulas
+  that the text snap breaks into pieces (FineNotes#159).
+
+### Fixed
+
+- **The highlighter takes a whole equation.** On a PDF, the text snap now
+  treats a formula as one line: a fraction's top and bottom and a sum's
+  limits belong to it, so a highlight over an equation is one band instead
+  of scraps at different heights (FineNotes#159). This holds for formulas
+  made in Word or MathType too, which a PDF draws a font at a time
+  (brackets, then letters, then digits): pieces join by where they stand on
+  the page, not by the order they were drawn.
+- **The whole-stroke eraser takes a highlight it touches.** It took a
+  stroke only near its centre line, so rubbing over a wide highlight (a
+  snapped one is as tall as the text) away from its middle left it there.
+  Now touching the ink is enough, as with the standard eraser
+  (FineNotes#159).
 - **Handwritten sections in ordinary notes**
   ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167),
   thanks [@mantomat](https://github.com/mantomat)). `![[Physics.notebook]]`

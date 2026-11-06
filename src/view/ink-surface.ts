@@ -302,6 +302,7 @@ import {
   eraseCircleFromStroke,
   eraseRectsFromStroke,
   eraserTakes,
+  inkWidth,
 } from "../ink/stroke-eraser";
 import {
   MAX_SCALE,
@@ -979,6 +980,8 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
+  /** Whether the highlighter snaps to a PDF page's text (the setting); absent, it does. */
+  highlighterSnapsToText?: () => boolean;
   /** The highlighter's tip, read live (`settings.highlighterTip`); absent is round. */
   highlighterTip?: () => HighlighterTip;
   /** Whether the Brush pen keeps the Pencil's tilt ("Pencil tilt"); off when absent. */
@@ -10812,6 +10815,8 @@ export class InkSurface {
    */
   private startTextMark(box: PageBox, at: Pt): boolean {
     if (this.toolState.tool !== "highlighter" || this.practice) return false;
+    // Switched off, it draws freehand on text too (FineNotes#159).
+    if (this.callbacks.highlighterSnapsToText?.() === false) return false;
     const layout = this.pageText(box.index);
     const selection = layout ? selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
     this.noteTextMark(box.index, layout, selection);
@@ -11174,12 +11179,17 @@ export class InkSurface {
   private eraseWholeAt(page: Page, at: Pt, radius: number, filter: EraserFilter): boolean {
     let marked = false;
     const notes = noteIdsOf(page.images);
-    for (const id of this.strokeIndex.near(page.id, at.x, at.y, radius)) {
+    // The index knows lines, not widths: reach as far as the widest ink.
+    const reach = radius + MAX_TILTED_HALF_WIDTH;
+    for (const id of this.strokeIndex.near(page.id, at.x, at.y, reach)) {
       const stroke = this.strokeIndex.get(id);
       if (!stroke || this.eraseIds.has(id) || !eraserTakes(stroke, filter)) continue;
       // Ink a sticky note hides, or a note's ink off its note, is not touched.
       if (!shownAt(page, stroke, at.x, at.y, notes)) continue;
-      if (!strokeHitByPoint(stroke, at.x, at.y, radius)) continue;
+      // Touching the ink takes it, not only its centre line: a snapped text
+      // highlight is a band as tall as the text, and rubbing over it away
+      // from its middle left it on the page (FineNotes#159).
+      if (!strokeHitByPoint(stroke, at.x, at.y, radius + inkWidth(stroke) / 2)) continue;
       marked = this.markWhole(page, id) || marked;
     }
     return marked;
