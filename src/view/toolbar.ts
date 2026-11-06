@@ -1180,6 +1180,8 @@ export class Toolbar {
   private readonly leavingPopovers = new Map<HTMLElement, number>();
   /** Redraws the open text popover's body in place after a change it made. */
   private popoverRender: (() => void) | null = null;
+  /** Places the open popover again after its rows changed on their own (`fitTextPopover`). */
+  private popoverRefit: (() => void) | null = null;
   /** The device's fonts for the font menu (`deviceFamilies`), once read. */
   private deviceFonts: string[] | null = null;
   /** The font search has the focus it took from the box being styled. */
@@ -4148,6 +4150,22 @@ export class Toolbar {
       render(body);
     };
     this.popoverRender();
+    this.popoverRefit = () => this.fitTextPopover(anchor);
+    this.popoverRefit();
+  }
+
+  /**
+   * Place a text popover and hold it to its room, from its height now. Run
+   * again whenever its rows change after it opened: the font menu fills in
+   * the device's fonts when they arrive, and a popover measured before that
+   * was left uncapped, so the long list ran past the view's bottom, which
+   * clips it, with nothing to scroll (FineNotes#165).
+   */
+  private fitTextPopover(anchor: HTMLElement): void {
+    const popover = this.popover;
+    if (!popover || !anchor.isConnected) return;
+    // A cap from an earlier, shorter fill would be read back as its height.
+    popover.setCssStyles({ maxHeight: "" });
     this.keepPopoverInside(anchor);
     this.keepPopoverAboveKeyboard(anchor);
   }
@@ -4308,7 +4326,9 @@ export class Toolbar {
     if (!this.deviceFonts) {
       void deviceFamilies().then((families) => {
         this.deviceFonts = families;
-        if (list.isConnected) fill();
+        if (!list.isConnected) return;
+        fill();
+        this.popoverRefit?.();
       });
     }
     const loupe = head.createEl("button", {
@@ -5547,6 +5567,7 @@ export class Toolbar {
     this.popover = null;
     this.popoverKind = null;
     this.popoverRender = null;
+    this.popoverRefit = null;
     this.sizeMarksRender = null;
     // The sticky colours closed with a note still waiting (Escape, another
     // tool, the button again): it waits no more.
