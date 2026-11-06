@@ -1796,6 +1796,27 @@ function centreTurned(f: BoxFrame, r: number): BoxFrame & { rotation?: number } 
   return { x: mid.x - f.w / 2, y: mid.y - f.h / 2, w: f.w, h: f.h, rotation: r };
 }
 
+/** A text box's place on screen, with its knob when the knob shows (a turned box: around both). */
+function withKnob(root: HTMLElement): {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+} {
+  const box = root.getBoundingClientRect();
+  const knob = root
+    .querySelector(".goodobsidian-page-textbox-handle.is-knob")
+    ?.getBoundingClientRect();
+  if (!knob || knob.width === 0) return box;
+  const left = Math.min(box.left, knob.left);
+  const top = Math.min(box.top, knob.top);
+  const right = Math.max(box.right, knob.right);
+  const bottom = Math.max(box.bottom, knob.bottom);
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
 /** A box's turn as a CSS `rotate` value; none for upright. */
 function turnCss(r: number): string {
   return r !== 0 && Number.isFinite(r) ? `${r.toFixed(5)}rad` : "";
@@ -19574,8 +19595,9 @@ export class InkSurface {
   private reportTextAnchor(): void {
     if (!this.callbacks.onTextAnchor) return;
     const view = this.textTargetView();
-    const box = view ? view.root.getBoundingClientRect() : null;
     const typing = view !== null && view === this.editingTextView();
+    // The knob of a selected box hangs below it: the pill keeps clear of it too.
+    const box = view ? withKnob(view.root) : null;
     // The part of the screen the page shows: on the iPad the window and the
     // toolbar's host reach below it, so a box can be gone from the page and
     // still inside them.
