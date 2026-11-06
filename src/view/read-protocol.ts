@@ -9,6 +9,7 @@
 
 import type { Page } from "../model/document";
 import type { LibraryEntry } from "../model/library";
+import type { IndexedPage } from "../search/library-search";
 
 /** Tags this module's messages. */
 export const READ_TAG = "fineNotesRead";
@@ -23,10 +24,19 @@ export interface ReadRequest {
   want: number[];
   /** Also the notebook's Home facts, as of this edit time. */
   facts?: { path: string; edited: number };
+  /** Also the notebook's own text, for Home's search inside notebooks. */
+  searchText?: true;
 }
 
 export type ReadReply =
-  | { id: number; ok: true; count: number; pages: Array<[number, Page]>; entry?: LibraryEntry }
+  | {
+      id: number;
+      ok: true;
+      count: number;
+      pages: Array<[number, Page]>;
+      entry?: LibraryEntry;
+      searchText?: IndexedPage[];
+    }
   /** The worker no longer holds `key`: ask again with the text. */
   | { id: number; ok: false; needText: true }
   | { id: number; ok: false; needText?: false; error: string };

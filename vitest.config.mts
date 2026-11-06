@@ -204,6 +204,7 @@ export default defineConfig({
         "src/search/hit-strokes.ts",
         "src/search/pdf-hits.ts",
         "src/search/link-choices.ts",
+        "src/search/library-search.ts",
         "src/util/errors.ts",
       ],
       thresholds: {

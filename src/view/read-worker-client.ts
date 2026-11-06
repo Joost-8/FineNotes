@@ -8,6 +8,7 @@
 import workerSource from "worker:./read-worker";
 import type { LibraryEntry } from "../model/library";
 import type { Page } from "../model/document";
+import type { IndexedPage } from "../search/library-search";
 import { READ_TAG, type ReadReply, type ReadRequest } from "./read-protocol";
 
 /** How long one read may take before the worker is given up on, ms. */
@@ -17,6 +18,7 @@ export interface ReadResult {
   count: number;
   pages: Map<number, Page>;
   entry?: LibraryEntry;
+  searchText?: IndexedPage[];
 }
 
 interface Pending {
@@ -71,19 +73,22 @@ export class ReadWorkerClient {
     text: () => Promise<string>,
     want: number[],
     facts?: { path: string; edited: number },
+    searchText = false,
   ): Promise<ReadResult> {
+    const also = searchText ? { searchText: true as const } : {};
     let reply =
       this.holds === key
-        ? await this.ask({ key, want, facts })
-        : await this.ask({ key, text: await text(), want, facts });
+        ? await this.ask({ key, want, facts, ...also })
+        : await this.ask({ key, text: await text(), want, facts, ...also });
     if (!reply.ok && reply.needText === true)
-      reply = await this.ask({ key, text: await text(), want, facts });
+      reply = await this.ask({ key, text: await text(), want, facts, ...also });
     if (!reply.ok) throw new Error(reply.needText === true ? "no text" : reply.error);
     this.holds = key;
     return {
       count: reply.count,
       pages: new Map(reply.pages),
       ...(reply.entry ? { entry: reply.entry } : {}),
+      ...(reply.searchText ? { searchText: reply.searchText } : {}),
     };
   }
 

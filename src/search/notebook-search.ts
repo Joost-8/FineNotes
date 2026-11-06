@@ -30,6 +30,12 @@ export type SourceKind = "handwriting" | "text" | "pdf";
 export interface PageSource {
   kind: SourceKind;
   text: string;
+  /**
+   * This device's own reading of the handwriting (Grape), not a
+   * transcription: it misreads a letter here and there, so Home's search
+   * lets a word be a little off in it.
+   */
+  guess?: true;
 }
 
 /** Everything searchable on one page. */
@@ -291,7 +297,7 @@ export function searchPages(index: readonly PageText[], query: string): SearchHi
  */
 const foldedSources = new WeakMap<PageSource, { of: string; text: string; map: number[] }>();
 
-function foldedOf(source: PageSource): { text: string; map: number[] } {
+export function foldedOf(source: PageSource): { text: string; map: number[] } {
   let folded = foldedSources.get(source);
   // A source given new text is folded again.
   if (folded?.of !== source.text) {
@@ -323,7 +329,7 @@ function occurrences(
 }
 
 /** A match in its original spelling, with context trimmed at word boundaries, on one line. */
-function snippetAt(
+export function snippetAt(
   source: PageSource,
   map: readonly number[],
   start: number,
