@@ -460,6 +460,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     fillColor: parseHexColor(s.fillColor ?? "") ?? DEFAULT_FILL_COLOR,
     tapeColor: tapeColorOf(s.tapeColor),
     tapeHeight: tapeHeightOf(s.tapeHeight),
+    tapeSnapText: s.tapeSnapText === true,
     tableHeader: s.tableHeader === true,
     recentColors: recentColorsOf(s.recentColors),
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
@@ -3076,6 +3077,7 @@ export class InkView extends TextFileView {
         onFillGapChange: (gap) => this.plugin.saveFillGap(gap),
         onFillColorChange: (color) => this.plugin.saveFillColor(color),
         onTapeChange: (color, height) => this.plugin.saveTape(color, height),
+        onTapeSnapTextChange: (on) => this.plugin.saveTapeSnapText(on),
         tapesShown: () => this.surface?.tapesShown() ?? null,
         onShowTapes: (shown) => this.surface?.showTapes(shown),
         onTableHeaderChange: (on) => this.plugin.saveTableHeader(on),
@@ -3287,6 +3289,7 @@ export class InkView extends TextFileView {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
+        highlighterSnapsToText: () => this.settings.highlighterSnapText !== false,
         highlighterTip: () => highlighterTipOf(this.settings.highlighterTip),
         pencilTilt: () => this.settings.pencilTilt === true,
         textDragSize: () => this.settings.textDragSize === true,

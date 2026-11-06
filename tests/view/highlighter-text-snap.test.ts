@@ -23,7 +23,12 @@ type Surface = Record<string, unknown> & {
   textMark: unknown;
 };
 
-function surface(read: TextLayout | null, tool = "highlighter", backdrop?: object) {
+function surface(
+  read: TextLayout | null,
+  tool = "highlighter",
+  backdrop?: object,
+  snapsToText?: boolean,
+) {
   const page = blankPage("p1", geometry);
   page.backdrop = (backdrop ?? { kind: "pdf", path: "Handout.pdf", page: 0 }) as never;
   const source = { peek: vi.fn(() => read), request: vi.fn() };
@@ -40,6 +45,7 @@ function surface(read: TextLayout | null, tool = "highlighter", backdrop?: objec
     lastLift: null,
     renderer: { renderWetStrokes: wet },
     scheduleHud: vi.fn(),
+    callbacks: snapsToText === undefined ? {} : { highlighterSnapsToText: () => snapsToText },
   }) as unknown as Surface;
   return { s, source, wet };
 }
@@ -67,6 +73,13 @@ describe("the highlighter on a PDF page's text", () => {
     const plain = surface(layout, "highlighter", { kind: "blank" });
     expect(plain.s.startTextMark({ index: 0 }, { x: 60, y: 95 })).toBe(false);
     expect(plain.s.hudTextMark).toBe("not a PDF page");
+  });
+
+  it("draws freehand on text too with Snap to PDF text off (FineNotes#159)", () => {
+    const { s, source } = surface(layout, "highlighter", undefined, false);
+    expect(s.startTextMark({ index: 0 }, { x: 60, y: 95 })).toBe(false);
+    expect(s.textMark).toBeNull();
+    expect(source.peek).not.toHaveBeenCalled();
   });
 
   it("is the highlighter's alone", () => {

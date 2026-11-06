@@ -317,7 +317,9 @@ export default class GoodObsidianPlugin extends Plugin {
 
   private syncExplorerNotebookButton(): void {
     this.emptyTabHome.sync(
-      this.app.workspace.getLeavesOfType("empty").map((leaf) => ({ leaf, el: leaf.view.containerEl })),
+      this.app.workspace
+        .getLeavesOfType("empty")
+        .map((leaf) => ({ leaf, el: leaf.view.containerEl })),
     );
     const explorers = this.app.workspace.getLeavesOfType("file-explorer").map((leaf) => leaf.view);
     this.explorerNotebookButton.sync(
@@ -1641,6 +1643,12 @@ export default class GoodObsidianPlugin extends Plugin {
   saveTape(color: string, height: number): void {
     this.settings.tapeColor = tapeColorOf(color);
     this.settings.tapeHeight = tapeHeightOf(height);
+    void this.saveSettings();
+  }
+
+  /** Remember whether a cover tape snaps to a PDF's text, for the next session. */
+  saveTapeSnapText(on: boolean): void {
+    this.settings.tapeSnapText = on;
     void this.saveSettings();
   }
 

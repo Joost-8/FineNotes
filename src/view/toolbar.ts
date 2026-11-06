@@ -713,6 +713,8 @@ export interface ToolbarState {
   tapeColor?: string;
   /** Cover tape's height, page px. `undefined` counts as the medium height. */
   tapeHeight?: number;
+  /** Whether a cover tape dragged along a PDF's text covers its lines. `undefined` is off. */
+  tapeSnapText?: boolean;
 }
 
 export interface ToolbarCallbacks {
@@ -824,6 +826,8 @@ export interface ToolbarCallbacks {
   onShapeColorChange?: (color: string) => void;
   /** Cover tape's colour or height changed. Hosts persist it. */
   onTapeChange?: (color: string, height: number) => void;
+  /** Cover tape's Snap to PDF text was switched. Hosts persist it. */
+  onTapeSnapTextChange?: (on: boolean) => void;
   /**
    * Whether the cover tapes on the page in view are all shown through, or
    * `null` when it has none. Without it the tape's pill has no eye.
@@ -3209,10 +3213,25 @@ export class Toolbar {
       button.toggleClass("is-active", each === height);
       button.addEventListener("click", () => set(color, each));
     });
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    // Snap to PDF text: a magnet, as the ruler's angle snap, lit as a picked option while on (#164).
+    const snap = this.state.tapeSnapText === true;
+    const magnet = this.barButton(
+      this.optionsEl,
+      "magnet",
+      t("toolbar.highlighter.snapText"),
+      () => {
+        this.state.tapeSnapText = !snap;
+        this.callbacks.onTapeSnapTextChange?.(!snap);
+        this.buildOptions();
+      },
+    );
+    magnet.addClass("goodobsidian-tape-snap");
+    magnet.toggleClass("is-active", snap);
+    magnet.setAttribute("aria-pressed", String(snap));
     const shownOf = this.callbacks.tapesShown;
     const show = this.callbacks.onShowTapes;
     if (!shownOf || !show) return;
-    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const shown = shownOf();
     const eye = this.barButton(
       this.optionsEl,
@@ -5283,6 +5302,9 @@ export class Toolbar {
     const list = body.createDiv({ cls: "goodobsidian-switch-list" });
     this.switchRow(list, t("toolbar.highlighter.straighten"), prefs.straightHighlighter, (on) =>
       save({ straightHighlighter: on }),
+    );
+    this.switchRow(list, t("toolbar.highlighter.snapText"), prefs.highlighterSnapText, (on) =>
+      save({ highlighterSnapText: on }),
     );
   }
 
