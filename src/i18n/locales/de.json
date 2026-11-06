@@ -2214,7 +2214,6 @@
   "surface.selectionBar.shapeTitle": "Form",
   "surface.command.writeAnswer": "Antwort schreiben",
   "surface.textBox.page": "Seiten-Textfeld",
-  "surface.textBox.move": "Textfeld verschieben",
   "surface.textBox.resize": "Textfeldgröße ändern",
   "surface.shapeType.rectangle": "Rechteck",
   "surface.shapeType.circle": "Kreis",

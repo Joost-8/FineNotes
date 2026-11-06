@@ -2386,7 +2386,6 @@
   "surface.selectionBar.shapeTitle": "Tvar",
   "surface.command.writeAnswer": "Napsat odpověď",
   "surface.textBox.page": "Textové pole stránky",
-  "surface.textBox.move": "Přesunout textové pole",
   "surface.textBox.resize": "Změnit velikost textového pole",
   "surface.shapeType.rectangle": "Obdélník",
   "surface.shapeType.circle": "Kruh",

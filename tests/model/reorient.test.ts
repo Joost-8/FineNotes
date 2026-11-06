@@ -234,7 +234,7 @@ describe("ReorientElements: turning", () => {
     close(b.rotation ?? 0, 3.5 - 2 * Math.PI);
   });
 
-  it("keeps a text box upright and moves its middle, measuring an auto-height box", () => {
+  it("turns a text box with the selection about its middle, measuring an auto-height box", () => {
     const { doc, t } = fixture();
     const auto = textBox("t2", { x: 0, y: 200, w: 40 });
     doc.pages[0].textBoxes.push(auto);
@@ -244,13 +244,16 @@ describe("ReorientElements: turning", () => {
       doc,
       new ReorientElements("p1", sel, { kind: "rotate", angle: Math.PI }, 0, 0, heights),
     );
-    // t's middle (20, 110) goes to (-20, -110); its size and style stay.
-    close(t.x, -40);
-    close(t.y, -120);
+    // t's middle (20, 110) goes to (-20, -110) and it turns half round, so
+    // its corner (turned about) is at (0, -100); its size and style stay.
+    close(t.x, 0);
+    close(t.y, -100);
+    close(t.rotation ?? 0, Math.PI);
     expect([t.w, t.h, t.fontSize]).toEqual([40, 20, 18]);
     // auto's middle (20, 215) goes to (-20, -215), with the measured height.
-    close(auto.x, -40);
-    close(auto.y, -230);
+    close(auto.x, 0);
+    close(auto.y, -200);
+    close(auto.rotation ?? 0, Math.PI);
     expect("h" in auto).toBe(false);
   });
 

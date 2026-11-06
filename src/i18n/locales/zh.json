@@ -2128,7 +2128,6 @@
   "surface.selectionBar.shapeTitle": "形状",
   "surface.command.writeAnswer": "写入答案",
   "surface.textBox.page": "页面文本框",
-  "surface.textBox.move": "移动文本框",
   "surface.textBox.resize": "调整文本框大小",
   "surface.shapeType.rectangle": "矩形",
   "surface.shapeType.circle": "圆形",

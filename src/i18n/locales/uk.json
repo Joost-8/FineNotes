@@ -2248,7 +2248,6 @@
   "surface.selectionBar.shapeTitle": "Фігура",
   "surface.command.writeAnswer": "Записати відповідь",
   "surface.textBox.page": "Текстове поле сторінки",
-  "surface.textBox.move": "Перемістити текстове поле",
   "surface.textBox.resize": "Змінити розмір текстового поля",
   "surface.shapeType.rectangle": "Прямокутник",
   "surface.shapeType.circle": "Коло",

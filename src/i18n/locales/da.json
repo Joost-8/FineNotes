@@ -2214,7 +2214,6 @@
   "surface.selectionBar.shapeTitle": "Form",
   "surface.command.writeAnswer": "Skriv svar",
   "surface.textBox.page": "Sidens tekstboks",
-  "surface.textBox.move": "Flyt tekstboks",
   "surface.textBox.resize": "Tilpas tekstboksens størrelse",
   "surface.shapeType.rectangle": "Rektangel",
   "surface.shapeType.circle": "Cirkel",

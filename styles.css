@@ -2347,7 +2347,10 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   pointer-events: none;
 }
 
-/* Finger-sized hit areas with a small visible dot, per Apple's 44 pt rule. */
+/* Goodnotes' handles, told apart by shape alone: a pill on each side sets
+   the width, a square on each corner scales the text, the knob below turns
+   the box, and the box itself moves it. Finger-sized hit areas around small
+   marks; they turn with the box. */
 .goodobsidian-page-textbox-handle {
   position: absolute;
   display: none;
@@ -2362,32 +2365,118 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 12px;
-  height: 12px;
+  box-sizing: border-box;
   border: 2px solid var(--interactive-accent);
-  border-radius: 50%;
   background: var(--gob-mark);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
   transform: translate(-50%, -50%);
 }
 
-/* Also on a box a tap beside it kept ("held"): typing stopped, the keyboard
-   is down, but it can be moved or resized straight away, as in GoodNotes. */
-.goodobsidian-page-textbox:focus-within .goodobsidian-page-textbox-handle,
-.goodobsidian-page-textbox.is-dragging .goodobsidian-page-textbox-handle,
+/* While typing only the width pills show; a selected box (held: a tap
+   beside it or the lasso kept it, keyboard down) shows them all. */
+.goodobsidian-page-textbox:focus-within .goodobsidian-page-textbox-handle.is-side,
+.goodobsidian-page-textbox.is-dragging .goodobsidian-page-textbox-handle.is-side,
 .goodobsidian-page-textbox.is-held .goodobsidian-page-textbox-handle {
   display: block;
 }
 
-.goodobsidian-page-textbox-handle.is-move {
-  top: -16px;
-  left: -16px;
-  cursor: move;
+.goodobsidian-page-textbox.is-held:focus-within .goodobsidian-page-textbox-handle.is-corner,
+.goodobsidian-page-textbox.is-held:focus-within .goodobsidian-page-textbox-handle.is-knob {
+  display: none;
 }
 
-.goodobsidian-page-textbox-handle.is-resize {
+/* A side pill spans only the room between the corner squares, and its mark
+   keeps clear of them, so on a short box the two never touch. */
+.goodobsidian-page-textbox-handle.is-side {
+  top: 10px;
+  bottom: 10px;
+  width: 24px;
+  height: auto;
+  cursor: ew-resize;
+}
+
+.goodobsidian-page-textbox-handle.is-side::after {
+  width: 8px;
+  height: min(26px, max(6px, calc(100% - 4px)));
+  border-radius: 4px;
+}
+
+.goodobsidian-page-textbox-handle.is-w {
+  left: -12px;
+}
+
+.goodobsidian-page-textbox-handle.is-e {
+  right: -12px;
+}
+
+.goodobsidian-page-textbox-handle.is-corner::after {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+}
+
+.goodobsidian-page-textbox-handle.is-nw {
+  top: -16px;
+  left: -16px;
+  cursor: nwse-resize;
+}
+
+.goodobsidian-page-textbox-handle.is-ne {
+  top: -16px;
+  right: -16px;
+  cursor: nesw-resize;
+}
+
+.goodobsidian-page-textbox-handle.is-sw {
+  bottom: -16px;
+  left: -16px;
+  cursor: nesw-resize;
+}
+
+.goodobsidian-page-textbox-handle.is-se {
   right: -16px;
   bottom: -16px;
   cursor: nwse-resize;
+}
+
+/* The knob hangs below the box on a short stalk, as the lasso's does. */
+.goodobsidian-page-textbox-handle.is-knob {
+  left: 50%;
+  bottom: -46px;
+  margin-left: -16px;
+  cursor: grab;
+}
+
+.goodobsidian-page-textbox-handle.is-knob::after {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.goodobsidian-page-textbox-handle.is-knob::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(50% + 7px);
+  width: 1.5px;
+  height: 16px;
+  margin-left: -0.75px;
+  background: var(--interactive-accent);
+}
+
+/* A selected box moves when dragged; a tap on it still types. */
+.goodobsidian-page-textbox.is-held {
+  cursor: move;
+  touch-action: none;
+}
+
+.goodobsidian-page-textbox.is-held .goodobsidian-page-textbox-input {
+  cursor: move;
+  touch-action: none;
+}
+
+.goodobsidian-page-textbox.is-held:focus-within .goodobsidian-page-textbox-input {
+  cursor: text;
 }
 
 /* The wet (live stroke) canvas between strokes; the renderer sets the class. */
@@ -7051,9 +7140,17 @@ textarea.goodobsidian-chat-input:focus-visible {
 /* A box selected without the keyboard takes the tap that types in it, once
    the tap that selected it is over (ink-surface.ts, fingerHoldsTextBox),
    and its handles move and resize it with any tool. */
-.goodobsidian-surface .goodobsidian-page-textbox.is-held.is-tappable,
+.goodobsidian-surface .goodobsidian-page-textbox.is-held,
 .goodobsidian-surface .goodobsidian-page-textbox.is-held .goodobsidian-page-textbox-handle {
   pointer-events: auto;
+}
+
+/* Until then a press on the box is the box's (a drag moves it), never the
+   field's: iOS aims the selecting tap's click at whatever is under it. */
+.goodobsidian-surface
+  .goodobsidian-page-textbox.is-held:not(.is-tappable):not(:focus-within)
+  .goodobsidian-page-textbox-input {
+  pointer-events: none;
 }
 
 /* The lasso's options live in a popover hanging from its tier-1 button, as in

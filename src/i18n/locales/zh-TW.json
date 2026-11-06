@@ -2128,7 +2128,6 @@
   "surface.selectionBar.shapeTitle": "形狀",
   "surface.command.writeAnswer": "寫下答案",
   "surface.textBox.page": "頁面文字方塊",
-  "surface.textBox.move": "移動文字方塊",
   "surface.textBox.resize": "調整文字方塊大小",
   "surface.shapeType.rectangle": "矩形",
   "surface.shapeType.circle": "圓形",

@@ -2214,7 +2214,6 @@
   "surface.selectionBar.shapeTitle": "ფიგურა",
   "surface.command.writeAnswer": "პასუხის ჩაწერა",
   "surface.textBox.page": "გვერდის ტექსტის ველი",
-  "surface.textBox.move": "ტექსტის ველის გადაადგილება",
   "surface.textBox.resize": "ტექსტის ველის ზომის შეცვლა",
   "surface.shapeType.rectangle": "მართკუთხედი",
   "surface.shapeType.circle": "წრე",

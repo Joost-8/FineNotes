@@ -2128,7 +2128,6 @@
   "surface.selectionBar.shapeTitle": "図形",
   "surface.command.writeAnswer": "答えを書く",
   "surface.textBox.page": "ページのテキストボックス",
-  "surface.textBox.move": "テキストボックスを移動",
   "surface.textBox.resize": "テキストボックスのサイズを変更",
   "surface.shapeType.rectangle": "長方形",
   "surface.shapeType.circle": "円",

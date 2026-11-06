@@ -34,6 +34,7 @@ export default defineConfig({
         "src/ink/shape-snap.ts",
         "src/ink/connector-route.ts",
         "src/canvas/backdrop.ts",
+        "src/canvas/text-box-handles.ts",
         "src/canvas/graph-painter.ts",
         "src/canvas/night.ts",
         "src/canvas/erase-look.ts",

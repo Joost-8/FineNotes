@@ -548,6 +548,8 @@ import { addStrokesTimed } from "../model/recording-commands";
 import { SetTextBoxStyle, SetTextBoxText } from "../model/text-commands";
 import {
   DEFAULT_TEXT_STYLE,
+  MAX_TEXT_SIZE,
+  MIN_TEXT_SIZE,
   type TextStyle,
   type TextStylePatch,
   changesTextStyle,
@@ -557,6 +559,20 @@ import {
   shownCase,
   textStyleOf,
 } from "../model/text-style";
+import {
+  type TextCorner,
+  type TextFrame,
+  type TextSide,
+  anchorOf,
+  dragCorner,
+  dragTurnedSide,
+  isDrag,
+  onTurnedBox,
+  turnAboutMiddle,
+  turnVec,
+  turnedBounds,
+  turnedPoint,
+} from "../canvas/text-box-handles";
 import {
   type ListKind,
   type TextEdit,
@@ -1819,6 +1835,42 @@ const CLICK_AFTER_TAP_MS = 600;
  * already from reaching `target` (and focusing a field there): its
  * `mousedown` and `click` within {@link CLICK_AFTER_TAP_MS} are stopped.
  */
+/**
+ * A box turned `r` about its top-left corner, given as the same rectangle
+ * turned about its middle, as pictures are (`image-geometry.ts`).
+ */
+function centreTurned(f: BoxFrame, r: number): BoxFrame & { rotation?: number } {
+  if (r === 0) return f;
+  const mid = turnedPoint(f, r, f.x + f.w / 2, f.y + f.h / 2);
+  return { x: mid.x - f.w / 2, y: mid.y - f.h / 2, w: f.w, h: f.h, rotation: r };
+}
+
+/** A text box's place on screen, with its knob when the knob shows (a turned box: around both). */
+function withKnob(root: HTMLElement): {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+} {
+  const box = root.getBoundingClientRect();
+  const knob = root
+    .querySelector(".goodobsidian-page-textbox-handle.is-knob")
+    ?.getBoundingClientRect();
+  if (!knob || knob.width === 0) return box;
+  const left = Math.min(box.left, knob.left);
+  const top = Math.min(box.top, knob.top);
+  const right = Math.max(box.right, knob.right);
+  const bottom = Math.max(box.bottom, knob.bottom);
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+/** A box's turn as a CSS `rotate` value; none for upright. */
+function turnCss(r: number): string {
+  return r !== 0 && Number.isFinite(r) ? `${r.toFixed(5)}rad` : "";
+}
+
 function swallowClickAfterTap(target: HTMLElement): void {
   const win = target.ownerDocument.defaultView;
   if (!win) return;
@@ -5950,6 +6002,7 @@ export class InkSurface {
             top: `${((box.y + textBox.y + shift.y) * scale).toFixed(2)}px`,
             transform: `scale(${(scale / view.laidAt).toFixed(5)})`,
             transformOrigin: "0 0",
+            rotate: turnCss(this.shownTurn(page.id, textBox, key)),
           });
           view.zoomScaled = true;
           this.textBoxesProvisional = true;
@@ -5992,11 +6045,15 @@ export class InkSurface {
         root.toggleClass("has-fixed-height", fixedHeight);
         const border = normalizeBorder(textBox.border);
         const inset = textInset(textBox);
+        const turn = this.shownTurn(page.id, textBox, key);
         root.setCssStyles({
           left: `${Math.round((box.x + frame.x + shift.x) * scale)}px`,
           top: `${Math.round((box.y + frame.y + shift.y) * scale)}px`,
           width: `${Math.round(width * scale)}px`,
           height: fixedHeight ? `${Math.round((frame.h ?? 0) * scale)}px` : root.style.height,
+          // A turned box turns about its top-left corner, as it is stored.
+          rotate: turnCss(turn),
+          transformOrigin: turn !== 0 || view.zoomScaled ? "0 0" : "",
           // The fill is the frame's, so it covers the whole box, handles aside.
           background: textBox.fill !== undefined ? shownColor(textBox.fill, night) : "",
           // The border is an inset shadow: drawn inside the edge, as the
@@ -6018,7 +6075,7 @@ export class InkSurface {
           // A covered tape over the box hides it there, as it hides ink;
           // never the box being typed in.
           clipPath:
-            document.activeElement === input
+            document.activeElement === input || turn !== 0
               ? ""
               : tapeClipPath(
                   page.strokes,
@@ -6292,13 +6349,26 @@ export class InkSurface {
       cls: "goodobsidian-page-textbox-input",
       attr: { "aria-label": t("surface.textBox.page"), rows: "1" },
     });
-    const moveHandle = root.createDiv({
-      cls: "goodobsidian-page-textbox-handle is-move",
-      attr: { "aria-label": t("surface.textBox.move") },
-    });
-    const resizeHandle = root.createDiv({
-      cls: "goodobsidian-page-textbox-handle is-resize",
-      attr: { "aria-label": t("surface.textBox.resize") },
+    // Goodnotes' handles: a pill on each side sets the width, a square on
+    // each corner scales the text, the knob turns the box, and the box
+    // itself moves it (`pressHeldText`).
+    const sideHandles = (["w", "e"] as const).map((side) => ({
+      side,
+      el: root.createDiv({
+        cls: `goodobsidian-page-textbox-handle is-side is-${side}`,
+        attr: { "aria-label": t("surface.textBox.resize") },
+      }),
+    }));
+    const cornerHandles = (["nw", "ne", "sw", "se"] as const).map((corner) => ({
+      corner,
+      el: root.createDiv({
+        cls: `goodobsidian-page-textbox-handle is-corner is-${corner}`,
+        attr: { "aria-label": t("surface.textBox.scale") },
+      }),
+    }));
+    const knob = root.createDiv({
+      cls: "goodobsidian-page-textbox-handle is-knob",
+      attr: { "aria-label": t("surface.textBox.rotate") },
     });
     const shown = root.createDiv({ cls: "goodobsidian-page-textbox-view" });
     input.value = textBox.text;
@@ -6403,12 +6473,17 @@ export class InkSurface {
       this.reportTextAnchor();
       this.changed();
     });
-    moveHandle.addEventListener("pointerdown", (event) =>
-      this.startFrameDrag(view, key, "move", event),
-    );
-    resizeHandle.addEventListener("pointerdown", (event) =>
-      this.startFrameDrag(view, key, "resize", event),
-    );
+    for (const { side, el } of sideHandles) {
+      el.addEventListener("pointerdown", (event) => this.startFrameDrag(view, key, side, event));
+    }
+    for (const { corner, el } of cornerHandles) {
+      el.addEventListener("pointerdown", (event) => this.startTextScale(view, key, corner, event));
+    }
+    knob.addEventListener("pointerdown", (event) => this.startTextTurn(view, key, event));
+    // In the capture phase: before the textarea's own handler, which stops it.
+    root.addEventListener("pointerdown", (event) => this.pressHeldText(view, key, event), {
+      capture: true,
+    });
 
     this.textBoxInputs.set(key, view);
     return view;
@@ -6468,27 +6543,86 @@ export class InkSurface {
   }
 
   /**
-   * Move or resize a text box by one of its handles. The frame is previewed
-   * live and committed as one undoable command when the pointer lifts.
+   * A press on a selected box (held, not typed in), as in Goodnotes: a drag
+   * moves the box, a tap types in it. The textarea takes a tap itself once
+   * the box takes taps (`is-tappable`), placing the caret where it landed;
+   * before that, or with a mouse, the tap focuses it here.
+   */
+  private pressHeldText(view: TextBoxView, key: string, event: PointerEvent): void {
+    if (this.heldText !== view || this.callbacks.isLocked?.()) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest(".goodobsidian-page-textbox-handle")) return;
+    // A link or a checkbox in the text keeps its own tap.
+    if (target?.closest("a, .goodobsidian-textbox-check")) return;
+    const native = event.target === view.input && view.root.hasClass("is-tappable");
+    // A mouse would focus the field on the press: held until it is clear
+    // whether this is a tap or a drag.
+    if (event.pointerType === "mouse") event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const back = this.heldReturnTool;
+    const stop = (): void => {
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onCancel, true);
+    };
+    const onMove = (e: PointerEvent): void => {
+      if (e.pointerId !== event.pointerId) return;
+      if (!isDrag(e.clientX - startX, e.clientY - startY, TAP_SLOP_PX)) return;
+      stop();
+      swallowClickAfterTap(view.root);
+      // A finger's lift would focus the field (iOS does at touchend): not after a move.
+      view.root.addEventListener("touchend", (t) => t.preventDefault(), {
+        once: true,
+        passive: false,
+      });
+      this.startFrameDrag(view, key, "move", event, view.root, () => {
+        // Still selected where it landed, as in Goodnotes.
+        if (this.heldText !== view) this.holdTextBox(view, back, false);
+      });
+    };
+    const onUp = (e: PointerEvent): void => {
+      if (e.pointerId !== event.pointerId) return;
+      stop();
+      // The textarea places the caret itself; otherwise focus it here.
+      if (!native || event.pointerType === "mouse") this.focusTextBox(view.input);
+    };
+    const onCancel = (e: PointerEvent): void => {
+      if (e.pointerId === event.pointerId) stop();
+    };
+    window.addEventListener("pointermove", onMove, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onCancel, true);
+  }
+
+  /**
+   * Move a text box (pressing the box itself), or set its width by a side
+   * pill. The frame is previewed live and committed as one undoable command
+   * when the pointer lifts. A turned box widens along its own edge, and the
+   * height keeps following the text.
    */
   private startFrameDrag(
     view: TextBoxView,
     key: string,
-    mode: "move" | "resize",
+    mode: "move" | TextSide,
     event: PointerEvent,
+    grip?: HTMLElement,
+    landed?: () => void,
   ): void {
     const live = this.liveTextBox(view.pageId, view.id);
     const pageBox = this.pageLayout.boxes.find((b) => b.id === view.pageId);
     if (!live || !pageBox || this.callbacks.isLocked?.()) return;
     event.stopPropagation();
-    // Keeps the focus where it is: a resize goes on editing, keyboard up.
+    // Keeps the focus where it is: a width drag goes on editing, keyboard up.
     event.preventDefault();
-    const handle = event.currentTarget as HTMLElement;
+    const handle = grip ?? (event.currentTarget as HTMLElement);
     handle.setPointerCapture(event.pointerId);
+    const typing = document.activeElement === view.input;
     // Before any blur below, so the blur handler knows a drag is under way.
     view.root.addClass("is-dragging");
     this.textFrameDrag = key;
-    if (mode === "move" && document.activeElement === view.input) {
+    if (mode === "move" && typing) {
       // Moving a box ends editing, as in GoodNotes, and puts the keyboard
       // away: on the iPad it covered half the page the box was moving over.
       // The blur leaves the body's editing class in place (see
@@ -6501,10 +6635,10 @@ export class InkSurface {
     const scale = this.unitScale;
     const startX = event.clientX;
     const startY = event.clientY;
-    // An auto-height box being resized takes its current rendered height.
-    const startH = live.h ?? view.root.getBoundingClientRect().height / scale;
+    const turn = live.rotation ?? 0;
+    const startH = live.h ?? view.root.offsetHeight / scale;
     const start: TextBoxFrame = { x: live.x, y: live.y, w: live.w, h: live.h };
-    // A move keeps a fitted box fitted; a resize gives it the size dragged to.
+    // A move keeps a fitted box fitted; a width drag gives it the width dragged to.
     if (live.fit && mode === "move") start.fit = true;
 
     const onMove = (e: PointerEvent): void => {
@@ -6513,13 +6647,30 @@ export class InkSurface {
       const dy = (e.clientY - startY) / scale;
       let frame: TextBoxFrame;
       if (mode === "move") {
-        const x = clamp(start.x + dx, 0, Math.max(0, pageBox.width - start.w));
-        const y = clamp(start.y + dy, 0, Math.max(0, pageBox.height - (start.h ?? startH)));
+        // An upright box stays on its page; a turned one is placed freely.
+        const x =
+          turn === 0 ? clamp(start.x + dx, 0, Math.max(0, pageBox.width - start.w)) : start.x + dx;
+        const y =
+          turn === 0
+            ? clamp(start.y + dy, 0, Math.max(0, pageBox.height - (start.h ?? startH)))
+            : start.y + dy;
         frame = { ...start, x, y };
       } else {
-        const w = clamp(start.w + dx, TEXT_MIN_W, Math.max(TEXT_MIN_W, pageBox.width - start.x));
-        const h = clamp(startH + dy, TEXT_MIN_H, Math.max(TEXT_MIN_H, pageBox.height - start.y));
-        frame = { ...start, w, h };
+        const next = dragTurnedSide(
+          { x: start.x, y: start.y, w: start.w, h: startH },
+          turn,
+          mode,
+          dx,
+          dy,
+          pageBox.width,
+          TEXT_MIN_W,
+        );
+        frame = {
+          x: next.x,
+          y: next.y,
+          w: next.w,
+          ...(start.h !== undefined ? { h: start.h } : {}),
+        };
       }
       this.frameDraft = { key, frame };
       this.syncTextBoxes();
@@ -6532,32 +6683,16 @@ export class InkSurface {
       if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
       view.root.removeClass("is-dragging");
       this.textFrameDrag = null;
-      const draft = this.frameDraft;
-      this.frameDraft = null;
-      if (draft && draft.key === key) {
-        const f = draft.frame;
-        const frame: TextBoxFrame = {
-          x: f.x,
-          y: f.y,
-          w: f.w,
-          ...(f.h !== undefined ? { h: f.h } : {}),
-          ...(f.fit ? { fit: true as const } : {}),
-        };
-        this.pushTextCommand(key, new SetTextBoxFrame(view.pageId, view.id, frame));
-        // Dropped on a sticky note, the box is now drawn with the note: paint its tiles again.
-        const home = this.boxForPage(view.pageId);
-        const page = home ? this.pageAt(home.index) : null;
-        const dropped = page?.textBoxes.find((t) => t.id === view.id);
-        const owner = page && dropped ? noteOfText(page, dropped) : null;
-        if (home && owner) {
-          this.renderer?.invalidateRegion(home.index, imageBounds(transformOf(owner)));
-          this.renderDry();
-        }
-        this.changed();
-      }
+      this.commitTextFrame(view, key);
       this.syncTextBoxes();
-      if (mode === "resize") {
-        this.focusTextBox(view.input);
+      this.reportTextAnchor();
+      if (mode !== "move") {
+        // A width drag goes on as it was: typing, or selected.
+        if (typing) this.focusTextBox(view.input);
+        return;
+      }
+      if (landed) {
+        landed();
         return;
       }
       // A move finished the edit when it began; wrap it up now the box has
@@ -6568,6 +6703,187 @@ export class InkSurface {
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onEnd);
     handle.addEventListener("pointercancel", onEnd);
+  }
+
+  /** Record the frame a handle drag left (`frameDraft`) as one undo step. */
+  private commitTextFrame(view: TextBoxView, key: string): void {
+    const draft = this.frameDraft;
+    this.frameDraft = null;
+    if (!draft || draft.key !== key) return;
+    const f = draft.frame;
+    const frame: TextBoxFrame = {
+      x: f.x,
+      y: f.y,
+      w: f.w,
+      ...(f.h !== undefined ? { h: f.h } : {}),
+      ...(f.fit ? { fit: true as const } : {}),
+      ...(f.rotation !== undefined ? { rotation: f.rotation } : {}),
+    };
+    this.pushTextCommand(key, new SetTextBoxFrame(view.pageId, view.id, frame));
+    // Dropped on a sticky note, the box is now drawn with the note: paint its tiles again.
+    const home = this.boxForPage(view.pageId);
+    const page = home ? this.pageAt(home.index) : null;
+    const dropped = page?.textBoxes.find((t) => t.id === view.id);
+    const owner = page && dropped ? noteOfText(page, dropped) : null;
+    if (home && owner) {
+      this.renderer?.invalidateRegion(home.index, imageBounds(transformOf(owner)));
+      this.renderDry();
+    }
+    this.changed();
+  }
+
+  /** Start a drag on one of a box's handles; null when the box cannot be changed. */
+  private beginTextHandle(
+    view: TextBoxView,
+    key: string,
+    event: PointerEvent,
+  ): { live: TextBoxElement; pageBox: PageBox; handle: HTMLElement; frame: TextFrame } | null {
+    const live = this.liveTextBox(view.pageId, view.id);
+    const pageBox = this.pageLayout.boxes.find((b) => b.id === view.pageId);
+    if (!live || !pageBox || this.callbacks.isLocked?.()) return null;
+    event.stopPropagation();
+    event.preventDefault();
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture(event.pointerId);
+    view.root.addClass("is-dragging");
+    this.textFrameDrag = key;
+    const h = live.h ?? view.root.offsetHeight / this.unitScale;
+    return { live, pageBox, handle, frame: { x: live.x, y: live.y, w: live.w, h } };
+  }
+
+  /** Follow one pointer on a handle until it lifts, then tidy up and call `end`. */
+  private followTextHandle(
+    view: TextBoxView,
+    handle: HTMLElement,
+    pointerId: number,
+    move: (e: PointerEvent) => void,
+    end: () => void,
+  ): void {
+    const onMove = (e: PointerEvent): void => {
+      if (e.pointerId === pointerId) move(e);
+    };
+    const onEnd = (e: PointerEvent): void => {
+      if (e.pointerId !== pointerId) return;
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onEnd);
+      handle.removeEventListener("pointercancel", onEnd);
+      if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+      view.root.removeClass("is-dragging");
+      this.textFrameDrag = null;
+      end();
+      this.syncTextBoxes();
+      this.reportTextAnchor();
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onEnd);
+    handle.addEventListener("pointercancel", onEnd);
+  }
+
+  /**
+   * Scale a selected box by a corner square: the box and its text grow or
+   * shrink together about the opposite corner, as a lasso resize does.
+   * Previewed as a transform, committed as one `ScaleElements` step.
+   */
+  private startTextScale(
+    view: TextBoxView,
+    key: string,
+    corner: TextCorner,
+    event: PointerEvent,
+  ): void {
+    const begun = this.beginTextHandle(view, key, event);
+    if (!begun) return;
+    const { live, pageBox, handle, frame } = begun;
+    const scale = this.unitScale;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const turn = live.rotation ?? 0;
+    // Turned, the page's edges say nothing about the box's own axes.
+    const roomW = turn === 0 ? pageBox.width : Infinity;
+    const roomH = turn === 0 ? pageBox.height : Infinity;
+    let k = 1;
+    // Scaled about the opposite corner, which stays put on screen.
+    const origin = `${corner === "nw" || corner === "sw" ? "100%" : "0"} ${
+      corner === "nw" || corner === "ne" ? "100%" : "0"
+    }`;
+    this.followTextHandle(
+      view,
+      handle,
+      event.pointerId,
+      (e) => {
+        const d = turnVec((e.clientX - startX) / scale, (e.clientY - startY) / scale, -turn);
+        k = dragCorner(
+          frame,
+          corner,
+          d.x,
+          d.y,
+          live.fontSize,
+          MIN_TEXT_SIZE,
+          MAX_TEXT_SIZE,
+          roomW,
+          roomH,
+        ).k;
+        // The turn is the `rotate` property, so this scale composes with it.
+        view.root.setCssStyles({ transform: `scale(${k.toFixed(4)})`, transformOrigin: origin });
+      },
+      () => {
+        view.root.setCssStyles({ transform: "", transformOrigin: turn !== 0 ? "0 0" : "" });
+        if (Math.abs(k - 1) <= 1e-3) return;
+        const local = anchorOf(frame, corner);
+        const anchor = turnedPoint(frame, turn, local.x, local.y);
+        const elements = { strokes: [], images: [], textBoxes: [live] };
+        this.pushTextCommand(key, new ScaleElements(view.pageId, elements, anchor.x, anchor.y, k));
+        this.changed();
+      },
+    );
+  }
+
+  /**
+   * Turn a selected box by its knob, about the box's middle, with the
+   * lasso's detents (every 15°, a firm catch on quarter turns and level).
+   */
+  private startTextTurn(view: TextBoxView, key: string, event: PointerEvent): void {
+    const begun = this.beginTextHandle(view, key, event);
+    if (!begun) return;
+    const { live, pageBox, handle, frame } = begun;
+    const was = live.rotation ?? 0;
+    const mid = turnedPoint(frame, was, frame.x + frame.w / 2, frame.y + frame.h / 2);
+    const upright = { ...frame, x: mid.x - frame.w / 2, y: mid.y - frame.h / 2 };
+    // The middle on screen, where the pointer's angle is measured from.
+    const centre = this.toClient({ x: pageBox.x + mid.x, y: pageBox.y + mid.y });
+    const angleAt = (e: PointerEvent): number =>
+      Math.atan2(e.clientY - centre.y, e.clientX - centre.x);
+    const from = angleAt(event);
+    const snap = new TurnSnap(Math.hypot(event.clientX - centre.x, event.clientY - centre.y), was);
+    const draft = (turn: number): void => {
+      const r = snap.pageAngle(turn);
+      // About the middle: the corner moves so the middle stays put.
+      const corner = turnAboutMiddle(upright, r);
+      this.frameDraft = {
+        key,
+        frame: {
+          x: corner.x,
+          y: corner.y,
+          w: live.w,
+          ...(live.h !== undefined ? { h: live.h } : {}),
+          ...(live.fit ? { fit: true as const } : {}),
+          rotation: Math.abs(r) > 1e-4 ? r : 0,
+        },
+      };
+    };
+    this.followTextHandle(
+      view,
+      handle,
+      event.pointerId,
+      (e) => {
+        draft(snap.turn(angleAt(e) - from));
+        this.syncTextBoxes();
+      },
+      () => {
+        if (!this.frameDraft) return;
+        draft(snap.settled());
+        this.commitTextFrame(view, key);
+      },
+    );
   }
 
   // --- Keeping the page still while a text box takes focus -----------------
@@ -11606,7 +11922,7 @@ export class InkSurface {
         ? own(page.textBoxes).filter(
             (textBox) =>
               noteOfText(page, textBox) === null &&
-              boxInLasso(this.textBoxFrameOf(page.id, textBox), poly),
+              boxInLasso(this.textBoxCoverOf(page.id, textBox), poly),
           )
         : [],
       tables: filter.tables
@@ -12126,7 +12442,7 @@ export class InkSurface {
     return {
       lines: (page) => writingLines(page.backdrop, page.geometry),
       textBoxBounds: (page, textBox) => {
-        const f = this.textBoxFrameOf(page.id, textBox);
+        const f = this.textBoxCoverOf(page.id, textBox);
         return { minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h };
       },
     };
@@ -12286,7 +12602,7 @@ export class InkSurface {
         : [],
       textBoxes: filter.textBoxes
         ? page.textBoxes.filter((textBox) =>
-            framed(frameBounds(this.textBoxFrameOf(page.id, textBox))),
+            framed(frameBounds(this.textBoxCoverOf(page.id, textBox))),
           )
         : [],
       tables: filter.tables
@@ -12438,9 +12754,10 @@ export class InkSurface {
       const shown = page.textBoxes.filter(
         (t) => !(this.joined && isMirror(t)) && noteOfText(page, t) === null,
       );
+      // Turned about its middle as a picture is, so the picture hit test fits.
       const frames = shown.map((textBox) => ({
         textBox,
-        ...this.textBoxFrameOf(page.id, textBox),
+        ...centreTurned(this.textBoxFrameOf(page.id, textBox), textBox.rotation ?? 0),
       }));
       const hit = topImageAt(frames, p, tolerance);
       const view = hit ? this.textBoxInputs.get(`${page.id}:${hit.textBox.id}`) : undefined;
@@ -12849,14 +13166,43 @@ export class InkSurface {
     return textBoxFrame(textBox, measured);
   }
 
+  /** What a text box covers on the page: its frame, or the upright box around it turned. */
+  private textBoxCoverOf(pageId: string, textBox: TextBoxElement): BoxFrame {
+    return turnedBounds(this.textBoxFrameOf(pageId, textBox), textBox.rotation ?? 0);
+  }
+
+  /** Whether page point `p` is on a text box, turned or not. */
+  private onTextBoxAt(pageId: string, textBox: TextBoxElement, p: Pt): boolean {
+    return onTurnedBox(this.textBoxFrameOf(pageId, textBox), textBox.rotation ?? 0, p);
+  }
+
   /** Bounds of everything in a selection, page space. */
   private groupBounds(sel: GroupSelection): Bounds | null {
     return selectionBounds(sel.strokes, sel.images, [
-      ...sel.textBoxes.map((textBox) => this.textBoxFrameOf(sel.pageId, textBox)),
+      ...sel.textBoxes.map((textBox) => this.textBoxCoverOf(sel.pageId, textBox)),
       ...(sel.tables ?? []).map((table) => this.tableFrameOf(table)),
       ...(sel.graphs ?? []).map(graphFrame),
       ...(sel.equations ?? []).map(graphFrame),
     ]);
+  }
+
+  /**
+   * How far a box is turned as drawn now: its own turn (or the one being
+   * dragged on its knob), plus a lasso turn under way. A note's text stays upright.
+   */
+  private shownTurn(pageId: string, textBox: TextBoxElement, key: string): number {
+    const own = this.frameDraft?.key === key ? this.frameDraft.frame.rotation : undefined;
+    let r = own ?? textBox.rotation ?? 0;
+    const drag = this.groupDrag;
+    if (
+      drag?.lifted &&
+      drag.selection.pageId === pageId &&
+      drag.selection.textBoxes.includes(textBox) &&
+      textBox.onSticky === undefined
+    ) {
+      r += drag.fingers?.motion.angle ?? drag.turn?.angle ?? 0;
+    }
+    return Number.isFinite(r) ? r : 0;
   }
 
   /** How far a lasso drag has carried an element of `pageId`, page px; zero otherwise. */
@@ -12865,18 +13211,28 @@ export class InkSurface {
     if (!drag?.lifted || drag.selection.pageId !== pageId) return { x: 0, y: 0 };
     if (!drag.selection.textBoxes.includes(textBox)) return { x: 0, y: 0 };
     const fingers = drag.fingers?.motion;
+    // A box turns with the selection, about its corner (`rotation`); a
+    // note's text keeps to its note, which stays upright: only its middle
+    // goes round.
+    const upright = textBox.onSticky !== undefined;
     if (fingers) {
-      // Upright, as under the knob's turn: only its middle goes round.
       const f = this.textBoxFrameOf(pageId, textBox);
+      if (!upright) {
+        const to = turnPoint(fingers, { x: f.x, y: f.y });
+        return { x: to.x - f.x, y: to.y - f.y };
+      }
       const mid = turnPoint(fingers, { x: f.x + f.w / 2, y: f.y + f.h / 2 });
       return { x: mid.x - f.w / 2 - f.x, y: mid.y - f.h / 2 - f.y };
     }
     const turn = drag.turn;
     if (turn) {
-      // A box stays upright: only its middle goes round.
       const f = this.textBoxFrameOf(pageId, textBox);
-      const c = { x: f.x + f.w / 2, y: f.y + f.h / 2 };
       const motion: Reorientation = { kind: "rotate", angle: turn.angle };
+      if (!upright) {
+        const to = reorientPoint(motion, turn.centre.x, turn.centre.y, f.x, f.y);
+        return { x: to.x - f.x, y: to.y - f.y };
+      }
+      const c = { x: f.x + f.w / 2, y: f.y + f.h / 2 };
       const to = reorientPoint(motion, turn.centre.x, turn.centre.y, c.x, c.y);
       return { x: to.x - c.x, y: to.y - c.y };
     }
@@ -16170,12 +16526,18 @@ export class InkSurface {
     const scale = this.unitScale;
     const k = drag.scale?.k;
     for (const textBox of drag.selection.textBoxes) {
-      const view = this.textBoxInputs.get(`${drag.selection.pageId}:${textBox.id}`);
+      const key = `${drag.selection.pageId}:${textBox.id}`;
+      const view = this.textBoxInputs.get(key);
       const shift = this.dragShift(drag.selection.pageId, textBox);
+      // A turn turns the box too, about its corner, which `shift` carried round.
+      const turn = this.shownTurn(drag.selection.pageId, textBox, key);
       view?.root.setCssStyles({
         left: `${Math.round((box.x + textBox.x + shift.x) * scale)}px`,
         top: `${Math.round((box.y + textBox.y + shift.y) * scale)}px`,
-        ...(k === undefined ? {} : { transform: `scale(${k})`, transformOrigin: "0 0" }),
+        rotate: turnCss(turn),
+        ...(k === undefined
+          ? { transformOrigin: turn !== 0 ? "0 0" : "" }
+          : { transform: `scale(${k})`, transformOrigin: "0 0" }),
       });
     }
   }
@@ -17600,8 +17962,7 @@ export class InkSurface {
       const textBox = page.textBoxes[i];
       // A note's text is the note's: the tap selects the note, and a second one types.
       if (noteOfText(page, textBox) !== null) continue;
-      const f = this.textBoxFrameOf(page.id, textBox);
-      if (p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + f.h) {
+      if (this.onTextBoxAt(page.id, textBox, p)) {
         view = this.textBoxInputs.get(`${page.id}:${textBox.id}`);
       }
     }
@@ -17655,14 +18016,7 @@ export class InkSurface {
     const view = this.heldText ?? typing;
     if (!view) return false;
     const live = this.liveTextBox(view.pageId, view.id);
-    const f = live ? this.textBoxFrameOf(view.pageId, live) : null;
-    const on =
-      f !== null &&
-      page.id === view.pageId &&
-      p.x >= f.x &&
-      p.x <= f.x + f.w &&
-      p.y >= f.y &&
-      p.y <= f.y + f.h;
+    const on = live !== undefined && page.id === view.pageId && this.onTextBoxAt(page.id, live, p);
     if (on) {
       if (view !== typing) this.focusTextBox(view.input);
       return true;
@@ -17787,14 +18141,7 @@ export class InkSurface {
     if (parked.tool !== this.toolState.tool || this.toolState.tool !== "select") return false;
     const { view } = parked;
     const live = this.liveTextBox(view.pageId, view.id);
-    const f = live ? this.textBoxFrameOf(view.pageId, live) : null;
-    const on =
-      f !== null &&
-      page.id === view.pageId &&
-      p.x >= f.x &&
-      p.x <= f.x + f.w &&
-      p.y >= f.y &&
-      p.y <= f.y + f.h;
+    const on = live !== undefined && page.id === view.pageId && this.onTextBoxAt(page.id, live, p);
     if (on) {
       this.heldReturnTool = parked.returnTool;
       this.focusTextBox(view.input);
@@ -19760,8 +20107,9 @@ export class InkSurface {
   private reportTextAnchor(): void {
     if (!this.callbacks.onTextAnchor) return;
     const view = this.textTargetView();
-    const box = view ? view.root.getBoundingClientRect() : null;
     const typing = view !== null && view === this.editingTextView();
+    // The knob of a selected box hangs below it: the pill keeps clear of it too.
+    const box = view ? withKnob(view.root) : null;
     // The part of the screen the page shows: on the iPad the window and the
     // toolbar's host reach below it, so a box can be gone from the page and
     // still inside them.
