@@ -3211,7 +3211,7 @@ export class Toolbar {
       button.addEventListener("click", () => set(color, each));
     });
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    // Snap to PDF text: a magnet, as the ruler's angle snap, lit while on (#164).
+    // Snap to PDF text: a magnet, as the ruler's angle snap, lit as a picked option while on (#164).
     const snap = this.state.tapeSnapText === true;
     const magnet = this.barButton(
       this.optionsEl,
@@ -3224,7 +3224,7 @@ export class Toolbar {
       },
     );
     magnet.addClass("goodobsidian-tape-snap");
-    magnet.toggleClass("is-on", snap);
+    magnet.toggleClass("is-active", snap);
     magnet.setAttribute("aria-pressed", String(snap));
     const shownOf = this.callbacks.tapesShown;
     const show = this.callbacks.onShowTapes;
