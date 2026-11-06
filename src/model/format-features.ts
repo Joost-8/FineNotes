@@ -36,6 +36,8 @@ import { SCHEMA_VERSION } from "../constants";
  *   text typed in it (`TextBoxElement.onShape`), a filled shape without its
  *   line (`Stroke.noLine`), and a connector's own line style; an older build
  *   would drop each on its next save.
+ * - `text-turn`: a turned text box (`TextBoxElement.rotation`); an older
+ *   build would save it back upright.
  */
 export const FORMAT_FEATURES = [
   "sticky",
@@ -44,6 +46,7 @@ export const FORMAT_FEATURES = [
   "tape",
   "side-space",
   "shape-content",
+  "text-turn",
 ] as const;
 
 export type FormatFeature = (typeof FORMAT_FEATURES)[number];

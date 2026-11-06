@@ -2208,7 +2208,6 @@
   "surface.selectionBar.shapeTitle": "Forme",
   "surface.command.writeAnswer": "Écrire la réponse",
   "surface.textBox.page": "Zone de texte de la page",
-  "surface.textBox.move": "Déplacer la zone de texte",
   "surface.textBox.resize": "Redimensionner la zone de texte",
   "surface.shapeType.rectangle": "Rectangle",
   "surface.shapeType.circle": "Cercle",

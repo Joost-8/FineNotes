@@ -2544,7 +2544,6 @@
   "surface.selectionBar.shapeTitle": "الشكل",
   "surface.command.writeAnswer": "كتابة الإجابة",
   "surface.textBox.page": "مربع نص الصفحة",
-  "surface.textBox.move": "نقل مربع النص",
   "surface.textBox.resize": "تغيير حجم مربع النص",
   "surface.shapeType.rectangle": "مستطيل",
   "surface.shapeType.circle": "دائرة",

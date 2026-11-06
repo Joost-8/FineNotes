@@ -2208,7 +2208,6 @@
   "surface.selectionBar.shapeTitle": "Form",
   "surface.command.writeAnswer": "Skriv svar",
   "surface.textBox.page": "Sidans textruta",
-  "surface.textBox.move": "Flytta textrutan",
   "surface.textBox.resize": "Ändra textrutans storlek",
   "surface.shapeType.rectangle": "Rektangel",
   "surface.shapeType.circle": "Cirkel",

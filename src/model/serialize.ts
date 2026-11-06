@@ -410,6 +410,9 @@ function featuresOf(doc: InkDocument): FormatFeature[] {
   if (doc.pages.some((page) => page.strokes.some(isTape))) features.push("tape");
   if (doc.pages.some((page) => page.backdrop.frame)) features.push("side-space");
   if (doc.pages.some(hasShapeContent)) features.push("shape-content");
+  if (doc.pages.some((page) => page.textBoxes.some((box) => box.rotation !== undefined))) {
+    features.push("text-turn");
+  }
   return features;
 }
 
@@ -993,6 +996,10 @@ function normalizeTextBox(raw: unknown, mintId: () => string): TextBoxElement | 
     ...normalizeTextStyle(raw),
     ...(typeof raw.onSticky === "string" ? { onSticky: raw.onSticky } : {}),
     ...(typeof raw.onShape === "string" ? { onShape: raw.onShape } : {}),
+    // A turn of nothing is no turn: only a real, finite angle is kept.
+    ...(typeof raw.rotation === "number" && Number.isFinite(raw.rotation) && raw.rotation !== 0
+      ? { rotation: raw.rotation }
+      : {}),
   };
 }
 

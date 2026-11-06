@@ -2208,7 +2208,6 @@
   "surface.selectionBar.shapeTitle": "Şekil",
   "surface.command.writeAnswer": "Yanıt yaz",
   "surface.textBox.page": "Sayfa metin kutusu",
-  "surface.textBox.move": "Metin kutusunu taşı",
   "surface.textBox.resize": "Metin kutusunu yeniden boyutlandır",
   "surface.shapeType.rectangle": "Dikdörtgen",
   "surface.shapeType.circle": "Daire",

@@ -607,6 +607,13 @@ export interface TextBoxElement {
   /** Shown in capitals (a label, a kicker); the typed text keeps its case. */
   caps?: true;
   /**
+   * Turned this many radians clockwise about the box's top-left corner
+   * (`x`, `y`), so a box that grows with its text or is widened turns about
+   * a corner that stays put. `w` and `h` are the box unturned. Absent:
+   * upright; never stored as 0.
+   */
+  rotation?: number;
+  /**
    * The id of the sticky note this box is the typed text of, as
    * `Stroke.onSticky` is for its ink (`model/sticky-notes.ts`): drawn with
    * the note, clipped to it, turned with it and hidden while it is folded,

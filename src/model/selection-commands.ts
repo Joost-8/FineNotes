@@ -481,6 +481,14 @@ function wrapAngle(angle: number): number {
   return a;
 }
 
+/** The vector (`x`, `y`) turned `r` radians clockwise (y down). */
+function turnVector(x: number, y: number, r: number): { x: number; y: number } {
+  if (r === 0) return { x, y };
+  const c = Math.cos(r);
+  const s = Math.sin(r);
+  return { x: x * c - y * s, y: x * s + y * c };
+}
+
 /**
  * Turn or mirror everything selected on one page about the page point
  * (cx, cy) — the middle of the selection's bounds — as one undo step:
@@ -490,8 +498,10 @@ function wrapAngle(angle: number): number {
  * - a picture's centre moves; a turn adds to its `rotation`, a mirror
  *   flips it in its own frame and negates its rotation, since mirroring a
  *   turned picture is mirroring it first and turning it the other way;
- * - a text box has no rotation, so it stays upright and only its middle
- *   moves (`heights` gives a box's measured height when it has none fixed).
+ * - a text box turns with the selection (`rotation`, about its corner); a
+ *   mirror keeps its text readable, so it moves the box's middle and
+ *   negates its turn (`heights` gives a box's measured height when it has
+ *   none fixed).
  *
  * A non-finite angle or centre changes nothing. A stroke's `samples` stay as
  * recorded, as they do under a move.
@@ -501,7 +511,7 @@ export class ReorientElements implements Command {
   private saved: {
     strokes: Array<{ stroke: Stroke; pts: number[] }>;
     images: Array<{ image: ImageElement; saved: ImageElement }>;
-    textBoxes: Array<{ textBox: TextBoxElement; x: number; y: number }>;
+    textBoxes: Array<{ textBox: TextBoxElement; saved: TextBoxElement }>;
     tables: Array<{ table: TableElement; x: number; y: number }>;
     graphs: Array<{ graph: GraphElement; x: number; y: number }>;
   } | null = null;
@@ -568,19 +578,31 @@ export class ReorientElements implements Command {
         return { image, saved };
       }),
       textBoxes: on.textBoxes.map((textBox) => {
+        const saved = { ...textBox };
         const { x, y, w } = textBox;
         const pinned = onNote.get(textBox);
         if (pinned) {
           // The images were turned above, so the note is where it now stands.
           textBox.x = pinned.note.x + pinned.dx;
           textBox.y = pinned.note.y + pinned.dy;
-          return { textBox, x, y };
+          return { textBox, saved };
         }
         const h = this.heights?.get(textBox) ?? textBox.h ?? 0;
-        const c = reorientPoint(motion, cx, cy, x + w / 2, y + h / 2);
-        textBox.x = c.x - w / 2;
-        textBox.y = c.y - h / 2;
-        return { textBox, x, y };
+        const was =
+          typeof textBox.rotation === "number" && Number.isFinite(textBox.rotation)
+            ? textBox.rotation
+            : 0;
+        // The middle goes where the motion takes it; the box turns about it.
+        const half = turnVector(w / 2, h / 2, was);
+        const c = reorientPoint(motion, cx, cy, x + half.x, y + half.y);
+        const turned = wrapAngle(motion.kind === "rotate" ? was + motion.angle : -was);
+        const r = Math.abs(turned) > ROTATION_EPSILON ? turned : 0;
+        const to = turnVector(w / 2, h / 2, r);
+        textBox.x = c.x - to.x;
+        textBox.y = c.y - to.y;
+        if (r !== 0) textBox.rotation = r;
+        else delete textBox.rotation;
+        return { textBox, saved };
       }),
       // A table stays upright, as a text box does: only its middle moves.
       tables: (on.tables ?? []).map((table) => {
@@ -612,9 +634,10 @@ export class ReorientElements implements Command {
       for (const key of Object.keys(target)) delete target[key];
       Object.assign(image, before);
     }
-    for (const { textBox, x, y } of saved.textBoxes) {
-      textBox.x = x;
-      textBox.y = y;
+    for (const { textBox, saved: before } of saved.textBoxes) {
+      const target = textBox as unknown as Record<string, unknown>;
+      for (const key of Object.keys(target)) delete target[key];
+      Object.assign(textBox, before);
     }
     for (const { table, x, y } of saved.tables) {
       table.x = x;

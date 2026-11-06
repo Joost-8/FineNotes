@@ -2292,7 +2292,6 @@
   "surface.selectionBar.shapeTitle": "Облик",
   "surface.command.writeAnswer": "Упиши одговор",
   "surface.textBox.page": "Оквир за текст на страници",
-  "surface.textBox.move": "Премести оквир за текст",
   "surface.textBox.resize": "Промени величину оквира за текст",
   "surface.shapeType.rectangle": "Правоугаоник",
   "surface.shapeType.circle": "Круг",

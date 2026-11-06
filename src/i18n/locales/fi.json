@@ -2208,7 +2208,6 @@
   "surface.selectionBar.shapeTitle": "Muoto",
   "surface.command.writeAnswer": "Kirjoita vastaus",
   "surface.textBox.page": "Sivun tekstiruutu",
-  "surface.textBox.move": "Siirrä tekstiruutua",
   "surface.textBox.resize": "Muuta tekstiruudun kokoa",
   "surface.shapeType.rectangle": "Suorakulmio",
   "surface.shapeType.circle": "Ympyrä",

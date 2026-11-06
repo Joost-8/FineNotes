@@ -3481,6 +3481,13 @@ export function paintTextBox(
   const border = normalizeBorder(box.border);
   if (!box.text && !box.fill && !border) return;
   ctx.save();
+  // A turned box turns about its top-left corner, as the page's frame does.
+  const turn = box.rotation;
+  if (typeof turn === "number" && Number.isFinite(turn) && turn !== 0) {
+    ctx.translate(box.x, box.y);
+    ctx.rotate(turn);
+    ctx.translate(-box.x, -box.y);
+  }
   ctx.font = canvasFont(box, box.fontSize);
   const layout = layoutTextBox(box, (text) => ctx.measureText(text).width);
   // The corners the page's frame has (its CSS `border-radius`).

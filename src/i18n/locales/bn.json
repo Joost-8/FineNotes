@@ -2208,7 +2208,6 @@
   "surface.selectionBar.shapeTitle": "আকৃতি",
   "surface.command.writeAnswer": "উত্তর লিখুন",
   "surface.textBox.page": "পাতার টেক্সট বক্স",
-  "surface.textBox.move": "টেক্সট বক্স সরান",
   "surface.textBox.resize": "টেক্সট বক্সের আকার বদলান",
   "surface.shapeType.rectangle": "আয়তক্ষেত্র",
   "surface.shapeType.circle": "বৃত্ত",

@@ -2124,7 +2124,6 @@
   "surface.selectionBar.shapeTitle": "도형",
   "surface.command.writeAnswer": "답 쓰기",
   "surface.textBox.page": "페이지 텍스트 상자",
-  "surface.textBox.move": "텍스트 상자 이동",
   "surface.textBox.resize": "텍스트 상자 크기 조절",
   "surface.shapeType.rectangle": "직사각형",
   "surface.shapeType.circle": "원",

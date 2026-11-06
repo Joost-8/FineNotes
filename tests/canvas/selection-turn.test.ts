@@ -155,11 +155,18 @@ describe("committing a turn", () => {
       );
       expect(stroke.pts[i + 2]).toBe(pts[i + 2]);
     }
-    // Size and font kept; a text box stays upright and only its middle goes round.
+    // Size and font kept; a text box turns with the selection, about its corner.
     expect(stroke.size).toBe(2);
     expect(box.fontSize).toBe(20);
+    const r = box.rotation ?? 0;
+    expect(r).toBeCloseTo(35 * DEG, 9);
+    const hw = box.w / 2;
+    const hh = (box.h ?? 0) / 2;
     expectPoint(
-      { x: box.x + box.w / 2, y: box.y + (box.h ?? 0) / 2 },
+      {
+        x: box.x + hw * Math.cos(r) - hh * Math.sin(r),
+        y: box.y + hw * Math.sin(r) + hh * Math.cos(r),
+      },
       turnPoint(m, { x: 350, y: 120 }),
     );
     command?.invert(d);

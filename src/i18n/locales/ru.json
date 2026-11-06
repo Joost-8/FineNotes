@@ -2376,7 +2376,6 @@
   "surface.selectionBar.shapeTitle": "Фигура",
   "surface.command.writeAnswer": "Записать ответ",
   "surface.textBox.page": "Текстовое поле страницы",
-  "surface.textBox.move": "Переместить текстовое поле",
   "surface.textBox.resize": "Изменить размер текстового поля",
   "surface.shapeType.rectangle": "Прямоугольник",
   "surface.shapeType.circle": "Круг",
