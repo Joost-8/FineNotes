@@ -176,6 +176,7 @@ import {
 import {
   LIGHT_PAPER,
   type PaperTheme,
+  inkShade,
   pageLook,
   shownColor,
   writingLines,
@@ -4408,10 +4409,12 @@ export class InkSurface {
     const tool = cursorToolOf(this.toolState.tool);
     if (!tool) return;
     const page = this.doc.pages[this.pageIndex];
-    const night = page ? pageLook(page.backdrop, this.paper).night : false;
+    const shade = page ? inkShade(pageLook(page.backdrop, this.paper)) : "day";
     const color = this.strokeColor();
     const shown =
-      night && tool === "highlighter" ? nightHighlighter(color) : shownColor(color, night);
+      shade !== "day" && tool === "highlighter"
+        ? nightHighlighter(color)
+        : shownColor(color, shade === "night");
     const width = cursorSize(this.strokeSize() * this.unitScale);
     const highlighterAlpha = this.renderer?.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
     const key = `${tool} ${shown} ${width} ${highlighterAlpha}`;
