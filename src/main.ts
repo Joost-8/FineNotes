@@ -25,7 +25,7 @@ import {
   outsideNotebookFolder,
 } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
-import { tapeColorOf, tapeHeightOf } from "./model/cover-tape";
+import { type TapeMode, tapeColorOf, tapeHeightOf, tapeModeOf } from "./model/cover-tape";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
   MarkdownView,
@@ -317,7 +317,9 @@ export default class GoodObsidianPlugin extends Plugin {
 
   private syncExplorerNotebookButton(): void {
     this.emptyTabHome.sync(
-      this.app.workspace.getLeavesOfType("empty").map((leaf) => ({ leaf, el: leaf.view.containerEl })),
+      this.app.workspace
+        .getLeavesOfType("empty")
+        .map((leaf) => ({ leaf, el: leaf.view.containerEl })),
     );
     const explorers = this.app.workspace.getLeavesOfType("file-explorer").map((leaf) => leaf.view);
     this.explorerNotebookButton.sync(
@@ -1637,10 +1639,11 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
-  /** Remember cover tape's colour and height, for the next session. */
-  saveTape(color: string, height: number): void {
+  /** Remember cover tape's colour, height and mode, for the next session. */
+  saveTape(color: string, height: number, mode: TapeMode): void {
     this.settings.tapeColor = tapeColorOf(color);
     this.settings.tapeHeight = tapeHeightOf(height);
+    this.settings.tapeMode = tapeModeOf(mode);
     void this.saveSettings();
   }
 

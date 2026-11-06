@@ -23,7 +23,7 @@ import { stickerFolderOf } from "../model/stickers";
 import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
 import { DEFAULT_FILL_COLOR, readFillGap } from "../model/fill-region";
-import { isTape, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
+import { isTape, tapeColorOf, tapeHeightOf, tapeModeOf } from "../model/cover-tape";
 import { notebookKeyScope } from "./notebook-keys";
 import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
 import {
@@ -457,6 +457,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     fillColor: parseHexColor(s.fillColor ?? "") ?? DEFAULT_FILL_COLOR,
     tapeColor: tapeColorOf(s.tapeColor),
     tapeHeight: tapeHeightOf(s.tapeHeight),
+    tapeMode: tapeModeOf(s.tapeMode),
     tableHeader: s.tableHeader === true,
     recentColors: recentColorsOf(s.recentColors),
     // The pen in hand's row is its own, when it has one (model/pen-inks.ts).
@@ -3072,7 +3073,7 @@ export class InkView extends TextFileView {
         onShapeStyleChange: (style) => this.plugin.saveShapeStyle(style),
         onFillGapChange: (gap) => this.plugin.saveFillGap(gap),
         onFillColorChange: (color) => this.plugin.saveFillColor(color),
-        onTapeChange: (color, height) => this.plugin.saveTape(color, height),
+        onTapeChange: (color, height, mode) => this.plugin.saveTape(color, height, mode),
         tapesShown: () => this.surface?.tapesShown() ?? null,
         onShowTapes: (shown) => this.surface?.showTapes(shown),
         onTableHeaderChange: (on) => this.plugin.saveTableHeader(on),

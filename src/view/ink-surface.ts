@@ -250,9 +250,14 @@ import {
   strokeReach,
 } from "../canvas/mirrors";
 import {
+  FREEHAND_TAPE_HOOK,
+  FREEHAND_TAPE_SMOOTHING,
+  FREEHAND_TAPE_TOLERANCE,
   MIN_TAPE_LENGTH,
   TAPE_HANDLES,
   type TapeHandle,
+  freehandTapePoints,
+  isFreehandTape,
   isTape,
   stretchTape,
   tapeBounds,
@@ -260,6 +265,7 @@ import {
   tapeColorOf,
   tapeHandles,
   tapeHeightOf,
+  tapeModeOf,
   tapePoints,
   toggleRevealed,
   topTapeAt,
@@ -9131,24 +9137,30 @@ export class InkSurface {
    */
   private revealedTapes: ReadonlySet<string> = new Set();
 
-  /** A tape being dragged out: where it started and where the pen is, page px. */
-  private tapeDrag: { from: Pt; to: Pt } | null = null;
+  /**
+   * A tape being dragged out: where it started and where the pen is, page
+   * px, and for a freehand tape every point the pen passed.
+   */
+  private tapeDrag: { from: Pt; to: Pt; path: Pt[] | null } | null = null;
 
   /**
    * The Cover tape tool: a drag lays a strip from where it started to where
-   * it lifts, its height the pill's, made level or upright when nearly so; a
-   * tap shows a tape there through, or covers it again.
+   * it lifts, its height the pill's, made level or upright when nearly so,
+   * or in freehand mode along the drag; a tap shows a tape there through,
+   * or covers it again.
    */
   private readonly tapeGesture: PenGesture = {
     down: (_box, at) => {
-      this.tapeDrag = { from: at, to: at };
+      const freehand = tapeModeOf(this.toolState.tapeMode) === "freehand";
+      this.tapeDrag = { from: at, to: at, path: freehand ? [at] : null };
     },
     move: (box, samples) => {
       const drag = this.tapeDrag;
       const last = samples[samples.length - 1];
       if (!drag || !last) return;
+      if (drag.path) for (const sample of samples) drag.path.push(this.toPage(box, sample));
       drag.to = this.toPage(box, last);
-      const draft = this.tapeStroke(drag.from, drag.to);
+      const draft = this.tapeStroke(drag);
       if (draft) this.renderer?.renderWetStrokes(box.index, [draft]);
       else this.renderer?.clearWet();
     },
@@ -9163,19 +9175,34 @@ export class InkSurface {
     },
   };
 
-  /** The tape a drag from `from` to `to` lays, or null for a tap. */
-  private tapeStroke(from: Pt, to: Pt): Stroke | null {
-    const pts = tapePoints(
-      from,
-      to,
-      this.atFitZoom(LINE_LEVEL_RISE),
-      this.atFitZoom(MIN_TAPE_LENGTH),
-    );
+  /**
+   * The tape a drag lays, or null for a tap: from `from` to `to`, or along
+   * its `path` (simplified as it is laid, `final`; the draft keeps every point).
+   */
+  private tapeStroke(drag: { from: Pt; to: Pt; path: Pt[] | null }, final = false): Stroke | null {
+    const size = tapeHeightOf(this.toolState.tapeHeight);
+    const pts = drag.path
+      ? freehandTapePoints(
+          drag.path,
+          final ? this.atFitZoom(FREEHAND_TAPE_TOLERANCE) : 0,
+          this.atFitZoom(MIN_TAPE_LENGTH),
+          {
+            radius: size * FREEHAND_TAPE_SMOOTHING,
+            hook: this.atFitZoom(FREEHAND_TAPE_HOOK),
+            lift: final,
+          },
+        )
+      : tapePoints(
+          drag.from,
+          drag.to,
+          this.atFitZoom(LINE_LEVEL_RISE),
+          this.atFitZoom(MIN_TAPE_LENGTH),
+        );
     if (!pts) return null;
     return {
       id: "tape-draft",
       color: tapeColorOf(this.toolState.tapeColor),
-      size: tapeHeightOf(this.toolState.tapeHeight),
+      size,
       tool: "tape",
       pts,
     };
@@ -9189,7 +9216,11 @@ export class InkSurface {
     this.renderer?.clearWet();
     const page = this.pageAt(box.index);
     if (!drag || !page) return;
-    const draft = this.tapeStroke(drag.from, end ?? drag.to);
+    if (end) {
+      drag.to = end;
+      drag.path?.push(end);
+    }
+    const draft = this.tapeStroke(drag, true);
     if (!draft) {
       this.toggleTapeAt(page, drag.from, PEN_TAP_TOLERANCE_PX / this.gestureScale);
       return;
@@ -16719,7 +16750,9 @@ export class InkSurface {
       return null;
     }
     if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
-    return isTape(sel.strokes[0]) ? sel.strokes[0] : null;
+    // A freehand tape has no straight sides: it resizes as ink does.
+    const only = sel.strokes[0];
+    return isTape(only) && !isFreehandTape(only.pts) ? only : null;
   }
 
   /**

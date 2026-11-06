@@ -90,7 +90,14 @@ import {
 } from "./toolbar-layout";
 import { ToolbarEditor } from "./toolbar-edit";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
-import { TAPE_COLORS, TAPE_HEIGHTS, tapeColorOf, tapeHeightOf } from "../model/cover-tape";
+import {
+  TAPE_COLORS,
+  TAPE_HEIGHTS,
+  type TapeMode,
+  tapeColorOf,
+  tapeHeightOf,
+  tapeModeOf,
+} from "../model/cover-tape";
 import { magnifierTap, zoomButtonState } from "../model/zoom-box";
 import { Notice, setIcon } from "obsidian";
 import { t } from "../i18n/translate";
@@ -713,6 +720,8 @@ export interface ToolbarState {
   tapeColor?: string;
   /** Cover tape's height, page px. `undefined` counts as the medium height. */
   tapeHeight?: number;
+  /** How a new cover tape is laid. `undefined` counts as straight. */
+  tapeMode?: TapeMode;
 }
 
 export interface ToolbarCallbacks {
@@ -822,8 +831,8 @@ export interface ToolbarCallbacks {
   onPenPreferences?: (patch: Partial<PenPreferences>) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
-  /** Cover tape's colour or height changed. Hosts persist it. */
-  onTapeChange?: (color: string, height: number) => void;
+  /** Cover tape's colour, height or mode changed. Hosts persist it. */
+  onTapeChange?: (color: string, height: number, mode: TapeMode) => void;
   /**
    * Whether the cover tapes on the page in view are all shown through, or
    * `null` when it has none. Without it the tape's pill has no eye.
@@ -3177,19 +3186,30 @@ export class Toolbar {
   }
 
   /**
-   * Cover tape: its colours, its three heights, and an eye that shows the
-   * tapes on the page in view through, or covers them again (lit while they
-   * are shown). A tap on a tape shows or covers that one.
+   * Cover tape: straight or freehand, its colours, its three heights, and an
+   * eye that shows the tapes on the page in view through, or covers them
+   * again (lit while they are shown). A tap on a tape shows or covers that one.
    */
   private buildTapeOptions(): void {
     const color = tapeColorOf(this.state.tapeColor);
     const height = tapeHeightOf(this.state.tapeHeight);
-    const set = (nextColor: string, nextHeight: number): void => {
+    const mode = tapeModeOf(this.state.tapeMode);
+    const set = (nextColor: string, nextHeight: number, nextMode = mode): void => {
       this.state.tapeColor = nextColor;
       this.state.tapeHeight = nextHeight;
-      this.callbacks.onTapeChange?.(nextColor, nextHeight);
+      this.state.tapeMode = nextMode;
+      this.callbacks.onTapeChange?.(nextColor, nextHeight, nextMode);
       this.buildOptions();
     };
+    for (const [each, icon, label] of TAPE_MODES) {
+      const button = this.barButton(this.optionsEl, icon, label, () => {
+        if (each !== mode) set(color, height, each);
+      });
+      button.addClass("goodobsidian-tape-mode");
+      button.toggleClass("is-active", each === mode);
+      button.setAttribute("aria-pressed", String(each === mode));
+    }
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     for (const each of TAPE_COLORS) {
       const swatch = this.swatchButton(this.optionsEl, each, () => set(each, height));
       swatch.toggleClass("is-active", each === color);
@@ -6857,7 +6877,14 @@ function tapeHeightLabels(): string[] {
   return [t("toolbar.tape.narrow"), t("toolbar.tape.medium"), t("toolbar.tape.wide")];
 }
 
+/** The tape pill's two ways to lay a tape: mode, Lucide icon, name. */
+const TAPE_MODES: readonly (readonly [TapeMode, string, string])[] = [
+  ["straight", "minus", "Straight tape"],
+  ["freehand", "spline", "Freehand tape"],
+];
+
 /** A tape height button's mark: a band, taller for each height. */
+
 function tapeHeightGlyph(index: number): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 28 24");
