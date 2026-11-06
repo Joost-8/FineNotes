@@ -205,6 +205,14 @@ interface Read {
 const sessionReads = new Map<string, Map<string, Read>>();
 /** Each vault's notebooks' own text this session, for searching inside them. */
 const sessionTexts = new Map<string, Map<string, NotebookTextRecord>>();
+/**
+ * The notebook Home is reading, kept on this device until the read ends: a
+ * mark still there when Home reads again means that read took the app down,
+ * and that notebook is not read again until its file changes.
+ */
+const READING_MARK_KEY = "finenotes-home-reading";
+/** The pause between notebooks read only for their text (the one-time index), ms. */
+const TEXT_ONLY_GAP_MS = 60;
 /** Pages a search shows at most. */
 const MAX_PAGE_HITS = 40;
 /** How long typing must pause before the pages are searched, ms: titles answer at once. */
@@ -724,7 +732,10 @@ export class LibraryView extends ItemView {
     // Grape's readings of notebooks gone or renamed are let go.
     if (textChanges.size > 0) pruneReadings(this.vaultKey(), (path) => live.has(path));
     sessionReads.set(this.vaultKey(), this.reads);
-    stale.sort((a, b) => b.stat.mtime - a.stat.mtime);
+    this.skipCrashed(stale, changes, textChanges);
+    // Cards first; notebooks read only for their text (the one-time index) after, newest first.
+    const rank = (file: TFile): number => (this.entryFresh(file) ? 1 : 0);
+    stale.sort((a, b) => rank(a) - rank(b) || b.stat.mtime - a.stat.mtime);
     let count = 0;
     let unsorted = false;
     for (const file of stale) {
@@ -737,7 +748,10 @@ export class LibraryView extends ItemView {
       // Only its text was missing (kept from before searching inside notebooks): its card stays.
       const textOnly = this.entryFresh(file);
       // Decoded in the read worker; its cover drawn from that same read, never a second one.
-      const { entry, cover, text } = await this.pages().readEntry(file, mtime);
+      this.markReading(file);
+      const { entry, cover, text } = await this.pages()
+        .readEntry(file, mtime, !textOnly)
+        .finally(() => this.markReading(null));
       if (text) {
         const record = { mtime, size, pages: text };
         this.texts.set(file.path, record);
@@ -748,7 +762,8 @@ export class LibraryView extends ItemView {
         textChanges.clear();
       }
       if (textOnly) {
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        // The one-time index: a breath between notebooks, so memory is let go as it goes.
+        await new Promise<void>((resolve) => window.setTimeout(resolve, TEXT_ONLY_GAP_MS));
         continue;
       }
       if (cover) await this.keepOwnCover(file, cover).catch(() => undefined);
@@ -771,6 +786,59 @@ export class LibraryView extends ItemView {
     saveNotebookTexts(this.vaultKey(), textChanges);
     if (unsorted && !this.closed) this.paintNow();
     else if (textChanges.size > 0 && this.query.trim() !== "") this.schedulePageHits();
+  }
+
+  /** Marks the notebook being read on this device (`null`: none), before the read and after it. */
+  private markReading(file: TFile | null): void {
+    try {
+      this.app.saveLocalStorage(
+        READING_MARK_KEY,
+        file
+          ? JSON.stringify({ path: file.path, stamp: `${file.stat.mtime}:${file.stat.size}` })
+          : null,
+      );
+    } catch {
+      // No storage: nothing to guard with.
+    }
+  }
+
+  /**
+   * A mark left by a read that never ended (the app was closed or killed
+   * under it): that notebook, as it is now, gets a plain card and no text,
+   * and is not read again until its file changes, so a notebook too big for
+   * this device cannot take Home down at every launch.
+   */
+  private skipCrashed(
+    stale: TFile[],
+    changes: Map<string, Read | null>,
+    textChanges: Map<string, NotebookTextRecord | null>,
+  ): void {
+    let path: unknown = null;
+    let stamp: unknown = null;
+    try {
+      const raw: unknown = this.app.loadLocalStorage(READING_MARK_KEY);
+      if (typeof raw !== "string") return;
+      ({ path, stamp } = JSON.parse(raw) as { path?: unknown; stamp?: unknown });
+    } catch {
+      return;
+    }
+    this.markReading(null);
+    const at = stale.findIndex(
+      (f) => f.path === path && `${f.stat.mtime}:${f.stat.size}` === stamp,
+    );
+    if (at < 0) return;
+    const [file] = stale.splice(at, 1);
+    const { mtime, size } = file.stat;
+    const read = this.entryFresh(file)
+      ? this.reads.get(file.path)
+      : { mtime, size, entry: placeholderEntry(file.path, mtime) };
+    if (read && !this.entryFresh(file)) {
+      this.reads.set(file.path, read);
+      changes.set(file.path, read);
+    }
+    const record = { mtime, size, pages: [] };
+    this.texts.set(file.path, record);
+    textChanges.set(file.path, record);
   }
 
   /** Whether a notebook's card is from its file as it is now. */

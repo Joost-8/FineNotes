@@ -49,19 +49,91 @@ export interface IndexedPage {
  * A notebook's own searchable text, page by page, from its pages and the
  * note's text layer (`readTextSection` of the note's body).
  */
-export function notebookText(pages: readonly Page[], textLayer: string | null): IndexedPage[] {
+export function notebookText(
+  pages: readonly Page[],
+  textLayer: string | null,
+  budget = MAX_NOTEBOOK_TEXT,
+): IndexedPage[] {
   const keys = pageKeys(pages);
   const texts = collectPageText(pages, textLayer, null);
+  let left = budget;
   return pages.map((page, i) => {
     const backdrop = page.backdrop;
+    const sources: PageSource[] = [];
+    for (const source of texts[i].sources) {
+      const text = source.kind === "handwriting" ? plainTranscript(source.text) : source.text;
+      if (left <= 0) break;
+      // Past the budget the rest of the notebook is not kept: one odd notebook never fills the device.
+      sources.push({ ...source, text: text.length > left ? text.slice(0, left) : text });
+      left -= text.length;
+    }
     return {
       id: page.id,
       key: keys[i],
       hash: pageContentHash(page),
       ...(backdrop.kind === "pdf" ? { pdf: { path: backdrop.path, page: backdrop.page } } : {}),
-      sources: texts[i].sources,
+      sources,
     };
   });
+}
+
+/**
+ * The most text kept for one notebook, in characters. A full lecture
+ * notebook holds tens of thousands; this only stops a pathological one
+ * (a pasted book) from filling the device and every search.
+ */
+export const MAX_NOTEBOOK_TEXT = 1_000_000;
+
+/** LaTeX commands that read as a sign, and what they show as. */
+const LATEX_SIGNS: Readonly<Record<string, string>> = {
+  cdot: "·",
+  times: "×",
+  div: "÷",
+  pm: "±",
+  le: "≤",
+  leq: "≤",
+  ge: "≥",
+  geq: "≥",
+  ne: "≠",
+  neq: "≠",
+  approx: "≈",
+  to: "→",
+  rightarrow: "→",
+  infty: "∞",
+  sum: "∑",
+  int: "∫",
+  sqrt: "√",
+};
+
+/**
+ * A transcription as plain text, for searching and snippets: Markdown's
+ * marks (headings, list bullets and boxes, bold, code, links, quotes) and
+ * LaTeX's (`$`, braces, `\left`) go; every word stays, so nothing that
+ * could be searched for is lost. A link keeps the words it shows.
+ */
+export function plainTranscript(text: string): string {
+  return (
+    text
+      .replace(/<!--[\s\S]*?-->/g, "")
+      // [[target|shown]] and [[target]]; [shown](url).
+      .replace(
+        /!?\[\[([^\]|]*)\|?([^\]]*)\]\]/g,
+        (_, target: string, shown: string) => shown || target,
+      )
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+      // Line starts: headings, quotes, bullets, numbers, task boxes.
+      .replace(
+        /^[ \t]*(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+(?:\[[ xX]\][ \t]+)?|\d+[.)][ \t]+)/gm,
+        "",
+      )
+      .replace(
+        /\\([a-zA-Z]+)/g,
+        (_, name: string) =>
+          LATEX_SIGNS[name] ?? (name === "left" || name === "right" || name === "frac" ? "" : name),
+      )
+      .replace(/\*\*|__|`|\$\$?|[{}]/g, "")
+      .replace(/[ \t]{2,}/g, " ")
+  );
 }
 
 /** What this device adds to a notebook's own text. */
@@ -79,7 +151,8 @@ export function assemblePages(pages: readonly IndexedPage[], extras: PageExtras)
   return pages.map((page, pageIndex) => {
     const own = page.sources.filter((s) => s.kind === "handwriting");
     const sources: PageSource[] = [...own];
-    const server = extras.sidecar?.get(page.key);
+    const raw = extras.sidecar?.get(page.key);
+    const server = raw ? plainTranscript(raw) : undefined;
     if (server && !own.some((s) => s.text === server))
       sources.push({ kind: "handwriting", text: server });
     sources.push(...page.sources.filter((s) => s.kind !== "handwriting"));

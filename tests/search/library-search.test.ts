@@ -5,9 +5,11 @@ import { readTextSection, writeTextSection } from "../../src/recognition/text-la
 import {
   type IndexedPage,
   type LibraryBook,
+  MAX_NOTEBOOK_TEXT,
   assemblePages,
   nearAllowance,
   notebookText,
+  plainTranscript,
   searchLibrary,
 } from "../../src/search/library-search";
 import type { PageText } from "../../src/search/notebook-search";
@@ -31,6 +33,10 @@ function page(id: string, boxes: string[] = [], pdf?: { path: string; page: numb
       color: "#000",
     })),
   } as unknown as Page;
+}
+
+function layerWith(transcripts: Record<string, string>): string | null {
+  return readTextSection(noteWith(transcripts));
 }
 
 function noteWith(transcripts: Record<string, string>): string {
@@ -174,5 +180,34 @@ describe("searchLibrary", () => {
 
   it("allows more letters off in a longer word", () => {
     expect([3, 4, 5, 8, 9, 14].map(nearAllowance)).toEqual([0, 0, 1, 1, 2, 2]);
+  });
+});
+
+describe("plainTranscript", () => {
+  it("drops Markdown and LaTeX marks and keeps every word", () => {
+    expect(plainTranscript(String.raw`### Karatsuba $(x_1+x_0) \cdot y$`)).toBe(
+      "Karatsuba (x_1+x_0) · y",
+    );
+    expect(plainTranscript("- [x] **check** the `ack`\n2. Binary and [[Hex|hexadecimal]]")).toBe(
+      "check the ack\nBinary and hexadecimal",
+    );
+    expect(plainTranscript("> see [the slides](https://x.y) and [[Networks]]")).toBe(
+      "see the slides and Networks",
+    );
+    expect(plainTranscript(String.raw`$$\frac{a}{b} \le \alpha$$`)).toBe("ab ≤ alpha");
+  });
+
+  it("is what Home searches and shows for a transcription", () => {
+    const text = notebookText([page("a")], layerWith({ a: "## Heading **bold**" }));
+    expect(text[0].sources[0].text).toBe("Heading bold");
+  });
+});
+
+describe("the text budget", () => {
+  it("keeps at most the budget for one notebook, then nothing more", () => {
+    const pages = [page("a", ["x".repeat(30)]), page("b", ["y".repeat(30)]), page("c", ["z"])];
+    const text = notebookText(pages, null, 40);
+    expect(text.map((p) => p.sources.map((s) => s.text.length))).toEqual([[30], [10], []]);
+    expect(MAX_NOTEBOOK_TEXT).toBeGreaterThan(100_000);
   });
 });

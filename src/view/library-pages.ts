@@ -101,13 +101,15 @@ export class NotebookPages {
   /**
    * Home's own read of a notebook: its facts, its cover page when it has
    * one, and its own text for Home's search (`null` when it could not be read).
+   * Without `withCover` no page comes back: only the facts and the text.
    */
   async readEntry(
     file: TFile,
     edited: number,
+    withCover = true,
   ): Promise<{ entry: LibraryEntry; cover: Page | null; text: IndexedPage[] | null }> {
     try {
-      const result = await this.read(file, [0], { path: file.path, edited }, true);
+      const result = await this.read(file, withCover ? [0] : [], { path: file.path, edited }, true);
       const entry = result.entry ?? placeholderEntry(file.path, edited);
       return {
         entry,

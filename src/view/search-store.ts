@@ -25,7 +25,7 @@ const STORE_READINGS = "readings";
 const STORE_PRINTED = "printed";
 const STORES = [STORE_NOTEBOOKS, STORE_READINGS, STORE_PRINTED];
 /** Bump when `IndexedPage` or `notebookText` changes: notebooks are then read again. */
-const TEXT_VERSION = 1;
+const TEXT_VERSION = 2;
 
 export interface NotebookTextRecord {
   mtime: number;
