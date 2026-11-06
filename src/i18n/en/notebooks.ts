@@ -393,6 +393,7 @@ export const notebooks = {
   "notebooks.command.insertNewNotebook": "Insert a new notebook here",
   "notebooks.command.showWelcome": "Show the welcome",
   "notebooks.command.openLibrary": "Open the notebook library",
+  "notebooks.command.rereadScannedPages": "Re-read scanned pages of this PDF",
   "notebooks.command.simpleLook": "Simple look: hide or show Obsidian's tabs, sidebars and menus",
   "notebooks.command.newFromPdf": "New notebook from a PDF in the vault…",
   "notebooks.command.convertToNotebook": "Convert single page to notebook",

@@ -347,4 +347,9 @@ export const view = {
   "view.morePanel.deskLight": "Light desk",
   "view.morePanel.deskDark": "Dark desk",
   "view.morePanel.deskCustom": "Desk in a colour of your own",
+  "view.morePanel.freePageEdges": "Free page edges",
+  "view.ocr.noPdfPages": "FineNotes: this notebook has no PDF pages.",
+  "view.ocr.off":
+    'FineNotes: reading scanned pages is off. Turn on "Scanned pages" in the AI menu.',
+  "view.ocr.rereading": "FineNotes: reading this PDF's scanned pages again.",
 } as const;

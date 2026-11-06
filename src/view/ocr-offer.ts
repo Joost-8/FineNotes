@@ -8,6 +8,7 @@
 
 import { type App, Modal } from "obsidian";
 import { formatSize, totalBytes } from "../downloads/model-manifest";
+import { t } from "../i18n/translate";
 import type { OcrTier, OcrTierId } from "../recognition/ocr/ocr-model";
 
 export interface OcrOfferActions {
@@ -34,10 +35,8 @@ export class OcrOfferModal extends Modal {
   override onOpen(): void {
     const { contentEl } = this;
     contentEl.addClass("goodobsidian-ocr-offer");
-    this.setTitle("Read the text in this PDF?");
-    contentEl.createEl("p", {
-      text: "Some pages are pictures. Download a reader to search and copy their text. It runs on this device only.",
-    });
+    this.setTitle(t("ai.ocr.offerTitle"));
+    contentEl.createEl("p", { text: t("ai.ocr.offerBody") });
     const list = contentEl.createDiv({ cls: "goodobsidian-ocr-offer-list" });
     list.setAttribute("role", "radiogroup");
     for (const tier of this.tiers) {
@@ -56,21 +55,21 @@ export class OcrOfferModal extends Modal {
         text: formatSize(totalBytes(tier.asset)),
       });
       if (tier.id === "fast") {
-        head.createSpan({ cls: "goodobsidian-ocr-offer-pick", text: "Recommended" });
+        head.createSpan({ cls: "goodobsidian-ocr-offer-pick", text: t("ai.ocr.recommended") });
       }
       text.createDiv({ cls: "goodobsidian-ocr-offer-down", text: tier.downside });
     }
     const buttons = contentEl.createDiv({ cls: "modal-button-container" });
     // `clickable-icon`: Obsidian pads any other button 20 px on iPad.
     buttons
-      .createEl("button", { text: "Not now", cls: "clickable-icon" })
+      .createEl("button", { text: t("settings.models.notNow"), cls: "clickable-icon" })
       .addEventListener("click", () => {
         this.answered = true;
         this.actions.notNow();
         this.close();
       });
     buttons
-      .createEl("button", { text: "Download", cls: "mod-cta clickable-icon" })
+      .createEl("button", { text: t("settings.models.download"), cls: "mod-cta clickable-icon" })
       .addEventListener("click", () => {
         this.answered = true;
         this.actions.download(this.picked);

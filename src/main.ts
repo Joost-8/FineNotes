@@ -865,11 +865,16 @@ export default class GoodObsidianPlugin extends Plugin {
     const pages = (view: InkView): boolean => !view.isBoard;
     this.notebookCommand(
       "scan-document",
-      "Scan document into this notebook",
+      t("notebooks.command.scanDocument"),
       (view) => view.scanDocument(),
       pages,
     );
-    this.notebookCommand("import-pdf", "Import PDF…", (view) => view.importPdf(), pages);
+    this.notebookCommand(
+      "import-pdf",
+      t("notebooks.command.importPdf"),
+      (view) => view.importPdf(),
+      pages,
+    );
     this.notebookCommand(
       "import-vault-pdf",
       t("notebooks.command.importVaultPdf"),
@@ -983,8 +988,10 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => this.readOnDevice(view),
       () => this.settings.handwritingOnDevice !== false,
     );
-    this.notebookCommand("reread-scanned-pages", "Re-read scanned pages of this PDF", (view) =>
-      view.rereadScannedPages(),
+    this.notebookCommand(
+      "reread-scanned-pages",
+      t("notebooks.command.rereadScannedPages"),
+      (view) => view.rereadScannedPages(),
     );
     this.notebookCommand(
       "fit-reset-view",

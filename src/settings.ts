@@ -367,7 +367,7 @@ function modelPurpose() {
   return {
     voice: t("settings.models.purpose.voice"),
     grape: t("settings.models.purpose.grape"),
-    ocr: "The OCR model reads the printed text of scanned PDF pages on this device, so search, the text-snapping highlighter and Copy text work on them; the pages never leave the device.",
+    ocr: t("settings.models.purpose.ocr"),
     learned: t("settings.models.purpose.learned"),
   };
 }
@@ -1478,7 +1478,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           (s) => this.drawPaperWidth(s),
           ["canvas size", "page width"],
         ),
-        this.more("pages", "Folders, templates, file explorer"),
+        this.more("pages", t("settings.pages.more")),
         this.info(
           drawnRow(t("settings.notebookFolder.name"), "", (s) => this.drawNotebookFolder(s), [
             "default folder for new notebooks",
@@ -2123,20 +2123,20 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ? [
               this.info(
                 drawnRow(
-                  `Scanned pages · ${ocrTier.label}`,
+                  t("settings.models.ocrRow", { tier: ocrTier.label }),
                   "",
                   (s) => {
                     this.drawDownload(s, ocrStore);
                     s.addExtraButton((b) =>
                       b
                         .setIcon("trash-2")
-                        .setTooltip("Remove other OCR models")
+                        .setTooltip(t("settings.models.removeOtherOcr"))
                         .onClick(() => void this.plugin.removeOtherOcrModels()),
                     );
                   },
                   ["ocr", "scan", "scanned", "model", "fast", "accurate", "download", "offline"],
                 ),
-                `${modelPurpose().ocr} ${download}`,
+                t("settings.models.withDownload", { purpose: purpose.ocr, download }),
               ),
             ]
           : []),

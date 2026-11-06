@@ -27,6 +27,7 @@
  *   alone for a while; a notice is shown at most once per session.
  */
 
+import { t } from "../i18n/translate";
 import type { PixelRect } from "../recognition/ocr/blank";
 import { type PagePlan, type Region, settledCondition } from "../recognition/ocr/figures";
 import {
@@ -631,10 +632,7 @@ export class OcrService {
     );
     if (!this.noticed) {
       this.noticed = true;
-      this.deps.notice(
-        "FineNotes: a scanned PDF page could not be read on this device. The page stays as it is; " +
-          "details are in the developer console.",
-      );
+      this.deps.notice(t("ai.ocr.pageFailed"));
     }
   }
 

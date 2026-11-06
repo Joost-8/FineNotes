@@ -3209,7 +3209,7 @@ export class Toolbar {
       this.callbacks.onTapeChange?.(nextColor, nextHeight, nextMode);
       this.buildOptions();
     };
-    for (const [each, icon, label] of TAPE_MODES) {
+    for (const [each, icon, label] of tapeModes()) {
       const button = this.barButton(this.optionsEl, icon, label, () => {
         if (each !== mode) set(color, height, each);
       });
@@ -7088,10 +7088,12 @@ function tapeHeightLabels(): string[] {
 }
 
 /** The tape pill's two ways to lay a tape: mode, Lucide icon, name. */
-const TAPE_MODES: readonly (readonly [TapeMode, string, string])[] = [
-  ["straight", "minus", "Straight tape"],
-  ["freehand", "spline", "Freehand tape"],
-];
+function tapeModes(): readonly (readonly [TapeMode, string, string])[] {
+  return [
+    ["straight", "minus", t("toolbar.tape.straight")],
+    ["freehand", "spline", t("toolbar.tape.freehand")],
+  ];
+}
 
 /** A tape height button's mark: a band, taller for each height. */
 
