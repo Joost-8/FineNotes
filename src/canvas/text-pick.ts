@@ -53,6 +53,22 @@ export function pickWord(
   return word && word.rects.length > 0 ? word : null;
 }
 
+/**
+ * A press on a word swept on to page point `to` (FineNotes#164): every word
+ * from the one under `from` to the one nearest `to`, in reading order
+ * whichever way the sweep went, so the word pressed always stays in it.
+ * Null when `from` is over no text (`slop` page px all round).
+ */
+export function sweepWords(
+  layout: TextLayout,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  slop = 0,
+): TextPick | null {
+  const words = selectText(layout, from, to, slop);
+  return words && words.rects.length > 0 ? words : null;
+}
+
 /** Whether a pick holds anything: a character that is not a space. */
 export function isEmptyPick(pick: TextPick): boolean {
   return pick.rects.length === 0;
