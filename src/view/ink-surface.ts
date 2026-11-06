@@ -971,6 +971,8 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
+  /** Whether the highlighter snaps to a PDF page's text (the setting); absent, it does. */
+  highlighterSnapsToText?: () => boolean;
   /** The highlighter's tip, read live (`settings.highlighterTip`); absent is round. */
   highlighterTip?: () => HighlighterTip;
   /** Whether the Brush pen keeps the Pencil's tilt ("Pencil tilt"); off when absent. */
@@ -10777,6 +10779,8 @@ export class InkSurface {
    */
   private startTextMark(box: PageBox, at: Pt): boolean {
     if (this.toolState.tool !== "highlighter" || this.practice) return false;
+    // Switched off, it draws freehand on text too (FineNotes#159).
+    if (this.callbacks.highlighterSnapsToText?.() === false) return false;
     const layout = this.pageText(box.index);
     const selection = layout ? selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
     this.noteTextMark(box.index, layout, selection);

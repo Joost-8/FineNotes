@@ -5263,6 +5263,9 @@ export class Toolbar {
     this.switchRow(list, t("toolbar.highlighter.straighten"), prefs.straightHighlighter, (on) =>
       save({ straightHighlighter: on }),
     );
+    this.switchRow(list, t("toolbar.highlighter.snapText"), prefs.highlighterSnapText, (on) =>
+      save({ highlighterSnapText: on }),
+    );
   }
 
   /**
