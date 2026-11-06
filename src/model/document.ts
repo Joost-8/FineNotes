@@ -744,6 +744,39 @@ export interface GraphElement {
   labels?: false;
 }
 
+/**
+ * A typed equation on a page (discussion #166, `model/equation`): its LaTeX
+ * source, kept so it can be edited again, drawn as a typeset formula by
+ * `canvas/math-layout` into the page's tiles and exports. Drawn under the
+ * ink, like a graph, and kept upright.
+ */
+export interface EquationElement {
+  /** `q<N>`, unique on the page. */
+  id: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the element owned by `<pageId>/<id>` on a neighbouring page, kept here
+   * because it reaches over the join. Derived: rebuilt from its owner after
+   * every edit, and never edited itself. Absent on the owner.
+   */
+  join?: string;
+  /**
+   * The frame's top-left and size, page px, as the editor measured the
+   * formula: every reader fits its drawing into this box, so a device whose
+   * glyphs are a little wider or narrower still shows it in the same place.
+   */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** The LaTeX source, without `$`. */
+  tex: string;
+  /** Hex, as a text box's colour. */
+  color: string;
+  /** The font size it is set at, page px at a 1:1 scale; a resize scales it. */
+  size: number;
+}
+
 export type PageKind = "ink";
 
 export interface Page {
@@ -758,6 +791,8 @@ export interface Page {
   tables?: TableElement[];
   /** Graphs, bottom to top, drawn over the tables. Absent when the page has none. */
   graphs?: GraphElement[];
+  /** Typed equations, bottom to top, drawn over the graphs. Absent when the page has none. */
+  equations?: EquationElement[];
   /** Comments pinned to the page (`model/comments`). Absent when it has none. */
   comments?: PageComment[];
   /**

@@ -34,6 +34,17 @@ describe("selectionKind", () => {
     expect(selectionKind(sel({ textBoxes: [{}, {}] }))).toBe("text");
     expect(selectionKind(sel({ graphs: [{}] }))).toBe("graphs");
     expect(selectionKind(sel({ tables: [{}] }))).toBe("table");
+    expect(selectionKind(sel({ equations: [{}] }))).toBe("equations");
+  });
+
+  it("typed equations get the colour circle and nothing only ink has", () => {
+    const menu = selectionMenu("equations");
+    expect([menu.colour, menu.shapeStyle, menu.handwriting, menu.link]).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
   });
 
   it("a table with the ink in its cells is a table; with other ink, a mix", () => {

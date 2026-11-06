@@ -413,6 +413,7 @@ describe("AddElements and copyElements", () => {
       textBox: () => `t${100 + ++n}`,
       table: () => `g${100 + ++n}`,
       graph: () => `f${100 + ++n}`,
+      equation: () => "q1",
     };
     const copies = copyElements(
       { strokes: [s[1]], images: [i[1]], textBoxes: [t[1]] },
@@ -448,6 +449,7 @@ describe("AddElements and copyElements", () => {
         textBox: () => "t1",
         table: () => "g1",
         graph: () => "f1",
+        equation: () => "q1",
       },
       0,
       0,

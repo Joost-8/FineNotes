@@ -424,6 +424,8 @@ import {
   tableScaleRange,
 } from "../model/table";
 import { EditGraph, graphBounds, nextGraphId } from "../model/graph-element";
+import { RecolorEquations, nextEquationId } from "../model/equation";
+import type { EquationElement } from "../model/document";
 import {
   AddTable,
   InsertTableColumn,
@@ -955,6 +957,14 @@ export interface InkSurfaceCallbacks {
    * selection bar offers Explore only.
    */
   onEditGraph?: (pageId: string, graph: GraphElement) => void;
+  /**
+   * A typed equation to write (discussion #166): `equation` to edit one (a
+   * Text-tool tap on it, or Edit on a selected one), null for a new one at
+   * page point `at` (a tap with the Text tool's Equation on). The host opens
+   * the editor and commits what comes back. Without it equations are only
+   * shown.
+   */
+  onEquation?: (pageId: string, at: Pt, equation: EquationElement | null) => void;
   /** A key press switched tools; the host's toolbar should show the new one. */
   onToolChange?: (tool: ActiveTool) => void;
   /** A key (1 to 8) asked for saved pen `index` (FineNotes#25); the host applies it. */
@@ -1505,6 +1515,7 @@ const NO_IMAGES: ReadonlySet<ImageElement> = new Set();
 const NO_STROKES: ReadonlySet<string> = new Set();
 const NO_TABLES: ReadonlySet<TableElement> = new Set();
 const NO_GRAPHS: ReadonlySet<GraphElement> = new Set();
+const NO_EQUATIONS: ReadonlySet<EquationElement> = new Set();
 const NO_CONNECTORS: ReadonlySet<string> = new Set();
 
 /** A lasso selection: strokes, images and text boxes on one page, held by identity. */
@@ -10111,6 +10122,8 @@ export class InkSurface {
     if (!rect || !drag) return;
 
     if (!this.dragSizesText() || Math.max(rect.w, rect.h) < this.atFitZoom(TEXT_TAP_SLOP)) {
+      // A tap on an equation edits it; with Equation on, a tap places one.
+      if (this.equationAt(box, drag.origin)) return;
       // A tap in a table types in the cell, rather than placing a box on it.
       if (this.editCellAt(box, drag.origin)) return;
       // A tap on a sticky note types on the note.
@@ -10130,6 +10143,36 @@ export class InkSurface {
       w,
       h,
     });
+  }
+
+  /**
+   * A Text-tool tap at page point `at`: on an equation, it opens for
+   * editing; elsewhere, with the Text tool's Equation on, a new one is
+   * written there. Whether the tap was taken.
+   */
+  private equationAt(box: PageBox, at: Pt): boolean {
+    const onEquation = this.callbacks.onEquation;
+    const page = this.pageAt(box.index);
+    if (!onEquation || !page || this.practice || this.callbacks.isLocked?.()) return false;
+    const hit = this.ownEquationAt(page, at);
+    if (hit) {
+      // Picked up, as a text box is by its first tap: it drags from there,
+      // and its bar has Edit and its colour. A tap on it then edits it.
+      this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [hit] });
+      return true;
+    }
+    if (this.toolState.textEquation !== true) return false;
+    onEquation(page.id, at, null);
+    return true;
+  }
+
+  /** Select equation `equationId` on page `pageId` (just placed), as a tap with the lasso would. */
+  selectEquation(pageId: string, equationId: string): boolean {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const equation = page?.equations?.find((candidate) => candidate.id === equationId);
+    if (!page || !equation) return false;
+    this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [equation] });
+    return this.selection !== null;
   }
 
   /**
@@ -11434,7 +11477,9 @@ export class InkSurface {
    */
   private lassoed(page: Page, loop: readonly number[], except?: Stroke): ElementLists {
     const poly = polygonOf(loop);
-    if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [] };
+    if (!poly) {
+      return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [], equations: [] };
+    }
     const filter = lassoFilterFor(this.toolState);
     const anyPart = this.callbacks.lassoAnyPart?.() !== false;
     const near = this.strokeIndex.within(page.id, poly.bounds);
@@ -11469,6 +11514,10 @@ export class InkSurface {
         : [],
       graphs: filter.graphs
         ? own(page.graphs ?? []).filter((graph) => boxInLasso(graphFrame(graph), poly))
+        : [],
+      // An equation is typed text: the Text boxes switch takes it too.
+      equations: filter.textBoxes
+        ? own(page.equations ?? []).filter((equation) => boxInLasso(graphFrame(equation), poly))
         : [],
     };
   }
@@ -11993,6 +12042,9 @@ export class InkSurface {
       graphs: filter.graphs
         ? (page.graphs ?? []).filter((graph) => framed(frameBounds(graphFrame(graph))))
         : [],
+      equations: filter.textBoxes
+        ? (page.equations ?? []).filter((equation) => framed(frameBounds(graphFrame(equation))))
+        : [],
     });
   }
 
@@ -12033,6 +12085,7 @@ export class InkSurface {
         lists.textBoxes.push(...picked.movedOf("textBoxes"));
         (lists.tables ??= []).push(...picked.movedOf("tables"));
         (lists.graphs ??= []).push(...picked.movedOf("graphs"));
+        (lists.equations ??= []).push(...picked.movedOf("equations"));
       }
     }
     this.select(page.id, lists);
@@ -12063,6 +12116,7 @@ export class InkSurface {
       textBoxes: ids(found.textBoxes),
       tables: ids(found.tables),
       graphs: ids(found.graphs),
+      equations: ids(found.equations),
     });
     this.history.push(this.doc, move);
     this.strokeIndex.refreshPages(this.doc.pages, [fromPage.id, toPage.id]);
@@ -12153,6 +12207,12 @@ export class InkSurface {
       this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
       return true;
     }
+    // An equation lies over the graphs; it is picked up on its own, as typed text.
+    const equation = filter.textBoxes ? this.ownEquationAt(page, p) : null;
+    if (equation) {
+      this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [equation] });
+      return true;
+    }
     // A graph lies under the ink and over the tables; it is picked up on its own.
     const graph = filter.graphs ? this.ownGraphAt(page, p) : null;
     if (graph) {
@@ -12198,6 +12258,12 @@ export class InkSurface {
       if (insideShape(stroke, p.x, p.y)) return stroke;
     }
     return null;
+  }
+
+  /** The topmost equation at `p` that is not a mirror of another page's (with the pages joined). */
+  private ownEquationAt(page: Page, p: Pt): EquationElement | null {
+    const list = (page.equations ?? []).filter((e) => !(this.joined && isMirror(e)));
+    return frameAt(list, p);
   }
 
   /** The topmost graph at `p` that is not a mirror of another page's (with the pages joined). */
@@ -12435,6 +12501,7 @@ export class InkSurface {
     const { textBoxes } = elements;
     const tables = elements.tables ?? [];
     const graphs = elements.graphs ?? [];
+    const equations = elements.equations ?? [];
     const images = elements.images.filter((image) => image.locked !== true);
     // A sticky note never goes anywhere without its ink.
     const page = images.some((image) => image.sticky)
@@ -12443,12 +12510,13 @@ export class InkSurface {
     const strokes = page
       ? withNoteInk(page, { strokes: elements.strokes, images })
       : elements.strokes;
-    if (isEmptySelection({ strokes, images, textBoxes, tables, graphs })) return;
+    if (isEmptySelection({ strokes, images, textBoxes, tables, graphs, equations })) return;
     if (this.toolState.tool === "select") this.selectionToolUsed = true;
     if (
       textBoxes.length === 0 &&
       tables.length === 0 &&
       graphs.length === 0 &&
+      equations.length === 0 &&
       images.length === 1 &&
       (strokes.length === 0 || loneNote({ strokes, images }) !== null)
     ) {
@@ -12470,6 +12538,7 @@ export class InkSurface {
       textBoxes: [...withText],
       tables: [...tables],
       graphs: [...graphs],
+      equations: [...equations],
     };
     this.selectionCorners = isLoneShape(this.selection) || this.loneTape(this.selection) !== null;
     this.shapePointsOn = false;
@@ -12533,6 +12602,7 @@ export class InkSurface {
       ...sel.textBoxes.map((textBox) => this.textBoxFrameOf(sel.pageId, textBox)),
       ...(sel.tables ?? []).map((table) => this.tableFrameOf(table)),
       ...(sel.graphs ?? []).map(graphFrame),
+      ...(sel.equations ?? []).map(graphFrame),
     ]);
   }
 
@@ -12977,6 +13047,23 @@ export class InkSurface {
         },
       });
     }
+    // One equation on its own: change what it says, in the editor it was typed in.
+    const equations = sel.equations ?? [];
+    const onEquation = this.callbacks.onEquation;
+    if (equations.length === 1 && selectedCount(sel) === 1 && onEquation) {
+      const equation = equations[0];
+      actions.unshift({
+        id: "edit-equation",
+        icon: "sigma",
+        label: t("surface.command.editEquation"),
+        group: "edit",
+        bar: true,
+        run: () => {
+          this.clearSelection();
+          onEquation(sel.pageId, { x: equation.x, y: equation.y }, equation);
+        },
+      });
+    }
     // One graph on its own: look around in it, or change what it plots.
     const graphs = sel.graphs ?? [];
     if (graphs.length === 1 && selectedCount(sel) === 1) {
@@ -13016,10 +13103,12 @@ export class InkSurface {
         run: () => this.startCellEdit(sel.pageId, table, { row: 0, col: 0 }),
       });
     }
-    if (menu.colour && sel.strokes.length > 0) {
-      const first = sel.strokes[0].color;
+    const coloured = [...sel.strokes, ...(sel.equations ?? [])];
+    if (menu.colour && coloured.length > 0) {
+      const first = coloured[0].color;
       // First in the bar, a disc of its colour opening the colour panel
       // (Goodnotes' Change colour): the pens' picker, and a shape's fill below.
+      // A typed equation's colour too (discussion #166).
       actions.unshift({
         id: "colour",
         icon: "palette",
@@ -13032,7 +13121,7 @@ export class InkSurface {
           colors: this.palette,
           notebook: this.doc.palette?.colors ?? [],
           recent: this.toolState.recentColors ?? [],
-          current: sel.strokes.every((stroke) => stroke.color === first) ? first : null,
+          current: coloured.every((element) => element.color === first) ? first : null,
           pick: (color) => this.recolorSelection(color),
           shown: (color) => shownColor(color, this.paperTheme.night === true),
           custom: (color) => this.recolorCustom(color),
@@ -13690,6 +13779,7 @@ export class InkSurface {
       textBoxes: sel.textBoxes,
       tables: sel.tables,
       graphs: sel.graphs,
+      equations: sel.equations,
     };
     this.clearSelection();
     this.history.push(this.doc, new RemoveElements(sel.pageId, elements, label));
@@ -13730,6 +13820,7 @@ export class InkSurface {
           textBoxes: group.textBoxes,
           tables: group.tables,
           graphs: group.graphs,
+          equations: group.equations,
         },
         bounds,
       );
@@ -13791,6 +13882,7 @@ export class InkSurface {
       textBoxes: entry.elements.textBoxes,
       tables: entry.elements.tables,
       graphs: entry.elements.graphs,
+      equations: entry.elements.equations,
     };
     const d = pastePlacement({
       bounds: entry.bounds,
@@ -13816,12 +13908,14 @@ export class InkSurface {
     let imageSeq = Number(nextImageId(this.doc).slice(1)) - 1;
     let tableSeq = Number(nextTableId(this.doc).slice(1)) - 1;
     let graphSeq = Number(nextGraphId(this.doc).slice(1)) - 1;
+    let equationSeq = Number(nextEquationId(this.doc).slice(1)) - 1;
     return {
       stroke: () => this.strokeIds.next(),
       image: () => `i${++imageSeq}`,
       textBox: () => this.textBoxIds.next(),
       table: () => `g${++tableSeq}`,
       graph: () => `f${++graphSeq}`,
+      equation: () => `q${++equationSeq}`,
     };
   }
 
@@ -13989,6 +14083,7 @@ export class InkSurface {
       textBox: () => "t",
       table: () => "g",
       graph: () => "f",
+      equation: () => "q",
     };
     const moved = copyElements(sel, ids, pad - bounds.minX, pad - bounds.minY);
     const page: Page = { ...blankPage("sticker", { width, height }), ...moved };
@@ -15181,11 +15276,20 @@ export class InkSurface {
   /** Give every selected stroke one colour, as one undo step. */
   private recolorSelection(color: string): void {
     const sel = this.liveSelection();
-    if (!sel || sel.strokes.length === 0 || this.callbacks.isLocked?.()) return;
-    if (sel.strokes.every((stroke) => stroke.color === color)) return;
-    this.history.push(this.doc, new RecolorStrokes(sel.pageId, sel.strokes, color));
+    const equations = sel?.equations ?? [];
+    if (!sel || (sel.strokes.length === 0 && equations.length === 0)) return;
+    if (this.callbacks.isLocked?.()) return;
+    const all = [...sel.strokes, ...equations];
+    if (all.every((element) => element.color === color)) return;
+    const parts: Command[] = [];
+    if (sel.strokes.length > 0) parts.push(new RecolorStrokes(sel.pageId, sel.strokes, color));
+    if (equations.length > 0) parts.push(new RecolorEquations(sel.pageId, equations, color));
+    this.history.push(
+      this.doc,
+      parts.length === 1 ? parts[0] : new CompositeCommand(parts[0].label, parts),
+    );
     const box = this.boxForPage(sel.pageId);
-    const bounds = selectionBounds(sel.strokes, [], []);
+    const bounds = selectionBounds(sel.strokes, [], equations.map(graphFrame));
     // A colour is not part of a stroke's cached outline: re-rasterise.
     if (box && bounds) this.renderer?.invalidateRegion(box.index, bounds);
     this.renderDry();
@@ -15377,6 +15481,7 @@ export class InkSurface {
       textBoxes: [],
       tables: [],
       graphs: [],
+      equations: [],
     };
   }
 
@@ -15686,6 +15791,9 @@ export class InkSurface {
     this.renderer?.setHiddenImages(new Set([...drag.selection.images, ...mirrors.images]));
     this.renderer?.setHiddenTables(new Set([...(drag.selection.tables ?? []), ...mirrors.tables]));
     this.renderer?.setHiddenGraphs(new Set([...(drag.selection.graphs ?? []), ...mirrors.graphs]));
+    this.renderer?.setHiddenEquations(
+      new Set([...(drag.selection.equations ?? []), ...mirrors.equations]),
+    );
     // Its connectors leave the tiles too, and follow it on the wet layer.
     drag.connectors = this.connectorIdsOf(drag.selection.pageId, drag.selection.strokes);
     if (drag.connectors.size > 0) {
@@ -15703,6 +15811,7 @@ export class InkSurface {
     images: ImageElement[];
     tables: TableElement[];
     graphs: GraphElement[];
+    equations: EquationElement[];
     regions: Array<{ index: number; bounds: Bounds }>;
   } {
     const out = {
@@ -15710,6 +15819,7 @@ export class InkSurface {
       images: [] as ImageElement[],
       tables: [] as TableElement[],
       graphs: [] as GraphElement[],
+      equations: [] as EquationElement[],
       regions: [] as Array<{ index: number; bounds: Bounds }>,
     };
     if (!this.joined) return out;
@@ -15720,12 +15830,13 @@ export class InkSurface {
       images: keys(selection.images),
       tables: keys(selection.tables),
       graphs: keys(selection.graphs),
+      equations: keys(selection.equations),
     };
     this.pageLayout.boxes.forEach((box) => {
       const page = this.pageAt(box.index);
       if (!page || page.id === selection.pageId) return;
       const take = <T extends { join?: string }>(
-        kind: "strokes" | "images" | "tables" | "graphs",
+        kind: "strokes" | "images" | "tables" | "graphs" | "equations",
         list: readonly T[] | undefined,
         into: (element: T) => void,
       ): void => {
@@ -15740,6 +15851,7 @@ export class InkSurface {
       take("images", page.images, (image) => out.images.push(image));
       take("tables", page.tables, (table) => out.tables.push(table));
       take("graphs", page.graphs, (graph) => out.graphs.push(graph));
+      take("equations", page.equations, (equation) => out.equations.push(equation));
     });
     return out;
   }
@@ -15768,6 +15880,8 @@ export class InkSurface {
         { x: anchor.x, y: anchor.y, angle },
         drag.selection.tables ?? [],
         drag.selection.graphs ?? [],
+        true,
+        drag.selection.equations ?? [],
       );
       return;
     }
@@ -15787,6 +15901,7 @@ export class InkSurface {
       drag.selection.graphs ?? [],
       // A move is carried over the desk and onto other pages, not cut at its own page's edge.
       scale !== null || drag.turn !== null,
+      drag.selection.equations ?? [],
     );
     this.renderDraggedConnectors(drag, box);
     this.requestZoomPaint();
@@ -15848,6 +15963,15 @@ export class InkSurface {
         this.editShapeLabel(drag.own.pageId, shape);
         return;
       }
+      // A tap on an equation picked up on its own opens it in the equation window.
+      const equation =
+        commit && !drag.scale && !drag.turn && !drag.fingers ? this.loneEquation(drag.own) : null;
+      const onEquation = this.callbacks.onEquation;
+      if (equation && onEquation && !this.callbacks.isLocked?.()) {
+        this.clearSelection();
+        onEquation(drag.own.pageId, { x: equation.x, y: equation.y }, equation);
+        return;
+      }
       this.syncSelectionOverlay();
       return;
     }
@@ -15855,6 +15979,7 @@ export class InkSurface {
     this.renderer?.setHiddenImages(NO_IMAGES);
     this.renderer?.setHiddenTables(NO_TABLES);
     this.renderer?.setHiddenGraphs(NO_GRAPHS);
+    this.renderer?.setHiddenEquations(NO_EQUATIONS);
     if (drag.connectors && drag.connectors.size > 0) {
       this.renderer?.setHiddenConnectors(NO_CONNECTORS);
       // Back into the tiles where they are; a move repaints where they were too (`changed`).
@@ -16059,12 +16184,18 @@ export class InkSurface {
   /** Where each connector was last drawn, so a move repaints both places. */
   private connectorShown: Map<string, { pageId: string; bounds: Bounds }> | null = null;
 
+  /** The one equation a selection holds on its own; null for anything else. */
+  private loneEquation(sel: GroupSelection): EquationElement | null {
+    const equations = sel.equations ?? [];
+    return equations.length === 1 && selectedCount(sel) === 1 ? equations[0] : null;
+  }
+
   /** The one closed shape a selection holds on its own; null for anything else. */
   private loneLinkShape(sel: GroupSelection | null): Stroke | null {
     if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
       return null;
     }
-    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
+    if (hasFramed(sel)) return null;
     const stroke = sel.strokes[0];
     return isWholeClosedShape(stroke) ? stroke : null;
   }
@@ -16400,8 +16531,7 @@ export class InkSurface {
       group.strokes[0] === bar.stroke &&
       group.images.length === 0 &&
       group.textBoxes.length === 0 &&
-      (group.tables?.length ?? 0) === 0 &&
-      (group.graphs?.length ?? 0) === 0;
+      !hasFramed(group);
     if (!ok) this.linkBar = null;
     return ok;
   }
@@ -16569,7 +16699,7 @@ export class InkSurface {
     if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
       return null;
     }
-    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
+    if (hasFramed(sel)) return null;
     const stroke = sel.strokes[0];
     const handles = pointHandles(stroke.shape, stroke.pts);
     return handles ? { stroke, handles } : null;
@@ -16782,7 +16912,7 @@ export class InkSurface {
     if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
       return null;
     }
-    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
+    if (hasFramed(sel)) return null;
     // A freehand tape has no straight sides: it resizes as ink does.
     const only = sel.strokes[0];
     return isTape(only) && !isFreehandTape(only.pts) ? only : null;
@@ -17068,6 +17198,7 @@ export class InkSurface {
         if (
           this.fingerHoldsTextBox(tapped, p) ||
           this.fingerPicksShape(tapped, p) ||
+          this.fingerPicksEquation(tapped, p) ||
           this.fingerPicksGraph(tapped, p) ||
           this.fingerPicksTable(tapped, p) ||
           this.fingerPicksPicture(tapped, p) ||
@@ -17447,6 +17578,23 @@ export class InkSurface {
    * the lasso is picked and the graph selected, its bar offering Explore and
    * Edit, as a tap on a picture does. The Pencil keeps writing over it.
    */
+  private fingerPicksEquation(page: Page, p: Pt): boolean {
+    if (this.practice) return false;
+    const equation = this.ownEquationAt(page, p);
+    if (!equation) return false;
+    // With the Text tool an equation is typed text: picked up where it is,
+    // the Text tool kept, so it drags from there and a second tap edits it.
+    if (this.toolState.tool === "text") {
+      this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [equation] });
+      return true;
+    }
+    this.setTool("select");
+    this.callbacks.onToolChange?.("select");
+    this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [equation] });
+    return true;
+  }
+
+  /** As {@link fingerPicksEquation}, for a graph. */
   private fingerPicksGraph(page: Page, p: Pt): boolean {
     if (this.practice || this.toolState.tool === "text") return false;
     const graph = graphAt(page, p);
@@ -18283,7 +18431,8 @@ export class InkSurface {
       sel.images.length +
       sel.textBoxes.length +
       (sel.tables?.length ?? 0) +
-      (sel.graphs?.length ?? 0);
+      (sel.graphs?.length ?? 0) +
+      (sel.equations?.length ?? 0);
     const stroke = sel.strokes.length === 1 && others === 0 ? sel.strokes[0] : null;
     return stroke && takesLabel(stroke) ? stroke : null;
   }
@@ -18458,7 +18607,15 @@ export class InkSurface {
   private imageAsSelection(pageId: string, image: ImageElement): GroupSelection {
     const page = this.doc.pages.find((candidate) => candidate.id === pageId);
     const ink = image.sticky && page ? page.strokes.filter((s) => s.onSticky === image.id) : [];
-    return { pageId, strokes: ink, images: [image], textBoxes: [], tables: [], graphs: [] };
+    return {
+      pageId,
+      strokes: ink,
+      images: [image],
+      textBoxes: [],
+      tables: [],
+      graphs: [],
+      equations: [],
+    };
   }
 
   /** Take the dragged image out of the tiles and draw it on the wet layer instead. */
@@ -18718,7 +18875,12 @@ export class InkSurface {
   private loneTable(sel: ElementLists): TableElement | null {
     const tables = sel.tables ?? [];
     const others =
-      sel.images.length + sel.textBoxes.length + (sel.graphs?.length ?? 0) + tables.length - 1;
+      sel.images.length +
+      sel.textBoxes.length +
+      (sel.graphs?.length ?? 0) +
+      (sel.equations?.length ?? 0) +
+      tables.length -
+      1;
     return tables.length === 1 && others === 0 ? tables[0] : null;
   }
 
@@ -19729,6 +19891,7 @@ function selectablesOf(page: Page): ElementLists {
     textBoxes: page.textBoxes,
     tables: page.tables ?? [],
     graphs: page.graphs ?? [],
+    equations: page.equations ?? [],
   };
 }
 
@@ -19739,7 +19902,17 @@ function selectedCount(sel: ElementLists): number {
     sel.images.length +
     sel.textBoxes.length +
     (sel.tables?.length ?? 0) +
-    (sel.graphs?.length ?? 0)
+    (sel.graphs?.length ?? 0) +
+    (sel.equations?.length ?? 0)
+  );
+}
+
+/** Whether a selection holds a table, a graph or an equation: elements with a frame of their own. */
+function hasFramed(sel: ElementLists): boolean {
+  return (
+    (sel.tables?.length ?? 0) > 0 ||
+    (sel.graphs?.length ?? 0) > 0 ||
+    (sel.equations?.length ?? 0) > 0
   );
 }
 
@@ -19850,9 +20023,26 @@ export function spaceReadout(plan: SpacePlan): string {
   return parts.join(" · ");
 }
 
-/** A graph's frame, page px: where it is drawn and where it is picked up. */
-function graphFrame(graph: GraphElement): { x: number; y: number; w: number; h: number } {
+/** A graph's (or an equation's) frame, page px: where it is drawn and where it is picked up. */
+function graphFrame(graph: GraphElement | EquationElement): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} {
   return { x: graph.x, y: graph.y, w: graph.w, h: graph.h };
+}
+
+/** The topmost of `list` whose frame holds `p` (page px), or null. */
+function frameAt<T extends { x: number; y: number; w: number; h: number }>(
+  list: readonly T[],
+  p: Pt,
+): T | null {
+  for (let i = list.length - 1; i >= 0; i--) {
+    const f = list[i];
+    if (p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + f.h) return f;
+  }
+  return null;
 }
 
 /** The topmost graph whose frame holds `p` (page px), or null. */

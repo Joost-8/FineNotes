@@ -189,6 +189,7 @@ describe("copies", () => {
       textBox: () => `t${++n + 10}`,
       table: () => "g9",
       graph: () => "f9",
+      equation: () => "q1",
     };
     const both = copyElements({ strokes: [s], images: [], textBoxes: [label] }, ids, 10, 10);
     expect(both.textBoxes[0].onShape).toBe(both.strokes[0].id);

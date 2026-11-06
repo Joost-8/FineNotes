@@ -1517,9 +1517,34 @@ function renderBox(parent: HTMLElement, box: MathBox): void {
       renderBox(root.createSpan({ cls: "gob-m-radicand" }), box.body);
       return;
     }
+    case "sub": {
+      // Only typed equations make these; the calculator's display never does.
+      const sub = parent.createSpan({ cls: "gob-m-pow" });
+      renderBox(sub.createSpan({ cls: "gob-m-base" }), box.base);
+      if (box.sup) renderBox(sub.createSpan({ cls: "gob-m-sup" }), box.sup);
+      renderBox(sub.createSpan({ cls: "gob-m-sub" }), box.sub);
+      return;
+    }
+    case "matrix":
+      parent.createSpan({ cls: "gob-m-op", text: box.open });
+      box.rows.forEach((cells, i) => {
+        if (i > 0) parent.createSpan({ cls: "gob-m-op", text: "; " });
+        cells.forEach((cell, j) => {
+          if (j > 0) parent.createSpan({ cls: "gob-m-op", text: ", " });
+          renderBox(parent, cell);
+        });
+      });
+      parent.createSpan({ cls: "gob-m-op", text: box.close });
+      return;
+    case "accent":
+      renderBox(parent, box.body);
+      return;
+    case "space":
+      parent.createSpan({ text: " " });
+      return;
     case "paren":
     case "abs": {
-      const [open, close] = box.t === "paren" ? ["(", ")"] : ["|", "|"];
+      const [open, close] = box.t === "paren" ? [box.open ?? "(", box.close ?? ")"] : ["|", "|"];
       const group = parent.createSpan({ cls: "gob-m-group" });
       group.createSpan({ cls: "gob-m-fence", text: open });
       renderBox(group.createSpan(), box.body);

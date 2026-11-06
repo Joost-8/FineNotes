@@ -66,6 +66,7 @@ describe("copies", () => {
       textBox: () => "t1",
       table: () => "g1",
       graph: () => "f1",
+      equation: () => "q1",
     };
     const both = copyElements(
       { strokes: page.strokes, images: page.images, textBoxes: [] },

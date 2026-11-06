@@ -441,6 +441,7 @@ describe("the lasso's commands and the clipboard carry graphs whole", () => {
     textBox: () => "t1",
     table: () => "g1",
     graph: () => "f2",
+    equation: () => "q1",
   };
 
   it("duplicates a graph whole, unknown spec fields included, and undoes it", () => {

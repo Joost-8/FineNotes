@@ -5199,6 +5199,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 
 .goodobsidian-options .goodobsidian-text-control.is-pin.is-active,
 .goodobsidian-options .goodobsidian-text-control.is-drag-size.is-active,
+.goodobsidian-options .goodobsidian-text-control.is-equation.is-active,
 .goodobsidian-options .goodobsidian-text-control.is-format.is-on {
   color: var(--interactive-accent);
   background: var(--gob-accent-tint);
@@ -5216,6 +5217,13 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 
 .goodobsidian-text-pin-icon {
   display: inline-flex;
+}
+
+/* Equation (discussion #166): Σ in the face equations are set in. */
+.goodobsidian-text-sigma {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 19px;
+  line-height: 1;
 }
 
 .goodobsidian-options .goodobsidian-text-control .goodobsidian-text-pin-icon svg {
@@ -5241,6 +5249,8 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   max-width: 3.2em;
 }
 
+/* First step (is-short): only the pin's label goes; the pin keeps its icon. */
+.goodobsidian-options.is-short .goodobsidian-text-pin-label,
 .goodobsidian-options.is-compact .goodobsidian-text-pin-label {
   display: none;
 }
@@ -13536,6 +13546,7 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 /* The calculator's graph popped out over the notebook (view/graph-window.ts):
    above the page, below pop-ups; moved by its bar, sized by its corner. */
 .goodobsidian-graph-window,
+.goodobsidian-eq-window,
 .goodobsidian-calc-window,
 .goodobsidian-zoombox-window {
   position: absolute;
@@ -13561,6 +13572,7 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 }
 
 .goodobsidian-graph-window-bar,
+.goodobsidian-eq-window-bar,
 .goodobsidian-calc-window-bar,
 .goodobsidian-zoombox-window-bar {
   display: flex;
@@ -13574,6 +13586,7 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 }
 
 .goodobsidian-graph-window-title,
+.goodobsidian-eq-window-title,
 .goodobsidian-calc-window-title,
 .goodobsidian-zoombox-window-title {
   flex: 1 1 auto;
@@ -13591,6 +13604,7 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 }
 
 button.clickable-icon.goodobsidian-graph-window-button,
+button.clickable-icon.goodobsidian-eq-window-button,
 button.clickable-icon.goodobsidian-calc-window-button,
 button.clickable-icon.goodobsidian-zoombox-window-button {
   flex: 0 0 auto;
@@ -13602,6 +13616,7 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 }
 
 .goodobsidian-graph-window-body,
+.goodobsidian-eq-window-body,
 .goodobsidian-calc-window-body,
 .goodobsidian-zoombox-window-body {
   display: flex;
@@ -13649,6 +13664,7 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 
 /* The corner to resize from: a 28 px target over the graph's corner. */
 .goodobsidian-graph-window-grip,
+.goodobsidian-eq-window-grip,
 .goodobsidian-calc-window-grip,
 .goodobsidian-zoombox-window-grip {
   position: absolute;
@@ -13665,6 +13681,7 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 }
 
 .goodobsidian-graph-window-grip svg,
+.goodobsidian-eq-window-grip svg,
 .goodobsidian-calc-window-grip svg,
 .goodobsidian-zoombox-window-grip svg {
   width: 14px;
@@ -13761,6 +13778,7 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 
 /* The window last touched sits over the other one. */
 .goodobsidian-graph-window.is-front,
+.goodobsidian-eq-window.is-front,
 .goodobsidian-calc-window.is-front,
 .goodobsidian-zoombox-window.is-front {
   z-index: 21;
@@ -16646,6 +16664,61 @@ button.goodobsidian-library-fold .goodobsidian-library-fold-caret {
 button.goodobsidian-library-fold .svg-icon {
   width: 16px;
   height: 16px;
+}
+
+/* ------------------------------------------------------ equation window */
+
+/* Typed equations (view/equation-editor.ts, discussion #166): the LaTeX
+   source, the formula as the page draws it, and ✓. Framed as the calculator. */
+.goodobsidian-eq {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.goodobsidian-eq-window textarea.goodobsidian-eq-source {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 52px;
+  resize: none;
+  padding: 8px 10px;
+  border-radius: var(--gob-radius-m);
+  font-family: var(--font-monospace);
+  font-size: 15px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.goodobsidian-eq-preview {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 60px;
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+.goodobsidian-eq-bar {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-right: 22px;
+}
+
+.goodobsidian-eq-window button.clickable-icon.goodobsidian-eq-place {
+  width: 40px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-eq-window button.clickable-icon.goodobsidian-eq-place:disabled {
+  opacity: 0.4;
 }
 
 /* A PDF cover kept from before (FineNotes#146) shows at once, without the fade. */

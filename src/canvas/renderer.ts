@@ -71,6 +71,7 @@ import {
   type ShapeKind,
   type Stroke,
   type GraphElement,
+  type EquationElement,
   type TableElement,
   type TextBoxElement,
   type Tool,
@@ -96,6 +97,8 @@ import {
   noteTextToPage,
 } from "../model/sticky-notes";
 import { paintGraph } from "./graph-paint";
+import { paintEquation } from "./equation-paint";
+import { equationBounds } from "../model/equation";
 import { type RoutedConnector, paintConnector, paintConnectors } from "./connector-paint";
 import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
@@ -786,6 +789,8 @@ export class Renderer {
   private hiddenTables: ReadonlySet<TableElement> = new Set();
   /** Graphs left out of tiles and previews: a lasso selection being dragged, or one being explored. */
   private hiddenGraphs: ReadonlySet<GraphElement> = new Set();
+  /** Equations left out of tiles and previews: a lasso selection being dragged, or one being edited. */
+  private hiddenEquations: ReadonlySet<EquationElement> = new Set();
   /**
    * A note's text boxes (by id) left out of the tiles: those whose textarea
    * shows them, being typed in or held (`setHiddenText`).
@@ -1035,6 +1040,11 @@ export class Renderer {
   /** Leave these graphs out of tiles and previews; as above, the caller invalidates. */
   setHiddenGraphs(graphs: ReadonlySet<GraphElement>): void {
     this.hiddenGraphs = graphs;
+  }
+
+  /** Leave these equations out of tiles and previews; as above, the caller invalidates. */
+  setHiddenEquations(equations: ReadonlySet<EquationElement>): void {
+    this.hiddenEquations = equations;
   }
 
   /** Leave these connectors (by id) out of tiles and previews; as above, the caller invalidates. */
@@ -2336,6 +2346,7 @@ export class Renderer {
     this.paintImages(ctx, page, region, level, ink);
     this.paintTables(ctx, page, region);
     this.paintGraphs(ctx, page, region, level);
+    this.paintEquations(ctx, page, region);
     // Arrows joining shapes lie under the ink, as the tables and graphs do.
     const night = pageLook(page.backdrop, this.paper).night;
     paintConnectors(ctx, page, night, region, this.hiddenConnectors);
@@ -2449,6 +2460,17 @@ export class Renderer {
       if (this.hiddenGraphs.has(graph)) continue;
       if (!overlaps(padBounds(graphBounds(graph), 1), region)) continue;
       paintGraph(ctx, graph, { level, night, paper });
+    }
+  }
+
+  /** The page's typed equations that overlap `region`, over the graphs and under the ink. */
+  private paintEquations(ctx: CanvasRenderingContext2D, page: Page, region: Bounds): void {
+    if (!page.equations || page.equations.length === 0) return;
+    const night = pageLook(page.backdrop, this.paper).night;
+    for (const equation of page.equations) {
+      if (this.hiddenEquations.has(equation)) continue;
+      if (!overlaps(padBounds(equationBounds(equation), 2), region)) continue;
+      paintEquation(ctx, equation, night);
     }
   }
 
@@ -2733,6 +2755,7 @@ export class Renderer {
     tables: readonly TableElement[] = [],
     graphs: readonly GraphElement[] = [],
     clip = true,
+    equations: readonly EquationElement[] = [],
   ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
@@ -2795,6 +2818,31 @@ export class Renderer {
           paintTable(ctx, table, night, null, layout);
           ctx.restore();
         } else paintTable(ctx, table, night, null, layout);
+      }
+      ctx.restore();
+    }
+    if (equations.length > 0) {
+      // Upright as well: an equation's middle goes round under a turn.
+      ctx.save();
+      ctx.translate(dx, dy);
+      if (scale && scale.k > 0 && Number.isFinite(scale.k)) {
+        ctx.translate(scale.x, scale.y);
+        ctx.scale(scale.k, scale.k);
+        ctx.translate(-scale.x, -scale.y);
+      }
+      for (const equation of equations) {
+        ctx.save();
+        if (turn && Number.isFinite(turn.angle) && turn.angle !== 0) {
+          const cx = equation.x + equation.w / 2;
+          const cy = equation.y + equation.h / 2;
+          const c = Math.cos(turn.angle);
+          const s = Math.sin(turn.angle);
+          const tx = turn.x + (cx - turn.x) * c - (cy - turn.y) * s;
+          const ty = turn.y + (cx - turn.x) * s + (cy - turn.y) * c;
+          ctx.translate(tx - cx, ty - cy);
+        }
+        paintEquation(ctx, equation, night);
+        ctx.restore();
       }
       ctx.restore();
     }
@@ -3427,6 +3475,8 @@ export function renderPageThumbnail(
   for (const graph of page.graphs ?? []) {
     paintGraph(ctx, graph, { level: k, night: look.night, paper: look.paper });
   }
+  // And typed equations, over the graphs.
+  for (const equation of page.equations ?? []) paintEquation(ctx, equation, look.night);
   // And the arrows joining shapes.
   paintConnectors(ctx, page, look.night);
 
