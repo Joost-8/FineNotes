@@ -249,6 +249,8 @@ import {
   strokeReach,
 } from "../canvas/mirrors";
 import {
+  FREEHAND_TAPE_HOOK,
+  FREEHAND_TAPE_SMOOTHING,
   FREEHAND_TAPE_TOLERANCE,
   MIN_TAPE_LENGTH,
   TAPE_HANDLES,
@@ -9175,11 +9177,17 @@ export class InkSurface {
    * its `path` (simplified as it is laid, `final`; the draft keeps every point).
    */
   private tapeStroke(drag: { from: Pt; to: Pt; path: Pt[] | null }, final = false): Stroke | null {
+    const size = tapeHeightOf(this.toolState.tapeHeight);
     const pts = drag.path
       ? freehandTapePoints(
           drag.path,
           final ? this.atFitZoom(FREEHAND_TAPE_TOLERANCE) : 0,
           this.atFitZoom(MIN_TAPE_LENGTH),
+          {
+            radius: size * FREEHAND_TAPE_SMOOTHING,
+            hook: this.atFitZoom(FREEHAND_TAPE_HOOK),
+            lift: final,
+          },
         )
       : tapePoints(
           drag.from,
@@ -9191,7 +9199,7 @@ export class InkSurface {
     return {
       id: "tape-draft",
       color: tapeColorOf(this.toolState.tapeColor),
-      size: tapeHeightOf(this.toolState.tapeHeight),
+      size,
       tool: "tape",
       pts,
     };

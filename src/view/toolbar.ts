@@ -6877,12 +6877,13 @@ function tapeHeightLabels(): string[] {
   return [t("toolbar.tape.narrow"), t("toolbar.tape.medium"), t("toolbar.tape.wide")];
 }
 
-/** A tape height button's mark: a band, taller for each height. */
 /** The tape pill's two ways to lay a tape: mode, Lucide icon, name. */
 const TAPE_MODES: readonly (readonly [TapeMode, string, string])[] = [
   ["straight", "minus", "Straight tape"],
   ["freehand", "spline", "Freehand tape"],
 ];
+
+/** A tape height button's mark: a band, taller for each height. */
 
 function tapeHeightGlyph(index: number): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");

@@ -213,10 +213,152 @@ function simplify(path: readonly TapePt[], tolerance: number): TapePt[] {
   return path.filter((_, i) => keep[i] === 1);
 }
 
+/** How far a pen-down or lift hook may run, page px at fit zoom. */
+export const FREEHAND_TAPE_HOOK = 24;
+
+/** A hook is cut only where the path turns at least this much, degrees. */
+const HOOK_TURN = 50;
+
+/** How smooth a freehand tape's path is: the averaging reach, in tape heights. */
+export const FREEHAND_TAPE_SMOOTHING = 0.6;
+
+/** Distances along `path` from its start, one per point. */
+function along(path: readonly TapePt[]): number[] {
+  const out = [0];
+  for (let i = 1; i < path.length; i++) {
+    out.push(out[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y));
+  }
+  return out;
+}
+
+/** The angle between two directions, degrees (0 to 180). */
+function turnBetween(ax: number, ay: number, bx: number, by: number): number {
+  const la = Math.hypot(ax, ay);
+  const lb = Math.hypot(bx, by);
+  if (la < 1e-9 || lb < 1e-9) return 0;
+  const cos = Math.max(-1, Math.min(1, (ax * bx + ay * by) / (la * lb)));
+  return (Math.acos(cos) * 180) / Math.PI;
+}
+
 /**
- * The points of a freehand tape drawn through `samples` (page px): the path
- * simplified to `tolerance` page px (0: every point, for a draft), at the
- * neutral pressure a tape keeps.
+ * `path` without the hook the pen makes as it lands: the sharpest turn
+ * within `budget` page px of the start (and no further than a sixth of the
+ * path), cut there when it turns at least `HOOK_TURN`. The direction after
+ * the turn is read over another `budget`, so a gentle curve is no hook.
+ */
+function trimStartHook(path: readonly TapePt[], budget: number): TapePt[] {
+  if (path.length < 3 || !(budget > 0)) return path.slice();
+  const dist = along(path);
+  const total = dist[dist.length - 1];
+  const reach = Math.min(budget, total / 6);
+  let best = 0;
+  let cut = -1;
+  for (let k = 1; k < path.length - 1 && dist[k] <= reach; k++) {
+    if (dist[k] < 1e-6) continue;
+    let j = k + 1;
+    while (j < path.length - 1 && dist[j] - dist[k] < budget) j++;
+    const turn = turnBetween(
+      path[k].x - path[0].x,
+      path[k].y - path[0].y,
+      path[j].x - path[k].x,
+      path[j].y - path[k].y,
+    );
+    if (turn > best) {
+      best = turn;
+      cut = k;
+    }
+  }
+  return best >= HOOK_TURN && cut > 0 ? path.slice(cut) : path.slice();
+}
+
+/** `path` resampled every `step` page px along it, its two ends kept. */
+function resample(path: readonly TapePt[], step: number): TapePt[] {
+  const dist = along(path);
+  const total = dist[dist.length - 1];
+  const count = Math.max(1, Math.round(total / step));
+  const out: TapePt[] = [];
+  let seg = 0;
+  for (let n = 0; n <= count; n++) {
+    const d = (total * n) / count;
+    while (seg < path.length - 2 && dist[seg + 1] < d) seg++;
+    const span = dist[seg + 1] - dist[seg];
+    const t = span > 1e-9 ? (d - dist[seg]) / span : 0;
+    out.push({
+      x: path[seg].x + (path[seg + 1].x - path[seg].x) * t,
+      y: path[seg].y + (path[seg + 1].y - path[seg].y) * t,
+    });
+  }
+  return out;
+}
+
+/**
+ * Evenly spaced points averaged over a Gaussian window of `half` points
+ * either side. Past an end the path is mirrored through that end point, so
+ * the end stays where it is and the window stays full width up to it (a
+ * window narrowed at the ends would keep the wobble there).
+ */
+function averaged(path: readonly TapePt[], half: number): TapePt[] {
+  const last = path.length - 1;
+  const h = Math.min(half, last);
+  if (h < 1) return path.slice();
+  const at = (j: number): TapePt => {
+    if (j < 0) return { x: 2 * path[0].x - path[-j].x, y: 2 * path[0].y - path[-j].y };
+    if (j > last) {
+      const m = 2 * last - j;
+      return { x: 2 * path[last].x - path[m].x, y: 2 * path[last].y - path[m].y };
+    }
+    return path[j];
+  };
+  const sigma = h / 2;
+  const weights: number[] = [];
+  let total = 0;
+  for (let k = -h; k <= h; k++) {
+    const w = Math.exp(-(k * k) / (2 * sigma * sigma));
+    weights.push(w);
+    total += w;
+  }
+  return path.map((p, i) => {
+    if (i === 0 || i === last) return p;
+    let x = 0;
+    let y = 0;
+    for (let k = -h; k <= h; k++) {
+      const q = at(i + k);
+      x += q.x * weights[k + h];
+      y += q.y * weights[k + h];
+    }
+    return { x: x / total, y: y / total };
+  });
+}
+
+/** How a freehand tape's drag is cleaned before it is stored. */
+export interface TapeSmoothing {
+  /** The averaging reach, page px: wobbles shorter than this become a curve. */
+  radius: number;
+  /** How far a pen-down (and, with `lift`, lift) hook may run, page px. */
+  hook: number;
+  /** Whether the end is finished too: false while the pen is still down. */
+  lift: boolean;
+}
+
+/**
+ * A drag's path with its hooks cut (`smooth.hook`) and its wobble averaged
+ * into a smooth curve (`smooth.radius`), its ends kept in place.
+ */
+export function smoothTapePath(path: readonly TapePt[], smooth: TapeSmoothing): TapePt[] {
+  let out = trimStartHook(path, smooth.hook);
+  if (smooth.lift) out = trimStartHook(out.slice().reverse(), smooth.hook).reverse();
+  if (out.length < 3 || !(smooth.radius > 0)) return out;
+  const step = Math.max(0.25, smooth.radius / 6);
+  const even = resample(out, step);
+  const half = Math.round(smooth.radius / step);
+  return averaged(averaged(even, half), half);
+}
+
+/**
+ * The points of a freehand tape drawn through `samples` (page px): with
+ * `smooth`, its hooks cut and its wobble made a smooth curve; then
+ * simplified to `tolerance` page px (0: every point), at the neutral
+ * pressure a tape keeps.
  * Null when the path is shorter than `minLength`: a tap lays no tape. A path
  * that simplifies to one straight line is a straight tape.
  */
@@ -224,6 +366,7 @@ export function freehandTapePoints(
   samples: readonly TapePt[],
   tolerance: number,
   minLength = MIN_TAPE_LENGTH,
+  smooth?: TapeSmoothing,
 ): number[] | null {
   const path = samples.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
   let length = 0;
@@ -231,7 +374,8 @@ export function freehandTapePoints(
     length += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
   }
   if (path.length < 2 || !(length >= minLength)) return null;
-  const kept = tolerance > 0 ? simplify(path, tolerance) : path;
+  const clean = smooth ? smoothTapePath(path, smooth) : path;
+  const kept = tolerance > 0 ? simplify(clean, tolerance) : clean;
   const out: number[] = [];
   for (const p of kept) out.push(round2(p.x), round2(p.y), 0.5);
   return out;

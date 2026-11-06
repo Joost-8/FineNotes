@@ -679,6 +679,14 @@ body:not(.is-mobile) .goodobsidian-view {
   background: var(--gob-well);
 }
 
+/* The tape's straight / freehand pick is filled in the accent, hovered or
+   not: on the iPad a tapped button keeps :hover, and the grey well above
+   would otherwise hide which one is on. */
+.goodobsidian-options button.goodobsidian-tape-mode.is-active:not(:disabled) {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
 .goodobsidian-options button:disabled {
   opacity: 0.35;
   cursor: default;
