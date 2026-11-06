@@ -912,7 +912,8 @@ body:not(.is-mobile) .goodobsidian-view {
 /* Eraser mode button and shape colour: wells, like the text drops. */
 
 .goodobsidian-options button.goodobsidian-erasermode,
-.goodobsidian-options .goodobsidian-shape-color.clickable-icon {
+.goodobsidian-options .goodobsidian-shape-color.clickable-icon,
+.goodobsidian-options .goodobsidian-shape-style.clickable-icon {
   border-radius: var(--gob-well-radius);
   background: var(--gob-well);
 }
@@ -10507,8 +10508,10 @@ button.goodobsidian-color-delete.clickable-icon {
   scale: 0.7;
 }
 
-/* The shape pill's colour: a disc of the shapes' colour and a caret. */
-.goodobsidian-options .goodobsidian-shape-color.clickable-icon {
+/* The shape pill's colour and line: a disc of the shapes' colour, or the
+   line's symbol, and a caret, as the selection bar's two panel buttons. */
+.goodobsidian-options .goodobsidian-shape-color.clickable-icon,
+.goodobsidian-options .goodobsidian-shape-style.clickable-icon {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -10517,12 +10520,14 @@ button.goodobsidian-color-delete.clickable-icon {
   color: var(--text-normal);
 }
 
-.goodobsidian-options .goodobsidian-shape-color .goodobsidian-text-caret {
+.goodobsidian-options .goodobsidian-shape-color .goodobsidian-text-caret,
+.goodobsidian-options .goodobsidian-shape-style .goodobsidian-text-caret {
   display: inline-flex;
   margin-inline-start: var(--gob-caret-gap);
 }
 
-.goodobsidian-options .goodobsidian-shape-color .goodobsidian-text-caret svg {
+.goodobsidian-options .goodobsidian-shape-color .goodobsidian-text-caret svg,
+.goodobsidian-options .goodobsidian-shape-style .goodobsidian-text-caret svg {
   width: var(--gob-caret-size);
   height: var(--gob-caret-size);
 }
@@ -16470,4 +16475,117 @@ button.goodobsidian-library-fold .goodobsidian-library-fold-caret {
 button.goodobsidian-library-fold .svg-icon {
   width: 16px;
   height: 16px;
+}
+
+/* The Shape tool's colour and line panels, laid out as the selection bar's
+   (Goodnotes' Change colour and Stroke settings), in the toolbar's theme. */
+.goodobsidian-shape-panel {
+  width: min(320px, calc(100vw - 24px));
+}
+
+/* The popover scrolls when short; its rows keep their height. */
+.goodobsidian-shape-panel > * {
+  flex-shrink: 0;
+}
+
+.goodobsidian-options .goodobsidian-shape-style-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-shape-panel-head {
+  margin-top: 6px;
+}
+
+.goodobsidian-shape-tiles {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.goodobsidian-popover button.goodobsidian-shape-tile.clickable-icon {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 64px;
+  padding: 6px 4px;
+  border: none;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  white-space: normal;
+  opacity: 1;
+}
+
+.goodobsidian-popover button.goodobsidian-shape-tile.clickable-icon:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+}
+
+.goodobsidian-popover button.goodobsidian-shape-tile.clickable-icon.is-active {
+  background: var(--gob-well);
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-popover button.goodobsidian-shape-tile.clickable-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.goodobsidian-shape-tile-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-shape-tile-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.goodobsidian-shape-segments {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--gob-touch);
+  padding: 0 0 0 4px;
+}
+
+.goodobsidian-shape-segments-label {
+  flex: 1 1 auto;
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-shape-segment-group {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-well);
+}
+
+.goodobsidian-popover button.goodobsidian-shape-segment.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--gob-radius-m) - 2px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.goodobsidian-popover button.goodobsidian-shape-segment.clickable-icon.is-active {
+  background: var(--gob-well-strong);
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-shape-segment svg {
+  width: 18px;
+  height: 18px;
 }
