@@ -315,6 +315,14 @@ import { penGesturesOf } from "../ink/pen-gestures";
 import { NotebookSearchModal } from "./search-modal";
 import { layoutPlainText, pdfHitRects } from "../search/pdf-hits";
 import {
+  type KeptPrinted,
+  getPrinted,
+  printedKey,
+  savePrinted,
+  saveReading,
+  vaultKeyOf,
+} from "./search-store";
+import {
   type PageText,
   collectPageText,
   holdsPhrase,
@@ -416,6 +424,10 @@ import { vaultFonts } from "./font-store";
 /** Quiet time after the page being read changes before it is remembered. */
 /** A notebook that has just opened waits this long before its first page's PDF text is read for OCR, ms. */
 const OCR_OPEN_DELAY_MS = 800;
+/** How long after opening a notebook its PDF pages' text starts being read for Home's search, ms. */
+const PDF_INDEX_DELAY_MS = 4000;
+/** The pause between two PDF pages read for Home's search, ms: never a burst. */
+const PDF_INDEX_GAP_MS = 120;
 const LAST_PAGE_DEBOUNCE_MS = 500;
 
 /** How long the page in view must stay before it is checked for misread words, ms. */
@@ -566,8 +578,10 @@ export class InkView extends TextFileView {
   private pdfCache: PdfBackdropCache | null = null;
   /** The PDF pages' text, for the highlighter that snaps to it and for Copy text. */
   private pdfText: PdfTextCache | null = null;
-  /** PDF pages' printed text for search, by `path:page` (#112). */
+  /** PDF pages' printed text for search, by `path:page` (#112); kept on this device too (search-store.ts). */
   private readonly pdfSearchText = new Map<string, string>();
+  /** Reading the PDF pages' text for Home's search, a while after opening. */
+  private pdfIndexTimer = 0;
   /** Whether this view holds a use of the shared PDF worker (`acquirePdfWorker`). */
   private pdfWorkerHeld = false;
   /** The search box's last query, for the next search. */
@@ -825,6 +839,8 @@ export class InkView extends TextFileView {
     // Another notebook, or this one changed on disk: read what is unread.
     this.deviceRead.clear();
     this.scheduleDeviceReading(DEVICE_READ_OPEN_MS);
+    window.clearTimeout(this.pdfIndexTimer);
+    this.pdfIndexTimer = window.setTimeout(() => void this.indexPdfText(), PDF_INDEX_DELAY_MS);
   }
 
   /**
@@ -1123,6 +1139,8 @@ export class InkView extends TextFileView {
     window.clearTimeout(this.transcribeTimer);
     window.clearTimeout(this.deviceTimer);
     this.deviceTimer = 0;
+    window.clearTimeout(this.pdfIndexTimer);
+    this.pdfIndexTimer = 0;
     window.clearTimeout(this.wordCheckTimer);
     this.wordCheckTimer = 0;
     this.wordPopover?.close();
@@ -2400,23 +2418,93 @@ export class InkView extends TextFileView {
   /**
    * Read the printed text of every PDF page not read for search yet, in
    * page order; `onProgress` hears every few pages, so an open search list
-   * can fill in as they come.
+   * can fill in as they come. Text kept on this device from an earlier
+   * read of the same PDF is taken as it is, and what is read is kept
+   * (search-store.ts), so Home's search finds it. `gap` pauses between
+   * pages read, and waits while the pen writes (the background read);
+   * `restore` false reads again what was kept (its OCR text came since).
    */
-  private async readPdfSearchText(pages: readonly Page[], onProgress?: () => void): Promise<void> {
+  private async readPdfSearchText(
+    pages: readonly Page[],
+    onProgress?: () => void,
+    gap = 0,
+    restore = true,
+  ): Promise<void> {
     const cache = this.pdfText;
     if (!cache) return;
+    const vault = vaultKeyOf(this.app);
+    if (restore) await this.restorePrinted(vault, pages);
+    if (this.pdfText !== cache) return;
     let fresh = 0;
+    const kept = new Map<string, KeptPrinted>();
     for (const page of pages) {
       const backdrop = page.backdrop;
       if (backdrop.kind !== "pdf") continue;
       const key = `${backdrop.path}:${backdrop.page}`;
       if (this.pdfSearchText.has(key)) continue;
+      if (gap > 0) {
+        do await new Promise<void>((resolve) => window.setTimeout(resolve, gap));
+        while (this.penIsDown && this.pdfText === cache);
+      }
+      if (this.pdfText !== cache) return;
       const layout = await cache.layout(backdrop, page.geometry);
       if (this.pdfText !== cache) return;
-      this.pdfSearchText.set(key, layoutPlainText(layout));
-      if (++fresh % PDF_SEARCH_BATCH === 0) onProgress?.();
+      const text = layoutPlainText(layout);
+      this.pdfSearchText.set(key, text);
+      const stamp = this.pdfStamp(backdrop.path);
+      if (stamp) kept.set(printedKey(backdrop.path, backdrop.page), { stamp, text });
+      if (++fresh % PDF_SEARCH_BATCH === 0) {
+        onProgress?.();
+        savePrinted(vault, kept);
+        kept.clear();
+      }
     }
+    savePrinted(vault, kept);
     if (fresh % PDF_SEARCH_BATCH !== 0) onProgress?.();
+  }
+
+  /** PDF pages' text kept on this device from an earlier read, while the PDF is unchanged. */
+  private async restorePrinted(vault: string, pages: readonly Page[]): Promise<void> {
+    const wanted = new Map<string, string>();
+    for (const page of pages) {
+      const backdrop = page.backdrop;
+      if (backdrop.kind !== "pdf") continue;
+      const key = `${backdrop.path}:${backdrop.page}`;
+      if (!this.pdfSearchText.has(key)) wanted.set(printedKey(backdrop.path, backdrop.page), key);
+    }
+    if (wanted.size === 0) return;
+    const found = await getPrinted(vault, [...wanted.keys()]);
+    for (const [stored, kept] of found) {
+      const key = wanted.get(stored);
+      const path = stored.slice(0, stored.lastIndexOf("\n"));
+      if (key && kept.stamp === this.pdfStamp(path) && !this.pdfSearchText.has(key))
+        this.pdfSearchText.set(key, kept.text);
+    }
+  }
+
+  /** A PDF's version, `mtime:size`; `null` when it is not in the vault. */
+  private pdfStamp(path: string): string | null {
+    const file = this.app.vault.getFileByPath(path);
+    return file ? `${file.stat.mtime}:${file.stat.size}` : null;
+  }
+
+  /** This notebook's pages on one PDF page. */
+  private pdfPagesOf(path: string, n: number): Page[] {
+    return (this.surface?.document.pages ?? []).filter(
+      (p) => p.backdrop.kind === "pdf" && p.backdrop.path === path && p.backdrop.page === n,
+    );
+  }
+
+  /**
+   * A while after opening, the printed text of every PDF page is read
+   * (or taken from what this device kept), one page at a time, never
+   * while the pen writes: Home's search then finds it.
+   */
+  private async indexPdfText(): Promise<void> {
+    this.pdfIndexTimer = 0;
+    const pages = this.surface?.document.pages;
+    if (!pages || this.guard.locked || !pages.some((p) => p.backdrop.kind === "pdf")) return;
+    await this.readPdfSearchText(pages, undefined, PDF_INDEX_GAP_MS);
   }
 
   /**
@@ -2780,6 +2868,11 @@ export class InkView extends TextFileView {
       id: reading.id,
     };
     this.pageReadings.set(page.id, entry);
+    // Kept on this device, so Home's search finds the page (search-store.ts).
+    const path = this.file?.path;
+    if (path) {
+      saveReading(vaultKeyOf(this.app), path, page.id, { hash, text: entry.lines.join("\n") });
+    }
     return entry;
   }
 
@@ -3360,6 +3453,7 @@ export class InkView extends TextFileView {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
+        highlighterSnapsToText: () => this.settings.highlighterSnapText !== false,
         highlighterTip: () => highlighterTipOf(this.settings.highlighterTip),
         pencilTilt: () => this.settings.pencilTilt === true,
         textDragSize: () => this.settings.textDragSize === true,
@@ -3463,8 +3557,10 @@ export class InkView extends TextFileView {
     // A finger tap on a PDF link that waited for the page to be read; and a
     // page that was read again with its OCR text is searched again.
     this.pdfText.onReady = (path, page) => {
-      this.pdfSearchText.delete(`${path}:${page}`);
+      const known = this.pdfSearchText.delete(`${path}:${page}`);
       this.surface?.pdfTextReady(path, page);
+      // Read again (its OCR text came): what Home's search keeps follows it.
+      if (known) void this.readPdfSearchText(this.pdfPagesOf(path, page), undefined, 0, false);
     };
     this.surface.setTextSource(this.pdfText);
     // The page the notebook opens on: a scan there is read first.
@@ -4049,10 +4145,12 @@ export class InkView extends TextFileView {
    */
   override setEphemeralState(state: unknown): void {
     super.setEphemeralState(state);
-    const { subpath, pageIndex, match } = (state ?? {}) as {
+    const { subpath, pageIndex, match, search } = (state ?? {}) as {
       subpath?: unknown;
       pageIndex?: unknown;
       match?: { content?: unknown; matches?: unknown };
+      /** What Home's search found on `pageIndex`, to light up there. */
+      search?: unknown;
     };
     // A result of Obsidian's own search: its page, with the words lit up (2.5).
     const found =
@@ -4064,8 +4162,11 @@ export class InkView extends TextFileView {
       this.pendingPageIndex = found.pageIndex;
     } else if (typeof subpath === "string" && subpath) this.pendingSubpath = subpath;
     else if (typeof pageIndex === "number" && Number.isInteger(pageIndex) && pageIndex >= 0) {
-      // Back or Forward: the page this note was on then (see getEphemeralState).
+      // Back or Forward: the page this note was on then (see getEphemeralState);
+      // or a page Home's search found, with its words lit up.
       this.pendingPageIndex = pageIndex;
+      if (typeof search === "string" && search.trim())
+        this.pendingSearch = { pageIndex, query: search };
     } else return;
     if (this.loadedPath !== null && this.loadedPath === this.file?.path) this.applyPendingPage();
   }

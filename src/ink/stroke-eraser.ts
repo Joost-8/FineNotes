@@ -303,9 +303,10 @@ export function eraseRectsFromStroke(
 /**
  * How wide a stroke's ink is, for the cut: its nib, or as wide as the
  * Pencil's tilt made it anywhere along it (a shading stroke is cut where its
- * edge is, at the price of a little more off its narrower stretches).
+ * edge is, at the price of a little more off its narrower stretches). The
+ * whole-stroke eraser takes a stroke within half of it too.
  */
-function inkWidth(stroke: Stroke): number {
+export function inkWidth(stroke: Stroke): number {
   return stroke.shape === undefined ? stroke.size * widestTiltFactor(stroke.tilt) : stroke.size;
 }
 

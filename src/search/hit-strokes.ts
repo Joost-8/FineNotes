@@ -74,7 +74,7 @@ function bare(text: string): string {
 }
 
 /** Edit distance between `a` and `b`, or `max + 1` once it is past `max`. */
-function editDistance(a: string, b: string, max: number): number {
+export function editDistance(a: string, b: string, max: number): number {
   if (Math.abs(a.length - b.length) > max) return max + 1;
   let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {

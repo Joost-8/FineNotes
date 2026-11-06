@@ -11,6 +11,8 @@ export default defineConfig({
       include: [
         "src/changelog.ts",
         "src/settings-data.ts",
+        "src/model/library-rail.ts",
+        "src/model/notebook-tree.ts",
         "src/i18n/languages.ts",
         "src/i18n/translate.ts",
         "src/i18n/table-file.ts",
@@ -204,6 +206,7 @@ export default defineConfig({
         "src/search/hit-strokes.ts",
         "src/search/pdf-hits.ts",
         "src/search/link-choices.ts",
+        "src/search/library-search.ts",
         "src/util/errors.ts",
       ],
       thresholds: {
