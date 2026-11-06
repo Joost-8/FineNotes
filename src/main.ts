@@ -1,3 +1,4 @@
+import { NotebooksSidebar, VIEW_TYPE_NOTEBOOKS } from "./view/notebooks-sidebar";
 import {
   DEFAULT_GALLERY_URL,
   type GalleryEntry,
@@ -25,9 +26,10 @@ import {
   outsideNotebookFolder,
 } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
-import { tapeColorOf, tapeHeightOf } from "./model/cover-tape";
+import { type TapeMode, tapeColorOf, tapeHeightOf, tapeModeOf } from "./model/cover-tape";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
+  type Editor,
   MarkdownView,
   Notice,
   addIcon,
@@ -145,9 +147,10 @@ import {
   moveStyles,
 } from "./model/library-style";
 import { prepareImageBytes } from "./view/image-import";
-import { LibraryView } from "./view/library-view";
+import { LibraryView, unstackTabsOf } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
 import { PageEmbeds } from "./view/page-embed";
+import { embedInsertion } from "./view/page-embed-model";
 import type { EraserMode } from "./view/toolbar";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import type { LassoFilter, LassoMode } from "./canvas/lasso";
@@ -192,6 +195,8 @@ import { PAPER_COPY_PREFIX, type PaperEntry, paperName } from "./model/paper-lib
 import { buildDesignedNotebook } from "./model/paper-design";
 
 /** Where the name a user shares templates under is remembered, on this device. */
+/** Set once the Notebooks view was added to the left sidebar, on this device. */
+const NOTEBOOKS_SIDEBAR_ADDED_KEY = "finenotes-notebooks-sidebar-added";
 const SHARE_AUTHOR_KEY = "finenotes:share-author";
 /** The notebooks pages were sent to last, in this device's local storage. */
 const RECENT_TARGETS_KEY = "goodobsidian:move-targets";
@@ -317,7 +322,9 @@ export default class GoodObsidianPlugin extends Plugin {
 
   private syncExplorerNotebookButton(): void {
     this.emptyTabHome.sync(
-      this.app.workspace.getLeavesOfType("empty").map((leaf) => ({ leaf, el: leaf.view.containerEl })),
+      this.app.workspace
+        .getLeavesOfType("empty")
+        .map((leaf) => ({ leaf, el: leaf.view.containerEl })),
     );
     const explorers = this.app.workspace.getLeavesOfType("file-explorer").map((leaf) => leaf.view);
     this.explorerNotebookButton.sync(
@@ -551,6 +558,23 @@ export default class GoodObsidianPlugin extends Plugin {
           isInkFile: (file) => this.isInkFile(file),
         }),
     );
+    this.registerView(
+      VIEW_TYPE_NOTEBOOKS,
+      (leaf) =>
+        new NotebooksSidebar(leaf, {
+          isInkFile: (file) => this.isInkFile(file),
+          openLibrary: () => void this.openLibrary(),
+          newNotebook: (folder) => this.openNewNotebookDialog(folder),
+        }),
+    );
+    // Notebooks in Obsidian's left sidebar, once: picked there like Files or
+    // Bookmarks, and closed for good if the user closes it.
+    this.app.workspace.onLayoutReady(() => {
+      if (this.app.loadLocalStorage(NOTEBOOKS_SIDEBAR_ADDED_KEY)) return;
+      this.app.saveLocalStorage(NOTEBOOKS_SIDEBAR_ADDED_KEY, "1");
+      if (this.app.workspace.getLeavesOfType(VIEW_TYPE_NOTEBOOKS).length > 0) return;
+      void this.app.workspace.getLeftLeaf(false)?.setViewState({ type: VIEW_TYPE_NOTEBOOKS });
+    });
     // FineNotes' own icons, before any button that uses them is made.
     addIcon(ICON_IMPORT_NOTEBOOK, ICON_IMPORT_NOTEBOOK_SVG);
     addIcon(ICON_LIBRARY, ICON_LIBRARY_SVG);
@@ -747,6 +771,17 @@ export default class GoodObsidianPlugin extends Plugin {
     setting?.openTabById(this.manifest.id);
   }
 
+  /** The Notebooks view in the left sidebar, made if it was closed, and shown. */
+  async showNotebooksSidebar(): Promise<void> {
+    let leaf: WorkspaceLeaf | null =
+      this.app.workspace.getLeavesOfType(VIEW_TYPE_NOTEBOOKS)[0] ?? null;
+    if (!leaf) {
+      leaf = this.app.workspace.getLeftLeaf(false);
+      await leaf?.setViewState({ type: VIEW_TYPE_NOTEBOOKS, active: true });
+    }
+    if (leaf) await this.app.workspace.revealLeaf(leaf);
+  }
+
   async openLibrary(into?: WorkspaceLeaf): Promise<void> {
     const open = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
     const leaf = open ?? into ?? this.app.workspace.getLeaf("tab");
@@ -777,9 +812,27 @@ export default class GoodObsidianPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "insert-new-notebook",
+      name: t("notebooks.command.insertNewNotebook"),
+      editorCheckCallback: (checking, editor, ctx) => {
+        const note = ctx.file;
+        // Not inside a notebook's own Markdown, nor anywhere without a file to link from.
+        if (!note || this.isInkFile(note)) return false;
+        if (!checking) void this.insertNewNotebook(editor, note);
+        return true;
+      },
+    });
+
+    this.addCommand({
       id: "open-library",
       name: t("notebooks.command.openLibrary"),
       callback: () => void this.openLibrary(),
+    });
+
+    this.addCommand({
+      id: "show-notebooks-sidebar",
+      name: t("notebooks.command.showSidebar"),
+      callback: () => void this.showNotebooksSidebar(),
     });
 
     this.addCommand({
@@ -1637,10 +1690,17 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
-  /** Remember cover tape's colour and height, for the next session. */
-  saveTape(color: string, height: number): void {
+  /** Remember cover tape's colour, height and mode, for the next session. */
+  saveTape(color: string, height: number, mode: TapeMode): void {
     this.settings.tapeColor = tapeColorOf(color);
     this.settings.tapeHeight = tapeHeightOf(height);
+    this.settings.tapeMode = tapeModeOf(mode);
+    void this.saveSettings();
+  }
+
+  /** Remember whether a cover tape snaps to a PDF's text, for the next session. */
+  saveTapeSnapText(on: boolean): void {
+    this.settings.tapeSnapText = on;
     void this.saveSettings();
   }
 
@@ -2567,25 +2627,59 @@ export default class GoodObsidianPlugin extends Plugin {
    * notebook of last time while that is still in My templates, else the paper.
    * Always a notebook, even right after a board.
    */
-  private async createNotebookWithLastSettings(): Promise<void> {
-    const choices = dialogChoices(this.settings.lastNotebookChoices);
+  private async createNotebookWithLastSettings(
+    title = "",
+    open = true,
+    /** Choices that override the remembered ones (no cover for a notebook embedded in a note). */
+    override: Partial<NotebookChoices> = {},
+  ): Promise<TFile | null> {
+    const choices = { ...dialogChoices(this.settings.lastNotebookChoices), ...override };
     const remembered = parseNotebookTemplate(this.settings.lastNotebookTemplate);
     if (remembered) {
       const library = this.paperLibrary();
       const entries = await library.list().catch(() => []);
       const entry = entries.find((e) => e.path === remembered.path && e.page === remembered.page);
       if (entry) {
-        await this.createNotebookFromTemplate(
-          "",
+        return this.createNotebookFromTemplate(
+          title,
           choices,
           this.newNotebookFolder(),
           entry,
           library,
+          open,
         );
-        return;
       }
     }
-    await this.createNotebook("", choices);
+    return this.createNotebook(title, choices, undefined, undefined, undefined, open);
+  }
+
+  /**
+   * "Insert a new notebook here" (FineNotes discussion #167): a notebook made
+   * with the last settings but no cover, named after the note, embedded at the cursor as
+   * `![[…]]` (Obsidian's own link format, so it follows the user's settings),
+   * then opened in this tab, so Back returns to the note. The embed shows its
+   * pages and repaints as the notebook is written in.
+   */
+  private async insertNewNotebook(editor: Editor, note: TFile): Promise<void> {
+    // No cover: the notebook is read inside the note, where a cover is a page of nothing.
+    const file = await this.createNotebookWithLastSettings(note.basename, false, { cover: "none" });
+    if (!file) return;
+    const link = this.app.fileManager.generateMarkdownLink(file, note.path);
+    const from = editor.getCursor("from");
+    const to = editor.getCursor("to");
+    editor.replaceSelection(
+      embedInsertion(
+        link,
+        editor.getLine(from.line).slice(0, from.ch),
+        editor.getLine(to.line).slice(to.ch),
+        from.line > 0 ? editor.getLine(from.line - 1) : "",
+        to.line < editor.lastLine() ? editor.getLine(to.line + 1) : "",
+      ),
+    );
+    // This tab, so Back (and the iPad's swipe back) returns to the note.
+    await this.app.workspace
+      .getLeaf(false)
+      .setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
   }
 
   /** My templates, painting previews with `paint`, and with the community gallery. */
@@ -2638,38 +2732,51 @@ export default class GoodObsidianPlugin extends Plugin {
     folder: string,
     template: PaperEntry,
     library: VaultPaperLibrary,
-  ): Promise<void> {
+    open = true,
+  ): Promise<TFile | null> {
+    const ownFolder = this.settings.notebookOwnFolder;
     // A designed paper: the cover chosen, then a page of it; no file to copy.
     const design = template.design;
     if (design) {
-      await this.createNotebook(title, choices, folder, (heading, attachments) =>
-        buildDesignedNotebook(choices, heading, attachments, design),
+      return this.createNotebook(
+        title,
+        choices,
+        folder,
+        (heading, attachments) => buildDesignedNotebook(choices, heading, attachments, design),
+        ownFolder,
+        open,
       );
-      return;
     }
     const source = this.app.vault.getFileByPath(template.path);
     if (!source) {
       new Notice(t("notebooks.notice.templateGone"));
-      return;
+      return null;
     }
     const sizes = (await library.list())
       .filter((entry) => entry.path === template.path)
       .sort((a, b) => a.page - b.page)
       .map(({ width, height }) => ({ width, height }));
     const bytes = await this.app.vault.readBinary(source);
-    await this.createNotebook(title, choices, folder, async (heading, attachments, home) => {
-      const dir = attachments?.images ?? home;
-      if (dir && !this.app.vault.getFolderByPath(dir)) {
-        await this.app.vault.createFolder(dir).catch(() => undefined);
-      }
-      const stem = `${PAPER_COPY_PREFIX}${paperName(template.path)}`;
-      let path = normalizePath(joinVaultPath(dir, `${stem}.pdf`));
-      for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) {
-        path = normalizePath(joinVaultPath(dir, `${stem} ${n}.pdf`));
-      }
-      await this.app.vault.createBinary(path, bytes);
-      return buildPdfNotebook(choices, heading, attachments, path, sizes, true);
-    });
+    return this.createNotebook(
+      title,
+      choices,
+      folder,
+      async (heading, attachments, home) => {
+        const dir = attachments?.images ?? home;
+        if (dir && !this.app.vault.getFolderByPath(dir)) {
+          await this.app.vault.createFolder(dir).catch(() => undefined);
+        }
+        const stem = `${PAPER_COPY_PREFIX}${paperName(template.path)}`;
+        let path = normalizePath(joinVaultPath(dir, `${stem}.pdf`));
+        for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) {
+          path = normalizePath(joinVaultPath(dir, `${stem} ${n}.pdf`));
+        }
+        await this.app.vault.createBinary(path, bytes);
+        return buildPdfNotebook(choices, heading, attachments, path, sizes, true);
+      },
+      ownFolder,
+      open,
+    );
   }
 
   /**
@@ -2795,6 +2902,7 @@ export default class GoodObsidianPlugin extends Plugin {
       const fromHome =
         this.app.workspace.getMostRecentLeaf()?.view.getViewType() === VIEW_TYPE_LIBRARY;
       const tab = this.app.workspace.getLeaf(fromHome ? "tab" : false);
+      if (fromHome) unstackTabsOf(tab);
       await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
       await this.app.workspace.revealLeaf(tab);
       return file;

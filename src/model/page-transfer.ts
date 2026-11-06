@@ -66,6 +66,7 @@ export function prepareTransfer(pages: readonly Page[], dest: InkDocument): Page
   let imageSeq = maxId(all, (p) => p.images, "i");
   let tableSeq = maxId(all, (p) => p.tables ?? [], "g");
   let graphSeq = maxId(all, (p) => p.graphs ?? [], "f");
+  let equationSeq = maxId(all, (p) => p.equations ?? [], "q");
   let commentSeq = maxId(all, (p) => p.comments ?? [], "cm");
   let linkSeq = maxId(all, (p) => p.links ?? [], "l");
   let taskSeq = maxId(all, (p) => p.tasks ?? [], "ck");
@@ -92,6 +93,7 @@ export function prepareTransfer(pages: readonly Page[], dest: InkDocument): Page
     relinkNoteInk(copy.textBoxes, imageIds);
     for (const table of copy.tables ?? []) table.id = `g${++tableSeq}`;
     for (const graph of copy.graphs ?? []) graph.id = `f${++graphSeq}`;
+    for (const equation of copy.equations ?? []) equation.id = `q${++equationSeq}`;
     for (const comment of copy.comments ?? []) comment.id = `cm${++commentSeq}`;
     if (copy.links) {
       const links = copy.links.flatMap((link) => {

@@ -176,6 +176,7 @@ import {
 import {
   LIGHT_PAPER,
   type PaperTheme,
+  inkShade,
   pageLook,
   shownColor,
   writingLines,
@@ -249,9 +250,14 @@ import {
   strokeReach,
 } from "../canvas/mirrors";
 import {
+  FREEHAND_TAPE_HOOK,
+  FREEHAND_TAPE_SMOOTHING,
+  FREEHAND_TAPE_TOLERANCE,
   MIN_TAPE_LENGTH,
   TAPE_HANDLES,
   type TapeHandle,
+  freehandTapePoints,
+  isFreehandTape,
   isTape,
   stretchTape,
   tapeBounds,
@@ -259,10 +265,12 @@ import {
   tapeColorOf,
   tapeHandles,
   tapeHeightOf,
+  tapeModeOf,
   tapePoints,
   toggleRevealed,
   topTapeAt,
 } from "../model/cover-tape";
+import { textTapeStrokes } from "../model/tape-text";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
 import { type FillInk, bucketFill, insidePolygon } from "../canvas/bucket-fill";
 import {
@@ -295,6 +303,7 @@ import {
   eraseCircleFromStroke,
   eraseRectsFromStroke,
   eraserTakes,
+  inkWidth,
 } from "../ink/stroke-eraser";
 import {
   MAX_SCALE,
@@ -398,6 +407,7 @@ import {
   pickBounds,
   pickHandles,
   pickWord,
+  sweepWords,
 } from "../canvas/text-pick";
 import { TextPickView } from "./text-pick-view";
 import { followTopShift as offsetAfterTopShift } from "./pill-row-model";
@@ -416,6 +426,8 @@ import {
   tableScaleRange,
 } from "../model/table";
 import { EditGraph, graphBounds, nextGraphId } from "../model/graph-element";
+import { RecolorEquations, nextEquationId } from "../model/equation";
+import type { EquationElement } from "../model/document";
 import {
   AddTable,
   InsertTableColumn,
@@ -583,6 +595,7 @@ import {
   grownToFit,
   holdsBox,
   holdsStroke,
+  insideShape,
   labelArea,
   labelFrame,
   labelOf,
@@ -770,6 +783,11 @@ const OFF_PAGE_FADE_MS = 200;
  * a line of small print lands a little above or below it.
  */
 const TEXT_SNAP_SLOP_PX = 8;
+/**
+ * How long after a right-button sweep lets go a contextmenu is its own
+ * (Windows sends it on the release), ms.
+ */
+const SWEEP_MENU_MS = 1000;
 
 /** The shortest highlight, in screen px, that becomes a straight line on lift when drawn as one. */
 const HIGHLIGHT_LINE_MIN_PX = 24;
@@ -962,6 +980,14 @@ export interface InkSurfaceCallbacks {
    * selection bar offers Explore only.
    */
   onEditGraph?: (pageId: string, graph: GraphElement) => void;
+  /**
+   * A typed equation to write (discussion #166): `equation` to edit one (a
+   * Text-tool tap on it, or Edit on a selected one), null for a new one at
+   * page point `at` (a tap with the Text tool's Equation on). The host opens
+   * the editor and commits what comes back. Without it equations are only
+   * shown.
+   */
+  onEquation?: (pageId: string, at: Pt, equation: EquationElement | null) => void;
   /** A key press switched tools; the host's toolbar should show the new one. */
   onToolChange?: (tool: ActiveTool) => void;
   /** A key (1 to 8) asked for saved pen `index` (FineNotes#25); the host applies it. */
@@ -987,6 +1013,8 @@ export interface InkSurfaceCallbacks {
   returnToPenAfterUse?: () => boolean;
   /** Whether highlighter strokes are drawn as straight runs (`ink/straighten.ts`); on when absent. */
   straightenHighlighter?: () => boolean;
+  /** Whether the highlighter snaps to a PDF page's text (the setting); absent, it does. */
+  highlighterSnapsToText?: () => boolean;
   /** The highlighter's tip, read live (`settings.highlighterTip`); absent is round. */
   highlighterTip?: () => HighlighterTip;
   /** Whether the Brush pen keeps the Pencil's tilt ("Pencil tilt"); off when absent. */
@@ -1504,12 +1532,33 @@ interface PressText {
   pick: TextPick;
   /** The handle a pointer holds, and where it took it from (page px, handle less pointer). */
   drag: { end: PickEnd; grab: Pt } | null;
+  /**
+   * The press that selected the word is sweeping on over more words
+   * (FineNotes#164): a right-button drag, or a finger or pen held, then moved.
+   */
+  sweeping: boolean;
+}
+
+/** A right mouse button pressed on the paper, until it lets go: a drag of it selects words. */
+interface RightSweep {
+  pointerId: number;
+  /** Where it went down, client px. */
+  clientX: number;
+  clientY: number;
+  box: PageBox;
+  /** The same, page px of `box`. */
+  at: Pt;
+  /** Past the slop, with words selected: its contextmenu is swallowed. */
+  started: boolean;
+  /** Takes the window listeners away. */
+  off: () => void;
 }
 
 const NO_IMAGES: ReadonlySet<ImageElement> = new Set();
 const NO_STROKES: ReadonlySet<string> = new Set();
 const NO_TABLES: ReadonlySet<TableElement> = new Set();
 const NO_GRAPHS: ReadonlySet<GraphElement> = new Set();
+const NO_EQUATIONS: ReadonlySet<EquationElement> = new Set();
 const NO_CONNECTORS: ReadonlySet<string> = new Set();
 
 /** A lasso selection: strokes, images and text boxes on one page, held by identity. */
@@ -2199,6 +2248,14 @@ export class InkSurface {
   private zoomSlideFrame = 0;
   /** Until when (`now()`) a right-click menu is a stylus button's doing, not the user's. */
   private stylusMenuUntil = 0;
+  /** A right button held down on the paper (FineNotes#164). */
+  private rightSweep: RightSweep | null = null;
+  /**
+   * Until when (`now()`) a contextmenu is the end of a right-button sweep:
+   * Windows sends it after the button is let go, and the sweep has opened
+   * the menu already.
+   */
+  private sweepMenuUntil = 0;
   /** The cursor over the page for the pens, on a computer (FineNotes#25, #27). */
   private penCursor: PenCursorStyle = "arrow";
   /** What the ink cursor was last drawn for, so an unchanged one is not set again. */
@@ -3122,6 +3179,11 @@ export class InkSurface {
     const onContextMenu = (event: MouseEvent): void => {
       if (onTextBox(event.target) || isEditable(event.target)) return;
       event.preventDefault();
+      // A right-button drag selected words: it is done, and has its bar.
+      if (now() < this.sweepMenuUntil || this.rightSweep?.started === true) {
+        this.sweepMenuUntil = 0;
+        return;
+      }
       const type = (event as Partial<PointerEvent>).pointerType;
       // Android's WebView: the pen touching down with its side button held is
       // this alone, as a mouse's. It is no click of the button, and no menu.
@@ -3146,11 +3208,24 @@ export class InkSurface {
       if (!box) return;
       // The mouse is the pen, so it has no tap: a right-click on linked or
       // underlined ink does what a finger tap there does (FineNotes#41).
-      if (this.mouseTapsInk(box, at, event.clientX, event.clientY)) return;
+      if (this.mouseTapsInk(box, at, event.clientX, event.clientY)) {
+        // Where the menu comes as the button goes down, a drag must not follow it.
+        this.endRightSweep(false);
+        return;
+      }
       this.openPressMenu(box, this.toPage(box, at));
     };
     this.scrollEl.addEventListener("contextmenu", onContextMenu);
     this.disposers.push(() => this.scrollEl.removeEventListener("contextmenu", onContextMenu));
+
+    // The right button dragged from a PDF word selects every word to the
+    // pointer (FineNotes#164); held still, it is the right-click above.
+    const onRightDown = (event: PointerEvent): void => this.rightSweepDown(event);
+    this.scrollEl.addEventListener("pointerdown", onRightDown);
+    this.disposers.push(() => {
+      this.scrollEl.removeEventListener("pointerdown", onRightDown);
+      this.endRightSweep(false);
+    });
 
     // Wheel and trackpad: scroll, or zoom with Ctrl/Cmd (a trackpad pinch
     // arrives as a Ctrl+wheel). Momentum on a trackpad is the OS's own.
@@ -4460,10 +4535,12 @@ export class InkSurface {
     const tool = cursorToolOf(this.toolState.tool);
     if (!tool) return;
     const page = this.doc.pages[this.pageIndex];
-    const night = page ? pageLook(page.backdrop, this.paper).night : false;
+    const shade = page ? inkShade(pageLook(page.backdrop, this.paper)) : "day";
     const color = this.strokeColor();
     const shown =
-      night && tool === "highlighter" ? nightHighlighter(color) : shownColor(color, night);
+      shade !== "day" && tool === "highlighter"
+        ? nightHighlighter(color)
+        : shownColor(color, shade === "night");
     const width = cursorSize(this.strokeSize() * this.unitScale);
     const highlighterAlpha = this.renderer?.highlighterAlpha ?? DEFAULT_HIGHLIGHTER_ALPHA;
     const key = `${tool} ${shown} ${width} ${highlighterAlpha}`;
@@ -7553,6 +7630,8 @@ export class InkSurface {
         this.selectionFingers.move(PAGE_FINGER_ID, x, y, t);
         return;
       }
+      // Held on PDF text, the finger sweeps on over words instead of scrolling.
+      if (this.fingerSweepsText(x, y)) return;
       const tap = this.fingerTap;
       if (tap && Math.hypot(x - tap.x, y - tap.y) > TAP_SLOP_PX) {
         this.fingerTap = null;
@@ -7576,6 +7655,7 @@ export class InkSurface {
       this.fingerTap = null;
       this.stopPress();
       this.fingerHold.end();
+      this.endTextSweep();
       // The finger that opened the press menu lifted: now it takes presses.
       if (this.pressMenu?.provisional) {
         this.pressMenu.provisional = false;
@@ -9444,25 +9524,38 @@ export class InkSurface {
    */
   private revealedTapes: ReadonlySet<string> = new Set();
 
-  /** A tape being dragged out: where it started and where the pen is, page px. */
-  private tapeDrag: { from: Pt; to: Pt } | null = null;
+  /**
+   * A tape being dragged out: where it started and where the pen is, page
+   * px; for a freehand tape every point the pen passed, and the PDF text a
+   * straight one snaps to when it came down on some (#164).
+   */
+  private tapeDrag: { from: Pt; to: Pt; path: Pt[] | null; text: TextLayout | null } | null = null;
 
   /**
    * The Cover tape tool: a drag lays a strip from where it started to where
-   * it lifts, its height the pill's, made level or upright when nearly so; a
-   * tap shows a tape there through, or covers it again.
+   * it lifts, its height the pill's, made level or upright when nearly so,
+   * or in freehand mode along the drag; a tap shows a tape there through,
+   * or covers it again.
    */
   private readonly tapeGesture: PenGesture = {
-    down: (_box, at) => {
-      this.tapeDrag = { from: at, to: at };
+    down: (box, at) => {
+      const freehand = tapeModeOf(this.toolState.tapeMode) === "freehand";
+      // A freehand tape follows the pen: only a straight one snaps to text.
+      this.tapeDrag = {
+        from: at,
+        to: at,
+        path: freehand ? [at] : null,
+        text: freehand ? null : this.tapeTextAt(box, at),
+      };
     },
     move: (box, samples) => {
       const drag = this.tapeDrag;
       const last = samples[samples.length - 1];
       if (!drag || !last) return;
+      if (drag.path) for (const sample of samples) drag.path.push(this.toPage(box, sample));
       drag.to = this.toPage(box, last);
-      const draft = this.tapeStroke(drag.from, drag.to);
-      if (draft) this.renderer?.renderWetStrokes(box.index, [draft]);
+      const drafts = this.tapeDrafts(drag);
+      if (drafts.length > 0) this.renderer?.renderWetStrokes(box.index, drafts);
       else this.renderer?.clearWet();
     },
     up: (box, sample) => this.finishTape(box, this.toPage(box, sample)),
@@ -9476,22 +9569,67 @@ export class InkSurface {
     },
   };
 
-  /** The tape a drag from `from` to `to` lays, or null for a tap. */
-  private tapeStroke(from: Pt, to: Pt): Stroke | null {
-    const pts = tapePoints(
-      from,
-      to,
-      this.atFitZoom(LINE_LEVEL_RISE),
-      this.atFitZoom(MIN_TAPE_LENGTH),
-    );
+  /**
+   * The tape a drag lays, or null for a tap: from `from` to `to`, or along
+   * its `path` (simplified as it is laid, `final`; the draft keeps every point).
+   */
+  private tapeStroke(drag: { from: Pt; to: Pt; path: Pt[] | null }, final = false): Stroke | null {
+    const size = tapeHeightOf(this.toolState.tapeHeight);
+    const pts = drag.path
+      ? freehandTapePoints(
+          drag.path,
+          final ? this.atFitZoom(FREEHAND_TAPE_TOLERANCE) : 0,
+          this.atFitZoom(MIN_TAPE_LENGTH),
+          {
+            radius: size * FREEHAND_TAPE_SMOOTHING,
+            hook: this.atFitZoom(FREEHAND_TAPE_HOOK),
+            lift: final,
+          },
+        )
+      : tapePoints(
+          drag.from,
+          drag.to,
+          this.atFitZoom(LINE_LEVEL_RISE),
+          this.atFitZoom(MIN_TAPE_LENGTH),
+        );
     if (!pts) return null;
     return {
       id: "tape-draft",
       color: tapeColorOf(this.toolState.tapeColor),
-      size: tapeHeightOf(this.toolState.tapeHeight),
+      size,
       tool: "tape",
       pts,
     };
+  }
+
+  /**
+   * The PDF text a tape coming down at `at` snaps to: the page's, when Snap
+   * to PDF text is on and the pen landed on a line of it. Null otherwise.
+   */
+  private tapeTextAt(box: PageBox, at: Pt): TextLayout | null {
+    if (this.toolState.tapeSnapText !== true || this.practice) return null;
+    const layout = this.pageText(box.index);
+    if (!layout || !selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX))) return null;
+    return layout;
+  }
+
+  /**
+   * The tapes a drag lays: one per line of its `text` it runs over, each
+   * covering that line's band (`model/tape-text.ts`), or else the one tape
+   * (`tapeStroke`, straight or freehand). Empty for a tap.
+   */
+  private tapeDrafts(
+    drag: { from: Pt; to: Pt; path: Pt[] | null; text: TextLayout | null },
+    final = false,
+  ): Stroke[] {
+    const plain = this.tapeStroke(drag, final);
+    if (!plain) return [];
+    const { from, to, text } = drag;
+    const selection = text ? selectText(text, from, to, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
+    if (!selection) return [plain];
+    let n = 0;
+    const snapped = textTapeStrokes(selection.rects, plain.color, () => `tape-draft${++n}`);
+    return snapped.length > 0 ? snapped : [plain];
   }
 
   /** The tape tool lifted at `end` (null: cancelled where it was): lay the tape, or toggle one. */
@@ -9502,17 +9640,24 @@ export class InkSurface {
     this.renderer?.clearWet();
     const page = this.pageAt(box.index);
     if (!drag || !page) return;
-    const draft = this.tapeStroke(drag.from, end ?? drag.to);
-    if (!draft) {
+    if (end) {
+      drag.to = end;
+      drag.path?.push(end);
+    }
+    const drafts = this.tapeDrafts(drag, true);
+    if (drafts.length === 0) {
       this.toggleTapeAt(page, drag.from, PEN_TAP_TOLERANCE_PX / this.gestureScale);
       return;
     }
-    const stroke: Stroke = { ...draft, id: this.strokeIds.next() };
-    // As `commitStroke`, but never stuck on a sticky note: a tape lies over the page.
-    const command = addStrokesTimed(page, [stroke], this.penDownAt);
+    const strokes = drafts.map((draft): Stroke => ({ ...draft, id: this.strokeIds.next() }));
+    // As `commitStroke`, but never stuck on a sticky note: a tape lies over
+    // the page. A tape snapped over several lines is one undo step.
+    const command = addStrokesTimed(page, strokes, this.penDownAt);
     this.history.push(this.doc, command);
-    this.strokeIndex.add(page.id, stroke);
-    this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    for (const stroke of strokes) {
+      this.strokeIndex.add(page.id, stroke);
+      this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    }
     this.inkChanged([page.id]);
   }
 
@@ -10389,6 +10534,8 @@ export class InkSurface {
     if (!rect || !drag) return;
 
     if (!this.dragSizesText() || Math.max(rect.w, rect.h) < this.atFitZoom(TEXT_TAP_SLOP)) {
+      // A tap on an equation edits it; with Equation on, a tap places one.
+      if (this.equationAt(box, drag.origin)) return;
       // A tap in a table types in the cell, rather than placing a box on it.
       if (this.editCellAt(box, drag.origin)) return;
       // A tap on a sticky note types on the note.
@@ -10408,6 +10555,36 @@ export class InkSurface {
       w,
       h,
     });
+  }
+
+  /**
+   * A Text-tool tap at page point `at`: on an equation, it opens for
+   * editing; elsewhere, with the Text tool's Equation on, a new one is
+   * written there. Whether the tap was taken.
+   */
+  private equationAt(box: PageBox, at: Pt): boolean {
+    const onEquation = this.callbacks.onEquation;
+    const page = this.pageAt(box.index);
+    if (!onEquation || !page || this.practice || this.callbacks.isLocked?.()) return false;
+    const hit = this.ownEquationAt(page, at);
+    if (hit) {
+      // Picked up, as a text box is by its first tap: it drags from there,
+      // and its bar has Edit and its colour. A tap on it then edits it.
+      this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [hit] });
+      return true;
+    }
+    if (this.toolState.textEquation !== true) return false;
+    onEquation(page.id, at, null);
+    return true;
+  }
+
+  /** Select equation `equationId` on page `pageId` (just placed), as a tap with the lasso would. */
+  selectEquation(pageId: string, equationId: string): boolean {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const equation = page?.equations?.find((candidate) => candidate.id === equationId);
+    if (!page || !equation) return false;
+    this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [equation] });
+    return this.selection !== null;
   }
 
   /**
@@ -11079,7 +11256,11 @@ export class InkSurface {
    * pages either side read, so the first stroke on them can snap.
    */
   private prefetchText(): void {
-    if (!this.textSource || this.toolState.tool !== "highlighter") return;
+    if (!this.textSource) return;
+    const tool = this.toolState.tool;
+    const snaps =
+      tool === "highlighter" || (tool === "tape" && this.toolState.tapeSnapText === true);
+    if (!snaps) return;
     for (const index of [this.pageIndex, this.pageIndex + 1, this.pageIndex - 1]) {
       this.pageText(index);
     }
@@ -11093,6 +11274,8 @@ export class InkSurface {
    */
   private startTextMark(box: PageBox, at: Pt): boolean {
     if (this.toolState.tool !== "highlighter" || this.practice) return false;
+    // Switched off, it draws freehand on text too (FineNotes#159).
+    if (this.callbacks.highlighterSnapsToText?.() === false) return false;
     const layout = this.pageText(box.index);
     const selection = layout ? selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
     this.noteTextMark(box.index, layout, selection);
@@ -11455,12 +11638,17 @@ export class InkSurface {
   private eraseWholeAt(page: Page, at: Pt, radius: number, filter: EraserFilter): boolean {
     let marked = false;
     const notes = noteIdsOf(page.images);
-    for (const id of this.strokeIndex.near(page.id, at.x, at.y, radius)) {
+    // The index knows lines, not widths: reach as far as the widest ink.
+    const reach = radius + MAX_TILTED_HALF_WIDTH;
+    for (const id of this.strokeIndex.near(page.id, at.x, at.y, reach)) {
       const stroke = this.strokeIndex.get(id);
       if (!stroke || this.eraseIds.has(id) || !eraserTakes(stroke, filter)) continue;
       // Ink a sticky note hides, or a note's ink off its note, is not touched.
       if (!shownAt(page, stroke, at.x, at.y, notes)) continue;
-      if (!strokeHitByPoint(stroke, at.x, at.y, radius)) continue;
+      // Touching the ink takes it, not only its centre line: a snapped text
+      // highlight is a band as tall as the text, and rubbing over it away
+      // from its middle left it on the page (FineNotes#159).
+      if (!strokeHitByPoint(stroke, at.x, at.y, radius + inkWidth(stroke) / 2)) continue;
       marked = this.markWhole(page, id) || marked;
     }
     return marked;
@@ -11705,7 +11893,9 @@ export class InkSurface {
    */
   private lassoed(page: Page, loop: readonly number[], except?: Stroke): ElementLists {
     const poly = polygonOf(loop);
-    if (!poly) return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [] };
+    if (!poly) {
+      return { strokes: [], images: [], textBoxes: [], tables: [], graphs: [], equations: [] };
+    }
     const filter = lassoFilterFor(this.toolState);
     const anyPart = this.callbacks.lassoAnyPart?.() !== false;
     const near = this.strokeIndex.within(page.id, poly.bounds);
@@ -11740,6 +11930,10 @@ export class InkSurface {
         : [],
       graphs: filter.graphs
         ? own(page.graphs ?? []).filter((graph) => boxInLasso(graphFrame(graph), poly))
+        : [],
+      // An equation is typed text: the Text boxes switch takes it too.
+      equations: filter.textBoxes
+        ? own(page.equations ?? []).filter((equation) => boxInLasso(graphFrame(equation), poly))
         : [],
     };
   }
@@ -11877,6 +12071,7 @@ export class InkSurface {
       this.stopPress();
     }
     if (pick.dragging) this.dragCircleSelection(box, p);
+    else this.sweepPressText(pick.box, p);
   }
 
   /** It lifted: a move is one step; a tap leaves the one thing selected, with its frame. */
@@ -11884,6 +12079,7 @@ export class InkSurface {
     const pick = this.picking;
     this.picking = null;
     this.stopPress();
+    this.endTextSweep();
     // Only a move commits: a tap on a table must select it, not type in a
     // cell, as the frame's own tap would on a second press.
     if (pick?.dragging) this.endGroupDrag(this.groupDrag?.lifted === true);
@@ -11946,7 +12142,12 @@ export class InkSurface {
   private selectMove(samples: readonly Pt[]): void {
     const lasso = this.lasso;
     const last = samples[samples.length - 1];
-    if (!lasso || !last || lasso.held) return;
+    if (!lasso || !last) return;
+    if (lasso.held) {
+      // Held on PDF text: the pen sweeps on over words.
+      this.sweepPressText(lasso.box, last);
+      return;
+    }
     const scale = this.gestureScale;
     const moved = Math.hypot(last.x - lasso.origin.x, last.y - lasso.origin.y) * scale;
     if (moved > TAP_SLOP_PX) this.stopPress();
@@ -12022,9 +12223,7 @@ export class InkSurface {
     if (!page) return;
     this.clearSelection();
     this.deselectImage();
-    const top = topImageAt(page.images, p, PEN_TAP_TOLERANCE_PX / this.gestureScale);
-    const locked = top?.locked === true ? top : null;
-    const ink = this.strokeAt(page, p, PEN_TAP_TOLERANCE_PX / this.gestureScale);
+    const { locked, ink } = this.pressedThings(page, p);
     this.pressMenu = {
       pageId: page.id,
       at: { x: p.x, y: p.y },
@@ -12034,6 +12233,153 @@ export class InkSurface {
       // Held on a PDF's text, and on no ink but a highlight: the word is selected.
       text: locked || (ink && !isHighlight(ink)) ? null : this.pressedText(box.index, p),
     };
+    this.syncActionBar();
+  }
+
+  /** What a press at page point `p` lands on: a locked picture on top, and ink. */
+  private pressedThings(page: Page, p: Pt): { locked: ImageElement | null; ink: Stroke | null } {
+    const top = topImageAt(page.images, p, PEN_TAP_TOLERANCE_PX / this.gestureScale);
+    return {
+      locked: top?.locked === true ? top : null,
+      ink: this.strokeAt(page, p, PEN_TAP_TOLERANCE_PX / this.gestureScale),
+    };
+  }
+
+  /**
+   * Whether a press at page point `p` of `box` would select a PDF word, as
+   * `openPressMenu` decides it: text there, and no ink but a highlight and
+   * no locked picture over it.
+   */
+  private pressSelectsText(box: PageBox, p: Pt): boolean {
+    const page = this.pageAt(box.index);
+    if (!page) return false;
+    const { locked, ink } = this.pressedThings(page, p);
+    if (locked || (ink && !isHighlight(ink))) return false;
+    return this.pressedText(box.index, p) !== null;
+  }
+
+  // --- Sweeping words (FineNotes#164) ----------------------------------------
+  //
+  // A press that selected a PDF word and then moves takes every word from
+  // that one to the one under the pointer: the right mouse button dragged,
+  // or a finger or the lasso's pen held on the word, then moved. The bar
+  // steps aside while it sweeps and comes back, with Copy, when it ends.
+
+  /** The right button went down: remember where, for a drag to start from. */
+  private rightSweepDown(event: PointerEvent): void {
+    if (event.pointerType !== "mouse" || event.button !== 2) return;
+    this.endRightSweep(false);
+    this.sweepMenuUntil = 0;
+    if (onTextBox(event.target) || isEditable(event.target)) return;
+    if (this.callbacks.onlyStylusMode?.() === true || this.practice) return;
+    // A bound button or a tablet's stylus button: not the user's right click.
+    if (now() < this.stylusMenuUntil) return;
+    const target = event.target as Node | null;
+    if (target && (this.selectionUiEl.contains(target) || this.imageUiEl.contains(target))) {
+      return;
+    }
+    if (this.lasso || this.imageDrag || this.groupDrag || this.cropping) return;
+    const layout = this.toLayout(event.clientX, event.clientY);
+    const box = boxAtPoint(this.pageLayout, layout.x, layout.y);
+    if (!box) return;
+    const win = this.surfaceEl.ownerDocument.defaultView ?? window;
+    const pointerId = event.pointerId;
+    const onEvent = (e: PointerEvent): void => {
+      if (e.pointerId !== pointerId) return;
+      if (e.type === "pointermove" && (e.buttons & 2) !== 0) {
+        this.rightSweepMove(e.clientX, e.clientY);
+        return;
+      }
+      // Let go (or the system took it, or its release was never heard).
+      this.endRightSweep(true);
+    };
+    const off = (): void => {
+      win.removeEventListener("pointermove", onEvent, true);
+      win.removeEventListener("pointerup", onEvent, true);
+      win.removeEventListener("pointercancel", onEvent, true);
+    };
+    win.addEventListener("pointermove", onEvent, true);
+    win.addEventListener("pointerup", onEvent, true);
+    win.addEventListener("pointercancel", onEvent, true);
+    this.rightSweep = {
+      pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      box,
+      at: this.toPage(box, layout),
+      started: false,
+      off,
+    };
+  }
+
+  /** The right button moved, held: past the slop on a word, it sweeps. */
+  private rightSweepMove(x: number, y: number): void {
+    const sweep = this.rightSweep;
+    if (!sweep) return;
+    if (!sweep.started) {
+      // A screen length: the slop of a tap, whatever the zoom.
+      if (Math.hypot(x - sweep.clientX, y - sweep.clientY) <= TAP_SLOP_PX) return;
+      if (!this.pressSelectsText(sweep.box, sweep.at)) {
+        // Not on a word: the drag stays the right click it is today.
+        this.endRightSweep(false);
+        return;
+      }
+      sweep.started = true;
+      // Where the menu came as the button went down, it is opened again, the same.
+      this.openPressMenu(sweep.box, sweep.at);
+    }
+    this.sweepPressText(sweep.box, this.pagePoint(sweep.box, x, y));
+  }
+
+  /**
+   * The right button is done with: the sweep ends and its bar shows, and
+   * the contextmenu Windows sends after the release is swallowed.
+   */
+  private endRightSweep(released: boolean): void {
+    const sweep = this.rightSweep;
+    if (!sweep) return;
+    this.rightSweep = null;
+    sweep.off();
+    if (!sweep.started) return;
+    if (released) this.sweepMenuUntil = now() + SWEEP_MENU_MS;
+    this.endTextSweep();
+  }
+
+  /** A finger that held on PDF text moved: it sweeps over words. True when it did. */
+  private fingerSweepsText(x: number, y: number): boolean {
+    const press = this.pressMenu;
+    const text = press?.text;
+    if (!press || !text) return false;
+    // Once sweeping, the finger never scrolls again before it lifts.
+    if (!text.sweeping && (!press.provisional || this.pinch !== null || this.touchCount > 1)) {
+      return false;
+    }
+    const box = this.boxForPage(press.pageId);
+    if (!box) return false;
+    this.sweepPressText(box, this.pagePoint(box, x, y));
+    return true;
+  }
+
+  /** Sweep the press menu's selected text from where it was opened to page point `to` of `box`. */
+  private sweepPressText(box: PageBox, to: Pt): void {
+    const press = this.pressMenu;
+    const text = press?.text;
+    if (!press || !text || this.boxForPage(press.pageId)?.index !== box.index) return;
+    const first = !text.sweeping;
+    text.sweeping = true;
+    const pick = sweepWords(text.layout, press.at, to, this.atFitZoom(TEXT_SNAP_SLOP_PX));
+    const changed = pick !== null && (pick.start !== text.pick.start || pick.end !== text.pick.end);
+    if (pick && changed) text.pick = pick;
+    // The first step hides the bar; the rest only redraw the selection.
+    if (first) this.syncActionBar();
+    else if (changed) this.syncTextPick(press, box);
+  }
+
+  /** A sweep let go: the bar comes back over what it selected. */
+  private endTextSweep(): void {
+    const text = this.pressMenu?.text;
+    if (!text?.sweeping) return;
+    text.sweeping = false;
     this.syncActionBar();
   }
 
@@ -12114,6 +12460,7 @@ export class InkSurface {
     this.activePage = null;
     this.stopPress();
     this.renderer?.clearWet();
+    this.endTextSweep();
     // A held press has opened its bar already; the lift only lets go.
     if (!lasso || lasso.held) return;
     if (lasso.space) {
@@ -12264,6 +12611,9 @@ export class InkSurface {
       graphs: filter.graphs
         ? (page.graphs ?? []).filter((graph) => framed(frameBounds(graphFrame(graph))))
         : [],
+      equations: filter.textBoxes
+        ? (page.equations ?? []).filter((equation) => framed(frameBounds(graphFrame(equation))))
+        : [],
     });
   }
 
@@ -12304,6 +12654,7 @@ export class InkSurface {
         lists.textBoxes.push(...picked.movedOf("textBoxes"));
         (lists.tables ??= []).push(...picked.movedOf("tables"));
         (lists.graphs ??= []).push(...picked.movedOf("graphs"));
+        (lists.equations ??= []).push(...picked.movedOf("equations"));
       }
     }
     this.select(page.id, lists);
@@ -12334,6 +12685,7 @@ export class InkSurface {
       textBoxes: ids(found.textBoxes),
       tables: ids(found.tables),
       graphs: ids(found.graphs),
+      equations: ids(found.equations),
     });
     this.history.push(this.doc, move);
     this.strokeIndex.refreshPages(this.doc.pages, [fromPage.id, toPage.id]);
@@ -12425,6 +12777,12 @@ export class InkSurface {
       this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
       return true;
     }
+    // An equation lies over the graphs; it is picked up on its own, as typed text.
+    const equation = filter.textBoxes ? this.ownEquationAt(page, p) : null;
+    if (equation) {
+      this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [equation] });
+      return true;
+    }
     // A graph lies under the ink and over the tables; it is picked up on its own.
     const graph = filter.graphs ? this.ownGraphAt(page, p) : null;
     if (graph) {
@@ -12446,8 +12804,36 @@ export class InkSurface {
         candidate.locked !== true && !isFolded(candidate) && !(this.joined && isMirror(candidate)),
     );
     const image = filter.images ? topImageAt(unlocked, p, tolerance) : null;
-    if (image) this.setImageSelection(page.id, image);
-    return image !== null;
+    if (image) {
+      this.setImageSelection(page.id, image);
+      return true;
+    }
+    // Last, the inside of a closed shape: empty paper there picks the shape up.
+    const shape = this.shapeInsideAt(page, p, filter);
+    if (shape) this.select(page.id, { strokes: [shape], images: [], textBoxes: [] });
+    return shape !== null;
+  }
+
+  /**
+   * The topmost closed shape whose inside holds page point `p` (a rectangle,
+   * circle, triangle …, filled or not), as far as `filter` allows. Asked only
+   * after everything drawn there missed, so ink, text, tables and pictures
+   * inside a shape are still picked up on their own.
+   */
+  private shapeInsideAt(page: Page, p: Pt, filter: LassoFilter): Stroke | null {
+    for (let i = page.strokes.length - 1; i >= 0; i--) {
+      const stroke = page.strokes[i];
+      if (!takesLabel(stroke) || !lassoTakesStroke(stroke, filter)) continue;
+      if (this.joined && isMirror(stroke)) continue;
+      if (insideShape(stroke, p.x, p.y)) return stroke;
+    }
+    return null;
+  }
+
+  /** The topmost equation at `p` that is not a mirror of another page's (with the pages joined). */
+  private ownEquationAt(page: Page, p: Pt): EquationElement | null {
+    const list = (page.equations ?? []).filter((e) => !(this.joined && isMirror(e)));
+    return frameAt(list, p);
   }
 
   /** The topmost graph at `p` that is not a mirror of another page's (with the pages joined). */
@@ -12685,6 +13071,7 @@ export class InkSurface {
     const { textBoxes } = elements;
     const tables = elements.tables ?? [];
     const graphs = elements.graphs ?? [];
+    const equations = elements.equations ?? [];
     const images = elements.images.filter((image) => image.locked !== true);
     // A sticky note never goes anywhere without its ink.
     const page = images.some((image) => image.sticky)
@@ -12693,12 +13080,13 @@ export class InkSurface {
     const strokes = page
       ? withNoteInk(page, { strokes: elements.strokes, images })
       : elements.strokes;
-    if (isEmptySelection({ strokes, images, textBoxes, tables, graphs })) return;
+    if (isEmptySelection({ strokes, images, textBoxes, tables, graphs, equations })) return;
     if (this.toolState.tool === "select") this.selectionToolUsed = true;
     if (
       textBoxes.length === 0 &&
       tables.length === 0 &&
       graphs.length === 0 &&
+      equations.length === 0 &&
       images.length === 1 &&
       (strokes.length === 0 || loneNote({ strokes, images }) !== null)
     ) {
@@ -12720,6 +13108,7 @@ export class InkSurface {
       textBoxes: [...withText],
       tables: [...tables],
       graphs: [...graphs],
+      equations: [...equations],
     };
     this.selectionCorners = isLoneShape(this.selection) || this.loneTape(this.selection) !== null;
     this.shapePointsOn = false;
@@ -12793,6 +13182,7 @@ export class InkSurface {
       ...sel.textBoxes.map((textBox) => this.textBoxCoverOf(sel.pageId, textBox)),
       ...(sel.tables ?? []).map((table) => this.tableFrameOf(table)),
       ...(sel.graphs ?? []).map(graphFrame),
+      ...(sel.equations ?? []).map(graphFrame),
     ]);
   }
 
@@ -12957,7 +13347,8 @@ export class InkSurface {
       this.tapeStretch?.lifted === true ||
       this.linkDrag?.lifted === true ||
       // As on iPadOS, the bar steps aside while a handle is dragged.
-      press?.text?.drag != null;
+      press?.text?.drag != null ||
+      press?.text?.sweeping === true;
     let bounds: Bounds | null = null;
     let clearAbove = SELECTION_PAD_PX;
     let clearBelow = SELECTION_PAD_PX;
@@ -13266,6 +13657,23 @@ export class InkSurface {
         },
       });
     }
+    // One equation on its own: change what it says, in the editor it was typed in.
+    const equations = sel.equations ?? [];
+    const onEquation = this.callbacks.onEquation;
+    if (equations.length === 1 && selectedCount(sel) === 1 && onEquation) {
+      const equation = equations[0];
+      actions.unshift({
+        id: "edit-equation",
+        icon: "sigma",
+        label: t("surface.command.editEquation"),
+        group: "edit",
+        bar: true,
+        run: () => {
+          this.clearSelection();
+          onEquation(sel.pageId, { x: equation.x, y: equation.y }, equation);
+        },
+      });
+    }
     // One graph on its own: look around in it, or change what it plots.
     const graphs = sel.graphs ?? [];
     if (graphs.length === 1 && selectedCount(sel) === 1) {
@@ -13305,10 +13713,12 @@ export class InkSurface {
         run: () => this.startCellEdit(sel.pageId, table, { row: 0, col: 0 }),
       });
     }
-    if (menu.colour && sel.strokes.length > 0) {
-      const first = sel.strokes[0].color;
+    const coloured = [...sel.strokes, ...(sel.equations ?? [])];
+    if (menu.colour && coloured.length > 0) {
+      const first = coloured[0].color;
       // First in the bar, a disc of its colour opening the colour panel
       // (Goodnotes' Change colour): the pens' picker, and a shape's fill below.
+      // A typed equation's colour too (discussion #166).
       actions.unshift({
         id: "colour",
         icon: "palette",
@@ -13321,7 +13731,7 @@ export class InkSurface {
           colors: this.palette,
           notebook: this.doc.palette?.colors ?? [],
           recent: this.toolState.recentColors ?? [],
-          current: sel.strokes.every((stroke) => stroke.color === first) ? first : null,
+          current: coloured.every((element) => element.color === first) ? first : null,
           pick: (color) => this.recolorSelection(color),
           shown: (color) => shownColor(color, this.paperTheme.night === true),
           custom: (color) => this.recolorCustom(color),
@@ -13683,7 +14093,7 @@ export class InkSurface {
     if (this.practice) return null;
     const layout = this.pageText(index);
     const pick = layout ? pickWord(layout, p, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
-    return layout && pick ? { layout, pick, drag: null } : null;
+    return layout && pick ? { layout, pick, drag: null, sweeping: false } : null;
   }
 
   /**
@@ -13979,6 +14389,7 @@ export class InkSurface {
       textBoxes: sel.textBoxes,
       tables: sel.tables,
       graphs: sel.graphs,
+      equations: sel.equations,
     };
     this.clearSelection();
     this.history.push(this.doc, new RemoveElements(sel.pageId, elements, label));
@@ -14019,6 +14430,7 @@ export class InkSurface {
           textBoxes: group.textBoxes,
           tables: group.tables,
           graphs: group.graphs,
+          equations: group.equations,
         },
         bounds,
       );
@@ -14080,6 +14492,7 @@ export class InkSurface {
       textBoxes: entry.elements.textBoxes,
       tables: entry.elements.tables,
       graphs: entry.elements.graphs,
+      equations: entry.elements.equations,
     };
     const d = pastePlacement({
       bounds: entry.bounds,
@@ -14105,12 +14518,14 @@ export class InkSurface {
     let imageSeq = Number(nextImageId(this.doc).slice(1)) - 1;
     let tableSeq = Number(nextTableId(this.doc).slice(1)) - 1;
     let graphSeq = Number(nextGraphId(this.doc).slice(1)) - 1;
+    let equationSeq = Number(nextEquationId(this.doc).slice(1)) - 1;
     return {
       stroke: () => this.strokeIds.next(),
       image: () => `i${++imageSeq}`,
       textBox: () => this.textBoxIds.next(),
       table: () => `g${++tableSeq}`,
       graph: () => `f${++graphSeq}`,
+      equation: () => `q${++equationSeq}`,
     };
   }
 
@@ -14278,6 +14693,7 @@ export class InkSurface {
       textBox: () => "t",
       table: () => "g",
       graph: () => "f",
+      equation: () => "q",
     };
     const moved = copyElements(sel, ids, pad - bounds.minX, pad - bounds.minY);
     const page: Page = { ...blankPage("sticker", { width, height }), ...moved };
@@ -15470,11 +15886,20 @@ export class InkSurface {
   /** Give every selected stroke one colour, as one undo step. */
   private recolorSelection(color: string): void {
     const sel = this.liveSelection();
-    if (!sel || sel.strokes.length === 0 || this.callbacks.isLocked?.()) return;
-    if (sel.strokes.every((stroke) => stroke.color === color)) return;
-    this.history.push(this.doc, new RecolorStrokes(sel.pageId, sel.strokes, color));
+    const equations = sel?.equations ?? [];
+    if (!sel || (sel.strokes.length === 0 && equations.length === 0)) return;
+    if (this.callbacks.isLocked?.()) return;
+    const all = [...sel.strokes, ...equations];
+    if (all.every((element) => element.color === color)) return;
+    const parts: Command[] = [];
+    if (sel.strokes.length > 0) parts.push(new RecolorStrokes(sel.pageId, sel.strokes, color));
+    if (equations.length > 0) parts.push(new RecolorEquations(sel.pageId, equations, color));
+    this.history.push(
+      this.doc,
+      parts.length === 1 ? parts[0] : new CompositeCommand(parts[0].label, parts),
+    );
     const box = this.boxForPage(sel.pageId);
-    const bounds = selectionBounds(sel.strokes, [], []);
+    const bounds = selectionBounds(sel.strokes, [], equations.map(graphFrame));
     // A colour is not part of a stroke's cached outline: re-rasterise.
     if (box && bounds) this.renderer?.invalidateRegion(box.index, bounds);
     this.renderDry();
@@ -15666,6 +16091,7 @@ export class InkSurface {
       textBoxes: [],
       tables: [],
       graphs: [],
+      equations: [],
     };
   }
 
@@ -15975,6 +16401,9 @@ export class InkSurface {
     this.renderer?.setHiddenImages(new Set([...drag.selection.images, ...mirrors.images]));
     this.renderer?.setHiddenTables(new Set([...(drag.selection.tables ?? []), ...mirrors.tables]));
     this.renderer?.setHiddenGraphs(new Set([...(drag.selection.graphs ?? []), ...mirrors.graphs]));
+    this.renderer?.setHiddenEquations(
+      new Set([...(drag.selection.equations ?? []), ...mirrors.equations]),
+    );
     // Its connectors leave the tiles too, and follow it on the wet layer.
     drag.connectors = this.connectorIdsOf(drag.selection.pageId, drag.selection.strokes);
     if (drag.connectors.size > 0) {
@@ -15992,6 +16421,7 @@ export class InkSurface {
     images: ImageElement[];
     tables: TableElement[];
     graphs: GraphElement[];
+    equations: EquationElement[];
     regions: Array<{ index: number; bounds: Bounds }>;
   } {
     const out = {
@@ -15999,6 +16429,7 @@ export class InkSurface {
       images: [] as ImageElement[],
       tables: [] as TableElement[],
       graphs: [] as GraphElement[],
+      equations: [] as EquationElement[],
       regions: [] as Array<{ index: number; bounds: Bounds }>,
     };
     if (!this.joined) return out;
@@ -16009,12 +16440,13 @@ export class InkSurface {
       images: keys(selection.images),
       tables: keys(selection.tables),
       graphs: keys(selection.graphs),
+      equations: keys(selection.equations),
     };
     this.pageLayout.boxes.forEach((box) => {
       const page = this.pageAt(box.index);
       if (!page || page.id === selection.pageId) return;
       const take = <T extends { join?: string }>(
-        kind: "strokes" | "images" | "tables" | "graphs",
+        kind: "strokes" | "images" | "tables" | "graphs" | "equations",
         list: readonly T[] | undefined,
         into: (element: T) => void,
       ): void => {
@@ -16029,6 +16461,7 @@ export class InkSurface {
       take("images", page.images, (image) => out.images.push(image));
       take("tables", page.tables, (table) => out.tables.push(table));
       take("graphs", page.graphs, (graph) => out.graphs.push(graph));
+      take("equations", page.equations, (equation) => out.equations.push(equation));
     });
     return out;
   }
@@ -16057,6 +16490,8 @@ export class InkSurface {
         { x: anchor.x, y: anchor.y, angle },
         drag.selection.tables ?? [],
         drag.selection.graphs ?? [],
+        true,
+        drag.selection.equations ?? [],
       );
       return;
     }
@@ -16076,6 +16511,7 @@ export class InkSurface {
       drag.selection.graphs ?? [],
       // A move is carried over the desk and onto other pages, not cut at its own page's edge.
       scale !== null || drag.turn !== null,
+      drag.selection.equations ?? [],
     );
     this.renderDraggedConnectors(drag, box);
     this.requestZoomPaint();
@@ -16143,6 +16579,15 @@ export class InkSurface {
         this.editShapeLabel(drag.own.pageId, shape);
         return;
       }
+      // A tap on an equation picked up on its own opens it in the equation window.
+      const equation =
+        commit && !drag.scale && !drag.turn && !drag.fingers ? this.loneEquation(drag.own) : null;
+      const onEquation = this.callbacks.onEquation;
+      if (equation && onEquation && !this.callbacks.isLocked?.()) {
+        this.clearSelection();
+        onEquation(drag.own.pageId, { x: equation.x, y: equation.y }, equation);
+        return;
+      }
       this.syncSelectionOverlay();
       return;
     }
@@ -16150,6 +16595,7 @@ export class InkSurface {
     this.renderer?.setHiddenImages(NO_IMAGES);
     this.renderer?.setHiddenTables(NO_TABLES);
     this.renderer?.setHiddenGraphs(NO_GRAPHS);
+    this.renderer?.setHiddenEquations(NO_EQUATIONS);
     if (drag.connectors && drag.connectors.size > 0) {
       this.renderer?.setHiddenConnectors(NO_CONNECTORS);
       // Back into the tiles where they are; a move repaints where they were too (`changed`).
@@ -16354,12 +16800,18 @@ export class InkSurface {
   /** Where each connector was last drawn, so a move repaints both places. */
   private connectorShown: Map<string, { pageId: string; bounds: Bounds }> | null = null;
 
+  /** The one equation a selection holds on its own; null for anything else. */
+  private loneEquation(sel: GroupSelection): EquationElement | null {
+    const equations = sel.equations ?? [];
+    return equations.length === 1 && selectedCount(sel) === 1 ? equations[0] : null;
+  }
+
   /** The one closed shape a selection holds on its own; null for anything else. */
   private loneLinkShape(sel: GroupSelection | null): Stroke | null {
     if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
       return null;
     }
-    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
+    if (hasFramed(sel)) return null;
     const stroke = sel.strokes[0];
     return isWholeClosedShape(stroke) ? stroke : null;
   }
@@ -16695,8 +17147,7 @@ export class InkSurface {
       group.strokes[0] === bar.stroke &&
       group.images.length === 0 &&
       group.textBoxes.length === 0 &&
-      (group.tables?.length ?? 0) === 0 &&
-      (group.graphs?.length ?? 0) === 0;
+      !hasFramed(group);
     if (!ok) this.linkBar = null;
     return ok;
   }
@@ -16864,7 +17315,7 @@ export class InkSurface {
     if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
       return null;
     }
-    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
+    if (hasFramed(sel)) return null;
     const stroke = sel.strokes[0];
     const handles = pointHandles(stroke.shape, stroke.pts);
     return handles ? { stroke, handles } : null;
@@ -17077,8 +17528,10 @@ export class InkSurface {
     if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
       return null;
     }
-    if ((sel.tables?.length ?? 0) > 0 || (sel.graphs?.length ?? 0) > 0) return null;
-    return isTape(sel.strokes[0]) ? sel.strokes[0] : null;
+    if (hasFramed(sel)) return null;
+    // A freehand tape has no straight sides: it resizes as ink does.
+    const only = sel.strokes[0];
+    return isTape(only) && !isFreehandTape(only.pts) ? only : null;
   }
 
   /**
@@ -17361,9 +17814,11 @@ export class InkSurface {
         if (
           this.fingerHoldsTextBox(tapped, p) ||
           this.fingerPicksShape(tapped, p) ||
+          this.fingerPicksEquation(tapped, p) ||
           this.fingerPicksGraph(tapped, p) ||
           this.fingerPicksTable(tapped, p) ||
-          this.fingerPicksPicture(tapped, p)
+          this.fingerPicksPicture(tapped, p) ||
+          this.fingerPicksShapeInside(tapped, p)
         ) {
           return;
         }
@@ -17724,6 +18179,23 @@ export class InkSurface {
    * the lasso is picked and the graph selected, its bar offering Explore and
    * Edit, as a tap on a picture does. The Pencil keeps writing over it.
    */
+  private fingerPicksEquation(page: Page, p: Pt): boolean {
+    if (this.practice) return false;
+    const equation = this.ownEquationAt(page, p);
+    if (!equation) return false;
+    // With the Text tool an equation is typed text: picked up where it is,
+    // the Text tool kept, so it drags from there and a second tap edits it.
+    if (this.toolState.tool === "text") {
+      this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [equation] });
+      return true;
+    }
+    this.setTool("select");
+    this.callbacks.onToolChange?.("select");
+    this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [equation] });
+    return true;
+  }
+
+  /** As {@link fingerPicksEquation}, for a graph. */
   private fingerPicksGraph(page: Page, p: Pt): boolean {
     if (this.practice || this.toolState.tool === "text") return false;
     const graph = graphAt(page, p);
@@ -17747,6 +18219,26 @@ export class InkSurface {
     const stroke = this.strokeAt(page, p, FINGER_TAP_TOLERANCE_PX / this.unitScale, filter);
     if (!stroke) return false;
     // The shape already picked up on its own: this second tap types in it.
+    const sel = this.liveSelection();
+    if (sel && sel.pageId === page.id && this.loneLabelShape(sel) === stroke) {
+      this.editShapeLabel(page.id, stroke);
+      return true;
+    }
+    this.pickLasso();
+    this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
+    return true;
+  }
+
+  /**
+   * A finger tapped empty paper inside a closed shape: the shape is picked
+   * up as a tap on its outline picks it (`fingerPicksShape`), and a second
+   * tap there types in it.
+   */
+  private fingerPicksShapeInside(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const filter = { ...lassoFilterFor(this.toolState), handwriting: false };
+    const stroke = this.shapeInsideAt(page, p, filter);
+    if (!stroke) return false;
     const sel = this.liveSelection();
     if (sel && sel.pageId === page.id && this.loneLabelShape(sel) === stroke) {
       this.editShapeLabel(page.id, stroke);
@@ -18540,7 +19032,8 @@ export class InkSurface {
       sel.images.length +
       sel.textBoxes.length +
       (sel.tables?.length ?? 0) +
-      (sel.graphs?.length ?? 0);
+      (sel.graphs?.length ?? 0) +
+      (sel.equations?.length ?? 0);
     const stroke = sel.strokes.length === 1 && others === 0 ? sel.strokes[0] : null;
     return stroke && takesLabel(stroke) ? stroke : null;
   }
@@ -18715,7 +19208,15 @@ export class InkSurface {
   private imageAsSelection(pageId: string, image: ImageElement): GroupSelection {
     const page = this.doc.pages.find((candidate) => candidate.id === pageId);
     const ink = image.sticky && page ? page.strokes.filter((s) => s.onSticky === image.id) : [];
-    return { pageId, strokes: ink, images: [image], textBoxes: [], tables: [], graphs: [] };
+    return {
+      pageId,
+      strokes: ink,
+      images: [image],
+      textBoxes: [],
+      tables: [],
+      graphs: [],
+      equations: [],
+    };
   }
 
   /** Take the dragged image out of the tiles and draw it on the wet layer instead. */
@@ -18975,7 +19476,12 @@ export class InkSurface {
   private loneTable(sel: ElementLists): TableElement | null {
     const tables = sel.tables ?? [];
     const others =
-      sel.images.length + sel.textBoxes.length + (sel.graphs?.length ?? 0) + tables.length - 1;
+      sel.images.length +
+      sel.textBoxes.length +
+      (sel.graphs?.length ?? 0) +
+      (sel.equations?.length ?? 0) +
+      tables.length -
+      1;
     return tables.length === 1 && others === 0 ? tables[0] : null;
   }
 
@@ -19987,6 +20493,7 @@ function selectablesOf(page: Page): ElementLists {
     textBoxes: page.textBoxes,
     tables: page.tables ?? [],
     graphs: page.graphs ?? [],
+    equations: page.equations ?? [],
   };
 }
 
@@ -19997,7 +20504,17 @@ function selectedCount(sel: ElementLists): number {
     sel.images.length +
     sel.textBoxes.length +
     (sel.tables?.length ?? 0) +
-    (sel.graphs?.length ?? 0)
+    (sel.graphs?.length ?? 0) +
+    (sel.equations?.length ?? 0)
+  );
+}
+
+/** Whether a selection holds a table, a graph or an equation: elements with a frame of their own. */
+function hasFramed(sel: ElementLists): boolean {
+  return (
+    (sel.tables?.length ?? 0) > 0 ||
+    (sel.graphs?.length ?? 0) > 0 ||
+    (sel.equations?.length ?? 0) > 0
   );
 }
 
@@ -20108,9 +20625,26 @@ export function spaceReadout(plan: SpacePlan): string {
   return parts.join(" · ");
 }
 
-/** A graph's frame, page px: where it is drawn and where it is picked up. */
-function graphFrame(graph: GraphElement): { x: number; y: number; w: number; h: number } {
+/** A graph's (or an equation's) frame, page px: where it is drawn and where it is picked up. */
+function graphFrame(graph: GraphElement | EquationElement): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} {
   return { x: graph.x, y: graph.y, w: graph.w, h: graph.h };
+}
+
+/** The topmost of `list` whose frame holds `p` (page px), or null. */
+function frameAt<T extends { x: number; y: number; w: number; h: number }>(
+  list: readonly T[],
+  p: Pt,
+): T | null {
+  for (let i = list.length - 1; i >= 0; i--) {
+    const f = list[i];
+    if (p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + f.h) return f;
+  }
+  return null;
 }
 
 /** The topmost graph whose frame holds `p` (page px), or null. */

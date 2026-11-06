@@ -44,6 +44,7 @@ import { readTabColor } from "./page-tabs";
 import { readPaperExtras } from "./paper-extras";
 import { normalizeTable } from "./table";
 import { normalizeGraph } from "./graph-element";
+import { normalizeEquation } from "./equation";
 import { normalizeComment } from "./comments";
 import { cleanFamily } from "./text-family";
 import {
@@ -74,6 +75,7 @@ import {
   type Stroke,
   type TextAlign,
   type GraphElement,
+  type EquationElement,
   type TableElement,
   type PageComment,
   type TextBoxElement,
@@ -195,6 +197,7 @@ interface StoredPage {
   textBoxes: TextBoxElement[];
   tables?: TableElement[];
   graphs?: GraphElement[];
+  equations?: EquationElement[];
   comments?: PageComment[];
   strokes: StoredStroke[];
 }
@@ -362,6 +365,7 @@ function storePage(page: Page): StoredPage {
     textBoxes: page.textBoxes,
     tables: page.tables && page.tables.length > 0 ? page.tables : undefined,
     graphs: page.graphs && page.graphs.length > 0 ? page.graphs : undefined,
+    equations: page.equations && page.equations.length > 0 ? page.equations : undefined,
     comments: page.comments && page.comments.length > 0 ? page.comments : undefined,
     strokes: pageInk.map(storeStroke),
   };
@@ -888,9 +892,16 @@ function normalizeFrame(raw: unknown): { frame?: PdfFrame } {
 }
 
 /** A margin's paper, only a known one and only beside a frame. */
-function normalizeMarginPaper(raw: unknown, frame: unknown): { marginPaper?: MarginPaper } {
+function normalizeMarginPaper(
+  raw: unknown,
+  frame: unknown,
+  spacing?: unknown,
+): { marginPaper?: MarginPaper; marginSpacing?: number } {
   if (!normalizeFrame(frame).frame) return {};
-  return raw === "lined" || raw === "grid" || raw === "dotted" ? { marginPaper: raw } : {};
+  if (raw !== "lined" && raw !== "grid" && raw !== "dotted") return {};
+  // A pitch only with a paper to draw it on; a nonsense one is dropped, so the margin follows the page.
+  const pitch = typeof spacing === "number" && Number.isFinite(spacing) && spacing > 0;
+  return { marginPaper: raw, ...(pitch ? { marginSpacing: spacing } : {}) };
 }
 
 function normalizeBackdrop(raw: unknown): Backdrop {
@@ -906,7 +917,7 @@ function normalizeBackdrop(raw: unknown): Backdrop {
         ...(b.annotations === false ? { annotations: false as const } : {}),
         ...(b.template === true ? { template: true as const } : {}),
         ...normalizeFrame(b.frame),
-        ...normalizeMarginPaper(b.marginPaper, b.frame),
+        ...normalizeMarginPaper(b.marginPaper, b.frame, b.marginSpacing),
       };
     }
     return { kind: "blank" };
@@ -921,7 +932,7 @@ function normalizeBackdrop(raw: unknown): Backdrop {
       ...(printed.length > 0 ? { printed } : {}),
       ...readPaperExtras(b),
       ...normalizeFrame(b.frame),
-      ...normalizeMarginPaper(b.marginPaper, b.frame),
+      ...normalizeMarginPaper(b.marginPaper, b.frame, b.marginSpacing),
     };
   }
   // Unknown ruling from a newer build: keep the page, lose only the paper.
@@ -1127,6 +1138,13 @@ function normalizePage(
     const normalized = normalizeGraph(graph, () => `f${++lastGraphId}`);
     if (normalized) graphs.push(readJoin(graph, normalized));
   });
+  const equations: EquationElement[] = [];
+  const equationsRaw = Array.isArray(page.equations) ? page.equations : [];
+  let lastEquationId = maxNumericId(equationsRaw, "q");
+  equationsRaw.forEach((equation) => {
+    const normalized = normalizeEquation(equation, () => `q${++lastEquationId}`);
+    if (normalized) equations.push(readJoin(equation, normalized));
+  });
   const comments: PageComment[] = [];
   const commentsRaw = Array.isArray(page.comments) ? page.comments : [];
   let lastCommentId = maxNumericId(commentsRaw, "cm");
@@ -1154,6 +1172,7 @@ function normalizePage(
     ...connectorsIn(page.connectors, strokes, seenConnectors),
     ...(tables.length > 0 ? { tables } : {}),
     ...(graphs.length > 0 ? { graphs } : {}),
+    ...(equations.length > 0 ? { equations } : {}),
     ...(comments.length > 0 ? { comments } : {}),
   };
 }

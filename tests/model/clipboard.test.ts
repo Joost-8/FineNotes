@@ -44,6 +44,7 @@ function ids(): IdSource {
     textBox: () => `t${++n}`,
     table: () => `g${++n}`,
     graph: () => `f${++n}`,
+    equation: () => "q1",
   };
 }
 

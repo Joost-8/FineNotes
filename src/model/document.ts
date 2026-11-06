@@ -318,6 +318,8 @@ export interface SyntheticBackdrop {
   frame?: PdfFrame;
   /** The paper drawn in the margin beside the frame; absent: plain. */
   marginPaper?: MarginPaper;
+  /** The margin paper's pitch, page px ({@link MarginSpacing}). */
+  marginSpacing?: number;
   /** Rule/grid pitch in page px. Ignored for "blank". Default per ruling. */
   spacing?: number;
   /** Rule colour, hex. Default per ruling. */
@@ -407,10 +409,21 @@ export interface PdfBackdrop {
   frame?: PdfFrame;
   /** The paper drawn in the margin beside the frame; absent: plain. */
   marginPaper?: MarginPaper;
+  /** The margin paper's pitch, page px ({@link MarginSpacing}). */
+  marginSpacing?: number;
 }
 
 /** A margin's paper (`model/page-margin.ts`); absent on a backdrop means plain. */
 export type MarginPaper = "lined" | "grid" | "dotted";
+
+/**
+ * `marginSpacing`: the pitch of a margin paper's lines, squares or dots,
+ * page px, set in the Margin popover; stored only with a `marginPaper`, and
+ * only where it differs from what absent draws. Absent: the page's own
+ * spacing on an evenly ruled paper page, so the margin's lines continue the
+ * page's (`canvas/margin-paper.ts`), else the margin paper's own default.
+ */
+export type MarginSpacing = number;
 
 /**
  * A rectangle of a page, page px: where a page's own paper or PDF lies on a
@@ -751,6 +764,39 @@ export interface GraphElement {
   labels?: false;
 }
 
+/**
+ * A typed equation on a page (discussion #166, `model/equation`): its LaTeX
+ * source, kept so it can be edited again, drawn as a typeset formula by
+ * `canvas/math-layout` into the page's tiles and exports. Drawn under the
+ * ink, like a graph, and kept upright.
+ */
+export interface EquationElement {
+  /** `q<N>`, unique on the page. */
+  id: string;
+  /**
+   * A mirror (`canvas/mirrors.ts`): with joined pages, this is a copy of
+   * the element owned by `<pageId>/<id>` on a neighbouring page, kept here
+   * because it reaches over the join. Derived: rebuilt from its owner after
+   * every edit, and never edited itself. Absent on the owner.
+   */
+  join?: string;
+  /**
+   * The frame's top-left and size, page px, as the editor measured the
+   * formula: every reader fits its drawing into this box, so a device whose
+   * glyphs are a little wider or narrower still shows it in the same place.
+   */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** The LaTeX source, without `$`. */
+  tex: string;
+  /** Hex, as a text box's colour. */
+  color: string;
+  /** The font size it is set at, page px at a 1:1 scale; a resize scales it. */
+  size: number;
+}
+
 export type PageKind = "ink";
 
 export interface Page {
@@ -765,6 +811,8 @@ export interface Page {
   tables?: TableElement[];
   /** Graphs, bottom to top, drawn over the tables. Absent when the page has none. */
   graphs?: GraphElement[];
+  /** Typed equations, bottom to top, drawn over the graphs. Absent when the page has none. */
+  equations?: EquationElement[];
   /** Comments pinned to the page (`model/comments`). Absent when it has none. */
   comments?: PageComment[];
   /**

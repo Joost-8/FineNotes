@@ -281,6 +281,7 @@ export const toolbar = {
   "toolbar.text.boxBorder": "Box border",
   "toolbar.text.boxBorderNone": "Box border: none",
   "toolbar.text.pin": "Pin Text tool",
+  "toolbar.text.equation": "Equation: a tap places a typed formula (LaTeX)",
   "toolbar.text.pinShort": "Pin",
   "toolbar.text.deleteBox": "Delete text box",
   "toolbar.font.notOnDeviceLabel": "{family}. Not on this device: shown in {font}",
@@ -348,6 +349,7 @@ export const toolbar = {
   "toolbar.highlighter.opacity": "Opacity",
   "toolbar.highlighter.opacityLabel": "Highlighter opacity",
   "toolbar.highlighter.straighten": "Straighten lines",
+  "toolbar.highlighter.snapText": "Snap to PDF text",
   "toolbar.pen.stabilization": "Stroke stabilization",
   "toolbar.pen.stabilizationFor": "Stroke stabilization, {name}",
   "toolbar.pen.stabilizationHint":

@@ -180,6 +180,7 @@ const FRESH_INSTALL = {
   stylusButtonClick: "pen-menu",
   penCursor: "ink",
   straightHighlighter: true,
+  highlighterSnapText: true,
   onlyStylusMode: false,
   tuckPenOptionsOnWrite: "off",
   zoomBoxLineStep: 0,
@@ -317,6 +318,7 @@ const USED_VAULT = {
   stylusButtonClick: "none",
   penCursor: "crosshair",
   straightHighlighter: false,
+  highlighterSnapText: false,
   onlyStylusMode: true,
   tuckPenOptionsOnWrite: "until-tap",
   zoomBoxLineStep: -15,
@@ -680,6 +682,7 @@ describe("choices that set two switches", () => {
       highlighterTip: "round",
       highlighterAlpha: 0.4,
       straightHighlighter: true,
+      highlighterSnapText: true,
     });
     storePenPreferences(settings, { tuckOnWrite: "until-lift" });
     expect(penPreferencesOf(settings)).toEqual({
@@ -690,6 +693,7 @@ describe("choices that set two switches", () => {
       highlighterTip: "round",
       highlighterAlpha: 0.4,
       straightHighlighter: true,
+      highlighterSnapText: true,
     });
     storePenPreferences(settings, { snapMode: "disabled", snapCurve: 30, returnToPen: "both" });
     expect([settings.snapMode, settings.drawAndHold]).toEqual(["disabled", false]);
@@ -705,6 +709,7 @@ describe("choices that set two switches", () => {
       highlighterTip: "round",
       highlighterAlpha: 0.4,
       straightHighlighter: true,
+      highlighterSnapText: true,
     });
     storePenPreferences(settings, { tuckOnWrite: "until-tap" });
     expect(settings.tuckPenOptionsOnWrite).toBe("until-tap");
@@ -716,6 +721,8 @@ describe("choices that set two switches", () => {
     // Opacity steps by 5%, as the slider does.
     expect(settings.highlighterAlpha).toBe(0.65);
     expect(settings.straightHighlighter).toBe(false);
+    storePenPreferences(settings, { highlighterSnapText: false });
+    expect(settings.highlighterSnapText).toBe(false);
     storePenPreferences(settings, { highlighterAlpha: 0 });
     expect(settings.highlighterAlpha).toBe(0.1);
     expect(highlighterAlphaOf(4)).toBe(1);

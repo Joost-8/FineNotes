@@ -8,6 +8,103 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Type the line spacing** (FineNotes#164). Beside Tight, Normal, Roomy and
+  Wide, the template picker shows the spacing in mm; type any value from 2 to
+  30 mm, or step it by half a mm.
+- **The margin's spacing** (FineNotes#164). The Margin popover shows the
+  pitch of a lined, grid or dotted margin in mm, to type or step.
+
+### Fixed
+
+- **A page margin's lines now continue the page's** (FineNotes#164). On a
+  ruled, squared or dotted page the margin takes the page's spacing and its
+  lines are level with the page's, whatever the spacing; before, it kept its
+  own. A PDF page's margin keeps the margin paper's own spacing.
+- A spacing that matched none of the steps reopened in the template picker
+  as the nearest step, and was changed to it on Apply. It is kept as it is.
+- **Snap to PDF text, as a switch.** The highlighter's options have a new
+  switch beside Straighten lines. Off, the highlighter draws freehand on a
+  PDF's text too, straight or free, which marks equations and formulas
+  that the text snap breaks into pieces (FineNotes#159).
+
+### Fixed
+
+- **The highlighter takes a whole equation.** On a PDF, the text snap now
+  treats a formula as one line: a fraction's top and bottom and a sum's
+  limits belong to it, so a highlight over an equation is one band instead
+  of scraps at different heights (FineNotes#159). This holds for formulas
+  made in Word or MathType too, which a PDF draws a font at a time
+  (brackets, then letters, then digits): pieces join by where they stand on
+  the page, not by the order they were drawn.
+- **The whole-stroke eraser takes a highlight it touches.** It took a
+  stroke only near its centre line, so rubbing over a wide highlight (a
+  snapped one is as tall as the text) away from its middle left it there.
+  Now touching the ink is enough, as with the standard eraser
+  (FineNotes#159).
+- **Handwritten sections in ordinary notes**
+  ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167),
+  thanks [@mantomat](https://github.com/mantomat)). `![[Physics.notebook]]`
+  in a note now shows every page of the notebook, one under the other, not
+  only the first; `![[Physics.notebook#page=3]]` still shows one page. A tap
+  on a page opens the notebook at that page, and Back returns to the note.
+  The new command **Insert a new notebook here** makes a notebook named
+  after the note, without a cover, embeds it at the cursor and opens it.
+- **Embedded notebooks in Export to PDF.** A note exported with Obsidian's
+  Export to PDF now prints the pages it embeds, in light paper; before, they
+  came out blank. A page is never cut across two sheets.
+### Changed
+
+- **Home, redesigned around your notebooks.** In the simple look a folder
+  rail on the left lists Home and your folders, with the path to the open
+  folder unfolded; drop a notebook on a folder to move it there. Every
+  notebook with a cover shows that cover as you designed it, name included,
+  and a PDF notebook its first page with its name on a label. Continue shows
+  the notebook you read last with the page you left it on: tap the page or
+  Continue to go straight back. One tap on a cover shows a preview beside
+  the covers (its pages, folder, size, Open and ⋯); a tap on a page opens the
+  notebook there, and a double tap on a cover opens it.
+  The rail has a button of its own to put it away and bring it back; on a
+  narrow Home it opens as a drawer over the covers, closing once you pick a
+  folder. The sort menu has **Notebooks only**, to hide every other file.
+- **Recent**, under Continue: the six notebooks read or written before
+  those, newest first. Page pictures in Continue and the preview are drawn
+  at the size they are shown, sharp on the iPad, and kept on the device so
+  they show at once the next time.
+- **Notebooks in Obsidian's sidebar.** A Notebooks view sits beside Files,
+  Search and Bookmarks in the left sidebar: your folders with only the
+  notebooks in them, as the file explorer draws them. A tap opens a notebook,
+  a right-click or long press gives Obsidian's own file menu, and its buttons
+  open Home or make a notebook. It is added once; closed, the command "Show
+  notebooks in the sidebar" brings it back.
+- A folder holding only folders no longer opened empty with the rail on,
+  and the rail now appears and goes as soon as the simple look is turned on
+  or off. A notebook's transcript beside it (`X.transcript.md`) is part of
+  the notebook, not a note of its own. A PDF file no longer shows its name
+  twice.
+- **Home opens at once** (FineNotes#146). PDF covers are kept on this device
+  once they are drawn, so opening Home again, or after restarting the app,
+  shows them straight away instead of rendering every PDF again; only a new
+  or changed PDF is rendered, once. What Home knows of each notebook is kept
+  too, so it reads only the notebooks changed since. Searching and switching
+  tabs no longer redraw the covers. Measured on a desktop with 40 PDF
+  notebooks: covers on screen in 25 ms instead of about 1 s.
+- **Home shows every file in a folder, not only notebooks.** Notes, PDFs,
+  pictures and any other file sit beside the notebooks, sorted with them, and
+  every folder that holds something is a folder tile. A note shows its first
+  page as Obsidian renders it, a PDF its first page, a picture itself; other
+  files show a symbol and their extension. Tapping one opens it in Obsidian;
+  its ⌄ menu renames, moves or deletes it. What a notebook keeps in its own
+  folder (pictures, recordings, transcripts) still shows as the notebook.
+
+### Fixed
+
+- **A notebook opened from Home fills the screen.** With Obsidian's "Stack
+  tabs" on, it opened beside Home like a split screen; opening a notebook
+  from Home now stops that tab group stacking. Home stays a pinned tab, one
+  tap back.
+
 ## [2.8.2] - 2026-11-05
 
 ### Added
@@ -351,7 +448,12 @@ device first.
   beside Scribble to erase.
 - **Cover tape**, for studying, as Goodnotes' tape. Pick Cover tape in More
   tools (or put it on the bar) and drag across what to hide: an opaque strip
-  of tape, in one of six colours and three heights, lies over it. Tap a tape
+  of tape, in one of six colours and three heights, lies over it. The first
+  two buttons in the tape's pill choose a straight strip or a freehand one
+  that follows your drag along a smooth curve, however shaky the hand,
+  the little hook where the pen lands cut off
+  ([#160](https://github.com/Joost-8/FineNotes/discussions/160)); the
+  choice is remembered. Tap a tape
   with a finger, or with the Pencil or mouse, to see what is under it; tap
   again to cover it. The eye in the tape's pill shows or covers every tape
   on the page, and a covered tape hides typed text under it too. Shown

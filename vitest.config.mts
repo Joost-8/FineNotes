@@ -11,6 +11,8 @@ export default defineConfig({
       include: [
         "src/changelog.ts",
         "src/settings-data.ts",
+        "src/model/library-rail.ts",
+        "src/model/notebook-tree.ts",
         "src/i18n/languages.ts",
         "src/i18n/translate.ts",
         "src/i18n/table-file.ts",
@@ -60,8 +62,11 @@ export default defineConfig({
         "src/canvas/text-layout.ts",
         "src/canvas/table-layout.ts",
         "src/canvas/graph-geometry.ts",
+        "src/canvas/math-layout.ts",
+        "src/canvas/equation-paint.ts",
         "src/canvas/shape-decor.ts",
         "src/canvas/paper-style.ts",
+        "src/canvas/margin-paper.ts",
         "src/canvas/paper-texture.ts",
         "src/canvas/lasso.ts",
         "src/canvas/selection-turn.ts",
@@ -203,6 +208,7 @@ export default defineConfig({
         "src/search/hit-strokes.ts",
         "src/search/pdf-hits.ts",
         "src/search/link-choices.ts",
+        "src/search/library-search.ts",
         "src/util/errors.ts",
       ],
       thresholds: {

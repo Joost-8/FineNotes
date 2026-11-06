@@ -208,6 +208,8 @@ export class DrawLog {
       },
       moveTo: (x: number, y: number) => void path.push(`M${apply(state.matrix, x, y)}`),
       lineTo: (x: number, y: number) => void path.push(`L${apply(state.matrix, x, y)}`),
+      quadraticCurveTo: (cx: number, cy: number, x: number, y: number) =>
+        void path.push(`Q${apply(state.matrix, cx, cy)} ${apply(state.matrix, x, y)}`),
       closePath: () => void path.push("Z"),
       rect: (x: number, y: number, w: number, h: number) =>
         void path.push(`R(${corners(state.matrix, x, y, w, h)})`),

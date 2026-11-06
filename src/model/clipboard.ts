@@ -30,6 +30,7 @@ import type {
   PageGeometry,
   Stroke,
   GraphElement,
+  EquationElement,
   TableElement,
   TextBoxElement,
 } from "./document";
@@ -80,6 +81,7 @@ export class InkClipboard {
         textBoxes: elements.textBoxes.map((textBox) => structuredClone(textBox)),
         tables: (elements.tables ?? []).map((table) => structuredClone(table)),
         graphs: (elements.graphs ?? []).map((graph) => structuredClone(graph)),
+        equations: (elements.equations ?? []).map((equation) => structuredClone(equation)),
       },
       bounds: { ...bounds },
     };
@@ -108,6 +110,7 @@ export class InkClipboard {
       e.textBoxes.length > 0 ||
       (e.tables?.length ?? 0) > 0 ||
       (e.graphs?.length ?? 0) > 0 ||
+      (e.equations?.length ?? 0) > 0 ||
       (withImages && e.images.length > 0)
     );
   }
@@ -157,9 +160,9 @@ export function pasteCopies(
   dy: number,
   withImages = true,
 ): ElementLists {
-  const { strokes, images, textBoxes, tables, graphs } = entry.elements;
+  const { strokes, images, textBoxes, tables, graphs, equations } = entry.elements;
   const copies = copyElements(
-    { strokes, images: withImages ? images : [], textBoxes, tables, graphs },
+    { strokes, images: withImages ? images : [], textBoxes, tables, graphs, equations },
     ids,
     dx,
     dy,
@@ -255,9 +258,14 @@ export function sameSpotTaken(
         near(e.x, c.x + dx) &&
         near(e.y, c.y + dy),
     );
+  const equationTaken = (c: EquationElement): boolean =>
+    (page.equations ?? []).some(
+      (e) => e.tex === c.tex && near(e.x, c.x + dx) && near(e.y, c.y + dy),
+    );
   return (
     (copies.tables ?? []).some(tableTaken) ||
     (copies.graphs ?? []).some(graphTaken) ||
+    (copies.equations ?? []).some(equationTaken) ||
     copies.images.some(imageTaken) ||
     copies.textBoxes.some(textTaken) ||
     copies.strokes.some(strokeTaken)
