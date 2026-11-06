@@ -15928,6 +15928,16 @@ button.goodobsidian-library-new:active {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* The words found: accent, bolder, on a soft accent mark, so the eye lands on them. */
+.goodobsidian-library-hit-text .suggestion-highlight {
+  font-weight: var(--font-extrabold, 800);
+  color: var(--text-accent);
+  background-color: hsla(var(--interactive-accent-hsl), 0.18);
+  border-radius: 4px;
+  padding: 0 2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 .goodobsidian-library-hit-kind {
   display: inline-flex;
   vertical-align: -2px;
