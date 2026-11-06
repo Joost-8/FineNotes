@@ -23,6 +23,7 @@
 import type { Command } from "../model/commands";
 import {
   type Bounds,
+  type EquationElement,
   type GraphElement,
   type ImageElement,
   type InkDocument,
@@ -38,7 +39,7 @@ import { HEAD_MAX } from "./shape-decor";
 import { t } from "../i18n/translate";
 
 /** The element lists of a page that can hold mirrors. */
-export type MirrorKind = "strokes" | "images" | "textBoxes" | "tables" | "graphs";
+export type MirrorKind = "strokes" | "images" | "textBoxes" | "tables" | "graphs" | "equations";
 
 /** The kinds, in the order they are planned: notes before the ink on them. */
 export const MIRROR_KINDS: readonly MirrorKind[] = [
@@ -46,10 +47,12 @@ export const MIRROR_KINDS: readonly MirrorKind[] = [
   "textBoxes",
   "tables",
   "graphs",
+  "equations",
   "strokes",
 ];
 
-export type MirrorElement = Stroke | ImageElement | TextBoxElement | TableElement | GraphElement;
+export type MirrorElement =
+  Stroke | ImageElement | TextBoxElement | TableElement | GraphElement | EquationElement;
 
 /** Whether an element is a mirror of one on another page. */
 export function isMirror(element: { join?: string }): boolean {
@@ -146,6 +149,10 @@ export function elementBounds(kind: MirrorKind, element: MirrorElement): Bounds 
     case "graphs": {
       const graph = element as GraphElement;
       return { minX: graph.x, minY: graph.y, maxX: graph.x + graph.w, maxY: graph.y + graph.h };
+    }
+    case "equations": {
+      const e = element as EquationElement;
+      return { minX: e.x, minY: e.y, maxX: e.x + e.w, maxY: e.y + e.h };
     }
   }
 }

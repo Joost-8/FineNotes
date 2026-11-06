@@ -24,20 +24,95 @@ export function embeddedPageNumber(subpath: string): number | null {
 
 /** What an embed of a notebook shows: page `page` (1-based); `whole` for a link to the notebook itself. */
 export interface EmbedTarget {
+  /** The page named; 1 for a notebook embedded whole. */
   page: number;
-  /** `![[Physics.notebook]]`: page 1 is shown, and a click opens the notebook as any link does. */
+  /** `![[Physics.notebook]]`: every page is shown, one under the other. */
   whole: boolean;
 }
 
 /**
  * What an embed of a notebook with this subpath shows: the page it names, or
- * page 1 for the notebook itself (no subpath). `null` for any other subpath,
+ * the whole notebook (no subpath). `null` for any other subpath,
  * such as a heading: those stay Obsidian's.
  */
 export function embedTarget(subpath: string): EmbedTarget | null {
   if (/^#?\s*$/.test(subpath)) return { page: 1, whole: true };
   const page = embeddedPageNumber(subpath);
   return page === null ? null : { page, whole: false };
+}
+
+/**
+ * The pages an embed of a notebook with `pageCount` pages shows, 1-based, in
+ * order: every page, one under the other, for the notebook embedded whole;
+ * the one page a subpath names otherwise, whether or not the notebook has it
+ * (the embed then says it is missing).
+ */
+export function embedPageNumbers(target: EmbedTarget, pageCount: number): number[] {
+  if (!target.whole) return [target.page];
+  const count = Number.isFinite(pageCount) ? Math.max(0, Math.floor(pageCount)) : 0;
+  return Array.from({ length: count }, (_, i) => i + 1);
+}
+
+/**
+ * The link a click on page `page` of an embed opens: the embed's own link
+ * for a single page, and that page of the notebook for one embedded whole
+ * (`Physics.notebook` → `Physics.notebook#page=3`), so the notebook opens
+ * where the click was.
+ */
+export function embedPageLink(linktext: string, target: EmbedTarget, page: number): string {
+  if (!target.whole) return linktext;
+  const hash = linktext.indexOf("#");
+  const path = hash < 0 ? linktext : linktext.slice(0, hash);
+  return `${path}#page=${page}`;
+}
+
+/** A page's label in an embed: "Physics, page 3", or the notebook's name for its only page. */
+export function embedPageLabel(
+  basename: string,
+  target: EmbedTarget,
+  page: number,
+  pageCount: number,
+): string {
+  return target.whole && pageCount <= 1
+    ? embedLabel(basename, target)
+    : pageLinkLabel(basename, page);
+}
+
+/**
+ * The width a page is painted at for a PDF export, CSS px, when the print
+ * layout gives the box none (a page box measures 0 until it is laid out):
+ * about a portrait A4 page's text column.
+ */
+export const PRINT_FALLBACK_WIDTH = 680;
+/** Device px per CSS px when painting for a PDF export: sharp on paper, not a screen's ratio. */
+export const PRINT_DPR = 2;
+
+/** The size to paint at for a PDF export of a box `cssWidth` wide (0 when unknown). */
+export function printPaintSize(cssWidth: number): { cssWidth: number; dpr: number } {
+  const width = cssWidth > 0 && Number.isFinite(cssWidth) ? cssWidth : PRINT_FALLBACK_WIDTH;
+  // Never null: the width is positive.
+  return embedPaintSize(width, PRINT_DPR) ?? { cssWidth: PRINT_FALLBACK_WIDTH, dpr: 1 };
+}
+
+/**
+ * The text that embeds a new notebook at the cursor: `link` (as Obsidian's
+ * `generateMarkdownLink` wrote it, `[[…]]` or `[…](…)`) made an embed, on a
+ * paragraph of its own: a blank line from text `before` and `after` the
+ * cursor on its line, and from the lines above (`above`) and below
+ * (`below`) when they hold text, so the embed shows as a block and the text
+ * around it stays where it was.
+ */
+export function embedInsertion(
+  link: string,
+  before: string,
+  after: string,
+  above = "",
+  below = "",
+): string {
+  const embed = link.startsWith("!") ? link : `!${link}`;
+  const head = before.trim() ? "\n\n" : above.trim() ? "\n" : "";
+  const tail = after.trim() ? "\n\n" : below.trim() ? "\n" : "";
+  return `${head}${embed}${tail}`;
 }
 
 /** What an embed reads as when it is a link: "Physics" for the whole notebook, else "Physics, page 3". */

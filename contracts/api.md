@@ -1396,10 +1396,16 @@ opaque strip laid over the page, as Goodnotes' tape, to hide answers while
 studying or keep something out of sight.
 
 - **Geometry:** the stroke's first and last points are the middles of the
-  strip's two ends (the Cover tape tool stores exactly two, made level or
-  upright when nearly so); `size` is its height, page px; `color` its colour.
-  Pressure is ignored, and points in between (if a transform leaves any) do
-  not change its shape.
+  strip's two ends; `size` is its height, page px; `color` its colour.
+  Pressure is ignored (stored 0.5). A **straight** tape has exactly those two
+  points (made level or upright when nearly so). A **freehand** tape
+  (2026-11-05, discussion #160) has more: it is a band `size` tall along the
+  polyline through all of them, round at its bends and cut square at its
+  ends (`isFreehandTape`, `tapePath`); the tool stores the drag simplified to
+  0.5 page px at fit zoom, and a drag that simplifies to one line is stored
+  as a straight tape. A freehand tape has no straight-tape side handles: the
+  lasso resizes it as ink. The tool's mode is the plugin setting `tapeMode`
+  (`"straight"` | `"freehand"`, absent: straight), not part of the file.
 - **Painted over everything** on its page, whatever its place in `strokes`:
   ink, pictures (in front of the ink too), tables, graphs, checklist boxes
   and typed text. In the view, where typed text boxes are DOM above the

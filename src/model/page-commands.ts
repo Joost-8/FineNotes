@@ -385,6 +385,7 @@ export function duplicatePageAfter(
   let imageSeq = maxNumericId(doc, (page) => page.images, "i");
   let tableSeq = maxNumericId(doc, (page) => page.tables ?? [], "g");
   let graphSeq = maxNumericId(doc, (page) => page.graphs ?? [], "f");
+  let equationSeq = maxNumericId(doc, (page) => page.equations ?? [], "q");
   const copy = structuredClone(source);
   copy.id = nextPageId(doc);
   // A bookmark marks that page, not its content: the copy starts without one.
@@ -420,6 +421,7 @@ export function duplicatePageAfter(
   relinkNoteInk(copy.textBoxes, imageIds);
   for (const table of copy.tables ?? []) table.id = `g${++tableSeq}`;
   for (const graph of copy.graphs ?? []) graph.id = `f${++graphSeq}`;
+  for (const equation of copy.equations ?? []) equation.id = `q${++equationSeq}`;
   return { index: index + 1, page: copy };
 }
 

@@ -22,7 +22,10 @@ const layout: TextLayout = layoutText(
 type Pt = { x: number; y: number };
 type Surface = Record<string, unknown> & {
   tapeTextAt(box: { index: number }, at: Pt): TextLayout | null;
-  tapeDrafts(from: Pt, to: Pt, text: TextLayout | null): Stroke[];
+  tapeDrafts(
+    drag: { from: Pt; to: Pt; path: Pt[] | null; text: TextLayout | null },
+    final?: boolean,
+  ): Stroke[];
 };
 
 function surface(snap: boolean | undefined, read: TextLayout | null = layout) {
@@ -47,7 +50,12 @@ describe("a cover tape on a PDF page's text", () => {
       expect(source.peek).not.toHaveBeenCalled();
     }
     const { s } = surface(undefined);
-    const drafts = s.tapeDrafts({ x: 60, y: 95 }, { x: 140, y: 97 }, null);
+    const drafts = s.tapeDrafts({
+      from: { x: 60, y: 95 },
+      to: { x: 140, y: 97 },
+      path: null,
+      text: null,
+    });
     expect(drafts).toHaveLength(1);
     expect(drafts[0].pts[0]).toBe(60);
   });
@@ -56,7 +64,12 @@ describe("a cover tape on a PDF page's text", () => {
     const { s } = surface(true);
     const text = s.tapeTextAt({ index: 0 }, { x: 60, y: 95 });
     expect(text).toBe(layout);
-    const drafts = s.tapeDrafts({ x: 60, y: 95 }, { x: 225, y: 96 }, text);
+    const drafts = s.tapeDrafts({
+      from: { x: 60, y: 95 },
+      to: { x: 225, y: 96 },
+      path: null,
+      text: text,
+    });
     expect(drafts).toHaveLength(1);
     const [tape] = drafts;
     expect(tape.tool).toBe("tape");
@@ -72,7 +85,12 @@ describe("a cover tape on a PDF page's text", () => {
   it("covers each line a drag runs down over, one tape a line", () => {
     const { s } = surface(true);
     const text = s.tapeTextAt({ index: 0 }, { x: 60, y: 95 });
-    const drafts = s.tapeDrafts({ x: 60, y: 95 }, { x: 150, y: 125 }, text);
+    const drafts = s.tapeDrafts({
+      from: { x: 60, y: 95 },
+      to: { x: 150, y: 125 },
+      path: null,
+      text: text,
+    });
     expect(drafts).toHaveLength(2);
     expect(drafts[1].pts[1]).toBeGreaterThan(drafts[0].pts[1]);
   });
@@ -88,6 +106,8 @@ describe("a cover tape on a PDF page's text", () => {
   it("is still a tap that shows a tape through when the pen hardly moves", () => {
     const { s } = surface(true);
     const text = s.tapeTextAt({ index: 0 }, { x: 60, y: 95 });
-    expect(s.tapeDrafts({ x: 60, y: 95 }, { x: 61, y: 95 }, text)).toEqual([]);
+    expect(
+      s.tapeDrafts({ from: { x: 60, y: 95 }, to: { x: 61, y: 95 }, path: null, text: text }),
+    ).toEqual([]);
   });
 });

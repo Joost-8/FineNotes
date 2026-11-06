@@ -56,7 +56,50 @@ function ownedBy(path: string, folder: string, notePath: string): boolean {
   return rest.startsWith(`${stripInkSuffix(baseName(notePath)).toLowerCase()}.`);
 }
 
-/** A notebook or a folder picked in the library. */
+/**
+ * The files that are part of a notebook with a folder of its own (its
+ * pictures, recordings, transcripts, chats, exports and sidecars), which the
+ * library shows as the notebook and never as files of their own. The
+ * notebooks themselves are not in it.
+ */
+export function notebookOwnedFiles(
+  files: readonly string[],
+  isNotebook: (path: string) => boolean,
+): Set<string> {
+  const notebooks = files.filter(isNotebook);
+  // How many notebooks each folder holds, at any depth.
+  const held = new Map<string, number>();
+  for (const note of notebooks) {
+    for (let at = parentPath(note); at !== ""; at = parentPath(at))
+      held.set(at, (held.get(at) ?? 0) + 1);
+  }
+  // Own folders: a notebook's folder named after it, holding no other notebook.
+  const owner = new Map<string, string>();
+  for (const note of notebooks) {
+    const folder = parentPath(note);
+    if (isFolderNotebook(note) && held.get(folder) === 1) owner.set(folder, note);
+  }
+  const owned = new Set<string>();
+  // A transcript beside its notebook, in any folder (`X.transcript.md` by `X.page.md`).
+  const sidecars = new Set(
+    notebooks.map((note) =>
+      join(parentPath(note), `${stripInkSuffix(baseName(note))}.transcript.md`).toLowerCase(),
+    ),
+  );
+  for (const path of files) if (sidecars.has(path.toLowerCase())) owned.add(path);
+  if (owner.size === 0) return owned;
+  for (const path of files) {
+    for (let at = parentPath(path); at !== ""; at = parentPath(at)) {
+      const note = owner.get(at);
+      if (note === undefined) continue;
+      if (path !== note && ownedBy(path, at, note)) owned.add(path);
+      break;
+    }
+  }
+  return owned;
+}
+
+/** A notebook, a file or a folder picked in the library. */
 export interface Picked {
   path: string;
   folder: boolean;
@@ -68,14 +111,17 @@ export interface TrashPlan {
   trash: string[];
   /** The notebooks that go. */
   notebooks: string[];
+  /** The user's files that go: picked one by one, never for being in a picked folder. */
+  files: string[];
   /** Files of the user's own left where they are, in the picked folders. */
   kept: number;
 }
 
 /**
  * Deleting `picked`: every notebook picked, or in a picked folder, with the
- * folder of its own. A folder goes whole only when nothing else is in it;
- * otherwise only the notebooks in it go, and the rest stays.
+ * folder of its own, and every other file picked. A folder goes whole only
+ * when nothing else is in it; otherwise only the notebooks in it go, and the
+ * rest stays.
  */
 export function trashPlan(
   picked: readonly Picked[],
@@ -83,6 +129,7 @@ export function trashPlan(
   isNotebook: (path: string) => boolean,
 ): TrashPlan {
   const notebooks = new Set<string>();
+  const others = new Set<string>();
   const roots: string[] = [];
   for (const item of picked) {
     if (item.folder) {
@@ -90,9 +137,11 @@ export function trashPlan(
       for (const p of files) if (under(p, item.path) && isNotebook(p)) notebooks.add(p);
     } else if (isNotebook(item.path)) {
       notebooks.add(item.path);
+    } else if (files.includes(item.path)) {
+      others.add(item.path);
     }
   }
-  const doomed = new Set<string>();
+  const doomed = new Set<string>(others);
   for (const note of notebooks) {
     doomed.add(note);
     const unit = notebookUnit(note, files, isNotebook);
@@ -127,12 +176,12 @@ export function trashPlan(
   for (const root of outer) walk(root, true);
   for (const p of doomed) if (!outer.some((root) => under(p, root))) trash.add(p);
 
-  return { trash: [...trash], notebooks: [...notebooks], kept };
+  return { trash: [...trash], notebooks: [...notebooks], files: [...others], kept };
 }
 
 /** The question a Delete asks before it does anything: what goes, and what stays. */
 export function trashQuestion(plan: TrashPlan): { title: string; message: string } {
-  const names = plan.notebooks
+  const names = [...plan.notebooks, ...plan.files]
     .map((p) => stripInkSuffix(baseName(p)))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
     .map((name) => `"${name}"`);
@@ -145,17 +194,23 @@ export function trashQuestion(plan: TrashPlan): { title: string; message: string
     shown.length > 1
       ? t("ai.list.and", { head: shown.slice(0, -1).join(", "), last: shown.at(-1) ?? "" })
       : (shown[0] ?? "");
-  const folders = plan.trash.filter((p) => !inkFileSuffix(baseName(p)));
+  const own = new Set(plan.files);
+  const folders = plan.trash.filter((p) => !inkFileSuffix(baseName(p)) && !own.has(p));
   const title =
     count === 1
       ? t("notebooks.home.deleteOne", { name: names[0] ?? "" })
       : count > 1
-        ? tn("notebooks.home.deleteNotebooks", count)
+        ? plan.files.length === 0
+          ? tn("notebooks.home.deleteNotebooks", count)
+          : tn("notebooks.home.deleteItems", count)
         : folders.length === 1
           ? t("notebooks.home.deleteFolder", { name: baseName(folders[0] ?? "") })
           : tn("notebooks.home.deleteFolders", folders.length);
   const parts: string[] = [];
-  if (count > 0) {
+  if (plan.notebooks.length === 0 && count > 0) {
+    // A file has no files of its own to go with it.
+    parts.push(t("notebooks.home.deleteListPlain", { list }));
+  } else if (count > 0) {
     parts.push(
       t(count === 1 ? "notebooks.home.deleteListOne" : "notebooks.home.deleteListMany", { list }),
     );

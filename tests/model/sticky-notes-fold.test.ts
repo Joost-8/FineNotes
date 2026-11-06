@@ -277,6 +277,7 @@ describe("a note's typed text", () => {
       textBox: () => `t${++i + 10}`,
       table: () => `g${++i}`,
       graph: () => `f${++i}`,
+      equation: () => "q1",
     };
     const copied = copyElements(
       { strokes: [], images: [n], textBoxes: [text("t1", "i1")] },

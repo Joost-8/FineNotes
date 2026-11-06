@@ -177,6 +177,7 @@ function fakeApp(
       for (const leaf of [...workspace.leaves]) callback(leaf);
     },
     getLeaf: () => new WorkspaceLeaf(),
+    getLeftLeaf: () => new WorkspaceLeaf(),
     getMostRecentLeaf: () => null,
     revealLeaf: () => Promise.resolve(),
   };
@@ -561,6 +562,7 @@ describe("registration", () => {
         "fit-reset-view",
         "import-pdf",
         "import-vault-pdf",
+        "insert-new-notebook",
         "learn-handwriting",
         "new-from-template",
         "open-library",
@@ -573,6 +575,7 @@ describe("registration", () => {
         "share-template",
         "search-notebook",
         "show-keyboard-shortcuts",
+        "show-notebooks-sidebar",
         "show-welcome",
         "template-gallery",
         "toggle-canvas-markdown-view",
@@ -600,7 +603,7 @@ describe("registration", () => {
 
   it("registers the notebook view, the ribbon button and the two link handlers", async () => {
     await load();
-    expect([...registered.views.keys()]).toEqual([INK, "finenotes-library"]);
+    expect([...registered.views.keys()]).toEqual([INK, "finenotes-library", "finenotes-notebooks"]);
     expect(registered.ribbon.map((r) => r.icon)).toEqual(["finenotes-library"]);
     expect(registered.ribbon[0].title).toBe("Notebook library");
     expect(registered.ribbon[0].label).toBe("Notebook library");
@@ -1058,8 +1061,10 @@ describe("view routing of open leaves", () => {
     const leaf = markdownLeaf(app.addFile("Physics.notebook.md"));
     app.workspace.fireLayoutReady();
     await flush();
-    expect(viewStateCalls.map((c) => c.leaf)).toEqual([leaf]);
-    expect(viewStateCalls[0].state.type).toBe(INK);
+    // The Notebooks view put in the left sidebar on a first start is not routing.
+    const routed = viewStateCalls.filter((c) => c.state.type !== "finenotes-notebooks");
+    expect(routed.map((c) => c.leaf)).toEqual([leaf]);
+    expect(routed[0].state.type).toBe(INK);
   });
 });
 

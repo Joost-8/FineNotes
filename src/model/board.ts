@@ -123,6 +123,9 @@ export function drawnBounds(
     const b = graphBounds(graph);
     take(b.minX, b.minY, b.maxX, b.maxY);
   }
+  for (const equation of page.equations ?? []) {
+    take(equation.x, equation.y, equation.x + equation.w, equation.y + equation.h);
+  }
   for (const comment of page.comments ?? []) take(comment.x, comment.y, comment.x, comment.y);
   return box.minX <= box.maxX && box.minY <= box.maxY ? box : null;
 }
@@ -255,6 +258,7 @@ export class GrowBoard implements Command {
           textBoxes: page.textBoxes.slice(),
           tables: (page.tables ?? []).slice(),
           graphs: (page.graphs ?? []).slice(),
+          equations: (page.equations ?? []).slice(),
         },
         dx,
         dy,
@@ -366,6 +370,7 @@ export function boardDrawing(
       textBoxes: copy.textBoxes.slice(),
       tables: (copy.tables ?? []).slice(),
       graphs: (copy.graphs ?? []).slice(),
+      equations: (copy.equations ?? []).slice(),
     },
     -box.x,
     -box.y,

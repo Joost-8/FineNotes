@@ -117,8 +117,8 @@ export function marginFloor(page: Page): PageMargin {
 }
 
 /** What a page holds, each kind of element by its list. */
-type Kind = "strokes" | "images" | "textBoxes" | "tables" | "graphs";
-const KINDS: readonly Kind[] = ["strokes", "images", "textBoxes", "tables", "graphs"];
+type Kind = "strokes" | "images" | "textBoxes" | "tables" | "graphs" | "equations";
+const KINDS: readonly Kind[] = ["strokes", "images", "textBoxes", "tables", "graphs", "equations"];
 
 /** The leftmost and rightmost x an element covers, page px; null for nothing. */
 function spanOf(kind: Kind, element: unknown): { minX: number; maxX: number } | null {
@@ -148,6 +148,7 @@ function spanOf(kind: Kind, element: unknown): { minX: number; maxX: number } | 
     const table = element as NonNullable<Page["tables"]>[number];
     take(table.x, table.x + table.cols.reduce((sum, col) => sum + col, 0));
   } else {
+    // A graph or an equation: a frame.
     const graph = element as NonNullable<Page["graphs"]>[number];
     take(graph.x, graph.x + graph.w);
   }
@@ -420,6 +421,7 @@ export class SetPageMargin implements Command {
             textBoxes: [...page.textBoxes],
             tables: [...(page.tables ?? [])],
             graphs: [...(page.graphs ?? [])],
+            equations: [...(page.equations ?? [])],
           },
           dx,
           0,

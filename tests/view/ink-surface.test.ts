@@ -1247,6 +1247,27 @@ describe("whole-stroke erase", () => {
     expect(w.dab(0, 50, 50)).toBe(false);
   });
 
+  it("takes a snapped text highlight touched anywhere on its band (FineNotes#159)", () => {
+    // A highlight snapped to a formula: a band 40 px tall, and one over a
+    // glyph so narrow that both its ends are one point.
+    const band: Stroke = {
+      id: "band",
+      color: "#ffd43b",
+      size: 40,
+      tool: "highlighter",
+      shape: "line",
+      pts: [100, 300, 0.5, 300, 300, 0.5],
+    };
+    const dot: Stroke = { ...band, id: "dot", size: 28, pts: [400, 300, 0.5, 400, 300, 0.5] };
+    const w = ink(documentOf(page("p1", [band, dot])));
+    // 15 px above the band's middle: on its ink, far from its centre line.
+    expect(w.dab(0, 200, 285)).toBe(true);
+    // Off the band (20 px half height, 4 px eraser).
+    expect(w.dab(0, 200, 250)).toBe(false);
+    expect(w.dab(0, 410, 292)).toBe(true);
+    expect([...w.marked()].sort()).toEqual(["band", "dot"]);
+  });
+
   it("passes over strokes the filter keeps", () => {
     const w = ink(twoPages());
     expect(w.dab(0, 50, 200, 4, "pen")).toBe(false);

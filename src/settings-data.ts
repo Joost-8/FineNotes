@@ -215,6 +215,8 @@ export interface GoodObsidianSettings {
   tapeColor?: string;
   /** Cover tape's height, page px. Absent: the medium height. */
   tapeHeight?: number;
+  /** How a new cover tape is laid, "straight" or "freehand". Absent: straight. */
+  tapeMode?: string;
   /**
    * A cover tape dragged along a PDF's text covers its lines
    * (`model/tape-text.ts`). Absent: off, a tape is laid where it is dragged.
