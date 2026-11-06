@@ -9203,9 +9203,7 @@ export class InkSurface {
   private tapeDrafts(from: Pt, to: Pt, text: TextLayout | null): Stroke[] {
     const plain = this.tapeStroke(from, to);
     if (!plain) return [];
-    const selection = text
-      ? selectText(text, from, to, this.atFitZoom(TEXT_SNAP_SLOP_PX))
-      : null;
+    const selection = text ? selectText(text, from, to, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
     if (!selection) return [plain];
     let n = 0;
     const snapped = textTapeStrokes(selection.rects, plain.color, () => `tape-draft${++n}`);
@@ -10802,7 +10800,8 @@ export class InkSurface {
   private prefetchText(): void {
     if (!this.textSource) return;
     const tool = this.toolState.tool;
-    const snaps = tool === "highlighter" || (tool === "tape" && this.toolState.tapeSnapText === true);
+    const snaps =
+      tool === "highlighter" || (tool === "tape" && this.toolState.tapeSnapText === true);
     if (!snaps) return;
     for (const index of [this.pageIndex, this.pageIndex + 1, this.pageIndex - 1]) {
       this.pageText(index);

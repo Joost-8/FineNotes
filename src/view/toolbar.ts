@@ -3212,11 +3212,16 @@ export class Toolbar {
     });
     // Snap to PDF text: a magnet, as the ruler's angle snap, lit while on (#164).
     const snap = this.state.tapeSnapText === true;
-    const magnet = this.barButton(this.optionsEl, "magnet", t("toolbar.highlighter.snapText"), () => {
-      this.state.tapeSnapText = !snap;
-      this.callbacks.onTapeSnapTextChange?.(!snap);
-      this.buildOptions();
-    });
+    const magnet = this.barButton(
+      this.optionsEl,
+      "magnet",
+      t("toolbar.highlighter.snapText"),
+      () => {
+        this.state.tapeSnapText = !snap;
+        this.callbacks.onTapeSnapTextChange?.(!snap);
+        this.buildOptions();
+      },
+    );
     magnet.addClass("goodobsidian-tape-snap");
     magnet.toggleClass("is-on", snap);
     magnet.setAttribute("aria-pressed", String(snap));
