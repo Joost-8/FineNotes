@@ -4375,7 +4375,7 @@ input.goodobsidian-paper-designer-name {
 }
 
 /* − value mm +: big enough for a Pencil tap, the value typed in between. */
-.goodobsidian-paper-designer-stepper {
+.goodobsidian-mm-stepper {
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -4384,14 +4384,14 @@ input.goodobsidian-paper-designer-name {
   background: var(--gob-well, var(--background-secondary));
 }
 
-.goodobsidian-paper-designer-stepper > button.clickable-icon {
+.goodobsidian-mm-stepper > button.clickable-icon {
   width: 36px;
   height: 36px;
   padding: 0;
   border-radius: 999px;
 }
 
-.goodobsidian-paper-designer-stepper > input[type="text"] {
+.goodobsidian-mm-stepper > input[type="text"] {
   width: 52px;
   height: 32px;
   padding: 0 4px;
@@ -4403,7 +4403,7 @@ input.goodobsidian-paper-designer-name {
   font-variant-numeric: tabular-nums;
 }
 
-.goodobsidian-paper-designer-unit {
+.goodobsidian-mm-stepper-unit {
   padding-right: 4px;
   color: var(--text-muted);
   font-size: var(--font-ui-small);

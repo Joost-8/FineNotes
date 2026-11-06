@@ -197,9 +197,12 @@ import {
   type MarginPaperChoice,
   type MarginScope,
   marginSideOf,
+  marginSpacingOf,
   unmarginedGeometry,
   withoutFrame,
 } from "../model/page-margin";
+import { defaultMarginSpacing, storedMarginSpacing } from "../canvas/margin-paper";
+import { mmToPage, pageToMm } from "../model/units";
 import { AddTable } from "../model/table-commands";
 import { setCellText } from "../model/table";
 import { nextTableId } from "../model/table";
@@ -5378,9 +5381,14 @@ export class InkView extends TextFileView {
     const pdfPages = pages.filter((p) => p.backdrop.kind === "pdf");
     const reach = (scope: MarginScope): Page[] =>
       scope === "all" ? pages : scope === "pdf" ? pdfPages : [page];
-    const before = new Map(
-      pages.map((p) => [p, { margin: marginOf(p), paper: marginPaperOf(p) }] as const),
-    );
+    const stateOf = (
+      p: Page,
+    ): { margin: PageMargin; paper: MarginPaperChoice; spacing: number | null } => ({
+      margin: marginOf(p),
+      paper: marginPaperOf(p),
+      spacing: marginSpacingOf(p) ?? null,
+    });
+    const before = new Map(pages.map((p) => [p, stateOf(p)] as const));
     const same = (a: PageMargin, b: PageMargin): boolean =>
       a.left === b.left && a.right === b.right;
     const here = marginOf(page);
@@ -5405,15 +5413,26 @@ export class InkView extends TextFileView {
     const apply = (choice: MarginChoice): void => {
       const scope = new Set(reach(choice.scope));
       const targets = pages.map((p) => {
-        const was = before.get(p) ?? { margin: marginOf(p), paper: marginPaperOf(p) };
-        return scope.has(p)
-          ? { page: p, margin: marginFor(p, choice.side, choice.percent), paper: choice.paper }
-          : { page: p, margin: was.margin, paper: was.paper };
+        const was = before.get(p) ?? stateOf(p);
+        if (!scope.has(p)) {
+          return { page: p, margin: was.margin, paper: was.paper, spacing: was.spacing };
+        }
+        // A pitch set here reaches every page in scope; one equal to what the page draws anyway is not stored.
+        const typed = choice.spacingMm === undefined ? was.spacing : mmToPage(choice.spacingMm);
+        const spacing = typed === null ? null : storedMarginSpacing(p, choice.paper, typed);
+        return {
+          page: p,
+          margin: marginFor(p, choice.side, choice.percent),
+          paper: choice.paper,
+          spacing,
+        };
       });
-      const unchanged = targets.every(({ page: p, margin, paper }) => {
+      const unchanged = targets.every(({ page: p, margin, paper, spacing }) => {
         const was = before.get(p);
         return (
-          !was || (same(margin, was.margin) && (paper === was.paper || choice.side === "none"))
+          !was ||
+          (same(margin, was.margin) &&
+            (choice.side === "none" || (paper === was.paper && spacing === was.spacing)))
         );
       });
       const next = unchanged ? null : new SetPageMargin(targets, choice.drop === true);
@@ -5421,11 +5440,7 @@ export class InkView extends TextFileView {
       if (!next && step && !took) {
         // Something else was done meanwhile: put the margins back as a step of its own.
         const back = new SetPageMargin(
-          pages.map((p) => ({
-            page: p,
-            margin: before.get(p)?.margin ?? marginOf(p),
-            paper: before.get(p)?.paper ?? marginPaperOf(p),
-          })),
+          pages.map((p) => ({ page: p, ...(before.get(p) ?? stateOf(p)) })),
         );
         surface.applyCommand(back);
         step = back;
@@ -5470,6 +5485,12 @@ export class InkView extends TextFileView {
       },
       scopes,
       paintPaper: (canvas, paper) => this.paintMarginSwatch(canvas, paper),
+      spacingMm: (paper) => {
+        // The page's own pitch, as it was when the popover opened.
+        if (paper === "plain") return null;
+        const px = before.get(page)?.spacing ?? defaultMarginSpacing(page, paper);
+        return px === null ? null : Math.round(pageToMm(px) * 10) / 10;
+      },
       floor,
       cut: (scope) => {
         let items = 0;
@@ -5512,8 +5533,14 @@ export class InkView extends TextFileView {
         // The same size keeps the page's margin: the new paper goes in its frame.
         const frame = geometry ? undefined : page.backdrop.frame;
         const marginPaper = page.backdrop.marginPaper;
+        const marginSpacing = marginSpacingOf(page);
         const next = frame
-          ? { ...withoutFrame(backdrop), frame, ...(marginPaper ? { marginPaper } : {}) }
+          ? {
+              ...withoutFrame(backdrop),
+              frame,
+              ...(marginPaper ? { marginPaper } : {}),
+              ...(marginSpacing !== undefined ? { marginSpacing } : {}),
+            }
           : withoutFrame(backdrop);
         this.surface.applyCommand(new SetPageTemplate(page, next, geometry ?? undefined));
         this.rememberTemplate(backdrop);
