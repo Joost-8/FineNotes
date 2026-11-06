@@ -111,14 +111,7 @@ import {
   isShapeMode,
   starPoints,
 } from "../ink/shape-geometry";
-import {
-  type ArrowHead,
-  type ShapeDash,
-  TEXT_ALIGNS,
-  TEXT_FONTS,
-  TEXT_FONT_STACKS,
-  type TextAlign,
-} from "../model/document";
+import { TEXT_ALIGNS, TEXT_FONTS, TEXT_FONT_STACKS, type TextAlign } from "../model/document";
 import {
   DEFAULT_LINE_HEIGHT,
   DEFAULT_TEXT_STYLE,
@@ -256,8 +249,10 @@ import { DEFAULT_FILL_COLOR, FILL_GAPS, type FillGap, readFillGap } from "../mod
 import { onEnterKey } from "./enter-key";
 import {
   DEFAULT_ARROW_HEADS,
-  type FillMode,
+  FILL_OPACITIES,
   type ShapeToolStyle,
+  TINT_ALPHA,
+  nearestFillOpacity,
   readShapeToolStyle,
 } from "../model/shape-style";
 
@@ -376,7 +371,9 @@ export function penTypeFor(state: ToolbarState): PenTypeSpec {
 export function strokeWidthFor(state: ToolbarState): number {
   // A shape is drawn at the chosen width: a highlighter or brush nib would
   // make an outline four times too fat.
-  if (state.tool === "shape") return Math.max(0.5, state.size);
+  if (state.tool === "shape") {
+    return Math.max(0.5, readShapeToolStyle(state.shapeStyle).width ?? state.size);
+  }
   const spec = penTypeFor(state);
   // Pen and highlighter share one width, and only the pens go below the
   // thinnest preset (FineNotes#7).
@@ -3537,11 +3534,13 @@ export class Toolbar {
     });
 
     // The shapes' own colour, black until another is picked: a disc of it
-    // and a caret, opening the colour picker.
+    // and a caret, opening the colour panel (the pens' picker, then the
+    // fill and its opacity), as the selection bar's disc does.
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const color = this.state.shapeColor ?? DEFAULT_SHAPE_COLOR;
     const button = this.optionsEl.createEl("button", {
       cls: "goodobsidian-shape-color clickable-icon",
+      attr: { "aria-haspopup": "dialog" },
     });
     button
       .createSpan({ cls: "goodobsidian-text-disc" })
@@ -3549,140 +3548,281 @@ export class Toolbar {
     caretIn(button);
     button.setAttribute("aria-label", t("toolbar.shape.colourValue", { color }));
     button.setAttribute("title", t("toolbar.shape.colour"));
-    button.addEventListener("click", () =>
-      this.toggleColorPopover("shape-color", button, color, (picked) => {
-        this.state.shapeColor = picked;
-        this.callbacks.onShapeColorChange?.(picked);
-        this.buildOptions();
-      }),
-    );
+    button.addEventListener("click", () => this.toggleShapeColourPanel(button));
 
-    // Fill, line, corners and arrowheads, in one popover; the button shows
-    // the fill and line a new shape gets.
-    const styleButton = this.optionsEl.createEl("button", {
+    // The line: its style, width, corners and arrowheads, as the selection
+    // bar's line panel has them.
+    const lineButton = this.optionsEl.createEl("button", {
       cls: "goodobsidian-shape-style clickable-icon",
+      attr: { "aria-haspopup": "dialog" },
     });
-    styleButton.append(shapeStyleGlyph(readShapeToolStyle(this.state.shapeStyle), color));
-    caretIn(styleButton);
-    styleButton.setAttribute("aria-label", t("toolbar.shape.styleTip"));
-    styleButton.setAttribute("title", t("toolbar.shape.style"));
-    styleButton.addEventListener("click", () => this.toggleShapeStylePopover(styleButton));
+    iconOrText(
+      lineButton.createSpan({ cls: "goodobsidian-shape-style-icon" }),
+      "align-justify",
+      t("surface.shapeStyle.line"),
+    );
+    caretIn(lineButton);
+    lineButton.setAttribute("aria-label", t("surface.shapeStyle.line"));
+    lineButton.setAttribute("title", t("surface.shapeStyle.line"));
+    lineButton.addEventListener("click", () => this.toggleShapeLinePanel(lineButton));
   }
 
-  private toggleShapeStylePopover(anchor: HTMLElement): void {
+  /** The opacity Fill turns back on at, after it was switched off. */
+  private shapeFillAlpha = TINT_ALPHA;
+
+  /** Change the Shape tool's style, keep it, and leave out what is unset. */
+  private setShapeStyle(patch: Partial<ShapeToolStyle>): ShapeToolStyle {
+    const next: ShapeToolStyle = { ...readShapeToolStyle(this.state.shapeStyle), ...patch };
+    for (const key of Object.keys(next) as Array<keyof ShapeToolStyle>) {
+      if (next[key] === undefined) delete next[key];
+    }
+    // No line only with a fill: a shape is never drawn as nothing.
+    if (next.fillAlpha === undefined) delete next.noLine;
+    if (next.fillAlpha !== undefined) this.shapeFillAlpha = next.fillAlpha;
+    this.state.shapeStyle = next;
+    this.callbacks.onShapeStyleChange?.(next);
+    return next;
+  }
+
+  private toggleShapeColourPanel(anchor: HTMLElement): void {
+    if (this.popoverKind === "shape-color") {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("shape-color", anchor);
+    this.popover?.addClass("is-color-popover", "has-arrow");
+    body.addClass("goodobsidian-shape-panel");
+    this.renderShapeColour(body, anchor);
+    this.keepPopoverInside(anchor);
+  }
+
+  /**
+   * The colour panel: the colours, then the fill's switch and, while it is
+   * on, its opacity. A pick keeps the panel open, as the selection's does.
+   */
+  private renderShapeColour(body: HTMLElement, anchor: HTMLElement): void {
+    body.empty();
+    const color = this.state.shapeColor ?? DEFAULT_SHAPE_COLOR;
+    const use = (picked: string): void => {
+      this.state.shapeColor = picked;
+      this.callbacks.onShapeColorChange?.(picked);
+      anchor
+        .querySelector<HTMLElement>(".goodobsidian-text-disc")
+        ?.setCssStyles({ background: this.shown(picked, false) });
+      anchor.setAttribute("aria-label", t("toolbar.shape.colourValue", { color: picked }));
+      if (body.isConnected) this.renderShapeColour(body, anchor);
+    };
+    renderColorPicker(body.createDiv(), {
+      shown: (c) => this.shown(c),
+      current: color,
+      extra: this.pickerExtras(color),
+      recent: this.state.recentColors ?? [],
+      notebook: this.callbacks.notebookColors?.() ?? [],
+      onPick: (c) => {
+        if (c) use(c);
+      },
+      onCustom: (c) => {
+        this.rememberColor(c);
+        use(c);
+      },
+      onEyedropper: this.eyedropper(use),
+    });
+
+    const style = readShapeToolStyle(this.state.shapeStyle);
+    const on = style.fillAlpha !== undefined;
+    body.createDiv({ cls: "goodobsidian-popover-divider" });
+    this.switchRow(
+      body.createDiv({ cls: "goodobsidian-switch-list goodobsidian-text-switches" }),
+      t("surface.shapeStyle.fill"),
+      on,
+      (yes) => {
+        this.setShapeStyle({ fillAlpha: yes ? this.shapeFillAlpha : undefined });
+        this.renderShapeColour(body, anchor);
+        this.keepPopoverInside(anchor);
+      },
+    );
+    if (!on) return;
+    const opacity = t("surface.selectionBar.segment.opacity");
+    const range = this.panelSlider(body, opacity, FILL_OPACITIES.length - 1);
+    range.input.value = String(FILL_OPACITIES.indexOf(nearestFillOpacity(style.fillAlpha ?? 1)));
+    const stop = (): number => FILL_OPACITIES[Number(range.input.value)] ?? 1;
+    const show = (): void => {
+      range.readout.setText(`${Math.round(stop() * 100)} %`);
+      syncRangeFill(range.input);
+    };
+    show();
+    range.input.addEventListener("input", show);
+    range.input.addEventListener("change", () => this.setShapeStyle({ fillAlpha: stop() }));
+  }
+
+  /** A labelled slider with a readout, as the selection's panels have them. */
+  private panelSlider(
+    body: HTMLElement,
+    label: string,
+    max: number,
+  ): { input: HTMLInputElement; readout: HTMLElement } {
+    const head = body.createDiv({ cls: "goodobsidian-width-head goodobsidian-shape-panel-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: label });
+    const readout = head.createSpan({ cls: "goodobsidian-width-readout" });
+    const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
+    const input = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": label },
+    });
+    input.min = "0";
+    input.max = String(Math.max(0, max));
+    input.step = "1";
+    dragRange(input);
+    return { input, readout };
+  }
+
+  private toggleShapeLinePanel(anchor: HTMLElement): void {
     if (this.popoverKind === "shape-style") {
       this.closePopover();
       return;
     }
     const body = this.openPopover("shape-style", anchor);
-    body.addClass("goodobsidian-shape-style-popover");
-    this.renderShapeStyle(body, anchor);
+    body.addClass("goodobsidian-shape-panel");
+    this.renderShapeLine(body);
     this.keepPopoverInside(anchor);
   }
 
   /**
-   * The Shape tool's style. Each choice applies at once and the popover
-   * stays open, so a shape can be set up in one visit, as a text box's
-   * border is.
+   * The line panel: None (with a fill only), Solid, Dashed, Dotted as tiles,
+   * the width on a slider, then corners and arrowheads as segmented rows.
+   * Each choice applies at once and the panel stays open.
    */
-  private renderShapeStyle(body: HTMLElement, anchor: HTMLElement): void {
+  private renderShapeLine(body: HTMLElement): void {
     body.empty();
     const style = readShapeToolStyle(this.state.shapeStyle);
-    const color = this.state.shapeColor ?? DEFAULT_SHAPE_COLOR;
+    const filled = style.fillAlpha !== undefined;
+    const noLine = filled && style.noLine === true;
     const set = (patch: Partial<ShapeToolStyle>): void => {
-      const next: ShapeToolStyle = { ...style, ...patch };
-      for (const key of Object.keys(next) as Array<keyof ShapeToolStyle>) {
-        if (next[key] === undefined) delete next[key];
-      }
-      this.state.shapeStyle = next;
-      this.callbacks.onShapeStyleChange?.(next);
-      anchor.querySelector("svg")?.replaceWith(shapeStyleGlyph(next, color));
-      this.renderShapeStyle(body, anchor);
+      this.setShapeStyle(patch);
+      this.renderShapeLine(body);
     };
-    const choices = <T>(
+
+    const tiles = body.createDiv({ cls: "goodobsidian-shape-tiles" });
+    const tile = (
+      icon: string,
       label: string,
-      options: ReadonlyArray<{ value: T; name: string; glyph: SVGElement }>,
-      current: T,
-      pick: (value: T) => void,
+      on: boolean,
+      patch: Partial<ShapeToolStyle>,
+      enabled = true,
     ): void => {
-      body.createDiv({ cls: "goodobsidian-popover-label", text: label });
-      const row = body.createDiv({ cls: "goodobsidian-text-row" });
+      const button = tiles.createEl("button", {
+        cls: "goodobsidian-shape-tile clickable-icon",
+        attr: { "aria-label": label, "aria-pressed": String(on), title: label },
+      });
+      iconOrText(button.createSpan({ cls: "goodobsidian-shape-tile-icon" }), icon, label);
+      button.createSpan({ cls: "goodobsidian-shape-tile-label", text: label });
+      button.toggleClass("is-active", on);
+      button.disabled = !enabled;
+      button.addEventListener("click", () => set(patch));
+    };
+    tile("ban", t("surface.shapeStyle.noLine"), noLine, { noLine: true }, filled);
+    tile("minus", t("surface.shapeStyle.solidLine"), !noLine && !style.dash, {
+      dash: undefined,
+      noLine: undefined,
+    });
+    tile("square-dashed", t("surface.shapeStyle.dashedLine"), !noLine && style.dash === "dash", {
+      dash: "dash",
+      noLine: undefined,
+    });
+    tile("ellipsis", t("surface.shapeStyle.dottedLine"), !noLine && style.dash === "dot", {
+      dash: "dot",
+      noLine: undefined,
+    });
+
+    const current = strokeWidthFor(this.state);
+    const base = widthStops(SIZES, true);
+    const stops = base.includes(current) ? base : [...base, current].sort((a, b) => a - b);
+    const range = this.panelSlider(body, t("toolbar.width.title"), stops.length - 1);
+    range.input.value = String(nearestStop(stops, current));
+    const width = (): number => stops[Number(range.input.value)] ?? current;
+    const show = (): void => {
+      range.readout.setText(formatMm(width()));
+      syncRangeFill(range.input);
+    };
+    show();
+    range.input.addEventListener("input", show);
+    range.input.addEventListener("change", () => this.setShapeStyle({ width: width() }));
+
+    body.createDiv({ cls: "goodobsidian-popover-divider" });
+    const segments = (
+      label: string,
+      options: ReadonlyArray<{
+        icon: string;
+        name: string;
+        on: boolean;
+        patch: Partial<ShapeToolStyle>;
+      }>,
+    ): void => {
+      const row = body.createDiv({ cls: "goodobsidian-shape-segments" });
+      row.createSpan({ cls: "goodobsidian-shape-segments-label", text: label });
+      const group = row.createDiv({
+        cls: "goodobsidian-shape-segment-group",
+        attr: { role: "group", "aria-label": label },
+      });
       for (const option of options) {
-        const button = this.textOption(row, "is-flag", "", () => pick(option.value));
-        button.append(option.glyph);
-        button.setAttribute("aria-label", option.name);
-        button.setAttribute("title", option.name);
-        const on = option.value === current;
-        button.setAttribute("aria-pressed", String(on));
-        button.toggleClass("is-active", on);
+        const button = group.createEl("button", {
+          cls: "goodobsidian-shape-segment clickable-icon",
+          attr: {
+            "aria-label": option.name,
+            "aria-pressed": String(option.on),
+            title: option.name,
+          },
+        });
+        iconOrText(button, option.icon, option.name);
+        button.toggleClass("is-active", option.on);
+        button.addEventListener("click", () => set(option.patch));
       }
     };
-    choices<FillMode | undefined>(
-      t("toolbar.tool.fill"),
-      [
-        {
-          value: undefined,
-          name: t("toolbar.shape.fill.none"),
-          glyph: shapeFillGlyph(undefined, color),
-        },
-        { value: "soft", name: t("toolbar.shape.fill.soft"), glyph: shapeFillGlyph("soft", color) },
-        {
-          value: "solid",
-          name: t("toolbar.shape.fill.solid"),
-          glyph: shapeFillGlyph("solid", color),
-        },
-      ],
-      style.fill,
-      (fill) => set({ fill }),
-    );
-    choices<ShapeDash | undefined>(
-      t("toolbar.shape.line.label"),
-      [
-        { value: undefined, name: t("toolbar.shape.line.solid"), glyph: dashGlyph(undefined) },
-        { value: "dash", name: t("toolbar.shape.line.dashed"), glyph: dashGlyph("dash") },
-        { value: "dot", name: t("toolbar.shape.line.dotted"), glyph: dashGlyph("dot") },
-      ],
-      style.dash,
-      (dash) => set({ dash }),
-    );
-    this.switchRow(
-      body.createDiv({ cls: "goodobsidian-switch-list goodobsidian-text-switches" }),
-      t("toolbar.shape.roundedCorners"),
-      style.round === true,
-      (on) => set({ round: on ? true : undefined }),
-    );
+    segments(t("surface.shapeStyle.corners"), [
+      {
+        icon: "square",
+        name: t("surface.shapeStyle.squareCorners"),
+        on: style.round !== true,
+        patch: { round: undefined },
+      },
+      {
+        icon: "square-round-corner",
+        name: t("surface.shapeStyle.roundedCorners"),
+        on: style.round === true,
+        patch: { round: true },
+      },
+    ]);
     const heads = style.heads ?? DEFAULT_ARROW_HEADS;
-    const headOptions = (
-      end: "start" | "end",
-    ): Array<{
-      value: ArrowHead | undefined;
-      name: string;
-      glyph: SVGElement;
-    }> => [
+    const { start, end } = heads;
+    const filledHeads = start === "filled" || end === "filled";
+    const kind = filledHeads ? "filled" : "open";
+    const flip = filledHeads ? "open" : "filled";
+    segments(t("surface.shapeStyle.arrows"), [
       {
-        value: undefined,
-        name: t(end === "start" ? "toolbar.shape.head.noneStart" : "toolbar.shape.head.noneEnd"),
-        glyph: headGlyph(end, undefined),
+        icon: "arrow-left",
+        name: t("surface.shapeStyle.arrowAtStart"),
+        on: start !== undefined,
+        patch: { heads: { ...(start ? {} : { start: kind }), ...(end ? { end } : {}) } },
       },
       {
-        value: "open",
-        name: t(end === "start" ? "toolbar.shape.head.openStart" : "toolbar.shape.head.openEnd"),
-        glyph: headGlyph(end, "open"),
+        icon: "arrow-right",
+        name: t("surface.shapeStyle.arrowAtEnd"),
+        on: end !== undefined,
+        patch: { heads: { ...(start ? { start } : {}), ...(end ? {} : { end: kind }) } },
       },
       {
-        value: "filled",
-        name: t(
-          end === "start" ? "toolbar.shape.head.filledStart" : "toolbar.shape.head.filledEnd",
-        ),
-        glyph: headGlyph(end, "filled"),
+        icon: "triangle",
+        name: t("surface.shapeStyle.filledArrowheads"),
+        on: filledHeads,
+        patch: {
+          heads:
+            start || end
+              ? { ...(start ? { start: flip } : {}), ...(end ? { end: flip } : {}) }
+              : { end: "filled" },
+        },
       },
-    ];
-    choices(t("toolbar.shape.arrowStart"), headOptions("start"), heads.start, (start) =>
-      set({ heads: { ...(start ? { start } : {}), ...(heads.end ? { end: heads.end } : {}) } }),
-    );
-    choices(t("toolbar.shape.arrowEnd"), headOptions("end"), heads.end, (end) =>
-      set({ heads: { ...(heads.start ? { start: heads.start } : {}), ...(end ? { end } : {}) } }),
-    );
+    ]);
   }
 
   /** Put the current table size on the Table button, and in its label. */
@@ -7012,62 +7152,6 @@ function borderWidthGlyph(width: number | null): SVGElement {
       return;
     }
     add("path", { d: "M4 12h16", "stroke-width": String(Math.min(5, 0.8 + width)) });
-  });
-}
-
-/** What a new shape gets: its fill (or none) inside, its line round it. */
-function shapeStyleGlyph(style: ShapeToolStyle, color: string): SVGElement {
-  return textGlyph((add) => {
-    const attrs: Record<string, string> = { x: "4.5", y: "4.5", width: "15", height: "15" };
-    attrs.rx = style.round ? "4" : "1";
-    if (style.fill) {
-      attrs.fill = color;
-      attrs["fill-opacity"] = style.fill === "soft" ? "0.3" : "1";
-    }
-    if (style.dash === "dash") attrs["stroke-dasharray"] = "3.5 3";
-    if (style.dash === "dot") attrs["stroke-dasharray"] = "0.1 3.2";
-    add("rect", attrs);
-  });
-}
-
-function shapeFillGlyph(fill: FillMode | undefined, color: string): SVGElement {
-  return textGlyph((add) => {
-    const attrs: Record<string, string> = {
-      x: "4.5",
-      y: "4.5",
-      width: "15",
-      height: "15",
-      rx: "3",
-    };
-    if (fill) {
-      attrs.fill = color;
-      attrs["fill-opacity"] = fill === "soft" ? "0.3" : "1";
-    }
-    add("rect", attrs);
-    if (!fill) add("path", { d: "M7 17 17 7" });
-  });
-}
-
-function dashGlyph(dash: ShapeDash | undefined): SVGElement {
-  return textGlyph((add) => {
-    const attrs: Record<string, string> = { d: "M3.5 12h17", "stroke-width": "2.2" };
-    if (dash === "dash") attrs["stroke-dasharray"] = "4.5 3.5";
-    if (dash === "dot") attrs["stroke-dasharray"] = "0.1 4";
-    add("path", attrs);
-  });
-}
-
-/** A line with its head (or none) on the end `end` names. */
-function headGlyph(end: "start" | "end", head: ArrowHead | undefined): SVGElement {
-  return textGlyph((add) => {
-    // Pointing right for the end, left for the start.
-    const tip = end === "end" ? 20 : 4;
-    const back = end === "end" ? 13 : 11;
-    add("path", { d: `M4 12h16` });
-    if (head === "open") add("path", { d: `M${back} 7.5 ${tip} 12 ${back} 16.5` });
-    if (head === "filled") {
-      add("path", { d: `M${back} 7.5 ${tip} 12 ${back} 16.5Z`, fill: "currentColor" });
-    }
   });
 }
 
