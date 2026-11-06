@@ -1644,6 +1644,12 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
+  /** Remember whether a cover tape snaps to a PDF's text, for the next session. */
+  saveTapeSnapText(on: boolean): void {
+    this.settings.tapeSnapText = on;
+    void this.saveSettings();
+  }
+
   /** Remember whether new tables get a header row, for the next session. */
   saveTableHeader(on: boolean): void {
     this.settings.tableHeader = on;

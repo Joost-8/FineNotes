@@ -263,6 +263,7 @@ import {
   toggleRevealed,
   topTapeAt,
 } from "../model/cover-tape";
+import { textTapeStrokes } from "../model/tape-text";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
 import { type FillInk, bucketFill, insidePolygon } from "../canvas/bucket-fill";
 import {
@@ -9130,8 +9131,11 @@ export class InkSurface {
    */
   private revealedTapes: ReadonlySet<string> = new Set();
 
-  /** A tape being dragged out: where it started and where the pen is, page px. */
-  private tapeDrag: { from: Pt; to: Pt } | null = null;
+  /**
+   * A tape being dragged out: where it started and where the pen is, page
+   * px, and the PDF text it snaps to when it came down on some (#164).
+   */
+  private tapeDrag: { from: Pt; to: Pt; text: TextLayout | null } | null = null;
 
   /**
    * The Cover tape tool: a drag lays a strip from where it started to where
@@ -9139,16 +9143,16 @@ export class InkSurface {
    * tap shows a tape there through, or covers it again.
    */
   private readonly tapeGesture: PenGesture = {
-    down: (_box, at) => {
-      this.tapeDrag = { from: at, to: at };
+    down: (box, at) => {
+      this.tapeDrag = { from: at, to: at, text: this.tapeTextAt(box, at) };
     },
     move: (box, samples) => {
       const drag = this.tapeDrag;
       const last = samples[samples.length - 1];
       if (!drag || !last) return;
       drag.to = this.toPage(box, last);
-      const draft = this.tapeStroke(drag.from, drag.to);
-      if (draft) this.renderer?.renderWetStrokes(box.index, [draft]);
+      const drafts = this.tapeDrafts(drag.from, drag.to, drag.text);
+      if (drafts.length > 0) this.renderer?.renderWetStrokes(box.index, drafts);
       else this.renderer?.clearWet();
     },
     up: (box, sample) => this.finishTape(box, this.toPage(box, sample)),
@@ -9180,6 +9184,34 @@ export class InkSurface {
     };
   }
 
+  /**
+   * The PDF text a tape coming down at `at` snaps to: the page's, when Snap
+   * to PDF text is on and the pen landed on a line of it. Null otherwise.
+   */
+  private tapeTextAt(box: PageBox, at: Pt): TextLayout | null {
+    if (this.toolState.tapeSnapText !== true || this.practice) return null;
+    const layout = this.pageText(box.index);
+    if (!layout || !selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX))) return null;
+    return layout;
+  }
+
+  /**
+   * The tapes a drag from `from` to `to` lays: one per line of `text` it runs
+   * over, each covering that line's band (`model/tape-text.ts`), or else the
+   * one strip from `from` to `to`. Empty for a tap.
+   */
+  private tapeDrafts(from: Pt, to: Pt, text: TextLayout | null): Stroke[] {
+    const plain = this.tapeStroke(from, to);
+    if (!plain) return [];
+    const selection = text
+      ? selectText(text, from, to, this.atFitZoom(TEXT_SNAP_SLOP_PX))
+      : null;
+    if (!selection) return [plain];
+    let n = 0;
+    const snapped = textTapeStrokes(selection.rects, plain.color, () => `tape-draft${++n}`);
+    return snapped.length > 0 ? snapped : [plain];
+  }
+
   /** The tape tool lifted at `end` (null: cancelled where it was): lay the tape, or toggle one. */
   private finishTape(box: PageBox, end: Pt | null): void {
     const drag = this.tapeDrag;
@@ -9188,17 +9220,20 @@ export class InkSurface {
     this.renderer?.clearWet();
     const page = this.pageAt(box.index);
     if (!drag || !page) return;
-    const draft = this.tapeStroke(drag.from, end ?? drag.to);
-    if (!draft) {
+    const drafts = this.tapeDrafts(drag.from, end ?? drag.to, drag.text);
+    if (drafts.length === 0) {
       this.toggleTapeAt(page, drag.from, PEN_TAP_TOLERANCE_PX / this.gestureScale);
       return;
     }
-    const stroke: Stroke = { ...draft, id: this.strokeIds.next() };
-    // As `commitStroke`, but never stuck on a sticky note: a tape lies over the page.
-    const command = addStrokesTimed(page, [stroke], this.penDownAt);
+    const strokes = drafts.map((draft): Stroke => ({ ...draft, id: this.strokeIds.next() }));
+    // As `commitStroke`, but never stuck on a sticky note: a tape lies over
+    // the page. A tape snapped over several lines is one undo step.
+    const command = addStrokesTimed(page, strokes, this.penDownAt);
     this.history.push(this.doc, command);
-    this.strokeIndex.add(page.id, stroke);
-    this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    for (const stroke of strokes) {
+      this.strokeIndex.add(page.id, stroke);
+      this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    }
     this.inkChanged([page.id]);
   }
 
@@ -10765,7 +10800,10 @@ export class InkSurface {
    * pages either side read, so the first stroke on them can snap.
    */
   private prefetchText(): void {
-    if (!this.textSource || this.toolState.tool !== "highlighter") return;
+    if (!this.textSource) return;
+    const tool = this.toolState.tool;
+    const snaps = tool === "highlighter" || (tool === "tape" && this.toolState.tapeSnapText === true);
+    if (!snaps) return;
     for (const index of [this.pageIndex, this.pageIndex + 1, this.pageIndex - 1]) {
       this.pageText(index);
     }
