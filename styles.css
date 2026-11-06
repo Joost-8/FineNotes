@@ -728,9 +728,11 @@ body:not(.is-mobile) .goodobsidian-view {
 }
 
 /* The pen types as a row, as Goodnotes has them (toolbar.ts, buildPenRow):
-   four in view at a time, the rest a swipe away (Joost's call); on a narrow
-   pane the row gives way, down to two. An end that hides more fades as the
-   colour row's does. Upright it runs down the pill, four pens tall. */
+   every pen in view while the pill has the room (FineNotes#164); on a
+   narrow pane the row gives way, down to two, and the rest are a swipe (or
+   an arrow) away. An end that hides more fades as the colour row's does.
+   Upright it runs down the pill, as tall as its pens, and gives way the
+   same when the pill is taller than the room. */
 .goodobsidian-pen-types {
   position: relative;
   display: flex;
@@ -738,7 +740,6 @@ body:not(.is-mobile) .goodobsidian-view {
   align-items: center;
   gap: 4px;
   min-width: calc(var(--gob-pen-type, 42px) * 2 + 4px);
-  max-width: calc(var(--gob-pen-type, 42px) * 4 + 4px * 3);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -774,8 +775,7 @@ body:not(.is-mobile) .goodobsidian-view {
 .goodobsidian-options.is-upright .goodobsidian-pen-types {
   flex-direction: column;
   min-width: 0;
-  max-width: none;
-  max-height: calc(var(--gob-pen-type, 42px) * 4 + 4px * 3);
+  min-height: calc(var(--gob-pen-type, 42px) * 2 + 4px);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
@@ -14635,22 +14635,13 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   );
 }
 
-/* The docked column has the page's whole height: every pen type shows. */
-.goodobsidian-options.is-docked.is-upright .goodobsidian-pen-types {
-  max-height: none;
-}
-
 /* In the row it rests on the bar's band, not over the page: no shadow. */
 .goodobsidian-options.is-floating.is-docked {
   box-shadow: none;
 }
 
-/* The row is the width of the page, so the pill uses it: every pen type, and
-   as many colours as fit (the rest are a swipe away). */
-.goodobsidian-options.is-docked .goodobsidian-pen-types {
-  max-width: none;
-}
-
+/* The row is the width of the page, so the pill uses it: as many colours
+   as fit (the rest are a swipe away), as the pen types already do. */
 .goodobsidian-options.is-docked .goodobsidian-pen-colors {
   max-width: none;
 }
