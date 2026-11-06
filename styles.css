@@ -2361,17 +2361,19 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   display: none;
 }
 
+/* A side pill spans only the room between the corner squares, and its mark
+   keeps clear of them, so on a short box the two never touch. */
 .goodobsidian-page-textbox-handle.is-side {
-  top: 50%;
+  top: 10px;
+  bottom: 10px;
   width: 24px;
-  height: 44px;
-  margin-top: -22px;
+  height: auto;
   cursor: ew-resize;
 }
 
 .goodobsidian-page-textbox-handle.is-side::after {
   width: 8px;
-  height: 26px;
+  height: min(26px, max(6px, calc(100% - 4px)));
   border-radius: 4px;
 }
 
