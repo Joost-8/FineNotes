@@ -16475,6 +16475,11 @@ button.goodobsidian-library-fold .svg-icon {
   width: min(320px, calc(100vw - 24px));
 }
 
+/* The popover scrolls when short; its rows keep their height. */
+.goodobsidian-shape-panel > * {
+  flex-shrink: 0;
+}
+
 .goodobsidian-options .goodobsidian-shape-style-icon {
   display: inline-flex;
 }
