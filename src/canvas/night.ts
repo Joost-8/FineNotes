@@ -53,6 +53,15 @@ export const INK_BLACK_L = 0.22;
 export const DAY_HIGHLIGHTER_BLEND = "multiply";
 export const NIGHT_HIGHLIGHTER_BLEND = "screen";
 
+/**
+ * How ink is shown on a page. `"day"`: as stored, a highlighter multiplied
+ * into the paper. `"dark"`: as stored, on paper that is dark already (a black
+ * template, a navy cover), where a multiplied highlighter would vanish, so it
+ * is screened on as at night ({@link nightHighlighter}). `"night"`: every
+ * colour through {@link nightColor}, a highlighter screened.
+ */
+export type InkShade = "day" | "dark" | "night";
+
 /** Lightness a highlighter is shown at, at night, by its true lightness 0 and 1. */
 const NIGHT_HIGHLIGHT_L = { dark: 0.48, light: 0.6 };
 

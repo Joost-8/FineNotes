@@ -8,13 +8,13 @@ import type { TFile as FakeFile } from "./fake-obsidian";
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
 const { WorkspaceLeaf } = await import("./fake-obsidian");
-const { LibraryView } = await import("../../src/view/library-view");
+const { LibraryView, unstackTabsOf } = await import("../../src/view/library-view");
 const { memoryVault } = await import("./memory-vault");
 
 interface Inside {
   watchVault(): void;
   stale: boolean;
-  entries(): { path: string; title: string }[];
+  entries(): { kind: string; path: string; title: string }[];
   reads: Map<string, { mtime: number; entry: { pages: number } }>;
   readStale(): Promise<void>;
 }
@@ -66,21 +66,45 @@ describe("reading notebooks", () => {
 });
 
 describe("what the library lists", () => {
-  it("lists every kind of notebook, but not practice sheets or the inbox", () => {
+  it("lists every kind of notebook, and the vault's other files, but not practice sheets or the inbox", () => {
     const { inside } = viewOn([
       "Physics.notebook.md",
       "Sketch.page.md",
       "Old notes.ink.md",
       "Plain note.md",
+      "Slides.pdf",
       "FineNotes assets/Handwriting sheets/Handwriting practice 1.practice.md",
+      "FineNotes assets/Stickers/star.png",
       "FineNotes inbox/Scan.notebook.md",
+      "FineNotes inbox/photo.jpg",
     ]);
     expect(
       inside
         .entries()
-        .map((e) => e.title)
+        .map((e) => `${e.kind}:${e.title}`)
         .sort(),
-    ).toEqual(["Old notes", "Physics", "Sketch"]);
+    ).toEqual([
+      "note:Plain note",
+      "notebook:Old notes",
+      "notebook:Physics",
+      "notebook:Sketch",
+      "pdf:Slides",
+    ]);
+  });
+
+  it("does not list what a notebook's own folder holds for it", () => {
+    const { inside } = viewOn([
+      "Physics/Physics.notebook.md",
+      "Physics/Images/photo.png",
+      "Physics/Recordings/lecture.webm",
+      "Physics/Syllabus.pdf",
+    ]);
+    expect(
+      inside
+        .entries()
+        .map((e) => e.path)
+        .sort(),
+    ).toEqual(["Physics/Physics.notebook.md", "Physics/Syllabus.pdf"]);
   });
 });
 
@@ -127,3 +151,23 @@ describe("a Home tab in the background", () => {
     expect(inside.reads.get("A.notebook.md")?.mtime).toBe(7);
   });
 });
+
+describe("opening a notebook from Home", () => {
+  it("stops a stacked tab group stacking, so the notebook fills the view", () => {
+    const { unstack, leaf } = groupOf(true);
+    unstackTabsOf(leaf as never);
+    expect(unstack).toHaveBeenCalledWith(false);
+  });
+
+  it("leaves a tab group that is not stacked, and a leaf with no group, alone", () => {
+    const { unstack, leaf } = groupOf(false);
+    unstackTabsOf(leaf as never);
+    expect(unstack).not.toHaveBeenCalled();
+    expect(() => unstackTabsOf({ parent: null } as never)).not.toThrow();
+  });
+});
+
+function groupOf(isStacked: boolean) {
+  const unstack = vi.fn();
+  return { unstack, leaf: { parent: { isStacked, setStacked: unstack } } };
+}
