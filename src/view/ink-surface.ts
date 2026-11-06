@@ -270,6 +270,7 @@ import {
   toggleRevealed,
   topTapeAt,
 } from "../model/cover-tape";
+import { textTapeStrokes } from "../model/tape-text";
 import { strokeFillHit, strokeHitByPoint } from "../canvas/hit-test";
 import { type FillInk, bucketFill, insidePolygon } from "../canvas/bucket-fill";
 import {
@@ -406,6 +407,7 @@ import {
   pickBounds,
   pickHandles,
   pickWord,
+  sweepWords,
 } from "../canvas/text-pick";
 import { TextPickView } from "./text-pick-view";
 import { followTopShift as offsetAfterTopShift } from "./pill-row-model";
@@ -765,6 +767,11 @@ const OFF_PAGE_FADE_MS = 200;
  * a line of small print lands a little above or below it.
  */
 const TEXT_SNAP_SLOP_PX = 8;
+/**
+ * How long after a right-button sweep lets go a contextmenu is its own
+ * (Windows sends it on the release), ms.
+ */
+const SWEEP_MENU_MS = 1000;
 
 /** The shortest highlight, in screen px, that becomes a straight line on lift when drawn as one. */
 const HIGHLIGHT_LINE_MIN_PX = 24;
@@ -1509,6 +1516,26 @@ interface PressText {
   pick: TextPick;
   /** The handle a pointer holds, and where it took it from (page px, handle less pointer). */
   drag: { end: PickEnd; grab: Pt } | null;
+  /**
+   * The press that selected the word is sweeping on over more words
+   * (FineNotes#164): a right-button drag, or a finger or pen held, then moved.
+   */
+  sweeping: boolean;
+}
+
+/** A right mouse button pressed on the paper, until it lets go: a drag of it selects words. */
+interface RightSweep {
+  pointerId: number;
+  /** Where it went down, client px. */
+  clientX: number;
+  clientY: number;
+  box: PageBox;
+  /** The same, page px of `box`. */
+  at: Pt;
+  /** Past the slop, with words selected: its contextmenu is swallowed. */
+  started: boolean;
+  /** Takes the window listeners away. */
+  off: () => void;
 }
 
 const NO_IMAGES: ReadonlySet<ImageElement> = new Set();
@@ -2169,6 +2196,14 @@ export class InkSurface {
   private zoomSlideFrame = 0;
   /** Until when (`now()`) a right-click menu is a stylus button's doing, not the user's. */
   private stylusMenuUntil = 0;
+  /** A right button held down on the paper (FineNotes#164). */
+  private rightSweep: RightSweep | null = null;
+  /**
+   * Until when (`now()`) a contextmenu is the end of a right-button sweep:
+   * Windows sends it after the button is let go, and the sweep has opened
+   * the menu already.
+   */
+  private sweepMenuUntil = 0;
   /** The cursor over the page for the pens, on a computer (FineNotes#25, #27). */
   private penCursor: PenCursorStyle = "arrow";
   /** What the ink cursor was last drawn for, so an unchanged one is not set again. */
@@ -3092,6 +3127,11 @@ export class InkSurface {
     const onContextMenu = (event: MouseEvent): void => {
       if (onTextBox(event.target) || isEditable(event.target)) return;
       event.preventDefault();
+      // A right-button drag selected words: it is done, and has its bar.
+      if (now() < this.sweepMenuUntil || this.rightSweep?.started === true) {
+        this.sweepMenuUntil = 0;
+        return;
+      }
       const type = (event as Partial<PointerEvent>).pointerType;
       // Android's WebView: the pen touching down with its side button held is
       // this alone, as a mouse's. It is no click of the button, and no menu.
@@ -3116,11 +3156,24 @@ export class InkSurface {
       if (!box) return;
       // The mouse is the pen, so it has no tap: a right-click on linked or
       // underlined ink does what a finger tap there does (FineNotes#41).
-      if (this.mouseTapsInk(box, at, event.clientX, event.clientY)) return;
+      if (this.mouseTapsInk(box, at, event.clientX, event.clientY)) {
+        // Where the menu comes as the button goes down, a drag must not follow it.
+        this.endRightSweep(false);
+        return;
+      }
       this.openPressMenu(box, this.toPage(box, at));
     };
     this.scrollEl.addEventListener("contextmenu", onContextMenu);
     this.disposers.push(() => this.scrollEl.removeEventListener("contextmenu", onContextMenu));
+
+    // The right button dragged from a PDF word selects every word to the
+    // pointer (FineNotes#164); held still, it is the right-click above.
+    const onRightDown = (event: PointerEvent): void => this.rightSweepDown(event);
+    this.scrollEl.addEventListener("pointerdown", onRightDown);
+    this.disposers.push(() => {
+      this.scrollEl.removeEventListener("pointerdown", onRightDown);
+      this.endRightSweep(false);
+    });
 
     // Wheel and trackpad: scroll, or zoom with Ctrl/Cmd (a trackpad pinch
     // arrives as a Ctrl+wheel). Momentum on a trackpad is the OS's own.
@@ -7261,6 +7314,8 @@ export class InkSurface {
         this.selectionFingers.move(PAGE_FINGER_ID, x, y, t);
         return;
       }
+      // Held on PDF text, the finger sweeps on over words instead of scrolling.
+      if (this.fingerSweepsText(x, y)) return;
       const tap = this.fingerTap;
       if (tap && Math.hypot(x - tap.x, y - tap.y) > TAP_SLOP_PX) {
         this.fingerTap = null;
@@ -7284,6 +7339,7 @@ export class InkSurface {
       this.fingerTap = null;
       this.stopPress();
       this.fingerHold.end();
+      this.endTextSweep();
       // The finger that opened the press menu lifted: now it takes presses.
       if (this.pressMenu?.provisional) {
         this.pressMenu.provisional = false;
@@ -9154,9 +9210,10 @@ export class InkSurface {
 
   /**
    * A tape being dragged out: where it started and where the pen is, page
-   * px, and for a freehand tape every point the pen passed.
+   * px; for a freehand tape every point the pen passed, and the PDF text a
+   * straight one snaps to when it came down on some (#164).
    */
-  private tapeDrag: { from: Pt; to: Pt; path: Pt[] | null } | null = null;
+  private tapeDrag: { from: Pt; to: Pt; path: Pt[] | null; text: TextLayout | null } | null = null;
 
   /**
    * The Cover tape tool: a drag lays a strip from where it started to where
@@ -9165,9 +9222,15 @@ export class InkSurface {
    * or covers it again.
    */
   private readonly tapeGesture: PenGesture = {
-    down: (_box, at) => {
+    down: (box, at) => {
       const freehand = tapeModeOf(this.toolState.tapeMode) === "freehand";
-      this.tapeDrag = { from: at, to: at, path: freehand ? [at] : null };
+      // A freehand tape follows the pen: only a straight one snaps to text.
+      this.tapeDrag = {
+        from: at,
+        to: at,
+        path: freehand ? [at] : null,
+        text: freehand ? null : this.tapeTextAt(box, at),
+      };
     },
     move: (box, samples) => {
       const drag = this.tapeDrag;
@@ -9175,8 +9238,8 @@ export class InkSurface {
       if (!drag || !last) return;
       if (drag.path) for (const sample of samples) drag.path.push(this.toPage(box, sample));
       drag.to = this.toPage(box, last);
-      const draft = this.tapeStroke(drag);
-      if (draft) this.renderer?.renderWetStrokes(box.index, [draft]);
+      const drafts = this.tapeDrafts(drag);
+      if (drafts.length > 0) this.renderer?.renderWetStrokes(box.index, drafts);
       else this.renderer?.clearWet();
     },
     up: (box, sample) => this.finishTape(box, this.toPage(box, sample)),
@@ -9223,6 +9286,36 @@ export class InkSurface {
     };
   }
 
+  /**
+   * The PDF text a tape coming down at `at` snaps to: the page's, when Snap
+   * to PDF text is on and the pen landed on a line of it. Null otherwise.
+   */
+  private tapeTextAt(box: PageBox, at: Pt): TextLayout | null {
+    if (this.toolState.tapeSnapText !== true || this.practice) return null;
+    const layout = this.pageText(box.index);
+    if (!layout || !selectText(layout, at, at, this.atFitZoom(TEXT_SNAP_SLOP_PX))) return null;
+    return layout;
+  }
+
+  /**
+   * The tapes a drag lays: one per line of its `text` it runs over, each
+   * covering that line's band (`model/tape-text.ts`), or else the one tape
+   * (`tapeStroke`, straight or freehand). Empty for a tap.
+   */
+  private tapeDrafts(
+    drag: { from: Pt; to: Pt; path: Pt[] | null; text: TextLayout | null },
+    final = false,
+  ): Stroke[] {
+    const plain = this.tapeStroke(drag, final);
+    if (!plain) return [];
+    const { from, to, text } = drag;
+    const selection = text ? selectText(text, from, to, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
+    if (!selection) return [plain];
+    let n = 0;
+    const snapped = textTapeStrokes(selection.rects, plain.color, () => `tape-draft${++n}`);
+    return snapped.length > 0 ? snapped : [plain];
+  }
+
   /** The tape tool lifted at `end` (null: cancelled where it was): lay the tape, or toggle one. */
   private finishTape(box: PageBox, end: Pt | null): void {
     const drag = this.tapeDrag;
@@ -9235,17 +9328,20 @@ export class InkSurface {
       drag.to = end;
       drag.path?.push(end);
     }
-    const draft = this.tapeStroke(drag, true);
-    if (!draft) {
+    const drafts = this.tapeDrafts(drag, true);
+    if (drafts.length === 0) {
       this.toggleTapeAt(page, drag.from, PEN_TAP_TOLERANCE_PX / this.gestureScale);
       return;
     }
-    const stroke: Stroke = { ...draft, id: this.strokeIds.next() };
-    // As `commitStroke`, but never stuck on a sticky note: a tape lies over the page.
-    const command = addStrokesTimed(page, [stroke], this.penDownAt);
+    const strokes = drafts.map((draft): Stroke => ({ ...draft, id: this.strokeIds.next() }));
+    // As `commitStroke`, but never stuck on a sticky note: a tape lies over
+    // the page. A tape snapped over several lines is one undo step.
+    const command = addStrokesTimed(page, strokes, this.penDownAt);
     this.history.push(this.doc, command);
-    this.strokeIndex.add(page.id, stroke);
-    this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    for (const stroke of strokes) {
+      this.strokeIndex.add(page.id, stroke);
+      this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    }
     this.inkChanged([page.id]);
   }
 
@@ -10844,7 +10940,11 @@ export class InkSurface {
    * pages either side read, so the first stroke on them can snap.
    */
   private prefetchText(): void {
-    if (!this.textSource || this.toolState.tool !== "highlighter") return;
+    if (!this.textSource) return;
+    const tool = this.toolState.tool;
+    const snaps =
+      tool === "highlighter" || (tool === "tape" && this.toolState.tapeSnapText === true);
+    if (!snaps) return;
     for (const index of [this.pageIndex, this.pageIndex + 1, this.pageIndex - 1]) {
       this.pageText(index);
     }
@@ -11655,6 +11755,7 @@ export class InkSurface {
       this.stopPress();
     }
     if (pick.dragging) this.dragCircleSelection(box, p);
+    else this.sweepPressText(pick.box, p);
   }
 
   /** It lifted: a move is one step; a tap leaves the one thing selected, with its frame. */
@@ -11662,6 +11763,7 @@ export class InkSurface {
     const pick = this.picking;
     this.picking = null;
     this.stopPress();
+    this.endTextSweep();
     // Only a move commits: a tap on a table must select it, not type in a
     // cell, as the frame's own tap would on a second press.
     if (pick?.dragging) this.endGroupDrag(this.groupDrag?.lifted === true);
@@ -11724,7 +11826,12 @@ export class InkSurface {
   private selectMove(samples: readonly Pt[]): void {
     const lasso = this.lasso;
     const last = samples[samples.length - 1];
-    if (!lasso || !last || lasso.held) return;
+    if (!lasso || !last) return;
+    if (lasso.held) {
+      // Held on PDF text: the pen sweeps on over words.
+      this.sweepPressText(lasso.box, last);
+      return;
+    }
     const scale = this.gestureScale;
     const moved = Math.hypot(last.x - lasso.origin.x, last.y - lasso.origin.y) * scale;
     if (moved > TAP_SLOP_PX) this.stopPress();
@@ -11800,9 +11907,7 @@ export class InkSurface {
     if (!page) return;
     this.clearSelection();
     this.deselectImage();
-    const top = topImageAt(page.images, p, PEN_TAP_TOLERANCE_PX / this.gestureScale);
-    const locked = top?.locked === true ? top : null;
-    const ink = this.strokeAt(page, p, PEN_TAP_TOLERANCE_PX / this.gestureScale);
+    const { locked, ink } = this.pressedThings(page, p);
     this.pressMenu = {
       pageId: page.id,
       at: { x: p.x, y: p.y },
@@ -11812,6 +11917,153 @@ export class InkSurface {
       // Held on a PDF's text, and on no ink but a highlight: the word is selected.
       text: locked || (ink && !isHighlight(ink)) ? null : this.pressedText(box.index, p),
     };
+    this.syncActionBar();
+  }
+
+  /** What a press at page point `p` lands on: a locked picture on top, and ink. */
+  private pressedThings(page: Page, p: Pt): { locked: ImageElement | null; ink: Stroke | null } {
+    const top = topImageAt(page.images, p, PEN_TAP_TOLERANCE_PX / this.gestureScale);
+    return {
+      locked: top?.locked === true ? top : null,
+      ink: this.strokeAt(page, p, PEN_TAP_TOLERANCE_PX / this.gestureScale),
+    };
+  }
+
+  /**
+   * Whether a press at page point `p` of `box` would select a PDF word, as
+   * `openPressMenu` decides it: text there, and no ink but a highlight and
+   * no locked picture over it.
+   */
+  private pressSelectsText(box: PageBox, p: Pt): boolean {
+    const page = this.pageAt(box.index);
+    if (!page) return false;
+    const { locked, ink } = this.pressedThings(page, p);
+    if (locked || (ink && !isHighlight(ink))) return false;
+    return this.pressedText(box.index, p) !== null;
+  }
+
+  // --- Sweeping words (FineNotes#164) ----------------------------------------
+  //
+  // A press that selected a PDF word and then moves takes every word from
+  // that one to the one under the pointer: the right mouse button dragged,
+  // or a finger or the lasso's pen held on the word, then moved. The bar
+  // steps aside while it sweeps and comes back, with Copy, when it ends.
+
+  /** The right button went down: remember where, for a drag to start from. */
+  private rightSweepDown(event: PointerEvent): void {
+    if (event.pointerType !== "mouse" || event.button !== 2) return;
+    this.endRightSweep(false);
+    this.sweepMenuUntil = 0;
+    if (onTextBox(event.target) || isEditable(event.target)) return;
+    if (this.callbacks.onlyStylusMode?.() === true || this.practice) return;
+    // A bound button or a tablet's stylus button: not the user's right click.
+    if (now() < this.stylusMenuUntil) return;
+    const target = event.target as Node | null;
+    if (target && (this.selectionUiEl.contains(target) || this.imageUiEl.contains(target))) {
+      return;
+    }
+    if (this.lasso || this.imageDrag || this.groupDrag || this.cropping) return;
+    const layout = this.toLayout(event.clientX, event.clientY);
+    const box = boxAtPoint(this.pageLayout, layout.x, layout.y);
+    if (!box) return;
+    const win = this.surfaceEl.ownerDocument.defaultView ?? window;
+    const pointerId = event.pointerId;
+    const onEvent = (e: PointerEvent): void => {
+      if (e.pointerId !== pointerId) return;
+      if (e.type === "pointermove" && (e.buttons & 2) !== 0) {
+        this.rightSweepMove(e.clientX, e.clientY);
+        return;
+      }
+      // Let go (or the system took it, or its release was never heard).
+      this.endRightSweep(true);
+    };
+    const off = (): void => {
+      win.removeEventListener("pointermove", onEvent, true);
+      win.removeEventListener("pointerup", onEvent, true);
+      win.removeEventListener("pointercancel", onEvent, true);
+    };
+    win.addEventListener("pointermove", onEvent, true);
+    win.addEventListener("pointerup", onEvent, true);
+    win.addEventListener("pointercancel", onEvent, true);
+    this.rightSweep = {
+      pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      box,
+      at: this.toPage(box, layout),
+      started: false,
+      off,
+    };
+  }
+
+  /** The right button moved, held: past the slop on a word, it sweeps. */
+  private rightSweepMove(x: number, y: number): void {
+    const sweep = this.rightSweep;
+    if (!sweep) return;
+    if (!sweep.started) {
+      // A screen length: the slop of a tap, whatever the zoom.
+      if (Math.hypot(x - sweep.clientX, y - sweep.clientY) <= TAP_SLOP_PX) return;
+      if (!this.pressSelectsText(sweep.box, sweep.at)) {
+        // Not on a word: the drag stays the right click it is today.
+        this.endRightSweep(false);
+        return;
+      }
+      sweep.started = true;
+      // Where the menu came as the button went down, it is opened again, the same.
+      this.openPressMenu(sweep.box, sweep.at);
+    }
+    this.sweepPressText(sweep.box, this.pagePoint(sweep.box, x, y));
+  }
+
+  /**
+   * The right button is done with: the sweep ends and its bar shows, and
+   * the contextmenu Windows sends after the release is swallowed.
+   */
+  private endRightSweep(released: boolean): void {
+    const sweep = this.rightSweep;
+    if (!sweep) return;
+    this.rightSweep = null;
+    sweep.off();
+    if (!sweep.started) return;
+    if (released) this.sweepMenuUntil = now() + SWEEP_MENU_MS;
+    this.endTextSweep();
+  }
+
+  /** A finger that held on PDF text moved: it sweeps over words. True when it did. */
+  private fingerSweepsText(x: number, y: number): boolean {
+    const press = this.pressMenu;
+    const text = press?.text;
+    if (!press || !text) return false;
+    // Once sweeping, the finger never scrolls again before it lifts.
+    if (!text.sweeping && (!press.provisional || this.pinch !== null || this.touchCount > 1)) {
+      return false;
+    }
+    const box = this.boxForPage(press.pageId);
+    if (!box) return false;
+    this.sweepPressText(box, this.pagePoint(box, x, y));
+    return true;
+  }
+
+  /** Sweep the press menu's selected text from where it was opened to page point `to` of `box`. */
+  private sweepPressText(box: PageBox, to: Pt): void {
+    const press = this.pressMenu;
+    const text = press?.text;
+    if (!press || !text || this.boxForPage(press.pageId)?.index !== box.index) return;
+    const first = !text.sweeping;
+    text.sweeping = true;
+    const pick = sweepWords(text.layout, press.at, to, this.atFitZoom(TEXT_SNAP_SLOP_PX));
+    const changed = pick !== null && (pick.start !== text.pick.start || pick.end !== text.pick.end);
+    if (pick && changed) text.pick = pick;
+    // The first step hides the bar; the rest only redraw the selection.
+    if (first) this.syncActionBar();
+    else if (changed) this.syncTextPick(press, box);
+  }
+
+  /** A sweep let go: the bar comes back over what it selected. */
+  private endTextSweep(): void {
+    const text = this.pressMenu?.text;
+    if (!text?.sweeping) return;
+    text.sweeping = false;
     this.syncActionBar();
   }
 
@@ -11892,6 +12144,7 @@ export class InkSurface {
     this.activePage = null;
     this.stopPress();
     this.renderer?.clearWet();
+    this.endTextSweep();
     // A held press has opened its bar already; the lift only lets go.
     if (!lasso || lasso.held) return;
     if (lasso.space) {
@@ -12738,7 +12991,8 @@ export class InkSurface {
       this.tapeStretch?.lifted === true ||
       this.linkDrag?.lifted === true ||
       // As on iPadOS, the bar steps aside while a handle is dragged.
-      press?.text?.drag != null;
+      press?.text?.drag != null ||
+      press?.text?.sweeping === true;
     let bounds: Bounds | null = null;
     let clearAbove = SELECTION_PAD_PX;
     let clearBelow = SELECTION_PAD_PX;
@@ -13483,7 +13737,7 @@ export class InkSurface {
     if (this.practice) return null;
     const layout = this.pageText(index);
     const pick = layout ? pickWord(layout, p, this.atFitZoom(TEXT_SNAP_SLOP_PX)) : null;
-    return layout && pick ? { layout, pick, drag: null } : null;
+    return layout && pick ? { layout, pick, drag: null, sweeping: false } : null;
   }
 
   /**

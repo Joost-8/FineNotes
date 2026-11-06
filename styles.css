@@ -736,17 +736,17 @@ body:not(.is-mobile) .goodobsidian-view {
 }
 
 /* The pen types as a row, as Goodnotes has them (toolbar.ts, buildPenRow):
-   four in view at a time, the rest a swipe away (Joost's call); on a narrow
-   pane the row gives way, down to two. An end that hides more fades as the
-   colour row's does. Upright it runs down the pill, four pens tall. */
+   every pen in view, always, and no arrow (FineNotes#164): the colour row
+   beside it scrolls instead. Upright it runs down the pill, as tall as its
+   pens. */
 .goodobsidian-pen-types {
   position: relative;
   display: flex;
-  flex: 0 1 auto;
+  /* Every pen shows, with no arrow: the colour row gives way instead. */
+  flex: none;
   align-items: center;
   gap: 4px;
   min-width: calc(var(--gob-pen-type, 42px) * 2 + 4px);
-  max-width: calc(var(--gob-pen-type, 42px) * 4 + 4px * 3);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -782,8 +782,7 @@ body:not(.is-mobile) .goodobsidian-view {
 .goodobsidian-options.is-upright .goodobsidian-pen-types {
   flex-direction: column;
   min-width: 0;
-  max-width: none;
-  max-height: calc(var(--gob-pen-type, 42px) * 4 + 4px * 3);
+  min-height: calc(var(--gob-pen-type, 42px) * 2 + 4px);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
@@ -4400,7 +4399,7 @@ input.goodobsidian-paper-designer-name {
 }
 
 /* − value mm +: big enough for a Pencil tap, the value typed in between. */
-.goodobsidian-paper-designer-stepper {
+.goodobsidian-mm-stepper {
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -4409,14 +4408,14 @@ input.goodobsidian-paper-designer-name {
   background: var(--gob-well, var(--background-secondary));
 }
 
-.goodobsidian-paper-designer-stepper > button.clickable-icon {
+.goodobsidian-mm-stepper > button.clickable-icon {
   width: 36px;
   height: 36px;
   padding: 0;
   border-radius: 999px;
 }
 
-.goodobsidian-paper-designer-stepper > input[type="text"] {
+.goodobsidian-mm-stepper > input[type="text"] {
   width: 52px;
   height: 32px;
   padding: 0 4px;
@@ -4428,7 +4427,7 @@ input.goodobsidian-paper-designer-name {
   font-variant-numeric: tabular-nums;
 }
 
-.goodobsidian-paper-designer-unit {
+.goodobsidian-mm-stepper-unit {
   padding-right: 4px;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
@@ -14682,22 +14681,13 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   );
 }
 
-/* The docked column has the page's whole height: every pen type shows. */
-.goodobsidian-options.is-docked.is-upright .goodobsidian-pen-types {
-  max-height: none;
-}
-
 /* In the row it rests on the bar's band, not over the page: no shadow. */
 .goodobsidian-options.is-floating.is-docked {
   box-shadow: none;
 }
 
-/* The row is the width of the page, so the pill uses it: every pen type, and
-   as many colours as fit (the rest are a swipe away). */
-.goodobsidian-options.is-docked .goodobsidian-pen-types {
-  max-width: none;
-}
-
+/* The row is the width of the page, so the pill uses it: as many colours
+   as fit (the rest are a swipe away), as the pen types already do. */
 .goodobsidian-options.is-docked .goodobsidian-pen-colors {
   max-width: none;
 }

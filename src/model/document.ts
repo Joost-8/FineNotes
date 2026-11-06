@@ -318,6 +318,8 @@ export interface SyntheticBackdrop {
   frame?: PdfFrame;
   /** The paper drawn in the margin beside the frame; absent: plain. */
   marginPaper?: MarginPaper;
+  /** The margin paper's pitch, page px ({@link MarginSpacing}). */
+  marginSpacing?: number;
   /** Rule/grid pitch in page px. Ignored for "blank". Default per ruling. */
   spacing?: number;
   /** Rule colour, hex. Default per ruling. */
@@ -407,10 +409,21 @@ export interface PdfBackdrop {
   frame?: PdfFrame;
   /** The paper drawn in the margin beside the frame; absent: plain. */
   marginPaper?: MarginPaper;
+  /** The margin paper's pitch, page px ({@link MarginSpacing}). */
+  marginSpacing?: number;
 }
 
 /** A margin's paper (`model/page-margin.ts`); absent on a backdrop means plain. */
 export type MarginPaper = "lined" | "grid" | "dotted";
+
+/**
+ * `marginSpacing`: the pitch of a margin paper's lines, squares or dots,
+ * page px, set in the Margin popover; stored only with a `marginPaper`, and
+ * only where it differs from what absent draws. Absent: the page's own
+ * spacing on an evenly ruled paper page, so the margin's lines continue the
+ * page's (`canvas/margin-paper.ts`), else the margin paper's own default.
+ */
+export type MarginSpacing = number;
 
 /**
  * A rectangle of a page, page px: where a page's own paper or PDF lies on a

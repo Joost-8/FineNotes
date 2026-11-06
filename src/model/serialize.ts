@@ -889,9 +889,16 @@ function normalizeFrame(raw: unknown): { frame?: PdfFrame } {
 }
 
 /** A margin's paper, only a known one and only beside a frame. */
-function normalizeMarginPaper(raw: unknown, frame: unknown): { marginPaper?: MarginPaper } {
+function normalizeMarginPaper(
+  raw: unknown,
+  frame: unknown,
+  spacing?: unknown,
+): { marginPaper?: MarginPaper; marginSpacing?: number } {
   if (!normalizeFrame(frame).frame) return {};
-  return raw === "lined" || raw === "grid" || raw === "dotted" ? { marginPaper: raw } : {};
+  if (raw !== "lined" && raw !== "grid" && raw !== "dotted") return {};
+  // A pitch only with a paper to draw it on; a nonsense one is dropped, so the margin follows the page.
+  const pitch = typeof spacing === "number" && Number.isFinite(spacing) && spacing > 0;
+  return { marginPaper: raw, ...(pitch ? { marginSpacing: spacing } : {}) };
 }
 
 function normalizeBackdrop(raw: unknown): Backdrop {
@@ -907,7 +914,7 @@ function normalizeBackdrop(raw: unknown): Backdrop {
         ...(b.annotations === false ? { annotations: false as const } : {}),
         ...(b.template === true ? { template: true as const } : {}),
         ...normalizeFrame(b.frame),
-        ...normalizeMarginPaper(b.marginPaper, b.frame),
+        ...normalizeMarginPaper(b.marginPaper, b.frame, b.marginSpacing),
       };
     }
     return { kind: "blank" };
@@ -922,7 +929,7 @@ function normalizeBackdrop(raw: unknown): Backdrop {
       ...(printed.length > 0 ? { printed } : {}),
       ...readPaperExtras(b),
       ...normalizeFrame(b.frame),
-      ...normalizeMarginPaper(b.marginPaper, b.frame),
+      ...normalizeMarginPaper(b.marginPaper, b.frame, b.marginSpacing),
     };
   }
   // Unknown ruling from a newer build: keep the page, lose only the paper.

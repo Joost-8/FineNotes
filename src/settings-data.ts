@@ -217,6 +217,11 @@ export interface GoodObsidianSettings {
   tapeHeight?: number;
   /** How a new cover tape is laid, "straight" or "freehand". Absent: straight. */
   tapeMode?: string;
+  /**
+   * A cover tape dragged along a PDF's text covers its lines
+   * (`model/tape-text.ts`). Absent: off, a tape is laid where it is dragged.
+   */
+  tapeSnapText?: boolean;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
   /**

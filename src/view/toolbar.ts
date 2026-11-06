@@ -724,6 +724,8 @@ export interface ToolbarState {
   tapeHeight?: number;
   /** How a new cover tape is laid. `undefined` counts as straight. */
   tapeMode?: TapeMode;
+  /** Whether a cover tape dragged along a PDF's text covers its lines. `undefined` is off. */
+  tapeSnapText?: boolean;
 }
 
 export interface ToolbarCallbacks {
@@ -835,6 +837,8 @@ export interface ToolbarCallbacks {
   onShapeColorChange?: (color: string) => void;
   /** Cover tape's colour, height or mode changed. Hosts persist it. */
   onTapeChange?: (color: string, height: number, mode: TapeMode) => void;
+  /** Cover tape's Snap to PDF text was switched. Hosts persist it. */
+  onTapeSnapTextChange?: (on: boolean) => void;
   /**
    * Whether the cover tapes on the page in view are all shown through, or
    * `null` when it has none. Without it the tape's pill has no eye.
@@ -1191,6 +1195,8 @@ export class Toolbar {
   private readonly leavingPopovers = new Map<HTMLElement, number>();
   /** Redraws the open text popover's body in place after a change it made. */
   private popoverRender: (() => void) | null = null;
+  /** Places the open popover again after its rows changed on their own (`fitTextPopover`). */
+  private popoverRefit: (() => void) | null = null;
   /** The device's fonts for the font menu (`deviceFamilies`), once read. */
   private deviceFonts: string[] | null = null;
   /** The font search has the focus it took from the box being styled. */
@@ -2656,8 +2662,9 @@ export class Toolbar {
    * the one in hand marked. A tap picks one; a tap on the one in hand opens
    * its menu (as a tap on the colour in use opens its picker). Hold one and
    * drag it to put it elsewhere (`pen-type-drag.ts`); none can be added or
-   * taken away. Four show at a time (styles.css); the rest scroll, across the
-   * pill or, upright, down it.
+   * taken away. All show while the pill has the room (styles.css,
+   * FineNotes#164); on a narrow pane the rest scroll, across the pill or,
+   * upright, down it.
    */
   private buildPenRow(upright: boolean): void {
     const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-types" });
@@ -2704,14 +2711,13 @@ export class Toolbar {
    * view, and fade the ends that hide more, as the colour row does.
    */
   private fitPenRow(row: HTMLElement, upright: boolean): void {
-    const arrows = this.rowArrows(row, upright);
+    // No arrows here: the row keeps every pen in view (styles.css).
     const fade = (): void => {
       const ends = upright
         ? hiddenEnds(row.scrollTop, row.clientHeight, row.scrollHeight)
         : hiddenEnds(row.scrollLeft, row.clientWidth, row.scrollWidth);
       row.toggleClass("has-more-start", ends.start);
       row.toggleClass("has-more-end", ends.end);
-      arrows(ends);
     };
     const chosen = this.penTypeButtons.get(this.activePenType().id);
     if (upright) {
@@ -3228,10 +3234,25 @@ export class Toolbar {
       button.toggleClass("is-active", each === height);
       button.addEventListener("click", () => set(color, each));
     });
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    // Snap to PDF text: a magnet, as the ruler's angle snap, lit as a picked option while on (#164).
+    const snap = this.state.tapeSnapText === true;
+    const magnet = this.barButton(
+      this.optionsEl,
+      "magnet",
+      t("toolbar.highlighter.snapText"),
+      () => {
+        this.state.tapeSnapText = !snap;
+        this.callbacks.onTapeSnapTextChange?.(!snap);
+        this.buildOptions();
+      },
+    );
+    magnet.addClass("goodobsidian-tape-snap");
+    magnet.toggleClass("is-active", snap);
+    magnet.setAttribute("aria-pressed", String(snap));
     const shownOf = this.callbacks.tapesShown;
     const show = this.callbacks.onShowTapes;
     if (!shownOf || !show) return;
-    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const shown = shownOf();
     const eye = this.barButton(
       this.optionsEl,
@@ -4327,6 +4348,22 @@ export class Toolbar {
       render(body);
     };
     this.popoverRender();
+    this.popoverRefit = () => this.fitTextPopover(anchor);
+    this.popoverRefit();
+  }
+
+  /**
+   * Place a text popover and hold it to its room, from its height now. Run
+   * again whenever its rows change after it opened: the font menu fills in
+   * the device's fonts when they arrive, and a popover measured before that
+   * was left uncapped, so the long list ran past the view's bottom, which
+   * clips it, with nothing to scroll (FineNotes#165).
+   */
+  private fitTextPopover(anchor: HTMLElement): void {
+    const popover = this.popover;
+    if (!popover || !anchor.isConnected) return;
+    // A cap from an earlier, shorter fill would be read back as its height.
+    popover.setCssStyles({ maxHeight: "" });
     this.keepPopoverInside(anchor);
     this.keepPopoverAboveKeyboard(anchor);
   }
@@ -4487,7 +4524,9 @@ export class Toolbar {
     if (!this.deviceFonts) {
       void deviceFamilies().then((families) => {
         this.deviceFonts = families;
-        if (list.isConnected) fill();
+        if (!list.isConnected) return;
+        fill();
+        this.popoverRefit?.();
       });
     }
     const loupe = head.createEl("button", {
@@ -5729,6 +5768,7 @@ export class Toolbar {
     this.popover = null;
     this.popoverKind = null;
     this.popoverRender = null;
+    this.popoverRefit = null;
     this.sizeMarksRender = null;
     // The sticky colours closed with a note still waiting (Escape, another
     // tool, the button again): it waits no more.
