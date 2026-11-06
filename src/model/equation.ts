@@ -177,6 +177,34 @@ export class EditEquation implements Command {
   }
 }
 
+/** Give equations one colour (the lasso bar's colour circle); undo gives each its own back. */
+export class RecolorEquations implements Command {
+  readonly label = t("surface.command.changeColour");
+  private previous: Array<{ equation: EquationElement; color: string }> = [];
+
+  constructor(
+    readonly pageId: string,
+    private readonly equations: readonly EquationElement[],
+    private readonly color: string,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.previous = [];
+    const page = pageById(doc, this.pageId);
+    if (!page || !isHexColor(this.color)) return;
+    for (const equation of this.equations) {
+      if (!page.equations?.includes(equation)) continue;
+      this.previous.push({ equation, color: equation.color });
+      equation.color = this.color;
+    }
+  }
+
+  invert(): void {
+    for (const { equation, color } of this.previous) equation.color = color;
+    this.previous = [];
+  }
+}
+
 // --- Reading from disk ----------------------------------------------------------
 
 /**

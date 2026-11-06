@@ -423,7 +423,7 @@ import {
   tableScaleRange,
 } from "../model/table";
 import { EditGraph, graphBounds, nextGraphId } from "../model/graph-element";
-import { nextEquationId } from "../model/equation";
+import { RecolorEquations, nextEquationId } from "../model/equation";
 import type { EquationElement } from "../model/document";
 import {
   AddTable,
@@ -10153,7 +10153,9 @@ export class InkSurface {
     if (!onEquation || !page || this.practice || this.callbacks.isLocked?.()) return false;
     const hit = this.ownEquationAt(page, at);
     if (hit) {
-      onEquation(page.id, { x: hit.x, y: hit.y }, hit);
+      // Picked up, as a text box is by its first tap: it drags from there,
+      // and its bar has Edit and its colour. A tap on it then edits it.
+      this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [hit] });
       return true;
     }
     if (this.toolState.textEquation !== true) return false;
@@ -13091,10 +13093,12 @@ export class InkSurface {
         run: () => this.startCellEdit(sel.pageId, table, { row: 0, col: 0 }),
       });
     }
-    if (menu.colour && sel.strokes.length > 0) {
-      const first = sel.strokes[0].color;
+    const coloured = [...sel.strokes, ...(sel.equations ?? [])];
+    if (menu.colour && coloured.length > 0) {
+      const first = coloured[0].color;
       // First in the bar, a disc of its colour opening the colour panel
       // (Goodnotes' Change colour): the pens' picker, and a shape's fill below.
+      // A typed equation's colour too (discussion #166).
       actions.unshift({
         id: "colour",
         icon: "palette",
@@ -13107,7 +13111,7 @@ export class InkSurface {
           colors: this.palette,
           notebook: this.doc.palette?.colors ?? [],
           recent: this.toolState.recentColors ?? [],
-          current: sel.strokes.every((stroke) => stroke.color === first) ? first : null,
+          current: coloured.every((element) => element.color === first) ? first : null,
           pick: (color) => this.recolorSelection(color),
           shown: (color) => shownColor(color, this.paperTheme.night === true),
           custom: (color) => this.recolorCustom(color),
@@ -15262,11 +15266,20 @@ export class InkSurface {
   /** Give every selected stroke one colour, as one undo step. */
   private recolorSelection(color: string): void {
     const sel = this.liveSelection();
-    if (!sel || sel.strokes.length === 0 || this.callbacks.isLocked?.()) return;
-    if (sel.strokes.every((stroke) => stroke.color === color)) return;
-    this.history.push(this.doc, new RecolorStrokes(sel.pageId, sel.strokes, color));
+    const equations = sel?.equations ?? [];
+    if (!sel || (sel.strokes.length === 0 && equations.length === 0)) return;
+    if (this.callbacks.isLocked?.()) return;
+    const all = [...sel.strokes, ...equations];
+    if (all.every((element) => element.color === color)) return;
+    const parts: Command[] = [];
+    if (sel.strokes.length > 0) parts.push(new RecolorStrokes(sel.pageId, sel.strokes, color));
+    if (equations.length > 0) parts.push(new RecolorEquations(sel.pageId, equations, color));
+    this.history.push(
+      this.doc,
+      parts.length === 1 ? parts[0] : new CompositeCommand(parts[0].label, parts),
+    );
     const box = this.boxForPage(sel.pageId);
-    const bounds = selectionBounds(sel.strokes, [], []);
+    const bounds = selectionBounds(sel.strokes, [], equations.map(graphFrame));
     // A colour is not part of a stroke's cached outline: re-rasterise.
     if (box && bounds) this.renderer?.invalidateRegion(box.index, bounds);
     this.renderDry();
@@ -15940,6 +15953,15 @@ export class InkSurface {
         this.editShapeLabel(drag.own.pageId, shape);
         return;
       }
+      // A tap on an equation picked up on its own opens it in the equation window.
+      const equation =
+        commit && !drag.scale && !drag.turn && !drag.fingers ? this.loneEquation(drag.own) : null;
+      const onEquation = this.callbacks.onEquation;
+      if (equation && onEquation && !this.callbacks.isLocked?.()) {
+        this.clearSelection();
+        onEquation(drag.own.pageId, { x: equation.x, y: equation.y }, equation);
+        return;
+      }
       this.syncSelectionOverlay();
       return;
     }
@@ -16151,6 +16173,12 @@ export class InkSurface {
   private typeBar: SelectionActionBar | null = null;
   /** Where each connector was last drawn, so a move repaints both places. */
   private connectorShown: Map<string, { pageId: string; bounds: Bounds }> | null = null;
+
+  /** The one equation a selection holds on its own; null for anything else. */
+  private loneEquation(sel: GroupSelection): EquationElement | null {
+    const equations = sel.equations ?? [];
+    return equations.length === 1 && selectedCount(sel) === 1 ? equations[0] : null;
+  }
 
   /** The one closed shape a selection holds on its own; null for anything else. */
   private loneLinkShape(sel: GroupSelection | null): Stroke | null {
@@ -17541,9 +17569,15 @@ export class InkSurface {
    * Edit, as a tap on a picture does. The Pencil keeps writing over it.
    */
   private fingerPicksEquation(page: Page, p: Pt): boolean {
-    if (this.practice || this.toolState.tool === "text") return false;
+    if (this.practice) return false;
     const equation = this.ownEquationAt(page, p);
     if (!equation) return false;
+    // With the Text tool an equation is typed text: picked up where it is,
+    // the Text tool kept, so it drags from there and a second tap edits it.
+    if (this.toolState.tool === "text") {
+      this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [equation] });
+      return true;
+    }
     this.setTool("select");
     this.callbacks.onToolChange?.("select");
     this.select(page.id, { strokes: [], images: [], textBoxes: [], equations: [equation] });

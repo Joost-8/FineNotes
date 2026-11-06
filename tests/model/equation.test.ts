@@ -5,6 +5,7 @@ import {
   EQUATION_MAX_SIZE,
   EQUATION_MIN_SIZE,
   EditEquation,
+  RecolorEquations,
   equationBounds,
   equationContentKey,
   makeEquation,
@@ -148,6 +149,23 @@ describe("equation commands", () => {
     const stray = quadratic();
     new EditEquation("a", stray, { tex: "z" }).apply(d);
     expect(stray.tex).not.toBe("z");
+  });
+});
+
+describe("an equation's colour", () => {
+  it("is changed for the selected equations and undone to each one's own", () => {
+    const d = doc();
+    const e = d.pages[0].equations![0];
+    const before = JSON.stringify(d);
+    const recolor = new RecolorEquations("a", [e], "#ff0000");
+    recolor.apply(d);
+    expect(e.color).toBe("#ff0000");
+    recolor.invert();
+    expect(JSON.stringify(d)).toBe(before);
+    // Not a colour, or not on the page: nothing changes.
+    new RecolorEquations("a", [e], "red").apply(d);
+    new RecolorEquations("b", [e], "#00ff00").apply(d);
+    expect(JSON.stringify(d)).toBe(before);
   });
 });
 
