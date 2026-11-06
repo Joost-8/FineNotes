@@ -218,6 +218,8 @@ export const toolbar = {
   "toolbar.tape.narrow": "Narrow",
   "toolbar.tape.medium": "Medium",
   "toolbar.tape.wide": "Wide",
+  "toolbar.tape.straight": "Straight tape",
+  "toolbar.tape.freehand": "Freehand tape",
   "toolbar.hand.note": "Drag to move the page",
   "toolbar.fill.colourValue": "Fill colour {color}",
   "toolbar.fill.colour": "Fill colour",
