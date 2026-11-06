@@ -2171,7 +2171,6 @@
   "surface.selectionBar.shapeTitle": "រូបរាង",
   "surface.command.writeAnswer": "សរសេរចម្លើយ",
   "surface.textBox.page": "ប្រអប់អត្ថបទទំព័រ",
-  "surface.textBox.move": "ផ្លាស់ទីប្រអប់អត្ថបទ",
   "surface.textBox.resize": "ប្តូរទំហំប្រអប់អត្ថបទ",
   "surface.shapeType.rectangle": "ចតុកោណកែង",
   "surface.shapeType.circle": "រង្វង់",
@@ -2907,5 +2906,9 @@
   "view.morePanel.freePageEdges": "គែមទំព័រសេរី",
   "view.ocr.noPdfPages": "FineNotes៖ សៀវភៅកត់ត្រានេះគ្មានទំព័រ PDF ទេ។",
   "view.ocr.off": "FineNotes៖ ការអានទំព័រដែលបានស្កេនត្រូវបានបិទ។ បើក «ទំព័រដែលបានស្កេន» នៅក្នុងម៉ឺនុយ AI។",
-  "view.ocr.rereading": "FineNotes៖ កំពុងអានទំព័រដែលបានស្កេនរបស់ PDF នេះម្តងទៀត។"
+  "view.ocr.rereading": "FineNotes៖ កំពុងអានទំព័រដែលបានស្កេនរបស់ PDF នេះម្តងទៀត។",
+  "notebooks.home.files": "ឯកសារ",
+  "notebooks.home.itemCount.other": "{count} ធាតុ",
+  "notebooks.home.deleteItems.other": "លុប {count} ធាតុឬ?",
+  "notebooks.home.deleteListPlain": "{list} នឹងត្រូវបានលុប។"
 }

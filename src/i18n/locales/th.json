@@ -2171,7 +2171,6 @@
   "surface.selectionBar.shapeTitle": "รูปร่าง",
   "surface.command.writeAnswer": "เขียนคำตอบ",
   "surface.textBox.page": "กล่องข้อความของหน้า",
-  "surface.textBox.move": "ย้ายกล่องข้อความ",
   "surface.textBox.resize": "ปรับขนาดกล่องข้อความ",
   "surface.shapeType.rectangle": "สี่เหลี่ยมผืนผ้า",
   "surface.shapeType.circle": "วงกลม",
@@ -2907,5 +2906,9 @@
   "view.morePanel.freePageEdges": "ขอบหน้าอิสระ",
   "view.ocr.noPdfPages": "FineNotes: สมุดบันทึกนี้ไม่มีหน้า PDF",
   "view.ocr.off": "FineNotes: การอ่านหน้าที่สแกนปิดอยู่ เปิด “หน้าที่สแกน” ในเมนู AI",
-  "view.ocr.rereading": "FineNotes: กำลังอ่านหน้าที่สแกนของ PDF นี้อีกครั้ง"
+  "view.ocr.rereading": "FineNotes: กำลังอ่านหน้าที่สแกนของ PDF นี้อีกครั้ง",
+  "notebooks.home.files": "ไฟล์",
+  "notebooks.home.itemCount.other": "{count} รายการ",
+  "notebooks.home.deleteItems.other": "ลบ {count} รายการหรือไม่",
+  "notebooks.home.deleteListPlain": "{list} จะถูกลบ"
 }

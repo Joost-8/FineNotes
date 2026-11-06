@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Forma",
   "surface.command.writeAnswer": "Shkruaj përgjigjen",
   "surface.textBox.page": "Kuti teksti e faqes",
-  "surface.textBox.move": "Lëviz kutinë e tekstit",
   "surface.textBox.resize": "Ndrysho madhësinë e kutisë së tekstit",
   "surface.shapeType.rectangle": "Drejtkëndësh",
   "surface.shapeType.circle": "Rreth",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Skajet e lira të faqes",
   "view.ocr.noPdfPages": "FineNotes: kjo fletore nuk ka faqe PDF.",
   "view.ocr.off": "FineNotes: leximi i faqeve të skanuara është joaktiv. Aktivizo «Faqet e skanuara» te menuja e AI.",
-  "view.ocr.rereading": "FineNotes: po lexohen sërish faqet e skanuara të këtij PDF."
+  "view.ocr.rereading": "FineNotes: po lexohen sërish faqet e skanuara të këtij PDF.",
+  "notebooks.home.files": "Skedarët",
+  "notebooks.home.itemCount.one": "{count} element",
+  "notebooks.home.itemCount.other": "{count} elemente",
+  "notebooks.home.deleteItems.one": "Të fshihet {count} element?",
+  "notebooks.home.deleteItems.other": "Të fshihen {count} elemente?",
+  "notebooks.home.deleteListPlain": "Do të fshihet: {list}."
 }

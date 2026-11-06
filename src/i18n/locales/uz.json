@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Shakl",
   "surface.command.writeAnswer": "Javob yozish",
   "surface.textBox.page": "Sahifa matn qutisi",
-  "surface.textBox.move": "Matn qutisini koʻchirish",
   "surface.textBox.resize": "Matn qutisi oʻlchamini oʻzgartirish",
   "surface.shapeType.rectangle": "Toʻgʻri toʻrtburchak",
   "surface.shapeType.circle": "Doira",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Erkin sahifa chetlari",
   "view.ocr.noPdfPages": "FineNotes: bu daftarda PDF sahifalari yoʻq.",
   "view.ocr.off": "FineNotes: skanerlangan sahifalarni oʻqish oʻchirilgan. AI menyusida «Skanerlangan sahifalar»ni yoqing.",
-  "view.ocr.rereading": "FineNotes: bu PDF’ning skanerlangan sahifalari qayta oʻqilmoqda."
+  "view.ocr.rereading": "FineNotes: bu PDF’ning skanerlangan sahifalari qayta oʻqilmoqda.",
+  "notebooks.home.files": "Fayllar",
+  "notebooks.home.itemCount.one": "{count} ta element",
+  "notebooks.home.itemCount.other": "{count} ta element",
+  "notebooks.home.deleteItems.one": "{count} ta element oʻchirilsinmi?",
+  "notebooks.home.deleteItems.other": "{count} ta element oʻchirilsinmi?",
+  "notebooks.home.deleteListPlain": "Oʻchiriladi: {list}."
 }

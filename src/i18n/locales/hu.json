@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Alakzat",
   "surface.command.writeAnswer": "Válasz beírása",
   "surface.textBox.page": "Oldal szövegdoboza",
-  "surface.textBox.move": "Szövegdoboz mozgatása",
   "surface.textBox.resize": "Szövegdoboz átméretezése",
   "surface.shapeType.rectangle": "Téglalap",
   "surface.shapeType.circle": "Kör",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Szabad oldalszélek",
   "view.ocr.noPdfPages": "FineNotes: ebben a jegyzetfüzetben nincsenek PDF-oldalak.",
   "view.ocr.off": "FineNotes: a beolvasott oldalak olvasása ki van kapcsolva. Kapcsold be a „Beolvasott oldalak” lehetőséget az MI-menüben.",
-  "view.ocr.rereading": "FineNotes: a PDF beolvasott oldalainak újraolvasása."
+  "view.ocr.rereading": "FineNotes: a PDF beolvasott oldalainak újraolvasása.",
+  "notebooks.home.files": "Fájlok",
+  "notebooks.home.itemCount.one": "{count} elem",
+  "notebooks.home.itemCount.other": "{count} elem",
+  "notebooks.home.deleteItems.one": "Törölsz {count} elemet?",
+  "notebooks.home.deleteItems.other": "Törölsz {count} elemet?",
+  "notebooks.home.deleteListPlain": "{list} törlődik."
 }

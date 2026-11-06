@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Forma",
   "surface.command.writeAnswer": "Escrever resposta",
   "surface.textBox.page": "Caixa de texto da página",
-  "surface.textBox.move": "Mover caixa de texto",
   "surface.textBox.resize": "Redimensionar caixa de texto",
   "surface.shapeType.rectangle": "Retângulo",
   "surface.shapeType.circle": "Círculo",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Bordas de página livres",
   "view.ocr.noPdfPages": "FineNotes: este caderno não tem páginas de PDF.",
   "view.ocr.off": "FineNotes: a leitura de páginas digitalizadas está desativada. Ative “Páginas digitalizadas” no menu de IA.",
-  "view.ocr.rereading": "FineNotes: lendo de novo as páginas digitalizadas deste PDF."
+  "view.ocr.rereading": "FineNotes: lendo de novo as páginas digitalizadas deste PDF.",
+  "notebooks.home.files": "Arquivos",
+  "notebooks.home.itemCount.one": "{count} item",
+  "notebooks.home.itemCount.other": "{count} itens",
+  "notebooks.home.deleteItems.one": "Excluir {count} item?",
+  "notebooks.home.deleteItems.other": "Excluir {count} itens?",
+  "notebooks.home.deleteListPlain": "Para excluir: {list}."
 }

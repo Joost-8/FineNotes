@@ -10,6 +10,7 @@ import {
   marginFloor,
   marginFor,
   marginBackdrop,
+  marginSpacingOf,
   marginOf,
   marginPaperOf,
   marginStrips,
@@ -261,6 +262,57 @@ describe("margin paper", () => {
     expect(decodeDocument(encodeDocument(doc)).pages[0].backdrop.marginPaper).toBeUndefined();
     page.backdrop = { kind: "pdf", path: "Slides.pdf", page: 0, marginPaper: "grid" };
     expect(decodeDocument(encodeDocument(doc)).pages[0].backdrop.marginPaper).toBeUndefined();
+  });
+
+  it("keeps a margin pitch exactly, only with a margin paper, and lets null follow again", () => {
+    const { doc, page } = pdfDoc();
+    const set = new SetPageMargin([
+      { page, margin: { left: 0, right: 300 }, paper: "lined", spacing: 34.1333 },
+    ]);
+    set.apply(doc);
+    expect(page.backdrop.marginSpacing).toBe(34.13);
+    expect(marginSpacingOf(page)).toBe(34.13);
+    expect(marginBackdrop(page)).toEqual({ kind: "ruled-wide", spacing: 34.13 });
+    // Saved and read back to the hundredth: the field reopens on what was typed.
+    expect(decodeDocument(encodeDocument(doc)).pages[0].backdrop.marginSpacing).toBe(34.13);
+    // Absent keeps it; a new width or paper does too.
+    new SetPageMargin([{ page, margin: { left: 0, right: 400 }, paper: "grid" }]).apply(doc);
+    expect(page.backdrop.marginSpacing).toBe(34.13);
+    // Plain paper and no margin keep no pitch.
+    new SetPageMargin([{ page, margin: { left: 0, right: 400 }, paper: "plain" }]).apply(doc);
+    expect(page.backdrop.marginSpacing).toBeUndefined();
+    new SetPageMargin([
+      { page, margin: { left: 0, right: 400 }, paper: "dotted", spacing: 30 },
+    ]).apply(doc);
+    const follow = new SetPageMargin([{ page, margin: { left: 0, right: 400 }, spacing: null }]);
+    follow.apply(doc);
+    expect(follow.changedAny).toBe(true);
+    expect(page.backdrop.marginSpacing).toBeUndefined();
+    follow.invert(doc);
+    expect(page.backdrop.marginSpacing).toBe(30);
+    new SetPageMargin([{ page, margin: { left: 0, right: 0 } }]).apply(doc);
+    expect(page.backdrop.marginSpacing).toBeUndefined();
+  });
+
+  it("drops a nonsense or orphaned pitch on load", () => {
+    const { doc, page } = pdfDoc();
+    const frame = { x: 0, y: 0, width: 1000, height: 1400 };
+    for (const bad of [-4, 0, "40", Number.NaN]) {
+      page.backdrop = {
+        kind: "pdf",
+        path: "Slides.pdf",
+        page: 0,
+        frame,
+        marginPaper: "lined",
+        marginSpacing: bad as never,
+      };
+      const back = decodeDocument(encodeDocument(doc)).pages[0].backdrop;
+      expect(back.marginPaper).toBe("lined");
+      expect(back.marginSpacing).toBeUndefined();
+    }
+    page.backdrop = { kind: "pdf", path: "Slides.pdf", page: 0, frame, marginSpacing: 30 };
+    expect(decodeDocument(encodeDocument(doc)).pages[0].backdrop.marginSpacing).toBeUndefined();
+    expect(withoutFrame({ kind: "ruled-wide", marginSpacing: 30 })).toEqual({ kind: "ruled-wide" });
   });
 
   it("is not carried to a new page", () => {

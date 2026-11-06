@@ -2349,7 +2349,6 @@
   "surface.selectionBar.shapeTitle": "צורה",
   "surface.command.writeAnswer": "כתיבת התשובה",
   "surface.textBox.page": "תיבת טקסט של העמוד",
-  "surface.textBox.move": "הזזת תיבת טקסט",
   "surface.textBox.resize": "שינוי גודל תיבת טקסט",
   "surface.shapeType.rectangle": "מלבן",
   "surface.shapeType.circle": "עיגול",
@@ -3121,5 +3120,13 @@
   "view.morePanel.freePageEdges": "קצוות עמוד חופשיים",
   "view.ocr.noPdfPages": "FineNotes: במחברת הזו אין עמודי PDF.",
   "view.ocr.off": "FineNotes: קריאת עמודים סרוקים כבויה. הפעילו את “עמודים סרוקים” בתפריט AI.",
-  "view.ocr.rereading": "FineNotes: קוראים שוב את העמודים הסרוקים של ה-PDF הזה."
+  "view.ocr.rereading": "FineNotes: קוראים שוב את העמודים הסרוקים של ה-PDF הזה.",
+  "notebooks.home.files": "קבצים",
+  "notebooks.home.itemCount.one": "פריט אחד",
+  "notebooks.home.itemCount.two": "שני פריטים",
+  "notebooks.home.itemCount.other": "{count} פריטים",
+  "notebooks.home.deleteItems.one": "למחוק פריט אחד?",
+  "notebooks.home.deleteItems.two": "למחוק שני פריטים?",
+  "notebooks.home.deleteItems.other": "למחוק {count} פריטים?",
+  "notebooks.home.deleteListPlain": "יימחקו: {list}."
 }

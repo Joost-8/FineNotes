@@ -2171,7 +2171,6 @@
   "surface.selectionBar.shapeTitle": "形狀",
   "surface.command.writeAnswer": "寫下答案",
   "surface.textBox.page": "頁面文字方塊",
-  "surface.textBox.move": "移動文字方塊",
   "surface.textBox.resize": "調整文字方塊大小",
   "surface.shapeType.rectangle": "矩形",
   "surface.shapeType.circle": "圓形",
@@ -2907,5 +2906,9 @@
   "view.morePanel.freePageEdges": "自由頁面邊緣",
   "view.ocr.noPdfPages": "FineNotes：此筆記本沒有 PDF 頁面。",
   "view.ocr.off": "FineNotes：讀取掃描頁面已關閉。請在 AI 選單中開啟「掃描頁面」。",
-  "view.ocr.rereading": "FineNotes：正在重新讀取此 PDF 的掃描頁面。"
+  "view.ocr.rereading": "FineNotes：正在重新讀取此 PDF 的掃描頁面。",
+  "notebooks.home.files": "檔案",
+  "notebooks.home.itemCount.other": "{count} 項",
+  "notebooks.home.deleteItems.other": "要刪除 {count} 項嗎？",
+  "notebooks.home.deleteListPlain": "{list}將被刪除。"
 }

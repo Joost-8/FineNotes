@@ -2300,7 +2300,6 @@
   "surface.selectionBar.shapeTitle": "Фігура",
   "surface.command.writeAnswer": "Записати відповідь",
   "surface.textBox.page": "Текстове поле сторінки",
-  "surface.textBox.move": "Перемістити текстове поле",
   "surface.textBox.resize": "Змінити розмір текстового поля",
   "surface.shapeType.rectangle": "Прямокутник",
   "surface.shapeType.circle": "Коло",
@@ -3090,5 +3089,15 @@
   "view.morePanel.freePageEdges": "Вільні краї сторінки",
   "view.ocr.noPdfPages": "FineNotes: у цьому блокноті немає сторінок PDF.",
   "view.ocr.off": "FineNotes: читання відсканованих сторінок вимкнено. Увімкніть «Відскановані сторінки» в меню ШІ.",
-  "view.ocr.rereading": "FineNotes: відскановані сторінки цього PDF читаються знову."
+  "view.ocr.rereading": "FineNotes: відскановані сторінки цього PDF читаються знову.",
+  "notebooks.home.files": "Файли",
+  "notebooks.home.itemCount.one": "{count} елемент",
+  "notebooks.home.itemCount.few": "{count} елементи",
+  "notebooks.home.itemCount.many": "{count} елементів",
+  "notebooks.home.itemCount.other": "{count} елемента",
+  "notebooks.home.deleteItems.one": "Видалити {count} елемент?",
+  "notebooks.home.deleteItems.few": "Видалити {count} елементи?",
+  "notebooks.home.deleteItems.many": "Видалити {count} елементів?",
+  "notebooks.home.deleteItems.other": "Видалити {count} елемента?",
+  "notebooks.home.deleteListPlain": "Буде видалено: {list}."
 }

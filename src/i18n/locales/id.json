@@ -2171,7 +2171,6 @@
   "surface.selectionBar.shapeTitle": "Bentuk",
   "surface.command.writeAnswer": "Tulis jawaban",
   "surface.textBox.page": "Kotak teks halaman",
-  "surface.textBox.move": "Pindahkan kotak teks",
   "surface.textBox.resize": "Ubah ukuran kotak teks",
   "surface.shapeType.rectangle": "Persegi panjang",
   "surface.shapeType.circle": "Lingkaran",
@@ -2907,5 +2906,9 @@
   "view.morePanel.freePageEdges": "Tepi halaman bebas",
   "view.ocr.noPdfPages": "FineNotes: buku catatan ini tidak punya halaman PDF.",
   "view.ocr.off": "FineNotes: pembacaan halaman pindaian mati. Nyalakan “Halaman pindaian” di menu AI.",
-  "view.ocr.rereading": "FineNotes: membaca ulang halaman pindaian PDF ini."
+  "view.ocr.rereading": "FineNotes: membaca ulang halaman pindaian PDF ini.",
+  "notebooks.home.files": "Berkas",
+  "notebooks.home.itemCount.other": "{count} item",
+  "notebooks.home.deleteItems.other": "Hapus {count} item?",
+  "notebooks.home.deleteListPlain": "{list} akan dihapus."
 }

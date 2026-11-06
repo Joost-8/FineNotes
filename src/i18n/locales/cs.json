@@ -2438,7 +2438,6 @@
   "surface.selectionBar.shapeTitle": "Tvar",
   "surface.command.writeAnswer": "Napsat odpověď",
   "surface.textBox.page": "Textové pole stránky",
-  "surface.textBox.move": "Přesunout textové pole",
   "surface.textBox.resize": "Změnit velikost textového pole",
   "surface.shapeType.rectangle": "Obdélník",
   "surface.shapeType.circle": "Kruh",
@@ -3228,5 +3227,15 @@
   "view.morePanel.freePageEdges": "Volné okraje stránky",
   "view.ocr.noPdfPages": "FineNotes: tento sešit nemá žádné stránky PDF.",
   "view.ocr.off": "FineNotes: čtení naskenovaných stránek je vypnuté. Zapněte „Naskenované stránky“ v nabídce AI.",
-  "view.ocr.rereading": "FineNotes: naskenované stránky tohoto PDF se čtou znovu."
+  "view.ocr.rereading": "FineNotes: naskenované stránky tohoto PDF se čtou znovu.",
+  "notebooks.home.files": "Soubory",
+  "notebooks.home.itemCount.one": "{count} položka",
+  "notebooks.home.itemCount.few": "{count} položky",
+  "notebooks.home.itemCount.many": "{count} položky",
+  "notebooks.home.itemCount.other": "{count} položek",
+  "notebooks.home.deleteItems.one": "Smazat {count} položku?",
+  "notebooks.home.deleteItems.few": "Smazat {count} položky?",
+  "notebooks.home.deleteItems.many": "Smazat {count} položky?",
+  "notebooks.home.deleteItems.other": "Smazat {count} položek?",
+  "notebooks.home.deleteListPlain": "Bude smazáno: {list}."
 }

@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Vorm",
   "surface.command.writeAnswer": "Antwoord schrijven",
   "surface.textBox.page": "Tekstvak van de pagina",
-  "surface.textBox.move": "Tekstvak verplaatsen",
   "surface.textBox.resize": "Tekstvak vergroten of verkleinen",
   "surface.shapeType.rectangle": "Rechthoek",
   "surface.shapeType.circle": "Cirkel",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Vrije paginaranden",
   "view.ocr.noPdfPages": "FineNotes: dit notitieboek heeft geen PDF-pagina's.",
   "view.ocr.off": "FineNotes: het lezen van gescande pagina's staat uit. Zet „Gescande pagina's” aan in het AI-menu.",
-  "view.ocr.rereading": "FineNotes: de gescande pagina's van deze PDF worden opnieuw gelezen."
+  "view.ocr.rereading": "FineNotes: de gescande pagina's van deze PDF worden opnieuw gelezen.",
+  "notebooks.home.files": "Bestanden",
+  "notebooks.home.itemCount.one": "{count} item",
+  "notebooks.home.itemCount.other": "{count} items",
+  "notebooks.home.deleteItems.one": "{count} item verwijderen?",
+  "notebooks.home.deleteItems.other": "{count} items verwijderen?",
+  "notebooks.home.deleteListPlain": "Dit wordt verwijderd: {list}"
 }

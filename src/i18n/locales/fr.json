@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Forme",
   "surface.command.writeAnswer": "Écrire la réponse",
   "surface.textBox.page": "Zone de texte de la page",
-  "surface.textBox.move": "Déplacer la zone de texte",
   "surface.textBox.resize": "Redimensionner la zone de texte",
   "surface.shapeType.rectangle": "Rectangle",
   "surface.shapeType.circle": "Cercle",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Bords de page libres",
   "view.ocr.noPdfPages": "FineNotes : ce carnet n'a aucune page PDF.",
   "view.ocr.off": "FineNotes : la lecture des pages numérisées est désactivée. Activez « Pages numérisées » dans le menu IA.",
-  "view.ocr.rereading": "FineNotes : nouvelle lecture des pages numérisées de ce PDF."
+  "view.ocr.rereading": "FineNotes : nouvelle lecture des pages numérisées de ce PDF.",
+  "notebooks.home.files": "Fichiers",
+  "notebooks.home.itemCount.one": "{count} élément",
+  "notebooks.home.itemCount.other": "{count} éléments",
+  "notebooks.home.deleteItems.one": "Supprimer {count} élément ?",
+  "notebooks.home.deleteItems.other": "Supprimer {count} éléments ?",
+  "notebooks.home.deleteListPlain": "À supprimer : {list}."
 }

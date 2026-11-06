@@ -108,6 +108,11 @@ export interface TextBoxFrame {
   w: number;
   h?: number;
   fit?: true;
+  /**
+   * The box's turn (`TextBoxElement.rotation`); 0 makes it upright. Absent
+   * leaves the turn as it is, so a move or a resize never straightens a box.
+   */
+  rotation?: number;
 }
 
 /** Move and/or resize one text box on one page. */
@@ -160,6 +165,7 @@ function frameOf(box: TextBoxElement): TextBoxFrame {
     w: box.w,
     ...(box.h !== undefined ? { h: box.h } : {}),
     ...(box.fit ? { fit: true as const } : {}),
+    rotation: box.rotation ?? 0,
   };
 }
 
@@ -184,6 +190,9 @@ function setFrame(box: TextBoxElement, frame: TextBoxFrame): void {
   else box.h = frame.h;
   if (frame.fit) box.fit = true;
   else delete box.fit;
+  if (frame.rotation === undefined) return;
+  if (frame.rotation !== 0 && Number.isFinite(frame.rotation)) box.rotation = frame.rotation;
+  else delete box.rotation;
 }
 
 /** Remove strokes by id from one page, restoring their positions on undo. */
@@ -385,6 +394,7 @@ export function duplicatePageAfter(
   let imageSeq = maxNumericId(doc, (page) => page.images, "i");
   let tableSeq = maxNumericId(doc, (page) => page.tables ?? [], "g");
   let graphSeq = maxNumericId(doc, (page) => page.graphs ?? [], "f");
+  let equationSeq = maxNumericId(doc, (page) => page.equations ?? [], "q");
   const copy = structuredClone(source);
   copy.id = nextPageId(doc);
   // A bookmark marks that page, not its content: the copy starts without one.
@@ -420,6 +430,7 @@ export function duplicatePageAfter(
   relinkNoteInk(copy.textBoxes, imageIds);
   for (const table of copy.tables ?? []) table.id = `g${++tableSeq}`;
   for (const graph of copy.graphs ?? []) graph.id = `f${++graphSeq}`;
+  for (const equation of copy.equations ?? []) equation.id = `q${++equationSeq}`;
   return { index: index + 1, page: copy };
 }
 

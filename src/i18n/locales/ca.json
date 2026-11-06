@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Forma",
   "surface.command.writeAnswer": "Escriu la resposta",
   "surface.textBox.page": "Quadre de text de la pàgina",
-  "surface.textBox.move": "Mou el quadre de text",
   "surface.textBox.resize": "Canvia la mida del quadre de text",
   "surface.shapeType.rectangle": "Rectangle",
   "surface.shapeType.circle": "Cercle",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Vores de pàgina lliures",
   "view.ocr.noPdfPages": "FineNotes: aquest quadern no té pàgines PDF.",
   "view.ocr.off": "FineNotes: la lectura de pàgines escanejades està desactivada. Activa «Pàgines escanejades» al menú d'IA.",
-  "view.ocr.rereading": "FineNotes: s'estan tornant a llegir les pàgines escanejades d'aquest PDF."
+  "view.ocr.rereading": "FineNotes: s'estan tornant a llegir les pàgines escanejades d'aquest PDF.",
+  "notebooks.home.files": "Fitxers",
+  "notebooks.home.itemCount.one": "{count} element",
+  "notebooks.home.itemCount.other": "{count} elements",
+  "notebooks.home.deleteItems.one": "Vols suprimir {count} element?",
+  "notebooks.home.deleteItems.other": "Vols suprimir {count} elements?",
+  "notebooks.home.deleteListPlain": "Per suprimir: {list}."
 }

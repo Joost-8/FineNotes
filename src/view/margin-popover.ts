@@ -7,6 +7,7 @@
  *   │ [⊘] [▌▭] [▭▐] [▌▭▐]           │
  *   │ ───────●─────────────   33 %  │
  *   │ [ ] [≡] [#] [:]               │  paper: plain, lined, grid, dotted
+ *   │ [−  8.2 mm  +]                │  its pitch; only on a ruled paper
  *   │ This page · PDF pages · All   │
  *   └───────────────────────────────┘
  *
@@ -28,6 +29,9 @@ import {
   type MarginScope,
   type MarginSide,
 } from "../model/page-margin";
+import { DESIGN_RANGES, clampDesignValue } from "../model/paper-design";
+import { DialogKeyboard } from "./dialog-keyboard";
+import { type MmStepper, mmStepper } from "./mm-stepper";
 import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import { installPopoverDismiss, placePopover } from "./template-picker";
@@ -39,6 +43,11 @@ export interface MarginChoice {
   percent: number;
   /** The paper the margin is drawn on. */
   paper: MarginPaperChoice;
+  /**
+   * The pitch of its lines, squares or dots, mm, once one was set here;
+   * absent: each page keeps its own (by default the page's spacing).
+   */
+  spacingMm?: number;
   /** Which pages get it. */
   scope: MarginScope;
   /** No margin even where there is ink in it: what lies wholly in it is deleted. */
@@ -63,6 +72,8 @@ export interface MarginPopoverOptions {
    * how many pages.
    */
   cut?: (scope: MarginScope) => { items: number; pages: number };
+  /** The pitch, mm, a margin of `paper` has on this page while none was set here. */
+  spacingMm?: (paper: MarginPaperChoice) => number | null;
   /** Draw a swatch of `paper` into `canvas`, {@link MARGIN_SWATCH_CSS_WIDTH} CSS px wide. */
   paintPaper?: (canvas: HTMLCanvasElement, paper: MarginPaperChoice) => void;
   onChange: (choice: MarginChoice) => void;
@@ -142,6 +153,8 @@ export class MarginPopover {
   private readout!: HTMLElement;
   private confirm!: HTMLElement;
   private confirmText!: HTMLElement;
+  private spacing: MmStepper | null = null;
+  private keyboard: DialogKeyboard | null = null;
   private choice: MarginChoice;
   private closed = false;
 
@@ -174,6 +187,7 @@ export class MarginPopover {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.keyboard?.end();
     for (const d of this.dispose) d();
     this.el.remove();
     this.options.onClose?.();
@@ -239,6 +253,25 @@ export class MarginPopover {
         this.change({ paper });
       });
       this.papers.set(paper, button);
+    }
+
+    // The ruled paper's pitch: the page's own until one is set here. Shown only on a ruled margin.
+    if (this.options.spacingMm) {
+      this.keyboard = new DialogKeyboard(this.el);
+      const row = this.el.createDiv({ cls: "goodobsidian-margin-spacing" });
+      this.spacing = mmStepper(row, {
+        label: t("notebooks.designer.spacing"),
+        step: DESIGN_RANGES.spacing.step,
+        get: () => this.shownSpacing() ?? 0,
+        format: (mm) => mm.toFixed(1),
+        put: (mm) => {
+          const clamped = clampDesignValue("spacing", mm);
+          if (clamped === null) this.spacing?.sync();
+          else this.change({ spacingMm: Math.round(clamped * 10) / 10 });
+        },
+        keyboard: this.keyboard,
+        row,
+      });
     }
 
     if (this.options.scopes.length > 1) {
@@ -323,6 +356,17 @@ export class MarginPopover {
     this.readout.toggleClass("is-faint", side === "none");
     for (const [option, button] of this.papers) mark(button, option === paper);
     for (const [option, button] of this.scopes) mark(button, option === scope);
+    if (this.spacing) {
+      const shown = this.shownSpacing();
+      this.spacing.el.parentElement?.toggleClass("is-hidden", shown === null || side === "none");
+      this.spacing.sync();
+    }
+  }
+
+  /** The pitch the field shows, mm: the one set here, else the page's own; null on plain paper. */
+  private shownSpacing(): number | null {
+    if (this.choice.paper === "plain") return null;
+    return this.choice.spacingMm ?? this.options.spacingMm?.(this.choice.paper) ?? null;
   }
 }
 

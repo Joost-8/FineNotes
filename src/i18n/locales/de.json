@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Form",
   "surface.command.writeAnswer": "Antwort schreiben",
   "surface.textBox.page": "Seiten-Textfeld",
-  "surface.textBox.move": "Textfeld verschieben",
   "surface.textBox.resize": "Textfeldgröße ändern",
   "surface.shapeType.rectangle": "Rechteck",
   "surface.shapeType.circle": "Kreis",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Freie Seitenkanten",
   "view.ocr.noPdfPages": "FineNotes: Dieses Notizbuch hat keine PDF-Seiten.",
   "view.ocr.off": "FineNotes: Das Lesen gescannter Seiten ist aus. Schalte im KI-Menü „Gescannte Seiten“ ein.",
-  "view.ocr.rereading": "FineNotes: Die gescannten Seiten dieses PDFs werden erneut gelesen."
+  "view.ocr.rereading": "FineNotes: Die gescannten Seiten dieses PDFs werden erneut gelesen.",
+  "notebooks.home.files": "Dateien",
+  "notebooks.home.itemCount.one": "{count} Element",
+  "notebooks.home.itemCount.other": "{count} Elemente",
+  "notebooks.home.deleteItems.one": "{count} Element löschen?",
+  "notebooks.home.deleteItems.other": "{count} Elemente löschen?",
+  "notebooks.home.deleteListPlain": "Gelöscht wird: {list}"
 }

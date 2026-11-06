@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "شکل",
   "surface.command.writeAnswer": "نوشتن پاسخ",
   "surface.textBox.page": "کادر متن صفحه",
-  "surface.textBox.move": "جابه‌جا کردن کادر متن",
   "surface.textBox.resize": "تغییر اندازهٔ کادر متن",
   "surface.shapeType.rectangle": "مستطیل",
   "surface.shapeType.circle": "دایره",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "لبه‌های آزاد صفحه",
   "view.ocr.noPdfPages": "FineNotes: این دفترچه صفحهٔ PDF ندارد.",
   "view.ocr.off": "FineNotes: خواندن صفحه‌های اسکن‌شده خاموش است. «صفحه‌های اسکن‌شده» را در منوی هوش مصنوعی روشن کنید.",
-  "view.ocr.rereading": "FineNotes: صفحه‌های اسکن‌شدهٔ این PDF دوباره خوانده می‌شوند."
+  "view.ocr.rereading": "FineNotes: صفحه‌های اسکن‌شدهٔ این PDF دوباره خوانده می‌شوند.",
+  "notebooks.home.files": "فایل‌ها",
+  "notebooks.home.itemCount.one": "{count} مورد",
+  "notebooks.home.itemCount.other": "{count} مورد",
+  "notebooks.home.deleteItems.one": "{count} مورد حذف شود؟",
+  "notebooks.home.deleteItems.other": "{count} مورد حذف شود؟",
+  "notebooks.home.deleteListPlain": "{list} حذف می‌شود."
 }

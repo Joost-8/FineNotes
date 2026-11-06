@@ -2438,7 +2438,6 @@
   "surface.selectionBar.shapeTitle": "Tvar",
   "surface.command.writeAnswer": "Napísať odpoveď",
   "surface.textBox.page": "Textové pole strany",
-  "surface.textBox.move": "Presunúť textové pole",
   "surface.textBox.resize": "Zmeniť veľkosť textového poľa",
   "surface.shapeType.rectangle": "Obdĺžnik",
   "surface.shapeType.circle": "Kruh",
@@ -3228,5 +3227,15 @@
   "view.morePanel.freePageEdges": "Voľné okraje strany",
   "view.ocr.noPdfPages": "FineNotes: tento zošit nemá žiadne strany PDF.",
   "view.ocr.off": "FineNotes: čítanie naskenovaných strán je vypnuté. Zapnite „Naskenované strany“ v ponuke AI.",
-  "view.ocr.rereading": "FineNotes: naskenované strany tohto PDF sa čítajú znova."
+  "view.ocr.rereading": "FineNotes: naskenované strany tohto PDF sa čítajú znova.",
+  "notebooks.home.files": "Súbory",
+  "notebooks.home.itemCount.one": "{count} položka",
+  "notebooks.home.itemCount.few": "{count} položky",
+  "notebooks.home.itemCount.many": "{count} položky",
+  "notebooks.home.itemCount.other": "{count} položiek",
+  "notebooks.home.deleteItems.one": "Odstrániť {count} položku?",
+  "notebooks.home.deleteItems.few": "Odstrániť {count} položky?",
+  "notebooks.home.deleteItems.many": "Odstrániť {count} položky?",
+  "notebooks.home.deleteItems.other": "Odstrániť {count} položiek?",
+  "notebooks.home.deleteListPlain": "Bude odstránené: {list}."
 }

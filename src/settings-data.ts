@@ -215,6 +215,13 @@ export interface GoodObsidianSettings {
   tapeColor?: string;
   /** Cover tape's height, page px. Absent: the medium height. */
   tapeHeight?: number;
+  /** How a new cover tape is laid, "straight" or "freehand". Absent: straight. */
+  tapeMode?: string;
+  /**
+   * A cover tape dragged along a PDF's text covers its lines
+   * (`model/tape-text.ts`). Absent: off, a tape is laid where it is dragged.
+   */
+  tapeSnapText?: boolean;
   /** Vault folder of the user's sticker collections: one subfolder per collection. */
   stickerFolder: string;
   /**
@@ -401,6 +408,12 @@ export interface GoodObsidianSettings {
    */
   straightHighlighter: boolean;
   /**
+   * The highlighter landing on a PDF page's text marks that text a line at a
+   * time (`model/text-highlight.ts`). Off, it always draws freehand, which
+   * marks equations and figures better (FineNotes#159).
+   */
+  highlighterSnapText: boolean;
+  /**
    * The highlighter's tip: round, or a flat chisel that draws a level
    * highlight as a band with square ends (`ink/chisel.ts`). Each stroke
    * keeps the tip it was written with (`Stroke.tip`). Absent: round.
@@ -557,6 +570,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   stylusButtonClick: "pen-menu",
   penCursor: "ink",
   straightHighlighter: true,
+  highlighterSnapText: true,
   onlyStylusMode: false,
   tuckPenOptionsOnWrite: "off",
   zoomBoxLineStep: 0,
@@ -679,6 +693,8 @@ export interface PenPreferences {
   highlighterAlpha: number;
   /** {@link GoodObsidianSettings.straightHighlighter}. */
   straightHighlighter: boolean;
+  /** {@link GoodObsidianSettings.highlighterSnapText}. */
+  highlighterSnapText: boolean;
 }
 
 /**
@@ -787,6 +803,7 @@ export function penPreferencesOf(
     | "highlighterTip"
     | "highlighterAlpha"
     | "straightHighlighter"
+    | "highlighterSnapText"
   >,
 ): PenPreferences {
   return {
@@ -797,6 +814,7 @@ export function penPreferencesOf(
     returnToPen: returnToPenOf(settings),
     highlighterAlpha: highlighterAlphaOf(settings.highlighterAlpha),
     straightHighlighter: settings.straightHighlighter !== false,
+    highlighterSnapText: settings.highlighterSnapText !== false,
   };
 }
 
@@ -817,6 +835,9 @@ export function storePenPreferences(
   }
   if ("straightHighlighter" in patch) {
     settings.straightHighlighter = patch.straightHighlighter !== false;
+  }
+  if ("highlighterSnapText" in patch) {
+    settings.highlighterSnapText = patch.highlighterSnapText !== false;
   }
 }
 

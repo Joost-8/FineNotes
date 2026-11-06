@@ -2616,7 +2616,6 @@
   "surface.selectionBar.shapeTitle": "الشكل",
   "surface.command.writeAnswer": "كتابة الإجابة",
   "surface.textBox.page": "مربع نص الصفحة",
-  "surface.textBox.move": "نقل مربع النص",
   "surface.textBox.resize": "تغيير حجم مربع النص",
   "surface.shapeType.rectangle": "مستطيل",
   "surface.shapeType.circle": "دائرة",
@@ -3442,5 +3441,19 @@
   "view.morePanel.freePageEdges": "حواف الصفحة الحرة",
   "view.ocr.noPdfPages": "FineNotes: لا صفحات PDF في هذا الدفتر.",
   "view.ocr.off": "FineNotes: قراءة الصفحات الممسوحة ضوئيًا متوقفة. فعّل «الصفحات الممسوحة ضوئيًا» في قائمة الذكاء الاصطناعي.",
-  "view.ocr.rereading": "FineNotes: جارٍ قراءة الصفحات الممسوحة ضوئيًا في ملف PDF هذا مرة أخرى."
+  "view.ocr.rereading": "FineNotes: جارٍ قراءة الصفحات الممسوحة ضوئيًا في ملف PDF هذا مرة أخرى.",
+  "notebooks.home.files": "الملفات",
+  "notebooks.home.itemCount.one": "عنصر واحد",
+  "notebooks.home.itemCount.zero": "{count} عنصر",
+  "notebooks.home.itemCount.two": "عنصران",
+  "notebooks.home.itemCount.few": "{count} عناصر",
+  "notebooks.home.itemCount.many": "{count} عنصرًا",
+  "notebooks.home.itemCount.other": "{count} عنصر",
+  "notebooks.home.deleteItems.one": "حذف عنصر واحد؟",
+  "notebooks.home.deleteItems.zero": "حذف {count} عنصر؟",
+  "notebooks.home.deleteItems.two": "حذف عنصرين؟",
+  "notebooks.home.deleteItems.few": "حذف {count} عناصر؟",
+  "notebooks.home.deleteItems.many": "حذف {count} عنصرًا؟",
+  "notebooks.home.deleteItems.other": "حذف {count} عنصر؟",
+  "notebooks.home.deleteListPlain": "سيُحذف {list}."
 }

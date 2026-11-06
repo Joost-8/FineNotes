@@ -18,6 +18,7 @@ import {
   type Page,
   type ShapeKind,
   type Stroke,
+  type EquationElement,
   type GraphElement,
   type TableElement,
   type TextBoxElement,
@@ -29,6 +30,7 @@ import { isBucketFill } from "./fill-region";
 import { scaleTable, tableFloorSize } from "./table";
 import { restoreTable } from "./table-commands";
 import { restoreGraph, scaleGraph } from "./graph-element";
+import { scaleEquation } from "./equation";
 import {
   MAX_BORDER_WIDTH,
   MAX_CORNER_RADIUS,
@@ -55,6 +57,8 @@ export interface PageElements {
   tables?: readonly TableElement[];
   /** Absent: none, as for tables. */
   graphs?: readonly GraphElement[];
+  /** Absent: none, as for tables. */
+  equations?: readonly EquationElement[];
 }
 
 /** The same elements as fresh, mutable lists. */
@@ -64,6 +68,7 @@ export interface ElementLists {
   textBoxes: TextBoxElement[];
   tables?: TableElement[];
   graphs?: GraphElement[];
+  equations?: EquationElement[];
 }
 
 /** Which of `elements` are on `page` right now, in page order. */
@@ -74,6 +79,7 @@ export function elementsOnPage(page: Page, elements: PageElements): ElementLists
     textBoxes: present(page.textBoxes, elements.textBoxes),
     tables: present(page.tables ?? [], elements.tables ?? []),
     graphs: present(page.graphs ?? [], elements.graphs ?? []),
+    equations: present(page.equations ?? [], elements.equations ?? []),
   };
 }
 
@@ -84,7 +90,8 @@ export function isEmptySelection(elements: PageElements): boolean {
     elements.images.length === 0 &&
     elements.textBoxes.length === 0 &&
     (elements.tables?.length ?? 0) === 0 &&
-    (elements.graphs?.length ?? 0) === 0
+    (elements.graphs?.length ?? 0) === 0 &&
+    (elements.equations?.length ?? 0) === 0
   );
 }
 
@@ -182,6 +189,7 @@ export class TranslateElements implements Command {
     textBoxes: Array<{ textBox: TextBoxElement; x: number; y: number }>;
     tables: Array<{ table: TableElement; x: number; y: number }>;
     graphs: Array<{ graph: GraphElement; x: number; y: number }>;
+    equations: Array<{ equation: EquationElement; x: number; y: number }>;
     /** Boxes that landed on an open sticky note, which now owns them. */
     adopted: TextAdoption[];
   } | null = null;
@@ -229,6 +237,12 @@ export class TranslateElements implements Command {
         graph.y += dy;
         return saved;
       }),
+      equations: (on.equations ?? []).map((equation) => {
+        const saved = { equation, x: equation.x, y: equation.y };
+        equation.x += dx;
+        equation.y += dy;
+        return saved;
+      }),
       adopted: [],
     };
     // A box dropped on an open sticky note, without a note of its own going
@@ -259,6 +273,10 @@ export class TranslateElements implements Command {
     for (const { graph, x, y } of moved.graphs) {
       graph.x = x;
       graph.y = y;
+    }
+    for (const { equation, x, y } of moved.equations) {
+      equation.x = x;
+      equation.y = y;
     }
     this.moved = null;
   }
@@ -331,6 +349,7 @@ export class ScaleElements implements Command {
     }>;
     tables: Array<{ table: TableElement; saved: TableElement }>;
     graphs: Array<{ graph: GraphElement; saved: GraphElement }>;
+    equations: Array<{ equation: EquationElement; saved: EquationElement }>;
   } | null = null;
 
   constructor(
@@ -393,6 +412,12 @@ export class ScaleElements implements Command {
         scaleGraph(graph, ax, ay, k);
         return { graph, saved };
       }),
+      // An equation is set larger, not stretched.
+      equations: (on.equations ?? []).map((equation) => {
+        const saved = structuredClone(equation);
+        scaleEquation(equation, ax, ay, k);
+        return { equation, saved };
+      }),
     };
   }
 
@@ -423,6 +448,7 @@ export class ScaleElements implements Command {
     }
     for (const { table, saved } of scaled.tables) restoreTable(table, saved);
     for (const { graph, saved } of scaled.graphs) restoreGraph(graph, saved);
+    for (const { equation, saved } of scaled.equations) Object.assign(equation, saved);
     this.scaled = null;
   }
 }
@@ -481,6 +507,14 @@ function wrapAngle(angle: number): number {
   return a;
 }
 
+/** The vector (`x`, `y`) turned `r` radians clockwise (y down). */
+function turnVector(x: number, y: number, r: number): { x: number; y: number } {
+  if (r === 0) return { x, y };
+  const c = Math.cos(r);
+  const s = Math.sin(r);
+  return { x: x * c - y * s, y: x * s + y * c };
+}
+
 /**
  * Turn or mirror everything selected on one page about the page point
  * (cx, cy) — the middle of the selection's bounds — as one undo step:
@@ -490,8 +524,10 @@ function wrapAngle(angle: number): number {
  * - a picture's centre moves; a turn adds to its `rotation`, a mirror
  *   flips it in its own frame and negates its rotation, since mirroring a
  *   turned picture is mirroring it first and turning it the other way;
- * - a text box has no rotation, so it stays upright and only its middle
- *   moves (`heights` gives a box's measured height when it has none fixed).
+ * - a text box turns with the selection (`rotation`, about its corner); a
+ *   mirror keeps its text readable, so it moves the box's middle and
+ *   negates its turn (`heights` gives a box's measured height when it has
+ *   none fixed).
  *
  * A non-finite angle or centre changes nothing. A stroke's `samples` stay as
  * recorded, as they do under a move.
@@ -501,9 +537,10 @@ export class ReorientElements implements Command {
   private saved: {
     strokes: Array<{ stroke: Stroke; pts: number[] }>;
     images: Array<{ image: ImageElement; saved: ImageElement }>;
-    textBoxes: Array<{ textBox: TextBoxElement; x: number; y: number }>;
+    textBoxes: Array<{ textBox: TextBoxElement; saved: TextBoxElement }>;
     tables: Array<{ table: TableElement; x: number; y: number }>;
     graphs: Array<{ graph: GraphElement; x: number; y: number }>;
+    equations: Array<{ equation: EquationElement; x: number; y: number }>;
   } | null = null;
 
   constructor(
@@ -568,19 +605,31 @@ export class ReorientElements implements Command {
         return { image, saved };
       }),
       textBoxes: on.textBoxes.map((textBox) => {
+        const saved = { ...textBox };
         const { x, y, w } = textBox;
         const pinned = onNote.get(textBox);
         if (pinned) {
           // The images were turned above, so the note is where it now stands.
           textBox.x = pinned.note.x + pinned.dx;
           textBox.y = pinned.note.y + pinned.dy;
-          return { textBox, x, y };
+          return { textBox, saved };
         }
         const h = this.heights?.get(textBox) ?? textBox.h ?? 0;
-        const c = reorientPoint(motion, cx, cy, x + w / 2, y + h / 2);
-        textBox.x = c.x - w / 2;
-        textBox.y = c.y - h / 2;
-        return { textBox, x, y };
+        const was =
+          typeof textBox.rotation === "number" && Number.isFinite(textBox.rotation)
+            ? textBox.rotation
+            : 0;
+        // The middle goes where the motion takes it; the box turns about it.
+        const half = turnVector(w / 2, h / 2, was);
+        const c = reorientPoint(motion, cx, cy, x + half.x, y + half.y);
+        const turned = wrapAngle(motion.kind === "rotate" ? was + motion.angle : -was);
+        const r = Math.abs(turned) > ROTATION_EPSILON ? turned : 0;
+        const to = turnVector(w / 2, h / 2, r);
+        textBox.x = c.x - to.x;
+        textBox.y = c.y - to.y;
+        if (r !== 0) textBox.rotation = r;
+        else delete textBox.rotation;
+        return { textBox, saved };
       }),
       // A table stays upright, as a text box does: only its middle moves.
       tables: (on.tables ?? []).map((table) => {
@@ -600,6 +649,14 @@ export class ReorientElements implements Command {
         graph.y = c.y - graph.h / 2;
         return { graph, x, y };
       }),
+      // And an equation: a formula is read level.
+      equations: (on.equations ?? []).map((equation) => {
+        const { x, y } = equation;
+        const c = reorientPoint(motion, cx, cy, x + equation.w / 2, y + equation.h / 2);
+        equation.x = c.x - equation.w / 2;
+        equation.y = c.y - equation.h / 2;
+        return { equation, x, y };
+      }),
     };
   }
 
@@ -612,9 +669,10 @@ export class ReorientElements implements Command {
       for (const key of Object.keys(target)) delete target[key];
       Object.assign(image, before);
     }
-    for (const { textBox, x, y } of saved.textBoxes) {
-      textBox.x = x;
-      textBox.y = y;
+    for (const { textBox, saved: before } of saved.textBoxes) {
+      const target = textBox as unknown as Record<string, unknown>;
+      for (const key of Object.keys(target)) delete target[key];
+      Object.assign(textBox, before);
     }
     for (const { table, x, y } of saved.tables) {
       table.x = x;
@@ -623,6 +681,10 @@ export class ReorientElements implements Command {
     for (const { graph, x, y } of saved.graphs) {
       graph.x = x;
       graph.y = y;
+    }
+    for (const { equation, x, y } of saved.equations) {
+      equation.x = x;
+      equation.y = y;
     }
     this.saved = null;
   }
@@ -639,6 +701,7 @@ export class RemoveElements implements Command {
     textBoxes: Array<Removed<TextBoxElement>>;
     tables: Array<Removed<TableElement>>;
     graphs: Array<Removed<GraphElement>>;
+    equations: Array<Removed<EquationElement>>;
   } | null = null;
 
   constructor(
@@ -657,6 +720,7 @@ export class RemoveElements implements Command {
       textBoxes: removeFrom(page.textBoxes, this.elements.textBoxes),
       tables: page.tables ? removeFrom(page.tables, this.elements.tables ?? []) : [],
       graphs: page.graphs ? removeFrom(page.graphs, this.elements.graphs ?? []) : [],
+      equations: page.equations ? removeFrom(page.equations, this.elements.equations ?? []) : [],
     };
   }
 
@@ -669,6 +733,7 @@ export class RemoveElements implements Command {
     restoreTo(page.textBoxes, removed.textBoxes);
     if (page.tables) restoreTo(page.tables, removed.tables);
     if (page.graphs) restoreTo(page.graphs, removed.graphs);
+    if (page.equations) restoreTo(page.equations, removed.equations);
     this.removed = null;
   }
 }
@@ -694,6 +759,7 @@ export class MoveElementsToPage implements Command {
       textBoxes: Array<Removed<TextBoxElement>>;
       tables: Array<Removed<TableElement>>;
       graphs: Array<Removed<GraphElement>>;
+      equations: Array<Removed<EquationElement>>;
     };
     /** Each moved element as it was, field for field. */
     saved: Array<[object, object]>;
@@ -722,12 +788,14 @@ export class MoveElementsToPage implements Command {
     ];
     const tables = on.tables ?? [];
     const graphs = on.graphs ?? [];
+    const equations = on.equations ?? [];
     const removed = {
       strokes: removeFrom(from.strokes, on.strokes),
       images: removeFrom(from.images, on.images),
       textBoxes: removeFrom(from.textBoxes, on.textBoxes),
       tables: from.tables ? removeFrom(from.tables, tables) : [],
       graphs: from.graphs ? removeFrom(from.graphs, graphs) : [],
+      equations: from.equations ? removeFrom(from.equations, equations) : [],
     };
     const saved: Array<[object, object]> = [];
     const { dx, dy } = this;
@@ -747,7 +815,7 @@ export class MoveElementsToPage implements Command {
         else delete stroke.t0;
       }
     }
-    for (const item of [...on.images, ...on.textBoxes, ...tables, ...graphs]) {
+    for (const item of [...on.images, ...on.textBoxes, ...tables, ...graphs, ...equations]) {
       saved.push([item, { ...item }]);
       item.x += dx;
       item.y += dy;
@@ -757,6 +825,7 @@ export class MoveElementsToPage implements Command {
     to.textBoxes.push(...on.textBoxes);
     if (tables.length > 0) (to.tables ??= []).push(...tables);
     if (graphs.length > 0) (to.graphs ??= []).push(...graphs);
+    if (equations.length > 0) (to.equations ??= []).push(...equations);
     const ids = new Set(on.strokes.map((stroke) => stroke.id));
     const links = carryGroups(from.links, ids);
     if (links) {
@@ -785,11 +854,13 @@ export class MoveElementsToPage implements Command {
     removeFrom(to.textBoxes, items(removed.textBoxes));
     if (to.tables) removeFrom(to.tables, items(removed.tables));
     if (to.graphs) removeFrom(to.graphs, items(removed.graphs));
+    if (to.equations) removeFrom(to.equations, items(removed.equations));
     restoreTo(from.strokes, removed.strokes);
     restoreTo(from.images, removed.images);
     restoreTo(from.textBoxes, removed.textBoxes);
     if (from.tables) restoreTo(from.tables, removed.tables);
     if (from.graphs) restoreTo(from.graphs, removed.graphs);
+    if (from.equations) restoreTo(from.equations, removed.equations);
     for (const [item, was] of moved.saved) restoreFields(item, was);
     for (const [page, was] of moved.pages) restoreFields(page, was);
     this.moved = null;
@@ -839,6 +910,8 @@ export class AddElements implements Command {
   private created = false;
   /** The same for `graphs`. */
   private createdGraphs = false;
+  /** The same for `equations`. */
+  private createdEquations = false;
 
   constructor(
     readonly pageId: string,
@@ -862,6 +935,11 @@ export class AddElements implements Command {
       this.createdGraphs = page.graphs === undefined;
       (page.graphs ??= []).push(...graphs);
     }
+    const equations = this.elements.equations ?? [];
+    if (equations.length > 0) {
+      this.createdEquations = page.equations === undefined;
+      (page.equations ??= []).push(...equations);
+    }
   }
 
   invert(doc: InkDocument): void {
@@ -878,8 +956,13 @@ export class AddElements implements Command {
       removeFrom(page.graphs, this.elements.graphs ?? []);
       if (this.createdGraphs && page.graphs.length === 0) delete page.graphs;
     }
+    if (page.equations) {
+      removeFrom(page.equations, this.elements.equations ?? []);
+      if (this.createdEquations && page.equations.length === 0) delete page.equations;
+    }
     this.created = false;
     this.createdGraphs = false;
+    this.createdEquations = false;
   }
 }
 
@@ -997,6 +1080,7 @@ export interface IdSource {
   textBox: () => string;
   table: () => string;
   graph: () => string;
+  equation: () => string;
 }
 
 /**
@@ -1060,6 +1144,13 @@ export function copyElements(
     graphs: (elements.graphs ?? []).map((graph) => {
       const copy = structuredClone(graph);
       copy.id = ids.graph();
+      copy.x += dx;
+      copy.y += dy;
+      return copy;
+    }),
+    equations: (elements.equations ?? []).map((equation) => {
+      const copy = structuredClone(equation);
+      copy.id = ids.equation();
       copy.x += dx;
       copy.y += dy;
       return copy;

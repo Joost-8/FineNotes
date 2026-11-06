@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Muoto",
   "surface.command.writeAnswer": "Kirjoita vastaus",
   "surface.textBox.page": "Sivun tekstiruutu",
-  "surface.textBox.move": "Siirrä tekstiruutua",
   "surface.textBox.resize": "Muuta tekstiruudun kokoa",
   "surface.shapeType.rectangle": "Suorakulmio",
   "surface.shapeType.circle": "Ympyrä",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Vapaat sivureunat",
   "view.ocr.noPdfPages": "FineNotes: tässä muistikirjassa ei ole PDF-sivuja.",
   "view.ocr.off": "FineNotes: skannattujen sivujen lukeminen on pois päältä. Ota ”Skannatut sivut” käyttöön Tekoäly-valikossa.",
-  "view.ocr.rereading": "FineNotes: luetaan tämän PDF:n skannatut sivut uudelleen."
+  "view.ocr.rereading": "FineNotes: luetaan tämän PDF:n skannatut sivut uudelleen.",
+  "notebooks.home.files": "Tiedostot",
+  "notebooks.home.itemCount.one": "{count} kohde",
+  "notebooks.home.itemCount.other": "{count} kohdetta",
+  "notebooks.home.deleteItems.one": "Poistetaanko {count} kohde?",
+  "notebooks.home.deleteItems.other": "Poistetaanko {count} kohdetta?",
+  "notebooks.home.deleteListPlain": "{list} poistetaan."
 }

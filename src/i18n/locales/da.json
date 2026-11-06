@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Form",
   "surface.command.writeAnswer": "Skriv svar",
   "surface.textBox.page": "Sidens tekstboks",
-  "surface.textBox.move": "Flyt tekstboks",
   "surface.textBox.resize": "Tilpas tekstboksens størrelse",
   "surface.shapeType.rectangle": "Rektangel",
   "surface.shapeType.circle": "Cirkel",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Frie sidekanter",
   "view.ocr.noPdfPages": "FineNotes: denne notesbog har ingen PDF-sider.",
   "view.ocr.off": "FineNotes: læsning af scannede sider er slået fra. Slå “Scannede sider” til i AI-menuen.",
-  "view.ocr.rereading": "FineNotes: læser denne PDFs scannede sider igen."
+  "view.ocr.rereading": "FineNotes: læser denne PDFs scannede sider igen.",
+  "notebooks.home.files": "Filer",
+  "notebooks.home.itemCount.one": "{count} element",
+  "notebooks.home.itemCount.other": "{count} elementer",
+  "notebooks.home.deleteItems.one": "Slet {count} element?",
+  "notebooks.home.deleteItems.other": "Slet {count} elementer?",
+  "notebooks.home.deleteListPlain": "{list} slettes."
 }

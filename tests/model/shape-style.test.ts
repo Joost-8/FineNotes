@@ -127,7 +127,19 @@ describe("reading a style", () => {
   it("reads the Shape tool's remembered style field by field", () => {
     expect(
       readShapeToolStyle({ fill: "soft", dash: "dash", round: true, heads: { end: "filled" } }),
-    ).toEqual({ fill: "soft", dash: "dash", round: true, heads: { end: "filled" } });
+    ).toEqual({ fillAlpha: 0.3, dash: "dash", round: true, heads: { end: "filled" } });
+    expect(readShapeToolStyle({ fill: "solid" })).toEqual({ fillAlpha: 1 });
+    expect(readShapeToolStyle({ fillAlpha: 0.6, noLine: true, width: 4 })).toEqual({
+      fillAlpha: 0.6,
+      noLine: true,
+      width: 4,
+    });
+    // No line without a fill would draw nothing; a nonsense width is dropped.
+    expect(readShapeToolStyle({ noLine: true, width: -2, fillAlpha: Number.NaN })).toEqual({});
+    expect(readShapeToolStyle({ fillAlpha: 7, width: 1e6 })).toEqual({
+      fillAlpha: 1,
+      width: 100,
+    });
     expect(readShapeToolStyle({ fill: "glitter", round: "yes", heads: { end: "x" } })).toEqual({
       heads: {},
     });
@@ -204,8 +216,19 @@ describe("applyShapeStyle", () => {
 describe("styleNewShape: what the Shape tool places", () => {
   it("tints, dashes and rounds a closed shape", () => {
     const s = rect();
-    styleNewShape(s, { fill: "soft", dash: "dot", round: true });
+    styleNewShape(s, { fillAlpha: 0.3, dash: "dot", round: true });
     expect(s).toMatchObject({ fill: "#1971c24d", dash: "dot", radius: ROUND_RADIUS });
+    expect(s.noLine).toBeUndefined();
+  });
+
+  it("fills a closed shape without its line, and keeps a line's outline", () => {
+    const s = rect();
+    styleNewShape(s, { fillAlpha: 1, noLine: true });
+    expect(s).toMatchObject({ fill: "#1971c2", noLine: true });
+    const line = arrow();
+    styleNewShape(line, { fillAlpha: 1, noLine: true });
+    expect(line.fill).toBeUndefined();
+    expect(line.noLine).toBeUndefined();
   });
 
   it("keeps a default arrow as it always was", () => {
@@ -228,7 +251,7 @@ describe("styleNewShape: what the Shape tool places", () => {
 
   it("does nothing to freehand ink", () => {
     const ink: Stroke = { id: "i", color: "#000000", size: 2, tool: "pen", pts: [0, 0, 0.5] };
-    styleNewShape(ink, { fill: "solid", dash: "dash" });
+    styleNewShape(ink, { fillAlpha: 1, dash: "dash" });
     expect(ink).toEqual({ id: "i", color: "#000000", size: 2, tool: "pen", pts: [0, 0, 0.5] });
   });
 });
@@ -303,6 +326,7 @@ describe("shapes through the other commands", () => {
       textBox: () => "ct",
       table: () => "cg",
       graph: () => "cf",
+      equation: () => "q1",
     };
     const [copy] = copyElements({ strokes: [a], images: [], textBoxes: [] }, ids, 5, 5).strokes;
     expect(copy).toMatchObject({ fill: "#ff0000", dash: "dash", radius: 5 });

@@ -2438,7 +2438,6 @@
   "surface.selectionBar.shapeTitle": "Фигура",
   "surface.command.writeAnswer": "Записать ответ",
   "surface.textBox.page": "Текстовое поле страницы",
-  "surface.textBox.move": "Переместить текстовое поле",
   "surface.textBox.resize": "Изменить размер текстового поля",
   "surface.shapeType.rectangle": "Прямоугольник",
   "surface.shapeType.circle": "Круг",
@@ -3228,5 +3227,15 @@
   "view.morePanel.freePageEdges": "Свободные края страницы",
   "view.ocr.noPdfPages": "FineNotes: в этом блокноте нет страниц PDF.",
   "view.ocr.off": "FineNotes: чтение отсканированных страниц выключено. Включите «Отсканированные страницы» в меню ИИ.",
-  "view.ocr.rereading": "FineNotes: отсканированные страницы этого PDF читаются заново."
+  "view.ocr.rereading": "FineNotes: отсканированные страницы этого PDF читаются заново.",
+  "notebooks.home.files": "Файлы",
+  "notebooks.home.itemCount.one": "{count} элемент",
+  "notebooks.home.itemCount.few": "{count} элемента",
+  "notebooks.home.itemCount.many": "{count} элементов",
+  "notebooks.home.itemCount.other": "{count} элемента",
+  "notebooks.home.deleteItems.one": "Удалить {count} элемент?",
+  "notebooks.home.deleteItems.few": "Удалить {count} элемента?",
+  "notebooks.home.deleteItems.many": "Удалить {count} элементов?",
+  "notebooks.home.deleteItems.other": "Удалить {count} элемента?",
+  "notebooks.home.deleteListPlain": "Будет удалено: {list}."
 }

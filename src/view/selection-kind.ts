@@ -9,7 +9,7 @@
 
 /** The kinds a lasso selection can hold, or a mix of them. */
 export type SelectionKind =
-  "handwriting" | "shapes" | "table" | "graphs" | "pictures" | "text" | "mixed";
+  "handwriting" | "shapes" | "table" | "graphs" | "equations" | "pictures" | "text" | "mixed";
 
 export interface KindInput {
   strokes: readonly { shape?: string }[];
@@ -17,6 +17,7 @@ export interface KindInput {
   textBoxes: readonly unknown[];
   tables?: readonly unknown[];
   graphs?: readonly unknown[];
+  equations?: readonly unknown[];
 }
 
 /**
@@ -32,6 +33,7 @@ export function selectionKind(sel: KindInput, tableInk = false): SelectionKind {
   const present = [
     tables > 0 ? "table" : null,
     graphs > 0 ? "graphs" : null,
+    (sel.equations?.length ?? 0) > 0 ? "equations" : null,
     sel.images.length > 0 ? "pictures" : null,
     sel.textBoxes.length > 0 ? "text" : null,
     strokes > 0 && ink > 0 ? "handwriting" : null,
@@ -70,6 +72,9 @@ export function selectionMenu(kind: SelectionKind): SelectionMenu {
       return { ...none, colour: true, handwriting: true, link: true, sticker: true, comment: true };
     case "shapes":
       return { ...none, colour: true, shapeStyle: true, link: true, sticker: true, comment: true };
+    // Typed equations keep a colour of their own, as ink does.
+    case "equations":
+      return { ...none, colour: true, sticker: true, comment: true };
     case "mixed":
       // Only what applies to everything at once: its ink's colour, and
       // under Turn into what any selection can become.

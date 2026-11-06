@@ -48,5 +48,7 @@ export function pageSignature(page: Page): string {
   if (page.tables?.length) parts.push(JSON.stringify(page.tables));
   // A graph is a few expressions and four numbers: every field, likewise.
   if (page.graphs?.length) parts.push(JSON.stringify(page.graphs));
+  // An equation is its source and a frame: every field, likewise.
+  if (page.equations?.length) parts.push(JSON.stringify(page.equations));
   return parts.join("#");
 }

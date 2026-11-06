@@ -6,13 +6,15 @@
  * fibres along it and torn ends, so it reads as something laid on the page
  * and not as ink. Revealed (in the view only, never in a file or an export),
  * it is a faint wash of its colour inside a dashed outline: what is under it
- * shows, and so does where the tape is, to tap it covered again.
+ * shows, and so does where the tape is, to tap it covered again. A freehand
+ * tape is the same strip bent along its path: the canvas strokes it with
+ * square ends and round joins, and its torn teeth reach past each end.
  *
  * Draws with canvas calls only (no `Path2D`), so the tests' stand-in context
  * records it.
  */
 
-import { tapeCorners } from "../model/cover-tape";
+import { offsetPath, tapeCorners, tapePath, tapePolygon } from "../model/cover-tape";
 import { nightColor } from "./night";
 
 /** Teeth along each torn end, at least; a tall tape gets more. */
@@ -87,6 +89,11 @@ export function paintTape(
   color: string,
   look: TapeLook = {},
 ): void {
+  const path = tapePath(pts);
+  if (path) {
+    if (size > 0) paintFreehand(ctx, path, size, color, look);
+    return;
+  }
   const corners = tapeCorners(pts, size);
   if (!corners) return;
   const fill = look.night ? nightColor(color) : color;
@@ -120,6 +127,99 @@ export function paintTape(
     const to = lerp(bl, br, t);
     ctx.moveTo(from.x, from.y);
     ctx.lineTo(to.x, to.y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function tracePath(ctx: CanvasRenderingContext2D, path: readonly P[]): void {
+  ctx.beginPath();
+  path.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+}
+
+/**
+ * The torn end of a freehand tape at `end`, facing away from `next` (the
+ * path's neighbouring point): teeth `bite` deep reaching out past the square
+ * end, where a straight tape's are bitten in. A polygon, closed along the
+ * square end.
+ */
+export function tornEnd(end: P, next: P, size: number, bite: number): P[] {
+  const length = Math.hypot(end.x - next.x, end.y - next.y) || 1;
+  const ux = (end.x - next.x) / length;
+  const uy = (end.y - next.y) / length;
+  const teeth = Math.max(MIN_TEETH, Math.round(size / 8));
+  const out: P[] = [];
+  for (let i = 0; i <= teeth * 2; i++) {
+    const across = -size / 2 + (size * i) / (teeth * 2);
+    const d = i % 2 === 1 ? bite : 0;
+    out.push({ x: end.x - uy * across + ux * d, y: end.y + ux * across + uy * d });
+  }
+  return out;
+}
+
+/**
+ * A freehand tape: the canvas's own stroke of its path, `size` wide with
+ * round joins and square ends, torn teeth past each end, and fibres along
+ * it; revealed, a wash along the path inside a dashed outline.
+ */
+function paintFreehand(
+  ctx: CanvasRenderingContext2D,
+  path: readonly P[],
+  size: number,
+  color: string,
+  look: TapeLook,
+): void {
+  const fill = look.night ? nightColor(color) : color;
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "butt";
+  if (look.revealed) {
+    ctx.globalAlpha *= REVEALED_WASH;
+    ctx.strokeStyle = fill;
+    ctx.lineWidth = size;
+    tracePath(ctx, path);
+    ctx.stroke();
+    ctx.globalAlpha /= REVEALED_WASH;
+    const outline = tapePolygon(
+      path.flatMap((p) => [p.x, p.y, 0.5]),
+      size,
+    );
+    if (outline) {
+      tracePolygon(ctx, outline);
+      ctx.lineWidth = Math.max(1.5 * (look.hairline ?? 1), size * 0.04);
+      ctx.setLineDash([size * 0.18, size * 0.12]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+    return;
+  }
+  ctx.strokeStyle = fill;
+  ctx.lineWidth = size;
+  tracePath(ctx, path);
+  ctx.stroke();
+  let length = 0;
+  for (let i = 1; i < path.length; i++) {
+    length += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+  }
+  const bite = Math.min(size * TOOTH_DEPTH, length / 4);
+  const last = path.length - 1;
+  ctx.fillStyle = fill;
+  for (const [end, next] of [
+    [path[0], path[1]],
+    [path[last], path[last - 1]],
+  ]) {
+    tracePolygon(ctx, tornEnd(end, next, size, bite));
+    ctx.fill();
+  }
+  // Fibres: a few faint lines along the path, each kept inside the band.
+  ctx.strokeStyle = look.night ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)";
+  ctx.lineWidth = Math.max(0.5, size * 0.03);
+  ctx.beginPath();
+  for (let t = FIBRE_STEP / 2; t < 1; t += FIBRE_STEP) {
+    offsetPath(path, (t - 0.5) * size, false).forEach((p, i) =>
+      i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
+    );
   }
   ctx.stroke();
   ctx.restore();

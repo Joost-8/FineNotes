@@ -2438,7 +2438,6 @@
   "surface.selectionBar.shapeTitle": "Фігура",
   "surface.command.writeAnswer": "Запісаць адказ",
   "surface.textBox.page": "Тэкставае поле старонкі",
-  "surface.textBox.move": "Перамясціць тэкставае поле",
   "surface.textBox.resize": "Змяніць памер тэкставага поля",
   "surface.shapeType.rectangle": "Прамавугольнік",
   "surface.shapeType.circle": "Круг",
@@ -3228,5 +3227,15 @@
   "view.morePanel.freePageEdges": "Вольныя краі старонкі",
   "view.ocr.noPdfPages": "FineNotes: у гэтым сшытку няма старонак PDF.",
   "view.ocr.off": "FineNotes: чытанне адсканаваных старонак выключана. Уключыце «Адсканаваныя старонкі» ў меню ШІ.",
-  "view.ocr.rereading": "FineNotes: адсканаваныя старонкі гэтага PDF чытаюцца нанова."
+  "view.ocr.rereading": "FineNotes: адсканаваныя старонкі гэтага PDF чытаюцца нанова.",
+  "notebooks.home.files": "Файлы",
+  "notebooks.home.itemCount.one": "{count} элемент",
+  "notebooks.home.itemCount.few": "{count} элементы",
+  "notebooks.home.itemCount.many": "{count} элементаў",
+  "notebooks.home.itemCount.other": "{count} элемента",
+  "notebooks.home.deleteItems.one": "Выдаліць {count} элемент?",
+  "notebooks.home.deleteItems.few": "Выдаліць {count} элементы?",
+  "notebooks.home.deleteItems.many": "Выдаліць {count} элементаў?",
+  "notebooks.home.deleteItems.other": "Выдаліць {count} элемента?",
+  "notebooks.home.deleteListPlain": "Будзе выдалена: {list}."
 }

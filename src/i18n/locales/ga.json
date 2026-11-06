@@ -2527,7 +2527,6 @@
   "surface.selectionBar.shapeTitle": "Cruth",
   "surface.command.writeAnswer": "Scríobh freagra",
   "surface.textBox.page": "Bosca téacs leathanaigh",
-  "surface.textBox.move": "Bog bosca téacs",
   "surface.textBox.resize": "Athraigh méid boscaí téacs",
   "surface.shapeType.rectangle": "Dronuilleog",
   "surface.shapeType.circle": "Ciorcal",
@@ -3335,5 +3334,17 @@
   "view.morePanel.freePageEdges": "Imill saora leathanaigh",
   "view.ocr.noPdfPages": "FineNotes: níl aon leathanaigh PDF sa leabhar nótaí seo.",
   "view.ocr.off": "FineNotes: tá léamh leathanach scanta múchta. Cuir “Leathanaigh scanta” air sa roghchlár AI.",
-  "view.ocr.rereading": "FineNotes: leathanaigh scanta an PDF seo á léamh arís."
+  "view.ocr.rereading": "FineNotes: leathanaigh scanta an PDF seo á léamh arís.",
+  "notebooks.home.files": "Comhaid",
+  "notebooks.home.itemCount.one": "mír amháin",
+  "notebooks.home.itemCount.two": "dhá mhír",
+  "notebooks.home.itemCount.few": "{count} mhír",
+  "notebooks.home.itemCount.many": "{count} mír",
+  "notebooks.home.itemCount.other": "{count} mír",
+  "notebooks.home.deleteItems.one": "Scrios mír amháin?",
+  "notebooks.home.deleteItems.two": "Scrios dhá mhír?",
+  "notebooks.home.deleteItems.few": "Scrios {count} mhír?",
+  "notebooks.home.deleteItems.many": "Scrios {count} mír?",
+  "notebooks.home.deleteItems.other": "Scrios {count} mír?",
+  "notebooks.home.deleteListPlain": "Scriosfar {list}."
 }

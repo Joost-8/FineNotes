@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Forma",
   "surface.command.writeAnswer": "Scrivi la risposta",
   "surface.textBox.page": "Casella di testo della pagina",
-  "surface.textBox.move": "Sposta casella di testo",
   "surface.textBox.resize": "Ridimensiona casella di testo",
   "surface.shapeType.rectangle": "Rettangolo",
   "surface.shapeType.circle": "Cerchio",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Bordi di pagina liberi",
   "view.ocr.noPdfPages": "FineNotes: questo quaderno non ha pagine PDF.",
   "view.ocr.off": "FineNotes: la lettura delle pagine scansionate è disattivata. Attiva «Pagine scansionate» nel menu IA.",
-  "view.ocr.rereading": "FineNotes: nuova lettura delle pagine scansionate di questo PDF."
+  "view.ocr.rereading": "FineNotes: nuova lettura delle pagine scansionate di questo PDF.",
+  "notebooks.home.files": "File",
+  "notebooks.home.itemCount.one": "{count} elemento",
+  "notebooks.home.itemCount.other": "{count} elementi",
+  "notebooks.home.deleteItems.one": "Eliminare {count} elemento?",
+  "notebooks.home.deleteItems.other": "Eliminare {count} elementi?",
+  "notebooks.home.deleteListPlain": "Da eliminare: {list}."
 }

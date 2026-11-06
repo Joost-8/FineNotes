@@ -11,6 +11,8 @@
 
 import type { Ruling, SyntheticBackdrop } from "../model/document";
 import { type PaperColorId, templateBackdrop } from "../model/templates";
+import { clampDesignValue } from "../model/paper-design";
+import { mmToPage, pageToMm } from "../model/units";
 import { t } from "../i18n/translate";
 import { resolveSpacing } from "./backdrop";
 
@@ -21,6 +23,11 @@ export interface PaperStyle {
   rule?: string;
   /** The template's spacing times this; absent or 1 keeps it. */
   spacing?: number;
+  /**
+   * An exact pitch typed in mm, page px (two decimals): wins over `spacing`,
+   * the same on every template. Absent: the step above.
+   */
+  pitch?: number;
 }
 
 /** Papers the picker offers, light to dark: white, creams, pastels, a grey and a black. */
@@ -196,11 +203,56 @@ export function styledBackdrop(
     else if (!isDarkPaper(paper) && color === "dark" && !style.rule) delete backdrop.color;
   }
   if (style.rule && /^#[0-9a-f]{6}$/i.test(style.rule)) backdrop.color = style.rule.toLowerCase();
+  const pitch = style.pitch;
+  if (typeof pitch === "number" && Number.isFinite(pitch) && pitch > 0) {
+    const own = resolveSpacing(undefined, ruling);
+    if (Math.abs(pitch - own) >= 0.005) backdrop.spacing = Math.round(pitch * 100) / 100;
+    return backdrop;
+  }
   const k = style.spacing;
   if (typeof k === "number" && Number.isFinite(k) && k > 0 && Math.abs(k - 1) > 1e-9) {
-    backdrop.spacing = Math.max(8, Math.round(resolveSpacing(undefined, ruling) * k));
+    backdrop.spacing = stepPitch(ruling, k);
   }
   return backdrop;
+}
+
+/** The pitch a step `k` gives `ruling`, whole page px. */
+function stepPitch(ruling: Ruling, k: number): number {
+  return Math.max(8, Math.round(resolveSpacing(undefined, ruling) * k));
+}
+
+/** The pitch `style` gives `ruling`, page px: what the spacing field shows. */
+export function spacingOf(ruling: Ruling, style: PaperStyle): number {
+  const pitch = style.pitch;
+  if (typeof pitch === "number" && Number.isFinite(pitch) && pitch > 0) return pitch;
+  return resolveSpacing(
+    styledBackdrop(ruling, "white", { spacing: style.spacing }).spacing,
+    ruling,
+  );
+}
+
+/** A pitch in mm as the spacing field shows it: one decimal. */
+export function spacingMm(px: number): number {
+  return Math.round(pageToMm(px) * 10) / 10;
+}
+
+/**
+ * The style for a spacing typed in mm on `ruling`: the step it names when
+ * it reads as one (8.2 mm on Ruled Wide is Normal), else that exact pitch,
+ * held to the paper designer's range. Null for no number at all.
+ */
+export function typedSpacing(
+  ruling: Ruling,
+  mm: number,
+): Pick<PaperStyle, "spacing" | "pitch"> | null {
+  const clamped = clampDesignValue("spacing", mm);
+  if (clamped === null) return null;
+  for (const step of SPACING_STEPS) {
+    if (spacingMm(stepPitch(ruling, step.k)) === Math.round(clamped * 10) / 10) {
+      return { spacing: step.k === 1 ? undefined : step.k, pitch: undefined };
+    }
+  }
+  return { spacing: undefined, pitch: Math.round(mmToPage(clamped) * 100) / 100 };
 }
 
 /** The style a backdrop already has, so the picker opens on it. */
@@ -210,12 +262,14 @@ export function paperStyleOf(backdrop: SyntheticBackdrop): PaperStyle {
   if (backdrop.color && RULE_SWATCHES.some((s) => s.color === backdrop.color?.toLowerCase())) {
     style.rule = backdrop.color.toLowerCase();
   }
-  if (typeof backdrop.spacing === "number") {
-    const k = backdrop.spacing / resolveSpacing(undefined, backdrop.kind);
-    const step = SPACING_STEPS.reduce((best, s) =>
-      Math.abs(s.k - k) < Math.abs(best.k - k) ? s : best,
-    );
-    if (step.k !== 1) style.spacing = step.k;
+  if (typeof backdrop.spacing === "number" && backdrop.spacing > 0) {
+    // A step only when it gives exactly this pitch; any other pitch is kept as it is.
+    const step = SPACING_STEPS.find((s) => stepPitch(backdrop.kind, s.k) === backdrop.spacing);
+    if (step) {
+      if (step.k !== 1) style.spacing = step.k;
+    } else if (backdrop.spacing !== resolveSpacing(undefined, backdrop.kind)) {
+      style.pitch = backdrop.spacing;
+    }
   }
   return style;
 }

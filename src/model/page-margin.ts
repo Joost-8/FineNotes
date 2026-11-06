@@ -117,8 +117,8 @@ export function marginFloor(page: Page): PageMargin {
 }
 
 /** What a page holds, each kind of element by its list. */
-type Kind = "strokes" | "images" | "textBoxes" | "tables" | "graphs";
-const KINDS: readonly Kind[] = ["strokes", "images", "textBoxes", "tables", "graphs"];
+type Kind = "strokes" | "images" | "textBoxes" | "tables" | "graphs" | "equations";
+const KINDS: readonly Kind[] = ["strokes", "images", "textBoxes", "tables", "graphs", "equations"];
 
 /** The leftmost and rightmost x an element covers, page px; null for nothing. */
 function spanOf(kind: Kind, element: unknown): { minX: number; maxX: number } | null {
@@ -148,6 +148,7 @@ function spanOf(kind: Kind, element: unknown): { minX: number; maxX: number } | 
     const table = element as NonNullable<Page["tables"]>[number];
     take(table.x, table.x + table.cols.reduce((sum, col) => sum + col, 0));
   } else {
+    // A graph or an equation: a frame.
     const graph = element as NonNullable<Page["graphs"]>[number];
     take(graph.x, graph.x + graph.w);
   }
@@ -229,7 +230,29 @@ export function marginBackdrop(page: Page): SyntheticBackdrop | null {
   const paper = page.backdrop.marginPaper;
   if (!paper || !page.backdrop.frame) return null;
   const colour = page.backdrop.kind !== "pdf" ? page.backdrop.paperColor : undefined;
-  return { kind: MARGIN_RULING[paper], ...(colour ? { paperColor: colour } : {}) };
+  const spacing = marginSpacingOf(page);
+  return {
+    kind: MARGIN_RULING[paper],
+    ...(colour ? { paperColor: colour } : {}),
+    ...(spacing !== undefined ? { spacing } : {}),
+  };
+}
+
+/**
+ * The margin's own pitch, page px, when one was set in the Margin popover;
+ * undefined when the margin follows the page (`canvas/margin-paper.ts`).
+ */
+export function marginSpacingOf(page: Page): number | undefined {
+  const spacing = page.backdrop.marginSpacing;
+  return page.backdrop.marginPaper && typeof spacing === "number" && spacing > 0
+    ? spacing
+    : undefined;
+}
+
+/** A pitch as stored: two decimals of a page px, positive; undefined for none or nonsense. */
+function pitchOf(spacing: number | null | undefined): number | undefined {
+  if (typeof spacing !== "number" || !Number.isFinite(spacing) || spacing <= 0) return undefined;
+  return Math.round(spacing * 100) / 100;
 }
 
 /** The margins of `page` as rectangles, page px, left first: none without a margin. */
@@ -276,8 +299,10 @@ export function unmarginedGeometry(page: Page): PageGeometry {
 
 /** A backdrop without its margin (frame and margin paper): for a new page made from it. */
 export function withoutFrame<T extends Backdrop>(backdrop: T): T {
-  if (!backdrop.frame && !backdrop.marginPaper) return backdrop;
-  const { frame: _frame, marginPaper: _paper, ...rest } = backdrop;
+  if (!backdrop.frame && !backdrop.marginPaper && backdrop.marginSpacing === undefined) {
+    return backdrop;
+  }
+  const { frame: _frame, marginPaper: _paper, marginSpacing: _spacing, ...rest } = backdrop;
   return rest as T;
 }
 
@@ -299,12 +324,18 @@ export class SetPageMargin implements Command {
     lists: Partial<Record<Kind, unknown[]>> | null;
   }> = [];
 
-  /** `paper`: the margin's paper; absent keeps the one the page has. */
+  /**
+   * `paper`: the margin's paper; absent keeps the one the page has.
+   * `spacing`: the margin paper's own pitch, page px (kept to two decimals);
+   * `null` lets it follow the page again; absent keeps what the page has.
+   * Plain paper, or no margin, keeps no pitch.
+   */
   constructor(
     private readonly targets: ReadonlyArray<{
       page: Page;
       margin: PageMargin;
       paper?: MarginPaperChoice;
+      spacing?: number | null;
     }>,
     /**
      * Narrow the margins even past what is written in them, deleting what
@@ -322,7 +353,7 @@ export class SetPageMargin implements Command {
 
   apply(doc: InkDocument): void {
     this.done = [];
-    for (const { page, margin, paper } of this.targets) {
+    for (const { page, margin, paper, spacing } of this.targets) {
       // By identity, like the other page commands: ids can repeat within a file.
       if (!doc.pages.includes(page)) continue;
       const next = this.dropContent ? margin : keepContent(page, margin);
@@ -330,7 +361,16 @@ export class SetPageMargin implements Command {
       const none = next.left === 0 && next.right === 0;
       // No margin, no margin paper: it is chosen again with the next margin.
       const nextPaper = none ? "plain" : (paper ?? marginPaperOf(page));
-      if (next.left === old.left && next.right === old.right && nextPaper === marginPaperOf(page))
+      const nextSpacing =
+        nextPaper === "plain"
+          ? undefined
+          : pitchOf(spacing === undefined ? marginSpacingOf(page) : spacing);
+      if (
+        next.left === old.left &&
+        next.right === old.right &&
+        nextPaper === marginPaperOf(page) &&
+        nextSpacing === marginSpacingOf(page)
+      )
         continue;
       const record = {
         page,
@@ -362,11 +402,12 @@ export class SetPageMargin implements Command {
       if (none && fullHeight) {
         page.backdrop = withoutFrame(page.backdrop);
       } else {
-        const { marginPaper: _paper, ...rest } = page.backdrop;
+        const { marginPaper: _paper, marginSpacing: _spacing, ...rest } = page.backdrop;
         page.backdrop = {
           ...rest,
           frame: { ...frame, x: next.left },
           ...(nextPaper !== "plain" ? { marginPaper: nextPaper } : {}),
+          ...(nextSpacing !== undefined ? { marginSpacing: nextSpacing } : {}),
         };
       }
       page.geometry = { ...page.geometry, width: next.left + width + next.right };
@@ -380,6 +421,7 @@ export class SetPageMargin implements Command {
             textBoxes: [...page.textBoxes],
             tables: [...(page.tables ?? [])],
             graphs: [...(page.graphs ?? [])],
+            equations: [...(page.equations ?? [])],
           },
           dx,
           0,

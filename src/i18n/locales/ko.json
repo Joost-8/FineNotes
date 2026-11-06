@@ -2171,7 +2171,6 @@
   "surface.selectionBar.shapeTitle": "도형",
   "surface.command.writeAnswer": "답 쓰기",
   "surface.textBox.page": "페이지 텍스트 상자",
-  "surface.textBox.move": "텍스트 상자 이동",
   "surface.textBox.resize": "텍스트 상자 크기 조절",
   "surface.shapeType.rectangle": "직사각형",
   "surface.shapeType.circle": "원",
@@ -2907,5 +2906,9 @@
   "view.morePanel.freePageEdges": "페이지 가장자리 자유롭게",
   "view.ocr.noPdfPages": "FineNotes: 이 노트북에는 PDF 페이지가 없어요.",
   "view.ocr.off": "FineNotes: 스캔한 페이지 읽기가 꺼져 있어요. AI 메뉴에서 “스캔한 페이지”를 켜세요.",
-  "view.ocr.rereading": "FineNotes: 이 PDF의 스캔한 페이지를 다시 읽는 중이에요."
+  "view.ocr.rereading": "FineNotes: 이 PDF의 스캔한 페이지를 다시 읽는 중이에요.",
+  "notebooks.home.files": "파일",
+  "notebooks.home.itemCount.other": "{count}개",
+  "notebooks.home.deleteItems.other": "{count}개를 삭제할까요?",
+  "notebooks.home.deleteListPlain": "{list}이(가) 삭제돼요."
 }

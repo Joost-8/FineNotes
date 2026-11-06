@@ -2349,7 +2349,6 @@
   "surface.selectionBar.shapeTitle": "Облик",
   "surface.command.writeAnswer": "Упиши одговор",
   "surface.textBox.page": "Оквир за текст на страници",
-  "surface.textBox.move": "Премести оквир за текст",
   "surface.textBox.resize": "Промени величину оквира за текст",
   "surface.shapeType.rectangle": "Правоугаоник",
   "surface.shapeType.circle": "Круг",
@@ -3121,5 +3120,13 @@
   "view.morePanel.freePageEdges": "Слободне ивице странице",
   "view.ocr.noPdfPages": "FineNotes: ова бележница нема PDF странице.",
   "view.ocr.off": "FineNotes: читање скенираних страница је искључено. Укључите „Скениране странице“ у АИ менију.",
-  "view.ocr.rereading": "FineNotes: скениране странице овог PDF-а се поново читају."
+  "view.ocr.rereading": "FineNotes: скениране странице овог PDF-а се поново читају.",
+  "notebooks.home.files": "Датотеке",
+  "notebooks.home.itemCount.one": "{count} ставка",
+  "notebooks.home.itemCount.few": "{count} ставке",
+  "notebooks.home.itemCount.other": "{count} ставки",
+  "notebooks.home.deleteItems.one": "Обрисати {count} ставку?",
+  "notebooks.home.deleteItems.few": "Обрисати {count} ставке?",
+  "notebooks.home.deleteItems.other": "Обрисати {count} ставки?",
+  "notebooks.home.deleteListPlain": "Биће обрисано: {list}."
 }

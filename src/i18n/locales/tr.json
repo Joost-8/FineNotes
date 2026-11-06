@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Şekil",
   "surface.command.writeAnswer": "Yanıt yaz",
   "surface.textBox.page": "Sayfa metin kutusu",
-  "surface.textBox.move": "Metin kutusunu taşı",
   "surface.textBox.resize": "Metin kutusunu yeniden boyutlandır",
   "surface.shapeType.rectangle": "Dikdörtgen",
   "surface.shapeType.circle": "Daire",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Serbest sayfa kenarları",
   "view.ocr.noPdfPages": "FineNotes: bu defterde PDF sayfası yok.",
   "view.ocr.off": "FineNotes: taranmış sayfaları okuma kapalı. Yapay zekâ menüsünde “Taranmış sayfalar” seçeneğini aç.",
-  "view.ocr.rereading": "FineNotes: bu PDF'in taranmış sayfaları yeniden okunuyor."
+  "view.ocr.rereading": "FineNotes: bu PDF'in taranmış sayfaları yeniden okunuyor.",
+  "notebooks.home.files": "Dosyalar",
+  "notebooks.home.itemCount.one": "{count} öğe",
+  "notebooks.home.itemCount.other": "{count} öğe",
+  "notebooks.home.deleteItems.one": "{count} öğe silinsin mi?",
+  "notebooks.home.deleteItems.other": "{count} öğe silinsin mi?",
+  "notebooks.home.deleteListPlain": "{list} silinecek."
 }

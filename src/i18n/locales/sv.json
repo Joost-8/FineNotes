@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "Form",
   "surface.command.writeAnswer": "Skriv svar",
   "surface.textBox.page": "Sidans textruta",
-  "surface.textBox.move": "Flytta textrutan",
   "surface.textBox.resize": "Ändra textrutans storlek",
   "surface.shapeType.rectangle": "Rektangel",
   "surface.shapeType.circle": "Cirkel",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "Fria sidkanter",
   "view.ocr.noPdfPages": "FineNotes: den här anteckningsboken har inga PDF-sidor.",
   "view.ocr.off": "FineNotes: läsning av skannade sidor är avstängd. Slå på ”Skannade sidor” i AI-menyn.",
-  "view.ocr.rereading": "FineNotes: läser den här PDF:ens skannade sidor igen."
+  "view.ocr.rereading": "FineNotes: läser den här PDF:ens skannade sidor igen.",
+  "notebooks.home.files": "Filer",
+  "notebooks.home.itemCount.one": "{count} objekt",
+  "notebooks.home.itemCount.other": "{count} objekt",
+  "notebooks.home.deleteItems.one": "Radera {count} objekt?",
+  "notebooks.home.deleteItems.other": "Radera {count} objekt?",
+  "notebooks.home.deleteListPlain": "{list} raderas."
 }

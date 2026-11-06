@@ -2438,7 +2438,6 @@
   "surface.selectionBar.shapeTitle": "Kształt",
   "surface.command.writeAnswer": "Zapisz odpowiedź",
   "surface.textBox.page": "Pole tekstowe strony",
-  "surface.textBox.move": "Przesuń pole tekstowe",
   "surface.textBox.resize": "Zmień rozmiar pola tekstowego",
   "surface.shapeType.rectangle": "Prostokąt",
   "surface.shapeType.circle": "Koło",
@@ -3228,5 +3227,15 @@
   "view.morePanel.freePageEdges": "Swobodne krawędzie strony",
   "view.ocr.noPdfPages": "FineNotes: ten notatnik nie ma stron PDF.",
   "view.ocr.off": "FineNotes: odczytywanie zeskanowanych stron jest wyłączone. Włącz „Zeskanowane strony” w menu AI.",
-  "view.ocr.rereading": "FineNotes: zeskanowane strony tego PDF-a są odczytywane ponownie."
+  "view.ocr.rereading": "FineNotes: zeskanowane strony tego PDF-a są odczytywane ponownie.",
+  "notebooks.home.files": "Pliki",
+  "notebooks.home.itemCount.one": "{count} element",
+  "notebooks.home.itemCount.few": "{count} elementy",
+  "notebooks.home.itemCount.many": "{count} elementów",
+  "notebooks.home.itemCount.other": "{count} elementu",
+  "notebooks.home.deleteItems.one": "Usunąć {count} element?",
+  "notebooks.home.deleteItems.few": "Usunąć {count} elementy?",
+  "notebooks.home.deleteItems.many": "Usunąć {count} elementów?",
+  "notebooks.home.deleteItems.other": "Usunąć {count} elementu?",
+  "notebooks.home.deleteListPlain": "Zostanie usunięte: {list}."
 }

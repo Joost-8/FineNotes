@@ -3,7 +3,14 @@ import {
   EMBED_CANVAS_BUDGET,
   EMBED_WIDTH_STEP,
   MAX_EMBED_DEVICE_WIDTH,
+  PRINT_DPR,
+  PRINT_FALLBACK_WIDTH,
   SharedNotebooks,
+  embedInsertion,
+  embedPageLabel,
+  embedPageLink,
+  embedPageNumbers,
+  printPaintSize,
   embedPaintSize,
   embedLabel,
   embedTarget,
@@ -205,5 +212,95 @@ describe("SharedNotebooks", () => {
     await Promise.resolve();
     expect(shared.size).toBe(0);
     expect(await shared.get("P.md", 1, () => Promise.resolve("back"))).toBe("back");
+  });
+});
+
+describe("embedPageNumbers", () => {
+  const whole = { page: 1, whole: true };
+
+  it("shows every page of a notebook embedded whole, in order", () => {
+    expect(embedPageNumbers(whole, 3)).toEqual([1, 2, 3]);
+    expect(embedPageNumbers(whole, 1)).toEqual([1]);
+  });
+
+  it("shows nothing of a notebook with no pages, or a broken count", () => {
+    expect(embedPageNumbers(whole, 0)).toEqual([]);
+    expect(embedPageNumbers(whole, Number.NaN)).toEqual([]);
+    expect(embedPageNumbers(whole, -2)).toEqual([]);
+  });
+
+  it("shows the one page a subpath names, whether or not the notebook has it", () => {
+    expect(embedPageNumbers({ page: 4, whole: false }, 9)).toEqual([4]);
+    expect(embedPageNumbers({ page: 40, whole: false }, 2)).toEqual([40]);
+  });
+});
+
+describe("embedPageLink", () => {
+  it("opens the page clicked in a notebook embedded whole", () => {
+    const whole = { page: 1, whole: true };
+    expect(embedPageLink("Physics.notebook", whole, 3)).toBe("Physics.notebook#page=3");
+    expect(embedPageLink("Courses/Physics.notebook.md", whole, 1)).toBe(
+      "Courses/Physics.notebook.md#page=1",
+    );
+    expect(embedPageLink("Physics.notebook#", whole, 2)).toBe("Physics.notebook#page=2");
+  });
+
+  it("keeps a page embed's own link", () => {
+    expect(embedPageLink("Physics.notebook#p3", { page: 3, whole: false }, 3)).toBe(
+      "Physics.notebook#p3",
+    );
+  });
+});
+
+describe("embedPageLabel", () => {
+  it("names each page of a notebook embedded whole, and the notebook when it has one page", () => {
+    const whole = { page: 1, whole: true };
+    expect(embedPageLabel("Physics.notebook", whole, 2, 5)).toBe("Physics, page 2");
+    expect(embedPageLabel("Physics.notebook", whole, 1, 1)).toBe("Physics");
+    expect(embedPageLabel("Physics.notebook", { page: 3, whole: false }, 3, 1)).toBe(
+      "Physics, page 3",
+    );
+  });
+});
+
+describe("printPaintSize", () => {
+  it("paints at the box's width, sharp for paper", () => {
+    expect(printPaintSize(640)).toEqual({ cssWidth: 640, dpr: PRINT_DPR });
+  });
+
+  it("falls back to a text column's width when the layout gives none", () => {
+    expect(printPaintSize(0).cssWidth).toBeGreaterThanOrEqual(PRINT_FALLBACK_WIDTH);
+    expect(printPaintSize(Number.NaN).cssWidth).toBeGreaterThanOrEqual(PRINT_FALLBACK_WIDTH);
+  });
+
+  it("stays within the device-px cap", () => {
+    const size = printPaintSize(1800);
+    expect(size.cssWidth * size.dpr).toBeLessThanOrEqual(MAX_EMBED_DEVICE_WIDTH);
+  });
+});
+
+describe("embedInsertion", () => {
+  it("makes the link an embed", () => {
+    expect(embedInsertion("[[Physics.notebook]]", "", "")).toBe("![[Physics.notebook]]");
+    expect(embedInsertion("[Physics](Physics.notebook.md)", "", "")).toBe(
+      "![Physics](Physics.notebook.md)",
+    );
+    expect(embedInsertion("![[Physics.notebook]]", "", "")).toBe("![[Physics.notebook]]");
+  });
+
+  it("makes it a paragraph of its own when the cursor is inside text", () => {
+    expect(embedInsertion("[[A.notebook]]", "Vectors:", "")).toBe("\n\n![[A.notebook]]");
+    expect(embedInsertion("[[A.notebook]]", "", " more")).toBe("![[A.notebook]]\n\n");
+    expect(embedInsertion("[[A.notebook]]", "a", "b")).toBe("\n\n![[A.notebook]]\n\n");
+    expect(embedInsertion("[[A.notebook]]", "   ", "\t")).toBe("![[A.notebook]]");
+  });
+
+  it("keeps a blank line from text on the lines around an empty one", () => {
+    // An empty line between "Some text" and "### Vectors".
+    expect(embedInsertion("[[A.notebook]]", "", "", "Some text", "### Vectors")).toBe(
+      "\n![[A.notebook]]\n",
+    );
+    expect(embedInsertion("[[A.notebook]]", "", "", "", "")).toBe("![[A.notebook]]");
+    expect(embedInsertion("[[A.notebook]]", "", "", "Text", "  ")).toBe("\n![[A.notebook]]");
   });
 });

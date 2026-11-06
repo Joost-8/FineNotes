@@ -2172,7 +2172,6 @@
   "surface.selectionBar.shapeTitle": "Bentuk",
   "surface.command.writeAnswer": "Tulis jawapan",
   "surface.textBox.page": "Kotak teks halaman",
-  "surface.textBox.move": "Alihkan kotak teks",
   "surface.textBox.resize": "Ubah saiz kotak teks",
   "surface.shapeType.rectangle": "Segi empat tepat",
   "surface.shapeType.circle": "Bulatan",
@@ -2908,5 +2907,9 @@
   "view.morePanel.freePageEdges": "Tepi halaman bebas",
   "view.ocr.noPdfPages": "FineNotes: buku nota ini tiada halaman PDF.",
   "view.ocr.off": "FineNotes: pembacaan halaman imbasan dimatikan. Hidupkan “Halaman imbasan” dalam menu AI.",
-  "view.ocr.rereading": "FineNotes: membaca semula halaman imbasan PDF ini."
+  "view.ocr.rereading": "FineNotes: membaca semula halaman imbasan PDF ini.",
+  "notebooks.home.files": "Fail",
+  "notebooks.home.itemCount.other": "{count} item",
+  "notebooks.home.deleteItems.other": "Padam {count} item?",
+  "notebooks.home.deleteListPlain": "{list} akan dipadam."
 }

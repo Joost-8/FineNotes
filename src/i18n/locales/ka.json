@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "ფიგურა",
   "surface.command.writeAnswer": "პასუხის ჩაწერა",
   "surface.textBox.page": "გვერდის ტექსტის ველი",
-  "surface.textBox.move": "ტექსტის ველის გადაადგილება",
   "surface.textBox.resize": "ტექსტის ველის ზომის შეცვლა",
   "surface.shapeType.rectangle": "მართკუთხედი",
   "surface.shapeType.circle": "წრე",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "თავისუფალი გვერდის კიდეები",
   "view.ocr.noPdfPages": "FineNotes: ამ რვეულს PDF გვერდები არ აქვს.",
   "view.ocr.off": "FineNotes: დასკანირებული გვერდების წაკითხვა გამორთულია. AI მენიუში ჩართეთ „დასკანირებული გვერდები“.",
-  "view.ocr.rereading": "FineNotes: ამ PDF-ის დასკანირებული გვერდები ხელახლა იკითხება."
+  "view.ocr.rereading": "FineNotes: ამ PDF-ის დასკანირებული გვერდები ხელახლა იკითხება.",
+  "notebooks.home.files": "ფაილები",
+  "notebooks.home.itemCount.one": "{count} ელემენტი",
+  "notebooks.home.itemCount.other": "{count} ელემენტი",
+  "notebooks.home.deleteItems.one": "წაიშალოს {count} ელემენტი?",
+  "notebooks.home.deleteItems.other": "წაიშალოს {count} ელემენტი?",
+  "notebooks.home.deleteListPlain": "{list} წაიშლება."
 }

@@ -21,10 +21,15 @@ import {
   RULE_SWATCHES,
   SPACING_STEPS,
   paperStyleOf,
+  spacingMm,
+  spacingOf,
   styledBackdrop,
+  typedSpacing,
 } from "../canvas/paper-style";
 import { type App, Menu, Modal, setIcon } from "obsidian";
 import { renderColorMixer } from "./color-picker";
+import { DialogKeyboard } from "./dialog-keyboard";
+import { mmStepper } from "./mm-stepper";
 import { LIGHT_PAPER, drawSynthetic } from "../canvas/backdrop";
 import type {
   Backdrop,
@@ -36,6 +41,7 @@ import type {
 import type { InsertPosition } from "../model/page-commands";
 import type { PaperEntry } from "../model/paper-library";
 import {
+  DESIGN_RANGES,
   type PaperDesign,
   defaultPaperDesign,
   designBackdrop,
@@ -810,6 +816,8 @@ export class TemplatePickerModal extends Modal {
   private color: PaperColorId;
   private style: PaperStyle;
   private styleEl: HTMLElement | null = null;
+  /** Keeps the spacing field above the iPad keyboard. */
+  private keyboard: DialogKeyboard | null = null;
   /** Which row's custom colour mixer is open under it, if any. */
   private mixing: "paper" | "rule" | null = null;
   private sizeId: string;
@@ -842,6 +850,7 @@ export class TemplatePickerModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("goodobsidian-templates");
+    this.keyboard = new DialogKeyboard(this.modalEl);
 
     // A change keeps the page's size unless the user picks another one.
     const keepSize = this.sizeId === KEEP_SIZE || this.options.mode === "change";
@@ -869,6 +878,8 @@ export class TemplatePickerModal extends Modal {
       onSelect: (ruling) => {
         this.ruling = ruling;
         this.choosePaper(null);
+        // The spacing field shows this template's pitch.
+        this.renderStyle();
       },
       onActivate: (ruling) => {
         this.ruling = ruling;
@@ -904,6 +915,8 @@ export class TemplatePickerModal extends Modal {
 
   override onClose(): void {
     this.grid = null;
+    this.keyboard?.end();
+    this.keyboard = null;
     this.papers?.dispose();
     this.papers = null;
     this.styleEl = null;
@@ -987,12 +1000,31 @@ export class TemplatePickerModal extends Modal {
     });
     const steps = spacingRow.createDiv({ cls: "goodobsidian-segmented" });
     for (const step of SPACING_STEPS) {
-      const on = (this.style.spacing ?? 1) === step.k;
+      // A typed pitch lights no step: the field says what it is.
+      const on = this.style.pitch === undefined && (this.style.spacing ?? 1) === step.k;
       const button = steps.createEl("button", { cls: "clickable-icon", text: step.label });
       button.toggleClass("is-active", on);
       button.setAttribute("aria-pressed", String(on));
-      button.addEventListener("click", () => set({ spacing: step.k === 1 ? undefined : step.k }));
+      button.addEventListener("click", () =>
+        set({ spacing: step.k === 1 ? undefined : step.k, pitch: undefined }),
+      );
     }
+    // The pitch itself, in mm, for the template chosen: typed, or stepped by half a mm.
+    const shown = spacingMm(spacingOf(this.ruling, this.style));
+    mmStepper(spacingRow, {
+      label: t("notebooks.designer.spacing"),
+      step: DESIGN_RANGES.spacing.step,
+      get: () => shown,
+      format: (mm) => mm.toFixed(1),
+      put: (mm) => {
+        const patch = typedSpacing(this.ruling, mm);
+        if (patch) set(patch);
+        else this.renderStyle();
+      },
+      keyboard: this.keyboard ?? undefined,
+      row: spacingRow,
+      cls: "goodobsidian-paper-style-spacing",
+    });
   }
 
   /**

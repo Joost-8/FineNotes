@@ -2171,7 +2171,6 @@
   "surface.selectionBar.shapeTitle": "図形",
   "surface.command.writeAnswer": "答えを書く",
   "surface.textBox.page": "ページのテキストボックス",
-  "surface.textBox.move": "テキストボックスを移動",
   "surface.textBox.resize": "テキストボックスのサイズを変更",
   "surface.shapeType.rectangle": "長方形",
   "surface.shapeType.circle": "円",
@@ -2907,5 +2906,9 @@
   "view.morePanel.freePageEdges": "ページの端を自由に",
   "view.ocr.noPdfPages": "FineNotes: このノートブックにはPDFのページがありません。",
   "view.ocr.off": "FineNotes: スキャンしたページの読み取りはオフです。AIメニューの「スキャンしたページ」をオンにしてください。",
-  "view.ocr.rereading": "FineNotes: このPDFのスキャンしたページをもう一度読み取っています。"
+  "view.ocr.rereading": "FineNotes: このPDFのスキャンしたページをもう一度読み取っています。",
+  "notebooks.home.files": "ファイル",
+  "notebooks.home.itemCount.other": "{count}件",
+  "notebooks.home.deleteItems.other": "{count}件を削除しますか?",
+  "notebooks.home.deleteListPlain": "{list}を削除します。"
 }

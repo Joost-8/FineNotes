@@ -2260,7 +2260,6 @@
   "surface.selectionBar.shapeTitle": "ቅርጽ",
   "surface.command.writeAnswer": "መልሱን ጻፍ",
   "surface.textBox.page": "የገጽ የጽሑፍ ሳጥን",
-  "surface.textBox.move": "የጽሑፍ ሳጥን ውሰድ",
   "surface.textBox.resize": "የጽሑፍ ሳጥን መጠን ቀይር",
   "surface.shapeType.rectangle": "አራት ማዕዘን",
   "surface.shapeType.circle": "ክበብ",
@@ -3014,5 +3013,11 @@
   "view.morePanel.freePageEdges": "ነጻ የገጽ ጠርዞች",
   "view.ocr.noPdfPages": "FineNotes፦ ይህ ደብተር ምንም የPDF ገጽ የለውም።",
   "view.ocr.off": "FineNotes፦ የተቃኙ ገጾችን ማንበብ ጠፍቷል። በAI ምናሌ ውስጥ «የተቃኙ ገጾች»ን ያብሩ።",
-  "view.ocr.rereading": "FineNotes፦ የዚህ PDF የተቃኙ ገጾች እንደገና እየተነበቡ ነው።"
+  "view.ocr.rereading": "FineNotes፦ የዚህ PDF የተቃኙ ገጾች እንደገና እየተነበቡ ነው።",
+  "notebooks.home.files": "ፋይሎች",
+  "notebooks.home.itemCount.one": "{count} ንጥል",
+  "notebooks.home.itemCount.other": "{count} ንጥሎች",
+  "notebooks.home.deleteItems.one": "{count} ንጥል ይሰረዝ?",
+  "notebooks.home.deleteItems.other": "{count} ንጥሎች ይሰረዙ?",
+  "notebooks.home.deleteListPlain": "{list} ይሰረዛል።"
 }

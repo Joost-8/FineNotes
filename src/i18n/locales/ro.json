@@ -2349,7 +2349,6 @@
   "surface.selectionBar.shapeTitle": "Formă",
   "surface.command.writeAnswer": "Scrie răspunsul",
   "surface.textBox.page": "Casetă de text a paginii",
-  "surface.textBox.move": "Mută caseta de text",
   "surface.textBox.resize": "Redimensionează caseta de text",
   "surface.shapeType.rectangle": "Dreptunghi",
   "surface.shapeType.circle": "Cerc",
@@ -3121,5 +3120,13 @@
   "view.morePanel.freePageEdges": "Margini de pagină libere",
   "view.ocr.noPdfPages": "FineNotes: acest caiet nu are pagini PDF.",
   "view.ocr.off": "FineNotes: citirea paginilor scanate este dezactivată. Activează „Pagini scanate” din meniul AI.",
-  "view.ocr.rereading": "FineNotes: paginile scanate ale acestui PDF se citesc din nou."
+  "view.ocr.rereading": "FineNotes: paginile scanate ale acestui PDF se citesc din nou.",
+  "notebooks.home.files": "Fișiere",
+  "notebooks.home.itemCount.one": "{count} element",
+  "notebooks.home.itemCount.few": "{count} elemente",
+  "notebooks.home.itemCount.other": "{count} de elemente",
+  "notebooks.home.deleteItems.one": "Ștergi {count} element?",
+  "notebooks.home.deleteItems.few": "Ștergi {count} elemente?",
+  "notebooks.home.deleteItems.other": "Ștergi {count} de elemente?",
+  "notebooks.home.deleteListPlain": "De șters: {list}."
 }
