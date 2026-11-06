@@ -158,6 +158,18 @@ describe("a page painted on dark pages", () => {
     expect(paperColorOf(navy, DARK_PAPER)).toBe(NAVY);
   });
 
+  it("screens a highlighter onto paper that is dark already, the ink as stored", () => {
+    // Multiplied into navy or black paper, a highlight comes out near black.
+    const lines = thumbnail(page("n", NAVY), LIGHT_PAPER);
+    const fills = styles(lines, "fillStyle");
+    expect(fills).toContain(INK);
+    expect(fills).toContain(RED);
+    expect(fills).toContain(nightHighlighter(HIGHLIGHT));
+    expect(fills).not.toContain(HIGHLIGHT);
+    expect(lines.join("\n")).toContain("globalCompositeOperation=screen");
+    expect(lines.join("\n")).not.toContain("globalCompositeOperation=multiply");
+  });
+
   it("darkens a coloured paper, keeping its hue", () => {
     expect(paperColorOf(page("c", "#fdf6d8"), DARK_PAPER)).toBe(nightColor("#fdf6d8"));
   });
@@ -212,6 +224,19 @@ describe("the renderer switching theme", () => {
     renderer.renderWet(0, line(300), styleOf(doc.pages[0].strokes[1], false));
     expect(styles(log.lines, "fillStyle")).toContain(nightColor(RED));
     expect(styles(log.lines, "fillStyle")).not.toContain(RED);
+  });
+
+  it("screens the highlight being drawn on a black template, as it will be stored", () => {
+    const { renderer, doc } = setUp();
+    doc.pages = [page("a", "#111111")];
+    renderer.renderBackdrops(doc);
+    log.lines.length = 0;
+    renderer.renderWet(0, line(300), styleOf(doc.pages[0].strokes[2], false));
+    expect(styles(log.lines, "fillStyle")).toContain(nightHighlighter(HIGHLIGHT));
+    expect(log.lines.join("\n")).toContain("globalCompositeOperation=screen");
+    log.lines.length = 0;
+    renderer.renderWet(0, line(300), styleOf(doc.pages[0].strokes[1], false));
+    expect(styles(log.lines, "fillStyle")).toContain(RED);
   });
 
   it("shows a lassoed selection being dragged in its night colours", () => {

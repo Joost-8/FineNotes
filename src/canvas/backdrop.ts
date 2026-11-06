@@ -54,7 +54,7 @@ import {
 import { type LineBlock, evenBlock } from "./writing-lines";
 import { marginLinePlan, ruledArea } from "../model/paper-extras";
 import { TEXTURES, type TextureRegion, isDarkTextureGround, textureMarks } from "./paper-texture";
-import { NIGHT_PAPER, nightColor, nightRule, paperFlips } from "./night";
+import { type InkShade, NIGHT_PAPER, nightColor, nightRule, paperFlips } from "./night";
 import { t } from "../i18n/translate";
 
 /** Colours a page is painted with. Chrome colours come from Obsidian's CSS vars;
@@ -216,6 +216,16 @@ export function pageLook(backdrop: Backdrop, theme: PaperTheme): PageLook {
   return paperFlips(own)
     ? { paper: nightColor(own), night: true, theme }
     : { paper: own, night: false, theme: LIGHT_PAPER };
+}
+
+/**
+ * How a page of this look shows its ink: mapped on a night page; as stored
+ * on light paper; as stored but with highlighters screened on paper that is
+ * dark already, where multiplying them in would leave them near black.
+ */
+export function inkShade(look: PageLook): InkShade {
+  if (look.night) return "night";
+  return paperFlips(look.paper) ? "day" : "dark";
 }
 
 /** A colour a page names, as a page of that look shows it. */
