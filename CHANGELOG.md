@@ -8,50 +8,21 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
-### Fixed
+## [2.8.3] - 2026-11-06
 
-- **Everything since 2.8.0 in your language.** Reading scanned PDF pages (its
-  download offer, menu row, settings row and notices), the Notebooks button on
-  an empty tab, Free page edges, boards, deleting from Home, asking about what
-  is on screen and line width showed in English whatever the interface
-  language; they are now in all 42 languages. Scan document and Import PDF…
-  in the command palette, and the Pages section's More row, are translated
-  again.
 ### Added
 
-- **Type the line spacing** (FineNotes#164). Beside Tight, Normal, Roomy and
-  Wide, the template picker shows the spacing in mm; type any value from 2 to
-  30 mm, or step it by half a mm.
-- **The margin's spacing** (FineNotes#164). The Margin popover shows the
-  pitch of a lined, grid or dotted margin in mm, to type or step.
-
-### Fixed
-
-- **A page margin's lines now continue the page's** (FineNotes#164). On a
-  ruled, squared or dotted page the margin takes the page's spacing and its
-  lines are level with the page's, whatever the spacing; before, it kept its
-  own. A PDF page's margin keeps the margin paper's own spacing.
-- A spacing that matched none of the steps reopened in the template picker
-  as the nearest step, and was changed to it on Apply. It is kept as it is.
-- **Snap to PDF text, as a switch.** The highlighter's options have a new
-  switch beside Straighten lines. Off, the highlighter draws freehand on a
-  PDF's text too, straight or free, which marks equations and formulas
-  that the text snap breaks into pieces (FineNotes#159).
-
-### Fixed
-
-- **The highlighter takes a whole equation.** On a PDF, the text snap now
-  treats a formula as one line: a fraction's top and bottom and a sum's
-  limits belong to it, so a highlight over an equation is one band instead
-  of scraps at different heights (FineNotes#159). This holds for formulas
-  made in Word or MathType too, which a PDF draws a font at a time
-  (brackets, then letters, then digits): pieces join by where they stand on
-  the page, not by the order they were drawn.
-- **The whole-stroke eraser takes a highlight it touches.** It took a
-  stroke only near its centre line, so rubbing over a wide highlight (a
-  snapped one is as tall as the text) away from its middle left it there.
-  Now touching the ink is enough, as with the standard eraser
-  (FineNotes#159).
+- **Typed equations**
+  ([discussion #166](https://github.com/Joost-8/FineNotes/discussions/166)).
+  The Text tool's Σ switch makes a tap place a formula: type it in LaTeX,
+  see it set as you type, and ✓ puts it on the page, drawn as math in the
+  text's colour. Tap it again to edit; the lasso moves, scales and colours it.
+- **New text box handles, and text boxes turn.** A selected text box moves
+  when you drag the box itself; a pill on each side sets its width (the text
+  rewraps and the height keeps following it), a square on each corner scales
+  the box and its text together, and a knob below turns it, catching every
+  15°. While typing only the two pills show. Turning a lasso selection now
+  turns the text boxes in it too.
 - **Handwritten sections in ordinary notes**
   ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167),
   thanks [@mantomat](https://github.com/mantomat)). `![[Physics.notebook]]`
@@ -63,56 +34,83 @@ extracted from the matching section of this file by `release.yml`.
 - **Embedded notebooks in Export to PDF.** A note exported with Obsidian's
   Export to PDF now prints the pages it embeds, in light paper; before, they
   came out blank. A page is never cut across two sheets.
+- **Home search finds pages inside notebooks.** Under the matching
+  notebooks, Pages lists the pages that hold the words (transcriptions, text
+  boxes, handwriting read on the device, a PDF's text), one snippet each; a
+  tap opens the notebook on that page with the words lit.
+- **Notebooks in Obsidian's sidebar.** A Notebooks view sits beside Files,
+  Search and Bookmarks in the left sidebar: your folders with only the
+  notebooks in them. A tap opens a notebook, a right-click or long press
+  gives Obsidian's own file menu, and its buttons open Home or make a
+  notebook. Closed, the command "Show notebooks in the sidebar" brings it
+  back.
+- **Select PDF words by dragging** (FineNotes#164). Hold the right mouse
+  button on PDF text and drag: every word from there to the pointer is
+  selected, and Copy appears when you let go. With a finger or the Pencil,
+  hold on the text, then drag.
+- **Freehand cover tape** (discussion #160). The tape's options can lay a
+  tape along the path you draw, as a smooth curve, instead of a straight
+  strip.
+- **Tape that snaps to text** (FineNotes#164). A magnet in the tape's
+  options: dragged over a PDF's text, a straight tape covers each line it
+  runs over.
+- **Snap to PDF text, as a switch** (FineNotes#159). The highlighter's
+  options have a switch beside Straighten lines. Off, the highlighter draws
+  freehand on a PDF's text too.
+- **Type the line spacing** (FineNotes#164). Beside Tight, Normal, Roomy and
+  Wide, the template picker shows the spacing in mm; type any value from 2 to
+  30 mm, or step it by half a mm. The Margin popover does the same for a
+  lined, grid or dotted margin.
+- **The Shape tool's colour and line panels**, as the selection bar's: a
+  colour disc with Fill and its opacity, and a line panel with None, solid,
+  dashed or dotted lines and their width.
+- **A tap inside a closed shape picks it up**, not only a tap on its line.
+
 ### Changed
 
 - **Home, redesigned around your notebooks.** In the simple look a folder
-  rail on the left lists Home and your folders, with the path to the open
-  folder unfolded; drop a notebook on a folder to move it there. Every
-  notebook with a cover shows that cover as you designed it, name included,
-  and a PDF notebook its first page with its name on a label. Continue shows
-  the notebook you read last with the page you left it on: tap the page or
-  Continue to go straight back. One tap on a cover shows a preview beside
-  the covers (its pages, folder, size, Open and ⋯); a tap on a page opens the
-  notebook there, and a double tap on a cover opens it.
-  The rail has a button of its own to put it away and bring it back; on a
-  narrow Home it opens as a drawer over the covers, closing once you pick a
-  folder. The sort menu has **Notebooks only**, to hide every other file.
-- **Recent**, under Continue: the six notebooks read or written before
-  those, newest first. Page pictures in Continue and the preview are drawn
-  at the size they are shown, sharp on the iPad, and kept on the device so
-  they show at once the next time.
-- **Notebooks in Obsidian's sidebar.** A Notebooks view sits beside Files,
-  Search and Bookmarks in the left sidebar: your folders with only the
-  notebooks in them, as the file explorer draws them. A tap opens a notebook,
-  a right-click or long press gives Obsidian's own file menu, and its buttons
-  open Home or make a notebook. It is added once; closed, the command "Show
-  notebooks in the sidebar" brings it back.
-- A folder holding only folders no longer opened empty with the rail on,
-  and the rail now appears and goes as soon as the simple look is turned on
-  or off. A notebook's transcript beside it (`X.transcript.md`) is part of
-  the notebook, not a note of its own. A PDF file no longer shows its name
-  twice.
-- **Home opens at once** (FineNotes#146). PDF covers are kept on this device
-  once they are drawn, so opening Home again, or after restarting the app,
-  shows them straight away instead of rendering every PDF again; only a new
-  or changed PDF is rendered, once. What Home knows of each notebook is kept
-  too, so it reads only the notebooks changed since. Searching and switching
-  tabs no longer redraw the covers. Measured on a desktop with 40 PDF
-  notebooks: covers on screen in 25 ms instead of about 1 s.
+  rail on the left lists Home and your folders; drop a notebook on a folder
+  to move it there. Every notebook with a cover shows that cover as you
+  designed it, and a PDF notebook its first page. Continue shows the
+  notebook you read last with the page you left it on, and **Recent** under
+  it the six before. One tap on a cover shows a preview beside the covers
+  (its pages, folder, size, Open and ⋯); a double tap opens it. The rail can
+  be put away, and opens as a drawer on a narrow Home. The sort menu has
+  **Notebooks only**.
 - **Home shows every file in a folder, not only notebooks.** Notes, PDFs,
-  pictures and any other file sit beside the notebooks, sorted with them, and
-  every folder that holds something is a folder tile. A note shows its first
-  page as Obsidian renders it, a PDF its first page, a picture itself; other
-  files show a symbol and their extension. Tapping one opens it in Obsidian;
-  its ⌄ menu renames, moves or deletes it. What a notebook keeps in its own
-  folder (pictures, recordings, transcripts) still shows as the notebook.
+  pictures and any other file sit beside the notebooks; tapping one opens it
+  in Obsidian, and its ⌄ menu renames, moves or deletes it.
+- **Home opens at once** (FineNotes#146). PDF covers and what Home knows of
+  each notebook are kept on this device, so Home shows them straight away
+  instead of reading every notebook again.
+- **Every pen in view** (FineNotes#164). The pen row in the pen's options no
+  longer stops at four with an arrow: every pen always shows, and the colour
+  row beside it gives way instead.
 
 ### Fixed
 
-- **A notebook opened from Home fills the screen.** With Obsidian's "Stack
-  tabs" on, it opened beside Home like a split screen; opening a notebook
-  from Home now stops that tab group stacking. Home stays a pinned tab, one
-  tap back.
+- **The highlighter takes a whole equation** (FineNotes#159). On a PDF, a
+  formula is one line to the text snap: a fraction's top and bottom and a
+  sum's limits belong to it, so a highlight over an equation is one band
+  instead of scraps. This holds for formulas made in Word or MathType too.
+- **The whole-stroke eraser takes a highlight it touches**, not only near
+  its centre line, so wide highlights come off (FineNotes#159).
+- **The highlighter shows on dark paper**, such as black templates and navy
+  covers.
+- **The font list always scrolls** (FineNotes#165). The first time it was
+  opened in a notebook tab it could stop after the first font on the
+  computer, with no scrollbar.
+- **A page margin's lines continue the page's** (FineNotes#164), whatever
+  the spacing; before, it kept its own. A spacing that matched none of the
+  steps is no longer changed to the nearest one on Apply.
+- **Alt-drag zooms again** with the Zoom box on; only the Magnifier in hand
+  draws the box's target.
+- **A notebook opened from Home fills the screen**, even with Obsidian's
+  "Stack tabs" on.
+- **Everything in your language.** What was added since 2.8.0 (reading
+  scanned PDF pages, boards, deleting from Home, free page edges and more)
+  showed in English whatever the interface language, and so did this
+  release's new texts; they are now in all 42 languages.
 
 ## [2.8.2] - 2026-11-05
 
