@@ -58,14 +58,25 @@ export type FillMode = "soft" | "solid";
 
 /** The Shape tool's style choices, remembered between sessions. */
 export interface ShapeToolStyle {
-  /** Absent: no fill. */
-  fill?: FillMode;
+  /**
+   * Fill with the shape's own colour at this opacity (0–1), as the colour
+   * panel sets it. Absent: no fill. (Before 2.9 this was `fill`, soft or
+   * solid; the reader turns that into its opacity.)
+   */
+  fillAlpha?: number;
+  /** Draw a filled shape with no outline: the fill alone. */
+  noLine?: boolean;
+  /** The line's width, page px. Absent: the pen's width. */
+  width?: number;
   dash?: ShapeDash;
   /** Round the corners of shapes that have them. */
   round?: boolean;
   /** The arrow preset's heads; absent counts as an open head at the end only. */
   heads?: ArrowHeads;
 }
+
+/** The widest line the Shape tool remembers, page px. */
+const MAX_TOOL_WIDTH = 100;
 
 /** An arrow preset's heads when none were picked: GoodNotes' single open head. */
 export const DEFAULT_ARROW_HEADS: ArrowHeads = { end: "open" };
@@ -80,7 +91,18 @@ export function readShapeToolStyle(raw: unknown): ShapeToolStyle {
   if (typeof raw !== "object" || raw === null) return {};
   const r = raw as Record<string, unknown>;
   const out: ShapeToolStyle = {};
-  if (r.fill === "soft" || r.fill === "solid") out.fill = r.fill;
+  const alpha = r.fillAlpha;
+  if (typeof alpha === "number" && Number.isFinite(alpha) && alpha > 0) {
+    out.fillAlpha = Math.min(1, Math.max(0.05, alpha));
+  } else if (r.fill === "soft" || r.fill === "solid") {
+    out.fillAlpha = r.fill === "soft" ? TINT_ALPHA : 1;
+  }
+  // No line is only kept with a fill: a shape is never drawn as nothing.
+  if (r.noLine === true && out.fillAlpha !== undefined) out.noLine = true;
+  const width = r.width;
+  if (typeof width === "number" && Number.isFinite(width) && width > 0) {
+    out.width = Math.min(MAX_TOOL_WIDTH, width);
+  }
   const dash = readDash(r.dash);
   if (dash) out.dash = dash;
   if (r.round === true) out.round = true;
@@ -96,7 +118,10 @@ export function readShapeToolStyle(raw: unknown): ShapeToolStyle {
 export function styleNewShape(stroke: Stroke, tool: ShapeToolStyle): void {
   const kind = stroke.shape;
   if (kind === undefined) return;
-  if (tool.fill && canFill(kind)) stroke.fill = fillOf(stroke.color, tool.fill);
+  if (tool.fillAlpha !== undefined && canFill(kind)) {
+    stroke.fill = withAlpha(stroke.color, tool.fillAlpha);
+    if (tool.noLine) stroke.noLine = true;
+  }
   if (tool.dash) stroke.dash = tool.dash;
   if (tool.round && canRound(kind)) stroke.radius = ROUND_RADIUS;
   if (kind === "arrow" || kind === "path") {
