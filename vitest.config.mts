@@ -61,6 +61,7 @@ export default defineConfig({
         "src/canvas/graph-geometry.ts",
         "src/canvas/shape-decor.ts",
         "src/canvas/paper-style.ts",
+        "src/canvas/margin-paper.ts",
         "src/canvas/paper-texture.ts",
         "src/canvas/lasso.ts",
         "src/canvas/selection-turn.ts",

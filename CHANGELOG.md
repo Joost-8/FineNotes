@@ -8,6 +8,23 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Type the line spacing** (FineNotes#164). Beside Tight, Normal, Roomy and
+  Wide, the template picker shows the spacing in mm; type any value from 2 to
+  30 mm, or step it by half a mm.
+- **The margin's spacing** (FineNotes#164). The Margin popover shows the
+  pitch of a lined, grid or dotted margin in mm, to type or step.
+
+### Fixed
+
+- **A page margin's lines now continue the page's** (FineNotes#164). On a
+  ruled, squared or dotted page the margin takes the page's spacing and its
+  lines are level with the page's, whatever the spacing; before, it kept its
+  own. A PDF page's margin keeps the margin paper's own spacing.
+- A spacing that matched none of the steps reopened in the template picker
+  as the nearest step, and was changed to it on Apply. It is kept as it is.
+
 ## [2.8.2] - 2026-11-05
 
 ### Added

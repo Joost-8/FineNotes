@@ -39,6 +39,7 @@ import { PAGE_SIZES } from "../model/templates";
 import { pageToMm } from "../model/units";
 import { renderColorMixer } from "./color-picker";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { mmStepper } from "./mm-stepper";
 import { t } from "../i18n/translate";
 
 export interface PaperDesignerOptions {
@@ -635,47 +636,19 @@ class PaperDesigner {
     get: () => number,
     set: (value: number) => void,
   ): void {
-    const box = row.createDiv({ cls: "goodobsidian-paper-designer-stepper" });
-    const { step } = DESIGN_RANGES[range];
-    const minus = box.createEl("button", {
-      cls: "clickable-icon",
-      attr: {
-        "aria-label": t("notebooks.designer.less", { label }),
-        title: t("notebooks.designer.lessTitle"),
+    const stepper = mmStepper(row, {
+      label,
+      step: DESIGN_RANGES[range].step,
+      get,
+      put: (value) => {
+        const clamped = clampDesignValue(range, value);
+        if (clamped !== null) this.change(() => set(clamped));
+        else this.sync();
       },
+      keyboard: this.keyboard,
+      row,
     });
-    setIcon(minus, "minus");
-    const input = box.createEl("input", {
-      attr: {
-        type: "text",
-        inputmode: "decimal",
-        "aria-label": t("notebooks.designer.inMm", { label }),
-      },
-    });
-    box.createSpan({ cls: "goodobsidian-paper-designer-unit", text: "mm" });
-    const plus = box.createEl("button", {
-      cls: "clickable-icon",
-      attr: {
-        "aria-label": t("notebooks.designer.more", { label }),
-        title: t("notebooks.designer.moreTitle"),
-      },
-    });
-    setIcon(plus, "plus");
-    const put = (value: number): void => {
-      const clamped = clampDesignValue(range, value);
-      if (clamped !== null) this.change(() => set(clamped));
-      else this.sync();
-    };
-    minus.addEventListener("click", () => put(get() - step));
-    plus.addEventListener("click", () => put(get() + step));
-    input.addEventListener("change", () => put(Number(input.value.replace(",", "."))));
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") input.blur();
-    });
-    this.keyboard.watch(input, row);
-    this.syncers.push(() => {
-      if (document.activeElement !== input) input.value = String(Number(get().toFixed(2)));
-    });
+    this.syncers.push(stepper.sync);
   }
 
   // --- State ----------------------------------------------------------------------

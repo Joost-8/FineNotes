@@ -38,6 +38,7 @@
  */
 
 import { marginBackdrop, marginStrips } from "../model/page-margin";
+import { marginPaper } from "./margin-paper";
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
 import { LIGHT_PAPER, type PaperTheme, deskFor, pageLook, shownColor } from "./backdrop";
 import { erasingLook } from "./erase-look";
@@ -411,7 +412,7 @@ export function paintPagePaper(
   marginsOnly = false,
 ): void {
   const { backdrop, geometry } = page;
-  const margin = marginBackdrop(page);
+  const margin = marginPaper(page);
   if (margin) {
     for (const strip of marginStrips(page)) {
       paintInStrip(painter, ctx, margin, strip, weight, target);
