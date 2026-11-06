@@ -2700,14 +2700,13 @@ export class Toolbar {
    * view, and fade the ends that hide more, as the colour row does.
    */
   private fitPenRow(row: HTMLElement, upright: boolean): void {
-    const arrows = this.rowArrows(row, upright);
+    // No arrows here: the row keeps every pen in view (styles.css).
     const fade = (): void => {
       const ends = upright
         ? hiddenEnds(row.scrollTop, row.clientHeight, row.scrollHeight)
         : hiddenEnds(row.scrollLeft, row.clientWidth, row.scrollWidth);
       row.toggleClass("has-more-start", ends.start);
       row.toggleClass("has-more-end", ends.end);
-      arrows(ends);
     };
     const chosen = this.penTypeButtons.get(this.activePenType().id);
     if (upright) {

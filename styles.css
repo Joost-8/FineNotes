@@ -728,15 +728,14 @@ body:not(.is-mobile) .goodobsidian-view {
 }
 
 /* The pen types as a row, as Goodnotes has them (toolbar.ts, buildPenRow):
-   every pen in view while the pill has the room (FineNotes#164); on a
-   narrow pane the row gives way, down to two, and the rest are a swipe (or
-   an arrow) away. An end that hides more fades as the colour row's does.
-   Upright it runs down the pill, as tall as its pens, and gives way the
-   same when the pill is taller than the room. */
+   every pen in view, always, and no arrow (FineNotes#164): the colour row
+   beside it scrolls instead. Upright it runs down the pill, as tall as its
+   pens. */
 .goodobsidian-pen-types {
   position: relative;
   display: flex;
-  flex: 0 1 auto;
+  /* Every pen shows, with no arrow: the colour row gives way instead. */
+  flex: none;
   align-items: center;
   gap: 4px;
   min-width: calc(var(--gob-pen-type, 42px) * 2 + 4px);

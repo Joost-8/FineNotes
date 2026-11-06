@@ -1,7 +1,6 @@
 /**
- * styles.css — the pen types' row (FineNotes#164): every pen shows while
- * the pill has the room, across or upright; only a narrow pane makes it
- * give way, down to two pens, and scroll.
+ * styles.css — the pen types' row (FineNotes#164): every pen always shows,
+ * across or upright, with no arrow; the colour row beside it gives way.
  */
 
 import { readFileSync } from "node:fs";
@@ -29,11 +28,8 @@ describe("the pen row (FineNotes#164)", () => {
     }
   });
 
-  it("still gives way down to two pens, and scrolls", () => {
-    const body = penRowRules().join("\n");
-    expect(body).toMatch(/min-width:\s*calc\(var\(--gob-pen-type, 42px\) \* 2 \+ 4px\)/);
-    expect(body).toMatch(/min-height:\s*calc\(var\(--gob-pen-type, 42px\) \* 2 \+ 4px\)/);
-    expect(body).toMatch(/overflow-x:\s*auto/);
-    expect(body).toMatch(/overflow-y:\s*auto/);
+  it("never shrinks: the colour row gives way instead", () => {
+    const body = penRowRules()[0];
+    expect(body).toMatch(/flex:\s*none/);
   });
 });
