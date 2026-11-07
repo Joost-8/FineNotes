@@ -713,6 +713,15 @@ export class InkView extends TextFileView {
       surface: () => this.surface,
       page: (pageId) => this.doc.pages.find((p) => p.id === pageId) ?? null,
       learning: () => plugin.learningHost(),
+      record: async (pageId, strokes, read, text, kind) => {
+        const note = this.file?.path;
+        if (!note) return;
+        await plugin.wordCheck.record(
+          { note, pageId, word: { text: read, strokeIds: strokes.map((s) => s.id) }, strokes },
+          kind,
+          text,
+        );
+      },
     });
   }
 
@@ -3451,6 +3460,7 @@ export class InkView extends TextFileView {
           }
         },
         onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
+        onHistoryStep: (command, redo) => this.calcNotes.historyStep(command, redo),
         onPenShape: () => {
           if (this.surface) this.plugin.offerShapeHint(this.surface);
         },

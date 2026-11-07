@@ -28,6 +28,8 @@ export interface CalcCardContent {
   expression: string;
   forms: AnswerForms;
   form: AnswerForm;
+  /** What Grape was unsure of: each doubtful character (or piece) and its runner-ups. */
+  doubts: Array<{ char: string; alternatives: string[] }>;
 }
 
 export interface CalcCardActions {
@@ -39,6 +41,8 @@ export interface CalcCardActions {
   fix: (expression: string) => CalcCardContent | null;
   /** The chosen form changed (remembered for the next sum). */
   formChosen: (form: AnswerForm) => void;
+  /** Doubt `doubt` answered as `text`: the new content, or null when it no longer works out. */
+  pick: (doubt: number, text: string) => CalcCardContent | null;
 }
 
 /** The preview's font size, CSS px. */
@@ -54,6 +58,10 @@ export class CalcCard {
   private readonly forms: HTMLElement;
   private readonly fractionButton: HTMLButtonElement;
   private readonly decimalButton: HTMLButtonElement;
+  private readonly main: HTMLElement;
+  private readonly doubtsRow: HTMLElement;
+  private readonly fixView: HTMLElement;
+  private readonly fixChoices: HTMLElement;
   private content: CalcCardContent | null = null;
   private actions: CalcCardActions | null = null;
 
@@ -61,15 +69,19 @@ export class CalcCard {
     this.el = parent.createDiv({ cls: "goodobsidian-calc-card is-hidden" });
     // Presses on the card stay on the card: none reaches the page.
     this.el.addEventListener("pointerdown", (event) => event.stopPropagation());
+    const main = (this.main = this.el.createDiv({ cls: "goodobsidian-calc-card-main" }));
 
-    this.preview = this.el.createEl("button", {
+    this.preview = main.createEl("button", {
       cls: "goodobsidian-calc-card-preview clickable-icon",
     });
     this.preview.setAttribute("aria-label", t("calculator.fixReading"));
     this.canvas = this.preview.createEl("canvas");
     onTap(this.preview, () => this.editReading());
 
-    this.field = this.el.createEl("input", {
+    // What Grape was unsure of, dotted as on the page: a tap opens its runner-ups.
+    this.doubtsRow = main.createDiv({ cls: "goodobsidian-calc-card-doubts" });
+
+    this.field = main.createEl("input", {
       cls: "goodobsidian-calc-card-field is-hidden",
       attr: { type: "text", enterkeyhint: "done", autocapitalize: "off", spellcheck: "false" },
     });
@@ -79,7 +91,7 @@ export class CalcCard {
     new DialogKeyboard(this.el).watch(this.field, this.field);
     this.field.addEventListener("blur", () => this.commitReading());
 
-    this.forms = this.el.createDiv({ cls: "goodobsidian-segmented goodobsidian-calc-card-forms" });
+    this.forms = main.createDiv({ cls: "goodobsidian-segmented goodobsidian-calc-card-forms" });
     this.fractionButton = this.forms.createEl("button", {
       cls: "goodobsidian-calc-card-form clickable-icon",
     });
@@ -91,7 +103,7 @@ export class CalcCard {
     onTap(this.fractionButton, () => this.choose("fraction"));
     onTap(this.decimalButton, () => this.choose("decimal"));
 
-    const write = this.el.createEl("button", { cls: "goodobsidian-calc-card-write mod-cta" });
+    const write = main.createEl("button", { cls: "goodobsidian-calc-card-write mod-cta" });
     setIcon(write.createSpan({ cls: "goodobsidian-calc-card-write-icon" }), "corner-down-left");
     write.createSpan({ text: t("calculator.write") });
     onTap(write, () => {
@@ -99,7 +111,7 @@ export class CalcCard {
       if (form) this.actions?.write(form);
     });
 
-    const foot = this.el.createDiv({ cls: "goodobsidian-calc-card-foot" });
+    const foot = main.createDiv({ cls: "goodobsidian-calc-card-foot" });
     const icon = (name: string, label: string, action: () => void): void => {
       const b = foot.createEl("button", { cls: "clickable-icon goodobsidian-calc-card-icon" });
       setIcon(b, name);
@@ -112,6 +124,20 @@ export class CalcCard {
     });
     icon("copy", t("calculator.copyLatex"), () => this.actions?.copyLatex());
     icon("x", t("calculator.notMaths"), () => this.actions?.notMaths());
+
+    // The correction view: a doubt's runner-ups, ✎ to type it, ← back.
+    this.fixView = this.el.createDiv({ cls: "goodobsidian-calc-card-fix is-hidden" });
+    const head = this.fixView.createDiv({ cls: "goodobsidian-calc-card-fix-head" });
+    const back = head.createEl("button", { cls: "clickable-icon goodobsidian-calc-card-icon" });
+    setIcon(back, "chevron-left");
+    back.setAttribute("aria-label", t("calculator.back"));
+    onTap(back, () => this.showMain());
+    this.fixChoices = this.fixView.createDiv({ cls: "goodobsidian-calc-card-choices" });
+  }
+
+  /** Whether `node` is inside the card. */
+  contains(node: Node | null): boolean {
+    return node !== null && this.el.contains(node);
   }
 
   get shown(): boolean {
@@ -123,12 +149,60 @@ export class CalcCard {
     return !this.field.hasClass("is-hidden");
   }
 
-  show(content: CalcCardContent, actions: CalcCardActions): void {
+  /** Open it on `content`; with `doubt` (an index into its doubts), straight at that doubt's runner-ups. */
+  show(content: CalcCardContent, actions: CalcCardActions, doubt = -1): void {
     this.actions = actions;
     this.field.addClass("is-hidden");
     this.preview.removeClass("is-hidden");
     this.el.removeClass("is-hidden");
     this.setContent(content);
+    if (doubt >= 0 && doubt < content.doubts.length) this.showFix(doubt);
+    else this.showMain();
+  }
+
+  private showMain(): void {
+    this.fixView.addClass("is-hidden");
+    this.main.removeClass("is-hidden");
+  }
+
+  /** The runner-ups of doubt `index`: what was read first (chosen), then the others, then ✎. */
+  private showFix(index: number): void {
+    const doubt = this.content?.doubts[index];
+    if (!doubt) return;
+    this.fixChoices.empty();
+    for (const choice of [doubt.char, ...doubt.alternatives]) {
+      const b = this.fixChoices.createEl("button", {
+        cls: "clickable-icon goodobsidian-calc-card-choice",
+        text: choice,
+      });
+      b.toggleClass("is-active", choice === doubt.char);
+      onTap(b, () => this.pick(index, choice));
+    }
+    const type = this.fixChoices.createEl("button", {
+      cls: "clickable-icon goodobsidian-calc-card-choice",
+    });
+    setIcon(type, "pencil");
+    type.setAttribute("aria-label", t("calculator.fixReading"));
+    onTap(type, () => {
+      this.showMain();
+      this.editReading();
+    });
+    this.main.addClass("is-hidden");
+    this.fixView.removeClass("is-hidden");
+  }
+
+  private pick(index: number, text: string): void {
+    const doubt = this.content?.doubts[index];
+    if (!doubt || !this.actions) return;
+    if (text !== doubt.char) {
+      const next = this.actions.pick(index, text);
+      if (next)
+        this.setContent({
+          ...next,
+          form: next.forms.fraction ? (this.content?.form ?? "decimal") : "decimal",
+        });
+    }
+    this.showMain();
   }
 
   hide(): void {
@@ -164,6 +238,16 @@ export class CalcCard {
       f.createSpan({ text: fraction.d });
     }
     this.decimalButton.setText(content.forms.decimal.text.replace(/^-/, "−"));
+    this.doubtsRow.empty();
+    this.doubtsRow.toggleClass("is-hidden", content.doubts.length === 0);
+    content.doubts.forEach((doubt, i) => {
+      const chip = this.doubtsRow.createEl("button", {
+        cls: "clickable-icon goodobsidian-calc-card-doubt",
+        text: doubt.char,
+      });
+      chip.setAttribute("aria-label", t("calculator.fixChar", { char: doubt.char }));
+      onTap(chip, () => this.showFix(i));
+    });
     // A whole number has one form: the answer alone, no choice.
     this.fractionButton.toggleClass("is-hidden", !fraction);
     this.forms.toggleClass("is-single", !fraction);

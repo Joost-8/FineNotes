@@ -33,11 +33,51 @@ export class CalcGlow {
   /** The scale it was last drawn at, so a move alone does not redraw. */
   private drawnScale = 0;
 
-  constructor(parent: HTMLElement, onOpen: () => void) {
+  /**
+   * `onOpen` runs on a tap: with the index of the doubt tapped (its dotted
+   * ink), or -1 for a tap anywhere else on the glow.
+   */
+  constructor(parent: HTMLElement, onOpen: (doubt: number) => void) {
     this.el = parent.createEl("button", { cls: "goodobsidian-calc-glow clickable-icon is-hidden" });
     this.el.setAttribute("aria-label", t("calculator.mathsMark"));
     this.canvas = this.el.createEl("canvas");
-    onTap(this.el, onOpen);
+    let at = { x: 0, y: 0 };
+    this.el.addEventListener("pointerdown", (event) => {
+      at = { x: event.clientX, y: event.clientY };
+    });
+    onTap(this.el, () => onOpen(this.doubtAt(at.x, at.y)));
+  }
+
+  /** The doubt whose ink is under the client point, or -1. */
+  private doubtAt(clientX: number, clientY: number): number {
+    const spec = this.spec;
+    const b = this.bounds;
+    const scale = this.drawnScale;
+    if (!spec || !b || !(scale > 0)) return -1;
+    const rect = this.el.getBoundingClientRect();
+    const x = (clientX - rect.left) / scale + b.minX - PAD;
+    const y = (clientY - rect.top) / scale + b.minY - PAD;
+    // Within about a fingertip of the character's ink.
+    const reach = 14 / scale;
+    let best = -1;
+    let bestD = Infinity;
+    spec.doubts.forEach((ids, i) => {
+      const gb = unionBounds(spec.strokes.filter((s) => ids.includes(s.id)));
+      if (!gb) return;
+      const dx = Math.max(gb.minX - x, 0, x - gb.maxX);
+      const dy = Math.max(gb.minY - y, 0, y - (gb.maxY + 8));
+      const d = Math.hypot(dx, dy);
+      if (d <= reach && d < bestD) {
+        best = i;
+        bestD = d;
+      }
+    });
+    return best;
+  }
+
+  /** Whether `node` is the glow (or inside it). */
+  contains(node: Node | null): boolean {
+    return node !== null && this.el.contains(node);
   }
 
   get pageId(): string | null {

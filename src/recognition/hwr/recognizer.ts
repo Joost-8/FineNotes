@@ -10,7 +10,8 @@
 import { forward } from "./blstm";
 import type { HwrBundle } from "./bundle";
 import { type BeamOptions, beamDecode, greedyDecode } from "./ctc";
-import { networkInput } from "./curves";
+import { type CharReading, charReadings } from "./char-readings";
+import { networkFrames } from "./curves";
 import { type InkStroke, LineTooLongError, lineFeatures } from "./features";
 import { type Box, type PageInk, lineStrokes, segmentPage } from "./lines";
 
@@ -31,6 +32,11 @@ export interface LineReading {
   confidence: number;
   frames: number;
   timings: LineTimings;
+  /**
+   * Each character of `greedy`, with its strokes (indices into the strokes
+   * read), its confidence and its runner-ups; only when asked (`chars`).
+   */
+  chars?: CharReading[];
 }
 
 export interface PageLineReading extends LineReading {
@@ -61,6 +67,8 @@ export interface ReadOptions {
    * second look at its words (lexicon.ts). `line` is its index on the page.
    */
   logp?: (line: number, logp: Float32Array, frames: number) => void;
+  /** Also give each character with its strokes and runner-ups (`LineReading.chars`). */
+  chars?: boolean;
 }
 
 /**
@@ -75,10 +83,18 @@ export function readLine(
 ): LineReading {
   const now = options.now ?? (() => 0);
   const t0 = now();
-  let line: { features: Float32Array; frames: number };
+  let line: { features: Float32Array; frames: number; frameStroke: Int32Array | null };
+  let order: number[] = [];
   try {
     const points = lineFeatures(strokes, bundle.meta.features.heightsPerSecond);
-    line = networkInput(bundle.meta.input, bundle.net.inputs, points.features, points.frames);
+    line = networkFrames(
+      bundle.meta.input,
+      bundle.net.inputs,
+      points.features,
+      points.frames,
+      points.frameStroke,
+    );
+    if (options.chars) order = points.strokes.map((s) => strokes.indexOf(s));
   } catch (error) {
     if (!(error instanceof LineTooLongError)) throw error;
     const timings = { features: now() - t0, network: 0, greedy: 0, beam: 0 };
@@ -103,6 +119,19 @@ export function readLine(
     confidence: greedy.confidence,
     frames,
     timings: { features: t1 - t0, network: t2 - t1, greedy: t3 - t2, beam: t4 - t3 },
+    ...(options.chars && line.frameStroke
+      ? {
+          chars: charReadings(
+            logp,
+            frames,
+            alphabet,
+            greedy.text,
+            greedy.spans,
+            line.frameStroke,
+            order,
+          ),
+        }
+      : {}),
   };
 }
 

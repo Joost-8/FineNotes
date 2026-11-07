@@ -17,6 +17,13 @@ extracted from the matching section of this file by `release.yml`.
   it to fix the reading), the answer as a fraction or a decimal, and Write,
   which writes a fraction stacked over a bar. Along its foot: turn the sum
   into a typed equation, copy its LaTeX, or not maths.
+- **A doubtful character offers what else it may be** (FineNotes#178). Each
+  character Grape was unsure of, or that its word model changed, is dotted on
+  the page and in the card; a tap shows Grape's other guesses ("2 · Z · z")
+  and ✎ to type it. A pick works the sum out again and is kept as a
+  correction for Learn my handwriting, as is a reading accepted with Write or
+  a typed equation. A tap outside the card closes it and the sum keeps
+  glowing; undoing the answer or the equation brings the glow back.
 
 ### Fixed
 

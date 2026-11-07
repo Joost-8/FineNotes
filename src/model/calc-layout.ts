@@ -367,30 +367,139 @@ export function sumText(pieces: readonly SumPiece[], readings: readonly string[]
   return build(pieces);
 }
 
-/** What Grape gave for one group of ink: its text and how sure it was (mean best-class probability). */
+/** What Grape gave for one group of ink. */
 export interface PieceReading {
+  /** The reading (with the language model). */
   text: string;
+  /** Mean best-class probability over its frames. */
   confidence: number;
+  /** The letters as written (no language model); `chars` follow it. */
+  greedy?: string;
+  /** Each character of `greedy`: its strokes (indices into the group), confidence and runner-ups. */
+  chars?: ReadonlyArray<{
+    char: string;
+    strokes: readonly number[];
+    confidence: number;
+    alternatives: ReadonlyArray<{ char: string }>;
+  }>;
 }
 
 /**
- * Below this confidence a reading is marked as a doubt (dotted on the page).
- * Measured on the 246 real eval lines (`calc_confidence_probe.mjs`): of the
- * short lines (6 characters at most, like a fraction's side), 18 of 27 read
- * wrongly fell under 0.9 and 1 of 9 read exactly; under 0.85, 12 of 27 and
- * none. 0.88 sits between.
+ * Below this a piece read without per-character detail is a doubt as a
+ * whole. Measured on the 246 real eval lines (`calc_confidence_probe.mjs`):
+ * of the short lines (6 characters at most, like a fraction's side), 18 of 27
+ * read wrongly fell under 0.9 and 1 of 9 read exactly; under 0.85, 12 of 27
+ * and none. 0.88 sits between.
  */
 export const DOUBT_BELOW = 0.88;
 
-/** A sum read for a calculation note: its text (without the "="), what was laid out, and its doubts. */
+/**
+ * Below this a character is a doubt. Measured on the 5,003 characters of the
+ * eval lines (`calc_char_probe.mjs`): under 0.7, 38 % of the characters read
+ * wrongly and 5.4 % of those read right (digits: 33 % and 12 %); the right
+ * character was among the top three runner-ups for 56 % of the wrong ones.
+ */
+export const CHAR_DOUBT_BELOW = 0.7;
+
+/** Something Grape was unsure of: one character, or a whole piece (`at` -1). */
+export interface CharDoubt {
+  /** Its strokes' ids. */
+  strokes: string[];
+  /** What was read: the character, or the piece's whole text. */
+  char: string;
+  /** Other characters it may be, most likely first (none for a whole piece). */
+  alternatives: string[];
+  /** Which piece of the sum (`SumReading.pieces`). */
+  piece: number;
+  /** The character's index in the piece's text, or -1 for the whole piece. */
+  at: number;
+}
+
+/** A sum read for a calculation note. */
 export interface SumReading {
+  /** The line's text, ending in "=". */
   text: string;
   /** Whether a raised dot was read as times (the typed form then uses `\cdot`). */
   dot: boolean;
   /** Whether a fraction bar was read (the exact answer is offered first). */
   fraction: boolean;
-  /** The groups of strokes Grape read with a confidence under {@link DOUBT_BELOW}. */
-  doubts: string[][];
+  /** What Grape was unsure of. */
+  doubts: CharDoubt[];
+  /** Each piece read: its strokes, what Grape read, and what it reads now (after picks). */
+  pieces: Array<{ strokes: string[]; read: string; text: string }>;
+  /** The layout the pieces were read in; null for a line read whole. */
+  layout: SumPiece[] | null;
+}
+
+/**
+ * For each character of `b`, the index of the character of `a` it lines up
+ * with (the same, or one in its place), or -1 where `b` has one `a` lacks: a
+ * least-edits alignment.
+ */
+export function alignChars(a: readonly string[], b: readonly string[]): number[] {
+  const n = a.length;
+  const m = b.length;
+  const d: number[][] = Array.from({ length: n + 1 }, (_, i) =>
+    Array.from({ length: m + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,
+        d[i][j - 1] + 1,
+        d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+  }
+  const map = new Array<number>(m).fill(-1);
+  let i = n;
+  let j = m;
+  while (i > 0 && j > 0) {
+    if (d[i][j] === d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)) {
+      map[j - 1] = i - 1;
+      i--;
+      j--;
+    } else if (d[i][j] === d[i - 1][j] + 1) i--;
+    else j--;
+  }
+  return map;
+}
+
+/**
+ * The doubts of piece `index`, read from `group`. With Grape's characters,
+ * each character of the reading is lined up with the one Grape wrote at its
+ * place (`greedy`): one Grape was unsure of, or one the language model
+ * changed ("Z" read as "2"), is a doubt, offering what Grape wrote and its
+ * runner-ups. Without them, the whole piece is a doubt when its confidence
+ * is low.
+ */
+function pieceDoubts(index: number, group: readonly Stroke[], reading: PieceReading): CharDoubt[] {
+  const chars = reading.chars;
+  if (chars && chars.length > 0) {
+    const text = Array.from(reading.text);
+    const map = alignChars(
+      chars.map((c) => c.char),
+      text,
+    );
+    const out: CharDoubt[] = [];
+    text.forEach((char, at) => {
+      const c = map[at] >= 0 ? chars[map[at]] : null;
+      if (!c || char.trim() === "") return;
+      const changed = c.char !== char;
+      if (!changed && c.confidence >= CHAR_DOUBT_BELOW) return;
+      const strokes = c.strokes.flatMap((i) => (group[i] ? [group[i].id] : []));
+      if (strokes.length === 0) return;
+      const offered = [c.char, ...c.alternatives.map((a) => a.char)].filter(
+        (a, k, all) => a.trim() !== "" && a !== char && all.indexOf(a) === k,
+      );
+      out.push({ strokes, char, alternatives: offered, piece: index, at });
+    });
+    return out;
+  }
+  if (reading.confidence >= DOUBT_BELOW) return [];
+  return [
+    { strokes: group.map((s) => s.id), char: reading.text, alternatives: [], piece: index, at: -1 },
+  ];
 }
 
 /**
@@ -405,23 +514,27 @@ export async function readLaidOut(
 ): Promise<SumReading | null> {
   const plain = new Set<string>();
   for (let round = 0; round < 3; round++) {
-    const pieces = layoutSum(strokes, plain);
-    if (!hasLayout(pieces)) return null;
-    const groups = inkPieces(pieces);
+    const layout = layoutSum(strokes, plain);
+    if (!hasLayout(layout)) return null;
+    const groups = inkPieces(layout);
     const readings = groups.length > 0 ? await read(groups) : [];
     if (readings.length !== groups.length) return null;
     const texts = readings.map((r) => r.text);
-    const bad = misreadMarks(pieces, texts);
+    const bad = misreadMarks(layout, texts);
     if (bad.size === 0) {
-      const text = sumText(pieces, texts);
+      const text = sumText(layout, texts);
       if (text === null) return null;
       return {
-        text,
-        dot: hasKind(pieces, "times"),
-        fraction: hasKind(pieces, "fraction"),
-        doubts: groups
-          .filter((_, i) => readings[i].confidence < DOUBT_BELOW)
-          .map((g) => g.map((s) => s.id)),
+        text: `${text} =`,
+        dot: hasKind(layout, "times"),
+        fraction: hasKind(layout, "fraction"),
+        doubts: groups.flatMap((g, i) => pieceDoubts(i, g, readings[i])),
+        pieces: groups.map((g, i) => ({
+          strokes: g.map((s) => s.id),
+          read: texts[i],
+          text: texts[i],
+        })),
+        layout,
       };
     }
     for (const id of bad) plain.add(id);
@@ -429,13 +542,54 @@ export async function readLaidOut(
   return null;
 }
 
-/** A sum with no layout, read as one line: its doubt is the whole line, when Grape was unsure. */
+/** A sum with no layout, read as one line (`strokes` as read, the "=" included). */
 export function readWhole(strokes: readonly Stroke[], reading: PieceReading): SumReading {
   return {
     text: reading.text,
     dot: false,
     fraction: false,
-    doubts: reading.confidence < DOUBT_BELOW ? [strokes.map((s) => s.id)] : [],
+    doubts: pieceDoubts(0, strokes, reading),
+    pieces: [{ strokes: strokes.map((s) => s.id), read: reading.text, text: reading.text }],
+    layout: null,
+  };
+}
+
+/**
+ * The reading with `doubt` answered as `text` (one character, or the
+ * piece's whole text for a whole-piece doubt): its piece's text, the sum's
+ * text, and the doubts that remain. Null when the doubt is not this
+ * reading's, or the sum no longer reads.
+ */
+export function withPick(reading: SumReading, doubt: CharDoubt, text: string): SumReading | null {
+  const index = reading.doubts.indexOf(doubt);
+  const piece = reading.pieces[doubt.piece];
+  if (index < 0 || !piece) return null;
+  let next: string;
+  if (doubt.at < 0) next = text;
+  else {
+    const chars = Array.from(piece.text);
+    if (doubt.at >= chars.length) return null;
+    chars[doubt.at] = text;
+    next = chars.join("");
+  }
+  const pieces = reading.pieces.map((p, i) => (i === doubt.piece ? { ...p, text: next } : p));
+  let sum: string | null;
+  if (reading.layout) {
+    const laid = sumText(
+      reading.layout,
+      pieces.map((p) => p.text),
+    );
+    sum = laid === null ? null : `${laid} =`;
+  } else sum = next;
+  if (sum === null) return null;
+  // A whole piece answered, or a character answered with more or fewer than
+  // one: that piece's other doubts no longer point at the right characters.
+  const shifted = doubt.at < 0 || Array.from(text).length !== 1;
+  return {
+    ...reading,
+    text: sum,
+    pieces,
+    doubts: reading.doubts.filter((d) => d !== doubt && !(shifted && d.piece === doubt.piece)),
   };
 }
 

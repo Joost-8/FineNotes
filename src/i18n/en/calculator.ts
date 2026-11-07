@@ -57,6 +57,8 @@ export const calculator = {
   "calculator.copyLatex": "Copy LaTeX",
   "calculator.latexCopied": "LaTeX copied",
   "calculator.notMaths": "Not maths",
+  "calculator.back": "Back",
+  "calculator.fixChar": "Fix {char}",
 
   // --- Basic pad ----------------------------------------------------------------
   "calculator.padClear": "Clear",

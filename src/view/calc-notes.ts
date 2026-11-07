@@ -33,7 +33,13 @@ import {
   equalsAtEnd,
   sumStrokes,
 } from "../model/calc-ink";
-import { type SumReading, readLaidOut, readWhole } from "../model/calc-layout";
+import {
+  type PieceReading,
+  type SumReading,
+  readLaidOut,
+  readWhole,
+  withPick,
+} from "../model/calc-layout";
 import {
   type NoteSum,
   evaluateSum,
@@ -41,7 +47,7 @@ import {
   sumOfLine,
   variablesOfLines,
 } from "../model/calc-note";
-import { type AnswerForms, answerForms, expressionTex } from "../model/calc-tex";
+import { answerForms, expressionTex } from "../model/calc-tex";
 import type { CalcValue } from "../model/calculator";
 import { DEFAULT_PAGE_GEOMETRY, type Page, type Stroke, strokeBounds } from "../model/document";
 import { AddEquation, makeEquation, nextEquationId } from "../model/equation";
@@ -50,8 +56,11 @@ import { parseInkFile } from "../model/serialize";
 import { SYMBOL_SET, symbolSamples } from "../recognition/practice";
 import { type HandwritingReader, inkForReading } from "./handwriting";
 import { practiceFiles, practiceSetOf, type LearningHost } from "./handwriting-learning";
+import type { Command } from "../model/commands";
+import type { LineReading } from "../recognition/hwr/recognizer";
+import type { CorrectionKind } from "../recognition/hwr/corrections";
 import type { AnswerForm, CalcCardContent } from "./calc-card";
-import type { InkSurface } from "./ink-surface";
+import type { CalcNoteSpec, InkSurface } from "./ink-surface";
 
 /** How long after the pen lifts from the "=" the line is read, ms. */
 export const CALC_DELAY_MS = 700;
@@ -66,6 +75,35 @@ export interface CalcNotesHost {
   reader: HandwritingReader;
   /** The practice files, for the symbol sheet's glyphs. */
   learning(): LearningHost;
+  /**
+   * Keep a labelled piece of ink for learning (`corrections.json`): what
+   * Grape read, and what it is.
+   */
+  record(
+    pageId: string,
+    strokes: readonly Stroke[],
+    read: string,
+    text: string,
+    kind: CorrectionKind,
+  ): Promise<void>;
+}
+
+/** The calculation note open now: what was read, worked out, and what the card did with it. */
+interface OpenNote {
+  pageId: string;
+  eq: EqualsSign;
+  /** The sum's strokes, the "=" included. */
+  strokes: Stroke[];
+  place: AnswerPlace;
+  reading: SumReading;
+  vars: ReadonlyMap<string, CalcValue>;
+  content: CalcCardContent;
+  /** Pieces corrected with a pick (kept as misreads, not confirmed). */
+  picked: Set<number>;
+  /** Whether the reading was typed over in the card. */
+  typed: boolean;
+  /** The step that wrote the answer or made the equation, so its undo brings the glow back. */
+  accepted: Command | null;
 }
 
 /** A stroke's left edge, page px. */
@@ -83,6 +121,8 @@ export class CalcNotes {
   private timer = 0;
   /** Bumped by every stroke and pen-down: a reading that comes back after one is dropped. */
   private token = 0;
+  /** The note shown last (it stays after it is put out, for an undo of what the card did). */
+  private note: OpenNote | null = null;
   /** The answer form last chosen in the card, kept for the next sum while the view is open. */
   private form: AnswerForm | null = null;
   private measureCtx: CanvasRenderingContext2D | null = null;
@@ -112,6 +152,20 @@ export class CalcNotes {
   dispose(): void {
     this.cancel();
     this.host.surface()?.hideCalcNote();
+    this.note = null;
+  }
+
+  /**
+   * An undo or redo: undoing the answer written, or the typed equation made,
+   * from the card brings the sum's glow back (the card closed); redoing it
+   * puts the glow out again.
+   */
+  historyStep(command: Command, redo: boolean): void {
+    const note = this.note;
+    const surface = this.host.surface();
+    if (!note || note.accepted !== command || !surface) return;
+    if (redo) surface.hideCalcNote();
+    else surface.showCalcNote(this.spec(note));
   }
 
   private cancel(): void {
@@ -137,88 +191,168 @@ export class CalcNotes {
       found = this.work(reading.text, vars);
     }
     if (!found || found === "variables") return;
-    const content = this.content(found.sum, found.value, reading.dot, reading.fraction);
+    const content = this.content(found.sum, found.value, reading);
     if (!content) return;
-    const place = answerPlace(strokes, eq);
     const surface = this.host.surface();
     if (!surface || token !== this.token) return;
-    const sumIds = new Set(strokes.map((s) => s.id));
-    const left = Math.min(...strokes.map((s) => strokeLeft(s)));
-    const dot = reading.dot;
-    surface.showCalcNote({
+    const note: OpenNote = {
       pageId,
+      eq,
       strokes,
-      doubts: reading.doubts,
+      place: answerPlace(strokes, eq),
+      reading,
+      vars,
+      content,
+      picked: new Set(),
+      typed: false,
+      accepted: null,
+    };
+    this.note = note;
+    surface.showCalcNote(this.spec(note));
+  }
+
+  /** What the surface shows for `note`: the glow, its doubts, and the card's content and actions. */
+  private spec(note: OpenNote): CalcNoteSpec {
+    const left = Math.min(...note.strokes.map((s) => strokeLeft(s)));
+    const { eq, place } = note;
+    return {
+      pageId: note.pageId,
+      strokes: note.strokes,
+      doubts: note.reading.doubts.map((d) => d.strokes),
       // Beside the "=", level with the top of the sum's line.
       cardAt: { x: eq.bounds.maxX + place.height * 0.6, y: place.baseline - place.height * 1.4 },
       flipAt: left - place.height * 0.6,
-      content,
+      content: note.content,
       actions: {
         write: (form) => {
-          surface.hideCalcNote();
-          void this.write(pageId, eq, place, content.forms, form);
+          this.host.surface()?.hideCalcNote();
+          void this.write(note, form);
         },
         toEquation: (form) => {
-          surface.hideCalcNote();
-          this.toEquation(pageId, eq, sumIds, place, content, form);
+          this.host.surface()?.hideCalcNote();
+          this.toEquation(note, form);
         },
         copyLatex: () => {
-          void navigator.clipboard?.writeText(content.tex).then(
+          void navigator.clipboard?.writeText(note.content.tex).then(
             () => new Notice(t("calculator.latexCopied")),
             () => undefined,
           );
         },
-        notMaths: () => surface.hideCalcNote(),
+        notMaths: () => this.host.surface()?.hideCalcNote(),
         fix: (expression) => {
           const sum: NoteSum = { expression, shown: expression };
-          const result = evaluateSum(sum, vars);
+          const result = evaluateSum(sum, note.vars);
           if (!result.ok) return null;
-          const next = this.content(sum, result.value, dot, false);
-          if (next) Object.assign(content, next);
+          // Typed over the whole reading: its pieces no longer say what the
+          // ink is, so nothing of it is kept as a label.
+          const next = this.content(sum, result.value, { ...note.reading, doubts: [] });
+          if (!next) return null;
+          note.typed = true;
+          note.reading = { ...note.reading, doubts: [] };
+          note.content = next;
+          this.host.surface()?.updateCalcNote(this.spec(note));
           return next;
         },
         formChosen: (form) => {
           this.form = form;
         },
+        pick: (index, text) => this.pick(note, index, text),
       },
+    };
+  }
+
+  /**
+   * Doubt `index` answered as `text` in the card: the reading with it, worked
+   * out again; the piece kept as a correction (Grape read it wrong; the ink
+   * and what it is). Null when the sum no longer works out.
+   */
+  private pick(note: OpenNote, index: number, text: string): CalcCardContent | null {
+    const doubt = note.reading.doubts[index];
+    if (!doubt) return null;
+    const next = withPick(note.reading, doubt, text);
+    if (!next) return null;
+    const found = this.work(next.text, note.vars);
+    if (!found || found === "variables") return null;
+    const content = this.content(found.sum, found.value, next);
+    if (!content) return null;
+    note.reading = next;
+    note.content = content;
+    note.picked.add(doubt.piece);
+    const piece = next.pieces[doubt.piece];
+    this.record(note, piece.strokes, piece.read, piece.text, "misread");
+    this.host.surface()?.updateCalcNote(this.spec(note));
+    return content;
+  }
+
+  /**
+   * The answer was accepted (written, or turned into an equation) as read:
+   * every piece not already corrected is kept as a confirmed reading. Not
+   * after the reading was typed over: its pieces may no longer say what the
+   * ink is.
+   */
+  private confirm(note: OpenNote): void {
+    if (note.typed) return;
+    note.reading.pieces.forEach((piece, i) => {
+      if (note.picked.has(i)) return;
+      this.record(note, piece.strokes, piece.read, piece.text, "ignore");
     });
   }
 
-  /** The card's content for `sum` worked out to `value`: its LaTeX and the answer's forms. */
-  private content(
-    sum: NoteSum,
-    value: CalcValue,
-    dot: boolean,
-    fraction: boolean,
-  ): CalcCardContent | null {
+  private record(
+    note: OpenNote,
+    ids: readonly string[],
+    read: string,
+    text: string,
+    kind: CorrectionKind,
+  ): void {
+    const page = this.host.page(note.pageId);
+    if (!page || !text.trim()) return;
+    const strokes = page.strokes.filter((s) => ids.includes(s.id));
+    if (strokes.length === 0) return;
+    void this.host.record(note.pageId, strokes, read, text, kind).catch(() => undefined);
+  }
+
+  /** The card's content for `sum` worked out to `value`: its LaTeX, the answer's forms and the doubts. */
+  private content(sum: NoteSum, value: CalcValue, reading: SumReading): CalcCardContent | null {
     const forms = answerForms(value);
-    const tex = expressionTex(sum.expression, { dot });
+    const tex = expressionTex(sum.expression, { dot: reading.dot });
     if (!forms || tex === null) return null;
     const form: AnswerForm = forms.fraction
-      ? (this.form ?? (fraction ? "fraction" : "decimal"))
+      ? (this.form ?? (reading.fraction ? "fraction" : "decimal"))
       : "decimal";
-    return { tex, expression: sum.expression, forms, form };
+    return {
+      tex,
+      expression: sum.expression,
+      forms,
+      form,
+      doubts: reading.doubts.map((d) => ({ char: d.char, alternatives: d.alternatives })),
+    };
   }
 
   /**
    * The sum's line, read. Grape reads a plain line whole; a line with a
    * raised dot or a fraction (`calc-layout.ts`) is read piece by piece and
-   * put together by where the pieces sit. Its text ends in "=". Null when it
-   * cannot be read.
+   * put together by where the pieces sit. Each reading brings its characters,
+   * for the doubts. Null when it cannot be read.
    */
   private async read(strokes: readonly Stroke[], eq: EqualsSign): Promise<SumReading | null> {
     const reader = this.host.reader;
     const eqIds = new Set(eq.strokes.map((s) => s.id));
     const body = strokes.filter((s) => !eqIds.has(s.id));
+    const piece = (l: LineReading): PieceReading => ({
+      text: l.text,
+      confidence: l.confidence,
+      greedy: l.greedy,
+      chars: l.chars,
+    });
     const laidOut = await readLaidOut(body, async (groups) =>
-      (await reader.readGroups(groups.map(inkForReading))).map((l) => ({
-        text: l.text,
-        confidence: l.confidence,
-      })),
+      (await reader.readGroups(groups.map(inkForReading), { chars: true })).map(piece),
     );
-    if (laidOut !== null) return { ...laidOut, text: `${laidOut.text} =` };
-    const [line] = await reader.readGroups([inkForReading(strokes)]);
-    return line ? readWhole(body, { text: line.text, confidence: line.confidence }) : null;
+    if (laidOut !== null) return laidOut;
+    // `inkForReading` keeps pen ink only, in order: the indices `chars` names.
+    const ink = strokes.filter((s) => s.tool === "pen" && !s.shape);
+    const [line] = await reader.readGroups([inkForReading(ink)], { chars: true });
+    return line ? readWhole(ink, piece(line)) : null;
   }
 
   /** The reading worked out, "variables" when it needs ones set above, or null. */
@@ -264,13 +398,9 @@ export class CalcNotes {
    * over a bar, or a decimal), if the "=" is still there and still the
    * line's end.
    */
-  private async write(
-    pageId: string,
-    eq: EqualsSign,
-    place: AnswerPlace,
-    forms: AnswerForms,
-    form: AnswerForm,
-  ): Promise<void> {
+  private async write(note: OpenNote, form: AnswerForm): Promise<void> {
+    const { pageId, eq, place } = note;
+    const forms = note.content.forms;
     const fraction = form === "fraction" ? forms.fraction : null;
     const text = fraction ? `${fraction.n}${fraction.d}` : forms.decimal.text;
     const glyphs = glyphsFor(text, await this.ownGlyphs());
@@ -288,7 +418,9 @@ export class CalcNotes {
       ...(pen.nib !== undefined ? { nib: pen.nib } : {}),
       pts,
     }));
-    surface.addInkStrokes(pageId, ink);
+    // Kept before the step, while the sum's ink is surely on the page.
+    this.confirm(note);
+    note.accepted = surface.addInkStrokes(pageId, ink);
   }
 
   /**
@@ -296,14 +428,9 @@ export class CalcNotes {
    * ink, "=" included, goes, and the equation of the sum and its answer
    * comes, level with the "=", in the pen's colour. One undo step.
    */
-  private toEquation(
-    pageId: string,
-    eq: EqualsSign,
-    ids: ReadonlySet<string>,
-    place: AnswerPlace,
-    content: CalcCardContent,
-    form: AnswerForm,
-  ): void {
+  private toEquation(note: OpenNote, form: AnswerForm): void {
+    const { pageId, eq, place, content } = note;
+    const ids = new Set(note.strokes.map((s) => s.id));
     const surface = this.host.surface();
     const page = this.host.page(pageId);
     this.measureCtx ??= createEl("canvas").getContext("2d");
@@ -327,12 +454,13 @@ export class CalcNotes {
       size,
       ...frame,
     });
-    surface.applyCommand(
-      new CompositeCommand(t("calculator.toEquation"), [
-        new RemoveStrokesFromPage(pageId, ids),
-        new AddEquation(pageId, equation),
-      ]),
-    );
+    this.confirm(note);
+    const command = new CompositeCommand(t("calculator.toEquation"), [
+      new RemoveStrokesFromPage(pageId, ids),
+      new AddEquation(pageId, equation),
+    ]);
+    surface.applyCommand(command);
+    note.accepted = command;
   }
 
   /** The writer's glyphs from their symbol sheets (the last sample of each character wins). */

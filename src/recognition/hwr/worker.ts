@@ -122,7 +122,9 @@ function handle(request: HwrRequest, id: number): HwrResult {
   const model = bundle;
   return {
     type: "lines",
-    readings: request.lines.map((line) => readLine(model, line, { useLm: request.useLm, now })),
+    readings: request.lines.map((line) =>
+      readLine(model, line, { useLm: request.useLm, chars: request.chars === true, now }),
+    ),
   };
 }
 

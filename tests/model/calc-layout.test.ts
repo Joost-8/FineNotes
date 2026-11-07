@@ -17,6 +17,7 @@ import {
   misreadMarks,
   readLaidOut,
   readWhole,
+  withPick,
   sumText,
 } from "../../src/model/calc-layout";
 import { evaluateSum, sumOfLine } from "../../src/model/calc-note";
@@ -356,21 +357,80 @@ describe("reading again when a mark was taken wrongly", () => {
       reads.push(groups.map((g) => g.map((s) => s.id).join(",")));
       return groups.map(() => ({ text: "3", confidence: 0.97 }));
     });
-    expect(got).toEqual({ text: "3 * 3", dot: true, fraction: false, doubts: [] });
+    expect(got).toMatchObject({ text: "3 * 3 =", dot: true, fraction: false, doubts: [] });
+    expect(got?.pieces.map((p) => p.text)).toEqual(["3", "3"]);
     expect(reads).toHaveLength(1);
   });
 
-  it("marks the pieces Grape was unsure of as doubts", async () => {
+  it("marks a whole piece as a doubt when Grape gave no characters", async () => {
     const ink = threeDotThree();
     const got = await readLaidOut(ink, async (groups) =>
       groups.map((_, i) => ({ text: "3", confidence: i === 1 ? 0.8 : 0.95 })),
     );
-    expect(got?.doubts).toEqual([[ink[2].id]]);
-    // A whole line: its doubt is the whole line, only when unsure.
-    expect(readWhole(ink, { text: "3.3 =", confidence: 0.7 }).doubts).toEqual([
-      ink.map((s) => s.id),
+    expect(got?.doubts).toEqual([
+      { strokes: [ink[2].id], char: "3", alternatives: [], piece: 1, at: -1 },
     ]);
+    // A whole line: its doubt is the whole line, only when unsure.
+    expect(readWhole(ink, { text: "3.3 =", confidence: 0.7 }).doubts[0].strokes).toEqual(
+      ink.map((s) => s.id),
+    );
     expect(readWhole(ink, { text: "3.3 =", confidence: 0.95 }).doubts).toEqual([]);
+  });
+
+  it("marks only the doubtful character, with its runner-ups, and a pick works the sum out again", async () => {
+    // "12" over a bar over "7", read with characters: the 2 is a close call.
+    const top = [digit(100, 300, h), digit(118, 300, h)];
+    const bar = dash(94, 142, 306);
+    const bottom = digit(110, 336, h);
+    const chars = (text: string, low: number, alts: string[]) =>
+      Array.from(text).map((char, i) => ({
+        char,
+        strokes: [i],
+        confidence: i === low ? 0.55 : 0.97,
+        alternatives: i === low ? alts.map((a) => ({ char: a })) : [],
+      }));
+    const got = await readLaidOut([...top, bar, bottom], async (groups) =>
+      groups.map((g) =>
+        g.length === 2
+          ? { text: "12", greedy: "12", confidence: 0.8, chars: chars("12", 1, ["z", "7", " "]) }
+          : { text: "7", greedy: "7", confidence: 0.99, chars: chars("7", -1, []) },
+      ),
+    );
+    expect(got?.text).toBe("12/7 =");
+    expect(got?.doubts).toEqual([
+      { strokes: [top[1].id], char: "2", alternatives: ["z", "7"], piece: 0, at: 1 },
+    ]);
+    const picked = withPick(got!, got!.doubts[0], "7");
+    expect(picked?.text).toBe("17/7 =");
+    expect(picked?.doubts).toEqual([]);
+    expect(picked?.pieces[0]).toEqual({ strokes: top.map((s) => s.id), read: "12", text: "17" });
+    // Grape wrote "1z" and the language model made it "12": the changed
+    // character is a doubt even though Grape was sure, offering what Grape wrote.
+    const sure = (text: string) =>
+      Array.from(text).map((char, i) => ({
+        char,
+        strokes: [i],
+        confidence: 0.95,
+        alternatives: [{ char: "2" }],
+      }));
+    const lm = await readLaidOut([...top, bar, bottom], async (groups) =>
+      groups.map((g) =>
+        g.length === 2
+          ? { text: "12", greedy: "1z", confidence: 0.95, chars: sure("1z") }
+          : { text: "7", confidence: 0.99 },
+      ),
+    );
+    expect(lm?.doubts).toEqual([
+      { strokes: [top[1].id], char: "2", alternatives: ["z"], piece: 0, at: 1 },
+    ]);
+    // Without characters and unsure: the whole piece, and its answer replaces it.
+    const whole = await readLaidOut([...top, bar, bottom], async (groups) =>
+      groups.map((g) =>
+        g.length === 2 ? { text: "12", confidence: 0.7 } : { text: "7", confidence: 0.99 },
+      ),
+    );
+    expect(whole?.doubts.map((d) => d.at)).toEqual([-1]);
+    expect(withPick(whole!, whole!.doubts[0], "13")?.text).toBe("13/7 =");
   });
 
   it("falls back to the plain reading when a word stands beside the dot", async () => {

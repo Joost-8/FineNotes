@@ -316,6 +316,23 @@ export function networkInput(
   features: Float32Array,
   frames: number,
 ): { features: Float32Array; frames: number } {
-  if (!input) return { features, frames };
-  return curvesFromFeatures(features, frames, input.tol, inputs);
+  const line = networkFrames(input, inputs, features, frames, null);
+  return { features: line.features, frames: line.frames };
+}
+
+/**
+ * {@link networkInput}, and for each network frame the index of the stroke
+ * it came from: `frameStroke` as given for a model that reads points, the
+ * curves' own strokes for one that reads curves.
+ */
+export function networkFrames(
+  input: CurveInput | undefined,
+  inputs: number,
+  features: Float32Array,
+  frames: number,
+  frameStroke: Int32Array | null,
+): { features: Float32Array; frames: number; frameStroke: Int32Array | null } {
+  if (!input) return { features, frames, frameStroke };
+  const curves = curvesFromFeatures(features, frames, input.tol, inputs);
+  return { features: curves.features, frames: curves.frames, frameStroke: curves.curveStroke };
 }

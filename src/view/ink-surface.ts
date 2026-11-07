@@ -1062,6 +1062,8 @@ export interface InkSurfaceCallbacks {
    * out its Undo and Redo buttons. Sent once on construction too.
    */
   onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
+  /** An undo (`redo` false) or redo took `command` back or did it again. */
+  onHistoryStep?: (command: Command, redo: boolean) => void;
   /**
    * The user scrolled onto a different page. `index` is 0-based.
    * Hosts use it to keep the toolbar's page navigation in step.
@@ -3570,11 +3572,37 @@ export class InkSurface {
    * would leave the page). One at a time: a new one replaces the last.
    */
   showCalcNote(note: CalcNoteSpec): void {
-    this.calcGlow ??= new CalcGlow(this.paperEl, () => this.openCalcCard());
-    this.calcCard ??= new CalcCard(this.paperEl);
+    this.calcGlow ??= new CalcGlow(this.paperEl, (doubt) => this.openCalcCard(doubt));
+    if (!this.calcCard) {
+      this.calcCard = new CalcCard(this.paperEl);
+      // A press anywhere else while the card is open only closes the card:
+      // the sum keeps glowing, and the press neither writes nor scrolls.
+      this.surfaceEl.addEventListener(
+        "pointerdown",
+        (event) => {
+          if (!this.calcCard?.shown || this.calcCard.contains(event.target as Node)) return;
+          if (this.calcGlow?.contains(event.target as Node)) return;
+          event.stopPropagation();
+          event.preventDefault();
+          this.calcCard.hide();
+        },
+        { capture: true },
+      );
+    }
     this.calcCard.hide();
     this.calcNote = note;
     this.calcGlow.show({ pageId: note.pageId, strokes: note.strokes, doubts: note.doubts });
+    this.syncCalcChip();
+  }
+
+  /**
+   * The note's reading changed (a doubt answered in the card): its dotted
+   * marks follow; the card stays open with its own new content.
+   */
+  updateCalcNote(note: CalcNoteSpec): void {
+    if (!this.calcNote || this.calcNote.pageId !== note.pageId) return;
+    this.calcNote = note;
+    this.calcGlow?.show({ pageId: note.pageId, strokes: note.strokes, doubts: note.doubts });
     this.syncCalcChip();
   }
 
@@ -3594,25 +3622,27 @@ export class InkSurface {
     return this.calcNote?.pageId ?? null;
   }
 
-  private openCalcCard(): void {
+  /** Open the card; at doubt `doubt`'s runner-ups when one was tapped (-1: none). */
+  private openCalcCard(doubt = -1): void {
     const note = this.calcNote;
     if (!note || !this.calcCard) return;
-    this.calcCard.show(note.content, note.actions);
+    this.calcCard.show(note.content, note.actions, doubt);
     this.syncCalcChip();
   }
 
   /**
    * Write strokes the host made (a calculation's answer) on page `pageId`,
-   * as one undo step, with ids of their own. False when the note is locked
-   * or the page is gone.
+   * as one undo step, with ids of their own. The step, or null when the note
+   * is locked or the page is gone.
    */
-  addInkStrokes(pageId: string, strokes: ReadonlyArray<Omit<Stroke, "id">>): boolean {
-    if (this.callbacks.isLocked?.() || strokes.length === 0) return false;
+  addInkStrokes(pageId: string, strokes: ReadonlyArray<Omit<Stroke, "id">>): Command | null {
+    if (this.callbacks.isLocked?.() || strokes.length === 0) return null;
     const page = this.doc.pages.find((p) => p.id === pageId);
-    if (!page) return false;
+    if (!page) return null;
     const made: Stroke[] = strokes.map((s) => ({ ...s, id: this.strokeIds.next() }));
-    this.applyCommand(addStrokesTimed(page, made, this.clock(), t("surface.command.writeAnswer")));
-    return true;
+    const command = addStrokesTimed(page, made, this.clock(), t("surface.command.writeAnswer"));
+    this.applyCommand(command);
+    return command;
   }
 
   /** Keep the calculation note's glow and card on the sum across pan and zoom. */
@@ -19391,6 +19421,7 @@ export class InkSurface {
     this.changed();
     this.revealChange(command);
     this.flashReadout(historyNotice(redo, command.label), READOUT_NOTICE_HOLD_MS);
+    this.callbacks.onHistoryStep?.(command, redo);
   }
 
   /** Whether `command` is the newest step, so {@link undo} would take exactly it back. */

@@ -12245,6 +12245,67 @@ button.goodobsidian-calc-card-write.mod-cta {
   border-top: var(--gob-hairline);
 }
 
+.goodobsidian-calc-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.goodobsidian-calc-card-main.is-hidden,
+.goodobsidian-calc-card-fix.is-hidden,
+.goodobsidian-calc-card-doubts.is-hidden {
+  display: none;
+}
+
+/* What Grape was unsure of, dotted as on the page; a tap opens its runner-ups. */
+.goodobsidian-calc-card-doubts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+button.goodobsidian-calc-card-doubt.clickable-icon {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: var(--gob-radius-m);
+  color: var(--text-normal);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline dotted var(--interactive-accent) 2px;
+  text-underline-offset: 5px;
+}
+
+.goodobsidian-calc-card-fix {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.goodobsidian-calc-card-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+button.goodobsidian-calc-card-choice.clickable-icon {
+  flex: 1 1 40px;
+  height: 48px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-well);
+  color: var(--text-normal);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* What Grape read: chosen until another is picked. */
+button.goodobsidian-calc-card-choice.is-active.clickable-icon {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
 button.goodobsidian-calc-card-icon.clickable-icon {
   width: 40px;
   height: 36px;
