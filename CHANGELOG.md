@@ -17,7 +17,8 @@ extracted from the matching section of this file by `release.yml`.
   Everforest, High contrast), each in light and dark. Your pages, your ink
   and the rest of Obsidian stay as they are. Two commands step through
   them: "Look: next style" and "Look: next colours". Translated into every
-  language.
+  language. Customize toolbar has them too, as two rows of chips under
+  Hidden, so a look is tried on the bar it changes; Reset takes it back.
 
 ### Changed
 

@@ -1425,17 +1425,23 @@ export default class GoodObsidianPlugin extends Plugin {
     this.wearLook(lookClasses(this.settings.lookStyle, this.settings.lookPalette));
   }
 
-  async setLook(style: string | undefined, palette: string | undefined): Promise<void> {
+  /** Wear and keep a style or colours; `announce` names the look in a notice (the commands). */
+  async setLook(
+    style: string | undefined,
+    palette: string | undefined,
+    announce = true,
+  ): Promise<void> {
     if (style !== undefined) this.settings.lookStyle = style;
     if (palette !== undefined) this.settings.lookPalette = palette;
     this.applyLook();
-    new Notice(
-      t("settings.look.notice", {
-        style: lookStyleNames()[lookStyleOf(this.settings.lookStyle)],
-        palette: lookPaletteNames()[lookPaletteOf(this.settings.lookPalette)],
-      }),
-      1500,
-    );
+    if (announce)
+      new Notice(
+        t("settings.look.notice", {
+          style: lookStyleNames()[lookStyleOf(this.settings.lookStyle)],
+          palette: lookPaletteNames()[lookPaletteOf(this.settings.lookPalette)],
+        }),
+        1500,
+      );
     await this.saveSettings();
   }
 

@@ -8,13 +8,16 @@
  *   [▔][▁][▏][▕]  ◉ Dock tool options                         Reset   [✓]
  *   MORE TOOLS  ✋ 🔍 ✍ ☺ 🗒 📏 🩹 🎤 🪣
  *   HIDDEN      (empty)
+ *   STYLE       ▭ ◯ ▬ ▭ ▭ ▣ ◘ ▤ ▫
+ *   COLOURS     ◐ ◐ ◐ ◐ ◐ ◐ ◐ ◐ ◐ ◐
  *
  * Every button of the real bar can be picked up (finger, Pencil or mouse,
  * no hold) and dropped at any place in any zone, or on a shelf of the tray:
  * More tools or Hidden. A tap opens the same moves as a menu; with the
  * keyboard, arrows move the focused button one place and Enter opens the
  * menu. The pen, the toolbox and ⋯ stay on the bar (`PINNED`). The tray
- * also holds the bar's edge and "Dock tool options". The page dims and
+ * also holds the bar's edge, "Dock tool options" and the look (Settings →
+ * Look's style and colours, a tap each; Reset takes it back too). The page dims and
  * takes no ink; a tap on it, ✓ or Escape closes the mode. Every change is
  * live, and kept at once (`apply`).
  *
@@ -24,6 +27,14 @@
 import { setIcon } from "obsidian";
 import { type TextKey, t } from "../i18n/translate";
 import { type BarDock, isBarUpright } from "./bar-dock-model";
+import {
+  LOOK_PALETTES,
+  LOOK_STYLES,
+  type LookPalette,
+  type LookStyle,
+  lookPaletteNames,
+  lookStyleNames,
+} from "../model/look";
 import {
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
@@ -65,6 +76,9 @@ export interface ToolbarEditorHost {
   pillRow: () => boolean;
   setBarDock?: (dock: BarDock) => void;
   setPillRow?: (on: boolean) => void;
+  /** The look worn now; without it (and `setLook`) the tray has no Style or Colours row. */
+  look?: () => { style: LookStyle; palette: LookPalette };
+  setLook?: (style: LookStyle, palette: LookPalette) => void;
   /** The mode closed. */
   done: () => void;
 }
@@ -257,8 +271,15 @@ export class ToolbarEditor {
       cls: "goodobsidian-edit-reset clickable-icon",
       text: t("toolbar.edit.reset"),
     });
-    reset.disabled = sameLayout(this.h.layout(), defaultLayout());
-    reset.addEventListener("click", () => this.h.apply(defaultLayout()));
+    const look = this.h.look?.();
+    const setLook = this.h.setLook;
+    const lookIsDefault =
+      !look || (look.style === LOOK_STYLES[0] && look.palette === LOOK_PALETTES[0]);
+    reset.disabled = sameLayout(this.h.layout(), defaultLayout()) && lookIsDefault;
+    reset.addEventListener("click", () => {
+      if (!lookIsDefault) setLook?.(LOOK_STYLES[0], LOOK_PALETTES[0]);
+      this.h.apply(defaultLayout());
+    });
     const done = head.createEl("button", { cls: "goodobsidian-edit-done clickable-icon" });
     setIcon(done, "check");
     done.setAttribute("aria-label", t("common.done"));
@@ -275,6 +296,66 @@ export class ToolbarEditor {
       "off",
       offItems(layout).filter((id) => this.h.has(id)),
     );
+    if (look && setLook) {
+      const styles = lookStyleNames();
+      this.lookShelf(
+        t("settings.look.styleLabel"),
+        LOOK_STYLES,
+        look.style,
+        (id, chip) => {
+          chip.setAttribute("aria-label", styles[id]);
+          // The style's own bar in small: its corners, its border, its pressed button.
+          const mini = chip.createDiv({ cls: `goodobsidian-look-mini is-${id}` });
+          mini.createSpan({ cls: "is-on" });
+          mini.createSpan();
+        },
+        (id) => {
+          setLook(id, look.palette);
+          this.refresh();
+        },
+      );
+      const palettes = lookPaletteNames();
+      this.lookShelf(
+        t("settings.look.paletteLabel"),
+        LOOK_PALETTES,
+        look.palette,
+        (id, chip) => {
+          chip.setAttribute("aria-label", palettes[id]);
+          chip.createSpan({ cls: `goodobsidian-look-swatch is-${id}` });
+        },
+        (id) => {
+          setLook(look.style, id);
+          this.refresh();
+        },
+      );
+    }
+  }
+
+  /** A row of looks to pick from, the one worn ringed; a tap wears another. */
+  private lookShelf<T extends string>(
+    name: string,
+    ids: readonly T[],
+    current: T,
+    draw: (id: T, chip: HTMLButtonElement) => void,
+    pick: (id: T) => void,
+  ): void {
+    const shelf = this.tray.createDiv({ cls: "goodobsidian-edit-shelf is-look" });
+    shelf.createSpan({ cls: "goodobsidian-edit-shelf-name", text: name });
+    const chips = shelf.createDiv({ cls: "goodobsidian-edit-chips" });
+    chips.setAttribute("role", "radiogroup");
+    chips.setAttribute("aria-label", name);
+    for (const id of ids) {
+      const chip = chips.createEl("button", {
+        cls: "goodobsidian-edit-chip goodobsidian-look-chip clickable-icon",
+      });
+      chip.setAttribute("role", "radio");
+      chip.setAttribute("aria-checked", String(id === current));
+      chip.toggleClass("is-active", id === current);
+      draw(id, chip);
+      chip.addEventListener("click", () => {
+        if (id !== current) pick(id);
+      });
+    }
   }
 
   private shelf(name: string, place: "menu" | "off", ids: BarItemId[]): HTMLElement {

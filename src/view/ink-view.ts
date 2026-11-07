@@ -20,6 +20,7 @@ import { SetFurniture, furnitureText } from "../model/furniture";
 import { SetPageTab, nextTabColor } from "../model/page-tabs";
 import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
+import { lookPaletteOf, lookStyleOf } from "../model/look";
 import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
 import { DEFAULT_FILL_COLOR, readFillGap } from "../model/fill-region";
@@ -3272,6 +3273,11 @@ export class InkView extends TextFileView {
         onLayout: (layout) => this.plugin.saveToolbarLayout(layout),
         onSetBarDock: (dock) => this.plugin.setBarDock(dock),
         onSetPillRow: (on) => this.plugin.setPillRow(on),
+        lookNow: () => ({
+          style: lookStyleOf(this.plugin.settings.lookStyle),
+          palette: lookPaletteOf(this.plugin.settings.lookPalette),
+        }),
+        onSetLook: (style, palette) => void this.plugin.setLook(style, palette, false),
         onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
         onCalculator: () => this.toggleCalculator(),
