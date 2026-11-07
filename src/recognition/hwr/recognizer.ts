@@ -9,11 +9,15 @@
 
 import { forward } from "./blstm";
 import type { HwrBundle } from "./bundle";
-import { type BeamOptions, beamDecode, greedyDecode } from "./ctc";
+import { type BeamOptions, type WordBias, beamDecode, greedyDecode, wordTrie } from "./ctc";
 import { type CharReading, charReadings } from "./char-readings";
 import { networkFrames } from "./curves";
 import { type InkStroke, LineTooLongError, lineFeatures } from "./features";
+import { REREAD_MARGIN, type RereadList, rereadOutOfList } from "./lexicon";
 import { type Box, type PageInk, lineStrokes, segmentPage } from "./lines";
+
+/** Nats per letter a page word earns while decoding (EXP-PCONFIRM: lam 1). */
+export const PAGE_WORD_WEIGHT = 1;
 
 export interface LineTimings {
   /** Milliseconds for the frames, the network and the decoders. */
@@ -69,6 +73,42 @@ export interface ReadOptions {
   logp?: (line: number, logp: Float32Array, frames: number) => void;
   /** Also give each character with its strokes and runner-ups (`LineReading.chars`). */
   chars?: boolean;
+  /**
+   * The four reading fixes of EXP-PCONFIRM (set P whole pages 33.7 → 29.2 %
+   * CER), each on unless turned off here:
+   *
+   * - `rowOrder`: a page's lines in row order (`segmentPage`'s `rows`);
+   * - `lateStrokes`: late strokes read where they belong (`lateStrokeOrder`);
+   * - `pageWordBias`: favour `pageWords` while decoding (`WordBias`), when given;
+   * - `reread`: words not in `rereadList` read again against it
+   *   (`rereadOutOfList`), when given. The list is the word list
+   *   (words.txt), never the page words alone, which made one set worse.
+   */
+  rowOrder?: boolean;
+  lateStrokes?: boolean;
+  pageWordBias?: boolean;
+  reread?: boolean;
+  /** The notebook's own words (page-words.ts), never the page's own reading. */
+  pageWords?: readonly string[] | null;
+  /** Nats per letter for `pageWords` (default `PAGE_WORD_WEIGHT`). */
+  pageWordWeight?: number;
+  rereadList?: RereadList | null;
+  /** Default `REREAD_MARGIN`. */
+  rereadMargin?: number;
+  /** The page words' trie, built once by `readPage` for all its lines. */
+  bias?: WordBias | null;
+}
+
+/** The word bias `options` asks for, or null. */
+function biasOf(options: ReadOptions): WordBias | null {
+  if (options.bias !== undefined) return options.bias;
+  if (options.pageWordBias === false || !options.pageWords || options.pageWords.length === 0) {
+    return null;
+  }
+  return {
+    root: wordTrie(options.pageWords),
+    weight: options.pageWordWeight ?? PAGE_WORD_WEIGHT,
+  };
 }
 
 /**
@@ -86,7 +126,9 @@ export function readLine(
   let line: { features: Float32Array; frames: number; frameStroke: Int32Array | null };
   let order: number[] = [];
   try {
-    const points = lineFeatures(strokes, bundle.meta.features.heightsPerSecond);
+    const points = lineFeatures(strokes, bundle.meta.features.heightsPerSecond, {
+      lateStrokes: options.lateStrokes !== false,
+    });
     line = networkFrames(
       bundle.meta.input,
       bundle.net.inputs,
@@ -109,9 +151,13 @@ export function readLine(
   const greedy = greedyDecode(logp, frames, alphabet);
   const t3 = now();
   const lm = options.useLm === false ? null : bundle.lm;
-  const text = lm
-    ? beamDecode(logp, frames, alphabet, lm, { ...bundle.meta.decoder, ...options.beam })
-    : greedy.text;
+  const decoder = { ...bundle.meta.decoder, ...options.beam };
+  let text = lm ? beamDecode(logp, frames, alphabet, lm, decoder, biasOf(options)) : greedy.text;
+  if (lm && options.reread !== false && options.rereadList) {
+    const margin = options.rereadMargin ?? REREAD_MARGIN;
+    const line = { logp, frames };
+    text = rereadOutOfList(line, alphabet, lm, decoder.alpha, text, options.rereadList, margin);
+  }
   const t4 = now();
   return {
     greedy: greedy.text,
@@ -143,8 +189,9 @@ export function readPage(
 ): PageReading {
   const now = options.now ?? (() => 0);
   const t0 = now();
-  const { lines, wordGap } = segmentPage(strokes);
+  const { lines, wordGap } = segmentPage(strokes, { rows: options.rowOrder !== false });
   const segment = now() - t0;
+  const bias = biasOf(options);
   return {
     segment,
     wordGap,
@@ -154,6 +201,7 @@ export function readPage(
       return {
         ...readLine(bundle, ink, {
           ...options,
+          bias,
           logp: keep && ((_, logp, frames) => keep(index, logp, frames)),
         }),
         strokeIds: ink.map((s) => s.id),

@@ -183,6 +183,7 @@ export default defineConfig({
         "src/recognition/hwr/selection-words.ts",
         "src/recognition/hwr/lines.ts",
         "src/recognition/hwr/recognizer.ts",
+        "src/recognition/hwr/page-words.ts",
         "src/recognition/ocr/ocr-model.ts",
         "src/recognition/ocr/ocr-words.ts",
         "src/recognition/ocr/ocr-text.ts",

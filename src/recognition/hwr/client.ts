@@ -98,9 +98,19 @@ export class HwrWorkerClient {
     return result.info;
   }
 
-  /** Find the page's lines and read them; `keep` for `suggest` afterwards. */
-  async readPage(strokes: PageInk[], useLm = true, keep = false): Promise<PageReading> {
-    const result = await this.send({ type: "page", strokes, useLm, keep }, READ_TIMEOUT_MS);
+  /**
+   * Find the page's lines and read them; `keep` for `suggest` afterwards;
+   * `context`: the notebook's own words to favour, and whether to read
+   * words not in the word list again (protocol.ts).
+   */
+  async readPage(
+    strokes: PageInk[],
+    useLm = true,
+    keep = false,
+    context: { words?: string[]; reread?: boolean } = {},
+  ): Promise<PageReading> {
+    const request = { type: "page" as const, strokes, useLm, keep, ...context };
+    const result = await this.send(request, READ_TIMEOUT_MS);
     if (result.type !== "page") throw new Error("unexpected reply");
     return result.reading;
   }

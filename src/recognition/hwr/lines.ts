@@ -370,11 +370,38 @@ function bandsOf<S extends PageInk>(strokes: readonly S[], lineOverlap: number):
  */
 export function segmentPage<S extends PageInk>(
   strokes: readonly S[],
-  options: { wordGap?: number; lineOverlap?: number } = {},
+  options: { wordGap?: number; lineOverlap?: number; rows?: boolean } = {},
 ): PageLines<S> {
   const bands = bandsOf(strokes, options.lineOverlap ?? 0.35);
   const wordGap = options.wordGap ?? autoWordGap(gapsOf(wordsInBands(bands, 1e9)));
-  return { lines: wordsInBands(bands, wordGap), wordGap };
+  const lines = wordsInBands(bands, wordGap);
+  return { lines: options.rows ? rowOrder(lines).map((i) => lines[i]) : lines, wordGap };
+}
+
+/**
+ * The lines in row order (EXP-T012's `readingOrder`, confirmed on whole pages
+ * in EXP-PCONFIRM): lines whose centres are within half the smaller one's
+ * height (at least 4 px) share a row; rows top to bottom, each left to right.
+ * The reference orders lines by where each one starts, so a table's cells,
+ * or a word added beside a line later, came out of their row. Returns the
+ * lines' indices in that order.
+ */
+export function rowOrder(lines: readonly { box: Box }[]): number[] {
+  const items = lines.map((l, i) => ({
+    i,
+    cy: (l.box[1] + l.box[3]) / 2,
+    h: Math.max(4, l.box[3] - l.box[1]),
+    x: l.box[0],
+  }));
+  items.sort((a, b) => a.cy - b.cy);
+  const rows: { cy: number; h: number; items: typeof items }[] = [];
+  for (const it of items) {
+    const row = rows.find((r) => Math.abs(r.cy - it.cy) < 0.5 * Math.min(r.h, it.h));
+    if (row) row.items.push(it);
+    else rows.push({ cy: it.cy, h: it.h, items: [it] });
+  }
+  rows.sort((a, b) => a.cy - b.cy);
+  return rows.flatMap((r) => r.items.sort((a, b) => a.x - b.x)).map((it) => it.i);
 }
 
 /** A line's strokes, word by word (the order the rig hands to `prepare_v2`). */

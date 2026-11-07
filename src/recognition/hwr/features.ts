@@ -4,7 +4,8 @@
  * in research/handwriting-rig/htr.py, with the normalisation the shipped
  * models were trained with (skew off, slant off, core-height scaling):
  *
- * 1. Writing order: by `t0` when every stroke has one, else left to right.
+ * 1. Writing order: by `t0` when every stroke has one, else left to right
+ *    (`lateStrokeOrder` reads late strokes where they belong, on request).
  * 2. Time: FineNotes keeps one start time per stroke and none per point, so
  *    the pen moves at a constant 5.3 line heights per second inside a stroke;
  *    between strokes the stored `t0` gap counts when both have one.
@@ -19,6 +20,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { segmentPage } from "./lines";
 import {
   fitLine,
   interp,
@@ -98,6 +100,111 @@ export function writingOrder<S extends InkStroke>(strokes: readonly S[]): S[] {
     return [...strokes].sort((a, b) => (a.t0 as number) - (b.t0 as number));
   }
   return [...strokes].sort((a, b) => minX(a) - minX(b));
+}
+
+/** How far left of the ink so far a stroke must start to count as late, in x-heights. */
+export const LATE_STROKE_CORE = 0.5;
+
+function boxOf(pts: ArrayLike<number>): [number, number, number, number] {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (let i = 0; i + 1 < pts.length; i += 3) {
+    const x = pts[i];
+    const y = pts[i + 1];
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (y < y0) y0 = y;
+    if (y > y1) y1 = y;
+  }
+  return [x0, y0, x1, y1];
+}
+
+/** Median height of the strokes taller than 1.5 px (dots left out), or 10, as lines.ts. */
+function xHeightOf(strokes: readonly InkStroke[]): number {
+  const hs = strokes
+    .map((s) => {
+      const b = boxOf(s.pts);
+      return b[3] - b[1];
+    })
+    .filter((h) => h > 1.5);
+  return hs.length ? median(hs) : 10;
+}
+
+/**
+ * The ink rows of a line (a line may wrap): `segmentPage` on its strokes,
+ * each stroke it leaves out joining the row whose median centre is nearest,
+ * rows in the order they were begun.
+ */
+function inkRows<S extends InkStroke>(strokes: readonly S[]): S[][] {
+  const ink = strokes.map((s, i) => ({ ...s, id: String(i), tool: "pen" }));
+  const { lines } = segmentPage(ink);
+  const rows = lines.map((l) =>
+    l.words.flatMap((w) => w.strokes.map((x) => strokes[Number(x.id)])),
+  );
+  const placed = new Set(rows.flat());
+  const centre = (s: InkStroke): number => {
+    const b = boxOf(s.pts);
+    return (b[1] + b[3]) / 2;
+  };
+  for (const s of strokes) {
+    if (placed.has(s) || rows.length === 0) continue;
+    const cy = centre(s);
+    let best = 0;
+    let bestD = Infinity;
+    rows.forEach((r, i) => {
+      const d = Math.abs(median(r.map(centre)) - cy);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    rows[best].push(s);
+  }
+  if (rows.length === 0) rows.push([...strokes]);
+  const start = (r: readonly S[]): number => Math.min(...r.map((x) => x.t0 as number));
+  rows.sort((a, b) => start(a) - start(b));
+  return rows;
+}
+
+/**
+ * Rule 3b on one row (EXP-T368, confirmed on whole pages in EXP-PCONFIRM):
+ * in time order, a stroke whose centre lies more than `LATE_STROKE_CORE`
+ * x-heights left of the ink written so far (an i-dot, a t-bar, a word added
+ * later) goes after the last stroke placed that starts left of its centre.
+ */
+function lateStrokesInRow<S extends InkStroke>(row: readonly S[]): S[] {
+  const xh = xHeightOf(row);
+  const out: S[] = [];
+  let right = -Infinity;
+  for (const s of [...row].sort((a, b) => (a.t0 as number) - (b.t0 as number))) {
+    const b = boxOf(s.pts);
+    const cx = (b[0] + b[2]) / 2;
+    if (out.length && cx < right - LATE_STROKE_CORE * xh) {
+      let at = -1;
+      for (let i = out.length - 1; i >= 0; i--) {
+        if (boxOf(out[i].pts)[0] < cx) {
+          at = i;
+          break;
+        }
+      }
+      out.splice(at + 1, 0, s);
+    } else out.push(s);
+    right = Math.max(right, b[2]);
+  }
+  return out;
+}
+
+/**
+ * Writing order with late strokes read where they belong: rule 3b in each
+ * ink row of the line. Without a start time on every stroke there is no
+ * "late", and this is `writingOrder` (left to right). When the rule moves
+ * nothing, the order is `writingOrder`'s and so are the frames.
+ */
+export function lateStrokeOrder<S extends InkStroke>(strokes: readonly S[]): S[] {
+  if (strokes.length === 0 || !strokes.every((s) => s.t0 != null)) return writingOrder(strokes);
+  return inkRows(strokes).flatMap((row) => lateStrokesInRow(row));
 }
 
 /**
@@ -373,13 +480,16 @@ function frameFeatures(strokes: readonly TimedStroke[]): {
 
 /**
  * `prepare_v2`: one line of FineNotes strokes as network frames. Strokes
- * without points are left out.
+ * without points are left out. `lateStrokes`: read them in `lateStrokeOrder`
+ * (the reference, and the default here, is `writingOrder`).
  */
 export function lineFeatures<S extends InkStroke>(
   input: readonly S[],
   heightsPerSecond = HEIGHTS_PER_SECOND,
+  options: { lateStrokes?: boolean } = {},
 ): LineFeatures<S> & { norm: NormalizeInfo } {
-  const strokes = writingOrder(input.filter((s) => s.pts.length >= 3));
+  const order = options.lateStrokes ? lateStrokeOrder : writingOrder;
+  const strokes = order(input.filter((s) => s.pts.length >= 3));
   if (strokes.length === 0) throw new Error("a line needs at least one stroke with points");
   const xy = strokes.map((s) => {
     const n = Math.floor(s.pts.length / 3);

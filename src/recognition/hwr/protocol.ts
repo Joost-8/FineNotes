@@ -19,9 +19,19 @@ export type HwrRequest =
   | { type: "load"; bytes: ArrayBuffer }
   /**
    * Find a page's lines and read them. `keep`: hold on to the lines'
-   * log-probabilities (the last few pages only), for `suggest`.
+   * log-probabilities (the last few pages only), for `suggest`. `words`:
+   * the notebook's own words to favour (page-words.ts). `reread`: read the
+   * words not in the word list (`lexicon`) again against it (default true;
+   * nothing without a list).
    */
-  | { type: "page"; strokes: PageInk[]; useLm: boolean; keep?: boolean }
+  | {
+      type: "page";
+      strokes: PageInk[];
+      useLm: boolean;
+      keep?: boolean;
+      words?: string[];
+      reread?: boolean;
+    }
   /** The word list to suggest from (`handwriting/words.txt`). */
   | { type: "lexicon"; words: string[] }
   /** List words for words of a kept page (`PageReading.id`). */

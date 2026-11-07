@@ -25,6 +25,8 @@ const scope = self as unknown as WorkerScope;
 let bundle: HwrBundle | null = null;
 const now = (): number => performance.now();
 let lexicon: Lexicon | null = null;
+/** The list's own words (lower case), for telling which words of a reading are in it. */
+let lexiconWords: Set<string> = new Set();
 /** The log-probabilities of the last pages read with `keep`, by reading id. */
 const kept = new Map<number, LineLogp[]>();
 /** Pages kept: the one just checked, and the one before (a few MB each). */
@@ -81,20 +83,26 @@ function handle(request: HwrRequest, id: number): HwrResult {
   }
   if (request.type === "lexicon") {
     lexicon = new Lexicon(request.words);
+    lexiconWords = new Set(request.words.map((w) => w.toLowerCase()));
     return { type: "lexicon", size: lexicon.size };
   }
   if (!bundle) throw new Error("no model loaded");
   if (request.type === "page") {
+    const context = {
+      pageWords: request.words ?? null,
+      rereadList: request.reread !== false && lexicon ? { lexicon, words: lexiconWords } : null,
+    };
     if (!request.keep) {
       return {
         type: "page",
-        reading: readPage(bundle, request.strokes, { useLm: request.useLm, now }),
+        reading: readPage(bundle, request.strokes, { useLm: request.useLm, now, ...context }),
       };
     }
     const lines: LineLogp[] = [];
     const reading = readPage(bundle, request.strokes, {
       useLm: request.useLm,
       now,
+      ...context,
       logp: (line, logp, frames) => (lines[line] = { logp, frames }),
     });
     const readingId = nextReading++;
