@@ -17280,3 +17280,24 @@ button.goodobsidian-library-rail-toggle.is-active {
   width: 18px;
   height: 18px;
 }
+
+/* A popover held to the room under the bar scrolls its body, a flex column
+   whose children may shrink; a switch list clips its rows (overflow: hidden),
+   so it has no content floor and was squashed to half a row (FineNotes#159). */
+.goodobsidian-popover-body > .goodobsidian-switch-list {
+  flex-shrink: 0;
+}
+
+/* A long name wraps beside its dropdown, and the dropdown gives way rather
+   than running past the popover's edge (Swedish, FineNotes#159). */
+.goodobsidian-choice-row .goodobsidian-popover-label {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+select.goodobsidian-choice-select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  text-overflow: ellipsis;
+}
