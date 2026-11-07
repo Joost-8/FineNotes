@@ -24,7 +24,8 @@ extracted from the matching section of this file by `release.yml`.
   Each page now fits the screen on its own, as in Goodnotes: a lecture slide
   next to a portrait page used to open at two thirds of the screen, because
   every page was fitted to the tallest one. Turning to a page of another
-  shape fits that page.
+  shape fits that page. A 16:9 slide, wider than the screen, keeps only a
+  thin margin at its sides, as in Goodnotes, instead of a wide band of desk.
 - **A double tap on a slide shows the whole slide**, as large as fits and
   centred, instead of filling the width and cutting off its foot. Portrait
   pages still fill the width.

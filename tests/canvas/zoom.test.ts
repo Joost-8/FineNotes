@@ -15,6 +15,7 @@ import {
   pageContainZoom,
   pageFillZoom,
   rowPageFloor,
+  ROW_FIT_MARGIN_RATIO,
   pageWidthZoom,
   zoomAnchorFor,
   pinchOpensOverview,
@@ -310,5 +311,20 @@ describe("a row rests centred on each page (discussion #43)", () => {
     });
     const one = rowRestRangeY(same, 0.5, 664);
     expect(one.min).toBe(one.max);
+  });
+});
+
+describe("a 16:9 slide in a row gets Goodnotes' margin (discussion #43)", () => {
+  // A landscape iPad pane 1180 x 712 CSS px; a 16:9 slide 1411 x 794 is wider
+  // than the pane, so its side margin, not its height, sets its size.
+  const pane = { w: 1180, h: 712 };
+  const slide = { w: 1411, h: 794 };
+  const base = pane.w / (slide.w * 1.18);
+  const widthShown = (side: number) =>
+    (slide.w * base * rowPageFloor(slide.w, slide.h, side, base, pane.w, pane.h)) / pane.w;
+
+  it("fills about 94 % of the width with 3 % beside it, against 85 % with 9 %", () => {
+    expect(widthShown(slide.w * 0.09)).toBeCloseTo(0.847, 2);
+    expect(widthShown(slide.w * ROW_FIT_MARGIN_RATIO)).toBeCloseTo(0.943, 2);
   });
 });

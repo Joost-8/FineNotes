@@ -318,6 +318,7 @@ import {
   doubleTapZoom,
   doubleTapFill,
   rowPageFloor,
+  ROW_FIT_MARGIN_RATIO,
   zoomAnchorFor,
   zoomKeepingScale,
 } from "../canvas/zoom";
@@ -5128,7 +5129,7 @@ export class InkSurface {
     if (layout.direction !== "horizontal" || layout.joined || !reading) {
       return fitPageZoom(tallest, this.baseScale, cssH);
     }
-    const side = Math.max(0, (layout.fitWidth - widest) / 2);
+    const side = reading.width * ROW_FIT_MARGIN_RATIO;
     return rowPageFloor(reading.width, reading.height, side, this.baseScale, this.cssW, cssH);
   }
 

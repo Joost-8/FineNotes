@@ -53,6 +53,14 @@ export function fitPageZoom(
 }
 
 /**
+ * The desk beside a page fitted in a row, as a fraction of its width each
+ * side: about Goodnotes' (discussion #43, measured from recordings: 3%),
+ * not the 9% a column keeps. A 16:9 slide is wider than the pane, so this
+ * margin, not the height, sets its size.
+ */
+export const ROW_FIT_MARGIN_RATIO = 0.03;
+
+/**
  * The zoom floor of a row of pages (pages across): the user zoom at which
  * the page being read, `width` by `height` layout px, fits the pane whole
  * with the layout's margins (`side` either side, `marginY` above and below),
