@@ -48,6 +48,15 @@ export const calculator = {
   "calculator.wordOr": "or",
   "calculator.answerLine": "Answer: {answer}",
   "calculator.writeAnswer": "Write {answer}",
+  "calculator.mathsMark": "Read as maths: tap for the answer",
+  "calculator.fixReading": "Fix the reading",
+  "calculator.asFraction": "As a fraction",
+  "calculator.asDecimal": "As a decimal",
+  "calculator.write": "Write",
+  "calculator.toEquation": "Turn into a typed equation",
+  "calculator.copyLatex": "Copy LaTeX",
+  "calculator.latexCopied": "LaTeX copied",
+  "calculator.notMaths": "Not maths",
 
   // --- Basic pad ----------------------------------------------------------------
   "calculator.padClear": "Clear",

@@ -16,6 +16,7 @@ import {
   markId,
   misreadMarks,
   readLaidOut,
+  readWhole,
   sumText,
 } from "../../src/model/calc-layout";
 import { evaluateSum, sumOfLine } from "../../src/model/calc-note";
@@ -351,12 +352,25 @@ describe("reading again when a mark was taken wrongly", () => {
 
   it("reads 3·3 as 3 * 3 when both sides read as numbers", async () => {
     const reads: string[][] = [];
-    const text = await readLaidOut(threeDotThree(), async (groups) => {
+    const got = await readLaidOut(threeDotThree(), async (groups) => {
       reads.push(groups.map((g) => g.map((s) => s.id).join(",")));
-      return groups.map(() => "3");
+      return groups.map(() => ({ text: "3", confidence: 0.97 }));
     });
-    expect(text).toBe("3 * 3");
+    expect(got).toEqual({ text: "3 * 3", dot: true, fraction: false, doubts: [] });
     expect(reads).toHaveLength(1);
+  });
+
+  it("marks the pieces Grape was unsure of as doubts", async () => {
+    const ink = threeDotThree();
+    const got = await readLaidOut(ink, async (groups) =>
+      groups.map((_, i) => ({ text: "3", confidence: i === 1 ? 0.8 : 0.95 })),
+    );
+    expect(got?.doubts).toEqual([[ink[2].id]]);
+    // A whole line: its doubt is the whole line, only when unsure.
+    expect(readWhole(ink, { text: "3.3 =", confidence: 0.7 }).doubts).toEqual([
+      ink.map((s) => s.id),
+    ]);
+    expect(readWhole(ink, { text: "3.3 =", confidence: 0.95 }).doubts).toEqual([]);
   });
 
   it("falls back to the plain reading when a word stands beside the dot", async () => {
@@ -368,7 +382,10 @@ describe("reading again when a mark was taken wrongly", () => {
     expect([...bad]).toEqual([markId(pieces[1])]);
     expect(hasLayout(layoutSum(ink, bad))).toBe(false);
     const text = await readLaidOut(ink, async (groups) =>
-      groups.length === 2 ? readings : groups.map(() => "Euclid"),
+      (groups.length === 2 ? readings : groups.map(() => "Euclid")).map((r) => ({
+        text: r,
+        confidence: 0.95,
+      })),
     );
     expect(text).toBeNull();
   });

@@ -191,6 +191,40 @@ export function glyphsFor(text: string, own: GlyphSet | null): GlyphSet | null {
   return chars.every((c) => CLEAN_GLYPHS.has(c)) ? CLEAN_GLYPHS : null;
 }
 
+/** How wide `text` is when written at `height`, page px (as {@link writeText} advances). */
+export function textWidth(text: string, glyphs: GlyphSet, height: number): number {
+  let w = 0;
+  for (const c of Array.from(text)) {
+    const glyph = glyphs.get(c);
+    if (glyph) w += (glyph.width + TRACKING) * height;
+  }
+  return Math.max(0, w - TRACKING * height);
+}
+
+/**
+ * A fraction written by hand from `x`: `top` over a bar over `bottom`, each
+ * 0.8 of `height` tall, centred on each other, the bar at the middle of a
+ * digit on `baseline` (where the "=" sits). One stroke per array, page px.
+ */
+export function writeFraction(
+  top: string,
+  bottom: string,
+  glyphs: GlyphSet,
+  at: { x: number; baseline: number; height: number },
+): number[][] {
+  const h = at.height * 0.8;
+  const wt = textWidth(top, glyphs, h);
+  const wb = textWidth(bottom, glyphs, h);
+  const bar = Math.max(wt, wb) + at.height * 0.3;
+  const y = at.baseline - at.height * 0.45;
+  const gap = at.height * 0.14;
+  return [
+    ...writeText(top, glyphs, { x: at.x + (bar - wt) / 2, baseline: y - gap, height: h }),
+    [at.x, y, PRESSURE, at.x + bar / 2, y + at.height * 0.01, PRESSURE, at.x + bar, y, PRESSURE],
+    ...writeText(bottom, glyphs, { x: at.x + (bar - wb) / 2, baseline: y + gap + h, height: h }),
+  ];
+}
+
 /**
  * `text` written in `glyphs` from `x`, its digits `height` tall on
  * `baseline`: one `[x, y, pressure, …]` array per stroke, page px.

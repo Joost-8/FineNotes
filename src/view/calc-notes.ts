@@ -15,9 +15,17 @@
  * `model/answer-glyphs.ts` (the letters it is written in).
  */
 
-import type { App } from "obsidian";
+import { type App, Notice } from "obsidian";
 import { writingLines } from "../canvas/backdrop";
-import { type GlyphSet, glyphsFor, glyphsFromSamples, writeText } from "../model/answer-glyphs";
+import { measureEquation } from "../canvas/equation-paint";
+import { t } from "../i18n/translate";
+import {
+  type GlyphSet,
+  glyphsFor,
+  glyphsFromSamples,
+  writeFraction,
+  writeText,
+} from "../model/answer-glyphs";
 import {
   type AnswerPlace,
   type EqualsSign,
@@ -25,21 +33,24 @@ import {
   equalsAtEnd,
   sumStrokes,
 } from "../model/calc-ink";
-import { readLaidOut } from "../model/calc-layout";
+import { type SumReading, readLaidOut, readWhole } from "../model/calc-layout";
 import {
   type NoteSum,
-  answerText,
   evaluateSum,
   needsVariables,
   sumOfLine,
   variablesOfLines,
 } from "../model/calc-note";
+import { type AnswerForms, answerForms, expressionTex } from "../model/calc-tex";
 import type { CalcValue } from "../model/calculator";
-import { DEFAULT_PAGE_GEOMETRY, type Page, type Stroke } from "../model/document";
+import { DEFAULT_PAGE_GEOMETRY, type Page, type Stroke, strokeBounds } from "../model/document";
+import { AddEquation, makeEquation, nextEquationId } from "../model/equation";
+import { CompositeCommand, RemoveStrokesFromPage } from "../model/page-commands";
 import { parseInkFile } from "../model/serialize";
 import { SYMBOL_SET, symbolSamples } from "../recognition/practice";
 import { type HandwritingReader, inkForReading } from "./handwriting";
 import { practiceFiles, practiceSetOf, type LearningHost } from "./handwriting-learning";
+import type { AnswerForm, CalcCardContent } from "./calc-card";
 import type { InkSurface } from "./ink-surface";
 
 /** How long after the pen lifts from the "=" the line is read, ms. */
@@ -57,6 +68,11 @@ export interface CalcNotesHost {
   learning(): LearningHost;
 }
 
+/** A stroke's left edge, page px. */
+function strokeLeft(stroke: Stroke): number {
+  return strokeBounds(stroke)?.minX ?? Infinity;
+}
+
 /** The "=" a suggestion was made for is still the page's last ink. */
 function stillLast(page: Page, eq: EqualsSign): boolean {
   const now = equalsAtEnd(page.strokes);
@@ -67,6 +83,9 @@ export class CalcNotes {
   private timer = 0;
   /** Bumped by every stroke and pen-down: a reading that comes back after one is dropped. */
   private token = 0;
+  /** The answer form last chosen in the card, kept for the next sum while the view is open. */
+  private form: AnswerForm | null = null;
+  private measureCtx: CanvasRenderingContext2D | null = null;
 
   constructor(private readonly host: CalcNotesHost) {}
 
@@ -84,15 +103,15 @@ export class CalcNotes {
     }, CALC_DELAY_MS);
   }
 
-  /** The pen touched the page: writing on drops the suggestion, untouched. */
+  /** The pen touched the page: writing on drops the note, untouched. */
   penDown(): void {
     this.cancel();
-    this.host.surface()?.hideCalcSuggestion();
+    this.host.surface()?.hideCalcNote();
   }
 
   dispose(): void {
     this.cancel();
-    this.host.surface()?.hideCalcSuggestion();
+    this.host.surface()?.hideCalcNote();
   }
 
   private cancel(): void {
@@ -108,59 +127,108 @@ export class CalcNotes {
     const page = this.host.page(pageId);
     if (!page || !stillLast(page, eq)) return;
     const strokes = sumStrokes(page.strokes, eq, writingLines(page.backdrop, page.geometry));
-    const text = await this.read(strokes, eq);
-    if (text === null || token !== this.token) return;
-    let found = this.work(text, new Map());
+    const reading = await this.read(strokes, eq);
+    if (reading === null || token !== this.token) return;
+    let found = this.work(reading.text, new Map());
+    let vars: ReadonlyMap<string, CalcValue> = new Map();
     if (found === "variables") {
-      const vars = await this.variablesAbove(page, strokes);
+      vars = await this.variablesAbove(page, strokes);
       if (token !== this.token) return;
-      found = this.work(text, vars);
+      found = this.work(reading.text, vars);
     }
     if (!found || found === "variables") return;
-    const { sum, answer } = found;
+    const content = this.content(found.sum, found.value, reading.dot, reading.fraction);
+    if (!content) return;
     const place = answerPlace(strokes, eq);
     const surface = this.host.surface();
     if (!surface || token !== this.token) return;
-    // Over the line, from the "=" on: never where the answer will be written,
-    // so writing it by hand cannot land on the chip.
-    const top = Math.min(eq.bounds.minY, place.baseline - place.height);
-    surface.showCalcSuggestion(
+    const sumIds = new Set(strokes.map((s) => s.id));
+    const left = Math.min(...strokes.map((s) => strokeLeft(s)));
+    const dot = reading.dot;
+    surface.showCalcNote({
       pageId,
-      { x: eq.bounds.minX, y: top - place.height * 0.15 },
-      `${sum.shown} ${answer.exact ? "=" : "≈"}`,
-      answer.text.replace(/^-/, "−"),
-      () => void this.write(pageId, eq, place, answer.text),
-    );
+      strokes,
+      doubts: reading.doubts,
+      // Beside the "=", level with the top of the sum's line.
+      cardAt: { x: eq.bounds.maxX + place.height * 0.6, y: place.baseline - place.height * 1.4 },
+      flipAt: left - place.height * 0.6,
+      content,
+      actions: {
+        write: (form) => {
+          surface.hideCalcNote();
+          void this.write(pageId, eq, place, content.forms, form);
+        },
+        toEquation: (form) => {
+          surface.hideCalcNote();
+          this.toEquation(pageId, eq, sumIds, place, content, form);
+        },
+        copyLatex: () => {
+          void navigator.clipboard?.writeText(content.tex).then(
+            () => new Notice(t("calculator.latexCopied")),
+            () => undefined,
+          );
+        },
+        notMaths: () => surface.hideCalcNote(),
+        fix: (expression) => {
+          const sum: NoteSum = { expression, shown: expression };
+          const result = evaluateSum(sum, vars);
+          if (!result.ok) return null;
+          const next = this.content(sum, result.value, dot, false);
+          if (next) Object.assign(content, next);
+          return next;
+        },
+        formChosen: (form) => {
+          this.form = form;
+        },
+      },
+    });
+  }
+
+  /** The card's content for `sum` worked out to `value`: its LaTeX and the answer's forms. */
+  private content(
+    sum: NoteSum,
+    value: CalcValue,
+    dot: boolean,
+    fraction: boolean,
+  ): CalcCardContent | null {
+    const forms = answerForms(value);
+    const tex = expressionTex(sum.expression, { dot });
+    if (!forms || tex === null) return null;
+    const form: AnswerForm = forms.fraction
+      ? (this.form ?? (fraction ? "fraction" : "decimal"))
+      : "decimal";
+    return { tex, expression: sum.expression, forms, form };
   }
 
   /**
-   * The sum's line as text ending in "=". Grape reads a plain line whole; a
-   * line with a raised dot or a fraction (`calc-layout.ts`) is read piece by
-   * piece and put together by where the pieces sit. Null when it cannot be.
+   * The sum's line, read. Grape reads a plain line whole; a line with a
+   * raised dot or a fraction (`calc-layout.ts`) is read piece by piece and
+   * put together by where the pieces sit. Its text ends in "=". Null when it
+   * cannot be read.
    */
-  private async read(strokes: readonly Stroke[], eq: EqualsSign): Promise<string | null> {
+  private async read(strokes: readonly Stroke[], eq: EqualsSign): Promise<SumReading | null> {
     const reader = this.host.reader;
     const eqIds = new Set(eq.strokes.map((s) => s.id));
-    const laidOut = await readLaidOut(
-      strokes.filter((s) => !eqIds.has(s.id)),
-      async (groups) => (await reader.readGroups(groups.map(inkForReading))).map((l) => l.text),
+    const body = strokes.filter((s) => !eqIds.has(s.id));
+    const laidOut = await readLaidOut(body, async (groups) =>
+      (await reader.readGroups(groups.map(inkForReading))).map((l) => ({
+        text: l.text,
+        confidence: l.confidence,
+      })),
     );
-    if (laidOut !== null) return `${laidOut} =`;
+    if (laidOut !== null) return { ...laidOut, text: `${laidOut.text} =` };
     const [line] = await reader.readGroups([inkForReading(strokes)]);
-    return line ? line.text : null;
+    return line ? readWhole(body, { text: line.text, confidence: line.confidence }) : null;
   }
 
   /** The reading worked out, "variables" when it needs ones set above, or null. */
   private work(
     reading: string,
     vars: ReadonlyMap<string, CalcValue>,
-  ): { sum: NoteSum; answer: { text: string; exact: boolean } } | "variables" | null {
+  ): { sum: NoteSum; value: CalcValue } | "variables" | null {
     const sum = sumOfLine(reading, vars);
     const result = sum ? evaluateSum(sum, vars) : null;
-    if (sum && result?.ok) {
-      const answer = answerText(result.value);
-      return answer ? { sum, answer } : null;
-    }
+    if (sum && result?.ok) return { sum, value: result.value };
     // A letter in the line may be a variable set above: worth reading those
     // lines once, but only once.
     const letters = /[A-Za-z]/.test(reading.replace(/=\s*$/, ""));
@@ -191,19 +259,29 @@ export class CalcNotes {
     return variablesOfLines(lines);
   }
 
-  /** Write the answer after the "=", if it is still there and still the line's end. */
+  /**
+   * Write the answer after the "=", in the chosen form (a fraction stacked
+   * over a bar, or a decimal), if the "=" is still there and still the
+   * line's end.
+   */
   private async write(
     pageId: string,
     eq: EqualsSign,
     place: AnswerPlace,
-    text: string,
+    forms: AnswerForms,
+    form: AnswerForm,
   ): Promise<void> {
+    const fraction = form === "fraction" ? forms.fraction : null;
+    const text = fraction ? `${fraction.n}${fraction.d}` : forms.decimal.text;
     const glyphs = glyphsFor(text, await this.ownGlyphs());
     const page = this.host.page(pageId);
     const surface = this.host.surface();
     if (!glyphs || !page || !surface || !stillLast(page, eq)) return;
     const pen = eq.strokes[1];
-    const ink = writeText(text, glyphs, place).map((pts) => ({
+    const written = fraction
+      ? writeFraction(fraction.n, fraction.d, glyphs, place)
+      : writeText(forms.decimal.text, glyphs, place);
+    const ink = written.map((pts) => ({
       color: pen.color,
       size: pen.size,
       tool: pen.tool,
@@ -211,6 +289,50 @@ export class CalcNotes {
       pts,
     }));
     surface.addInkStrokes(pageId, ink);
+  }
+
+  /**
+   * Turn the sum into a typed equation (discussion #166) in its place: its
+   * ink, "=" included, goes, and the equation of the sum and its answer
+   * comes, level with the "=", in the pen's colour. One undo step.
+   */
+  private toEquation(
+    pageId: string,
+    eq: EqualsSign,
+    ids: ReadonlySet<string>,
+    place: AnswerPlace,
+    content: CalcCardContent,
+    form: AnswerForm,
+  ): void {
+    const surface = this.host.surface();
+    const page = this.host.page(pageId);
+    this.measureCtx ??= createEl("canvas").getContext("2d");
+    const ctx = this.measureCtx;
+    if (!surface || !page || !ctx || !this.host.enabled()) return;
+    const fraction = form === "fraction" ? content.forms.fraction : null;
+    const decimal = content.forms.decimal;
+    const answer = fraction ? fraction.tex : decimal.text;
+    const sign = !fraction && !decimal.exact ? "\\approx" : "=";
+    const tex = `${content.tex} ${sign} ${answer}`;
+    const size = Math.max(12, place.height * 1.1);
+    const frame = measureEquation(ctx, tex, size);
+    const left = Math.min(...page.strokes.filter((s) => ids.has(s.id)).map((s) => strokeLeft(s)));
+    const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
+    const equation = makeEquation({
+      id: nextEquationId(surface.document),
+      x: Number.isFinite(left) ? left : eq.bounds.minX,
+      y: cy - frame.h / 2,
+      tex,
+      color: eq.strokes[1].color,
+      size,
+      ...frame,
+    });
+    surface.applyCommand(
+      new CompositeCommand(t("calculator.toEquation"), [
+        new RemoveStrokesFromPage(pageId, ids),
+        new AddEquation(pageId, equation),
+      ]),
+    );
   }
 
   /** The writer's glyphs from their symbol sheets (the last sample of each character wins). */

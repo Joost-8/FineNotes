@@ -8,6 +8,25 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **A recognised sum glows, and a tap opens its maths card** (FineNotes#178).
+  When a line ending in "=" is read as maths, its ink glows in the accent
+  instead of a chip appearing over it; a part Grape was unsure of gets a
+  dotted line. A tap on the glow opens a card with the reading typeset (tap
+  it to fix the reading), the answer as a fraction or a decimal, and Write,
+  which writes a fraction stacked over a bar. Along its foot: turn the sum
+  into a typed equation, copy its LaTeX, or not maths.
+
+### Fixed
+
+- **Calculation notes read a raised dot as times, and fractions**
+  (FineNotes#178). "3·3 =" offered nothing, because the dot was read as a
+  decimal point; a fraction such as 3×2 over 7 was read as 3×2. A dot
+  halfway up the digits is now times and a dot on the baseline stays a
+  decimal point; a bar with a number over and under it is a fraction, and the
+  answer goes level with the "=". A dash with a dot over and under it is ÷.
+
 ## [2.8.3] - 2026-11-06
 
 ### Added
@@ -31,12 +50,6 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
-- **Calculation notes read a raised dot as times, and fractions**
-  (FineNotes#178). "3·3 =" offered nothing, because the dot was read as a
-  decimal point; a fraction such as 3×2 over 7 was read as 3×2. A dot
-  halfway up the digits is now times and a dot on the baseline stays a
-  decimal point; a bar with a number over and under it is a fraction, and the
-  answer goes level with the "=". A dash with a dot over and under it is ÷.
 - **A page margin's lines now continue the page's** (FineNotes#164). On a
   ruled, squared or dotted page the margin takes the page's spacing and its
   lines are level with the page's, whatever the spacing; before, it kept its

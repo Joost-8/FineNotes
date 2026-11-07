@@ -367,17 +367,42 @@ export function sumText(pieces: readonly SumPiece[], readings: readonly string[]
   return build(pieces);
 }
 
+/** What Grape gave for one group of ink: its text and how sure it was (mean best-class probability). */
+export interface PieceReading {
+  text: string;
+  confidence: number;
+}
+
+/**
+ * Below this confidence a reading is marked as a doubt (dotted on the page).
+ * Measured on the 246 real eval lines (`calc_confidence_probe.mjs`): of the
+ * short lines (6 characters at most, like a fraction's side), 18 of 27 read
+ * wrongly fell under 0.9 and 1 of 9 read exactly; under 0.85, 12 of 27 and
+ * none. 0.88 sits between.
+ */
+export const DOUBT_BELOW = 0.88;
+
+/** A sum read for a calculation note: its text (without the "="), what was laid out, and its doubts. */
+export interface SumReading {
+  text: string;
+  /** Whether a raised dot was read as times (the typed form then uses `\cdot`). */
+  dot: boolean;
+  /** Whether a fraction bar was read (the exact answer is offered first). */
+  fraction: boolean;
+  /** The groups of strokes Grape read with a confidence under {@link DOUBT_BELOW}. */
+  doubts: string[][];
+}
+
 /**
  * Read a sum laid out by where its marks sit: lay it out, read its ink pieces
  * with `read`, and lay it out again without any mark the readings show was
- * taken wrongly ({@link misreadMarks}), at most three times. The sum's text
- * without its "=", or null when it has no layout (or none survives): read it
- * whole, as before.
+ * taken wrongly ({@link misreadMarks}), at most three times. Null when it has
+ * no layout (or none survives): read it whole, with {@link readWhole}.
  */
 export async function readLaidOut(
   strokes: readonly Stroke[],
-  read: (groups: Stroke[][]) => Promise<string[]>,
-): Promise<string | null> {
+  read: (groups: Stroke[][]) => Promise<PieceReading[]>,
+): Promise<SumReading | null> {
   const plain = new Set<string>();
   for (let round = 0; round < 3; round++) {
     const pieces = layoutSum(strokes, plain);
@@ -385,11 +410,41 @@ export async function readLaidOut(
     const groups = inkPieces(pieces);
     const readings = groups.length > 0 ? await read(groups) : [];
     if (readings.length !== groups.length) return null;
-    const bad = misreadMarks(pieces, readings);
-    if (bad.size === 0) return sumText(pieces, readings);
+    const texts = readings.map((r) => r.text);
+    const bad = misreadMarks(pieces, texts);
+    if (bad.size === 0) {
+      const text = sumText(pieces, texts);
+      if (text === null) return null;
+      return {
+        text,
+        dot: hasKind(pieces, "times"),
+        fraction: hasKind(pieces, "fraction"),
+        doubts: groups
+          .filter((_, i) => readings[i].confidence < DOUBT_BELOW)
+          .map((g) => g.map((s) => s.id)),
+      };
+    }
     for (const id of bad) plain.add(id);
   }
   return null;
+}
+
+/** A sum with no layout, read as one line: its doubt is the whole line, when Grape was unsure. */
+export function readWhole(strokes: readonly Stroke[], reading: PieceReading): SumReading {
+  return {
+    text: reading.text,
+    dot: false,
+    fraction: false,
+    doubts: reading.confidence < DOUBT_BELOW ? [strokes.map((s) => s.id)] : [],
+  };
+}
+
+function hasKind(pieces: readonly SumPiece[], kind: SumPiece["kind"]): boolean {
+  return pieces.some(
+    (p) =>
+      p.kind === kind ||
+      (p.kind === "fraction" && (hasKind(p.over, kind) || hasKind(p.under, kind))),
+  );
 }
 
 /** Whether the layout is anything but plain ink (a raised dot, ÷ or a fraction somewhere). */

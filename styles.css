@@ -12078,44 +12078,180 @@ button.goodobsidian-comment-marker.clickable-icon:hover {
 }
 
 /* ---------------------------------------------------- calculation notes */
-/* A line ending in "=" (calc-chip.ts, calc-notes.ts): what was read and the
-   answer, in a pill over the line from the "=" on. Chrome, not ink: a tap
-   writes the answer, anything else leaves the page alone. Its bottom left
-   sits on the point it is placed at. */
-button.goodobsidian-calc-note.clickable-icon {
+/* A line ending in "=" (calc-notes.ts, FineNotes#178). The sum's ink glows
+   in the accent when it is read as maths (calc-glow.ts: a canvas over the
+   sum, its halo drawn in this colour); a dotted line marks what Grape was
+   unsure of. A tap on the glow opens the maths card (calc-card.ts): the
+   reading typeset, the answer as a fraction or a decimal, Write, and along
+   the foot a typed equation, copy LaTeX and Not maths. Chrome, not ink. */
+button.goodobsidian-calc-glow.clickable-icon {
   position: absolute;
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--interactive-accent);
-  border-radius: 14px;
-  background: var(--background-primary);
-  color: var(--text-muted);
-  font-family: var(--font-interface);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  line-height: 26px;
-  white-space: nowrap;
-  box-shadow: var(--gob-shadow-mark);
-  transform: translate(0, -100%);
+  display: block;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--interactive-accent);
   pointer-events: auto;
   touch-action: none;
+  cursor: pointer;
+  animation: goodobsidian-calc-glow-in 0.35s var(--gob-ease-out) 1;
 }
 
-button.goodobsidian-calc-note.clickable-icon:hover {
-  background: var(--background-primary);
-  filter: brightness(1.04);
+button.goodobsidian-calc-glow.clickable-icon:hover {
+  background: transparent;
 }
 
-button.goodobsidian-calc-note.is-hidden.clickable-icon {
+button.goodobsidian-calc-glow.is-hidden.clickable-icon {
   display: none;
 }
 
-.goodobsidian-calc-note-answer {
-  color: var(--interactive-accent);
-  font-weight: var(--font-semibold);
+.goodobsidian-calc-glow canvas {
+  display: block;
+  pointer-events: none;
+}
+
+@keyframes goodobsidian-calc-glow-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.goodobsidian-calc-card {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 188px;
+  padding: 8px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  font-family: var(--font-interface);
+  pointer-events: auto;
+}
+
+.goodobsidian-calc-card.is-hidden {
+  display: none;
+}
+
+/* Left of the sum when the page ends before the card would. */
+.goodobsidian-calc-card.is-flipped {
+  transform: translateX(-100%);
+}
+
+.goodobsidian-calc-card.is-refused {
+  animation: goodobsidian-calc-card-refuse 0.3s ease-in-out 1;
+}
+
+@keyframes goodobsidian-calc-card-refuse {
+  25% {
+    margin-left: -6px;
+  }
+  75% {
+    margin-left: 6px;
+  }
+}
+
+button.goodobsidian-calc-card-preview.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: auto;
+  min-height: 56px;
+  padding: 10px 6px;
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-well);
+  color: var(--text-normal);
+}
+
+button.goodobsidian-calc-card-preview.is-hidden.clickable-icon {
+  display: none;
+}
+
+.goodobsidian-calc-card-preview canvas {
+  display: block;
+  max-width: 100%;
+}
+
+/* The reading as the calculator's text: 16 px, or iPadOS zooms in on focus. */
+input.goodobsidian-calc-card-field {
+  width: 100%;
+  height: 40px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+input.goodobsidian-calc-card-field.is-hidden {
+  display: none;
+}
+
+.goodobsidian-segmented.goodobsidian-calc-card-forms button.is-hidden {
+  display: none;
+}
+
+/* One form (a whole number): the answer shown, not offered as a choice. */
+.goodobsidian-segmented.goodobsidian-calc-card-forms.is-single button {
+  pointer-events: none;
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-segmented.goodobsidian-calc-card-forms button {
+  height: 40px;
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-calc-card-frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.05;
+  font-size: 12px;
+}
+
+.goodobsidian-calc-card-frac > span:first-child {
+  padding: 0 3px;
+  border-bottom: 1.5px solid currentColor;
+}
+
+button.goodobsidian-calc-card-write.mod-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: var(--gob-radius-pill);
+}
+
+.goodobsidian-calc-card-write-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-calc-card-write-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-calc-card-foot {
+  display: flex;
+  justify-content: space-around;
+  padding-top: 4px;
+  border-top: var(--gob-hairline);
+}
+
+button.goodobsidian-calc-card-icon.clickable-icon {
+  width: 40px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* The comment dialog: Delete on the left, Resolve and Save on the right. */
