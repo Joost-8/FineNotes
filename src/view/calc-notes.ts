@@ -10,7 +10,8 @@
  * written until the user has seen what was read and tapped the suggestion.
  *
  * The pure parts: `model/calc-ink.ts` (the "=", the line, where the answer
- * goes), `model/calc-note.ts` (the reading to a sum, the answer's text) and
+ * goes), `model/calc-layout.ts` (raised dots and fractions, by where they
+ * sit), `model/calc-note.ts` (the reading to a sum, the answer's text) and
  * `model/answer-glyphs.ts` (the letters it is written in).
  */
 
@@ -24,6 +25,7 @@ import {
   equalsAtEnd,
   sumStrokes,
 } from "../model/calc-ink";
+import { readLaidOut } from "../model/calc-layout";
 import {
   type NoteSum,
   answerText,
@@ -106,13 +108,13 @@ export class CalcNotes {
     const page = this.host.page(pageId);
     if (!page || !stillLast(page, eq)) return;
     const strokes = sumStrokes(page.strokes, eq, writingLines(page.backdrop, page.geometry));
-    const [line] = await reader.readGroups([inkForReading(strokes)]);
-    if (!line || token !== this.token) return;
-    let found = this.work(line.text, new Map());
+    const text = await this.read(strokes, eq);
+    if (text === null || token !== this.token) return;
+    let found = this.work(text, new Map());
     if (found === "variables") {
       const vars = await this.variablesAbove(page, strokes);
       if (token !== this.token) return;
-      found = this.work(line.text, vars);
+      found = this.work(text, vars);
     }
     if (!found || found === "variables") return;
     const { sum, answer } = found;
@@ -129,6 +131,23 @@ export class CalcNotes {
       answer.text.replace(/^-/, "−"),
       () => void this.write(pageId, eq, place, answer.text),
     );
+  }
+
+  /**
+   * The sum's line as text ending in "=". Grape reads a plain line whole; a
+   * line with a raised dot or a fraction (`calc-layout.ts`) is read piece by
+   * piece and put together by where the pieces sit. Null when it cannot be.
+   */
+  private async read(strokes: readonly Stroke[], eq: EqualsSign): Promise<string | null> {
+    const reader = this.host.reader;
+    const eqIds = new Set(eq.strokes.map((s) => s.id));
+    const laidOut = await readLaidOut(
+      strokes.filter((s) => !eqIds.has(s.id)),
+      async (groups) => (await reader.readGroups(groups.map(inkForReading))).map((l) => l.text),
+    );
+    if (laidOut !== null) return `${laidOut} =`;
+    const [line] = await reader.readGroups([inkForReading(strokes)]);
+    return line ? line.text : null;
   }
 
   /** The reading worked out, "variables" when it needs ones set above, or null. */

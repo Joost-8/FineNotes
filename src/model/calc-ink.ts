@@ -31,7 +31,8 @@ export function isSumInk(stroke: Stroke): boolean {
   return stroke.tool === "pen" && !stroke.shape;
 }
 
-function pathLength(stroke: Stroke): number {
+/** A stroke's length along its path. */
+export function pathLength(stroke: Stroke): number {
   const p = stroke.pts;
   let length = 0;
   for (let i = POINT_STRIDE; i + 1 < p.length; i += POINT_STRIDE) {
@@ -44,10 +45,29 @@ function pathLength(stroke: Stroke): number {
  * A dash: flat, nearly straight, longer than a dot. The path may be half as
  * long again as the dash is wide: Pencil ink has a hook where it lands.
  */
-function isDash(stroke: Stroke, box: Bounds): boolean {
+export function isDash(stroke: Stroke, box: Bounds): boolean {
   const w = box.maxX - box.minX;
   const h = box.maxY - box.minY;
   return w > 1 && h <= Math.max(0.4 * w, 1.5) && pathLength(stroke) <= 1.5 * w;
+}
+
+function median(values: number[]): number {
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/**
+ * The height of a sum's digits: the median of its tall strokes (at least
+ * three quarters of the second tallest, so one long stroke does not set it).
+ * 0 when nothing has height.
+ */
+export function digitHeight(boxes: readonly Bounds[]): number {
+  const heights = boxes.map((b) => b.maxY - b.minY).filter((h) => h > 0);
+  if (heights.length === 0) return 0;
+  const sorted = [...heights].sort((a, b) => b - a);
+  const tallest = sorted[Math.min(1, sorted.length - 1)];
+  return median(heights.filter((h) => h >= 0.75 * tallest));
 }
 
 /**
@@ -131,16 +151,67 @@ export function sumStrokes(
     kept.push(c.stroke);
     left = Math.min(left, c.box.minX);
   }
+  pullFractionSides(ink, boxes, kept, { minX: left, maxX: eq.bounds.minX }, eqW * 1.6);
   // In the page's order (the order they were written in), then the "=".
   const order = new Map(strokes.map((s, i) => [s.id, i]));
   kept.sort((p, q) => (order.get(p.id) ?? 0) - (order.get(q.id) ?? 0));
   return [...kept, ...eq.strokes];
 }
 
-function median(values: number[]): number {
-  const s = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+/**
+ * A fraction may lie partly off the sum's line: on ruled paper its bar sits
+ * on the rule and its denominator under it; on blank paper a tall numerator
+ * may reach beyond the band around the "=". So every dash at least half a
+ * digit wide, between the sum's left end and the "=" and within a digit of
+ * its ink, is a bar when there is ink just over it and just under it
+ * (inside its width, within a digit): the bar and both sides are taken, so
+ * `calc-layout.ts` sees the whole fraction. A minus has nothing over and
+ * under it and takes nothing from the lines around it. Adds to `kept`.
+ */
+function pullFractionSides(
+  ink: readonly Stroke[],
+  boxes: readonly (Bounds | null)[],
+  kept: Stroke[],
+  span: { minX: number; maxX: number },
+  fallbackDigit: number,
+): void {
+  const keptIds = new Set(kept.map((s) => s.id));
+  const keptBoxes = kept.flatMap((s) => {
+    const b = strokeBounds(s);
+    return b ? [{ s, b }] : [];
+  });
+  // With only the bar on the line (both sides beyond the band), the "=" gives the size.
+  const digit =
+    digitHeight(keptBoxes.filter(({ s, b }) => !isDash(s, b)).map(({ b }) => b)) || fallbackDigit;
+  if (digit <= 0 || keptBoxes.length === 0) return;
+  const top = Math.min(...keptBoxes.map(({ b }) => b.minY)) - digit;
+  const bottom = Math.max(...keptBoxes.map(({ b }) => b.maxY)) + digit;
+  ink.forEach((bar, j) => {
+    const box = boxes[j];
+    if (!box || !isDash(bar, box) || box.maxX - box.minX < 0.5 * digit) return;
+    const w = box.maxX - box.minX;
+    const y = (box.minY + box.maxY) / 2;
+    const cx = (box.minX + box.maxX) / 2;
+    if (cx < span.minX - digit || cx > span.maxX || y < top || y > bottom) return;
+    const over: Stroke[] = [];
+    const under: Stroke[] = [];
+    ink.forEach((s, i) => {
+      const b = boxes[i];
+      if (!b || s === bar) return;
+      const x = (b.minX + b.maxX) / 2;
+      if (x < box.minX - 0.1 * w || x > box.maxX + 0.1 * w) return;
+      if (b.maxY - b.minY > 2.5 * digit) return;
+      const mid = (b.minY + b.maxY) / 2;
+      if (mid < y && b.maxY <= y + 0.2 * digit && b.maxY >= y - digit) over.push(s);
+      else if (mid > y && b.minY >= y - 0.2 * digit && b.minY <= y + digit) under.push(s);
+    });
+    if (over.length === 0 || under.length === 0) return;
+    for (const s of [bar, ...over, ...under]) {
+      if (keptIds.has(s.id)) continue;
+      keptIds.add(s.id);
+      kept.push(s);
+    }
+  });
 }
 
 /** The space between the "=" and the answer, in digit heights (as a hand leaves it). */
@@ -165,6 +236,12 @@ export function answerPlace(sum: readonly Stroke[], eq: EqualsSign): AnswerPlace
     const tall = boxes.filter((b) => b.maxY - b.minY >= 0.75 * tallest);
     const height = median(tall.map((b) => b.maxY - b.minY));
     if (height > 0) {
+      // Ink on two levels (a fraction): the answer sits level with the "=".
+      const bottoms = tall.map((b) => b.maxY);
+      if (Math.max(...bottoms) - Math.min(...bottoms) > height) {
+        const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
+        return { x: eq.bounds.maxX + height * ANSWER_GAP, baseline: cy + height / 2, height };
+      }
       return {
         x: eq.bounds.maxX + height * ANSWER_GAP,
         baseline: median(tall.map((b) => b.maxY)),

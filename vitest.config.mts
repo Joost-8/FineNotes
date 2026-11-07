@@ -144,6 +144,7 @@ export default defineConfig({
         "src/recognition/practice.ts",
         "src/model/calc-note.ts",
         "src/model/calc-ink.ts",
+        "src/model/calc-layout.ts",
         "src/model/answer-glyphs.ts",
         "src/recognition/hwr/learned-model.ts",
         "src/recognition/hwr/learn-window-model.ts",
