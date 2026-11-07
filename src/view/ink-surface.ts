@@ -3603,6 +3603,7 @@ export class InkSurface {
     if (!this.calcNote || this.calcNote.pageId !== note.pageId) return;
     this.calcNote = note;
     this.calcGlow?.show({ pageId: note.pageId, strokes: note.strokes, doubts: note.doubts });
+    if (this.calcCard?.shown) this.calcCard.update(note.content);
     this.syncCalcChip();
   }
 
@@ -3610,11 +3611,6 @@ export class InkSurface {
     this.calcNote = null;
     this.calcGlow?.hide();
     this.calcCard?.hide();
-  }
-
-  /** Whether the maths card is open with its reading being typed in. */
-  get calcCardEditing(): boolean {
-    return this.calcCard?.editing === true;
   }
 
   /** Where the calculation note is, or null while none shows. */

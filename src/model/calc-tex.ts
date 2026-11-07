@@ -12,7 +12,9 @@
  */
 
 import { fromCalc } from "./algebra/convert";
+import { print } from "./algebra/expr";
 import { toPoly } from "./algebra/poly";
+import { solveEquation } from "./algebra/solve";
 import { type CalcValue, formatValue, isRational } from "./calculator";
 import { answerText } from "./calc-note";
 
@@ -297,12 +299,15 @@ export function polynomialAnswer(expression: string): AnswerForms | null {
       (n) => !NOT_LETTERS.has(n.toLowerCase()),
     ),
   );
-  if (names.size !== 1) return null;
-  const [letter] = [...names];
-  if (!/^[A-Za-z]$/.test(letter)) return null;
+  // Grape may read one x as "X" and the next as "x": one letter, either case.
+  const lower = new Set([...names].map((n) => n.toLowerCase()));
+  if (lower.size !== 1) return null;
+  const [letter] = [...lower];
+  if (!/^[a-z]$/.test(letter)) return null;
+  const same = expression.replace(new RegExp(`(?<![A-Za-z])${letter}(?![A-Za-z])`, "gi"), letter);
   let poly;
   try {
-    poly = toPoly(fromCalc(expression), letter);
+    poly = toPoly(fromCalc(same), letter);
   } catch {
     return null;
   }
@@ -332,5 +337,39 @@ export function polynomialAnswer(expression: string): AnswerForms | null {
   return {
     fraction: null,
     decimal: { text: text.join(""), exact: true, tex: tex.join(""), shown: shown.join("") },
+  };
+}
+
+/**
+ * An equation solved for its letter ("2x+3=7" gives x = 2; "x^2=9" gives
+ * x = −3 or 3): the values as the card offers them, each in the
+ * calculator's text, LaTeX and as shown. Null when it has no real solution
+ * or the solver cannot read it.
+ */
+export function equationAnswer(lhs: string, rhs: string, letter: string): AnswerForms | null {
+  // One letter only: "y = 2x + 1" is a rule, not a number to find.
+  const names = (`${lhs} ${rhs}`.match(/[A-Za-z][A-Za-z0-9]*/g) ?? [])
+    .map((n) => n.toLowerCase())
+    .filter((n) => !NOT_LETTERS.has(n));
+  if (names.some((n) => n !== letter)) return null;
+  let values: string[];
+  let approx = false;
+  try {
+    const solution = solveEquation(fromCalc(lhs), fromCalc(rhs), { v: letter });
+    if (solution.values.length === 0 || solution.integer) return null;
+    approx = solution.approx;
+    values = solution.values.map((v) => print(v));
+  } catch {
+    return null;
+  }
+  const tex = values.map((v) => expressionTex(v) ?? v);
+  return {
+    fraction: null,
+    decimal: {
+      text: values.join(", "),
+      exact: !approx,
+      tex: tex.join(String.raw`,\ `),
+      shown: values.map((v) => v.replace(/^-/, "−")).join(" or "),
+    },
   };
 }

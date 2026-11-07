@@ -59,6 +59,11 @@ export const calculator = {
   "calculator.notMaths": "Not maths",
   "calculator.back": "Back",
   "calculator.fixChar": "Fix {char}",
+  "calculator.notSure": "Not sure:",
+  "calculator.whichDidYouWrite": "Which did you write?",
+  "calculator.readingTitle": "What does it say?",
+  "calculator.readingNote": "Type the sum as you wrote it.",
+  "calculator.readingRefused": "That does not work out. Check the sum.",
 
   // --- Basic pad ----------------------------------------------------------------
   "calculator.padClear": "Clear",

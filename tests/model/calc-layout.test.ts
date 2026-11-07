@@ -23,6 +23,7 @@ import {
 import { evaluateSum, sumOfLine } from "../../src/model/calc-note";
 import { formatValue } from "../../src/model/calculator";
 import type { Stroke } from "../../src/model/document";
+import realPage from "../ink/fixtures/real-calc-page-ipad.json";
 
 const A4 = { width: 1024, height: 1448 };
 const RULED = writingLines({ kind: "ruled-wide" }, A4);
@@ -542,5 +543,41 @@ describe("powers by position (FineNotes#178)", () => {
     const pieces = layoutSum([digit(100, 300, h), small(117, 300, h)]);
     expect(misreadMarks(pieces, ["5", "'"])).toEqual(new Set([markId(pieces[1])]));
     expect(misreadMarks(pieces, ["5", "2"]).size).toBe(0);
+  });
+});
+
+describe("powers on real ink (Joost's iPad, FineNotes#178)", () => {
+  // Brackets, the "g" of log and a base written low all reach below the
+  // line: judged against a line-wide baseline, the digits after them looked
+  // raised, and "(x+7)(x+4)" and "log₂(727)" each grew a false power.
+  const strokes: Stroke[] = realPage.strokes.map((s) => ({
+    id: s.id,
+    color: "#000",
+    size: 2,
+    tool: "pen",
+    t0: s.t0 ?? undefined,
+    pts: s.pts,
+  }));
+  const sums = (): Array<{ at: number[]; kinds: string[] }> => {
+    const out: Array<{ at: number[]; kinds: string[] }> = [];
+    for (let i = 1; i < strokes.length; i++) {
+      const eq = equalsAtEnd([strokes[i - 1], strokes[i]]);
+      if (!eq) continue;
+      const sum = sumStrokes(strokes.slice(0, i + 1), eq, []);
+      const ids = new Set(eq.strokes.map((s) => s.id));
+      out.push({
+        at: [Math.round(eq.bounds.minX), Math.round(eq.bounds.minY)],
+        kinds: kinds(layoutSum(sum.filter((s) => !ids.has(s.id)))),
+      });
+    }
+    return out;
+  };
+
+  it("finds no power in a product of brackets or a log with its base low", () => {
+    const found = sums();
+    expect(found.length).toBe(8);
+    // Only "log₂ ²⁷", whose 27 really is written raised, has a power.
+    const powered = found.filter((f) => f.kinds.includes("power"));
+    expect(powered.map((f) => f.at)).toEqual([[861, 485]]);
   });
 });

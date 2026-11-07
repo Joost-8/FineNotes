@@ -30,6 +30,14 @@ extracted from the matching section of this file by `release.yml`.
   base; "17 mod 5" works however the spaces were read; and a sum in one
   letter is expanded ("(2x+4)(4x+1)" offers 8x²+18x+4, written with its
   powers raised).
+- **Solve an equation by asking for its letter** (FineNotes#178). Write
+  "x =" under an equation in x (or after it on the same line) and the card
+  offers its solutions ("2x+3=7" gives x = 2; "x²=9" gives x = −3 or 3).
+- **The maths card's corrections are clearer** (FineNotes#178). Picking the
+  character that was read confirms it and takes its dotted mark away; a
+  short line says what the dotted characters are ("Not sure:") and what to
+  pick ("Which did you write?"). Typing the reading opens a dialog that rises
+  above the keyboard and shows the sum typeset as it is typed.
 
 ### Fixed
 

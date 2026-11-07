@@ -1,8 +1,9 @@
 /**
  * Calculation notes, the maths card (FineNotes#178, design 2 of
  * `research/review/calc-menu-designs.html`): what a tap on a glowing sum
- * opens. The reading typeset at the top, which a tap turns into a field to
- * fix it; the answer as a fraction or a decimal; Write; and along the foot,
+ * opens. The reading typeset at the top (a tap opens a dialog to type it,
+ * `calc-reading-modal.ts`); what Grape was unsure of, each a tap away from
+ * its other guesses; the answer as a fraction or a decimal; Write; and along the foot,
  * turn the sum into a typed equation, copy its LaTeX, or say it is not maths.
  *
  * Chrome in the paper, so it scrolls and zooms with the page; the surface
@@ -14,8 +15,6 @@ import { setIcon } from "obsidian";
 import { equationFrameSize, equationLayout, paintLayout } from "../canvas/equation-paint";
 import { t } from "../i18n/translate";
 import type { AnswerForms } from "../model/calc-tex";
-import { DialogKeyboard } from "./dialog-keyboard";
-import { onEnterKey } from "./enter-key";
 import { onTap } from "./selection-bar";
 
 /** Which form of the answer is chosen. */
@@ -24,10 +23,15 @@ export type AnswerForm = "fraction" | "decimal";
 /** What the card shows: the reading, as LaTeX and as the calculator's text, and its answer. */
 export interface CalcCardContent {
   tex: string;
-  /** The calculator's text, which the fix field edits. */
+  /** The calculator's text, which the reading dialog edits. */
   expression: string;
   forms: AnswerForms;
   form: AnswerForm;
+  /**
+   * What stands before the "=" when the sum becomes a typed equation: the
+   * sum itself (its LaTeX), or for an equation solved, its letter ("x").
+   */
+  lead: string;
   /** What Grape was unsure of: each doubtful character (or piece) and its runner-ups. */
   doubts: Array<{ char: string; alternatives: string[] }>;
 }
@@ -37,8 +41,8 @@ export interface CalcCardActions {
   toEquation: (form: AnswerForm) => void;
   copyLatex: () => void;
   notMaths: () => void;
-  /** A fixed reading: its new content, or null when the calculator cannot work it out. */
-  fix: (expression: string) => CalcCardContent | null;
+  /** Open the dialog to type the reading (the card follows what it saves). */
+  editReading: () => void;
   /** The chosen form changed (remembered for the next sum). */
   formChosen: (form: AnswerForm) => void;
   /** Doubt `doubt` answered as `text`: the new content, or null when it no longer works out. */
@@ -54,7 +58,6 @@ export class CalcCard {
   private readonly el: HTMLElement;
   private readonly preview: HTMLButtonElement;
   private readonly canvas: HTMLCanvasElement;
-  private readonly field: HTMLInputElement;
   private readonly forms: HTMLElement;
   private readonly fractionButton: HTMLButtonElement;
   private readonly decimalButton: HTMLButtonElement;
@@ -78,18 +81,9 @@ export class CalcCard {
     this.canvas = this.preview.createEl("canvas");
     onTap(this.preview, () => this.editReading());
 
-    // What Grape was unsure of, dotted as on the page: a tap opens its runner-ups.
+    // What Grape was unsure of, dotted as on the page: a tap opens its other
+    // guesses. A short line says what the dotted characters are.
     this.doubtsRow = main.createDiv({ cls: "goodobsidian-calc-card-doubts" });
-
-    this.field = main.createEl("input", {
-      cls: "goodobsidian-calc-card-field is-hidden",
-      attr: { type: "text", enterkeyhint: "done", autocapitalize: "off", spellcheck: "false" },
-    });
-    this.field.setAttribute("aria-label", t("calculator.fixReading"));
-    onEnterKey(this.field, () => this.commitReading());
-    // On the iPad the card rises above the keyboard while the reading is typed.
-    new DialogKeyboard(this.el).watch(this.field, this.field);
-    this.field.addEventListener("blur", () => this.commitReading());
 
     this.forms = main.createDiv({ cls: "goodobsidian-segmented goodobsidian-calc-card-forms" });
     this.fractionButton = this.forms.createEl("button", {
@@ -132,6 +126,7 @@ export class CalcCard {
     setIcon(back, "chevron-left");
     back.setAttribute("aria-label", t("calculator.back"));
     onTap(back, () => this.showMain());
+    head.createSpan({ cls: "goodobsidian-calc-card-hint", text: t("calculator.whichDidYouWrite") });
     this.fixChoices = this.fixView.createDiv({ cls: "goodobsidian-calc-card-choices" });
   }
 
@@ -144,16 +139,9 @@ export class CalcCard {
     return !this.el.hasClass("is-hidden");
   }
 
-  /** Whether the reading is being typed in (the keyboard may be up). */
-  get editing(): boolean {
-    return !this.field.hasClass("is-hidden");
-  }
-
   /** Open it on `content`; with `doubt` (an index into its doubts), straight at that doubt's runner-ups. */
   show(content: CalcCardContent, actions: CalcCardActions, doubt = -1): void {
     this.actions = actions;
-    this.field.addClass("is-hidden");
-    this.preview.removeClass("is-hidden");
     this.el.removeClass("is-hidden");
     this.setContent(content);
     if (doubt >= 0 && doubt < content.doubts.length) this.showFix(doubt);
@@ -191,23 +179,26 @@ export class CalcCard {
     this.fixView.removeClass("is-hidden");
   }
 
+  /** A choice for doubt `index`: another character changes the reading; the one read confirms it. Either way the doubt goes. */
   private pick(index: number, text: string): void {
     const doubt = this.content?.doubts[index];
     if (!doubt || !this.actions) return;
-    if (text !== doubt.char) {
-      const next = this.actions.pick(index, text);
-      if (next)
-        this.setContent({
-          ...next,
-          form: next.forms.fraction ? (this.content?.form ?? "decimal") : "decimal",
-        });
-    }
+    const next = this.actions.pick(index, text);
+    if (next) this.update(next);
     this.showMain();
+  }
+
+  /** New content for the card while it is open (a pick, a typed reading). */
+  update(next: CalcCardContent): void {
+    if (!this.content) return;
+    this.setContent({
+      ...next,
+      form: next.forms.fraction ? this.content.form : "decimal",
+    });
   }
 
   hide(): void {
     this.el.addClass("is-hidden");
-    this.field.addClass("is-hidden");
     this.content = null;
     this.actions = null;
   }
@@ -220,7 +211,7 @@ export class CalcCard {
   place(left: number, top: number, flip: boolean, room: DOMRect | null = null): void {
     this.el.setCssStyles({ left: `${left}px`, top: `${top}px` });
     this.el.toggleClass("is-flipped", flip);
-    if (!room || this.editing) return;
+    if (!room) return;
     const rect = this.el.getBoundingClientRect();
     const over = rect.bottom - (room.bottom - CARD_MARGIN);
     if (over <= 0) return;
@@ -241,6 +232,12 @@ export class CalcCard {
     this.decimalButton.setText(decimal.shown ?? decimal.text.replace(/^-/, "−"));
     this.doubtsRow.empty();
     this.doubtsRow.toggleClass("is-hidden", content.doubts.length === 0);
+    if (content.doubts.length > 0) {
+      this.doubtsRow.createSpan({
+        cls: "goodobsidian-calc-card-hint",
+        text: t("calculator.notSure"),
+      });
+    }
     content.doubts.forEach((doubt, i) => {
       const chip = this.doubtsRow.createEl("button", {
         cls: "clickable-icon goodobsidian-calc-card-doubt",
@@ -267,25 +264,7 @@ export class CalcCard {
   }
 
   private editReading(): void {
-    if (!this.content) return;
-    this.field.value = this.content.expression.replace(/\*/g, "×");
-    this.preview.addClass("is-hidden");
-    this.field.removeClass("is-hidden");
-    this.field.focus();
-    this.field.select();
-  }
-
-  private commitReading(): void {
-    if (!this.editing || !this.content || !this.actions) return;
-    const text = this.field.value.replace(/×/g, "*").trim();
-    this.field.addClass("is-hidden");
-    this.preview.removeClass("is-hidden");
-    if (!text || text === this.content.expression) return;
-    const next = this.actions.fix(text);
-    if (next)
-      this.setContent({ ...next, form: next.forms.fraction ? this.content.form : "decimal" });
-    else this.el.addClass("is-refused");
-    window.setTimeout(() => this.el.removeClass("is-refused"), 400);
+    this.actions?.editReading();
   }
 
   /** The reading typeset, as the page would set it, in the card's text colour. */

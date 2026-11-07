@@ -11,6 +11,8 @@ import {
   assignmentOfLine,
   evaluateSum,
   needsVariables,
+  askedLetter,
+  equationOfLine,
   showSum,
   spellNames,
   suggestionLabel,
@@ -227,5 +229,30 @@ describe("names Grape writes differently (FineNotes#178)", () => {
     // Nested brackets stay whole; a plain log and ln are left alone.
     expect(spellNames("log3((2+1)*3)")).toBe("log((2+1)*3, 3)");
     expect(spellNames("log(100)+ln(8)")).toBe("log(100)+ln(8)");
+  });
+});
+
+describe('equations asked for with "x =" (FineNotes#178)', () => {
+  it("knows the letter a line asks for", () => {
+    expect(askedLetter("x =")).toBe("x");
+    expect(askedLetter("2x+3=7, X =")).toBe("x");
+    expect(askedLetter("12x4 =")).toBeNull();
+    expect(askedLetter("ax =")).toBeNull();
+  });
+
+  it("finds the equation on the line, without the ask or a label", () => {
+    expect(equationOfLine("2x + 3 = 7", "x")).toEqual({ lhs: "2x+3", rhs: "7", letter: "x" });
+    expect(equationOfLine("2X+3=7, x =", "x")).toEqual({ lhs: "2x+3", rhs: "7", letter: "x" });
+    expect(equationOfLine("Ex 2: 3x = x+4", "x")).toEqual({ lhs: "3x", rhs: "x+4", letter: "x" });
+    expect(equationOfLine("2a+1 = 5 a =", "a")).toEqual({ lhs: "2a+1", rhs: "5", letter: "a" });
+  });
+
+  it("finds none where there is no equation in that letter", () => {
+    // A letter set, a line with no letter, two "=", the letter missing.
+    expect(equationOfLine("x = 5", "x")).toBeNull();
+    expect(equationOfLine("3 + 4 = 7", "x")).toBeNull();
+    expect(equationOfLine("x = 2 = 3", "x")).toBeNull();
+    expect(equationOfLine("2y = 4", "x")).toBeNull();
+    expect(equationOfLine("x =", "x")).toBeNull();
   });
 });

@@ -73,6 +73,24 @@ function fixDigitLetters(text: string): string {
   return spellNames(fixDigits(text));
 }
 
+/** The digit a letter read in place of a logarithm's low base most likely is. */
+const BASE_LOOKALIKES: Record<string, string> = {
+  z: "2",
+  Z: "2",
+  y: "4",
+  q: "9",
+  g: "8",
+  s: "5",
+  S: "5",
+  b: "6",
+  t: "7",
+  T: "7",
+  l: "1",
+  I: "1",
+  o: "0",
+  O: "0",
+};
+
 /**
  * How Grape writes two names the calculator spells otherwise: "17mod5"
  * (it often reads no spaces round a word between numbers) is "17 mod 5", and
@@ -81,6 +99,9 @@ function fixDigitLetters(text: string): string {
  */
 export function spellNames(text: string): string {
   let s = text.replace(/([0-9)\]])\s*mod\s*(?=[0-9(])/gi, "$1 mod ");
+  // A base written low is often read as the letter it resembles ("logz(8)",
+  // "logy(76)"): the digit it most likely is. A guess, shown in the card.
+  s = s.replace(/log\s*([zZyqgsSbtTlIoO])\s*\(/g, (_, c: string) => `log${BASE_LOOKALIKES[c]}(`);
   for (let guard = 0; guard < 8; guard++) {
     const m = /log_?\s*([0-9]+(?:\.[0-9]+)?)\s*\(/i.exec(s);
     if (!m) break;
@@ -296,4 +317,59 @@ export function answerText(value: CalcValue): { text: string; exact: boolean } |
 /** The suggestion's words: "12×4 = 48", or "1÷3 ≈ 0.33333333" when rounded. */
 export function suggestionLabel(sum: NoteSum, answer: { text: string; exact: boolean }): string {
   return `${sum.shown} ${answer.exact ? "=" : "≈"} ${answer.text.replace(/^-/, "−")}`;
+}
+
+/** An equation to solve: its two sides in the calculator's text, and the letter asked for. */
+export interface NoteEquation {
+  lhs: string;
+  rhs: string;
+  letter: string;
+}
+
+/**
+ * The letter a line asks for, when it ends in it and an "=" ("x =", or
+ * "2x+3=7, x ="): solve for it. Null otherwise.
+ */
+export function askedLetter(reading: string): string | null {
+  const m = /(?:^|[^A-Za-z0-9])([A-Za-z])\s*=\s*$/.exec(reading.replace(/\s+$/, ""));
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** One side of an equation as read, in the calculator's text. */
+function equationSide(text: string): string {
+  return fixDigitLetters(text)
+    .replace(/[×·∗⋅]/g, "*")
+    .replace(/[÷∕]/g, "/")
+    .replace(/[−–—]/g, "-")
+    .replace(/([0-9)])\s*:\s*(?=[0-9(])/g, "$1/")
+    .replace(/([0-9]),(?=[0-9])/g, "$1.")
+    .replace(/^[\s,;:]+|[\s,;:]+$/g, "")
+    .replace(/\s+/g, "");
+}
+
+/**
+ * The equation in `letter` a line holds ("2x + 3 = 7"), when it holds one:
+ * a single "=" with something on both sides and the letter in it. The
+ * letter's own ask at the end ("…, x =") and a label before it ("Ex 2:")
+ * are left out; the letter is read in either case. Null when there is none.
+ */
+export function equationOfLine(reading: string, letter: string): NoteEquation | null {
+  let text = reading.replace(/\s+$/, "");
+  const ask = new RegExp(String.raw`(?:^|[^A-Za-z0-9])${letter}\s*=\s*$`, "i");
+  const asked = ask.exec(text);
+  if (asked) text = text.slice(0, asked.index + (/[^A-Za-z0-9]/.test(asked[0][0]) ? 1 : 0));
+  const label = Math.max(text.lastIndexOf(": "), text.lastIndexOf("; "));
+  if (label >= 0) text = text.slice(label + 1);
+  const parts = text.split("=");
+  if (parts.length !== 2) return null;
+  const same = (s: string) =>
+    equationSide(s).replace(new RegExp(`(?<![A-Za-z])${letter}(?![A-Za-z])`, "gi"), letter);
+  const lhs = same(parts[0]);
+  const rhs = same(parts[1]);
+  if (!lhs || !rhs) return null;
+  const has = new RegExp(`(?<![A-Za-z])${letter}(?![A-Za-z])`);
+  if (!has.test(lhs) && !has.test(rhs)) return null;
+  // "x = 5": a letter being set, not an equation to solve.
+  if (lhs === letter && !has.test(rhs)) return null;
+  return { lhs, rhs, letter };
 }

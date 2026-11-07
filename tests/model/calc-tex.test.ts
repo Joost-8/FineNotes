@@ -12,7 +12,12 @@ import {
   writeText,
   writeWithPowers,
 } from "../../src/model/answer-glyphs";
-import { answerForms, expressionTex, polynomialAnswer } from "../../src/model/calc-tex";
+import {
+  answerForms,
+  equationAnswer,
+  expressionTex,
+  polynomialAnswer,
+} from "../../src/model/calc-tex";
 import { evaluate } from "../../src/model/calculator";
 import { parseLatex } from "../../src/model/latex";
 
@@ -167,5 +172,26 @@ describe("writeWithPowers", () => {
     // After the x.
     const xRight = Math.max(...plain.flatMap((s) => s.filter((_, i) => i % 3 === 0)));
     expect(Math.min(...xs)).toBeGreaterThan(xRight);
+  });
+});
+
+describe("equationAnswer", () => {
+  it("solves an equation in one letter", () => {
+    expect(equationAnswer("2x+3", "7", "x")?.decimal).toMatchObject({ text: "2", shown: "2" });
+    expect(equationAnswer("x^2", "9", "x")?.decimal).toMatchObject({
+      text: "-3, 3",
+      shown: "−3 or 3",
+    });
+    expect(equationAnswer("3x", "x+4", "x")?.decimal.text).toBe("2");
+    expect(equationAnswer("2a+1", "5", "a")?.decimal.text).toBe("2");
+  });
+
+  it("offers nothing without a real solution, or with a second letter", () => {
+    expect(equationAnswer("x^2+1", "0", "x")).toBeNull();
+    expect(equationAnswer("y", "2x+1", "x")).toBeNull();
+  });
+
+  it("expands brackets whatever the case of their letter", () => {
+    expect(polynomialAnswer("(X+7)(x+4)")?.decimal.text).toBe("x^2+11x+28");
   });
 });

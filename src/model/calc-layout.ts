@@ -20,7 +20,7 @@
  */
 
 import { digitHeight, isDash, pathLength } from "./calc-ink";
-import { type Bounds, type Stroke, strokeBounds } from "./document";
+import { type Bounds, POINT_STRIDE, type Stroke, strokeBounds } from "./document";
 
 /** One part of a sum, left to right. */
 export type SumPiece =
@@ -99,47 +99,93 @@ export function markId(piece: SumPiece): string | null {
 }
 
 /**
+ * Whether a stroke is an opening bracket "(": tall and thin, its middle bowed
+ * left of its ends. Nothing is ever the power of one.
+ */
+function isOpenBracket(stroke: Stroke, box: Bounds): boolean {
+  if (height(box) < 2.2 * Math.max(width(box), 1)) return false;
+  const p = stroke.pts;
+  const n = Math.floor(p.length / POINT_STRIDE);
+  if (n < 3) return false;
+  const first = p[0];
+  const last = p[(n - 1) * POINT_STRIDE];
+  // The point nearest the middle height.
+  const mid = midY(box);
+  let best = 0;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(p[i * POINT_STRIDE + 1] - mid) < Math.abs(p[best * POINT_STRIDE + 1] - mid))
+      best = i;
+  }
+  return p[best * POINT_STRIDE] < (first + last) / 2 - 0.15 * width(box);
+}
+
+/**
  * The groups of small ink raised after a base: a power's exponent ("5²",
- * "(x+1)²"). A mark is raised when its foot is a third of a digit or more
- * above the digits' baseline and it is no taller than four fifths of a
- * digit; marks a little apart join one exponent. Each group needs a base:
- * ink not raised, right before it (within a digit), reaching up to it. A
- * dash is never raised (a minus or a fraction bar sits at mid height), and
- * the mid-height signs (+, ×) do not reach a third of a digit up.
+ * "(x+1)²", "x²"). Judged against the base itself, the ink right before the
+ * group, not against a line's baseline (brackets, a "g" and a written-low
+ * base all reach below the line and would make every digit look raised).
+ * The group is raised when its foot is above the base's middle and its top
+ * at or above the base's top; it is no taller than four fifths of a digit;
+ * marks a little apart join one exponent. The base must be ink of some
+ * height (not a sign), and never an opening bracket. A dash or a dot is
+ * never raised.
  */
 function raisedGroups(items: readonly Item[], digit: number): Item[][] {
-  const solid = items.filter((it) => !isDash(it.stroke, it.box));
-  const tall = solid.filter((it) => height(it.box) >= 0.75 * digit);
-  if (tall.length === 0) return [];
-  const bottoms = tall.map((it) => it.box.maxY).sort((a, b) => a - b);
-  const baseline = bottoms[Math.floor(bottoms.length / 2)];
-  // A dot is never an exponent (a colon's upper dot, an i's dot).
-  const raised = solid
-    .filter(
-      (it) =>
-        height(it.box) <= 0.8 * digit &&
-        it.box.maxY <= baseline - 0.33 * digit &&
-        !isDot(it.stroke, it.box, digit),
-    )
+  const solid = items.filter(
+    (it) => !isDash(it.stroke, it.box) && !isDot(it.stroke, it.box, digit),
+  );
+  const small = solid
+    .filter((it) => height(it.box) <= 0.8 * digit)
     .sort((a, b) => a.box.minX - b.box.minX);
+  // The line's foot: where most of its ink of some height ends. A base
+  // written well below it (log₃'s 3) is itself low, and takes no power.
+  const feet = solid
+    .filter((it) => height(it.box) >= 0.5 * digit)
+    .map((it) => it.box.maxY)
+    .sort((a, b) => a - b);
+  const foot = feet.length > 0 ? feet[Math.floor(feet.length / 2)] : Infinity;
   const groups: Item[][] = [];
-  for (const it of raised) {
-    const last = groups[groups.length - 1];
-    const right = last ? Math.max(...last.map((g) => g.box.maxX)) : -Infinity;
-    if (last && it.box.minX - right <= 0.45 * digit) last.push(it);
-    else groups.push([it]);
-  }
-  return groups.filter((group) => {
-    const minX = Math.min(...group.map((g) => g.box.minX));
-    const maxY = Math.max(...group.map((g) => g.box.maxY));
-    const others = solid.filter((it) => !raised.includes(it));
-    const base = others
-      .filter((it) => it.box.maxX <= minX + 0.3 * digit && minX - it.box.maxX <= digit)
+  const used = new Set<Item>();
+  for (const first of small) {
+    // An exponent never starts with an opening bracket: that is the argument
+    // after something written low (log₃(4)), not a power.
+    if (used.has(first) || isOpenBracket(first.stroke, first.box)) continue;
+    // The base: the nearest ink left of it (within a digit), not part of a group.
+    const base = solid
+      .filter(
+        (it) =>
+          it !== first &&
+          !used.has(it) &&
+          it.box.maxX <= first.box.minX + 0.3 * digit &&
+          first.box.minX - it.box.maxX <= digit,
+      )
       .sort((a, b) => b.box.maxX - a.box.maxX)[0];
-    if (!base || base.box.minY > maxY) return false;
-    // Nothing else between the base and the exponent.
-    return !others.some((it) => it !== base && midX(it.box) > base.box.maxX && midX(it.box) < minX);
-  });
+    if (!base) continue;
+    const bh = height(base.box);
+    if (bh < 0.4 * digit || isOpenBracket(base.stroke, base.box)) continue;
+    if (base.box.maxY > foot + 0.35 * digit) continue;
+    const raised = (it: Item): boolean =>
+      it.box.maxY <= midY(base.box) + 0.1 * bh && it.box.minY <= base.box.minY + 0.15 * bh;
+    if (!raised(first)) continue;
+    const group = [first];
+    for (const next of small) {
+      if (next === first || used.has(next) || next.box.minX < first.box.minX) continue;
+      const right = Math.max(...group.map((g) => g.box.maxX));
+      if (next.box.minX - right > 0.45 * digit) break;
+      if (next.box.maxY > midY(base.box) + 0.1 * bh) break;
+      group.push(next);
+    }
+    // Nothing that is not raised between the base and the group.
+    const minX = Math.min(...group.map((g) => g.box.minX));
+    const between = solid.some(
+      (it) =>
+        it !== base && !group.includes(it) && midX(it.box) > base.box.maxX && midX(it.box) < minX,
+    );
+    if (between) continue;
+    for (const g of group) used.add(g);
+    groups.push(group);
+  }
+  return groups;
 }
 
 function layoutItems(items: Item[], digit: number, plain: ReadonlySet<string>): SumPiece[] {

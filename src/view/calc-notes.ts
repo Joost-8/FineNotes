@@ -41,13 +41,22 @@ import {
   withPick,
 } from "../model/calc-layout";
 import {
+  type NoteEquation,
   type NoteSum,
+  askedLetter,
+  equationOfLine,
   evaluateSum,
   needsVariables,
   sumOfLine,
   variablesOfLines,
 } from "../model/calc-note";
-import { type AnswerForms, answerForms, expressionTex, polynomialAnswer } from "../model/calc-tex";
+import {
+  type AnswerForms,
+  answerForms,
+  equationAnswer,
+  expressionTex,
+  polynomialAnswer,
+} from "../model/calc-tex";
 import type { CalcValue } from "../model/calculator";
 import { DEFAULT_PAGE_GEOMETRY, type Page, type Stroke, strokeBounds } from "../model/document";
 import { AddEquation, makeEquation, nextEquationId } from "../model/equation";
@@ -60,6 +69,7 @@ import type { Command } from "../model/commands";
 import type { LineReading } from "../recognition/hwr/recognizer";
 import type { CorrectionKind } from "../recognition/hwr/corrections";
 import type { AnswerForm, CalcCardContent } from "./calc-card";
+import { CalcReadingModal } from "./calc-reading-modal";
 import type { CalcNoteSpec, InkSurface } from "./ink-surface";
 
 /** How long after the pen lifts from the "=" the line is read, ms. */
@@ -183,19 +193,39 @@ export class CalcNotes {
     const strokes = sumStrokes(page.strokes, eq, writingLines(page.backdrop, page.geometry));
     const reading = await this.read(strokes, eq);
     if (reading === null || token !== this.token) return;
+    // The lines above are read once, for the variables they set and the
+    // equation an "x =" asks about.
+    let above: string[] | null = null;
+    const linesAbove = async (): Promise<string[]> =>
+      (above ??= await this.linesAbove(page, strokes));
     let found = this.work(reading.text, new Map());
     let vars: ReadonlyMap<string, CalcValue> = new Map();
     if (found === "variables") {
-      vars = await this.variablesAbove(page, strokes);
+      vars = variablesOfLines(await linesAbove());
       if (token !== this.token) return;
       found = this.work(reading.text, vars);
     }
+    let content: CalcCardContent | null = null;
     const solved =
       found && found !== "variables"
         ? { sum: found.sum, forms: answerForms(found.value) }
         : this.expanded(reading.text, vars);
-    if (!solved?.forms) return;
-    const content = this.content(solved.sum, solved.forms, reading);
+    if (solved?.forms) content = this.content(solved.sum, solved.forms, reading);
+    else {
+      // "x =": the equation in x on this line, or the nearest one above.
+      const letter = askedLetter(reading.text);
+      if (letter) {
+        const equation =
+          equationOfLine(reading.text, letter) ??
+          [...(await linesAbove())]
+            .reverse()
+            .map((line) => equationOfLine(line, letter))
+            .find((e) => e !== null) ??
+          null;
+        if (token !== this.token) return;
+        if (equation) content = this.equationContent(equation, reading);
+      }
+    }
     if (!content) return;
     const surface = this.host.surface();
     if (!surface || token !== this.token) return;
@@ -243,27 +273,57 @@ export class CalcNotes {
           );
         },
         notMaths: () => this.host.surface()?.hideCalcNote(),
-        fix: (expression) => {
-          const sum: NoteSum = { expression, shown: expression };
-          const result = evaluateSum(sum, note.vars);
-          const forms = result.ok ? answerForms(result.value) : polynomialAnswer(expression);
-          if (!forms) return null;
-          // Typed over the whole reading: its pieces no longer say what the
-          // ink is, so nothing of it is kept as a label.
-          const next = this.content(sum, forms, { ...note.reading, doubts: [] });
-          if (!next) return null;
-          note.typed = true;
-          note.reading = { ...note.reading, doubts: [] };
-          note.content = next;
-          this.host.surface()?.updateCalcNote(this.spec(note));
-          return next;
-        },
+        editReading: () => this.editReading(note),
         formChosen: (form) => {
           this.form = form;
         },
         pick: (index, text) => this.pick(note, index, text),
       },
     };
+  }
+
+  /**
+   * Type the reading in a dialog (above the keyboard on the iPad), the sum
+   * typeset as it is typed. What is saved is worked out as a sum or an
+   * expanded polynomial; the glow and the card follow it. Nothing of it is
+   * kept for learning: typed over the whole reading, its pieces may no
+   * longer say what the ink is.
+   */
+  private editReading(note: OpenNote): void {
+    const solve = (text: string): CalcCardContent | null => {
+      // An equation typed: solved for its one letter.
+      if (text.includes("=")) {
+        const letter = /(?<![A-Za-z])([A-Za-z])(?![A-Za-z])/.exec(text)?.[1]?.toLowerCase();
+        const equation = letter ? equationOfLine(text, letter) : null;
+        return equation ? this.equationContent(equation, { ...note.reading, doubts: [] }) : null;
+      }
+      const sum = sumOfLine(`${text} =`, note.vars) ?? { expression: text, shown: text };
+      const result = evaluateSum(sum, note.vars);
+      const forms = result.ok ? answerForms(result.value) : polynomialAnswer(sum.expression);
+      return forms ? this.content(sum, forms, { ...note.reading, doubts: [] }) : null;
+    };
+    new CalcReadingModal(this.host.app, {
+      expression: note.content.expression,
+      preview: (text) => {
+        if (text.includes("=")) {
+          const [l, r] = text.split("=");
+          const lt = expressionTex(l ?? "");
+          const rt = expressionTex(r ?? "");
+          return lt !== null && rt !== null ? `${lt} = ${rt}` : null;
+        }
+        const sum = sumOfLine(`${text} =`, note.vars);
+        return expressionTex(sum?.expression ?? text, { dot: note.reading.dot });
+      },
+      submit: (text) => {
+        const next = solve(text);
+        if (!next) return false;
+        note.typed = true;
+        note.reading = { ...note.reading, doubts: [] };
+        note.content = next;
+        this.host.surface()?.updateCalcNote(this.spec(note));
+        return true;
+      },
+    }).open();
   }
 
   /**
@@ -286,9 +346,13 @@ export class CalcNotes {
     if (!content) return null;
     note.reading = next;
     note.content = content;
-    note.picked.add(doubt.piece);
-    const piece = next.pieces[doubt.piece];
-    this.record(note, piece.strokes, piece.read, piece.text, "misread");
+    // The character Grape read, chosen: confirmed, and kept as read right
+    // when the answer is accepted. Another: a misread, kept now.
+    if (text !== doubt.char) {
+      note.picked.add(doubt.piece);
+      const piece = next.pieces[doubt.piece];
+      this.record(note, piece.strokes, piece.read, piece.text, "misread");
+    }
     this.host.surface()?.updateCalcNote(this.spec(note));
     return content;
   }
@@ -346,9 +410,33 @@ export class CalcNotes {
       : "decimal";
     return {
       tex,
+      lead: tex,
       expression: sum.expression,
       forms,
       form,
+      doubts: reading.doubts.map((d) => ({ char: d.char, alternatives: d.alternatives })),
+    };
+  }
+
+  /**
+   * The card for an equation solved ("2x+3=7" asked with "x ="): the
+   * equation typeset, its solutions as the answer ("x = 2"), written after
+   * the "=" as the values alone. Null when it has no real solution.
+   */
+  private equationContent(equation: NoteEquation, reading: SumReading): CalcCardContent | null {
+    const forms = equationAnswer(equation.lhs, equation.rhs, equation.letter);
+    const lhs = expressionTex(equation.lhs);
+    const rhs = expressionTex(equation.rhs);
+    if (!forms || lhs === null || rhs === null) return null;
+    return {
+      tex: `${lhs} = ${rhs}`,
+      lead: equation.letter,
+      expression: `${equation.lhs} = ${equation.rhs}`,
+      forms: {
+        ...forms,
+        decimal: { ...forms.decimal, shown: `${equation.letter} = ${forms.decimal.shown ?? ""}` },
+      },
+      form: "decimal",
       doubts: reading.doubts.map((d) => ({ char: d.char, alternatives: d.alternatives })),
     };
   }
@@ -395,10 +483,8 @@ export class CalcNotes {
   }
 
   /** The variables set on the lines above the sum ("a = 5"), read on this device. */
-  private async variablesAbove(
-    page: Page,
-    sum: readonly Stroke[],
-  ): Promise<Map<string, CalcValue>> {
+  /** The lines above the sum, read on this device, top to bottom. */
+  private async linesAbove(page: Page, sum: readonly Stroke[]): Promise<string[]> {
     const own = new Set(sum.map((s) => s.id));
     const top = Math.min(
       ...sum.map((s) => {
@@ -408,13 +494,12 @@ export class CalcNotes {
       }),
     );
     const above = page.strokes.filter((s) => !own.has(s.id));
-    if (above.length === 0) return new Map();
+    if (above.length === 0) return [];
     const reading = await this.host.reader.readPage(above);
-    const lines = reading.lines
+    return reading.lines
       .filter((line) => line.box[3] <= top + 1)
       .sort((a, b) => a.box[1] - b.box[1])
       .map((line) => line.text);
-    return variablesOfLines(lines);
   }
 
   /**
@@ -464,7 +549,7 @@ export class CalcNotes {
     const decimal = content.forms.decimal;
     const answer = fraction ? fraction.tex : (decimal.tex ?? decimal.text);
     const sign = !fraction && !decimal.exact ? "\\approx" : "=";
-    const tex = `${content.tex} ${sign} ${answer}`;
+    const tex = `${content.lead} ${sign} ${answer}`;
     const size = Math.max(12, place.height * 1.1);
     const frame = measureEquation(ctx, tex, size);
     const left = Math.min(...page.strokes.filter((s) => ids.has(s.id)).map((s) => strokeLeft(s)));
