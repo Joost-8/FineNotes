@@ -17280,3 +17280,87 @@ button.goodobsidian-library-rail-toggle.is-active {
   width: 18px;
   height: 18px;
 }
+
+/* A popover held to the room under the bar scrolls its body, a flex column
+   whose children may shrink; a switch list clips its rows (overflow: hidden),
+   so it has no content floor and was squashed to half a row (FineNotes#159). */
+.goodobsidian-popover-body > .goodobsidian-switch-list {
+  flex-shrink: 0;
+}
+
+/* A long name wraps beside its dropdown, and the dropdown gives way rather
+   than running past the popover's edge (Swedish, FineNotes#159). */
+.goodobsidian-choice-row .goodobsidian-popover-label {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+select.goodobsidian-choice-select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  text-overflow: ellipsis;
+}
+
+/* Longer languages (the layout audit, scripts/ui-gallery/audit-overflow.mjs):
+   a name wraps rather than end in "…" or run out of its box. Obsidian keeps
+   every button's text on one line, so each row says so itself. */
+.goodobsidian-more-label {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.goodobsidian-player-hint {
+  white-space: normal;
+}
+
+.goodobsidian-popover button.goodobsidian-erasermode-row,
+.goodobsidian-popover button.goodobsidian-pen-row {
+  white-space: normal;
+  text-align: start;
+}
+
+.goodobsidian-saved-pen-label {
+  min-width: 0;
+  white-space: normal;
+}
+
+.goodobsidian-newnb-under-title button.goodobsidian-newnb-import.clickable-icon {
+  max-width: 50%;
+  white-space: normal;
+  text-align: start;
+}
+
+.goodobsidian-popover button.goodobsidian-popover-link {
+  white-space: normal;
+  text-align: start;
+}
+
+.goodobsidian-popover-link-name {
+  min-width: 0;
+}
+
+/* A segment's name wraps inside its segment ("Last page" runs long in most
+   languages); the segment grows to two lines rather than spill into its
+   neighbour. Icon segments keep their size. */
+.goodobsidian-segmented:not(.is-icons) button {
+  height: auto;
+  min-height: 38px;
+  padding: 4px 10px;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* A switch row whose name runs to two lines keeps room above and below it. */
+.goodobsidian-popover button.goodobsidian-switch-row {
+  padding-block: 6px;
+}
+
+/* A card's name in the interface language (its `lang`) breaks at a hyphen,
+   not after whichever letter runs out of room: "kleur-overgang". Without the
+   language's dictionary, overflow-wrap still breaks it as before. */
+.goodobsidian-template-name[lang] {
+  -webkit-hyphens: auto;
+  hyphens: auto;
+}

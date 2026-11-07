@@ -46,7 +46,8 @@ import {
   TemplateGrid,
   paintTemplatePreview,
 } from "./template-picker";
-import { t } from "../i18n/translate";
+import { currentLanguage, t } from "../i18n/translate";
+import { fitCardNames } from "./card-name-fit";
 
 export interface NewNotebookRequest {
   /** As typed; the plugin cleans it and derives the file name. */
@@ -462,7 +463,11 @@ export class NewNotebookModal extends Modal {
       });
       const canvas = root.createEl("canvas", { cls: "goodobsidian-template-preview" });
       paintTemplatePreview(canvas, { kind: ruling }, BOARD_PREVIEW_GEOMETRY, BOARD_PREVIEW_WIDTH);
-      root.createDiv({ cls: "goodobsidian-template-name", text: name });
+      root.createDiv({
+        cls: "goodobsidian-template-name",
+        text: name,
+        attr: { lang: currentLanguage() },
+      });
       root.addEventListener("click", () => {
         this.choices.boardRuling = ruling;
         this.syncBoardCards();
@@ -502,6 +507,8 @@ export class NewNotebookModal extends Modal {
     for (const section of this.notebookSections) section.toggleClass("is-hidden", board);
     this.importLink?.toggleClass("is-hidden", board);
     this.boardSection?.toggleClass("is-hidden", !board);
+    // Hidden cards have no width to fit their names to until now.
+    if (board && this.boardSection) fitCardNames(this.boardSection);
   }
 
   /** A template from My templates (null: the paper picked in the grid). */
