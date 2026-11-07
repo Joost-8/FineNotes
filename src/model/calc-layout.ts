@@ -182,6 +182,21 @@ function raisedGroups(items: readonly Item[], digit: number): Item[][] {
         it !== base && !group.includes(it) && midX(it.box) > base.box.maxX && midX(it.box) < minX,
     );
     if (between) continue;
+    // Nor half of a mark whose other half is not raised: the two strokes of
+    // a × cross, and only the first may sit high.
+    const crossed = solid.some(
+      (it) =>
+        it !== base &&
+        !group.includes(it) &&
+        // Not the base's own other strokes (an x's second stroke before its "²").
+        midX(it.box) >= minX &&
+        group.some((g) => {
+          const w = Math.min(it.box.maxX, g.box.maxX) - Math.max(it.box.minX, g.box.minX);
+          const h = Math.min(it.box.maxY, g.box.maxY) - Math.max(it.box.minY, g.box.minY);
+          return w >= 0.5 * Math.min(width(it.box), width(g.box)) && h >= 0.5 * height(g.box);
+        }),
+    );
+    if (crossed) continue;
     for (const g of group) used.add(g);
     groups.push(group);
   }
@@ -301,6 +316,26 @@ function timesDots(items: readonly Item[], digit: number): Item[][] {
   const solid = items.filter((it) => !single.includes(it));
   const tall = solid.filter((it) => height(it.box) >= 0.5 * digit);
   if (tall.length === 0) return [];
+  // The marks a dot sits between: each tall stroke with the short strokes
+  // across it (a crossed 7's bar), which can reach past it toward the dot;
+  // and the short strokes on their own.
+  const attached = new Set<Item>();
+  const marksBeside: Array<{ box: Bounds; tall: boolean }> = tall.map((t) => {
+    const box = { ...t.box };
+    for (const it of solid) {
+      if (tall.includes(it) || attached.has(it)) continue;
+      const across = Math.min(it.box.maxX, t.box.maxX) - Math.max(it.box.minX, t.box.minX);
+      const inside =
+        it.box.minY >= t.box.minY - 0.1 * digit && it.box.maxY <= t.box.maxY + 0.1 * digit;
+      if (across < 0.5 * width(it.box) || !inside) continue;
+      attached.add(it);
+      box.minX = Math.min(box.minX, it.box.minX);
+      box.maxX = Math.max(box.maxX, it.box.maxX);
+    }
+    return { box, tall: true };
+  });
+  for (const it of solid)
+    if (!tall.includes(it) && !attached.has(it)) marksBeside.push({ box: it.box, tall: false });
   const result: Item[][] = [];
   for (const group of groups) {
     const box = boxOf(group);
@@ -319,9 +354,13 @@ function timesDots(items: readonly Item[], digit: number): Item[][] {
     // Its nearest neighbours must be full-height marks (digits, brackets), and
     // the dot small against them: beside small letters in a word, a short
     // stroke of a letter looks like a dot against the line's tall ones.
-    const left = solid.filter((it) => it.box.maxX <= x).sort((a, b) => b.box.maxX - a.box.maxX)[0];
-    const right = solid.filter((it) => it.box.minX >= x).sort((a, b) => a.box.minX - b.box.minX)[0];
-    if (!left || !right || !tall.includes(left) || !tall.includes(right)) continue;
+    const left = marksBeside
+      .filter((g) => g.box.maxX <= x)
+      .sort((a, b) => b.box.maxX - a.box.maxX)[0];
+    const right = marksBeside
+      .filter((g) => g.box.minX >= x)
+      .sort((a, b) => a.box.minX - b.box.minX)[0];
+    if (!left || !right || !left.tall || !right.tall) continue;
     const near = Math.min(height(left.box), height(right.box));
     if (Math.max(width(box), height(box)) > 0.3 * near) continue;
     // Within reach of both: about two digits.
@@ -618,6 +657,30 @@ function pieceDoubts(index: number, group: readonly Stroke[], reading: PieceRead
   ];
 }
 
+/** Letters Grape reads for a digit in a number written beside a maths mark. */
+const DIGIT_LOOKALIKES: Record<string, string> = {
+  o: "0",
+  O: "0",
+  z: "2",
+  Z: "2",
+  l: "1",
+  I: "1",
+  s: "5",
+  S: "5",
+};
+
+/**
+ * A piece of a laid-out sum read as letters that each look like a digit
+ * ("Zo" for a written 20): that number. Only for two characters or more, so
+ * a lone letter stays a letter ("2·z"); the changed characters become doubts
+ * offering the letters, so a wrong guess is one tap to undo.
+ */
+export function numberOfLookalikes(text: string): string {
+  const t = text.trim();
+  if (Array.from(t).length < 2 || !/^[0-9oOzZlIsS]+$/.test(t)) return text;
+  return Array.from(t, (c) => DIGIT_LOOKALIKES[c] ?? c).join("");
+}
+
 /**
  * Read a sum laid out by where its marks sit: lay it out, read its ink pieces
  * with `read`, and lay it out again without any mark the readings show was
@@ -635,7 +698,7 @@ export async function readLaidOut(
     const groups = inkPieces(layout);
     const readings = groups.length > 0 ? await read(groups) : [];
     if (readings.length !== groups.length) return null;
-    const texts = readings.map((r) => r.text);
+    const texts = readings.map((r) => numberOfLookalikes(r.text));
     const bad = misreadMarks(layout, texts);
     if (bad.size === 0) {
       const text = sumText(layout, texts);
@@ -644,7 +707,7 @@ export async function readLaidOut(
         text: `${text} =`,
         dot: hasKind(layout, "times"),
         fraction: hasKind(layout, "fraction"),
-        doubts: groups.flatMap((g, i) => pieceDoubts(i, g, readings[i])),
+        doubts: groups.flatMap((g, i) => pieceDoubts(i, g, { ...readings[i], text: texts[i] })),
         pieces: groups.map((g, i) => ({
           strokes: g.map((s) => s.id),
           read: texts[i],

@@ -15,6 +15,7 @@ import {
   layoutSum,
   markId,
   misreadMarks,
+  numberOfLookalikes,
   readLaidOut,
   readWhole,
   withPick,
@@ -23,6 +24,7 @@ import {
 import { evaluateSum, sumOfLine } from "../../src/model/calc-note";
 import { formatValue } from "../../src/model/calculator";
 import type { Stroke } from "../../src/model/document";
+import realDots from "../ink/fixtures/real-calc-dots-ipad.json";
 import realPage from "../ink/fixtures/real-calc-page-ipad.json";
 
 const A4 = { width: 1024, height: 1448 };
@@ -579,5 +581,52 @@ describe("powers on real ink (Joost's iPad, FineNotes#178)", () => {
     // Only "log₂ ²⁷", whose 27 really is written raised, has a power.
     const powered = found.filter((f) => f.kinds.includes("power"));
     expect(powered.map((f) => f.at)).toEqual([[861, 485]]);
+  });
+});
+
+describe("raised dots on Joost's iPad page (FineNotes#178)", () => {
+  const strokes: Stroke[] = realDots.strokes.map((s) => ({
+    id: s.id,
+    color: "#000",
+    size: 2,
+    tool: "pen",
+    t0: s.t0 ?? undefined,
+    pts: s.pts,
+  }));
+  const found: Array<{ y: number; kinds: string[] }> = [];
+  for (let i = 1; i < strokes.length; i++) {
+    const eq = equalsAtEnd([strokes[i - 1], strokes[i]]);
+    if (!eq) continue;
+    const sum = sumStrokes(strokes.slice(0, i + 1), eq, []);
+    const ids = new Set(eq.strokes.map((s) => s.id));
+    found.push({
+      y: Math.round(eq.bounds.minY),
+      kinds: kinds(layoutSum(sum.filter((s) => !ids.has(s.id)))),
+    });
+  }
+
+  it("takes the dot between two crossed 7s for times (the left 7's bar reaches past it)", () => {
+    expect(found.map((f) => f.y)).toEqual([377, 433, 492, 543, 602, 653]);
+    for (const y of [377, 492, 653]) {
+      expect(found.find((f) => f.y === y)?.kinds, String(y)).toContain("times");
+    }
+  });
+
+  it("does not take the first stroke of a × after a small 0 for its power", () => {
+    for (const y of [543, 602]) {
+      const f = found.find((x) => x.y === y);
+      expect(f?.kinds, String(y)).not.toContain("power");
+      expect(f?.kinds, String(y)).not.toContain("times");
+    }
+  });
+});
+
+describe("numberOfLookalikes", () => {
+  it("reads a number Grape spelled in look-alike letters, and leaves a lone letter", () => {
+    expect(numberOfLookalikes("Zo")).toBe("20");
+    expect(numberOfLookalikes("l5")).toBe("15");
+    expect(numberOfLookalikes("z")).toBe("z");
+    expect(numberOfLookalikes("ab")).toBe("ab");
+    expect(numberOfLookalikes("so x")).toBe("so x");
   });
 });

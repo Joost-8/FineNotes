@@ -47,6 +47,9 @@ extracted from the matching section of this file by `release.yml`.
   halfway up the digits is now times and a dot on the baseline stays a
   decimal point; a bar with a number over and under it is a fraction, and the
   answer goes level with the "=". A dash with a dot over and under it is ÷.
+  A crossed 7 beside the dot no longer hides it, a number read as look-alike
+  letters next to it ("Zo" for 20) counts as that number, and the first
+  stroke of a × is no longer taken for a power.
 
 ## [2.8.3] - 2026-11-06
 
