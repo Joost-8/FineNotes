@@ -10,11 +10,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **Lock fit to width.** A new switch in Settings › Advanced: after a double
-  tap fits the page to the width, a finger no longer moves the page sideways
-  at all ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
-  Off, as before, a sideways pull stretches the page and it springs back, as
-  in Goodnotes. Pinching still moves it either way.
+- **Lock fit to width**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  A new check in the notebook's ⋯ panel: after a double tap fits the page
+  to the width, a finger no longer moves the page sideways at all. Off, as
+  before, a sideways pull stretches the page and it springs back, as in
+  Goodnotes. Pinching still moves it either way.
 
 ### Fixed
 

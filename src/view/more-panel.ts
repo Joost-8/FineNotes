@@ -78,6 +78,8 @@ export interface MorePanelPage {
   fingerDrawing?: boolean;
   /** Zoomed-in pages across scroll freely, past the page edges (`freePageEdges`). */
   freePageEdges?: boolean;
+  /** A page held to the pane's width does not move sideways (`holdFitWidth`). */
+  lockFitWidth?: boolean;
 }
 
 export interface MorePanelActions {
@@ -110,6 +112,8 @@ export interface MorePanelActions {
   setFingerDrawing?: (on: boolean) => void;
   /** Free the view from the page edges, or hold it to them again. Without it the row is not offered. */
   setFreePageEdges?: (on: boolean) => void;
+  /** Hold a page fitted to the width still sideways, or let it stretch. Without it the row is not offered. */
+  setLockFitWidth?: (on: boolean) => void;
 }
 
 /** The desks in the Desk row, in order. */
@@ -311,6 +315,7 @@ export class MorePanel {
     this.deskRow(view);
     this.fingerDrawRow(view);
     this.freeEdgesRow(view);
+    this.lockFitRow(view);
     this.row(view, {
       icon: "keyboard",
       text: t("view.morePanel.shortcuts"),
@@ -368,6 +373,35 @@ export class MorePanel {
     const mark = button.createSpan({ cls: "goodobsidian-more-check" });
     setIcon(mark, "check");
     let on = this.page.freePageEdges === true;
+    const show = (): void => {
+      mark.toggleClass("is-hidden", !on);
+      button.setAttribute("role", "switch");
+      button.setAttribute("aria-checked", String(on));
+    };
+    show();
+    button.addEventListener("click", () => {
+      on = !on;
+      show();
+      set(on);
+    });
+  }
+
+  /**
+   * "Lock fit to width" (discussion #43): a check while a page fitted to the
+   * pane's width holds still under a sideways pull, instead of stretching and
+   * springing back. A tap switches it and the panel stays.
+   */
+  private lockFitRow(parent: HTMLElement): void {
+    const set = this.actions.setLockFitWidth;
+    if (!set) return;
+    const button = parent.createEl("button", {
+      cls: "goodobsidian-more-row is-switch clickable-icon",
+    });
+    setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), "lock");
+    button.createSpan({ cls: "goodobsidian-more-label", text: t("view.morePanel.lockFitWidth") });
+    const mark = button.createSpan({ cls: "goodobsidian-more-check" });
+    setIcon(mark, "check");
+    let on = this.page.lockFitWidth === true;
     const show = (): void => {
       mark.toggleClass("is-hidden", !on);
       button.setAttribute("role", "switch");

@@ -5241,6 +5241,12 @@ export class InkSurface {
   /** The setting "Lock fit to width", read at each layout (`ScrollExtent.holdX`). */
   holdFitWidth: () => boolean = () => false;
 
+  /** A setting the scroll extent reads changed ("Lock fit to width"): apply it now. */
+  refreshScrollExtent(): void {
+    this.ensurePaperSize();
+    this.requestFrame();
+  }
+
   setFreePageEdges(on: boolean): void {
     if (this.freePageEdges === on) return;
     this.freePageEdges = on;
