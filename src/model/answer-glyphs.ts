@@ -110,6 +110,45 @@ export const CLEAN_GLYPHS: GlyphSet = new Map<string, Glyph>([
       width: 0.5,
     },
   ],
+  // An expanded polynomial's signs and its letter (FineNotes#178), lower
+  // case on the x-height (0.45 to 1).
+  [
+    "+",
+    { strokes: [line([0.04, 0.56], [0.52, 0.56]), line([0.28, 0.32], [0.28, 0.8])], width: 0.56 },
+  ],
+  ["x", { strokes: [line([0.04, 0.46], [0.46, 1]), line([0.46, 0.46], [0.04, 1])], width: 0.5 }],
+  [
+    "y",
+    { strokes: [line([0.04, 0.46], [0.27, 0.84]), line([0.5, 0.46], [0.12, 1.24])], width: 0.54 },
+  ],
+  [
+    "a",
+    {
+      strokes: [arc(0.24, 0.73, 0.2, 0.26, -10, 350, 20), line([0.44, 0.46], [0.46, 1])],
+      width: 0.5,
+    },
+  ],
+  [
+    "b",
+    { strokes: [line([0.06, 0], [0.06, 1]), arc(0.26, 0.73, 0.2, 0.26, 180, 540, 20)], width: 0.5 },
+  ],
+  [
+    "n",
+    {
+      strokes: [
+        line([0.06, 0.46], [0.06, 1]),
+        line([0.06, 0.62], [0.2, 0.47], [0.38, 0.48], [0.44, 0.62], [0.44, 1]),
+      ],
+      width: 0.52,
+    },
+  ],
+  [
+    "t",
+    {
+      strokes: [line([0.2, 0.14], [0.2, 0.94], [0.34, 1]), line([0.02, 0.44], [0.4, 0.44])],
+      width: 0.44,
+    },
+  ],
 ]);
 
 /** A character sample from the symbol sheet: its strokes in page px, and the line it was written on. */
@@ -223,6 +262,39 @@ export function writeFraction(
     [at.x, y, PRESSURE, at.x + bar / 2, y + at.height * 0.01, PRESSURE, at.x + bar, y, PRESSURE],
     ...writeText(bottom, glyphs, { x: at.x + (bar - wb) / 2, baseline: y + gap + h, height: h }),
   ];
+}
+
+/**
+ * `text` with powers written as they are by hand: each `^` and the digits
+ * after it ("8x^2+18x+4") small and raised after its base. One stroke per
+ * array, page px.
+ */
+export function writeWithPowers(
+  text: string,
+  glyphs: GlyphSet,
+  at: { x: number; baseline: number; height: number },
+): number[][] {
+  const out: number[][] = [];
+  let x = at.x;
+  const small = at.height * 0.6;
+  for (const part of text.split(/(\^[0-9]+)/)) {
+    if (!part) continue;
+    if (part.startsWith("^")) {
+      const digits = part.slice(1);
+      out.push(
+        ...writeText(digits, glyphs, {
+          x,
+          baseline: at.baseline - at.height * 0.55,
+          height: small,
+        }),
+      );
+      x += textWidth(digits, glyphs, small) + TRACKING * at.height;
+    } else {
+      out.push(...writeText(part, glyphs, { x, baseline: at.baseline, height: at.height }));
+      x += textWidth(part, glyphs, at.height) + TRACKING * at.height;
+    }
+  }
+  return out;
 }
 
 /**

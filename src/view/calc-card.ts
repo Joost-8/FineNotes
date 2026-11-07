@@ -237,7 +237,8 @@ export class CalcCard {
       f.createSpan({ text: fraction.n.replace(/^-/, "−") });
       f.createSpan({ text: fraction.d });
     }
-    this.decimalButton.setText(content.forms.decimal.text.replace(/^-/, "−"));
+    const decimal = content.forms.decimal;
+    this.decimalButton.setText(decimal.shown ?? decimal.text.replace(/^-/, "−"));
     this.doubtsRow.empty();
     this.doubtsRow.toggleClass("is-hidden", content.doubts.length === 0);
     content.doubts.forEach((doubt, i) => {

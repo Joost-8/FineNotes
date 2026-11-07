@@ -12,6 +12,7 @@ import {
   evaluateSum,
   needsVariables,
   showSum,
+  spellNames,
   suggestionLabel,
   sumOfLine,
   variablesOfLines,
@@ -198,5 +199,33 @@ describe("the answer's text", () => {
   it("shows the calculator's text with × ÷ −", () => {
     expect(showSum("2 * 3 / 4 - 1")).toBe("2×3÷4−1");
     expect(showSum("1.5E-3 + 1")).toBe("1.5E-3+1");
+  });
+});
+
+describe("names Grape writes differently (FineNotes#178)", () => {
+  const answer = (line: string): string | null => {
+    const sum = sumOfLine(line);
+    const result = sum ? evaluateSum(sum) : null;
+    return result?.ok ? formatValue(result.value) : null;
+  };
+
+  it("reads mod without spaces round it", () => {
+    expect(spellNames("17mod5")).toBe("17 mod 5");
+    expect(answer("17mod5 =")).toBe("2");
+    expect(answer("(9+8)MOD5 =")).toBe("2");
+    // Not inside a word.
+    expect(spellNames("model 5")).toBe("model 5");
+  });
+
+  it("reads a logarithm with its base written low as log(x, base)", () => {
+    expect(spellNames("log2(8)")).toBe("log(8, 2)");
+    expect(spellNames("log_2(8)")).toBe("log(8, 2)");
+    expect(answer("log2(8) =")).toBe("3");
+    expect(answer("log10(1000)+1 =")).toBe("4");
+    // The base's comma is no decimal comma, and the argument keeps its own.
+    expect(answer("log2(1,5) =")).toBe(formatValue(Math.log2(1.5)));
+    // Nested brackets stay whole; a plain log and ln are left alone.
+    expect(spellNames("log3((2+1)*3)")).toBe("log((2+1)*3, 3)");
+    expect(spellNames("log(100)+ln(8)")).toBe("log(100)+ln(8)");
   });
 });

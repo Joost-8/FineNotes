@@ -6,8 +6,13 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { writeFraction, writeText } from "../../src/model/answer-glyphs";
-import { answerForms, expressionTex } from "../../src/model/calc-tex";
+import {
+  CLEAN_GLYPHS,
+  writeFraction,
+  writeText,
+  writeWithPowers,
+} from "../../src/model/answer-glyphs";
+import { answerForms, expressionTex, polynomialAnswer } from "../../src/model/calc-tex";
 import { evaluate } from "../../src/model/calculator";
 import { parseLatex } from "../../src/model/latex";
 
@@ -117,5 +122,50 @@ describe("writeFraction", () => {
     expect(Math.min(...strokes[2].filter((_, i) => i % 3 === 1))).toBeGreaterThan(barY);
     // As a plain number it would have been one line.
     expect(writeText("612", glyphs, at)).toHaveLength(3);
+  });
+});
+
+describe("names and letters (FineNotes#178)", () => {
+  it("sets mod, a logarithm's base and a letter before a bracket", () => {
+    expect(expressionTex("17 mod 5")).toBe(String.raw`17\bmod 5`);
+    expect(expressionTex("log(8, 2)")).toBe(String.raw`\log_{2}\left(8\right)`);
+    expect(expressionTex("x(x-3)")).toBe(String.raw`x\left(x-3\right)`);
+    expect(expressionTex("5^(2)")).toBe("{5}^{2}");
+  });
+
+  it("expands a sum in one letter into its polynomial", () => {
+    expect(polynomialAnswer("(2x+4)(4x+1)")?.decimal).toEqual({
+      text: "8x^2+18x+4",
+      exact: true,
+      tex: "8x^{2}+18x+4",
+      shown: "8x²+18x+4",
+    });
+    expect(polynomialAnswer("x(x-3)")?.decimal.text).toBe("x^2-3x");
+    expect(polynomialAnswer("(a-1)(a+1)")?.decimal.shown).toBe("a²−1");
+    expect(polynomialAnswer("(x+1)/2")?.decimal.tex).toBe(String.raw`\frac{1}{2}x+\frac{1}{2}`);
+    expect(polynomialAnswer("(x-1)(x+1)-x^2+1")?.decimal.text).toBe("0");
+    // No letter, two letters, or no polynomial: no expansion.
+    expect(polynomialAnswer("3+4")).toBeNull();
+    expect(polynomialAnswer("(x+y)(x-y)")).toBeNull();
+    expect(polynomialAnswer("sin(x)")).toBeNull();
+    expect(polynomialAnswer("1/x")).toBeNull();
+  });
+});
+
+describe("writeWithPowers", () => {
+  it("writes each power small and raised after its base", () => {
+    const at = { x: 100, baseline: 200, height: 40 };
+    const plain = writeText("8x", CLEAN_GLYPHS, at);
+    const written = writeWithPowers("8x^2+1", CLEAN_GLYPHS, at);
+    const two = writeText("2", CLEAN_GLYPHS, { x: 0, baseline: 0, height: 1 }).length;
+    const powerStrokes = written.slice(plain.length, plain.length + two);
+    const ys = powerStrokes.flatMap((s) => s.filter((_, i) => i % 3 === 1));
+    const xs = powerStrokes.flatMap((s) => s.filter((_, i) => i % 3 === 0));
+    // Its foot well above the line, and smaller than a digit.
+    expect(Math.max(...ys)).toBeLessThan(200 - 40 * 0.5);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(40 * 0.7);
+    // After the x.
+    const xRight = Math.max(...plain.flatMap((s) => s.filter((_, i) => i % 3 === 0)));
+    expect(Math.min(...xs)).toBeGreaterThan(xRight);
   });
 });

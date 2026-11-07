@@ -70,6 +70,38 @@ export interface NoteSum {
  * into a number. A bar stays a bar: it may be an absolute value.
  */
 function fixDigitLetters(text: string): string {
+  return spellNames(fixDigits(text));
+}
+
+/**
+ * How Grape writes two names the calculator spells otherwise: "17mod5"
+ * (it often reads no spaces round a word between numbers) is "17 mod 5", and
+ * a logarithm with its base written low after it, read as "log2(8)" or
+ * "log_2(8)", is the calculator's "log(8,2)".
+ */
+export function spellNames(text: string): string {
+  let s = text.replace(/([0-9)\]])\s*mod\s*(?=[0-9(])/gi, "$1 mod ");
+  for (let guard = 0; guard < 8; guard++) {
+    const m = /log_?\s*([0-9]+(?:\.[0-9]+)?)\s*\(/i.exec(s);
+    if (!m) break;
+    const open = m.index + m[0].length - 1;
+    let depth = 0;
+    let close = -1;
+    for (let i = open; i < s.length; i++) {
+      if (s[i] === "(") depth++;
+      else if (s[i] === ")" && --depth === 0) {
+        close = i;
+        break;
+      }
+    }
+    if (close < 0) break;
+    // ", base" with a space: a comma between two digits is a decimal comma.
+    s = `${s.slice(0, m.index)}log(${s.slice(open + 1, close)}, ${m[1]})${s.slice(close + 1)}`;
+  }
+  return s;
+}
+
+function fixDigits(text: string): string {
   // Letters other than x on either side make it a word; x is times ("1Ox4").
   return text.replace(/(?<![A-WYZa-wyz])[0-9OoIl]+(?:\.[0-9OoIl]+)?(?![A-WYZa-wyz])/g, (run) => {
     if (!/[0-9]/.test(run)) return run;

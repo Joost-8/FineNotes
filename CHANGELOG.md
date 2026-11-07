@@ -24,6 +24,12 @@ extracted from the matching section of this file by `release.yml`.
   correction for Learn my handwriting, as is a reading accepted with Write or
   a typed equation. A tap outside the card closes it and the sum keeps
   glowing; undoing the answer or the equation brings the glow back.
+- **Powers, log bases, mod and brackets with a letter in calculation notes**
+  (FineNotes#178). A small digit raised after a number is its power
+  ("9²" is 81); a logarithm with its base written low ("log₂ 8") uses that
+  base; "17 mod 5" works however the spaces were read; and a sum in one
+  letter is expanded ("(2x+4)(4x+1)" offers 8x²+18x+4, written with its
+  powers raised).
 
 ### Fixed
 

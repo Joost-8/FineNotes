@@ -31,7 +31,9 @@ export type SumPiece =
   /** A dash with a dot above and below: divided by. */
   | { kind: "divide"; strokes: Stroke[] }
   /** A fraction bar with what is over and under it. */
-  | { kind: "fraction"; bar: Stroke; over: SumPiece[]; under: SumPiece[] };
+  | { kind: "fraction"; bar: Stroke; over: SumPiece[]; under: SumPiece[] }
+  /** Small ink raised after its base ("5²"): a power, `exp` the exponent. */
+  | { kind: "power"; exp: SumPiece[] };
 
 interface Item {
   stroke: Stroke;
@@ -92,7 +94,52 @@ export function markId(piece: SumPiece): string | null {
   if (piece.kind === "times") return piece.strokes[0].id;
   if (piece.kind === "divide") return piece.strokes[0].id;
   if (piece.kind === "fraction") return piece.bar.id;
+  if (piece.kind === "power") return inkPieces(piece.exp)[0]?.[0]?.id ?? null;
   return null;
+}
+
+/**
+ * The groups of small ink raised after a base: a power's exponent ("5²",
+ * "(x+1)²"). A mark is raised when its foot is a third of a digit or more
+ * above the digits' baseline and it is no taller than four fifths of a
+ * digit; marks a little apart join one exponent. Each group needs a base:
+ * ink not raised, right before it (within a digit), reaching up to it. A
+ * dash is never raised (a minus or a fraction bar sits at mid height), and
+ * the mid-height signs (+, ×) do not reach a third of a digit up.
+ */
+function raisedGroups(items: readonly Item[], digit: number): Item[][] {
+  const solid = items.filter((it) => !isDash(it.stroke, it.box));
+  const tall = solid.filter((it) => height(it.box) >= 0.75 * digit);
+  if (tall.length === 0) return [];
+  const bottoms = tall.map((it) => it.box.maxY).sort((a, b) => a - b);
+  const baseline = bottoms[Math.floor(bottoms.length / 2)];
+  // A dot is never an exponent (a colon's upper dot, an i's dot).
+  const raised = solid
+    .filter(
+      (it) =>
+        height(it.box) <= 0.8 * digit &&
+        it.box.maxY <= baseline - 0.33 * digit &&
+        !isDot(it.stroke, it.box, digit),
+    )
+    .sort((a, b) => a.box.minX - b.box.minX);
+  const groups: Item[][] = [];
+  for (const it of raised) {
+    const last = groups[groups.length - 1];
+    const right = last ? Math.max(...last.map((g) => g.box.maxX)) : -Infinity;
+    if (last && it.box.minX - right <= 0.45 * digit) last.push(it);
+    else groups.push([it]);
+  }
+  return groups.filter((group) => {
+    const minX = Math.min(...group.map((g) => g.box.minX));
+    const maxY = Math.max(...group.map((g) => g.box.maxY));
+    const others = solid.filter((it) => !raised.includes(it));
+    const base = others
+      .filter((it) => it.box.maxX <= minX + 0.3 * digit && minX - it.box.maxX <= digit)
+      .sort((a, b) => b.box.maxX - a.box.maxX)[0];
+    if (!base || base.box.minY > maxY) return false;
+    // Nothing else between the base and the exponent.
+    return !others.some((it) => it !== base && midX(it.box) > base.box.maxX && midX(it.box) < minX);
+  });
 }
 
 function layoutItems(items: Item[], digit: number, plain: ReadonlySet<string>): SumPiece[] {
@@ -141,6 +188,18 @@ function layoutItems(items: Item[], digit: number, plain: ReadonlySet<string>): 
   }
   const taken = new Set(times.flat());
   rest = rest.filter((it) => !taken.has(it));
+
+  // Raised ink after a base: powers.
+  const powers = raisedGroups(rest, digit).filter((g) => !plain.has(g[0].stroke.id));
+  for (const group of powers) {
+    group.sort((a, b) => a.order - b.order);
+    placed.push({
+      left: Math.min(...group.map((it) => it.box.minX)),
+      piece: { kind: "power", exp: [{ kind: "ink", strokes: group.map((it) => it.stroke) }] },
+    });
+  }
+  const powered = new Set(powers.flat());
+  rest = rest.filter((it) => !powered.has(it));
 
   // The ink between the marks, as runs in left-to-right order.
   const marks = placed.sort((a, b) => a.left - b.left);
@@ -279,7 +338,7 @@ export function misreadMarks(
       else if (p.kind === "fraction") {
         walk(p.over);
         walk(p.under);
-      }
+      } else if (p.kind === "power") walk(p.exp);
     }
   };
   walk(pieces);
@@ -287,6 +346,11 @@ export function misreadMarks(
     list.map((p) => (p.kind === "ink" ? (text.get(p) ?? "") : "1")).join("");
   const check = (list: readonly SumPiece[]): void => {
     list.forEach((p, i) => {
+      if (p.kind === "power") {
+        const id = markId(p);
+        if (id && !/^[\s(]*[-−]?[0-9A-Za-z]/.test(sideText(p.exp))) bad.add(id);
+        return;
+      }
       if (p.kind === "fraction") {
         const id = markId(p);
         if (
@@ -305,6 +369,7 @@ export function misreadMarks(
       const okBefore =
         before !== undefined &&
         (before.kind === "fraction" ||
+          before.kind === "power" ||
           (before.kind === "ink" && TIMES_BEFORE.test(text.get(before) ?? "")));
       const okAfter =
         after !== undefined &&
@@ -327,7 +392,7 @@ export function inkPieces(pieces: readonly SumPiece[]): Stroke[][] {
       else if (p.kind === "fraction") {
         walk(p.over);
         walk(p.under);
-      }
+      } else if (p.kind === "power") walk(p.exp);
     }
   };
   walk(pieces);
@@ -353,7 +418,12 @@ export function sumText(pieces: readonly SumPiece[], readings: readonly string[]
       if (p.kind === "ink") parts.push((readings[next++] ?? "").trim());
       else if (p.kind === "times") parts.push("*");
       else if (p.kind === "divide") parts.push("/");
-      else {
+      else if (p.kind === "power") {
+        const exp = build(p.exp);
+        if (!exp) return null;
+        // Straight after its base: "5^(2)".
+        parts[parts.length - 1] = `${parts[parts.length - 1] ?? ""}^(${exp})`;
+      } else {
         const over = build(p.over);
         const under = build(p.under);
         if (!over || !under) return null;
@@ -597,7 +667,8 @@ function hasKind(pieces: readonly SumPiece[], kind: SumPiece["kind"]): boolean {
   return pieces.some(
     (p) =>
       p.kind === kind ||
-      (p.kind === "fraction" && (hasKind(p.over, kind) || hasKind(p.under, kind))),
+      (p.kind === "fraction" && (hasKind(p.over, kind) || hasKind(p.under, kind))) ||
+      (p.kind === "power" && hasKind(p.exp, kind)),
   );
 }
 

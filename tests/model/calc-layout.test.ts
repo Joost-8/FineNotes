@@ -489,3 +489,58 @@ describe("reading again when a mark was taken wrongly", () => {
     expect(arrow.some((p) => p.kind === "fraction")).toBe(false);
   });
 });
+
+describe("powers by position (FineNotes#178)", () => {
+  /** A small digit with its foot `up` digits above `baseline`, `h` the digits' height. */
+  const small = (x: number, baseline: number, h: number, up = 0.55) =>
+    digit(x, baseline - h * up, h * 0.55);
+
+  it("reads a small digit raised after a number as its power, at any size", () => {
+    for (const h of [10, 24, 60]) {
+      const five = digit(100, 300, h);
+      const two = small(100 + h * 0.7, 300, h);
+      const pieces = layoutSum([five, two]);
+      expect(kinds(pieces), `h ${h}`).toEqual(["ink", "power"]);
+      expect(inkPieces(pieces)).toEqual([[five], [two]]);
+      expect(sumText(pieces, ["5", "2"])).toBe("5^(2)");
+      expect(answerOf(pieces, ["5", "2"])).toBe("25");
+    }
+  });
+
+  it("reads 9² + 1 with the plus on the line", () => {
+    const h = 24;
+    const pieces = layoutSum([
+      digit(100, 300, h),
+      small(117, 300, h),
+      dash(134, 148, 300 - h * 0.45),
+      stroke([
+        [141, 300 - h * 0.7],
+        [141, 300 - h * 0.2],
+      ]),
+      digit(156, 300, h),
+    ]);
+    expect(kinds(pieces)).toEqual(["ink", "power", "ink"]);
+    expect(answerOf(pieces, ["9", "2", "+ 1"])).toBe("82");
+  });
+
+  it("leaves digits on the line, signs at mid height and a lone raised mark alone", () => {
+    const h = 24;
+    // 52: both on the baseline.
+    expect(hasLayout(layoutSum([digit(100, 300, h), digit(118, 300, h)]))).toBe(false);
+    // 5 − 2: the minus sits at mid height.
+    expect(
+      hasLayout(
+        layoutSum([digit(100, 300, h), dash(120, 134, 300 - h * 0.45), digit(140, 300, h)]),
+      ),
+    ).toBe(false);
+    // A small raised mark with no base before it.
+    expect(hasLayout(layoutSum([small(100, 300, h), digit(130, 300, h)]))).toBe(false);
+  });
+
+  it("drops a power whose exponent reads as no digit or letter", () => {
+    const h = 24;
+    const pieces = layoutSum([digit(100, 300, h), small(117, 300, h)]);
+    expect(misreadMarks(pieces, ["5", "'"])).toEqual(new Set([markId(pieces[1])]));
+    expect(misreadMarks(pieces, ["5", "2"]).size).toBe(0);
+  });
+});

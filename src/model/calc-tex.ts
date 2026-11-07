@@ -11,6 +11,8 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { fromCalc } from "./algebra/convert";
+import { toPoly } from "./algebra/poly";
 import { type CalcValue, formatValue, isRational } from "./calculator";
 import { answerText } from "./calc-note";
 
@@ -102,6 +104,14 @@ class TexParser {
     for (;;) {
       const t = this.peek();
       if (!t) return left;
+      // "17 mod 5": the calculator's remainder, an operator between terms.
+      if (t.kind === "name" && t.text.toLowerCase() === "mod") {
+        this.at++;
+        const right = this.unary();
+        if (!right) return null;
+        left = { tex: `${left.tex}\\bmod ${right.tex}` };
+        continue;
+      }
       if (t.kind === "op" && (t.text === "*" || t.text === "/")) {
         this.at++;
         const right = this.unary();
@@ -167,7 +177,9 @@ class TexParser {
       this.at++;
       const name = t.text;
       const lower = name.toLowerCase();
-      if (this.peek()?.kind === "op" && this.peek()?.text === "(") {
+      // A single letter before a bracket is that letter times the bracket ("x(x-3)").
+      const call = name.length > 1 || OPERATORS.has(lower);
+      if (call && this.peek()?.kind === "op" && this.peek()?.text === "(") {
         this.at++;
         const args: string[] = [];
         if (!this.take(")")) {
@@ -184,6 +196,10 @@ class TexParser {
           return { tex: `\\sqrt[${args[1]}]{${args[0]}}` };
         }
         if (lower === "abs" && args.length === 1) return { tex: `\\left|${args[0]}\\right|` };
+        // log(8, 2): the logarithm of 8 to base 2, its base written low.
+        if (lower === "log" && args.length === 2) {
+          return { tex: `\\log_{${args[1]}}\\left(${args[0]}\\right)` };
+        }
         const fn = OPERATORS.has(lower) ? `\\${lower}` : `\\operatorname{${name}}`;
         return { tex: `${fn}\\left(${args.join(",")}\\right)` };
       }
@@ -211,8 +227,12 @@ export function expressionTex(expression: string, options: { dot?: boolean } = {
 export interface AnswerForms {
   /** As a fraction, when it is a fraction (not whole, and exact); else null. */
   fraction: { n: string; d: string; text: string; tex: string } | null;
-  /** As written in decimals (`answerText`): at most 8 significant digits. */
-  decimal: { text: string; exact: boolean };
+  /**
+   * As written in decimals (`answerText`): at most 8 significant digits. For
+   * an expanded polynomial, its terms ("8x^2+18x+4"), with `tex` and `shown`
+   * (superscript powers, for the card).
+   */
+  decimal: { text: string; exact: boolean; tex?: string; shown?: string };
 }
 
 /**
@@ -234,4 +254,83 @@ export function answerForms(value: CalcValue): AnswerForms | null {
     }
   }
   return { fraction, decimal };
+}
+
+const SUPERSCRIPT: Record<string, string> = {
+  "0": "⁰",
+  "1": "¹",
+  "2": "²",
+  "3": "³",
+  "4": "⁴",
+  "5": "⁵",
+  "6": "⁶",
+  "7": "⁷",
+  "8": "⁸",
+  "9": "⁹",
+};
+
+/** Names in the calculator's text that are not a sum's letter (functions and constants). */
+const NOT_LETTERS = new Set([
+  "e",
+  "pi",
+  "mod",
+  "sqrt",
+  "root",
+  "abs",
+  "sin",
+  "cos",
+  "tan",
+  "ln",
+  "log",
+  "exp",
+]);
+
+/**
+ * A sum in one letter, expanded ("(2x+4)(4x+1)" is "8x^2+18x+4"): its terms
+ * highest power first, with exact fraction coefficients. Null when the sum
+ * has no letter, more than one, or is not a polynomial in it (a sine, a
+ * division by the letter).
+ */
+export function polynomialAnswer(expression: string): AnswerForms | null {
+  const names = new Set(
+    (expression.match(/[A-Za-z][A-Za-z0-9]*/g) ?? []).filter(
+      (n) => !NOT_LETTERS.has(n.toLowerCase()),
+    ),
+  );
+  if (names.size !== 1) return null;
+  const [letter] = [...names];
+  if (!/^[A-Za-z]$/.test(letter)) return null;
+  let poly;
+  try {
+    poly = toPoly(fromCalc(expression), letter);
+  } catch {
+    return null;
+  }
+  if (!poly) return null;
+  const text: string[] = [];
+  const tex: string[] = [];
+  const shown: string[] = [];
+  for (let k = poly.length - 1; k >= 0; k--) {
+    const c = poly[k];
+    if (c.n === 0n) continue;
+    const negative = c.n < 0n;
+    const n = negative ? -c.n : c.n;
+    const sign = negative ? "-" : text.length > 0 ? "+" : "";
+    const one = n === 1n && c.d === 1n && k > 0;
+    const coefText = one ? "" : c.d === 1n ? `${n}` : `${n}/${c.d}`;
+    const coefTex = one ? "" : c.d === 1n ? `${n}` : `\\frac{${n}}{${c.d}}`;
+    const power = k > 1 ? `${k}` : "";
+    text.push(`${sign}${coefText}${k > 0 ? letter : ""}${power ? `^${power}` : ""}`);
+    tex.push(`${sign}${coefTex}${k > 0 ? letter : ""}${power ? `^{${power}}` : ""}`);
+    shown.push(
+      `${sign === "-" ? "−" : sign}${coefText}${k > 0 ? letter : ""}${Array.from(power)
+        .map((d) => SUPERSCRIPT[d])
+        .join("")}`,
+    );
+  }
+  if (text.length === 0) return { fraction: null, decimal: { text: "0", exact: true } };
+  return {
+    fraction: null,
+    decimal: { text: text.join(""), exact: true, tex: tex.join(""), shown: shown.join("") },
+  };
 }

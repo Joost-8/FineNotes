@@ -24,7 +24,7 @@ import {
   glyphsFor,
   glyphsFromSamples,
   writeFraction,
-  writeText,
+  writeWithPowers,
 } from "../model/answer-glyphs";
 import {
   type AnswerPlace,
@@ -47,7 +47,7 @@ import {
   sumOfLine,
   variablesOfLines,
 } from "../model/calc-note";
-import { answerForms, expressionTex } from "../model/calc-tex";
+import { type AnswerForms, answerForms, expressionTex, polynomialAnswer } from "../model/calc-tex";
 import type { CalcValue } from "../model/calculator";
 import { DEFAULT_PAGE_GEOMETRY, type Page, type Stroke, strokeBounds } from "../model/document";
 import { AddEquation, makeEquation, nextEquationId } from "../model/equation";
@@ -190,8 +190,12 @@ export class CalcNotes {
       if (token !== this.token) return;
       found = this.work(reading.text, vars);
     }
-    if (!found || found === "variables") return;
-    const content = this.content(found.sum, found.value, reading);
+    const solved =
+      found && found !== "variables"
+        ? { sum: found.sum, forms: answerForms(found.value) }
+        : this.expanded(reading.text, vars);
+    if (!solved?.forms) return;
+    const content = this.content(solved.sum, solved.forms, reading);
     if (!content) return;
     const surface = this.host.surface();
     if (!surface || token !== this.token) return;
@@ -242,10 +246,11 @@ export class CalcNotes {
         fix: (expression) => {
           const sum: NoteSum = { expression, shown: expression };
           const result = evaluateSum(sum, note.vars);
-          if (!result.ok) return null;
+          const forms = result.ok ? answerForms(result.value) : polynomialAnswer(expression);
+          if (!forms) return null;
           // Typed over the whole reading: its pieces no longer say what the
           // ink is, so nothing of it is kept as a label.
-          const next = this.content(sum, result.value, { ...note.reading, doubts: [] });
+          const next = this.content(sum, forms, { ...note.reading, doubts: [] });
           if (!next) return null;
           note.typed = true;
           note.reading = { ...note.reading, doubts: [] };
@@ -272,8 +277,12 @@ export class CalcNotes {
     const next = withPick(note.reading, doubt, text);
     if (!next) return null;
     const found = this.work(next.text, note.vars);
-    if (!found || found === "variables") return null;
-    const content = this.content(found.sum, found.value, next);
+    const solved =
+      found && found !== "variables"
+        ? { sum: found.sum, forms: answerForms(found.value) }
+        : this.expanded(next.text, note.vars);
+    if (!solved?.forms) return null;
+    const content = this.content(solved.sum, solved.forms, next);
     if (!content) return null;
     note.reading = next;
     note.content = content;
@@ -313,8 +322,23 @@ export class CalcNotes {
   }
 
   /** The card's content for `sum` worked out to `value`: its LaTeX, the answer's forms and the doubts. */
-  private content(sum: NoteSum, value: CalcValue, reading: SumReading): CalcCardContent | null {
-    const forms = answerForms(value);
+  /**
+   * A sum with a letter no line above sets ("(2x+4)(4x+1) ="): the
+   * polynomial it expands to, or null when it is none.
+   */
+  private expanded(
+    reading: string,
+    vars: ReadonlyMap<string, CalcValue>,
+  ): { sum: NoteSum; forms: AnswerForms | null } | null {
+    const sum = sumOfLine(reading, vars);
+    return sum ? { sum, forms: polynomialAnswer(sum.expression) } : null;
+  }
+
+  private content(
+    sum: NoteSum,
+    forms: AnswerForms | null,
+    reading: SumReading,
+  ): CalcCardContent | null {
     const tex = expressionTex(sum.expression, { dot: reading.dot });
     if (!forms || tex === null) return null;
     const form: AnswerForm = forms.fraction
@@ -402,7 +426,7 @@ export class CalcNotes {
     const { pageId, eq, place } = note;
     const forms = note.content.forms;
     const fraction = form === "fraction" ? forms.fraction : null;
-    const text = fraction ? `${fraction.n}${fraction.d}` : forms.decimal.text;
+    const text = fraction ? `${fraction.n}${fraction.d}` : forms.decimal.text.replace(/\^/g, "");
     const glyphs = glyphsFor(text, await this.ownGlyphs());
     const page = this.host.page(pageId);
     const surface = this.host.surface();
@@ -410,7 +434,7 @@ export class CalcNotes {
     const pen = eq.strokes[1];
     const written = fraction
       ? writeFraction(fraction.n, fraction.d, glyphs, place)
-      : writeText(forms.decimal.text, glyphs, place);
+      : writeWithPowers(forms.decimal.text, glyphs, place);
     const ink = written.map((pts) => ({
       color: pen.color,
       size: pen.size,
@@ -438,7 +462,7 @@ export class CalcNotes {
     if (!surface || !page || !ctx || !this.host.enabled()) return;
     const fraction = form === "fraction" ? content.forms.fraction : null;
     const decimal = content.forms.decimal;
-    const answer = fraction ? fraction.tex : decimal.text;
+    const answer = fraction ? fraction.tex : (decimal.tex ?? decimal.text);
     const sign = !fraction && !decimal.exact ? "\\approx" : "=";
     const tex = `${content.tex} ${sign} ${answer}`;
     const size = Math.max(12, place.height * 1.1);
