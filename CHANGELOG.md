@@ -8,6 +8,26 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Lock fit to width.** A new switch in Settings › Advanced: after a double
+  tap fits the page to the width, a finger no longer moves the page sideways
+  at all ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  Off, as before, a sideways pull stretches the page and it springs back, as
+  in Goodnotes. Pinching still moves it either way.
+
+### Fixed
+
+- **Slides fill the screen with pages across**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  Each page now fits the screen on its own, as in Goodnotes: a lecture slide
+  next to a portrait page used to open at two thirds of the screen, because
+  every page was fitted to the tallest one. Turning to a page of another
+  shape fits that page.
+- **A double tap on a slide shows the whole slide**, as large as fits and
+  centred, instead of filling the width and cutting off its foot. Portrait
+  pages still fill the width.
+
 ## [2.8.3] - 2026-11-06
 
 ### Added
@@ -111,13 +131,6 @@ extracted from the matching section of this file by `release.yml`.
   scanned PDF pages, boards, deleting from Home, free page edges and more)
   showed in English whatever the interface language, and so did this
   release's new texts; they are now in all 42 languages.
-### Fixed
-### Added
-
-- **Lock fit to width.** A new switch in Settings › Advanced: after a double
-  tap fits the page to the width, a finger no longer moves the page sideways
-  at all (discussion #43). Off, as before, a sideways pull stretches the page
-  and it springs back, as in Goodnotes. Pinching still moves it either way.
 
 ## [2.8.2] - 2026-11-05
 
