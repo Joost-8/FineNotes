@@ -138,6 +138,16 @@ import { changelogSince, releasedChangelog } from "./changelog";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
+import {
+  LOOK_PALETTES,
+  LOOK_STYLES,
+  lookClasses,
+  lookPaletteNames,
+  lookPaletteOf,
+  lookStyleNames,
+  lookStyleOf,
+  nextLook,
+} from "./model/look";
 import { HOME_FILE, HOME_FILE_TEXT, isOwnHomeText } from "./model/home-file";
 import {
   dropPaths,
@@ -510,6 +520,8 @@ export default class GoodObsidianPlugin extends Plugin {
 
     this.setUpReadingGuard();
     this.applySimpleLook();
+    this.applyLook();
+    this.register(() => this.wearLook([]));
     this.register(() => {
       if (typeof document !== "undefined") document.body.classList.remove(SIMPLE_CLASS);
     });
@@ -833,6 +845,18 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "show-notebooks-sidebar",
       name: t("notebooks.command.showSidebar"),
       callback: () => void this.showNotebooksSidebar(),
+    });
+
+    this.addCommand({
+      id: "next-look-style",
+      name: t("notebooks.command.nextLookStyle"),
+      callback: () => void this.setLook(nextLook(LOOK_STYLES, this.settings.lookStyle), undefined),
+    });
+    this.addCommand({
+      id: "next-look-palette",
+      name: t("notebooks.command.nextLookPalette"),
+      callback: () =>
+        void this.setLook(undefined, nextLook(LOOK_PALETTES, this.settings.lookPalette)),
     });
 
     this.addCommand({
@@ -1385,6 +1409,34 @@ export default class GoodObsidianPlugin extends Plugin {
     const body = document.body;
     body.classList.remove(SIMPLE_CLASS);
     body.classList.add(...simpleClasses(this.settings.simpleLook));
+  }
+
+  private lookWorn: string[] = [];
+
+  private wearLook(classes: string[]): void {
+    if (typeof document === "undefined") return;
+    document.body.classList.remove(...this.lookWorn);
+    document.body.classList.add(...classes);
+    this.lookWorn = classes;
+  }
+
+  /** Wear the chrome's style and palette (`model/look.ts`). */
+  applyLook(): void {
+    this.wearLook(lookClasses(this.settings.lookStyle, this.settings.lookPalette));
+  }
+
+  async setLook(style: string | undefined, palette: string | undefined): Promise<void> {
+    if (style !== undefined) this.settings.lookStyle = style;
+    if (palette !== undefined) this.settings.lookPalette = palette;
+    this.applyLook();
+    new Notice(
+      t("settings.look.notice", {
+        style: lookStyleNames()[lookStyleOf(this.settings.lookStyle)],
+        palette: lookPaletteNames()[lookPaletteOf(this.settings.lookPalette)],
+      }),
+      1500,
+    );
+    await this.saveSettings();
   }
 
   setSimpleLook(on: boolean): void {

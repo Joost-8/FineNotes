@@ -395,6 +395,8 @@ export const notebooks = {
   "notebooks.command.openLibrary": "Open the notebook library",
   "notebooks.command.rereadScannedPages": "Re-read scanned pages of this PDF",
   "notebooks.command.simpleLook": "Simple look: hide or show Obsidian's tabs, sidebars and menus",
+  "notebooks.command.nextLookStyle": "Look: next style",
+  "notebooks.command.nextLookPalette": "Look: next colours",
   "notebooks.command.newFromPdf": "New notebook from a PDF in the vault…",
   "notebooks.command.convertToNotebook": "Convert single page to notebook",
   "notebooks.command.scanDocument": "Scan document into this notebook",
