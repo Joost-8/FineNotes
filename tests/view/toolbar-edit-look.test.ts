@@ -5,13 +5,15 @@
 
 import { describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", () => import("./fake-obsidian"));
-const { ToolbarEditor } = await import("../../src/view/toolbar-edit");
-const { LOOK_PALETTES, LOOK_STYLES } = await import("../../src/model/look");
+const { ToolbarEditor, lookPreview } = await import("../../src/view/toolbar-edit");
+const { LOOK_PALETTES, LOOK_STYLES, PALETTE_VARIABLES } = await import("../../src/model/look");
+const { readFileSync } = await import("node:fs");
 
 /** Just enough of an element for `lookShelf`. */
 interface FakeEl {
   classes: Set<string>;
   attrs: Record<string, string>;
+  style: { vars: Record<string, string>; setProperty(name: string, value: string): void };
   children: FakeEl[];
   click?: () => void;
   createDiv(o?: { cls?: string; text?: string }): FakeEl;
@@ -26,6 +28,10 @@ function fakeEl(cls = ""): FakeEl {
   const el: FakeEl = {
     classes: new Set(cls.split(" ").filter(Boolean)),
     attrs: {},
+    style: {
+      vars: {},
+      setProperty: (name, value) => (el.style.vars[name] = value),
+    },
     children: [],
     createDiv: (o) => add(o?.cls),
     createSpan: (o) => add(o?.cls),
@@ -88,5 +94,62 @@ describe("Customize toolbar's look rows", () => {
     chips[0].click?.();
     chips[LOOK_PALETTES.indexOf("nord")].click?.();
     expect(picked).toEqual(["nord"]);
+  });
+});
+
+describe("a look chip's bar", () => {
+  it("is the look's own classes, the pen pressed beside the eraser", () => {
+    const chip = fakeEl();
+    lookPreview(chip as unknown as HTMLElement, "retro", "nord");
+    const preview = chip.children[0];
+    expect([...preview.classes]).toEqual([
+      "goodobsidian-look-preview",
+      "is-style-retro",
+      "is-palette-nord",
+    ]);
+    const tools = preview.children[0].children;
+    expect(tools.map((t) => t.classes.has("is-active"))).toEqual([true, false]);
+    expect(preview.style.vars).toEqual({});
+  });
+
+  it("takes Match Obsidian's colours from the theme, not from a palette worn", () => {
+    vi.stubGlobal("document", { body: {} });
+    vi.stubGlobal("getComputedStyle", () => ({
+      getPropertyValue: (name: string) => (name === "--interactive-accent" ? " #8a7ce8 " : ""),
+    }));
+    try {
+      const chip = fakeEl();
+      lookPreview(chip as unknown as HTMLElement, "default", "obsidian");
+      expect(chip.children[0].style.vars).toEqual({ "--interactive-accent": "#8a7ce8" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("styles.css draws every look chip", () => {
+  /** The stylesheet with each line end as `|`, so a selector list reads on one line. */
+  const lines = readFileSync("styles.css", "utf8").split(/\r?\n/).join("|");
+
+  it("names the chip in every style's and palette's token block", () => {
+    for (const style of LOOK_STYLES.filter((s) => s !== "default"))
+      expect(lines).toContain(
+        `.goodobsidian-look-preview.is-style-${style},|body.finenotes-style-${style},`,
+      );
+    for (const palette of LOOK_PALETTES.filter((p) => p !== "obsidian"))
+      for (const mode of ["light", "dark"])
+        expect(lines).toContain(
+          `body.theme-${mode} .goodobsidian-look-preview.is-palette-${palette},|body.finenotes-palette-${palette}.theme-${mode}|`,
+        );
+  });
+
+  it("copies for Match Obsidian exactly the variables every palette sets", () => {
+    for (const palette of LOOK_PALETTES.filter((p) => p !== "obsidian"))
+      for (const mode of ["light", "dark"]) {
+        const start = lines.indexOf(`|body.finenotes-palette-${palette}.theme-${mode}|`);
+        const block = lines.slice(lines.indexOf("{", start) + 1, lines.indexOf("}", start));
+        const names = [...block.matchAll(/(--[a-z0-9-]+):/g)].map((m) => m[1]);
+        expect(names, `${palette} ${mode}`).toEqual([...PALETTE_VARIABLES]);
+      }
   });
 });

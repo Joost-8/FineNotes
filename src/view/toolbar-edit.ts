@@ -32,6 +32,7 @@ import {
   LOOK_STYLES,
   type LookPalette,
   type LookStyle,
+  PALETTE_VARIABLES,
   lookPaletteNames,
   lookStyleNames,
 } from "../model/look";
@@ -112,6 +113,38 @@ interface Press {
   x: number;
   y: number;
   dragging: boolean;
+}
+
+/** The tools a look chip shows, the pen pressed: the bar's own icons. */
+const PREVIEW_TOOLS = ["pen", "eraser"] as const;
+
+/**
+ * A small bar in `style` and `palette`, drawn by the Looks section's own
+ * tokens (`styles.css`). Match Obsidian takes the theme's colours from the
+ * body, since a palette worn by the view would otherwise reach it.
+ */
+export function lookPreview(
+  parent: HTMLElement,
+  style: LookStyle,
+  palette: LookPalette,
+): HTMLElement {
+  const preview = parent.createDiv({
+    cls: `goodobsidian-look-preview is-style-${style} is-palette-${palette}`,
+  });
+  if (palette === "obsidian" && typeof getComputedStyle === "function") {
+    const theme = getComputedStyle(document.body);
+    for (const name of PALETTE_VARIABLES) {
+      const value = theme.getPropertyValue(name).trim();
+      if (value) preview.style.setProperty(name, value);
+    }
+  }
+  const bar = preview.createDiv({ cls: "goodobsidian-look-bar" });
+  PREVIEW_TOOLS.forEach((id, i) => {
+    const tool = bar.createSpan({ cls: "goodobsidian-look-tool" });
+    tool.toggleClass("is-active", i === 0);
+    setIcon(tool, BAR_ITEM_ICONS[id]);
+  });
+  return preview;
 }
 
 export class ToolbarEditor {
@@ -304,10 +337,7 @@ export class ToolbarEditor {
         look.style,
         (id, chip) => {
           chip.setAttribute("aria-label", styles[id]);
-          // The style's own bar in small: its corners, its border, its pressed button.
-          const mini = chip.createDiv({ cls: `goodobsidian-look-mini is-${id}` });
-          mini.createSpan({ cls: "is-on" });
-          mini.createSpan();
+          lookPreview(chip, id, look.palette);
         },
         (id) => {
           setLook(id, look.palette);
@@ -321,7 +351,7 @@ export class ToolbarEditor {
         look.palette,
         (id, chip) => {
           chip.setAttribute("aria-label", palettes[id]);
-          chip.createSpan({ cls: `goodobsidian-look-swatch is-${id}` });
+          lookPreview(chip, look.style, id);
         },
         (id) => {
           setLook(look.style, id);

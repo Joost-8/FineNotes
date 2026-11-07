@@ -30,6 +30,42 @@ export const LOOK_PALETTES = [
   "high-contrast",
 ] as const;
 
+/** Obsidian's variables a palette sets (`styles.css`, Looks); Match Obsidian's preview copies them from the theme. */
+export const PALETTE_VARIABLES = [
+  "--background-primary",
+  "--background-primary-alt",
+  "--background-secondary",
+  "--background-secondary-alt",
+  "--background-modifier-border",
+  "--background-modifier-border-hover",
+  "--background-modifier-border-focus",
+  "--background-modifier-hover",
+  "--background-modifier-active-hover",
+  "--background-modifier-form-field",
+  "--modal-background",
+  "--modal-border-color",
+  "--background-modifier-cover",
+  "--interactive-normal",
+  "--interactive-hover",
+  "--interactive-accent",
+  "--interactive-accent-hover",
+  "--interactive-accent-hsl",
+  "--color-accent",
+  "--text-normal",
+  "--text-muted",
+  "--text-faint",
+  "--text-accent",
+  "--text-on-accent",
+  "--text-error",
+  "--color-red",
+  "--icon-color",
+  "--icon-color-hover",
+  "--icon-color-active",
+  "--mono-rgb-100",
+  "--mono-rgb-0",
+  "--color-base-35",
+] as const;
+
 export type LookStyle = (typeof LOOK_STYLES)[number];
 export type LookPalette = (typeof LOOK_PALETTES)[number];
 

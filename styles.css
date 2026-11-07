@@ -30,7 +30,8 @@
  * accent only on what is active or selected. */
 body,
 .theme-light,
-.theme-dark {
+.theme-dark,
+.goodobsidian-look-preview {
   /* Touch targets: >= 44 pt, a finger-and-pencil surface. The compact size
      is for controls that sit over the page (the options pill), as small as
      GoodNotes' own and still a comfortable Pencil tap. */
@@ -230,7 +231,8 @@ body,
 @supports (color: color-mix(in srgb, red 50%, transparent)) {
   body,
   .theme-light,
-  .theme-dark {
+  .theme-dark,
+  .goodobsidian-look-preview {
     --gob-accent-tint: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
     --gob-active-press: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
     --gob-on-accent-press: color-mix(in srgb, var(--text-on-accent) 24%, transparent);
@@ -15525,8 +15527,16 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
 
 .goodobsidian-toolbar.is-editing button.goodobsidian-tool[data-item] {
   cursor: grab;
-  background: var(--background-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+/* The indicator stays home while buttons move; the active button wears its
+   own square, so the bar looks as it does outside the mode in every look. */
+.goodobsidian-toolbar.is-editing .goodobsidian-bar-group.has-indicator button.is-active,
+.goodobsidian-toolbar.is-editing
+  .goodobsidian-bar-group.has-indicator
+  button.is-active:hover:not(:disabled) {
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
 }
 
 /* Pinned to the bar: it moves along it, never off it. A dot says so. */
@@ -15772,12 +15782,18 @@ button.goodobsidian-edit-chip {
 }
 
 /* The look rows: a tap wears it, so no grab cursor; the one worn is ringed
-   and dotted. Each style chip is that style's bar in small (its corners,
-   border and pressed button); each colours chip is the palette's surface
-   and accent, split (the swatches are in the Looks section at the end). */
+   and dotted. Each chip is a small bar drawn by that look's own tokens and
+   colours (`.goodobsidian-look-preview`, in the Looks section at the end):
+   a style in the colours worn, a colour set in the style worn. */
 button.goodobsidian-edit-chip.goodobsidian-look-chip {
   position: relative;
+  width: auto;
+  height: auto;
+  padding: 4px;
+  border-radius: 10px;
   cursor: var(--cursor);
+  background: transparent;
+  box-shadow: none;
 }
 
 button.goodobsidian-look-chip.is-active {
@@ -15793,156 +15809,6 @@ button.goodobsidian-look-chip.is-active::after {
   height: 6px;
   border-radius: 50%;
   background: var(--interactive-accent);
-}
-
-.goodobsidian-look-mini {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  width: 32px;
-  height: 20px;
-  padding: 0 3px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-}
-
-.goodobsidian-look-mini > span {
-  width: 11px;
-  height: 12px;
-  border-radius: 3px;
-  background: var(--text-faint);
-  opacity: 0.7;
-}
-
-.goodobsidian-look-mini > span.is-on {
-  background: var(--interactive-accent);
-  opacity: 1;
-}
-
-.goodobsidian-look-mini.is-glass {
-  border-color: color-mix(in srgb, white 30%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-secondary) 55%, transparent);
-}
-
-.goodobsidian-look-mini.is-glass > span {
-  border-radius: 999px;
-}
-
-.goodobsidian-look-mini.is-material {
-  border: 0;
-  border-radius: 0;
-  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-secondary));
-}
-
-.goodobsidian-look-mini.is-material > span {
-  border-radius: 6px;
-}
-
-.goodobsidian-look-mini.is-material > span.is-on {
-  background: color-mix(in srgb, var(--interactive-accent) 45%, transparent);
-}
-
-.goodobsidian-look-mini.is-fluent {
-  border-radius: 4px;
-}
-
-.goodobsidian-look-mini.is-fluent > span {
-  border-radius: 2px;
-}
-
-.goodobsidian-look-mini.is-fluent > span.is-on {
-  background: var(--text-faint);
-  box-shadow: inset 0 -3px 0 var(--interactive-accent);
-}
-
-.goodobsidian-look-mini.is-paper {
-  border-radius: 2px;
-}
-
-.goodobsidian-look-mini.is-paper > span {
-  border-radius: 1px;
-  outline: 1px solid var(--text-faint);
-  background: transparent;
-}
-
-.goodobsidian-look-mini.is-paper > span.is-on {
-  outline: 0;
-  background: transparent;
-  box-shadow: inset 0 -2px 0 var(--text-normal);
-}
-
-.goodobsidian-look-mini.is-brutalist {
-  border: 2px solid var(--text-normal);
-  border-radius: 3px;
-  box-shadow: 2px 2px 0 var(--text-normal);
-}
-
-.goodobsidian-look-mini.is-brutalist > span.is-on {
-  outline: 1.5px solid var(--text-normal);
-}
-
-.goodobsidian-look-mini.is-soft {
-  border: 0;
-  border-radius: 8px;
-  box-shadow:
-    2px 2px 4px rgba(0, 0, 0, 0.35),
-    -1px -1px 3px rgba(255, 255, 255, 0.4);
-}
-
-.theme-dark .goodobsidian-look-mini.is-soft {
-  box-shadow:
-    2px 2px 4px rgba(0, 0, 0, 0.5),
-    -1px -1px 3px rgba(255, 255, 255, 0.07);
-}
-
-.goodobsidian-look-mini.is-soft > span.is-on {
-  outline: 1px solid var(--interactive-accent);
-  background: var(--background-secondary);
-  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.45);
-}
-
-.goodobsidian-look-mini.is-retro {
-  border-color: var(--text-normal);
-  border-radius: 0;
-  box-shadow: 2px 2px 0 var(--text-normal);
-}
-
-.goodobsidian-look-mini.is-retro > span {
-  border-radius: 0;
-}
-
-.goodobsidian-look-mini.is-retro > span.is-on {
-  background: var(--text-normal);
-}
-
-.goodobsidian-look-mini.is-compact {
-  gap: 2px;
-  width: 24px;
-  height: 15px;
-  padding: 0 2px;
-  border-radius: 4px;
-}
-
-.goodobsidian-look-mini.is-compact > span {
-  width: 8px;
-  height: 9px;
-  border-radius: 2px;
-}
-
-.goodobsidian-look-swatch {
-  display: block;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--swatch-bg) 0 50%, var(--swatch-accent) 50% 100%);
-  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
-}
-
-/* Match Obsidian: light and dark, and Obsidian's own accent. */
-.goodobsidian-look-swatch.is-obsidian {
-  background: conic-gradient(#8a7ce8 0 25%, #f6f6f6 0 50%, #262626 0 75%, #8a7ce8 0);
 }
 
 .goodobsidian-edit-menu {
@@ -17555,6 +17421,7 @@ button.goodobsidian-library-rail-toggle.is-active {
    surfaces only; a style sets the --gob-* tokens. Both are body classes
    from `model/look.ts`. */
 
+.goodobsidian-look-preview:not(.is-palette-obsidian),
 body[class*="finenotes-palette-"]
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -17604,6 +17471,7 @@ body[class*="finenotes-palette-"]
   --gob-spring-tool: var(--gob-spring);
   --gob-bookmark: var(--color-red);
 }
+body.theme-dark .goodobsidian-look-preview:not(.is-palette-obsidian),
 body[class*="finenotes-palette-"]
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -17616,6 +17484,7 @@ body[class*="finenotes-palette-"]
   .theme-dark {
   --gob-seg-active-bg: var(--color-base-35);
 }
+body.theme-light .goodobsidian-look-preview.is-palette-nord,
 body.finenotes-palette-nord.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -17658,6 +17527,7 @@ body.finenotes-palette-nord.theme-light
   --mono-rgb-0: 236, 239, 244;
   --color-base-35: color-mix(in srgb, #2e3440 12%, #eceff4);
 }
+body.theme-dark .goodobsidian-look-preview.is-palette-nord,
 body.finenotes-palette-nord.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -17710,6 +17580,7 @@ body.finenotes-palette-nord
   --mono-rgb-0: 67, 76, 94;
   --color-base-35: color-mix(in srgb, #eceff4 12%, #434c5e);
 }
+body.theme-light .goodobsidian-look-preview.is-palette-catppuccin,
 body.finenotes-palette-catppuccin.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -17752,6 +17623,7 @@ body.finenotes-palette-catppuccin.theme-light
   --mono-rgb-0: 239, 241, 245;
   --color-base-35: color-mix(in srgb, #4c4f69 12%, #eff1f5);
 }
+body.theme-dark .goodobsidian-look-preview.is-palette-catppuccin,
 body.finenotes-palette-catppuccin.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -17804,6 +17676,7 @@ body.finenotes-palette-catppuccin
   --mono-rgb-0: 30, 30, 46;
   --color-base-35: color-mix(in srgb, #cdd6f4 12%, #1e1e2e);
 }
+body.theme-light .goodobsidian-look-preview.is-palette-dracula,
 body.finenotes-palette-dracula.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -17846,6 +17719,7 @@ body.finenotes-palette-dracula.theme-light
   --mono-rgb-0: 255, 251, 235;
   --color-base-35: color-mix(in srgb, #1f1f1f 12%, #fffbeb);
 }
+body.theme-dark .goodobsidian-look-preview.is-palette-dracula,
 body.finenotes-palette-dracula.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -17898,6 +17772,7 @@ body.finenotes-palette-dracula
   --mono-rgb-0: 52, 55, 70;
   --color-base-35: color-mix(in srgb, #f8f8f2 12%, #343746);
 }
+body.theme-light .goodobsidian-look-preview.is-palette-rose-pine,
 body.finenotes-palette-rose-pine.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -17940,6 +17815,7 @@ body.finenotes-palette-rose-pine.theme-light
   --mono-rgb-0: 255, 250, 243;
   --color-base-35: color-mix(in srgb, #575279 12%, #fffaf3);
 }
+body.theme-dark .goodobsidian-look-preview.is-palette-rose-pine,
 body.finenotes-palette-rose-pine.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -17992,6 +17868,7 @@ body.finenotes-palette-rose-pine
   --mono-rgb-0: 38, 35, 58;
   --color-base-35: color-mix(in srgb, #e0def4 12%, #26233a);
 }
+body.theme-light .goodobsidian-look-preview.is-palette-gruvbox,
 body.finenotes-palette-gruvbox.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -18034,6 +17911,7 @@ body.finenotes-palette-gruvbox.theme-light
   --mono-rgb-0: 251, 241, 199;
   --color-base-35: color-mix(in srgb, #3c3836 12%, #fbf1c7);
 }
+body.theme-dark .goodobsidian-look-preview.is-palette-gruvbox,
 body.finenotes-palette-gruvbox.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -18086,6 +17964,7 @@ body.finenotes-palette-gruvbox
   --mono-rgb-0: 60, 56, 54;
   --color-base-35: color-mix(in srgb, #ebdbb2 12%, #3c3836);
 }
+body.theme-light .goodobsidian-look-preview.is-palette-solarized,
 body.finenotes-palette-solarized.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -18128,6 +18007,7 @@ body.finenotes-palette-solarized.theme-light
   --mono-rgb-0: 253, 246, 227;
   --color-base-35: color-mix(in srgb, #073642 12%, #fdf6e3);
 }
+body.theme-dark .goodobsidian-look-preview.is-palette-solarized,
 body.finenotes-palette-solarized.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -18180,6 +18060,7 @@ body.finenotes-palette-solarized
   --mono-rgb-0: 7, 54, 66;
   --color-base-35: color-mix(in srgb, #eee8d5 12%, #073642);
 }
+body.theme-light .goodobsidian-look-preview.is-palette-tokyo-night,
 body.finenotes-palette-tokyo-night.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -18222,6 +18103,7 @@ body.finenotes-palette-tokyo-night.theme-light
   --mono-rgb-0: 233, 233, 237;
   --color-base-35: color-mix(in srgb, #343b58 12%, #e9e9ed);
 }
+body.theme-dark .goodobsidian-look-preview.is-palette-tokyo-night,
 body.finenotes-palette-tokyo-night.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -18274,6 +18156,7 @@ body.finenotes-palette-tokyo-night
   --mono-rgb-0: 36, 40, 59;
   --color-base-35: color-mix(in srgb, #c0caf5 12%, #24283b);
 }
+body.theme-light .goodobsidian-look-preview.is-palette-everforest,
 body.finenotes-palette-everforest.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -18316,6 +18199,7 @@ body.finenotes-palette-everforest.theme-light
   --mono-rgb-0: 253, 246, 227;
   --color-base-35: color-mix(in srgb, #4d5a61 12%, #fdf6e3);
 }
+body.theme-dark .goodobsidian-look-preview.is-palette-everforest,
 body.finenotes-palette-everforest.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -18368,6 +18252,7 @@ body.finenotes-palette-everforest
   --mono-rgb-0: 52, 63, 68;
   --color-base-35: color-mix(in srgb, #d3c6aa 12%, #343f44);
 }
+body.theme-light .goodobsidian-look-preview.is-palette-high-contrast,
 body.finenotes-palette-high-contrast.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -18410,6 +18295,7 @@ body.finenotes-palette-high-contrast.theme-light
   --mono-rgb-0: 255, 255, 255;
   --color-base-35: color-mix(in srgb, #000000 12%, #ffffff);
 }
+body.theme-dark .goodobsidian-look-preview.is-palette-high-contrast,
 body.finenotes-palette-high-contrast.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
@@ -18463,79 +18349,7 @@ body.finenotes-palette-high-contrast
   --color-base-35: color-mix(in srgb, #ffffff 12%, #000000);
 }
 
-/* Customize toolbar's colours chips, in the theme's own mode. */
-.goodobsidian-look-swatch.is-nord {
-  --swatch-bg: #e5e9f0;
-  --swatch-accent: #5e81ac;
-}
-.theme-dark .goodobsidian-look-swatch.is-nord {
-  --swatch-bg: #3b4252;
-  --swatch-accent: #88c0d0;
-}
-.goodobsidian-look-swatch.is-catppuccin {
-  --swatch-bg: #e6e9ef;
-  --swatch-accent: #8839ef;
-}
-.theme-dark .goodobsidian-look-swatch.is-catppuccin {
-  --swatch-bg: #181825;
-  --swatch-accent: #cba6f7;
-}
-.goodobsidian-look-swatch.is-dracula {
-  --swatch-bg: #f5f1de;
-  --swatch-accent: #644ac9;
-}
-.theme-dark .goodobsidian-look-swatch.is-dracula {
-  --swatch-bg: #282a36;
-  --swatch-accent: #bd93f9;
-}
-.goodobsidian-look-swatch.is-rose-pine {
-  --swatch-bg: #faf4ed;
-  --swatch-accent: #907aa9;
-}
-.theme-dark .goodobsidian-look-swatch.is-rose-pine {
-  --swatch-bg: #1f1d2e;
-  --swatch-accent: #c4a7e7;
-}
-.goodobsidian-look-swatch.is-gruvbox {
-  --swatch-bg: #f2e5bc;
-  --swatch-accent: #af3a03;
-}
-.theme-dark .goodobsidian-look-swatch.is-gruvbox {
-  --swatch-bg: #282828;
-  --swatch-accent: #fe8019;
-}
-.goodobsidian-look-swatch.is-solarized {
-  --swatch-bg: #f5efdc;
-  --swatch-accent: #268bd2;
-}
-.theme-dark .goodobsidian-look-swatch.is-solarized {
-  --swatch-bg: #002b36;
-  --swatch-accent: #2aa1f0;
-}
-.goodobsidian-look-swatch.is-tokyo-night {
-  --swatch-bg: #e1e2e7;
-  --swatch-accent: #2e7de9;
-}
-.theme-dark .goodobsidian-look-swatch.is-tokyo-night {
-  --swatch-bg: #1a1b26;
-  --swatch-accent: #7aa2f7;
-}
-.goodobsidian-look-swatch.is-everforest {
-  --swatch-bg: #f4f0d9;
-  --swatch-accent: #6a7d00;
-}
-.theme-dark .goodobsidian-look-swatch.is-everforest {
-  --swatch-bg: #2d353b;
-  --swatch-accent: #a7c080;
-}
-.goodobsidian-look-swatch.is-high-contrast {
-  --swatch-bg: #ffffff;
-  --swatch-accent: #0040c0;
-}
-.theme-dark .goodobsidian-look-swatch.is-high-contrast {
-  --swatch-bg: #000000;
-  --swatch-accent: #ffd400;
-}
+.goodobsidian-look-preview.is-style-glass,
 body.finenotes-style-glass,
 body.finenotes-style-glass .theme-light,
 body.finenotes-style-glass .theme-dark,
@@ -18566,6 +18380,7 @@ body.finenotes-style-glass
   --gob-active-fg: var(--text-on-accent);
   --gob-blur: blur(22px) saturate(1.8);
 }
+.goodobsidian-look-preview.is-style-material,
 body.finenotes-style-material,
 body.finenotes-style-material .theme-light,
 body.finenotes-style-material .theme-dark,
@@ -18596,6 +18411,7 @@ body.finenotes-style-material
   --gob-icon-size: 24px;
   --gob-icon-stroke: 2px;
 }
+.goodobsidian-look-preview.is-style-fluent,
 body.finenotes-style-fluent,
 body.finenotes-style-fluent .theme-light,
 body.finenotes-style-fluent .theme-dark,
@@ -18624,6 +18440,7 @@ body.finenotes-style-fluent
   --gob-icon-size: 20px;
   --gob-icon-stroke: 1.4px;
 }
+.goodobsidian-look-preview.is-style-paper,
 body.finenotes-style-paper,
 body.finenotes-style-paper .theme-light,
 body.finenotes-style-paper .theme-dark,
@@ -18653,6 +18470,7 @@ body.finenotes-style-paper
   --gob-active-fg: var(--text-normal);
   --gob-icon-stroke: 1.25px;
 }
+.goodobsidian-look-preview.is-style-brutalist,
 body.finenotes-style-brutalist,
 body.finenotes-style-brutalist .theme-light,
 body.finenotes-style-brutalist .theme-dark,
@@ -18686,6 +18504,7 @@ body.finenotes-style-brutalist
   --gob-active-fg: var(--text-on-accent);
   --gob-icon-stroke: 2.2px;
 }
+.goodobsidian-look-preview.is-style-soft,
 body.finenotes-style-soft,
 body.finenotes-style-soft .theme-light,
 body.finenotes-style-soft .theme-dark,
@@ -18715,6 +18534,7 @@ body.finenotes-style-soft
   --gob-active-fg: var(--interactive-accent);
   --gob-icon-stroke: 1.5px;
 }
+.goodobsidian-look-preview.is-style-retro,
 body.finenotes-style-retro,
 body.finenotes-style-retro .theme-light,
 body.finenotes-style-retro .theme-dark,
@@ -18748,6 +18568,7 @@ body.finenotes-style-retro
   --gob-active-fg: var(--background-primary);
   --gob-icon-stroke: 2px;
 }
+.goodobsidian-look-preview.is-style-compact,
 body.finenotes-style-compact,
 body.finenotes-style-compact .theme-light,
 body.finenotes-style-compact .theme-dark,
@@ -18784,6 +18605,7 @@ body.finenotes-style-glass
   -webkit-backdrop-filter: var(--gob-blur);
   backdrop-filter: var(--gob-blur);
 }
+body.theme-dark .goodobsidian-look-preview.is-style-glass,
 body.finenotes-style-glass.theme-dark {
   --gob-shadow-float: 0 10px 34px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
@@ -18828,6 +18650,7 @@ body.finenotes-style-brutalist .modal[class*="goodobsidian-"] {
 }
 
 /* Soft: one surface, lit from the top left. */
+body.theme-dark .goodobsidian-look-preview.is-style-soft,
 body.finenotes-style-soft.theme-dark {
   --gob-shadow-float: 6px 6px 16px rgba(0, 0, 0, 0.5), -4px -4px 12px rgba(255, 255, 255, 0.05);
 }
@@ -18872,4 +18695,91 @@ body.finenotes-style-retro
     .goodobsidian-addpage
   ) {
   font-family: var(--font-monospace);
+}
+
+/* Customize toolbar's look chips (toolbar-edit.ts, lookPreview): a small
+   bar of two tools, the pen pressed. The token blocks above name
+   `.goodobsidian-look-preview` with its style and colours, so it is drawn
+   by the same values as the real bar; what a style draws outside its tokens
+   is repeated here. */
+.goodobsidian-look-preview {
+  display: block;
+  color: var(--text-normal);
+}
+
+.goodobsidian-look-bar {
+  display: flex;
+  align-items: center;
+  gap: max(var(--gob-gap), 2px);
+  padding: 3px;
+  border: var(--gob-bar-border);
+  border-radius: calc(var(--gob-radius-m) * 0.6);
+  background: var(--gob-bar-bg);
+}
+
+.goodobsidian-look-tool {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--gob-touch) * 0.5);
+  height: calc(var(--gob-touch) * 0.5);
+  border-radius: min(var(--gob-tool-radius), 14px);
+  color: var(--gob-icon);
+  --icon-size: 15px;
+}
+
+.goodobsidian-look-tool svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-look-tool.is-active {
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
+}
+
+.goodobsidian-look-preview:is(.is-style-fluent, .is-style-paper)
+  .goodobsidian-look-tool.is-active::after {
+  content: "";
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  bottom: 1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+}
+.goodobsidian-look-preview.is-style-paper .goodobsidian-look-tool.is-active::after {
+  background: var(--text-normal);
+}
+.goodobsidian-look-preview.is-style-paper .goodobsidian-look-tool:not(.is-active) {
+  color: var(--text-muted);
+}
+.goodobsidian-look-preview.is-style-brutalist .goodobsidian-look-tool.is-active {
+  outline: 2px solid var(--text-normal);
+  outline-offset: -2px;
+}
+.goodobsidian-look-preview.is-style-soft .goodobsidian-look-tool.is-active {
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.16),
+    inset -2px -2px 4px rgba(255, 255, 255, 0.5);
+}
+body.theme-dark .goodobsidian-look-preview.is-style-soft .goodobsidian-look-tool.is-active {
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.5),
+    inset -1px -1px 3px rgba(255, 255, 255, 0.06);
+}
+.goodobsidian-look-preview.is-style-retro .goodobsidian-look-bar {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--background-primary) 0 2px,
+    color-mix(in srgb, var(--text-normal) 14%, var(--background-primary)) 2px 3px
+  );
+}
+.goodobsidian-look-preview.is-style-retro .goodobsidian-look-tool {
+  background-color: var(--background-primary);
+}
+.goodobsidian-look-preview.is-style-retro .goodobsidian-look-tool.is-active {
+  background-color: var(--text-normal);
 }
