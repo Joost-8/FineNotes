@@ -17301,3 +17301,58 @@ select.goodobsidian-choice-select {
   max-width: 60%;
   text-overflow: ellipsis;
 }
+
+/* Longer languages (the layout audit, scripts/ui-gallery/audit-overflow.mjs):
+   a name wraps rather than end in "…" or run out of its box. Obsidian keeps
+   every button's text on one line, so each row says so itself. */
+.goodobsidian-more-label {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.goodobsidian-player-hint {
+  white-space: normal;
+}
+
+.goodobsidian-popover button.goodobsidian-erasermode-row,
+.goodobsidian-popover button.goodobsidian-pen-row {
+  white-space: normal;
+  text-align: start;
+}
+
+.goodobsidian-saved-pen-label {
+  min-width: 0;
+  white-space: normal;
+}
+
+.goodobsidian-newnb-under-title button.goodobsidian-newnb-import.clickable-icon {
+  max-width: 50%;
+  white-space: normal;
+  text-align: start;
+}
+
+.goodobsidian-popover button.goodobsidian-popover-link {
+  white-space: normal;
+  text-align: start;
+}
+
+.goodobsidian-popover-link-name {
+  min-width: 0;
+}
+
+/* A segment's name wraps inside its segment ("Last page" runs long in most
+   languages); the segment grows to two lines rather than spill into its
+   neighbour. Icon segments keep their size. */
+.goodobsidian-segmented:not(.is-icons) button {
+  height: auto;
+  min-height: 38px;
+  padding: 4px 10px;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* A switch row whose name runs to two lines keeps room above and below it. */
+.goodobsidian-popover button.goodobsidian-switch-row {
+  padding-block: 6px;
+}

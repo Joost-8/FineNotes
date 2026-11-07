@@ -238,15 +238,17 @@ export class AiMenuPopover {
     }
     const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
     // Below the button, always: it never covers the bar it hangs from. A
-    // window too short for the whole menu scrolls it instead.
+    // window too short for the whole menu scrolls it instead. The cap is set
+    // whatever the height now: rows filled in or wrapped after this (a longer
+    // language) would otherwise grow the menu past the window's bottom.
     const top = r.bottom + 6;
     const room = Math.max(160, window.innerHeight - top - 8);
     this.el.setCssStyles({
       left: `${left}px`,
       top: `${top}px`,
       width: `${width}px`,
-      maxHeight: height > room ? `${room}px` : "",
-      overflowY: height > room ? "auto" : "",
+      maxHeight: `${room}px`,
+      overflowY: "auto",
     });
   }
 
