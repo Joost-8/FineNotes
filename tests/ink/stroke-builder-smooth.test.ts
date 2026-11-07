@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import { CENTRED_HALF, type Smoothing, StrokeBuilder } from "../../src/ink/stroke-builder";
+import deviceRounded from "./fixtures/real-pencil-device-px-ipad.json";
 
 type Sample = { x: number; y: number; pressure: number };
 
@@ -177,5 +178,40 @@ describe("StrokeBuilder smoothing", () => {
     expect(b.add({ x: 2, y: 0, pressure: 0.3 })).toBe(true);
     expect(b.addFinal({ x: 2.5, y: 0, pressure: 0.3 })).toBe(true);
     expect(b.length).toBe(3);
+  });
+
+  it("centred steadies real Pencil ink rounded to device px (FineNotes#179)", () => {
+    // How jagged a stroke is: the mean change of turn from one point to the
+    // next, degrees. A letter turns; rounding makes it turn to and fro.
+    const jagged = (pts: number[][]): number => {
+      const turns: number[] = [];
+      for (let i = 2; i < pts.length; i++) {
+        const a = Math.atan2(pts[i - 1][1] - pts[i - 2][1], pts[i - 1][0] - pts[i - 2][0]);
+        const b = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]);
+        let d = b - a;
+        while (d > Math.PI) d -= 2 * Math.PI;
+        while (d < -Math.PI) d += 2 * Math.PI;
+        turns.push(d);
+      }
+      let sum = 0;
+      for (let i = 1; i < turns.length; i++) sum += Math.abs(turns[i] - turns[i - 1]);
+      return turns.length > 1 ? (sum / (turns.length - 1)) * (180 / Math.PI) : 0;
+    };
+    const score = (smoothing: Smoothing): number => {
+      let total = 0;
+      for (const xy of deviceRounded.strokes) {
+        const samples: Sample[] = [];
+        for (let i = 0; i + 1 < xy.length; i += 2) {
+          samples.push({ x: xy[i], y: xy[i + 1], pressure: 0.5 });
+        }
+        total += jagged(build(samples, { smoothing, minDistance: 0.01 }));
+      }
+      return total / deviceRounded.strokes.length;
+    };
+    const off = score("off");
+    const centred = score("centred");
+    // Measured: 30.9° off, 13.5° centred.
+    expect(off).toBeGreaterThan(25);
+    expect(centred).toBeLessThan(off * 0.55);
   });
 });

@@ -28,7 +28,8 @@ export interface InputSample {
 /**
  * How the pen's positions are smoothed before they are kept: `"off"` keeps
  * them as they are; `"centred"`, for a pen whose positions arrive rounded to
- * whole screen px, places each one from the samples on both sides of it
+ * whole screen px or whole device px (FineNotes#179), places each one from
+ * the samples on both sides of it
  * ({@link CENTRED_HALF}).
  */
 export type Smoothing = "off" | "centred";

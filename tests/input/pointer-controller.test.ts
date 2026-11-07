@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { altitudeOf } from "../../src/ink/tilt";
 import {
+  isOnDevicePixel,
   isWholePixel,
   PointerController,
   type PointerControllerCallbacks,
@@ -140,7 +141,8 @@ class Rig {
   /** Fingers draw (the Pencil is away); a pen event turns it off, as the plugin does. */
   readonly fingerDraw = { on: false };
 
-  constructor(only?: "required") {
+  /** `pixelRatio`: the screen's, handed to the controller; absent, it reads the element's window. */
+  constructor(only?: "required", pixelRatio?: number) {
     const log = this.log;
     const required: PointerControllerCallbacks = {
       onStart: (s) => {
@@ -187,6 +189,7 @@ class Rig {
         route: () => "draw",
         onlyStylus: () => this.onlyStylus.on,
         fingerDraws: () => this.fingerDraw.on,
+        ...(pixelRatio === undefined ? {} : { pixelRatio: () => pixelRatio }),
       },
     );
     this.controller.attach();
@@ -367,6 +370,68 @@ describe("a drawing pointer", () => {
       expect(rig.records.map((r) => r.wholePixel)).toEqual([false]);
       expect(isWholePixel({ clientX: 3, clientY: -4 })).toBe(true);
       expect(isWholePixel({ clientX: 3, clientY: 4.01 })).toBe(false);
+    });
+  });
+
+  describe("a pen whose positions arrive rounded to device px (FineNotes#179, iPadOS 27)", () => {
+    it("is rounded while every position is a whole device px at the screen's ratio", () => {
+      const rig = new Rig(undefined, 2);
+      rig.pen("pointerdown", 1, { x: 10.5, y: 20 });
+      expect(rig.controller.strokeRounded).toBe(true);
+      rig.pen("pointermove", 1, {
+        x: 12,
+        y: 21.5,
+        coalesced: [
+          { x: 11.5, y: 20.5 },
+          { x: 12, y: 21.5 },
+        ],
+      });
+      rig.pen("pointerup", 1, { x: 12, y: 21.5 });
+      rig.pen("pointerdown", 2, { x: 40.5, y: 50.5 });
+      expect(rig.controller.strokeRounded).toBe(true);
+    });
+
+    it("is precise once a position lies between device px, and stays so", () => {
+      const rig = new Rig(undefined, 2);
+      rig.pen("pointerdown", 1, { x: 10.5, y: 20 });
+      rig.pen("pointermove", 1, { x: 11.25, y: 20.5 });
+      rig.pen("pointerup", 1, { x: 11.5, y: 21 });
+      rig.pen("pointerdown", 2, { x: 40.5, y: 50.5 });
+      expect(rig.controller.strokeRounded).toBe(false);
+    });
+
+    it("treats half px as a fraction at a ratio of 1, as before", () => {
+      const rig = new Rig(undefined, 1);
+      rig.pen("pointerdown", 1, { x: 10.5, y: 20 });
+      expect(rig.controller.strokeRounded).toBe(false);
+    });
+
+    it("keeps whole px rounded at a ratio whose device grid misses them (old iPads, zoomed)", () => {
+      const rig = new Rig(undefined, 2.2);
+      rig.pen("pointerdown", 1, { x: 11, y: 21 });
+      rig.pen("pointerup", 1, { x: 12, y: 23 });
+      rig.pen("pointerdown", 2, { x: 13, y: 27 });
+      expect(rig.controller.strokeRounded).toBe(true);
+    });
+
+    it("reads the ratio from the element's window when none is given", () => {
+      const rig = new Rig();
+      Object.assign(rig.el, { ownerDocument: { defaultView: { devicePixelRatio: 3 } } });
+      rig.pen("pointerdown", 1, { x: 10 + 1 / 3, y: 20 + 2 / 3 });
+      expect(rig.controller.strokeRounded).toBe(true);
+      // Half a px is between device px at a ratio of 3.
+      rig.pen("pointermove", 1, { x: 10.5, y: 21 });
+      rig.pen("pointerup", 1, { x: 10.5, y: 21 });
+      rig.pen("pointerdown", 2, { x: 11, y: 21 });
+      expect(rig.controller.strokeRounded).toBe(false);
+    });
+
+    it("tells device px from fractions between them, allowing float error", () => {
+      expect(isOnDevicePixel({ clientX: 455.5, clientY: 911 }, 2)).toBe(true);
+      expect(isOnDevicePixel({ clientX: 455.913, clientY: 911.1 }, 2)).toBe(false);
+      expect(isOnDevicePixel({ clientX: 455.5, clientY: 911.25 }, 2)).toBe(false);
+      expect(isOnDevicePixel({ clientX: 3.5, clientY: 4.0000004 }, 2)).toBe(true);
+      expect(isOnDevicePixel({ clientX: 3.5, clientY: 4 }, Number.NaN)).toBe(false);
     });
   });
 
