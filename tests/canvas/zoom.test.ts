@@ -1,12 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { PAGE_MARGIN_Y } from "../../src/canvas/page-layout";
+import {
+  PAGE_MARGIN_Y,
+  layoutPages,
+  rowRestRangeY,
+  rowScrollYForPage,
+} from "../../src/canvas/page-layout";
 import {
   MAX_SCALE,
   MIN_SCALE,
   OVERVIEW_PINCH_ZOOM,
   anchorScrollDelta,
   doubleTapZoom,
+  doubleTapFill,
+  pageContainZoom,
   pageFillZoom,
+  rowPageFloor,
+  ROW_FIT_MARGIN_RATIO,
   pageWidthZoom,
   zoomAnchorFor,
   pinchOpensOverview,
@@ -223,5 +232,99 @@ describe("zoomKeepingScale", () => {
     expect(zoomKeepingScale(0.1, 0.5, 1)).toBe(1);
     expect(zoomKeepingScale(0, 0.5, 1)).toBe(1);
     expect(zoomKeepingScale(0.7, Number.NaN, 1.2)).toBe(1.2);
+  });
+});
+
+describe("slides in a row fit the screen (discussion #43)", () => {
+  // His iPad in landscape: a pane 1112 x 664 CSS px; A4-shaped slides
+  // 1123 x 794 next to one portrait page 794 x 1123, side margin 9 %.
+  const pane = { w: 1112, h: 664 };
+  const slide = { w: 1123, h: 794 };
+  const side = slide.w * 0.09;
+  const base = pane.w / (slide.w + 2 * side);
+
+  it("fits the slide being read, not the tallest page", () => {
+    const old = fitPageZoom(1123, base, pane.h);
+    const floor = rowPageFloor(slide.w, slide.h, side, base, pane.w, pane.h);
+    // The old floor showed the slide 68 % of the pane's height (his screenshot).
+    expect((slide.h * base * old) / pane.h).toBeCloseTo(0.68, 1);
+    expect((slide.h * base * floor) / pane.h).toBeGreaterThan(0.9);
+    expect(slide.w * base * floor).toBeLessThanOrEqual(pane.w + 1e-6);
+  });
+
+  it("a portrait page in the row fits by its height", () => {
+    const floor = rowPageFloor(794, 1123, side, base, pane.w, pane.h);
+    expect((1123 + 2 * PAGE_MARGIN_Y) * base * floor).toBeCloseTo(pane.h, 6);
+  });
+
+  it("never magnifies past 1:1, and degrades on nonsense", () => {
+    expect(rowPageFloor(400, 300, 24, 1, 3000, 2000)).toBe(1);
+    expect(rowPageFloor(0, 300, 24, 1, 3000, 2000)).toBe(1);
+    expect(rowPageFloor(400, 300, 24, 1, NaN, 2000)).toBe(1);
+  });
+
+  it("a double tap on a slide shows it whole, as large as fits", () => {
+    const zoom = doubleTapFill(slide.w, slide.h, base, pane.w, pane.h, true);
+    const shown = { w: slide.w * base * zoom, h: slide.h * base * zoom };
+    expect(Math.max(shown.w / pane.w, shown.h / pane.h)).toBeCloseTo(1, 6);
+    expect(shown.w).toBeLessThanOrEqual(pane.w + 1e-6);
+    expect(shown.h).toBeLessThanOrEqual(pane.h + 1e-6);
+    expect(zoom).toBe(pageContainZoom(slide.w, slide.h, base, pane.w, pane.h));
+    expect(doubleTapFill(slide.w, slide.h, base, pane.w, pane.h, false)).toBe(zoom);
+  });
+
+  it("a double tap on a tall page still fills the width (column) or covers (row)", () => {
+    expect(doubleTapFill(794, 1123, base, pane.w, pane.h, false)).toBe(
+      pageWidthZoom(794, base, pane.w),
+    );
+    expect(doubleTapFill(794, 1123, base, pane.w, pane.h, true)).toBe(
+      pageFillZoom(794, 1123, base, pane.w, pane.h),
+    );
+  });
+});
+
+describe("a row rests centred on each page (discussion #43)", () => {
+  const page = (id: string, width: number, height: number) =>
+    ({ id, geometry: { width, height } }) as unknown as Parameters<typeof layoutPages>[0][number];
+  const layout = layoutPages([page("a", 794, 1123), page("b", 1123, 794), page("c", 1123, 794)], {
+    direction: "horizontal",
+  });
+
+  it("centres a slide that the floor fits, though the row is centred on a taller page", () => {
+    const scale = 0.79;
+    const y = rowScrollYForPage(layout, 1, scale, 664);
+    const box = layout.boxes[1];
+    expect((box.y + box.height / 2) * scale - y).toBeCloseTo(332, 6);
+  });
+
+  it("shows the top of a page much taller than the pane", () => {
+    const y = rowScrollYForPage(layout, 0, 0.79, 664);
+    expect(y).toBe(0);
+  });
+
+  it("the rest range spans the pages' rests, one value when they share a height", () => {
+    const range = rowRestRangeY(layout, 0.79, 664);
+    expect(range.min).toBe(rowScrollYForPage(layout, 0, 0.79, 664));
+    expect(range.max).toBe(rowScrollYForPage(layout, 1, 0.79, 664));
+    const same = layoutPages([page("b", 1123, 794), page("c", 1123, 794)], {
+      direction: "horizontal",
+    });
+    const one = rowRestRangeY(same, 0.5, 664);
+    expect(one.min).toBe(one.max);
+  });
+});
+
+describe("a 16:9 slide in a row gets Goodnotes' margin (discussion #43)", () => {
+  // A landscape iPad pane 1180 x 712 CSS px; a 16:9 slide 1411 x 794 is wider
+  // than the pane, so its side margin, not its height, sets its size.
+  const pane = { w: 1180, h: 712 };
+  const slide = { w: 1411, h: 794 };
+  const base = pane.w / (slide.w * 1.18);
+  const widthShown = (side: number) =>
+    (slide.w * base * rowPageFloor(slide.w, slide.h, side, base, pane.w, pane.h)) / pane.w;
+
+  it("fills about 94 % of the width with 3 % beside it, against 85 % with 9 %", () => {
+    expect(widthShown(slide.w * 0.09)).toBeCloseTo(0.847, 2);
+    expect(widthShown(slide.w * ROW_FIT_MARGIN_RATIO)).toBeCloseTo(0.943, 2);
   });
 });

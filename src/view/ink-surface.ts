@@ -216,6 +216,8 @@ import {
   rowPageScrollRange,
   rowScrollInsets,
   rowScrollXForPage,
+  rowScrollYForPage,
+  rowRestRangeY,
   rowSlotGap,
   rowGapAtZoom,
   ROW_PULL_ADD_PX,
@@ -314,8 +316,9 @@ import {
   nextZoomFloor,
   wheelZoomFactor,
   doubleTapZoom,
-  pageFillZoom,
-  pageWidthZoom,
+  doubleTapFill,
+  rowPageFloor,
+  ROW_FIT_MARGIN_RATIO,
   zoomAnchorFor,
   zoomKeepingScale,
 } from "../canvas/zoom";
@@ -3821,7 +3824,8 @@ export class InkSurface {
       return;
     }
     // After the layout, which would otherwise keep the current page of a row centred.
-    this.scroller.setPosition(this.direction === "horizontal" ? this.rowX(0) : 0, 0);
+    if (this.direction === "horizontal") this.scroller.setPosition(this.rowX(0), this.rowY(0));
+    else this.scroller.setPosition(0, 0);
     this.syncViewport();
     this.requestFrame();
     this.reportStatus();
@@ -3927,7 +3931,7 @@ export class InkSurface {
       return;
     }
     const x = row ? this.rowX(clamped) : this.scroller.position.x;
-    const y = row ? 0 : scrollTopForPage(this.pageLayout, clamped) * this.scale;
+    const y = row ? this.rowY(clamped) : scrollTopForPage(this.pageLayout, clamped) * this.scale;
     if (animate) this.scroller.glideTo(x, y, now());
     else this.scroller.setPosition(x, y);
     this.syncViewport();
@@ -3980,6 +3984,16 @@ export class InkSurface {
   /** The scroll x that centres page `index` of a row in the pane. */
   private rowX(index: number): number {
     return rowScrollXForPage(this.pageLayout, index, this.scale, this.cssW);
+  }
+
+  /**
+   * The scroll y that centres page `index` of a row in the pane, or shows
+   * its top when it is taller than the pane. A row's pages are centred on
+   * its tallest, which the floor no longer fits (`rowPageFloor`): a slide
+   * beside a portrait page sits below the row's middle (discussion #43).
+   */
+  private rowY(index: number): number {
+    return rowScrollYForPage(this.pageLayout, index, this.scale, this.cssH);
   }
 
   /** Let (or stop) a pinch well past the fit open the page overview. The host knows single pages. */
@@ -4830,7 +4844,7 @@ export class InkSurface {
       this.goToPage(reading);
     } else if (direction === "horizontal" && this.atZoomFloor && this.isScrollIdle) {
       // A pane that changed shape (rotation, split view) keeps the page centred.
-      this.scroller.setPosition(this.rowX(this.pageIndex), 0);
+      this.scroller.setPosition(this.rowX(this.pageIndex), this.rowY(this.pageIndex));
     }
     this.layoutTail(cssW, cssH);
   }
@@ -5079,12 +5093,10 @@ export class InkSurface {
    * `hold`: the pane changed for the docked options row, which leaves both.
    */
   private updateZoomFloor(cssH: number, hold = false): void {
-    let tallest = 0;
-    for (const box of this.pageLayout.boxes) tallest = Math.max(tallest, box.height);
     const step = nextZoomFloor({
       zoom: this.userZoom,
       floor: this.minZoom,
-      newFloor: fitPageZoom(tallest, this.baseScale, cssH),
+      newFloor: this.floorForPane(cssH),
       initialised: this.zoomInitialised,
       // A pane made short by the keyboard must not re-fit the page into it.
       keyboard: hold || document.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
@@ -5096,6 +5108,40 @@ export class InkSurface {
       this.zoomAnim = null;
       this.userZoom = step.zoom;
     }
+  }
+
+  /**
+   * The zoom floor for a pane `cssH` px tall. A column fits its tallest page,
+   * so the floor holds while scrolling. A row of separate pages fits the page
+   * being read (`rowPageFloor`), so a slide fills the screen however tall the
+   * other pages are; turning to a page of another shape re-fits it on rest
+   * (`refitRowPage`). Joined pages are one sheet and keep the tallest.
+   */
+  private floorForPane(cssH: number): number {
+    const layout = this.pageLayout;
+    let tallest = 0;
+    let widest = 0;
+    for (const box of layout.boxes) {
+      tallest = Math.max(tallest, box.height);
+      widest = Math.max(widest, box.width);
+    }
+    const reading = layout.boxes[this.heldPage ?? this.pageIndex] ?? null;
+    if (layout.direction !== "horizontal" || layout.joined || !reading) {
+      return fitPageZoom(tallest, this.baseScale, cssH);
+    }
+    const side = reading.width * ROW_FIT_MARGIN_RATIO;
+    return rowPageFloor(reading.width, reading.height, side, this.baseScale, this.cssW, cssH);
+  }
+
+  /**
+   * A row at its floor came to rest on a page of another shape than the one
+   * the floor was fitted to: lay out again, so that page fits the screen too.
+   */
+  private refitRowPage(): void {
+    if (this.direction !== "horizontal" || this.board || this.joined) return;
+    if (!this.atZoomFloor || !this.isScrollIdle || this.pinch || this.zoomAnim) return;
+    const floor = this.floorForPane(this.cssH);
+    if (Math.abs(floor / this.minZoom - 1) > 0.005) this.scheduleRelayout();
   }
 
   /** The next layout keeps a zoomed-in page the size it is, whatever the pane's new width. */
@@ -5173,6 +5219,13 @@ export class InkSurface {
       rangeX,
       // Held centred, a diagonal drag scrolls only down (Goodnotes).
       diagonalsScrollY: !row,
+      // Turning pages, the view rests centred on each page (`rowY`), never
+      // scrolled up or down: the row's whole range is the pages' centres.
+      rangeY:
+        row && this.turnsPages && !this.joined
+          ? rowRestRangeY(this.pageLayout, scale, this.cssH)
+          : undefined,
+      holdX: !row && this.holdFitWidth(),
       // While a box is typed in, room to lift it above the keyboard: a page
       // that fits the screen (a cover, a single page) has none of its own.
       trailY: this.typingField() ? keyboardHeight() : 0,
@@ -5185,6 +5238,15 @@ export class InkSurface {
    * stopping at the page's edges.
    */
   private freePageEdges = false;
+
+  /** The setting "Lock fit to width", read at each layout (`ScrollExtent.holdX`). */
+  holdFitWidth: () => boolean = () => false;
+
+  /** A setting the scroll extent reads changed ("Lock fit to width"): apply it now. */
+  refreshScrollExtent(): void {
+    this.ensurePaperSize();
+    this.requestFrame();
+  }
 
   setFreePageEdges(on: boolean): void {
     if (this.freePageEdges === on) return;
@@ -5421,6 +5483,7 @@ export class InkSurface {
       return;
     }
     this.settleIfIdle();
+    this.refitRowPage();
     this.schedulePrefetch();
     // The action bar flips above or below the selection by what is on
     // screen, which a scroll changes; re-place it once the page comes to rest.
@@ -5806,7 +5869,7 @@ export class InkSurface {
     const page = this.pageIndex;
     const { x, y } = this.scroller.position;
     this.scroller.stop();
-    this.rowSettle = { page, dx: x - this.rowX(page), dy: y, t0: now() };
+    this.rowSettle = { page, dx: x - this.rowX(page), dy: y - this.rowY(page), t0: now() };
     this.requestFrame();
   }
 
@@ -5821,7 +5884,10 @@ export class InkSurface {
     const progress = (t - settle.t0) / ZOOM_SPRING_MS;
     const left = progress >= 1 ? 0 : 1 - easeOutCubic(progress);
     // Centred at the scale of this frame: the zoom may still be springing.
-    this.scroller.setPosition(this.rowX(settle.page) + settle.dx * left, settle.dy * left);
+    this.scroller.setPosition(
+      this.rowX(settle.page) + settle.dx * left,
+      this.rowY(settle.page) + settle.dy * left,
+    );
     if (progress < 1) return true;
     this.rowSettle = null;
     return false;
@@ -5849,7 +5915,9 @@ export class InkSurface {
     this.snapRowAfterZoom = false;
     this.scroller.cancel();
     this.applyZoom(this.minZoom, this.cssW / 2, this.cssH / 2);
-    if (this.direction === "horizontal") this.scroller.setPosition(this.rowX(this.pageIndex), 0);
+    if (this.direction === "horizontal") {
+      this.scroller.setPosition(this.rowX(this.pageIndex), this.rowY(this.pageIndex));
+    }
     this.syncViewport();
     this.zoomReadoutEl.addClass("is-idle");
     this.callbacks.onPinchOverview?.(snapshot);
@@ -5869,7 +5937,7 @@ export class InkSurface {
       this.scale,
       this.cssW,
     );
-    this.scroller.snapTo(this.rowX(index), 0, now());
+    this.scroller.snapTo(this.rowX(index), this.rowY(index), now());
     this.requestFrame();
   }
 
@@ -17866,11 +17934,9 @@ export class InkSurface {
       boxAtPoint(this.pageLayout, at.x, at.y) ?? this.pageLayout.boxes[this.pageIndex] ?? null;
     if (!box) return;
     const row = this.direction === "horizontal";
-    // Pages down: the page exactly as wide as the pane, whatever its shape
-    // (discussion #43); a row's page covers the pane.
-    const fill = row
-      ? pageFillZoom(box.width, box.height, this.baseScale, this.cssW, this.cssH)
-      : pageWidthZoom(box.width, this.baseScale, this.cssW);
+    // A slide as large as fits whole; a tall page as wide as the pane (pages
+    // down) or covering it (a row) (discussion #43).
+    const fill = doubleTapFill(box.width, box.height, this.baseScale, this.cssW, this.cssH, row);
     const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom, fill));
     if (Math.abs(target - this.userZoom) < 1e-3) return;
     const rect = this.surfaceEl.getBoundingClientRect();
@@ -17915,11 +17981,15 @@ export class InkSurface {
         y: this.cssH / 2 - (box.y + box.height / 2) * scale,
       };
     }
+    // A side of the page that fits the pane is centred on it (a slide filled
+    // whole); a side larger keeps the tapped spot where it was, inside the page.
     const keep = (tap: number, local: number, start: number, size: number, pane: number) =>
-      Math.min(
-        -start * scale,
-        Math.max(pane - (start + size) * scale, tap - (start + local) * scale),
-      );
+      size * scale <= pane + 0.5
+        ? pane / 2 - (start + size / 2) * scale
+        : Math.min(
+            -start * scale,
+            Math.max(pane - (start + size) * scale, tap - (start + local) * scale),
+          );
     return {
       x: keep(settle.screen.x, settle.local.x, box.x, box.width, this.cssW),
       y: keep(settle.screen.y, settle.local.y, box.y, box.height, this.cssH),
