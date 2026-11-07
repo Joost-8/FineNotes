@@ -17356,3 +17356,11 @@ select.goodobsidian-choice-select {
 .goodobsidian-popover button.goodobsidian-switch-row {
   padding-block: 6px;
 }
+
+/* A card's name in the interface language (its `lang`) breaks at a hyphen,
+   not after whichever letter runs out of room: "kleur-overgang". Without the
+   language's dictionary, overflow-wrap still breaks it as before. */
+.goodobsidian-template-name[lang] {
+  -webkit-hyphens: auto;
+  hyphens: auto;
+}
