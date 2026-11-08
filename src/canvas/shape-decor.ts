@@ -110,9 +110,23 @@ function arcOp(prev: Pt, at: Pt, next: Pt, radius: number): OutlineOp {
 
 /** Longest arrowhead side, page px: kept inside the ink padding tiles redraw by. */
 export const HEAD_MAX = 30;
-const HEAD_MIN = 10;
-const HEAD_FRACTION = 0.18;
-const HEAD_ANGLE = (30 * Math.PI) / 180;
+/**
+ * Shortest arrowhead side, page px. Goodnotes has none (a hairline arrow
+ * gets a hairline head); this keeps a thin pen's head readable.
+ */
+export const HEAD_MIN = 6;
+/**
+ * Goodnotes' heads (research/goodnotes-shapes-2026-11-08.md), measured at
+ * two widths: sized by the line's width alone, never by its length. An
+ * open V's barbs are 5 widths long at 40° to the line; a filled head is 5
+ * widths long and 6 across (its sides about 31° to the line).
+ */
+const OPEN_BARB = 5;
+const OPEN_ANGLE = (40 * Math.PI) / 180;
+const FILLED_LENGTH = 5;
+const FILLED_ANGLE = Math.atan2(3, FILLED_LENGTH);
+/** A short line is never all head: a head takes no more than this share of it. */
+const HEAD_SHARE = 0.45;
 
 /** An arrowhead on the end at `tip` of a line coming from `from`. */
 export interface HeadGeometry {
@@ -128,9 +142,10 @@ export interface HeadGeometry {
 }
 
 /**
- * The head a line of `width` (page px) and `span` long gets at `tip`: its
- * sides grow with the line and the pen, between {@link HEAD_MIN} and
- * {@link HEAD_MAX}, and never past 45 % of the line.
+ * The head a line of `width` (page px) and `span` long gets at `tip`, in
+ * Goodnotes' proportions: sized by the width alone (see {@link OPEN_BARB}),
+ * its sides between {@link HEAD_MIN} and {@link HEAD_MAX}, and reaching no
+ * more than 45 % of the way along a short line.
  */
 export function arrowHead(
   from: Pt,
@@ -143,15 +158,19 @@ export function arrowHead(
   const dy = from.y - tip.y;
   const len = Math.hypot(dx, dy);
   if (!(len > 0) || !(span > 0)) return null;
+  const angle = head === "open" ? OPEN_ANGLE : FILLED_ANGLE;
+  const w = Number.isFinite(width) && width > 0 ? width : 0;
+  const wanted = head === "open" ? OPEN_BARB * w : (FILLED_LENGTH * w) / Math.cos(FILLED_ANGLE);
+  // The longest side, then shortened until the head reaches no further along the line than its share.
   const side = Math.min(
-    span * 0.45,
-    Math.min(HEAD_MAX, Math.max(HEAD_MIN, HEAD_FRACTION * span, 3 * width)),
+    Math.min(HEAD_MAX, Math.max(HEAD_MIN, wanted)),
+    (span * HEAD_SHARE) / Math.cos(angle),
   );
   const ux = dx / len;
   const uy = dy / len;
   const barb = (sign: number): Pt => {
-    const c = Math.cos(sign * HEAD_ANGLE);
-    const s = Math.sin(sign * HEAD_ANGLE);
+    const c = Math.cos(sign * angle);
+    const s = Math.sin(sign * angle);
     return { x: tip.x + side * (ux * c - uy * s), y: tip.y + side * (ux * s + uy * c) };
   };
   const a = barb(1);

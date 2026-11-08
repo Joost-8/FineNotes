@@ -29,12 +29,14 @@ export const SHAPE_PRESETS: readonly BoxPreset[] = [
 ];
 
 /**
- * GoodNotes' two connector tools: dragged from start to end rather than
- * corner to corner, so the direction of the drag is kept.
+ * The connector tools: dragged from start to end rather than corner to
+ * corner, so the direction of the drag is kept. A straight line, the same
+ * with a head, and Goodnotes' elbow: two right-angled runs with a rounded
+ * corner (research/goodnotes-shapes-2026-11-08.md), placed as a `path`.
  */
-export type ConnectorPreset = "line" | "arrow";
+export type ConnectorPreset = "line" | "arrow" | "elbow";
 
-export const CONNECTOR_PRESETS: readonly ConnectorPreset[] = ["line", "arrow"];
+export const CONNECTOR_PRESETS: readonly ConnectorPreset[] = ["line", "arrow", "elbow"];
 
 /** Every preset the Shape tool places as one stroke. */
 export type ShapePreset = BoxPreset | ConnectorPreset;
@@ -56,6 +58,19 @@ export function isShapeMode(value: unknown): value is ShapeMode {
 
 export function isConnectorPreset(value: ShapeMode): value is ConnectorPreset {
   return CONNECTOR_PRESETS.includes(value as ConnectorPreset);
+}
+
+/** The kind of stroke a preset places: an elbow is a `path`, the rest are their own kind. */
+export function presetKind(preset: ShapePreset): ShapeKind {
+  return preset === "elbow" ? "path" : preset;
+}
+
+/** The corner radius an elbow is placed with, page px: Goodnotes rounds its bend. */
+export const ELBOW_RADIUS = 14;
+
+/** What a preset's stroke carries besides its points: an elbow's rounded bend. */
+export function presetDecor(preset: ShapePreset | "table"): { radius?: number } {
+  return preset === "elbow" ? { radius: ELBOW_RADIUS } : {};
 }
 
 /** Segments used for a full ellipse; enough to look round at any page zoom. */
@@ -464,8 +479,24 @@ function connectorGeometry(
       : Math.abs(to.x - from.x) >= Math.abs(to.y - from.y)
         ? { x: from.x + Math.sign(to.x - from.x) * span, y: from.y }
         : { x: from.x, y: from.y + Math.sign(to.y - from.y) * span };
+  if (preset === "elbow") {
+    // Level or upright, there is no bend to make: one straight run.
+    if (turn !== 0 || from.x === to.x || from.y === to.y) return flatten([from, end], pressure);
+    return flatten(elbowPoints(from, to), pressure);
+  }
   const points = preset === "line" ? [from, end] : arrowPoints(from, end);
   return flatten(points, pressure);
+}
+
+/**
+ * An elbow from `from` to `to`: its first run goes along the drag's longer
+ * axis, then it turns once towards `to`, as Goodnotes' elbow connector does
+ * (a drag 180 across and 100 down runs across, then down).
+ */
+export function elbowPoints(from: Pt, to: Pt): Pt[] {
+  const across = Math.abs(to.x - from.x) >= Math.abs(to.y - from.y);
+  const corner = across ? { x: to.x, y: from.y } : { x: from.x, y: to.y };
+  return [{ ...from }, corner, { ...to }];
 }
 
 /**
@@ -481,7 +512,7 @@ export function presetGeometry(
   pressure: number,
   levelRise = LINE_LEVEL_RISE,
 ): number[] {
-  if (preset === "line" || preset === "arrow") {
+  if (preset === "line" || preset === "arrow" || preset === "elbow") {
     return connectorGeometry(preset, from, to, pressure, levelRise);
   }
   const x0 = Math.min(from.x, to.x);

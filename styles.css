@@ -7804,6 +7804,38 @@ textarea.goodobsidian-chat-input:focus-visible {
   display: none;
 }
 
+/* Alignment guides while a selection moves (canvas/align-snap.ts), as
+   Goodnotes draws them: thin red lines, solid on an edge, dashed on a
+   centre, with a dot at the selection's centre. Drawn in page px on the
+   paper, so they scroll with it; gone on lift. */
+.goodobsidian-align-guides {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.goodobsidian-align-guides.is-hidden {
+  display: none;
+}
+
+.goodobsidian-align-guides line {
+  stroke: var(--color-red);
+  stroke-width: 1;
+}
+
+.goodobsidian-align-guides line.is-centre {
+  stroke-dasharray: 4 3;
+}
+
+.goodobsidian-align-guides circle {
+  fill: var(--color-red);
+}
+
 /* A lone shape's side dots (discussion #51): drag one out, or tap it, for
    a copy joined to the shape by an arrow, as in Goodnotes. Small accent
    dots just outside the frame, each in a 32 px target that hands its press

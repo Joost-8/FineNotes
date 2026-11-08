@@ -65,6 +65,7 @@ export default defineConfig({
         "src/canvas/math-layout.ts",
         "src/canvas/equation-paint.ts",
         "src/canvas/shape-decor.ts",
+        "src/canvas/align-snap.ts",
         "src/canvas/paper-style.ts",
         "src/canvas/margin-paper.ts",
         "src/canvas/paper-texture.ts",

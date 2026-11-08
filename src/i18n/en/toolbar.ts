@@ -159,6 +159,7 @@ export const toolbar = {
   "toolbar.shape.heart": "Heart",
   "toolbar.shape.line": "Line: drag from start to end",
   "toolbar.shape.arrow": "Arrow: drag from tail to tip",
+  "toolbar.shape.elbow": "Elbow arrow: drag from tail to tip",
   "toolbar.shape.table": "Table",
   "toolbar.barLabel": "Handwriting tools",
   "toolbar.optionsLabel": "Tool options",

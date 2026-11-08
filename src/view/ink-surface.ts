@@ -1,5 +1,11 @@
 import { bindScrollThumb } from "./scroll-thumb-drag";
 import { type PdfRenderArea, boundsMeet } from "../canvas/pdf-raster";
+import {
+  ALIGN_GUIDE_OVERSHOOT_PX,
+  ALIGN_SNAP_PX,
+  type AlignResult,
+  alignMove,
+} from "../canvas/align-snap";
 import { t, tn } from "../i18n/translate";
 /**
  * The notebook's drawing surface: the part of `InkView` the pen touches.
@@ -355,6 +361,8 @@ import {
   type BoxPreset,
   isClosedKind,
   isConnectorPreset,
+  presetDecor,
+  presetKind,
   presetGeometry,
   shapePivot,
   transformShape,
@@ -1628,6 +1636,12 @@ interface GroupDrag {
   screen?: Pt;
   /** The connectors joined to the selection's shapes, drawn on the wet layer while it moves. */
   connectors?: Set<string>;
+  /**
+   * What a move lines up with (`canvas/align-snap.ts`): the bounds of the
+   * page's shapes and objects outside the selection, found once when the
+   * move first needs them.
+   */
+  alignTargets?: Bounds[];
 }
 
 /**
@@ -11099,7 +11113,8 @@ export class InkSurface {
       const halfW = this.atFitZoom(SHAPE_DEFAULT_SIZE) / 2;
       const connector = isConnectorPreset(preset);
       const aspect = preset === "star" ? STAR_ASPECT : preset === "heart" ? HEART_ASPECT : 1;
-      const halfH = connector ? 0 : halfW * aspect;
+      // A tapped elbow shows its bend: half as tall as it is wide.
+      const halfH = preset === "elbow" ? halfW / 2 : connector ? 0 : halfW * aspect;
       const cx = clamp(origin.x, halfW, Math.max(halfW, box.width - halfW));
       const cy = clamp(origin.y, halfH, Math.max(halfH, box.height - halfH));
       origin = { x: cx - halfW, y: cy - halfH };
@@ -11154,7 +11169,7 @@ export class InkSurface {
       this.requestZoomPaint();
       return;
     }
-    this.renderWetShape(box.index, drag.preset, pts);
+    this.renderWetShape(box.index, presetKind(drag.preset), pts, presetDecor(drag.preset));
   }
 
   /** A table is ruled in the pen's colour, thinner than handwriting. */
@@ -11186,7 +11201,8 @@ export class InkSurface {
         size: this.strokeSize(),
         tool: "pen",
         pts,
-        shape: drag.preset,
+        shape: presetKind(drag.preset),
+        ...presetDecor(drag.preset),
       }),
     );
   }
@@ -16050,6 +16066,8 @@ export class InkSurface {
     const snap = new TurnSnap(spread / 2, this.pageAngleOf(drag.selection));
     const motion = fingerTurnMotion(state, (raw) => snap.turn(raw));
     drag.fingers = { state, snap, motion, page, owned };
+    // Turning, it no longer lines up: the move's guides go.
+    this.showAlignGuides(null, null);
     return true;
   }
   /**
@@ -16327,10 +16345,14 @@ export class InkSurface {
       const dx = at.x - own.x - drag.from.x;
       const dy = at.y - own.y - drag.from.y;
       // Joined, the pages are one sheet: it may lie over the join, as ink may.
-      const d =
+      let d =
         this.joined && !this.board
           ? joinedDelta(drag.bounds, dx, dy, own, paperBox(boxes))
           : crossPageDelta(drag.bounds, dx, dy, own, target);
+      // On its own page it lines up with what is there, as in Goodnotes.
+      const aligned = target === own ? this.alignGroupDrag(drag, d.dx, d.dy) : null;
+      if (aligned) d = aligned;
+      this.showAlignGuides(aligned ? own : null, aligned);
       drag.dx = d.dx;
       drag.dy = d.dy;
       drag.target = target;
@@ -16344,6 +16366,109 @@ export class InkSurface {
     this.renderGroupDraft();
     this.placeDraggedTextBoxes(drag, box);
     this.syncSelectionOverlay();
+  }
+
+  /**
+   * A move of (`dx`, `dy`) lined up with the page's other shapes and
+   * objects within {@link ALIGN_SNAP_PX} screen px; null when nothing is
+   * there to line up with.
+   */
+  private alignGroupDrag(drag: GroupDrag, dx: number, dy: number): AlignResult | null {
+    const targets = (drag.alignTargets ??= this.alignTargetsOf(drag.selection));
+    if (targets.length === 0) return null;
+    const perScreenPx = 1 / this.unitScale;
+    return alignMove(
+      drag.bounds,
+      dx,
+      dy,
+      targets,
+      ALIGN_SNAP_PX * perScreenPx,
+      ALIGN_GUIDE_OVERSHOOT_PX * perScreenPx,
+    );
+  }
+
+  /**
+   * What a selection on its page lines up with: the bounds of each shape,
+   * picture, text box, table, graph and equation it does not hold. Not
+   * handwriting, highlighter or tape: Goodnotes lines a moved selection up
+   * with shapes, never with a line of writing.
+   */
+  private alignTargetsOf(sel: GroupSelection): Bounds[] {
+    const page = this.doc.pages.find((p) => p.id === sel.pageId);
+    if (!page) return [];
+    const held = new Set<object>([
+      ...sel.strokes,
+      ...sel.images,
+      ...sel.textBoxes,
+      ...(sel.tables ?? []),
+      ...(sel.graphs ?? []),
+      ...(sel.equations ?? []),
+    ]);
+    const out: Bounds[] = [];
+    const add = (b: Bounds | null): void => {
+      if (b) out.push(b);
+    };
+    for (const stroke of page.strokes) {
+      if (held.has(stroke) || stroke.shape === undefined || isTape(stroke)) continue;
+      add(selectionBounds([stroke], [], []));
+    }
+    for (const image of page.images) if (!held.has(image)) add(imageBounds(transformOf(image)));
+    const frames: BoxFrame[] = [
+      ...page.textBoxes.filter((t) => !held.has(t)).map((t) => this.textBoxCoverOf(page.id, t)),
+      ...(page.tables ?? []).filter((t) => !held.has(t)).map((t) => this.tableFrameOf(t)),
+      ...(page.graphs ?? []).filter((g) => !held.has(g)).map(graphFrame),
+      ...(page.equations ?? []).filter((e) => !held.has(e)).map(graphFrame),
+    ];
+    for (const f of frames) add({ minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h });
+    return out;
+  }
+
+  private alignGuidesEl: SVGSVGElement | null = null;
+
+  /**
+   * Draw a move's alignment guides on page `box`, or hide them (null): thin
+   * lines in the alert colour, solid on an edge, dashed on a centre with a
+   * dot at the selection's centre, as Goodnotes draws them.
+   */
+  private showAlignGuides(box: PageBox | null, result: AlignResult | null): void {
+    if (!box || !result || result.guides.length === 0) {
+      this.alignGuidesEl?.addClass("is-hidden");
+      return;
+    }
+    let svg = this.alignGuidesEl;
+    if (!svg) {
+      svg = activeDocument.createElementNS(SVG_NS, "svg");
+      svg.setAttribute("class", "goodobsidian-align-guides is-hidden");
+      svg.setAttribute("aria-hidden", "true");
+      this.paperEl.append(svg);
+      this.alignGuidesEl = svg;
+    }
+    while (svg.firstChild) svg.firstChild.remove();
+    const scale = this.unitScale;
+    const at = (x: number, y: number): [string, string] => [
+      ((box.x + x) * scale).toFixed(1),
+      ((box.y + y) * scale).toFixed(1),
+    ];
+    for (const guide of result.guides) {
+      const [x1, y1] = guide.axis === "x" ? at(guide.at, guide.from) : at(guide.from, guide.at);
+      const [x2, y2] = guide.axis === "x" ? at(guide.at, guide.to) : at(guide.to, guide.at);
+      const line = activeDocument.createElementNS(SVG_NS, "line");
+      line.setAttribute("x1", x1);
+      line.setAttribute("y1", y1);
+      line.setAttribute("x2", x2);
+      line.setAttribute("y2", y2);
+      line.setAttribute("class", guide.centre ? "is-centre" : "is-edge");
+      svg.append(line);
+    }
+    if (result.dot) {
+      const [cx, cy] = at(result.dot.x, result.dot.y);
+      const dot = activeDocument.createElementNS(SVG_NS, "circle");
+      dot.setAttribute("cx", cx);
+      dot.setAttribute("cy", cy);
+      dot.setAttribute("r", "2.5");
+      svg.append(dot);
+    }
+    svg.removeClass("is-hidden");
   }
 
   /** How fast a selection held at pane point `at` scrolls the view, px a frame, per axis. */
@@ -16554,6 +16679,7 @@ export class InkSurface {
     this.groupDrag = null;
     this.circleDrag = false;
     this.showTurnLabel(null, null, 0, false);
+    this.showAlignGuides(null, null);
     this.selectionFrameEl.removeEventListener("pointermove", this.onSelectionPointerMove);
     this.selectionFrameEl.removeEventListener("pointerup", this.onSelectionPointerEnd);
     this.selectionFrameEl.removeEventListener("pointercancel", this.onSelectionPointerEnd);

@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   HEAD_MAX,
+  HEAD_MIN,
   type OutlineOp,
   arrowHead,
   cornerRadius,
@@ -125,15 +126,35 @@ describe("arrowHead", () => {
     expect(head?.stop.x).toBeLessThan(tip.x);
   });
 
-  it("grows with the line but never past HEAD_MAX, nor past 45 % of a short line", () => {
-    const side = (span: number): number => {
-      const head = arrowHead({ x: tip.x - span, y: 0 }, tip, 2, "open", span);
-      const a = head?.points[0];
-      return a ? Math.hypot(a.x - tip.x, a.y - tip.y) : 0;
-    };
-    expect(side(1000)).toBeCloseTo(HEAD_MAX);
-    expect(side(100)).toBeLessThan(HEAD_MAX);
-    expect(side(20)).toBeCloseTo(9);
+  // Goodnotes' heads (research/goodnotes-shapes-2026-11-08.md).
+  const sideOf = (span: number, width: number, head: "open" | "filled"): number => {
+    const h = arrowHead({ x: tip.x - span, y: 0 }, tip, width, head, span);
+    const a = h?.points[head === "open" ? 0 : 1];
+    return a ? Math.hypot(a.x - tip.x, a.y - tip.y) : 0;
+  };
+
+  it("is sized by the width, not by the length: a short arrow's head is a long one's", () => {
+    expect(sideOf(60, 3, "open")).toBeCloseTo(15);
+    expect(sideOf(400, 3, "open")).toBeCloseTo(15);
+    expect(sideOf(400, 4, "open")).toBeCloseTo(20);
+  });
+
+  it("opens its V at 40° to the line; a filled head is 5 widths long and 6 across", () => {
+    const open = arrowHead(tail, tip, 3, "open", 200);
+    const [a] = open?.points ?? [];
+    expect((Math.atan2(Math.abs(a.y), tip.x - a.x) * 180) / Math.PI).toBeCloseTo(40);
+    const filled = arrowHead(tail, tip, 3, "filled", 200);
+    const [, b, c] = filled?.points ?? [];
+    expect(tip.x - b.x).toBeCloseTo(15);
+    expect(Math.abs(b.y - c.y)).toBeCloseTo(18);
+  });
+
+  it("stays between HEAD_MIN and HEAD_MAX, and reaches no more than 45 % along a short line", () => {
+    expect(sideOf(400, 0.2, "open")).toBeCloseTo(HEAD_MIN);
+    expect(sideOf(400, 20, "open")).toBeCloseTo(HEAD_MAX);
+    expect(sideOf(400, 20, "filled")).toBeCloseTo(HEAD_MAX);
+    const short = arrowHead({ x: tip.x - 20, y: 0 }, tip, 3, "open", 20);
+    expect(tip.x - (short?.points[0].x ?? 0)).toBeCloseTo(9);
   });
 
   it("is nothing for a line of no length", () => {
@@ -171,7 +192,7 @@ describe("pathHeads (discussion #107)", () => {
     expect(a.x).toBeLessThan(400);
     expect(b.x).toBeLessThan(400);
     expect(a.y - 100).toBeCloseTo(100 - b.y, 6);
-    expect(Math.hypot(a.x - 400, a.y - 100)).toBeCloseTo(HEAD_MAX, 6);
+    expect(Math.hypot(a.x - 400, a.y - 100)).toBeCloseTo(10, 6);
   });
 
   it("cuts the path back to a filled head's base, and heads its start along the first run", () => {
