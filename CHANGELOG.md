@@ -8,6 +8,20 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **A PDF's own contents come with it**
+  ([discussion #185](https://github.com/Joost-8/FineNotes/discussions/185)).
+  Importing a PDF, as a new notebook or into one, reads its outline (the
+  bookmarks a PDF reader shows beside it) into the Contents tab: chapters,
+  sections and parts, each on the right page and at the right spot. A notice
+  says how many entries came in, with Undo. Everything stays editable.
+- **Chapters in the contents.** Entries now nest up to three levels: a
+  chapter holds the sections after it, across pages, and folds them away.
+  An entry's ⌄ menu has Indent and Outdent; its own sections move with it.
+  The order never changes: the contents still follow the pages. A long
+  contents, such as a textbook's, opens with its chapters folded.
+
 ## [2.8.3] - 2026-11-06
 
 ### Added

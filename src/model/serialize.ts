@@ -30,7 +30,7 @@ import {
   SCHEMA_VERSION,
 } from "../constants";
 import { normalizeAttachmentFolders } from "./attachment-folders";
-import { normalizePageTitle, normalizeSections } from "./contents";
+import { normalizePageTitle, normalizeSections, readContentsLevel } from "./contents";
 import { normalizeLinks } from "./links";
 import { normalizeTasks } from "./tasks";
 import { isStyledConnector, liveConnectors, readConnectors } from "./connectors";
@@ -61,6 +61,7 @@ import {
   type InkDocument,
   type Page,
   type PageSection,
+  type ContentsLevel,
   type InkLink,
   type InkTask,
   type ShapeConnector,
@@ -189,6 +190,7 @@ interface StoredPage {
   bookmarked?: boolean;
   tab?: string;
   title?: string;
+  titleLevel?: ContentsLevel;
   sections?: PageSection[];
   links?: InkLink[];
   tasks?: InkTask[];
@@ -355,6 +357,10 @@ function storePage(page: Page): StoredPage {
     bookmarked: page.bookmarked === true ? true : undefined,
     tab: readTabColor(page.tab),
     title: normalizePageTitle(page.title),
+    titleLevel:
+      page.title !== undefined && (page.titleLevel === 2 || page.titleLevel === 3)
+        ? page.titleLevel
+        : undefined,
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
     links: page.links && page.links.length > 0 ? page.links : undefined,
     tasks: page.tasks && page.tasks.length > 0 ? page.tasks : undefined,
@@ -733,9 +739,12 @@ export class DocumentEncoder {
 
 /** Anything with fields to read. Arrays pass too; their named fields are simply absent. */
 /** A page's contents title, spread into the page only when there is one. */
-function titleOf(raw: unknown): { title?: string } {
+function titleOf(raw: unknown, rawLevel: unknown): { title?: string; titleLevel?: ContentsLevel } {
   const title = normalizePageTitle(raw);
-  return title === undefined ? {} : { title };
+  if (title === undefined) return {};
+  // A chapter is what absent means; only a deeper level is kept.
+  const level = readContentsLevel(rawLevel);
+  return level === 2 || level === 3 ? { title, titleLevel: level } : { title };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1165,7 +1174,7 @@ function normalizePage(
     // Only a literal `true`: anything else in the file is "not bookmarked".
     ...(page.bookmarked === true ? { bookmarked: true as const } : {}),
     ...(readTabColor(page.tab) ? { tab: readTabColor(page.tab) } : {}),
-    ...titleOf(page.title),
+    ...titleOf(page.title, page.titleLevel),
     ...sectionsOf(page.sections, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
     ...tasksOf(page.tasks, strokes, seenTasks),

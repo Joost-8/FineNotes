@@ -71,9 +71,11 @@ import {
 } from "../model/notebook-files";
 import {
   type ContentsEntry,
+  type ContentsNode,
   contentsEntries,
   contentsTree,
   currentContentsEntry,
+  levelShift,
   pageContentsEntries,
 } from "../model/contents";
 import type { PageSection } from "../model/document";
@@ -136,6 +138,11 @@ export interface PageSidebarCallbacks {
     section: PageSection,
     anchor: HTMLElement,
   ) => void;
+  /**
+   * Indent (`+1`) or outdent (`-1`) contents entry `at` (its place in
+   * `contentsEntries`), from its ⌄ menu (discussion #185).
+   */
+  onContentsLevel?: (at: number, delta: 1 | -1) => void;
   /** `anchor` is the thumbnail's "…" button, for anything that opens a popover. */
   onPageAction: (action: PageAction, index: number, anchor: HTMLElement) => void;
   /** The "Add page" tile was tapped. */
@@ -245,6 +252,12 @@ export function thumbnailRasterScale(dpr: number): number {
 const REFRESH_DEBOUNCE_MS = 350;
 
 /**
+ * Past this many entries the contents open with every chapter folded, so a
+ * textbook outline reads as its chapters first (discussion #185).
+ */
+const FOLD_CONTENTS_OVER = 40;
+
+/**
  * How many painted thumbnails stay painted out of view, the least recently
  * seen given back first. A thumbnail's canvas is ~330 KB at an iPad's pixel
  * ratio, and keeping every one painted held 325 MB after a scroll through
@@ -301,11 +314,19 @@ export class PageSidebar {
   private readonly contentsEmpty: HTMLElement;
   private readonly contentsAdd: HTMLButtonElement;
   private readonly contentsAddLabel: HTMLElement;
-  /** The contents as last rendered, one row each, and the heading row each sub row is under. */
+  /**
+   * The contents as last rendered, one row each, with the entries each sits
+   * inside (outermost first) and its fold key when it holds any.
+   */
   private contentsItems: ContentsEntry[] = [];
-  private contentsRows: Array<{ row: HTMLElement; heading: number }> = [];
-  /** Headings folded shut, by their page's id: kept while the view is open. */
-  private readonly folded = new Set<string>();
+  private contentsRows: Array<{ row: HTMLElement; parents: number[]; key: string | null }> = [];
+  /**
+   * Entries the reader folded shut (`true`) or open (`false`), by
+   * `foldKey`: kept while the view is open. The rest follow `foldedByDefault`.
+   */
+  private readonly foldChoice = new Map<string, boolean>();
+  /** Whether entries start folded: a long contents, such as a textbook outline. */
+  private contentsFoldDefault = false;
   /** How far down the page being read the reader is, page px; Infinity when unknown. */
   private currentY = Infinity;
   /** The entry marked as being read, so a scroll only touches the rows when it changes. */
@@ -1125,57 +1146,89 @@ export class PageSidebar {
   }
 
   /**
-   * Rebuild the Contents tab: titled pages as headings, the headings inside
-   * each such page under it, folded as the reader left them. A few rows:
-   * cheap.
+   * Rebuild the Contents tab as a tree (discussion #185): chapters, the
+   * entries inside them indented under them, each folded as the reader left
+   * it. A long contents (a textbook's) starts with its chapters folded.
    */
   private renderContents(): void {
     const entries = this.doc ? contentsEntries(this.doc) : [];
     this.contentsItems = entries;
     this.contentsList.empty();
-    const rows: Array<{ row: HTMLElement; heading: number }> = [];
-    for (const node of contentsTree(entries)) {
-      const pageId = this.doc?.pages[node.entry.index]?.id ?? "";
-      const folded = this.folded.has(pageId);
-      const heading = this.contentsRow(node.entry, node.children.length > 0 ? folded : null);
-      rows[node.at] = { row: heading, heading: node.at };
-      const subs = node.children.map((child) => {
-        const row = this.contentsRow(child.entry, null, true);
-        row.toggleClass("is-hidden", folded);
-        rows[child.at] = { row, heading: node.at };
-        return row;
-      });
-      const fold = heading.querySelector<HTMLElement>(".goodobsidian-contents-fold");
-      fold?.addEventListener("click", () => {
-        const shut = !this.folded.has(pageId);
-        if (shut) this.folded.add(pageId);
-        else this.folded.delete(pageId);
-        fold.toggleClass("is-folded", shut);
-        fold.setAttribute("aria-expanded", String(!shut));
-        for (const row of subs) row.toggleClass("is-hidden", shut);
-        this.currentEntry = -2;
-        this.syncCurrent();
-      });
-    }
+    const rows: Array<{ row: HTMLElement; parents: number[]; key: string | null }> = [];
+    const foldDefault = entries.length > FOLD_CONTENTS_OVER;
+    const place = (node: ContentsNode, parents: number[]): void => {
+      const key = node.children.length > 0 ? this.foldKey(node.entry) : null;
+      const folded = key !== null && (this.foldChoice.get(key) ?? foldDefault);
+      const row = this.contentsRow(
+        node.entry,
+        node.at,
+        key === null ? null : folded,
+        parents.length,
+      );
+      rows[node.at] = { row, parents, key };
+      const fold = row.querySelector<HTMLElement>(".goodobsidian-contents-fold");
+      if (fold && key !== null) {
+        fold.addEventListener("click", () => {
+          const shut = !this.isFolded(key);
+          this.foldChoice.set(key, shut);
+          fold.toggleClass("is-folded", shut);
+          fold.setAttribute("aria-expanded", String(!shut));
+          this.syncContentsFolds();
+          this.currentEntry = -2;
+          this.syncCurrent();
+        });
+      }
+      for (const child of node.children) place(child, [...parents, node.at]);
+    };
+    for (const node of contentsTree(entries)) place(node, []);
     this.contentsRows = rows;
+    this.contentsFoldDefault = foldDefault;
+    this.syncContentsFolds();
     this.currentEntry = -2;
     this.contentsEmpty.toggleClass("is-hidden", entries.length > 0);
     this.syncContentsAdd();
   }
 
+  /** Whether the entry with fold key `key` is folded shut now. */
+  private isFolded(key: string): boolean {
+    return this.foldChoice.get(key) ?? this.contentsFoldDefault;
+  }
+
+  /** What remembers an entry's fold: its page's id for a title, its own id for a heading. */
+  private foldKey(entry: ContentsEntry): string {
+    if (entry.section) return `s:${entry.section.id}`;
+    return `p:${this.doc?.pages[entry.index]?.id ?? entry.index}`;
+  }
+
+  /** Hide every row inside an entry that is folded shut. */
+  private syncContentsFolds(): void {
+    for (const { row, parents } of this.contentsRows) {
+      const hidden = parents.some((at) => {
+        const key = this.contentsRows[at]?.key;
+        return key !== null && key !== undefined && this.isFolded(key);
+      });
+      row.toggleClass("is-hidden", hidden);
+    }
+  }
+
   /**
-   * One row of the contents: a fold toggle when it heads its page's headings
-   * (`folded` says how it is; null for none), the entry, and its ⌄ menu. A
-   * `sub` row is listed under its page's title; a heading inside a page
-   * without one lines up with the page titles instead.
+   * One row of the contents: a fold toggle when it holds entries (`folded`
+   * says how it is; null for none), the entry, and its ⌄ menu, indented by
+   * `depth`, the entries it sits inside.
    */
-  private contentsRow(entry: ContentsEntry, folded: boolean | null, sub = false): HTMLElement {
+  private contentsRow(
+    entry: ContentsEntry,
+    at: number,
+    folded: boolean | null,
+    depth: number,
+  ): HTMLElement {
     const row = this.contentsList.createDiv({
       cls: "goodobsidian-contents-row",
-      attr: { role: "listitem" },
+      attr: { role: "listitem", "aria-level": String(depth + 1) },
     });
     row.toggleClass("is-section", entry.section !== undefined);
-    row.toggleClass("is-sub", sub);
+    row.toggleClass("is-sub", depth > 0);
+    row.setCssProps({ "--gob-contents-depth": String(depth) });
     if (folded !== null) {
       const fold = row.createEl("button", {
         cls: "goodobsidian-contents-fold clickable-icon",
@@ -1186,7 +1239,7 @@ export class PageSidebar {
       });
       fold.toggleClass("is-folded", folded);
       setIcon(fold, "chevron-down");
-    } else if (!sub) {
+    } else {
       row.createSpan({ cls: "goodobsidian-contents-fold-space" });
     }
     const go = row.createEl("button", { cls: "goodobsidian-contents-entry clickable-icon" });
@@ -1212,8 +1265,8 @@ export class PageSidebar {
     setIcon(more, "chevron-down");
     more.setAttribute("aria-label", t("view.sidebar.entryOptions"));
     more.addEventListener("click", (event) => {
-      if (section) this.showSectionMenu(entry.index, section, event, more);
-      else this.showContentsMenu(entry.index, event, more);
+      if (section) this.showSectionMenu(entry.index, section, at, event, more);
+      else this.showContentsMenu(entry.index, at, event, more);
     });
     return row;
   }
@@ -1221,6 +1274,7 @@ export class PageSidebar {
   private showSectionMenu(
     index: number,
     section: PageSection,
+    at: number,
     event: MouseEvent,
     anchor: HTMLElement,
   ): void {
@@ -1230,6 +1284,7 @@ export class PageSidebar {
     menu.addItem((item) =>
       item.setTitle(t("common.rename")).setIcon("pencil").onClick(act("rename")),
     );
+    this.addLevelItems(menu, at);
     menu.addItem((item) =>
       item.setTitle(t("view.contents.remove")).setIcon("list-x").onClick(act("remove")),
     );
@@ -1246,16 +1301,39 @@ export class PageSidebar {
     this.contentsAddLabel.setText(t("view.sidebar.addPageToContents", { page: this.current + 1 }));
   }
 
-  private showContentsMenu(index: number, event: MouseEvent, anchor: HTMLElement): void {
+  private showContentsMenu(
+    index: number,
+    at: number,
+    event: MouseEvent,
+    anchor: HTMLElement,
+  ): void {
     const act = (action: PageAction) => () => this.callbacks.onPageAction(action, index, anchor);
     const menu = new Menu();
     menu.addItem((item) =>
       item.setTitle(t("common.rename")).setIcon("pencil").onClick(act("contents")),
     );
+    this.addLevelItems(menu, at);
     menu.addItem((item) =>
       item.setTitle(t("view.contents.remove")).setIcon("list-x").onClick(act("contents-remove")),
     );
     menu.showAtMouseEvent(event);
+  }
+
+  /** Outdent and Indent for entry `at`, each only when it can move that way. */
+  private addLevelItems(menu: Menu, at: number): void {
+    const doc = this.doc;
+    if (!doc || !this.callbacks.onContentsLevel) return;
+    const shift = (delta: 1 | -1) => () => this.callbacks.onContentsLevel?.(at, delta);
+    if (levelShift(doc, at, -1)) {
+      menu.addItem((item) =>
+        item.setTitle(t("view.contents.outdent")).setIcon("outdent").onClick(shift(-1)),
+      );
+    }
+    if (levelShift(doc, at, 1)) {
+      menu.addItem((item) =>
+        item.setTitle(t("view.contents.indent")).setIcon("indent").onClick(shift(1)),
+      );
+    }
   }
 
   private createThumb(): ThumbView {
@@ -1325,14 +1403,18 @@ export class PageSidebar {
   }
 
   /**
-   * Mark the entry being read: the last one at or above the reader. Under a
-   * folded heading, the heading is marked instead. Touches the rows only
-   * when it changes, since a scroll calls this every frame.
+   * Mark the entry being read: the last one at or above the reader. Inside a
+   * folded entry, the outermost folded one is marked instead. Touches the
+   * rows only when it changes, since a scroll calls this every frame.
    */
   private syncCurrentEntry(): void {
     const reading = currentContentsEntry(this.contentsItems, this.current, this.currentY);
     const holder = this.contentsRows[reading];
-    const at = holder && holder.row.hasClass("is-hidden") ? holder.heading : reading;
+    const shut = holder?.parents.find((parent) => {
+      const key = this.contentsRows[parent]?.key;
+      return key !== null && key !== undefined && this.isFolded(key);
+    });
+    const at = shut ?? reading;
     if (at === this.currentEntry) return;
     this.currentEntry = at;
     this.contentsRows.forEach(({ row }, i) => {

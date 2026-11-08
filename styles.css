@@ -1525,10 +1525,10 @@ select.goodobsidian-choice-select {
   flex: 0 0 36px;
 }
 
-/* A heading inside a page: smaller and muted, and indented under its page's
-   title when the page has one. */
+/* An entry inside another, indented one step per entry it sits in
+   (discussion #185); a heading inside a page is smaller and muted too. */
 .goodobsidian-contents-row.is-sub {
-  padding-left: 40px;
+  padding-left: calc(var(--gob-contents-depth, 1) * 20px);
 }
 
 .goodobsidian-contents-row.is-section .goodobsidian-contents-title {

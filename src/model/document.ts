@@ -836,6 +836,13 @@ export interface Page {
    */
   title?: string;
   /**
+   * How deep the title sits in the contents (discussion #185): 2 is a
+   * section of the chapter above it, 3 a part of that section. Stored only as
+   * 2 or 3, and only with a `title`; absent is a chapter (level 1), as every
+   * title was before levels.
+   */
+  titleLevel?: ContentsLevel;
+  /**
    * Headings inside the page that are listed in the contents under it, top
    * to bottom (FineNotes#20). Absent when there are none.
    */
@@ -959,7 +966,16 @@ export interface PageSection {
   y: number;
   /** As a page title is: one line, trimmed, at most `MAX_PAGE_TITLE_LENGTH`. */
   title: string;
+  /**
+   * How deep it sits in the contents (discussion #185). Stored only where it
+   * differs from where a heading has always sat: one below its page's title,
+   * or a chapter on a page without one (`sectionDefaultLevel`).
+   */
+  level?: ContentsLevel;
 }
+
+/** A contents entry's depth: 1 a chapter, 2 a section of it, 3 a part of that. */
+export type ContentsLevel = 1 | 2 | 3;
 
 /** An audio recording made while the note was open (0.5). */
 export interface Recording {

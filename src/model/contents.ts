@@ -5,15 +5,22 @@
  * entry back. Pages without one simply run on under the entry above them,
  * which is what makes a titled page the start of a section.
  *
+ * Entries have a level (discussion #185): 1 a chapter, 2 a section of it, 3
+ * a part of that. Levels only group the entries, which stay in page order;
+ * without any set, the contents read exactly as they did before levels.
+ *
  * PURE: no DOM, no Obsidian.
  */
 
 import { t } from "../i18n/translate";
 import type { Command } from "./commands";
-import type { InkDocument, Page, PageSection } from "./document";
+import type { ContentsLevel, InkDocument, Page, PageSection } from "./document";
 
 /** Longest title kept, in UTF-16 units; longer ones are cut on save and load. */
 export const MAX_PAGE_TITLE_LENGTH = 80;
+
+/** The deepest level the contents nests to. */
+export const MAX_CONTENTS_LEVEL = 3;
 
 /**
  * A title as it is stored, or `undefined` for none: runs of whitespace
@@ -32,6 +39,36 @@ export function normalizePageTitle(raw: unknown): string | undefined {
   return title.length > 0 ? title : undefined;
 }
 
+/** A stored level, or `undefined` for anything but 1, 2 or 3. */
+export function readContentsLevel(raw: unknown): ContentsLevel | undefined {
+  return raw === 1 || raw === 2 || raw === 3 ? raw : undefined;
+}
+
+/** Any number as a level: below 1 is 1, past the deepest is the deepest. */
+export function clampContentsLevel(level: number): ContentsLevel {
+  if (!(level > 1)) return 1;
+  return level >= MAX_CONTENTS_LEVEL ? MAX_CONTENTS_LEVEL : 2;
+}
+
+/** The level of a page's title: a chapter unless set deeper. */
+export function titleLevelOf(page: Page): ContentsLevel {
+  return page.titleLevel ?? 1;
+}
+
+/**
+ * Where a heading inside a page sits when it has no level of its own: one
+ * below its page's title, or a chapter on a page without one. That is where
+ * headings sat before levels, so old notebooks read as they did.
+ */
+export function sectionDefaultLevel(page: Page): ContentsLevel {
+  return page.title !== undefined ? clampContentsLevel(titleLevelOf(page) + 1) : 1;
+}
+
+/** A heading's level in the contents. */
+export function sectionLevelOf(page: Page, section: PageSection): ContentsLevel {
+  return section.level ?? sectionDefaultLevel(page);
+}
+
 /**
  * One line of the contents: a titled page, by its index in the page list,
  * or a section inside a page, which also carries the section.
@@ -40,6 +77,8 @@ export interface ContentsEntry {
   index: number;
   title: string;
   section?: PageSection;
+  /** How deep it sits: 1 a chapter, 2 a section of it, 3 a part of that. */
+  level: ContentsLevel;
 }
 
 /** The contents, in page order: each page's title, then its sections top to bottom. */
@@ -50,8 +89,10 @@ export function contentsEntries(doc: InkDocument): ContentsEntry[] {
 /** One page's lines of the contents, `index` being its place in the page list. */
 export function pageContentsEntries(page: Page, index: number): ContentsEntry[] {
   const out: ContentsEntry[] = [];
-  if (page.title !== undefined) out.push({ index, title: page.title });
-  for (const section of page.sections ?? []) out.push({ index, title: section.title, section });
+  if (page.title !== undefined) out.push({ index, title: page.title, level: titleLevelOf(page) });
+  for (const section of page.sections ?? []) {
+    out.push({ index, title: section.title, section, level: sectionLevelOf(page, section) });
+  }
   return out;
 }
 
@@ -78,13 +119,14 @@ export function currentContentsEntry(
 
 /**
  * Give a page a title in the contents, rename it, or (with `null`, or a title
- * that normalises to nothing) take it out. One undo step.
+ * that normalises to nothing) take it out, its level with it. One undo step.
  */
 export class SetPageTitle implements Command {
   readonly label: string;
   private readonly title: string | undefined;
   /** What the page had before `apply`; `null` until it has run. */
-  private previous: { title: string | undefined } | null = null;
+  private previous: { title: string | undefined; titleLevel: ContentsLevel | undefined } | null =
+    null;
 
   constructor(
     private readonly page: Page,
@@ -102,13 +144,16 @@ export class SetPageTitle implements Command {
   apply(doc: InkDocument): void {
     // By identity, like the other page commands: ids can repeat within a file.
     if (!doc.pages.includes(this.page)) return;
-    this.previous = { title: this.page.title };
+    this.previous = { title: this.page.title, titleLevel: this.page.titleLevel };
     setTitle(this.page, this.title);
+    // A level belongs to a title: taking the title out takes it too.
+    if (this.title === undefined) delete this.page.titleLevel;
   }
 
   invert(doc: InkDocument): void {
     if (this.previous === null || !doc.pages.includes(this.page)) return;
     setTitle(this.page, this.previous.title);
+    setTitleLevel(this.page, this.previous.titleLevel);
     this.previous = null;
   }
 }
@@ -118,10 +163,20 @@ function setTitle(page: Page, title: string | undefined): void {
   else page.title = title;
 }
 
+function setTitleLevel(page: Page, level: ContentsLevel | undefined): void {
+  if (level === undefined || level === 1 || page.title === undefined) delete page.titleLevel;
+  else page.titleLevel = level;
+}
+
 // --- Sections: headings inside a page (FineNotes#20) --------------------------
 
 /** The next free section id in the notebook: `c<N>`. */
 export function nextSectionId(doc: InkDocument): string {
+  return `c${maxSectionNumber(doc) + 1}`;
+}
+
+/** The highest `N` among the notebook's `c<N>` section ids, 0 for none. */
+export function maxSectionNumber(doc: InkDocument): number {
   let max = 0;
   for (const page of doc.pages) {
     for (const section of page.sections ?? []) {
@@ -129,13 +184,14 @@ export function nextSectionId(doc: InkDocument): string {
       if (m) max = Math.max(max, Number(m[1]));
     }
   }
-  return `c${max + 1}`;
+  return max;
 }
 
 /**
  * Add, move, rename or (with `null`) remove one section of a page, by id.
  * The page's sections stay in order top to bottom. One undo step, which
- * puts back exactly the list the page had.
+ * puts back exactly the list the page had. A section that is moved or
+ * renamed keeps its level unless `value` gives one.
  */
 export class SetSection implements Command {
   readonly label: string;
@@ -159,13 +215,22 @@ export class SetSection implements Command {
     if (!doc.pages.includes(this.page)) return;
     const before = this.page.sections;
     this.previous = { sections: before };
+    const old = before?.find((s) => s.id === this.id);
     const rest = (before ?? []).filter((s) => s.id !== this.id);
     const value = this.value;
     const title = value ? normalizePageTitle(value.title) : undefined;
     const keep =
       value !== null && title !== undefined && Number.isFinite(value.x) && Number.isFinite(value.y);
     // A full copy: a field added to sections later must not be dropped here.
-    const next = keep ? sortSections([...rest, { ...value, id: this.id, title }]) : rest;
+    const level = value?.level ?? old?.level;
+    const next = keep
+      ? sortSections([
+          ...rest,
+          level === undefined
+            ? { ...value, id: this.id, title }
+            : { ...value, id: this.id, title, level },
+        ])
+      : rest;
     if (next.length > 0) this.page.sections = next;
     else delete this.page.sections;
   }
@@ -187,25 +252,31 @@ export function sortSections(sections: PageSection[]): PageSection[] {
 /**
  * A page's sections as stored, or none: each needs an id, a finite point
  * and a title that survives `normalizePageTitle`, and an id already seen in
- * the notebook is dropped. Top to bottom.
+ * the notebook is dropped. A level other than 1, 2 or 3 is dropped too (the
+ * heading then sits where it always did). Top to bottom.
  */
 export function normalizeSections(raw: unknown, seen: Set<string>): PageSection[] {
   if (!Array.isArray(raw)) return [];
   const out: PageSection[] = [];
   for (const item of raw) {
     if (typeof item !== "object" || item === null) continue;
-    const { id, x, y, title } = item as Record<string, unknown>;
+    const { id, x, y, title, level } = item as Record<string, unknown>;
     const name = normalizePageTitle(title);
     if (typeof id !== "string" || id === "" || seen.has(id) || name === undefined) continue;
     if (typeof x !== "number" || !Number.isFinite(x)) continue;
     if (typeof y !== "number" || !Number.isFinite(y)) continue;
     seen.add(id);
-    out.push({ id, x, y, title: name });
+    const depth = readContentsLevel(level);
+    out.push(
+      depth === undefined ? { id, x, y, title: name } : { id, x, y, title: name, level: depth },
+    );
   }
   return sortSections(out);
 }
 
-/** One heading of the contents, with the entries it holds when it is folded open. */
+// --- The tree: what folds under what ----------------------------------------------
+
+/** One entry of the contents, with the entries it holds when it is folded open. */
 export interface ContentsNode {
   /** Where the entry is in `contentsEntries`. */
   at: number;
@@ -214,24 +285,189 @@ export interface ContentsNode {
 }
 
 /**
- * The contents as headings and the page's own headings under them: a page
- * with a title is a heading, and the sections on that page are listed under
- * it, to fold away with it. Sections on a page without a title stand on
- * their own. Nothing nests across pages; the entry being read still runs on
- * until the next one, across pages (`currentContentsEntry`).
+ * The contents as a tree, nested the way Markdown headings nest: an entry
+ * holds the entries after it that sit deeper, up to the next one at its own
+ * level or above. Nothing is reordered, only grouped, so the contents stay
+ * in page order. Without levels set, a page's title holds the headings on its
+ * page and everything else stands on its own, as before levels.
  */
 export function contentsTree(entries: readonly ContentsEntry[]): ContentsNode[] {
   const roots: ContentsNode[] = [];
-  let heading: ContentsNode | null = null;
+  const open: ContentsNode[] = [];
   entries.forEach((entry, at) => {
     const node: ContentsNode = { at, entry, children: [] };
-    // A page's title comes first among its entries (contentsEntries).
-    if (entry.section && heading?.entry.index === entry.index) {
-      heading.children.push(node);
-      return;
-    }
-    roots.push(node);
-    heading = entry.section ? null : node;
+    while (open.length > 0 && open[open.length - 1].entry.level >= entry.level) open.pop();
+    (open.length > 0 ? open[open.length - 1].children : roots).push(node);
+    open.push(node);
   });
   return roots;
+}
+
+/** For each entry, the entries it sits inside, outermost first (as `contentsTree` nests). */
+export function contentsAncestors(entries: readonly ContentsEntry[]): number[][] {
+  const out: number[][] = [];
+  const open: number[] = [];
+  entries.forEach((entry, at) => {
+    while (open.length > 0 && entries[open[open.length - 1]].level >= entry.level) open.pop();
+    out.push([...open]);
+    open.push(at);
+  });
+  return out;
+}
+
+// --- Levels: indent and outdent (discussion #185) ------------------------------
+
+/** One entry's new level: a page's title (`section` absent), or a heading by id. */
+export interface LevelChange {
+  page: Page;
+  section?: string;
+  level: ContentsLevel;
+}
+
+/**
+ * What indenting (`+1`) or outdenting (`-1`) entry `at` changes: it and the
+ * entries inside it move together, so a chapter keeps its sections. `null`
+ * when it cannot: indenting needs an entry above it, at its level or deeper,
+ * to go under, and nothing may pass the deepest level; outdenting stops at 1.
+ */
+export function levelShift(doc: InkDocument, at: number, delta: 1 | -1): LevelChange[] | null {
+  const entries = contentsEntries(doc);
+  const target = entries[at];
+  if (!target) return null;
+  let end = at + 1;
+  while (end < entries.length && entries[end].level > target.level) end++;
+  const moved = entries.slice(at, end);
+  if (delta > 0) {
+    const above = entries[at - 1];
+    if (!above || above.level < target.level) return null;
+    if (moved.some((entry) => entry.level >= MAX_CONTENTS_LEVEL)) return null;
+  } else if (target.level <= 1) {
+    return null;
+  }
+  return moved.map((entry) => {
+    const page = doc.pages[entry.index];
+    const level = clampContentsLevel(entry.level + delta);
+    return entry.section ? { page, section: entry.section.id, level } : { page, level };
+  });
+}
+
+/**
+ * Set the levels `levelShift` worked out, as one undo step. A heading's
+ * default level follows its page's title, so every heading on a page that
+ * changes keeps the level it showed unless it is one of the changes; each
+ * level is stored only where it differs from what absent means.
+ */
+export class SetContentsLevels implements Command {
+  private previous: Array<{
+    page: Page;
+    titleLevel: ContentsLevel | undefined;
+    sections: PageSection[] | undefined;
+  }> | null = null;
+
+  constructor(
+    private readonly changes: readonly LevelChange[],
+    readonly label: string,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    const pages = [...new Set(this.changes.map((change) => change.page))].filter((page) =>
+      doc.pages.includes(page),
+    );
+    this.previous = pages.map((page) => ({
+      page,
+      titleLevel: page.titleLevel,
+      sections: page.sections,
+    }));
+    // Every heading's level as it reads now, before any title moves.
+    const want = new Map<string, ContentsLevel>();
+    for (const page of pages) {
+      for (const section of page.sections ?? []) {
+        want.set(`${page.id}/${section.id}`, sectionLevelOf(page, section));
+      }
+    }
+    for (const change of this.changes) {
+      if (!pages.includes(change.page)) continue;
+      if (change.section === undefined) setTitleLevel(change.page, change.level);
+      else want.set(`${change.page.id}/${change.section}`, change.level);
+    }
+    for (const page of pages) {
+      if (!page.sections) continue;
+      const fallback = sectionDefaultLevel(page);
+      // Fresh objects: undo puts the old ones back untouched.
+      page.sections = page.sections.map((section) => {
+        const rest: PageSection = { ...section };
+        delete rest.level;
+        const level = want.get(`${page.id}/${section.id}`) ?? fallback;
+        return level === fallback ? rest : { ...rest, level };
+      });
+    }
+  }
+
+  invert(doc: InkDocument): void {
+    if (this.previous === null) return;
+    for (const { page, titleLevel, sections } of this.previous) {
+      if (!doc.pages.includes(page)) continue;
+      if (titleLevel === undefined) delete page.titleLevel;
+      else page.titleLevel = titleLevel;
+      if (sections === undefined) delete page.sections;
+      else page.sections = sections;
+    }
+    this.previous = null;
+  }
+}
+
+// --- Whole pages' contents at once: a PDF's outline, and taking it out ---------
+
+/** What a page's contents become: its title, the title's level and its headings. */
+export interface PageContents {
+  page: Page;
+  title?: string;
+  titleLevel?: ContentsLevel;
+  sections?: PageSection[];
+}
+
+/**
+ * Replace several pages' contents in one undo step: what a PDF's outline
+ * adds when it is imported, and what the notice's Undo takes out again.
+ */
+export class SetPagesContents implements Command {
+  private previous: PageContents[] | null = null;
+
+  constructor(
+    private readonly next: readonly PageContents[],
+    readonly label: string,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    const here = this.next.filter(({ page }) => doc.pages.includes(page));
+    this.previous = here.map(({ page }) => ({
+      page,
+      title: page.title,
+      titleLevel: page.titleLevel,
+      sections: page.sections,
+    }));
+    for (const contents of here) writeContents(contents);
+  }
+
+  invert(doc: InkDocument): void {
+    if (this.previous === null) return;
+    for (const contents of this.previous) {
+      if (doc.pages.includes(contents.page)) writeContents(contents);
+    }
+    this.previous = null;
+  }
+}
+
+function writeContents({ page, title, titleLevel, sections }: PageContents): void {
+  setTitle(page, title);
+  setTitleLevel(page, titleLevel);
+  if (sections === undefined || sections.length === 0) delete page.sections;
+  else page.sections = sections;
+}
+
+/** These pages with nothing in the contents: what taking an imported outline out leaves. */
+export function clearedContents(pages: readonly Page[]): PageContents[] {
+  return pages
+    .filter((page) => page.title !== undefined || (page.sections?.length ?? 0) > 0)
+    .map((page) => ({ page }));
 }
