@@ -7709,6 +7709,50 @@ textarea.goodobsidian-chat-input:focus-visible {
   background: var(--interactive-accent);
 }
 
+/* A lone connector shows its handles alone, as Goodnotes does: no dashed
+   box and no knob until the bar's resize handles are asked for. */
+.goodobsidian-selection-frame.is-connector {
+  border-color: transparent;
+}
+
+.goodobsidian-selection-frame.is-connector .goodobsidian-image-rotate {
+  display: none;
+}
+
+/* A connector's other handles (Goodnotes' curved and elbow connectors): a
+   small dot half way along a run adds a bend point there; a pill on an
+   elbow's run, lying along it, slides the run sideways. */
+.goodobsidian-shape-point.is-dot {
+  width: 9px;
+  height: 9px;
+  border-color: var(--gob-mark);
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-shape-point.is-pill {
+  width: 20px;
+  height: 9px;
+  border-color: var(--gob-mark);
+  border-radius: 4.5px;
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-shape-point.is-pill.is-upright {
+  width: 9px;
+  height: 20px;
+}
+
+.goodobsidian-shape-point.is-pill.is-dragging {
+  width: 24px;
+  height: 12px;
+  border-radius: 6px;
+}
+
+.goodobsidian-shape-point.is-pill.is-upright.is-dragging {
+  width: 12px;
+  height: 24px;
+}
+
 /* PDF text held on (discussion #107): a tint over each selected line, and a
    handle at either end as iPadOS draws them, a bar the line's height with a
    knob above the start and below the end. The handle's box is 44 px wide, a

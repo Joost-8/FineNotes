@@ -31,6 +31,7 @@ export default defineConfig({
         "src/ink/straighten.ts",
         "src/ink/level-line.ts",
         "src/ink/shape-points.ts",
+        "src/ink/connector-edit.ts",
         "src/ink/shape-snap.ts",
         "src/ink/connector-route.ts",
         "src/canvas/backdrop.ts",

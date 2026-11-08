@@ -713,7 +713,14 @@ import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 import { type PenCursorStyle, cursorCss, cursorFor, cursorSize, cursorToolOf } from "./pen-cursor";
 import { type Span, toastSide } from "./toast-side";
 import { RulerOverlay } from "./ruler-overlay";
-import { type PointHandles, movePoint, pickPointHandle, pointHandles } from "../ink/shape-points";
+import {
+  type PointHandles,
+  levelAnchor,
+  movePoint,
+  pickPointHandle,
+  pointHandles,
+  snapsToShapes,
+} from "../ink/shape-points";
 import {
   besideOffset,
   boundsOfPts,
@@ -13128,8 +13135,13 @@ export class InkSurface {
       graphs: [...graphs],
       equations: [...equations],
     };
-    this.selectionCorners = isLoneShape(this.selection) || this.loneTape(this.selection) !== null;
-    this.shapePointsOn = false;
+    // A lone connector (a line, a curve, an elbow) shows its bend handles
+    // straight away and no resize frame, as Goodnotes' does; other shapes
+    // their resize handles, the corner points behind the bar's button.
+    const connector = this.loneShape(this.selection)?.handles.connector !== undefined;
+    this.selectionCorners =
+      !connector && (isLoneShape(this.selection) || this.loneTape(this.selection) !== null);
+    this.shapePointsOn = connector;
     this.syncSelectionOverlay();
   }
 
@@ -13308,6 +13320,7 @@ export class InkSurface {
         : null;
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
     this.selectionFrameEl.toggleClass("no-corners", !this.selectionCorners);
+    this.selectionFrameEl.toggleClass("is-connector", this.connectorChrome);
     if (box && bounds) {
       const scale = this.unitScale;
       const pad = this.framePad;
@@ -13432,6 +13445,7 @@ export class InkSurface {
     if (!bounds) return null;
     // A lasso's loop has no knob until the resize handles are asked for.
     if (this.outlineShown(sel) && !this.selectionCorners) return bounds;
+    if (this.connectorChrome) return bounds;
     const scale = this.unitScale;
     const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
     const r = ROTATE_KNOB_RADIUS_PX / scale;
@@ -16229,6 +16243,7 @@ export class InkSurface {
 
   /** The turn a press at page point `from` starts, or `null` when it missed the rotate knob. */
   private knobGrabbed(bounds: Bounds, from: Pt): GroupTurn | null {
+    if (this.connectorChrome) return null;
     const scale = this.unitScale;
     const frame = this.selectionFrameOf(bounds);
     const hit = hitSelectionKnob(
@@ -17438,6 +17453,18 @@ export class InkSurface {
       : SELECTION_PAD_PX;
   }
 
+  /**
+   * A lone connector showing its handles and not its resize frame: then,
+   * as in Goodnotes, the handles are all its chrome (no dashed box, no knob).
+   */
+  private get connectorChrome(): boolean {
+    return (
+      this.shapePointsOn &&
+      !this.selectionCorners &&
+      this.loneShape(this.selection)?.handles.connector !== undefined
+    );
+  }
+
   /** The one shape a selection holds on its own, and its point handles; null otherwise. */
   private loneShape(sel: GroupSelection | null): { stroke: Stroke; handles: PointHandles } | null {
     if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
@@ -17465,18 +17492,33 @@ export class InkSurface {
       cls: "goodobsidian-shape-points",
     }));
     el.removeClass("is-hidden");
-    const at = lone.handles.at;
+    // A connector being bent shows the handles its draft has (a new bend
+    // point, runs that came or went), the one under the pen marked.
+    const shown =
+      drag?.draft && drag.handles.connector
+        ? (pointHandles(drag.draft.kind, drag.draft.pts) ?? lone.handles)
+        : lone.handles;
+    const at = shown.at;
     const count = at.length / 2;
+    let held = drag?.lifted === true ? drag.handle : -1;
+    if (held >= 0 && shown !== lone.handles && drag?.draft) {
+      held = pickPointHandle(at, drag.draft.at, Infinity);
+    }
     while (el.childElementCount < count) el.createDiv({ cls: "goodobsidian-shape-point" });
     while (el.childElementCount > count) el.lastElementChild?.remove();
     const scale = this.unitScale;
     for (let h = 0; h < count; h++) {
       const dot = el.children[h] as HTMLElement;
-      const moved = drag?.draft && drag.handle === h ? drag.draft.at : null;
+      const moved =
+        drag?.draft && shown === lone.handles && drag.handle === h ? drag.draft.at : null;
       const x = moved ? moved.x : at[h * 2];
       const y = moved ? moved.y : at[h * 2 + 1];
       dot.setCssStyles({ left: `${(box.x + x) * scale}px`, top: `${(box.y + y) * scale}px` });
-      dot.toggleClass("is-dragging", drag?.lifted === true && drag.handle === h);
+      const look = shown.looks?.[h] ?? "ring";
+      dot.toggleClass("is-dot", look === "dot");
+      dot.toggleClass("is-pill", look === "pill-x" || look === "pill-y");
+      dot.toggleClass("is-upright", look === "pill-y");
+      dot.toggleClass("is-dragging", h === held);
     }
   }
 
@@ -17570,21 +17612,21 @@ export class InkSurface {
    * within a few degrees of either.
    */
   private snapDraggedPoint(box: PageBox, drag: PointDrag, p: Pt): Pt {
-    this.shapeSnapper.exclude = drag.stroke;
-    const snapped = this.snapNear(box, p.x, p.y);
-    this.shapeSnapper.exclude = null;
-    if (snapped) {
-      const hit = this.shapeSnapper.hit;
-      this.showSnapMarker(box, hit);
-      return { x: hit.x, y: hit.y };
+    if (snapsToShapes(drag.handles, drag.handle)) {
+      this.shapeSnapper.exclude = drag.stroke;
+      const snapped = this.snapNear(box, p.x, p.y);
+      this.shapeSnapper.exclude = null;
+      if (snapped) {
+        const hit = this.shapeSnapper.hit;
+        this.showSnapMarker(box, hit);
+        return { x: hit.x, y: hit.y };
+      }
     }
     this.showSnapMarker(null, null);
-    const { at, points, arrow } = drag.handles;
-    const line = arrow || (points.length === 2 && points.every((list) => list.length === 1));
-    if (!line) return p;
-    const other = 1 - drag.handle;
-    const ox = at[other * 2];
-    const oy = at[other * 2 + 1];
+    const anchor = levelAnchor(drag.handles, drag.handle);
+    if (!anchor) return p;
+    const ox = anchor.x;
+    const oy = anchor.y;
     const turn = levelTurn(p.x - ox, p.y - oy, this.atFitZoom(LINE_LEVEL_RISE));
     if (turn === 0) return p;
     const c = Math.cos(turn);
