@@ -178,14 +178,13 @@ describe("width glyphs", () => {
     expect(widthAt(brush, 3)).toBeGreaterThan(widthAt(brush, 10));
     expect(widthAt(brush, 10)).toBeGreaterThan(widthAt(brush, 20));
     expect(widthAt(brush, 20)).toBeLessThan(1);
-    // The calligraphy pen: a band whose ends are cut along the nib's 40° edge,
-    // down and to the right as the engine's nib lies (`nibFactor`).
+    // The calligraphy pen: a band whose ends are cut at 40°, rising to the right.
     // Corners: top left, top right, bottom right, bottom left.
     const [tl, tr, br, bl] = vertices(swoosh("calligraphy", 6).d);
     expect(tr[1]).toBe(tl[1]);
     expect(br[1]).toBe(bl[1]);
     const cut = (top: number, bottom: number): number =>
-      Math.atan2(br[1] - tr[1], bottom - top) * (180 / Math.PI);
+      Math.atan2(br[1] - tr[1], top - bottom) * (180 / Math.PI);
     expect(cut(tl[0], bl[0])).toBeCloseTo(40, 0);
     expect(cut(tr[0], br[0])).toBeCloseTo(40, 0);
   });

@@ -299,16 +299,16 @@ export function swoosh(pen: string, thickness: number): Swoosh {
     case "highlighter":
       return { d: `M${BAR_LEFT} ${MID}H${BAR_RIGHT}`, strokeWidth: w, cap: "butt", opacity: 0.55 };
     case "calligraphy": {
-      // Both ends cut along the nib's edge (down and to the right, as the
-      // ink engine lays it), until the cuts would leave too short a band;
-      // steeper past that.
+      // Both ends cut at the nib's 40°, rising to the right (Joost,
+      // 2026-11-08: "calligraphy should go up"), until the cuts would leave
+      // too short a band; steeper past that.
       const slant = Math.min(w / Math.tan((NIB_DEGREES * Math.PI) / 180), WIDTH_BAR / 2 - 1);
       const top = MID - r;
       const bottom = MID + r;
       return {
         d:
-          `M${n(BAR_LEFT)} ${n(top)}H${n(BAR_RIGHT - slant)}` +
-          `L${n(BAR_RIGHT)} ${n(bottom)}H${n(BAR_LEFT + slant)}Z`,
+          `M${n(BAR_LEFT + slant)} ${n(top)}H${n(BAR_RIGHT)}` +
+          `L${n(BAR_RIGHT - slant)} ${n(bottom)}H${n(BAR_LEFT)}Z`,
       };
     }
     default: {
