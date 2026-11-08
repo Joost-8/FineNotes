@@ -148,6 +148,8 @@ export interface LibraryHost {
   openUpdate(): void;
   /** Read the released version now (Home's check button); `update()` then has the answer. */
   checkUpdate(): Promise<CheckOutcome>;
+  /** Call `listener` when `update()` may have changed (the daily check); returns the unsubscribe. */
+  onUpdateChange(listener: () => void): () => void;
   /** A notebook whose pages are the chosen PDF's, made in `folder`. */
   importPdf(
     source: { kind: "file"; file: File } | { kind: "vault"; file: TFile },
@@ -392,6 +394,13 @@ export class LibraryView extends ItemView {
     );
     this.titleEl = head.createEl("h4", { cls: "goodobsidian-library-title" });
 
+    // Two arrows that check for a newer FineNotes; one found turns them into "Update to x".
+    this.updateEl = head.createEl("button", {
+      cls: "clickable-icon goodobsidian-library-update",
+      attr: { type: "button" },
+    });
+    this.updateEl.addEventListener("click", () => this.tapUpdate());
+
     const search = head.createDiv({ cls: "goodobsidian-library-search" });
     setIcon(search.createSpan(), "search");
     const input = search.createEl("input", {
@@ -412,13 +421,6 @@ export class LibraryView extends ItemView {
     });
     setIcon(sort, "arrow-up-down");
     sort.addEventListener("click", (event) => this.openSortMenu(event));
-
-    // Two arrows that check for a newer FineNotes; one found turns them into "Update to x".
-    this.updateEl = head.createEl("button", {
-      cls: "clickable-icon goodobsidian-library-update",
-      attr: { type: "button" },
-    });
-    this.updateEl.addEventListener("click", () => this.tapUpdate());
 
     const add = head.createEl("button", {
       cls: "goodobsidian-library-new",
@@ -465,6 +467,8 @@ export class LibraryView extends ItemView {
 
     // A deleted note's frontmatter may be gone already: one read before counts too.
     this.watchVault();
+    // The daily check (or switching it off) can answer while Home is open: the pill follows at once.
+    this.register(this.host.onUpdateChange(() => this.paintUpdate()));
     // The simple look turned on or off while Home is open: the rail follows at once.
     const look = new MutationObserver(() => {
       if (document.body.hasClass(SIMPLE_CLASS) !== this.simple) this.paintNow();
