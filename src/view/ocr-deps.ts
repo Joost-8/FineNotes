@@ -41,6 +41,9 @@ class ActiveStore implements ModelStoreLike {
   get state() {
     return this.active().state;
   }
+  get arriving() {
+    return this.active().arriving;
+  }
   file() {
     return this.active().file();
   }
