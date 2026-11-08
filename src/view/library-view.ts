@@ -75,6 +75,13 @@ import { ASSETS_FOLDER } from "../model/vault-folders";
 import { HOME_FILE, HOME_FILE_FLAG } from "../model/home-file";
 import { notebookOwnedFiles } from "../model/library-files";
 import { type TextKey, t, tn } from "../i18n/translate";
+import {
+  CHECK_RESULT_MS,
+  type CheckOutcome,
+  type CheckPhase,
+  phaseAfter,
+  updateButtonLook,
+} from "../model/update-button";
 import { inkFileSuffix } from "../model/new-notebook";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
@@ -139,6 +146,8 @@ export interface LibraryHost {
   update(): string | null;
   /** Open FineNotes' page under Community plugins, with Obsidian's Update button. */
   openUpdate(): void;
+  /** Read the released version now (Home's check button); `update()` then has the answer. */
+  checkUpdate(): Promise<CheckOutcome>;
   /** A notebook whose pages are the chosen PDF's, made in `folder`. */
   importPdf(
     source: { kind: "file"; file: File } | { kind: "vault"; file: TFile },
@@ -259,6 +268,9 @@ export class LibraryView extends ItemView {
   private barEl!: HTMLElement;
   private pullEl!: HTMLElement;
   private updateEl!: HTMLElement;
+  /** Where a check the user asked for stands (`model/update-button.ts`). */
+  private checkPhase: CheckPhase = "idle";
+  private checkTimer = 0;
   private query = "";
   private readonly reads = new Map<string, Read>();
   /** Each notebook's own text, for searching inside it; valid while its file's time and size match. */
@@ -401,13 +413,12 @@ export class LibraryView extends ItemView {
     setIcon(sort, "arrow-up-down");
     sort.addEventListener("click", (event) => this.openSortMenu(event));
 
+    // Two arrows that check for a newer FineNotes; one found turns them into "Update to x".
     this.updateEl = head.createEl("button", {
-      cls: "goodobsidian-library-update is-hidden",
+      cls: "clickable-icon goodobsidian-library-update",
       attr: { type: "button" },
     });
-    setIcon(this.updateEl.createSpan({ cls: "goodobsidian-library-new-icon" }), "arrow-up-circle");
-    this.updateEl.createSpan({ text: t("settings.update.button") });
-    this.updateEl.addEventListener("click", () => this.host.openUpdate());
+    this.updateEl.addEventListener("click", () => this.tapUpdate());
 
     const add = head.createEl("button", {
       cls: "goodobsidian-library-new",
@@ -581,7 +592,79 @@ export class LibraryView extends ItemView {
     );
   }
 
+  /** The update control as `updateButtonLook` says: the arrows, a spin, "No update", or the pill. */
+  private paintUpdate(): void {
+    const el = this.updateEl;
+    if (!el) return;
+    const look = updateButtonLook(this.host.update(), this.checkPhase);
+    if (
+      el.dataset.look === look.kind &&
+      el.dataset.version === (look.kind === "update" ? look.version : "")
+    )
+      return;
+    el.dataset.look = look.kind;
+    el.dataset.version = look.kind === "update" ? look.version : "";
+    el.empty();
+    const pill = look.kind === "update" || look.kind === "none";
+    el.toggleClass("is-pill", pill);
+    el.toggleClass("is-checking", look.kind === "checking");
+    el.toggleClass("is-update", look.kind === "update");
+    el.toggleClass("clickable-icon", !pill);
+    const icon = el.createSpan({ cls: "goodobsidian-library-update-icon" });
+    switch (look.kind) {
+      case "update":
+        setIcon(icon, "arrow-up-circle");
+        el.createSpan({
+          cls: "goodobsidian-library-update-text",
+          text: t("notebooks.home.updateTo", { version: look.version }),
+        });
+        el.setAttribute("aria-label", t("settings.update.out", { version: look.version }));
+        break;
+      case "none":
+        setIcon(icon, "check");
+        el.createSpan({
+          cls: "goodobsidian-library-update-text",
+          text: t("notebooks.home.noUpdate"),
+        });
+        // Its words name it; a tooltip would only repeat them.
+        el.removeAttribute("aria-label");
+        break;
+      case "offline":
+        setIcon(icon, "wifi-off");
+        el.setAttribute("aria-label", t("notebooks.home.updateOffline"));
+        break;
+      default:
+        setIcon(icon, "refresh-cw");
+        el.setAttribute("aria-label", t("notebooks.home.checkUpdate"));
+    }
+  }
+
+  /** A tap on the update control: install the update that is known, or look for one. */
+  private tapUpdate(): void {
+    if (this.host.update() !== null) {
+      this.host.openUpdate();
+      return;
+    }
+    if (this.checkPhase === "checking") return;
+    window.clearTimeout(this.checkTimer);
+    this.checkPhase = "checking";
+    this.paintUpdate();
+    void this.host
+      .checkUpdate()
+      .catch((): CheckOutcome => "offline")
+      .then((outcome) => {
+        this.checkPhase = phaseAfter(outcome);
+        this.paintUpdate();
+        if (this.checkPhase === "idle") return;
+        this.checkTimer = window.setTimeout(() => {
+          this.checkPhase = "idle";
+          this.paintUpdate();
+        }, CHECK_RESULT_MS);
+      });
+  }
+
   override async onClose(): Promise<void> {
+    window.clearTimeout(this.checkTimer);
     this.closed = true;
     this.unloadPreviews();
     this.pagesOf?.dispose();
@@ -895,10 +978,7 @@ export class LibraryView extends ItemView {
     );
     this.upEl.toggleClass("is-hidden", this.folder === "");
     this.unloadPreviews();
-    const update = this.host.update();
-    this.updateEl.toggleClass("is-hidden", update === null);
-    if (update !== null)
-      this.updateEl.setAttribute("aria-label", t("settings.update.out", { version: update }));
+    this.paintUpdate();
     this.bodyEl.empty();
 
     const all = this.entries();

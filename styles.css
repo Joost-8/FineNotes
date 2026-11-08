@@ -16238,8 +16238,18 @@ body.goodobsidian-ocr-reading .goodobsidian-pageindicator:not(.is-hidden)::befor
     transform: rotate(360deg);
   }
 }
-/* An update is out: the same stadium as New, in a quieter fill. */
-button.goodobsidian-library-update {
+/*
+ * Check for updates: Obsidian's icon button, two arrows. An update found
+ * grows it into the same stadium as New, in a quieter fill; "No update"
+ * is that stadium in grey for a moment.
+ */
+.goodobsidian-library-update-icon {
+  display: inline-flex;
+}
+button.goodobsidian-library-update.is-checking .goodobsidian-library-update-icon {
+  animation: goodobsidian-update-spin 0.9s linear infinite;
+}
+button.goodobsidian-library-update.is-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -16248,16 +16258,47 @@ button.goodobsidian-library-update {
   border: 0;
   border-radius: 999px;
   box-shadow: none;
-  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
-  color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
   font-size: 14px;
   font-weight: 650;
+  white-space: nowrap;
+  animation: goodobsidian-update-grow 0.22s var(--gob-ease);
 }
-button.goodobsidian-library-update.is-hidden {
-  display: none;
+button.goodobsidian-library-update.is-update {
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  color: var(--interactive-accent);
+}
+button.goodobsidian-library-update.is-pill .svg-icon {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.4;
 }
 button.goodobsidian-library-update:active {
   transform: scale(0.95);
+}
+/* A narrow Home has no room for the words: the stadium keeps its mark, the name is the tooltip. */
+.goodobsidian-library.is-narrow button.goodobsidian-library-update.is-update {
+  padding: 0 9px;
+}
+.goodobsidian-library.is-narrow .is-update .goodobsidian-library-update-text {
+  display: none;
+}
+@keyframes goodobsidian-update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes goodobsidian-update-grow {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  button.goodobsidian-library-update.is-pill {
+    animation: none;
+  }
 }
 .goodobsidian-library-swatch {
   display: inline-block;

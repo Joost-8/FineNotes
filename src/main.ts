@@ -527,6 +527,7 @@ export default class GoodObsidianPlugin extends Plugin {
           openSettings: () => this.openOwnSettings(),
           update: () => this.updates.available,
           openUpdate: () => this.openUpdatePage(),
+          checkUpdate: () => this.updates.checkNow(),
           importPdf: (source, folder) => {
             const name = source.file.name.replace(/\.pdf$/i, "");
             void this.createNotebookFromPdfBytes(
