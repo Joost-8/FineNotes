@@ -416,7 +416,16 @@ const PRINT_WORDS = [
   "water",
   "sugar",
   "lipid",
+  "virus",
+  "spore",
+  "fungi",
+  "light",
+  "acids",
+  "roots",
   "enzyme",
+  "oxygen",
+  "glucose",
+  "hormone",
   "energy",
   "carbon",
   "tissue",
@@ -428,16 +437,69 @@ const PRINT_WORDS = [
   "organism",
   "bacteria",
   "ribosome",
+  "cytoplasm",
+  "organelle",
+  "metabolism",
   "chromosome",
+  "chloroplast",
   "respiration",
 ];
 
 /** A word as long as a printed gap of `w`, varying with `index`. */
-function printWord(w: number, index: number): string {
-  const target = Math.round(w / 6);
-  const fits = PRINT_WORDS.filter((word) => Math.abs(word.length - target) <= 2);
-  const pool = fits.length > 0 ? fits : PRINT_WORDS;
-  return pool[(index * 7) % pool.length];
+/** Roughly how wide a serif sets each letter, in em; the rest count as 0.55. */
+const PRINT_EM: Record<string, number> = {
+  " ": 0.26,
+  i: 0.29,
+  j: 0.29,
+  l: 0.29,
+  f: 0.34,
+  t: 0.35,
+  r: 0.41,
+  s: 0.43,
+  a: 0.5,
+  c: 0.46,
+  e: 0.48,
+  g: 0.51,
+  z: 0.45,
+  k: 0.53,
+  v: 0.5,
+  x: 0.5,
+  y: 0.5,
+  m: 0.88,
+  w: 0.75,
+};
+const PRINT_SIZE = 11;
+
+const printWidth = (text: string): number =>
+  [...text].reduce((sum, letter) => sum + (PRINT_EM[letter] ?? 0.57), 0) * PRINT_SIZE;
+
+type Print = readonly [text: string, width: number];
+const sized = (text: string): Print => [text, printWidth(text)];
+const SMALL_WORDS = PRINT_WORDS.slice(0, 4);
+const PRINT_SINGLES: readonly Print[] = PRINT_WORDS.map(sized);
+/** For the gaps no word fills: a small word before a noun, "in water". */
+const PRINT_PAIRS: readonly Print[] = SMALL_WORDS.flatMap((small) =>
+  PRINT_WORDS.slice(10).map((noun) => sized(`${small} ${noun}`)),
+);
+
+/**
+ * Print as wide as a gap of `w`, varying with `index`, never `after` twice
+ * running. Set to the gap it is stretched or squeezed, so only what a serif
+ * sets within a twelfth of the gap is offered: letters of one size across a
+ * page, on any device's font. One word where one fits.
+ */
+function printWord(w: number, index: number, after = ""): string {
+  const near = (from: readonly Print[]): Print[] =>
+    from.filter(([text, width]) => text !== after && Math.abs(width - w) <= w / 12);
+  let pool = near(PRINT_SINGLES);
+  if (pool.length === 0) pool = near(PRINT_PAIRS);
+  if (pool.length === 0) {
+    pool = [...PRINT_SINGLES, ...PRINT_PAIRS]
+      .filter(([text]) => text !== after)
+      .sort((x, y) => Math.abs(x[1] - w) - Math.abs(y[1] - w))
+      .slice(0, 1);
+  }
+  return pool[(index * 7) % pool.length][0];
 }
 
 /** Typed text across `w`, its top where a bar of that width would be. */
@@ -454,18 +516,20 @@ function typed(
 }
 
 /** Rows of printed words: a page of a textbook. */
-function printed(rows: ReadonlyArray<readonly [y: number, widths: readonly number[]]>) {
+function printed(rows: ReadonlyArray<readonly [y: number, widths: readonly number[]]>, left = 34) {
   const shapes: SceneShape[] = [];
   let index = 0;
+  let last = "";
   for (const [y, widths] of rows) {
-    let x = 34;
+    let x = left;
     for (const w of widths) {
+      last = printWord(w, index, last);
       shapes.push({
         kind: "text",
         x,
         y: y + 8,
-        text: printWord(w, index),
-        size: 11,
+        text: last,
+        size: PRINT_SIZE,
         fit: w,
         face: "print",
         tone: "print",
@@ -1494,7 +1558,7 @@ const SCENES = {
     shapes: [
       ...ruledPaper(),
       ink(scrawl(44, 106, 74, 37, 13)),
-      ink(scrawl(130, 106, 76, 38, 13)),
+      ink(handwrite("mitosis", 130, 106, 76, 13)),
       ink(scrawl(218, 106, 58, 39, 13)),
       {
         kind: "path",
@@ -1878,14 +1942,24 @@ const SCENES = {
   screenshotLasso: sc(
     0.78,
     printed(PRINT),
-    frame(60, 54, 150, 62, "accent", 3, { opacity: shownFrom(0.08) }, true),
-    icon("camera", 240, 40, "accent", 34, { opacity: between(0.3, 0.56) }),
-    taps(240, 40, [0.48]),
+    frame(60, 58, 150, 62, "accent", 3, { opacity: shownFrom(0.08) }, true),
     group(
-      { opacity: shownFrom(0.56), x: movedTo(60, 0.56, 0.78), y: movedTo(26, 0.56, 0.78) },
-      box(60, 54, 150, 62, "page", 4),
-      frame(60, 54, 150, 62, "soft", 4),
-      word(74, 92, 110, 49, 10),
+      { opacity: between(0.26, 0.56) },
+      box(113, 16, 44, 32, "ink", 16),
+      icon("camera", 135, 32, "page", 20),
+    ),
+    taps(135, 32, [0.48]),
+    group(
+      { opacity: shownFrom(0.56), x: movedTo(84, 0.58, 0.8), y: movedTo(58, 0.58, 0.8) },
+      box(60, 58, 150, 62, "page", 4),
+      frame(60, 58, 150, 62, "accent", 4),
+      printed(
+        [
+          [68, [48, 30, 44]],
+          [98, [26, 62, 34]],
+        ],
+        70,
+      ),
     ),
   ),
   lassoFilter: sc(

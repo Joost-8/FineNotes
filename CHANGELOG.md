@@ -28,6 +28,11 @@ extracted from the matching section of this file by `release.yml`.
 - **What's new shows more of 2.9.** Five new pictures, also under Tips: a
   sum that glows and its maths card, solving for x, putting a graph on the
   page, the looks, and the lasso's lighter menu.
+- **Tidier pictures in Tips.** The printed pages in the pictures are set
+  in letters of one size (words used to be stretched or squeezed to fit, and
+  looked bold and thin by turns). "Fix a misread word" writes the word its
+  menu corrects, and "Screenshot any patch" shows the camera in the lasso's
+  own pill, clear of the text, and copies print, not handwriting.
 
 ## [2.9.0] - 2026-11-09
 
