@@ -30,7 +30,12 @@ import {
   SCHEMA_VERSION,
 } from "../constants";
 import { normalizeAttachmentFolders } from "./attachment-folders";
-import { normalizePageTitle, normalizeSections } from "./contents";
+import {
+  normalizeChapters,
+  normalizePageTitle,
+  normalizeSections,
+  readContentsLevel,
+} from "./contents";
 import { normalizeLinks } from "./links";
 import { normalizeTasks } from "./tasks";
 import { isStyledConnector, liveConnectors, readConnectors } from "./connectors";
@@ -60,7 +65,9 @@ import {
   type ImageElement,
   type InkDocument,
   type Page,
+  type PageChapter,
   type PageSection,
+  type ContentsLevel,
   type InkLink,
   type InkTask,
   type ShapeConnector,
@@ -189,7 +196,9 @@ interface StoredPage {
   bookmarked?: boolean;
   tab?: string;
   title?: string;
+  titleLevel?: ContentsLevel;
   sections?: PageSection[];
+  chapters?: PageChapter[];
   links?: InkLink[];
   tasks?: InkTask[];
   connectors?: ShapeConnector[];
@@ -355,7 +364,12 @@ function storePage(page: Page): StoredPage {
     bookmarked: page.bookmarked === true ? true : undefined,
     tab: readTabColor(page.tab),
     title: normalizePageTitle(page.title),
+    titleLevel:
+      page.title !== undefined && (page.titleLevel === 2 || page.titleLevel === 3)
+        ? page.titleLevel
+        : undefined,
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
+    chapters: page.chapters && page.chapters.length > 0 ? page.chapters : undefined,
     links: page.links && page.links.length > 0 ? page.links : undefined,
     tasks: page.tasks && page.tasks.length > 0 ? page.tasks : undefined,
     connectors: storedConnectors(page),
@@ -733,9 +747,12 @@ export class DocumentEncoder {
 
 /** Anything with fields to read. Arrays pass too; their named fields are simply absent. */
 /** A page's contents title, spread into the page only when there is one. */
-function titleOf(raw: unknown): { title?: string } {
+function titleOf(raw: unknown, rawLevel: unknown): { title?: string; titleLevel?: ContentsLevel } {
   const title = normalizePageTitle(raw);
-  return title === undefined ? {} : { title };
+  if (title === undefined) return {};
+  // A chapter is what absent means; only a deeper level is kept.
+  const level = readContentsLevel(rawLevel);
+  return level === 2 || level === 3 ? { title, titleLevel: level } : { title };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1165,8 +1182,9 @@ function normalizePage(
     // Only a literal `true`: anything else in the file is "not bookmarked".
     ...(page.bookmarked === true ? { bookmarked: true as const } : {}),
     ...(readTabColor(page.tab) ? { tab: readTabColor(page.tab) } : {}),
-    ...titleOf(page.title),
+    ...titleOf(page.title, page.titleLevel),
     ...sectionsOf(page.sections, seenSections),
+    ...chaptersOf(page.chapters, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
     ...tasksOf(page.tasks, strokes, seenTasks),
     ...connectorsIn(page.connectors, strokes, seenConnectors),
@@ -1208,6 +1226,11 @@ function tasksOf(
 }
 
 /** A page's sections, spread into the page only when it has any. */
+function chaptersOf(raw: unknown, seen: Set<string>): { chapters?: PageChapter[] } {
+  const chapters = normalizeChapters(raw, seen);
+  return chapters.length > 0 ? { chapters } : {};
+}
+
 function sectionsOf(raw: unknown, seen: Set<string>): { sections?: PageSection[] } {
   const sections = normalizeSections(raw, seen);
   return sections.length > 0 ? { sections } : {};
