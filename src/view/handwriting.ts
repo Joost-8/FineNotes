@@ -205,11 +205,12 @@ export class HandwritingReader {
   /**
    * Read groups of strokes, each as one line (words, for the bracket test).
    * With `chars`, each reading also gives its characters, their strokes and
-   * runner-ups (a calculation note's doubts).
+   * runner-ups (a calculation note's doubts). With `math`, each is read as
+   * maths (a calculation note's "=" says so).
    */
   async readGroups(
     groups: readonly (readonly PageInk[])[],
-    options: { chars?: boolean } = {},
+    options: { chars?: boolean; math?: boolean } = {},
   ): Promise<LineReading[]> {
     await this.model();
     const client = this.client;
@@ -219,6 +220,7 @@ export class HandwritingReader {
         groups.map((group) => [...group]),
         true,
         options.chars === true,
+        options.math === true,
       );
     } catch (error) {
       this.dispose();

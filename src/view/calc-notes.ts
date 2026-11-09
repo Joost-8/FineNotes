@@ -458,12 +458,12 @@ export class CalcNotes {
       chars: l.chars,
     });
     const laidOut = await readLaidOut(body, async (groups) =>
-      (await reader.readGroups(groups.map(inkForReading), { chars: true })).map(piece),
+      (await reader.readGroups(groups.map(inkForReading), { chars: true, math: true })).map(piece),
     );
     if (laidOut !== null) return laidOut;
     // `inkForReading` keeps pen ink only, in order: the indices `chars` names.
     const ink = strokes.filter((s) => s.tool === "pen" && !s.shape);
-    const [line] = await reader.readGroups([inkForReading(ink)], { chars: true });
+    const [line] = await reader.readGroups([inkForReading(ink)], { chars: true, math: true });
     return line ? readWhole(ink, piece(line)) : null;
   }
 

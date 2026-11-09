@@ -157,6 +157,41 @@ function topClasses(logp: Float32Array, o: number, C: number, n: number): number
   return out;
 }
 
+/** What a line known to be maths rewards (nats a frame): its digits and signs. */
+const MATH_SIGNS: ReadonlySet<string> = new Set("0123456789+-*/=^()<>.∑∫≤≥√π");
+const MATH_SIGN_REWARD = 3;
+/** The letters sums are written in; less, since a word in a sum has them too. */
+const MATH_LETTERS: ReadonlySet<string> = new Set("xyf");
+const MATH_LETTER_REWARD = 1.5;
+
+/** `logp` with a maths line's characters rewarded. `logp` itself is left alone. */
+export function mathLogp(
+  logp: Float32Array,
+  frames: number,
+  alphabet: readonly string[],
+): Float32Array {
+  const out = new Float32Array(logp);
+  const K = alphabet.length + 1;
+  alphabet.forEach((c, i) => {
+    const reward = MATH_SIGNS.has(c)
+      ? MATH_SIGN_REWARD
+      : MATH_LETTERS.has(c)
+        ? MATH_LETTER_REWARD
+        : 0;
+    if (reward === 0) return;
+    for (let t = 0; t < frames; t++) out[t * K + i + 1] += reward;
+  });
+  return out;
+}
+
+/**
+ * Maths symbols Grape can write and the language model has never seen. It
+ * would give each only its smoothing mass, and a real integral sign would
+ * lose to any letter; so each is scored as a "(", the nearest thing it knows.
+ * Only these: other unseen characters (~ # \) stay as they were.
+ */
+const LM_UNSEEN: ReadonlySet<string> = new Set(["∑", "∫", "≤", "≥", "√", "π"]);
+
 /**
  * `lm_decode.beam_decode` without its word bonus. `lm` null: a plain beam
  * search. `bias`: favour its words (`WordBias`); without it the text is the
@@ -172,7 +207,7 @@ export function beamDecode(
 ): string {
   const { alpha, beta, beam, topk, prune } = { ...DEFAULT_BEAM, ...options };
   const C = alphabet.length + 1;
-  const codes = lm ? alphabet.map((c) => lm.codeOf(c)) : [];
+  const codes = lm ? alphabet.map((c) => lm.codeOf(LM_UNSEEN.has(c) ? "(" : c)) : [];
   const contextOf = (p: Prefix): LmContext => (p.context ??= (lm as CharLm).context(p.text));
   /** Where `parent` + `ch` stands in the bias's trie. */
   const step = (e: Prefix, parent: Prefix, ch: string): void => {

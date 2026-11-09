@@ -37,7 +37,7 @@ export type HwrRequest =
   /** List words for words of a kept page (`PageReading.id`). */
   | { type: "suggest"; reading: number; items: SuggestItem[] }
   /** Read lines given as strokes (benchmarks, tests). */
-  | { type: "lines"; lines: InkStroke[][]; useLm: boolean; chars?: boolean }
+  | { type: "lines"; lines: InkStroke[][]; useLm: boolean; chars?: boolean; math?: boolean }
   /**
    * Learn a writer's handwriting from labelled lines, starting from the model
    * in `bytes` (the general one): the tuned model file, and how both read

@@ -133,8 +133,13 @@ export class HwrWorkerClient {
   }
 
   /** Read lines given as strokes. */
-  async readLines(lines: InkStroke[][], useLm = true, chars = false): Promise<LineReading[]> {
-    const result = await this.send({ type: "lines", lines, useLm, chars }, READ_TIMEOUT_MS);
+  async readLines(
+    lines: InkStroke[][],
+    useLm = true,
+    chars = false,
+    math = false,
+  ): Promise<LineReading[]> {
+    const result = await this.send({ type: "lines", lines, useLm, chars, math }, READ_TIMEOUT_MS);
     if (result.type !== "lines") throw new Error("unexpected reply");
     return result.readings;
   }

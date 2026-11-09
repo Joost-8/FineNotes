@@ -9,7 +9,14 @@
 
 import { forward } from "./blstm";
 import type { HwrBundle } from "./bundle";
-import { type BeamOptions, type WordBias, beamDecode, greedyDecode, wordTrie } from "./ctc";
+import {
+  type BeamOptions,
+  type WordBias,
+  beamDecode,
+  greedyDecode,
+  mathLogp,
+  wordTrie,
+} from "./ctc";
 import { type CharReading, charReadings } from "./char-readings";
 import { networkFrames } from "./curves";
 import { type InkStroke, LineTooLongError, lineFeatures } from "./features";
@@ -59,9 +66,23 @@ export interface PageReading {
   wordGap: number;
 }
 
+/** How much the text language model counts on a maths line. */
+const MATH_LM_SCALE = 0.5;
+/** The words a maths line is written with, favoured as a page's own words are. */
+const MATH_BIAS: WordBias = {
+  root: wordTrie(["ln", "log", "mod", "sin", "cos", "tan"]),
+  weight: 1,
+};
+
 export interface ReadOptions {
   /** Decode with the bundle's language model (default true, when it has one). */
   useLm?: boolean;
+  /**
+   * The line is known to be maths (a calculation note's "="): digits, signs
+   * and x y f are rewarded, the text language model counts half, and ln log
+   * mod sin cos tan are favoured. Ordinary reading never sets it.
+   */
+  math?: boolean;
   /** Overrides the bundle's decoder settings. */
   beam?: Partial<BeamOptions>;
   /** A clock in milliseconds (`performance.now` in the worker). */
@@ -152,8 +173,21 @@ export function readLine(
   const t3 = now();
   const lm = options.useLm === false ? null : bundle.lm;
   const decoder = { ...bundle.meta.decoder, ...options.beam };
-  let text = lm ? beamDecode(logp, frames, alphabet, lm, decoder, biasOf(options)) : greedy.text;
-  if (lm && options.reread !== false && options.rereadList) {
+  const math = options.math === true;
+  let text = greedy.text;
+  if (lm) {
+    text = math
+      ? beamDecode(
+          mathLogp(logp, frames, alphabet),
+          frames,
+          alphabet,
+          lm,
+          { ...decoder, alpha: decoder.alpha * MATH_LM_SCALE },
+          MATH_BIAS,
+        )
+      : beamDecode(logp, frames, alphabet, lm, decoder, biasOf(options));
+  }
+  if (lm && !math && options.reread !== false && options.rereadList) {
     const margin = options.rereadMargin ?? REREAD_MARGIN;
     const line = { logp, frames };
     text = rereadOutOfList(line, alphabet, lm, decoder.alpha, text, options.rereadList, margin);
