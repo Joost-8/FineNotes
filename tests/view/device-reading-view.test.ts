@@ -114,7 +114,8 @@ describe("reading pages on the device", () => {
     read.mockResolvedValueOnce(reading);
     await next();
     // Not kept for suggestions: checking words is off.
-    expect(read).toHaveBeenLastCalledWith(v.doc.pages[1].strokes, false);
+    // The page goes with the notebook's own words and the word list (none here).
+    expect(read).toHaveBeenLastCalledWith(v.doc.pages[1].strokes, false, expect.any(Object));
   });
 
   it("blames no page when the model fails to load", async () => {

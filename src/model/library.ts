@@ -12,6 +12,7 @@
 import { localeTag, t, tn } from "../i18n/translate";
 import { type InkDocument, type PageGeometry, type PdfBackdrop, isCoverRuling } from "./document";
 import { inkFileSuffix, stripInkSuffix } from "./new-notebook";
+import { previewCaption, previewPageIndexes } from "./preview-pages";
 import { parseInkFile } from "./serialize";
 
 /**
@@ -44,6 +45,50 @@ export interface LibraryEntry {
   edited: number;
   /** When the file was made, ms since the epoch; the library fills it from the file. */
   created?: number;
+  /**
+   * The pages the preview's strip shows, when the notebook has more than
+   * fit (`homePreviewPages`); absent, the strip shows its pages from the
+   * first.
+   */
+  preview?: PreviewSheet[];
+}
+
+/** How many pages the strip of Home's preview shows, not counting a cover. */
+export const HOME_PREVIEW_PAGES = 12;
+
+/** One page of a shortened strip: which page, and what says which it is. */
+export interface PreviewSheet {
+  /** Its place among all the notebook's pages, the cover included. */
+  index: number;
+  /** Its line in the contents, when it has one. */
+  title?: string;
+  bookmarked?: true;
+}
+
+/**
+ * The pages the strip of Home's preview shows for a notebook too long to
+ * show from its first page: the first page past the cover, then the pages
+ * its chapters, bookmarks and contents point to (`previewPageIndexes`, the
+ * hover preview's choice), at most `HOME_PREVIEW_PAGES`. A cover is never
+ * among them: the preview shows it above the strip. `undefined` when every
+ * page fits.
+ */
+export function homePreviewPages(
+  pages: InkDocument["pages"],
+  covered: boolean,
+): PreviewSheet[] | undefined {
+  const first = covered ? 1 : 0;
+  const rest = pages.slice(first);
+  if (rest.length <= HOME_PREVIEW_PAGES) return undefined;
+  return previewPageIndexes(rest, HOME_PREVIEW_PAGES).map((i) => {
+    const page = rest[i];
+    const title = previewCaption(page);
+    return {
+      index: first + i,
+      ...(title !== undefined ? { title } : {}),
+      ...(page.bookmarked ? { bookmarked: true as const } : {}),
+    };
+  });
 }
 
 /** A notebook the library has not read yet: its file's facts only. */
@@ -222,6 +267,7 @@ export function entryFromDoc(path: string, edited: number, doc: InkDocument | nu
   const first = doc.pages[0];
   const covered = first !== undefined && isCoverRuling(first.backdrop.kind);
   const tint = first && "paperColor" in first.backdrop ? first.backdrop.paperColor : undefined;
+  const preview = homePreviewPages(doc.pages, covered);
   return {
     ...base,
     pages: doc.pages.length - (covered ? 1 : 0),
@@ -229,6 +275,7 @@ export function entryFromDoc(path: string, edited: number, doc: InkDocument | nu
     hasPdf: doc.pages.some((p) => p.backdrop.kind === "pdf"),
     pdf: firstPdf(doc.pages[covered ? 1 : 0]),
     covered,
+    ...(preview ? { preview } : {}),
   };
 }
 

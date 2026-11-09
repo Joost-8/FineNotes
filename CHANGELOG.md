@@ -29,6 +29,132 @@ extracted from the matching section of this file by `release.yml`.
 - **A double tap on a slide shows the whole slide**, as large as fits and
   centred, instead of filling the width and cutting off its foot. Portrait
   pages still fill the width.
+- **Click the pen's side button for the eraser** (FineNotes#149). On Android,
+  holding an S Pen's button while writing does not reach FineNotes. Settings →
+  Pens and shortcuts, **Side button click**, now has **Switch to the eraser**:
+  a click with the pen just above the page takes the eraser, another goes back
+  to the tool you had.
+
+### Fixed
+
+- **Fast, small writing no longer wobbles on newer iPads**
+  ([#179](https://github.com/Joost-8/FineNotes/issues/179)). On some iPads
+  the Pencil's position arrives rounded to the screen's pixels, which made
+  quick strokes zigzag slightly. FineNotes now recognises this and steadies
+  the ink as it does on older iPads, without stabilization's delay. The
+  end of a stroke also no longer shifts as the pen lifts.
+
+### Added
+
+- **A recognised sum glows, and a tap opens its maths card** (FineNotes#178).
+  When a line ending in "=" is read as maths, its ink glows in the accent
+  instead of a chip appearing over it; a part Grape was unsure of gets a
+  dotted line. A tap on the glow opens a card with the reading typeset (tap
+  it to fix the reading), the answer as a fraction or a decimal, and Write,
+  which writes a fraction stacked over a bar. Along its foot: turn the sum
+  into a typed equation, copy its LaTeX, or not maths.
+- **A doubtful character offers what else it may be** (FineNotes#178). Each
+  character Grape was unsure of, or that its word model changed, is dotted on
+  the page and in the card; a tap shows Grape's other guesses ("2 · Z · z")
+  and ✎ to type it. A pick works the sum out again and is kept as a
+  correction for Learn my handwriting, as is a reading accepted with Write or
+  a typed equation. A tap outside the card closes it and the sum keeps
+  glowing; undoing the answer or the equation brings the glow back.
+- **Powers, log bases, mod and brackets with a letter in calculation notes**
+  (FineNotes#178). A small digit raised after a number is its power
+  ("9²" is 81); a logarithm with its base written low ("log₂ 8") uses that
+  base; "17 mod 5" works however the spaces were read; and a sum in one
+  letter is expanded ("(2x+4)(4x+1)" offers 8x²+18x+4, written with its
+  powers raised).
+- **Solve an equation by asking for its letter** (FineNotes#178). Write
+  "x =" under an equation in x (or after it on the same line) and the card
+  offers its solutions ("2x+3=7" gives x = 2; "x²=9" gives x = −3 or 3).
+- **The maths card's corrections are clearer** (FineNotes#178). Picking the
+  character that was read confirms it and takes its dotted mark away; a
+  short line says what the dotted characters are ("Not sure:") and what to
+  pick ("Which did you write?"). Typing the reading opens a dialog that rises
+  above the keyboard and shows the sum typeset as it is typed.
+
+### Fixed
+
+- **Calculation notes read a raised dot as times, and fractions**
+  (FineNotes#178). "3·3 =" offered nothing, because the dot was read as a
+  decimal point; a fraction such as 3×2 over 7 was read as 3×2. A dot
+  halfway up the digits is now times and a dot on the baseline stays a
+  decimal point; a bar with a number over and under it is a fraction, and the
+  answer goes level with the "=". A dash with a dot over and under it is ÷.
+  A crossed 7 beside the dot no longer hides it, a number read as look-alike
+  letters next to it ("Zo" for 20) counts as that number, and the first
+  stroke of a × is no longer taken for a power.
+- **Tips.** The lightbulb on Home opens moving pictures of what is easy to
+  miss, ordered by what helps most: pen gestures, cover tape, tapping your
+  writing to hear it, and more. The first two pen gestures can be tried right
+  there.
+- **What's new is on Home.** After an update a card shows the highlights in
+  pictures; nothing opens by itself. A dot on the toolbar's Home button waits
+  for anyone who goes straight to a notebook.
+- **A way back from the simple look, always in sight:** a switch at the foot of
+  Home's folder rail.
+
+### Changed
+
+- **The simple look is off for new installs,** and offered as a live switch in
+  a redrawn Welcome. Anyone already using it keeps it.
+- **Themes for FineNotes' own bars, menus and dialogs.** Settings → Look
+  has two menus: a style (Default, Glass, Material, Fluent, Paper,
+  Brutalist, Soft, Retro, Compact) and colours (Match Obsidian, Nord,
+  Catppuccin, Dracula, Rosé Pine, Gruvbox, Solarized, Tokyo Night,
+  Everforest, High contrast), each in light and dark. Your pages, your ink
+  and the rest of Obsidian stay as they are. Two commands step through
+  them: "Look: next style" and "Look: next colours". Translated into every
+  language. Customize toolbar has them too, as two rows of chips under
+  Hidden, so a look is tried on the bar it changes; Reset takes it back.
+
+### Changed
+
+- **The top of FineNotes' settings reads as one list.** Look and Simple
+  look use the section headers' text and spacing, with quieter menus and a
+  smaller switch, so every name on the left sits the same distance apart.
+- **A PDF's own contents come with it**
+  ([discussion #185](https://github.com/Joost-8/FineNotes/discussions/185)).
+  Importing a PDF, as a new notebook or into one, reads its outline (the
+  bookmarks a PDF reader shows beside it) into the Contents tab: chapters,
+  sections and parts, each on the right page and at the right spot. A notice
+  says how many entries came in, with Undo. Everything stays editable.
+- **Chapters in the contents.** Entries now nest up to three levels: a
+  chapter holds the sections after it, across pages, and folds them away.
+  An entry's ⌄ menu has Indent and Outdent; its own sections move with it.
+  The order never changes: the contents still follow the pages. A long
+  contents, such as a textbook's, opens with its chapters folded.
+- **Chapters of their own.** The folder-plus under the Contents tab makes a
+  chapter that is only a name, standing before the page you are on, so
+  pages can be grouped without giving a page up to the chapter's title.
+- **Drag entries in the contents.** Press an entry and move it (hold first
+  with a finger): its pages and everything inside it go with it, in one
+  undo. Moving sideways while dragging sets how deep it sits.
+- **Previews of a long notebook show its chapters, not its first pages.**
+  The preview that opens over a notebook link, which scrolled through every
+  page, and the page strip in Home's preview, which showed the first 12, now
+  show the first page and the pages the notebook's contents and bookmarks
+  point to: chapters first, then bookmarked pages, then the rest of the
+  contents, spread through the book when there are more than fit (9 pages
+  in a link's preview, 12 in Home). Two places are always kept for
+  bookmarks, and places left over show the notebook's first pages. Each
+  page is labelled with its number and its line in the contents, and a
+  bookmarked one carries its ribbon; a link's preview ends with a +N that
+  opens the notebook. A shorter notebook shows every page, and
+  `![[Physics.notebook]]` in a note still shows every page.
+
+### Fixed
+
+- **The scanned-page reader no longer asks to be downloaded again after an
+  update or a vault sync.** Its files were looked for once, when FineNotes
+  started; if sync was still bringing them in, the download was offered and
+  the files that arrived a moment later were not used until a restart. Now
+  the folder is looked at again while pages wait, and nothing is offered
+  while part of the model is still arriving.
+- The AI menu in the tool bar scrolls when it does not fit below the bar,
+  instead of running off the screen, in full screen too.
 
 ## [2.8.3] - 2026-11-06
 
@@ -45,6 +171,39 @@ extracted from the matching section of this file by `release.yml`.
   the box and its text together, and a knob below turns it, catching every
   15°. While typing only the two pills show. Turning a lasso selection now
   turns the text boxes in it too.
+- **Type the line spacing** (FineNotes#164). Beside Tight, Normal, Roomy and
+  Wide, the template picker shows the spacing in mm; type any value from 2 to
+  30 mm, or step it by half a mm.
+- **The margin's spacing** (FineNotes#164). The Margin popover shows the
+  pitch of a lined, grid or dotted margin in mm, to type or step.
+
+### Fixed
+
+- **A page margin's lines now continue the page's** (FineNotes#164). On a
+  ruled, squared or dotted page the margin takes the page's spacing and its
+  lines are level with the page's, whatever the spacing; before, it kept its
+  own. A PDF page's margin keeps the margin paper's own spacing.
+- A spacing that matched none of the steps reopened in the template picker
+  as the nearest step, and was changed to it on Apply. It is kept as it is.
+- **Snap to PDF text, as a switch.** The highlighter's options have a new
+  switch beside Straighten lines. Off, the highlighter draws freehand on a
+  PDF's text too, straight or free, which marks equations and formulas
+  that the text snap breaks into pieces (FineNotes#159).
+
+### Fixed
+
+- **The highlighter takes a whole equation.** On a PDF, the text snap now
+  treats a formula as one line: a fraction's top and bottom and a sum's
+  limits belong to it, so a highlight over an equation is one band instead
+  of scraps at different heights (FineNotes#159). This holds for formulas
+  made in Word or MathType too, which a PDF draws a font at a time
+  (brackets, then letters, then digits): pieces join by where they stand on
+  the page, not by the order they were drawn.
+- **The whole-stroke eraser takes a highlight it touches.** It took a
+  stroke only near its centre line, so rubbing over a wide highlight (a
+  snapped one is as tall as the text) away from its middle left it there.
+  Now touching the ink is enough, as with the standard eraser
+  (FineNotes#159).
 - **Handwritten sections in ordinary notes**
   ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167),
   thanks [@mantomat](https://github.com/mantomat)). `![[Physics.notebook]]`

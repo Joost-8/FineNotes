@@ -21,6 +21,9 @@ that repository instead.
 3. Add a `## [x.y.z] - YYYY-MM-DD` section to `CHANGELOG.md`. `release.yml`
    uses it as the GitHub Release notes, and falls back to a generic line if the
    section is missing.
+   If the release has something to show, add an entry for it at the top of
+   `RELEASE_HIGHLIGHTS` in `src/model/tips.ts` (at most three pictures); a
+   release of fixes adds none, and Home shows no card.
 4. Bump the version:
    ```bash
    npm version patch   # or minor / major, or an explicit x.y.z

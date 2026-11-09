@@ -20,6 +20,7 @@ import { SetFurniture, furnitureText } from "../model/furniture";
 import { SetPageTab, nextTabColor } from "../model/page-tabs";
 import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
 import { stickerFolderOf } from "../model/stickers";
+import { lookPaletteOf, lookStyleOf } from "../model/look";
 import { templateFolderOf } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
 import { DEFAULT_FILL_COLOR, readFillGap } from "../model/fill-region";
@@ -153,7 +154,7 @@ import {
   sameLayout,
 } from "./toolbar-layout";
 import { needsNewerReader } from "../model/format-features";
-import type { ImageElement, PageSection } from "../model/document";
+import type { ContentsLevel, ImageElement, PageChapter, PageSection } from "../model/document";
 import { ScanSheet } from "./scan-sheet";
 import type { ScanItem } from "./scan-io";
 import { type SavedItem, buildScanInsert, scanFileName } from "../model/scan-commands";
@@ -247,7 +248,19 @@ import {
   insertIndexFor,
   pageFromTemplate,
 } from "../model/page-commands";
-import { SetPageTitle, SetSection, nextSectionId } from "../model/contents";
+import {
+  SetChapter,
+  SetContentsLevels,
+  SetPageTitle,
+  SetPagesContents,
+  SetSection,
+  clearedContents,
+  levelShift,
+  nextSectionId,
+} from "../model/contents";
+import { MoveContents, planContentsDrop } from "../model/contents-drag";
+import { addedEntries, outlineContents } from "../model/pdf-outline";
+import { readPdfOutline } from "./pdf-outline";
 import {
   DuplicatePages,
   MovePages,
@@ -267,7 +280,8 @@ import {
   renameLinkTargets,
 } from "../model/links";
 import { LinkSuggestModal } from "./link-modal";
-import { inkForReading, readingText } from "./handwriting";
+import { type ReadingContext, inkForReading, readingText } from "./handwriting";
+import { pageWords } from "../recognition/hwr/page-words";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
@@ -712,7 +726,17 @@ export class InkView extends TextFileView {
         !this.isProtected(),
       surface: () => this.surface,
       page: (pageId) => this.doc.pages.find((p) => p.id === pageId) ?? null,
+      openGraph: () => this.calculatorOnLine(null),
       learning: () => plugin.learningHost(),
+      record: async (pageId, strokes, read, text, kind) => {
+        const note = this.file?.path;
+        if (!note) return;
+        await plugin.wordCheck.record(
+          { note, pageId, word: { text: read, strokeIds: strokes.map((s) => s.id) }, strokes },
+          kind,
+          text,
+        );
+      },
     });
   }
 
@@ -1253,6 +1277,10 @@ export class InkView extends TextFileView {
   }
 
   /** The tool bar's layout as the settings hold it. */
+  setNewsDot(on: boolean): void {
+    this.toolbar?.setHomeDot(on);
+  }
+
   private toolbarLayout(): ToolbarLayout {
     return normalizeLayout(this.settings.toolbarLayout);
   }
@@ -1928,6 +1956,45 @@ export class InkView extends TextFileView {
   /** The notebook's name, as a header's `{title}`. */
   private notebookTitle(): string {
     return this.file ? stripInkSuffix(this.file.basename) : "";
+  }
+
+  /**
+   * What a page of this notebook is read with on the device: the notebook's
+   * own words (its title, and its other pages as read or transcribed,
+   * page-words.ts) and the word list (EXP-PCONFIRM). Never throws: without
+   * either, the page is read as before.
+   */
+  private async readingContext(page: Page): Promise<ReadingContext> {
+    const context: ReadingContext = {};
+    try {
+      await this.plugin.wordCheck.load();
+      context.lexicon = this.plugin.wordCheck.lexicon();
+    } catch {
+      // No word list: nothing is read again.
+    }
+    try {
+      const doc = this.doc;
+      const key = pageKeys(doc.pages)[doc.pages.indexOf(page)] ?? page.id;
+      const title = this.notebookTitle();
+      const notes = [this.noteBody, ...(await this.transcriptFiles(title))];
+      context.words = pageWords(title, notes, key);
+    } catch {
+      // No page words: the page is read on its own.
+    }
+    return context;
+  }
+
+  /** The transcript files kept beside this notebook (`Transcripts/<title>.transcript.md`). */
+  private async transcriptFiles(title: string): Promise<string[]> {
+    const dir = this.file?.parent?.path ?? "";
+    if (!title) return [];
+    const adapter = this.app.vault.adapter;
+    const out: string[] = [];
+    for (const rel of [`Transcripts/${title}.transcript.md`, `${title}.transcript.md`]) {
+      const path = normalizePath(dir && dir !== "/" ? `${dir}/${rel}` : rel);
+      if (await adapter.exists(path)) out.push(await adapter.read(path));
+    }
+    return out;
   }
 
   /** Ask, in the layout last chosen: a window, or the sidebar beside the page. */
@@ -2724,7 +2791,11 @@ export class InkView extends TextFileView {
       try {
         // TODO(#46 phase 4): a board is read by area, around what changed;
         // its whole page would make every reading slower as it fills.
-        reading = await this.plugin.handwriting.readPage(step.page.strokes, this.wordsChecked);
+        reading = await this.plugin.handwriting.readPage(
+          step.page.strokes,
+          this.wordsChecked,
+          await this.readingContext(step.page),
+        );
       } catch {
         // An error or a timeout: skip this page until it changes, and go on.
         guard.fail(mark);
@@ -2806,7 +2877,11 @@ export class InkView extends TextFileView {
     }
     this.deviceBusy = true;
     try {
-      const reading = await this.plugin.handwriting.readPage(page.strokes, true);
+      const reading = await this.plugin.handwriting.readPage(
+        page.strokes,
+        true,
+        await this.readingContext(page),
+      );
       if (this.surface === surface && surface.document.pages.includes(page)) {
         await this.checkWords(page, hash, reading);
       }
@@ -3034,7 +3109,11 @@ export class InkView extends TextFileView {
         entry = this.keepReading(
           page,
           hash,
-          await this.plugin.handwriting.readPage(page.strokes, true),
+          await this.plugin.handwriting.readPage(
+            page.strokes,
+            true,
+            await this.readingContext(page),
+          ),
         );
         fresh = true;
       }
@@ -3277,6 +3356,11 @@ export class InkView extends TextFileView {
         onLayout: (layout) => this.plugin.saveToolbarLayout(layout),
         onSetBarDock: (dock) => this.plugin.setBarDock(dock),
         onSetPillRow: (on) => this.plugin.setPillRow(on),
+        lookNow: () => ({
+          style: lookStyleOf(this.plugin.settings.lookStyle),
+          palette: lookPaletteOf(this.plugin.settings.lookPalette),
+        }),
+        onSetLook: (style, palette) => void this.plugin.setLook(style, palette, false),
         onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
         onCalculator: () => this.toggleCalculator(),
@@ -3318,6 +3402,7 @@ export class InkView extends TextFileView {
         laserColor: () => this.settings.laserDefaultColor,
       },
     );
+    this.toolbar.setHomeDot(this.plugin.hasNews());
     this.showFullScreen(this.plugin.fullScreen);
     // The gear's dot while a newer FineNotes is out, and "Update available"
     // under it until it is tapped or closed, again every other day until the
@@ -3376,6 +3461,10 @@ export class InkView extends TextFileView {
         onSelectSection: (index, section, fromOverview) =>
           this.surface?.goToPagePoint(index, section.y, !fromOverview, section.x),
         onSectionAction: (action, index, section) => this.sectionAction(action, index, section),
+        onContentsLevel: (at, delta) => this.shiftContentsLevel(at, delta),
+        onMoveContents: (at, gap, level) => this.moveContents(at, gap, level),
+        onNewChapter: (index) => this.newChapter(index),
+        onChapterAction: (action, index, chapter) => this.chapterAction(action, index, chapter),
         onAddPage: (anchor) => this.openAddPage(anchor, this.doc.pages.length - 1, "last"),
         onClose: () => {
           if (this.sidebar?.isOpen) this.toggleSidebar();
@@ -3456,6 +3545,7 @@ export class InkView extends TextFileView {
           }
         },
         onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
+        onHistoryStep: (command, redo) => this.calcNotes.historyStep(command, redo),
         onPenShape: () => {
           if (this.surface) this.plugin.offerShapeHint(this.surface);
         },
@@ -3496,7 +3586,9 @@ export class InkView extends TextFileView {
         // bar could pass for its click (`stylus-click.ts`).
         stylusClick: () => (Platform.isIosApp ? "none" : this.settings.stylusButtonClick),
         onStylusClick: () => {
-          if (!this.isProtected()) this.toolbar?.togglePenMenu();
+          if (this.isProtected()) return;
+          if (this.settings.stylusButtonClick === "eraser") this.surface?.stylusEraserClick();
+          else this.toolbar?.togglePenMenu();
         },
         onToolChange: (tool) => {
           this.toolbar?.setState(this.toolState);
@@ -3934,7 +4026,10 @@ export class InkView extends TextFileView {
       single: this.isSinglePage,
       board: this.isBoard,
       scrollDirection: () => scrollDirectionOf(this.doc),
-      setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
+      setScrollDirection: (direction) => {
+        apply(new SetScrollDirection(direction));
+        if (!this.isBoard) this.plugin.rememberScrollDirection(direction);
+      },
       joinedPages: () => joinedPagesOf(this.surface?.document ?? this.doc),
       setJoinedPages: (on) => apply(new SetJoinedPages(on)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
@@ -4119,7 +4214,11 @@ export class InkView extends TextFileView {
     if (kept && kept.hash === hash) lines = kept.readLines;
     else if (this.settings.handwritingOnDevice !== false && page.strokes.length > 0) {
       try {
-        const reading = await this.plugin.handwriting.readPage(page.strokes, true);
+        const reading = await this.plugin.handwriting.readPage(
+          page.strokes,
+          true,
+          await this.readingContext(page),
+        );
         if (this.surface !== surface || !surface.document.pages.includes(page)) return;
         lines = this.keepReading(page, hash, reading).readLines;
       } catch {
@@ -4891,7 +4990,7 @@ export class InkView extends TextFileView {
         this.requestSave();
         if (read) this.recordEdits(page, read.words, title);
       },
-      true,
+      "section",
     );
     modal.open();
     // The heading's ink, read on this device, fills the title once it is read.
@@ -4980,7 +5079,11 @@ export class InkView extends TextFileView {
           this.deviceBusy = true;
           let reading: PageReading;
           try {
-            reading = await this.plugin.handwriting.readPage(page.strokes, true);
+            reading = await this.plugin.handwriting.readPage(
+              page.strokes,
+              true,
+              await this.readingContext(page),
+            );
           } finally {
             this.deviceBusy = false;
           }
@@ -5035,6 +5138,149 @@ export class InkView extends TextFileView {
     }
   }
 
+  /**
+   * Indent (`+1`) or outdent (`-1`) contents entry `at`, the entries inside
+   * it with it (discussion #185). One undo step; nothing when it cannot move.
+   */
+  private shiftContentsLevel(at: number, delta: 1 | -1): void {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return;
+    const changes = levelShift(surface.document, at, delta);
+    if (!changes) return;
+    const label = delta > 0 ? t("view.contents.indent") : t("view.contents.outdent");
+    surface.applyCommand(new SetContentsLevels(changes, label));
+    this.sidebar?.flush();
+    this.requestSave();
+  }
+
+  /** A contents entry was dragged: it and what it stands for, as one undo step. */
+  private moveContents(at: number, gap: number, level: ContentsLevel): void {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) return;
+    const drop = planContentsDrop(surface.document, at, gap, level);
+    if (!drop) return;
+    surface.applyCommand(new MoveContents(drop, t("view.contents.moved")));
+    this.sidebar?.flush();
+    this.requestSave();
+  }
+
+  /** Name a new chapter of its own and stand it before page `index`. */
+  private newChapter(index: number): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page || this.isProtected()) return;
+    new ContentsTitleModal(
+      this.app,
+      index,
+      undefined,
+      (title) => {
+        if (this.isProtected() || this.surface !== surface) return;
+        if (!surface.document.pages.includes(page)) return;
+        surface.applyCommand(new SetChapter(page, nextSectionId(surface.document), title));
+        this.sidebar?.flush();
+        this.requestSave();
+      },
+      "chapter",
+    ).open();
+  }
+
+  private chapterAction(action: SectionAction, index: number, chapter: PageChapter): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page || this.isProtected()) return;
+    if (action === "remove") {
+      surface.applyCommand(new SetChapter(page, chapter.id, null));
+      this.sidebar?.flush();
+      this.requestSave();
+      return;
+    }
+    new ContentsTitleModal(
+      this.app,
+      index,
+      chapter.title,
+      (title) => {
+        if (this.isProtected() || this.surface !== surface) return;
+        // By id: dragging may have stood it by another page since.
+        const holder = surface.document.pages.find((each) =>
+          each.chapters?.some((c) => c.id === chapter.id),
+        );
+        if (!holder) return;
+        surface.applyCommand(new SetChapter(holder, chapter.id, title));
+        this.sidebar?.flush();
+        this.requestSave();
+      },
+      "chapter",
+    ).open();
+  }
+
+  /**
+   * After a PDF's pages went in: its outline (bookmarks) as contents entries
+   * on those pages, and a notice saying so with Undo (discussion #185). Quiet
+   * when the PDF has no outline, or none of it lands on these pages.
+   */
+  private async addPdfOutline(
+    surface: InkSurface,
+    path: string,
+    bytes: ArrayBuffer | Uint8Array,
+    pages: Page[],
+  ): Promise<void> {
+    const items = await readPdfOutline(bytes);
+    if (items.length === 0 || this.surface !== surface || this.isProtected()) return;
+    const here = pages.filter((page) => surface.document.pages.includes(page));
+    const contents = outlineContents(surface.document, path, items, here);
+    const count = addedEntries(contents);
+    if (count === 0) return;
+    const command = new SetPagesContents(contents, t("view.contents.fromPdf"));
+    surface.applyCommand(command);
+    this.sidebar?.flush();
+    this.requestSave();
+    this.offerContentsUndo(count, () => {
+      if (this.surface !== surface || this.isProtected()) return;
+      if (surface.isLatest(command)) surface.undo();
+      else
+        surface.applyCommand(
+          new SetPagesContents(clearedContents(here), t("view.contents.remove")),
+        );
+      this.sidebar?.flush();
+      this.requestSave();
+    });
+  }
+
+  /**
+   * A notebook just made from a PDF arrives with the PDF's outline in its
+   * contents (`main.ts`); this is its notice, whose Undo takes every entry
+   * out again as one step of this notebook's undo.
+   */
+  offerPdfContentsUndo(count: number): void {
+    const surface = this.surface;
+    if (!surface) return;
+    this.offerContentsUndo(count, () => {
+      if (this.surface !== surface || this.isProtected()) return;
+      const cleared = clearedContents(surface.document.pages);
+      if (cleared.length === 0) return;
+      surface.applyCommand(new SetPagesContents(cleared, t("view.contents.remove")));
+      this.sidebar?.flush();
+      this.requestSave();
+    });
+  }
+
+  private offerContentsUndo(count: number, undo: () => void): void {
+    const notice = new Notice(
+      createFragment((fragment) => {
+        fragment.createSpan({ text: tn("view.contents.addedFromPdf", count) });
+        const button = fragment.createEl("button", {
+          cls: "goodobsidian-notice-action clickable-icon",
+          text: t("common.undo"),
+        });
+        button.addEventListener("click", () => {
+          notice.hide();
+          undo();
+        });
+      }),
+      10000,
+    );
+  }
+
   /** Rename or remove a section, from its menu in the Contents tab. */
   private sectionAction(action: SectionAction, index: number, section: PageSection): void {
     const surface = this.surface;
@@ -5056,7 +5302,7 @@ export class InkView extends TextFileView {
         surface.applyCommand(new SetSection(page, section.id, { x: now.x, y: now.y, title }));
         this.requestSave();
       },
-      true,
+      "section",
     ).open();
   }
 
@@ -6372,6 +6618,16 @@ export class InkView extends TextFileView {
     this.requestSave();
     if (!insert.addedPages) {
       new Notice(t("view.scan.singlePage"));
+    }
+    // A PDF's own outline becomes contents on the pages it just added.
+    const added = new Set(insert.placed.map((place) => place.pageId));
+    for (const item of items) {
+      if (item.kind !== "pdf" || !item.savedPath) continue;
+      const path = item.savedPath;
+      const pages = surface.document.pages.filter(
+        (page) => added.has(page.id) && page.backdrop.kind === "pdf" && page.backdrop.path === path,
+      );
+      if (pages.length > 0) void this.addPdfOutline(surface, path, item.bytes, pages);
     }
     return true;
   }

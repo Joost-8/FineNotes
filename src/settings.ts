@@ -140,6 +140,7 @@ import type { BarrelAction } from "./input/pen-modifiers";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { learnWindow } from "./recognition/hwr/learn-window-model";
+import { lookPaletteNames, lookPaletteOf, lookStyleNames, lookStyleOf } from "./model/look";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -247,6 +248,7 @@ function barrelNames(): Record<BarrelAction, string> {
 function stylusClickNames(): Record<StylusClickAction, string> {
   return {
     "pen-menu": t("settings.stylusClick.penMenu"),
+    eraser: t("settings.stylusClick.eraser"),
     none: t("settings.stylusClick.none"),
   };
 }
@@ -954,6 +956,17 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         t("language.info"),
       ),
       this.info(
+        drawnRow(t("settings.look.name"), "", (s) => this.drawLook(s), [
+          "look",
+          "style",
+          "theme",
+          "colours",
+          "colors",
+          "palette",
+        ]),
+        t("settings.look.info"),
+      ),
+      this.info(
         toggle("simpleLook", t("settings.simpleLook.name"), "", [
           "simple",
           "look",
@@ -1252,6 +1265,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
               "barrel click",
               "s pen",
               "pen menu",
+              "eraser",
               "stylus",
             ]),
             t("settings.stylusClick.info"),
@@ -2194,6 +2208,33 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       d.selectEl.setAttribute("aria-label", t("settings.speech.languageLabel"));
       d.setValue(settings.speechLanguage ?? SPEECH_LANGUAGES[0].code);
       d.onChange((value) => void this.setControlValue("speechLanguage", value));
+    });
+  }
+
+  /** The chrome's style and colours, side by side (`model/look.ts`). */
+  private drawLook(setting: Setting): void {
+    const settings = this.plugin.settings;
+    const wear = async (): Promise<void> => {
+      this.plugin.applyLook();
+      await this.plugin.saveSettings();
+    };
+    setting.addDropdown((d) => {
+      for (const [id, name] of Object.entries(lookStyleNames())) d.addOption(id, name);
+      d.selectEl.setAttribute("aria-label", t("settings.look.styleLabel"));
+      d.setValue(lookStyleOf(settings.lookStyle));
+      d.onChange((value) => {
+        settings.lookStyle = value;
+        void wear();
+      });
+    });
+    setting.addDropdown((d) => {
+      for (const [id, name] of Object.entries(lookPaletteNames())) d.addOption(id, name);
+      d.selectEl.setAttribute("aria-label", t("settings.look.paletteLabel"));
+      d.setValue(lookPaletteOf(settings.lookPalette));
+      d.onChange((value) => {
+        settings.lookPalette = value;
+        void wear();
+      });
     });
   }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { PreviewPage } from "../../src/model/preview-pages";
 import {
   EMBED_CANVAS_BUDGET,
   EMBED_WIDTH_STEP,
@@ -10,6 +11,7 @@ import {
   embedPageLabel,
   embedPageLink,
   embedPageNumbers,
+  MAX_PREVIEW_PAGES,
   printPaintSize,
   embedPaintSize,
   embedLabel,
@@ -217,21 +219,35 @@ describe("SharedNotebooks", () => {
 
 describe("embedPageNumbers", () => {
   const whole = { page: 1, whole: true };
+  /** `n` pages, a chapter every tenth. */
+  const book = (n: number): PreviewPage[] =>
+    Array.from({ length: n }, (_, i) => (i > 0 && i % 10 === 0 ? { title: `Ch ${i}` } : {}));
 
-  it("shows every page of a notebook embedded whole, in order", () => {
-    expect(embedPageNumbers(whole, 3)).toEqual([1, 2, 3]);
-    expect(embedPageNumbers(whole, 1)).toEqual([1]);
+  it("shows every page of a notebook embedded whole in a note, however many", () => {
+    expect(embedPageNumbers(whole, book(3))).toEqual([1, 2, 3]);
+    expect(embedPageNumbers(whole, book(400))).toHaveLength(400);
+    expect(embedPageNumbers(whole, [])).toEqual([]);
   });
 
-  it("shows nothing of a notebook with no pages, or a broken count", () => {
-    expect(embedPageNumbers(whole, 0)).toEqual([]);
-    expect(embedPageNumbers(whole, Number.NaN)).toEqual([]);
-    expect(embedPageNumbers(whole, -2)).toEqual([]);
+  it("shows a long notebook's cover and chapters in a hover preview", () => {
+    expect(embedPageNumbers(whole, book(5), true)).toEqual([1, 2, 3, 4, 5]);
+    expect(embedPageNumbers(whole, book(400), true)).toHaveLength(MAX_PREVIEW_PAGES);
+    expect(embedPageNumbers(whole, book(60), true)).toEqual([1, 2, 3, 4, 11, 21, 31, 41, 51]);
   });
 
   it("shows the one page a subpath names, whether or not the notebook has it", () => {
-    expect(embedPageNumbers({ page: 4, whole: false }, 9)).toEqual([4]);
-    expect(embedPageNumbers({ page: 40, whole: false }, 2)).toEqual([40]);
+    expect(embedPageNumbers({ page: 4, whole: false }, book(9))).toEqual([4]);
+    expect(embedPageNumbers({ page: 40, whole: false }, book(2), true)).toEqual([40]);
+  });
+
+  it("keeps a hover preview scrolled end to end inside the embeds' canvas budget", () => {
+    // Obsidian's hover preview is about 450 CSS px wide; an A4 page at 2x.
+    const size = embedPaintSize(450, 2);
+    if (!size) throw new Error("no size");
+    const width = Math.round(size.cssWidth * size.dpr);
+    const bytes = width * Math.round(width * Math.SQRT2) * 4;
+    expect(MAX_PREVIEW_PAGES * bytes).toBeLessThanOrEqual(EMBED_CANVAS_BUDGET);
+    expect((MAX_PREVIEW_PAGES + 3) * bytes).toBeGreaterThan(EMBED_CANVAS_BUDGET);
   });
 });
 

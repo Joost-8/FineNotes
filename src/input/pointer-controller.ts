@@ -102,6 +102,30 @@ export function isWholePixel(position: { clientX: number; clientY: number }): bo
   return Number.isInteger(position.clientX) && Number.isInteger(position.clientY);
 }
 
+/** How far off the device-pixel grid still counts as on it, device px (float error). */
+const GRID_TOLERANCE = 1e-3;
+
+/**
+ * Whether a pointer position lies on the screen's device-pixel grid on both
+ * axes: whole multiples of `1 / pixelRatio` CSS px. An iPad Air M2 with a
+ * Pencil Pro on iPadOS 27 reports the Pencil rounded so (FineNotes#179:
+ * every point of the reporter's 20 strokes sat on the 0.375 page-px grid,
+ * one device px at his zoom), half a CSS px apart at a ratio of 2. That is
+ * not a fraction {@link isWholePixel} sees, and at 240 Hz samples ~1.5 px
+ * apart it swings each step's direction as whole-px rounding did.
+ */
+export function isOnDevicePixel(
+  position: { clientX: number; clientY: number },
+  pixelRatio: number,
+): boolean {
+  const ratio = Number.isFinite(pixelRatio) && pixelRatio > 0 ? pixelRatio : 1;
+  const on = (v: number): boolean => {
+    const device = v * ratio;
+    return Math.abs(device - Math.round(device)) < GRID_TOLERANCE;
+  };
+  return on(position.clientX) && on(position.clientY);
+}
+
 function rawOf(e: PointerEvent): RawSample {
   return { x: e.clientX, y: e.clientY, pressure: e.pressure, t: e.timeStamp };
 }
@@ -175,6 +199,8 @@ export interface PointerControllerOptions {
   touchTarget?: (event: PointerEvent) => boolean;
   /** A click of the pen's side button is wanted: only then is a press of it in the air held back. */
   stylusClicks?: () => boolean;
+  /** The screen's device px per CSS px; absent, the element's window's `devicePixelRatio`. */
+  pixelRatio?: () => number;
 }
 
 const PHASES = ["pointerdown", "pointermove", "pointerup", "pointercancel"] as const;
@@ -188,7 +214,7 @@ type Phase = (typeof PHASES)[number];
 export class PointerController {
   /** The pointer drawing the open stroke; null between strokes. */
   private stroke: number | null = null;
-  /** A pen has reported a position with a fraction: this device does not round. */
+  /** A pen has reported a position off the px and device-px grids: this device does not round. */
   private penIsPrecise = false;
   /** See {@link strokeRounded}. */
   private rounded = false;
@@ -247,8 +273,8 @@ export class PointerController {
 
   /**
    * The stroke under way is a pen's, and this device's pen positions arrive
-   * rounded to whole px: no pen event so far, its pen-down included, had a
-   * fraction. Decided at the pen-down and kept for the stroke. A mouse is
+   * rounded to whole px or whole device px: no pen event so far, its
+   * pen-down included, lay off both grids ({@link isOnDevicePixel}). Decided at the pen-down and kept for the stroke. A mouse is
    * never counted (desktop mice report whole px and need nothing smoothed).
    */
   get strokeRounded(): boolean {
@@ -628,9 +654,18 @@ export class PointerController {
     if (endsFingerDrawing(event.pointerType) && this.fingerDraws()) this.listener.onPenReturned?.();
   }
 
-  /** One position with a fraction is enough: this device's pen does not round. */
+  /**
+   * One position off both grids is enough: this device's pen does not round.
+   * Whole CSS px stays a grid of its own (the old iPads), whatever the ratio.
+   */
   private notePen(position: { clientX: number; clientY: number }): void {
-    if (!this.penIsPrecise && !isWholePixel(position)) this.penIsPrecise = true;
+    if (this.penIsPrecise || isWholePixel(position)) return;
+    if (!isOnDevicePixel(position, this.pixelRatio())) this.penIsPrecise = true;
+  }
+
+  private pixelRatio(): number {
+    const own = this.options.pixelRatio;
+    return own ? own() : (this.element.ownerDocument?.defaultView?.devicePixelRatio ?? 1);
   }
 
   private debug(

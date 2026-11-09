@@ -9,10 +9,22 @@
 
 import { forward } from "./blstm";
 import type { HwrBundle } from "./bundle";
-import { type BeamOptions, beamDecode, greedyDecode } from "./ctc";
-import { networkInput } from "./curves";
+import {
+  type BeamOptions,
+  type WordBias,
+  beamDecode,
+  greedyDecode,
+  mathLogp,
+  wordTrie,
+} from "./ctc";
+import { type CharReading, charReadings } from "./char-readings";
+import { networkFrames } from "./curves";
 import { type InkStroke, LineTooLongError, lineFeatures } from "./features";
-import { type Box, type PageInk, lineStrokes, segmentPage } from "./lines";
+import { REREAD_MARGIN, type RereadList, rereadOutOfList } from "./lexicon";
+import { type Box, type PageInk, lineStrokes, segmentPage, withStrokeTimes } from "./lines";
+
+/** Nats per letter a page word earns while decoding (EXP-PCONFIRM: lam 1). */
+export const PAGE_WORD_WEIGHT = 1;
 
 export interface LineTimings {
   /** Milliseconds for the frames, the network and the decoders. */
@@ -31,6 +43,11 @@ export interface LineReading {
   confidence: number;
   frames: number;
   timings: LineTimings;
+  /**
+   * Each character of `greedy`, with its strokes (indices into the strokes
+   * read), its confidence and its runner-ups; only when asked (`chars`).
+   */
+  chars?: CharReading[];
 }
 
 export interface PageLineReading extends LineReading {
@@ -49,9 +66,23 @@ export interface PageReading {
   wordGap: number;
 }
 
+/** How much the text language model counts on a maths line. */
+const MATH_LM_SCALE = 0.5;
+/** The words a maths line is written with, favoured as a page's own words are. */
+const MATH_BIAS: WordBias = {
+  root: wordTrie(["ln", "log", "mod", "sin", "cos", "tan"]),
+  weight: 1,
+};
+
 export interface ReadOptions {
   /** Decode with the bundle's language model (default true, when it has one). */
   useLm?: boolean;
+  /**
+   * The line is known to be maths (a calculation note's "="): digits, signs
+   * and x y f are rewarded, the text language model counts half, and ln log
+   * mod sin cos tan are favoured. Ordinary reading never sets it.
+   */
+  math?: boolean;
   /** Overrides the bundle's decoder settings. */
   beam?: Partial<BeamOptions>;
   /** A clock in milliseconds (`performance.now` in the worker). */
@@ -61,6 +92,46 @@ export interface ReadOptions {
    * second look at its words (lexicon.ts). `line` is its index on the page.
    */
   logp?: (line: number, logp: Float32Array, frames: number) => void;
+  /** Also give each character with its strokes and runner-ups (`LineReading.chars`). */
+  chars?: boolean;
+  /**
+   * The four reading fixes of EXP-PCONFIRM (set P whole pages 33.7 → 29.2 %
+   * CER), each on unless turned off here:
+   *
+   * - `rowOrder`: a page's lines in row order (`segmentPage`'s `rows`);
+   * - `lateStrokes`: late strokes read where they belong (`lateStrokeOrder`);
+   * - `strokeTimes`: ink without a time does not take the page off the pen (`withStrokeTimes`);
+   * - `pageWordBias`: favour `pageWords` while decoding (`WordBias`), when given;
+   * - `reread`: words not in `rereadList` read again against it
+   *   (`rereadOutOfList`), when given. The list is the word list
+   *   (words.txt), never the page words alone, which made one set worse.
+   */
+  rowOrder?: boolean;
+  lateStrokes?: boolean;
+  strokeTimes?: boolean;
+  pageWordBias?: boolean;
+  reread?: boolean;
+  /** The notebook's own words (page-words.ts), never the page's own reading. */
+  pageWords?: readonly string[] | null;
+  /** Nats per letter for `pageWords` (default `PAGE_WORD_WEIGHT`). */
+  pageWordWeight?: number;
+  rereadList?: RereadList | null;
+  /** Default `REREAD_MARGIN`. */
+  rereadMargin?: number;
+  /** The page words' trie, built once by `readPage` for all its lines. */
+  bias?: WordBias | null;
+}
+
+/** The word bias `options` asks for, or null. */
+function biasOf(options: ReadOptions): WordBias | null {
+  if (options.bias !== undefined) return options.bias;
+  if (options.pageWordBias === false || !options.pageWords || options.pageWords.length === 0) {
+    return null;
+  }
+  return {
+    root: wordTrie(options.pageWords),
+    weight: options.pageWordWeight ?? PAGE_WORD_WEIGHT,
+  };
 }
 
 /**
@@ -75,10 +146,20 @@ export function readLine(
 ): LineReading {
   const now = options.now ?? (() => 0);
   const t0 = now();
-  let line: { features: Float32Array; frames: number };
+  let line: { features: Float32Array; frames: number; frameStroke: Int32Array | null };
+  let order: number[] = [];
   try {
-    const points = lineFeatures(strokes, bundle.meta.features.heightsPerSecond);
-    line = networkInput(bundle.meta.input, bundle.net.inputs, points.features, points.frames);
+    const points = lineFeatures(strokes, bundle.meta.features.heightsPerSecond, {
+      lateStrokes: options.lateStrokes !== false,
+    });
+    line = networkFrames(
+      bundle.meta.input,
+      bundle.net.inputs,
+      points.features,
+      points.frames,
+      points.frameStroke,
+    );
+    if (options.chars) order = points.strokes.map((s) => strokes.indexOf(s));
   } catch (error) {
     if (!(error instanceof LineTooLongError)) throw error;
     const timings = { features: now() - t0, network: 0, greedy: 0, beam: 0 };
@@ -93,9 +174,26 @@ export function readLine(
   const greedy = greedyDecode(logp, frames, alphabet);
   const t3 = now();
   const lm = options.useLm === false ? null : bundle.lm;
-  const text = lm
-    ? beamDecode(logp, frames, alphabet, lm, { ...bundle.meta.decoder, ...options.beam })
-    : greedy.text;
+  const decoder = { ...bundle.meta.decoder, ...options.beam };
+  const math = options.math === true;
+  let text = greedy.text;
+  if (lm) {
+    text = math
+      ? beamDecode(
+          mathLogp(logp, frames, alphabet),
+          frames,
+          alphabet,
+          lm,
+          { ...decoder, alpha: decoder.alpha * MATH_LM_SCALE },
+          MATH_BIAS,
+        )
+      : beamDecode(logp, frames, alphabet, lm, decoder, biasOf(options));
+  }
+  if (lm && !math && options.reread !== false && options.rereadList) {
+    const margin = options.rereadMargin ?? REREAD_MARGIN;
+    const line = { logp, frames };
+    text = rereadOutOfList(line, alphabet, lm, decoder.alpha, text, options.rereadList, margin);
+  }
   const t4 = now();
   return {
     greedy: greedy.text,
@@ -103,6 +201,19 @@ export function readLine(
     confidence: greedy.confidence,
     frames,
     timings: { features: t1 - t0, network: t2 - t1, greedy: t3 - t2, beam: t4 - t3 },
+    ...(options.chars && line.frameStroke
+      ? {
+          chars: charReadings(
+            logp,
+            frames,
+            alphabet,
+            greedy.text,
+            greedy.spans,
+            line.frameStroke,
+            order,
+          ),
+        }
+      : {}),
   };
 }
 
@@ -114,17 +225,24 @@ export function readPage(
 ): PageReading {
   const now = options.now ?? (() => 0);
   const t0 = now();
-  const { lines, wordGap } = segmentPage(strokes);
+  const { lines, wordGap } = segmentPage(
+    options.strokeTimes === false ? strokes : withStrokeTimes(strokes),
+    { rows: options.rowOrder !== false },
+  );
+  // The lines came from the filled-in times; each line is read from what was stored.
+  const stored = new Map(strokes.map((s) => [s.id, s]));
   const segment = now() - t0;
+  const bias = biasOf(options);
   return {
     segment,
     wordGap,
     lines: lines.map((line, index) => {
-      const ink = lineStrokes(line);
+      const ink = lineStrokes(line).map((s) => stored.get(s.id) ?? s);
       const keep = options.logp;
       return {
         ...readLine(bundle, ink, {
           ...options,
+          bias,
           logp: keep && ((_, logp, frames) => keep(index, logp, frames)),
         }),
         strokeIds: ink.map((s) => s.id),

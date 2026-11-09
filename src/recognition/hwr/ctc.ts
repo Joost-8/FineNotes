@@ -4,7 +4,8 @@
  * - `greedyDecode`: the best class per frame, repeats merged and blanks
  *   dropped — the letters as written (`htr.greedy`).
  * - `beamDecode`: prefix beam search with the character LM's weight `alpha`
- *   and an insertion bonus `beta` per character (`lm_decode.beam_decode`).
+ *   and an insertion bonus `beta` per character (`lm_decode.beam_decode`);
+ *   optionally favouring a list of words (the page's own, `WordBias`).
  *
  * Both follow the Python reference's order of operations (which prefix is
  * kept on a tie, which candidate comes first), so they give the same text.
@@ -92,7 +93,51 @@ interface Prefix {
   pnb: number;
   /** The LM's context for `text`, worked out when first needed. */
   context: LmContext | null;
+  /** With a word bias: where the word being read is in its trie (null: off it), */
+  node: WordNode | null;
+  /** the bonus it has had so far, */
+  acc: number;
+  /** and the bonus (or its taking back) its last character brought. */
+  delta: number;
 }
+
+/** A node of a word list's trie, by lower-case character. */
+export interface WordNode {
+  kids: Map<string, WordNode>;
+  word: boolean;
+}
+
+/**
+ * Words to favour while decoding (EXP-T57, confirmed in EXP-PCONFIRM; NeMo's
+ * CTC word spotting): each letter that follows a list word from the word's
+ * start earns `weight` nats, and the whole bonus is taken back when the word
+ * does not finish as a list word. Letters and digits make words; anything
+ * else ends one. Case is ignored.
+ */
+export interface WordBias {
+  root: WordNode;
+  weight: number;
+}
+
+/** The trie of `words`, lower-cased. */
+export function wordTrie(words: Iterable<string>): WordNode {
+  const root: WordNode = { kids: new Map(), word: false };
+  for (const w of new Set([...words].map((x) => x.toLowerCase()))) {
+    let n = root;
+    for (const ch of w) {
+      let k = n.kids.get(ch);
+      if (!k) {
+        k = { kids: new Map(), word: false };
+        n.kids.set(ch, k);
+      }
+      n = k;
+    }
+    n.word = true;
+  }
+  return root;
+}
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
 
 /**
  * The `count` best classes of a frame, best first, from `top + 1` candidates
@@ -112,29 +157,108 @@ function topClasses(logp: Float32Array, o: number, C: number, n: number): number
   return out;
 }
 
-/** `lm_decode.beam_decode` without the word bonus. `lm` null: a plain beam search. */
+/** What a line known to be maths rewards (nats a frame): its digits and signs. */
+const MATH_SIGNS: ReadonlySet<string> = new Set("0123456789+-*/=^()<>.∑∫≤≥√π");
+const MATH_SIGN_REWARD = 3;
+/** The letters sums are written in; less, since a word in a sum has them too. */
+const MATH_LETTERS: ReadonlySet<string> = new Set("xyf");
+const MATH_LETTER_REWARD = 1.5;
+
+/** `logp` with a maths line's characters rewarded. `logp` itself is left alone. */
+export function mathLogp(
+  logp: Float32Array,
+  frames: number,
+  alphabet: readonly string[],
+): Float32Array {
+  const out = new Float32Array(logp);
+  const K = alphabet.length + 1;
+  alphabet.forEach((c, i) => {
+    const reward = MATH_SIGNS.has(c)
+      ? MATH_SIGN_REWARD
+      : MATH_LETTERS.has(c)
+        ? MATH_LETTER_REWARD
+        : 0;
+    if (reward === 0) return;
+    for (let t = 0; t < frames; t++) out[t * K + i + 1] += reward;
+  });
+  return out;
+}
+
+/**
+ * Maths symbols Grape can write and the language model has never seen. It
+ * would give each only its smoothing mass, and a real integral sign would
+ * lose to any letter; so each is scored as a "(", the nearest thing it knows.
+ * Only these: other unseen characters (~ # \) stay as they were.
+ */
+const LM_UNSEEN: ReadonlySet<string> = new Set(["∑", "∫", "≤", "≥", "√", "π"]);
+
+/**
+ * `lm_decode.beam_decode` without its word bonus. `lm` null: a plain beam
+ * search. `bias`: favour its words (`WordBias`); without it the text is the
+ * reference's.
+ */
 export function beamDecode(
   logp: Float32Array,
   frames: number,
   alphabet: readonly string[],
   lm: CharLm | null,
   options: Partial<BeamOptions> = {},
+  bias: WordBias | null = null,
 ): string {
   const { alpha, beta, beam, topk, prune } = { ...DEFAULT_BEAM, ...options };
   const C = alphabet.length + 1;
-  const codes = lm ? alphabet.map((c) => lm.codeOf(c)) : [];
+  const codes = lm ? alphabet.map((c) => lm.codeOf(LM_UNSEEN.has(c) ? "(" : c)) : [];
   const contextOf = (p: Prefix): LmContext => (p.context ??= (lm as CharLm).context(p.text));
-  let beams: Prefix[] = [{ text: "", pb: 0, pnb: NEG, context: null }];
+  /** Where `parent` + `ch` stands in the bias's trie. */
+  const step = (e: Prefix, parent: Prefix, ch: string): void => {
+    if (!bias) return;
+    if (WORD_CHAR.test(ch)) {
+      if (parent.node === null) {
+        e.node = null;
+        e.acc = parent.acc;
+        return;
+      }
+      const k = parent.node.kids.get(ch.toLowerCase());
+      if (k) {
+        e.node = k;
+        e.acc = parent.acc + bias.weight;
+        e.delta = bias.weight;
+      } else {
+        e.node = null;
+        e.acc = 0;
+        e.delta = -parent.acc;
+      }
+      return;
+    }
+    // The word ends: its bonus stays only when it is a list word.
+    const done = parent.node !== null && parent.node.word;
+    e.node = bias.root;
+    e.acc = 0;
+    e.delta = done ? 0 : -parent.acc;
+  };
+  let beams: Prefix[] = [
+    { text: "", pb: 0, pnb: NEG, context: null, node: bias ? bias.root : null, acc: 0, delta: 0 },
+  ];
   for (let t = 0; t < frames; t++) {
     const o = t * C;
     const cand = topClasses(logp, o, C, topk + 1)
       .filter((k) => k !== 0 && logp[o + k] > prune)
       .slice(0, topk);
     const next = new Map<string, Prefix>();
-    const entry = (text: string): Prefix => {
+    /** The prefix `text`, made from `parent` (+ `ch`) when it is new this frame. */
+    const entry = (text: string, parent: Prefix, ch: string | null): Prefix => {
       let e = next.get(text);
       if (!e) {
-        e = { text, pb: NEG, pnb: NEG, context: null };
+        e = {
+          text,
+          pb: NEG,
+          pnb: NEG,
+          context: null,
+          node: parent.node,
+          acc: parent.acc,
+          delta: 0,
+        };
+        if (ch !== null) step(e, parent, ch);
         next.set(text, e);
       }
       return e;
@@ -142,20 +266,20 @@ export function beamDecode(
     const blank = logp[o];
     for (const b of beams) {
       const ptot = lse(b.pb, b.pnb);
-      const e = entry(b.text);
+      const e = entry(b.text, b, null);
       e.context ??= b.context;
       e.pb = lse(e.pb, ptot + blank);
       const last = b.text.length ? b.text[b.text.length - 1] : null;
       for (const k of cand) {
         const ch = alphabet[k - 1];
         const p = logp[o + k];
-        const bonus = lm ? alpha * Math.log(lm.probIn(contextOf(b), codes[k - 1])) + beta : 0;
+        const n = entry(b.text + ch, b, ch);
+        let bonus = lm ? alpha * Math.log(lm.probIn(contextOf(b), codes[k - 1])) + beta : 0;
+        if (bias) bonus += n.delta;
         if (ch === last) {
           e.pnb = lse(e.pnb, b.pnb + p);
-          const n = entry(b.text + ch);
           n.pnb = lse(n.pnb, b.pb + p + bonus);
         } else {
-          const n = entry(b.text + ch);
           n.pnb = lse(n.pnb, ptot + p + bonus);
         }
       }
@@ -170,6 +294,8 @@ export function beamDecode(
   for (const b of beams) {
     let score = lse(b.pb, b.pnb);
     if (lm) score += alpha * Math.log(lm.probIn(contextOf(b), end));
+    // A word left unfinished at the end gives its bonus back.
+    if (bias && !(b.node !== null && b.node.word)) score -= b.acc;
     if (score > bestScore) {
       best = b;
       bestScore = score;

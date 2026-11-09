@@ -363,6 +363,26 @@ function bandsOf<S extends PageInk>(strokes: readonly S[], lineOverlap: number):
 }
 
 /**
+ * `strokes` with a start time on each one, for following the pen: a stroke
+ * without one (ink pasted in, or from before times were kept) takes the time
+ * of the stroke before it in the page's order, which is the order it was put
+ * there. Otherwise one pasted word would take the whole page off the pen and
+ * onto the rougher line finder, where a flat dash or t-bar becomes a line of
+ * its own. Unchanged when every stroke has a time, or none does.
+ */
+export function withStrokeTimes<S extends PageInk>(strokes: readonly S[]): readonly S[] {
+  if (strokes.every((s) => s.t0 != null) || strokes.every((s) => s.t0 == null)) return strokes;
+  let last = 0;
+  return strokes.map((s) => {
+    if (s.t0 != null) {
+      last = s.t0;
+      return s;
+    }
+    return { ...s, t0: last };
+  });
+}
+
+/**
  * `ink.segment`: the page's lines in reading order, each with its words.
  * `wordGap` (x-heights) is chosen from the page's own gaps unless given.
  * (The reference finds the bands twice, once to measure the gaps; they are
@@ -370,11 +390,38 @@ function bandsOf<S extends PageInk>(strokes: readonly S[], lineOverlap: number):
  */
 export function segmentPage<S extends PageInk>(
   strokes: readonly S[],
-  options: { wordGap?: number; lineOverlap?: number } = {},
+  options: { wordGap?: number; lineOverlap?: number; rows?: boolean } = {},
 ): PageLines<S> {
   const bands = bandsOf(strokes, options.lineOverlap ?? 0.35);
   const wordGap = options.wordGap ?? autoWordGap(gapsOf(wordsInBands(bands, 1e9)));
-  return { lines: wordsInBands(bands, wordGap), wordGap };
+  const lines = wordsInBands(bands, wordGap);
+  return { lines: options.rows ? rowOrder(lines).map((i) => lines[i]) : lines, wordGap };
+}
+
+/**
+ * The lines in row order (EXP-T012's `readingOrder`, confirmed on whole pages
+ * in EXP-PCONFIRM): lines whose centres are within half the smaller one's
+ * height (at least 4 px) share a row; rows top to bottom, each left to right.
+ * The reference orders lines by where each one starts, so a table's cells,
+ * or a word added beside a line later, came out of their row. Returns the
+ * lines' indices in that order.
+ */
+export function rowOrder(lines: readonly { box: Box }[]): number[] {
+  const items = lines.map((l, i) => ({
+    i,
+    cy: (l.box[1] + l.box[3]) / 2,
+    h: Math.max(4, l.box[3] - l.box[1]),
+    x: l.box[0],
+  }));
+  items.sort((a, b) => a.cy - b.cy);
+  const rows: { cy: number; h: number; items: typeof items }[] = [];
+  for (const it of items) {
+    const row = rows.find((r) => Math.abs(r.cy - it.cy) < 0.5 * Math.min(r.h, it.h));
+    if (row) row.items.push(it);
+    else rows.push({ cy: it.cy, h: it.h, items: [it] });
+  }
+  rows.sort((a, b) => a.cy - b.cy);
+  return rows.flatMap((r) => r.items.sort((a, b) => a.x - b.x)).map((it) => it.i);
 }
 
 /** A line's strokes, word by word (the order the rig hands to `prepare_v2`). */
