@@ -8,6 +8,7 @@ import { blankPage, emptyDocument, type InkDocument } from "../../src/model/docu
 import {
   MAX_PAGE_TITLE_LENGTH,
   SetPageTitle,
+  type ContentsEntry,
   contentsEntries,
   currentContentsEntry,
   normalizePageTitle,
@@ -96,8 +97,8 @@ describe("contentsEntries and currentContentsEntry", () => {
     doc.pages[3].title = "Routing";
     doc.pages[1].title = "Forwarding";
     expect(contentsEntries(doc)).toEqual([
-      { index: 1, title: "Forwarding" },
-      { index: 3, title: "Routing" },
+      { index: 1, title: "Forwarding", level: 1 },
+      { index: 3, title: "Routing", level: 1 },
     ]);
   });
 
@@ -119,9 +120,9 @@ describe("contentsEntries and currentContentsEntry", () => {
   });
 
   it("puts the reader under the last entry at or before the page", () => {
-    const entries = [
-      { index: 1, title: "A" },
-      { index: 3, title: "B" },
+    const entries: ContentsEntry[] = [
+      { index: 1, title: "A", level: 1 },
+      { index: 3, title: "B", level: 1 },
     ];
     expect([0, 1, 2, 3, 4].map((page) => currentContentsEntry(entries, page))).toEqual([
       -1, 0, 0, 1, 1,
@@ -134,9 +135,9 @@ describe("contentsEntries and currentContentsEntry", () => {
     doc.pages[3].title = "Routing";
     const remove = new RemovePage(1);
     remove.apply(doc);
-    expect(contentsEntries(doc)).toEqual([{ index: 2, title: "Routing" }]);
+    expect(contentsEntries(doc)).toEqual([{ index: 2, title: "Routing", level: 1 }]);
     remove.invert(doc);
-    expect(contentsEntries(doc)).toEqual([{ index: 3, title: "Routing" }]);
+    expect(contentsEntries(doc)).toEqual([{ index: 3, title: "Routing", level: 1 }]);
   });
 
   it("is not copied by a duplicate", () => {

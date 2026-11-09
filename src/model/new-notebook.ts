@@ -33,6 +33,7 @@ import {
   type SyntheticBackdrop,
   RULINGS,
   isCoverRuling,
+  type ScrollDirection,
 } from "./document";
 import {
   COVER_COLORS,
@@ -69,9 +70,12 @@ export interface NotebookChoices {
   /** A {@link PAGE_SIZES} id. */
   size: string;
   landscape: boolean;
+  /** The way pages run, as last chosen in a notebook's settings. */
+  scroll: ScrollDirection;
 }
 
 export const DEFAULT_NOTEBOOK_CHOICES: Readonly<NotebookChoices> = {
+  scroll: "vertical",
   type: "notebook",
   cover: "cover-gradient",
   coverColor: COVER_COLORS[0].id,
@@ -114,6 +118,7 @@ export function parseNotebookChoices(raw: unknown): NotebookChoices {
   if (PAPER_COLORS.some((c) => c.id === r.paper)) out.paper = r.paper as PaperColorId;
   if (PAGE_SIZES.some((s) => s.id === r.size)) out.size = r.size as string;
   if (typeof r.landscape === "boolean") out.landscape = r.landscape;
+  if (r.scroll === "horizontal") out.scroll = "horizontal";
   // `joined`, remembered by 2.6, is ignored: pages are joined in a
   // notebook's own settings now (the gear), not when it is made.
   return out;

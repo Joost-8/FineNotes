@@ -185,6 +185,8 @@ function checkInput(meta: HwrMeta): void {
       `the model reads ${String(input.kind)} (${String(input.encoding)}); this build computes raw curves`,
     );
   }
+  if (input.order !== undefined && input.order !== "delayed")
+    throw new HwrFormatError(`stroke order ${String(input.order)}`);
   if (!(input.tol > 0 && Number.isFinite(input.tol)))
     throw new HwrFormatError(`curve tolerance ${input.tol}`);
   if (meta.net.inputs < CURVE_RAW)

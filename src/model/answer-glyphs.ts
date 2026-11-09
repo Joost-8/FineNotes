@@ -110,6 +110,46 @@ export const CLEAN_GLYPHS: GlyphSet = new Map<string, Glyph>([
       width: 0.5,
     },
   ],
+  // An expanded polynomial's signs and its letter (FineNotes#178), lower
+  // case on the x-height (0.45 to 1).
+  [
+    "+",
+    { strokes: [line([0.04, 0.56], [0.52, 0.56]), line([0.28, 0.32], [0.28, 0.8])], width: 0.56 },
+  ],
+  ["x", { strokes: [line([0.04, 0.46], [0.46, 1]), line([0.46, 0.46], [0.04, 1])], width: 0.5 }],
+  ["=", { strokes: [line([0.04, 0.5], [0.5, 0.5]), line([0.04, 0.74], [0.5, 0.74])], width: 0.54 }],
+  [
+    "y",
+    { strokes: [line([0.04, 0.46], [0.27, 0.84]), line([0.5, 0.46], [0.12, 1.24])], width: 0.54 },
+  ],
+  [
+    "a",
+    {
+      strokes: [arc(0.24, 0.73, 0.2, 0.26, -10, 350, 20), line([0.44, 0.46], [0.46, 1])],
+      width: 0.5,
+    },
+  ],
+  [
+    "b",
+    { strokes: [line([0.06, 0], [0.06, 1]), arc(0.26, 0.73, 0.2, 0.26, 180, 540, 20)], width: 0.5 },
+  ],
+  [
+    "n",
+    {
+      strokes: [
+        line([0.06, 0.46], [0.06, 1]),
+        line([0.06, 0.62], [0.2, 0.47], [0.38, 0.48], [0.44, 0.62], [0.44, 1]),
+      ],
+      width: 0.52,
+    },
+  ],
+  [
+    "t",
+    {
+      strokes: [line([0.2, 0.14], [0.2, 0.94], [0.34, 1]), line([0.02, 0.44], [0.4, 0.44])],
+      width: 0.44,
+    },
+  ],
 ]);
 
 /** A character sample from the symbol sheet: its strokes in page px, and the line it was written on. */
@@ -189,6 +229,73 @@ export function glyphsFor(text: string, own: GlyphSet | null): GlyphSet | null {
   const chars = Array.from(text);
   if (own && chars.every((c) => own.has(c))) return own;
   return chars.every((c) => CLEAN_GLYPHS.has(c)) ? CLEAN_GLYPHS : null;
+}
+
+/** How wide `text` is when written at `height`, page px (as {@link writeText} advances). */
+export function textWidth(text: string, glyphs: GlyphSet, height: number): number {
+  let w = 0;
+  for (const c of Array.from(text)) {
+    const glyph = glyphs.get(c);
+    if (glyph) w += (glyph.width + TRACKING) * height;
+  }
+  return Math.max(0, w - TRACKING * height);
+}
+
+/**
+ * A fraction written by hand from `x`: `top` over a bar over `bottom`, each
+ * 0.8 of `height` tall, centred on each other, the bar at the middle of a
+ * digit on `baseline` (where the "=" sits). One stroke per array, page px.
+ */
+export function writeFraction(
+  top: string,
+  bottom: string,
+  glyphs: GlyphSet,
+  at: { x: number; baseline: number; height: number },
+): number[][] {
+  const h = at.height * 0.8;
+  const wt = textWidth(top, glyphs, h);
+  const wb = textWidth(bottom, glyphs, h);
+  const bar = Math.max(wt, wb) + at.height * 0.3;
+  const y = at.baseline - at.height * 0.45;
+  const gap = at.height * 0.14;
+  return [
+    ...writeText(top, glyphs, { x: at.x + (bar - wt) / 2, baseline: y - gap, height: h }),
+    [at.x, y, PRESSURE, at.x + bar / 2, y + at.height * 0.01, PRESSURE, at.x + bar, y, PRESSURE],
+    ...writeText(bottom, glyphs, { x: at.x + (bar - wb) / 2, baseline: y + gap + h, height: h }),
+  ];
+}
+
+/**
+ * `text` with powers written as they are by hand: each `^` and the digits
+ * after it ("8x^2+18x+4") small and raised after its base. One stroke per
+ * array, page px.
+ */
+export function writeWithPowers(
+  text: string,
+  glyphs: GlyphSet,
+  at: { x: number; baseline: number; height: number },
+): number[][] {
+  const out: number[][] = [];
+  let x = at.x;
+  const small = at.height * 0.6;
+  for (const part of text.split(/(\^[0-9]+)/)) {
+    if (!part) continue;
+    if (part.startsWith("^")) {
+      const digits = part.slice(1);
+      out.push(
+        ...writeText(digits, glyphs, {
+          x,
+          baseline: at.baseline - at.height * 0.55,
+          height: small,
+        }),
+      );
+      x += textWidth(digits, glyphs, small) + TRACKING * at.height;
+    } else {
+      out.push(...writeText(part, glyphs, { x, baseline: at.baseline, height: at.height }));
+      x += textWidth(part, glyphs, at.height) + TRACKING * at.height;
+    }
+  }
+  return out;
 }
 
 /**

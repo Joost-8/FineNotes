@@ -107,6 +107,7 @@ import { loadedVaultFonts } from "./font-store";
 import { errorMessage } from "../util/errors";
 import { downloadLabel } from "../model/font-catalogue";
 import { familyStack, matchesFamily } from "../model/text-family";
+import type { LookPalette, LookStyle } from "../model/look";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
@@ -151,6 +152,7 @@ import { type PenInk, type PenInks, penInkFor, switchPenInk, withPenInk } from "
 import {
   SWOOSH_HEIGHT,
   SWOOSH_WIDTH,
+  WIDTH_MARK_LIMIT,
   fitMarks,
   inkNeedsRim,
   sampleStroke,
@@ -898,6 +900,10 @@ export interface ToolbarCallbacks {
   onSetBarDock?: (dock: BarDock) => void;
   /** Customize toolbar switched "Dock tool options" (`pill-row-model.ts`). */
   onSetPillRow?: (on: boolean) => void;
+  /** The look worn now (`model/look.ts`), for Customize toolbar's Style and Colours rows. */
+  lookNow?: () => { style: LookStyle; palette: LookPalette };
+  /** Customize toolbar picked a style or colours. */
+  onSetLook?: (style: LookStyle, palette: LookPalette) => void;
   /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
   onRulerChange?: (kind: RulerKind, snap: number) => void;
   /** Stylus-only mode's toolbar button was tapped: turn the mode on or off. */
@@ -1109,6 +1115,7 @@ export class Toolbar {
   private readonly shapeButtons = new Map<ShapeMode, HTMLButtonElement>();
   /** The Table button's "3 × 4" caption, kept in step with the picked size. */
   private tableCaption: HTMLElement | null = null;
+  private homeButton: HTMLButtonElement | null = null;
   private thumbnailsButton: HTMLButtonElement | null = null;
   /** Full screen (tablets only, `onFullScreen`); its icon says which way it goes. */
   private fullScreenButton: HTMLButtonElement | null = null;
@@ -1396,8 +1403,10 @@ export class Toolbar {
     };
 
     const home = cb.onHome;
-    if (home)
-      item("home", this.barButton(start, "house", t("toolbar.item.home"), home), home, false);
+    if (home) {
+      this.homeButton = this.barButton(start, "house", t("toolbar.item.home"), home);
+      item("home", this.homeButton, home, false);
+    }
     this.thumbnailsButton = this.barButton(
       start,
       "panel-left",
@@ -1873,6 +1882,11 @@ export class Toolbar {
    * A tier-1 button. Passing `undefined` for the handler renders it disabled —
    * the feature exists in the design but not yet in the model.
    */
+  /** A dot on Home: an update's news is waiting there. */
+  setHomeDot(on: boolean): void {
+    this.homeButton?.toggleClass("goodobsidian-has-news", on);
+  }
+
   private barButton(
     parent: HTMLElement,
     icon: string,
@@ -2047,6 +2061,8 @@ export class Toolbar {
       pillRow: () => this.pillRowOn,
       setBarDock: this.callbacks.onSetBarDock,
       setPillRow: this.callbacks.onSetPillRow,
+      look: this.callbacks.lookNow,
+      setLook: this.callbacks.onSetLook,
       done: () => {
         this.editor = null;
         if (this.optionsBeforeCustomize) {
@@ -4996,13 +5012,14 @@ export class Toolbar {
 
   /**
    * One control's width marks (`widthMark`): true size while the thickest
-   * fits the glyph, else shrunk together, still solid (`fitMarks`).
+   * fits its bar (`WIDTH_MARK_LIMIT`), else shrunk together, still solid
+   * (`fitMarks`).
    */
   private widthMarks(widths: readonly number[]): Map<number, SizeMark> {
     return fittedMarks(
       widths,
       widths.map((width) => this.widthMark(width)),
-      SWOOSH_HEIGHT,
+      WIDTH_MARK_LIMIT,
     );
   }
 
@@ -7136,10 +7153,8 @@ function widthButton(
 }
 
 /**
- * A stroke-width control drawn as a stroke `thickness` screen px thick, in
- * the pen's own character: tapered for the fountain pen, even for the
- * ballpoint, lifting off for the brush, a flat band for the highlighter
- * (pen-glyphs.ts).
+ * A stroke-width control drawn as a level bar `thickness` screen px thick,
+ * its ends in the pen's character (`swoosh` in pen-glyphs.ts).
  */
 function widthGlyph(mark: SizeMark | undefined, pen: string): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");

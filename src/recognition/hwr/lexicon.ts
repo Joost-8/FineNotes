@@ -23,6 +23,11 @@
  * first. Above it the ink really shows this word. Never applied silently:
  * the report found half the fixes wrong.
  *
+ * `rereadOutOfList` is the one exception, measured since (EXP-PCONFIRM): a
+ * word NOT in the list is replaced by its best list word when that scores
+ * within 1 nat a letter of it, which made every test set better and none
+ * worse. Words in the list are never touched.
+ *
  * PURE: no DOM, no Obsidian.
  */
 
@@ -601,4 +606,88 @@ export function lmWord(lm: CharLm, before: string, word: string, after: string):
 export function replaceCore(token: string, word: string): string {
   const { cs, ce } = wordCore({ text: token, start: 0, end: token.length });
   return token.slice(0, cs) + word + token.slice(ce);
+}
+
+/** The word list a reading's words are checked against: its trie and the words themselves. */
+export interface RereadList {
+  lexicon: Lexicon;
+  /** The list's words, lower case (without `Lexicon`'s added short words). */
+  words: ReadonlySet<string>;
+}
+
+/** A list word must beat the reading by more than this, in nats per letter (as a negative gain). */
+export const REREAD_MARGIN = -1;
+
+/**
+ * Read the words of a line's text that are not in the list again
+ * (EXP-T368's test 6, confirmed in EXP-PCONFIRM): each one is replaced by
+ * its best near list word when that word's score (CTC + LM, as `suggest`
+ * scores it) minus the reading's, per letter, is above `margin` (−1: the
+ * list word may score up to 1 nat a letter worse, since the beam's LM
+ * favours what it has seen over a real word it has not). Words in the list
+ * are left alone. The text is returned unchanged when its characters do not
+ * fit the network's classes or its frames.
+ */
+export function rereadOutOfList(
+  line: LineLogp,
+  alphabet: readonly string[],
+  lm: CharLm | null,
+  alpha: number,
+  text: string,
+  list: RereadList,
+  margin = REREAD_MARGIN,
+): string {
+  const C = alphabet.length + 1;
+  const index = new Map<string, number>();
+  alphabet.forEach((c, i) => index.set(c, i + 1));
+  const toIds = (s: string): number[] | null => {
+    const ids: number[] = [];
+    for (const ch of s) {
+      const k = index.get(ch);
+      if (k === undefined) return null;
+      ids.push(k);
+    }
+    return ids;
+  };
+  const spell = (w: string): string => (index.has("’") ? w : w.replace(/’/g, "'"));
+  const ids = toIds(text);
+  if (!ids || ids.length !== text.length || text.length === 0) return text;
+  const pos = forceAlign(line.logp, line.frames, C, ids);
+  if (!pos) return text;
+  const swaps: { cs: number; ce: number; word: string }[] = [];
+  const re = /\S+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const { cs, ce } = wordCore({ text, start: m.index, end: m.index + m[0].length });
+    if (ce <= cs) continue;
+    const core = text.slice(cs, ce);
+    if (list.words.has(core.toLowerCase())) continue;
+    const [s, e] = wordWindow(pos, cs, ce, text.length);
+    const before = text.slice(0, cs);
+    const after = ce < text.length ? text[ce] : "\n";
+    let open = ctcScore(line.logp, C, s, e, ids.slice(cs, ce));
+    if (lm) open += alpha * lmWord(lm, before, core, after);
+    const upper = core.length > 1 && core === core.toUpperCase() && core !== core.toLowerCase();
+    const variants = new Set<string>();
+    for (const near of list.lexicon.near(core)) {
+      const w = spell(near);
+      variants.add(w);
+      variants.add(w.charAt(0).toUpperCase() + w.slice(1));
+      if (upper) variants.add(w.toUpperCase());
+    }
+    variants.delete(core);
+    const entries: { word: string; ids: number[] }[] = [];
+    for (const v of variants) {
+      const vi = toIds(v);
+      if (vi) entries.push({ word: v, ids: vi });
+    }
+    if (entries.length === 0) continue;
+    const context = lm && { lm, alpha, before, after };
+    const top = bestWords(line.logp, C, s, e, entries, 1, context);
+    if (top.length === 0) continue;
+    if ((top[0].score - open) / core.length > margin) swaps.push({ cs, ce, word: top[0].word });
+  }
+  let out = text;
+  for (const w of swaps.reverse()) out = out.slice(0, w.cs) + w.word + out.slice(w.ce);
+  return out;
 }

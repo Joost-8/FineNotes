@@ -36,8 +36,8 @@ export class ContentsTitleModal extends Modal {
     /** Its title now; `undefined` when it is not in the contents yet. */
     private readonly current: string | undefined,
     private readonly submit: (title: string) => void,
-    /** A heading inside the page, listed with its page's other headings, rather than the page itself. */
-    private readonly section = false,
+    /** What is being named: the page itself, a heading inside it, or a chapter of its own. */
+    private readonly kind: "page" | "section" | "chapter" = "page",
   ) {
     super(app);
     this.keyboard = new DialogKeyboard(this.modalEl);
@@ -46,26 +46,43 @@ export class ContentsTitleModal extends Modal {
   override onOpen(): void {
     const renaming = this.current !== undefined;
     const page = this.index + 1;
-    const fallback = this.section
-      ? t("view.contentsTitle.sectionFallback", { page })
-      : t("view.contentsTitle.pageFallback", { page });
+    const fallback =
+      this.kind === "chapter"
+        ? t("view.contentsTitle.chapterFallback")
+        : this.kind === "section"
+          ? t("view.contentsTitle.sectionFallback", { page })
+          : t("view.contentsTitle.pageFallback", { page });
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-contents-modal");
-    this.titleEl.setText(renaming ? t("view.contents.rename") : t("view.contents.add"));
+    this.titleEl.setText(
+      renaming
+        ? t("view.contents.rename")
+        : this.kind === "chapter"
+          ? t("view.contents.newChapter")
+          : t("view.contents.add"),
+    );
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
-    body.createDiv({
-      cls: "goodobsidian-ask-note",
-      text: this.section ? t("view.contentsTitle.sectionNote") : t("view.contentsTitle.pageNote"),
-    });
+    if (this.kind !== "chapter") {
+      body.createDiv({
+        cls: "goodobsidian-ask-note",
+        text:
+          this.kind === "section"
+            ? t("view.contentsTitle.sectionNote")
+            : t("view.contentsTitle.pageNote"),
+      });
+    }
     const row = body.createDiv({ cls: "goodobsidian-contents-field-row" });
     const field = row.createEl("input", {
       cls: "goodobsidian-contents-field",
       type: "text",
       attr: {
         placeholder: fallback,
-        "aria-label": this.section
-          ? t("view.contentsTitle.sectionLabel", { page })
-          : t("view.contentsTitle.pageLabel", { page }),
+        "aria-label":
+          this.kind === "chapter"
+            ? t("view.contentsTitle.chapterLabel")
+            : this.kind === "section"
+              ? t("view.contentsTitle.sectionLabel", { page })
+              : t("view.contentsTitle.pageLabel", { page }),
         maxlength: String(MAX_PAGE_TITLE_LENGTH),
         enterkeyhint: "done",
         autocomplete: "off",

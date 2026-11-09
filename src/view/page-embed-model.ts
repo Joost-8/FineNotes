@@ -11,6 +11,7 @@
 
 import { stripInkSuffix } from "../model/new-notebook";
 import { pageFromSubpath } from "../search/notebook-search";
+import { type PreviewPage, previewPageIndexes } from "../model/preview-pages";
 
 /**
  * The page a link's subpath names, 1-based, in every form `pageFromSubpath`
@@ -42,15 +43,32 @@ export function embedTarget(subpath: string): EmbedTarget | null {
 }
 
 /**
- * The pages an embed of a notebook with `pageCount` pages shows, 1-based, in
- * order: every page, one under the other, for the notebook embedded whole;
- * the one page a subpath names otherwise, whether or not the notebook has it
- * (the embed then says it is missing).
+ * The most pages a hover preview of a notebook link shows; a notebook with
+ * more shows its cover and the pages `previewPageIndexes` picks, then how
+ * many it left out. An embed in a note shows every page. Set by memory on
+ * an iPad: a hover preview is about 450 CSS px wide, painted 512 px at 2x,
+ * so an A4 page holds 1024 × 1448 device px, 5.7 MB. Nine of them, the
+ * preview scrolled end to end, hold 51 MB, inside the 64 MB all embeds may
+ * keep painted (`EMBED_CANVAS_BUDGET`) with room for a page of the note
+ * behind it; twelve would pass it. A test pins the sum.
  */
-export function embedPageNumbers(target: EmbedTarget, pageCount: number): number[] {
+export const MAX_PREVIEW_PAGES = 9;
+
+/**
+ * The pages an embed shows, 1-based, in order. A single page names itself,
+ * whether or not the notebook has it (the embed then says it is missing). A
+ * notebook embedded whole shows every page, one under the other; in a hover
+ * preview, a notebook of more than `MAX_PREVIEW_PAGES` shows its cover and
+ * the pages its contents and bookmarks point to (`previewPageIndexes`).
+ */
+export function embedPageNumbers(
+  target: EmbedTarget,
+  pages: readonly PreviewPage[],
+  hover = false,
+): number[] {
   if (!target.whole) return [target.page];
-  const count = Number.isFinite(pageCount) ? Math.max(0, Math.floor(pageCount)) : 0;
-  return Array.from({ length: count }, (_, i) => i + 1);
+  if (!hover) return pages.map((_, i) => i + 1);
+  return previewPageIndexes(pages, MAX_PREVIEW_PAGES).map((i) => i + 1);
 }
 
 /**
