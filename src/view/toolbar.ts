@@ -1115,6 +1115,7 @@ export class Toolbar {
   private readonly shapeButtons = new Map<ShapeMode, HTMLButtonElement>();
   /** The Table button's "3 × 4" caption, kept in step with the picked size. */
   private tableCaption: HTMLElement | null = null;
+  private homeButton: HTMLButtonElement | null = null;
   private thumbnailsButton: HTMLButtonElement | null = null;
   /** Full screen (tablets only, `onFullScreen`); its icon says which way it goes. */
   private fullScreenButton: HTMLButtonElement | null = null;
@@ -1402,8 +1403,10 @@ export class Toolbar {
     };
 
     const home = cb.onHome;
-    if (home)
-      item("home", this.barButton(start, "house", t("toolbar.item.home"), home), home, false);
+    if (home) {
+      this.homeButton = this.barButton(start, "house", t("toolbar.item.home"), home);
+      item("home", this.homeButton, home, false);
+    }
     this.thumbnailsButton = this.barButton(
       start,
       "panel-left",
@@ -1879,6 +1882,11 @@ export class Toolbar {
    * A tier-1 button. Passing `undefined` for the handler renders it disabled —
    * the feature exists in the design but not yet in the model.
    */
+  /** A dot on Home: an update's news is waiting there. */
+  setHomeDot(on: boolean): void {
+    this.homeButton?.toggleClass("goodobsidian-has-news", on);
+  }
+
   private barButton(
     parent: HTMLElement,
     icon: string,

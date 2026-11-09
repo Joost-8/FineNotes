@@ -4858,13 +4858,6 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
   color: var(--text-on-accent);
 }
 
-/* The welcome: where to find it again, quieter than the choices above. */
-.goodobsidian-welcome-hint {
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-  margin-bottom: 0;
-}
-
 /* Import notebook, first screen: two columns, where from (drop zone and the
    vault) and what comes over; they stack on a narrow screen. Under them a
    footer with the destination folder and the export help. */
@@ -17466,6 +17459,583 @@ button.goodobsidian-library-rail-toggle.is-active {
 .goodobsidian-shape-segment svg {
   width: 18px;
   height: 18px;
+}
+
+/* --- Tips, Home's card and the Welcome (view/tips-modal.ts, tip-visual.ts) --- */
+.goodobsidian-tv {
+  display: block;
+  overflow: hidden;
+  background: #fffefa;
+  border-radius: 10px;
+  --gob-tv-ink: #1b2a6b;
+  --gob-tv-accent: var(--interactive-accent);
+  --gob-tv-red: #d0394b;
+  --gob-tv-green: #2f8a5b;
+  --gob-tv-blue: #3b78d8;
+  --gob-tv-mark: #ffd84a;
+  --gob-tv-rule: #cfe0ef;
+  --gob-tv-soft: #b8b8c2;
+  --gob-tv-desk: #ebeaf0;
+  --gob-tv-page: #ffffff;
+}
+.goodobsidian-tv svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.goodobsidian-tv-moves {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.goodobsidian-tv .is-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.goodobsidian-tv .is-drawn {
+  stroke-dasharray: 1;
+}
+.goodobsidian-tv .is-dashed {
+  stroke-dasharray: 5 4;
+}
+.goodobsidian-tv .is-fill {
+  stroke: none;
+}
+.goodobsidian-tv-ink.is-line {
+  stroke: var(--gob-tv-ink);
+}
+.goodobsidian-tv-ink.is-fill {
+  fill: var(--gob-tv-ink);
+}
+.goodobsidian-tv-print.is-fill {
+  fill: #4b4b55;
+}
+.goodobsidian-tv-accent.is-line {
+  stroke: var(--gob-tv-accent);
+}
+.goodobsidian-tv-accent.is-fill {
+  fill: var(--gob-tv-accent);
+}
+.goodobsidian-tv-red.is-line {
+  stroke: var(--gob-tv-red);
+}
+.goodobsidian-tv-red.is-fill {
+  fill: var(--gob-tv-red);
+}
+.goodobsidian-tv-green.is-line {
+  stroke: var(--gob-tv-green);
+}
+.goodobsidian-tv-green.is-fill {
+  fill: var(--gob-tv-green);
+}
+.goodobsidian-tv-blue.is-line {
+  stroke: var(--gob-tv-blue);
+}
+.goodobsidian-tv-blue.is-fill {
+  fill: var(--gob-tv-blue);
+}
+.goodobsidian-tv-mark {
+  mix-blend-mode: multiply;
+}
+.goodobsidian-tv-mark.is-line {
+  stroke: var(--gob-tv-mark);
+}
+.goodobsidian-tv-mark.is-fill {
+  fill: var(--gob-tv-mark);
+}
+.goodobsidian-tv-rule.is-line {
+  stroke: var(--gob-tv-rule);
+}
+.goodobsidian-tv-soft.is-line {
+  stroke: var(--gob-tv-soft);
+}
+.goodobsidian-tv-soft.is-fill {
+  fill: var(--gob-tv-soft);
+}
+.goodobsidian-tv-desk.is-fill {
+  fill: var(--gob-tv-desk);
+}
+.goodobsidian-tv-page.is-fill {
+  fill: var(--gob-tv-page);
+}
+.goodobsidian-tv-page.is-line {
+  stroke: var(--gob-tv-page);
+}
+.goodobsidian-tv text {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+}
+.goodobsidian-tv text.is-print {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: normal;
+}
+.goodobsidian-tv text.is-typed {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-style: normal;
+}
+.goodobsidian-tv-pen path {
+  fill: #ffffff;
+  stroke: #8a8a96;
+  stroke-width: 1.2px;
+  stroke-linejoin: round;
+}
+.goodobsidian-tv-pen circle.goodobsidian-tv-finger {
+  fill: var(--gob-tv-accent);
+  opacity: 0.5;
+}
+.goodobsidian-tv-pen path.goodobsidian-tv-pen-tip {
+  fill: #55555f;
+}
+
+@keyframes goodobsidian-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-welcome-row,
+  .goodobsidian-tips-tile {
+    animation: none !important;
+  }
+}
+
+/* The Welcome. */
+.modal.goodobsidian-welcome {
+  width: min(500px, 94vw);
+}
+.goodobsidian-welcome-intro {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+}
+.goodobsidian-welcome-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--background-modifier-border);
+  animation: goodobsidian-rise 0.36s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+.goodobsidian-welcome-row:nth-of-type(3) {
+  animation-delay: 60ms;
+}
+.goodobsidian-welcome-row:nth-of-type(4) {
+  animation-delay: 120ms;
+}
+.goodobsidian-welcome-row:nth-of-type(5) {
+  animation-delay: 180ms;
+}
+.goodobsidian-welcome-row.is-lead {
+  padding: 12px;
+  margin-bottom: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: hsla(var(--interactive-accent-hsl), 0.12);
+}
+.goodobsidian-welcome-words {
+  flex: 1;
+  min-width: 0;
+}
+.goodobsidian-welcome-name {
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-welcome-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+button.goodobsidian-welcome-button.clickable-icon {
+  flex: none;
+  width: auto;
+  height: auto;
+  padding: 7px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 9px;
+  color: var(--text-normal);
+  white-space: normal;
+}
+.goodobsidian-dialog button.goodobsidian-welcome-button.mod-cta.clickable-icon {
+  padding: 7px 14px;
+  border-color: transparent;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.goodobsidian-welcome-window {
+  flex: none;
+  display: flex;
+  width: 52px;
+  height: 38px;
+  padding: 3px;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--background-primary);
+  box-shadow: 0 0 0 1px var(--background-modifier-border);
+}
+.goodobsidian-welcome-window-ribbon,
+.goodobsidian-welcome-window-side {
+  flex: none;
+  border-radius: 2px;
+  background: hsla(var(--interactive-accent-hsl), 0.4);
+  transition:
+    width 0.28s cubic-bezier(0.2, 0.7, 0.2, 1),
+    margin 0.28s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.2s;
+}
+.goodobsidian-welcome-window-ribbon {
+  width: 5px;
+}
+.goodobsidian-welcome-window-side {
+  width: 12px;
+}
+.goodobsidian-welcome-window.is-simple .goodobsidian-welcome-window-ribbon,
+.goodobsidian-welcome-window.is-simple .goodobsidian-welcome-window-side {
+  width: 0;
+  margin-right: -2px;
+  opacity: 0;
+}
+.goodobsidian-welcome-window-page {
+  flex: 1;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+}
+
+/* Home's one card. */
+.goodobsidian-home-card {
+  position: relative;
+  margin-bottom: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--background-secondary);
+}
+.goodobsidian-home-card.is-offer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 48px;
+}
+.goodobsidian-home-card-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-home-card-icon {
+  display: flex;
+  color: var(--text-accent);
+}
+.goodobsidian-home-card-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+.goodobsidian-home-card-words {
+  flex: 1;
+  min-width: 0;
+}
+.goodobsidian-home-card-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+button.goodobsidian-home-card-close.clickable-icon {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.goodobsidian-home-card-frame {
+  position: relative;
+  margin-top: 12px;
+}
+.goodobsidian-home-card-pictures {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+}
+.goodobsidian-home-card-pictures::-webkit-scrollbar {
+  display: none;
+}
+.goodobsidian-home-card-frame.has-more .goodobsidian-home-card-pictures {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+}
+button.goodobsidian-home-card-arrow.clickable-icon {
+  position: absolute;
+  top: 54px;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+button.goodobsidian-home-card-arrow.is-start.clickable-icon {
+  left: 4px;
+}
+button.goodobsidian-home-card-arrow.is-end.clickable-icon {
+  right: 4px;
+}
+button.goodobsidian-home-card-arrow.is-hidden.clickable-icon {
+  display: none;
+}
+@media (hover: none) {
+  button.goodobsidian-home-card-arrow.clickable-icon {
+    display: none;
+  }
+}
+button.goodobsidian-home-card-picture.clickable-icon {
+  display: block;
+  flex: 0 0 min(220px, 62%);
+  scroll-snap-align: start;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: none;
+  color: var(--text-normal);
+  text-align: left;
+  white-space: normal;
+  transition: transform 0.16s;
+}
+button.goodobsidian-home-card-picture.clickable-icon:active {
+  transform: scale(0.97);
+}
+.goodobsidian-home-card-name {
+  margin-top: 6px;
+  font-size: var(--font-ui-small);
+}
+
+/* The way back, at the foot of the folder rail. */
+.goodobsidian-library-rail-foot {
+  position: sticky;
+  bottom: -24px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: auto -10px -24px;
+  padding: 10px 20px calc(10px + var(--safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.goodobsidian-library-rail-foot .checkbox-container {
+  flex: none;
+  margin-left: auto;
+}
+
+/* The toolbar's Home button while news waits. */
+.goodobsidian-has-news {
+  position: relative;
+}
+.goodobsidian-has-news::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+}
+
+/* Tips. */
+.modal.goodobsidian-tips {
+  width: min(760px, 94vw);
+  max-width: 94vw;
+}
+.goodobsidian-tips .modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.goodobsidian-tips-section {
+  margin: 22px 0 10px;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+}
+.goodobsidian-tips-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+button.goodobsidian-tips-tile.clickable-icon {
+  display: block;
+  width: auto;
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  text-align: left;
+  white-space: normal;
+  animation: goodobsidian-rise 0.36s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  animation-delay: calc(var(--gob-i, 0) * 45ms);
+  transition: transform 0.16s;
+}
+button.goodobsidian-tips-tile.clickable-icon:hover {
+  transform: translateY(-2px);
+}
+button.goodobsidian-tips-tile.clickable-icon:active {
+  transform: scale(0.97);
+}
+.goodobsidian-tips-tile .goodobsidian-tv {
+  border-radius: 0;
+}
+button.goodobsidian-tips-tile.is-first.clickable-icon {
+  display: flex;
+  grid-column: 1 / -1;
+}
+.goodobsidian-tips-tile.is-first .goodobsidian-tv {
+  flex: 0 0 min(52%, 320px);
+}
+.goodobsidian-tips-tile.is-first .goodobsidian-tips-tile-caption {
+  flex: 1;
+  align-items: center;
+  padding: 18px;
+  font-size: 18px;
+}
+.goodobsidian-tips-tile-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-tips-count {
+  color: var(--text-muted);
+  font-weight: var(--font-normal);
+}
+.goodobsidian-tips-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 16px;
+}
+button.goodobsidian-tips-link.clickable-icon {
+  width: auto;
+  height: auto;
+  padding: 4px 6px;
+  color: var(--text-accent);
+  white-space: normal;
+}
+.goodobsidian-tips-pager {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.goodobsidian-tips-stage {
+  position: relative;
+  width: min(520px, 100%);
+  overflow: hidden;
+  border-radius: 14px;
+  background: #fffefa;
+  box-shadow: 0 0 0 1px var(--background-modifier-border);
+  touch-action: pan-y;
+}
+.goodobsidian-tips-stage.is-trying > .goodobsidian-tv {
+  visibility: hidden;
+}
+.goodobsidian-tips-pad {
+  position: absolute;
+  inset: 0;
+}
+.goodobsidian-tips-pad canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+.goodobsidian-tips-pad-done {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 0.16s,
+    transform 0.24s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.goodobsidian-tips-pad-done.is-shown {
+  opacity: 1;
+  transform: none;
+}
+.goodobsidian-tips-words {
+  max-width: 460px;
+  min-height: 112px;
+  margin-top: 14px;
+  text-align: center;
+}
+.goodobsidian-tips-words h3 {
+  margin: 0;
+  font-size: 20px;
+}
+.goodobsidian-tips-words p {
+  margin: 6px 0 10px;
+  color: var(--text-muted);
+}
+button.goodobsidian-tips-try.clickable-icon {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  padding: 6px 16px;
+  border-radius: 18px;
+  background: hsla(var(--interactive-accent-hsl), 0.14);
+  color: var(--text-accent);
+  white-space: normal;
+}
+.goodobsidian-tips-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  width: 100%;
+}
+button.goodobsidian-tips-arrow.clickable-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--background-secondary);
+}
+button.goodobsidian-tips-arrow.clickable-icon.is-hidden {
+  display: flex;
+  visibility: hidden;
+}
+.goodobsidian-tips-dots {
+  display: flex;
+  align-items: center;
+}
+button.goodobsidian-tips-dot.clickable-icon {
+  width: 20px;
+  height: 28px;
+  padding: 0;
+  background: none;
+}
+button.goodobsidian-tips-dot.clickable-icon::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--background-modifier-border);
+  transition:
+    background 0.16s,
+    transform 0.16s;
+}
+button.goodobsidian-tips-dot.is-on.clickable-icon::before {
+  background: var(--interactive-accent);
+  transform: scale(1.25);
 }
 
 /* ----------------------------------------------------------- looks */

@@ -134,7 +134,17 @@ import {
   templateFolderOf,
 } from "./model/vault-folders";
 import { UpdateNotice } from "./view/update-notice";
-import { changelogSince, releasedChangelog } from "./changelog";
+import { releasedChangelog } from "./changelog";
+import {
+  type HomeCardKind,
+  highlightsSince,
+  homeCardKind,
+  EARLIEST_NEWS,
+  latestHighlighted,
+  nextNewsSince,
+  simpleOfferDue,
+} from "./model/tips";
+import { type TipsPage, TipsModal } from "./view/tips-modal";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
@@ -195,6 +205,7 @@ import {
   welcomeStickerFiles,
 } from "./model/welcome";
 import { WelcomeModal } from "./view/welcome-modal";
+import type { HomeCard } from "./view/library-view";
 import { saveImageAttachment } from "./view/image-import";
 import { VaultPaperLibrary } from "./view/paper-library-host";
 import { PdfBackdropCache } from "./view/pdf-backdrop";
@@ -312,11 +323,6 @@ export interface RecognitionTarget {
 
 /** Where a key exchange with OpenRouter ended: a key, or what to tell the user. */
 type OpenRouterOutcome = { key: string } | { problem: string };
-
-/** How long after start the simple-look note waits, so the welcome is up first, ms. */
-const SIMPLE_HINT_DELAY_MS = 2500;
-/** How long the note stays, ms. */
-const SIMPLE_HINT_MS = 20000;
 
 export default class GoodObsidianPlugin extends Plugin {
   private readonly explorerNotebookButton = new FileExplorerNotebookButton(
@@ -540,6 +546,11 @@ export default class GoodObsidianPlugin extends Plugin {
           importFromApp: (folder) => this.openImportNotebook(folder),
           importImage: (file, folder) => void this.createNotebookFromImage(file, folder),
           openSettings: () => this.openOwnSettings(),
+          openTips: (page) => this.openTips(page),
+          homeCard: () => this.homeCard(),
+          dismissHomeCard: (kind) => this.dismissHomeCard(kind),
+          simpleLook: () => this.settings.simpleLook,
+          setSimpleLook: (on) => this.setSimpleLook(on),
           update: () => this.updates.available,
           openUpdate: () => this.openUpdatePage(),
           checkUpdate: () => this.updates.checkNow(),
@@ -852,6 +863,17 @@ export default class GoodObsidianPlugin extends Plugin {
       callback: () => void this.showNotebooksSidebar(),
     });
 
+    this.addCommand({
+      id: "show-tips",
+      name: t("notebooks.command.tips"),
+      callback: () => this.openTips(),
+    });
+
+    this.addCommand({
+      id: "show-whats-new",
+      name: t("notebooks.command.whatsNew"),
+      callback: () => this.showNewsAgain(),
+    });
     this.addCommand({
       id: "next-look-style",
       name: t("notebooks.command.nextLookStyle"),
@@ -1388,26 +1410,6 @@ export default class GoodObsidianPlugin extends Plugin {
     if (moved) this.saveCalculator(moved);
   }
 
-  /** Once: the simple look is on, and one switch brings normal Obsidian back. */
-  private sayWhereSimpleLookIs(): void {
-    if (!this.settings.simpleLook || this.settings.simpleLookHinted) return;
-    this.settings.simpleLookHinted = true;
-    void this.saveSettings();
-    const notice: Notice = new Notice(
-      createFragment((fragment) => {
-        fragment.createDiv({
-          text: t("notebooks.simpleLook.noticeNew"),
-        });
-        const undo = fragment.createEl("button", { text: t("notebooks.simpleLook.undo") });
-        undo.addEventListener("click", () => {
-          notice.hide();
-          this.setSimpleLook(false);
-        });
-      }),
-      SIMPLE_HINT_MS,
-    );
-  }
-
   /** Wear the body classes the simple look asks for now (none when it is off). */
   applySimpleLook(): void {
     if (typeof document === "undefined") return;
@@ -1452,6 +1454,7 @@ export default class GoodObsidianPlugin extends Plugin {
 
   setSimpleLook(on: boolean): void {
     this.settings.simpleLook = on;
+    this.settings.simpleLookHinted = true;
     void this.saveSettings();
   }
 
@@ -1696,19 +1699,79 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * After an update, once: the changelog since the version this vault last
-   * ran. The version seen is kept in the plugin's data, which syncs with the
-   * vault, so a user with three devices reads the news once, not three times.
+   * After an update: remember where the news starts, for Home's card. Nothing
+   * opens by itself. The version is kept in the plugin's data, which syncs
+   * with the vault, so a user with three devices reads the news once.
    */
   private async showWhatsNew(): Promise<void> {
     const version = this.manifest.version;
     const seen = this.settings.lastSeenVersion;
     if (seen === version) return;
-    // A new install has nothing to catch up on; it only starts the record.
-    const news = this.firstInstall ? "" : changelogSince(changelogMd, seen || null);
+    this.settings.newsSince = nextNewsSince({
+      firstInstall: this.firstInstall,
+      lastSeen: seen,
+      pending: this.settings.newsSince,
+      current: version,
+    });
     this.settings.lastSeenVersion = version;
     await this.saveSettings();
-    if (news) this.showChangelog(news);
+    this.syncNewsDots();
+  }
+
+  /** What Home's one card shows now, or null. */
+  homeCard(): HomeCard | null {
+    const { newsSince } = this.settings;
+    const version = this.manifest.version;
+    const tips = highlightsSince(newsSince, version);
+    const kind = homeCardKind(tips.length > 0, simpleOfferDue(this.settings));
+    if (kind === "news") {
+      return { kind, tips, version: latestHighlighted(newsSince, version) ?? version };
+    }
+    return kind === "simple" ? { kind } : null;
+  }
+
+  /** Whether an update's highlights are still waiting: the toolbar's Home button says so. */
+  hasNews(): boolean {
+    return highlightsSince(this.settings.newsSince, this.manifest.version).length > 0;
+  }
+
+  dismissHomeCard(kind: HomeCardKind): void {
+    if (kind === "news") this.settings.newsSince = "";
+    else this.settings.simpleLookHinted = true;
+    void this.saveSettings();
+    this.syncNewsDots();
+  }
+
+  private syncNewsDots(): void {
+    const on = this.hasNews();
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_INK)) {
+      (leaf.view as InkView).setNewsDot(on);
+    }
+  }
+
+  /** Bring Home's what's-new card back, with the latest releases' highlights. */
+  showNewsAgain(): void {
+    this.settings.newsSince = EARLIEST_NEWS;
+    void this.saveSettings();
+    this.syncNewsDots();
+    void this.openLibrary().then(() => {
+      for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)) {
+        (leaf.view as LibraryView).refreshCard();
+      }
+    });
+  }
+
+  /** Tips: the collections, or `page` when one is given. */
+  openTips(page: TipsPage | null = null): void {
+    new TipsModal(
+      this.app,
+      {
+        openTour: () => void this.openWelcomeTour(),
+        openChangelog: () => this.showChangelog(releasedChangelog(changelogMd)),
+        showNews: () => this.showNewsAgain(),
+      },
+      page,
+    ).open();
   }
 
   /** Remember the eraser's mode and size for the next session (and device). */
@@ -2376,13 +2439,6 @@ export default class GoodObsidianPlugin extends Plugin {
         const timer = window.setTimeout(() => void this.makeHomeFile(), HOME_FILE_DELAY_MS);
         this.register(() => window.clearTimeout(timer));
       }
-      if (this.settings.simpleLook && !this.settings.simpleLookHinted) {
-        if (typeof window !== "undefined") {
-          // Cleared on unload: a plugin turned off in those seconds says nothing.
-          const hint = window.setTimeout(() => this.sayWhereSimpleLookIs(), SIMPLE_HINT_DELAY_MS);
-          this.register(() => window.clearTimeout(hint));
-        }
-      }
     });
     // Opening FineNotes' own Home note opens the library instead.
     this.registerEvent(
@@ -2578,6 +2634,8 @@ export default class GoodObsidianPlugin extends Plugin {
       openTour: () => void this.openWelcomeTour(),
       importNotebooks: () => this.openImportNotebook(),
       openHome: () => void this.openLibrary(),
+      simpleLook: () => this.settings.simpleLook,
+      setSimpleLook: (on) => this.setSimpleLook(on),
     }).open();
   }
 

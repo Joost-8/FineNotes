@@ -10,6 +10,20 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Tips.** The lightbulb on Home opens moving pictures of what is easy to
+  miss, ordered by what helps most: pen gestures, cover tape, tapping your
+  writing to hear it, and more. The first two pen gestures can be tried right
+  there.
+- **What's new is on Home.** After an update a card shows the highlights in
+  pictures; nothing opens by itself. A dot on the toolbar's Home button waits
+  for anyone who goes straight to a notebook.
+- **A way back from the simple look, always in sight:** a switch at the foot of
+  Home's folder rail.
+
+### Changed
+
+- **The simple look is off for new installs,** and offered as a live switch in
+  a redrawn Welcome. Anyone already using it keeps it.
 - **Themes for FineNotes' own bars, menus and dialogs.** Settings → Look
   has two menus: a style (Default, Glass, Material, Fluent, Paper,
   Brutalist, Soft, Retro, Compact) and colours (Match Obsidian, Nord,

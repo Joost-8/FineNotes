@@ -37,6 +37,7 @@ import {
   type TAbstractFile,
   TFile,
   TFolder,
+  ToggleComponent,
   type ViewStateResult,
   type WorkspaceLeaf,
   setIcon,
@@ -62,6 +63,10 @@ import { NotebookPages } from "./library-pages";
 import type { Page } from "../model/document";
 import { type Tap, isDoubleTap, railFolders } from "../model/library-rail";
 import { SIMPLE_CLASS } from "../model/simple-mode";
+import type { HomeCardKind, Tip } from "../model/tips";
+import { tipScene } from "../model/tip-scenes";
+import { TipVisual } from "./tip-visual";
+import type { TipsPage } from "./tips-modal";
 import { coverUrlNow, loadCover, loadEntries, saveCover, saveEntries } from "./home-cache";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { thumbnailRasterScale } from "./page-sidebar";
@@ -132,7 +137,16 @@ import {
 } from "./search-store";
 
 /** What the view needs from the plugin. */
+/** What Home's one card is showing. */
+export type HomeCard = { kind: "news"; version: string; tips: readonly Tip[] } | { kind: "simple" };
+
 export interface LibraryHost {
+  /** Tips: the collections, or one page of them. */
+  openTips(page?: TipsPage | null): void;
+  homeCard(): HomeCard | null;
+  dismissHomeCard(kind: HomeCardKind): void;
+  simpleLook(): boolean;
+  setSimpleLook(on: boolean): void;
   /** The New notebook / New board dialogs, made in `folder` ("" the root). */
   newNotebook(folder: string): void;
   newBoard(folder: string): void;
@@ -327,6 +341,10 @@ export class LibraryView extends ItemView {
   private previewEl!: HTMLElement;
   /** The item the preview shows, or null when it is closed. */
   private previewPath: string | null = null;
+  private cardEl: HTMLElement | null = null;
+  private cardKey = "";
+  private cardVisuals: TipVisual[] = [];
+  private cardObserver: IntersectionObserver | null = null;
   /** The last tap on a cover, for a double tap. */
   private lastTap: Tap | null = null;
   /** Notebooks read whole, for their cover and page pictures. */
@@ -421,6 +439,13 @@ export class LibraryView extends ItemView {
     });
     setIcon(sort, "arrow-up-down");
     sort.addEventListener("click", (event) => this.openSortMenu(event));
+
+    const tips = head.createEl("button", {
+      cls: "clickable-icon",
+      attr: { type: "button", "aria-label": t("notebooks.tips.title") },
+    });
+    setIcon(tips, "lightbulb");
+    tips.addEventListener("click", () => this.host.openTips());
 
     const add = head.createEl("button", {
       cls: "goodobsidian-library-new",
@@ -1001,6 +1026,7 @@ export class LibraryView extends ItemView {
     else this.railEl.empty();
     if (this.previewPath !== null && !all.some((e) => e.path === this.previewPath))
       this.hidePreview();
+    if (!searching && this.folder === "") this.paintHomeCard();
     if (all.length === 0) {
       const empty = this.bodyEl.createDiv({ cls: "goodobsidian-library-empty" });
       empty.createDiv({ text: t("notebooks.home.empty") });
@@ -1589,6 +1615,139 @@ export class LibraryView extends ItemView {
     return card;
   }
 
+  // --- Home's one card ----------------------------------------------------------
+
+  /** Paint Home again after its card changed from outside. */
+  refreshCard(): void {
+    this.paintNow();
+  }
+
+  /** Kept across repaints, so its pictures keep playing while the list refreshes. */
+  private paintHomeCard(): void {
+    const card = this.host.homeCard();
+    const key = card === null ? "" : card.kind === "news" ? `news:${card.version}` : "simple";
+    if (key !== this.cardKey) {
+      this.dropCard();
+      this.cardKey = key;
+      if (card?.kind === "news") this.cardEl = this.newsCard(card);
+      else if (card?.kind === "simple") this.cardEl = this.simpleCard();
+      this.cardEl?.animate(
+        [
+          { opacity: 0, transform: "translateY(10px)" },
+          { opacity: 1, transform: "none" },
+        ],
+        { duration: 320, easing: "cubic-bezier(.2,.7,.2,1)" },
+      );
+    }
+    if (this.cardEl) this.bodyEl.appendChild(this.cardEl);
+  }
+
+  private dropCard(): void {
+    this.cardObserver?.disconnect();
+    this.cardObserver = null;
+    for (const visual of this.cardVisuals) visual.destroy();
+    this.cardVisuals = [];
+    this.cardEl?.remove();
+    this.cardEl = null;
+    this.cardKey = "";
+  }
+
+  private cardShell(kind: HomeCardKind): HTMLElement {
+    const card = createDiv({ cls: "goodobsidian-home-card" });
+    const close = card.createEl("button", {
+      cls: "goodobsidian-home-card-close clickable-icon",
+      attr: { type: "button", "aria-label": t("notebooks.home.dismissCard") },
+    });
+    setIcon(close, "x");
+    close.addEventListener("click", () => {
+      this.host.dismissHomeCard(kind);
+      this.paintNow();
+    });
+    return card;
+  }
+
+  private newsCard(news: Extract<HomeCard, { kind: "news" }>): HTMLElement {
+    const card = this.cardShell("news");
+    const title = t("notebooks.home.newIn", { version: news.version });
+    const head = card.createDiv({ cls: "goodobsidian-home-card-title" });
+    setIcon(head.createSpan({ cls: "goodobsidian-home-card-icon" }), "sparkles");
+    head.createSpan({ text: title });
+    const frame = card.createDiv({ cls: "goodobsidian-home-card-frame" });
+    const row = frame.createDiv({ cls: "goodobsidian-home-card-pictures" });
+    const byPicture = new Map<Element, TipVisual>();
+    const onScreen = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) byPicture.get(entry.target)?.play();
+          else byPicture.get(entry.target)?.pause();
+        }
+      },
+      { root: row },
+    );
+    this.cardObserver = onScreen;
+    news.tips.forEach((tip, index) => {
+      const button = row.createEl("button", {
+        cls: "goodobsidian-home-card-picture clickable-icon",
+        attr: { type: "button" },
+      });
+      const visual = new TipVisual(button, tipScene(tip.scene));
+      this.cardVisuals.push(visual);
+      byPicture.set(button, visual);
+      onScreen.observe(button);
+      button.createDiv({ cls: "goodobsidian-home-card-name", text: t(tip.title) });
+      button.addEventListener("click", () => {
+        this.host.dismissHomeCard("news");
+        this.paintNow();
+        this.host.openTips({ title, tips: news.tips, index });
+      });
+    });
+    this.addStripArrows(frame, row);
+    return card;
+  }
+
+  /** A mouse has no sideways swipe: arrows at the row's ends, there only while it can go further. */
+  private addStripArrows(frame: HTMLElement, row: HTMLElement): void {
+    const arrow = (icon: string, label: string, side: string, direction: number): HTMLElement => {
+      const button = frame.createEl("button", {
+        cls: ["goodobsidian-home-card-arrow", side, "clickable-icon"],
+        attr: { type: "button", "aria-label": label },
+      });
+      setIcon(button, icon);
+      button.addEventListener("click", () =>
+        row.scrollBy({ left: direction * row.clientWidth * 0.8, behavior: "smooth" }),
+      );
+      return button;
+    };
+    const back = arrow("chevron-left", t("notebooks.tips.previous"), "is-start", -1);
+    const next = arrow("chevron-right", t("notebooks.tips.next"), "is-end", 1);
+    const sync = (): void => {
+      const left = row.scrollLeft;
+      const more = row.scrollWidth - row.clientWidth - left;
+      back.toggleClass("is-hidden", left <= 1);
+      next.toggleClass("is-hidden", more <= 1);
+      frame.toggleClass("has-more", more > 1);
+    };
+    row.addEventListener("scroll", sync, { passive: true });
+    new ResizeObserver(sync).observe(row);
+    sync();
+  }
+
+  private simpleCard(): HTMLElement {
+    const card = this.cardShell("simple");
+    card.addClass("is-offer");
+    const words = card.createDiv({ cls: "goodobsidian-home-card-words" });
+    words.createDiv({ cls: "goodobsidian-home-card-title", text: t("notebooks.welcome.simple") });
+    words.createDiv({
+      cls: "goodobsidian-home-card-desc",
+      text: t("notebooks.welcome.simpleInfo"),
+    });
+    new ToggleComponent(card).setValue(false).onChange((on) => {
+      this.host.setSimpleLook(on);
+      this.paintNow();
+    });
+    return card;
+  }
+
   // --- Folder rail, Continue, preview ------------------------------------------
 
   /** Home and the folders, the path to the open one unfolded; a row is a drop target. */
@@ -1652,6 +1811,17 @@ export class LibraryView extends ItemView {
         });
       });
     }
+    // The way back to normal Obsidian, always in sight while its own chrome is hidden.
+    const foot = rail.createDiv({ cls: "goodobsidian-library-rail-foot" });
+    setIcon(foot.createSpan({ cls: "goodobsidian-library-rail-icon" }), "panel-left-close");
+    foot.createSpan({
+      cls: "goodobsidian-library-rail-name",
+      text: t("settings.simpleLook.name"),
+    });
+    new ToggleComponent(foot).setValue(this.host.simpleLook()).onChange((on) => {
+      this.host.setSimpleLook(on);
+      this.paintNow();
+    });
   }
 
   /**
