@@ -22,7 +22,9 @@
  *   `pointerdown`; a pen on the glass always has its `pointerdown` first, so
  *   that bit counts only while no pen is down ({@link StylusClicks.landed}).
  *   There, the pen touching down with the button held is a `contextmenu`
- *   alone, as a mouse's ({@link StylusClicks.touched}).
+ *   alone, as a mouse's ({@link StylusClicks.touched}): the stroke itself
+ *   never reaches the page, so holding the button cannot erase there
+ *   (FineNotes#149), and the click can switch to the eraser instead.
  * - **`contextmenu`.** A WebView may hand the button over as nothing but a
  *   right-click with `pointerType` "pen"; that counts when the pointer events
  *   saw no button, and not just after the pen lifted
@@ -35,9 +37,9 @@
  */
 
 /** What a click of the pen's side button does, as the settings store it. */
-export type StylusClickAction = "pen-menu" | "none";
+export type StylusClickAction = "pen-menu" | "eraser" | "none";
 
-export const STYLUS_CLICK_ACTIONS: readonly StylusClickAction[] = ["pen-menu", "none"];
+export const STYLUS_CLICK_ACTIONS: readonly StylusClickAction[] = ["pen-menu", "eraser", "none"];
 
 /** A stored click setting as one, or the default (the pen menu) when it is not one. */
 export function stylusClickActionOf(value: unknown): StylusClickAction {

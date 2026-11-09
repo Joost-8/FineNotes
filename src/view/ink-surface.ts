@@ -692,6 +692,7 @@ import {
   type ToolUse,
   continuesUse,
   drawingToolOf,
+  eraserClickStep,
   selectedTool,
   toolAfterUse,
 } from "./tool-return";
@@ -1980,6 +1981,8 @@ export class InkSurface {
   private textFrameDrag: string | null = null;
   /** The tool as of the last `setTool`, so switching to Text can remember what it replaced. */
   private toolSeen: ActiveTool;
+  /** The tool a side-button click left for the eraser; a tool picked any other way forgets it. */
+  private eraserClickBack: ActiveTool | null = null;
   /** The tool in use before Text, which an unpinned Text tool returns to. */
   private toolBeforeText: ActiveTool | null = null;
   /** The pen or highlighter last in use, which the return-to-pen settings go back to. */
@@ -4055,6 +4058,7 @@ export class InkSurface {
     // A tool picked by hand overrides a return still waiting to happen.
     this.cancelPendingReturn();
     this.toolSeen = tool;
+    this.eraserClickBack = null;
     this.toolState.tool = tool;
     if (tool !== "highlighter") this.dropTextMark();
     if (this.textCopyTimer) this.hideTextCopy();
@@ -4308,6 +4312,16 @@ export class InkSurface {
         // turning ink into text are the host's; it answers whether it ran.
         this.callbacks.onShortcutAction?.(id);
     }
+  }
+
+  /** The side button clicked in the air, set to the eraser: to it, and back again. */
+  stylusEraserClick(): void {
+    const step = eraserClickStep(this.toolState.tool, this.eraserClickBack, this.drawingTool);
+    if (this.practice && !isPracticeTool(step.tool)) return;
+    if (this.callbacks.toolOff?.(step.tool) === true) return;
+    this.setTool(step.tool);
+    this.eraserClickBack = step.back;
+    this.callbacks.onToolChange?.(step.tool);
   }
 
   /** The tool a key press switches to, as a letter already did. */

@@ -8,6 +8,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Click the pen's side button for the eraser** (FineNotes#149). On Android,
+  holding an S Pen's button while writing does not reach FineNotes. Settings →
+  Pens and shortcuts, **Side button click**, now has **Switch to the eraser**:
+  a click with the pen just above the page takes the eraser, another goes back
+  to the tool you had.
+
 ## [2.8.3] - 2026-11-06
 
 ### Added

@@ -974,6 +974,38 @@ describe("buttons in the user's shortcut table", () => {
     expect(free.calls).toEqual(["onStylusClick"]);
   });
 
+  describe("the click set to the eraser", () => {
+    function clicking(off: (tool: string) => boolean = () => false) {
+      const { surface, calls } = buttons(shortcutTable());
+      const fields = surface as unknown as Record<string, unknown>;
+      fields.toolState = { tool: "select" };
+      fields.drawingTool = "pen";
+      fields.eraserClickBack = null;
+      fields.setTool = (tool: string) => {
+        (fields.toolState as { tool: string }).tool = tool;
+        fields.eraserClickBack = null;
+      };
+      surface.callbacks = { ...(surface.callbacks as object), toolOff: off };
+      return { surface, calls, fields };
+    }
+
+    it("switches to the eraser and back to the tool it left", () => {
+      const { surface, calls, fields } = clicking();
+      run(surface, "stylusEraserClick");
+      expect(fields.toolState).toEqual({ tool: "eraser" });
+      run(surface, "stylusEraserClick");
+      expect(fields.toolState).toEqual({ tool: "select" });
+      expect(calls).toEqual(["onToolChange(eraser)", "onToolChange(select)"]);
+    });
+
+    it("does nothing when the eraser is switched off", () => {
+      const { surface, calls, fields } = clicking((tool) => tool === "eraser");
+      run(surface, "stylusEraserClick");
+      expect(fields.toolState).toEqual({ tool: "select" });
+      expect(calls).toEqual([]);
+    });
+  });
+
   it("listens for the side button's click when it is bound, whatever the click setting says", () => {
     const { surface } = buttons(shortcutTable(withShortcut({}, "edit.undo", side, "press")));
     surface.callbacks = { ...(surface.callbacks as object), stylusClick: () => "none" };
