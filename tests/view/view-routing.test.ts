@@ -120,4 +120,24 @@ describe("ViewRouter", () => {
     expect(router.wantsNotebook("Plain.md", () => false)).toBe(false);
     expect(router.wantsNotebook("A.notebook.md", () => true)).toBe(true);
   });
+
+  it("opens a text note in its own view, whatever else claims it", () => {
+    const router = new ViewRouter();
+    const isNote = (path: string): boolean => path.endsWith(".note.md");
+    expect(router.typeToOpen(MARKDOWN_VIEW_TYPE, "Ideas.note.md", () => false, isNote)).toBe(
+      "finenotes-note",
+    );
+    expect(router.typeToOpen(MARKDOWN_VIEW_TYPE, "Ideas.note.md", () => true, isNote)).toBe(
+      "finenotes-note",
+    );
+    expect(router.typeToOpen(MARKDOWN_VIEW_TYPE, "Plain.md", () => false, isNote)).toBe(
+      MARKDOWN_VIEW_TYPE,
+    );
+    // A view asked for by name is left alone.
+    expect(router.typeToOpen("image", "Ideas.note.md", () => false, isNote)).toBe("image");
+    // Without the fourth argument nothing is a text note.
+    expect(router.typeToOpen(MARKDOWN_VIEW_TYPE, "Ideas.note.md", () => false)).toBe(
+      MARKDOWN_VIEW_TYPE,
+    );
+  });
 });

@@ -19835,3 +19835,816 @@ select.goodobsidian-choice-select {
   -webkit-hyphens: auto;
   hyphens: auto;
 }
+
+/* ==========================================================================
+   Text notes (`Title.note.md`, src/view/note-view.ts): typed text first,
+   with handwriting sections and pictures between the paragraphs.
+   ========================================================================== */
+
+.workspace-leaf-content > .view-content.finenotes-note-view {
+  --fn-note-accent: var(--interactive-accent);
+  --fn-note-tint: color-mix(in srgb, var(--interactive-accent) 16%, transparent);
+  --fn-note-glass: color-mix(in srgb, var(--background-primary) 80%, transparent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+/* --- the bar ------------------------------------------------------------- */
+
+.finenotes-note-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+  padding: 6px 16px 2px;
+}
+
+.finenotes-note-bar-group {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+button.clickable-icon.finenotes-note-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  color: var(--fn-note-accent);
+  border-radius: 10px;
+  transition:
+    background-color 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.12s ease;
+}
+
+button.clickable-icon.finenotes-note-button .svg-icon {
+  width: 21px;
+  height: 21px;
+}
+
+button.clickable-icon.finenotes-note-button:active {
+  transform: scale(0.92);
+}
+
+button.clickable-icon.finenotes-note-button.is-active {
+  background: var(--fn-note-tint);
+}
+
+button.clickable-icon.finenotes-note-button:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* --- the page ------------------------------------------------------------ */
+
+.finenotes-note-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.finenotes-note-column {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+  padding: 4px 24px 0;
+}
+
+.finenotes-note-date {
+  min-height: 16px;
+  margin: 2px 0 14px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+  user-select: none;
+}
+
+.finenotes-note-doc {
+  font-size: 17px;
+  line-height: 1.47;
+  color: var(--text-normal);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  caret-color: var(--fn-note-accent);
+  outline: none;
+  counter-reset: fn-n0 fn-n1 fn-n2 fn-n3;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.finenotes-note-doc::selection,
+.finenotes-note-doc *::selection {
+  background: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+}
+
+.finenotes-note-line {
+  --fn-indent: 0;
+  position: relative;
+  min-height: 1.47em;
+  margin: 0;
+  padding: 1px 0;
+  counter-reset: fn-n0 fn-n1 fn-n2 fn-n3;
+}
+
+.finenotes-note-line[data-indent="1"] {
+  --fn-indent: 1;
+}
+
+.finenotes-note-line[data-indent="2"] {
+  --fn-indent: 2;
+}
+
+.finenotes-note-line[data-indent="3"] {
+  --fn-indent: 3;
+}
+
+.finenotes-note-line[data-kind="title"] {
+  min-height: 1.2em;
+  margin-bottom: 6px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+}
+
+.finenotes-note-line[data-kind="heading"] {
+  min-height: 1.25em;
+  margin-top: 14px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.008em;
+}
+
+.finenotes-note-line[data-kind="subheading"] {
+  margin-top: 8px;
+  font-weight: 650;
+}
+
+.finenotes-note-line[data-kind="title"]:first-child,
+.finenotes-note-line[data-kind="heading"]:first-child,
+.finenotes-note-line[data-kind="subheading"]:first-child {
+  margin-top: 0;
+}
+
+.finenotes-note-line[data-kind="mono"] {
+  padding: 1px 14px;
+  font-family: var(--font-monospace);
+  font-size: 14.5px;
+  line-height: 1.6;
+  background: var(--background-secondary);
+}
+
+.finenotes-note-doc > :not([data-kind="mono"]) + [data-kind="mono"],
+.finenotes-note-doc > [data-kind="mono"]:first-child {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-start-start-radius: 10px;
+  border-start-end-radius: 10px;
+}
+
+.finenotes-note-doc > [data-kind="mono"]:not(:has(+ [data-kind="mono"])) {
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+  border-end-start-radius: 10px;
+  border-end-end-radius: 10px;
+}
+
+.finenotes-note-line[data-kind="quote"] {
+  margin-inline-start: 2px;
+  padding-inline-start: 14px;
+  color: var(--text-muted);
+  border-inline-start: 3px solid var(--fn-note-accent);
+}
+
+.finenotes-note-line[data-kind="bullet"],
+.finenotes-note-line[data-kind="number"],
+.finenotes-note-line[data-kind="check"] {
+  padding-inline-start: calc(30px + var(--fn-indent) * 26px);
+  counter-reset: none;
+}
+
+.finenotes-note-line[data-kind="bullet"]::before,
+.finenotes-note-line[data-kind="number"]::before,
+.finenotes-note-line[data-kind="check"]::before {
+  position: absolute;
+  inset-inline-start: calc(var(--fn-indent) * 26px);
+  top: 1px;
+  box-sizing: border-box;
+  width: 24px;
+  color: var(--text-muted);
+  text-align: end;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.finenotes-note-line[data-kind="bullet"]::before {
+  width: 20px;
+  font-weight: 700;
+  content: "•";
+}
+
+.finenotes-note-line[data-kind="bullet"][data-indent="1"]::before,
+.finenotes-note-line[data-kind="bullet"][data-indent="3"]::before {
+  content: "◦";
+}
+
+.finenotes-note-line[data-kind="number"]:not([data-indent]) {
+  counter-increment: fn-n0;
+  counter-reset: fn-n1 fn-n2 fn-n3;
+}
+
+.finenotes-note-line[data-kind="number"][data-indent="1"] {
+  counter-increment: fn-n1;
+  counter-reset: fn-n2 fn-n3;
+}
+
+.finenotes-note-line[data-kind="number"][data-indent="2"] {
+  counter-increment: fn-n2;
+  counter-reset: fn-n3;
+}
+
+.finenotes-note-line[data-kind="number"][data-indent="3"] {
+  counter-increment: fn-n3;
+}
+
+.finenotes-note-line[data-kind="number"]::before {
+  font-variant-numeric: tabular-nums;
+  content: counter(fn-n0) ".";
+}
+
+.finenotes-note-line[data-kind="number"][data-indent="1"]::before {
+  content: counter(fn-n1) ".";
+}
+
+.finenotes-note-line[data-kind="number"][data-indent="2"]::before {
+  content: counter(fn-n2) ".";
+}
+
+.finenotes-note-line[data-kind="number"][data-indent="3"]::before {
+  content: counter(fn-n3) ".";
+}
+
+/* The checklist's circle: empty, or filled with a tick. The click is read by position. */
+.finenotes-note-line[data-kind="check"] {
+  cursor: text;
+}
+
+.finenotes-note-line[data-kind="check"]::before {
+  top: 0.26em;
+  width: 21px;
+  height: 21px;
+  content: "";
+  border: 1.6px solid var(--text-faint);
+  border-radius: 50%;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.finenotes-note-line[data-kind="check"][data-checked="true"]::before {
+  background-color: var(--fn-note-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 15px;
+  border-color: var(--fn-note-accent);
+}
+
+.finenotes-note-line[data-kind="check"][data-checked="true"] {
+  color: var(--text-faint);
+}
+
+/* The title's placeholder, on the first line while it is empty. */
+.finenotes-note-line.is-blank[data-placeholder]::after {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 1px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  pointer-events: none;
+  content: attr(data-placeholder);
+}
+
+.finenotes-note-line.is-blank[data-placeholder]:not([data-kind="title"])::after {
+  display: none;
+}
+
+.finenotes-note-tail {
+  min-height: 46vh;
+  cursor: text;
+  touch-action: pan-y pinch-zoom;
+}
+
+/* --- sections: handwriting, pictures -------------------------------------- */
+
+.finenotes-note-ink,
+.finenotes-note-image,
+.finenotes-note-raw {
+  position: relative;
+  counter-reset: fn-n0 fn-n1 fn-n2 fn-n3;
+  box-sizing: border-box;
+  margin: 8px 0;
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition:
+    outline-color 0.15s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.finenotes-note-ink {
+  width: 100%;
+  aspect-ratio: var(--fn-ink-ratio, 720 / 260);
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+  transition:
+    outline-color 0.15s ease,
+    box-shadow 0.2s ease,
+    background-color 0.25s ease;
+}
+
+.finenotes-note-ink.is-pen-near,
+.finenotes-note-view.is-finger-draw.is-drawing .finenotes-note-ink {
+  touch-action: none;
+}
+
+.finenotes-note-ink-layer {
+  position: absolute;
+  inset-block-start: 0;
+  left: 0;
+  width: var(--fn-layer-w, 100%);
+  height: var(--fn-layer-h, 100%);
+  pointer-events: none;
+}
+
+/* With the pen out, every section shows as paper to write on. */
+.finenotes-note-scroll.is-drawing .finenotes-note-ink {
+  cursor: crosshair;
+  background-color: color-mix(in srgb, var(--text-normal) 3.5%, transparent);
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--text-normal) 20%, transparent) 1px,
+    transparent 1.5px
+  );
+  background-position: 11px 11px;
+  background-size: 22px 22px;
+}
+
+.finenotes-note-scroll.is-drawing .finenotes-note-tail {
+  cursor: crosshair;
+}
+
+.finenotes-note-scroll.is-drawing .finenotes-note-doc {
+  cursor: default;
+}
+
+.finenotes-note-ink.is-selected,
+.finenotes-note-image.is-selected,
+.finenotes-note-raw.is-selected {
+  outline-color: var(--fn-note-accent);
+}
+
+/* The foot of a section: a line with a dot, dragged to give it more or less room. */
+.finenotes-note-ink-edge {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  display: none;
+  height: 26px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.finenotes-note-ink-edge::before {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2px;
+  content: "";
+  background: var(--fn-note-accent);
+}
+
+.finenotes-note-ink-grip {
+  position: absolute;
+  inset-inline-start: 14px;
+  bottom: -5px;
+  width: 12px;
+  height: 12px;
+  background: var(--fn-note-accent);
+  border: 2px solid var(--background-primary);
+  border-radius: 50%;
+}
+
+.finenotes-note-scroll.is-drawing .finenotes-note-ink.is-active .finenotes-note-ink-edge,
+.finenotes-note-ink.is-selected .finenotes-note-ink-edge,
+.finenotes-note-ink.is-resizing .finenotes-note-ink-edge {
+  display: block;
+}
+
+.finenotes-note-ink.is-active,
+.finenotes-note-ink.is-selected,
+.finenotes-note-ink.is-resizing {
+  overflow: visible;
+}
+
+.finenotes-note-image {
+  width: calc(var(--fn-share, 1) * 100%);
+  min-width: 48px;
+  line-height: 0;
+}
+
+.finenotes-note-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+.finenotes-note-image.is-missing {
+  min-height: 96px;
+  background: var(--background-secondary);
+  background-image: linear-gradient(
+    135deg,
+    transparent 46%,
+    var(--background-modifier-border) 46%,
+    var(--background-modifier-border) 54%,
+    transparent 54%
+  );
+}
+
+.finenotes-note-image.is-missing img {
+  display: none;
+}
+
+.finenotes-note-handle {
+  position: absolute;
+  inset-inline-end: -9px;
+  bottom: -9px;
+  display: none;
+  width: 30px;
+  height: 30px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.finenotes-note-handle::before {
+  position: absolute;
+  inset: 8px;
+  content: "";
+  background: var(--fn-note-accent);
+  border: 2px solid var(--background-primary);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.finenotes-note-image.is-selected .finenotes-note-handle {
+  display: block;
+}
+
+.finenotes-note-raw {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+}
+
+.finenotes-note-raw-icon {
+  display: inline-flex;
+}
+
+/* The one control a selected section shows. */
+.finenotes-note-island-bar {
+  position: absolute;
+  inset-inline-end: 8px;
+  top: 8px;
+  z-index: 2;
+  display: none;
+}
+
+.finenotes-note-ink.is-selected > .finenotes-note-island-bar,
+.finenotes-note-image.is-selected > .finenotes-note-island-bar,
+.finenotes-note-raw.is-selected > .finenotes-note-island-bar {
+  display: flex;
+}
+
+button.clickable-icon.finenotes-note-island-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--text-error);
+  background: var(--fn-note-glass);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  backdrop-filter: blur(14px) saturate(1.6);
+}
+
+/* A section lifted to move it, and the line that shows where it will land. */
+.finenotes-note-ink.is-lifted,
+.finenotes-note-image.is-lifted,
+.finenotes-note-raw.is-lifted {
+  z-index: 5;
+  background-color: var(--background-primary);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+  transform: translateY(var(--fn-lift, 0)) scale(1.015);
+  transition: box-shadow 0.2s ease;
+}
+
+.finenotes-note-scroll.is-moving {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.finenotes-note-drop {
+  position: absolute;
+  inset-inline: 24px;
+  top: var(--fn-drop, 0);
+  display: none;
+  height: 3px;
+  margin-top: -2px;
+  pointer-events: none;
+  background: var(--fn-note-accent);
+  border-radius: 2px;
+}
+
+.finenotes-note-drop.is-shown {
+  display: block;
+}
+
+/* --- the pen's palette ----------------------------------------------------- */
+
+.finenotes-note-palette {
+  position: absolute;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  z-index: 10;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  max-width: calc(100% - 24px);
+  padding: 6px 8px;
+  overflow-x: auto;
+  pointer-events: none;
+  background: var(--fn-note-glass);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 26px;
+  box-shadow:
+    0 10px 34px rgba(0, 0, 0, 0.16),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+  opacity: 0;
+  transform: translate(-50%, 130%);
+  transition:
+    transform 0.34s cubic-bezier(0.2, 0.9, 0.25, 1),
+    opacity 0.2s ease;
+  scrollbar-width: none;
+  -webkit-backdrop-filter: blur(20px) saturate(1.7);
+  backdrop-filter: blur(20px) saturate(1.7);
+}
+
+/* On a computer Obsidian's status bar floats over the window's foot. */
+body:not(.is-mobile) .finenotes-note-palette {
+  bottom: 44px;
+}
+
+.finenotes-note-view.is-drawing > .finenotes-note-palette {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.finenotes-note-palette-group {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+}
+
+.finenotes-note-palette-group + .finenotes-note-palette-group {
+  padding-inline-start: 6px;
+  margin-inline-start: 2px;
+  border-inline-start: 1px solid var(--background-modifier-border);
+}
+
+.finenotes-note-palette button.clickable-icon.finenotes-note-button {
+  color: var(--text-muted);
+  border-radius: 50%;
+}
+
+.finenotes-note-palette button.clickable-icon.finenotes-note-button.is-active {
+  color: var(--fn-note-accent);
+}
+
+button.clickable-icon.finenotes-note-swatch,
+button.clickable-icon.finenotes-note-size {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: transparent;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+button.clickable-icon.finenotes-note-swatch::before {
+  width: 24px;
+  height: 24px;
+  content: "";
+  background: var(--fn-swatch);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.3);
+  transition: transform 0.16s cubic-bezier(0.2, 0.9, 0.25, 1.4);
+}
+
+button.clickable-icon.finenotes-note-swatch.is-active::before {
+  box-shadow:
+    0 0 0 2px var(--background-primary),
+    0 0 0 4px var(--fn-swatch);
+  transform: scale(0.84);
+}
+
+button.clickable-icon.finenotes-note-size::before {
+  width: var(--fn-dot, 6px);
+  height: var(--fn-dot, 6px);
+  content: "";
+  background: var(--text-muted);
+  border-radius: 50%;
+}
+
+button.clickable-icon.finenotes-note-size.is-active {
+  background: var(--fn-note-tint);
+}
+
+button.clickable-icon.finenotes-note-size.is-active::before {
+  background: var(--fn-note-accent);
+}
+
+button.clickable-icon.finenotes-note-done {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  margin-inline-start: 6px;
+  color: var(--text-on-accent);
+  background: var(--fn-note-accent);
+  border-radius: 50%;
+}
+
+button.clickable-icon.finenotes-note-done:hover {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent-hover);
+}
+
+/* --- text styles ----------------------------------------------------------- */
+
+.finenotes-note-styles {
+  position: absolute;
+  top: var(--fn-styles-y, 48px);
+  left: var(--fn-styles-x, 12px);
+  z-index: 20;
+  box-sizing: border-box;
+  width: 248px;
+  max-width: calc(100% - 16px);
+  padding: 8px;
+  background: var(--fn-note-glass);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 16px;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.18),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+  transform-origin: 20px 0;
+  animation: finenotes-note-pop 0.18s cubic-bezier(0.2, 0.9, 0.25, 1.15);
+  -webkit-backdrop-filter: blur(22px) saturate(1.7);
+  backdrop-filter: blur(22px) saturate(1.7);
+}
+
+@keyframes finenotes-note-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+.finenotes-note-styles-kinds {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+button.clickable-icon.finenotes-note-style {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 6px 10px;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--text-normal);
+  text-align: start;
+  white-space: normal;
+  border-radius: 9px;
+}
+
+button.clickable-icon.finenotes-note-style[data-kind="title"] {
+  font-size: 23px;
+  font-weight: 700;
+}
+
+button.clickable-icon.finenotes-note-style[data-kind="heading"] {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+button.clickable-icon.finenotes-note-style[data-kind="subheading"] {
+  font-weight: 650;
+}
+
+button.clickable-icon.finenotes-note-style[data-kind="mono"] {
+  font-family: var(--font-monospace);
+  font-size: 14px;
+}
+
+button.clickable-icon.finenotes-note-style.is-active {
+  color: var(--fn-note-accent);
+  background: var(--fn-note-tint);
+}
+
+.finenotes-note-styles-row {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  padding-top: 6px;
+  margin-top: 6px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.finenotes-note-styles-row button.clickable-icon.finenotes-note-button {
+  width: 36px;
+  height: 36px;
+  color: var(--text-normal);
+}
+
+.finenotes-note-styles-row button.clickable-icon.finenotes-note-button.is-active {
+  color: var(--fn-note-accent);
+}
+
+.finenotes-note-styles-gap {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 520px) {
+  .finenotes-note-column {
+    padding-inline: 18px;
+  }
+
+  .finenotes-note-drop {
+    inset-inline: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finenotes-note-palette,
+  .finenotes-note-styles,
+  button.clickable-icon.finenotes-note-button {
+    transition: none;
+    animation: none;
+  }
+}

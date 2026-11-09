@@ -20,6 +20,7 @@ export default defineConfig({
         "src/i18n/translate.ts",
         "src/i18n/table-file.ts",
         "src/model/**/*.ts",
+        "src/view/note-dom.ts",
         "src/import/**/*.ts",
         "src/ink/freehand.ts",
         "src/ink/chisel.ts",
