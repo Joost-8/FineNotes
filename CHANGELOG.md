@@ -17,6 +17,46 @@ extracted from the matching section of this file by `release.yml`.
   A selected line or arrow has a button that switches it between curved and
   elbow. Drag the dot in a line's middle to bend it through a smooth curve,
   or a pill on an elbow to slide that run sideways.
+- **A recognised sum glows, and a tap opens its maths card** (FineNotes#178).
+  When a line ending in "=" is read as maths, its ink glows in the accent
+  instead of a chip appearing over it; a part Grape was unsure of gets a
+  dotted line. A tap on the glow opens a card with the reading typeset (tap
+  it to fix the reading), the answer as a fraction or a decimal, and Write,
+  which writes a fraction stacked over a bar. Along its foot: turn the sum
+  into a typed equation, copy its LaTeX, or not maths.
+- **A doubtful character offers what else it may be** (FineNotes#178). Each
+  character Grape was unsure of, or that its word model changed, is dotted on
+  the page and in the card; a tap shows Grape's other guesses ("2 · Z · z")
+  and ✎ to type it. A pick works the sum out again and is kept as a
+  correction for Learn my handwriting, as is a reading accepted with Write or
+  a typed equation. A tap outside the card closes it and the sum keeps
+  glowing; undoing the answer or the equation brings the glow back.
+- **Powers, log bases, mod and brackets with a letter in calculation notes**
+  (FineNotes#178). A small digit raised after a number is its power
+  ("9²" is 81); a logarithm with its base written low ("log₂ 8") uses that
+  base; "17 mod 5" works however the spaces were read; and a sum in one
+  letter is expanded ("(2x+4)(4x+1)" offers 8x²+18x+4, written with its
+  powers raised).
+- **Solve an equation by asking for its letter** (FineNotes#178). Write
+  "x =" under an equation in x (or after it on the same line) and the card
+  offers its solutions ("2x+3=7" gives x = 2; "x²=9" gives x = −3 or 3).
+- **The maths card's corrections are clearer** (FineNotes#178). Picking the
+  character that was read confirms it and takes its dotted mark away; a
+  short line says what the dotted characters are ("Not sure:") and what to
+  pick ("Which did you write?"). Typing the reading opens a dialog that rises
+  above the keyboard and shows the sum typeset as it is typed.
+
+### Fixed
+
+- **Calculation notes read a raised dot as times, and fractions**
+  (FineNotes#178). "3·3 =" offered nothing, because the dot was read as a
+  decimal point; a fraction such as 3×2 over 7 was read as 3×2. A dot
+  halfway up the digits is now times and a dot on the baseline stays a
+  decimal point; a bar with a number over and under it is a fraction, and the
+  answer goes level with the "=". A dash with a dot over and under it is ÷.
+  A crossed 7 beside the dot no longer hides it, a number read as look-alike
+  letters next to it ("Zo" for 20) counts as that number, and the first
+  stroke of a × is no longer taken for a power.
 - **Tips.** The lightbulb on Home opens moving pictures of what is easy to
   miss, ordered by what helps most: pen gestures, cover tape, tapping your
   writing to hear it, and more. The first two pen gestures can be tried right
@@ -63,6 +103,17 @@ extracted from the matching section of this file by `release.yml`.
 - **Drag entries in the contents.** Press an entry and move it (hold first
   with a finger): its pages and everything inside it go with it, in one
   undo. Moving sideways while dragging sets how deep it sits.
+- **Previews of a long notebook show its chapters, not its first pages.**
+  The preview that opens over a notebook link, which scrolled through every
+  page, and the page strip in Home's preview, which showed the first 12, now
+  show the first page and the pages the notebook's contents and bookmarks
+  point to: chapters first, then bookmarked pages, then the rest of the
+  contents, spread through the book when there are more than fit (9 pages
+  in a link's preview, 12 in Home). Two places are always kept for
+  bookmarks. Each page is labelled with its number and its line in the
+  contents, and a bookmarked one carries its ribbon; a link's preview ends
+  with a +N that opens the notebook. A shorter notebook shows every page,
+  and `![[Physics.notebook]]` in a note still shows every page.
 
 ### Fixed
 

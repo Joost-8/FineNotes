@@ -237,7 +237,7 @@ import { readPdfOutline } from "./view/pdf-outline";
 import { SetPagesContents } from "./model/contents";
 import { addedEntries, outlineContents } from "./model/pdf-outline";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
-import type { AttachmentFolders, InkDocument, Page } from "./model/document";
+import type { AttachmentFolders, InkDocument, Page, ScrollDirection } from "./model/document";
 import { type ImageMenuContext, registerImageMenuEntry } from "./view/image-menu";
 import type { InkSurface } from "./view/ink-surface";
 import { GrapeFiles } from "./view/grape-files";
@@ -2781,6 +2781,15 @@ export default class GoodObsidianPlugin extends Plugin {
     return this.createNotebook(title, choices, undefined, undefined, undefined, open);
   }
 
+  /** The way pages run, as just chosen in a notebook: new notebooks start the same way. */
+  rememberScrollDirection(scroll: ScrollDirection): void {
+    this.settings.lastNotebookChoices = {
+      ...parseNotebookChoices(this.settings.lastNotebookChoices),
+      scroll,
+    };
+    void this.saveSettings();
+  }
+
   /**
    * "Insert a new notebook here" (FineNotes discussion #167): a notebook made
    * with the last settings but no cover, named after the note, embedded at the cursor as
@@ -3015,10 +3024,11 @@ export default class GoodObsidianPlugin extends Plugin {
       }
       const name = paths.fileName;
       const heading = cleanTitle(title) || stripInkSuffix(name);
-      const content = buildInkFile(
-        newNoteBody(heading, new Date().toISOString()),
-        await build(heading, paths.attachments, paths.folder),
-      );
+      const doc = await build(heading, paths.attachments, paths.folder);
+      if (choices.type === "notebook" && choices.scroll === "horizontal") {
+        doc.scroll = "horizontal";
+      }
+      const content = buildInkFile(newNoteBody(heading, new Date().toISOString()), doc);
       const file = await this.app.vault.create(
         normalizePath(joinVaultPath(paths.folder, name)),
         content,

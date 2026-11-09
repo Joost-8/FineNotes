@@ -91,8 +91,10 @@ import { inkFileSuffix } from "../model/new-notebook";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
 import {
+  HOME_PREVIEW_PAGES,
   type LibraryEntry,
   type LibraryPdf,
+  type PreviewSheet,
   coverKey,
   type LibrarySort,
   browse,
@@ -215,8 +217,6 @@ const RAIL_MIN_WIDTH = 720;
 const RAIL_HIDDEN_KEY = "finenotes-library-rail-hidden";
 /** Whether Home lists notebooks only on this device. */
 const ONLY_NOTEBOOKS_KEY = "finenotes-library-only-notebooks";
-/** How many pages the preview's strip shows. */
-const PREVIEW_PAGES = 12;
 /** A cover drawn from the notebook's own cover page, CSS px wide. */
 const COVER_WIDTH = 240;
 
@@ -1993,17 +1993,37 @@ export class LibraryView extends ItemView {
     if (!file) return;
     const strip = pane.createDiv({ cls: "goodobsidian-library-preview-pages" });
     const first = entry.covered ? 1 : 0;
-    const count = Math.min(entry.pages, PREVIEW_PAGES);
-    for (let i = 0; i < count; i++) {
-      const index = first + i;
-      const sheet = strip.createDiv({
+    // A long notebook: its first page and the ones its contents and bookmarks point to.
+    const sheets: PreviewSheet[] =
+      entry.preview ??
+      Array.from({ length: Math.min(entry.pages, HOME_PREVIEW_PAGES) }, (_, i) => ({
+        index: first + i,
+      }));
+    for (const shown of sheets) {
+      const { index } = shown;
+      // Pages are counted without the cover, as Home's page count is.
+      const number = index - first + 1;
+      const holder = entry.preview
+        ? strip.createDiv({ cls: "goodobsidian-library-preview-sheet" })
+        : strip;
+      const sheet = holder.createDiv({
         cls: "goodobsidian-library-preview-page",
         attr: {
           role: "button",
           tabindex: "0",
-          "aria-label": t("notebooks.home.pageOf", { page: i + 1, total: entry.pages }),
+          "aria-label": t("notebooks.home.pageOf", { page: number, total: entry.pages }),
         },
       });
+      if (entry.preview) {
+        // The pages shown are not one after another: each says which it is.
+        const caption = holder.createDiv({ cls: "goodobsidian-library-preview-caption" });
+        caption.createSpan({ cls: "goodobsidian-page-embed-number", text: String(number) });
+        if (shown.title !== undefined) caption.createSpan({ text: shown.title });
+        if (shown.bookmarked) {
+          const ribbon = holder.createDiv({ cls: "goodobsidian-library-preview-ribbon" });
+          setIcon(ribbon, "bookmark");
+        }
+      }
       sheet.toggleClass("is-current", leftAt === index);
       sheet.addEventListener("click", () => this.openItem(entry, index));
       sheet.addEventListener("keydown", (event) => {

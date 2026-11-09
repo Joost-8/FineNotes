@@ -1240,7 +1240,7 @@ select.goodobsidian-choice-select {
 }
 
 /* `![[Physics.notebook]]`: every page, one under the other, as the
-   notebook view stacks them. */
+   notebook view stacks them (or, for a long notebook, a choice of them). */
 .internal-embed.goodobsidian-notebook-embed:not(.is-link) {
   display: flex;
   flex-direction: column;
@@ -1265,6 +1265,88 @@ select.goodobsidian-choice-select {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* A notebook too long to show whole shows its cover and the pages its
+   contents and bookmarks point to (page-embed-model.ts): each says which it
+   is, as the notebook's page counter does, since they are not one after
+   another. Its number, then its line in the contents, cut to one line. */
+.goodobsidian-page-embed-caption {
+  position: absolute;
+  z-index: 1;
+  top: var(--size-4-2);
+  left: var(--size-4-2);
+  display: flex;
+  gap: var(--size-4-2);
+  max-width: calc(100% - 3 * var(--size-4-2) - 18px);
+  padding: 2px var(--size-4-2);
+  overflow: hidden;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.goodobsidian-page-embed-caption > span:last-child:not(:first-child) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-page-embed-number {
+  flex: none;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A bookmarked page: the page sidebar's ribbon, not something to tap. */
+.goodobsidian-page-embed-ribbon {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: var(--size-4-2);
+  display: flex;
+  color: var(--gob-bookmark);
+  pointer-events: none;
+}
+
+.goodobsidian-page-embed-ribbon svg {
+  width: 18px;
+  height: 22px;
+  fill: currentColor;
+  stroke: rgba(0, 0, 0, 0.25);
+}
+
+/* After the pages: how many were left out, opening the notebook. */
+.goodobsidian-page-embed-more {
+  /* Centred in the note's stack and in a hover preview, which is not one. */
+  display: block;
+  width: fit-content;
+  margin: var(--size-4-2) auto 0;
+  padding: var(--size-4-1) var(--size-4-3);
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.goodobsidian-page-embed-more:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.goodobsidian-page-embed-more.is-hidden {
+  display: none;
+}
+
+@media print {
+  .goodobsidian-page-embed-more {
+    display: none;
+  }
 }
 
 /* ------------------------------------------------------- page sidebar */
@@ -12255,44 +12337,260 @@ button.goodobsidian-comment-marker.clickable-icon:hover {
 }
 
 /* ---------------------------------------------------- calculation notes */
-/* A line ending in "=" (calc-chip.ts, calc-notes.ts): what was read and the
-   answer, in a pill over the line from the "=" on. Chrome, not ink: a tap
-   writes the answer, anything else leaves the page alone. Its bottom left
-   sits on the point it is placed at. */
-button.goodobsidian-calc-note.clickable-icon {
+/* A line ending in "=" (calc-notes.ts, FineNotes#178). The sum's ink glows
+   in the accent when it is read as maths (calc-glow.ts: a canvas over the
+   sum, its halo drawn in this colour); a dotted line marks what Grape was
+   unsure of. A tap on the glow opens the maths card (calc-card.ts): the
+   reading typeset, the answer as a fraction or a decimal, Write, and along
+   the foot a typed equation, copy LaTeX and Not maths. Chrome, not ink. */
+button.goodobsidian-calc-glow.clickable-icon {
   position: absolute;
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--interactive-accent);
-  border-radius: 14px;
-  background: var(--background-primary);
-  color: var(--text-muted);
-  font-family: var(--font-interface);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  line-height: 26px;
-  white-space: nowrap;
-  box-shadow: var(--gob-shadow-mark);
-  transform: translate(0, -100%);
+  display: block;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--interactive-accent);
   pointer-events: auto;
   touch-action: none;
+  cursor: pointer;
+  animation: goodobsidian-calc-glow-in 0.35s var(--gob-ease-out) 1;
 }
 
-button.goodobsidian-calc-note.clickable-icon:hover {
-  background: var(--background-primary);
-  filter: brightness(1.04);
+button.goodobsidian-calc-glow.clickable-icon:hover {
+  background: transparent;
 }
 
-button.goodobsidian-calc-note.is-hidden.clickable-icon {
+button.goodobsidian-calc-glow.is-hidden.clickable-icon {
   display: none;
 }
 
-.goodobsidian-calc-note-answer {
-  color: var(--interactive-accent);
-  font-weight: var(--font-semibold);
+.goodobsidian-calc-glow canvas {
+  display: block;
+  pointer-events: none;
+}
+
+@keyframes goodobsidian-calc-glow-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.goodobsidian-calc-card {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 188px;
+  padding: 8px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  font-family: var(--font-interface);
+  pointer-events: auto;
+}
+
+.goodobsidian-calc-card.is-hidden {
+  display: none;
+}
+
+/* Left of the sum when the page ends before the card would. */
+.goodobsidian-calc-card.is-flipped {
+  transform: translateX(-100%);
+}
+
+.goodobsidian-calc-card.is-refused {
+  animation: goodobsidian-calc-card-refuse 0.3s ease-in-out 1;
+}
+
+@keyframes goodobsidian-calc-card-refuse {
+  25% {
+    margin-left: -6px;
+  }
+  75% {
+    margin-left: 6px;
+  }
+}
+
+button.goodobsidian-calc-card-preview.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: auto;
+  min-height: 56px;
+  padding: 10px 6px;
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-well);
+  color: var(--text-normal);
+}
+
+button.goodobsidian-calc-card-preview.is-hidden.clickable-icon {
+  display: none;
+}
+
+.goodobsidian-calc-card-preview canvas {
+  display: block;
+  max-width: 100%;
+}
+
+.goodobsidian-segmented.goodobsidian-calc-card-forms button.is-hidden {
+  display: none;
+}
+
+/* One form (a whole number): the answer shown, not offered as a choice. */
+.goodobsidian-segmented.goodobsidian-calc-card-forms.is-single button {
+  pointer-events: none;
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-segmented.goodobsidian-calc-card-forms button {
+  height: 40px;
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-calc-card-frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.05;
+  font-size: 12px;
+}
+
+.goodobsidian-calc-card-frac > span:first-child {
+  padding: 0 3px;
+  border-bottom: 1.5px solid currentColor;
+}
+
+button.goodobsidian-calc-card-write.mod-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: var(--gob-radius-pill);
+}
+
+.goodobsidian-calc-card-write-icon {
+  display: inline-flex;
+}
+
+.goodobsidian-calc-card-write-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-calc-card-foot {
+  display: flex;
+  justify-content: space-around;
+  padding-top: 4px;
+  border-top: var(--gob-hairline);
+}
+
+.goodobsidian-calc-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.goodobsidian-calc-card-main.is-hidden,
+.goodobsidian-calc-card-fix.is-hidden,
+.goodobsidian-calc-card-doubts.is-hidden {
+  display: none;
+}
+
+/* What Grape was unsure of, dotted as on the page; a tap opens its runner-ups. */
+.goodobsidian-calc-card-doubts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+button.goodobsidian-calc-card-doubt.clickable-icon {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: var(--gob-radius-m);
+  color: var(--text-normal);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline dotted var(--interactive-accent) 2px;
+  text-underline-offset: 5px;
+}
+
+.goodobsidian-calc-card-fix {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.goodobsidian-calc-card-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+button.goodobsidian-calc-card-choice.clickable-icon {
+  flex: 1 1 40px;
+  height: 48px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-well);
+  color: var(--text-normal);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* What Grape read: chosen until another is picked. */
+button.goodobsidian-calc-card-choice.is-active.clickable-icon {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* A short line saying what the dotted characters are, and what to pick. */
+.goodobsidian-calc-card-hint {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.goodobsidian-calc-card-fix-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The reading dialog: the typed sum typeset above its field. */
+.goodobsidian-calc-reading-preview {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  color: var(--text-normal);
+}
+
+.goodobsidian-calc-reading-refused {
+  margin-top: 6px;
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-calc-reading-refused.is-hidden {
+  display: none;
+}
+
+button.goodobsidian-calc-card-icon.clickable-icon {
+  width: 40px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* The comment dialog: Delete on the left, Resolve and Save on the right. */
@@ -17378,6 +17676,45 @@ button.goodobsidian-library-preview-close {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
 }
+/* A long notebook's strip shows its first page and the pages its contents
+   and bookmarks point to (model/library.ts): each says which it is under
+   it, its number and its line in the contents, as the hover preview does,
+   and a bookmarked one carries the sidebar's ribbon. */
+.goodobsidian-library-preview-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.goodobsidian-library-preview-caption {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.goodobsidian-library-preview-caption > span:last-child:not(:first-child) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.goodobsidian-library-preview-ribbon {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  display: flex;
+  color: var(--gob-bookmark);
+  pointer-events: none;
+}
+.goodobsidian-library-preview-ribbon svg {
+  width: 14px;
+  height: 18px;
+  fill: currentColor;
+  stroke: rgba(0, 0, 0, 0.25);
+}
 /* A phone or an iPad in portrait: the preview comes up from the bottom. */
 .goodobsidian-library.is-narrow.has-preview {
   padding-right: 0;
@@ -17535,6 +17872,15 @@ button.goodobsidian-library-rail-toggle.is-active {
 .goodobsidian-shape-segment svg {
   width: 18px;
   height: 18px;
+}
+
+.goodobsidian-segmented.goodobsidian-calc-card-forms.is-hidden,
+button.goodobsidian-calc-card-icon.clickable-icon.is-hidden {
+  display: none;
+}
+
+button.goodobsidian-calc-card-write.mod-cta.is-hidden {
+  display: none;
 }
 
 /* --- Tips, Home's card and the Welcome (view/tips-modal.ts, tip-visual.ts) --- */

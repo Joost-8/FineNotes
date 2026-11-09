@@ -19,7 +19,9 @@ import {
   fileIcon,
   fileKind,
   folderOf,
+  HOME_PREVIEW_PAGES,
   hoistSingles,
+  homePreviewPages,
   notePreviewText,
   placeholderEntry,
   readProgress,
@@ -66,6 +68,55 @@ describe("entryFromText", () => {
     expect(placeholderEntry("Sketch.page.md", 1).title).toBe("Sketch");
     expect(placeholderEntry("Old.ink.md", 1).title).toBe("Old");
     expect(placeholderEntry("Marked.md", 1).title).toBe("Marked");
+  });
+});
+
+describe("homePreviewPages", () => {
+  /** `n` pages after an optional cover, a chapter every tenth, page 25 bookmarked. */
+  const notebook = (n: number, covered: boolean): ReturnType<typeof emptyDocument> => {
+    const doc = emptyDocument();
+    doc.pages = Array.from({ length: n }, (_, i) => {
+      const page = blankPage(`p${i + 1}`);
+      if (i > 0 && i % 10 === 0) page.title = `Chapter ${i / 10}`;
+      if (i === 25) page.bookmarked = true;
+      return page;
+    });
+    if (covered) {
+      const cover = blankPage("c0");
+      cover.backdrop = coverBackdrop("cover-plain", "navy");
+      cover.title = "Physics";
+      doc.pages.unshift(cover);
+    }
+    return doc;
+  };
+
+  it("leaves a notebook whose pages all fit the strip as it was", () => {
+    expect(homePreviewPages(notebook(HOME_PREVIEW_PAGES, false).pages, false)).toBeUndefined();
+    // A cover is not counted: it shows above the strip.
+    expect(homePreviewPages(notebook(HOME_PREVIEW_PAGES, true).pages, true)).toBeUndefined();
+  });
+
+  it("shows a long notebook's first page, chapters and bookmarks, labelled", () => {
+    const strip = homePreviewPages(notebook(60, false).pages, false) ?? [];
+    expect(strip.map((s) => s.index)).toEqual([0, 10, 20, 25, 30, 40, 50]);
+    expect(strip[1]).toEqual({ index: 10, title: "Chapter 1" });
+    expect(strip[3]).toEqual({ index: 25, bookmarked: true });
+  });
+
+  it("never shows the cover in the strip, and counts from the page after it", () => {
+    const strip = homePreviewPages(notebook(60, true).pages, true) ?? [];
+    expect(strip[0]).toEqual({ index: 1 });
+    expect(strip.map((s) => s.index)).toEqual([1, 11, 21, 26, 31, 41, 51]);
+  });
+
+  it("is in the entry Home reads, at most the strip's length", () => {
+    const doc = notebook(400, false);
+    for (const page of doc.pages) page.title ??= "T";
+    const read = entryFromText("Book.notebook.md", 1, buildInkFile("", doc));
+    expect(read.preview).toHaveLength(HOME_PREVIEW_PAGES);
+    expect(
+      entryFromText("Short.notebook.md", 1, buildInkFile("", notebook(3, false))).preview,
+    ).toBeUndefined();
   });
 });
 

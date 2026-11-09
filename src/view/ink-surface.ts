@@ -669,7 +669,8 @@ import type { HighlighterTip, SnapMode } from "../settings-data";
 import { SelectionActionBar, onTap } from "./selection-bar";
 import { swallowGhostClick } from "./ghost-click";
 import { edgeScrollSpeed } from "./page-drag-model";
-import { CalcChip } from "./calc-chip";
+import { CalcCard, type CalcCardActions, type CalcCardContent } from "./calc-card";
+import { CalcGlow } from "./calc-glow";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
 import { cleanPastedText, inkFirst, pastedTextOrigin } from "./paste-choice";
 import {
@@ -1078,6 +1079,8 @@ export interface InkSurfaceCallbacks {
    * out its Undo and Redo buttons. Sent once on construction too.
    */
   onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
+  /** An undo (`redo` false) or redo took `command` back or did it again. */
+  onHistoryStep?: (command: Command, redo: boolean) => void;
   /**
    * The user scrolled onto a different page. `index` is 0-based.
    * Hosts use it to keep the toolbar's page navigation in step.
@@ -1202,6 +1205,24 @@ export interface PdfTextSource {
  * tap; false lets the tap do what it would have done anyway.
  */
 export type StrokeTapHandler = (page: Page, stroke: Stroke) => boolean;
+
+/** A calculation note as the surface shows it (`showCalcNote`): the glowing sum and its card. */
+export interface CalcNoteSpec {
+  pageId: string;
+  /** The sum's strokes, the "=" included: what glows. */
+  strokes: readonly Stroke[];
+  /** Groups of stroke ids Grape was unsure of. */
+  doubts: readonly (readonly string[])[];
+  /** The card's top left, page px: beside the "=". */
+  cardAt: { x: number; y: number };
+  /** Where the card's right edge goes when it flips left of the sum, page px. */
+  flipAt: number;
+  content: CalcCardContent;
+  actions: CalcCardActions;
+}
+
+/** The maths card's width, CSS px (styles.css, `.goodobsidian-calc-card`). */
+const CALC_CARD_WIDTH = 188;
 
 /**
  * A tool's handling of the pen, from pen-down to lift, on the page it went
@@ -2409,7 +2430,9 @@ export class InkSurface {
   /** The format painter's sweep under way: painted live, one undo step at the lift. */
   private paintSweep: PaintStyle | null = null;
   /** A calculation note's suggestion beside its line, made on first use. */
-  private calcChip: CalcChip | null = null;
+  private calcGlow: CalcGlow | null = null;
+  private calcCard: CalcCard | null = null;
+  private calcNote: CalcNoteSpec | null = null;
   /** Set by a host while taps on ink mean something else (audio replay). */
   private strokeTapHandler: StrokeTapHandler | null = null;
   /** New strokes' and text boxes' ids: `s<N>` and `t<N>`, above any the document holds. */
@@ -3568,57 +3591,106 @@ export class InkSurface {
   }
 
   /**
-   * Show a calculation note's suggestion ("12×4 =", "48") with its bottom
-   * left at `at` on page `pageId`; a tap runs `accept`. One at a time: a new
-   * one replaces the last.
+   * Show a calculation note (FineNotes#178): the sum's ink glows, a dotted
+   * line marks each of `doubts`, and a tap on the glow opens the maths card
+   * beside the "=" (`cardAt`, page px; it flips left of `flipAt` when it
+   * would leave the page). One at a time: a new one replaces the last.
    */
-  showCalcSuggestion(
-    pageId: string,
-    at: { x: number; y: number },
-    sum: string,
-    answer: string,
-    accept: () => void,
-  ): void {
-    this.calcChip ??= new CalcChip(this.paperEl);
-    this.calcChip.show({ pageId, x: at.x, y: at.y }, sum, answer, accept);
+  showCalcNote(note: CalcNoteSpec): void {
+    this.calcGlow ??= new CalcGlow(this.paperEl, (doubt) => this.openCalcCard(doubt));
+    if (!this.calcCard) {
+      this.calcCard = new CalcCard(this.paperEl);
+      // A press anywhere else while the card is open only closes the card:
+      // the sum keeps glowing, and the press neither writes nor scrolls.
+      this.surfaceEl.addEventListener(
+        "pointerdown",
+        (event) => {
+          if (!this.calcCard?.shown || this.calcCard.contains(event.target as Node)) return;
+          if (this.calcGlow?.contains(event.target as Node)) return;
+          event.stopPropagation();
+          event.preventDefault();
+          this.calcCard.hide();
+        },
+        { capture: true },
+      );
+    }
+    this.calcCard.hide();
+    this.calcNote = note;
+    this.calcGlow.show({ pageId: note.pageId, strokes: note.strokes, doubts: note.doubts });
     this.syncCalcChip();
   }
 
-  hideCalcSuggestion(): void {
-    this.calcChip?.hide();
+  /**
+   * The note's reading changed (a doubt answered in the card): its dotted
+   * marks follow; the card stays open with its own new content.
+   */
+  updateCalcNote(note: CalcNoteSpec): void {
+    if (!this.calcNote || this.calcNote.pageId !== note.pageId) return;
+    this.calcNote = note;
+    this.calcGlow?.show({ pageId: note.pageId, strokes: note.strokes, doubts: note.doubts });
+    if (this.calcCard?.shown) this.calcCard.update(note.content);
+    this.syncCalcChip();
   }
 
-  /** Where the suggestion is, or null while none shows. */
+  hideCalcNote(): void {
+    this.calcNote = null;
+    this.calcGlow?.hide();
+    this.calcCard?.hide();
+  }
+
+  /** Where the calculation note is, or null while none shows. */
   get calcSuggestionPage(): string | null {
-    return this.calcChip?.anchor?.pageId ?? null;
+    return this.calcNote?.pageId ?? null;
+  }
+
+  /** Open the card; at doubt `doubt`'s runner-ups when one was tapped (-1: none). */
+  private openCalcCard(doubt = -1): void {
+    const note = this.calcNote;
+    if (!note || !this.calcCard) return;
+    this.calcCard.show(note.content, note.actions, doubt);
+    this.syncCalcChip();
   }
 
   /**
    * Write strokes the host made (a calculation's answer) on page `pageId`,
-   * as one undo step, with ids of their own. False when the note is locked
-   * or the page is gone.
+   * as one undo step, with ids of their own. The step, or null when the note
+   * is locked or the page is gone.
    */
-  addInkStrokes(pageId: string, strokes: ReadonlyArray<Omit<Stroke, "id">>): boolean {
-    if (this.callbacks.isLocked?.() || strokes.length === 0) return false;
+  addInkStrokes(pageId: string, strokes: ReadonlyArray<Omit<Stroke, "id">>): Command | null {
+    if (this.callbacks.isLocked?.() || strokes.length === 0) return null;
     const page = this.doc.pages.find((p) => p.id === pageId);
-    if (!page) return false;
+    if (!page) return null;
     const made: Stroke[] = strokes.map((s) => ({ ...s, id: this.strokeIds.next() }));
-    this.applyCommand(addStrokesTimed(page, made, this.clock(), t("surface.command.writeAnswer")));
-    return true;
+    const command = addStrokesTimed(page, made, this.clock(), t("surface.command.writeAnswer"));
+    this.applyCommand(command);
+    return command;
   }
 
-  /** Keep the calculation suggestion on its page point across pan and zoom. */
+  /** Keep the calculation note's glow and card on the sum across pan and zoom. */
   private syncCalcChip(): void {
-    const chip = this.calcChip;
-    const anchor = chip?.anchor;
-    if (!chip || !anchor || !this.pageLayout) return;
-    const box = this.pageLayout.boxes.find((b) => this.pageAt(b.index)?.id === anchor.pageId);
-    if (!box) {
-      chip.hide();
+    const note = this.calcNote;
+    if (!note || !this.pageLayout) return;
+    const box = this.pageLayout.boxes.find((b) => this.pageAt(b.index)?.id === note.pageId);
+    const page = box ? this.pageAt(box.index) : null;
+    if (!box || !page) {
+      this.hideCalcNote();
       return;
     }
     const scale = this.unitScale;
-    chip.place((box.x + anchor.x) * scale, (box.y + anchor.y) * scale);
+    this.calcGlow?.place(box.x * scale, box.y * scale, scale);
+    const card = this.calcCard;
+    if (card?.shown) {
+      // Beside the "=", or left of the sum when the page ends before the card does.
+      const width = CALC_CARD_WIDTH / scale;
+      const flip = note.cardAt.x + width > page.geometry.width && note.flipAt - width > 0;
+      const x = flip ? note.flipAt : note.cardAt.x;
+      card.place(
+        (box.x + x) * scale,
+        (box.y + note.cardAt.y) * scale,
+        flip,
+        this.surfaceEl.getBoundingClientRect(),
+      );
+    }
   }
 
   /** Repaint without touching layout or indexes (a PDF raster arrived). */
@@ -18055,6 +18127,7 @@ export class InkSurface {
         if (
           this.fingerHoldsTextBox(tapped, p) ||
           this.fingerPicksShape(tapped, p) ||
+          this.fingerPicksConnector(tapped, p) ||
           this.fingerPicksEquation(tapped, p) ||
           this.fingerPicksGraph(tapped, p) ||
           this.fingerPicksTable(tapped, p) ||
@@ -18468,6 +18541,18 @@ export class InkSurface {
     this.pickLasso();
     this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
     return true;
+  }
+
+  /** A finger tapped an arrow joining two shapes: picked up on its own, as a lasso tap does. */
+  private fingerPicksConnector(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const tolerance = FINGER_TAP_TOLERANCE_PX / this.unitScale;
+    if (!routeConnectors(page).some((r) => nearConnector(r, p.x, p.y, tolerance))) return false;
+    this.pickLasso();
+    return this.tapConnector(page, p, tolerance, {
+      ...lassoFilterFor(this.toolState),
+      handwriting: false,
+    });
   }
 
   /**
@@ -19595,6 +19680,7 @@ export class InkSurface {
     this.changed();
     this.revealChange(command);
     this.flashReadout(historyNotice(redo, command.label), READOUT_NOTICE_HOLD_MS);
+    this.callbacks.onHistoryStep?.(command, redo);
   }
 
   /** Whether `command` is the newest step, so {@link undo} would take exactly it back. */
