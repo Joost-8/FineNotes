@@ -17888,6 +17888,7 @@ export class InkSurface {
         if (
           this.fingerHoldsTextBox(tapped, p) ||
           this.fingerPicksShape(tapped, p) ||
+          this.fingerPicksConnector(tapped, p) ||
           this.fingerPicksEquation(tapped, p) ||
           this.fingerPicksGraph(tapped, p) ||
           this.fingerPicksTable(tapped, p) ||
@@ -18301,6 +18302,18 @@ export class InkSurface {
     this.pickLasso();
     this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
     return true;
+  }
+
+  /** A finger tapped an arrow joining two shapes: picked up on its own, as a lasso tap does. */
+  private fingerPicksConnector(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const tolerance = FINGER_TAP_TOLERANCE_PX / this.unitScale;
+    if (!routeConnectors(page).some((r) => nearConnector(r, p.x, p.y, tolerance))) return false;
+    this.pickLasso();
+    return this.tapConnector(page, p, tolerance, {
+      ...lassoFilterFor(this.toolState),
+      handwriting: false,
+    });
   }
 
   /**

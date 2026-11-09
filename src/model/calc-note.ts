@@ -440,3 +440,53 @@ const GRAPH_VIEW = { xMin: -10, xMax: 10, yMin: -7.5, yMax: 7.5 };
 export function functionGraphSpec(fn: NoteFunction & { body: string }): GraphSpec {
   return { ...GRAPH_VIEW, expressions: [`${fn.name} = ${fn.body}`] };
 }
+
+/** The digit a letter read in a number on a line about x most likely is. */
+const NUMBER_LOOKALIKES: Record<string, string> = {
+  o: "0",
+  O: "0",
+  l: "1",
+  I: "1",
+  z: "2",
+  Z: "2",
+  s: "5",
+  S: "5",
+  h: "4",
+};
+
+/**
+ * The part of a line as read that can be one equation or function: what
+ * follows the last separator outside brackets ("x2-7=0, x2-1=0" holds two),
+ * without a list's bullet ("- f(x) = x2"). On a line about x, letters that
+ * only look like digits are the digits ("ho" for 40, "xz" for x squared):
+ * shown in the card, and one tap away from being typed over.
+ */
+export function mathsClause(reading: string): string {
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < reading.length; i++) {
+    const c = reading[i];
+    if (c === "(") depth++;
+    else if (c === ")") depth--;
+    else if (depth > 0) continue;
+    else if (c === ";" || (c === ":" && /\s/.test(reading[i + 1] ?? ""))) start = i + 1;
+    else if (
+      c === "," &&
+      !(/[0-9]/.test(reading[i - 1] ?? "") && /[0-9]/.test(reading[i + 1] ?? ""))
+    ) {
+      start = i + 1;
+    }
+  }
+  const clause = reading
+    .slice(start)
+    .trim()
+    .replace(/^[-–—•·*]+\s+(?=\S)/, "");
+  if (!/[xX]/.test(clause)) return clause;
+  return clause
+    .replace(/(?<![A-Za-z])([xX])[zZ](?![A-Za-z])/g, "$12")
+    .replace(
+      /(?<![A-Za-z])([oOlIzZsSh]+)([xX]?)(?![A-Za-z(])/g,
+      (_, digits: string, x: string) =>
+        `${Array.from(digits, (c) => NUMBER_LOOKALIKES[c]).join("")}${x}`,
+    );
+}

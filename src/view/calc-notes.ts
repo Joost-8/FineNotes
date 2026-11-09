@@ -57,6 +57,7 @@ import {
   evaluateSum,
   functionGraphSpec,
   functionOfLine,
+  mathsClause,
   needsVariables,
   sumOfLine,
   variablesOfLines,
@@ -66,6 +67,7 @@ import {
   answerForms,
   equationAnswer,
   expressionTex,
+  noRealSolution,
   polynomialAnswer,
 } from "../model/calc-tex";
 import type { CalcValue } from "../model/calculator";
@@ -261,7 +263,7 @@ export class CalcNotes {
       }
     }
     // "f(x) =" and "y =" with nothing to work out: the graph, to type it in.
-    if (!content && functionOfLine(reading.text)?.body === null) {
+    if (!content && functionOfLine(mathsClause(reading.text))?.body === null) {
       content = this.lineContent(reading);
     }
     if (!content) return;
@@ -303,18 +305,40 @@ export class CalcNotes {
 
   /** The card for a line that is a function or an equation in one letter, or null. */
   private lineContent(reading: SumReading): CalcCardContent | null {
-    const fn = functionOfLine(reading.text);
+    const clause = mathsClause(reading.text);
+    const fn = functionOfLine(clause);
     if (fn) return this.functionContent(fn, reading);
-    const letter = equationLetter(reading.text);
-    const equation = letter ? equationOfLine(reading.text, letter) : null;
+    const letter = equationLetter(clause);
+    const equation = letter ? equationOfLine(clause, letter) : null;
     if (!equation) return null;
     const content = this.equationContent(equation, reading);
-    if (!content) return null;
+    if (!content) return this.noRealContent(equation, reading);
     return {
       ...content,
       // Beside the equation, not in place of its right side.
       lead: String.raw`${content.tex},\ ${equation.letter}`,
       written: `${equation.letter}=${content.forms.decimal.text}`,
+    };
+  }
+
+  /** The card for an equation with no real solution: what was read, and the mark that says so. */
+  private noRealContent(equation: NoteEquation, reading: SumReading): CalcCardContent | null {
+    if (!noRealSolution(equation.lhs, equation.rhs, equation.letter)) return null;
+    const lhs = expressionTex(equation.lhs);
+    const rhs = expressionTex(equation.rhs);
+    if (lhs === null || rhs === null) return null;
+    const tex = `${lhs} = ${rhs}`;
+    return {
+      tex,
+      lead: tex,
+      expression: `${equation.lhs} = ${equation.rhs}`,
+      forms: {
+        fraction: null,
+        decimal: { text: "", exact: true, shown: `${equation.letter} \u2209 \u211D` },
+      },
+      form: "decimal",
+      doubts: reading.doubts.map((d) => ({ char: d.char, alternatives: d.alternatives })),
+      noAnswer: true,
     };
   }
 

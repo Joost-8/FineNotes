@@ -38,6 +38,8 @@ export interface CalcCardContent {
   doubts: Array<{ char: string; alternatives: string[] }>;
   /** A function to plot instead of an answer: no forms, no equation, Insert graph. */
   graph?: NoteFunction;
+  /** Nothing to write ("x \u2209 \u211D"): the mark stays, Write and the equation button go. */
+  noAnswer?: boolean;
   /** What is written instead of the answer alone ("x=2" after a whole equation). */
   written?: string;
 }
@@ -69,6 +71,7 @@ export class CalcCard {
   private readonly fractionButton: HTMLButtonElement;
   private readonly decimalButton: HTMLButtonElement;
   private readonly main: HTMLElement;
+  private readonly writeButton: HTMLButtonElement;
   private readonly writeIcon: HTMLElement;
   private readonly writeLabel: HTMLElement;
   private readonly equationButton: HTMLButtonElement;
@@ -107,7 +110,9 @@ export class CalcCard {
     onTap(this.fractionButton, () => this.choose("fraction"));
     onTap(this.decimalButton, () => this.choose("decimal"));
 
-    const write = main.createEl("button", { cls: "goodobsidian-calc-card-write mod-cta" });
+    const write = (this.writeButton = main.createEl("button", {
+      cls: "goodobsidian-calc-card-write mod-cta",
+    }));
     this.writeIcon = write.createSpan({ cls: "goodobsidian-calc-card-write-icon" });
     this.writeLabel = write.createSpan();
     onTap(write, () => {
@@ -238,7 +243,8 @@ export class CalcCard {
     this.content = content;
     const graph = content.graph !== undefined;
     this.forms.toggleClass("is-hidden", graph);
-    this.equationButton.toggleClass("is-hidden", graph);
+    this.equationButton.toggleClass("is-hidden", graph || content.noAnswer === true);
+    this.writeButton.toggleClass("is-hidden", content.noAnswer === true);
     setIcon(this.writeIcon, graph ? "chart-spline" : "corner-down-left");
     this.writeLabel.setText(t(graph ? "calculator.insertGraph" : "calculator.write"));
     const fraction = content.forms.fraction;

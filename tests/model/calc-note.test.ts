@@ -16,6 +16,7 @@ import {
   equationOfLine,
   functionGraphSpec,
   functionOfLine,
+  mathsClause,
   showSum,
   spellNames,
   suggestionLabel,
@@ -301,5 +302,30 @@ describe("a function on a line", () => {
     const spec = functionGraphSpec({ name: "y", body: "2x+1" });
     expect(spec.expressions).toEqual(["y = 2x+1"]);
     expect(spec.yMax - spec.yMin).toBe(15);
+  });
+});
+
+describe("the maths on a line (Joost's sheet, as Grape read it)", () => {
+  const fn = (reading: string) => functionOfLine(mathsClause(reading));
+  it("reads past a bullet and an earlier part of the line", () => {
+    expect(fn("- f(x) = x2")).toEqual({ name: "f(x)", body: "x^2" });
+    expect(fn(", y = xz")).toEqual({ name: "y", body: "x^2" });
+    expect(fn("- f(x) =")).toEqual({ name: "f(x)", body: null });
+  });
+  it("takes letters that only look like digits as digits on a line about x", () => {
+    expect(mathsClause("x2-3ox+ho=o")).toBe("x2-30x+40=0");
+    expect(equationOfLine(mathsClause("x2-3ox+ho=o"), "x")?.rhs).toBe("0");
+  });
+  it("takes the last of two equations, and nothing while it is half written", () => {
+    expect(mathsClause("x2-3*x + 4o=0, x2-1=0")).toBe("x2-1=0");
+    expect(equationLetter(mathsClause("x2-3*x + 40=0, x2-7"))).toBeNull();
+  });
+  it("leaves a decimal comma, a bracket's comma and a function's name alone", () => {
+    expect(mathsClause("x = 2,5")).toBe("x = 2,5");
+    expect(mathsClause("log(8, 2) = x")).toBe("log(8, 2) = x");
+    expect(mathsClause("s(x) = x")).toBe("s(x) = x");
+  });
+  it("keeps a line with no x as it is", () => {
+    expect(mathsClause("so 3 = 3")).toBe("so 3 = 3");
   });
 });

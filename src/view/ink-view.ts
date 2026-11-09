@@ -3991,7 +3991,10 @@ export class InkView extends TextFileView {
       single: this.isSinglePage,
       board: this.isBoard,
       scrollDirection: () => scrollDirectionOf(this.doc),
-      setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
+      setScrollDirection: (direction) => {
+        apply(new SetScrollDirection(direction));
+        if (!this.isBoard) this.plugin.rememberScrollDirection(direction);
+      },
       joinedPages: () => joinedPagesOf(this.surface?.document ?? this.doc),
       setJoinedPages: (on) => apply(new SetJoinedPages(on)),
       openPluginSettings: () => this.plugin.openSettingsTab(),

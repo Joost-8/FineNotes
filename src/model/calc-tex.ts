@@ -11,6 +11,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { t } from "../i18n/translate";
 import { fromCalc } from "./algebra/convert";
 import { print } from "./algebra/expr";
 import { toPoly } from "./algebra/poly";
@@ -346,6 +347,15 @@ export function polynomialAnswer(expression: string): AnswerForms | null {
  * calculator's text, LaTeX and as shown. Null when it has no real solution
  * or the solver cannot read it.
  */
+export function noRealSolution(lhs: string, rhs: string, letter: string): boolean {
+  try {
+    const solution = solveEquation(fromCalc(lhs), fromCalc(rhs), { v: letter });
+    return solution.values.length === 0 && solution.message === t("calculator.algNoRealSolution");
+  } catch {
+    return false;
+  }
+}
+
 export function equationAnswer(lhs: string, rhs: string, letter: string): AnswerForms | null {
   // One letter only: "y = 2x + 1" is a rule, not a number to find.
   const names = (`${lhs} ${rhs}`.match(/[A-Za-z][A-Za-z0-9]*/g) ?? [])
