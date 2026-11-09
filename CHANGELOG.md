@@ -27,6 +27,7 @@ extracted from the matching section of this file by `release.yml`.
 - **Drag entries in the contents.** Press an entry and move it (hold first
   with a finger): its pages and everything inside it go with it, in one
   undo. Moving sideways while dragging sets how deep it sits.
+
 ### Fixed
 
 - **The scanned-page reader no longer asks to be downloaded again after an
