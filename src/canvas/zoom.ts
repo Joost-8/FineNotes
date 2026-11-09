@@ -52,6 +52,41 @@ export function fitPageZoom(
   return Math.min(1, Math.max(MIN_SCALE, paneHeight / shown));
 }
 
+/**
+ * The desk beside a page fitted in a row, as a fraction of its width each
+ * side: about Goodnotes' (discussion #43, measured from recordings: 3%),
+ * not the 9% a column keeps. A 16:9 slide is wider than the pane, so this
+ * margin, not the height, sets its size.
+ */
+export const ROW_FIT_MARGIN_RATIO = 0.03;
+
+/**
+ * The zoom floor of a row of pages (pages across): the user zoom at which
+ * the page being read, `width` by `height` layout px, fits the pane whole
+ * with the layout's margins (`side` either side, `marginY` above and below),
+ * as Goodnotes fits each slide to the screen (discussion #43). Not the
+ * tallest page of the notebook, as a column's floor is: one portrait page
+ * among slides shrank every slide to two thirds of the screen. Never past
+ * 1:1 (`1 / baseScale`), as the fit to width never is, and within
+ * {@link MIN_SCALE}..{@link MAX_SCALE}.
+ */
+export function rowPageFloor(
+  width: number,
+  height: number,
+  side: number,
+  baseScale: number,
+  paneWidth: number,
+  paneHeight: number,
+  marginY = PAGE_MARGIN_Y,
+): number {
+  if (!(width > 0) || !(height > 0) || !(baseScale > 0) || !(paneWidth > 0) || !(paneHeight > 0)) {
+    return 1;
+  }
+  const byWidth = paneWidth / ((width + 2 * Math.max(0, side)) * baseScale);
+  const byHeight = paneHeight / ((height + 2 * marginY) * baseScale);
+  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min(byWidth, byHeight, 1 / baseScale)));
+}
+
 /** What {@link nextZoomFloor} decides: the new floor, and the zoom to show. */
 export interface ZoomFloorStep {
   floor: number;
@@ -176,6 +211,46 @@ export function pageFillZoom(
 export function pageWidthZoom(width: number, baseScale: number, paneWidth: number): number {
   if (!(width > 0) || !(baseScale > 0) || !(paneWidth > 0)) return 1;
   return Math.min(MAX_SCALE, paneWidth / (width * baseScale));
+}
+
+/**
+ * The user zoom at which a page `width` by `height` layout px, shown at
+ * `baseScale`, is as large as fits the pane whole, with no margin: one side
+ * meets the pane's edges, the other is centred.
+ */
+export function pageContainZoom(
+  width: number,
+  height: number,
+  baseScale: number,
+  paneWidth: number,
+  paneHeight: number,
+): number {
+  if (!(width > 0) || !(height > 0) || !(baseScale > 0) || !(paneWidth > 0) || !(paneHeight > 0)) {
+    return 1;
+  }
+  const fit = Math.min(paneWidth / (width * baseScale), paneHeight / (height * baseScale));
+  return Math.min(MAX_SCALE, fit);
+}
+
+/**
+ * Where a one-finger double tap fills the screen with the tapped page. A
+ * page wider than tall (a slide) fills it whole, as large as fits, so the
+ * whole slide shows (discussion #43: filling the width cut its foot off).
+ * A page taller than wide fills the pane's width in a column (`row` false),
+ * to read down it, and covers the pane in a row.
+ */
+export function doubleTapFill(
+  width: number,
+  height: number,
+  baseScale: number,
+  paneWidth: number,
+  paneHeight: number,
+  row: boolean,
+): number {
+  if (width > height) return pageContainZoom(width, height, baseScale, paneWidth, paneHeight);
+  return row
+    ? pageFillZoom(width, height, baseScale, paneWidth, paneHeight)
+    : pageWidthZoom(width, baseScale, paneWidth);
 }
 
 /**

@@ -8,6 +8,8 @@ import {
   PREVIEW_HIGHLIGHTER_OPACITY,
   SWOOSH_HEIGHT,
   SWOOSH_WIDTH,
+  WIDTH_BAR,
+  WIDTH_MARK_LIMIT,
   fitMarks,
   glyphThickness,
   inkNeedsRim,
@@ -31,6 +33,43 @@ function widthAt(d: string, i: number): number {
   const left = p[i];
   const right = p[p.length - 1 - i];
   return Math.hypot(left[0] - right[0], left[1] - right[1]);
+}
+
+const PENS = ["fountain", "ball", "brush", "calligraphy", "highlighter"];
+
+/** A path's corners, for paths of M, L, H and Z. */
+function vertices(d: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const [, cmd, args] of d.matchAll(/([MLHZ])([^MLHZ]*)/g)) {
+    const nums = (args.match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
+    if (cmd === "H") for (const x of nums) out.push([x, out[out.length - 1][1]]);
+    else for (let i = 0; i + 1 < nums.length; i += 2) out.push([nums[i], nums[i + 1]]);
+  }
+  return out;
+}
+
+/** The outline's full height: its lowest point less its highest. */
+function height(d: string): number {
+  const ys = vertices(d).map(([, y]) => y);
+  return Math.max(...ys) - Math.min(...ys);
+}
+
+/** The ink a mark covers, glyph px: a stroked line's caps and width included. */
+function extent(shape: { d: string; strokeWidth?: number; cap?: string }): {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+} {
+  const p = vertices(shape.d);
+  const half = (shape.strokeWidth ?? 0) / 2;
+  const capX = shape.cap === "round" ? half : 0;
+  return {
+    left: Math.min(...p.map(([x]) => x)) - capX,
+    right: Math.max(...p.map(([x]) => x)) + capX,
+    top: Math.min(...p.map(([, y]) => y)) - half,
+    bottom: Math.max(...p.map(([, y]) => y)) + half,
+  };
 }
 
 describe("pen icons", () => {
@@ -73,11 +112,11 @@ describe("ink that would vanish into the bar", () => {
 });
 
 describe("width glyphs", () => {
-  it("are as thick as the stroke on screen, up to the glyph's height", () => {
+  it("are as thick as the stroke on screen, up to the bar's limit", () => {
     expect(glyphThickness(0.5)).toBe(0.5);
     expect(glyphThickness(5.74)).toBe(5.74);
     expect(glyphThickness(0.01)).toBe(0.25);
-    expect(glyphThickness(40)).toBe(SWOOSH_HEIGHT);
+    expect(glyphThickness(40)).toBe(WIDTH_MARK_LIMIT);
     expect(glyphThickness(Number.NaN)).toBe(1.5);
   });
 
@@ -96,54 +135,69 @@ describe("width glyphs", () => {
   });
 
   it("draw a shrunk mark as solid ink, at its fitted size", () => {
-    const [, , largest] = fitMarks([30, 60, 120], 24).sizes;
-    expect(swoosh("ball", largest)).toMatchObject({ strokeWidth: 24, cap: "round" });
-    expect(swoosh("highlighter", largest)).toMatchObject({ strokeWidth: 24, cap: "butt" });
-    expect(swoosh("fountain", largest).strokeWidth).toBeUndefined();
+    const [, , largest] = fitMarks([30, 60, 120], WIDTH_MARK_LIMIT).sizes;
+    expect(swoosh("ball", largest)).toMatchObject({ strokeWidth: WIDTH_MARK_LIMIT, cap: "round" });
+    expect(swoosh("highlighter", largest)).toMatchObject({
+      strokeWidth: WIDTH_MARK_LIMIT,
+      cap: "butt",
+    });
+    expect(height(swoosh("fountain", largest).d)).toBeCloseTo(WIDTH_MARK_LIMIT, 1);
   });
 
-  it("draw the ballpoint even and the highlighter as a flat, see-through band", () => {
+  it("are level bars of one length at every width, as Goodnotes draws them", () => {
+    for (const pen of PENS) {
+      for (const size of [0.5, 3, 12, WIDTH_MARK_LIMIT]) {
+        const { left, right } = extent(swoosh(pen, size));
+        expect(right - left, `${pen} ${size}`).toBeCloseTo(WIDTH_BAR, 1);
+        expect((left + right) / 2).toBeCloseTo(SWOOSH_WIDTH / 2, 1);
+      }
+    }
+  });
+
+  it("are as tall as the stroke is wide", () => {
     expect(swoosh("ball", 3)).toMatchObject({ strokeWidth: 3, cap: "round" });
     expect(swoosh("highlighter", 14)).toMatchObject({
       strokeWidth: 14,
       cap: "butt",
       opacity: 0.55,
     });
-    expect(swoosh("highlighter", 40).strokeWidth).toBe(SWOOSH_HEIGHT);
+    for (const pen of ["fountain", "brush", "calligraphy"]) {
+      expect(height(swoosh(pen, 6).d), pen).toBeCloseTo(6, 1);
+      expect(height(swoosh(pen, 12).d), pen).toBeCloseTo(12, 1);
+    }
   });
 
-  it("taper the fountain pen at both ends and the brush toward its end", () => {
+  it("end in the pen's character", () => {
+    // The fountain pen: fine at both ends, the nib's width in the middle.
     const fountain = swoosh("fountain", 6).d;
-    expect(swoosh("fountain", 6).strokeWidth).toBeUndefined();
     expect(widthAt(fountain, 10)).toBeCloseTo(6, 1);
-    expect(widthAt(fountain, 0)).toBeLessThan(2);
-    expect(widthAt(fountain, 20)).toBeLessThan(2);
+    expect(widthAt(fountain, 0)).toBeLessThan(1.5);
+    expect(widthAt(fountain, 20)).toBeLessThan(1.5);
+    // The brush: full near the start, lifting off to a point.
     const brush = swoosh("brush", 6).d;
     expect(widthAt(brush, 3)).toBeGreaterThan(widthAt(brush, 10));
     expect(widthAt(brush, 10)).toBeGreaterThan(widthAt(brush, 20));
     expect(widthAt(brush, 20)).toBeLessThan(1);
-    // The calligraphy pen's flat nib: thick and thin by turns along the curve.
-    const nib = Array.from({ length: 21 }, (_, i) => widthAt(swoosh("calligraphy", 6).d, i));
-    expect(Math.max(...nib)).toBeGreaterThan(3 * Math.min(...nib));
-    // Wider pens draw wider glyphs.
-    expect(widthAt(swoosh("fountain", 8).d, 10)).toBeGreaterThan(
-      widthAt(swoosh("fountain", 2).d, 10),
-    );
+    // The calligraphy pen: a band whose ends are cut at 40°, rising to the right.
+    // Corners: top left, top right, bottom right, bottom left.
+    const [tl, tr, br, bl] = vertices(swoosh("calligraphy", 6).d);
+    expect(tr[1]).toBe(tl[1]);
+    expect(br[1]).toBe(bl[1]);
+    const cut = (top: number, bottom: number): number =>
+      Math.atan2(br[1] - tr[1], top - bottom) * (180 / Math.PI);
+    expect(cut(tl[0], bl[0])).toBeCloseTo(40, 0);
+    expect(cut(tr[0], br[0])).toBeCloseTo(40, 0);
   });
 
-  it("stay inside their box while they fit in it", () => {
-    for (const pen of ["fountain", "ball", "brush", "highlighter"]) {
-      for (const size of [0.5, 2, 5, 8]) {
+  it("stay inside their box", () => {
+    for (const pen of PENS) {
+      for (const size of [0.5, 2, 5, 8, WIDTH_MARK_LIMIT]) {
         const shape = swoosh(pen, size);
-        const pad = (shape.strokeWidth ?? 0) / 2;
-        // A flat (butt) end stops where the line does; a round one reaches past it.
-        const padX = shape.cap === "butt" ? 0 : pad;
-        for (const [x, y] of points(shape.d)) {
-          expect(x - padX, `${pen} ${size}`).toBeGreaterThanOrEqual(-0.5);
-          expect(x + padX).toBeLessThanOrEqual(SWOOSH_WIDTH + 0.5);
-          expect(y - pad).toBeGreaterThanOrEqual(-0.5);
-          expect(y + pad).toBeLessThanOrEqual(SWOOSH_HEIGHT + 0.5);
-        }
+        const { left, right, top, bottom } = extent(shape);
+        expect(left, `${pen} ${size}`).toBeGreaterThanOrEqual(-0.01);
+        expect(right).toBeLessThanOrEqual(SWOOSH_WIDTH + 0.01);
+        expect(top).toBeGreaterThanOrEqual(-0.01);
+        expect(bottom).toBeLessThanOrEqual(SWOOSH_HEIGHT + 0.01);
       }
     }
   });

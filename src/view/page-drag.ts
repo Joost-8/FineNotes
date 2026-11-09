@@ -3,9 +3,7 @@
  * overview. The geometry is `page-drag-model.ts`; this is the input and the
  * drawing.
  *
- * - **Mouse and Pencil:** press on a page and move: it lifts at once.
- * - **Finger:** rest on a page for {@link HOLD_MS}, then move. A finger
- *   that moves sooner is a scroll, and the panel scrolls natively.
+ * When a press becomes a drag is `press-drag.ts`.
  *
  * While dragging, a copy of the page follows the pointer (lifted, with a
  * count when several selected pages move together), the pages being moved
@@ -13,29 +11,10 @@
  * and the panel scrolls when the pointer nears its top or bottom edge.
  * Letting go over the panel moves the pages (one undoable command, by the
  * host); letting go outside it, Escape, or a cancelled touch puts them back.
- *
- * iPad traps (CLAUDE.md ledger):
- * - The finger path runs on touch events, as Obsidian's own drag-to-reorder
- *   does (read from its `app.js`). A `touchstart` cannot be cancelled
- *   without stopping the scroll, so it is not; once the page has lifted,
- *   `touchmove` is cancelled instead, which stops the scroll from starting,
- *   and the long-press `contextmenu` is swallowed.
- * - A Pencil's `touchstart` on a page *is* cancelled: otherwise the Pencil
- *   scrolls the panel, and a held Pencil ends in `pointercancel` (WebKit's
- *   long press). That also means a Pencil tap never becomes a `click`, so
- *   the Pencil's taps are reported from `pointerup` ({@link PageDragHost.onPenTap}).
  */
 
-import {
-  type Box,
-  type DropSlot,
-  HOLD_MS,
-  POINTER_SLOP_PX,
-  TOUCH_SLOP_PX,
-  dropSlotAt,
-  edgeScrollSpeed,
-  realGap,
-} from "./page-drag-model";
+import { type Box, type DropSlot, dropSlotAt, edgeScrollSpeed, realGap } from "./page-drag-model";
+import { PressDrag } from "./press-drag";
 
 export interface PageDragHost {
   /** Whether pages can be dragged now (an editable notebook of several pages). */
@@ -52,20 +31,10 @@ export interface PageDragHost {
   onPenTap(index: number, target: Element, event: PointerEvent): void;
 }
 
-interface Press {
-  kind: "pointer" | "touch";
-  /** Pointer id, or touch identifier. */
-  id: number;
-  index: number;
+/** A pressed thumbnail. */
+interface Item {
   root: HTMLElement;
-  /** What was pressed (the ribbon, or the page), for a tap. */
-  target: Element;
-  startX: number;
-  startY: number;
-  x: number;
-  y: number;
-  /** The finger's hold timer, while it runs. */
-  timer: number;
+  index: number;
 }
 
 interface Drag {
@@ -86,11 +55,8 @@ const FRAME = ".goodobsidian-thumb-frame";
 const THUMB = ".goodobsidian-thumb";
 
 export class PageDrag {
-  private press: Press | null = null;
+  private readonly input: PressDrag<Item>;
   private drag: Drag | null = null;
-  /** A drag just ended with the mouse: the `click` that follows it is not a tap. */
-  private swallowClickUntil = 0;
-  private readonly cleanups: Array<() => void> = [];
 
   constructor(
     /** The scrolling panel. */
@@ -99,17 +65,19 @@ export class PageDrag {
     private readonly grid: HTMLElement,
     private readonly host: PageDragHost,
   ) {
-    this.listen(grid, "pointerdown", (e) => this.onPointerDown(e));
-    this.listen(grid, "touchstart", (e) => this.onTouchStart(e), { passive: false });
-    // The long press's menu (and, on a desktop, a right-click) mid-drag.
-    this.listen(grid, "contextmenu", (e) => {
-      if (this.press?.kind === "touch" || this.drag) e.preventDefault();
+    this.input = new PressDrag<Item>(grid, {
+      canDrag: () => host.canDrag(),
+      itemAt: (target) => this.thumbAt(target),
+      begin: (item, x, y) => this.begin(item, x, y),
+      moveTo: (x, y) => this.moveTo(x, y),
+      end: (drop) => this.end(drop),
+      onPenTap: (item, target, event) => host.onPenTap(item.index, target, event),
     });
   }
 
   /** Whether a page is being dragged. */
   get active(): boolean {
-    return this.drag !== null;
+    return this.input.active;
   }
 
   /**
@@ -117,186 +85,29 @@ export class PageDrag {
    * the page it was let go over.
    */
   consumeClick(): boolean {
-    return performance.now() < this.swallowClickUntil;
+    return this.input.consumeClick();
   }
 
   /** Put the pages back and stop (Escape, the panel closing, the document changing). */
   cancel(): void {
-    this.finish(false);
+    this.input.cancel();
   }
 
   destroy(): void {
-    this.finish(false);
-    for (const cleanup of this.cleanups) cleanup();
-    this.cleanups.length = 0;
-  }
-
-  // --- Input ----------------------------------------------------------------
-
-  private listen<K extends keyof HTMLElementEventMap>(
-    target: HTMLElement,
-    type: K,
-    handler: (event: HTMLElementEventMap[K]) => void,
-    options?: AddEventListenerOptions,
-  ): void {
-    target.addEventListener(type, handler, options);
-    this.cleanups.push(() => target.removeEventListener(type, handler, options));
+    this.input.destroy();
   }
 
   /** The thumbnail whose page frame `target` is inside, and its page index. */
-  private thumbAt(target: EventTarget | null): { root: HTMLElement; index: number } | null {
+  private thumbAt(target: EventTarget | null): Item | null {
     if (!(target instanceof Element) || !target.closest(FRAME)) return null;
     const root = target.closest<HTMLElement>(THUMB);
     if (!root || !this.grid.contains(root)) return null;
     return this.host.shown().find((item) => item.root === root) ?? null;
   }
 
-  private onPointerDown(event: PointerEvent): void {
-    if (event.pointerType === "touch" || event.button !== 0 || this.press || this.drag) return;
-    const thumb = this.thumbAt(event.target);
-    if (!thumb || !(event.target instanceof Element)) return;
-    this.press = {
-      kind: "pointer",
-      id: event.pointerId,
-      index: thumb.index,
-      root: thumb.root,
-      target: event.target,
-      startX: event.clientX,
-      startY: event.clientY,
-      x: event.clientX,
-      y: event.clientY,
-      timer: 0,
-    };
-    const win = this.grid.win;
-    const move = (e: PointerEvent) => {
-      if (e.pointerId !== this.press?.id || this.press.kind !== "pointer") return;
-      this.press.x = e.clientX;
-      this.press.y = e.clientY;
-      if (!this.drag) {
-        const moved = Math.hypot(e.clientX - this.press.startX, e.clientY - this.press.startY);
-        if (moved < POINTER_SLOP_PX || !this.host.canDrag()) return;
-        this.begin(this.press);
-      }
-      e.preventDefault();
-      this.moveTo(e.clientX, e.clientY);
-    };
-    const up = (e: PointerEvent) => {
-      if (e.pointerId !== this.press?.id) return;
-      const press = this.press;
-      done();
-      const moved = Math.hypot(e.clientX - press.startX, e.clientY - press.startY);
-      if (this.drag) {
-        this.swallowClickUntil = performance.now() + 400;
-        this.finish(true);
-      } else if (e.pointerType === "pen" && moved < POINTER_SLOP_PX) {
-        // No click follows a Pencil tap here: its touchstart was cancelled.
-        this.swallowClickUntil = performance.now() + 400;
-        this.host.onPenTap(press.index, press.target, e);
-      }
-    };
-    const cancel = (e: PointerEvent) => {
-      if (e.pointerId !== this.press?.id) return;
-      done();
-      this.finish(false);
-    };
-    const done = () => {
-      win.removeEventListener("pointermove", move);
-      win.removeEventListener("pointerup", up);
-      win.removeEventListener("pointercancel", cancel);
-      if (this.press?.kind === "pointer") this.press = null;
-      this.release = () => undefined;
-    };
-    this.release = done;
-    win.addEventListener("pointermove", move);
-    win.addEventListener("pointerup", up);
-    win.addEventListener("pointercancel", cancel);
-  }
-
-  private onTouchStart(event: TouchEvent): void {
-    const touch = event.changedTouches[0];
-    if (!touch) return;
-    // A stylus: no scrolling and no long press; the pointer path drags it.
-    if (stylus(touch)) {
-      if (this.thumbAt(event.target)) event.preventDefault();
-      return;
-    }
-    if (event.touches.length > 1) {
-      // A second finger: a pinch or a two-finger scroll, never a drag.
-      const dragged = this.drag !== null;
-      this.release();
-      if (dragged) this.finish(false);
-      return;
-    }
-    if (this.press || this.drag) return;
-    const thumb = this.thumbAt(event.target);
-    if (!thumb || !this.host.canDrag()) return;
-    const win = this.grid.win;
-    const press: Press = {
-      kind: "touch",
-      id: touch.identifier,
-      index: thumb.index,
-      root: thumb.root,
-      target: thumb.root,
-      startX: touch.clientX,
-      startY: touch.clientY,
-      x: touch.clientX,
-      y: touch.clientY,
-      timer: 0,
-    };
-    // "Nothing moved for N ms" is a timer, never a check in a move handler.
-    press.timer = win.setTimeout(() => {
-      press.timer = 0;
-      if (this.press !== press) return;
-      this.begin(press);
-      this.moveTo(press.x, press.y);
-    }, HOLD_MS);
-    this.press = press;
-    const find = (e: TouchEvent) =>
-      Array.from(e.changedTouches).find((t) => t.identifier === press.id) ?? null;
-    const move = (e: TouchEvent) => {
-      const t = find(e);
-      if (!t || this.press !== press) return;
-      press.x = t.clientX;
-      press.y = t.clientY;
-      if (!this.drag) {
-        // Moved before it lifted: a scroll, which the panel already has.
-        if (Math.hypot(t.clientX - press.startX, t.clientY - press.startY) > TOUCH_SLOP_PX) {
-          done();
-        }
-        return;
-      }
-      if (e.cancelable) e.preventDefault();
-      this.moveTo(t.clientX, t.clientY);
-    };
-    const end = (e: TouchEvent) => {
-      if (!find(e) || this.press !== press) return;
-      const dragged = this.drag !== null;
-      done();
-      if (!dragged) return;
-      // Lifted and let go: no tap, and no click.
-      if (e.cancelable) e.preventDefault();
-      this.finish(e.type === "touchend");
-    };
-    const done = () => {
-      win.clearTimeout(press.timer);
-      win.removeEventListener("touchmove", move);
-      win.removeEventListener("touchend", end);
-      win.removeEventListener("touchcancel", end);
-      if (this.press === press) this.press = null;
-      this.release = () => undefined;
-    };
-    this.release = done;
-    win.addEventListener("touchmove", move, { passive: false });
-    win.addEventListener("touchend", end);
-    win.addEventListener("touchcancel", end);
-  }
-
-  /** Stop following the pointer or finger pressed on a page, if any. */
-  private release: () => void = () => undefined;
-
   // --- Dragging ---------------------------------------------------------------
 
-  private begin(press: Press): void {
+  private begin(press: Item, startX: number, startY: number): void {
     const moving = this.host.moving(press.index);
     const indexes = moving.includes(press.index) ? moving : [press.index];
     const shown = this.host.shown();
@@ -318,8 +129,8 @@ export class PageDrag {
       sources,
       ghost,
       bar,
-      grabX: press.startX - rect.left,
-      grabY: press.startY - rect.top,
+      grabX: startX - rect.left,
+      grabY: startY - rect.top,
       slot: null,
       frame: 0,
     };
@@ -340,7 +151,7 @@ export class PageDrag {
   /** The gap under the pointer now, and the bar that shows it. */
   private updateSlot(): void {
     const drag = this.drag;
-    const press = this.press;
+    const press = this.input.point;
     if (!drag || !press) return;
     const panel = this.scroller.getBoundingClientRect();
     const inside =
@@ -376,7 +187,7 @@ export class PageDrag {
     if (!drag) return;
     drag.frame = this.grid.win.requestAnimationFrame(() => {
       if (this.drag !== drag) return;
-      const press = this.press;
+      const press = this.input.point;
       if (press) {
         const panel = this.scroller.getBoundingClientRect();
         const within = press.x >= panel.left && press.x <= panel.right;
@@ -393,12 +204,7 @@ export class PageDrag {
   }
 
   /** End the drag: drop the pages where the bar shows (`drop`), or put them back. */
-  private finish(drop: boolean): void {
-    this.release();
-    if (this.press) {
-      this.grid.win.clearTimeout(this.press.timer);
-      this.press = null;
-    }
+  private end(drop: boolean): void {
     const drag = this.drag;
     if (!drag) return;
     this.drag = null;
@@ -411,11 +217,6 @@ export class PageDrag {
     const shown = this.host.shown().map((item) => item.index);
     this.host.onDrop(drag.indexes, realGap(shown, drag.slot.gap));
   }
-}
-
-/** Whether a touch is the Pencil's. `touchType` is WebKit's; elsewhere there is none. */
-function stylus(touch: Touch): boolean {
-  return (touch as Touch & { touchType?: string }).touchType === "stylus";
 }
 
 /**

@@ -2,9 +2,12 @@
  * Notebook embeds: `![[Physics.notebook#page=3]]` (or `#Page 3`, `#p3`) in an
  * ordinary note shows that page of the notebook, read-only, at the note's
  * width; `![[Physics.notebook]]` shows every page, one under the other
- * (FineNotes discussion #167). A click opens the notebook at the page
- * clicked. Paginated notebooks can do this where an infinite canvas cannot:
- * a page has a fixed shape of its own.
+ * (FineNotes discussion #167). In a hover preview of a notebook link, a
+ * notebook of more than `MAX_PREVIEW_PAGES`, such as an imported textbook,
+ * shows its cover and the pages its chapters, bookmarks and contents point
+ * to, each labelled, then how many it left out (`embedPageNumbers`). A click
+ * opens the notebook at the page clicked. Paginated notebooks can do this
+ * where an infinite canvas cannot: a page has a fixed shape of its own.
  *
  * The hook. Obsidian builds every `![[…]]` embed, in reading view, live
  * preview, hover previews, canvas cards and Export to PDF alike, through one
@@ -33,9 +36,9 @@
  * layout paints every page at once, in light paper, before it resolves.
  */
 
-import { type App, Component, Keymap, type TAbstractFile, TFile } from "obsidian";
+import { type App, Component, Keymap, type TAbstractFile, TFile, setIcon } from "obsidian";
 import { LIGHT_PAPER, type PaperTheme } from "../canvas/backdrop";
-import { t } from "../i18n/translate";
+import { t, tn } from "../i18n/translate";
 import { DEFAULT_PAGE_GEOMETRY, type Page } from "../model/document";
 import { pageSignature } from "../model/page-signature";
 import { parseInkFile } from "../model/serialize";
@@ -55,6 +58,7 @@ import {
   embedsToRelease,
   printPaintSize,
 } from "./page-embed-model";
+import { previewCaption } from "../model/preview-pages";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { type PdfExportSources, paintPagePreview } from "./pdf-export";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
@@ -542,6 +546,9 @@ class NotebookEmbed extends Component {
   /** The pages are from the file as of `version` (its modification time); -1 for not read yet. */
   version = -1;
   isLink = false;
+  /** A whole notebook too long to show every page: a choice of them, each labelled. */
+  shortened = false;
+  private moreEl: HTMLElement | null = null;
   private loaded = false;
 
   constructor(
@@ -576,8 +583,13 @@ class NotebookEmbed extends Component {
    */
   setPages(pages: readonly Page[] | null): LinkReason | null {
     if (!pages) return "unreadable";
-    const numbers = embedPageNumbers(this.target, pages.length);
+    // Obsidian's hover preview of a link holds the embed in a `.hover-popover`.
+    const hover = this.containerEl.closest(".hover-popover") !== null;
+    const numbers = embedPageNumbers(this.target, pages, hover);
     if (numbers.length === 0) return "no-pages";
+    // A hover preview of a long notebook shows a choice of its pages: each says which it is.
+    const left = this.target.whole ? pages.length - numbers.length : 0;
+    this.shortened = left > 0;
     while (this.slots.length > numbers.length) {
       const slot = this.slots.pop();
       if (!slot) break;
@@ -592,7 +604,45 @@ class NotebookEmbed extends Component {
     numbers.forEach((number, i) =>
       this.slots[i]?.show(number, pages[number - 1] ?? null, numbers.length),
     );
+    this.showMore(left);
     return this.slots.every((slot) => slot.page) ? null : "missing-page";
+  }
+
+  /**
+   * After the pages of a shortened embed: how many it left out, as a link
+   * that opens the notebook. Gone when it shows them all.
+   */
+  private showMore(left: number): void {
+    if (left <= 0) {
+      this.moreEl?.remove();
+      this.moreEl = null;
+      return;
+    }
+    if (!this.moreEl) {
+      const link = createEl("a", {
+        cls: "goodobsidian-page-embed-more interactive-child",
+        href: this.ctx.linktext,
+      });
+      link.dataset.href = this.ctx.linktext;
+      link.addEventListener("click", (event) => this.openNotebook(event));
+      this.moreEl = link;
+    }
+    this.moreEl.setText(`+${left}`);
+    this.moreEl.setAttribute("aria-label", tn("view.pageEmbed.morePages", left));
+    this.moreEl.toggleClass("is-hidden", this.isLink);
+    // Last, after any page added since.
+    this.containerEl.appendChild(this.moreEl);
+  }
+
+  /** The notebook itself, where it was last left. */
+  private openNotebook(event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    void this.ctx.app.workspace.openLinkText(
+      this.ctx.linktext,
+      this.ctx.sourcePath,
+      Keymap.isModEvent(event),
+    );
   }
 
   open(event: MouseEvent | KeyboardEvent, page: number): void {
@@ -612,6 +662,7 @@ class NotebookEmbed extends Component {
     this.linkEl = null;
     this.containerEl.removeClass("is-link");
     for (const slot of this.slots) slot.el.removeClass("is-hidden");
+    this.moreEl?.removeClass("is-hidden");
   }
 
   /** No page to show: a plain link to the notebook, saying why. */
@@ -620,6 +671,7 @@ class NotebookEmbed extends Component {
       slot.release();
       slot.el.addClass("is-hidden");
     }
+    this.moreEl?.addClass("is-hidden");
     this.version = -1;
     this.isLink = true;
     this.containerEl.addClass("is-link");
@@ -653,6 +705,8 @@ class PageSlot {
   busy = false;
   again = false;
   attached = true;
+  private captionEl: HTMLElement | null = null;
+  private ribbonEl: HTMLElement | null = null;
 
   constructor(
     readonly embed: NotebookEmbed,
@@ -692,6 +746,31 @@ class PageSlot {
       embedPageLabel(embed.file.basename, embed.target, number, count),
     );
     if (page) this.el.setCssStyles({ aspectRatio: aspectOf(page.geometry) });
+    this.label(embed.shortened ? page : null);
+  }
+
+  /**
+   * On the paper of a shortened embed's page, since the pages shown are not
+   * one after another: its number and its line in the contents, top left,
+   * and its bookmark, top right, as the page sidebar marks it. Nothing when
+   * `page` is `null`.
+   */
+  private label(page: Page | null): void {
+    this.captionEl?.remove();
+    this.captionEl = null;
+    this.ribbonEl?.remove();
+    this.ribbonEl = null;
+    if (!page) return;
+    const caption = this.el.createDiv({ cls: "goodobsidian-page-embed-caption" });
+    caption.createSpan({ cls: "goodobsidian-page-embed-number", text: String(this.number) });
+    const title = previewCaption(page);
+    if (title !== undefined) caption.createSpan({ text: title });
+    this.captionEl = caption;
+    if (page.bookmarked) {
+      const ribbon = this.el.createDiv({ cls: "goodobsidian-page-embed-ribbon" });
+      setIcon(ribbon, "bookmark");
+      this.ribbonEl = ribbon;
+    }
   }
 
   /** The width the page box has now, CSS px, after the size syntax's cap. */

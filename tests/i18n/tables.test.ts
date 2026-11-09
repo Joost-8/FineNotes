@@ -119,9 +119,11 @@ describe.each(files)("locales/%s", (file) => {
   });
 
   it("covers nearly all of English", () => {
-    const covered = Object.keys(english).filter(
+    // Tips grow with every release and show in English until the next translation pass.
+    const counted = Object.keys(english).filter((key) => !key.startsWith("notebooks.tips."));
+    const covered = counted.filter(
       (key) => typeof table[key] === "string" || pluralOther(key) !== null,
     ).length;
-    expect(covered / Object.keys(english).length, code).toBeGreaterThan(0.95);
+    expect(covered / counted.length, code).toBeGreaterThan(0.95);
   });
 });

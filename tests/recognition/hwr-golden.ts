@@ -151,7 +151,12 @@ export function checkPage(bundle: HwrBundle | null, page: GoldenPage): void {
   expect(lines.map((l) => l.xHeight)).toEqual(page.lines.map((l) => l.xHeight));
   expect(lines.map((l) => l.box)).toEqual(page.lines.map((l) => l.box));
   if (!bundle || page.lines.some((l) => l.text === undefined)) return;
-  const read = readPage(bundle, page.strokes);
+  // The reference has neither of the reading fixes that change what is read.
+  const read = readPage(bundle, page.strokes, {
+    rowOrder: false,
+    lateStrokes: false,
+    strokeTimes: false,
+  });
   expect(read.lines.map((l) => l.greedy)).toEqual(page.lines.map((l) => l.greedy));
   expect(read.lines.map((l) => l.text)).toEqual(page.lines.map((l) => l.text));
 }

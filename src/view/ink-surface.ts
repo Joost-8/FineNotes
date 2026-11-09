@@ -216,6 +216,8 @@ import {
   rowPageScrollRange,
   rowScrollInsets,
   rowScrollXForPage,
+  rowScrollYForPage,
+  rowRestRangeY,
   rowSlotGap,
   rowGapAtZoom,
   ROW_PULL_ADD_PX,
@@ -314,8 +316,9 @@ import {
   nextZoomFloor,
   wheelZoomFactor,
   doubleTapZoom,
-  pageFillZoom,
-  pageWidthZoom,
+  doubleTapFill,
+  rowPageFloor,
+  ROW_FIT_MARGIN_RATIO,
   zoomAnchorFor,
   zoomKeepingScale,
 } from "../canvas/zoom";
@@ -660,7 +663,8 @@ import type { HighlighterTip, SnapMode } from "../settings-data";
 import { SelectionActionBar, onTap } from "./selection-bar";
 import { swallowGhostClick } from "./ghost-click";
 import { edgeScrollSpeed } from "./page-drag-model";
-import { CalcChip } from "./calc-chip";
+import { CalcCard, type CalcCardActions, type CalcCardContent } from "./calc-card";
+import { CalcGlow } from "./calc-glow";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
 import { cleanPastedText, inkFirst, pastedTextOrigin } from "./paste-choice";
 import {
@@ -692,6 +696,7 @@ import {
   type ToolUse,
   continuesUse,
   drawingToolOf,
+  eraserClickStep,
   selectedTool,
   toolAfterUse,
 } from "./tool-return";
@@ -1061,6 +1066,8 @@ export interface InkSurfaceCallbacks {
    * out its Undo and Redo buttons. Sent once on construction too.
    */
   onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
+  /** An undo (`redo` false) or redo took `command` back or did it again. */
+  onHistoryStep?: (command: Command, redo: boolean) => void;
   /**
    * The user scrolled onto a different page. `index` is 0-based.
    * Hosts use it to keep the toolbar's page navigation in step.
@@ -1185,6 +1192,24 @@ export interface PdfTextSource {
  * tap; false lets the tap do what it would have done anyway.
  */
 export type StrokeTapHandler = (page: Page, stroke: Stroke) => boolean;
+
+/** A calculation note as the surface shows it (`showCalcNote`): the glowing sum and its card. */
+export interface CalcNoteSpec {
+  pageId: string;
+  /** The sum's strokes, the "=" included: what glows. */
+  strokes: readonly Stroke[];
+  /** Groups of stroke ids Grape was unsure of. */
+  doubts: readonly (readonly string[])[];
+  /** The card's top left, page px: beside the "=". */
+  cardAt: { x: number; y: number };
+  /** Where the card's right edge goes when it flips left of the sum, page px. */
+  flipAt: number;
+  content: CalcCardContent;
+  actions: CalcCardActions;
+}
+
+/** The maths card's width, CSS px (styles.css, `.goodobsidian-calc-card`). */
+const CALC_CARD_WIDTH = 188;
 
 /**
  * A tool's handling of the pen, from pen-down to lift, on the page it went
@@ -1980,6 +2005,8 @@ export class InkSurface {
   private textFrameDrag: string | null = null;
   /** The tool as of the last `setTool`, so switching to Text can remember what it replaced. */
   private toolSeen: ActiveTool;
+  /** The tool a side-button click left for the eraser; a tool picked any other way forgets it. */
+  private eraserClickBack: ActiveTool | null = null;
   /** The tool in use before Text, which an unpinned Text tool returns to. */
   private toolBeforeText: ActiveTool | null = null;
   /** The pen or highlighter last in use, which the return-to-pen settings go back to. */
@@ -2384,7 +2411,9 @@ export class InkSurface {
   /** The format painter's sweep under way: painted live, one undo step at the lift. */
   private paintSweep: PaintStyle | null = null;
   /** A calculation note's suggestion beside its line, made on first use. */
-  private calcChip: CalcChip | null = null;
+  private calcGlow: CalcGlow | null = null;
+  private calcCard: CalcCard | null = null;
+  private calcNote: CalcNoteSpec | null = null;
   /** Set by a host while taps on ink mean something else (audio replay). */
   private strokeTapHandler: StrokeTapHandler | null = null;
   /** New strokes' and text boxes' ids: `s<N>` and `t<N>`, above any the document holds. */
@@ -3543,57 +3572,106 @@ export class InkSurface {
   }
 
   /**
-   * Show a calculation note's suggestion ("12×4 =", "48") with its bottom
-   * left at `at` on page `pageId`; a tap runs `accept`. One at a time: a new
-   * one replaces the last.
+   * Show a calculation note (FineNotes#178): the sum's ink glows, a dotted
+   * line marks each of `doubts`, and a tap on the glow opens the maths card
+   * beside the "=" (`cardAt`, page px; it flips left of `flipAt` when it
+   * would leave the page). One at a time: a new one replaces the last.
    */
-  showCalcSuggestion(
-    pageId: string,
-    at: { x: number; y: number },
-    sum: string,
-    answer: string,
-    accept: () => void,
-  ): void {
-    this.calcChip ??= new CalcChip(this.paperEl);
-    this.calcChip.show({ pageId, x: at.x, y: at.y }, sum, answer, accept);
+  showCalcNote(note: CalcNoteSpec): void {
+    this.calcGlow ??= new CalcGlow(this.paperEl, (doubt) => this.openCalcCard(doubt));
+    if (!this.calcCard) {
+      this.calcCard = new CalcCard(this.paperEl);
+      // A press anywhere else while the card is open only closes the card:
+      // the sum keeps glowing, and the press neither writes nor scrolls.
+      this.surfaceEl.addEventListener(
+        "pointerdown",
+        (event) => {
+          if (!this.calcCard?.shown || this.calcCard.contains(event.target as Node)) return;
+          if (this.calcGlow?.contains(event.target as Node)) return;
+          event.stopPropagation();
+          event.preventDefault();
+          this.calcCard.hide();
+        },
+        { capture: true },
+      );
+    }
+    this.calcCard.hide();
+    this.calcNote = note;
+    this.calcGlow.show({ pageId: note.pageId, strokes: note.strokes, doubts: note.doubts });
     this.syncCalcChip();
   }
 
-  hideCalcSuggestion(): void {
-    this.calcChip?.hide();
+  /**
+   * The note's reading changed (a doubt answered in the card): its dotted
+   * marks follow; the card stays open with its own new content.
+   */
+  updateCalcNote(note: CalcNoteSpec): void {
+    if (!this.calcNote || this.calcNote.pageId !== note.pageId) return;
+    this.calcNote = note;
+    this.calcGlow?.show({ pageId: note.pageId, strokes: note.strokes, doubts: note.doubts });
+    if (this.calcCard?.shown) this.calcCard.update(note.content);
+    this.syncCalcChip();
   }
 
-  /** Where the suggestion is, or null while none shows. */
+  hideCalcNote(): void {
+    this.calcNote = null;
+    this.calcGlow?.hide();
+    this.calcCard?.hide();
+  }
+
+  /** Where the calculation note is, or null while none shows. */
   get calcSuggestionPage(): string | null {
-    return this.calcChip?.anchor?.pageId ?? null;
+    return this.calcNote?.pageId ?? null;
+  }
+
+  /** Open the card; at doubt `doubt`'s runner-ups when one was tapped (-1: none). */
+  private openCalcCard(doubt = -1): void {
+    const note = this.calcNote;
+    if (!note || !this.calcCard) return;
+    this.calcCard.show(note.content, note.actions, doubt);
+    this.syncCalcChip();
   }
 
   /**
    * Write strokes the host made (a calculation's answer) on page `pageId`,
-   * as one undo step, with ids of their own. False when the note is locked
-   * or the page is gone.
+   * as one undo step, with ids of their own. The step, or null when the note
+   * is locked or the page is gone.
    */
-  addInkStrokes(pageId: string, strokes: ReadonlyArray<Omit<Stroke, "id">>): boolean {
-    if (this.callbacks.isLocked?.() || strokes.length === 0) return false;
+  addInkStrokes(pageId: string, strokes: ReadonlyArray<Omit<Stroke, "id">>): Command | null {
+    if (this.callbacks.isLocked?.() || strokes.length === 0) return null;
     const page = this.doc.pages.find((p) => p.id === pageId);
-    if (!page) return false;
+    if (!page) return null;
     const made: Stroke[] = strokes.map((s) => ({ ...s, id: this.strokeIds.next() }));
-    this.applyCommand(addStrokesTimed(page, made, this.clock(), t("surface.command.writeAnswer")));
-    return true;
+    const command = addStrokesTimed(page, made, this.clock(), t("surface.command.writeAnswer"));
+    this.applyCommand(command);
+    return command;
   }
 
-  /** Keep the calculation suggestion on its page point across pan and zoom. */
+  /** Keep the calculation note's glow and card on the sum across pan and zoom. */
   private syncCalcChip(): void {
-    const chip = this.calcChip;
-    const anchor = chip?.anchor;
-    if (!chip || !anchor || !this.pageLayout) return;
-    const box = this.pageLayout.boxes.find((b) => this.pageAt(b.index)?.id === anchor.pageId);
-    if (!box) {
-      chip.hide();
+    const note = this.calcNote;
+    if (!note || !this.pageLayout) return;
+    const box = this.pageLayout.boxes.find((b) => this.pageAt(b.index)?.id === note.pageId);
+    const page = box ? this.pageAt(box.index) : null;
+    if (!box || !page) {
+      this.hideCalcNote();
       return;
     }
     const scale = this.unitScale;
-    chip.place((box.x + anchor.x) * scale, (box.y + anchor.y) * scale);
+    this.calcGlow?.place(box.x * scale, box.y * scale, scale);
+    const card = this.calcCard;
+    if (card?.shown) {
+      // Beside the "=", or left of the sum when the page ends before the card does.
+      const width = CALC_CARD_WIDTH / scale;
+      const flip = note.cardAt.x + width > page.geometry.width && note.flipAt - width > 0;
+      const x = flip ? note.flipAt : note.cardAt.x;
+      card.place(
+        (box.x + x) * scale,
+        (box.y + note.cardAt.y) * scale,
+        flip,
+        this.surfaceEl.getBoundingClientRect(),
+      );
+    }
   }
 
   /** Repaint without touching layout or indexes (a PDF raster arrived). */
@@ -3821,7 +3899,8 @@ export class InkSurface {
       return;
     }
     // After the layout, which would otherwise keep the current page of a row centred.
-    this.scroller.setPosition(this.direction === "horizontal" ? this.rowX(0) : 0, 0);
+    if (this.direction === "horizontal") this.scroller.setPosition(this.rowX(0), this.rowY(0));
+    else this.scroller.setPosition(0, 0);
     this.syncViewport();
     this.requestFrame();
     this.reportStatus();
@@ -3927,7 +4006,7 @@ export class InkSurface {
       return;
     }
     const x = row ? this.rowX(clamped) : this.scroller.position.x;
-    const y = row ? 0 : scrollTopForPage(this.pageLayout, clamped) * this.scale;
+    const y = row ? this.rowY(clamped) : scrollTopForPage(this.pageLayout, clamped) * this.scale;
     if (animate) this.scroller.glideTo(x, y, now());
     else this.scroller.setPosition(x, y);
     this.syncViewport();
@@ -3980,6 +4059,16 @@ export class InkSurface {
   /** The scroll x that centres page `index` of a row in the pane. */
   private rowX(index: number): number {
     return rowScrollXForPage(this.pageLayout, index, this.scale, this.cssW);
+  }
+
+  /**
+   * The scroll y that centres page `index` of a row in the pane, or shows
+   * its top when it is taller than the pane. A row's pages are centred on
+   * its tallest, which the floor no longer fits (`rowPageFloor`): a slide
+   * beside a portrait page sits below the row's middle (discussion #43).
+   */
+  private rowY(index: number): number {
+    return rowScrollYForPage(this.pageLayout, index, this.scale, this.cssH);
   }
 
   /** Let (or stop) a pinch well past the fit open the page overview. The host knows single pages. */
@@ -4055,6 +4144,7 @@ export class InkSurface {
     // A tool picked by hand overrides a return still waiting to happen.
     this.cancelPendingReturn();
     this.toolSeen = tool;
+    this.eraserClickBack = null;
     this.toolState.tool = tool;
     if (tool !== "highlighter") this.dropTextMark();
     if (this.textCopyTimer) this.hideTextCopy();
@@ -4308,6 +4398,16 @@ export class InkSurface {
         // turning ink into text are the host's; it answers whether it ran.
         this.callbacks.onShortcutAction?.(id);
     }
+  }
+
+  /** The side button clicked in the air, set to the eraser: to it, and back again. */
+  stylusEraserClick(): void {
+    const step = eraserClickStep(this.toolState.tool, this.eraserClickBack, this.drawingTool);
+    if (this.practice && !isPracticeTool(step.tool)) return;
+    if (this.callbacks.toolOff?.(step.tool) === true) return;
+    this.setTool(step.tool);
+    this.eraserClickBack = step.back;
+    this.callbacks.onToolChange?.(step.tool);
   }
 
   /** The tool a key press switches to, as a letter already did. */
@@ -4830,7 +4930,7 @@ export class InkSurface {
       this.goToPage(reading);
     } else if (direction === "horizontal" && this.atZoomFloor && this.isScrollIdle) {
       // A pane that changed shape (rotation, split view) keeps the page centred.
-      this.scroller.setPosition(this.rowX(this.pageIndex), 0);
+      this.scroller.setPosition(this.rowX(this.pageIndex), this.rowY(this.pageIndex));
     }
     this.layoutTail(cssW, cssH);
   }
@@ -5079,12 +5179,10 @@ export class InkSurface {
    * `hold`: the pane changed for the docked options row, which leaves both.
    */
   private updateZoomFloor(cssH: number, hold = false): void {
-    let tallest = 0;
-    for (const box of this.pageLayout.boxes) tallest = Math.max(tallest, box.height);
     const step = nextZoomFloor({
       zoom: this.userZoom,
       floor: this.minZoom,
-      newFloor: fitPageZoom(tallest, this.baseScale, cssH),
+      newFloor: this.floorForPane(cssH),
       initialised: this.zoomInitialised,
       // A pane made short by the keyboard must not re-fit the page into it.
       keyboard: hold || document.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
@@ -5096,6 +5194,40 @@ export class InkSurface {
       this.zoomAnim = null;
       this.userZoom = step.zoom;
     }
+  }
+
+  /**
+   * The zoom floor for a pane `cssH` px tall. A column fits its tallest page,
+   * so the floor holds while scrolling. A row of separate pages fits the page
+   * being read (`rowPageFloor`), so a slide fills the screen however tall the
+   * other pages are; turning to a page of another shape re-fits it on rest
+   * (`refitRowPage`). Joined pages are one sheet and keep the tallest.
+   */
+  private floorForPane(cssH: number): number {
+    const layout = this.pageLayout;
+    let tallest = 0;
+    let widest = 0;
+    for (const box of layout.boxes) {
+      tallest = Math.max(tallest, box.height);
+      widest = Math.max(widest, box.width);
+    }
+    const reading = layout.boxes[this.heldPage ?? this.pageIndex] ?? null;
+    if (layout.direction !== "horizontal" || layout.joined || !reading) {
+      return fitPageZoom(tallest, this.baseScale, cssH);
+    }
+    const side = reading.width * ROW_FIT_MARGIN_RATIO;
+    return rowPageFloor(reading.width, reading.height, side, this.baseScale, this.cssW, cssH);
+  }
+
+  /**
+   * A row at its floor came to rest on a page of another shape than the one
+   * the floor was fitted to: lay out again, so that page fits the screen too.
+   */
+  private refitRowPage(): void {
+    if (this.direction !== "horizontal" || this.board || this.joined) return;
+    if (!this.atZoomFloor || !this.isScrollIdle || this.pinch || this.zoomAnim) return;
+    const floor = this.floorForPane(this.cssH);
+    if (Math.abs(floor / this.minZoom - 1) > 0.005) this.scheduleRelayout();
   }
 
   /** The next layout keeps a zoomed-in page the size it is, whatever the pane's new width. */
@@ -5173,6 +5305,13 @@ export class InkSurface {
       rangeX,
       // Held centred, a diagonal drag scrolls only down (Goodnotes).
       diagonalsScrollY: !row,
+      // Turning pages, the view rests centred on each page (`rowY`), never
+      // scrolled up or down: the row's whole range is the pages' centres.
+      rangeY:
+        row && this.turnsPages && !this.joined
+          ? rowRestRangeY(this.pageLayout, scale, this.cssH)
+          : undefined,
+      holdX: !row && this.holdFitWidth(),
       // While a box is typed in, room to lift it above the keyboard: a page
       // that fits the screen (a cover, a single page) has none of its own.
       trailY: this.typingField() ? keyboardHeight() : 0,
@@ -5185,6 +5324,15 @@ export class InkSurface {
    * stopping at the page's edges.
    */
   private freePageEdges = false;
+
+  /** The setting "Lock fit to width", read at each layout (`ScrollExtent.holdX`). */
+  holdFitWidth: () => boolean = () => false;
+
+  /** A setting the scroll extent reads changed ("Lock fit to width"): apply it now. */
+  refreshScrollExtent(): void {
+    this.ensurePaperSize();
+    this.requestFrame();
+  }
 
   setFreePageEdges(on: boolean): void {
     if (this.freePageEdges === on) return;
@@ -5421,6 +5569,7 @@ export class InkSurface {
       return;
     }
     this.settleIfIdle();
+    this.refitRowPage();
     this.schedulePrefetch();
     // The action bar flips above or below the selection by what is on
     // screen, which a scroll changes; re-place it once the page comes to rest.
@@ -5806,7 +5955,7 @@ export class InkSurface {
     const page = this.pageIndex;
     const { x, y } = this.scroller.position;
     this.scroller.stop();
-    this.rowSettle = { page, dx: x - this.rowX(page), dy: y, t0: now() };
+    this.rowSettle = { page, dx: x - this.rowX(page), dy: y - this.rowY(page), t0: now() };
     this.requestFrame();
   }
 
@@ -5821,7 +5970,10 @@ export class InkSurface {
     const progress = (t - settle.t0) / ZOOM_SPRING_MS;
     const left = progress >= 1 ? 0 : 1 - easeOutCubic(progress);
     // Centred at the scale of this frame: the zoom may still be springing.
-    this.scroller.setPosition(this.rowX(settle.page) + settle.dx * left, settle.dy * left);
+    this.scroller.setPosition(
+      this.rowX(settle.page) + settle.dx * left,
+      this.rowY(settle.page) + settle.dy * left,
+    );
     if (progress < 1) return true;
     this.rowSettle = null;
     return false;
@@ -5849,7 +6001,9 @@ export class InkSurface {
     this.snapRowAfterZoom = false;
     this.scroller.cancel();
     this.applyZoom(this.minZoom, this.cssW / 2, this.cssH / 2);
-    if (this.direction === "horizontal") this.scroller.setPosition(this.rowX(this.pageIndex), 0);
+    if (this.direction === "horizontal") {
+      this.scroller.setPosition(this.rowX(this.pageIndex), this.rowY(this.pageIndex));
+    }
     this.syncViewport();
     this.zoomReadoutEl.addClass("is-idle");
     this.callbacks.onPinchOverview?.(snapshot);
@@ -5869,7 +6023,7 @@ export class InkSurface {
       this.scale,
       this.cssW,
     );
-    this.scroller.snapTo(this.rowX(index), 0, now());
+    this.scroller.snapTo(this.rowX(index), this.rowY(index), now());
     this.requestFrame();
   }
 
@@ -17816,6 +17970,7 @@ export class InkSurface {
         if (
           this.fingerHoldsTextBox(tapped, p) ||
           this.fingerPicksShape(tapped, p) ||
+          this.fingerPicksConnector(tapped, p) ||
           this.fingerPicksEquation(tapped, p) ||
           this.fingerPicksGraph(tapped, p) ||
           this.fingerPicksTable(tapped, p) ||
@@ -17866,11 +18021,9 @@ export class InkSurface {
       boxAtPoint(this.pageLayout, at.x, at.y) ?? this.pageLayout.boxes[this.pageIndex] ?? null;
     if (!box) return;
     const row = this.direction === "horizontal";
-    // Pages down: the page exactly as wide as the pane, whatever its shape
-    // (discussion #43); a row's page covers the pane.
-    const fill = row
-      ? pageFillZoom(box.width, box.height, this.baseScale, this.cssW, this.cssH)
-      : pageWidthZoom(box.width, this.baseScale, this.cssW);
+    // A slide as large as fits whole; a tall page as wide as the pane (pages
+    // down) or covering it (a row) (discussion #43).
+    const fill = doubleTapFill(box.width, box.height, this.baseScale, this.cssW, this.cssH, row);
     const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom, fill));
     if (Math.abs(target - this.userZoom) < 1e-3) return;
     const rect = this.surfaceEl.getBoundingClientRect();
@@ -17915,11 +18068,15 @@ export class InkSurface {
         y: this.cssH / 2 - (box.y + box.height / 2) * scale,
       };
     }
+    // A side of the page that fits the pane is centred on it (a slide filled
+    // whole); a side larger keeps the tapped spot where it was, inside the page.
     const keep = (tap: number, local: number, start: number, size: number, pane: number) =>
-      Math.min(
-        -start * scale,
-        Math.max(pane - (start + size) * scale, tap - (start + local) * scale),
-      );
+      size * scale <= pane + 0.5
+        ? pane / 2 - (start + size / 2) * scale
+        : Math.min(
+            -start * scale,
+            Math.max(pane - (start + size) * scale, tap - (start + local) * scale),
+          );
     return {
       x: keep(settle.screen.x, settle.local.x, box.x, box.width, this.cssW),
       y: keep(settle.screen.y, settle.local.y, box.y, box.height, this.cssH),
@@ -18229,6 +18386,18 @@ export class InkSurface {
     this.pickLasso();
     this.select(page.id, { strokes: [stroke], images: [], textBoxes: [] });
     return true;
+  }
+
+  /** A finger tapped an arrow joining two shapes: picked up on its own, as a lasso tap does. */
+  private fingerPicksConnector(page: Page, p: Pt): boolean {
+    if (this.practice || this.toolState.tool === "text") return false;
+    const tolerance = FINGER_TAP_TOLERANCE_PX / this.unitScale;
+    if (!routeConnectors(page).some((r) => nearConnector(r, p.x, p.y, tolerance))) return false;
+    this.pickLasso();
+    return this.tapConnector(page, p, tolerance, {
+      ...lassoFilterFor(this.toolState),
+      handwriting: false,
+    });
   }
 
   /**
@@ -19345,6 +19514,7 @@ export class InkSurface {
     this.changed();
     this.revealChange(command);
     this.flashReadout(historyNotice(redo, command.label), READOUT_NOTICE_HOLD_MS);
+    this.callbacks.onHistoryStep?.(command, redo);
   }
 
   /** Whether `command` is the newest step, so {@link undo} would take exactly it back. */

@@ -17,12 +17,14 @@
 import {
   type CalcValue,
   type EvalResult,
+  compileFunction,
   evaluate,
   formatValue,
   isUnknownNameError,
   isRational,
   toFloat,
 } from "./calculator";
+import type { GraphSpec } from "./graph";
 
 /** Function and constant names a sum may use (the calculator knows more; these are the ones a line is scanned for). */
 const NAMES = new Set([
@@ -70,6 +72,59 @@ export interface NoteSum {
  * into a number. A bar stays a bar: it may be an absolute value.
  */
 function fixDigitLetters(text: string): string {
+  return spellNames(fixDigits(text));
+}
+
+/** The digit a letter read in place of a logarithm's low base most likely is. */
+const BASE_LOOKALIKES: Record<string, string> = {
+  z: "2",
+  Z: "2",
+  y: "4",
+  q: "9",
+  g: "8",
+  s: "5",
+  S: "5",
+  b: "6",
+  t: "7",
+  T: "7",
+  l: "1",
+  I: "1",
+  o: "0",
+  O: "0",
+};
+
+/**
+ * How Grape writes two names the calculator spells otherwise: "17mod5"
+ * (it often reads no spaces round a word between numbers) is "17 mod 5", and
+ * a logarithm with its base written low after it, read as "log2(8)" or
+ * "log_2(8)", is the calculator's "log(8,2)".
+ */
+export function spellNames(text: string): string {
+  let s = text.replace(/([0-9)\]])\s*mod\s*(?=[0-9(])/gi, "$1 mod ");
+  // A base written low is often read as the letter it resembles ("logz(8)",
+  // "logy(76)"): the digit it most likely is. A guess, shown in the card.
+  s = s.replace(/log\s*([zZyqgsSbtTlIoO])\s*\(/g, (_, c: string) => `log${BASE_LOOKALIKES[c]}(`);
+  for (let guard = 0; guard < 8; guard++) {
+    const m = /log_?\s*([0-9]+(?:\.[0-9]+)?)\s*\(/i.exec(s);
+    if (!m) break;
+    const open = m.index + m[0].length - 1;
+    let depth = 0;
+    let close = -1;
+    for (let i = open; i < s.length; i++) {
+      if (s[i] === "(") depth++;
+      else if (s[i] === ")" && --depth === 0) {
+        close = i;
+        break;
+      }
+    }
+    if (close < 0) break;
+    // ", base" with a space: a comma between two digits is a decimal comma.
+    s = `${s.slice(0, m.index)}log(${s.slice(open + 1, close)}, ${m[1]})${s.slice(close + 1)}`;
+  }
+  return s;
+}
+
+function fixDigits(text: string): string {
   // Letters other than x on either side make it a word; x is times ("1Ox4").
   return text.replace(/(?<![A-WYZa-wyz])[0-9OoIl]+(?:\.[0-9OoIl]+)?(?![A-WYZa-wyz])/g, (run) => {
     if (!/[0-9]/.test(run)) return run;
@@ -264,4 +319,174 @@ export function answerText(value: CalcValue): { text: string; exact: boolean } |
 /** The suggestion's words: "12×4 = 48", or "1÷3 ≈ 0.33333333" when rounded. */
 export function suggestionLabel(sum: NoteSum, answer: { text: string; exact: boolean }): string {
   return `${sum.shown} ${answer.exact ? "=" : "≈"} ${answer.text.replace(/^-/, "−")}`;
+}
+
+/** An equation to solve: its two sides in the calculator's text, and the letter asked for. */
+export interface NoteEquation {
+  lhs: string;
+  rhs: string;
+  letter: string;
+}
+
+/**
+ * The letter a line asks for, when it ends in it and an "=" ("x =", or
+ * "2x+3=7, x ="): solve for it. Null otherwise.
+ */
+export function askedLetter(reading: string): string | null {
+  const m = /(?:^|[^A-Za-z0-9])([A-Za-z])\s*=\s*$/.exec(reading.replace(/\s+$/, ""));
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * Grape reads a raised power on the line: a digit straight after the letter
+ * ("x2", "2x3 + 1") is that power. Nobody writes "x times 2" as "x2".
+ */
+function powersOf(side: string, letter: string): string {
+  return side.replace(new RegExp(`(?<![A-Za-z])${letter}([2-9])(?![0-9.])`, "g"), `${letter}^$1`);
+}
+
+/** One side of an equation as read, in the calculator's text. */
+function equationSide(text: string): string {
+  return fixDigitLetters(text)
+    .replace(/[×·∗⋅]/g, "*")
+    .replace(/[÷∕]/g, "/")
+    .replace(/[−–—]/g, "-")
+    .replace(/([0-9)])\s*:\s*(?=[0-9(])/g, "$1/")
+    .replace(/([0-9]),(?=[0-9])/g, "$1.")
+    .replace(/^[\s,;:]+|[\s,;:]+$/g, "")
+    .replace(/\s+/g, "");
+}
+
+/**
+ * The equation in `letter` a line holds ("2x + 3 = 7"), when it holds one:
+ * a single "=" with something on both sides and the letter in it. The
+ * letter's own ask at the end ("…, x =") and a label before it ("Ex 2:")
+ * are left out; the letter is read in either case. Null when there is none.
+ */
+export function equationOfLine(reading: string, letter: string): NoteEquation | null {
+  let text = reading.replace(/\s+$/, "");
+  const ask = new RegExp(String.raw`(?:^|[^A-Za-z0-9])${letter}\s*=\s*$`, "i");
+  const asked = ask.exec(text);
+  if (asked) text = text.slice(0, asked.index + (/[^A-Za-z0-9]/.test(asked[0][0]) ? 1 : 0));
+  const label = Math.max(text.lastIndexOf(": "), text.lastIndexOf("; "));
+  if (label >= 0) text = text.slice(label + 1);
+  const parts = text.split("=");
+  if (parts.length !== 2) return null;
+  const same = (s: string) =>
+    powersOf(
+      equationSide(s).replace(new RegExp(`(?<![A-Za-z])${letter}(?![A-Za-z])`, "gi"), letter),
+      letter,
+    );
+  const lhs = same(parts[0]);
+  const rhs = same(parts[1]);
+  if (!lhs || !rhs) return null;
+  const has = new RegExp(`(?<![A-Za-z])${letter}(?![A-Za-z])`);
+  if (!has.test(lhs) && !has.test(rhs)) return null;
+  // "x = 5": a letter being set, not an equation to solve.
+  if (lhs === letter && !has.test(rhs)) return null;
+  return { lhs, rhs, letter };
+}
+
+/**
+ * The one unknown of a whole equation as read ("x + 5 = 7"): the single letter
+ * it holds beside the names a sum may use. Null when it has none, several, or
+ * a word in it (prose with an "=" in it is no equation).
+ */
+export function equationLetter(reading: string): string | null {
+  if ((reading.match(/=/g) ?? []).length !== 1) return null;
+  const label = Math.max(reading.lastIndexOf(": "), reading.lastIndexOf("; "));
+  const body = fixDigitLetters(label >= 0 ? reading.slice(label + 1) : reading);
+  const letters = new Set<string>();
+  for (const word of body.match(/[A-Za-z]+/g) ?? []) {
+    const lower = word.toLowerCase();
+    if (NAMES.has(lower)) continue;
+    if (lower.length > 1) return null;
+    letters.add(lower);
+  }
+  return letters.size === 1 ? [...letters][0] : null;
+}
+
+/** A function written on a line ("y = 2x + 1", "f(x) = x2"): what to plot. */
+export interface NoteFunction {
+  /** What is defined: "y", or "f(x)" with its own letter. */
+  name: string;
+  /** Its right side in the calculator's text; null when nothing is written there yet. */
+  body: string | null;
+}
+
+/**
+ * The function a line defines, when it starts with "y =" or "f(x) =" and
+ * its right side can be plotted. "y" needs an x on its right ("y = 5" sets a
+ * value). A word the calculator does not know is no function.
+ */
+export function functionOfLine(reading: string): NoteFunction | null {
+  const label = Math.max(reading.lastIndexOf(": "), reading.lastIndexOf("; "));
+  const text = label >= 0 ? reading.slice(label + 1) : reading;
+  const m = /^\s*(?:([yY])|([A-Za-z])\s*\(\s*[xX]\s*\))\s*=([^=]*)$/.exec(text);
+  if (!m) return null;
+  const name = m[1] ? "y" : `${m[2].toLowerCase()}(x)`;
+  const rest = m[3].replace(/[\s.,;:]+$/, "");
+  if (rest.trim() === "") return { name, body: null };
+  const body = powersOf(equationSide(rest).replace(/(?<![A-Za-z])X(?![A-Za-z])/g, "x"), "x");
+  const hasX = /(?<![A-Za-z])x(?![A-Za-z])/.test(body);
+  if ((m[1] && !hasX) || !compileFunction(body).ok) return null;
+  return { name, body };
+}
+
+/** The view a written function's graph opens at: x from -10 to 10, y at the same scale in a 4:3 frame. */
+const GRAPH_VIEW = { xMin: -10, xMax: 10, yMin: -7.5, yMax: 7.5 };
+
+/** The graph of a written function, as the calculator's graphs are kept. */
+export function functionGraphSpec(fn: NoteFunction & { body: string }): GraphSpec {
+  return { ...GRAPH_VIEW, expressions: [`${fn.name} = ${fn.body}`] };
+}
+
+/** The digit a letter read in a number on a line about x most likely is. */
+const NUMBER_LOOKALIKES: Record<string, string> = {
+  o: "0",
+  O: "0",
+  l: "1",
+  I: "1",
+  z: "2",
+  Z: "2",
+  s: "5",
+  S: "5",
+  h: "4",
+};
+
+/**
+ * The part of a line as read that can be one equation or function: what
+ * follows the last separator outside brackets ("x2-7=0, x2-1=0" holds two),
+ * without a list's bullet ("- f(x) = x2"). On a line about x, letters that
+ * only look like digits are the digits ("ho" for 40, "xz" for x squared):
+ * shown in the card, and one tap away from being typed over.
+ */
+export function mathsClause(reading: string): string {
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < reading.length; i++) {
+    const c = reading[i];
+    if (c === "(") depth++;
+    else if (c === ")") depth--;
+    else if (depth > 0) continue;
+    else if (c === ";" || (c === ":" && /\s/.test(reading[i + 1] ?? ""))) start = i + 1;
+    else if (
+      c === "," &&
+      !(/[0-9]/.test(reading[i - 1] ?? "") && /[0-9]/.test(reading[i + 1] ?? ""))
+    ) {
+      start = i + 1;
+    }
+  }
+  const clause = reading
+    .slice(start)
+    .trim()
+    .replace(/^[-–—•·*]+\s+(?=\S)/, "");
+  if (!/[xX]/.test(clause)) return clause;
+  return clause
+    .replace(/(?<![A-Za-z])([xX])[zZ](?![A-Za-z])/g, "$12")
+    .replace(
+      /(?<![A-Za-z])([oOlIzZsSh]+)([xX]?)(?![A-Za-z(])/g,
+      (_, digits: string, x: string) =>
+        `${Array.from(digits, (c) => NUMBER_LOOKALIKES[c]).join("")}${x}`,
+    );
 }

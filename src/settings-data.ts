@@ -134,6 +134,8 @@ export interface GoodObsidianSettings {
   scribbleNoticeShown: boolean;
   /** The last version whose changes "What's new" has shown. */
   lastSeenVersion: string;
+  /** Home's what's-new card counts releases after this version; "" when there is none to show. */
+  newsSince: string;
   /** Read once a day whether a newer FineNotes is out, and mark the gear (update-check.ts). */
   checkForUpdates: boolean;
   /**
@@ -279,6 +281,8 @@ export interface GoodObsidianSettings {
    */
   /** Zoomed in on pages across, the view may leave the page being read and go past the notebook's ends. */
   freePageEdges: boolean;
+  /** After a double tap fits pages down to the width, a finger never moves the page sideways (discussion #43). Off, it stretches and springs back, as Goodnotes does. */
+  holdFitWidth: boolean;
   pencilTilt: boolean;
   /** Selecting an active secondary tool again returns to the pen or highlighter used before. */
   returnToPenOnReselect: boolean;
@@ -383,6 +387,10 @@ export interface GoodObsidianSettings {
   simpleLook: boolean;
   /** The note saying how to get normal Obsidian back has been shown (once). */
   simpleLookHinted: boolean;
+  /** Prototype: the chrome's style (`look.ts`), `default` for today's. */
+  lookStyle: string;
+  /** Prototype: the chrome's colour palette (`look.ts`), `obsidian` to match the theme. */
+  lookPalette: string;
   /** Notebooks and folders starred in the library, by vault path. Cleaned where read. */
   libraryStars: string[];
   /** The colour and icon chosen for library folders, by vault path. Cleaned where read. */
@@ -494,6 +502,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   debugHud: false,
   scribbleNoticeShown: false,
   lastSeenVersion: "",
+  newsSince: "",
   checkForUpdates: true,
   updateReminders: true,
   llmVendor: "anthropic",
@@ -533,6 +542,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   recentColors: [],
   pressureWidth: false,
   freePageEdges: false,
+  holdFitWidth: false,
   pencilTilt: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
@@ -562,8 +572,10 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   savedPens: defaultSavedPens(),
   toolbarLayout: defaultLayout(),
   toolbarHomeAdded: true,
-  simpleLook: true,
+  simpleLook: false,
   simpleLookHinted: false,
+  lookStyle: "default",
+  lookPalette: "obsidian",
   libraryStars: [],
   libraryFolders: {},
   barrelButton: "erase",

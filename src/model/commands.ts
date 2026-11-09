@@ -9,6 +9,7 @@
  * and others). Nothing here touches the DOM or Obsidian.
  */
 
+import { keepChaptersOf, restoreChapters } from "./contents";
 import {
   type Backdrop,
   type ImageElement,
@@ -101,16 +102,20 @@ export class AddPage implements Command {
 export class RemovePage implements Command {
   readonly label = t("surface.command.removePage");
   private removed: Page | null = null;
+  private chapters: ReturnType<typeof keepChaptersOf> = null;
 
   constructor(private readonly index: number) {}
 
   apply(doc: InkDocument): void {
+    const page = doc.pages.length > 1 ? doc.pages[this.index] : undefined;
+    this.chapters = page ? keepChaptersOf(doc, [page]) : null;
     this.removed = removePageAt(doc, this.index);
   }
 
   invert(doc: InkDocument): void {
     if (!this.removed) return;
     insertPage(doc, this.index, this.removed);
+    if (this.chapters) restoreChapters(this.chapters);
     this.removed = null;
   }
 }

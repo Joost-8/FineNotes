@@ -5,6 +5,15 @@ export const view = {
   "view.contents.rename": "Rename in contents",
   "view.contents.remove": "Remove from contents",
   "view.contents.change": "Change contents",
+  "view.contents.newChapter": "New chapter",
+  "view.contents.moved": "Move in contents",
+  "view.contentsTitle.chapterFallback": "Chapter",
+  "view.contentsTitle.chapterLabel": "Chapter title",
+  "view.contents.indent": "Indent",
+  "view.contents.outdent": "Outdent",
+  "view.contents.fromPdf": "Contents from the PDF",
+  "view.contents.addedFromPdf.one": "Added 1 entry from the PDF to the contents",
+  "view.contents.addedFromPdf.other": "Added {count} entries from the PDF to the contents",
   "view.contentsTitle.add": "Add",
   "view.contentsTitle.pageFallback": "Page {page}",
   "view.contentsTitle.sectionFallback": "Section on page {page}",
@@ -258,6 +267,8 @@ export const view = {
   "view.pageEmbed.noPages": "This notebook has no pages.",
   "view.pageEmbed.missingFile": "This notebook is not in the vault.",
   "view.pageEmbed.unreadable": "This notebook could not be read.",
+  "view.pageEmbed.morePages.one": "{count} more page",
+  "view.pageEmbed.morePages.other": "{count} more pages",
 
   // Page sidebar
   "view.sidebar.pages": "Pages",
@@ -348,6 +359,7 @@ export const view = {
   "view.morePanel.deskDark": "Dark desk",
   "view.morePanel.deskCustom": "Desk in a colour of your own",
   "view.morePanel.freePageEdges": "Free page edges",
+  "view.morePanel.lockFitWidth": "Lock fit to width",
   "view.ocr.noPdfPages": "FineNotes: this notebook has no PDF pages.",
   "view.ocr.off":
     'FineNotes: reading scanned pages is off. Turn on "Scanned pages" in the AI menu.',

@@ -401,7 +401,9 @@ export function duplicatePageAfter(
   delete copy.bookmarked;
   // Nor does its line in the contents: the original still starts that section.
   delete copy.title;
+  delete copy.titleLevel;
   delete copy.sections;
+  delete copy.chapters;
   // Its strokes get new ids, so links and tasks on the old ones would hold nothing.
   delete copy.links;
   delete copy.tasks;
