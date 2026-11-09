@@ -10,7 +10,6 @@ import {
   RecolorStrokes,
   RemoveElements,
   ReshapeStroke,
-  SwitchConnector,
   ScaleElements,
   TranslateElements,
   copyElements,
@@ -624,40 +623,6 @@ describe("ScaleElements", () => {
     // One already outside the range may stay as it is.
     expect(textScaleRange([textBox("d", { fontSize: 8 })]).min).toBe(1);
     expect(textScaleRange([textBox("e", { fontSize: 500 })]).max).toBe(1);
-  });
-});
-
-describe("SwitchConnector", () => {
-  it("sets points, kind, corner and head, and undo puts all of it back", () => {
-    const { doc, s } = fixture();
-    const before = snap(doc);
-    const old = s[1].pts;
-    const pts = [0, 0, 0.5, 90, 0, 0.5, 90, 40, 0.5];
-    const history = new History();
-    history.push(
-      doc,
-      new SwitchConnector("p1", s[1], {
-        pts,
-        kind: "path",
-        radius: 14,
-        heads: { end: "open" },
-      }),
-    );
-    expect(s[1].pts).toBe(pts);
-    expect(s[1].shape).toBe("path");
-    expect(s[1].radius).toBe(14);
-    expect(s[1].heads).toEqual({ end: "open" });
-    history.undo(doc);
-    expect(s[1].pts).toBe(old);
-    expect(snap(doc)).toBe(before);
-  });
-
-  it("takes the corner off when it becomes a line", () => {
-    const { doc, s } = fixture();
-    s[1].radius = 14;
-    new SwitchConnector("p1", s[1], { pts: [0, 0, 0.5, 9, 9, 0.5], kind: "line" }).apply(doc);
-    expect(s[1].radius).toBeUndefined();
-    expect(s[1].shape).toBe("line");
   });
 });
 

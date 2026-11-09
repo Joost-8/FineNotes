@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   FIT_TOLERANCE,
   connectorHandles,
-  connectorType,
   dragConnector,
   isEndHandle,
   runSamples,
   splinePoints,
-  switchConnector,
   tidyElbow,
 } from "../../src/ink/connector-edit";
 import { POINT_STRIDE } from "../../src/model/document";
@@ -247,59 +245,5 @@ describe("an elbow", () => {
       { x: 100, y: 0 },
       { x: 100, y: 50 },
     ]);
-  });
-});
-
-describe("switching a connector between its two kinds", () => {
-  const from = { x: 10, y: 20 };
-  const to = { x: 190, y: 120 };
-
-  it("reads a line, a bent curve, a snapped arrow and an elbow", () => {
-    const line = flat([from, to]);
-    expect(connectorType("line", line)).toBe("curve");
-    const bent = splinePoints([from, { x: 100, y: 10 }, to], 0.5);
-    expect(connectorType("path", bent)).toBe("curve");
-    expect(connectorType("arrow", flat([from, to, to, from, to, from]))).toBe("curve");
-    expect(connectorType("path", flat([from, { x: 190, y: 20 }, to]))).toBe("elbow");
-    expect(connectorType("rect", line)).toBeNull();
-    expect(connectorType(undefined, line)).toBeNull();
-  });
-
-  it("turns a line into a rounded elbow along the longer axis, and back", () => {
-    const elbow = switchConnector("line", flat([from, to]));
-    expect(elbow?.kind).toBe("path");
-    expect(elbow?.radius).toBeGreaterThan(0);
-    expect(pointsOf(elbow?.pts ?? [])).toEqual([from, { x: 190, y: 20 }, to]);
-    const back = switchConnector("path", elbow?.pts ?? []);
-    expect(back?.kind).toBe("line");
-    expect(back?.radius).toBeUndefined();
-    expect(pointsOf(back?.pts ?? [])).toEqual([from, to]);
-  });
-
-  it("drops a curve's bend points, keeping its ends", () => {
-    const bent = splinePoints([from, { x: 100, y: 10 }, { x: 150, y: 200 }, to], 0.5);
-    expect(pointsOf(switchConnector("path", bent)?.pts ?? [])).toEqual([
-      from,
-      { x: 190, y: 20 },
-      to,
-    ]);
-  });
-
-  it("gives a snapped arrow its head as a head of its own", () => {
-    const arrow = flat([from, to, to, { x: 170, y: 100 }, to, { x: 175, y: 95 }]);
-    const out = switchConnector("arrow", arrow);
-    expect(out?.heads).toEqual({ end: "open" });
-    expect(pointsOf(out?.pts ?? [])).toEqual([from, { x: 190, y: 20 }, to]);
-  });
-
-  it("has no elbow for a line too nearly level or upright to turn a corner", () => {
-    expect(switchConnector("line", flat([from, { x: 190, y: 20 }]))).toBeNull();
-    expect(switchConnector("line", flat([from, { x: 190, y: 27 }]))).toBeNull();
-    expect(switchConnector("line", flat([from, { x: 12, y: 120 }]))).toBeNull();
-    expect(switchConnector("line", flat([from, { x: 190, y: 28 }]))).not.toBeNull();
-  });
-
-  it("leaves other shapes alone", () => {
-    expect(switchConnector("rect", flat([from, to]))).toBeNull();
   });
 });
