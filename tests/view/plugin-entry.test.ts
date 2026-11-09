@@ -576,6 +576,7 @@ describe("registration", () => {
         "search-notebook",
         "show-keyboard-shortcuts",
         "show-notebooks-sidebar",
+        "show-tips",
         "show-welcome",
         "template-gallery",
         "toggle-canvas-markdown-view",
@@ -1354,24 +1355,21 @@ describe("What's new", () => {
     expect(registered.saved.at(-1)?.lastSeenVersion).toBe(VERSION);
   });
 
-  it("shows what came since the last version seen", async () => {
+  it("opens nothing after an update, and leaves the news for Home", async () => {
     await load({ lastSeenVersion: "0.8.0" });
     app.workspace.fireLayoutReady();
     await flush();
-    expect(opened).toHaveLength(1);
-    expect(opened[0]).toContain("Nine.");
-    expect(opened[0]).toContain("Eight point one.");
-    expect(opened[0]).not.toContain("Eight.\n");
+    expect(opened).toEqual([]);
+    expect(registered.saved.at(-1)?.newsSince).toBe("0.8.0");
     expect(registered.saved.at(-1)?.lastSeenVersion).toBe(VERSION);
   });
 
-  it("shows only the newest section when the last version is unknown", async () => {
+  it("has no news to count when the last version is unknown", async () => {
     await load({ defaultSize: 3 });
     app.workspace.fireLayoutReady();
     await flush();
-    expect(opened).toHaveLength(1);
-    expect(opened[0]).toContain("Nine.");
-    expect(opened[0]).not.toContain("Eight");
+    expect(opened).toEqual([]);
+    expect(registered.saved.at(-1)?.newsSince).toBe("");
   });
 
   it("does nothing when the version is the one already seen", async () => {

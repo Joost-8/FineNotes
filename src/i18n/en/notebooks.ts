@@ -394,6 +394,7 @@ export const notebooks = {
   "notebooks.command.showWelcome": "Show the welcome",
   "notebooks.command.openLibrary": "Open the notebook library",
   "notebooks.command.rereadScannedPages": "Re-read scanned pages of this PDF",
+  "notebooks.command.tips": "Show the tips",
   "notebooks.command.simpleLook": "Simple look: hide or show Obsidian's tabs, sidebars and menus",
   "notebooks.command.newFromPdf": "New notebook from a PDF in the vault…",
   "notebooks.command.convertToNotebook": "Convert single page to notebook",
@@ -530,7 +531,8 @@ export const notebooks = {
   "notebooks.welcome.homeInfo":
     "Home holds your notebooks. Its New button makes one, with the cover and paper you choose.",
   "notebooks.welcome.homeButton": "Open Home",
-  "notebooks.welcome.hint": "To see this again, run the command “FineNotes: {command}”.",
+  "notebooks.welcome.simple": "Only here for FineNotes?",
+  "notebooks.welcome.simpleInfo": "Hide Obsidian's menus and sidebars.",
   "notebooks.pdfImport.find": "Find a PDF in the vault…",
   "notebooks.stickerModal.title": "Stickers",
   "notebooks.stickerModal.hintOwn":
@@ -891,10 +893,99 @@ export const notebooks = {
   "notebooks.untitled.board": "Untitled board",
   "notebooks.untitled.notebook": "Untitled notebook",
 
-  // The simple look's one-time notice (main.ts).
-  "notebooks.simpleLook.noticeNew":
-    "This is the new look of FineNotes: Obsidian's sidebars, ribbon and bars are hidden. You can go back to the original any time (Simple look, in FineNotes' settings).",
-  "notebooks.simpleLook.undo": "Undo",
+  // Tips and Home's card (view/tips-modal.ts, model/tips.ts).
+  "notebooks.tips.title": "Tips",
+  "notebooks.tips.tryIt": "Try it",
+  "notebooks.tips.watch": "Watch again",
+  "notebooks.tips.previous": "Previous tip",
+  "notebooks.tips.next": "Next tip",
+  "notebooks.tips.allTips": "All tips",
+  "notebooks.tips.tour": "Take the tour",
+  "notebooks.tips.allChanges": "All changes",
+  "notebooks.tips.collection.gestures": "Pen gestures",
+  "notebooks.tips.collection.study": "Studying",
+  "notebooks.tips.collection.find": "Find anything",
+  "notebooks.tips.collection.hands": "Fingers",
+  "notebooks.tips.collection.writing": "Writing",
+  "notebooks.tips.collection.selecting": "Selecting",
+  "notebooks.tips.collection.pages": "Pages",
+  "notebooks.tips.hold.title": "Draw and hold",
+  "notebooks.tips.hold.body": "Draw a shape in one stroke and keep the pen still. It snaps clean.",
+  "notebooks.tips.scribble.title": "Scribble to erase",
+  "notebooks.tips.scribble.body": "Scribble back and forth over writing and it is gone.",
+  "notebooks.tips.circleLasso.title": "Circle to select",
+  "notebooks.tips.circleLasso.body":
+    "Loop round something and lift, then press and hold on the loop.",
+  "notebooks.tips.holdResize.title": "Size it while you hold",
+  "notebooks.tips.holdResize.body":
+    "After a shape snaps, keep the pen down and move it to resize and turn it.",
+  "notebooks.tips.arrow.title": "Arrows in one stroke",
+  "notebooks.tips.arrow.body": "Draw a line, go back a little way along it, and hold.",
+  "notebooks.tips.coverTape.title": "Cover tape for studying",
+  "notebooks.tips.coverTape.body":
+    "Hide answers under tape, from More tools. Tap the tape to peek.",
+  "notebooks.tips.hear.title": "Tap to hear that moment",
+  "notebooks.tips.hear.body":
+    "With a recording's player open, tap your writing to hear what was said.",
+  "notebooks.tips.snap.title": "Highlights snap to text",
+  "notebooks.tips.snap.body":
+    "Highlight roughly on a PDF and it lands on the line. The switch is in the highlighter's options.",
+  "notebooks.tips.holdWord.title": "Select words on a PDF",
+  "notebooks.tips.holdWord.body": "Press and hold a word, or right-click it, to select it.",
+  "notebooks.tips.calc.title": "Write a sum, get the answer",
+  "notebooks.tips.calc.body":
+    "End a sum with = and FineNotes offers the result. Tap it to write it in.",
+  "notebooks.tips.searchInk.title": "Search your handwriting",
+  "notebooks.tips.searchInk.body":
+    "Once handwriting reading is on, search finds the words you wrote.",
+  "notebooks.tips.homeSearch.title": "Search every notebook",
+  "notebooks.tips.homeSearch.body": "Home's search finds the pages inside your notebooks too.",
+  "notebooks.tips.inkLink.title": "Handwritten links",
+  "notebooks.tips.inkLink.body": "Write [[Note]] by hand, then tap it to open that note.",
+  "notebooks.tips.undo.title": "Two-finger double tap",
+  "notebooks.tips.undo.body": "Double tap with two fingers to undo.",
+  "notebooks.tips.pullPage.title": "Pull for a new page",
+  "notebooks.tips.pullPage.body": "Keep pulling past the last page until the ring fills.",
+  "notebooks.tips.tapColour.title": "Swap a pen's colour",
+  "notebooks.tips.tapColour.body": "Tap the colour in use again to change it.",
+  "notebooks.tips.zoomBox.title": "Write big, land small",
+  "notebooks.tips.zoomBox.body":
+    "The Magnifier's Zoom box lets you write large while the ink lands small.",
+  "notebooks.tips.eraseLine.title": "Erase by line",
+  "notebooks.tips.eraseLine.body":
+    "On lined paper, the eraser's By line mode takes the words along a line.",
+  "notebooks.tips.typedEquation.title": "Typed equations",
+  "notebooks.tips.typedEquation.body":
+    "The Text tool's Σ places a formula. Type LaTeX and see it set.",
+  "notebooks.tips.typeInShape.title": "Type inside a shape",
+  "notebooks.tips.typeInShape.body":
+    "Tap a closed shape to pick it up, then tap it again and type.",
+  "notebooks.tips.turnIntoText.title": "Handwriting into text",
+  "notebooks.tips.turnIntoText.body": "Lasso your writing and choose Turn into, then Text.",
+  "notebooks.tips.pasteHere.title": "Paste right here",
+  "notebooks.tips.pasteHere.body": "Hold the lasso on empty paper for a Paste button.",
+  "notebooks.tips.pinchSelection.title": "Pinch a selection",
+  "notebooks.tips.pinchSelection.body": "Two fingers on a selection resize and turn it.",
+  "notebooks.tips.turnKnob.title": "Turn a selection",
+  "notebooks.tips.turnKnob.body": "Drag the knob below a selection to turn it.",
+  "notebooks.tips.correctWord.title": "Fix a misread word",
+  "notebooks.tips.correctWord.body": "Lasso a word that was read wrong and choose Correct.",
+  "notebooks.tips.reorder.title": "Reorder pages",
+  "notebooks.tips.reorder.body": "In the page sidebar, hold a page and drag it.",
+  "notebooks.tips.ribbon.title": "Bookmark a page",
+  "notebooks.tips.ribbon.body": "In the page sidebar, tap a page's ribbon.",
+  "notebooks.tips.scan.title": "Scan paper into a page",
+  "notebooks.tips.scan.body":
+    "Insert image has Scan document: photograph a sheet and it becomes a page.",
+  "notebooks.tips.importBooks.title": "Bring your notebooks",
+  "notebooks.tips.importBooks.body": "Home's New menu imports from Goodnotes, Notability and more.",
+  "notebooks.tips.textTurns.title": "Text boxes turn",
+  "notebooks.tips.textTurns.body":
+    "Select a text box and drag the knob below it. It catches every 15°.",
+  "notebooks.tips.lineSpacing.title": "Exact line spacing",
+  "notebooks.tips.lineSpacing.body": "Type any spacing from 2 to 30 mm in the template picker.",
+  "notebooks.home.newIn": "New in {version}",
+  "notebooks.home.dismissCard": "Dismiss",
 
   // Home, the notebook library (view/library-view.ts and its models).
   "notebooks.home.title": "Home",

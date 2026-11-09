@@ -1253,6 +1253,10 @@ export class InkView extends TextFileView {
   }
 
   /** The tool bar's layout as the settings hold it. */
+  setNewsDot(on: boolean): void {
+    this.toolbar?.setHomeDot(on);
+  }
+
   private toolbarLayout(): ToolbarLayout {
     return normalizeLayout(this.settings.toolbarLayout);
   }
@@ -3313,6 +3317,7 @@ export class InkView extends TextFileView {
         laserColor: () => this.settings.laserDefaultColor,
       },
     );
+    this.toolbar.setHomeDot(this.plugin.hasNews());
     this.showFullScreen(this.plugin.fullScreen);
     // The gear's dot while a newer FineNotes is out, and "Update available"
     // under it until it is tapped or closed, again every other day until the

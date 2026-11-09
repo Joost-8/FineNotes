@@ -12,6 +12,8 @@ export default defineConfig({
         "src/changelog.ts",
         "src/settings-data.ts",
         "src/model/library-rail.ts",
+        "src/model/tips.ts",
+        "src/model/tip-scenes.ts",
         "src/model/notebook-tree.ts",
         "src/i18n/languages.ts",
         "src/i18n/translate.ts",

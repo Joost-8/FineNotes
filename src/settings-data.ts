@@ -134,6 +134,8 @@ export interface GoodObsidianSettings {
   scribbleNoticeShown: boolean;
   /** The last version whose changes "What's new" has shown. */
   lastSeenVersion: string;
+  /** Home's what's-new card counts releases after this version; "" when there is none to show. */
+  newsSince: string;
   /** Read once a day whether a newer FineNotes is out, and mark the gear (update-check.ts). */
   checkForUpdates: boolean;
   /**
@@ -494,6 +496,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   debugHud: false,
   scribbleNoticeShown: false,
   lastSeenVersion: "",
+  newsSince: "",
   checkForUpdates: true,
   updateReminders: true,
   llmVendor: "anthropic",
@@ -562,7 +565,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   savedPens: defaultSavedPens(),
   toolbarLayout: defaultLayout(),
   toolbarHomeAdded: true,
-  simpleLook: true,
+  simpleLook: false,
   simpleLookHinted: false,
   libraryStars: [],
   libraryFolders: {},
