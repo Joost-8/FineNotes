@@ -43,6 +43,23 @@ export class ModelNotDownloadedError extends Error {
   }
 }
 
+/** The word list (word-check.ts), sent to the worker when its version is new. */
+export interface WordListSource {
+  version: number;
+  words: () => string[];
+}
+
+/** What a notebook page is read with (`HandwritingReader.readPage`). */
+export interface ReadingContext {
+  /** The notebook's own words, from its title and its other pages (page-words.ts). */
+  words?: string[];
+  /**
+   * The word list to read words outside it again against; null: there is
+   * none; absent: no re-reading (a few strokes, not a page).
+   */
+  lexicon?: WordListSource | null;
+}
+
 /** The strokes the recogniser reads: pen ink, not highlighter, cover tape, snapped shapes or tables. */
 export function inkForReading(strokes: readonly Stroke[]): PageInk[] {
   return strokes
@@ -135,17 +152,37 @@ export class HandwritingReader {
   /**
    * Find the lines in these strokes and read them. `keep`: the worker keeps
    * the lines' log-probabilities (the last two pages), for `suggest`.
+   * `context`, for a notebook page: the notebook's own words to favour
+   * (page-words.ts), and the word list that words outside it are read again
+   * against (sent to the worker when its `version` is new to it).
    */
-  async readPage(strokes: readonly Stroke[], keep = false): Promise<PageReading> {
+  async readPage(
+    strokes: readonly Stroke[],
+    keep = false,
+    context: ReadingContext = {},
+  ): Promise<PageReading> {
     await this.model();
     const client = this.client;
     if (!client) throw new Error("the recogniser stopped");
     try {
-      return await client.readPage(inkForReading(strokes), true, keep);
+      await this.sendLexicon(client, context.lexicon ?? null);
+      return await client.readPage(inkForReading(strokes), true, keep, {
+        words: context.words,
+        reread: context.lexicon !== undefined ? context.lexicon !== null : false,
+      });
     } catch (error) {
       this.dispose();
       throw error;
     }
+  }
+
+  private async sendLexicon(
+    client: HwrWorkerClient,
+    lexicon: WordListSource | null,
+  ): Promise<void> {
+    if (!lexicon || this.lexiconVersion === lexicon.version) return;
+    await client.setLexicon(lexicon.words());
+    this.lexiconVersion = lexicon.version;
   }
 
   /**
@@ -156,20 +193,25 @@ export class HandwritingReader {
   async suggest(
     reading: number,
     items: SuggestItem[],
-    lexicon: { version: number; words: () => string[] },
+    lexicon: WordListSource,
   ): Promise<SuggestResult[] | null> {
     await this.model();
     const client = this.client;
     if (!client) throw new Error("the recogniser stopped");
-    if (this.lexiconVersion !== lexicon.version) {
-      await client.setLexicon(lexicon.words());
-      this.lexiconVersion = lexicon.version;
-    }
+    await this.sendLexicon(client, lexicon);
     return client.suggest(reading, items);
   }
 
-  /** Read groups of strokes, each as one line (words, for the bracket test). */
-  async readGroups(groups: readonly (readonly PageInk[])[]): Promise<LineReading[]> {
+  /**
+   * Read groups of strokes, each as one line (words, for the bracket test).
+   * With `chars`, each reading also gives its characters, their strokes and
+   * runner-ups (a calculation note's doubts). With `math`, each is read as
+   * maths (a calculation note's "=" says so).
+   */
+  async readGroups(
+    groups: readonly (readonly PageInk[])[],
+    options: { chars?: boolean; math?: boolean } = {},
+  ): Promise<LineReading[]> {
     await this.model();
     const client = this.client;
     if (!client) throw new Error("the recogniser stopped");
@@ -177,6 +219,8 @@ export class HandwritingReader {
       return await client.readLines(
         groups.map((group) => [...group]),
         true,
+        options.chars === true,
+        options.math === true,
       );
     } catch (error) {
       this.dispose();

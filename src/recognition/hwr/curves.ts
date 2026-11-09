@@ -28,6 +28,12 @@ export interface CurveInput {
   tol: number;
   /** Only "raw" (the rows as they are) is ported. */
   encoding: "raw";
+  /**
+   * "delayed": small strokes written late (i-dots, t-bars, accents) are moved
+   * next to the stroke they belong to before the network reads the line
+   * (`orderCurves`). Absent: time order, as Grape 2.0 was trained.
+   */
+  order?: "delayed";
 }
 
 type Vec = [number, number, number];
@@ -316,6 +322,178 @@ export function networkInput(
   features: Float32Array,
   frames: number,
 ): { features: Float32Array; frames: number } {
-  if (!input) return { features, frames };
-  return curvesFromFeatures(features, frames, input.tol, inputs);
+  const line = networkFrames(input, inputs, features, frames, null);
+  return { features: line.features, frames: line.frames };
+}
+
+/**
+ * {@link networkInput}, and for each network frame the index of the stroke
+ * it came from: `frameStroke` as given for a model that reads points, the
+ * curves' own strokes for one that reads curves.
+ */
+export function networkFrames(
+  input: CurveInput | undefined,
+  inputs: number,
+  features: Float32Array,
+  frames: number,
+  frameStroke: Int32Array | null,
+): { features: Float32Array; frames: number; frameStroke: Int32Array | null } {
+  if (!input) return { features, frames, frameStroke };
+  let curves = curvesFromFeatures(features, frames, input.tol, inputs);
+  if (input.order === "delayed") curves = orderCurves(curves, inputs);
+  return { features: curves.features, frames: curves.frames, frameStroke: curves.curveStroke };
+}
+
+/** The core zone's height in normalised units (htr.CORE_UNITS). */
+const CORE = 0.4;
+/** A stroke is small when its box is at most this wide and tall, in cores. */
+const SMALL_W = 1.5;
+const SMALL_H = 0.6;
+/** ... and delayed when its centre is this many cores left of everything before it. */
+const BACK = 0.5;
+
+interface CurveRun {
+  /** First and one-past-last pen-down row. */
+  a: number;
+  b: number;
+  sx: number;
+  sy: number;
+  st: number;
+  ex: number;
+  ey: number;
+  et: number;
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  /** The stroke index the run's rows carry. */
+  stroke: number;
+}
+
+/**
+ * Delayed strokes put back next to their letter, on raw curves: a port of
+ * research/handwriting-rig/sym_order.py `order`, in float64 and in its order
+ * of additions. A small stroke (box at most SMALL_W × SMALL_H cores) whose
+ * centre lies more than BACK cores left of the rightmost point before it is
+ * inserted right after the last stroke, in the order so far, whose box starts
+ * left of that centre. Pen-up rows are rebuilt between the new neighbours;
+ * their time is floored at 0. A line where nothing moves is returned as is.
+ */
+export function orderCurves(c: LineCurves, channels = CURVE_RAW): LineCurves {
+  const f = c.features;
+  const runs: CurveRun[] = [];
+  let x = 0;
+  let y = 0;
+  let t = 0;
+  let cur: CurveRun | null = null;
+  const close = (): void => {
+    if (!cur) return;
+    cur.ex = x;
+    cur.ey = y;
+    cur.et = t;
+    runs.push(cur);
+  };
+  const open = (r: number): CurveRun => ({
+    a: r,
+    b: r,
+    sx: x,
+    sy: y,
+    st: t,
+    ex: 0,
+    ey: 0,
+    et: 0,
+    x0: 0,
+    x1: 0,
+    y0: 0,
+    y1: 0,
+    stroke: c.curveStroke[r] ?? 0,
+  });
+  for (let r = 0; r < c.frames; r++) {
+    const o = r * channels;
+    if (f[o + 9] > 0.5) {
+      close();
+      x += f[o];
+      y += f[o + 1];
+      t += f[o + 6];
+      cur = open(r + 1);
+      cur.stroke = c.curveStroke[r];
+      continue;
+    }
+    if (!cur) cur = open(r);
+    cur.b = r + 1;
+    x += f[o];
+    y += f[o + 1];
+    t = t + f[o + 6] + f[o + 7] + f[o + 8];
+  }
+  close();
+  if (runs.length < 2) return c;
+  for (const s of runs) {
+    let px = s.sx;
+    let py = s.sy;
+    let x0 = px,
+      x1 = px,
+      y0 = py,
+      y1 = py;
+    for (let r = s.a; r < s.b; r++) {
+      const o = r * channels;
+      const qx = px + f[o];
+      const qy = py + f[o + 1];
+      for (const [vx, vy] of [
+        [px + f[o + 2], py + f[o + 3]],
+        [qx + f[o + 4], qy + f[o + 5]],
+        [qx, qy],
+      ]) {
+        if (vx < x0) x0 = vx;
+        if (vx > x1) x1 = vx;
+        if (vy < y0) y0 = vy;
+        if (vy > y1) y1 = vy;
+      }
+      px = qx;
+      py = qy;
+    }
+    s.x0 = x0;
+    s.x1 = x1;
+    s.y0 = y0;
+    s.y1 = y1;
+  }
+  const placed: number[] = [];
+  let right = -Infinity;
+  let moved = 0;
+  runs.forEach((s, k) => {
+    const xc = 0.5 * (s.x0 + s.x1);
+    const small = s.x1 - s.x0 <= SMALL_W * CORE && s.y1 - s.y0 <= SMALL_H * CORE;
+    if (placed.length > 0 && small && xc < right - BACK * CORE) {
+      let j = -1;
+      for (let i = 0; i < placed.length; i++) if (runs[placed[i]].x0 <= xc) j = i;
+      if (j !== placed.length - 1) moved++;
+      placed.splice(j + 1, 0, k);
+    } else {
+      placed.push(k);
+    }
+    if (s.x1 > right) right = s.x1;
+  });
+  if (moved === 0) return c;
+  const rows: number[] = [];
+  const src: number[] = [];
+  let prev: CurveRun | null = null;
+  for (const k of placed) {
+    const s = runs[k];
+    if (prev) {
+      const d0 = s.sx - prev.ex;
+      const d1 = s.sy - prev.ey;
+      rows.push(d0, d1, d0 / 3, d1 / 3, -d0 / 3, -d1 / 3, Math.max(0, s.st - prev.et), 0, 0, 1);
+      src.push(s.stroke);
+    }
+    for (let r = s.a; r < s.b; r++) {
+      for (let q = 0; q < CURVE_RAW; q++) rows.push(f[r * channels + q]);
+      src.push(c.curveStroke[r]);
+    }
+    prev = s;
+  }
+  const n = src.length;
+  const features = new Float32Array(n * channels);
+  for (let r = 0; r < n; r++) {
+    for (let q = 0; q < CURVE_RAW; q++) features[r * channels + q] = rows[r * CURVE_RAW + q];
+  }
+  return { features, frames: n, curveStroke: Int32Array.from(src) };
 }

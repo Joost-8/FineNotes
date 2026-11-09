@@ -280,7 +280,8 @@ import {
   renameLinkTargets,
 } from "../model/links";
 import { LinkSuggestModal } from "./link-modal";
-import { inkForReading, readingText } from "./handwriting";
+import { type ReadingContext, inkForReading, readingText } from "./handwriting";
+import { pageWords } from "../recognition/hwr/page-words";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
@@ -725,7 +726,17 @@ export class InkView extends TextFileView {
         !this.isProtected(),
       surface: () => this.surface,
       page: (pageId) => this.doc.pages.find((p) => p.id === pageId) ?? null,
+      openGraph: () => this.calculatorOnLine(null),
       learning: () => plugin.learningHost(),
+      record: async (pageId, strokes, read, text, kind) => {
+        const note = this.file?.path;
+        if (!note) return;
+        await plugin.wordCheck.record(
+          { note, pageId, word: { text: read, strokeIds: strokes.map((s) => s.id) }, strokes },
+          kind,
+          text,
+        );
+      },
     });
   }
 
@@ -1942,6 +1953,45 @@ export class InkView extends TextFileView {
     return this.file ? stripInkSuffix(this.file.basename) : "";
   }
 
+  /**
+   * What a page of this notebook is read with on the device: the notebook's
+   * own words (its title, and its other pages as read or transcribed,
+   * page-words.ts) and the word list (EXP-PCONFIRM). Never throws: without
+   * either, the page is read as before.
+   */
+  private async readingContext(page: Page): Promise<ReadingContext> {
+    const context: ReadingContext = {};
+    try {
+      await this.plugin.wordCheck.load();
+      context.lexicon = this.plugin.wordCheck.lexicon();
+    } catch {
+      // No word list: nothing is read again.
+    }
+    try {
+      const doc = this.doc;
+      const key = pageKeys(doc.pages)[doc.pages.indexOf(page)] ?? page.id;
+      const title = this.notebookTitle();
+      const notes = [this.noteBody, ...(await this.transcriptFiles(title))];
+      context.words = pageWords(title, notes, key);
+    } catch {
+      // No page words: the page is read on its own.
+    }
+    return context;
+  }
+
+  /** The transcript files kept beside this notebook (`Transcripts/<title>.transcript.md`). */
+  private async transcriptFiles(title: string): Promise<string[]> {
+    const dir = this.file?.parent?.path ?? "";
+    if (!title) return [];
+    const adapter = this.app.vault.adapter;
+    const out: string[] = [];
+    for (const rel of [`Transcripts/${title}.transcript.md`, `${title}.transcript.md`]) {
+      const path = normalizePath(dir && dir !== "/" ? `${dir}/${rel}` : rel);
+      if (await adapter.exists(path)) out.push(await adapter.read(path));
+    }
+    return out;
+  }
+
   /** Ask, in the layout last chosen: a window, or the sidebar beside the page. */
   private openAsk(): void {
     if (this.isDamaged()) return;
@@ -2736,7 +2786,11 @@ export class InkView extends TextFileView {
       try {
         // TODO(#46 phase 4): a board is read by area, around what changed;
         // its whole page would make every reading slower as it fills.
-        reading = await this.plugin.handwriting.readPage(step.page.strokes, this.wordsChecked);
+        reading = await this.plugin.handwriting.readPage(
+          step.page.strokes,
+          this.wordsChecked,
+          await this.readingContext(step.page),
+        );
       } catch {
         // An error or a timeout: skip this page until it changes, and go on.
         guard.fail(mark);
@@ -2818,7 +2872,11 @@ export class InkView extends TextFileView {
     }
     this.deviceBusy = true;
     try {
-      const reading = await this.plugin.handwriting.readPage(page.strokes, true);
+      const reading = await this.plugin.handwriting.readPage(
+        page.strokes,
+        true,
+        await this.readingContext(page),
+      );
       if (this.surface === surface && surface.document.pages.includes(page)) {
         await this.checkWords(page, hash, reading);
       }
@@ -3046,7 +3104,11 @@ export class InkView extends TextFileView {
         entry = this.keepReading(
           page,
           hash,
-          await this.plugin.handwriting.readPage(page.strokes, true),
+          await this.plugin.handwriting.readPage(
+            page.strokes,
+            true,
+            await this.readingContext(page),
+          ),
         );
         fresh = true;
       }
@@ -3478,6 +3540,7 @@ export class InkView extends TextFileView {
           }
         },
         onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
+        onHistoryStep: (command, redo) => this.calcNotes.historyStep(command, redo),
         onPenShape: () => {
           if (this.surface) this.plugin.offerShapeHint(this.surface);
         },
@@ -3955,7 +4018,10 @@ export class InkView extends TextFileView {
       single: this.isSinglePage,
       board: this.isBoard,
       scrollDirection: () => scrollDirectionOf(this.doc),
-      setScrollDirection: (direction) => apply(new SetScrollDirection(direction)),
+      setScrollDirection: (direction) => {
+        apply(new SetScrollDirection(direction));
+        if (!this.isBoard) this.plugin.rememberScrollDirection(direction);
+      },
       joinedPages: () => joinedPagesOf(this.surface?.document ?? this.doc),
       setJoinedPages: (on) => apply(new SetJoinedPages(on)),
       openPluginSettings: () => this.plugin.openSettingsTab(),
@@ -4140,7 +4206,11 @@ export class InkView extends TextFileView {
     if (kept && kept.hash === hash) lines = kept.readLines;
     else if (this.settings.handwritingOnDevice !== false && page.strokes.length > 0) {
       try {
-        const reading = await this.plugin.handwriting.readPage(page.strokes, true);
+        const reading = await this.plugin.handwriting.readPage(
+          page.strokes,
+          true,
+          await this.readingContext(page),
+        );
         if (this.surface !== surface || !surface.document.pages.includes(page)) return;
         lines = this.keepReading(page, hash, reading).readLines;
       } catch {
@@ -5001,7 +5071,11 @@ export class InkView extends TextFileView {
           this.deviceBusy = true;
           let reading: PageReading;
           try {
-            reading = await this.plugin.handwriting.readPage(page.strokes, true);
+            reading = await this.plugin.handwriting.readPage(
+              page.strokes,
+              true,
+              await this.readingContext(page),
+            );
           } finally {
             this.deviceBusy = false;
           }

@@ -10,6 +10,46 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **A recognised sum glows, and a tap opens its maths card** (FineNotes#178).
+  When a line ending in "=" is read as maths, its ink glows in the accent
+  instead of a chip appearing over it; a part Grape was unsure of gets a
+  dotted line. A tap on the glow opens a card with the reading typeset (tap
+  it to fix the reading), the answer as a fraction or a decimal, and Write,
+  which writes a fraction stacked over a bar. Along its foot: turn the sum
+  into a typed equation, copy its LaTeX, or not maths.
+- **A doubtful character offers what else it may be** (FineNotes#178). Each
+  character Grape was unsure of, or that its word model changed, is dotted on
+  the page and in the card; a tap shows Grape's other guesses ("2 · Z · z")
+  and ✎ to type it. A pick works the sum out again and is kept as a
+  correction for Learn my handwriting, as is a reading accepted with Write or
+  a typed equation. A tap outside the card closes it and the sum keeps
+  glowing; undoing the answer or the equation brings the glow back.
+- **Powers, log bases, mod and brackets with a letter in calculation notes**
+  (FineNotes#178). A small digit raised after a number is its power
+  ("9²" is 81); a logarithm with its base written low ("log₂ 8") uses that
+  base; "17 mod 5" works however the spaces were read; and a sum in one
+  letter is expanded ("(2x+4)(4x+1)" offers 8x²+18x+4, written with its
+  powers raised).
+- **Solve an equation by asking for its letter** (FineNotes#178). Write
+  "x =" under an equation in x (or after it on the same line) and the card
+  offers its solutions ("2x+3=7" gives x = 2; "x²=9" gives x = −3 or 3).
+- **The maths card's corrections are clearer** (FineNotes#178). Picking the
+  character that was read confirms it and takes its dotted mark away; a
+  short line says what the dotted characters are ("Not sure:") and what to
+  pick ("Which did you write?"). Typing the reading opens a dialog that rises
+  above the keyboard and shows the sum typeset as it is typed.
+
+### Fixed
+
+- **Calculation notes read a raised dot as times, and fractions**
+  (FineNotes#178). "3·3 =" offered nothing, because the dot was read as a
+  decimal point; a fraction such as 3×2 over 7 was read as 3×2. A dot
+  halfway up the digits is now times and a dot on the baseline stays a
+  decimal point; a bar with a number over and under it is a fraction, and the
+  answer goes level with the "=". A dash with a dot over and under it is ÷.
+  A crossed 7 beside the dot no longer hides it, a number read as look-alike
+  letters next to it ("Zo" for 20) counts as that number, and the first
+  stroke of a × is no longer taken for a power.
 - **Tips.** The lightbulb on Home opens moving pictures of what is easy to
   miss, ordered by what helps most: pen gestures, cover tape, tapping your
   writing to hear it, and more. The first two pen gestures can be tried right

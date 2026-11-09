@@ -92,11 +92,12 @@ An area's agent edits only these files plus src/i18n/en/<area>.ts.
 - src/view/template-ui.ts
 - src/view/welcome-modal.ts
 
-## calculator (8)
+## calculator (9)
 
 - src/model/calculator-keys.ts
 - src/model/calculator.ts
-- src/view/calc-chip.ts
+- src/view/calc-card.ts
+- src/view/calc-glow.ts
 - src/view/calculator-basic.ts
 - src/view/calculator-graph.ts
 - src/view/calculator-popover.ts

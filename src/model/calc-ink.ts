@@ -10,7 +10,7 @@
  * PURE: no DOM. Page px throughout.
  */
 
-import { type LineBlock, assignLines, lineOfBounds } from "../canvas/writing-lines";
+import { type LineBlock, type LineRef, assignLines, lineOfBounds } from "../canvas/writing-lines";
 import { type Bounds, POINT_STRIDE, type Stroke, strokeBounds } from "./document";
 
 /** An "=" drawn as two strokes, and the box around both. */
@@ -31,7 +31,8 @@ export function isSumInk(stroke: Stroke): boolean {
   return stroke.tool === "pen" && !stroke.shape;
 }
 
-function pathLength(stroke: Stroke): number {
+/** A stroke's length along its path. */
+export function pathLength(stroke: Stroke): number {
   const p = stroke.pts;
   let length = 0;
   for (let i = POINT_STRIDE; i + 1 < p.length; i += POINT_STRIDE) {
@@ -44,10 +45,29 @@ function pathLength(stroke: Stroke): number {
  * A dash: flat, nearly straight, longer than a dot. The path may be half as
  * long again as the dash is wide: Pencil ink has a hook where it lands.
  */
-function isDash(stroke: Stroke, box: Bounds): boolean {
+export function isDash(stroke: Stroke, box: Bounds): boolean {
   const w = box.maxX - box.minX;
   const h = box.maxY - box.minY;
   return w > 1 && h <= Math.max(0.4 * w, 1.5) && pathLength(stroke) <= 1.5 * w;
+}
+
+function median(values: number[]): number {
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/**
+ * The height of a sum's digits: the median of its tall strokes (at least
+ * three quarters of the second tallest, so one long stroke does not set it).
+ * 0 when nothing has height.
+ */
+export function digitHeight(boxes: readonly Bounds[]): number {
+  const heights = boxes.map((b) => b.maxY - b.minY).filter((h) => h > 0);
+  if (heights.length === 0) return 0;
+  const sorted = [...heights].sort((a, b) => b - a);
+  const tallest = sorted[Math.min(1, sorted.length - 1)];
+  return median(heights.filter((h) => h >= 0.75 * tallest));
 }
 
 /**
@@ -59,20 +79,36 @@ function isDash(stroke: Stroke, box: Bounds): boolean {
 export function equalsAtEnd(strokes: readonly Stroke[]): EqualsSign | null {
   const ink = strokes.filter(isSumInk);
   if (ink.length < 2) return null;
-  const a = ink[ink.length - 2];
-  const b = ink[ink.length - 1];
+  return equalsOf(ink[ink.length - 2], ink[ink.length - 1]);
+}
+
+/**
+ * A dash in an "=" written in passing: it may lean more than a lone one
+ * (measured on real lines). Only for {@link equalsAfter}, whose line must then
+ * be read with exactly one "=" in it, so a stray pair costs one reading.
+ */
+function isLooseDash(stroke: Stroke, box: Bounds): boolean {
+  const w = box.maxX - box.minX;
+  const h = box.maxY - box.minY;
+  return w > 1 && h <= Math.max(0.65 * w, 1.5) && pathLength(stroke) <= 1.6 * w;
+}
+
+/** The "=" two strokes make, or null (see {@link equalsAtEnd}). */
+function equalsOf(a: Stroke, b: Stroke, loose = false): EqualsSign | null {
   const ba = strokeBounds(a);
   const bb = strokeBounds(b);
-  if (!ba || !bb || !isDash(a, ba) || !isDash(b, bb)) return null;
+  if (!ba || !bb) return null;
+  const dash = loose ? isLooseDash : isDash;
+  if (!dash(a, ba) || !dash(b, bb)) return null;
   const wa = ba.maxX - ba.minX;
   const wb = bb.maxX - bb.minX;
-  if (Math.max(wa, wb) > 2.2 * Math.min(wa, wb)) return null;
+  if (Math.max(wa, wb) > (loose ? 3.3 : 2.2) * Math.min(wa, wb)) return null;
   const overlap = Math.min(ba.maxX, bb.maxX) - Math.max(ba.minX, bb.minX);
   if (overlap < 0.5 * Math.min(wa, wb)) return null;
   const mean = (wa + wb) / 2;
   const gap = Math.abs((ba.minY + ba.maxY) / 2 - (bb.minY + bb.maxY) / 2);
   const tallest = Math.max(ba.maxY - ba.minY, bb.maxY - bb.minY);
-  if (gap < 0.12 * mean || gap > 1.0 * mean || gap <= tallest * 0.8) return null;
+  if (gap < 0.12 * mean || gap > (loose ? 1.8 : 1.0) * mean || gap <= tallest * 0.8) return null;
   const top = (ba.minY + ba.maxY) / 2 <= (bb.minY + bb.maxY) / 2 ? a : b;
   return {
     strokes: top === a ? [a, b] : [b, a],
@@ -83,6 +119,79 @@ export function equalsAtEnd(strokes: readonly Stroke[]): EqualsSign | null {
       maxY: Math.max(ba.maxY, bb.maxY),
     },
   };
+}
+
+/** How many strokes may follow an "=" for the line still to count as that "="'s. */
+const MAX_AFTER_EQUALS = 40;
+
+/** An "=" with ink written after it on its line ("x + 5 = 7"), and that ink. */
+export interface EqualsWithRest {
+  eq: EqualsSign;
+  /** The strokes written after the "=", in the order they were written. */
+  after: Stroke[];
+}
+
+/**
+ * The latest "=" the page's last ink follows on one line: every stroke since
+ * it lies right of it, on its line, with no gap wider than the sum's own
+ * (as in {@link sumStrokes}). Null when the last ink is the "=" itself, or
+ * belongs to something else.
+ */
+export function equalsAfter(
+  strokes: readonly Stroke[],
+  blocks: readonly LineBlock[],
+): EqualsWithRest | null {
+  const ink = strokes.filter(isSumInk);
+  const stop = Math.max(1, ink.length - 1 - MAX_AFTER_EQUALS);
+  for (let i = ink.length - 2; i >= stop; i--) {
+    const eq = equalsOf(ink[i - 1], ink[i], true);
+    if (!eq) continue;
+    const after = ink.slice(i + 1);
+    return followsOnLine(eq, after, blocks) ? { eq, after } : null;
+  }
+  return null;
+}
+
+/** Whether all of `after` lies right of `eq`, on its line, one stretch of ink. */
+function followsOnLine(
+  eq: EqualsSign,
+  after: readonly Stroke[],
+  blocks: readonly LineBlock[],
+): boolean {
+  const boxes = after.map((s) => strokeBounds(s));
+  if (boxes.some((b) => b === null)) return false;
+  const known = boxes as Bounds[];
+  const eqW = eq.bounds.maxX - eq.bounds.minX;
+  const eqRef = blocks.length > 0 ? lineOfBounds(blocks, eq.bounds) : null;
+  let gapLimit = eqW * 3;
+  if (eqRef) {
+    const refs = assignLines(blocks, known);
+    const pitch = blocks[eqRef.block].pitch;
+    const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
+    const same = (r: LineRef | null, b: Bounds): boolean =>
+      (r !== null && r.block === eqRef.block && r.line === eqRef.line) || levelWith(b, cy, pitch);
+    if (known.some((b, i) => !same(refs[i], b))) return false;
+    gapLimit = Math.max(pitch * 2, gapLimit);
+  } else {
+    const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
+    const reach = Math.max(eqW * 1.2, (eq.bounds.maxY - eq.bounds.minY) * 2);
+    if (known.some((b) => Math.abs((b.minY + b.maxY) / 2 - cy) > reach)) return false;
+  }
+  if (known.some((b) => b.minX < eq.bounds.maxX - eqW * 0.5)) return false;
+  let right = eq.bounds.maxX;
+  for (const box of [...known].sort((p, q) => p.minX - q.minX)) {
+    if (box.minX > right + gapLimit) return false;
+    right = Math.max(right, box.maxX);
+  }
+  return true;
+}
+
+/** Share of a ruled line's pitch ink may sit from the "=" and still be on its line (a raised power does). */
+const LEVEL_SHARE = 0.8;
+
+/** Whether `box` has its middle within reach of `cy` on paper ruled at `pitch`. */
+function levelWith(box: Bounds | null, cy: number, pitch: number): boolean {
+  return box !== null && Math.abs((box.minY + box.maxY) / 2 - cy) <= LEVEL_SHARE * pitch;
 }
 
 /**
@@ -108,8 +217,15 @@ export function sumStrokes(
       blocks,
       boxes.map((b) => b ?? { minX: 0, minY: -1e9, maxX: 0, maxY: -1e9 }),
     );
-    onLine = refs.map((r) => r !== null && r.block === eqRef.block && r.line === eqRef.line);
-    gapLimit = Math.max(blocks[eqRef.block].pitch * 2, eqW * 3);
+    // Handwriting crosses the rules: ink level with the "=" is on its line too.
+    const pitch = blocks[eqRef.block].pitch;
+    const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
+    onLine = refs.map(
+      (r, i) =>
+        (r !== null && r.block === eqRef.block && r.line === eqRef.line) ||
+        levelWith(boxes[i], cy, pitch),
+    );
+    gapLimit = Math.max(pitch * 2, eqW * 3);
   } else {
     const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
     const reach = Math.max(eqW * 1.2, (eq.bounds.maxY - eq.bounds.minY) * 2);
@@ -131,16 +247,67 @@ export function sumStrokes(
     kept.push(c.stroke);
     left = Math.min(left, c.box.minX);
   }
+  pullFractionSides(ink, boxes, kept, { minX: left, maxX: eq.bounds.minX }, eqW * 1.6);
   // In the page's order (the order they were written in), then the "=".
   const order = new Map(strokes.map((s, i) => [s.id, i]));
   kept.sort((p, q) => (order.get(p.id) ?? 0) - (order.get(q.id) ?? 0));
   return [...kept, ...eq.strokes];
 }
 
-function median(values: number[]): number {
-  const s = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+/**
+ * A fraction may lie partly off the sum's line: on ruled paper its bar sits
+ * on the rule and its denominator under it; on blank paper a tall numerator
+ * may reach beyond the band around the "=". So every dash at least half a
+ * digit wide, between the sum's left end and the "=" and within a digit of
+ * its ink, is a bar when there is ink just over it and just under it
+ * (inside its width, within a digit): the bar and both sides are taken, so
+ * `calc-layout.ts` sees the whole fraction. A minus has nothing over and
+ * under it and takes nothing from the lines around it. Adds to `kept`.
+ */
+function pullFractionSides(
+  ink: readonly Stroke[],
+  boxes: readonly (Bounds | null)[],
+  kept: Stroke[],
+  span: { minX: number; maxX: number },
+  fallbackDigit: number,
+): void {
+  const keptIds = new Set(kept.map((s) => s.id));
+  const keptBoxes = kept.flatMap((s) => {
+    const b = strokeBounds(s);
+    return b ? [{ s, b }] : [];
+  });
+  // With only the bar on the line (both sides beyond the band), the "=" gives the size.
+  const digit =
+    digitHeight(keptBoxes.filter(({ s, b }) => !isDash(s, b)).map(({ b }) => b)) || fallbackDigit;
+  if (digit <= 0 || keptBoxes.length === 0) return;
+  const top = Math.min(...keptBoxes.map(({ b }) => b.minY)) - digit;
+  const bottom = Math.max(...keptBoxes.map(({ b }) => b.maxY)) + digit;
+  ink.forEach((bar, j) => {
+    const box = boxes[j];
+    if (!box || !isDash(bar, box) || box.maxX - box.minX < 0.5 * digit) return;
+    const w = box.maxX - box.minX;
+    const y = (box.minY + box.maxY) / 2;
+    const cx = (box.minX + box.maxX) / 2;
+    if (cx < span.minX - digit || cx > span.maxX || y < top || y > bottom) return;
+    const over: Stroke[] = [];
+    const under: Stroke[] = [];
+    ink.forEach((s, i) => {
+      const b = boxes[i];
+      if (!b || s === bar) return;
+      const x = (b.minX + b.maxX) / 2;
+      if (x < box.minX - 0.1 * w || x > box.maxX + 0.1 * w) return;
+      if (b.maxY - b.minY > 2.5 * digit) return;
+      const mid = (b.minY + b.maxY) / 2;
+      if (mid < y && b.maxY <= y + 0.2 * digit && b.maxY >= y - digit) over.push(s);
+      else if (mid > y && b.minY >= y - 0.2 * digit && b.minY <= y + digit) under.push(s);
+    });
+    if (over.length === 0 || under.length === 0) return;
+    for (const s of [bar, ...over, ...under]) {
+      if (keptIds.has(s.id)) continue;
+      keptIds.add(s.id);
+      kept.push(s);
+    }
+  });
 }
 
 /** The space between the "=" and the answer, in digit heights (as a hand leaves it). */
@@ -165,6 +332,12 @@ export function answerPlace(sum: readonly Stroke[], eq: EqualsSign): AnswerPlace
     const tall = boxes.filter((b) => b.maxY - b.minY >= 0.75 * tallest);
     const height = median(tall.map((b) => b.maxY - b.minY));
     if (height > 0) {
+      // Ink on two levels (a fraction): the answer sits level with the "=".
+      const bottoms = tall.map((b) => b.maxY);
+      if (Math.max(...bottoms) - Math.min(...bottoms) > height) {
+        const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
+        return { x: eq.bounds.maxX + height * ANSWER_GAP, baseline: cy + height / 2, height };
+      }
       return {
         x: eq.bounds.maxX + height * ANSWER_GAP,
         baseline: median(tall.map((b) => b.maxY)),
@@ -175,4 +348,30 @@ export function answerPlace(sum: readonly Stroke[], eq: EqualsSign): AnswerPlace
   const height = Math.max(eqW * 1.6, 4);
   const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
   return { x: eq.bounds.maxX + height * ANSWER_GAP, baseline: cy + height * 0.45, height };
+}
+
+/** Where the answer to a whole equation goes: after the line's last ink, a little apart. */
+export function answerPlaceAfter(place: AnswerPlace, after: readonly Stroke[]): AnswerPlace {
+  const right = Math.max(...after.map((s) => strokeBounds(s)?.maxX ?? -Infinity));
+  return Number.isFinite(right) ? { ...place, x: right + place.height * 1.4 } : place;
+}
+
+/** Room kept between a graph and the page's edge, page px. */
+const GRAPH_MARGIN = 12;
+
+/**
+ * Where a graph of a written function goes: under its line, level with the
+ * line's left end, and inside the page.
+ */
+export function graphPlaceUnder(
+  line: Bounds,
+  size: { w: number; h: number },
+  page: { width: number; height: number },
+): { x: number; y: number } {
+  const inside = (value: number, room: number): number =>
+    Math.max(GRAPH_MARGIN, Math.min(value, room - GRAPH_MARGIN));
+  return {
+    x: inside(line.minX, page.width - size.w),
+    y: inside(line.maxY + GRAPH_MARGIN, page.height - size.h),
+  };
 }
