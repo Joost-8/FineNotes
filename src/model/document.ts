@@ -847,6 +847,12 @@ export interface Page {
    * to bottom (FineNotes#20). Absent when there are none.
    */
   sections?: PageSection[];
+  /**
+   * Chapters with no page of their own that stand just before this page in
+   * the contents, or after it with `after` (discussion #185). Absent when
+   * there are none.
+   */
+  chapters?: PageChapter[];
   /** Ink on this page that links somewhere (FineNotes#20). Absent when there is none. */
   links?: InkLink[];
   /** Handwritten lines made checklist items (2.5). Absent when there are none. */
@@ -976,6 +982,20 @@ export interface PageSection {
 
 /** A contents entry's depth: 1 a chapter, 2 a section of it, 3 a part of that. */
 export type ContentsLevel = 1 | 2 | 3;
+
+/**
+ * A chapter in the contents that is neither a page's title nor a heading on a
+ * page: only a name that the entries after it can sit under.
+ */
+export interface PageChapter {
+  /** `c<N>`, from the same series as section ids. */
+  id: string;
+  title: string;
+  /** Absent is 1. */
+  level?: ContentsLevel;
+  /** After the page's own entries: the end of the notebook has no next page to stand before. */
+  after?: true;
+}
 
 /** An audio recording made while the note was open (0.5). */
 export interface Recording {

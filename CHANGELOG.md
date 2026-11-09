@@ -21,6 +21,12 @@ extracted from the matching section of this file by `release.yml`.
   An entry's ⌄ menu has Indent and Outdent; its own sections move with it.
   The order never changes: the contents still follow the pages. A long
   contents, such as a textbook's, opens with its chapters folded.
+- **Chapters of their own.** The folder-plus under the Contents tab makes a
+  chapter that is only a name, standing before the page you are on, so
+  pages can be grouped without giving a page up to the chapter's title.
+- **Drag entries in the contents.** Press an entry and move it (hold first
+  with a finger): its pages and everything inside it go with it, in one
+  undo. Moving sideways while dragging sets how deep it sits.
 
 ## [2.8.3] - 2026-11-06
 

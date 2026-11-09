@@ -78,7 +78,7 @@ import {
   levelShift,
   pageContentsEntries,
 } from "../model/contents";
-import type { PageSection } from "../model/document";
+import type { ContentsLevel, PageChapter, PageSection } from "../model/document";
 import type { BackdropPainter, ImagePainter } from "../canvas/renderer";
 import { renderPageThumbnail } from "../canvas/renderer";
 import { type PageTexts, furnitureText } from "../model/furniture";
@@ -94,6 +94,7 @@ import {
   springCurve,
 } from "./motion";
 import { EASE_OUT_FALLBACK, OVERVIEW_FLIGHT, springMs } from "./springs";
+import { ContentsDrag } from "./contents-drag";
 import { PageDrag } from "./page-drag";
 import { rangeOf } from "./page-drag-model";
 
@@ -143,6 +144,12 @@ export interface PageSidebarCallbacks {
    * `contentsEntries`), from its ⌄ menu (discussion #185).
    */
   onContentsLevel?: (at: number, delta: 1 | -1) => void;
+  /** Contents entry `at` was dragged to gap `gap` at `level` (`model/contents-drag.ts`). */
+  onMoveContents?: (at: number, gap: number, level: ContentsLevel) => void;
+  /** A new chapter of its own, standing before page `index`. */
+  onNewChapter?: (index: number) => void;
+  /** The ⌄ menu of a page-less chapter standing by page `index`. */
+  onChapterAction?: (action: SectionAction, index: number, chapter: PageChapter) => void;
   /** `anchor` is the thumbnail's "…" button, for anything that opens a popover. */
   onPageAction: (action: PageAction, index: number, anchor: HTMLElement) => void;
   /** The "Add page" tile was tapped. */
@@ -314,6 +321,7 @@ export class PageSidebar {
   private readonly contentsEmpty: HTMLElement;
   private readonly contentsAdd: HTMLButtonElement;
   private readonly contentsAddLabel: HTMLElement;
+  private readonly contentsChapter: HTMLButtonElement;
   /**
    * The contents as last rendered, one row each, with the entries each sits
    * inside (outermost first) and its fold key when it holds any.
@@ -337,6 +345,7 @@ export class PageSidebar {
   private readonly addTile: HTMLElement;
   private thumbs: ThumbView[] = [];
   private readonly drag: PageDrag;
+  private readonly contentsDrag: ContentsDrag;
   /** The header's ⤢ / ⤡, and the overview's Select all and Select / Done. */
   private readonly expandButton: HTMLButtonElement;
   private readonly selectAllButton: HTMLButtonElement;
@@ -452,13 +461,22 @@ export class PageSidebar {
       cls: "goodobsidian-contents-empty",
       text: t("view.sidebar.contentsEmpty"),
     });
-    this.contentsAdd = this.contentsEl.createEl("button", {
+    const adders = this.contentsEl.createDiv({ cls: "goodobsidian-contents-adders" });
+    this.contentsAdd = adders.createEl("button", {
       cls: "goodobsidian-contents-add clickable-icon",
     });
     setIcon(this.contentsAdd.createSpan({ cls: "goodobsidian-contents-add-icon" }), "list-plus");
     this.contentsAddLabel = this.contentsAdd.createSpan();
     this.contentsAdd.addEventListener("click", () =>
       this.callbacks.onPageAction("contents", this.current, this.contentsAdd),
+    );
+    this.contentsChapter = adders.createEl("button", {
+      cls: "goodobsidian-contents-new clickable-icon",
+      attr: { "aria-label": t("view.contents.newChapter") },
+    });
+    setIcon(this.contentsChapter, "folder-plus");
+    this.contentsChapter.addEventListener("click", () =>
+      this.callbacks.onNewChapter?.(this.current),
     );
     this.filesEl = this.el.createDiv({ cls: "goodobsidian-pagesidebar-files" });
     this.kindSelect = this.filesEl.createEl("select", {
@@ -531,6 +549,20 @@ export class PageSidebar {
       onDrop: (indexes, gap) => this.callbacks.onMovePages?.(indexes, gap),
       onPenTap: (index, target, event) => this.tapThumb(index, target, event),
     });
+    this.contentsDrag = new ContentsDrag(this.el, this.contentsList, {
+      canDrag: () =>
+        this.open &&
+        !this.board &&
+        !this.single &&
+        this.callbacks.canEdit?.() !== false &&
+        !!this.callbacks.onMoveContents,
+      document: () => this.doc,
+      rows: () => this.contentsRows.map(({ row }) => row),
+      visibleTop: () =>
+        this.el.querySelector(".goodobsidian-pagesidebar-top")?.getBoundingClientRect().bottom ?? 0,
+      onDrop: (at, gap, level) => this.callbacks.onMoveContents?.(at, gap, level),
+      onPenTap: (at) => this.openContentsEntry(at),
+    });
 
     this.observer = new IntersectionObserver(
       (entries) => {
@@ -559,6 +591,7 @@ export class PageSidebar {
     if (open === this.open) return;
     if (!open) {
       this.drag.cancel();
+      this.contentsDrag.cancel();
       this.setOverview(false);
       this.setSelecting(false);
     }
@@ -798,6 +831,7 @@ export class PageSidebar {
     if (!this.open) return false;
     if (event.key === "Escape") {
       if (this.drag.active) this.drag.cancel();
+      if (this.contentsDrag.active) this.contentsDrag.cancel();
       else if (this.selecting) this.setSelecting(false);
       else if (this.overview) this.setOverview(false, true);
       else return false;
@@ -1084,6 +1118,7 @@ export class PageSidebar {
     this.zoom?.cancel();
     this.zoom = null;
     this.drag.destroy();
+    this.contentsDrag.destroy();
     this.observer.disconnect();
     this.el.remove();
     this.spacer.remove();
@@ -1151,6 +1186,7 @@ export class PageSidebar {
    * it. A long contents (a textbook's) starts with its chapters folded.
    */
   private renderContents(): void {
+    this.contentsDrag.cancel();
     const entries = this.doc ? contentsEntries(this.doc) : [];
     this.contentsItems = entries;
     this.contentsList.empty();
@@ -1197,6 +1233,7 @@ export class PageSidebar {
   /** What remembers an entry's fold: its page's id for a title, its own id for a heading. */
   private foldKey(entry: ContentsEntry): string {
     if (entry.section) return `s:${entry.section.id}`;
+    if (entry.chapter) return `s:${entry.chapter.id}`;
     return `p:${this.doc?.pages[entry.index]?.id ?? entry.index}`;
   }
 
@@ -1255,9 +1292,9 @@ export class PageSidebar {
         : t("view.sidebar.entryLabel", { title: entry.title, page: entry.index + 1 }),
     );
     const section = entry.section;
+    const chapter = entry.chapter;
     go.addEventListener("click", () => {
-      if (section) this.callbacks.onSelectSection?.(entry.index, section);
-      else this.callbacks.onSelectPage(entry.index);
+      if (!this.contentsDrag.consumeClick()) this.openContentsEntry(at);
     });
     // A board's page menu holds page actions it has none of; its headings keep theirs.
     if (this.board && !section) return row;
@@ -1265,10 +1302,38 @@ export class PageSidebar {
     setIcon(more, "chevron-down");
     more.setAttribute("aria-label", t("view.sidebar.entryOptions"));
     more.addEventListener("click", (event) => {
-      if (section) this.showSectionMenu(entry.index, section, at, event, more);
+      if (chapter) this.showChapterMenu(entry.index, chapter, at, event);
+      else if (section) this.showSectionMenu(entry.index, section, at, event, more);
       else this.showContentsMenu(entry.index, at, event, more);
     });
     return row;
+  }
+
+  /** Go to contents entry `at`, as a tap on it does. */
+  private openContentsEntry(at: number): void {
+    const entry = this.contentsItems[at];
+    if (!entry) return;
+    if (entry.section) this.callbacks.onSelectSection?.(entry.index, entry.section);
+    else this.callbacks.onSelectPage(entry.index);
+  }
+
+  private showChapterMenu(
+    index: number,
+    chapter: PageChapter,
+    at: number,
+    event: MouseEvent,
+  ): void {
+    const act = (action: SectionAction) => () =>
+      this.callbacks.onChapterAction?.(action, index, chapter);
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item.setTitle(t("common.rename")).setIcon("pencil").onClick(act("rename")),
+    );
+    this.addLevelItems(menu, at);
+    menu.addItem((item) =>
+      item.setTitle(t("view.contents.remove")).setIcon("list-x").onClick(act("remove")),
+    );
+    menu.showAtMouseEvent(event);
   }
 
   private showSectionMenu(
@@ -1299,6 +1364,7 @@ export class PageSidebar {
     const page = this.doc?.pages[this.current];
     this.contentsAdd.toggleClass("is-hidden", this.board || !page || page.title !== undefined);
     this.contentsAddLabel.setText(t("view.sidebar.addPageToContents", { page: this.current + 1 }));
+    this.contentsChapter.toggleClass("is-hidden", this.board || this.single || !page);
   }
 
   private showContentsMenu(

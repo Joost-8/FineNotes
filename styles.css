@@ -1552,6 +1552,58 @@ select.goodobsidian-choice-select {
   text-align: center;
 }
 
+/* The ghost of a dragged contents entry; what it carries fades in the list. */
+.goodobsidian-contents-row.is-drag-source {
+  opacity: 0.35;
+}
+
+.goodobsidian-contents-ghost {
+  position: fixed;
+  z-index: var(--layer-dragged-item, 2000);
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--gob-radius-s);
+  background: var(--background-primary);
+  box-shadow: var(--gob-shadow-float);
+  font-size: var(--font-ui-small);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.goodobsidian-contents-ghost-count {
+  flex: none;
+  color: var(--text-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Under the list: add this page, and a chapter of its own. */
+.goodobsidian-contents-adders {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.goodobsidian-pagesidebar .goodobsidian-contents-new.clickable-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-accent);
+}
+
+.goodobsidian-pagesidebar .goodobsidian-contents-new.clickable-icon.is-hidden {
+  display: none;
+}
+
 /* "Add page N to contents": the filter chip's shape, under the list. */
 .goodobsidian-pagesidebar .goodobsidian-contents-add.clickable-icon {
   display: inline-flex;

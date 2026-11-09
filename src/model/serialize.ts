@@ -30,7 +30,12 @@ import {
   SCHEMA_VERSION,
 } from "../constants";
 import { normalizeAttachmentFolders } from "./attachment-folders";
-import { normalizePageTitle, normalizeSections, readContentsLevel } from "./contents";
+import {
+  normalizeChapters,
+  normalizePageTitle,
+  normalizeSections,
+  readContentsLevel,
+} from "./contents";
 import { normalizeLinks } from "./links";
 import { normalizeTasks } from "./tasks";
 import { isStyledConnector, liveConnectors, readConnectors } from "./connectors";
@@ -60,6 +65,7 @@ import {
   type ImageElement,
   type InkDocument,
   type Page,
+  type PageChapter,
   type PageSection,
   type ContentsLevel,
   type InkLink,
@@ -192,6 +198,7 @@ interface StoredPage {
   title?: string;
   titleLevel?: ContentsLevel;
   sections?: PageSection[];
+  chapters?: PageChapter[];
   links?: InkLink[];
   tasks?: InkTask[];
   connectors?: ShapeConnector[];
@@ -362,6 +369,7 @@ function storePage(page: Page): StoredPage {
         ? page.titleLevel
         : undefined,
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
+    chapters: page.chapters && page.chapters.length > 0 ? page.chapters : undefined,
     links: page.links && page.links.length > 0 ? page.links : undefined,
     tasks: page.tasks && page.tasks.length > 0 ? page.tasks : undefined,
     connectors: storedConnectors(page),
@@ -1176,6 +1184,7 @@ function normalizePage(
     ...(readTabColor(page.tab) ? { tab: readTabColor(page.tab) } : {}),
     ...titleOf(page.title, page.titleLevel),
     ...sectionsOf(page.sections, seenSections),
+    ...chaptersOf(page.chapters, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
     ...tasksOf(page.tasks, strokes, seenTasks),
     ...connectorsIn(page.connectors, strokes, seenConnectors),
@@ -1217,6 +1226,11 @@ function tasksOf(
 }
 
 /** A page's sections, spread into the page only when it has any. */
+function chaptersOf(raw: unknown, seen: Set<string>): { chapters?: PageChapter[] } {
+  const chapters = normalizeChapters(raw, seen);
+  return chapters.length > 0 ? { chapters } : {};
+}
+
 function sectionsOf(raw: unknown, seen: Set<string>): { sections?: PageSection[] } {
   const sections = normalizeSections(raw, seen);
   return sections.length > 0 ? { sections } : {};
