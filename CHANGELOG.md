@@ -27,6 +27,16 @@ extracted from the matching section of this file by `release.yml`.
 - **Drag entries in the contents.** Press an entry and move it (hold first
   with a finger): its pages and everything inside it go with it, in one
   undo. Moving sideways while dragging sets how deep it sits.
+### Fixed
+
+- **The scanned-page reader no longer asks to be downloaded again after an
+  update or a vault sync.** Its files were looked for once, when FineNotes
+  started; if sync was still bringing them in, the download was offered and
+  the files that arrived a moment later were not used until a restart. Now
+  the folder is looked at again while pages wait, and nothing is offered
+  while part of the model is still arriving.
+- The AI menu in the tool bar scrolls when it does not fit below the bar,
+  instead of running off the screen, in full screen too.
 
 ## [2.8.3] - 2026-11-06
 
@@ -51,12 +61,6 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
-- **The scanned-page reader no longer asks to be downloaded again after an
-  update or a vault sync.** Its files were looked for once, when FineNotes
-  started; if sync was still bringing them in, the download was offered and
-  the files that arrived a moment later were not used until a restart. Now
-  the folder is looked at again while pages wait, and nothing is offered
-  while part of the model is still arriving.
 - **A page margin's lines now continue the page's** (FineNotes#164). On a
   ruled, squared or dotted page the margin takes the page's spacing and its
   lines are level with the page's, whatever the spacing; before, it kept its

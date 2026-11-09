@@ -151,6 +151,7 @@ import { type PenInk, type PenInks, penInkFor, switchPenInk, withPenInk } from "
 import {
   SWOOSH_HEIGHT,
   SWOOSH_WIDTH,
+  WIDTH_MARK_LIMIT,
   fitMarks,
   inkNeedsRim,
   sampleStroke,
@@ -4996,13 +4997,14 @@ export class Toolbar {
 
   /**
    * One control's width marks (`widthMark`): true size while the thickest
-   * fits the glyph, else shrunk together, still solid (`fitMarks`).
+   * fits its bar (`WIDTH_MARK_LIMIT`), else shrunk together, still solid
+   * (`fitMarks`).
    */
   private widthMarks(widths: readonly number[]): Map<number, SizeMark> {
     return fittedMarks(
       widths,
       widths.map((width) => this.widthMark(width)),
-      SWOOSH_HEIGHT,
+      WIDTH_MARK_LIMIT,
     );
   }
 
@@ -7136,10 +7138,8 @@ function widthButton(
 }
 
 /**
- * A stroke-width control drawn as a stroke `thickness` screen px thick, in
- * the pen's own character: tapered for the fountain pen, even for the
- * ballpoint, lifting off for the brush, a flat band for the highlighter
- * (pen-glyphs.ts).
+ * A stroke-width control drawn as a level bar `thickness` screen px thick,
+ * its ends in the pen's character (`swoosh` in pen-glyphs.ts).
  */
 function widthGlyph(mark: SizeMark | undefined, pen: string): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
