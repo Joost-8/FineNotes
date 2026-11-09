@@ -383,6 +383,10 @@ export interface GoodObsidianSettings {
   simpleLook: boolean;
   /** The note saying how to get normal Obsidian back has been shown (once). */
   simpleLookHinted: boolean;
+  /** Prototype: the chrome's style (`look.ts`), `default` for today's. */
+  lookStyle: string;
+  /** Prototype: the chrome's colour palette (`look.ts`), `obsidian` to match the theme. */
+  lookPalette: string;
   /** Notebooks and folders starred in the library, by vault path. Cleaned where read. */
   libraryStars: string[];
   /** The colour and icon chosen for library folders, by vault path. Cleaned where read. */
@@ -564,6 +568,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   toolbarHomeAdded: true,
   simpleLook: true,
   simpleLookHinted: false,
+  lookStyle: "default",
+  lookPalette: "obsidian",
   libraryStars: [],
   libraryFolders: {},
   barrelButton: "erase",

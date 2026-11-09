@@ -10,6 +10,21 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Themes for FineNotes' own bars, menus and dialogs.** Settings → Look
+  has two menus: a style (Default, Glass, Material, Fluent, Paper,
+  Brutalist, Soft, Retro, Compact) and colours (Match Obsidian, Nord,
+  Catppuccin, Dracula, Rosé Pine, Gruvbox, Solarized, Tokyo Night,
+  Everforest, High contrast), each in light and dark. Your pages, your ink
+  and the rest of Obsidian stay as they are. Two commands step through
+  them: "Look: next style" and "Look: next colours". Translated into every
+  language. Customize toolbar has them too, as two rows of chips under
+  Hidden, so a look is tried on the bar it changes; Reset takes it back.
+
+### Changed
+
+- **The top of FineNotes' settings reads as one list.** Look and Simple
+  look use the section headers' text and spacing, with quieter menus and a
+  smaller switch, so every name on the left sits the same distance apart.
 - **A PDF's own contents come with it**
   ([discussion #185](https://github.com/Joost-8/FineNotes/discussions/185)).
   Importing a PDF, as a new notebook or into one, reads its outline (the

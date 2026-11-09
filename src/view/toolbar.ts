@@ -107,6 +107,7 @@ import { loadedVaultFonts } from "./font-store";
 import { errorMessage } from "../util/errors";
 import { downloadLabel } from "../model/font-catalogue";
 import { familyStack, matchesFamily } from "../model/text-family";
+import type { LookPalette, LookStyle } from "../model/look";
 import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
@@ -899,6 +900,10 @@ export interface ToolbarCallbacks {
   onSetBarDock?: (dock: BarDock) => void;
   /** Customize toolbar switched "Dock tool options" (`pill-row-model.ts`). */
   onSetPillRow?: (on: boolean) => void;
+  /** The look worn now (`model/look.ts`), for Customize toolbar's Style and Colours rows. */
+  lookNow?: () => { style: LookStyle; palette: LookPalette };
+  /** Customize toolbar picked a style or colours. */
+  onSetLook?: (style: LookStyle, palette: LookPalette) => void;
   /** The ruler's kind or snapping changed in its popover. Hosts persist it and bring the ruler out. */
   onRulerChange?: (kind: RulerKind, snap: number) => void;
   /** Stylus-only mode's toolbar button was tapped: turn the mode on or off. */
@@ -2048,6 +2053,8 @@ export class Toolbar {
       pillRow: () => this.pillRowOn,
       setBarDock: this.callbacks.onSetBarDock,
       setPillRow: this.callbacks.onSetPillRow,
+      look: this.callbacks.lookNow,
+      setLook: this.callbacks.onSetLook,
       done: () => {
         this.editor = null;
         if (this.optionsBeforeCustomize) {
