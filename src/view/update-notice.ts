@@ -6,6 +6,7 @@
  */
 
 import { requestUrl } from "obsidian";
+import type { CheckOutcome } from "../model/update-button";
 import {
   UPDATE_MANIFEST_URL,
   type UpdateRecord,
@@ -31,6 +32,8 @@ export interface UpdateNoticeOptions {
 
 export class UpdateNotice {
   private latest: string | null;
+  /** The user asked (Home's check button): the answer shows even with checking off. */
+  private asked = false;
   private readonly listeners = new Set<() => void>();
 
   constructor(private readonly options: UpdateNoticeOptions) {
@@ -39,7 +42,7 @@ export class UpdateNotice {
 
   /** The newer version to mark, or null (none known, or checking is off). */
   get available(): string | null {
-    return this.options.enabled() ? this.latest : null;
+    return this.options.enabled() || this.asked ? this.latest : null;
   }
 
   /** Call `listener` whenever {@link available} may have changed; returns the unsubscribe. */
@@ -82,8 +85,24 @@ export class UpdateNotice {
    */
   async check(): Promise<void> {
     if (!this.options.enabled()) return;
+    if (!checkDue(updateRecordOf(this.options.load()), this.now())) return;
+    await this.read();
+  }
+
+  /**
+   * Read the released version now, because the user asked (Home's check
+   * button): no daily limit, and the answer shows even with checking off.
+   */
+  async checkNow(): Promise<CheckOutcome> {
+    this.asked = true;
+    const latest = await this.read();
+    if (latest === null) return "offline";
+    return this.latest === null ? "none" : "found";
+  }
+
+  /** One read of `main`'s manifest: the version on it (kept), or null with no answer. */
+  private async read(): Promise<string | null> {
     const now = this.now();
-    if (!checkDue(updateRecordOf(this.options.load()), now)) return;
     let latest: string | null = null;
     try {
       const answer = await requestUrl({ url: UPDATE_MANIFEST_URL, throw: false });
@@ -91,12 +110,14 @@ export class UpdateNotice {
     } catch {
       // No connection, or not JSON.
     }
-    if (latest === null) return;
+    if (latest === null) return null;
     const record = { ...updateRecordOf(this.options.load()), checkedAt: now, latest };
     this.options.save(record);
     const found = newerVersion(record, this.options.current);
-    if (found === this.latest) return;
-    this.latest = found;
-    this.changed();
+    if (found !== this.latest) {
+      this.latest = found;
+      this.changed();
+    }
+    return latest;
   }
 }

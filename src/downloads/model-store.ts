@@ -52,6 +52,8 @@ export interface AssetStoreDeps {
   /** The format version a stored main file says it is in, or null when it is not this model. */
   formatOf(data: ArrayBuffer): number | null;
   sleep(ms: number): Promise<void>;
+  /** The clock, ms (Date.now when absent): how old the last look at the folder is. */
+  now?(): number;
 }
 
 type FolderDeps = Pick<AssetStoreDeps, "list" | "read" | "write" | "rename" | "remove">;
@@ -89,8 +91,35 @@ export function routedFolder(
   };
 }
 
+/**
+ * A look that found the model not usable is trusted this long, ms; after
+ * that `file()` looks again. Vault sync (Syncthing, iCloud, Obsidian Sync)
+ * may still be writing the files when the plugin starts: after an update, or
+ * while a vault is synced onto a device anew.
+ */
+export const RECHECK_MS = 30_000;
+
+/**
+ * How long files of the model that are there but do not verify yet count as
+ * still arriving by sync, ms: no download is offered unasked meanwhile.
+ * After that they count as damaged, and the download is offered.
+ */
+export const ARRIVING_MS = 5 * 60_000;
+
 /** Tries per byte range before the download is given up, and the waits between them. */
 export const RETRY_WAITS_MS = [1000, 3000];
+
+/**
+ * Whether a folder listing holds some of these files: by name, or as a sync
+ * tool's temporary copy (Syncthing's `.syncthing.<name>.tmp`, a name with
+ * the file's name inside it). Our own interrupted download (`<name>.download`)
+ * does not count: it is resumed by downloading.
+ */
+export function hasPartOf(files: readonly ModelFile[], names: readonly string[]): boolean {
+  return names.some(
+    (n) => !n.endsWith(".download") && files.some((f) => n === f.name || n.includes(f.name)),
+  );
+}
 
 class DownloadError extends Error {
   constructor(
@@ -118,6 +147,10 @@ export class AssetStore {
   private partialFile: string | null = null;
   private partial: Uint8Array[] = [];
   private partialBytes = 0;
+  /** When the folder was last looked at (`-Infinity`: never). */
+  private lookedAt = Number.NEGATIVE_INFINITY;
+  /** Since when the looks have found part of the model, unverified (null: they have not). */
+  private partSince: number | null = null;
 
   constructor(
     readonly asset: ModelAsset,
@@ -154,14 +187,36 @@ export class AssetStore {
     return this.checking;
   }
 
+  private now(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
+
+  /**
+   * True when the last look found some of the model's files (or a sync
+   * tool's temporary copy of one) but not all of them verified, for less
+   * than {@link ARRIVING_MS}: they are most likely still arriving by vault
+   * sync, so a download should not be offered unasked.
+   */
+  get arriving(): boolean {
+    return (
+      this.current.kind !== "ready" &&
+      this.partSince !== null &&
+      this.now() - this.partSince < ARRIVING_MS
+    );
+  }
+
   private async look(): Promise<AssetState> {
     const { asset, deps } = this;
     const names = await this.names();
+    this.lookedAt = this.now();
     const stored = storedVersions(asset, names);
     if (stored.current && (await this.allVerify())) {
+      this.partSince = null;
       this.emit({ type: "found", found: "current" });
       return this.current;
     }
+    if (hasPartOf(asset.files, names)) this.partSince ??= this.lookedAt;
+    else this.partSince = null;
     let older: OlderFile | null = null;
     for (const other of stored.others) {
       try {
@@ -201,9 +256,18 @@ export class AssetStore {
     }
   }
 
-  /** The main file to read now, or null (missing, or only an unreadable older version). */
+  /**
+   * The main file to read now, or null (missing, or only an unreadable older
+   * version). A look that found nothing usable is repeated once it is
+   * {@link RECHECK_MS} old, so files that vault sync delivered since count.
+   */
   async file(): Promise<string | null> {
-    await this.check();
+    const stale =
+      this.current.kind !== "ready" &&
+      this.current.kind !== "unknown" &&
+      !isBusy(this.current) &&
+      this.now() - this.lookedAt >= RECHECK_MS;
+    await this.check(stale);
     return usableFile(this.asset, this.current);
   }
 

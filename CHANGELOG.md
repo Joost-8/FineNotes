@@ -26,6 +26,17 @@ extracted from the matching section of this file by `release.yml`.
   look use the section headers' text and spacing, with quieter menus and a
   smaller switch, so every name on the left sits the same distance apart.
 
+### Fixed
+
+- **The scanned-page reader no longer asks to be downloaded again after an
+  update or a vault sync.** Its files were looked for once, when FineNotes
+  started; if sync was still bringing them in, the download was offered and
+  the files that arrived a moment later were not used until a restart. Now
+  the folder is looked at again while pages wait, and nothing is offered
+  while part of the model is still arriving.
+- The AI menu in the tool bar scrolls when it does not fit below the bar,
+  instead of running off the screen, in full screen too.
+
 ## [2.8.3] - 2026-11-06
 
 ### Added
@@ -41,6 +52,39 @@ extracted from the matching section of this file by `release.yml`.
   the box and its text together, and a knob below turns it, catching every
   15°. While typing only the two pills show. Turning a lasso selection now
   turns the text boxes in it too.
+- **Type the line spacing** (FineNotes#164). Beside Tight, Normal, Roomy and
+  Wide, the template picker shows the spacing in mm; type any value from 2 to
+  30 mm, or step it by half a mm.
+- **The margin's spacing** (FineNotes#164). The Margin popover shows the
+  pitch of a lined, grid or dotted margin in mm, to type or step.
+
+### Fixed
+
+- **A page margin's lines now continue the page's** (FineNotes#164). On a
+  ruled, squared or dotted page the margin takes the page's spacing and its
+  lines are level with the page's, whatever the spacing; before, it kept its
+  own. A PDF page's margin keeps the margin paper's own spacing.
+- A spacing that matched none of the steps reopened in the template picker
+  as the nearest step, and was changed to it on Apply. It is kept as it is.
+- **Snap to PDF text, as a switch.** The highlighter's options have a new
+  switch beside Straighten lines. Off, the highlighter draws freehand on a
+  PDF's text too, straight or free, which marks equations and formulas
+  that the text snap breaks into pieces (FineNotes#159).
+
+### Fixed
+
+- **The highlighter takes a whole equation.** On a PDF, the text snap now
+  treats a formula as one line: a fraction's top and bottom and a sum's
+  limits belong to it, so a highlight over an equation is one band instead
+  of scraps at different heights (FineNotes#159). This holds for formulas
+  made in Word or MathType too, which a PDF draws a font at a time
+  (brackets, then letters, then digits): pieces join by where they stand on
+  the page, not by the order they were drawn.
+- **The whole-stroke eraser takes a highlight it touches.** It took a
+  stroke only near its centre line, so rubbing over a wide highlight (a
+  snapped one is as tall as the text) away from its middle left it there.
+  Now touching the ink is enough, as with the standard eraser
+  (FineNotes#159).
 - **Handwritten sections in ordinary notes**
   ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167),
   thanks [@mantomat](https://github.com/mantomat)). `![[Physics.notebook]]`
