@@ -15,7 +15,12 @@ import {
   writingOrder,
 } from "../../src/recognition/hwr/features";
 import { Lexicon, rereadOutOfList } from "../../src/recognition/hwr/lexicon";
-import { type PageInk, rowOrder, segmentPage } from "../../src/recognition/hwr/lines";
+import {
+  type PageInk,
+  rowOrder,
+  segmentPage,
+  withStrokeTimes,
+} from "../../src/recognition/hwr/lines";
 import {
   pageEntries,
   pageWords,
@@ -239,7 +244,11 @@ describe("readPage with the fixes", () => {
   const page = golden.pages.find((p) => p.strokes.every((s) => s.t0 != null)) ?? golden.pages[0];
 
   it("turns each fix off on its own", () => {
-    const off = readPage(bundle, page.strokes, { rowOrder: false, lateStrokes: false });
+    const off = readPage(bundle, page.strokes, {
+      rowOrder: false,
+      lateStrokes: false,
+      strokeTimes: false,
+    });
     const plainLines = segmentPage(page.strokes).lines.map((l) => l.box);
     expect(off.lines.map((l) => l.box)).toEqual(plainLines);
     const on = readPage(bundle, page.strokes);
@@ -289,5 +298,35 @@ describe("a word written again later", () => {
 
   it("keeps the times of strokes written one after the other", () => {
     expect(features((i) => i * 200)).not.toEqual(features((i) => i * 900));
+  });
+});
+
+describe("ink without a time on a page that has times", () => {
+  const ink = (id: string, x: number, t0?: number) => ({
+    id,
+    tool: "pen",
+    pts: [x, 10, 0.5, x + 10, 20, 0.5],
+    ...(t0 === undefined ? {} : { t0 }),
+  });
+
+  it("follows the stroke before it, in the page's order", () => {
+    const filled = withStrokeTimes([
+      ink("a", 0, 100),
+      ink("b", 40),
+      ink("c", 80),
+      ink("d", 120, 900),
+    ]);
+    expect(filled.map((s) => s.t0)).toEqual([100, 100, 100, 900]);
+  });
+
+  it("starts at zero when the first strokes have none", () => {
+    expect(withStrokeTimes([ink("a", 0), ink("b", 40, 50)]).map((s) => s.t0)).toEqual([0, 50]);
+  });
+
+  it("leaves a page alone that has all its times, or none", () => {
+    const all = [ink("a", 0, 1), ink("b", 40, 2)];
+    const none = [ink("a", 0), ink("b", 40)];
+    expect(withStrokeTimes(all)).toBe(all);
+    expect(withStrokeTimes(none)).toBe(none);
   });
 });

@@ -21,7 +21,7 @@ import { type CharReading, charReadings } from "./char-readings";
 import { networkFrames } from "./curves";
 import { type InkStroke, LineTooLongError, lineFeatures } from "./features";
 import { REREAD_MARGIN, type RereadList, rereadOutOfList } from "./lexicon";
-import { type Box, type PageInk, lineStrokes, segmentPage } from "./lines";
+import { type Box, type PageInk, lineStrokes, segmentPage, withStrokeTimes } from "./lines";
 
 /** Nats per letter a page word earns while decoding (EXP-PCONFIRM: lam 1). */
 export const PAGE_WORD_WEIGHT = 1;
@@ -100,6 +100,7 @@ export interface ReadOptions {
    *
    * - `rowOrder`: a page's lines in row order (`segmentPage`'s `rows`);
    * - `lateStrokes`: late strokes read where they belong (`lateStrokeOrder`);
+   * - `strokeTimes`: ink without a time does not take the page off the pen (`withStrokeTimes`);
    * - `pageWordBias`: favour `pageWords` while decoding (`WordBias`), when given;
    * - `reread`: words not in `rereadList` read again against it
    *   (`rereadOutOfList`), when given. The list is the word list
@@ -107,6 +108,7 @@ export interface ReadOptions {
    */
   rowOrder?: boolean;
   lateStrokes?: boolean;
+  strokeTimes?: boolean;
   pageWordBias?: boolean;
   reread?: boolean;
   /** The notebook's own words (page-words.ts), never the page's own reading. */
@@ -223,14 +225,19 @@ export function readPage(
 ): PageReading {
   const now = options.now ?? (() => 0);
   const t0 = now();
-  const { lines, wordGap } = segmentPage(strokes, { rows: options.rowOrder !== false });
+  const { lines, wordGap } = segmentPage(
+    options.strokeTimes === false ? strokes : withStrokeTimes(strokes),
+    { rows: options.rowOrder !== false },
+  );
+  // The lines came from the filled-in times; each line is read from what was stored.
+  const stored = new Map(strokes.map((s) => [s.id, s]));
   const segment = now() - t0;
   const bias = biasOf(options);
   return {
     segment,
     wordGap,
     lines: lines.map((line, index) => {
-      const ink = lineStrokes(line);
+      const ink = lineStrokes(line).map((s) => stored.get(s.id) ?? s);
       const keep = options.logp;
       return {
         ...readLine(bundle, ink, {

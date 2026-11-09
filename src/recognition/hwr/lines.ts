@@ -363,6 +363,26 @@ function bandsOf<S extends PageInk>(strokes: readonly S[], lineOverlap: number):
 }
 
 /**
+ * `strokes` with a start time on each one, for following the pen: a stroke
+ * without one (ink pasted in, or from before times were kept) takes the time
+ * of the stroke before it in the page's order, which is the order it was put
+ * there. Otherwise one pasted word would take the whole page off the pen and
+ * onto the rougher line finder, where a flat dash or t-bar becomes a line of
+ * its own. Unchanged when every stroke has a time, or none does.
+ */
+export function withStrokeTimes<S extends PageInk>(strokes: readonly S[]): readonly S[] {
+  if (strokes.every((s) => s.t0 != null) || strokes.every((s) => s.t0 == null)) return strokes;
+  let last = 0;
+  return strokes.map((s) => {
+    if (s.t0 != null) {
+      last = s.t0;
+      return s;
+    }
+    return { ...s, t0: last };
+  });
+}
+
+/**
  * `ink.segment`: the page's lines in reading order, each with its words.
  * `wordGap` (x-heights) is chosen from the page's own gaps unless given.
  * (The reference finds the bands twice, once to measure the gaps; they are
