@@ -212,6 +212,9 @@ export interface TransferReceipt {
 }
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
+import { readPdfOutline } from "./view/pdf-outline";
+import { SetPagesContents } from "./model/contents";
+import { addedEntries, outlineContents } from "./model/pdf-outline";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
 import type { AttachmentFolders, InkDocument, Page } from "./model/document";
 import { type ImageMenuContext, registerImageMenuEntry } from "./view/image-menu";
@@ -3202,13 +3205,55 @@ export default class GoodObsidianPlugin extends Plugin {
       new Notice(t("notebooks.notice.pdfEmpty"));
       return null;
     }
+    // The PDF's own outline becomes the notebook's contents (discussion #185).
+    const outline = await readPdfOutline(bytes);
+    let outlined = 0;
+    const withOutline = (doc: InkDocument, path: string): InkDocument => {
+      const contents = outlineContents(doc, path, outline);
+      outlined = addedEntries(contents);
+      if (outlined > 0) new SetPagesContents(contents, t("view.contents.fromPdf")).apply(doc);
+      return doc;
+    };
+    const made = await this.makePdfNotebook(
+      title,
+      choices,
+      folder,
+      pdf,
+      bytes,
+      sizes,
+      open,
+      withOutline,
+    );
+    if (made && outlined > 0) {
+      const view = this.app.workspace
+        .getLeavesOfType(VIEW_TYPE_INK)
+        .map((leaf) => leaf.view)
+        .find((view): view is InkView => view instanceof InkView && view.file?.path === made.path);
+      // Undo needs the open notebook; one made without opening keeps its contents.
+      view?.offerPdfContentsUndo(outlined);
+    }
+    return made;
+  }
+
+  /** `createNotebookFromPdfBytes`' notebook itself, `shape` adding to the built document. */
+  private makePdfNotebook(
+    title: string,
+    choices: NotebookChoices,
+    folder: string | undefined,
+    pdf: string | { name: string } | { move: TFile },
+    bytes: ArrayBuffer,
+    sizes: Array<{ width: number; height: number }>,
+    open: boolean,
+    shape: (doc: InkDocument, path: string) => InkDocument,
+  ): Promise<TFile | null> {
     const ownFolder = this.settings.notebookOwnFolder;
     if (typeof pdf === "string") {
       return this.createNotebook(
         title,
         choices,
         folder,
-        (heading, attachments) => buildPdfNotebook(choices, heading, attachments, pdf, sizes),
+        (heading, attachments) =>
+          shape(buildPdfNotebook(choices, heading, attachments, pdf, sizes), pdf),
         ownFolder,
         open,
       );
@@ -3229,7 +3274,7 @@ export default class GoodObsidianPlugin extends Plugin {
         }
         if ("move" in pdf) await this.app.fileManager.renameFile(pdf.move, path);
         else await this.app.vault.createBinary(path, bytes);
-        return buildPdfNotebook(choices, heading, attachments, path, sizes);
+        return shape(buildPdfNotebook(choices, heading, attachments, path, sizes), path);
       },
       ownFolder,
       open,

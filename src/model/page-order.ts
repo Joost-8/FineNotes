@@ -15,6 +15,7 @@
  */
 
 import type { Command } from "./commands";
+import { keepChaptersOf, restoreChapters } from "./contents";
 import { type InkDocument, type Page, insertPage } from "./document";
 import { duplicatePageAfter } from "./page-commands";
 import { t } from "../i18n/translate";
@@ -127,6 +128,7 @@ export class RemovePages implements Command {
   readonly label: string;
   readonly keepsReading = true;
   private removed: Array<{ page: Page; at: number }> | null = null;
+  private chapters: ReturnType<typeof keepChaptersOf> = null;
 
   constructor(private readonly pages: readonly Page[]) {
     this.label =
@@ -137,6 +139,10 @@ export class RemovePages implements Command {
     this.removed = null;
     const placed = positionsOf(doc, this.pages);
     if (placed.length === 0 || placed.length >= doc.pages.length) return;
+    this.chapters = keepChaptersOf(
+      doc,
+      placed.map((p) => p.page),
+    );
     for (let i = placed.length - 1; i >= 0; i--) doc.pages.splice(placed[i].at, 1);
     this.removed = placed;
   }
@@ -144,6 +150,7 @@ export class RemovePages implements Command {
   invert(doc: InkDocument): void {
     if (!this.removed) return;
     for (const { page, at } of this.removed) insertPage(doc, at, page);
+    if (this.chapters) restoreChapters(this.chapters);
     this.removed = null;
   }
 }
