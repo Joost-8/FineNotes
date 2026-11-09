@@ -2233,6 +2233,54 @@ const SCENES = {
     holdRing(158, 146, 0.38, 0.54),
     ink(HEART, { opacity: shownFrom(0.54) }),
   ),
+  curvedElbow: sc(
+    0.82,
+    line("M40 54L280 54", "ink", 2.4, { opacity: shownUntil(0.17) }),
+    line("M40 54Q160 34 280 54", "ink", 2.4, { opacity: between(0.17, 0.23) }),
+    line("M40 54Q160 14 280 54", "ink", 2.4, { opacity: between(0.23, 0.29) }),
+    line("M40 54Q160 -6 280 54", "ink", 2.4, { opacity: shownFrom(0.29) }),
+    line("M280 54L262 42M280 54L266 72", "ink", 2.4),
+    dot(160, 54, 7, "accent", { y: movedTo(-30, 0.12, 0.3), opacity: shownUntil(0.5) }),
+    line("M40 158H200V108", "ink", 2.4, { opacity: shownUntil(0.68) }),
+    line("M200 108L189 124M200 108L211 124", "ink", 2.4, { opacity: shownUntil(0.68) }),
+    line("M40 158V98H280", "ink", 2.4, { opacity: shownFrom(0.7) }),
+    line("M280 98L264 87M280 98L264 109", "ink", 2.4, { opacity: shownFrom(0.7) }),
+    dot(200, 108, 7, "accent", {
+      x: movedTo(80, 0.5, 0.7),
+      y: movedTo(-10, 0.5, 0.7),
+      opacity: between(0.46, 0.8),
+    }),
+  ),
+  lineUpMoves: sc(
+    0.78,
+    line("M60 8V172", "red", 1.2, { opacity: between(0.5, 0.74) }),
+    line("M8 62H312", "red", 1.2, { opacity: between(0.5, 0.74) }),
+    frame(60, 62, 76, 56, "ink", 3),
+    group(
+      { x: movedTo(-120, 0.1, 0.5) },
+      box(180, 62, 76, 76, "soft", 3),
+      frame(180, 62, 76, 76, "accent", 3),
+    ),
+  ),
+  lockFit: sc(
+    0.8,
+    desk(),
+    box(0, 0, 320, 180, "page", 0),
+    printed([
+      [40, [70, 60, 40, 80]],
+      [76, [90, 50, 70, 40]],
+      [112, [50, 80, 60, 60]],
+      [148, [80, 40, 90, 50]],
+    ]),
+    dot(230, 92, 13, "accent", {
+      x: movedTo(-140, 0.18, 0.56),
+      opacity: between(0.14, 0.6),
+    }),
+    icon("lock", 160, 90, "accent", 40, {
+      opacity: shownFrom(0.58),
+      scale: movedTo(1, 0.58, 0.7, 1.4),
+    }),
+  ),
   pathArrow: sc(
     0.78,
     ink(

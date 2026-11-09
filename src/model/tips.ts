@@ -63,6 +63,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("circleLasso", "circleLasso"),
           tip("pullPage", "pullPage"),
           tip("fillScreen", "fillScreen"),
+          tip("lockFit", "lockFit"),
           tip("searchInk", "searchInk"),
           tip("tapColour", "tapColour"),
           tip("ribbon", "ribbon"),
@@ -83,6 +84,8 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("arrow", "arrow"),
           tip("scribbleFill", "scribbleFill"),
           tip("pathArrow", "pathArrow"),
+          tip("curvedElbow", "curvedElbow"),
+          tip("lineUpMoves", "lineUpMoves"),
         ],
       },
       {
@@ -276,6 +279,14 @@ export const TIP_COLLECTIONS: readonly TipCollection[] = TIP_SECTIONS.flatMap((s
 
 /** Newest first. Every release with something to show adds an entry. */
 export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlights[] = [
+  {
+    version: "2.9.0",
+    tips: [
+      tip("curvedElbow", "curvedElbow"),
+      tip("lineUpMoves", "lineUpMoves"),
+      tip("lockFit", "lockFit"),
+    ],
+  },
   {
     version: "2.8.3",
     tips: [
