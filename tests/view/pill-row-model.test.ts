@@ -6,6 +6,7 @@ import {
   parsePillRowOn,
   pillRow,
   pillRowEdge,
+  pillFitsBar,
 } from "../../src/view/pill-row-model";
 
 describe("parsePillRowOn", () => {
@@ -77,6 +78,23 @@ describe("pillRow", () => {
 
   it("never takes room for a negative gap", () => {
     expect(pillRow({ ...base, gap: -5, previous: NO_PILL_ROW }).room).toBe(44);
+  });
+});
+
+describe("pillFitsBar", () => {
+  const fit = { edge: "top" as const, room: 500, need: 400, height: 44, barHeight: 57 };
+  it("takes a pill that fits along the top or bottom", () => {
+    expect(pillFitsBar(fit)).toBe(true);
+    expect(pillFitsBar({ ...fit, edge: "bottom" })).toBe(true);
+  });
+  it("leaves a pill too wide or too tall to its row", () => {
+    expect(pillFitsBar({ ...fit, need: 502 })).toBe(false);
+    expect(pillFitsBar({ ...fit, height: 60 })).toBe(false);
+    expect(pillFitsBar({ ...fit, room: 0 })).toBe(false);
+  });
+  it("never at a side, or with no dock", () => {
+    expect(pillFitsBar({ ...fit, edge: "left" })).toBe(false);
+    expect(pillFitsBar({ ...fit, edge: null })).toBe(false);
   });
 });
 

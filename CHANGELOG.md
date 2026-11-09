@@ -8,6 +8,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Tool options inside the bar**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  With Dock tool options on and the bar along the top or bottom, the pen's
+  widths and colours sit in the bar itself, after the tools, as in Goodnotes.
+  The buttons that fold first go into ⋯ to make room. Where there is too
+  little room, the options keep a row of their own.
+
 ## [2.9.0] - 2026-11-09
 
 ### Added
