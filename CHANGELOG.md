@@ -16,6 +16,7 @@ extracted from the matching section of this file by `release.yml`.
   widths and colours sit in the bar itself, after the tools, as in Goodnotes.
   The buttons that fold first go into ⋯ to make room. Where there is too
   little room, the options keep a row of their own.
+
 ### Fixed
 
 - **Home's What's new card could ignore clicks.** When Home redrew itself
