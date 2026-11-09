@@ -360,8 +360,10 @@ function timesDots(items: readonly Item[], digit: number): Item[][] {
     const right = marksBeside
       .filter((g) => g.box.minX >= x)
       .sort((a, b) => a.box.minX - b.box.minX)[0];
-    if (!left || !right || !left.tall || !right.tall) continue;
-    const near = Math.min(height(left.box), height(right.box));
+    if (!left || !right) continue;
+    // A small 0 beside the dot is still a digit: a quarter of the digits' height will do.
+    if (Math.min(height(left.box), height(right.box)) < 0.25 * digit) continue;
+    const near = Math.max(0.5 * digit, Math.min(height(left.box), height(right.box)));
     if (Math.max(width(box), height(box)) > 0.3 * near) continue;
     // Within reach of both: about two digits.
     if (x - left.box.maxX > 2 * digit || right.box.minX - x > 2 * digit) continue;

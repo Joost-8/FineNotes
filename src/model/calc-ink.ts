@@ -10,7 +10,7 @@
  * PURE: no DOM. Page px throughout.
  */
 
-import { type LineBlock, assignLines, lineOfBounds } from "../canvas/writing-lines";
+import { type LineBlock, type LineRef, assignLines, lineOfBounds } from "../canvas/writing-lines";
 import { type Bounds, POINT_STRIDE, type Stroke, strokeBounds } from "./document";
 
 /** An "=" drawn as two strokes, and the box around both. */
@@ -166,10 +166,12 @@ function followsOnLine(
   let gapLimit = eqW * 3;
   if (eqRef) {
     const refs = assignLines(blocks, known);
-    if (refs.some((r) => r === null || r.block !== eqRef.block || r.line !== eqRef.line)) {
-      return false;
-    }
-    gapLimit = Math.max(blocks[eqRef.block].pitch * 2, gapLimit);
+    const pitch = blocks[eqRef.block].pitch;
+    const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
+    const same = (r: LineRef | null, b: Bounds): boolean =>
+      (r !== null && r.block === eqRef.block && r.line === eqRef.line) || levelWith(b, cy, pitch);
+    if (known.some((b, i) => !same(refs[i], b))) return false;
+    gapLimit = Math.max(pitch * 2, gapLimit);
   } else {
     const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
     const reach = Math.max(eqW * 1.2, (eq.bounds.maxY - eq.bounds.minY) * 2);
@@ -182,6 +184,14 @@ function followsOnLine(
     right = Math.max(right, box.maxX);
   }
   return true;
+}
+
+/** Share of a ruled line's pitch ink may sit from the "=" and still be on its line (a raised power does). */
+const LEVEL_SHARE = 0.8;
+
+/** Whether `box` has its middle within reach of `cy` on paper ruled at `pitch`. */
+function levelWith(box: Bounds | null, cy: number, pitch: number): boolean {
+  return box !== null && Math.abs((box.minY + box.maxY) / 2 - cy) <= LEVEL_SHARE * pitch;
 }
 
 /**
@@ -207,8 +217,15 @@ export function sumStrokes(
       blocks,
       boxes.map((b) => b ?? { minX: 0, minY: -1e9, maxX: 0, maxY: -1e9 }),
     );
-    onLine = refs.map((r) => r !== null && r.block === eqRef.block && r.line === eqRef.line);
-    gapLimit = Math.max(blocks[eqRef.block].pitch * 2, eqW * 3);
+    // Handwriting crosses the rules: ink level with the "=" is on its line too.
+    const pitch = blocks[eqRef.block].pitch;
+    const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
+    onLine = refs.map(
+      (r, i) =>
+        (r !== null && r.block === eqRef.block && r.line === eqRef.line) ||
+        levelWith(boxes[i], cy, pitch),
+    );
+    gapLimit = Math.max(pitch * 2, eqW * 3);
   } else {
     const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
     const reach = Math.max(eqW * 1.2, (eq.bounds.maxY - eq.bounds.minY) * 2);

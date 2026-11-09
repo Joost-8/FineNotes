@@ -327,6 +327,39 @@ describe("equalsAfter", () => {
   });
 });
 
+describe("handwriting that crosses the rules", () => {
+  const pitch = RULED[0].pitch;
+  const base = RULED[0].baselines[8];
+  /** Digits written a third of a pitch above the rule, the "=" further up still. */
+  const drifting = (): { left: Stroke[]; eq: Stroke[] } => ({
+    left: [digit(100, base + pitch * 0.45, 50), digit(140, base + pitch * 0.45, 50)],
+    eq: equals(190, base - pitch * 0.35, 40),
+  });
+
+  it("keeps the ink before the = when the two fall in different bands", () => {
+    const { left, eq } = drifting();
+    const found = equalsAtEnd([...left, ...eq]);
+    expect(found).not.toBeNull();
+    expect(sumStrokes([...left, ...eq], found!, RULED)).toHaveLength(4);
+  });
+
+  it("does not take the line above", () => {
+    const { left, eq } = drifting();
+    const above = digit(140, base - pitch * 2, 30);
+    const found = equalsAtEnd([above, ...left, ...eq]);
+    expect(sumStrokes([above, ...left, ...eq], found!, RULED).map((s) => s.id)).not.toContain(
+      above.id,
+    );
+  });
+
+  it("follows a raised power after the =", () => {
+    const { left, eq } = drifting();
+    const x = digit(240, base - pitch * 0.2, 40);
+    const power = digit(275, base - pitch * 0.9, 20);
+    expect(equalsAfter([...left, ...eq, x, power], RULED)?.after).toHaveLength(2);
+  });
+});
+
 describe("where a whole line's answer and graph go", () => {
   it("writes after the last ink", () => {
     const after = [digit(200, 300, 30)];

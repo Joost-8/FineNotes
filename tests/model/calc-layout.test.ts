@@ -142,6 +142,15 @@ describe("raised dots", () => {
     }
   });
 
+  it("reads a dot beside a small written 0 as times", () => {
+    const h = 46;
+    const nine = digit(100, 300, h);
+    const zero = digit(140, 288, 13);
+    const d = dot(165, 300 - h * 0.4, h);
+    const three = digit(185, 300, h);
+    expect(kinds(layoutSum([nine, zero, d, three]))).toEqual(["ink", "times", "ink"]);
+  });
+
   it("leaves a dot on the baseline to the digits: a decimal point", () => {
     for (const h of [10, 24, 60]) {
       const step = h * 0.8;
