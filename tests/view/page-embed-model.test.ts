@@ -232,7 +232,7 @@ describe("embedPageNumbers", () => {
   it("shows a long notebook's cover and chapters in a hover preview", () => {
     expect(embedPageNumbers(whole, book(5), true)).toEqual([1, 2, 3, 4, 5]);
     expect(embedPageNumbers(whole, book(400), true)).toHaveLength(MAX_PREVIEW_PAGES);
-    expect(embedPageNumbers(whole, book(60), true)).toEqual([1, 11, 21, 31, 41, 51]);
+    expect(embedPageNumbers(whole, book(60), true)).toEqual([1, 2, 3, 4, 11, 21, 31, 41, 51]);
   });
 
   it("shows the one page a subpath names, whether or not the notebook has it", () => {

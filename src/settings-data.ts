@@ -281,6 +281,8 @@ export interface GoodObsidianSettings {
    */
   /** Zoomed in on pages across, the view may leave the page being read and go past the notebook's ends. */
   freePageEdges: boolean;
+  /** After a double tap fits pages down to the width, a finger never moves the page sideways (discussion #43). Off, it stretches and springs back, as Goodnotes does. */
+  holdFitWidth: boolean;
   pencilTilt: boolean;
   /** Selecting an active secondary tool again returns to the pen or highlighter used before. */
   returnToPenOnReselect: boolean;
@@ -540,6 +542,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   recentColors: [],
   pressureWidth: false,
   freePageEdges: false,
+  holdFitWidth: false,
   pencilTilt: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,

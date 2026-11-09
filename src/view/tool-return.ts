@@ -61,6 +61,21 @@ export function selectedTool(
 }
 
 /**
+ * A click of the pen's side button set to switch to the eraser
+ * (FineNotes#149): any other tool goes to the eraser and is remembered in
+ * `back`; on the eraser, the click goes back to it, or to the pen or
+ * highlighter in use when the eraser was picked by hand.
+ */
+export function eraserClickStep(
+  current: ActiveTool,
+  back: ActiveTool | null,
+  drawing: ActiveTool,
+): { tool: ActiveTool; back: ActiveTool | null } {
+  if (current !== "eraser") return { tool: "eraser", back: current };
+  return { tool: back ?? drawingToolOf(drawing, drawing), back: null };
+}
+
+/**
  * The tool once a use is finished: `back` (the pen or highlighter used
  * before, else the pen). Text and lasso finish only after editing or
  * manipulation, not their initial pointer lift.

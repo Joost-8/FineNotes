@@ -33,7 +33,14 @@ describe("previewPageIndexes", () => {
       120: { bookmarked: true },
       250: { sections: [{ title: "Optics" }] },
     });
-    expect(shown(pages)).toEqual([1, 31, 121, 251]);
+    expect(shown(pages)).toEqual([1, 2, 3, 4, 5, 6, 31, 121, 251]);
+  });
+
+  it("fills the places the contents leave empty with the first pages, each once", () => {
+    // The heading is among the first pages: the filling goes one page further.
+    expect(shown(book(20, { 2: { title: "Early" } }))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(shown(book(20, { 7: { title: "Only heading" } }), 12)).toHaveLength(12);
+    expect(shown(book(10, { 9: { bookmarked: true } }))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 10]);
   });
 
   it("puts chapters before bookmarks, and bookmarks before deeper entries", () => {

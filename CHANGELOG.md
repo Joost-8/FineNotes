@@ -16,6 +16,66 @@ extracted from the matching section of this file by `release.yml`.
 - **Two kinds of arrow in the Shape tool, as in Goodnotes:** curved and elbow.
   Drag the dot in a line's middle to bend it through a smooth curve, or a pill
   on an elbow to slide that run sideways.
+- **Lock fit to width**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  A new check in the notebook's ⋯ panel: after a double tap fits the page
+  to the width, a finger no longer moves the page sideways at all. Off, as
+  before, a sideways pull stretches the page and it springs back, as in
+  Goodnotes. Pinching still moves it either way.
+
+### Changed
+
+- **A lighter lasso bar and menu.** Nothing stands in both any more. The
+  bar keeps the colour, Copy, Duplicate, Delete and the handles' switch;
+  Cut moved to the ⋯ menu, whose top is now a tray of four: Cut, Paste,
+  Screenshot and Copy style. Delete, Copy and Duplicate left the menu, and
+  a picture's menu lost its second Crop. What the ink can become (Ask AI,
+  Correct, Turn into) is one group, then Flip.
+- **Smoother bars.** The lasso's bar rises from the selection and fades
+  away when it goes; its menu and colour panel grow from the button they
+  hang on and shrink back into it; Turn into slides its rows in and the
+  menu glides to its new height. Buttons show a press at once, with the
+  Pencil too. The table's bar, the audio player, the recording pill and a
+  few more now arrive the same way instead of appearing from nothing, and
+  hovering or picking something in a popover, a dialog, the page sidebar
+  or Home eases instead of snapping. With Reduce Motion on, none of it
+  moves.
+- **Looks reach further.** Paper marks what is chosen with an ink outline
+  instead of the accent; Fluent with its neutral well; Brutalist and Retro
+  box it as thickly as everything else; Material uses a tonal fill. Glass
+  keeps the tool bar readable over the desk. The lasso's dark bar and menu
+  follow each look (Soft's light, Brutalist's thick line, Retro's mono
+  face and inverted press).
+
+### Fixed
+
+- **Slides fill the screen with pages across**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  Each page now fits the screen on its own, as in Goodnotes: a lecture slide
+  next to a portrait page used to open at two thirds of the screen, because
+  every page was fitted to the tallest one. Turning to a page of another
+  shape fits that page. A 16:9 slide, wider than the screen, keeps only a
+  thin margin at its sides, as in Goodnotes, instead of a wide band of desk.
+- **A double tap on a slide shows the whole slide**, as large as fits and
+  centred, instead of filling the width and cutting off its foot. Portrait
+  pages still fill the width.
+- **Click the pen's side button for the eraser** (FineNotes#149). On Android,
+  holding an S Pen's button while writing does not reach FineNotes. Settings →
+  Pens and shortcuts, **Side button click**, now has **Switch to the eraser**:
+  a click with the pen just above the page takes the eraser, another goes back
+  to the tool you had.
+
+### Fixed
+
+- **Fast, small writing no longer wobbles on newer iPads**
+  ([#179](https://github.com/Joost-8/FineNotes/issues/179)). On some iPads
+  the Pencil's position arrives rounded to the screen's pixels, which made
+  quick strokes zigzag slightly. FineNotes now recognises this and steadies
+  the ink as it does on older iPads, without stabilization's delay. The
+  end of a stroke also no longer shifts as the pen lifts.
+
+### Added
+
 - **A recognised sum glows, and a tap opens its maths card** (FineNotes#178).
   When a line ending in "=" is read as maths, its ink glows in the accent
   instead of a chip appearing over it; a part Grape was unsure of gets a
@@ -109,10 +169,11 @@ extracted from the matching section of this file by `release.yml`.
   point to: chapters first, then bookmarked pages, then the rest of the
   contents, spread through the book when there are more than fit (9 pages
   in a link's preview, 12 in Home). Two places are always kept for
-  bookmarks. Each page is labelled with its number and its line in the
-  contents, and a bookmarked one carries its ribbon; a link's preview ends
-  with a +N that opens the notebook. A shorter notebook shows every page,
-  and `![[Physics.notebook]]` in a note still shows every page.
+  bookmarks, and places left over show the notebook's first pages. Each
+  page is labelled with its number and its line in the contents, and a
+  bookmarked one carries its ribbon; a link's preview ends with a +N that
+  opens the notebook. A shorter notebook shows every page, and
+  `![[Physics.notebook]]` in a note still shows every page.
 
 ### Fixed
 

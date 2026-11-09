@@ -1970,6 +1970,13 @@ export default class GoodObsidianPlugin extends Plugin {
     for (const view of this.openNotebooks()) view.setFreePageEdges(on);
   }
 
+  /** "Lock fit to width" changed (the ⋯ panel): every open notebook holds or frees a fitted page. */
+  async setHoldFitWidth(on: boolean): Promise<void> {
+    this.settings.holdFitWidth = on;
+    await this.saveSettings();
+    for (const view of this.openNotebooks()) view.setHoldFitWidth();
+  }
+
   /** "Cursor over the page" changed: every open notebook shows the new cursor. */
   async setPenCursor(style: PenCursorStyle): Promise<void> {
     this.settings.penCursor = style;

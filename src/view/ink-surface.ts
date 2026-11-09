@@ -222,6 +222,8 @@ import {
   rowPageScrollRange,
   rowScrollInsets,
   rowScrollXForPage,
+  rowScrollYForPage,
+  rowRestRangeY,
   rowSlotGap,
   rowGapAtZoom,
   ROW_PULL_ADD_PX,
@@ -320,8 +322,9 @@ import {
   nextZoomFloor,
   wheelZoomFactor,
   doubleTapZoom,
-  pageFillZoom,
-  pageWidthZoom,
+  doubleTapFill,
+  rowPageFloor,
+  ROW_FIT_MARGIN_RATIO,
   zoomAnchorFor,
   zoomKeepingScale,
 } from "../canvas/zoom";
@@ -701,6 +704,7 @@ import {
   type ToolUse,
   continuesUse,
   drawingToolOf,
+  eraserClickStep,
   selectedTool,
   toolAfterUse,
 } from "./tool-return";
@@ -2024,6 +2028,8 @@ export class InkSurface {
   private textFrameDrag: string | null = null;
   /** The tool as of the last `setTool`, so switching to Text can remember what it replaced. */
   private toolSeen: ActiveTool;
+  /** The tool a side-button click left for the eraser; a tool picked any other way forgets it. */
+  private eraserClickBack: ActiveTool | null = null;
   /** The tool in use before Text, which an unpinned Text tool returns to. */
   private toolBeforeText: ActiveTool | null = null;
   /** The pen or highlighter last in use, which the return-to-pen settings go back to. */
@@ -3916,7 +3922,8 @@ export class InkSurface {
       return;
     }
     // After the layout, which would otherwise keep the current page of a row centred.
-    this.scroller.setPosition(this.direction === "horizontal" ? this.rowX(0) : 0, 0);
+    if (this.direction === "horizontal") this.scroller.setPosition(this.rowX(0), this.rowY(0));
+    else this.scroller.setPosition(0, 0);
     this.syncViewport();
     this.requestFrame();
     this.reportStatus();
@@ -4022,7 +4029,7 @@ export class InkSurface {
       return;
     }
     const x = row ? this.rowX(clamped) : this.scroller.position.x;
-    const y = row ? 0 : scrollTopForPage(this.pageLayout, clamped) * this.scale;
+    const y = row ? this.rowY(clamped) : scrollTopForPage(this.pageLayout, clamped) * this.scale;
     if (animate) this.scroller.glideTo(x, y, now());
     else this.scroller.setPosition(x, y);
     this.syncViewport();
@@ -4075,6 +4082,16 @@ export class InkSurface {
   /** The scroll x that centres page `index` of a row in the pane. */
   private rowX(index: number): number {
     return rowScrollXForPage(this.pageLayout, index, this.scale, this.cssW);
+  }
+
+  /**
+   * The scroll y that centres page `index` of a row in the pane, or shows
+   * its top when it is taller than the pane. A row's pages are centred on
+   * its tallest, which the floor no longer fits (`rowPageFloor`): a slide
+   * beside a portrait page sits below the row's middle (discussion #43).
+   */
+  private rowY(index: number): number {
+    return rowScrollYForPage(this.pageLayout, index, this.scale, this.cssH);
   }
 
   /** Let (or stop) a pinch well past the fit open the page overview. The host knows single pages. */
@@ -4150,6 +4167,7 @@ export class InkSurface {
     // A tool picked by hand overrides a return still waiting to happen.
     this.cancelPendingReturn();
     this.toolSeen = tool;
+    this.eraserClickBack = null;
     this.toolState.tool = tool;
     if (tool !== "highlighter") this.dropTextMark();
     if (this.textCopyTimer) this.hideTextCopy();
@@ -4403,6 +4421,16 @@ export class InkSurface {
         // turning ink into text are the host's; it answers whether it ran.
         this.callbacks.onShortcutAction?.(id);
     }
+  }
+
+  /** The side button clicked in the air, set to the eraser: to it, and back again. */
+  stylusEraserClick(): void {
+    const step = eraserClickStep(this.toolState.tool, this.eraserClickBack, this.drawingTool);
+    if (this.practice && !isPracticeTool(step.tool)) return;
+    if (this.callbacks.toolOff?.(step.tool) === true) return;
+    this.setTool(step.tool);
+    this.eraserClickBack = step.back;
+    this.callbacks.onToolChange?.(step.tool);
   }
 
   /** The tool a key press switches to, as a letter already did. */
@@ -4925,7 +4953,7 @@ export class InkSurface {
       this.goToPage(reading);
     } else if (direction === "horizontal" && this.atZoomFloor && this.isScrollIdle) {
       // A pane that changed shape (rotation, split view) keeps the page centred.
-      this.scroller.setPosition(this.rowX(this.pageIndex), 0);
+      this.scroller.setPosition(this.rowX(this.pageIndex), this.rowY(this.pageIndex));
     }
     this.layoutTail(cssW, cssH);
   }
@@ -5174,12 +5202,10 @@ export class InkSurface {
    * `hold`: the pane changed for the docked options row, which leaves both.
    */
   private updateZoomFloor(cssH: number, hold = false): void {
-    let tallest = 0;
-    for (const box of this.pageLayout.boxes) tallest = Math.max(tallest, box.height);
     const step = nextZoomFloor({
       zoom: this.userZoom,
       floor: this.minZoom,
-      newFloor: fitPageZoom(tallest, this.baseScale, cssH),
+      newFloor: this.floorForPane(cssH),
       initialised: this.zoomInitialised,
       // A pane made short by the keyboard must not re-fit the page into it.
       keyboard: hold || document.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
@@ -5191,6 +5217,40 @@ export class InkSurface {
       this.zoomAnim = null;
       this.userZoom = step.zoom;
     }
+  }
+
+  /**
+   * The zoom floor for a pane `cssH` px tall. A column fits its tallest page,
+   * so the floor holds while scrolling. A row of separate pages fits the page
+   * being read (`rowPageFloor`), so a slide fills the screen however tall the
+   * other pages are; turning to a page of another shape re-fits it on rest
+   * (`refitRowPage`). Joined pages are one sheet and keep the tallest.
+   */
+  private floorForPane(cssH: number): number {
+    const layout = this.pageLayout;
+    let tallest = 0;
+    let widest = 0;
+    for (const box of layout.boxes) {
+      tallest = Math.max(tallest, box.height);
+      widest = Math.max(widest, box.width);
+    }
+    const reading = layout.boxes[this.heldPage ?? this.pageIndex] ?? null;
+    if (layout.direction !== "horizontal" || layout.joined || !reading) {
+      return fitPageZoom(tallest, this.baseScale, cssH);
+    }
+    const side = reading.width * ROW_FIT_MARGIN_RATIO;
+    return rowPageFloor(reading.width, reading.height, side, this.baseScale, this.cssW, cssH);
+  }
+
+  /**
+   * A row at its floor came to rest on a page of another shape than the one
+   * the floor was fitted to: lay out again, so that page fits the screen too.
+   */
+  private refitRowPage(): void {
+    if (this.direction !== "horizontal" || this.board || this.joined) return;
+    if (!this.atZoomFloor || !this.isScrollIdle || this.pinch || this.zoomAnim) return;
+    const floor = this.floorForPane(this.cssH);
+    if (Math.abs(floor / this.minZoom - 1) > 0.005) this.scheduleRelayout();
   }
 
   /** The next layout keeps a zoomed-in page the size it is, whatever the pane's new width. */
@@ -5268,6 +5328,13 @@ export class InkSurface {
       rangeX,
       // Held centred, a diagonal drag scrolls only down (Goodnotes).
       diagonalsScrollY: !row,
+      // Turning pages, the view rests centred on each page (`rowY`), never
+      // scrolled up or down: the row's whole range is the pages' centres.
+      rangeY:
+        row && this.turnsPages && !this.joined
+          ? rowRestRangeY(this.pageLayout, scale, this.cssH)
+          : undefined,
+      holdX: !row && this.holdFitWidth(),
       // While a box is typed in, room to lift it above the keyboard: a page
       // that fits the screen (a cover, a single page) has none of its own.
       trailY: this.typingField() ? keyboardHeight() : 0,
@@ -5280,6 +5347,15 @@ export class InkSurface {
    * stopping at the page's edges.
    */
   private freePageEdges = false;
+
+  /** The setting "Lock fit to width", read at each layout (`ScrollExtent.holdX`). */
+  holdFitWidth: () => boolean = () => false;
+
+  /** A setting the scroll extent reads changed ("Lock fit to width"): apply it now. */
+  refreshScrollExtent(): void {
+    this.ensurePaperSize();
+    this.requestFrame();
+  }
 
   setFreePageEdges(on: boolean): void {
     if (this.freePageEdges === on) return;
@@ -5516,6 +5592,7 @@ export class InkSurface {
       return;
     }
     this.settleIfIdle();
+    this.refitRowPage();
     this.schedulePrefetch();
     // The action bar flips above or below the selection by what is on
     // screen, which a scroll changes; re-place it once the page comes to rest.
@@ -5901,7 +5978,7 @@ export class InkSurface {
     const page = this.pageIndex;
     const { x, y } = this.scroller.position;
     this.scroller.stop();
-    this.rowSettle = { page, dx: x - this.rowX(page), dy: y, t0: now() };
+    this.rowSettle = { page, dx: x - this.rowX(page), dy: y - this.rowY(page), t0: now() };
     this.requestFrame();
   }
 
@@ -5916,7 +5993,10 @@ export class InkSurface {
     const progress = (t - settle.t0) / ZOOM_SPRING_MS;
     const left = progress >= 1 ? 0 : 1 - easeOutCubic(progress);
     // Centred at the scale of this frame: the zoom may still be springing.
-    this.scroller.setPosition(this.rowX(settle.page) + settle.dx * left, settle.dy * left);
+    this.scroller.setPosition(
+      this.rowX(settle.page) + settle.dx * left,
+      this.rowY(settle.page) + settle.dy * left,
+    );
     if (progress < 1) return true;
     this.rowSettle = null;
     return false;
@@ -5944,7 +6024,9 @@ export class InkSurface {
     this.snapRowAfterZoom = false;
     this.scroller.cancel();
     this.applyZoom(this.minZoom, this.cssW / 2, this.cssH / 2);
-    if (this.direction === "horizontal") this.scroller.setPosition(this.rowX(this.pageIndex), 0);
+    if (this.direction === "horizontal") {
+      this.scroller.setPosition(this.rowX(this.pageIndex), this.rowY(this.pageIndex));
+    }
     this.syncViewport();
     this.zoomReadoutEl.addClass("is-idle");
     this.callbacks.onPinchOverview?.(snapshot);
@@ -5964,7 +6046,7 @@ export class InkSurface {
       this.scale,
       this.cssW,
     );
-    this.scroller.snapTo(this.rowX(index), 0, now());
+    this.scroller.snapTo(this.rowX(index), this.rowY(index), now());
     this.requestFrame();
   }
 
@@ -13613,7 +13695,6 @@ export class InkSurface {
         icon: "scissors",
         label: t("common.cut"),
         group: "edit",
-        bar: true,
         menu: "tile",
         run: () => this.cutSelection(),
       },
@@ -13622,7 +13703,8 @@ export class InkSurface {
         icon: "copy",
         label: t("common.copy"),
         group: "edit",
-        menu: "tile",
+        bar: true,
+        menu: "none",
         run: () => this.copySelection(),
       },
       {
@@ -13631,7 +13713,7 @@ export class InkSurface {
         label: t("common.duplicate"),
         group: "edit",
         bar: true,
-        menu: "tile",
+        menu: "none",
         run: () => this.duplicateSelectedImage(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
@@ -13660,13 +13742,6 @@ export class InkSurface {
         group: "edit",
         run: () => this.lockSelectedImage(),
       },
-      {
-        id: "crop-image",
-        icon: "crop",
-        label: t("surface.command.cropImage"),
-        group: "crop-image",
-        run: () => this.startCrop(),
-      },
       ...flipActions((axis) => this.flipSelectedImage(axis), "arrange"),
       {
         id: "in-front",
@@ -13691,8 +13766,8 @@ export class InkSurface {
         icon: "trash-2",
         label: t("common.delete"),
         group: "edit",
-        menuGroup: "delete",
         bar: true,
+        menu: "none",
         destructive: true,
         run: () => this.deleteSelectedImage(),
       },
@@ -13700,11 +13775,11 @@ export class InkSurface {
   }
 
   /**
-   * The bar for a lasso selection: Cut · Duplicate · Delete · "…". The menu
-   * (2.5, redrawn when its shape options reached 22 rows) has Cut · Copy ·
-   * Duplicate · Paste across the top, then Screenshot; Colour when it holds ink; one segmented
-   * row each for a shape's fill, line, corners and arrows, and for Flip; Turn
-   * into ›, which holds what the selection can become; and Delete. What it
+   * The bar for a lasso selection: its colour · Copy · Duplicate · Delete ·
+   * the handles' switch · "…". Nothing stands in both the bar and the menu
+   * (2026-11-09, when the bar had grown to nine buttons): the menu has Cut ·
+   * Paste · Screenshot · Copy style across the top, then what the ink can be
+   * asked or become (Ask AI, Correct, Turn into ›) and Flip. What it
    * holds decides the rest (`selectionMenu`): one kind keeps its own options,
    * a mix gets only its ink's colour, and Turn into offers what fits.
    */
@@ -13717,7 +13792,6 @@ export class InkSurface {
         icon: "scissors",
         label: t("common.cut"),
         group: "edit",
-        bar: true,
         menu: "tile",
         run: () => this.cutSelection(),
       },
@@ -13727,7 +13801,7 @@ export class InkSurface {
         label: t("common.copy"),
         group: "edit",
         bar: true,
-        menu: "tile",
+        menu: "none",
         run: () => this.copySelection(),
       },
       {
@@ -13736,7 +13810,7 @@ export class InkSurface {
         label: t("common.duplicate"),
         group: "edit",
         bar: true,
-        menu: "tile",
+        menu: "none",
         run: () => this.duplicateSelection(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
@@ -13746,6 +13820,7 @@ export class InkSurface {
         icon: "camera",
         label: t("surface.selectionBar.screenshot"),
         group: "edit",
+        menu: "tile",
         run: () => void this.showSelectionScreenshot(),
       },
     ];
@@ -13857,6 +13932,7 @@ export class InkSurface {
         icon: "paintbrush",
         label: t("surface.selectionBar.copyStyle"),
         group: "style",
+        menu: "tile",
         run: () => this.copyStyle(sel.strokes),
       });
     }
@@ -13951,13 +14027,13 @@ export class InkSurface {
       icon: "trash-2",
       label: t("common.delete"),
       group: "edit",
-      menuGroup: "delete",
       bar: true,
+      menu: "none",
       destructive: true,
       run: () => this.deleteSelection(),
     });
-    // The bar, as Joost asked (2026-10-28): Cut · Copy · Duplicate · Delete ·
-    // the resize handles, then the "…". A lone shape shows its handles from
+    // The resize handles' switch stands with the "…", apart from the three
+    // actions (Cut moved to the menu, 2026-11-09). A lone shape shows its handles from
     // the start, so it has only the corner points' switch (Joost, 2026-10-30).
     const lone = this.loneShape(sel);
     // A curved shape (heart, arc, circle…) has no corner points, but it is a
@@ -13969,7 +14045,7 @@ export class InkSurface {
         label: this.selectionCorners
           ? t("surface.selectionBar.hideResizeHandles")
           : t("surface.selectionBar.showResizeHandles"),
-        group: "edit",
+        group: "handles",
         bar: true,
         menu: "none",
         checked: this.selectionCorners,
@@ -13986,7 +14062,7 @@ export class InkSurface {
         label: this.shapePointsOn
           ? t("surface.selectionBar.hideCornerPoints")
           : t("surface.selectionBar.editCornerPoints"),
-        group: "edit",
+        group: "handles",
         bar: true,
         menu: "none",
         checked: this.shapePointsOn,
@@ -13996,6 +14072,9 @@ export class InkSurface {
         },
       });
     }
+    // Turn into › stands with Ask AI and Correct, what the ink can be asked
+    // or become: one group, so three rows are not cut apart by two lines.
+    for (const action of actions) if (action.submenu) action.menuGroup = "edit";
     return actions;
   }
 
@@ -18128,11 +18207,9 @@ export class InkSurface {
       boxAtPoint(this.pageLayout, at.x, at.y) ?? this.pageLayout.boxes[this.pageIndex] ?? null;
     if (!box) return;
     const row = this.direction === "horizontal";
-    // Pages down: the page exactly as wide as the pane, whatever its shape
-    // (discussion #43); a row's page covers the pane.
-    const fill = row
-      ? pageFillZoom(box.width, box.height, this.baseScale, this.cssW, this.cssH)
-      : pageWidthZoom(box.width, this.baseScale, this.cssW);
+    // A slide as large as fits whole; a tall page as wide as the pane (pages
+    // down) or covering it (a row) (discussion #43).
+    const fill = doubleTapFill(box.width, box.height, this.baseScale, this.cssW, this.cssH, row);
     const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom, fill));
     if (Math.abs(target - this.userZoom) < 1e-3) return;
     const rect = this.surfaceEl.getBoundingClientRect();
@@ -18177,11 +18254,15 @@ export class InkSurface {
         y: this.cssH / 2 - (box.y + box.height / 2) * scale,
       };
     }
+    // A side of the page that fits the pane is centred on it (a slide filled
+    // whole); a side larger keeps the tapped spot where it was, inside the page.
     const keep = (tap: number, local: number, start: number, size: number, pane: number) =>
-      Math.min(
-        -start * scale,
-        Math.max(pane - (start + size) * scale, tap - (start + local) * scale),
-      );
+      size * scale <= pane + 0.5
+        ? pane / 2 - (start + size / 2) * scale
+        : Math.min(
+            -start * scale,
+            Math.max(pane - (start + size) * scale, tap - (start + local) * scale),
+          );
     return {
       x: keep(settle.screen.x, settle.local.x, box.x, box.width, this.cssW),
       y: keep(settle.screen.y, settle.local.y, box.y, box.height, this.cssH),

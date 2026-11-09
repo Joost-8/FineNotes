@@ -219,14 +219,15 @@ describe("StrokeBuilder stabilization", () => {
       for (let i = 1; i < tail.length; i++) {
         along += Math.hypot(tail[i][0] - tail[i - 1][0], tail[i][1] - tail[i - 1][1]);
       }
-      expect(along).toBeGreaterThanOrEqual(reach);
+      // The tail is drawn smoothed, so it has shed part of the wobble.
+      expect(along).toBeGreaterThanOrEqual(reach * 0.9);
       // One sample step past the reach, at most, plus the wobble's own
       // detour, which grows with the reach.
       expect(along).toBeLessThan(reach * 1.1 + 3);
     }
     const dense = new StrokeBuilder({ minDistance: 0.01, stabilize: STABILIZE_MAX_PX });
     for (let i = 0; i < 400; i++) dense.add({ x: i * 0.05, y: 0, pressure: 0.4 });
-    expect(dense.tail.length).toBe(MAX_CENTRED_HALF);
+    expect(dense.tail.length).toBe(MAX_CENTRED_HALF + 1); // and the pen-up it assumes
   });
 
   it("is felt across the slider on a Pencil's longer wobble, which 10 px could not reach (#107)", () => {

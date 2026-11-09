@@ -19414,7 +19414,7 @@ body.finenotes-style-glass
   --gob-options-radius: 26px;
   --gob-card-radius: 20px;
   --gob-dialog-radius: 26px;
-  --gob-bar-bg: color-mix(in srgb, var(--background-secondary) 62%, transparent);
+  --gob-bar-bg: color-mix(in srgb, var(--background-secondary) 86%, transparent);
   --gob-pill-bg: color-mix(in srgb, var(--background-primary) 60%, transparent);
   --gob-pop-bg: color-mix(in srgb, var(--background-primary) 72%, transparent);
   --gob-side-bg: color-mix(in srgb, var(--background-secondary) 72%, transparent);
@@ -19454,6 +19454,10 @@ body.finenotes-style-material
   --gob-active-fg: var(--text-normal);
   --gob-icon-size: 24px;
   --gob-icon-stroke: 2px;
+  --gob-shadow-sheet: 0 4px 8px rgba(0, 0, 0, 0.14), 0 12px 28px rgba(0, 0, 0, 0.2);
+  --gob-accent-tint: color-mix(in srgb, var(--interactive-accent) 26%, transparent);
+  --gob-size-active-bg: color-mix(in srgb, var(--interactive-accent) 26%, transparent);
+  --gob-size-active-ring: inset 0 0 0 0 transparent;
 }
 .goodobsidian-look-preview.is-style-fluent,
 body.finenotes-style-fluent,
@@ -19483,6 +19487,8 @@ body.finenotes-style-fluent
   --gob-active-fg: var(--text-normal);
   --gob-icon-size: 20px;
   --gob-icon-stroke: 1.4px;
+  --gob-accent-tint: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  --gob-size-active-bg: color-mix(in srgb, var(--text-normal) 7%, transparent);
 }
 .goodobsidian-look-preview.is-style-paper,
 body.finenotes-style-paper,
@@ -19513,6 +19519,11 @@ body.finenotes-style-paper
   --gob-active-bg: transparent;
   --gob-active-fg: var(--text-normal);
   --gob-icon-stroke: 1.25px;
+  --gob-accent-tint: color-mix(in srgb, var(--text-normal) 8%, transparent);
+  --gob-size-active-bg: transparent;
+  --gob-size-active-ring: inset 0 0 0 1.5px var(--text-normal);
+  --gob-swatch-ring: inset 0 0 0 2px var(--text-normal);
+  --gob-ring-active: inset 0 0 0 2px var(--text-normal);
 }
 .goodobsidian-look-preview.is-style-brutalist,
 body.finenotes-style-brutalist,
@@ -19547,6 +19558,12 @@ body.finenotes-style-brutalist
   --gob-active-bg: var(--interactive-accent);
   --gob-active-fg: var(--text-on-accent);
   --gob-icon-stroke: 2.2px;
+  --gob-accent-tint: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
+  --gob-size-active-bg: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
+  --gob-size-active-ring: inset 0 0 0 2.5px var(--text-normal);
+  --gob-swatch-ring: inset 0 0 0 2.5px var(--text-normal);
+  --gob-ring-active: inset 0 0 0 2.5px var(--text-normal);
+  --gob-shadow-paper: 3px 3px 0 var(--text-normal);
 }
 .goodobsidian-look-preview.is-style-soft,
 body.finenotes-style-soft,
@@ -19611,6 +19628,11 @@ body.finenotes-style-retro
   --gob-active-bg: var(--text-normal);
   --gob-active-fg: var(--background-primary);
   --gob-icon-stroke: 2px;
+  --gob-accent-tint: color-mix(in srgb, var(--text-normal) 16%, transparent);
+  --gob-size-active-bg: color-mix(in srgb, var(--text-normal) 16%, transparent);
+  --gob-size-active-ring: inset 0 0 0 2px var(--text-normal);
+  --gob-swatch-ring: inset 0 0 0 2px var(--text-normal);
+  --gob-ring-active: inset 0 0 0 2px var(--text-normal);
 }
 .goodobsidian-look-preview.is-style-compact,
 body.finenotes-style-compact,
@@ -19826,4 +19848,545 @@ body.theme-dark .goodobsidian-look-preview.is-style-soft .goodobsidian-look-tool
 }
 .goodobsidian-look-preview.is-style-retro .goodobsidian-look-tool.is-active {
   background-color: var(--text-normal);
+}
+
+/* A popover held to the room under the bar scrolls its body, a flex column
+   whose children may shrink; a switch list clips its rows (overflow: hidden),
+   so it has no content floor and was squashed to half a row (FineNotes#159). */
+.goodobsidian-popover-body > .goodobsidian-switch-list {
+  flex-shrink: 0;
+}
+
+/* A long name wraps beside its dropdown, and the dropdown gives way rather
+   than running past the popover's edge (Swedish, FineNotes#159). */
+.goodobsidian-choice-row .goodobsidian-popover-label {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+select.goodobsidian-choice-select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  text-overflow: ellipsis;
+}
+
+/* Longer languages (the layout audit, scripts/ui-gallery/audit-overflow.mjs):
+   a name wraps rather than end in "…" or run out of its box. Obsidian keeps
+   every button's text on one line, so each row says so itself. */
+.goodobsidian-more-label {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.goodobsidian-player-hint {
+  white-space: normal;
+}
+
+.goodobsidian-popover button.goodobsidian-erasermode-row,
+.goodobsidian-popover button.goodobsidian-pen-row {
+  white-space: normal;
+  text-align: start;
+}
+
+.goodobsidian-saved-pen-label {
+  min-width: 0;
+  white-space: normal;
+}
+
+.goodobsidian-newnb-under-title button.goodobsidian-newnb-import.clickable-icon {
+  max-width: 50%;
+  white-space: normal;
+  text-align: start;
+}
+
+.goodobsidian-popover button.goodobsidian-popover-link {
+  white-space: normal;
+  text-align: start;
+}
+
+.goodobsidian-popover-link-name {
+  min-width: 0;
+}
+
+/* A segment's name wraps inside its segment ("Last page" runs long in most
+   languages); the segment grows to two lines rather than spill into its
+   neighbour. Icon segments keep their size. */
+.goodobsidian-segmented:not(.is-icons) button {
+  height: auto;
+  min-height: 38px;
+  padding: 4px 10px;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* A switch row whose name runs to two lines keeps room above and below it. */
+.goodobsidian-popover button.goodobsidian-switch-row {
+  padding-block: 6px;
+}
+
+/* A card's name in the interface language (its `lang`) breaks at a hyphen,
+   not after whichever letter runs out of room: "kleur-overgang". Without the
+   language's dictionary, overflow-wrap still breaks it as before. */
+.goodobsidian-template-name[lang] {
+  -webkit-hyphens: auto;
+  hyphens: auto;
+}
+
+/* ------------------------------------------- floating bars, redrawn (2.9) */
+/* The selection's bar and menu, the table's bar and the other small things
+   that float over the page: one look and one motion. Last in the file, since
+   these restyle rules of equal weight above (ledger 2026-09-25); the looks
+   still outrank it through their body classes.
+
+   Motion is the popovers' own (toolbar.ts growPopover): grow from where it
+   hangs, 0.96 to 1 with a fade and a 6 px step on the house spring, and
+   leave the same way, quicker. `scale` and `translate` are their own
+   properties, so an element placed with `transform` keeps its place. */
+
+@keyframes goodobsidian-sel-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 var(--gob-sel-from, -6px);
+  }
+}
+
+@keyframes goodobsidian-sel-out {
+  to {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 var(--gob-sel-from, -6px);
+  }
+}
+
+/* A sub-panel's rows come in from the side they were asked from. */
+@keyframes goodobsidian-sel-forward {
+  from {
+    opacity: 0;
+    translate: 16px 0;
+  }
+}
+
+@keyframes goodobsidian-sel-back {
+  from {
+    opacity: 0;
+    translate: -16px 0;
+  }
+}
+
+.goodobsidian-selection-bar,
+.goodobsidian-selection-menu,
+.goodobsidian-table-bar,
+.goodobsidian-table-swatches,
+.goodobsidian-empty-lasso-pill {
+  /* The island's steps of dark: its ground, a well in it (--gob-sel-well),
+     and what is raised out of a well. Its top edge catches the light. */
+  --gob-sel-raise: var(--color-base-35);
+  --gob-sel-lit: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* --- The bar ---------------------------------------------------------------- */
+
+/* A 4 px rim round 10 px buttons makes the 14 px corner. It rises from the
+   selection: from below when it sits above it, from above when under it. */
+.goodobsidian-selection-bar {
+  --gob-sel-from: 6px;
+  gap: 2px;
+  padding: 4px;
+  box-shadow: var(--gob-shadow-float), var(--gob-sel-lit);
+  transform-origin: 50% 100%;
+  animation: goodobsidian-sel-in var(--gob-t-popover-in) var(--gob-spring-popover-in);
+}
+
+.goodobsidian-selection-bar.is-below {
+  --gob-sel-from: -6px;
+  transform-origin: 50% 0;
+}
+
+/* Hidden to the code, drawn while it fades (selection-bar.ts, hide). */
+.goodobsidian-selection-bar.is-hidden.is-leaving {
+  display: flex;
+}
+
+.goodobsidian-selection-bar.is-leaving,
+.goodobsidian-selection-menu.is-leaving {
+  pointer-events: none;
+  animation: goodobsidian-sel-out var(--gob-t-popover-out) var(--gob-spring-popover-out) forwards;
+}
+
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon {
+  height: calc(var(--gob-touch) - 4px);
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease,
+    scale 0.2s var(--gob-ease-out);
+}
+
+.goodobsidian-selection-bar .goodobsidian-selection-button svg {
+  width: var(--gob-icon-size);
+  height: var(--gob-icon-size);
+  stroke-width: var(--gob-icon-stroke);
+}
+
+/* A press: the well at once, and the button gives a little. */
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon[data-pressed] {
+  background: var(--gob-sel-well);
+  color: var(--color-base-100);
+  scale: 0.9;
+}
+
+/* A switch that is on (the resize handles, a shape's corner points): a mark,
+   not only a colour. */
+.goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.is-on,
+.goodobsidian-selection-bar
+  .goodobsidian-selection-button.clickable-icon.is-on:hover:not(:disabled) {
+  background: hsla(var(--interactive-accent-hsl), 0.24);
+}
+
+.goodobsidian-selection-bar
+  .goodobsidian-selection-button.clickable-icon.mod-warning:hover:not(:disabled),
+.goodobsidian-selection-bar
+  .goodobsidian-selection-button.clickable-icon.mod-warning[data-pressed] {
+  background: color-mix(in srgb, var(--color-red) 20%, transparent);
+  color: var(--color-red);
+}
+
+.goodobsidian-selection-divider {
+  height: 20px;
+  margin: 0 5px;
+  background: var(--gob-sel-line);
+}
+
+/* --- The menu and the panels ------------------------------------------------ */
+
+.goodobsidian-selection-menu {
+  --gob-sel-from: -6px;
+  min-width: 276px;
+  padding: 5px;
+  box-shadow: var(--gob-shadow-sheet), var(--gob-sel-lit);
+  animation: goodobsidian-sel-in var(--gob-t-popover-in) var(--gob-spring-popover-in);
+}
+
+.goodobsidian-selection-menu.is-above {
+  --gob-sel-from: 6px;
+}
+
+.goodobsidian-selection-menu.is-forward > * {
+  animation: goodobsidian-sel-forward 0.24s var(--gob-ease-out) backwards;
+}
+
+.goodobsidian-selection-menu.is-back > * {
+  animation: goodobsidian-sel-back 0.24s var(--gob-ease-out) backwards;
+}
+
+/* Its height glides to the sub-panel's; nothing scrolls meanwhile. */
+.goodobsidian-selection-menu.is-morphing {
+  overflow: hidden;
+}
+
+/* The strip across the top is a tray: its tiles lie in a well, so it needs
+   no line under it. */
+.goodobsidian-selection-tiles {
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-sel-well);
+}
+
+.goodobsidian-selection-tiles + .goodobsidian-selection-menu-divider {
+  height: 0;
+  margin: 2px 0;
+  background: none;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon {
+  gap: 5px;
+  min-height: 58px;
+  padding: 6px 2px;
+  border-radius: calc(var(--gob-radius-m) - 3px);
+  color: var(--color-base-100);
+  font-weight: var(--font-normal);
+  line-height: 1.15;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease,
+    scale 0.2s var(--gob-ease-out);
+}
+
+.goodobsidian-selection-tile-icon {
+  color: var(--gob-sel-icon);
+}
+
+/* A long name wraps between its words, or at a hyphen its language allows. */
+.goodobsidian-selection-tile-label {
+  max-width: 100%;
+  overflow-wrap: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon:hover:not(:disabled),
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon[data-pressed],
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon.is-active,
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon.is-on {
+  background: var(--gob-sel-raise);
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon[data-pressed] {
+  scale: 0.94;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon.is-active,
+.goodobsidian-selection-menu .goodobsidian-selection-tile.clickable-icon.is-on,
+.goodobsidian-selection-tile.is-active .goodobsidian-selection-tile-icon,
+.goodobsidian-selection-tile.is-on .goodobsidian-selection-tile-icon {
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-row.clickable-icon,
+.goodobsidian-selection-menu .goodobsidian-selection-row.is-static {
+  font-weight: var(--font-normal);
+  transition:
+    background-color 0.14s ease,
+    scale 0.2s var(--gob-ease-out);
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-row.clickable-icon[data-pressed] {
+  background: var(--gob-sel-well);
+  scale: 0.98;
+}
+
+/* The way back out of a sub-panel reads as its title. */
+.goodobsidian-selection-menu .goodobsidian-selection-row.is-back {
+  font-weight: var(--font-semibold);
+}
+
+.goodobsidian-selection-menu-divider {
+  margin: 4px 8px;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-segment.clickable-icon {
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.goodobsidian-selection-menu .goodobsidian-selection-segment.clickable-icon.is-active {
+  background: var(--gob-sel-raise);
+  box-shadow: var(--gob-shadow-raised);
+}
+
+.goodobsidian-selection-swatch-disc,
+.goodobsidian-selection-colour-disc {
+  transition: box-shadow 0.16s ease;
+}
+
+/* --- The table's bar, and the other small things over the page -------------- */
+
+.goodobsidian-table-bar {
+  --gob-sel-from: 6px;
+  box-shadow: var(--gob-shadow-float), var(--gob-sel-lit);
+  transform-origin: 50% 100%;
+}
+
+.goodobsidian-table-bar .goodobsidian-table-bar-button.clickable-icon {
+  font-weight: var(--font-normal);
+  transition:
+    background-color 0.14s ease,
+    scale 0.2s var(--gob-ease-out);
+}
+
+.goodobsidian-table-bar .goodobsidian-table-bar-button.clickable-icon:hover:not(:disabled),
+.goodobsidian-table-bar .goodobsidian-table-bar-button.clickable-icon[data-pressed] {
+  background: var(--gob-sel-line);
+}
+
+.goodobsidian-table-bar .goodobsidian-table-bar-button.clickable-icon[data-pressed] {
+  scale: 0.92;
+}
+
+.goodobsidian-empty-lasso-pill {
+  --gob-sel-from: 6px;
+  box-shadow: var(--gob-shadow-float), var(--gob-sel-lit);
+}
+
+/* Things that used to appear from nothing now arrive as a popover does: the
+   table's bar and its colours, the empty lasso's pill, the recording pill,
+   the scan sheet's status, the zoom box's settings and the toolbar editor's
+   menu. Frosted ones are left out: a blurred layer is never faded. */
+.goodobsidian-table-bar,
+.goodobsidian-table-swatches,
+.goodobsidian-empty-lasso-pill,
+.goodobsidian-rec-pill,
+.goodobsidian-scan-status,
+.goodobsidian-zoombox-settings,
+.goodobsidian-edit-menu {
+  animation: goodobsidian-sel-in var(--gob-t-popover-in) var(--gob-spring-popover-in);
+}
+
+/* The player comes up from the foot of the page. */
+.goodobsidian-player {
+  --gob-sel-from: 10px;
+  animation: goodobsidian-sel-in var(--gob-t-popover-in) var(--gob-spring-popover-in);
+}
+
+/* State changes ease instead of snapping: a hover, a pick, a switch. Colour
+   only, so nothing is laid out again. `:where()` weighs nothing: a control
+   with a transition of its own keeps it. The tool bar and the options pill
+   are left out; their press layer and sliding indicator are their motion. */
+:where(
+    .goodobsidian-popover,
+    .goodobsidian-more,
+    .goodobsidian-addpage,
+    .goodobsidian-pagesidebar,
+    .goodobsidian-textpanel,
+    .goodobsidian-player,
+    .goodobsidian-edit-menu,
+    .goodobsidian-zoombox-settings,
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    .workspace-leaf-content[data-type="finenotes-library"]
+  )
+  :where(button, .clickable-icon, [role="button"], [role="tab"], [role="switch"]) {
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease,
+    border-color 0.14s ease,
+    box-shadow 0.14s ease,
+    opacity 0.14s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body:not(#fn-reduce-motion) .goodobsidian-selection-menu > *,
+  body:not(#fn-reduce-motion) .goodobsidian-table-bar,
+  body:not(#fn-reduce-motion) .goodobsidian-table-swatches,
+  body:not(#fn-reduce-motion) .goodobsidian-empty-lasso-pill,
+  body:not(#fn-reduce-motion) .goodobsidian-rec-pill,
+  body:not(#fn-reduce-motion) .goodobsidian-scan-status,
+  body:not(#fn-reduce-motion) .goodobsidian-zoombox-settings,
+  body:not(#fn-reduce-motion) .goodobsidian-edit-menu,
+  body:not(#fn-reduce-motion) .goodobsidian-player {
+    animation: none;
+  }
+
+  body:not(#fn-reduce-motion) .goodobsidian-selection-bar button,
+  body:not(#fn-reduce-motion) .goodobsidian-selection-menu button,
+  body:not(#fn-reduce-motion) .goodobsidian-table-bar button {
+    transition: none;
+    scale: none;
+  }
+}
+
+/* ------------------------------------------- looks, on the floating bars */
+/* The selection's bar and menu and the table's bar are a dark island in
+   every theme, so a style's light-surface shadows and lines need their own
+   answer there. After the floating bars' section, which they restyle. */
+
+/* Soft: the island is lit from the top left too, but its light edge is a
+   glint, not the white glow a light surface casts. */
+body.finenotes-style-soft
+  :is(
+    .goodobsidian-selection-bar,
+    .goodobsidian-selection-menu,
+    .goodobsidian-table-bar,
+    .goodobsidian-table-swatches,
+    .goodobsidian-empty-lasso-pill
+  ) {
+  --gob-shadow-float: 6px 6px 16px rgba(0, 0, 0, 0.32), -2px -2px 8px rgba(255, 255, 255, 0.06);
+  --gob-shadow-sheet: 8px 8px 22px rgba(0, 0, 0, 0.38), -2px -2px 8px rgba(255, 255, 255, 0.06);
+  border-color: transparent;
+}
+
+/* Brutalist: the island wears the thick line too, in its own light ink. */
+body.finenotes-style-brutalist
+  :is(
+    .goodobsidian-selection-bar,
+    .goodobsidian-selection-menu,
+    .goodobsidian-table-bar,
+    .goodobsidian-table-swatches,
+    .goodobsidian-empty-lasso-pill
+  ) {
+  --gob-sel-line: var(--color-base-100);
+  --gob-sel-lit: 0 0 0 0 transparent;
+  border-width: 2.5px;
+}
+
+body.finenotes-style-brutalist .goodobsidian-selection-divider,
+body.finenotes-style-brutalist .goodobsidian-selection-menu-divider,
+body.finenotes-style-brutalist .goodobsidian-table-bar-gap {
+  background: var(--color-base-50);
+}
+
+/* Retro: square, one-pixel lines, the mono face; a press inverts. */
+body.finenotes-style-retro
+  :is(
+    .goodobsidian-selection-bar,
+    .goodobsidian-selection-menu,
+    .goodobsidian-table-bar,
+    .goodobsidian-table-swatches,
+    .goodobsidian-empty-lasso-pill,
+    .goodobsidian-player,
+    .goodobsidian-rec-pill
+  ) {
+  --gob-sel-line: var(--color-base-100);
+  --gob-sel-lit: 0 0 0 0 transparent;
+  font-family: var(--font-monospace);
+}
+
+body.finenotes-style-retro .goodobsidian-selection-divider,
+body.finenotes-style-retro .goodobsidian-selection-menu-divider,
+body.finenotes-style-retro .goodobsidian-table-bar-gap {
+  background: var(--color-base-50);
+}
+
+body.finenotes-style-retro .goodobsidian-selection-tiles {
+  background-color: transparent;
+  background-image: radial-gradient(var(--color-base-40) 1px, transparent 1px);
+  background-size: 4px 4px;
+}
+
+body.finenotes-style-retro
+  .goodobsidian-selection-bar
+  .goodobsidian-selection-button.clickable-icon[data-pressed],
+body.finenotes-style-retro
+  .goodobsidian-selection-menu
+  :is(.goodobsidian-selection-row, .goodobsidian-selection-tile).clickable-icon[data-pressed] {
+  background: var(--color-base-100);
+  color: var(--color-base-00);
+  scale: none;
+}
+
+body.finenotes-style-retro
+  .goodobsidian-selection-menu
+  .clickable-icon[data-pressed]
+  :is(.goodobsidian-selection-row-icon, .goodobsidian-selection-tile-icon) {
+  color: inherit;
+}
+
+/* Paper and Fluent: flat. The island has no lit edge and no lift. */
+body:is(.finenotes-style-paper, .finenotes-style-fluent)
+  :is(
+    .goodobsidian-selection-bar,
+    .goodobsidian-selection-menu,
+    .goodobsidian-table-bar,
+    .goodobsidian-table-swatches,
+    .goodobsidian-empty-lasso-pill
+  ) {
+  --gob-sel-lit: 0 0 0 0 transparent;
+}
+
+/* Material: the menu's tiles are tonal chips, and a press is a state layer
+   (a tint, no squeeze). */
+body.finenotes-style-material .goodobsidian-selection-tiles {
+  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--color-base-25));
+}
+
+body.finenotes-style-material
+  :is(.goodobsidian-selection-bar, .goodobsidian-selection-menu, .goodobsidian-table-bar)
+  .clickable-icon[data-pressed] {
+  background: color-mix(in srgb, var(--interactive-accent) 26%, transparent);
+  scale: none;
 }
