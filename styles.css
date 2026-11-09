@@ -1240,7 +1240,7 @@ select.goodobsidian-choice-select {
 }
 
 /* `![[Physics.notebook]]`: every page, one under the other, as the
-   notebook view stacks them. */
+   notebook view stacks them (or, for a long notebook, a choice of them). */
 .internal-embed.goodobsidian-notebook-embed:not(.is-link) {
   display: flex;
   flex-direction: column;
@@ -1265,6 +1265,88 @@ select.goodobsidian-choice-select {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* A notebook too long to show whole shows its cover and the pages its
+   contents and bookmarks point to (page-embed-model.ts): each says which it
+   is, as the notebook's page counter does, since they are not one after
+   another. Its number, then its line in the contents, cut to one line. */
+.goodobsidian-page-embed-caption {
+  position: absolute;
+  z-index: 1;
+  top: var(--size-4-2);
+  left: var(--size-4-2);
+  display: flex;
+  gap: var(--size-4-2);
+  max-width: calc(100% - 3 * var(--size-4-2) - 18px);
+  padding: 2px var(--size-4-2);
+  overflow: hidden;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.goodobsidian-page-embed-caption > span:last-child:not(:first-child) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-page-embed-number {
+  flex: none;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A bookmarked page: the page sidebar's ribbon, not something to tap. */
+.goodobsidian-page-embed-ribbon {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: var(--size-4-2);
+  display: flex;
+  color: var(--gob-bookmark);
+  pointer-events: none;
+}
+
+.goodobsidian-page-embed-ribbon svg {
+  width: 18px;
+  height: 22px;
+  fill: currentColor;
+  stroke: rgba(0, 0, 0, 0.25);
+}
+
+/* After the pages: how many were left out, opening the notebook. */
+.goodobsidian-page-embed-more {
+  /* Centred in the note's stack and in a hover preview, which is not one. */
+  display: block;
+  width: fit-content;
+  margin: var(--size-4-2) auto 0;
+  padding: var(--size-4-1) var(--size-4-3);
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.goodobsidian-page-embed-more:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.goodobsidian-page-embed-more.is-hidden {
+  display: none;
+}
+
+@media print {
+  .goodobsidian-page-embed-more {
+    display: none;
+  }
 }
 
 /* ------------------------------------------------------- page sidebar */
