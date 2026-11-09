@@ -8,14 +8,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
-### Changed
+## [2.9.1] - 2026-11-10
 
-- **Tool options inside the bar**
-  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
-  With Dock tool options on and the bar along the top or bottom, the pen's
-  widths and colours sit in the bar itself, after the tools, as in Goodnotes.
-  The buttons that fold first go into ⋯ to make room. Where there is too
-  little room, the options keep a row of their own.
+2.9.0's What's new card on Home had a bug and was incomplete: it could
+ignore taps on its X and its pictures, and it showed three of that
+release's features and left out the rest. This release fixes the card and
+shows all of 2.9 again, also to anyone who already closed it.
 
 ### Fixed
 
@@ -26,14 +24,22 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
-- **What's new shows more of 2.9.** Five new pictures, also under Tips: a
-  sum that glows and its maths card, solving for x, putting a graph on the
-  page, the looks, and the lasso's lighter menu.
+- **What's new shows all of 2.9.** The card comes back once with eight
+  pictures: the looks, a sum that glows and its maths card, putting a graph
+  on the page, solving for x and the lasso's lighter menu, which 2.9.0's
+  card left out, and then curved and elbow arrows, things lining up as they
+  move, and Lock fit to width. The five new pictures are under Tips too.
 - **Tidier pictures in Tips.** The printed pages in the pictures are set
   in letters of one size (words used to be stretched or squeezed to fit, and
   looked bold and thin by turns). "Fix a misread word" writes the word its
   menu corrects, and "Screenshot any patch" shows the camera in the lasso's
   own pill, clear of the text, and copies print, not handwriting.
+- **Tool options inside the bar**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  With Dock tool options on and the bar along the top or bottom, the pen's
+  widths and colours sit in the bar itself, after the tools, as in Goodnotes.
+  The buttons that fold first go into ⋯ to make room. Where there is too
+  little room, the options keep a row of their own.
 
 ## [2.9.0] - 2026-11-09
 

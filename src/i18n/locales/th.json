@@ -3251,5 +3251,15 @@
   "calculator.whichDidYouWrite": "คุณเขียนอะไร",
   "calculator.readingTitle": "เขียนว่าอะไร",
   "calculator.readingNote": "พิมพ์โจทย์ตามที่คุณเขียน",
-  "calculator.readingRefused": "คำนวณไม่ลงตัว ตรวจสอบโจทย์อีกครั้ง"
+  "calculator.readingRefused": "คำนวณไม่ลงตัว ตรวจสอบโจทย์อีกครั้ง",
+  "notebooks.tips.sumGlow.title": "โจทย์จะเรืองแสงเมื่ออ่านแล้ว",
+  "notebooks.tips.sumGlow.body": "จบโจทย์ด้วย = แล้วแตะแสงเรืองเพื่อดูการ์ด: คำตอบ เขียน หรือสมการที่พิมพ์",
+  "notebooks.tips.solveLetter.title": "แก้สมการหา x",
+  "notebooks.tips.solveLetter.body": "เขียน x = ใต้สมการที่มี x แล้วแตะแสงเรืองให้การ์ดเสนอคำตอบ",
+  "notebooks.tips.insertGraph.title": "ใส่กราฟลงในหน้า",
+  "notebooks.tips.insertGraph.body": "พิมพ์ฟังก์ชันของ x ในเครื่องคิดเลข เปิด กราฟ แล้วแตะ แทรกกราฟ",
+  "notebooks.tips.looks.title": "รูปลักษณ์ของ FineNotes",
+  "notebooks.tips.looks.body": "การตั้งค่า → รูปลักษณ์ ปรับแถบและเมนูของ FineNotes: เลือกสไตล์และชุดสี",
+  "notebooks.tips.lassoTray.title": "เมนูบ่วงบาศที่เบาขึ้น",
+  "notebooks.tips.lassoTray.body": "แถบเหลือ คัดลอก ทำสำเนา และ ลบ ส่วน ⋯ เปิด ตัด วาง ภาพหน้าจอ และ คัดลอกรูปแบบ"
 }

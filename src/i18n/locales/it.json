@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Quale hai scritto?",
   "calculator.readingTitle": "Cosa dice?",
   "calculator.readingNote": "Digita il calcolo come l'hai scritto.",
-  "calculator.readingRefused": "Non torna. Controlla il calcolo."
+  "calculator.readingRefused": "Non torna. Controlla il calcolo.",
+  "notebooks.tips.sumGlow.title": "Un calcolo si illumina quando è letto",
+  "notebooks.tips.sumGlow.body": "Chiudi un calcolo con =. Tocca il bagliore per la sua scheda: il risultato, Scrivi o un'equazione digitata.",
+  "notebooks.tips.solveLetter.title": "Risolvi per x",
+  "notebooks.tips.solveLetter.body": "Scrivi x = sotto un'equazione in x, poi tocca il bagliore: la scheda propone le soluzioni.",
+  "notebooks.tips.insertGraph.title": "Metti un grafico sulla pagina",
+  "notebooks.tips.insertGraph.body": "Digita una funzione di x nella calcolatrice, apri Grafico e tocca Inserisci il grafico.",
+  "notebooks.tips.looks.title": "Aspetti per FineNotes",
+  "notebooks.tips.looks.body": "Impostazioni → Aspetto cambia lo stile di barre e menu di FineNotes: scegli uno stile e dei colori.",
+  "notebooks.tips.lassoTray.title": "Un menu del lazo più leggero",
+  "notebooks.tips.lassoTray.body": "La barra tiene Copia, Duplica ed Elimina. ⋯ apre Taglia, Incolla, Schermata e Copia stile."
 }

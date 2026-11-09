@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "کدام را نوشتید؟",
   "calculator.readingTitle": "چه نوشته است؟",
   "calculator.readingNote": "حساب را همان‌طور که نوشتید تایپ کنید.",
-  "calculator.readingRefused": "حساب درنمی‌آید. آن را بررسی کنید."
+  "calculator.readingRefused": "حساب درنمی‌آید. آن را بررسی کنید.",
+  "notebooks.tips.sumGlow.title": "محاسبه وقتی خوانده شود می‌درخشد",
+  "notebooks.tips.sumGlow.body": "محاسبه را با = تمام کنید. روی درخشش بزنید: پاسخ، نوشتن یا یک معادله تایپ‌شده.",
+  "notebooks.tips.solveLetter.title": "حل برای x",
+  "notebooks.tips.solveLetter.body": "زیر یک معادله بر حسب x بنویسید x = و روی درخشش بزنید: کارت جواب‌ها را پیشنهاد می‌دهد.",
+  "notebooks.tips.insertGraph.title": "نمودار را روی صفحه بگذارید",
+  "notebooks.tips.insertGraph.body": "در ماشین‌حساب تابعی از x بنویسید، نمودار را باز کنید و روی درج نمودار بزنید.",
+  "notebooks.tips.looks.title": "ظاهرهایی برای FineNotes",
+  "notebooks.tips.looks.body": "تنظیمات ← ظاهر شکل نوارها و منوهای FineNotes را عوض می‌کند: سبک و رنگ‌ها را انتخاب کنید.",
+  "notebooks.tips.lassoTray.title": "منوی کمندِ سبک‌تر",
+  "notebooks.tips.lassoTray.body": "نوار رونوشت، تکرار و حذف را نگه می‌دارد. ⋯ برش، چسباندن، عکس صفحه و رونوشت سبک را باز می‌کند."
 }

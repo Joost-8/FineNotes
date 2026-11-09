@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Qaysi birini yozdingiz?",
   "calculator.readingTitle": "Nima deyilgan?",
   "calculator.readingNote": "Misolni yozganingizdek kiriting.",
-  "calculator.readingRefused": "Bu hisoblanmadi. Misolni tekshiring."
+  "calculator.readingRefused": "Bu hisoblanmadi. Misolni tekshiring.",
+  "notebooks.tips.sumGlow.title": "Misol oʻqilganda porlaydi",
+  "notebooks.tips.sumGlow.body": "Misolni = bilan tugating. Kartaga porlashga teging: javob, Yozish yoki terilgan tenglama.",
+  "notebooks.tips.solveLetter.title": "x boʻyicha yechish",
+  "notebooks.tips.solveLetter.body": "x li tenglama ostiga x = yozing va porlashga teging: karta yechimlarni taklif qiladi.",
+  "notebooks.tips.insertGraph.title": "Sahifaga grafik qoʻying",
+  "notebooks.tips.insertGraph.body": "Kalkulyatorda x funksiyasini yozing, Grafikni oching va Grafikni qoʻshish ga teging.",
+  "notebooks.tips.looks.title": "FineNotes koʻrinishlari",
+  "notebooks.tips.looks.body": "Sozlamalar → Koʻrinish FineNotes panellari va menyularini oʻzgartiradi: uslub va ranglarni tanlang.",
+  "notebooks.tips.lassoTray.title": "Yengilroq lasso menyusi",
+  "notebooks.tips.lassoTray.body": "Panelda Nusxa olish, Nusxalash va Oʻchirish qoladi. ⋯ Kesib olish, Qoʻyish, Skrinshotni ochadi."
 }

@@ -3584,5 +3584,15 @@
   "calculator.whichDidYouWrite": "Co napisano?",
   "calculator.readingTitle": "Co tu jest napisane?",
   "calculator.readingNote": "Wpisz działanie tak, jak je napisano.",
-  "calculator.readingRefused": "To się nie zgadza. Sprawdź działanie."
+  "calculator.readingRefused": "To się nie zgadza. Sprawdź działanie.",
+  "notebooks.tips.sumGlow.title": "Działanie świeci, gdy zostanie odczytane",
+  "notebooks.tips.sumGlow.body": "Zakończ działanie znakiem =. Dotknij poświaty, by zobaczyć kartę: wynik, Zapisz lub wpisane równanie.",
+  "notebooks.tips.solveLetter.title": "Rozwiąż względem x",
+  "notebooks.tips.solveLetter.body": "Napisz x = pod równaniem z x i dotknij poświaty: karta zaproponuje rozwiązania.",
+  "notebooks.tips.insertGraph.title": "Wykres na stronie",
+  "notebooks.tips.insertGraph.body": "Wpisz w kalkulatorze funkcję x, otwórz Wykres i dotknij Wstaw wykres.",
+  "notebooks.tips.looks.title": "Wygląd FineNotes",
+  "notebooks.tips.looks.body": "Ustawienia → Wygląd zmienia styl i kolory pasków oraz menu FineNotes.",
+  "notebooks.tips.lassoTray.title": "Lżejsze menu lassa",
+  "notebooks.tips.lassoTray.body": "Pasek zostawia Kopiuj, Duplikuj i Usuń. ⋯ otwiera Wytnij, Wklej, Zrzut ekranu i Kopiuj styl."
 }

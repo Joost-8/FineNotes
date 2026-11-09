@@ -3584,5 +3584,15 @@
   "calculator.whichDidYouWrite": "Které jste napsali?",
   "calculator.readingTitle": "Co tam je?",
   "calculator.readingNote": "Napište příklad tak, jak jste jej napsali.",
-  "calculator.readingRefused": "To nevychází. Zkontrolujte příklad."
+  "calculator.readingRefused": "To nevychází. Zkontrolujte příklad.",
+  "notebooks.tips.sumGlow.title": "Příklad se rozsvítí, když je přečten",
+  "notebooks.tips.sumGlow.body": "Ukonči příklad znakem =. Klepni na záři: výsledek, Napsat, nebo napsaná rovnice.",
+  "notebooks.tips.solveLetter.title": "Vyřeš pro x",
+  "notebooks.tips.solveLetter.body": "Napiš x = pod rovnici s x a klepni na záři: karta nabídne řešení.",
+  "notebooks.tips.insertGraph.title": "Dej na stránku graf",
+  "notebooks.tips.insertGraph.body": "Zadej v kalkulačce funkci proměnné x, otevři Graf a klepni na Vložit graf.",
+  "notebooks.tips.looks.title": "Vzhledy pro FineNotes",
+  "notebooks.tips.looks.body": "Nastavení → Vzhled mění podobu lišt a nabídek FineNotes: vyber styl a barvy.",
+  "notebooks.tips.lassoTray.title": "Lehčí nabídka laso",
+  "notebooks.tips.lassoTray.body": "Lišta nabízí Kopírovat, Duplikovat a Smazat. ⋯ otevře Vyjmout, Vložit, Snímek obrazovky a Kopírovat styl."
 }

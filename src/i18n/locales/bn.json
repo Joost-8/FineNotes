@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "কোনটি লিখেছিলেন?",
   "calculator.readingTitle": "কী লেখা আছে?",
   "calculator.readingNote": "অঙ্কটি যেভাবে লিখেছেন সেভাবে টাইপ করুন।",
-  "calculator.readingRefused": "এটি মেলে না। অঙ্কটি দেখে নিন।"
+  "calculator.readingRefused": "এটি মেলে না। অঙ্কটি দেখে নিন।",
+  "notebooks.tips.sumGlow.title": "অঙ্ক পড়া হলে জ্বলে ওঠে",
+  "notebooks.tips.sumGlow.body": "অঙ্কটি = দিয়ে শেষ করুন। আভায় ট্যাপ করুন: উত্তর, লিখুন, বা টাইপ করা সমীকরণ।",
+  "notebooks.tips.solveLetter.title": "x-এর জন্য সমাধান করুন",
+  "notebooks.tips.solveLetter.body": "x-এর সমীকরণের নিচে x = লিখে আভায় ট্যাপ করুন: কার্ড সমাধানগুলো দেখাবে।",
+  "notebooks.tips.insertGraph.title": "পাতায় গ্রাফ রাখুন",
+  "notebooks.tips.insertGraph.body": "ক্যালকুলেটরে x-এর একটি ফাংশন টাইপ করুন, গ্রাফ খুলে গ্রাফ যোগ করুন-এ ট্যাপ করুন।",
+  "notebooks.tips.looks.title": "FineNotes-এর লুক",
+  "notebooks.tips.looks.body": "সেটিংস → লুক FineNotes-এর বার ও মেনুর রূপ বদলায়: একটি স্টাইল ও রঙের সেট বেছে নিন।",
+  "notebooks.tips.lassoTray.title": "হালকা ল্যাসো মেনু",
+  "notebooks.tips.lassoTray.body": "বারে কপি, ডুপ্লিকেট ও মুছুন থাকে। ⋯ খুললে কাট, পেস্ট, স্ক্রিনশট ও স্টাইল কপি পাবেন।"
 }

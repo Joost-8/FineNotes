@@ -3695,5 +3695,15 @@
   "calculator.whichDidYouWrite": "Cé acu a scríobh tú?",
   "calculator.readingTitle": "Cad deir sé?",
   "calculator.readingNote": "Clóscríobh an tsuim mar a scríobh tú í.",
-  "calculator.readingRefused": "Ní oibríonn sin amach. Seiceáil an tsuim."
+  "calculator.readingRefused": "Ní oibríonn sin amach. Seiceáil an tsuim.",
+  "notebooks.tips.sumGlow.title": "Lonraíonn suim nuair a léitear í",
+  "notebooks.tips.sumGlow.body": "Críochnaigh suim le =. Tapáil an lonrú: an freagra, Scríobh, nó cothromóid chlóscríofa.",
+  "notebooks.tips.solveLetter.title": "Réitigh do x",
+  "notebooks.tips.solveLetter.body": "Scríobh x = faoi chothromóid in x, ansin tapáil an lonrú: tairgeann an cárta a réitigh.",
+  "notebooks.tips.insertGraph.title": "Cuir graf ar an leathanach",
+  "notebooks.tips.insertGraph.body": "Clóscríobh feidhm de x sa áireamhán, oscail Graf agus tapáil Cuir graf isteach.",
+  "notebooks.tips.looks.title": "Cumacha do FineNotes",
+  "notebooks.tips.looks.body": "Socruithe → Cuma athstíleann barraí agus roghchláir FineNotes: roghnaigh stíl agus dathanna.",
+  "notebooks.tips.lassoTray.title": "Roghchlár laso níos éadroime",
+  "notebooks.tips.lassoTray.body": "Barra: Cóipeáil, Dúbail, Scrios. ⋯: Gearr, Greamaigh, Scáileánghrabadh, Cóipeáil stíl."
 }

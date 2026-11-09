@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Melyiket írta?",
   "calculator.readingTitle": "Mit jelent?",
   "calculator.readingNote": "Írja be a műveletet úgy, ahogy leírta.",
-  "calculator.readingRefused": "Ez nem jön ki. Ellenőrizze a műveletet."
+  "calculator.readingRefused": "Ez nem jön ki. Ellenőrizze a műveletet.",
+  "notebooks.tips.sumGlow.title": "Az olvasott művelet izzik",
+  "notebooks.tips.sumGlow.body": "Zárja a műveletet =-vel. Koppintson az izzásra: eredmény, Beírás vagy begépelt egyenlet.",
+  "notebooks.tips.solveLetter.title": "Oldja meg x-re",
+  "notebooks.tips.solveLetter.body": "Írjon x = jelet egy x-es egyenlet alá, majd koppintson az izzásra: a kártya megoldásokat kínál.",
+  "notebooks.tips.insertGraph.title": "Grafikon az oldalra",
+  "notebooks.tips.insertGraph.body": "Írjon x-függvényt a számológépbe, nyissa meg a Grafikont, és koppintson a Grafikon beszúrása gombra.",
+  "notebooks.tips.looks.title": "A FineNotes megjelenése",
+  "notebooks.tips.looks.body": "Beállítások → Megjelenés: a FineNotes sávjainak és menüinek stílusa és színei.",
+  "notebooks.tips.lassoTray.title": "Könnyebb lasszómenü",
+  "notebooks.tips.lassoTray.body": "A sávon marad: Másolás, Duplikálás, Törlés. A ⋯ mögött: Kivágás, Beillesztés, Képernyőkép, Stílus másolása."
 }

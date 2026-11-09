@@ -3584,5 +3584,15 @@
   "calculator.whichDidYouWrite": "Што вы напісалі?",
   "calculator.readingTitle": "Што тут напісана?",
   "calculator.readingNote": "Набярыце прыклад так, як вы яго напісалі.",
-  "calculator.readingRefused": "Не сыходзіцца. Праверце прыклад."
+  "calculator.readingRefused": "Не сыходзіцца. Праверце прыклад.",
+  "notebooks.tips.sumGlow.title": "Прыклад свеціцца, калі яго прачыталі",
+  "notebooks.tips.sumGlow.body": "Скончыце прыклад знакам =. Націсніце на ззянне: адказ, Запісаць або набранае ўраўненне.",
+  "notebooks.tips.solveLetter.title": "Рашыце для x",
+  "notebooks.tips.solveLetter.body": "Напішыце x = пад ураўненнем з x і націсніце на ззянне: картка прапануе рашэнні.",
+  "notebooks.tips.insertGraph.title": "Дадайце графік на старонку",
+  "notebooks.tips.insertGraph.body": "Набярыце ў калькулятары функцыю ад x, адкрыйце Графік і націсніце Уставіць графік.",
+  "notebooks.tips.looks.title": "Выгляды для FineNotes",
+  "notebooks.tips.looks.body": "Налады → Выгляд змяняе панэлі і меню FineNotes: выберыце стыль і колеры.",
+  "notebooks.tips.lassoTray.title": "Лягчэйшае меню ласо",
+  "notebooks.tips.lassoTray.body": "На панэлі Скапіяваць, Дубліраваць і Выдаліць. ⋯ адкрывае Выразаць, Уставіць, Здымак экрана, Скапіяваць стыль."
 }

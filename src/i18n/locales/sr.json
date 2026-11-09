@@ -3473,5 +3473,15 @@
   "calculator.whichDidYouWrite": "Шта си написао?",
   "calculator.readingTitle": "Шта пише?",
   "calculator.readingNote": "Укуцај рачун онако како си га написао.",
-  "calculator.readingRefused": "То не излази. Провери рачун."
+  "calculator.readingRefused": "То не излази. Провери рачун.",
+  "notebooks.tips.sumGlow.title": "Рачун сија кад се прочита",
+  "notebooks.tips.sumGlow.body": "Заврши рачун знаком =. Додирни сјај за картицу: одговор, Упиши или откуцану једначину.",
+  "notebooks.tips.solveLetter.title": "Реши по x",
+  "notebooks.tips.solveLetter.body": "Напиши x = испод једначине са x, па додирни сјај: картица нуди решења.",
+  "notebooks.tips.insertGraph.title": "Стави график на страницу",
+  "notebooks.tips.insertGraph.body": "Откуцај функцију од x у калкулатору, отвори График и додирни Уметни график.",
+  "notebooks.tips.looks.title": "Изглед за FineNotes",
+  "notebooks.tips.looks.body": "Подешавања → Изглед мења траке и меније FineNotes-а: изабери стил и сет боја.",
+  "notebooks.tips.lassoTray.title": "Лакши мени ласоа",
+  "notebooks.tips.lassoTray.body": "Трака задржава Копирај, Дуплирај и Обриши. ⋯ отвара Исеци, Налепи, Снимак екрана и Копирај стил."
 }

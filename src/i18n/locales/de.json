@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Was hast du geschrieben?",
   "calculator.readingTitle": "Was steht da?",
   "calculator.readingNote": "Tippe die Rechnung so, wie du sie geschrieben hast.",
-  "calculator.readingRefused": "Das geht nicht auf. Prüfe die Rechnung."
+  "calculator.readingRefused": "Das geht nicht auf. Prüfe die Rechnung.",
+  "notebooks.tips.sumGlow.title": "Eine Rechnung leuchtet, wenn sie gelesen wird",
+  "notebooks.tips.sumGlow.body": "Beende eine Rechnung mit =. Tippe auf das Leuchten: Ergebnis, Schreiben oder eine getippte Gleichung.",
+  "notebooks.tips.solveLetter.title": "Nach x auflösen",
+  "notebooks.tips.solveLetter.body": "Schreibe x = unter eine Gleichung in x und tippe auf das Leuchten: Die Karte zeigt die Lösungen.",
+  "notebooks.tips.insertGraph.title": "Einen Graphen auf die Seite setzen",
+  "notebooks.tips.insertGraph.body": "Tippe im Rechner eine Funktion von x ein, öffne Graph und tippe auf Graph einfügen.",
+  "notebooks.tips.looks.title": "Aussehen für FineNotes",
+  "notebooks.tips.looks.body": "Einstellungen → Aussehen gestaltet Leisten und Menüs von FineNotes neu: Stil und Farben wählen.",
+  "notebooks.tips.lassoTray.title": "Ein schlankeres Lassomenü",
+  "notebooks.tips.lassoTray.body": "Die Leiste hat Kopieren, Duplizieren und Löschen. ⋯ öffnet Ausschneiden, Einfügen, Screenshot, Stil kopieren."
 }

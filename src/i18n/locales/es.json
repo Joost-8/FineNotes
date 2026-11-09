@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "¿Cuál escribiste?",
   "calculator.readingTitle": "¿Qué dice?",
   "calculator.readingNote": "Escribe la cuenta como la escribiste.",
-  "calculator.readingRefused": "Eso no cuadra. Revisa la cuenta."
+  "calculator.readingRefused": "Eso no cuadra. Revisa la cuenta.",
+  "notebooks.tips.sumGlow.title": "Una cuenta brilla cuando se lee",
+  "notebooks.tips.sumGlow.body": "Termina una cuenta con =. Toca el brillo para ver su tarjeta: la respuesta, Escribir o una ecuación tecleada.",
+  "notebooks.tips.solveLetter.title": "Despejar x",
+  "notebooks.tips.solveLetter.body": "Escribe x = bajo una ecuación en x y toca el brillo: la tarjeta ofrece sus soluciones.",
+  "notebooks.tips.insertGraph.title": "Pon una gráfica en la página",
+  "notebooks.tips.insertGraph.body": "Teclea una función de x en la calculadora, abre Gráfica y toca Insertar gráfica.",
+  "notebooks.tips.looks.title": "Aspectos para FineNotes",
+  "notebooks.tips.looks.body": "Ajustes → Aspecto renueva las barras y menús de FineNotes: elige un estilo y unos colores.",
+  "notebooks.tips.lassoTray.title": "Un menú de lazo más ligero",
+  "notebooks.tips.lassoTray.body": "La barra conserva Copiar, Duplicar y Eliminar. ⋯ abre Cortar, Pegar, Captura y Copiar estilo."
 }

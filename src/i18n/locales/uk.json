@@ -3446,5 +3446,15 @@
   "calculator.whichDidYouWrite": "Що ви написали?",
   "calculator.readingTitle": "Що тут написано?",
   "calculator.readingNote": "Введіть приклад так, як ви його написали.",
-  "calculator.readingRefused": "Це не сходиться. Перевірте приклад."
+  "calculator.readingRefused": "Це не сходиться. Перевірте приклад.",
+  "notebooks.tips.sumGlow.title": "Приклад світиться, коли прочитаний",
+  "notebooks.tips.sumGlow.body": "Закінчіть приклад знаком =. Торкніться сяйва: відповідь, Вписати або набране рівняння.",
+  "notebooks.tips.solveLetter.title": "Розв'язати відносно x",
+  "notebooks.tips.solveLetter.body": "Напишіть x = під рівнянням з x і торкніться сяйва: картка запропонує розв'язки.",
+  "notebooks.tips.insertGraph.title": "Графік на сторінці",
+  "notebooks.tips.insertGraph.body": "Введіть функцію від x у калькуляторі, відкрийте Графік і торкніться Вставити графік.",
+  "notebooks.tips.looks.title": "Вигляд FineNotes",
+  "notebooks.tips.looks.body": "Налаштування → Вигляд змінює панелі та меню FineNotes: оберіть стиль і набір кольорів.",
+  "notebooks.tips.lassoTray.title": "Легше меню ласо",
+  "notebooks.tips.lassoTray.body": "На панелі лишились Копіювати, Дублювати й Видалити. ⋯ відкриває Вирізати, Вставити, Знімок екрана."
 }

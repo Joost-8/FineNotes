@@ -285,13 +285,23 @@ export const TIP_COLLECTIONS: readonly TipCollection[] = TIP_SECTIONS.flatMap((s
 /** Newest first. Every release with something to show adds an entry. */
 export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlights[] = [
   {
+    // 2.9.0's card missed most of that release and could ignore taps: 2.9.1
+    // shows all of 2.9 again, to those who closed the first card too.
+    version: "2.9.1",
+    tips: [
+      tip("looks", "looks"),
+      tip("sumGlow", "sumGlow"),
+      tip("insertGraph", "insertGraph"),
+      tip("solveLetter", "solveLetter"),
+      tip("lassoTray", "lassoTray"),
+      tip("curvedElbow", "curvedElbow"),
+      tip("lineUpMoves", "lineUpMoves"),
+      tip("lockFit", "lockFit"),
+    ],
+  },
+  {
     version: "2.9.0",
     tips: [
-      tip("sumGlow", "sumGlow"),
-      tip("solveLetter", "solveLetter"),
-      tip("insertGraph", "insertGraph"),
-      tip("looks", "looks"),
-      tip("lassoTray", "lassoTray"),
       tip("curvedElbow", "curvedElbow"),
       tip("lineUpMoves", "lineUpMoves"),
       tip("lockFit", "lockFit"),

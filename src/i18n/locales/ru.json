@@ -3584,5 +3584,15 @@
   "calculator.whichDidYouWrite": "Что вы написали?",
   "calculator.readingTitle": "Что здесь написано?",
   "calculator.readingNote": "Введите пример, как вы его написали.",
-  "calculator.readingRefused": "Не сходится. Проверьте пример."
+  "calculator.readingRefused": "Не сходится. Проверьте пример.",
+  "notebooks.tips.sumGlow.title": "Пример светится, когда прочитан",
+  "notebooks.tips.sumGlow.body": "Закончите пример знаком =. Коснитесь свечения: ответ, Записать или набранное уравнение.",
+  "notebooks.tips.solveLetter.title": "Решить относительно x",
+  "notebooks.tips.solveLetter.body": "Напишите x = под уравнением с x и коснитесь свечения: карточка предложит решения.",
+  "notebooks.tips.insertGraph.title": "График на странице",
+  "notebooks.tips.insertGraph.body": "Введите функцию от x в калькуляторе, откройте График и нажмите Вставить график.",
+  "notebooks.tips.looks.title": "Вид FineNotes",
+  "notebooks.tips.looks.body": "Настройки → Вид меняет панели и меню FineNotes: выберите стиль и набор цветов.",
+  "notebooks.tips.lassoTray.title": "Облегчённое меню лассо",
+  "notebooks.tips.lassoTray.body": "На панели остались Копировать, Дублировать и Удалить. ⋯ открывает Вырезать, Вставить, Снимок экрана."
 }

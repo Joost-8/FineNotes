@@ -3251,5 +3251,15 @@
   "calculator.whichDidYouWrite": "Mana yang Anda tulis?",
   "calculator.readingTitle": "Apa bunyinya?",
   "calculator.readingNote": "Ketik soal seperti yang Anda tulis.",
-  "calculator.readingRefused": "Itu tidak cocok. Periksa soalnya."
+  "calculator.readingRefused": "Itu tidak cocok. Periksa soalnya.",
+  "notebooks.tips.sumGlow.title": "Soal yang terbaca akan menyala",
+  "notebooks.tips.sumGlow.body": "Akhiri soal dengan =. Ketuk cahayanya untuk kartunya: jawaban, Tulis, atau persamaan ketikan.",
+  "notebooks.tips.solveLetter.title": "Selesaikan untuk x",
+  "notebooks.tips.solveLetter.body": "Tulis x = di bawah persamaan dalam x, lalu ketuk cahayanya: kartu menawarkan solusinya.",
+  "notebooks.tips.insertGraph.title": "Taruh grafik di halaman",
+  "notebooks.tips.insertGraph.body": "Ketik fungsi x di kalkulator, buka Grafik, lalu ketuk Sisipkan grafik.",
+  "notebooks.tips.looks.title": "Tampilan untuk FineNotes",
+  "notebooks.tips.looks.body": "Pengaturan → Tampilan mengubah gaya bilah dan menu FineNotes: pilih gaya dan set warna.",
+  "notebooks.tips.lassoTray.title": "Menu lasso lebih ringkas",
+  "notebooks.tips.lassoTray.body": "Bilah menyisakan Salin, Duplikat, Hapus. ⋯ membuka Potong, Tempel, Tangkapan layar, Salin gaya."
 }

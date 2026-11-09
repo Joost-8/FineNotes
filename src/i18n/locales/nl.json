@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Welke schreef je?",
   "calculator.readingTitle": "Wat staat er?",
   "calculator.readingNote": "Typ de som zoals je hem schreef.",
-  "calculator.readingRefused": "Dat komt niet uit. Controleer de som."
+  "calculator.readingRefused": "Dat komt niet uit. Controleer de som.",
+  "notebooks.tips.sumGlow.title": "Een som licht op als hij gelezen is",
+  "notebooks.tips.sumGlow.body": "Sluit een som af met =. Tik op de gloed voor de kaart: het antwoord, Schrijven of een getypte vergelijking.",
+  "notebooks.tips.solveLetter.title": "Oplossen voor x",
+  "notebooks.tips.solveLetter.body": "Schrijf x = onder een vergelijking in x en tik op de gloed: de kaart geeft de oplossingen.",
+  "notebooks.tips.insertGraph.title": "Zet een grafiek op de pagina",
+  "notebooks.tips.insertGraph.body": "Typ een functie van x in de rekenmachine, open Grafiek en tik op Grafiek invoegen.",
+  "notebooks.tips.looks.title": "Uiterlijk voor FineNotes",
+  "notebooks.tips.looks.body": "Instellingen → Uiterlijk geeft de balken en menu's van FineNotes een andere stijl en kleuren.",
+  "notebooks.tips.lassoTray.title": "Een lichter lassomenu",
+  "notebooks.tips.lassoTray.body": "De balk houdt Kopiëren, Dupliceren en Verwijderen. ⋯ opent Knippen, Plakken, Schermafbeelding, Stijl kopiëren."
 }

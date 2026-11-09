@@ -3251,5 +3251,15 @@
   "calculator.whichDidYouWrite": "어느 쪽을 쓰셨나요?",
   "calculator.readingTitle": "뭐라고 쓰여 있나요?",
   "calculator.readingNote": "쓴 대로 식을 입력하세요.",
-  "calculator.readingRefused": "계산이 되지 않아요. 식을 확인해 주세요."
+  "calculator.readingRefused": "계산이 되지 않아요. 식을 확인해 주세요.",
+  "notebooks.tips.sumGlow.title": "계산은 읽히면 빛나요",
+  "notebooks.tips.sumGlow.body": "식 끝에 =를 쓰고 빛을 탭하면 카드가 열려요: 답, 쓰기, 또는 입력한 식.",
+  "notebooks.tips.solveLetter.title": "x 구하기",
+  "notebooks.tips.solveLetter.body": "x에 관한 식 아래에 x = 를 쓰고 빛을 탭하면 카드가 해를 보여줘요.",
+  "notebooks.tips.insertGraph.title": "페이지에 그래프 넣기",
+  "notebooks.tips.insertGraph.body": "계산기에 x의 함수를 입력하고 그래프를 열어 그래프 삽입을 탭하세요.",
+  "notebooks.tips.looks.title": "FineNotes 모양",
+  "notebooks.tips.looks.body": "설정 → 모양에서 FineNotes 막대와 메뉴의 스타일과 색상을 고를 수 있어요.",
+  "notebooks.tips.lassoTray.title": "더 가벼운 올가미 메뉴",
+  "notebooks.tips.lassoTray.body": "막대에는 복사, 복제, 삭제가 남아요. ⋯에서 잘라내기, 붙여넣기, 스크린샷, 스타일 복사를 쓸 수 있어요."
 }

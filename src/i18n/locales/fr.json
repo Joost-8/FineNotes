@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Lequel avez-vous écrit ?",
   "calculator.readingTitle": "Qu'est-ce qui est écrit ?",
   "calculator.readingNote": "Saisissez le calcul tel que vous l'avez écrit.",
-  "calculator.readingRefused": "Ça ne tombe pas juste. Vérifiez le calcul."
+  "calculator.readingRefused": "Ça ne tombe pas juste. Vérifiez le calcul.",
+  "notebooks.tips.sumGlow.title": "Un calcul s'illumine quand il est lu",
+  "notebooks.tips.sumGlow.body": "Terminez un calcul par =. Touchez la lueur pour sa carte : la réponse, Écrire ou une équation saisie.",
+  "notebooks.tips.solveLetter.title": "Résoudre pour x",
+  "notebooks.tips.solveLetter.body": "Écrivez x = sous une équation en x, puis touchez la lueur : la carte propose ses solutions.",
+  "notebooks.tips.insertGraph.title": "Mettre un graphique sur la page",
+  "notebooks.tips.insertGraph.body": "Saisissez une fonction de x dans la calculatrice, ouvrez Graphique et touchez Insérer le graphique.",
+  "notebooks.tips.looks.title": "Des apparences pour FineNotes",
+  "notebooks.tips.looks.body": "Paramètres → Apparence redessine les barres et menus de FineNotes : choisissez un style et des couleurs.",
+  "notebooks.tips.lassoTray.title": "Un menu lasso plus léger",
+  "notebooks.tips.lassoTray.body": "La barre garde Copier, Dupliquer et Supprimer. ⋯ ouvre Couper, Coller, Capture d'écran et Copier le style."
 }

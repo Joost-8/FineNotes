@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "የትኛውን ጻፍክ?",
   "calculator.readingTitle": "ምን ይላል?",
   "calculator.readingNote": "ስሌቱን እንደጻፍከው ተይብ።",
-  "calculator.readingRefused": "ይህ አይሰራም። ስሌቱን ፈትሽ።"
+  "calculator.readingRefused": "ይህ አይሰራም። ስሌቱን ፈትሽ።",
+  "notebooks.tips.sumGlow.title": "ስሌት ሲነበብ ያበራል",
+  "notebooks.tips.sumGlow.body": "ስሌትን በ = ጨርስ። ብርሃኑን ንካ፦ መልሱ፣ ጻፍ ወይም የተተየበ እኩልነት።",
+  "notebooks.tips.solveLetter.title": "ለ x ፍታ",
+  "notebooks.tips.solveLetter.body": "በ x እኩልነት ስር x = ጻፍና ብርሃኑን ንካ፦ ካርዱ መፍትሔዎቹን ያቀርባል።",
+  "notebooks.tips.insertGraph.title": "በገጹ ላይ ግራፍ አስቀምጥ",
+  "notebooks.tips.insertGraph.body": "በካልኩሌተሩ ውስጥ የ x ተግባር ተይብ፣ ግራፍ ክፈት እና ግራፍ አስገባ ንካ።",
+  "notebooks.tips.looks.title": "ለ FineNotes ገጽታዎች",
+  "notebooks.tips.looks.body": "ቅንብሮች → ገጽታ የ FineNotes አሞሌዎችንና ምናሌዎችን ይቀይራል፦ ዘይቤና ቀለሞችን ምረጥ።",
+  "notebooks.tips.lassoTray.title": "ቀለል ያለ የላሶ ምናሌ",
+  "notebooks.tips.lassoTray.body": "አሞሌው ቅዳ፣ አባዛ እና ሰርዝ ይይዛል። ⋯ ቁረጥ፣ ለጥፍ፣ ቅጽበታዊ ገጽ እይታ እና ዘይቤ ቅዳ ይከፍታል።"
 }

@@ -3355,5 +3355,15 @@
   "calculator.whichDidYouWrite": "Kuru tu uzrakstīji?",
   "calculator.readingTitle": "Ko tur raksta?",
   "calculator.readingNote": "Ieraksti aprēķinu tā, kā to uzrakstīji.",
-  "calculator.readingRefused": "Tas nesanāk. Pārbaudi aprēķinu."
+  "calculator.readingRefused": "Tas nesanāk. Pārbaudi aprēķinu.",
+  "notebooks.tips.sumGlow.title": "Aprēķins mirdz, kad tiek nolasīts",
+  "notebooks.tips.sumGlow.body": "Beidz aprēķinu ar =. Pieskaries mirdzumam: atbilde, Rakstīt vai ievadīts vienādojums.",
+  "notebooks.tips.solveLetter.title": "Atrisini pēc x",
+  "notebooks.tips.solveLetter.body": "Uzraksti x = zem vienādojuma ar x un pieskaries mirdzumam: kartīte piedāvā atrisinājumus.",
+  "notebooks.tips.insertGraph.title": "Grafiks lapā",
+  "notebooks.tips.insertGraph.body": "Ievadi kalkulatorā x funkciju, atver Grafiks un pieskaries Ievietot grafiku.",
+  "notebooks.tips.looks.title": "FineNotes izskats",
+  "notebooks.tips.looks.body": "Iestatījumi → Izskats maina FineNotes joslu un izvēlņu stilu un krāsas.",
+  "notebooks.tips.lassoTray.title": "Vieglāka lasso izvēlne",
+  "notebooks.tips.lassoTray.body": "Joslā paliek Kopēt, Dublēt, Dzēst. ⋯ atver Izgriezt, Ielīmēt, Ekrānuzņēmums, Kopēt stilu."
 }

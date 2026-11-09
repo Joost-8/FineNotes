@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Hvilken skrev du?",
   "calculator.readingTitle": "Hva står det?",
   "calculator.readingNote": "Skriv regnestykket slik du skrev det.",
-  "calculator.readingRefused": "Det går ikke opp. Sjekk regnestykket."
+  "calculator.readingRefused": "Det går ikke opp. Sjekk regnestykket.",
+  "notebooks.tips.sumGlow.title": "Et regnestykke lyser når det er lest",
+  "notebooks.tips.sumGlow.body": "Avslutt regnestykket med =. Trykk på gløden for kortet: svaret, Skriv eller en skrevet ligning.",
+  "notebooks.tips.solveLetter.title": "Løs for x",
+  "notebooks.tips.solveLetter.body": "Skriv x = under en ligning i x, og trykk på gløden: kortet viser løsningene.",
+  "notebooks.tips.insertGraph.title": "Legg en graf på siden",
+  "notebooks.tips.insertGraph.body": "Skriv en funksjon av x i kalkulatoren, åpne Graf og trykk på Sett inn graf.",
+  "notebooks.tips.looks.title": "Utseende for FineNotes",
+  "notebooks.tips.looks.body": "Innstillinger → Utseende endrer stilen og fargene på FineNotes' felt og menyer.",
+  "notebooks.tips.lassoTray.title": "En lettere lassomeny",
+  "notebooks.tips.lassoTray.body": "Linjen beholder Kopier, Dupliser og Slett. ⋯ åpner Klipp ut, Lim inn, Skjermbilde og Kopier stil."
 }

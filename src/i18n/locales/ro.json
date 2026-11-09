@@ -3473,5 +3473,15 @@
   "calculator.whichDidYouWrite": "Pe care l-ai scris?",
   "calculator.readingTitle": "Ce scrie?",
   "calculator.readingNote": "Tastează calculul așa cum l-ai scris.",
-  "calculator.readingRefused": "Nu iese. Verifică calculul."
+  "calculator.readingRefused": "Nu iese. Verifică calculul.",
+  "notebooks.tips.sumGlow.title": "Un calcul strălucește când e citit",
+  "notebooks.tips.sumGlow.body": "Încheie calculul cu =. Atinge strălucirea pentru card: rezultatul, Scrie sau o ecuație tastată.",
+  "notebooks.tips.solveLetter.title": "Rezolvă în x",
+  "notebooks.tips.solveLetter.body": "Scrie x = sub o ecuație în x, apoi atinge strălucirea: cardul oferă soluțiile.",
+  "notebooks.tips.insertGraph.title": "Pune un grafic pe pagină",
+  "notebooks.tips.insertGraph.body": "Tastează o funcție de x în calculator, deschide Grafic și atinge Inserează graficul.",
+  "notebooks.tips.looks.title": "Aspecte pentru FineNotes",
+  "notebooks.tips.looks.body": "Setări → Aspect schimbă barele și meniurile FineNotes: alege un stil și un set de culori.",
+  "notebooks.tips.lassoTray.title": "Un meniu de lasso mai ușor",
+  "notebooks.tips.lassoTray.body": "Bara păstrează Copiază, Dublează și Șterge. ⋯ deschide Taie, Lipește, Captură de ecran și Copiază stilul."
 }

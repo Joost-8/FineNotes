@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "რომელი დაწერეთ?",
   "calculator.readingTitle": "რა წერია?",
   "calculator.readingNote": "აკრიფეთ მაგალითი ისე, როგორც დაწერეთ.",
-  "calculator.readingRefused": "ეს არ გამოდის. შეამოწმეთ მაგალითი."
+  "calculator.readingRefused": "ეს არ გამოდის. შეამოწმეთ მაგალითი.",
+  "notebooks.tips.sumGlow.title": "გამოთვლა ნათდება, როცა იკითხება",
+  "notebooks.tips.sumGlow.body": "დაასრულეთ გამოთვლა =-ით. შეეხეთ ნათებას: პასუხი, ჩაწერა ან აკრეფილი განტოლება.",
+  "notebooks.tips.solveLetter.title": "ამოხსენით x-ისთვის",
+  "notebooks.tips.solveLetter.body": "x-იანი განტოლების ქვეშ დაწერეთ x = და შეეხეთ ნათებას: ბარათი ამონახსნებს შემოგთავაზებთ.",
+  "notebooks.tips.insertGraph.title": "გრაფიკი გვერდზე",
+  "notebooks.tips.insertGraph.body": "კალკულატორში აკრიფეთ x-ის ფუნქცია, გახსენით გრაფიკი და შეეხეთ „გრაფიკის ჩასმა“-ს.",
+  "notebooks.tips.looks.title": "FineNotes-ის იერსახე",
+  "notebooks.tips.looks.body": "პარამეტრები → იერსახე ცვლის FineNotes-ის პანელებისა და მენიუების სტილს და ფერებს.",
+  "notebooks.tips.lassoTray.title": "უფრო მსუბუქი ლასოს მენიუ",
+  "notebooks.tips.lassoTray.body": "პანელზე რჩება კოპირება, დუბლირება, წაშლა. ⋯ ხსნის: ამოჭრა, ჩასმა, ეკრანის ანაბეჭდი, სტილის კოპირება."
 }

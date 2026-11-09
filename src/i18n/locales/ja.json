@@ -3251,5 +3251,15 @@
   "calculator.whichDidYouWrite": "どちらを書きましたか？",
   "calculator.readingTitle": "何と書いてありますか？",
   "calculator.readingNote": "書いた通りに式を入力してください。",
-  "calculator.readingRefused": "計算が成り立ちません。式を確認してください。"
+  "calculator.readingRefused": "計算が成り立ちません。式を確認してください。",
+  "notebooks.tips.sumGlow.title": "計算は読み取られると光ります",
+  "notebooks.tips.sumGlow.body": "式の最後に=を書き、光をタップするとカードが開きます：答え、書き込む、入力した式。",
+  "notebooks.tips.solveLetter.title": "xを求める",
+  "notebooks.tips.solveLetter.body": "xの式の下に x = と書き、光をタップすると、カードに解が表示されます。",
+  "notebooks.tips.insertGraph.title": "ページにグラフを置く",
+  "notebooks.tips.insertGraph.body": "電卓にxの関数を入力し、グラフを開いて「グラフを挿入」をタップします。",
+  "notebooks.tips.looks.title": "FineNotesの外観",
+  "notebooks.tips.looks.body": "設定 → 外観で、FineNotesのバーとメニューのスタイルと配色を選べます。",
+  "notebooks.tips.lassoTray.title": "すっきりした投げ縄メニュー",
+  "notebooks.tips.lassoTray.body": "バーにはコピー、複製、削除。⋯にはカット、ペースト、スクリーンショット、スタイルをコピー。"
 }

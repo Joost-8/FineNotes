@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "तपाईंले कुन लेख्नुभयो?",
   "calculator.readingTitle": "यसमा के लेखिएको छ?",
   "calculator.readingNote": "हिसाब जस्तो लेख्नुभयो त्यस्तै टाइप गर्नुहोस्।",
-  "calculator.readingRefused": "यो मिलेन। हिसाब जाँच्नुहोस्।"
+  "calculator.readingRefused": "यो मिलेन। हिसाब जाँच्नुहोस्।",
+  "notebooks.tips.sumGlow.title": "गणना पढिएपछि चम्कन्छ",
+  "notebooks.tips.sumGlow.body": "गणना = ले टुङ्ग्याउनुहोस्। चमकमा ट्याप गर्नुहोस्: उत्तर, लेख्नुहोस्, वा टाइप गरिएको समीकरण।",
+  "notebooks.tips.solveLetter.title": "x को हल गर्नुहोस्",
+  "notebooks.tips.solveLetter.body": "x को समीकरणमुनि x = लेख्नुहोस्, अनि चमकमा ट्याप गर्नुहोस्: कार्डले समाधान देखाउँछ।",
+  "notebooks.tips.insertGraph.title": "पृष्ठमा ग्राफ राख्नुहोस्",
+  "notebooks.tips.insertGraph.body": "क्यालकुलेटरमा x को फंक्सन टाइप गर्नुहोस्, ग्राफ खोल्नुहोस् र ग्राफ घुसाउनुहोस् मा ट्याप गर्नुहोस्।",
+  "notebooks.tips.looks.title": "FineNotes को रूप",
+  "notebooks.tips.looks.body": "सेटिङ → रूपले FineNotes का बार र मेनुको शैली र रङ बदल्छ।",
+  "notebooks.tips.lassoTray.title": "हल्का ल्यासो मेनु",
+  "notebooks.tips.lassoTray.body": "बारमा: कपी गर्नुहोस्, नक्कल बनाउनुहोस्, मेटाउनुहोस्। ⋯ मा: काट्नुहोस्, टाँस्नुहोस्, स्क्रिनसट।"
 }

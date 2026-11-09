@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Hangisini yazdın?",
   "calculator.readingTitle": "Ne yazıyor?",
   "calculator.readingNote": "İşlemi yazdığın gibi yaz.",
-  "calculator.readingRefused": "Bu sonuç vermiyor. İşlemi kontrol et."
+  "calculator.readingRefused": "Bu sonuç vermiyor. İşlemi kontrol et.",
+  "notebooks.tips.sumGlow.title": "İşlem okununca parlar",
+  "notebooks.tips.sumGlow.body": "İşlemi = ile bitir. Kart için parlamaya dokun: sonuç, Yaz ya da yazılmış bir denklem.",
+  "notebooks.tips.solveLetter.title": "x için çöz",
+  "notebooks.tips.solveLetter.body": "x içeren bir denklemin altına x = yaz, sonra parlamaya dokun: kart çözümleri sunar.",
+  "notebooks.tips.insertGraph.title": "Sayfaya grafik koy",
+  "notebooks.tips.insertGraph.body": "Hesap makinesine x'in bir fonksiyonunu yaz, Grafik'i aç ve Grafiği ekle'ye dokun.",
+  "notebooks.tips.looks.title": "FineNotes görünümleri",
+  "notebooks.tips.looks.body": "Ayarlar → Görünüm, FineNotes'un çubuklarını ve menülerini değiştirir: bir stil ve renk seti seç.",
+  "notebooks.tips.lassoTray.title": "Daha hafif kement menüsü",
+  "notebooks.tips.lassoTray.body": "Çubukta Kopyala, Çoğalt ve Sil kalır. ⋯ Kes, Yapıştır, Ekran görüntüsü ve Stili kopyala'yı açar."
 }

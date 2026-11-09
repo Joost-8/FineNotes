@@ -3251,5 +3251,15 @@
   "calculator.whichDidYouWrite": "你寫的是哪一個？",
   "calculator.readingTitle": "上面寫了什麼？",
   "calculator.readingNote": "請照你寫的方式輸入算式。",
-  "calculator.readingRefused": "這個算不出來。請檢查算式。"
+  "calculator.readingRefused": "這個算不出來。請檢查算式。",
+  "notebooks.tips.sumGlow.title": "算式讀取後會發光",
+  "notebooks.tips.sumGlow.body": "算式以 = 結尾，點一下光暈開啟卡片：答案、寫入，或輸入的方程式。",
+  "notebooks.tips.solveLetter.title": "解出 x",
+  "notebooks.tips.solveLetter.body": "在含 x 的方程式下方寫 x =，再點光暈：卡片會提供解答。",
+  "notebooks.tips.insertGraph.title": "在頁面放上圖形",
+  "notebooks.tips.insertGraph.body": "在計算機輸入 x 的函數，開啟圖形，再點插入圖形。",
+  "notebooks.tips.looks.title": "FineNotes 的外觀",
+  "notebooks.tips.looks.body": "設定 → 外觀可改變 FineNotes 的工具列和選單：選一種樣式和一組顏色。",
+  "notebooks.tips.lassoTray.title": "更簡潔的套索選單",
+  "notebooks.tips.lassoTray.body": "工具列保留複製、建立副本和刪除。⋯ 內有剪下、貼上、截圖和複製樣式。"
 }

@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Kumman kirjoitit?",
   "calculator.readingTitle": "Mitä siinä lukee?",
   "calculator.readingNote": "Kirjoita lasku sellaisena kuin sen kirjoitit.",
-  "calculator.readingRefused": "Se ei mene tasan. Tarkista lasku."
+  "calculator.readingRefused": "Se ei mene tasan. Tarkista lasku.",
+  "notebooks.tips.sumGlow.title": "Laskutoimitus hehkuu, kun se luetaan",
+  "notebooks.tips.sumGlow.body": "Päätä laskutoimitus merkkiin =. Napauta hehkua: vastaus, Kirjoita tai kirjoitettu yhtälö.",
+  "notebooks.tips.solveLetter.title": "Ratkaise x",
+  "notebooks.tips.solveLetter.body": "Kirjoita x = x:n yhtälön alle ja napauta hehkua: kortti tarjoaa ratkaisut.",
+  "notebooks.tips.insertGraph.title": "Lisää kuvaaja sivulle",
+  "notebooks.tips.insertGraph.body": "Kirjoita laskimeen x:n funktio, avaa Kuvaaja ja napauta Lisää kuvaaja.",
+  "notebooks.tips.looks.title": "Ulkoasuja FineNotesiin",
+  "notebooks.tips.looks.body": "Asetukset → Ulkoasu uudistaa FineNotesin palkit ja valikot: valitse tyyli ja värit.",
+  "notebooks.tips.lassoTray.title": "Kevyempi lassovalikko",
+  "notebooks.tips.lassoTray.body": "Palkissa on Kopioi, Monista ja Poista. ⋯ avaa Leikkaa, Liitä, Kuvakaappaus ja Kopioi tyyli."
 }

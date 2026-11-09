@@ -3806,5 +3806,15 @@
   "calculator.whichDidYouWrite": "أيهما كتبت؟",
   "calculator.readingTitle": "ماذا يقول؟",
   "calculator.readingNote": "اكتب العملية كما كتبتها.",
-  "calculator.readingRefused": "هذا غير صحيح. تحقق من العملية."
+  "calculator.readingRefused": "هذا غير صحيح. تحقق من العملية.",
+  "notebooks.tips.sumGlow.title": "تتوهج العملية الحسابية عند قراءتها",
+  "notebooks.tips.sumGlow.body": "أنهِ العملية بـ =. اضغط على التوهج لتظهر بطاقتها: الناتج أو اكتب أو معادلة مكتوبة.",
+  "notebooks.tips.solveLetter.title": "حلّ المعادلة بدلالة x",
+  "notebooks.tips.solveLetter.body": "اكتب x = تحت معادلة في x ثم اضغط على التوهج: تعرض البطاقة حلولها.",
+  "notebooks.tips.insertGraph.title": "ضع رسمًا بيانيًا في الصفحة",
+  "notebooks.tips.insertGraph.body": "اكتب دالة في x في الحاسبة، وافتح رسم بياني، ثم اضغط إدراج الرسم البياني.",
+  "notebooks.tips.looks.title": "مظاهر لـ FineNotes",
+  "notebooks.tips.looks.body": "الإعدادات ← المظهر يغيّر شكل أشرطة FineNotes وقوائمه: اختر نمطًا ومجموعة ألوان.",
+  "notebooks.tips.lassoTray.title": "قائمة تحديد حر أخف",
+  "notebooks.tips.lassoTray.body": "يحتفظ الشريط بـ نسخ وتكرار وحذف. ⋯ يفتح قص ولصق ولقطة شاشة ونسخ النمط."
 }

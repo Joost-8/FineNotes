@@ -3251,5 +3251,15 @@
   "calculator.whichDidYouWrite": "តើអ្នកបានសរសេរមួយណា?",
   "calculator.readingTitle": "តើវាសរសេរអ្វី?",
   "calculator.readingNote": "វាយលំហាត់ដូចដែលអ្នកបានសរសេរ។",
-  "calculator.readingRefused": "វាមិនត្រូវទេ។ សូមពិនិត្យលំហាត់។"
+  "calculator.readingRefused": "វាមិនត្រូវទេ។ សូមពិនិត្យលំហាត់។",
+  "notebooks.tips.sumGlow.title": "ប្រមាណវិធីភ្លឺនៅពេលអានរួច",
+  "notebooks.tips.sumGlow.body": "បញ្ចប់ប្រមាណវិធីដោយ =។ ចុចលើពន្លឺដើម្បីបើកកាត៖ ចម្លើយ សរសេរ ឬសមីការដែលបានវាយ។",
+  "notebooks.tips.solveLetter.title": "ដោះស្រាយរក x",
+  "notebooks.tips.solveLetter.body": "សរសេរ x = ក្រោមសមីការ x រួចចុចលើពន្លឺ៖ កាតផ្តល់ចម្លើយ។",
+  "notebooks.tips.insertGraph.title": "ដាក់ក្រាហ្វលើទំព័រ",
+  "notebooks.tips.insertGraph.body": "វាយអនុគមន៍នៃ x ក្នុងម៉ាស៊ីនគិតលេខ បើកក្រាហ្វ រួចចុច បញ្ចូលក្រាហ្វ។",
+  "notebooks.tips.looks.title": "រូបរាងសម្រាប់ FineNotes",
+  "notebooks.tips.looks.body": "ការកំណត់ → រូបរាង ប្តូររចនាប័ទ្ម និងពណ៌នៃរបារ និងម៉ឺនុយរបស់ FineNotes។",
+  "notebooks.tips.lassoTray.title": "ម៉ឺនុយឡាសូស្រាលជាង",
+  "notebooks.tips.lassoTray.body": "របាររក្សា៖ ចម្លង ចម្លង លុប។ ⋯ បើក៖ កាត់ បិទភ្ជាប់ រូបថតអេក្រង់ ចម្លងរចនាប័ទ្ម។"
 }

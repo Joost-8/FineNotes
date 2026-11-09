@@ -3473,5 +3473,15 @@
   "calculator.whichDidYouWrite": "מה כתבתם?",
   "calculator.readingTitle": "מה כתוב?",
   "calculator.readingNote": "הקלידו את התרגיל כפי שכתבתם.",
-  "calculator.readingRefused": "זה לא יוצא. בדקו את התרגיל."
+  "calculator.readingRefused": "זה לא יוצא. בדקו את התרגיל.",
+  "notebooks.tips.sumGlow.title": "תרגיל זוהר כשהוא נקרא",
+  "notebooks.tips.sumGlow.body": "סיימו תרגיל ב-=. הקישו על הזוהר לכרטיס שלו: התשובה, כתיבה, או משוואה מוקלדת.",
+  "notebooks.tips.solveLetter.title": "פתרון עבור x",
+  "notebooks.tips.solveLetter.body": "כתבו x = מתחת למשוואה ב-x והקישו על הזוהר: הכרטיס מציע את הפתרונות.",
+  "notebooks.tips.insertGraph.title": "לשים גרף בדף",
+  "notebooks.tips.insertGraph.body": "הקלידו במחשבון פונקציה של x, פתחו גרף והקישו על הוספת הגרף.",
+  "notebooks.tips.looks.title": "מראות ל-FineNotes",
+  "notebooks.tips.looks.body": "הגדרות ← מראה משנה את הסרגלים והתפריטים של FineNotes: בחרו סגנון וצבעים.",
+  "notebooks.tips.lassoTray.title": "תפריט לאסו קל יותר",
+  "notebooks.tips.lassoTray.body": "הסרגל שומר העתקה, שכפול ומחיקה. ⋯ פותח גזירה, הדבקה, צילום מסך והעתקת סגנון."
 }

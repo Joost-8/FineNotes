@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Quin has escrit?",
   "calculator.readingTitle": "Què diu?",
   "calculator.readingNote": "Escriu l'operació tal com l'has escrita.",
-  "calculator.readingRefused": "Això no quadra. Revisa l'operació."
+  "calculator.readingRefused": "Això no quadra. Revisa l'operació.",
+  "notebooks.tips.sumGlow.title": "Una operació brilla quan es llegeix",
+  "notebooks.tips.sumGlow.body": "Acaba una operació amb =. Toca la brillantor: la resposta, Escriu o una equació escrita.",
+  "notebooks.tips.solveLetter.title": "Resol per a x",
+  "notebooks.tips.solveLetter.body": "Escriu x = sota una equació en x i toca la brillantor: la targeta n'ofereix les solucions.",
+  "notebooks.tips.insertGraph.title": "Posa un gràfic a la pàgina",
+  "notebooks.tips.insertGraph.body": "Escriu una funció de x a la calculadora, obre Gràfic i toca Insereix el gràfic.",
+  "notebooks.tips.looks.title": "Aspectes per a FineNotes",
+  "notebooks.tips.looks.body": "Configuració → Aspecte renova les barres i els menús de FineNotes: tria un estil i uns colors.",
+  "notebooks.tips.lassoTray.title": "Un menú de llaç més lleuger",
+  "notebooks.tips.lassoTray.body": "La barra conserva Copia, Duplica i Suprimeix. ⋯ obre Retalla, Enganxa, Captura i Copia l'estil."
 }

@@ -3252,5 +3252,15 @@
   "calculator.whichDidYouWrite": "Yang mana anda tulis?",
   "calculator.readingTitle": "Apa yang tertulis?",
   "calculator.readingNote": "Taip pengiraan seperti yang anda tulis.",
-  "calculator.readingRefused": "Itu tidak menjadi. Semak pengiraan."
+  "calculator.readingRefused": "Itu tidak menjadi. Semak pengiraan.",
+  "notebooks.tips.sumGlow.title": "Pengiraan bercahaya apabila dibaca",
+  "notebooks.tips.sumGlow.body": "Akhiri pengiraan dengan =. Ketik cahaya itu untuk kadnya: jawapan, Tulis atau persamaan yang ditaip.",
+  "notebooks.tips.solveLetter.title": "Selesaikan untuk x",
+  "notebooks.tips.solveLetter.body": "Tulis x = di bawah persamaan dalam x, kemudian ketik cahaya itu: kad menawarkan penyelesaiannya.",
+  "notebooks.tips.insertGraph.title": "Letak graf pada halaman",
+  "notebooks.tips.insertGraph.body": "Taip fungsi x dalam kalkulator, buka Graf dan ketik Sisip graf.",
+  "notebooks.tips.looks.title": "Rupa untuk FineNotes",
+  "notebooks.tips.looks.body": "Tetapan → Rupa menukar gaya bar dan menu FineNotes: pilih gaya dan set warna.",
+  "notebooks.tips.lassoTray.title": "Menu lasso yang lebih ringan",
+  "notebooks.tips.lassoTray.body": "Bar mengekalkan Salin, Duplikasi, Padam. ⋯ membuka Potong, Tampal, Tangkapan skrin, Salin gaya."
 }

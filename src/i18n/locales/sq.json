@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Cilën shkrove?",
   "calculator.readingTitle": "Çfarë thotë?",
   "calculator.readingNote": "Shkruaj llogarinë ashtu siç e shkrove.",
-  "calculator.readingRefused": "Kjo nuk del. Kontrollo llogarinë."
+  "calculator.readingRefused": "Kjo nuk del. Kontrollo llogarinë.",
+  "notebooks.tips.sumGlow.title": "Llogaria shkëlqen kur lexohet",
+  "notebooks.tips.sumGlow.body": "Mbylle llogarinë me =. Prek shkëlqimin për kartën: përgjigjen, Shkruaj ose një ekuacion të shtypur.",
+  "notebooks.tips.solveLetter.title": "Zgjidhe për x",
+  "notebooks.tips.solveLetter.body": "Shkruaj x = nën një ekuacion me x, pastaj prek shkëlqimin: karta ofron zgjidhjet.",
+  "notebooks.tips.insertGraph.title": "Vër një grafik në faqe",
+  "notebooks.tips.insertGraph.body": "Shkruaj një funksion të x në makinën llogaritëse, hap Grafiku dhe prek Fut grafikun.",
+  "notebooks.tips.looks.title": "Pamje për FineNotes",
+  "notebooks.tips.looks.body": "Cilësimet → Pamja ndryshon shiritat dhe menutë e FineNotes: zgjidh një stil dhe një set ngjyrash.",
+  "notebooks.tips.lassoTray.title": "Meny lasoje më e lehtë",
+  "notebooks.tips.lassoTray.body": "Shiriti mban Kopjo, Dyfisho dhe Fshi. ⋯ hap Preje, Ngjit, Pamje ekrani dhe Kopjo stilin."
 }

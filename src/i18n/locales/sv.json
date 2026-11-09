@@ -3362,5 +3362,15 @@
   "calculator.whichDidYouWrite": "Vilket skrev du?",
   "calculator.readingTitle": "Vad står det?",
   "calculator.readingNote": "Skriv talet som du skrev det.",
-  "calculator.readingRefused": "Det går inte ihop. Kontrollera talet."
+  "calculator.readingRefused": "Det går inte ihop. Kontrollera talet.",
+  "notebooks.tips.sumGlow.title": "Ett tal lyser när det är läst",
+  "notebooks.tips.sumGlow.body": "Avsluta talet med =. Tryck på glöden för kortet: svaret, Skriv eller en skriven ekvation.",
+  "notebooks.tips.solveLetter.title": "Lös för x",
+  "notebooks.tips.solveLetter.body": "Skriv x = under en ekvation i x och tryck på glöden: kortet erbjuder lösningarna.",
+  "notebooks.tips.insertGraph.title": "Lägg en graf på sidan",
+  "notebooks.tips.insertGraph.body": "Skriv en funktion av x i kalkylatorn, öppna Graf och tryck på Infoga graf.",
+  "notebooks.tips.looks.title": "Utseenden för FineNotes",
+  "notebooks.tips.looks.body": "Inställningar → Utseende ändrar FineNotes fält och menyer: välj en stil och en färguppsättning.",
+  "notebooks.tips.lassoTray.title": "En lättare lassomeny",
+  "notebooks.tips.lassoTray.body": "Fältet behåller Kopiera, Duplicera och Radera. ⋯ öppnar Klipp ut, Klistra in, Skärmbild och Kopiera stil."
 }

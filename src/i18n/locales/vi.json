@@ -3251,5 +3251,15 @@
   "calculator.whichDidYouWrite": "Bạn đã viết cái nào?",
   "calculator.readingTitle": "Nó viết gì?",
   "calculator.readingNote": "Gõ phép tính như bạn đã viết.",
-  "calculator.readingRefused": "Phép tính này không ra kết quả. Hãy kiểm tra lại."
+  "calculator.readingRefused": "Phép tính này không ra kết quả. Hãy kiểm tra lại.",
+  "notebooks.tips.sumGlow.title": "Phép tính sáng lên khi được đọc",
+  "notebooks.tips.sumGlow.body": "Kết thúc phép tính bằng =. Chạm vào vùng sáng để mở thẻ: kết quả, Viết hoặc phương trình đã gõ.",
+  "notebooks.tips.solveLetter.title": "Giải theo x",
+  "notebooks.tips.solveLetter.body": "Viết x = dưới phương trình theo x rồi chạm vào vùng sáng: thẻ sẽ gợi ý nghiệm.",
+  "notebooks.tips.insertGraph.title": "Đặt đồ thị lên trang",
+  "notebooks.tips.insertGraph.body": "Gõ một hàm của x trong máy tính, mở Đồ thị rồi chạm Chèn đồ thị.",
+  "notebooks.tips.looks.title": "Giao diện cho FineNotes",
+  "notebooks.tips.looks.body": "Cài đặt → Giao diện đổi thanh và menu của FineNotes: chọn một kiểu và bộ màu.",
+  "notebooks.tips.lassoTray.title": "Menu vòng chọn gọn hơn",
+  "notebooks.tips.lassoTray.body": "Thanh giữ Sao chép, Nhân đôi và Xóa. ⋯ mở Cắt, Dán, Ảnh chụp màn hình và Sao chép kiểu."
 }
