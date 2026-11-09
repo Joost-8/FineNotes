@@ -16,7 +16,7 @@ const DAY = UPDATE_CHECK_INTERVAL_MS;
 
 function notice(
   stored: unknown,
-  options: { enabled?: boolean; remind?: boolean; now?: number } = {},
+  options: { enabled?: boolean; remind?: boolean; now?: number; current?: string } = {},
 ) {
   let record = stored;
   let enabled = options.enabled ?? true;
@@ -24,7 +24,7 @@ function notice(
   let now = options.now ?? 10 * DAY;
   const saved: unknown[] = [];
   const n = new UpdateNotice({
-    current: "2.4.1",
+    current: options.current ?? "2.4.1",
     enabled: () => enabled,
     remind: () => remind,
     load: () => record,
@@ -141,5 +141,48 @@ describe("UpdateNotice", () => {
     expect(n.available).toBe("2.4.2");
     setRemind(true);
     expect(n.pendingAnnouncement()).toBe("2.4.2");
+  });
+
+  it("checks now when asked, within the day, and shows what it found even with checking off", async () => {
+    requestUrl.mockResolvedValue(answer({ version: "2.4.2" }));
+    const { n, saved } = notice({ checkedAt: 10 * DAY, latest: "2.4.1" }, { enabled: false });
+    const heard = vi.fn();
+    n.subscribe(heard);
+    expect(await n.checkNow()).toBe("found");
+    expect(requestUrl).toHaveBeenCalledTimes(1);
+    expect(n.available).toBe("2.4.2");
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(saved).toEqual([{ checkedAt: 10 * DAY, latest: "2.4.2" }]);
+    // Asked again: read again, and the same answer tells nobody twice.
+    expect(await n.checkNow()).toBe("found");
+    expect(requestUrl).toHaveBeenCalledTimes(2);
+    expect(heard).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers none when the version running is the newest", async () => {
+    requestUrl.mockResolvedValue(answer({ version: "2.4.1" }));
+    const { n } = notice(undefined);
+    expect(await n.checkNow()).toBe("none");
+    expect(n.available).toBeNull();
+  });
+
+  it("never offers a beta the release below it", async () => {
+    requestUrl.mockResolvedValue(answer({ version: "2.8.3" }));
+    const beta = notice(undefined, { current: "2.8.4-beta.1" });
+    expect(await beta.n.checkNow()).toBe("none");
+    expect(beta.n.available).toBeNull();
+    // Its own release is newer than the beta.
+    requestUrl.mockResolvedValue(answer({ version: "2.8.4" }));
+    expect(await beta.n.checkNow()).toBe("found");
+    expect(beta.n.available).toBe("2.8.4");
+  });
+
+  it("answers offline with no connection or no manifest, and keeps nothing", async () => {
+    requestUrl.mockRejectedValue(new Error("offline"));
+    const { n, saved } = notice(undefined);
+    expect(await n.checkNow()).toBe("offline");
+    requestUrl.mockResolvedValue(answer({ message: "Not Found" }, 404));
+    expect(await n.checkNow()).toBe("offline");
+    expect(saved).toEqual([]);
   });
 });

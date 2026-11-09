@@ -16,6 +16,7 @@ import { OCR_MODEL, OCR_TIERS } from "../../src/recognition/ocr/ocr-model";
 import type { OcrPage } from "../../src/recognition/ocr/ocr-words";
 import {
   IDLE_MS,
+  MODEL_RECHECK_MS,
   MAX_FAILURES,
   type NativeInfo,
   type OcrDeps,
@@ -113,6 +114,10 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
     afterRead: null as null | (() => void),
     /** The model the setting chooses (the service's default, Fast, when null). */
     model: null as null | ActiveOcrModel,
+    /** Part of the model is in its folder, unverified (still arriving by sync). */
+    arriving: false,
+    /** The next look at the folder finds the model complete (sync delivered it). */
+    arrivesOnCheck: false,
   };
   let t = 1_000_000;
   const timers: { at: number; fn: () => void; live: boolean }[] = [];
@@ -127,8 +132,16 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
       log.bytesAsked.push(name);
       return Promise.resolve(new ArrayBuffer(1));
     },
+    get arriving() {
+      return state.arriving;
+    },
     check: () => {
       log.checks++;
+      if (state.arrivesOnCheck && !state.ready) {
+        state.ready = true;
+        state.arriving = false;
+        for (const l of [...listeners]) l();
+      }
       return Promise.resolve();
     },
     subscribe: (l: () => void) => {
@@ -427,6 +440,48 @@ describe("OcrService", () => {
     expect(r.log.read).toEqual(["600"]);
     expect(r.owner.ready).toEqual(["a.pdf#0"]);
     expect(OCR_MODEL.id).toBe("ocr-ppocrv6");
+  });
+
+  it("does not offer a model still arriving by sync, and reads the page once the files are in", async () => {
+    const r = rig({ ready: false });
+    r.state.arriving = true;
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+    await r.settle();
+    expect(r.log.offers).toBe(0);
+    r.state.arrivesOnCheck = true;
+    await r.advance(MODEL_RECHECK_MS);
+    expect(r.log.offers).toBe(0);
+    expect(r.log.read).toEqual(["600"]);
+    expect(r.owner.ready).toEqual(["a.pdf#0"]);
+  });
+
+  it("finds a model that sync delivers while a page waits for it, without a restart", async () => {
+    const r = rig({ ready: false });
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+    await r.settle();
+    expect(r.log.offers).toBe(1);
+    r.state.arrivesOnCheck = true;
+    await r.advance(MODEL_RECHECK_MS);
+    expect(r.log.read).toEqual(["600"]);
+  });
+
+  it("makes the held-back offer once the files stop counting as arriving", async () => {
+    const r = rig({ ready: false });
+    r.state.arriving = true;
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+    await r.settle();
+    expect(r.log.offers).toBe(0);
+    await r.advance(MODEL_RECHECK_MS);
+    expect(r.log.offers).toBe(0);
+    r.state.arriving = false;
+    await r.advance(MODEL_RECHECK_MS);
+    expect(r.log.offers).toBe(1);
+    // Asked once; the re-checks go on quietly.
+    await r.advance(MODEL_RECHECK_MS * 3);
+    expect(r.log.offers).toBe(1);
   });
 
   it("never offers the model for a blank page, which is cached as read", async () => {

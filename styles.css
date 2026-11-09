@@ -30,7 +30,8 @@
  * accent only on what is active or selected. */
 body,
 .theme-light,
-.theme-dark {
+.theme-dark,
+.goodobsidian-look-preview {
   /* Touch targets: >= 44 pt, a finger-and-pencil surface. The compact size
      is for controls that sit over the page (the options pill), as small as
      GoodNotes' own and still a comfortable Pencil tap. */
@@ -230,7 +231,8 @@ body,
 @supports (color: color-mix(in srgb, red 50%, transparent)) {
   body,
   .theme-light,
-  .theme-dark {
+  .theme-dark,
+  .goodobsidian-look-preview {
     --gob-accent-tint: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
     --gob-active-press: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
     --gob-on-accent-press: color-mix(in srgb, var(--text-on-accent) 24%, transparent);
@@ -1525,10 +1527,10 @@ select.goodobsidian-choice-select {
   flex: 0 0 36px;
 }
 
-/* A heading inside a page: smaller and muted, and indented under its page's
-   title when the page has one. */
+/* An entry inside another, indented one step per entry it sits in
+   (discussion #185); a heading inside a page is smaller and muted too. */
 .goodobsidian-contents-row.is-sub {
-  padding-left: 40px;
+  padding-left: calc(var(--gob-contents-depth, 1) * 20px);
 }
 
 .goodobsidian-contents-row.is-section .goodobsidian-contents-title {
@@ -1550,6 +1552,58 @@ select.goodobsidian-choice-select {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   text-align: center;
+}
+
+/* The ghost of a dragged contents entry; what it carries fades in the list. */
+.goodobsidian-contents-row.is-drag-source {
+  opacity: 0.35;
+}
+
+.goodobsidian-contents-ghost {
+  position: fixed;
+  z-index: var(--layer-dragged-item, 2000);
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--gob-radius-s);
+  background: var(--background-primary);
+  box-shadow: var(--gob-shadow-float);
+  font-size: var(--font-ui-small);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.goodobsidian-contents-ghost-count {
+  flex: none;
+  color: var(--text-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Under the list: add this page, and a chapter of its own. */
+.goodobsidian-contents-adders {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.goodobsidian-pagesidebar .goodobsidian-contents-new.clickable-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-accent);
+}
+
+.goodobsidian-pagesidebar .goodobsidian-contents-new.clickable-icon.is-hidden {
+  display: none;
 }
 
 /* "Add page N to contents": the filter chip's shape, under the list. */
@@ -2965,8 +3019,62 @@ input.goodobsidian-color-list.is-invalid {
   display: none;
 }
 
+/* Look and Simple look read like the language row and the section headers
+   under them: the headers' text, one header pitch each (a header's chevron
+   and the margin between headers), no divider between them, and quiet
+   controls (the language row's menus, Obsidian's small switch). Obsidian's
+   row padding, divider and switch all read these variables, so setting
+   them on the rows moves those too. */
+.goodobsidian-language-row ~ .setting-item {
+  align-items: center;
+  min-height: calc(var(--icon-size) + 2 * var(--size-2-2) + var(--size-4-4));
+  --setting-items-padding-x: var(--size-4-4);
+  --setting-items-padding-y: 0px;
+  --toggle-width: var(--toggle-s-width);
+  --toggle-thumb-height: var(--toggle-s-thumb-height);
+  --toggle-thumb-width: var(--toggle-s-thumb-width);
+}
+
+.goodobsidian-language-row + .setting-item {
+  margin-top: var(--size-4-2);
+}
+
+.goodobsidian-language-row ~ .setting-item ~ .setting-item::before {
+  content: none;
+}
+
+.goodobsidian-language-row ~ .setting-item .setting-item-name {
+  color: var(--setting-group-heading-color);
+  font-size: var(--setting-group-heading-size);
+  font-weight: var(--setting-group-heading-weight);
+}
+
+/* In line with the headers' names while they show their icons. */
+.vertical-tab-content:has(.goodobsidian-fold-header .goodobsidian-section-icon)
+  .goodobsidian-language-row
+  ~ .setting-item
+  .setting-item-name {
+  padding-inline-start: calc(16px + var(--size-4-2));
+}
+
+.goodobsidian-language-row ~ .setting-item select.dropdown {
+  height: calc(var(--icon-size) + 2 * var(--size-2-2));
+  padding-top: 0;
+  padding-bottom: 0;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-normal);
+}
+
+.goodobsidian-language-row ~ .setting-item select.dropdown:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
 .setting-group:has(.goodobsidian-language-row) + .setting-group.goodobsidian-section.is-folded {
-  margin-top: var(--size-4-4);
+  margin-top: var(--size-4-2);
 }
 
 /* Sections that fold. The header is the control (the chevron is its
@@ -4748,13 +4856,6 @@ body:not(.is-phone) .modal.goodobsidian-dialog {
 .goodobsidian-dialog button.mod-cta.clickable-icon:hover {
   background-color: var(--interactive-accent-hover);
   color: var(--text-on-accent);
-}
-
-/* The welcome: where to find it again, quieter than the choices above. */
-.goodobsidian-welcome-hint {
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-  margin-bottom: 0;
 }
 
 /* Import notebook, first screen: two columns, where from (drop zone and the
@@ -15547,8 +15648,16 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
 
 .goodobsidian-toolbar.is-editing button.goodobsidian-tool[data-item] {
   cursor: grab;
-  background: var(--background-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+/* The indicator stays home while buttons move; the active button wears its
+   own square, so the bar looks as it does outside the mode in every look. */
+.goodobsidian-toolbar.is-editing .goodobsidian-bar-group.has-indicator button.is-active,
+.goodobsidian-toolbar.is-editing
+  .goodobsidian-bar-group.has-indicator
+  button.is-active:hover:not(:disabled) {
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
 }
 
 /* Pinned to the bar: it moves along it, never off it. A dot says so. */
@@ -15791,6 +15900,36 @@ button.goodobsidian-edit-chip {
 .goodobsidian-edit-empty {
   display: inline-flex;
   color: var(--text-faint);
+}
+
+/* The look rows: a tap wears it, so no grab cursor; the one worn is ringed
+   and dotted. Each chip is a small bar drawn by that look's own tokens and
+   colours (`.goodobsidian-look-preview`, in the Looks section at the end):
+   a style in the colours worn, a colour set in the style worn. */
+button.goodobsidian-edit-chip.goodobsidian-look-chip {
+  position: relative;
+  width: auto;
+  height: auto;
+  padding: 4px;
+  border-radius: 10px;
+  cursor: var(--cursor);
+  background: transparent;
+  box-shadow: none;
+}
+
+button.goodobsidian-look-chip.is-active {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+button.goodobsidian-look-chip.is-active::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
 }
 
 .goodobsidian-edit-menu {
@@ -16314,8 +16453,18 @@ body.goodobsidian-ocr-reading .goodobsidian-pageindicator:not(.is-hidden)::befor
     transform: rotate(360deg);
   }
 }
-/* An update is out: the same stadium as New, in a quieter fill. */
-button.goodobsidian-library-update {
+/*
+ * Check for updates: Obsidian's icon button, two arrows. An update found
+ * grows it into the same stadium as New, in a quieter fill; "No update"
+ * is that stadium in grey for a moment.
+ */
+.goodobsidian-library-update-icon {
+  display: inline-flex;
+}
+button.goodobsidian-library-update.is-checking .goodobsidian-library-update-icon {
+  animation: goodobsidian-update-spin 0.9s linear infinite;
+}
+button.goodobsidian-library-update.is-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -16324,16 +16473,47 @@ button.goodobsidian-library-update {
   border: 0;
   border-radius: 999px;
   box-shadow: none;
-  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
-  color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
   font-size: 14px;
   font-weight: 650;
+  white-space: nowrap;
+  animation: goodobsidian-update-grow 0.22s var(--gob-ease);
 }
-button.goodobsidian-library-update.is-hidden {
-  display: none;
+button.goodobsidian-library-update.is-update {
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  color: var(--interactive-accent);
+}
+button.goodobsidian-library-update.is-pill .svg-icon {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.4;
 }
 button.goodobsidian-library-update:active {
   transform: scale(0.95);
+}
+/* A narrow Home has no room for the words: the stadium keeps its mark, the name is the tooltip. */
+.goodobsidian-library.is-narrow button.goodobsidian-library-update.is-update {
+  padding: 0 9px;
+}
+.goodobsidian-library.is-narrow .is-update .goodobsidian-library-update-text {
+  display: none;
+}
+@keyframes goodobsidian-update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes goodobsidian-update-grow {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  button.goodobsidian-library-update.is-pill {
+    animation: none;
+  }
 }
 .goodobsidian-library-swatch {
   display: inline-block;
@@ -17355,4 +17535,1949 @@ button.goodobsidian-library-rail-toggle.is-active {
 .goodobsidian-shape-segment svg {
   width: 18px;
   height: 18px;
+}
+
+/* --- Tips, Home's card and the Welcome (view/tips-modal.ts, tip-visual.ts) --- */
+.goodobsidian-tv {
+  display: block;
+  overflow: hidden;
+  background: #fffefa;
+  border-radius: 10px;
+  --gob-tv-ink: #1b2a6b;
+  --gob-tv-accent: var(--interactive-accent);
+  --gob-tv-red: #d0394b;
+  --gob-tv-green: #2f8a5b;
+  --gob-tv-blue: #3b78d8;
+  --gob-tv-mark: #ffd84a;
+  --gob-tv-rule: #cfe0ef;
+  --gob-tv-soft: #b8b8c2;
+  --gob-tv-desk: #ebeaf0;
+  --gob-tv-page: #ffffff;
+}
+.goodobsidian-tv svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.goodobsidian-tv-moves {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.goodobsidian-tv .is-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.goodobsidian-tv .is-drawn {
+  stroke-dasharray: 1;
+}
+.goodobsidian-tv .is-dashed {
+  stroke-dasharray: 5 4;
+}
+.goodobsidian-tv .is-fill {
+  stroke: none;
+}
+.goodobsidian-tv-ink.is-line {
+  stroke: var(--gob-tv-ink);
+}
+.goodobsidian-tv-ink.is-fill {
+  fill: var(--gob-tv-ink);
+}
+.goodobsidian-tv-print.is-fill {
+  fill: #4b4b55;
+}
+.goodobsidian-tv-accent.is-line {
+  stroke: var(--gob-tv-accent);
+}
+.goodobsidian-tv-accent.is-fill {
+  fill: var(--gob-tv-accent);
+}
+.goodobsidian-tv-red.is-line {
+  stroke: var(--gob-tv-red);
+}
+.goodobsidian-tv-red.is-fill {
+  fill: var(--gob-tv-red);
+}
+.goodobsidian-tv-green.is-line {
+  stroke: var(--gob-tv-green);
+}
+.goodobsidian-tv-green.is-fill {
+  fill: var(--gob-tv-green);
+}
+.goodobsidian-tv-blue.is-line {
+  stroke: var(--gob-tv-blue);
+}
+.goodobsidian-tv-blue.is-fill {
+  fill: var(--gob-tv-blue);
+}
+.goodobsidian-tv-mark {
+  mix-blend-mode: multiply;
+}
+.goodobsidian-tv-mark.is-line {
+  stroke: var(--gob-tv-mark);
+}
+.goodobsidian-tv-mark.is-fill {
+  fill: var(--gob-tv-mark);
+}
+.goodobsidian-tv-rule.is-line {
+  stroke: var(--gob-tv-rule);
+}
+.goodobsidian-tv-soft.is-line {
+  stroke: var(--gob-tv-soft);
+}
+.goodobsidian-tv-soft.is-fill {
+  fill: var(--gob-tv-soft);
+}
+.goodobsidian-tv-desk.is-fill {
+  fill: var(--gob-tv-desk);
+}
+.goodobsidian-tv-page.is-fill {
+  fill: var(--gob-tv-page);
+}
+.goodobsidian-tv-page.is-line {
+  stroke: var(--gob-tv-page);
+}
+.goodobsidian-tv text {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+}
+.goodobsidian-tv text.is-print {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: normal;
+}
+.goodobsidian-tv text.is-typed {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-style: normal;
+}
+.goodobsidian-tv-pen path {
+  fill: #ffffff;
+  stroke: #8a8a96;
+  stroke-width: 1.2px;
+  stroke-linejoin: round;
+}
+.goodobsidian-tv-pen circle.goodobsidian-tv-finger {
+  fill: var(--gob-tv-accent);
+  opacity: 0.5;
+}
+.goodobsidian-tv-pen path.goodobsidian-tv-pen-tip {
+  fill: #55555f;
+}
+
+@keyframes goodobsidian-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-welcome-row,
+  .goodobsidian-tips-tile {
+    animation: none !important;
+  }
+}
+
+/* The Welcome. */
+.modal.goodobsidian-welcome {
+  width: min(500px, 94vw);
+}
+.goodobsidian-welcome-intro {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+}
+.goodobsidian-welcome-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--background-modifier-border);
+  animation: goodobsidian-rise 0.36s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+.goodobsidian-welcome-row:nth-of-type(3) {
+  animation-delay: 60ms;
+}
+.goodobsidian-welcome-row:nth-of-type(4) {
+  animation-delay: 120ms;
+}
+.goodobsidian-welcome-row:nth-of-type(5) {
+  animation-delay: 180ms;
+}
+.goodobsidian-welcome-row.is-lead {
+  padding: 12px;
+  margin-bottom: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: hsla(var(--interactive-accent-hsl), 0.12);
+}
+.goodobsidian-welcome-words {
+  flex: 1;
+  min-width: 0;
+}
+.goodobsidian-welcome-name {
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-welcome-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+button.goodobsidian-welcome-button.clickable-icon {
+  flex: none;
+  width: auto;
+  height: auto;
+  padding: 7px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 9px;
+  color: var(--text-normal);
+  white-space: normal;
+}
+.goodobsidian-dialog button.goodobsidian-welcome-button.mod-cta.clickable-icon {
+  padding: 7px 14px;
+  border-color: transparent;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.goodobsidian-welcome-window {
+  flex: none;
+  display: flex;
+  width: 52px;
+  height: 38px;
+  padding: 3px;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--background-primary);
+  box-shadow: 0 0 0 1px var(--background-modifier-border);
+}
+.goodobsidian-welcome-window-ribbon,
+.goodobsidian-welcome-window-side {
+  flex: none;
+  border-radius: 2px;
+  background: hsla(var(--interactive-accent-hsl), 0.4);
+  transition:
+    width 0.28s cubic-bezier(0.2, 0.7, 0.2, 1),
+    margin 0.28s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.2s;
+}
+.goodobsidian-welcome-window-ribbon {
+  width: 5px;
+}
+.goodobsidian-welcome-window-side {
+  width: 12px;
+}
+.goodobsidian-welcome-window.is-simple .goodobsidian-welcome-window-ribbon,
+.goodobsidian-welcome-window.is-simple .goodobsidian-welcome-window-side {
+  width: 0;
+  margin-right: -2px;
+  opacity: 0;
+}
+.goodobsidian-welcome-window-page {
+  flex: 1;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+}
+
+/* Home's one card. */
+.goodobsidian-home-card {
+  position: relative;
+  margin-bottom: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--background-secondary);
+}
+.goodobsidian-home-card.is-offer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 48px;
+}
+.goodobsidian-home-card-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-home-card-icon {
+  display: flex;
+  color: var(--text-accent);
+}
+.goodobsidian-home-card-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+.goodobsidian-home-card-words {
+  flex: 1;
+  min-width: 0;
+}
+.goodobsidian-home-card-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+button.goodobsidian-home-card-close.clickable-icon {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.goodobsidian-home-card-frame {
+  position: relative;
+  margin-top: 12px;
+}
+.goodobsidian-home-card-pictures {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+}
+.goodobsidian-home-card-pictures::-webkit-scrollbar {
+  display: none;
+}
+.goodobsidian-home-card-frame.has-more .goodobsidian-home-card-pictures {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+}
+button.goodobsidian-home-card-arrow.clickable-icon {
+  position: absolute;
+  top: 54px;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+button.goodobsidian-home-card-arrow.is-start.clickable-icon {
+  left: 4px;
+}
+button.goodobsidian-home-card-arrow.is-end.clickable-icon {
+  right: 4px;
+}
+button.goodobsidian-home-card-arrow.is-hidden.clickable-icon {
+  display: none;
+}
+@media (hover: none) {
+  button.goodobsidian-home-card-arrow.clickable-icon {
+    display: none;
+  }
+}
+button.goodobsidian-home-card-picture.clickable-icon {
+  display: block;
+  flex: 0 0 min(220px, 62%);
+  scroll-snap-align: start;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: none;
+  color: var(--text-normal);
+  text-align: left;
+  white-space: normal;
+  transition: transform 0.16s;
+}
+button.goodobsidian-home-card-picture.clickable-icon:active {
+  transform: scale(0.97);
+}
+.goodobsidian-home-card-name {
+  margin-top: 6px;
+  font-size: var(--font-ui-small);
+}
+
+/* The way back, at the foot of the folder rail. */
+.goodobsidian-library-rail-foot {
+  position: sticky;
+  bottom: -24px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: auto -10px -24px;
+  padding: 10px 20px calc(10px + var(--safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.goodobsidian-library-rail-foot .checkbox-container {
+  flex: none;
+  margin-left: auto;
+}
+
+/* The toolbar's Home button while news waits. */
+.goodobsidian-has-news {
+  position: relative;
+}
+.goodobsidian-has-news::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+}
+
+/* Tips. */
+.modal.goodobsidian-tips {
+  width: min(760px, 94vw);
+  max-width: 94vw;
+}
+.goodobsidian-tips .modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.goodobsidian-tips-section {
+  margin: 22px 0 10px;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+}
+.goodobsidian-tips-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+button.goodobsidian-tips-tile.clickable-icon {
+  display: block;
+  width: auto;
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  text-align: left;
+  white-space: normal;
+  animation: goodobsidian-rise 0.36s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  animation-delay: calc(var(--gob-i, 0) * 45ms);
+  transition: transform 0.16s;
+}
+button.goodobsidian-tips-tile.clickable-icon:hover {
+  transform: translateY(-2px);
+}
+button.goodobsidian-tips-tile.clickable-icon:active {
+  transform: scale(0.97);
+}
+.goodobsidian-tips-tile .goodobsidian-tv {
+  border-radius: 0;
+}
+button.goodobsidian-tips-tile.is-first.clickable-icon {
+  display: flex;
+  grid-column: 1 / -1;
+}
+.goodobsidian-tips-tile.is-first .goodobsidian-tv {
+  flex: 0 0 min(52%, 320px);
+}
+.goodobsidian-tips-tile.is-first .goodobsidian-tips-tile-caption {
+  flex: 1;
+  align-items: center;
+  padding: 18px;
+  font-size: 18px;
+}
+.goodobsidian-tips-tile-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-tips-count {
+  color: var(--text-muted);
+  font-weight: var(--font-normal);
+}
+.goodobsidian-tips-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 16px;
+}
+button.goodobsidian-tips-link.clickable-icon {
+  width: auto;
+  height: auto;
+  padding: 4px 6px;
+  color: var(--text-accent);
+  white-space: normal;
+}
+.goodobsidian-tips-pager {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.goodobsidian-tips-stage {
+  position: relative;
+  width: min(520px, 100%);
+  overflow: hidden;
+  border-radius: 14px;
+  background: #fffefa;
+  box-shadow: 0 0 0 1px var(--background-modifier-border);
+  touch-action: pan-y;
+}
+.goodobsidian-tips-stage.is-trying > .goodobsidian-tv {
+  visibility: hidden;
+}
+.goodobsidian-tips-pad {
+  position: absolute;
+  inset: 0;
+}
+.goodobsidian-tips-pad canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+.goodobsidian-tips-pad-done {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 0.16s,
+    transform 0.24s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.goodobsidian-tips-pad-done.is-shown {
+  opacity: 1;
+  transform: none;
+}
+.goodobsidian-tips-words {
+  max-width: 460px;
+  min-height: 112px;
+  margin-top: 14px;
+  text-align: center;
+}
+.goodobsidian-tips-words h3 {
+  margin: 0;
+  font-size: 20px;
+}
+.goodobsidian-tips-words p {
+  margin: 6px 0 10px;
+  color: var(--text-muted);
+}
+button.goodobsidian-tips-try.clickable-icon {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  padding: 6px 16px;
+  border-radius: 18px;
+  background: hsla(var(--interactive-accent-hsl), 0.14);
+  color: var(--text-accent);
+  white-space: normal;
+}
+.goodobsidian-tips-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  width: 100%;
+}
+button.goodobsidian-tips-arrow.clickable-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--background-secondary);
+}
+button.goodobsidian-tips-arrow.clickable-icon.is-hidden {
+  display: flex;
+  visibility: hidden;
+}
+.goodobsidian-tips-dots {
+  display: flex;
+  align-items: center;
+}
+button.goodobsidian-tips-dot.clickable-icon {
+  width: 20px;
+  height: 28px;
+  padding: 0;
+  background: none;
+}
+button.goodobsidian-tips-dot.clickable-icon::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--background-modifier-border);
+  transition:
+    background 0.16s,
+    transform 0.16s;
+}
+button.goodobsidian-tips-dot.is-on.clickable-icon::before {
+  background: var(--interactive-accent);
+  transform: scale(1.25);
+}
+
+/* ----------------------------------------------------------- looks */
+/* Settings → Look. A palette sets Obsidian's own variables on FineNotes'
+   surfaces only; a style sets the --gob-* tokens. Both are body classes
+   from `model/look.ts`. */
+
+.goodobsidian-look-preview:not(.is-palette-obsidian),
+body[class*="finenotes-palette-"]
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ),
+body[class*="finenotes-palette-"]
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --gob-bar-bg: var(--background-secondary);
+  --gob-bar-border: 1px solid var(--background-modifier-border);
+  --gob-card-bg: var(--background-primary);
+  --gob-pill-bg: var(--background-primary);
+  --gob-pop-bg: var(--background-primary);
+  --gob-sheet-bg: var(--background-primary);
+  --gob-group-bg: var(--background-secondary);
+  --gob-side-bg: var(--background-secondary);
+  --gob-seg-active-bg: var(--background-primary);
+  --gob-line: var(--background-modifier-border);
+  --gob-hairline: 1px solid var(--background-modifier-border);
+  --gob-ring-hairline: 0 0 0 1px var(--background-modifier-border);
+  --gob-well: rgba(var(--mono-rgb-100), 0.07);
+  --gob-well-strong: rgba(var(--mono-rgb-100), 0.12);
+  --gob-icon: var(--icon-color, var(--text-muted));
+  --gob-accent-tint: hsla(var(--interactive-accent-hsl), 0.18);
+  --gob-active-bg: var(--gob-accent-tint);
+  --gob-active-fg: var(--interactive-accent);
+  --gob-active-press: hsla(var(--interactive-accent-hsl), 0.28);
+  --gob-size-active-bg: var(--gob-well-strong);
+  --gob-size-active-ring: inset 0 0 0 1.5px var(--interactive-accent);
+  --gob-size-active-fg: var(--text-normal);
+  --gob-swatch-ring: inset 0 0 0 2px var(--interactive-accent);
+  --gob-ring-active: inset 0 0 0 2px var(--interactive-accent);
+  --gob-frost: color-mix(in srgb, var(--background-primary) 78%, transparent);
+  --gob-spring-popover-in: var(--gob-ease-out);
+  --gob-spring-popover-out: var(--gob-ease-out);
+  --gob-spring-tool: var(--gob-spring);
+  --gob-bookmark: var(--color-red);
+}
+body.theme-dark .goodobsidian-look-preview:not(.is-palette-obsidian),
+body[class*="finenotes-palette-"]
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --gob-seg-active-bg: var(--color-base-35);
+}
+body.theme-light .goodobsidian-look-preview.is-palette-nord,
+body.finenotes-palette-nord.theme-light
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --background-primary: #eceff4;
+  --background-primary-alt: color-mix(in srgb, #2e3440 4%, #eceff4);
+  --background-secondary: #e5e9f0;
+  --background-secondary-alt: #d8dee9;
+  --background-modifier-border: #c9d1de;
+  --background-modifier-border-hover: color-mix(in srgb, #2e3440 20%, #c9d1de);
+  --background-modifier-border-focus: #5e81ac;
+  --background-modifier-hover: color-mix(in srgb, #2e3440 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #5e81ac 15%, transparent);
+  --background-modifier-form-field: #eceff4;
+  --modal-background: #eceff4;
+  --modal-border-color: #c9d1de;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #eceff4;
+  --interactive-hover: color-mix(in srgb, #2e3440 7%, #eceff4);
+  --interactive-accent: #5e81ac;
+  --interactive-accent-hover: color-mix(in srgb, #2e3440 10%, #5e81ac);
+  --interactive-accent-hsl: 213, 32%, 52%;
+  --color-accent: #5e81ac;
+  --text-normal: #2e3440;
+  --text-muted: #4c566a;
+  --text-faint: color-mix(in srgb, #4c566a 70%, #e5e9f0);
+  --text-accent: #5e81ac;
+  --text-on-accent: #ffffff;
+  --text-error: #bf616a;
+  --color-red: #bf616a;
+  --icon-color: #4c566a;
+  --icon-color-hover: #2e3440;
+  --icon-color-active: #5e81ac;
+  --mono-rgb-100: 46, 52, 64;
+  --mono-rgb-0: 236, 239, 244;
+  --color-base-35: color-mix(in srgb, #2e3440 12%, #eceff4);
+}
+body.theme-dark .goodobsidian-look-preview.is-palette-nord,
+body.finenotes-palette-nord.theme-dark
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ),
+body.finenotes-palette-nord
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --background-primary: #434c5e;
+  --background-primary-alt: color-mix(in srgb, #eceff4 4%, #434c5e);
+  --background-secondary: #3b4252;
+  --background-secondary-alt: #2e3440;
+  --background-modifier-border: #4c566a;
+  --background-modifier-border-hover: color-mix(in srgb, #eceff4 20%, #4c566a);
+  --background-modifier-border-focus: #88c0d0;
+  --background-modifier-hover: color-mix(in srgb, #eceff4 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #88c0d0 15%, transparent);
+  --background-modifier-form-field: #434c5e;
+  --modal-background: #434c5e;
+  --modal-border-color: #4c566a;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #434c5e;
+  --interactive-hover: color-mix(in srgb, #eceff4 7%, #434c5e);
+  --interactive-accent: #88c0d0;
+  --interactive-accent-hover: color-mix(in srgb, #eceff4 10%, #88c0d0);
+  --interactive-accent-hsl: 193, 43%, 67%;
+  --color-accent: #88c0d0;
+  --text-normal: #eceff4;
+  --text-muted: #d8dee9;
+  --text-faint: color-mix(in srgb, #d8dee9 70%, #3b4252);
+  --text-accent: #88c0d0;
+  --text-on-accent: #2e3440;
+  --text-error: #bf616a;
+  --color-red: #bf616a;
+  --icon-color: #d8dee9;
+  --icon-color-hover: #eceff4;
+  --icon-color-active: #88c0d0;
+  --mono-rgb-100: 236, 239, 244;
+  --mono-rgb-0: 67, 76, 94;
+  --color-base-35: color-mix(in srgb, #eceff4 12%, #434c5e);
+}
+body.theme-light .goodobsidian-look-preview.is-palette-catppuccin,
+body.finenotes-palette-catppuccin.theme-light
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --background-primary: #eff1f5;
+  --background-primary-alt: color-mix(in srgb, #4c4f69 4%, #eff1f5);
+  --background-secondary: #e6e9ef;
+  --background-secondary-alt: #dce0e8;
+  --background-modifier-border: #ccd0da;
+  --background-modifier-border-hover: color-mix(in srgb, #4c4f69 20%, #ccd0da);
+  --background-modifier-border-focus: #8839ef;
+  --background-modifier-hover: color-mix(in srgb, #4c4f69 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #8839ef 15%, transparent);
+  --background-modifier-form-field: #eff1f5;
+  --modal-background: #eff1f5;
+  --modal-border-color: #ccd0da;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #eff1f5;
+  --interactive-hover: color-mix(in srgb, #4c4f69 7%, #eff1f5);
+  --interactive-accent: #8839ef;
+  --interactive-accent-hover: color-mix(in srgb, #4c4f69 10%, #8839ef);
+  --interactive-accent-hsl: 266, 85%, 58%;
+  --color-accent: #8839ef;
+  --text-normal: #4c4f69;
+  --text-muted: #5c5f77;
+  --text-faint: color-mix(in srgb, #5c5f77 70%, #e6e9ef);
+  --text-accent: #8839ef;
+  --text-on-accent: #ffffff;
+  --text-error: #d20f39;
+  --color-red: #d20f39;
+  --icon-color: #5c5f77;
+  --icon-color-hover: #4c4f69;
+  --icon-color-active: #8839ef;
+  --mono-rgb-100: 76, 79, 105;
+  --mono-rgb-0: 239, 241, 245;
+  --color-base-35: color-mix(in srgb, #4c4f69 12%, #eff1f5);
+}
+body.theme-dark .goodobsidian-look-preview.is-palette-catppuccin,
+body.finenotes-palette-catppuccin.theme-dark
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ),
+body.finenotes-palette-catppuccin
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --background-primary: #1e1e2e;
+  --background-primary-alt: color-mix(in srgb, #cdd6f4 4%, #1e1e2e);
+  --background-secondary: #181825;
+  --background-secondary-alt: #11111b;
+  --background-modifier-border: #313244;
+  --background-modifier-border-hover: color-mix(in srgb, #cdd6f4 20%, #313244);
+  --background-modifier-border-focus: #cba6f7;
+  --background-modifier-hover: color-mix(in srgb, #cdd6f4 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #cba6f7 15%, transparent);
+  --background-modifier-form-field: #1e1e2e;
+  --modal-background: #1e1e2e;
+  --modal-border-color: #313244;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #1e1e2e;
+  --interactive-hover: color-mix(in srgb, #cdd6f4 7%, #1e1e2e);
+  --interactive-accent: #cba6f7;
+  --interactive-accent-hover: color-mix(in srgb, #cdd6f4 10%, #cba6f7);
+  --interactive-accent-hsl: 267, 84%, 81%;
+  --color-accent: #cba6f7;
+  --text-normal: #cdd6f4;
+  --text-muted: #bac2de;
+  --text-faint: color-mix(in srgb, #bac2de 70%, #181825);
+  --text-accent: #cba6f7;
+  --text-on-accent: #1e1e2e;
+  --text-error: #f38ba8;
+  --color-red: #f38ba8;
+  --icon-color: #bac2de;
+  --icon-color-hover: #cdd6f4;
+  --icon-color-active: #cba6f7;
+  --mono-rgb-100: 205, 214, 244;
+  --mono-rgb-0: 30, 30, 46;
+  --color-base-35: color-mix(in srgb, #cdd6f4 12%, #1e1e2e);
+}
+body.theme-light .goodobsidian-look-preview.is-palette-dracula,
+body.finenotes-palette-dracula.theme-light
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --background-primary: #fffbeb;
+  --background-primary-alt: color-mix(in srgb, #1f1f1f 4%, #fffbeb);
+  --background-secondary: #f5f1de;
+  --background-secondary-alt: #ece8d4;
+  --background-modifier-border: #cfcab0;
+  --background-modifier-border-hover: color-mix(in srgb, #1f1f1f 20%, #cfcab0);
+  --background-modifier-border-focus: #644ac9;
+  --background-modifier-hover: color-mix(in srgb, #1f1f1f 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #644ac9 15%, transparent);
+  --background-modifier-form-field: #fffbeb;
+  --modal-background: #fffbeb;
+  --modal-border-color: #cfcab0;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #fffbeb;
+  --interactive-hover: color-mix(in srgb, #1f1f1f 7%, #fffbeb);
+  --interactive-accent: #644ac9;
+  --interactive-accent-hover: color-mix(in srgb, #1f1f1f 10%, #644ac9);
+  --interactive-accent-hsl: 252, 54%, 54%;
+  --color-accent: #644ac9;
+  --text-normal: #1f1f1f;
+  --text-muted: #635d48;
+  --text-faint: color-mix(in srgb, #635d48 70%, #f5f1de);
+  --text-accent: #644ac9;
+  --text-on-accent: #ffffff;
+  --text-error: #cb3a2a;
+  --color-red: #cb3a2a;
+  --icon-color: #635d48;
+  --icon-color-hover: #1f1f1f;
+  --icon-color-active: #644ac9;
+  --mono-rgb-100: 31, 31, 31;
+  --mono-rgb-0: 255, 251, 235;
+  --color-base-35: color-mix(in srgb, #1f1f1f 12%, #fffbeb);
+}
+body.theme-dark .goodobsidian-look-preview.is-palette-dracula,
+body.finenotes-palette-dracula.theme-dark
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ),
+body.finenotes-palette-dracula
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --background-primary: #343746;
+  --background-primary-alt: color-mix(in srgb, #f8f8f2 4%, #343746);
+  --background-secondary: #282a36;
+  --background-secondary-alt: #21222c;
+  --background-modifier-border: #44475a;
+  --background-modifier-border-hover: color-mix(in srgb, #f8f8f2 20%, #44475a);
+  --background-modifier-border-focus: #bd93f9;
+  --background-modifier-hover: color-mix(in srgb, #f8f8f2 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #bd93f9 15%, transparent);
+  --background-modifier-form-field: #343746;
+  --modal-background: #343746;
+  --modal-border-color: #44475a;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #343746;
+  --interactive-hover: color-mix(in srgb, #f8f8f2 7%, #343746);
+  --interactive-accent: #bd93f9;
+  --interactive-accent-hover: color-mix(in srgb, #f8f8f2 10%, #bd93f9);
+  --interactive-accent-hsl: 265, 89%, 78%;
+  --color-accent: #bd93f9;
+  --text-normal: #f8f8f2;
+  --text-muted: #c0c3d9;
+  --text-faint: color-mix(in srgb, #c0c3d9 70%, #282a36);
+  --text-accent: #bd93f9;
+  --text-on-accent: #21222c;
+  --text-error: #ff5555;
+  --color-red: #ff5555;
+  --icon-color: #c0c3d9;
+  --icon-color-hover: #f8f8f2;
+  --icon-color-active: #bd93f9;
+  --mono-rgb-100: 248, 248, 242;
+  --mono-rgb-0: 52, 55, 70;
+  --color-base-35: color-mix(in srgb, #f8f8f2 12%, #343746);
+}
+body.theme-light .goodobsidian-look-preview.is-palette-rose-pine,
+body.finenotes-palette-rose-pine.theme-light
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --background-primary: #fffaf3;
+  --background-primary-alt: color-mix(in srgb, #575279 4%, #fffaf3);
+  --background-secondary: #faf4ed;
+  --background-secondary-alt: #f2e9e1;
+  --background-modifier-border: #dfdad9;
+  --background-modifier-border-hover: color-mix(in srgb, #575279 20%, #dfdad9);
+  --background-modifier-border-focus: #907aa9;
+  --background-modifier-hover: color-mix(in srgb, #575279 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #907aa9 15%, transparent);
+  --background-modifier-form-field: #fffaf3;
+  --modal-background: #fffaf3;
+  --modal-border-color: #dfdad9;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #fffaf3;
+  --interactive-hover: color-mix(in srgb, #575279 7%, #fffaf3);
+  --interactive-accent: #907aa9;
+  --interactive-accent-hover: color-mix(in srgb, #575279 10%, #907aa9);
+  --interactive-accent-hsl: 268, 21%, 57%;
+  --color-accent: #907aa9;
+  --text-normal: #575279;
+  --text-muted: #625c87;
+  --text-faint: color-mix(in srgb, #625c87 70%, #faf4ed);
+  --text-accent: #907aa9;
+  --text-on-accent: #ffffff;
+  --text-error: #b4637a;
+  --color-red: #b4637a;
+  --icon-color: #625c87;
+  --icon-color-hover: #575279;
+  --icon-color-active: #907aa9;
+  --mono-rgb-100: 87, 82, 121;
+  --mono-rgb-0: 255, 250, 243;
+  --color-base-35: color-mix(in srgb, #575279 12%, #fffaf3);
+}
+body.theme-dark .goodobsidian-look-preview.is-palette-rose-pine,
+body.finenotes-palette-rose-pine.theme-dark
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ),
+body.finenotes-palette-rose-pine
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --background-primary: #26233a;
+  --background-primary-alt: color-mix(in srgb, #e0def4 4%, #26233a);
+  --background-secondary: #1f1d2e;
+  --background-secondary-alt: #191724;
+  --background-modifier-border: #403d52;
+  --background-modifier-border-hover: color-mix(in srgb, #e0def4 20%, #403d52);
+  --background-modifier-border-focus: #c4a7e7;
+  --background-modifier-hover: color-mix(in srgb, #e0def4 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #c4a7e7 15%, transparent);
+  --background-modifier-form-field: #26233a;
+  --modal-background: #26233a;
+  --modal-border-color: #403d52;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #26233a;
+  --interactive-hover: color-mix(in srgb, #e0def4 7%, #26233a);
+  --interactive-accent: #c4a7e7;
+  --interactive-accent-hover: color-mix(in srgb, #e0def4 10%, #c4a7e7);
+  --interactive-accent-hsl: 267, 57%, 78%;
+  --color-accent: #c4a7e7;
+  --text-normal: #e0def4;
+  --text-muted: #c5c2dd;
+  --text-faint: color-mix(in srgb, #c5c2dd 70%, #1f1d2e);
+  --text-accent: #c4a7e7;
+  --text-on-accent: #191724;
+  --text-error: #eb6f92;
+  --color-red: #eb6f92;
+  --icon-color: #c5c2dd;
+  --icon-color-hover: #e0def4;
+  --icon-color-active: #c4a7e7;
+  --mono-rgb-100: 224, 222, 244;
+  --mono-rgb-0: 38, 35, 58;
+  --color-base-35: color-mix(in srgb, #e0def4 12%, #26233a);
+}
+body.theme-light .goodobsidian-look-preview.is-palette-gruvbox,
+body.finenotes-palette-gruvbox.theme-light
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --background-primary: #fbf1c7;
+  --background-primary-alt: color-mix(in srgb, #3c3836 4%, #fbf1c7);
+  --background-secondary: #f2e5bc;
+  --background-secondary-alt: #ebdbb2;
+  --background-modifier-border: #d5c4a1;
+  --background-modifier-border-hover: color-mix(in srgb, #3c3836 20%, #d5c4a1);
+  --background-modifier-border-focus: #af3a03;
+  --background-modifier-hover: color-mix(in srgb, #3c3836 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #af3a03 15%, transparent);
+  --background-modifier-form-field: #fbf1c7;
+  --modal-background: #fbf1c7;
+  --modal-border-color: #d5c4a1;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #fbf1c7;
+  --interactive-hover: color-mix(in srgb, #3c3836 7%, #fbf1c7);
+  --interactive-accent: #af3a03;
+  --interactive-accent-hover: color-mix(in srgb, #3c3836 10%, #af3a03);
+  --interactive-accent-hsl: 19, 97%, 35%;
+  --color-accent: #af3a03;
+  --text-normal: #3c3836;
+  --text-muted: #5f564f;
+  --text-faint: color-mix(in srgb, #5f564f 70%, #f2e5bc);
+  --text-accent: #af3a03;
+  --text-on-accent: #fbf1c7;
+  --text-error: #9d0006;
+  --color-red: #9d0006;
+  --icon-color: #5f564f;
+  --icon-color-hover: #3c3836;
+  --icon-color-active: #af3a03;
+  --mono-rgb-100: 60, 56, 54;
+  --mono-rgb-0: 251, 241, 199;
+  --color-base-35: color-mix(in srgb, #3c3836 12%, #fbf1c7);
+}
+body.theme-dark .goodobsidian-look-preview.is-palette-gruvbox,
+body.finenotes-palette-gruvbox.theme-dark
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ),
+body.finenotes-palette-gruvbox
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --background-primary: #3c3836;
+  --background-primary-alt: color-mix(in srgb, #ebdbb2 4%, #3c3836);
+  --background-secondary: #282828;
+  --background-secondary-alt: #1d2021;
+  --background-modifier-border: #504945;
+  --background-modifier-border-hover: color-mix(in srgb, #ebdbb2 20%, #504945);
+  --background-modifier-border-focus: #fe8019;
+  --background-modifier-hover: color-mix(in srgb, #ebdbb2 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #fe8019 15%, transparent);
+  --background-modifier-form-field: #3c3836;
+  --modal-background: #3c3836;
+  --modal-border-color: #504945;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #3c3836;
+  --interactive-hover: color-mix(in srgb, #ebdbb2 7%, #3c3836);
+  --interactive-accent: #fe8019;
+  --interactive-accent-hover: color-mix(in srgb, #ebdbb2 10%, #fe8019);
+  --interactive-accent-hsl: 27, 99%, 55%;
+  --color-accent: #fe8019;
+  --text-normal: #ebdbb2;
+  --text-muted: #d5c4a1;
+  --text-faint: color-mix(in srgb, #d5c4a1 70%, #282828);
+  --text-accent: #fe8019;
+  --text-on-accent: #282828;
+  --text-error: #fb4934;
+  --color-red: #fb4934;
+  --icon-color: #d5c4a1;
+  --icon-color-hover: #ebdbb2;
+  --icon-color-active: #fe8019;
+  --mono-rgb-100: 235, 219, 178;
+  --mono-rgb-0: 60, 56, 54;
+  --color-base-35: color-mix(in srgb, #ebdbb2 12%, #3c3836);
+}
+body.theme-light .goodobsidian-look-preview.is-palette-solarized,
+body.finenotes-palette-solarized.theme-light
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --background-primary: #fdf6e3;
+  --background-primary-alt: color-mix(in srgb, #073642 4%, #fdf6e3);
+  --background-secondary: #f5efdc;
+  --background-secondary-alt: #eee8d5;
+  --background-modifier-border: #ddd6c1;
+  --background-modifier-border-hover: color-mix(in srgb, #073642 20%, #ddd6c1);
+  --background-modifier-border-focus: #268bd2;
+  --background-modifier-hover: color-mix(in srgb, #073642 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #268bd2 15%, transparent);
+  --background-modifier-form-field: #fdf6e3;
+  --modal-background: #fdf6e3;
+  --modal-border-color: #ddd6c1;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #fdf6e3;
+  --interactive-hover: color-mix(in srgb, #073642 7%, #fdf6e3);
+  --interactive-accent: #268bd2;
+  --interactive-accent-hover: color-mix(in srgb, #073642 10%, #268bd2);
+  --interactive-accent-hsl: 205, 69%, 49%;
+  --color-accent: #268bd2;
+  --text-normal: #073642;
+  --text-muted: #586e75;
+  --text-faint: color-mix(in srgb, #586e75 70%, #f5efdc);
+  --text-accent: #268bd2;
+  --text-on-accent: #ffffff;
+  --text-error: #dc322f;
+  --color-red: #dc322f;
+  --icon-color: #586e75;
+  --icon-color-hover: #073642;
+  --icon-color-active: #268bd2;
+  --mono-rgb-100: 7, 54, 66;
+  --mono-rgb-0: 253, 246, 227;
+  --color-base-35: color-mix(in srgb, #073642 12%, #fdf6e3);
+}
+body.theme-dark .goodobsidian-look-preview.is-palette-solarized,
+body.finenotes-palette-solarized.theme-dark
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ),
+body.finenotes-palette-solarized
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --background-primary: #073642;
+  --background-primary-alt: color-mix(in srgb, #eee8d5 4%, #073642);
+  --background-secondary: #002b36;
+  --background-secondary-alt: #00212b;
+  --background-modifier-border: #0e4b5a;
+  --background-modifier-border-hover: color-mix(in srgb, #eee8d5 20%, #0e4b5a);
+  --background-modifier-border-focus: #2aa1f0;
+  --background-modifier-hover: color-mix(in srgb, #eee8d5 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #2aa1f0 15%, transparent);
+  --background-modifier-form-field: #073642;
+  --modal-background: #073642;
+  --modal-border-color: #0e4b5a;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #073642;
+  --interactive-hover: color-mix(in srgb, #eee8d5 7%, #073642);
+  --interactive-accent: #2aa1f0;
+  --interactive-accent-hover: color-mix(in srgb, #eee8d5 10%, #2aa1f0);
+  --interactive-accent-hsl: 204, 87%, 55%;
+  --color-accent: #2aa1f0;
+  --text-normal: #eee8d5;
+  --text-muted: #93a1a1;
+  --text-faint: color-mix(in srgb, #93a1a1 70%, #002b36);
+  --text-accent: #2aa1f0;
+  --text-on-accent: #00212b;
+  --text-error: #ef5552;
+  --color-red: #ef5552;
+  --icon-color: #93a1a1;
+  --icon-color-hover: #eee8d5;
+  --icon-color-active: #2aa1f0;
+  --mono-rgb-100: 238, 232, 213;
+  --mono-rgb-0: 7, 54, 66;
+  --color-base-35: color-mix(in srgb, #eee8d5 12%, #073642);
+}
+body.theme-light .goodobsidian-look-preview.is-palette-tokyo-night,
+body.finenotes-palette-tokyo-night.theme-light
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --background-primary: #e9e9ed;
+  --background-primary-alt: color-mix(in srgb, #343b58 4%, #e9e9ed);
+  --background-secondary: #e1e2e7;
+  --background-secondary-alt: #d0d5e3;
+  --background-modifier-border: #c4c8da;
+  --background-modifier-border-hover: color-mix(in srgb, #343b58 20%, #c4c8da);
+  --background-modifier-border-focus: #2e7de9;
+  --background-modifier-hover: color-mix(in srgb, #343b58 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #2e7de9 15%, transparent);
+  --background-modifier-form-field: #e9e9ed;
+  --modal-background: #e9e9ed;
+  --modal-border-color: #c4c8da;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #e9e9ed;
+  --interactive-hover: color-mix(in srgb, #343b58 7%, #e9e9ed);
+  --interactive-accent: #2e7de9;
+  --interactive-accent-hover: color-mix(in srgb, #343b58 10%, #2e7de9);
+  --interactive-accent-hsl: 215, 81%, 55%;
+  --color-accent: #2e7de9;
+  --text-normal: #343b58;
+  --text-muted: #4d5579;
+  --text-faint: color-mix(in srgb, #4d5579 70%, #e1e2e7);
+  --text-accent: #2e7de9;
+  --text-on-accent: #ffffff;
+  --text-error: #c64343;
+  --color-red: #c64343;
+  --icon-color: #4d5579;
+  --icon-color-hover: #343b58;
+  --icon-color-active: #2e7de9;
+  --mono-rgb-100: 52, 59, 88;
+  --mono-rgb-0: 233, 233, 237;
+  --color-base-35: color-mix(in srgb, #343b58 12%, #e9e9ed);
+}
+body.theme-dark .goodobsidian-look-preview.is-palette-tokyo-night,
+body.finenotes-palette-tokyo-night.theme-dark
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ),
+body.finenotes-palette-tokyo-night
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --background-primary: #24283b;
+  --background-primary-alt: color-mix(in srgb, #c0caf5 4%, #24283b);
+  --background-secondary: #1a1b26;
+  --background-secondary-alt: #16161e;
+  --background-modifier-border: #3b4261;
+  --background-modifier-border-hover: color-mix(in srgb, #c0caf5 20%, #3b4261);
+  --background-modifier-border-focus: #7aa2f7;
+  --background-modifier-hover: color-mix(in srgb, #c0caf5 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #7aa2f7 15%, transparent);
+  --background-modifier-form-field: #24283b;
+  --modal-background: #24283b;
+  --modal-border-color: #3b4261;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #24283b;
+  --interactive-hover: color-mix(in srgb, #c0caf5 7%, #24283b);
+  --interactive-accent: #7aa2f7;
+  --interactive-accent-hover: color-mix(in srgb, #c0caf5 10%, #7aa2f7);
+  --interactive-accent-hsl: 221, 89%, 72%;
+  --color-accent: #7aa2f7;
+  --text-normal: #c0caf5;
+  --text-muted: #a9b1d6;
+  --text-faint: color-mix(in srgb, #a9b1d6 70%, #1a1b26);
+  --text-accent: #7aa2f7;
+  --text-on-accent: #16161e;
+  --text-error: #f7768e;
+  --color-red: #f7768e;
+  --icon-color: #a9b1d6;
+  --icon-color-hover: #c0caf5;
+  --icon-color-active: #7aa2f7;
+  --mono-rgb-100: 192, 202, 245;
+  --mono-rgb-0: 36, 40, 59;
+  --color-base-35: color-mix(in srgb, #c0caf5 12%, #24283b);
+}
+body.theme-light .goodobsidian-look-preview.is-palette-everforest,
+body.finenotes-palette-everforest.theme-light
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --background-primary: #fdf6e3;
+  --background-primary-alt: color-mix(in srgb, #4d5a61 4%, #fdf6e3);
+  --background-secondary: #f4f0d9;
+  --background-secondary-alt: #efebd4;
+  --background-modifier-border: #e0dcc7;
+  --background-modifier-border-hover: color-mix(in srgb, #4d5a61 20%, #e0dcc7);
+  --background-modifier-border-focus: #6a7d00;
+  --background-modifier-hover: color-mix(in srgb, #4d5a61 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #6a7d00 15%, transparent);
+  --background-modifier-form-field: #fdf6e3;
+  --modal-background: #fdf6e3;
+  --modal-border-color: #e0dcc7;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #fdf6e3;
+  --interactive-hover: color-mix(in srgb, #4d5a61 7%, #fdf6e3);
+  --interactive-accent: #6a7d00;
+  --interactive-accent-hover: color-mix(in srgb, #4d5a61 10%, #6a7d00);
+  --interactive-accent-hsl: 69, 100%, 25%;
+  --color-accent: #6a7d00;
+  --text-normal: #4d5a61;
+  --text-muted: #5c6a72;
+  --text-faint: color-mix(in srgb, #5c6a72 70%, #f4f0d9);
+  --text-accent: #6a7d00;
+  --text-on-accent: #ffffff;
+  --text-error: #e66868;
+  --color-red: #e66868;
+  --icon-color: #5c6a72;
+  --icon-color-hover: #4d5a61;
+  --icon-color-active: #6a7d00;
+  --mono-rgb-100: 77, 90, 97;
+  --mono-rgb-0: 253, 246, 227;
+  --color-base-35: color-mix(in srgb, #4d5a61 12%, #fdf6e3);
+}
+body.theme-dark .goodobsidian-look-preview.is-palette-everforest,
+body.finenotes-palette-everforest.theme-dark
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ),
+body.finenotes-palette-everforest
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --background-primary: #343f44;
+  --background-primary-alt: color-mix(in srgb, #d3c6aa 4%, #343f44);
+  --background-secondary: #2d353b;
+  --background-secondary-alt: #232a2e;
+  --background-modifier-border: #475258;
+  --background-modifier-border-hover: color-mix(in srgb, #d3c6aa 20%, #475258);
+  --background-modifier-border-focus: #a7c080;
+  --background-modifier-hover: color-mix(in srgb, #d3c6aa 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #a7c080 15%, transparent);
+  --background-modifier-form-field: #343f44;
+  --modal-background: #343f44;
+  --modal-border-color: #475258;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #343f44;
+  --interactive-hover: color-mix(in srgb, #d3c6aa 7%, #343f44);
+  --interactive-accent: #a7c080;
+  --interactive-accent-hover: color-mix(in srgb, #d3c6aa 10%, #a7c080);
+  --interactive-accent-hsl: 83, 34%, 63%;
+  --color-accent: #a7c080;
+  --text-normal: #d3c6aa;
+  --text-muted: #b9b09a;
+  --text-faint: color-mix(in srgb, #b9b09a 70%, #2d353b);
+  --text-accent: #a7c080;
+  --text-on-accent: #232a2e;
+  --text-error: #e67e80;
+  --color-red: #e67e80;
+  --icon-color: #b9b09a;
+  --icon-color-hover: #d3c6aa;
+  --icon-color-active: #a7c080;
+  --mono-rgb-100: 211, 198, 170;
+  --mono-rgb-0: 52, 63, 68;
+  --color-base-35: color-mix(in srgb, #d3c6aa 12%, #343f44);
+}
+body.theme-light .goodobsidian-look-preview.is-palette-high-contrast,
+body.finenotes-palette-high-contrast.theme-light
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --background-primary: #ffffff;
+  --background-primary-alt: color-mix(in srgb, #000000 4%, #ffffff);
+  --background-secondary: #ffffff;
+  --background-secondary-alt: #ffffff;
+  --background-modifier-border: #000000;
+  --background-modifier-border-hover: color-mix(in srgb, #000000 20%, #000000);
+  --background-modifier-border-focus: #0040c0;
+  --background-modifier-hover: color-mix(in srgb, #000000 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #0040c0 15%, transparent);
+  --background-modifier-form-field: #ffffff;
+  --modal-background: #ffffff;
+  --modal-border-color: #000000;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #ffffff;
+  --interactive-hover: color-mix(in srgb, #000000 7%, #ffffff);
+  --interactive-accent: #0040c0;
+  --interactive-accent-hover: color-mix(in srgb, #000000 10%, #0040c0);
+  --interactive-accent-hsl: 220, 100%, 38%;
+  --color-accent: #0040c0;
+  --text-normal: #000000;
+  --text-muted: #000000;
+  --text-faint: color-mix(in srgb, #000000 70%, #ffffff);
+  --text-accent: #0040c0;
+  --text-on-accent: #ffffff;
+  --text-error: #b00000;
+  --color-red: #b00000;
+  --icon-color: #000000;
+  --icon-color-hover: #000000;
+  --icon-color-active: #0040c0;
+  --mono-rgb-100: 0, 0, 0;
+  --mono-rgb-0: 255, 255, 255;
+  --color-base-35: color-mix(in srgb, #000000 12%, #ffffff);
+}
+body.theme-dark .goodobsidian-look-preview.is-palette-high-contrast,
+body.finenotes-palette-high-contrast.theme-dark
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ),
+body.finenotes-palette-high-contrast
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  )
+  .theme-dark {
+  --background-primary: #000000;
+  --background-primary-alt: color-mix(in srgb, #ffffff 4%, #000000);
+  --background-secondary: #000000;
+  --background-secondary-alt: #000000;
+  --background-modifier-border: #ffffff;
+  --background-modifier-border-hover: color-mix(in srgb, #ffffff 20%, #ffffff);
+  --background-modifier-border-focus: #ffd400;
+  --background-modifier-hover: color-mix(in srgb, #ffffff 7%, transparent);
+  --background-modifier-active-hover: color-mix(in srgb, #ffd400 15%, transparent);
+  --background-modifier-form-field: #000000;
+  --modal-background: #000000;
+  --modal-border-color: #ffffff;
+  --background-modifier-cover: color-mix(in srgb, black 35%, transparent);
+  --interactive-normal: #000000;
+  --interactive-hover: color-mix(in srgb, #ffffff 7%, #000000);
+  --interactive-accent: #ffd400;
+  --interactive-accent-hover: color-mix(in srgb, #ffffff 10%, #ffd400);
+  --interactive-accent-hsl: 50, 100%, 50%;
+  --color-accent: #ffd400;
+  --text-normal: #ffffff;
+  --text-muted: #ffffff;
+  --text-faint: color-mix(in srgb, #ffffff 70%, #000000);
+  --text-accent: #ffd400;
+  --text-on-accent: #000000;
+  --text-error: #ff6060;
+  --color-red: #ff6060;
+  --icon-color: #ffffff;
+  --icon-color-hover: #ffffff;
+  --icon-color-active: #ffd400;
+  --mono-rgb-100: 255, 255, 255;
+  --mono-rgb-0: 0, 0, 0;
+  --color-base-35: color-mix(in srgb, #ffffff 12%, #000000);
+}
+
+.goodobsidian-look-preview.is-style-glass,
+body.finenotes-style-glass,
+body.finenotes-style-glass .theme-light,
+body.finenotes-style-glass .theme-dark,
+body.finenotes-style-glass
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --gob-tool-radius: 999px;
+  --gob-well-radius: 999px;
+  --gob-radius-m: 14px;
+  --gob-radius-l: 20px;
+  --gob-pop-radius: 22px;
+  --gob-options-radius: 26px;
+  --gob-card-radius: 20px;
+  --gob-dialog-radius: 26px;
+  --gob-bar-bg: color-mix(in srgb, var(--background-secondary) 62%, transparent);
+  --gob-pill-bg: color-mix(in srgb, var(--background-primary) 60%, transparent);
+  --gob-pop-bg: color-mix(in srgb, var(--background-primary) 72%, transparent);
+  --gob-side-bg: color-mix(in srgb, var(--background-secondary) 72%, transparent);
+  --gob-bar-border: 1px solid color-mix(in srgb, white 30%, transparent);
+  --gob-shadow-float: 0 10px 34px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  --gob-active-bg: var(--interactive-accent);
+  --gob-active-fg: var(--text-on-accent);
+  --gob-blur: blur(22px) saturate(1.8);
+}
+.goodobsidian-look-preview.is-style-material,
+body.finenotes-style-material,
+body.finenotes-style-material .theme-light,
+body.finenotes-style-material .theme-dark,
+body.finenotes-style-material
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --gob-tool-radius: 16px;
+  --gob-well-radius: 16px;
+  --gob-radius-m: 12px;
+  --gob-radius-l: 16px;
+  --gob-pop-radius: 8px;
+  --gob-options-radius: 28px;
+  --gob-card-radius: 12px;
+  --gob-dialog-radius: 28px;
+  --gob-bar-bg: color-mix(in srgb, var(--interactive-accent) 9%, var(--background-secondary));
+  --gob-pill-bg: color-mix(in srgb, var(--interactive-accent) 7%, var(--background-primary));
+  --gob-pop-bg: color-mix(in srgb, var(--interactive-accent) 5%, var(--background-primary));
+  --gob-bar-border: 0 none transparent;
+  --gob-shadow-float: 0 1px 3px rgba(0, 0, 0, 0.18), 0 4px 10px rgba(0, 0, 0, 0.08);
+  --gob-active-bg: color-mix(in srgb, var(--interactive-accent) 26%, transparent);
+  --gob-active-fg: var(--text-normal);
+  --gob-icon-size: 24px;
+  --gob-icon-stroke: 2px;
+}
+.goodobsidian-look-preview.is-style-fluent,
+body.finenotes-style-fluent,
+body.finenotes-style-fluent .theme-light,
+body.finenotes-style-fluent .theme-dark,
+body.finenotes-style-fluent
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --gob-tool-radius: 4px;
+  --gob-well-radius: 4px;
+  --gob-radius-s: 3px;
+  --gob-radius-m: 6px;
+  --gob-radius-l: 8px;
+  --gob-pop-radius: 8px;
+  --gob-options-radius: 8px;
+  --gob-card-radius: 8px;
+  --gob-dialog-radius: 8px;
+  --gob-bar-bg: color-mix(in srgb, var(--background-secondary) 90%, var(--interactive-accent));
+  --gob-shadow-float: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.2);
+  --gob-active-bg: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  --gob-active-fg: var(--text-normal);
+  --gob-icon-size: 20px;
+  --gob-icon-stroke: 1.4px;
+}
+.goodobsidian-look-preview.is-style-paper,
+body.finenotes-style-paper,
+body.finenotes-style-paper .theme-light,
+body.finenotes-style-paper .theme-dark,
+body.finenotes-style-paper
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --gob-tool-radius: 4px;
+  --gob-well-radius: 4px;
+  --gob-radius-s: 3px;
+  --gob-radius-m: 4px;
+  --gob-radius-l: 4px;
+  --gob-pop-radius: 4px;
+  --gob-options-radius: 4px;
+  --gob-card-radius: 4px;
+  --gob-dialog-radius: 6px;
+  --gob-bar-bg: var(--background-primary);
+  --gob-shadow-float: 0 0 0 1px var(--background-modifier-border);
+  --gob-shadow-raised: none;
+  --gob-shadow-sheet: 0 0 0 1px var(--background-modifier-border);
+  --gob-active-bg: transparent;
+  --gob-active-fg: var(--text-normal);
+  --gob-icon-stroke: 1.25px;
+}
+.goodobsidian-look-preview.is-style-brutalist,
+body.finenotes-style-brutalist,
+body.finenotes-style-brutalist .theme-light,
+body.finenotes-style-brutalist .theme-dark,
+body.finenotes-style-brutalist
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --gob-tool-radius: 6px;
+  --gob-well-radius: 6px;
+  --gob-radius-m: 6px;
+  --gob-radius-l: 8px;
+  --gob-pop-radius: 8px;
+  --gob-options-radius: 10px;
+  --gob-card-radius: 8px;
+  --gob-dialog-radius: 10px;
+  --gob-bar-bg: var(--background-primary);
+  --gob-pill-bg: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
+  --gob-bar-border: 2.5px solid var(--text-normal);
+  --gob-hairline: 2px solid var(--text-normal);
+  --gob-line: var(--text-normal);
+  --gob-ring-hairline: 0 0 0 2px var(--text-normal);
+  --gob-shadow-float: 4px 4px 0 var(--text-normal);
+  --gob-shadow-sheet: 6px 6px 0 var(--text-normal);
+  --gob-shadow-raised: 2px 2px 0 var(--text-normal);
+  --gob-active-bg: var(--interactive-accent);
+  --gob-active-fg: var(--text-on-accent);
+  --gob-icon-stroke: 2.2px;
+}
+.goodobsidian-look-preview.is-style-soft,
+body.finenotes-style-soft,
+body.finenotes-style-soft .theme-light,
+body.finenotes-style-soft .theme-dark,
+body.finenotes-style-soft
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --gob-tool-radius: 16px;
+  --gob-well-radius: 16px;
+  --gob-radius-m: 16px;
+  --gob-radius-l: 22px;
+  --gob-pop-radius: 20px;
+  --gob-options-radius: 24px;
+  --gob-card-radius: 20px;
+  --gob-dialog-radius: 26px;
+  --gob-bar-bg: var(--background-secondary);
+  --gob-pill-bg: var(--background-secondary);
+  --gob-pop-bg: var(--background-secondary);
+  --gob-bar-border: 0 none transparent;
+  --gob-shadow-float: 6px 6px 16px rgba(0, 0, 0, 0.16), -5px -5px 14px rgba(255, 255, 255, 0.55);
+  --gob-active-bg: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  --gob-active-fg: var(--interactive-accent);
+  --gob-icon-stroke: 1.5px;
+}
+.goodobsidian-look-preview.is-style-retro,
+body.finenotes-style-retro,
+body.finenotes-style-retro .theme-light,
+body.finenotes-style-retro .theme-dark,
+body.finenotes-style-retro
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --gob-tool-radius: 0;
+  --gob-well-radius: 0;
+  --gob-radius-s: 0;
+  --gob-radius-m: 0;
+  --gob-radius-l: 0;
+  --gob-radius-pill: 0;
+  --gob-pop-radius: 0;
+  --gob-options-radius: 0;
+  --gob-card-radius: 0;
+  --gob-dialog-radius: 0;
+  --gob-bar-bg: var(--background-primary);
+  --gob-bar-border: 1px solid var(--text-normal);
+  --gob-hairline: 1px solid var(--text-normal);
+  --gob-line: var(--text-normal);
+  --gob-shadow-float: 2px 2px 0 var(--text-normal);
+  --gob-shadow-sheet: 3px 3px 0 var(--text-normal);
+  --gob-shadow-raised: 1px 1px 0 var(--text-normal);
+  --gob-active-bg: var(--text-normal);
+  --gob-active-fg: var(--background-primary);
+  --gob-icon-stroke: 2px;
+}
+.goodobsidian-look-preview.is-style-compact,
+body.finenotes-style-compact,
+body.finenotes-style-compact .theme-light,
+body.finenotes-style-compact .theme-dark,
+body.finenotes-style-compact
+  :is(
+    .workspace-leaf-content[data-type="goodobsidian-view"],
+    .workspace-leaf-content[data-type="finenotes-library"],
+    .modal[class*="goodobsidian-"],
+    .modal[class*="finenotes-"],
+    body > [class*="goodobsidian-"],
+    body > [class*="finenotes-"]
+  ) {
+  --gob-touch: 36px;
+  --gob-touch-compact: 30px;
+  --gob-icon-size: 18px;
+  --gob-gap: 2px;
+  --gob-tool-radius: 7px;
+  --gob-radius-m: 8px;
+  --gob-pop-radius: 10px;
+  --gob-options-radius: 12px;
+  --gob-bar-h: 46px;
+  --gob-pill-gap: 5px;
+}
+
+/* Glass: the bar, pill and popovers blur what lies under them. */
+body.finenotes-style-glass
+  :is(
+    .goodobsidian-toolbar,
+    .goodobsidian-options,
+    .goodobsidian-popover,
+    .goodobsidian-more,
+    .goodobsidian-addpage
+  ) {
+  -webkit-backdrop-filter: var(--gob-blur);
+  backdrop-filter: var(--gob-blur);
+}
+body.theme-dark .goodobsidian-look-preview.is-style-glass,
+body.finenotes-style-glass.theme-dark {
+  --gob-shadow-float: 0 10px 34px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Fluent and Paper: the active tool is a short bar under its icon. */
+body:is(.finenotes-style-fluent, .finenotes-style-paper) .goodobsidian-toolbar button.is-active {
+  position: relative;
+}
+body:is(.finenotes-style-fluent, .finenotes-style-paper)
+  .goodobsidian-toolbar
+  button.is-active::after {
+  content: "";
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  bottom: 2px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+  pointer-events: none;
+}
+body.finenotes-style-paper .goodobsidian-toolbar button.is-active::after {
+  height: 2px;
+  background: var(--text-normal);
+}
+body.finenotes-style-paper .goodobsidian-toolbar button:not(.is-active) {
+  color: var(--text-muted);
+}
+
+/* Brutalist: thick borders, hard shadows. */
+body.finenotes-style-brutalist
+  :is(.goodobsidian-options, .goodobsidian-popover, .goodobsidian-more) {
+  border: 2.5px solid var(--text-normal);
+}
+body.finenotes-style-brutalist .goodobsidian-toolbar button.is-active {
+  outline: 2.5px solid var(--text-normal);
+  outline-offset: -2.5px;
+}
+body.finenotes-style-brutalist .modal[class*="goodobsidian-"] {
+  border: 2.5px solid var(--text-normal);
+  box-shadow: 6px 6px 0 var(--text-normal);
+}
+
+/* Soft: one surface, lit from the top left. */
+body.theme-dark .goodobsidian-look-preview.is-style-soft,
+body.finenotes-style-soft.theme-dark {
+  --gob-shadow-float: 6px 6px 16px rgba(0, 0, 0, 0.5), -4px -4px 12px rgba(255, 255, 255, 0.05);
+}
+body.finenotes-style-soft .goodobsidian-toolbar button.is-active {
+  box-shadow:
+    inset 3px 3px 7px rgba(0, 0, 0, 0.16),
+    inset -3px -3px 7px rgba(255, 255, 255, 0.5);
+}
+body.finenotes-style-soft.theme-dark .goodobsidian-toolbar button.is-active {
+  box-shadow:
+    inset 3px 3px 7px rgba(0, 0, 0, 0.5),
+    inset -2px -2px 6px rgba(255, 255, 255, 0.06);
+}
+
+/* Retro: a striped bar, a dithered pill, a mono face. */
+body.finenotes-style-retro .goodobsidian-toolbar {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--background-primary) 0 2px,
+    color-mix(in srgb, var(--text-normal) 14%, var(--background-primary)) 2px 3px
+  );
+}
+body.finenotes-style-retro .goodobsidian-toolbar button {
+  background-color: var(--background-primary);
+}
+body.finenotes-style-retro .goodobsidian-toolbar button.is-active {
+  background-color: var(--text-normal);
+}
+body.finenotes-style-retro .goodobsidian-options {
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--text-normal) 22%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 4px 4px;
+}
+body.finenotes-style-retro
+  :is(
+    .goodobsidian-toolbar,
+    .goodobsidian-options,
+    .goodobsidian-popover,
+    .goodobsidian-more,
+    .goodobsidian-addpage
+  ) {
+  font-family: var(--font-monospace);
+}
+
+/* Customize toolbar's look chips (toolbar-edit.ts, lookPreview): a small
+   bar of two tools, the pen pressed. The token blocks above name
+   `.goodobsidian-look-preview` with its style and colours, so it is drawn
+   by the same values as the real bar; what a style draws outside its tokens
+   is repeated here. */
+.goodobsidian-look-preview {
+  display: block;
+  color: var(--text-normal);
+}
+
+.goodobsidian-look-bar {
+  display: flex;
+  align-items: center;
+  gap: max(var(--gob-gap), 2px);
+  padding: 3px;
+  border: var(--gob-bar-border);
+  border-radius: calc(var(--gob-radius-m) * 0.6);
+  background: var(--gob-bar-bg);
+}
+
+.goodobsidian-look-tool {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--gob-touch) * 0.5);
+  height: calc(var(--gob-touch) * 0.5);
+  border-radius: min(var(--gob-tool-radius), 14px);
+  color: var(--gob-icon);
+  --icon-size: 15px;
+}
+
+.goodobsidian-look-tool svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-look-tool.is-active {
+  background: var(--gob-active-bg);
+  color: var(--gob-active-fg);
+}
+
+.goodobsidian-look-preview:is(.is-style-fluent, .is-style-paper)
+  .goodobsidian-look-tool.is-active::after {
+  content: "";
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  bottom: 1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+}
+.goodobsidian-look-preview.is-style-paper .goodobsidian-look-tool.is-active::after {
+  background: var(--text-normal);
+}
+.goodobsidian-look-preview.is-style-paper .goodobsidian-look-tool:not(.is-active) {
+  color: var(--text-muted);
+}
+.goodobsidian-look-preview.is-style-brutalist .goodobsidian-look-tool.is-active {
+  outline: 2px solid var(--text-normal);
+  outline-offset: -2px;
+}
+.goodobsidian-look-preview.is-style-soft .goodobsidian-look-tool.is-active {
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.16),
+    inset -2px -2px 4px rgba(255, 255, 255, 0.5);
+}
+body.theme-dark .goodobsidian-look-preview.is-style-soft .goodobsidian-look-tool.is-active {
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.5),
+    inset -1px -1px 3px rgba(255, 255, 255, 0.06);
+}
+.goodobsidian-look-preview.is-style-retro .goodobsidian-look-bar {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--background-primary) 0 2px,
+    color-mix(in srgb, var(--text-normal) 14%, var(--background-primary)) 2px 3px
+  );
+}
+.goodobsidian-look-preview.is-style-retro .goodobsidian-look-tool {
+  background-color: var(--background-primary);
+}
+.goodobsidian-look-preview.is-style-retro .goodobsidian-look-tool.is-active {
+  background-color: var(--text-normal);
 }
