@@ -165,10 +165,11 @@ function isWholeArrow(kind: ShapeKind | undefined, pts: readonly number[]): bool
 export function pointHandles(
   kind: ShapeKind | undefined,
   pts: readonly number[],
+  elbow = false,
 ): PointHandles | null {
   if (kind === undefined) return null;
   if (CURVED.has(kind)) return curveHandles(pts);
-  const connector = connectorHandles(kind, pts);
+  const connector = connectorHandles(kind, pts, elbow);
   if (connector) {
     return {
       at: connector.at,

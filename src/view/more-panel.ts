@@ -389,7 +389,8 @@ export class MorePanel {
   /**
    * "Lock fit to width" (discussion #43): a check while a page fitted to the
    * pane's width holds still under a sideways pull, instead of stretching and
-   * springing back. A tap switches it and the panel stays.
+   * springing back; pages across turn on a swipe. A tap switches it and the
+   * panel stays.
    */
   private lockFitRow(parent: HTMLElement): void {
     const set = this.actions.setLockFitWidth;

@@ -229,6 +229,7 @@ import {
   ROW_PULL_ADD_PX,
   PULL_ADD_PAGE_PX,
   rowEdgeTurn,
+  rowHeldTurn,
   pullAddAllowed,
   WHEEL_PULL_PAUSE_MS,
   WHEEL_PULL_REST,
@@ -5327,14 +5328,14 @@ export class InkSurface {
       alwaysBounceX: row,
       rangeX,
       // Held centred, a diagonal drag scrolls only down (Goodnotes).
-      diagonalsScrollY: !row,
+      diagonalsScrollY: !row || (this.heldRow && !this.pinch),
       // Turning pages, the view rests centred on each page (`rowY`), never
       // scrolled up or down: the row's whole range is the pages' centres.
       rangeY:
         row && this.turnsPages && !this.joined
           ? rowRestRangeY(this.pageLayout, scale, this.cssH)
           : undefined,
-      holdX: !row && this.holdFitWidth(),
+      holdX: (!row || (this.heldRow && !this.pinch)) && this.holdFitWidth(),
       // While a box is typed in, room to lift it above the keyboard: a page
       // that fits the screen (a cover, a single page) has none of its own.
       trailY: this.typingField() ? keyboardHeight() : 0,
@@ -7850,7 +7851,9 @@ export class InkSurface {
       const bounds = this.scroller.bounds;
       const edgeTurn =
         this.heldRow && !pulled && this.pullGesture?.pinched === false
-          ? rowEdgeTurn(this.scroller.position.x, bounds.minX, bounds.maxX)
+          ? this.scroller.heldSideways
+            ? rowHeldTurn(this.scroller.dragTravel.x, this.scroller.dragTravel.y)
+            : rowEdgeTurn(this.scroller.position.x, bounds.minX, bounds.maxX)
           : 0;
       this.pullGesture = null;
       this.touchPanning = false;
@@ -17644,7 +17647,7 @@ export class InkSurface {
     }
     if (hasFramed(sel)) return null;
     const stroke = sel.strokes[0];
-    const handles = pointHandles(stroke.shape, stroke.pts);
+    const handles = pointHandles(stroke.shape, stroke.pts, (stroke.radius ?? 0) > 0);
     return handles ? { stroke, handles } : null;
   }
 
@@ -17668,7 +17671,11 @@ export class InkSurface {
     // point, runs that came or went), the one under the pen marked.
     const shown =
       drag?.draft && drag.handles.connector
-        ? (pointHandles(drag.draft.kind, drag.draft.pts) ?? lone.handles)
+        ? (pointHandles(
+            drag.draft.kind,
+            drag.draft.pts,
+            lone.handles.connector?.kind === "elbow",
+          ) ?? lone.handles)
         : lone.handles;
     const at = shown.at;
     const count = at.length / 2;
@@ -18183,7 +18190,7 @@ export class InkSurface {
 
   /**
    * One finger tapped twice where nothing took the taps: zoom until the
-   * tapped page is as wide as the pane (pages down) or covers it (a row),
+   * tapped page is as wide as the pane,
    * its left edge on the pane's and the tapped
    * spot as high as it was (inside the page), so nothing but the page shows;
    * from there, back to the whole page, centred. Zoom and scroll land as one
@@ -18207,9 +18214,8 @@ export class InkSurface {
       boxAtPoint(this.pageLayout, at.x, at.y) ?? this.pageLayout.boxes[this.pageIndex] ?? null;
     if (!box) return;
     const row = this.direction === "horizontal";
-    // A slide as large as fits whole; a tall page as wide as the pane (pages
-    // down) or covering it (a row) (discussion #43).
-    const fill = doubleTapFill(box.width, box.height, this.baseScale, this.cssW, this.cssH, row);
+    // A slide as large as fits whole; a tall page as wide as the pane (discussion #43).
+    const fill = doubleTapFill(box.width, box.height, this.baseScale, this.cssW, this.cssH);
     const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom, fill));
     if (Math.abs(target - this.userZoom) < 1e-3) return;
     const rect = this.surfaceEl.getBoundingClientRect();

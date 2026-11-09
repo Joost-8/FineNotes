@@ -26,6 +26,7 @@
  */
 
 import { POINT_STRIDE } from "../model/document";
+import { elbowPoints } from "./shape-geometry";
 
 export interface Pt {
   x: number;
@@ -281,6 +282,10 @@ function isLevel(a: Pt, b: Pt): boolean {
   return Math.abs(a.y - b.y) <= SAME;
 }
 
+function isUpright(a: Pt, b: Pt): boolean {
+  return Math.abs(a.x - b.x) <= SAME;
+}
+
 /**
  * An elbow tidied after a drag: no zero-length runs, and no corner between
  * two runs on one line (a run slid back into line with its neighbours, or
@@ -356,6 +361,7 @@ function elbowHandles(knots: Pt[], pressure: number, ends: [number, number]): Co
 export function connectorHandles(
   kind: string | undefined,
   pts: readonly number[],
+  elbow = false,
 ): ConnectorHandles | null {
   if (kind !== "line" && kind !== "path") return null;
   const raw = pointsOf(pts);
@@ -365,6 +371,14 @@ export function connectorHandles(
   const points = distinct(raw);
   if (points.length < 2) return null;
   if (points.length === 2) {
+    // An elbow lying straight is still an elbow: its end bends it (`elbow`, from
+    // the stroke's rounded bend).
+    if (
+      elbow &&
+      kind === "path" &&
+      isLevel(points[0], points[1]) !== isUpright(points[0], points[1])
+    )
+      return elbowHandles(points, pressure, ends);
     // A line, or a straight path: no bend yet, one middle dot.
     return raw.length === 2 ? curveHandles(points, pressure, ends) : null;
   }
@@ -435,11 +449,19 @@ function slideRun(knots: Pt[], run: number, p: Pt): Pt[] {
   return out;
 }
 
-/** An elbow with an end moved to `p`: the run from it slides along, so it stays level or upright. */
+/**
+ * An elbow with an end moved to `p`. One with at most one bend bends on its
+ * own: it is routed afresh, along the longer direction first, as when it was
+ * drawn. One whose runs were slid into a Z or U keeps its shape: the run from
+ * that end slides along, so it stays level or upright.
+ */
 function moveElbowEnd(knots: Pt[], role: ConnectorRole, p: Pt): Pt[] {
   if (role.type !== "knot") return knots;
-  const out = knots.slice();
   const end = role.knot;
+  if (knots.length <= 3) {
+    return end === 0 ? elbowPoints(p, knots[knots.length - 1]) : elbowPoints(knots[0], p);
+  }
+  const out = knots.slice();
   const near = end === 0 ? 1 : end - 1;
   const level = isLevel(knots[end], knots[near]);
   out[end] = p;

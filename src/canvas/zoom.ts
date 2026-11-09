@@ -236,8 +236,9 @@ export function pageContainZoom(
  * Where a one-finger double tap fills the screen with the tapped page. A
  * page wider than tall (a slide) fills it whole, as large as fits, so the
  * whole slide shows (discussion #43: filling the width cut its foot off).
- * A page taller than wide fills the pane's width in a column (`row` false),
- * to read down it, and covers the pane in a row.
+ * A page taller than wide fills the pane's width exactly, in a column and in
+ * a row alike: nothing sticks out sideways, so nothing can be panned there
+ * (discussion #43; covering the pane left a page 14 px too wide on an iPad).
  */
 export function doubleTapFill(
   width: number,
@@ -245,12 +246,9 @@ export function doubleTapFill(
   baseScale: number,
   paneWidth: number,
   paneHeight: number,
-  row: boolean,
 ): number {
   if (width > height) return pageContainZoom(width, height, baseScale, paneWidth, paneHeight);
-  return row
-    ? pageFillZoom(width, height, baseScale, paneWidth, paneHeight)
-    : pageWidthZoom(width, baseScale, paneWidth);
+  return pageWidthZoom(width, baseScale, paneWidth);
 }
 
 /**

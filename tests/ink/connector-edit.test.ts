@@ -231,6 +231,50 @@ describe("an elbow", () => {
     expect(moved.kind).toBe("path");
   });
 
+  it("an end dragged the other way bends it on its own, longer direction first", () => {
+    const h = connectorHandles("path", flat(L))!;
+    const down = dragConnector("path", h, 3, { x: 60, y: 300 })!;
+    expect(pointsOf(down.pts)).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 300 },
+      { x: 60, y: 300 },
+    ]);
+  });
+
+  it("an elbow lying straight bends when its end is dragged off the line", () => {
+    const straight = [
+      { x: 0, y: 0 },
+      { x: 200, y: 0 },
+    ];
+    const h = connectorHandles("path", flat(straight), true)!;
+    expect(h.kind).toBe("elbow");
+    const bent = dragConnector("path", h, 2, { x: 200, y: 80 })!;
+    expect(pointsOf(bent.pts)).toEqual([
+      { x: 0, y: 0 },
+      { x: 200, y: 0 },
+      { x: 200, y: 80 },
+    ]);
+    // A plain straight path keeps its middle dot.
+    expect(connectorHandles("path", flat(straight))?.kind).toBe("curve");
+  });
+
+  it("a Z keeps its shape when an end moves", () => {
+    const z = [
+      { x: 0, y: 0 },
+      { x: 80, y: 0 },
+      { x: 80, y: 100 },
+      { x: 200, y: 100 },
+    ];
+    const h = connectorHandles("path", flat(z))!;
+    const moved = dragConnector("path", h, h.roles.length - 1, { x: 240, y: 140 })!;
+    expect(pointsOf(moved.pts)).toEqual([
+      { x: 0, y: 0 },
+      { x: 80, y: 0 },
+      { x: 80, y: 140 },
+      { x: 240, y: 140 },
+    ]);
+  });
+
   it("tidies runs of no length and corners on a straight run", () => {
     expect(
       tidyElbow([

@@ -264,22 +264,18 @@ describe("slides in a row fit the screen (discussion #43)", () => {
   });
 
   it("a double tap on a slide shows it whole, as large as fits", () => {
-    const zoom = doubleTapFill(slide.w, slide.h, base, pane.w, pane.h, true);
+    const zoom = doubleTapFill(slide.w, slide.h, base, pane.w, pane.h);
     const shown = { w: slide.w * base * zoom, h: slide.h * base * zoom };
     expect(Math.max(shown.w / pane.w, shown.h / pane.h)).toBeCloseTo(1, 6);
     expect(shown.w).toBeLessThanOrEqual(pane.w + 1e-6);
     expect(shown.h).toBeLessThanOrEqual(pane.h + 1e-6);
     expect(zoom).toBe(pageContainZoom(slide.w, slide.h, base, pane.w, pane.h));
-    expect(doubleTapFill(slide.w, slide.h, base, pane.w, pane.h, false)).toBe(zoom);
   });
 
-  it("a double tap on a tall page still fills the width (column) or covers (row)", () => {
-    expect(doubleTapFill(794, 1123, base, pane.w, pane.h, false)).toBe(
-      pageWidthZoom(794, base, pane.w),
-    );
-    expect(doubleTapFill(794, 1123, base, pane.w, pane.h, true)).toBe(
-      pageFillZoom(794, 1123, base, pane.w, pane.h),
-    );
+  it("a double tap on a tall page fills the width exactly, so nothing sticks out sideways", () => {
+    const zoom = doubleTapFill(1024, 1448, base, 820, 1180);
+    expect(zoom).toBe(pageWidthZoom(1024, base, 820));
+    expect(1024 * base * zoom).toBeCloseTo(820, 6);
   });
 });
 
