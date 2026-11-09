@@ -13663,7 +13663,6 @@ export class InkSurface {
         icon: "scissors",
         label: t("common.cut"),
         group: "edit",
-        bar: true,
         menu: "tile",
         run: () => this.cutSelection(),
       },
@@ -13672,7 +13671,8 @@ export class InkSurface {
         icon: "copy",
         label: t("common.copy"),
         group: "edit",
-        menu: "tile",
+        bar: true,
+        menu: "none",
         run: () => this.copySelection(),
       },
       {
@@ -13681,7 +13681,7 @@ export class InkSurface {
         label: t("common.duplicate"),
         group: "edit",
         bar: true,
-        menu: "tile",
+        menu: "none",
         run: () => this.duplicateSelectedImage(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
@@ -13710,13 +13710,6 @@ export class InkSurface {
         group: "edit",
         run: () => this.lockSelectedImage(),
       },
-      {
-        id: "crop-image",
-        icon: "crop",
-        label: t("surface.command.cropImage"),
-        group: "crop-image",
-        run: () => this.startCrop(),
-      },
       ...flipActions((axis) => this.flipSelectedImage(axis), "arrange"),
       {
         id: "in-front",
@@ -13741,8 +13734,8 @@ export class InkSurface {
         icon: "trash-2",
         label: t("common.delete"),
         group: "edit",
-        menuGroup: "delete",
         bar: true,
+        menu: "none",
         destructive: true,
         run: () => this.deleteSelectedImage(),
       },
@@ -13750,11 +13743,11 @@ export class InkSurface {
   }
 
   /**
-   * The bar for a lasso selection: Cut · Duplicate · Delete · "…". The menu
-   * (2.5, redrawn when its shape options reached 22 rows) has Cut · Copy ·
-   * Duplicate · Paste across the top, then Screenshot; Colour when it holds ink; one segmented
-   * row each for a shape's fill, line, corners and arrows, and for Flip; Turn
-   * into ›, which holds what the selection can become; and Delete. What it
+   * The bar for a lasso selection: its colour · Copy · Duplicate · Delete ·
+   * the handles' switch · "…". Nothing stands in both the bar and the menu
+   * (2026-11-09, when the bar had grown to nine buttons): the menu has Cut ·
+   * Paste · Screenshot · Copy style across the top, then what the ink can be
+   * asked or become (Ask AI, Correct, Turn into ›) and Flip. What it
    * holds decides the rest (`selectionMenu`): one kind keeps its own options,
    * a mix gets only its ink's colour, and Turn into offers what fits.
    */
@@ -13767,7 +13760,6 @@ export class InkSurface {
         icon: "scissors",
         label: t("common.cut"),
         group: "edit",
-        bar: true,
         menu: "tile",
         run: () => this.cutSelection(),
       },
@@ -13777,7 +13769,7 @@ export class InkSurface {
         label: t("common.copy"),
         group: "edit",
         bar: true,
-        menu: "tile",
+        menu: "none",
         run: () => this.copySelection(),
       },
       {
@@ -13786,7 +13778,7 @@ export class InkSurface {
         label: t("common.duplicate"),
         group: "edit",
         bar: true,
-        menu: "tile",
+        menu: "none",
         run: () => this.duplicateSelection(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
@@ -13796,6 +13788,7 @@ export class InkSurface {
         icon: "camera",
         label: t("surface.selectionBar.screenshot"),
         group: "edit",
+        menu: "tile",
         run: () => void this.showSelectionScreenshot(),
       },
     ];
@@ -13907,6 +13900,7 @@ export class InkSurface {
         icon: "paintbrush",
         label: t("surface.selectionBar.copyStyle"),
         group: "style",
+        menu: "tile",
         run: () => this.copyStyle(sel.strokes),
       });
     }
@@ -14001,13 +13995,13 @@ export class InkSurface {
       icon: "trash-2",
       label: t("common.delete"),
       group: "edit",
-      menuGroup: "delete",
       bar: true,
+      menu: "none",
       destructive: true,
       run: () => this.deleteSelection(),
     });
-    // The bar, as Joost asked (2026-10-28): Cut · Copy · Duplicate · Delete ·
-    // the resize handles, then the "…". A lone shape shows its handles from
+    // The resize handles' switch stands with the "…", apart from the three
+    // actions (Cut moved to the menu, 2026-11-09). A lone shape shows its handles from
     // the start, so it has only the corner points' switch (Joost, 2026-10-30).
     const lone = this.loneShape(sel);
     // A curved shape (heart, arc, circle…) has no corner points, but it is a
@@ -14019,7 +14013,7 @@ export class InkSurface {
         label: this.selectionCorners
           ? t("surface.selectionBar.hideResizeHandles")
           : t("surface.selectionBar.showResizeHandles"),
-        group: "edit",
+        group: "handles",
         bar: true,
         menu: "none",
         checked: this.selectionCorners,
@@ -14036,7 +14030,7 @@ export class InkSurface {
         label: this.shapePointsOn
           ? t("surface.selectionBar.hideCornerPoints")
           : t("surface.selectionBar.editCornerPoints"),
-        group: "edit",
+        group: "handles",
         bar: true,
         menu: "none",
         checked: this.shapePointsOn,
@@ -14046,6 +14040,9 @@ export class InkSurface {
         },
       });
     }
+    // Turn into › stands with Ask AI and Correct, what the ink can be asked
+    // or become: one group, so three rows are not cut apart by two lines.
+    for (const action of actions) if (action.submenu) action.menuGroup = "edit";
     return actions;
   }
 

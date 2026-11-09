@@ -29,7 +29,7 @@ import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequ
 import { PointerHud } from "../../src/view/pointer-hud";
 import { StrokeIndex } from "../../src/view/stroke-index";
 import { SizeWait } from "../../src/view/surface-size";
-import { type SelectionAction, menuLayout } from "../../src/view/selection-bar-model";
+import { type SelectionAction, barItems, menuLayout } from "../../src/view/selection-bar-model";
 
 vi.mock("obsidian", () => ({
   Notice: class {},
@@ -1629,7 +1629,7 @@ describe("Add to contents on a selection", () => {
     expect(cleared).toBe(1);
   });
 
-  it("sits above Link to under Turn into, with Comment after it, and Delete last", () => {
+  it("sits above Link to under Turn into, with Comment after it; nothing is in both the bar and the menu", () => {
     const p = page("p1", [line("h", 100, 300, 115)]);
     const comments: unknown[] = [];
     const surface = surfaceWith({
@@ -1653,14 +1653,27 @@ describe("Add to contents on a selection", () => {
     const into = turn?.kind === "submenu" ? turn.actions.map((a) => a.id) : [];
     expect(into.indexOf("contents")).toBeLessThan(into.indexOf("link"));
     expect(into.indexOf("link")).toBeLessThan(into.indexOf("comment"));
-    // The flips are one segmented row with the style; Delete is the menu's foot.
+    // The flips are one segmented row, the menu's last.
     const flip = rows.find((r) => r.kind === "segments" && r.label === "Flip");
     expect(flip?.kind === "segments" && flip.actions.map((a) => a.id)).toEqual([
       "flip-x",
       "flip-y",
     ]);
     const last = rows[rows.length - 1];
-    expect(last.kind === "action" && last.action.id).toBe("delete");
+    expect(last).toBe(flip);
+    // Delete, Copy and Duplicate are the bar's; Cut, Paste, Screenshot and
+    // Copy style are the menu's tiles. No action stands in both.
+    const { tiles } = menuLayout(actions);
+    const bar = barItems(actions).flatMap((item) =>
+      item.kind === "action" ? [item.action.id] : [],
+    );
+    expect(bar).toEqual(["colour", "copy", "duplicate", "delete", "corners"]);
+    expect(tiles.map((a) => a.id)).toEqual(["cut", "paste", "screenshot", "copy-style"]);
+    const inMenu = [
+      ...tiles.map((a) => a.id),
+      ...rows.flatMap((r) => (r.kind === "action" ? [r.action.id] : [])),
+    ];
+    expect(inMenu.filter((id) => bar.includes(id))).toEqual([]);
     // A comment is pinned at the selection's top-right corner.
     actions.find((a) => a.id === "comment")?.run?.();
     expect(comments).toEqual([[0, { x: 300, y: 105 }]]);

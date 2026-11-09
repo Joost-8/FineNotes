@@ -17,6 +17,30 @@ extracted from the matching section of this file by `release.yml`.
   before, a sideways pull stretches the page and it springs back, as in
   Goodnotes. Pinching still moves it either way.
 
+### Changed
+
+- **A lighter lasso bar and menu.** Nothing stands in both any more. The
+  bar keeps the colour, Copy, Duplicate, Delete and the handles' switch;
+  Cut moved to the ⋯ menu, whose top is now a tray of four: Cut, Paste,
+  Screenshot and Copy style. Delete, Copy and Duplicate left the menu, and
+  a picture's menu lost its second Crop. What the ink can become (Ask AI,
+  Correct, Turn into) is one group, then Flip.
+- **Smoother bars.** The lasso's bar rises from the selection and fades
+  away when it goes; its menu and colour panel grow from the button they
+  hang on and shrink back into it; Turn into slides its rows in and the
+  menu glides to its new height. Buttons show a press at once, with the
+  Pencil too. The table's bar, the audio player, the recording pill and a
+  few more now arrive the same way instead of appearing from nothing, and
+  hovering or picking something in a popover, a dialog, the page sidebar
+  or Home eases instead of snapping. With Reduce Motion on, none of it
+  moves.
+- **Looks reach further.** Paper marks what is chosen with an ink outline
+  instead of the accent; Fluent with its neutral well; Brutalist and Retro
+  box it as thickly as everything else; Material uses a tonal fill. Glass
+  keeps the tool bar readable over the desk. The lasso's dark bar and menu
+  follow each look (Soft's light, Brutalist's thick line, Retro's mono
+  face and inverted press).
+
 ### Fixed
 
 - **Slides fill the screen with pages across**
