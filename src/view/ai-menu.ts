@@ -228,26 +228,24 @@ export class AiMenuPopover {
   private place(): void {
     const r = this.anchor.getBoundingClientRect();
     const width = Math.min(POPOVER_WIDTH, window.innerWidth - 16);
+    // Measured at the width it is shown at: its rows wrap there, and a menu
+    // measured wider came out shorter than it was.
+    this.el.setCssStyles({ width: `${width}px`, maxHeight: "" });
     const height = this.el.offsetHeight;
     const { side, box } = menuAnchor(this.anchor);
     if (side !== "down") {
       const room = { width: window.innerWidth, height: window.innerHeight };
       const at = menuPlace(side, box, { width, height }, room, "start", 6, 8);
-      this.el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px`, width: `${width}px` });
+      this.el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px` });
       return;
     }
     const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
-    // Below the button, always: it never covers the bar it hangs from. A
-    // window too short for the whole menu scrolls it instead.
+    // Below the button, always: it never covers the bar it hangs from. Always
+    // held to the room there, so a menu that does not fit scrolls (styles.css)
+    // instead of running off the screen, however its height was measured.
     const top = r.bottom + 6;
     const room = Math.max(160, window.innerHeight - top - 8);
-    this.el.setCssStyles({
-      left: `${left}px`,
-      top: `${top}px`,
-      width: `${width}px`,
-      maxHeight: height > room ? `${room}px` : "",
-      overflowY: height > room ? "auto" : "",
-    });
+    this.el.setCssStyles({ left: `${left}px`, top: `${top}px`, maxHeight: `${room}px` });
   }
 
   private installDismiss(): void {
