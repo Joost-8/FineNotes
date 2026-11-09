@@ -153,8 +153,8 @@ describe("raised dots", () => {
       [152, 282],
       [140, 276],
     ]);
-    const d = dot(165, 300 - h * 0.4, h);
-    const three = digit(185, 300, h);
+    const d = dot(173, 300 - h * 0.4, h);
+    const three = digit(190, 300, h);
     expect(kinds(layoutSum([nine, zero, d, three]))).toEqual(["ink", "times", "ink"]);
   });
 
