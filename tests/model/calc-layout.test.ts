@@ -145,7 +145,14 @@ describe("raised dots", () => {
   it("reads a dot beside a small written 0 as times", () => {
     const h = 46;
     const nine = digit(100, 300, h);
-    const zero = digit(140, 288, 13);
+    // Measured on the real one: 23 wide, 12 tall beside digits 46 tall.
+    const zero = stroke([
+      [140, 276],
+      [152, 270],
+      [163, 276],
+      [152, 282],
+      [140, 276],
+    ]);
     const d = dot(165, 300 - h * 0.4, h);
     const three = digit(185, 300, h);
     expect(kinds(layoutSum([nine, zero, d, three]))).toEqual(["ink", "times", "ink"]);

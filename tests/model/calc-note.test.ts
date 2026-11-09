@@ -286,14 +286,6 @@ describe("a function on a line", () => {
     expect(functionOfLine("G (X) = sin(X)")).toEqual({ name: "g(x)", body: "sin(x)" });
     expect(functionOfLine("f(x) = 5")).toEqual({ name: "f(x)", body: "5" });
   });
-  it("takes the x of f(x) misread as a 1, when the right side has an x", () => {
-    expect(functionOfLine("f(1)= x")).toEqual({ name: "f(x)", body: "x" });
-    expect(functionOfLine("f(1) = 2")).toBeNull();
-  });
-  it("takes a z straight after x as a raised 2", () => {
-    expect(functionOfLine("y = xz")).toEqual({ name: "y", body: "x^2" });
-    expect(functionOfLine("f(x) = 3xz + 1")).toEqual({ name: "f(x)", body: "3x^2+1" });
-  });
   it("sees a bare left side as nothing to plot yet", () => {
     expect(functionOfLine("f(x) =")).toEqual({ name: "f(x)", body: null });
     expect(functionOfLine("y =")).toEqual({ name: "y", body: null });

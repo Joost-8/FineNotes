@@ -422,22 +422,14 @@ export interface NoteFunction {
 export function functionOfLine(reading: string): NoteFunction | null {
   const label = Math.max(reading.lastIndexOf(": "), reading.lastIndexOf("; "));
   const text = label >= 0 ? reading.slice(label + 1) : reading;
-  // Grape often reads the x in "f(x)" as a 1, an l or a +.
-  const m = /^\s*(?:([yY])|([A-Za-z])\s*\(\s*([xX1lI+])\s*\))\s*=([^=]*)$/.exec(text);
+  const m = /^\s*(?:([yY])|([A-Za-z])\s*\(\s*[xX]\s*\))\s*=([^=]*)$/.exec(text);
   if (!m) return null;
   const name = m[1] ? "y" : `${m[2].toLowerCase()}(x)`;
-  const rest = m[4].replace(/[\s.,;:]+$/, "");
+  const rest = m[3].replace(/[\s.,;:]+$/, "");
   if (rest.trim() === "") return { name, body: null };
-  const body = powersOf(
-    equationSide(rest)
-      .replace(/(?<![A-Za-z])X(?![A-Za-z])/g, "x")
-      // Only x can be a letter here: a z after it is a 2 read on the line ("xz" for x²).
-      .replace(/(?<![A-Za-z])x[zZ](?![A-Za-z])/g, "x2"),
-    "x",
-  );
+  const body = powersOf(equationSide(rest).replace(/(?<![A-Za-z])X(?![A-Za-z])/g, "x"), "x");
   const hasX = /(?<![A-Za-z])x(?![A-Za-z])/.test(body);
-  const argument = m[3] === undefined || /[xX]/.test(m[3]);
-  if (((m[1] || !argument) && !hasX) || !compileFunction(body).ok) return null;
+  if ((m[1] && !hasX) || !compileFunction(body).ok) return null;
   return { name, body };
 }
 

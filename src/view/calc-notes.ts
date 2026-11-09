@@ -139,11 +139,6 @@ interface OpenNote {
   accepted: Command | null;
 }
 
-/** What the layout reader needs of a line Grape read. */
-function pieceOf(l: LineReading): PieceReading {
-  return { text: l.text, confidence: l.confidence, greedy: l.greedy, chars: l.chars };
-}
-
 /** A stroke's left edge, page px. */
 function strokeLeft(stroke: Stroke): number {
   return strokeBounds(stroke)?.minX ?? Infinity;
@@ -294,58 +289,16 @@ export class CalcNotes {
     const ink = strokes.filter(isSumInk);
     const [line] = await reader.readGroups([inkForReading(ink)], { chars: true, math: true });
     if (!line || token !== this.token) return;
-    const whole = readWhole(ink, {
+    const reading = readWhole(ink, {
       text: line.text,
       confidence: line.confidence,
       greedy: line.greedy,
       chars: line.chars,
     });
-    const eqIds = new Set(eq.strokes.map((s) => s.id));
-    const reading = await this.withLayout(
-      whole,
-      strokes.filter((s) => !eqIds.has(s.id) && !after.includes(s)),
-      after,
-    );
-    if (token !== this.token) return;
     const content = this.lineContent(reading);
     if (!content) return;
     const place = answerPlaceAfter(answerPlace(strokes.slice(0, -after.length), eq), after);
     this.open(pageId, eq, after, strokes, place, reading, new Map(), content, token);
-  }
-
-  /**
-   * A whole line with its sides' layout: a raised power or dot, a stacked
-   * fraction, where the marks sit says more than Grape reading them on the
-   * line. Unchanged when neither side has any. Such a reading has no doubts
-   * or pieces to keep: its characters no longer line up with the whole line's.
-   */
-  private async withLayout(
-    whole: SumReading,
-    left: readonly Stroke[],
-    right: readonly Stroke[],
-  ): Promise<SumReading> {
-    const laid = (side: readonly Stroke[]): Promise<SumReading | null> =>
-      readLaidOut(side, async (groups) =>
-        (
-          await this.host.reader.readGroups(groups.map(inkForReading), {
-            chars: true,
-            math: true,
-          })
-        ).map(pieceOf),
-      );
-    const [l, r] = await Promise.all([laid(left), laid(right)]);
-    const parts = whole.text.split("=");
-    if ((!l && !r) || parts.length !== 2) return whole;
-    const side = (reading: SumReading | null, read: string): string =>
-      reading ? reading.text.replace(/\s*=\s*$/, "") : read.trim();
-    return {
-      ...whole,
-      text: `${side(l, parts[0])} = ${side(r, parts[1])}`,
-      dot: l?.dot === true || r?.dot === true,
-      fraction: l?.fraction === true || r?.fraction === true,
-      doubts: [],
-      pieces: [],
-    };
   }
 
   /** The card for a line that is a function or an equation in one letter, or null. */
@@ -630,7 +583,12 @@ export class CalcNotes {
     const reader = this.host.reader;
     const eqIds = new Set(eq.strokes.map((s) => s.id));
     const body = strokes.filter((s) => !eqIds.has(s.id));
-    const piece = pieceOf;
+    const piece = (l: LineReading): PieceReading => ({
+      text: l.text,
+      confidence: l.confidence,
+      greedy: l.greedy,
+      chars: l.chars,
+    });
     const laidOut = await readLaidOut(body, async (groups) =>
       (await reader.readGroups(groups.map(inkForReading), { chars: true, math: true })).map(piece),
     );
