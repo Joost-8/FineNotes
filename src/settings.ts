@@ -248,6 +248,7 @@ function barrelNames(): Record<BarrelAction, string> {
 function stylusClickNames(): Record<StylusClickAction, string> {
   return {
     "pen-menu": t("settings.stylusClick.penMenu"),
+    eraser: t("settings.stylusClick.eraser"),
     none: t("settings.stylusClick.none"),
   };
 }
@@ -1264,6 +1265,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
               "barrel click",
               "s pen",
               "pen menu",
+              "eraser",
               "stylus",
             ]),
             t("settings.stylusClick.info"),

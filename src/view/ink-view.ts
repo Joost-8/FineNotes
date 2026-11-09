@@ -3581,7 +3581,9 @@ export class InkView extends TextFileView {
         // bar could pass for its click (`stylus-click.ts`).
         stylusClick: () => (Platform.isIosApp ? "none" : this.settings.stylusButtonClick),
         onStylusClick: () => {
-          if (!this.isProtected()) this.toolbar?.togglePenMenu();
+          if (this.isProtected()) return;
+          if (this.settings.stylusButtonClick === "eraser") this.surface?.stylusEraserClick();
+          else this.toolbar?.togglePenMenu();
         },
         onToolChange: (tool) => {
           this.toolbar?.setState(this.toolState);

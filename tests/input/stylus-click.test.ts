@@ -34,6 +34,7 @@ describe("the setting", () => {
   it("is the pen menu unless it says nothing", () => {
     expect(stylusClickActionOf("none")).toBe("none");
     expect(stylusClickActionOf("pen-menu")).toBe("pen-menu");
+    expect(stylusClickActionOf("eraser")).toBe("eraser");
     expect(stylusClickActionOf(undefined)).toBe("pen-menu");
     expect(stylusClickActionOf("erase")).toBe("pen-menu");
   });

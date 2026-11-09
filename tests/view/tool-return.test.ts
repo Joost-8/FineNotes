@@ -4,6 +4,7 @@ import { REJOIN_MS, REJOIN_PX } from "../../src/input/pen-rejoin";
 import {
   continuesUse,
   drawingToolOf,
+  eraserClickStep,
   optionsAfterSwitch,
   selectedTool,
   toolAfterUse,
@@ -56,6 +57,25 @@ describe("optional tool return", () => {
     expect(toolAfterUse("text", "text", true, "highlighter")).toBe("highlighter");
     expect(toolAfterUse("select", "selection", true, "select")).toBe("pen");
     expect(toolAfterUse("pen", "gesture", true, "highlighter")).toBe("pen");
+  });
+});
+
+describe("the side button's click set to the eraser", () => {
+  it("takes the eraser and remembers the tool it left", () => {
+    expect(eraserClickStep("pen", null, "pen")).toEqual({ tool: "eraser", back: "pen" });
+    expect(eraserClickStep("select", null, "pen")).toEqual({ tool: "eraser", back: "select" });
+  });
+
+  it("goes back to that tool on the next click", () => {
+    expect(eraserClickStep("eraser", "select", "pen")).toEqual({ tool: "select", back: null });
+  });
+
+  it("goes back to the drawing tool from an eraser picked by hand", () => {
+    expect(eraserClickStep("eraser", null, "highlighter")).toEqual({
+      tool: "highlighter",
+      back: null,
+    });
+    expect(eraserClickStep("eraser", null, "select")).toEqual({ tool: "pen", back: null });
   });
 });
 
