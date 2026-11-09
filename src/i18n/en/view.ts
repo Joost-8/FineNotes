@@ -267,6 +267,8 @@ export const view = {
   "view.pageEmbed.noPages": "This notebook has no pages.",
   "view.pageEmbed.missingFile": "This notebook is not in the vault.",
   "view.pageEmbed.unreadable": "This notebook could not be read.",
+  "view.pageEmbed.morePages.one": "{count} more page",
+  "view.pageEmbed.morePages.other": "{count} more pages",
 
   // Page sidebar
   "view.sidebar.pages": "Pages",

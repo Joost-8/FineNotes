@@ -96,6 +96,17 @@ extracted from the matching section of this file by `release.yml`.
 - **Drag entries in the contents.** Press an entry and move it (hold first
   with a finger): its pages and everything inside it go with it, in one
   undo. Moving sideways while dragging sets how deep it sits.
+- **Previews of a long notebook show its chapters, not its first pages.**
+  The preview that opens over a notebook link, which scrolled through every
+  page, and the page strip in Home's preview, which showed the first 12, now
+  show the first page and the pages the notebook's contents and bookmarks
+  point to: chapters first, then bookmarked pages, then the rest of the
+  contents, spread through the book when there are more than fit (9 pages
+  in a link's preview, 12 in Home). Two places are always kept for
+  bookmarks. Each page is labelled with its number and its line in the
+  contents, and a bookmarked one carries its ribbon; a link's preview ends
+  with a +N that opens the notebook. A shorter notebook shows every page,
+  and `![[Physics.notebook]]` in a note still shows every page.
 
 ### Fixed
 
