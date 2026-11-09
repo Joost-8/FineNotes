@@ -1488,6 +1488,8 @@ interface ImageDrag {
   turn?: TurnSnap;
   /** Another finger joined it, so its lift is no tap. */
   crowded?: boolean;
+  /** What a move of it lines up with (`canvas/align-snap.ts`), found when first needed. */
+  alignTargets?: Bounds[];
 }
 
 /**
@@ -16389,11 +16391,25 @@ export class InkSurface {
    * there to line up with.
    */
   private alignGroupDrag(drag: GroupDrag, dx: number, dy: number): AlignResult | null {
-    const targets = (drag.alignTargets ??= this.alignTargetsOf(drag.selection));
+    // Goodnotes moves a text box, picked up alone or lassoed, without lining it up.
+    const sel = drag.selection;
+    const onlyText =
+      sel.strokes.length === 0 &&
+      sel.images.length === 0 &&
+      (sel.tables ?? []).length === 0 &&
+      (sel.graphs ?? []).length === 0 &&
+      (sel.equations ?? []).length === 0;
+    if (onlyText) return null;
+    const targets = (drag.alignTargets ??= this.alignTargetsOf(sel));
+    return this.alignMoveOf(drag.bounds, dx, dy, targets);
+  }
+
+  /** `box` moved by (`dx`, `dy`) and lined up with `targets`; null when there are none. */
+  private alignMoveOf(box: Bounds, dx: number, dy: number, targets: Bounds[]): AlignResult | null {
     if (targets.length === 0) return null;
     const perScreenPx = 1 / this.unitScale;
     return alignMove(
-      drag.bounds,
+      box,
       dx,
       dy,
       targets,
@@ -16404,9 +16420,10 @@ export class InkSurface {
 
   /**
    * What a selection on its page lines up with: the bounds of each shape,
-   * picture, text box, table, graph and equation it does not hold. Not
-   * handwriting, highlighter or tape: Goodnotes lines a moved selection up
-   * with shapes, never with a line of writing.
+   * picture or sticky note, text box, table, graph and equation it does not
+   * hold. Not handwriting, highlighter or tape: Goodnotes lines a moved
+   * selection up with these, never with a line of writing. What is written
+   * or typed on a sticky note counts as the note.
    */
   private alignTargetsOf(sel: GroupSelection): Bounds[] {
     const page = this.doc.pages.find((p) => p.id === sel.pageId);
@@ -16424,12 +16441,16 @@ export class InkSurface {
       if (b) out.push(b);
     };
     for (const stroke of page.strokes) {
-      if (held.has(stroke) || stroke.shape === undefined || isTape(stroke)) continue;
+      // A shape drawn on a sticky note moves with it: the note is the target.
+      if (held.has(stroke) || stroke.shape === undefined || isTape(stroke) || stroke.onSticky)
+        continue;
       add(selectionBounds([stroke], [], []));
     }
     for (const image of page.images) if (!held.has(image)) add(imageBounds(transformOf(image)));
     const frames: BoxFrame[] = [
-      ...page.textBoxes.filter((t) => !held.has(t)).map((t) => this.textBoxCoverOf(page.id, t)),
+      ...page.textBoxes
+        .filter((t) => !held.has(t) && t.onSticky === undefined)
+        .map((t) => this.textBoxCoverOf(page.id, t)),
       ...(page.tables ?? []).filter((t) => !held.has(t)).map((t) => this.tableFrameOf(t)),
       ...(page.graphs ?? []).filter((g) => !held.has(g)).map(graphFrame),
       ...(page.equations ?? []).filter((e) => !held.has(e)).map(graphFrame),
@@ -18927,14 +18948,24 @@ export class InkSurface {
     if (!box) return;
     const p = this.pagePoint(box, event.clientX, event.clientY);
     switch (drag.part) {
-      case "body":
-        drag.draft = moveImage(
-          drag.start,
-          p.x - drag.from.x,
-          p.y - drag.from.y,
-          this.imageRoom(box),
+      case "body": {
+        // A picture or a sticky note lines up with the page's shapes and
+        // objects as it moves, as in Goodnotes.
+        const room = this.imageRoom(box);
+        const moved = moveImage(drag.start, p.x - drag.from.x, p.y - drag.from.y, room);
+        const targets = (drag.alignTargets ??= this.alignTargetsOf(
+          this.imageAsSelection(drag.pageId, drag.image),
+        ));
+        const aligned = this.alignMoveOf(
+          imageBounds(drag.start),
+          moved.x - drag.start.x,
+          moved.y - drag.start.y,
+          targets,
         );
+        drag.draft = aligned ? moveImage(drag.start, aligned.dx, aligned.dy, room) : moved;
+        this.showAlignGuides(aligned ? box : null, aligned);
         break;
+      }
       case "rotate": {
         const swept = sweptTurn(imageCentre(drag.start), drag.from, p, 0);
         const turn = drag.turn ? drag.turn.turn(swept) : swept;
@@ -19419,6 +19450,7 @@ export class InkSurface {
     if (!drag) return;
     this.imageDrag = null;
     this.showTurnLabel(null, null, 0, false);
+    this.showAlignGuides(null, null);
     this.imageFrameEl.removeEventListener("pointermove", this.onImagePointerMove);
     this.imageFrameEl.removeEventListener("pointerup", this.onImagePointerEnd);
     this.imageFrameEl.removeEventListener("pointercancel", this.onImagePointerEnd);
