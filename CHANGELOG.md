@@ -15,6 +15,7 @@ extracted from the matching section of this file by `release.yml`.
   Pens and shortcuts, **Side button click**, now has **Switch to the eraser**:
   a click with the pen just above the page takes the eraser, another goes back
   to the tool you had.
+
 ### Fixed
 
 - **The scanned-page reader no longer asks to be downloaded again after an
