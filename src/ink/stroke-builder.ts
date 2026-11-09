@@ -314,12 +314,24 @@ export class StrokeBuilder {
   /**
    * Everything kept but not yet in {@link view}, in order, `[x, y, p, altitude]` each:
    * the sample `densify` waits on, then the samples `"centred"` smoothing
-   * waits on. Draw straight lines through them meanwhile; empty when nothing
-   * is provisional.
+   * waits on, each where a pen-up here would place it, so lifting does not
+   * move the end of the stroke (FineNotes#179). A pen-up is one more sample,
+   * so it is added for the reckoning and is the tail's last point: the pen's
+   * own position. Draw straight lines through them meanwhile; empty when
+   * nothing is provisional.
    */
   get tail(): readonly (readonly number[])[] {
     const out: (readonly number[])[] = this.waiting ? [this.waiting] : [];
-    for (let i = this.passed; i < this.held.length; i++) out.push(this.held[i]);
+    const { held, along } = this;
+    if (this.passed >= held.length) return out;
+    held.push(held[held.length - 1]);
+    along.push(along[along.length - 1]);
+    for (let i = this.passed; i < held.length; i++) {
+      const [x, y] = this.placed(i, this.reachAt(i, true));
+      out.push([x, y, held[i][2], held[i][3]]);
+    }
+    held.pop();
+    along.pop();
     return out;
   }
 
@@ -534,8 +546,14 @@ export class StrokeBuilder {
     }
   }
 
-  /** The held sample `i`, placed from the `reach` samples on each side of it. */
+  /** Pass on the held sample `i`, placed from the `reach` samples on each side of it. */
   private passOn(i: number, reach: number): void {
+    const [x, y] = this.placed(i, reach);
+    this.take(x, y, this.held[i][2], this.held[i][3]);
+  }
+
+  /** Where the `reach` samples on each side of the held sample `i` put it. */
+  private placed(i: number, reach: number): [number, number] {
     const weights = centredWeights(reach);
     let x = 0;
     let y = 0;
@@ -546,7 +564,7 @@ export class StrokeBuilder {
       y += weights[j] * s[1];
       sum += weights[j];
     }
-    this.take(x / sum, y / sum, this.held[i][2], this.held[i][3]);
+    return [x / sum, y / sum];
   }
 
   /** A builder in the same state, for settling without touching this one. */

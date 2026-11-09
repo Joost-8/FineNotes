@@ -14,7 +14,8 @@ extracted from the matching section of this file by `release.yml`.
   ([#179](https://github.com/Joost-8/FineNotes/issues/179)). On some iPads
   the Pencil's position arrives rounded to the screen's pixels, which made
   quick strokes zigzag slightly. FineNotes now recognises this and steadies
-  the ink as it does on older iPads, without stabilization's delay.
+  the ink as it does on older iPads, without stabilization's delay. The
+  end of a stroke also no longer shifts as the pen lifts.
 
 ## [2.8.3] - 2026-11-06
 

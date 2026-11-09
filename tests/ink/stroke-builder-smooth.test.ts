@@ -133,13 +133,35 @@ describe("StrokeBuilder smoothing", () => {
     for (const s of samples) b.add(s);
     // Sample i passes once CENTRED_HALF samples follow it (fewer near the start).
     expect(b.view.length / 3).toBe(samples.length - CENTRED_HALF);
-    expect(b.tail.map(([x, y]) => [x, y])).toEqual(
-      samples.slice(-CENTRED_HALF).map((s) => [s.x, s.y]),
-    );
+    // The held samples, then the pen-up the reckoning assumes.
+    expect(b.tail.length).toBe(CENTRED_HALF + 1);
+    expect(b.tail.at(-1)?.slice(0, 2)).toEqual([samples[9].x, samples[9].y]);
     expect(b.length).toBe(samples.length);
     b.settle();
     expect(b.tail).toEqual([]);
     expect(b.view.length / 3).toBe(samples.length);
+  });
+
+  it("centred: the tail is drawn where a pen-up would leave it (FineNotes#179)", () => {
+    for (const options of [{ smoothing: "centred" as const }, { stabilize: 6 }]) {
+      for (const xy of deviceRounded.strokes) {
+        const b = new StrokeBuilder({ minDistance: 0.01, ...options });
+        for (let i = 0; i + 1 < xy.length; i += 2) {
+          const pen = { x: xy[i], y: xy[i + 1], pressure: 0.5 };
+          b.add(pen);
+          const drawn = [...triples(b.view), ...b.tail].flatMap(([x, y]) => [x, y]);
+          const lifted = new StrokeBuilder({ minDistance: 0.01, ...options });
+          for (let j = 0; j < i; j += 2) {
+            lifted.add({ x: xy[j], y: xy[j + 1], pressure: 0.5 });
+          }
+          lifted.add(pen);
+          lifted.addFinal(pen);
+          if (b.tail.length > 0) {
+            expect(drawn).toEqual(triples(lifted.points()).flatMap(([x, y]) => [x, y]));
+          }
+        }
+      }
+    }
   });
 
   it("centred: points() is what settling would give, and changes nothing", () => {
