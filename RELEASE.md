@@ -21,10 +21,27 @@ that repository instead.
 3. Add a `## [x.y.z] - YYYY-MM-DD` section to `CHANGELOG.md`. `release.yml`
    uses it as the GitHub Release notes, and falls back to a generic line if the
    section is missing.
-   If the release has something to show, add an entry for it at the top of
-   `RELEASE_HIGHLIGHTS` in `src/model/tips.ts` (at most three pictures); a
-   release of fixes adds none, and Home shows no card.
-4. Bump the version:
+4. Before the version bump, so that all of it is in the tagged commit, bring
+   what users see up to date with the release:
+   - **Animate What's new.** If the release has something to show, add an
+     entry for it at the top of `RELEASE_HIGHLIGHTS` in `src/model/tips.ts`
+     (at most three pictures), each with its own animated scene in
+     `src/model/tip-scenes.ts`. A release of fixes adds none, and Home shows
+     no card.
+   - **Add to Tips when it fits.** A new gesture, shortcut or control someone
+     would not find alone gets a tip in `TIP_SECTIONS` in the same file, with
+     its scene and its text in `src/i18n/en/notebooks.ts`. Fixes, and features
+     that explain themselves, get none. Check every claim in a tip against
+     the code that handles it, never against the changelog.
+   - **Update the languages.** Every text added or changed since the last
+     release, tips included, goes into each table in `src/i18n/locales/`:
+     ```bash
+     npm run languages:check -- --missing <dir>   # what each language lacks
+     ```
+     Translate those and run it again; no language should lack a key. The
+     plugin fetches its tables at the tag of the version it is running, so a
+     translation added after the tag does not reach that version.
+5. Bump the version:
    ```bash
    npm version patch   # or minor / major, or an explicit x.y.z
    ```
@@ -33,14 +50,14 @@ that repository instead.
    the commit as `x.y.z`, with **no `v` prefix** (enforced by `.npmrc`'s
    `tag-version-prefix=""`). Obsidian requires the tag to match
    `manifest.json`'s version exactly.
-5. Push the commit and **that one tag**:
+6. Push the commit and **that one tag**:
    ```bash
    git push origin main && git push origin x.y.z
    ```
    Never run `git push --tags`: a clone that still holds the pre-1.0 tags
    would push them, and they would carry the old history into this repository
    (see "History" below).
-6. `release.yml` builds and creates a GitHub Release:
+7. `release.yml` builds and creates a GitHub Release:
    - it attaches `main.js`, `manifest.json` and `styles.css`, the three files
      Obsidian downloads;
    - it attests their build provenance;
