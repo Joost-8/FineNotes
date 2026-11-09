@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import { EN } from "../../src/i18n/en";
 import { detectScribble } from "../../src/ink/scribble";
 import {
+  BIOLOGY,
+  LETTERS,
   SCENE_IDS,
   type SceneShape,
   motionKeyframes,
   penPresence,
   sampleTrack,
+  handwrite,
   scrawl,
   tipScene,
   zigzag,
@@ -96,14 +99,6 @@ describe("the pictures", () => {
     }
   });
 
-  it("holds no sentence: a picture's text is maths or a symbol", () => {
-    for (const id of SCENE_IDS) {
-      for (const shape of everyShape(tipScene(id).shapes)) {
-        if (shape.kind === "text") expect(shape.text, id).not.toMatch(/[a-z]{4,}\s[a-z]{2,}/i);
-      }
-    }
-  });
-
   it("merges position, turn and size into one transform", () => {
     const lists = motionKeyframes({
       x: [
@@ -151,12 +146,20 @@ describe("the pictures", () => {
     expect(sampleTrack(track, 0.9)).toBe(0);
   });
 
-  it("scrawls the same line for the same seed, as wide as asked", () => {
+  it("has a letter for every character of the sample notes", () => {
+    for (const phrase of BIOLOGY) {
+      for (const letter of phrase) expect(LETTERS[letter], `${phrase}: ${letter}`).toBeDefined();
+    }
+  });
+
+  it("writes real words, the same each time, about as wide as asked", () => {
     expect(scrawl(10, 50, 100, 4)).toBe(scrawl(10, 50, 100, 4));
-    expect(scrawl(10, 50, 100, 4)).not.toBe(scrawl(10, 50, 100, 5));
-    const ends = [...scrawl(10, 50, 100, 4).matchAll(/ S\S+ \S+ (\S+) /g)].map((m) => Number(m[1]));
-    expect(Math.max(...ends)).toBeGreaterThanOrEqual(110);
-    expect(Math.max(...ends)).toBeLessThan(130);
+    expect(handwrite("mitosis", 0, 0, 80)).not.toBe(handwrite("meiosis", 0, 0, 80));
+    const xs = [...handwrite("mitosis", 10, 50, 80).matchAll(/[MLC]([\d.-]+) /g)].map((m) =>
+      Number(m[1]),
+    );
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(9);
+    expect(Math.max(...xs)).toBeLessThan(100);
   });
 });
 

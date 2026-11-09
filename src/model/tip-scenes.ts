@@ -3,8 +3,9 @@
  *
  * A picture is a little loop drawn on a 320 x 180 sheet: shapes, each with
  * tracks saying how it moves over one loop (offset 0 to 1). The plugin ships
- * no image files and speaks 43 languages, so a scene holds ink, marks and
- * maths, never a sentence, and costs a few hundred bytes.
+ * no image files, so a scene is ink and marks, and costs a few hundred bytes.
+ * The pages in them are a student's biology notes, written by a single-stroke
+ * hand so the pen can write them as it does ink.
  */
 
 export const SCENE_WIDTH = 320;
@@ -13,7 +14,17 @@ export const SCENE_HEIGHT = 180;
 export const SCENE_MS = 5200;
 
 export type Tone =
-  "ink" | "accent" | "red" | "green" | "blue" | "mark" | "rule" | "soft" | "desk" | "page";
+  | "ink"
+  | "print"
+  | "accent"
+  | "red"
+  | "green"
+  | "blue"
+  | "mark"
+  | "rule"
+  | "soft"
+  | "desk"
+  | "page";
 
 /** A value over one loop: `[offset, value]` pairs, offsets ascending. */
 export type Track = ReadonlyArray<readonly [number, number]>;
@@ -47,7 +58,16 @@ export type SceneShape =
     })
   | (Painted & { kind: "rect"; x: number; y: number; w: number; h: number; r?: number })
   | (Painted & { kind: "circle"; cx: number; cy: number; r: number })
-  | (Painted & { kind: "text"; x: number; y: number; text: string; size: number })
+  | (Painted & {
+      kind: "text";
+      x: number;
+      y: number;
+      text: string;
+      size: number;
+      /** The width the text is set to, whatever font the device has. */
+      fit?: number;
+      face?: "typed" | "print";
+    })
   | {
       kind: "group";
       motion?: Motion;
@@ -196,22 +216,155 @@ function rng(seed: number): () => number {
 
 const round = (value: number): number => Math.round(value * 10) / 10;
 
-/** A path that reads as a line of cursive in any language: humps of varied height. */
-export function scrawl(x: number, y: number, width: number, seed = 1, height = 12): string {
+/** The humps of an unsteady hand, for a line that is not writing. */
+function humps(x: number, y: number, width: number, seed: number, height: number): string {
   const random = rng(seed);
   let at = x;
   let d = `M${x} ${y}`;
   while (at < x + width) {
     const step = height * 0.75 + random() * height * 0.55;
-    const tall = random() > 0.76;
-    const top = y - height * (tall ? 1.5 : 0.72) - random() * 3;
-    const foot = y + (random() - 0.5) * 2.4;
+    const top = y - height * 0.72 - random() * 3;
     d += ` C${round(at + step * 0.08)} ${round(y)} ${round(at + step * 0.2)} ${round(top)}`;
     d += ` ${round(at + step * 0.52)} ${round(top)}`;
-    d += ` S${round(at + step * 0.72)} ${round(y + 2.5)} ${round(at + step)} ${round(foot)}`;
+    d += ` S${round(at + step * 0.72)} ${round(y + 2.5)} ${round(at + step)} ${round(y)}`;
     at += step;
   }
   return d;
+}
+
+/**
+ * A single-stroke handwriting: each letter a pen path from the last letter's
+ * end to its own, so the words write themselves like ink. x-height 9, baseline
+ * 0, y down. `[advance, path]`; a path's first segment joins from the pen.
+ */
+export const LETTERS: Readonly<Record<string, readonly [number, string]>> = {
+  a: [12, "C3 -5 6 -9 9 -9C5 -11 1 -8 1 -4C1 0 6 0 9 -9C8 -5 8 0 12 -2"],
+  b: [12, "C3 -3 8 -12 8 -17C8 -21 5 -20 4 -15L3 -1C4 -6 8 -9 9 -8C11 -6 8 0 4 -1C6 -2 9 -3 12 -3"],
+  c: [10, "C0.5 -4 3 -9 7 -9C4.5 -10 1.2 -8 1.2 -4C1.2 0 6 1 10 -2"],
+  d: [13, "C3 -5 6 -9 9 -9C5 -11 1 -8 1 -4C1 0 6 0 9 -9L10 -19C9 -12 8 -1 13 -2"],
+  e: [10, "C5 -2 9 -5 8 -8C7 -10 3 -9 2 -5C1 -1 5 1 10 -2"],
+  f: [10, "C3 -3 8 -12 8 -17C8 -21 5 -20 4 -15C3 -8 3 0 3 6C3 9 6 6 5 3C4 0 8 -1 10 -3"],
+  g: [12, "C3 -5 6 -9 9 -9C5 -11 1 -8 1 -4C1 0 6 0 9 -9C9 -3 9 4 7 7C5 10 1 8 4 3C6 0 10 -1 12 -2"],
+  h: [
+    14,
+    "C3 -3 8 -12 8 -17C8 -21 5 -20 4 -15L3 0C4 -5 7 -9 9 -9C11 -9 10 -4 10 -2C10 -1 12 -1 14 -3",
+  ],
+  i: [8, "C2 -3 3 -7 4 -9C3 -5 3 -1 5 -1C6 -1 7 -2 8 -3M4 -13L4.3 -12.5M8 -3"],
+  j: [8, "C2 -3 3 -7 4 -9C4 -3 4 4 2 7C0 10 -2 7 2 3C4 1 7 -1 8 -3M4 -13L4.3 -12.5M8 -3"],
+  k: [
+    13,
+    "C3 -3 8 -12 8 -17C8 -21 5 -20 4 -15L3 0C4 -5 8 -10 9 -8C10 -6 6 -5 4 -5C7 -4 8 -1 10 -1C11 -1 12 -2 13 -3",
+  ],
+  l: [10, "C3 -3 8 -12 8 -17C8 -21 5 -20 4 -15C3 -9 3 -1 6 -1C8 -1 9 -2 10 -3"],
+  m: [
+    19,
+    "C1 -3 3 -7 3 -9L3 0C4 -5 6 -9 8 -9C10 -9 9 -4 9 0C10 -5 12 -9 14 -9C16 -9 15 -4 15 -2C15 -1 17 -1 19 -3",
+  ],
+  n: [14, "C1 -3 3 -7 3 -9L3 0C4 -5 7 -9 9 -9C11 -9 10 -4 10 -2C10 -1 12 -1 14 -3"],
+  o: [12, "C3 -5 6 -9 8 -9C4 -10 1 -7 1 -4C1 0 7 1 8 -5C8 -8 6 -9 5 -8C7 -6 10 -3 12 -3"],
+  p: [12, "C2 -3 3 -7 4 -9L2 8C3 -3 6 -9 9 -9C12 -8 9 0 5 -1C7 -2 10 -3 12 -3"],
+  q: [12, "C3 -5 6 -9 9 -9C5 -11 1 -8 1 -4C1 0 6 0 9 -9L8 8C9 2 10 -1 12 -3"],
+  r: [12, "C2 -3 3 -6 4 -9C5 -8 7 -8 8 -9C7 -6 7 -2 9 -2C10 -2 11 -2.5 12 -3"],
+  s: [10, "C2 -3 4 -6 6 -10C8 -6 9 -2 6 0C4 1 2 0 2 -1C4 -1 7 -2 10 -3"],
+  t: [10, "C2 -3 4 -10 5 -17C4 -10 3 -1 6 -1C8 -1 9 -2 10 -3M1 -10L9 -11M10 -3"],
+  u: [14, "C2 -3 3 -7 3 -9C2 -4 2 -1 5 -1C7 -1 9 -6 10 -9C9 -5 9 -1 11 -1C12 -1 13 -2 14 -3"],
+  v: [14, "C2 -3 3 -7 4 -9C4 -5 5 -1 7 -1C9 -2 11 -6 10 -9C12 -7 13 -6 14 -6"],
+  w: [
+    18,
+    "C2 -3 3 -7 3 -9C2 -4 3 -1 5 -1C7 -1 8 -5 9 -8C8 -4 9 -1 11 -1C13 -2 15 -6 14 -9C16 -7 17 -6 18 -6",
+  ],
+  x: [11, "C2 -4 6 -9 8 -9C6 -6 7 0 11 -2M10 -8L3 -0.5M11 -2"],
+  y: [
+    12,
+    "C2 -3 3 -7 3 -9C2 -4 2 -1 5 -1C7 -1 9 -6 10 -9C10 -3 10 4 8 7C6 10 2 8 5 3C7 0 10 -1 12 -3",
+  ],
+  z: [11, "C3 -4 5 -9 8 -9L2 0C5 -2 8 0 11 -3"],
+  A: [16, "M0 0L7 -18L14 0M3 -7L11 -7M16 0"],
+  D: [15, "M1 0L1 -18C12 -18 14 -4 1 0M15 0"],
+  N: [16, "M0 0L1 -18L12 0L13 -18M16 0"],
+  P: [12, "M1 0L1 -18C11 -19 11 -8 1 -9M12 0"],
+  R: [13, "M1 0L1 -18C10 -19 10 -9 1 -9L11 0M13 0"],
+  T: [15, "M0 -18L14 -18M7 -18L7 0M15 0"],
+  " ": [7, "M7 -2"],
+};
+
+/** What the pictures' pages say. Their lengths cover the widths scenes ask for. */
+export const BIOLOGY: readonly string[] = [
+  "cell",
+  "gene",
+  "DNA",
+  "RNA",
+  "ATP",
+  "lipid",
+  "virus",
+  "algae",
+  "tissue",
+  "enzyme",
+  "mitosis",
+  "meiosis",
+  "osmosis",
+  "protein",
+  "nucleus",
+  "ribosome",
+  "membrane",
+  "organism",
+  "bacteria",
+  "chromosome",
+  "chloroplast",
+  "mitochondria",
+  "cell membrane",
+  "the cell cycle",
+  "active transport",
+  "golgi apparatus",
+  "photosynthesis",
+  "gene expression",
+  "the krebs cycle",
+  "DNA replication",
+  "natural selection",
+  "protein synthesis",
+  "cells divide by mitosis",
+  "cellular respiration",
+  "the nucleus holds the DNA",
+  "endoplasmic reticulum",
+  "ribosomes build proteins",
+  "plants make sugar from light",
+  "mitochondria make ATP for cells",
+  "enzymes lower activation energy",
+  "every cell comes from another cell",
+];
+
+const widthOf = (text: string): number =>
+  [...text].reduce((sum, letter) => sum + (LETTERS[letter]?.[0] ?? 7), 0);
+
+/** `text` as one pen path starting at (x, y), filling `width` where it can. */
+export function handwrite(text: string, x: number, y: number, width: number, height = 12): string {
+  const unit = (height * 0.85) / 9;
+  const stretch = Math.min(1.3, Math.max(0.65, width / Math.max(1, widthOf(text) * unit)));
+  const sx = unit * stretch;
+  const random = rng(text.length * 7 + 3);
+  let at = x;
+  let d = `M${round(x)} ${round(y)}`;
+  for (const letter of text) {
+    const [advance, path] = LETTERS[letter] ?? LETTERS[" "];
+    const lift = (random() - 0.5) * height * 0.08;
+    d += path.replace(/([MLC])([^MLC]+)/g, (_, command: string, numbers: string) => {
+      const values = numbers.trim().split(/\s+/).map(Number);
+      const placed = values.map((value, i) =>
+        round(i % 2 === 0 ? at + value * sx : y + lift + value * unit),
+      );
+      return command + placed.join(" ");
+    });
+    at += advance * sx;
+  }
+  return d;
+}
+
+/** Some biology about as wide as `width`, in handwriting; `seed` picks among the nearest. */
+export function scrawl(x: number, y: number, width: number, seed = 1, height = 12): string {
+  const unit = (height * 0.85) / 9;
+  const distance = (text: string): number => Math.abs(Math.log((widthOf(text) * unit) / width));
+  const nearest = [...BIOLOGY].sort((a, b) => distance(a) - distance(b)).slice(0, 5);
+  return handwrite(nearest[seed % nearest.length], x, y, width, height);
 }
 
 /** A scribble: passes straight up and down, stepping along. */
@@ -246,13 +399,78 @@ function ruledPaper(): SceneShape[] {
   }));
 }
 
-/** Rows of grey bars: a printed page in no language. */
+const PRINT_WORDS = [
+  "of",
+  "the",
+  "in",
+  "and",
+  "cell",
+  "gene",
+  "into",
+  "each",
+  "with",
+  "form",
+  "cells",
+  "which",
+  "plant",
+  "water",
+  "sugar",
+  "lipid",
+  "enzyme",
+  "energy",
+  "carbon",
+  "tissue",
+  "protein",
+  "nucleus",
+  "mitosis",
+  "osmosis",
+  "membrane",
+  "organism",
+  "bacteria",
+  "ribosome",
+  "chromosome",
+  "respiration",
+];
+
+/** A word as long as a printed gap of `w`, varying with `index`. */
+function printWord(w: number, index: number): string {
+  const target = Math.round(w / 6);
+  const fits = PRINT_WORDS.filter((word) => Math.abs(word.length - target) <= 2);
+  const pool = fits.length > 0 ? fits : PRINT_WORDS;
+  return pool[(index * 7) % pool.length];
+}
+
+/** Typed text across `w`, its top where a bar of that width would be. */
+function typed(
+  text: string,
+  x: number,
+  y: number,
+  w: number,
+  tone: Tone = "ink",
+  motion?: Motion,
+): SceneShape {
+  const size = Math.min(12.5, (w / Math.max(1, text.length)) * 2.05);
+  return { kind: "text", x, y: y + 9, text, size, fit: w, face: "typed", tone, motion };
+}
+
+/** Rows of printed words: a page of a textbook. */
 function printed(rows: ReadonlyArray<readonly [y: number, widths: readonly number[]]>) {
   const shapes: SceneShape[] = [];
+  let index = 0;
   for (const [y, widths] of rows) {
     let x = 34;
     for (const w of widths) {
-      shapes.push({ kind: "rect", x, y, w, h: 8, r: 3, tone: "soft", fill: true });
+      shapes.push({
+        kind: "text",
+        x,
+        y: y + 8,
+        text: printWord(w, index),
+        size: 11,
+        fit: w,
+        face: "print",
+        tone: "print",
+      });
+      index += 1;
       x += w + 7;
     }
   }
@@ -359,13 +577,13 @@ const miniPage = (x: number, y: number, motion?: Motion): SceneShape => ({
   motion,
 });
 
-function searchPill(typeA: number, typeB: number, seed: number): SceneShape[] {
+function searchPill(typeA: number, typeB: number): SceneShape[] {
   return [
     { kind: "rect", x: 60, y: 12, w: 200, h: 30, r: 10, tone: "page", fill: true },
     { kind: "rect", x: 60, y: 12, w: 200, h: 30, r: 10, tone: "soft", width: 1 },
     { kind: "circle", cx: 79, cy: 26, r: 5.5, tone: "soft", width: 2 },
     { kind: "path", d: "M83 30l5 5", tone: "soft", width: 2 },
-    written(scrawl(100, 32, 72, seed, 9), typeA, typeB, false),
+    written(handwrite("mitosis", 100, 32, 62, 9), typeA, typeB, false),
   ];
 }
 
@@ -487,9 +705,16 @@ function popover(x: number, y: number, w: number, rows: number, a: number, b: nu
     { opacity: between(a, b) },
     box(x, y, w, h, "page", 10),
     frame(x, y, w, h, "soft", 10),
-    Array.from({ length: rows }, (_, i): SceneShape =>
-      box(x + 14, y + 13 + i * 22, w - 40 - (i % 2) * 18, 8, i === pick ? "accent" : "soft", 3),
-    ),
+    Array.from({ length: rows }, (_, i): SceneShape => {
+      const label = ["Paste", "Text box", "Select all"][i % 3];
+      return typed(
+        label,
+        x + 14,
+        y + 13 + i * 22,
+        label.length * 6.2,
+        i === pick ? "accent" : "print",
+      );
+    }),
   );
 }
 
@@ -516,8 +741,19 @@ const LIFT: Track = [
   [1, 1],
 ];
 
+const NOTES = [
+  "Cells are the basic unit of life.",
+  "Every cell comes from a cell.",
+  "DNA carries the genetic code.",
+  "Enzymes speed up reactions.",
+];
+const SHORT_NOTES = ["Cell theory", "Mitosis", "Meiosis", "Genes"];
+
 const textBars = (x: number, y: number, rows: number, w = 150): SceneShape[] =>
-  Array.from({ length: rows }, (_, i) => box(x, y + i * 18, w - (i % 2) * 34, 8, "soft", 3));
+  Array.from({ length: rows }, (_, i) => {
+    const width = w - (i % 2) * 34;
+    return typed((width < 110 ? SHORT_NOTES : NOTES)[i % 4], x, y + i * 18, width, "print");
+  });
 
 function keyCap(x: number, y: number, w: number, label: string): SceneShape[] {
   return [
@@ -882,7 +1118,7 @@ const SCENES = {
   searchInk: {
     rest: 0.76,
     shapes: [
-      ...searchPill(0.1, 0.38, 21),
+      ...searchPill(0.1, 0.38),
       ...[110, 142].map((y): SceneShape => ({
         kind: "path",
         d: `M0 ${y}H320`,
@@ -891,7 +1127,7 @@ const SCENES = {
       })),
       { kind: "rect", x: 130, y: 80, w: 82, h: 28, r: 3, tone: "mark", fill: true, motion: FOUND },
       ink(scrawl(44, 104, 76, 14, 13)),
-      ink(scrawl(134, 104, 72, 21, 9)),
+      ink(handwrite("mitosis", 134, 104, 72, 12)),
       ink(scrawl(216, 104, 60, 16, 13)),
       ink(scrawl(44, 136, 170, 17, 13)),
     ],
@@ -900,13 +1136,13 @@ const SCENES = {
     rest: 0.76,
     shapes: [
       { kind: "rect", x: 0, y: 0, w: 320, h: 180, tone: "desk", fill: true },
-      ...searchPill(0.1, 0.34, 23),
+      ...searchPill(0.1, 0.34),
       ...[54, 128, 202].map((x) => miniPage(x, 68)),
       ink(scrawl(62, 96, 46, 4, 7)),
       ink(scrawl(62, 116, 50, 7, 7)),
       ink(scrawl(136, 96, 48, 8, 7)),
       { kind: "rect", x: 134, y: 106, w: 52, h: 16, r: 2, tone: "mark", fill: true, motion: FOUND },
-      ink(scrawl(136, 118, 46, 23, 7)),
+      ink(handwrite("mitosis", 136, 118, 46, 7)),
       ink(scrawl(210, 96, 50, 10, 7)),
       ink(scrawl(210, 116, 44, 12, 7)),
     ],
@@ -940,7 +1176,7 @@ const SCENES = {
     rest: 0.24,
     shapes: [
       ...ruledPaper(),
-      { kind: "text", x: 44, y: 106, text: "x = 2y + 1", size: 30, tone: "ink" },
+      ink(handwrite("the cell cycle", 44, 106, 150, 15)),
       ink("M214 96C232 66 244 120 258 88C268 66 280 110 296 82", { opacity: shownUntil(0.42) }),
       taps(136, 138, [0.26, 0.38]),
       taps(192, 144, [0.26, 0.38]),
@@ -1111,14 +1347,14 @@ const SCENES = {
         },
       },
       ...[0, 1, 2].map((i): SceneShape => ({
-        kind: "rect",
-        x: 124,
-        y: 74 + i * 15,
-        w: 72 - (i % 2) * 18,
-        h: 8,
-        r: 3,
+        kind: "text",
+        x: 160 - [50, 32, 68][i] / 2,
+        y: 83 + i * 15,
+        text: ["Plasma", "lipid", "membrane"][i],
+        size: 13,
+        fit: [50, 32, 68][i],
+        face: "typed",
         tone: "ink",
-        fill: true,
         motion: { opacity: shownFrom(0.38 + i * 0.1) },
       })),
     ],
@@ -1215,26 +1451,16 @@ const SCENES = {
           ],
         },
       },
-      {
-        kind: "rect",
-        x: 140,
-        y: 53,
-        w: 40,
-        h: 8,
-        r: 3,
-        tone: "page",
-        fill: true,
-        motion: {
-          opacity: [
-            [0, 0],
-            [0.3, 0],
-            [0.34, 1],
-            [0.54, 1],
-            [0.57, 0],
-            [1, 0],
-          ],
-        },
-      },
+      typed("Paste", 140, 52, 40, "page", {
+        opacity: [
+          [0, 0],
+          [0.3, 0],
+          [0.34, 1],
+          [0.54, 1],
+          [0.57, 0],
+          [1, 0],
+        ],
+      }),
       taps(160, 57, [0.5]),
       ink(scrawl(100, 106, 124, 33, 14), { opacity: shownFrom(0.58) }),
     ],
@@ -1243,8 +1469,8 @@ const SCENES = {
     rest: 0.8,
     shapes: [
       ...ruledPaper(),
-      ink(scrawl(66, 76, 190, 35, 13), { opacity: shownUntil(0.5) }),
-      ink(scrawl(66, 108, 150, 36, 13), { opacity: shownUntil(0.5) }),
+      ink(handwrite("cells split into two halves", 66, 76, 190, 13), { opacity: shownUntil(0.5) }),
+      ink(handwrite("every cell makes more", 66, 108, 150, 13), { opacity: shownUntil(0.5) }),
       {
         kind: "group",
         motion: {
@@ -1259,28 +1485,8 @@ const SCENES = {
         },
         children: selection(56, 50, 208, 68),
       },
-      ...[0, 1, 2, 3, 4].map((i): SceneShape => ({
-        kind: "rect",
-        x: 66 + i * 40,
-        y: 62,
-        w: 34,
-        h: 9,
-        r: 3,
-        tone: "ink",
-        fill: true,
-        motion: { opacity: shownFrom(0.52 + i * 0.03) },
-      })),
-      ...[0, 1, 2, 3].map((i): SceneShape => ({
-        kind: "rect",
-        x: 66 + i * 40,
-        y: 94,
-        w: 34,
-        h: 9,
-        r: 3,
-        tone: "ink",
-        fill: true,
-        motion: { opacity: shownFrom(0.66 + i * 0.03) },
-      })),
+      typed("Cells split into two halves.", 66, 62, 186, "ink", { opacity: shownFrom(0.52) }),
+      typed("Every cell makes more.", 66, 94, 150, "ink", { opacity: shownFrom(0.62) }),
     ],
   },
   correctWord: {
@@ -1314,8 +1520,8 @@ const SCENES = {
         children: [
           { kind: "rect", x: 104, y: 122, w: 128, h: 50, r: 10, tone: "page", fill: true },
           { kind: "rect", x: 104, y: 122, w: 128, h: 50, r: 10, tone: "soft", width: 1 },
-          { kind: "rect", x: 118, y: 134, w: 76, h: 8, r: 3, tone: "ink", fill: true },
-          { kind: "rect", x: 118, y: 152, w: 58, h: 8, r: 3, tone: "soft", fill: true },
+          typed("mitosis", 118, 133, 62),
+          typed("meiosis", 118, 151, 62, "print"),
         ],
       },
       taps(150, 138, [0.58]),
@@ -1436,8 +1642,8 @@ const SCENES = {
         motion: { rotate: movedTo(15, 0.2, 0.6) },
         children: [
           { kind: "rect", x: 86, y: 60, w: 148, h: 54, tone: "accent", width: 1.5 },
-          { kind: "rect", x: 104, y: 72, w: 112, h: 9, r: 3, tone: "ink", fill: true },
-          { kind: "rect", x: 104, y: 92, w: 80, h: 9, r: 3, tone: "ink", fill: true },
+          typed("The cell cycle", 104, 71, 112),
+          typed("Chapter 3", 104, 91, 80, "print"),
           { kind: "path", d: "M160 114V134", tone: "accent", width: 1.5 },
           { kind: "circle", cx: 160, cy: 140, r: 6, tone: "accent", fill: true },
         ],
@@ -1852,7 +2058,7 @@ const SCENES = {
   ),
   stabilization: sc(
     0.8,
-    line(scrawl(40, 92, 240, 60, 3), "red", 2.4, {
+    line(humps(40, 92, 240, 60, 3), "red", 2.4, {
       draw: drawnBetween(0.04, 0.4),
       opacity: shownUntil(0.5),
     }),
@@ -1900,7 +2106,16 @@ const SCENES = {
   checklist: sc(
     0.8,
     [0, 1, 2].map((i) =>
-      box(106, 58 + i * 30, 130 - (i % 2) * 30, 9, "ink", 3, { opacity: shownFrom(0.02) }),
+      typed(
+        ["Label the cell", "Revise meiosis", "Learn the organelles"][i],
+        106,
+        56 + i * 30,
+        [92, 100, 130][i],
+        "ink",
+        {
+          opacity: shownFrom(0.02),
+        },
+      ),
     ),
     [0, 1, 2].map((i) =>
       frame(76, 52 + i * 30, 20, 20, "ink", 4, { opacity: shownFrom(0.14 + i * 0.08) }),
@@ -2132,7 +2347,7 @@ const SCENES = {
   askSelection: sc(
     0.78,
     ruledPaper(),
-    { kind: "text", x: 80, y: 124, text: "∫ x² dx", size: 30, tone: "ink" },
+    ink(handwrite("krebs cycle", 86, 126, 112, 14)),
     line(
       "M70 96C110 80 190 82 214 100C232 124 204 146 150 146C96 148 58 128 70 96",
       "accent",
@@ -2272,9 +2487,12 @@ const SCENES = {
     word(30, 74, 130, 71, 15),
     frame(22, 42, 148, 44, "accent", 6, { opacity: between(0.08, 0.5) }, true),
     box(196, 20, 108, 140, "desk", 8),
-    box(208, 38, 70, 8, "soft", 3),
-    box(208, 60, 84, 8, "accent", 3, { opacity: shownFrom(0.52), x: movedTo(0, 0.52, 0.66, -60) }),
-    box(208, 82, 60, 8, "soft", 3),
+    typed("Cell biology", 208, 37, 70, "print"),
+    typed("The nucleus", 208, 59, 80, "accent", {
+      opacity: shownFrom(0.52),
+      x: movedTo(0, 0.52, 0.66, -60),
+    }),
+    typed("Genetics", 208, 81, 60, "print"),
   ),
   inkTask: sc(
     0.82,

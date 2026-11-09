@@ -17361,6 +17361,9 @@ button.goodobsidian-library-rail-toggle.is-active {
 .goodobsidian-tv-ink.is-fill {
   fill: var(--gob-tv-ink);
 }
+.goodobsidian-tv-print.is-fill {
+  fill: #4b4b55;
+}
 .goodobsidian-tv-accent.is-line {
   stroke: var(--gob-tv-accent);
 }
@@ -17415,6 +17418,14 @@ button.goodobsidian-library-rail-toggle.is-active {
 .goodobsidian-tv text {
   font-family: Georgia, "Times New Roman", serif;
   font-style: italic;
+}
+.goodobsidian-tv text.is-print {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: normal;
+}
+.goodobsidian-tv text.is-typed {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-style: normal;
 }
 .goodobsidian-tv-pen path {
   fill: #ffffff;

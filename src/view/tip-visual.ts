@@ -103,9 +103,17 @@ export class TipVisual {
     } else {
       el = parent.createSvg("text", {
         cls,
-        attr: { x: shape.x, y: shape.y, "font-size": shape.size },
+        attr: {
+          x: shape.x,
+          y: shape.y,
+          "font-size": shape.size,
+          ...(shape.fit === undefined
+            ? {}
+            : { textLength: shape.fit, lengthAdjust: "spacingAndGlyphs" }),
+        },
       });
       el.textContent = shape.text;
+      if (shape.face) el.addClass(`is-${shape.face}`);
     }
     el.setAttribute("stroke-width", String(shape.width ?? 2));
     if (shape.dashed) el.addClass("is-dashed");
