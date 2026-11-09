@@ -444,6 +444,23 @@ export function rowEdgeTurn(x: number, minX: number, maxX: number): -1 | 0 | 1 {
   return 0;
 }
 
+/**
+ * Finger px of a plainly sideways swipe that turns a page held still ("Lock
+ * fit to width"): the page does not follow the finger, so there is no stretch
+ * to measure and nothing to pull far.
+ */
+export const ROW_HELD_TURN_PX = 80;
+
+/**
+ * On letting go of a swipe over a row's page held still: -1 to turn back, 1
+ * to turn on, 0 to stay. `dx` and `dy` are the finger's travel in the
+ * scroller's sense (positive `dx`: the finger went left, towards later pages).
+ */
+export function rowHeldTurn(dx: number, dy: number): -1 | 0 | 1 {
+  if (Math.abs(dx) < ROW_HELD_TURN_PX || Math.abs(dx) < 2 * Math.abs(dy)) return 0;
+  return dx > 0 ? 1 : -1;
+}
+
 /** Whether a row of pages turns pages at `zoom`, given the zoom floor. */
 export function rowTurnsPages(zoom: number, floor: number): boolean {
   return zoom <= floor * ROW_PAGING_ZOOM;

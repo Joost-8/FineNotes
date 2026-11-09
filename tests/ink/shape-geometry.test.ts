@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   ARROW_HEAD_DEG,
   CONNECTOR_PRESETS,
+  ELBOW_RADIUS,
   SHAPE_PRESETS,
   STAR_ASPECT,
   STAR_INNER_RATIO,
@@ -16,7 +17,9 @@ import {
   isConnectorPreset,
   isShapeMode,
   pentagramPoints,
+  presetDecor,
   presetGeometry,
+  presetKind,
   shapePivot,
   starPoints,
   transformShape,
@@ -130,6 +133,42 @@ describe("connector presets", () => {
   it("return nothing when the press and the lift coincide, or are not finite", () => {
     expect(presetGeometry("line", from, from, 0.5)).toEqual([]);
     expect(presetGeometry("arrow", from, { x: NaN, y: 0 }, 0.5)).toEqual([]);
+    expect(presetGeometry("elbow", from, from, 0.5)).toEqual([]);
+  });
+});
+
+describe("the elbow preset (Goodnotes' elbow connector)", () => {
+  it("runs along the drag's longer axis first, then turns once to the lift", () => {
+    // 200 across, 120 up: across first, then up.
+    expect(xy(presetGeometry("elbow", { x: 300, y: 200 }, { x: 100, y: 80 }, 0.5))).toEqual([
+      { x: 300, y: 200 },
+      { x: 100, y: 200 },
+      { x: 100, y: 80 },
+    ]);
+    // 60 across, 200 down: down first, then across.
+    expect(xy(presetGeometry("elbow", { x: 0, y: 0 }, { x: 60, y: 200 }, 0.5))).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 200 },
+      { x: 60, y: 200 },
+    ]);
+  });
+
+  it("is one straight run when the drag is level or upright", () => {
+    // Levelled as a line is: turned about the press, its length kept.
+    const level = xy(presetGeometry("elbow", { x: 0, y: 0 }, { x: 200, y: 3 }, 0.5));
+    expect(level).toHaveLength(2);
+    expect(level[1].y).toBe(0);
+    expect(level[1].x).toBeCloseTo(200, 1);
+    expect(xy(presetGeometry("elbow", { x: 0, y: 0 }, { x: 0, y: 90 }, 0.5, 0))).toHaveLength(2);
+  });
+
+  it("is placed as a path with a rounded bend; the other presets as their own kind", () => {
+    expect(presetKind("elbow")).toBe("path");
+    expect(presetDecor("elbow")).toEqual({ radius: ELBOW_RADIUS });
+    expect(presetKind("arrow")).toBe("arrow");
+    expect(presetDecor("rect")).toEqual({});
+    expect(CONNECTOR_PRESETS).toContain("elbow");
+    expect(isConnectorPreset("elbow")).toBe(true);
   });
 });
 

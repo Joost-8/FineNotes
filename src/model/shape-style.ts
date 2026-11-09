@@ -113,7 +113,8 @@ export function readShapeToolStyle(raw: unknown): ShapeToolStyle {
 /**
  * Style a shape the Shape tool has just made, of `kind` in `color`: the
  * fields to set on it, and the kind and points it ends up with (an arrow
- * whose heads are not the default becomes a line with those heads).
+ * becomes a line with the tool's heads; an elbow or a path takes them as
+ * they are).
  */
 export function styleNewShape(stroke: Stroke, tool: ShapeToolStyle): void {
   const kind = stroke.shape;
@@ -125,10 +126,10 @@ export function styleNewShape(stroke: Stroke, tool: ShapeToolStyle): void {
   if (tool.dash) stroke.dash = tool.dash;
   if (tool.round && canRound(kind)) stroke.radius = ROUND_RADIUS;
   if (kind === "arrow" || kind === "path") {
+    // Even the default head: an arrow becomes a line whose head is drawn to
+    // the pen's width, as Goodnotes draws its heads, not barbs in its points.
     const heads = tool.heads ?? DEFAULT_ARROW_HEADS;
-    if (heads.start !== undefined || heads.end !== "open") {
-      applyShapeStyle(stroke, { heads: heads.start || heads.end ? heads : null });
-    }
+    applyShapeStyle(stroke, { heads: heads.start || heads.end ? heads : null });
   }
 }
 

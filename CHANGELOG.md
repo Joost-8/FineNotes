@@ -10,6 +10,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Things line up when you move them.** A selection, picture or sticky note
+  snaps to the edges and centres of the shapes and objects on the page, with
+  thin red guides.
+- **Two kinds of arrow in the Shape tool, as in Goodnotes:** curved and elbow.
+  Drag the dot in a line's middle to bend it through a smooth curve, or a pill
+  on an elbow to slide that run sideways.
 - **Lock fit to width**
   ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
   A new check in the notebook's ⋯ panel: after a double tap fits the page

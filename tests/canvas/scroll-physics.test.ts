@@ -749,6 +749,15 @@ describe("a column held to the pane's width (discussion #43)", () => {
     expect(s.position.x).toBe(110);
   });
 
+  it("reports a held page and the finger's travel, for a row's swipe to turn", () => {
+    const s = heldColumn(true, true);
+    expect(s.heldSideways).toBe(true);
+    s.dragStart(300, 300, 0);
+    s.dragMove(180, 290, 16);
+    expect(s.dragTravel).toEqual({ x: 120, y: 10 });
+    expect(heldColumn(true, false).heldSideways).toBe(false);
+  });
+
   it("with holdX a pinch's freeDrag still moves sideways", () => {
     const s = heldColumn(true, true);
     s.dragStart(500, 500, 0);

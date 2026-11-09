@@ -171,7 +171,8 @@ export interface ScrollExtent {
   /**
    * Held centred (`diagonalsScrollY` with a one-point x range), a finger
    * never moves the content sideways, not even the stretch it springs back
-   * from (the setting "Lock fit to width", discussion #43).
+   * from (the setting "Lock fit to width", discussion #43). Pages across
+   * turn on a swipe instead (`heldSideways`, `dragTravel`).
    */
   holdX?: boolean;
   /**
@@ -245,6 +246,8 @@ export class KineticScroller {
 
   /** `ScrollExtent.holdX`. */
   private holdX = false;
+  /** How far the finger has gone in this drag, as the content would move. */
+  private travel = { x: 0, y: 0 };
   /** Vertical always stretches, as GoodNotes does even on a one-page note. */
   private readonly bounceY = true;
   private drag: Drag | null = null;
@@ -279,6 +282,16 @@ export class KineticScroller {
 
   get axisLock(): AxisLock {
     return this.drag?.lock ?? "undecided";
+  }
+
+  /** The finger's travel in the current (or last) drag: positive when it went left or up. */
+  get dragTravel(): { x: number; y: number } {
+    return this.travel;
+  }
+
+  /** Whether a finger cannot move the content sideways at all (`ScrollExtent.holdX`). */
+  get heldSideways(): boolean {
+    return this.holdX && this.diagonalsScrollY && this.maxX - this.minX < 0.5;
   }
 
   /** Whether the content is currently stretched past an edge. */
@@ -488,6 +501,7 @@ export class KineticScroller {
   }
 
   dragStart(fingerX: number, fingerY: number, t: number): void {
+    this.travel = { x: 0, y: 0 };
     // Touching the screen stops a fling dead, as it does on iOS; a flick that
     // follows may take its speed on (`dragEnd`). A snap, a glide or the spring
     // back from an edge is no fling.
@@ -529,6 +543,7 @@ export class KineticScroller {
     this.tracker.add(t, fingerX, fingerY);
     const dx = drag.originX - fingerX;
     const dy = drag.originY - fingerY;
+    this.travel = { x: dx, y: dy };
     // Held centred (pages down at fit-to-width), a diagonal scrolls only
     // down; with `holdX` a sideways pull does not move it either, not even a
     // little before the lock is decided. A pinch's `freeDrag` still does.

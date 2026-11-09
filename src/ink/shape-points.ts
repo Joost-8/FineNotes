@@ -25,6 +25,13 @@
  */
 
 import { POINT_STRIDE, type ShapeKind } from "../model/document";
+import {
+  type ConnectorHandles,
+  type HandleLook,
+  connectorHandles,
+  dragConnector,
+  isEndHandle,
+} from "./connector-edit";
 
 export interface Pt {
   x: number;
@@ -63,6 +70,13 @@ export interface PointHandles {
    * a handle follow it (`span`).
    */
   curve?: { n: number; closed: boolean; span: number };
+  /**
+   * A connector (a line, a curve, an elbow; `ink/connector-edit`): its
+   * handles bend it or slide its runs instead of moving one point each.
+   */
+  connector?: ConnectorHandles;
+  /** How each handle is drawn; absent, every one is a ring. */
+  looks?: HandleLook[];
 }
 
 /** Handles along a closed curve, and along an open one (ends included). */
@@ -151,9 +165,20 @@ function isWholeArrow(kind: ShapeKind | undefined, pts: readonly number[]): bool
 export function pointHandles(
   kind: ShapeKind | undefined,
   pts: readonly number[],
+  elbow = false,
 ): PointHandles | null {
   if (kind === undefined) return null;
   if (CURVED.has(kind)) return curveHandles(pts);
+  const connector = connectorHandles(kind, pts, elbow);
+  if (connector) {
+    return {
+      at: connector.at,
+      points: connector.at.filter((_, i) => i % 2 === 0).map(() => []),
+      arrow: false,
+      connector,
+      looks: connector.looks,
+    };
+  }
   const count = Math.floor(pts.length / POINT_STRIDE);
   if (isWholeArrow(kind, pts)) {
     return {
@@ -204,6 +229,11 @@ export function movePoint(
   if (handles.curve) {
     const bent = bendCurve(pts, handles, handle, to);
     return bent ? { pts: bent, kind } : null;
+  }
+  if (handles.connector) {
+    return kind === "line" || kind === "path"
+      ? dragConnector(kind, handles.connector, handle, to)
+      : null;
   }
   const x = round2(to.x);
   const y = round2(to.y);
@@ -288,4 +318,32 @@ export function pickPointHandle(
     if (Math.hypot(rival.x - p.x, rival.y - p.y) < bestDist) return -1;
   }
   return best;
+}
+
+/**
+ * The point a dragged end is put level or upright with, when it is near
+ * either: the other end of a straight line or a whole arrow. Null for every
+ * other handle (a bend point, a run, a corner).
+ */
+export function levelAnchor(handles: PointHandles, handle: number): Pt | null {
+  const connector = handles.connector;
+  if (connector) {
+    if (connector.kind !== "curve" || connector.knots.length !== 2) return null;
+    if (!isEndHandle(connector, handle)) return null;
+    return { ...connector.knots[handle === 0 ? 1 : 0] };
+  }
+  const { at, points, arrow } = handles;
+  const line = arrow || (points.length === 2 && points.every((list) => list.length === 1));
+  if (!line || handle < 0 || handle > 1) return null;
+  const other = 1 - handle;
+  return { x: at[other * 2], y: at[other * 2 + 1] };
+}
+
+/**
+ * Whether a drag of handle `handle` snaps onto other shapes' points: a
+ * corner or an end does; a bend point, a half-way dot or an elbow's run
+ * does not (it would jump to a point it has no business on).
+ */
+export function snapsToShapes(handles: PointHandles, handle: number): boolean {
+  return handles.connector ? isEndHandle(handles.connector, handle) : true;
 }

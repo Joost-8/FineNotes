@@ -7,6 +7,8 @@ import {
   ROW_ZOOMED_GAP_PX,
   pullAddAllowed,
   rowEdgeTurn,
+  rowHeldTurn,
+  ROW_HELD_TURN_PX,
   rowGapAtZoom,
 } from "../../src/canvas/page-layout";
 
@@ -66,6 +68,17 @@ describe("pullAddAllowed (pull a new page in, as Goodnotes)", () => {
   it("refuses a drag that runs as much across the pages as along them", () => {
     expect(pullAddAllowed({ ...pull, along: -200, across: 120 })).toBe(false);
     expect(pullAddAllowed({ ...pull, along: -200, across: 100 })).toBe(true);
+  });
+});
+
+describe("rowHeldTurn (Lock fit to width: the page holds still, a swipe turns it)", () => {
+  it("turns on a plainly sideways swipe, either way", () => {
+    expect(rowHeldTurn(ROW_HELD_TURN_PX, 0)).toBe(1);
+    expect(rowHeldTurn(-ROW_HELD_TURN_PX, 10)).toBe(-1);
+  });
+  it("stays for a short or mostly upright drag", () => {
+    expect(rowHeldTurn(ROW_HELD_TURN_PX - 1, 0)).toBe(0);
+    expect(rowHeldTurn(200, 150)).toBe(0);
   });
 });
 

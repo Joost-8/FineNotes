@@ -434,6 +434,16 @@ stroke, as the retrace arrow is.
   upright put on it. The stroke gets `radius` 14 (the rounded corners).
 - **A smooth curve** (no corner, a turn of 30–300° in all) becomes the ink
   smoothed, a sample at most every 8 page px and at least 24 of them.
+- **Edited by its handles** (2026-11-08, Goodnotes' connectors): a
+  `line` or a straight `path` bent by its middle dot becomes a curve
+  through its bend points (a centripetal Catmull-Rom spline, each end run
+  mirroring its neighbour), sampled with the same number of points on
+  every run between two bend points (16–64, about every 6 page px), so the
+  bend points are the samples at every k-th index and are read back by
+  regenerating the spline through them. An elbow (every run level or
+  upright) keeps that: a run slid sideways moves its corners, and an end
+  run slid off its end gets a new run back to it. Both keep `heads` and
+  `radius`; older versions read either as an ordinary `path`.
 - Either gets `heads: { end: "open" }`. The head is not in `pts`: it is drawn
   from `heads` along the path's own last stretch (its last segment, or half
   a head back, whichever is shorter), sized by the path's whole length, and
