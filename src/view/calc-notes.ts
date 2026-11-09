@@ -9,6 +9,9 @@
  * A misread digit would give a confident wrong answer, so nothing is
  * written until the user has seen what was read and tapped the suggestion.
  *
+ * A line with ink after its "=" is read too: an equation in one letter
+ * ("x + 5 = 7") offers its solution, a function ("y = 2x + 1") its graph.
+ *
  * The pure parts: `model/calc-ink.ts` (the "=", the line, where the answer
  * goes), `model/calc-layout.ts` (raised dots and fractions, by where they
  * sit), `model/calc-note.ts` (the reading to a sum, the answer's text) and
@@ -30,7 +33,11 @@ import {
   type AnswerPlace,
   type EqualsSign,
   answerPlace,
+  answerPlaceAfter,
+  equalsAfter,
   equalsAtEnd,
+  graphPlaceUnder,
+  isSumInk,
   sumStrokes,
 } from "../model/calc-ink";
 import {
@@ -42,10 +49,14 @@ import {
 } from "../model/calc-layout";
 import {
   type NoteEquation,
+  type NoteFunction,
   type NoteSum,
   askedLetter,
+  equationLetter,
   equationOfLine,
   evaluateSum,
+  functionGraphSpec,
+  functionOfLine,
   needsVariables,
   sumOfLine,
   variablesOfLines,
@@ -60,6 +71,14 @@ import {
 import type { CalcValue } from "../model/calculator";
 import { DEFAULT_PAGE_GEOMETRY, type Page, type Stroke, strokeBounds } from "../model/document";
 import { AddEquation, makeEquation, nextEquationId } from "../model/equation";
+import {
+  AddGraph,
+  GRAPH_DEFAULT_H,
+  GRAPH_DEFAULT_W,
+  graphFrameHeight,
+  graphFromSpec,
+  nextGraphId,
+} from "../model/graph-element";
 import { CompositeCommand, RemoveStrokesFromPage } from "../model/page-commands";
 import { parseInkFile } from "../model/serialize";
 import { SYMBOL_SET, symbolSamples } from "../recognition/practice";
@@ -83,6 +102,8 @@ export interface CalcNotesHost {
   surface(): InkSurface | null;
   page(pageId: string): Page | null;
   reader: HandwritingReader;
+  /** Open the graph, to type a function into (a bare "f(x) =" has nothing to plot yet). */
+  openGraph(): void;
   /** The practice files, for the symbol sheet's glyphs. */
   learning(): LearningHost;
   /**
@@ -102,6 +123,8 @@ export interface CalcNotesHost {
 interface OpenNote {
   pageId: string;
   eq: EqualsSign;
+  /** The ink written after the "=" ("x + 5 = 7"); empty when the "=" ends the line. */
+  after: Stroke[];
   /** The sum's strokes, the "=" included. */
   strokes: Stroke[];
   place: AnswerPlace;
@@ -121,8 +144,12 @@ function strokeLeft(stroke: Stroke): number {
   return strokeBounds(stroke)?.minX ?? Infinity;
 }
 
-/** The "=" a suggestion was made for is still the page's last ink. */
-function stillLast(page: Page, eq: EqualsSign): boolean {
+/** The ink a suggestion was made for is still the page's last. */
+function stillLast(page: Page, eq: EqualsSign, after: readonly Stroke[] = []): boolean {
+  if (after.length > 0) {
+    const ink = page.strokes.filter(isSumInk);
+    return ink[ink.length - 1]?.id === after[after.length - 1].id;
+  }
   const now = equalsAtEnd(page.strokes);
   return now !== null && now.strokes.every((s, i) => s.id === eq.strokes[i].id);
 }
@@ -144,12 +171,19 @@ export class CalcNotes {
     this.cancel();
     if (!this.host.enabled()) return;
     const page = this.host.page(pageId);
-    const eq = page ? equalsAtEnd(page.strokes) : null;
-    if (!eq) return;
+    if (!page) return;
+    const eq = equalsAtEnd(page.strokes);
+    const rest = eq ? null : equalsAfter(page.strokes, writingLines(page.backdrop, page.geometry));
+    if (!eq && !rest) return;
     const token = this.token;
     this.timer = window.setTimeout(() => {
       this.timer = 0;
-      void this.suggest(pageId, eq, token).catch(() => undefined);
+      const asked = eq
+        ? this.suggest(pageId, eq, token)
+        : rest
+          ? this.suggestWhole(pageId, rest.eq, rest.after, token)
+          : Promise.resolve();
+      void asked.catch(() => undefined);
     }, CALC_DELAY_MS);
   }
 
@@ -226,14 +260,100 @@ export class CalcNotes {
         if (equation) content = this.equationContent(equation, reading);
       }
     }
+    // "f(x) =" and "y =" with nothing to work out: the graph, to type it in.
+    if (!content && functionOfLine(reading.text)?.body === null) {
+      content = this.lineContent(reading);
+    }
     if (!content) return;
+    this.open(pageId, eq, [], strokes, answerPlace(strokes, eq), reading, vars, content, token);
+  }
+
+  /**
+   * A line with ink after its "=", read whole (measured on real lines: as
+   * good as reading the two sides apart, and it always finds the "="): an
+   * equation in one letter, or a function.
+   */
+  private async suggestWhole(
+    pageId: string,
+    eq: EqualsSign,
+    after: Stroke[],
+    token: number,
+  ): Promise<void> {
+    const reader = this.host.reader;
+    await reader.model();
+    if (token !== this.token || !this.host.enabled()) return;
+    const page = this.host.page(pageId);
+    if (!page || !stillLast(page, eq, after)) return;
+    const blocks = writingLines(page.backdrop, page.geometry);
+    const strokes = [...sumStrokes(page.strokes, eq, blocks), ...after];
+    const ink = strokes.filter(isSumInk);
+    const [line] = await reader.readGroups([inkForReading(ink)], { chars: true, math: true });
+    if (!line || token !== this.token) return;
+    const reading = readWhole(ink, {
+      text: line.text,
+      confidence: line.confidence,
+      greedy: line.greedy,
+      chars: line.chars,
+    });
+    const content = this.lineContent(reading);
+    if (!content) return;
+    const place = answerPlaceAfter(answerPlace(strokes.slice(0, -after.length), eq), after);
+    this.open(pageId, eq, after, strokes, place, reading, new Map(), content, token);
+  }
+
+  /** The card for a line that is a function or an equation in one letter, or null. */
+  private lineContent(reading: SumReading): CalcCardContent | null {
+    const fn = functionOfLine(reading.text);
+    if (fn) return this.functionContent(fn, reading);
+    const letter = equationLetter(reading.text);
+    const equation = letter ? equationOfLine(reading.text, letter) : null;
+    if (!equation) return null;
+    const content = this.equationContent(equation, reading);
+    if (!content) return null;
+    return {
+      ...content,
+      // Beside the equation, not in place of its right side.
+      lead: String.raw`${content.tex},\ ${equation.letter}`,
+      written: `${equation.letter}=${content.forms.decimal.text}`,
+    };
+  }
+
+  /** The card for a function: what was read, typeset, and nothing to answer. */
+  private functionContent(fn: NoteFunction, reading: SumReading): CalcCardContent | null {
+    const body = fn.body === null ? "" : expressionTex(fn.body);
+    if (body === null) return null;
+    const tex = `${fn.name} = ${body}`.trim();
+    return {
+      tex,
+      lead: tex,
+      expression: `${fn.name} = ${fn.body ?? ""}`.trim(),
+      forms: { fraction: null, decimal: { text: "", exact: true } },
+      form: "decimal",
+      doubts: reading.doubts.map((d) => ({ char: d.char, alternatives: d.alternatives })),
+      graph: fn,
+    };
+  }
+
+  /** Show the glow for what was read, unless the pen has moved on. */
+  private open(
+    pageId: string,
+    eq: EqualsSign,
+    after: Stroke[],
+    strokes: Stroke[],
+    place: AnswerPlace,
+    reading: SumReading,
+    vars: ReadonlyMap<string, CalcValue>,
+    content: CalcCardContent,
+    token: number,
+  ): void {
     const surface = this.host.surface();
     if (!surface || token !== this.token) return;
     const note: OpenNote = {
       pageId,
       eq,
+      after,
       strokes,
-      place: answerPlace(strokes, eq),
+      place,
       reading,
       vars,
       content,
@@ -249,12 +369,13 @@ export class CalcNotes {
   private spec(note: OpenNote): CalcNoteSpec {
     const left = Math.min(...note.strokes.map((s) => strokeLeft(s)));
     const { eq, place } = note;
+    const right = Math.max(eq.bounds.maxX, ...note.after.map((s) => strokeBounds(s)?.maxX ?? 0));
     return {
       pageId: note.pageId,
       strokes: note.strokes,
       doubts: note.reading.doubts.map((d) => d.strokes),
       // Beside the "=", level with the top of the sum's line.
-      cardAt: { x: eq.bounds.maxX + place.height * 0.6, y: place.baseline - place.height * 1.4 },
+      cardAt: { x: right + place.height * 0.6, y: place.baseline - place.height * 1.4 },
       flipAt: left - place.height * 0.6,
       content: note.content,
       actions: {
@@ -265,6 +386,10 @@ export class CalcNotes {
         toEquation: (form) => {
           this.host.surface()?.hideCalcNote();
           this.toEquation(note, form);
+        },
+        insertGraph: () => {
+          this.host.surface()?.hideCalcNote();
+          this.insertGraph(note);
         },
         copyLatex: () => {
           void navigator.clipboard?.writeText(note.content.tex).then(
@@ -291,6 +416,8 @@ export class CalcNotes {
    */
   private editReading(note: OpenNote): void {
     const solve = (text: string): CalcCardContent | null => {
+      const fn = functionOfLine(text);
+      if (fn) return this.functionContent(fn, { ...note.reading, doubts: [] });
       // An equation typed: solved for its one letter.
       if (text.includes("=")) {
         const letter = /(?<![A-Za-z])([A-Za-z])(?![A-Za-z])/.exec(text)?.[1]?.toLowerCase();
@@ -336,13 +463,7 @@ export class CalcNotes {
     if (!doubt) return null;
     const next = withPick(note.reading, doubt, text);
     if (!next) return null;
-    const found = this.work(next.text, note.vars);
-    const solved =
-      found && found !== "variables"
-        ? { sum: found.sum, forms: answerForms(found.value) }
-        : this.expanded(next.text, note.vars);
-    if (!solved?.forms) return null;
-    const content = this.content(solved.sum, solved.forms, next);
+    const content = this.pickedContent(note, next);
     if (!content) return null;
     note.reading = next;
     note.content = content;
@@ -355,6 +476,17 @@ export class CalcNotes {
     }
     this.host.surface()?.updateCalcNote(this.spec(note));
     return content;
+  }
+
+  /** The card for a reading changed by a pick, as a line or as a sum. */
+  private pickedContent(note: OpenNote, next: SumReading): CalcCardContent | null {
+    if (note.after.length > 0 || note.content.graph) return this.lineContent(next);
+    const found = this.work(next.text, note.vars);
+    const solved =
+      found && found !== "variables"
+        ? { sum: found.sum, forms: answerForms(found.value) }
+        : this.expanded(next.text, note.vars);
+    return solved?.forms ? this.content(solved.sum, solved.forms, next) : null;
   }
 
   /**
@@ -508,18 +640,19 @@ export class CalcNotes {
    * line's end.
    */
   private async write(note: OpenNote, form: AnswerForm): Promise<void> {
-    const { pageId, eq, place } = note;
+    const { pageId, eq, place, after } = note;
     const forms = note.content.forms;
     const fraction = form === "fraction" ? forms.fraction : null;
-    const text = fraction ? `${fraction.n}${fraction.d}` : forms.decimal.text.replace(/\^/g, "");
+    const shown = (note.content.written ?? forms.decimal.text).replace(/\s+/g, "");
+    const text = fraction ? `${fraction.n}${fraction.d}` : shown.replace(/\^/g, "");
     const glyphs = glyphsFor(text, await this.ownGlyphs());
     const page = this.host.page(pageId);
     const surface = this.host.surface();
-    if (!glyphs || !page || !surface || !stillLast(page, eq)) return;
+    if (!glyphs || !page || !surface || !stillLast(page, eq, after)) return;
     const pen = eq.strokes[1];
     const written = fraction
       ? writeFraction(fraction.n, fraction.d, glyphs, place)
-      : writeWithPowers(forms.decimal.text, glyphs, place);
+      : writeWithPowers(shown, glyphs, place);
     const ink = written.map((pts) => ({
       color: pen.color,
       size: pen.size,
@@ -530,6 +663,44 @@ export class CalcNotes {
     // Kept before the step, while the sum's ink is surely on the page.
     this.confirm(note);
     note.accepted = surface.addInkStrokes(pageId, ink);
+  }
+
+  /**
+   * Put the graph of the written function under its line, the ink left as
+   * it is (one undo step). A bare "f(x) =" opens the graph to type it in.
+   */
+  private insertGraph(note: OpenNote): void {
+    const fn = note.content.graph;
+    const surface = this.host.surface();
+    const page = this.host.page(note.pageId);
+    if (!fn || !surface || !page || !this.host.enabled()) return;
+    if (fn.body === null) {
+      this.host.openGraph();
+      return;
+    }
+    const spec = functionGraphSpec({ ...fn, body: fn.body });
+    const w = GRAPH_DEFAULT_W;
+    const h = graphFrameHeight(spec, w, GRAPH_DEFAULT_H);
+    let top = Infinity;
+    let left = Infinity;
+    let bottom = -Infinity;
+    for (const stroke of note.strokes) {
+      const box = strokeBounds(stroke);
+      if (!box) continue;
+      top = Math.min(top, box.minY);
+      left = Math.min(left, box.minX);
+      bottom = Math.max(bottom, box.maxY);
+    }
+    const line = { minX: left, minY: top, maxX: left, maxY: bottom };
+    const at = graphPlaceUnder(line, { w, h }, page.geometry);
+    const graph = graphFromSpec(nextGraphId(surface.document), at.x, at.y, spec);
+    graph.h = h;
+    if (graph.spec.expressions.length === 0) return;
+    this.confirm(note);
+    const command = new AddGraph(note.pageId, graph);
+    surface.applyCommand(command);
+    surface.selectGraph(note.pageId, graph.id);
+    note.accepted = command;
   }
 
   /**

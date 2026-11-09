@@ -12,7 +12,10 @@ import {
   evaluateSum,
   needsVariables,
   askedLetter,
+  equationLetter,
   equationOfLine,
+  functionGraphSpec,
+  functionOfLine,
   showSum,
   spellNames,
   suggestionLabel,
@@ -254,5 +257,49 @@ describe('equations asked for with "x =" (FineNotes#178)', () => {
     expect(equationOfLine("x = 2 = 3", "x")).toBeNull();
     expect(equationOfLine("2y = 4", "x")).toBeNull();
     expect(equationOfLine("x =", "x")).toBeNull();
+  });
+});
+
+describe("a whole equation (ink after the =)", () => {
+  it("finds its one letter", () => {
+    expect(equationLetter("x + 5 = 7")).toBe("x");
+    expect(equationLetter("2X+3=7")).toBe("x");
+    expect(equationLetter("Ex 1: 3a - 2 = 4")).toBe("a");
+    expect(equationLetter("sin(x) = 1")).toBe("x");
+  });
+  it("leaves alone what is no equation", () => {
+    expect(equationLetter("3 + 4 = 7")).toBeNull();
+    expect(equationLetter("a + b = 3")).toBeNull();
+    expect(equationLetter("f is monic if lc = 1")).toBeNull();
+    expect(equationLetter("x = 1 = 2")).toBeNull();
+  });
+  it("reads x + 5 = 7 as an equation, and a digit after the letter as a power", () => {
+    expect(equationOfLine("x + 5 = 7", "x")).toEqual({ lhs: "x+5", rhs: "7", letter: "x" });
+    expect(equationOfLine("2x2 + 3 = 11", "x")?.lhs).toBe("2x^2+3");
+  });
+});
+
+describe("a function on a line", () => {
+  it("reads y = and f(x) =", () => {
+    expect(functionOfLine("y = 2x + 1")).toEqual({ name: "y", body: "2x+1" });
+    expect(functionOfLine("f(x) = x2 + 1")).toEqual({ name: "f(x)", body: "x^2+1" });
+    expect(functionOfLine("G (X) = sin(X)")).toEqual({ name: "g(x)", body: "sin(x)" });
+    expect(functionOfLine("f(x) = 5")).toEqual({ name: "f(x)", body: "5" });
+  });
+  it("sees a bare left side as nothing to plot yet", () => {
+    expect(functionOfLine("f(x) =")).toEqual({ name: "f(x)", body: null });
+    expect(functionOfLine("y =")).toEqual({ name: "y", body: null });
+  });
+  it("is not fooled by a value, an equation or a word", () => {
+    expect(functionOfLine("y = 5")).toBeNull();
+    expect(functionOfLine("x + 5 = 7")).toBeNull();
+    expect(functionOfLine("y = monic x")).toBeNull();
+    expect(functionOfLine("y = 2x = 4")).toBeNull();
+    expect(functionOfLine("sin(x) = 1")).toBeNull();
+  });
+  it("makes a graph the calculator can draw", () => {
+    const spec = functionGraphSpec({ name: "y", body: "2x+1" });
+    expect(spec.expressions).toEqual(["y = 2x+1"]);
+    expect(spec.yMax - spec.yMin).toBe(15);
   });
 });

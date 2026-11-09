@@ -17496,3 +17496,8 @@ button.goodobsidian-library-rail-toggle.is-active {
   width: 18px;
   height: 18px;
 }
+
+.goodobsidian-segmented.goodobsidian-calc-card-forms.is-hidden,
+button.goodobsidian-calc-card-icon.clickable-icon.is-hidden {
+  display: none;
+}

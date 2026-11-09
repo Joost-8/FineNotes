@@ -79,20 +79,36 @@ export function digitHeight(boxes: readonly Bounds[]): number {
 export function equalsAtEnd(strokes: readonly Stroke[]): EqualsSign | null {
   const ink = strokes.filter(isSumInk);
   if (ink.length < 2) return null;
-  const a = ink[ink.length - 2];
-  const b = ink[ink.length - 1];
+  return equalsOf(ink[ink.length - 2], ink[ink.length - 1]);
+}
+
+/**
+ * A dash in an "=" written in passing: it may lean more than a lone one
+ * (measured on real lines). Only for {@link equalsAfter}, whose line must then
+ * be read with exactly one "=" in it, so a stray pair costs one reading.
+ */
+function isLooseDash(stroke: Stroke, box: Bounds): boolean {
+  const w = box.maxX - box.minX;
+  const h = box.maxY - box.minY;
+  return w > 1 && h <= Math.max(0.65 * w, 1.5) && pathLength(stroke) <= 1.6 * w;
+}
+
+/** The "=" two strokes make, or null (see {@link equalsAtEnd}). */
+function equalsOf(a: Stroke, b: Stroke, loose = false): EqualsSign | null {
   const ba = strokeBounds(a);
   const bb = strokeBounds(b);
-  if (!ba || !bb || !isDash(a, ba) || !isDash(b, bb)) return null;
+  if (!ba || !bb) return null;
+  const dash = loose ? isLooseDash : isDash;
+  if (!dash(a, ba) || !dash(b, bb)) return null;
   const wa = ba.maxX - ba.minX;
   const wb = bb.maxX - bb.minX;
-  if (Math.max(wa, wb) > 2.2 * Math.min(wa, wb)) return null;
+  if (Math.max(wa, wb) > (loose ? 3.3 : 2.2) * Math.min(wa, wb)) return null;
   const overlap = Math.min(ba.maxX, bb.maxX) - Math.max(ba.minX, bb.minX);
   if (overlap < 0.5 * Math.min(wa, wb)) return null;
   const mean = (wa + wb) / 2;
   const gap = Math.abs((ba.minY + ba.maxY) / 2 - (bb.minY + bb.maxY) / 2);
   const tallest = Math.max(ba.maxY - ba.minY, bb.maxY - bb.minY);
-  if (gap < 0.12 * mean || gap > 1.0 * mean || gap <= tallest * 0.8) return null;
+  if (gap < 0.12 * mean || gap > (loose ? 1.8 : 1.0) * mean || gap <= tallest * 0.8) return null;
   const top = (ba.minY + ba.maxY) / 2 <= (bb.minY + bb.maxY) / 2 ? a : b;
   return {
     strokes: top === a ? [a, b] : [b, a],
@@ -103,6 +119,69 @@ export function equalsAtEnd(strokes: readonly Stroke[]): EqualsSign | null {
       maxY: Math.max(ba.maxY, bb.maxY),
     },
   };
+}
+
+/** How many strokes may follow an "=" for the line still to count as that "="'s. */
+const MAX_AFTER_EQUALS = 40;
+
+/** An "=" with ink written after it on its line ("x + 5 = 7"), and that ink. */
+export interface EqualsWithRest {
+  eq: EqualsSign;
+  /** The strokes written after the "=", in the order they were written. */
+  after: Stroke[];
+}
+
+/**
+ * The latest "=" the page's last ink follows on one line: every stroke since
+ * it lies right of it, on its line, with no gap wider than the sum's own
+ * (as in {@link sumStrokes}). Null when the last ink is the "=" itself, or
+ * belongs to something else.
+ */
+export function equalsAfter(
+  strokes: readonly Stroke[],
+  blocks: readonly LineBlock[],
+): EqualsWithRest | null {
+  const ink = strokes.filter(isSumInk);
+  const stop = Math.max(1, ink.length - 1 - MAX_AFTER_EQUALS);
+  for (let i = ink.length - 2; i >= stop; i--) {
+    const eq = equalsOf(ink[i - 1], ink[i], true);
+    if (!eq) continue;
+    const after = ink.slice(i + 1);
+    return followsOnLine(eq, after, blocks) ? { eq, after } : null;
+  }
+  return null;
+}
+
+/** Whether all of `after` lies right of `eq`, on its line, one stretch of ink. */
+function followsOnLine(
+  eq: EqualsSign,
+  after: readonly Stroke[],
+  blocks: readonly LineBlock[],
+): boolean {
+  const boxes = after.map((s) => strokeBounds(s));
+  if (boxes.some((b) => b === null)) return false;
+  const known = boxes as Bounds[];
+  const eqW = eq.bounds.maxX - eq.bounds.minX;
+  const eqRef = blocks.length > 0 ? lineOfBounds(blocks, eq.bounds) : null;
+  let gapLimit = eqW * 3;
+  if (eqRef) {
+    const refs = assignLines(blocks, known);
+    if (refs.some((r) => r === null || r.block !== eqRef.block || r.line !== eqRef.line)) {
+      return false;
+    }
+    gapLimit = Math.max(blocks[eqRef.block].pitch * 2, gapLimit);
+  } else {
+    const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
+    const reach = Math.max(eqW * 1.2, (eq.bounds.maxY - eq.bounds.minY) * 2);
+    if (known.some((b) => Math.abs((b.minY + b.maxY) / 2 - cy) > reach)) return false;
+  }
+  if (known.some((b) => b.minX < eq.bounds.maxX - eqW * 0.5)) return false;
+  let right = eq.bounds.maxX;
+  for (const box of [...known].sort((p, q) => p.minX - q.minX)) {
+    if (box.minX > right + gapLimit) return false;
+    right = Math.max(right, box.maxX);
+  }
+  return true;
 }
 
 /**
@@ -252,4 +331,30 @@ export function answerPlace(sum: readonly Stroke[], eq: EqualsSign): AnswerPlace
   const height = Math.max(eqW * 1.6, 4);
   const cy = (eq.bounds.minY + eq.bounds.maxY) / 2;
   return { x: eq.bounds.maxX + height * ANSWER_GAP, baseline: cy + height * 0.45, height };
+}
+
+/** Where the answer to a whole equation goes: after the line's last ink, a little apart. */
+export function answerPlaceAfter(place: AnswerPlace, after: readonly Stroke[]): AnswerPlace {
+  const right = Math.max(...after.map((s) => strokeBounds(s)?.maxX ?? -Infinity));
+  return Number.isFinite(right) ? { ...place, x: right + place.height * 1.4 } : place;
+}
+
+/** Room kept between a graph and the page's edge, page px. */
+const GRAPH_MARGIN = 12;
+
+/**
+ * Where a graph of a written function goes: under its line, level with the
+ * line's left end, and inside the page.
+ */
+export function graphPlaceUnder(
+  line: Bounds,
+  size: { w: number; h: number },
+  page: { width: number; height: number },
+): { x: number; y: number } {
+  const inside = (value: number, room: number): number =>
+    Math.max(GRAPH_MARGIN, Math.min(value, room - GRAPH_MARGIN));
+  return {
+    x: inside(line.minX, page.width - size.w),
+    y: inside(line.maxY + GRAPH_MARGIN, page.height - size.h),
+  };
 }

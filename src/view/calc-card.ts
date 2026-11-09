@@ -5,6 +5,7 @@
  * `calc-reading-modal.ts`); what Grape was unsure of, each a tap away from
  * its other guesses; the answer as a fraction or a decimal; Write; and along the foot,
  * turn the sum into a typed equation, copy its LaTeX, or say it is not maths.
+ * A written function ("y = 2x + 1") has no answer: the card offers its graph.
  *
  * Chrome in the paper, so it scrolls and zooms with the page; the surface
  * places it beside the sum. Every control acts on a tap (`onTap`), so the
@@ -14,6 +15,7 @@
 import { setIcon } from "obsidian";
 import { equationFrameSize, equationLayout, paintLayout } from "../canvas/equation-paint";
 import { t } from "../i18n/translate";
+import type { NoteFunction } from "../model/calc-note";
 import type { AnswerForms } from "../model/calc-tex";
 import { onTap } from "./selection-bar";
 
@@ -34,11 +36,16 @@ export interface CalcCardContent {
   lead: string;
   /** What Grape was unsure of: each doubtful character (or piece) and its runner-ups. */
   doubts: Array<{ char: string; alternatives: string[] }>;
+  /** A function to plot instead of an answer: no forms, no equation, Insert graph. */
+  graph?: NoteFunction;
+  /** What is written instead of the answer alone ("x=2" after a whole equation). */
+  written?: string;
 }
 
 export interface CalcCardActions {
   write: (form: AnswerForm) => void;
   toEquation: (form: AnswerForm) => void;
+  insertGraph: () => void;
   copyLatex: () => void;
   notMaths: () => void;
   /** Open the dialog to type the reading (the card follows what it saves). */
@@ -62,6 +69,9 @@ export class CalcCard {
   private readonly fractionButton: HTMLButtonElement;
   private readonly decimalButton: HTMLButtonElement;
   private readonly main: HTMLElement;
+  private readonly writeIcon: HTMLElement;
+  private readonly writeLabel: HTMLElement;
+  private readonly equationButton: HTMLButtonElement;
   private readonly doubtsRow: HTMLElement;
   private readonly fixView: HTMLElement;
   private readonly fixChoices: HTMLElement;
@@ -98,21 +108,26 @@ export class CalcCard {
     onTap(this.decimalButton, () => this.choose("decimal"));
 
     const write = main.createEl("button", { cls: "goodobsidian-calc-card-write mod-cta" });
-    setIcon(write.createSpan({ cls: "goodobsidian-calc-card-write-icon" }), "corner-down-left");
-    write.createSpan({ text: t("calculator.write") });
+    this.writeIcon = write.createSpan({ cls: "goodobsidian-calc-card-write-icon" });
+    this.writeLabel = write.createSpan();
     onTap(write, () => {
+      if (this.content?.graph) {
+        this.actions?.insertGraph();
+        return;
+      }
       const form = this.content?.form;
       if (form) this.actions?.write(form);
     });
 
     const foot = main.createDiv({ cls: "goodobsidian-calc-card-foot" });
-    const icon = (name: string, label: string, action: () => void): void => {
+    const icon = (name: string, label: string, action: () => void): HTMLButtonElement => {
       const b = foot.createEl("button", { cls: "clickable-icon goodobsidian-calc-card-icon" });
       setIcon(b, name);
       b.setAttribute("aria-label", label);
       onTap(b, action);
+      return b;
     };
-    icon("sigma", t("calculator.toEquation"), () => {
+    this.equationButton = icon("sigma", t("calculator.toEquation"), () => {
       const form = this.content?.form;
       if (form) this.actions?.toEquation(form);
     });
@@ -221,6 +236,11 @@ export class CalcCard {
 
   private setContent(content: CalcCardContent): void {
     this.content = content;
+    const graph = content.graph !== undefined;
+    this.forms.toggleClass("is-hidden", graph);
+    this.equationButton.toggleClass("is-hidden", graph);
+    setIcon(this.writeIcon, graph ? "chart-spline" : "corner-down-left");
+    this.writeLabel.setText(t(graph ? "calculator.insertGraph" : "calculator.write"));
     const fraction = content.forms.fraction;
     this.fractionButton.empty();
     if (fraction) {

@@ -117,6 +117,7 @@ export const CLEAN_GLYPHS: GlyphSet = new Map<string, Glyph>([
     { strokes: [line([0.04, 0.56], [0.52, 0.56]), line([0.28, 0.32], [0.28, 0.8])], width: 0.56 },
   ],
   ["x", { strokes: [line([0.04, 0.46], [0.46, 1]), line([0.46, 0.46], [0.04, 1])], width: 0.5 }],
+  ["=", { strokes: [line([0.04, 0.5], [0.5, 0.5]), line([0.04, 0.74], [0.5, 0.74])], width: 0.54 }],
   [
     "y",
     { strokes: [line([0.04, 0.46], [0.27, 0.84]), line([0.5, 0.46], [0.12, 1.24])], width: 0.54 },

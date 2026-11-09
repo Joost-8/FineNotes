@@ -265,3 +265,29 @@ describe("readPage with the fixes", () => {
     expect(typeof on.text).toBe("string");
   });
 });
+
+describe("a word written again later", () => {
+  const line = (t: (i: number) => number) =>
+    [0, 40, 80, 120].map((x, i) => ({
+      id: `s${i}`,
+      t0: t(i),
+      pts: [x, 10, 0.5, x + 10, 20, 0.5, x + 20, 10, 0.5],
+    }));
+
+  const features = (t: (i: number) => number) =>
+    Array.from(lineFeatures(line(t), undefined, { lateStrokes: true }).features);
+
+  it("is read the same however much later it was written", () => {
+    const soon = features((i) => (i === 2 ? 60000 : i * 400));
+    expect(features((i) => (i === 2 ? 600000 : i * 400))).toEqual(soon);
+  });
+
+  it("makes a long pause on the line no different from a short walk", () => {
+    const paused = features((i) => (i >= 2 ? i * 400 + 60000 : i * 400));
+    expect(features((i) => (i >= 2 ? i * 400 + 90000 : i * 400))).toEqual(paused);
+  });
+
+  it("keeps the times of strokes written one after the other", () => {
+    expect(features((i) => i * 200)).not.toEqual(features((i) => i * 900));
+  });
+});

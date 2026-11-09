@@ -207,6 +207,30 @@ export function lateStrokeOrder<S extends InkStroke>(strokes: readonly S[]): S[]
   return inkRows(strokes).flatMap((row) => lateStrokesInRow(row));
 }
 
+/** Longest pause between two strokes still read as the pen travelling, ms. */
+export const LONGEST_PEN_TRAVEL_MS = 3000;
+
+/**
+ * For each stroke in reading order, whether the time since the one before
+ * says how the pen travelled: they were written one straight after the other,
+ * without a long pause. A word rubbed out and written again later is read in
+ * its place, but the minutes between it and its neighbours are not the pen
+ * crossing a gap.
+ */
+function penStayed(strokes: readonly InkStroke[]): boolean[] {
+  if (!strokes.every((s) => s.t0 != null)) return strokes.map(() => true);
+  const inTime = [...strokes].sort((a, b) => (a.t0 as number) - (b.t0 as number));
+  const rank = new Map(inTime.map((s, i) => [s, i]));
+  return strokes.map((s, i) => {
+    if (i === 0) return true;
+    const before = strokes[i - 1];
+    return (
+      rank.get(s) === (rank.get(before) as number) + 1 &&
+      (s.t0 as number) - (before.t0 as number) <= LONGEST_PEN_TRAVEL_MS
+    );
+  });
+}
+
 /**
  * `strokes_to_timed`: within a stroke, arc length / `speed`; between strokes,
  * the stored `t0` difference when both have one and it grows, else the jump
@@ -216,6 +240,7 @@ function timeStrokes(
   xy: { x: Float64Array; y: Float64Array }[],
   t0s: readonly (number | null | undefined)[],
   speed: number,
+  seam?: readonly boolean[],
 ): TimedStroke[] {
   const timed: TimedStroke[] = [];
   let tEnd = 0;
@@ -229,7 +254,7 @@ function timeStrokes(
     } else {
       const a = t0s[i - 1];
       const b = t0s[i];
-      if (a != null && b != null && b > a) {
+      if (a != null && b != null && b > a && (!seam || seam[i])) {
         tStart = Math.max(tEnd + 0.01, timed[i - 1].t[0] + (b - a) / 1000);
       } else {
         const dx = x[0] - prevX;
@@ -514,6 +539,7 @@ export function lineFeatures<S extends InkStroke>(
     xy,
     strokes.map((s) => s.t0),
     speed,
+    options.lateStrokes ? penStayed(strokes) : undefined,
   );
   const { strokes: norm, info } = normalizeCore(timed);
   const { features, frameStroke } = frameFeatures(norm);

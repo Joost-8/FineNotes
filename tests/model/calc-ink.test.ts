@@ -7,8 +7,16 @@
 
 import { describe, expect, it } from "vitest";
 import { writingLines } from "../../src/canvas/backdrop";
-import { answerPlace, equalsAtEnd, isSumInk, sumStrokes } from "../../src/model/calc-ink";
-import type { Stroke } from "../../src/model/document";
+import {
+  answerPlace,
+  answerPlaceAfter,
+  equalsAfter,
+  equalsAtEnd,
+  graphPlaceUnder,
+  isSumInk,
+  sumStrokes,
+} from "../../src/model/calc-ink";
+import { type Stroke, strokeBounds } from "../../src/model/document";
 
 const A4 = { width: 1024, height: 1448 };
 const RULED = writingLines({ kind: "ruled-wide" }, A4);
@@ -265,5 +273,70 @@ describe("answerPlace", () => {
     expect(place.height).toBeGreaterThan(10);
     expect(place.x).toBeGreaterThan(eq.bounds.maxX);
     expect(place.baseline).toBeGreaterThan(eq.bounds.maxY);
+  });
+});
+
+describe("equalsAfter", () => {
+  const h = 30;
+  /** "12+4=" then two more digits after it, on one line. */
+  const whole = (): { line: Stroke[]; after: Stroke[] } => {
+    const line = sumLine(100, 300, h);
+    const after = [digit(100 + h * 4, 300, h), digit(100 + h * 4.75, 300, h)];
+    return { line: [...line, ...after], after };
+  };
+
+  it("finds the = the last ink follows", () => {
+    const { line, after } = whole();
+    const found = equalsAfter(line, []);
+    expect(found?.after.map((s) => s.id)).toEqual(after.map((s) => s.id));
+  });
+
+  it("is null while the = is the last ink", () => {
+    expect(equalsAfter(sumLine(100, 300, h), [])).toBeNull();
+  });
+
+  it("is null when the last ink is on another line or far away", () => {
+    const { line } = whole();
+    expect(equalsAfter([...line, digit(100, 400, h)], [])).toBeNull();
+    expect(equalsAfter([...line, digit(900, 300, h)], [])).toBeNull();
+  });
+
+  it("is null when the last ink is left of the =", () => {
+    const { line } = whole();
+    expect(equalsAfter([...line, digit(60, 300, h)], [])).toBeNull();
+  });
+
+  it("takes an = drawn in passing that a lone = would refuse", () => {
+    const a = stroke(
+      [
+        [100, 300],
+        [111, 301],
+      ],
+      0.2,
+    );
+    const b = stroke(
+      [
+        [101, 317],
+        [118, 319],
+      ],
+      0.2,
+    );
+    expect(equalsAtEnd([a, b])).toBeNull();
+    const found = equalsAfter([a, b, digit(130, 320, 24)], []);
+    expect(found?.eq.strokes).toHaveLength(2);
+  });
+});
+
+describe("where a whole line's answer and graph go", () => {
+  it("writes after the last ink", () => {
+    const after = [digit(200, 300, 30)];
+    const x = strokeBounds(after[0])!.maxX;
+    expect(answerPlaceAfter({ x: 0, baseline: 300, height: 30 }, after).x).toBe(x + 42);
+  });
+  it("puts a graph under the line, inside the page", () => {
+    const line = { minX: 50, minY: 280, maxX: 50, maxY: 300 };
+    expect(graphPlaceUnder(line, { w: 320, h: 240 }, A4)).toEqual({ x: 50, y: 312 });
+    const low = { ...line, maxY: 1400 };
+    expect(graphPlaceUnder(low, { w: 320, h: 240 }, A4).y).toBe(1448 - 240 - 12);
   });
 });

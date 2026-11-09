@@ -17,12 +17,14 @@
 import {
   type CalcValue,
   type EvalResult,
+  compileFunction,
   evaluate,
   formatValue,
   isUnknownNameError,
   isRational,
   toFloat,
 } from "./calculator";
+import type { GraphSpec } from "./graph";
 
 /** Function and constant names a sum may use (the calculator knows more; these are the ones a line is scanned for). */
 const NAMES = new Set([
@@ -335,6 +337,14 @@ export function askedLetter(reading: string): string | null {
   return m ? m[1].toLowerCase() : null;
 }
 
+/**
+ * Grape reads a raised power on the line: a digit straight after the letter
+ * ("x2", "2x3 + 1") is that power. Nobody writes "x times 2" as "x2".
+ */
+function powersOf(side: string, letter: string): string {
+  return side.replace(new RegExp(`(?<![A-Za-z])${letter}([2-9])(?![0-9.])`, "g"), `${letter}^$1`);
+}
+
 /** One side of an equation as read, in the calculator's text. */
 function equationSide(text: string): string {
   return fixDigitLetters(text)
@@ -363,7 +373,10 @@ export function equationOfLine(reading: string, letter: string): NoteEquation | 
   const parts = text.split("=");
   if (parts.length !== 2) return null;
   const same = (s: string) =>
-    equationSide(s).replace(new RegExp(`(?<![A-Za-z])${letter}(?![A-Za-z])`, "gi"), letter);
+    powersOf(
+      equationSide(s).replace(new RegExp(`(?<![A-Za-z])${letter}(?![A-Za-z])`, "gi"), letter),
+      letter,
+    );
   const lhs = same(parts[0]);
   const rhs = same(parts[1]);
   if (!lhs || !rhs) return null;
@@ -372,4 +385,58 @@ export function equationOfLine(reading: string, letter: string): NoteEquation | 
   // "x = 5": a letter being set, not an equation to solve.
   if (lhs === letter && !has.test(rhs)) return null;
   return { lhs, rhs, letter };
+}
+
+/**
+ * The one unknown of a whole equation as read ("x + 5 = 7"): the single letter
+ * it holds beside the names a sum may use. Null when it has none, several, or
+ * a word in it (prose with an "=" in it is no equation).
+ */
+export function equationLetter(reading: string): string | null {
+  if ((reading.match(/=/g) ?? []).length !== 1) return null;
+  const label = Math.max(reading.lastIndexOf(": "), reading.lastIndexOf("; "));
+  const body = fixDigitLetters(label >= 0 ? reading.slice(label + 1) : reading);
+  const letters = new Set<string>();
+  for (const word of body.match(/[A-Za-z]+/g) ?? []) {
+    const lower = word.toLowerCase();
+    if (NAMES.has(lower)) continue;
+    if (lower.length > 1) return null;
+    letters.add(lower);
+  }
+  return letters.size === 1 ? [...letters][0] : null;
+}
+
+/** A function written on a line ("y = 2x + 1", "f(x) = x2"): what to plot. */
+export interface NoteFunction {
+  /** What is defined: "y", or "f(x)" with its own letter. */
+  name: string;
+  /** Its right side in the calculator's text; null when nothing is written there yet. */
+  body: string | null;
+}
+
+/**
+ * The function a line defines, when it starts with "y =" or "f(x) =" and
+ * its right side can be plotted. "y" needs an x on its right ("y = 5" sets a
+ * value). A word the calculator does not know is no function.
+ */
+export function functionOfLine(reading: string): NoteFunction | null {
+  const label = Math.max(reading.lastIndexOf(": "), reading.lastIndexOf("; "));
+  const text = label >= 0 ? reading.slice(label + 1) : reading;
+  const m = /^\s*(?:([yY])|([A-Za-z])\s*\(\s*[xX]\s*\))\s*=([^=]*)$/.exec(text);
+  if (!m) return null;
+  const name = m[1] ? "y" : `${m[2].toLowerCase()}(x)`;
+  const rest = m[3].replace(/[\s.,;:]+$/, "");
+  if (rest.trim() === "") return { name, body: null };
+  const body = powersOf(equationSide(rest).replace(/(?<![A-Za-z])X(?![A-Za-z])/g, "x"), "x");
+  const hasX = /(?<![A-Za-z])x(?![A-Za-z])/.test(body);
+  if ((m[1] && !hasX) || !compileFunction(body).ok) return null;
+  return { name, body };
+}
+
+/** The view a written function's graph opens at: x from -10 to 10, y at the same scale in a 4:3 frame. */
+const GRAPH_VIEW = { xMin: -10, xMax: 10, yMin: -7.5, yMax: 7.5 };
+
+/** The graph of a written function, as the calculator's graphs are kept. */
+export function functionGraphSpec(fn: NoteFunction & { body: string }): GraphSpec {
+  return { ...GRAPH_VIEW, expressions: [`${fn.name} = ${fn.body}`] };
 }

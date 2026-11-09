@@ -713,6 +713,7 @@ export class InkView extends TextFileView {
         !this.isProtected(),
       surface: () => this.surface,
       page: (pageId) => this.doc.pages.find((p) => p.id === pageId) ?? null,
+      openGraph: () => this.calculatorOnLine(null),
       learning: () => plugin.learningHost(),
       record: async (pageId, strokes, read, text, kind) => {
         const note = this.file?.path;
