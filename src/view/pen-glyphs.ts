@@ -1,9 +1,9 @@
 /**
  * The pen pill's glyphs: an outline icon for each pen type, and the width
- * buttons drawn as a stroke in that pen's own character (the fountain pen
- * tapers at both ends, the ballpoint is even, the brush starts full and
- * thins, the highlighter is a flat band), so the widths read as what the
- * pen will write.
+ * buttons drawn as short level bars, their ends in that pen's character (the
+ * fountain pen fine at both ends, the ballpoint round, the brush lifting off,
+ * the calligraphy pen cut at its nib, the highlighter square), and the size
+ * preview's sample stroke.
  *
  * PURE: shapes as SVG data; the toolbar makes the elements.
  */
@@ -134,13 +134,20 @@ const SAMPLES = 20;
 const MIN_THICKNESS = 0.25;
 
 /**
+ * The thickest a width bar is drawn true size, glyph px: thicker, a 20 px
+ * bar would read as a blob. A control whose widest mark is past it shrinks
+ * its marks together (`fitMarks`).
+ */
+export const WIDTH_MARK_LIMIT = 18;
+
+/**
  * A width mark's thickness, glyph px (one is a screen px): the stroke's own
- * width on screen, so the mark is the line it writes. Past the glyph's
- * height it fills the glyph, which is as thick as it can show.
+ * width on screen, so the mark is the line it writes, up to
+ * {@link WIDTH_MARK_LIMIT}.
  */
 export function glyphThickness(screenPx: number): number {
   if (!Number.isFinite(screenPx)) return 1.5;
-  return Math.max(MIN_THICKNESS, Math.min(SWOOSH_HEIGHT, screenPx));
+  return Math.max(MIN_THICKNESS, Math.min(WIDTH_MARK_LIMIT, screenPx));
 }
 
 /**
@@ -163,14 +170,6 @@ export function fitMarks(
 
 /** A cubic Bézier: start, two control points, end. */
 type Curve = readonly [readonly number[], readonly number[], readonly number[], readonly number[]];
-
-/** The swoosh's centre line: a cubic from lower left to upper right. */
-const SWOOSH_CURVE: Curve = [
-  [4, 19],
-  [11, 19],
-  [18, 8],
-  [26, 5],
-];
 
 function at(curve: Curve, t: number): { x: number; y: number; dx: number; dy: number } {
   const [P0, P1, P2, P3] = curve;
@@ -242,22 +241,81 @@ function penStroke(pen: string, curve: Curve, thick: number, highlighterOpacity:
   return { d: outline(curve, (t) => (thick / 2) * shape(t)) };
 }
 
-/** The highlighter's width mark: a level band across the glyph, as a highlight lies. */
-const HIGHLIGHT_BAND = `M3 ${SWOOSH_HEIGHT / 2}H${SWOOSH_WIDTH - 3}`;
+/** A width bar's length, glyph px, its ends included: one length at every width. */
+export const WIDTH_BAR = 20;
 
-/** The width button for a stroke `thickness` screen px wide, with pen `pen`. */
-export function swoosh(pen: string, thickness: number): Swoosh {
-  // A highlight is wide: a level band shows its height whole up to the
-  // glyph's, where a slanted one would be cut at its corners.
-  if (pen === "highlighter") {
-    return {
-      d: HIGHLIGHT_BAND,
-      strokeWidth: glyphThickness(thickness),
-      cap: "butt",
-      opacity: 0.55,
-    };
+/** The bar's two ends, centred in the glyph. */
+const BAR_LEFT = (SWOOSH_WIDTH - WIDTH_BAR) / 2;
+const BAR_RIGHT = BAR_LEFT + WIDTH_BAR;
+const MID = SWOOSH_HEIGHT / 2;
+
+/** The bar as a straight "curve", for {@link outline}. */
+const BAR_LINE: Curve = [
+  [BAR_LEFT, MID],
+  [BAR_LEFT + WIDTH_BAR / 3, MID],
+  [BAR_LEFT + (2 * WIDTH_BAR) / 3, MID],
+  [BAR_RIGHT, MID],
+];
+
+/** The calligraphy pen's nib angle, degrees (its `PenTypeSpec.nib`). */
+const NIB_DEGREES = 40;
+
+/**
+ * The width bar's thickness along it, as a share of its full width at `t`
+ * from 0 (left end) to 1 (right end), for the pens drawn as an outline.
+ */
+function barProfile(pen: string): (t: number) => number {
+  if (pen === "brush") {
+    // Pressed down to a round start, lifting off to a point.
+    return (t) =>
+      t < 0.15 ? Math.sqrt(1 - ((0.15 - t) / 0.15) ** 2) : 1 - 0.88 * ((t - 0.15) / 0.85) ** 1.3;
   }
-  return penStroke(pen, SWOOSH_CURVE, glyphThickness(thickness), 0.55);
+  // A fountain pen's line: fine at both ends, the nib's width in the middle.
+  return (t) => 0.18 + 0.82 * Math.sin(Math.PI * t) ** 0.6;
+}
+
+/**
+ * The width button for a stroke `thickness` screen px wide, with pen `pen`:
+ * a short level bar, as Goodnotes draws its widths, its ends in the pen's
+ * character. Round for the ballpoint, fine at both ends for the fountain
+ * pen, a round start lifting off to a point for the brush, cut at the nib's
+ * angle for the calligraphy pen, square and see-through for the
+ * highlighter (Joost, 2026-11-08: "B, bars with ends"). Its full height is
+ * the stroke's width on screen, up to {@link WIDTH_MARK_LIMIT}.
+ */
+export function swoosh(pen: string, thickness: number): Swoosh {
+  const w = glyphThickness(thickness);
+  const r = w / 2;
+  switch (pen) {
+    case "ball": {
+      // Round caps reach past the line's ends: shorten it so the bar is one length.
+      const inset = Math.min(WIDTH_BAR / 2, r);
+      return {
+        d: `M${n(BAR_LEFT + inset)} ${MID}H${n(BAR_RIGHT - inset)}`,
+        strokeWidth: w,
+        cap: "round",
+      };
+    }
+    case "highlighter":
+      return { d: `M${BAR_LEFT} ${MID}H${BAR_RIGHT}`, strokeWidth: w, cap: "butt", opacity: 0.55 };
+    case "calligraphy": {
+      // Both ends cut at the nib's 40°, rising to the right (Joost,
+      // 2026-11-08: "calligraphy should go up"), until the cuts would leave
+      // too short a band; steeper past that.
+      const slant = Math.min(w / Math.tan((NIB_DEGREES * Math.PI) / 180), WIDTH_BAR / 2 - 1);
+      const top = MID - r;
+      const bottom = MID + r;
+      return {
+        d:
+          `M${n(BAR_LEFT + slant)} ${n(top)}H${n(BAR_RIGHT)}` +
+          `L${n(BAR_RIGHT - slant)} ${n(bottom)}H${n(BAR_LEFT)}Z`,
+      };
+    }
+    default: {
+      const share = barProfile(pen);
+      return { d: outline(BAR_LINE, (t) => r * share(t)) };
+    }
+  }
 }
 
 /** How opaque the size preview draws the highlighter: the page's default. */

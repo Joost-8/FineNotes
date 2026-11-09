@@ -101,6 +101,11 @@ export interface ModelStoreLike {
   subscribe(listener: () => void): () => void;
   /** Look at the model's folder again (after the setting chose it, or a sync). */
   check?(again?: boolean): Promise<unknown>;
+  /**
+   * Part of the model is in its folder but does not verify yet: most likely
+   * still arriving by vault sync (model-store.ts `arriving`).
+   */
+  readonly arriving?: boolean;
 }
 
 /** A page drawn for OCR (`ocr-raster.ts`). */
@@ -213,6 +218,8 @@ export const SAVE_MS = 2500;
 const PROBE_PAUSE_MS = 40;
 /** Failures in a row after which OCR rests for the session. */
 export const MAX_FAILURES = 4;
+/** While pages wait for the model, its folder is looked at again this often, ms (vault sync). */
+export const MODEL_RECHECK_MS = 30_000;
 
 /** Whether the centre of `box` lies inside `r`. */
 function inside(box: readonly number[], r: PixelRect): boolean {
@@ -248,6 +255,9 @@ export class OcrService {
   private disposed = false;
   private cancelWake: (() => void) | null = null;
   private cancelSave: (() => void) | null = null;
+  private cancelRecheck: (() => void) | null = null;
+  /** The offer was held back because the model's files were still arriving by sync. */
+  private offerHeld = false;
   private readonly unsubscribe: () => void;
 
   /** The model in use now. */
@@ -269,6 +279,7 @@ export class OcrService {
     // The model arriving (from the card, or the settings) un-parks the queue.
     this.unsubscribe = deps.store.subscribe(() => {
       if (deps.store.state.kind !== "ready") return;
+      this.offerHeld = false;
       this.parked = false;
       this.requeueWaiting();
       this.pump();
@@ -544,6 +555,7 @@ export class OcrService {
     this.disposed = true;
     this.cancelWake?.();
     this.cancelSave?.();
+    this.cancelRecheck?.();
     this.unsubscribe();
     this.client?.dispose();
     this.deps.raster.dispose();
@@ -861,9 +873,38 @@ export class OcrService {
    * download card unless `offer` is false.
    */
   private async modelReady(offer = true): Promise<boolean> {
-    if ((await this.deps.store.file()) !== null) return true;
-    if (offer) this.deps.offer();
+    const { store } = this.deps;
+    if ((await store.file()) !== null) return true;
+    this.watchForModel();
+    if (!offer) return false;
+    // Files that are there but not verified yet are most likely still being
+    // synced in (after an update, or a vault synced anew): no download yet.
+    if (store.arriving) this.offerHeld = true;
+    else this.deps.offer();
     return false;
+  }
+
+  /**
+   * While pages wait for the model, look at its folder again now and then:
+   * a model that vault sync delivers is then found without a restart (the
+   * store's subscription resumes the queue), and a held-back offer is made
+   * once the files stop counting as arriving.
+   */
+  private watchForModel(): void {
+    const { store } = this.deps;
+    if (this.cancelRecheck || this.disposed || !store.check) return;
+    this.cancelRecheck = this.deps.later(() => {
+      this.cancelRecheck = null;
+      if (this.disposed || !this.enabled) return;
+      void store.check?.(true).then(() => {
+        if (this.disposed || store.state.kind === "ready") return;
+        if (this.offerHeld && !store.arriving) {
+          this.offerHeld = false;
+          this.deps.offer();
+        }
+        if (this.parked || this.waitingForModel.size > 0) this.watchForModel();
+      });
+    }, MODEL_RECHECK_MS);
   }
 
   private async readModel(model: ActiveOcrModel): Promise<OcrFiles> {

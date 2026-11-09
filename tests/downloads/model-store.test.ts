@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { type ModelAsset } from "../../src/downloads/model-manifest";
-import { AssetStore, type AssetStoreDeps, routedFolder } from "../../src/downloads/model-store";
+import {
+  ARRIVING_MS,
+  AssetStore,
+  type AssetStoreDeps,
+  RECHECK_MS,
+  hasPartOf,
+  routedFolder,
+} from "../../src/downloads/model-store";
 
 /** A 2,000-byte "model" with a 4-byte header naming its format. */
 function makeFile(format = 1, size = 2000): Uint8Array {
@@ -459,6 +466,62 @@ describe("AssetStore", () => {
     again.files.set("dec-1.0.bin", SECOND);
     expect(await new AssetStore(shared, again.deps).download()).toBe(true);
     expect(again.srv.requests.every((r) => r.end < FILE.byteLength)).toBe(true);
+  });
+});
+
+describe("AssetStore and vault sync", () => {
+  it("looks at the folder again once a 'missing' answer is old, so a synced-in model counts", async () => {
+    const { deps, files } = fakes();
+    let now = 1000;
+    const store = new AssetStore(ASSET, { ...deps, now: () => now });
+    expect(await store.file()).toBeNull();
+    // Sync delivers the file a moment later: trusted look, still missing.
+    files.set("grape-1.0.bin", FILE.slice());
+    now += RECHECK_MS - 1;
+    expect(await store.file()).toBeNull();
+    now += 1;
+    expect(await store.file()).toBe("grape-1.0.bin");
+    expect(store.state.kind).toBe("ready");
+  });
+
+  it("counts a half-synced model as arriving, then as damaged after a while", async () => {
+    const { deps, files } = fakes();
+    let now = 0;
+    const store = new AssetStore(ASSET, { ...deps, now: () => now });
+    files.set("grape-1.0.bin", FILE.slice(0, 500));
+    expect((await store.check()).kind).toBe("missing");
+    expect(store.arriving).toBe(true);
+    now += ARRIVING_MS - 1;
+    await store.check(true);
+    expect(store.arriving).toBe(true);
+    now += 1;
+    await store.check(true);
+    expect(store.arriving).toBe(false);
+    // Complete at last: ready, no longer arriving.
+    files.set("grape-1.0.bin", FILE.slice());
+    expect((await store.check(true)).kind).toBe("ready");
+    expect(store.arriving).toBe(false);
+  });
+
+  it("counts a sync tool's temporary copy as arriving, but not an empty folder or our own .download", async () => {
+    const { deps, files } = fakes();
+    const store = new AssetStore(ASSET, deps);
+    await store.check();
+    expect(store.arriving).toBe(false);
+    files.set("grape-1.0.bin.download", FILE.slice(0, 10));
+    await store.check(true);
+    expect(store.arriving).toBe(false);
+    files.delete("grape-1.0.bin.download");
+    files.set(".syncthing.grape-1.0.bin.tmp", FILE.slice(0, 10));
+    await store.check(true);
+    expect(store.arriving).toBe(true);
+  });
+
+  it("hasPartOf matches names and temporary copies, never our own download", () => {
+    expect(hasPartOf(ASSET.files, ["grape-1.0.bin"])).toBe(true);
+    expect(hasPartOf(ASSET.files, ["~grape-1.0.bin.partial"])).toBe(true);
+    expect(hasPartOf(ASSET.files, ["grape-1.0.bin.download"])).toBe(false);
+    expect(hasPartOf(ASSET.files, ["other.bin"])).toBe(false);
   });
 });
 

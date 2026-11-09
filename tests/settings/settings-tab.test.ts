@@ -484,6 +484,7 @@ describe("the rows", () => {
     expect(rows(tab).map((r) => [r.heading, r.def.name || "(block)", kind(r.def)])).toEqual([
       ["", "(block)", "render"],
       ["", "Language", "render"],
+      ["", "Look", "render"],
       ["", "Simple look", "toggle:simpleLook"],
       [WRITING, "Start with", "render"],
       [WRITING, "Saved pens", "render"],
@@ -714,6 +715,7 @@ describe("which rows show", () => {
   it("by default: no iPad tip, and the AI group folded into one row", () => {
     expect(visibleNames(makePlugin(), false)).toEqual([
       "Language",
+      "Look",
       "Simple look",
       "Start with",
       ...SAVED_PEN_ROWS,
@@ -1801,7 +1803,12 @@ describe("folding sections", () => {
     expect(groups(tab).map((g) => [g.heading, g.cls])).toEqual(
       HEADINGS.map((h) => [h, "goodobsidian-section is-folded"]),
     );
-    expect(unfoldedRows(tab).map((r) => r.def.name)).toEqual(["Language", "Simple look", FOOTER]);
+    expect(unfoldedRows(tab).map((r) => r.def.name)).toEqual([
+      "Language",
+      "Look",
+      "Simple look",
+      FOOTER,
+    ]);
   });
 
   it("shows the rows of the sections that are open", () => {
