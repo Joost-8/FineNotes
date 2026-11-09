@@ -1363,6 +1363,11 @@ export class InkView extends TextFileView {
     this.surface?.setFreePageEdges(on);
   }
 
+  /** "Lock fit to width" changed: the surface reads it at once. */
+  setHoldFitWidth(): void {
+    this.surface?.refreshScrollExtent();
+  }
+
   /** The pressure setting changed: the pen in hand widens with pressure if it is a pressure pen. */
   setPressureWidth(enabled: boolean): void {
     this.surface?.setPressure(enabled && penTypeFor(this.toolState).pressure);
@@ -3649,6 +3654,7 @@ export class InkView extends TextFileView {
     this.setPenCursor(this.settings.penCursor);
     this.surface.setInkPressure(this.settings.pressureWidth);
     this.surface.setFreePageEdges(this.settings.freePageEdges);
+    this.surface.holdFitWidth = () => this.settings.holdFitWidth;
     this.pdfText?.destroy();
     this.pdfText = new PdfTextCache(this.app, this.plugin.ocr);
     // A finger tap on a PDF link that waited for the page to be read; and a
@@ -5673,6 +5679,7 @@ export class InkView extends TextFileView {
         folded: this.toolbar?.foldedItems() ?? [],
         fingerDrawing: this.plugin.fingerDrawing,
         freePageEdges: this.settings.freePageEdges,
+        lockFitWidth: this.settings.holdFitWidth,
       },
       {
         paintThumbnail: (canvas, at, width) => this.sidebar?.paintThumbnail(canvas, at, width),
@@ -5707,6 +5714,7 @@ export class InkView extends TextFileView {
         copyHomeLink: () => this.copyHomeLink(),
         // Where touch exists: on a desktop the mouse draws already.
         setFreePageEdges: (on) => void this.plugin.setFreePageEdges(on),
+        setLockFitWidth: (on) => void this.plugin.setHoldFitWidth(on),
         setFingerDrawing:
           navigator.maxTouchPoints > 0 ? (on) => this.plugin.setFingerDrawing(on) : undefined,
       },

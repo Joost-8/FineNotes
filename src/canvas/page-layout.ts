@@ -298,6 +298,48 @@ export function rowScrollXForPage(
 }
 
 /**
+ * The scroll y that centres page `index` of a row in a pane `paneHeight`
+ * tall, or puts its top (less the layout's margin) at the pane's top when it
+ * is much taller than the pane. Never above the row's own top.
+ */
+export function rowScrollYForPage(
+  layout: DocumentLayout,
+  index: number,
+  scale: number,
+  paneHeight: number,
+): number {
+  const box = layout.boxes[Math.max(0, Math.min(layout.boxes.length - 1, index))];
+  if (!box || !(scale > 0)) return 0;
+  // A page a little taller (a row zoomed a hair past its floor) stays centred too.
+  const y =
+    box.height * scale <= paneHeight * 1.15
+      ? (box.y + box.height / 2) * scale - paneHeight / 2
+      : (box.y - PAGE_MARGIN_Y) * scale;
+  return Math.max(0, y);
+}
+
+/**
+ * The scroll range in y of a row turning pages: from the lowest to the
+ * highest {@link rowScrollYForPage} of its pages, so every page can rest at
+ * its own and nothing scrolls up or down beyond. One value when every page
+ * has the same height.
+ */
+export function rowRestRangeY(
+  layout: DocumentLayout,
+  scale: number,
+  paneHeight: number,
+): { min: number; max: number } {
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < layout.boxes.length; i++) {
+    const y = rowScrollYForPage(layout, i, scale, paneHeight);
+    min = Math.min(min, y);
+    max = Math.max(max, y);
+  }
+  return min <= max ? { min, max } : { min: 0, max: 0 };
+}
+
+/**
  * Extra scroll room before the first page and after the last, screen px, so
  * that either can sit centred in the pane (as GoodNotes shows every page of a
  * horizontal notebook). Zero once a page is wider than the pane.

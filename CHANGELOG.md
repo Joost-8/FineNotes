@@ -10,6 +10,25 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Lock fit to width**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  A new check in the notebook's ⋯ panel: after a double tap fits the page
+  to the width, a finger no longer moves the page sideways at all. Off, as
+  before, a sideways pull stretches the page and it springs back, as in
+  Goodnotes. Pinching still moves it either way.
+
+### Fixed
+
+- **Slides fill the screen with pages across**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  Each page now fits the screen on its own, as in Goodnotes: a lecture slide
+  next to a portrait page used to open at two thirds of the screen, because
+  every page was fitted to the tallest one. Turning to a page of another
+  shape fits that page. A 16:9 slide, wider than the screen, keeps only a
+  thin margin at its sides, as in Goodnotes, instead of a wide band of desk.
+- **A double tap on a slide shows the whole slide**, as large as fits and
+  centred, instead of filling the width and cutting off its foot. Portrait
+  pages still fill the width.
 - **Click the pen's side button for the eraser** (FineNotes#149). On Android,
   holding an S Pen's button while writing does not reach FineNotes. Settings →
   Pens and shortcuts, **Side button click**, now has **Switch to the eraser**:
