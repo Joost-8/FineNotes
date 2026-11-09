@@ -110,6 +110,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("lassoFilter", "lassoFilter"),
           tip("copyStyle", "copyStyle"),
           tip("oneItem", "oneItem"),
+          tip("lassoTray", "lassoTray"),
           tip("correctWord", "correctWord"),
           tip("screenshotLasso", "screenshotLasso"),
           tip("saveSticker", "saveSticker"),
@@ -217,7 +218,10 @@ export const TIP_SECTIONS: readonly TipSection[] = [
         title: "notebooks.tips.collection.maths",
         tips: [
           tip("calc", "calc"),
+          tip("sumGlow", "sumGlow"),
+          tip("solveLetter", "solveLetter"),
           tip("basicCalc", "basicCalc"),
+          tip("insertGraph", "insertGraph"),
           tip("graphFit", "graphFit"),
           tip("graphPin", "graphPin"),
           tip("graphPopOut", "graphPopOut"),
@@ -262,6 +266,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("colourOff", "colourOff"),
           tip("pillDock", "pillDock"),
           tip("customizeBar", "customizeBar"),
+          tip("looks", "looks"),
           tip("toolbarEdge", "toolbarEdge"),
           tip("dockOptions", "dockOptions"),
           tip("shortcutSheet", "shortcutSheet"),
@@ -282,6 +287,11 @@ export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlights[] = [
   {
     version: "2.9.0",
     tips: [
+      tip("sumGlow", "sumGlow"),
+      tip("solveLetter", "solveLetter"),
+      tip("insertGraph", "insertGraph"),
+      tip("looks", "looks"),
+      tip("lassoTray", "lassoTray"),
       tip("curvedElbow", "curvedElbow"),
       tip("lineUpMoves", "lineUpMoves"),
       tip("lockFit", "lockFit"),

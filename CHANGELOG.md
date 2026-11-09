@@ -16,6 +16,18 @@ extracted from the matching section of this file by `release.yml`.
   widths and colours sit in the bar itself, after the tools, as in Goodnotes.
   The buttons that fold first go into ⋯ to make room. Where there is too
   little room, the options keep a row of their own.
+### Fixed
+
+- **Home's What's new card could ignore clicks.** When Home redrew itself
+  between a press and its release (while it was still reading notebooks,
+  say), the card was taken off the page and put back, and neither its X nor
+  its pictures got the click. The card now stays in place while Home redraws.
+
+### Changed
+
+- **What's new shows more of 2.9.** Five new pictures, also under Tips: a
+  sum that glows and its maths card, solving for x, putting a graph on the
+  page, the looks, and the lasso's lighter menu.
 
 ## [2.9.0] - 2026-11-09
 

@@ -939,6 +939,21 @@ export const notebooks = {
   "notebooks.tips.calc.title": "Write a sum, get the answer",
   "notebooks.tips.calc.body":
     "End a sum with =, then tap what FineNotes offers to write the answer in.",
+  "notebooks.tips.sumGlow.title": "A sum glows when it is read",
+  "notebooks.tips.sumGlow.body":
+    "End a sum with =. Tap the glow for its card: the answer, Write, or a typed equation.",
+  "notebooks.tips.solveLetter.title": "Solve for x",
+  "notebooks.tips.solveLetter.body":
+    "Write x = under an equation in x, then tap the glow: the card offers its solutions.",
+  "notebooks.tips.insertGraph.title": "Put a graph on the page",
+  "notebooks.tips.insertGraph.body":
+    "Type a function of x in the calculator, open Graph and tap Insert graph.",
+  "notebooks.tips.looks.title": "Looks for FineNotes",
+  "notebooks.tips.looks.body":
+    "Settings → Look restyles FineNotes' bars and menus: pick a style and a set of colours.",
+  "notebooks.tips.lassoTray.title": "A lighter lasso menu",
+  "notebooks.tips.lassoTray.body":
+    "The bar keeps Copy, Duplicate and Delete. ⋯ opens Cut, Paste, Screenshot and Copy style.",
   "notebooks.tips.searchInk.title": "Search your handwriting",
   "notebooks.tips.searchInk.body":
     "Once handwriting reading is on, search finds the words you wrote.",

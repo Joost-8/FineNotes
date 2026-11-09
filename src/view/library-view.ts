@@ -1008,7 +1008,13 @@ export class LibraryView extends ItemView {
     this.upEl.toggleClass("is-hidden", this.folder === "");
     this.unloadPreviews();
     this.paintUpdate();
-    this.bodyEl.empty();
+    // Home's card stays where it is. Taken out and put back between a press and
+    // its release, a button never gets its click: the card's X and pictures
+    // went dead whenever Home repainted under the pointer.
+    const kept = !searching && this.folder === "" ? this.cardEl : null;
+    for (const child of Array.from(this.bodyEl.childNodes)) {
+      if (child !== kept) child.remove();
+    }
 
     const all = this.entries();
     this.simple = document.body.hasClass(SIMPLE_CLASS);
@@ -1639,7 +1645,8 @@ export class LibraryView extends ItemView {
         { duration: 320, easing: "cubic-bezier(.2,.7,.2,1)" },
       );
     }
-    if (this.cardEl) this.bodyEl.appendChild(this.cardEl);
+    // First on the page, and only moved when it is not there already.
+    if (this.cardEl && this.bodyEl.firstChild !== this.cardEl) this.bodyEl.prepend(this.cardEl);
   }
 
   private dropCard(): void {
