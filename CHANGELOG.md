@@ -24,6 +24,49 @@ extracted from the matching section of this file by `release.yml`.
 
 - **The simple look is off for new installs,** and offered as a live switch in
   a redrawn Welcome. Anyone already using it keeps it.
+- **Themes for FineNotes' own bars, menus and dialogs.** Settings → Look
+  has two menus: a style (Default, Glass, Material, Fluent, Paper,
+  Brutalist, Soft, Retro, Compact) and colours (Match Obsidian, Nord,
+  Catppuccin, Dracula, Rosé Pine, Gruvbox, Solarized, Tokyo Night,
+  Everforest, High contrast), each in light and dark. Your pages, your ink
+  and the rest of Obsidian stay as they are. Two commands step through
+  them: "Look: next style" and "Look: next colours". Translated into every
+  language. Customize toolbar has them too, as two rows of chips under
+  Hidden, so a look is tried on the bar it changes; Reset takes it back.
+
+### Changed
+
+- **The top of FineNotes' settings reads as one list.** Look and Simple
+  look use the section headers' text and spacing, with quieter menus and a
+  smaller switch, so every name on the left sits the same distance apart.
+- **A PDF's own contents come with it**
+  ([discussion #185](https://github.com/Joost-8/FineNotes/discussions/185)).
+  Importing a PDF, as a new notebook or into one, reads its outline (the
+  bookmarks a PDF reader shows beside it) into the Contents tab: chapters,
+  sections and parts, each on the right page and at the right spot. A notice
+  says how many entries came in, with Undo. Everything stays editable.
+- **Chapters in the contents.** Entries now nest up to three levels: a
+  chapter holds the sections after it, across pages, and folds them away.
+  An entry's ⌄ menu has Indent and Outdent; its own sections move with it.
+  The order never changes: the contents still follow the pages. A long
+  contents, such as a textbook's, opens with its chapters folded.
+- **Chapters of their own.** The folder-plus under the Contents tab makes a
+  chapter that is only a name, standing before the page you are on, so
+  pages can be grouped without giving a page up to the chapter's title.
+- **Drag entries in the contents.** Press an entry and move it (hold first
+  with a finger): its pages and everything inside it go with it, in one
+  undo. Moving sideways while dragging sets how deep it sits.
+
+### Fixed
+
+- **The scanned-page reader no longer asks to be downloaded again after an
+  update or a vault sync.** Its files were looked for once, when FineNotes
+  started; if sync was still bringing them in, the download was offered and
+  the files that arrived a moment later were not used until a restart. Now
+  the folder is looked at again while pages wait, and nothing is offered
+  while part of the model is still arriving.
+- The AI menu in the tool bar scrolls when it does not fit below the bar,
+  instead of running off the screen, in full screen too.
 
 ## [2.8.3] - 2026-11-06
 
@@ -48,12 +91,6 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
-- **The scanned-page reader no longer asks to be downloaded again after an
-  update or a vault sync.** Its files were looked for once, when FineNotes
-  started; if sync was still bringing them in, the download was offered and
-  the files that arrived a moment later were not used until a restart. Now
-  the folder is looked at again while pages wait, and nothing is offered
-  while part of the model is still arriving.
 - **A page margin's lines now continue the page's** (FineNotes#164). On a
   ruled, squared or dotted page the margin takes the page's spacing and its
   lines are level with the page's, whatever the spacing; before, it kept its

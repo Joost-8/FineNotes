@@ -148,6 +148,16 @@ import { type TipsPage, TipsModal } from "./view/tips-modal";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
+import {
+  LOOK_PALETTES,
+  LOOK_STYLES,
+  lookClasses,
+  lookPaletteNames,
+  lookPaletteOf,
+  lookStyleNames,
+  lookStyleOf,
+  nextLook,
+} from "./model/look";
 import { HOME_FILE, HOME_FILE_TEXT, isOwnHomeText } from "./model/home-file";
 import {
   dropPaths,
@@ -223,6 +233,9 @@ export interface TransferReceipt {
 }
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
+import { readPdfOutline } from "./view/pdf-outline";
+import { SetPagesContents } from "./model/contents";
+import { addedEntries, outlineContents } from "./model/pdf-outline";
 import { VaultPdfSuggestModal } from "./view/pdf-import-modal";
 import type { AttachmentFolders, InkDocument, Page } from "./model/document";
 import { type ImageMenuContext, registerImageMenuEntry } from "./view/image-menu";
@@ -516,6 +529,8 @@ export default class GoodObsidianPlugin extends Plugin {
 
     this.setUpReadingGuard();
     this.applySimpleLook();
+    this.applyLook();
+    this.register(() => this.wearLook([]));
     this.register(() => {
       if (typeof document !== "undefined") document.body.classList.remove(SIMPLE_CLASS);
     });
@@ -858,6 +873,17 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "show-whats-new",
       name: t("notebooks.command.whatsNew"),
       callback: () => this.showNewsAgain(),
+    });
+    this.addCommand({
+      id: "next-look-style",
+      name: t("notebooks.command.nextLookStyle"),
+      callback: () => void this.setLook(nextLook(LOOK_STYLES, this.settings.lookStyle), undefined),
+    });
+    this.addCommand({
+      id: "next-look-palette",
+      name: t("notebooks.command.nextLookPalette"),
+      callback: () =>
+        void this.setLook(undefined, nextLook(LOOK_PALETTES, this.settings.lookPalette)),
     });
 
     this.addCommand({
@@ -1390,6 +1416,40 @@ export default class GoodObsidianPlugin extends Plugin {
     const body = document.body;
     body.classList.remove(SIMPLE_CLASS);
     body.classList.add(...simpleClasses(this.settings.simpleLook));
+  }
+
+  private lookWorn: string[] = [];
+
+  private wearLook(classes: string[]): void {
+    if (typeof document === "undefined") return;
+    document.body.classList.remove(...this.lookWorn);
+    document.body.classList.add(...classes);
+    this.lookWorn = classes;
+  }
+
+  /** Wear the chrome's style and palette (`model/look.ts`). */
+  applyLook(): void {
+    this.wearLook(lookClasses(this.settings.lookStyle, this.settings.lookPalette));
+  }
+
+  /** Wear and keep a style or colours; `announce` names the look in a notice (the commands). */
+  async setLook(
+    style: string | undefined,
+    palette: string | undefined,
+    announce = true,
+  ): Promise<void> {
+    if (style !== undefined) this.settings.lookStyle = style;
+    if (palette !== undefined) this.settings.lookPalette = palette;
+    this.applyLook();
+    if (announce)
+      new Notice(
+        t("settings.look.notice", {
+          style: lookStyleNames()[lookStyleOf(this.settings.lookStyle)],
+          palette: lookPaletteNames()[lookPaletteOf(this.settings.lookPalette)],
+        }),
+        1500,
+      );
+    await this.saveSettings();
   }
 
   setSimpleLook(on: boolean): void {
@@ -3261,13 +3321,55 @@ export default class GoodObsidianPlugin extends Plugin {
       new Notice(t("notebooks.notice.pdfEmpty"));
       return null;
     }
+    // The PDF's own outline becomes the notebook's contents (discussion #185).
+    const outline = await readPdfOutline(bytes);
+    let outlined = 0;
+    const withOutline = (doc: InkDocument, path: string): InkDocument => {
+      const contents = outlineContents(doc, path, outline);
+      outlined = addedEntries(contents);
+      if (outlined > 0) new SetPagesContents(contents, t("view.contents.fromPdf")).apply(doc);
+      return doc;
+    };
+    const made = await this.makePdfNotebook(
+      title,
+      choices,
+      folder,
+      pdf,
+      bytes,
+      sizes,
+      open,
+      withOutline,
+    );
+    if (made && outlined > 0) {
+      const view = this.app.workspace
+        .getLeavesOfType(VIEW_TYPE_INK)
+        .map((leaf) => leaf.view)
+        .find((view): view is InkView => view instanceof InkView && view.file?.path === made.path);
+      // Undo needs the open notebook; one made without opening keeps its contents.
+      view?.offerPdfContentsUndo(outlined);
+    }
+    return made;
+  }
+
+  /** `createNotebookFromPdfBytes`' notebook itself, `shape` adding to the built document. */
+  private makePdfNotebook(
+    title: string,
+    choices: NotebookChoices,
+    folder: string | undefined,
+    pdf: string | { name: string } | { move: TFile },
+    bytes: ArrayBuffer,
+    sizes: Array<{ width: number; height: number }>,
+    open: boolean,
+    shape: (doc: InkDocument, path: string) => InkDocument,
+  ): Promise<TFile | null> {
     const ownFolder = this.settings.notebookOwnFolder;
     if (typeof pdf === "string") {
       return this.createNotebook(
         title,
         choices,
         folder,
-        (heading, attachments) => buildPdfNotebook(choices, heading, attachments, pdf, sizes),
+        (heading, attachments) =>
+          shape(buildPdfNotebook(choices, heading, attachments, pdf, sizes), pdf),
         ownFolder,
         open,
       );
@@ -3288,7 +3390,7 @@ export default class GoodObsidianPlugin extends Plugin {
         }
         if ("move" in pdf) await this.app.fileManager.renameFile(pdf.move, path);
         else await this.app.vault.createBinary(path, bytes);
-        return buildPdfNotebook(choices, heading, attachments, path, sizes);
+        return shape(buildPdfNotebook(choices, heading, attachments, path, sizes), path);
       },
       ownFolder,
       open,
