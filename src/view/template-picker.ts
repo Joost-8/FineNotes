@@ -60,7 +60,8 @@ import {
   sizeGeometry,
   sizeOf,
 } from "../model/templates";
-import { t, tn } from "../i18n/translate";
+import { currentLanguage, t, tn } from "../i18n/translate";
+import { fitCardNames } from "./card-name-fit";
 
 /** Paint a template preview into `canvas`, `cssWidth` CSS px wide. */
 export function paintTemplatePreview(
@@ -406,13 +407,21 @@ export class TemplateGrid {
       setIcon(summary.createSpan({ cls: "goodobsidian-templates-chevron" }), "chevron-down");
       summary.createSpan({ text: section.title });
       const row = details.createDiv({ cls: "goodobsidian-templates-row" });
+      // A folded section's cards have no width to fit their names to until it opens.
+      details.addEventListener("toggle", () => {
+        if (details.open) fitCardNames(details);
+      });
       for (const template of section.templates) {
         const root = row.createEl("button", {
           cls: "goodobsidian-template-card is-large clickable-icon",
         });
         root.setAttribute("aria-label", template.name);
         const canvas = root.createEl("canvas", { cls: "goodobsidian-template-preview" });
-        root.createDiv({ cls: "goodobsidian-template-name", text: template.name });
+        root.createDiv({
+          cls: "goodobsidian-template-name",
+          text: template.name,
+          attr: { lang: currentLanguage() },
+        });
         root.addEventListener("click", () => {
           this.select(template.ruling);
           this.options.onSelect(template.ruling);
@@ -424,6 +433,7 @@ export class TemplateGrid {
         this.cards.push({ ruling: template.ruling, root, canvas });
       }
     }
+    fitCardNames(this.el);
     this.sync();
   }
 

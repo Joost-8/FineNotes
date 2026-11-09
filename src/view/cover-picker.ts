@@ -21,7 +21,8 @@ import {
 import type { CoverChoice } from "../model/new-notebook";
 import { COVER_COLORS, COVER_SECTIONS } from "../model/templates";
 import { installPopoverDismiss, paintTemplatePreview, placePopover } from "./template-picker";
-import { t } from "../i18n/translate";
+import { currentLanguage, t } from "../i18n/translate";
+import { fitCardNames } from "./card-name-fit";
 
 export interface CoverPickerOptions {
   design: CoverChoice;
@@ -79,7 +80,11 @@ export class CoverPicker {
           cls: "goodobsidian-template-preview goodobsidian-cover-none",
         });
         setIcon(preview, "ban");
-        root.createDiv({ cls: "goodobsidian-template-name", text: t("notebooks.cover.none") });
+        root.createDiv({
+          cls: "goodobsidian-template-name",
+          text: t("notebooks.cover.none"),
+          attr: { lang: currentLanguage() },
+        });
         root.setAttribute("aria-label", t("notebooks.cover.none"));
         root.addEventListener("click", () => this.pick("none", this.paperColor));
         this.designs.set("none", { root, canvas: null, preview });
@@ -93,12 +98,14 @@ export class CoverPicker {
         root.createDiv({
           cls: "goodobsidian-template-name",
           text: template.name.replace(/ cover$/, ""),
+          attr: { lang: currentLanguage() },
         });
         root.setAttribute("aria-label", template.name);
         root.addEventListener("click", () => this.pick(design, this.paperColor));
         this.designs.set(design, { root, canvas, preview: canvas });
       }
     });
+    fitCardNames(this.el);
 
     this.colorRow = this.el.createDiv({ cls: "goodobsidian-coverpicker-colors" });
     this.colorRow.setAttribute("role", "group");
