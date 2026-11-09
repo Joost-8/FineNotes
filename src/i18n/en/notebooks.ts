@@ -395,6 +395,7 @@ export const notebooks = {
   "notebooks.command.openLibrary": "Open the notebook library",
   "notebooks.command.rereadScannedPages": "Re-read scanned pages of this PDF",
   "notebooks.command.tips": "Show the tips",
+  "notebooks.command.whatsNew": "Show what's new on Home",
   "notebooks.command.simpleLook": "Simple look: hide or show Obsidian's tabs, sidebars and menus",
   "notebooks.command.newFromPdf": "New notebook from a PDF in the vault…",
   "notebooks.command.convertToNotebook": "Convert single page to notebook",
@@ -902,13 +903,14 @@ export const notebooks = {
   "notebooks.tips.allTips": "All tips",
   "notebooks.tips.tour": "Take the tour",
   "notebooks.tips.allChanges": "All changes",
+  "notebooks.tips.whatsNew": "What's new",
   "notebooks.tips.collection.gestures": "Pen gestures",
-  "notebooks.tips.collection.study": "Studying",
-  "notebooks.tips.collection.find": "Find anything",
+  "notebooks.tips.collection.study": "Cover, listen, highlight",
+  "notebooks.tips.collection.find": "Find and link",
   "notebooks.tips.collection.hands": "Fingers",
   "notebooks.tips.collection.writing": "Writing",
   "notebooks.tips.collection.selecting": "Selecting",
-  "notebooks.tips.collection.pages": "Pages",
+  "notebooks.tips.collection.pages": "Pages and export",
   "notebooks.tips.hold.title": "Draw and hold",
   "notebooks.tips.hold.body": "Draw a shape in one stroke and keep the pen still. It snaps clean.",
   "notebooks.tips.scribble.title": "Scribble to erase",
@@ -934,20 +936,21 @@ export const notebooks = {
   "notebooks.tips.holdWord.body": "Press and hold a word, or right-click it, to select it.",
   "notebooks.tips.calc.title": "Write a sum, get the answer",
   "notebooks.tips.calc.body":
-    "End a sum with = and FineNotes offers the result. Tap it to write it in.",
+    "End a sum with =, then tap what FineNotes offers to write the answer in.",
   "notebooks.tips.searchInk.title": "Search your handwriting",
   "notebooks.tips.searchInk.body":
     "Once handwriting reading is on, search finds the words you wrote.",
   "notebooks.tips.homeSearch.title": "Search every notebook",
   "notebooks.tips.homeSearch.body": "Home's search finds the pages inside your notebooks too.",
   "notebooks.tips.inkLink.title": "Handwritten links",
-  "notebooks.tips.inkLink.body": "Write [[Note]] by hand, then tap it to open that note.",
+  "notebooks.tips.inkLink.body":
+    "Write [[Note]] by hand, finger-tap the dashed underline and confirm. Then a tap opens it.",
   "notebooks.tips.undo.title": "Two-finger double tap",
   "notebooks.tips.undo.body": "Double tap with two fingers to undo.",
   "notebooks.tips.pullPage.title": "Pull for a new page",
   "notebooks.tips.pullPage.body": "Keep pulling past the last page until the ring fills.",
   "notebooks.tips.tapColour.title": "Swap a pen's colour",
-  "notebooks.tips.tapColour.body": "Tap the colour in use again to change it.",
+  "notebooks.tips.tapColour.body": "In the pen's bar, tap the colour in use again to change it.",
   "notebooks.tips.zoomBox.title": "Write big, land small",
   "notebooks.tips.zoomBox.body":
     "The Magnifier's Zoom box lets you write large while the ink lands small.",
@@ -964,10 +967,11 @@ export const notebooks = {
   "notebooks.tips.turnIntoText.body": "Lasso your writing and choose Turn into, then Text.",
   "notebooks.tips.pasteHere.title": "Paste right here",
   "notebooks.tips.pasteHere.body": "Hold the lasso on empty paper for a Paste button.",
-  "notebooks.tips.pinchSelection.title": "Pinch a selection",
-  "notebooks.tips.pinchSelection.body": "Two fingers on a selection resize and turn it.",
+  "notebooks.tips.pinchSelection.title": "Turn with two fingers",
+  "notebooks.tips.pinchSelection.body": "Two fingers on a selection turn it.",
   "notebooks.tips.turnKnob.title": "Turn a selection",
-  "notebooks.tips.turnKnob.body": "Drag the knob below a selection to turn it.",
+  "notebooks.tips.turnKnob.body":
+    "Tap a selection's corners button, then drag the knob below it to turn it.",
   "notebooks.tips.correctWord.title": "Fix a misread word",
   "notebooks.tips.correctWord.body": "Lasso a word that was read wrong and choose Correct.",
   "notebooks.tips.reorder.title": "Reorder pages",
@@ -981,9 +985,272 @@ export const notebooks = {
   "notebooks.tips.importBooks.body": "Home's New menu imports from Goodnotes, Notability and more.",
   "notebooks.tips.textTurns.title": "Text boxes turn",
   "notebooks.tips.textTurns.body":
-    "Select a text box and drag the knob below it. It catches every 15°.",
+    "Select a text box and drag the knob below it. It settles on every 45°.",
   "notebooks.tips.lineSpacing.title": "Exact line spacing",
   "notebooks.tips.lineSpacing.body": "Type any spacing from 2 to 30 mm in the template picker.",
+  "notebooks.tips.collection.yours": "Make it yours",
+  "notebooks.tips.collection.shapes": "Shapes and tables",
+  "notebooks.tips.collection.tools": "Rulers and erasers",
+  "notebooks.tips.collection.organize": "Organize",
+  "notebooks.tips.collection.maths": "Maths",
+  "notebooks.tips.collection.keyboard": "With a keyboard",
+  "notebooks.tips.penOrder.title": "Reorder your pens",
+  "notebooks.tips.penOrder.body":
+    "In the pen's bar, hold a pen for a moment, then drag it to a new place in the row.",
+  "notebooks.tips.pillDock.title": "Move a tool's bar",
+  "notebooks.tips.pillDock.body":
+    "Hold a tool's options bar for a moment, then drag it to any edge of the screen.",
+  "notebooks.tips.redoThree.title": "Three fingers redo",
+  "notebooks.tips.redoThree.body":
+    "Double tap with three fingers to bring back what you just undid.",
+  "notebooks.tips.fillScreen.title": "Double tap to fill",
+  "notebooks.tips.fillScreen.body":
+    "Double tap the page with one finger to fill the screen, and again to see it whole.",
+  "notebooks.tips.fingerHoldMenu.title": "Hold a finger down",
+  "notebooks.tips.fingerHoldMenu.body":
+    "Hold a finger on the page, with any tool, for Paste, Text box, Comment and Select all.",
+  "notebooks.tips.colourOff.title": "Drag a colour away",
+  "notebooks.tips.colourOff.body":
+    "Hold a colour in the pen's bar and drag it off the bar to remove it.",
+  "notebooks.tips.customizeBar.title": "Rearrange the toolbar",
+  "notebooks.tips.customizeBar.body":
+    "Open More tools, choose Customize toolbar, then drag any button along the bar or to Hidden.",
+  "notebooks.tips.copyStyle.title": "Copy a pen's look",
+  "notebooks.tips.copyStyle.body":
+    "Lasso some ink, choose Copy style in its menu, then sweep the pen over other ink to match.",
+  "notebooks.tips.linkedShapes.title": "Join shapes with arrows",
+  "notebooks.tips.linkedShapes.body":
+    "Pick up one shape and drag a dot at its side for a joined copy, or drop it on another shape.",
+  "notebooks.tips.cornerPoints.title": "Move a single corner",
+  "notebooks.tips.cornerPoints.body":
+    "Pick up one shape, tap the corner points button in its bar, then drag a ring on a corner.",
+  "notebooks.tips.bendCurves.title": "Bend a curved shape",
+  "notebooks.tips.bendCurves.body":
+    "On a circle or heart, the corner points button puts handles round it. Drag one to bend it.",
+  "notebooks.tips.dragToPage.title": "Move to another page",
+  "notebooks.tips.dragToPage.body":
+    "Drag a lasso selection over another page and let go. Near the edge the notebook scrolls.",
+  "notebooks.tips.insertSpace.title": "Make room between lines",
+  "notebooks.tips.insertSpace.body":
+    "With the lasso on By line, drag a line's small margin arrow down to push the writing below it.",
+  "notebooks.tips.oneItem.title": "Grab without a loop",
+  "notebooks.tips.oneItem.body":
+    "Set the lasso to One item: the pen picks up what it lands on and moves it in one stroke.",
+  "notebooks.tips.saveSticker.title": "Make your own stickers",
+  "notebooks.tips.saveSticker.body":
+    "Lasso something, choose Turn into, then Sticker. It joins My stickers in the Stickers tool.",
+  "notebooks.tips.screenshotLasso.title": "Screenshot any patch",
+  "notebooks.tips.screenshotLasso.body":
+    "Draw a lasso round nothing, even over a PDF, then tap the camera to copy that patch.",
+  "notebooks.tips.askSelection.title": "Ask about one part",
+  "notebooks.tips.askSelection.body":
+    "With an AI service set up, lasso something and choose Ask AI to ask about just that.",
+  "notebooks.tips.tapeEye.title": "Show every tape",
+  "notebooks.tips.tapeEye.body":
+    "The eye in Cover tape's bar shows or covers all the tapes on the page at once.",
+  "notebooks.tips.tapeMagnet.title": "Tape that finds lines",
+  "notebooks.tips.tapeMagnet.body":
+    "On a PDF, turn on the magnet in Cover tape's bar and a straight tape covers each line it crosses.",
+  "notebooks.tips.tapeExport.title": "Export the answer sheet",
+  "notebooks.tips.tapeExport.body":
+    "In Export, tap the Cover tapes button to leave every tape out of the PDF.",
+  "notebooks.tips.foldNote.title": "Fold a sticky note",
+  "notebooks.tips.foldNote.body":
+    "Select a sticky note and choose Fold note: it shrinks to an icon. Tap the icon to open it.",
+  "notebooks.tips.zoomAdvance.title": "Zoom box moves along",
+  "notebooks.tips.zoomAdvance.body":
+    "Tap Auto-advance on the Zoom box's bar (off at first) and the box moves on as you write.",
+  "notebooks.tips.zoomFrame.title": "Steer the Zoom box",
+  "notebooks.tips.zoomFrame.body":
+    "Drag its frame on the page to move it, its handles to resize, and pinch its window to magnify.",
+  "notebooks.tips.savedPens.title": "Keep favourite pens",
+  "notebooks.tips.savedPens.body":
+    "Tap the star in the pen's bar to save the pen in hand. On a keyboard, 1 to 8 pick them.",
+  "notebooks.tips.eyedropper.title": "Pick a colour up",
+  "notebooks.tips.eyedropper.body":
+    "Every colour picker has an eyedropper: tap it, then tap ink or a picture to take its colour.",
+  "notebooks.tips.laser.title": "Laser pointer",
+  "notebooks.tips.laser.body":
+    "Tap the pen already in hand and choose Laser pointer. Its trail fades and is never saved.",
+  "notebooks.tips.fillTool.title": "Fill with a bucket",
+  "notebooks.tips.fillTool.body":
+    "Open More tools, pick Fill and tap inside an outline. Tap a filled area again to recolour it.",
+  "notebooks.tips.scribbleFill.title": "Scribble to fill",
+  "notebooks.tips.scribbleFill.body":
+    "Scribble inside a closed outline, over nothing to erase, and the whole area fills.",
+  "notebooks.tips.arcsHearts.title": "More shapes snap",
+  "notebooks.tips.arcsHearts.body":
+    "Draw a heart, an arc or a pie slice and hold the pen still: they snap clean too.",
+  "notebooks.tips.pathArrow.title": "Arrows with bends",
+  "notebooks.tips.pathArrow.body":
+    "Draw a path with turns, end it with an arrowhead and hold: it snaps to a clean bent arrow.",
+  "notebooks.tips.shapeSnap.title": "Shapes snap together",
+  "notebooks.tips.shapeSnap.body":
+    "Draw a line with the Shapes tool near another shape: its end snaps to corners and midpoints.",
+  "notebooks.tips.eraseHighlightOnly.title": "Erase only highlights",
+  "notebooks.tips.eraseHighlightOnly.body":
+    "In the eraser's mode list, Erase highlighter only rubs out highlights and leaves your writing.",
+  "notebooks.tips.hideOptions.title": "Clear bar while writing",
+  "notebooks.tips.hideOptions.body":
+    "Under the pen's chevron, Pen settings has Hide pen options while writing. Off at first.",
+  "notebooks.tips.backToPen.title": "Snap back to pen",
+  "notebooks.tips.backToPen.body":
+    "In Pen settings, Back to the pen returns you to the pen after erasing or selecting. Off at first.",
+  "notebooks.tips.chisel.title": "Chisel highlighter",
+  "notebooks.tips.chisel.body":
+    "Tap the highlighter in hand and pick the Chisel tip for even bands with square ends.",
+  "notebooks.tips.stabilization.title": "Steady a shaky hand",
+  "notebooks.tips.stabilization.body":
+    "Pen settings has Stroke stabilization: raise it and wobbly lines come out smoother.",
+  "notebooks.tips.tableTab.title": "Tab through a table",
+  "notebooks.tips.tableTab.body":
+    "While typing in a table cell, Tab goes to the next cell. Past the last it adds a row.",
+  "notebooks.tips.tableResize.title": "Resize table columns",
+  "notebooks.tips.tableResize.body":
+    "While editing a table, drag any column or row border to change its size.",
+  "notebooks.tips.margins.title": "Room beside slides",
+  "notebooks.tips.margins.body":
+    "More (⋯) has Margin: add writing space beside a PDF, for this page or every PDF page.",
+  "notebooks.tips.joinedPages.title": "Write across pages",
+  "notebooks.tips.joinedPages.body":
+    "In Notebook settings, Join pages removes the gap so ink runs over the join.",
+  "notebooks.tips.pageGrid.title": "See all pages",
+  "notebooks.tips.pageGrid.body":
+    "In the page sidebar, tap Show all pages, then Select to move, export or delete several.",
+  "notebooks.tips.moveToNotebook.title": "Send pages elsewhere",
+  "notebooks.tips.moveToNotebook.body":
+    "In the all-pages grid, select pages and choose Move, then To another notebook.",
+  "notebooks.tips.pageTab.title": "Tabs on the edge",
+  "notebooks.tips.pageTab.body":
+    "In a page's menu in the sidebar, Add page tab puts a tab on the notebook's edge that opens it.",
+  "notebooks.tips.contentsHeading.title": "Headings into Contents",
+  "notebooks.tips.contentsHeading.body":
+    "Lasso a handwritten heading, choose Turn into, then Contents heading to list it in Contents.",
+  "notebooks.tips.inkTask.title": "Handwriting into tasks",
+  "notebooks.tips.inkTask.body":
+    "Lasso what you wrote and choose Turn into, then Task. A box appears beside it to tick.",
+  "notebooks.tips.linkTo.title": "Link any ink",
+  "notebooks.tips.linkTo.body":
+    "Lasso some ink and choose Link to… to make it open a note, a heading or a web address.",
+  "notebooks.tips.homePreview.title": "Peek at a notebook",
+  "notebooks.tips.homePreview.body":
+    "On Home, one tap on a cover shows a preview of its pages. A second tap opens it.",
+  "notebooks.tips.homeDrag.title": "Drag into folders",
+  "notebooks.tips.homeDrag.body":
+    "On Home, drag a notebook's cover onto a folder to move it there.",
+  "notebooks.tips.folderColour.title": "Colour your folders",
+  "notebooks.tips.folderColour.body":
+    "On Home, open a folder's ⌄ menu for Customize color… and Set icon….",
+  "notebooks.tips.newBoard.title": "Endless boards",
+  "notebooks.tips.newBoard.body":
+    "Home's New menu has a board: one page that grows as you write near its edges.",
+  "notebooks.tips.embedPages.title": "Pages inside notes",
+  "notebooks.tips.embedPages.body":
+    "In a note, type ![[Name.notebook#page=3]] to show that page. A tap opens the notebook there.",
+  "notebooks.tips.copyPageLink.title": "Link to a page",
+  "notebooks.tips.copyPageLink.body":
+    "More (⋯) has Copy link to page: paste it into any note to jump to that page.",
+  "notebooks.tips.plainExport.title": "Export without lines",
+  "notebooks.tips.plainExport.body":
+    "In Export, tap Template background to leave out the paper's lines, grid and dots.",
+  "notebooks.tips.pictureExport.title": "Export as pictures",
+  "notebooks.tips.pictureExport.body":
+    "Export also offers PNG and JPG: several pages become a folder with one picture each.",
+  "notebooks.tips.graphPin.title": "Pin a graph point",
+  "notebooks.tips.graphPin.body":
+    "In the calculator's graph, tap and hold on a curve to pin that point with its label.",
+  "notebooks.tips.graphFit.title": "Fit the graph",
+  "notebooks.tips.graphFit.body":
+    "Double tap the calculator's graph to fit the view to your curves.",
+  "notebooks.tips.graphPopOut.title": "Keep a graph open",
+  "notebooks.tips.graphPopOut.body":
+    "Pop the graph out of the calculator into a window that stays open while you write.",
+  "notebooks.tips.basicCalc.title": "Pocket calculator mode",
+  "notebooks.tips.basicCalc.body":
+    "The calculator's title bar switches between scientific keys and a Basic calculator.",
+  "notebooks.tips.copyHighlighted.title": "Copy what you highlighted",
+  "notebooks.tips.copyHighlighted.body":
+    "Run Copy highlighted text on this page from the command palette to copy a PDF's marked words.",
+  "notebooks.tips.pdfLinks.title": "PDF links work",
+  "notebooks.tips.pdfLinks.body":
+    "Tap a link in a PDF page with a finger: planner tabs and contents go to that page.",
+  "notebooks.tips.drawFinger.title": "Draw with a finger",
+  "notebooks.tips.drawFinger.body":
+    "More (⋯) has Draw with finger: one finger writes and two pan, when the Pencil is away.",
+  "notebooks.tips.stylusOnly.title": "Stylus only mode",
+  "notebooks.tips.stylusOnly.body":
+    "Open More tools and pick Stylus only: fingers and a resting palm then do nothing on the page.",
+  "notebooks.tips.fingerPick.title": "Tap to pick up",
+  "notebooks.tips.fingerPick.body":
+    "With the pen in hand, a finger tap on a shape, table or picture selects it.",
+  "notebooks.tips.saveTemplate.title": "Page into template",
+  "notebooks.tips.saveTemplate.body":
+    "More (⋯) has Save page as template: the page becomes a paper in My templates.",
+  "notebooks.tips.designPaper.title": "Design your own paper",
+  "notebooks.tips.designPaper.body":
+    "In the template picker, My templates' + has Design a paper…: size, colour, lines and margins.",
+  "notebooks.tips.dropPdf.title": "Drop in a PDF",
+  "notebooks.tips.dropPdf.body":
+    "Drag a PDF or picture from the file list onto an open notebook to add it.",
+  "notebooks.tips.pasteTranscript.title": "Transcript onto the page",
+  "notebooks.tips.pasteTranscript.body":
+    "In the Recordings list, the paste button puts a transcribed recording on the page as text.",
+  "notebooks.tips.shortcutSheet.title": "Every shortcut listed",
+  "notebooks.tips.shortcutSheet.body":
+    "Press ? in a notebook, or choose Keyboard shortcuts in More (⋯), to see every key.",
+  "notebooks.tips.spaceDrag.title": "Space to move",
+  "notebooks.tips.spaceDrag.body":
+    "On a keyboard, hold Space and drag with the pen or mouse to move the page.",
+  "notebooks.tips.shiftErase.title": "Erase with Shift",
+  "notebooks.tips.shiftErase.body":
+    "Hold Shift while writing to erase, or Ctrl (Cmd on iPad) to lasso, for that one stroke.",
+  "notebooks.tips.altZoom.title": "Alt to zoom",
+  "notebooks.tips.altZoom.body":
+    "Hold Alt and draw up to zoom in or down to zoom out, about the pen.",
+  "notebooks.tips.lockPicture.title": "Lock a worksheet",
+  "notebooks.tips.lockPicture.body":
+    "Choose Lock image in a picture's ⋯ menu. To free it later, hold the lasso on it for Unlock.",
+  "notebooks.tips.pictureFront.title": "Pictures over ink",
+  "notebooks.tips.pictureFront.body":
+    "A picture's ⋯ menu can put it In front of ink and change its opacity.",
+  "notebooks.tips.checklist.title": "Tick boxes in text",
+  "notebooks.tips.checklist.body":
+    "The Text tool's lists button has Checklist. A tap on a box ticks it.",
+  "notebooks.tips.readOnly.title": "Protect a notebook",
+  "notebooks.tips.readOnly.body":
+    "Notebook settings has Read-only: scroll, zoom, search and export still work.",
+  "notebooks.tips.pageNumbers.title": "Headers and numbers",
+  "notebooks.tips.pageNumbers.body":
+    "Notebook settings adds Page numbers and a Header to every page, in exports too.",
+  "notebooks.tips.darkDesk.title": "Dark pages at night",
+  "notebooks.tips.darkDesk.body":
+    "More (⋯) has Dark pages for writing at night, and a Desk row for the colour around them.",
+  "notebooks.tips.rulerUse.title": "Draw along a ruler",
+  "notebooks.tips.rulerUse.body":
+    "Pick Ruler in More tools. One finger slides it, two turn it, and the pen follows its edge.",
+  "notebooks.tips.rulerKinds.title": "Set square and protractor",
+  "notebooks.tips.rulerKinds.body":
+    "Put Ruler on the bar; while it is out, its ⌄ picks set square, protractor and angle snapping.",
+  "notebooks.tips.lassoFilter.title": "Choose what lasso takes",
+  "notebooks.tips.lassoFilter.body":
+    "Tap the lasso again and switch off Handwriting, Images, Shapes or Text boxes to skip them.",
+  "notebooks.tips.widthMm.title": "Exact pen width",
+  "notebooks.tips.widthMm.body":
+    "The chevron after the pen widths takes a typed width in millimetres.",
+  "notebooks.tips.dockOptions.title": "Dock tool options",
+  "notebooks.tips.dockOptions.body":
+    "In Customize toolbar, Dock tool options keeps a tool's bar beside the toolbar, off the page.",
+  "notebooks.tips.toolbarEdge.title": "Toolbar on any edge",
+  "notebooks.tips.toolbarEdge.body":
+    "In Customize toolbar, the edge buttons put the toolbar along the bottom or upright at a side.",
+  "notebooks.tips.learnWriting.title": "Teach it your writing",
+  "notebooks.tips.learnWriting.body":
+    "Open Learn your handwriting in the AI menu, copy the practice lines, and reading gets much better.",
+  "notebooks.tips.collection.essentials": "Start here",
+  "notebooks.tips.section.daily": "Every day",
+  "notebooks.tips.section.notes": "Notes and pages",
+  "notebooks.tips.section.learn": "Studying",
+  "notebooks.tips.section.draw": "Draw and customize",
   "notebooks.home.newIn": "New in {version}",
   "notebooks.home.dismissCard": "Dismiss",
 

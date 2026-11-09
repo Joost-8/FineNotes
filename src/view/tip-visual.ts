@@ -63,7 +63,14 @@ export class TipVisual {
 
   private add(parent: SVGElement, shape: SceneShape): void {
     if (shape.kind === "group") {
-      const group = parent.createSvg("g", { cls: "goodobsidian-tv-moves" });
+      const holder = shape.place
+        ? parent.createSvg("g", {
+            attr: {
+              transform: `translate(${shape.place.x} ${shape.place.y}) scale(${shape.place.scale})`,
+            },
+          })
+        : parent;
+      const group = holder.createSvg("g", { cls: "goodobsidian-tv-moves" });
       for (const child of shape.children) this.add(group, child);
       if (shape.motion) this.animate(group, shape.motion);
       return;
@@ -74,7 +81,7 @@ export class TipVisual {
       el.addClass("is-drawn");
     }
     if (shape.motion) this.animate(el, shape.motion);
-    if (shape.kind === "path" && shape.pen) this.ridePen(parent, el, shape.pen);
+    if (shape.kind === "path" && shape.pen) this.ridePen(parent, el, shape.pen, shape.rider);
   }
 
   private painted(parent: SVGElement, shape: Exclude<SceneShape, { kind: "group" }>): SVGElement {
@@ -129,13 +136,18 @@ export class TipVisual {
     parent: SVGElement,
     path: SVGElement,
     [from, to]: readonly [number, number],
+    rider: "pen" | "finger" = "pen",
   ): void {
     const geometry = path as SVGPathElement;
     const length = geometry.getTotalLength?.() ?? 0;
     if (length <= 0) return;
     const pen = parent.createSvg("g", { cls: "goodobsidian-tv-pen" });
-    pen.createSvg("path", { attr: { d: "M0 0L3 -11L37 -45L47 -35L13 -2Z" } });
-    pen.createSvg("path", { cls: "goodobsidian-tv-pen-tip", attr: { d: "M0 0L3 -11L13 -2Z" } });
+    if (rider === "finger") {
+      pen.createSvg("circle", { cls: "goodobsidian-tv-finger", attr: { r: 15 } });
+    } else {
+      pen.createSvg("path", { attr: { d: "M0 0L3 -11L37 -45L47 -35L13 -2Z" } });
+      pen.createSvg("path", { cls: "goodobsidian-tv-pen-tip", attr: { d: "M0 0L3 -11L13 -2Z" } });
+    }
     const start = geometry.getPointAtLength(0);
     const frames: SceneKeyframe[] = [
       { offset: 0, transform: `translate(${start.x}px,${start.y}px)` },

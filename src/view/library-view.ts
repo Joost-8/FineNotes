@@ -63,7 +63,7 @@ import { NotebookPages } from "./library-pages";
 import type { Page } from "../model/document";
 import { type Tap, isDoubleTap, railFolders } from "../model/library-rail";
 import { SIMPLE_CLASS } from "../model/simple-mode";
-import { HOME_CARD_PICTURES, type HomeCardKind, type Tip } from "../model/tips";
+import type { HomeCardKind, Tip } from "../model/tips";
 import { tipScene } from "../model/tip-scenes";
 import { TipVisual } from "./tip-visual";
 import type { TipsPage } from "./tips-modal";
@@ -344,6 +344,7 @@ export class LibraryView extends ItemView {
   private cardEl: HTMLElement | null = null;
   private cardKey = "";
   private cardVisuals: TipVisual[] = [];
+  private cardObserver: IntersectionObserver | null = null;
   /** The last tap on a cover, for a double tap. */
   private lastTap: Tap | null = null;
   /** Notebooks read whole, for their cover and page pictures. */
@@ -1616,6 +1617,11 @@ export class LibraryView extends ItemView {
 
   // --- Home's one card ----------------------------------------------------------
 
+  /** Paint Home again after its card changed from outside. */
+  refreshCard(): void {
+    this.paintNow();
+  }
+
   /** Kept across repaints, so its pictures keep playing while the list refreshes. */
   private paintHomeCard(): void {
     const card = this.host.homeCard();
@@ -1637,6 +1643,8 @@ export class LibraryView extends ItemView {
   }
 
   private dropCard(): void {
+    this.cardObserver?.disconnect();
+    this.cardObserver = null;
     for (const visual of this.cardVisuals) visual.destroy();
     this.cardVisuals = [];
     this.cardEl?.remove();
@@ -1664,13 +1672,28 @@ export class LibraryView extends ItemView {
     const head = card.createDiv({ cls: "goodobsidian-home-card-title" });
     setIcon(head.createSpan({ cls: "goodobsidian-home-card-icon" }), "sparkles");
     head.createSpan({ text: title });
-    const row = card.createDiv({ cls: "goodobsidian-home-card-pictures" });
-    news.tips.slice(0, HOME_CARD_PICTURES).forEach((tip, index) => {
+    const frame = card.createDiv({ cls: "goodobsidian-home-card-frame" });
+    const row = frame.createDiv({ cls: "goodobsidian-home-card-pictures" });
+    const byPicture = new Map<Element, TipVisual>();
+    const onScreen = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) byPicture.get(entry.target)?.play();
+          else byPicture.get(entry.target)?.pause();
+        }
+      },
+      { root: row },
+    );
+    this.cardObserver = onScreen;
+    news.tips.forEach((tip, index) => {
       const button = row.createEl("button", {
         cls: "goodobsidian-home-card-picture clickable-icon",
         attr: { type: "button" },
       });
-      this.cardVisuals.push(new TipVisual(button, tipScene(tip.scene)));
+      const visual = new TipVisual(button, tipScene(tip.scene));
+      this.cardVisuals.push(visual);
+      byPicture.set(button, visual);
+      onScreen.observe(button);
       button.createDiv({ cls: "goodobsidian-home-card-name", text: t(tip.title) });
       button.addEventListener("click", () => {
         this.host.dismissHomeCard("news");
@@ -1678,7 +1701,35 @@ export class LibraryView extends ItemView {
         this.host.openTips({ title, tips: news.tips, index });
       });
     });
+    this.addStripArrows(frame, row);
     return card;
+  }
+
+  /** A mouse has no sideways swipe: arrows at the row's ends, there only while it can go further. */
+  private addStripArrows(frame: HTMLElement, row: HTMLElement): void {
+    const arrow = (icon: string, label: string, side: string, direction: number): HTMLElement => {
+      const button = frame.createEl("button", {
+        cls: ["goodobsidian-home-card-arrow", side, "clickable-icon"],
+        attr: { type: "button", "aria-label": label },
+      });
+      setIcon(button, icon);
+      button.addEventListener("click", () =>
+        row.scrollBy({ left: direction * row.clientWidth * 0.8, behavior: "smooth" }),
+      );
+      return button;
+    };
+    const back = arrow("chevron-left", t("notebooks.tips.previous"), "is-start", -1);
+    const next = arrow("chevron-right", t("notebooks.tips.next"), "is-end", 1);
+    const sync = (): void => {
+      const left = row.scrollLeft;
+      const more = row.scrollWidth - row.clientWidth - left;
+      back.toggleClass("is-hidden", left <= 1);
+      next.toggleClass("is-hidden", more <= 1);
+      frame.toggleClass("has-more", more > 1);
+    };
+    row.addEventListener("scroll", sync, { passive: true });
+    new ResizeObserver(sync).observe(row);
+    sync();
   }
 
   private simpleCard(): HTMLElement {

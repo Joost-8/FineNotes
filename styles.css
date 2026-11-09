@@ -17409,6 +17409,9 @@ button.goodobsidian-library-rail-toggle.is-active {
 .goodobsidian-tv-page.is-fill {
   fill: var(--gob-tv-page);
 }
+.goodobsidian-tv-page.is-line {
+  stroke: var(--gob-tv-page);
+}
 .goodobsidian-tv text {
   font-family: Georgia, "Times New Roman", serif;
   font-style: italic;
@@ -17418,6 +17421,10 @@ button.goodobsidian-library-rail-toggle.is-active {
   stroke: #8a8a96;
   stroke-width: 1.2px;
   stroke-linejoin: round;
+}
+.goodobsidian-tv-pen circle.goodobsidian-tv-finger {
+  fill: var(--gob-tv-accent);
+  opacity: 0.5;
 }
 .goodobsidian-tv-pen path.goodobsidian-tv-pen-tip {
   fill: #55555f;
@@ -17576,14 +17583,55 @@ button.goodobsidian-home-card-close.clickable-icon {
   top: 8px;
   right: 8px;
 }
-.goodobsidian-home-card-pictures {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 220px));
-  gap: 12px;
+.goodobsidian-home-card-frame {
+  position: relative;
   margin-top: 12px;
+}
+.goodobsidian-home-card-pictures {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+}
+.goodobsidian-home-card-pictures::-webkit-scrollbar {
+  display: none;
+}
+.goodobsidian-home-card-frame.has-more .goodobsidian-home-card-pictures {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+}
+button.goodobsidian-home-card-arrow.clickable-icon {
+  position: absolute;
+  top: 54px;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+button.goodobsidian-home-card-arrow.is-start.clickable-icon {
+  left: 4px;
+}
+button.goodobsidian-home-card-arrow.is-end.clickable-icon {
+  right: 4px;
+}
+button.goodobsidian-home-card-arrow.is-hidden.clickable-icon {
+  display: none;
+}
+@media (hover: none) {
+  button.goodobsidian-home-card-arrow.clickable-icon {
+    display: none;
+  }
 }
 button.goodobsidian-home-card-picture.clickable-icon {
   display: block;
+  flex: 0 0 min(220px, 62%);
+  scroll-snap-align: start;
   width: auto;
   height: auto;
   padding: 0;
@@ -17644,6 +17692,12 @@ button.goodobsidian-home-card-picture.clickable-icon:active {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.goodobsidian-tips-section {
+  margin: 22px 0 10px;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
 }
 .goodobsidian-tips-grid {
   display: grid;

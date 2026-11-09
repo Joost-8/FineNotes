@@ -5,7 +5,7 @@
 
 import { type App, Modal, setIcon } from "obsidian";
 import { t } from "../i18n/translate";
-import { TIP_COLLECTIONS, type Tip, type TipCollection } from "../model/tips";
+import { TIP_COLLECTIONS, TIP_SECTIONS, type Tip, type TipCollection } from "../model/tips";
 import { tipScene } from "../model/tip-scenes";
 import { TipPad } from "./tip-pad";
 import { TipVisual } from "./tip-visual";
@@ -13,6 +13,7 @@ import { TipVisual } from "./tip-visual";
 export interface TipsActions {
   openTour: () => void;
   openChangelog: () => void;
+  showNews: () => void;
 }
 
 /** What the pager shows: `title` over `tips`, opened at `index`. */
@@ -80,7 +81,6 @@ export class TipsModal extends Modal {
     this.titleEl.setText(t("notebooks.tips.title"));
     const root = this.contentEl;
     root.empty();
-    const grid = root.createDiv({ cls: "goodobsidian-tips-grid" });
     const byCell = new Map<Element, TipVisual>();
     this.observer =
       typeof IntersectionObserver === "undefined"
@@ -92,27 +92,40 @@ export class TipsModal extends Modal {
               else visual?.pause();
             }
           });
-    TIP_COLLECTIONS.forEach((collection, index) => {
-      const tile = grid.createEl("button", {
-        cls: "goodobsidian-tips-tile clickable-icon",
-        attr: { type: "button" },
-      });
-      tile.style.setProperty("--gob-i", String(index));
-      tile.toggleClass("is-first", index === 0);
-      const first = collection.tips[0];
-      const visual = new TipVisual(tile, tipScene(first.scene));
-      this.visuals.push(visual);
-      byCell.set(tile, visual);
-      this.observer?.observe(tile);
-      const caption = tile.createDiv({ cls: "goodobsidian-tips-tile-caption" });
-      caption.createSpan({ text: t(collection.title) });
-      caption.createSpan({ cls: "goodobsidian-tips-count", text: String(collection.tips.length) });
-      tile.addEventListener("click", () => this.openCollection(collection));
-    });
+    let index = 0;
+    for (const section of TIP_SECTIONS) {
+      if (section.title)
+        root.createEl("h4", { cls: "goodobsidian-tips-section", text: t(section.title) });
+      const grid = root.createDiv({ cls: "goodobsidian-tips-grid" });
+      for (const collection of section.collections) {
+        const tile = grid.createEl("button", {
+          cls: "goodobsidian-tips-tile clickable-icon",
+          attr: { type: "button" },
+        });
+        tile.style.setProperty("--gob-i", String(Math.min(index, 8)));
+        tile.toggleClass("is-first", index === 0);
+        const visual = new TipVisual(tile, tipScene(collection.tips[0].scene));
+        this.visuals.push(visual);
+        byCell.set(tile, visual);
+        this.observer?.observe(tile);
+        const caption = tile.createDiv({ cls: "goodobsidian-tips-tile-caption" });
+        caption.createSpan({ text: t(collection.title) });
+        caption.createSpan({
+          cls: "goodobsidian-tips-count",
+          text: String(collection.tips.length),
+        });
+        tile.addEventListener("click", () => this.openCollection(collection));
+        index += 1;
+      }
+    }
     const foot = root.createDiv({ cls: "goodobsidian-tips-foot" });
     this.link(foot, t("notebooks.tips.tour"), () => {
       this.close();
       this.actions.openTour();
+    });
+    this.link(foot, t("notebooks.tips.whatsNew"), () => {
+      this.close();
+      this.actions.showNews();
     });
     this.link(foot, t("notebooks.tips.allChanges"), () => {
       this.close();

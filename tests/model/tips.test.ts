@@ -55,10 +55,10 @@ describe("the catalogue", () => {
     for (const c of TIP_COLLECTIONS) expect(english[c.title], c.title).toBeTruthy();
   });
 
-  it("lists a tip once, and starts with the gestures people miss most", () => {
+  it("lists a tip once, and starts with the simple ones that help most", () => {
     const ids = TIP_COLLECTIONS.flatMap((c) => c.tips.map((t) => t.id));
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.slice(0, 3)).toEqual(["hold", "scribble", "circleLasso"]);
+    expect(ids.slice(0, 3)).toEqual(["hold", "scribble", "undo"]);
   });
 
   it("keeps a body to what fits under a picture", () => {
@@ -192,7 +192,7 @@ describe("what's new", () => {
   });
 
   it("caps what the pager carries", () => {
-    const many = [{ version: "2.0.0", tips: [..."abcdefghij"].map(fake) }];
+    const many = [{ version: "2.0.0", tips: [..."abcdefghijklmnopqrst"].map(fake) }];
     expect(highlightsSince("1.0.0", "2.0.0", many)).toHaveLength(MAX_HIGHLIGHTS);
   });
 

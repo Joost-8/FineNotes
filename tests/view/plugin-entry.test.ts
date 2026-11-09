@@ -577,6 +577,7 @@ describe("registration", () => {
         "show-keyboard-shortcuts",
         "show-notebooks-sidebar",
         "show-tips",
+        "show-whats-new",
         "show-welcome",
         "template-gallery",
         "toggle-canvas-markdown-view",

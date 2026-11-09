@@ -139,6 +139,7 @@ import {
   type HomeCardKind,
   highlightsSince,
   homeCardKind,
+  EARLIEST_NEWS,
   latestHighlighted,
   nextNewsSince,
   simpleOfferDue,
@@ -851,6 +852,12 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "show-tips",
       name: t("notebooks.command.tips"),
       callback: () => this.openTips(),
+    });
+
+    this.addCommand({
+      id: "show-whats-new",
+      name: t("notebooks.command.whatsNew"),
+      callback: () => this.showNewsAgain(),
     });
 
     this.addCommand({
@@ -1682,6 +1689,18 @@ export default class GoodObsidianPlugin extends Plugin {
     }
   }
 
+  /** Bring Home's what's-new card back, with the latest releases' highlights. */
+  showNewsAgain(): void {
+    this.settings.newsSince = EARLIEST_NEWS;
+    void this.saveSettings();
+    this.syncNewsDots();
+    void this.openLibrary().then(() => {
+      for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)) {
+        (leaf.view as LibraryView).refreshCard();
+      }
+    });
+  }
+
   /** Tips: the collections, or `page` when one is given. */
   openTips(page: TipsPage | null = null): void {
     new TipsModal(
@@ -1689,6 +1708,7 @@ export default class GoodObsidianPlugin extends Plugin {
       {
         openTour: () => void this.openWelcomeTour(),
         openChangelog: () => this.showChangelog(releasedChangelog(changelogMd)),
+        showNews: () => this.showNewsAgain(),
       },
       page,
     ).open();
