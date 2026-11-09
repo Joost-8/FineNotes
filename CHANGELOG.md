@@ -13,10 +13,9 @@ extracted from the matching section of this file by `release.yml`.
 - **Things line up when you move them.** A selection, picture or sticky note
   snaps to the edges and centres of the shapes and objects on the page, with
   thin red guides.
-- **Two kinds of arrow, as in Goodnotes.** The Shape tool has an elbow arrow.
-  A selected line or arrow has a button that switches it between curved and
-  elbow. Drag the dot in a line's middle to bend it through a smooth curve,
-  or a pill on an elbow to slide that run sideways.
+- **Two kinds of arrow in the Shape tool, as in Goodnotes:** curved and elbow.
+  Drag the dot in a line's middle to bend it through a smooth curve, or a pill
+  on an elbow to slide that run sideways.
 - **A recognised sum glows, and a tap opens its maths card** (FineNotes#178).
   When a line ending in "=" is read as maths, its ink glows in the accent
   instead of a chip appearing over it; a part Grape was unsure of gets a

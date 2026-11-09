@@ -6909,7 +6909,8 @@ function shapeGlyph(mode: ShapeMode): SVGElement {
       add("path", { d: `${d.join(" ")}Z` });
     },
     line: () => add("path", { d: "M5 19 19 5" }),
-    arrow: () => add("path", { d: "M5 19 19 5M10.5 5H19V13.5" }),
+    // A curve to a head: it is drawn straight and bends by its middle dot.
+    arrow: () => add("path", { d: "M4 18C5 8 15 6 18.5 17M14.3 14.3l4.2 2.7 1.9-4.6" }),
     // Across, a rounded bend, then down to a head: the elbow it places.
     elbow: () => add("path", { d: "M4 6h9.5a3.5 3.5 0 0 1 3.5 3.5V19M13.5 15.5 17 19l3.5-3.5" }),
     table: () => {
