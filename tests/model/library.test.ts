@@ -98,15 +98,15 @@ describe("homePreviewPages", () => {
 
   it("shows a long notebook's first page, chapters and bookmarks, labelled", () => {
     const strip = homePreviewPages(notebook(60, false).pages, false) ?? [];
-    expect(strip.map((s) => s.index)).toEqual([0, 10, 20, 25, 30, 40, 50]);
-    expect(strip[1]).toEqual({ index: 10, title: "Chapter 1" });
-    expect(strip[3]).toEqual({ index: 25, bookmarked: true });
+    expect(strip.map((s) => s.index)).toEqual([0, 1, 2, 3, 4, 5, 10, 20, 25, 30, 40, 50]);
+    expect(strip[6]).toEqual({ index: 10, title: "Chapter 1" });
+    expect(strip[8]).toEqual({ index: 25, bookmarked: true });
   });
 
   it("never shows the cover in the strip, and counts from the page after it", () => {
     const strip = homePreviewPages(notebook(60, true).pages, true) ?? [];
     expect(strip[0]).toEqual({ index: 1 });
-    expect(strip.map((s) => s.index)).toEqual([1, 11, 21, 26, 31, 41, 51]);
+    expect(strip.map((s) => s.index)).toEqual([1, 2, 3, 4, 5, 6, 11, 21, 26, 31, 41, 51]);
   });
 
   it("is in the entry Home reads, at most the strip's length", () => {

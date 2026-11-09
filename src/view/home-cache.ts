@@ -25,7 +25,7 @@ const MAX_URLS = 400;
  * The shape of a kept entry. Bump it whenever `LibraryEntry` (or what
  * `entryFromText` reads into it) changes: older entries are then read again.
  */
-const ENTRY_VERSION = 2;
+const ENTRY_VERSION = 3;
 
 export interface CachedRead {
   mtime: number;

@@ -55,8 +55,9 @@ function spread<T>(items: readonly T[], k: number): T[] {
  * contents and bookmarks point to, chosen in this order: chapters, bookmarked
  * pages, then the deeper entries of the contents, except that chapters always
  * leave `PREVIEW_BOOKMARK_PLACES` for bookmarks. Where one kind has more pages
- * than are left, they are spread evenly through the notebook. With neither
- * contents nor bookmarks, the first `limit` pages.
+ * than are left, they are spread evenly through the notebook. Places still
+ * empty go to the notebook's first pages, so a long notebook always fills
+ * `limit`; with neither contents nor bookmarks, that is the first `limit` pages.
  */
 export function previewPageIndexes(pages: readonly PreviewPage[], limit: number): number[] {
   const count = pages.length;
@@ -79,8 +80,9 @@ export function previewPageIndexes(pages: readonly PreviewPage[], limit: number)
   for (const kind of [bookmarked, outlined]) {
     picked.push(...spread(kind, max - 1 - picked.length));
   }
-  if (picked.length === 0) return Array.from({ length: max }, (_, i) => i);
-  return [0, ...picked.sort((a, b) => a - b)];
+  const shown = new Set([0, ...picked]);
+  for (let i = 1; shown.size < max; i++) shown.add(i);
+  return [...shown].sort((a, b) => a - b);
 }
 
 /**
