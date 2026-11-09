@@ -1083,6 +1083,15 @@ export const notebooks = {
   "notebooks.tips.arcsHearts.title": "More shapes snap",
   "notebooks.tips.arcsHearts.body":
     "Draw a heart, an arc or a pie slice and hold the pen still: they snap clean too.",
+  "notebooks.tips.curvedElbow.title": "Curved and elbow arrows",
+  "notebooks.tips.curvedElbow.body":
+    "Pick either in the Shape tool and drag. A middle dot bends the curve; an elbow's end re-routes it.",
+  "notebooks.tips.lineUpMoves.title": "Things line up as they move",
+  "notebooks.tips.lineUpMoves.body":
+    "Move a selection, picture or sticky note near a shape: it snaps to edges and centres, with red guides.",
+  "notebooks.tips.lockFit.title": "Hold a fitted page still",
+  "notebooks.tips.lockFit.body":
+    "With Lock fit to width in ⋯, a double-tapped page stays put. With pages across, a swipe turns it.",
   "notebooks.tips.pathArrow.title": "Arrows with bends",
   "notebooks.tips.pathArrow.body":
     "Draw a path with turns, end it with an arrowhead and hold: it snaps to a clean bent arrow.",

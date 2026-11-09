@@ -8,6 +8,8 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-11-09
+
 ### Added
 
 - **Things line up when you move them.** A selection, picture or sticky note
@@ -19,63 +21,10 @@ extracted from the matching section of this file by `release.yml`.
 - **Lock fit to width**
   ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
   A new check in the notebook's ⋯ panel: after a double tap fits the page
-  to the width, a finger no longer moves the page sideways at all. Off, as
-  before, a sideways pull stretches the page and it springs back, as in
-  Goodnotes. Pinching still moves it either way.
-
-### Changed
-
-- **A lighter lasso bar and menu.** Nothing stands in both any more. The
-  bar keeps the colour, Copy, Duplicate, Delete and the handles' switch;
-  Cut moved to the ⋯ menu, whose top is now a tray of four: Cut, Paste,
-  Screenshot and Copy style. Delete, Copy and Duplicate left the menu, and
-  a picture's menu lost its second Crop. What the ink can become (Ask AI,
-  Correct, Turn into) is one group, then Flip.
-- **Smoother bars.** The lasso's bar rises from the selection and fades
-  away when it goes; its menu and colour panel grow from the button they
-  hang on and shrink back into it; Turn into slides its rows in and the
-  menu glides to its new height. Buttons show a press at once, with the
-  Pencil too. The table's bar, the audio player, the recording pill and a
-  few more now arrive the same way instead of appearing from nothing, and
-  hovering or picking something in a popover, a dialog, the page sidebar
-  or Home eases instead of snapping. With Reduce Motion on, none of it
-  moves.
-- **Looks reach further.** Paper marks what is chosen with an ink outline
-  instead of the accent; Fluent with its neutral well; Brutalist and Retro
-  box it as thickly as everything else; Material uses a tonal fill. Glass
-  keeps the tool bar readable over the desk. The lasso's dark bar and menu
-  follow each look (Soft's light, Brutalist's thick line, Retro's mono
-  face and inverted press).
-
-### Fixed
-
-- **Slides fill the screen with pages across**
-  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
-  Each page now fits the screen on its own, as in Goodnotes: a lecture slide
-  next to a portrait page used to open at two thirds of the screen, because
-  every page was fitted to the tallest one. Turning to a page of another
-  shape fits that page. A 16:9 slide, wider than the screen, keeps only a
-  thin margin at its sides, as in Goodnotes, instead of a wide band of desk.
-- **A double tap on a slide shows the whole slide**, as large as fits and
-  centred, instead of filling the width and cutting off its foot. Portrait
-  pages still fill the width.
-- **Click the pen's side button for the eraser** (FineNotes#149). On Android,
-  holding an S Pen's button while writing does not reach FineNotes. Settings →
-  Pens and shortcuts, **Side button click**, now has **Switch to the eraser**:
-  a click with the pen just above the page takes the eraser, another goes back
-  to the tool you had.
-
-### Fixed
-
-- **Fast, small writing no longer wobbles on newer iPads**
-  ([#179](https://github.com/Joost-8/FineNotes/issues/179)). On some iPads
-  the Pencil's position arrives rounded to the screen's pixels, which made
-  quick strokes zigzag slightly. FineNotes now recognises this and steadies
-  the ink as it does on older iPads, without stabilization's delay. The
-  end of a stroke also no longer shifts as the pen lifts.
-
-### Added
-
+  to the width, a finger no longer moves the page sideways at all. With
+  pages across, a sideways swipe still turns the page. Off, as before, a
+  sideways pull stretches the page and it springs back, as in Goodnotes.
+  Pinching still moves it either way.
 - **A recognised sum glows, and a tap opens its maths card** (FineNotes#178).
   When a line ending in "=" is read as maths, its ink glows in the accent
   instead of a chip appearing over it; a part Grape was unsure of gets a
@@ -104,30 +53,33 @@ extracted from the matching section of this file by `release.yml`.
   short line says what the dotted characters are ("Not sure:") and what to
   pick ("Which did you write?"). Typing the reading opens a dialog that rises
   above the keyboard and shows the sum typeset as it is typed.
-
-### Fixed
-
-- **Calculation notes read a raised dot as times, and fractions**
-  (FineNotes#178). "3·3 =" offered nothing, because the dot was read as a
-  decimal point; a fraction such as 3×2 over 7 was read as 3×2. A dot
-  halfway up the digits is now times and a dot on the baseline stays a
-  decimal point; a bar with a number over and under it is a fraction, and the
-  answer goes level with the "=". A dash with a dot over and under it is ÷.
-  A crossed 7 beside the dot no longer hides it, a number read as look-alike
-  letters next to it ("Zo" for 20) counts as that number, and the first
-  stroke of a × is no longer taken for a power.
-- **Tips.** The lightbulb on Home opens moving pictures of what is easy to
-  miss, ordered by what helps most: pen gestures, cover tape, tapping your
-  writing to hear it, and more. The first two pen gestures can be tried right
-  there.
-- **What's new is on Home.** After an update a card shows the highlights in
-  pictures; nothing opens by itself. A dot on the toolbar's Home button waits
-  for anyone who goes straight to a notebook.
-- **A way back from the simple look, always in sight:** a switch at the foot of
-  Home's folder rail.
+- **A check-for-updates button on Home,** left of search. It grows into
+  "Update to x" when a new version is out, and the daily check updates it
+  live.
 
 ### Changed
 
+- **A lighter lasso bar and menu.** Nothing stands in both any more. The
+  bar keeps the colour, Copy, Duplicate, Delete and the handles' switch;
+  Cut moved to the ⋯ menu, whose top is now a tray of four: Cut, Paste,
+  Screenshot and Copy style. Delete, Copy and Duplicate left the menu, and
+  a picture's menu lost its second Crop. What the ink can become (Ask AI,
+  Correct, Turn into) is one group, then Flip.
+- **Smoother bars.** The lasso's bar rises from the selection and fades
+  away when it goes; its menu and colour panel grow from the button they
+  hang on and shrink back into it; Turn into slides its rows in and the
+  menu glides to its new height. Buttons show a press at once, with the
+  Pencil too. The table's bar, the audio player, the recording pill and a
+  few more now arrive the same way instead of appearing from nothing, and
+  hovering or picking something in a popover, a dialog, the page sidebar
+  or Home eases instead of snapping. With Reduce Motion on, none of it
+  moves.
+- **Looks reach further.** Paper marks what is chosen with an ink outline
+  instead of the accent; Fluent with its neutral well; Brutalist and Retro
+  box it as thickly as everything else; Material uses a tonal fill. Glass
+  keeps the tool bar readable over the desk. The lasso's dark bar and menu
+  follow each look (Soft's light, Brutalist's thick line, Retro's mono
+  face and inverted press).
 - **The simple look is off for new installs,** and offered as a live switch in
   a redrawn Welcome. Anyone already using it keeps it.
 - **Themes for FineNotes' own bars, menus and dialogs.** Settings → Look
@@ -139,9 +91,6 @@ extracted from the matching section of this file by `release.yml`.
   them: "Look: next style" and "Look: next colours". Translated into every
   language. Customize toolbar has them too, as two rows of chips under
   Hidden, so a look is tried on the bar it changes; Reset takes it back.
-
-### Changed
-
 - **The top of FineNotes' settings reads as one list.** Look and Simple
   look use the section headers' text and spacing, with quieter menus and a
   smaller switch, so every name on the left sits the same distance apart.
@@ -174,9 +123,50 @@ extracted from the matching section of this file by `release.yml`.
   bookmarked one carries its ribbon; a link's preview ends with a +N that
   opens the notebook. A shorter notebook shows every page, and
   `![[Physics.notebook]]` in a note still shows every page.
+- **Pen width buttons are level bars with the pen's own ends,** as Goodnotes
+  draws its widths; calligraphy's rise to the right.
 
 ### Fixed
 
+- **Slides fill the screen with pages across**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  Each page now fits the screen on its own, as in Goodnotes: a lecture slide
+  next to a portrait page used to open at two thirds of the screen, because
+  every page was fitted to the tallest one. Turning to a page of another
+  shape fits that page. A 16:9 slide, wider than the screen, keeps only a
+  thin margin at its sides, as in Goodnotes, instead of a wide band of desk.
+- **A double tap on a slide shows the whole slide**, as large as fits and
+  centred, instead of filling the width and cutting off its foot. Portrait
+  pages still fill the width.
+- **Click the pen's side button for the eraser** (FineNotes#149). On Android,
+  holding an S Pen's button while writing does not reach FineNotes. Settings →
+  Pens and shortcuts, **Side button click**, now has **Switch to the eraser**:
+  a click with the pen just above the page takes the eraser, another goes back
+  to the tool you had.
+- **Fast, small writing no longer wobbles on newer iPads**
+  ([#179](https://github.com/Joost-8/FineNotes/issues/179)). On some iPads
+  the Pencil's position arrives rounded to the screen's pixels, which made
+  quick strokes zigzag slightly. FineNotes now recognises this and steadies
+  the ink as it does on older iPads, without stabilization's delay. The
+  end of a stroke also no longer shifts as the pen lifts.
+- **Calculation notes read a raised dot as times, and fractions**
+  (FineNotes#178). "3·3 =" offered nothing, because the dot was read as a
+  decimal point; a fraction such as 3×2 over 7 was read as 3×2. A dot
+  halfway up the digits is now times and a dot on the baseline stays a
+  decimal point; a bar with a number over and under it is a fraction, and the
+  answer goes level with the "=". A dash with a dot over and under it is ÷.
+  A crossed 7 beside the dot no longer hides it, a number read as look-alike
+  letters next to it ("Zo" for 20) counts as that number, and the first
+  stroke of a × is no longer taken for a power.
+- **Tips.** The lightbulb on Home opens moving pictures of what is easy to
+  miss, ordered by what helps most: pen gestures, cover tape, tapping your
+  writing to hear it, and more. The first two pen gestures can be tried right
+  there.
+- **What's new is on Home.** After an update a card shows the highlights in
+  pictures; nothing opens by itself. A dot on the toolbar's Home button waits
+  for anyone who goes straight to a notebook.
+- **A way back from the simple look, always in sight:** a switch at the foot of
+  Home's folder rail.
 - **The scanned-page reader no longer asks to be downloaded again after an
   update or a vault sync.** Its files were looked for once, when FineNotes
   started; if sync was still bringing them in, the download was offered and
@@ -185,6 +175,16 @@ extracted from the matching section of this file by `release.yml`.
   while part of the model is still arriving.
 - The AI menu in the tool bar scrolls when it does not fit below the bar,
   instead of running off the screen, in full screen too.
+- **A double tap fits the width with pages across too**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  It made the page cover the screen, which on an iPad left it a little wider
+  than the screen, so it could still be moved sideways.
+- **An elbow arrow bends on its own when you drag its end,** along the longer
+  direction first, and one lying straight bends as soon as the end leaves
+  its line. One you slid into a Z or U keeps that shape.
+- **Longer languages fit.** The pen settings popover, the ⋯ panel and menus
+  wrap long names instead of cutting them off, spilling or breaking mid-word.
+- **The AI menu** always stays in the room below the bar.
 
 ## [2.8.3] - 2026-11-06
 
