@@ -120,10 +120,11 @@ extracted from the matching section of this file by `release.yml`.
   point to: chapters first, then bookmarked pages, then the rest of the
   contents, spread through the book when there are more than fit (9 pages
   in a link's preview, 12 in Home). Two places are always kept for
-  bookmarks. Each page is labelled with its number and its line in the
-  contents, and a bookmarked one carries its ribbon; a link's preview ends
-  with a +N that opens the notebook. A shorter notebook shows every page,
-  and `![[Physics.notebook]]` in a note still shows every page.
+  bookmarks, and places left over show the notebook's first pages. Each
+  page is labelled with its number and its line in the contents, and a
+  bookmarked one carries its ribbon; a link's preview ends with a +N that
+  opens the notebook. A shorter notebook shows every page, and
+  `![[Physics.notebook]]` in a note still shows every page.
 
 ### Fixed
 
