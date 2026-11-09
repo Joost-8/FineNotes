@@ -349,6 +349,8 @@ export const surface = {
   "surface.shapeStyle.roundedCorners": "Rounded corners",
   "surface.shapeStyle.arrowAtStart": "Arrow at start",
   "surface.shapeStyle.arrows": "Arrows",
+  "surface.shapeStyle.toElbow": "Change to an elbow arrow",
+  "surface.shapeStyle.toCurved": "Change to a curved arrow",
   "surface.shapeStyle.arrowAtEnd": "Arrow at end",
   "surface.shapeStyle.filledArrowheads": "Filled arrowheads",
   "surface.command.scribbleToErase": "Scribble to erase",

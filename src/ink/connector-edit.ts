@@ -25,7 +25,8 @@
  * PURE: no DOM. Outputs are fresh arrays.
  */
 
-import { POINT_STRIDE } from "../model/document";
+import { POINT_STRIDE, type ArrowHeads, type ShapeKind } from "../model/document";
+import { ELBOW_RADIUS, elbowPoints } from "./shape-geometry";
 
 export interface Pt {
   x: number;
@@ -447,4 +448,65 @@ function moveElbowEnd(knots: Pt[], role: ConnectorRole, p: Pt): Pt[] {
   // along the next run keeps that run square.
   out[near] = level ? { x: knots[near].x, y: p.y } : { x: p.x, y: knots[near].y };
   return out;
+}
+
+// --- The two kinds of connector ------------------------------------------------------
+
+/** An elbow needs both of its runs at least this long, page px; shorter is a kink in a line. */
+export const ELBOW_MIN_RUN = 8;
+
+/** What a connector becomes when switched to its other kind. */
+export interface ConnectorSwitch {
+  pts: number[];
+  kind: "line" | "path";
+  /** The elbow's rounded bend; absent on a curve. */
+  radius?: number;
+  /** Set when the arrow's head was part of its points and is now a head of its own. */
+  heads?: ArrowHeads;
+}
+
+/**
+ * Which of Goodnotes' two connectors a shape is: a `curve` (a straight line
+ * counts: it is a curve with no bend yet), an `elbow`, or null for anything
+ * else. A snapped arrow, its head drawn in its points, is a straight line.
+ */
+export function connectorType(
+  kind: ShapeKind | undefined,
+  pts: readonly number[],
+): "curve" | "elbow" | null {
+  if (kind === "arrow") return pts.length >= 2 * POINT_STRIDE ? "curve" : null;
+  return connectorHandles(kind, pts)?.kind ?? null;
+}
+
+/**
+ * A connector switched to its other kind, end to end: a curve becomes an
+ * elbow (its bend points are dropped, as in Goodnotes), an elbow a straight
+ * line that can be bent. Null when it is neither, or when its ends are too
+ * nearly level or upright for an elbow to have a corner.
+ */
+export function switchConnector(
+  kind: ShapeKind | undefined,
+  pts: readonly number[],
+  heads?: ArrowHeads,
+): ConnectorSwitch | null {
+  const type = connectorType(kind, pts);
+  if (!type) return null;
+  const count = kind === "arrow" ? 2 : Math.floor(pts.length / POINT_STRIDE);
+  const at = (i: number): Pt => ({ x: pts[i * POINT_STRIDE], y: pts[i * POINT_STRIDE + 1] });
+  const from = at(0);
+  const to = at(count - 1);
+  const pressure = pts[2] ?? 0.5;
+  // A snapped arrow's head is three of its points; from now on it is a head.
+  const own: Pick<ConnectorSwitch, "heads"> =
+    kind === "arrow" ? { heads: heads ?? { end: "open" } } : {};
+  if (type === "elbow") return { pts: flatten([from, to], pressure), kind: "line", ...own };
+  if (Math.abs(to.x - from.x) < ELBOW_MIN_RUN || Math.abs(to.y - from.y) < ELBOW_MIN_RUN) {
+    return null;
+  }
+  return {
+    pts: flatten(elbowPoints(from, to), pressure),
+    kind: "path",
+    radius: ELBOW_RADIUS,
+    ...own,
+  };
 }

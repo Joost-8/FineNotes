@@ -474,6 +474,7 @@ import {
   RecolorStrokes,
   RemoveElements,
   ReshapeStroke,
+  SwitchConnector,
   RestyleShapes,
   RewidthStrokes,
   ReorientElements,
@@ -730,6 +731,7 @@ import {
   nearestSide,
   sideMiddle,
 } from "../ink/connector-route";
+import { connectorType, switchConnector } from "../ink/connector-edit";
 import {
   CONNECTOR_WIDTH,
   type RoutedConnector,
@@ -13789,6 +13791,7 @@ export class InkSurface {
       });
     }
     if (menu.shapeStyle) actions.push(...this.shapeStyleActions(sel.strokes));
+    if (menu.shapeStyle) actions.push(...this.connectorTypeAction(sel));
     const heading = this.groupBounds(sel);
     const index = this.doc.pages.findIndex((page) => page.id === sel.pageId);
     // Text first under Turn into: the plainest thing ink can become.
@@ -15877,6 +15880,53 @@ export class InkSurface {
         },
       },
     ];
+  }
+
+  /**
+   * A lone line or arrow's kind, as Goodnotes' bar has it: the icon is the
+   * kind it is, a tap makes it the other. Greyed when its ends are too
+   * nearly level or upright for an elbow to have a corner.
+   */
+  private connectorTypeAction(sel: GroupSelection): SelectionAction[] {
+    const stroke = sel.strokes[0];
+    const others = sel.images.length + sel.textBoxes.length;
+    if (sel.strokes.length !== 1 || others > 0) return [];
+    const type = connectorType(stroke.shape, stroke.pts);
+    if (!type) return [];
+    const next = switchConnector(stroke.shape, stroke.pts, stroke.heads);
+    return [
+      {
+        id: "connector-type",
+        icon: type === "elbow" ? "corner-down-right" : "spline",
+        label: t(type === "elbow" ? "surface.shapeStyle.toCurved" : "surface.shapeStyle.toElbow"),
+        group: "colour",
+        bar: true,
+        menu: "none",
+        enabled: next !== null,
+        run: () => this.switchConnectorKind(stroke),
+      },
+    ];
+  }
+
+  /** Switch a lone connector between curved and elbow (`SwitchConnector`), as one undo step. */
+  private switchConnectorKind(stroke: Stroke): void {
+    const sel = this.liveSelection();
+    if (!sel || sel.strokes[0] !== stroke || this.callbacks.isLocked?.()) return;
+    const next = switchConnector(stroke.shape, stroke.pts, stroke.heads);
+    if (!next) return;
+    const before = strokeBounds(stroke);
+    this.history.push(this.doc, new SwitchConnector(sel.pageId, stroke, next));
+    this.strokeIndex.remove(stroke.id, sel.pageId);
+    this.strokeIndex.add(sel.pageId, stroke);
+    // The lasso's loop no longer goes round the shape it was drawn round.
+    this.selectionOutline = null;
+    const box = this.boxForPage(sel.pageId);
+    const dirty = unionBounds(before, strokeBounds(stroke));
+    if (box && dirty) this.renderer?.invalidateRegion(box.index, dirty);
+    this.renderDry();
+    this.syncSelectionOverlay();
+    this.syncActionBar();
+    this.changed([sel.pageId]);
   }
 
   /** Give the selected strokes one line width (`RewidthStrokes`), as one undo step. */

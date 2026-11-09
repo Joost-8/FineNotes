@@ -10,6 +10,13 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Things line up when you move them.** A selection, picture or sticky note
+  snaps to the edges and centres of the shapes and objects on the page, with
+  thin red guides.
+- **Two kinds of arrow, as in Goodnotes.** The Shape tool has an elbow arrow.
+  A selected line or arrow has a button that switches it between curved and
+  elbow. Drag the dot in a line's middle to bend it through a smooth curve,
+  or a pill on an elbow to slide that run sideways.
 - **Tips.** The lightbulb on Home opens moving pictures of what is easy to
   miss, ordered by what helps most: pen gestures, cover tape, tapping your
   writing to hear it, and more. The first two pen gestures can be tried right

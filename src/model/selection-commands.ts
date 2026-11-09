@@ -46,6 +46,7 @@ import {
   restoreStyleFields,
   styleFieldsOf,
 } from "./shape-style";
+import type { ConnectorSwitch } from "../ink/connector-edit";
 import { t } from "../i18n/translate";
 
 /** The elements a selection holds on one page. */
@@ -1070,6 +1071,40 @@ export class RestyleShapes implements Command {
     if (!pageById(doc, this.pageId)) return;
     for (const { stroke, saved } of this.previous) restoreStyleFields(stroke, saved);
     this.previous = [];
+  }
+}
+
+/**
+ * A connector switched between curved and elbow (`switchConnector`): new
+ * points, kind and corner, and a head when it had one in its points. Undo
+ * puts back the very array it replaced, and the rest as it was.
+ */
+export class SwitchConnector implements Command {
+  readonly label = t("surface.command.editShape");
+  private saved: StyleFields | null = null;
+
+  constructor(
+    readonly pageId: string,
+    private readonly stroke: Stroke,
+    private readonly next: ConnectorSwitch,
+  ) {}
+
+  apply(doc: InkDocument): void {
+    this.saved = null;
+    const page = pageById(doc, this.pageId);
+    if (!page?.strokes.includes(this.stroke)) return;
+    this.saved = styleFieldsOf(this.stroke);
+    const { pts, kind, radius, heads } = this.next;
+    this.stroke.pts = pts;
+    this.stroke.shape = kind;
+    if (radius === undefined) delete this.stroke.radius;
+    else this.stroke.radius = radius;
+    if (heads) this.stroke.heads = { ...heads };
+  }
+
+  invert(): void {
+    if (this.saved) restoreStyleFields(this.stroke, this.saved);
+    this.saved = null;
   }
 }
 
