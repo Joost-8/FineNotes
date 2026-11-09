@@ -42,17 +42,17 @@ extracted from the matching section of this file by `release.yml`.
 - **Drag entries in the contents.** Press an entry and move it (hold first
   with a finger): its pages and everything inside it go with it, in one
   undo. Moving sideways while dragging sets how deep it sits.
-- **A long notebook embedded whole shows its chapters, not every page.**
-  `![[Physics.notebook]]` still shows every page of a notebook of up to 9
-  pages. A longer one, such as an imported textbook, showed all of them,
-  hundreds for a big PDF, and Export to PDF painted them all at once. It now
-  shows its cover and the pages its contents and bookmarks point to:
-  chapters first, then bookmarked pages, then the rest of the contents,
-  spread through the book when there are more than fit. Two places are
-  always kept for bookmarks, however many chapters there are. Each page is
-  labelled with its number and its line in the contents, a bookmarked one
-  carries its ribbon, and a +N at the end opens the notebook. A notebook
-  with neither shows its first 9 pages.
+- **Previews of a long notebook show its chapters, not its first pages.**
+  The preview that opens over a notebook link, which scrolled through every
+  page, and the page strip in Home's preview, which showed the first 12, now
+  show the first page and the pages the notebook's contents and bookmarks
+  point to: chapters first, then bookmarked pages, then the rest of the
+  contents, spread through the book when there are more than fit (9 pages
+  in a link's preview, 12 in Home). Two places are always kept for
+  bookmarks. Each page is labelled with its number and its line in the
+  contents, and a bookmarked one carries its ribbon; a link's preview ends
+  with a +N that opens the notebook. A shorter notebook shows every page,
+  and `![[Physics.notebook]]` in a note still shows every page.
 
 ### Fixed
 

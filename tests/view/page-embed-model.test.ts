@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PreviewPage } from "../../src/view/page-embed-model";
+import type { PreviewPage } from "../../src/model/preview-pages";
 import {
   EMBED_CANVAS_BUDGET,
   EMBED_WIDTH_STEP,
@@ -12,7 +12,6 @@ import {
   embedPageLink,
   embedPageNumbers,
   MAX_PREVIEW_PAGES,
-  previewCaption,
   printPaintSize,
   embedPaintSize,
   embedLabel,
@@ -220,144 +219,35 @@ describe("SharedNotebooks", () => {
 
 describe("embedPageNumbers", () => {
   const whole = { page: 1, whole: true };
-  /** `n` pages with nothing in the contents. */
-  const blank = (n: number): PreviewPage[] => Array.from({ length: n }, () => ({}));
-  /** `n` pages with `marks` laid on (index: page fields). */
-  const book = (n: number, marks: Record<number, PreviewPage>): PreviewPage[] =>
-    blank(n).map((page, i) => marks[i] ?? page);
+  /** `n` pages, a chapter every tenth. */
+  const book = (n: number): PreviewPage[] =>
+    Array.from({ length: n }, (_, i) => (i > 0 && i % 10 === 0 ? { title: `Ch ${i}` } : {}));
 
-  it("shows every page of a notebook embedded whole while it has at most the limit", () => {
-    expect(embedPageNumbers(whole, blank(3))).toEqual([1, 2, 3]);
-    expect(embedPageNumbers(whole, blank(1))).toEqual([1]);
-    expect(embedPageNumbers(whole, blank(MAX_PREVIEW_PAGES))).toHaveLength(MAX_PREVIEW_PAGES);
-  });
-
-  it("shows nothing of a notebook with no pages", () => {
+  it("shows every page of a notebook embedded whole in a note, however many", () => {
+    expect(embedPageNumbers(whole, book(3))).toEqual([1, 2, 3]);
+    expect(embedPageNumbers(whole, book(400))).toHaveLength(400);
     expect(embedPageNumbers(whole, [])).toEqual([]);
   });
 
+  it("shows a long notebook's cover and chapters in a hover preview", () => {
+    expect(embedPageNumbers(whole, book(5), true)).toEqual([1, 2, 3, 4, 5]);
+    expect(embedPageNumbers(whole, book(400), true)).toHaveLength(MAX_PREVIEW_PAGES);
+    expect(embedPageNumbers(whole, book(60), true)).toEqual([1, 11, 21, 31, 41, 51]);
+  });
+
   it("shows the one page a subpath names, whether or not the notebook has it", () => {
-    expect(embedPageNumbers({ page: 4, whole: false }, blank(9))).toEqual([4]);
-    expect(embedPageNumbers({ page: 40, whole: false }, blank(2))).toEqual([40]);
+    expect(embedPageNumbers({ page: 4, whole: false }, book(9))).toEqual([4]);
+    expect(embedPageNumbers({ page: 40, whole: false }, book(2), true)).toEqual([40]);
   });
 
-  it("shows the first pages of a long notebook with no contents or bookmarks", () => {
-    expect(embedPageNumbers(whole, blank(400))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
-  });
-
-  it("shows the cover, then the pages the contents and bookmarks point to", () => {
-    const pages = book(400, {
-      30: { title: "Waves" },
-      120: { bookmarked: true },
-      250: { sections: [{ title: "Optics" }] },
-    });
-    expect(embedPageNumbers(whole, pages)).toEqual([1, 31, 121, 251]);
-  });
-
-  it("puts chapters before bookmarks, and bookmarks before deeper entries", () => {
-    const marks: Record<number, PreviewPage> = {};
-    // 6 chapters, 4 bookmarks, 5 sections: 8 places after the cover.
-    for (const i of [10, 20, 30, 40, 50, 60]) marks[i] = { title: `Ch ${i}` };
-    for (const i of [15, 25, 35, 45]) marks[i] = { bookmarked: true };
-    for (const i of [12, 22, 32, 42, 52]) marks[i] = { title: `S ${i}`, titleLevel: 2 };
-    const shown = embedPageNumbers(whole, book(100, marks));
-    expect(shown).toHaveLength(MAX_PREVIEW_PAGES);
-    expect(shown[0]).toBe(1);
-    for (const i of [10, 20, 30, 40, 50, 60]) expect(shown).toContain(i + 1);
-    expect(shown.filter((n) => [16, 26, 36, 46].includes(n))).toHaveLength(2);
-    expect(shown.filter((n) => [13, 23, 33, 43, 53].includes(n))).toHaveLength(0);
-  });
-
-  it("keeps two places for bookmarks however many chapters there are", () => {
-    const chaptered = (bookmarks: number[]): number[] => {
-      const marks: Record<number, PreviewPage> = {};
-      for (let i = 10; i < 200; i += 10) marks[i] = { title: `Chapter ${i}` };
-      for (const i of bookmarks) marks[i] = { bookmarked: true };
-      return embedPageNumbers(whole, book(200, marks));
-    };
-    const isChapter = (n: number): boolean => (n - 1) % 10 === 0 && n > 1;
-    // 19 chapters and 3 bookmarks: 6 chapters, 2 bookmarks.
-    const three = chaptered([55, 125, 185]);
-    expect(three).toHaveLength(MAX_PREVIEW_PAGES);
-    expect(three.filter(isChapter)).toHaveLength(6);
-    expect(three.filter((n) => [56, 126, 186].includes(n))).toHaveLength(2);
-    // One bookmark keeps one place; the other goes back to the chapters.
-    const one = chaptered([55]);
-    expect(one).toContain(56);
-    expect(one.filter(isChapter)).toHaveLength(7);
-    // None: every place is a chapter's.
-    expect(chaptered([]).filter(isChapter)).toHaveLength(8);
-  });
-
-  it("spreads too many chapters evenly through the notebook, in page order", () => {
-    const marks: Record<number, PreviewPage> = {};
-    for (let i = 1; i < 400; i += 2) marks[i] = { title: `Chapter ${i}` };
-    const shown = embedPageNumbers(whole, book(400, marks));
-    expect(shown).toHaveLength(MAX_PREVIEW_PAGES);
-    expect(shown).toEqual([...shown].sort((a, b) => a - b));
-    // The first chapter is kept, and the picks reach the last quarter of the book.
-    expect(shown[1]).toBe(2);
-    expect(shown[shown.length - 1]).toBeGreaterThan(300);
-  });
-
-  it("reads a heading on an untitled page as a chapter, and one under a title as a section", () => {
-    const heading = { title: "H" };
-    const pages = book(50, {
-      10: { sections: [heading] },
-      20: { title: "Chapter", sections: [heading] },
-      30: { title: "Part", titleLevel: 3 },
-      40: { sections: [{ title: "H", level: 2 }] },
-    });
-    // Two chapters fit; with a limit of 3 the sections are left out.
-    expect(embedPageNumbers(whole, pages, 3)).toEqual([1, 11, 21]);
-  });
-
-  it("counts the page a name-only chapter stands before as a chapter's", () => {
-    const pages = book(50, {
-      12: { chapters: [{ title: "Part II" }] },
-      30: { chapters: [{ title: "Appendix", after: true }] },
-      40: { chapters: [{ title: "Aside", level: 2 }], bookmarked: true },
-    });
-    // A limit of 3: the chapter, then the bookmark; the `after` chapter starts nothing.
-    expect(embedPageNumbers(whole, pages, 3)).toEqual([1, 13, 41]);
-    expect(previewCaption(pages[12])).toBe("Part II");
-    expect(previewCaption(pages[30])).toBeUndefined();
-  });
-
-  it("never shows more than the limit, however many pages are marked", () => {
-    const pages = book(1000, {});
-    for (let i = 0; i < 1000; i++) pages[i] = { title: `T${i}`, bookmarked: true };
-    expect(embedPageNumbers(whole, pages)).toHaveLength(MAX_PREVIEW_PAGES);
-  });
-
-  it("holds at most half the smallest iPad canvas ceiling when Export to PDF paints them all", () => {
-    // Export to PDF keeps every page it paints: an A4 page at the print size.
-    const size = printPaintSize(0);
+  it("keeps a hover preview scrolled end to end inside the embeds' canvas budget", () => {
+    // Obsidian's hover preview is about 450 CSS px wide; an A4 page at 2x.
+    const size = embedPaintSize(450, 2);
+    if (!size) throw new Error("no size");
     const width = Math.round(size.cssWidth * size.dpr);
-    const height = Math.round(width * Math.SQRT2);
-    const bytes = width * height * 4;
-    const IPAD_CANVAS_CEILING = 256 * 1024 * 1024;
-    expect(MAX_PREVIEW_PAGES * bytes).toBeLessThanOrEqual(IPAD_CANVAS_CEILING / 2);
-    expect((MAX_PREVIEW_PAGES + 3) * bytes).toBeGreaterThan(IPAD_CANVAS_CEILING / 2);
-  });
-});
-
-describe("previewCaption", () => {
-  it("names a page by its highest entry in the contents", () => {
-    expect(previewCaption({ title: "Waves" })).toBe("Waves");
-    expect(
-      previewCaption({
-        title: "Part",
-        titleLevel: 2,
-        sections: [{ title: "Chapter 4", level: 1 }],
-      }),
-    ).toBe("Chapter 4");
-    expect(previewCaption({ sections: [{ title: "A" }, { title: "B" }] })).toBe("A");
-  });
-
-  it("has nothing for a page the contents does not list", () => {
-    expect(previewCaption({})).toBeUndefined();
-    expect(previewCaption({ bookmarked: true })).toBeUndefined();
+    const bytes = width * Math.round(width * Math.SQRT2) * 4;
+    expect(MAX_PREVIEW_PAGES * bytes).toBeLessThanOrEqual(EMBED_CANVAS_BUDGET);
+    expect((MAX_PREVIEW_PAGES + 3) * bytes).toBeGreaterThan(EMBED_CANVAS_BUDGET);
   });
 });
 

@@ -2,11 +2,12 @@
  * Notebook embeds: `![[Physics.notebook#page=3]]` (or `#Page 3`, `#p3`) in an
  * ordinary note shows that page of the notebook, read-only, at the note's
  * width; `![[Physics.notebook]]` shows every page, one under the other
- * (FineNotes discussion #167), up to `MAX_PREVIEW_PAGES`. A longer notebook,
- * such as an imported textbook, shows its cover and the pages its chapters,
- * bookmarks and contents point to, each labelled, then how many it left out
- * (`embedPageNumbers`). A click opens the notebook at the page clicked. Paginated notebooks can do this where an infinite canvas cannot:
- * a page has a fixed shape of its own.
+ * (FineNotes discussion #167). In a hover preview of a notebook link, a
+ * notebook of more than `MAX_PREVIEW_PAGES`, such as an imported textbook,
+ * shows its cover and the pages its chapters, bookmarks and contents point
+ * to, each labelled, then how many it left out (`embedPageNumbers`). A click
+ * opens the notebook at the page clicked. Paginated notebooks can do this
+ * where an infinite canvas cannot: a page has a fixed shape of its own.
  *
  * The hook. Obsidian builds every `![[…]]` embed, in reading view, live
  * preview, hover previews, canvas cards and Export to PDF alike, through one
@@ -55,9 +56,9 @@ import {
   embedPageNumbers,
   embedTarget,
   embedsToRelease,
-  previewCaption,
   printPaintSize,
 } from "./page-embed-model";
+import { previewCaption } from "../model/preview-pages";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { type PdfExportSources, paintPagePreview } from "./pdf-export";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
@@ -582,9 +583,11 @@ class NotebookEmbed extends Component {
    */
   setPages(pages: readonly Page[] | null): LinkReason | null {
     if (!pages) return "unreadable";
-    const numbers = embedPageNumbers(this.target, pages);
+    // Obsidian's hover preview of a link holds the embed in a `.hover-popover`.
+    const hover = this.containerEl.closest(".hover-popover") !== null;
+    const numbers = embedPageNumbers(this.target, pages, hover);
     if (numbers.length === 0) return "no-pages";
-    // A long notebook shows a choice of its pages: each says which it is.
+    // A hover preview of a long notebook shows a choice of its pages: each says which it is.
     const left = this.target.whole ? pages.length - numbers.length : 0;
     this.shortened = left > 0;
     while (this.slots.length > numbers.length) {

@@ -11,6 +11,7 @@
 
 import { stripInkSuffix } from "../model/new-notebook";
 import { pageFromSubpath } from "../search/notebook-search";
+import { type PreviewPage, previewPageIndexes } from "../model/preview-pages";
 
 /**
  * The page a link's subpath names, 1-based, in every form `pageFromSubpath`
@@ -42,111 +43,32 @@ export function embedTarget(subpath: string): EmbedTarget | null {
 }
 
 /**
- * What choosing the pages of a whole-notebook embed reads of a page: its
- * place in the contents and its bookmark. Levels are 1 a chapter, 2 a section
- * of it, 3 a part of that; a title without one is a chapter, and a heading
- * without one sits one below its page's title, or is a chapter on a page
- * without a title (discussion #185, as `contentsEntries` reads them). A
- * chapter that is only a name starts at the page it stands before; one
- * standing `after` the last page starts nothing.
- */
-export interface PreviewPage {
-  title?: string;
-  titleLevel?: number;
-  sections?: readonly { title: string; level?: number }[];
-  chapters?: readonly { title: string; level?: number; after?: true }[];
-  bookmarked?: true;
-}
-
-/**
- * The most pages a whole-notebook embed shows; a notebook with more shows
- * its cover and the pages `embedPageNumbers` picks, then how many it left
- * out. Set by memory on an iPad. Pages on screen paint lazily and those off
- * screen give their canvas back past `EMBED_CANVAS_BUDGET`, so scrolling
- * holds about the same whatever the count; Export to PDF does not, as it
- * paints every page at once and keeps them all (`PRINT_DPR`, a 704 px box:
- * 1408 × 1991 device px, 11.2 MB for an A4 page). WebKit on iOS caps all
- * canvases together at a quarter of the RAM, 256 to 384 MB on the iPads
- * reported, and the open notebook's tiles and PDF rasters share that, so
- * one embed holds at most half the lowest: 9 × 11.2 MB = 101 MB (12 would
- * be 134 MB). A test pins the sum.
+ * The most pages a hover preview of a notebook link shows; a notebook with
+ * more shows its cover and the pages `previewPageIndexes` picks, then how
+ * many it left out. An embed in a note shows every page. Set by memory on
+ * an iPad: a hover preview is about 450 CSS px wide, painted 512 px at 2x,
+ * so an A4 page holds 1024 × 1448 device px, 5.7 MB. Nine of them, the
+ * preview scrolled end to end, hold 51 MB, inside the 64 MB all embeds may
+ * keep painted (`EMBED_CANVAS_BUDGET`) with room for a page of the note
+ * behind it; twelve would pass it. A test pins the sum.
  */
 export const MAX_PREVIEW_PAGES = 9;
-
-/** Places a shortened embed keeps for bookmarked pages, however many chapters there are. */
-export const PREVIEW_BOOKMARK_PLACES = 2;
-
-/** A page's contents entries with their levels, as the contents lists them. */
-function previewEntries(page: PreviewPage): { title: string; level: number }[] {
-  const out: { title: string; level: number }[] = [];
-  for (const chapter of page.chapters ?? []) {
-    if (!chapter.after) out.push({ title: chapter.title, level: chapter.level ?? 1 });
-  }
-  const titleLevel = page.titleLevel ?? 1;
-  if (page.title !== undefined) out.push({ title: page.title, level: titleLevel });
-  const sectionLevel = page.title !== undefined ? Math.min(3, titleLevel + 1) : 1;
-  for (const section of page.sections ?? []) {
-    out.push({ title: section.title, level: section.level ?? sectionLevel });
-  }
-  return out;
-}
-
-/** `k` of `items`, evenly spread from the first, in order. */
-function spread<T>(items: readonly T[], k: number): T[] {
-  if (k >= items.length) return [...items];
-  return Array.from({ length: k }, (_, i) => items[Math.floor((i * items.length) / k)]);
-}
 
 /**
  * The pages an embed shows, 1-based, in order. A single page names itself,
  * whether or not the notebook has it (the embed then says it is missing). A
- * notebook embedded whole shows every page, one under the other, while it
- * has at most `limit`. A longer one (a textbook PDF) shows its cover, then
- * the pages its contents and bookmarks point to, chosen in this order:
- * chapters, bookmarked pages, then the deeper entries of the contents, except
- * that chapters always leave `PREVIEW_BOOKMARK_PLACES` for bookmarks. Where
- * one kind has more pages than are left, they are spread evenly through the
- * notebook. With neither contents nor bookmarks, its first `limit` pages.
+ * notebook embedded whole shows every page, one under the other; in a hover
+ * preview, a notebook of more than `MAX_PREVIEW_PAGES` shows its cover and
+ * the pages its contents and bookmarks point to (`previewPageIndexes`).
  */
 export function embedPageNumbers(
   target: EmbedTarget,
   pages: readonly PreviewPage[],
-  limit = MAX_PREVIEW_PAGES,
+  hover = false,
 ): number[] {
   if (!target.whole) return [target.page];
-  const count = pages.length;
-  const max = Math.max(1, Math.floor(limit));
-  if (count <= max) return Array.from({ length: count }, (_, i) => i + 1);
-  const chapters: number[] = [];
-  const bookmarked: number[] = [];
-  const outlined: number[] = [];
-  // The cover is always shown, so it is never one of the picks.
-  for (let i = 1; i < count; i++) {
-    const page = pages[i];
-    const entries = previewEntries(page);
-    if (entries.some((entry) => entry.level <= 1)) chapters.push(i);
-    else if (page.bookmarked) bookmarked.push(i);
-    else if (entries.length > 0) outlined.push(i);
-  }
-  // Chapters leave room for a few bookmarks, which the user chose by hand.
-  const kept = Math.min(PREVIEW_BOOKMARK_PLACES, bookmarked.length, max - 1);
-  const picked = spread(chapters, max - 1 - kept);
-  for (const kind of [bookmarked, outlined]) {
-    picked.push(...spread(kind, max - 1 - picked.length));
-  }
-  if (picked.length === 0) return Array.from({ length: max }, (_, i) => i + 1);
-  return [1, ...picked.sort((a, b) => a - b).map((i) => i + 1)];
-}
-
-/**
- * What a page reads as above it in a shortened whole-notebook embed: its
- * highest entry in the contents (the first chapter on it, else its first
- * entry), or `undefined` for a page the contents does not list.
- */
-export function previewCaption(page: PreviewPage): string | undefined {
-  let best: { title: string; level: number } | undefined;
-  for (const entry of previewEntries(page)) if (!best || entry.level < best.level) best = entry;
-  return best?.title;
+  if (!hover) return pages.map((_, i) => i + 1);
+  return previewPageIndexes(pages, MAX_PREVIEW_PAGES).map((i) => i + 1);
 }
 
 /**
