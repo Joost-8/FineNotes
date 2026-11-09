@@ -12,6 +12,9 @@
  *
  * Only by the bar: a pill at another edge than the bar's is one the user
  * carried away from it, and floats where it was left.
+ *
+ * A bar along the top or bottom with room to spare holds the pill itself,
+ * after its tools, as Goodnotes does: no row at all ({@link pillFitsBar}).
  */
 
 import type { BarDock } from "./bar-dock-model";
@@ -40,6 +43,22 @@ export function parsePillRowOn(raw: unknown): boolean {
 /** The edge the row takes, when docking is on and the pill rests by the bar, wherever the bar is. */
 export function pillRowEdge(on: boolean, pill: PillDock, bar: BarDock): PillRowEdge {
   return on && pill === bar ? bar : null;
+}
+
+/**
+ * Whether a pill docked along the top or bottom goes inside the bar: all of
+ * it (`need` px wide at its narrowest) fits the `room` left between the
+ * bar's groups, and it is no taller than the bar. Otherwise it has a row.
+ */
+export function pillFitsBar(input: {
+  edge: PillRowEdge;
+  room: number;
+  need: number;
+  height: number;
+  barHeight: number;
+}): boolean {
+  if (input.edge !== "top" && input.edge !== "bottom") return false;
+  return input.room > 0 && input.need <= input.room + 1 && input.height <= input.barHeight;
 }
 
 /**

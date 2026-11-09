@@ -20390,3 +20390,48 @@ body.finenotes-style-material
   background: color-mix(in srgb, var(--interactive-accent) 26%, transparent);
   scale: none;
 }
+
+/* ------------------------------- tool options inside the bar (discussion #43) */
+
+/* Dock tool options, with room in a bar along the top or bottom: the tools
+   follow the start, and the pill sits after them in the bar (toolbar.ts,
+   placeInsideBar), as Goodnotes does. */
+.goodobsidian-toolbar.has-pill-inside .goodobsidian-bar-group.is-tools {
+  position: static;
+  margin: 0;
+  transform: none;
+}
+
+.goodobsidian-toolbar.has-pill-inside .goodobsidian-bar-group.goodobsidian-bar-doc {
+  margin-left: auto;
+}
+
+.goodobsidian-options.is-floating.is-in-bar {
+  z-index: 21;
+  max-width: var(--gob-pill-inside, 100%);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--gob-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.goodobsidian-options.is-floating.is-in-bar.is-collapsed {
+  translate: none;
+  transition: none;
+}
+
+/* Short of room in the bar, the pens scroll as the colours do. */
+.goodobsidian-options.is-in-bar .goodobsidian-pen-types {
+  flex: 0 1 auto;
+}
+
+/* The colours are what the bar is for: as many as the room allows.
+   A tap on the pen in hand opens the same menu as the chevron beside it. */
+.goodobsidian-options.is-in-bar .goodobsidian-pen-colors {
+  min-width: calc(var(--gob-touch-compact) * 2.5);
+}
+
+.goodobsidian-options.is-in-bar .goodobsidian-pen-types + button {
+  display: none;
+}
