@@ -13,8 +13,11 @@
  * Only by the bar: a pill at another edge than the bar's is one the user
  * carried away from it, and floats where it was left.
  *
- * A bar along the top or bottom with room to spare holds the pill itself,
- * after its tools, as Goodnotes does: no row at all ({@link pillFitsBar}).
+ * A bar along the top or bottom with room for all of the pill holds it
+ * itself, after its tools, as Goodnotes does: no row at all
+ * ({@link pillFitsBar}). A pill that would be cut short there (the pen's
+ * colours, on most iPads) gets the row instead, and keeps it at that bar
+ * width ({@link keepsPillRow}).
  */
 
 import type { BarDock } from "./bar-dock-model";
@@ -46,19 +49,34 @@ export function pillRowEdge(on: boolean, pill: PillDock, bar: BarDock): PillRowE
 }
 
 /**
- * Whether a pill docked along the top or bottom goes inside the bar: all of
- * it (`need` px wide at its narrowest) fits the `room` left between the
- * bar's groups, and it is no taller than the bar. Otherwise it has a row.
+ * Whether a pill docked along the top or bottom goes inside the bar: every
+ * one of its options shows in the `room` left between the bar's groups,
+ * nothing scrolled out of sight or shortened (`fitsAll`), and it is no
+ * taller than the bar. Otherwise it has a row of its own, as wide as the
+ * page, where the pen's colours have room to all show (discussion #200).
+ * No button of the bar folds away to make the room.
  */
 export function pillFitsBar(input: {
   edge: PillRowEdge;
   room: number;
-  need: number;
+  fitsAll: boolean;
   height: number;
   barHeight: number;
 }): boolean {
   if (input.edge !== "top" && input.edge !== "bottom") return false;
-  return input.room > 0 && input.need <= input.room + 1 && input.height <= input.barHeight;
+  return input.room > 0 && input.fitsAll && input.height <= input.barHeight;
+}
+
+/**
+ * Whether a docked pill keeps its row though it would fit inside the bar:
+ * a pill already needed the row at this bar width (`rowWidth`, px; null when
+ * none has). So the row does not come and go with every switch between the
+ * pen (whose colours need the row) and a tool with a short pill, moving the
+ * page each time. A new width (a rotation, Split View, the bar moved) asks
+ * again.
+ */
+export function keepsPillRow(rowWidth: number | null, barWidth: number): boolean {
+  return rowWidth !== null && Math.abs(rowWidth - barWidth) < 1;
 }
 
 /**

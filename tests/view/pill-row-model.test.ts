@@ -7,6 +7,7 @@ import {
   pillRow,
   pillRowEdge,
   pillFitsBar,
+  keepsPillRow,
 } from "../../src/view/pill-row-model";
 
 describe("parsePillRowOn", () => {
@@ -82,19 +83,32 @@ describe("pillRow", () => {
 });
 
 describe("pillFitsBar", () => {
-  const fit = { edge: "top" as const, room: 500, need: 400, height: 44, barHeight: 57 };
+  const fit = { edge: "top" as const, room: 500, fitsAll: true, height: 44, barHeight: 57 };
   it("takes a pill that fits along the top or bottom", () => {
     expect(pillFitsBar(fit)).toBe(true);
     expect(pillFitsBar({ ...fit, edge: "bottom" })).toBe(true);
   });
-  it("leaves a pill too wide or too tall to its row", () => {
-    expect(pillFitsBar({ ...fit, need: 502 })).toBe(false);
+  it("leaves a pill cut short, too tall, or with no room, to its row", () => {
+    // Some colours scrolled out of sight: the row shows them all (#200).
+    expect(pillFitsBar({ ...fit, fitsAll: false })).toBe(false);
     expect(pillFitsBar({ ...fit, height: 60 })).toBe(false);
     expect(pillFitsBar({ ...fit, room: 0 })).toBe(false);
   });
   it("never at a side, or with no dock", () => {
     expect(pillFitsBar({ ...fit, edge: "left" })).toBe(false);
     expect(pillFitsBar({ ...fit, edge: null })).toBe(false);
+  });
+});
+
+describe("keepsPillRow", () => {
+  it("keeps the row at the width a pill needed it", () => {
+    expect(keepsPillRow(1180, 1180)).toBe(true);
+    expect(keepsPillRow(1180, 1180.4)).toBe(true);
+  });
+  it("asks again at another width, or when no pill needed it", () => {
+    expect(keepsPillRow(1180, 820)).toBe(false);
+    expect(keepsPillRow(820, 1180)).toBe(false);
+    expect(keepsPillRow(null, 1180)).toBe(false);
   });
 });
 

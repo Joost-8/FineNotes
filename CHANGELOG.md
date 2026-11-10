@@ -8,6 +8,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Docked tool options get a row of their own instead of squeezing into the
+  bar** (discussion #200). With Dock tool options on, a tool's options sit
+  inside the bar only when all of them show there. Otherwise they take a row
+  as wide as the page, where every pen type and every colour of the pen
+  shows, and the bar keeps its buttons instead of folding Search, AI, Share
+  and others into ⋯ to make room. At a given width the row stays for every
+  tool, so the page does not move as you switch between the pen and the
+  eraser.
+
 ## [2.9.1] - 2026-11-10
 
 2.9.0's What's new card on Home had a bug and was incomplete: it could
