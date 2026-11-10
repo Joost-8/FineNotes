@@ -1440,3 +1440,36 @@ studying or keep something out of sight.
   with `"requires": ["tape"]`. An older FineNotes would read a tape as pen
   ink and save it back as a thick line, so it holds the notebook read-only
   instead (§ "Payload label: refusing instead of dropping").
+
+## Board files of several boards (2026-11-10, discussion #160)
+
+An endless board file (`InkDocument.endless`, FineNotes#46) may hold more
+than one board: each page is a board that grows on its own (`GrowBoard` is
+per page id), and the view shows one at a time, like OneNote's pages.
+
+- **On disk:** `meta.endless` (with `meta.single`) is written for any number
+  of pages. A file of two or more boards is labelled `v2+boards:` with
+  `"requires": ["boards"]` (last in `FORMAT_FEATURES`), so FineNotes 2.9.1
+  and older refuse the payload and hold the note read-only instead of
+  reading the boards as pages metres long and dropping `endless` on their
+  next save (§ "Payload label: refusing instead of dropping"). A one-board
+  file keeps the plain `v2:` label and its bytes (pinned by a payload 2.9.1
+  saved, `tests/model/multi-board.test.ts`). Deleting down to one board
+  drops the label again.
+- **Reading:** `endless` is kept on a file of several pages only when its
+  `requires` names `boards`; without it (a hand edit) the pages load as a
+  notebook, none lost.
+- **A board's name** is its page's `title`, its line in the contents, as
+  for a page; unnamed boards show their number.
+- **Layout:** `layoutBoards(pages, current)` puts the board shown at the
+  origin, as `layoutBoard` did, and parks every other board below
+  `BOARD_PARKED_Y` (1e7 layout px), so `boxes[i]` stays `pages[i]` for every
+  caller and no band, hit test or scroll range reaches a parked board.
+- **View:** `InkSurface.goToPage(i)` on a board file switches boards; each
+  board keeps where it was left this session (zoom and middle point) and on
+  this device (`LastPage.boards`, by page id, with the anchors a board's
+  spot already has). Page-addressed tools (search, contents, undo's reveal)
+  switch to the board they name.
+- **Still per file, not per board:** export makes one PDF page per board,
+  each cut to its drawing; Ask AI reads the board shown as the screen shows
+  it and any other board it is given as its whole drawing.

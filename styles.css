@@ -1735,6 +1735,18 @@ select.goodobsidian-choice-select {
   color: var(--text-on-accent);
 }
 
+/* A board file's Boards tab (discussion #160): no filter and no bookmark
+   ribbons, a few boards rather than a hundred pages; the grid starts where
+   the chip stood. */
+.goodobsidian-pagesidebar.is-board .goodobsidian-pagesidebar-filter.clickable-icon,
+.goodobsidian-pagesidebar.is-board .goodobsidian-thumb-ribbon {
+  display: none;
+}
+
+.goodobsidian-pagesidebar.is-board .goodobsidian-pagesidebar-grid {
+  padding-top: 12px;
+}
+
 .goodobsidian-pagesidebar-filter-caret {
   display: inline-flex;
   margin-inline-start: var(--gob-caret-gap);

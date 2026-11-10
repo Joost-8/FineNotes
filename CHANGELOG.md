@@ -8,6 +8,19 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Several boards in one board file**
+  ([discussion #160](https://github.com/Joost-8/FineNotes/discussions/160)).
+  A board file can hold more than one endless board, listed like pages, as
+  in OneNote. The sidebar's first tab is Boards: a picture of each board's
+  drawing, + to add one, the ⌄ to name, move, clear or delete it, and a
+  drag to reorder. Tap a board to show it; each opens where you left it.
+  Add board and Go to board are in the command palette, and search and the
+  contents go to the board they found. A file with one board stays as it
+  was. A file with several boards opens read-only in FineNotes 2.9.1 and
+  older, which cannot show them, so nothing on it is lost.
+
 ## [2.9.1] - 2026-11-10
 
 2.9.0's What's new card on Home had a bug and was incomplete: it could

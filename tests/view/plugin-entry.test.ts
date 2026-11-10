@@ -549,6 +549,7 @@ describe("registration", () => {
     await load();
     expect(registered.commands.map((c) => c.id).sort()).toEqual(
       [
+        "add-board",
         "convert-to-notebook",
         "copy-highlighted-text",
         "copy-page-link",
@@ -560,6 +561,7 @@ describe("registration", () => {
         "export-pdf",
         "fit-board-drawing",
         "fit-reset-view",
+        "go-to-board",
         "import-pdf",
         "import-vault-pdf",
         "insert-new-notebook",

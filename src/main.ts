@@ -1057,6 +1057,19 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => view.resetView(),
       (view) => view.isBoard,
     );
+    // A board file's boards (discussion #160), in place of the page commands.
+    this.notebookCommand(
+      "add-board",
+      t("notebooks.command.addBoard"),
+      (view) => view.addBoard(),
+      (view) => view.isBoard,
+    );
+    this.notebookCommand(
+      "go-to-board",
+      t("notebooks.command.goToBoard"),
+      (view) => view.goToBoard(),
+      (view) => view.isBoard && view.document.pages.length > 1,
+    );
     this.notebookCommand("zoom-in", t("notebooks.command.zoomIn"), (view) => view.zoomIn());
     this.notebookCommand("zoom-out", t("notebooks.command.zoomOut"), (view) => view.zoomOut());
 

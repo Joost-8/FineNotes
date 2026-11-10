@@ -229,6 +229,7 @@ export const view = {
 
   // Deleting pages
   "view.deletePage.done": "Deleted page {page}. Undo (Cmd/Ctrl+Z) brings it back.",
+  "view.deleteBoard.done": "Deleted board {board}. Undo (Cmd/Ctrl+Z) brings it back.",
   "view.deletePages.title.one": "Delete {count} page?",
   "view.deletePages.title.other": "Delete {count} pages?",
   "view.deletePages.message.one":
@@ -272,6 +273,7 @@ export const view = {
 
   // Page sidebar
   "view.sidebar.pages": "Pages",
+  "view.sidebar.boards": "Boards",
   "view.sidebar.contents": "Contents",
   "view.sidebar.files": "Files",
   "view.sidebar.close": "Close sidebar",
@@ -290,6 +292,7 @@ export const view = {
   "view.sidebar.bookmark": "Bookmark",
   "view.sidebar.export": "Export",
   "view.sidebar.addPage": "Add page",
+  "view.sidebar.addBoard": "Add board",
   "view.sidebar.removeBookmark": "Remove bookmark",
   "view.sidebar.bookmarkPage": "Bookmark page",
   "view.sidebar.toggleHeadings": "Show or hide this page's headings",
@@ -322,6 +325,7 @@ export const view = {
   "view.sidebar.moveUp": "Move up",
   "view.sidebar.moveDown": "Move down",
   "view.sidebar.deletePage": "Delete page",
+  "view.sidebar.deleteBoard": "Delete board",
 
   // The ⋯ panel
   "view.morePanel.clearBoard": "Clear board",
