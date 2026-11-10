@@ -8,6 +8,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **A board embedded in a note shows its drawing**
+  ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167)).
+  `![[Mind map.notebook]]` used to paint the board's whole page, metres of
+  mostly empty paper shrunk to the note's width. It now shows what is drawn
+  with a little paper round it, the same cut Export as PDF makes; an empty
+  board shows a short strip of its paper.
+
 ## [2.9.1] - 2026-11-10
 
 2.9.0's What's new card on Home had a bug and was incomplete: it could

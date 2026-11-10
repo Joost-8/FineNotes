@@ -1,12 +1,21 @@
 import { describe, expect, it } from "vitest";
+import {
+  BOARD_BLOCK,
+  BOARD_CUT_STEP,
+  boardDrawingBox,
+  boardStartGeometry,
+} from "../../src/model/board";
+import type { Page } from "../../src/model/document";
 import type { PreviewPage } from "../../src/model/preview-pages";
 import {
   EMBED_CANVAS_BUDGET,
   EMBED_WIDTH_STEP,
+  MAX_EMBED_DEVICE_HEIGHT,
   MAX_EMBED_DEVICE_WIDTH,
   PRINT_DPR,
   PRINT_FALLBACK_WIDTH,
   SharedNotebooks,
+  boardEmbedBox,
   embedInsertion,
   embedPageLabel,
   embedPageLink,
@@ -318,5 +327,80 @@ describe("embedInsertion", () => {
     );
     expect(embedInsertion("[[A.notebook]]", "", "", "", "")).toBe("![[A.notebook]]");
     expect(embedInsertion("[[A.notebook]]", "", "", "Text", "  ")).toBe("\n![[A.notebook]]");
+  });
+});
+
+/** A board's one page, as a new board starts: five blocks each way, nothing on it. */
+function boardPage(): Page {
+  return {
+    id: "p1",
+    kind: "ink",
+    geometry: boardStartGeometry(),
+    backdrop: { kind: "dotted" },
+    strokes: [],
+    images: [],
+    textBoxes: [],
+  };
+}
+
+describe("boardEmbedBox", () => {
+  it("cuts a board to its drawing, as its PDF export does", () => {
+    const page = boardPage();
+    page.strokes.push({
+      id: "s1",
+      color: "#000000",
+      size: 4,
+      tool: "pen",
+      pts: [2000, 2100, 0.5, 2600, 2400, 0.5],
+    });
+    const box = boardEmbedBox(page);
+    expect(box).toEqual(boardDrawingBox(page));
+    // Far smaller than the grown page, and holding the ink with paper round it.
+    expect(box.width).toBeLessThan(page.geometry.width / 4);
+    expect(box.x).toBeLessThan(2000);
+    expect(box.x + box.width).toBeGreaterThan(2600);
+    expect(box.y).toBeLessThan(2100);
+    expect(box.y + box.height).toBeGreaterThan(2400);
+  });
+
+  it("shows an empty board as a strip from its middle, wider than tall, on the paper's grid", () => {
+    const page = boardPage();
+    const box = boardEmbedBox(page);
+    expect(box.width).toBe(BOARD_BLOCK);
+    expect(box.height).toBe(BOARD_BLOCK / 2);
+    expect(box.x % BOARD_CUT_STEP).toBe(0);
+    expect(box.y % BOARD_CUT_STEP).toBe(0);
+    // Round the middle of the page.
+    expect(Math.abs(box.x + box.width / 2 - page.geometry.width / 2)).toBeLessThanOrEqual(
+      BOARD_CUT_STEP,
+    );
+    expect(Math.abs(box.y + box.height / 2 - page.geometry.height / 2)).toBeLessThanOrEqual(
+      BOARD_CUT_STEP,
+    );
+  });
+
+  it("never cuts past a page smaller than the strip", () => {
+    const page = boardPage();
+    page.geometry = { width: 600, height: 300 };
+    expect(boardEmbedBox(page)).toEqual({ x: 0, y: 0, width: 600, height: 300 });
+  });
+});
+
+describe("embedPaintSize with a cut's aspect", () => {
+  it("lowers the pixel ratio so a tall cut stays within the tallest canvas", () => {
+    const size = embedPaintSize(640, 2, 5);
+    expect(size?.cssWidth).toBe(640);
+    expect((size?.dpr ?? 0) * 640 * 5).toBeCloseTo(MAX_EMBED_DEVICE_HEIGHT);
+  });
+
+  it("leaves a wide cut, and a whole page, as they were", () => {
+    expect(embedPaintSize(640, 2, 0.5)).toEqual(embedPaintSize(640, 2));
+    expect(embedPaintSize(640, 2, 0)).toEqual({ cssWidth: 640, dpr: 2 });
+    expect(embedPaintSize(640, 2, Number.NaN)).toEqual({ cssWidth: 640, dpr: 2 });
+  });
+
+  it("holds a PDF export's paint to the same height", () => {
+    const size = printPaintSize(680, 10);
+    expect(size.cssWidth * size.dpr * 10).toBeLessThanOrEqual(MAX_EMBED_DEVICE_HEIGHT + 1e-6);
   });
 });

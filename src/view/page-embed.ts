@@ -39,14 +39,18 @@
 import { type App, Component, Keymap, type TAbstractFile, TFile, setIcon } from "obsidian";
 import { LIGHT_PAPER, type PaperTheme } from "../canvas/backdrop";
 import { t, tn } from "../i18n/translate";
-import { DEFAULT_PAGE_GEOMETRY, type Page } from "../model/document";
+import { paintedTextHeight } from "../canvas/renderer";
+import { isBoard, textLinesHeight } from "../model/board";
+import { DEFAULT_PAGE_GEOMETRY, type Page, type TextBoxElement } from "../model/document";
 import { pageSignature } from "../model/page-signature";
 import { parseInkFile } from "../model/serialize";
 import { VaultImageCache } from "./image-cache";
 import { releaseCanvas } from "./image-import";
 import {
   EMBED_CANVAS_BUDGET,
+  type EmbedCrop,
   SharedNotebooks,
+  boardEmbedBox,
   embedPaintSize,
   embedWidth,
   type EmbedTarget,
@@ -112,6 +116,12 @@ export interface PageEmbedHost {
   paper(): PaperTheme;
 }
 
+/** A notebook's pages as embeds read them, and whether it is an endless board. */
+interface EmbedNotebook {
+  pages: readonly Page[];
+  board: boolean;
+}
+
 /** Quiet time after a notebook is saved before its embeds repaint. */
 const CHANGE_DEBOUNCE_MS = 300;
 /** How long the next page waits for a slow one to finish painting. */
@@ -126,7 +136,9 @@ const PRINT_LAYOUT = ".print";
  */
 export class PageEmbeds extends Component {
   /** Each notebook's pages; none for a file without an ink block, `null` for one that would not decode. */
-  private readonly notebooks = new SharedNotebooks<readonly Page[] | null>(3);
+  private readonly notebooks = new SharedNotebooks<EmbedNotebook | null>(3);
+  /** Measures self-sizing text boxes for a board's cut, as its export does. */
+  private measureCtx: CanvasRenderingContext2D | null = null;
   private readonly live = new Set<NotebookEmbed>();
   /** The pages shown, by the element the observers report. */
   private readonly byElement = new Map<Element, PageSlot>();
@@ -328,7 +340,7 @@ export class PageEmbeds extends Component {
     const { embed } = slot;
     if (!(await this.syncEmbed(embed))) return;
     if (!this.live.has(embed) || !slot.attached || !slot.page) return;
-    const size = embedPaintSize(slot.boxWidth(), window.devicePixelRatio || 1);
+    const size = embedPaintSize(slot.boxWidth(), window.devicePixelRatio || 1, slot.aspect());
     if (!size) return;
     await this.paint(slot, size, this.host.paper());
     if (!this.live.has(embed)) return;
@@ -348,10 +360,10 @@ export class PageEmbeds extends Component {
     }
     const version = file.stat.mtime;
     if (embed.version === version) return !embed.isLink;
-    const pages = await this.notebook(file, version);
+    const notebook = await this.notebook(file, version);
     if (embed.version === version) return !embed.isLink;
     embed.version = version;
-    const reason = embed.setPages(pages);
+    const reason = embed.setPages(notebook);
     if (reason) {
       embed.showLink(reason);
       return false;
@@ -370,9 +382,18 @@ export class PageEmbeds extends Component {
     const page = slot.page;
     if (!page) return;
     const look = paper.night ? (paper.keepPdf ? "|dark-keep-pdf" : "|dark") : "";
-    const key = `${pageSignature(page)}@${size.cssWidth}x${size.dpr}${look}`;
+    const crop = slot.crop;
+    const cut = crop ? `#${crop.x},${crop.y},${crop.width},${crop.height}` : "";
+    const key = `${pageSignature(page)}${cut}@${size.cssWidth}x${size.dpr}${look}`;
     if (key === slot.painted) return;
-    await paintPagePreview(slot.canvas, page, this.sources(page, paper), size.cssWidth, size.dpr);
+    await paintPagePreview(
+      slot.canvas,
+      page,
+      this.sources(page, paper),
+      size.cssWidth,
+      size.dpr,
+      crop ?? undefined,
+    );
     slot.painted = key;
     slot.bytes = slot.canvas.width * slot.canvas.height * 4;
   }
@@ -386,7 +407,7 @@ export class PageEmbeds extends Component {
     try {
       if (!(await this.syncEmbed(embed))) return;
       for (const slot of embed.slots) {
-        await this.paint(slot, printPaintSize(slot.boxWidth()), LIGHT_PAPER);
+        await this.paint(slot, printPaintSize(slot.boxWidth(), slot.aspect()), LIGHT_PAPER);
       }
     } catch (error) {
       console.error("FineNotes: could not draw an embedded page for the PDF", error);
@@ -399,13 +420,26 @@ export class PageEmbeds extends Component {
    * every embed of it: none when the file has no ink block yet (a decoded
    * notebook always has a page), `null` when its block does not decode.
    */
-  private notebook(file: TFile, version: number): Promise<readonly Page[] | null> {
+  private notebook(file: TFile, version: number): Promise<EmbedNotebook | null> {
     return this.notebooks.get(file.path, version, async () => {
       const text = await this.host.app.vault.cachedRead(file);
       const { doc, payload } = parseInkFile(text, this.host.paperWidth());
-      if (doc) return doc.pages;
-      return payload === undefined ? [] : null;
+      if (doc) return { pages: doc.pages, board: isBoard(doc) };
+      return payload === undefined ? { pages: [], board: false } : null;
     });
+  }
+
+  /**
+   * The part of a board's page an embed shows: its drawing (`boardEmbedBox`),
+   * self-sizing text measured as the export measures it.
+   */
+  boardCut(page: Page): EmbedCrop {
+    return boardEmbedBox(page, (text) => this.textHeight(text));
+  }
+
+  private textHeight(text: TextBoxElement): number {
+    this.measureCtx ??= createEl("canvas").getContext("2d");
+    return this.measureCtx ? paintedTextHeight(this.measureCtx, text) : textLinesHeight(text);
   }
 
   private sources(page: Page, paper: PaperTheme): PdfExportSources {
@@ -581,8 +615,9 @@ class NotebookEmbed extends Component {
    * The notebook's pages: one slot for each page this embed shows, added or
    * taken out to match. Returns why there is nothing to show, if so.
    */
-  setPages(pages: readonly Page[] | null): LinkReason | null {
-    if (!pages) return "unreadable";
+  setPages(notebook: EmbedNotebook | null): LinkReason | null {
+    if (!notebook) return "unreadable";
+    const { pages } = notebook;
     // Obsidian's hover preview of a link holds the embed in a `.hover-popover`.
     const hover = this.containerEl.closest(".hover-popover") !== null;
     const numbers = embedPageNumbers(this.target, pages, hover);
@@ -601,9 +636,12 @@ class NotebookEmbed extends Component {
       this.slots.push(slot);
       if (this.loaded) this.embeds.trackSlot(slot);
     }
-    numbers.forEach((number, i) =>
-      this.slots[i]?.show(number, pages[number - 1] ?? null, numbers.length),
-    );
+    numbers.forEach((number, i) => {
+      const page = pages[number - 1] ?? null;
+      // A board shows its drawing, not the paper it has grown to.
+      const crop = page && notebook.board ? this.embeds.boardCut(page) : null;
+      this.slots[i]?.show(number, page, numbers.length, crop);
+    });
     this.showMore(left);
     return this.slots.every((slot) => slot.page) ? null : "missing-page";
   }
@@ -696,6 +734,8 @@ class PageSlot {
   /** The page's number in the notebook, 1-based. */
   number: number;
   page: Page | null = null;
+  /** The part of the page shown, page px; `null` for all of it. */
+  crop: EmbedCrop | null = null;
   /** What the canvas holds: the page's signature and the paint size; "" for nothing. */
   painted = "";
   bytes = 0;
@@ -736,16 +776,20 @@ class PageSlot {
     });
   }
 
-  /** Show page `number` (`page`, or `null` when the notebook has none such) of `count` shown. */
-  show(number: number, page: Page | null, count: number): void {
+  /**
+   * Show page `number` (`page`, or `null` when the notebook has none such) of
+   * `count` shown; only its `crop` when given.
+   */
+  show(number: number, page: Page | null, count: number, crop: EmbedCrop | null = null): void {
     this.number = number;
     this.page = page;
+    this.crop = crop;
     const { embed } = this;
     this.el.setAttribute(
       "aria-label",
       embedPageLabel(embed.file.basename, embed.target, number, count),
     );
-    if (page) this.el.setCssStyles({ aspectRatio: aspectOf(page.geometry) });
+    if (page) this.el.setCssStyles({ aspectRatio: aspectOf(crop ?? page.geometry) });
     this.label(embed.shortened ? page : null);
   }
 
@@ -771,6 +815,12 @@ class PageSlot {
       setIcon(ribbon, "bookmark");
       this.ribbonEl = ribbon;
     }
+  }
+
+  /** The shown part's height over its width, for a cut; 0 for a whole page. */
+  aspect(): number {
+    const crop = this.crop;
+    return crop && crop.width > 0 ? crop.height / crop.width : 0;
   }
 
   /** The width the page box has now, CSS px, after the size syntax's cap. */

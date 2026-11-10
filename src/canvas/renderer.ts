@@ -3381,6 +3381,12 @@ export interface ThumbnailOptions {
   images?: ImagePainter;
   /** The page's header and page number, when the notebook has them. */
   furniture?: PageTexts;
+  /**
+   * Paint only this part of the page, page px (a board's drawing, a named
+   * region): the canvas is its size and `cssWidth` its width. The paper is
+   * drawn where it lies on the page, so the ruling stays on the ink's grid.
+   */
+  crop?: { x: number; y: number; width: number; height: number };
 }
 
 /**
@@ -3397,13 +3403,16 @@ export function renderPageThumbnail(
   dpr: number,
   options: ThumbnailOptions,
 ): void {
-  const { width, height } = page.geometry;
+  const crop = options.crop;
+  const { width, height } = crop ?? page.geometry;
   if (!(width > 0) || !(height > 0)) return;
   const k = (cssWidth / width) * dpr;
   canvas.width = Math.max(1, Math.round(width * k));
   canvas.height = Math.max(1, Math.round(height * k));
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+  const ox = crop?.x ?? 0;
+  const oy = crop?.y ?? 0;
 
   const look = pageLook(page.backdrop, options.paper ?? LIGHT_PAPER);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -3414,17 +3423,24 @@ export function renderPageThumbnail(
   // Each axis scaled to the rounded canvas, so the page fills it exactly: at
   // the unrounded scale the last row or column was only partly painted and
   // showed the base through — a light line along a cover's bottom edge.
-  ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
+  const sx = canvas.width / width;
+  const sy = canvas.height / height;
+  ctx.setTransform(sx, 0, 0, sy, -ox * sx, -oy * sy);
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, 0, width, height);
+  ctx.rect(ox, oy, width, height);
   ctx.clip();
+  // Only the cut's part of the paper is drawn: a board's is metres of it.
+  const region = crop
+    ? { minX: crop.x, minY: crop.y, maxX: crop.x + crop.width, maxY: crop.y + crop.height }
+    : undefined;
   // A 1 page-px rule is about a tenth of a CSS pixel at thumbnail size and
   // would vanish; draw rules roughly half a CSS pixel wide instead.
   if (!options.transparent) {
     paintPagePaper(painter, ctx, page, Math.max(1, (0.5 * width) / cssWidth), {
       deviceScale: k,
       paper: options.paper ?? LIGHT_PAPER,
+      ...(region ? { region } : {}),
     });
     if (options.furniture) paintFurniture(ctx, page.geometry, options.furniture, look.night);
   } else if (marginBackdrop(page)) {
