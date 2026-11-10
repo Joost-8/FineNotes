@@ -4307,7 +4307,9 @@ export class InkView extends TextFileView {
     const subpath = this.pendingSubpath;
     const back = this.pendingPageIndex;
     if (!fresh && subpath === null && back === null) return;
-    if (surface.surfaceEl.clientHeight === 0 && attempt < 20) {
+    // A board not laid out yet has no view to put a spot in either.
+    const unready = surface.surfaceEl.clientHeight === 0 || (this.isBoard && !surface.boardSpot());
+    if (unready && attempt < 20) {
       // Not laid out yet (a new tab): goToPage would scroll by a scale of nothing.
       window.setTimeout(() => this.applyPendingPage(attempt + 1), 50);
       return;
@@ -4383,6 +4385,9 @@ export class InkView extends TextFileView {
     const page = surface.document.pages[index];
     if (!page) return;
     const at = surface.boardSpot();
+    // A board not laid out yet (a window opened hidden) knows no spot: keep
+    // the ones stored rather than writing them away.
+    if (this.isBoard && !at) return;
     const anchor = at ? spotAnchor(page) : undefined;
     const spot = at ? { ...at, ...(anchor ? { anchor } : {}) } : undefined;
     // A board file's other boards (discussion #160), each anchored to its own drawing.
