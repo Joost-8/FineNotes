@@ -13,7 +13,7 @@ import { History } from "../../src/model/history";
 import { DEFAULT_NOTEBOOK_CHOICES, buildNewDocument } from "../../src/model/new-notebook";
 import { AddStrokeToPage } from "../../src/model/page-commands";
 import { WRITING_SCALE } from "../../src/model/units";
-import { layoutBoard } from "../../src/canvas/page-layout";
+import { layoutBoard, layoutBoards } from "../../src/canvas/page-layout";
 
 vi.mock("obsidian", () => ({
   Notice: class {},
@@ -49,6 +49,9 @@ function boardSurface(): { surface: State; doc: InkDocument; history: History } 
     boardHold: null,
     boardShift: { x: 0, y: 0 },
     boardChecked: new WeakSet(),
+    boardRef: null,
+    boardSpots: new WeakMap(),
+    pageIndex: 0,
     baseScale: WRITING_SCALE,
     userZoom: 1,
     cssW: 1024,
@@ -153,5 +156,65 @@ describe("gesture thresholds on a board", () => {
     expect(get(surface, "scale")).toBeCloseTo(WRITING_SCALE);
     surface.userZoom = 5;
     expect(run(surface, "atFitZoom", 10)).toBe(2);
+  });
+});
+
+describe("a file of several boards (discussion #160)", () => {
+  function threeBoards(): { surface: State; doc: InkDocument } {
+    const { surface, doc } = boardSurface();
+    for (const id of ["p2", "p3"]) doc.pages.push({ ...structuredClone(doc.pages[0]), id });
+    return { surface, doc };
+  }
+
+  it("shows the board it was on through a reorder, by identity", () => {
+    const { surface, doc } = threeBoards();
+    surface.boardRef = doc.pages[1];
+    doc.pages.reverse();
+    expect(run(surface, "shownBoard")).toEqual({ page: doc.pages[1], index: 1 });
+    doc.pages.push(doc.pages.shift()!);
+    expect(run<{ index: number }>(surface, "shownBoard").index).toBe(0);
+  });
+
+  it("finds it by id after a reload, and shows a neighbour when it was deleted", () => {
+    const { surface, doc } = threeBoards();
+    surface.boardRef = { ...doc.pages[2] };
+    expect(run<{ index: number }>(surface, "shownBoard").index).toBe(2);
+    surface.boardRef = doc.pages[2];
+    surface.pageIndex = 2;
+    doc.pages.splice(2, 1);
+    expect(run(surface, "shownBoard")).toEqual({ page: doc.pages[1], index: 1 });
+  });
+
+  it("moves the view with a growth of the board shown, and the spot of another", () => {
+    const { surface, doc } = threeBoards();
+    surface.boardRef = doc.pages[0];
+    const spots = surface.boardSpots as WeakMap<object, unknown>;
+    spots.set(doc.pages[2], { x: 10, y: 20, zoom: 2 });
+    run(surface, "boardMoved", doc.pages[0], BOARD_BLOCK, 0);
+    expect(surface.boardShift).toEqual({ x: BOARD_BLOCK, y: 0 });
+    run(surface, "boardMoved", doc.pages[2], 0, -BOARD_BLOCK);
+    expect(spots.get(doc.pages[2])).toEqual({ x: 10, y: 20 - BOARD_BLOCK, zoom: 2 });
+    expect(surface.boardShift).toEqual({ x: BOARD_BLOCK, y: 0 });
+  });
+
+  it("lists the other boards' spots by id, not the one shown", () => {
+    const { surface, doc } = threeBoards();
+    surface.boardRef = doc.pages[1];
+    const spots = surface.boardSpots as WeakMap<object, unknown>;
+    spots.set(doc.pages[0], { x: 1, y: 2, zoom: 1 });
+    spots.set(doc.pages[1], { x: 3, y: 4, zoom: 1 });
+    expect([...run<Map<string, unknown>>(surface, "otherBoardSpots")]).toEqual([
+      ["p1", { x: 1, y: 2, zoom: 1 }],
+    ]);
+    run(surface, "restoreBoardSpots", new Map([["p3", { x: 5, y: 6, zoom: 3 }]]));
+    expect(spots.get(doc.pages[2])).toEqual({ x: 5, y: 6, zoom: 3 });
+  });
+
+  it("lays the layout out again when boards were reordered", () => {
+    const { surface, doc } = threeBoards();
+    surface.pageLayout = layoutBoards(doc.pages, 0);
+    expect(run(surface, "layoutStale")).toBe(false);
+    doc.pages.reverse();
+    expect(run(surface, "layoutStale")).toBe(true);
   });
 });

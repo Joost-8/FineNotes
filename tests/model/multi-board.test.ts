@@ -12,6 +12,7 @@ import {
   BOARD_BLOCK,
   BOARD_THUMB_ASPECT,
   boardDrawingBox,
+  boardLabel,
   boardStartGeometry,
   boardThumbBox,
   newBoardPage,
@@ -234,5 +235,15 @@ describe("boardThumbBox", () => {
     expect(box.y).toBeGreaterThanOrEqual(0);
     expect(box.y + box.height).toBeLessThanOrEqual(280);
     expect(box.x + box.width).toBeLessThanOrEqual(BOARD_BLOCK);
+  });
+});
+
+describe("boardLabel", () => {
+  it("is the board's number, and its name when it has one", () => {
+    const page = newBoardPage("p1", undefined);
+    expect(boardLabel(page, 0)).toBe("1");
+    page.title = "Plan";
+    expect(boardLabel(page, 1)).toBe("2  Plan");
+    expect(boardLabel(undefined, 2)).toBe("3");
   });
 });

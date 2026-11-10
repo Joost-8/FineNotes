@@ -433,3 +433,9 @@ export function boardThumbBox(
     height,
   };
 }
+
+/** How a board reads in a list: its number, and its name when it has one ("2  Plan"). */
+export function boardLabel(page: Page | undefined, index: number): string {
+  const name = page?.title;
+  return name ? `${index + 1}  ${name}` : String(index + 1);
+}
