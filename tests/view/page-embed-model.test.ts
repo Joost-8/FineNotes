@@ -16,6 +16,7 @@ import {
   PRINT_FALLBACK_WIDTH,
   SharedNotebooks,
   boardEmbedBox,
+  regionEmbedPart,
   embedInsertion,
   embedPageLabel,
   embedPageLink,
@@ -69,10 +70,65 @@ describe("embedTarget", () => {
     expect(embedTarget("#p40")).toEqual({ page: 40, whole: false });
   });
 
-  it("leaves a heading or a block to Obsidian", () => {
-    expect(embedTarget("#Introduction")).toBeNull();
+  it("leaves a block to Obsidian", () => {
     expect(embedTarget("#^block")).toBeNull();
-    expect(embedTarget("#page=0")).toBeNull();
+    expect(embedTarget("^block")).toBeNull();
+  });
+
+  it("reads any other text as a region's name, decided once the notebook is read", () => {
+    expect(embedTarget("#Krebs cycle")).toEqual({ page: 1, whole: false, region: "Krebs cycle" });
+    // A heading reads the same way: with no region of its name it goes back to Obsidian.
+    expect(embedTarget("#Introduction")).toEqual({ page: 1, whole: false, region: "Introduction" });
+    expect(embedTarget("#page=0")).toEqual({ page: 1, whole: false, region: "page=0" });
+  });
+
+  it("puts a page before a region named like one", () => {
+    for (const subpath of ["#page=3", "#Page 3", "#p3"]) {
+      expect(embedTarget(subpath)).toEqual({ page: 3, whole: false });
+    }
+  });
+});
+
+describe("regionEmbedPart", () => {
+  const page = (id: string, regions: Page["regions"]): Page => ({
+    id,
+    kind: "ink",
+    geometry: { width: 1000, height: 1400 },
+    backdrop: { kind: "blank" },
+    strokes: [],
+    images: [],
+    textBoxes: [],
+    ...(regions ? { regions } : {}),
+  });
+  const pages = [
+    page("a", undefined),
+    page("b", [{ id: "rg1", name: "Krebs cycle", x: 10, y: 20, w: 300, h: 200 }]),
+  ];
+
+  it("finds the region's page and cuts to it, whatever the name's case", () => {
+    expect(regionEmbedPart(pages, "krebs  CYCLE")).toEqual({
+      page: 2,
+      crop: { x: 10, y: 20, width: 300, height: 200 },
+    });
+  });
+
+  it("finds nothing for a name no region has: the embed goes back to Obsidian", () => {
+    expect(regionEmbedPart(pages, "Introduction")).toBeNull();
+  });
+});
+
+describe("a region embed's label and link", () => {
+  const target = { page: 2, whole: false, region: "Krebs cycle" };
+
+  it("reads as the notebook and the region's name", () => {
+    expect(embedLabel("Mind map.notebook", target)).toBe("Mind map, Krebs cycle");
+    expect(embedPageLabel("Mind map.notebook", target, 2, 1)).toBe("Mind map, Krebs cycle");
+  });
+
+  it("opens by its own link, which centres the board on the region", () => {
+    expect(embedPageLink("Mind map.notebook#Krebs cycle", target, 2)).toBe(
+      "Mind map.notebook#Krebs cycle",
+    );
   });
 });
 

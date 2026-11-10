@@ -320,6 +320,7 @@ export class SetPageMargin implements Command {
     backdrop: Backdrop;
     comments: number[];
     sections: number[];
+    regions: number[];
     moved: TranslateElements | null;
     lists: Partial<Record<Kind, unknown[]>> | null;
   }> = [];
@@ -378,6 +379,7 @@ export class SetPageMargin implements Command {
         backdrop: page.backdrop,
         comments: (page.comments ?? []).map((comment) => comment.x),
         sections: (page.sections ?? []).map((section) => section.x),
+        regions: (page.regions ?? []).map((region) => region.x),
         moved: null as TranslateElements | null,
         lists: null as Partial<Record<Kind, unknown[]>> | null,
       };
@@ -429,6 +431,7 @@ export class SetPageMargin implements Command {
         record.moved.apply(doc);
         for (const comment of page.comments ?? []) comment.x += dx;
         for (const section of page.sections ?? []) section.x += dx;
+        for (const region of page.regions ?? []) region.x += dx;
       }
       this.done.push(record);
     }
@@ -451,6 +454,9 @@ export class SetPageMargin implements Command {
       });
       (page.sections ?? []).forEach((section, at) => {
         section.x = record.sections[at] ?? section.x;
+      });
+      (page.regions ?? []).forEach((region, at) => {
+        region.x = record.regions[at] ?? region.x;
       });
       page.geometry = record.geometry;
       page.backdrop = record.backdrop;

@@ -1440,3 +1440,49 @@ studying or keep something out of sight.
   with `"requires": ["tape"]`. An older FineNotes would read a tape as pen
   ink and save it back as a thick line, so it holds the notebook read-only
   instead (§ "Payload label: refusing instead of dropping").
+
+## Named regions (2026-11-10, discussion #167)
+
+A part of a board, or of any page, lassoed and named so an ordinary Markdown
+note can embed it alone (`src/model/regions.ts`):
+
+```ts
+Page.regions?: PageRegion[]; // absent when there are none
+interface PageRegion {
+  id: string; // "rg<N>", unique in the notebook
+  name: string; // one line, trimmed, at most 80 characters, no # | ^ [ ] \
+  x: number; // page px
+  y: number;
+  w: number; // > 0
+  h: number; // > 0
+}
+```
+
+- **Boards and pages alike.** A region is a rectangle over the page; it
+  holds no elements. An embed shows whatever is drawn inside it when it
+  paints. Lassoed with Turn into › Frame to embed (the UI calls a region a
+  frame), its rectangle is the selection's bounds with 24 page px of paper,
+  rounded out to whole px, kept on the page.
+- **Loading** (`normalizeRegions`) drops, never mends: a record needs an id
+  not seen before in the notebook, a name that survives the name rules,
+  a finite `x`/`y` and a finite `w`/`h` above 0.
+- **Moves with the page:** a board growing left or up shifts regions with
+  everything else (`GrowBoard`, undone exactly), as does a page margin
+  (`x`), and a board's drawing cut out for export moves them with the cut.
+  A duplicated page starts without them (names are what links reach).
+  Insert space and the lasso do not move them.
+- **One command:** `SetRegion(page, id, value | null)` adds, renames,
+  moves or resizes (same id, same place in the list) or removes; its
+  inverse restores the page's list exactly.
+- **Embedding** (`embedTarget`, first match wins): no subpath, the whole
+  notebook (a board cut to its drawing, `boardEmbedBox`); a page
+  (`#page=3`, `#Page 3`, `#p3`), even over a region named like one; a block
+  (`#^id`), Obsidian's; any other text, the region of that name, matched
+  without regard to case or runs of spaces (`regionKey`). When the notebook
+  has no region of that name the embed is handed back to Obsidian's
+  Markdown embed, so `#Some heading` shows the note text's heading as
+  before. A link opens the notebook centred on the region.
+- **Older builds** (2.9.1 and earlier) keep the plain `v2:` label: no
+  `requires`, so they open the notebook and read everything else as before
+  (checked against 2.9.1's own decoder). They drop `regions` when they save,
+  losing only the names and frames, never ink.

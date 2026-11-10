@@ -4,8 +4,14 @@ import type { EmbedCreator } from "../../src/view/page-embed";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
-/** Each page painted, by its id, the width and the paper it was painted in. */
-const painted: { id: string; cssWidth: number; dpr: number; night: boolean }[] = [];
+/** Each page painted, by its id, the width, the paper it was painted in and its cut. */
+const painted: {
+  id: string;
+  cssWidth: number;
+  dpr: number;
+  night: boolean;
+  crop?: { x: number; y: number; width: number; height: number };
+}[] = [];
 vi.mock("../../src/view/pdf-export", () => ({
   paintPagePreview: (
     canvas: { width: number; height: number },
@@ -13,17 +19,29 @@ vi.mock("../../src/view/pdf-export", () => ({
     sources: { paper: { night: boolean } },
     cssWidth: number,
     dpr: number,
+    crop?: { x: number; y: number; width: number; height: number },
   ) => {
     canvas.width = cssWidth * dpr;
     canvas.height = cssWidth * dpr;
-    painted.push({ id: page.id, cssWidth, dpr, night: sources.paper.night });
+    painted.push({
+      id: page.id,
+      cssWidth,
+      dpr,
+      night: sources.paper.night,
+      ...(crop ? { crop } : {}),
+    });
     return Promise.resolve();
   },
 }));
 /** The pages every notebook file decodes to. */
 let notebookPages: { id: string }[] = [];
+/** Whether the notebook file is an endless board. */
+let notebookEndless = false;
 vi.mock("../../src/model/serialize", () => ({
-  parseInkFile: () => ({ doc: { pages: notebookPages }, payload: "x" }),
+  parseInkFile: () => ({
+    doc: { pages: notebookPages, ...(notebookEndless ? { endless: true } : {}) },
+    payload: "x",
+  }),
 }));
 vi.mock("../../src/model/page-signature", () => ({
   pageSignature: (page: { id: string }) => page.id,
@@ -47,8 +65,8 @@ function fakeEl(): Record<string, unknown> {
     addClass(...cls: string[]) {
       for (const c of cls) (el.classes as Set<string>).add(c);
     },
-    removeClass(c: string) {
-      (el.classes as Set<string>).delete(c);
+    removeClass(...cls: string[]) {
+      for (const c of cls) (el.classes as Set<string>).delete(c);
     },
     setAttribute(k: string, v: string) {
       (el.attrs as Map<string, string>).set(k, v);
@@ -111,7 +129,14 @@ function registry(): {
   };
 }
 
-const markdownEmbed = { kind: "markdown", loadFile: () => undefined };
+/** Obsidian's Markdown embed; `loaded` counts its `loadFile` calls. */
+const markdownEmbed = {
+  kind: "markdown",
+  loaded: 0,
+  loadFile() {
+    this.loaded++;
+  },
+};
 
 function setUp(app: Record<string, unknown> = {}, paper: PaperTheme = LIGHT_PAPER) {
   const reg = registry();
@@ -173,11 +198,15 @@ describe("PageEmbeds' hook into Obsidian's embed registry", () => {
     expect(creator(ctx("Physics.notebook"), notebook, "")).not.toBe(markdownEmbed);
     expect(original).not.toHaveBeenCalled();
 
-    // A heading, a block, or an ordinary note, with or without a page: Obsidian's.
-    expect(creator(ctx("Physics.notebook#Intro"), notebook, "#Intro")).toBe(markdownEmbed);
+    // Other text may name a region: the notebook is read to know (and hands it back if not).
+    expect(creator(ctx("Physics.notebook#Intro"), notebook, "#Intro")).not.toBe(markdownEmbed);
+    expect(original).not.toHaveBeenCalled();
+
+    // A block, or an ordinary note, with or without a page: Obsidian's.
     expect(creator(ctx("Physics.notebook#^abc"), notebook, "#^abc")).toBe(markdownEmbed);
     const plain = new TFile("Plain.md") as never;
     expect(creator(ctx("Plain#page=2"), plain, "#page=2")).toBe(markdownEmbed);
+    expect(creator(ctx("Plain#Intro"), plain, "#Intro")).toBe(markdownEmbed);
     expect(creator(ctx("Plain"), plain, "")).toBe(markdownEmbed);
     expect(original).toHaveBeenCalledTimes(4);
   });
@@ -244,6 +273,8 @@ describe("Notebook embeds' pages", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     painted.length = 0;
+    notebookEndless = false;
+    markdownEmbed.loaded = 0;
   });
 
   type Fake = ReturnType<typeof fakeEl>;
@@ -346,5 +377,87 @@ describe("Notebook embeds' pages", () => {
     (notebook.stat as { mtime: number }).mtime = 1;
     report(pagesOf(c.containerEl)[0], true);
     await vi.waitFor(() => expect(pagesOf(c.containerEl)).toHaveLength(2));
+  });
+  it("prints a board cut to its drawing, not its whole grown page", async () => {
+    notebookEndless = true;
+    notebookPages = [
+      {
+        ...page("board"),
+        geometry: { width: 5600, height: 5600 },
+        strokes: [
+          {
+            id: "s1",
+            color: "#000000",
+            size: 4,
+            tool: "pen",
+            pts: [2000, 2000, 0.5, 2400, 2200, 0.5],
+          },
+        ],
+        textBoxes: [],
+      } as never,
+    ];
+    const { reg, embeds, notebook } = setUp();
+    embeds.onload();
+    const c = inPrint(ctx("Physics.notebook"));
+    await reg.embedByExtension.md!(c, notebook as never, "")?.loadFile();
+    const crop = painted[0]?.crop;
+    expect(crop).toBeDefined();
+    expect(crop!.width).toBeLessThan(1400);
+    expect(crop!.x).toBeLessThan(2000);
+    expect(crop!.x + crop!.width).toBeGreaterThan(2400);
+  });
+
+  it("prints a region alone, from whichever page has it", async () => {
+    notebookPages = [
+      page("a"),
+      {
+        ...page("b"),
+        regions: [{ id: "rg1", name: "Krebs cycle", x: 50, y: 60, w: 400, h: 200 }],
+      } as never,
+    ];
+    const { reg, embeds, notebook, original } = setUp();
+    embeds.onload();
+    const c = inPrint(ctx("Physics.notebook#Krebs cycle"));
+    await reg.embedByExtension.md!(c, notebook as never, "#Krebs cycle")?.loadFile();
+    expect(painted).toEqual([
+      expect.objectContaining({ id: "b", crop: { x: 50, y: 60, width: 400, height: 200 } }),
+    ]);
+    expect(original).not.toHaveBeenCalled();
+    expect((pagesOf(c.containerEl)[0]?.attrs as Map<string, string>).get("aria-label")).toBe(
+      "Physics, Krebs cycle",
+    );
+  });
+
+  it("hands a subpath that names no region back to Obsidian, which shows that heading", async () => {
+    notebookPages = [page("a")];
+    const { reg, embeds, notebook, original } = setUp();
+    embeds.onload();
+    const c = inPrint(ctx("Physics.notebook#Intro"));
+    await reg.embedByExtension.md!(c, notebook as never, "#Intro")?.loadFile();
+    // Obsidian's own embed, made in this place with the same link, and loaded.
+    expect(original).toHaveBeenCalledWith(c, notebook, "#Intro");
+    expect(markdownEmbed.loaded).toBe(1);
+    expect(painted).toHaveLength(0);
+    expect(pagesOf(c.containerEl)).toHaveLength(0);
+    expect((c.containerEl as unknown as Fake).classes).not.toContain("goodobsidian-page-embed");
+  });
+
+  it("says a region shown before is gone, rather than turning into a heading embed", async () => {
+    const report = observers();
+    const krebs = { id: "rg1", name: "Krebs cycle", x: 0, y: 0, w: 100, h: 100 };
+    notebookPages = [{ ...page("a"), regions: [krebs] } as never];
+    const { reg, embeds, notebook, original } = setUp();
+    embeds.onload();
+    const c = ctx("Physics.notebook#Krebs cycle");
+    void reg.embedByExtension.md!(c, notebook as never, "#Krebs cycle")?.loadFile();
+    report(pagesOf(c.containerEl)[0], true);
+    await vi.waitFor(() => expect(painted.map((p) => p.id)).toEqual(["a"]));
+
+    // Deleted on the board: the next version of the file has none.
+    notebookPages = [page("a")];
+    (notebook.stat as { mtime: number }).mtime = 2;
+    report(pagesOf(c.containerEl)[0], true);
+    await vi.waitFor(() => expect((c.containerEl as unknown as Fake).classes).toContain("is-link"));
+    expect(original).not.toHaveBeenCalled();
   });
 });

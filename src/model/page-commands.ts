@@ -404,6 +404,8 @@ export function duplicatePageAfter(
   delete copy.titleLevel;
   delete copy.sections;
   delete copy.chapters;
+  // A region's name is what links reach it by: it stays with the original.
+  delete copy.regions;
   // Its strokes get new ids, so links and tasks on the old ones would hold nothing.
   delete copy.links;
   delete copy.tasks;

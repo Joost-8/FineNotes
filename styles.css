@@ -12336,6 +12336,70 @@ button.goodobsidian-comment-marker.clickable-icon:hover {
   height: 16px;
 }
 
+/* Named regions a note can embed (`region-frames.ts`, discussion #167),
+   shown only while the lasso is the tool: a thin dashed outline, and the
+   name in a small accent tab above its top-left corner. The outline takes no
+   presses; the tab does (Copy embed link, Rename, Delete). */
+.goodobsidian-region-frames {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-region-frames.is-hidden,
+.goodobsidian-region-frame.is-hidden {
+  display: none;
+}
+
+.goodobsidian-region-frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--interactive-accent);
+  border-radius: var(--radius-s);
+}
+
+button.goodobsidian-region-name {
+  position: absolute;
+  left: -1.5px;
+  bottom: calc(100% + 4px);
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  max-width: 240px;
+  height: auto;
+  margin: 0;
+  padding: 2px var(--size-4-2) 2px var(--size-2-3);
+  border: none;
+  border-radius: var(--radius-l);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  box-shadow: var(--gob-shadow-mark);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
+}
+
+button.goodobsidian-region-name:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.goodobsidian-region-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-region-icon {
+  display: flex;
+}
+
+.goodobsidian-region-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
 /* ---------------------------------------------------- calculation notes */
 /* A line ending in "=" (calc-notes.ts, FineNotes#178). The sum's ink glows
    in the accent when it is read as maths (calc-glow.ts: a canvas over the

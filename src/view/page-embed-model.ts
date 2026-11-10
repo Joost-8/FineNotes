@@ -12,6 +12,7 @@
 import { BOARD_BLOCK, BOARD_CUT_STEP, boardDrawingBox, drawnBounds } from "../model/board";
 import type { Page, TextBoxElement } from "../model/document";
 import { stripInkSuffix } from "../model/new-notebook";
+import { findRegion, regionSubpathName } from "../model/regions";
 import { pageFromSubpath } from "../search/notebook-search";
 import { type PreviewPage, previewPageIndexes } from "../model/preview-pages";
 
@@ -57,23 +58,52 @@ export function embeddedPageNumber(subpath: string): number | null {
   return index === null ? null : index + 1;
 }
 
-/** What an embed of a notebook shows: page `page` (1-based); `whole` for a link to the notebook itself. */
+/**
+ * What an embed of a notebook shows: page `page` (1-based); `whole` for a
+ * link to the notebook itself; `region` for a named part of a page.
+ */
 export interface EmbedTarget {
-  /** The page named; 1 for a notebook embedded whole. */
+  /** The page named; 1 for a notebook embedded whole, or until a region is found. */
   page: number;
   /** `![[Physics.notebook]]`: every page is shown, one under the other. */
   whole: boolean;
+  /** `![[Mind map.notebook#Krebs cycle]]`: the region of that name, alone (discussion #167). */
+  region?: string;
 }
 
 /**
- * What an embed of a notebook with this subpath shows: the page it names, or
- * the whole notebook (no subpath). `null` for any other subpath,
- * such as a heading: those stay Obsidian's.
+ * What an embed of a notebook with this subpath shows, the first that
+ * matches:
+ *
+ * 1. no subpath: the whole notebook;
+ * 2. a page (`#page=3`, `#Page 3`, `#p3`): that page, even when a region
+ *    is named like one;
+ * 3. a block (`#^id`): `null`, left to Obsidian;
+ * 4. any other text: the region of that name (`#Krebs cycle`). Whether the
+ *    notebook has one is only known once it is read; when it has none, the
+ *    embed is handed back to Obsidian, which shows the heading of that name
+ *    in the note's text as it always did (`regionEmbedPart`).
  */
 export function embedTarget(subpath: string): EmbedTarget | null {
   if (/^#?\s*$/.test(subpath)) return { page: 1, whole: true };
   const page = embeddedPageNumber(subpath);
-  return page === null ? null : { page, whole: false };
+  if (page !== null) return { page, whole: false };
+  const region = regionSubpathName(subpath);
+  return region === null ? null : { page: 1, whole: false, region };
+}
+
+/**
+ * The page (1-based) and the part of it an embed of region `name` shows,
+ * or `null` when the notebook has no region of that name.
+ */
+export function regionEmbedPart(
+  pages: readonly Page[],
+  name: string,
+): { page: number; crop: EmbedCrop } | null {
+  const found = findRegion(pages, name);
+  if (!found) return null;
+  const { x, y, w, h } = found.region;
+  return { page: found.index + 1, crop: { x, y, width: w, height: h } };
 }
 
 /**
@@ -118,14 +148,17 @@ export function embedPageLink(linktext: string, target: EmbedTarget, page: numbe
   return `${path}#page=${page}`;
 }
 
-/** A page's label in an embed: "Physics, page 3", or the notebook's name for its only page. */
+/**
+ * A page's label in an embed: "Physics, page 3", the notebook's name for
+ * its only page, or "Mind map, Krebs cycle" for a region.
+ */
 export function embedPageLabel(
   basename: string,
   target: EmbedTarget,
   page: number,
   pageCount: number,
 ): string {
-  return target.whole && pageCount <= 1
+  return (target.whole && pageCount <= 1) || target.region !== undefined
     ? embedLabel(basename, target)
     : pageLinkLabel(basename, page);
 }
@@ -170,8 +203,12 @@ export function embedInsertion(
   return `${head}${embed}${tail}`;
 }
 
-/** What an embed reads as when it is a link: "Physics" for the whole notebook, else "Physics, page 3". */
+/**
+ * What an embed reads as when it is a link: "Physics" for the whole
+ * notebook, "Mind map, Krebs cycle" for a region, else "Physics, page 3".
+ */
 export function embedLabel(basename: string, target: EmbedTarget): string {
+  if (target.region !== undefined) return `${stripInkSuffix(basename)}, ${target.region}`;
   return target.whole ? stripInkSuffix(basename) : pageLinkLabel(basename, target.page);
 }
 
