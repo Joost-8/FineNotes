@@ -219,6 +219,7 @@ import {
   pageSnapIndex,
   pullAddProgress,
   columnScrollRangeX,
+  columnScrollRangeY,
   rowPageScrollRange,
   rowScrollInsets,
   rowScrollXForPage,
@@ -5331,8 +5332,11 @@ export class InkSurface {
       diagonalsScrollY: !row || (this.heldRow && !this.pinch),
       // Turning pages, the view rests centred on each page (`rowY`), never
       // scrolled up or down: the row's whole range is the pages' centres.
-      rangeY:
-        row && this.turnsPages && !this.joined
+      // Pages down, filled to the pane's width, no desk shows above page 1
+      // or below the last, as none shows beside them (discussion #43).
+      rangeY: !row
+        ? columnScrollRangeY(this.pageLayout, scale, this.cssW, this.cssH)
+        : this.turnsPages && !this.joined
           ? rowRestRangeY(this.pageLayout, scale, this.cssH)
           : undefined,
       holdX: (!row || (this.heldRow && !this.pinch)) && this.holdFitWidth(),

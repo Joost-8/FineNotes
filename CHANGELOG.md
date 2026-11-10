@@ -8,6 +8,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **No grey above or below a page a double tap filled.** With pages running
+  down, a double tap fills the screen's width with the page, but scrolling to
+  the top still showed a grey band above page 1, and one below the last page
+  at the end ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  Now the page stops at the screen's edges there, as at its sides. Zoomed out
+  to the whole page, the margin around it stays. The gap between pages stays
+  too; Join pages in Notebook settings closes it.
+
 ## [2.9.1] - 2026-11-10
 
 2.9.0's What's new card on Home had a bug and was incomplete: it could
