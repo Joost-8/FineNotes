@@ -15,6 +15,8 @@ import {
   boardLabel,
   boardStartGeometry,
   boardThumbBox,
+  hasBoards,
+  isBoardPage,
   newBoardPage,
 } from "../../src/model/board";
 import { AddPage, RemovePage } from "../../src/model/commands";
@@ -28,7 +30,8 @@ import {
 } from "../../src/model/format-features";
 import { History } from "../../src/model/history";
 import { DEFAULT_NOTEBOOK_CHOICES, buildNewDocument } from "../../src/model/new-notebook";
-import { MovePage, nextPageId } from "../../src/model/page-commands";
+import { MovePage, nextPageId, pageToInsertAfter } from "../../src/model/page-commands";
+import { paperPageFor, shapePageFor } from "../../src/model/templates";
 import { decodeDocument, encodeDocument } from "../../src/model/serialize";
 
 /**
@@ -245,5 +248,82 @@ describe("boardLabel", () => {
     page.title = "Plan";
     expect(boardLabel(page, 1)).toBe("2  Plan");
     expect(boardLabel(undefined, 2)).toBe("3");
+  });
+});
+
+describe("a board among a notebook's pages", () => {
+  function notebookWithBoard(): InkDocument {
+    const doc = buildNewDocument(DEFAULT_NOTEBOOK_CHOICES, "Physics");
+    const board = newBoardPage(nextPageId(doc), doc.pages[1], true);
+    board.strokes.push(stroke("s7", 2800, 2800));
+    doc.pages.splice(1, 0, board);
+    return doc;
+  }
+
+  it("is flagged on its page, and the notebook saves under the boards label", () => {
+    const doc = notebookWithBoard();
+    expect(doc.pages[1].board).toBe(true);
+    expect(isBoardPage(doc, doc.pages[1])).toBe(true);
+    expect(isBoardPage(doc, doc.pages[0])).toBe(false);
+    expect(hasBoards(doc)).toBe(true);
+    const payload = encodeDocument(doc);
+    expect(payload.startsWith("v2+boards:")).toBe(true);
+    const loaded = decodeDocument(payload);
+    expect(loaded.endless).toBeUndefined();
+    expect(loaded.pages.map((page) => page.board === true)).toEqual(
+      doc.pages.map((page) => page.board === true),
+    );
+    expect(encodeDocument(loaded)).toBe(payload);
+  });
+
+  it("leaves a notebook without one on the plain label, with no flag stored", () => {
+    const doc = buildNewDocument(DEFAULT_NOTEBOOK_CHOICES, "Physics");
+    const payload = encodeDocument(doc);
+    expect(payload.startsWith("v2:")).toBe(true);
+    expect(hasBoards(doc)).toBe(false);
+    expect(JSON.stringify(stored(payload))).not.toContain('"board"');
+  });
+
+  it("reads anything but a literal true as an ordinary page", () => {
+    const doc = notebookWithBoard();
+    const json = stored(encodeDocument(doc)) as unknown as { pages: Array<{ board?: unknown }> };
+    json.pages[1].board = "yes";
+    const loaded = decodeDocument(`v2+boards:${deflateToBase64(JSON.stringify(json))}`);
+    expect(loaded.pages[1].board).toBeUndefined();
+  });
+
+  it("every page of a board file is a board, flag or not", () => {
+    const doc = board();
+    expect(isBoardPage(doc, doc.pages[0])).toBe(true);
+    expect(newBoardPage("p2", doc.pages[0]).board).toBeUndefined();
+  });
+});
+
+describe("a page added next to a board among the pages", () => {
+  function pagesAroundBoard(): InkDocument {
+    const doc = buildNewDocument(
+      { ...DEFAULT_NOTEBOOK_CHOICES, cover: "none", ruling: "ruled-narrow" },
+      "x",
+    );
+    doc.pages.push(newBoardPage(nextPageId(doc), doc.pages[0], true));
+    return doc;
+  }
+
+  it("takes a page's size and paper, not the board's", () => {
+    const doc = pagesAroundBoard();
+    const board = doc.pages.length - 1;
+    const insert = pageToInsertAfter(doc, board)!;
+    expect(insert.page.geometry).toEqual(doc.pages[0].geometry);
+    expect(insert.page.backdrop.kind).toBe(doc.pages[0].backdrop.kind);
+    expect(insert.page.board).toBeUndefined();
+    expect(shapePageFor(doc.pages, board)).toBe(doc.pages[0]);
+    expect(paperPageFor(doc.pages, board)).toBe(doc.pages[0]);
+  });
+
+  it("is a plain page of the default size in a notebook of boards only", () => {
+    const doc = pagesAroundBoard();
+    doc.pages.splice(0, doc.pages.length - 1);
+    expect(shapePageFor(doc.pages, 0)).toBeUndefined();
+    expect(pageToInsertAfter(doc, 0)!.page.geometry).toEqual(blankPage().geometry);
   });
 });

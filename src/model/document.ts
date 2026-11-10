@@ -823,6 +823,14 @@ export interface Page {
    */
   epoch?: number;
   /**
+   * An endless board inside an ordinary notebook (discussion #160,
+   * `model/board.ts`): listed among the pages, left out of their column, and
+   * shown on its own as a board when gone to. Stored only as `true`; a
+   * notebook with one is labelled `boards`. Every page of a board file
+   * (`InkDocument.endless`) is a board without it.
+   */
+  board?: true;
+  /**
    * Bookmarked (GoodNotes' "Add to Favourites"): the page sidebar can show
    * bookmarked pages only. Stored only as `true`; absent means not.
    */

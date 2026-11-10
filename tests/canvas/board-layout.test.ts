@@ -17,9 +17,18 @@ import {
   boxAtPoint,
   layoutBoard,
   layoutBoards,
+  layoutNotebook,
+  layoutPages,
+  columnScrollRangeX,
+  currentPageIndex,
+  currentPageIndexInRow,
+  pageSnapIndex,
+  rowScrollInsets,
+  shownBoxes,
   visibleBoxes,
 } from "../../src/canvas/page-layout";
 import { KineticScroller } from "../../src/canvas/scroll-physics";
+import { joinLines, joinedSides } from "../../src/canvas/page-join";
 import { MAX_SCALE, MIN_SCALE, boardFitZoom } from "../../src/canvas/zoom";
 
 const geometry = { width: 5600, height: 5600 };
@@ -220,5 +229,60 @@ describe("layoutBoards (discussion #160)", () => {
     expect(layoutBoards(pages, 9).boxes[2].y).toBe(0);
     expect(layoutBoards(pages, -1).boxes[0].y).toBe(0);
     expect(layoutBoards([pages[0]], 0)).toEqual(layoutBoard(pages[0]));
+  });
+});
+
+describe("layoutNotebook: boards among a notebook's pages (discussion #160)", () => {
+  const page = (id: string): ReturnType<typeof blankPage> =>
+    blankPage(id, { width: 800, height: 1100 });
+  const board = (id: string): ReturnType<typeof blankPage> => ({
+    ...blankPage(id, geometry),
+    board: true,
+  });
+  const pages = [page("p1"), board("p2"), page("p3"), board("p4")];
+
+  it("is layoutPages when there is no board", () => {
+    const plain = [page("p1"), page("p2")];
+    expect(layoutNotebook(plain)).toEqual(layoutPages(plain));
+  });
+
+  it("lays the pages out as if the boards were not there, the boards parked at their indexes", () => {
+    const layout = layoutNotebook(pages);
+    const column = layoutPages([pages[0], pages[2]]);
+    expect(layout.boxes.map((box) => box.index)).toEqual([0, 1, 2, 3]);
+    expect(layout.boxes[2]).toEqual({ ...column.boxes[1], index: 2 });
+    expect(layout.boxes[1].parked).toBe(true);
+    expect(layout.boxes[3].parked).toBe(true);
+    expect(layout.height).toBe(column.height);
+    expect(shownBoxes(layout).map((box) => box.id)).toEqual(["p1", "p3"]);
+  });
+
+  it("keeps the boards out of every measure of the layout", () => {
+    const layout = layoutNotebook(pages);
+    const column = layoutPages([pages[0], pages[2]]);
+    expect(columnScrollRangeX(layout, 1, 900)).toEqual(columnScrollRangeX(column, 1, 900));
+    expect(currentPageIndex(layout, 0, 100_000_000)).toBe(0);
+    expect(currentPageIndex(layout, column.boxes[1].y, column.boxes[1].y + 900)).toBe(2);
+  });
+
+  it("steps a row's swipe over a board, and measures the row without it", () => {
+    const row = layoutNotebook(pages, { direction: "horizontal" });
+    const plain = layoutPages([pages[0], pages[2]], { direction: "horizontal" });
+    expect(pageSnapIndex(row, 0, 1, 0, 1, 900)).toBe(2);
+    expect(pageSnapIndex(row, 0, -1, 2, 1, 900)).toBe(0);
+    expect(rowScrollInsets(row, 1, 900)).toEqual(rowScrollInsets(plain, 1, 900));
+    expect(currentPageIndexInRow(row, 0, 100_000)).toBe(0);
+  });
+
+  it("joins only the pages shown", () => {
+    const joined = layoutNotebook(pages, { joined: true });
+    expect(joinLines(joined).map((line) => line.index)).toEqual([2]);
+    expect(joinedSides(joined, 2)).toMatchObject({ top: true, bottom: false });
+    expect(joinedSides(joined, 1)).toMatchObject({ top: false, bottom: false });
+  });
+
+  it("is the first board alone for a notebook of boards only", () => {
+    const only = [board("p1"), board("p2")];
+    expect(layoutNotebook(only)).toEqual(layoutBoards(only, 0));
   });
 });

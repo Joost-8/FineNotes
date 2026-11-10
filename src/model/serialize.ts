@@ -192,6 +192,7 @@ interface StoredPage {
   kind: string;
   geometry: PageGeometry;
   backdrop: Backdrop;
+  board?: true;
   epoch?: number;
   bookmarked?: boolean;
   tab?: string;
@@ -360,6 +361,7 @@ function storePage(page: Page): StoredPage {
     kind: page.kind,
     geometry: page.geometry,
     backdrop: page.backdrop,
+    board: page.board === true ? true : undefined,
     epoch: isEpoch(page.epoch) ? Math.round(page.epoch) : undefined,
     bookmarked: page.bookmarked === true ? true : undefined,
     tab: readTabColor(page.tab),
@@ -431,7 +433,9 @@ function featuresOf(doc: InkDocument): FormatFeature[] {
   if (doc.pages.some((page) => page.textBoxes.some((box) => box.rotation !== undefined))) {
     features.push("text-turn");
   }
-  if (doc.endless === true && doc.pages.length > 1) features.push("boards");
+  if ((doc.endless === true && doc.pages.length > 1) || doc.pages.some((p) => p.board === true)) {
+    features.push("boards");
+  }
   return features;
 }
 
@@ -1179,6 +1183,7 @@ function normalizePage(
     strokes,
     images,
     textBoxes,
+    ...(page.board === true ? { board: true as const } : {}),
     ...(isEpoch(page.epoch) ? { epoch: Math.round(page.epoch) } : {}),
     // Only a literal `true`: anything else in the file is "not bookmarked".
     ...(page.bookmarked === true ? { bookmarked: true as const } : {}),

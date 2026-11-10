@@ -59,9 +59,22 @@ export const BOARD_MAX_BLOCKS = 60;
 /** The papers a board offers: the three a mind map is drawn on. White, always. */
 export const BOARD_RULINGS: readonly Ruling[] = ["blank", "dotted", "squared"];
 
-/** Whether `doc` is an endless board. */
+/** Whether `doc` is an endless board file (every page a board). */
 export function isBoard(doc: Pick<InkDocument, "endless">): boolean {
   return doc.endless === true;
+}
+
+/**
+ * Whether `page` of `doc` is a board: every page of a board file is, and in
+ * an ordinary notebook a page flagged `board` (discussion #160).
+ */
+export function isBoardPage(doc: Pick<InkDocument, "endless">, page: Pick<Page, "board">): boolean {
+  return doc.endless === true || page.board === true;
+}
+
+/** Whether `doc` has any board, in a board file or among a notebook's pages. */
+export function hasBoards(doc: Pick<InkDocument, "endless" | "pages">): boolean {
+  return doc.endless === true || doc.pages.some((page) => page.board === true);
 }
 
 /** The page a new board starts with: {@link BOARD_START_BLOCKS} blocks each way. */
@@ -385,11 +398,12 @@ export function boardDrawing(
 // --- A file of several boards (discussion #160) --------------------------------
 
 /**
- * A new board for a board file, as page `id`: as big as a board starts
- * ({@link boardStartGeometry}), empty, on the paper of `like` (the board
- * being read) when that is one a board offers, else blank.
+ * A new board as page `id`: as big as a board starts
+ * ({@link boardStartGeometry}), empty, on the paper of `like` (the page
+ * being read) when that is one a board offers, else blank. `inNotebook`:
+ * a board among an ordinary notebook's pages, flagged `board`.
  */
-export function newBoardPage(id: string, like: Page | undefined): Page {
+export function newBoardPage(id: string, like: Page | undefined, inNotebook = false): Page {
   const backdrop =
     like && (BOARD_RULINGS as readonly string[]).includes(like.backdrop.kind)
       ? structuredClone(like.backdrop)
@@ -402,6 +416,7 @@ export function newBoardPage(id: string, like: Page | undefined): Page {
     strokes: [],
     images: [],
     textBoxes: [],
+    ...(inNotebook ? { board: true as const } : {}),
   };
 }
 

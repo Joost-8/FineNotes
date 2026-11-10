@@ -38,9 +38,10 @@ import { SCHEMA_VERSION } from "../constants";
  *   would drop each on its next save.
  * - `text-turn`: a turned text box (`TextBoxElement.rotation`); an older
  *   build would save it back upright.
- * - `boards`: a board file holding more than one endless board
- *   (discussion #160, `model/board.ts`); an older build would read them as
- *   one notebook of pages metres long and drop the board flag on its save.
+ * - `boards`: a board file holding more than one endless board, or a
+ *   notebook with a board among its pages (`Page.board`) (discussion #160,
+ *   `model/board.ts`); an older build would read them as pages metres long
+ *   and drop the board flags on its save.
  */
 export const FORMAT_FEATURES = [
   "sticky",
