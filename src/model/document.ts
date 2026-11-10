@@ -1050,10 +1050,13 @@ export interface InkDocument {
    */
   single?: boolean;
   /**
-   * An endless board (FineNotes#46, `model/board.ts`): its one page grows as
-   * it is written on, and the view scrolls freely across it. A board is
-   * written with `single` too, so a build that knows no boards opens it as a
-   * single page. Only ever stored as `true`, and only on a one-page document.
+   * An endless board (FineNotes#46, `model/board.ts`): each page is a board
+   * that grows as it is written on, and the view shows one at a time,
+   * scrolled freely. A board file is written with `single` too, so a build
+   * that knows no boards opens a one-board file as a single page; a file of
+   * several boards (discussion #160) is labelled `boards`
+   * (`format-features.ts`), which an older build holds read-only. Only ever
+   * stored as `true`.
    */
   endless?: true;
   /** Audio recorded against this note, oldest first. Absent when there are none. */

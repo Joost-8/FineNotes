@@ -12,7 +12,12 @@ import {
   boardCentre,
   boardScrollRange,
   boardScrollToCentre,
+  BOARD_PARKED_Y,
+  PAGE_GAP,
+  boxAtPoint,
   layoutBoard,
+  layoutBoards,
+  visibleBoxes,
 } from "../../src/canvas/page-layout";
 import { KineticScroller } from "../../src/canvas/scroll-physics";
 import { MAX_SCALE, MIN_SCALE, boardFitZoom } from "../../src/canvas/zoom";
@@ -183,5 +188,37 @@ describe("KineticScroller on a board", () => {
     expect(s.position.y).toBeLessThanOrEqual(2100);
     expect(s.position.x).toBeGreaterThan(1240);
     expect(s.position.y).toBeGreaterThan(1240);
+  });
+});
+
+describe("layoutBoards (discussion #160)", () => {
+  const pages = [
+    blankPage("p1", geometry),
+    blankPage("p2", { width: 6720, height: 4480 }),
+    blankPage("p3", geometry),
+  ];
+
+  it("shows the current board at the origin and is that board's size", () => {
+    const layout = layoutBoards(pages, 1);
+    expect(layout.boxes[1]).toEqual({ index: 1, id: "p2", x: 0, y: 0, width: 6720, height: 4480 });
+    expect(layout.width).toBe(6720);
+    expect(layout.height).toBe(4480);
+  });
+
+  it("keeps every board's box at its own index, the others parked out of reach", () => {
+    const layout = layoutBoards(pages, 1);
+    expect(layout.boxes.map((box) => box.index)).toEqual([0, 1, 2]);
+    expect(layout.boxes.map((box) => box.id)).toEqual(["p1", "p2", "p3"]);
+    expect(layout.boxes[0].y).toBe(BOARD_PARKED_Y);
+    expect(layout.boxes[2].y).toBe(BOARD_PARKED_Y + 5600 + PAGE_GAP);
+    // Nothing on or around the board being shown reaches a parked one.
+    expect(visibleBoxes(layout, -100_000, 100_000).map((box) => box.id)).toEqual(["p2"]);
+    expect(boxAtPoint(layout, 10, 10)?.id).toBe("p2");
+  });
+
+  it("clamps the current board into the file, and is layoutBoard for one", () => {
+    expect(layoutBoards(pages, 9).boxes[2].y).toBe(0);
+    expect(layoutBoards(pages, -1).boxes[0].y).toBe(0);
+    expect(layoutBoards([pages[0]], 0)).toEqual(layoutBoard(pages[0]));
   });
 });

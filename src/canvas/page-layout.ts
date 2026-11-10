@@ -690,14 +690,37 @@ export function scrollTopForPage(layout: DocumentLayout, index: number): number 
  * scale comes from the writing size (`WRITING_SCALE`) and the zoom.
  */
 export function layoutBoard(page: Page): DocumentLayout {
-  const { width, height } = page.geometry;
-  return {
-    boxes: [{ index: 0, id: page.id, x: 0, y: 0, width, height }],
-    width,
-    height,
-    direction: "vertical",
-    fitWidth: width,
-  };
+  return layoutBoards([page], 0);
+}
+
+/**
+ * Where a board file's other boards wait (discussion #160), layout px: below
+ * the board being shown, further than the largest board reaches (60 blocks,
+ * 67 200 px) and its rubber band, so no view, band or hit test finds them.
+ */
+export const BOARD_PARKED_Y = 1e7;
+
+/**
+ * A board file's layout (discussion #160): board `current` at the origin as
+ * {@link layoutBoard} lays a lone board out, and every other board parked
+ * below {@link BOARD_PARKED_Y}, one after another, so each page keeps its
+ * box at its own index (`boxes[i]` is `pages[i]`, as every caller expects)
+ * without ever showing. The layout's size is the current board's.
+ */
+export function layoutBoards(pages: readonly Page[], current: number): DocumentLayout {
+  const at = Math.max(0, Math.min(pages.length - 1, Math.trunc(current) || 0));
+  const shown = pages[at];
+  const width = shown?.geometry.width ?? 0;
+  const height = shown?.geometry.height ?? 0;
+  let parked = BOARD_PARKED_Y;
+  const boxes = pages.map((page, index): PageBox => {
+    const { width: w, height: h } = page.geometry;
+    if (index === at) return { index, id: page.id, x: 0, y: 0, width: w, height: h };
+    const box = { index, id: page.id, x: 0, y: parked, width: w, height: h };
+    parked += h + PAGE_GAP;
+    return box;
+  });
+  return { boxes, width, height, direction: "vertical", fitWidth: width };
 }
 
 /** The middle of what is drawn on a board, or of the page when nothing is, page px. */

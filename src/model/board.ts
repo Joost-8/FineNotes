@@ -381,3 +381,55 @@ export function boardDrawing(
   }
   return copy;
 }
+
+// --- A file of several boards (discussion #160) --------------------------------
+
+/**
+ * A new board for a board file, as page `id`: as big as a board starts
+ * ({@link boardStartGeometry}), empty, on the paper of `like` (the board
+ * being read) when that is one a board offers, else blank.
+ */
+export function newBoardPage(id: string, like: Page | undefined): Page {
+  const backdrop =
+    like && (BOARD_RULINGS as readonly string[]).includes(like.backdrop.kind)
+      ? structuredClone(like.backdrop)
+      : ({ kind: "blank" } as const);
+  return {
+    id,
+    kind: "ink",
+    geometry: boardStartGeometry(),
+    backdrop,
+    strokes: [],
+    images: [],
+    textBoxes: [],
+  };
+}
+
+/** A board's thumbnail is never wider than this, nor taller than its inverse. */
+export const BOARD_THUMB_ASPECT = 4 / 3;
+
+/**
+ * The part of a board its thumbnail shows: the drawing ({@link boardDrawingBox}),
+ * widened about its middle to between 3:4 and 4:3, so one long line of
+ * writing still shows as a picture and not a sliver. Inside the page.
+ */
+export function boardThumbBox(
+  page: Page,
+  textHeight?: (text: TextBoxElement) => number,
+): { x: number; y: number; width: number; height: number } {
+  const box = boardDrawingBox(page, textHeight);
+  const { width: pageW, height: pageH } = page.geometry;
+  let { width, height } = box;
+  if (width > height * BOARD_THUMB_ASPECT) height = width / BOARD_THUMB_ASPECT;
+  else if (height > width * BOARD_THUMB_ASPECT) width = height / BOARD_THUMB_ASPECT;
+  width = Math.min(width, pageW);
+  height = Math.min(height, pageH);
+  const place = (start: number, was: number, now: number, room: number): number =>
+    Math.min(Math.max(0, start - (now - was) / 2), Math.max(0, room - now));
+  return {
+    x: place(box.x, box.width, width, pageW),
+    y: place(box.y, box.height, height, pageH),
+    width,
+    height,
+  };
+}

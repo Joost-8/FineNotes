@@ -431,6 +431,7 @@ function featuresOf(doc: InkDocument): FormatFeature[] {
   if (doc.pages.some((page) => page.textBoxes.some((box) => box.rotation !== undefined))) {
     features.push("text-turn");
   }
+  if (doc.endless === true && doc.pages.length > 1) features.push("boards");
   return features;
 }
 
@@ -439,7 +440,7 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
   const meta: StoredMeta = {
     recognizedHash: doc.recognizedHash || undefined,
     single: doc.single === true ? true : undefined,
-    endless: doc.endless === true && doc.pages.length === 1 ? true : undefined,
+    endless: doc.endless === true ? true : undefined,
     folders: normalizeAttachmentFolders(doc.folders),
     scroll: doc.scroll === "horizontal" ? "horizontal" : undefined,
     joined: doc.joined === true ? true : undefined,
@@ -1307,9 +1308,12 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   const doc: InkDocument = { version: SCHEMA_VERSION, view, pages };
   if (typeof meta.recognizedHash === "string") doc.recognizedHash = meta.recognizedHash;
   if (meta.single === true) doc.single = true;
-  // A board is one page. Pages added to it by a build that knows no boards
-  // make it a notebook again, with every page kept.
-  if (meta.endless === true && pages.length === 1) doc.endless = true;
+  // A board file holds one board, or several under the `boards` label
+  // (discussion #160). Pages added to a one-board file without that label
+  // (a hand edit) make it a notebook again, with every page kept.
+  if (meta.endless === true && (pages.length === 1 || namesBoards(raw.requires))) {
+    doc.endless = true;
+  }
   if (recordings.length > 0) doc.recordings = recordings;
   if (folders) doc.folders = folders;
   if (meta.scroll === "horizontal") doc.scroll = "horizontal";
@@ -1322,6 +1326,11 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   const furniture = readFurniture(meta.furniture);
   if (furniture) doc.furniture = furniture;
   return doc;
+}
+
+/** Whether the stored `requires` list names `boards`: a file of several boards. */
+function namesBoards(requires: unknown): boolean {
+  return Array.isArray(requires) && requires.includes("boards");
 }
 
 /** Run one stage of unpacking, turning its failure into a {@link SerializeError}. */

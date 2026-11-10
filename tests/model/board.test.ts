@@ -520,11 +520,11 @@ describe("a board in the file", () => {
     expect(loaded.pages[0].geometry.width).toBe(BOARD_BLOCK * BOARD_START_BLOCKS);
   });
 
-  it("is a notebook again once a page was added to it", () => {
+  it("stays a board file once a second board was added (discussion #160)", () => {
     const doc = board();
     doc.pages.push({ ...doc.pages[0], id: "p2", strokes: [], images: [], textBoxes: [] });
     const loaded = decodeDocument(encodeDocument(doc));
-    expect(loaded.endless).toBeUndefined();
+    expect(loaded.endless).toBe(true);
     expect(loaded.pages).toHaveLength(2);
   });
 
