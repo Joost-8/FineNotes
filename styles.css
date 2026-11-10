@@ -1853,6 +1853,28 @@ select.goodobsidian-choice-select {
   color: var(--text-normal);
 }
 
+/* A board among a notebook's pages (discussion #160): ∞ at the lower left. */
+.goodobsidian-thumb-kind {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  display: flex;
+  padding: 1px 4px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  box-shadow: 0 0 0 1px var(--background-modifier-border);
+}
+
+.goodobsidian-thumb-kind svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-thumb-kind.is-hidden {
+  display: none;
+}
+
 .goodobsidian-thumb.is-current .goodobsidian-thumb-number {
   color: var(--text-normal);
   font-weight: var(--font-normal, 400);

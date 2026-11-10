@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { BOARD_BLOCK, BOARD_START_BLOCKS } from "../../src/model/board";
+import { BOARD_BLOCK, BOARD_START_BLOCKS, newBoardPage } from "../../src/model/board";
 import type { InkDocument, Stroke } from "../../src/model/document";
 import { History } from "../../src/model/history";
 import { DEFAULT_NOTEBOOK_CHOICES, buildNewDocument } from "../../src/model/new-notebook";
@@ -216,5 +216,54 @@ describe("a file of several boards (discussion #160)", () => {
     expect(run(surface, "layoutStale")).toBe(false);
     doc.pages.reverse();
     expect(run(surface, "layoutStale")).toBe(true);
+  });
+});
+
+describe("a board among a notebook's pages (discussion #160)", () => {
+  function notebook(): { surface: State; doc: InkDocument } {
+    const { surface } = boardSurface();
+    const doc = buildNewDocument(DEFAULT_NOTEBOOK_CHOICES, "Physics");
+    doc.pages.splice(1, 0, newBoardPage("p9", doc.pages[0], true));
+    Object.assign(surface, { doc, board: false });
+    return { surface, doc };
+  }
+
+  it("shows the board when the board wanted is one of the notebook's boards", () => {
+    const { surface, doc } = notebook();
+    expect(run(surface, "showsBoardPage")).toBe(false);
+    surface.boardRef = doc.pages[1];
+    expect(run(surface, "showsBoardPage")).toBe(true);
+    // By id after a reload, and no longer once it is deleted.
+    surface.boardRef = { ...doc.pages[1] };
+    expect(run(surface, "showsBoardPage")).toBe(true);
+    doc.pages.splice(1, 1);
+    expect(run(surface, "showsBoardPage")).toBe(false);
+  });
+
+  it("never for an ordinary page, nor in a board file", () => {
+    const { surface, doc } = notebook();
+    surface.boardRef = doc.pages[0];
+    expect(run(surface, "showsBoardPage")).toBe(false);
+    const { surface: file, doc: boards } = boardSurface();
+    file.boardRef = boards.pages[0];
+    expect(run(file, "showsBoardPage")).toBe(false);
+  });
+});
+
+describe("paging past a board among the pages (discussion #160)", () => {
+  it("steps over boards in a notebook, and from board to board in a board file", () => {
+    const { surface } = boardSurface();
+    const doc = buildNewDocument(DEFAULT_NOTEBOOK_CHOICES, "Physics");
+    doc.pages.splice(1);
+    doc.pages.push({ ...structuredClone(doc.pages[0]), id: "p8", board: true });
+    doc.pages.push({ ...structuredClone(doc.pages[0]), id: "p9" });
+    Object.assign(surface, { doc, pageIndex: 0 });
+    expect(run(surface, "pageStep", 1)).toBe(2);
+    surface.pageIndex = 2;
+    expect(run(surface, "pageStep", -1)).toBe(0);
+    expect(run(surface, "pageStep", 1)).toBe(2);
+    const { surface: file } = boardSurface();
+    Object.assign(file, { pageIndex: 0 });
+    expect(run(file, "pageStep", 1)).toBe(1);
   });
 });

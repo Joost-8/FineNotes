@@ -20,6 +20,11 @@ extracted from the matching section of this file by `release.yml`.
   contents go to the board they found. A file with one board stays as it
   was. A file with several boards opens read-only in FineNotes 2.9.1 and
   older, which cannot show them, so nothing on it is lost.
+- **A board inside a notebook.** Add page has a new last row, Add board:
+  an endless board among the notebook's pages, marked ∞ in the sidebar.
+  Tap it to show it on its own; tap any page to go back. Scrolling and
+  Page Up/Down go past it, and a page added next to it takes a page's size.
+  A notebook with a board opens read-only in FineNotes 2.9.1 and older.
 
 ## [2.9.1] - 2026-11-10
 

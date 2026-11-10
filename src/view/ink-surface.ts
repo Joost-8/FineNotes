@@ -243,6 +243,8 @@ import {
   boardScrollRange,
   boardScrollToCentre,
   layoutBoards,
+  layoutNotebook,
+  shownBoxes,
 } from "../canvas/page-layout";
 import { movePagePts, pagesReached } from "../canvas/page-join";
 import {
@@ -333,7 +335,14 @@ import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physic
 import { pairsAsDoubleTap, type PlainTap } from "../input/multi-finger-tap";
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { WRITING_SCALE, formatMm, zoomPercent } from "../model/units";
-import { GrowBoard, boardGrowth, drawnBounds, isBoard, isNoGrowth } from "../model/board";
+import {
+  GrowBoard,
+  boardGrowth,
+  drawnBounds,
+  isBoard,
+  isBoardPage,
+  isNoGrowth,
+} from "../model/board";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
   BRUSH_PRESSURE,
@@ -3946,6 +3955,8 @@ export class InkSurface {
    * {@link showBoardSpot}). Anything else: {@link resetView}, the page fitted.
    */
   showHome(): void {
+    // A notebook opens on its pages, not on a board among them.
+    if (this.board && !isBoard(this.doc)) this.leaveBoard();
     if (!this.board) {
       this.resetView();
       return;
@@ -4059,13 +4070,18 @@ export class InkSurface {
    */
   goToPage(index: number, animate = false): void {
     this.parkedText = null;
-    // A board file shows one board at a time (discussion #160): going to a
-    // page is going to that board, where it was left.
-    if (this.board) {
-      this.switchBoard(Math.max(0, Math.min(this.doc.pages.length - 1, index)));
+    const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
+    // A board is shown on its own (discussion #160): going to one is going to
+    // that board, where it was left; going from one to a page, back to the pages.
+    const target = this.doc.pages[clamped];
+    if (target && isBoardPage(this.doc, target)) {
+      this.switchBoard(clamped);
       return;
     }
-    const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
+    if (this.board) {
+      this.leaveBoard();
+      animate = false;
+    }
     const row = this.direction === "horizontal";
     // Zoomed in, a row lands on the page's top-left corner at the same zoom;
     // centring it would only show its middle.
@@ -4096,10 +4112,15 @@ export class InkSurface {
    */
   goToPagePoint(index: number, y: number, animate = false, pointX?: number): void {
     const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
-    // On another board of the file (discussion #160): that board first, then
-    // straight to the point; a glide from where it was left would cross it.
-    if (this.board && this.boardPage !== this.doc.pages[clamped]) {
+    // On another board (discussion #160): that board first, then straight
+    // to the point; a glide from where it was left would cross it. From a
+    // board to a page: back to the pages first.
+    const target = this.doc.pages[clamped];
+    if (target && isBoardPage(this.doc, target) && this.boardPage !== target) {
       this.switchBoard(clamped);
+      animate = false;
+    } else if (this.board && target && !isBoardPage(this.doc, target)) {
+      this.leaveBoard();
       animate = false;
     }
     const box = this.pageLayout.boxes[clamped];
@@ -4171,11 +4192,26 @@ export class InkSurface {
   }
 
   nextPage(): void {
-    this.goToPage(this.pageIndex + 1, true);
+    this.goToPage(this.pageStep(1), true);
   }
 
   previousPage(): void {
-    this.goToPage(this.pageIndex - 1, true);
+    this.goToPage(this.pageStep(-1), true);
+  }
+
+  /**
+   * The page `step` pages on from the one being read, as paging reaches it:
+   * in a notebook, boards among the pages are stepped over (discussion #160),
+   * as their column leaves them out; a board file steps from board to board.
+   * The page being read when there is none that way.
+   */
+  private pageStep(step: -1 | 1): number {
+    const pages = this.doc.pages;
+    if (isBoard(this.doc)) return this.pageIndex + step;
+    for (let i = this.pageIndex + step; i >= 0 && i < pages.length; i += step) {
+      if (pages[i]?.board !== true) return i;
+    }
+    return this.pageIndex;
   }
 
   /** Whether an add-page control should be enabled (see `onAddPageRequested`). */
@@ -4910,7 +4946,11 @@ export class InkSurface {
     // when the pane changes width (the sidebar, the Ask AI panel, a rotation,
     // Split View): the scale and the gap between pages both follow the width,
     // so the old scroll offset would name a spot pages away.
-    if (isBoard(this.doc)) {
+    // A notebook of boards only has no pages to show: its first board.
+    if (!isBoard(this.doc) && !this.showsBoardPage() && this.doc.pages.every((p) => p.board)) {
+      this.boardRef = this.doc.pages[0] ?? null;
+    }
+    if (isBoard(this.doc) || this.showsBoardPage()) {
       this.layoutBoardView(cssW, cssH);
       this.layoutTail(cssW, cssH);
       return;
@@ -4951,7 +4991,8 @@ export class InkSurface {
     const rejoined = joined !== (this.joined === true);
     this.joined = joined;
     if (rejoined) this.strokeIndex?.rebuild(this.doc.pages);
-    this.pageLayout = layoutPages(this.doc.pages, { direction, joined });
+    // A board among the pages (discussion #160) is left out of their column.
+    this.pageLayout = layoutNotebook(this.doc.pages, { direction, joined });
     renderer.setLayout(this.pageLayout);
     // Fit the page stack to the available width, but never magnify past 1:1 —
     // on a wide desktop pane an upscaled page looks like a zoom bug, and the
@@ -4981,7 +5022,8 @@ export class InkSurface {
       // floor just computed still hold.
       // Zoomed in, the gap closes so the next page shows beside this one.
       // Joined pages have no gap to space or close: 0 keeps `syncRowGap` out.
-      this.rowSlot = joined ? 0 : rowSlotGap(this.doc.pages, cssW, this.baseScale * this.minZoom);
+      const shown = this.doc.pages.filter((page) => page.board !== true);
+      this.rowSlot = joined ? 0 : rowSlotGap(shown, cssW, this.baseScale * this.minZoom);
       this.rowGap = Number.NaN;
       this.syncRowGap();
     }
@@ -5044,7 +5086,8 @@ export class InkSurface {
     const switched = this.boardLaidOut !== null && this.boardLaidOut !== page.id;
     this.boardLaidOut = page.id;
     this.boardRef = page;
-    const remembered = switched ? this.boardSpots.get(page) : undefined;
+    // A board again after another, or after a notebook's pages: where it was left.
+    const remembered = switched || !this.board ? this.boardSpots.get(page) : undefined;
     const scaleBefore = this.unitScale;
     const shift = switched ? { x: 0, y: 0 } : this.boardShift;
     this.boardShift = { x: 0, y: 0 };
@@ -5119,6 +5162,34 @@ export class InkSurface {
   }
 
   /**
+   * Whether the view shows a board of an ordinary notebook (discussion #160):
+   * {@link boardRef} is one of its pages, by identity or by id, flagged `board`.
+   */
+  private showsBoardPage(): boolean {
+    const ref = this.boardRef;
+    if (!ref || isBoard(this.doc)) return false;
+    const pages = this.doc.pages;
+    const page = pages.includes(ref) ? ref : pages.find((p) => p.id === ref.id);
+    return page?.board === true;
+  }
+
+  /**
+   * Back from a board of an ordinary notebook to its pages: the board's spot
+   * is kept, and the pages lay out as they do, fitted afresh.
+   */
+  private leaveBoard(): void {
+    const shown = this.boardPage;
+    const spot = this.boardSpot();
+    if (shown && spot) this.boardSpots.set(shown, spot);
+    this.parkedText = null;
+    this.dropSelection();
+    this.pinch = null;
+    this.boardRef = null;
+    this.renderer?.invalidateAll();
+    this.layout();
+  }
+
+  /**
    * Show board `index` of a board file (discussion #160): the one shown is
    * left where it is (its spot kept for this session), and the other opens
    * where it was left, or at 100% on the middle of its drawing.
@@ -5126,9 +5197,9 @@ export class InkSurface {
   private switchBoard(index: number): void {
     const next = this.doc.pages[index];
     const shown = this.boardPage;
-    if (!next || !shown || next === shown) return;
+    if (!next || next === shown) return;
     const spot = this.boardSpot();
-    if (spot) this.boardSpots.set(shown, spot);
+    if (shown && spot) this.boardSpots.set(shown, spot);
     this.parkedText = null;
     this.dropSelection();
     this.pinch = null;
@@ -5356,7 +5427,7 @@ export class InkSurface {
     const layout = this.pageLayout;
     let tallest = 0;
     let widest = 0;
-    for (const box of layout.boxes) {
+    for (const box of shownBoxes(layout)) {
       tallest = Math.max(tallest, box.height);
       widest = Math.max(widest, box.width);
     }
@@ -5425,7 +5496,7 @@ export class InkSurface {
     // (`rowEdgeTurn`). While a pinch is on, the whole row is free, so the
     // neighbours show beside the page; letting go settles on the page then
     // in the middle (`onPinchEnd`). Joined pages are never held (`heldRow`).
-    const last = this.pageLayout.boxes.length - 1;
+    const last = shownBoxes(this.pageLayout).at(-1)?.index ?? -1;
     const desk = this.freePageEdges ? this.cssW / 2 : 0;
     // Pages down: held centred while the pages fit the pane's width, and
     // never panned onto the desk beside them (discussion #43, as Goodnotes).
@@ -6057,7 +6128,9 @@ export class InkSurface {
    * to the previous page's right edge (`rowEdgeTurn`).
    */
   private turnHeldPage(step: -1 | 1): void {
-    const to = this.heldIndex() + step;
+    // The next page of the row, a board among the pages stepped over.
+    let to = this.heldIndex() + step;
+    while (this.doc.pages[to]?.board === true) to += step;
     if (to < 0 || to >= this.doc.pages.length) return;
     const range = rowPageScrollRange(this.pageLayout, to, this.scale, this.cssW);
     this.glideHeldTo(to, step > 0 ? range.min : range.max, this.scroller.position.y, true);
@@ -6132,6 +6205,7 @@ export class InkSurface {
   private get pinchOverviewArmed(): boolean {
     return (
       this.pinchOverviewEnabled &&
+      !this.board &&
       this.pinch !== null &&
       pinchOpensOverview(this.pinch.raw, this.minZoom)
     );
@@ -6208,11 +6282,13 @@ export class InkSurface {
   /** Keep the pull-to-add ring in step with the stretch while a finger holds it. */
   private syncPullAdd(): void {
     const wheel = wheelPullProgress(this.wheelPull);
-    if (this.pullAddEnabled && !this.touchPanning && wheel > 0) {
+    // A board shows no end of pages to pull past.
+    const enabled = this.pullAddEnabled && !this.board;
+    if (enabled && !this.touchPanning && wheel > 0) {
       this.pullAdd.update(this.direction, this.pullOverscroll(), wheel);
       return;
     }
-    if (!this.pullAddEnabled || !this.touchPanning || !this.pullAllowed()) {
+    if (!enabled || !this.touchPanning || !this.pullAllowed()) {
       this.pullAdd.hide();
       return;
     }
@@ -11848,7 +11924,7 @@ export class InkSurface {
     if (!this.joined || this.board) return [box];
     const boxes = this.pageLayout.boxes;
     return [boxes[box.index - 1], box, boxes[box.index + 1]].filter(
-      (b): b is PageBox => b !== undefined,
+      (b): b is PageBox => b !== undefined && b.parked !== true,
     );
   }
 
@@ -19894,7 +19970,7 @@ export class InkSurface {
       (!isBoard(this.doc) && scrollDirectionOf(this.doc) !== this.direction) ||
       (!isBoard(this.doc) && joinedPagesOf(this.doc) !== this.joined) ||
       this.pageLayout.boxes.length !== this.doc.pages.length ||
-      isBoard(this.doc) !== this.board ||
+      (isBoard(this.doc) || this.showsBoardPage()) !== this.board ||
       // A board file's boards moved (discussion #160): each box follows its board.
       (this.board && this.pageLayout.boxes.some((b, i) => b.id !== this.doc.pages[i]?.id)) ||
       // A page changed size (Add space, a template with another size) or an
@@ -21158,6 +21234,7 @@ function nearestRowBox(boxes: readonly PageBox[], x: number): number {
   let bestAway = Infinity;
   for (let i = 0; i < boxes.length; i++) {
     const box = boxes[i];
+    if (box.parked) continue;
     const away = x < box.x ? box.x - x : x > box.x + box.width ? x - box.x - box.width : 0;
     if (away < bestAway) {
       bestAway = away;

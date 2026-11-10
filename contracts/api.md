@@ -1470,6 +1470,17 @@ per page id), and the view shows one at a time, like OneNote's pages.
   this device (`LastPage.boards`, by page id, with the anchors a board's
   spot already has). Page-addressed tools (search, contents, undo's reveal)
   switch to the board they name.
+- **A board among a notebook's pages:** `Page.board: true` (stored after
+  `backdrop`, only as `true`). The notebook is labelled `boards` too.
+  `layoutNotebook(pages, options)` is `layoutPages` with every such page
+  left out of the column or row and parked (`PageBox.parked`), its box at
+  its index; every measure of the layout (`shownBoxes`: ranges, the page
+  being read, row snapping, joins) leaves parked boxes out. The view shows a
+  board page on its own (as a board file's board) when gone to, and goes
+  back to the pages for any other page; Page Up/Down and a held row's turn
+  step over boards. A page added next to one takes the nearest page's size
+  and paper (`shapePageFor`, `paperPageFor`). `isBoardPage(doc, page)`
+  answers for both kinds.
 - **Still per file, not per board:** export makes one PDF page per board,
   each cut to its drawing; Ask AI reads the board shown as the screen shows
   it and any other board it is given as its whole drawing.

@@ -1080,7 +1080,7 @@ export class PageSidebar {
    * ({@link boardThumbBox}), not metres of empty paper.
    */
   private thumbPage(page: Page): Page {
-    return this.board ? boardDrawing(page, boardThumbBox(page)) : page;
+    return this.board || page.board ? boardDrawing(page, boardThumbBox(page)) : page;
   }
 
   /** Whether the panel serves an endless board ({@link setBoard}). */
@@ -1189,6 +1189,9 @@ export class PageSidebar {
     this.thumbs.forEach((view, index) => {
       view.page = pages[index] ?? null;
       view.label.setText(String(index + 1));
+      view.root
+        .querySelector(".goodobsidian-thumb-kind")
+        ?.toggleClass("is-hidden", pages[index]?.board !== true || this.board);
       const page = pages[index];
       const entries = page ? pageContentsEntries(page, index).length : 0;
       const title = thumbnailTitleOf(page);
@@ -1447,6 +1450,8 @@ export class PageSidebar {
     // red when the page is bookmarked. A tap on it toggles the bookmark.
     const ribbon = frame.createSpan({ cls: "goodobsidian-thumb-ribbon is-outline" });
     setIcon(ribbon, "bookmark");
+    // A board among a notebook's pages (discussion #160): ∞ at its lower corner.
+    setIcon(frame.createSpan({ cls: "goodobsidian-thumb-kind is-hidden" }), "infinity");
     // The overview's Select mode: a tick at the page's corner.
     setIcon(frame.createSpan({ cls: "goodobsidian-thumb-check" }), "check");
     const footer = root.createDiv({ cls: "goodobsidian-thumb-footer" });
@@ -1833,6 +1838,8 @@ export class PageSidebar {
     const total = this.doc?.pages.length ?? 0;
     const backdrop = this.doc?.pages[index]?.backdrop;
     const cover = !!backdrop && backdrop.kind !== "pdf" && isCoverRuling(backdrop.kind);
+    // A board among the pages takes no template or cover (discussion #160).
+    const boardPage = this.doc?.pages[index]?.board === true;
     const act = (action: PageAction) => () => this.callbacks.onPageAction(action, index, anchor);
     const menu = new Menu();
     if (this.board) {
@@ -1913,7 +1920,9 @@ export class PageSidebar {
       );
     }
     // A cover is not paper: it changes design and colour, not template.
-    if (cover) {
+    if (boardPage) {
+      // Its paper is the board's own, chosen as it was added.
+    } else if (cover) {
       menu.addItem((item) =>
         item
           .setTitle(t("view.sidebar.changeCover"))
