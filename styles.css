@@ -1766,15 +1766,22 @@ select.goodobsidian-choice-select {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-  /* A book's worth of thumbnails: only those near the view are laid out. */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 170px;
 }
 
-/* Their rings reach past the thumbnail, and the overview measures the current one. */
-.goodobsidian-thumb.is-current,
-.goodobsidian-thumb.is-selected {
-  content-visibility: visible;
+/* A thumbnail far from the view holds nothing (page-sidebar.ts): these keep
+   its place, as tall as the page and the footer it will show. */
+.goodobsidian-thumb:empty::before {
+  content: "";
+  display: block;
+  aspect-ratio: var(--goodobsidian-thumb-aspect, 3 / 4);
+  border-radius: var(--gob-radius-s);
+  background: var(--gob-paper);
+}
+
+.goodobsidian-thumb:empty::after {
+  content: "";
+  display: block;
+  height: 28px;
 }
 
 .goodobsidian-thumb-frame {
