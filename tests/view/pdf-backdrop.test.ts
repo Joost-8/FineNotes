@@ -155,6 +155,20 @@ describe("PdfBackdropCache", () => {
     expect(pdf.calls[0].viewport.width).toBe(9600);
   });
 
+  it("waits until the pen and the zoom have both let go", async () => {
+    const c = cache();
+    c.setHeld(true);
+    c.setHeld(true, "zoom");
+    c.request("a.pdf", 0, 2);
+    await settle();
+    c.setHeld(false);
+    await settle();
+    expect(pdf.renders).toBe(0);
+    c.setHeld(false, "zoom");
+    await settle();
+    expect(pdf.renders).toBe(1);
+  });
+
   it("says which page landed", async () => {
     const c = cache();
     const landed: Array<[string, number]> = [];

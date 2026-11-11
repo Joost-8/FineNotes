@@ -289,6 +289,8 @@ export class PdfBackdropCache {
   private readonly running = new Set<RasterWork>();
   private readonly work = new Map<string, RasterWork>();
   private readonly documents = new Map<string, Promise<PdfDocumentLike | null>>();
+  /** Why rendering waits: the pen is writing, or a zoom is moving. */
+  private readonly holds = new Set<"pen" | "zoom">();
   /** Requests made while held, started on {@link setHeld}(false). */
   private readonly deferred = new Map<
     string,
@@ -554,10 +556,13 @@ export class PdfBackdropCache {
     return this.worker?.alive === true;
   }
 
-  setHeld(held: boolean): void {
-    if (this.held === held) return;
-    this.held = held;
-    if (held) return;
+  setHeld(held: boolean, reason: "pen" | "zoom" = "pen"): void {
+    if (held) this.holds.add(reason);
+    else this.holds.delete(reason);
+    const now = this.holds.size > 0;
+    if (this.held === now) return;
+    this.held = now;
+    if (now) return;
     for (const next of this.paused.splice(0)) next();
     const waiting = [...this.deferred.values()];
     this.deferred.clear();

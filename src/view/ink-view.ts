@@ -3634,6 +3634,7 @@ export class InkView extends TextFileView {
         // then glide onto it, as GoodNotes does.
         onPullAddPage: () => this.addPage(this.doc.pages.length - 1, true),
         onPinchOverview: (snapshot) => this.openOverviewFromPinch(snapshot),
+        onZoomMotion: (moving) => this.pdfCache?.setHeld(moving, "zoom"),
         onTextEditing: (style) => this.toolbar?.setTextTarget(style),
         onTextAnchor: (rect) => this.toolbar?.setTextAnchor(rect),
         textPillState: () => this.toolbar?.textPillState ?? "-",

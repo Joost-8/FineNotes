@@ -93,6 +93,7 @@ import {
   prefersReducedMotion,
   springCurve,
 } from "./motion";
+import { afterPainted } from "./after-painted";
 import { EASE_OUT_FALLBACK, OVERVIEW_FLIGHT, springMs } from "./springs";
 import { ContentsDrag } from "./contents-drag";
 import { PageDrag } from "./page-drag";
@@ -606,10 +607,16 @@ export class PageSidebar {
       this.revealCurrent();
       if (this.tab === "files") this.refreshFiles();
       if (motion) {
-        this.slide = this.el.animate(
+        // Started once the panel is drawn, or its first frames are skipped.
+        const slide = this.el.animate(
           [{ transform: "translateX(-100%)" }, { transform: "translateX(0)" }],
           { duration: PANEL_SLIDE_MS, easing: "ease" },
         );
+        slide.pause();
+        this.slide = slide;
+        afterPainted(this.el.win, () => {
+          if (this.slide === slide) slide.play();
+        });
       }
       return;
     }
@@ -765,39 +772,54 @@ export class PageSidebar {
     const sy = to.height / page.height;
     // The slot's corners, drawn before the scale shrinks them.
     const radius = parseFloat(this.el.win.getComputedStyle(slot).borderTopLeftRadius) || 0;
-    sheet.animate(
-      [
-        { transform: "none", borderRadius: "0px" },
-        {
-          transform: `translate(${to.left - page.left}px, ${to.top - page.top}px) scale(${sx}, ${sy})`,
-          borderRadius: `${radius / sx}px / ${radius / sy}px`,
-        },
-      ],
-      { duration: ms, easing, fill: "forwards" },
+    const moves: Animation[] = [];
+    moves.push(
+      sheet.animate(
+        [
+          { transform: "none", borderRadius: "0px" },
+          {
+            transform: `translate(${to.left - page.left}px, ${to.top - page.top}px) scale(${sx}, ${sy})`,
+            borderRadius: `${radius / sx}px / ${radius / sy}px`,
+          },
+        ],
+        { duration: ms, easing, fill: "forwards" },
+      ),
     );
     // The view recedes toward where the page lay, and is gone by half time.
     const origin = `${page.left + page.width / 2 - pane.left}px ${page.top + page.height / 2 - pane.top}px`;
-    view.animate(
-      [
-        { transformOrigin: origin, transform: "scale(1)", opacity: 1 },
-        { transformOrigin: origin, transform: "scale(0.88)", opacity: 0 },
-      ],
-      { duration: ms * 0.55, easing: "ease-out", fill: "forwards" },
+    moves.push(
+      view.animate(
+        [
+          { transformOrigin: origin, transform: "scale(1)", opacity: 1 },
+          { transformOrigin: origin, transform: "scale(0.88)", opacity: 0 },
+        ],
+        { duration: ms * 0.55, easing: "ease-out", fill: "forwards" },
+      ),
     );
     // The rest of the overview comes in around the page.
     for (const part of Array.from(this.el.children)) {
-      part.animate([{ opacity: 0 }, { opacity: 1 }], {
-        duration: ms * 0.7,
-        delay: ms * 0.2,
-        easing: "ease-out",
-        fill: "backwards",
-      });
+      moves.push(
+        part.animate([{ opacity: 0 }, { opacity: 1 }], {
+          duration: ms * 0.7,
+          delay: ms * 0.2,
+          easing: "ease-out",
+          fill: "backwards",
+        }),
+      );
     }
+    // The first frames of a big grid take over 100 ms each to draw: the page
+    // waits where it lay until they are done, then flies the whole way.
+    for (const move of moves) move.pause();
     // Its own thumbnail shows once the page has landed on it. A timer, not
     // the animation's finish event (ledger: the browser pane delays those).
     slot.addClass("is-landing");
-    const timer = window.setTimeout(() => this.flight?.(), ms);
+    let timer = 0;
+    const stopWaiting = afterPainted(this.el.win, () => {
+      for (const move of moves) move.play();
+      timer = window.setTimeout(() => this.flight?.(), ms);
+    });
     this.flight = () => {
+      stopWaiting();
       window.clearTimeout(timer);
       this.flight = null;
       slot.removeClass("is-landing");

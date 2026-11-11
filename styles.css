@@ -1766,6 +1766,15 @@ select.goodobsidian-choice-select {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+  /* A book's worth of thumbnails: only those near the view are laid out. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 170px;
+}
+
+/* Their rings reach past the thumbnail, and the overview measures the current one. */
+.goodobsidian-thumb.is-current,
+.goodobsidian-thumb.is-selected {
+  content-visibility: visible;
 }
 
 .goodobsidian-thumb-frame {
@@ -2015,6 +2024,8 @@ select.goodobsidian-choice-select {
   max-width: none;
   border-right: none;
   box-shadow: none;
+  /* Solid: the page behind must not show between the thumbnails. */
+  background-color: var(--background-primary);
 }
 
 .goodobsidian-pagesidebar-spacer {

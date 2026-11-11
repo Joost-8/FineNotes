@@ -774,6 +774,8 @@ const SCROLL_FRAME_BUDGET_MS = 6;
  * so did a PDF page arriving.
  */
 const REST_FRAME_BUDGET_MS = 10;
+/** How long after the last frame of a zoom PDF rendering starts again, ms. */
+const ZOOM_PDF_HOLD_MS = 150;
 /** Clear space round a sticker saved from a selection, page px: room for the ink's width. */
 const STICKER_PAD = 8;
 /** Budget for one idle prefetch frame (tiles just off screen, page previews). */
@@ -1169,6 +1171,12 @@ export interface InkSurfaceCallbacks {
    * {@link InkSurface.setPinchToOverview}.
    */
   onPinchOverview?: (snapshot: PageSnapshot | null) => void;
+  /**
+   * A zoom started moving (true), or has been still for a moment (false). PDF
+   * pages wait in between: rendering them during a pinch stalled its last
+   * frames by about 200 ms on an iPad.
+   */
+  onZoomMotion?: (moving: boolean) => void;
   /**
    * A page text box took focus (its style), or editing ended (`null`). Hosts
    * show the box's style in the text pill. Also sent after an undo or redo
@@ -5571,6 +5579,7 @@ export class InkSurface {
     const carrying = this.stepGroupDragScroll();
     const moving = scrolling || zooming || settling || carrying;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
+    this.noteZoomMotion();
     this.noteViewMotion(busy);
     this.syncViewport();
     // The ruler's centimetres are the page's, at the zoom now.
@@ -5602,6 +5611,29 @@ export class InkSurface {
     if (this.imageSel) this.syncImageOverlay();
     if (this.selection) this.syncSelectionOverlay();
     if (this.pressMenu) this.syncActionBar();
+  };
+
+  private zoomHeld = false;
+  private zoomHoldTimer = 0;
+
+  /** A zoom frame: hold PDF rendering, until the zoom has been still for a moment. */
+  private noteZoomMotion(): void {
+    if (!this.zoomTransient) return;
+    if (!this.zoomHeld) {
+      this.zoomHeld = true;
+      this.callbacks.onZoomMotion?.(true);
+    }
+    window.clearTimeout(this.zoomHoldTimer);
+    this.zoomHoldTimer = window.setTimeout(this.releaseZoomHold, ZOOM_PDF_HOLD_MS);
+  }
+
+  private readonly releaseZoomHold = (): void => {
+    this.zoomHoldTimer = this.zoomTransient
+      ? window.setTimeout(this.releaseZoomHold, ZOOM_PDF_HOLD_MS)
+      : 0;
+    if (this.zoomHoldTimer !== 0 || !this.zoomHeld) return;
+    this.zoomHeld = false;
+    this.callbacks.onZoomMotion?.(false);
   };
 
   /** Whether the zoom is mid-gesture, so the tiles' level must not change yet. */
