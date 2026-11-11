@@ -400,14 +400,22 @@ export class PdfBackdropCache {
    */
   request(path: string, page: number, dprScale: number, area?: PdfRenderArea): void {
     if (this.destroyed) return;
-    if (this.held) {
+    // A zoom may reveal a page with no image at all, the one beside the page
+    // being read: blank paper would show until the zoom ends.
+    const nothingToShow =
+      this.held &&
+      this.holds.size === 1 &&
+      this.holds.has("zoom") &&
+      !area?.region &&
+      this.peekNearest(path, page, dprScale, area) === null;
+    if (this.held && !nothingToShow) {
       const key = rasterKey(path, page, dprScale, area);
       if (!this.entries.has(key) && !this.inflight.has(key)) {
         this.deferred.set(key, { path, page, dprScale, area });
       }
       return;
     }
-    void this.resolve(path, page, dprScale, area, true);
+    void this.resolve(path, page, dprScale, area, !nothingToShow);
   }
 
   /**

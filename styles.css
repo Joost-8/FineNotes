@@ -2303,6 +2303,10 @@ select.goodobsidian-choice-select {
   will-change: transform;
 }
 
+.goodobsidian-canvas-fading {
+  pointer-events: none;
+}
+
 .goodobsidian-canvas-wet {
   z-index: 2;
 }

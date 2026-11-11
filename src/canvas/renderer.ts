@@ -3001,6 +3001,21 @@ export class Renderer {
     return out;
   }
 
+  /** Lay `cover` exactly over the dry layer, showing what the dry layer shows now. */
+  coverDry(cover: HTMLCanvasElement): void {
+    const { canvas } = this.dry;
+    cover.width = canvas.width;
+    cover.height = canvas.height;
+    cover.style.cssText = canvas.style.cssText;
+    cover.getContext("2d")?.drawImage(canvas, 0, 0);
+    canvas.after(cover);
+  }
+
+  /** Whether page `pageIndex` of a document of `count` pages is on screen. */
+  isPageOnScreen(pageIndex: number, count: number): boolean {
+    return this.boxesOnScreen(count).some((box) => box.index === pageIndex);
+  }
+
   /** Let go of a dragged selection's picture: the drag is over. */
   releaseSelectionRaster(): void {
     const canvas = this.selectionRaster?.canvas;

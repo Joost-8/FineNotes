@@ -334,6 +334,8 @@ import { pairsAsDoubleTap, type PlainTap } from "../input/multi-finger-tap";
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { WRITING_SCALE, formatMm, zoomPercent } from "../model/units";
 import { GrowBoard, boardGrowth, drawnBounds, isBoard, isNoGrowth } from "../model/board";
+import { afterPainted } from "./after-painted";
+import { lowMemoryDevice } from "./pdf-backdrop";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
   BRUSH_PRESSURE,
@@ -774,6 +776,14 @@ const SCROLL_FRAME_BUDGET_MS = 6;
  * so did a PDF page arriving.
  */
 const REST_FRAME_BUDGET_MS = 10;
+/** Rasterising budget for the frame that swaps in a sharper PDF image. */
+const SHARPEN_FRAME_BUDGET_MS = 120;
+/** One fade waits this long after the last PDF image of a zoom, ms. */
+const SHARPEN_QUIET_MS = 90;
+/** And never longer than this after the first, ms. */
+const SHARPEN_WAIT_MAX_MS = 350;
+/** How long a sharper PDF image takes to fade in over the blurred one, ms. */
+const PDF_SHARPEN_FADE_MS = 160;
 /** How long after the last frame of a zoom PDF rendering starts again, ms. */
 const ZOOM_PDF_HOLD_MS = 150;
 /** Clear space round a sticker saved from a selection, page px: room for the ink's width. */
@@ -5579,6 +5589,7 @@ export class InkSurface {
     const carrying = this.stepGroupDragScroll();
     const moving = scrolling || zooming || settling || carrying;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
+    if (busy) this.endSharpenFade();
     this.noteZoomMotion();
     this.noteViewMotion(busy);
     this.syncViewport();
@@ -5597,7 +5608,15 @@ export class InkSurface {
     this.reportTextAnchor();
     this.syncPullAdd();
     if (busy) this.flashChrome();
-    const complete = this.paint(busy ? SCROLL_FRAME_BUDGET_MS : REST_FRAME_BUDGET_MS);
+    // Under the fade, every tile changes at once: nothing moves, and tiles
+    // arriving a few a frame would ripple across the text.
+    const complete = this.paint(
+      busy
+        ? SCROLL_FRAME_BUDGET_MS
+        : this.fadeTimer !== 0
+          ? SHARPEN_FRAME_BUDGET_MS
+          : REST_FRAME_BUDGET_MS,
+    );
     if (this.debug) this.trackFrame(t, started, moving);
     if (moving || !complete) {
       this.requestFrame();
@@ -5611,6 +5630,78 @@ export class InkSurface {
     if (this.imageSel) this.syncImageOverlay();
     if (this.selection) this.syncSelectionOverlay();
     if (this.pressMenu) this.syncActionBar();
+  };
+
+  private fadeCover: HTMLCanvasElement | null = null;
+  private fadeTimer = 0;
+  private fadeAnimation: Animation | null = null;
+  /** The fade has not started: more images may still join it. */
+  private fadeWaiting = false;
+  private fadeBegan = 0;
+  private fadeStopWaiting: (() => void) | null = null;
+
+  /**
+   * A sharper PDF image arrived while nothing moves. Swapped in at once, the
+   * text visibly jumps from blurred to sharp after every zoom: the picture as
+   * it was stays on top instead and fades away.
+   */
+  private fadeInSharper(pageIndex: number): void {
+    if (!this.renderer || this.viewMoving || prefersReducedMotion() || lowMemoryDevice()) return;
+    if (!this.renderer.isPageOnScreen(pageIndex, this.doc.pages.length)) return;
+    // More of the same zoom's images: they all go under the one fade.
+    if (this.fadeTimer !== 0) {
+      if (this.fadeWaiting && now() - this.fadeBegan < SHARPEN_WAIT_MAX_MS) this.armSharpenFade();
+      return;
+    }
+    const cover = (this.fadeCover ??= createEl("canvas", {
+      cls: "goodobsidian-canvas goodobsidian-canvas-dry goodobsidian-canvas-fading",
+    }));
+    if (typeof cover.animate !== "function") return;
+    this.renderer.coverDry(cover);
+    const fade = cover.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: PDF_SHARPEN_FADE_MS,
+      easing: "ease-out",
+      fill: "forwards",
+    });
+    fade.pause();
+    this.fadeAnimation = fade;
+    this.fadeBegan = now();
+    this.fadeWaiting = true;
+    this.armSharpenFade();
+  }
+
+  /** Start the fade once no image has arrived for a moment and the new text is drawn. */
+  private armSharpenFade(): void {
+    window.clearTimeout(this.fadeTimer);
+    this.fadeTimer = window.setTimeout(() => {
+      // Started before the swap is on screen, its first frames are lost.
+      this.fadeStopWaiting = afterPainted(window, () => {
+        this.fadeStopWaiting = null;
+        this.fadeWaiting = false;
+        this.fadeAnimation?.play();
+        // A timer, not `finish`: finish events land late (ledger).
+        window.clearTimeout(this.fadeTimer);
+        this.fadeTimer = window.setTimeout(this.endSharpenFade, PDF_SHARPEN_FADE_MS);
+      });
+      this.requestFrame();
+    }, SHARPEN_QUIET_MS);
+  }
+
+  private readonly endSharpenFade = (): void => {
+    if (this.fadeTimer === 0) return;
+    window.clearTimeout(this.fadeTimer);
+    this.fadeTimer = 0;
+    this.fadeWaiting = false;
+    this.fadeStopWaiting?.();
+    this.fadeStopWaiting = null;
+    this.fadeAnimation?.cancel();
+    this.fadeAnimation = null;
+    const cover = this.fadeCover;
+    if (!cover) return;
+    cover.remove();
+    // WebKit frees a canvas's memory only once it has no size.
+    cover.width = 0;
+    cover.height = 0;
   };
 
   private zoomHeld = false;
@@ -7540,6 +7631,7 @@ export class InkSurface {
           maxY: r.maxY + frame.y,
         });
       } else renderer.refreshPage(index);
+      this.fadeInSharper(index);
       shown = true;
     });
     if (shown) this.requestFrame();
