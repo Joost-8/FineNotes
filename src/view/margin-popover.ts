@@ -36,6 +36,7 @@ import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import { installPopoverDismiss, placePopover } from "./template-picker";
 import { t, tn } from "../i18n/translate";
+import { shownDoc } from "./host-window";
 
 export interface MarginChoice {
   side: MarginSide;
@@ -164,7 +165,7 @@ export class MarginPopover {
   ) {
     const scope = options.scopes.includes(options.initial.scope) ? options.initial.scope : "page";
     this.choice = { ...options.initial, scope };
-    this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-margin" });
+    this.el = shownDoc().body.createDiv({ cls: "goodobsidian-addpage goodobsidian-margin" });
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute("aria-label", t("surface.margin.title"));
     this.build();

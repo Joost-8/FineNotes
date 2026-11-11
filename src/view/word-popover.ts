@@ -12,6 +12,7 @@
 
 import { setIcon } from "obsidian";
 import { t } from "../i18n/translate";
+import { docOf, shownDoc, winOf } from "./host-window";
 
 const POPOVER_WIDTH = 300;
 
@@ -45,7 +46,7 @@ export class WordPopover {
   ) {
     WordPopover.current?.close();
     WordPopover.current = this;
-    this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-wordcheck" });
+    this.el = shownDoc().body.createDiv({ cls: "goodobsidian-addpage goodobsidian-wordcheck" });
     this.el.setAttribute("role", "menu");
     this.el.setAttribute("aria-label", t("ai.word.readAs", { word: content.read }));
     this.build(content);
@@ -106,11 +107,11 @@ export class WordPopover {
 
   /** Below the tap, kept inside the window; above it when there is no room below. */
   private place(): void {
-    const width = Math.min(POPOVER_WIDTH, window.innerWidth - 16);
-    const left = Math.max(8, Math.min(this.at.x - 32, window.innerWidth - width - 8));
+    const width = Math.min(POPOVER_WIDTH, winOf(this.el).innerWidth - 16);
+    const left = Math.max(8, Math.min(this.at.x - 32, winOf(this.el).innerWidth - width - 8));
     const height = this.el.offsetHeight;
     let top = this.at.y + 16;
-    if (top + height > window.innerHeight - 8) top = Math.max(8, this.at.y - height - 16);
+    if (top + height > winOf(this.el).innerHeight - 8) top = Math.max(8, this.at.y - height - 16);
     this.el.setCssStyles({ left: `${left}px`, top: `${top}px`, width: `${width}px` });
   }
 
@@ -125,13 +126,13 @@ export class WordPopover {
     };
     const onResize = (): void => this.place();
     // Capture: the drawing surface consumes its own pointer events.
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
+    docOf(this.el).addEventListener("pointerdown", onDown, true);
+    docOf(this.el).addEventListener("keydown", onKey);
+    winOf(this.el).addEventListener("resize", onResize);
     this.dispose.push(() => {
-      document.removeEventListener("pointerdown", onDown, true);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
+      docOf(this.el).removeEventListener("pointerdown", onDown, true);
+      docOf(this.el).removeEventListener("keydown", onKey);
+      winOf(this.el).removeEventListener("resize", onResize);
     });
   }
 }

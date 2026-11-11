@@ -97,6 +97,7 @@ import { EASE_OUT_FALLBACK, OVERVIEW_FLIGHT, springMs } from "./springs";
 import { ContentsDrag } from "./contents-drag";
 import { PageDrag } from "./page-drag";
 import { rangeOf } from "./page-drag-model";
+import { isElement, onWindowMoved, winOf } from "./host-window";
 
 export type PageAction =
   | "add-before"
@@ -386,6 +387,8 @@ export class PageSidebar {
   /** The slide in or out, while it runs. */
   private slide: Animation | null = null;
 
+  private readonly stopWindowMoves: () => void;
+
   constructor(
     host: HTMLElement,
     private readonly callbacks: PageSidebarCallbacks,
@@ -574,6 +577,11 @@ export class PageSidebar {
       },
       { root: this.el, rootMargin: "200px 0px" },
     );
+    // A frame asked of the window the panel left may never come.
+    this.stopWindowMoves = onWindowMoved(this.el, () => {
+      this.paintFrame = 0;
+      this.schedulePaint();
+    });
     this.showTab(this.tab);
     this.syncChrome();
   }
@@ -951,13 +959,20 @@ export class PageSidebar {
   paintThumbnail(canvas: HTMLCanvasElement, index: number, cssWidth: number): void {
     const page = this.doc?.pages[index];
     if (!page) return;
-    renderPageThumbnail(canvas, page, this.render.painter, cssWidth, window.devicePixelRatio || 1, {
-      usePressure: this.render.usePressure,
-      highlighterAlpha: this.render.highlighterAlpha,
-      paper: this.render.paper,
-      images: this.render.images,
-      furniture: this.furnitureOf(index),
-    });
+    renderPageThumbnail(
+      canvas,
+      page,
+      this.render.painter,
+      cssWidth,
+      winOf(this.el).devicePixelRatio || 1,
+      {
+        usePressure: this.render.usePressure,
+        highlighterAlpha: this.render.highlighterAlpha,
+        paper: this.render.paper,
+        images: this.render.images,
+        furniture: this.furnitureOf(index),
+      },
+    );
   }
 
   /** Page `index`'s header and number, as the page itself prints them. */
@@ -1112,13 +1127,14 @@ export class PageSidebar {
 
   destroy(): void {
     window.clearTimeout(this.refreshTimer);
-    window.cancelAnimationFrame(this.paintFrame);
+    winOf(this.el).cancelAnimationFrame(this.paintFrame);
     this.slide?.cancel();
     this.slide = null;
     this.zoom?.cancel();
     this.zoom = null;
     this.drag.destroy();
     this.contentsDrag.destroy();
+    this.stopWindowMoves();
     this.observer.disconnect();
     this.el.remove();
     this.spacer.remove();
@@ -1440,7 +1456,7 @@ export class PageSidebar {
       const index = this.thumbs.indexOf(view);
       // A drag just ended here, or the Pencil's tap was already taken.
       if (index < 0 || this.drag.consumeClick()) return;
-      this.tapThumb(index, event.target instanceof Element ? event.target : frame, event);
+      this.tapThumb(index, isElement(event.target) ? event.target : frame, event);
     });
     name.addEventListener("click", (event) => {
       const index = this.thumbs.indexOf(view);
@@ -1513,7 +1529,7 @@ export class PageSidebar {
 
   private schedulePaint(): void {
     if (!this.open || this.paintFrame) return;
-    this.paintFrame = window.requestAnimationFrame(() => {
+    this.paintFrame = winOf(this.el).requestAnimationFrame(() => {
       this.paintFrame = 0;
       this.paintVisible();
     });
@@ -1521,7 +1537,7 @@ export class PageSidebar {
 
   private paintVisible(): void {
     const pages = this.doc?.pages ?? [];
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = winOf(this.el).devicePixelRatio || 1;
     const width = this.overview ? OVERVIEW_THUMB_WIDTH : THUMB_WIDTH;
     const now = ++this.paints;
     this.thumbs.forEach((view, index) => {

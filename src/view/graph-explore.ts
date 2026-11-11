@@ -41,6 +41,7 @@ import {
 } from "../canvas/scroll-physics";
 import { onTap } from "./selection-bar";
 import { setIcon } from "obsidian";
+import { winOf } from "./host-window";
 
 export interface GraphExploreOptions {
   /** The card's fill and whether the page is a night page, as the tiles paint it. */
@@ -178,7 +179,7 @@ export class GraphExplorer {
     if (this.closed) return;
     this.closed = true;
     this.coast = null;
-    if (this.frame) window.cancelAnimationFrame(this.frame);
+    if (this.frame) winOf(this.root).cancelAnimationFrame(this.frame);
     this.root.remove();
     const view = this.view;
     this.options.onClose(commit && !sameView(view, this.start) ? view : null);
@@ -365,7 +366,7 @@ export class GraphExplorer {
 
   private requestDraw(): void {
     if (this.frame) return;
-    this.frame = window.requestAnimationFrame(() => {
+    this.frame = winOf(this.root).requestAnimationFrame(() => {
       this.frame = 0;
       if (this.coast) this.stepCoast();
       this.draw();

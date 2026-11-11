@@ -8,6 +8,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- A notebook moved to a new window (Move to new window) no longer lags or freezes while the main
+  window is covered: the page, pen, sidebar, menus and text boxes now work from the window the
+  notebook is in, and it keeps working when moved back (FineNotes#199).
+
 ## [2.9.1] - 2026-11-10
 
 2.9.0's What's new card on Home had a bug and was incomplete: it could

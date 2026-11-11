@@ -88,6 +88,7 @@ export default defineConfig({
         "src/view/selection-kind.ts",
         "src/view/screenshot-crop.ts",
         "src/view/enter-key.ts",
+        "src/view/host-window.ts",
         "src/view/swatch-drag-model.ts",
         "src/view/pill-dock-model.ts",
         "src/view/bar-dock-model.ts",

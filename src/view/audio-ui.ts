@@ -27,6 +27,7 @@ import type { Recording } from "../model/document";
 import { swallowGhostClick } from "./ghost-click";
 import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
+import { winOf } from "./host-window";
 
 /** `setIcon`, with a text fallback for mobile builds where an icon comes up blank. */
 function iconInto(el: HTMLElement, icon: string, fallback: string): void {
@@ -404,13 +405,13 @@ export class AudioPlayerBar {
     if (!this.hooks.onTime || this.frame !== 0) return;
     const step = (): void => {
       this.reportTime();
-      this.frame = this.audio.paused ? 0 : window.requestAnimationFrame(step);
+      this.frame = this.audio.paused ? 0 : winOf(this.el).requestAnimationFrame(step);
     };
-    this.frame = window.requestAnimationFrame(step);
+    this.frame = winOf(this.el).requestAnimationFrame(step);
   }
 
   private stopFrames(): void {
-    if (this.frame !== 0) window.cancelAnimationFrame(this.frame);
+    if (this.frame !== 0) winOf(this.el).cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.reportTime();
   }
