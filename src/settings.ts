@@ -51,7 +51,12 @@ import {
 } from "obsidian";
 import { ICON_NEW_NOTEBOOK, SIZES } from "./constants";
 import { SHORTCUT_NEW_NOTEBOOK_URL, SHORTCUT_PDF_URL } from "./model/inbox";
-import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-folders";
+import {
+  ASSETS_FOLDER,
+  DEFAULT_STICKER_FOLDER,
+  DEFAULT_TEMPLATE_FOLDER,
+  chosenFolder,
+} from "./model/vault-folders";
 import type GoodObsidianPlugin from "./main";
 import { normalizeFolder } from "./model/new-notebook";
 import {
@@ -83,7 +88,10 @@ import {
   handwritingReaderOf,
   paperWidthFrom,
   parseColorList,
+  AUTO_RECOGNITION,
+  recognitionChoiceOf,
   shownSectionOf,
+  storeRecognitionChoice,
   shownValue,
   storeShownValue,
   withShownSection,
@@ -531,7 +539,7 @@ function folderRows() {
     [
       "recordingsFolder",
       t("settings.folders.recordings.name"),
-      t("settings.folders.recordings.desc"),
+      t("settings.folders.recordings.line"),
       t("settings.folders.recordings.placeholder"),
     ],
     [
@@ -839,6 +847,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         dark: activeDocument.body.hasClass("theme-dark"),
         reader: handwritingReaderOf(settings, this.ownModelHere()),
         updates: updateChoiceOf(settings),
+        autoRecognizing: recognitionChoiceOf(settings) === AUTO_RECOGNITION,
       }),
     );
   }
@@ -876,6 +885,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     if (key === "handwritingOnDevice") {
       return handwritingReaderOf(this.plugin.settings, this.ownModelHere());
     }
+    if (key === "recognitionProviderId") return recognitionChoiceOf(this.plugin.settings);
     return shownValue(this.plugin.settings, key);
   }
 
@@ -912,6 +922,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       // Saved by the plugin, which offers Grape if it is needed now.
       await this.plugin.setHandwritingReader(String(value));
       // Its rows show only while something reads.
+      this.update();
+      return;
+    }
+    if (key === "recognitionProviderId") {
+      // One choice, two keys: which reads, and whether Cloud AI runs by itself.
+      storeRecognitionChoice(this.plugin.settings, String(value));
+      await this.plugin.saveSettings();
       this.update();
       return;
     }
@@ -1135,29 +1152,24 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         t("settings.writing.stylusHeading"),
         [
           this.art(
-            dropdown(
-              "barrelButton",
+            drawnRow(
               t("settings.barrel.name"),
-              t("settings.barrel.line"),
-              barrelNames(),
-              ["barrel button", "pen tablet", "wacom", "stylus"],
+              Platform.isIosApp ? t("settings.barrel.line") : t("settings.barrel.bothLine"),
+              (s) => this.drawSideButton(s),
+              [
+                "barrel button",
+                "pen tablet",
+                "wacom",
+                "stylus",
+                "side button click",
+                "barrel click",
+                "s pen",
+                "pen menu",
+                "eraser",
+              ],
             ),
             "barrel",
           ),
-          {
-            ...this.art(
-              dropdown(
-                "stylusButtonClick",
-                t("settings.stylusClick.name"),
-                t("settings.stylusClick.line"),
-                stylusClickNames(),
-                ["barrel click", "s pen", "pen menu", "eraser", "stylus"],
-              ),
-              "stylusClick",
-            ),
-            // The Apple Pencil has no side button (`stylus-click.ts`).
-            visible: !Platform.isIosApp,
-          },
           this.art(
             toggle("pressureWidth", t("settings.pressure.name"), t("settings.pressure.line"), [
               "pressure sensitivity",
@@ -1714,6 +1726,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   /** Where FineNotes keeps what you add and make. */
   private filesGroups(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    // A field that left the tab stays while it holds a value of its own, so
+    // it can be cleared. Read once per build: a row that vanished while it
+    // was being typed in would take the keyboard with it.
+    const holds = (key: "transcriptsFolder" | "hwrModelPath"): boolean =>
+      (settings[key] ?? "").trim() !== "";
     const folderIcons: Record<string, string> = {
       imagesFolder: "images",
       recordingsFolder: "audio-lines",
@@ -1728,20 +1746,42 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         [
           this.tile(
             controlRow(
-              t("settings.stickerFolder.name"),
-              t("settings.stickerFolder.line"),
-              { type: "text", key: "stickerFolder", placeholder: DEFAULT_STICKER_FOLDER },
-              ["sticker", "collection", "folder"],
+              t("settings.assetsFolder.name"),
+              t("settings.assetsFolder.line"),
+              { type: "text", key: "assetsFolder", placeholder: ASSETS_FOLDER },
+              [
+                "sticker",
+                "stickers folder",
+                "template",
+                "templates folder",
+                "collection",
+                "folder",
+              ],
             ),
+            "folder-heart",
+          ),
+          this.tile(
+            {
+              ...controlRow(
+                t("settings.stickerFolder.name"),
+                t("settings.folders.ownLine"),
+                { type: "text", key: "stickerFolder", placeholder: DEFAULT_STICKER_FOLDER },
+                ["sticker", "collection", "folder"],
+              ),
+              visible: chosenFolder(settings.stickerFolder, "stickers") !== null,
+            },
             "sticker",
           ),
           this.tile(
-            controlRow(
-              t("settings.templateFolder.name"),
-              t("settings.templateFolder.line"),
-              { type: "text", key: "templateFolder", placeholder: DEFAULT_TEMPLATE_FOLDER },
-              ["template", "folder", "share"],
-            ),
+            {
+              ...controlRow(
+                t("settings.templateFolder.name"),
+                t("settings.folders.ownLine"),
+                { type: "text", key: "templateFolder", placeholder: DEFAULT_TEMPLATE_FOLDER },
+                ["template", "folder", "share"],
+              ),
+              visible: chosenFolder(settings.templateFolder, "templates") !== null,
+            },
             "layout-template",
           ),
           this.tile(
@@ -1764,11 +1804,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         t("settings.files.savedHeading"),
         folderRows().map(([key, name, desc, placeholder]) =>
           this.tile(
-            controlRow(name, desc, { type: "text", key, placeholder }, [
-              "folder",
-              "attachments",
-              "where files are saved",
-            ]),
+            {
+              ...controlRow(name, desc, { type: "text", key, placeholder }, [
+                "folder",
+                "attachments",
+                "where files are saved",
+                ...(key === "recordingsFolder" ? ["transcripts", "recording transcripts"] : []),
+              ]),
+              visible: key !== "transcriptsFolder" || holds("transcriptsFolder"),
+            },
             folderIcons[key] ?? "folder",
           ),
         ),
@@ -1778,12 +1822,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         t("settings.files.modelHeading"),
         [
           this.tile(
-            controlRow(
-              t("settings.hwrModelFile.name"),
-              t("settings.hwrModelFile.line"),
-              { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
-              ["handwriting", "recognition", "model"],
-            ),
+            {
+              ...controlRow(
+                t("settings.hwrModelFile.name"),
+                t("settings.folders.ownLine"),
+                { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
+                ["handwriting", "recognition", "model"],
+              ),
+              visible: holds("hwrModelPath"),
+            },
             "file-cog",
           ),
         ],
@@ -1791,22 +1838,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     ]);
   }
 
-  /** The switches to reach for when ink misbehaves. */
+  /** The switch to reach for when strokes go missing or break. */
   private troubleshootingGroups(): SettingDefinitionItem[] {
     return this.sectionGroups("troubleshooting", [
       [
         "main",
         "",
         [
-          this.art(
-            toggle(
-              "desynchronizedCanvas",
-              t("settings.desynchronized.name"),
-              t("settings.desynchronized.line"),
-              ["latency", "glitch", "artifacts"],
-            ),
-            "desync",
-          ),
           this.art(
             toggle("debugHud", t("settings.debugHud.name"), t("settings.debugHud.line"), [
               "diagnostics",
@@ -1830,6 +1868,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const { settings } = this.plugin;
     const providers: Record<string, string> = {};
     for (const id of this.plugin.providers.keys()) providers[id] = providerLabel(id);
+    // Cloud AI by itself, after Cloud AI: automatic recognition, as a choice.
+    const recognitionChoices: Record<string, string> = {};
+    for (const [id, label] of Object.entries(providers)) {
+      recognitionChoices[id] = label;
+      if (id === LLM_PROVIDER_ID)
+        recognitionChoices[AUTO_RECOGNITION] = t("settings.recognition.auto");
+    }
     const vendor = settings.llmVendor;
     const custom = VENDORS[vendor].userEndpoint;
     const imageVendor = resolveImageVendor(settings.imageVendor, vendor);
@@ -1917,28 +1962,16 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "transcribing",
         t("settings.ai.transcribingHeading"),
         [
-          this.tile(
+          this.art(
             dropdown(
               "recognitionProviderId",
               t("settings.recognition.name"),
               t("settings.recognition.line"),
-              providers,
-              ["OCR", "handwriting to text"],
+              recognitionChoices,
+              ["OCR", "handwriting to text", "auto recognition", "recognize automatically"],
             ),
-            "scan-text",
+            "autoRecognize",
           ),
-          {
-            ...this.art(
-              toggle(
-                "autoRecognize",
-                t("settings.autoRecognize.name"),
-                t("settings.autoRecognize.line"),
-                ["auto recognition"],
-              ),
-              "autoRecognize",
-            ),
-            visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
-          },
         ],
       ],
       [
@@ -2315,6 +2348,29 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       d.selectEl.setAttribute("aria-label", t("settings.speech.languageLabel"));
       d.setValue(settings.speechLanguage ?? SPEECH_LANGUAGES[0].code);
       d.onChange((value) => void this.setControlValue("speechLanguage", value));
+    });
+  }
+
+  /**
+   * The stylus side button: what it does while the pen writes, and what a
+   * click of it does with the pen held above the page. The Apple Pencil has
+   * no side button to click (`stylus-click.ts`), so an iPhone or iPad gets
+   * the first only.
+   */
+  private drawSideButton(setting: Setting): void {
+    const settings = this.plugin.settings;
+    setting.addDropdown((d) => {
+      for (const [id, name] of Object.entries(barrelNames())) d.addOption(id, name);
+      d.selectEl.setAttribute("aria-label", t("settings.barrel.whileWriting"));
+      d.setValue(String(shownValue(settings, "barrelButton")));
+      d.onChange((value) => void this.setControlValue("barrelButton", value));
+    });
+    if (Platform.isIosApp) return;
+    setting.addDropdown((d) => {
+      for (const [id, name] of Object.entries(stylusClickNames())) d.addOption(id, name);
+      d.selectEl.setAttribute("aria-label", t("settings.stylusClick.name"));
+      d.setValue(String(shownValue(settings, "stylusButtonClick")));
+      d.onChange((value) => void this.setControlValue("stylusButtonClick", value));
     });
   }
 

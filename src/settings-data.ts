@@ -9,6 +9,7 @@
  */
 
 import type { FolderStyles } from "./model/library-style";
+import { LLM_PROVIDER_ID } from "./recognition/llm-request";
 import { type ShapeToolStyle } from "./model/shape-style";
 import type { LearnedModel } from "./recognition/hwr/learned-model";
 import {
@@ -224,7 +225,17 @@ export interface GoodObsidianSettings {
    * (`model/tape-text.ts`). Absent: off, a tape is laid where it is dragged.
    */
   tapeSnapText?: boolean;
-  /** Vault folder of the user's sticker collections: one subfolder per collection. */
+  /**
+   * The folder stickers and templates live in (`Stickers`, `Templates`).
+   * Absent or blank: `FineNotes assets`. Read through `stickerFolderFor` and
+   * `templateFolderFor` (model/vault-folders.ts).
+   */
+  assetsFolder?: string;
+  /**
+   * Vault folder of the user's sticker collections: one subfolder per
+   * collection. Since 2026-11-11 only a folder the user typed counts; a
+   * default follows {@link GoodObsidianSettings.assetsFolder}.
+   */
   stickerFolder: string;
   /**
    * Where notebooks without a folder of their own save new files, by kind;
@@ -653,6 +664,35 @@ export function shownSectionOf(raw: unknown): SettingsSection {
 /** What `settingsOpen` keeps when `id` is the section shown. */
 export function withShownSection(id: SettingsSection): SettingsSection[] {
   return [id];
+}
+
+// --- Handwriting recognition ----------------------------------------------------
+
+/** "Handwriting recognition"'s choice for Cloud AI that runs by itself. */
+export const AUTO_RECOGNITION = `${LLM_PROVIDER_ID}:auto`;
+
+/**
+ * The choice "Handwriting recognition" shows: the recognition provider, or
+ * {@link AUTO_RECOGNITION} for Cloud AI with automatic recognition on. Two
+ * stored keys, as before 2026-11-11, when automatic was a switch of its own.
+ */
+export function recognitionChoiceOf(
+  settings: Pick<GoodObsidianSettings, "recognitionProviderId" | "autoRecognize">,
+): string {
+  const provider = settings.recognitionProviderId;
+  return provider === LLM_PROVIDER_ID && settings.autoRecognize === true
+    ? AUTO_RECOGNITION
+    : provider;
+}
+
+/** Store a "Handwriting recognition" choice as its two keys. */
+export function storeRecognitionChoice(
+  settings: Pick<GoodObsidianSettings, "recognitionProviderId" | "autoRecognize">,
+  choice: string,
+): void {
+  const auto = choice === AUTO_RECOGNITION;
+  settings.recognitionProviderId = auto ? LLM_PROVIDER_ID : choice;
+  settings.autoRecognize = auto;
 }
 
 /** The longest line a settings row may show under its name, in characters. */

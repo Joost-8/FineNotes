@@ -345,12 +345,6 @@ export const ART = {
     ),
     rect("ga-accent-box ga-attached", 8, 7, 26, 15, 7, "ask=off"),
   ],
-  desync: [
-    PAPER,
-    path("ga-ink-even", "M9 34c6-11 11-11 16-3s9 7 13-1", "desync=off"),
-    path("ga-ink-even", "M9 34c6-11 11-11 16-3s9 7 13-1 8-9 11-9", "desync=on"),
-    { tag: "g", attrs: { transform: "translate(49 22) scale(.7)" }, kids: STYLUS },
-  ],
   debugHud: [
     PAPER,
     path("ga-rule", "M8 17h56M8 32h56"),
@@ -397,7 +391,7 @@ function sizeShare(size: number): number {
 /** One stored number or colour list as the drawings show it, for a setting's current value. */
 export function artStateOf(
   settings: GoodObsidianSettings,
-  extra: { dark: boolean; reader: string; updates: string },
+  extra: { dark: boolean; reader: string; updates: string; autoRecognizing?: boolean },
 ): ArtState {
   const night =
     settings.pageAppearance === "dark" || (settings.pageAppearance === "system" && extra.dark);
@@ -446,9 +440,8 @@ export function artStateOf(
       read: extra.reader,
       check: YES_NO(settings.checkHandwrittenWords),
       calc: YES_NO(settings.calcNotes),
-      auto: YES_NO(settings.autoRecognize),
+      auto: extra.autoRecognizing ? "on" : "off",
       ask: YES_NO(settings.askAttachPage),
-      desync: YES_NO(settings.desynchronizedCanvas),
       debug: YES_NO(settings.debugHud),
     },
     vars,

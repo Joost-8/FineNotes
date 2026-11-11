@@ -70,7 +70,8 @@ vi.mock("../../src/view/folder-suggest", () => ({
 const { FakeEl, Menu, Platform, Setting } = await import("../fakes/obsidian");
 const { DEFAULT_SETTINGS, GoodObsidianSettingTab, shortcutList } =
   await import("../../src/settings");
-const { SETTINGS_LINE_MAX, SETTINGS_SECTIONS } = await import("../../src/settings-data");
+const { AUTO_RECOGNITION, SETTINGS_LINE_MAX, SETTINGS_SECTIONS } =
+  await import("../../src/settings-data");
 const { ShortcutStore } = await import("../../src/view/shortcut-store");
 const { SHORTCUT_ACTIONS } = await import("../../src/model/shortcut-bindings");
 const { t, useLanguage } = await import("../../src/i18n/translate");
@@ -504,8 +505,7 @@ describe("the rows", () => {
       ["writing", "Gestures", "Two-finger double-tap to undo", "toggle:fingerTapUndo"],
       ["writing", "Gestures", "Lasso takes what it touches", "toggle:lassoTouches"],
       ["writing", "Gestures", "Drag to size text boxes", "toggle:textDragSize"],
-      ["writing", "Stylus", "Stylus side button", "dropdown:barrelButton"],
-      ["writing", "Stylus", "Side button click", "dropdown:stylusButtonClick"],
+      ["writing", "Stylus", "Stylus side button", "render"],
       ["writing", "Stylus", "Pressure-sensitive pens", "toggle:pressureWidth"],
       ["writing", "Stylus", "(block)", "render"],
       ["writing", "Stylus", "Pencil tilt", "toggle:pencilTilt"],
@@ -545,13 +545,13 @@ describe("the rows", () => {
       ["ai", "Service", `${label} API key`, "render"],
       ["ai", "Service", "(block)", "render"],
       ["ai", "Transcribing", "Handwriting recognition", "dropdown:recognitionProviderId"],
-      ["ai", "Transcribing", "Recognize automatically", "toggle:autoRecognize"],
       ["ai", "Ask AI", "Ask AI starts on the open page", "toggle:askAttachPage"],
       ["ai", "Ask AI", "Skip compressed providers", "toggle:openRouterSkipCompressed"],
       ["ai", "Pictures", "Image generation", "dropdown:imageVendor"],
       ["ai", "Pictures", "(block)", "render"],
       ["ai", "Pictures", "Image model", "text:imageModel"],
       ["ai", "Pictures", `${label} API key for images`, "render"],
+      ["files", "Stickers and templates", "Assets folder", "text:assetsFolder"],
       ["files", "Stickers and templates", "Stickers folder", "text:stickerFolder"],
       ["files", "Stickers and templates", "Templates folder", "text:templateFolder"],
       ["files", "Stickers and templates", "Template gallery", "text:templateGalleryUrl"],
@@ -568,7 +568,6 @@ describe("the rows", () => {
         `text:${key}`,
       ]),
       ["files", "Handwriting", "Handwriting model file", "text:hwrModelPath"],
-      ["troubleshooting", "", "Desynchronized canvas", "toggle:desynchronizedCanvas"],
       ["troubleshooting", "", "Input debug overlay", "toggle:debugHud"],
     ]);
   });
@@ -681,9 +680,11 @@ describe("the rows", () => {
     expect(all.some((row) => row.def.name === "Dark PDF pages" || row.def.name === "Desk")).toBe(
       false,
     );
+    // Automatic recognition is Cloud AI's own choice, right after it.
     expect(named(all, "Handwriting recognition").control?.options).toEqual({
       [MANUAL_PROVIDER_ID]: providerLabel(MANUAL_PROVIDER_ID),
       [LLM_PROVIDER_ID]: providerLabel(LLM_PROVIDER_ID),
+      [AUTO_RECOGNITION]: "Cloud AI, by itself after you write",
     });
     expect(named(all, "AI service").control?.options).toEqual(VENDOR_LABELS);
     expect(Object.entries(named(all, "Image generation").control?.options ?? {})).toEqual([
@@ -752,7 +753,7 @@ describe("which rows show", () => {
       "Style",
     ]);
     const from = names.indexOf("AI service");
-    expect(names.slice(from, names.indexOf("Stickers folder"))).toEqual([
+    expect(names.slice(from, names.indexOf("Assets folder"))).toEqual([
       "AI service",
       "AI model",
       `${label} API key`,
@@ -852,9 +853,62 @@ describe("which rows show", () => {
     }
   });
 
-  it("offers automatic recognition only with Cloud AI", () => {
-    const plugin = makePlugin({ recognitionProviderId: LLM_PROVIDER_ID });
-    expect(visibleNames(plugin)).toContain("Recognize automatically");
+  it("offers automatic recognition as a choice of its own, stored as the two keys it always was", async () => {
+    const plugin = makePlugin({ recognitionProviderId: LLM_PROVIDER_ID, autoRecognize: true });
+    const { tab } = makeTab(plugin);
+    expect(visibleNames(plugin)).not.toContain("Recognize automatically");
+    // A vault that had the switch on reads as the automatic choice.
+    expect(tab.getControlValue("recognitionProviderId")).toBe(AUTO_RECOGNITION);
+    await tab.setControlValue("recognitionProviderId", MANUAL_PROVIDER_ID);
+    expect(plugin.settings).toMatchObject({
+      recognitionProviderId: MANUAL_PROVIDER_ID,
+      autoRecognize: false,
+    });
+    await tab.setControlValue("recognitionProviderId", AUTO_RECOGNITION);
+    expect(plugin.settings).toMatchObject({
+      recognitionProviderId: LLM_PROVIDER_ID,
+      autoRecognize: true,
+    });
+    expect(plugin.calls).toContain("save");
+  });
+
+  it("keeps a folder or model file typed before the merge, shown so it can be cleared", () => {
+    const fresh = visibleNames(makePlugin());
+    for (const gone of [
+      "Stickers folder",
+      "Templates folder",
+      "Folder for recording transcripts",
+      "Handwriting model file",
+      "Desynchronized canvas",
+    ]) {
+      expect(fresh, gone).not.toContain(gone);
+    }
+    expect(fresh).toContain("Assets folder");
+    // An old default, or the one from before 2.6, is no folder of the user's.
+    expect(
+      visibleNames(
+        makePlugin({
+          stickerFolder: "FineNotes stickers",
+          templateFolder: "FineNotes assets/Templates",
+        }),
+      ),
+    ).not.toContain("Stickers folder");
+    const chosen = visibleNames(
+      makePlugin({
+        stickerFolder: "Art/My stickers",
+        templateFolder: "Paper",
+        transcriptsFolder: "Lectures/Text",
+        hwrModelPath: "FineNotes/handwriting/grape-s3.bin",
+      }),
+    );
+    for (const kept of [
+      "Stickers folder",
+      "Templates folder",
+      "Folder for recording transcripts",
+      "Handwriting model file",
+    ]) {
+      expect(chosen, kept).toContain(kept);
+    }
   });
 
   it("shows the endpoint rows for a custom endpoint, and checks its URL as it is typed", () => {
@@ -1463,12 +1517,20 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     expect(plugin.settings.savedPens).toHaveLength(8);
   });
 
-  it("keeps the stylus button rows, and offers the cursor's three only on a computer", () => {
-    const all = rows(makeTab(makePlugin()).tab);
-    // The side button is not in the key table yet: its own two rows still set it.
-    expect(named(all, "Stylus side button").control?.key).toBe("barrelButton");
-    expect(named(all, "Side button click").control?.key).toBe("stylusButtonClick");
+  it("sets the side button in one row, two choices, and offers the cursor's only on a computer", async () => {
+    const plugin = makePlugin();
+    const all = rows(makeTab(plugin).tab);
+    // The side button is not in the key table yet: its own row still sets it.
+    const button = renderRow(named(all, "Stylus side button"));
+    expect(button.dropdowns.map((d) => Object.keys(d.options))).toEqual([
+      ["erase", "lasso", "pan", "none"],
+      ["pen-menu", "eraser", "none"],
+    ]);
+    await button.dropdowns[0].pick("pan");
+    await button.dropdowns[1].pick("eraser");
+    expect(plugin.settings).toMatchObject({ barrelButton: "pan", stylusButtonClick: "eraser" });
     expect(all.find((row) => row.def.name === "Stylus side button")?.heading).toBe("Stylus");
+    expect(all.some((row) => row.def.name === "Side button click")).toBe(false);
     const cursor = named(all, "Cursor over the page");
     expect(cursor.control?.options).toEqual({
       ink: "Ink dot",
@@ -1484,7 +1546,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
       const mobile = rows(makeTab(makePlugin()).tab);
       expect(shown(named(mobile, "Cursor over the page"))).toBe(false);
       // The Apple Pencil has no side button to click.
-      expect(shown(named(mobile, "Side button click"))).toBe(false);
+      expect(renderRow(named(mobile, "Stylus side button")).dropdowns).toHaveLength(1);
     } finally {
       Platform.isMobile = false;
       Platform.isIosApp = false;

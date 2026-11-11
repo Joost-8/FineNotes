@@ -29,7 +29,10 @@ import {
   paperWidthFrom,
   parseColorList,
   returnToPenOf,
+  AUTO_RECOGNITION,
+  recognitionChoiceOf,
   shownSectionOf,
+  storeRecognitionChoice,
   snapCurveOf,
   snapModeOf,
   storeSnapMode,
@@ -44,6 +47,7 @@ import {
   storeShownValue,
   withShownSection,
 } from "../../src/settings-data";
+import { LLM_PROVIDER_ID } from "../../src/recognition/llm-request";
 import { DARK_PAPER, LIGHT_DESK, LIGHT_PAPER, pageLook } from "../../src/canvas/backdrop";
 
 /**
@@ -822,5 +826,29 @@ describe("choices that set two switches", () => {
       "light",
       true,
     ]);
+  });
+});
+
+describe("handwriting recognition as one choice", () => {
+  const recognition = (provider: string, auto: boolean) => ({
+    recognitionProviderId: provider,
+    autoRecognize: auto,
+  });
+
+  it("reads the two stored keys as one choice", () => {
+    expect(recognitionChoiceOf(recognition(LLM_PROVIDER_ID, true))).toBe(AUTO_RECOGNITION);
+    expect(recognitionChoiceOf(recognition(LLM_PROVIDER_ID, false))).toBe(LLM_PROVIDER_ID);
+    // The old switch only ever acted with Cloud AI: with Manual it is Manual.
+    expect(recognitionChoiceOf(recognition("manual", true))).toBe("manual");
+  });
+
+  it("stores a choice as the two keys", () => {
+    const settings = recognition("manual", false);
+    storeRecognitionChoice(settings, AUTO_RECOGNITION);
+    expect(settings).toEqual(recognition(LLM_PROVIDER_ID, true));
+    storeRecognitionChoice(settings, LLM_PROVIDER_ID);
+    expect(settings).toEqual(recognition(LLM_PROVIDER_ID, false));
+    storeRecognitionChoice(settings, "manual");
+    expect(settings).toEqual(recognition("manual", false));
   });
 });

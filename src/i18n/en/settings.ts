@@ -449,4 +449,11 @@ export const settings = {
   "settings.hwrModelFile.line": "Empty: Grape. Or the vault path of another model.",
   "settings.desynchronized.line": "Draws ink with less delay. Off if ink looks garbled.",
   "settings.debugHud.line": "Prints the raw pen and touch events over the page.",
+  "settings.barrel.bothLine": "While you write, and a click above the page.",
+  "settings.barrel.whileWriting": "While writing",
+  "settings.recognition.auto": "Cloud AI, by itself after you write",
+  "settings.assetsFolder.name": "Assets folder",
+  "settings.assetsFolder.line": "Your Stickers and Templates folders go in it.",
+  "settings.folders.ownLine": "A folder of your own. Clear it to use the default.",
+  "settings.folders.recordings.line": "Recordings, with their transcripts beside them.",
 } as const;
