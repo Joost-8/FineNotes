@@ -5,7 +5,7 @@
  * row offers with one button, as Obsidian does for its own language.
  */
 
-import { type Setting, setIcon } from "obsidian";
+import type { Setting } from "obsidian";
 import {
   FOLLOW_OBSIDIAN,
   INTERFACE_LANGUAGES,
@@ -50,12 +50,6 @@ export function drawLanguageRow(setting: Setting, host: LanguageRowHost): void {
     INTERFACE_LANGUAGES.find((l) => l.code === resolveLanguage(undefined, obsidianLanguage()))
       ?.name ?? "English";
   setting.settingEl.addClass("goodobsidian-language-row");
-  // In line with the sections' icons; shown only while theirs are.
-  if (!setting.nameEl.querySelector(".goodobsidian-section-icon")) {
-    const icon = setting.nameEl.createSpan({ cls: "goodobsidian-section-icon" });
-    setIcon(icon, "languages");
-    setting.nameEl.prepend(icon);
-  }
   setting.addDropdown((d) => {
     d.addOption(FOLLOW_OBSIDIAN, t("language.follow", { language: obsidianName }));
     for (const l of INTERFACE_LANGUAGES) d.addOption(l.code, l.name);

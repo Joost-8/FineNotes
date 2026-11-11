@@ -459,10 +459,9 @@ export interface GoodObsidianSettings {
   greyWhileErasing: boolean;
 
   /**
-   * The settings tab's sections shown open, by id; every other one is
-   * folded. Checked where read ({@link openSectionsOf}). It replaced
-   * `foldedSettingsSections` (2026-10-21, the compact settings), which is
-   * dropped on load, so everyone starts with every section folded.
+   * The settings tab's section shown, as a one-id list, read through
+   * {@link shownSectionOf}. Before the list of sections (2026-11-11) it held
+   * every section left open; those ids are still understood.
    */
   settingsOpen: string[];
   /** The iPad's "switch off Scribble" tip was dismissed with its ✕. */
@@ -605,56 +604,59 @@ export function laserDefaultColorOf(raw: unknown): string {
 // --- Settings sections -----------------------------------------------------------
 
 /**
- * The settings tab's sections, by the id `settingsOpen` keeps. Ids, not
- * headings, so a renamed heading keeps its state.
+ * The settings tab's sections, in the order of its list, by the id
+ * `settingsOpen` keeps. Ids, not headings, so a renamed heading keeps its
+ * state.
  */
 export const SETTINGS_SECTIONS = [
+  "general",
   "writing",
-  "shortcuts",
   "pages",
-  "on-device",
+  "shortcuts",
+  "reading",
   "ai",
-  "advanced",
+  "files",
+  "troubleshooting",
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+/**
+ * Sections that folded before the list of sections, and where their rows
+ * went (2026-11-11). A stored "advanced" opens Files and folders, which holds
+ * most of its rows.
+ */
+const OLD_SECTIONS: Readonly<Record<string, SettingsSection>> = {
+  "on-device": "reading",
+  advanced: "files",
+};
 
 function isSection(value: unknown): value is SettingsSection {
   return (SETTINGS_SECTIONS as readonly unknown[]).includes(value);
 }
 
 /**
- * The open sections a stored value names, in the tab's order, once each.
- * Anything but a list (a missing key, a hand-edited file) opens none; ids
- * this build does not know are dropped.
+ * The section shown, from `settingsOpen`: the first one it names that this
+ * build knows, an id from before the list included. Anything but a list (a
+ * missing key, a hand-edited file) shows General.
  */
-export function openSectionsOf(raw: unknown): SettingsSection[] {
-  if (!Array.isArray(raw)) return [];
-  return SETTINGS_SECTIONS.filter((id) => raw.includes(id));
+export function shownSectionOf(raw: unknown): SettingsSection {
+  if (Array.isArray(raw)) {
+    for (const id of raw as unknown[]) {
+      const current = typeof id === "string" ? (OLD_SECTIONS[id] ?? id) : id;
+      if (isSection(current)) return current;
+    }
+  }
+  return "general";
 }
 
-/**
- * Whether `id` is shown open. `alone`: one section open at a time (on an
- * iPad or a phone), so of several stored open (synced from a computer) only
- * the first is.
- */
-export function sectionOpen(raw: unknown, id: SettingsSection, alone = false): boolean {
-  const open = openSectionsOf(raw);
-  return alone ? open[0] === id : open.includes(id);
+/** What `settingsOpen` keeps when `id` is the section shown. */
+export function withShownSection(id: SettingsSection): SettingsSection[] {
+  return [id];
 }
 
-/** The open sections with `id` opened or folded; `alone`: opening it folds the rest. */
-export function withSection(
-  raw: unknown,
-  id: SettingsSection,
-  open: boolean,
-  alone = false,
-): SettingsSection[] {
-  if (!isSection(id)) return openSectionsOf(raw);
-  if (open && alone) return [id];
-  const rest = openSectionsOf(raw).filter((section) => section !== id);
-  return open ? SETTINGS_SECTIONS.filter((s) => s === id || rest.includes(s)) : rest;
-}
+/** The longest line a settings row may show under its name, in characters. */
+export const SETTINGS_LINE_MAX = 70;
 
 // --- The eraser ------------------------------------------------------------------
 

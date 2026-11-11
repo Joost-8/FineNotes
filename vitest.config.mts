@@ -11,6 +11,7 @@ export default defineConfig({
       include: [
         "src/changelog.ts",
         "src/settings-data.ts",
+        "src/view/settings-art.ts",
         "src/model/contents-drag.ts",
         "src/model/library-rail.ts",
         "src/model/tips.ts",

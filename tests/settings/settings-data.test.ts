@@ -21,7 +21,6 @@ import {
   endpointWarning,
   greyWhileErasingOf,
   laserDefaultColorOf,
-  openSectionsOf,
   pagesAreDark,
   handwritingReaderOf,
   highlighterAlphaOf,
@@ -30,7 +29,7 @@ import {
   paperWidthFrom,
   parseColorList,
   returnToPenOf,
-  sectionOpen,
+  shownSectionOf,
   snapCurveOf,
   snapModeOf,
   storeSnapMode,
@@ -43,7 +42,7 @@ import {
   switchLlmVendor,
   storeReturnToPen,
   storeShownValue,
-  withSection,
+  withShownSection,
 } from "../../src/settings-data";
 import { DARK_PAPER, LIGHT_DESK, LIGHT_PAPER, pageLook } from "../../src/canvas/backdrop";
 
@@ -624,38 +623,28 @@ describe("control values", () => {
   });
 });
 
-describe("settings sections", () => {
-  it("opens none on a fresh install", () => {
-    expect(openSectionsOf(undefined)).toEqual([]);
-    expect(openSectionsOf(DEFAULT_SETTINGS.settingsOpen)).toEqual([]);
-    expect(sectionOpen(undefined, "writing")).toBe(false);
+describe("the section shown", () => {
+  it("is General on a fresh install", () => {
+    expect(shownSectionOf(undefined)).toBe("general");
+    expect(shownSectionOf(DEFAULT_SETTINGS.settingsOpen)).toBe("general");
   });
 
   it("reads a hand-edited value without trusting it", () => {
-    expect(openSectionsOf("writing")).toEqual([]);
-    expect(openSectionsOf(null)).toEqual([]);
-    // Unknown ids go; known ones come back in the tab's order, once each.
-    expect(openSectionsOf(["ai", "nope", "pages", "ai", 7, "toString", "shortcuts"])).toEqual([
-      "shortcuts",
-      "pages",
-      "ai",
-    ]);
+    expect(shownSectionOf("writing")).toBe("general");
+    expect(shownSectionOf(null)).toBe("general");
+    expect(shownSectionOf(["nope", 7, "toString", "pages"])).toBe("pages");
   });
 
-  it("opens and folds one section, leaving the others", () => {
-    const open = withSection(["pages"], "advanced", true);
-    expect(open).toEqual(["pages", "advanced"]);
-    expect(withSection(open, "pages", false)).toEqual(["advanced"]);
-    expect(withSection(open, "advanced", true)).toEqual(["pages", "advanced"]);
-    expect(withSection(["pages"], "toString" as never, true)).toEqual(["pages"]);
+  it("keeps what the folding sections stored: the first one open", () => {
+    expect(shownSectionOf(["writing"])).toBe("writing");
+    expect(shownSectionOf(["shortcuts", "ai"])).toBe("shortcuts");
+    expect(shownSectionOf(["on-device"])).toBe("reading");
+    expect(shownSectionOf(["advanced", "pages"])).toBe("files");
   });
 
-  it("keeps one open at a time on a tablet, the first of several synced from a computer", () => {
-    expect(withSection(["pages", "ai"], "on-device", true, true)).toEqual(["on-device"]);
-    expect(withSection(["pages"], "pages", false, true)).toEqual([]);
-    expect(sectionOpen(["pages", "ai"], "pages", true)).toBe(true);
-    expect(sectionOpen(["pages", "ai"], "ai", true)).toBe(false);
-    expect(sectionOpen(["pages", "ai"], "ai")).toBe(true);
+  it("stores the section as a one-id list", () => {
+    expect(withShownSection("reading")).toEqual(["reading"]);
+    expect(shownSectionOf(withShownSection("troubleshooting"))).toBe("troubleshooting");
   });
 });
 
