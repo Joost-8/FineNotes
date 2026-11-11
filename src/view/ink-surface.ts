@@ -1639,6 +1639,8 @@ interface LassoDraft {
  */
 interface GroupDrag {
   pointerId: number;
+  /** Set by a move: its text boxes and frame are placed on the next frame, against this page. */
+  placeBox?: PageBox | null;
   /** What moves: the selection, and what its closed shapes hold (`withShapeContent`). */
   selection: GroupSelection;
   /** The selection itself, as it is kept once the drag is over. */
@@ -5657,7 +5659,10 @@ export class InkSurface {
     // cropped, lives on the wet layer, which does not follow a scroll or zoom
     // by itself.
     if (this.imageDrag?.lifted) this.renderImageDraft();
-    if (this.groupDrag?.lifted) this.renderGroupDraft();
+    if (this.groupDrag?.lifted) {
+      this.renderGroupDraft();
+      this.placeGroupDrag(this.groupDrag);
+    }
     if (this.cropping) this.renderCropDraft();
     this.paintZoomBox();
     return complete;
@@ -16534,7 +16539,16 @@ export class InkSurface {
       if (this.edgeSpeed(drag.screen).some((v) => v !== 0)) this.requestFrame();
     }
     if (!drag.lifted) this.liftSelection(drag, box);
-    this.renderGroupDraft();
+    // Drawn once a frame, however many samples the pen or finger sends.
+    drag.placeBox = box;
+    this.requestFrame();
+  }
+
+  /** The text boxes and frame of a selection that moved since the last frame. */
+  private placeGroupDrag(drag: GroupDrag): void {
+    const box = drag.placeBox;
+    if (!box) return;
+    drag.placeBox = null;
     this.placeDraggedTextBoxes(drag, box);
     this.syncSelectionOverlay();
   }
@@ -16866,6 +16880,8 @@ export class InkSurface {
   private endGroupDrag(commit: boolean): void {
     const drag = this.groupDrag;
     if (!drag) return;
+    this.placeGroupDrag(drag);
+    this.renderer?.releaseSelectionRaster();
     this.groupDrag = null;
     this.circleDrag = false;
     this.showTurnLabel(null, null, 0, false);

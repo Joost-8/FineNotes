@@ -140,6 +140,7 @@ import {
   tilesCovering,
   tilesForBounds,
 } from "./tile-grid";
+import { SELECTION_RASTER_MIN_STROKES, selectionRasterBox } from "./selection-raster";
 import type { ViewportState } from "./viewport";
 
 /** How strongly ink a playing recording has not reached yet is drawn (2.5). */
@@ -755,6 +756,17 @@ export class Renderer {
    * null when it shows nothing, or something only its pixels hold.
    */
   private wetReplay: WetReplay | null = null;
+  /** The picture of the selection being dragged ({@link blitSelectionRaster}). */
+  private selectionRaster: {
+    selection: readonly Stroke[];
+    level: number;
+    usePressure: boolean;
+    shade: InkShade;
+    alpha: number;
+    canvas: HTMLCanvasElement | null;
+    x: number;
+    y: number;
+  } | null = null;
   /** The wet layer holds pixels {@link wetReplay} cannot paint again. */
   private wetRaster = false;
   /** The viewport canvases' size in CSS px, and device px per CSS px. */
@@ -2858,11 +2870,11 @@ export class Renderer {
       ctx.rotate(turn.angle);
       ctx.translate(-turn.x, -turn.y);
     }
-    const draw = (stroke: Stroke, shade: InkShade): void => {
+    const drawOn = (c: CanvasRenderingContext2D, stroke: Stroke, shade: InkShade): void => {
       const entry = this.pathEntry(stroke, usePressure);
       const revealed = this.tapeRevealed(stroke);
       paintStroke(
-        ctx,
+        c,
         entry,
         stroke,
         this.highlighterAlpha,
@@ -2872,6 +2884,7 @@ export class Renderer {
         revealed,
       );
     };
+    const draw = (stroke: Stroke, shade: InkShade): void => drawOn(ctx, stroke, shade);
     const notes = noteIdsOf(images);
     const onPage = this.doc?.pages[pageIndex];
     const pictures = (front: boolean): void => {
@@ -2889,11 +2902,114 @@ export class Renderer {
       }
     };
     pictures(false);
-    for (const stroke of tapesLast(strokes))
-      if (!isNoteInk(stroke, notes)) draw(stroke, this.shadeAt(pageIndex));
+    const ink = tapesLast(strokes).filter((stroke) => !isNoteInk(stroke, notes));
+    const shade = this.shadeAt(pageIndex);
+    const moved = !scale && !turn;
+    if (!moved || !this.blitSelectionRaster(ctx, strokes, ink, usePressure, shade, drawOn)) {
+      for (const stroke of ink) draw(stroke, shade);
+    }
     pictures(true);
     ctx.restore();
     this.setWetVisible(true);
+  }
+
+  /**
+   * Draw a moved selection's ink from one picture, made the first time, so a
+   * move costs a copy however many strokes it holds. Returns false when the
+   * ink should be drawn stroke by stroke: too few strokes to be worth it, or
+   * a picture too large to keep. Placed on a whole device px, so the ink
+   * stays as sharp as in the tiles.
+   */
+  private blitSelectionRaster(
+    ctx: CanvasRenderingContext2D,
+    selection: readonly Stroke[],
+    ink: readonly Stroke[],
+    usePressure: boolean,
+    shade: InkShade,
+    drawOn: (c: CanvasRenderingContext2D, stroke: Stroke, shade: InkShade) => void,
+  ): boolean {
+    if (ink.length < SELECTION_RASTER_MIN_STROKES) return false;
+    const view = ctx.getTransform();
+    const level = view.a;
+    let raster = this.selectionRaster;
+    if (
+      !raster ||
+      raster.selection !== selection ||
+      raster.level !== level ||
+      raster.usePressure !== usePressure ||
+      raster.shade !== shade ||
+      raster.alpha !== this.highlighterAlpha
+    ) {
+      this.releaseSelectionRaster();
+      raster = {
+        selection,
+        level,
+        usePressure,
+        shade,
+        alpha: this.highlighterAlpha,
+        canvas: null,
+        x: 0,
+        y: 0,
+      };
+      this.selectionRaster = raster;
+      const bounds = this.inkBounds(ink, usePressure);
+      const box = bounds ? selectionRasterBox(bounds, level) : null;
+      if (box) {
+        const canvas = createEl("canvas");
+        canvas.width = box.width;
+        canvas.height = box.height;
+        const c = canvas.getContext("2d");
+        if (c) {
+          c.setTransform(level, 0, 0, level, -box.x * level, -box.y * level);
+          for (const stroke of ink) drawOn(c, stroke, shade);
+          raster.canvas = canvas;
+          raster.x = box.x;
+          raster.y = box.y;
+        }
+      }
+    }
+    if (!raster.canvas) return false;
+    ctx.save();
+    ctx.setTransform(
+      1,
+      0,
+      0,
+      1,
+      Math.round(level * raster.x + view.e),
+      Math.round(view.d * raster.y + view.f),
+    );
+    ctx.drawImage(raster.canvas, 0, 0);
+    ctx.restore();
+    return true;
+  }
+
+  /** The union of what these strokes paint, page px; null when they paint nothing. */
+  private inkBounds(ink: readonly Stroke[], usePressure: boolean): Bounds | null {
+    let out: Bounds | null = null;
+    for (const stroke of ink) {
+      const b = this.pathEntry(stroke, usePressure).bounds;
+      if (!b) continue;
+      out = out
+        ? {
+            minX: Math.min(out.minX, b.minX),
+            minY: Math.min(out.minY, b.minY),
+            maxX: Math.max(out.maxX, b.maxX),
+            maxY: Math.max(out.maxY, b.maxY),
+          }
+        : b;
+    }
+    return out;
+  }
+
+  /** Let go of a dragged selection's picture: the drag is over. */
+  releaseSelectionRaster(): void {
+    const canvas = this.selectionRaster?.canvas;
+    if (canvas) {
+      // WebKit frees a canvas's memory only once it has no size.
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    this.selectionRaster = null;
   }
 
   /**
