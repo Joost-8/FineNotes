@@ -502,12 +502,17 @@ export function paintInk(
 function pathOfStretches(run: InkRun, stretches: readonly number[]): Path2D {
   const count = Math.floor(run.pts.length / 2);
   const whole = stretches.length === 2 && stretches[0] === 0 && stretches[1] === count - 1;
-  if (whole || run.chisel || run.closed) return pathOf(run);
+  if (whole || run.closed) return pathOf(run);
   const path = new Path2D();
   const { pts } = run;
   for (let s = 0; s + 1 < stretches.length; s += 2) {
     const first = stretches[s];
     const last = stretches[s + 1];
+    if (run.chisel) {
+      // The tip sweeps each segment by itself, so a stretch traces as the run does.
+      traceRun(path, { ...run, pts: pts.slice(2 * first, 2 * last + 2) });
+      continue;
+    }
     path.moveTo(pts[2 * first], pts[2 * first + 1]);
     for (let i = first + 1; i <= last; i++) path.lineTo(pts[2 * i], pts[2 * i + 1]);
     if (first === last) path.lineTo(pts[2 * first], pts[2 * first + 1]);

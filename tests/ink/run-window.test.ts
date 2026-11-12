@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { chiselPolygons } from "../../src/ink/chisel";
 import { type InkRun, InkTracer, penOptions } from "../../src/ink/freehand";
 import {
   type RunBox,
@@ -50,11 +51,11 @@ describe("markOf and boundsSince", () => {
     });
   });
 
-  it("counts a chisel run whole and by its full width", () => {
+  it("bounds a chisel run like any other: its tip is no wider than its height", () => {
     const runs: InkRun[] = [{ width: 10, pts: [0, 0, 50, 0], chisel: true }];
     const mark = markOf(runs);
     runs[0].pts.push(100, 0);
-    expect(boundsSince(runs, mark)).toEqual({ minX: -10, minY: -10, maxX: 110, maxY: 10 });
+    expect(boundsSince(runs, mark)).toEqual({ minX: 45, minY: -5, maxX: 105, maxY: 5 });
   });
 });
 
@@ -88,15 +89,15 @@ describe("stretchesWithin", () => {
     expect(stretchesWithin(line(32, 0, 20, 100, 20), box)).toEqual([0, 1]);
   });
 
-  it("takes a dot, a closed run and a chisel run whole or not at all", () => {
+  it("takes a dot and a closed run whole or not at all, and cuts a chisel run", () => {
     expect(stretchesWithin(line(4, 50, 0), box)).toEqual([0, 0]);
     expect(stretchesWithin(line(4, 0, 0), box)).toEqual([]);
     expect(stretchesWithin({ width: 2, pts: [0, 0, 50, 0, 50, 90], closed: true }, box)).toEqual([
       0, 2,
     ]);
-    expect(stretchesWithin({ width: 2, pts: [0, 0, 20, 0, 20, 90], chisel: true }, box)).toEqual(
-      [],
-    );
+    expect(
+      stretchesWithin({ width: 2, pts: [0, 0, 45, 0, 90, 0, 90, 90], chisel: true }, box),
+    ).toEqual([0, 2]);
     expect(stretchesWithin(line(2), box)).toEqual([]);
   });
 });
@@ -146,5 +147,14 @@ describe("a frame's changed box holds every difference from the frame before", (
       seen = { settled, tip };
       before = runs;
     }
+  });
+});
+
+describe("a stretch of a chisel run", () => {
+  it("sweeps the same polygons as the whole run does over those segments", () => {
+    const pts = [0, 0, 30, 4, 60, -3, 90, 10, 120, 0];
+    const whole = chiselPolygons(pts, 12);
+    const part = chiselPolygons(pts.slice(2, 8), 12);
+    expect(part).toEqual(whole.slice(1, 3));
   });
 });

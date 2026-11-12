@@ -29,9 +29,12 @@ export function markOf(runs: readonly InkRun[]): RunMark {
   return { runs: runs.length, open: last ? last.pts.length : 0 };
 }
 
-/** How far a run's ink reaches from its centreline. A chisel tip sweeps its whole width to a side. */
+/**
+ * How far a run's ink reaches from its centreline: half its width. A chisel
+ * tip is `width` tall and narrower across (`ink/chisel`), so that holds it.
+ */
 function reachOf(run: InkRun): number {
-  return run.chisel ? run.width : run.width / 2;
+  return run.width / 2;
 }
 
 /**
@@ -48,9 +51,8 @@ export function boundsSince(runs: readonly InkRun[], mark: RunMark | null): RunB
   for (let r = first; r < runs.length; r++) {
     const run = runs[r];
     const reach = reachOf(run);
-    // The marked run goes on from its last point; a chisel run's corners depend
-    // on its neighbours, so it counts whole.
-    const from = mark && r === first && !run.chisel ? Math.max(0, mark.open - 2) : 0;
+    // The marked run goes on from its last point.
+    const from = mark && r === first ? Math.max(0, mark.open - 2) : 0;
     for (let i = from - (from % 2); i + 1 < run.pts.length; i += 2) {
       const x = run.pts[i];
       const y = run.pts[i + 1];
@@ -80,8 +82,9 @@ export function unionBox(a: RunBox | null, b: RunBox | null): RunBox | null {
  * The stretches of `run` whose ink can touch `box`, as point-index pairs
  * `[first, last, first, last, …]` (a point is two numbers of `pts`), each a
  * stretch of consecutive points. A segment counts when its own box, widened
- * by the run's reach, overlaps `box`. A closed run, a chisel run and a dot
- * count whole or not at all.
+ * by the run's reach, overlaps `box`. A closed run and a dot count whole or
+ * not at all. A chisel run is cut like any other: the tip sweeps each
+ * segment by itself, so a stretch of it draws what the whole run draws there.
  */
 export function stretchesWithin(run: InkRun, box: RunBox): number[] {
   const { pts } = run;
@@ -94,7 +97,7 @@ export function stretchesWithin(run: InkRun, box: RunBox): number[] {
     Math.min(ay, by) - reach <= box.maxY &&
     Math.max(ay, by) + reach >= box.minY;
   if (count === 1) return touches(pts[0], pts[1], pts[0], pts[1]) ? [0, 0] : [];
-  if (run.closed || run.chisel) {
+  if (run.closed) {
     for (let i = 0; i + 1 < count; i++) {
       if (touches(pts[2 * i], pts[2 * i + 1], pts[2 * i + 2], pts[2 * i + 3])) return [0, count - 1];
     }
