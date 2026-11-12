@@ -12,9 +12,9 @@
  *   Read-only · Simple look
  *   [⚙ All FineNotes settings              ›]  everything else
  *
- * The rows sit in one rounded frame with no titles, each hint behind the ⓘ
- * after its name, so the whole dialog fits an iPad's landscape screen and
- * the card to every other setting shows without scrolling. Scroll direction
+ * The rows sit in one rounded frame with no titles, each a name and one
+ * line, so the whole dialog fits an iPad's landscape screen and the card to
+ * every other setting shows without scrolling. Scroll direction
  * is a two-way switch. Where new files are saved is in FineNotes' own settings
  * (Advanced), for every notebook without a folder of its own.
  *
@@ -30,7 +30,6 @@ import { formatFileSize } from "../model/notebook-info";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { t, tn } from "../i18n/translate";
-import { addInfo } from "../settings";
 
 /** What the summary card shows. */
 export interface NotebookInfo {
@@ -150,11 +149,9 @@ export class NoteSettingsModal extends Modal {
     this.renderAllSettings(contentEl);
   }
 
-  /** A row: its name, and its hint behind the ⓘ after the name. */
-  private row(group: HTMLElement, name: string, info: string): Setting {
-    const setting = new Setting(group).setName(name);
-    addInfo(setting.settingEl, info);
-    return setting;
+  /** A row: its name and its one line, as every row in Settings. */
+  private row(group: HTMLElement, name: string, desc: string): Setting {
+    return new Setting(group).setName(name).setDesc(desc);
   }
 
   /**
