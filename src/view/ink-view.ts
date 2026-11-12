@@ -19,9 +19,8 @@
 import { SetFurniture, furnitureText } from "../model/furniture";
 import { SetPageTab, nextTabColor } from "../model/page-tabs";
 import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
-import { stickerFolderOf } from "../model/stickers";
 import { lookPaletteOf, lookStyleOf } from "../model/look";
-import { templateFolderOf } from "../model/vault-folders";
+import { stickerFolderFor, templateFolderFor } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
 import { DEFAULT_FILL_COLOR, readFillGap } from "../model/fill-region";
 import { isTape, tapeColorOf, tapeHeightOf, tapeModeOf } from "../model/cover-tape";
@@ -366,7 +365,7 @@ import {
   exportTarget,
   mimeTypeOf,
 } from "../export/export-choice";
-import { normalizeFolder, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
+import { stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
 import { MorePanel } from "./more-panel";
@@ -3638,6 +3637,7 @@ export class InkView extends TextFileView {
         // then glide onto it, as GoodNotes does.
         onPullAddPage: () => this.addPage(this.doc.pages.length - 1, true),
         onPinchOverview: (snapshot) => this.openOverviewFromPinch(snapshot),
+        onZoomMotion: (moving) => this.pdfCache?.setHeld(moving, "zoom"),
         onTextEditing: (style) => this.toolbar?.setTextTarget(style),
         onTextAnchor: (rect) => this.toolbar?.setTextAnchor(rect),
         textPillState: () => this.toolbar?.textPillState ?? "-",
@@ -3913,7 +3913,7 @@ export class InkView extends TextFileView {
         files,
         ...(preview ? { preview } : {}),
       });
-      const folder = templateFolderOf(normalizeFolder(this.settings.templateFolder));
+      const folder = templateFolderFor(this.settings);
       if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
       const taken = new Set(
         this.app.vault.getFolderByPath(folder)?.children.map((child) => child.name) ?? [],
@@ -6045,7 +6045,7 @@ export class InkView extends TextFileView {
     if (!this.thumbBackdrops) return undefined;
     return new VaultPaperLibrary(
       this.app,
-      () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
+      () => templateFolderFor(this.settings),
       (canvas, backdrop, geometry, cssWidth) =>
         this.paintPaperThumbnail(canvas, backdrop, geometry, cssWidth),
       () => this.plugin.openTemplateGallery(),
@@ -6055,10 +6055,7 @@ export class InkView extends TextFileView {
 
   /** The names in My templates now, which tell an older notebook's template pages apart. */
   private templateNames(): Set<string> {
-    return templateNamesIn(
-      this.app,
-      templateFolderOf(normalizeFolder(this.settings.templateFolder)),
-    );
+    return templateNamesIn(this.app, templateFolderFor(this.settings));
   }
 
   /** An empty page with paper `backdrop` (a PDF page or a designed paper), as a thumbnail `cssWidth` wide. */
@@ -6429,7 +6426,7 @@ export class InkView extends TextFileView {
   private async saveSticker(png: ArrayBuffer, width: number, height: number): Promise<void> {
     const note = this.file;
     if (!note) return;
-    const folder = `${stickerFolderOf(this.settings.stickerFolder)}/${SAVED_STICKERS_COLLECTION}`;
+    const folder = `${stickerFolderFor(this.settings)}/${SAVED_STICKERS_COLLECTION}`;
     try {
       const prepared = { bytes: png, mime: "image/png", ext: "png", width, height };
       const file = await saveImageAttachment(this.app, prepared, "Sticker", note.path, folder);

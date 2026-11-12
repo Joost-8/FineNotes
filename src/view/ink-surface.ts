@@ -219,6 +219,7 @@ import {
   pageSnapIndex,
   pullAddProgress,
   columnScrollRangeX,
+  columnScrollRangeY,
   rowPageScrollRange,
   rowScrollInsets,
   rowScrollXForPage,
@@ -334,6 +335,8 @@ import { pairsAsDoubleTap, type PlainTap } from "../input/multi-finger-tap";
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { WRITING_SCALE, formatMm, zoomPercent } from "../model/units";
 import { GrowBoard, boardGrowth, drawnBounds, isBoard, isNoGrowth } from "../model/board";
+import { afterPainted } from "./after-painted";
+import { lowMemoryDevice } from "./pdf-backdrop";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
   BRUSH_PRESSURE,
@@ -784,6 +787,16 @@ const SCROLL_FRAME_BUDGET_MS = 6;
  * so did a PDF page arriving.
  */
 const REST_FRAME_BUDGET_MS = 10;
+/** Rasterising budget for the frame that swaps in a sharper PDF image. */
+const SHARPEN_FRAME_BUDGET_MS = 120;
+/** One fade waits this long after the last PDF image of a zoom, ms. */
+const SHARPEN_QUIET_MS = 90;
+/** And never longer than this after the first, ms. */
+const SHARPEN_WAIT_MAX_MS = 350;
+/** How long a sharper PDF image takes to fade in over the blurred one, ms. */
+const PDF_SHARPEN_FADE_MS = 160;
+/** How long after the last frame of a zoom PDF rendering starts again, ms. */
+const ZOOM_PDF_HOLD_MS = 150;
 /** Clear space round a sticker saved from a selection, page px: room for the ink's width. */
 const STICKER_PAD = 8;
 /** Budget for one idle prefetch frame (tiles just off screen, page previews). */
@@ -1179,6 +1192,12 @@ export interface InkSurfaceCallbacks {
    * {@link InkSurface.setPinchToOverview}.
    */
   onPinchOverview?: (snapshot: PageSnapshot | null) => void;
+  /**
+   * A zoom started moving (true), or has been still for a moment (false). PDF
+   * pages wait in between: rendering them during a pinch stalled its last
+   * frames by about 200 ms on an iPad.
+   */
+  onZoomMotion?: (moving: boolean) => void;
   /**
    * A page text box took focus (its style), or editing ended (`null`). Hosts
    * show the box's style in the text pill. Also sent after an undo or redo
@@ -1649,6 +1668,8 @@ interface LassoDraft {
  */
 interface GroupDrag {
   pointerId: number;
+  /** Set by a move: its text boxes and frame are placed on the next frame, against this page. */
+  placeBox?: PageBox | null;
   /** What moves: the selection, and what its closed shapes hold (`withShapeContent`). */
   selection: GroupSelection;
   /** The selection itself, as it is kept once the drag is over. */
@@ -5391,8 +5412,11 @@ export class InkSurface {
       diagonalsScrollY: !row || (this.heldRow && !this.pinch),
       // Turning pages, the view rests centred on each page (`rowY`), never
       // scrolled up or down: the row's whole range is the pages' centres.
-      rangeY:
-        row && this.turnsPages && !this.joined
+      // Pages down, filled to the pane's width, no desk shows above page 1
+      // or below the last, as none shows beside them (discussion #43).
+      rangeY: !row
+        ? columnScrollRangeY(this.pageLayout, scale, this.cssW, this.cssH)
+        : this.turnsPages && !this.joined
           ? rowRestRangeY(this.pageLayout, scale, this.cssH)
           : undefined,
       holdX: (!row || (this.heldRow && !this.pinch)) && this.holdFitWidth(),
@@ -5629,6 +5653,8 @@ export class InkSurface {
     const carrying = this.stepGroupDragScroll();
     const moving = scrolling || zooming || settling || carrying;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
+    if (busy) this.endSharpenFade();
+    this.noteZoomMotion();
     this.noteViewMotion(busy);
     this.syncViewport();
     // The ruler's centimetres are the page's, at the zoom now.
@@ -5646,7 +5672,15 @@ export class InkSurface {
     this.reportTextAnchor();
     this.syncPullAdd();
     if (busy) this.flashChrome();
-    const complete = this.paint(busy ? SCROLL_FRAME_BUDGET_MS : REST_FRAME_BUDGET_MS);
+    // Under the fade, every tile changes at once: nothing moves, and tiles
+    // arriving a few a frame would ripple across the text.
+    const complete = this.paint(
+      busy
+        ? SCROLL_FRAME_BUDGET_MS
+        : this.fadeTimer !== 0
+          ? SHARPEN_FRAME_BUDGET_MS
+          : REST_FRAME_BUDGET_MS,
+    );
     if (this.debug) this.trackFrame(t, started, moving);
     if (moving || !complete) {
       this.requestFrame();
@@ -5660,6 +5694,101 @@ export class InkSurface {
     if (this.imageSel) this.syncImageOverlay();
     if (this.selection) this.syncSelectionOverlay();
     if (this.pressMenu) this.syncActionBar();
+  };
+
+  private fadeCover: HTMLCanvasElement | null = null;
+  private fadeTimer = 0;
+  private fadeAnimation: Animation | null = null;
+  /** The fade has not started: more images may still join it. */
+  private fadeWaiting = false;
+  private fadeBegan = 0;
+  private fadeStopWaiting: (() => void) | null = null;
+
+  /**
+   * A sharper PDF image arrived while nothing moves. Swapped in at once, the
+   * text visibly jumps from blurred to sharp after every zoom: the picture as
+   * it was stays on top instead and fades away.
+   */
+  private fadeInSharper(pageIndex: number): void {
+    if (!this.renderer || this.viewMoving || prefersReducedMotion() || lowMemoryDevice()) return;
+    if (!this.renderer.isPageOnScreen(pageIndex, this.doc.pages.length)) return;
+    // More of the same zoom's images: they all go under the one fade.
+    if (this.fadeTimer !== 0) {
+      if (this.fadeWaiting && now() - this.fadeBegan < SHARPEN_WAIT_MAX_MS) this.armSharpenFade();
+      return;
+    }
+    const cover = (this.fadeCover ??= createEl("canvas", {
+      cls: "goodobsidian-canvas goodobsidian-canvas-dry goodobsidian-canvas-fading",
+    }));
+    if (typeof cover.animate !== "function") return;
+    this.renderer.coverDry(cover);
+    const fade = cover.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: PDF_SHARPEN_FADE_MS,
+      easing: "ease-out",
+      fill: "forwards",
+    });
+    fade.pause();
+    this.fadeAnimation = fade;
+    this.fadeBegan = now();
+    this.fadeWaiting = true;
+    this.armSharpenFade();
+  }
+
+  /** Start the fade once no image has arrived for a moment and the new text is drawn. */
+  private armSharpenFade(): void {
+    window.clearTimeout(this.fadeTimer);
+    this.fadeTimer = window.setTimeout(() => {
+      // Started before the swap is on screen, its first frames are lost.
+      this.fadeStopWaiting = afterPainted(window, () => {
+        this.fadeStopWaiting = null;
+        this.fadeWaiting = false;
+        this.fadeAnimation?.play();
+        // A timer, not `finish`: finish events land late (ledger).
+        window.clearTimeout(this.fadeTimer);
+        this.fadeTimer = window.setTimeout(this.endSharpenFade, PDF_SHARPEN_FADE_MS);
+      });
+      this.requestFrame();
+    }, SHARPEN_QUIET_MS);
+  }
+
+  private readonly endSharpenFade = (): void => {
+    if (this.fadeTimer === 0) return;
+    window.clearTimeout(this.fadeTimer);
+    this.fadeTimer = 0;
+    this.fadeWaiting = false;
+    this.fadeStopWaiting?.();
+    this.fadeStopWaiting = null;
+    this.fadeAnimation?.cancel();
+    this.fadeAnimation = null;
+    const cover = this.fadeCover;
+    if (!cover) return;
+    cover.remove();
+    // WebKit frees a canvas's memory only once it has no size.
+    cover.width = 0;
+    cover.height = 0;
+  };
+
+  private zoomHeld = false;
+  private zoomHoldTimer = 0;
+
+  /** A zoom frame: hold PDF rendering, until the zoom has been still for a moment. */
+  private noteZoomMotion(): void {
+    if (!this.zoomTransient) return;
+    if (!this.zoomHeld) {
+      this.zoomHeld = true;
+      this.callbacks.onZoomMotion?.(true);
+    }
+    window.clearTimeout(this.zoomHoldTimer);
+    this.zoomHoldTimer = window.setTimeout(this.releaseZoomHold, ZOOM_PDF_HOLD_MS);
+  }
+
+  private readonly releaseZoomHold = (): void => {
+    this.zoomHoldTimer = this.zoomTransient
+      ? window.setTimeout(this.releaseZoomHold, ZOOM_PDF_HOLD_MS)
+      : 0;
+    if (this.zoomHoldTimer !== 0 || !this.zoomHeld) return;
+    this.zoomHeld = false;
+    this.callbacks.onZoomMotion?.(false);
   };
 
   /** Whether the zoom is mid-gesture, so the tiles' level must not change yet. */
@@ -5717,7 +5846,10 @@ export class InkSurface {
     // cropped, lives on the wet layer, which does not follow a scroll or zoom
     // by itself.
     if (this.imageDrag?.lifted) this.renderImageDraft();
-    if (this.groupDrag?.lifted) this.renderGroupDraft();
+    if (this.groupDrag?.lifted) {
+      this.renderGroupDraft();
+      this.placeGroupDrag(this.groupDrag);
+    }
     if (this.cropping) this.renderCropDraft();
     this.paintZoomBox();
     return complete;
@@ -7563,6 +7695,7 @@ export class InkSurface {
           maxY: r.maxY + frame.y,
         });
       } else renderer.refreshPage(index);
+      this.fadeInSharper(index);
       shown = true;
     });
     if (shown) this.requestFrame();
@@ -16593,7 +16726,16 @@ export class InkSurface {
       if (this.edgeSpeed(drag.screen).some((v) => v !== 0)) this.requestFrame();
     }
     if (!drag.lifted) this.liftSelection(drag, box);
-    this.renderGroupDraft();
+    // Drawn once a frame, however many samples the pen or finger sends.
+    drag.placeBox = box;
+    this.requestFrame();
+  }
+
+  /** The text boxes and frame of a selection that moved since the last frame. */
+  private placeGroupDrag(drag: GroupDrag): void {
+    const box = drag.placeBox;
+    if (!box) return;
+    drag.placeBox = null;
     this.placeDraggedTextBoxes(drag, box);
     this.syncSelectionOverlay();
   }
@@ -16925,6 +17067,8 @@ export class InkSurface {
   private endGroupDrag(commit: boolean): void {
     const drag = this.groupDrag;
     if (!drag) return;
+    this.placeGroupDrag(drag);
+    this.renderer?.releaseSelectionRaster();
     this.groupDrag = null;
     this.circleDrag = false;
     this.showTurnLabel(null, null, 0, false);

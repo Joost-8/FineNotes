@@ -159,6 +159,28 @@ export class FakeEl {
   get textContent(): string {
     return this.text + this.children.map((c) => c.textContent).join("");
   }
+  removeAttribute(name: string): void {
+    delete this.attrs[name];
+  }
+  getAttribute(name: string): string | null {
+    return this.attrs[name] ?? null;
+  }
+  get firstElementChild(): FakeEl | null {
+    return this.children[0] ?? null;
+  }
+  get doc(): unknown {
+    return activeDocument;
+  }
+  instanceOf(_type: unknown): boolean {
+    return true;
+  }
+  /** Every descendant with this class (".x") or attribute ("[x]"). */
+  querySelectorAll(selector: string): FakeEl[] {
+    const attr = /^\[(.+)\]$/.exec(selector);
+    const all = (el: FakeEl): FakeEl[] => el.children.flatMap((c) => [c, ...all(c)]);
+    if (attr) return all(this).filter((el) => attr[1] in el.attrs);
+    return this.findAll(selector.replace(/^\./, ""));
+  }
   /** Every descendant carrying `cls`, depth first. */
   findAll(cls: string): FakeEl[] {
     const out: FakeEl[] = [];

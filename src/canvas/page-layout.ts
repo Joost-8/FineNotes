@@ -529,6 +529,56 @@ export function columnScrollRangeX(
   return { min: left * scale, max: right * scale - paneWidth };
 }
 
+/**
+ * The vertical scroll range of a column (pages down) at `scale`, in scroll
+ * px (screen = -position + layout * scale), when the desk above the first
+ * page and below the last must shrink: never more of it shows there than
+ * shows beside the pages. Zoomed in until the pages fill the pane's width (a
+ * double tap's fill), none does, so the first page's top and the last
+ * page's foot stop on the pane's edges, as in Goodnotes (discussion #43:
+ * "I can still see the top grey"). Zoomed out to the whole page, the desk
+ * beside it is wider than {@link PAGE_MARGIN_Y}, so the margins stay and
+ * this is undefined: the range is the content's, as it always was. The gap
+ * between pages is left alone ("Join pages" closes it).
+ *
+ * Pages shorter than the pane once trimmed rest as far towards centred as
+ * the margin is trimmed: top-aligned with the whole margin, as before,
+ * centred with none, where a double tap's fill centres a short page.
+ */
+export function columnScrollRangeY(
+  layout: DocumentLayout,
+  scale: number,
+  paneWidth: number,
+  paneHeight: number,
+): { min: number; max: number } | undefined {
+  if (layout.boxes.length === 0 || !(scale > 0) || !(paneWidth > 0) || !(paneHeight > 0)) {
+    return undefined;
+  }
+  let left = Infinity;
+  let right = -Infinity;
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (const box of layout.boxes) {
+    left = Math.min(left, box.x);
+    right = Math.max(right, box.x + box.width);
+    top = Math.min(top, box.y);
+    bottom = Math.max(bottom, box.y + box.height);
+  }
+  const marginTop = top * scale;
+  const marginBottom = Math.max(0, layout.height - bottom) * scale;
+  const side = Math.max(0, (paneWidth - (right - left) * scale) / 2);
+  const above = Math.min(marginTop, side);
+  const below = Math.min(marginBottom, side);
+  if (above >= marginTop - 0.5 && below >= marginBottom - 0.5) return undefined;
+  const min = marginTop - above;
+  const max = bottom * scale + below - paneHeight;
+  if (max >= min) return { min, max };
+  const trimmed = marginTop > 0 ? 1 - above / marginTop : 1;
+  const centred = ((top + bottom) / 2) * scale - paneHeight / 2;
+  const rest = min + (centred - min) * trimmed;
+  return { min: rest, max: rest };
+}
+
 /** A release faster than this (px/ms) turns the page even if it moved less than half. */
 export const PAGE_FLICK_SPEED = 0.3;
 
