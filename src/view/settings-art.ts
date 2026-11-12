@@ -63,6 +63,14 @@ const STYLUS: ArtShape[] = [
   path("ga-accent-line", "M0 0l3-8 5 7z"),
 ];
 
+/** The Colours drawing's group, which wears the chosen palette's preview class. */
+const PALETTE_PREVIEW = "ga-palette goodobsidian-look-preview";
+
+/** The class that gives `palette`'s colours to an element and what is inside it. */
+export function paletteClass(palette: string): string {
+  return `is-palette-${palette}`;
+}
+
 /** A line of handwriting, roughly 30 wide, for a `g` to place. */
 const WORD = "M0 8c3-9 5-9 7-2s4 6 6-1 5-5 6 0 3 5 5 1 4-5 6-2";
 
@@ -88,12 +96,17 @@ export const ART = {
       dot("ga-tool", 45, 24, 2.6),
     ]),
   ],
+  /* Settings is Obsidian's window, which a palette does not reach (it is worn
+     by FineNotes' own surfaces only), so the drawing wears the palette itself:
+     `paintArt` gives this group the Looks section's preview class. */
   palette: [
-    rect("ga-surface", 1, 1, 70, 46, 7),
-    rect("ga-card", 9, 9, 54, 30, 6),
-    dot("ga-fill", 21, 24, 6.5),
-    dot("ga-fill-normal", 36, 24, 6.5),
-    dot("ga-fill-muted", 51, 24, 6.5),
+    group(PALETTE_PREVIEW, [
+      rect("ga-surface", 1, 1, 70, 46, 7),
+      rect("ga-card", 9, 9, 54, 30, 6),
+      dot("ga-fill", 21, 24, 6.5),
+      dot("ga-fill-normal", 36, 24, 6.5),
+      dot("ga-fill-muted", 51, 24, 6.5),
+    ]),
   ],
   simpleLook: [
     rect("ga-surface", 1, 1, 70, 46, 7),
@@ -481,5 +494,12 @@ export function paintArt(root: HTMLElement, state: ArtState): void {
   root.setCssProps(state.vars);
   for (const el of Array.from(root.querySelectorAll("[data-when]"))) {
     el.toggleClass("is-on", artPartOn(el.getAttribute("data-when") ?? "", state.on));
+  }
+  const wear = paletteClass(state.on.palette ?? "obsidian");
+  for (const el of Array.from(root.querySelectorAll(".ga-palette"))) {
+    for (const cls of Array.from(el.classList)) {
+      if (cls.startsWith("is-palette-") && cls !== wear) el.classList.remove(cls);
+    }
+    el.classList.add(wear);
   }
 }

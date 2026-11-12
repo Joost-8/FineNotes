@@ -8,7 +8,13 @@ import { describe, expect, it } from "vitest";
 import { DARK_PAPER, LIGHT_PAPER } from "../../src/canvas/backdrop";
 import { nightColor } from "../../src/canvas/night";
 import { DEFAULT_SETTINGS, type GoodObsidianSettings } from "../../src/settings-data";
-import { ART, type ArtShape, artPartOn, artStateOf } from "../../src/view/settings-art";
+import {
+  ART,
+  type ArtShape,
+  artPartOn,
+  artStateOf,
+  paletteClass,
+} from "../../src/view/settings-art";
 
 const settings = (over: Partial<GoodObsidianSettings> = {}): GoodObsidianSettings => ({
   ...structuredClone(DEFAULT_SETTINGS),
@@ -31,6 +37,19 @@ describe("the drawings", () => {
         expect(on, `${id}: ${part.when}`).toHaveProperty(key);
       }
     }
+  });
+
+  it("draw Colours inside the Looks preview, so the chosen palette reaches Obsidian's settings window", () => {
+    const [outer] = ART.palette;
+    expect(outer?.tag).toBe("g");
+    expect(outer?.cls?.split(" ")).toEqual(
+      expect.arrayContaining(["ga-palette", "goodobsidian-look-preview"]),
+    );
+    expect(parts(ART.palette).length).toBeGreaterThan(1);
+    expect(paletteClass(state({ lookPalette: "nord" }).on.palette ?? "")).toBe("is-palette-nord");
+    expect(paletteClass(state({ lookPalette: "no such palette" }).on.palette ?? "")).toBe(
+      "is-palette-obsidian",
+    );
   });
 
   it("hold no text: the tab is in 42 languages", () => {
