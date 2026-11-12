@@ -359,6 +359,8 @@ import { SetReadOnly, isReadOnly } from "../model/read-only";
 import { coverColorOfDocument, notebookName, renamePlan } from "../model/notebook-info";
 import { ExportPdfModal } from "./export-modal";
 import { penGesturesOf } from "../ink/pen-gestures";
+import type { Feature } from "../model/feature-index";
+import { TryHint } from "./try-hint";
 import { NotebookSearchModal } from "./search-modal";
 import { layoutPlainText, pdfHitRects } from "../search/pdf-hits";
 import {
@@ -1019,6 +1021,9 @@ export class InkView extends TextFileView {
    * running recording so it joins *this* note, and save that.
    */
   override async onUnloadFile(file: TFile): Promise<void> {
+    // Leaving the scratch page any other way ends the try without going back.
+    this.tryHint?.destroy();
+    this.tryHint = null;
     // The conversation was about this notebook's pages.
     this.chatPanel?.close();
     this.askSession = null;
@@ -1152,6 +1157,23 @@ export class InkView extends TextFileView {
   syncPenPreferences(): void {
     this.toolState.snapMode = snapModeOf(this.settings);
     this.toolState.snapCurvatureThreshold = snapCurveOf(this.settings.snapCurvatureThreshold);
+    // A pen gesture switched from a tip or a search result (feature-index.ts).
+    this.toolState.penGestures = penGesturesOf(this.settings.penGestures);
+  }
+
+  // --- Try it (try-hint.ts) ---------------------------------------------------
+
+  /** The tip being tried on this scratch page, while it is. */
+  private tryHint: TryHint | null = null;
+
+  /** Show a tip's picture over this scratch page until its gesture is done or it is closed. */
+  startTry(feature: Feature, onEnd: () => void): void {
+    this.tryHint?.destroy();
+    const host = this.surface?.surfaceEl ?? this.contentEl;
+    this.tryHint = new TryHint(host, feature, () => {
+      this.tryHint = null;
+      onEnd();
+    });
   }
 
   /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */
@@ -4268,6 +4290,7 @@ export class InkView extends TextFileView {
    */
   /** Count a slow or a fast way for the earned hints (model/nudges.ts). */
   private noteUse(event: NudgeEvent): void {
+    this.tryHint?.noteUse(event);
     if (this.surface) this.plugin.noteUse(event, this.surface);
   }
 

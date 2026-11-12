@@ -10,6 +10,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Try a gesture from its tip.** A tip for a gesture on the page (Circle
+  to select, Scribble to erase, hold to snap a shape, the finger taps for
+  undo and redo, pulling in a page and more) has Try it: a scratch page with
+  a few lines of writing opens, with the tip's picture over it. Do the
+  gesture and the ✓ fills; you are back where you were, and the scratch page
+  goes to the trash. A gesture with a switch shows it in its tip, as Circle
+  to select, Scribble to erase and Scribble to fill now do. The link to a
+  tip moved behind the tip's ⋯.
 - **Several boards in one board file**
   ([discussion #160](https://github.com/Joost-8/FineNotes/discussions/160)).
   A board file can hold more than one endless board, listed like pages, as

@@ -21269,3 +21269,68 @@ button.goodobsidian-tips-copy.clickable-icon {
 .goodobsidian-tips-found {
   min-height: 240px;
 }
+
+/* --- Try it: a tip's picture over its scratch page (try-hint.ts) --- */
+.goodobsidian-try {
+  position: absolute;
+  z-index: 13;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 8px;
+  border-radius: 16px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: var(--gob-shadow-float);
+}
+
+.goodobsidian-try-visual {
+  flex: 0 0 auto;
+  width: 128px;
+}
+
+.goodobsidian-try-words {
+  min-width: 0;
+  max-width: 340px;
+  line-height: 1.3;
+}
+
+.goodobsidian-try-title {
+  font-weight: var(--font-semibold);
+}
+
+.goodobsidian-try-body {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-try button.goodobsidian-try-done.clickable-icon {
+  flex: 0 0 auto;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  transition:
+    background-color 0.2s,
+    color 0.2s;
+}
+
+/* Done: the ✓ fills with the accent, and the try ends by itself. */
+.goodobsidian-try.is-done button.goodobsidian-try-done.clickable-icon {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+/* On a phone the picture goes: the words and the ✓ are enough. */
+@media (max-width: 600px) {
+  .goodobsidian-try-visual {
+    display: none;
+  }
+}

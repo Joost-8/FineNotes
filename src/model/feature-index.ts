@@ -9,14 +9,54 @@
  */
 
 import type { TextKey } from "../i18n/translate";
+import type { NudgeEvent } from "./nudges";
 import { RELEASE_HIGHLIGHTS, TIP_COLLECTIONS, type Tip, type TipCollection } from "./tips";
 
 /** What a feature's one button does. */
 export type FeatureAction =
-  /** A switch in settings (`key` in the plugin's settings): turned on or off in place. */
+  /**
+   * A switch in settings (`key` in the plugin's settings, or `penGestures.<name>`
+   * for a pen gesture's switch): turned on or off in place.
+   */
   | { kind: "setting"; key: string; name: TextKey }
   /** A command of this plugin, by its id without the plugin's prefix. */
   | { kind: "command"; id: string };
+
+/**
+ * A gesture done on a page: Try it opens a scratch page with the tip's
+ * picture over it. `done` is the event that says it was done (nudges.ts),
+ * which marks it ✓; null where nothing reports it, and Done ends the try.
+ */
+export interface TryOn {
+  done: NudgeEvent | null;
+}
+
+/** The key of a pen gesture's switch, `penGestures.circleLasso`, as a setting action names it. */
+export const PEN_GESTURE_PREFIX = "penGestures.";
+
+/**
+ * A switch's value in `settings`: a top-level key, or one pen gesture
+ * (`penGestures.circleLasso`), whose missing value is `fallback`'s. Undefined
+ * when the key names no on/off setting.
+ */
+export function switchValue(
+  settings: Readonly<Record<string, unknown>>,
+  key: string,
+  fallback: Readonly<Record<string, boolean>> = {},
+): boolean | undefined {
+  if (key.startsWith(PEN_GESTURE_PREFIX)) {
+    const name = key.slice(PEN_GESTURE_PREFIX.length);
+    const gestures = settings.penGestures;
+    const value =
+      gestures && typeof gestures === "object"
+        ? (gestures as Record<string, unknown>)[name]
+        : undefined;
+    if (typeof value === "boolean") return value;
+    return Object.prototype.hasOwnProperty.call(fallback, name) ? fallback[name] : undefined;
+  }
+  const value = settings[key];
+  return typeof value === "boolean" ? value : undefined;
+}
 
 export interface Feature {
   id: string;
@@ -27,6 +67,8 @@ export interface Feature {
   /** The Tips collection it sits in, when it sits in one. */
   collection: TipCollection | null;
   action: FeatureAction | null;
+  /** A gesture to try on a scratch page; null when the tip is not one. */
+  tryOn: TryOn | null;
   /** More words a search may use, English only. */
   also: string;
 }
@@ -51,6 +93,35 @@ const TIP_ACTIONS: Readonly<Record<string, FeatureAction>> = {
   learnWriting: command("learn-handwriting"),
   homeSearch: command("open-library"),
   calc: setting("calcNotes", "settings.calcNotes.name"),
+  // The pen gestures' own switches, from the pen's ⌄ › Pen gestures.
+  scribble: setting(`${PEN_GESTURE_PREFIX}scribbleErase`, "toolbar.gesture.scribbleErase"),
+  scribbleFill: setting(`${PEN_GESTURE_PREFIX}scribbleFill`, "toolbar.gesture.scribbleFill"),
+  circleLasso: setting(`${PEN_GESTURE_PREFIX}circleLasso`, "toolbar.gesture.circleLasso"),
+};
+
+const tryIt = (done: NudgeEvent | null = null): TryOn => ({ done });
+
+/**
+ * The tips that are a gesture on a page, which a blank page with a little
+ * writing on it is enough to try. The events are the ones the earned hints
+ * already count (ink-surface.ts, ink-view.ts `noteUse`).
+ */
+const TIP_TRY: Readonly<Record<string, TryOn>> = {
+  hold: tryIt("shape.hold"),
+  holdResize: tryIt("shape.hold"),
+  arcsHearts: tryIt("shape.hold"),
+  pathArrow: tryIt("shape.hold"),
+  scribble: tryIt("erase.scribble"),
+  undo: tryIt("undo.gesture"),
+  redoThree: tryIt("redo.gesture"),
+  circleLasso: tryIt("lasso.circle"),
+  pullPage: tryIt("page.pull"),
+  fillScreen: tryIt(),
+  scribbleFill: tryIt(),
+  fingerPick: tryIt(),
+  fingerHoldMenu: tryIt(),
+  pinchSelection: tryIt(),
+  turnKnob: tryIt(),
 };
 
 /** English words people search with that a tip's own text does not hold. */
@@ -131,6 +202,7 @@ function build(): Feature[] {
       tip,
       collection,
       action: TIP_ACTIONS[tip.id] ?? null,
+      tryOn: TIP_TRY[tip.id] ?? null,
       also: TIP_ALSO[tip.id] ?? "",
     });
   };
@@ -151,6 +223,7 @@ function build(): Feature[] {
       tip: null,
       collection: null,
       action: setting(item.key, item.title),
+      tryOn: null,
       also: item.also,
     });
   }

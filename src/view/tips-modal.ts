@@ -3,7 +3,7 @@
  * tips. Also shows an update's highlights, with the same pager.
  */
 
-import { type App, Modal, Notice, Platform, setIcon } from "obsidian";
+import { type App, Menu, Modal, Notice, Platform, setIcon } from "obsidian";
 import { t } from "../i18n/translate";
 import { TIP_COLLECTIONS, TIP_SECTIONS, type Tip, type TipCollection } from "../model/tips";
 import { tipScene } from "../model/tip-scenes";
@@ -193,7 +193,6 @@ export class TipsModal extends Modal {
     words.createEl("h3", { text: t(tip.title) });
     words.createEl("p", { text: t(tip.body) });
     const acts = words.createDiv({ cls: "goodobsidian-tips-actions" });
-    if (tip.tryIt) this.tryButton(acts, tip);
     this.featureButtons(acts, tip);
 
     const nav = pager.createDiv({ cls: "goodobsidian-tips-nav" });
@@ -272,13 +271,29 @@ export class TipsModal extends Modal {
   }
 
   /**
-   * A tip ends at its control: the switch that is its setting, or a button
-   * that takes you to it; and a link to the tip, for an answer elsewhere.
+   * A tip ends in one action, by what it is: a gesture is tried on a scratch
+   * page (Try it), a command runs (Show me), a setting is its switch; a tip
+   * with a gesture and a switch has both. The link to the tip, which is for
+   * answers elsewhere, waits behind the ⋯.
    */
   private featureButtons(parent: HTMLElement, tip: Tip): void {
     const feature = featureById(tip.id);
-    if (!feature) return;
+    if (!feature) {
+      if (tip.tryIt) this.tryButton(parent, tip);
+      return;
+    }
     const action = feature.action;
+    if (feature.tryOn) {
+      const go = parent.createEl("button", {
+        cls: "goodobsidian-tips-try clickable-icon",
+        text: t("notebooks.tips.tryIt"),
+        attr: { type: "button" },
+      });
+      go.addEventListener("click", () => {
+        this.close();
+        this.actions.features.tryFeature(feature);
+      });
+    } else if (tip.tryIt) this.tryButton(parent, tip);
     if (action?.kind === "command") {
       const show = parent.createEl("button", {
         cls: "goodobsidian-tips-try clickable-icon",
@@ -292,15 +307,24 @@ export class TipsModal extends Modal {
     } else if (action) {
       featureControl(parent, feature, this.actions.features, undefined, true);
     }
-    const link = parent.createEl("button", {
+    const more = parent.createEl("button", {
       cls: "goodobsidian-tips-copy clickable-icon",
-      attr: { type: "button", "aria-label": t("notebooks.features.copyLink") },
+      attr: { type: "button", "aria-label": t("notebooks.tips.more") },
     });
-    setIcon(link, "link");
-    link.addEventListener("click", () => {
-      void navigator.clipboard
-        ?.writeText(featureLink(feature.id))
-        .then(() => new Notice(t("notebooks.features.linkCopied")));
+    setIcon(more, "more-horizontal");
+    more.addEventListener("click", (event) => {
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item
+          .setTitle(t("notebooks.features.copyLink"))
+          .setIcon("link")
+          .onClick(() => {
+            void navigator.clipboard
+              ?.writeText(featureLink(feature.id))
+              .then(() => new Notice(t("notebooks.features.linkCopied")));
+          }),
+      );
+      menu.showAtMouseEvent(event);
     });
   }
 

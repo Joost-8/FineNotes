@@ -18,6 +18,8 @@ export interface FeatureHost {
   runCommand(id: string): boolean;
   /** The feature's tip, or its row in settings when it has no tip. */
   show(feature: Feature): void;
+  /** A gesture's Try it: a scratch page with the tip's picture over it. */
+  tryFeature(feature: Feature): void;
   /** Start a request on GitHub that carries these words. */
   ask(query: string): void;
 }

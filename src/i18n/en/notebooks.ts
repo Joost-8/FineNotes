@@ -900,6 +900,8 @@ export const notebooks = {
   "notebooks.tips.title": "Tips",
   "notebooks.tips.tryIt": "Try it",
   "notebooks.tips.watch": "Watch again",
+  "notebooks.tips.tryDone": "Done",
+  "notebooks.tips.more": "More for this tip",
   "notebooks.tips.previous": "Previous tip",
   "notebooks.tips.next": "Next tip",
   "notebooks.tips.allTips": "All tips",
