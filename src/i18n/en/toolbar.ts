@@ -213,6 +213,8 @@ export const toolbar = {
   "toolbar.laser.colourValue": "Laser colour {color}",
   "toolbar.laser.colour": "Laser colour",
   "toolbar.tape.height": "Tape height: {label}",
+  "toolbar.tape.heightTitle": "Tape height",
+  "toolbar.tape.anyHeight": "Any tape height",
   "toolbar.tape.cover": "Cover the tapes on this page",
   "toolbar.tape.show": "Show the tapes on this page",
   "toolbar.tape.none": "No tapes on this page",

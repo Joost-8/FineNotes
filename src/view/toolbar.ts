@@ -91,6 +91,8 @@ import {
 import { ToolbarEditor } from "./toolbar-edit";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import {
+  MAX_TAPE_HEIGHT,
+  MIN_TAPE_HEIGHT,
   TAPE_COLORS,
   TAPE_HEIGHTS,
   type TapeMode,
@@ -2579,6 +2581,7 @@ export class Toolbar {
       }
       // The laser's picker lives in its pill; a picker opened from its palette closes with it.
       if (this.popoverKind === "laser-color" && this.state.tool !== "laser") this.closePopover();
+      if (this.popoverKind === "tape-height" && this.state.tool !== "tape") this.closePopover();
       switch (this.state.tool) {
         case "pen":
         case "highlighter":
@@ -3273,8 +3276,8 @@ export class Toolbar {
   }
 
   /**
-   * Cover tape: straight or freehand, its colours, its three heights, and an
-   * eye that shows the tapes on the page in view through, or covers them
+   * Cover tape: straight or freehand, its colours, its three heights and a
+   * chevron to any other height, and an eye that shows the tapes on the page in view through, or covers them
    * again (lit while they are shown). A tap on a tape shows or covers that one.
    */
   private buildTapeOptions(): void {
@@ -3307,12 +3310,15 @@ export class Toolbar {
         cls: "goodobsidian-width goodobsidian-tape-height clickable-icon",
       });
       button.append(tapeHeightGlyph(i));
+      button.dataset.height = String(each);
       const label = tapeHeightLabels()[i] ?? `${each}`;
       button.setAttribute("aria-label", t("toolbar.tape.height", { label }));
       button.setAttribute("title", label);
       button.toggleClass("is-active", each === height);
       button.addEventListener("click", () => set(color, each));
     });
+    // Any height between the presets and past them, on a slider (FineNotes#211).
+    this.chevron(t("toolbar.tape.anyHeight"), (button) => this.toggleTapeHeight(button));
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     // Snap to PDF text: a magnet, as the ruler's angle snap, lit as a picked option while on (#164).
     const snap = this.state.tapeSnapText === true;
@@ -3348,6 +3354,57 @@ export class Toolbar {
     eye.toggleClass("is-on", shown === true);
     eye.setAttribute("aria-pressed", String(shown === true));
     if (shown === null) eye.setAttribute("title", t("toolbar.tape.none"));
+  }
+
+  /**
+   * The tape's height on a slider, as the pens' width popover has one: the
+   * height in mm and any height from {@link MIN_TAPE_HEIGHT} to
+   * {@link MAX_TAPE_HEIGHT} page px (FineNotes#211). The pill's presets light
+   * as the knob passes them; the height is kept when the knob is let go.
+   */
+  private toggleTapeHeight(anchor: HTMLElement): void {
+    if (this.popoverKind === "tape-height") {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("tape-height", anchor);
+    body.addClass("goodobsidian-width-popover", "goodobsidian-tape-height-popover");
+    const head = body.createDiv({ cls: "goodobsidian-width-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.tape.heightTitle") });
+    const readout = head.createDiv({ cls: "goodobsidian-text-size-readout" });
+    const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
+    const range = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": t("toolbar.tape.heightTitle") },
+    });
+    dragRange(range);
+    range.min = String(MIN_TAPE_HEIGHT);
+    range.max = String(MAX_TAPE_HEIGHT);
+    range.step = "1";
+    const show = (height: number): void => {
+      readout.setText(formatMm(height));
+      range.value = String(height);
+      syncRangeFill(range);
+      for (const button of Array.from(
+        this.optionsEl.querySelectorAll<HTMLElement>(".goodobsidian-tape-height"),
+      )) {
+        button.toggleClass("is-active", Number(button.dataset.height) === height);
+      }
+    };
+    show(tapeHeightOf(this.state.tapeHeight));
+    range.addEventListener("input", () => show(tapeHeightOf(Number(range.value))));
+    range.addEventListener("change", () => {
+      const height = tapeHeightOf(Number(range.value));
+      this.state.tapeHeight = height;
+      this.callbacks.onTapeChange?.(
+        tapeColorOf(this.state.tapeColor),
+        height,
+        tapeModeOf(this.state.tapeMode),
+      );
+      show(height);
+    });
+    this.keepPopoverInside(anchor);
   }
 
   /** The hand has nothing to set: its pill says what dragging does with it. */

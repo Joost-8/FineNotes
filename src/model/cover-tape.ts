@@ -575,14 +575,22 @@ export function tapeClipPath<T extends Pick<Stroke, "tool" | "pts" | "size">>(
   return cut ? `polygon(evenodd, ${points.join(", ")})` : "";
 }
 
-/** The tape height closest to `size` among {@link TAPE_HEIGHTS}; the default for nonsense. */
+/** The thinnest tape the slider lays, page px (about 1.4 mm). */
+export const MIN_TAPE_HEIGHT = 8;
+
+/** The widest tape the slider lays, page px (about 3.4 cm): a whole paragraph. */
+export const MAX_TAPE_HEIGHT = 200;
+
+/**
+ * A stored tape height, kept as asked within the slider's range (FineNotes#211),
+ * to whole page px; the default for nonsense. The pill's three heights are
+ * presets on that range, not the only heights.
+ */
 export function tapeHeightOf(size: unknown): number {
-  if (typeof size !== "number" || !(size > 0)) return DEFAULT_TAPE_HEIGHT;
-  let best = TAPE_HEIGHTS[0];
-  for (const height of TAPE_HEIGHTS) {
-    if (Math.abs(height - size) < Math.abs(best - size)) best = height;
+  if (typeof size !== "number" || !Number.isFinite(size) || !(size > 0)) {
+    return DEFAULT_TAPE_HEIGHT;
   }
-  return best;
+  return Math.min(MAX_TAPE_HEIGHT, Math.max(MIN_TAPE_HEIGHT, Math.round(size)));
 }
 
 /** A stored tape colour if it is `#rrggbb`, else masking tape. */

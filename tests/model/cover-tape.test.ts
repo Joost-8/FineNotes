@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TAPE_COLOR,
   DEFAULT_TAPE_HEIGHT,
+  MAX_TAPE_HEIGHT,
+  MIN_TAPE_HEIGHT,
   TAPE_HEIGHTS,
   allRevealed,
   isTape,
@@ -161,11 +163,19 @@ describe("a text box under a tape", () => {
 });
 
 describe("the tool's settings", () => {
-  it("snaps a stored height to the nearest offered one", () => {
-    expect(tapeHeightOf(TAPE_HEIGHTS[0] + 1)).toBe(TAPE_HEIGHTS[0]);
-    expect(tapeHeightOf(1000)).toBe(TAPE_HEIGHTS[TAPE_HEIGHTS.length - 1]);
+  it("keeps any stored height inside the slider's range, to whole px (FineNotes#211)", () => {
+    expect(tapeHeightOf(TAPE_HEIGHTS[0] + 1)).toBe(TAPE_HEIGHTS[0] + 1);
+    expect(tapeHeightOf(55.4)).toBe(55);
+    expect(tapeHeightOf(1000)).toBe(MAX_TAPE_HEIGHT);
+    expect(tapeHeightOf(2)).toBe(MIN_TAPE_HEIGHT);
     expect(tapeHeightOf(-3)).toBe(DEFAULT_TAPE_HEIGHT);
+    expect(tapeHeightOf(Number.NaN)).toBe(DEFAULT_TAPE_HEIGHT);
     expect(tapeHeightOf("wide")).toBe(DEFAULT_TAPE_HEIGHT);
+  });
+
+  it("offers presets that are heights the slider can lay", () => {
+    for (const each of TAPE_HEIGHTS) expect(tapeHeightOf(each)).toBe(each);
+    expect(tapeHeightOf(DEFAULT_TAPE_HEIGHT)).toBe(DEFAULT_TAPE_HEIGHT);
   });
 
   it("keeps a hex colour and falls back to masking tape", () => {
