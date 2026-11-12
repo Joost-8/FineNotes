@@ -12,9 +12,23 @@ import {
   boardCentre,
   boardScrollRange,
   boardScrollToCentre,
+  BOARD_PARKED_Y,
+  PAGE_GAP,
+  boxAtPoint,
   layoutBoard,
+  layoutBoards,
+  layoutNotebook,
+  layoutPages,
+  columnScrollRangeX,
+  currentPageIndex,
+  currentPageIndexInRow,
+  pageSnapIndex,
+  rowScrollInsets,
+  shownBoxes,
+  visibleBoxes,
 } from "../../src/canvas/page-layout";
 import { KineticScroller } from "../../src/canvas/scroll-physics";
+import { joinLines, joinedSides } from "../../src/canvas/page-join";
 import { MAX_SCALE, MIN_SCALE, boardFitZoom } from "../../src/canvas/zoom";
 
 const geometry = { width: 5600, height: 5600 };
@@ -183,5 +197,92 @@ describe("KineticScroller on a board", () => {
     expect(s.position.y).toBeLessThanOrEqual(2100);
     expect(s.position.x).toBeGreaterThan(1240);
     expect(s.position.y).toBeGreaterThan(1240);
+  });
+});
+
+describe("layoutBoards (discussion #160)", () => {
+  const pages = [
+    blankPage("p1", geometry),
+    blankPage("p2", { width: 6720, height: 4480 }),
+    blankPage("p3", geometry),
+  ];
+
+  it("shows the current board at the origin and is that board's size", () => {
+    const layout = layoutBoards(pages, 1);
+    expect(layout.boxes[1]).toEqual({ index: 1, id: "p2", x: 0, y: 0, width: 6720, height: 4480 });
+    expect(layout.width).toBe(6720);
+    expect(layout.height).toBe(4480);
+  });
+
+  it("keeps every board's box at its own index, the others parked out of reach", () => {
+    const layout = layoutBoards(pages, 1);
+    expect(layout.boxes.map((box) => box.index)).toEqual([0, 1, 2]);
+    expect(layout.boxes.map((box) => box.id)).toEqual(["p1", "p2", "p3"]);
+    expect(layout.boxes[0].y).toBe(BOARD_PARKED_Y);
+    expect(layout.boxes[2].y).toBe(BOARD_PARKED_Y + 5600 + PAGE_GAP);
+    // Nothing on or around the board being shown reaches a parked one.
+    expect(visibleBoxes(layout, -100_000, 100_000).map((box) => box.id)).toEqual(["p2"]);
+    expect(boxAtPoint(layout, 10, 10)?.id).toBe("p2");
+  });
+
+  it("clamps the current board into the file, and is layoutBoard for one", () => {
+    expect(layoutBoards(pages, 9).boxes[2].y).toBe(0);
+    expect(layoutBoards(pages, -1).boxes[0].y).toBe(0);
+    expect(layoutBoards([pages[0]], 0)).toEqual(layoutBoard(pages[0]));
+  });
+});
+
+describe("layoutNotebook: boards among a notebook's pages (discussion #160)", () => {
+  const page = (id: string): ReturnType<typeof blankPage> =>
+    blankPage(id, { width: 800, height: 1100 });
+  const board = (id: string): ReturnType<typeof blankPage> => ({
+    ...blankPage(id, geometry),
+    board: true,
+  });
+  const pages = [page("p1"), board("p2"), page("p3"), board("p4")];
+
+  it("is layoutPages when there is no board", () => {
+    const plain = [page("p1"), page("p2")];
+    expect(layoutNotebook(plain)).toEqual(layoutPages(plain));
+  });
+
+  it("lays the pages out as if the boards were not there, the boards parked at their indexes", () => {
+    const layout = layoutNotebook(pages);
+    const column = layoutPages([pages[0], pages[2]]);
+    expect(layout.boxes.map((box) => box.index)).toEqual([0, 1, 2, 3]);
+    expect(layout.boxes[2]).toEqual({ ...column.boxes[1], index: 2 });
+    expect(layout.boxes[1].parked).toBe(true);
+    expect(layout.boxes[3].parked).toBe(true);
+    expect(layout.height).toBe(column.height);
+    expect(shownBoxes(layout).map((box) => box.id)).toEqual(["p1", "p3"]);
+  });
+
+  it("keeps the boards out of every measure of the layout", () => {
+    const layout = layoutNotebook(pages);
+    const column = layoutPages([pages[0], pages[2]]);
+    expect(columnScrollRangeX(layout, 1, 900)).toEqual(columnScrollRangeX(column, 1, 900));
+    expect(currentPageIndex(layout, 0, 100_000_000)).toBe(0);
+    expect(currentPageIndex(layout, column.boxes[1].y, column.boxes[1].y + 900)).toBe(2);
+  });
+
+  it("steps a row's swipe over a board, and measures the row without it", () => {
+    const row = layoutNotebook(pages, { direction: "horizontal" });
+    const plain = layoutPages([pages[0], pages[2]], { direction: "horizontal" });
+    expect(pageSnapIndex(row, 0, 1, 0, 1, 900)).toBe(2);
+    expect(pageSnapIndex(row, 0, -1, 2, 1, 900)).toBe(0);
+    expect(rowScrollInsets(row, 1, 900)).toEqual(rowScrollInsets(plain, 1, 900));
+    expect(currentPageIndexInRow(row, 0, 100_000)).toBe(0);
+  });
+
+  it("joins only the pages shown", () => {
+    const joined = layoutNotebook(pages, { joined: true });
+    expect(joinLines(joined).map((line) => line.index)).toEqual([2]);
+    expect(joinedSides(joined, 2)).toMatchObject({ top: true, bottom: false });
+    expect(joinedSides(joined, 1)).toMatchObject({ top: false, bottom: false });
+  });
+
+  it("is the first board alone for a notebook of boards only", () => {
+    const only = [board("p1"), board("p2")];
+    expect(layoutNotebook(only)).toEqual(layoutBoards(only, 0));
   });
 });

@@ -15,7 +15,7 @@
  */
 
 import { POINT_STRIDE } from "../model/document";
-import type { DocumentLayout, PageBox } from "./page-layout";
+import { type DocumentLayout, type PageBox, shownBoxes } from "./page-layout";
 
 /**
  * How far a stroke's ink may reach past its points, page px: half the
@@ -143,10 +143,12 @@ export interface JoinedSides {
  */
 export function joinedSides(layout: DocumentLayout, index: number): JoinedSides {
   const none = { top: false, bottom: false, left: false, right: false };
-  const n = layout.boxes.length;
-  if (layout.joined !== true || index < 0 || index >= n) return none;
-  const before = index > 0;
-  const after = index < n - 1;
+  // Among the pages shown: a parked board (discussion #160) joins nothing.
+  const shown = shownBoxes(layout);
+  const at = shown.findIndex((box) => box.index === index);
+  if (layout.joined !== true || at < 0) return none;
+  const before = at > 0;
+  const after = at < shown.length - 1;
   return layout.direction === "horizontal"
     ? { ...none, left: before, right: after }
     : { ...none, top: before, bottom: after };
@@ -174,9 +176,10 @@ export function joinLines(layout: DocumentLayout): JoinLine[] {
   if (layout.joined !== true) return [];
   const lines: JoinLine[] = [];
   const across = layout.direction !== "horizontal";
-  for (let i = 1; i < layout.boxes.length; i++) {
-    const a = layout.boxes[i - 1];
-    const b = layout.boxes[i];
+  const shown = shownBoxes(layout);
+  for (let i = 1; i < shown.length; i++) {
+    const a = shown[i - 1];
+    const b = shown[i];
     lines.push(
       across
         ? {

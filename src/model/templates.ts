@@ -498,17 +498,40 @@ export function coverColorOf(backdrop: Backdrop): string | null {
 
 /**
  * The page whose paper a new page next to page `index` should repeat.
- * Normally that page — but a cover is not paper, so next to a cover it is
- * the nearest paper page (the one after it first), or none.
+ * Normally that page — but a cover is not paper, and neither is a board
+ * among the pages (discussion #160), so next to one it is the nearest paper
+ * page (the one after it first), or none.
  */
 export function paperPageFor(pages: readonly Page[], index: number): Page | undefined {
+  return nearestPage(
+    pages,
+    index,
+    (page) =>
+      page.board !== true && (page.backdrop.kind === "pdf" || !isCoverRuling(page.backdrop.kind)),
+  );
+}
+
+/**
+ * The page whose size a new page next to page `index` takes: that page, or
+ * next to a board among the pages (discussion #160) the nearest page that
+ * is not a board (the one after it first); none in a notebook of boards.
+ */
+export function shapePageFor(pages: readonly Page[], index: number): Page | undefined {
+  return nearestPage(pages, index, (page) => page.board !== true);
+}
+
+/** Page `index` when it is `fit`, else the nearest that is (the one after first). */
+function nearestPage(
+  pages: readonly Page[],
+  index: number,
+  fit: (page: Page) => boolean,
+): Page | undefined {
   const at = Math.max(0, Math.min(pages.length - 1, Math.trunc(index) || 0));
-  const isPaper = (page: Page | undefined): page is Page =>
-    !!page && (page.backdrop.kind === "pdf" || !isCoverRuling(page.backdrop.kind));
-  if (isPaper(pages[at])) return pages[at];
+  const ok = (page: Page | undefined): page is Page => !!page && fit(page);
+  if (ok(pages[at])) return pages[at];
   for (let d = 1; d < pages.length; d++) {
-    if (isPaper(pages[at + d])) return pages[at + d];
-    if (isPaper(pages[at - d])) return pages[at - d];
+    if (ok(pages[at + d])) return pages[at + d];
+    if (ok(pages[at - d])) return pages[at - d];
   }
   return undefined;
 }

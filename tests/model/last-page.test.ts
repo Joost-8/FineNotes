@@ -9,6 +9,7 @@ import {
   parseLastPages,
   rememberPage,
   renameInLastPages,
+  reopenBoards,
   spotAnchor,
 } from "../../src/model/last-page";
 import { BOARD_BLOCK, GrowBoard } from "../../src/model/board";
@@ -199,5 +200,81 @@ describe("a board's spot after it grew left or up", () => {
     expect(spotAnchor(page)).toEqual({ kind: "text", id: "t1", x: 40, y: 50 });
     page.images.push({ id: "i1", path: "a.png", x: 10, y: 20, w: 5, h: 5 });
     expect(spotAnchor(page)).toEqual({ kind: "image", id: "i1", x: 10, y: 20 });
+  });
+});
+
+describe("a file of several boards (discussion #160)", () => {
+  function boards() {
+    const doc = buildNewDocument({ ...DEFAULT_NOTEBOOK_CHOICES, type: "endless" }, "Map");
+    const second = structuredClone(doc.pages[0]);
+    second.id = "p2";
+    second.strokes.push({ id: "s9", color: "#000", size: 4, tool: "pen", pts: [900, 800, 0.5] });
+    doc.pages.push(second);
+    return doc;
+  }
+
+  it("reopens on the board it was left on, at its spot, with the others' spots", () => {
+    const doc = boards();
+    const map = rememberPage(
+      {},
+      "M.notebook.md",
+      "p2",
+      1,
+      1,
+      { x: 1, y: 2, zoom: 2 },
+      {
+        p1: { x: 3, y: 4, zoom: 0.5 },
+        p2: { x: 9, y: 9, zoom: 9 },
+        "": { x: 0, y: 0, zoom: 1 },
+      },
+    );
+    const back = parseLastPages(JSON.parse(JSON.stringify(map)));
+    // The board being read is not kept twice, and a nameless one not at all.
+    expect(back["M.notebook.md"].boards).toEqual({ p1: { x: 3, y: 4, zoom: 0.5 } });
+    const open = reopenBoards(back, "M.notebook.md", doc.pages)!;
+    expect(open.index).toBe(1);
+    expect(open.spot).toEqual({ x: 1, y: 2, zoom: 2 });
+    expect([...open.others]).toEqual([["p1", { x: 3, y: 4, zoom: 0.5 }]]);
+  });
+
+  it("follows the board when boards were added in front of it", () => {
+    const doc = boards();
+    const map = rememberPage({}, "M.notebook.md", "p2", 1, 1, { x: 1, y: 2, zoom: 1 });
+    doc.pages.unshift({ ...structuredClone(doc.pages[0]), id: "p3" });
+    expect(reopenBoards(map, "M.notebook.md", doc.pages)?.index).toBe(2);
+  });
+
+  it("keeps no spot when the board it was left on is gone, and nothing for a new file", () => {
+    const doc = boards();
+    const map = rememberPage(
+      {},
+      "M.notebook.md",
+      "gone",
+      1,
+      1,
+      { x: 1, y: 2, zoom: 1 },
+      {
+        p1: { x: 3, y: 4, zoom: 1 },
+        p7: { x: 5, y: 6, zoom: 1 },
+      },
+    );
+    const open = reopenBoards(map, "M.notebook.md", doc.pages)!;
+    expect(open.index).toBe(1);
+    expect(open.spot).toBeNull();
+    // Only boards still in the file.
+    expect([...open.others.keys()]).toEqual(["p1"]);
+    expect(reopenBoards(map, "Other.notebook.md", doc.pages)).toBeNull();
+  });
+
+  it("drops stored board spots that are not whole", () => {
+    const map = parseLastPages({
+      "B.notebook.md": { page: "p1", index: 0, at: 1, boards: { p2: { x: 1 }, p3: "x" } },
+    });
+    expect(map["B.notebook.md"]).toEqual({ page: "p1", index: 0, at: 1 });
+    expect(
+      parseLastPages({ "B.notebook.md": { page: "p1", index: 0, at: 1, boards: [1] } })[
+        "B.notebook.md"
+      ],
+    ).toEqual({ page: "p1", index: 0, at: 1 });
   });
 });

@@ -19,11 +19,12 @@ import {
   type Stroke,
   type TextBoxElement,
   POINT_STRIDE,
+  blankPage,
   pageById,
 } from "./document";
 import { type TextAdoption, adoptText, relinkNoteInk, releaseText } from "./sticky-notes";
 import { nextConnectorId, remapConnectors } from "./connectors";
-import { paperPageFor, repeatedPaper } from "./templates";
+import { paperPageFor, repeatedPaper, shapePageFor } from "./templates";
 import { t } from "../i18n/translate";
 
 /** Append a freshly-drawn stroke to a specific page. */
@@ -286,8 +287,9 @@ export function pageToInsertAfter(
   templateNames: ReadonlySet<string> = new Set(),
 ): { index: number; page: Page } | null {
   const at = doc.pages[afterIndex] ? afterIndex : doc.pages.length - 1;
-  const template = doc.pages[at];
-  if (!template) return null;
+  if (!doc.pages[at]) return null;
+  // Next to a board among the pages, a page takes a page's size, not the board's.
+  const template = shapePageFor(doc.pages, at) ?? blankPage();
   const paper = paperPageFor(doc.pages, at);
   const backdrop = repeatedPaper(paper?.backdrop ?? { kind: "blank" }, templateNames);
   // A repeated PDF page keeps that page's shape, even when it sits past a cover.

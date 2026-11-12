@@ -15,7 +15,9 @@
  * px on a board do not hold still: growing left or up moves everything on
  * it by whole blocks, on whichever device the writing happened. So the spot
  * also keeps something drawn on the board (`anchor`), and follows it when it
- * moved by whole blocks since.
+ * moved by whole blocks since. A file of several boards (discussion #160)
+ * keeps the board being read as the page, its spot as the spot, and the
+ * spot of each other board it has been to (`boards`), by page id.
  */
 
 import { BOARD_BLOCK } from "./board";
@@ -93,6 +95,8 @@ export interface LastPage {
   at: number;
   /** On a board, where on its page. */
   spot?: BoardSpot;
+  /** A board file's other boards (discussion #160), by page id: where each was left. */
+  boards?: Record<string, BoardSpot>;
 }
 
 /** The vault-scoped local-storage key of the map, shared by the notebook view and the library. */
@@ -115,7 +119,8 @@ export function parseLastPages(raw: unknown): LastPages {
     if (typeof index !== "number" || !Number.isInteger(index) || index < 0) continue;
     if (typeof at !== "number" || !Number.isFinite(at)) continue;
     const spot = parseSpot((value as Record<string, unknown>).spot);
-    out[path] = { page, index, at, ...(spot ? { spot } : {}) };
+    const boards = parseBoards((value as Record<string, unknown>).boards);
+    out[path] = { page, index, at, ...(spot ? { spot } : {}), ...(boards ? { boards } : {}) };
   }
   return out;
 }
@@ -128,6 +133,20 @@ function parseSpot(raw: unknown): BoardSpot | undefined {
   if (![x, y, zoom].every(Number.isFinite) || !(zoom > 0)) return undefined;
   const anchor = parseAnchor((raw as Record<string, unknown>).anchor);
   return { x, y, zoom, ...(anchor ? { anchor } : {}) };
+}
+
+/** Stored spots by board id, keeping the whole ones; `undefined` when none is. */
+function parseBoards(raw: unknown): Record<string, BoardSpot> | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+  const out: Record<string, BoardSpot> = Object.create(null) as Record<string, BoardSpot>;
+  let any = false;
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    const spot = id ? parseSpot(value) : undefined;
+    if (!spot) continue;
+    out[id] = spot;
+    any = true;
+  }
+  return any ? out : undefined;
 }
 
 /** A stored spot's anchor, or `undefined` (a spot kept before anchors, or a broken one). */
@@ -144,7 +163,8 @@ function parseAnchor(raw: unknown): SpotAnchor | undefined {
 
 /**
  * Record that `path` was left on page `pageId` (at `index`), at time `at`,
- * and on a board at `spot`. Returns a new map, pruned to
+ * and on a board at `spot`; a board file's other boards at `boards`, by
+ * page id (the one being read is left out). Returns a new map, pruned to
  * {@link LAST_PAGES_MAX} by dropping the longest unread.
  */
 export function rememberPage(
@@ -154,12 +174,22 @@ export function rememberPage(
   index: number,
   at: number,
   spot?: BoardSpot,
+  boards?: Record<string, BoardSpot>,
 ): LastPages {
   const next: LastPages = Object.create(null) as LastPages;
   Object.assign(next, map);
   if (!path || !pageId || !Number.isInteger(index) || index < 0) return next;
   const kept = parseSpot(spot);
-  next[path] = { page: pageId, index, at, ...(kept ? { spot: kept } : {}) };
+  const others = parseBoards(boards);
+  if (others) delete others[pageId];
+  const keptOthers = others && Object.keys(others).length > 0 ? others : undefined;
+  next[path] = {
+    page: pageId,
+    index,
+    at,
+    ...(kept ? { spot: kept } : {}),
+    ...(keptOthers ? { boards: keptOthers } : {}),
+  };
   const paths = Object.keys(next);
   if (paths.length > LAST_PAGES_MAX) {
     paths.sort((a, b) => next[a].at - next[b].at);
@@ -208,6 +238,34 @@ export function lastPageIndex(
 /** Where the board at `path` was left, or `null` (open it on its middle). */
 export function lastBoardSpot(map: LastPages, path: string): BoardSpot | null {
   return (hasEntry(map, path) ? map[path].spot : undefined) ?? null;
+}
+
+/**
+ * Where to reopen the board file at `path` (discussion #160), among
+ * `pages`: the board it was left on ({@link lastPageIndex}), with its spot
+ * only when that board was found by id (a spot means nothing on another
+ * board), and the spot of every other board still in the file, by id, each
+ * following its anchor ({@link anchoredSpot}). `null`: open as if anew.
+ */
+export function reopenBoards(
+  map: LastPages,
+  path: string,
+  pages: readonly Page[],
+): { index: number; spot: BoardSpot | null; others: Map<string, BoardSpot> } | null {
+  const index = lastPageIndex(map, path, pages);
+  if (index === null) return null;
+  const entry = map[path];
+  const page = pages[index];
+  const spot = entry.spot && page.id === entry.page ? anchoredSpot(entry.spot, page) : null;
+  const others = new Map<string, BoardSpot>();
+  for (const other of pages) {
+    const kept =
+      entry.boards && Object.prototype.hasOwnProperty.call(entry.boards, other.id)
+        ? entry.boards[other.id]
+        : undefined;
+    if (kept && other !== page) others.set(other.id, anchoredSpot(kept, other));
+  }
+  return { index, spot, others };
 }
 
 /** An own entry: a path like "constructor" must not find Object.prototype's. */

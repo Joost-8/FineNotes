@@ -68,6 +68,18 @@ export interface PageBox {
   /** Intrinsic page size (page px). Layout space is 1:1 with page px. */
   width: number;
   height: number;
+  /**
+   * Out of the way, never shown (discussion #160): a board not being shown,
+   * placed far below the pages ({@link BOARD_PARKED_Y}). Its box keeps its
+   * index so `boxes[i]` stays `pages[i]`; every measure of the layout
+   * (ranges, the page being read, row snapping, joins) leaves it out.
+   */
+  parked?: true;
+}
+
+/** The boxes the view shows, in page order: every box but the parked ones. */
+export function shownBoxes(layout: DocumentLayout): PageBox[] {
+  return layout.boxes.filter((box) => box.parked !== true);
 }
 
 export interface DocumentLayout {
@@ -245,14 +257,15 @@ export function inkBeyondPage(pts: readonly number[], width: number, height: num
  * (scrolled into a gap above page one).
  */
 export function currentPageIndex(layout: DocumentLayout, top: number, bottom: number): number {
-  if (layout.boxes.length === 0) return 0;
-  let best = 0;
+  const boxes = shownBoxes(layout);
+  if (boxes.length === 0) return 0;
+  let best = boxes[0].index;
   // -Infinity, not -1: past the last page every cover is negative, and a -1
   // seed meant nothing ever beat it, so the indicator snapped back to "1 of n"
   // on overscroll. The first-page bias above page one is preserved because
   // ties keep the earliest box.
   let bestCover = -Infinity;
-  for (const b of layout.boxes) {
+  for (const b of boxes) {
     const cover = Math.min(bottom, b.y + b.height) - Math.max(top, b.y);
     if (cover > bestCover) {
       bestCover = cover;
@@ -267,10 +280,11 @@ export function currentPageIndex(layout: DocumentLayout, top: number, bottom: nu
  * horizontal band `[left, right]` (layout px). Ties keep the earliest page.
  */
 export function currentPageIndexInRow(layout: DocumentLayout, left: number, right: number): number {
-  if (layout.boxes.length === 0) return 0;
-  let best = 0;
+  const boxes = shownBoxes(layout);
+  if (boxes.length === 0) return 0;
+  let best = boxes[0].index;
   let bestCover = -Infinity;
-  for (const b of layout.boxes) {
+  for (const b of boxes) {
     const cover = Math.min(right, b.x + b.width) - Math.max(left, b.x);
     if (cover > bestCover) {
       bestCover = cover;
@@ -331,8 +345,8 @@ export function rowRestRangeY(
 ): { min: number; max: number } {
   let min = Infinity;
   let max = -Infinity;
-  for (let i = 0; i < layout.boxes.length; i++) {
-    const y = rowScrollYForPage(layout, i, scale, paneHeight);
+  for (const box of shownBoxes(layout)) {
+    const y = rowScrollYForPage(layout, box.index, scale, paneHeight);
     min = Math.min(min, y);
     max = Math.max(max, y);
   }
@@ -349,10 +363,11 @@ export function rowScrollInsets(
   scale: number,
   paneWidth: number,
 ): { lead: number; trail: number } {
-  const n = layout.boxes.length;
+  const shown = shownBoxes(layout);
+  const n = shown.length;
   if (n === 0) return { lead: 0, trail: 0 };
-  const first = rowScrollXForPage(layout, 0, scale, paneWidth);
-  const last = rowScrollXForPage(layout, n - 1, scale, paneWidth);
+  const first = rowScrollXForPage(layout, shown[0].index, scale, paneWidth);
+  const last = rowScrollXForPage(layout, shown[n - 1].index, scale, paneWidth);
   const maxX = layout.width * scale - paneWidth;
   return { lead: Math.max(0, -first), trail: Math.max(0, last - maxX) };
 }
@@ -513,7 +528,7 @@ export function columnScrollRangeX(
 ): { min: number; max: number } {
   let left = Infinity;
   let right = -Infinity;
-  for (const box of layout.boxes) {
+  for (const box of shownBoxes(layout)) {
     left = Math.min(left, box.x);
     right = Math.max(right, box.x + box.width);
   }
@@ -598,16 +613,19 @@ export function pageSnapIndex(
   scale: number,
   paneWidth: number,
 ): number {
-  const n = layout.boxes.length;
+  // Positions among the pages shown: a parked board is stepped over.
+  const shown = shownBoxes(layout);
+  const n = shown.length;
   if (n === 0) return 0;
-  const from = Math.max(0, Math.min(n - 1, fromIndex));
+  let from = shown.findIndex((box) => box.index >= fromIndex);
+  if (from < 0) from = n - 1;
   let target = from;
   if (Math.abs(velocity) >= PAGE_FLICK_SPEED) {
     target = from + (velocity > 0 ? 1 : -1);
   } else {
     let bestDist = Infinity;
     for (let i = 0; i < n; i++) {
-      const d = Math.abs(rowScrollXForPage(layout, i, scale, paneWidth) - position);
+      const d = Math.abs(rowScrollXForPage(layout, shown[i].index, scale, paneWidth) - position);
       if (d < bestDist) {
         bestDist = d;
         target = i;
@@ -615,7 +633,7 @@ export function pageSnapIndex(
     }
   }
   const oneAway = Math.max(from - 1, Math.min(from + 1, target));
-  return Math.max(0, Math.min(n - 1, oneAway));
+  return shown[Math.max(0, Math.min(n - 1, oneAway))].index;
 }
 
 /** How far past the last page (screen px) a pull must stretch to add a page. */
@@ -740,14 +758,69 @@ export function scrollTopForPage(layout: DocumentLayout, index: number): number 
  * scale comes from the writing size (`WRITING_SCALE`) and the zoom.
  */
 export function layoutBoard(page: Page): DocumentLayout {
-  const { width, height } = page.geometry;
-  return {
-    boxes: [{ index: 0, id: page.id, x: 0, y: 0, width, height }],
-    width,
-    height,
-    direction: "vertical",
-    fitWidth: width,
+  return layoutBoards([page], 0);
+}
+
+/**
+ * Where a board file's other boards wait (discussion #160), layout px: below
+ * the board being shown, further than the largest board reaches (60 blocks,
+ * 67 200 px) and its rubber band, so no view, band or hit test finds them.
+ */
+export const BOARD_PARKED_Y = 1e7;
+
+/**
+ * A board file's layout (discussion #160): board `current` at the origin as
+ * {@link layoutBoard} lays a lone board out, and every other board parked
+ * below {@link BOARD_PARKED_Y}, one after another, so each page keeps its
+ * box at its own index (`boxes[i]` is `pages[i]`, as every caller expects)
+ * without ever showing. The layout's size is the current board's.
+ */
+export function layoutBoards(pages: readonly Page[], current: number): DocumentLayout {
+  const at = Math.max(0, Math.min(pages.length - 1, Math.trunc(current) || 0));
+  const shown = pages[at];
+  const width = shown?.geometry.width ?? 0;
+  const height = shown?.geometry.height ?? 0;
+  const park = parker();
+  const boxes = pages.map((page, index): PageBox => {
+    const { width: w, height: h } = page.geometry;
+    if (index === at) return { index, id: page.id, x: 0, y: 0, width: w, height: h };
+    return park(page, index);
+  });
+  return { boxes, width, height, direction: "vertical", fitWidth: width };
+}
+
+/** Parks boxes one after another below {@link BOARD_PARKED_Y}, and far right of every page. */
+function parker(): (page: Page, index: number) => PageBox {
+  let y = BOARD_PARKED_Y;
+  return (page, index) => {
+    const { width, height } = page.geometry;
+    const box: PageBox = { index, id: page.id, x: BOARD_PARKED_Y, y, width, height, parked: true };
+    y += height + PAGE_GAP;
+    return box;
   };
+}
+
+/**
+ * A notebook's pages laid out as {@link layoutPages} does, with any board
+ * among them (`Page.board`, discussion #160) left out of the column or row
+ * and parked, its box still at its index. A notebook of boards only lays out
+ * its first board ({@link layoutBoards}); the view shows a board on its own.
+ */
+export function layoutNotebook(
+  pages: readonly Page[],
+  options: LayoutOptions = {},
+): DocumentLayout {
+  if (!pages.some((page) => page.board === true)) return layoutPages(pages, options);
+  const column = pages.filter((page) => page.board !== true);
+  if (column.length === 0) return layoutBoards(pages, 0);
+  const laid = layoutPages(column, options);
+  const place = new Map(column.map((page, i) => [page, laid.boxes[i]]));
+  const park = parker();
+  const boxes = pages.map((page, index): PageBox => {
+    const box = place.get(page);
+    return box ? { ...box, index } : park(page, index);
+  });
+  return { ...laid, boxes };
 }
 
 /** The middle of what is drawn on a board, or of the page when nothing is, page px. */

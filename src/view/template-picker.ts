@@ -163,6 +163,8 @@ export interface AddPagePopoverOptions {
   paintPaper?: (canvas: HTMLCanvasElement, backdrop: PdfBackdrop, cssWidth: number) => void;
   onPick: (backdrop: Backdrop, position: InsertPosition) => void;
   onMore: (position: InsertPosition) => void;
+  /** Add an endless board among the pages (discussion #160); without it the row is not offered. */
+  onBoard?: (position: InsertPosition) => void;
 }
 
 const POPOVER_WIDTH = 340;
@@ -276,6 +278,16 @@ export class AddPagePopover {
       this.close();
       this.options.onMore(this.position);
     });
+    const onBoard = this.options.onBoard;
+    if (onBoard) {
+      const board = this.el.createEl("button", { cls: "goodobsidian-addpage-row clickable-icon" });
+      setIcon(board.createSpan({ cls: "goodobsidian-addpage-row-icon" }), "infinity");
+      board.createSpan({ text: t("notebooks.command.addBoard") });
+      board.addEventListener("click", () => {
+        this.close();
+        onBoard(this.position);
+      });
+    }
   }
 
   private syncSegments(): void {

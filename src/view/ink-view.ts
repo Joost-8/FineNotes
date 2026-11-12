@@ -62,6 +62,7 @@ import {
   type PageComment,
   type Page,
   type TextBoxElement,
+  blankPage,
   emptyDocument,
 } from "../model/document";
 import { DocumentEncoder, buildInkFile, parseInkFile } from "../model/serialize";
@@ -252,12 +253,14 @@ import { attachmentFromBytes, pdfsBehind } from "../recognition/ask-attachments"
 import { chatsFolderFor } from "../recognition/ask-chat-file";
 import { type AskPagesResult, AskSession } from "../recognition/ask-session";
 import { GenerateImageModal } from "./generate-image-modal";
+import { GoToBoardModal } from "./go-to-board-modal";
 import { AddPage, type Command, InsertImage, RemovePage } from "../model/commands";
 import {
   AddTextBoxToPage,
   ClearPage,
   MovePage,
   duplicatePageAfter,
+  nextPageId,
   pageToInsertAfter,
   type InsertPosition,
   CompositeCommand,
@@ -329,13 +332,22 @@ import {
   type SyntheticBackdrop,
   isCoverRuling,
 } from "../model/document";
-import { paperPageFor, paperTemplateFor, parseRecent, pushRecent } from "../model/templates";
+import {
+  paperPageFor,
+  paperTemplateFor,
+  parseRecent,
+  pushRecent,
+  shapePageFor,
+} from "../model/templates";
 import { SetSingle, changeCover } from "../model/notebook-commands";
 import {
   boardDrawing,
   boardDrawingBox,
   drawnBounds,
+  hasBoards,
   isBoard,
+  isBoardPage,
+  newBoardPage,
   textLinesHeight,
 } from "../model/board";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
@@ -422,15 +434,15 @@ import { penStabilizationOf } from "../model/pen-stabilization";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
 import { PANEL_SLIDE_MS, type PageSnapshot } from "./motion";
 import {
+  type BoardSpot,
   type LastPages,
-  anchoredSpot,
   forgetInLastPages,
   LAST_PAGES_KEY,
   lastPageIndex,
   parseLastPages,
   rememberPage,
-  lastBoardSpot,
   renameInLastPages,
+  reopenBoards,
   spotAnchor,
 } from "../model/last-page";
 import { NoteAudio } from "./note-audio";
@@ -1627,7 +1639,8 @@ export class InkView extends TextFileView {
     area?: { x: number; y: number; width: number; height: number },
   ): Promise<RenderedPage | null> {
     if (!this.backdrops) return null;
-    return renderPageForAi(this.isBoard ? this.boardDrawing(page, area) : page, this.backdrops, {
+    const shown = isBoardPage(this.doc, page) ? this.boardDrawing(page, area) : page;
+    return renderPageForAi(shown, this.backdrops, {
       usePressure: this.settings.pressureWidth,
       highlighterAlpha: this.settings.highlighterAlpha,
       // Pictures the page shows are part of what the model should see. One
@@ -2149,7 +2162,7 @@ export class InkView extends TextFileView {
           totalPages: this.doc.pages.length,
           save: this.settings.askSaveChats,
           attachPage: this.settings.askAttachPage,
-          screen: this.isBoard,
+          screen: this.showingBoard,
         },
       );
       this.askSession = session;
@@ -2617,13 +2630,15 @@ export class InkView extends TextFileView {
   private async collectAskPages(indexes: readonly number[]): Promise<AskPagesResult> {
     const images: ChatImage[] = [];
     const pageNumbers: number[] = [];
-    // A board is asked about as the screen shows it (FineNotes#46).
-    const seen = this.isBoard ? this.surface?.visiblePageRect(0) : null;
+    // A board is asked about as the screen shows it (FineNotes#46); another
+    // board of the file (discussion #160), as its whole drawing.
+    const shown = this.surface?.currentPage ?? 0;
+    const seen = this.showingBoard ? this.surface?.visiblePageRect(shown) : null;
     const screen = seen ? { x: seen.x, y: seen.y, width: seen.w, height: seen.h } : undefined;
     for (const index of indexes) {
       const page = this.doc.pages[index];
       if (!page) continue;
-      const rendered = await this.renderForAi(page, screen);
+      const rendered = await this.renderForAi(page, index === shown ? screen : undefined);
       if (!rendered) continue;
       images.push({ base64: rendered.base64, mimeType: "image/png" });
       pageNumbers.push(index + 1);
@@ -3650,7 +3665,7 @@ export class InkView extends TextFileView {
         onReadingPoint: (index, y) => {
           this.sidebar?.setReadingPoint(index, y);
           // A board never changes page: where it was left is where it was scrolled.
-          if (this.isBoard) this.scheduleLastPage();
+          if (this.showingBoard) this.scheduleLastPage();
         },
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
         onAddRegion: (index, bounds, strokeIds) => this.addRegion(index, bounds, strokeIds),
@@ -4383,7 +4398,9 @@ export class InkView extends TextFileView {
     const subpath = this.pendingSubpath;
     const back = this.pendingPageIndex;
     if (!fresh && subpath === null && back === null) return;
-    if (surface.surfaceEl.clientHeight === 0 && attempt < 20) {
+    // A board not laid out yet has no view to put a spot in either.
+    const unready = surface.surfaceEl.clientHeight === 0 || (this.isBoard && !surface.boardSpot());
+    if (unready && attempt < 20) {
       // Not laid out yet (a new tab): goToPage would scroll by a scale of nothing.
       window.setTimeout(() => this.applyPendingPage(attempt + 1), 50);
       return;
@@ -4397,20 +4414,29 @@ export class InkView extends TextFileView {
     // `#Krebs cycle`: a named region, centred (discussion #167). A page comes first.
     const name = subpath !== null && index === null ? regionSubpathName(subpath) : null;
     const region = name !== null ? findRegion(pages, name) : null;
+    let boardSpots: ReadonlyMap<string, BoardSpot> | null = null;
     if (fresh) {
       // From now on the page being read is worth remembering for this file.
       this.restoredPath = path;
       // A notebook opened anew starts at fit zoom (a board at 100% on its middle),
       // whatever this leaf showed before.
       surface.showHome();
-      // A board goes back to where it was left on its one page.
-      const spot =
-        this.isBoard && subpath === null ? lastBoardSpot(this.loadLastPages(), path) : null;
-      if (spot && pages[0]) surface.showBoardSpot(anchoredSpot(spot, pages[0]));
-      else index ??= lastPageIndex(this.loadLastPages(), path, pages);
+      // A board file goes back to the board it was left on, where it was
+      // left, and each of its other boards to where that was (discussion #160).
+      const board = hasBoards(this.doc) ? reopenBoards(this.loadLastPages(), path, pages) : null;
+      if (board && subpath === null) {
+        surface.goToPage(board.index);
+        surface.restoreBoardSpots(board.others);
+        if (board.spot) surface.showBoardSpot(board.spot);
+      } else {
+        boardSpots = board?.others ?? null;
+        index ??= lastPageIndex(this.loadLastPages(), path, pages);
+      }
     }
     if (region) surface.showRegion(region.index, region.region);
     else if (index !== null) surface.goToPage(index);
+    // After the board is shown: going to it keeps where the first one was.
+    if (boardSpots) surface.restoreBoardSpots(boardSpots);
     const search = this.pendingSearch;
     this.pendingSearch = null;
     if (search && search.pageIndex === index) void this.showSearchHits(index, search.query);
@@ -4454,9 +4480,21 @@ export class InkView extends TextFileView {
     const page = surface.document.pages[index];
     if (!page) return;
     const at = surface.boardSpot();
+    // A board not laid out yet (a window opened hidden) knows no spot: keep
+    // the ones stored rather than writing them away.
+    if (this.showingBoard && !at) return;
     const anchor = at ? spotAnchor(page) : undefined;
     const spot = at ? { ...at, ...(anchor ? { anchor } : {}) } : undefined;
-    this.saveLastPages(rememberPage(this.loadLastPages(), path, page.id, index, Date.now(), spot));
+    // A board file's other boards (discussion #160), each anchored to its own drawing.
+    const boards: Record<string, BoardSpot> = {};
+    for (const [id, other] of surface.otherBoardSpots()) {
+      const kept = surface.document.pages.find((p) => p.id === id);
+      const mark = kept ? spotAnchor(kept) : undefined;
+      boards[id] = { ...other, ...(mark ? { anchor: mark } : {}) };
+    }
+    this.saveLastPages(
+      rememberPage(this.loadLastPages(), path, page.id, index, Date.now(), spot, boards),
+    );
   }
 
   /** A note was renamed or deleted: its remembered page follows it, or goes. */
@@ -4485,10 +4523,14 @@ export class InkView extends TextFileView {
     const note = this.file;
     if (this.isDamaged() || !note) return;
     const open = this.surface?.document ?? this.doc;
-    // A board (FineNotes#46) exports as one page the size of its drawing,
-    // not metres of empty paper around it.
-    const doc: Pick<InkDocument, "pages"> = isBoard(open)
-      ? { pages: open.pages.map((page) => this.boardDrawing(page)) }
+    // A board (FineNotes#46), in a board file or among a notebook's pages,
+    // exports as one page the size of its drawing, not metres of empty paper.
+    const doc: Pick<InkDocument, "pages"> = hasBoards(open)
+      ? {
+          pages: open.pages.map((page) =>
+            isBoardPage(open, page) ? this.boardDrawing(page) : page,
+          ),
+        }
       : open;
     const total = doc.pages.length;
     if (total === 0) return;
@@ -4639,9 +4681,19 @@ export class InkView extends TextFileView {
     return this.doc.single === true;
   }
 
-  /** Whether the open document is an endless board (FineNotes#46); a board is a single page too. */
+  /**
+   * Whether the open document is an endless board file (FineNotes#46): one
+   * board or several (discussion #160). It is a single page too, for builds
+   * that know no boards.
+   */
   get isBoard(): boolean {
-    return isBoard(this.doc) && this.doc.pages.length === 1;
+    return isBoard(this.doc);
+  }
+
+  /** Whether the view shows a board: a board file, or a board among a notebook's pages. */
+  get showingBoard(): boolean {
+    const page = this.doc.pages[this.surface?.currentPage ?? 0];
+    return page !== undefined && isBoardPage(this.doc, page);
   }
 
   /** A handwriting practice file: kept to writing, its pages and paper fixed. */
@@ -4663,7 +4715,8 @@ export class InkView extends TextFileView {
     this.surface?.setPullToAddPage(!single && !practice && !this.guard.locked);
     // The overview needs pages to show, as its ⤢ does.
     this.surface?.setPinchToOverview(!single && !practice);
-    this.sidebar?.setSingle(single, practice);
+    // A board file's panel adds, drags and deletes boards (discussion #160).
+    this.sidebar?.setSingle(single && !this.isBoard, practice);
     // A board's panel is Contents and Files; its ⋯ has no page items (`toggleMorePanel`).
     this.sidebar?.setBoard(this.isBoard);
     // A practice file has the pen and the eraser, and nothing else.
@@ -5572,7 +5625,11 @@ export class InkView extends TextFileView {
         if (doc.pages.length <= 1) return;
         surface.applyCommand(new RemovePage(index));
         surface.goToPage(Math.min(index, doc.pages.length - 1));
-        new Notice(t("view.deletePage.done", { page: index + 1 }));
+        new Notice(
+          this.isBoard
+            ? t("view.deleteBoard.done", { board: index + 1 })
+            : t("view.deletePage.done", { page: index + 1 }),
+        );
         break;
     }
     this.requestSave();
@@ -5586,7 +5643,7 @@ export class InkView extends TextFileView {
    */
   private movePages(indexes: readonly number[], gap: number): void {
     const surface = this.surface;
-    if (!surface || this.isProtected() || this.isSinglePage) return;
+    if (!surface || this.isProtected() || (this.isSinglePage && !this.isBoard)) return;
     const doc = surface.document;
     const total = doc.pages.length;
     if (indexes.length === 1) {
@@ -5852,7 +5909,7 @@ export class InkView extends TextFileView {
         titled: page.title !== undefined,
         cover: page.backdrop.kind !== "pdf" && isCoverRuling(page.backdrop.kind),
         single: this.isSinglePage,
-        board: this.isBoard,
+        board: this.showingBoard,
         fixed: this.isPractice,
         clearable: page.strokes.length > 0,
         ...(page.backdrop.kind !== "pdf" && isCoverRuling(page.backdrop.kind)
@@ -5957,6 +6014,11 @@ export class InkView extends TextFileView {
    * tap on the same control closes it.
    */
   private openAddPage(anchor: HTMLElement, ref: number, position: InsertPosition): void {
+    // A board file's "Add board": an empty board, no template to pick (discussion #160).
+    if (this.isBoard) {
+      this.addBoard();
+      return;
+    }
     const open = this.addPagePopover;
     this.addPagePopover = null;
     if (open?.popover.isOpen) {
@@ -5965,8 +6027,8 @@ export class InkView extends TextFileView {
     }
     if (this.isProtected() || this.refuseSinglePage()) return;
     const at = Math.max(0, Math.min(this.doc.pages.length - 1, ref));
-    const page = this.doc.pages[at];
-    if (!page) return;
+    // Its size: next to a board among the pages, a page's (discussion #160).
+    const page = shapePageFor(this.doc.pages, at) ?? blankPage();
     // A cover is not paper: next to one, offer the notebook's paper.
     const paper = paperPageFor(this.doc.pages, at);
     // A page of My templates is repeated in its own shape. Beside a page with
@@ -5983,6 +6045,7 @@ export class InkView extends TextFileView {
         this.paintPaperThumbnail(canvas, backdrop, shapeOf(backdrop), cssWidth),
       onPick: (backdrop, at) => this.addTemplatePage(backdrop, shapeOf(backdrop), at, ref),
       onMore: (at) => this.openTemplatePicker("add", ref, at),
+      onBoard: (at) => this.addBoardPage(at, ref),
     });
     this.addPagePopover = { popover, anchor };
   }
@@ -6142,8 +6205,10 @@ export class InkView extends TextFileView {
   private openTemplatePicker(mode: "add" | "change", ref: number, position: InsertPosition): void {
     if (this.isProtected() || this.refusePractice()) return;
     if (mode === "add" && this.refuseSinglePage()) return;
-    const page = this.doc.pages[ref];
-    if (!page) return;
+    const here = this.doc.pages[ref];
+    if (!here) return;
+    // Adding next to a board among the pages takes a page's size (discussion #160).
+    const page = mode === "add" ? (shapePageFor(this.doc.pages, ref) ?? blankPage()) : here;
     // Adding next to a cover preselects the notebook's paper, never the cover.
     const reference = mode === "add" ? paperTemplateFor(this.doc.pages, ref) : page.backdrop;
     const picker = new TemplatePickerModal(this.app, {
@@ -6871,6 +6936,45 @@ export class InkView extends TextFileView {
   private rememberTemplate(backdrop: SyntheticBackdrop): void {
     const next = pushRecent(this.loadRecentTemplates(), backdrop);
     this.app.saveLocalStorage(InkView.RECENT_TEMPLATES_KEY, JSON.stringify(next));
+  }
+
+  /**
+   * "Add board" (discussion #160): an empty board after the last one, on the
+   * paper of the board being read, shown at once. One undo step.
+   */
+  addBoard(): void {
+    const surface = this.surface;
+    if (!surface || !this.isBoard || this.isProtected()) return;
+    const doc = surface.document;
+    const page = newBoardPage(nextPageId(doc), doc.pages[surface.currentPage]);
+    surface.applyCommand(new AddPage(doc.pages.length, page));
+    surface.goToPage(doc.pages.length - 1);
+    this.sidebar?.flush();
+    this.requestSave();
+  }
+
+  /**
+   * A board among a notebook's pages (discussion #160), from Add page: an
+   * empty board at `position` from page `ref`, shown at once. One undo step.
+   */
+  private addBoardPage(position: InsertPosition, ref: number): void {
+    const surface = this.surface;
+    if (!surface || this.isProtected() || this.refuseSinglePage()) return;
+    const doc = surface.document;
+    const index = insertIndexFor(position, ref, doc.pages.length);
+    surface.applyCommand(new AddPage(index, newBoardPage(nextPageId(doc), doc.pages[ref], true)));
+    surface.goToPage(index);
+    this.sidebar?.flush();
+    this.requestSave();
+  }
+
+  /** "Go to board" (discussion #160): pick one of the file's boards from a list. */
+  goToBoard(): void {
+    const surface = this.surface;
+    if (!surface || !this.isBoard) return;
+    new GoToBoardModal(this.app, surface.document.pages, surface.currentPage, (index) =>
+      this.surface?.goToPage(index),
+    ).open();
   }
 
   /**

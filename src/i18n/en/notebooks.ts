@@ -424,6 +424,8 @@ export const notebooks = {
   "notebooks.command.readOnDevice": "Show this page read on this device",
   "notebooks.command.fitReset": "Fit the page and go to the top",
   "notebooks.command.fitBoardDrawing": "Fit the whole drawing on screen",
+  "notebooks.command.addBoard": "Add board",
+  "notebooks.command.goToBoard": "Go to board",
   "notebooks.command.zoomIn": "Zoom in",
   "notebooks.command.zoomOut": "Zoom out",
   "notebooks.command.stylusOnly": "Turn Stylus-only mode on or off",

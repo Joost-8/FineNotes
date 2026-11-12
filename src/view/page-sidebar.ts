@@ -84,6 +84,7 @@ import { renderPageThumbnail } from "../canvas/renderer";
 import { type PageTexts, furnitureText } from "../model/furniture";
 import type { PaperTheme } from "../canvas/backdrop";
 import { type InkDocument, type Page, isCoverRuling } from "../model/document";
+import { boardDrawing, boardThumbBox } from "../model/board";
 import { releaseCanvas } from "./image-import";
 import { pageSignature } from "../model/page-signature";
 import {
@@ -193,8 +194,8 @@ export interface PageSidebarRenderOptions {
 /** The sidebar's panes: the page thumbnails, the contents, or the note's files. */
 export type SidebarTab = "pages" | "contents" | "files";
 
-function tabTitle(tab: SidebarTab): string {
-  if (tab === "pages") return t("view.sidebar.pages");
+function tabTitle(tab: SidebarTab, board = false): string {
+  if (tab === "pages") return board ? t("view.sidebar.boards") : t("view.sidebar.pages");
   if (tab === "contents") return t("view.sidebar.contents");
   return t("view.sidebar.files");
 }
@@ -688,7 +689,7 @@ export class PageSidebar {
    * host's `pageSnapshot`), or, without one, zooms open.
    */
   setOverview(on: boolean, animate = false, snapshot?: PageSnapshot | null): void {
-    if (on === this.overview || (on && (!this.open || this.single))) return;
+    if (on === this.overview || (on && (!this.open || this.single || this.board))) return;
     const motion =
       on && animate && !prefersReducedMotion() && typeof this.el.animate === "function";
     // Before anything changes on screen.
@@ -909,14 +910,12 @@ export class PageSidebar {
 
   /** Show the page thumbnails or the recordings. */
   showTab(tab: SidebarTab): void {
-    // A board's panel has no Pages tab.
-    if (tab === "pages" && this.board) tab = "contents";
     this.tab = tab;
     if (tab !== "pages") this.setSelecting(false);
     this.pagesEl.toggleClass("is-hidden", tab !== "pages");
     this.contentsEl.toggleClass("is-hidden", tab !== "contents");
     this.filesEl.toggleClass("is-hidden", tab !== "files");
-    const title = tabTitle(tab);
+    const title = tabTitle(tab, this.board);
     this.el.setAttribute("aria-label", title);
     this.titleEl.setText(title);
     this.syncChrome();
@@ -1007,7 +1006,7 @@ export class PageSidebar {
     if (!page) return;
     renderPageThumbnail(
       canvas,
-      page,
+      this.thumbPage(page),
       this.render.painter,
       cssWidth,
       winOf(this.el).devicePixelRatio || 1,
@@ -1099,16 +1098,43 @@ export class PageSidebar {
   }
 
   /**
-   * An endless board (FineNotes#46) has one page and no thumbnails to show:
-   * the panel keeps Contents, its headings the way around the board, and
-   * Files, with the recordings.
+   * An endless board file (FineNotes#46): its Pages tab is Boards
+   * (discussion #160), a thumbnail per board cut to its drawing, added,
+   * named, dragged and deleted as pages are. No bookmarks, filter or
+   * overview: a file holds a few boards, not a hundred pages.
    */
   setBoard(board: boolean): void {
-    this.board = board;
-    this.tabButtons.get("pages")?.toggleClass("is-hidden", board);
+    if (board !== this.board) {
+      this.board = board;
+      this.el.toggleClass("is-board", board);
+      const button = this.tabButtons.get("pages");
+      if (button) {
+        const label = tabTitle("pages", board);
+        button.setAttribute("aria-label", label);
+        button.setAttribute("title", label);
+        setIcon(button, board ? "infinity" : "file");
+      }
+      const add = board ? t("view.sidebar.addBoard") : t("view.sidebar.addPage");
+      this.addTile.setAttribute("aria-label", add);
+      this.addTile.lastElementChild?.setText(add);
+      if (board) {
+        this.setOverview(false);
+        this.filter = "all";
+      }
+      for (const view of this.thumbs) view.painted = "";
+      this.sync();
+    }
     this.syncContentsAdd();
     this.renderContents();
-    if (board && this.tab === "pages") this.showTab("contents");
+    this.showTab(this.tab);
+  }
+
+  /**
+   * The page a thumbnail paints: on a board, the board cut to its drawing
+   * ({@link boardThumbBox}), not metres of empty paper.
+   */
+  private thumbPage(page: Page): Page {
+    return this.board || page.board ? boardDrawing(page, boardThumbBox(page)) : page;
   }
 
   /** Whether the panel serves an endless board ({@link setBoard}). */
@@ -1218,6 +1244,10 @@ export class PageSidebar {
     this.thumbs.forEach((view, index) => {
       view.page = pages[index] ?? null;
       view.label.setText(String(index + 1));
+      // The frame, not the root: it is only in the root near the view (#207).
+      view.frame
+        .querySelector(".goodobsidian-thumb-kind")
+        ?.toggleClass("is-hidden", pages[index]?.board !== true || this.board);
       const page = pages[index];
       const entries = page ? pageContentsEntries(page, index).length : 0;
       const title = thumbnailTitleOf(page);
@@ -1229,13 +1259,15 @@ export class PageSidebar {
         "aria-label",
         entries > 1 ? t("view.sidebar.moreInContents", { title, count: entries - 1 }) : title,
       );
-      const aspect = aspectOf(pages[index]);
+      const aspect = page ? aspectOf(this.thumbPage(page)) : "";
       view.canvas.setCssStyles({ aspectRatio: aspect });
       view.root.setCssProps({ "--goodobsidian-thumb-aspect": aspect });
     });
-    // "Add page" takes the shape of the page it would add: a copy of the last.
+    // "Add page" takes the shape of the page it would add: a copy of the
+    // last; "Add board", an empty board's square.
     const last = pages[pages.length - 1];
-    this.addTile.setCssStyles({ aspectRatio: last ? aspectOf(last) : "" });
+    const shape = this.board ? "1 / 1" : last ? aspectOf(last) : "";
+    this.addTile.setCssStyles({ aspectRatio: shape });
     this.applyFilter();
     this.renderContents();
     this.syncCurrent();
@@ -1345,13 +1377,14 @@ export class PageSidebar {
     }
     const go = row.createEl("button", { cls: "goodobsidian-contents-entry clickable-icon" });
     go.createSpan({ cls: "goodobsidian-contents-title", text: entry.title });
-    // A board is one page: a page number would say nothing.
-    if (!this.board) {
+    // A file of one board: a board number would say nothing.
+    const numbered = !this.board || (this.doc?.pages.length ?? 0) > 1;
+    if (numbered) {
       go.createSpan({ cls: "goodobsidian-contents-page", text: String(entry.index + 1) });
     }
     go.setAttribute(
       "aria-label",
-      this.board
+      !numbered
         ? entry.title
         : t("view.sidebar.entryLabel", { title: entry.title, page: entry.index + 1 }),
     );
@@ -1474,6 +1507,8 @@ export class PageSidebar {
     // GoodNotes' ribbon at the top right of every page: an outline, filled
     // red when the page is bookmarked. A tap on it toggles the bookmark.
     const ribbon = frame.createSpan({ cls: "goodobsidian-thumb-ribbon is-outline" });
+    // A board among a notebook's pages (discussion #160): ∞ at its lower corner.
+    const kind = frame.createSpan({ cls: "goodobsidian-thumb-kind is-hidden" });
     // The overview's Select mode: a tick at the page's corner.
     const check = frame.createSpan({ cls: "goodobsidian-thumb-check" });
     const footer = createDiv({ cls: "goodobsidian-thumb-footer" });
@@ -1492,6 +1527,7 @@ export class PageSidebar {
       drawIcons: () => {
         setIcon(ribbon, "bookmark");
         setIcon(check, "check");
+        setIcon(kind, "infinity");
         setIcon(more, "chevron-down");
       },
       page: null,
@@ -1620,7 +1656,7 @@ export class PageSidebar {
       view.seen = now;
       const signature = pageSignature(page);
       if (signature === view.painted) return;
-      renderPageThumbnail(view.canvas, page, this.render.painter, width, dpr, {
+      renderPageThumbnail(view.canvas, this.thumbPage(page), this.render.painter, width, dpr, {
         usePressure: this.render.usePressure,
         highlighterAlpha: this.render.highlighterAlpha,
         paper: this.render.paper,
@@ -1846,7 +1882,7 @@ export class PageSidebar {
     const expandLabel = overview ? t("view.sidebar.backToSidebar") : t("view.sidebar.showAllPages");
     this.expandButton.setAttribute("aria-label", expandLabel);
     this.expandButton.setAttribute("title", expandLabel);
-    this.expandButton.toggleClass("is-hidden", this.single || selecting);
+    this.expandButton.toggleClass("is-hidden", this.single || this.board || selecting);
     this.closeButton.toggleClass("is-hidden", overview || selecting);
     this.tabsEl.toggleClass("is-hidden", overview);
     this.selectButton.toggleClass("is-hidden", !overview && !selecting);
@@ -1862,7 +1898,7 @@ export class PageSidebar {
         count === 0 ? t("view.sidebar.selectPages") : tn("view.sidebar.pageCount", count),
       );
     } else {
-      this.titleEl.setText(tabTitle(this.tab));
+      this.titleEl.setText(tabTitle(this.tab, this.board));
     }
     this.selectBar.toggleClass("is-hidden", !selecting);
     // Moving or deleting every page means nothing (and a notebook keeps one).
@@ -1887,8 +1923,15 @@ export class PageSidebar {
     const total = this.doc?.pages.length ?? 0;
     const backdrop = this.doc?.pages[index]?.backdrop;
     const cover = !!backdrop && backdrop.kind !== "pdf" && isCoverRuling(backdrop.kind);
+    // A board among the pages takes no template or cover (discussion #160).
+    const boardPage = this.doc?.pages[index]?.board === true;
     const act = (action: PageAction) => () => this.callbacks.onPageAction(action, index, anchor);
     const menu = new Menu();
+    if (this.board) {
+      this.boardMenu(menu, index, total, act);
+      menu.showAtMouseEvent(event);
+      return;
+    }
     if (this.fixed) {
       // A practice file: rubbing a page out is the one thing to do to it.
       menu.addItem((item) =>
@@ -1962,7 +2005,9 @@ export class PageSidebar {
       );
     }
     // A cover is not paper: it changes design and colour, not template.
-    if (cover) {
+    if (boardPage) {
+      // Its paper is the board's own, chosen as it was added.
+    } else if (cover) {
       menu.addItem((item) =>
         item
           .setTitle(t("view.sidebar.changeCover"))
@@ -2010,6 +2055,66 @@ export class PageSidebar {
         .onClick(act("delete")),
     );
     menu.showAtMouseEvent(event);
+  }
+
+  /**
+   * A board's ⌄ menu (discussion #160): the page menu's items that mean
+   * something for a board, in its order: its name (its line in the
+   * contents), its link, its place among the boards, and clearing or
+   * deleting it. No bookmark, tab, template or copy.
+   */
+  private boardMenu(
+    menu: Menu,
+    index: number,
+    total: number,
+    act: (action: PageAction) => () => void,
+  ): void {
+    const titled = this.doc?.pages[index]?.title !== undefined;
+    menu.addItem((item) =>
+      item
+        .setTitle(titled ? t("view.contents.rename") : t("view.contents.add"))
+        .setIcon(titled ? "pencil" : "list-plus")
+        .onClick(act("contents")),
+    );
+    if (titled) {
+      menu.addItem((item) =>
+        item.setTitle(t("view.contents.remove")).setIcon("list-x").onClick(act("contents-remove")),
+      );
+    }
+    menu.addItem((item) =>
+      item.setTitle(t("view.sidebar.copyLink")).setIcon("link").onClick(act("copy-link")),
+    );
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item
+        .setTitle(t("view.sidebar.moveUp"))
+        .setIcon("arrow-up")
+        .setDisabled(index <= 0)
+        .onClick(act("move-up")),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle(t("view.sidebar.moveDown"))
+        .setIcon("arrow-down")
+        .setDisabled(index >= total - 1)
+        .onClick(act("move-down")),
+    );
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item
+        .setTitle(t("view.morePanel.clearBoard"))
+        .setIcon("x-circle")
+        .setWarning(true)
+        .onClick(act("clear")),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle(t("view.sidebar.deleteBoard"))
+        .setIcon("trash-2")
+        .setWarning(true)
+        .setDisabled(total <= 1)
+        .onClick(act("delete")),
+    );
   }
 }
 

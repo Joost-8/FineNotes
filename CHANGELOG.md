@@ -10,6 +10,21 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Several boards in one board file**
+  ([discussion #160](https://github.com/Joost-8/FineNotes/discussions/160)).
+  A board file can hold more than one endless board, listed like pages, as
+  in OneNote. The sidebar's first tab is Boards: a picture of each board's
+  drawing, + to add one, the ⌄ to name, move, clear or delete it, and a
+  drag to reorder. Tap a board to show it; each opens where you left it.
+  Add board and Go to board are in the command palette, and search and the
+  contents go to the board they found. A file with one board stays as it
+  was. A file with several boards opens read-only in FineNotes 2.9.1 and
+  older, which cannot show them, so nothing on it is lost.
+- **A board inside a notebook.** Add page has a new last row, Add board:
+  an endless board among the notebook's pages, marked ∞ in the sidebar.
+  Tap it to show it on its own; tap any page to go back. Scrolling and
+  Page Up/Down go past it, and a page added next to it takes a page's size.
+  A notebook with a board opens read-only in FineNotes 2.9.1 and older.
 - **Embed part of a board in a note**
   ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167)).
   Lasso something on a board (or any page) and choose Turn into › Frame to
@@ -30,6 +45,7 @@ extracted from the matching section of this file by `release.yml`.
   mostly empty paper shrunk to the note's width. It now shows what is drawn
   with a little paper round it, the same cut Export as PDF makes; an empty
   board shows a short strip of its paper.
+
 ### Fixed
 
 - A notebook moved to a new window (Move to new window) no longer lags or freezes while the main
