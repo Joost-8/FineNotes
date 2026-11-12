@@ -26,6 +26,7 @@ import {
   type Page,
   type PageComment,
   type PageGeometry,
+  type PageRegion,
   type PageSection,
   type Ruling,
   type TextBoxElement,
@@ -220,8 +221,8 @@ export function boardGrowth(
 /**
  * Grow a board's page by `growth` blocks, as one undo step. Left and top
  * blocks move everything on the page right and down by those blocks (the
- * lasso's {@link TranslateElements} over every element, plus the comments and
- * headings, which a selection never holds), so it all stays where it was on
+ * lasso's {@link TranslateElements} over every element, plus the comments,
+ * headings and named regions, which a selection never holds), so it all stays where it was on
  * the paper. `onShift` hears that move, page px, on every apply (`+`) and
  * invert (`-`): the view moves by it, so nothing on screen jumps.
  *
@@ -235,6 +236,7 @@ export class GrowBoard implements Command {
     move: TranslateElements | null;
     comments: Array<{ comment: PageComment; x: number; y: number }>;
     sections: Array<{ section: PageSection; x: number; y: number }>;
+    regions: Array<{ region: PageRegion; x: number; y: number }>;
   } | null = null;
 
   constructor(
@@ -262,6 +264,7 @@ export class GrowBoard implements Command {
     let move: TranslateElements | null = null;
     const comments: Array<{ comment: PageComment; x: number; y: number }> = [];
     const sections: Array<{ section: PageSection; x: number; y: number }> = [];
+    const regions: Array<{ region: PageRegion; x: number; y: number }> = [];
     if (dx !== 0 || dy !== 0) {
       move = new TranslateElements(
         page.id,
@@ -287,8 +290,14 @@ export class GrowBoard implements Command {
         section.x += dx;
         section.y += dy;
       }
+      // Named regions stay round what they framed.
+      for (const region of page.regions ?? []) {
+        regions.push({ region, x: region.x, y: region.y });
+        region.x += dx;
+        region.y += dy;
+      }
     }
-    this.applied = { geometry, move, comments, sections };
+    this.applied = { geometry, move, comments, sections, regions };
     if (dx !== 0 || dy !== 0) this.onShift?.(dx, dy);
   }
 
@@ -308,6 +317,10 @@ export class GrowBoard implements Command {
     for (const { section, x, y } of applied.sections) {
       section.x = x;
       section.y = y;
+    }
+    for (const { region, x, y } of applied.regions) {
+      region.x = x;
+      region.y = y;
     }
     const { x, y } = this.shift;
     this.onShift?.(-x, -y);
@@ -388,7 +401,11 @@ export function boardDrawing(
     -box.x,
     -box.y,
   ).apply(doc);
-  for (const item of [...(copy.comments ?? []), ...(copy.sections ?? [])]) {
+  for (const item of [
+    ...(copy.comments ?? []),
+    ...(copy.sections ?? []),
+    ...(copy.regions ?? []),
+  ]) {
     item.x -= box.x;
     item.y -= box.y;
   }

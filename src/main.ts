@@ -13,7 +13,7 @@ import {
 import type { PickedFile } from "./view/import-notebook-modal";
 import { mimeForExtension } from "./canvas/image-raster";
 import { StickerModal } from "./view/sticker-modal";
-import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
+import { stickerFileName, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
 import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-region";
 import { EmptyTabHomeButton } from "./view/empty-tab-home-button";
@@ -131,7 +131,8 @@ import {
   folderMoves,
   legacyCorrectionsFile,
   movedPath,
-  templateFolderOf,
+  stickerFolderFor,
+  templateFolderFor,
 } from "./model/vault-folders";
 import { UpdateNotice } from "./view/update-notice";
 import { releasedChangelog } from "./changelog";
@@ -141,10 +142,22 @@ import {
   homeCardKind,
   EARLIEST_NEWS,
   latestHighlighted,
+  newsControls,
   nextNewsSince,
   simpleOfferDue,
 } from "./model/tips";
 import { type TipsPage, TipsModal } from "./view/tips-modal";
+import { type Feature, featureById } from "./model/feature-index";
+import type { FeatureHost } from "./view/feature-rows";
+import {
+  type NudgeEvent,
+  type NudgeState,
+  dayOf,
+  dueNudge,
+  markShown,
+  parseNudges,
+  recordUse,
+} from "./model/nudges";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
@@ -291,6 +304,12 @@ import { t, tn } from "./i18n/translate";
 
 /** How many times the Text tool's hint pill is shown before it stops by itself. */
 const TEXT_HINT_SHOWS = 3;
+
+/** What this device counted for the earned hints: per device, never synced. */
+const NUDGES_KEY = "finenotes:nudges";
+
+/** Where "Ask for it" starts a request; the searched words become its title. */
+const ASK_URL = "https://github.com/Joost-8/FineNotes/discussions/new?category=ideas";
 
 /** The pen in hand is saved once it has been left alone this long, ms: a width slider drags. */
 const LAST_PEN_SAVE_MS = 600;
@@ -547,6 +566,7 @@ export default class GoodObsidianPlugin extends Plugin {
           importImage: (file, folder) => void this.createNotebookFromImage(file, folder),
           openSettings: () => this.openOwnSettings(),
           openTips: (page) => this.openTips(page),
+          features: this.featureHost(),
           homeCard: () => this.homeCard(),
           dismissHomeCard: (kind) => this.dismissHomeCard(kind),
           simpleLook: () => this.settings.simpleLook,
@@ -1727,6 +1747,8 @@ export default class GoodObsidianPlugin extends Plugin {
       current: version,
     });
     this.settings.lastSeenVersion = version;
+    // New news: every changed control gets its dot again.
+    this.settings.newsDotsUsed = [];
     await this.saveSettings();
     this.syncNewsDots();
   }
@@ -1757,9 +1779,26 @@ export default class GoodObsidianPlugin extends Plugin {
 
   private syncNewsDots(): void {
     const on = this.hasNews();
+    const controls = this.newsControlIds();
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_INK)) {
-      (leaf.view as InkView).setNewsDot(on);
+      // A tab Obsidian has not loaded yet holds a placeholder view; it reads the dots when it opens.
+      if (leaf.view instanceof InkView) leaf.view.setNewsDot(on, controls);
     }
+  }
+
+  /** The toolbar buttons an update's news sits behind, not used since. */
+  newsControlIds(): string[] {
+    const tips = highlightsSince(this.settings.newsSince, this.manifest.version);
+    return newsControls(tips, this.settings.newsDotsUsed ?? []);
+  }
+
+  /** A dotted button was used: its dot goes, in every open notebook and on the other devices. */
+  markNewsControlUsed(id: string): void {
+    const used = this.settings.newsDotsUsed ?? [];
+    if (used.includes(id)) return;
+    this.settings.newsDotsUsed = [...used, id];
+    void this.saveSettings();
+    this.syncNewsDots();
   }
 
   /** Bring Home's what's-new card back, with the latest releases' highlights. */
@@ -1782,9 +1821,95 @@ export default class GoodObsidianPlugin extends Plugin {
         openTour: () => void this.openWelcomeTour(),
         openChangelog: () => this.showChangelog(releasedChangelog(changelogMd)),
         showNews: () => this.showNewsAgain(),
+        showWelcome: () => this.showWelcome(),
+        features: this.featureHost(),
       },
       page,
     ).open();
+  }
+
+  // --- Earned hints (model/nudges.ts) -------------------------------------------
+
+  /** What this device counted, read once from its own storage. */
+  private nudges: NudgeState | null = null;
+
+  /**
+   * Count `event`; when it was the slow way once too often for someone who
+   * never used the fast way, say the fast way in the hint pill. A tap on
+   * the line opens its tip.
+   */
+  noteUse(event: NudgeEvent, surface: InkSurface): void {
+    if (!this.settings.gestureHints) return;
+    const before: NudgeState =
+      this.nudges ?? parseNudges(this.app.loadLocalStorage(NUDGES_KEY) as unknown);
+    let state = recordUse(before, event);
+    const day = dayOf(new Date());
+    const rule = dueNudge(state, event, { day, touch: Platform.isMobile });
+    if (rule) {
+      state = markShown(state, rule, day);
+      const feature = featureById(rule.id);
+      surface.showTextHint(
+        t(rule.text),
+        () => undefined,
+        feature ? () => this.showFeature(feature) : undefined,
+      );
+    }
+    this.nudges = state;
+    this.app.saveLocalStorage(NUDGES_KEY, state);
+  }
+
+  /** Hints for faster ways on or off; off forgets what was counted. */
+  async setGestureHints(on: boolean): Promise<void> {
+    this.settings.gestureHints = on;
+    if (!on) {
+      this.nudges = null;
+      this.app.saveLocalStorage(NUDGES_KEY, null);
+    }
+    await this.saveSettings();
+  }
+
+  // --- The feature index (model/feature-index.ts) ---------------------------------
+
+  /** What a feature's row or a tip's button can do, wherever it is drawn. */
+  featureHost(): FeatureHost {
+    return {
+      settingOn: (key) => (this.settings as unknown as Record<string, unknown>)[key] === true,
+      setSetting: async (key, on) => {
+        if (key === "simpleLook") this.setSimpleLook(on);
+        else await this.settingTab?.setControlValue(key, on);
+      },
+      runCommand: (id) => this.runOwnCommand(id),
+      show: (feature) => this.showFeature(feature),
+      ask: (query) => {
+        window.open(`${ASK_URL}&title=${encodeURIComponent(query)}`);
+      },
+    };
+  }
+
+  /** A feature's tip among its collection's; without a tip, its row in settings. */
+  showFeature(feature: Feature): void {
+    const tip = feature.tip;
+    if (!tip) {
+      this.openSettingsTab();
+      this.settingTab?.revealRow(t(feature.title));
+      return;
+    }
+    const tips = feature.collection?.tips ?? [tip];
+    this.openTips({
+      title: feature.collection ? t(feature.collection.title) : t(tip.title),
+      tips,
+      index: Math.max(0, tips.indexOf(tip)),
+    });
+  }
+
+  /** Run one of this plugin's commands by its own id; says so when it needs a notebook. */
+  private runOwnCommand(id: string): boolean {
+    const commands = (
+      this.app as unknown as { commands?: { executeCommandById?: (id: string) => boolean } }
+    ).commands;
+    const ran = commands?.executeCommandById?.(`${this.manifest.id}:${id}`) === true;
+    if (!ran) new Notice(t("notebooks.features.needsNotebook"));
+    return ran;
   }
 
   /** Remember the eraser's mode and size for the next session (and device). */
@@ -1945,7 +2070,7 @@ export default class GoodObsidianPlugin extends Plugin {
    * link to the stickers folder) and placed like any picture.
    */
   openStickerPicker(ctx: Pick<ImageMenuContext, "insertBytes">): void {
-    new StickerModal(this.app, stickerFolderOf(this.settings.stickerFolder), (choice) => {
+    new StickerModal(this.app, stickerFolderFor(this.settings), (choice) => {
       void (async () => {
         if (choice.kind === "builtin") {
           const svg = stickerSvg(choice.sticker, choice.color);
@@ -2617,13 +2742,13 @@ export default class GoodObsidianPlugin extends Plugin {
       if (entry.kind === "paper") {
         const library = new VaultPaperLibrary(
           this.app,
-          () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
+          () => templateFolderFor(this.settings),
           () => undefined,
         );
         const ext = entry.download.split(/[?#]/)[0].split(".").pop() ?? "pdf";
         return await library.addFile(bytes, `${entry.name}.${ext}`);
       }
-      const folder = templateFolderOf(normalizeFolder(this.settings.templateFolder));
+      const folder = templateFolderFor(this.settings);
       if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
       const name = `${entry.name.replace(/[\\/:*?"<>|#^[\]]+/g, " ").trim() || "Template"}.${TEMPLATE_EXTENSION}`;
       const path = normalizePath(`${folder}/${name}`);
@@ -2845,7 +2970,7 @@ export default class GoodObsidianPlugin extends Plugin {
   ): VaultPaperLibrary {
     return new VaultPaperLibrary(
       this.app,
-      () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
+      () => templateFolderFor(this.settings),
       paint,
       () => this.openTemplateGallery(),
       (path) => void this.openShareTemplate(path),
@@ -3555,6 +3680,10 @@ export default class GoodObsidianPlugin extends Plugin {
     } else if (request.do === "pdf") {
       const notebook = await this.notebookForPdfLink(request.file);
       if (notebook) await this.showNotebook(notebook);
+    } else if (request.do === "show") {
+      const feature = featureById(request.feature);
+      if (feature) this.showFeature(feature);
+      else new Notice(t("notebooks.features.unknown", { what: request.feature }));
     } else {
       new Notice(t("notebooks.notice.linkUnknown", { what: request.what }));
     }

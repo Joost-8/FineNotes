@@ -231,3 +231,27 @@ describe("Home's one card", () => {
     expect(homeCardKind(false, false)).toBeNull();
   });
 });
+
+describe("newsControls", () => {
+  const picked = (ids: string[]): Tip[] =>
+    TIP_COLLECTIONS.flatMap((c) => c.tips).filter((tip) => ids.includes(tip.id));
+
+  it("names each button once, and none for a tip that sits behind no button", async () => {
+    const { newsControls } = await import("../../src/model/tips");
+    expect(newsControls(picked(["lockFit", "margins", "looks", "hold"]), []).sort()).toEqual([
+      "more",
+      "settings",
+    ]);
+  });
+
+  it("leaves out a button used since", async () => {
+    const { newsControls } = await import("../../src/model/tips");
+    expect(newsControls(picked(["lockFit", "looks"]), ["more"])).toEqual(["settings"]);
+  });
+
+  it("points only at tips that exist", async () => {
+    const { TIP_CONTROLS } = await import("../../src/model/tips");
+    const known = new Set(TIP_COLLECTIONS.flatMap((c) => c.tips.map((tip) => tip.id)));
+    for (const id of Object.keys(TIP_CONTROLS)) expect(known.has(id), id).toBe(true);
+  });
+});

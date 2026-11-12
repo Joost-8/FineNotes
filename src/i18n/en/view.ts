@@ -24,6 +24,16 @@ export const view = {
   "view.contentsTitle.pageLabel": "Title for page {page}",
   "view.contentsTitle.sectionLabel": "Title for a section on page {page}",
 
+  // Frames: named parts of a page a note embeds (model/regions.ts, discussion #167)
+  "view.region.add": "Name this frame",
+  "view.region.rename": "Rename frame",
+  "view.region.note": "A note can embed what is in it by this name.",
+  "view.region.label": "Name of the frame",
+  "view.region.fallback": "Frame {n}",
+  "view.region.copyLink": "Copy embed link",
+  "view.region.linkCopied": "Embed link copied",
+  "view.region.delete": "Delete frame",
+
   // Comment dialog
   "view.comment.title": "Comment",
   "view.comment.newTitle": "New comment on page {page}",
@@ -268,6 +278,7 @@ export const view = {
   "view.pageEmbed.noPages": "This notebook has no pages.",
   "view.pageEmbed.missingFile": "This notebook is not in the vault.",
   "view.pageEmbed.unreadable": "This notebook could not be read.",
+  "view.pageEmbed.missingRegion": "This notebook has no frame named {name}.",
   "view.pageEmbed.morePages.one": "{count} more page",
   "view.pageEmbed.morePages.other": "{count} more pages",
 

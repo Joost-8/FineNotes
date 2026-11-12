@@ -405,3 +405,26 @@ export function homeCardKind(hasNews: boolean, offerDue: boolean): HomeCardKind 
   if (hasNews) return "news";
   return offerDue ? "simple" : null;
 }
+
+/**
+ * The toolbar button a highlighted tip's feature sits behind (a bar item's
+ * id, toolbar-layout.ts). After an update that button carries a dot until
+ * it is used, so the news is where the change is, not only on Home.
+ */
+export const TIP_CONTROLS: Readonly<Record<string, string>> = {
+  looks: "settings",
+  insertGraph: "calculator",
+  lockFit: "more",
+  margins: "more",
+  tapeMagnet: "tape",
+};
+
+/** The buttons to dot for these highlights, each once, leaving out the ones used since. */
+export function newsControls(tips: readonly Tip[], used: readonly string[]): string[] {
+  const controls: string[] = [];
+  for (const item of tips) {
+    const control = TIP_CONTROLS[item.id];
+    if (control && !used.includes(control) && !controls.includes(control)) controls.push(control);
+  }
+  return controls;
+}

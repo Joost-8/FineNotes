@@ -48,6 +48,7 @@ import {
   placeFloating,
 } from "./selection-bar-model";
 import { t } from "../i18n/translate";
+import { withKeys } from "../model/fast-ways";
 
 /** Space between the selection (and anything sticking out of it) and the bar, px. */
 const BAR_GAP_PX = 12;
@@ -296,7 +297,23 @@ export class SelectionActionBar {
     });
   }
 
+  /**
+   * The key that does an entry too, as this device has it (fast-ways.ts);
+   * the surface sets it. Shown in the entry's tooltip and at a row's end.
+   */
+  keysFor: ((id: string) => string | null) | null = null;
+
   private decorate(button: HTMLButtonElement, action: SelectionAction): void {
+    const keys = this.keysFor?.(action.id) ?? null;
+    if (keys) {
+      // Obsidian's own tooltip reads the label, the browser's the title: both name the key.
+      button.title = withKeys(action.label, keys);
+      button.setAttribute("aria-label", withKeys(action.label, keys));
+      const row = button.hasClass("goodobsidian-selection-row");
+      if (row && !button.querySelector(".goodobsidian-selection-row-keys")) {
+        button.createSpan({ cls: "goodobsidian-selection-row-keys", text: keys });
+      }
+    }
     button.toggleClass("mod-warning", action.destructive === true);
     // A choice in the bar itself (a linked shape's type) marks the one it is.
     if (action.checked !== undefined && action.bar === true) {

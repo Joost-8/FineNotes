@@ -16,7 +16,7 @@ Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Andro
 
 ![A lecture slide opened in FineNotes, with highlights, a circled formula and handwritten notes](assets/readme/pdf-annotation.png)
 
-**Website:** [finenotes.vercel.app](https://finenotes.vercel.app), with a demo you can [try in your browser](https://finenotes.vercel.app/play/)
+**Website:** [finenotes.app](https://finenotes.app/), with a demo you can [try in your browser](https://finenotes.app/play/)
 
 **Follow FineNotes:** [X](https://x.com/finenotes_) · [Instagram](https://www.instagram.com/finenotesobsidian/) · [TikTok](https://www.tiktok.com/@finenotesobsidian) · [YouTube](https://www.youtube.com/@FineNotesAtObsidian)
 

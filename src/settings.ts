@@ -6,10 +6,10 @@
  * fields that check what is typed, the saved pens, the models, and the API
  * key rows.
  *
- * Compact by rule (CLAUDE.md, "show more by showing less"): every section
- * starts folded with its state beside its heading; a row says its name and
- * at most one short line; the longer explanation waits behind the ⓘ after
- * its name; rows few people need sit under the section's "More".
+ * The tab is a list of sections and the chosen section beside it (CLAUDE.md):
+ * each section is a run of Obsidian's own groups, and a row is a drawing of
+ * its effect (`view/settings-art.ts`) or an icon tile, its name, one short
+ * line, and its control.
  *
  * What is stored, and how, lives in `settings-data.ts`.
  */
@@ -19,7 +19,6 @@ import {
   learnedFiles,
   learnedRecord,
   practiceSheets,
-  previousKey,
   progressLabel,
   readCorrections,
   swapWithPrevious,
@@ -28,33 +27,36 @@ import {
 import {
   type PracticeSheet,
   deleteQuestion,
-  learnInfoText,
   learnSummary,
   learnedBadge,
-  learnedResult,
-  learnedStatus,
-  newCorrections,
-  undoText,
 } from "./recognition/hwr/learned-model";
 import { PRACTICE_SETS } from "./recognition/practice";
 import { PLUGIN_PAGE_URL } from "./model/update-check";
 import { t } from "./i18n/translate";
+import { INTERFACE_LANGUAGES, resolveLanguage } from "./i18n/languages";
 import { LANGUAGE_ALIASES, drawLanguageRow } from "./view/language-row";
+import { obsidianLanguage } from "./view/interface-language";
+import { type ArtId, artStateOf, drawArt, paintArt } from "./view/settings-art";
 import {
   type App,
-  type ExtraButtonComponent,
   Menu,
   Platform,
   PluginSettingTab,
   type Setting,
   type SettingControl,
   type SettingDefinition,
+  type SettingDefinitionGroup,
   type SettingDefinitionItem,
   setIcon,
 } from "obsidian";
 import { ICON_NEW_NOTEBOOK, SIZES } from "./constants";
 import { SHORTCUT_NEW_NOTEBOOK_URL, SHORTCUT_PDF_URL } from "./model/inbox";
-import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-folders";
+import {
+  ASSETS_FOLDER,
+  DEFAULT_STICKER_FOLDER,
+  DEFAULT_TEMPLATE_FOLDER,
+  chosenFolder,
+} from "./model/vault-folders";
 import type GoodObsidianPlugin from "./main";
 import { normalizeFolder } from "./model/new-notebook";
 import {
@@ -79,16 +81,20 @@ import {
   type GoodObsidianSettings,
   PAPER_WIDTH_RANGE,
   type PageAppearance,
+  SETTINGS_SECTIONS,
   type SettingsSection,
   changesTabLayout,
   endpointWarning,
   handwritingReaderOf,
   paperWidthFrom,
   parseColorList,
-  sectionOpen,
+  AUTO_RECOGNITION,
+  recognitionChoiceOf,
+  shownSectionOf,
+  storeRecognitionChoice,
   shownValue,
   storeShownValue,
-  withSection,
+  withShownSection,
 } from "./settings-data";
 import { SHORTCUT_GROUPS, shortcutText } from "./model/shortcuts";
 import {
@@ -149,7 +155,7 @@ type Visible = boolean | (() => boolean);
 
 // --- Wording -----------------------------------------------------------------
 
-/** A callout's one line, and what its ⓘ opens if the line needs more. */
+/** A callout's one line, and what to do about it if the line needs more. */
 interface Callout {
   title: string;
   detail?: string;
@@ -253,13 +259,19 @@ function stylusClickNames(): Record<StylusClickAction, string> {
   };
 }
 
-/** Shortcuts → More: the actions after the tools, in this order. */
-const SHORTCUT_MORE_ORDER: readonly ShortcutGroupKey[] = [
-  "toolbar.shortcut.group.selectionEditing",
-  "toolbar.shortcut.group.viewZoom",
-  "toolbar.shortcut.group.tools",
-  "toolbar.shortcut.group.savedPens",
-];
+/** The sections, as the list names them. */
+function sectionNames(): Record<SettingsSection, string> {
+  return {
+    general: t("settings.section.general"),
+    writing: t("settings.writing.heading"),
+    pages: t("settings.section.pages"),
+    shortcuts: t("settings.shortcuts.heading"),
+    reading: t("settings.section.reading"),
+    ai: t("settings.section.ai"),
+    files: t("settings.section.files"),
+    troubleshooting: t("settings.section.troubleshooting"),
+  };
+}
 
 /**
  * The keyboard and stylus shortcuts as plain text, one `[keys, action]` pair
@@ -364,16 +376,6 @@ function drawnRow(
   return { name, desc: desc || undefined, aliases, visible, render: draw };
 }
 
-/** What each on-device model is and does: the start of its row's ⓘ. */
-function modelPurpose() {
-  return {
-    voice: t("settings.models.purpose.voice"),
-    grape: t("settings.models.purpose.grape"),
-    ocr: t("settings.models.purpose.ocr"),
-    learned: t("settings.models.purpose.learned"),
-  };
-}
-
 /** How a model's state reads at a glance: the colour of the dot before its state. */
 type ModelTone = "ready" | "off" | "missing" | "busy" | "failed";
 
@@ -410,7 +412,7 @@ interface LearningState {
   files: { current: boolean; previous: boolean; bytes: number };
 }
 
-/** One piece of a section's state beside its heading: words, a dot of a tone, or a colour. */
+/** One piece of a section's state in the list: words, a dot of a tone, or a colour. */
 interface StatusPart {
   text?: string;
   tone?: ModelTone;
@@ -426,63 +428,65 @@ interface MenuEntry {
   warning?: boolean;
 }
 
-/** The class every folding section carries; `is-folded` beside it hides its rows. */
-const SECTION_CLS = "goodobsidian-section";
+/** The class of every group that belongs to a section; `-<section>` says which. */
+const SECTION_CLS = "goodobsidian-sec";
 
-/** A row that has its ⓘ already. */
-const INFO_CLS = "goodobsidian-has-info";
+/** What heads a row: a drawing of its effect, or a tile when there is nothing to draw. */
+type RowMark = { art: ArtId } | { icon: string };
+
+/** The Lucide icon on each section in the list. */
+const SECTION_ICONS: Record<SettingsSection, string> = {
+  general: "palette",
+  writing: "pencil",
+  pages: "file-text",
+  shortcuts: "keyboard",
+  reading: "scan-text",
+  ai: "sparkles",
+  files: "folder",
+  troubleshooting: "wrench",
+};
+
+/** Each shortcut's tile. An action not named here (a saved pen) has the keyboard's. */
+const SHORTCUT_ICONS: Record<string, string> = {
+  "tool.pen": "pen-tool",
+  "tool.highlighter": "highlighter",
+  "tool.eraser": "eraser",
+  "tool.select": "lasso",
+  "tool.shape": "shapes",
+  "tool.text": "type",
+  "tool.laser": "wand",
+  "tool.pan": "hand",
+  "tool.zoom": "search",
+  "edit.undo": "undo-2",
+  "edit.redo": "redo-2",
+  "edit.select-all": "text-select",
+  "edit.delete": "trash-2",
+  "edit.copy": "copy",
+  "edit.cut": "scissors",
+  "edit.paste": "clipboard-paste",
+  "edit.turn-into-text": "type",
+  "view.zoom-in": "zoom-in",
+  "view.zoom-out": "zoom-out",
+  "view.zoom-fit": "maximize-2",
+  "view.next-page": "arrow-down",
+  "view.previous-page": "arrow-up",
+  "view.fullscreen": "expand",
+  "view.shortcuts": "circle-help",
+  "bar.image": "image-plus",
+  "bar.pdf": "file-plus-2",
+  "bar.sticker": "smile",
+  "bar.sticky": "sticky-note",
+  "bar.ruler": "ruler",
+  "bar.record": "mic",
+  "bar.stylus": "pen-line",
+};
 
 /**
- * A saved pen row's strip of paper, px (styles.css sizes it the same): tall
- * enough for the thickest sample (`SAMPLE_MAX_THICKNESS`) with room to wave.
+ * A saved pen's stroke on paper, px (styles.css sizes it the same): the
+ * drawing column's size, tall enough for the thickest sample
+ * (`SAMPLE_MAX_THICKNESS`) with room to wave.
  */
-const PEN_SAMPLE = { width: 112, height: 28 } as const;
-
-/**
- * An ⓘ in `buttonParent` that opens `text` at the end of `textParent`, in
- * place, and closes it again. A tap on it is not a tap on its row.
- */
-function infoToggle(buttonParent: HTMLElement, textParent: HTMLElement, text: string): void {
-  const button = buttonParent.createSpan({ cls: "goodobsidian-info clickable-icon" });
-  setIcon(button, "info");
-  button.setAttribute("role", "button");
-  button.setAttribute("tabindex", "0");
-  button.setAttribute("aria-label", t("settings.moreAbout"));
-  button.setAttribute("aria-expanded", "false");
-  const more = textParent.createDiv({ cls: "goodobsidian-info-text is-hidden", text });
-  const flip = (event: Event): void => {
-    event.preventDefault();
-    event.stopPropagation();
-    const open = more.hasClass("is-hidden");
-    more.toggleClass("is-hidden", !open);
-    button.setAttribute("aria-expanded", String(open));
-  };
-  button.addEventListener("click", flip);
-  button.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") flip(event);
-  });
-}
-
-/**
- * Give a drawn settings row its ⓘ: after its name, opening `text` under its
- * description. A row that has one keeps it and takes the new text. When
- * Obsidian draws the row again (each `update()`), `setName` empties the
- * name and takes the button with it, and the old text stays behind: both
- * are made again, so the ⓘ says what the row says now.
- */
-export function addInfo(settingEl: HTMLElement, text: string): void {
-  const nameEl = settingEl.querySelector<HTMLElement>(".setting-item-name");
-  const infoEl = settingEl.querySelector<HTMLElement>(".setting-item-info");
-  if (!nameEl || !infoEl) return;
-  const more = infoEl.querySelector<HTMLElement>(".goodobsidian-info-text");
-  if (more && nameEl.querySelector(".goodobsidian-info")) {
-    if (more.textContent !== text) more.setText(text);
-    return;
-  }
-  more?.remove();
-  settingEl.addClass(INFO_CLS);
-  infoToggle(nameEl, infoEl, text);
-}
+const PEN_SAMPLE = { width: 72, height: 48 } as const;
 
 /**
  * A row with no name or control, filled edge to edge by `draw` (a callout).
@@ -512,18 +516,18 @@ function removeOwn(parent: HTMLElement, cls: string): void {
   }
 }
 
-/** A note that shows only while it is true: one line, the rest behind its ⓘ. */
+/** A note that shows only while it is true: its one line, and what to do about it. */
 function callout({ title, detail }: Callout, visible: Visible): SettingDefinition {
   return block((el) => {
     const box = el.createDiv({ cls: "goodobsidian-callout" });
-    const line = box.createDiv({ cls: "goodobsidian-callout-title", text: title });
-    if (detail) infoToggle(line, box, detail);
+    box.createDiv({ cls: "goodobsidian-callout-title", text: title });
+    if (detail) box.createDiv({ cls: "goodobsidian-callout-detail", text: detail });
   }, visible);
 }
 
 // --- The tab -----------------------------------------------------------------
 
-/** Advanced: where notebooks without a folder of their own save each kind of file. */
+/** Where notebooks without a folder of their own save each kind of file. */
 function folderRows() {
   return [
     [
@@ -535,7 +539,7 @@ function folderRows() {
     [
       "recordingsFolder",
       t("settings.folders.recordings.name"),
-      t("settings.folders.recordings.desc"),
+      t("settings.folders.recordings.line"),
       t("settings.folders.recordings.placeholder"),
     ],
     [
@@ -560,18 +564,12 @@ function folderRows() {
 }
 
 export class GoodObsidianSettingTab extends PluginSettingTab {
-  /** The AI group, opened by hand when no AI service is set up. */
-  private aiOpen = false;
-  /** Sections whose "More" rows are shown, for this opening of the settings. */
-  private readonly moreOpen = new Set<SettingsSection>();
-  /** Each row's ⓘ text, by row name; filled as the rows are defined. */
-  private readonly infos = new Map<string, string>();
-  /** Each drawn section header's status, redrawn after a value changes. */
-  private readonly statuses = new Map<SettingsSection, () => void>();
-  /** Each section header's current toggle, behind the one click listener it gets. */
-  private readonly headerToggles = new WeakMap<HTMLElement, () => void>();
-  /** Each drawn section's fold, for folding the others when one opens on a tablet. */
-  private readonly folds = new Map<SettingsSection, (open: boolean) => void>();
+  /** What heads each row, by row name; filled as the rows are defined. */
+  private readonly marks = new Map<string, RowMark>();
+  /** Each section's entry in the list, for its state and for showing it as chosen. */
+  private readonly navItems = new Map<SettingsSection, { item: HTMLElement; state: HTMLElement }>();
+  /** The back control over an opened section on a narrow pane, and its name. */
+  private navBackName: HTMLElement | null = null;
   /** Which saved pen each drawn pen row shows, behind the one click listener it gets. */
   private readonly penRowTargets = new WeakMap<HTMLElement, number>();
   /** The binding slot listening for an input, while one records. */
@@ -581,12 +579,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     private readonly plugin: GoodObsidianPlugin,
   ) {
     super(app, plugin);
-    // Obsidian draws the plain controls' rows itself: each gets its ⓘ as it
-    // appears.
+    this.containerEl.addClass("goodobsidian-settings");
+    // Obsidian draws the plain controls' rows itself: each gets its drawing
+    // as it appears. A search result flashes its row: its section is shown.
     if (typeof MutationObserver !== "undefined") {
-      new MutationObserver(() => this.decorate()).observe(this.containerEl, {
+      new MutationObserver((changes) => this.onDrawn(changes)).observe(this.containerEl, {
         childList: true,
         subtree: true,
+        attributes: true,
+        attributeFilter: ["class"],
       });
     }
   }
@@ -596,243 +597,306 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     this.update();
   }
 
-  /** One section open at a time on an iPad or a phone, where the screen holds one. */
-  private get alone(): boolean {
-    return Platform.isMobile;
+  /**
+   * Show the row called `name` as a search result is shown: flashing it
+   * switches to its section and scrolls to it (`reveal`). The tab may still
+   * be drawing when this is called, so it looks a few times.
+   */
+  revealRow(name: string, triesLeft = 8): void {
+    const row = Array.from(this.containerEl.querySelectorAll<HTMLElement>(".setting-item")).find(
+      (el) =>
+        !el.hasClass("setting-item-heading") &&
+        el.querySelector(".setting-item-name")?.textContent?.trim() === name,
+    );
+    if (!row) {
+      if (triesLeft > 0) window.setTimeout(() => this.revealRow(name, triesLeft - 1), 80);
+      return;
+    }
+    row.addClass("is-flashing");
+    this.reveal(row);
+    window.setTimeout(() => row.removeClass("is-flashing"), 750);
   }
 
-  /** Register `text` as the ⓘ of `def`'s row. */
-  private info<T extends SettingDefinition>(def: T, text: string): T {
-    this.infos.set(def.name, text);
+  /** The row `def` headed by the drawing `art`. */
+  private art<T extends SettingDefinition>(def: T, art: ArtId): T {
+    this.marks.set(def.name, { art });
     return def;
   }
 
-  /** The ⓘ of the row called `name`, if it has one. */
-  infoOf(name: string): string | undefined {
-    return this.infos.get(name);
+  /** The row `def` headed by a tile with the Lucide icon `icon`. */
+  private tile<T extends SettingDefinition>(def: T, icon: string): T {
+    this.marks.set(def.name, { icon });
+    return def;
   }
 
-  /** Give every drawn row that has an ⓘ text its button, with the text it has now. */
+  /** What heads the row called `name`, if anything does. */
+  markOf(name: string): RowMark | undefined {
+    return this.marks.get(name);
+  }
+
+  private onDrawn(changes: MutationRecord[]): void {
+    if (changes.some((change) => change.type === "childList")) this.decorate();
+    for (const change of changes) {
+      const target = change.target;
+      if (change.type !== "attributes" || !target.instanceOf(HTMLElement)) continue;
+      if (target.hasClass("is-flashing")) this.reveal(target);
+    }
+  }
+
+  /**
+   * Give every row its drawing or tile, as the first thing in the row: not
+   * in its name or description, which Obsidian empties on each `update()`,
+   * nor its controls. A row that has the right one keeps it, so it can
+   * animate from the old state to the new.
+   */
   private decorate(): void {
-    for (const el of Array.from(this.containerEl.querySelectorAll<HTMLElement>(".setting-item"))) {
-      const name = el.querySelector(".setting-item-name")?.textContent?.trim();
-      const text = name ? this.infos.get(name) : undefined;
-      if (text) addInfo(el, text);
-    }
-  }
-
-  // --- Folding ---------------------------------------------------------------
-
-  /**
-   * A section under a header that folds it: tapping the header (or its
-   * chevron) hides or shows the rows, and the tab remembers which are open
-   * (`settingsOpen`). The header carries the section's icon and, beside the
-   * chevron, its state in a few words, so a folded section rarely needs
-   * opening. Folding is a class on the group, never the rows' `visible`:
-   * Obsidian's search leaves out rows that are not visible, and a folded
-   * row must still be found. Obsidian applies `cls` when it first draws the
-   * group; after that the class on the group is the state.
-   */
-  private section(
-    id: SettingsSection,
-    heading: string,
-    icon: string,
-    items: SettingDefinition[],
-    status: () => StatusPart[] = () => [],
-  ): SettingDefinitionItem {
-    const open = sectionOpen(this.plugin.settings.settingsOpen, id, this.alone);
-    const cls = [SECTION_CLS, open ? "" : "is-folded", this.moreOpen.has(id) ? "is-more-open" : ""];
-    return {
-      type: "group",
-      heading,
-      items,
-      cls: cls.filter(Boolean).join(" "),
-      extraButtons: [(button) => this.foldButton(button, id, heading, icon, status)],
-    };
-  }
-
-  /**
-   * The chevron in a section's header, and the header made the control that
-   * folds it. Obsidian puts the button in the header's control column, so
-   * the header and the group are its ancestors.
-   */
-  private foldButton(
-    button: ExtraButtonComponent,
-    id: SettingsSection,
-    heading: string,
-    icon: string,
-    status: () => StatusPart[],
-  ): void {
-    const chevron = button.extraSettingsEl;
-    const header = chevron.closest<HTMLElement>(".setting-item-heading");
-    const group = chevron.closest<HTMLElement>(".setting-group");
-    if (!header || !group) return;
-    button.setIcon("chevron-right");
-    chevron.addClass("goodobsidian-fold-chevron");
-    header.addClass("goodobsidian-fold-header");
-    const nameEl = header.querySelector<HTMLElement>(".setting-item-name");
-    if (nameEl && !nameEl.querySelector(".goodobsidian-section-icon")) {
-      const iconEl = nameEl.createSpan({ cls: "goodobsidian-section-icon" });
-      setIcon(iconEl, icon);
-      nameEl.prepend(iconEl);
-    }
-    const control = chevron.parentElement;
-    if (control) {
-      removeOwn(control, "goodobsidian-section-status");
-      const statusEl = control.createSpan({ cls: "goodobsidian-section-status" });
-      control.prepend(statusEl);
-      const show = (): void => {
-        statusEl.empty();
-        for (const part of status()) {
-          const el = statusEl.createSpan({
-            cls: `goodobsidian-status-part${part.tone ? ` is-${part.tone}` : ""}`,
-          });
-          if (part.tone) el.createSpan({ cls: "goodobsidian-model-dot" });
-          if (part.color) {
-            el.createSpan({ cls: "goodobsidian-status-swatch" }).setCssStyles({
-              backgroundColor: part.color,
-            });
-          }
-          if (part.text) el.createSpan({ text: part.text });
-        }
-      };
-      show();
-      this.statuses.set(id, show);
-    }
-    const sync = (): void => {
-      const open = !group.hasClass("is-folded");
-      chevron.setAttribute("role", "button");
-      chevron.setAttribute("aria-expanded", String(open));
-      chevron.setAttribute(
-        "aria-label",
-        open ? t("settings.section.fold", { heading }) : t("settings.section.unfold", { heading }),
-      );
-    };
-    const setOpen = (open: boolean): void => {
-      group.toggleClass("is-folded", !open);
-      sync();
-    };
-    this.folds.set(id, setOpen);
-    const open = (): void => {
-      setOpen(true);
-      if (!this.alone) return;
-      for (const [other, fold] of this.folds) if (other !== id) fold(false);
-      header.scrollIntoView({ block: "nearest" });
-    };
-    const toggle = (): void => {
-      const opening = group.hasClass("is-folded");
-      if (opening) open();
-      else setOpen(false);
-      this.rememberFold(id, opening);
-    };
-    sync();
-    // The whole header is the target, chevron included: one click, one
-    // toggle. Obsidian may draw a header again in place: it keeps one
-    // listener, which runs the latest toggle.
-    const wired = this.headerToggles.has(header);
-    this.headerToggles.set(header, toggle);
-    if (!wired) header.addEventListener("click", () => this.headerToggles.get(header)?.());
-    chevron.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      toggle();
-    });
-    if (wired) return;
-    this.revealOnFlash(group, () => {
-      open();
-      group.addClass("is-more-open");
-      this.moreOpen.add(id);
-      this.rememberFold(id, true);
-    });
-  }
-
-  /**
-   * A search result opens its row by scrolling to it and flashing it
-   * (`is-flashing`). A row in a folded section, or under a closed "More",
-   * cannot be scrolled to, so the flash opens both, and the row is scrolled
-   * to again.
-   */
-  private revealOnFlash(group: HTMLElement, reveal: () => void): void {
-    if (typeof MutationObserver === "undefined") return;
-    const observer = new MutationObserver((changes) => {
-      if (!group.hasClass("is-folded") && group.hasClass("is-more-open")) return;
-      for (const change of changes) {
-        const target = change.target;
-        if (!target.instanceOf(HTMLElement) || !target.hasClass("is-flashing")) continue;
-        reveal();
-        target.scrollIntoView({ block: "center" });
-        return;
+    for (const row of Array.from(this.containerEl.querySelectorAll<HTMLElement>(".setting-item"))) {
+      const name = row.querySelector(".setting-item-name")?.textContent?.trim();
+      // A group's heading can share its name with a row.
+      const mark = name && !row.hasClass("setting-item-heading") ? this.marks.get(name) : undefined;
+      if (!mark) continue;
+      const key = "art" in mark ? `art:${mark.art}` : `icon:${mark.icon}`;
+      const first = row.firstElementChild;
+      if (first?.hasClass("goodobsidian-mark")) {
+        if (first.getAttribute("data-mark") === key) continue;
+        first.remove();
       }
+      const el = row.createDiv({
+        cls: `goodobsidian-mark ${"art" in mark ? "goodobsidian-art" : "goodobsidian-tile"}`,
+        attr: { "data-mark": key },
+      });
+      if ("art" in mark) el.append(drawArt(mark.art, row.doc));
+      else setIcon(el, mark.icon);
+      row.prepend(el);
+    }
+    this.paintRows();
+  }
+
+  // --- The section list ------------------------------------------------------
+
+  /** The section shown; which one is kept in `settingsOpen`. */
+  private get shown(): SettingsSection {
+    return shownSectionOf(this.plugin.settings.settingsOpen);
+  }
+
+  /**
+   * A section's groups, one rounded card under a small heading each. Which
+   * section is shown is an attribute on the tab, read by the stylesheet,
+   * never the rows' `visible`: Obsidian's search leaves out rows that are
+   * not visible, and every row must be found. Obsidian applies `cls` when it
+   * first draws a group; `id` keeps a group the same one across redraws.
+   */
+  private sectionGroups(
+    section: SettingsSection,
+    cards: ReadonlyArray<readonly [string, string, SettingDefinition[]]>,
+  ): SettingDefinitionItem[] {
+    return cards.map(([key, heading, items], index) => {
+      const cls = [SECTION_CLS, `${SECTION_CLS}-${section}`, index === 0 ? "is-first" : ""];
+      const group: SettingDefinitionGroup & { id: string } = {
+        type: "group",
+        id: `${section}.${key}`,
+        heading,
+        items,
+        cls: cls.filter(Boolean).join(" "),
+      };
+      return group;
     });
-    observer.observe(group, { subtree: true, attributes: true, attributeFilter: ["class"] });
   }
 
-  /** Save a section opened or folded; on a tablet, opening one folds the rest. */
-  private rememberFold(id: SettingsSection, open: boolean): void {
+  /** Show section `id` and remember it; on a narrow pane it opens over the list. */
+  private showSection(id: SettingsSection): void {
     const settings = this.plugin.settings;
-    settings.settingsOpen = withSection(settings.settingsOpen, id, open, this.alone);
-    void this.plugin.saveSettings();
+    if (this.shown !== id) {
+      settings.settingsOpen = withShownSection(id);
+      void this.plugin.saveSettings();
+    }
+    this.containerEl.addClass("is-section-open");
+    this.paintShown();
+    this.containerEl.scrollTop = 0;
+  }
+
+  /** Back to the section list on a narrow pane. */
+  private showList(): void {
+    this.containerEl.removeClass("is-section-open");
+    this.containerEl.scrollTop = 0;
   }
 
   /**
-   * A row that opens or closes the rows below it, like "More": Obsidian
-   * draws the action row and its chevron; the caller says whether it is
-   * open and what a tap does.
+   * A search result scrolls to its row and flashes it. A row in a section
+   * not shown cannot be scrolled to, so the flash shows that section and
+   * the row is scrolled to again.
    */
-  private disclosure(
-    name: string,
-    what: string,
-    open: (row: HTMLElement) => boolean,
-    toggle: (row: HTMLElement, open: boolean) => void,
-  ): SettingDefinition {
-    return {
-      name,
-      desc: what,
-      searchable: false,
-      action: (row) => toggle(row, !open(row)),
-    };
+  private reveal(target: HTMLElement): void {
+    const group = target.closest<HTMLElement>(`.${SECTION_CLS}`);
+    const section = SETTINGS_SECTIONS.find((id) => group?.hasClass(`${SECTION_CLS}-${id}`));
+    if (section) this.showSection(section);
+    else if (target.closest(".goodobsidian-nav-group")) this.showList();
+    target.scrollIntoView({ block: "center" });
   }
 
-  /**
-   * "More": the section's rows after it stay hidden until it is tapped, by
-   * a class on the group (so search still finds them, and opens it). It
-   * says what is under it.
-   */
-  private more(id: SettingsSection, what: string): SettingDefinition {
-    return this.disclosure(
-      t("common.more"),
-      what,
-      (row) => row.closest<HTMLElement>(".setting-group")?.hasClass("is-more-open") ?? false,
-      (row, open) => {
-        const group = row.closest<HTMLElement>(".setting-group");
-        if (!group) return;
-        group.toggleClass("is-more-open", open);
-        if (open) this.moreOpen.add(id);
-        else this.moreOpen.delete(id);
-      },
+  private paintShown(): void {
+    const shown = this.shown;
+    this.containerEl.setAttribute("data-section", shown);
+    for (const [id, { item }] of this.navItems) {
+      item.toggleClass("is-current", id === shown);
+      if (id === shown) item.setAttribute("aria-current", "true");
+      else item.removeAttribute("aria-current");
+    }
+    this.navBackName?.setText(sectionNames()[shown]);
+  }
+
+  /** The section list, and the back control a narrow pane shows over a section. */
+  private navRow(): SettingDefinition {
+    return block((el) => {
+      el.addClass("goodobsidian-nav-row");
+      this.navItems.clear();
+      const back = el.createEl("button", { cls: "goodobsidian-nav-back clickable-icon" });
+      back.setAttribute("type", "button");
+      setIcon(back.createSpan({ cls: "goodobsidian-nav-back-icon" }), "chevron-left");
+      this.navBackName = back.createSpan({ cls: "goodobsidian-nav-back-name" });
+      back.setAttribute("aria-label", t("settings.section.back"));
+      back.addEventListener("click", () => this.showList());
+      const list = el.createDiv({ cls: "goodobsidian-nav" });
+      const names = sectionNames();
+      for (const id of SETTINGS_SECTIONS) {
+        const item = list.createEl("button", { cls: "goodobsidian-nav-item clickable-icon" });
+        item.setAttribute("type", "button");
+        item.setAttribute("data-section", id);
+        setIcon(item.createSpan({ cls: "goodobsidian-tile" }), SECTION_ICONS[id]);
+        const text = item.createSpan({ cls: "goodobsidian-nav-text" });
+        text.createSpan({ cls: "goodobsidian-nav-name", text: names[id] });
+        const state = text.createSpan({ cls: "goodobsidian-nav-state" });
+        const chevron = item.createSpan({ cls: "goodobsidian-nav-chevron" });
+        setIcon(chevron, "chevron-right");
+        item.addEventListener("click", () => this.showSection(id));
+        this.navItems.set(id, { item, state });
+      }
+      this.paintNav();
+      this.paintShown();
+    });
+  }
+
+  /** Every section's state in the list. */
+  private paintNav(): void {
+    for (const [id, { state }] of this.navItems) {
+      state.empty();
+      for (const part of this.sectionStatus(id)) {
+        const el = state.createSpan({
+          cls: `goodobsidian-status-part${part.tone ? ` is-${part.tone}` : ""}`,
+        });
+        if (part.tone) el.createSpan({ cls: "goodobsidian-model-dot" });
+        if (part.color) {
+          el.createSpan({ cls: "goodobsidian-status-swatch" }).setCssStyles({
+            backgroundColor: part.color,
+          });
+        }
+        if (part.text) el.createSpan({ text: part.text });
+      }
+    }
+  }
+
+  /** What a section's row in the list says about it. */
+  private sectionStatus(id: SettingsSection): StatusPart[] {
+    const settings = this.plugin.settings;
+    switch (id) {
+      case "general": {
+        const code = resolveLanguage(settings.interfaceLanguage, obsidianLanguage());
+        const language = INTERFACE_LANGUAGES.find((l) => l.code === code)?.name ?? "English";
+        return [{ text: language }];
+      }
+      case "writing":
+        return [
+          {
+            text: t("settings.writing.status", {
+              tool: toolNames()[settings.defaultTool] ?? toolNames().pen,
+              width: defaultWidthText(settings.defaultTool, settings.defaultSize),
+            }),
+          },
+          { color: settings.defaultColor },
+        ];
+      case "pages":
+        return [
+          {
+            text: t("settings.pages.status", {
+              appearance: pageAppearances()[settings.pageAppearance] ?? pageAppearances().light,
+              width: settings.paperWidth,
+            }),
+          },
+        ];
+      case "shortcuts": {
+        const table = this.plugin.shortcuts.table;
+        if (table.conflicts.length > 0)
+          return [{ text: t("settings.shortcuts.clash"), tone: "failed" }];
+        return table.customized > 0
+          ? [{ text: t("settings.shortcuts.changed", { count: table.customized }) }]
+          : [];
+      }
+      case "reading":
+        return [
+          {
+            text: t("settings.models.statusVoice"),
+            tone: stateTone(this.plugin.speech.store().state),
+          },
+          {
+            text: t("settings.models.statusHandwriting"),
+            tone:
+              settings.handwritingOnDevice !== false
+                ? stateTone(this.plugin.grape.model.state)
+                : "off",
+          },
+        ];
+      case "ai":
+        return [
+          {
+            text: aiKeyFolded(this.plugin.aiSetup())
+              ? t("settings.ai.notSetUp")
+              : VENDORS[settings.llmVendor].label,
+          },
+        ];
+      default:
+        return [];
+    }
+  }
+
+  /** Put the settings' current values on every drawing; each moves to its new state. */
+  private paintRows(): void {
+    const settings = this.plugin.settings;
+    paintArt(
+      this.containerEl,
+      artStateOf(settings, {
+        dark: activeDocument.body.hasClass("theme-dark"),
+        reader: handwritingReaderOf(settings, this.ownModelHere()),
+        updates: updateChoiceOf(settings),
+        autoRecognizing: recognitionChoiceOf(settings) === AUTO_RECOGNITION,
+      }),
     );
   }
 
-  /** Redraw every section header's state, after a value changed. */
+  /** The list's states and the row drawings, after a value changed. */
   private syncStatuses(): void {
-    for (const show of this.statuses.values()) show();
+    this.paintNav();
+    this.paintRows();
   }
 
   override getSettingDefinitions(): SettingDefinitionItem[] {
-    this.infos.clear();
-    this.statuses.clear();
-    this.folds.clear();
-    // By theme: writing (pens included), shortcuts, pages, the models on this
-    // device, AI, then the switches few people need; feedback last.
+    this.marks.clear();
+    this.containerEl.setAttribute("data-section", this.shown);
     return [
-      ...this.topRows(),
-      this.writingGroup(),
-      this.shortcutsGroup(),
-      this.pagesGroup(),
-      this.modelsGroup(),
-      this.aiGroup(),
-      this.advancedGroup(),
-      this.footerRow(),
+      this.calloutsGroup(),
+      {
+        type: "group",
+        id: "nav",
+        cls: "goodobsidian-nav-group",
+        items: [this.navRow(), this.footerRow()],
+      } as SettingDefinitionItem,
+      ...this.generalGroups(),
+      ...this.writingGroups(),
+      ...this.pagesGroups(),
+      ...this.shortcutsGroups(),
+      ...this.readingGroups(),
+      ...this.aiGroups(),
+      ...this.filesGroups(),
+      ...this.troubleshootingGroups(),
     ];
   }
 
@@ -841,6 +905,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     if (key === "handwritingOnDevice") {
       return handwritingReaderOf(this.plugin.settings, this.ownModelHere());
     }
+    if (key === "recognitionProviderId") return recognitionChoiceOf(this.plugin.settings);
     return shownValue(this.plugin.settings, key);
   }
 
@@ -880,6 +945,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.update();
       return;
     }
+    if (key === "recognitionProviderId") {
+      // One choice, two keys: which reads, and whether Cloud AI runs by itself.
+      storeRecognitionChoice(this.plugin.settings, String(value));
+      await this.plugin.saveSettings();
+      this.update();
+      return;
+    }
+    if (key === "gestureHints") {
+      // Saved by the plugin, which forgets what it counted when the hints go off.
+      await this.plugin.setGestureHints(value === true);
+      return;
+    }
     if (key === "pressureWidth") {
       // Saved by the plugin, which redraws every open notebook's ink.
       await this.plugin.setPressureWidth(value as boolean);
@@ -916,11 +993,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   // --- Sections --------------------------------------------------------------
 
   /**
-   * Above every section: a newer FineNotes, while one is out, with Obsidian's
+   * Above the sections: a newer FineNotes, while one is out, with Obsidian's
    * own Update a tap away; and the iPad's Scribble, which loses strokes,
    * until its ✕.
    */
-  private topRows(): SettingDefinition[] {
+  private calloutsGroup(): SettingDefinitionItem {
     const update = this.plugin.updates.available;
     const updateRow = block((el) => {
       const box = el.createDiv({ cls: "goodobsidian-callout goodobsidian-update-callout" });
@@ -933,147 +1010,253 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const shown = (): boolean =>
       Platform.isIosApp && Platform.isTablet && !this.plugin.settings.scribbleTipDismissed;
     const { title, detail } = callouts().scribble;
-    return [
-      // Only while one is out: the tab is rebuilt when checking is switched.
-      ...(update !== null ? [updateRow] : []),
-      block((el) => {
-        const box = el.createDiv({ cls: "goodobsidian-callout" });
-        const line = box.createDiv({ cls: "goodobsidian-callout-title", text: title });
-        infoToggle(line, box, detail);
-        const close = line.createSpan({ cls: "goodobsidian-callout-close clickable-icon" });
-        setIcon(close, "x");
-        close.setAttribute("role", "button");
-        close.setAttribute("aria-label", t("common.dismiss"));
-        close.addEventListener("click", () => {
-          this.plugin.settings.scribbleTipDismissed = true;
-          void this.plugin.saveSettings();
-          this.refreshDomState();
-        });
-      }, shown),
-      // Below the notices, above the sections: found without opening one.
-      this.info(
-        drawnRow(t("language.name"), "", (s) => this.drawLanguage(s), LANGUAGE_ALIASES),
-        t("language.info"),
-      ),
-      this.info(
-        drawnRow(t("settings.look.name"), "", (s) => this.drawLook(s), [
-          "look",
-          "style",
-          "theme",
-          "colours",
-          "colors",
-          "palette",
-        ]),
-        t("settings.look.info"),
-      ),
-      this.info(
-        toggle("simpleLook", t("settings.simpleLook.name"), "", [
-          "simple",
-          "look",
-          "hide",
-          "sidebar",
-          "ribbon",
-        ]),
-        t("settings.simpleLook.info"),
-      ),
-    ];
+    return {
+      type: "group",
+      id: "callouts",
+      cls: "goodobsidian-callouts",
+      items: [
+        // Only while one is out: the tab is rebuilt when checking is switched.
+        ...(update !== null ? [updateRow] : []),
+        block((el) => {
+          const box = el.createDiv({ cls: "goodobsidian-callout" });
+          const line = box.createDiv({ cls: "goodobsidian-callout-title", text: title });
+          if (detail) box.createDiv({ cls: "goodobsidian-callout-detail", text: detail });
+          const close = line.createSpan({ cls: "goodobsidian-callout-close clickable-icon" });
+          setIcon(close, "x");
+          close.setAttribute("role", "button");
+          close.setAttribute("aria-label", t("common.dismiss"));
+          close.addEventListener("click", () => {
+            this.plugin.settings.scribbleTipDismissed = true;
+            void this.plugin.saveSettings();
+            this.refreshDomState();
+          });
+        }, shown),
+      ],
+    } as SettingDefinitionItem;
   }
 
-  /** How the pen, the tools and the gestures behave, and what a new note starts with. */
-  private writingGroup(): SettingDefinitionItem {
-    const settings = this.plugin.settings;
-    return this.section(
-      "writing",
-      t("settings.writing.heading"),
-      "pencil",
+  /** The tab's own language and looks, and how updates are announced. */
+  private generalGroups(): SettingDefinitionItem[] {
+    return this.sectionGroups("general", [
       [
-        drawnRow(t("settings.startWith.name"), "", (s) => this.drawStartWith(s), [
-          "default tool",
-          "default stroke size",
-          "pen size",
-          "line width",
-          "default ink color",
-          "pen color",
-        ]),
-        this.info(
-          drawnRow(t("settings.savedPens.name"), "", (s) => this.drawSavedPensRow(s), [
-            "favorite pens",
-            "presets",
-            "number key",
-            "add pen",
-            "new pen",
-            "restore defaults",
-          ]),
-          t("settings.savedPens.info"),
-        ),
-        ...savedPensOf(settings.savedPens).map((pen, index) =>
-          drawnRow(savedPenLabel(pen), "", (s) => this.drawSavedPen(s, pen, index), [
-            "saved pen",
-            "preset",
-            "edit pen",
-            "delete pen",
-          ]),
-        ),
-        toggle(
-          "fingerTapUndo",
-          t("settings.fingerTapUndo.name"),
-          t("settings.fingerTapUndo.desc"),
-          ["undo", "redo", "gesture", "fingers", "tap"],
-        ),
-        this.more(
-          "writing",
-          Platform.isMobile
-            ? t("settings.writing.more.mobile")
-            : t("settings.writing.more.desktop"),
-        ),
-        this.info(
-          toggle("textDragSize", t("settings.textDragSize.name"), "", [
-            "text",
-            "text box",
-            "size",
-            "drag",
-          ]),
-          t("settings.textDragSize.info"),
-        ),
-        this.info(
-          drawnRow(t("settings.customColors.name"), "", (s) => this.drawCustomColors(s), [
-            "palette",
-          ]),
-          t("settings.customColors.info"),
-        ),
-        this.info(
-          toggle("lassoTouches", t("settings.lassoTouches.name"), "", [
-            "lasso",
-            "select",
-            "selection",
-            "notability",
-          ]),
-          t("settings.lassoTouches.info"),
-        ),
-        {
-          ...this.info(
-            dropdown("penCursor", t("settings.penCursor.name"), "", penCursorNames(), [
-              "cursor",
-              "pointer",
-              "crosshair",
-            ]),
-            t("settings.penCursor.info"),
+        "main",
+        "",
+        [
+          this.tile(
+            drawnRow(
+              t("language.name"),
+              t("settings.language.line"),
+              (s) => this.drawLanguage(s),
+              LANGUAGE_ALIASES,
+            ),
+            "languages",
           ),
-          visible: !Platform.isMobile,
-        },
+          this.art(
+            drawnRow(
+              t("settings.look.styleLabel"),
+              t("settings.look.styleLine"),
+              (s) => this.drawStyle(s),
+              ["look", "style", "theme"],
+            ),
+            "style",
+          ),
+          this.art(
+            drawnRow(
+              t("settings.look.paletteLabel"),
+              t("settings.look.paletteLine"),
+              (s) => this.drawPalette(s),
+              ["look", "colours", "colors", "palette", "theme"],
+            ),
+            "palette",
+          ),
+          this.art(
+            toggle("simpleLook", t("settings.simpleLook.name"), t("settings.simpleLook.line"), [
+              "simple",
+              "look",
+              "hide",
+              "sidebar",
+              "ribbon",
+            ]),
+            "simpleLook",
+          ),
+          this.tile(
+            toggle(
+              "gestureHints",
+              t("settings.gestureHints.name"),
+              t("settings.gestureHints.line"),
+              ["hint", "tip", "suggest", "gesture"],
+            ),
+            "lightbulb",
+          ),
+          this.art(
+            dropdown(
+              "checkForUpdates",
+              t("settings.updates.name"),
+              t("settings.updates.line"),
+              updateChoices(),
+              ["check for updates", "new version", "release", "notification", "reminder"],
+            ),
+            "updates",
+          ),
+        ],
       ],
-      () => [
-        {
-          text: t("settings.writing.status", {
-            tool: toolNames()[settings.defaultTool] ?? toolNames().pen,
-            width: defaultWidthText(settings.defaultTool, settings.defaultSize),
-          }),
-        },
-        { color: settings.defaultColor },
-      ],
-    );
+    ]);
   }
 
+  /** The pens, the gestures, the stylus, and the colours of a new note. */
+  private writingGroups(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    return this.sectionGroups("writing", [
+      [
+        "pens",
+        t("settings.writing.pensHeading"),
+        [
+          this.art(
+            drawnRow(
+              t("settings.startWith.name"),
+              t("settings.startWith.line"),
+              (s) => this.drawStartWith(s),
+              [
+                "default tool",
+                "default stroke size",
+                "pen size",
+                "line width",
+                "default ink color",
+                "pen color",
+              ],
+            ),
+            "startWith",
+          ),
+          this.tile(
+            drawnRow(
+              t("settings.savedPens.name"),
+              t("settings.savedPens.line"),
+              (s) => this.drawSavedPensRow(s),
+              ["favorite pens", "presets", "number key", "add pen", "new pen", "restore defaults"],
+            ),
+            "pencil-line",
+          ),
+          ...savedPensOf(settings.savedPens).map((pen, index) => ({
+            // Two pens can read the same: Obsidian keys a row by this.
+            id: `saved-pen-${index}`,
+            ...drawnRow(savedPenLabel(pen), "", (s) => this.drawSavedPen(s, pen, index), [
+              "saved pen",
+              "preset",
+              "edit pen",
+              "delete pen",
+            ]),
+          })),
+        ],
+      ],
+      [
+        "gestures",
+        t("settings.writing.gesturesHeading"),
+        [
+          this.art(
+            toggle(
+              "fingerTapUndo",
+              t("settings.fingerTapUndo.name"),
+              t("settings.fingerTapUndo.desc"),
+              ["undo", "redo", "gesture", "fingers", "tap"],
+            ),
+            "undo",
+          ),
+          this.art(
+            toggle(
+              "lassoTouches",
+              t("settings.lassoTouches.name"),
+              t("settings.lassoTouches.line"),
+              ["lasso", "select", "selection", "notability"],
+            ),
+            "lasso",
+          ),
+          this.art(
+            toggle(
+              "textDragSize",
+              t("settings.textDragSize.name"),
+              t("settings.textDragSize.line"),
+              ["text", "text box", "size", "drag"],
+            ),
+            "textDrag",
+          ),
+        ],
+      ],
+      [
+        "stylus",
+        t("settings.writing.stylusHeading"),
+        [
+          this.art(
+            drawnRow(
+              t("settings.barrel.name"),
+              Platform.isIosApp ? t("settings.barrel.line") : t("settings.barrel.bothLine"),
+              (s) => this.drawSideButton(s),
+              [
+                "barrel button",
+                "pen tablet",
+                "wacom",
+                "stylus",
+                "side button click",
+                "barrel click",
+                "s pen",
+                "pen menu",
+                "eraser",
+              ],
+            ),
+            "barrel",
+          ),
+          this.art(
+            toggle("pressureWidth", t("settings.pressure.name"), t("settings.pressure.line"), [
+              "pressure sensitivity",
+              "stylus",
+              "Apple Pencil",
+              "fountain pen",
+              "brush pen",
+            ]),
+            "pressure",
+          ),
+          callout(callouts().pressure, () => settings.pressureWidth),
+          this.art(
+            toggle("pencilTilt", t("settings.pencilTilt.name"), t("settings.pencilTilt.line"), [
+              "tilt",
+              "shading",
+              "Apple Pencil",
+              "stylus",
+              "brush pen",
+            ]),
+            "tilt",
+          ),
+          {
+            ...this.art(
+              dropdown(
+                "penCursor",
+                t("settings.penCursor.name"),
+                t("settings.penCursor.line"),
+                penCursorNames(),
+                ["cursor", "pointer", "crosshair"],
+              ),
+              "cursor",
+            ),
+            visible: !Platform.isMobile,
+          },
+        ],
+      ],
+      [
+        "colours",
+        t("settings.writing.coloursHeading"),
+        [
+          this.art(
+            drawnRow(
+              t("settings.customColors.name"),
+              t("settings.customColors.line"),
+              (s) => this.drawCustomColors(s),
+              ["palette"],
+            ),
+            "customColors",
+          ),
+        ],
+      ],
+    ]);
+  }
   /** "Start with": the tool, the width and the colour a note opens with, side by side. */
   private drawStartWith(setting: Setting): void {
     const settings = this.plugin.settings;
@@ -1164,7 +1347,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     mark.setAttribute("title", label);
     mark.createSpan({ cls: "goodobsidian-saved-pen-key", text: String(index + 1) });
     mark.append(penGlyph(pen.type, pen.color, doc));
-    const paper = mark.createSpan({ cls: "goodobsidian-size-preview goodobsidian-pen-sample" });
+    mark.createSpan({ cls: "goodobsidian-saved-pen-name", text: savedPenLabel(pen) });
+    removeOwn(setting.settingEl, "goodobsidian-pen-art");
+    const art = setting.settingEl.createDiv({ cls: "goodobsidian-mark goodobsidian-pen-art" });
+    setting.settingEl.prepend(art);
+    const paper = art.createSpan({ cls: "goodobsidian-size-preview goodobsidian-pen-sample" });
     paper.toggleClass("is-highlighter", pen.type === "highlighter");
     paper.toggleClass("is-light-ink", relativeLuminance(pen.color) > 0.75);
     paper.append(
@@ -1190,6 +1377,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         if (at !== undefined) this.openPenDialog(at);
       });
     }
+    art.addEventListener("click", () => this.openPenDialog(index));
     setting.addExtraButton((button) =>
       button
         .setIcon("trash-2")
@@ -1228,88 +1416,81 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /**
-   * The keys of the notebook, as a key map (FineNotes#25): the tools in
-   * view, each with the key that picks it, and a slot that records a new
-   * one; the pen tablet's side button under them, as it always was; the
-   * rest of the actions under More. Everything here but the side button is
-   * per device (`view/shortcut-store.ts`), so the laptop and the tablet keep
-   * their own.
+   * The keys of the notebook, as a key map (FineNotes#25): each action with
+   * the key that picks it and a slot that records a new one. Everything here
+   * is per device (`view/shortcut-store.ts`), so the laptop and the tablet
+   * keep their own.
    */
-  private shortcutsGroup(): SettingDefinitionItem {
-    const tools = SHORTCUT_ACTIONS.filter((action) => action.id.startsWith("tool."));
-    const rest = SHORTCUT_MORE_ORDER.flatMap((group) =>
-      SHORTCUT_ACTIONS.filter((action) => action.groupKey === group && !tools.includes(action)),
-    );
-    return this.section(
-      "shortcuts",
-      t("settings.shortcuts.heading"),
-      "keyboard",
+  private shortcutsGroups(): SettingDefinitionItem[] {
+    const isTool = (action: ShortcutAction): boolean => action.id.startsWith("tool.");
+    const inGroup = (group: ShortcutGroupKey, extra: (a: ShortcutAction) => boolean = () => true) =>
+      SHORTCUT_ACTIONS.filter((action) => action.groupKey === group && extra(action)).map((a) =>
+        this.shortcutRow(a),
+      );
+    return this.sectionGroups("shortcuts", [
       [
-        block(
-          (el) => this.drawShortcutConflicts(el),
-          () => this.plugin.shortcuts.table.conflicts.length > 0,
-        ),
-        ...tools.map((action) => this.shortcutRow(action)),
-        this.info(
-          dropdown("barrelButton", t("settings.barrel.name"), "", barrelNames(), [
-            "barrel button",
-            "pen tablet",
-            "wacom",
-            "stylus",
-          ]),
-          t("settings.barrel.info"),
-        ),
-        {
-          ...this.info(
-            dropdown("stylusButtonClick", t("settings.stylusClick.name"), "", stylusClickNames(), [
-              "barrel click",
-              "s pen",
-              "pen menu",
-              "eraser",
-              "stylus",
-            ]),
-            t("settings.stylusClick.info"),
+        "tools",
+        t("toolbar.shortcut.group.tools"),
+        [
+          block((el) =>
+            el.createDiv({
+              cls: "goodobsidian-models-intro",
+              text: t("settings.shortcuts.line"),
+            }),
           ),
-          // The Apple Pencil has no side button (`stylus-click.ts`).
-          visible: !Platform.isIosApp,
-        },
-        this.more("shortcuts", t("settings.shortcuts.more")),
-        ...rest.map((action) => this.shortcutRow(action)),
-        this.info(
-          drawnRow(t("settings.shortcuts.resetAll"), "", (s) => this.drawResetShortcuts(s), [
-            "restore keys",
-            "default keys",
-            "hotkeys",
-          ]),
-          t("settings.shortcuts.info"),
-        ),
+          block(
+            (el) => this.drawShortcutConflicts(el),
+            () => this.plugin.shortcuts.table.conflicts.length > 0,
+          ),
+          ...inGroup("toolbar.shortcut.group.tools", isTool),
+        ],
       ],
-      () => {
-        const table = this.plugin.shortcuts.table;
-        if (table.conflicts.length > 0) {
-          return [{ text: t("settings.shortcuts.clash"), tone: "failed" }];
-        }
-        return table.customized > 0
-          ? [{ text: t("settings.shortcuts.changed", { count: table.customized }) }]
-          : [];
-      },
-    );
+      [
+        "editing",
+        t("toolbar.shortcut.group.selectionEditing"),
+        inGroup("toolbar.shortcut.group.selectionEditing"),
+      ],
+      ["view", t("toolbar.shortcut.group.viewZoom"), inGroup("toolbar.shortcut.group.viewZoom")],
+      [
+        "toolbar",
+        t("settings.shortcuts.toolbarHeading"),
+        inGroup("toolbar.shortcut.group.tools", (action) => !isTool(action)),
+      ],
+      ["pens", t("toolbar.shortcut.group.savedPens"), inGroup("toolbar.shortcut.group.savedPens")],
+      [
+        "reset",
+        "",
+        [
+          this.tile(
+            drawnRow(
+              t("settings.shortcuts.resetAll"),
+              t("settings.shortcuts.resetLine"),
+              (s) => this.drawResetShortcuts(s),
+              ["restore keys", "default keys", "hotkeys"],
+            ),
+            "rotate-ccw",
+          ),
+        ],
+      ],
+    ]);
   }
 
-  /** One action's row: its name (and ⓘ), and the slot that shows and records its key. */
+  /** One action's row: its name, and the slot that shows and records its key. */
   private shortcutRow(action: ShortcutAction): SettingDefinition {
-    const row = drawnRow(
-      action.label,
-      "",
-      (setting) => this.drawShortcutRow(setting, action),
-      shortcutAliases(action),
+    return this.tile(
+      drawnRow(
+        action.label,
+        action.hint ?? "",
+        (setting) => this.drawShortcutRow(setting, action),
+        shortcutAliases(action),
+      ),
+      SHORTCUT_ICONS[action.id] ?? "keyboard",
     );
-    return action.hint ? this.info(row, action.hint) : row;
   }
 
   /**
-   * Two rows on one key: a one-line callout while it is true, its ⓘ naming
-   * the key and the rows. Neither row acts until one of them changes.
+   * Two rows on one key: a callout while it is true, naming the key and the
+   * rows. Neither row acts until one of them changes.
    */
   private drawShortcutConflicts(el: HTMLElement): void {
     const conflicts = this.plugin.shortcuts.table.conflicts;
@@ -1326,11 +1507,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       })
       .reduce((a, b) => t("settings.shortcuts.conflictJoin", { a, b }));
     const box = el.createDiv({ cls: "goodobsidian-callout" });
-    const line = box.createDiv({
-      cls: "goodobsidian-callout-title",
-      text: t("settings.shortcuts.conflict"),
+    box.createDiv({ cls: "goodobsidian-callout-title", text: t("settings.shortcuts.conflict") });
+    box.createDiv({
+      cls: "goodobsidian-callout-detail",
+      text: t("settings.shortcuts.conflictDetail", { conflicts: detail }),
     });
-    infoToggle(line, box, t("settings.shortcuts.conflictDetail", { conflicts: detail }));
   }
 
   /**
@@ -1469,215 +1650,247 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     return Platform.isMacOS || Platform.isIosApp;
   }
 
-  /** The paper, and where new notebooks go and how they are made. */
-  private pagesGroup(): SettingDefinitionItem {
-    const settings = this.plugin.settings;
-    return this.section(
-      "pages",
-      t("settings.pages.heading"),
-      "file-text",
+  /** The paper, where new notebooks go, and what Obsidian's file list shows. */
+  private pagesGroups(): SettingDefinitionItem[] {
+    return this.sectionGroups("pages", [
       [
-        this.info(
-          dropdown("pageAppearance", t("settings.pageAppearance.name"), "", pageAppearances(), [
-            "dark mode",
-            "night mode",
-            "invert",
-            "theme",
-          ]),
-          t("settings.pageAppearance.info"),
-        ),
-        drawnRow(
-          t("settings.paperWidth.name"),
-          t("settings.paperWidth.desc"),
-          (s) => this.drawPaperWidth(s),
-          ["canvas size", "page width"],
-        ),
-        this.more("pages", t("settings.pages.more")),
-        this.info(
-          drawnRow(t("settings.notebookFolder.name"), "", (s) => this.drawNotebookFolder(s), [
-            "default folder for new notebooks",
-            "folder",
-            "location",
-            "new notebook",
-            "new page",
-          ]),
-          t("settings.notebookFolder.info"),
-        ),
-        // Shortcuts exist on Apple devices only.
-        ...(this.apple
-          ? [
-              this.info(
-                drawnRow(t("settings.shortcutsApp.name"), "", (s) => this.drawShortcutLinks(s), [
-                  "shortcuts",
-                  "share sheet",
-                  "home screen",
-                  "pdf",
-                  "inbox",
-                ]),
-                t("settings.shortcutsApp.info"),
-              ),
-            ]
-          : []),
-        this.info(
-          toggle("notebookOwnFolder", t("settings.notebookOwnFolder.name"), "", [
-            "folder",
-            "own folder",
-            "new notebook",
-            "attachments",
-          ]),
-          t("settings.notebookOwnFolder.info"),
-        ),
-        this.info(
-          controlRow(
-            t("settings.stickerFolder.name"),
-            "",
-            { type: "text", key: "stickerFolder", placeholder: DEFAULT_STICKER_FOLDER },
-            ["sticker", "collection", "folder"],
+        "paper",
+        t("settings.pages.paperHeading"),
+        [
+          this.art(
+            dropdown(
+              "pageAppearance",
+              t("settings.pageAppearance.name"),
+              t("settings.pageAppearance.line"),
+              pageAppearances(),
+              ["dark mode", "night mode", "invert", "theme"],
+            ),
+            "pageAppearance",
           ),
-          t("settings.stickerFolder.info"),
-        ),
-        this.info(
-          controlRow(
-            t("settings.templateFolder.name"),
-            "",
-            { type: "text", key: "templateFolder", placeholder: DEFAULT_TEMPLATE_FOLDER },
-            ["template", "folder", "share"],
+          this.art(
+            drawnRow(
+              t("settings.paperWidth.name"),
+              t("settings.paperWidth.desc"),
+              (s) => this.drawPaperWidth(s),
+              ["canvas size", "page width"],
+            ),
+            "paperWidth",
           ),
-          t("settings.templateFolder.info"),
-        ),
-        this.info(
-          controlRow(
-            t("settings.templateGallery.name"),
-            "",
-            {
-              type: "text",
-              key: "templateGalleryUrl",
-              placeholder: t("settings.templateGallery.placeholder"),
-            },
-            ["template", "gallery", "community", "share"],
-          ),
-          t("settings.templateGallery.info"),
-        ),
-        this.info(
-          toggle("showNewNotebookInContextMenu", t("settings.newNotebookContextMenu.name"), "", [
-            "context menu",
-            "file explorer",
-            "new notebook",
-          ]),
-          t("settings.newNotebookContextMenu.info"),
-        ),
-        this.info(
-          toggle("showNewNotebookInExplorer", t("settings.libraryExplorer.name"), "", [
-            "toolbar",
-            "file explorer",
-            "library",
-            "new notebook",
-          ]),
-          t("settings.libraryExplorer.info"),
-        ),
-        this.info(
-          toggle("folderNotebooks", t("settings.folderNotebooks.name"), "", [
-            "file explorer",
-            "folder",
-            "folder note",
-            "icons",
-          ]),
-          t("settings.folderNotebooks.info"),
-        ),
+        ],
       ],
-      () => [
-        {
-          text: t("settings.pages.status", {
-            appearance: pageAppearances()[settings.pageAppearance] ?? pageAppearances().light,
-            width: settings.paperWidth,
-          }),
-        },
+      [
+        "notebooks",
+        t("settings.pages.notebooksHeading"),
+        [
+          this.tile(
+            drawnRow(
+              t("settings.notebookFolder.name"),
+              t("settings.notebookFolder.line"),
+              (s) => this.drawNotebookFolder(s),
+              [
+                "default folder for new notebooks",
+                "folder",
+                "location",
+                "new notebook",
+                "new page",
+              ],
+            ),
+            "folder-input",
+          ),
+          this.art(
+            toggle(
+              "notebookOwnFolder",
+              t("settings.notebookOwnFolder.name"),
+              t("settings.notebookOwnFolder.line"),
+              ["folder", "own folder", "new notebook", "attachments"],
+            ),
+            "ownFolder",
+          ),
+          // Shortcuts exist on Apple devices only.
+          ...(this.apple
+            ? [
+                this.tile(
+                  drawnRow(
+                    t("settings.shortcutsApp.name"),
+                    t("settings.shortcutsApp.line"),
+                    (s) => this.drawShortcutLinks(s),
+                    ["shortcuts", "share sheet", "home screen", "pdf", "inbox"],
+                  ),
+                  "share",
+                ),
+              ]
+            : []),
+        ],
       ],
-    );
+      [
+        "explorer",
+        t("settings.pages.explorerHeading"),
+        [
+          this.art(
+            toggle(
+              "showNewNotebookInContextMenu",
+              t("settings.newNotebookContextMenu.name"),
+              t("settings.newNotebookContextMenu.line"),
+              ["context menu", "file explorer", "new notebook"],
+            ),
+            "contextMenu",
+          ),
+          this.art(
+            toggle(
+              "showNewNotebookInExplorer",
+              t("settings.libraryExplorer.name"),
+              t("settings.libraryExplorer.line"),
+              ["toolbar", "file explorer", "library", "new notebook"],
+            ),
+            "libraryButton",
+          ),
+          this.art(
+            toggle(
+              "folderNotebooks",
+              t("settings.folderNotebooks.name"),
+              t("settings.folderNotebooks.line"),
+              ["file explorer", "folder", "folder note", "icons"],
+            ),
+            "folderNotebooks",
+          ),
+        ],
+      ],
+    ]);
   }
 
-  /** Rendering, input and files: the switches most people never need. */
-  private advancedGroup(): SettingDefinitionItem {
+  /** Where FineNotes keeps what you add and make. */
+  private filesGroups(): SettingDefinitionItem[] {
     const settings = this.plugin.settings;
-    return this.section(
-      "advanced",
-      t("settings.advanced.heading"),
-      "sliders-horizontal",
+    // A field that left the tab stays while it holds a value of its own, so
+    // it can be cleared. Read once per build: a row that vanished while it
+    // was being typed in would take the keyboard with it.
+    const holds = (key: "transcriptsFolder" | "hwrModelPath"): boolean =>
+      (settings[key] ?? "").trim() !== "";
+    const folderIcons: Record<string, string> = {
+      imagesFolder: "images",
+      recordingsFolder: "audio-lines",
+      transcriptsFolder: "file-text",
+      chatsFolder: "messages-square",
+      exportsFolder: "file-output",
+    };
+    return this.sectionGroups("files", [
       [
-        this.info(
-          toggle("pressureWidth", t("settings.pressure.name"), "", [
-            "pressure sensitivity",
-            "stylus",
-            "Apple Pencil",
-            "fountain pen",
-            "brush pen",
-          ]),
-          t("settings.pressure.info"),
-        ),
-        callout(callouts().pressure, () => settings.pressureWidth),
-        this.info(
-          toggle("pencilTilt", t("settings.pencilTilt.name"), "", [
-            "tilt",
-            "shading",
-            "Apple Pencil",
-            "stylus",
-            "brush pen",
-          ]),
-          t("settings.pencilTilt.info"),
-        ),
-        this.info(
-          toggle("desynchronizedCanvas", t("settings.desynchronized.name"), "", [
-            "latency",
-            "glitch",
-            "artifacts",
-          ]),
-          t("settings.desynchronized.info"),
-        ),
-        this.info(
-          dropdown("checkForUpdates", t("settings.updates.name"), "", updateChoices(), [
-            "check for updates",
-            "new version",
-            "release",
-            "notification",
-            "reminder",
-          ]),
-          t("settings.updates.info"),
-        ),
-        this.info(
-          toggle("debugHud", t("settings.debugHud.name"), "", [
-            "diagnostics",
-            "HUD",
-            "troubleshooting",
-            "support",
-          ]),
-          t("settings.debugHud.info"),
-        ),
-        this.info(
-          controlRow(
-            t("settings.hwrModelFile.name"),
-            "",
-            { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
-            ["handwriting", "recognition", "model"],
+        "library",
+        t("settings.files.libraryHeading"),
+        [
+          this.tile(
+            controlRow(
+              t("settings.assetsFolder.name"),
+              t("settings.assetsFolder.line"),
+              { type: "text", key: "assetsFolder", placeholder: ASSETS_FOLDER },
+              [
+                "sticker",
+                "stickers folder",
+                "template",
+                "templates folder",
+                "collection",
+                "folder",
+              ],
+            ),
+            "folder-heart",
           ),
-          t("settings.hwrModelFile.info"),
+          this.tile(
+            {
+              ...controlRow(
+                t("settings.stickerFolder.name"),
+                t("settings.folders.ownLine"),
+                { type: "text", key: "stickerFolder", placeholder: DEFAULT_STICKER_FOLDER },
+                ["sticker", "collection", "folder"],
+              ),
+              visible: chosenFolder(settings.stickerFolder, "stickers") !== null,
+            },
+            "sticker",
+          ),
+          this.tile(
+            {
+              ...controlRow(
+                t("settings.templateFolder.name"),
+                t("settings.folders.ownLine"),
+                { type: "text", key: "templateFolder", placeholder: DEFAULT_TEMPLATE_FOLDER },
+                ["template", "folder", "share"],
+              ),
+              visible: chosenFolder(settings.templateFolder, "templates") !== null,
+            },
+            "layout-template",
+          ),
+          this.tile(
+            controlRow(
+              t("settings.templateGallery.name"),
+              t("settings.templateGallery.line"),
+              {
+                type: "text",
+                key: "templateGalleryUrl",
+                placeholder: t("settings.templateGallery.placeholder"),
+              },
+              ["template", "gallery", "community", "share"],
+            ),
+            "globe",
+          ),
+        ],
+      ],
+      [
+        "saved",
+        t("settings.files.savedHeading"),
+        folderRows().map(([key, name, desc, placeholder]) =>
+          this.tile(
+            {
+              ...controlRow(name, desc, { type: "text", key, placeholder }, [
+                "folder",
+                "attachments",
+                "where files are saved",
+                ...(key === "recordingsFolder" ? ["transcripts", "recording transcripts"] : []),
+              ]),
+              visible: key !== "transcriptsFolder" || holds("transcriptsFolder"),
+            },
+            folderIcons[key] ?? "folder",
+          ),
         ),
-        this.more("advanced", t("settings.advanced.more")),
-        ...folderRows().map(([key, name, desc, placeholder]) =>
-          this.info(
-            controlRow(name, "", { type: "text", key, placeholder }, [
-              "folder",
-              "attachments",
-              "where files are saved",
+      ],
+      [
+        "model",
+        t("settings.files.modelHeading"),
+        [
+          this.tile(
+            {
+              ...controlRow(
+                t("settings.hwrModelFile.name"),
+                t("settings.folders.ownLine"),
+                { type: "text", key: "hwrModelPath", placeholder: "FineNotes/finenotes-hwr.bin" },
+                ["handwriting", "recognition", "model"],
+              ),
+              visible: holds("hwrModelPath"),
+            },
+            "file-cog",
+          ),
+        ],
+      ],
+    ]);
+  }
+
+  /** The switch to reach for when strokes go missing or break. */
+  private troubleshootingGroups(): SettingDefinitionItem[] {
+    return this.sectionGroups("troubleshooting", [
+      [
+        "main",
+        "",
+        [
+          this.art(
+            toggle("debugHud", t("settings.debugHud.name"), t("settings.debugHud.line"), [
+              "diagnostics",
+              "HUD",
+              "troubleshooting",
+              "support",
             ]),
-            t("settings.folders.info", { desc, note: t("settings.folders.note") }),
+            "debugHud",
           ),
-        ),
+        ],
       ],
-      () => [
-        ...(settings.pressureWidth ? [{ text: t("settings.advanced.pressureOn") }] : []),
-        ...(settings.pencilTilt ? [{ text: t("settings.advanced.tiltOn") }] : []),
-      ],
-    );
+    ]);
   }
 
   /**
@@ -1685,21 +1898,17 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * changing one rebuilds them (`changesTabLayout`). The endpoint URL is
    * read on every visibility check, as it changes while being typed.
    */
-  private aiGroup(): SettingDefinitionItem {
+  private aiGroups(): SettingDefinitionItem[] {
     const { settings } = this.plugin;
     const providers: Record<string, string> = {};
     for (const id of this.plugin.providers.keys()) providers[id] = providerLabel(id);
-    // Without a key the group is one row, opened on request, so it does not
-    // crowd the settings of anyone who reads handwriting on the device only.
-    const folded = (): boolean => aiKeyFolded(this.plugin.aiSetup());
-    const shown = (): boolean => this.aiOpen || !folded();
-    const fold = (item: SettingDefinition): SettingDefinition => {
-      const own = item.visible;
-      return {
-        ...item,
-        visible: () => shown() && (typeof own === "function" ? own() : own !== false),
-      };
-    };
+    // Cloud AI by itself, after Cloud AI: automatic recognition, as a choice.
+    const recognitionChoices: Record<string, string> = {};
+    for (const [id, label] of Object.entries(providers)) {
+      recognitionChoices[id] = label;
+      if (id === LLM_PROVIDER_ID)
+        recognitionChoices[AUTO_RECOGNITION] = t("settings.recognition.auto");
+    }
     const vendor = settings.llmVendor;
     const custom = VENDORS[vendor].userEndpoint;
     const imageVendor = resolveImageVendor(settings.imageVendor, vendor);
@@ -1713,172 +1922,179 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       : t("settings.ai.keyName", { service: VENDORS[vendor].label });
     const imageKeyName = t("settings.ai.imageKeyName", { service: VENDORS[imageVendor].label });
 
-    const rows: SettingDefinition[] = [
-      this.info(
-        dropdown("llmVendor", t("settings.ai.service.name"), "", VENDOR_LABELS, [
-          "Anthropic",
-          "Claude",
-          "OpenAI",
-          "GPT",
-          "Gemini",
-          "OpenRouter",
-          "Cloud AI",
-        ]),
-        t("settings.ai.service.info"),
-      ),
-      this.info(
-        drawnRow(
-          t("settings.ai.endpointUrl.name"),
-          "",
-          (s) => this.drawEndpointUrl(s),
-          ["self-hosted", "local server"],
-          usingEndpoint,
-        ),
-        t("settings.ai.endpointUrl.info"),
-      ),
-      callout(callouts().incompleteUrl, endpointShows("incomplete")),
-      callout(callouts().plainHttp, endpointShows("plain-http")),
-      this.info(
-        drawnRow(
-          t("settings.openRouter.name"),
-          "",
-          (s) => this.drawOpenRouterConnect(s),
-          undefined,
-          () => VENDORS[settings.llmVendor].oauthConnect,
-        ),
-        t("settings.openRouter.info"),
-      ),
-      this.info(
-        controlRow(
-          t("settings.aiModel.name"),
-          t("settings.ai.empty", { model: DEFAULT_MODELS[vendor] }),
-          {
-            type: "text",
-            key: "llmModel",
-            placeholder: DEFAULT_MODELS[vendor],
-          },
-        ),
-        t("settings.aiModel.info", { model: DEFAULT_MODELS[vendor] }),
-      ),
-      this.info(
-        drawnRow(keyName, "", (s) => this.renderKeyRow(s, vendor), ["token", "secret", "API key"]),
-        this.keyDesc(vendor, "text"),
-      ),
-      callout(callouts().noKeychain, !this.plugin.keys.secure),
-      this.info(
-        dropdown("recognitionProviderId", t("settings.recognition.name"), "", providers, [
-          "OCR",
-          "handwriting to text",
-        ]),
-        t("settings.recognition.info"),
-      ),
-      {
-        ...this.info(
-          toggle("autoRecognize", t("settings.autoRecognize.name"), "", ["auto recognition"]),
-          t("settings.autoRecognize.info"),
-        ),
-        visible: () => settings.recognitionProviderId === LLM_PROVIDER_ID,
-      },
-      // OpenRouter's providers and pictures are the AI rows fewest people change.
-      this.more(
-        "ai",
-        vendor === "openrouter" ? t("settings.ai.more.openrouter") : t("settings.ai.more.other"),
-      ),
-      this.info(
-        toggle("askAttachPage", t("settings.askAttachPage.name"), "", [
-          "attach page",
-          "current page",
-          "Ask AI",
-          "chat",
-        ]),
-        t("settings.askAttachPage.info"),
-      ),
-      {
-        ...this.info(
-          toggle("openRouterSkipCompressed", t("settings.openRouterSkipCompressed.name"), "", [
-            "provider",
-            "quantization",
-            "fp4",
-            "fp8",
-            "OpenRouter",
-          ]),
-          t("settings.openRouterSkipCompressed.info"),
-        ),
-        visible: () => settings.llmVendor === "openrouter",
-      },
-      this.info(
-        dropdown("imageVendor", t("settings.imageVendor.name"), "", imageVendorLabels(), [
-          "generate image",
-          "picture",
-          "DALL-E",
-          "GPT Image",
-          "Nano Banana",
-        ]),
-        t("settings.imageVendor.info"),
-      ),
-      callout({ title: `${imageUnsupportedReason(imageVendor)}.` }, !makesImages),
-      {
-        ...controlRow(
-          t("settings.imageModel.name"),
-          makesImages ? t("settings.ai.empty", { model: imageModel }) : "",
-          {
-            type: "text",
-            key: "imageModel",
-            placeholder: imageModel,
-          },
-        ),
-        visible: makesImages,
-      },
-      this.info(
-        drawnRow(
-          imageKeyName,
-          "",
-          (s) => this.renderKeyRow(s, imageVendor),
-          ["image key"],
-          makesImages && imageVendor !== vendor,
-        ),
-        this.keyDesc(imageVendor, "image"),
-      ),
-    ];
-    return this.section(
-      "ai",
-      t("settings.ai.heading"),
-      "sparkles",
+    return this.sectionGroups("ai", [
       [
-        ...this.handwritingRows(),
-        drawnRow(
-          t("settings.ai.setUp.name"),
-          t("settings.ai.setUp.desc"),
-          (setting) => this.drawAiFold(setting),
-          ["API key", "AI", "transcribe"],
-          folded,
-        ),
-        ...rows.map(fold),
+        "service",
+        t("settings.ai.serviceHeading"),
+        [
+          this.tile(
+            dropdown(
+              "llmVendor",
+              t("settings.ai.service.name"),
+              t("settings.ai.service.line"),
+              VENDOR_LABELS,
+              [
+                "Anthropic",
+                "Claude",
+                "OpenAI",
+                "GPT",
+                "Gemini",
+                "OpenRouter",
+                "Cloud AI",
+                "AI",
+                "transcribe",
+              ],
+            ),
+            "bot",
+          ),
+          this.tile(
+            drawnRow(
+              t("settings.ai.endpointUrl.name"),
+              t("settings.ai.endpointUrl.line"),
+              (s) => this.drawEndpointUrl(s),
+              ["self-hosted", "local server"],
+              usingEndpoint,
+            ),
+            "server",
+          ),
+          callout(callouts().incompleteUrl, endpointShows("incomplete")),
+          callout(callouts().plainHttp, endpointShows("plain-http")),
+          this.tile(
+            drawnRow(
+              t("settings.openRouter.name"),
+              t("settings.openRouter.line"),
+              (s) => this.drawOpenRouterConnect(s),
+              undefined,
+              () => VENDORS[settings.llmVendor].oauthConnect,
+            ),
+            "plug",
+          ),
+          this.tile(
+            controlRow(
+              t("settings.aiModel.name"),
+              t("settings.ai.empty", { model: DEFAULT_MODELS[vendor] }),
+              {
+                type: "text",
+                key: "llmModel",
+                placeholder: DEFAULT_MODELS[vendor],
+              },
+            ),
+            "cpu",
+          ),
+          this.tile(
+            drawnRow(keyName, this.keyLine(vendor), (s) => this.renderKeyRow(s, vendor), [
+              "token",
+              "secret",
+              "API key",
+            ]),
+            "key-round",
+          ),
+          callout(callouts().noKeychain, !this.plugin.keys.secure),
+        ],
       ],
-      () => [
-        {
-          text: t("settings.ai.status", {
-            reader: readerNames()[handwritingReaderOf(settings, this.ownModelHere())],
-            service: folded() ? t("settings.ai.notSetUp") : VENDORS[settings.llmVendor].label,
-          }),
-        },
+      [
+        "transcribing",
+        t("settings.ai.transcribingHeading"),
+        [
+          this.art(
+            dropdown(
+              "recognitionProviderId",
+              t("settings.recognition.name"),
+              t("settings.recognition.line"),
+              recognitionChoices,
+              ["OCR", "handwriting to text", "auto recognition", "recognize automatically"],
+            ),
+            "autoRecognize",
+          ),
+        ],
       ],
-    );
+      [
+        "ask",
+        t("settings.ai.askHeading"),
+        [
+          this.art(
+            toggle(
+              "askAttachPage",
+              t("settings.askAttachPage.name"),
+              t("settings.askAttachPage.line"),
+              ["attach page", "current page", "Ask AI", "chat"],
+            ),
+            "askPage",
+          ),
+          {
+            ...this.tile(
+              toggle(
+                "openRouterSkipCompressed",
+                t("settings.openRouterSkipCompressed.name"),
+                t("settings.openRouterSkipCompressed.line"),
+                ["provider", "quantization", "fp4", "fp8", "OpenRouter"],
+              ),
+              "minimize-2",
+            ),
+            visible: () => settings.llmVendor === "openrouter",
+          },
+        ],
+      ],
+      [
+        "pictures",
+        t("settings.ai.picturesHeading"),
+        [
+          this.tile(
+            dropdown(
+              "imageVendor",
+              t("settings.imageVendor.name"),
+              t("settings.imageVendor.line"),
+              imageVendorLabels(),
+              ["generate image", "picture", "DALL-E", "GPT Image", "Nano Banana"],
+            ),
+            "image",
+          ),
+          callout({ title: `${imageUnsupportedReason(imageVendor)}.` }, !makesImages),
+          this.tile(
+            {
+              ...controlRow(
+                t("settings.imageModel.name"),
+                makesImages ? t("settings.ai.empty", { model: imageModel }) : "",
+                {
+                  type: "text",
+                  key: "imageModel",
+                  placeholder: imageModel,
+                },
+              ),
+              visible: makesImages,
+            },
+            "cpu",
+          ),
+          this.tile(
+            drawnRow(
+              imageKeyName,
+              this.keyLine(imageVendor),
+              (s) => this.renderKeyRow(s, imageVendor),
+              ["image key"],
+              makesImages && imageVendor !== vendor,
+            ),
+            "key-round",
+          ),
+        ],
+      ],
+    ]);
   }
-
   /** Whether a model learned from the user's handwriting is on this device. */
   private ownModelHere(): boolean {
     return this.learningState?.files.current ?? false;
   }
 
   /**
-   * Reading handwriting on this device, at the head of "AI and handwriting":
-   * which model reads (none, Grape, or the one learned from the user's own
-   * writing: one choice where there were two switches in two places), and
-   * while one does, what else reads with it. The models themselves are
-   * downloaded and managed under "Models on this device".
+   * Reading handwriting on this device, which model reads (none, Grape, or
+   * the one learned from the user's own writing: one choice where there were
+   * two switches in two places), and while one does, what else reads with
+   * it; then the models themselves: the voice model (Whisper), Grape
+   * (the handwriting recognizer model), the model learned from the user's
+   * handwriting and the OCR reader, each one row with its state after a dot,
+   * Download while it is missing and the rest in its ⋯ menu. A model a
+   * feature registered that is none of these is listed at the end.
    */
-  private handwritingRows(): SettingDefinition[] {
+  private readingGroups(): SettingDefinitionItem[] {
     const { settings } = this.plugin;
     const reading = (): boolean => settings.handwritingOnDevice !== false;
     // Whether "Your model" is offered depends on the files: the tab is
@@ -1889,80 +2105,205 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     const readers = readerNames();
     const choices: Record<string, string> = { off: readers.off, grape: readers.grape };
     if (this.ownModelHere()) choices.mine = readers.mine;
-    return [
-      this.info(
-        // One choice stored as two switches: getControlValue and
-        // storeControlValue read and write both under this key.
-        controlRow(
-          t("settings.readWith.name"),
-          "",
-          { type: "dropdown", key: "handwritingOnDevice", options: choices },
-          [
-            "read handwriting on this device",
-            "read with my model",
-            "handwriting model",
-            "handwriting",
-            "recognition",
+    const grape = this.plugin.grape.model;
+    const speech = this.plugin.speech.store();
+    // The OCR models have their own rows below, not one row each here.
+    const ocrIds = new Set(OCR_TIERS.map((t) => t.asset.id));
+    const others = this.plugin.models
+      .all()
+      .filter((s) => s !== grape && s !== speech && !ocrIds.has(s.asset.id));
+    const mobile = Platform.isMobile;
+    const voice = speechModelInfo(effectiveSpeechModel(settings.speechModel, mobile)).label;
+    const ocrTier = effectiveOcrTier(settings.ocrModel, mobile);
+    const ocrStore = this.plugin.models.get(ocrTier.asset.id);
+    return this.sectionGroups("reading", [
+      [
+        "handwriting",
+        t("settings.reading.handwritingHeading"),
+        [
+          this.art(
+            // One choice stored as two switches: getControlValue and
+            // storeControlValue read and write both under this key.
+            controlRow(
+              t("settings.readWith.name"),
+              t("settings.readWith.line"),
+              { type: "dropdown", key: "handwritingOnDevice", options: choices },
+              [
+                "read handwriting on this device",
+                "read with my model",
+                "handwriting model",
+                "handwriting",
+                "recognition",
+                "grape",
+                "learned",
+                "search",
+                "offline",
+              ],
+            ),
+            "readWith",
+          ),
+          {
+            ...this.art(
+              toggle(
+                "checkHandwrittenWords",
+                t("settings.checkWords.name"),
+                t("settings.checkWords.line"),
+                ["handwriting", "spelling", "correct", "misread", "underline"],
+              ),
+              "underline",
+            ),
+            visible: reading,
+          },
+          {
+            ...this.art(
+              toggle("calcNotes", t("settings.calcNotes.name"), t("settings.calcNotes.line"), [
+                "calculation notes",
+                "calculate",
+                "calculator",
+                "maths",
+                "math",
+                "sum",
+                "equals",
+                "answer",
+              ]),
+              "calc",
+            ),
+            visible: reading,
+          },
+          this.tile(
+            drawnRow(
+              t("settings.learn.name"),
+              "",
+              (s) => this.drawLearnRow(s),
+              [
+                "write the practice sheets",
+                "learn my handwriting",
+                "handwriting",
+                "practice",
+                "sheet",
+                "learn",
+                "personal",
+                "fine-tune",
+                "recognition",
+              ],
+              reading,
+            ),
+            "graduation-cap",
+          ),
+        ],
+      ],
+      [
+        "models",
+        t("settings.models.heading"),
+        [
+          block((el) =>
+            el.createDiv({
+              cls: "goodobsidian-models-intro",
+              text: t("settings.models.intro"),
+            }),
+          ),
+          this.tile(
+            drawnRow(
+              t("settings.models.voiceRow", { voice }),
+              "",
+              (s) => this.drawDownload(s, speech),
+              [
+                "voice model",
+                "audio",
+                "speech",
+                "whisper",
+                "transcribe",
+                "model",
+                "download",
+                "offline",
+              ],
+            ),
+            "mic",
+          ),
+          this.tile(
+            drawnRow(
+              t("settings.speech.name"),
+              t("settings.speech.line"),
+              (s) => this.drawSpeechChoices(s),
+              [
+                "voice model size",
+                "spoken language",
+                "audio",
+                "speech",
+                "whisper",
+                "transcribe",
+                "offline",
+              ],
+            ),
+            "audio-lines",
+          ),
+          this.tile(
+            drawnRow(
+              t("settings.models.grapeRow", { version: grape.asset.version }),
+              "",
+              (s) => this.drawDownload(s, grape),
+              ["handwriting model", "grape", "recognition", "model", "download", "offline"],
+            ),
             "grape",
-            "learned",
-            "search",
-            "offline",
-          ],
-        ),
-        t("settings.readWith.info"),
-      ),
-      {
-        ...this.info(
-          toggle("checkHandwrittenWords", t("settings.checkWords.name"), "", [
-            "handwriting",
-            "spelling",
-            "correct",
-            "misread",
-            "underline",
-          ]),
-          t("settings.checkWords.info"),
-        ),
-        visible: reading,
-      },
-      {
-        ...this.info(
-          toggle("calcNotes", t("settings.calcNotes.name"), "", [
-            "calculation notes",
-            "calculate",
-            "calculator",
-            "maths",
-            "math",
-            "sum",
-            "equals",
-            "answer",
-          ]),
-          t("settings.calcNotes.info"),
-        ),
-        visible: reading,
-      },
-      this.info(
-        drawnRow(
-          t("settings.learn.name"),
-          "",
-          (s) => this.drawLearnRow(s),
-          [
-            "write the practice sheets",
-            "learn my handwriting",
-            "handwriting",
-            "practice",
-            "sheet",
-            "learn",
-            "personal",
-            "fine-tune",
-            "recognition",
-          ],
-          reading,
-        ),
-        this.learnInfo(),
-      ),
-    ];
+          ),
+          this.tile(
+            drawnRow(
+              t("settings.models.learnedName"),
+              "",
+              (s) => this.drawLearnedModel(s),
+              [
+                "learned handwriting model",
+                "handwriting",
+                "learned",
+                "personal",
+                "fine-tune",
+                "model",
+                "go back to the previous learned model",
+                "undo",
+                "previous",
+                "delete my learned model",
+                "remove",
+              ],
+              reading,
+            ),
+            "signature",
+          ),
+          ...(ocrStore
+            ? [
+                this.tile(
+                  drawnRow(
+                    t("settings.models.ocrRow", { tier: ocrTier.label }),
+                    "",
+                    (s) => {
+                      this.drawDownload(s, ocrStore);
+                      s.addExtraButton((b) =>
+                        b
+                          .setIcon("trash-2")
+                          .setTooltip(t("settings.models.removeOtherOcr"))
+                          .onClick(() => void this.plugin.removeOtherOcrModels()),
+                      );
+                    },
+                    ["ocr", "scan", "scanned", "model", "fast", "accurate", "download", "offline"],
+                  ),
+                  "scan-text",
+                ),
+              ]
+            : []),
+          ...others.map((store) =>
+            this.tile(
+              drawnRow(store.asset.label, "", (s) => this.drawDownload(s, store), [
+                "model",
+                "download",
+                "offline",
+                store.asset.id,
+              ]),
+              "box",
+            ),
+          ),
+        ],
+      ],
+    ]);
   }
-
   /** Ideas, bugs, support and FineNotes' accounts: one line of links at the very end. */
   private footerRow(): SettingDefinition {
     return {
@@ -2024,173 +2365,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     };
   }
 
-  // --- Models on this device ---------------------------------------------------
-
-  /**
-   * "Models on this device": the voice model (Whisper), Grape (the
-   * handwriting recognizer model) and the model learned from the user's
-   * handwriting, each one row with its state after a dot, Download while it
-   * is missing and the rest in its ⋯ menu; what each is for is behind its
-   * ⓘ. The OCR reader is one row for the chosen model, with its size choice
-   * under it, shown while OCR is on. A model a feature registered that is none
-   * of these is listed at the end.
-   */
-  private modelsGroup(): SettingDefinitionItem {
-    const { settings } = this.plugin;
-    const grape = this.plugin.grape.model;
-    const speech = this.plugin.speech.store();
-    // The OCR models have their own rows below, not one row each here.
-    const ocrIds = new Set(OCR_TIERS.map((t) => t.asset.id));
-    const others = this.plugin.models
-      .all()
-      .filter((s) => s !== grape && s !== speech && !ocrIds.has(s.asset.id));
-    const reading = (): boolean => settings.handwritingOnDevice !== false;
-    const learning = this.learningState;
-    const record = learnedRecord(settings, this.plugin.grape.id);
-    const onDevice = learning?.files.current ?? false;
-    const mobile = Platform.isMobile;
-    const download = t("settings.models.downloadsOnce");
-    const purpose = modelPurpose();
-    const voice = speechModelInfo(effectiveSpeechModel(settings.speechModel, mobile)).label;
-    const ocrTier = effectiveOcrTier(settings.ocrModel, mobile);
-    const ocrStore = this.plugin.models.get(ocrTier.asset.id);
-    return this.section(
-      "on-device",
-      t("settings.models.heading"),
-      "cpu",
-      [
-        block((el) =>
-          el.createDiv({
-            cls: "goodobsidian-models-intro",
-            text: t("settings.models.intro"),
-          }),
-        ),
-        this.info(
-          drawnRow(
-            t("settings.models.voiceRow", { voice }),
-            "",
-            (s) => this.drawDownload(s, speech),
-            [
-              "voice model",
-              "audio",
-              "speech",
-              "whisper",
-              "transcribe",
-              "model",
-              "download",
-              "offline",
-            ],
-          ),
-          t("settings.models.withDownload", { purpose: purpose.voice, download }),
-        ),
-        this.info(
-          drawnRow(t("settings.speech.name"), "", (s) => this.drawSpeechChoices(s), [
-            "voice model size",
-            "spoken language",
-            "audio",
-            "speech",
-            "whisper",
-            "transcribe",
-            "offline",
-          ]),
-          mobile ? t("settings.speech.info.mobile") : t("settings.speech.info.desktop"),
-        ),
-        this.info(
-          drawnRow(
-            t("settings.models.grapeRow", { version: grape.asset.version }),
-            "",
-            (s) => this.drawDownload(s, grape),
-            ["handwriting model", "grape", "recognition", "model", "download", "offline"],
-          ),
-          t("settings.models.withDownload", { purpose: purpose.grape, download }),
-        ),
-        this.info(
-          drawnRow(
-            t("settings.models.learnedName"),
-            "",
-            (s) => this.drawLearnedModel(s),
-            [
-              "learned handwriting model",
-              "handwriting",
-              "learned",
-              "personal",
-              "fine-tune",
-              "model",
-              "go back to the previous learned model",
-              "undo",
-              "previous",
-              "delete my learned model",
-              "remove",
-            ],
-            reading,
-          ),
-          [
-            purpose.learned,
-            learnedStatus(record, onDevice, settings.useLearnedHandwriting !== false).text,
-            record && onDevice ? learnedResult(record) : "",
-            learning?.files.previous ? undoText(settings[previousKey(this.plugin.grape.id)]) : "",
-          ]
-            .filter(Boolean)
-            .join(" "),
-        ),
-        ...(ocrStore
-          ? [
-              this.info(
-                drawnRow(
-                  t("settings.models.ocrRow", { tier: ocrTier.label }),
-                  "",
-                  (s) => {
-                    this.drawDownload(s, ocrStore);
-                    s.addExtraButton((b) =>
-                      b
-                        .setIcon("trash-2")
-                        .setTooltip(t("settings.models.removeOtherOcr"))
-                        .onClick(() => void this.plugin.removeOtherOcrModels()),
-                    );
-                  },
-                  ["ocr", "scan", "scanned", "model", "fast", "accurate", "download", "offline"],
-                ),
-                t("settings.models.withDownload", { purpose: purpose.ocr, download }),
-              ),
-            ]
-          : []),
-        ...others.map((store) =>
-          this.info(
-            drawnRow(store.asset.label, "", (s) => this.drawDownload(s, store), [
-              "model",
-              "download",
-              "offline",
-              store.asset.id,
-            ]),
-            store.asset.purpose,
-          ),
-        ),
-      ],
-      () => [
-        { text: t("settings.models.statusVoice"), tone: stateTone(speech.state) },
-        {
-          text: t("settings.models.statusHandwriting"),
-          tone: reading() ? stateTone(grape.state) : "off",
-        },
-      ],
-    );
-  }
-
-  /** "Learn your handwriting"'s ⓘ: what learning needs, what there is, what comes next. */
-  private learnInfo(): string {
-    const learning = this.learningState;
-    const record = learnedRecord(this.plugin.settings, this.plugin.grape.id);
-    const answeredAt = learning?.answeredAt ?? [];
-    return learnInfoText({
-      sheets: learning?.sheets ?? [],
-      sets: PRACTICE_SETS.length,
-      corrections: answeredAt.length,
-      fresh: newCorrections(answeredAt, record),
-      model: record,
-      onDevice: learning?.files.current ?? false,
-    });
-  }
-
   /** The voice model's size and spoken language, side by side. */
   private drawSpeechChoices(setting: Setting): void {
     const settings = this.plugin.settings;
@@ -2211,31 +2385,60 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     });
   }
 
-  /** The chrome's style and colours, side by side (`model/look.ts`). */
-  private drawLook(setting: Setting): void {
+  /**
+   * The stylus side button: what it does while the pen writes, and what a
+   * click of it does with the pen held above the page. The Apple Pencil has
+   * no side button to click (`stylus-click.ts`), so an iPhone or iPad gets
+   * the first only.
+   */
+  private drawSideButton(setting: Setting): void {
     const settings = this.plugin.settings;
-    const wear = async (): Promise<void> => {
-      this.plugin.applyLook();
-      await this.plugin.saveSettings();
-    };
+    setting.addDropdown((d) => {
+      for (const [id, name] of Object.entries(barrelNames())) d.addOption(id, name);
+      d.selectEl.setAttribute("aria-label", t("settings.barrel.whileWriting"));
+      d.setValue(String(shownValue(settings, "barrelButton")));
+      d.onChange((value) => void this.setControlValue("barrelButton", value));
+    });
+    if (Platform.isIosApp) return;
+    setting.addDropdown((d) => {
+      for (const [id, name] of Object.entries(stylusClickNames())) d.addOption(id, name);
+      d.selectEl.setAttribute("aria-label", t("settings.stylusClick.name"));
+      d.setValue(String(shownValue(settings, "stylusButtonClick")));
+      d.onChange((value) => void this.setControlValue("stylusButtonClick", value));
+    });
+  }
+
+  /** The chrome's style and colours (`model/look.ts`). */
+  private drawStyle(setting: Setting): void {
+    const settings = this.plugin.settings;
     setting.addDropdown((d) => {
       for (const [id, name] of Object.entries(lookStyleNames())) d.addOption(id, name);
       d.selectEl.setAttribute("aria-label", t("settings.look.styleLabel"));
       d.setValue(lookStyleOf(settings.lookStyle));
       d.onChange((value) => {
         settings.lookStyle = value;
-        void wear();
+        void this.wearLook();
       });
     });
+  }
+
+  private drawPalette(setting: Setting): void {
+    const settings = this.plugin.settings;
     setting.addDropdown((d) => {
       for (const [id, name] of Object.entries(lookPaletteNames())) d.addOption(id, name);
       d.selectEl.setAttribute("aria-label", t("settings.look.paletteLabel"));
       d.setValue(lookPaletteOf(settings.lookPalette));
       d.onChange((value) => {
         settings.lookPalette = value;
-        void wear();
+        void this.wearLook();
       });
     });
+  }
+
+  private async wearLook(): Promise<void> {
+    this.plugin.applyLook();
+    this.syncStatuses();
+    await this.plugin.saveSettings();
   }
 
   /** The interface language: stored, its table fetched, and the tab drawn in it. */
@@ -2383,7 +2586,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     this.shortcutRecorder?.cancel();
     this.shortcutRecorder = null;
     this.learningState = null;
-    this.moreOpen.clear();
+    // A narrow pane opens on the list the next time.
+    this.containerEl.removeClass("is-section-open");
     super.hide();
   }
 
@@ -2524,18 +2728,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   // --- Rows the tab draws itself ---------------------------------------------
 
-  /** Show or Hide: the AI group's rows, when no AI service is set up. */
-  private drawAiFold(setting: Setting): void {
-    setting.addButton((b) => {
-      b.setButtonText(this.aiOpen ? t("settings.ai.hide") : t("settings.ai.show"));
-      b.onClick(() => {
-        this.aiOpen = !this.aiOpen;
-        b.setButtonText(this.aiOpen ? t("settings.ai.hide") : t("settings.ai.show"));
-        this.refreshDomState();
-      });
-    });
-  }
-
   /**
    * Only hex colours are kept (`parseColorList`): the field is marked while it
    * holds anything else, and shows what was kept once it is left.
@@ -2551,6 +2743,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         const entries = typed.split(",").filter((part) => part.trim() !== "");
         text.inputEl.toggleClass("is-invalid", kept.length < entries.length);
         storeShownValue(this.plugin.settings, "customColors", typed);
+        this.syncStatuses();
         await this.plugin.saveSettings();
       });
       text.inputEl.addEventListener("blur", () => {
@@ -2644,21 +2837,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     });
   }
 
-  /** What a key row's ⓘ says about where the key lives and where it goes. */
-  private keyDesc(slot: LlmVendor, use: "text" | "image"): string {
-    if (VENDORS[slot].userEndpoint) {
-      return t("settings.key.endpointInfo");
-    }
-    const secure = this.plugin.keys.secure;
+  /** A key row's one line: where the key lives and where it goes. */
+  private keyLine(slot: LlmVendor): string {
+    if (VENDORS[slot].userEndpoint) return t("settings.key.endpointLine");
     const service = VENDORS[slot].label;
-    if (use === "image") {
-      return secure
-        ? t("settings.key.image.keychain", { service })
-        : t("settings.key.image.vault", { service });
-    }
-    return secure
-      ? t("settings.key.text.keychain", { service })
-      : t("settings.key.text.vault", { service });
+    return this.plugin.keys.secure
+      ? t("settings.key.keychainLine", { service })
+      : t("settings.key.vaultLine", { service });
   }
 
   /**

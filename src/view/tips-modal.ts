@@ -3,17 +3,27 @@
  * tips. Also shows an update's highlights, with the same pager.
  */
 
-import { type App, Modal, setIcon } from "obsidian";
+import { type App, Modal, Notice, Platform, setIcon } from "obsidian";
 import { t } from "../i18n/translate";
 import { TIP_COLLECTIONS, TIP_SECTIONS, type Tip, type TipCollection } from "../model/tips";
 import { tipScene } from "../model/tip-scenes";
 import { TipPad } from "./tip-pad";
 import { TipVisual } from "./tip-visual";
+import { featureById, featureLink } from "../model/feature-index";
+import { DialogKeyboard } from "./dialog-keyboard";
+import { type FeatureHost, featureControl, featureList } from "./feature-rows";
+
+/** Features a search inside Tips lists at most. */
+const TIPS_SEARCH_HITS = 12;
 
 export interface TipsActions {
   openTour: () => void;
   openChangelog: () => void;
   showNews: () => void;
+  /** The welcome dialog: the tour, importing notebooks, Simple look. */
+  showWelcome: () => void;
+  /** What a tip's own button, and a found feature's row, can do. */
+  features: FeatureHost;
 }
 
 /** What the pager shows: `title` over `tips`, opened at `index`. */
@@ -35,6 +45,8 @@ export class TipsModal extends Modal {
   /** The pager came from the collections, so its back arrow returns there. */
   private cameFromList = false;
   private stage: HTMLElement | null = null;
+  /** Keeps the search field above the iPad keyboard. */
+  private keyboard: DialogKeyboard | null = null;
 
   constructor(
     app: App,
@@ -59,6 +71,8 @@ export class TipsModal extends Modal {
   }
 
   override onClose(): void {
+    this.keyboard?.end();
+    this.keyboard = null;
     this.clearLive();
     this.contentEl.empty();
   }
@@ -79,8 +93,9 @@ export class TipsModal extends Modal {
     this.clearLive();
     this.page = null;
     this.titleEl.setText(t("notebooks.tips.title"));
-    const root = this.contentEl;
-    root.empty();
+    const top = this.contentEl;
+    top.empty();
+    const root = this.searchField(top);
     const byCell = new Map<Element, TipVisual>();
     this.observer =
       typeof IntersectionObserver === "undefined"
@@ -123,13 +138,23 @@ export class TipsModal extends Modal {
       this.close();
       this.actions.openTour();
     });
-    this.link(foot, t("notebooks.tips.whatsNew"), () => {
-      this.close();
-      this.actions.showNews();
-    });
     this.link(foot, t("notebooks.tips.allChanges"), () => {
       this.close();
       this.actions.openChangelog();
+    });
+  }
+
+  /** A pill beside the search field: an icon and its name; it closes Tips and runs. */
+  private quick(parent: HTMLElement, icon: string, text: string, run: () => void): void {
+    const button = parent.createEl("button", {
+      cls: "goodobsidian-tips-quick clickable-icon",
+      attr: { type: "button" },
+    });
+    setIcon(button.createSpan({ cls: "goodobsidian-tips-quick-icon" }), icon);
+    button.createSpan({ text });
+    button.addEventListener("click", () => {
+      this.close();
+      run();
     });
   }
 
@@ -167,7 +192,9 @@ export class TipsModal extends Modal {
     const words = pager.createDiv({ cls: "goodobsidian-tips-words" });
     words.createEl("h3", { text: t(tip.title) });
     words.createEl("p", { text: t(tip.body) });
-    if (tip.tryIt) this.tryButton(words, tip);
+    const acts = words.createDiv({ cls: "goodobsidian-tips-actions" });
+    if (tip.tryIt) this.tryButton(acts, tip);
+    this.featureButtons(acts, tip);
 
     const nav = pager.createDiv({ cls: "goodobsidian-tips-nav" });
     const back = this.navButton(nav, "chevron-left", t("notebooks.tips.previous"), () =>
@@ -196,6 +223,85 @@ export class TipsModal extends Modal {
       list.addEventListener("click", () => this.showCollections());
     }
     if (direction !== 0) this.slideIn(pager, direction);
+  }
+
+  /**
+   * The field above the collections: typing lists the features the words
+   * mean (tips and switches), in place of the collections. Returns where
+   * the collections go.
+   */
+  private searchField(top: HTMLElement): HTMLElement {
+    // Beside the field, where they are seen at once: what an update brought, and the welcome.
+    const head = top.createDiv({ cls: "goodobsidian-tips-head" });
+    const field = head.createDiv({ cls: "goodobsidian-tips-search" });
+    this.quick(head, "sparkles", t("notebooks.tips.whatsNew"), () => this.actions.showNews());
+    this.quick(head, "hand", t("notebooks.tips.welcome"), () => this.actions.showWelcome());
+    setIcon(field.createSpan(), "search");
+    const input = field.createEl("input", {
+      attr: {
+        type: "search",
+        placeholder: t("notebooks.features.search"),
+        "aria-label": t("notebooks.features.search"),
+      },
+    });
+    const found = top.createDiv({ cls: "goodobsidian-tips-found is-hidden" });
+    const browse = top.createDiv({ cls: "goodobsidian-tips-browse" });
+    input.addEventListener("input", () => {
+      const query = input.value.trim();
+      found.empty();
+      found.toggleClass("is-hidden", query === "");
+      browse.toggleClass("is-hidden", query !== "");
+      if (query === "") return;
+      featureList(found, query, this.actions.features, {
+        limit: TIPS_SEARCH_HITS,
+        askFor: true,
+        done: () => this.close(),
+      });
+    });
+    this.keyboard?.end();
+    this.keyboard = new DialogKeyboard(this.modalEl);
+    this.keyboard.start(input);
+    // Obsidian puts the cursor in a dialog's first field. With a keyboard that
+    // is "type to search"; on a tablet it would raise the keyboard over the tips.
+    if (Platform.isMobile) {
+      window.setTimeout(() => {
+        if (input.ownerDocument.activeElement === input) input.blur();
+      }, 0);
+    }
+    return browse;
+  }
+
+  /**
+   * A tip ends at its control: the switch that is its setting, or a button
+   * that takes you to it; and a link to the tip, for an answer elsewhere.
+   */
+  private featureButtons(parent: HTMLElement, tip: Tip): void {
+    const feature = featureById(tip.id);
+    if (!feature) return;
+    const action = feature.action;
+    if (action?.kind === "command") {
+      const show = parent.createEl("button", {
+        cls: "goodobsidian-tips-try clickable-icon",
+        text: t("notebooks.features.showMe"),
+        attr: { type: "button" },
+      });
+      show.addEventListener("click", () => {
+        this.close();
+        this.actions.features.runCommand(action.id);
+      });
+    } else if (action) {
+      featureControl(parent, feature, this.actions.features, undefined, true);
+    }
+    const link = parent.createEl("button", {
+      cls: "goodobsidian-tips-copy clickable-icon",
+      attr: { type: "button", "aria-label": t("notebooks.features.copyLink") },
+    });
+    setIcon(link, "link");
+    link.addEventListener("click", () => {
+      void navigator.clipboard
+        ?.writeText(featureLink(feature.id))
+        .then(() => new Notice(t("notebooks.features.linkCopied")));
+    });
   }
 
   private navButton(

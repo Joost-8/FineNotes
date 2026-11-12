@@ -41,6 +41,7 @@ import { renderColorMixer } from "./color-picker";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { mmStepper } from "./mm-stepper";
 import { t } from "../i18n/translate";
+import { sizeObserver, winOf } from "./host-window";
 
 export interface PaperDesignerOptions {
   /** The design to start from: a new one, or the one being edited. */
@@ -238,7 +239,7 @@ class PaperDesigner {
     this.observer =
       typeof ResizeObserver === "undefined"
         ? null
-        : new ResizeObserver((entries) => {
+        : sizeObserver(this.previewBox, (entries) => {
             if (!this.root.isConnected) {
               this.observer?.disconnect();
               return;
@@ -247,10 +248,10 @@ class PaperDesigner {
             const next = box ? `${Math.round(box.width)}x${Math.round(box.height)}` : "";
             if (next === room) return;
             room = next;
-            window.requestAnimationFrame(() => this.paint());
+            winOf(this.root).requestAnimationFrame(() => this.paint());
           });
     this.observer?.observe(this.previewBox);
-    window.requestAnimationFrame(() => this.paint());
+    winOf(this.root).requestAnimationFrame(() => this.paint());
   }
 
   /** Close: put the dialog's own content back and report. */
@@ -679,7 +680,7 @@ class PaperDesigner {
     const cssScale = Math.min(room.width / geometry.width, room.height / geometry.height);
     const cssWidth = geometry.width * cssScale;
     const cssHeight = geometry.height * cssScale;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = winOf(this.root).devicePixelRatio || 1;
     const k = cssScale * dpr;
     this.canvas.width = Math.max(1, Math.round(geometry.width * k));
     this.canvas.height = Math.max(1, Math.round(geometry.height * k));

@@ -20,6 +20,7 @@
 
 import { HOLD_MS, POINTER_SLOP_PX, TOUCH_SLOP_PX } from "./page-drag-model";
 import { offBar } from "./swatch-drag-model";
+import { docOf, winOf } from "./host-window";
 
 export interface SwatchDragOptions {
   /** The pill: a colour let go clear of it leaves the row. */
@@ -54,7 +55,7 @@ export function bindSwatchDrag(swatch: HTMLElement, options: SwatchDragOptions):
     timer = 0;
     barBox = options.bar().getBoundingClientRect();
     off = false;
-    ghost = document.body.createDiv({ cls: "goodobsidian-swatch-ghost" });
+    ghost = docOf(swatch).body.createDiv({ cls: "goodobsidian-swatch-ghost" });
     // The disc's own colour: the one inline style, as the swatch has.
     ghost.setCssStyles({ backgroundColor: getComputedStyle(swatch).backgroundColor });
     swatch.addClass("is-lifted");
@@ -145,14 +146,14 @@ export function bindSwatchDrag(swatch: HTMLElement, options: SwatchDragOptions):
       else place(e.clientX, e.clientY);
     };
     const up = (e: PointerEvent): void => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
+      winOf(swatch).removeEventListener("pointermove", move);
+      winOf(swatch).removeEventListener("pointerup", up);
+      winOf(swatch).removeEventListener("pointercancel", up);
       end(e.clientX, e.clientY, e.type === "pointercancel");
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    winOf(swatch).addEventListener("pointermove", move);
+    winOf(swatch).addEventListener("pointerup", up);
+    winOf(swatch).addEventListener("pointercancel", up);
   });
 
   // The long press's menu, and the click a hold ends in.

@@ -94,10 +94,12 @@ import {
   prefersReducedMotion,
   springCurve,
 } from "./motion";
+import { afterPainted } from "./after-painted";
 import { EASE_OUT_FALLBACK, OVERVIEW_FLIGHT, springMs } from "./springs";
 import { ContentsDrag } from "./contents-drag";
 import { PageDrag } from "./page-drag";
 import { rangeOf } from "./page-drag-model";
+import { isElement, onWindowMoved, winOf } from "./host-window";
 
 export type PageAction =
   | "add-before"
@@ -279,6 +281,12 @@ const KEEP_PAINTED_OFFSCREEN_OVERVIEW = 10;
 
 interface ThumbView {
   root: HTMLElement;
+  /** The page and its footer: in `root` only near the view, so a book stays quick to lay out. */
+  frame: HTMLElement;
+  footer: HTMLElement;
+  attached: boolean;
+  /** Draws its icons, the first time it is attached; null once done. */
+  drawIcons: (() => void) | null;
   /** The page it shows, by identity: a page that moves keeps its thumbnail and its pixels. */
   page: Page | null;
   canvas: HTMLCanvasElement;
@@ -299,6 +307,23 @@ interface ThumbView {
   visible: boolean;
   /** When it was last on screen, as a paint count: the oldest is given back first. */
   seen: number;
+}
+
+/** Attached thumbnails out of view kept ready, for a scroll back. */
+export const KEEP_ATTACHED_OFFSCREEN = 48;
+
+/**
+ * The thumbnails to take out of the page: attached, out of view and not
+ * `pinned`, past the `keep` seen most recently, the oldest first.
+ */
+export function thumbsToDetach<T extends { attached: boolean; visible: boolean; seen: number }>(
+  views: readonly T[],
+  pinned: (view: T) => boolean,
+  keep: number,
+): T[] {
+  const idle = views.filter((view) => view.attached && !view.visible && !pinned(view));
+  idle.sort((a, b) => a.seen - b.seen);
+  return idle.slice(0, Math.max(0, idle.length - keep));
 }
 
 export class PageSidebar {
@@ -386,6 +411,8 @@ export class PageSidebar {
   private paintFrame = 0;
   /** The slide in or out, while it runs. */
   private slide: Animation | null = null;
+
+  private readonly stopWindowMoves: () => void;
 
   constructor(
     host: HTMLElement,
@@ -569,12 +596,20 @@ export class PageSidebar {
       (entries) => {
         for (const entry of entries) {
           const view = this.viewOf.get(entry.target);
-          if (view) view.visible = entry.isIntersecting;
+          if (!view) continue;
+          view.visible = entry.isIntersecting;
+          if (view.visible) this.attachThumb(view);
         }
+        this.detachIdleThumbs();
         this.schedulePaint();
       },
       { root: this.el, rootMargin: "200px 0px" },
     );
+    // A frame asked of the window the panel left may never come.
+    this.stopWindowMoves = onWindowMoved(this.el, () => {
+      this.paintFrame = 0;
+      this.schedulePaint();
+    });
     this.showTab(this.tab);
     this.syncChrome();
   }
@@ -607,10 +642,16 @@ export class PageSidebar {
       this.revealCurrent();
       if (this.tab === "files") this.refreshFiles();
       if (motion) {
-        this.slide = this.el.animate(
+        // Started once the panel is drawn, or its first frames are skipped.
+        const slide = this.el.animate(
           [{ transform: "translateX(-100%)" }, { transform: "translateX(0)" }],
           { duration: PANEL_SLIDE_MS, easing: "ease" },
         );
+        slide.pause();
+        this.slide = slide;
+        afterPainted(this.el.win, () => {
+          if (this.slide === slide) slide.play();
+        });
       }
       return;
     }
@@ -693,9 +734,7 @@ export class PageSidebar {
    * found, for the plain zoom instead.
    */
   private flyIn(snap: PageSnapshot): boolean {
-    const slot = this.thumbs[this.current]?.root.querySelector<HTMLElement>(
-      ".goodobsidian-thumb-frame",
-    );
+    const slot = this.thumbs[this.current]?.frame;
     const host = this.el.parentElement;
     if (!slot || !host) return false;
     const to = slot.getBoundingClientRect();
@@ -766,39 +805,54 @@ export class PageSidebar {
     const sy = to.height / page.height;
     // The slot's corners, drawn before the scale shrinks them.
     const radius = parseFloat(this.el.win.getComputedStyle(slot).borderTopLeftRadius) || 0;
-    sheet.animate(
-      [
-        { transform: "none", borderRadius: "0px" },
-        {
-          transform: `translate(${to.left - page.left}px, ${to.top - page.top}px) scale(${sx}, ${sy})`,
-          borderRadius: `${radius / sx}px / ${radius / sy}px`,
-        },
-      ],
-      { duration: ms, easing, fill: "forwards" },
+    const moves: Animation[] = [];
+    moves.push(
+      sheet.animate(
+        [
+          { transform: "none", borderRadius: "0px" },
+          {
+            transform: `translate(${to.left - page.left}px, ${to.top - page.top}px) scale(${sx}, ${sy})`,
+            borderRadius: `${radius / sx}px / ${radius / sy}px`,
+          },
+        ],
+        { duration: ms, easing, fill: "forwards" },
+      ),
     );
     // The view recedes toward where the page lay, and is gone by half time.
     const origin = `${page.left + page.width / 2 - pane.left}px ${page.top + page.height / 2 - pane.top}px`;
-    view.animate(
-      [
-        { transformOrigin: origin, transform: "scale(1)", opacity: 1 },
-        { transformOrigin: origin, transform: "scale(0.88)", opacity: 0 },
-      ],
-      { duration: ms * 0.55, easing: "ease-out", fill: "forwards" },
+    moves.push(
+      view.animate(
+        [
+          { transformOrigin: origin, transform: "scale(1)", opacity: 1 },
+          { transformOrigin: origin, transform: "scale(0.88)", opacity: 0 },
+        ],
+        { duration: ms * 0.55, easing: "ease-out", fill: "forwards" },
+      ),
     );
     // The rest of the overview comes in around the page.
     for (const part of Array.from(this.el.children)) {
-      part.animate([{ opacity: 0 }, { opacity: 1 }], {
-        duration: ms * 0.7,
-        delay: ms * 0.2,
-        easing: "ease-out",
-        fill: "backwards",
-      });
+      moves.push(
+        part.animate([{ opacity: 0 }, { opacity: 1 }], {
+          duration: ms * 0.7,
+          delay: ms * 0.2,
+          easing: "ease-out",
+          fill: "backwards",
+        }),
+      );
     }
+    // The first frames of a big grid take over 100 ms each to draw: the page
+    // waits where it lay until they are done, then flies the whole way.
+    for (const move of moves) move.pause();
     // Its own thumbnail shows once the page has landed on it. A timer, not
     // the animation's finish event (ledger: the browser pane delays those).
     slot.addClass("is-landing");
-    const timer = window.setTimeout(() => this.flight?.(), ms);
+    let timer = 0;
+    const stopWaiting = afterPainted(this.el.win, () => {
+      for (const move of moves) move.play();
+      timer = window.setTimeout(() => this.flight?.(), ms);
+    });
     this.flight = () => {
+      stopWaiting();
       window.clearTimeout(timer);
       this.flight = null;
       slot.removeClass("is-landing");
@@ -955,7 +1009,7 @@ export class PageSidebar {
       this.thumbPage(page),
       this.render.painter,
       cssWidth,
-      window.devicePixelRatio || 1,
+      winOf(this.el).devicePixelRatio || 1,
       {
         usePressure: this.render.usePressure,
         highlighterAlpha: this.render.highlighterAlpha,
@@ -1145,13 +1199,14 @@ export class PageSidebar {
 
   destroy(): void {
     window.clearTimeout(this.refreshTimer);
-    window.cancelAnimationFrame(this.paintFrame);
+    winOf(this.el).cancelAnimationFrame(this.paintFrame);
     this.slide?.cancel();
     this.slide = null;
     this.zoom?.cancel();
     this.zoom = null;
     this.drag.destroy();
     this.contentsDrag.destroy();
+    this.stopWindowMoves();
     this.observer.disconnect();
     this.el.remove();
     this.spacer.remove();
@@ -1189,7 +1244,8 @@ export class PageSidebar {
     this.thumbs.forEach((view, index) => {
       view.page = pages[index] ?? null;
       view.label.setText(String(index + 1));
-      view.root
+      // The frame, not the root: it is only in the root near the view (#207).
+      view.frame
         .querySelector(".goodobsidian-thumb-kind")
         ?.toggleClass("is-hidden", pages[index]?.board !== true || this.board);
       const page = pages[index];
@@ -1203,7 +1259,9 @@ export class PageSidebar {
         "aria-label",
         entries > 1 ? t("view.sidebar.moreInContents", { title, count: entries - 1 }) : title,
       );
-      view.canvas.setCssStyles({ aspectRatio: page ? aspectOf(this.thumbPage(page)) : "" });
+      const aspect = page ? aspectOf(this.thumbPage(page)) : "";
+      view.canvas.setCssStyles({ aspectRatio: aspect });
+      view.root.setCssProps({ "--goodobsidian-thumb-aspect": aspect });
     });
     // "Add page" takes the shape of the page it would add: a copy of the
     // last; "Add board", an empty board's square.
@@ -1444,27 +1502,34 @@ export class PageSidebar {
   private createThumb(): ThumbView {
     const root = createDiv({ cls: "goodobsidian-thumb" });
     this.grid.insertBefore(root, this.addTile);
-    const frame = root.createEl("button", { cls: "goodobsidian-thumb-frame clickable-icon" });
+    const frame = createEl("button", { cls: "goodobsidian-thumb-frame clickable-icon" });
     const canvas = frame.createEl("canvas", { cls: "goodobsidian-thumb-canvas" });
     // GoodNotes' ribbon at the top right of every page: an outline, filled
     // red when the page is bookmarked. A tap on it toggles the bookmark.
     const ribbon = frame.createSpan({ cls: "goodobsidian-thumb-ribbon is-outline" });
-    setIcon(ribbon, "bookmark");
     // A board among a notebook's pages (discussion #160): ∞ at its lower corner.
-    setIcon(frame.createSpan({ cls: "goodobsidian-thumb-kind is-hidden" }), "infinity");
+    const kind = frame.createSpan({ cls: "goodobsidian-thumb-kind is-hidden" });
     // The overview's Select mode: a tick at the page's corner.
-    setIcon(frame.createSpan({ cls: "goodobsidian-thumb-check" }), "check");
-    const footer = root.createDiv({ cls: "goodobsidian-thumb-footer" });
+    const check = frame.createSpan({ cls: "goodobsidian-thumb-check" });
+    const footer = createDiv({ cls: "goodobsidian-thumb-footer" });
     const label = footer.createSpan({ cls: "goodobsidian-thumb-number" });
     const name = footer.createEl("button", { cls: "goodobsidian-thumb-name clickable-icon" });
     const title = name.createSpan({ cls: "goodobsidian-thumb-title" });
     const count = name.createSpan({ cls: "goodobsidian-thumb-count" });
     const more = footer.createEl("button", { cls: "goodobsidian-thumb-more clickable-icon" });
-    setIcon(more, "chevron-down");
     more.setAttribute("aria-label", t("view.sidebar.pageOptions"));
 
     const view: ThumbView = {
       root,
+      frame,
+      footer,
+      attached: false,
+      drawIcons: () => {
+        setIcon(ribbon, "bookmark");
+        setIcon(check, "check");
+        setIcon(kind, "infinity");
+        setIcon(more, "chevron-down");
+      },
       page: null,
       canvas,
       ribbon,
@@ -1481,7 +1546,7 @@ export class PageSidebar {
       const index = this.thumbs.indexOf(view);
       // A drag just ended here, or the Pencil's tap was already taken.
       if (index < 0 || this.drag.consumeClick()) return;
-      this.tapThumb(index, event.target instanceof Element ? event.target : frame, event);
+      this.tapThumb(index, isElement(event.target) ? event.target : frame, event);
     });
     name.addEventListener("click", (event) => {
       const index = this.thumbs.indexOf(view);
@@ -1497,13 +1562,33 @@ export class PageSidebar {
     return view;
   }
 
+  /** Put a thumbnail's page and footer in the document. */
+  private attachThumb(view: ThumbView): void {
+    if (view.attached) return;
+    view.attached = true;
+    view.drawIcons?.();
+    view.drawIcons = null;
+    view.root.append(view.frame, view.footer);
+  }
+
+  /** Take those far from the view out of the document again; they keep their pixels. */
+  private detachIdleThumbs(): void {
+    const pinned = (view: ThumbView): boolean =>
+      view === this.thumbs[this.current] || (view.page !== null && this.selected.has(view.page));
+    for (const view of thumbsToDetach(this.thumbs, pinned, KEEP_ATTACHED_OFFSCREEN)) {
+      view.attached = false;
+      view.frame.remove();
+      view.footer.remove();
+    }
+  }
+
   private syncCurrent(): void {
     this.thumbs.forEach((view, index) => {
       const active = index === this.current;
       view.root.toggleClass("is-current", active);
-      view.root
-        .querySelector(".goodobsidian-thumb-frame")
-        ?.setAttribute("aria-current", active ? "page" : "false");
+      view.frame.setAttribute("aria-current", active ? "page" : "false");
+      // The overview measures the page being read to fly it into its place.
+      if (active) this.attachThumb(view);
     });
     this.syncCurrentEntry();
     this.syncContentsAdd();
@@ -1554,7 +1639,7 @@ export class PageSidebar {
 
   private schedulePaint(): void {
     if (!this.open || this.paintFrame) return;
-    this.paintFrame = window.requestAnimationFrame(() => {
+    this.paintFrame = winOf(this.el).requestAnimationFrame(() => {
       this.paintFrame = 0;
       this.paintVisible();
     });
@@ -1562,7 +1647,7 @@ export class PageSidebar {
 
   private paintVisible(): void {
     const pages = this.doc?.pages ?? [];
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = winOf(this.el).devicePixelRatio || 1;
     const width = this.overview ? OVERVIEW_THUMB_WIDTH : THUMB_WIDTH;
     const now = ++this.paints;
     this.thumbs.forEach((view, index) => {
@@ -1780,9 +1865,9 @@ export class PageSidebar {
     for (const view of this.thumbs) {
       const on = this.selecting && view.page !== null && this.selected.has(view.page);
       view.root.toggleClass("is-selected", on);
-      const frame = view.root.querySelector(".goodobsidian-thumb-frame");
-      if (this.selecting) frame?.setAttribute("aria-pressed", String(on));
-      else frame?.removeAttribute("aria-pressed");
+      if (on) this.attachThumb(view);
+      if (this.selecting) view.frame.setAttribute("aria-pressed", String(on));
+      else view.frame.removeAttribute("aria-pressed");
     }
   }
 

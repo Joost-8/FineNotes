@@ -37,6 +37,7 @@ import {
   readContentsLevel,
 } from "./contents";
 import { normalizeLinks } from "./links";
+import { normalizeRegions } from "./regions";
 import { normalizeTasks } from "./tasks";
 import { isStyledConnector, liveConnectors, readConnectors } from "./connectors";
 import { isTape } from "./cover-tape";
@@ -66,6 +67,7 @@ import {
   type InkDocument,
   type Page,
   type PageChapter,
+  type PageRegion,
   type PageSection,
   type ContentsLevel,
   type InkLink,
@@ -199,6 +201,7 @@ interface StoredPage {
   title?: string;
   titleLevel?: ContentsLevel;
   sections?: PageSection[];
+  regions?: PageRegion[];
   chapters?: PageChapter[];
   links?: InkLink[];
   tasks?: InkTask[];
@@ -371,6 +374,7 @@ function storePage(page: Page): StoredPage {
         ? page.titleLevel
         : undefined,
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
+    regions: page.regions && page.regions.length > 0 ? page.regions : undefined,
     chapters: page.chapters && page.chapters.length > 0 ? page.chapters : undefined,
     links: page.links && page.links.length > 0 ? page.links : undefined,
     tasks: page.tasks && page.tasks.length > 0 ? page.tasks : undefined,
@@ -1115,6 +1119,7 @@ function normalizePage(
   seenLinks: Set<string> = new Set(),
   seenTasks: Set<string> = new Set(),
   seenConnectors: Set<string> = new Set(),
+  seenRegions: Set<string> = new Set(),
 ): Page {
   const page = isRecord(raw) ? raw : {};
   const images: ImageElement[] = [];
@@ -1190,6 +1195,7 @@ function normalizePage(
     ...(readTabColor(page.tab) ? { tab: readTabColor(page.tab) } : {}),
     ...titleOf(page.title, page.titleLevel),
     ...sectionsOf(page.sections, seenSections),
+    ...regionsOf(page.regions, seenRegions),
     ...chaptersOf(page.chapters, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
     ...tasksOf(page.tasks, strokes, seenTasks),
@@ -1242,6 +1248,12 @@ function sectionsOf(raw: unknown, seen: Set<string>): { sections?: PageSection[]
   return sections.length > 0 ? { sections } : {};
 }
 
+/** A page's named regions (discussion #167), spread into the page only when it has any. */
+function regionsOf(raw: unknown, seen: Set<string>): { regions?: PageRegion[] } {
+  const regions = normalizeRegions(raw, seen);
+  return regions.length > 0 ? { regions } : {};
+}
+
 /**
  * v1 -> v2. An upstream region is an unbounded paper roll, so its page height
  * is derived from how far the ink actually reaches; anything shorter would
@@ -1287,8 +1299,18 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
     const seenLinks = new Set<string>();
     const seenTasks = new Set<string>();
     const seenConnectors = new Set<string>();
+    const seenRegions = new Set<string>();
     pages = raw.pages.map((p, i) =>
-      normalizePage(p, i, view.width, seenSections, seenLinks, seenTasks, seenConnectors),
+      normalizePage(
+        p,
+        i,
+        view.width,
+        seenSections,
+        seenLinks,
+        seenTasks,
+        seenConnectors,
+        seenRegions,
+      ),
     );
   } else if (Array.isArray(raw.regions)) {
     pages = raw.regions.map((r, i) => migrateV1Region(r, i, view.width));

@@ -856,6 +856,12 @@ export interface Page {
    */
   sections?: PageSection[];
   /**
+   * Named parts of the page that a note can embed alone,
+   * `![[Mind map.notebook#Krebs cycle]]` (discussion #167; `model/regions`).
+   * Absent when there are none.
+   */
+  regions?: PageRegion[];
+  /**
    * Chapters with no page of their own that stand just before this page in
    * the contents, or after it with `after` (discussion #185). Absent when
    * there are none.
@@ -986,6 +992,24 @@ export interface PageSection {
    * or a chapter on a page without one (`sectionDefaultLevel`).
    */
   level?: ContentsLevel;
+}
+
+/**
+ * A named rectangle of a page, page px, lassoed and named on a board or a
+ * page, that a Markdown note embeds alone by its name (discussion #167).
+ * It holds no elements: it is a frame over the page, and what is drawn in
+ * it when the embed paints is what shows.
+ */
+export interface PageRegion {
+  /** `rg<N>`, unique in the notebook. */
+  id: string;
+  /** What links name it by: one line, trimmed, at most 80 characters, no `#|^[]\`. */
+  name: string;
+  x: number;
+  y: number;
+  /** Width and height, page px, greater than 0. */
+  w: number;
+  h: number;
 }
 
 /** A contents entry's depth: 1 a chapter, 2 a section of it, 3 a part of that. */
