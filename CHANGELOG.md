@@ -10,6 +10,9 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- A notebook moved to a new window (Move to new window) no longer lags or freezes while the main
+  window is covered: the page, pen, sidebar, menus and text boxes now work from the window the
+  notebook is in, and it keeps working when moved back (FineNotes#199).
 - **No grey above or below a page a double tap filled.** With pages running
   down, a double tap fills the screen's width with the page, but scrolling to
   the top still showed a grey band above page 1, and one below the last page
