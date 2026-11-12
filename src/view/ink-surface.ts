@@ -6503,7 +6503,9 @@ export class InkSurface {
   private pullOverscroll(): number {
     // Zoomed in, a row is held to one page: past its end is past the
     // notebook's end only on the last page (elsewhere a pull turns the page).
-    if (this.heldRow && this.heldIndex() !== this.doc.pages.length - 1) return 0;
+    // The last page shown: a board after it is parked, not a page (discussion #160).
+    const last = shownBoxes(this.pageLayout).at(-1)?.index ?? this.doc.pages.length - 1;
+    if (this.heldRow && this.heldIndex() !== last) return 0;
     const end = this.scroller.overscrollEnd;
     return this.direction === "horizontal" ? end.x : end.y;
   }
