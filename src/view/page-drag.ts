@@ -15,6 +15,7 @@
 
 import { type Box, type DropSlot, dropSlotAt, edgeScrollSpeed, realGap } from "./page-drag-model";
 import { PressDrag } from "./press-drag";
+import { isElement } from "./host-window";
 
 export interface PageDragHost {
   /** Whether pages can be dragged now (an editable notebook of several pages). */
@@ -99,7 +100,7 @@ export class PageDrag {
 
   /** The thumbnail whose page frame `target` is inside, and its page index. */
   private thumbAt(target: EventTarget | null): Item | null {
-    if (!(target instanceof Element) || !target.closest(FRAME)) return null;
+    if (!isElement(target) || !target.closest(FRAME)) return null;
     const root = target.closest<HTMLElement>(THUMB);
     if (!root || !this.grid.contains(root)) return null;
     return this.host.shown().find((item) => item.root === root) ?? null;

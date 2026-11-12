@@ -43,6 +43,7 @@ import { pickImageFile, releaseCanvas } from "./image-import";
 import { type EncodedScan, decodePhoto, encodeScan, paint } from "./scan-io";
 import { errorMessage } from "../util/errors";
 import { t, tn } from "../i18n/translate";
+import { isElement, sizeObserver, winOf } from "./host-window";
 
 export interface ScanSheetHost {
   /**
@@ -157,14 +158,14 @@ export class ScanSheet extends Modal {
     this.buildStage(main);
     this.buildResult(main);
     this.buildBar(contentEl);
-    this.resizeObserver = new ResizeObserver(() => this.layout());
+    this.resizeObserver = sizeObserver(this.stageEl, () => this.layout());
     this.resizeObserver.observe(this.stageEl);
     this.refresh();
   }
 
   override onClose(): void {
     this.closed = true;
-    if (this.frame) window.cancelAnimationFrame(this.frame);
+    if (this.frame) winOf(this.stageEl).cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
@@ -223,7 +224,7 @@ export class ScanSheet extends Modal {
     // tap on the empty state's buttons must still become a click.
     const claim = (event: TouchEvent): void => {
       const target = event.target;
-      if (target instanceof Element && target.closest(".goodobsidian-scan-handle")) {
+      if (isElement(target) && target.closest(".goodobsidian-scan-handle")) {
         event.preventDefault();
       }
     };
@@ -414,7 +415,7 @@ export class ScanSheet extends Modal {
     // photo costs tens of ms, and a window being dragged resizes every frame.
     const want = Math.min(
       Math.max(photo.width, photo.height),
-      Math.round(Math.max(w, h) * (window.devicePixelRatio || 1)),
+      Math.round(Math.max(w, h) * (winOf(this.stageEl).devicePixelRatio || 1)),
     );
     if (!this.displayLong || want > this.displayLong * 1.15 || want < this.displayLong * 0.6) {
       this.displayLong = want;
@@ -502,7 +503,7 @@ export class ScanSheet extends Modal {
   private requestPreview(kind: "draft" | "full"): void {
     if (this.pendingPreview !== "full") this.pendingPreview = kind;
     if (this.frame) return;
-    this.frame = window.requestAnimationFrame(() => {
+    this.frame = winOf(this.stageEl).requestAnimationFrame(() => {
       this.frame = 0;
       const pending = this.pendingPreview;
       this.pendingPreview = null;
@@ -553,7 +554,10 @@ export class ScanSheet extends Modal {
   private previewLong(): number {
     const frame = this.previewCanvas.parentElement;
     const css = frame ? Math.max(frame.clientWidth, frame.clientHeight) : 600;
-    return Math.max(200, Math.min(PREVIEW_MAX, Math.round(css * (window.devicePixelRatio || 1))));
+    return Math.max(
+      200,
+      Math.min(PREVIEW_MAX, Math.round(css * (winOf(this.stageEl).devicePixelRatio || 1))),
+    );
   }
 
   /** The photo under the corner being dragged, magnified, above the finger. */
@@ -562,7 +566,7 @@ export class ScanSheet extends Modal {
     const photo = this.photo;
     if (!drag || !photo) return;
     const corner = this.corners[drag.index];
-    const px = Math.round(LOUPE_SIZE * (window.devicePixelRatio || 1));
+    const px = Math.round(LOUPE_SIZE * (winOf(this.stageEl).devicePixelRatio || 1));
     const half = LOUPE_SIZE / 2 / (this.fit.scale * LOUPE_ZOOM);
     const view = warpPerspective(
       photo,

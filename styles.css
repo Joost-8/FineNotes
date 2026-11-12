@@ -1768,6 +1768,22 @@ select.goodobsidian-choice-select {
   min-width: 0;
 }
 
+/* A thumbnail far from the view holds nothing (page-sidebar.ts): these keep
+   its place, as tall as the page and the footer it will show. */
+.goodobsidian-thumb:empty::before {
+  content: "";
+  display: block;
+  aspect-ratio: var(--goodobsidian-thumb-aspect, 3 / 4);
+  border-radius: var(--gob-radius-s);
+  background: var(--gob-paper);
+}
+
+.goodobsidian-thumb:empty::after {
+  content: "";
+  display: block;
+  height: 28px;
+}
+
 .goodobsidian-thumb-frame {
   position: relative;
   display: block;
@@ -2015,6 +2031,8 @@ select.goodobsidian-choice-select {
   max-width: none;
   border-right: none;
   box-shadow: none;
+  /* Solid: the page behind must not show between the thumbnails. */
+  background-color: var(--background-primary);
 }
 
 .goodobsidian-pagesidebar-spacer {
@@ -2283,6 +2301,10 @@ select.goodobsidian-choice-select {
   z-index: 1;
   /* It reaches past the view and follows a scroll by a transform (Renderer.useOverscan). */
   will-change: transform;
+}
+
+.goodobsidian-canvas-fading {
+  pointer-events: none;
 }
 
 .goodobsidian-canvas-wet {
@@ -12820,6 +12842,70 @@ button.goodobsidian-comment-marker.clickable-icon:hover {
 .goodobsidian-comment-marker svg {
   width: 16px;
   height: 16px;
+}
+
+/* Named regions a note can embed (`region-frames.ts`, discussion #167),
+   shown only while the lasso is the tool: a thin dashed outline, and the
+   name in a small accent tab above its top-left corner. The outline takes no
+   presses; the tab does (Copy embed link, Rename, Delete). */
+.goodobsidian-region-frames {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-region-frames.is-hidden,
+.goodobsidian-region-frame.is-hidden {
+  display: none;
+}
+
+.goodobsidian-region-frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--interactive-accent);
+  border-radius: var(--radius-s);
+}
+
+button.goodobsidian-region-name {
+  position: absolute;
+  left: -1.5px;
+  bottom: calc(100% + 4px);
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  max-width: 240px;
+  height: auto;
+  margin: 0;
+  padding: 2px var(--size-4-2) 2px var(--size-2-3);
+  border: none;
+  border-radius: var(--radius-l);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  box-shadow: var(--gob-shadow-mark);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
+}
+
+button.goodobsidian-region-name:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.goodobsidian-region-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-region-icon {
+  display: flex;
+}
+
+.goodobsidian-region-icon svg {
+  width: 12px;
+  height: 12px;
 }
 
 /* ---------------------------------------------------- calculation notes */

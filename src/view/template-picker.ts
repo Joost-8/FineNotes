@@ -62,6 +62,7 @@ import {
 } from "../model/templates";
 import { currentLanguage, t, tn } from "../i18n/translate";
 import { fitCardNames } from "./card-name-fit";
+import { docOf, shownDoc, winOf } from "./host-window";
 
 /** Paint a template preview into `canvas`, `cssWidth` CSS px wide. */
 export function paintTemplatePreview(
@@ -92,21 +93,21 @@ export function paintTemplatePreview(
  */
 export function placePopover(el: HTMLElement, anchor: HTMLElement, maxWidth: number): void {
   const r = anchor.getBoundingClientRect();
-  const width = Math.min(maxWidth, window.innerWidth - 16);
+  const width = Math.min(maxWidth, winOf(el).innerWidth - 16);
   const { side, box } = menuAnchor(anchor);
   if (side !== "down") {
     const size = { width, height: el.offsetHeight };
-    const room = { width: window.innerWidth, height: window.innerHeight };
+    const room = { width: winOf(el).innerWidth, height: winOf(el).innerHeight };
     const at = menuPlace(side, box, size, room, "end", 6, 8);
     el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px`, width: `${width}px` });
     return;
   }
   let left = r.right - width;
-  if (left < 8) left = Math.min(r.left, window.innerWidth - width - 8);
+  if (left < 8) left = Math.min(r.left, winOf(el).innerWidth - width - 8);
   left = Math.max(8, left);
   const height = el.offsetHeight;
   let top = r.bottom + 6;
-  if (top + height > window.innerHeight - 8) top = Math.max(8, r.top - height - 6);
+  if (top + height > winOf(el).innerHeight - 8) top = Math.max(8, r.top - height - 6);
   el.setCssStyles({ left: `${left}px`, top: `${top}px`, width: `${width}px` });
 }
 
@@ -135,15 +136,15 @@ export function installPopoverDismiss(
     else close();
   };
   // Capture: the drawing surface consumes its own pointer events.
-  document.addEventListener("pointerdown", onDown, true);
-  document.addEventListener("keydown", onKey);
-  window.addEventListener("resize", onResize);
+  docOf(el).addEventListener("pointerdown", onDown, true);
+  docOf(el).addEventListener("keydown", onKey);
+  winOf(el).addEventListener("resize", onResize);
   // A second tap on the anchor is the host's to handle: it closes the
   // popover instead of opening another (see each popover's `isOpen`).
   return () => {
-    document.removeEventListener("pointerdown", onDown, true);
-    document.removeEventListener("keydown", onKey);
-    window.removeEventListener("resize", onResize);
+    docOf(el).removeEventListener("pointerdown", onDown, true);
+    docOf(el).removeEventListener("keydown", onKey);
+    winOf(el).removeEventListener("resize", onResize);
   };
 }
 
@@ -181,7 +182,7 @@ export class AddPagePopover {
     private readonly options: AddPagePopoverOptions,
   ) {
     this.position = options.position;
-    this.el = document.body.createDiv({ cls: "goodobsidian-addpage" });
+    this.el = shownDoc().body.createDiv({ cls: "goodobsidian-addpage" });
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute("aria-label", t("notebooks.picker.addPage"));
     this.build();
@@ -920,7 +921,7 @@ export class TemplatePickerModal extends Modal {
 
     this.repaint();
     // Bring the preselected template into view.
-    window.requestAnimationFrame(() => this.grid?.reveal());
+    winOf(this.contentEl).requestAnimationFrame(() => this.grid?.reveal());
   }
 
   override onClose(): void {

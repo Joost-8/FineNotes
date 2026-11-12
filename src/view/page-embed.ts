@@ -39,14 +39,18 @@
 import { type App, Component, Keymap, type TAbstractFile, TFile, setIcon } from "obsidian";
 import { LIGHT_PAPER, type PaperTheme } from "../canvas/backdrop";
 import { t, tn } from "../i18n/translate";
-import { DEFAULT_PAGE_GEOMETRY, type Page } from "../model/document";
+import { paintedTextHeight } from "../canvas/renderer";
+import { isBoard, textLinesHeight } from "../model/board";
+import { DEFAULT_PAGE_GEOMETRY, type Page, type TextBoxElement } from "../model/document";
 import { pageSignature } from "../model/page-signature";
 import { parseInkFile } from "../model/serialize";
 import { VaultImageCache } from "./image-cache";
 import { releaseCanvas } from "./image-import";
 import {
   EMBED_CANVAS_BUDGET,
+  type EmbedCrop,
   SharedNotebooks,
+  boardEmbedBox,
   embedPaintSize,
   embedWidth,
   type EmbedTarget,
@@ -57,6 +61,7 @@ import {
   embedTarget,
   embedsToRelease,
   printPaintSize,
+  regionEmbedPart,
 } from "./page-embed-model";
 import { previewCaption } from "../model/preview-pages";
 import { PdfBackdropCache } from "./pdf-backdrop";
@@ -112,6 +117,12 @@ export interface PageEmbedHost {
   paper(): PaperTheme;
 }
 
+/** A notebook's pages as embeds read them, and whether it is an endless board. */
+interface EmbedNotebook {
+  pages: readonly Page[];
+  board: boolean;
+}
+
 /** Quiet time after a notebook is saved before its embeds repaint. */
 const CHANGE_DEBOUNCE_MS = 300;
 /** How long the next page waits for a slow one to finish painting. */
@@ -126,7 +137,9 @@ const PRINT_LAYOUT = ".print";
  */
 export class PageEmbeds extends Component {
   /** Each notebook's pages; none for a file without an ink block, `null` for one that would not decode. */
-  private readonly notebooks = new SharedNotebooks<readonly Page[] | null>(3);
+  private readonly notebooks = new SharedNotebooks<EmbedNotebook | null>(3);
+  /** Measures self-sizing text boxes for a board's cut, as its export does. */
+  private measureCtx: CanvasRenderingContext2D | null = null;
   private readonly live = new Set<NotebookEmbed>();
   /** The pages shown, by the element the observers report. */
   private readonly byElement = new Map<Element, PageSlot>();
@@ -140,6 +153,11 @@ export class PageEmbeds extends Component {
   private workerHeld = false;
   private readonly changeTimers = new Map<string, number>();
   private active = false;
+  /**
+   * Obsidian's Markdown embed creator, which this one stands in front of:
+   * an embed whose subpath names no region of its notebook goes back to it.
+   */
+  private markdown: EmbedCreator | null = null;
 
   constructor(private readonly host: PageEmbedHost) {
     super();
@@ -200,8 +218,10 @@ export class PageEmbeds extends Component {
       (enabled ? this.create(ctx, file, subpath) : null) ?? original(ctx, file, subpath);
     registry.unregisterExtension("md");
     registry.registerExtension("md", creator);
+    this.markdown = original;
     return () => {
       enabled = false;
+      this.markdown = null;
       if (registry.embedByExtension.md !== creator) return;
       registry.unregisterExtension("md");
       registry.registerExtension("md", original);
@@ -213,7 +233,7 @@ export class PageEmbeds extends Component {
     if (!this.active) return null;
     const target = embedTarget(subpath);
     if (target === null || !this.host.isInkFile(file)) return null;
-    return new NotebookEmbed(this, ctx, file, target);
+    return new NotebookEmbed(this, ctx, file, target, subpath);
   }
 
   // --- Embeds coming and going ----------------------------------------------------
@@ -328,7 +348,7 @@ export class PageEmbeds extends Component {
     const { embed } = slot;
     if (!(await this.syncEmbed(embed))) return;
     if (!this.live.has(embed) || !slot.attached || !slot.page) return;
-    const size = embedPaintSize(slot.boxWidth(), window.devicePixelRatio || 1);
+    const size = embedPaintSize(slot.boxWidth(), window.devicePixelRatio || 1, slot.aspect());
     if (!size) return;
     await this.paint(slot, size, this.host.paper());
     if (!this.live.has(embed)) return;
@@ -348,10 +368,17 @@ export class PageEmbeds extends Component {
     }
     const version = file.stat.mtime;
     if (embed.version === version) return !embed.isLink;
-    const pages = await this.notebook(file, version);
+    const notebook = await this.notebook(file, version);
     if (embed.version === version) return !embed.isLink;
     embed.version = version;
-    const reason = embed.setPages(pages);
+    const reason = embed.setPages(notebook);
+    // `#Introduction` names no region: Obsidian shows that heading of the note's text,
+    // as it did before regions. A region that is gone since it was shown says so instead.
+    if (reason === "missing-region" && !embed.foundRegion && this.markdown) {
+      this.untrack(embed);
+      await embed.handOver(this.markdown);
+      return false;
+    }
     if (reason) {
       embed.showLink(reason);
       return false;
@@ -370,9 +397,18 @@ export class PageEmbeds extends Component {
     const page = slot.page;
     if (!page) return;
     const look = paper.night ? (paper.keepPdf ? "|dark-keep-pdf" : "|dark") : "";
-    const key = `${pageSignature(page)}@${size.cssWidth}x${size.dpr}${look}`;
+    const crop = slot.crop;
+    const cut = crop ? `#${crop.x},${crop.y},${crop.width},${crop.height}` : "";
+    const key = `${pageSignature(page)}${cut}@${size.cssWidth}x${size.dpr}${look}`;
     if (key === slot.painted) return;
-    await paintPagePreview(slot.canvas, page, this.sources(page, paper), size.cssWidth, size.dpr);
+    await paintPagePreview(
+      slot.canvas,
+      page,
+      this.sources(page, paper),
+      size.cssWidth,
+      size.dpr,
+      crop ?? undefined,
+    );
     slot.painted = key;
     slot.bytes = slot.canvas.width * slot.canvas.height * 4;
   }
@@ -386,7 +422,7 @@ export class PageEmbeds extends Component {
     try {
       if (!(await this.syncEmbed(embed))) return;
       for (const slot of embed.slots) {
-        await this.paint(slot, printPaintSize(slot.boxWidth()), LIGHT_PAPER);
+        await this.paint(slot, printPaintSize(slot.boxWidth(), slot.aspect()), LIGHT_PAPER);
       }
     } catch (error) {
       console.error("FineNotes: could not draw an embedded page for the PDF", error);
@@ -399,13 +435,26 @@ export class PageEmbeds extends Component {
    * every embed of it: none when the file has no ink block yet (a decoded
    * notebook always has a page), `null` when its block does not decode.
    */
-  private notebook(file: TFile, version: number): Promise<readonly Page[] | null> {
+  private notebook(file: TFile, version: number): Promise<EmbedNotebook | null> {
     return this.notebooks.get(file.path, version, async () => {
       const text = await this.host.app.vault.cachedRead(file);
       const { doc, payload } = parseInkFile(text, this.host.paperWidth());
-      if (doc) return doc.pages;
-      return payload === undefined ? [] : null;
+      if (doc) return { pages: doc.pages, board: isBoard(doc) };
+      return payload === undefined ? { pages: [], board: false } : null;
     });
+  }
+
+  /**
+   * The part of a board's page an embed shows: its drawing (`boardEmbedBox`),
+   * self-sizing text measured as the export measures it.
+   */
+  boardCut(page: Page): EmbedCrop {
+    return boardEmbedBox(page, (text) => this.textHeight(text));
+  }
+
+  private textHeight(text: TextBoxElement): number {
+    this.measureCtx ??= createEl("canvas").getContext("2d");
+    return this.measureCtx ? paintedTextHeight(this.measureCtx, text) : textLinesHeight(text);
   }
 
   private sources(page: Page, paper: PaperTheme): PdfExportSources {
@@ -517,12 +566,14 @@ export class PageEmbeds extends Component {
 }
 
 /** Why an embed shows a link instead of its pages. */
-type LinkReason = "missing-page" | "no-pages" | "missing-file" | "unreadable";
+type LinkReason = "missing-page" | "missing-region" | "no-pages" | "missing-file" | "unreadable";
 
-function linkTitle(reason: LinkReason, page: number): string {
+function linkTitle(reason: LinkReason, target: EmbedTarget): string {
   switch (reason) {
     case "missing-page":
-      return t("view.pageEmbed.missingPage", { page });
+      return t("view.pageEmbed.missingPage", { page: target.page });
+    case "missing-region":
+      return t("view.pageEmbed.missingRegion", { name: target.region ?? "" });
     case "no-pages":
       return t("view.pageEmbed.noPages");
     case "missing-file":
@@ -550,12 +601,16 @@ class NotebookEmbed extends Component {
   shortened = false;
   private moreEl: HTMLElement | null = null;
   private loaded = false;
+  /** A region embed has shown its region once: from then on, one gone says so. */
+  foundRegion = false;
 
   constructor(
     readonly embeds: PageEmbeds,
     readonly ctx: EmbedContext,
     readonly file: TFile,
     readonly target: EmbedTarget,
+    /** The link's subpath as Obsidian gave it, for handing the embed back. */
+    private readonly subpath: string,
   ) {
     super();
     this.containerEl = ctx.containerEl;
@@ -581,8 +636,19 @@ class NotebookEmbed extends Component {
    * The notebook's pages: one slot for each page this embed shows, added or
    * taken out to match. Returns why there is nothing to show, if so.
    */
-  setPages(pages: readonly Page[] | null): LinkReason | null {
-    if (!pages) return "unreadable";
+  setPages(notebook: EmbedNotebook | null): LinkReason | null {
+    if (!notebook) return "unreadable";
+    const { pages } = notebook;
+    if (this.target.region !== undefined) {
+      // One page, cut to the region (discussion #167).
+      const part = regionEmbedPart(pages, this.target.region);
+      if (!part) return "missing-region";
+      this.foundRegion = true;
+      this.shortened = false;
+      this.slots[0]?.show(part.page, pages[part.page - 1] ?? null, 1, part.crop);
+      this.showMore(0);
+      return null;
+    }
     // Obsidian's hover preview of a link holds the embed in a `.hover-popover`.
     const hover = this.containerEl.closest(".hover-popover") !== null;
     const numbers = embedPageNumbers(this.target, pages, hover);
@@ -601,9 +667,12 @@ class NotebookEmbed extends Component {
       this.slots.push(slot);
       if (this.loaded) this.embeds.trackSlot(slot);
     }
-    numbers.forEach((number, i) =>
-      this.slots[i]?.show(number, pages[number - 1] ?? null, numbers.length),
-    );
+    numbers.forEach((number, i) => {
+      const page = pages[number - 1] ?? null;
+      // A board shows its drawing, not the paper it has grown to.
+      const crop = page && notebook.board ? this.embeds.boardCut(page) : null;
+      this.slots[i]?.show(number, page, numbers.length, crop);
+    });
     this.showMore(left);
     return this.slots.every((slot) => slot.page) ? null : "missing-page";
   }
@@ -655,6 +724,29 @@ class NotebookEmbed extends Component {
     );
   }
 
+  /**
+   * No region of this name: what Obsidian's Markdown embed shows instead
+   * (a heading of the note's text, or its own "not found"), in this embed's
+   * place, as if the plugin had never taken it.
+   */
+  async handOver(markdown: EmbedCreator): Promise<void> {
+    for (const slot of this.slots) slot.remove();
+    this.slots.length = 0;
+    this.linkEl?.remove();
+    this.linkEl = null;
+    this.moreEl?.remove();
+    this.moreEl = null;
+    this.containerEl.removeClass(
+      "goodobsidian-page-embed",
+      "goodobsidian-notebook-embed",
+      "is-link",
+    );
+    const child = markdown(this.ctx, this.file, this.subpath);
+    if (!child) return;
+    this.addChild(child);
+    await child.loadFile();
+  }
+
   showPages(): void {
     if (!this.isLink) return;
     this.isLink = false;
@@ -682,7 +774,7 @@ class NotebookEmbed extends Component {
       href: this.ctx.linktext,
     });
     link.dataset.href = this.ctx.linktext;
-    link.setAttribute("title", linkTitle(reason, this.target.page));
+    link.setAttribute("title", linkTitle(reason, this.target));
     link.toggleClass("is-unresolved", reason === "missing-file");
     link.addEventListener("click", (event) => this.open(event, this.target.page));
     this.linkEl = link;
@@ -696,6 +788,8 @@ class PageSlot {
   /** The page's number in the notebook, 1-based. */
   number: number;
   page: Page | null = null;
+  /** The part of the page shown, page px; `null` for all of it. */
+  crop: EmbedCrop | null = null;
   /** What the canvas holds: the page's signature and the paint size; "" for nothing. */
   painted = "";
   bytes = 0;
@@ -725,7 +819,10 @@ class PageSlot {
       "aria-label",
       embedPageLabel(embed.file.basename, embed.target, number, 1),
     );
-    this.el.setCssStyles({ aspectRatio: aspectOf(DEFAULT_PAGE_GEOMETRY) });
+    // A region's shape is not known yet: a short box, not a page, until it is read.
+    this.el.setCssStyles({
+      aspectRatio: embed.target.region !== undefined ? "4 / 1" : aspectOf(DEFAULT_PAGE_GEOMETRY),
+    });
     if (embed.isLink) this.el.addClass("is-hidden");
     this.canvas = this.el.createEl("canvas", { cls: "goodobsidian-page-embed-canvas" });
     // No backing store until the page is painted (a canvas starts at 300 x 150).
@@ -736,16 +833,20 @@ class PageSlot {
     });
   }
 
-  /** Show page `number` (`page`, or `null` when the notebook has none such) of `count` shown. */
-  show(number: number, page: Page | null, count: number): void {
+  /**
+   * Show page `number` (`page`, or `null` when the notebook has none such) of
+   * `count` shown; only its `crop` when given.
+   */
+  show(number: number, page: Page | null, count: number, crop: EmbedCrop | null = null): void {
     this.number = number;
     this.page = page;
+    this.crop = crop;
     const { embed } = this;
     this.el.setAttribute(
       "aria-label",
       embedPageLabel(embed.file.basename, embed.target, number, count),
     );
-    if (page) this.el.setCssStyles({ aspectRatio: aspectOf(page.geometry) });
+    if (page) this.el.setCssStyles({ aspectRatio: aspectOf(crop ?? page.geometry) });
     this.label(embed.shortened ? page : null);
   }
 
@@ -771,6 +872,12 @@ class PageSlot {
       setIcon(ribbon, "bookmark");
       this.ribbonEl = ribbon;
     }
+  }
+
+  /** The shown part's height over its width, for a cut; 0 for a whole page. */
+  aspect(): number {
+    const crop = this.crop;
+    return crop && crop.width > 0 ? crop.height / crop.width : 0;
   }
 
   /** The width the page box has now, CSS px, after the size syntax's cap. */

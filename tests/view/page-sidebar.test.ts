@@ -19,7 +19,7 @@ vi.mock("obsidian", () => ({
   normalizePath: (path: string) => path,
 }));
 
-const { KEEP_PAINTED_OFFSCREEN, PageSidebar, pagePassesFilter, thumbnailTitleOf } =
+const { KEEP_PAINTED_OFFSCREEN, PageSidebar, pagePassesFilter, thumbnailTitleOf, thumbsToDetach } =
   await import("../../src/view/page-sidebar");
 
 interface FakeView {
@@ -155,6 +155,32 @@ describe("page filter", () => {
       true,
     ]);
     expect(pagePassesFilter({ ...blankPage("e"), sections: [] }, "contents")).toBe(false);
+  });
+});
+
+describe("thumbsToDetach", () => {
+  const view = (seen: number, attached = true, visible = false) => ({ seen, attached, visible });
+
+  it("takes out the oldest past the budget, never one in view or not attached", () => {
+    const old = view(1);
+    const middle = view(2);
+    const recent = view(3);
+    const shown = view(0, true, true);
+    const absent = view(0, false);
+    expect(thumbsToDetach([recent, shown, absent, old, middle], () => false, 1)).toEqual([
+      old,
+      middle,
+    ]);
+  });
+
+  it("keeps a pinned thumbnail however old", () => {
+    const current = view(1);
+    const other = view(2);
+    expect(thumbsToDetach([current, other], (v) => v === current, 0)).toEqual([other]);
+  });
+
+  it("takes out nothing within the budget", () => {
+    expect(thumbsToDetach([view(1), view(2)], () => false, 2)).toEqual([]);
   });
 });
 

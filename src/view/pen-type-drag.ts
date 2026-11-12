@@ -20,6 +20,7 @@
 
 import { HOLD_MS, POINTER_SLOP_PX, TOUCH_SLOP_PX } from "./page-drag-model";
 import { gapAt, gapMark } from "../model/pen-type-order";
+import { winOf } from "./host-window";
 
 export interface PenTypeDragOptions {
   /** The row the pens stand in; the gap's mark is drawn there. */
@@ -158,14 +159,14 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
       else place(e.clientX, e.clientY);
     };
     const up = (e: PointerEvent): void => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
+      winOf(pen).removeEventListener("pointermove", move);
+      winOf(pen).removeEventListener("pointerup", up);
+      winOf(pen).removeEventListener("pointercancel", up);
       end(e.type === "pointercancel");
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    winOf(pen).addEventListener("pointermove", move);
+    winOf(pen).addEventListener("pointerup", up);
+    winOf(pen).addEventListener("pointercancel", up);
   });
 
   // The long press's menu, and the click a hold ends in.

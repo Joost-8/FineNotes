@@ -21,6 +21,7 @@ import { setIcon } from "obsidian";
 import { t } from "../i18n/translate";
 import type { AiMenuItem } from "../recognition/ai-menu-model";
 import { menuAnchor, menuPlace } from "./bar-dock-model";
+import { docOf, shownDoc, winOf } from "./host-window";
 
 const POPOVER_WIDTH = 320;
 
@@ -37,7 +38,7 @@ export class AiMenuPopover {
     private readonly toggle: (id: string, on: boolean) => void = () => {},
     private readonly choose: (id: string, value: string) => void = () => {},
   ) {
-    this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-aimenu" });
+    this.el = shownDoc().body.createDiv({ cls: "goodobsidian-addpage goodobsidian-aimenu" });
     this.el.setAttribute("role", "menu");
     this.el.setAttribute("aria-label", t("ai.menu.title"));
     this.build(items, keyFolded);
@@ -227,24 +228,24 @@ export class AiMenuPopover {
    */
   private place(): void {
     const r = this.anchor.getBoundingClientRect();
-    const width = Math.min(POPOVER_WIDTH, window.innerWidth - 16);
+    const width = Math.min(POPOVER_WIDTH, winOf(this.el).innerWidth - 16);
     // Measured at the width it is shown at: its rows wrap there, and a menu
     // measured wider came out shorter than it was.
     this.el.setCssStyles({ width: `${width}px`, maxHeight: "" });
     const height = this.el.offsetHeight;
     const { side, box } = menuAnchor(this.anchor);
     if (side !== "down") {
-      const room = { width: window.innerWidth, height: window.innerHeight };
+      const room = { width: winOf(this.el).innerWidth, height: winOf(this.el).innerHeight };
       const at = menuPlace(side, box, { width, height }, room, "start", 6, 8);
       this.el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px` });
       return;
     }
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+    const left = Math.max(8, Math.min(r.left, winOf(this.el).innerWidth - width - 8));
     // Below the button, always: it never covers the bar it hangs from. Always
     // held to the room there, so a menu that does not fit scrolls (styles.css)
     // instead of running off the screen, however its height was measured.
     const top = r.bottom + 6;
-    const room = Math.max(160, window.innerHeight - top - 8);
+    const room = Math.max(160, winOf(this.el).innerHeight - top - 8);
     this.el.setCssStyles({ left: `${left}px`, top: `${top}px`, maxHeight: `${room}px` });
   }
 
@@ -262,13 +263,13 @@ export class AiMenuPopover {
       else this.close();
     };
     // Capture: the drawing surface consumes its own pointer events.
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
+    docOf(this.el).addEventListener("pointerdown", onDown, true);
+    docOf(this.el).addEventListener("keydown", onKey);
+    winOf(this.el).addEventListener("resize", onResize);
     this.dispose.push(() => {
-      document.removeEventListener("pointerdown", onDown, true);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
+      docOf(this.el).removeEventListener("pointerdown", onDown, true);
+      docOf(this.el).removeEventListener("keydown", onKey);
+      winOf(this.el).removeEventListener("resize", onResize);
     });
   }
 }

@@ -24,6 +24,7 @@ function recorder(log: Call[]): CanvasRenderingContext2D {
   return new Proxy(state, {
     get(target, prop) {
       if (prop in target) return target[prop];
+      if (prop === "getTransform") return () => ({ a: 2, b: 0, c: 0, d: 2, e: 10.4, f: 20.6 });
       return (...args: unknown[]) => void log.push([String(prop), ...args]);
     },
     set(target, prop, value) {
@@ -164,6 +165,66 @@ describe("renderSelectionDraft", () => {
     const picture = wetLog.findIndex(([name, x]) => name === "translate" && x === 5);
     expect(offset).toBeLessThan(picture);
     expect(picture).toBeLessThan(names.indexOf("stroke"));
+  });
+});
+
+describe("renderSelectionDraft of a big selection", () => {
+  const many = (): Stroke[] => Array.from({ length: 30 }, (_, i) => stroke(`s${i}`, i * 10));
+
+  it("draws the ink once, then only copies its picture, on whole device px", () => {
+    const { renderer, wetLog } = setup();
+    const strokes = many();
+    renderer.renderSelectionDraft(0, strokes, [], 5, 7, true);
+    const drawn = tileLog.filter(([name]) => name === "stroke").length;
+    expect(drawn).toBe(30);
+    renderer.renderSelectionDraft(0, strokes, [], 9, 3, true);
+    expect(tileLog.filter(([name]) => name === "stroke")).toHaveLength(drawn);
+    expect(wetLog.some(([name]) => name === "stroke")).toBe(false);
+    expect(wetLog.filter(([name]) => name === "drawImage")).toHaveLength(2);
+    const placed = wetLog.filter(([name, a]) => name === "setTransform" && a === 1);
+    for (const [, , , , , x, y] of placed) {
+      expect(Number.isInteger(x)).toBe(true);
+      expect(Number.isInteger(y)).toBe(true);
+    }
+  });
+
+  it("makes a new picture for another selection, and after letting go", () => {
+    const { renderer } = setup();
+    const first = many();
+    renderer.renderSelectionDraft(0, first, [], 0, 0, true);
+    renderer.renderSelectionDraft(0, many(), [], 0, 0, true);
+    expect(tileLog.filter(([name]) => name === "stroke")).toHaveLength(60);
+    renderer.releaseSelectionRaster();
+    renderer.renderSelectionDraft(0, first, [], 0, 0, true);
+    expect(tileLog.filter(([name]) => name === "stroke")).toHaveLength(90);
+  });
+
+  it("redraws the strokes under a resize or a turn, which a picture would blur", () => {
+    const { renderer, wetLog } = setup();
+    const strokes = many();
+    renderer.renderSelectionDraft(0, strokes, [], 0, 0, true, { x: 0, y: 0, k: 2 });
+    renderer.renderSelectionDraft(0, strokes, [], 0, 0, true, undefined, {
+      x: 0,
+      y: 0,
+      angle: 0.5,
+    });
+    expect(wetLog.filter(([name]) => name === "stroke")).toHaveLength(60);
+    expect(wetLog.some(([name]) => name === "drawImage")).toBe(false);
+  });
+
+  it("redraws the strokes when a picture would be too large", () => {
+    const { renderer, wetLog } = setup();
+    const strokes = many();
+    strokes[0] = { ...strokes[0], pts: [0, 0, 0.5, 9000, 9000, 0.5] };
+    renderer.renderSelectionDraft(0, strokes, [], 0, 0, true);
+    expect(wetLog.filter(([name]) => name === "stroke")).toHaveLength(30);
+    expect(wetLog.some(([name]) => name === "drawImage")).toBe(false);
+  });
+
+  it("keeps a few strokes on the plain path", () => {
+    const { renderer, wetLog } = setup();
+    renderer.renderSelectionDraft(0, many().slice(0, 23), [], 0, 0, true);
+    expect(wetLog.filter(([name]) => name === "stroke")).toHaveLength(23);
   });
 });
 

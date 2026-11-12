@@ -40,6 +40,7 @@ import type { FoldedBarItem } from "./toolbar";
 import type { DeskChoice } from "../settings-data";
 import { DARK_PAPER, LIGHT_DESK, LIGHT_PAPER } from "../canvas/backdrop";
 import { menuAnchor, menuPlace, menuRoom } from "./bar-dock-model";
+import { docOf, shownDoc, winOf } from "./host-window";
 
 export interface MorePanelPage {
   /** Zero-based index of the page the panel is about. */
@@ -151,7 +152,7 @@ export class MorePanel {
     private readonly page: MorePanelPage,
     private readonly actions: MorePanelActions,
   ) {
-    this.el = document.body.createDiv({ cls: "goodobsidian-more" });
+    this.el = shownDoc().body.createDiv({ cls: "goodobsidian-more" });
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute("aria-label", t("common.more"));
     this.keyboard = new DialogKeyboard(this.el);
@@ -590,7 +591,7 @@ export class MorePanel {
     // must undo the scroll iPadOS makes to reveal the field, as one on the
     // field itself does.
     row.addEventListener("pointerdown", (event) => {
-      if (event.target !== input && document.activeElement !== input) {
+      if (event.target !== input && docOf(this.el).activeElement !== input) {
         this.keyboard.holdWindow(input);
       }
     });
@@ -603,10 +604,10 @@ export class MorePanel {
    */
   private place(): void {
     const r = this.anchor.getBoundingClientRect();
-    const width = Math.min(PANEL_WIDTH, window.innerWidth - 16);
+    const width = Math.min(PANEL_WIDTH, winOf(this.el).innerWidth - 16);
     const { side, box } = menuAnchor(this.anchor);
     if (side !== "down") {
-      const room = { width: window.innerWidth, height: window.innerHeight };
+      const room = { width: winOf(this.el).innerWidth, height: winOf(this.el).innerHeight };
       const maxHeight = Math.max(160, menuRoom(side, box, room, 6, 8));
       this.el.setCssStyles({ width: `${width}px`, maxHeight: `${maxHeight}px` });
       const size = { width, height: Math.min(this.el.offsetHeight, maxHeight) };
@@ -614,13 +615,13 @@ export class MorePanel {
       this.el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px` });
       return;
     }
-    const left = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8));
+    const left = Math.max(8, Math.min(r.right - width, winOf(this.el).innerWidth - width - 8));
     const top = r.bottom + 6;
     this.el.setCssStyles({
       left: `${left}px`,
       top: `${top}px`,
       width: `${width}px`,
-      maxHeight: `${Math.max(160, window.innerHeight - top - 8)}px`,
+      maxHeight: `${Math.max(160, winOf(this.el).innerHeight - top - 8)}px`,
     });
   }
 
@@ -639,17 +640,17 @@ export class MorePanel {
     };
     // Capture: the drawing surface consumes its own pointer events. A swipe
     // anywhere else starts with one of these, so it closes the panel too.
-    document.addEventListener("pointerdown", outside, true);
-    document.addEventListener("touchstart", outside, { capture: true, passive: true });
-    document.addEventListener("wheel", outside, { capture: true, passive: true });
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
+    docOf(this.el).addEventListener("pointerdown", outside, true);
+    docOf(this.el).addEventListener("touchstart", outside, { capture: true, passive: true });
+    docOf(this.el).addEventListener("wheel", outside, { capture: true, passive: true });
+    docOf(this.el).addEventListener("keydown", onKey);
+    winOf(this.el).addEventListener("resize", onResize);
     this.dispose.push(() => {
-      document.removeEventListener("pointerdown", outside, true);
-      document.removeEventListener("touchstart", outside, true);
-      document.removeEventListener("wheel", outside, true);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
+      docOf(this.el).removeEventListener("pointerdown", outside, true);
+      docOf(this.el).removeEventListener("touchstart", outside, true);
+      docOf(this.el).removeEventListener("wheel", outside, true);
+      docOf(this.el).removeEventListener("keydown", onKey);
+      winOf(this.el).removeEventListener("resize", onResize);
     });
   }
 }
