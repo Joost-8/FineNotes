@@ -21,6 +21,7 @@ import {
   isBoard,
   isNoGrowth,
   textLinesHeight,
+  newBoardPage,
   pageAfterTurn,
 } from "../../src/model/board";
 import { type InkDocument, type Page, type Stroke } from "../../src/model/document";
@@ -550,5 +551,24 @@ describe("pageAfterTurn", () => {
   it("keeps a board file's board, and nothing for a page that is gone", () => {
     expect(pageAfterTurn({ endless: true, pages: [page("p1"), page("p2")] }, 1)).toBe(1);
     expect(pageAfterTurn({ pages: [page("p1")] }, 4)).toBeNull();
+  });
+});
+
+describe("newBoardPage's paper", () => {
+  const like = { backdrop: { kind: "squared" } } as unknown as Page;
+
+  it("takes the paper picked in Add page", () => {
+    expect(newBoardPage("p9", like, true, "dotted").backdrop).toEqual({ kind: "dotted" });
+    expect(newBoardPage("p9", undefined, true, "blank").backdrop).toEqual({ kind: "blank" });
+  });
+
+  it("without a pick, the board beside it's paper, or blank", () => {
+    expect(newBoardPage("p9", like, true).backdrop).toEqual({ kind: "squared" });
+    const ruled = { backdrop: { kind: "ruled-wide" } } as unknown as Page;
+    expect(newBoardPage("p9", ruled, true).backdrop).toEqual({ kind: "blank" });
+  });
+
+  it("never takes a paper a board does not offer", () => {
+    expect(newBoardPage("p9", like, true, "ruled-wide").backdrop).toEqual({ kind: "squared" });
   });
 });

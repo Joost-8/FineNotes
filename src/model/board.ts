@@ -30,6 +30,7 @@ import {
   type PageSection,
   type Ruling,
   type TextBoxElement,
+  type Backdrop,
   POINT_STRIDE,
   pageById,
 } from "./document";
@@ -435,11 +436,19 @@ export function boardDrawing(
  * being read) when that is one a board offers, else blank. `inNotebook`:
  * a board among an ordinary notebook's pages, flagged `board`.
  */
-export function newBoardPage(id: string, like: Page | undefined, inNotebook = false): Page {
-  const backdrop =
-    like && (BOARD_RULINGS as readonly string[]).includes(like.backdrop.kind)
-      ? structuredClone(like.backdrop)
-      : ({ kind: "blank" } as const);
+export function newBoardPage(
+  id: string,
+  like: Page | undefined,
+  inNotebook = false,
+  /** One of `BOARD_RULINGS`, picked in Add page; otherwise `like`'s, when a board paper. */
+  ruling?: Ruling,
+): Page {
+  const backdrop: Backdrop =
+    ruling && BOARD_RULINGS.includes(ruling)
+      ? { kind: ruling }
+      : like && (BOARD_RULINGS as readonly string[]).includes(like.backdrop.kind)
+        ? structuredClone(like.backdrop)
+        : { kind: "blank" };
   return {
     id,
     kind: "ink",

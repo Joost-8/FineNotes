@@ -21354,3 +21354,23 @@ button.goodobsidian-feature-hide.clickable-icon svg {
 .goodobsidian-feature-row button.goodobsidian-feature-hide.clickable-icon {
   margin-inline-start: 2px;
 }
+
+/* Add page: a board on one of the three papers a new board offers (discussion #160). */
+.goodobsidian-addpage-boardhead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  color: var(--text-normal);
+}
+
+.goodobsidian-addpage-boards {
+  display: flex;
+  gap: 10px;
+  padding: 0 10px;
+}
+
+.goodobsidian-addpage-boards button.goodobsidian-template-card.clickable-icon {
+  flex: 1 1 0;
+  min-width: 0;
+}

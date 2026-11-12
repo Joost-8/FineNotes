@@ -61,6 +61,7 @@ import {
   type InkDocument,
   type PageComment,
   type Page,
+  type Ruling,
   type TextBoxElement,
   blankPage,
   emptyDocument,
@@ -6069,7 +6070,7 @@ export class InkView extends TextFileView {
         this.paintPaperThumbnail(canvas, backdrop, shapeOf(backdrop), cssWidth),
       onPick: (backdrop, at) => this.addTemplatePage(backdrop, shapeOf(backdrop), at, ref),
       onMore: (at) => this.openTemplatePicker("add", ref, at),
-      onBoard: (at) => this.addBoardPage(at, ref),
+      onBoard: (at, ruling) => this.addBoardPage(at, ref, ruling),
     });
     this.addPagePopover = { popover, anchor };
   }
@@ -6981,12 +6982,14 @@ export class InkView extends TextFileView {
    * A board among a notebook's pages (discussion #160), from Add page: an
    * empty board at `position` from page `ref`, shown at once. One undo step.
    */
-  private addBoardPage(position: InsertPosition, ref: number): void {
+  private addBoardPage(position: InsertPosition, ref: number, ruling?: Ruling): void {
     const surface = this.surface;
     if (!surface || this.isProtected() || this.refuseSinglePage()) return;
     const doc = surface.document;
     const index = insertIndexFor(position, ref, doc.pages.length);
-    surface.applyCommand(new AddPage(index, newBoardPage(nextPageId(doc), doc.pages[ref], true)));
+    surface.applyCommand(
+      new AddPage(index, newBoardPage(nextPageId(doc), doc.pages[ref], true, ruling)),
+    );
     surface.goToPage(index);
     this.sidebar?.flush();
     this.requestSave();
