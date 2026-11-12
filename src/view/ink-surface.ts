@@ -672,6 +672,7 @@ import {
   tableSizeFor,
 } from "./toolbar";
 import type { HighlighterTip, SnapMode } from "../settings-data";
+import { RegionFrames, type ShownRegion } from "./region-frames";
 import { SelectionActionBar, onTap } from "./selection-bar";
 import { swallowGhostClick } from "./ghost-click";
 import { edgeScrollSpeed } from "./page-drag-model";
@@ -859,6 +860,8 @@ const SEARCH_MARK_PAD = 3;
 const WORD_FLAG_GAP_PX = 5;
 /** How far below the top of the view a section lands when the contents goes to it, screen px. */
 const SECTION_LEAD_PX = 96;
+/** How much of the pane a named region fills when a link opens a board on it. */
+const REGION_FIT = 0.85;
 /** How long "Undo" or "Redo" from a finger double tap stays in the readout pill. */
 const READOUT_WORD_HOLD_MS = 900;
 /** An undo or redo's notice ("Undid: Move selection") is a phrase: held longer. */
@@ -1131,6 +1134,14 @@ export interface InkSurfaceCallbacks {
    * middle).
    */
   onAddSection?: (index: number, at: { x: number; y: number }, strokeIds: string[]) => void;
+  /**
+   * Turn into › Frame to embed on a lasso selection (discussion #167): the
+   * host asks for a name and adds a region of page `index` round `bounds`
+   * (page px, the selection's), pre-filled from its ink.
+   */
+  onAddRegion?: (index: number, bounds: Bounds, strokeIds: string[]) => void;
+  /** A region's name was tapped on its frame (shown with the lasso): `anchor` is the name. */
+  onTapRegion?: (shown: ShownRegion, anchor: HTMLElement) => void;
   /**
    * "Link to…" on a lasso selection of ink: the host asks where to, and
    * applies `linkStrokes` for these stroke ids on page `index`. `current`
@@ -2614,6 +2625,8 @@ export class InkSurface {
   private readonly commentMarkers: HTMLButtonElement[] = [];
   /** What each marker in the pool stands for now: its page and comment. */
   private commentTargets: Array<{ index: number; comment: PageComment }> = [];
+  /** The named regions' frames, shown while the lasso is the tool (discussion #167). */
+  private readonly regionFrames: RegionFrames;
   /** The by-line lasso's insert-space markers: a column per block of lines per page. */
   private readonly spaceHandlesEl: HTMLElement;
   private readonly spaceHandleEls: HTMLElement[] = [];
@@ -3009,6 +3022,9 @@ export class InkSurface {
     this.commentMarkersEl = this.paperEl.createDiv({
       cls: "goodobsidian-comment-markers is-hidden",
     });
+    this.regionFrames = new RegionFrames(this.paperEl, (shown, anchor) =>
+      this.callbacks.onTapRegion?.(shown, anchor),
+    );
     // A ribbon beside each heading listed in the contents. Takes no presses either.
     this.sectionRibbonsEl = this.paperEl.createDiv({
       cls: "goodobsidian-section-ribbons is-hidden",
@@ -3938,6 +3954,7 @@ export class InkSurface {
     this.syncSpaceHandles();
     // A comment added, resolved or removed (an undo too).
     this.syncCommentMarkers();
+    this.syncRegionFrames();
     this.syncCalcChip();
     this.callbacks.onChange(pages);
   }
@@ -4064,6 +4081,26 @@ export class InkSurface {
     this.requestFrame();
     this.reportStatus();
     this.reportSizeScale();
+  }
+
+  /**
+   * Show a named region (page `index`, `rect` in page px), as a link to it
+   * opens the notebook: on a board, in the middle of the pane, zoomed out
+   * just enough to fit it, never past the writing size; on a page, its top
+   * a little below the view's.
+   */
+  showRegion(index: number, rect: { x: number; y: number; w: number; h: number }): void {
+    if (!this.board) {
+      this.goToPagePoint(index, rect.y);
+      return;
+    }
+    const base = this.baseScale || 1;
+    const fit = REGION_FIT * Math.min(this.cssW / (rect.w * base), this.cssH / (rect.h * base));
+    this.showBoardSpot({
+      x: rect.x + rect.w / 2,
+      y: rect.y + rect.h / 2,
+      zoom: Number.isFinite(fit) && fit > 0 ? Math.min(1, fit) : 1,
+    });
   }
 
   /** Put the middle of a board's drawing (or of its page) in the middle of the pane. */
@@ -14186,6 +14223,24 @@ export class InkSurface {
         },
       });
     }
+    const region = this.callbacks.onAddRegion;
+    if (heading && index >= 0 && region) {
+      actions.push({
+        id: "region",
+        icon: "frame",
+        label: t("surface.selectionBar.region"),
+        group: "turn",
+        submenu: TURN_INTO,
+        run: () => {
+          this.clearSelection();
+          region(
+            index,
+            heading,
+            sel.strokes.map((stroke) => stroke.id),
+          );
+        },
+      });
+    }
     if (menu.link) actions.push(...this.linkActions(sel, index));
     if (menu.sticker && this.callbacks.onSaveSticker) {
       actions.push({
@@ -15826,6 +15881,20 @@ export class InkSurface {
     }
     for (let i = used; i < this.lockBadges.length; i++) this.lockBadges[i].addClass("is-hidden");
     this.lockBadgesEl.toggleClass("is-hidden", used === 0);
+    // Named regions' frames show with the lasso too, and move with the same layouts.
+    this.syncRegionFrames();
+  }
+
+  /** Each named region's frame, while the lasso is the tool; none otherwise. */
+  private syncRegionFrames(): void {
+    // Not built yet (the first change can come from the constructor's load).
+    if (!this.regionFrames || !this.pageLayout) return;
+    this.regionFrames.sync(
+      this.pageLayout.boxes,
+      (index) => this.pageAt(index),
+      this.unitScale,
+      this.toolState.tool === "select",
+    );
   }
 
   /**

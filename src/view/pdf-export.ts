@@ -227,6 +227,8 @@ async function paintForExport<T>(
 /**
  * Paint `page` into `canvas` at `cssWidth` CSS px, exactly as it will be
  * exported — for the export dialog's page previews. Resolves once painted.
+ * With `crop` (page px) only that part is painted, `cssWidth` wide: a
+ * board's drawing or a named region in a note's embed.
  */
 export async function paintPagePreview(
   canvas: HTMLCanvasElement,
@@ -234,18 +236,38 @@ export async function paintPagePreview(
   sources: PdfExportSources,
   cssWidth: number,
   dpr: number,
+  crop?: { x: number; y: number; width: number; height: number },
 ): Promise<void> {
   const page = withTapesOf(pageOf(original, sources), sources);
-  const { width } = page.geometry;
+  const { width } = crop ?? page.geometry;
   if (!(width > 0) || !(cssWidth > 0)) return;
-  const painter = await preparePage(page, sources, (cssWidth / width) * dpr);
+  // Cropped, only the pictures that reach into the cut are decoded.
+  const shown = crop ? { ...page, images: page.images.filter((i) => reaches(i, crop)) } : page;
+  const painter = await preparePage(shown, sources, (cssWidth / width) * dpr);
   renderPageThumbnail(canvas, page, painter, cssWidth, dpr, {
     usePressure: sources.usePressure,
     highlighterAlpha: sources.highlighterAlpha,
     paper: sources.paper,
     ...(sources.images ? { images: sources.images } : {}),
     ...(sources.furniture ? { furniture: sources.furniture(original) } : {}),
+    ...(crop ? { crop } : {}),
   });
+}
+
+/** Whether a picture, turned any way about its centre, can reach into `box` (page px). */
+function reaches(
+  image: { x: number; y: number; w: number; h: number },
+  box: { x: number; y: number; width: number; height: number },
+): boolean {
+  const r = Math.hypot(image.w, image.h) / 2;
+  const cx = image.x + image.w / 2;
+  const cy = image.y + image.h / 2;
+  return (
+    cx + r >= box.x &&
+    cx - r <= box.x + box.width &&
+    cy + r >= box.y &&
+    cy - r <= box.y + box.height
+  );
 }
 
 /**

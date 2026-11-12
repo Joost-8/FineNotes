@@ -8,6 +8,28 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Embed part of a board in a note**
+  ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167)).
+  Lasso something on a board (or any page) and choose Turn into › Frame to
+  embed: name it, and `![[Mind map.notebook#Krebs cycle]]` in any note shows
+  just that part, at the note's width. The embed link is copied for you, the
+  name is filled in from your handwriting when the reader is on, and the
+  embed follows the board as you write. A tap opens the board on that part,
+  and Export to PDF of the note prints it. While the lasso is the tool,
+  frames show as a thin outline with their name; tap the name to copy the
+  link again, rename or delete it. `#page=3` still means page 3, and a name
+  that is no frame still shows that heading of the note, as before.
+
+### Changed
+
+- **A board embedded in a note shows its drawing**
+  ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167)).
+  `![[Mind map.notebook]]` used to paint the board's whole page, metres of
+  mostly empty paper shrunk to the note's width. It now shows what is drawn
+  with a little paper round it, the same cut Export as PDF makes; an empty
+  board shows a short strip of its paper.
 ### Fixed
 
 - A notebook moved to a new window (Move to new window) no longer lags or freezes while the main

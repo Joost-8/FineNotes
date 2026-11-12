@@ -25,7 +25,26 @@ import { readShapeToolStyle } from "../model/shape-style";
 import { DEFAULT_FILL_COLOR, readFillGap } from "../model/fill-region";
 import { isTape, tapeColorOf, tapeHeightOf, tapeModeOf } from "../model/cover-tape";
 import { notebookKeyScope } from "./notebook-keys";
-import { Notice, Platform, TextFileView, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
+import {
+  Menu,
+  Notice,
+  Platform,
+  TextFileView,
+  TFile,
+  type WorkspaceLeaf,
+  normalizePath,
+} from "obsidian";
+import {
+  SetRegion,
+  allRegions,
+  findRegion,
+  nextRegionId,
+  regionKey,
+  regionRect,
+  regionSubpathName,
+  uniqueRegionName,
+} from "../model/regions";
+import type { ShownRegion } from "./region-frames";
 import {
   AUTO_RECOGNIZE_IDLE_MS,
   DEVICE_READ_IDLE_MS,
@@ -3615,6 +3634,8 @@ export class InkView extends TextFileView {
           if (this.isBoard) this.scheduleLastPage();
         },
         onAddSection: (index, at, strokeIds) => this.addSection(index, at, strokeIds),
+        onAddRegion: (index, bounds, strokeIds) => this.addRegion(index, bounds, strokeIds),
+        onTapRegion: (shown, anchor) => this.regionMenu(shown, anchor),
         onLinkStrokes: (index, strokeIds, current) => this.linkInk(index, strokeIds, current),
         onMakeTask: (index, strokeIds) => this.makeInkTask(index, strokeIds),
         onTurnIntoText: (index, strokeIds) => this.turnIntoText(index, strokeIds),
@@ -4344,6 +4365,9 @@ export class InkView extends TextFileView {
     let index: number | null = null;
     if (subpath !== null) index = pageFromSubpath(subpath, pages.length);
     else if (back !== null) index = back < pages.length ? back : null;
+    // `#Krebs cycle`: a named region, centred (discussion #167). A page comes first.
+    const name = subpath !== null && index === null ? regionSubpathName(subpath) : null;
+    const region = name !== null ? findRegion(pages, name) : null;
     if (fresh) {
       // From now on the page being read is worth remembering for this file.
       this.restoredPath = path;
@@ -4356,7 +4380,8 @@ export class InkView extends TextFileView {
       if (spot && pages[0]) surface.showBoardSpot(anchoredSpot(spot, pages[0]));
       else index ??= lastPageIndex(this.loadLastPages(), path, pages);
     }
-    if (index !== null) surface.goToPage(index);
+    if (region) surface.showRegion(region.index, region.region);
+    else if (index !== null) surface.goToPage(index);
     const search = this.pendingSearch;
     this.pendingSearch = null;
     if (search && search.pageIndex === index) void this.showSearchHits(index, search.query);
@@ -5029,6 +5054,112 @@ export class InkView extends TextFileView {
       read = found;
       if (found.text) modal.suggest(found.text, found.fixes);
     });
+  }
+
+  /**
+   * Turn into › Frame to embed (discussion #167): ask for a name, pre-filled
+   * from the ink as a contents heading is, and frame the selection with it,
+   * so a Markdown note can embed that part alone. A name another frame of
+   * this page already has moves that frame here (its embeds keep working);
+   * one a frame on another page has is numbered. The embed link is copied.
+   */
+  private addRegion(index: number, bounds: Bounds, strokeIds: string[]): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[index];
+    if (!surface || !page || this.isProtected()) return;
+    const rect = regionRect(bounds, page.geometry);
+    if (!rect) return;
+    let read: SelectionText | null = null;
+    const modal = new ContentsTitleModal(
+      this.app,
+      allRegions(surface.document.pages).length,
+      undefined,
+      (title) => {
+        // By identity: the page may move or go while the dialog is open.
+        if (this.isProtected() || this.surface !== surface) return;
+        if (!surface.document.pages.includes(page)) return;
+        const same = page.regions?.find((r) => regionKey(r.name) === regionKey(title));
+        const id = same?.id ?? nextRegionId(surface.document);
+        const name = same ? title : uniqueRegionName(surface.document.pages, title);
+        surface.applyCommand(new SetRegion(page, id, { name, ...rect }));
+        this.requestSave();
+        if (read) this.recordEdits(page, read.words, title);
+        this.copyRegionLink(name);
+      },
+      "region",
+    );
+    modal.open();
+    void this.readSelection(page, strokeIds).then((found) => {
+      read = found;
+      if (found.text) modal.suggest(found.text, found.fixes);
+    });
+  }
+
+  /** A tap on a frame's name: copy its embed link, rename it, or delete it. */
+  private regionMenu(shown: ShownRegion, anchor: HTMLElement): void {
+    const surface = this.surface;
+    const page = surface?.document.pages[shown.index];
+    const { region } = shown;
+    if (!surface || !page) return;
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item
+        .setTitle(t("view.region.copyLink"))
+        .setIcon("link")
+        .onClick(() => this.copyRegionLink(region.name)),
+    );
+    if (!this.isProtected()) {
+      menu.addItem((item) =>
+        item
+          .setTitle(t("view.region.rename"))
+          .setIcon("pencil")
+          .onClick(() => this.renameRegion(page, region.id)),
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle(t("view.region.delete"))
+          .setIcon("trash-2")
+          .setWarning(true)
+          .onClick(() => {
+            if (this.isProtected() || this.surface !== surface) return;
+            surface.applyCommand(new SetRegion(page, region.id, null));
+            this.requestSave();
+          }),
+      );
+    }
+    const r = anchor.getBoundingClientRect();
+    menu.showAtPosition({ x: r.left, y: r.bottom + 4 });
+  }
+
+  private renameRegion(page: Page, id: string): void {
+    const surface = this.surface;
+    const region = page.regions?.find((r) => r.id === id);
+    if (!surface || !region || this.isProtected()) return;
+    new ContentsTitleModal(
+      this.app,
+      0,
+      region.name,
+      (title) => {
+        if (this.isProtected() || this.surface !== surface) return;
+        const now = page.regions?.find((r) => r.id === id);
+        if (!now || !surface.document.pages.includes(page)) return;
+        const name = uniqueRegionName(surface.document.pages, title, id);
+        surface.applyCommand(new SetRegion(page, id, { ...now, name }));
+        this.requestSave();
+      },
+      "region",
+    ).open();
+  }
+
+  /** Copy the embed that shows frame `name` of this notebook in a note, in the vault's link style. */
+  private copyRegionLink(name: string): void {
+    const file = this.file;
+    if (!file) return;
+    const link = this.app.fileManager.generateMarkdownLink(file, "", `#${name}`);
+    void writeSystemText(link.startsWith("!") ? link : `!${link}`).then(
+      () => new Notice(t("view.region.linkCopied")),
+      () => new Notice(t("view.clipboardUnavailable")),
+    );
   }
 
   /**
