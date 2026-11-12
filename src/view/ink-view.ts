@@ -362,6 +362,7 @@ import { ExportPdfModal } from "./export-modal";
 import { penGesturesOf } from "../ink/pen-gestures";
 import type { Feature } from "../model/feature-index";
 import { TryHint } from "./try-hint";
+import { closeMenuOnPressOutside } from "./menu-dismiss";
 import { NotebookSearchModal } from "./search-modal";
 import { layoutPlainText, pdfHitRects } from "../search/pdf-hits";
 import {
@@ -5236,6 +5237,9 @@ export class InkView extends TextFileView {
     }
     const r = anchor.getBoundingClientRect();
     menu.showAtPosition({ x: r.left, y: r.bottom + 4 });
+    // A tap anywhere else closes it, the page included (menu-dismiss.ts).
+    const surfaceEl = surface.surfaceEl;
+    closeMenuOnPressOutside(menu, anchor.ownerDocument, (target) => surfaceEl.contains(target));
   }
 
   private renameRegion(page: Page, id: string): void {
