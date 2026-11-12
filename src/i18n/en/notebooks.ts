@@ -904,6 +904,27 @@ export const notebooks = {
   "notebooks.tips.tour": "Take the tour",
   "notebooks.tips.allChanges": "All changes",
   "notebooks.tips.whatsNew": "What's new",
+  "notebooks.tips.welcome": "Welcome",
+
+  // Features found by search, a tip's own button, and links (model/feature-index.ts).
+  "notebooks.features.heading": "Features",
+  "notebooks.features.search": "Search tips and settings",
+  "notebooks.features.open": "Open",
+  "notebooks.features.showMe": "Show me",
+  "notebooks.features.ask": "Not in FineNotes yet? Ask for it",
+  "notebooks.features.needsNotebook": "Open a notebook first.",
+  "notebooks.features.unknown": "FineNotes has no feature called {what}.",
+  "notebooks.features.copyLink": "Copy a link to this tip",
+  "notebooks.features.linkCopied": "Link copied",
+  "notebooks.features.darkShade": "Dark pages show colours in another shade",
+
+  // One-time hints after doing something the slow way (model/nudges.ts).
+  "notebooks.nudge.undo": "Two-finger double tap undoes",
+  "notebooks.nudge.redoThree": "Three-finger double tap redoes",
+  "notebooks.nudge.scribble": "Scribble over ink to erase it",
+  "notebooks.nudge.circleLasso": "Circle ink and hold to select it",
+  "notebooks.nudge.hold": "Draw and hold to make a shape",
+  "notebooks.nudge.pullPage": "Pull past the last page to add one",
   "notebooks.tips.collection.gestures": "Pen gestures",
   "notebooks.tips.collection.study": "Cover, listen, highlight",
   "notebooks.tips.collection.find": "Find and link",

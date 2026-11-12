@@ -107,6 +107,8 @@ export interface MorePanelActions {
   setDesk?: (choice: DeskChoice, color?: string) => void;
   /** Show the keyboard and stylus shortcuts. */
   showShortcuts: () => void;
+  /** The key that shows them too, where there is a keyboard; named at the row's end. */
+  shortcutsKey?: () => string | null;
   /** Copy the link that opens this notebook from a home-screen shortcut. */
   copyHomeLink: () => void;
   /** Let a finger draw until the Pencil writes again, or stop. Without it (no touch) the row is not offered. */
@@ -320,6 +322,7 @@ export class MorePanel {
     this.row(view, {
       icon: "keyboard",
       text: t("view.morePanel.shortcuts"),
+      value: actions.shortcutsKey?.() ?? undefined,
       run: () => actions.showShortcuts(),
     });
     this.row(view, {
@@ -540,6 +543,8 @@ export class MorePanel {
       text: string;
       cls?: string;
       enabled?: boolean;
+      /** A word at the row's end: the key that does the same. */
+      value?: string;
       run: (button: HTMLButtonElement) => void;
     },
   ): HTMLButtonElement {
@@ -548,6 +553,7 @@ export class MorePanel {
     });
     setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), options.icon);
     button.createSpan({ cls: "goodobsidian-more-label", text: options.text });
+    if (options.value) button.createSpan({ cls: "goodobsidian-more-value", text: options.value });
     button.disabled = options.enabled === false;
     button.addEventListener("click", () => {
       if (button.disabled) return;

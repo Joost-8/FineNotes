@@ -391,6 +391,8 @@ import { MorePanel } from "./more-panel";
 import { ShortcutsModal } from "../ui/shortcuts-modal";
 import { SHORTCUT_GROUPS } from "../model/shortcuts";
 import { boundShortcutGroups } from "../model/shortcut-bindings";
+import { fastKeys } from "../model/fast-ways";
+import type { NudgeEvent } from "../model/nudges";
 import { ContentsTitleModal } from "./contents-title-modal";
 import { TaskModal } from "./task-modal";
 import { InkTextModal } from "./ink-text-modal";
@@ -1297,8 +1299,9 @@ export class InkView extends TextFileView {
   }
 
   /** The tool bar's layout as the settings hold it. */
-  setNewsDot(on: boolean): void {
+  setNewsDot(on: boolean, controls: readonly string[] = this.plugin.newsControlIds()): void {
     this.toolbar?.setHomeDot(on);
+    this.toolbar?.setNewsItems(controls, (id) => this.plugin.markNewsControlUsed(id));
   }
 
   private toolbarLayout(): ToolbarLayout {
@@ -3277,6 +3280,9 @@ export class InkView extends TextFileView {
         onToolChange: (tool) => {
           this.surface?.setTool(tool);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
+          // Picked from the bar: the slow way to a lasso or a shape.
+          if (tool === "select") this.noteUse("lasso.tool");
+          else if (tool === "shape") this.noteUse("shape.tool");
         },
         // The toolbar writes colour and size into the shared tool state,
         // which is where the surface reads them; the pen is remembered for
@@ -3295,10 +3301,19 @@ export class InkView extends TextFileView {
         },
         onPressureToggle: () => this.updateSidebarRendering(),
         pressureAllowed: () => this.settings.pressureWidth,
-        onUndo: () => this.surface?.undo(),
-        onRedo: () => this.surface?.redo(),
+        onUndo: () => {
+          this.surface?.undo();
+          this.noteUse("undo.button");
+        },
+        onRedo: () => {
+          this.surface?.redo();
+          this.noteUse("redo.button");
+        },
         onClear: () => this.clearPage(),
-        onAddPage: (anchor) => this.openAddPage(anchor, this.surface?.currentPage ?? 0, "after"),
+        onAddPage: (anchor) => {
+          this.openAddPage(anchor, this.surface?.currentPage ?? 0, "after");
+          this.noteUse("page.button");
+        },
         onPenTypeChange: () => {
           this.toolbar?.syncActive();
           this.surface?.refreshPenCursor();
@@ -3423,6 +3438,9 @@ export class InkView extends TextFileView {
       },
     );
     this.toolbar.setHomeDot(this.plugin.hasNews());
+    this.toolbar.setNewsItems(this.plugin.newsControlIds(), (id) =>
+      this.plugin.markNewsControlUsed(id),
+    );
     this.showFullScreen(this.plugin.fullScreen);
     // The gear's dot while a newer FineNotes is out, and "Update available"
     // under it until it is tapped or closed, again every other day until the
@@ -3570,6 +3588,7 @@ export class InkView extends TextFileView {
         onHistoryStep: (command, redo) => this.calcNotes.historyStep(command, redo),
         onPenShape: () => {
           if (this.surface) this.plugin.offerShapeHint(this.surface);
+          this.noteUse("shape.hold");
         },
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
@@ -3656,7 +3675,11 @@ export class InkView extends TextFileView {
         onAddPageRequested: (afterIndex) => this.addPage(afterIndex, true),
         // Pulled past the last page: a blank page on the last page's paper,
         // then glide onto it, as GoodNotes does.
-        onPullAddPage: () => this.addPage(this.doc.pages.length - 1, true),
+        onPullAddPage: () => {
+          this.addPage(this.doc.pages.length - 1, true);
+          this.noteUse("page.pull");
+        },
+        onUse: (event) => this.noteUse(event),
         onPinchOverview: (snapshot) => this.openOverviewFromPinch(snapshot),
         onZoomMotion: (moving) => this.pdfCache?.setHeld(moving, "zoom"),
         onTextEditing: (style) => this.toolbar?.setTextTarget(style),
@@ -4228,6 +4251,11 @@ export class InkView extends TextFileView {
    * transcript server's sidecar file) and typed text; a tap on a result
    * turns to its page. Read-only, so a protected note may be searched too.
    */
+  /** Count a slow or a fast way for the earned hints (model/nudges.ts). */
+  private noteUse(event: NudgeEvent): void {
+    if (this.surface) this.plugin.noteUse(event, this.surface);
+  }
+
   async openSearch(): Promise<void> {
     if (!this.file || !this.surface) return;
     const pages = await this.notebookTextIndex(false);
@@ -4236,6 +4264,7 @@ export class InkView extends TextFileView {
       initial: this.lastSearch,
       onQuery: (query) => (this.lastSearch = query),
       goTo: (index, query) => void this.showSearchHits(index, query),
+      showFeature: (feature) => this.plugin.showFeature(feature),
     });
     modal.open();
     // The PDF pages not read yet join the list as they are read (#112).
@@ -5873,6 +5902,10 @@ export class InkView extends TextFileView {
           void this.plugin.applyPageAppearance();
         },
         showShortcuts: () => this.toggleShortcuts(),
+        shortcutsKey: () =>
+          Platform.isMobile
+            ? null
+            : fastKeys("shortcuts", this.plugin.shortcuts.table, Platform.isMacOS),
         copyHomeLink: () => this.copyHomeLink(),
         // Where touch exists: on a desktop the mouse draws already.
         setFreePageEdges: (on) => void this.plugin.setFreePageEdges(on),

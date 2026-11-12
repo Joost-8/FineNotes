@@ -8,6 +8,8 @@
  *   beside it, opened at its first page. A shortcut that has just saved the
  *   file passes its vault path; `.pdf` may be left off, and a bare name is
  *   looked for anywhere in the vault.
+ * - `do=show&feature=scribble` — that feature's tip, with its button
+ *   (feature-index.ts). The link an answer on GitHub can carry.
  *
  * Obsidian itself reads `vault`. On mobile, a `vault` that is not the open
  * vault's name (as it is called on that device) reloads the app to open
@@ -21,6 +23,8 @@ export const FINENOTES_LINK_ACTION = "finenotes";
 export type LinkRequest =
   | { do: "new"; name: string; folder?: string; last: boolean }
   | { do: "pdf"; file: string }
+  /** `do=show&feature=scribble`: that feature's tip, or its switch (feature-index.ts). */
+  | { do: "show"; feature: string }
   | { do: "unknown"; what: string };
 
 /** Obsidian hands a protocol handler the query as plain strings. */
@@ -36,6 +40,10 @@ export function parseFinenotesLink(
   if (what === "pdf") {
     const file = cleanPath(params.file ?? "");
     return file ? { do: "pdf", file } : { do: "unknown", what: "pdf without a file" };
+  }
+  if (what === "show") {
+    const feature = (params.feature ?? "").trim();
+    return feature ? { do: "show", feature } : { do: "unknown", what: "show without a feature" };
   }
   return { do: "unknown", what: what || "nothing" };
 }

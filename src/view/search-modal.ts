@@ -10,7 +10,7 @@
  * `.transcript.md` file), its typed text boxes and its PDF's printed text.
  */
 
-import { type App, SuggestModal } from "obsidian";
+import { type App, SuggestModal, setIcon } from "obsidian";
 import { t, tn } from "../i18n/translate";
 import {
   type PageText,
@@ -20,6 +20,15 @@ import {
   searchPages,
 } from "../search/notebook-search";
 import { DialogKeyboard } from "./dialog-keyboard";
+import type { Feature } from "../model/feature-index";
+import { featureHits } from "./feature-rows";
+
+/** A row of the list: a page that holds the words, or a feature the words mean. */
+type SearchRow = SearchHit | Feature;
+
+function isFeature(row: SearchRow): row is Feature {
+  return !("pageIndex" in row);
+}
 
 function kindLabel(kind: SearchHit["snippets"][number]["kind"]): string {
   if (kind === "handwriting") return t("view.search.kindHandwriting");
@@ -34,9 +43,11 @@ export interface NotebookSearchHost {
   onQuery: (query: string) => void;
   /** Turn to a page, 0-based, and light up what `query` found there. */
   goTo: (pageIndex: number, query: string) => void;
+  /** Open a feature the words meant: its tip, or its switch. */
+  showFeature?: (feature: Feature) => void;
 }
 
-export class NotebookSearchModal extends SuggestModal<SearchHit> {
+export class NotebookSearchModal extends SuggestModal<SearchRow> {
   private transcribed: boolean;
   private index: readonly PageText[];
   /**
@@ -84,13 +95,29 @@ export class NotebookSearchModal extends SuggestModal<SearchHit> {
     }
   }
 
-  getSuggestions(query: string): SearchHit[] {
+  getSuggestions(query: string): SearchRow[] {
     this.host.onQuery(query);
     this.emptyStateText = this.hint(query);
-    return searchPages(this.index, query);
+    // The notebook's own pages first; what FineNotes can do with those words after.
+    const features = this.host.showFeature ? featureHits(query) : [];
+    return [...searchPages(this.index, query), ...features];
   }
 
-  renderSuggestion(hit: SearchHit, el: HTMLElement): void {
+  renderSuggestion(hit: SearchRow, el: HTMLElement): void {
+    if (isFeature(hit)) {
+      el.addClass("goodobsidian-search-feature");
+      setIcon(
+        el.createSpan({ cls: "goodobsidian-feature-icon" }),
+        hit.tip ? "lightbulb" : "sliders-horizontal",
+      );
+      const words = el.createSpan({ cls: "goodobsidian-feature-words" });
+      words.createSpan({ cls: "goodobsidian-feature-title", text: t(hit.title) });
+      words.createSpan({
+        cls: "goodobsidian-feature-sub",
+        text: hit.collection ? t(hit.collection.title) : t("notebooks.features.heading"),
+      });
+      return;
+    }
     el.addClass("goodobsidian-search-hit");
     const head = el.createDiv({ cls: "goodobsidian-search-page" });
     head.createSpan({ text: t("view.search.page", { page: hit.pageIndex + 1 }) });
@@ -110,7 +137,11 @@ export class NotebookSearchModal extends SuggestModal<SearchHit> {
     }
   }
 
-  onChooseSuggestion(hit: SearchHit): void {
+  onChooseSuggestion(hit: SearchRow): void {
+    if (isFeature(hit)) {
+      this.host.showFeature?.(hit);
+      return;
+    }
     this.host.goTo(hit.pageIndex, this.inputEl.value);
   }
 
