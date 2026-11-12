@@ -58,6 +58,15 @@ extracted from the matching section of this file by `release.yml`.
   Now the page stops at the screen's edges there, as at its sides. Zoomed out
   to the whole page, the margin around it stays. The gap between pages stays
   too; Join pages in Notebook settings closes it.
+- **A lasso's Screenshot is the area you drew**
+  ([FineNotes#210](https://github.com/Joost-8/FineNotes/issues/210)). It
+  used to grow or shift to the ink the lasso picked up; now ink that sticks
+  out of the loop is cut at its edge. Ask AI about a selection sends the
+  same area. Once the selection is resized, the picture follows its frame.
+- **Pen settings and Pen gestures fit an iPad Split View pane**
+  ([FineNotes#210](https://github.com/Joost-8/FineNotes/issues/210)). Opened
+  from the pen in hand, the second page of the pen menu hung off the pane's
+  left edge. Every toolbar popover now stays inside the view, however narrow.
 
 ## [2.9.1] - 2026-11-10
 

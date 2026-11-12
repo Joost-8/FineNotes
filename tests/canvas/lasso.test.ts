@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  selectionPatchBounds,
   DEFAULT_LASSO_FILTER,
   LASSO_FILTER_KEYS,
   LassoPath,
@@ -703,5 +704,47 @@ describe("resizing a selection by its corners", () => {
     expect(after.minY).toBeCloseTo(expected.minY);
     expect(after.maxX).toBeCloseTo(expected.maxX);
     expect(after.maxY).toBeCloseTo(expected.maxY);
+  });
+});
+
+describe("the patch a lasso selection's screenshot takes (FineNotes#210)", () => {
+  const loop = { minX: 100, minY: 50, maxX: 400, maxY: 300 };
+  // Ink picked up by the loop reaches past it on the left and stops short on the right.
+  const picked = { minX: 80, minY: 90, maxX: 350, maxY: 280 };
+  const area = { pageId: "p1", loop, picked };
+
+  it("is the loop as drawn, not the bounds of the ink it picked up", () => {
+    expect(selectionPatchBounds(area, "p1", picked, 8)).toEqual(loop);
+  });
+
+  it("follows the selection when it is moved", () => {
+    const moved = { minX: 110, minY: 70, maxX: 380, maxY: 260 };
+    expect(selectionPatchBounds(area, "p1", moved, 8)).toEqual({
+      minX: 130,
+      minY: 30,
+      maxX: 430,
+      maxY: 280,
+    });
+  });
+
+  it("falls back to the selection's bounds with a margin once it was resized or is another", () => {
+    const resized = { minX: 80, minY: 90, maxX: 500, maxY: 400 };
+    expect(selectionPatchBounds(area, "p1", resized, 8)).toEqual({
+      minX: 72,
+      minY: 82,
+      maxX: 508,
+      maxY: 408,
+    });
+    expect(selectionPatchBounds(area, "p2", picked, 8)).toEqual({
+      minX: 72,
+      minY: 82,
+      maxX: 358,
+      maxY: 288,
+    });
+    expect(selectionPatchBounds(null, "p1", picked, 0)).toEqual(picked);
+  });
+
+  it("is nothing without a selection", () => {
+    expect(selectionPatchBounds(area, "p1", null, 8)).toBeNull();
   });
 });

@@ -995,7 +995,10 @@ body:not(.is-mobile) .goodobsidian-view {
   position: absolute;
   z-index: 30;
   transform: translateX(-50%);
-  max-width: min(320px, calc(100vw - 24px));
+  /* --gob-popover-room: the width the view leaves it (toolbar.ts,
+     keepPopoverInside), narrower than the window beside a sidebar or in
+     iPad Split View (FineNotes#210). */
+  max-width: min(320px, calc(100vw - 24px), var(--gob-popover-room, 100vw));
   border: 1px solid var(--gob-line);
   border-radius: var(--gob-pop-radius);
   background: var(--gob-pop-bg);
@@ -7791,7 +7794,7 @@ textarea.goodobsidian-chat-input:focus-visible {
    iPad, shrinking to 28 px on a narrow pane). The cells up to the chosen
    size fill with the accent. Wider than other popovers to fit the grid. */
 .goodobsidian-popover.is-table-picker {
-  max-width: min(420px, calc(100vw - 24px));
+  max-width: min(420px, calc(100vw - 24px), var(--gob-popover-room, 100vw));
 }
 
 .goodobsidian-table-grid {
@@ -10930,7 +10933,7 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
 
 .goodobsidian-popover.is-color-popover {
   width: 340px;
-  max-width: calc(100vw - 24px);
+  max-width: min(calc(100vw - 24px), var(--gob-popover-room, 100vw));
 }
 
 /* The laser's colour: the Shape tool's own well and disc with a caret
