@@ -9,10 +9,13 @@ import {
 import {
   DUPLICATE_OFFSET,
   IMAGE_MIN_PLACE_SIDE,
+  IMAGE_GRID_GAP,
   duplicateImage,
   newImageElement,
+  newImageElements,
   nextImageId,
   placeImageBox,
+  placeImageGrid,
 } from "../../src/model/images";
 import { withRotation } from "../../src/canvas/image-geometry";
 
@@ -173,5 +176,66 @@ describe("placing through the commands", () => {
     expect(doc.pages[0].images.map((i) => i.id)).toEqual(["i1", "i2"]);
     new RemoveImage("p1", "i1").apply(doc);
     expect(doc.pages[0].images).toEqual([second]);
+  });
+});
+
+describe("placeImageGrid (several pictures chosen at once, FineNotes#211)", () => {
+  const visible = { minX: 0, minY: 200, maxX: 1024, maxY: 900 };
+  const overlaps = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+  ): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+  it("places one picture as a single import does", () => {
+    const one = { width: 800, height: 600 };
+    expect(placeImageGrid([one], PAGE, visible)).toEqual([placeImageBox(one, PAGE, visible)]);
+    expect(placeImageGrid([], PAGE, visible)).toEqual([]);
+  });
+
+  it("lays several side by side in reading order, apart, inside what is on screen", () => {
+    const sizes = [
+      { width: 4000, height: 3000 },
+      { width: 3000, height: 4000 },
+      { width: 500, height: 500 },
+      { width: 1200, height: 300 },
+      { width: 0, height: 0 },
+    ];
+    const boxes = placeImageGrid(sizes, PAGE, visible);
+    expect(boxes).toHaveLength(sizes.length);
+    for (const [i, box] of boxes.entries()) {
+      expect(box.x).toBeGreaterThanOrEqual(visible.minX + IMAGE_GRID_GAP - 1e-9);
+      expect(box.y).toBeGreaterThanOrEqual(visible.minY + IMAGE_GRID_GAP - 1e-9);
+      expect(box.x + box.w).toBeLessThanOrEqual(visible.maxX + 1e-9);
+      expect(box.y + box.h).toBeLessThanOrEqual(visible.maxY + 1e-9);
+      for (const other of boxes.slice(i + 1)) expect(overlaps(box, other)).toBe(false);
+    }
+    // Aspect kept.
+    expect(boxes[0].w / boxes[0].h).toBeCloseTo(4 / 3, 6);
+    expect(boxes[1].w / boxes[1].h).toBeCloseTo(3 / 4, 6);
+    // Reading order: the second is right of the first on the first row.
+    expect(boxes[1].x).toBeGreaterThan(boxes[0].x);
+  });
+
+  it("never enlarges a small picture past its own size", () => {
+    const boxes = placeImageGrid(
+      [
+        { width: 120, height: 80 },
+        { width: 120, height: 80 },
+      ],
+      PAGE,
+      null,
+    );
+    for (const box of boxes) expect(box.w).toBeCloseTo(120, 6);
+  });
+});
+
+describe("newImageElements", () => {
+  it("counts fresh ids on, so pictures placed together never share one", () => {
+    const doc: InkDocument = emptyDocument();
+    doc.pages[0].images.push({ id: "i4", path: "a.png", x: 0, y: 0, w: 1, h: 1 });
+    const box = { x: 1, y: 2, w: 3, h: 4 };
+    const made = newImageElements(doc, ["b.png", "c.png", "d.png"], [box, box, box]);
+    expect(made.map((m) => m.id)).toEqual(["i5", "i6", "i7"]);
+    expect(made.map((m) => m.path)).toEqual(["b.png", "c.png", "d.png"]);
   });
 });

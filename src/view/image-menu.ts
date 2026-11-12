@@ -30,7 +30,7 @@
 import { type App, FuzzySuggestModal, Notice, Platform, type TFile, setIcon } from "obsidian";
 import { isImagePath } from "../canvas/image-raster";
 import type { ImageElement } from "../model/document";
-import { pickImageFile } from "./image-import";
+import { pickImageFiles } from "./image-import";
 import { menuAnchor, menuPlace } from "./bar-dock-model";
 import { t } from "../i18n/translate";
 import { docOf, shownDoc, winOf } from "./host-window";
@@ -73,6 +73,14 @@ export interface ImageMenuContext {
     suggestedName: string,
     options?: InsertImageOptions,
   ) => Promise<ImageElement | null>;
+  /**
+   * Save several pictures chosen at once and place them on the page in view
+   * side by side, as **one** undo step (FineNotes#211). Absent, each goes in
+   * through `insertBytes`.
+   */
+  insertManyBytes?: (
+    pictures: readonly { bytes: ArrayBuffer; mime: string; name: string }[],
+  ) => Promise<void>;
   /** Place a picture that is already in the vault, by path. No copy is made. */
   insertVaultFile: (path: string, options?: InsertImageOptions) => Promise<ImageElement | null>;
 }
@@ -170,20 +178,26 @@ export function imageMenuEntries(): ImageMenuEntry[] {
 }
 
 /**
- * Photos / Take photo. `pickImageFile` runs before this function's first
+ * Photos / Take photo. `pickImageFiles` runs before this function's first
  * `await`, i.e. still inside the tap, which is what lets the picker open.
+ * Photos takes several at once (FineNotes#211).
  */
 async function pickAndInsert(ctx: ImageMenuContext, capture: boolean): Promise<void> {
-  const file = await pickImageFile(ctx.host, capture);
-  if (!file) return;
-  let bytes: ArrayBuffer;
-  try {
-    bytes = await file.arrayBuffer();
-  } catch {
-    new Notice(t("surface.imageMenu.readFailed"));
+  const files = await pickImageFiles(ctx.host, capture);
+  if (files.length === 0) return;
+  const pictures: { bytes: ArrayBuffer; mime: string; name: string }[] = [];
+  for (const file of files) {
+    try {
+      pictures.push({ bytes: await file.arrayBuffer(), mime: file.type, name: file.name });
+    } catch {
+      new Notice(t("surface.imageMenu.readFailed"));
+    }
+  }
+  if (pictures.length > 1 && ctx.insertManyBytes) {
+    await ctx.insertManyBytes(pictures);
     return;
   }
-  await ctx.insertBytes(bytes, file.type, file.name);
+  for (const picture of pictures) await ctx.insertBytes(picture.bytes, picture.mime, picture.name);
 }
 
 const POPOVER_WIDTH = 280;

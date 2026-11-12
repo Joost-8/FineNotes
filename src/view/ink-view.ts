@@ -142,7 +142,7 @@ import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
 import {
   measureImage,
-  pickImageFile,
+  pickImageFiles,
   prepareImageBytes,
   saveImageAttachment,
 } from "./image-import";
@@ -157,7 +157,13 @@ import {
   imageMenuEntries,
 } from "./image-menu";
 import { isImagePath, mimeForExtension, normalizeMime } from "../canvas/image-raster";
-import { newImageElement, nextImageId, placeImageBox } from "../model/images";
+import {
+  newImageElement,
+  newImageElements,
+  nextImageId,
+  placeImageBox,
+  placeImageGrid,
+} from "../model/images";
 import {
   STICKY_SIDE,
   DEFAULT_STICKY_COLOR,
@@ -6513,8 +6519,63 @@ export class InkView extends TextFileView {
       host: this.contentEl,
       insertBytes: (bytes, mime, name, options) =>
         this.insertImageBytes(bytes, mime, name, options),
+      insertManyBytes: (pictures) => this.insertImagesBytes(pictures),
       insertVaultFile: (path, options) => this.insertImageFromVault(path, options),
     };
+  }
+
+  /**
+   * Several pictures chosen at once (FineNotes#211): each saved as an
+   * attachment as {@link insertImageBytes} saves one, then all placed side
+   * by side on the page in view (`placeImageGrid`) as **one** undo step. A
+   * picture that cannot be read is skipped with a notice; the rest go in.
+   */
+  private async insertImagesBytes(
+    pictures: readonly { bytes: ArrayBuffer; mime: string; name: string }[],
+  ): Promise<void> {
+    if (this.isProtected()) return;
+    const note = this.file;
+    const surface = this.surface;
+    if (!note || !surface) return;
+    const progress = new Notice(t("view.image.adding"), 0);
+    const saved: { path: string; width: number; height: number }[] = [];
+    try {
+      for (const picture of pictures) {
+        try {
+          const prepared = await prepareImageBytes(picture.bytes, picture.mime);
+          const file = await saveImageAttachment(
+            this.app,
+            prepared,
+            picture.name,
+            note.path,
+            this.attachmentFolder("images"),
+          );
+          saved.push({ path: file.path, width: prepared.width, height: prepared.height });
+        } catch (error) {
+          new Notice(t("view.image.addFailed", { message: errorMessage(error) }), 8000);
+        }
+        if (this.file !== note || this.surface !== surface || this.isProtected()) return;
+      }
+    } finally {
+      progress.hide();
+    }
+    if (saved.length === 0) return;
+    const doc = surface.document;
+    const index = Math.max(0, Math.min(doc.pages.length - 1, surface.currentPage));
+    const page = doc.pages[index];
+    if (!page) return;
+    const boxes = placeImageGrid(saved, page.geometry, surface.visibleRegion(index));
+    const images = newImageElements(
+      doc,
+      saved.map((each) => each.path),
+      boxes,
+    );
+    surface.applyCommand(
+      new CompositeCommand(
+        t("surface.command.insertImage"),
+        images.map((image) => new InsertImage(page.id, image)),
+      ),
+    );
   }
 
   /**
@@ -6692,10 +6753,50 @@ export class InkView extends TextFileView {
     if (fromVault) {
       new VaultPdfSuggestModal(this.app, (file) => void this.importVaultPdf(file.path)).open();
     } else {
-      void pickImageFile(this.contentEl, false, "application/pdf,.pdf").then((file) => {
-        if (file) void this.importPdfFile(file);
+      // Several at once (FineNotes#211): every page of each, in the order chosen.
+      void pickImageFiles(this.contentEl, false, "application/pdf,.pdf", true).then((files) => {
+        if (files.length === 1) void this.importPdfFile(files[0]);
+        else if (files.length > 1) void this.importPdfFiles(files);
       });
     }
+  }
+
+  /**
+   * Several PDFs chosen at once (FineNotes#211): every page of each, after
+   * the last page, in the order the picker gave them, as **one** undo step
+   * (`insertScans`). No page picker: that is one PDF's choice. A PDF that
+   * cannot be read is skipped with a notice.
+   */
+  private async importPdfFiles(files: readonly File[]): Promise<void> {
+    const note = this.file;
+    const surface = this.surface;
+    if (!note || !surface || this.isProtected()) return;
+    const progress = new Notice(t("view.pdf.reading"), 0);
+    const items: ScanItem[] = [];
+    try {
+      for (const file of files) {
+        try {
+          const bytes = await file.arrayBuffer();
+          const pages = await measurePdfPages(bytes);
+          items.push({
+            kind: "pdf",
+            bytes,
+            name: file.name,
+            pages: pages.map((size, page) => ({ ...size, page })),
+          });
+        } catch (error) {
+          new Notice(
+            t("view.pdf.readFailed", { name: file.name, message: errorMessage(error) }),
+            8000,
+          );
+        }
+        if (this.file !== note || this.surface !== surface || this.isProtected()) return;
+      }
+    } finally {
+      progress.hide();
+    }
+    if (items.length === 0) return;
+    await this.insertScans(items, t("view.pdf.importLabel"), surface.document.pages.length - 1);
   }
 
   /**
