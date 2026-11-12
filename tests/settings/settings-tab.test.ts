@@ -546,6 +546,10 @@ describe("the rows", () => {
       ["ai", "Service", `${label} API key`, "render"],
       ["ai", "Service", "(block)", "render"],
       ["ai", "Transcribing", "Handwriting recognition", "dropdown:recognitionProviderId"],
+      ["ai", "Recordings", "Transcribe recordings with", "dropdown:speechService"],
+      ["ai", "Recordings", "Transcription model", "text:speechServiceModel"],
+      ["ai", "Recordings", "Transcription server URL", "text:speechBaseUrl"],
+      ["ai", "Recordings", "Groq API key for recordings", "render"],
       ["ai", "Ask AI", "Ask AI starts on the open page", "toggle:askAttachPage"],
       ["ai", "Ask AI", "Skip compressed providers", "toggle:openRouterSkipCompressed"],
       ["ai", "Pictures", "Image generation", "dropdown:imageVendor"],
@@ -759,6 +763,7 @@ describe("which rows show", () => {
       "AI model",
       `${label} API key`,
       "Handwriting recognition",
+      "Transcribe recordings with",
       "Ask AI starts on the open page",
       "Image generation",
       // Claude makes no pictures: the callout saying so.
@@ -950,6 +955,31 @@ describe("which rows show", () => {
     for (const vendor of ["anthropic", "openai", "google", "custom"] as const) {
       expect(visibleNames(makePlugin({ llmVendor: vendor })), vendor).not.toContain(toggle);
     }
+  });
+
+  it("shows a recordings service's model, key and server only once one is chosen", () => {
+    const rowsFor = (overrides: Partial<Settings>) => {
+      const names = visibleNames(makePlugin(overrides));
+      const from = names.indexOf("Transcribe recordings with");
+      return names.slice(from, names.indexOf("Ask AI starts on the open page"));
+    };
+    expect(rowsFor({})).toEqual(["Transcribe recordings with"]);
+    expect(rowsFor({ speechService: "groq" })).toEqual([
+      "Transcribe recordings with",
+      "Transcription model",
+      "Groq API key for recordings",
+    ]);
+    // The chat's own key row already holds OpenAI's key.
+    expect(rowsFor({ speechService: "openai", llmVendor: "openai" })).toEqual([
+      "Transcribe recordings with",
+      "Transcription model",
+    ]);
+    expect(rowsFor({ speechService: "custom" })).toEqual([
+      "Transcribe recordings with",
+      "Transcription model",
+      "Transcription server URL",
+      "Endpoint API key",
+    ]);
   });
 
   it("offers the OpenRouter connect only for OpenRouter", () => {

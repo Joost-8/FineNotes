@@ -4,17 +4,21 @@ import {
   DEFAULT_AUDIO_MODELS,
   GOOGLE_INLINE_MAX_BYTES,
   OPENAI_AUDIO_MAX_BYTES,
+  GROQ_TRANSCRIPTIONS_URL,
+  OPENROUTER_TRANSCRIPTIONS_URL,
   audioFilename,
-  audioUnsupportedReason,
+  audioMaxBytes,
+  audioService,
   buildAudioRequest,
   buildAudioTranscriptionPrompt,
   bytesToBase64,
-  canTranscribeAudio,
   encodeMultipart,
   escapeDispositionValue,
+  extractAudioSegments,
   extractAudioTranscript,
   geminiAudioMimeType,
   makeBoundary,
+  wantsSegments,
 } from "../../src/recognition/audio-request";
 
 const decode = (body: Uint8Array) => new TextDecoder().decode(body);
@@ -113,6 +117,32 @@ describe("buildAudioRequest", () => {
     expect(text.endsWith(`--${boundary}--\r\n`)).toBe(true);
   });
 
+  it("uploads to Groq with its turbo Whisper, asking for timed segments", () => {
+    const req = buildAudioRequest({ ...base, vendor: "groq", apiKey: "gsk_1", segments: true });
+    expect(req.url).toBe(GROQ_TRANSCRIPTIONS_URL);
+    expect(req.url).toBe("https://api.groq.com/openai/v1/audio/transcriptions");
+    expect(req.headers).toEqual({ authorization: "Bearer gsk_1" });
+    const text = decode(req.body);
+    expect(text).toContain('name="model"\r\n\r\nwhisper-large-v3-turbo\r\n');
+    expect(text).toContain('name="response_format"\r\n\r\nverbose_json\r\n');
+  });
+
+  it("uploads to OpenRouter's transcription endpoint with its attribution headers", () => {
+    const req = buildAudioRequest({ ...base, vendor: "openrouter", apiKey: "sk-or-1" });
+    expect(req.url).toBe(OPENROUTER_TRANSCRIPTIONS_URL);
+    expect(req.headers.authorization).toBe("Bearer sk-or-1");
+    expect(req.headers["x-title"]).toBe("FineNotes");
+    expect(decode(req.body)).toContain('name="model"\r\n\r\nopenai/whisper-large-v3\r\n');
+  });
+
+  it("refuses an upload over 25 MB to Groq or OpenRouter", () => {
+    for (const vendor of ["groq", "openrouter"] as const) {
+      expect(() =>
+        buildAudioRequest({ ...base, vendor, audio: new Uint8Array(OPENAI_AUDIO_MAX_BYTES + 1) }),
+      ).toThrow(/25/);
+    }
+  });
+
   it("uses the chosen model when one is set", () => {
     const req = buildAudioRequest({ ...base, vendor: "openai", model: " gpt-transcribe " });
     expect(decode(req.body)).toContain('name="model"\r\n\r\ngpt-transcribe\r\n');
@@ -183,14 +213,29 @@ describe("buildAudioRequest", () => {
   });
 });
 
-describe("which vendors transcribe audio", () => {
-  it("is OpenAI, Google and a custom endpoint; Claude and OpenRouter say what would work", () => {
-    expect(AUDIO_VENDORS.every(canTranscribeAudio)).toBe(true);
-    expect(canTranscribeAudio("anthropic")).toBe(false);
-    expect(canTranscribeAudio("openrouter")).toBe(false);
-    expect(audioUnsupportedReason("anthropic")).toMatch(/OpenAI or Google key/);
-    expect(audioUnsupportedReason("openrouter")).toMatch(/OpenAI or Google key/);
-    expect(audioUnsupportedReason("openai")).toBe("");
+describe("transcription services", () => {
+  it("are Groq, OpenAI, OpenRouter, Gemini and a server of the user's own", () => {
+    expect([...AUDIO_VENDORS]).toEqual(["groq", "openai", "openrouter", "google", "custom"]);
+    expect(audioService("groq")).toMatchObject({ label: "Groq", requiresKey: true });
+    expect(audioService("groq").headers("gsk")).toEqual({ authorization: "Bearer gsk" });
+    expect(audioService("custom").userEndpoint).toBe(true);
+  });
+
+  it("take 25 MB an upload, Gemini about 14 MB of audio", () => {
+    expect(audioMaxBytes("groq")).toBe(OPENAI_AUDIO_MAX_BYTES);
+    expect(audioMaxBytes("openrouter")).toBe(OPENAI_AUDIO_MAX_BYTES);
+    expect(audioMaxBytes("custom")).toBe(OPENAI_AUDIO_MAX_BYTES);
+    expect(audioMaxBytes("google")).toBe(14 * 1024 * 1024);
+  });
+
+  it("ask Whisper models for timed segments, and nothing else", () => {
+    expect(wantsSegments("groq", "")).toBe(true);
+    expect(wantsSegments("openrouter", "openai/whisper-large-v3")).toBe(true);
+    expect(wantsSegments("openrouter", "google/chirp-3")).toBe(false);
+    expect(wantsSegments("openai", "whisper-1")).toBe(true);
+    expect(wantsSegments("openai", "gpt-4o-mini-transcribe")).toBe(false);
+    expect(wantsSegments("custom", "whisper-1")).toBe(false);
+    expect(wantsSegments("google", "gemini-3.5-flash")).toBe(false);
   });
 });
 
@@ -205,6 +250,26 @@ describe("responses", () => {
         candidates: [{ content: { parts: [{ text: "Hello " }, { text: "class." }] } }],
       }),
     ).toBe("Hello class.");
+  });
+
+  it("reads verbose_json segments in ms, skipping what does not read", () => {
+    const json = {
+      text: "Hello class. Today.",
+      segments: [
+        { id: 0, start: 0, end: 1.52, text: " Hello class." },
+        { id: 1, start: 1.52, end: 2.9, text: " Today." },
+        { start: "x", end: 3, text: "bad" },
+        { start: 4, text: "no end" },
+        null,
+      ],
+    };
+    expect(extractAudioSegments(json)).toEqual([
+      { start: 0, end: 1520, text: " Hello class." },
+      { start: 1520, end: 2900, text: " Today." },
+      { start: 4000, end: 4000, text: "no end" },
+    ]);
+    expect(extractAudioSegments({ text: "plain" })).toEqual([]);
+    expect(extractAudioSegments(null)).toEqual([]);
   });
 
   it("is empty for malformed payloads", () => {
