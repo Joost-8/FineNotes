@@ -283,6 +283,7 @@ import type { TextStyle } from "./model/text-style";
 import { errorMessage } from "./util/errors";
 import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
+import { type WidthPresets } from "./model/width-presets";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
 import { type SavedPen, savedPensOf } from "./model/saved-pens";
 import {
@@ -2023,6 +2024,30 @@ export default class GoodObsidianPlugin extends Plugin {
    */
   savePenStabilization(all: PenStabilization): void {
     this.settings.penStabilization = penStabilizationOf(all);
+    window.clearTimeout(this.lastPenTimer);
+    this.lastPenTimer = window.setTimeout(() => {
+      this.lastPenTimer = 0;
+      void this.saveSettings();
+    }, LAST_PEN_SAVE_MS);
+  }
+
+  /**
+   * Remember each pen type's width presets (FineNotes#210), for every
+   * notebook. Saved once the slider rests, as the pen inks are.
+   */
+  saveWidthPresets(presets: WidthPresets): void {
+    this.settings.widthPresets = { ...presets };
+    this.saveSoon();
+  }
+
+  /** Remember the eraser's preset sizes, for every notebook. Saved once the slider rests. */
+  saveEraserPresets(presets: number[]): void {
+    this.settings.eraserPresets = [...presets];
+    this.saveSoon();
+  }
+
+  /** Save once the picking rests, on the last pen's timer (flushed on unload). */
+  private saveSoon(): void {
     window.clearTimeout(this.lastPenTimer);
     this.lastPenTimer = window.setTimeout(() => {
       this.lastPenTimer = 0;

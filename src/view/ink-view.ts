@@ -429,6 +429,7 @@ import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from ".
 import type { PillDock } from "./pill-dock-model";
 import type { BarDock } from "./bar-dock-model";
 import { penInksOf } from "../model/pen-inks";
+import { eraserPresetsOf, widthPresetsOf } from "../model/width-presets";
 import { penTypeOrderOf } from "../model/pen-type-order";
 import { penStabilizationOf } from "../model/pen-stabilization";
 import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
@@ -508,6 +509,8 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     snapCurvatureThreshold: snapCurveOf(s.snapCurvatureThreshold),
     eraserMode: s.eraserMode,
     eraserSize: s.eraserSize,
+    widthPresets: widthPresetsOf(s.widthPresets),
+    eraserPresets: eraserPresetsOf(s.eraserPresets),
     eraserFilter: eraserFilterOf(s.eraserFilter),
     eraserGrey: greyWhileErasingOf(s.greyWhileErasing),
     lassoMode: lassoModeOf(s.lassoMode),
@@ -3391,6 +3394,8 @@ export class InkView extends TextFileView {
         onPenColors: (colors) => this.plugin.savePenColors(colors),
         onPenTypeOrder: (order) => this.plugin.savePenTypeOrder(order),
         onPenInks: (inks) => this.plugin.savePenInks(inks),
+        onWidthPresets: (presets) => this.plugin.saveWidthPresets(presets),
+        onEraserPresets: (presets) => this.plugin.saveEraserPresets(presets),
         onPenStabilization: (all) => this.plugin.savePenStabilization(all),
         penPreferences: () => penPreferencesOf(this.settings),
         onPenPreferences: (patch) => this.plugin.savePenPreferences(patch),
