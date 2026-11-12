@@ -219,6 +219,7 @@ import {
   pageSnapIndex,
   pullAddProgress,
   columnScrollRangeX,
+  columnScrollRangeY,
   rowPageScrollRange,
   rowScrollInsets,
   rowScrollXForPage,
@@ -334,6 +335,8 @@ import { pairsAsDoubleTap, type PlainTap } from "../input/multi-finger-tap";
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { WRITING_SCALE, formatMm, zoomPercent } from "../model/units";
 import { GrowBoard, boardGrowth, drawnBounds, isBoard, isNoGrowth } from "../model/board";
+import { afterPainted } from "./after-painted";
+import { lowMemoryDevice } from "./pdf-backdrop";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
   BRUSH_PRESSURE,
@@ -757,6 +760,16 @@ import {
   nextConnectorId,
 } from "../model/connectors";
 import { DEFAULT_RULER_SNAP } from "../canvas/ruler-geometry";
+import {
+  docOf,
+  type HostWindow,
+  isElement,
+  isHTMLElement,
+  isNode,
+  onWindowMoved,
+  watchSize,
+  winOf,
+} from "./host-window";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
 const ZOOM_STEP = 1.25;
@@ -775,6 +788,16 @@ const SCROLL_FRAME_BUDGET_MS = 6;
  * so did a PDF page arriving.
  */
 const REST_FRAME_BUDGET_MS = 10;
+/** Rasterising budget for the frame that swaps in a sharper PDF image. */
+const SHARPEN_FRAME_BUDGET_MS = 120;
+/** One fade waits this long after the last PDF image of a zoom, ms. */
+const SHARPEN_QUIET_MS = 90;
+/** And never longer than this after the first, ms. */
+const SHARPEN_WAIT_MAX_MS = 350;
+/** How long a sharper PDF image takes to fade in over the blurred one, ms. */
+const PDF_SHARPEN_FADE_MS = 160;
+/** How long after the last frame of a zoom PDF rendering starts again, ms. */
+const ZOOM_PDF_HOLD_MS = 150;
 /** Clear space round a sticker saved from a selection, page px: room for the ink's width. */
 const STICKER_PAD = 8;
 /** Budget for one idle prefetch frame (tiles just off screen, page previews). */
@@ -1180,6 +1203,12 @@ export interface InkSurfaceCallbacks {
    * {@link InkSurface.setPinchToOverview}.
    */
   onPinchOverview?: (snapshot: PageSnapshot | null) => void;
+  /**
+   * A zoom started moving (true), or has been still for a moment (false). PDF
+   * pages wait in between: rendering them during a pinch stalled its last
+   * frames by about 200 ms on an iPad.
+   */
+  onZoomMotion?: (moving: boolean) => void;
   /**
    * A page text box took focus (its style), or editing ended (`null`). Hosts
    * show the box's style in the text pill. Also sent after an undo or redo
@@ -1650,6 +1679,8 @@ interface LassoDraft {
  */
 interface GroupDrag {
   pointerId: number;
+  /** Set by a move: its text boxes and frame are placed on the next frame, against this page. */
+  placeBox?: PageBox | null;
   /** What moves: the selection, and what its closed shapes hold (`withShapeContent`). */
   selection: GroupSelection;
   /** The selection itself, as it is kept once the drag is over. */
@@ -1935,7 +1966,7 @@ function swallowClickAfterTap(target: HTMLElement): void {
   const win = target.ownerDocument.defaultView;
   if (!win) return;
   const stop = (event: Event): void => {
-    if (!(event.target instanceof Node) || !target.contains(event.target)) return;
+    if (!isNode(event.target) || !target.contains(event.target)) return;
     event.preventDefault();
     event.stopPropagation();
   };
@@ -2020,6 +2051,8 @@ const ZOOM_PINCH_DEAD = 0.04;
 export class InkSurface {
   readonly surfaceEl: HTMLElement;
   private readonly scrollEl: HTMLElement;
+  private boundWin: HostWindow | null = null;
+  private windowListeners: (() => void) | null = null;
   private readonly paperEl: HTMLElement;
   private readonly textBoxesEl: HTMLElement;
   private readonly textBoxInputs = new Map<string, TextBoxView>();
@@ -2295,7 +2328,7 @@ export class InkSurface {
   /** The box canvas's rectangle for the stroke under way, read once per press. */
   private zoomCanvasRect: DOMRect | null = null;
   /** Repaints the window while its corner is dragged to a new size. */
-  private zoomResize: ResizeObserver | null = null;
+  private stopZoomResize: (() => void) | null = null;
   /** A window repaint asked for by a wet stroke, outside the page's frame loop. */
   private zoomPaintFrame = 0;
   /** The readout last written, so a still window is not touched every frame. */
@@ -3320,17 +3353,41 @@ export class InkSurface {
     // The on-screen keyboard changes the visual viewport, and a WebView may
     // report that without resizing any element the ResizeObserver watches.
     // Repaint on it anyway, so the canvases can never sit stale under the page.
-    const vv = window.visualViewport;
-    if (vv) {
-      const onViewport = (): void => this.scheduleRelayout();
-      vv.addEventListener("resize", onViewport);
-      vv.addEventListener("scroll", onViewport);
-      this.disposers.push(() => {
-        vv.removeEventListener("resize", onViewport);
-        vv.removeEventListener("scroll", onViewport);
-      });
-    }
+    this.bindWindow();
+    this.disposers.push(() => this.unbindWindow());
+    this.disposers.push(onWindowMoved(this.surfaceEl, () => this.windowMoved()));
 
+    // A pane that changes size (a sidebar, a rotation, a split) is laid out again.
+    this.disposers.push(watchSize(this.surfaceEl, () => this.layout()));
+
+    // Every path that changes the history — a stroke, an erase, a withdrawn
+    // empty text box, undo, a new file — reaches the host's buttons this way.
+    this.history.onChange = () => this.syncHistory();
+    this.setDocument(doc);
+  }
+
+  /** The window the page is shown in, which a tab moved to a new window changes. */
+  private get win(): HostWindow {
+    return winOf(this.surfaceEl);
+  }
+
+  private get viewDoc(): Document {
+    return docOf(this.surfaceEl);
+  }
+
+  /** Listen to what only the page's own window reports. */
+  private bindWindow(): void {
+    this.unbindWindow();
+    const win = this.win;
+    const doc = this.viewDoc;
+    this.boundWin = win;
+    // The on-screen keyboard changes the visual viewport, and a WebView may
+    // report that without resizing any element the ResizeObserver watches.
+    // Repaint on it anyway, so the canvases can never sit stale under the page.
+    const vv = win.visualViewport;
+    const onViewport = (): void => this.scheduleRelayout();
+    vv?.addEventListener("resize", onViewport);
+    vv?.addEventListener("scroll", onViewport);
     // Leaving the app may put something newer on the system clipboard: from
     // then on, a picture pasted from there wins over the plugin's clipboard
     // (see `handlePaste`). Idempotent, so every open surface may report it.
@@ -3348,24 +3405,48 @@ export class InkSurface {
         this.layout();
       } else this.requestFrame();
     };
-    // The surface's own document: a popout window hides and shows its own.
-    const viewDoc = this.surfaceEl.ownerDocument;
-    window.addEventListener("blur", onLeave);
-    viewDoc.addEventListener("visibilitychange", onVisibility);
-    this.disposers.push(() => {
-      window.removeEventListener("blur", onLeave);
-      viewDoc.removeEventListener("visibilitychange", onVisibility);
-    });
+    win.addEventListener("blur", onLeave);
+    doc.addEventListener("visibilitychange", onVisibility);
+    this.windowListeners = () => {
+      vv?.removeEventListener("resize", onViewport);
+      vv?.removeEventListener("scroll", onViewport);
+      win.removeEventListener("blur", onLeave);
+      doc.removeEventListener("visibilitychange", onVisibility);
+    };
+  }
 
-    // A pane that changes size (a sidebar, a rotation, a split) is laid out again.
-    const sizeWatch = new ResizeObserver(() => this.layout());
-    sizeWatch.observe(this.surfaceEl);
-    this.disposers.push(() => sizeWatch.disconnect());
+  private unbindWindow(): void {
+    this.windowListeners?.();
+    this.windowListeners = null;
+  }
 
-    // Every path that changes the history — a stroke, an erase, a withdrawn
-    // empty text box, undo, a new file — reaches the host's buttons this way.
-    this.history.onChange = () => this.syncHistory();
-    this.setDocument(doc);
+  /**
+   * The tab went to another window. A frame asked of the old one may never
+   * come (it closed, or sits covered), and would leave its request standing.
+   */
+  private windowMoved(): void {
+    const from = this.boundWin;
+    for (const frame of [
+      this.frameReq,
+      this.prefetchReq,
+      this.hudFrame,
+      this.wetFrame,
+      this.focusHoldFrame,
+      this.relayoutFrame,
+      this.laserFrame,
+      this.zoomPaintFrame,
+      this.zoomSlideFrame,
+    ]) {
+      if (frame) from?.cancelAnimationFrame(frame);
+    }
+    this.frameReq = this.prefetchReq = this.hudFrame = this.wetFrame = 0;
+    this.focusHoldFrame = this.relayoutFrame = this.laserFrame = 0;
+    this.zoomPaintFrame = this.zoomSlideFrame = 0;
+    this.bindWindow();
+    // The new window may be on a screen of another density.
+    this.renderer?.repaintAll();
+    this.scheduleRelayout();
+    this.requestFrame();
   }
 
   /**
@@ -3396,7 +3477,7 @@ export class InkSurface {
       this.relayoutFrame,
       this.laserFrame,
     ]) {
-      if (frame) window.cancelAnimationFrame(frame);
+      if (frame) this.win.cancelAnimationFrame(frame);
     }
     this.frameReq = this.prefetchReq = this.hudFrame = this.wetFrame = 0;
     this.ruler?.destroy();
@@ -3419,9 +3500,9 @@ export class InkSurface {
     this.endCrop(false);
     this.actionBar.destroy();
     this.textPickView.destroy();
-    this.zoomResize?.disconnect();
-    this.zoomResize = null;
-    if (this.zoomPaintFrame) window.cancelAnimationFrame(this.zoomPaintFrame);
+    this.stopZoomResize?.();
+    this.stopZoomResize = null;
+    if (this.zoomPaintFrame) this.win.cancelAnimationFrame(this.zoomPaintFrame);
     this.zoomPaintFrame = 0;
     this.zoomFrame?.destroy();
     this.zoomFrame = null;
@@ -3429,7 +3510,7 @@ export class InkSurface {
     this.flip?.cancel();
     this.flip = null;
     this.renderer?.destroy();
-    document.body.removeClass(TEXT_EDITING_BODY_CLASS);
+    this.viewDoc.body.removeClass(TEXT_EDITING_BODY_CLASS);
     while (this.disposers.length > 0) this.disposers.shift()?.();
     // From here on every late callback finds no renderer and does nothing.
     this.renderer = null;
@@ -4881,7 +4962,7 @@ export class InkSurface {
     }
     const { clientWidth: cssW, clientHeight: cssH } = this.surfaceEl;
     const size = this.sizeWait.check(cssW, cssH);
-    if (size === "retry") window.requestAnimationFrame(() => this.layout());
+    if (size === "retry") this.win.requestAnimationFrame(() => this.layout());
     if (size !== "layout") return;
     this.hudLayouts += 1;
     // Only a pane that lost or gained that much height at its top moved with the row.
@@ -4998,7 +5079,7 @@ export class InkSurface {
 
   /** The end of every layout: size the canvases, place the paper and paint. */
   private layoutTail(cssW: number, cssH: number): void {
-    this.renderer?.resize(cssW, cssH, backingScale(window.devicePixelRatio));
+    this.renderer?.resize(cssW, cssH, backingScale(this.win.devicePixelRatio));
     this.syncViewport();
     this.syncInkCursor();
     this.settleIfIdle();
@@ -5226,7 +5307,7 @@ export class InkSurface {
   /** Coalesce viewport events into one layout per frame. */
   private scheduleRelayout(): void {
     if (this.relayoutFrame) return;
-    this.relayoutFrame = window.requestAnimationFrame(() => {
+    this.relayoutFrame = this.win.requestAnimationFrame(() => {
       this.relayoutFrame = 0;
       this.layout();
     });
@@ -5246,7 +5327,7 @@ export class InkSurface {
       newFloor: this.floorForPane(cssH),
       initialised: this.zoomInitialised,
       // A pane made short by the keyboard must not re-fit the page into it.
-      keyboard: hold || document.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
+      keyboard: hold || this.viewDoc.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
     });
     this.minZoom = step.floor;
     this.zoomInitialised = true;
@@ -5368,8 +5449,11 @@ export class InkSurface {
       diagonalsScrollY: !row || (this.heldRow && !this.pinch),
       // Turning pages, the view rests centred on each page (`rowY`), never
       // scrolled up or down: the row's whole range is the pages' centres.
-      rangeY:
-        row && this.turnsPages && !this.joined
+      // Pages down, filled to the pane's width, no desk shows above page 1
+      // or below the last, as none shows beside them (discussion #43).
+      rangeY: !row
+        ? columnScrollRangeY(this.pageLayout, scale, this.cssW, this.cssH)
+        : this.turnsPages && !this.joined
           ? rowRestRangeY(this.pageLayout, scale, this.cssH)
           : undefined,
       holdX: (!row || (this.heldRow && !this.pinch)) && this.holdFitWidth(),
@@ -5575,7 +5659,7 @@ export class InkSurface {
 
   private requestFrame(): void {
     if (this.frameReq) return;
-    this.frameReq = window.requestAnimationFrame(this.frame);
+    this.frameReq = this.win.requestAnimationFrame(this.frame);
   }
 
   /**
@@ -5585,7 +5669,7 @@ export class InkSurface {
    */
   private requestZoomPaint(): void {
     if (!this.zoomBox || this.frameReq || this.zoomPaintFrame) return;
-    this.zoomPaintFrame = window.requestAnimationFrame(() => {
+    this.zoomPaintFrame = this.win.requestAnimationFrame(() => {
       this.zoomPaintFrame = 0;
       this.paintZoomBox();
     });
@@ -5606,6 +5690,8 @@ export class InkSurface {
     const carrying = this.stepGroupDragScroll();
     const moving = scrolling || zooming || settling || carrying;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
+    if (busy) this.endSharpenFade();
+    this.noteZoomMotion();
     this.noteViewMotion(busy);
     this.syncViewport();
     // The ruler's centimetres are the page's, at the zoom now.
@@ -5623,7 +5709,15 @@ export class InkSurface {
     this.reportTextAnchor();
     this.syncPullAdd();
     if (busy) this.flashChrome();
-    const complete = this.paint(busy ? SCROLL_FRAME_BUDGET_MS : REST_FRAME_BUDGET_MS);
+    // Under the fade, every tile changes at once: nothing moves, and tiles
+    // arriving a few a frame would ripple across the text.
+    const complete = this.paint(
+      busy
+        ? SCROLL_FRAME_BUDGET_MS
+        : this.fadeTimer !== 0
+          ? SHARPEN_FRAME_BUDGET_MS
+          : REST_FRAME_BUDGET_MS,
+    );
     if (this.debug) this.trackFrame(t, started, moving);
     if (moving || !complete) {
       this.requestFrame();
@@ -5637,6 +5731,101 @@ export class InkSurface {
     if (this.imageSel) this.syncImageOverlay();
     if (this.selection) this.syncSelectionOverlay();
     if (this.pressMenu) this.syncActionBar();
+  };
+
+  private fadeCover: HTMLCanvasElement | null = null;
+  private fadeTimer = 0;
+  private fadeAnimation: Animation | null = null;
+  /** The fade has not started: more images may still join it. */
+  private fadeWaiting = false;
+  private fadeBegan = 0;
+  private fadeStopWaiting: (() => void) | null = null;
+
+  /**
+   * A sharper PDF image arrived while nothing moves. Swapped in at once, the
+   * text visibly jumps from blurred to sharp after every zoom: the picture as
+   * it was stays on top instead and fades away.
+   */
+  private fadeInSharper(pageIndex: number): void {
+    if (!this.renderer || this.viewMoving || prefersReducedMotion() || lowMemoryDevice()) return;
+    if (!this.renderer.isPageOnScreen(pageIndex, this.doc.pages.length)) return;
+    // More of the same zoom's images: they all go under the one fade.
+    if (this.fadeTimer !== 0) {
+      if (this.fadeWaiting && now() - this.fadeBegan < SHARPEN_WAIT_MAX_MS) this.armSharpenFade();
+      return;
+    }
+    const cover = (this.fadeCover ??= createEl("canvas", {
+      cls: "goodobsidian-canvas goodobsidian-canvas-dry goodobsidian-canvas-fading",
+    }));
+    if (typeof cover.animate !== "function") return;
+    this.renderer.coverDry(cover);
+    const fade = cover.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: PDF_SHARPEN_FADE_MS,
+      easing: "ease-out",
+      fill: "forwards",
+    });
+    fade.pause();
+    this.fadeAnimation = fade;
+    this.fadeBegan = now();
+    this.fadeWaiting = true;
+    this.armSharpenFade();
+  }
+
+  /** Start the fade once no image has arrived for a moment and the new text is drawn. */
+  private armSharpenFade(): void {
+    window.clearTimeout(this.fadeTimer);
+    this.fadeTimer = window.setTimeout(() => {
+      // Started before the swap is on screen, its first frames are lost.
+      this.fadeStopWaiting = afterPainted(window, () => {
+        this.fadeStopWaiting = null;
+        this.fadeWaiting = false;
+        this.fadeAnimation?.play();
+        // A timer, not `finish`: finish events land late (ledger).
+        window.clearTimeout(this.fadeTimer);
+        this.fadeTimer = window.setTimeout(this.endSharpenFade, PDF_SHARPEN_FADE_MS);
+      });
+      this.requestFrame();
+    }, SHARPEN_QUIET_MS);
+  }
+
+  private readonly endSharpenFade = (): void => {
+    if (this.fadeTimer === 0) return;
+    window.clearTimeout(this.fadeTimer);
+    this.fadeTimer = 0;
+    this.fadeWaiting = false;
+    this.fadeStopWaiting?.();
+    this.fadeStopWaiting = null;
+    this.fadeAnimation?.cancel();
+    this.fadeAnimation = null;
+    const cover = this.fadeCover;
+    if (!cover) return;
+    cover.remove();
+    // WebKit frees a canvas's memory only once it has no size.
+    cover.width = 0;
+    cover.height = 0;
+  };
+
+  private zoomHeld = false;
+  private zoomHoldTimer = 0;
+
+  /** A zoom frame: hold PDF rendering, until the zoom has been still for a moment. */
+  private noteZoomMotion(): void {
+    if (!this.zoomTransient) return;
+    if (!this.zoomHeld) {
+      this.zoomHeld = true;
+      this.callbacks.onZoomMotion?.(true);
+    }
+    window.clearTimeout(this.zoomHoldTimer);
+    this.zoomHoldTimer = window.setTimeout(this.releaseZoomHold, ZOOM_PDF_HOLD_MS);
+  }
+
+  private readonly releaseZoomHold = (): void => {
+    this.zoomHoldTimer = this.zoomTransient
+      ? window.setTimeout(this.releaseZoomHold, ZOOM_PDF_HOLD_MS)
+      : 0;
+    if (this.zoomHoldTimer !== 0 || !this.zoomHeld) return;
+    this.zoomHeld = false;
+    this.callbacks.onZoomMotion?.(false);
   };
 
   /** Whether the zoom is mid-gesture, so the tiles' level must not change yet. */
@@ -5694,7 +5883,10 @@ export class InkSurface {
     // cropped, lives on the wet layer, which does not follow a scroll or zoom
     // by itself.
     if (this.imageDrag?.lifted) this.renderImageDraft();
-    if (this.groupDrag?.lifted) this.renderGroupDraft();
+    if (this.groupDrag?.lifted) {
+      this.renderGroupDraft();
+      this.placeGroupDrag(this.groupDrag);
+    }
     if (this.cropping) this.renderCropDraft();
     this.paintZoomBox();
     return complete;
@@ -5708,7 +5900,7 @@ export class InkSurface {
    */
   private schedulePrefetch(): void {
     if (this.prefetchReq || !this.renderer) return;
-    this.prefetchReq = window.requestAnimationFrame(() => {
+    this.prefetchReq = this.win.requestAnimationFrame(() => {
       this.prefetchReq = 0;
       if (!this.renderer || this.frameReq || this.scroller.isDragging || this.pinch) return;
       if (this.pressing) return;
@@ -6191,14 +6383,14 @@ export class InkSurface {
         // Never the box being typed in or held: hiding it would blur it.
         const park =
           (parked || drawnOnNote) &&
-          !root.contains(document.activeElement) &&
+          !root.contains(this.viewDoc.activeElement) &&
           this.heldText !== view;
         root.toggleClass("is-parked", park);
         if (park) {
           if (parked) this.textBoxesProvisional = true;
           continue;
         }
-        if (document.activeElement !== input && input.value !== textBox.text)
+        if (this.viewDoc.activeElement !== input && input.value !== textBox.text)
           input.value = textBox.text;
         this.renderShownText(view, textBox.text);
         // Mid-zoom a box keeps the layout it last had and is scaled whole from
@@ -6207,7 +6399,7 @@ export class InkSurface {
         if (
           zooming &&
           view.laidAt > 0 &&
-          document.activeElement !== input &&
+          this.viewDoc.activeElement !== input &&
           this.frameDraft?.key !== key &&
           this.groupDrag === null
         ) {
@@ -6290,7 +6482,7 @@ export class InkSurface {
           // A covered tape over the box hides it there, as it hides ink;
           // never the box being typed in.
           clipPath:
-            document.activeElement === input || turn !== 0
+            this.viewDoc.activeElement === input || turn !== 0
               ? ""
               : tapeClipPath(
                   page.strokes,
@@ -6352,7 +6544,7 @@ export class InkSurface {
     for (const view of stale) {
       // Removing a focused element fires no blur in every engine; an undo
       // that takes away the box being edited must still end the edit.
-      if (document.activeElement === view.input) this.blurTextInput(view.input, "gone");
+      if (this.viewDoc.activeElement === view.input) this.blurTextInput(view.input, "gone");
       // A kept box that went (an undo took it): nothing is held any more.
       if (this.heldText === view) this.heldText = null;
       view.root.remove();
@@ -6612,7 +6804,7 @@ export class InkSurface {
     // box, so a jump it makes to "reveal" the caret can be undone.
     input.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
-      if (document.activeElement !== input) this.pendingFocusHold = this.scrollSnapshot();
+      if (this.viewDoc.activeElement !== input) this.pendingFocusHold = this.scrollSnapshot();
     });
     input.addEventListener("focus", () => {
       view.focusedAt = now();
@@ -6778,9 +6970,9 @@ export class InkSurface {
     const startY = event.clientY;
     const back = this.heldReturnTool;
     const stop = (): void => {
-      window.removeEventListener("pointermove", onMove, true);
-      window.removeEventListener("pointerup", onUp, true);
-      window.removeEventListener("pointercancel", onCancel, true);
+      this.win.removeEventListener("pointermove", onMove, true);
+      this.win.removeEventListener("pointerup", onUp, true);
+      this.win.removeEventListener("pointercancel", onCancel, true);
     };
     const onMove = (e: PointerEvent): void => {
       if (e.pointerId !== event.pointerId) return;
@@ -6806,9 +6998,9 @@ export class InkSurface {
     const onCancel = (e: PointerEvent): void => {
       if (e.pointerId === event.pointerId) stop();
     };
-    window.addEventListener("pointermove", onMove, true);
-    window.addEventListener("pointerup", onUp, true);
-    window.addEventListener("pointercancel", onCancel, true);
+    this.win.addEventListener("pointermove", onMove, true);
+    this.win.addEventListener("pointerup", onUp, true);
+    this.win.addEventListener("pointercancel", onCancel, true);
   }
 
   /**
@@ -6833,7 +7025,7 @@ export class InkSurface {
     event.preventDefault();
     const handle = grip ?? (event.currentTarget as HTMLElement);
     handle.setPointerCapture(event.pointerId);
-    const typing = document.activeElement === view.input;
+    const typing = this.viewDoc.activeElement === view.input;
     // Before any blur below, so the blur handler knows a drag is under way.
     view.root.addClass("is-dragging");
     this.textFrameDrag = key;
@@ -6913,7 +7105,7 @@ export class InkSurface {
       // A move finished the edit when it began; wrap it up now the box has
       // landed (and is no longer mid-drag, so an empty one may go). The box
       // is not refocused: that would bring the keyboard straight back.
-      if (document.activeElement !== view.input) this.endTextEditing(view);
+      if (this.viewDoc.activeElement !== view.input) this.endTextEditing(view);
     };
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onEnd);
@@ -7116,7 +7308,7 @@ export class InkSurface {
       top: this.scroller.position.y,
       left: this.scroller.position.x,
       windowX: window.scrollX,
-      windowY: window.scrollY,
+      windowY: this.win.scrollY,
       ancestors,
     };
   }
@@ -7136,17 +7328,17 @@ export class InkSurface {
    * above the keyboard.
    */
   private holdScroll(input: HTMLTextAreaElement, snapshot: ScrollSnapshot): void {
-    if (this.focusHoldFrame) window.cancelAnimationFrame(this.focusHoldFrame);
+    if (this.focusHoldFrame) this.win.cancelAnimationFrame(this.focusHoldFrame);
     const until = now() + TEXT_FOCUS_HOLD_MS;
     let top = snapshot.top;
     const step = (): void => {
       this.focusHoldFrame = 0;
-      if (document.activeElement !== input || !this.renderer) return;
+      if (this.viewDoc.activeElement !== input || !this.renderer) return;
       for (const a of snapshot.ancestors) {
         if (a.el.scrollTop !== a.top) a.el.scrollTop = a.top;
         if (a.el.scrollLeft !== a.left) a.el.scrollLeft = a.left;
       }
-      if (window.scrollX !== snapshot.windowX || window.scrollY !== snapshot.windowY)
+      if (window.scrollX !== snapshot.windowX || this.win.scrollY !== snapshot.windowY)
         window.scrollTo(snapshot.windowX, snapshot.windowY);
       const position = this.scroller.position;
       if (position.x !== snapshot.left || position.y !== top) {
@@ -7157,7 +7349,7 @@ export class InkSurface {
 
       // Keep the box above the on-screen keyboard, with room for the pill.
       if (this.keepTypingBoxVisible()) top = this.scroller.position.y;
-      if (now() < until) this.focusHoldFrame = window.requestAnimationFrame(step);
+      if (now() < until) this.focusHoldFrame = this.win.requestAnimationFrame(step);
     };
     step();
   }
@@ -7173,15 +7365,15 @@ export class InkSurface {
     const view = this.typingField();
     if (!view || !this.renderer) return false;
     const surface = this.surfaceEl.getBoundingClientRect();
-    const vv = window.visualViewport;
+    const vv = this.win.visualViewport;
     // A floating or minimised keyboard reports a small height, or none,
     // but still sits low on the screen: the box rises above it either way.
-    const keyboard = Math.max(keyboardHeight(), window.innerHeight * TYPING_KEYBOARD_SHARE);
+    const keyboard = Math.max(keyboardHeight(), this.win.innerHeight * TYPING_KEYBOARD_SHARE);
     const bottom =
       Math.min(
         surface.bottom,
-        vv ? vv.offsetTop + vv.height : window.innerHeight,
-        window.innerHeight - keyboard,
+        vv ? vv.offsetTop + vv.height : this.win.innerHeight,
+        this.win.innerHeight - keyboard,
       ) - TEXT_REVEAL_MARGIN_PX;
     const box = view.root.getBoundingClientRect();
     const { input } = view;
@@ -7435,7 +7627,7 @@ export class InkSurface {
     const page = this.doc.pages[this.pageIndex];
     const seen = this.visibleRegion(this.pageIndex);
     if (!page || !seen || !(width > 0) || !(height > 0)) return false;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = this.win.devicePixelRatio || 1;
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     const ctx = canvas.getContext("2d");
@@ -7540,6 +7732,7 @@ export class InkSurface {
           maxY: r.maxY + frame.y,
         });
       } else renderer.refreshPage(index);
+      this.fadeInSharper(index);
       shown = true;
     });
     if (shown) this.requestFrame();
@@ -8334,7 +8527,7 @@ export class InkSurface {
    * pressed there is not taken for it.
    */
   penInView(event: PointerEvent): void {
-    if (event.target instanceof Node && this.scrollEl.contains(event.target)) return;
+    if (isNode(event.target) && this.scrollEl.contains(event.target)) return;
     this.pointerInput?.penElsewhere(event);
   }
 
@@ -8624,9 +8817,9 @@ export class InkSurface {
     this.resetZoomMarqueePointer();
     this.zoomMarqueeEl?.addClass("is-hidden");
     this.zoomTargetEl?.addClass("is-hidden");
-    this.zoomResize?.disconnect();
-    this.zoomResize = null;
-    if (this.zoomPaintFrame) window.cancelAnimationFrame(this.zoomPaintFrame);
+    this.stopZoomResize?.();
+    this.stopZoomResize = null;
+    if (this.zoomPaintFrame) this.win.cancelAnimationFrame(this.zoomPaintFrame);
     this.zoomPaintFrame = 0;
     this.zoomFrame?.destroy();
     this.zoomFrame = null;
@@ -8765,15 +8958,14 @@ export class InkSurface {
     // A corner drag changes the window's size, not its place record, until the
     // pointer is lifted; follow the size so the magnified page never stretches.
     if (typeof ResizeObserver === "function") {
-      this.zoomResize = new ResizeObserver(() => this.requestFrame());
-      this.zoomResize.observe(canvas);
+      this.stopZoomResize = watchSize(canvas, () => this.requestFrame());
     }
   }
 
   /** Every frame: keep the frame over its page and draw the magnified view. */
   private paintZoomBox(): void {
     if (this.zoomPaintFrame) {
-      window.cancelAnimationFrame(this.zoomPaintFrame);
+      this.win.cancelAnimationFrame(this.zoomPaintFrame);
       this.zoomPaintFrame = 0;
     }
     const state = this.zoomBox;
@@ -8803,7 +8995,7 @@ export class InkSurface {
     if (!(width > 0) || !(height > 0)) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const dpr = backingScale(window.devicePixelRatio);
+    const dpr = backingScale(this.win.devicePixelRatio);
     const deviceW = Math.max(1, Math.round(width * dpr));
     const deviceH = Math.max(1, Math.round(height * dpr));
     if (canvas.width !== deviceW || canvas.height !== deviceH) {
@@ -9136,7 +9328,7 @@ export class InkSurface {
   /** A hand on the box or a manual step ends an auto-advance glide. */
   private cancelZoomSlide(): void {
     if (!this.zoomSlideFrame) return;
-    window.cancelAnimationFrame(this.zoomSlideFrame);
+    this.win.cancelAnimationFrame(this.zoomSlideFrame);
     this.zoomSlideFrame = 0;
   }
 
@@ -9381,7 +9573,7 @@ export class InkSurface {
     if (!state) return;
     this.cancelZoomSlide();
     const from = { ...state.box };
-    if (typeof window.requestAnimationFrame !== "function") {
+    if (typeof this.win.requestAnimationFrame !== "function") {
       state.box = to;
       this.syncZoomTarget();
       this.ensureZoomTargetVisible();
@@ -9401,13 +9593,13 @@ export class InkSurface {
       this.syncZoomTarget();
       this.requestFrame();
       if (t < 1) {
-        this.zoomSlideFrame = window.requestAnimationFrame(tick);
+        this.zoomSlideFrame = this.win.requestAnimationFrame(tick);
       } else {
         this.zoomSlideFrame = 0;
         this.ensureZoomTargetVisible();
       }
     };
-    this.zoomSlideFrame = window.requestAnimationFrame(tick);
+    this.zoomSlideFrame = this.win.requestAnimationFrame(tick);
   }
 
   /** − or +: the target shrinks or grows about its centre, so the window magnifies more or less. */
@@ -9465,7 +9657,7 @@ export class InkSurface {
     const state = this.zoomBox;
     const pageBox = state ? this.boxForPage(state.pageId) : null;
     if (!state || !pageBox || event.button !== 0) return;
-    const target = event.target instanceof HTMLElement ? event.target : null;
+    const target = isHTMLElement(event.target) ? event.target : null;
     const grip = target?.closest<HTMLElement>("[data-zoom-handle]");
     const handle = (grip?.dataset.zoomHandle ?? null) as ZoomHandle | null;
     const press = zoomTargetPress(handle);
@@ -9972,7 +10164,7 @@ export class InkSurface {
 
   private requestLaser(): void {
     if (this.laserFrame) return;
-    this.laserFrame = window.requestAnimationFrame(() => {
+    this.laserFrame = this.win.requestAnimationFrame(() => {
       this.laserFrame = 0;
       this.paintLaser();
     });
@@ -9985,7 +10177,7 @@ export class InkSurface {
    */
   private paintLaser(): void {
     const canvas = this.laserCanvas;
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = this.win.devicePixelRatio || 1;
     const width = Math.round(this.cssW * ratio);
     const height = Math.round(this.cssH * ratio);
     if (canvas.width !== width || canvas.height !== height) {
@@ -10459,7 +10651,7 @@ export class InkSurface {
           phone: Platform.isPhone,
           desktop: Platform.isDesktop,
         },
-        devicePixelRatio: window.devicePixelRatio,
+        devicePixelRatio: this.win.devicePixelRatio,
         coalescedEvents: proto !== null && "getCoalescedEvents" in proto,
         predictedEvents: proto !== null && "getPredictedEvents" in proto,
         roundedPen: this.penController?.strokeRounded ?? null,
@@ -10531,7 +10723,7 @@ export class InkSurface {
     const record: TextEndRecord = {
       by: this.textBlurBy,
       ms: view.focusedAt ? now() - view.focusedAt : 0,
-      to: event.relatedTarget instanceof Element ? event.relatedTarget : null,
+      to: isElement(event.relatedTarget) ? event.relatedTarget : null,
       keyboard: keyboardHeight(),
       surfaceH: surface.height,
       boxTop: box.top - surface.top,
@@ -10540,16 +10732,16 @@ export class InkSurface {
       hidden: document.visibilityState === "hidden",
       removed: false,
     };
-    window.requestAnimationFrame(() => {
+    this.win.requestAnimationFrame(() => {
       record.removed = !this.liveTextBox(view.pageId, view.id);
-      this.hudTextEnd = textEndLine(record, document.activeElement);
+      this.hudTextEnd = textEndLine(record, this.viewDoc.activeElement);
       this.scheduleHud();
     });
   }
 
   private scheduleHud(): void {
     if (this.hudFrame !== 0) return;
-    this.hudFrame = window.requestAnimationFrame(this.drawHud);
+    this.hudFrame = this.win.requestAnimationFrame(this.drawHud);
   }
 
   private readonly drawHud = (): void => {
@@ -10580,16 +10772,16 @@ export class InkSurface {
    * scroll offset that a focused text box can disturb, and the canvas size.
    */
   private hudGeometry(): string {
-    const vv = window.visualViewport;
+    const vv = this.win.visualViewport;
     const r = (n: number): number => Math.round(n);
     const canvas = this.surfaceEl.querySelector("canvas");
-    const active = document.activeElement;
+    const active = this.viewDoc.activeElement;
     const focus = active?.classList.contains("goodobsidian-page-textbox-input")
       ? "textbox"
       : (active?.tagName.toLowerCase() ?? "-");
     return (
       `vv ${vv ? `${r(vv.width)}x${r(vv.height)} @${r(vv.offsetLeft)},${r(vv.offsetTop)} z=${vv.scale.toFixed(2)}` : "-"} ` +
-      `win ${r(window.innerWidth)}x${r(window.innerHeight)} sy=${r(window.scrollY)}
+      `win ${r(this.win.innerWidth)}x${r(this.win.innerHeight)} sy=${r(this.win.scrollY)}
 ` +
       `surf ${this.cssW}x${this.cssH} st=${r(this.surfaceEl.scrollTop)} ` +
       `scroll x=${r(this.scroller.position.x)} y=${r(this.scroller.position.y)} ` +
@@ -10641,7 +10833,7 @@ export class InkSurface {
    */
   private scheduleWet(): void {
     if (this.wetFrame !== 0 || !this.builder) return;
-    this.wetFrame = window.requestAnimationFrame(() => this.drawWet());
+    this.wetFrame = this.win.requestAnimationFrame(() => this.drawWet());
   }
 
   private drawWet(): void {
@@ -10699,7 +10891,7 @@ export class InkSurface {
    * the wet layer clear. Returns its builder, for a caller that keeps it.
    */
   private endWetStroke(): StrokeBuilder | null {
-    if (this.wetFrame !== 0) window.cancelAnimationFrame(this.wetFrame);
+    if (this.wetFrame !== 0) this.win.cancelAnimationFrame(this.wetFrame);
     this.wetFrame = 0;
     const builder = this.builder;
     this.builder = null;
@@ -16603,7 +16795,16 @@ export class InkSurface {
       if (this.edgeSpeed(drag.screen).some((v) => v !== 0)) this.requestFrame();
     }
     if (!drag.lifted) this.liftSelection(drag, box);
-    this.renderGroupDraft();
+    // Drawn once a frame, however many samples the pen or finger sends.
+    drag.placeBox = box;
+    this.requestFrame();
+  }
+
+  /** The text boxes and frame of a selection that moved since the last frame. */
+  private placeGroupDrag(drag: GroupDrag): void {
+    const box = drag.placeBox;
+    if (!box) return;
+    drag.placeBox = null;
     this.placeDraggedTextBoxes(drag, box);
     this.syncSelectionOverlay();
   }
@@ -16935,6 +17136,8 @@ export class InkSurface {
   private endGroupDrag(commit: boolean): void {
     const drag = this.groupDrag;
     if (!drag) return;
+    this.placeGroupDrag(drag);
+    this.renderer?.releaseSelectionRaster();
     this.groupDrag = null;
     this.circleDrag = false;
     this.showTurnLabel(null, null, 0, false);
@@ -18770,7 +18973,7 @@ export class InkSurface {
       (box.x + g.x) * scale,
       (box.y + g.y) * scale,
       scale,
-      window.devicePixelRatio || 1,
+      this.win.devicePixelRatio || 1,
     );
   }
 
@@ -18977,7 +19180,7 @@ export class InkSurface {
         const view = this.textBoxInputs.get(key);
         const typing =
           view !== undefined &&
-          (view.root.contains(document.activeElement) || this.heldText === view);
+          (view.root.contains(this.viewDoc.activeElement) || this.heldText === view);
         if (typing || this.noteTextOpen === key) shown.add(textBox.id);
       }
     }
@@ -19895,7 +20098,7 @@ export class InkSurface {
     const view = this.editingTextView();
     if (view) return view;
     const editor = this.cellEditor;
-    return this.cellEdit && editor && document.activeElement === editor.input ? editor : null;
+    return this.cellEdit && editor && this.viewDoc.activeElement === editor.input ? editor : null;
   }
 
   /** A table laid out with the surface's measuring canvas. */
@@ -20035,7 +20238,7 @@ export class InkSurface {
     if (previous && previous.table !== table) this.repaintTable(previous.pageId, previous.table);
     this.repaintTable(pageId, table);
     this.placeCellEditor();
-    if (document.activeElement !== editor.input) this.focusTextBox(editor.input);
+    if (this.viewDoc.activeElement !== editor.input) this.focusTextBox(editor.input);
     const end = editor.input.value.length;
     editor.input.setSelectionRange(end, end);
   }
@@ -20076,7 +20279,7 @@ export class InkSurface {
     this.endGripDrag(false);
     this.renderer?.setEditingCell(null);
     const editor = this.cellEditor;
-    if (blur && editor && document.activeElement === editor.input) editor.input.blur();
+    if (blur && editor && this.viewDoc.activeElement === editor.input) editor.input.blur();
     editor?.hide();
     this.watchTypingKeyboard(false);
     this.releaseTextEditingClass();
@@ -20489,7 +20692,7 @@ export class InkSurface {
 
   /** The page text box that has focus, if any. */
   private editingTextView(): TextBoxView | null {
-    const active = document.activeElement;
+    const active = this.viewDoc.activeElement;
     for (const view of this.textBoxInputs.values()) {
       if (view.input === active) return view;
     }
@@ -20525,7 +20728,7 @@ export class InkSurface {
       return;
     }
     const editable =
-      to instanceof HTMLElement &&
+      isHTMLElement(to) &&
       (to.isContentEditable || to.tagName === "INPUT" || to.tagName === "TEXTAREA");
     if (editable || !this.liveTextBox(view.pageId, view.id)) {
       this.endTextEditing(view);
@@ -20811,7 +21014,7 @@ export class InkSurface {
   private holdTextEditingClass(): void {
     window.clearTimeout(this.textClassTimer);
     this.textClassTimer = 0;
-    document.body.addClass(TEXT_EDITING_BODY_CLASS);
+    this.viewDoc.body.addClass(TEXT_EDITING_BODY_CLASS);
   }
 
   /**
@@ -20838,7 +21041,7 @@ export class InkSurface {
         // The clock starts when the drag ends.
         deadline = now() + TEXT_CLASS_RELEASE_MS;
       } else if (keyboardHeight() === 0 || now() >= deadline) {
-        document.body.removeClass(TEXT_EDITING_BODY_CLASS);
+        this.viewDoc.body.removeClass(TEXT_EDITING_BODY_CLASS);
         // The zoom floor was held while the keyboard was up; catch it up now.
         this.scheduleRelayout();
         return;

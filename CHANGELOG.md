@@ -30,6 +30,18 @@ extracted from the matching section of this file by `release.yml`.
   mostly empty paper shrunk to the note's width. It now shows what is drawn
   with a little paper round it, the same cut Export as PDF makes; an empty
   board shows a short strip of its paper.
+### Fixed
+
+- A notebook moved to a new window (Move to new window) no longer lags or freezes while the main
+  window is covered: the page, pen, sidebar, menus and text boxes now work from the window the
+  notebook is in, and it keeps working when moved back (FineNotes#199).
+- **No grey above or below a page a double tap filled.** With pages running
+  down, a double tap fills the screen's width with the page, but scrolling to
+  the top still showed a grey band above page 1, and one below the last page
+  at the end ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  Now the page stops at the screen's edges there, as at its sides. Zoomed out
+  to the whole page, the margin around it stays. The gap between pages stays
+  too; Join pages in Notebook settings closes it.
 
 ## [2.9.1] - 2026-11-10
 

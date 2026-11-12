@@ -273,7 +273,7 @@ export class Modal extends Shell {
   close(): void {}
 }
 export class PluginSettingTab extends Shell {
-  readonly containerEl = { isConnected: false };
+  readonly containerEl = { isConnected: false, addClass: () => undefined };
 }
 export class Setting extends Shell {}
 export class Menu extends Shell {}

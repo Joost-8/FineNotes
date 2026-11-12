@@ -33,6 +33,7 @@ import type { ImageElement } from "../model/document";
 import { pickImageFile } from "./image-import";
 import { menuAnchor, menuPlace } from "./bar-dock-model";
 import { t } from "../i18n/translate";
+import { docOf, shownDoc, winOf } from "./host-window";
 
 /** Options for placing a picture; every field is optional. */
 export interface InsertImageOptions {
@@ -202,7 +203,7 @@ export class ImageMenuPopover {
     private readonly context: ImageMenuContext,
     title = t("surface.command.insertImage"),
   ) {
-    this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-imagemenu" });
+    this.el = shownDoc().body.createDiv({ cls: "goodobsidian-addpage goodobsidian-imagemenu" });
     this.el.setAttribute("role", "menu");
     this.el.setAttribute("aria-label", title);
     this.el.createDiv({ cls: "goodobsidian-addpage-title", text: title });
@@ -264,21 +265,21 @@ export class ImageMenuPopover {
    */
   private place(): void {
     const r = this.anchor.getBoundingClientRect();
-    const width = Math.min(POPOVER_WIDTH, window.innerWidth - 16);
+    const width = Math.min(POPOVER_WIDTH, winOf(this.el).innerWidth - 16);
     const { side, box } = menuAnchor(this.anchor);
     if (side !== "down") {
       const size = { width, height: this.el.offsetHeight };
-      const room = { width: window.innerWidth, height: window.innerHeight };
+      const room = { width: winOf(this.el).innerWidth, height: winOf(this.el).innerHeight };
       const at = menuPlace(side, box, size, room, "end", 6, 8);
       this.el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px`, width: `${width}px` });
       return;
     }
     let left = r.right - width;
-    if (left < 8) left = Math.min(r.left, window.innerWidth - width - 8);
+    if (left < 8) left = Math.min(r.left, winOf(this.el).innerWidth - width - 8);
     left = Math.max(8, left);
     const height = this.el.offsetHeight;
     let top = r.bottom + 6;
-    if (top + height > window.innerHeight - 8) top = Math.max(8, r.top - height - 6);
+    if (top + height > winOf(this.el).innerHeight - 8) top = Math.max(8, r.top - height - 6);
     this.el.setCssStyles({ left: `${left}px`, top: `${top}px`, width: `${width}px` });
   }
 
@@ -296,13 +297,13 @@ export class ImageMenuPopover {
       else this.close();
     };
     // Capture: the drawing surface consumes its own pointer events.
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
+    docOf(this.el).addEventListener("pointerdown", onDown, true);
+    docOf(this.el).addEventListener("keydown", onKey);
+    winOf(this.el).addEventListener("resize", onResize);
     this.dispose.push(() => {
-      document.removeEventListener("pointerdown", onDown, true);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
+      docOf(this.el).removeEventListener("pointerdown", onDown, true);
+      docOf(this.el).removeEventListener("keydown", onKey);
+      winOf(this.el).removeEventListener("resize", onResize);
     });
   }
 }

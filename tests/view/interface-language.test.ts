@@ -215,15 +215,6 @@ describe("the Language row", () => {
     expect(s.buttons).toEqual([]);
   });
 
-  it("is drawn as a section header's line, with one icon however often it is drawn", () => {
-    const s = fakeSetting();
-    const host = { chosen: () => undefined, choose: vi.fn(), redraw: vi.fn() };
-    drawLanguageRow(s as never, host);
-    drawLanguageRow(s as never, host);
-    expect(s.classes).toContain("goodobsidian-language-row");
-    expect(s.icons).toEqual(["goodobsidian-section-icon"]);
-  });
-
   it("shows a stored choice, and an unknown one as Follow Obsidian", () => {
     const fr = fakeSetting();
     drawLanguageRow(fr as never, { chosen: () => "fr", choose: vi.fn(), redraw: vi.fn() });

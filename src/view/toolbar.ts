@@ -271,6 +271,7 @@ import {
   nearestFillOpacity,
   readShapeToolStyle,
 } from "../model/shape-style";
+import { isElement, sizeObserver, watchSize, winOf } from "./host-window";
 
 /**
  * Tools selectable in the toolbar. Pen, highlighter and shape produce
@@ -1650,9 +1651,7 @@ export class Toolbar {
     };
     this.measureBar = measureAll;
     if (typeof ResizeObserver === "function") {
-      const observer = new ResizeObserver(measureAll);
-      observer.observe(this.barEl);
-      this.disposers.push(() => observer.disconnect());
+      this.disposers.push(watchSize(this.barEl, measureAll));
     }
     measure();
   }
@@ -2794,7 +2793,7 @@ export class Toolbar {
     this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
     fade();
     // The pill may still settle round it: place the arrows again once it has.
-    window.requestAnimationFrame(fade);
+    winOf(this.barEl).requestAnimationFrame(fade);
     row.addEventListener("scroll", () => {
       this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
       fade();
@@ -3028,7 +3027,7 @@ export class Toolbar {
     }
     this.colorColumnScroll = column.scrollTop;
     fade();
-    window.requestAnimationFrame(fade);
+    winOf(this.barEl).requestAnimationFrame(fade);
     column.addEventListener("scroll", () => {
       this.colorColumnScroll = column.scrollTop;
       fade();
@@ -3068,14 +3067,14 @@ export class Toolbar {
       fade();
     };
     showChosen();
-    window.requestAnimationFrame(fade);
+    winOf(this.barEl).requestAnimationFrame(fade);
     // The row gives way when the pill has too little room, which can settle
     // after it was built (the pill is placed afterwards): look again then.
     this.colorRowWatch?.disconnect();
     this.colorRowWatch = null;
     if (typeof ResizeObserver !== "undefined") {
       let width = row.clientWidth;
-      this.colorRowWatch = new ResizeObserver(() => {
+      this.colorRowWatch = sizeObserver(row, () => {
         if (row.clientWidth === width) return;
         width = row.clientWidth;
         showChosen();
@@ -4433,7 +4432,8 @@ export class Toolbar {
     }
     const hostBox = this.host.getBoundingClientRect();
     const anchorBox = anchor.getBoundingClientRect();
-    const floor = Math.min(hostBox.bottom, window.innerHeight - keyboardHeight()) - EDGE_INSET;
+    const floor =
+      Math.min(hostBox.bottom, winOf(this.barEl).innerHeight - keyboardHeight()) - EDGE_INSET;
     const below = floor - (anchorBox.bottom + 8);
     const above = anchorBox.top - 8 - (hostBox.top + EDGE_INSET);
     const height = popover.offsetHeight;
@@ -4624,7 +4624,7 @@ export class Toolbar {
   private textFieldDone(to: EventTarget | null): void {
     if (!this.textFieldOpen) return;
     this.textFieldOpen = false;
-    this.callbacks.onTextFieldDone?.(to instanceof Element ? to : null);
+    this.callbacks.onTextFieldDone?.(isElement(to) ? to : null);
   }
 
   /** The named styles, each shown in its own look; a pick applies it and closes. */

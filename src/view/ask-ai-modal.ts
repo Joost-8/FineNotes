@@ -59,6 +59,7 @@ import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { keyboardHeight } from "./keyboard";
 import { writeSystemText } from "./system-clipboard";
+import { sizeObserver } from "./host-window";
 
 export interface AskAiHost {
   session: AskSession;
@@ -276,7 +277,7 @@ export class AskChat {
     this.keyboard.watch(input, composer);
 
     this.unsubscribe = this.session.onChange(() => this.render());
-    this.resize = new ResizeObserver(() => this.syncInput());
+    this.resize = sizeObserver(contentEl, () => this.syncInput());
     this.resize.observe(contentEl);
     this.render();
     this.scrollToEnd();

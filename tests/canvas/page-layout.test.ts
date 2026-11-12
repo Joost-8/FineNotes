@@ -19,6 +19,7 @@ import {
   PAGE_MARGIN_Y,
   boxAtPoint,
   columnScrollRangeX,
+  columnScrollRangeY,
   currentPageIndex,
   inkBeyondPage,
   fitScale,
@@ -432,5 +433,79 @@ describe("columnScrollRangeX (discussion #43)", () => {
     const range = columnScrollRangeX(layout, 1, 1180);
     expect(range.min).toBe(range.max);
     expect(range.min).toBeCloseTo(layout.width / 2 - 590, 9);
+  });
+});
+
+describe("columnScrollRangeY (discussion #43: no grey above or below at the fill)", () => {
+  const paneW = 1112;
+  const paneH = 760;
+
+  it("at the double tap's fill, stops page 1's top and the last page's foot on the pane's edges", () => {
+    const layout = layoutPages(uniform());
+    const first = layout.boxes[0];
+    const last = layout.boxes[layout.boxes.length - 1];
+    const scale = paneW / first.width;
+    const range = columnScrollRangeY(layout, scale, paneW, paneH);
+    expect(range).toBeDefined();
+    expect(range?.min).toBeCloseTo(first.y * scale, 9);
+    expect(range?.max).toBeCloseTo((last.y + last.height) * scale - paneH, 9);
+    // The band in the user's screenshot: PAGE_MARGIN_Y * scale above page 1.
+    expect(range?.min).toBeCloseTo(PAGE_MARGIN_Y * scale, 9);
+  });
+
+  it("keeps the gap between pages: only the ends are trimmed", () => {
+    const layout = layoutPages(uniform());
+    const scale = paneW / layout.boxes[0].width;
+    const range = columnScrollRangeY(layout, scale, paneW, paneH);
+    const span = (range?.max ?? 0) - (range?.min ?? 0) + paneH;
+    expect(span).toBeCloseTo((3 * 1448 + 2 * PAGE_GAP) * scale, 6);
+  });
+
+  it("zoomed past the fill, trims the margins too", () => {
+    const layout = layoutPages(uniform());
+    const scale = (2 * paneW) / layout.boxes[0].width;
+    const range = columnScrollRangeY(layout, scale, paneW, paneH);
+    expect(range?.min).toBeCloseTo(layout.boxes[0].y * scale, 9);
+  });
+
+  it("at the whole-page floor, keeps the margins: the content's own range", () => {
+    const layout = layoutPages(uniform());
+    // Fitted whole by height, the desk beside the page is far wider than the margin.
+    const scale = paneH / (1448 + 2 * PAGE_MARGIN_Y);
+    expect(columnScrollRangeY(layout, scale, paneW, paneH)).toBeUndefined();
+  });
+
+  it("between the floor and the fill, shows no more desk above than beside the pages", () => {
+    const layout = layoutPages(uniform());
+    const first = layout.boxes[0];
+    // Beside the page: 10 px each side, less than the margin's PAGE_MARGIN_Y * scale.
+    const scale = (paneW - 20) / first.width;
+    const range = columnScrollRangeY(layout, scale, paneW, paneH);
+    expect(first.y * scale - (range?.min ?? 0)).toBeCloseTo(10, 6);
+  });
+
+  it("is continuous where the trim starts", () => {
+    const layout = layoutPages(uniform());
+    const w = layout.boxes[0].width;
+    // The scale at which the desk beside equals the margin above.
+    const s = paneW / (w + 2 * PAGE_MARGIN_Y);
+    const just = columnScrollRangeY(layout, s * 1.0001, paneW, paneH);
+    expect(just?.min ?? 0).toBeLessThan(0.5);
+  });
+
+  it("a single page shorter than the pane at the fill rests centred, not top-aligned", () => {
+    // A US Letter page in an iPad held upright: 1061 px at the fill, the pane 1100.
+    const layout = layoutPages(pages([612, 792]));
+    const box = layout.boxes[0];
+    const tallPane = 1100;
+    const scale = 820 / box.width;
+    const range = columnScrollRangeY(layout, scale, 820, tallPane);
+    expect(range?.min).toBe(range?.max);
+    expect(range?.min).toBeCloseTo((box.y + box.height / 2) * scale - tallPane / 2, 9);
+  });
+
+  it("an empty notebook or a zero pane changes nothing", () => {
+    expect(columnScrollRangeY(layoutPages([]), 1, paneW, paneH)).toBeUndefined();
+    expect(columnScrollRangeY(layoutPages(uniform()), 1, 0, paneH)).toBeUndefined();
   });
 });

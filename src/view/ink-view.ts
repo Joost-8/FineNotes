@@ -19,9 +19,8 @@
 import { SetFurniture, furnitureText } from "../model/furniture";
 import { SetPageTab, nextTabColor } from "../model/page-tabs";
 import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
-import { stickerFolderOf } from "../model/stickers";
 import { lookPaletteOf, lookStyleOf } from "../model/look";
-import { templateFolderOf } from "../model/vault-folders";
+import { stickerFolderFor, templateFolderFor } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
 import { DEFAULT_FILL_COLOR, readFillGap } from "../model/fill-region";
 import { isTape, tapeColorOf, tapeHeightOf, tapeModeOf } from "../model/cover-tape";
@@ -385,7 +384,7 @@ import {
   exportTarget,
   mimeTypeOf,
 } from "../export/export-choice";
-import { normalizeFolder, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
+import { stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
 import { MorePanel } from "./more-panel";
@@ -456,6 +455,7 @@ import { writeSystemText } from "./system-clipboard";
 import { obsidianOpenUri } from "../model/home-link";
 import { familiesIn } from "../model/font-catalogue";
 import { vaultFonts } from "./font-store";
+import { docOf, isElement, onWindowMoved, winOf } from "./host-window";
 
 /** Quiet time after the page being read changes before it is remembered. */
 /** A notebook that has just opened waits this long before its first page's PDF text is read for OCR, ms. */
@@ -675,6 +675,7 @@ export class InkView extends TextFileView {
 
   /** The text layer below the pages, while mounted. */
   private textPanel: TextPanel | null = null;
+  private windowEventsOff: (() => void) | null = null;
   /** Whether the text layer is open; outlives the DOM, so a reopened view keeps it. */
   private textPanelOpen = false;
 
@@ -2075,7 +2076,7 @@ export class InkView extends TextFileView {
             page,
             this.previewSources(),
             cssWidth,
-            window.devicePixelRatio || 1,
+            winOf(this.contentEl).devicePixelRatio || 1,
           );
         }
       },
@@ -3466,7 +3467,9 @@ export class InkView extends TextFileView {
     }
     this.backdrops = new VaultBackdropRenderer(this.pdfCache);
     this.thumbBackdrops = new VaultBackdropRenderer(this.pdfCache);
-    this.thumbBackdrops.setDeviceScale(thumbnailRasterScale(window.devicePixelRatio || 1));
+    this.thumbBackdrops.setDeviceScale(
+      thumbnailRasterScale(winOf(this.contentEl).devicePixelRatio || 1),
+    );
     this.images = new VaultImageCache(this.app);
 
     const body = root.createDiv({ cls: "goodobsidian-body" });
@@ -3655,6 +3658,7 @@ export class InkView extends TextFileView {
         // then glide onto it, as GoodNotes does.
         onPullAddPage: () => this.addPage(this.doc.pages.length - 1, true),
         onPinchOverview: (snapshot) => this.openOverviewFromPinch(snapshot),
+        onZoomMotion: (moving) => this.pdfCache?.setHeld(moving, "zoom"),
         onTextEditing: (style) => this.toolbar?.setTextTarget(style),
         onTextAnchor: (rect) => this.toolbar?.setTextAnchor(rect),
         textPillState: () => this.toolbar?.textPillState ?? "-",
@@ -3709,21 +3713,9 @@ export class InkView extends TextFileView {
     this.surface.setClock(() => audio.now());
     // A tool remembered from before its button was turned off is not taken up.
     this.endOffItemEffects();
-    this.registerDomEvent(document, "visibilitychange", () => {
-      const hidden = document.visibilityState === "hidden";
-      // A page read while the app is away is not blamed if iPadOS ends it.
-      this.plugin.readingGuard.setHidden(hidden);
-      if (!hidden) return;
-      // A key held as the app goes away never sends its key-up.
-      this.surface?.setHand(false);
-      this.surface?.releaseHeldShortcuts();
-      this.audio?.onHidden();
-      // iPadOS may end the app from the background: keep the page now, and
-      // a save the pen put off or one still in the background, made here
-      // on the main thread, as it may not get another chance.
-      this.recordLastPage();
-      if (this.writeHold.savePending || this.saver.busy) void this.saveNow(false, true);
-    });
+    this.bindWindowEvents(root);
+    this.register(onWindowMoved(root, () => this.bindWindowEvents(root)));
+    this.register(() => this.windowEventsOff?.());
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => this.lastPageFileMoved(oldPath, file.path)),
     );
@@ -3819,20 +3811,6 @@ export class InkView extends TextFileView {
       this.registerDomEvent(this.contentEl, type, (e) => this.surface?.penInView(e), {
         capture: true,
       });
-    // Paste events go to whatever has focus — often the body, outside this
-    // view — so they are heard on the document, and taken only while this
-    // is the active view. The surface leaves text fields' pastes alone.
-    // Space lets go of the hand wherever the key-up lands, and when the
-    // window loses focus, which keeps the key-up from arriving at all.
-    this.registerDomEvent(document, "keyup", (e) => this.surface?.handleKeyUp(e));
-    this.registerDomEvent(window, "blur", () => {
-      this.surface?.setHand(false);
-      this.surface?.releaseHeldShortcuts();
-    });
-    this.registerDomEvent(document, "paste", (e) => {
-      if (this.app.workspace.getActiveViewOfType(InkView) !== this) return;
-      this.surface?.handlePaste(e);
-    });
 
     this.registerDomEvent(root, "dragover", (event) => {
       const types = event.dataTransfer?.types ?? [];
@@ -3844,28 +3822,81 @@ export class InkView extends TextFileView {
         event.preventDefault();
     });
     this.registerDomEvent(root, "drop", (event) => void this.handleFileDrop(event));
-    // On a tablet the file list is a drawer, and while it is open Obsidian's
-    // `.workspace-drawer-backdrop` covers the page, so a file dragged out of
-    // it is dropped on the backdrop, outside this view. Take a drop on that
-    // backdrop whose point lies over this view; a drop in the drawer itself
-    // (moving a file to a folder) is the file list's.
-    this.registerDomEvent(document, "drop", (event) => {
-      const target = event.target;
-      if (event.defaultPrevented || !(target instanceof Element)) return;
-      if (!target.matches(".workspace-drawer-backdrop")) return;
-      if (!pointInside(root.getBoundingClientRect(), event.clientX, event.clientY)) return;
-      void this.handleFileDrop(event);
-    });
 
     // First layout pass: the pill has no measured size until the view is in
     // the document, so its restored position can only be applied after a frame.
-    window.requestAnimationFrame(() => this.toolbar?.applyPosition());
+    winOf(this.contentEl).requestAnimationFrame(() => this.toolbar?.applyPosition());
 
     // The file may have loaded before the DOM was built (or not yet at all):
     // either way the chrome follows whatever document is here now.
     this.syncSingle();
     audio.syncChrome();
     this.matchPdfResolution();
+  }
+
+  /**
+   * What only the view's own window reports. A tab moved to a new window is
+   * listened to there, and no longer in the window it left.
+   */
+  private bindWindowEvents(root: HTMLElement): void {
+    this.windowEventsOff?.();
+    const win = winOf(root);
+    const doc = docOf(root);
+    const offs: (() => void)[] = [];
+    const on = <K extends keyof DocumentEventMap>(
+      type: K,
+      listener: (event: DocumentEventMap[K]) => void,
+    ): void => {
+      doc.addEventListener(type, listener);
+      offs.push(() => doc.removeEventListener(type, listener));
+    };
+    on("visibilitychange", () => {
+      const hidden = doc.visibilityState === "hidden";
+      // A page read while the app is away is not blamed if iPadOS ends it.
+      this.plugin.readingGuard.setHidden(hidden);
+      if (!hidden) return;
+      // A key held as the app goes away never sends its key-up.
+      this.surface?.setHand(false);
+      this.surface?.releaseHeldShortcuts();
+      this.audio?.onHidden();
+      // iPadOS may end the app from the background: keep the page now, and
+      // a save the pen put off or one still in the background, made here
+      // on the main thread, as it may not get another chance.
+      this.recordLastPage();
+      if (this.writeHold.savePending || this.saver.busy) void this.saveNow(false, true);
+    });
+    // Paste events go to whatever has focus — often the body, outside this
+    // view — so they are heard on the document, and taken only while this
+    // is the active view. The surface leaves text fields' pastes alone.
+    // Space lets go of the hand wherever the key-up lands, and when the
+    // window loses focus, which keeps the key-up from arriving at all.
+    on("keyup", (e) => this.surface?.handleKeyUp(e));
+    on("paste", (e) => {
+      if (this.app.workspace.getActiveViewOfType(InkView) !== this) return;
+      this.surface?.handlePaste(e);
+    });
+    // On a tablet the file list is a drawer, and while it is open Obsidian's
+    // `.workspace-drawer-backdrop` covers the page, so a file dragged out of
+    // it is dropped on the backdrop, outside this view. Take a drop on that
+    // backdrop whose point lies over this view; a drop in the drawer itself
+    // (moving a file to a folder) is the file list's.
+    on("drop", (event) => {
+      const target = event.target;
+      if (event.defaultPrevented || !isElement(target)) return;
+      if (!target.matches(".workspace-drawer-backdrop")) return;
+      if (!pointInside(root.getBoundingClientRect(), event.clientX, event.clientY)) return;
+      void this.handleFileDrop(event);
+    });
+    const onBlur = (): void => {
+      this.surface?.setHand(false);
+      this.surface?.releaseHeldShortcuts();
+    };
+    win.addEventListener("blur", onBlur);
+    offs.push(() => win.removeEventListener("blur", onBlur));
+    this.windowEventsOff = () => {
+      for (const off of offs) off();
+      this.windowEventsOff = null;
+    };
   }
 
   // --- Note settings ----------------------------------------------------------
@@ -3903,7 +3934,7 @@ export class InkView extends TextFileView {
         files,
         ...(preview ? { preview } : {}),
       });
-      const folder = templateFolderOf(normalizeFolder(this.settings.templateFolder));
+      const folder = templateFolderFor(this.settings);
       if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
       const taken = new Set(
         this.app.vault.getFolderByPath(folder)?.children.map((child) => child.name) ?? [],
@@ -4079,7 +4110,7 @@ export class InkView extends TextFileView {
           page,
           this.previewSources(),
           cssWidth,
-          window.devicePixelRatio || 1,
+          winOf(this.contentEl).devicePixelRatio || 1,
         );
         return true;
       },
@@ -4470,7 +4501,7 @@ export class InkView extends TextFileView {
       paintPreview: async (canvas, i, cssWidth) => {
         const page = doc.pages[i];
         if (page) {
-          const dpr = window.devicePixelRatio || 1;
+          const dpr = winOf(this.contentEl).devicePixelRatio || 1;
           await paintPagePreview(canvas, page, exported(), cssWidth, dpr);
         }
       },
@@ -6018,7 +6049,7 @@ export class InkView extends TextFileView {
     let pending: MarginChoice | null = null;
     let frame = 0;
     const flush = (): void => {
-      if (frame) window.cancelAnimationFrame(frame);
+      if (frame) winOf(this.contentEl).cancelAnimationFrame(frame);
       frame = 0;
       const next = pending;
       pending = null;
@@ -6026,7 +6057,7 @@ export class InkView extends TextFileView {
     };
     const change = (choice: MarginChoice): void => {
       pending = choice;
-      if (!frame) frame = window.requestAnimationFrame(flush);
+      if (!frame) frame = winOf(this.contentEl).requestAnimationFrame(flush);
     };
     // "PDF pages" only where it differs from both other choices.
     const scopes: MarginScope[] = [
@@ -6145,7 +6176,7 @@ export class InkView extends TextFileView {
     if (!this.thumbBackdrops) return undefined;
     return new VaultPaperLibrary(
       this.app,
-      () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
+      () => templateFolderFor(this.settings),
       (canvas, backdrop, geometry, cssWidth) =>
         this.paintPaperThumbnail(canvas, backdrop, geometry, cssWidth),
       () => this.plugin.openTemplateGallery(),
@@ -6155,10 +6186,7 @@ export class InkView extends TextFileView {
 
   /** The names in My templates now, which tell an older notebook's template pages apart. */
   private templateNames(): Set<string> {
-    return templateNamesIn(
-      this.app,
-      templateFolderOf(normalizeFolder(this.settings.templateFolder)),
-    );
+    return templateNamesIn(this.app, templateFolderFor(this.settings));
   }
 
   /** An empty page with paper `backdrop` (a PDF page or a designed paper), as a thumbnail `cssWidth` wide. */
@@ -6179,10 +6207,17 @@ export class InkView extends TextFileView {
       images: [],
       textBoxes: [],
     };
-    renderPageThumbnail(canvas, page, painter, cssWidth, window.devicePixelRatio || 1, {
-      usePressure: false,
-      highlighterAlpha: this.settings.highlighterAlpha,
-    });
+    renderPageThumbnail(
+      canvas,
+      page,
+      painter,
+      cssWidth,
+      winOf(this.contentEl).devicePixelRatio || 1,
+      {
+        usePressure: false,
+        highlighterAlpha: this.settings.highlighterAlpha,
+      },
+    );
   }
 
   /** A Margin popover swatch: a patch of the margin paper, drawn as the page draws it. */
@@ -6522,7 +6557,7 @@ export class InkView extends TextFileView {
   private async saveSticker(png: ArrayBuffer, width: number, height: number): Promise<void> {
     const note = this.file;
     if (!note) return;
-    const folder = `${stickerFolderOf(this.settings.stickerFolder)}/${SAVED_STICKERS_COLLECTION}`;
+    const folder = `${stickerFolderFor(this.settings)}/${SAVED_STICKERS_COLLECTION}`;
     try {
       const prepared = { bytes: png, mime: "image/png", ext: "png", width, height };
       const file = await saveImageAttachment(this.app, prepared, "Sticker", note.path, folder);
