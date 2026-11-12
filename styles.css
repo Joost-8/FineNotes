@@ -4441,6 +4441,7 @@ body,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
+.goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   position: absolute;
   inset: 0;
@@ -4459,6 +4460,7 @@ body,
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
+.goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   --gob-slider-height: var(--gob-touch);
 }
@@ -4479,6 +4481,8 @@ input[type="range"].goodobsidian-player-scrubber {
 .goodobsidian-zoombox-settings
   input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-colour-panel
+  input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+.goodobsidian-mm-stepper
   input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
@@ -4507,6 +4511,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track 
 .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+.goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   top: 0;
@@ -4528,6 +4533,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-colour-panel
   input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+.goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
@@ -4543,6 +4549,7 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   .goodobsidian-pen-modal input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
     transition: none;
@@ -5205,6 +5212,8 @@ input.goodobsidian-paper-designer-name {
 /* − value mm +: big enough for a Pencil tap, the value typed in between. */
 .goodobsidian-mm-stepper {
   display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
   align-items: center;
   gap: 2px;
   padding: 2px;
@@ -5212,11 +5221,15 @@ input.goodobsidian-paper-designer-name {
   background: var(--gob-well, var(--background-secondary));
 }
 
-.goodobsidian-mm-stepper > button.clickable-icon {
-  width: 36px;
+.goodobsidian-mm-stepper-slider.goodobsidian-width-slider {
+  flex: 1 1 140px;
+  min-width: 120px;
   height: 36px;
-  padding: 0;
-  border-radius: 999px;
+  margin: 0 4px 0 8px;
+}
+
+.goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range {
+  --gob-slider-height: 36px;
 }
 
 .goodobsidian-mm-stepper > input[type="text"] {

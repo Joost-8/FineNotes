@@ -84,7 +84,7 @@ export const DESIGN_SPACING_MM: Readonly<Record<DesignRuling, number>> = {
   dots: 5,
 };
 
-/** The range each length may take, mm, and the step its − and + move by. */
+/** The range each length may take, mm, and the step its slider moves by. */
 export const DESIGN_RANGES = {
   spacing: { min: 2, max: 30, step: 0.5 },
   margin: { min: 0, max: 300, step: 1 },

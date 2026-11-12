@@ -1032,10 +1032,12 @@ export class TemplatePickerModal extends Modal {
         set({ spacing: step.k === 1 ? undefined : step.k, pitch: undefined }),
       );
     }
-    // The pitch itself, in mm, for the template chosen: typed, or stepped by half a mm.
+    // The pitch itself, in mm, for the template chosen: dragged in half mm, or typed.
     const shown = spacingMm(spacingOf(this.ruling, this.style));
     mmStepper(spacingRow, {
       label: t("notebooks.designer.spacing"),
+      min: DESIGN_RANGES.spacing.min,
+      max: DESIGN_RANGES.spacing.max,
       step: DESIGN_RANGES.spacing.step,
       get: () => shown,
       format: (mm) => mm.toFixed(1),

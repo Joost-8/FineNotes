@@ -262,6 +262,8 @@ export class MarginPopover {
       const row = this.el.createDiv({ cls: "goodobsidian-margin-spacing" });
       this.spacing = mmStepper(row, {
         label: t("notebooks.designer.spacing"),
+        min: DESIGN_RANGES.spacing.min,
+        max: DESIGN_RANGES.spacing.max,
         step: DESIGN_RANGES.spacing.step,
         get: () => this.shownSpacing() ?? 0,
         format: (mm) => mm.toFixed(1),

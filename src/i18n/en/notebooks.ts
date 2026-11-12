@@ -736,11 +736,7 @@ export const notebooks = {
   "notebooks.designer.inset": "Inset",
   "notebooks.designer.lineInset": "Margin line inset",
   "notebooks.designer.anyColour": "Any colour",
-  "notebooks.designer.less": "{label}: less",
-  "notebooks.designer.lessTitle": "Less",
   "notebooks.designer.inMm": "{label}, mm",
-  "notebooks.designer.more": "{label}: more",
-  "notebooks.designer.moreTitle": "More",
   "notebooks.designer.defaultName": "My paper",
   "notebooks.library.deleteTitle": "Delete template",
   "notebooks.library.deleteMessage.one":

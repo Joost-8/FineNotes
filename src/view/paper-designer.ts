@@ -629,7 +629,7 @@ class PaperDesigner {
     return wrap;
   }
 
-  /** − value mm +: the value typed, or stepped with a Pencil tap. */
+  /** A slider and the value in mm: dragged (the preview follows), or typed. */
   private stepper(
     row: HTMLElement,
     range: DesignRange,
@@ -639,7 +639,10 @@ class PaperDesigner {
   ): void {
     const stepper = mmStepper(row, {
       label,
+      min: DESIGN_RANGES[range].min,
+      max: DESIGN_RANGES[range].max,
       step: DESIGN_RANGES[range].step,
+      live: true,
       get,
       put: (value) => {
         const clamped = clampDesignValue(range, value);
