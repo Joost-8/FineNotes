@@ -99,7 +99,8 @@ export function stretchesWithin(run: InkRun, box: RunBox): number[] {
   if (count === 1) return touches(pts[0], pts[1], pts[0], pts[1]) ? [0, 0] : [];
   if (run.closed) {
     for (let i = 0; i + 1 < count; i++) {
-      if (touches(pts[2 * i], pts[2 * i + 1], pts[2 * i + 2], pts[2 * i + 3])) return [0, count - 1];
+      if (touches(pts[2 * i], pts[2 * i + 1], pts[2 * i + 2], pts[2 * i + 3]))
+        return [0, count - 1];
     }
     return [];
   }
