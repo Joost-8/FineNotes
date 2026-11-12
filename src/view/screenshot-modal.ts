@@ -16,14 +16,17 @@
  * want a user gesture, which the menu's tap has spent by then.
  *
  * A selection's picture shows the page behind it, as the page shows it:
- * paper, PDF and everything drawn there (FineNotes discussion #107). A
- * switch at the start of the actions, lit while it does, leaves the page out
- * for the selection on its own; Copy, Share and Save take the one shown.
+ * paper, PDF and everything drawn there (FineNotes discussion #107). One
+ * choice at the start of the actions says what the picture includes
+ * (`screenshot-parts.ts`): everything, the selection on its own, or the page
+ * behind it without its ink (FineNotes#211); Copy, Share and Save take the
+ * one shown.
  */
 
 import { type App, Modal, setIcon } from "obsidian";
 import { t } from "../i18n/translate";
 import { errorMessage } from "../util/errors";
+import { SCREENSHOT_PARTS, SCREENSHOT_PART_ICONS, type ScreenshotPart } from "./screenshot-parts";
 
 /** What the dialog's second choice is on this platform. */
 export type ScreenshotSecond = "share" | "save";
@@ -62,10 +65,27 @@ export interface ScreenshotHost {
   tell(text: string): void;
 }
 
+/** A selection's other pictures, for the dialog's choice of what to include. */
+export interface ScreenshotOthers {
+  /** The selection on its own. */
+  selection: ScreenshotPicture;
+  /** The page behind it without its ink, drawn when first asked for; null when it could not be. */
+  page: () => Promise<ScreenshotPicture | null>;
+}
+
+/** What each choice is called, to screen readers and on hover. */
+function partLabel(part: ScreenshotPart): string {
+  if (part === "all") return t("view.screenshot.partAll");
+  if (part === "selection") return t("view.screenshot.partSelection");
+  return t("view.screenshot.partPage");
+}
+
 export class ScreenshotModal extends Modal {
   private readonly urls = new Map<ScreenshotPicture, string>();
   /** The picture shown, which Copy, Share and Save take. */
   private shown: ScreenshotPicture;
+  /** Which of the choices it is. */
+  private shownPart: ScreenshotPart = "all";
 
   constructor(
     app: App,
@@ -74,8 +94,8 @@ export class ScreenshotModal extends Modal {
     /** The file name it is shared or saved under. */
     private readonly name: string,
     private readonly host: ScreenshotHost,
-    /** The selection on its own, for the switch; absent, there is no switch. */
-    private readonly inkOnly?: ScreenshotPicture,
+    /** The selection's other pictures, for the choice; absent, there is no choice. */
+    private readonly others?: ScreenshotOthers,
   ) {
     super(app);
     this.shown = picture;
@@ -101,25 +121,52 @@ export class ScreenshotModal extends Modal {
     const status = body.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = body.createDiv({ cls: "goodobsidian-ask-actions" });
 
-    const inkOnly = this.inkOnly;
-    if (inkOnly) {
-      // The page behind it: lit while it shows, off for the selection alone.
-      const page = actions.createEl("button", {
-        cls: "clickable-icon goodobsidian-screenshot-page",
-        attr: { "aria-label": t("view.screenshot.pageBehind") },
+    const others = this.others;
+    if (others) {
+      // One choice of what the picture includes: icons in a segmented well.
+      const choice = actions.createDiv({
+        cls: "goodobsidian-segmented is-icons goodobsidian-screenshot-parts",
+        attr: { role: "radiogroup", "aria-label": t("view.screenshot.include") },
       });
-      setIcon(page, "layers");
+      let pageOnly: Promise<ScreenshotPicture | null> | null = null;
+      const pictureOf = async (part: ScreenshotPart): Promise<ScreenshotPicture | null> => {
+        if (part === "all") return this.picture;
+        if (part === "selection") return others.selection;
+        pageOnly ??= others.page();
+        return pageOnly;
+      };
+      const buttons = new Map<ScreenshotPart, HTMLButtonElement>();
       const sync = (): void => {
-        const on = this.shown === this.picture;
-        page.toggleClass("is-active", on);
-        page.setAttribute("aria-pressed", String(on));
+        for (const [part, button] of buttons) {
+          const on = this.shownPart === part;
+          button.toggleClass("is-active", on);
+          button.setAttribute("aria-checked", String(on));
+        }
         img.src = this.urlOf(this.shown);
       };
+      for (const part of SCREENSHOT_PARTS) {
+        const button = choice.createEl("button", {
+          cls: "clickable-icon",
+          attr: { role: "radio", "aria-label": partLabel(part), title: partLabel(part) },
+        });
+        setIcon(button, SCREENSHOT_PART_ICONS[part]);
+        buttons.set(part, button);
+        button.addEventListener("click", () => {
+          if (this.shownPart === part) return;
+          void pictureOf(part).then((picture) => {
+            if (!picture) {
+              button.disabled = true;
+              status.addClass("is-error");
+              status.setText(t("view.screenshot.failed"));
+              return;
+            }
+            this.shown = picture;
+            this.shownPart = part;
+            sync();
+          });
+        });
+      }
       sync();
-      page.addEventListener("click", () => {
-        this.shown = this.shown === this.picture ? inkOnly : this.picture;
-        sync();
-      });
     }
 
     const file = (): File => new File([this.shown.png], this.name, { type: "image/png" });

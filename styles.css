@@ -10872,20 +10872,15 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   border-radius: var(--radius-s);
 }
 
-/* The page-behind switch, at the start of the actions: lit while the
-   picture shows the page (paper, PDF) behind the selection; off, the
-   selection alone. As the export dialog's template switch. */
-.goodobsidian-ask-actions button.goodobsidian-screenshot-page {
-  width: var(--gob-touch);
+/* What the picture includes, at the start of the actions: everything, the
+   selection alone, or the page behind it without its ink (FineNotes#211). */
+.goodobsidian-ask-actions .goodobsidian-screenshot-parts {
   margin-right: auto;
-  padding: 0;
-  border-radius: var(--gob-radius-pill);
-  color: var(--text-muted);
 }
 
-.goodobsidian-ask-actions button.goodobsidian-screenshot-page.is-active {
-  background: hsla(var(--interactive-accent-hsl), 0.15);
-  color: var(--interactive-accent);
+.goodobsidian-ask-actions .goodobsidian-screenshot-parts button {
+  width: 44px;
+  height: 36px;
 }
 
 /* ------------------------------------------------ search this notebook */

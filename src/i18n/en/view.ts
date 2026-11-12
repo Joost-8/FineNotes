@@ -101,7 +101,10 @@ export const view = {
   // Screenshot dialog
   "view.screenshot.title": "Screenshot",
   "view.screenshot.alt": "The selection as a picture",
-  "view.screenshot.pageBehind": "Page behind",
+  "view.screenshot.include": "Include",
+  "view.screenshot.partAll": "Everything",
+  "view.screenshot.partSelection": "Selection only",
+  "view.screenshot.partPage": "Page only, without ink",
   "view.screenshot.share": "Share…",
   "view.screenshot.saveImage": "Save image",
   "view.screenshot.saveFailed": "The picture could not be saved.",

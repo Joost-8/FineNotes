@@ -147,7 +147,8 @@ import {
   saveImageAttachment,
 } from "./image-import";
 import { copyPictureToSystemClipboard, writePngToClipboard } from "./picture-clipboard";
-import { type ScreenshotPicture, ScreenshotModal } from "./screenshot-modal";
+import { type ScreenshotOthers, type ScreenshotPicture, ScreenshotModal } from "./screenshot-modal";
+import { pageWithoutInk } from "./screenshot-parts";
 import { pageCrop } from "./screenshot-crop";
 import {
   ImageMenuPopover,
@@ -4009,8 +4010,9 @@ export class InkView extends TextFileView {
   /**
    * The lasso's Screenshot (ink-surface.ts, showSelectionScreenshot): the
    * patch of page `index` the selection covers, with the page behind it
-   * (paper, PDF, everything drawn there); the dialog's switch shows `inkOnly`,
-   * the selection on its own, instead (FineNotes discussion #107).
+   * (paper, PDF, everything drawn there); the dialog's choice shows `inkOnly`,
+   * the selection on its own (FineNotes discussion #107), or the page behind
+   * it without its ink (FineNotes#211), instead.
    */
   private async screenshotSelection(
     inkOnly: ScreenshotPicture,
@@ -4018,7 +4020,12 @@ export class InkView extends TextFileView {
     bounds: Bounds,
   ): Promise<void> {
     const shot = await this.pagePicture(index, bounds);
-    this.showScreenshot(shot ?? inkOnly, shot ? inkOnly : undefined);
+    this.showScreenshot(
+      shot ?? inkOnly,
+      shot
+        ? { selection: inkOnly, page: () => this.pagePicture(index, bounds, true) }
+        : undefined,
+    );
   }
 
   /**
@@ -4044,11 +4051,17 @@ export class InkView extends TextFileView {
   /**
    * The patch of page `index` inside `bounds`, drawn as an export draws it
    * (paper, PDF, ink), sharp at up to three times its size; null when none
-   * of it is on the page or it could not be drawn.
+   * of it is on the page or it could not be drawn. `withoutInk` leaves the
+   * page's strokes out (`pageWithoutInk`).
    */
-  private async pagePicture(index: number, bounds: Bounds): Promise<ScreenshotPicture | null> {
-    const page = this.doc.pages[index];
-    if (!page) return null;
+  private async pagePicture(
+    index: number,
+    bounds: Bounds,
+    withoutInk = false,
+  ): Promise<ScreenshotPicture | null> {
+    const shown = this.doc.pages[index];
+    if (!shown) return null;
+    const page = withoutInk ? pageWithoutInk(shown) : shown;
     const { width, height } = page.geometry;
     const crop = pageCrop(bounds, width, height);
     if (!crop) return null;
@@ -4945,10 +4958,10 @@ export class InkView extends TextFileView {
   /**
    * The lasso's Screenshot: the picture in a small dialog, to copy, or to
    * share through the system's share sheet (or save into the notebook's
-   * pictures folder where the platform cannot share a file). With `inkOnly`,
-   * a switch in it leaves the page behind out.
+   * pictures folder where the platform cannot share a file). With `others`,
+   * a choice in it shows the selection alone or the page alone instead.
    */
-  private showScreenshot(shot: ScreenshotPicture, inkOnly?: ScreenshotPicture): void {
+  private showScreenshot(shot: ScreenshotPicture, others?: ScreenshotOthers): void {
     const note = this.file;
     new ScreenshotModal(
       this.app,
@@ -4978,7 +4991,7 @@ export class InkView extends TextFileView {
         },
         tell: (text) => new Notice(text),
       },
-      inkOnly,
+      others,
     ).open();
   }
 
