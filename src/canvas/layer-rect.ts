@@ -25,6 +25,28 @@ export interface PixelRect {
 }
 
 /**
+ * The whole device px a box covers through `m`, cut to the canvas's `width`
+ * and `height`; null when none of it is on the canvas. `m` is taken to scale
+ * and move only.
+ */
+export function boxPixelRect(
+  box: { minX: number; minY: number; maxX: number; maxY: number },
+  m: Affine,
+  width: number,
+  height: number,
+): PixelRect | null {
+  const xs = [m.a * box.minX + m.e, m.a * box.maxX + m.e];
+  const ys = [m.d * box.minY + m.f, m.d * box.maxY + m.f];
+  if (![...xs, ...ys].every(Number.isFinite)) return null;
+  const left = Math.max(0, Math.floor(Math.min(...xs)));
+  const top = Math.max(0, Math.floor(Math.min(...ys)));
+  const right = Math.min(width, Math.ceil(Math.max(...xs)));
+  const bottom = Math.min(height, Math.ceil(Math.max(...ys)));
+  if (right <= left || bottom <= top) return null;
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+/**
  * The device-px rectangle the runs cover through `m` (each run's half width
  * and a pixel of anti-aliasing included), cut to the canvas's `width` and
  * `height`; null when nothing of it is on the canvas.

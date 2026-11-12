@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { SELECTION_RASTER_MAX_PIXELS, selectionRasterBox } from "../../src/canvas/selection-raster";
+import {
+  SELECTION_RASTER_MAX_DETAIL,
+  SELECTION_RASTER_MAX_PIXELS,
+  selectionRasterBox,
+  selectionRasterDetail,
+} from "../../src/canvas/selection-raster";
 
 const bounds = (minX: number, minY: number, maxX: number, maxY: number) => ({
   minX,
@@ -38,5 +43,26 @@ describe("selectionRasterBox", () => {
     expect(selectionRasterBox(bounds(0, 0, 10, 10), 0)).toBeNull();
     expect(selectionRasterBox(bounds(0, 0, 10, 10), Number.NaN)).toBeNull();
     expect(selectionRasterBox(bounds(0, 0, Number.POSITIVE_INFINITY, 10), 1)).toBeNull();
+  });
+});
+
+describe("selectionRasterDetail", () => {
+  it("keeps the view's detail until the picture is half as large again", () => {
+    expect(selectionRasterDetail(0.3)).toBe(1);
+    expect(selectionRasterDetail(1)).toBe(1);
+    expect(selectionRasterDetail(1.5)).toBe(1);
+  });
+
+  it("doubles it in steps, up to the most", () => {
+    expect(selectionRasterDetail(1.51)).toBe(2);
+    expect(selectionRasterDetail(3)).toBe(2);
+    expect(selectionRasterDetail(3.1)).toBe(4);
+    expect(selectionRasterDetail(40)).toBe(SELECTION_RASTER_MAX_DETAIL);
+  });
+
+  it("answers 1 for a size that is no size", () => {
+    expect(selectionRasterDetail(Number.NaN)).toBe(1);
+    expect(selectionRasterDetail(Number.POSITIVE_INFINITY)).toBe(1);
+    expect(selectionRasterDetail(-2)).toBe(1);
   });
 });

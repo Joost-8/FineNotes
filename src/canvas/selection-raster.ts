@@ -13,6 +13,23 @@ export const SELECTION_RASTER_MIN_STROKES = 24;
 /** A full iPad screen is about 3.9 MP; past this much, the strokes are redrawn. */
 export const SELECTION_RASTER_MAX_PIXELS = 9_000_000;
 
+/** The most detail a picture is made with, times the view's own. */
+export const SELECTION_RASTER_MAX_DETAIL = 4;
+
+/**
+ * How much detail the picture of a selection drawn `grown` times its size
+ * needs, times the view's own: 1, 2 or 4. A picture is enlarged by up to a
+ * half before the next step is asked for, which keeps the steps few (each
+ * one draws every stroke again) and the ink at least two thirds as sharp as
+ * the tiles will make it.
+ */
+export function selectionRasterDetail(grown: number): number {
+  if (!(grown > 1.5) || !Number.isFinite(grown)) return 1;
+  let detail = 1;
+  while (detail < SELECTION_RASTER_MAX_DETAIL && grown > 1.5 * detail) detail *= 2;
+  return detail;
+}
+
 export interface SelectionRasterBox {
   /** The picture's top-left corner, page px, on a whole device px. */
   x: number;

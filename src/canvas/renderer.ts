@@ -50,8 +50,9 @@ import {
   nightHighlighter,
 } from "./night";
 import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import { type RunBox, stretchesWithin } from "../ink/run-window";
 import { addDamage, damageArea, grow, rectArea, rectsMeet, staleRect, unite } from "./damage";
-import { type PixelRect, inkPixelRect } from "./layer-rect";
+import { type PixelRect, boxPixelRect, inkPixelRect } from "./layer-rect";
 import { widestTiltFactor } from "../ink/tilt";
 import { isTape, tapesLast } from "../model/cover-tape";
 import { paintTape } from "./tape-paint";
@@ -140,7 +141,11 @@ import {
   tilesCovering,
   tilesForBounds,
 } from "./tile-grid";
-import { SELECTION_RASTER_MIN_STROKES, selectionRasterBox } from "./selection-raster";
+import {
+  SELECTION_RASTER_MIN_STROKES,
+  selectionRasterBox,
+  selectionRasterDetail,
+} from "./selection-raster";
 import type { ViewportState } from "./viewport";
 
 /** How strongly ink a playing recording has not reached yet is drawn (2.5). */
@@ -489,6 +494,27 @@ export function paintInk(
   });
 }
 
+/**
+ * The stretches of a run (`stretchesWithin`) as one `Path2D`, so the canvas
+ * still strokes them as one shape: where two of them cross, the ink is laid
+ * down once, as when the run is drawn whole.
+ */
+function pathOfStretches(run: InkRun, stretches: readonly number[]): Path2D {
+  const count = Math.floor(run.pts.length / 2);
+  const whole = stretches.length === 2 && stretches[0] === 0 && stretches[1] === count - 1;
+  if (whole || run.chisel || run.closed) return pathOf(run);
+  const path = new Path2D();
+  const { pts } = run;
+  for (let s = 0; s + 1 < stretches.length; s += 2) {
+    const first = stretches[s];
+    const last = stretches[s + 1];
+    path.moveTo(pts[2 * first], pts[2 * first + 1]);
+    for (let i = first + 1; i <= last; i++) path.lineTo(pts[2 * i], pts[2 * i + 1]);
+    if (first === last) path.lineTo(pts[2 * first], pts[2 * first + 1]);
+  }
+  return path;
+}
+
 /** A run's polyline as a `Path2D`. */
 export function pathOf(run: InkRun): Path2D {
   const path = new Path2D();
@@ -603,6 +629,12 @@ interface DryShown {
   paint: DryView;
   clipped: boolean;
 }
+
+/**
+ * A frame of the stroke being written repaints only what changed while that
+ * is under this share of the wet layer; past it the layer is cleared whole.
+ */
+const WET_REPAIR_SHARE = 0.5;
 
 /**
  * How far the dry layer reaches past the view on each side with overscan
@@ -756,10 +788,19 @@ export class Renderer {
    * null when it shows nothing, or something only its pixels hold.
    */
   private wetReplay: WetReplay | null = null;
+  /**
+   * What the stroke being written was last drawn under ({@link wetInkKey}),
+   * while the wet layer still shows that frame: the next frame may then
+   * repaint only what changed. Null once anything else touched the layer.
+   */
+  private wetInk: string | null = null;
   /** The picture of the selection being dragged ({@link blitSelectionRaster}). */
   private selectionRaster: {
     selection: readonly Stroke[];
-    level: number;
+    /** Device px per page px of the view it was made for. */
+    base: number;
+    /** How many times that the picture holds (`selectionRasterDetail`); 0 before it is made. */
+    detail: number;
     usePressure: boolean;
     shade: InkShade;
     alpha: number;
@@ -1280,6 +1321,7 @@ export class Renderer {
     if (ctx === this.wet.ctx) {
       this.wetReplay = null;
       this.wetRaster = false;
+      this.wetInk = null;
     }
     const { width, height, dpr } = this.screen;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2904,8 +2946,9 @@ export class Renderer {
     pictures(false);
     const ink = tapesLast(strokes).filter((stroke) => !isNoteInk(stroke, notes));
     const shade = this.shadeAt(pageIndex);
-    const moved = !scale && !turn;
-    if (!moved || !this.blitSelectionRaster(ctx, strokes, ink, usePressure, shade, drawOn)) {
+    const grown = scale && scale.k > 0 && Number.isFinite(scale.k) ? scale.k : 1;
+    const placed = !scale && !turn;
+    if (!this.blitSelectionRaster(ctx, strokes, ink, usePressure, shade, drawOn, placed, grown)) {
       for (const stroke of ink) draw(stroke, shade);
     }
     pictures(true);
@@ -2914,11 +2957,17 @@ export class Renderer {
   }
 
   /**
-   * Draw a moved selection's ink from one picture, made the first time, so a
-   * move costs a copy however many strokes it holds. Returns false when the
-   * ink should be drawn stroke by stroke: too few strokes to be worth it, or
-   * a picture too large to keep. Placed on a whole device px, so the ink
-   * stays as sharp as in the tiles.
+   * Draw a dragged selection's ink from one picture, made the first time, so
+   * a frame costs a copy however many strokes it holds. Returns false when
+   * the ink should be drawn stroke by stroke: too few strokes to be worth it,
+   * or a picture too large to keep. A move (`placed`) puts it on a whole
+   * device px, so the ink stays as sharp as in the tiles. A resize or a turn
+   * draws the same picture through `ctx`'s transform, `grown` times the
+   * size: it redrew every stroke on every frame before (2,000 strokes: 10 to
+   * 12 ms a frame on an iPad Air, FineNotes#201). Enlarged, the picture is
+   * made again with more detail ({@link selectionRasterDetail}) while one
+   * that size may be kept, so the ink is soft only between those steps, and
+   * only until the lift commits it to the tiles.
    */
   private blitSelectionRaster(
     ctx: CanvasRenderingContext2D,
@@ -2927,15 +2976,16 @@ export class Renderer {
     usePressure: boolean,
     shade: InkShade,
     drawOn: (c: CanvasRenderingContext2D, stroke: Stroke, shade: InkShade) => void,
+    placed = true,
+    grown = 1,
   ): boolean {
     if (ink.length < SELECTION_RASTER_MIN_STROKES) return false;
-    const view = ctx.getTransform();
-    const level = view.a;
+    const base = this.deviceScale;
     let raster = this.selectionRaster;
     if (
       !raster ||
       raster.selection !== selection ||
-      raster.level !== level ||
+      raster.base !== base ||
       raster.usePressure !== usePressure ||
       raster.shade !== shade ||
       raster.alpha !== this.highlighterAlpha
@@ -2943,7 +2993,8 @@ export class Renderer {
       this.releaseSelectionRaster();
       raster = {
         selection,
-        level,
+        base,
+        detail: 0,
         usePressure,
         shade,
         alpha: this.highlighterAlpha,
@@ -2952,9 +3003,27 @@ export class Renderer {
         y: 0,
       };
       this.selectionRaster = raster;
+    }
+    // Never coarser than the picture it has: a resize that shrinks again keeps it.
+    const wanted = Math.max(selectionRasterDetail(grown), raster.detail);
+    if (wanted !== raster.detail) {
       const bounds = this.inkBounds(ink, usePressure);
-      const box = bounds ? selectionRasterBox(bounds, level) : null;
+      let detail = wanted;
+      let box = bounds ? selectionRasterBox(bounds, base * detail) : null;
+      while (!box && bounds && detail > 1 && detail / 2 > raster.detail) {
+        detail /= 2;
+        box = selectionRasterBox(bounds, base * detail);
+      }
+      // No larger picture may be kept: the one it has goes on, softer.
+      if (!box && raster.detail > 0) return this.drawSelectionRaster(ctx, raster, placed);
+      raster.detail = detail;
+      if (raster.canvas) {
+        raster.canvas.width = 0;
+        raster.canvas.height = 0;
+        raster.canvas = null;
+      }
       if (box) {
+        const level = base * detail;
         const canvas = createEl("canvas");
         canvas.width = box.width;
         canvas.height = box.height;
@@ -2968,18 +3037,34 @@ export class Renderer {
         }
       }
     }
-    if (!raster.canvas) return false;
-    ctx.save();
-    ctx.setTransform(
-      1,
-      0,
-      0,
-      1,
-      Math.round(level * raster.x + view.e),
-      Math.round(view.d * raster.y + view.f),
-    );
-    ctx.drawImage(raster.canvas, 0, 0);
-    ctx.restore();
+    return this.drawSelectionRaster(ctx, raster, placed);
+  }
+
+  /** Copy the selection's picture into `ctx`, which is in the dragged selection's page space. */
+  private drawSelectionRaster(
+    ctx: CanvasRenderingContext2D,
+    raster: NonNullable<Renderer["selectionRaster"]>,
+    placed: boolean,
+  ): boolean {
+    const { canvas } = raster;
+    if (!canvas) return false;
+    const level = raster.base * raster.detail;
+    if (placed && raster.detail === 1) {
+      const view = ctx.getTransform();
+      ctx.save();
+      ctx.setTransform(
+        1,
+        0,
+        0,
+        1,
+        Math.round(view.a * raster.x + view.e),
+        Math.round(view.d * raster.y + view.f),
+      );
+      ctx.drawImage(canvas, 0, 0);
+      ctx.restore();
+      return true;
+    }
+    ctx.drawImage(canvas, raster.x, raster.y, canvas.width / level, canvas.height / level);
     return true;
   }
 
@@ -3261,21 +3346,128 @@ export class Renderer {
    * Draw the handwriting being written, already traced into `runs` (page
    * space), on the wet layer, painted as a stored stroke of `style` is.
    */
-  renderWetRuns(pageIndex: number, runs: readonly InkRun[], style: StrokeStyle): void {
+  renderWetRuns(
+    pageIndex: number,
+    runs: readonly InkRun[],
+    style: StrokeStyle,
+    changed: RunBox | null = null,
+  ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
-    this.wipe(ctx);
-    if (!box) return;
-    this.toLayoutSpace(ctx);
-    this.enterWetPage(ctx, box);
     const shade = this.shadeAt(pageIndex);
     const paint = (c: CanvasRenderingContext2D): void => {
       paintStroke(c, { runs }, style, this.highlighterAlpha, shade);
     };
+    const key = box ? this.wetInkKey(pageIndex, box, style, shade) : null;
+    if (
+      box &&
+      changed &&
+      key === this.wetInk &&
+      this.repairWetRuns(box, runs, style, shade, changed)
+    ) {
+      this.wetReplay = { pageIndex, paint };
+      return;
+    }
+    this.wipe(ctx);
+    if (!box) return;
+    this.toLayoutSpace(ctx);
+    this.enterWetPage(ctx, box);
     paint(ctx);
     ctx.restore();
     this.wetReplay = { pageIndex, paint };
+    this.wetInk = key;
     this.setWetVisible(true);
+  }
+
+  /** Everything a frame of the stroke being written was drawn under, bar the stroke itself. */
+  private wetInkKey(pageIndex: number, box: PageBox, style: StrokeStyle, shade: InkShade): string {
+    const { width, height } = this.wet.canvas;
+    return [
+      pageIndex,
+      this.deviceScale,
+      this.originX,
+      this.view.scrollY,
+      box.x,
+      box.y,
+      width,
+      height,
+      this.layout.joined === true,
+      style.tool,
+      style.color,
+      shade,
+      this.highlighterAlpha,
+    ].join("|");
+  }
+
+  /**
+   * Bring the wet layer, which shows the last frame of the stroke being
+   * written, up to `runs`: only `changed` (page px: the ink added since, and
+   * the unsettled tip then and now) is cleared and painted again, with the
+   * stretches of ink that reach into it. A frame of writing cleared and
+   * repainted the whole pane before, however little of it had changed
+   * (FineNotes#201). False when it cannot: the caller paints it all.
+   */
+  private repairWetRuns(
+    box: PageBox,
+    runs: readonly InkRun[],
+    style: StrokeStyle,
+    shade: InkShade,
+    changed: RunBox,
+  ): boolean {
+    const ctx = this.wet.ctx;
+    if (style.tool === "tape" || !("getTransform" in ctx) || typeof Path2D === "undefined")
+      return false;
+    const { width, height } = this.wet.canvas;
+    this.toLayoutSpace(ctx);
+    ctx.translate(box.x, box.y);
+    const m = ctx.getTransform();
+    if (!(m.a > 0) || m.b !== 0 || m.c !== 0) return false;
+    // Two device px more a side: the anti-aliased rim of the ink.
+    const rim = 2 / m.a;
+    const area: RunBox = {
+      minX: changed.minX - rim,
+      minY: changed.minY - rim,
+      maxX: changed.maxX + rim,
+      maxY: changed.maxY + rim,
+    };
+    const rect = boxPixelRect(area, m, width, height);
+    // Nothing of it is on the layer: what the layer shows is still right.
+    if (!rect) return true;
+    // Most of the layer: clearing it whole costs no more.
+    if (rect.w * rect.h > WET_REPAIR_SHARE * width * height) return false;
+    // Whole px were cleared, so ink a px past the box is painted again too.
+    const reach: RunBox = {
+      minX: area.minX - rim,
+      minY: area.minY - rim,
+      maxX: area.maxX + rim,
+      maxY: area.maxY + rim,
+    };
+    const kept: InkRun[] = [];
+    const paths: Path2D[] = [];
+    for (const run of runs) {
+      const stretches = stretchesWithin(run, reach);
+      if (stretches.length === 0) continue;
+      kept.push(run);
+      paths.push(pathOfStretches(run, stretches));
+    }
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.beginPath();
+    ctx.rect(rect.x, rect.y, rect.w, rect.h);
+    ctx.clip();
+    this.toLayoutSpace(ctx);
+    this.enterWetPage(ctx, box);
+    const limit = scratchLimit;
+    scratchLimit = rect;
+    try {
+      paintStroke(ctx, { runs: kept, paths }, style, this.highlighterAlpha, shade);
+    } finally {
+      scratchLimit = limit;
+    }
+    ctx.restore();
+    ctx.restore();
+    return true;
   }
 
   /** Nothing is in flight any more: empty the wet layer and hide it. */

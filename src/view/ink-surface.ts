@@ -356,6 +356,8 @@ import {
 } from "../ink/stroke-builder";
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
+import { FramePace } from "../canvas/frame-pace";
+import { type RunBox, type RunMark, boundsSince, unionBox } from "../ink/run-window";
 import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
 import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
@@ -786,9 +788,11 @@ import {
 const ZOOM_STEP = 1.25;
 
 /**
- * Rasterising budget for a frame that is scrolling or zooming, in ms. The
- * rest of a 16.7 ms frame is the blits, the compositor and headroom; a tile
- * the budget skips is drawn from the page preview until the next frame.
+ * Rasterising budget for a frame that is scrolling or zooming, in ms, on a
+ * 60 Hz display; a faster display gets the same share of its shorter frame
+ * (`FramePace.budget`). The rest of a 16.7 ms frame is the blits, the
+ * compositor and headroom; a tile the budget skips is drawn from the page
+ * preview until the next frame.
  */
 const SCROLL_FRAME_BUDGET_MS = 6;
 /**
@@ -2806,6 +2810,12 @@ export class InkSurface {
    */
   private wetTracer: InkTracer | null = null;
   private wetRevision = -1;
+  /**
+   * What the last frame of the stroke in progress drew: where the tracer's
+   * settled ink ended, and the box of the unsettled tip beyond it. The next
+   * frame repaints only from there (`ink/run-window`).
+   */
+  private wetSeen: { tracer: InkTracer; settled: RunMark; tip: RunBox | null } | null = null;
   /** A pane with no size yet is laid out again on the next frames, a bounded number of times. */
   private readonly sizeWait = new SizeWait();
 
@@ -2825,7 +2835,12 @@ export class InkSurface {
   /** Frame rate and paint time while something moves, smoothed. */
   private hudFps = 0;
   private hudPaintMs = 0;
+  private hudInkMs = 0;
   private hudLastFrameT = 0;
+  /** The display's frame length, learned from this surface's own frames. */
+  private readonly pace = new FramePace();
+  /** The frame now asked for was asked for by the frame before it. */
+  private frameFollows = false;
 
   // Shape diagnostics, kept whether or not the HUD is on: the last strokes and
   // what the recogniser made of each, for the "Copy shape diagnostics"
@@ -5892,6 +5907,8 @@ export class InkSurface {
     this.frameReq = 0;
     if (!this.renderer) return;
     const started = now();
+    this.pace.note(t, this.frameFollows);
+    this.frameFollows = false;
     // Both advance every frame: a pinch usually ends with one finger still
     // moving, so a fling and the zoom spring run together. Short-circuiting
     // here froze the spring for the length of the fling, then snapped it.
@@ -5926,13 +5943,15 @@ export class InkSurface {
     // arriving a few a frame would ripple across the text.
     const complete = this.paint(
       busy
-        ? SCROLL_FRAME_BUDGET_MS
+        ? this.pace.budget(SCROLL_FRAME_BUDGET_MS)
         : this.fadeTimer !== 0
           ? SHARPEN_FRAME_BUDGET_MS
-          : REST_FRAME_BUDGET_MS,
+          : this.pace.budget(REST_FRAME_BUDGET_MS),
     );
-    if (this.debug) this.trackFrame(t, started, moving);
+    if (this.debug) this.trackFrame(t, started);
     if (moving || !complete) {
+      // The next frame is the display's next: the time between them is a frame.
+      this.frameFollows = true;
       this.requestFrame();
       return;
     }
@@ -6079,7 +6098,7 @@ export class InkSurface {
     if (!this.renderer || this.zoomTransient || !this.renderer.isTransient) return;
     this.renderer.settle();
     // A few tiles a frame, the last zoom's scaled meanwhile.
-    if (!this.paint(REST_FRAME_BUDGET_MS)) this.requestFrame();
+    if (!this.paint(this.pace.budget(REST_FRAME_BUDGET_MS))) this.requestFrame();
   }
 
   /** Paint the backdrop and the dry layer. Returns whether every tile was ready. */
@@ -11024,7 +11043,8 @@ export class InkSurface {
     const v = this.scroller.velocity;
     const tiles = stats ? `${stats.tiles}/${(stats.tileBytes / 1048576).toFixed(0)}MB` : "-";
     return (
-      `fps=${this.hudFps.toFixed(0)} paint=${this.hudPaintMs.toFixed(1)}ms ` +
+      `fps=${this.hudFps.toFixed(0)}/${this.pace.hz.toFixed(0)} ` +
+      `paint=${this.hudPaintMs.toFixed(1)}ms ink=${this.hudInkMs.toFixed(1)}ms ` +
       `tiles=${tiles} prev=${stats?.previews ?? 0} lvl=${stats?.level.toFixed(2) ?? "-"} ` +
       `${this.backdropPainter?.diagnostics?.() ?? "pdf=-"} ` +
       `v=${(v.x * 1000).toFixed(0)},${(v.y * 1000).toFixed(0)}px/s ` +
@@ -11033,19 +11053,29 @@ export class InkSurface {
     );
   }
 
-  /** Smooth the frame interval and paint time over consecutive moving frames. */
-  private trackFrame(t: number, started: number, moving: boolean): void {
+  /** Smooth the paint time of the page's frames, and count the frame. */
+  private trackFrame(t: number, started: number): void {
     const paint = now() - started;
     this.hudPaintMs = this.hudPaintMs ? this.hudPaintMs * 0.8 + paint * 0.2 : paint;
-    if (moving && this.hudLastFrameT) {
-      const dt = t - this.hudLastFrameT;
-      if (dt > 0 && dt < 250) {
-        const fps = 1000 / dt;
-        this.hudFps = this.hudFps ? this.hudFps * 0.8 + fps * 0.2 : fps;
-      }
-    }
-    this.hudLastFrameT = moving ? t : 0;
+    this.countFrame(t);
     this.scheduleHud();
+  }
+
+  /**
+   * A frame was drawn at `t`: the page's (a scroll, a zoom, a dragged
+   * selection, the eraser) or the stroke being written, which has its own.
+   * Frames within 100 ms of each other are a run, and `fps` is its rate; the
+   * readout stood still while writing or dragging a selection before
+   * (FineNotes#201). Two in one display frame count once.
+   */
+  private countFrame(t: number): void {
+    const dt = t - this.hudLastFrameT;
+    if (dt === 0) return;
+    if (this.hudLastFrameT && dt > 0 && dt < 100) {
+      const fps = 1000 / dt;
+      this.hudFps = this.hudFps ? this.hudFps * 0.8 + fps * 0.2 : fps;
+    }
+    this.hudLastFrameT = t;
   }
 
   // --- Drawing a stroke ------------------------------------------------------------
@@ -11056,7 +11086,18 @@ export class InkSurface {
    */
   private scheduleWet(): void {
     if (this.wetFrame !== 0 || !this.builder) return;
-    this.wetFrame = this.win.requestAnimationFrame(() => this.drawWet());
+    this.wetFrame = this.win.requestAnimationFrame((t) => {
+      if (!this.debug) {
+        this.drawWet();
+        return;
+      }
+      const started = now();
+      this.drawWet();
+      const ink = now() - started;
+      this.hudInkMs = this.hudInkMs ? this.hudInkMs * 0.8 + ink * 0.2 : ink;
+      this.countFrame(t);
+      this.scheduleHud();
+    });
   }
 
   private drawWet(): void {
@@ -11085,6 +11126,7 @@ export class InkSurface {
     for (let i = tracer.length * 3; i + 2 < pts.length; i += 3) {
       tracer.push(pts[i], pts[i + 1], pts[i + 2], tiltFactor(tilt[i / 3]));
     }
+    const settled = tracer.mark();
     const runs = tracer.runs();
     // Samples still provisional (`densify` waits for the next to fix the
     // curve; centred smoothing for the next few): straight lines through
@@ -11092,7 +11134,13 @@ export class InkSurface {
     // changes nothing kept.
     const open = runs[runs.length - 1];
     if (open) for (const tip of builder.tail) open.pts.push(tip[0], tip[1]);
-    this.renderer?.renderWetRuns(box.index, runs, style);
+    // What differs from the last frame: the ink settled since, and the tip
+    // that was not settled then or is not now. Only that is painted again.
+    const seen = this.wetSeen?.tracer === tracer ? this.wetSeen : null;
+    const tip = boundsSince(runs, settled);
+    const changed = seen ? unionBox(boundsSince(runs, seen.settled), seen.tip) : null;
+    this.wetSeen = { tracer, settled, tip };
+    this.renderer?.renderWetRuns(box.index, runs, style, changed);
     this.requestZoomPaint();
   }
 
@@ -11120,6 +11168,7 @@ export class InkSurface {
     this.builder = null;
     this.snap = null;
     this.wetTracer = null;
+    this.wetSeen = null;
     this.stopHold();
     this.renderer?.clearWet();
     this.showSnapMarker(null, null);

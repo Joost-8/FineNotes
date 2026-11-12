@@ -199,17 +199,34 @@ describe("renderSelectionDraft of a big selection", () => {
     expect(tileLog.filter(([name]) => name === "stroke")).toHaveLength(90);
   });
 
-  it("redraws the strokes under a resize or a turn, which a picture would blur", () => {
+  it("copies the picture under a turn and a small resize too, through their transform", () => {
     const { renderer, wetLog } = setup();
     const strokes = many();
-    renderer.renderSelectionDraft(0, strokes, [], 0, 0, true, { x: 0, y: 0, k: 2 });
+    renderer.renderSelectionDraft(0, strokes, [], 0, 0, true, { x: 0, y: 0, k: 1.2 });
     renderer.renderSelectionDraft(0, strokes, [], 0, 0, true, undefined, {
       x: 0,
       y: 0,
       angle: 0.5,
     });
-    expect(wetLog.filter(([name]) => name === "stroke")).toHaveLength(60);
-    expect(wetLog.some(([name]) => name === "drawImage")).toBe(false);
+    expect(tileLog.filter(([name]) => name === "stroke")).toHaveLength(30);
+    expect(wetLog.some(([name]) => name === "stroke")).toBe(false);
+    const copies = wetLog.filter(([name]) => name === "drawImage");
+    expect(copies).toHaveLength(2);
+    // Drawn at its page size, so the resize and the turn carry it.
+    for (const copy of copies) expect(copy).toHaveLength(6);
+  });
+
+  it("makes the picture again with more detail once it is enlarged, and keeps that", () => {
+    const { renderer, wetLog } = setup();
+    const strokes = many();
+    renderer.renderSelectionDraft(0, strokes, [], 0, 0, true, { x: 0, y: 0, k: 1.2 });
+    renderer.renderSelectionDraft(0, strokes, [], 0, 0, true, { x: 0, y: 0, k: 2 });
+    expect(tileLog.filter(([name]) => name === "stroke")).toHaveLength(60);
+    // Shrunk again: the sharper picture stays, nothing is drawn again.
+    renderer.renderSelectionDraft(0, strokes, [], 0, 0, true, { x: 0, y: 0, k: 1.1 });
+    renderer.renderSelectionDraft(0, strokes, [], 0, 0, true, { x: 0, y: 0, k: 2.4 });
+    expect(tileLog.filter(([name]) => name === "stroke")).toHaveLength(60);
+    expect(wetLog.some(([name]) => name === "stroke")).toBe(false);
   });
 
   it("redraws the strokes when a picture would be too large", () => {
