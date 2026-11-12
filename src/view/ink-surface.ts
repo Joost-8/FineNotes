@@ -6208,7 +6208,8 @@ export class InkSurface {
     // by 3% (well under a px on screen), not on every frame of a pinch.
     if (Math.abs(gap - this.rowGap) < Math.max(0.01, this.rowGap * 0.03)) return false;
     this.rowGap = gap;
-    this.pageLayout = layoutPages(this.doc.pages, { direction: "horizontal", gap });
+    // A board among the pages stays parked: a swipe never lands on it (discussion #160).
+    this.pageLayout = layoutNotebook(this.doc.pages, { direction: "horizontal", gap });
     this.renderer?.setLayout(this.pageLayout);
     return true;
   }
