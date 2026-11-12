@@ -73,6 +73,21 @@ export function isBoardPage(doc: Pick<InkDocument, "endless">, page: Pick<Page, 
   return doc.endless === true || page.board === true;
 }
 
+/**
+ * The page to stay on when the pages turn (the layout changed direction),
+ * given the page `reading` was being read. Null when that was a board among
+ * a notebook's pages: leaving it turns the layout too, and going back to it
+ * would undo the leaving (discussion #160); whoever left goes on to their page.
+ */
+export function pageAfterTurn(
+  doc: Pick<InkDocument, "endless" | "pages">,
+  reading: number,
+): number | null {
+  const page = doc.pages[reading];
+  if (!page) return null;
+  return !doc.endless && page.board === true ? null : reading;
+}
+
 /** Whether `doc` has any board, in a board file or among a notebook's pages. */
 export function hasBoards(doc: Pick<InkDocument, "endless" | "pages">): boolean {
   return doc.endless === true || doc.pages.some((page) => page.board === true);

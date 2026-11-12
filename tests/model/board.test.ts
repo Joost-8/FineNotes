@@ -21,6 +21,7 @@ import {
   isBoard,
   isNoGrowth,
   textLinesHeight,
+  pageAfterTurn,
 } from "../../src/model/board";
 import { type InkDocument, type Page, type Stroke } from "../../src/model/document";
 import { AttachedStep, History } from "../../src/model/history";
@@ -531,5 +532,23 @@ describe("a board in the file", () => {
   it("is not written for a notebook, so its bytes stay as they were", () => {
     const doc = buildNewDocument(DEFAULT_NOTEBOOK_CHOICES, "x");
     expect("endless" in decodeDocument(encodeDocument(doc))).toBe(false);
+  });
+});
+
+describe("pageAfterTurn", () => {
+  const page = (id: string, board?: boolean): Page =>
+    ({ id, ...(board ? { board: true } : {}) }) as unknown as Page;
+
+  it("stays on the page being read when the pages turn", () => {
+    expect(pageAfterTurn({ pages: [page("p1"), page("p2")] }, 1)).toBe(1);
+  });
+
+  it("does not go back onto a board among the pages just left (discussion #160)", () => {
+    expect(pageAfterTurn({ pages: [page("p1"), page("p2", true)] }, 1)).toBeNull();
+  });
+
+  it("keeps a board file's board, and nothing for a page that is gone", () => {
+    expect(pageAfterTurn({ endless: true, pages: [page("p1"), page("p2")] }, 1)).toBe(1);
+    expect(pageAfterTurn({ pages: [page("p1")] }, 4)).toBeNull();
   });
 });

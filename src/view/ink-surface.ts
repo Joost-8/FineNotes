@@ -343,6 +343,7 @@ import {
   isBoard,
   isBoardPage,
   isNoGrowth,
+  pageAfterTurn,
 } from "../model/board";
 import { afterPainted } from "./after-painted";
 import { lowMemoryDevice } from "./pdf-backdrop";
@@ -5186,7 +5187,9 @@ export class InkSurface {
     if (turned) {
       this.userZoom = this.minZoom;
       this.ensurePaperSize();
-      this.goToPage(reading);
+      // Not back onto a board just left (`pageAfterTurn`).
+      const stay = pageAfterTurn(this.doc, reading);
+      if (stay !== null) this.goToPage(stay);
     } else if (direction === "horizontal" && this.atZoomFloor && this.isScrollIdle) {
       // A pane that changed shape (rotation, split view) keeps the page centred.
       this.scroller.setPosition(this.rowX(this.pageIndex), this.rowY(this.pageIndex));
