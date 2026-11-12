@@ -13,7 +13,7 @@ import {
 import type { PickedFile } from "./view/import-notebook-modal";
 import { mimeForExtension } from "./canvas/image-raster";
 import { StickerModal } from "./view/sticker-modal";
-import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
+import { stickerFileName, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
 import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-region";
 import { EmptyTabHomeButton } from "./view/empty-tab-home-button";
@@ -131,7 +131,8 @@ import {
   folderMoves,
   legacyCorrectionsFile,
   movedPath,
-  templateFolderOf,
+  stickerFolderFor,
+  templateFolderFor,
 } from "./model/vault-folders";
 import { UpdateNotice } from "./view/update-notice";
 import { releasedChangelog } from "./changelog";
@@ -1932,7 +1933,7 @@ export default class GoodObsidianPlugin extends Plugin {
    * link to the stickers folder) and placed like any picture.
    */
   openStickerPicker(ctx: Pick<ImageMenuContext, "insertBytes">): void {
-    new StickerModal(this.app, stickerFolderOf(this.settings.stickerFolder), (choice) => {
+    new StickerModal(this.app, stickerFolderFor(this.settings), (choice) => {
       void (async () => {
         if (choice.kind === "builtin") {
           const svg = stickerSvg(choice.sticker, choice.color);
@@ -2604,13 +2605,13 @@ export default class GoodObsidianPlugin extends Plugin {
       if (entry.kind === "paper") {
         const library = new VaultPaperLibrary(
           this.app,
-          () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
+          () => templateFolderFor(this.settings),
           () => undefined,
         );
         const ext = entry.download.split(/[?#]/)[0].split(".").pop() ?? "pdf";
         return await library.addFile(bytes, `${entry.name}.${ext}`);
       }
-      const folder = templateFolderOf(normalizeFolder(this.settings.templateFolder));
+      const folder = templateFolderFor(this.settings);
       if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
       const name = `${entry.name.replace(/[\\/:*?"<>|#^[\]]+/g, " ").trim() || "Template"}.${TEMPLATE_EXTENSION}`;
       const path = normalizePath(`${folder}/${name}`);
@@ -2832,7 +2833,7 @@ export default class GoodObsidianPlugin extends Plugin {
   ): VaultPaperLibrary {
     return new VaultPaperLibrary(
       this.app,
-      () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
+      () => templateFolderFor(this.settings),
       paint,
       () => this.openTemplateGallery(),
       (path) => void this.openShareTemplate(path),

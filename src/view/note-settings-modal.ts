@@ -5,14 +5,17 @@
  *   FineNotes 2.6.0 is out      [Update]  only while one is out
  *   Don't show again
  *   [cover] Name (tap to rename)          the notebook itself
- *           23 pages · 911 KB · edited 19 Oct
+ *           23 pages · 911 KB
+ *           Created … · edited 19 Oct
  *           folder
- *   Pages         Scroll direction · Page numbers · Header   (not on a board)
- *   Editing       Read-only
- *   Created …                    All FineNotes settings ›
+ *   Scroll direction · Join pages · Page numbers · Header   (not on a board)
+ *   Read-only · Simple look
+ *   [⚙ All FineNotes settings              ›]  everything else
  *
- * Settings sit in rounded groups with one-line hints; scroll direction is a
- * two-way switch. Where new files are saved is in FineNotes' own settings
+ * The rows sit in one rounded frame with no titles, each a name and one
+ * line, so the whole dialog fits an iPad's landscape screen and the card to
+ * every other setting shows without scrolling. Scroll direction
+ * is a two-way switch. Where new files are saved is in FineNotes' own settings
  * (Advanced), for every notebook without a folder of its own.
  *
  * The modal only reports choices; the host applies them as undoable commands
@@ -85,7 +88,7 @@ export interface NoteSettingsHost {
 }
 
 /** The summary card's cover, in CSS px. */
-const COVER_WIDTH = 96;
+const COVER_WIDTH = 64;
 
 export class NoteSettingsModal extends Modal {
   /** Keeps the field being typed in above the keyboard. */
@@ -137,10 +140,18 @@ export class NoteSettingsModal extends Modal {
     const info = this.host.info();
     this.renderUpdate(contentEl);
     this.renderSummary(contentEl, info);
-    if (!this.host.board) this.renderPages(contentEl);
-    this.renderEditing(contentEl);
-    this.renderLook(contentEl);
-    this.renderFooter(contentEl, info);
+    // One frame of rows, no group titles: the whole dialog fits an iPad's
+    // landscape screen, so the way to every other setting shows without scrolling.
+    const group = contentEl.createDiv({ cls: "goodobsidian-ns-group" });
+    if (!this.host.board) this.renderPages(group);
+    this.renderEditing(group);
+    this.renderLook(group);
+    this.renderAllSettings(contentEl);
+  }
+
+  /** A row: its name and its one line, as every row in Settings. */
+  private row(group: HTMLElement, name: string, desc: string): Setting {
+    return new Setting(group).setName(name).setDesc(desc);
   }
 
   /**
@@ -178,12 +189,6 @@ export class NoteSettingsModal extends Modal {
       stop();
       mute.remove();
     });
-  }
-
-  /** A titled group of rows: the title above, the rows in one rounded frame. */
-  private group(parent: HTMLElement, title: string): HTMLElement {
-    parent.createDiv({ cls: "goodobsidian-ns-group-title", text: title });
-    return parent.createDiv({ cls: "goodobsidian-ns-group" });
   }
 
   /**
@@ -244,16 +249,19 @@ export class NoteSettingsModal extends Modal {
     if (!this.host.single) facts.push(tn("notebooks.noteSettings.pages", info.pages));
     const size = formatFileSize(info.bytes);
     if (size) facts.push(size);
+    if (facts.length) body.createDiv({ cls: "goodobsidian-ns-facts", text: facts.join(" · ") });
+    const dates: string[] = [];
+    const created = shortDate(info.created, true);
+    if (created) dates.push(t("notebooks.noteSettings.created", { date: created }));
     const edited = shortDate(info.modified);
-    if (edited) facts.push(t("notebooks.noteSettings.edited", { date: edited }));
-    body.createDiv({ cls: "goodobsidian-ns-facts", text: facts.join(" · ") });
+    if (edited) dates.push(t("notebooks.noteSettings.edited", { date: edited }));
+    if (dates.length) body.createDiv({ cls: "goodobsidian-ns-facts", text: dates.join(" · ") });
     const folder = body.createDiv({ cls: "goodobsidian-ns-facts" });
     setIcon(folder.createSpan({ cls: "goodobsidian-ns-facts-icon" }), "folder");
     folder.createSpan({ text: info.folder || t("notebooks.importModal.topFolder") });
   }
 
-  private renderPages(parent: HTMLElement): void {
-    const group = this.group(parent, t("notebooks.noteSettings.pagesGroup"));
+  private renderPages(group: HTMLElement): void {
     // A single page has nowhere to scroll to.
     if (!this.host.single) {
       const row = new Setting(group).setName(t("notebooks.noteSettings.scroll"));
@@ -288,15 +296,16 @@ export class NoteSettingsModal extends Modal {
     const get = this.host.joinedPages;
     const set = this.host.setJoinedPages;
     if (!get || !set) return;
-    new Setting(group)
-      .setName(t("notebooks.noteSettings.join"))
-      .setDesc(t("notebooks.noteSettings.joinInfo"))
-      .addToggle((toggle) =>
-        toggle.setValue(get()).onChange((on) => {
-          set(on);
-          this.render();
-        }),
-      );
+    this.row(
+      group,
+      t("notebooks.noteSettings.join"),
+      t("notebooks.noteSettings.joinInfo"),
+    ).addToggle((toggle) =>
+      toggle.setValue(get()).onChange((on) => {
+        set(on);
+        this.render();
+      }),
+    );
   }
 
   /** Page numbers and a header, printed on every page but the cover. */
@@ -305,77 +314,86 @@ export class NoteSettingsModal extends Modal {
     const set = this.host.setFurniture;
     if (!get || !set) return;
     const current = get();
-    new Setting(group)
-      .setName(t("notebooks.noteSettings.numbers"))
-      .setDesc(t("notebooks.noteSettings.numbersInfo"))
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("none", t("notebooks.noteSettings.numbersNone"))
-          .addOption("center", t("notebooks.noteSettings.numbersCentre"))
-          .addOption("right", t("notebooks.noteSettings.numbersRight"))
-          .setValue(current.numbers ?? "none")
-          .onChange((value) => {
-            const next = { ...get() };
-            if (value === "center" || value === "right") next.numbers = value;
-            else delete next.numbers;
-            set(next);
-          }),
-      );
-    const header = new Setting(group)
-      .setName(t("notebooks.noteSettings.header"))
-      .setDesc(t("notebooks.noteSettings.headerInfo"))
-      .addText((text) => {
-        text.setPlaceholder("{title}").setValue(current.header ?? "");
-        // Set when the field is left, not on every key: each change is a step of undo.
-        text.inputEl.addEventListener("change", () => {
+    this.row(
+      group,
+      t("notebooks.noteSettings.numbers"),
+      t("notebooks.noteSettings.numbersInfo"),
+    ).addDropdown((dropdown) =>
+      dropdown
+        .addOption("none", t("notebooks.noteSettings.numbersNone"))
+        .addOption("center", t("notebooks.noteSettings.numbersCentre"))
+        .addOption("right", t("notebooks.noteSettings.numbersRight"))
+        .setValue(current.numbers ?? "none")
+        .onChange((value) => {
           const next = { ...get() };
-          const value = text.getValue().trim();
-          if (value) next.header = value;
-          else delete next.header;
+          if (value === "center" || value === "right") next.numbers = value;
+          else delete next.numbers;
           set(next);
-        });
+        }),
+    );
+    const header = this.row(
+      group,
+      t("notebooks.noteSettings.header"),
+      t("notebooks.noteSettings.headerInfo"),
+    ).addText((text) => {
+      text.setPlaceholder("{title}").setValue(current.header ?? "");
+      // Set when the field is left, not on every key: each change is a step of undo.
+      text.inputEl.addEventListener("change", () => {
+        const next = { ...get() };
+        const value = text.getValue().trim();
+        if (value) next.header = value;
+        else delete next.header;
+        set(next);
       });
+    });
     const field = header.controlEl.querySelector("input");
     if (field) this.keyboard.watch(field, header.settingEl);
   }
 
-  private renderEditing(parent: HTMLElement): void {
-    const group = this.group(parent, t("notebooks.noteSettings.editing"));
-    new Setting(group)
-      .setName(t("notebooks.noteSettings.readOnly"))
-      .setDesc(t("notebooks.noteSettings.readOnlyInfo"))
-      .addToggle((toggle) =>
-        toggle.setValue(this.host.readOnly()).onChange((on) => {
-          this.host.setReadOnly(on);
-          this.render();
-        }),
-      );
+  private renderEditing(group: HTMLElement): void {
+    this.row(
+      group,
+      t("notebooks.noteSettings.readOnly"),
+      t("notebooks.noteSettings.readOnlyInfo"),
+    ).addToggle((toggle) =>
+      toggle.setValue(this.host.readOnly()).onChange((on) => {
+        this.host.setReadOnly(on);
+        this.render();
+      }),
+    );
   }
 
   /** The simple look: it belongs to the app, but the notebook is where one wants it back. */
-  private renderLook(parent: HTMLElement): void {
+  private renderLook(group: HTMLElement): void {
     const { simpleLook, setSimpleLook } = this.host;
     if (!simpleLook || !setSimpleLook) return;
-    const group = this.group(parent, t("notebooks.noteSettings.look"));
-    new Setting(group)
-      .setName(t("settings.simpleLook.name"))
-      .setDesc(t("notebooks.noteSettings.simpleLookDesc"))
-      .addToggle((toggle) => toggle.setValue(simpleLook()).onChange((on) => setSimpleLook(on)));
+    this.row(
+      group,
+      t("settings.simpleLook.name"),
+      t("notebooks.noteSettings.simpleLookDesc"),
+    ).addToggle((toggle) => toggle.setValue(simpleLook()).onChange((on) => setSimpleLook(on)));
   }
 
-  /** When it was made, and the way to every other setting. */
-  private renderFooter(parent: HTMLElement, info: NotebookInfo): void {
-    const footer = parent.createDiv({ cls: "goodobsidian-ns-footer" });
-    const created = shortDate(info.created, true);
-    footer.createSpan({
-      cls: "goodobsidian-ns-footer-text",
-      text: created ? t("notebooks.noteSettings.created", { date: created }) : "",
-    });
-    const all = footer.createEl("button", {
+  /**
+   * The way to every other setting, as a card of its own: what is here
+   * belongs to this notebook, and everything else (pens, toolbar,
+   * handwriting, AI, shortcuts) is one tap away.
+   */
+  private renderAllSettings(parent: HTMLElement): void {
+    const all = parent.createEl("button", {
       cls: "goodobsidian-ns-all clickable-icon",
       attr: { type: "button" },
     });
-    all.createSpan({ text: t("notebooks.noteSettings.allSettings") });
+    setIcon(all.createSpan({ cls: "goodobsidian-ns-all-lead" }), "settings");
+    const text = all.createSpan({ cls: "goodobsidian-ns-all-text" });
+    text.createSpan({
+      cls: "goodobsidian-ns-all-name",
+      text: t("notebooks.noteSettings.allSettings"),
+    });
+    text.createSpan({
+      cls: "goodobsidian-ns-all-desc",
+      text: t("notebooks.noteSettings.allSettingsInfo"),
+    });
     if (this.host.update) {
       // The gear's dot, carried on to where the update is.
       all.addClass("has-mark");

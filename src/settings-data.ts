@@ -9,6 +9,7 @@
  */
 
 import type { FolderStyles } from "./model/library-style";
+import { LLM_PROVIDER_ID } from "./recognition/llm-request";
 import { type ShapeToolStyle } from "./model/shape-style";
 import type { LearnedModel } from "./recognition/hwr/learned-model";
 import {
@@ -224,7 +225,17 @@ export interface GoodObsidianSettings {
    * (`model/tape-text.ts`). Absent: off, a tape is laid where it is dragged.
    */
   tapeSnapText?: boolean;
-  /** Vault folder of the user's sticker collections: one subfolder per collection. */
+  /**
+   * The folder stickers and templates live in (`Stickers`, `Templates`).
+   * Absent or blank: `FineNotes assets`. Read through `stickerFolderFor` and
+   * `templateFolderFor` (model/vault-folders.ts).
+   */
+  assetsFolder?: string;
+  /**
+   * Vault folder of the user's sticker collections: one subfolder per
+   * collection. Since 2026-11-11 only a folder the user typed counts; a
+   * default follows {@link GoodObsidianSettings.assetsFolder}.
+   */
   stickerFolder: string;
   /**
    * Where notebooks without a folder of their own save new files, by kind;
@@ -459,10 +470,9 @@ export interface GoodObsidianSettings {
   greyWhileErasing: boolean;
 
   /**
-   * The settings tab's sections shown open, by id; every other one is
-   * folded. Checked where read ({@link openSectionsOf}). It replaced
-   * `foldedSettingsSections` (2026-10-21, the compact settings), which is
-   * dropped on load, so everyone starts with every section folded.
+   * The settings tab's section shown, as a one-id list, read through
+   * {@link shownSectionOf}. Before the list of sections (2026-11-11) it held
+   * every section left open; those ids are still understood.
    */
   settingsOpen: string[];
   /** The iPad's "switch off Scribble" tip was dismissed with its ✕. */
@@ -605,56 +615,88 @@ export function laserDefaultColorOf(raw: unknown): string {
 // --- Settings sections -----------------------------------------------------------
 
 /**
- * The settings tab's sections, by the id `settingsOpen` keeps. Ids, not
- * headings, so a renamed heading keeps its state.
+ * The settings tab's sections, in the order of its list, by the id
+ * `settingsOpen` keeps. Ids, not headings, so a renamed heading keeps its
+ * state.
  */
 export const SETTINGS_SECTIONS = [
+  "general",
   "writing",
-  "shortcuts",
   "pages",
-  "on-device",
+  "shortcuts",
+  "reading",
   "ai",
-  "advanced",
+  "files",
+  "troubleshooting",
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+/**
+ * Sections that folded before the list of sections, and where their rows
+ * went (2026-11-11). A stored "advanced" opens Files and folders, which holds
+ * most of its rows.
+ */
+const OLD_SECTIONS: Readonly<Record<string, SettingsSection>> = {
+  "on-device": "reading",
+  advanced: "files",
+};
 
 function isSection(value: unknown): value is SettingsSection {
   return (SETTINGS_SECTIONS as readonly unknown[]).includes(value);
 }
 
 /**
- * The open sections a stored value names, in the tab's order, once each.
- * Anything but a list (a missing key, a hand-edited file) opens none; ids
- * this build does not know are dropped.
+ * The section shown, from `settingsOpen`: the first one it names that this
+ * build knows, an id from before the list included. Anything but a list (a
+ * missing key, a hand-edited file) shows General.
  */
-export function openSectionsOf(raw: unknown): SettingsSection[] {
-  if (!Array.isArray(raw)) return [];
-  return SETTINGS_SECTIONS.filter((id) => raw.includes(id));
+export function shownSectionOf(raw: unknown): SettingsSection {
+  if (Array.isArray(raw)) {
+    for (const id of raw as unknown[]) {
+      const current = typeof id === "string" ? (OLD_SECTIONS[id] ?? id) : id;
+      if (isSection(current)) return current;
+    }
+  }
+  return "general";
 }
+
+/** What `settingsOpen` keeps when `id` is the section shown. */
+export function withShownSection(id: SettingsSection): SettingsSection[] {
+  return [id];
+}
+
+// --- Handwriting recognition ----------------------------------------------------
+
+/** "Handwriting recognition"'s choice for Cloud AI that runs by itself. */
+export const AUTO_RECOGNITION = `${LLM_PROVIDER_ID}:auto`;
 
 /**
- * Whether `id` is shown open. `alone`: one section open at a time (on an
- * iPad or a phone), so of several stored open (synced from a computer) only
- * the first is.
+ * The choice "Handwriting recognition" shows: the recognition provider, or
+ * {@link AUTO_RECOGNITION} for Cloud AI with automatic recognition on. Two
+ * stored keys, as before 2026-11-11, when automatic was a switch of its own.
  */
-export function sectionOpen(raw: unknown, id: SettingsSection, alone = false): boolean {
-  const open = openSectionsOf(raw);
-  return alone ? open[0] === id : open.includes(id);
+export function recognitionChoiceOf(
+  settings: Pick<GoodObsidianSettings, "recognitionProviderId" | "autoRecognize">,
+): string {
+  const provider = settings.recognitionProviderId;
+  return provider === LLM_PROVIDER_ID && settings.autoRecognize === true
+    ? AUTO_RECOGNITION
+    : provider;
 }
 
-/** The open sections with `id` opened or folded; `alone`: opening it folds the rest. */
-export function withSection(
-  raw: unknown,
-  id: SettingsSection,
-  open: boolean,
-  alone = false,
-): SettingsSection[] {
-  if (!isSection(id)) return openSectionsOf(raw);
-  if (open && alone) return [id];
-  const rest = openSectionsOf(raw).filter((section) => section !== id);
-  return open ? SETTINGS_SECTIONS.filter((s) => s === id || rest.includes(s)) : rest;
+/** Store a "Handwriting recognition" choice as its two keys. */
+export function storeRecognitionChoice(
+  settings: Pick<GoodObsidianSettings, "recognitionProviderId" | "autoRecognize">,
+  choice: string,
+): void {
+  const auto = choice === AUTO_RECOGNITION;
+  settings.recognitionProviderId = auto ? LLM_PROVIDER_ID : choice;
+  settings.autoRecognize = auto;
 }
+
+/** The longest line a settings row may show under its name, in characters. */
+export const SETTINGS_LINE_MAX = 70;
 
 // --- The eraser ------------------------------------------------------------------
 

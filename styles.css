@@ -3073,172 +3073,6 @@ input.goodobsidian-color-list.is-invalid {
   border-color: var(--text-error);
 }
 
-/* The Language row, above the sections: a line like their headers (no
-   card, the heading's type and inset, the same gap to the next one), its
-   choice muted beside it like a header's state. */
-.setting-group:has(.goodobsidian-language-row) > .setting-items {
-  border-color: transparent;
-  background-color: transparent;
-}
-
-.setting-group .setting-item.goodobsidian-language-row {
-  align-items: center;
-  padding: 0 var(--size-4-4);
-}
-
-.goodobsidian-language-row .setting-item-name {
-  color: var(--setting-group-heading-color);
-  font-size: var(--setting-group-heading-size);
-  font-weight: var(--setting-group-heading-weight);
-}
-
-.goodobsidian-language-row .setting-item-control select.dropdown {
-  background-color: transparent;
-  box-shadow: none;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-normal);
-}
-
-/* As tall as a header's chevron (its icon and padding), so the row keeps
-   the headers' pitch on every platform. */
-.goodobsidian-language-row .setting-item-control :is(select.dropdown, button) {
-  height: calc(var(--icon-size) + 2 * var(--size-2-2));
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.goodobsidian-language-row .setting-item-control button {
-  font-size: var(--font-ui-small);
-}
-
-.goodobsidian-language-row .setting-item-control select.dropdown:hover {
-  background-color: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-.vertical-tab-content:not(:has(.goodobsidian-fold-header .goodobsidian-section-icon))
-  .goodobsidian-language-row
-  .goodobsidian-section-icon {
-  display: none;
-}
-
-/* Look and Simple look read like the language row and the section headers
-   under them: the headers' text, one header pitch each (a header's chevron
-   and the margin between headers), no divider between them, and quiet
-   controls (the language row's menus, Obsidian's small switch). Obsidian's
-   row padding, divider and switch all read these variables, so setting
-   them on the rows moves those too. */
-.goodobsidian-language-row ~ .setting-item {
-  align-items: center;
-  min-height: calc(var(--icon-size) + 2 * var(--size-2-2) + var(--size-4-4));
-  --setting-items-padding-x: var(--size-4-4);
-  --setting-items-padding-y: 0px;
-  --toggle-width: var(--toggle-s-width);
-  --toggle-thumb-height: var(--toggle-s-thumb-height);
-  --toggle-thumb-width: var(--toggle-s-thumb-width);
-}
-
-.goodobsidian-language-row + .setting-item {
-  margin-top: var(--size-4-2);
-}
-
-.goodobsidian-language-row ~ .setting-item ~ .setting-item::before {
-  content: none;
-}
-
-.goodobsidian-language-row ~ .setting-item .setting-item-name {
-  color: var(--setting-group-heading-color);
-  font-size: var(--setting-group-heading-size);
-  font-weight: var(--setting-group-heading-weight);
-}
-
-/* In line with the headers' names while they show their icons. */
-.vertical-tab-content:has(.goodobsidian-fold-header .goodobsidian-section-icon)
-  .goodobsidian-language-row
-  ~ .setting-item
-  .setting-item-name {
-  padding-inline-start: calc(16px + var(--size-4-2));
-}
-
-.goodobsidian-language-row ~ .setting-item select.dropdown {
-  height: calc(var(--icon-size) + 2 * var(--size-2-2));
-  padding-top: 0;
-  padding-bottom: 0;
-  background-color: transparent;
-  box-shadow: none;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-normal);
-}
-
-.goodobsidian-language-row ~ .setting-item select.dropdown:hover {
-  background-color: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-.setting-group:has(.goodobsidian-language-row) + .setting-group.goodobsidian-section.is-folded {
-  margin-top: var(--size-4-2);
-}
-
-/* Sections that fold. The header is the control (the chevron is its
-   visible sign); a folded section shows its header only. Hidden by class,
-   never by `visible`, so Obsidian's search still finds every row. The
-   chevron is Obsidian's own extra button, a `clickable-icon` div, so the
-   iPad's 20 px button padding does not reach it. */
-.setting-group.goodobsidian-section > .setting-item-heading.goodobsidian-fold-header {
-  cursor: var(--cursor);
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.setting-group.goodobsidian-section.is-folded > .setting-items,
-.setting-group.goodobsidian-section.is-folded > .setting-group-search {
-  display: none;
-}
-
-.setting-group.goodobsidian-section.is-folded > .setting-item-heading {
-  margin-bottom: 0;
-}
-
-/* Folded headers stack closer than open sections do. */
-.setting-group.goodobsidian-section.is-folded + .setting-group.goodobsidian-section {
-  margin-top: var(--size-4-4);
-}
-
-.goodobsidian-fold-chevron .svg-icon {
-  transform: rotate(90deg);
-  transition: transform 150ms ease;
-}
-
-.setting-group.is-folded > .setting-item-heading .goodobsidian-fold-chevron .svg-icon {
-  transform: none;
-}
-
-/* A section's header: its icon before the heading, and its state in a few
-   words (or a dot, or a colour) beside the chevron, so a folded section
-   rarely needs opening. */
-.goodobsidian-section-icon {
-  display: inline-flex;
-  margin-inline-end: var(--size-4-2);
-  color: var(--text-muted);
-  vertical-align: -2px;
-  --icon-size: 16px;
-}
-
-.goodobsidian-section-status {
-  display: flex;
-  align-items: center;
-  gap: var(--size-4-2);
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-normal);
-  white-space: nowrap;
-}
-
 .goodobsidian-status-part {
   display: inline-flex;
   align-items: center;
@@ -3252,57 +3086,717 @@ input.goodobsidian-color-list.is-invalid {
   border-radius: 50%;
 }
 
-/* "More": an action row (Obsidian's own tappable row); the section's rows
-   after it stay hidden until it is tapped. By class, so search still finds
-   them (and opens it). Its chevron points down while they show. */
-.setting-group.goodobsidian-section:not(.is-more-open) .setting-item.mod-action ~ .setting-item {
+/* The tab as a list of sections beside the chosen section. Obsidian keeps
+   only its own groups as the tab's children, so the list is one of them,
+   floated into a column of its own; the rest fill what is beside it. Which
+   section shows is an attribute on the tab, never a row's `visible`, so
+   Obsidian's search still finds every row. Obsidian makes the tab a size
+   container: under 680 px the list is the first screen and a section opens
+   over it, with no script measuring anything. */
+.modal.mod-settings .vertical-tab-content.goodobsidian-settings:not(.setting-page) {
+  padding-inline: var(--size-4-6);
+}
+
+.goodobsidian-settings > .setting-group {
+  width: auto;
+  max-width: none;
+  margin-inline: 0;
+}
+
+/* On a computer the cards need a colour of their own against the pane;
+   Obsidian's mobile layouts already give them one. */
+body:not(.is-mobile) .goodobsidian-settings {
+  --setting-items-background: var(--background-secondary);
+}
+
+.goodobsidian-settings > .setting-group.goodobsidian-callouts {
+  margin-bottom: var(--size-4-4);
+}
+
+.goodobsidian-callouts .goodobsidian-callout {
+  margin-bottom: var(--size-2-2);
+}
+
+.goodobsidian-callouts .setting-items {
+  border: none;
+  background: transparent;
+}
+
+.goodobsidian-settings > .setting-group.goodobsidian-nav-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  float: inline-start;
+  width: 216px;
+  margin-top: 0;
+}
+
+.goodobsidian-nav-group .setting-items,
+.setting-items.goodobsidian-footer-items {
+  border: none;
+  background: transparent;
+}
+
+.goodobsidian-settings > .setting-group.goodobsidian-sec {
+  display: none;
+  margin-inline-start: calc(216px + var(--size-4-5));
+}
+
+.goodobsidian-settings > .setting-group.goodobsidian-sec.is-first {
+  margin-top: 0;
+}
+
+.goodobsidian-settings[data-section="general"] > .setting-group.goodobsidian-sec-general,
+.goodobsidian-settings[data-section="writing"] > .setting-group.goodobsidian-sec-writing,
+.goodobsidian-settings[data-section="pages"] > .setting-group.goodobsidian-sec-pages,
+.goodobsidian-settings[data-section="shortcuts"] > .setting-group.goodobsidian-sec-shortcuts,
+.goodobsidian-settings[data-section="reading"] > .setting-group.goodobsidian-sec-reading,
+.goodobsidian-settings[data-section="ai"] > .setting-group.goodobsidian-sec-ai,
+.goodobsidian-settings[data-section="files"] > .setting-group.goodobsidian-sec-files,
+.goodobsidian-settings[data-section="troubleshooting"]
+  > .setting-group.goodobsidian-sec-troubleshooting {
+  display: block;
+}
+
+/* The small heading over each card, in the section's own rhythm. */
+.goodobsidian-sec > .setting-item-heading .setting-item-name {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* The list: a tile, the section's name and its state, the chosen one lifted
+   onto a card. Each entry is a button out-ranking Obsidian's padded one. */
+.setting-group .setting-item.goodobsidian-plain-row.goodobsidian-nav-row {
+  display: block;
+  padding: 0;
+}
+
+.goodobsidian-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+button.goodobsidian-nav-item.clickable-icon {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  width: 100%;
+  height: auto;
+  min-height: var(--gob-touch);
+  padding: 7px 8px;
+  border-radius: var(--gob-radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  text-align: start;
+  white-space: normal;
+}
+
+button.goodobsidian-nav-item.clickable-icon.is-current {
+  background-color: var(--setting-items-background, var(--background-primary));
+  box-shadow: var(--gob-ring-hairline);
+}
+
+.goodobsidian-nav-item .goodobsidian-tile {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  --icon-size: 18px;
+}
+
+.goodobsidian-nav-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.goodobsidian-nav-name {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  overflow-wrap: anywhere;
+}
+
+.goodobsidian-nav-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--size-2-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.3;
+}
+
+.goodobsidian-nav-state:empty {
   display: none;
 }
 
-.goodobsidian-section .setting-item.mod-action .setting-item-name {
-  color: var(--text-muted);
+/* The chevron and the back control belong to the narrow layout. */
+.goodobsidian-nav-chevron,
+button.goodobsidian-nav-back.clickable-icon {
+  display: none;
 }
 
-.goodobsidian-section .setting-item.mod-action::after {
-  content: "";
-  flex: none;
-  width: 8px;
-  height: 8px;
-  margin: 0 6px 0 var(--size-4-3);
-  border-right: 2px solid var(--text-faint);
-  border-bottom: 2px solid var(--text-faint);
-  transform: rotate(-45deg);
-  transition: transform 150ms ease;
-}
-
-.goodobsidian-section.is-more-open .setting-item.mod-action::after {
-  transform: rotate(45deg);
-}
-
-/* The ⓘ after a row's name, and the explanation it opens under the row's
-   one line. */
-.goodobsidian-info.clickable-icon {
-  display: inline-flex;
-  margin: -6px 0 -6px 2px;
-  padding: 6px;
+.goodobsidian-nav-chevron {
   color: var(--text-faint);
-  vertical-align: middle;
-  --icon-size: 14px;
 }
 
-.goodobsidian-info-text {
-  max-width: 56ch;
-  margin-top: var(--size-2-2);
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  line-height: 1.45;
+/* A row: its drawing or tile, its name and one line, its control. */
+.goodobsidian-settings .setting-item:not(.setting-item-heading, .goodobsidian-plain-row) {
+  flex-wrap: wrap;
+  gap: var(--size-2-3) var(--size-4-3);
 }
 
-.goodobsidian-callout > .goodobsidian-info-text {
-  font-weight: var(--font-normal);
+.goodobsidian-settings .setting-item-info {
+  flex: 1 1 150px;
+  min-width: 0;
+  margin-inline-end: 0;
 }
 
-.goodobsidian-info-text.is-hidden,
+/* A name wraps, even inside a long word: a translated one must not be cut. */
+.goodobsidian-settings .setting-item-name {
+  overflow-wrap: anywhere;
+}
+
+.goodobsidian-saved-pen-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: start;
+  white-space: normal;
+}
+
+.goodobsidian-settings .setting-item-control {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+  margin-inline-start: auto;
+}
+
+.goodobsidian-mark {
+  flex: none;
+  order: -1;
+  width: 72px;
+  height: 48px;
+}
+
+.goodobsidian-tile {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  border-radius: var(--gob-radius-l);
+  background-color: hsla(var(--interactive-accent-hsl), 0.15);
+  color: var(--interactive-accent);
+  --icon-size: 22px;
+  --icon-stroke: 1.75px;
+}
+
+.goodobsidian-sec-shortcuts .goodobsidian-mark.goodobsidian-tile {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  --icon-size: 18px;
+}
+
+.goodobsidian-art-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.setting-item.goodobsidian-saved-pen-row {
+  align-items: center;
+}
+
+.setting-item.goodobsidian-saved-pen-row .setting-item-info,
+.goodobsidian-mark.goodobsidian-pen-art {
+  cursor: pointer;
+}
+
+/* The saved pen's stroke fills the column, on the same paper as its row's. */
+.goodobsidian-size-preview.goodobsidian-pen-sample {
+  display: block;
+  width: 72px;
+  height: 48px;
+  margin: 0;
+  border-radius: var(--gob-radius-m);
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+
+.goodobsidian-pen-sample svg {
+  display: block;
+  width: 72px;
+  height: 48px;
+}
+
+/* A drawing's parts: everything moves, so a change reads as the change. */
+.goodobsidian-art-svg * {
+  transition:
+    opacity 340ms cubic-bezier(0.3, 0.7, 0.3, 1),
+    fill 340ms cubic-bezier(0.3, 0.7, 0.3, 1),
+    stroke 340ms cubic-bezier(0.3, 0.7, 0.3, 1),
+    stroke-width 340ms cubic-bezier(0.3, 0.7, 0.3, 1),
+    transform 340ms cubic-bezier(0.3, 0.7, 0.3, 1);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.goodobsidian-art-svg .ga-when {
+  opacity: 0;
+}
+
+.goodobsidian-art-svg .ga-when.is-on {
+  opacity: 1;
+}
+
+.goodobsidian-art-svg .ga-paper {
+  fill: var(--art-paper, #ffffff);
+  stroke: var(--background-modifier-border);
+}
+
+.goodobsidian-art-svg .ga-rule {
+  fill: none;
+  stroke: var(--art-rule, #d5dcea);
+  stroke-width: 1;
+}
+
+.goodobsidian-art-svg .ga-surface {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+}
+
+.goodobsidian-art-svg .ga-card {
+  fill: var(--background-primary);
+  stroke: var(--background-modifier-border);
+}
+
+.goodobsidian-art-svg .ga-card-off {
+  fill: none;
+  stroke: var(--background-modifier-border);
+  stroke-dasharray: 3 3;
+}
+
+.goodobsidian-art-svg :is(.ga-line, .ga-folder, .ga-text) {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.goodobsidian-art-svg .ga-folder-off {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-dasharray: 3 3;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+  opacity: 0.45;
+}
+
+.goodobsidian-art-svg .ga-folder-off.ga-when:not(.is-on) {
+  opacity: 0;
+}
+
+.goodobsidian-art-svg :is(.ga-accent-line, .ga-accent-box, .ga-accent-thin) {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+}
+
+.goodobsidian-art-svg .ga-accent-thin {
+  stroke-width: 1.6;
+}
+
+.goodobsidian-art-svg :is(.ga-accent-solid, .ga-fill) {
+  fill: var(--interactive-accent);
+}
+
+.goodobsidian-art-svg .ga-fill-normal {
+  fill: var(--text-normal);
+}
+
+.goodobsidian-art-svg .ga-fill-muted {
+  fill: var(--text-muted);
+}
+
+.goodobsidian-art-svg .ga-tool {
+  fill: var(--text-faint);
+}
+
+.goodobsidian-art-svg .ga-tool-on {
+  fill: var(--interactive-accent);
+}
+
+.goodobsidian-art-svg .ga-bar {
+  fill: var(--gob-bar-bg, var(--background-secondary));
+  stroke: var(--background-modifier-border-hover);
+  stroke-width: 1.2;
+}
+
+.goodobsidian-art-svg .ga-bar-glass {
+  fill-opacity: 0.55;
+}
+
+.goodobsidian-art-svg .ga-bar-paper {
+  stroke-dasharray: 2 2;
+}
+
+.goodobsidian-art-svg .ga-shadow {
+  fill: var(--text-normal);
+}
+
+.goodobsidian-art-svg .ga-shadow-soft.ga-when.is-on {
+  fill: var(--text-faint);
+  opacity: 0.45;
+}
+
+.goodobsidian-art-svg .ga-glint {
+  fill: none;
+  stroke: var(--text-on-accent);
+  stroke-linecap: round;
+  stroke-width: 1.6;
+  opacity: 0;
+}
+
+.goodobsidian-art-svg .ga-glint.is-on {
+  opacity: 0.8;
+}
+
+.goodobsidian-art-svg .ga-body {
+  fill: var(--background-primary);
+  stroke: var(--text-muted);
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+}
+
+.goodobsidian-art-svg .ga-chrome-part {
+  fill: var(--background-modifier-border);
+}
+
+.goodobsidian-art-svg .ga-chrome {
+  transform: translateY(-3px);
+}
+
+.goodobsidian-art-svg .ga-chrome.is-on {
+  transform: none;
+}
+
+.goodobsidian-art-svg .ga-start {
+  fill: none;
+  stroke: var(--art-start-ink, currentColor);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: var(--art-start-width, 2.6px);
+}
+
+.goodobsidian-art-svg .ga-start.is-on {
+  opacity: var(--art-start-opacity, 1);
+}
+
+.goodobsidian-art-svg :is(.ga-ink-even, .ga-ink-thin, .ga-ink-broad) {
+  fill: none;
+  stroke: var(--art-ink, currentColor);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.6;
+}
+
+.goodobsidian-art-svg .ga-ink-thin {
+  stroke-width: 2.2;
+}
+
+.goodobsidian-art-svg .ga-ink-broad {
+  stroke-width: 7;
+}
+
+.goodobsidian-art-svg .ga-ink-broad.is-on {
+  opacity: 0.55;
+}
+
+.goodobsidian-art-svg .ga-ink-fill,
+.goodobsidian-art-svg .ga-ink-dot {
+  fill: var(--art-ink, currentColor);
+}
+
+.goodobsidian-art-svg .ga-dash {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-dasharray: 3 4;
+  stroke-linecap: round;
+  stroke-width: 1.6;
+}
+
+.goodobsidian-art-svg .ga-dots {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-dasharray: 0 5;
+  stroke-linecap: round;
+  stroke-width: 2.2;
+}
+
+.goodobsidian-art-svg .ga-finger {
+  fill: var(--interactive-accent);
+}
+
+.goodobsidian-art-svg .ga-finger-off {
+  fill: var(--text-faint);
+}
+
+.goodobsidian-art-svg .ga-finger-off.is-on {
+  opacity: 0.35;
+}
+
+.goodobsidian-art-svg .ga-text-box {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-dasharray: 3 3;
+  stroke-width: 1.6;
+  transform-origin: left center;
+  vector-effect: non-scaling-stroke;
+}
+
+.goodobsidian-settings:has(.ga-handle.is-on) .ga-text-box {
+  stroke: var(--interactive-accent);
+  transform: scaleX(2.3);
+}
+
+.goodobsidian-art-svg .ga-handle {
+  fill: var(--interactive-accent);
+  transform: translateX(0);
+}
+
+.goodobsidian-art-svg .ga-handle.is-on {
+  transform: translateX(28px);
+}
+
+.goodobsidian-art-svg .ga-tilt-pen {
+  transform: rotate(38deg);
+  transform-origin: 30% 95%;
+}
+
+.goodobsidian-settings:has(.ga-ink-broad.is-on) .ga-tilt-pen {
+  transform: rotate(62deg);
+}
+
+.goodobsidian-art-svg .ga-arrow {
+  fill: var(--art-ink, currentColor);
+  stroke: var(--art-paper, #ffffff);
+  stroke-linejoin: round;
+  stroke-width: 1;
+}
+
+.goodobsidian-art-svg .ga-swatch-1 {
+  fill: var(--art-swatch-1, transparent);
+  stroke: var(--art-swatch-1-line, var(--background-modifier-border));
+}
+
+.goodobsidian-art-svg .ga-swatch-2 {
+  fill: var(--art-swatch-2, transparent);
+  stroke: var(--art-swatch-2-line, var(--background-modifier-border));
+}
+
+.goodobsidian-art-svg .ga-swatch-3 {
+  fill: var(--art-swatch-3, transparent);
+  stroke: var(--art-swatch-3-line, var(--background-modifier-border));
+}
+
+.goodobsidian-art-svg .ga-swatch-4 {
+  fill: var(--art-swatch-4, transparent);
+  stroke: var(--art-swatch-4-line, var(--background-modifier-border));
+}
+
+.goodobsidian-art-svg .ga-paper-width {
+  transform: scaleX(var(--art-paper-scale, 1));
+  vector-effect: non-scaling-stroke;
+}
+
+.goodobsidian-art-svg .ga-pop-in {
+  transform: scale(0.7);
+}
+
+.goodobsidian-art-svg .ga-pop-in.is-on {
+  transform: none;
+}
+
+.goodobsidian-art-svg .ga-spine {
+  fill: none;
+  stroke: var(--text-on-accent);
+  stroke-opacity: 0.6;
+  stroke-width: 1.5;
+}
+
+.goodobsidian-art-svg .ga-spine-thin {
+  fill: none;
+  stroke: var(--text-on-accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.goodobsidian-art-svg .ga-marked {
+  fill: hsla(var(--interactive-accent-hsl), 0.22);
+}
+
+.goodobsidian-art-svg .ga-hud {
+  fill: var(--background-primary);
+  stroke: var(--background-modifier-border);
+}
+
+.goodobsidian-art-svg .ga-hud-line {
+  stroke-width: 1.6;
+}
+
+.goodobsidian-art-svg .ga-attached {
+  stroke-dasharray: 3 3;
+  stroke-width: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-art-svg * {
+    transition: none;
+  }
+}
+
+/* Obsidian stacks a row below 400 px, and on a phone: the drawing and the
+   name stay side by side here, and the control takes the next line. */
+@container (max-width: 400px) {
+  .goodobsidian-settings .setting-item:not(.setting-item-heading, .goodobsidian-plain-row) {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .goodobsidian-settings .setting-item-info {
+    flex: 1 1 110px;
+  }
+
+  .goodobsidian-settings .setting-item-control {
+    flex-basis: 100%;
+  }
+
+  .goodobsidian-settings .setting-item.mod-toggle .setting-item-control {
+    flex-basis: auto;
+    width: auto;
+  }
+
+  .goodobsidian-settings .goodobsidian-shortcut-row .setting-item-control {
+    flex-basis: auto;
+    width: auto;
+    margin-inline-start: auto;
+  }
+
+  .goodobsidian-settings
+    .setting-group
+    .setting-item.goodobsidian-plain-row.goodobsidian-settings-footer {
+    flex-direction: row;
+  }
+}
+
+.is-phone
+  .modal
+  .goodobsidian-settings
+  .setting-item:not(.setting-item-heading, .goodobsidian-plain-row) {
+  flex-direction: row;
+  align-items: center;
+}
+
+.is-phone .modal .goodobsidian-settings .setting-item-info {
+  flex: 1 1 110px;
+}
+
+.is-phone .modal .goodobsidian-settings .setting-item-control {
+  flex-basis: 100%;
+}
+
+.is-phone .modal .goodobsidian-settings .setting-item.mod-toggle .setting-item-control {
+  flex-basis: auto;
+  width: auto;
+}
+
+.is-phone .modal .goodobsidian-settings .goodobsidian-shortcut-row .setting-item-control {
+  flex-basis: auto;
+  width: auto;
+  margin-inline-start: auto;
+}
+
+.is-phone
+  .modal
+  .goodobsidian-settings
+  .setting-group
+  .setting-item.goodobsidian-plain-row.goodobsidian-settings-footer {
+  flex-direction: row;
+}
+
+/* Narrow: the list is the first screen; a section opens over it. */
+@container (max-width: 680px) {
+  .goodobsidian-settings > .setting-group.goodobsidian-nav-group {
+    position: static;
+    float: none;
+    width: auto;
+  }
+
+  .goodobsidian-settings > .setting-group.goodobsidian-sec {
+    margin-inline-start: 0;
+  }
+
+  .goodobsidian-settings:not(.is-section-open) > .setting-group.goodobsidian-sec {
+    display: none;
+  }
+
+  .goodobsidian-settings.is-section-open > .setting-group.goodobsidian-callouts,
+  .goodobsidian-settings.is-section-open .goodobsidian-nav,
+  .goodobsidian-settings.is-section-open
+    .setting-group
+    .setting-item.goodobsidian-plain-row.goodobsidian-settings-footer {
+    display: none;
+  }
+
+  .goodobsidian-settings.is-section-open > .setting-group.goodobsidian-nav-group {
+    position: sticky;
+    z-index: 2;
+    margin-bottom: var(--size-4-3);
+    background-color: inherit;
+  }
+
+  .goodobsidian-settings.is-section-open button.goodobsidian-nav-back.clickable-icon {
+    display: flex;
+    align-items: center;
+    gap: var(--size-2-2);
+    width: auto;
+    height: var(--gob-touch);
+    padding: 0 var(--size-4-2) 0 0;
+    color: var(--interactive-accent);
+    font-size: var(--font-ui-medium);
+    font-weight: var(--font-semibold);
+    white-space: normal;
+  }
+
+  .goodobsidian-nav-chevron {
+    display: inline-flex;
+  }
+
+  button.goodobsidian-nav-item.clickable-icon {
+    border-radius: 0;
+  }
+
+  button.goodobsidian-nav-item.clickable-icon.is-current {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .goodobsidian-nav {
+    gap: 0;
+    overflow: hidden;
+    border-radius: var(--setting-items-radius);
+    background-color: var(--setting-items-background);
+  }
+}
+
 .goodobsidian-field-error.is-hidden {
   display: none;
 }
@@ -3313,7 +3807,7 @@ input.goodobsidian-color-list.is-invalid {
   color: var(--text-error);
 }
 
-.goodobsidian-section .setting-item-control input.is-invalid {
+.goodobsidian-settings .setting-item-control input.is-invalid {
   border-color: var(--text-error);
 }
 
@@ -3338,34 +3832,9 @@ button.goodobsidian-saved-pen-mark.clickable-icon {
   color: inherit;
 }
 
-.setting-item.goodobsidian-saved-pen-row {
-  align-items: center;
-}
-
-.setting-item.goodobsidian-saved-pen-row .setting-item-info {
-  cursor: pointer;
-}
-
 /* The name holds only the mark: no line box around it, so it centres on the row. */
 .setting-item.goodobsidian-saved-pen-row .setting-item-name {
   display: flex;
-}
-
-/* The stroke's paper: the width popover's strip (`goodobsidian-size-preview`),
-   row-sized. Its size matches `PEN_SAMPLE` in settings.ts. */
-.goodobsidian-size-preview.goodobsidian-pen-sample {
-  flex: none;
-  width: 112px;
-  height: 28px;
-  margin: 0;
-  border-radius: var(--gob-radius-s, 6px);
-  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
-}
-
-.goodobsidian-saved-pen-mark .goodobsidian-pen-sample svg {
-  display: block;
-  width: 112px;
-  height: 28px;
 }
 
 /* The highlighter multiplies onto the paper, as on the page (not onto the
@@ -3485,7 +3954,7 @@ button.goodobsidian-pen-modal-type.clickable-icon.is-active {
   box-shadow: none;
 }
 
-.setting-item.goodobsidian-plain-row.goodobsidian-settings-footer {
+.setting-group .setting-item.goodobsidian-plain-row.goodobsidian-settings-footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -11250,15 +11719,16 @@ button.goodobsidian-page-tab.is-current {
 
 /* ---------------------------------------------------- notebook settings */
 /* The notebook first, as a card: cover colour, a name that reads as a title
-   until tapped (then renames), and its facts. Settings follow in rounded
-   groups with one-line hints, and a footer with the date and a link to every
-   setting. Rows keep Obsidian's own controls. */
+   until tapped (then renames), and its facts. Settings follow in one rounded
+   frame, hints behind each row's ⓘ, and then a card to every other setting.
+   Sized so the whole dialog fits an iPad's landscape screen. Rows keep
+   Obsidian's own controls. */
 .goodobsidian-ns-summary {
   display: flex;
   align-items: center;
   gap: var(--size-4-3);
-  margin: var(--size-4-1) 0 var(--size-4-4);
-  padding: var(--size-4-3);
+  margin: var(--size-4-1) 0 var(--size-4-3);
+  padding: var(--size-4-2) var(--size-4-3);
   border-radius: var(--gob-radius-m, 10px);
   background-color: var(--background-modifier-hover);
 }
@@ -11266,7 +11736,7 @@ button.goodobsidian-page-tab.is-current {
 .goodobsidian-ns-cover {
   flex: none;
   position: relative;
-  width: 96px;
+  width: 64px;
   aspect-ratio: 1024 / 1448;
   overflow: hidden;
   border-radius: 3px 6px 6px 3px;
@@ -11356,15 +11826,8 @@ input[type="text"].goodobsidian-ns-name-input:focus {
   --icon-size: 13px;
 }
 
-.goodobsidian-ns-group-title {
-  margin: 0 0 var(--size-2-3) var(--size-4-1);
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  font-weight: var(--font-medium);
-}
-
 .goodobsidian-ns-group {
-  margin-bottom: var(--size-4-4);
+  margin-bottom: var(--size-4-3);
   padding: 0 var(--size-4-3);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--gob-radius-m, 10px);
@@ -11376,7 +11839,7 @@ input[type="text"].goodobsidian-ns-name-input:focus {
   > .setting-item:not(.setting-item-heading) {
   align-items: center;
   min-height: var(--gob-touch);
-  padding: 10px 0;
+  padding: 6px 0;
   border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -11385,17 +11848,13 @@ input[type="text"].goodobsidian-ns-name-input:focus {
   > .setting-item:not(.setting-item-heading):first-child {
   border-top: none;
   /* Obsidian takes the padding off a first and last row; a group needs it. */
-  padding-top: 10px;
+  padding-top: 6px;
 }
 
 .modal.goodobsidian-note-settings
   .goodobsidian-ns-group
   > .setting-item:not(.setting-item-heading):last-child {
-  padding-bottom: 10px;
-}
-
-.goodobsidian-ns-group .setting-item-description {
-  padding-top: 2px;
+  padding-bottom: 6px;
 }
 
 /* Scroll direction: a two-way switch instead of a dropdown. */
@@ -11421,31 +11880,58 @@ button.goodobsidian-ns-segment.clickable-icon.is-active {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
-.goodobsidian-ns-footer {
+/* The way to every other setting: a card of its own, tinted with the accent,
+   a gear, its name, and what is there. */
+button.goodobsidian-ns-all.clickable-icon {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--size-4-2);
-  padding-top: var(--size-4-3);
-  border-top: 1px solid var(--background-modifier-border);
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
+  gap: var(--size-4-3);
+  width: 100%;
+  height: auto;
+  min-height: var(--gob-touch);
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid hsla(var(--interactive-accent-hsl), 0.35);
+  border-radius: var(--gob-radius-m, 10px);
+  background-color: hsla(var(--interactive-accent-hsl), 0.1);
+  color: var(--text-normal);
+  text-align: start;
+  white-space: normal;
 }
 
-button.goodobsidian-ns-all.clickable-icon {
+button.goodobsidian-ns-all.clickable-icon:hover {
+  background-color: hsla(var(--interactive-accent-hsl), 0.18);
+}
+
+.goodobsidian-ns-all-lead {
   display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  min-height: var(--gob-touch-compact);
-  padding: 0 var(--size-4-1);
+  flex: none;
   color: var(--text-accent);
-  font-size: var(--font-ui-small);
+  --icon-size: 20px;
+}
+
+.goodobsidian-ns-all-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.goodobsidian-ns-all-name {
+  color: var(--text-accent);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+.goodobsidian-ns-all-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
 }
 
 .goodobsidian-ns-all-icon {
   display: inline-flex;
-  --icon-size: 16px;
+  flex: none;
+  color: var(--text-faint);
+  --icon-size: 18px;
 }
 /* ------------------------------------------------------------ paper style */
 /* The template picker's paper colour, line colour and spacing rows. */
@@ -14628,7 +15114,7 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
 }
 
 .goodobsidian-more .goodobsidian-more-row.has-mark .goodobsidian-more-label::after,
-.goodobsidian-ns-all.has-mark > span:first-child::after {
+.goodobsidian-ns-all.has-mark .goodobsidian-ns-all-name::after {
   content: "";
   display: inline-block;
   width: 7px;

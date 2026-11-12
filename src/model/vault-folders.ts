@@ -13,6 +13,10 @@
  * folder and every remembered path inside it. Only the defaults move; a
  * folder the user chose stays where it is.
  *
+ * Since 2026-11-11 the settings choose one assets folder, and stickers and
+ * templates are its `Stickers` and `Templates`. A stickers or templates
+ * folder the user typed before that still wins ({@link chosenFolder}).
+ *
  * PURE: no DOM, no Obsidian.
  */
 
@@ -44,6 +48,58 @@ export function folderOf(value: unknown, fallback: string): string {
 /** The templates folder as set, or the default. */
 export function templateFolderOf(value: unknown): string {
   return folderOf(value, DEFAULT_TEMPLATE_FOLDER);
+}
+
+/** A folder setting as typed, tidied: forward slashes, no blank or "." parts, no slashes at the ends. */
+function tidyFolder(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part !== "" && part !== ".")
+    .join("/");
+}
+
+/** The assets folder as set, or `FineNotes assets`. */
+export function assetsFolderOf(value: unknown): string {
+  return tidyFolder(value) || ASSETS_FOLDER;
+}
+
+/**
+ * A stickers or templates folder the user typed, or null while it is blank
+ * or a default, old or new: then the folder follows the assets folder.
+ */
+export function chosenFolder(value: unknown, kind: "templates" | "stickers"): string | null {
+  const text = tidyFolder(value);
+  const [legacy, current] =
+    kind === "templates"
+      ? [LEGACY_TEMPLATE_FOLDER, DEFAULT_TEMPLATE_FOLDER]
+      : [LEGACY_STICKER_FOLDER, DEFAULT_STICKER_FOLDER];
+  return text === "" || text === legacy || text === current ? null : text;
+}
+
+/** The settings the two folders below are read from. */
+export interface AssetFolderSettings {
+  assetsFolder?: unknown;
+  templateFolder?: unknown;
+  stickerFolder?: unknown;
+}
+
+/** Where templates are saved and looked for. */
+export function templateFolderFor(settings: AssetFolderSettings): string {
+  return (
+    chosenFolder(settings.templateFolder, "templates") ??
+    `${assetsFolderOf(settings.assetsFolder)}/Templates`
+  );
+}
+
+/** Where the user's sticker collections live. */
+export function stickerFolderFor(settings: AssetFolderSettings): string {
+  return (
+    chosenFolder(settings.stickerFolder, "stickers") ??
+    `${assetsFolderOf(settings.assetsFolder)}/Stickers`
+  );
 }
 
 /** `path` moved from folder `from` to folder `to`, or null when it is not inside `from`. */
