@@ -147,7 +147,14 @@ import {
   simpleOfferDue,
 } from "./model/tips";
 import { type TipsPage, TipsModal } from "./view/tips-modal";
-import { type Feature, PEN_GESTURE_PREFIX, featureById, switchValue } from "./model/feature-index";
+import {
+  type Feature,
+  PEN_GESTURE_PREFIX,
+  featureById,
+  hiddenFeatureIds,
+  switchValue,
+  withHiddenFeature,
+} from "./model/feature-index";
 import { TRY_PAGE_PATH, tryPageDocument } from "./model/try-page";
 import type { FeatureHost } from "./view/feature-rows";
 import {
@@ -1889,6 +1896,15 @@ export default class GoodObsidianPlugin extends Plugin {
         else await this.settingTab?.setControlValue(key, on);
       },
       tryFeature: (feature) => void this.tryFeature(feature),
+      hiddenFeatures: () => hiddenFeatureIds(this.settings.searchHidden),
+      hideFeature: (id, hide) => {
+        this.settings.searchHidden = withHiddenFeature(
+          hiddenFeatureIds(this.settings.searchHidden),
+          id,
+          hide,
+        );
+        void this.saveSettings();
+      },
       runCommand: (id) => this.runOwnCommand(id),
       show: (feature) => this.showFeature(feature),
       ask: (query) => {

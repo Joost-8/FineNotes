@@ -920,6 +920,8 @@ export const notebooks = {
   "notebooks.features.unknown": "FineNotes has no feature called {what}.",
   "notebooks.features.copyLink": "Copy a link to this tip",
   "notebooks.features.linkCopied": "Link copied",
+  "notebooks.features.hide": "Hide from search",
+  "notebooks.features.unhide": "Show in search again",
   "notebooks.features.darkShade": "Dark pages show colours in another shade",
 
   // One-time hints after doing something the slow way (model/nudges.ts).

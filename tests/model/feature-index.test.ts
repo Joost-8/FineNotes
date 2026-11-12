@@ -7,8 +7,11 @@ import {
   featureLink,
   searchFeatures,
   searchWords,
+  hiddenFeatureIds,
+  searchableFeatures,
   settingKeyOf,
   switchValue,
+  withHiddenFeature,
 } from "../../src/model/feature-index";
 import { parseFinenotesLink } from "../../src/model/finenotes-link";
 import { DEFAULT_SETTINGS } from "../../src/settings-data";
@@ -135,5 +138,34 @@ describe("feature links", () => {
       do: "unknown",
       what: "show without a feature",
     });
+  });
+});
+
+describe("features taken out of search", () => {
+  it("reads back known ids only, each once", () => {
+    expect(hiddenFeatureIds(["circleLasso", "circleLasso", "nope", 3, null])).toEqual([
+      "circleLasso",
+    ]);
+    expect(hiddenFeatureIds("circleLasso")).toEqual([]);
+    expect(hiddenFeatureIds(undefined)).toEqual([]);
+  });
+
+  it("takes a feature out and puts it back", () => {
+    const out = withHiddenFeature([], "circleLasso", true);
+    expect(out).toEqual(["circleLasso"]);
+    expect(withHiddenFeature(out, "circleLasso", true)).toEqual(["circleLasso"]);
+    expect(withHiddenFeature(out, "circleLasso", false)).toEqual([]);
+    expect(withHiddenFeature([], "nope", true)).toEqual([]);
+  });
+
+  it("leaves a hidden feature out of what search may find, and nothing else", () => {
+    const all = searchableFeatures([]);
+    const some = searchableFeatures(["circleLasso"]);
+    expect(some.length).toBe(all.length - 1);
+    expect(some.some((f) => f.id === "circleLasso")).toBe(false);
+    expect(searchFeatures("circle select", text, 3, some).map((f) => f.id)).not.toContain(
+      "circleLasso",
+    );
+    expect(searchFeatures("circle select", text, 3, all).map((f) => f.id)).toContain("circleLasso");
   });
 });

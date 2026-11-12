@@ -21334,3 +21334,23 @@ button.goodobsidian-tips-copy.clickable-icon {
     display: none;
   }
 }
+
+/* A found feature's × at the row's far end: out of search results; its tip stays in Tips. */
+button.goodobsidian-feature-hide.clickable-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-inline-start: auto;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-faint);
+}
+
+button.goodobsidian-feature-hide.clickable-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-feature-row button.goodobsidian-feature-hide.clickable-icon {
+  margin-inline-start: 2px;
+}

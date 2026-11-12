@@ -324,6 +324,15 @@ export class TipsModal extends Modal {
               .then(() => new Notice(t("notebooks.features.linkCopied")));
           }),
       );
+      // Taken out of search results with its ×: the way back in.
+      const host = this.actions.features;
+      const hidden = host.hiddenFeatures().includes(feature.id);
+      menu.addItem((item) =>
+        item
+          .setTitle(t(hidden ? "notebooks.features.unhide" : "notebooks.features.hide"))
+          .setIcon(hidden ? "search" : "search-x")
+          .onClick(() => host.hideFeature(feature.id, !hidden)),
+      );
       menu.showAtMouseEvent(event);
     });
   }

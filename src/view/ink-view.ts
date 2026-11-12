@@ -4303,6 +4303,7 @@ export class InkView extends TextFileView {
       onQuery: (query) => (this.lastSearch = query),
       goTo: (index, query) => void this.showSearchHits(index, query),
       showFeature: (feature) => this.plugin.showFeature(feature),
+      features: this.plugin.featureHost(),
     });
     modal.open();
     // The PDF pages not read yet join the list as they are read (#112).

@@ -243,6 +243,34 @@ export function featureById(id: string): Feature | null {
   return FEATURES.find((f) => f.id.toLowerCase() === lower) ?? null;
 }
 
+// --- Taken out of search ------------------------------------------------------
+
+/**
+ * The features someone took out of search results with a result's ×, as
+ * stored: known feature ids only, each once. Their tips stay in Tips.
+ */
+export function hiddenFeatureIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const ids = new Set<string>();
+  for (const value of raw) {
+    if (typeof value === "string" && BY_ID.has(value)) ids.add(value);
+  }
+  return [...ids];
+}
+
+/** `hidden` with feature `id` taken out of search (`hide`) or put back. */
+export function withHiddenFeature(hidden: readonly string[], id: string, hide: boolean): string[] {
+  const rest = hidden.filter((other) => other !== id);
+  return hide && BY_ID.has(id) ? [...rest, id] : rest;
+}
+
+/** The features a search may show: all but those taken out. */
+export function searchableFeatures(hidden: readonly string[]): readonly Feature[] {
+  if (hidden.length === 0) return FEATURES;
+  const out = new Set(hidden);
+  return FEATURES.filter((feature) => !out.has(feature.id));
+}
+
 /** The feature a settings switch belongs to, for the mark beside a search result. */
 export function settingKeyOf(feature: Feature): string | null {
   return feature.action?.kind === "setting" ? feature.action.key : null;
