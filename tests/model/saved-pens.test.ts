@@ -15,6 +15,10 @@ import {
   SAVED_PEN_TYPES,
   type SavedPen,
   addSavedPen,
+  isPenId,
+  penIdFor,
+  savedPenById,
+  withPenIds,
   defaultSavedPens,
   duplicateIndex,
   editSavedPen,
@@ -298,5 +302,63 @@ describe("making and changing a saved pen (the pen dialog)", () => {
     expect(newPenDraft(red)).toEqual(red);
     expect(newPenDraft(undefined)).toEqual({ type: "ball", color: "#1a1a1a", size: 2 });
     expect(newPenDraft({ type: "quill" })).toEqual({ type: "ball", color: "#1a1a1a", size: 2 });
+  });
+});
+
+describe("saved pens' ids (FineNotes#211)", () => {
+  it("are kept when valid, and left out when not", () => {
+    expect(savedPenOf({ type: "ball", color: "#123456", size: 2, id: "abc1" })?.id).toBe("abc1");
+    expect(
+      savedPenOf({ type: "ball", color: "#123456", size: 2, id: "no way" }),
+    ).not.toHaveProperty("id");
+    expect(isPenId("p0z9")).toBe(true);
+    expect(isPenId("")).toBe(false);
+    expect(isPenId(7)).toBe(false);
+  });
+
+  it("are given to pens without one, the same on every device", () => {
+    const pens: SavedPen[] = [
+      { type: "ball", color: "#123456", size: 2 },
+      { type: "ball", color: "#123456", size: 2, id: "mine" },
+    ];
+    const a = withPenIds(pens);
+    const b = withPenIds(pens);
+    expect(a[0].id).toBeDefined();
+    expect(a[0].id).toBe(b[0].id);
+    expect(a[1].id).toBe("mine");
+    expect(a[0]).not.toBe(pens[0]);
+    expect(pens[0]).not.toHaveProperty("id");
+  });
+
+  it("are never shared: a repeated or clashing id is replaced", () => {
+    const first = { type: "ball" as const, color: "#123456", size: 2 };
+    const clash = penIdFor(first, 0);
+    const pens = withPenIds([
+      first,
+      { ...first, color: "#654321", id: clash },
+      { ...first, id: clash },
+    ]);
+    expect(new Set(pens.map((pen) => pen.id)).size).toBe(3);
+  });
+
+  it("follow a pen through an edit and a reorder", () => {
+    const pens = withPenIds(DEFAULT_SAVED_PENS);
+    const edited = putSavedPen(pens, { type: "brush", color: "#000000", size: 3 }, 2);
+    expect(edited?.[2].id).toBe(pens[2].id);
+    expect(savedPenById(pens, pens[5].id ?? "")).toEqual(pens[5]);
+    expect(savedPenById(pens, "nope")).toBeNull();
+  });
+
+  it("are on the default pens already", () => {
+    expect(DEFAULT_SAVED_PENS.map((pen) => pen.id)).toEqual([
+      "pen1",
+      "pen2",
+      "pen3",
+      "pen4",
+      "pen5",
+      "pen6",
+      "pen7",
+      "pen8",
+    ]);
   });
 });

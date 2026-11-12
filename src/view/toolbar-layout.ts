@@ -20,9 +20,16 @@
 
 import { ICON_STYLUS_ONLY } from "../constants";
 import { t } from "../i18n/translate";
+import {
+  SAVED_PEN_TYPES,
+  type SavedPen,
+  type SavedPenType,
+  isPenId,
+  samePen,
+} from "../model/saved-pens";
 
-/** Every button the tool bar can show. */
-export type BarItemId =
+/** Every button the tool bar has of its own. */
+export type CoreItemId =
   | "select"
   | "pen"
   | "eraser"
@@ -53,8 +60,53 @@ export type BarItemId =
   | "accessories"
   | "more";
 
+/**
+ * A pen as a button of its own (FineNotes#211): a pen type (`pen:ball`),
+ * which keeps its own ink as the type does in the pen's row, or a saved pen
+ * (`saved:<id>`), a preset as its key 1-8 is. These live only in a zone:
+ * taken off the bar they are gone, never in More tools or Hidden, since the
+ * pen's row and Saved pens are where they wait.
+ */
+export type PenSlotId = `pen:${SavedPenType}` | `saved:${string}`;
+
+/** Every button the tool bar can show. */
+export type BarItemId = CoreItemId | PenSlotId;
+
+/** Whether `id` is a pen as a button of its own. */
+export function isPenSlot(id: BarItemId): id is PenSlotId {
+  return id.startsWith("pen:") || id.startsWith("saved:");
+}
+
+/** The pen type a `pen:` slot holds, or `null`. */
+export function slotPenType(id: BarItemId): SavedPenType | null {
+  if (!id.startsWith("pen:")) return null;
+  const type = id.slice(4);
+  return (SAVED_PEN_TYPES as readonly string[]).includes(type) ? (type as SavedPenType) : null;
+}
+
+/** The saved pen's id a `saved:` slot names, or `null`. */
+export function slotSavedId(id: BarItemId): string | null {
+  if (!id.startsWith("saved:")) return null;
+  const pen = id.slice(6);
+  return isPenId(pen) ? pen : null;
+}
+
+/** The slot for a pen type. */
+export function penTypeSlot(type: SavedPenType): PenSlotId {
+  return `pen:${type}`;
+}
+
+/** The slot for a saved pen. */
+export function savedPenSlot(id: string): PenSlotId {
+  return `saved:${id}`;
+}
+
+function isPenSlotId(value: string): value is PenSlotId {
+  return slotPenType(value as BarItemId) !== null || slotSavedId(value as BarItemId) !== null;
+}
+
 /** Every button, in the order the More tools menu and the Hidden shelf give them. */
-export const BAR_ITEMS: readonly BarItemId[] = [
+export const BAR_ITEMS: readonly CoreItemId[] = [
   "select",
   "pen",
   "eraser",
@@ -145,19 +197,34 @@ export function defaultLayout(): ToolbarLayout {
 }
 
 /** The buttons that never leave the bar, and the zone each goes back to if lost. */
-export const PINNED: Readonly<Partial<Record<BarItemId, Zone>>> = {
+export const PINNED: Readonly<Partial<Record<CoreItemId, Zone>>> = {
   pen: "middle",
   accessories: "middle",
   more: "end",
 };
 
-/** Whether `id` must stay on the bar. */
+/** Whether `id` must stay on the bar, whatever else is on it. */
 export function isPinned(id: BarItemId): boolean {
-  return PINNED[id] !== undefined;
+  return !isPenSlot(id) && PINNED[id] !== undefined;
+}
+
+/** The pens on the bar as buttons of their own, in bar order. */
+export function penSlotsOf(layout: ToolbarLayout): PenSlotId[] {
+  return barItems(layout).filter(isPenSlot);
+}
+
+/**
+ * Whether `id` must stay on the bar under `layout`. The pen is pinned only
+ * while it is the bar's one writing tool: once another pen is on the bar it
+ * may go to More tools or out of sight (FineNotes#211).
+ */
+export function isPinnedIn(layout: ToolbarLayout, id: BarItemId): boolean {
+  if (id === "pen") return penSlotsOf(layout).length === 0;
+  return isPinned(id);
 }
 
 /** What each button is called, in its tooltip, the menus and edit mode. */
-export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
+export const BAR_ITEM_LABELS: Record<CoreItemId, string> = {
   get select() {
     return t("toolbar.tool.lasso");
   },
@@ -248,7 +315,7 @@ export const BAR_ITEM_LABELS: Record<BarItemId, string> = {
 };
 
 /** Each button's icon, in the menus and edit mode as on the bar. */
-export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
+export const BAR_ITEM_ICONS: Record<CoreItemId, string> = {
   select: "lasso",
   pen: "pen-tool",
   eraser: "eraser",
@@ -280,29 +347,56 @@ export const BAR_ITEM_ICONS: Record<BarItemId, string> = {
   more: "more-horizontal",
 };
 
-function isBarItem(value: unknown): value is BarItemId {
+function isBarItem(value: unknown): value is CoreItemId {
   return typeof value === "string" && (BAR_ITEMS as readonly string[]).includes(value);
 }
 
-/** Known ids from a stored list, each once and not already `taken`, in their order. */
-function readList(raw: unknown, taken: Set<BarItemId>): BarItemId[] {
+/**
+ * Which saved pens a layout may show: `null` takes every well-formed
+ * `saved:` slot, a set only those it names (a deleted pen's button goes).
+ */
+export type SavedPenIds = ReadonlySet<string> | null;
+
+/**
+ * Known ids from a stored list, each once and not already `taken`, in their
+ * order; with `slots`, pens as buttons too (those `saved` allows).
+ */
+function readList(
+  raw: unknown,
+  taken: Set<BarItemId>,
+  slots = false,
+  saved: SavedPenIds = null,
+): BarItemId[] {
   const out: BarItemId[] = [];
   if (!Array.isArray(raw)) return out;
   for (const value of raw) {
-    if (!isBarItem(value) || taken.has(value)) continue;
-    taken.add(value);
-    out.push(value);
+    if (typeof value !== "string") continue;
+    let id: BarItemId | null = null;
+    if (isBarItem(value)) id = value;
+    else if (slots && isPenSlotId(value)) {
+      const pen = slotSavedId(value);
+      if (pen === null || saved === null || saved.has(pen)) id = value;
+    }
+    if (id === null || taken.has(id)) continue;
+    taken.add(id);
+    out.push(id);
   }
   return out;
 }
 
-/** A pinned button that went missing goes back to its zone: the pen first, the rest last. */
+/**
+ * A pinned button that went missing goes back to its zone: the pen first,
+ * the rest last. The pen only while no other pen is on the bar.
+ */
 function restorePinned(layout: ToolbarLayout): void {
   for (const id of BAR_ITEMS) {
     const zone = PINNED[id];
     if (!zone || ZONES.some((z) => layout[z].includes(id))) continue;
-    if (id === "pen") layout[zone].unshift(id);
-    else layout[zone].push(id);
+    if (id === "pen") {
+      if (penSlotsOf(layout).length > 0) continue;
+      layout.off = layout.off.filter((item) => item !== "pen");
+      layout[zone].unshift(id);
+    } else layout[zone].push(id);
   }
 }
 
@@ -313,18 +407,19 @@ function restorePinned(layout: ToolbarLayout): void {
  * bar. Anything that is not an object (a new install, a damaged file) is
  * the default layout.
  */
-export function normalizeLayout(raw: unknown): ToolbarLayout {
+export function normalizeLayout(raw: unknown, saved: SavedPenIds = null): ToolbarLayout {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return defaultLayout();
   const stored = raw as Record<string, unknown>;
   const taken = new Set<BarItemId>();
   const layout: ToolbarLayout = {
-    start: readList(stored.start, taken),
-    middle: readList(stored.middle, taken),
-    end: readList(stored.end, taken),
+    start: readList(stored.start, taken, true, saved),
+    middle: readList(stored.middle, taken, true, saved),
+    end: readList(stored.end, taken, true, saved),
     off: [],
   };
   const off = readList(stored.off, taken);
-  layout.off = BAR_ITEMS.filter((id) => off.includes(id) && !isPinned(id));
+  // The pen may be out of sight only while another pen is on the bar.
+  layout.off = BAR_ITEMS.filter((id) => off.includes(id) && !isPinnedIn(layout, id));
   restorePinned(layout);
   return layout;
 }
@@ -354,10 +449,10 @@ export function migrateLayout(items: unknown, off: unknown, home?: unknown): Too
   });
 }
 
-/** Where `id` is in `layout`. */
+/** Where `id` is in `layout`. A pen as a button off the bar is nowhere: "off". */
 export function placeOf(layout: ToolbarLayout, id: BarItemId): ItemPlace {
   for (const zone of ZONES) if (layout[zone].includes(id)) return zone;
-  return layout.off.includes(id) ? "off" : "menu";
+  return layout.off.includes(id) || isPenSlot(id) ? "off" : "menu";
 }
 
 /** Every button on the bar, in zone order. */
@@ -366,12 +461,12 @@ export function barItems(layout: ToolbarLayout): BarItemId[] {
 }
 
 /** The buttons the More tools menu lists, in catalogue order. */
-export function menuItems(layout: ToolbarLayout): BarItemId[] {
+export function menuItems(layout: ToolbarLayout): CoreItemId[] {
   return BAR_ITEMS.filter((id) => placeOf(layout, id) === "menu");
 }
 
 /** The buttons shown nowhere, in catalogue order. */
-export function offItems(layout: ToolbarLayout): BarItemId[] {
+export function offItems(layout: ToolbarLayout): CoreItemId[] {
   return BAR_ITEMS.filter((id) => layout.off.includes(id));
 }
 
@@ -391,21 +486,45 @@ export type Target = { zone: Zone; index: number } | "menu" | "off";
 /**
  * `layout` with `id` moved to `target`. In a zone, `index` counts the
  * zone's buttons without `id` itself and is clamped into it. A pinned button
- * sent to the menu or off stays where it is. `layout` is not changed.
+ * sent to the menu or off stays where it is. A pen as a button sent to
+ * either leaves the layout; the last one to go brings the pen back to the
+ * bar if it was away (it is pinned again). `layout` is not changed.
  */
 export function moveTo(layout: ToolbarLayout, id: BarItemId, target: Target): ToolbarLayout {
   const next = copyLayout(layout);
-  if (typeof target === "string" && isPinned(id)) return next;
+  if (typeof target === "string" && isPinnedIn(layout, id)) return next;
   for (const zone of ZONES) next[zone] = next[zone].filter((item) => item !== id);
   next.off = next.off.filter((item) => item !== id);
-  if (target === "off")
-    next.off = BAR_ITEMS.filter((item) => item === id || next.off.includes(item));
-  else if (target !== "menu") {
+  if (target === "off") {
+    if (!isPenSlot(id))
+      next.off = BAR_ITEMS.filter((item) => item === id || next.off.includes(item));
+  } else if (target !== "menu") {
     const list = next[target.zone];
     const index = Math.max(0, Math.min(list.length, Math.round(target.index)));
     list.splice(index, 0, id);
   }
+  restorePinned(next);
   return next;
+}
+
+/**
+ * `layout` with the pen `slot` on the bar right after the pen's button (or
+ * after the last pen as a button, where the pen is away), or taken off it
+ * when it is there already (`on` false). Where neither is on the bar, it
+ * goes at the start of the middle zone.
+ */
+export function setPenSlot(layout: ToolbarLayout, slot: PenSlotId, on: boolean): ToolbarLayout {
+  const here = placeOf(layout, slot) !== "off";
+  if (!on) return here ? moveTo(layout, slot, "off") : copyLayout(layout);
+  if (here) return copyLayout(layout);
+  const anchors = ["pen" as BarItemId, ...penSlotsOf(layout)];
+  let after: { zone: Zone; index: number } | null = null;
+  for (const zone of ZONES) {
+    layout[zone].forEach((id, index) => {
+      if (anchors.includes(id)) after = { zone, index: index + 1 };
+    });
+  }
+  return moveTo(layout, slot, after ?? { zone: "middle", index: 0 });
 }
 
 /**
@@ -504,7 +623,9 @@ export function effectsOfOffItems(layout: ToolbarLayout, live: ItemEffects): End
   const off = (id: BarItemId): boolean => layout.off.includes(id);
   const item = barItemOfTool(live.tool);
   return {
-    pen: item !== null && !isPinned(item) && off(item),
+    // The pen is out of sight only while other pens are on the bar: the pen
+    // in hand is one of theirs, and stays.
+    pen: item !== null && item !== "pen" && !isPinned(item) && off(item),
     onlyStylus: live.onlyStylus && off("stylus"),
     ruler: live.rulerOut && off("ruler"),
     recording: live.recording && off("record"),
@@ -517,5 +638,72 @@ export function effectsOfOffItems(layout: ToolbarLayout, live: ItemEffects): End
  * turn its effect on: it would be on with no button to show it.
  */
 export function isItemOff(layout: ToolbarLayout, id: BarItemId): boolean {
+  // The pen out of sight still writes: the pens on the bar are its types.
+  if (id === "pen" && penSlotsOf(layout).length > 0) return false;
   return layout.off.includes(id);
+}
+
+// --- Pens as buttons of their own (FineNotes#211) -------------------------------
+
+/** The pen types on the bar as buttons of their own. */
+export function penTypesOnBar(layout: ToolbarLayout): Set<SavedPenType> {
+  const types = new Set<SavedPenType>();
+  for (const slot of penSlotsOf(layout)) {
+    const type = slotPenType(slot);
+    if (type) types.add(type);
+  }
+  return types;
+}
+
+/**
+ * The pen types the pen's row offers, of `shown` (the user's order, as the
+ * row has them): those not on the bar as buttons of their own. None when
+ * the type in hand is one of those (its button's pill has no row), or when
+ * one type is left, which is then simply what the pen's button is.
+ */
+export function penRowOffers(
+  shown: readonly SavedPenType[],
+  onBar: ReadonlySet<SavedPenType>,
+  inHand: SavedPenType,
+): SavedPenType[] {
+  if (onBar.has(inHand)) return [];
+  const row = shown.filter((type) => !onBar.has(type));
+  return row.length > 1 ? row : [];
+}
+
+/**
+ * The button the pen in hand belongs to: a saved pen on the bar it draws
+ * exactly as (the first, in bar order), else its type's own button, else
+ * `null`, the pen's button. `saved` resolves a `saved:` slot's pen.
+ */
+export function penSlotInHand(
+  layout: ToolbarLayout,
+  inHand: SavedPen,
+  saved: (id: string) => SavedPen | null,
+): PenSlotId | null {
+  const slots = penSlotsOf(layout);
+  for (const slot of slots) {
+    const id = slotSavedId(slot);
+    const pen = id === null ? null : saved(id);
+    if (pen && samePen(pen, inHand)) return slot;
+  }
+  const own = penTypeSlot(inHand.type);
+  return slots.includes(own) ? own : null;
+}
+
+/**
+ * The pen type the pen's button stands for: the type in hand while it is
+ * not on the bar as a button of its own, else the last it stood for
+ * (`last`) if that is still free, else the first free type in the user's
+ * order. `null` when every type has its own button.
+ */
+export function penButtonType(
+  order: readonly SavedPenType[],
+  onBar: ReadonlySet<SavedPenType>,
+  inHand: SavedPenType,
+  last: SavedPenType | null,
+): SavedPenType | null {
+  if (!onBar.has(inHand)) return inHand;
+  if (last !== null && !onBar.has(last)) return last;
+  return order.find((type) => !onBar.has(type)) ?? null;
 }

@@ -36,6 +36,16 @@ extracted from the matching section of this file by `release.yml`.
   frames show as a thin outline with their name; tap the name to copy the
   link again, rename or delete it. `#page=3` still means page 3, and a name
   that is no frame still shows that heading of the note, as before.
+- **Pens on the toolbar as buttons of their own**
+  ([#211](https://github.com/Joost-8/FineNotes/issues/211)). In the pen's
+  menu (the ⌄ after the pen types), Add to toolbar puts the pen type in hand
+  on the bar, keeping its own colour and width as it does in the row. In
+  Saved pens, the pin at the end of a row puts that saved pen on the bar,
+  marked with a small star; a tap writes with it, as its key does. Customize
+  toolbar has a New pen: drag it onto the bar to save the pen in hand there.
+  A type on the bar leaves the pen's row, and once another pen is on the bar
+  the pen's own button can go to Hidden, so a bar can hold just a ball pen
+  and a highlighter. Hidden, or Remove from toolbar, takes a pen off again.
 
 ### Changed
 

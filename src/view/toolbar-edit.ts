@@ -40,13 +40,15 @@ import {
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
   type BarItemId,
+  type CoreItemId,
   type Target,
   type ToolbarLayout,
   ZONES,
   ZONE_LABELS,
   type Zone,
   defaultLayout,
-  isPinned,
+  isPenSlot,
+  isPinnedIn,
   menuItems,
   moveTo,
   offItems,
@@ -68,6 +70,20 @@ export interface ToolbarEditorHost {
   button: (id: BarItemId) => HTMLButtonElement | undefined;
   /** Whether this bar has a button for an item (no handler here, no button). */
   has: (id: BarItemId) => boolean;
+  /** What an item is called: its own name, or a pen's (FineNotes#211). */
+  label: (id: BarItemId) => string;
+  /**
+   * The tray's New pen (FineNotes#211): dragged onto the bar, the pen in
+   * hand becomes a saved pen there, a button of its own. Without it, no New pen.
+   */
+  newPen?: {
+    /** Whether the pen in hand can be added: saved pens not full, not on the bar yet. */
+    can: () => boolean;
+    /** Save the pen in hand if need be; its slot, or `null`. */
+    make: () => BarItemId | null;
+    /** Draw the pen in hand on the chip. */
+    draw: (chip: HTMLElement) => void;
+  };
   layout: () => ToolbarLayout;
   /** Show `layout` and keep it. */
   apply: (layout: ToolbarLayout) => void;
@@ -147,6 +163,9 @@ export function lookPreview(
   return preview;
 }
 
+/** The New pen chip's `data-item`: a source of new pens, never a bar item. */
+const NEW_PEN = "new-pen";
+
 export class ToolbarEditor {
   private readonly doc: Document;
   private readonly tray: HTMLElement;
@@ -225,7 +244,7 @@ export class ToolbarEditor {
     for (const id of this.barIds()) {
       const button = this.h.button(id);
       if (!button) continue;
-      button.toggleClass("is-pinned", isPinned(id));
+      button.toggleClass("is-pinned", isPinnedIn(this.h.layout(), id));
       // Its own name ("Lasso select (V)") comes back when the mode closes.
       if (!button.hasAttribute("data-label")) {
         button.setAttribute("data-label", button.getAttribute("aria-label") ?? "");
@@ -254,12 +273,13 @@ export class ToolbarEditor {
     }
     // Every button, not only those on the bar now: one moved off it meanwhile
     // keeps its own name for when it comes back.
-    for (const id of Object.keys(BAR_ITEM_LABELS) as BarItemId[]) {
+    const ids = [...(Object.keys(BAR_ITEM_LABELS) as BarItemId[]), ...this.barIds()];
+    for (const id of ids) {
       const button = this.h.button(id);
       if (!button) continue;
       button.removeClass("is-pinned", "will-fold");
       const own = button.getAttribute("data-label");
-      if (own !== null) button.setAttribute("aria-label", own || BAR_ITEM_LABELS[id]);
+      if (own !== null) button.setAttribute("aria-label", own || this.h.label(id));
       button.removeAttribute("data-label");
     }
     this.scrim.remove();
@@ -319,6 +339,7 @@ export class ToolbarEditor {
     done.addEventListener("click", () => this.finish());
 
     const layout = this.h.layout();
+    this.newPenShelf();
     this.menuShelf = this.shelf(
       t("toolbar.moreTools"),
       "menu",
@@ -388,7 +409,30 @@ export class ToolbarEditor {
     }
   }
 
-  private shelf(name: string, place: "menu" | "off", ids: BarItemId[]): HTMLElement {
+  /**
+   * New pen (FineNotes#211): one chip, however many pens there are, drawn as
+   * the pen in hand. Dragged onto the bar it leaves a new pen button where it
+   * lands; a tap puts one after the pen's. Dimmed when it cannot add one.
+   */
+  private newPenShelf(): void {
+    const pen = this.h.newPen;
+    if (!pen) return;
+    const shelf = this.tray.createDiv({ cls: "goodobsidian-edit-shelf is-new-pen" });
+    shelf.createSpan({ cls: "goodobsidian-edit-shelf-name", text: t("toolbar.edit.newPen") });
+    const chips = shelf.createDiv({ cls: "goodobsidian-edit-chips" });
+    const chip = chips.createEl("button", {
+      cls: "goodobsidian-edit-chip goodobsidian-edit-new-pen clickable-icon",
+    });
+    pen.draw(chip);
+    setIcon(chip.createSpan({ cls: "goodobsidian-edit-new-pen-plus" }), "plus");
+    const can = pen.can();
+    chip.setAttribute("data-item", NEW_PEN);
+    chip.toggleClass("is-disabled", !can);
+    chip.setAttribute("aria-disabled", String(!can));
+    chip.setAttribute("aria-label", t("toolbar.edit.newPenTip"));
+  }
+
+  private shelf(name: string, place: "menu" | "off", ids: CoreItemId[]): HTMLElement {
     const shelf = this.tray.createDiv({ cls: `goodobsidian-edit-shelf is-${place}` });
     shelf.createSpan({ cls: "goodobsidian-edit-shelf-name", text: name });
     const chips = shelf.createDiv({ cls: "goodobsidian-edit-chips" });
@@ -439,6 +483,7 @@ export class ToolbarEditor {
     event.stopPropagation();
     this.closeMenu();
     this.endPress();
+    if (el.getAttribute("data-item") === NEW_PEN && this.h.newPen?.can() !== true) return;
     this.press = {
       id: el.getAttribute("data-item") as BarItemId,
       el,
@@ -471,7 +516,14 @@ export class ToolbarEditor {
       // Its own element, not a clone: a copied <button> would take Obsidian's
       // button padding (20 px a side on an iPad) and squeeze its icon away.
       const ghost = this.doc.body.createDiv({ cls: "goodobsidian-edit-ghost" });
-      setIcon(ghost, BAR_ITEM_ICONS[press.id]);
+      // A pen carries its own drawing; every other button its icon.
+      const pen = press.el.querySelector(
+        "svg.goodobsidian-tool-pen-glyph, .goodobsidian-pen-glyph",
+      );
+      if (isPenSlot(press.id) || (press.id as string) === NEW_PEN) {
+        const drawn = pen ?? press.el.querySelector("svg");
+        if (drawn) ghost.append(drawn.cloneNode(true));
+      } else setIcon(ghost, BAR_ITEM_ICONS[press.id]);
       this.ghost = ghost;
       press.el.addClass("is-drag-source");
       this.h.bar.addClass("is-dragging");
@@ -490,11 +542,29 @@ export class ToolbarEditor {
     const target = event.type === "pointerup" ? this.target : null;
     const { id, dragging, el } = press;
     this.endPress();
+    if ((id as string) === NEW_PEN) {
+      if (event.type === "pointerup") this.addPen(dragging ? target : null);
+      return;
+    }
     if (!dragging) {
       if (event.type === "pointerup") this.openMenu(id, el);
       return;
     }
     if (target) this.move(id, target);
+  }
+
+  /**
+   * New pen let go: a pen button for the pen in hand at `target` on the bar,
+   * or after the pen's button when it was only tapped (`null`).
+   */
+  private addPen(target: Target | null): void {
+    if (target !== null && typeof target === "string") return;
+    const slot = this.h.newPen?.make();
+    if (!slot) return;
+    const layout = this.h.layout();
+    const next =
+      target === null ? moveTo(layout, slot, afterPen(layout)) : moveTo(layout, slot, target);
+    this.apply(slot, next);
   }
 
   private endPress(): void {
@@ -515,7 +585,9 @@ export class ToolbarEditor {
       [this.offShelf, "off"],
     ] as const) {
       if (!shelf || !inside(shelf.getBoundingClientRect(), x, y, 4)) continue;
-      return isPinned(id) ? null : place;
+      // A new pen only goes on the bar; a pen as a button leaves it by Hidden.
+      if ((id as string) === NEW_PEN || (isPenSlot(id) && place === "menu")) return null;
+      return isPinnedIn(this.h.layout(), id) ? null : place;
     }
     const bar = this.h.bar.getBoundingClientRect();
     const upright = isBarUpright(this.h.barDock());
@@ -586,7 +658,7 @@ export class ToolbarEditor {
     const upright = isBarUpright(this.h.barDock());
     const menu = this.h.host.createDiv({ cls: "goodobsidian-edit-menu" });
     menu.setAttribute("role", "menu");
-    menu.setAttribute("aria-label", BAR_ITEM_LABELS[id]);
+    menu.setAttribute("aria-label", this.h.label(id));
     const row = (icon: string, label: string, next: ToolbarLayout): void => {
       if (sameLayout(next, layout)) return;
       const button = menu.createEl("button", { cls: "goodobsidian-edit-menu-row clickable-icon" });
@@ -622,7 +694,10 @@ export class ToolbarEditor {
         moveTo(layout, id, { zone, index: layout[zone].length }),
       );
     }
-    if (!isPinned(id)) {
+    if (isPenSlot(id)) {
+      // A pen as a button is not kept anywhere off the bar: it goes.
+      row("pin-off", t("toolbar.pen.removeFromBar"), moveTo(layout, id, "off"));
+    } else if (!isPinnedIn(layout, id)) {
       if (place !== "menu")
         row("toolbox", t("toolbar.edit.toMoreTools"), moveTo(layout, id, "menu"));
       if (place !== "off") row("eye-off", t("toolbar.edit.hide"), moveTo(layout, id, "off"));
@@ -650,6 +725,13 @@ export class ToolbarEditor {
     const el = (event.target as Element | null)?.closest<HTMLElement>("[data-item]");
     if (!el) return;
     const id = el.getAttribute("data-item") as BarItemId;
+    if ((id as string) === NEW_PEN) {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.h.newPen?.can() === true) this.addPen(null);
+      return;
+    }
     const upright = isBarUpright(this.h.barDock());
     const back = upright ? "ArrowUp" : "ArrowLeft";
     const on = upright ? "ArrowDown" : "ArrowRight";
@@ -688,8 +770,8 @@ export class ToolbarEditor {
 
   /** A button's name in edit mode: what pressing it does now. */
   private ariaLabel(id: BarItemId): string {
-    const name = BAR_ITEM_LABELS[id];
-    return isPinned(id)
+    const name = this.h.label(id);
+    return isPinnedIn(this.h.layout(), id)
       ? t("toolbar.edit.pinned", { name })
       : t("toolbar.customize.move", { name });
   }
@@ -703,6 +785,17 @@ export class ToolbarEditor {
     target.addEventListener(type, handler, capture);
     this.cleanups.push(() => target.removeEventListener(type, handler, capture));
   }
+}
+
+/** Right after the pen's button, or the last pen as a button, or the middle's start. */
+function afterPen(layout: ToolbarLayout): Target {
+  let at: Target = { zone: "middle", index: 0 };
+  for (const zone of ZONES) {
+    layout[zone].forEach((id, index) => {
+      if (id === "pen" || isPenSlot(id)) at = { zone, index: index + 1 };
+    });
+  }
+  return at;
 }
 
 /** Whether (`x`, `y`) is in `box` grown by `pad` on every side. */

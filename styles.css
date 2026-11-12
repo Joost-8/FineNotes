@@ -21302,3 +21302,119 @@ button.goodobsidian-tips-copy.clickable-icon {
 .goodobsidian-tips-found {
   min-height: 240px;
 }
+
+/* ------------------------------------------- pens as buttons (FineNotes#211) */
+
+/* A pen on the bar as a button of its own is drawn as the pen's button is
+   (its glyph in its ink over its width); a saved pen carries a small star,
+   the mark it is saved under, in its top corner. */
+.goodobsidian-toolbar button.goodobsidian-pen-slot {
+  position: relative;
+}
+
+.goodobsidian-pen-slot-star {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: inline-flex;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.goodobsidian-toolbar button .goodobsidian-pen-slot-star .svg-icon {
+  width: 9px;
+  height: 9px;
+  fill: currentColor;
+  stroke-width: 1.5px;
+}
+
+.goodobsidian-toolbar button.goodobsidian-pen-slot.is-active .goodobsidian-pen-slot-star {
+  color: var(--interactive-accent);
+}
+
+/* A saved pen's pin, at the end of its row: a 44 px target, filled when the
+   pen is on the bar. */
+.goodobsidian-saved-pen-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  margin: -10px -8px -10px 0;
+  border-radius: var(--gob-radius-s, 6px);
+  color: var(--text-faint);
+  cursor: var(--cursor);
+}
+
+.goodobsidian-saved-pen-pin svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-saved-pen-pin.is-on {
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-saved-pen-pin.is-on svg {
+  fill: currentColor;
+}
+
+/* On the pen in hand's row (filled with the accent) the pin takes the row's colour. */
+.goodobsidian-popover button.is-active .goodobsidian-saved-pen-pin {
+  color: inherit;
+}
+
+/* With a pin at the end of each row, a pen's name keeps one line. */
+.goodobsidian-saved-pens-popover {
+  min-width: 320px;
+}
+
+@media (hover: hover) {
+  .goodobsidian-saved-pen-pin:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+}
+
+/* Customize toolbar's New pen: the pen in hand with a plus, accent-ringed;
+   dimmed while it cannot add one (saved pens full, or that pen is on the bar). */
+button.goodobsidian-edit-chip.goodobsidian-edit-new-pen {
+  position: relative;
+  color: var(--text-normal);
+  box-shadow: 0 0 0 1.5px var(--interactive-accent);
+}
+
+button.goodobsidian-edit-chip.goodobsidian-edit-new-pen > svg {
+  width: 24px;
+  height: 24px;
+}
+
+.goodobsidian-edit-new-pen-plus {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-edit-new-pen-plus svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 3px;
+}
+
+button.goodobsidian-edit-chip.goodobsidian-edit-new-pen.is-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.goodobsidian-edit-ghost > svg.goodobsidian-tool-pen-glyph {
+  transform: none;
+}

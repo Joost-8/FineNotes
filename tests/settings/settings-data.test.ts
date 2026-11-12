@@ -163,14 +163,14 @@ const FRESH_INSTALL = {
   exportMargins: "all",
 
   savedPens: [
-    { type: "ball", color: "#1971c2", size: 2 },
-    { type: "ball", color: "#e03131", size: 2 },
-    { type: "ball", color: "#2f9e44", size: 2 },
-    { type: "fountain", color: "#1971c2", size: 5 },
-    { type: "fountain", color: "#1a1a1a", size: 3 },
-    { type: "ball", color: "#1a1a1a", size: 1.22 },
-    { type: "brush", color: "#9c36b5", size: 3 },
-    { type: "highlighter", color: "#fab005", size: 5 },
+    { type: "ball", color: "#1971c2", size: 2, id: "pen1" },
+    { type: "ball", color: "#e03131", size: 2, id: "pen2" },
+    { type: "ball", color: "#2f9e44", size: 2, id: "pen3" },
+    { type: "fountain", color: "#1971c2", size: 5, id: "pen4" },
+    { type: "fountain", color: "#1a1a1a", size: 3, id: "pen5" },
+    { type: "ball", color: "#1a1a1a", size: 1.22, id: "pen6" },
+    { type: "brush", color: "#9c36b5", size: 3, id: "pen7" },
+    { type: "highlighter", color: "#fab005", size: 5, id: "pen8" },
   ],
   toolbarLayout: {
     start: ["home", "thumbnails", "search", "ai", "calculator", "undo", "redo"],

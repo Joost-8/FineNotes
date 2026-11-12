@@ -284,7 +284,7 @@ import { errorMessage } from "./util/errors";
 import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
-import { type SavedPen, savedPensOf } from "./model/saved-pens";
+import { type SavedPen, savedPensOf, withPenIds } from "./model/saved-pens";
 import {
   type ToolbarLayout,
   isItemOff,
@@ -1177,7 +1177,8 @@ export default class GoodObsidianPlugin extends Plugin {
     // open ones are kept, and every section starts folded.
     delete loaded.foldedSettingsSections;
     // A list of its own, read as pens: the default's must stay as it is.
-    this.settings.savedPens = savedPensOf(this.settings.savedPens);
+    // Each with an id, for a button of its own on the bar (FineNotes#211).
+    this.settings.savedPens = withPenIds(savedPensOf(this.settings.savedPens));
     // The whole bar's layout (discussion #43) replaced the tools' three
     // lists: a vault that has only those is read as the bar it showed.
     const toolbar =
@@ -2060,8 +2061,10 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Keep the saved pens (FineNotes#24), and show them in every open notebook's toolbar. */
   saveSavedPens(pens: readonly SavedPen[]): void {
-    this.settings.savedPens = pens.map((pen) => ({ ...pen }));
+    this.settings.savedPens = withPenIds(pens);
     void this.saveSettings();
+    // A pen on the bar as a button of its own follows its saved pen (FineNotes#211).
+    for (const view of this.openNotebooks()) view.refreshSavedPens();
   }
 
   /**

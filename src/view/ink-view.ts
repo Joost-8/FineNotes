@@ -1317,6 +1317,11 @@ export class InkView extends TextFileView {
     this.endOffItemEffects(normalizeLayout(layout));
   }
 
+  /** The saved pens changed: the pens on the bar as buttons of their own follow (FineNotes#211). */
+  refreshSavedPens(): void {
+    this.toolbar?.refreshSavedPens();
+  }
+
   /** The tool bar's layout as the settings hold it. */
   setNewsDot(on: boolean, controls: readonly string[] = this.plugin.newsControlIds()): void {
     this.toolbar?.setHomeDot(on);

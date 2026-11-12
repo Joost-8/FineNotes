@@ -80,13 +80,27 @@ import {
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
   type BarItemId,
+  type CoreItemId,
+  type PenSlotId,
   type ToolbarLayout,
   ZONES,
   type Zone,
   barItems as layoutBarItems,
   defaultLayout,
+  isPenSlot,
   menuItems,
   normalizeLayout,
+  penButtonType,
+  penRowOffers,
+  penSlotInHand,
+  penSlotsOf,
+  penTypeSlot,
+  penTypesOnBar,
+  placeOf,
+  savedPenSlot,
+  setPenSlot,
+  slotPenType,
+  slotSavedId,
 } from "./toolbar-layout";
 import { ToolbarEditor } from "./toolbar-edit";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
@@ -254,8 +268,10 @@ import type { HighlighterTip, PenPreferences, ReturnToPen, SnapMode } from "../s
 import {
   MAX_SAVED_PENS,
   type SavedPen,
+  type SavedPenType,
   mmText,
   samePen,
+  savedPenById,
   savedPenLabel,
   widthFromMm,
 } from "../model/saved-pens";
@@ -1151,6 +1167,12 @@ export class Toolbar {
   private penToolButton: HTMLElement | null = null;
   /** What the pen button last drew, so an unchanged pen is not redrawn. */
   private penPreviewKey = "";
+  /** Pens on the bar as buttons of their own (FineNotes#211), by slot. */
+  private readonly penSlotButtons = new Map<PenSlotId, HTMLButtonElement>();
+  /** The pen type the pen's button last stood for, while others have buttons of their own. */
+  private penButtonLast: SavedPenType | null = null;
+  /** The pen button the indicator marks while a pen is in hand: a slot, or the pen's (`null`). */
+  private indicatorSlot: PenSlotId | null = null;
   /** Pages are shown dark: every colour the bar shows is shown as the ink is (`shownColor`). */
   private night = false;
   /** The writing tools, centred on the bar while there is room. */
@@ -2064,8 +2086,12 @@ export class Toolbar {
    * indicator, as a live change needs.
    */
   setLayout(raw: ToolbarLayout, relayout = true): void {
-    const layout = normalizeLayout(raw);
+    // A saved pen deleted meanwhile has no button.
+    const pens = this.callbacks.savedPens?.() ?? [];
+    const ids = new Set(pens.flatMap((pen) => (pen.id === undefined ? [] : [pen.id])));
+    const layout = normalizeLayout(raw, ids);
     this.layoutNow = layout;
+    this.syncPenSlots(layout);
     const onBar = new Set(layoutBarItems(layout));
     for (const zone of ZONES) {
       const el = this.zoneEls[zone];
@@ -2085,12 +2111,217 @@ export class Toolbar {
     this.editor?.refresh();
     if (!relayout) return;
     const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
+    // The pen's row loses or gains the types now on the bar.
+    if (tool === "pen") this.buildOptions();
+    this.syncActive();
     this.fitBar(tool);
     this.placeIndicator(tool, null);
   }
 
+  // --- Pens as buttons of their own (FineNotes#211) -------------------------
+
+  /**
+   * Make a button for every pen `layout` puts on the bar, and drop those it
+   * no longer does. Each sits in the tools' group until `setLayout` puts it
+   * in its zone.
+   */
+  private syncPenSlots(layout: ToolbarLayout): void {
+    const slots = new Set(penSlotsOf(layout));
+    for (const [slot, button] of this.penSlotButtons) {
+      if (slots.has(slot)) continue;
+      button.remove();
+      this.penSlotButtons.delete(slot);
+      this.barItems.delete(slot);
+    }
+    const parent = this.toolsGroup;
+    if (!parent) return;
+    for (const slot of slots) {
+      if (this.penSlotButtons.has(slot)) continue;
+      const button = parent.createEl("button", {
+        cls: "goodobsidian-tool goodobsidian-tool-pen goodobsidian-pen-slot",
+      });
+      button.setAttribute("data-item", slot);
+      button.setAttribute("aria-pressed", "false");
+      button.addEventListener("click", () => {
+        if (!button.disabled) this.tapPenSlot(slot, button);
+      });
+      this.penSlotButtons.set(slot, button);
+      this.barItems.set(slot, button);
+    }
+    this.drawPenSlots();
+  }
+
+  /** The layout shown; the default before the bar is built (a bare toolbar in tests). */
+  private laid(): ToolbarLayout {
+    const shown: ToolbarLayout | undefined = this.layoutNow;
+    return shown ?? defaultLayout();
+  }
+
+  /** The pen buttons, none before the bar is built. */
+  private slotButtons(): Map<PenSlotId, HTMLButtonElement> {
+    const buttons: Map<PenSlotId, HTMLButtonElement> | undefined = this.penSlotButtons;
+    return buttons ?? new Map<PenSlotId, HTMLButtonElement>();
+  }
+
+  /** The saved pen a `saved:` slot names, or `null` (deleted meanwhile). */
+  private savedPenOf(id: string): SavedPen | null {
+    return savedPenById(this.callbacks.savedPens?.() ?? [], id);
+  }
+
+  /** The pen a slot's button writes with: a type in its own ink, or the saved pen. */
+  private slotPen(slot: PenSlotId): SavedPen | null {
+    const type = slotPenType(slot);
+    if (type) {
+      if (type === this.activePenType().id) return penOfState(this.state);
+      const ink = penInkFor(this.state.penInks ?? {}, type, this.inkInHand());
+      return { type, color: ink.color, size: ink.size ?? this.state.size };
+    }
+    const id = slotSavedId(slot);
+    return id === null ? null : this.savedPenOf(id);
+  }
+
+  /** What a pen as a button is called: its type's name, or the saved pen's. */
+  private slotLabel(slot: PenSlotId): string {
+    const type = slotPenType(slot);
+    if (type) return PEN_TYPES.find((spec) => spec.id === type)?.label ?? type;
+    const pen = this.slotPen(slot);
+    return pen ? t("toolbar.penSlot.saved", { name: savedPenLabel(pen) }) : "";
+  }
+
+  /** A bar item's name: its own, or a pen's. */
+  private itemLabel(id: BarItemId): string {
+    return isPenSlot(id) ? this.slotLabel(id) : BAR_ITEM_LABELS[id];
+  }
+
+  /** Draw every pen button: its type's glyph in its ink, and its width under it. */
+  private drawPenSlots(): void {
+    for (const [slot, button] of this.slotButtons()) {
+      const pen = this.slotPen(slot);
+      if (!pen) continue;
+      this.drawPenFace(button, pen, slotSavedId(slot) !== null, this.slotLabel(slot));
+    }
+  }
+
+  /**
+   * Draw a pen button: the pen's glyph in its ink with its width under it,
+   * as the pen's button shows the pen in hand; a saved pen with a small star,
+   * the mark it is saved under.
+   */
+  private drawPenFace(button: HTMLElement, pen: SavedPen, saved: boolean, label: string): void {
+    const spec = PEN_TYPES.find((type) => type.id === pen.type) ?? PEN_TYPES[0];
+    const color = this.shown(pen.color);
+    const width = strokeWidthFor({
+      ...this.state,
+      tool: spec.tool,
+      penType: spec.id,
+      size: pen.size,
+    });
+    const dark = activeDocument.body.hasClass("theme-dark");
+    const key = `${spec.id}|${color}|${width}|${dark}|${saved}|${label}`;
+    if (button.getAttribute("data-face") === key) return;
+    button.setAttribute("data-face", key);
+    button.empty();
+    const glyph = penGlyph(spec.id, color);
+    glyph.classList.add("goodobsidian-tool-pen-glyph");
+    button.append(glyph);
+    const mark = button.createSpan({ cls: "goodobsidian-tool-pen-width" });
+    mark.toggleClass("is-highlighter", spec.tool === "highlighter");
+    mark.toggleClass("is-rimmed", inkNeedsRim(color, dark));
+    mark.setCssProps({
+      "--gob-ink": color,
+      "--gob-ink-width": `${widthMarkThickness(width)}px`,
+    });
+    if (saved) iconOrText(button.createSpan({ cls: "goodobsidian-pen-slot-star" }), "star", "");
+    // In Customize toolbar the editor names it by what a press does.
+    if (!button.hasAttribute("data-label")) button.setAttribute("aria-label", label);
+    else button.setAttribute("data-label", label);
+  }
+
+  /** The pen button the pen in hand belongs to: a slot, or the pen's own (`null`). */
+  private penSlotInHand(): PenSlotId | null {
+    if (this.state.tool !== "pen" && this.state.tool !== "highlighter") return null;
+    return penSlotInHand(this.laid(), penOfState(this.state), (id) => this.savedPenOf(id));
+  }
+
+  /** The pen type the pen's button stands for now (`toolbar-layout.ts`). */
+  private penButtonSpec(): PenTypeSpec {
+    const order = penRowTypes(this.state).map((spec) => spec.id);
+    const id = penButtonType(
+      order,
+      penTypesOnBar(this.laid()),
+      this.activePenType().id,
+      this.penButtonLast,
+    );
+    return PEN_TYPES.find((spec) => spec.id === id) ?? this.activePenType();
+  }
+
+  /**
+   * A pen as a button was tapped: put it in hand (a type with its own ink,
+   * a saved pen as its key 1-8 does); tapped in hand, it shows or tucks
+   * away its pill, as every tool's button does.
+   */
+  private tapPenSlot(slot: PenSlotId, button: HTMLElement): void {
+    if (this.penSlotInHand() === slot) {
+      this.closePopover();
+      this.tuckedByStroke = false;
+      this.optionsVisible = !this.optionsVisible;
+      this.showOptions(this.optionsVisible);
+      this.syncActive();
+      return;
+    }
+    const type = slotPenType(slot);
+    const pen = type ? null : this.slotPen(slot);
+    const spec = PEN_TYPES.find((p) => p.id === (type ?? pen?.type));
+    if (!spec || (this.practice && spec.tool === "highlighter")) return;
+    this.closePopover();
+    if (pen) {
+      this.applySavedPen(pen);
+      return;
+    }
+    if (this.state.tool !== spec.tool) {
+      this.drawingTool = drawingToolOf(this.drawingTool, spec.tool);
+      this.leaveToolFor(spec.tool);
+    }
+    this.choosePenType(spec);
+    button.focus({ preventScroll: true });
+  }
+
+  /** Put a pen on the bar as a button of its own, or take it off, and keep the layout. */
+  private togglePenSlot(slot: PenSlotId): void {
+    const save = this.callbacks.onLayout;
+    if (!save) return;
+    const on = placeOf(this.laid(), slot) === "off";
+    this.setLayout(setPenSlot(this.laid(), slot, on));
+    save(this.laid());
+  }
+
+  /**
+   * Customize toolbar's New pen: the pen in hand as a saved pen (saved now if
+   * it is not yet), for a button of its own. `null` when it cannot be: saved
+   * pens are full, or that pen is on the bar already.
+   */
+  private newPenSlot(save: boolean): PenSlotId | null {
+    const current = penOfState(this.state);
+    const pens = this.callbacks.savedPens?.() ?? [];
+    let pen = pens.find((saved) => samePen(saved, current)) ?? null;
+    if (!pen) {
+      if (pens.length >= MAX_SAVED_PENS || !this.callbacks.onSavePen) return null;
+      if (!save) return "saved:new";
+      this.callbacks.onSavePen(current);
+      pen = (this.callbacks.savedPens?.() ?? []).find((saved) => samePen(saved, current)) ?? null;
+    }
+    if (!pen?.id) return null;
+    const slot = savedPenSlot(pen.id);
+    return placeOf(this.laid(), slot) === "off" ? slot : null;
+  }
+
+  /** The saved pens changed (added, edited, reordered, deleted): the bar's pens follow. */
+  refreshSavedPens(): void {
+    this.setLayout(this.laid());
+  }
+
   /** The buttons its More tools menu lists now, in catalogue order. */
-  get menuListed(): readonly BarItemId[] {
+  get menuListed(): readonly CoreItemId[] {
     return menuItems(this.layout).filter((id) => this.itemRuns.has(id));
   }
 
@@ -2120,6 +2351,17 @@ export class Toolbar {
       zones: () => this.zoneEls,
       button: (id) => this.barItems.get(id),
       has: (id) => this.barItems.has(id),
+      label: (id) => this.itemLabel(id),
+      newPen: this.callbacks.onSavePen
+        ? {
+            can: () => this.newPenSlot(false) !== null,
+            make: () => this.newPenSlot(true),
+            draw: (chip) => {
+              const current = penOfState(this.state);
+              chip.append(penGlyph(current.type, this.shown(current.color)));
+            },
+          }
+        : undefined,
       layout: () => this.layoutNow,
       apply: (layout) => {
         this.setLayout(layout);
@@ -2395,9 +2637,21 @@ export class Toolbar {
   private drawPenPreview(): void {
     const button = this.penToolButton;
     if (!button) return;
-    const spec = this.activePenType();
-    const color = this.shown(this.state.color);
-    const width = strokeWidthFor({ ...this.state, tool: spec.tool });
+    // With types on the bar as buttons of their own, the pen's button shows
+    // the type it stands for, in that type's own ink (FineNotes#211).
+    const spec = this.penButtonSpec();
+    if (this.state.tool === "pen" || this.state.tool === "highlighter") {
+      if (this.penSlotInHand() === null) this.penButtonLast = spec.id;
+    }
+    const inHand = spec.id === this.activePenType().id;
+    const ink = inHand ? null : penInkFor(this.state.penInks ?? {}, spec.id, this.inkInHand());
+    const color = this.shown(ink ? ink.color : this.state.color);
+    const width = strokeWidthFor({
+      ...this.state,
+      tool: spec.tool,
+      penType: spec.id,
+      size: ink?.size ?? this.state.size,
+    });
     const dark = activeDocument.body.hasClass("theme-dark");
     const key = `${spec.id}|${color}|${width}|${dark}`;
     if (key === this.penPreviewKey) return;
@@ -2475,7 +2729,19 @@ export class Toolbar {
     // The pen button stands for every pen type, the highlighter included:
     // it picks the type in hand. Picking plain "pen" with the highlighter as
     // the type wrote opaque pen ink in the highlighter's colour.
-    if (tool === "pen") tool = this.activePenType().tool;
+    if (tool === "pen") {
+      // While the pen in hand belongs to a type's own button, the pen's
+      // button puts its own type back in hand (FineNotes#211).
+      const slot = this.penSlotInHand();
+      const own = this.penButtonSpec();
+      if (slot !== null && slotPenType(slot) !== null && own.id !== this.activePenType().id) {
+        if (this.practice && own.tool === "highlighter") return;
+        this.closePopover();
+        this.choosePenType(own);
+        return;
+      }
+      tool = this.activePenType().tool;
+    }
     const current = this.state.tool;
     this.drawingTool = drawingToolOf(this.drawingTool, current);
     tool = selectedTool(
@@ -2757,7 +3023,17 @@ export class Toolbar {
     // A swipe here scrolls the row, never Obsidian's sidebars.
     row.dataset.ignoreSwipe = "true";
     const order = penRowTypes(this.state).map((spec) => spec.id);
-    const shown = shownPenTypes(order, this.practice, "highlighter");
+    // Types on the bar as buttons of their own leave the row; the row goes
+    // when the type in hand is one of them, or one type is left (FineNotes#211).
+    const shown = penRowOffers(
+      shownPenTypes(order, this.practice, "highlighter"),
+      penTypesOnBar(this.laid()),
+      this.activePenType().id,
+    );
+    if (shown.length === 0) {
+      row.remove();
+      return;
+    }
     for (const id of shown) {
       const spec = PEN_TYPES.find((type) => type.id === id);
       if (!spec) continue;
@@ -3578,6 +3854,9 @@ export class Toolbar {
       row.append(penGlyph(spec.id, pen.color));
       row.createSpan({ cls: "goodobsidian-saved-pen-label", text: savedPenLabel(pen) });
       row.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: String(index + 1) });
+      if (pen.id !== undefined && this.callbacks.onLayout && !this.practice) {
+        this.savedPenPin(row, pen, pen.id);
+      }
       row.toggleClass("is-active", inHand && samePen(pen, current));
       row.addEventListener("click", () => {
         if (!drag.consumeClick()) pick(pen);
@@ -3613,6 +3892,46 @@ export class Toolbar {
     edit.addEventListener("click", () => {
       this.closePopover();
       this.callbacks.onEditPens?.();
+    });
+  }
+
+  /**
+   * A saved pen's pin: on the bar as a button of its own, or not
+   * (FineNotes#211). It sits in the row, which is itself a button and can be
+   * dragged, so it acts on its own lift (the Pencil sends no click here)
+   * and keeps its press from the row.
+   */
+  private savedPenPin(row: HTMLElement, pen: SavedPen, id: string): void {
+    const slot = savedPenSlot(id);
+    const on = placeOf(this.laid(), slot) !== "off";
+    const pin = row.createSpan({ cls: "goodobsidian-saved-pen-pin" });
+    pin.toggleClass("is-on", on);
+    iconOrText(pin, "pin", "");
+    const name = savedPenLabel(pen);
+    pin.setAttribute("role", "button");
+    pin.setAttribute("aria-pressed", String(on));
+    pin.setAttribute(
+      "aria-label",
+      on ? t("toolbar.savedPens.unpin", { name }) : t("toolbar.savedPens.pin", { name }),
+    );
+    let pressed = false;
+    pin.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      pressed = true;
+    });
+    pin.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      if (!pressed) return;
+      pressed = false;
+      this.togglePenSlot(slot);
+      this.popoverRender?.();
+    });
+    pin.addEventListener("pointercancel", () => {
+      pressed = false;
+    });
+    pin.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
     });
   }
 
@@ -5466,6 +5785,26 @@ export class Toolbar {
     openSettings: () => void,
     openGestures: () => void,
   ): void {
+    // The pen in hand's type as a button of its own on the bar, or off it
+    // again (FineNotes#211). Not on a practice sheet, whose bar is fixed.
+    if (this.callbacks.onLayout && !this.practice) {
+      const slot = penTypeSlot(this.activePenType().id);
+      const on = placeOf(this.laid(), slot) !== "off";
+      const pin = body.createEl("button", {
+        cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-pen-pin-row",
+      });
+      iconOrText(
+        pin.createSpan({ cls: "goodobsidian-laser-row-icon" }),
+        on ? "pin-off" : "pin",
+        "",
+      );
+      pin.createSpan({ text: on ? t("toolbar.pen.removeFromBar") : t("toolbar.pen.addToBar") });
+      pin.addEventListener("click", () => {
+        this.closePopover();
+        this.togglePenSlot(slot);
+      });
+      body.createDiv({ cls: "goodobsidian-popover-divider" });
+    }
     // The highlighter's tip, first: its one choice no other pen has.
     if (this.activePenType().tool === "highlighter" && this.renderHighlighterTip(body)) {
       body.createDiv({ cls: "goodobsidian-popover-divider" });
@@ -6873,7 +7212,12 @@ export class Toolbar {
     for (const slide of this.toolSlides) slide.cancel();
     this.toolSlides = [];
     this.indicatorTool = tool;
-    let target = tool === null ? undefined : this.toolButtons.get(tool);
+    const slot = tool === "pen" ? this.indicatorSlot : null;
+    let target =
+      tool === null
+        ? undefined
+        : ((slot !== null ? this.slotButtons().get(slot) : undefined) ??
+          this.toolButtons.get(tool));
     // A tool taken off the bar is in hand from the accessories menu: the
     // indicator marks that button instead.
     if (target?.hasClass("is-unlisted") && this.accessoriesButton) target = this.accessoriesButton;
@@ -6951,8 +7295,21 @@ export class Toolbar {
     const { state } = this;
     // Highlighter is a pen type, so the pen button stands for both.
     const tool = state.tool === "highlighter" ? "pen" : state.tool;
-    const from = tool === this.indicatorTool ? null : this.toolPlaces();
+    const slot = this.penSlotInHand();
+    const from =
+      tool === this.indicatorTool && slot === this.indicatorSlot ? null : this.toolPlaces();
     markChosen(this.toolButtons, tool, true);
+    // The pen in hand may be one of the pens on the bar (FineNotes#211).
+    this.indicatorSlot = slot;
+    for (const [id, button] of this.slotButtons()) {
+      button.toggleClass("is-active", id === slot);
+      button.setAttribute("aria-pressed", String(id === slot));
+    }
+    if (slot !== null) {
+      this.penToolButton?.removeClass("is-active");
+      this.penToolButton?.setAttribute("aria-pressed", "false");
+    }
+    this.drawPenSlots();
     // An open Zoom box keeps the Magnifier lit while another tool writes.
     // `is-on` is exactly what Stylus only uses: the whole button takes the
     // active background and icon colour, not just the glyph.
