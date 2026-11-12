@@ -21047,6 +21047,24 @@ body.finenotes-style-material
   display: none;
 }
 
+/* Docked along the top or bottom, the widths are one button (toolbar.ts,
+   penWidthsShown) and the colours take the room it leaves: up to ten in a
+   row of its own, and in the bar whatever is left after the pens. */
+.goodobsidian-options.has-one-width .goodobsidian-pen-colors {
+  max-width: calc(var(--gob-touch-compact) * 10.5);
+}
+
+/* In the bar the colours keep their room, and the pens, which scroll and
+   keep the one in hand in view, give way first, down to three. */
+.goodobsidian-options.is-in-bar.has-one-width .goodobsidian-pen-colors {
+  flex: 0 1 auto;
+}
+
+.goodobsidian-options.is-in-bar.has-one-width .goodobsidian-pen-types {
+  flex-shrink: 20;
+  min-width: calc(var(--gob-pen-type, 42px) * 3 + 8px);
+}
+
 /* --- Finding features: search rows, a tip's own control (feature-rows.ts) --- */
 .goodobsidian-library-features:empty {
   display: none;

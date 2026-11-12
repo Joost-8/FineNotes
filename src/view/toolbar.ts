@@ -207,6 +207,7 @@ import {
   NO_PILL_ROW,
   type PillRow,
   pageTopShift,
+  penWidthsShown,
   pillFitsBar,
   pillRow,
   pillRowEdge,
@@ -1005,9 +1006,11 @@ export interface FoldedBarItem {
 /**
  * The room a pill gets inside the bar, px; buttons fold to make it
  * (`placeInsideBar`). With less than the least, the pen's controls would be
- * cut off and it takes a row of its own.
+ * cut off and it takes a row of its own. 600 leaves an iPad in landscape
+ * room for the pens in hand and a row of colours (discussion #200): Full
+ * screen folds first.
  */
-const PILL_IN_BAR_ROOM = 505;
+const PILL_IN_BAR_ROOM = 600;
 const PILL_IN_BAR_LEAST = 480;
 
 /**
@@ -1125,6 +1128,8 @@ export class Toolbar {
   private barDock: BarDock = DEFAULT_BAR_DOCK;
   /** Watches the pen's colour row give way to a narrow pane (`fitColorRow`). */
   private colorRowWatch: ResizeObserver | null = null;
+  /** Watches the pen row give way to the colours in the bar (`fitPenRow`). */
+  private penRowWatch: ResizeObserver | null = null;
   /** How far the pen's colour row was scrolled, kept across rebuilds of the pill. */
   private colorRowScroll = 0;
   /** How far the pen type row was scrolled, kept across rebuilds of the pill. */
@@ -1321,6 +1326,7 @@ export class Toolbar {
     });
 
     this.disposers.push(() => this.colorRowWatch?.disconnect());
+    this.disposers.push(() => this.penRowWatch?.disconnect());
 
     this.buildBar();
     this.buildOptions();
@@ -2558,6 +2564,7 @@ export class Toolbar {
     const colorRow = this.optionsEl.querySelector<HTMLElement>(".goodobsidian-pen-colors");
     if (colorRow) this.colorRowScroll = colorRow.scrollLeft;
     this.optionsEl.empty();
+    this.optionsEl.removeClass("has-one-width");
     this.colorSwatches.clear();
     this.widthButtons.clear();
     this.penTypeButtons.clear();
@@ -2629,6 +2636,11 @@ export class Toolbar {
     const upright = isUpright(this.pillDock);
     const roomy = upright && this.dockedAtSide();
     const folded = upright && !roomy;
+    // Docked along the top or bottom the widths are one button too, and
+    // their room goes to the colours (discussion #200).
+    const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
+    const oneWidth = penWidthsShown({ upright, roomy, edge }) === "one";
+    this.optionsEl.toggleClass("has-one-width", oneWidth && !folded);
     this.buildPenRow(upright);
     // The rest of the old pen menu: the laser pointer, the pen's settings and
     // the pen gestures. A practice sheet has none of them.
@@ -2638,7 +2650,7 @@ export class Toolbar {
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    if (folded) {
+    if (oneWidth) {
       const width = this.state.size;
       const button = widthButton(
         this.optionsEl,
@@ -2812,7 +2824,8 @@ export class Toolbar {
       }
     } else {
       row.scrollLeft = this.penRowScroll;
-      if (chosen) {
+      const showChosen = (): void => {
+        if (!chosen) return;
         row.scrollLeft = scrollToShow(
           row.scrollLeft,
           row.clientWidth,
@@ -2820,6 +2833,21 @@ export class Toolbar {
           chosen.offsetWidth,
           COLOR_ROW_FADE_PX,
         );
+      };
+      showChosen();
+      // In the bar the row gives way to the colours once the pill is placed,
+      // after it was built: keep the pen in hand in view then too.
+      this.penRowWatch?.disconnect();
+      this.penRowWatch = null;
+      if (typeof ResizeObserver !== "undefined") {
+        let width = row.clientWidth;
+        this.penRowWatch = sizeObserver(row, () => {
+          if (row.clientWidth === width) return;
+          width = row.clientWidth;
+          showChosen();
+          fade();
+        });
+        this.penRowWatch.observe(row);
       }
     }
     this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;

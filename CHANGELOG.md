@@ -39,6 +39,13 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **More colours in the bar with Dock tool options on**
+  ([discussion #200](https://github.com/Joost-8/FineNotes/discussions/200)).
+  With the bar along the top or bottom, the pen's widths are one button
+  showing the width in use (tap it for all widths and the slider), as
+  Goodnotes and Notability have it. The room goes to the colours: on an iPad
+  in landscape the bar shows seven colours or more, the rest a swipe away. Full screen moves into ⋯ to make room, and the pen in
+  hand always stays in view.
 - **A board embedded in a note shows its drawing**
   ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167)).
   `![[Mind map.notebook]]` used to paint the board's whole page, metres of
