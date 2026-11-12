@@ -137,6 +137,8 @@ export interface GoodObsidianSettings {
   lastSeenVersion: string;
   /** Home's what's-new card counts releases after this version; "" when there is none to show. */
   newsSince: string;
+  /** Toolbar buttons used since that news came: their dots are gone (tips.ts, `newsControls`). */
+  newsDotsUsed: string[];
   /** Read once a day whether a newer FineNotes is out, and mark the gear (update-check.ts). */
   checkForUpdates: boolean;
   /**
@@ -208,6 +210,8 @@ export interface GoodObsidianSettings {
   textHintDismissed: boolean;
   /** Where Make shapes lives was said, at the first pen stroke that snapped. */
   shapeHintShown: boolean;
+  /** One line names a faster way after the slow one was used a few times (model/nudges.ts). */
+  gestureHints: boolean;
   /** Mirror of `snapMode === "auto"`, read by builds before it. */
   penAutoShape: boolean;
   /** Scribble to erase and Circle to lasso (the pen type menu). Checked where it is read. */
@@ -513,6 +517,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   scribbleNoticeShown: false,
   lastSeenVersion: "",
   newsSince: "",
+  newsDotsUsed: [],
   checkForUpdates: true,
   updateReminders: true,
   llmVendor: "anthropic",
@@ -538,6 +543,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   textHintShown: 0,
   textHintDismissed: false,
   shapeHintShown: false,
+  gestureHints: true,
   penAutoShape: false,
   penGestures: { ...DEFAULT_PEN_GESTURES },
   shapeColor: DEFAULT_SHAPE_COLOR,

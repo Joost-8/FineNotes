@@ -700,6 +700,8 @@ import {
   keyInput,
   matchShortcut,
 } from "../model/shortcut-bindings";
+import { fastKeys } from "../model/fast-ways";
+import type { NudgeEvent } from "../model/nudges";
 import {
   type ToolLift,
   type ToolUse,
@@ -1163,6 +1165,8 @@ export interface InkSurfaceCallbacks {
    * enables it with {@link InkSurface.setPullToAddPage}.
    */
   onPullAddPage?: () => void;
+  /** Something was done a way the earned hints count (model/nudges.ts). */
+  onUse?: (event: NudgeEvent) => void;
   /**
    * A pinch closed well past the fit and let go (`pinchOpensOverview`): show
    * every page in the overview. Only while the host enables it with
@@ -2103,6 +2107,8 @@ export class InkSurface {
   private readonly textHintEl: HTMLElement;
   private readonly textHintLabel: HTMLElement;
   private textHintDismiss: (() => void) | null = null;
+  /** What a tap on the hint's line does, when it leads somewhere. */
+  private textHintShow: (() => void) | null = null;
   /** "Part of this stroke is outside the page", with Undo (`noteOffPage`). */
   private readonly offPageEl: HTMLElement;
   /** The stroke the notice's Undo takes back; `null` while it is hidden. */
@@ -2913,6 +2919,14 @@ export class InkSurface {
     this.textHintEl.setAttribute("role", "status");
     iconInto(this.textHintEl.createSpan({ cls: "goodobsidian-text-hint-icon" }), "info", "i");
     this.textHintLabel = this.textHintEl.createSpan({ cls: "goodobsidian-text-hint-label" });
+    this.textHintLabel.addEventListener("pointerup", (up) => {
+      const show = this.textHintShow;
+      if (!show) return;
+      // What it opens must not get the click Android sends after the lift.
+      swallowGhostClick(this.surfaceEl.ownerDocument, up);
+      this.hideTextHint();
+      show();
+    });
     const hintClose = this.textHintEl.createEl("button", {
       cls: "goodobsidian-text-hint-close clickable-icon",
       attr: { "aria-label": t("surface.textHint.dismiss") },
@@ -3099,6 +3113,9 @@ export class InkSurface {
       this.selectionFrameEl.addEventListener(type, this.onSelectionFinger);
     }
     this.actionBar = new SelectionActionBar(this.selectionUiEl, t("surface.selectionBar.title"));
+    // A key that does an entry too is named beside it, where there is a keyboard.
+    this.actionBar.keysFor = (id) =>
+      Platform.isMobile ? null : fastKeys(id, this.callbacks.shortcuts?.() ?? null, macKeys());
     this.textPickView = new TextPickView(this.selectionUiEl, {
       grab: (end, x, y) => this.grabTextHandle(end, x, y),
       drag: (x, y) => this.dragTextHandle(x, y),
@@ -8019,8 +8036,13 @@ export class InkSurface {
       this.flashReadout(
         redo ? t("surface.readout.nothingToRedo") : t("surface.readout.nothingToUndo"),
       );
-    else if (redo) this.redo();
-    else this.undo();
+    else if (redo) {
+      this.redo();
+      this.callbacks.onUse?.("redo.gesture");
+    } else {
+      this.undo();
+      this.callbacks.onUse?.("undo.gesture");
+    }
   }
 
   /** Show a word in the readout pill for `holdMs`, faded on the zoom readout's clock. */
@@ -12014,6 +12036,7 @@ export class InkSurface {
     if (erased) this.renderer?.invalidateRegion(box.index, erased);
     if (this.debug) this.hud.mark("scribble");
     this.inkChanged([page.id]);
+    this.callbacks.onUse?.("erase.scribble");
     return true;
   }
 
@@ -12165,6 +12188,7 @@ export class InkSurface {
     const { stroke } = candidate;
     const mirrors = this.strokeMirrors(page.id, stroke.id);
     if (!this.history.withdraw(this.doc, candidate.command)) return;
+    this.callbacks.onUse?.("lasso.circle");
     this.strokeIndex.remove(stroke.id, page.id);
     this.repaintMirrors(mirrors);
     const drawn = selectionBounds([stroke], [], []);
@@ -14557,7 +14581,10 @@ export class InkSurface {
   /** Delete everything selected, as one undo step. */
   private deleteSelection(): void {
     if (this.callbacks.isLocked?.()) return;
-    if (this.removeSelection(t("surface.command.deleteSelection"))) this.selectionTakenAway();
+    if (this.removeSelection(t("surface.command.deleteSelection"))) {
+      this.selectionTakenAway();
+      this.callbacks.onUse?.("erase.lasso");
+    }
   }
 
   /**
@@ -20779,9 +20806,15 @@ export class InkSurface {
     attempt();
   }
 
-  /** Show the Text tool's hint pill; `onDismiss` runs when its × is tapped. */
-  showTextHint(text: string, onDismiss: () => void): void {
+  /**
+   * Show the Text tool's hint pill; `onDismiss` runs when its × is tapped.
+   * With `onShow` the line itself can be tapped, to see how (an earned hint
+   * opens its tip).
+   */
+  showTextHint(text: string, onDismiss: () => void, onShow?: () => void): void {
     this.textHintLabel.setText(text);
+    this.textHintShow = onShow ?? null;
+    this.textHintLabel.toggleClass("is-link", onShow !== undefined);
     this.textHintDismiss = onDismiss;
     this.textHintEl.removeClass("is-hidden");
     this.placeToasts();
@@ -20806,6 +20839,7 @@ export class InkSurface {
 
   hideTextHint(): void {
     this.textHintDismiss = null;
+    this.textHintShow = null;
     this.textHintEl.addClass("is-hidden");
   }
 

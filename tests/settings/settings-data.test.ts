@@ -89,6 +89,7 @@ const FRESH_INSTALL = {
   scribbleNoticeShown: false,
   lastSeenVersion: "",
   newsSince: "",
+  newsDotsUsed: [],
   checkForUpdates: true,
   updateReminders: true,
   llmVendor: "anthropic",
@@ -114,6 +115,7 @@ const FRESH_INSTALL = {
   textHintShown: 0,
   textHintDismissed: false,
   shapeHintShown: false,
+  gestureHints: true,
   penAutoShape: false,
   penGestures: {
     scribbleErase: true,
@@ -250,6 +252,7 @@ const USED_VAULT = {
   scribbleNoticeShown: true,
   lastSeenVersion: "0.8.1",
   newsSince: "",
+  newsDotsUsed: [],
   checkForUpdates: false,
   updateReminders: false,
   llmVendor: "custom",
@@ -275,6 +278,7 @@ const USED_VAULT = {
   textHintShown: 3,
   textHintDismissed: true,
   shapeHintShown: true,
+  gestureHints: true,
   penAutoShape: true,
   penGestures: {
     scribbleErase: false,

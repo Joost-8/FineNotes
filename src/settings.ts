@@ -597,6 +597,26 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     this.update();
   }
 
+  /**
+   * Show the row called `name` as a search result is shown: flashing it
+   * switches to its section and scrolls to it (`reveal`). The tab may still
+   * be drawing when this is called, so it looks a few times.
+   */
+  revealRow(name: string, triesLeft = 8): void {
+    const row = Array.from(this.containerEl.querySelectorAll<HTMLElement>(".setting-item")).find(
+      (el) =>
+        !el.hasClass("setting-item-heading") &&
+        el.querySelector(".setting-item-name")?.textContent?.trim() === name,
+    );
+    if (!row) {
+      if (triesLeft > 0) window.setTimeout(() => this.revealRow(name, triesLeft - 1), 80);
+      return;
+    }
+    row.addClass("is-flashing");
+    this.reveal(row);
+    window.setTimeout(() => row.removeClass("is-flashing"), 750);
+  }
+
   /** The row `def` headed by the drawing `art`. */
   private art<T extends SettingDefinition>(def: T, art: ArtId): T {
     this.marks.set(def.name, { art });
@@ -932,6 +952,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.update();
       return;
     }
+    if (key === "gestureHints") {
+      // Saved by the plugin, which forgets what it counted when the hints go off.
+      await this.plugin.setGestureHints(value === true);
+      return;
+    }
     if (key === "pressureWidth") {
       // Saved by the plugin, which redraws every open notebook's ink.
       await this.plugin.setPressureWidth(value as boolean);
@@ -1053,6 +1078,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
               "ribbon",
             ]),
             "simpleLook",
+          ),
+          this.tile(
+            toggle(
+              "gestureHints",
+              t("settings.gestureHints.name"),
+              t("settings.gestureHints.line"),
+              ["hint", "tip", "suggest", "gesture"],
+            ),
+            "lightbulb",
           ),
           this.art(
             dropdown(

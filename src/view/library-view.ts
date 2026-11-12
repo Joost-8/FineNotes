@@ -67,6 +67,7 @@ import type { HomeCardKind, Tip } from "../model/tips";
 import { tipScene } from "../model/tip-scenes";
 import { TipVisual } from "./tip-visual";
 import type { TipsPage } from "./tips-modal";
+import { type FeatureHost, askRow, featureList } from "./feature-rows";
 import { coverUrlNow, loadCover, loadEntries, saveCover, saveEntries } from "./home-cache";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { thumbnailRasterScale } from "./page-sidebar";
@@ -145,6 +146,8 @@ export type HomeCard = { kind: "news"; version: string; tips: readonly Tip[] } |
 export interface LibraryHost {
   /** Tips: the collections, or one page of them. */
   openTips(page?: TipsPage | null): void;
+  /** What a found feature's row can do (feature-rows.ts). */
+  features: FeatureHost;
   homeCard(): HomeCard | null;
   dismissHomeCard(kind: HomeCardKind): void;
   simpleLook(): boolean;
@@ -293,6 +296,8 @@ export class LibraryView extends ItemView {
   private texts = new Map<string, NotebookTextRecord>();
   /** What this device read on pages (Grape, PDF text); `null` until a search wants it, or after a notebook was visited. */
   private extras: SearchExtras | null = null;
+  /** Features the search now showing found: "no notebook matches" stays quiet when one did. */
+  private featureCount = 0;
   private extrasLoading: Promise<SearchExtras> | null = null;
   /** The transcript server's transcriptions, by notebook path, as of the sidecar's version. */
   private readonly sidecars = new Map<string, { stamp: string; byKey: Map<string, string> }>();
@@ -1049,6 +1054,12 @@ export class LibraryView extends ItemView {
         searchEntries(all.filter(keep), this.query),
         this.sort,
         this.reverse,
+      );
+      // What FineNotes can do comes first: a few rows, only when the words mean a feature.
+      this.featureCount = featureList(
+        this.bodyEl.createDiv({ cls: "goodobsidian-library-features" }),
+        this.query,
+        this.host.features,
       );
       // Titles answer at once; the pages holding the words follow under them.
       if (found.length > 0) this.grid(found, t("notebooks.home.results"));
@@ -2104,7 +2115,11 @@ export class LibraryView extends ItemView {
   /** "No notebook matches", once neither a title nor a page did. */
   private noMatch(el: HTMLElement): void {
     el.empty();
+    // A feature answered the search: nothing is missing.
+    if (this.featureCount > 0) return;
     el.createDiv({ cls: "goodobsidian-library-label", text: t("notebooks.home.noMatch") });
+    // Nothing at all: the words may be a feature FineNotes lacks.
+    askRow(el, this.query, this.host.features);
   }
 
   /** What this device kept about pages, loaded once per search (and again after visiting a notebook). */

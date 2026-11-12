@@ -1919,6 +1919,38 @@ export class Toolbar {
     this.homeButton?.toggleClass("goodobsidian-has-news", on);
   }
 
+  /** The bar items that carry an update's dot now. */
+  private newsItems = new Set<string>();
+  private onNewsUsed: ((id: string) => void) | null = null;
+
+  /**
+   * A dot on each button an update changed something behind (`items`, bar
+   * item ids); `onUsed` runs the first time one is tapped, and its dot goes.
+   */
+  setNewsItems(items: readonly string[], onUsed: (id: string) => void): void {
+    this.onNewsUsed = onUsed;
+    this.newsItems = new Set(items);
+    for (const [id, button] of this.barItems) {
+      if (id !== "home") button.toggleClass("goodobsidian-has-news", this.newsItems.has(id));
+    }
+    if (this.newsWatched) return;
+    this.newsWatched = true;
+    // One listener for the whole bar, before the buttons' own.
+    this.barEl.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target as Element | null;
+        const id = target?.closest("[data-item]")?.getAttribute("data-item");
+        if (!id || !this.newsItems.has(id)) return;
+        this.newsItems.delete(id);
+        this.barItems.get(id as BarItemId)?.removeClass("goodobsidian-has-news");
+        this.onNewsUsed?.(id);
+      },
+      true,
+    );
+  }
+  private newsWatched = false;
+
   private barButton(
     parent: HTMLElement,
     icon: string,

@@ -193,6 +193,8 @@ export const settings = {
   "settings.pencilTilt.name": "Pencil tilt",
   "settings.pencilTilt.info":
     "Hold the Pencil flat and the Brush pen paints a wider stroke, up to three times its width, for shading. Held as you write, nothing changes. Only pens and tablets that report tilt do this (the Apple Pencil does). Shaded strokes keep their width when this is off. An older FineNotes opens a notebook with them read-only.",
+  "settings.gestureHints.name": "Hints for faster ways",
+  "settings.gestureHints.line": "Names a faster way once, after the slow one a few times.",
   "settings.desynchronized.name": "Desynchronized canvas",
   "settings.desynchronized.info":
     "Asks the browser to draw ink with less delay. Switch it off if ink looks garbled on your device; iOS WebKit has had trouble with it.",

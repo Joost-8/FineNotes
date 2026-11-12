@@ -18733,19 +18733,24 @@ button.goodobsidian-home-card-picture.clickable-icon:active {
   margin-left: auto;
 }
 
-/* The toolbar's Home button while news waits. */
+/* A toolbar button while news waits behind it: Home, and the buttons an
+   update changed something behind. On ::before, as the update dot is: a
+   toolbar button's ::after is its press highlight, which outranked the dot
+   and hid it (2.9.0-2.9.1). */
 .goodobsidian-has-news {
   position: relative;
 }
-.goodobsidian-has-news::after {
+.goodobsidian-toolbar button.goodobsidian-has-news::before {
   content: "";
   position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 7px;
-  height: 7px;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--interactive-accent);
+  box-shadow: 0 0 0 2px var(--background-primary);
+  pointer-events: none;
 }
 
 /* Tips. */
@@ -20920,4 +20925,227 @@ body.finenotes-style-material
 
 .goodobsidian-options.is-in-bar .goodobsidian-pen-types + button {
   display: none;
+}
+
+/* --- Finding features: search rows, a tip's own control (feature-rows.ts) --- */
+.goodobsidian-library-features:empty {
+  display: none;
+}
+.goodobsidian-feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 560px;
+  margin-bottom: 14px;
+}
+.goodobsidian-feature-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+button.goodobsidian-feature-main.clickable-icon {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-width: 0;
+  width: auto;
+  height: auto;
+  min-height: 48px;
+  padding: 6px 10px;
+  border-radius: var(--gob-radius-m, 10px);
+  text-align: start;
+  white-space: normal;
+}
+.goodobsidian-feature-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  color: var(--text-muted);
+}
+.goodobsidian-feature-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.goodobsidian-feature-title {
+  color: var(--text-normal);
+}
+.goodobsidian-feature-sub {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.goodobsidian-feature-switch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding-inline: 6px;
+}
+button.goodobsidian-feature-go.clickable-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: hsla(var(--interactive-accent-hsl), 0.14);
+  color: var(--text-accent);
+}
+button.goodobsidian-feature-ask.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: auto;
+  height: auto;
+  min-height: 48px;
+  padding: 6px 14px 6px 10px;
+  border-radius: var(--gob-radius-m, 10px);
+  color: var(--text-accent);
+  text-align: start;
+  white-space: normal;
+}
+/* A feature in the notebook's search list (Obsidian's suggestion row). */
+.suggestion-item.goodobsidian-search-feature {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* Tips: the search field above the collections, and what it finds. */
+/* The field, then What's new and Welcome beside it; they drop below on a narrow window. */
+.goodobsidian-tips-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+button.goodobsidian-tips-quick.clickable-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: hsla(var(--interactive-accent-hsl), 0.14);
+  color: var(--text-accent);
+  white-space: nowrap;
+}
+.goodobsidian-tips-quick-icon {
+  display: inline-flex;
+}
+.goodobsidian-tips-quick-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+.goodobsidian-tips-search {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  margin: 0;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  color: var(--text-faint);
+}
+.goodobsidian-tips-search:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--interactive-accent);
+}
+.goodobsidian-tips-search .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+.goodobsidian-tips-search input[type="search"],
+.goodobsidian-tips-search input[type="search"]:hover,
+.goodobsidian-tips-search input[type="search"]:focus,
+.goodobsidian-tips-search input[type="search"]:focus-visible {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  /* 16px: iPadOS zooms the page into a smaller field. */
+  font-size: 16px;
+  padding: 0;
+}
+.goodobsidian-tips-found.is-hidden,
+.goodobsidian-tips-browse.is-hidden {
+  display: none;
+}
+.goodobsidian-tips-found .goodobsidian-feature-list {
+  max-width: none;
+}
+.goodobsidian-tips-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 36px;
+}
+button.goodobsidian-tips-copy.clickable-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-faint);
+}
+
+/* The key that does a menu row too, at the row's end (fast-ways.ts). */
+.goodobsidian-selection-row-keys {
+  margin-inline-start: auto;
+  padding-inline-start: 12px;
+  color: var(--gob-sel-icon, var(--text-faint));
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+/* Dark pages draw ink in another shade: one line where a colour is chosen. */
+.goodobsidian-color-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.goodobsidian-color-note-icon {
+  display: inline-flex;
+}
+.goodobsidian-color-note-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* An earned hint's line can be tapped to see how (model/nudges.ts). */
+.goodobsidian-text-hint-label.is-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+.goodobsidian-feature-switch-name {
+  margin-inline-end: 10px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+/* Searching inside Tips: the window keeps its height while the list changes. */
+.goodobsidian-tips-found {
+  min-height: 240px;
 }
