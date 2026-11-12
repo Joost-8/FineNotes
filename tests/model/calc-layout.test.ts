@@ -332,6 +332,37 @@ describe("the whole fraction reaches the sum", () => {
     expect(kinds(layoutSum(got.slice(0, -2)))).toEqual(["fraction"]);
   });
 
+  it("keeps a numerator's raised dot and crossed 7 when the = is short (the second screenshot in #178)", () => {
+    // "7·2 over 3 =" on squared paper, the 7 crossed, the "=" half a digit
+    // wide: the dot and the 7's bar lie more than that "=" says a digit is
+    // above the fraction bar, and were left out, so it read 72 over 3.
+    for (const k of [0.5, 1]) {
+      const h = 60 * k;
+      const w = h * 0.6;
+      const seven = [
+        stroke([
+          [1350 * k, 670 * k - h],
+          [1350 * k + w, 670 * k - h],
+          [1350 * k + w * 0.35, 670 * k],
+        ]),
+        dash(1350 * k + w * 0.1, 1350 * k + w * 0.9, 670 * k - h * 0.5),
+      ];
+      const num = [...seven, dot(1415 * k, 632 * k, h), digit(1455 * k, 660 * k, h * 0.9)];
+      const bar = dash(1350 * k, 1510 * k, 690 * k);
+      const den = digit(1420 * k, 765 * k, h);
+      const eqInk = [dash(1548 * k, 1578 * k, 690 * k), dash(1548 * k, 1578 * k, 704 * k)];
+      const page = [...num, bar, den, ...eqInk];
+      const eq = equalsAtEnd(page)!;
+      const got = sumStrokes(page, eq, []);
+      expect(new Set(got.map((s) => s.id))).toEqual(new Set(page.map((s) => s.id)));
+      const pieces = layoutSum(got.slice(0, -2));
+      expect(kinds(pieces)).toEqual(["fraction"]);
+      const fraction = pieces[0] as Extract<SumPiece, { kind: "fraction" }>;
+      expect(kinds(fraction.over)).toEqual(["ink", "times", "ink"]);
+      expect(answerOf(pieces, ["7", "2", "3"])).toBe("14/3");
+    }
+  });
+
   it("takes nothing from the line below for a minus", () => {
     const h = 24;
     const line = [

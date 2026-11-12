@@ -48,6 +48,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **A tapped word is the word you tapped** (FineNotes#202). On a line with a
+  sum, or with two words written close together, the word check could tie
+  every word to the ink of the word before it: tapping "This" offered
+  "another". Each word now gets the strokes Grape (handwriting recognizer
+  model) read it from, not a guess from the gaps in the ink. The same goes
+  for Correct, for what lassoed ink says, and for what a search lights up,
+  and five times as many words can now be underlined or corrected at all.
+- **Calculation notes: a fraction keeps its small marks** (FineNotes#178).
+  "7·2 over 3 =" with a short "=" lost the raised dot and the bar of a
+  crossed 7, and was read as 72 over 3.
 - A notebook moved to a new window (Move to new window) no longer lags or freezes while the main
   window is covered: the page, pen, sidebar, menus and text boxes now work from the window the
   notebook is in, and it keeps working when moved back (FineNotes#199).
