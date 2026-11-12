@@ -1141,6 +1141,31 @@ select.goodobsidian-choice-select {
   min-width: 260px;
 }
 
+/* The saved pens, dragged into another order (FineNotes#211): the held row
+   follows the pointer, lifted; the rows it passes slide out of its way. */
+.goodobsidian-saved-pen-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.goodobsidian-saved-pen-list.is-dragging-row > .goodobsidian-saved-pen {
+  transition: transform 0.15s ease;
+}
+
+.goodobsidian-saved-pen-list.is-dragging-row > .goodobsidian-saved-pen.is-drag-row {
+  position: relative;
+  z-index: 1;
+  box-shadow: var(--gob-shadow-raised, 0 4px 12px rgba(0, 0, 0, 0.2));
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-saved-pen-list.is-dragging-row > .goodobsidian-saved-pen {
+    transition: none;
+  }
+}
+
 .goodobsidian-laser-row-icon {
   display: inline-flex;
   width: 24px;

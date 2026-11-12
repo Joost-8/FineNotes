@@ -91,6 +91,7 @@ export default defineConfig({
         "src/view/selection-kind.ts",
         "src/view/screenshot-crop.ts",
         "src/view/screenshot-parts.ts",
+        "src/view/row-drag-model.ts",
         "src/view/enter-key.ts",
         "src/view/host-window.ts",
         "src/view/swatch-drag-model.ts",

@@ -218,6 +218,8 @@ import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
 import { dragRange } from "./range-drag";
+import { RowDrag } from "./row-drag";
+import { moveTo } from "./row-drag-model";
 import { syncRangeFill } from "./range-fill";
 import { clampEraserSize, eraserStops, quickEraserSizes } from "../model/eraser-sizes";
 import { PANEL_SLIDE_MS, prefersReducedMotion, springCurve } from "./motion";
@@ -890,6 +892,8 @@ export interface ToolbarCallbacks {
   savedPens?: () => readonly SavedPen[];
   /** "Save current pen": add `pen` to the saved pens. Hosts persist it. */
   onSavePen?: (pen: SavedPen) => void;
+  /** The saved pens dragged into another order (FineNotes#211). Hosts persist it. */
+  onReorderPens?: (pens: SavedPen[]) => void;
   /** "Edit saved pens": open where they are edited (the settings). */
   onEditPens?: () => void;
   /** Bring the ruler out or put it away. Without it the bar has no ruler. */
@@ -3524,8 +3528,9 @@ export class Toolbar {
 
   /**
    * The saved pens' popover: each pen with its number key, the one in hand
-   * marked; then Save current pen, and a way to the settings, where they are
-   * reordered and deleted.
+   * marked, in an order they are dragged to (a finger after a short hold);
+   * then Save current pen, and a way to the settings, where they are edited
+   * and deleted.
    */
   private toggleSavedPens(anchor: HTMLElement): void {
     if (this.popoverKind === "saved-pens") {
@@ -3547,9 +3552,27 @@ export class Toolbar {
     const pens = this.callbacks.savedPens?.() ?? [];
     const current = penOfState(this.state);
     const inHand = this.state.tool === "pen" || this.state.tool === "highlighter";
+    // Dragged into another order (FineNotes#211): the keys 1 to 8 follow it.
+    const list = body.createDiv({ cls: "goodobsidian-saved-pen-list" });
+    const pick = (pen: SavedPen): void => {
+      this.closePopover();
+      this.applySavedPen(pen);
+    };
+    const reorder = this.callbacks.onReorderPens;
+    const drag = new RowDrag(list, ".goodobsidian-saved-pen", {
+      canDrag: () => reorder !== undefined && pens.length > 1,
+      onMove: (from, to) => {
+        reorder?.(moveTo(pens, from, to));
+        this.popoverRender?.();
+      },
+      onPenTap: (index) => {
+        const pen = pens[index];
+        if (pen) pick(pen);
+      },
+    });
     pens.forEach((pen, index) => {
       const spec = PEN_TYPES.find((type) => type.id === pen.type) ?? PEN_TYPES[0];
-      const row = body.createEl("button", {
+      const row = list.createEl("button", {
         cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-saved-pen",
       });
       row.append(penGlyph(spec.id, pen.color));
@@ -3557,8 +3580,7 @@ export class Toolbar {
       row.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: String(index + 1) });
       row.toggleClass("is-active", inHand && samePen(pen, current));
       row.addEventListener("click", () => {
-        this.closePopover();
-        this.applySavedPen(pen);
+        if (!drag.consumeClick()) pick(pen);
       });
     });
     if (pens.length === 0) {

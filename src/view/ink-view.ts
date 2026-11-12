@@ -3342,6 +3342,7 @@ export class InkView extends TextFileView {
           this.rememberPen();
         },
         savedPens: () => savedPensOf(this.settings.savedPens),
+        onReorderPens: (pens) => this.plugin.saveSavedPens(pens),
         onSavePen: (pen) =>
           this.plugin.saveSavedPens(addSavedPen(savedPensOf(this.settings.savedPens), pen)),
         onEditPens: () => this.plugin.openSettingsTab(),
@@ -4028,9 +4029,7 @@ export class InkView extends TextFileView {
     const shot = await this.pagePicture(index, bounds);
     this.showScreenshot(
       shot ?? inkOnly,
-      shot
-        ? { selection: inkOnly, page: () => this.pagePicture(index, bounds, true) }
-        : undefined,
+      shot ? { selection: inkOnly, page: () => this.pagePicture(index, bounds, true) } : undefined,
     );
   }
 
