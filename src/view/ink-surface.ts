@@ -581,6 +581,7 @@ import {
   lineHeightOf,
   normalizeBorder,
   shownCase,
+  textStyleKey,
   textStyleOf,
 } from "../model/text-style";
 import {
@@ -601,14 +602,28 @@ import {
   type ListKind,
   type TextEdit,
   continueList,
-  setTaskDone,
   taskBoxes,
   toggleList,
 } from "../model/text-list";
+import { continueMarkdownList, setMarkdownTaskDone } from "../model/markdown-text";
+import {
+  fitMarkdownWidth,
+  markdownLinkRects,
+  taskBoxSize,
+  type MarkdownBox,
+  type MarkdownLayout,
+} from "../canvas/markdown-layout";
+import {
+  MARKDOWN_LINK_COLOR,
+  layoutMarkdownOn,
+  markdownMeasure,
+  paintMarkdownText,
+} from "../canvas/markdown-paint";
 import { keyboardHeight } from "./keyboard";
 import { type ViewSpot, carriedOutOfSight, revealDelta, showsIn } from "./text-reveal";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
 import {
+  TEXT_FIT_SLACK,
   canvasFont,
   fitTextWidth,
   layoutTextBox,
@@ -1341,7 +1356,20 @@ interface TextBoxView {
   zoomScaled: boolean;
   /** When it was last focused (`now()`), for the HUD's text-end line. */
   focusedAt: number;
+  /**
+   * A Markdown box at rest (discussion #107): its text painted formatted, by
+   * the painter thumbnails and exports use, with tap targets for its links
+   * and tasks over it. Made the first time it is needed.
+   */
+  md: HTMLElement | null;
+  /** What `md` was last painted for. */
+  mdKey: string;
+  /** The formatted height in page px while a Markdown box is at rest; 0 otherwise. */
+  mdH: number;
 }
+
+/** Longest side of a Markdown box's canvas, device px: a huge box at 5x is drawn softer, not out of memory. */
+const MARKDOWN_CANVAS_MAX = 4096;
 
 /** A text-tool drag shorter than this (page px) is a tap: a box that fits its text. */
 const TEXT_TAP_SLOP = 12;
@@ -6567,6 +6595,8 @@ export class InkSurface {
     // crawl. The rest are hidden until the zoom rests and are placed then.
     const zooming = this.zoomTransient;
     this.textBoxesProvisional = false;
+    // Read again, once, when a Markdown box first needs it: the theme may have changed.
+    this.markdownAccent = null;
     const seen = zooming ? this.visiblePaperRect() : null;
     const marginX = this.cssW;
     const marginY = this.cssH;
@@ -6745,7 +6775,15 @@ export class InkSurface {
         });
         // The shown text lies exactly over the textarea, the frame's full height.
         view.shown.setCssStyles({ ...typeStyle, height: `${100 / shrink}%` });
-        view.styleKey = `${input.style.fontFamily}|${input.style.fontWeight}|${input.style.fontStyle}|${lineHeight}|${input.style.padding}`;
+        // A Markdown box shows its raw text while edited and is drawn
+        // formatted at rest, as tall as the formatted text (discussion #107).
+        const markdown = textBox.markdown === true;
+        root.toggleClass("is-markdown", markdown);
+        view.mdH =
+          markdown && this.viewDoc.activeElement !== input
+            ? this.syncMarkdownView(view, textBox, width, frame.h, scale, night)
+            : 0;
+        view.styleKey = `${input.style.fontFamily}|${input.style.fontWeight}|${input.style.fontStyle}|${lineHeight}|${input.style.padding}|${view.mdH}`;
         if (!fixedHeight && this.needsMeasure(view, heightModeChanged, zooming)) measure.push(view);
       }
     }
@@ -6784,6 +6822,14 @@ export class InkSurface {
    * straight down again (2.5.1).
    */
   private renderShownText(view: TextBoxView, text: string): void {
+    // A Markdown box is drawn by its canvas, links and tasks included.
+    if (this.liveTextBox(view.pageId, view.id)?.markdown === true) {
+      if (view.shownText === null) return;
+      view.shownText = null;
+      view.shown.empty();
+      view.root.removeClass("has-links", "has-checks");
+      return;
+    }
     if (view.shownText === text) return;
     view.shownText = text;
     view.shown.empty();
@@ -6842,7 +6888,7 @@ export class InkSurface {
       pressed = null;
       const live = this.liveTextBox(view.pageId, view.id);
       if (!live || this.callbacks.isLocked?.()) return;
-      const text = setTaskDone(live.text, line, done);
+      const text = setMarkdownTaskDone(live.text, line, done);
       if (text === live.text) return;
       this.history.push(
         this.doc,
@@ -6855,6 +6901,8 @@ export class InkSurface {
       );
       view.input.value = text;
       this.renderShownText(view, text);
+      // A Markdown box's tick is painted: draw it again.
+      if (live.markdown === true) this.syncTextBoxes();
       this.changed([view.pageId]);
     });
     el.addEventListener("pointercancel", () => {
@@ -6923,7 +6971,11 @@ export class InkSurface {
     if (views.length === 0) return;
     const scale = this.unitScale;
     for (const view of views) view.input.setCssStyles({ height: "auto" });
-    const heights = views.map((view) => view.input.scrollHeight);
+    // A Markdown box at rest is as tall as its formatted text, which the
+    // canvas measured; its textarea is stretched over it to take the taps.
+    const heights = views.map((view) =>
+      view.mdH > 0 ? (view.mdH * scale) / view.shrink : view.input.scrollHeight,
+    );
     views.forEach((view, i) => {
       const h = heights[i];
       view.input.setCssStyles({ height: `${h}px` });
@@ -6952,7 +7004,8 @@ export class InkSurface {
     const room = pageWidth - x;
     const inset = textInset(textBox).x;
     const shown = shownCase(textBox.text, textBox);
-    const key = `${font}|${room}|${inset}|${shown}`;
+    const markdown = textBox.markdown === true;
+    const key = `${font}|${room}|${inset}|${shown}|${markdown}`;
     if (view.fitKey === key) return view.fitW;
     this.measureCtx ??= createEl("canvas").getContext("2d");
     const ctx = this.measureCtx;
@@ -6962,7 +7015,131 @@ export class InkSurface {
     ctx.font = font;
     view.fitKey = key;
     view.fitW = fitTextWidth(shown, min, room, (text) => ctx.measureText(text).width, inset);
+    // A Markdown box is as wide as the wider of its raw and formatted text,
+    // so it keeps its width as it is edited and let go (a heading is larger).
+    if (markdown) {
+      const formatted = fitMarkdownWidth(
+        { ...textBox, x, w: room },
+        min,
+        room,
+        markdownMeasure(ctx, textBox),
+        TEXT_FIT_SLACK,
+      );
+      view.fitW = Math.max(view.fitW, formatted);
+    }
     return view.fitW;
+  }
+
+  /** The theme's accent for Markdown boxes' links, read once a sync (`syncTextBoxes`). */
+  private markdownAccent: string | null = null;
+
+  /**
+   * A Markdown box at rest (discussion #107): lay its text out formatted, at
+   * `width` (and `fixedH`, a fixed box's height), paint it into the box's
+   * canvas when anything it shows changed, and give back its height in page
+   * px. Painted by the painter thumbnails and exports use, so the page, its
+   * thumbnail and an export break at the same words.
+   */
+  private syncMarkdownView(
+    view: TextBoxView,
+    textBox: TextBoxElement,
+    width: number,
+    fixedH: number | undefined,
+    scale: number,
+    night: boolean,
+  ): number {
+    this.measureCtx ??= createEl("canvas").getContext("2d");
+    const ctx = this.measureCtx;
+    if (!ctx) return 0;
+    // In the box's own frame: its top-left at 0, 0, turned with the frame.
+    const box: MarkdownBox = { ...textBox, x: 0, y: 0, w: width, h: fixedH };
+    const layout = layoutMarkdownOn(ctx, box);
+    if (this.markdownAccent === null) {
+      const accent = this.win
+        .getComputedStyle(this.surfaceEl)
+        .getPropertyValue("--interactive-accent");
+      this.markdownAccent = accent.trim() || MARKDOWN_LINK_COLOR;
+    }
+    const accent = this.markdownAccent;
+    const dpr = this.win.devicePixelRatio || 1;
+    const key = [box.text, textStyleKey(box), width, layout.height, scale, dpr, night, accent].join(
+      "|",
+    );
+    if (view.mdKey !== key) {
+      view.mdKey = key;
+      this.paintMarkdownView(view, box, layout, scale * dpr, night, accent);
+    }
+    return layout.height;
+  }
+
+  /**
+   * Paint a Markdown box's canvas at `k` device px a page px, and lay its
+   * links' and tasks' tap targets over it, placed in shares of the box so a
+   * pinch, which scales the box whole, keeps them on their words.
+   */
+  private paintMarkdownView(
+    view: TextBoxView,
+    box: MarkdownBox,
+    layout: MarkdownLayout,
+    k: number,
+    night: boolean,
+    accent: string,
+  ): void {
+    let md = view.md;
+    if (!md) {
+      // Over the textarea, which stays to take the tap that edits the box,
+      // and under the handles.
+      md = createDiv({ cls: "goodobsidian-page-textbox-md" });
+      view.input.after(md);
+      view.md = md;
+    }
+    md.empty();
+    const w = Math.max(1, box.w);
+    const h = Math.max(1, layout.height);
+    const scale = Math.min(k, MARKDOWN_CANVAS_MAX / w, MARKDOWN_CANVAS_MAX / h);
+    const canvas = md.createEl("canvas", { cls: "goodobsidian-page-textbox-md-canvas" });
+    canvas.width = Math.max(1, Math.ceil(w * scale));
+    canvas.height = Math.max(1, Math.ceil(h * scale));
+    const paint = canvas.getContext("2d");
+    if (paint) {
+      paint.scale(scale, scale);
+      paintMarkdownText(paint, box, layout, night, accent);
+    }
+    const place = (el: HTMLElement, x: number, y: number, rw: number, rh: number): void => {
+      el.setCssStyles({
+        left: `${((x / w) * 100).toFixed(3)}%`,
+        top: `${((y / h) * 100).toFixed(3)}%`,
+        width: `${((rw / w) * 100).toFixed(3)}%`,
+        height: `${((rh / h) * 100).toFixed(3)}%`,
+      });
+    };
+    for (const rect of markdownLinkRects(layout)) {
+      const el = md.createSpan({
+        cls: "goodobsidian-textbox-hit is-link",
+        attr: { role: "link", "aria-label": rect.target },
+      });
+      place(el, rect.x, rect.y, rect.w, rect.h);
+      this.bindTextLink(el, rect.target);
+    }
+    for (const mark of layout.marks) {
+      if (mark.kind !== "task") continue;
+      const lineBox = mark.size * lineHeightOf(box);
+      const side = taskBoxSize(mark.size);
+      // A larger target than the box, which is a few px wide at fit zoom.
+      const pad = mark.size * 0.25;
+      const el = md.createSpan({
+        cls: "goodobsidian-textbox-hit is-task",
+        attr: { role: "checkbox", "aria-checked": String(mark.done) },
+      });
+      place(
+        el,
+        layout.x + mark.x + mark.size * 0.1 - pad,
+        layout.y + mark.y + (lineBox - side) / 2 - pad,
+        side + 2 * pad,
+        side + 2 * pad,
+      );
+      this.bindTextTask(el, view, mark.line, !mark.done);
+    }
   }
 
   private createTextBoxView(pageId: string, textBox: TextBoxElement, key: string): TextBoxView {
@@ -7015,6 +7192,9 @@ export class InkSurface {
       laidAt: 0,
       zoomScaled: false,
       focusedAt: 0,
+      md: null,
+      mdKey: "",
+      mdH: 0,
     };
 
     // Text editing must never start an ink gesture on the scroll overlay
@@ -7066,11 +7246,24 @@ export class InkSurface {
       }
       this.endTextEditing(view);
     });
-    // Enter on a list line continues the list; on an empty item, ends it.
+    // A Markdown box swaps its raw text for the formatted one, and back, as
+    // it is edited and let go: laid out again either way.
+    input.addEventListener("focus", () => {
+      if (this.liveTextBox(pageId, textBox.id)?.markdown === true) this.syncTextBoxes();
+    });
+    input.addEventListener("blur", () => {
+      if (this.liveTextBox(pageId, textBox.id)?.markdown === true) this.syncTextBoxes();
+    });
+    // Enter on a list line continues the list; on an empty item, ends it. In
+    // a Markdown box, Markdown's lists and quotes go on too.
     input.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
       if (input.selectionStart !== input.selectionEnd) return;
-      const edit = continueList(input.value, input.selectionStart);
+      const markdown = this.liveTextBox(pageId, textBox.id)?.markdown === true;
+      const edit = (markdown ? continueMarkdownList : continueList)(
+        input.value,
+        input.selectionStart,
+      );
       if (!edit) return;
       event.preventDefault();
       this.setTextInput(input, edit);

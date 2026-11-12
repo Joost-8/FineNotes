@@ -36,6 +36,16 @@ extracted from the matching section of this file by `release.yml`.
   frames show as a thin outline with their name; tap the name to copy the
   link again, rename or delete it. `#page=3` still means page 3, and a name
   that is no frame still shows that heading of the note, as before.
+- **Markdown in text boxes**
+  ([discussion #107](https://github.com/Joost-8/FineNotes/discussions/107)).
+  The # in the Text tool's style menu reads a box as Markdown, as Obsidian
+  writes it: headings, bold, italic, strikethrough, highlights, inline and
+  fenced code, bulleted, numbered and task lists, quotes, rules, and links
+  (`[[Note]]` and `[text](url)`). While you type, the box shows the
+  Markdown; once you let go it is drawn formatted, on the page, in
+  thumbnails and in exports alike. Tap a link to open it, or a task's box to
+  tick it. Markdown pasted from a note looks as it did there. The text is
+  stored as typed, so older versions show it as plain Markdown.
 
 ### Changed
 

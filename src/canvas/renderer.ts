@@ -117,6 +117,7 @@ import {
 } from "./text-layout";
 import type { TextStyle } from "../model/text-style";
 import { displayText } from "../model/text-links";
+import { layoutMarkdownOn, paintMarkdownText } from "./markdown-paint";
 import { normalizeBorder, shownCase } from "../model/text-style";
 import { canFill, canRound, isClosedLoop, splitFill } from "../model/shape-style";
 import { type PageTexts, furnitureText } from "../model/furniture";
@@ -3702,7 +3703,11 @@ export function paintTextBox(
   night = false,
 ): void {
   // Links in the text show as their text, brackets hidden, as on the page.
-  const box = { ...typed, text: shownCase(displayText(typed.text), typed) };
+  // A Markdown box is read by its own layout, which does both itself.
+  const markdown = typed.markdown === true;
+  const box = markdown
+    ? { ...typed }
+    : { ...typed, text: shownCase(displayText(typed.text), typed) };
   const border = normalizeBorder(box.border);
   if (!box.text && !box.fill && !border) return;
   ctx.save();
@@ -3714,21 +3719,24 @@ export function paintTextBox(
     ctx.translate(-box.x, -box.y);
   }
   ctx.font = canvasFont(box, box.fontSize);
-  const layout = layoutTextBox(box, (text) => ctx.measureText(text).width);
+  const md = markdown ? layoutMarkdownOn(ctx, box) : null;
+  const plain = md ? null : layoutTextBox(box, (text) => ctx.measureText(text).width);
+  const height = md?.height ?? plain?.height ?? 0;
+  ctx.font = canvasFont(box, box.fontSize);
   // The corners the page's frame has (its CSS `border-radius`).
-  const radius = cornerRadiusOf(box.radius, box.w, layout.height);
+  const radius = cornerRadiusOf(box.radius, box.w, height);
   if (box.fill) {
     ctx.fillStyle = shownColor(box.fill, night);
     if (radius > 0) {
       ctx.beginPath();
-      traceBoxPath(ctx, box.x, box.y, box.w, layout.height, radius);
+      traceBoxPath(ctx, box.x, box.y, box.w, height, radius);
       ctx.fill();
-    } else ctx.fillRect(box.x, box.y, box.w, layout.height);
+    } else ctx.fillRect(box.x, box.y, box.w, height);
   }
   if (border) {
     // Inside the edge, as the frame's inset shadow is: the line's centre
     // sits half its width in, on corners half its width tighter.
-    const width = Math.min(border.width, box.w / 2, layout.height / 2);
+    const width = Math.min(border.width, box.w / 2, height / 2);
     const half = width / 2;
     ctx.strokeStyle = shownColor(border.color, night);
     ctx.lineWidth = width;
@@ -3738,12 +3746,13 @@ export function paintTextBox(
       box.x + half,
       box.y + half,
       box.w - width,
-      layout.height - width,
+      height - width,
       Math.max(0, radius - half),
     );
     ctx.stroke();
   }
-  if (box.text) paintTextLines(ctx, box, layout, { x: box.x, y: box.y, w: box.w }, night);
+  if (md && box.text) paintMarkdownText(ctx, box, md, night);
+  if (plain && box.text) paintTextLines(ctx, box, plain, { x: box.x, y: box.y, w: box.w }, night);
   ctx.restore();
 }
 
@@ -3791,10 +3800,15 @@ function paintTextLines(
  */
 export function paintedTextHeight(ctx: CanvasRenderingContext2D, typed: TextBoxElement): number {
   if (typed.h !== undefined) return typed.h;
-  const box = { ...typed, text: shownCase(displayText(typed.text), typed) };
+  const markdown = typed.markdown === true;
+  const box = markdown
+    ? { ...typed }
+    : { ...typed, text: shownCase(displayText(typed.text), typed) };
   ctx.save();
   ctx.font = canvasFont(box, box.fontSize);
-  const { height } = layoutTextBox(box, (text) => ctx.measureText(text).width);
+  const { height } = markdown
+    ? layoutMarkdownOn(ctx, box)
+    : layoutTextBox(box, (text) => ctx.measureText(text).width);
   ctx.restore();
   return height;
 }
