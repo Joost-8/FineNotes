@@ -1768,6 +1768,22 @@ select.goodobsidian-choice-select {
   min-width: 0;
 }
 
+/* A thumbnail far from the view holds nothing (page-sidebar.ts): these keep
+   its place, as tall as the page and the footer it will show. */
+.goodobsidian-thumb:empty::before {
+  content: "";
+  display: block;
+  aspect-ratio: var(--goodobsidian-thumb-aspect, 3 / 4);
+  border-radius: var(--gob-radius-s);
+  background: var(--gob-paper);
+}
+
+.goodobsidian-thumb:empty::after {
+  content: "";
+  display: block;
+  height: 28px;
+}
+
 .goodobsidian-thumb-frame {
   position: relative;
   display: block;
@@ -2015,6 +2031,8 @@ select.goodobsidian-choice-select {
   max-width: none;
   border-right: none;
   box-shadow: none;
+  /* Solid: the page behind must not show between the thumbnails. */
+  background-color: var(--background-primary);
 }
 
 .goodobsidian-pagesidebar-spacer {
@@ -2283,6 +2301,10 @@ select.goodobsidian-choice-select {
   z-index: 1;
   /* It reaches past the view and follows a scroll by a transform (Renderer.useOverscan). */
   will-change: transform;
+}
+
+.goodobsidian-canvas-fading {
+  pointer-events: none;
 }
 
 .goodobsidian-canvas-wet {
