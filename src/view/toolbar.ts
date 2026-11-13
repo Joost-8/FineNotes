@@ -2247,7 +2247,9 @@ export class Toolbar {
       "--gob-ink": color,
       "--gob-ink-width": `${widthMarkThickness(width)}px`,
     });
-    if (saved) iconOrText(button.createSpan({ cls: "goodobsidian-pen-slot-star" }), "star", "");
+    // A little pin at its top right: a pen pinned to the bar, not the pen
+    // menu's own button (FineNotes#211).
+    iconOrText(button.createSpan({ cls: "goodobsidian-pen-slot-star" }), "pin", "");
     // In Customize toolbar the editor names it by what a press does.
     if (!button.hasAttribute("data-label")) button.setAttribute("aria-label", label);
     else button.setAttribute("data-label", label);
