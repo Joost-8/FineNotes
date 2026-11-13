@@ -27,7 +27,7 @@ import {
 } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
 import { type TapeMode, tapeColorOf, tapeHeightOf, tapeModeOf } from "./model/cover-tape";
-import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
+import { DEFAULT_PEN_GESTURES, type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
   type Editor,
   MarkdownView,
@@ -147,7 +147,15 @@ import {
   simpleOfferDue,
 } from "./model/tips";
 import { type TipsPage, TipsModal } from "./view/tips-modal";
-import { type Feature, featureById } from "./model/feature-index";
+import {
+  type Feature,
+  PEN_GESTURE_PREFIX,
+  featureById,
+  hiddenFeatureIds,
+  switchValue,
+  withHiddenFeature,
+} from "./model/feature-index";
+import { TRY_PAGE_PATH, tryPageDocument } from "./model/try-page";
 import type { FeatureHost } from "./view/feature-rows";
 import {
   type NudgeEvent,
@@ -1874,10 +1882,29 @@ export default class GoodObsidianPlugin extends Plugin {
   /** What a feature's row or a tip's button can do, wherever it is drawn. */
   featureHost(): FeatureHost {
     return {
-      settingOn: (key) => (this.settings as unknown as Record<string, unknown>)[key] === true,
+      settingOn: (key) =>
+        switchValue(
+          this.settings as unknown as Record<string, unknown>,
+          key,
+          DEFAULT_PEN_GESTURES,
+        ) === true,
       setSetting: async (key, on) => {
-        if (key === "simpleLook") this.setSimpleLook(on);
+        if (key.startsWith(PEN_GESTURE_PREFIX)) {
+          const name = key.slice(PEN_GESTURE_PREFIX.length);
+          this.savePenGestures({ ...penGesturesOf(this.settings.penGestures), [name]: on });
+          for (const view of this.openNotebooks()) view.syncPenPreferences();
+        } else if (key === "simpleLook") this.setSimpleLook(on);
         else await this.settingTab?.setControlValue(key, on);
+      },
+      tryFeature: (feature) => void this.tryFeature(feature),
+      hiddenFeatures: () => hiddenFeatureIds(this.settings.searchHidden),
+      hideFeature: (id, hide) => {
+        this.settings.searchHidden = withHiddenFeature(
+          hiddenFeatureIds(this.settings.searchHidden),
+          id,
+          hide,
+        );
+        void this.saveSettings();
       },
       runCommand: (id) => this.runOwnCommand(id),
       show: (feature) => this.showFeature(feature),
@@ -1901,6 +1928,57 @@ export default class GoodObsidianPlugin extends Plugin {
       tips,
       index: Math.max(0, tips.indexOf(tip)),
     });
+  }
+
+  /**
+   * A tip's Try it: a scratch page (try-page.ts) in the current tab, with the
+   * tip's picture over it until the gesture is done or the hint is closed.
+   * Then the tab goes back to what it showed, and the page to the trash.
+   */
+  /** What the tab showed before the first Try it of a run, to go back to. */
+  private tryBack: ViewState | null = null;
+
+  async tryFeature(feature: Feature): Promise<void> {
+    if (!feature.tip || !feature.tryOn) return;
+    const leaf = this.app.workspace.getLeaf(false);
+    const now = leaf.getViewState();
+    // Trying another tip from the scratch page: go back to where the first try began.
+    const onScratch = (now.state as { file?: unknown } | undefined)?.file === TRY_PAGE_PATH;
+    const back: ViewState = onScratch ? (this.tryBack ?? { type: "empty" }) : now;
+    this.tryBack = back;
+    let file: TFile;
+    try {
+      const folder = TRY_PAGE_PATH.slice(0, TRY_PAGE_PATH.lastIndexOf("/"));
+      if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
+      const choices = parseNotebookChoices(this.settings.lastNotebookChoices);
+      const title = t(feature.tip.title);
+      const content = buildInkFile(
+        newNoteBody(title, new Date().toISOString()),
+        tryPageDocument(choices, title),
+      );
+      const existing = this.app.vault.getFileByPath(TRY_PAGE_PATH);
+      if (existing) await this.app.vault.modify(existing, content);
+      file = existing ?? (await this.app.vault.create(TRY_PAGE_PATH, content));
+    } catch (error) {
+      new Notice(errorMessage(error));
+      return;
+    }
+    await leaf.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
+    const view = leaf.view;
+    if (!(view instanceof InkView)) return;
+    view.startTry(feature, () => void this.endTry(leaf, back, file));
+  }
+
+  /** The try is over: the tab shows what it did before, and the scratch page goes. */
+  private async endTry(leaf: WorkspaceLeaf, back: ViewState, file: TFile): Promise<void> {
+    this.tryBack = null;
+    if (back.type && back.type !== "empty") await leaf.setViewState(back);
+    else leaf.detach();
+    // Still open in another tab (a split): leave it, it is written over next time.
+    const open = this.app.workspace
+      .getLeavesOfType(VIEW_TYPE_INK)
+      .some((other) => (other.view as { file?: TFile | null }).file?.path === file.path);
+    if (!open) await this.app.fileManager.trashFile(file);
   }
 
   /** Run one of this plugin's commands by its own id; says so when it needs a notebook. */

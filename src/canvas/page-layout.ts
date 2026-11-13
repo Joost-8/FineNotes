@@ -566,14 +566,16 @@ export function columnScrollRangeY(
   paneWidth: number,
   paneHeight: number,
 ): { min: number; max: number } | undefined {
-  if (layout.boxes.length === 0 || !(scale > 0) || !(paneWidth > 0) || !(paneHeight > 0)) {
+  // A board among the pages is parked far away (`layoutNotebook`): only the pages count.
+  const boxes = shownBoxes(layout);
+  if (boxes.length === 0 || !(scale > 0) || !(paneWidth > 0) || !(paneHeight > 0)) {
     return undefined;
   }
   let left = Infinity;
   let right = -Infinity;
   let top = Infinity;
   let bottom = -Infinity;
-  for (const box of layout.boxes) {
+  for (const box of boxes) {
     left = Math.min(left, box.x);
     right = Math.max(right, box.x + box.width);
     top = Math.min(top, box.y);

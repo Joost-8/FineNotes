@@ -61,6 +61,7 @@ import {
   type InkDocument,
   type PageComment,
   type Page,
+  type Ruling,
   type TextBoxElement,
   blankPage,
   emptyDocument,
@@ -359,6 +360,9 @@ import { SetReadOnly, isReadOnly } from "../model/read-only";
 import { coverColorOfDocument, notebookName, renamePlan } from "../model/notebook-info";
 import { ExportPdfModal } from "./export-modal";
 import { penGesturesOf } from "../ink/pen-gestures";
+import type { Feature } from "../model/feature-index";
+import { TryHint } from "./try-hint";
+import { closeMenuOnPressOutside } from "./menu-dismiss";
 import { NotebookSearchModal } from "./search-modal";
 import { layoutPlainText, pdfHitRects } from "../search/pdf-hits";
 import {
@@ -1022,6 +1026,9 @@ export class InkView extends TextFileView {
    * running recording so it joins *this* note, and save that.
    */
   override async onUnloadFile(file: TFile): Promise<void> {
+    // Leaving the scratch page any other way ends the try without going back.
+    this.tryHint?.destroy();
+    this.tryHint = null;
     // The conversation was about this notebook's pages.
     this.chatPanel?.close();
     this.askSession = null;
@@ -1155,6 +1162,23 @@ export class InkView extends TextFileView {
   syncPenPreferences(): void {
     this.toolState.snapMode = snapModeOf(this.settings);
     this.toolState.snapCurvatureThreshold = snapCurveOf(this.settings.snapCurvatureThreshold);
+    // A pen gesture switched from a tip or a search result (feature-index.ts).
+    this.toolState.penGestures = penGesturesOf(this.settings.penGestures);
+  }
+
+  // --- Try it (try-hint.ts) ---------------------------------------------------
+
+  /** The tip being tried on this scratch page, while it is. */
+  private tryHint: TryHint | null = null;
+
+  /** Show a tip's picture over this scratch page until its gesture is done or it is closed. */
+  startTry(feature: Feature, onEnd: () => void): void {
+    this.tryHint?.destroy();
+    const host = this.surface?.surfaceEl ?? this.contentEl;
+    this.tryHint = new TryHint(host, feature, () => {
+      this.tryHint = null;
+      onEnd();
+    });
   }
 
   /** Full screen went on or off (the plugin's, for every notebook): the bar's button follows. */
@@ -4273,6 +4297,7 @@ export class InkView extends TextFileView {
    */
   /** Count a slow or a fast way for the earned hints (model/nudges.ts). */
   private noteUse(event: NudgeEvent): void {
+    this.tryHint?.noteUse(event);
     if (this.surface) this.plugin.noteUse(event, this.surface);
   }
 
@@ -4285,6 +4310,7 @@ export class InkView extends TextFileView {
       onQuery: (query) => (this.lastSearch = query),
       goTo: (index, query) => void this.showSearchHits(index, query),
       showFeature: (feature) => this.plugin.showFeature(feature),
+      features: this.plugin.featureHost(),
     });
     modal.open();
     // The PDF pages not read yet join the list as they are read (#112).
@@ -5216,6 +5242,9 @@ export class InkView extends TextFileView {
     }
     const r = anchor.getBoundingClientRect();
     menu.showAtPosition({ x: r.left, y: r.bottom + 4 });
+    // A tap anywhere else closes it, the page included (menu-dismiss.ts).
+    const surfaceEl = surface.surfaceEl;
+    closeMenuOnPressOutside(menu, anchor.ownerDocument, (target) => surfaceEl.contains(target));
   }
 
   private renameRegion(page: Page, id: string): void {
@@ -6050,7 +6079,7 @@ export class InkView extends TextFileView {
         this.paintPaperThumbnail(canvas, backdrop, shapeOf(backdrop), cssWidth),
       onPick: (backdrop, at) => this.addTemplatePage(backdrop, shapeOf(backdrop), at, ref),
       onMore: (at) => this.openTemplatePicker("add", ref, at),
-      onBoard: (at) => this.addBoardPage(at, ref),
+      onBoard: (at, ruling) => this.addBoardPage(at, ref, ruling),
     });
     this.addPagePopover = { popover, anchor };
   }
@@ -6962,12 +6991,14 @@ export class InkView extends TextFileView {
    * A board among a notebook's pages (discussion #160), from Add page: an
    * empty board at `position` from page `ref`, shown at once. One undo step.
    */
-  private addBoardPage(position: InsertPosition, ref: number): void {
+  private addBoardPage(position: InsertPosition, ref: number, ruling?: Ruling): void {
     const surface = this.surface;
     if (!surface || this.isProtected() || this.refuseSinglePage()) return;
     const doc = surface.document;
     const index = insertIndexFor(position, ref, doc.pages.length);
-    surface.applyCommand(new AddPage(index, newBoardPage(nextPageId(doc), doc.pages[ref], true)));
+    surface.applyCommand(
+      new AddPage(index, newBoardPage(nextPageId(doc), doc.pages[ref], true, ruling)),
+    );
     surface.goToPage(index);
     this.sidebar?.flush();
     this.requestSave();
