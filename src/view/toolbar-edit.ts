@@ -85,6 +85,11 @@ export interface ToolbarEditorHost {
     /** Draw the pen in hand on the chip. */
     draw: (chip: HTMLElement) => void;
     /**
+     * Delete a pen button: a saved pen leaves the bar and Saved pens, a pen
+     * type the bar. Without it, no trash and no Delete.
+     */
+    remove?: (id: BarItemId) => void;
+    /**
      * The pen dialog, starting from the pen in hand; `place` gets the slot of
      * the pen it saved. Without it a tap adds the pen in hand as it is.
      */
@@ -183,6 +188,10 @@ export class ToolbarEditor {
   private ghost: HTMLElement | null = null;
   private gap: HTMLElement | null = null;
   private target: Target | null = null;
+  /** The trash beside New pen, shown while a pen button is dragged. */
+  private trash: HTMLElement | null = null;
+  /** A dragged pen is over the trash: let go, it is deleted. */
+  private overTrash = false;
   /** Buttons disabled when the mode opened (undo with nothing to undo): pickable meanwhile. */
   private readonly wasDisabled: HTMLButtonElement[] = [];
   private readonly cleanups: Array<() => void> = [];
@@ -326,6 +335,13 @@ export class ToolbarEditor {
       row.addEventListener("click", () => setRow(!on));
     }
     this.newPenChip(head);
+    if (this.h.newPen?.remove) {
+      // Beside New pen, while a pen button is carried: dropped here, it goes.
+      const trash = head.createDiv({ cls: "goodobsidian-edit-trash is-hidden" });
+      setIcon(trash, "trash-2");
+      trash.setAttribute("aria-label", t("toolbar.edit.deletePen"));
+      this.trash = trash;
+    }
     head.createDiv({ cls: "goodobsidian-edit-spacer" });
     const reset = head.createEl("button", {
       cls: "goodobsidian-edit-reset clickable-icon",
@@ -532,6 +548,19 @@ export class ToolbarEditor {
       this.ghost = ghost;
       press.el.addClass("is-drag-source");
       this.h.bar.addClass("is-dragging");
+      if (isPenSlot(press.id)) this.trash?.removeClass("is-hidden");
+    }
+    // Over the trash, a pen is deleted when let go; nowhere else is lit.
+    const trashBox = this.trash?.hasClass("is-hidden") ? null : this.trash?.getBoundingClientRect();
+    this.overTrash = !!trashBox && inside(trashBox, event.clientX, event.clientY, 8);
+    this.trash?.toggleClass("is-target", this.overTrash);
+    if (this.overTrash) {
+      this.ghost?.setCssStyles({
+        left: `${Math.round(event.clientX)}px`,
+        top: `${Math.round(event.clientY)}px`,
+      });
+      this.setTarget(null);
+      return;
     }
     this.ghost?.setCssStyles({
       left: `${Math.round(event.clientX)}px`,
@@ -545,8 +574,14 @@ export class ToolbarEditor {
     if (!press || event.pointerId !== press.pointerId) return;
     event.preventDefault();
     const target = event.type === "pointerup" ? this.target : null;
+    const toTrash = event.type === "pointerup" && this.overTrash;
     const { id, dragging, el } = press;
     this.endPress();
+    if (dragging && toTrash && isPenSlot(id)) {
+      this.h.newPen?.remove?.(id);
+      this.buildTray();
+      return;
+    }
     if ((id as string) === NEW_PEN) {
       if (event.type !== "pointerup") return;
       if (dragging) {
@@ -597,6 +632,9 @@ export class ToolbarEditor {
     this.ghost = null;
     this.setTarget(null);
     this.h.bar.removeClass("is-dragging");
+    this.overTrash = false;
+    this.trash?.removeClass("is-target");
+    this.trash?.addClass("is-hidden");
   }
 
   /** Where a drop at (`x`, `y`) would put `id`: a place on the bar, a shelf, or nowhere. */
@@ -718,6 +756,21 @@ export class ToolbarEditor {
     if (isPenSlot(id)) {
       // A pen as a button is not kept anywhere off the bar: it goes.
       row("pin-off", t("toolbar.pen.removeFromBar"), moveTo(layout, id, "off"));
+      const remove = this.h.newPen?.remove;
+      if (remove && id.startsWith("saved:")) {
+        // Delete: off the bar and out of Saved pens, as the trash does.
+        const button = menu.createEl("button", {
+          cls: "goodobsidian-edit-menu-row mod-warning clickable-icon",
+        });
+        setIcon(button.createSpan({ cls: "goodobsidian-edit-menu-icon" }), "trash-2");
+        button.createSpan({ text: t("toolbar.edit.deletePen") });
+        button.setAttribute("role", "menuitem");
+        button.addEventListener("click", () => {
+          this.closeMenu();
+          remove(id);
+          this.buildTray();
+        });
+      }
     } else if (!isPinnedIn(layout, id)) {
       if (place !== "menu")
         row("toolbox", t("toolbar.edit.toMoreTools"), moveTo(layout, id, "menu"));

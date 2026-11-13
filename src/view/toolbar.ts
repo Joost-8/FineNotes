@@ -948,6 +948,8 @@ export interface ToolbarCallbacks {
   onNewPen?: (start: SavedPen, onMade: (pen: SavedPen) => void) => void;
   /** The saved pens dragged into another order (FineNotes#211). Hosts persist it. */
   onReorderPens?: (pens: SavedPen[]) => void;
+  /** A saved pen deleted from Saved pens or Customize toolbar. Hosts persist it. */
+  onDeletePen?: (id: string) => void;
   /** "Edit saved pens": open where they are edited (the settings). */
   onEditPens?: () => void;
   /** Bring the ruler out or put it away. Without it the bar has no ruler. */
@@ -2434,6 +2436,11 @@ export class Toolbar {
             draw: (chip) => {
               const current = penOfState(this.state);
               chip.append(penGlyph(current.type, this.shown(current.color)));
+            },
+            remove: (id) => {
+              const savedId = slotSavedId(id as PenSlotId);
+              if (savedId !== null) this.deleteSavedPen(savedId);
+              else if (isPenSlot(id) && placeOf(this.laid(), id) !== "off") this.togglePenSlot(id);
             },
             customize: this.callbacks.onNewPen
               ? (place) =>
@@ -4052,6 +4059,9 @@ export class Toolbar {
       if (pen.id !== undefined && this.callbacks.onLayout && !this.practice) {
         this.savedPenPin(row, pen, pen.id);
       }
+      if (pen.id !== undefined && this.callbacks.onDeletePen) {
+        this.savedPenDelete(row, pen, pen.id);
+      }
       row.toggleClass("is-active", inHand && samePen(pen, current));
       row.addEventListener("click", () => {
         if (!drag.consumeClick()) pick(pen);
@@ -4123,6 +4133,51 @@ export class Toolbar {
       this.closePopover();
       this.callbacks.onEditPens?.();
     });
+  }
+
+  /**
+   * Delete a saved pen (FineNotes#211): off the bar first, if it is on it,
+   * so no button is left for a pen that is gone; then out of Saved pens.
+   */
+  private deleteSavedPen(id: string): void {
+    const slot = savedPenSlot(id);
+    if (placeOf(this.laid(), slot) !== "off") this.togglePenSlot(slot);
+    if (this.handButton === slot) this.handButton = null;
+    this.callbacks.onDeletePen?.(id);
+  }
+
+  /**
+   * A saved pen's trash, at the end of its row: a first tap readies it (it
+   * turns red), a second deletes the pen. It acts on its own lift, as the
+   * pin does, and keeps its press from the row.
+   */
+  private savedPenDelete(row: HTMLElement, pen: SavedPen, id: string): void {
+    const trash = row.createSpan({ cls: "goodobsidian-saved-pen-delete" });
+    iconOrText(trash, "trash-2", "");
+    const name = savedPenLabel(pen);
+    trash.setAttribute("role", "button");
+    trash.setAttribute("aria-label", t("toolbar.savedPens.delete", { name }));
+    let pressed = false;
+    trash.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      pressed = true;
+    });
+    trash.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      if (!pressed) return;
+      pressed = false;
+      if (!trash.hasClass("is-armed")) {
+        trash.addClass("is-armed");
+        trash.setAttribute("aria-label", t("toolbar.savedPens.deleteConfirm", { name }));
+        return;
+      }
+      this.deleteSavedPen(id);
+      this.popoverRender?.();
+    });
+    trash.addEventListener("pointercancel", () => {
+      pressed = false;
+    });
+    trash.addEventListener("click", (event) => event.stopPropagation());
   }
 
   /**

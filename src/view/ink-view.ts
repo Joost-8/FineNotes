@@ -3412,6 +3412,10 @@ export class InkView extends TextFileView {
         },
         savedPens: () => savedPensOf(this.settings.savedPens),
         onReorderPens: (pens) => this.plugin.saveSavedPens(pens),
+        onDeletePen: (id) =>
+          this.plugin.saveSavedPens(
+            savedPensOf(this.settings.savedPens).filter((pen) => pen.id !== id),
+          ),
         onSavePen: (pen) =>
           this.plugin.saveSavedPens(addSavedPen(savedPensOf(this.settings.savedPens), pen)),
         onNewPen: (start, onMade) => this.openNewPen(start, onMade),

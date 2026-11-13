@@ -21582,3 +21582,44 @@ button.goodobsidian-feature-hide.clickable-icon svg {
   flex: 1 1 0;
   min-width: 0;
 }
+
+/* Customize toolbar: the trash beside New pen while a pen button is carried;
+   lit while the pen is over it (toolbar-edit.ts). */
+.goodobsidian-edit-trash {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  border-radius: 50%;
+  border: 1px dashed var(--text-error);
+  color: var(--text-error);
+}
+
+.goodobsidian-edit-trash.is-hidden {
+  display: none;
+}
+
+.goodobsidian-edit-trash.is-target {
+  background: var(--text-error);
+  border-style: solid;
+  color: var(--text-on-accent);
+}
+
+/* A saved pen's trash, after its pin: red once tapped, a second tap deletes. */
+.goodobsidian-saved-pen-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--gob-touch);
+  height: var(--gob-touch);
+  margin-inline-end: -8px;
+  border-radius: 50%;
+  color: var(--text-faint);
+}
+
+.goodobsidian-saved-pen-delete.is-armed {
+  background: var(--text-error);
+  color: var(--text-on-accent);
+}
