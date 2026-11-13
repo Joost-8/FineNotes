@@ -5502,6 +5502,19 @@ export class Toolbar {
       button.setAttribute("aria-pressed", String(on));
       button.toggleClass("is-active", on);
     }
+    // Markdown mode (discussion #107): the text read as Markdown, raw while
+    // it is typed, drawn formatted once the box is let go. A toggle like the
+    // flags beside it, and kept for new boxes as they are.
+    const markdown = style.markdown === true;
+    const label = t("toolbar.text.markdown");
+    const button = this.textOption(row, "is-flag is-markdown", "", () =>
+      this.applyTextPatch({ markdown: !markdown }),
+    );
+    iconOrText(button, "hash", "#");
+    button.setAttribute("aria-label", label);
+    button.setAttribute("title", label);
+    button.setAttribute("aria-pressed", String(markdown));
+    button.toggleClass("is-active", markdown);
   }
 
   private renderTextAlign(body: HTMLElement): void {

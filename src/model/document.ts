@@ -620,6 +620,14 @@ export interface TextBoxElement {
   /** Shown in capitals (a label, a kicker); the typed text keeps its case. */
   caps?: true;
   /**
+   * Markdown mode (discussion #107): `text` is Markdown, stored exactly as
+   * typed. At rest the box is drawn formatted (`model/markdown-text.ts`,
+   * `canvas/markdown-layout.ts`); while it is edited the textarea shows the
+   * raw text. A reader that does not know the field shows the raw text, as
+   * a note would in source mode. Only stored as `true`.
+   */
+  markdown?: true;
+  /**
    * Turned this many radians clockwise about the box's top-left corner
    * (`x`, `y`), so a box that grows with its text or is widened turns about
    * a corner that stays put. `w` and `h` are the box unturned. Absent:

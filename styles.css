@@ -2547,10 +2547,44 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   color: transparent;
 }
 
+/* A Markdown box at rest (discussion #107): its text drawn formatted on a
+   canvas over the box, by the painter thumbnails and exports use. The
+   textarea stays under it, unseen, to take the tap that edits the box. */
+.goodobsidian-page-textbox-md {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+}
+
+.goodobsidian-page-textbox.is-markdown:not(:focus-within) .goodobsidian-page-textbox-md {
+  display: block;
+}
+
+.goodobsidian-page-textbox.is-markdown:not(:focus-within) .goodobsidian-page-textbox-input {
+  opacity: 0;
+}
+
+.goodobsidian-page-textbox-md-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* A link's or task's tap target, laid over its words on the canvas. */
+.goodobsidian-textbox-hit {
+  position: absolute;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 .goodobsidian-surface.is-lasso .goodobsidian-textbox-link,
 .goodobsidian-surface.is-text-tool .goodobsidian-textbox-link,
 .goodobsidian-surface.is-lasso .goodobsidian-textbox-check,
-.goodobsidian-surface.is-text-tool .goodobsidian-textbox-check {
+.goodobsidian-surface.is-text-tool .goodobsidian-textbox-check,
+.goodobsidian-surface.is-lasso .goodobsidian-textbox-hit,
+.goodobsidian-surface.is-text-tool .goodobsidian-textbox-hit {
   pointer-events: none;
 }
 
@@ -21480,6 +21514,13 @@ button.goodobsidian-edit-chip.goodobsidian-edit-new-pen.is-disabled {
 .goodobsidian-edit-head button.goodobsidian-edit-chip.goodobsidian-edit-new-pen > svg {
   width: 22px;
   height: 22px;
+}
+
+/* A Markdown box at rest shows no search marks: they are placed on the raw
+   text, which it does not show. After the search rule, and above it. */
+.goodobsidian-page-textbox.is-markdown.is-markdown:not(:focus-within)
+  .goodobsidian-page-textbox-view {
+  display: none;
 }
 
 /* --- Try it: a tip's picture over its scratch page (try-hint.ts) --- */

@@ -1071,6 +1071,7 @@ function normalizeTextStyle(raw: Record<string, unknown>): Partial<TextBoxElemen
   if (isCornerRadius(raw.radius)) style.radius = raw.radius;
   if (isTextPadding(raw.padding)) style.padding = raw.padding;
   if (raw.caps === true) style.caps = true;
+  if (raw.markdown === true) style.markdown = true;
   return style;
 }
 
