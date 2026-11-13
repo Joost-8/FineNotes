@@ -226,11 +226,13 @@ import {
 import {
   NO_PILL_ROW,
   type PillRow,
+  foldedBadge,
   pageTopShift,
   penWidthsShown,
   pillFitsBar,
   pillRow,
   pillRowEdge,
+  widestRow,
 } from "./pill-row-model";
 import { hiddenEnds, pageScroll, scrollToShow } from "./swatch-drag-model";
 import { closingPressStops } from "./popover-dismiss";
@@ -1086,20 +1088,35 @@ export interface FoldedBarItem {
 }
 
 /**
- * The room a pill gets inside the bar, px; buttons fold to make it
- * (`placeInsideBar`). With less than the least, the pen's controls would be
- * cut off and it takes a row of its own. 600 leaves an iPad in landscape
- * room for the pens in hand and a row of colours (discussion #200): Full
- * screen folds first.
+ * Docking design B (2026-11-13): the order the bar's buttons fold into ⋯ to
+ * make room for the tool rows inside it, first to fold first. Undo, redo,
+ * the tools and ⋯ never fold for a row: a row that still does not fit takes
+ * a row of its own, for every tool, rather than hiding a tool.
  */
-const PILL_IN_BAR_ROOM = 600;
-const PILL_IN_BAR_LEAST = 480;
+const DOCK_FOLD_ORDER: readonly BarItemId[] = [
+  "addPage",
+  "fullscreen",
+  "share",
+  "settings",
+  "image",
+  "pdf",
+  "sticker",
+  "sticky",
+  "record",
+  "stylus",
+  "ruler",
+  "calculator",
+  "ai",
+  "search",
+  "thumbnails",
+  "home",
+];
 
 /**
  * INVARIANT: the tool bar never scrolls sideways. When its buttons do not
  * fit, they fold into the ⋯ panel, least important first, in this order
- * (lower folds first). Undo, the pen, the eraser and ⋯ itself never fold,
- * and neither does the tool in hand.
+ * (lower folds first). Undo, redo, the pen, the eraser and ⋯ itself never
+ * fold, and neither does the tool in hand.
  */
 const FOLD_RANK = {
   fullScreen: 0,
@@ -1122,19 +1139,9 @@ const FOLD_RANK = {
   select: 11,
   stylus: 11.8,
   addPage: 12,
-  redo: 13,
   thumbnails: 14,
+  home: 14.5,
 } as const;
-
-/** The last rank that may fold to make room for the pill inside the bar: Share. */
-const IN_BAR_LAST_FOLD = FOLD_RANK.share;
-
-/**
- * How far a tool whose options need more than the usual room may fold
- * (discussion #200): the gear, and the hand, magnifier, tape and ruler
- * buttons, which are seldom in hand while another tool's options show.
- */
-const IN_BAR_STRETCH_FOLD = FOLD_RANK.ruler;
 
 /** The sticky-note colour picked last, ringed in the colours; the classic yellow at first. */
 let lastStickyColor = DEFAULT_STICKY_COLOR;
@@ -1544,6 +1551,8 @@ export class Toolbar {
     const home = cb.onHome;
     if (home) {
       this.homeButton = this.barButton(start, "house", t("toolbar.item.home"), home);
+      // Home may fold, last of all (Joost, 2026-11-13).
+      this.fold(FOLD_RANK.home, this.homeButton, "house", t("toolbar.item.home"), home);
       item("home", this.homeButton, home, false);
     }
     this.thumbnailsButton = this.barButton(
@@ -1588,7 +1597,8 @@ export class Toolbar {
     );
     this.redoButton = item(
       "redo",
-      this.foldButton(start, FOLD_RANK.redo, "redo-2", t("toolbar.redoTip"), redo),
+      // Undo and redo never fold (Joost, 2026-11-13).
+      this.barButton(start, "redo-2", t("toolbar.redoTip"), redo),
       redo,
       false,
     );
@@ -1794,6 +1804,7 @@ export class Toolbar {
       this.fitUprightBar();
       this.moreButton?.removeClass("has-folded");
       this.moreButton?.removeClass("has-mark");
+      this.moreButton?.removeAttribute("data-folded-count");
       return;
     }
     const style = getComputedStyle(bar);
@@ -1815,9 +1826,9 @@ export class Toolbar {
       item.button.addClass("is-overflowed");
       this.measureCrowding();
     }
-    // The pill in the bar keeps the room it was placed with (`pillNeed`).
+    // The rows in the bar keep the room they were placed with (`dockWant`).
     if (bar.hasClass("has-pill-inside")) {
-      this.foldForPill(active, this.pillWant);
+      this.foldForDock(this.dockWant);
       // Folding moved the tools: the pill starts where they end now.
       this.alignPillInBar();
     }
@@ -1826,7 +1837,12 @@ export class Toolbar {
 
   /** The ⋯ button shows that it holds folded buttons, and any that want attention. */
   private markFolded(): void {
-    this.moreButton?.toggleClass("has-folded", this.foldedItems().length > 0);
+    const count = this.foldedItems().length;
+    this.moreButton?.toggleClass("has-folded", count > 0);
+    // How many folded into it, on the bar without opening it (Joost, 2026-11-13).
+    const badge = foldedBadge(count);
+    if (badge === null) this.moreButton?.removeAttribute("data-folded-count");
+    else this.moreButton?.setAttribute("data-folded-count", badge);
     this.moreButton?.toggleClass(
       "has-mark",
       this.foldedItems().some((item) => item.marked),
@@ -2879,7 +2895,9 @@ export class Toolbar {
       this.callbacks.returnToPenOnReselect?.() === true,
       this.drawingTool,
     );
-    if (tool === "select" && current === "select") {
+    // Docked, the lasso's types and filters are its row: a second tap shows
+    // or hides the row, as for every tool (docking design B, 2026-11-13).
+    if (tool === "select" && current === "select" && !this.dockedAcross()) {
       this.toggleLassoPopover(button);
       return;
     }
@@ -7126,31 +7144,45 @@ export class Toolbar {
   }
 
   /**
-   * The room the pill wants inside the bar: all of it, so the text pill is
-   * not shortened and the shapes' last buttons are not cut off (discussion
-   * #200), and buttons fold to make it (`foldForPill`), but no more than
-   * that. The pen's is the usual room: its colours are a row that scrolls.
-   */
-  /**
    * The pen's pill is showing (not the text pill over it): its colours are a
-   * row that scrolls, so it asks only for the usual room. The laser's and
-   * fill's colour rows look the same but belong to other tools.
+   * row that scrolls. The laser's and fill's colour rows look the same but
+   * belong to other tools.
    */
   private penPillShown(): boolean {
     const tool = this.state.tool;
     return !this.optionsEl.hasClass("is-text") && (tool === "pen" || tool === "highlighter");
   }
 
-  /** The room the pill in the bar was placed with, which a later `fitBar` keeps. */
-  private pillWant = PILL_IN_BAR_ROOM;
+  /** The room the row in the bar was placed with, which a later `fitBar` keeps. */
+  private pillWant = 0;
+  /** The room the bar keeps for the widest row (`widestRow`), which a later `fitBar` keeps. */
+  private dockWant = 0;
+  /** What each tool's row was measured to need in the bar, by its options key. */
+  private readonly rowNeeds = new Map<string, number>();
 
+  /** Whose row the pill shows: the text pill's over the pen, else the tool's. */
+  private rowKey(): string {
+    return this.optionsEl.hasClass("is-text") ? "text" : optionsKey(this.state.tool);
+  }
+
+  /**
+   * The room the row wants inside the bar: all of it, so no control is cut
+   * (docking design B, 2026-11-13), except the pen's colours, which scroll
+   * down to their least (styles.css, `.is-in-bar .goodobsidian-pen-colors`).
+   */
   private pillNeed(): number {
     const pill = this.optionsEl;
-    if (this.penPillShown()) return PILL_IN_BAR_ROOM;
     pill.setCssProps({ "--gob-pill-inside": "100000px" });
     this.fitTextPill(100000);
-    // Its own width: a short pill (the lasso's, the eraser's) folds nothing.
-    return Math.ceil(pill.scrollWidth) + 2;
+    let need = Math.ceil(pill.scrollWidth) + 2;
+    const colours = this.penPillShown()
+      ? pill.querySelector<HTMLElement>(".goodobsidian-pen-colors")
+      : null;
+    if (colours) {
+      const least = parseFloat(getComputedStyle(colours).minWidth) || 0;
+      need -= Math.max(0, Math.ceil(colours.scrollWidth) - least);
+    }
+    return need;
   }
 
   /** Put the pill in the bar right after the tools, with the room between them and the end. */
@@ -7197,23 +7229,28 @@ export class Toolbar {
     return { from, room: Math.floor(to - from - 2 * BAR_GAP) };
   }
 
-  /** Fold the buttons that fold first until the pill has its room in the bar. */
-  private foldForPill(active: ActiveTool | null, need = PILL_IN_BAR_ROOM): void {
-    const order = [...this.foldable].sort((a, b) => a.rank - b.rank);
-    for (const item of order) {
-      const last = need > PILL_IN_BAR_ROOM ? IN_BAR_STRETCH_FOLD : IN_BAR_LAST_FOLD;
-      if (this.pillSpan().room >= need || item.rank > last) break;
-      if (item.tool !== undefined && item.tool === active) continue;
+  /**
+   * Fold the bar's buttons in {@link DOCK_FOLD_ORDER} until the rows have
+   * `want` px beside the tools. Tools, undo, redo and ⋯ never fold here.
+   */
+  private foldForDock(want: number): void {
+    for (const id of DOCK_FOLD_ORDER) {
+      if (this.pillSpan().room >= want) return;
+      const button = this.barItems.get(id);
+      const item = button && this.foldable.find((entry) => entry.button === button);
+      if (!item || item.button.hasClass("is-overflowed")) continue;
       if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
       item.button.addClass("is-overflowed");
     }
   }
 
   /**
-   * Put a pill docked along the top or bottom inside the bar, after the
-   * tools: the buttons that fold first go into ⋯ to leave it room, no further
-   * than {@link IN_BAR_LAST_FOLD}. A pill wider than the room scrolls. False
-   * when the room cannot be made, and the pill gets a row of its own.
+   * Docking design B (2026-11-13): put the row docked along the top or
+   * bottom inside the bar, after the tools, when the widest row any tool
+   * shows (`widestRow`) fits there once the bar's buttons fold
+   * ({@link DOCK_FOLD_ORDER}). The room is decided by the widest row, not by
+   * the tool in hand, so switching tools never moves a button. False when
+   * it does not fit: then every tool's row is a row of its own under the bar.
    */
   private placeInsideBar(hostBox: DOMRect): boolean {
     const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
@@ -7222,27 +7259,23 @@ export class Toolbar {
     this.barEl.addClass("has-pill-inside");
     const pill = this.optionsEl;
     pill.addClass("is-in-bar");
+    pill.addClass("is-docked");
     this.pillWant = this.pillNeed();
-    this.foldForPill(this.indicatorTool, this.pillWant);
+    this.rowNeeds.set(this.rowKey(), this.pillWant);
+    this.dockWant = widestRow(this.rowNeeds);
+    this.foldForDock(this.dockWant);
     const { from, room } = this.pillSpan();
     pill.setCssProps({ "--gob-pill-inside": `${Math.max(0, room)}px` });
-    pill.addClass("is-in-bar");
-    pill.addClass("is-docked");
     this.fitTextPill(room);
     const bar = this.barEl.getBoundingClientRect();
     const box = pill.getBoundingClientRect();
     if (
-      !pillFitsBar({
-        edge,
-        room,
-        // A short pill (the magnifier's) needs only its own width.
-        need: Math.min(PILL_IN_BAR_LEAST, this.pillWant),
-        height: box.height,
-        barHeight: bar.height,
-      })
+      !pillFitsBar({ edge, room, need: this.dockWant, height: box.height, barHeight: bar.height })
     ) {
       this.leaveBar();
       this.fitTextPill();
+      // The buttons folded for the rows come back: the bar folds only for itself.
+      this.fitBar(this.indicatorTool);
       return false;
     }
     this.markFolded();
@@ -7267,6 +7300,9 @@ export class Toolbar {
     // A glide in progress would be measured as the pill's size.
     this.stopPillMorph();
     this.leaveBar();
+    this.optionsEl.removeClass("is-overflowing");
+    // The lasso's chevron goes while its options are a docked row (styles.css).
+    this.barEl.toggleClass("has-docked-row", this.dockedAcross());
     // Docked, the pill is as wide as the row allows: measure it so.
     this.optionsEl.toggleClass(
       "is-docked",
@@ -7298,6 +7334,13 @@ export class Toolbar {
       this.syncPillRow(false, 0);
       return;
     }
+    // A row of its own narrower than the tool's controls (Split View): they
+    // scroll sideways, faded at the end, rather than being cut off.
+    const across = this.optionsEl.hasClass("is-docked") && !isUpright(this.pillDock);
+    this.optionsEl.toggleClass(
+      "is-overflowing",
+      across && this.optionsEl.scrollWidth > this.optionsEl.clientWidth + 1,
+    );
     const area = this.pillArea(hostBox, pill.width);
     // An upright pill taller than the room scrolls (styles.css).
     this.optionsEl.setCssProps({

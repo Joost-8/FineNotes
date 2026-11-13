@@ -120,3 +120,40 @@ export function followTopShift(y: number, shift: number, minY: number): number {
   if (shift === 0 || y <= minY + 0.5) return y;
   return Math.max(minY, y + shift);
 }
+
+/**
+ * What each tool's row needs inside the bar until it has been measured, px,
+ * with the colours given way (measured in the UI gallery in English,
+ * 2026-11-13). The bar decides from the widest, so these keep the first
+ * decision close to the one measuring every row would make.
+ */
+export const ROW_NEED_SEEDS: Readonly<Record<string, number>> = {
+  pen: 512,
+  shape: 645,
+  text: 625,
+  tape: 573,
+  select: 485,
+  eraser: 469,
+  fill: 427,
+  laser: 262,
+};
+
+/**
+ * The widest row any tool shows (docking design B, 2026-11-13): the bar holds
+ * the rows only when this one fits beside its tools, so switching tools never
+ * moves a button. A measured row replaces its seed, since a longer language or
+ * a pinned pen changes it.
+ */
+export function widestRow(measured: ReadonlyMap<string, number>): number {
+  const needs: Record<string, number> = { ...ROW_NEED_SEEDS };
+  for (const [tool, need] of measured) needs[tool] = need;
+  return Math.max(0, ...Object.values(needs));
+}
+
+/**
+ * How many of the bar's buttons are folded into ⋯, as its badge shows it:
+ * nothing at none.
+ */
+export function foldedBadge(count: number): string | null {
+  return count > 0 ? String(count) : null;
+}

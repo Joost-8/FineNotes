@@ -7979,6 +7979,21 @@ textarea.goodobsidian-chat-input:focus-visible {
   opacity: 0.85;
 }
 
+/* With the rows docked along the top or bottom, the lasso's types and filters are its row, and
+   a second tap shows or hides it (toolbar.ts, tapTool): no popover, so no
+   chevron, and the lasso keeps its width, so no button moves when it is
+   picked (docking design B, 2026-11-13). */
+.goodobsidian-toolbar.has-docked-row button[data-item="select"].has-caret.is-active {
+  min-width: var(--gob-touch);
+  padding-right: 6px;
+}
+
+.goodobsidian-toolbar.has-docked-row
+  button[data-item="select"].has-caret.is-active
+  .goodobsidian-tool-caret {
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .goodobsidian-toolbar button.has-caret,
   .goodobsidian-tool-caret {
@@ -15292,6 +15307,38 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
   pointer-events: none;
 }
 
+/* How many of the bar's buttons folded into ⋯ (toolbar.ts, markFolded),
+   shown on the bar without opening it. On `::before`, as the mark above:
+   `::after` is a button's press highlight (ledger 2026-11-12). A folded
+   button's mark rings the number instead of a second dot. */
+.goodobsidian-toolbar button[data-folded-count]::before {
+  content: attr(data-folded-count);
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--background-primary);
+  pointer-events: none;
+}
+
+.goodobsidian-toolbar button[data-folded-count].has-mark::before {
+  width: auto;
+  box-shadow:
+    0 0 0 2px var(--background-primary),
+    0 0 0 3.5px var(--interactive-accent);
+}
+
 .goodobsidian-more .goodobsidian-more-row.has-mark .goodobsidian-more-label::after,
 .goodobsidian-ns-all.has-mark .goodobsidian-ns-all-name::after {
   content: "";
@@ -21113,9 +21160,10 @@ body.finenotes-style-material
   transition: none;
 }
 
-/* Short of room in the bar, the pens scroll as the colours do. */
+/* In the bar the pens show whole: the colours are what give way
+   (docking design B, 2026-11-13). */
 .goodobsidian-options.is-in-bar .goodobsidian-pen-types {
-  flex: 0 1 auto;
+  flex: none;
 }
 
 /* The colours are what the bar is for: as many as the room allows.
@@ -21135,21 +21183,17 @@ body.finenotes-style-material
   max-width: calc(var(--gob-touch-compact) * 10.5);
 }
 
-/* In the bar the colours keep their room, and the pens, which scroll and
-   keep the one in hand in view, give way first, down to three. */
+/* In the bar the colours take what the rest leaves, down to their least
+   (toolbar.ts, pillNeed), and scroll. */
 .goodobsidian-options.is-in-bar.has-one-width .goodobsidian-pen-colors {
   flex: 0 1 auto;
-}
-
-.goodobsidian-options.is-in-bar.has-one-width .goodobsidian-pen-types {
-  flex-shrink: 20;
-  min-width: calc(var(--gob-pen-type, 42px) * 3 + 8px);
 }
 
 /* Nothing more may fold and the options still do not fit (toolbar.ts,
    markPillOverflow): they scroll sideways, faded at the end, rather than
    losing their last buttons. */
-.goodobsidian-options.is-in-bar.is-overflowing {
+.goodobsidian-options.is-in-bar.is-overflowing,
+.goodobsidian-options.is-docked.is-overflowing {
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
@@ -21157,11 +21201,13 @@ body.finenotes-style-material
   mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 
-.goodobsidian-options.is-in-bar.is-overflowing::-webkit-scrollbar {
+.goodobsidian-options.is-in-bar.is-overflowing::-webkit-scrollbar,
+.goodobsidian-options.is-docked.is-overflowing::-webkit-scrollbar {
   display: none;
 }
 
-.goodobsidian-options.is-in-bar.is-overflowing > * {
+.goodobsidian-options.is-in-bar.is-overflowing > *,
+.goodobsidian-options.is-docked.is-overflowing > * {
   flex-shrink: 0;
 }
 

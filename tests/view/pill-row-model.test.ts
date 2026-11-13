@@ -7,6 +7,9 @@ import {
   pillRow,
   pillRowEdge,
   pillFitsBar,
+  widestRow,
+  foldedBadge,
+  ROW_NEED_SEEDS,
   penWidthsShown,
 } from "../../src/view/pill-row-model";
 
@@ -148,5 +151,22 @@ describe("followTopShift", () => {
 
   it("does nothing for no shift", () => {
     expect(followTopShift(123, 0, 0)).toBe(123);
+  });
+});
+
+describe("widestRow (docking design B)", () => {
+  it("starts from the measured seeds, the shapes row widest", () => {
+    expect(widestRow(new Map())).toBe(ROW_NEED_SEEDS.shape);
+  });
+  it("lets a measured row replace its seed, wider or narrower", () => {
+    expect(widestRow(new Map([["text", 720]]))).toBe(720);
+    expect(widestRow(new Map([["shape", 300]]))).toBe(ROW_NEED_SEEDS.text);
+  });
+});
+
+describe("foldedBadge", () => {
+  it("shows the count, nothing at none", () => {
+    expect(foldedBadge(0)).toBeNull();
+    expect(foldedBadge(9)).toBe("9");
   });
 });
