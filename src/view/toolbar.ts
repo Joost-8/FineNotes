@@ -6427,14 +6427,22 @@ export class Toolbar {
    * #200), and buttons fold to make it (`foldForPill`), but no more than
    * that. The pen's is the usual room: its colours are a row that scrolls.
    */
+  /**
+   * The pen's pill is showing (not the text pill over it): its colours are a
+   * row that scrolls, so it asks only for the usual room. The laser's and
+   * fill's colour rows look the same but belong to other tools.
+   */
+  private penPillShown(): boolean {
+    const tool = this.state.tool;
+    return !this.optionsEl.hasClass("is-text") && (tool === "pen" || tool === "highlighter");
+  }
+
   /** The room the pill in the bar was placed with, which a later `fitBar` keeps. */
   private pillWant = PILL_IN_BAR_ROOM;
 
   private pillNeed(): number {
     const pill = this.optionsEl;
-    const pen =
-      !pill.hasClass("is-text") && this.optionsEl.querySelector(".goodobsidian-pen-colors");
-    if (pen) return PILL_IN_BAR_ROOM;
+    if (this.penPillShown()) return PILL_IN_BAR_ROOM;
     pill.setCssProps({ "--gob-pill-inside": "100000px" });
     this.fitTextPill(100000);
     // Its own width: a short pill (the lasso's, the eraser's) folds nothing.
@@ -6459,7 +6467,10 @@ export class Toolbar {
     const pill = this.optionsEl;
     pill.removeClass("is-overflowing");
     if (!pill.hasClass("is-in-bar")) return;
-    pill.toggleClass("is-overflowing", pill.scrollWidth > pill.clientWidth + 1);
+    // From what it needs against its room: its own width may still be gliding
+    // from the last tool's (morphPill). The pen's colours scroll by themselves.
+    if (this.penPillShown()) return;
+    pill.toggleClass("is-overflowing", this.pillWant > this.pillSpan().room + 1);
   }
 
   /** Take the pill back out of the bar: it is put in again only if it still fits. */
