@@ -611,7 +611,9 @@ export class ToolbarEditor {
     if (this.inPreset()) {
       // A tool off the bar may go between More tools and Hidden; on the bar,
       // a drop swaps (Joost, 2026-11-13).
-      const shelf = this.shelfAt(press.id, event.clientX, event.clientY);
+      const shelf =
+        this.shelfAt(press.id, event.clientX, event.clientY) ??
+        this.intoMore(press.id, event.clientX, event.clientY);
       this.setTarget(shelf);
       this.setSwap(shelf ? null : this.swapAt(press.id, event.clientX, event.clientY));
       return;
@@ -625,8 +627,9 @@ export class ToolbarEditor {
    */
   private shelfAt(id: BarItemId, x: number, y: number): "menu" | "off" | null {
     const place = placeOf(this.h.layout(), id);
-    if (place !== "menu" && place !== "off") return null;
-    if ((id as string) === NEW_PEN || isPenSlot(id)) return null;
+    // Off the bar, or in ⋯ (the end, which Essentials folds); ⋯ itself stays.
+    if (place !== "menu" && place !== "off" && place !== "end") return null;
+    if ((id as string) === NEW_PEN || isPenSlot(id) || id === "more") return null;
     for (const [shelf, target] of [
       [this.menuShelf, "menu"],
       [this.offShelf, "off"],
@@ -634,6 +637,21 @@ export class ToolbarEditor {
       if (shelf && target !== place && inside(shelf.getBoundingClientRect(), x, y, 4)) return target;
     }
     return null;
+  }
+
+  /**
+   * Essentials: a tool off the bar dropped on the end goes into ⋯, which
+   * holds the end's buttons (Joost, 2026-11-13): placed just before ⋯.
+   */
+  private intoMore(id: BarItemId, x: number, y: number): Target | null {
+    const layout = this.h.layout();
+    const place = placeOf(layout, id);
+    if (place !== "menu" && place !== "off") return null;
+    if ((id as string) === NEW_PEN || isPenSlot(id)) return null;
+    const end = this.h.zones().end;
+    if (!end || !inside(end.getBoundingClientRect(), x, y, BAR_REACH)) return null;
+    const at = layout.end.indexOf("more");
+    return { zone: "end", index: at < 0 ? layout.end.length : at };
   }
 
   /** Essentials is in use: tools are swapped, never added or taken away. */
@@ -690,7 +708,7 @@ export class ToolbarEditor {
     if (this.inPreset() && dragging) {
       // Essentials: a drop on a button swaps; a tool off the bar may change
       // shelf; anywhere else changes nothing.
-      if (target === "menu" || target === "off") {
+      if (target) {
         this.move(id, target);
         return;
       }
@@ -961,12 +979,14 @@ export class ToolbarEditor {
 
   /**
    * Essentials keeps its buttons where they belong: the same ones in the
-   * start and middle together, and the end as it is (it lives in ⋯).
+   * start and middle together.
    */
   private keepsPreset(layout: ToolbarLayout, next: ToolbarLayout): boolean {
     const slots = (l: ToolbarLayout): string =>
       [...l.start, ...l.middle].filter((id) => !isFixedInPreset(l, id)).sort().join(",");
-    return slots(layout) === slots(next) && layout.end.join(",") === next.end.join(",");
+    // The end may take tools from More tools and give them back (it lives in
+    // ⋯), never the bar's.
+    return slots(layout) === slots(next) && next.end.includes("more");
   }
 
   private barIds(): BarItemId[] {

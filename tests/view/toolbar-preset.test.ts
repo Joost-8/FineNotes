@@ -30,8 +30,8 @@ describe("the Essentials preset", () => {
   });
 
   it("replaces a tool with one from More tools, which takes the other's place there", () => {
-    const next = swapItems(essentialsLayout(), "ai", "shape");
-    expect(next.middle).toEqual(["select", "pen", "eraser", "text", "ai", "accessories"]);
+    const next = swapItems(essentialsLayout(), "image", "shape");
+    expect(next.middle).toEqual(["select", "pen", "eraser", "text", "image", "accessories"]);
     expect([...next.start, ...next.middle, ...next.end]).not.toContain("shape");
   });
 
@@ -50,7 +50,7 @@ describe("the Essentials preset", () => {
 
   it("does nothing with a fixed button", () => {
     const layout = essentialsLayout();
-    expect(swapItems(layout, "ai", "undo")).toEqual(layout);
+    expect(swapItems(layout, "image", "undo")).toEqual(layout);
     expect(swapItems(layout, "undo", "shape")).toEqual(layout);
   });
 });
