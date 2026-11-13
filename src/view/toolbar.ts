@@ -92,11 +92,11 @@ import {
   menuItems,
   normalizeLayout,
   penButtonType,
+  penMenuPin,
   penRowOffers,
   penSlotInHand,
   penSlotsOf,
   rememberPenType,
-  penTypeSlot,
   penTypesOnBar,
   placeOf,
   savedPenSlot,
@@ -6289,8 +6289,8 @@ export class Toolbar {
     // The pen in hand's type as a button of its own on the bar, or off it
     // again (FineNotes#211). Not on a practice sheet, whose bar is fixed.
     if (this.callbacks.onLayout && !this.practice) {
-      const slot = penTypeSlot(this.activePenType().id);
-      const on = placeOf(this.laid(), slot) !== "off";
+      // The button the bar marks as in hand: a pinned saved pen's own slot.
+      const { slot, on } = penMenuPin(this.laid(), this.penSlotInHand(), this.activePenType().id);
       const pin = body.createEl("button", {
         cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-pen-pin-row",
       });
