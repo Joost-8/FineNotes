@@ -46,6 +46,24 @@ export function pillRowEdge(on: boolean, pill: PillDock, bar: BarDock): PillRowE
 }
 
 /**
+ * How the pen's widths show. `"one"`: a single button, the width in use,
+ * whose tap lists them all, as Goodnotes and Notability keep it. That is
+ * so upright beside the page when the pill is not docked in a column of
+ * its own, and when it is docked along the top or bottom, where the bar's
+ * room goes to the colours instead (discussion #200). Otherwise `"quick"`:
+ * the three quick widths and a ⌄.
+ */
+export function penWidthsShown(input: {
+  upright: boolean;
+  /** Docked in a column of its own beside the page. */
+  roomy: boolean;
+  edge: PillRowEdge;
+}): "one" | "quick" {
+  if (input.upright) return input.roomy ? "quick" : "one";
+  return input.edge === "top" || input.edge === "bottom" ? "one" : "quick";
+}
+
+/**
  * Whether a pill docked along the top or bottom goes inside the bar: all of
  * it (`need` px wide at its narrowest) fits the `room` left between the
  * bar's groups, and it is no taller than the bar. Otherwise it has a row.

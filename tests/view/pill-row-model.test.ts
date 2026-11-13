@@ -7,7 +7,25 @@ import {
   pillRow,
   pillRowEdge,
   pillFitsBar,
+  penWidthsShown,
 } from "../../src/view/pill-row-model";
+
+describe("penWidthsShown", () => {
+  it("is one button when docked along the top or bottom, so the colours get the room", () => {
+    expect(penWidthsShown({ upright: false, roomy: false, edge: "top" })).toBe("one");
+    expect(penWidthsShown({ upright: false, roomy: false, edge: "bottom" })).toBe("one");
+  });
+
+  it("keeps the quick widths on a floating pill across the page", () => {
+    expect(penWidthsShown({ upright: false, roomy: false, edge: null })).toBe("quick");
+  });
+
+  it("is one button upright beside the page, all of them in a column of its own", () => {
+    expect(penWidthsShown({ upright: true, roomy: false, edge: null })).toBe("one");
+    expect(penWidthsShown({ upright: true, roomy: true, edge: "left" })).toBe("quick");
+    expect(penWidthsShown({ upright: true, roomy: true, edge: "right" })).toBe("quick");
+  });
+});
 
 describe("parsePillRowOn", () => {
   it("is on only when it was saved on", () => {
