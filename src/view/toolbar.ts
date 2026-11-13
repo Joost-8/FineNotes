@@ -1072,6 +1072,9 @@ export interface TextAnchor {
   moving?: boolean;
 }
 
+/** A bar button that may fold into ⋯, with its rank and the tool it picks, if any. */
+type FoldableItem = FoldedBarItem & { rank: number; button: HTMLElement; tool?: ActiveTool };
+
 /** The least room kept between the centred tools and the groups beside them. */
 const BAR_GAP = 8;
 
@@ -1088,34 +1091,10 @@ export interface FoldedBarItem {
 }
 
 /**
- * Docking design B (2026-11-13): the order the bar's buttons fold into ⋯ to
- * make room for the tool rows inside it, first to fold first. Undo, redo,
- * the tools and ⋯ never fold for a row: a row that still does not fit takes
- * a row of its own, for every tool, rather than hiding a tool.
- */
-const DOCK_FOLD_ORDER: readonly BarItemId[] = [
-  "addPage",
-  "fullscreen",
-  "share",
-  "settings",
-  "image",
-  "pdf",
-  "sticker",
-  "sticky",
-  "record",
-  "stylus",
-  "ruler",
-  "calculator",
-  "ai",
-  "search",
-  "thumbnails",
-  "home",
-];
-
-/**
  * INVARIANT: the tool bar never scrolls sideways. When its buttons do not
- * fit, they fold into the ⋯ panel, least important first, in this order
- * (lower folds first). Undo, redo, the pen, the eraser and ⋯ itself never
+ * fit, they fold into the ⋯ panel (`foldOrder`): the buttons at the sides
+ * from their outer ends in, as the user arranged them; the rest, and the
+ * tools last, in this order (lower folds first). Undo, redo, the pen, the eraser and ⋯ itself never
  * fold, and neither does the tool in hand.
  */
 const FOLD_RANK = {
@@ -1273,9 +1252,7 @@ export class Toolbar {
   /** The writing tools, centred on the bar while there is room. */
   private toolsGroup: HTMLElement | null = null;
   /** The tier-1 buttons that may fold into ⋯ (`fitBar`), ranked by `FOLD_RANK`. */
-  private readonly foldable: Array<
-    FoldedBarItem & { rank: number; button: HTMLElement; tool?: ActiveTool }
-  > = [];
+  private readonly foldable: FoldableItem[] = [];
   private moreButton: HTMLButtonElement | null = null;
   /** Every button the bar has, by its item, for placing them (`setLayout`). */
   private readonly barItems = new Map<BarItemId, HTMLButtonElement>();
@@ -1816,8 +1793,7 @@ export class Toolbar {
         const at = along(group.getBoundingClientRect());
         return at.length > 0 && (at.end > right + 0.5 || at.start < left - 0.5);
       });
-    const order = [...this.foldable].sort((a, b) => a.rank - b.rank);
-    for (const item of order) {
+    for (const item of this.foldOrder()) {
       if (!overflows()) break;
       if (item.tool !== undefined && item.tool === active) continue;
       // Hidden for another reason (a practice file, a single page, taken off
@@ -1831,6 +1807,49 @@ export class Toolbar {
       this.foldForDock(this.dockWant);
       // Folding moved the tools: the pill starts where they end now.
       this.alignPillInBar();
+    }
+    this.settleFolds();
+  }
+
+  /**
+   * The order the bar's buttons fold into ⋯, first to fold first. The bar's
+   * own order chooses it, so Customize toolbar does (Joost, 2026-11-13): what
+   * sits among the tools but is no tool (insert image, PDF…), then each side
+   * from its outer end in, the end's first, then the start's. Tools fold
+   * last, the least used first (`FOLD_RANK`).
+   */
+  private foldOrder(): FoldableItem[] {
+    const byButton = new Map<Element, FoldableItem>(
+      this.foldable.map((item) => [item.button, item]),
+    );
+    const inZone = (zone: HTMLElement | undefined): FoldableItem[] =>
+      Array.from(zone?.children ?? []).flatMap((el) => {
+        const item = byButton.get(el);
+        return item ? [item] : [];
+      });
+    const byRank = (a: FoldableItem, b: FoldableItem): number => a.rank - b.rank;
+    const { start, middle, end } = this.zoneEls;
+    const notTool = (item: FoldableItem): boolean => item.tool === undefined;
+    const order = [
+      ...inZone(middle).filter(notTool).sort(byRank),
+      ...inZone(end).filter(notTool).reverse(),
+      ...inZone(start).filter(notTool),
+    ];
+    const placed = new Set(order);
+    return [...order, ...this.foldable.filter((item) => !placed.has(item)).sort(byRank)];
+  }
+
+  /**
+   * The folds are made: ⋯ counts them. In Customize toolbar nothing hides,
+   * so every button can be moved: what would fold is marked (`will-fold`).
+   */
+  private settleFolds(): void {
+    if (this.editor) {
+      for (const item of this.foldable) {
+        const folded = item.button.hasClass("is-overflowed");
+        item.button.removeClass("is-overflowed");
+        item.button.toggleClass("will-fold", folded);
+      }
     }
     this.markFolded();
   }
@@ -2538,11 +2557,7 @@ export class Toolbar {
    */
   private markFolds(): void {
     this.fitBar(this.indicatorTool);
-    for (const item of this.foldable) {
-      const folded = item.button.hasClass("is-overflowed");
-      item.button.removeClass("is-overflowed");
-      item.button.toggleClass("will-fold", folded);
-    }
+    if (this.barEl.hasClass("has-pill-inside")) this.placePill();
   }
 
   /**
@@ -7230,15 +7245,13 @@ export class Toolbar {
   }
 
   /**
-   * Fold the bar's buttons in {@link DOCK_FOLD_ORDER} until the rows have
+   * Fold the bar's buttons in their order (`foldOrder`) until the rows have
    * `want` px beside the tools. Tools, undo, redo and ⋯ never fold here.
    */
   private foldForDock(want: number): void {
-    for (const id of DOCK_FOLD_ORDER) {
+    for (const item of this.foldOrder()) {
       if (this.pillSpan().room >= want) return;
-      const button = this.barItems.get(id);
-      const item = button && this.foldable.find((entry) => entry.button === button);
-      if (!item || item.button.hasClass("is-overflowed")) continue;
+      if (item.tool !== undefined || item.button.hasClass("is-overflowed")) continue;
       if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
       item.button.addClass("is-overflowed");
     }
@@ -7248,7 +7261,7 @@ export class Toolbar {
    * Docking design B (2026-11-13): put the row docked along the top or
    * bottom inside the bar, after the tools, when the widest row any tool
    * shows (`widestRow`) fits there once the bar's buttons fold
-   * ({@link DOCK_FOLD_ORDER}). The room is decided by the widest row, not by
+   * (`foldOrder`). The room is decided by the widest row, not by
    * the tool in hand, so switching tools never moves a button. False when
    * it does not fit: then every tool's row is a row of its own under the bar.
    */
@@ -7278,7 +7291,7 @@ export class Toolbar {
       this.fitBar(this.indicatorTool);
       return false;
     }
-    this.markFolded();
+    this.settleFolds();
     pill.setCssStyles({
       left: `${Math.round(from + BAR_GAP - hostBox.left)}px`,
       top: `${Math.round(bar.top - hostBox.top + (bar.height - box.height) / 2)}px`,

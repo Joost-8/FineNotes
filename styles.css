@@ -16658,9 +16658,12 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
   outline-offset: 0;
 }
 
-/* A crowded bar's tools group is unpositioned (it follows the start):
-   positioned here, which moves nothing, so its name sits on it. */
-.goodobsidian-toolbar.is-editing.is-crowded .goodobsidian-bar-group.is-tools {
+/* A crowded bar's tools group is unpositioned (it follows the start), and
+   so is it while the tool's options sit in the bar (has-pill-inside):
+   positioned here, which moves nothing, so its name sits on it and not on
+   the start's. */
+.goodobsidian-toolbar.is-editing.is-crowded .goodobsidian-bar-group.is-tools,
+.goodobsidian-toolbar.is-editing.has-pill-inside .goodobsidian-bar-group.is-tools {
   position: relative;
   inset: auto;
 }
