@@ -2438,7 +2438,7 @@ export class Toolbar {
               chip.append(penGlyph(current.type, this.shown(current.color)));
             },
             remove: (id) => {
-              const savedId = slotSavedId(id as PenSlotId);
+              const savedId = slotSavedId(id);
               if (savedId !== null) this.deleteSavedPen(savedId);
               else if (isPenSlot(id) && placeOf(this.laid(), id) !== "off") this.togglePenSlot(id);
             },
