@@ -68,6 +68,7 @@ import {
   type RulerKind,
 } from "../canvas/ruler-geometry";
 import { LASER_COLOR } from "../canvas/laser-trail";
+import { paintTape } from "../canvas/tape-paint";
 import {
   drawingToolOf,
   optionsAfterSwitch,
@@ -3399,10 +3400,14 @@ export class Toolbar {
     range.min = String(MIN_TAPE_HEIGHT);
     range.max = String(MAX_TAPE_HEIGHT);
     range.step = "1";
+    // The tape as it will lie on the page now, on the page's own paper, as
+    // the pens' and the eraser's sliders show theirs.
+    const preview = tapePreview(body, this.callbacks.paintSizePaper);
     const show = (height: number): void => {
       readout.setText(formatMm(height));
       range.value = String(height);
       syncRangeFill(range);
+      preview(height, this.previewScales().pen, tapeColorOf(this.state.tapeColor));
     };
     show(tapeHeightOf(this.state.tapeHeight));
     range.addEventListener("input", () => show(tapeHeightOf(Number(range.value))));
@@ -7280,6 +7285,39 @@ function strokePreview(
     strip.toggleClass("is-highlighter", pen === "highlighter");
     // White ink would vanish on white paper: show it on dark paper instead.
     strip.toggleClass("is-light-ink", sameColor(color, "#ffffff"));
+  };
+}
+
+/**
+ * A strip of paper under the tape-height slider with a piece of tape on it,
+ * drawn by the page's own tape painter at the height it will have on the
+ * page now (`scale` screen px per page px). A tape taller than the strip is
+ * cut at its edges, which still reads as wide. Returns the redraw function.
+ */
+function tapePreview(
+  parent: HTMLElement,
+  paint?: PaperPainter,
+): (height: number, scale: number, color: string) => void {
+  const strip = parent.createDiv({ cls: "goodobsidian-size-preview is-tape" });
+  strip.setAttribute("aria-hidden", "true");
+  const paper = paperUnder(strip, paint);
+  const canvas = strip.createEl("canvas", { cls: "goodobsidian-size-preview-tape" });
+  return (height, scale, color) => {
+    paper();
+    const width = strip.clientWidth || 240;
+    const tall = strip.clientHeight || 72;
+    const ratio = activeWindow.devicePixelRatio || 1;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(tall * ratio);
+    canvas.setCssStyles({ width: `${width}px`, height: `${tall}px` });
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Page px from here on, so the painter draws the tape as the page does.
+    ctx.setTransform(ratio * scale, 0, 0, ratio * scale, 0, 0);
+    const across = width / scale;
+    const middle = tall / scale / 2;
+    paintTape(ctx, [across * 0.12, middle, 0.5, across * 0.88, middle, 0.5], height, color);
   };
 }
 

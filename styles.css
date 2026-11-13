@@ -4631,6 +4631,16 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   height: 72px;
 }
 
+/* The tape too: a wide one covers several lines (FineNotes#211). */
+.goodobsidian-size-preview.is-tape {
+  height: 72px;
+}
+
+.goodobsidian-size-preview-tape {
+  position: absolute;
+  inset: 0;
+}
+
 /* Above the page: the ring and the stroke. */
 .goodobsidian-size-preview-eraser {
   position: relative;
