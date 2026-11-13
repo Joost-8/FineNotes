@@ -116,6 +116,7 @@ const FRESH_INSTALL = {
   textHintDismissed: false,
   shapeHintShown: false,
   gestureHints: true,
+  searchHidden: [],
   penAutoShape: false,
   penGestures: {
     scribbleErase: true,
@@ -285,6 +286,7 @@ const USED_VAULT = {
   textHintDismissed: true,
   shapeHintShown: true,
   gestureHints: true,
+  searchHidden: ["circleLasso"],
   penAutoShape: true,
   penGestures: {
     scribbleErase: false,

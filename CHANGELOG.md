@@ -19,6 +19,14 @@ extracted from the matching section of this file by `release.yml`.
   transcript with times, like the device's. A recording over the service's
   25 MB limit is sent in parts of up to ten minutes and joined again, so a
   long lecture no longer needs cutting up.
+- **Try a gesture from its tip.** A tip for a gesture on the page (Circle
+  to select, Scribble to erase, hold to snap a shape, the finger taps for
+  undo and redo, pulling in a page and more) has Try it: a scratch page with
+  a few lines of writing opens, with the tip's picture over it. Do the
+  gesture and the ✓ fills; you are back where you were, and the scratch page
+  goes to the trash. A gesture with a switch shows it in its tip, as Circle
+  to select, Scribble to erase and Scribble to fill now do. The link to a
+  tip moved behind the tip's ⋯.
 - **Several boards in one board file**
   ([discussion #160](https://github.com/Joost-8/FineNotes/discussions/160)).
   A board file can hold more than one endless board, listed like pages, as
@@ -29,8 +37,9 @@ extracted from the matching section of this file by `release.yml`.
   contents go to the board they found. A file with one board stays as it
   was. A file with several boards opens read-only in FineNotes 2.9.1 and
   older, which cannot show them, so nothing on it is lost.
-- **A board inside a notebook.** Add page has a new last row, Add board:
-  an endless board among the notebook's pages, marked ∞ in the sidebar.
+- **A board inside a notebook.** Add page ends with Add board and its three
+  papers (blank, dotted, squared): an endless board among the notebook's
+  pages, marked ∞ in the sidebar.
   Tap it to show it on its own; tap any page to go back. Scrolling and
   Page Up/Down go past it, and a page added next to it takes a page's size.
   A notebook with a board opens read-only in FineNotes 2.9.1 and older.
