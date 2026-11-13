@@ -212,6 +212,8 @@ export interface GoodObsidianSettings {
   shapeHintShown: boolean;
   /** One line names a faster way after the slow one was used a few times (model/nudges.ts). */
   gestureHints: boolean;
+  /** Features taken out of search results with their ×; their tips stay in Tips (feature-index.ts). */
+  searchHidden: string[];
   /** Mirror of `snapMode === "auto"`, read by builds before it. */
   penAutoShape: boolean;
   /** Scribble to erase and Circle to lasso (the pen type menu). Checked where it is read. */
@@ -544,6 +546,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   textHintDismissed: false,
   shapeHintShown: false,
   gestureHints: true,
+  searchHidden: [],
   penAutoShape: false,
   penGestures: { ...DEFAULT_PEN_GESTURES },
   shapeColor: DEFAULT_SHAPE_COLOR,

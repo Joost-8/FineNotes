@@ -21,6 +21,8 @@ import {
   isBoard,
   isNoGrowth,
   textLinesHeight,
+  newBoardPage,
+  pageAfterTurn,
 } from "../../src/model/board";
 import { type InkDocument, type Page, type Stroke } from "../../src/model/document";
 import { AttachedStep, History } from "../../src/model/history";
@@ -531,5 +533,42 @@ describe("a board in the file", () => {
   it("is not written for a notebook, so its bytes stay as they were", () => {
     const doc = buildNewDocument(DEFAULT_NOTEBOOK_CHOICES, "x");
     expect("endless" in decodeDocument(encodeDocument(doc))).toBe(false);
+  });
+});
+
+describe("pageAfterTurn", () => {
+  const page = (id: string, board?: boolean): Page =>
+    ({ id, ...(board ? { board: true } : {}) }) as unknown as Page;
+
+  it("stays on the page being read when the pages turn", () => {
+    expect(pageAfterTurn({ pages: [page("p1"), page("p2")] }, 1)).toBe(1);
+  });
+
+  it("does not go back onto a board among the pages just left (discussion #160)", () => {
+    expect(pageAfterTurn({ pages: [page("p1"), page("p2", true)] }, 1)).toBeNull();
+  });
+
+  it("keeps a board file's board, and nothing for a page that is gone", () => {
+    expect(pageAfterTurn({ endless: true, pages: [page("p1"), page("p2")] }, 1)).toBe(1);
+    expect(pageAfterTurn({ pages: [page("p1")] }, 4)).toBeNull();
+  });
+});
+
+describe("newBoardPage's paper", () => {
+  const like = { backdrop: { kind: "squared" } } as unknown as Page;
+
+  it("takes the paper picked in Add page", () => {
+    expect(newBoardPage("p9", like, true, "dotted").backdrop).toEqual({ kind: "dotted" });
+    expect(newBoardPage("p9", undefined, true, "blank").backdrop).toEqual({ kind: "blank" });
+  });
+
+  it("without a pick, the board beside it's paper, or blank", () => {
+    expect(newBoardPage("p9", like, true).backdrop).toEqual({ kind: "squared" });
+    const ruled = { backdrop: { kind: "ruled-wide" } } as unknown as Page;
+    expect(newBoardPage("p9", ruled, true).backdrop).toEqual({ kind: "blank" });
+  });
+
+  it("never takes a paper a board does not offer", () => {
+    expect(newBoardPage("p9", like, true, "ruled-wide").backdrop).toEqual({ kind: "squared" });
   });
 });

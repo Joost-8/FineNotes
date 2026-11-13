@@ -343,6 +343,7 @@ import {
   isBoard,
   isBoardPage,
   isNoGrowth,
+  pageAfterTurn,
 } from "../model/board";
 import { afterPainted } from "./after-painted";
 import { lowMemoryDevice } from "./pdf-backdrop";
@@ -5214,7 +5215,9 @@ export class InkSurface {
     if (turned) {
       this.userZoom = this.minZoom;
       this.ensurePaperSize();
-      this.goToPage(reading);
+      // Not back onto a board just left (`pageAfterTurn`).
+      const stay = pageAfterTurn(this.doc, reading);
+      if (stay !== null) this.goToPage(stay);
     } else if (direction === "horizontal" && this.atZoomFloor && this.isScrollIdle) {
       // A pane that changed shape (rotation, split view) keeps the page centred.
       this.scroller.setPosition(this.rowX(this.pageIndex), this.rowY(this.pageIndex));
@@ -6233,7 +6236,8 @@ export class InkSurface {
     // by 3% (well under a px on screen), not on every frame of a pinch.
     if (Math.abs(gap - this.rowGap) < Math.max(0.01, this.rowGap * 0.03)) return false;
     this.rowGap = gap;
-    this.pageLayout = layoutPages(this.doc.pages, { direction: "horizontal", gap });
+    // A board among the pages stays parked: a swipe never lands on it (discussion #160).
+    this.pageLayout = layoutNotebook(this.doc.pages, { direction: "horizontal", gap });
     this.renderer?.setLayout(this.pageLayout);
     return true;
   }
@@ -6528,7 +6532,9 @@ export class InkSurface {
   private pullOverscroll(): number {
     // Zoomed in, a row is held to one page: past its end is past the
     // notebook's end only on the last page (elsewhere a pull turns the page).
-    if (this.heldRow && this.heldIndex() !== this.doc.pages.length - 1) return 0;
+    // The last page shown: a board after it is parked, not a page (discussion #160).
+    const last = shownBoxes(this.pageLayout).at(-1)?.index ?? this.doc.pages.length - 1;
+    if (this.heldRow && this.heldIndex() !== last) return 0;
     const end = this.scroller.overscrollEnd;
     return this.direction === "horizontal" ? end.x : end.y;
   }
