@@ -640,20 +640,19 @@ export class ToolbarEditor {
   }
 
   /**
-   * Essentials: a tool off the bar dropped on the end goes into ⋯, which
-   * holds the end's buttons (Joost, 2026-11-13): placed above Home, which
-   * stays last in ⋯, or else just before ⋯.
+   * Essentials: the end holds what ⋯ lists, in its order (Joost,
+   * 2026-11-13). A tool from More tools or Hidden, or one already there,
+   * dropped on the end goes where it is dropped, so the person orders ⋯.
    */
   private intoMore(id: BarItemId, x: number, y: number): Target | null {
     const layout = this.h.layout();
     const place = placeOf(layout, id);
-    if (place !== "menu" && place !== "off") return null;
-    if ((id as string) === NEW_PEN || isPenSlot(id)) return null;
+    if (place !== "menu" && place !== "off" && place !== "end") return null;
+    if ((id as string) === NEW_PEN || isPenSlot(id) || id === "more") return null;
     const end = this.h.zones().end;
     if (!end || !inside(end.getBoundingClientRect(), x, y, BAR_REACH)) return null;
-    const home = layout.end.indexOf("home");
-    const at = home >= 0 ? home : layout.end.indexOf("more");
-    return { zone: "end", index: at < 0 ? layout.end.length : at };
+    const target = this.hitTest(id, x, y);
+    return target && typeof target !== "string" && target.zone === "end" ? target : null;
   }
 
   /** Essentials is in use: tools are swapped, never added or taken away. */
