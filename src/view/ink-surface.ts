@@ -382,12 +382,15 @@ import {
   type BoxPreset,
   isClosedKind,
   isConnectorPreset,
+  isDrawnConnector,
   presetDecor,
   presetKind,
   presetGeometry,
   shapePivot,
   transformShape,
+  ELBOW_RADIUS,
 } from "../ink/shape-geometry";
+import { splinePoints, traceCurve, traceElbow } from "../ink/connector-edit";
 import {
   type TableStroke,
   draggedTableBox,
@@ -2798,6 +2801,11 @@ export class InkSurface {
     moved: boolean;
     /** The end is on another shape's point: a connector is not levelled off it. */
     snapped?: boolean;
+    /**
+     * The curved and elbow arrows are drawn, not dragged out (Goodnotes):
+     * the pen's path, page px. Shown as plain ink until the lift traces it.
+     */
+    trail?: Pt[];
   } | null = null;
 
   /**
@@ -10789,6 +10797,7 @@ export class InkSurface {
       // A preset is dragged out as its bounding box, as in GoodNotes.
       const origin = this.snapDragEnd(box, mode, at);
       this.shapeDrag = { preset: mode, origin, to: origin, moved: false };
+      if (isDrawnConnector(mode)) this.shapeDrag.trail = [origin];
       this.showShapeDraft(box);
       return;
     }
@@ -10856,9 +10865,19 @@ export class InkSurface {
       return;
     }
     if (this.shapeDrag) {
+      const drag = this.shapeDrag;
+      if (drag.trail) {
+        const room = this.shapeRoom(box);
+        for (const sample of samples) {
+          const p = this.toPage(box, sample);
+          drag.trail.push({
+            x: clamp(p.x, room.minX, room.maxX),
+            y: clamp(p.y, room.minY, room.maxY),
+          });
+        }
+      }
       if (last) {
         const local = this.toPage(box, last);
-        const drag = this.shapeDrag;
         const room = this.shapeRoom(box);
         const to = {
           x: clamp(local.x, room.minX, room.maxX),
@@ -12055,6 +12074,14 @@ export class InkSurface {
       }
       return;
     }
+    if (drag.trail) {
+      // A drawn arrow is plain ink while the pen is down; the lift traces it.
+      const ink = drag.trail.flatMap((p) => [p.x, p.y, FALLBACK_PRESSURE]);
+      if (ink.length === POINT_STRIDE) ink.push(...ink);
+      this.renderer?.renderWet(box.index, ink, { ...this.currentStyle(), shape: true });
+      this.requestZoomPaint();
+      return;
+    }
     // While dragging, preview the real size — even a tiny one; the tap
     // default only applies if the pen lifts without having moved.
     const rise = drag.snapped === true ? 0 : this.atFitZoom(LINE_LEVEL_RISE);
@@ -12086,6 +12113,21 @@ export class InkSurface {
       this.commitTable(box, page, table);
       return;
     }
+    const traced = drag.moved ? this.traceDrawnArrow(drag) : null;
+    if (traced) {
+      this.commitStroke(
+        box,
+        page,
+        this.styleShape({
+          id: this.strokeIds.next(),
+          color: this.strokeColor(),
+          size: this.strokeSize(),
+          tool: "pen",
+          ...traced,
+        }),
+      );
+      return;
+    }
     if (pts.length === 0) return;
     this.commitStroke(
       box,
@@ -12100,6 +12142,32 @@ export class InkSurface {
         ...presetDecor(drag.preset),
       }),
     );
+  }
+
+  /**
+   * The connector a drawn curved or elbow arrow becomes on lift: the elbow's
+   * runs as the pen went (an L, Z, U…), or the curve through the ink. A
+   * curved arrow drawn straight is the straight arrow, levelled as a dragged
+   * one is. Null for anything else, which is placed from its drag.
+   */
+  private traceDrawnArrow(
+    drag: NonNullable<InkSurface["shapeDrag"]>,
+  ): Pick<Stroke, "pts" | "shape" | "radius"> | null {
+    const trail = drag.trail;
+    if (!trail || drag.preset === "table") return null;
+    const unit = this.atFitZoom(1);
+    if (drag.preset === "elbow") {
+      const points = traceElbow(trail, drag.origin, drag.to, unit);
+      if (points.length < 2) return null;
+      return {
+        pts: points.flatMap((p) => [p.x, p.y, FALLBACK_PRESSURE]),
+        shape: "path",
+        radius: ELBOW_RADIUS,
+      };
+    }
+    const knots = traceCurve(trail, drag.origin, drag.to, unit);
+    if (!knots) return null;
+    return { pts: splinePoints(knots, FALLBACK_PRESSURE), shape: "path" };
   }
 
   /**
