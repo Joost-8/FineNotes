@@ -3646,10 +3646,6 @@ export class Toolbar {
   }
 
   private buildEraserOptions(): void {
-    if (this.dockedAcross()) {
-      this.buildEraserRow();
-      return;
-    }
     // Mode first, as in GoodNotes: "Standard" with a chevron to switch.
     const mode = ERASER_MODES.find((m) => m.id === eraserModeFor(this.state)) ?? ERASER_MODES[0];
     const modeButton = this.optionsEl.createEl("button", { cls: "goodobsidian-erasermode" });
@@ -5408,73 +5404,6 @@ export class Toolbar {
     const clamped = clampEraserSize(size);
     this.state.eraserSize = clamped;
     this.callbacks.onEraserChange?.(eraserModeFor(this.state), clamped);
-  }
-
-  /**
-   * The eraser in the bar (discussion #200): its three modes, the sizes,
-   * and what it erases, each a button; the chevron after the modes keeps
-   * the rarely used Grey out switch.
-   */
-  private buildEraserRow(): void {
-    const mode = eraserModeFor(this.state);
-    for (const each of ERASER_MODES) {
-      const button = this.optionsEl.createEl("button", {
-        cls: "goodobsidian-shape goodobsidian-erasermode-pick clickable-icon",
-        attr: { type: "button", "aria-label": each.label },
-      });
-      eraserModeIcon(button, each.id, each.label);
-      button.toggleClass("is-active", each.id === mode);
-      button.setAttribute("aria-pressed", String(each.id === mode));
-      button.addEventListener("click", () => {
-        this.state.eraserMode = each.id;
-        this.callbacks.onEraserChange?.(each.id, eraserSizeFor(this.state));
-        this.buildOptions();
-        this.syncActive();
-      });
-    }
-    this.chevron(t("toolbar.eraser.greyOut"), (anchor) => this.toggleEraserModeList(anchor));
-    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    const sizes = quickEraserSizes(eraserSizeFor(this.state));
-    const marks = this.eraserMarks(sizes, PILL_ERASER_BOX);
-    for (const size of sizes) {
-      const button = this.optionsEl.createEl("button", { cls: "goodobsidian-erasersize" });
-      button.append(eraserSizeGlyph(marks.get(size), PILL_ERASER_BOX));
-      button.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
-      button.addEventListener("click", () => {
-        this.setEraserSize(size);
-        this.syncActive();
-      });
-      this.eraserSizeButtons.set(size, button);
-    }
-    this.chevron(t("toolbar.eraser.size"), (anchor) => this.toggleEraserSizeList(anchor));
-    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    const filter = eraserFilterFor(this.state);
-    const filters: readonly [EraserFilter, string][] = [
-      ["all", "layers"],
-      ["pen", "pen-line"],
-      ["highlighter", "highlighter"],
-    ];
-    for (const [each, icon] of filters) {
-      const button = this.optionsEl.createEl("button", {
-        cls: "goodobsidian-shape goodobsidian-eraserfilter-pick clickable-icon",
-        attr: { type: "button", "aria-label": ERASER_FILTER_LABELS[each] },
-      });
-      iconOrText(button, icon, ERASER_FILTER_LABELS[each]);
-      button.toggleClass("is-active", each === filter);
-      button.setAttribute("aria-pressed", String(each === filter));
-      button.addEventListener("click", () => {
-        this.state.eraserFilter = each;
-        this.callbacks.onEraserFilterChange?.(each);
-        this.buildOptions();
-      });
-    }
-    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    const clear = this.optionsEl.createEl("button", {
-      cls: "goodobsidian-text-button clickable-icon",
-    });
-    iconOrText(clear, "trash-2", t("toolbar.eraser.clearPage"));
-    clear.setAttribute("aria-label", t("toolbar.eraser.clearPage"));
-    clear.addEventListener("click", () => this.callbacks.onClear());
   }
 
   private toggleEraserModeList(anchor: HTMLElement): void {
