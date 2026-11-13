@@ -12,6 +12,7 @@ import { TipVisual } from "./tip-visual";
 import { featureById, featureLink } from "../model/feature-index";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { type FeatureHost, featureControl, featureList } from "./feature-rows";
+import { closeMenuOnPressOutside } from "./menu-dismiss";
 
 /** Features a search inside Tips lists at most. */
 const TIPS_SEARCH_HITS = 12;
@@ -334,6 +335,14 @@ export class TipsModal extends Modal {
           .onClick(() => host.hideFeature(feature.id, !hidden)),
       );
       menu.showAtMouseEvent(event);
+      // Any tap off the menu closes it, and only closes it (menu-dismiss.ts);
+      // the Try it pad is the page here, where a pen's press would draw.
+      closeMenuOnPressOutside(
+        menu,
+        more.ownerDocument,
+        (target) => this.pad?.el.contains(target) ?? false,
+        { swallowClick: true },
+      );
     });
   }
 
