@@ -220,7 +220,18 @@ export function essentialsLayout(): ToolbarLayout {
   return {
     start: ["thumbnails", "undo", "redo"],
     middle: ["select", "pen", "eraser", "text", "shape", "accessories"],
-    end: ["home", "search", "ai", "calculator", "fullscreen", "addPage", "share", "more", "settings"],
+    // In ⋯ in this order, top to bottom, Home last (Joost, 2026-11-13).
+    end: [
+      "settings",
+      "share",
+      "fullscreen",
+      "ai",
+      "calculator",
+      "search",
+      "addPage",
+      "home",
+      "more",
+    ],
     off: ["pan", "zoom", "stylus", "fill"],
   };
 }
