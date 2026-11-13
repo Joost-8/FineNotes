@@ -1867,8 +1867,35 @@ export class Toolbar {
         item.button.removeClass("is-overflowed");
         item.button.toggleClass("will-fold", folded);
       }
+      // Every button back: the tools follow the start (is-crowded) rather
+      // than stay centred over the end's (Joost, 2026-11-13).
+      this.measureCrowding();
     }
+    this.wrapForEditing();
     this.markFolded();
+  }
+
+  /**
+   * In Customize toolbar every button shows, so the zones may not fit one
+   * line: the bar then grows a second line for the end (`is-wrapped`),
+   * rather than let them overlap (Joost, 2026-11-13). Along the top or
+   * bottom only; an upright bar scrolls.
+   */
+  private wrapForEditing(): void {
+    const bar = this.barEl;
+    bar.removeClass("is-wrapped");
+    if (!this.editor || isBarUpright(this.barDock)) return;
+    const box = (el: HTMLElement | undefined): DOMRect | null => {
+      const r = el?.getBoundingClientRect();
+      return r && r.width > 0 ? r : null;
+    };
+    const { start, middle, end } = this.zoneEls;
+    const zones = [box(start), box(middle), box(end)].filter((r): r is DOMRect => r !== null);
+    const inner = bar.getBoundingClientRect().right - parseFloat(getComputedStyle(bar).paddingRight);
+    const clash = zones.some(
+      (r, i) => r.right > inner + 0.5 || (i > 0 && zones[i - 1].right > r.left + 0.5),
+    );
+    bar.toggleClass("is-wrapped", clash);
   }
 
   /** The ⋯ button shows that it holds folded buttons, and any that want attention. */
