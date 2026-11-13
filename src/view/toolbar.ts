@@ -3832,10 +3832,21 @@ export class Toolbar {
     }
     const body = this.openPopover("saved-pens", anchor);
     body.addClass("goodobsidian-saved-pens-popover");
+    let at = anchor;
     this.popoverRender = () => {
       body.empty();
       this.renderSavedPens(body);
-      this.keepPopoverInside(anchor);
+      // A pin rebuilds the pill, its star with it (FineNotes#211). Placed
+      // against the removed star, which measures 0, 0, the popover jumped
+      // to the view's left edge: hang it from the new star instead.
+      const popover = this.popover;
+      if (!at.isConnected && popover) {
+        const star = this.optionsEl.querySelector<HTMLElement>(".goodobsidian-saved-pens");
+        if (!star) return;
+        at = star;
+        this.placePopover(popover, at);
+      }
+      this.keepPopoverInside(at);
     };
     this.popoverRender();
   }
@@ -6258,14 +6269,35 @@ export class Toolbar {
     // Removed with the popover, so its listeners need no disposer.
     this.keepFocus(popover, false);
     const body = popover.createDiv({ cls: "goodobsidian-popover-body" });
+    const side = this.placePopover(popover, anchor);
 
+    this.popover = popover;
+    this.popoverKind = kind;
+    this.growPopover(popover);
+    // Once the caller has filled it: beside an upright pill, every popover is
+    // kept inside the page area, whether or not its caller asks again.
+    if (side === "left" || side === "right") {
+      queueMicrotask(() => {
+        if (this.popover === popover && anchor.isConnected) this.keepPopoverInside(anchor);
+      });
+    }
+    return body;
+  }
+
+  /**
+   * Put `popover` beside `anchor`: toward the page from wherever the pill
+   * rests (pill-dock-model.ts), placed by the edge it opens from, so its
+   * size is not needed yet. Returns the side it opens toward.
+   */
+  private placePopover(popover: HTMLElement, anchor: HTMLElement): PopoverSide {
     const hostBox = this.host.getBoundingClientRect();
     const anchorBox = anchor.getBoundingClientRect();
-    // Toward the page from wherever the pill rests (pill-dock-model.ts);
-    // placed by the edge it opens from, so its size is not needed yet.
     const side = this.popoverSideFor(anchor);
     const centreX = anchorBox.left - hostBox.left + anchorBox.width / 2;
     const centreY = anchorBox.top - hostBox.top + anchorBox.height / 2;
+    for (const each of ["up", "left", "right"]) popover.removeClass(`opens-${each}`);
+    popover.style.removeProperty("top");
+    popover.style.removeProperty("bottom");
     if (side !== "down") popover.addClass(`opens-${side}`);
     if (side === "down") {
       popover.setCssStyles({
@@ -6284,18 +6316,7 @@ export class Toolbar {
         top: `${Math.round(centreY)}px`,
       });
     }
-
-    this.popover = popover;
-    this.popoverKind = kind;
-    this.growPopover(popover);
-    // Once the caller has filled it: beside an upright pill, every popover is
-    // kept inside the page area, whether or not its caller asks again.
-    if (side === "left" || side === "right") {
-      queueMicrotask(() => {
-        if (this.popover === popover && anchor.isConnected) this.keepPopoverInside(anchor);
-      });
-    }
-    return body;
+    return side;
   }
 
   /**
