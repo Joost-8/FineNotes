@@ -27,6 +27,7 @@ import {
   typedSpacing,
 } from "../canvas/paper-style";
 import { type App, Menu, Modal, setIcon } from "obsidian";
+import { BOARD_RULINGS } from "../model/board";
 import { renderColorMixer } from "./color-picker";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { mmStepper } from "./mm-stepper";
@@ -164,7 +165,7 @@ export interface AddPagePopoverOptions {
   onPick: (backdrop: Backdrop, position: InsertPosition) => void;
   onMore: (position: InsertPosition) => void;
   /** Add an endless board among the pages (discussion #160); without it the row is not offered. */
-  onBoard?: (position: InsertPosition) => void;
+  onBoard?: (position: InsertPosition, ruling: Ruling) => void;
 }
 
 const POPOVER_WIDTH = 340;
@@ -280,13 +281,30 @@ export class AddPagePopover {
     });
     const onBoard = this.options.onBoard;
     if (onBoard) {
-      const board = this.el.createEl("button", { cls: "goodobsidian-addpage-row clickable-icon" });
-      setIcon(board.createSpan({ cls: "goodobsidian-addpage-row-icon" }), "infinity");
-      board.createSpan({ text: t("notebooks.command.addBoard") });
-      board.addEventListener("click", () => {
-        this.close();
-        onBoard(this.position);
-      });
+      // A board, on the paper of its card: the three a new board offers.
+      const head = this.el.createDiv({ cls: "goodobsidian-addpage-boardhead" });
+      setIcon(head.createSpan({ cls: "goodobsidian-addpage-row-icon" }), "infinity");
+      head.createSpan({ text: t("notebooks.command.addBoard") });
+      const row = this.el.createDiv({ cls: "goodobsidian-addpage-boards" });
+      for (const ruling of BOARD_RULINGS) {
+        const name = boardPaperName(ruling);
+        const card = row.createEl("button", {
+          cls: "goodobsidian-template-card clickable-icon",
+          attr: { type: "button", "aria-label": `${t("notebooks.command.addBoard")}: ${name}` },
+        });
+        const canvas = card.createEl("canvas", { cls: "goodobsidian-template-preview" });
+        paintTemplatePreview(
+          canvas,
+          { kind: ruling },
+          BOARD_PREVIEW_GEOMETRY,
+          ADD_BOARD_PREVIEW_WIDTH,
+        );
+        card.createDiv({ cls: "goodobsidian-template-name", text: name });
+        card.addEventListener("click", () => {
+          this.close();
+          onBoard(this.position, ruling);
+        });
+      }
     }
   }
 
@@ -299,6 +317,19 @@ export class AddPagePopover {
 }
 
 // --- Picker parts -------------------------------------------------------------
+
+/** A board's paper cards show a landscape piece of it, 4 by 3. */
+export const BOARD_PREVIEW_GEOMETRY: PageGeometry = { width: 560, height: 420 };
+/** Preview width of a board's paper card in Add page, CSS px: three to the popover's row. */
+const ADD_BOARD_PREVIEW_WIDTH = 64;
+
+/** A board paper's name, as New notebook and Add page show it. */
+export function boardPaperName(ruling: Ruling): string {
+  if (ruling === "blank") return t("notebooks.newNotebook.boardBlank");
+  if (ruling === "dotted") return t("notebooks.newNotebook.boardDotted");
+  if (ruling === "squared") return t("notebooks.newNotebook.boardSquared");
+  return ruling;
+}
 
 /** Size-select value meaning "leave the page the size it is". */
 export const KEEP_SIZE = "keep";

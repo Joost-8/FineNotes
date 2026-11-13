@@ -7,7 +7,11 @@ import {
   featureLink,
   searchFeatures,
   searchWords,
+  hiddenFeatureIds,
+  searchableFeatures,
   settingKeyOf,
+  switchValue,
+  withHiddenFeature,
 } from "../../src/model/feature-index";
 import { parseFinenotesLink } from "../../src/model/finenotes-link";
 import { DEFAULT_SETTINGS } from "../../src/settings-data";
@@ -33,17 +37,51 @@ describe("the feature index", () => {
     }
   });
 
-  it("points every switch at a real on/off setting", () => {
+  it("points every switch at a real on/off setting, pen gestures included", () => {
     const settings = DEFAULT_SETTINGS as unknown as Record<string, unknown>;
     for (const feature of FEATURES) {
       const key = settingKeyOf(feature);
-      if (key !== null) expect(typeof settings[key], feature.id).toBe("boolean");
+      if (key !== null) expect(typeof switchValue(settings, key), feature.id).toBe("boolean");
+    }
+    expect(settingKeyOf(featureById("circleLasso")!)).toBe("penGestures.circleLasso");
+  });
+
+  it("gives the gestures on a page a Try it, with the event that marks it done", () => {
+    expect(featureById("circleLasso")?.tryOn).toEqual({ done: "lasso.circle" });
+    expect(featureById("scribble")?.tryOn).toEqual({ done: "erase.scribble" });
+    expect(featureById("undo")?.tryOn).toEqual({ done: "undo.gesture" });
+    expect(featureById("pullPage")?.tryOn).toEqual({ done: "page.pull" });
+    expect(featureById("fillScreen")?.tryOn).toEqual({ done: null });
+    // A command or a switch with no gesture is not tried on a page.
+    expect(featureById("searchInk")?.tryOn).toBeNull();
+    expect(featureById("textDragSize")?.tryOn).toBeNull();
+    for (const feature of FEATURES) {
+      if (feature.tryOn) expect(feature.tip, feature.id).not.toBeNull();
     }
   });
 
   it("finds a feature by id whatever its case", () => {
     expect(featureById("TEXTDRAGSIZE")?.id).toBe("textDragSize");
     expect(featureById("nothing-like-this")).toBeNull();
+  });
+});
+
+describe("switchValue", () => {
+  const defaults = { circleLasso: true, scribbleErase: true };
+
+  it("reads a top-level switch, and nothing for a key that is not on/off", () => {
+    expect(switchValue({ calcNotes: false }, "calcNotes")).toBe(false);
+    expect(switchValue({ paperWidth: 900 }, "paperWidth")).toBeUndefined();
+    expect(switchValue({}, "missing")).toBeUndefined();
+  });
+
+  it("reads a pen gesture, falling back to its default when it was never stored", () => {
+    expect(
+      switchValue({ penGestures: { circleLasso: false } }, "penGestures.circleLasso", defaults),
+    ).toBe(false);
+    expect(switchValue({}, "penGestures.circleLasso", defaults)).toBe(true);
+    expect(switchValue({ penGestures: "junk" }, "penGestures.scribbleErase", defaults)).toBe(true);
+    expect(switchValue({}, "penGestures.toString", defaults)).toBeUndefined();
   });
 });
 
@@ -100,5 +138,34 @@ describe("feature links", () => {
       do: "unknown",
       what: "show without a feature",
     });
+  });
+});
+
+describe("features taken out of search", () => {
+  it("reads back known ids only, each once", () => {
+    expect(hiddenFeatureIds(["circleLasso", "circleLasso", "nope", 3, null])).toEqual([
+      "circleLasso",
+    ]);
+    expect(hiddenFeatureIds("circleLasso")).toEqual([]);
+    expect(hiddenFeatureIds(undefined)).toEqual([]);
+  });
+
+  it("takes a feature out and puts it back", () => {
+    const out = withHiddenFeature([], "circleLasso", true);
+    expect(out).toEqual(["circleLasso"]);
+    expect(withHiddenFeature(out, "circleLasso", true)).toEqual(["circleLasso"]);
+    expect(withHiddenFeature(out, "circleLasso", false)).toEqual([]);
+    expect(withHiddenFeature([], "nope", true)).toEqual([]);
+  });
+
+  it("leaves a hidden feature out of what search may find, and nothing else", () => {
+    const all = searchableFeatures([]);
+    const some = searchableFeatures(["circleLasso"]);
+    expect(some.length).toBe(all.length - 1);
+    expect(some.some((f) => f.id === "circleLasso")).toBe(false);
+    expect(searchFeatures("circle select", text, 3, some).map((f) => f.id)).not.toContain(
+      "circleLasso",
+    );
+    expect(searchFeatures("circle select", text, 3, all).map((f) => f.id)).toContain("circleLasso");
   });
 });

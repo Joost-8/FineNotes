@@ -23,6 +23,7 @@ import {
   currentPageIndex,
   inkBeyondPage,
   fitScale,
+  layoutNotebook,
   layoutPages,
   scrollTopForPage,
   toLayoutSpace,
@@ -451,6 +452,17 @@ describe("columnScrollRangeY (discussion #43: no grey above or below at the fill
     expect(range?.max).toBeCloseTo((last.y + last.height) * scale - paneH, 9);
     // The band in the user's screenshot: PAGE_MARGIN_Y * scale above page 1.
     expect(range?.min).toBeCloseTo(PAGE_MARGIN_Y * scale, 9);
+  });
+
+  it("ends at the last page when a board follows it (discussion #160, parked far away)", () => {
+    const pages = uniform();
+    const board = { ...structuredClone(pages[0]), id: "pb", board: true as const };
+    const layout = layoutNotebook([...pages, board]);
+    const plain = layoutPages(pages);
+    const scale = paneW / plain.boxes[0].width;
+    expect(columnScrollRangeY(layout, scale, paneW, paneH)).toEqual(
+      columnScrollRangeY(plain, scale, paneW, paneH),
+    );
   });
 
   it("keeps the gap between pages: only the ends are trimmed", () => {
