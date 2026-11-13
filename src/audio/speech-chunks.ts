@@ -78,11 +78,12 @@ export function resample(samples: Float32Array, from: number, to: number): Float
 /**
  * Where the windows end, in samples, the last being `length`: each at the
  * quietest `QUIET_SPAN_S` within `SEARCH_S` before the longest a window may
- * run. Quiet is the lowest mean square, the earliest on a tie.
+ * run (`windowS`: Whisper's 28 s on this device, minutes for an upload).
+ * Quiet is the lowest mean square, the earliest on a tie.
  */
-export function cutPoints(samples: Float32Array, rate = SPEECH_RATE): number[] {
+export function cutPoints(samples: Float32Array, rate = SPEECH_RATE, windowS = WINDOW_S): number[] {
   const length = samples.length;
-  const window = Math.round(WINDOW_S * rate);
+  const window = Math.round(windowS * rate);
   const search = Math.round(SEARCH_S * rate);
   const span = Math.max(1, Math.round(QUIET_SPAN_S * rate));
   const step = Math.max(1, Math.round(span / 4));

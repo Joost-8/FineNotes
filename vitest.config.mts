@@ -218,6 +218,7 @@ export default defineConfig({
         "src/audio/recording.ts",
         "src/audio/replay.ts",
         "src/audio/speech-chunks.ts",
+        "src/audio/online-speech.ts",
         "src/audio/speech-models.ts",
         "src/export/pdf-writer.ts",
         "src/export/pdf-composer.ts",

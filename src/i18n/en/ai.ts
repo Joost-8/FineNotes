@@ -35,6 +35,7 @@ export const ai = {
   "ai.menu.settings": "AI settings…",
   "ai.menu.setUp": "Set up AI…",
   "ai.menu.needsEndpoint": "Needs your endpoint's URL in settings",
+  "ai.menu.speechOnDevice": "Recordings are transcribed on this device",
   "ai.menu.needsKeyA": "Needs a {name} key",
   "ai.menu.needsKeyAn": "Needs an {name} key",
   "ai.menu.needsKeyImagesA": "Needs a {name} key for images",
@@ -183,23 +184,15 @@ export const ai = {
   "ai.client.noImage": "{label} returned no image.",
   "ai.client.undecodable": "{label} returned an image FineNotes could not decode.",
   "ai.client.uploading": "Uploading {size} MB to {label}…",
-  "ai.client.waiting": "Waiting for the transcript…",
+  "ai.client.uploadingPart": "Uploading part {part} of {parts} ({size} MB) to {label}…",
   "ai.client.audioLimit":
     "{label} hit the {max}-token output limit before the end of the recording. Transcribe shorter parts.",
   "ai.client.noTranscript": "{label} returned no transcript.",
-  "ai.audio.claudeUnsupported":
-    "Claude cannot transcribe audio files — needs an OpenAI or Google key",
-  "ai.audio.openrouterUnsupported":
-    "OpenRouter has no audio transcription — needs an OpenAI or Google key",
   "ai.audio.empty": "the recording is empty",
   "ai.audio.tooBigGemini":
     "the recording is {size} — Gemini takes at most about {max} in one request. Use an OpenAI key (up to 25 MB), or record shorter parts.",
   "ai.audio.tooBigOpenai":
     "the recording is {size} — OpenAI takes at most 25 MB. Record shorter parts, or at a lower bitrate.",
-  "ai.audio.uploadGemini":
-    "This recording is {size}, and Gemini takes at most about {max} in one request. Use an OpenAI key (up to 25 MB), or record shorter parts.",
-  "ai.audio.uploadOpenai":
-    "This recording is {size}, and OpenAI takes at most {max}. Record shorter parts.",
   "ai.image.claudeUnsupported":
     "Claude cannot make images — needs an OpenAI, Google or OpenRouter key",
   "ai.image.needsKey": "Needs an OpenAI, Google or OpenRouter key",
@@ -427,8 +420,6 @@ export const ai = {
   "ai.audio.stopTranscribing": "Stop transcribing",
   "ai.audio.transcribeAgain": "Transcribe again",
   "ai.audio.transcribe": "Transcribe",
-  "ai.audio.onDevice": "On this device",
-  "ai.audio.withKey": "With your AI key",
   "ai.audio.openTranscript": "Open transcript note",
   "ai.audio.pasteTranscript": "Paste transcript onto the page",
   "ai.audio.remove": "Remove from note",

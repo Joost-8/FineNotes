@@ -15,10 +15,7 @@
  */
 
 import type { Page, Recording, Stroke } from "../model/document";
-import { GOOGLE_INLINE_MAX_BYTES, OPENAI_AUDIO_MAX_BYTES } from "../recognition/audio-request";
-import { t } from "../i18n/translate";
 import { monthName } from "../recognition/hwr/learned-model";
-import type { LlmVendor } from "../recognition/llm-request";
 
 /**
  * Bits per second, always passed explicitly: WebKit's default is 192 kbps,
@@ -305,43 +302,6 @@ export function findRecordingAt(
 export function seekTargetMs(offsetMs: number, durationMs: number, leadMs = SEEK_LEAD_MS): number {
   const end = Math.max(0, durationMs);
   return Math.min(end, Math.max(0, offsetMs - leadMs));
-}
-
-/**
- * The most a vendor will take in one transcription upload, in bytes, or
- * `null` when there is no published limit (a self-hosted endpoint).
- * Gemini's 20 MB is for the whole JSON request and the audio travels as
- * base64, so about three quarters of it is audio; 14 MB leaves room for the
- * prompt and the envelope.
- */
-export function audioUploadLimit(vendor: LlmVendor): number | null {
-  switch (vendor) {
-    case "openai":
-      return OPENAI_AUDIO_MAX_BYTES;
-    case "google":
-      return Math.min(14 * 1024 * 1024, Math.floor((GOOGLE_INLINE_MAX_BYTES * 3) / 4));
-    default:
-      return null;
-  }
-}
-
-function megabytes(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/**
- * Why a recording of `bytes` cannot be sent to `vendor`, or `null` when it
- * can. Checked against the file's size before it is read or anything is
- * sent, so a lecture that is too big is refused at once rather than after an
- * upload that was always going to fail.
- */
-export function uploadSizeProblem(vendor: LlmVendor, bytes: number): string | null {
-  const limit = audioUploadLimit(vendor);
-  if (limit === null || bytes <= limit) return null;
-  if (vendor === "google") {
-    return t("ai.audio.uploadGemini", { size: megabytes(bytes), max: megabytes(limit) });
-  }
-  return t("ai.audio.uploadOpenai", { size: megabytes(bytes), max: megabytes(limit) });
 }
 
 /** Split a vault path into its folder (`""` at the root) and its file name. */

@@ -76,6 +76,8 @@ import {
   VENDOR_LABELS,
   VENDORS,
 } from "./recognition/llm-request";
+import { DEFAULT_AUDIO_MODELS, type KeySlot, audioService } from "./recognition/audio-request";
+import { type SpeechService, isOnlineSpeechService } from "./audio/online-speech";
 import { providerLabel } from "./recognition/registry";
 import {
   type GoodObsidianSettings,
@@ -303,6 +305,22 @@ function toolNames() {
     highlighter: t("settings.tool.highlighter"),
     eraser: t("settings.tool.eraser"),
     select: t("settings.tool.select"),
+  };
+}
+
+/** What the key rows need to know about a slot: a chat vendor, or Groq. */
+function slotService(slot: KeySlot): { label: string; userEndpoint: boolean } {
+  return slot === "groq" ? audioService("groq") : VENDORS[slot];
+}
+
+function speechServiceLabels(): Record<SpeechService, string> {
+  return {
+    device: t("settings.speechService.device"),
+    groq: "Groq",
+    openai: "OpenAI",
+    openrouter: "OpenRouter",
+    google: "Google (Gemini)",
+    custom: t("settings.speechService.custom"),
   };
 }
 
@@ -1921,6 +1939,14 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       ? t("settings.ai.endpointKey")
       : t("settings.ai.keyName", { service: VENDORS[vendor].label });
     const imageKeyName = t("settings.ai.imageKeyName", { service: VENDORS[imageVendor].label });
+    const speechService = settings.speechService ?? "device";
+    const speechOnline = isOnlineSpeechService(speechService);
+    const speechModel = DEFAULT_AUDIO_MODELS[speechOnline ? speechService : "groq"];
+    const speechKeyName = !speechOnline
+      ? t("settings.ai.speechKeyName", { service: "Groq" })
+      : speechService === "custom"
+        ? t("settings.ai.endpointKey")
+        : t("settings.ai.speechKeyName", { service: slotService(speechService).label });
 
     return this.sectionGroups("ai", [
       [
@@ -2005,6 +2031,61 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
               ["OCR", "handwriting to text", "auto recognition", "recognize automatically"],
             ),
             "autoRecognize",
+          ),
+        ],
+      ],
+      [
+        "recordings",
+        t("settings.ai.recordingsHeading"),
+        [
+          this.tile(
+            dropdown(
+              "speechService",
+              t("settings.speechService.name"),
+              t("settings.speechService.line"),
+              speechServiceLabels(),
+              ["transcribe", "transcription", "speech to text", "Whisper", "Groq", "audio"],
+            ),
+            "audio-lines",
+          ),
+          this.tile(
+            {
+              ...controlRow(
+                t("settings.speechServiceModel.name"),
+                t("settings.ai.empty", { model: speechModel }),
+                { type: "text", key: "speechServiceModel", placeholder: speechModel },
+              ),
+              visible: speechOnline,
+            },
+            "cpu",
+          ),
+          this.tile(
+            {
+              ...controlRow(
+                t("settings.speechBaseUrl.name"),
+                t("settings.speechBaseUrl.line"),
+                {
+                  type: "text",
+                  key: "speechBaseUrl",
+                  placeholder: settings.llmBaseUrl || "http://localhost:8000/v1",
+                },
+                ["Speaches", "faster-whisper", "self-hosted"],
+              ),
+              visible: speechService === "custom",
+            },
+            "server",
+          ),
+          this.tile(
+            drawnRow(
+              speechKeyName,
+              this.keyLine(speechOnline ? speechService : "groq"),
+              (s) => {
+                if (isOnlineSpeechService(speechService)) this.renderKeyRow(s, speechService);
+              },
+              ["transcription key", "Groq key"],
+              speechOnline && speechService !== vendor,
+            ),
+            "key-round",
           ),
         ],
       ],
@@ -2838,9 +2919,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /** A key row's one line: where the key lives and where it goes. */
-  private keyLine(slot: LlmVendor): string {
-    if (VENDORS[slot].userEndpoint) return t("settings.key.endpointLine");
-    const service = VENDORS[slot].label;
+  private keyLine(slot: KeySlot): string {
+    if (slotService(slot).userEndpoint) return t("settings.key.endpointLine");
+    const service = slotService(slot).label;
     return this.plugin.keys.secure
       ? t("settings.key.keychainLine", { service })
       : t("settings.key.vaultLine", { service });
@@ -2850,9 +2931,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
    * A key's status with Add / Replace / Remove. The key itself is never put
    * back on screen — not even masked in a field, where it could be copied out.
    */
-  private renderKeyRow(setting: Setting, slot: LlmVendor): void {
+  private renderKeyRow(setting: Setting, slot: KeySlot): void {
     const set = this.plugin.apiKeyFor(slot) !== "";
-    const optional = VENDORS[slot].userEndpoint;
+    const optional = slotService(slot).userEndpoint;
     setting.controlEl.createSpan({
       cls: `goodobsidian-key-status${set ? " is-set" : ""}`,
       text: set
@@ -2876,30 +2957,30 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     }
   }
 
-  private promptForKey(slot: LlmVendor): void {
+  private promptForKey(slot: KeySlot): void {
     new ApiKeyModal(this.app, {
-      title: VENDORS[slot].userEndpoint
+      title: slotService(slot).userEndpoint
         ? t("settings.ai.endpointKey")
-        : t("settings.ai.keyName", { service: VENDORS[slot].label }),
-      placeholder: VENDORS[slot].userEndpoint ? t("settings.key.usuallyEmpty") : "sk-…",
+        : t("settings.ai.keyName", { service: slotService(slot).label }),
+      placeholder: slotService(slot).userEndpoint ? t("settings.key.usuallyEmpty") : "sk-…",
       where: this.plugin.keys.secure
         ? t("settings.key.whereKeychain")
         : t("settings.key.whereVault"),
       onSave: (key) => {
         // Entering a key by hand invalidates any in-flight OpenRouter connect,
         // so a stale browser approval cannot overwrite it later.
-        if (!VENDORS[slot].userEndpoint) this.plugin.cancelOpenRouterConnect();
+        if (!slotService(slot).userEndpoint) this.plugin.cancelOpenRouterConnect();
         this.plugin.storeApiKey(slot, key);
         this.refresh();
       },
     }).open();
   }
 
-  private async removeKey(slot: LlmVendor): Promise<void> {
+  private async removeKey(slot: KeySlot): Promise<void> {
     const sure = await ConfirmModal.confirm(this.app, {
-      title: VENDORS[slot].userEndpoint
+      title: slotService(slot).userEndpoint
         ? t("settings.key.removeEndpointTitle")
-        : t("settings.key.removeTitle", { service: VENDORS[slot].label }),
+        : t("settings.key.removeTitle", { service: slotService(slot).label }),
       message: t("settings.key.removeMessage"),
       cta: t("common.remove"),
     });

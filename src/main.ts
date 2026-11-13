@@ -109,11 +109,14 @@ import { DEFAULT_IMAGE_MODELS, canGenerateImages } from "./recognition/ai-image"
 import {
   type AiVendorConfig,
   type ImageConfig,
-  assertConfigured,
+  type SpeechConfig,
+  assertSpeechConfigured,
+  speechLabel,
   targetLabel,
   transcribeAudio,
 } from "./recognition/ai-client";
-import { audioUnsupportedReason, canTranscribeAudio } from "./recognition/audio-request";
+import type { KeySlot } from "./recognition/audio-request";
+import { isOnlineSpeechService, isSpeechService } from "./audio/online-speech";
 import {
   OPENROUTER_CALLBACK_ACTION,
   buildKeyExchangeRequest,
@@ -269,7 +272,7 @@ import { type ImageMenuContext, registerImageMenuEntry } from "./view/image-menu
 import type { InkSurface } from "./view/ink-surface";
 import { GrapeFiles } from "./view/grape-files";
 import { StartupLog } from "./view/startup-log";
-import { DeviceTranscriber } from "./view/device-transcriber";
+import { DeviceTranscriber, decodeForSpeech } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
 import { obsidianOcrDeps } from "./view/ocr-deps";
 import { cleanupText, removeOtherOcrModels } from "./view/ocr-models";
@@ -1176,6 +1179,7 @@ export default class GoodObsidianPlugin extends Plugin {
     // "trocr-local", was removed in 2026-09) lands on Manual, so the settings
     // dropdown never shows a blank choice. The removed provider's own two
     // settings are dropped, so they are not written back.
+    if (!isSpeechService(this.settings.speechService)) this.settings.speechService = "device";
     if (!this.providers.has(this.settings.recognitionProviderId)) {
       this.settings.recognitionProviderId = MANUAL_PROVIDER_ID;
     }
@@ -1565,7 +1569,7 @@ export default class GoodObsidianPlugin extends Plugin {
    * be told from its prefix stays in `llmApiKey` (see `planKeyMigration`) and
    * keeps working exactly as it did: for the selected cloud vendor only.
    */
-  apiKeyFor(slot: LlmVendor): string {
+  apiKeyFor(slot: KeySlot): string {
     const stored = this.keys.get(slot);
     if (stored) return stored;
     if (slot === this.settings.llmVendor && !VENDORS[slot].userEndpoint) {
@@ -1575,7 +1579,7 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Store a key; false (with a notice) when it did not read back. */
-  storeApiKey(slot: LlmVendor, key: string): boolean {
+  storeApiKey(slot: KeySlot, key: string): boolean {
     const ok = this.keys.set(slot, key);
     if (ok && slot === this.settings.llmVendor && this.settings.llmApiKey) {
       // The slot now has a key of its own; drop the unassigned legacy one.
@@ -1605,7 +1609,7 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Forget a key. */
-  removeApiKey(slot: LlmVendor): void {
+  removeApiKey(slot: KeySlot): void {
     if (slot === this.settings.llmVendor && this.settings.llmApiKey) {
       this.settings.llmApiKey = "";
       void this.saveSettings();
@@ -1644,7 +1648,28 @@ export default class GoodObsidianPlugin extends Plugin {
       vendor: this.settings.llmVendor,
       baseUrl: this.settings.llmBaseUrl,
       imageVendor: this.settings.imageVendor,
+      speechService: this.settings.speechService,
+      speechBaseUrl: this.speechBaseUrl(),
       hasKey: (slot) => this.apiKeyFor(slot) !== "",
+    };
+  }
+
+  /** The transcription server of the user's own: its own address, else the AI service's. */
+  speechBaseUrl(): string {
+    return this.settings.speechBaseUrl?.trim() || this.settings.llmBaseUrl;
+  }
+
+  /** The online service recordings are transcribed with, or null for this device. */
+  speechConfig(): SpeechConfig | null {
+    const service = this.settings.speechService;
+    if (!isOnlineSpeechService(service)) return null;
+    const language = this.settings.speechLanguage;
+    return {
+      vendor: service,
+      model: this.settings.speechServiceModel ?? "",
+      apiKey: this.apiKeyFor(service),
+      baseUrl: service === "custom" ? this.speechBaseUrl() : "",
+      language: language && language !== "auto" ? language : undefined,
     };
   }
 
@@ -1653,8 +1678,8 @@ export default class GoodObsidianPlugin extends Plugin {
    * destination. The user's own endpoint and the named cloud services are
    * asked about separately.
    */
-  consentedTo(vendor: LlmVendor): boolean {
-    return VENDORS[vendor].userEndpoint
+  consentedTo(vendor: KeySlot): boolean {
+    return isUserEndpoint(vendor)
       ? this.settings.customConsentGiven
       : this.settings.cloudConsentGiven;
   }
@@ -1667,18 +1692,21 @@ export default class GoodObsidianPlugin extends Plugin {
    * `what` complete "<action> sends <what> to <destination>".
    */
   async confirmAiSend(
-    target: { vendor: LlmVendor; baseUrl: string },
+    target: { vendor: KeySlot; baseUrl: string },
     action: string,
     what: string,
   ): Promise<boolean> {
-    const custom = VENDORS[target.vendor].userEndpoint;
+    const custom = isUserEndpoint(target.vendor);
     if (this.consentedTo(target.vendor)) return true;
     const confirmed = await ConfirmModal.confirm(this.app, {
       title: custom ? t("notebooks.consent.titleCustom") : t("notebooks.consent.titleCloud"),
       message: t(custom ? "notebooks.consent.messageCustom" : "notebooks.consent.messageCloud", {
         action,
         what,
-        target: targetLabel(target),
+        target:
+          target.vendor === "groq"
+            ? speechLabel({ vendor: "groq", baseUrl: "" })
+            : targetLabel({ vendor: target.vendor, baseUrl: target.baseUrl }),
       }),
       cta: t("notebooks.consent.send"),
     });
@@ -1689,30 +1717,31 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * Transcribe an audio recording with the configured AI service, after the
-   * one-time consent. Resolves to the transcript, or `null` when the user
-   * declined to send it; throws an `Error` with a Notice-ready message
-   * otherwise (unsupported vendor, no key, too large, network, HTTP). The
-   * audio feature's entry point — see `transcribeAudio` in ai-client.ts.
+   * Transcribe an audio recording with the online service chosen for
+   * recordings, after the one-time consent. Resolves to the transcript, or
+   * `null` when the user declined to send it; throws an `Error` with a
+   * Notice-ready message otherwise (none chosen, no key, network, HTTP). A
+   * recording over the service's upload limit is decoded here and sent in
+   * windows. The audio feature's entry point — see `transcribeAudio` in
+   * ai-client.ts.
    */
   async transcribeAudioFile(
     bytes: ArrayBuffer,
     mimeType: string,
     onProgress?: (message: string) => void,
   ): Promise<string | null> {
-    const text = this.textAiConfig();
-    // The text model is not a speech model except on Gemini, which does both.
-    const config = { ...text, model: text.vendor === "google" ? text.model : "" };
+    const config = this.speechConfig();
+    if (!config) throw new Error(`${t("ai.menu.speechOnDevice")}.`);
     // Refuse what cannot work before asking to send anything.
-    if (!canTranscribeAudio(config.vendor)) {
-      throw new Error(`${audioUnsupportedReason(config.vendor)}.`);
-    }
-    assertConfigured(config);
+    assertSpeechConfigured(config);
     const action = t("notebooks.consent.audioAction");
     if (!(await this.confirmAiSend(config, action, t("notebooks.consent.audioWhat")))) {
       return null;
     }
-    return transcribeAudio(config, bytes, mimeType, onProgress);
+    return transcribeAudio(config, bytes, mimeType, {
+      onProgress,
+      decode: () => decodeForSpeech(bytes),
+    });
   }
 
   /** Close the settings window, to show a note opened from it (the same app API as below). */
@@ -3845,4 +3874,9 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     return null;
   }
+}
+
+/** A server of the user's own: a key slot and a consent of its own. */
+function isUserEndpoint(slot: KeySlot): boolean {
+  return slot !== "groq" && VENDORS[slot].userEndpoint;
 }

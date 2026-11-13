@@ -12,8 +12,20 @@
  *   transcription prompt. The whole request may be 20 MB; `audio/m4a` is a
  *   listed type and `audio/mp4` is not, so MP4 audio is relabelled.
  *   https://ai.google.dev/gemini-api/docs/audio (2026-09-22)
- * - **Anthropic** and **OpenRouter** have no audio-file transcription
- *   endpoint, and say so rather than guess.
+ * - **Groq**: the same OpenAI form at
+ *   `api.groq.com/openai/v1/audio/transcriptions`, Whisper large v3 (turbo).
+ *   25 MB on the free tier; flac, mp3, mp4, m4a, ogg, wav, webm.
+ *   https://console.groq.com/docs/speech-to-text (2026-11-12)
+ * - **OpenRouter**: the OpenAI form at `openrouter.ai/api/v1/audio/transcriptions`
+ *   (added 2026), models such as `openai/whisper-large-v3`; multipart
+ *   uploads up to 25 MB; `json` or `verbose_json` only.
+ *   https://openrouter.ai/docs/guides/overview/multimodal/stt (2026-11-12)
+ * - **Anthropic** has no audio-file transcription endpoint, and says so
+ *   rather than guess.
+ *
+ * Whisper models answer `verbose_json` with timed segments, which give a
+ * transcript with times like the device's; `gpt-4o-*-transcribe` and a
+ * server of the user's own are asked for plain `json`.
  *
  * The multipart body is built here, as bytes, because `requestUrl` takes an
  * `ArrayBuffer` and has no FormData — and a hand-built body is only correct
@@ -31,44 +43,92 @@ import {
   openAiEndpointUrl,
 } from "./llm-request";
 
-export type AudioVendor = "openai" | "google" | "custom";
+export type AudioVendor = "openai" | "google" | "custom" | "openrouter" | "groq";
 
-export const AUDIO_VENDORS: readonly AudioVendor[] = ["openai", "google", "custom"];
+/** Every service a recording can be sent to; Groq transcribes and nothing else here. */
+export const AUDIO_VENDORS: readonly AudioVendor[] = [
+  "groq",
+  "openai",
+  "openrouter",
+  "google",
+  "custom",
+];
+
+/** Where a key is kept: one slot per chat vendor, and Groq's. */
+export type KeySlot = LlmVendor | "groq";
 
 /**
  * Starting points. `gpt-4o-mini-transcribe` is the cheapest OpenAI model
  * (research/FEATURES.md §3.4: about $0.27 for a 90-minute lecture). Gemini
- * transcribes with the ordinary text model. Self-hosted Whisper servers
- * conventionally accept the name `whisper-1`.
+ * transcribes with the ordinary text model. Groq's turbo Whisper costs
+ * $0.04 an hour. Self-hosted Whisper servers conventionally accept the
+ * name `whisper-1`.
  */
 export const DEFAULT_AUDIO_MODELS: Readonly<Record<AudioVendor, string>> = {
   openai: "gpt-4o-mini-transcribe",
   google: defaultModelFor("google"),
   custom: "whisper-1",
+  openrouter: "openai/whisper-large-v3",
+  groq: "whisper-large-v3-turbo",
 };
 
-/** OpenAI's documented upload cap. */
+/** OpenAI's documented upload cap, which Groq (free tier) and OpenRouter share. */
 export const OPENAI_AUDIO_MAX_BYTES = 25 * 1024 * 1024;
+
+/** Groq's transcription endpoint. */
+export const GROQ_TRANSCRIPTIONS_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+/** OpenRouter's transcription endpoint. */
+export const OPENROUTER_TRANSCRIPTIONS_URL = "https://openrouter.ai/api/v1/audio/transcriptions";
+
+/** What the rest of the code needs to know about a transcription service. */
+export interface AudioServiceInfo {
+  label: string;
+  requiresKey: boolean;
+  /** A server of the user's own: its own key slot and its own consent. */
+  userEndpoint: boolean;
+  headers: (apiKey: string) => Record<string, string>;
+}
+
+/** The service behind `vendor`: the chat vendor's own description, or Groq's. */
+export function audioService(vendor: AudioVendor): AudioServiceInfo {
+  if (vendor === "groq") {
+    return {
+      label: "Groq",
+      requiresKey: true,
+      userEndpoint: false,
+      headers: (apiKey) => ({ authorization: `Bearer ${apiKey}` }),
+    };
+  }
+  return VENDORS[vendor];
+}
+
+/**
+ * The most one upload to `vendor` may hold. A server of the user's own
+ * publishes none; 25 MB is the OpenAI-compatible servers' common default.
+ * Gemini's 20 MB is for the whole JSON request, the audio as base64.
+ */
+export function audioMaxBytes(vendor: AudioVendor): number {
+  if (vendor === "google") {
+    return Math.min(14 * 1024 * 1024, Math.floor((GOOGLE_INLINE_MAX_BYTES * 3) / 4));
+  }
+  return OPENAI_AUDIO_MAX_BYTES;
+}
+
+/**
+ * Whether `vendor` is asked for timed segments (`verbose_json`): Whisper
+ * models at Groq, OpenRouter and OpenAI. `gpt-4o-*-transcribe` refuses it,
+ * and a server of the user's own may not know it.
+ */
+export function wantsSegments(vendor: AudioVendor, model: string): boolean {
+  const id = model.trim().toLowerCase();
+  if (vendor === "groq") return true;
+  if (vendor === "openrouter" || vendor === "openai") return id.includes("whisper");
+  return false;
+}
 /** Gemini's documented cap on a whole inline request, prompt included. */
 export const GOOGLE_INLINE_MAX_BYTES = 20 * 1024 * 1024;
 /** A transcript of an hour of speech is ~10k words; leave room for two. */
 export const AUDIO_MAX_OUTPUT_TOKENS = 32768;
-
-export function canTranscribeAudio(vendor: LlmVendor): vendor is AudioVendor {
-  return (AUDIO_VENDORS as readonly string[]).includes(vendor);
-}
-
-/** A one-line reason why `vendor` cannot transcribe audio (empty when it can). */
-export function audioUnsupportedReason(vendor: LlmVendor): string {
-  switch (vendor) {
-    case "anthropic":
-      return t("ai.audio.claudeUnsupported");
-    case "openrouter":
-      return t("ai.audio.openrouterUnsupported");
-    default:
-      return "";
-  }
-}
 
 // --- multipart/form-data ------------------------------------------------------
 
@@ -180,6 +240,8 @@ export interface AudioRequestInput {
   boundary: string;
   /** ISO-639-1 hint, e.g. "en" or "nl". Optional. */
   language?: string;
+  /** Ask for timed segments (`verbose_json`); see {@link wantsSegments}. */
+  segments?: boolean;
 }
 
 export interface AudioHttpRequest {
@@ -202,7 +264,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
 
 /** Build the transcription request. Throws with a user-facing reason when it cannot be sent. */
 export function buildAudioRequest(input: AudioRequestInput): AudioHttpRequest {
-  const vendor = VENDORS[input.vendor];
+  const vendor = audioService(input.vendor);
   if (vendor.requiresKey && !input.apiKey.trim()) throw new Error(t("ai.client.missingKey"));
   if (input.audio.length === 0) throw new Error(t("ai.audio.empty"));
   const model = input.model.trim() || DEFAULT_AUDIO_MODELS[input.vendor];
@@ -231,20 +293,21 @@ export function buildAudioRequest(input: AudioRequestInput): AudioHttpRequest {
       );
     }
     return {
-      url: vendor.url({ model }),
+      url: VENDORS.google.url({ model }),
       headers: vendor.headers(input.apiKey),
       contentType: "application/json",
       body: json,
     };
   }
 
-  if (input.vendor === "openai" && input.audio.length > OPENAI_AUDIO_MAX_BYTES) {
+  if (input.vendor !== "custom" && input.audio.length > OPENAI_AUDIO_MAX_BYTES) {
     throw new Error(t("ai.audio.tooBigOpenai", { size: megabytes(input.audio.length) }));
   }
   const parts: MultipartPart[] = [
     { name: "model", value: model },
-    // gpt-4o-*-transcribe answer only `json` or `text`; `json` suits all.
-    { name: "response_format", value: "json" },
+    // gpt-4o-*-transcribe answer only `json` or `text`; Whisper also gives
+    // `verbose_json`, with the segments' times.
+    { name: "response_format", value: input.segments ? "verbose_json" : "json" },
   ];
   if (input.language) parts.push({ name: "language", value: input.language });
   parts.push({
@@ -256,7 +319,11 @@ export function buildAudioRequest(input: AudioRequestInput): AudioHttpRequest {
   const url =
     input.vendor === "custom"
       ? openAiEndpointUrl(input.baseUrl ?? "", "/audio/transcriptions")
-      : "https://api.openai.com/v1/audio/transcriptions";
+      : input.vendor === "groq"
+        ? GROQ_TRANSCRIPTIONS_URL
+        : input.vendor === "openrouter"
+          ? OPENROUTER_TRANSCRIPTIONS_URL
+          : "https://api.openai.com/v1/audio/transcriptions";
   return {
     url,
     headers: vendor.headers(input.apiKey),
@@ -271,6 +338,33 @@ export function extractAudioTranscript(vendor: AudioVendor, json: unknown): stri
   if (typeof json !== "object" || json === null) return "";
   const text = (json as Record<string, unknown>).text;
   return typeof text === "string" ? text.trim() : "";
+}
+
+/** A timed piece of a transcript, in ms from the start of the audio sent. */
+export interface AudioSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/**
+ * The segments of a `verbose_json` answer (`segments: [{ start, end, text }]`,
+ * times in seconds) in ms; empty when there are none or they do not read.
+ */
+export function extractAudioSegments(json: unknown): AudioSegment[] {
+  if (typeof json !== "object" || json === null) return [];
+  const list = (json as Record<string, unknown>).segments;
+  if (!Array.isArray(list)) return [];
+  const out: AudioSegment[] = [];
+  for (const item of list) {
+    if (typeof item !== "object" || item === null) continue;
+    const { start, end, text } = item as Record<string, unknown>;
+    if (typeof text !== "string") continue;
+    if (typeof start !== "number" || !Number.isFinite(start) || start < 0) continue;
+    const stop = typeof end === "number" && Number.isFinite(end) && end >= start ? end : start;
+    out.push({ start: Math.round(start * 1000), end: Math.round(stop * 1000), text });
+  }
+  return out;
 }
 
 function megabytes(bytes: number): string {

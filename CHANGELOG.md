@@ -10,6 +10,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Transcribe recordings with an online service**
+  ([#211](https://github.com/Joost-8/FineNotes/issues/211)). Settings › AI ›
+  Recordings › Transcribe recordings with: this device (as before), Groq,
+  OpenAI, OpenRouter, Google (Gemini) or a server of your own, with your own
+  key. The recording's Transcribe button then sends it there in one tap.
+  Whisper models (Groq's default, `whisper-large-v3-turbo`) give a
+  transcript with times, like the device's. A recording over the service's
+  25 MB limit is sent in parts of up to ten minutes and joined again, so a
+  long lecture no longer needs cutting up.
 - **Try a gesture from its tip.** A tip for a gesture on the page (Circle
   to select, Scribble to erase, hold to snap a shape, the finger taps for
   undo and redo, pulling in a page and more) has Try it: a scratch page with

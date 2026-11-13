@@ -41,6 +41,8 @@ import type { AttachmentKind } from "./model/document";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
 import type { ImageAspect } from "./recognition/ai-image";
 import type { ImageVendorChoice } from "./recognition/ai-menu-model";
+import type { KeySlot } from "./recognition/audio-request";
+import type { SpeechService } from "./audio/online-speech";
 import { type LlmVendor, chatCompletionsUrl, isPlainHttpUrl } from "./recognition/llm-request";
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import type { EraserMode } from "./view/toolbar";
@@ -174,7 +176,7 @@ export interface GoodObsidianSettings {
    * 1.11.4); with one, this stays empty. The `custom` slot's key only ever
    * goes to the custom endpoint.
    */
-  apiKeys: Partial<Record<LlmVendor, string>>;
+  apiKeys: Partial<Record<KeySlot, string>>;
   /** "same" makes pictures with the text vendor; otherwise that vendor. */
   imageVendor: ImageVendorChoice;
   /** Empty for the image vendor's default model. */
@@ -364,6 +366,16 @@ export interface GoodObsidianSettings {
   speechModel?: string;
   /** The spoken language as an ISO 639-1 code, or "auto" to detect it. */
   speechLanguage?: string;
+  /**
+   * Where recordings are transcribed: "device", or an online service with
+   * the user's own key (`audio/online-speech.ts`). The language above is
+   * sent to it as a hint.
+   */
+  speechService?: SpeechService;
+  /** The online service's model; empty for its default (`DEFAULT_AUDIO_MODELS`). */
+  speechServiceModel?: string;
+  /** A transcription server of the user's own; empty uses the AI service's endpoint. */
+  speechBaseUrl?: string;
   /** The interface language: a code from `INTERFACE_LANGUAGES`, or "auto" to follow Obsidian. */
   interfaceLanguage?: string;
 
@@ -581,6 +593,9 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   calcNotes: true,
   speechModel: "whisper-base",
   speechLanguage: "auto",
+  speechService: "device",
+  speechServiceModel: "",
+  speechBaseUrl: "",
   interfaceLanguage: "auto",
   notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
@@ -1116,6 +1131,8 @@ export function changesTabLayout(key: string): boolean {
     key === "imageVendor" ||
     key === "pressureWidth" ||
     key === "speechModel" ||
+    // The online service brings its model, key and endpoint rows.
+    key === "speechService" ||
     // The row "Scanned pages · <choice>" is named by it.
     key === "ocrModel" ||
     key === "useLearnedHandwriting"
