@@ -12,6 +12,7 @@ import {
   penSlotsOf,
   penTypeSlot,
   penTypesOnBar,
+  rememberPenType,
   placeOf,
   savedPenSlot,
   setPenSlot,
@@ -165,15 +166,27 @@ describe("what the pen's button stands for", () => {
   const order: SavedPenType[] = ["fountain", "ball", "brush", "calligraphy", "highlighter"];
 
   it("is the type in hand while that has no button of its own", () => {
-    expect(penButtonType(order, new Set(["ball"]), "brush", "fountain")).toBe("brush");
+    expect(penButtonType(order, new Set(["ball"]), "brush", ["fountain"])).toBe("brush");
   });
 
   it("is the type it last stood for while another's button holds the pen", () => {
-    expect(penButtonType(order, new Set(["ball"]), "ball", "calligraphy")).toBe("calligraphy");
+    expect(penButtonType(order, new Set(["ball"]), "ball", ["calligraphy"])).toBe("calligraphy");
   });
 
-  it("is the first free type when the last one has a button now, or none is left", () => {
-    expect(penButtonType(order, new Set(["ball", "fountain"]), "ball", "fountain")).toBe("brush");
-    expect(penButtonType(order, new Set(order), "ball", null)).toBeNull();
+  it("goes back to the type before when the one it stood for just got a button", () => {
+    // Ball pen, then the highlighter from the pen's row, then Add to toolbar
+    // on the highlighter: the pen's button is the ball pen again, not the
+    // first type in the row (found on the iPad, FineNotes#211).
+    const recent = rememberPenType(rememberPenType([], "ball"), "highlighter");
+    expect(penButtonType(order, new Set(["highlighter"]), "highlighter", recent)).toBe("ball");
+  });
+
+  it("is the first free type when the recent ones have buttons now, or none is left", () => {
+    expect(penButtonType(order, new Set(["ball", "fountain"]), "ball", ["fountain"])).toBe("brush");
+    expect(penButtonType(order, new Set(order), "ball", [])).toBeNull();
+  });
+
+  it("remembers each type once, newest first", () => {
+    expect(rememberPenType(["ball", "brush"], "brush")).toEqual(["brush", "ball"]);
   });
 });

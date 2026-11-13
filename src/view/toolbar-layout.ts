@@ -693,17 +693,27 @@ export function penSlotInHand(
 
 /**
  * The pen type the pen's button stands for: the type in hand while it is
- * not on the bar as a button of its own, else the last it stood for
- * (`last`) if that is still free, else the first free type in the user's
- * order. `null` when every type has its own button.
+ * not on the bar as a button of its own, else the latest it stood for that
+ * is still free (`recent`, newest first: the one it stood for a moment ago
+ * may be the type just given a button), else the first free type in the
+ * user's order. `null` when every type has its own button.
  */
 export function penButtonType(
   order: readonly SavedPenType[],
   onBar: ReadonlySet<SavedPenType>,
   inHand: SavedPenType,
-  last: SavedPenType | null,
+  recent: readonly SavedPenType[],
 ): SavedPenType | null {
   if (!onBar.has(inHand)) return inHand;
-  if (last !== null && !onBar.has(last)) return last;
+  const free = recent.find((type) => !onBar.has(type));
+  if (free !== undefined) return free;
   return order.find((type) => !onBar.has(type)) ?? null;
+}
+
+/** `recent` with `type` first, each type once, at most as many as there are types. */
+export function rememberPenType(
+  recent: readonly SavedPenType[],
+  type: SavedPenType,
+): SavedPenType[] {
+  return [type, ...recent.filter((each) => each !== type)].slice(0, 8);
 }

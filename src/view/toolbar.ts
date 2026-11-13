@@ -94,6 +94,7 @@ import {
   penRowOffers,
   penSlotInHand,
   penSlotsOf,
+  rememberPenType,
   penTypeSlot,
   penTypesOnBar,
   placeOf,
@@ -1174,8 +1175,8 @@ export class Toolbar {
   private penPreviewKey = "";
   /** Pens on the bar as buttons of their own (FineNotes#211), by slot. */
   private readonly penSlotButtons = new Map<PenSlotId, HTMLButtonElement>();
-  /** The pen type the pen's button last stood for, while others have buttons of their own. */
-  private penButtonLast: SavedPenType | null = null;
+  /** The pen types the pen's button stood for, newest first (`penButtonType`). */
+  private penButtonRecent: SavedPenType[] = [];
   /** The pen button the indicator marks while a pen is in hand: a slot, or the pen's (`null`). */
   private indicatorSlot: PenSlotId | null = null;
   /** Pages are shown dark: every colour the bar shows is shown as the ink is (`shownColor`). */
@@ -2255,7 +2256,7 @@ export class Toolbar {
       order,
       penTypesOnBar(this.laid()),
       this.activePenType().id,
-      this.penButtonLast,
+      this.penButtonRecent,
     );
     return PEN_TYPES.find((spec) => spec.id === id) ?? this.activePenType();
   }
@@ -2658,7 +2659,9 @@ export class Toolbar {
     // the type it stands for, in that type's own ink (FineNotes#211).
     const spec = this.penButtonSpec();
     if (this.state.tool === "pen" || this.state.tool === "highlighter") {
-      if (this.penSlotInHand() === null) this.penButtonLast = spec.id;
+      if (this.penSlotInHand() === null && this.penButtonRecent[0] !== spec.id) {
+        this.penButtonRecent = rememberPenType(this.penButtonRecent, spec.id);
+      }
     }
     const inHand = spec.id === this.activePenType().id;
     const ink = inHand ? null : penInkFor(this.state.penInks ?? {}, spec.id, this.inkInHand());
