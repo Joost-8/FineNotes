@@ -7,6 +7,7 @@ import {
   moveTo,
   normalizeLayout,
   penButtonType,
+  penMenuPin,
   penRowOffers,
   penSlotInHand,
   penSlotsOf,
@@ -159,6 +160,33 @@ describe("which pen button the pen in hand belongs to", () => {
     const layout = withSlots("pen:ball", "saved:pen1");
     const inHand: SavedPen = { type: "fountain", color: "#1971c2", size: 2 };
     expect(penSlotInHand(layout, inHand, saved)).toBeNull();
+  });
+});
+
+describe("the pen menu's Add to toolbar row", () => {
+  const green: SavedPen = { type: "highlighter", color: "#2f9e44", size: 12, id: "pen3" };
+  const saved = (id: string): SavedPen | null => (id === "pen3" ? green : null);
+
+  it("offers to unpin a saved pen in hand that is on the bar, not to add its type", () => {
+    const layout = withSlots("saved:pen3");
+    const inHand = penSlotInHand(
+      layout,
+      { type: "highlighter", color: "#2f9e44", size: 12 },
+      saved,
+    );
+    expect(penMenuPin(layout, inHand, "highlighter")).toEqual({ slot: "saved:pen3", on: true });
+  });
+
+  it("offers to unpin a pen type's own button in hand", () => {
+    const layout = withSlots("pen:ball");
+    const inHand = penSlotInHand(layout, { type: "ball", color: "#000000", size: 2 }, saved);
+    expect(penMenuPin(layout, inHand, "ball")).toEqual({ slot: "pen:ball", on: true });
+  });
+
+  it("offers to add the main pen's type when it has no button of its own", () => {
+    const layout = withSlots("saved:pen3");
+    const inHand = penSlotInHand(layout, { type: "ball", color: "#000000", size: 2 }, saved);
+    expect(penMenuPin(layout, inHand, "ball")).toEqual({ slot: "pen:ball", on: false });
   });
 });
 

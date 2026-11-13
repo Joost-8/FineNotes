@@ -692,6 +692,21 @@ export function penSlotInHand(
 }
 
 /**
+ * The pen menu's "Add to toolbar" row: the button the pen in hand is on
+ * (`inHand`, from {@link penSlotInHand}), which it offers to take off,
+ * else its type's own, which it offers to add. A pinned saved pen is on the
+ * bar as `saved:<id>`, never as its type's slot.
+ */
+export function penMenuPin(
+  layout: ToolbarLayout,
+  inHand: PenSlotId | null,
+  type: SavedPenType,
+): { slot: PenSlotId; on: boolean } {
+  const slot = inHand ?? penTypeSlot(type);
+  return { slot, on: placeOf(layout, slot) !== "off" };
+}
+
+/**
  * The pen type the pen's button stands for: the type in hand while it is
  * not on the bar as a button of its own, else the latest it stood for that
  * is still free (`recent`, newest first: the one it stood for a moment ago
