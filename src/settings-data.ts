@@ -280,6 +280,13 @@ export interface GoodObsidianSettings {
    */
   penInks?: Record<string, unknown>;
   /**
+   * Each pen type's three width presets (`model/width-presets.ts`,
+   * FineNotes#210); a type left out has the defaults. Checked where it is read.
+   */
+  widthPresets?: Record<string, unknown>;
+  /** The eraser's three preset sizes (`eraserPresetsOf`). Checked where it is read. */
+  eraserPresets?: unknown;
+  /**
    * Each pen type's stroke stabilization, whole percent
    * (`model/pen-stabilization.ts`); a pen left out is off. Checked where it
    * is read.

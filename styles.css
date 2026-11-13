@@ -1210,7 +1210,8 @@ select.goodobsidian-choice-select {
   color: var(--text-normal);
 }
 
-.goodobsidian-popover .goodobsidian-width.is-active {
+.goodobsidian-popover .goodobsidian-width.is-active,
+.goodobsidian-popover button.goodobsidian-erasersize.is-active {
   box-shadow: var(--gob-size-active-ring);
   background: var(--gob-size-active-bg);
 }

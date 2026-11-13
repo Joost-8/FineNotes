@@ -128,7 +128,7 @@ import { errorMessage } from "../util/errors";
 import { downloadLabel } from "../model/font-catalogue";
 import { familyStack, matchesFamily } from "../model/text-family";
 import type { LookPalette, LookStyle } from "../model/look";
-import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
+import { DEFAULT_ERASER_SIZE, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
   SHAPE_PRESETS,
@@ -240,7 +240,17 @@ import { dragRange } from "./range-drag";
 import { RowDrag } from "./row-drag";
 import { moveTo } from "./row-drag-model";
 import { syncRangeFill } from "./range-fill";
-import { clampEraserSize, eraserStops, quickEraserSizes } from "../model/eraser-sizes";
+import { clampEraserSize, eraserStops } from "../model/eraser-sizes";
+import {
+  DEFAULT_WIDTH_PRESETS,
+  type WidthPresets,
+  chosenSlot,
+  eraserPresetsOf,
+  presetsFor,
+  withEraserPreset,
+  withWidthPreset,
+  withoutWidthPresets,
+} from "../model/width-presets";
 import { PANEL_SLIDE_MS, prefersReducedMotion, springCurve } from "./motion";
 import {
   EASE_OUT_FALLBACK,
@@ -736,6 +746,13 @@ export interface ToolbarState {
   eraserMode?: EraserMode;
   /** Eraser diameter in page px. `undefined` counts as {@link DEFAULT_ERASER_SIZE}. */
   eraserSize?: number;
+  /**
+   * Each pen type's three width presets (`model/width-presets.ts`). A type
+   * left out, or `undefined`, has the defaults.
+   */
+  widthPresets?: WidthPresets;
+  /** The eraser's three preset sizes. `undefined`: the defaults. */
+  eraserPresets?: number[];
   /** What the eraser may erase. `undefined` counts as everything. */
   eraserFilter?: EraserFilter;
   /**
@@ -812,6 +829,10 @@ export interface ToolbarCallbacks {
   onPenTypeChange?: (spec: PenTypeSpec) => void;
   /** Eraser mode or size changed. Hosts persist it across sessions. */
   onEraserChange?: (mode: EraserMode, size: number) => void;
+  /** A pen type's width presets changed (`ToolbarState.widthPresets`). Hosts persist them. */
+  onWidthPresets?: (presets: WidthPresets) => void;
+  /** The eraser's preset sizes changed (`ToolbarState.eraserPresets`). Hosts persist them. */
+  onEraserPresets?: (presets: number[]) => void;
   /**
    * Screen px per page px for the size previews: the pen's at the zoom now,
    * the eraser's at fit-to-page. Left out, a page px is drawn as a screen px.
@@ -1121,8 +1142,8 @@ let lastStickyColor = DEFAULT_STICKY_COLOR;
 /** The strip of the ruler button, from its right edge, that opens its popover: the chevron, px. */
 const RULER_CARET_STRIP = 22;
 
-/** How many stroke widths tier 2 shows before the "more" chevron. */
-const QUICK_WIDTHS = 3;
+/** The folded pill's one width button, in `widthButtons` beside the preset slots. */
+const FOLDED_WIDTH = -1;
 
 /** The pill changing width and place for a new tool: GoodNotes' 0.3 s `ease`. */
 const PILL_MORPH_MS = 300;
@@ -1204,9 +1225,17 @@ export class Toolbar {
   private penRowScroll = 0;
   /** A colour was just added with the "+": the row scrolls to its end once to show it. */
   private revealNewColor = false;
+  /** The pill's width buttons by preset slot ({@link FOLDED_WIDTH} for the folded pill's one). */
   private readonly widthButtons = new Map<number, HTMLElement>();
+  /** The width each of {@link widthButtons} draws, page px. */
+  private readonly widthButtonSizes = new Map<number, number>();
   private readonly penTypeButtons = new Map<PenType, HTMLButtonElement>();
+  /** The pill's eraser size buttons, by preset slot. */
   private readonly eraserSizeButtons = new Map<number, HTMLButtonElement>();
+  /** The width preset picked last: between two holding the same width, this one is chosen. */
+  private widthSlot: number | null = null;
+  /** The eraser preset picked last, as {@link widthSlot}. */
+  private eraserSlot: number | null = null;
   private readonly shapeButtons = new Map<ShapeMode, HTMLButtonElement>();
   /** The Table button's "3 × 4" caption, kept in step with the picked size. */
   private tableCaption: HTMLElement | null = null;
@@ -2948,6 +2977,7 @@ export class Toolbar {
     this.optionsEl.removeClass("has-one-width");
     this.colorSwatches.clear();
     this.widthButtons.clear();
+    this.widthButtonSizes.clear();
     this.penTypeButtons.clear();
     this.eraserSizeButtons.clear();
     this.shapeButtons.clear();
@@ -3045,24 +3075,26 @@ export class Toolbar {
         () => this.toggleWidthList(button),
       );
       button.setAttribute("aria-label", t("toolbar.width.moreWidths", { mm: this.widthMm(width) }));
-      this.widthButtons.set(width, button);
+      this.widthButtons.set(FOLDED_WIDTH, button);
+      this.widthButtonSizes.set(FOLDED_WIDTH, width);
     } else {
-      // Stroke widths, drawn as literal strokes of increasing weight.
-      const quick = this.quickWidths();
-      const marks = this.widthMarks(quick);
-      for (const width of quick) {
+      // The pen type's own presets, each drawn as the stroke it lays down.
+      const presets = this.widthPresets();
+      const marks = this.widthMarks(presets);
+      presets.forEach((width, slot) => {
         const button = widthButton(
           this.optionsEl,
           this.widthMm(width),
           active.id,
           marks.get(width),
           () => {
-            this.setWidth(width);
+            this.pickWidthPreset(slot);
             this.syncActive();
           },
         );
-        this.widthButtons.set(width, button);
-      }
+        this.widthButtons.set(slot, button);
+        this.widthButtonSizes.set(slot, width);
+      });
       this.chevron(t("toolbar.width.more"), (button) => this.toggleWidthList(button));
     }
 
@@ -4259,21 +4291,21 @@ export class Toolbar {
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    // Sizes, drawn as eraser footprints of increasing diameter: the presets,
-    // with a size set on the slider in place of the nearest one. The chevron
-    // opens the slider, as the pen's widths do.
-    const sizes = quickEraserSizes(eraserSizeFor(this.state));
+    // Sizes, drawn as eraser footprints: the three presets, each keeping the
+    // size it was given on the slider. The chevron opens the slider, as the
+    // pen's widths do.
+    const sizes = this.eraserPresets();
     const marks = this.eraserMarks(sizes, PILL_ERASER_BOX);
-    for (const size of sizes) {
+    sizes.forEach((size, slot) => {
       const button = this.optionsEl.createEl("button", { cls: "goodobsidian-erasersize" });
       button.append(eraserSizeGlyph(marks.get(size), PILL_ERASER_BOX));
       button.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
       button.addEventListener("click", () => {
-        this.setEraserSize(size);
+        this.pickEraserPreset(slot);
         this.syncActive();
       });
-      this.eraserSizeButtons.set(size, button);
-    }
+      this.eraserSizeButtons.set(slot, button);
+    });
     this.chevron(t("toolbar.eraser.size"), (anchor) => this.toggleEraserSizeList(anchor));
 
     // What it erases: GoodNotes' "Erase highlighter only", and "pen only".
@@ -5651,15 +5683,96 @@ export class Toolbar {
     this.syncActive();
   }
 
-  /** Three widths around the active one, per the reference screenshot. */
-  private quickWidths(): number[] {
-    const quick = this.widths.slice(0, QUICK_WIDTHS);
-    // The live width takes the last slot, a preset or one set on the slider.
-    const size = this.state.size;
-    if (!quick.includes(size) && Number.isFinite(size) && size > 0) {
-      quick[quick.length - 1] = size;
+  /** The pen type in hand's width presets (FineNotes#210): each keeps its own width. */
+  private widthPresets(): number[] {
+    return presetsFor(this.state.widthPresets ?? {}, this.activePenType().id);
+  }
+
+  /** The width preset holding the width in hand, or `null` when none does (a saved pen's). */
+  private chosenWidthSlot(): number | null {
+    this.widthSlot = chosenSlot(this.widthPresets(), this.state.size, this.widthSlot);
+    return this.widthSlot;
+  }
+
+  /** Write with preset `slot`'s width; the slider now changes that preset. */
+  private pickWidthPreset(slot: number): void {
+    const width = this.widthPresets()[slot];
+    if (width === undefined) return;
+    this.widthSlot = slot;
+    this.setWidth(width);
+  }
+
+  /**
+   * A width from the slider or the mm field: the chosen preset becomes it,
+   * the others keep theirs. With none chosen, only the width in hand changes.
+   */
+  private editWidth(width: number): void {
+    const slot = this.chosenWidthSlot();
+    if (slot !== null) {
+      this.state.widthPresets = withWidthPreset(
+        this.state.widthPresets ?? {},
+        this.activePenType().id,
+        slot,
+        width,
+      );
+      this.callbacks.onWidthPresets?.(this.state.widthPresets);
     }
-    return quick;
+    this.setWidth(width);
+  }
+
+  /** The reset: the pen type's presets back to the defaults, and the chosen one's width in hand. */
+  private resetWidthPresets(): void {
+    const slot = this.chosenWidthSlot();
+    this.state.widthPresets = withoutWidthPresets(
+      this.state.widthPresets ?? {},
+      this.activePenType().id,
+    );
+    this.callbacks.onWidthPresets?.(this.state.widthPresets);
+    const width =
+      slot !== null
+        ? DEFAULT_WIDTH_PRESETS[slot]
+        : (this.options.defaultSize ?? DEFAULT_WIDTH_PRESETS[1]);
+    this.widthSlot = slot;
+    this.setWidth(width);
+  }
+
+  /** The eraser's preset sizes. */
+  private eraserPresets(): number[] {
+    return eraserPresetsOf(this.state.eraserPresets);
+  }
+
+  /** The eraser preset holding the size in hand, or `null` when none does. */
+  private chosenEraserSlot(): number | null {
+    this.eraserSlot = chosenSlot(this.eraserPresets(), eraserSizeFor(this.state), this.eraserSlot);
+    return this.eraserSlot;
+  }
+
+  /** Erase with preset `slot`'s size; the slider now changes that preset. */
+  private pickEraserPreset(slot: number): void {
+    const size = this.eraserPresets()[slot];
+    if (size === undefined) return;
+    this.eraserSlot = slot;
+    this.setEraserSize(size);
+  }
+
+  /** A size from the slider: the chosen preset becomes it, as {@link editWidth}. */
+  private editEraserSize(size: number): void {
+    const slot = this.chosenEraserSlot();
+    const clamped = clampEraserSize(size);
+    if (slot !== null) {
+      this.state.eraserPresets = withEraserPreset(this.eraserPresets(), slot, clamped);
+      this.callbacks.onEraserPresets?.(this.state.eraserPresets);
+    }
+    this.setEraserSize(clamped);
+  }
+
+  /** The reset: the eraser's presets back to the defaults, and the chosen one's size in hand. */
+  private resetEraserPresets(): void {
+    const slot = this.chosenEraserSlot();
+    this.state.eraserPresets = eraserPresetsOf(undefined);
+    this.callbacks.onEraserPresets?.(this.state.eraserPresets);
+    this.eraserSlot = slot;
+    this.setEraserSize(slot !== null ? this.state.eraserPresets[slot] : DEFAULT_ERASER_SIZE);
   }
 
   /** The settings' own colours, which keep their slots in the pen's row. */
@@ -5738,7 +5851,19 @@ export class Toolbar {
     range.step = "1";
     const preview = strokePreview(body, this.callbacks.paintSizePaper);
     const row = body.createDiv({ cls: "goodobsidian-sizes" });
+    // By slot: each preset keeps its own width, and the chosen one follows the slider.
     const presets = new Map<number, HTMLElement>();
+    const drawPresets = (): void => {
+      const widths = this.widthPresets();
+      const marks = this.widthMarks(widths);
+      const pen = this.activePenType().id;
+      for (const [slot, preset] of presets) {
+        const width = widths[slot];
+        preset.querySelector("svg")?.replaceWith(widthGlyph(marks.get(width), pen));
+        preset.setAttribute("aria-label", t("toolbar.width.value", { mm: this.widthMm(width) }));
+        preset.setAttribute("title", this.widthMm(width));
+      }
+    };
     // The readout, the thumb, the preview and the presets always show the live width.
     const show = (): void => {
       const width = chosenWidth(this.state.size, floor);
@@ -5747,7 +5872,8 @@ export class Toolbar {
       field.setAttribute("title", this.widthMm(width));
       range.value = String(nearestStop(stops, width));
       syncRangeFill(range);
-      markChosen(presets, this.state.size);
+      drawPresets();
+      markChosen(presets, this.chosenWidthSlot());
       const color =
         this.state.tool === "shape"
           ? (this.state.shapeColor ?? DEFAULT_SHAPE_COLOR)
@@ -5756,52 +5882,48 @@ export class Toolbar {
       const pen = this.state.tool === "shape" ? "ball" : this.activePenType().id;
       preview(strokeWidthFor(this.state) * this.previewScales().pen, this.shown(color), pen);
     };
-    const pick = (width: number): void => {
-      this.setWidth(width);
+    // A new width for the chosen preset, from the slider or the field.
+    const edit = (width: number): void => {
+      this.editWidth(width);
       show();
     };
-    // After a preset or a reset, the pill's quick widths are rebuilt around it.
+    // After a preset, an edit or a reset, the pill's widths are drawn again.
     const settle = (): void => {
       this.buildOptions();
       this.syncActive();
     };
-    const marks = this.widthMarks(this.widths);
-    for (const width of this.widths) {
+    const first = this.widthPresets();
+    const firstMarks = this.widthMarks(first);
+    first.forEach((width, slot) => {
       const preset = widthButton(
         row,
         this.widthMm(width),
         this.activePenType().id,
-        marks.get(width),
+        firstMarks.get(width),
         () => {
-          pick(width);
+          this.pickWidthPreset(slot);
+          show();
           this.closePopover();
           settle();
         },
       );
-      presets.set(width, preset);
-    }
+      presets.set(slot, preset);
+    });
     // The zoom changed under the open popover: its marks follow the ink.
-    this.sizeMarksRender = () => {
-      const marks = this.widthMarks([...presets.keys()]);
-      for (const [width, preset] of presets) {
-        preset
-          .querySelector("svg")
-          ?.replaceWith(widthGlyph(marks.get(width), this.activePenType().id));
-      }
-      show();
-    };
+    this.sizeMarksRender = show;
     // Live while dragging; the pill's widths follow once the thumb is let go.
-    range.addEventListener("input", () => pick(stops[Number(range.value)] ?? this.state.size));
+    range.addEventListener("input", () => edit(stops[Number(range.value)] ?? this.state.size));
     range.addEventListener("change", settle);
     reset.addEventListener("click", () => {
-      pick(this.options.defaultSize ?? this.widths[Math.floor(this.widths.length / 2)]);
+      this.resetWidthPresets();
+      show();
       settle();
     });
     const typed = (): void => {
       const width = widthFromMm(field.value, this.inkScale());
       field.toggleClass("is-invalid", width === null);
       if (width === null) return;
-      pick(width);
+      edit(width);
       field.value = mmText(chosenWidth(this.state.size, floor), this.inkScale());
       settle();
     };
@@ -5880,12 +6002,15 @@ export class Toolbar {
    */
   refreshSizeMarks(): void {
     const pen = this.activePenType().id;
-    const widths = this.widthMarks([...this.widthButtons.keys()]);
-    for (const [width, button] of this.widthButtons) {
+    const widths = this.widthMarks([...this.widthButtonSizes.values()]);
+    for (const [slot, button] of this.widthButtons) {
+      const width = this.widthButtonSizes.get(slot) ?? NaN;
       button.querySelector("svg")?.replaceWith(widthGlyph(widths.get(width), pen));
     }
-    const sizes = this.eraserMarks([...this.eraserSizeButtons.keys()], PILL_ERASER_BOX);
-    for (const [size, button] of this.eraserSizeButtons) {
+    const presets = this.eraserPresets();
+    const sizes = this.eraserMarks(presets, PILL_ERASER_BOX);
+    for (const [slot, button] of this.eraserSizeButtons) {
+      const size = presets[slot];
       button.querySelector("svg")?.replaceWith(eraserSizeGlyph(sizes.get(size), PILL_ERASER_BOX));
       button.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
     }
@@ -5940,59 +6065,57 @@ export class Toolbar {
     range.step = "1";
     const preview = eraserPreview(body, this.callbacks.paintSizePaper);
     const row = body.createDiv({ cls: "goodobsidian-sizes" });
+    // By slot: each preset keeps its own size, and the chosen one follows the slider.
     const presets = new Map<number, HTMLElement>();
-    // The readout, the thumb, the preview and the presets always show the live size.
-    const show = (): void => {
-      const size = eraserSizeFor(this.state);
-      readout.setText(this.eraserMm(size));
-      range.value = String(nearestStop(stops, size));
-      syncRangeFill(range);
-      markChosen(presets, size);
-      preview(size * this.previewScales().eraser);
-    };
-    const pick = (size: number): void => {
-      this.setEraserSize(size);
-      show();
-    };
-    // The pill's quick sizes are rebuilt around a new size once it is chosen.
-    const settle = (): void => {
-      this.buildOptions();
-      this.syncActive();
-    };
-    const marks = this.eraserMarks(ERASER_SIZES, POPOVER_ERASER_BOX);
-    for (const size of ERASER_SIZES) {
-      const preset = row.createEl("button", { cls: "goodobsidian-erasersize" });
-      preset.append(eraserSizeGlyph(marks.get(size), POPOVER_ERASER_BOX));
-      preset.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
-      preset.setAttribute("title", this.eraserMm(size));
-      preset.addEventListener("click", () => {
-        pick(size);
-        this.closePopover();
-        settle();
-      });
-      presets.set(size, preset);
-    }
-    this.sizeMarksRender = () => {
-      const marks = this.eraserMarks([...presets.keys()], POPOVER_ERASER_BOX);
-      for (const [size, preset] of presets) {
-        preset
-          .querySelector("svg")
-          ?.replaceWith(eraserSizeGlyph(marks.get(size), POPOVER_ERASER_BOX));
+    const drawPresets = (): void => {
+      const sizes = this.eraserPresets();
+      const marks = this.eraserMarks(sizes, POPOVER_ERASER_BOX);
+      for (const [slot, preset] of presets) {
+        const size = sizes[slot];
+        preset.empty();
+        preset.append(eraserSizeGlyph(marks.get(size), POPOVER_ERASER_BOX));
         preset.setAttribute(
           "aria-label",
           t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }),
         );
         preset.setAttribute("title", this.eraserMm(size));
       }
-      show();
     };
+    // The readout, the thumb, the preview and the presets always show the live size.
+    const show = (): void => {
+      const size = eraserSizeFor(this.state);
+      readout.setText(this.eraserMm(size));
+      range.value = String(nearestStop(stops, size));
+      syncRangeFill(range);
+      drawPresets();
+      markChosen(presets, this.chosenEraserSlot());
+      preview(size * this.previewScales().eraser);
+    };
+    // After a preset, an edit or a reset, the pill's sizes are drawn again.
+    const settle = (): void => {
+      this.buildOptions();
+      this.syncActive();
+    };
+    this.eraserPresets().forEach((_, slot) => {
+      const preset = row.createEl("button", { cls: "goodobsidian-erasersize" });
+      preset.addEventListener("click", () => {
+        this.pickEraserPreset(slot);
+        show();
+        this.closePopover();
+        settle();
+      });
+      presets.set(slot, preset);
+    });
+    this.sizeMarksRender = show;
     // Live while dragging; the pill follows once the thumb is let go.
-    range.addEventListener("input", () =>
-      pick(stops[Number(range.value)] ?? eraserSizeFor(this.state)),
-    );
+    range.addEventListener("input", () => {
+      this.editEraserSize(stops[Number(range.value)] ?? eraserSizeFor(this.state));
+      show();
+    });
     range.addEventListener("change", settle);
     reset.addEventListener("click", () => {
-      pick(DEFAULT_ERASER_SIZE);
+      this.resetEraserPresets();
+      show();
       settle();
     });
     show();
@@ -7755,8 +7878,11 @@ export class Toolbar {
     if (tool !== this.indicatorTool) this.fitBar(tool);
     this.placeIndicator(tool, from);
     markChosen(this.colorSwatches, state.color);
-    markChosen(this.widthButtons, state.size);
-    markChosen(this.eraserSizeButtons, eraserSizeFor(state));
+    markChosen(
+      this.widthButtons,
+      this.widthButtons.has(FOLDED_WIDTH) ? FOLDED_WIDTH : this.chosenWidthSlot(),
+    );
+    markChosen(this.eraserSizeButtons, this.chosenEraserSlot());
     markChosen(this.penTypeButtons, this.activePenType().id);
     markChosen(this.shapeButtons, shapeModeFor(state), true);
     this.drawPenPreview();
@@ -7875,7 +8001,7 @@ export class Toolbar {
  * Mark the button keyed `chosen` as active and every other one as not;
  * `pressed` mirrors that in `aria-pressed`, for buttons that toggle.
  */
-function markChosen<K>(buttons: Map<K, HTMLElement>, chosen: K, pressed = false): void {
+function markChosen<K>(buttons: Map<K, HTMLElement>, chosen: K | null, pressed = false): void {
   for (const [key, button] of buttons) {
     const isChosen = key === chosen;
     button.toggleClass("is-active", isChosen);

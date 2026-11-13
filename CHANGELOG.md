@@ -71,6 +71,13 @@ extracted from the matching section of this file by `release.yml`.
   mostly empty paper shrunk to the note's width. It now shows what is drawn
   with a little paper round it, the same cut Export as PDF makes; an empty
   board shows a short strip of its paper.
+- **Each width preset keeps its own width**
+  ([#210](https://github.com/Joost-8/FineNotes/issues/210),
+  [#211](https://github.com/Joost-8/FineNotes/issues/211)). Pick a preset,
+  then move the slider or type a width: that preset changes and the others
+  keep theirs, for each pen type and for the eraser's three sizes. The pen's
+  More widths shows the same three presets as the pill. The reset button
+  puts them back to the defaults.
 
 ### Fixed
 
