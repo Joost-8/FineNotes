@@ -2185,8 +2185,12 @@ describe("the wet stroke", () => {
     builder.add({ x: 10, y: 10, pressure: 0.5 });
     builder.add({ x: 15, y: 10, pressure: 0.5 });
     run(surface, "drawWet");
-    // page, runs, style: a fourth argument could make a note's live ink differ from its committed ink.
-    expect(calls[calls.length - 1]).toHaveLength(3);
+    // page, runs, style, and the box that changed since the last frame (none
+    // on the first): nothing about the note, which could make its live ink
+    // differ from its committed ink.
+    const last = calls[calls.length - 1];
+    expect(last).toHaveLength(4);
+    expect(last[3]).toBeNull();
   });
 
   it("traces each kept point once, and a finished stroke looks as it did wet", () => {

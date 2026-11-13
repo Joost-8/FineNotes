@@ -206,6 +206,17 @@ export class InkTracer {
     return chain.runs;
   }
 
+  /**
+   * Where the settled runs end now: how many there are, and how many numbers
+   * the last holds. They only grow, so the ink before this place is the same
+   * on every later call of {@link runs}.
+   */
+  mark(): { runs: number; open: number } {
+    const { runs } = this.chain;
+    const last = runs[runs.length - 1];
+    return { runs: runs.length, open: last ? last.pts.length : 0 };
+  }
+
   /** The settled runs alone, copied: what no later point can change. */
   settled(): InkRun[] {
     return this.chain.runs.map((run) => ({ ...run, pts: [...run.pts] }));
