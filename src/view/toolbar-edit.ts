@@ -634,7 +634,8 @@ export class ToolbarEditor {
       [this.menuShelf, "menu"],
       [this.offShelf, "off"],
     ] as const) {
-      if (shelf && target !== place && inside(shelf.getBoundingClientRect(), x, y, 4)) return target;
+      if (shelf && target !== place && inside(shelf.getBoundingClientRect(), x, y, 4))
+        return target;
     }
     return null;
   }
@@ -984,7 +985,10 @@ export class ToolbarEditor {
    */
   private keepsPreset(layout: ToolbarLayout, next: ToolbarLayout): boolean {
     const slots = (l: ToolbarLayout): string =>
-      [...l.start, ...l.middle].filter((id) => !isFixedInPreset(l, id)).sort().join(",");
+      [...l.start, ...l.middle]
+        .filter((id) => !isFixedInPreset(l, id))
+        .sort()
+        .join(",");
     // The end may take tools from More tools and give them back (it lives in
     // ⋯), never the bar's.
     return slots(layout) === slots(next) && next.end.includes("more");

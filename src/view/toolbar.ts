@@ -1891,7 +1891,8 @@ export class Toolbar {
     };
     const { start, middle, end } = this.zoneEls;
     const zones = [box(start), box(middle), box(end)].filter((r): r is DOMRect => r !== null);
-    const inner = bar.getBoundingClientRect().right - parseFloat(getComputedStyle(bar).paddingRight);
+    const inner =
+      bar.getBoundingClientRect().right - parseFloat(getComputedStyle(bar).paddingRight);
     const clash = zones.some(
       (r, i) => r.right > inner + 0.5 || (i > 0 && zones[i - 1].right > r.left + 0.5),
     );
