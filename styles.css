@@ -16689,6 +16689,24 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
   outline-offset: 0;
 }
 
+/* Customize toolbar shows every button; when the zones do not fit one
+   line the bar grows a second for the end (toolbar.ts, wrapForEditing). */
+.goodobsidian-toolbar.is-editing.is-wrapped {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.goodobsidian-toolbar.is-editing.is-wrapped .goodobsidian-bar-group.is-tools {
+  position: relative;
+  inset: auto;
+  transform: none;
+  margin: 0;
+}
+
+.goodobsidian-toolbar.is-editing.is-wrapped .goodobsidian-bar-group.goodobsidian-bar-doc {
+  margin-left: auto;
+}
+
 /* A crowded bar's tools group is unpositioned (it follows the start), and
    so is it while the tool's options sit in the bar (has-pill-inside):
    positioned here, which moves nothing, so its name sits on it and not on
