@@ -64,6 +64,8 @@ extracted from the matching section of this file by `release.yml`.
   A type on the bar leaves the pen's row, and once another pen is on the bar
   the pen's own button can go to Hidden, so a bar can hold just a ball pen
   and a highlighter. Hidden, or Remove from toolbar, takes a pen off again.
+  The pen's own button keeps its own pen beside them: it shows that pen and
+  a tap brings it back, also after a pinned highlighter.
 - **Markdown in text boxes**
   ([discussion #107](https://github.com/Joost-8/FineNotes/discussions/107)).
   Pick **Markdown** in the Text tool's Style list, or paste Markdown into
