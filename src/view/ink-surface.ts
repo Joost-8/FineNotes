@@ -135,6 +135,8 @@ import {
   minScaleForSide,
   paperBox,
   polygonOf,
+  type DrawnArea,
+  selectionPatchBounds,
   rectLoop,
   scaleBounds,
   selectionKnobPoint,
@@ -2584,6 +2586,8 @@ export class InkSurface {
   // serves both. Frame, bar and menu are DOM over the page, like the text
   // boxes, so a finger works them as well as the Pencil.
   private selection: GroupSelection | null = null;
+  /** Where the lasso that made `selection` was drawn (`selectionPatch`). */
+  private selectionArea: DrawnArea | null = null;
   /** An arrow joining two shapes, picked up on its own (a lasso tap on it), by page and id. */
   private connectorSel: { pageId: string; id: string } | null = null;
   /** Its highlight over the page: the route drawn wide in the accent colour. */
@@ -13141,7 +13145,10 @@ export class InkSurface {
       return;
     }
     this.selectInside(lasso.box, loop);
-    if (!this.liveSelection()) {
+    const made = this.liveSelection();
+    const picked = made ? this.groupBounds(made) : null;
+    if (made && picked && b) this.selectionArea = { pageId: made.pageId, loop: { ...b }, picked };
+    if (!made) {
       // Round nothing: the loop stays a moment, with a Screenshot button.
       this.showEmptyLasso(lasso.box, lasso.mode === "rect" ? loop : smoothPath(loop), lasso.to);
       return;
@@ -13745,6 +13752,7 @@ export class InkSurface {
     if (live && withText.includes(live)) this.blurTextBox();
     // So does a table being typed in.
     if (this.cellEdit && tables.includes(this.cellEdit.table)) this.endCellEdit(true);
+    this.selectionArea = null;
     this.selection = {
       pageId,
       strokes: [...strokes],
@@ -13787,6 +13795,7 @@ export class InkSurface {
     const pressed = this.pressMenu !== null;
     this.pressMenu = null;
     this.selectionOutline = null;
+    this.selectionArea = null;
     if (!this.selection) {
       if (pressed) this.syncActionBar();
       return;
@@ -15323,23 +15332,20 @@ export class InkSurface {
   }
 
   /**
-   * The patch of the page a selection covers, page space: its bounds with
-   * the margin `selectionPicture` gives them, so both pictures frame it alike.
+   * The patch of the page a selection's picture takes, page space: the
+   * loop as the lasso drew it, while the selection is the one it made
+   * (FineNotes#210); else its bounds with the margin `selectionPicture`
+   * gives them, so both pictures frame it alike.
    */
   private selectionPatch(sel: GroupSelection): { pageIndex: number; bounds: Bounds } | null {
-    const bounds = this.groupBounds(sel);
     const pageIndex = this.doc.pages.findIndex((page) => page.id === sel.pageId);
-    if (!bounds || pageIndex < 0) return null;
-    const pad = STICKER_PAD;
-    return {
-      pageIndex,
-      bounds: {
-        minX: bounds.minX - pad,
-        minY: bounds.minY - pad,
-        maxX: bounds.maxX + pad,
-        maxY: bounds.maxY + pad,
-      },
-    };
+    const bounds = selectionPatchBounds(
+      this.selectionArea,
+      sel.pageId,
+      this.groupBounds(sel),
+      STICKER_PAD,
+    );
+    return bounds && pageIndex >= 0 ? { pageIndex, bounds } : null;
   }
 
   /**

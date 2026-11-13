@@ -6694,18 +6694,20 @@ export class Toolbar {
     // Removed with the popover, so its listeners need no disposer.
     this.keepFocus(popover, false);
     const body = popover.createDiv({ cls: "goodobsidian-popover-body" });
-    const side = this.placePopover(popover, anchor);
+    this.placePopover(popover, anchor);
 
     this.popover = popover;
     this.popoverKind = kind;
     this.growPopover(popover);
-    // Once the caller has filled it: beside an upright pill, every popover is
-    // kept inside the page area, whether or not its caller asks again.
-    if (side === "left" || side === "right") {
-      queueMicrotask(() => {
-        if (this.popover === popover && anchor.isConnected) this.keepPopoverInside(anchor);
-      });
-    }
+    // Once the caller has filled it, every popover is kept inside the view,
+    // whether or not its caller asks again: some never did, and in iPad
+    // Split View a pane is narrow enough for any of them to hang off it
+    // (FineNotes#210). A text popover is placed by its own refit.
+    queueMicrotask(() => {
+      if (this.popover !== popover || !anchor.isConnected) return;
+      if (this.popoverRefit) this.popoverRefit();
+      else this.keepPopoverInside(anchor);
+    });
     return body;
   }
 
@@ -6878,6 +6880,11 @@ export class Toolbar {
       // from its box: it is still growing in (scale, translate) when this
       // first runs, and a box read then put it 100 px above the view on the
       // iPad (CLAUDE.md ledger, "Measuring an element that is still gliding").
+      // As wide as the room on the side it opens to (a narrow Split View pane).
+      const besideX = popover.hasClass("opens-right")
+        ? hostBox.right - EDGE_INSET - (anchorBox.right + 8)
+        : anchorBox.left - 8 - (hostBox.left + EDGE_INSET);
+      popover.setCssProps({ "--gob-popover-room": `${Math.round(Math.max(120, besideX))}px` });
       const area = this.pillArea(hostBox, 0);
       const top = area.top;
       const floor = Math.max(top, area.bottom - EDGE_INSET);
@@ -6897,14 +6904,17 @@ export class Toolbar {
       ? anchorBox.top - hostBox.top - EDGE_INSET - gap
       : hostBox.bottom - anchorBox.bottom - EDGE_INSET - gap;
     this.limitPopoverHeight(popover, roomVertical);
-    const box = popover.getBoundingClientRect();
-    let shift = 0;
-    if (box.right > hostBox.right - EDGE_INSET) shift = hostBox.right - EDGE_INSET - box.right;
-    if (box.left + shift < hostBox.left + EDGE_INSET) shift = hostBox.left + EDGE_INSET - box.left;
+    // Slid sideways into the view, worked out from where it rests (centred
+    // on its button, `offsetWidth`), never from its box: that box carries
+    // the slide of an earlier call (the pen menu re-renders as its pages
+    // change) and the grow's scale, and in iPad Split View the settings
+    // page was left hanging off the pane's left edge (FineNotes#210).
+    const room = Math.max(0, hostBox.width - 2 * EDGE_INSET);
+    popover.setCssProps({ "--gob-popover-room": `${Math.round(room)}px` });
+    const centre = anchorBox.left - hostBox.left + anchorBox.width / 2;
+    const shift = sideLift(centre, popover.offsetWidth, EDGE_INSET, hostBox.width - EDGE_INSET);
     // A popover with an arrow keeps it pointing at the anchor.
     popover.setCssProps({ "--gob-popover-arrow": `${Math.round(-shift)}px` });
-    if (shift === 0) return;
-    const centre = anchorBox.left - hostBox.left + anchorBox.width / 2;
     popover.setCssStyles({ left: `${Math.round(centre + shift)}px` });
   }
 
