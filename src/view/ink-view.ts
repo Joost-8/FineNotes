@@ -173,10 +173,12 @@ import {
 } from "../model/sticky-notes";
 import {
   type BarItemId,
+  type BarPreset,
   type ToolbarLayout,
   barItemOfTool,
   effectsOfOffItems,
   isItemOff,
+  layoutInUse,
   normalizeLayout,
   sameLayout,
 } from "./toolbar-layout";
@@ -1247,6 +1249,12 @@ export class InkView extends TextFileView {
     this.toolbar?.setPillRow(on);
   }
 
+  /** The bar's preset changed (Customize toolbar, here or in another notebook): show its layout. */
+  showToolbarPreset(preset: BarPreset, layout: ToolbarLayout): void {
+    this.toolbar?.setPreset(preset);
+    this.setToolbarItems(layout);
+  }
+
   /**
    * Stylus-only mode was switched here or through the toolbar: its toggle
    * follows in this notebook. The hand and magnifier are ordinary toolbar
@@ -1395,7 +1403,12 @@ export class InkView extends TextFileView {
   }
 
   private toolbarLayout(): ToolbarLayout {
-    return normalizeLayout(this.settings.toolbarLayout);
+    return layoutInUse(
+      this.settings.toolbarLayout,
+      this.settings.toolbarEssentials,
+      this.settings.toolbarPreset,
+      this.plugin.pillRow === true,
+    );
   }
 
   /** Open Customize toolbar on this notebook's bar (the command; the More tools menu opens it too). */
@@ -3493,6 +3506,7 @@ export class InkView extends TextFileView {
         onLayout: (layout) => this.plugin.saveToolbarLayout(layout),
         onSetBarDock: (dock) => this.plugin.setBarDock(dock),
         onSetPillRow: (on) => this.plugin.setPillRow(on),
+        onSetPreset: (preset) => this.plugin.setToolbarPreset(preset),
         lookNow: () => ({
           style: lookStyleOf(this.plugin.settings.lookStyle),
           palette: lookPaletteOf(this.plugin.settings.lookPalette),
@@ -3533,6 +3547,7 @@ export class InkView extends TextFileView {
         pillDock: this.plugin.pillDock,
         barDock: this.plugin.barDock,
         pillRow: this.plugin.pillRow,
+        preset: this.plugin.pillRow === true ? this.settings.toolbarPreset : "own",
         layout: this.toolbarLayout(),
         onlyStylusMode: this.plugin.stylusOnly,
         fingerDrawing: this.plugin.fingerDrawing,

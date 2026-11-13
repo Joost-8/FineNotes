@@ -196,6 +196,85 @@ export function defaultLayout(): ToolbarLayout {
   };
 }
 
+/**
+ * The bar's presets (Joost, 2026-11-13): the person's own layout, or
+ * Essentials, the tools used all the time in a bar that holds a tool's
+ * docked options in one row at 11″ landscape.
+ */
+export type BarPreset = "own" | "essentials";
+
+/** A stored preset, read back: Essentials only when it was saved so. */
+export function parseBarPreset(raw: unknown): BarPreset {
+  return raw === "essentials" ? "essentials" : "own";
+}
+
+/**
+ * Essentials as it starts: the sidebar, undo and redo; the lasso, pen,
+ * eraser, text and shapes with the toolbox; the end's buttons, which in
+ * Essentials always sit in ⋯ (`isFoldedInPreset`). The rest is in More tools.
+ */
+export function essentialsLayout(): ToolbarLayout {
+  return {
+    start: ["thumbnails", "undo", "redo"],
+    middle: ["select", "pen", "eraser", "text", "shape", "accessories"],
+    end: ["fullscreen", "addPage", "share", "more", "settings"],
+    off: [],
+  };
+}
+
+/**
+ * The layout the bar shows: Essentials while it is chosen and the tool
+ * options are docked (Joost, 2026-11-13: the preset is for docking), else
+ * the person's own. A stored layout that is damaged or missing is the one
+ * its preset starts with.
+ */
+export function layoutInUse(
+  own: unknown,
+  essentials: unknown,
+  preset: BarPreset,
+  docked: boolean,
+): ToolbarLayout {
+  if (preset !== "essentials" || !docked) return normalizeLayout(own);
+  return essentials !== null && typeof essentials === "object"
+    ? normalizeLayout(essentials)
+    : essentialsLayout();
+}
+
+/** In Essentials the end's buttons, but ⋯, are always folded into ⋯. */
+export function isFoldedInPreset(layout: ToolbarLayout, id: BarItemId): boolean {
+  return id !== "more" && layout.end.includes(id);
+}
+
+/**
+ * Whether `id` keeps its place in Essentials: undo, redo, the buttons that
+ * never leave the bar (`isPinnedIn`), and the end's, which live in ⋯.
+ */
+export function isFixedInPreset(layout: ToolbarLayout, id: BarItemId): boolean {
+  return id === "undo" || id === "redo" || isPinnedIn(layout, id) || layout.end.includes(id);
+}
+
+/**
+ * Essentials keeps its number of buttons: tools are replaced, never added
+ * (Joost, 2026-11-13). `layout` with `id` in `slot`'s place and `slot` where
+ * `id` was: another place on the bar, or More tools when `id` came from off
+ * the bar. Unchanged when either keeps its place (`isFixedInPreset`).
+ */
+export function swapItems(layout: ToolbarLayout, id: BarItemId, slot: BarItemId): ToolbarLayout {
+  const next = copyLayout(layout);
+  if (id === slot || isFixedInPreset(layout, slot)) return next;
+  const zoneOf = (item: BarItemId): Zone | undefined =>
+    ZONES.find((zone) => next[zone].includes(item));
+  const to = zoneOf(slot);
+  if (!to) return next;
+  const from = zoneOf(id);
+  if (from && isFixedInPreset(layout, id)) return next;
+  const at = next[to].indexOf(slot);
+  if (from) next[from][next[from].indexOf(id)] = slot;
+  next.off = next.off.filter((item) => item !== id);
+  next[to][at] = id;
+  return next;
+}
+
 /** The buttons that never leave the bar, and the zone each goes back to if lost. */
 export const PINNED: Readonly<Partial<Record<CoreItemId, Zone>>> = {
   pen: "middle",

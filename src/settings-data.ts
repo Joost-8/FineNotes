@@ -33,7 +33,12 @@ import type { BarrelAction } from "./input/pen-modifiers";
 import type { ExportFormat, ExportMargins } from "./export/export-choice";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
-import { type ToolbarLayout, defaultLayout } from "./view/toolbar-layout";
+import {
+  type BarPreset,
+  type ToolbarLayout,
+  defaultLayout,
+  essentialsLayout,
+} from "./view/toolbar-layout";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import { DEFAULT_SHAPE_COLOR, parseHexColor } from "./model/colors";
 import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-folders";
@@ -419,6 +424,14 @@ export interface GoodObsidianSettings {
    * `toolbarItems`, `toolbarOff` and `toolbarHome`, read once on load.
    */
   toolbarLayout: ToolbarLayout;
+  /**
+   * Which layout the bar shows: the person's own (`toolbarLayout`) or the
+   * Essentials preset (`toolbarEssentials`), whose tools are replaced, never
+   * added, and whose end lives in ⋯ (Joost, 2026-11-13).
+   */
+  toolbarPreset: BarPreset;
+  /** The Essentials preset's layout, as Customize toolbar left it. */
+  toolbarEssentials: ToolbarLayout;
   /** The Home button has been put on a bar customized before it existed (once). */
   toolbarHomeAdded: boolean;
   /** The simple look: Obsidian's own chrome hidden (`model/simple-mode.ts`). On for a new install, and for a vault that updates (with an Undo in the note shown once). */
@@ -614,6 +627,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
 
   savedPens: defaultSavedPens(),
   toolbarLayout: defaultLayout(),
+  toolbarPreset: "own",
+  toolbarEssentials: essentialsLayout(),
   toolbarHomeAdded: true,
   simpleLook: false,
   simpleLookHinted: false,

@@ -41,6 +41,7 @@ import {
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
   type BarItemId,
+  type BarPreset,
   type CoreItemId,
   type Target,
   type ToolbarLayout,
@@ -48,6 +49,8 @@ import {
   ZONE_LABELS,
   type Zone,
   defaultLayout,
+  essentialsLayout,
+  isFixedInPreset,
   isPenSlot,
   isPinnedIn,
   menuItems,
@@ -57,6 +60,7 @@ import {
   sameLayout,
   slotAt,
   stepItem,
+  swapItems,
 } from "./toolbar-layout";
 
 /** What the editor needs of the tool bar. */
@@ -104,6 +108,9 @@ export interface ToolbarEditorHost {
   pillRow: () => boolean;
   setBarDock?: (dock: BarDock) => void;
   setPillRow?: (on: boolean) => void;
+  /** The bar's preset (`BarPreset`); without `setPreset`, no Essentials switch. */
+  preset?: () => BarPreset;
+  setPreset?: (preset: BarPreset) => void;
   /** The look worn now; without it (and `setLook`) the tray has no Style or Colours row. */
   look?: () => { style: LookStyle; palette: LookPalette };
   setLook?: (style: LookStyle, palette: LookPalette) => void;
@@ -188,6 +195,8 @@ export class ToolbarEditor {
   private ghost: HTMLElement | null = null;
   private gap: HTMLElement | null = null;
   private target: Target | null = null;
+  /** Essentials: the bar button a drop would swap with (`swapItems`). */
+  private swapWith: BarItemId | null = null;
   /** The trash beside New pen, shown while a pen button is dragged. */
   private trash: HTMLElement | null = null;
   /** A dragged pen is over the trash: let go, it is deleted. */
@@ -334,6 +343,17 @@ export class ToolbarEditor {
       row.setAttribute("aria-checked", String(on));
       row.addEventListener("click", () => setRow(!on));
     }
+    // Essentials is for docked options: its switch shows while they are docked.
+    const setPreset = this.h.setPreset;
+    if (setPreset && this.h.pillRow()) {
+      const on = this.inPreset();
+      const preset = head.createEl("button", { cls: "goodobsidian-edit-switch clickable-icon" });
+      preset.createSpan({ cls: "goodobsidian-edit-toggle" }).toggleClass("is-on", on);
+      preset.createSpan({ text: t("toolbar.edit.essentials") });
+      preset.setAttribute("role", "switch");
+      preset.setAttribute("aria-checked", String(on));
+      preset.addEventListener("click", () => setPreset(on ? "own" : "essentials"));
+    }
     this.newPenChip(head);
     if (this.h.newPen?.remove) {
       // Beside New pen, while a pen button is carried: dropped here, it goes.
@@ -351,22 +371,30 @@ export class ToolbarEditor {
     const setLook = this.h.setLook;
     const lookIsDefault =
       !look || (look.style === LOOK_STYLES[0] && look.palette === LOOK_PALETTES[0]);
-    reset.disabled = sameLayout(this.h.layout(), defaultLayout()) && lookIsDefault;
+    // Reset gives back the layout the preset in use starts with.
+    const start = this.inPreset() ? essentialsLayout() : defaultLayout();
+    reset.disabled = sameLayout(this.h.layout(), start) && lookIsDefault;
     reset.addEventListener("click", () => {
       if (!lookIsDefault) setLook?.(LOOK_STYLES[0], LOOK_PALETTES[0]);
-      this.h.apply(defaultLayout());
+      this.h.apply(start);
     });
     const done = head.createEl("button", { cls: "goodobsidian-edit-done clickable-icon" });
     setIcon(done, "check");
     done.setAttribute("aria-label", t("common.done"));
     done.addEventListener("click", () => this.finish());
-    // Docked along the top or bottom, the tool's options sit in the bar, and
-    // the end's buttons fold into ⋯ to make room (toolbar.ts, foldForDock):
-    // said here, where the switch is, only while it is on (Joost, 2026-11-13).
-    if (setRow && this.h.pillRow() && !isBarUpright(this.h.barDock())) {
-      const note = tray.createDiv({ cls: "goodobsidian-edit-note" });
-      setIcon(note.createSpan({ cls: "goodobsidian-edit-note-icon" }), "info");
-      note.createSpan({ text: t("toolbar.edit.dockFolds") });
+    // What the switches above do to the bar, said where they are, only while
+    // it is true (Joost, 2026-11-13): Essentials keeps its end in ⋯ and
+    // swaps tools; docked options that do not fit take a bar of their own.
+    const docked = this.h.pillRow() && !isBarUpright(this.h.barDock());
+    const note = this.inPreset()
+      ? t("toolbar.edit.essentialsNote")
+      : setRow && docked
+        ? t("toolbar.edit.dockSecondBar")
+        : null;
+    if (note) {
+      const line = tray.createDiv({ cls: "goodobsidian-edit-note" });
+      setIcon(line.createSpan({ cls: "goodobsidian-edit-note-icon" }), "info");
+      line.createSpan({ text: note });
     }
 
     const layout = this.h.layout();
@@ -574,7 +602,48 @@ export class ToolbarEditor {
       left: `${Math.round(event.clientX)}px`,
       top: `${Math.round(event.clientY)}px`,
     });
+    if (this.inPreset()) {
+      this.setSwap(this.swapAt(press.id, event.clientX, event.clientY));
+      return;
+    }
     this.setTarget(this.hitTest(press.id, event.clientX, event.clientY));
+  }
+
+  /** Essentials is in use: tools are swapped, never added or taken away. */
+  private inPreset(): boolean {
+    return this.h.preset?.() === "essentials";
+  }
+
+  /**
+   * Essentials: the bar button nearest (`x`, `y`) along the bar that `id`
+   * may swap with, or `null` (off the bar, or no button there may move).
+   */
+  private swapAt(id: BarItemId, x: number, y: number): BarItemId | null {
+    const bar = this.h.bar.getBoundingClientRect();
+    if (!inside(bar, x, y, BAR_REACH)) return null;
+    const layout = this.h.layout();
+    if ((id as string) !== NEW_PEN && isFixedInPreset(layout, id) && placeOf(layout, id) !== "menu")
+      return null;
+    const upright = isBarUpright(this.h.barDock());
+    const along = upright ? y : x;
+    let best: { id: BarItemId; distance: number } | null = null;
+    for (const zone of ["start", "middle"] as const) {
+      for (const { id: slot, el } of this.shownIn(zone, id)) {
+        if (isFixedInPreset(layout, slot)) continue;
+        const box = el.getBoundingClientRect();
+        const centre = upright ? box.top + box.height / 2 : box.left + box.width / 2;
+        const distance = Math.abs(centre - along);
+        if (!best || distance < best.distance) best = { id: slot, distance };
+      }
+    }
+    return best && best.distance <= BAR_REACH * 2 ? best.id : null;
+  }
+
+  /** Light the button a drop would swap with. */
+  private setSwap(slot: BarItemId | null): void {
+    if (this.swapWith) this.h.button(this.swapWith)?.removeClass("is-swap-target");
+    this.swapWith = slot;
+    if (slot) this.h.button(slot)?.addClass("is-swap-target");
   }
 
   private onUp(event: PointerEvent): void {
@@ -582,6 +651,7 @@ export class ToolbarEditor {
     if (!press || event.pointerId !== press.pointerId) return;
     event.preventDefault();
     const target = event.type === "pointerup" ? this.target : null;
+    const swap = event.type === "pointerup" ? this.swapWith : null;
     const toTrash = event.type === "pointerup" && this.overTrash;
     const { id, dragging, el } = press;
     this.endPress();
@@ -590,11 +660,18 @@ export class ToolbarEditor {
       this.buildTray();
       return;
     }
+    if (this.inPreset() && dragging) {
+      // Essentials: a drop on a button swaps; anywhere else changes nothing.
+      if (!swap) return;
+      const slot = (id as string) === NEW_PEN ? this.h.newPen?.make() : id;
+      if (slot) this.apply(slot, swapItems(this.h.layout(), slot, swap));
+      return;
+    }
     if ((id as string) === NEW_PEN) {
       if (event.type !== "pointerup") return;
       if (dragging) {
         if (target) this.addPen(target);
-      } else this.customizePen();
+      } else if (!this.inPreset()) this.customizePen();
       return;
     }
     if (!dragging) {
@@ -639,6 +716,7 @@ export class ToolbarEditor {
     this.ghost?.remove();
     this.ghost = null;
     this.setTarget(null);
+    this.setSwap(null);
     this.h.bar.removeClass("is-dragging");
     this.overTrash = false;
     this.trash?.removeClass("is-target");
@@ -728,6 +806,7 @@ export class ToolbarEditor {
     menu.setAttribute("aria-label", this.h.label(id));
     const row = (icon: string, label: string, next: ToolbarLayout): void => {
       if (sameLayout(next, layout)) return;
+      if (this.inPreset() && !this.keepsPreset(layout, next)) return;
       const button = menu.createEl("button", { cls: "goodobsidian-edit-menu-row clickable-icon" });
       setIcon(button.createSpan({ cls: "goodobsidian-edit-menu-icon" }), icon);
       button.createSpan({ text: label });
@@ -820,7 +899,9 @@ export class ToolbarEditor {
     if (event.key === back || event.key === on) {
       event.preventDefault();
       event.stopPropagation();
-      this.apply(id, stepItem(this.h.layout(), id, event.key === back ? -1 : 1));
+      const layout = this.h.layout();
+      const next = stepItem(layout, id, event.key === back ? -1 : 1);
+      if (!this.inPreset() || this.keepsPreset(layout, next)) this.apply(id, next);
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       event.stopPropagation();
@@ -843,6 +924,16 @@ export class ToolbarEditor {
         ? this.h.button(id)
         : this.tray.querySelector<HTMLElement>(`[data-item="${id}"]`);
     moved?.focus({ preventScroll: true });
+  }
+
+  /**
+   * Essentials keeps its buttons where they belong: the same ones in the
+   * start and middle together, and the end as it is (it lives in ⋯).
+   */
+  private keepsPreset(layout: ToolbarLayout, next: ToolbarLayout): boolean {
+    const slots = (l: ToolbarLayout): string =>
+      [...l.start, ...l.middle].filter((id) => !isFixedInPreset(l, id)).sort().join(",");
+    return slots(layout) === slots(next) && layout.end.join(",") === next.end.join(",");
   }
 
   private barIds(): BarItemId[] {
