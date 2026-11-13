@@ -10,6 +10,8 @@ import { decodeDocument, encodeDocument } from "../../src/model/serialize";
 import { SetTextBoxStyle } from "../../src/model/text-commands";
 import {
   DEFAULT_TEXT_STYLE,
+  TEXT_PRESETS,
+  presetOf,
   resetTextStylePatch,
   sanitizeTextStyle,
   textStyleKey,
@@ -120,5 +122,31 @@ describe("painting a markdown box", () => {
     // The heading's line is 1.802 lines tall; the other two are one each.
     expect(formatted - plain).toBeCloseTo(0.802 * 20 * 1.25);
     expect(paintedTextHeight(ctx, box({ markdown: true, h: 50 }))).toBe(50);
+  });
+});
+
+describe("Markdown in the Style list", () => {
+  const markdown = TEXT_PRESETS.find((preset) => preset.id === "markdown");
+
+  it("is a style of its own, picked like the others", () => {
+    expect(markdown).toBeDefined();
+    const style = withTextStyle(DEFAULT_TEXT_STYLE, markdown?.patch ?? {});
+    expect(style.markdown).toBe(true);
+    expect(presetOf(style)?.id).toBe("markdown");
+  });
+
+  it("names a Markdown box whatever its look", () => {
+    const big = withTextStyle(DEFAULT_TEXT_STYLE, { markdown: true, fontSize: 40, bold: true });
+    expect(presetOf(big)?.id).toBe("markdown");
+  });
+
+  it("is left by picking any other style", () => {
+    const md = withTextStyle(DEFAULT_TEXT_STYLE, { markdown: true });
+    for (const preset of TEXT_PRESETS) {
+      if (preset.id === "markdown") continue;
+      const picked = withTextStyle(md, preset.patch);
+      expect(picked.markdown, preset.id).toBeUndefined();
+      expect(presetOf(picked)?.id, preset.id).toBe(preset.id);
+    }
   });
 });

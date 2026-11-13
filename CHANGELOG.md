@@ -66,8 +66,9 @@ extracted from the matching section of this file by `release.yml`.
   and a highlighter. Hidden, or Remove from toolbar, takes a pen off again.
 - **Markdown in text boxes**
   ([discussion #107](https://github.com/Joost-8/FineNotes/discussions/107)).
-  The # in the Text tool's style menu reads a box as Markdown, as Obsidian
-  writes it: headings, bold, italic, strikethrough, highlights, inline and
+  Pick **Markdown** in the Text tool's Style list, or paste Markdown into
+  any text box and it switches by itself (one undo takes back both). The box
+  reads Markdown as Obsidian writes it: headings, bold, italic, strikethrough, highlights, inline and
   fenced code, bulleted, numbered and task lists, quotes, rules, and links
   (`[[Note]]` and `[text](url)`). While you type, the box shows the
   Markdown; once you let go it is drawn formatted, on the page, in
