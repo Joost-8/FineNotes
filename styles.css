@@ -21353,16 +21353,17 @@ button.goodobsidian-tips-copy.clickable-icon {
 /* ------------------------------------------- pens as buttons (FineNotes#211) */
 
 /* A pen on the bar as a button of its own is drawn as the pen's button is
-   (its glyph in its ink over its width); a saved pen carries a small star,
-   the mark it is saved under, in its top corner. */
+   (its glyph in its ink over its width), with a little pin in its top
+   corner: pinned there, not the pen menu's own button. */
 .goodobsidian-toolbar button.goodobsidian-pen-slot {
   position: relative;
 }
 
+/* In the very corner, clear of the pen's glyph. */
 .goodobsidian-pen-slot-star {
   position: absolute;
-  top: 5px;
-  right: 5px;
+  top: 1px;
+  right: 1px;
   display: inline-flex;
   color: var(--text-faint);
   pointer-events: none;
@@ -21371,8 +21372,7 @@ button.goodobsidian-tips-copy.clickable-icon {
 .goodobsidian-toolbar button .goodobsidian-pen-slot-star .svg-icon {
   width: 9px;
   height: 9px;
-  fill: currentColor;
-  stroke-width: 1.5px;
+  stroke-width: 2.25px;
 }
 
 .goodobsidian-toolbar button.goodobsidian-pen-slot.is-active .goodobsidian-pen-slot-star {
