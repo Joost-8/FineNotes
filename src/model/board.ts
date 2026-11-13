@@ -30,6 +30,7 @@ import {
   type PageSection,
   type Ruling,
   type TextBoxElement,
+  type Backdrop,
   POINT_STRIDE,
   pageById,
 } from "./document";
@@ -71,6 +72,21 @@ export function isBoard(doc: Pick<InkDocument, "endless">): boolean {
  */
 export function isBoardPage(doc: Pick<InkDocument, "endless">, page: Pick<Page, "board">): boolean {
   return doc.endless === true || page.board === true;
+}
+
+/**
+ * The page to stay on when the pages turn (the layout changed direction),
+ * given the page `reading` was being read. Null when that was a board among
+ * a notebook's pages: leaving it turns the layout too, and going back to it
+ * would undo the leaving (discussion #160); whoever left goes on to their page.
+ */
+export function pageAfterTurn(
+  doc: Pick<InkDocument, "endless" | "pages">,
+  reading: number,
+): number | null {
+  const page = doc.pages[reading];
+  if (!page) return null;
+  return !doc.endless && page.board === true ? null : reading;
 }
 
 /** Whether `doc` has any board, in a board file or among a notebook's pages. */
@@ -420,11 +436,19 @@ export function boardDrawing(
  * being read) when that is one a board offers, else blank. `inNotebook`:
  * a board among an ordinary notebook's pages, flagged `board`.
  */
-export function newBoardPage(id: string, like: Page | undefined, inNotebook = false): Page {
-  const backdrop =
-    like && (BOARD_RULINGS as readonly string[]).includes(like.backdrop.kind)
-      ? structuredClone(like.backdrop)
-      : ({ kind: "blank" } as const);
+export function newBoardPage(
+  id: string,
+  like: Page | undefined,
+  inNotebook = false,
+  /** One of `BOARD_RULINGS`, picked in Add page; otherwise `like`'s, when a board paper. */
+  ruling?: Ruling,
+): Page {
+  const backdrop: Backdrop =
+    ruling && BOARD_RULINGS.includes(ruling)
+      ? { kind: ruling }
+      : like && (BOARD_RULINGS as readonly string[]).includes(like.backdrop.kind)
+        ? structuredClone(like.backdrop)
+        : { kind: "blank" };
   return {
     id,
     kind: "ink",

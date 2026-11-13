@@ -21,7 +21,7 @@ import {
 } from "../search/notebook-search";
 import { DialogKeyboard } from "./dialog-keyboard";
 import type { Feature } from "../model/feature-index";
-import { featureHits } from "./feature-rows";
+import { type FeatureHost, featureHits, hideButton } from "./feature-rows";
 
 /** A row of the list: a page that holds the words, or a feature the words mean. */
 type SearchRow = SearchHit | Feature;
@@ -45,6 +45,8 @@ export interface NotebookSearchHost {
   goTo: (pageIndex: number, query: string) => void;
   /** Open a feature the words meant: its tip, or its switch. */
   showFeature?: (feature: Feature) => void;
+  /** What a found feature's × can do: take it out of search results. */
+  features?: FeatureHost;
 }
 
 export class NotebookSearchModal extends SuggestModal<SearchRow> {
@@ -99,7 +101,8 @@ export class NotebookSearchModal extends SuggestModal<SearchRow> {
     this.host.onQuery(query);
     this.emptyStateText = this.hint(query);
     // The notebook's own pages first; what FineNotes can do with those words after.
-    const features = this.host.showFeature ? featureHits(query) : [];
+    const hidden = this.host.features?.hiddenFeatures() ?? [];
+    const features = this.host.showFeature ? featureHits(query, undefined, hidden) : [];
     return [...searchPages(this.index, query), ...features];
   }
 
@@ -116,6 +119,13 @@ export class NotebookSearchModal extends SuggestModal<SearchRow> {
         cls: "goodobsidian-feature-sub",
         text: hit.collection ? t(hit.collection.title) : t("notebooks.features.heading"),
       });
+      const host = this.host.features;
+      // Its × takes it out of search results, and the list is made again without it.
+      if (host) {
+        hideButton(el, hit, host, () => {
+          this.inputEl.dispatchEvent(new Event("input"));
+        });
+      }
       return;
     }
     el.addClass("goodobsidian-search-hit");
