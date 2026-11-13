@@ -71,6 +71,7 @@ export default defineConfig({
         "src/canvas/text-layout.ts",
         "src/canvas/markdown-layout.ts",
         "src/model/markdown-text.ts",
+        "src/model/markdown-detect.ts",
         "src/canvas/table-layout.ts",
         "src/canvas/graph-geometry.ts",
         "src/canvas/math-layout.ts",

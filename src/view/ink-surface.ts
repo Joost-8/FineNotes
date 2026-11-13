@@ -611,6 +611,7 @@ import {
   toggleList,
 } from "../model/text-list";
 import { continueMarkdownList, setMarkdownTaskDone } from "../model/markdown-text";
+import { looksLikeMarkdown } from "../model/markdown-detect";
 import {
   fitMarkdownWidth,
   markdownLinkRects,
@@ -7296,6 +7297,30 @@ export class InkSurface {
       if (!edit) return;
       event.preventDefault();
       this.setTextInput(input, edit);
+    });
+    // Markdown pasted into a box that is not Markdown yet switches it
+    // (discussion #107): the text and the switch are one step of undo. A
+    // Markdown box stays one, and plain text pastes as the browser pastes it.
+    input.addEventListener("paste", (event) => {
+      const live = this.liveTextBox(pageId, textBox.id);
+      if (!live || live.markdown === true || this.callbacks.isLocked?.()) return;
+      const raw = event.clipboardData?.getData("text/plain") ?? "";
+      const pasted = raw.replace(/\r\n?/g, "\n");
+      if (!looksLikeMarkdown(pasted)) return;
+      event.preventDefault();
+      const start = input.selectionStart;
+      const text = input.value.slice(0, start) + pasted + input.value.slice(input.selectionEnd);
+      const caret = start + pasted.length;
+      this.pushTextCommand(
+        key,
+        new CompositeCommand(t("common.paste"), [
+          new SetTextBoxText(pageId, textBox.id, text),
+          new SetTextBoxStyle(pageId, textBox.id, { markdown: true }),
+        ]),
+      );
+      this.setTextInput(input, { text, selectionStart: caret, selectionEnd: caret });
+      this.syncTextBoxes();
+      this.reportTextEditing();
     });
     input.addEventListener("input", () => {
       const live = this.liveTextBox(pageId, textBox.id);
@@ -15218,6 +15243,8 @@ export class InkSurface {
       text,
       ...textStyleOf(this.toolState.textStyle ?? DEFAULT_TEXT_STYLE),
     };
+    // Markdown pasted onto the page makes a Markdown box (discussion #107).
+    if (looksLikeMarkdown(text)) textBox.markdown = true;
     this.dropSelection();
     this.history.push(this.doc, new AddTextBoxToPage(page.id, textBox));
     this.syncTextBoxes();
@@ -20460,6 +20487,7 @@ export class InkSurface {
     const place = this.readingPlace();
     const command = step(this.doc);
     if (!command) return;
+    this.refreshTypedText();
     // What was selected may have moved, gone or come back: start afresh.
     this.dropSelection();
     this.strokeIndex.rebuild(this.doc.pages);
@@ -20472,6 +20500,16 @@ export class InkSurface {
     this.revealChange(command);
     this.flashReadout(historyNotice(redo, command.label), READOUT_NOTICE_HOLD_MS);
     this.callbacks.onHistoryStep?.(command, redo);
+  }
+
+  /**
+   * The box being typed in shows the text an undo or redo left in it (a
+   * Markdown paste taken back): the sync leaves a focused box's field alone.
+   */
+  private refreshTypedText(): void {
+    const typing = this.editingTextView();
+    const typed = typing ? this.liveTextBox(typing.pageId, typing.id) : undefined;
+    if (typing && typed && typing.input.value !== typed.text) typing.input.value = typed.text;
   }
 
   /** Whether `command` is the newest step, so {@link undo} would take exactly it back. */

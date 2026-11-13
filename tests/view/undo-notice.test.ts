@@ -32,6 +32,7 @@ function surface(undone: { label: string } | null, redone: { label: string } | n
     layoutStale: () => false,
     renderAll: vi.fn(),
     reportTextEditing: vi.fn(),
+    refreshTypedText: vi.fn(),
     changed: vi.fn(),
     revealChange: vi.fn(),
     flashReadout: vi.fn(),

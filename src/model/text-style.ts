@@ -347,6 +347,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: true,
       italic: false,
       caps: false,
+      markdown: false,
       lineHeight: 1.15,
     },
   },
@@ -362,6 +363,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: true,
       italic: false,
       caps: false,
+      markdown: false,
       lineHeight: 1.15,
     },
   },
@@ -377,6 +379,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: true,
       italic: false,
       caps: false,
+      markdown: false,
       lineHeight: 1.25,
     },
   },
@@ -392,6 +395,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: false,
       italic: false,
       caps: false,
+      markdown: false,
       lineHeight: DEFAULT_LINE_HEIGHT,
     },
   },
@@ -407,6 +411,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: false,
       italic: true,
       caps: false,
+      markdown: false,
       lineHeight: 1.25,
     },
   },
@@ -422,13 +427,37 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: true,
       italic: false,
       caps: true,
+      markdown: false,
       lineHeight: 1.25,
+    },
+  },
+  {
+    // Markdown mode (discussion #107) as a style of its own: Body's look,
+    // the text read as Markdown. Raw while typed, formatted once let go.
+    id: "markdown",
+    get name() {
+      return t("surface.textPreset.markdown");
+    },
+    patch: {
+      font: "sans",
+      family: null,
+      fontSize: 18,
+      bold: false,
+      italic: false,
+      caps: false,
+      markdown: true,
+      lineHeight: DEFAULT_LINE_HEIGHT,
     },
   },
 ];
 
-/** The preset a style matches (font, size, weight, slant and case all equal), if any. */
+/**
+ * The preset a style matches (font, size, weight, slant and case all equal),
+ * if any. A Markdown box is "Markdown" whatever its look: the mode is what
+ * the name tells.
+ */
 export function presetOf(style: TextStyle): TextPreset | undefined {
+  if (style.markdown === true) return TEXT_PRESETS.find((preset) => preset.id === "markdown");
   return TEXT_PRESETS.find((preset) => !changesTextStyle(style, preset.patch));
 }
 

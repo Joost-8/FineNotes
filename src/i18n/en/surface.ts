@@ -179,6 +179,7 @@ export const surface = {
   "surface.textPreset.body": "Body",
   "surface.textPreset.caption": "Caption",
   "surface.textPreset.label": "Label",
+  "surface.textPreset.markdown": "Markdown",
   "surface.textFont.sans": "Sans",
   "surface.textFont.serif": "Serif",
   "surface.textFont.mono": "Mono",

@@ -318,7 +318,6 @@ export const toolbar = {
   "toolbar.text.underline": "Underline",
   "toolbar.text.strike": "Strikethrough",
   "toolbar.text.caps": "All capitals",
-  "toolbar.text.markdown": "Markdown",
   "toolbar.text.alignment": "Alignment",
   "toolbar.text.lineSpacing": "Line spacing",
   "toolbar.text.lineSpacingDefault": "{value} (default)",
