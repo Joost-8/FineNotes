@@ -21,8 +21,22 @@ vi.mock("obsidian", async () => {
         return this;
       }
     },
-    FuzzySuggestModal: class extends fakes.Modal {
+    SuggestModal: class extends fakes.Modal {
+      limit = 0;
+      emptyStateText = "";
+      inputEl = {
+        value: "",
+        inputs: 0,
+        dispatchEvent(): void {
+          this.inputs++;
+        },
+      };
+      resultContainerEl = { scrollTop: 0 };
       setPlaceholder(): void {}
+      selectSuggestion(value: unknown): void {
+        this.close();
+        (this as unknown as { onChooseSuggestion(v: unknown): void }).onChooseSuggestion(value);
+      }
     },
     Notice: class {
       constructor(message: string) {
@@ -34,9 +48,11 @@ vi.mock("obsidian", async () => {
 vi.mock("../../src/view/dialog-keyboard", () => ({
   DialogKeyboard: class {
     watch(): void {}
+    start(): void {}
     end(): void {}
   },
 }));
+vi.mock("../../src/view/enter-key", () => ({ onEnterKey: () => undefined }));
 const { PdfImportModal, VaultPdfSuggestModal } = await import("../../src/view/pdf-import-modal");
 const { Setting } = await import("../fakes/obsidian");
 beforeEach(() => {
@@ -119,16 +135,40 @@ describe("PDF import dialog", () => {
     expect(modal.isOpen).toBe(true);
     expect(state.notices[0]).toContain("Disk full");
   });
-  it("lists only vault PDFs and passes their original path", () => {
-    const file = { path: "Lecture.PDF", extension: "PDF" };
+  it("browses the vault's folders that hold PDFs, opens one in place, and takes a PDF", () => {
+    const files = [
+      { path: "Courses/Lecture.PDF", extension: "PDF" },
+      { path: "Courses/notes.md", extension: "md" },
+      { path: "scan.pdf", extension: "pdf" },
+    ];
     const pick = vi.fn();
-    const modal = new VaultPdfSuggestModal(
-      { vault: { getFiles: () => [file, { path: "note.md", extension: "md" }] } } as never,
-      pick,
-    );
-    expect(modal.getItems()).toEqual([file]);
-    expect(modal.getItemText(file as never)).toBe(file.path);
-    modal.onChooseItem(file as never);
-    expect(pick).toHaveBeenCalledWith(file);
+    const app = {
+      vault: {
+        getFiles: () => files,
+        getFileByPath: (path: string) => files.find((f) => f.path === path) ?? null,
+        getName: () => "Vault",
+      },
+    };
+    const modal = new VaultPdfSuggestModal(app as never, pick);
+    const shown = modal as unknown as Modal;
+    modal.open();
+    const kinds = (rows: Array<{ kind: string }>): string[] => rows.map((r) => r.kind);
+    const root = modal.getSuggestions("");
+    expect(kinds(root)).toEqual(["folder", "pdf"]);
+    // A folder opens in the picker, which stays open, with a way back.
+    modal.selectSuggestion(root[0], {} as never);
+    expect(shown.isOpen).toBe(true);
+    const inside = modal.getSuggestions("");
+    expect(kinds(inside)).toEqual(["up", "pdf"]);
+    // Typing searches every PDF, wherever it is.
+    expect(modal.getSuggestions("scan").map((r) => r.kind === "pdf" && r.pdf.path)).toEqual([
+      "scan.pdf",
+    ]);
+    modal.selectSuggestion(inside[1], {} as never);
+    expect(shown.isOpen).toBe(false);
+    expect(pick).toHaveBeenCalledWith(files[0]);
+    // The next picker starts where this one took its PDF.
+    const again = new VaultPdfSuggestModal(app as never, pick);
+    expect(kinds(again.getSuggestions(""))).toEqual(["up", "pdf"]);
   });
 });

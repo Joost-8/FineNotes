@@ -539,6 +539,8 @@ export const notebooks = {
   "notebooks.welcome.simple": "Only here for FineNotes?",
   "notebooks.welcome.simpleInfo": "Hide Obsidian's menus and sidebars.",
   "notebooks.pdfImport.find": "Find a PDF in the vault…",
+  "notebooks.pdfImport.none": "No PDF here",
+  "notebooks.pdfImport.back": "Back to {name}",
   "notebooks.stickerModal.title": "Stickers",
   "notebooks.stickerModal.hintOwn":
     "Your own stickers live in “{folder}”: one folder per collection.",

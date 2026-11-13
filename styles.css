@@ -9932,6 +9932,28 @@ input[type="range"].goodobsidian-player-scrubber {
   white-space: nowrap;
 }
 
+/* The vault PDF picker (pdf-import-modal.ts): folders to open, PDFs to take, as
+   Obsidian's file list shows them. Rows are finger-sized on a tablet. */
+.goodobsidian-pdf-pick .suggestion-item {
+  min-height: 44px;
+}
+
+.goodobsidian-pdf-pick .is-up .goodobsidian-link-choice-title {
+  color: var(--text-accent);
+}
+
+.goodobsidian-pdf-pick .is-folder .goodobsidian-link-choice-icon,
+.goodobsidian-pdf-pick .is-up .goodobsidian-link-choice-icon {
+  color: var(--text-accent);
+}
+
+.goodobsidian-pdf-pick-count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
 /* A bar button that says what it does: crop mode's Cancel · Reset · Done, a
    tap-and-hold's Paste or Unlock. Still a 44 px target. */
 .goodobsidian-selection-bar .goodobsidian-selection-button.clickable-icon.has-label {
