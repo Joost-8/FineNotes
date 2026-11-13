@@ -593,6 +593,39 @@ export function tapeHeightOf(size: unknown): number {
   return Math.min(MAX_TAPE_HEIGHT, Math.max(MIN_TAPE_HEIGHT, Math.round(size)));
 }
 
+/**
+ * The pill's three tape heights as stored (FineNotes#211): each one the
+ * slider may have changed, as the pens' width presets keep theirs. Anything
+ * but three positive numbers is the defaults ({@link TAPE_HEIGHTS}); each is
+ * kept on the slider's range ({@link tapeHeightOf}).
+ */
+export function tapeHeightsOf(raw: unknown): number[] {
+  if (!Array.isArray(raw) || raw.length !== TAPE_HEIGHTS.length) return [...TAPE_HEIGHTS];
+  const ok = raw.every((each) => typeof each === "number" && Number.isFinite(each) && each > 0);
+  return ok ? raw.map((each) => tapeHeightOf(each)) : [...TAPE_HEIGHTS];
+}
+
+/**
+ * Which of `heights` the tape in hand is: the one equal to `height`, else
+ * the nearest (the first of two as near). The slider changes this one.
+ */
+export function tapePresetIndex(heights: readonly number[], height: number): number {
+  let best = 0;
+  for (let i = 1; i < heights.length; i++) {
+    if (Math.abs(heights[i] - height) < Math.abs(heights[best] - height)) best = i;
+  }
+  return best;
+}
+
+/** `heights` with preset `index` set to `height`, kept on the slider's range. */
+export function withTapePreset(
+  heights: readonly number[],
+  index: number,
+  height: number,
+): number[] {
+  return heights.map((each, i) => (i === index ? tapeHeightOf(height) : each));
+}
+
 /** A stored tape colour if it is `#rrggbb`, else masking tape. */
 export function tapeColorOf(color: unknown): string {
   return typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color)

@@ -222,6 +222,8 @@ export interface GoodObsidianSettings {
   tapeColor?: string;
   /** Cover tape's height, page px. Absent: the medium height. */
   tapeHeight?: number;
+  /** The tape pill's three heights, each as the slider left it (`tapeHeightsOf`). Checked where read. */
+  tapeHeights?: unknown;
   /** How a new cover tape is laid, "straight" or "freehand". Absent: straight. */
   tapeMode?: string;
   /**

@@ -26,7 +26,13 @@ import {
   outsideNotebookFolder,
 } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
-import { type TapeMode, tapeColorOf, tapeHeightOf, tapeModeOf } from "./model/cover-tape";
+import {
+  type TapeMode,
+  tapeColorOf,
+  tapeHeightOf,
+  tapeHeightsOf,
+  tapeModeOf,
+} from "./model/cover-tape";
 import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
   type Editor,
@@ -1961,10 +1967,11 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
-  /** Remember cover tape's colour, height and mode, for the next session. */
-  saveTape(color: string, height: number, mode: TapeMode): void {
+  /** Remember cover tape's colour, height, the pill's three heights and mode, for the next session. */
+  saveTape(color: string, height: number, mode: TapeMode, heights: readonly number[]): void {
     this.settings.tapeColor = tapeColorOf(color);
     this.settings.tapeHeight = tapeHeightOf(height);
+    this.settings.tapeHeights = tapeHeightsOf(heights);
     this.settings.tapeMode = tapeModeOf(mode);
     void this.saveSettings();
   }

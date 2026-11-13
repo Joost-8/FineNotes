@@ -17,6 +17,9 @@ import {
   tapeCorners,
   tapeEnds,
   tapeHeightOf,
+  tapeHeightsOf,
+  tapePresetIndex,
+  withTapePreset,
   tapePoints,
   tapesLast,
   tapeClipPath,
@@ -176,6 +179,24 @@ describe("the tool's settings", () => {
   it("offers presets that are heights the slider can lay", () => {
     for (const each of TAPE_HEIGHTS) expect(tapeHeightOf(each)).toBe(each);
     expect(tapeHeightOf(DEFAULT_TAPE_HEIGHT)).toBe(DEFAULT_TAPE_HEIGHT);
+  });
+
+  it("keeps each of the three heights as the slider left it (FineNotes#211)", () => {
+    expect(tapeHeightsOf(undefined)).toEqual([...TAPE_HEIGHTS]);
+    expect(tapeHeightsOf([22, 40])).toEqual([...TAPE_HEIGHTS]);
+    expect(tapeHeightsOf([22, "wide", 72])).toEqual([...TAPE_HEIGHTS]);
+    expect(tapeHeightsOf([22, 150.4, 1000])).toEqual([22, 150, MAX_TAPE_HEIGHT]);
+  });
+
+  it("changes the preset in hand, and only that one", () => {
+    const heights = [...TAPE_HEIGHTS];
+    const index = tapePresetIndex(heights, TAPE_HEIGHTS[2]);
+    expect(index).toBe(2);
+    expect(withTapePreset(heights, index, 150)).toEqual([TAPE_HEIGHTS[0], TAPE_HEIGHTS[1], 150]);
+    // A height from before the presets were kept is the nearest preset's.
+    expect(tapePresetIndex(heights, 45)).toBe(1);
+    // Two presets set alike: the first is the one in hand.
+    expect(tapePresetIndex([40, 40, 72], 40)).toBe(0);
   });
 
   it("keeps a hex colour and falls back to masking tape", () => {

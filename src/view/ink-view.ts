@@ -23,7 +23,7 @@ import { lookPaletteOf, lookStyleOf } from "../model/look";
 import { stickerFolderFor, templateFolderFor } from "../model/vault-folders";
 import { readShapeToolStyle } from "../model/shape-style";
 import { DEFAULT_FILL_COLOR, readFillGap } from "../model/fill-region";
-import { isTape, tapeColorOf, tapeHeightOf, tapeModeOf } from "../model/cover-tape";
+import { isTape, tapeColorOf, tapeHeightOf, tapeHeightsOf, tapeModeOf } from "../model/cover-tape";
 import { notebookKeyScope } from "./notebook-keys";
 import {
   Menu,
@@ -529,6 +529,7 @@ function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
     fillColor: parseHexColor(s.fillColor ?? "") ?? DEFAULT_FILL_COLOR,
     tapeColor: tapeColorOf(s.tapeColor),
     tapeHeight: tapeHeightOf(s.tapeHeight),
+    tapeHeights: tapeHeightsOf(s.tapeHeights),
     tapeMode: tapeModeOf(s.tapeMode),
     tapeSnapText: s.tapeSnapText === true,
     tableHeader: s.tableHeader === true,
@@ -3386,7 +3387,8 @@ export class InkView extends TextFileView {
         onShapeStyleChange: (style) => this.plugin.saveShapeStyle(style),
         onFillGapChange: (gap) => this.plugin.saveFillGap(gap),
         onFillColorChange: (color) => this.plugin.saveFillColor(color),
-        onTapeChange: (color, height, mode) => this.plugin.saveTape(color, height, mode),
+        onTapeChange: (color, height, mode, heights) =>
+          this.plugin.saveTape(color, height, mode, heights),
         onTapeSnapTextChange: (on) => this.plugin.saveTapeSnapText(on),
         tapesShown: () => this.surface?.tapesShown() ?? null,
         onShowTapes: (shown) => this.surface?.showTapes(shown),

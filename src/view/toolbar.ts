@@ -94,10 +94,12 @@ import {
   MAX_TAPE_HEIGHT,
   MIN_TAPE_HEIGHT,
   TAPE_COLORS,
-  TAPE_HEIGHTS,
   type TapeMode,
   tapeColorOf,
   tapeHeightOf,
+  tapeHeightsOf,
+  tapePresetIndex,
+  withTapePreset,
   tapeModeOf,
 } from "../model/cover-tape";
 import { magnifierTap, zoomButtonState } from "../model/zoom-box";
@@ -739,6 +741,8 @@ export interface ToolbarState {
   tapeColor?: string;
   /** Cover tape's height, page px. `undefined` counts as the medium height. */
   tapeHeight?: number;
+  /** The tape pill's three heights, each as the slider left it. `undefined`: the defaults. */
+  tapeHeights?: readonly number[];
   /** How a new cover tape is laid. `undefined` counts as straight. */
   tapeMode?: TapeMode;
   /** Whether a cover tape dragged along a PDF's text covers its lines. `undefined` is off. */
@@ -852,8 +856,13 @@ export interface ToolbarCallbacks {
   onPenPreferences?: (patch: Partial<PenPreferences>) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
-  /** Cover tape's colour, height or mode changed. Hosts persist it. */
-  onTapeChange?: (color: string, height: number, mode: TapeMode) => void;
+  /** Cover tape's colour, height, mode or one of its three heights changed. Hosts persist it. */
+  onTapeChange?: (
+    color: string,
+    height: number,
+    mode: TapeMode,
+    heights: readonly number[],
+  ) => void;
   /** Cover tape's Snap to PDF text was switched. Hosts persist it. */
   onTapeSnapTextChange?: (on: boolean) => void;
   /**
@@ -3287,12 +3296,13 @@ export class Toolbar {
   private buildTapeOptions(): void {
     const color = tapeColorOf(this.state.tapeColor);
     const height = tapeHeightOf(this.state.tapeHeight);
+    const heights = tapeHeightsOf(this.state.tapeHeights);
     const mode = tapeModeOf(this.state.tapeMode);
     const set = (nextColor: string, nextHeight: number, nextMode = mode): void => {
       this.state.tapeColor = nextColor;
       this.state.tapeHeight = nextHeight;
       this.state.tapeMode = nextMode;
-      this.callbacks.onTapeChange?.(nextColor, nextHeight, nextMode);
+      this.callbacks.onTapeChange?.(nextColor, nextHeight, nextMode, heights);
       this.buildOptions();
     };
     for (const [each, icon, label] of tapeModes()) {
@@ -3309,19 +3319,21 @@ export class Toolbar {
       swatch.toggleClass("is-active", each === color);
     }
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    TAPE_HEIGHTS.forEach((each, i) => {
+    // Three heights, each kept as the slider left it, as the pens' widths
+    // are (FineNotes#211): one is always the tape in hand.
+    const inHand = tapePresetIndex(heights, height);
+    heights.forEach((each, i) => {
       const button = this.optionsEl.createEl("button", {
         cls: "goodobsidian-width goodobsidian-tape-height clickable-icon",
       });
-      button.append(tapeHeightGlyph(i));
-      button.dataset.height = String(each);
-      const label = tapeHeightLabels()[i] ?? `${each}`;
+      button.append(tapeHeightGlyph(each));
+      const label = `${tapeHeightLabels()[i] ?? ""} ${formatMm(each)}`.trim();
       button.setAttribute("aria-label", t("toolbar.tape.height", { label }));
       button.setAttribute("title", label);
-      button.toggleClass("is-active", each === height);
+      button.toggleClass("is-active", i === inHand);
       button.addEventListener("click", () => set(color, each));
     });
-    // Any height between the presets and past them, on a slider (FineNotes#211).
+    // The height in hand on a slider, anywhere on its range (FineNotes#211).
     this.chevron(t("toolbar.tape.anyHeight"), (button) => this.toggleTapeHeight(button));
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     // Snap to PDF text: a magnet, as the ruler's angle snap, lit as a picked option while on (#164).
@@ -3363,8 +3375,9 @@ export class Toolbar {
   /**
    * The tape's height on a slider, as the pens' width popover has one: the
    * height in mm and any height from {@link MIN_TAPE_HEIGHT} to
-   * {@link MAX_TAPE_HEIGHT} page px (FineNotes#211). The pill's presets light
-   * as the knob passes them; the height is kept when the knob is let go.
+   * {@link MAX_TAPE_HEIGHT} page px (FineNotes#211). It changes the pill's
+   * height in hand, which keeps it, as a pen's width preset does; the others
+   * stay as they are.
    */
   private toggleTapeHeight(anchor: HTMLElement): void {
     if (this.popoverKind === "tape-height") {
@@ -3390,23 +3403,28 @@ export class Toolbar {
       readout.setText(formatMm(height));
       range.value = String(height);
       syncRangeFill(range);
-      for (const button of Array.from(
-        this.optionsEl.querySelectorAll<HTMLElement>(".goodobsidian-tape-height"),
-      )) {
-        button.toggleClass("is-active", Number(button.dataset.height) === height);
-      }
     };
     show(tapeHeightOf(this.state.tapeHeight));
     range.addEventListener("input", () => show(tapeHeightOf(Number(range.value))));
     range.addEventListener("change", () => {
       const height = tapeHeightOf(Number(range.value));
+      const before = tapeHeightsOf(this.state.tapeHeights);
+      const heights = withTapePreset(
+        before,
+        tapePresetIndex(before, tapeHeightOf(this.state.tapeHeight)),
+        height,
+      );
       this.state.tapeHeight = height;
+      this.state.tapeHeights = heights;
       this.callbacks.onTapeChange?.(
         tapeColorOf(this.state.tapeColor),
         height,
         tapeModeOf(this.state.tapeMode),
+        heights,
       );
       show(height);
+      // The pill's band for that height is redrawn at its new size.
+      this.buildOptions();
     });
     this.keepPopoverInside(anchor);
   }
@@ -7348,15 +7366,17 @@ function tapeModes(): readonly (readonly [TapeMode, string, string])[] {
   ];
 }
 
-/** A tape height button's mark: a band, taller for each height. */
-
-function tapeHeightGlyph(index: number): SVGElement {
+/**
+ * A tape height button's mark: a band as tall as the height, in step with
+ * the others (the default heights draw 5, 9 and 15 px), never past the glyph.
+ */
+function tapeHeightGlyph(height: number): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 28 24");
   svg.setAttribute("width", "28");
   svg.setAttribute("height", "24");
   svg.setAttribute("aria-hidden", "true");
-  const tall = [5, 9, 15][index] ?? 9;
+  const tall = Math.max(3, Math.min(20, Math.round(height / 4.8)));
   const rect = activeDocument.createElementNS(SVG_NS, "rect");
   rect.setAttribute("x", "3");
   rect.setAttribute("y", String(12 - tall / 2));
