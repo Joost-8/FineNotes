@@ -518,6 +518,17 @@ export function lassoFilterFor(state: ToolbarState): LassoFilter {
   return lassoFilterOf(state.lassoFilter);
 }
 
+/** A symbol for each kind of thing the lasso picks up, for its row in the bar. */
+const LASSO_FILTER_ICONS: Record<(typeof LASSO_FILTER_KEYS)[number], string> = {
+  handwriting: "signature",
+  images: "image",
+  shapes: "shapes",
+  arrows: "move-up-right",
+  textBoxes: "type",
+  tables: "table",
+  graphs: "chart-spline",
+};
+
 const LASSO_MODE_LABELS: Record<LassoMode, string> = {
   get rect() {
     return t("toolbar.lasso.mode.rect");
@@ -1704,7 +1715,12 @@ export class Toolbar {
       item.button.addClass("is-overflowed");
       this.measureCrowding();
     }
-    if (bar.hasClass("has-pill-inside")) this.foldForPill(active);
+    // The pill in the bar keeps the room it was placed with (`pillNeed`).
+    if (bar.hasClass("has-pill-inside")) {
+      this.foldForPill(active, this.pillWant);
+      // Folding moved the tools: the pill starts where they end now.
+      this.alignPillInBar();
+    }
     this.markFolded();
   }
 
@@ -4057,6 +4073,12 @@ export class Toolbar {
    * button says so), and an empty pill hides itself.
    */
   private buildSelectOptions(): void {
+    // Docked along the top or bottom, the lasso's options are in the bar itself.
+    const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
+    if (edge === "top" || edge === "bottom") {
+      this.buildLassoRow();
+      return;
+    }
     // Repeated selection may now return to Pen, so keep the lasso settings reachable.
     if (this.callbacks.returnToPenOnReselect?.() === true)
       this.barButton(this.optionsEl, "settings-2", t("toolbar.lasso.options"), (button) =>
@@ -4114,6 +4136,46 @@ export class Toolbar {
         this.state.lassoFilter = { ...lassoFilterFor(this.state), [key]: on };
         this.saveLasso();
         this.popoverRender?.();
+      });
+    }
+  }
+
+  /**
+   * The lasso popover's choices as a row of the bar (discussion #200): its
+   * types, then what it picks up, each a symbol that is lit while on.
+   */
+  private buildLassoRow(): void {
+    const mode = lassoModeFor(this.state);
+    for (const option of [...LASSO_MODES].reverse()) {
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-shape goodobsidian-lasso-mode clickable-icon",
+        attr: { type: "button", "aria-label": LASSO_MODE_LABELS[option] },
+      });
+      button.append(lassoGlyph(option, 24));
+      button.toggleClass("is-active", option === mode);
+      button.setAttribute("aria-pressed", String(option === mode));
+      button.addEventListener("click", () => {
+        this.state.lassoMode = option;
+        this.saveLasso();
+        this.drawLassoIcon();
+        this.buildOptions();
+      });
+    }
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const filter = lassoFilterFor(this.state);
+    for (const key of LASSO_FILTER_KEYS) {
+      const on = filter[key];
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-shape goodobsidian-lasso-filter clickable-icon",
+        attr: { type: "button", "aria-label": LASSO_FILTER_LABELS[key] },
+      });
+      setIcon(button, LASSO_FILTER_ICONS[key]);
+      button.toggleClass("is-active", on);
+      button.setAttribute("aria-pressed", String(on));
+      button.addEventListener("click", () => {
+        this.state.lassoFilter = { ...lassoFilterFor(this.state), [key]: !on };
+        this.saveLasso();
+        this.buildOptions();
       });
     }
   }
@@ -6214,6 +6276,34 @@ export class Toolbar {
     return spans.map(({ top, bottom }) => ({ top, bottom }));
   }
 
+  /**
+   * The room the pill wants inside the bar: all of it, so the text pill is
+   * not shortened and the shapes' last buttons are not cut off (discussion
+   * #200), and buttons fold to make it (`foldForPill`), but no more than
+   * that. The pen's is the usual room: its colours are a row that scrolls.
+   */
+  /** The room the pill in the bar was placed with, which a later `fitBar` keeps. */
+  private pillWant = PILL_IN_BAR_ROOM;
+
+  private pillNeed(): number {
+    const pill = this.optionsEl;
+    const pen =
+      !pill.hasClass("is-text") && this.optionsEl.querySelector(".goodobsidian-pen-colors");
+    if (pen) return PILL_IN_BAR_ROOM;
+    pill.setCssProps({ "--gob-pill-inside": "100000px" });
+    this.fitTextPill(100000);
+    // Its own width: a short pill (the lasso's, the eraser's) folds nothing.
+    return Math.ceil(pill.scrollWidth) + 2;
+  }
+
+  /** Put the pill in the bar right after the tools, with the room between them and the end. */
+  private alignPillInBar(): void {
+    const { from, room } = this.pillSpan();
+    const hostBox = this.host.getBoundingClientRect();
+    this.optionsEl.setCssProps({ "--gob-pill-inside": `${Math.max(0, room)}px` });
+    this.optionsEl.setCssStyles({ left: `${Math.round(from + BAR_GAP - hostBox.left)}px` });
+  }
+
   /** Take the pill back out of the bar: it is put in again only if it still fits. */
   private leaveBar(): void {
     this.barEl.removeClass("has-pill-inside");
@@ -6235,10 +6325,10 @@ export class Toolbar {
   }
 
   /** Fold the buttons that fold first until the pill has its room in the bar. */
-  private foldForPill(active: ActiveTool | null): void {
+  private foldForPill(active: ActiveTool | null, need = PILL_IN_BAR_ROOM): void {
     const order = [...this.foldable].sort((a, b) => a.rank - b.rank);
     for (const item of order) {
-      if (this.pillSpan().room >= PILL_IN_BAR_ROOM || item.rank > IN_BAR_LAST_FOLD) break;
+      if (this.pillSpan().room >= need || item.rank > IN_BAR_LAST_FOLD) break;
       if (item.tool !== undefined && item.tool === active) continue;
       if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
       item.button.addClass("is-overflowed");
@@ -6256,9 +6346,11 @@ export class Toolbar {
     if (edge !== "top" && edge !== "bottom") return false;
     this.fitBar(this.indicatorTool);
     this.barEl.addClass("has-pill-inside");
-    this.foldForPill(this.indicatorTool);
-    const { from, room } = this.pillSpan();
     const pill = this.optionsEl;
+    pill.addClass("is-in-bar");
+    this.pillWant = this.pillNeed();
+    this.foldForPill(this.indicatorTool, this.pillWant);
+    const { from, room } = this.pillSpan();
     pill.setCssProps({ "--gob-pill-inside": `${Math.max(0, room)}px` });
     pill.addClass("is-in-bar");
     pill.addClass("is-docked");
