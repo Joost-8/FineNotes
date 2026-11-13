@@ -222,11 +222,11 @@ export function essentialsLayout(): ToolbarLayout {
     middle: ["select", "pen", "eraser", "text", "shape", "accessories"],
     // In ⋯ in this order, top to bottom, Home last (Joost, 2026-11-13).
     end: [
+      "fullscreen",
       "addPage",
       "search",
       "calculator",
       "ai",
-      "fullscreen",
       "share",
       "settings",
       "home",
