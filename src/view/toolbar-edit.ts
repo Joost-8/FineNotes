@@ -360,6 +360,14 @@ export class ToolbarEditor {
     setIcon(done, "check");
     done.setAttribute("aria-label", t("common.done"));
     done.addEventListener("click", () => this.finish());
+    // Docked along the top or bottom, the tool's options sit in the bar, and
+    // the end's buttons fold into ⋯ to make room (toolbar.ts, foldForDock):
+    // said here, where the switch is, only while it is on (Joost, 2026-11-13).
+    if (setRow && this.h.pillRow() && !isBarUpright(this.h.barDock())) {
+      const note = tray.createDiv({ cls: "goodobsidian-edit-note" });
+      setIcon(note.createSpan({ cls: "goodobsidian-edit-note-icon" }), "info");
+      note.createSpan({ text: t("toolbar.edit.dockFolds") });
+    }
 
     const layout = this.h.layout();
     this.menuShelf = this.shelf(

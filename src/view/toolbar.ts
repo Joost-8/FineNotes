@@ -7233,13 +7233,17 @@ export class Toolbar {
   }
 
   /**
-   * Fold the bar's buttons in their order (`foldOrder`) until the rows have
-   * `want` px beside the tools. Tools, undo, redo and ⋯ never fold here.
+   * Fold the buttons at the end of the bar (the right, along the top), from
+   * their outer end in, until the rows have `want` px beside the tools. Only
+   * those fold for a row (Joost, 2026-11-13): the start's buttons and the
+   * tools always show, and a row that still does not fit gets a bar of its own.
    */
   private foldForDock(want: number): void {
+    const end = new Set(Array.from(this.zoneEls.end?.children ?? []));
     for (const item of this.foldOrder()) {
       if (this.pillSpan().room >= want) return;
-      if (item.tool !== undefined || item.button.hasClass("is-overflowed")) continue;
+      if (!end.has(item.button) || item.tool !== undefined) continue;
+      if (item.button.hasClass("is-overflowed")) continue;
       if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
       item.button.addClass("is-overflowed");
     }

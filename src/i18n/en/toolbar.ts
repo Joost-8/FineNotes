@@ -98,6 +98,7 @@ export const toolbar = {
   "toolbar.zone.end": "End",
   "toolbar.zone.bottom": "Bottom",
   "toolbar.edit.dockOptions": "Dock tool options",
+  "toolbar.edit.dockFolds": "To make room for the tool options, buttons on the right fold into ⋯.",
   "toolbar.edit.reset": "Reset",
   "toolbar.edit.moveUp": "Move up",
   "toolbar.edit.moveDown": "Move down",
