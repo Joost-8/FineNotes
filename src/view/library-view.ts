@@ -1060,6 +1060,7 @@ export class LibraryView extends ItemView {
         this.bodyEl.createDiv({ cls: "goodobsidian-library-features" }),
         this.query,
         this.host.features,
+        { hideable: true },
       );
       // Titles answer at once; the pages holding the words follow under them.
       if (found.length > 0) this.grid(found, t("notebooks.home.results"));
