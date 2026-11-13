@@ -304,10 +304,14 @@ import { type WidthPresets } from "./model/width-presets";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
 import { type SavedPen, savedPensOf, withPenIds } from "./model/saved-pens";
 import {
+  type BarPreset,
   type ToolbarLayout,
+  essentialsLayout,
   isItemOff,
+  layoutInUse,
   migrateLayout,
   normalizeLayout,
+  parseBarPreset,
   placeOf,
 } from "./view/toolbar-layout";
 import {
@@ -1211,13 +1215,19 @@ export default class GoodObsidianPlugin extends Plugin {
     }
     this.settings.toolbarHomeAdded = true;
     this.settings.toolbarLayout = toolbar;
+    this.settings.toolbarPreset = parseBarPreset(this.settings.toolbarPreset);
+    this.settings.toolbarEssentials = normalizeLayout(
+      saved !== null && "toolbarEssentials" in saved
+        ? this.settings.toolbarEssentials
+        : essentialsLayout(),
+    );
     delete loaded.toolbarItems;
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
-    if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
+    if (isItemOff(this.toolbarLayoutNow(), "stylus")) this.settings.onlyStylusMode = false;
     // A Zoom box line step outside the slider's range is a hand-edited file,
     // not a value to honour; a negative step overlaps the next line.
     const lineStep = Number(this.settings.zoomBoxLineStep);
@@ -2231,10 +2241,36 @@ export default class GoodObsidianPlugin extends Plugin {
     }).open();
   }
 
+  /** The layout the bar shows: the preset's (Essentials) or the person's own. */
+  toolbarLayoutNow(): ToolbarLayout {
+    return layoutInUse(
+      this.settings.toolbarLayout,
+      this.settings.toolbarEssentials,
+      this.settings.toolbarPreset,
+      this.pillRow,
+    );
+  }
+
+  /** Customize toolbar switched the bar's preset: every open notebook shows its layout. */
+  setToolbarPreset(preset: BarPreset): void {
+    if (preset === this.settings.toolbarPreset) return;
+    this.settings.toolbarPreset = preset;
+    void this.saveSettings();
+    const toolbar = this.toolbarLayoutNow();
+    const shown = this.pillRow ? preset : "own";
+    for (const view of this.openNotebooks()) view.showToolbarPreset(shown, toolbar);
+    if (this.settings.onlyStylusMode && isItemOff(toolbar, "stylus")) {
+      void this.setOnlyStylusMode(false);
+    }
+  }
+
   /** Customize toolbar changed the bar or its menu: every open notebook shows the new one. */
   saveToolbarLayout(layout: ToolbarLayout): void {
     const toolbar = normalizeLayout(layout);
-    this.settings.toolbarLayout = toolbar;
+    // The preset in use keeps the change; the other layout stays as it was.
+    if (this.settings.toolbarPreset === "essentials" && this.pillRow)
+      this.settings.toolbarEssentials = toolbar;
+    else this.settings.toolbarLayout = toolbar;
     void this.saveSettings();
     // Each notebook ends what an item now shown nowhere left on (effectsOfOffItems).
     for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
@@ -2270,7 +2306,7 @@ export default class GoodObsidianPlugin extends Plugin {
    */
   async setOnlyStylusMode(on: boolean): Promise<void> {
     // Shown nowhere, Stylus only stays off: a command must not turn it on unseen.
-    if (on && isItemOff(this.settings.toolbarLayout, "stylus")) return;
+    if (on && isItemOff(this.toolbarLayoutNow(), "stylus")) return;
     this.settings.onlyStylusMode = on;
     // Asking for the pen alone means the Pencil is in hand: fingers stop drawing.
     if (on) this.setFingerDrawing(false);
@@ -2612,6 +2648,12 @@ export default class GoodObsidianPlugin extends Plugin {
     this.pillRowSeen = on;
     this.app.saveLocalStorage(GoodObsidianPlugin.PILL_ROW_KEY, on ? "on" : null);
     for (const view of this.openNotebooks()) view.showPillRow(on);
+    // Essentials is for docked options: it comes and goes with them.
+    if (this.settings.toolbarPreset === "essentials") {
+      const toolbar = this.toolbarLayoutNow();
+      const preset = on ? "essentials" : "own";
+      for (const view of this.openNotebooks()) view.showToolbarPreset(preset, toolbar);
+    }
   }
 
   private static readonly BAR_DOCK_KEY = "goodobsidian:bar-dock";

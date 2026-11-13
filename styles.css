@@ -16747,8 +16747,15 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
   opacity: 0.25;
 }
 
-/* Under the tray's head while Dock tool options is on along the top or
-   bottom: the right's buttons fold into ⋯ for the options (toolbar-edit.ts). */
+/* Essentials: the button a carried tool would swap with (toolbar-edit.ts). */
+.goodobsidian-toolbar.is-editing button.goodobsidian-tool.is-swap-target {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+  background: var(--gob-active-bg);
+}
+
+/* Under the tray's head: what Essentials or Dock tool options does to the
+   bar, while it is on (toolbar-edit.ts). */
 .goodobsidian-edit-note {
   display: flex;
   align-items: center;

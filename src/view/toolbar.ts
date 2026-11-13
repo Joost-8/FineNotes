@@ -81,6 +81,7 @@ import {
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
   type BarItemId,
+  type BarPreset,
   type CoreItemId,
   type PenSlotId,
   type ToolbarLayout,
@@ -88,6 +89,7 @@ import {
   type Zone,
   barItems as layoutBarItems,
   defaultLayout,
+  isFoldedInPreset,
   isPenSlot,
   menuItems,
   normalizeLayout,
@@ -996,6 +998,8 @@ export interface ToolbarCallbacks {
   onSetBarDock?: (dock: BarDock) => void;
   /** Customize toolbar switched "Dock tool options" (`pill-row-model.ts`). */
   onSetPillRow?: (on: boolean) => void;
+  /** Customize toolbar switched the bar's preset (`toolbar-layout.ts`, `BarPreset`). */
+  onSetPreset?: (preset: BarPreset) => void;
   /** The look worn now (`model/look.ts`), for Customize toolbar's Style and Colours rows. */
   lookNow?: () => { style: LookStyle; palette: LookPalette };
   /** Customize toolbar picked a style or colours. */
@@ -1028,6 +1032,8 @@ export interface ToolbarOptions {
   barDock?: BarDock;
   /** "Dock tool options": the pill by the bar is a row the page starts past (`pill-row-model.ts`). */
   pillRow?: boolean;
+  /** The bar's preset: in Essentials the end's buttons live in ⋯ (`isFoldedInPreset`). */
+  preset?: BarPreset;
   /** Where every button is (`toolbar-layout.ts`); the default layout when absent. */
   layout?: ToolbarLayout;
   /** Stylus-only mode is on, so its toolbar toggle starts on. */
@@ -1182,6 +1188,8 @@ export class Toolbar {
   private readonly rowEl: HTMLElement;
   /** "Dock tool options" is on, on this device. */
   private pillRowOn = false;
+  /** The bar's preset: in Essentials the end's buttons live in ⋯ (`isFoldedInPreset`). */
+  private preset: BarPreset = "own";
   /** How far the docked side pill's colour column is scrolled. */
   private colorColumnScroll = 0;
   /** Where the pill rested before "Dock tool options" brought it to the bar, to give back when it is off. */
@@ -1390,6 +1398,7 @@ export class Toolbar {
     // the page body gives it its height.
     this.rowEl = host.createDiv({ cls: "goodobsidian-pill-row" });
     this.pillRowOn = options.pillRow === true;
+    this.preset = options.preset ?? "own";
     // The pill always floats over the page (styles.css, `.is-floating`).
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
@@ -1793,6 +1802,15 @@ export class Toolbar {
         const at = along(group.getBoundingClientRect());
         return at.length > 0 && (at.end > right + 0.5 || at.start < left - 0.5);
       });
+    // Essentials: the end's buttons always sit in ⋯ (Joost, 2026-11-13).
+    if (this.preset === "essentials") {
+      const layout = this.layoutNow;
+      for (const item of this.foldable) {
+        const id = item.button.getAttribute("data-item") as BarItemId | null;
+        if (id && isFoldedInPreset(layout, id)) item.button.addClass("is-overflowed");
+      }
+      this.measureCrowding();
+    }
     for (const item of this.foldOrder()) {
       if (!overflows()) break;
       if (item.tool !== undefined && item.tool === active) continue;
@@ -1804,7 +1822,6 @@ export class Toolbar {
     }
     // The rows in the bar keep the room they were placed with (`dockWant`).
     if (bar.hasClass("has-pill-inside")) {
-      this.foldForDock(this.dockWant);
       // Folding moved the tools: the pill starts where they end now.
       this.alignPillInBar();
     }
@@ -2526,6 +2543,8 @@ export class Toolbar {
       pillRow: () => this.pillRowOn,
       setBarDock: this.callbacks.onSetBarDock,
       setPillRow: this.callbacks.onSetPillRow,
+      preset: () => this.preset,
+      setPreset: this.callbacks.onSetPreset,
       look: this.callbacks.lookNow,
       setLook: this.callbacks.onSetLook,
       done: () => {
@@ -7089,6 +7108,14 @@ export class Toolbar {
    * "Dock tool options" was switched on this device (main.ts, `pillRow`):
    * the pill by the bar becomes a row the page starts past, or floats again.
    */
+  /** The bar's preset changed (Customize toolbar): the end folds into ⋯ in Essentials. */
+  setPreset(preset: BarPreset): void {
+    if (preset === this.preset) return;
+    this.preset = preset;
+    this.editor?.refresh();
+    this.measureBar();
+  }
+
   setPillRow(on: boolean): void {
     if (on === this.pillRowOn) return;
     this.pillRowOn = on;
@@ -7177,6 +7204,9 @@ export class Toolbar {
     const pill = this.optionsEl;
     pill.setCssProps({ "--gob-pill-inside": "100000px" });
     this.fitTextPill(100000);
+    // The text row in the bar may drop the pin's word, keeping its icon
+    // (`fitTextPill`, is-short): every control still shows.
+    if (pill.hasClass("is-text")) pill.addClass("is-short");
     let need = Math.ceil(pill.scrollWidth) + 2;
     const colours = this.penPillShown()
       ? pill.querySelector<HTMLElement>(".goodobsidian-pen-colors")
@@ -7233,29 +7263,13 @@ export class Toolbar {
   }
 
   /**
-   * Fold the buttons at the end of the bar (the right, along the top), from
-   * their outer end in, until the rows have `want` px beside the tools. Only
-   * those fold for a row (Joost, 2026-11-13): the start's buttons and the
-   * tools always show, and a row that still does not fit gets a bar of its own.
-   */
-  private foldForDock(want: number): void {
-    const end = new Set(Array.from(this.zoneEls.end?.children ?? []));
-    for (const item of this.foldOrder()) {
-      if (this.pillSpan().room >= want) return;
-      if (!end.has(item.button) || item.tool !== undefined) continue;
-      if (item.button.hasClass("is-overflowed")) continue;
-      if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
-      item.button.addClass("is-overflowed");
-    }
-  }
-
-  /**
    * Docking design B (2026-11-13): put the row docked along the top or
    * bottom inside the bar, after the tools, when the widest row any tool
-   * shows (`widestRow`) fits there once the bar's buttons fold
-   * (`foldOrder`). The room is decided by the widest row, not by
-   * the tool in hand, so switching tools never moves a button. False when
-   * it does not fit: then every tool's row is a row of its own under the bar.
+   * shows (`widestRow`) fits beside them as the bar is. Nothing folds for
+   * it: only Essentials keeps its end in ⋯ (Joost, 2026-11-13). The room is
+   * decided by the widest row, not by the tool in hand, so switching tools
+   * never moves a button. False when it does not fit: then every tool's
+   * row is a row of its own under the bar.
    */
   private placeInsideBar(hostBox: DOMRect): boolean {
     const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
@@ -7268,7 +7282,6 @@ export class Toolbar {
     this.pillWant = this.pillNeed();
     this.rowNeeds.set(this.rowKey(), this.pillWant);
     this.dockWant = widestRow(this.rowNeeds);
-    this.foldForDock(this.dockWant);
     const { from, room } = this.pillSpan();
     pill.setCssProps({ "--gob-pill-inside": `${Math.max(0, room)}px` });
     this.fitTextPill(room);
