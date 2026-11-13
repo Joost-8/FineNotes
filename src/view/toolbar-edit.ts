@@ -5,7 +5,7 @@
  *   ┌ START ───────────┐   ┌ MIDDLE ──────────────────┐   ┌ END ─────────┐
  *   │ ▢ 🔍 ✦ ▦ ↶ ↷     │   │ ⌇ ✎📌 ⌫ T ◇ ▣ ▤ 🧰📌       │   │ ⤢ + ⇪ ⋯📌 ⚙ │
  *   └──────────────────┘   └──────────────────────────┘   └──────────────┘
- *   [▔][▁][▏][▕]  ◉ Dock tool options                         Reset   [✓]
+ *   [▔][▁][▏][▕]  ◉ Dock tool options  [✎+]                   Reset   [✓]
  *   MORE TOOLS  ✋ 🔍 ✍ ☺ 🗒 📏 🩹 🎤 🪣
  *   HIDDEN      (empty)
  *   STYLE       ▭ ◯ ▬ ▭ ▭ ▣ ◘ ▤ ▫
@@ -16,7 +16,8 @@
  * More tools or Hidden. A tap opens the same moves as a menu; with the
  * keyboard, arrows move the focused button one place and Enter opens the
  * menu. The pen, the toolbox and ⋯ stay on the bar (`PINNED`). The tray
- * also holds the bar's edge, "Dock tool options" and the look (Settings →
+ * also holds the bar's edge, "Dock tool options", New pen [✎+] (a pen as
+ * a button of its own, FineNotes#211) and the look (Settings →
  * Look's style and colours, a tap each; Reset takes it back too). The page dims and
  * takes no ink; a tap on it, ✓ or Escape closes the mode. Every change is
  * live, and kept at once (`apply`).
@@ -83,6 +84,11 @@ export interface ToolbarEditorHost {
     make: () => BarItemId | null;
     /** Draw the pen in hand on the chip. */
     draw: (chip: HTMLElement) => void;
+    /**
+     * The pen dialog, starting from the pen in hand; `place` gets the slot of
+     * the pen it saved. Without it a tap adds the pen in hand as it is.
+     */
+    customize?: (place: (slot: BarItemId) => void) => void;
   };
   layout: () => ToolbarLayout;
   /** Show `layout` and keep it. */
@@ -319,6 +325,7 @@ export class ToolbarEditor {
       row.setAttribute("aria-checked", String(on));
       row.addEventListener("click", () => setRow(!on));
     }
+    this.newPenChip(head);
     head.createDiv({ cls: "goodobsidian-edit-spacer" });
     const reset = head.createEl("button", {
       cls: "goodobsidian-edit-reset clickable-icon",
@@ -339,7 +346,6 @@ export class ToolbarEditor {
     done.addEventListener("click", () => this.finish());
 
     const layout = this.h.layout();
-    this.newPenShelf();
     this.menuShelf = this.shelf(
       t("toolbar.moreTools"),
       "menu",
@@ -410,17 +416,16 @@ export class ToolbarEditor {
   }
 
   /**
-   * New pen (FineNotes#211): one chip, however many pens there are, drawn as
-   * the pen in hand. Dragged onto the bar it leaves a new pen button where it
-   * lands; a tap puts one after the pen's. Dimmed when it cannot add one.
+   * New pen (FineNotes#211): one chip beside Dock tool options, however many
+   * pens there are, drawn as the pen in hand. Dragged onto the bar it leaves
+   * that pen as a button where it lands; a tap opens the pen dialog on it, to
+   * change it first, and puts the pen it makes after the pen's button.
+   * Dimmed when it cannot add one.
    */
-  private newPenShelf(): void {
+  private newPenChip(parent: HTMLElement): void {
     const pen = this.h.newPen;
     if (!pen) return;
-    const shelf = this.tray.createDiv({ cls: "goodobsidian-edit-shelf is-new-pen" });
-    shelf.createSpan({ cls: "goodobsidian-edit-shelf-name", text: t("toolbar.edit.newPen") });
-    const chips = shelf.createDiv({ cls: "goodobsidian-edit-chips" });
-    const chip = chips.createEl("button", {
+    const chip = parent.createEl("button", {
       cls: "goodobsidian-edit-chip goodobsidian-edit-new-pen clickable-icon",
     });
     pen.draw(chip);
@@ -543,7 +548,10 @@ export class ToolbarEditor {
     const { id, dragging, el } = press;
     this.endPress();
     if ((id as string) === NEW_PEN) {
-      if (event.type === "pointerup") this.addPen(dragging ? target : null);
+      if (event.type !== "pointerup") return;
+      if (dragging) {
+        if (target) this.addPen(target);
+      } else this.customizePen();
       return;
     }
     if (!dragging) {
@@ -565,6 +573,19 @@ export class ToolbarEditor {
     const next =
       target === null ? moveTo(layout, slot, afterPen(layout)) : moveTo(layout, slot, target);
     this.apply(slot, next);
+  }
+
+  /** New pen tapped: the pen dialog, and the pen it saves after the pen's button. */
+  private customizePen(): void {
+    const pen = this.h.newPen;
+    if (!pen?.customize) {
+      this.addPen(null);
+      return;
+    }
+    pen.customize((slot) => {
+      const layout = this.h.layout();
+      this.apply(slot, moveTo(layout, slot, afterPen(layout)));
+    });
   }
 
   private endPress(): void {
@@ -729,7 +750,7 @@ export class ToolbarEditor {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       event.stopPropagation();
-      if (this.h.newPen?.can() === true) this.addPen(null);
+      if (this.h.newPen?.can() === true) this.customizePen();
       return;
     }
     const upright = isBarUpright(this.h.barDock());

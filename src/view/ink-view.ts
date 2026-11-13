@@ -416,7 +416,12 @@ import { ContentsTitleModal } from "./contents-title-modal";
 import { TaskModal } from "./task-modal";
 import { InkTextModal } from "./ink-text-modal";
 import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
-import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "../model/colors";
+import {
+  DEFAULT_SHAPE_COLOR,
+  parseHexColor,
+  pushRecentColor,
+  recentColorsOf,
+} from "../model/colors";
 import { AddPagePopover, TemplatePickerModal } from "./template-picker";
 import { MARGIN_SWATCH_CSS_WIDTH, type MarginChoice, MarginPopover } from "./margin-popover";
 import { CoverPopover } from "./cover-picker";
@@ -438,7 +443,15 @@ import type { BarDock } from "./bar-dock-model";
 import { penInksOf } from "../model/pen-inks";
 import { penTypeOrderOf } from "../model/pen-type-order";
 import { penStabilizationOf } from "../model/pen-stabilization";
-import { addSavedPen, openingTool, savedPenOf, savedPensOf } from "../model/saved-pens";
+import {
+  type SavedPen,
+  addSavedPen,
+  openingTool,
+  samePen,
+  savedPenOf,
+  savedPensOf,
+} from "../model/saved-pens";
+import { SavedPenModal } from "./saved-pen-modal";
 import { PANEL_SLIDE_MS, type PageSnapshot } from "./motion";
 import {
   type BoardSpot,
@@ -782,6 +795,32 @@ export class InkView extends TextFileView {
   }
 
   /** The plugin's settings, read afresh each time: the settings tab may change them. */
+  /**
+   * The pen dialog for a new saved pen, from the toolbar's New pen
+   * (FineNotes#211): it starts from `start` (the pen in hand), and the pen
+   * it saves goes to `onMade` with its id.
+   */
+  private openNewPen(start: SavedPen, onMade: (pen: SavedPen) => void): void {
+    const settings = this.settings;
+    new SavedPenModal(this.app, {
+      pen: start,
+      index: null,
+      pens: savedPensOf(settings.savedPens),
+      highlighterAlpha: settings.highlighterAlpha,
+      recent: settings.recentColors,
+      palette: settings.customColors,
+      onCustomColor: (color) => {
+        settings.recentColors = pushRecentColor(settings.recentColors, color);
+        void this.plugin.saveSettings();
+      },
+      onSave: (pen) => {
+        this.plugin.saveSavedPens(addSavedPen(savedPensOf(this.settings.savedPens), pen));
+        const made = savedPensOf(this.settings.savedPens).find((saved) => samePen(saved, pen));
+        if (made) onMade(made);
+      },
+    }).open();
+  }
+
   private get settings(): GoodObsidianSettings {
     return this.plugin.settings;
   }
@@ -3350,6 +3389,7 @@ export class InkView extends TextFileView {
         onReorderPens: (pens) => this.plugin.saveSavedPens(pens),
         onSavePen: (pen) =>
           this.plugin.saveSavedPens(addSavedPen(savedPensOf(this.settings.savedPens), pen)),
+        onNewPen: (start, onMade) => this.openNewPen(start, onMade),
         onEditPens: () => this.plugin.openSettingsTab(),
         onRuler: () => {
           const surface = this.surface;

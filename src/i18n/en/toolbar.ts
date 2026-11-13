@@ -243,7 +243,7 @@ export const toolbar = {
   "toolbar.penSlot.saved": "Saved pen: {name}",
   "toolbar.edit.newPen": "New pen",
   "toolbar.edit.newPenTip":
-    "New pen: drag onto the toolbar to save the pen in hand as a button of its own",
+    "New pen: tap to make a pen for the toolbar, or drag the pen in hand onto it",
   "toolbar.eraser.modeTip": "Eraser mode: {mode}",
   "toolbar.eraser.sizeValue": "Eraser size {mm}",
   "toolbar.eraser.size": "Eraser size",

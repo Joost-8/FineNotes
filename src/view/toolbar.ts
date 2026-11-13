@@ -908,6 +908,11 @@ export interface ToolbarCallbacks {
   savedPens?: () => readonly SavedPen[];
   /** "Save current pen": add `pen` to the saved pens. Hosts persist it. */
   onSavePen?: (pen: SavedPen) => void;
+  /**
+   * The pen dialog for a new saved pen, starting from `start` (FineNotes#211);
+   * `onMade` gets the pen once it is saved, its id included.
+   */
+  onNewPen?: (start: SavedPen, onMade: (pen: SavedPen) => void) => void;
   /** The saved pens dragged into another order (FineNotes#211). Hosts persist it. */
   onReorderPens?: (pens: SavedPen[]) => void;
   /** "Edit saved pens": open where they are edited (the settings). */
@@ -2354,12 +2359,24 @@ export class Toolbar {
       label: (id) => this.itemLabel(id),
       newPen: this.callbacks.onSavePen
         ? {
-            can: () => this.newPenSlot(false) !== null,
+            // A tap opens the pen dialog, which makes any pen while there is room.
+            can: () =>
+              this.newPenSlot(false) !== null ||
+              (this.callbacks.onNewPen !== undefined &&
+                (this.callbacks.savedPens?.() ?? []).length < MAX_SAVED_PENS),
             make: () => this.newPenSlot(true),
             draw: (chip) => {
               const current = penOfState(this.state);
               chip.append(penGlyph(current.type, this.shown(current.color)));
             },
+            customize: this.callbacks.onNewPen
+              ? (place) =>
+                  this.callbacks.onNewPen?.(penOfState(this.state), (pen) => {
+                    if (!pen.id) return;
+                    const slot = savedPenSlot(pen.id);
+                    if (placeOf(this.laid(), slot) === "off") place(slot);
+                  })
+              : undefined,
           }
         : undefined,
       layout: () => this.layoutNow,
@@ -3866,6 +3883,37 @@ export class Toolbar {
       body.createDiv({ cls: "goodobsidian-popover-hint", text: t("toolbar.savedPens.none") });
     }
     body.createDiv({ cls: "goodobsidian-popover-divider" });
+    const make = this.callbacks.onNewPen;
+    if (make && !this.practice) {
+      // New pen: the pen dialog, starting from the pen in hand, to save it
+      // as it is or changed first (FineNotes#211).
+      const add = body.createEl("button", {
+        cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
+      });
+      const full = pens.length >= MAX_SAVED_PENS;
+      add.createSpan({
+        text: full
+          ? t("toolbar.savedPens.full", { max: MAX_SAVED_PENS })
+          : t("toolbar.savedPen.newPen"),
+      });
+      iconOrText(add.createSpan({ cls: "goodobsidian-popover-link-icon" }), "plus", "+");
+      add.disabled = full;
+      add.addEventListener("click", () => {
+        if (add.disabled) return;
+        this.closePopover();
+        make(current, () => undefined);
+      });
+    } else this.saveCurrentPenLink(body, pens, current, inHand);
+    this.editPensLink(body);
+  }
+
+  /** Save current pen, where there is no pen dialog to make one. */
+  private saveCurrentPenLink(
+    body: HTMLElement,
+    pens: readonly SavedPen[],
+    current: SavedPen,
+    inHand: boolean,
+  ): void {
     const saved = pens.some((pen) => samePen(pen, current));
     const add = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
@@ -3883,6 +3931,10 @@ export class Toolbar {
       this.callbacks.onSavePen?.(current);
       this.popoverRender?.();
     });
+  }
+
+  /** Edit saved pens: the settings, where they are changed and deleted. */
+  private editPensLink(body: HTMLElement): void {
     if (!this.callbacks.onEditPens) return;
     const edit = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",

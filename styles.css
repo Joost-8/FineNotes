@@ -21378,7 +21378,7 @@ button.goodobsidian-tips-copy.clickable-icon {
 }
 
 /* Customize toolbar's New pen: the pen in hand with a plus, accent-ringed;
-   dimmed while it cannot add one (saved pens full, or that pen is on the bar). */
+   dimmed while it cannot add one (eight saved pens already). */
 button.goodobsidian-edit-chip.goodobsidian-edit-new-pen {
   position: relative;
   color: var(--text-normal);
@@ -21417,4 +21417,16 @@ button.goodobsidian-edit-chip.goodobsidian-edit-new-pen.is-disabled {
 
 .goodobsidian-edit-ghost > svg.goodobsidian-tool-pen-glyph {
   transform: none;
+}
+
+/* New pen in Customize toolbar's head, beside Dock tool options
+   (FineNotes#211): smaller than a shelf chip, still a 40 px target. */
+.goodobsidian-edit-head button.goodobsidian-edit-chip.goodobsidian-edit-new-pen {
+  width: 40px;
+  height: 40px;
+}
+
+.goodobsidian-edit-head button.goodobsidian-edit-chip.goodobsidian-edit-new-pen > svg {
+  width: 22px;
+  height: 22px;
 }
