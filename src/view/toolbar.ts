@@ -2286,7 +2286,9 @@ export class Toolbar {
       "--gob-ink": color,
       "--gob-ink-width": `${widthMarkThickness(width)}px`,
     });
-    if (saved) iconOrText(button.createSpan({ cls: "goodobsidian-pen-slot-star" }), "star", "");
+    // A little pin at its top right: a pen pinned to the bar, not the pen
+    // menu's own button (FineNotes#211).
+    iconOrText(button.createSpan({ cls: "goodobsidian-pen-slot-star" }), "pin", "");
     // In Customize toolbar the editor names it by what a press does.
     if (!button.hasAttribute("data-label")) button.setAttribute("aria-label", label);
     else button.setAttribute("data-label", label);
@@ -2975,7 +2977,10 @@ export class Toolbar {
     // Docked along the top or bottom the widths are one button too, and
     // their room goes to the colours (discussion #200).
     const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
-    const oneWidth = penWidthsShown({ upright, roomy, edge }) === "one";
+    // A pen with a button of its own has no pen-type row (FineNotes#211):
+    // docked, its widths take that room, as they did before docking.
+    const oneWidth =
+      penWidthsShown({ upright, roomy, edge }) === "one" && (upright || this.penRowShown());
     this.optionsEl.toggleClass("has-one-width", oneWidth && !folded);
     this.buildPenRow(upright);
     // The rest of the old pen menu: the laser pointer, the pen's settings and
@@ -3093,18 +3098,33 @@ export class Toolbar {
    * FineNotes#164); on a narrow pane the rest scroll, across the pill or,
    * upright, down it.
    */
-  private buildPenRow(upright: boolean): void {
-    const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-types" });
-    // A swipe here scrolls the row, never Obsidian's sidebars.
-    row.dataset.ignoreSwipe = "true";
+  /**
+   * The pen types the row offers for the pen in hand: none for a pen with a
+   * button of its own, a type's or a saved pen's (FineNotes#211).
+   */
+  private penRowOffered(): ReturnType<typeof penRowOffers> {
+    if (this.penSlotInHand()?.startsWith("saved:")) return [];
     const order = penRowTypes(this.state).map((spec) => spec.id);
-    // Types on the bar as buttons of their own leave the row; the row goes
-    // when the type in hand is one of them, or one type is left (FineNotes#211).
-    const shown = penRowOffers(
+    return penRowOffers(
       shownPenTypes(order, this.practice, "highlighter"),
       penTypesOnBar(this.laid()),
       this.activePenType().id,
     );
+  }
+
+  /** The pen-type row has types to offer for the pen in hand (`buildPenRow`). */
+  private penRowShown(): boolean {
+    return this.penRowOffered().length > 0;
+  }
+
+  private buildPenRow(upright: boolean): void {
+    const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-types" });
+    // A swipe here scrolls the row, never Obsidian's sidebars.
+    row.dataset.ignoreSwipe = "true";
+    // Types on the bar as buttons of their own leave the row; the row goes
+    // when the pen in hand has a button of its own, or one type is left (FineNotes#211).
+    const order = penRowTypes(this.state).map((spec) => spec.id);
+    const shown = this.penRowOffered();
     if (shown.length === 0) {
       row.remove();
       return;
