@@ -641,7 +641,8 @@ export class ToolbarEditor {
 
   /**
    * Essentials: a tool off the bar dropped on the end goes into ⋯, which
-   * holds the end's buttons (Joost, 2026-11-13): placed just before ⋯.
+   * holds the end's buttons (Joost, 2026-11-13): placed above Home, which
+   * stays last in ⋯, or else just before ⋯.
    */
   private intoMore(id: BarItemId, x: number, y: number): Target | null {
     const layout = this.h.layout();
@@ -650,7 +651,8 @@ export class ToolbarEditor {
     if ((id as string) === NEW_PEN || isPenSlot(id)) return null;
     const end = this.h.zones().end;
     if (!end || !inside(end.getBoundingClientRect(), x, y, BAR_REACH)) return null;
-    const at = layout.end.indexOf("more");
+    const home = layout.end.indexOf("home");
+    const at = home >= 0 ? home : layout.end.indexOf("more");
     return { zone: "end", index: at < 0 ? layout.end.length : at };
   }
 

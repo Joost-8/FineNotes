@@ -186,7 +186,7 @@ const FRESH_INSTALL = {
   toolbarEssentials: {
     start: ["thumbnails", "undo", "redo"],
     middle: ["select", "pen", "eraser", "text", "shape", "accessories"],
-    end: ["home", "search", "ai", "calculator", "fullscreen", "addPage", "share", "more", "settings"],
+    end: ["settings", "share", "fullscreen", "ai", "calculator", "search", "addPage", "home", "more"],
     off: ["pan", "zoom", "stylus", "fill"],
   },
   toolbarHomeAdded: true,
@@ -340,7 +340,7 @@ const USED_VAULT = {
   toolbarEssentials: {
     start: ["thumbnails", "undo", "redo"],
     middle: ["select", "pen", "eraser", "text", "shape", "accessories"],
-    end: ["home", "search", "ai", "calculator", "fullscreen", "addPage", "share", "more", "settings"],
+    end: ["settings", "share", "fullscreen", "ai", "calculator", "search", "addPage", "home", "more"],
     off: ["pan", "zoom", "stylus", "fill"],
   },
   toolbarHomeAdded: true,
