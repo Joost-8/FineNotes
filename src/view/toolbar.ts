@@ -519,6 +519,16 @@ export function lassoFilterFor(state: ToolbarState): LassoFilter {
 }
 
 /** A symbol for each kind of thing the lasso picks up, for its row in the bar. */
+/** The laser's colours in a docked bar: its own red first. */
+const LASER_COLORS: readonly string[] = [
+  LASER_COLOR,
+  "#ff9500",
+  "#ffcc00",
+  "#34c759",
+  "#0a84ff",
+  "#bf5af2",
+];
+
 const LASSO_FILTER_ICONS: Record<(typeof LASSO_FILTER_KEYS)[number], string> = {
   handwriting: "signature",
   images: "image",
@@ -1057,6 +1067,13 @@ const FOLD_RANK = {
 
 /** The last rank that may fold to make room for the pill inside the bar: Share. */
 const IN_BAR_LAST_FOLD = FOLD_RANK.share;
+
+/**
+ * How far a tool whose options need more than the usual room may fold
+ * (discussion #200): the gear, and the hand, magnifier, tape and ruler
+ * buttons, which are seldom in hand while another tool's options show.
+ */
+const IN_BAR_STRETCH_FOLD = FOLD_RANK.ruler;
 
 /** The sticky-note colour picked last, ringed in the colours; the classic yellow at first. */
 let lastStickyColor = DEFAULT_STICKY_COLOR;
@@ -3275,6 +3292,8 @@ export class Toolbar {
 
   /** A tool pill with nothing to set: an icon and one line. */
   private toolNote(icon: string, text: string): void {
+    // Docked in the bar, its room goes to the tool's choices (discussion #200).
+    if (this.dockedAcross()) return;
     const note = this.optionsEl.createDiv({ cls: "goodobsidian-tool-note" });
     const mark = note.createSpan({ cls: "goodobsidian-tool-note-icon" });
     iconOrText(mark, icon, "");
@@ -3289,8 +3308,20 @@ export class Toolbar {
    */
   private buildLaserOptions(): void {
     this.toolNote("pointer", t("toolbar.laser.note"));
-    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    if (!this.dockedAcross()) this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const color = this.laserColor();
+    if (this.dockedAcross()) {
+      this.colorRow(
+        LASER_COLORS,
+        color,
+        (picked) => this.setLaserColor(picked),
+        (anchor) =>
+          this.toggleColorPopover("laser-color", anchor, color, (picked) =>
+            this.setLaserColor(picked),
+          ),
+      );
+      return;
+    }
     const button = this.optionsEl.createEl("button", {
       cls: "goodobsidian-shape-color clickable-icon goodobsidian-laser-color",
     });
@@ -3407,22 +3438,31 @@ export class Toolbar {
    */
   private buildFillOptions(): void {
     const color = this.state.fillColor ?? DEFAULT_FILL_COLOR;
-    const colorButton = this.optionsEl.createEl("button", {
-      cls: "goodobsidian-shape-color clickable-icon",
-    });
-    colorButton
-      .createSpan({ cls: "goodobsidian-text-disc" })
-      .setCssStyles({ background: this.shown(color, false) });
-    caretIn(colorButton);
-    colorButton.setAttribute("aria-label", t("toolbar.fill.colourValue", { color }));
-    colorButton.setAttribute("title", t("toolbar.fill.colour"));
-    colorButton.addEventListener("click", () =>
-      this.toggleColorPopover("fill-color", colorButton, color, (picked) => {
-        this.state.fillColor = picked;
-        this.callbacks.onFillColorChange?.(picked);
-        this.buildOptions();
-      }),
-    );
+    const setFill = (picked: string): void => {
+      this.state.fillColor = picked;
+      this.callbacks.onFillColorChange?.(picked);
+      this.buildOptions();
+    };
+    if (this.dockedAcross()) {
+      // Docked: the colours as swatches in the bar, as the pen has them.
+      const colors = this.palette.filter((c) => c.toLowerCase() !== "#ffffff").slice(0, 8);
+      this.colorRow(colors, color, setFill, (anchor) =>
+        this.toggleColorPopover("fill-color", anchor, color, setFill),
+      );
+    } else {
+      const colorButton = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-shape-color clickable-icon",
+      });
+      colorButton
+        .createSpan({ cls: "goodobsidian-text-disc" })
+        .setCssStyles({ background: this.shown(color, false) });
+      caretIn(colorButton);
+      colorButton.setAttribute("aria-label", t("toolbar.fill.colourValue", { color }));
+      colorButton.setAttribute("title", t("toolbar.fill.colour"));
+      colorButton.addEventListener("click", () =>
+        this.toggleColorPopover("fill-color", colorButton, color, setFill),
+      );
+    }
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const gap = readFillGap(this.state.fillGap);
     for (const choice of FILL_GAPS) {
@@ -3503,7 +3543,7 @@ export class Toolbar {
     );
     // Page zoom keeps the note it always had; the Zoom box needs none: the
     // target it draws, and the window, show what a drag did.
-    if (!boxMode) {
+    if (!boxMode && !this.dockedAcross()) {
       this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
       this.toolNote("zoom-in", t("toolbar.zoom.note"));
     }
@@ -3606,6 +3646,10 @@ export class Toolbar {
   }
 
   private buildEraserOptions(): void {
+    if (this.dockedAcross()) {
+      this.buildEraserRow();
+      return;
+    }
     // Mode first, as in GoodNotes: "Standard" with a chevron to switch.
     const mode = ERASER_MODES.find((m) => m.id === eraserModeFor(this.state)) ?? ERASER_MODES[0];
     const modeButton = this.optionsEl.createEl("button", { cls: "goodobsidian-erasermode" });
@@ -4074,8 +4118,7 @@ export class Toolbar {
    */
   private buildSelectOptions(): void {
     // Docked along the top or bottom, the lasso's options are in the bar itself.
-    const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
-    if (edge === "top" || edge === "bottom") {
+    if (this.dockedAcross()) {
       this.buildLassoRow();
       return;
     }
@@ -4138,6 +4181,41 @@ export class Toolbar {
         this.popoverRender?.();
       });
     }
+  }
+
+  /**
+   * Docked along the top or bottom (discussion #200): a tool's choices are
+   * a row of the bar, each one a button, rather than a menu behind one.
+   */
+  private dockedAcross(): boolean {
+    const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
+    return edge === "top" || edge === "bottom";
+  }
+
+  /**
+   * A row of colour swatches for a tool with one colour (the laser, fill):
+   * `colors`, the one in use among them, and a + that opens the picker for
+   * any other.
+   */
+  private colorRow(
+    colors: readonly string[],
+    current: string,
+    pick: (color: string) => void,
+    openPicker: (anchor: HTMLElement) => void,
+  ): void {
+    const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors" });
+    row.dataset.ignoreSwipe = "true";
+    const shown = colors.some((c) => sameColor(c, current)) ? colors : [current, ...colors];
+    for (const color of shown) {
+      const swatch = this.swatchButton(row, color, () => pick(color));
+      swatch.toggleClass("is-active", sameColor(color, current));
+    }
+    const more = row.createEl("button", {
+      cls: "goodobsidian-color-more clickable-icon",
+      attr: { type: "button", "aria-label": t("toolbar.color.add") },
+    });
+    iconOrText(more, "plus", "+");
+    more.addEventListener("click", () => openPicker(more));
   }
 
   /**
@@ -5332,6 +5410,73 @@ export class Toolbar {
     this.callbacks.onEraserChange?.(eraserModeFor(this.state), clamped);
   }
 
+  /**
+   * The eraser in the bar (discussion #200): its three modes, the sizes,
+   * and what it erases, each a button; the chevron after the modes keeps
+   * the rarely used Grey out switch.
+   */
+  private buildEraserRow(): void {
+    const mode = eraserModeFor(this.state);
+    for (const each of ERASER_MODES) {
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-shape goodobsidian-erasermode-pick clickable-icon",
+        attr: { type: "button", "aria-label": each.label },
+      });
+      eraserModeIcon(button, each.id, each.label);
+      button.toggleClass("is-active", each.id === mode);
+      button.setAttribute("aria-pressed", String(each.id === mode));
+      button.addEventListener("click", () => {
+        this.state.eraserMode = each.id;
+        this.callbacks.onEraserChange?.(each.id, eraserSizeFor(this.state));
+        this.buildOptions();
+        this.syncActive();
+      });
+    }
+    this.chevron(t("toolbar.eraser.greyOut"), (anchor) => this.toggleEraserModeList(anchor));
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const sizes = quickEraserSizes(eraserSizeFor(this.state));
+    const marks = this.eraserMarks(sizes, PILL_ERASER_BOX);
+    for (const size of sizes) {
+      const button = this.optionsEl.createEl("button", { cls: "goodobsidian-erasersize" });
+      button.append(eraserSizeGlyph(marks.get(size), PILL_ERASER_BOX));
+      button.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
+      button.addEventListener("click", () => {
+        this.setEraserSize(size);
+        this.syncActive();
+      });
+      this.eraserSizeButtons.set(size, button);
+    }
+    this.chevron(t("toolbar.eraser.size"), (anchor) => this.toggleEraserSizeList(anchor));
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const filter = eraserFilterFor(this.state);
+    const filters: readonly [EraserFilter, string][] = [
+      ["all", "layers"],
+      ["pen", "pen-line"],
+      ["highlighter", "highlighter"],
+    ];
+    for (const [each, icon] of filters) {
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-shape goodobsidian-eraserfilter-pick clickable-icon",
+        attr: { type: "button", "aria-label": ERASER_FILTER_LABELS[each] },
+      });
+      iconOrText(button, icon, ERASER_FILTER_LABELS[each]);
+      button.toggleClass("is-active", each === filter);
+      button.setAttribute("aria-pressed", String(each === filter));
+      button.addEventListener("click", () => {
+        this.state.eraserFilter = each;
+        this.callbacks.onEraserFilterChange?.(each);
+        this.buildOptions();
+      });
+    }
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const clear = this.optionsEl.createEl("button", {
+      cls: "goodobsidian-text-button clickable-icon",
+    });
+    iconOrText(clear, "trash-2", t("toolbar.eraser.clearPage"));
+    clear.setAttribute("aria-label", t("toolbar.eraser.clearPage"));
+    clear.addEventListener("click", () => this.callbacks.onClear());
+  }
+
   private toggleEraserModeList(anchor: HTMLElement): void {
     if (this.popoverKind === "eraser-mode") {
       this.closePopover();
@@ -6302,6 +6447,19 @@ export class Toolbar {
     const hostBox = this.host.getBoundingClientRect();
     this.optionsEl.setCssProps({ "--gob-pill-inside": `${Math.max(0, room)}px` });
     this.optionsEl.setCssStyles({ left: `${Math.round(from + BAR_GAP - hostBox.left)}px` });
+    this.markPillOverflow();
+  }
+
+  /**
+   * The last resort when nothing more may fold (discussion #200): a pill
+   * still wider than its room scrolls sideways in the bar rather than
+   * losing its last buttons.
+   */
+  private markPillOverflow(): void {
+    const pill = this.optionsEl;
+    pill.removeClass("is-overflowing");
+    if (!pill.hasClass("is-in-bar")) return;
+    pill.toggleClass("is-overflowing", pill.scrollWidth > pill.clientWidth + 1);
   }
 
   /** Take the pill back out of the bar: it is put in again only if it still fits. */
@@ -6328,7 +6486,8 @@ export class Toolbar {
   private foldForPill(active: ActiveTool | null, need = PILL_IN_BAR_ROOM): void {
     const order = [...this.foldable].sort((a, b) => a.rank - b.rank);
     for (const item of order) {
-      if (this.pillSpan().room >= need || item.rank > IN_BAR_LAST_FOLD) break;
+      const last = need > PILL_IN_BAR_ROOM ? IN_BAR_STRETCH_FOLD : IN_BAR_LAST_FOLD;
+      if (this.pillSpan().room >= need || item.rank > last) break;
       if (item.tool !== undefined && item.tool === active) continue;
       if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
       item.button.addClass("is-overflowed");
@@ -6361,7 +6520,8 @@ export class Toolbar {
       !pillFitsBar({
         edge,
         room,
-        need: PILL_IN_BAR_LEAST,
+        // A short pill (the magnifier's) needs only its own width.
+        need: Math.min(PILL_IN_BAR_LEAST, this.pillWant),
         height: box.height,
         barHeight: bar.height,
       })
@@ -6375,6 +6535,7 @@ export class Toolbar {
       left: `${Math.round(from + BAR_GAP - hostBox.left)}px`,
       top: `${Math.round(bar.top - hostBox.top + (bar.height - box.height) / 2)}px`,
     });
+    this.markPillOverflow();
     return true;
   }
 

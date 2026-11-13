@@ -21065,6 +21065,25 @@ body.finenotes-style-material
   min-width: calc(var(--gob-pen-type, 42px) * 3 + 8px);
 }
 
+/* Nothing more may fold and the options still do not fit (toolbar.ts,
+   markPillOverflow): they scroll sideways, faded at the end, rather than
+   losing their last buttons. */
+.goodobsidian-options.is-in-bar.is-overflowing {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+
+.goodobsidian-options.is-in-bar.is-overflowing::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-options.is-in-bar.is-overflowing > * {
+  flex-shrink: 0;
+}
+
 /* --- Finding features: search rows, a tip's own control (feature-rows.ts) --- */
 .goodobsidian-library-features:empty {
   display: none;
