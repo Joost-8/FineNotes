@@ -7,6 +7,7 @@
 export const common = {
   "common.cancel": "Cancel",
   "common.close": "Close",
+  "common.backTo": "Back to {name}",
   "common.delete": "Delete",
   "common.done": "Done",
   "common.duplicate": "Duplicate",

@@ -1564,7 +1564,7 @@ export class LibraryView extends ItemView {
       cover.style.setProperty("--gob-cover-hi", palette.sheenLight);
       cover.style.setProperty("--gob-cover-lo", palette.sheenDark);
       cover.createSpan({ cls: "goodobsidian-library-cover-title", text: entry.title });
-      if (entry.covered) this.paintOwnCover(cover, entry);
+      if (entry.covered || entry.pictured) this.paintOwnCover(cover, entry);
       else if (entry.pdf) this.paintPdfCover(cover, entry.pdf);
     } else this.paintFileCover(cover, entry);
     this.starButton(cover, entry.path, entry.title);
@@ -1902,7 +1902,8 @@ export class LibraryView extends ItemView {
 
   /**
    * A notebook with a cover page shows that page as its cover, as the
-   * notebook draws it (design, colour, title). It is drawn once, kept as a
+   * notebook draws it (design, colour, title); one with no cover whose first
+   * page holds a picture shows that page (`pictured`). It is drawn once, kept as a
    * small picture on this device, and shown over the plain cover when ready.
    */
   private ownCoverKey(file: TFile): string {

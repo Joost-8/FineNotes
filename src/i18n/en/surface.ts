@@ -202,6 +202,7 @@ export const surface = {
   "surface.linkModal.linkTo": "Link to “{target}”",
   "surface.imageMenu.readFailed": "FineNotes: couldn't read that picture.",
   "surface.imageMenu.findPlaceholder": "Find a picture in the vault…",
+  "surface.imageMenu.none": "No picture here",
   "surface.imageMenu.swatch": "{entry}: {swatch}",
   "surface.imageMenu.photos": "Photos",
   "surface.imageMenu.takePhoto": "Take photo",

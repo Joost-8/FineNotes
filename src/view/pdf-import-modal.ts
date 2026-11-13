@@ -1,25 +1,27 @@
-import { type App, FuzzySuggestModal, Modal, Notice, Setting, type TFile } from "obsidian";
+import { type App, Modal, Notice, Setting, type TFile } from "obsidian";
 import { allPages, parsePageRange } from "../export/page-range";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { VaultFilePicker } from "./vault-file-picker";
 import { errorMessage } from "../util/errors";
 import { t } from "../i18n/translate";
 
-export class VaultPdfSuggestModal extends FuzzySuggestModal<TFile> {
-  constructor(
-    app: App,
-    private readonly pick: (file: TFile) => void,
-  ) {
-    super(app);
-    this.setPlaceholder(t("notebooks.pdfImport.find"));
-  }
-  getItems(): TFile[] {
-    return this.app.vault.getFiles().filter((file) => file.extension.toLowerCase() === "pdf");
-  }
-  getItemText(file: TFile): string {
-    return file.path;
-  }
-  onChooseItem(file: TFile): void {
-    this.pick(file);
+/** Where the last PDF was picked from the vault (this session). */
+const lastPdfFolder = { folder: "" };
+
+/** Import PDF › From vault: the vault's folders, the PDFs in them, search on top (vault-file-picker.ts). */
+export class VaultPdfSuggestModal extends VaultFilePicker {
+  constructor(app: App, pick: (file: TFile) => void) {
+    super(
+      app,
+      {
+        accepts: (path) => path.toLowerCase().endsWith(".pdf"),
+        placeholder: t("notebooks.pdfImport.find"),
+        empty: t("notebooks.pdfImport.none"),
+        icon: "file-text",
+        memory: lastPdfFolder,
+      },
+      pick,
+    );
   }
 }
 
