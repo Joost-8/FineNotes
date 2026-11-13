@@ -14,13 +14,14 @@
  */
 
 import type { App, TFile } from "obsidian";
-import { renderPageThumbnail } from "../canvas/renderer";
+import { type ImagePainter, renderPageThumbnail } from "../canvas/renderer";
 import { parseInkFile } from "../model/serialize";
 import { readTextSection } from "../recognition/text-layer";
 import { type IndexedPage, notebookText } from "../search/library-search";
 import type { Page } from "../model/document";
 import { type LibraryEntry, entryFromDoc, placeholderEntry } from "../model/library";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
+import { VaultImageCache } from "./image-cache";
 import type { PdfBackdropCache } from "./pdf-backdrop";
 import { thumbnailRasterScale } from "./page-sidebar";
 import type { ReadResult, ReadWorkerClient } from "./read-worker-client";
@@ -43,6 +44,8 @@ export class NotebookPages {
   /** A fetch under way per notebook, so pages asked for together are fetched once. */
   private readonly fetching = new Map<string, Promise<void>>();
   private readonly painter = new VaultBackdropRenderer(null);
+  /** The pictures placed on pages, decoded at the size a page is drawn; made on first use. */
+  private pictures: VaultImageCache | null = null;
   /** PDFs opened for pictures since the last {@link releasePdfs}. */
   private readonly pdfsUsed = new Set<string>();
   private releaseTimer = 0;
@@ -113,7 +116,8 @@ export class NotebookPages {
       const entry = result.entry ?? placeholderEntry(file.path, edited);
       return {
         entry,
-        cover: entry.covered ? (result.pages.get(0) ?? null) : null,
+        // A cover page, or a first page with a picture on it: what the card shows.
+        cover: entry.covered || entry.pictured ? (result.pages.get(0) ?? null) : null,
         text: result.searchText ?? null,
       };
     } catch {
@@ -169,6 +173,8 @@ export class NotebookPages {
     window.clearTimeout(this.releaseTimer);
     this.kept.clear();
     this.releasePdfs();
+    this.pictures?.destroy();
+    this.pictures = null;
     this.worker?.stop();
     this.worker = null;
   }
@@ -194,12 +200,29 @@ export class NotebookPages {
     this.pdfsUsed.clear();
   }
 
+  /**
+   * The painter for `page`'s pictures, each decoded at the size the page is
+   * drawn first; none for a page without any (a sticky note is painted paper).
+   */
+  private async picturesOf(
+    page: Page,
+    cssWidth: number,
+    dpr: number,
+  ): Promise<ImagePainter | undefined> {
+    if (!page.images.some((image) => !image.sticky)) return undefined;
+    this.pictures ??= new VaultImageCache(this.app);
+    const width = page.geometry.width;
+    if (width > 0) await this.pictures.prepare(page.images, (cssWidth * dpr) / width);
+    return this.pictures;
+  }
+
   private async renderPage(page: Page, cssWidth: number): Promise<HTMLCanvasElement> {
     const dpr = window.devicePixelRatio || 1;
     const canvas = createEl("canvas");
     const backdrop = page.backdrop;
+    const images = await this.picturesOf(page, cssWidth, dpr);
     if (backdrop.kind !== "pdf") {
-      renderPageThumbnail(canvas, page, this.painter, cssWidth, dpr, { usePressure: true });
+      renderPageThumbnail(canvas, page, this.painter, cssWidth, dpr, { usePressure: true, images });
       return canvas;
     }
     // A PDF page: its raster under the page's own ink.
@@ -208,6 +231,7 @@ export class NotebookPages {
     renderPageThumbnail(ink, page, this.painter, cssWidth, dpr, {
       usePressure: true,
       transparent: true,
+      images,
     });
     canvas.width = ink.width;
     canvas.height = ink.height;

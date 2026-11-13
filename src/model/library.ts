@@ -41,6 +41,12 @@ export interface LibraryEntry {
   pdf: LibraryPdf | null;
   /** Whether the first page is a cover, which `pages` does not count. */
   covered: boolean;
+  /**
+   * A notebook with no cover page whose first page holds a picture (one made
+   * from a photo or a scan): that page, drawn small, is its cover, as a PDF
+   * page is a PDF notebook's.
+   */
+  pictured?: true;
   /** Last edit, ms since the epoch. */
   edited: number;
   /** When the file was made, ms since the epoch; the library fills it from the file. */
@@ -255,6 +261,11 @@ function firstPdf(
   return { path: pdf.path, page: pdf.page, width, height };
 }
 
+/** Whether `page` holds a picture: a placed image, not a sticky note (which is painted paper). */
+function hasPicture(page: { images?: ReadonlyArray<{ sticky?: unknown }> }): boolean {
+  return (page.images ?? []).some((image) => !image.sticky);
+}
+
 /** `entry` read from the note's text. An unreadable note keeps its placeholder. */
 export function entryFromText(path: string, edited: number, markdown: string): LibraryEntry {
   return entryFromDoc(path, edited, parseInkFile(markdown).doc);
@@ -275,6 +286,9 @@ export function entryFromDoc(path: string, edited: number, doc: InkDocument | nu
     hasPdf: doc.pages.some((p) => p.backdrop.kind === "pdf"),
     pdf: firstPdf(doc.pages[covered ? 1 : 0]),
     covered,
+    ...(!covered && first !== undefined && first.backdrop.kind !== "pdf" && hasPicture(first)
+      ? { pictured: true as const }
+      : {}),
     ...(preview ? { preview } : {}),
   };
 }

@@ -25,7 +25,8 @@ const MAX_URLS = 400;
  * The shape of a kept entry. Bump it whenever `LibraryEntry` (or what
  * `entryFromText` reads into it) changes: older entries are then read again.
  */
-const ENTRY_VERSION = 3;
+// 4 (2026-11-13): `pictured`, so a notebook made from a photo shows it on its cover.
+const ENTRY_VERSION = 4;
 
 export interface CachedRead {
   mtime: number;
