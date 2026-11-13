@@ -315,7 +315,6 @@ import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handw
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
 import { type ReadLine, lineHits, pageHits, searchMatchTarget } from "../search/hit-strokes";
-import { inkBounds } from "../model/tasks";
 import {
   type LexiconSuggestion,
   SUGGEST_MARGIN,
@@ -3062,7 +3061,7 @@ export class InkView extends TextFileView {
   private keepReading(page: Page, hash: string, reading: PageReading): PageWords {
     const entry: PageWords = {
       hash,
-      words: readWords(reading.lines, (ids) => inkBounds(page, ids)),
+      words: readWords(reading.lines),
       read: new Set(reading.lines.flatMap((line) => line.strokeIds)),
       lines: reading.lines.map((line) => line.text),
       readLines: reading.lines.map((line) => ({ text: line.text, words: line.words })),
@@ -4431,7 +4430,7 @@ export class InkView extends TextFileView {
     // that phrase, wherever it is, and not each word on its own.
     const phrase = holdsPhrase(pageText, query);
     if (this.surface !== surface || !surface.document.pages.includes(page)) return;
-    const words = lineHits(query, lines, (ids) => inkBounds(page, ids), transcript, phrase);
+    const words = lineHits(query, lines, transcript, phrase);
     const { boxes } = pageHits(query, [], page.textBoxes, phrase);
     // The PDF's printed words, lit as handwriting is (#112).
     const backdrop = page.backdrop;
