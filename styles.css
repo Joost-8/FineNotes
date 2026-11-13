@@ -16724,6 +16724,27 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
   opacity: 0.25;
 }
 
+/* Under the tray's head while Dock tool options is on along the top or
+   bottom: the right's buttons fold into ⋯ for the options (toolbar-edit.ts). */
+.goodobsidian-edit-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -2px 4px 10px;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.goodobsidian-edit-note-icon {
+  display: inline-flex;
+  color: var(--interactive-accent);
+}
+
+.goodobsidian-edit-note-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
 .goodobsidian-edit-gap {
   flex: 0 0 auto;
   width: var(--gob-touch);
