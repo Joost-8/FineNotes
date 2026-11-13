@@ -154,14 +154,14 @@ describe("PDF import dialog", () => {
     modal.open();
     const kinds = (rows: Array<{ kind: string }>): string[] => rows.map((r) => r.kind);
     const root = modal.getSuggestions("");
-    expect(kinds(root)).toEqual(["folder", "pdf"]);
+    expect(kinds(root)).toEqual(["folder", "file"]);
     // A folder opens in the picker, which stays open, with a way back.
     modal.selectSuggestion(root[0], {} as never);
     expect(shown.isOpen).toBe(true);
     const inside = modal.getSuggestions("");
-    expect(kinds(inside)).toEqual(["up", "pdf"]);
+    expect(kinds(inside)).toEqual(["up", "file"]);
     // Typing searches every PDF, wherever it is.
-    expect(modal.getSuggestions("scan").map((r) => r.kind === "pdf" && r.pdf.path)).toEqual([
+    expect(modal.getSuggestions("scan").map((r) => r.kind === "file" && r.file.path)).toEqual([
       "scan.pdf",
     ]);
     modal.selectSuggestion(inside[1], {} as never);
@@ -169,6 +169,6 @@ describe("PDF import dialog", () => {
     expect(pick).toHaveBeenCalledWith(files[0]);
     // The next picker starts where this one took its PDF.
     const again = new VaultPdfSuggestModal(app as never, pick);
-    expect(kinds(again.getSuggestions(""))).toEqual(["up", "pdf"]);
+    expect(kinds(again.getSuggestions(""))).toEqual(["up", "file"]);
   });
 });

@@ -9932,22 +9932,23 @@ input[type="range"].goodobsidian-player-scrubber {
   white-space: nowrap;
 }
 
-/* The vault PDF picker (pdf-import-modal.ts): folders to open, PDFs to take, as
-   Obsidian's file list shows them. Rows are finger-sized on a tablet. */
-.goodobsidian-pdf-pick .suggestion-item {
+/* The vault file pickers (vault-file-picker.ts: Import PDF, Insert image › From
+   vault): folders to open, files to take, as Obsidian's file list shows them.
+   Rows are finger-sized on a tablet. */
+.goodobsidian-file-pick .suggestion-item {
   min-height: 44px;
 }
 
-.goodobsidian-pdf-pick .is-up .goodobsidian-link-choice-title {
+.goodobsidian-file-pick .is-up .goodobsidian-link-choice-title {
   color: var(--text-accent);
 }
 
-.goodobsidian-pdf-pick .is-folder .goodobsidian-link-choice-icon,
-.goodobsidian-pdf-pick .is-up .goodobsidian-link-choice-icon {
+.goodobsidian-file-pick .is-folder .goodobsidian-link-choice-icon,
+.goodobsidian-file-pick .is-up .goodobsidian-link-choice-icon {
   color: var(--text-accent);
 }
 
-.goodobsidian-pdf-pick-count {
+.goodobsidian-file-pick-aux {
   margin-left: auto;
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);

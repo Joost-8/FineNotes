@@ -513,6 +513,7 @@ export class AbstractInputSuggest {
 }
 
 export class FuzzySuggestModal extends Modal {}
+export class SuggestModal extends Modal {}
 
 export const Platform = { isIosApp: false, isTablet: false, isMobile: false };
 

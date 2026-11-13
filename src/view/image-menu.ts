@@ -27,10 +27,11 @@
  * opens, so an entry registered late still shows up.
  */
 
-import { type App, FuzzySuggestModal, Notice, Platform, type TFile, setIcon } from "obsidian";
+import { type App, Notice, Platform, type TFile, setIcon } from "obsidian";
 import { isImagePath } from "../canvas/image-raster";
 import type { ImageElement } from "../model/document";
 import { pickImageFiles } from "./image-import";
+import { VaultFilePicker } from "./vault-file-picker";
 import { menuAnchor, menuPlace } from "./bar-dock-model";
 import { t } from "../i18n/translate";
 import { docOf, shownDoc, winOf } from "./host-window";
@@ -322,31 +323,27 @@ export class ImageMenuPopover {
   }
 }
 
+/** Where the last picture was picked from the vault (this session). */
+const lastImageFolder = { folder: "" };
+
 /**
- * "From vault": a fuzzy search over every picture in the vault. The chosen
- * file is placed by its existing path — nothing is copied.
+ * "From vault": the vault's folders and the pictures in them, with search on
+ * top (vault-file-picker.ts), as Import PDF's. The chosen file is placed by
+ * its existing path — nothing is copied.
  */
-export class VaultImageSuggestModal extends FuzzySuggestModal<TFile> {
-  constructor(
-    app: App,
-    private readonly onPick: (file: TFile) => void,
-  ) {
-    super(app);
-    this.setPlaceholder(t("surface.imageMenu.findPlaceholder"));
-  }
-
-  getItems(): TFile[] {
-    return this.app.vault
-      .getFiles()
-      .filter((file) => isImagePath(file.path))
-      .sort((a, b) => b.stat.mtime - a.stat.mtime);
-  }
-
-  getItemText(file: TFile): string {
-    return file.path;
-  }
-
-  onChooseItem(file: TFile): void {
-    this.onPick(file);
+export class VaultImageSuggestModal extends VaultFilePicker {
+  constructor(app: App, onPick: (file: TFile) => void) {
+    super(
+      app,
+      {
+        accepts: isImagePath,
+        placeholder: t("surface.imageMenu.findPlaceholder"),
+        empty: t("surface.imageMenu.none"),
+        icon: "image",
+        showExtension: true,
+        memory: lastImageFolder,
+      },
+      onPick,
+    );
   }
 }
