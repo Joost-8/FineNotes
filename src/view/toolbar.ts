@@ -7204,9 +7204,9 @@ export class Toolbar {
     const pill = this.optionsEl;
     pill.setCssProps({ "--gob-pill-inside": "100000px" });
     this.fitTextPill(100000);
-    // The text row in the bar may drop the pin's word, keeping its icon
-    // (`fitTextPill`, is-short): every control still shows.
-    if (pill.hasClass("is-text")) pill.addClass("is-short");
+    // The text row in the bar may take its compact form (`fitTextPill`):
+    // narrower dropdowns, the pin's word gone, every control still shown.
+    if (pill.hasClass("is-text")) pill.addClass("is-compact");
     let need = Math.ceil(pill.scrollWidth) + 2;
     const colours = this.penPillShown()
       ? pill.querySelector<HTMLElement>(".goodobsidian-pen-colors")

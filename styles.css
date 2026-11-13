@@ -7873,6 +7873,14 @@ textarea.goodobsidian-chat-input:focus-visible {
   color: var(--text-muted);
 }
 
+/* In the bar the table button hugs its icon and size, so the shapes row
+   fits beside the tools (docking design B, Essentials). */
+.goodobsidian-options.is-in-bar button.is-table {
+  gap: 2px;
+  padding-inline: 4px;
+  letter-spacing: -0.02em;
+}
+
 /* The rows × columns picker: 8 × 8 cells a fingertip can hit (44 px on an
    iPad, shrinking to 28 px on a narrow pane). The cells up to the chosen
    size fill with the accent. Wider than other popovers to fit the grid. */
