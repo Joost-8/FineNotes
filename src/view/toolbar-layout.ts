@@ -211,14 +211,16 @@ export function parseBarPreset(raw: unknown): BarPreset {
 /**
  * Essentials as it starts: the sidebar, undo and redo; the lasso, pen,
  * eraser, text and shapes with the toolbox; the end's buttons, which in
- * Essentials always sit in ⋯ (`isFoldedInPreset`). The rest is in More tools.
+ * Essentials always sit in ⋯ (`isFoldedInPreset`). The hand, the magnifier,
+ * Stylus only and the fill bucket are hidden (Joost, 2026-11-13); the rest
+ * is in More tools.
  */
 export function essentialsLayout(): ToolbarLayout {
   return {
     start: ["thumbnails", "undo", "redo"],
     middle: ["select", "pen", "eraser", "text", "shape", "accessories"],
     end: ["fullscreen", "addPage", "share", "more", "settings"],
-    off: [],
+    off: ["pan", "zoom", "stylus", "fill"],
   };
 }
 

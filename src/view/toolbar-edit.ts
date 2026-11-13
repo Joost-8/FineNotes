@@ -219,6 +219,11 @@ export class ToolbarEditor {
     this.tray = h.host.createDiv({ cls: "goodobsidian-edit-tray" });
     this.tray.setAttribute("role", "toolbar");
     this.tray.setAttribute("aria-label", t("toolbar.customize.title"));
+    // A drag here is a button being carried, not Obsidian's swipe: without
+    // its opt-out the sidebars and the pull-down command palette opened
+    // under the finger (Joost, 2026-11-13; ledger 2026-09-22).
+    // The bar has it already (toolbar.ts); the tray and the scrim are new.
+    for (const el of [this.tray, this.scrim]) el.dataset.ignoreSwipe = "true";
 
     const swallow = (event: Event): void => {
       event.preventDefault();
@@ -573,6 +578,7 @@ export class ToolbarEditor {
       // Its own element, not a clone: a copied <button> would take Obsidian's
       // button padding (20 px a side on an iPad) and squeeze its icon away.
       const ghost = this.doc.body.createDiv({ cls: "goodobsidian-edit-ghost" });
+      ghost.dataset.ignoreSwipe = "true";
       // A pen carries its own drawing; every other button its icon.
       const pen = press.el.querySelector(
         "svg.goodobsidian-tool-pen-glyph, .goodobsidian-pen-glyph",
@@ -603,10 +609,31 @@ export class ToolbarEditor {
       top: `${Math.round(event.clientY)}px`,
     });
     if (this.inPreset()) {
-      this.setSwap(this.swapAt(press.id, event.clientX, event.clientY));
+      // A tool off the bar may go between More tools and Hidden; on the bar,
+      // a drop swaps (Joost, 2026-11-13).
+      const shelf = this.shelfAt(press.id, event.clientX, event.clientY);
+      this.setTarget(shelf);
+      this.setSwap(shelf ? null : this.swapAt(press.id, event.clientX, event.clientY));
       return;
     }
     this.setTarget(this.hitTest(press.id, event.clientX, event.clientY));
+  }
+
+  /**
+   * Essentials: the shelf (More tools or Hidden) a drop at (`x`, `y`) puts
+   * `id` on, for a tool that is not on the bar; the bar keeps its count.
+   */
+  private shelfAt(id: BarItemId, x: number, y: number): "menu" | "off" | null {
+    const place = placeOf(this.h.layout(), id);
+    if (place !== "menu" && place !== "off") return null;
+    if ((id as string) === NEW_PEN || isPenSlot(id)) return null;
+    for (const [shelf, target] of [
+      [this.menuShelf, "menu"],
+      [this.offShelf, "off"],
+    ] as const) {
+      if (shelf && target !== place && inside(shelf.getBoundingClientRect(), x, y, 4)) return target;
+    }
+    return null;
   }
 
   /** Essentials is in use: tools are swapped, never added or taken away. */
@@ -661,7 +688,12 @@ export class ToolbarEditor {
       return;
     }
     if (this.inPreset() && dragging) {
-      // Essentials: a drop on a button swaps; anywhere else changes nothing.
+      // Essentials: a drop on a button swaps; a tool off the bar may change
+      // shelf; anywhere else changes nothing.
+      if (target === "menu" || target === "off") {
+        this.move(id, target);
+        return;
+      }
       if (!swap) return;
       const slot = (id as string) === NEW_PEN ? this.h.newPen?.make() : id;
       if (slot) this.apply(slot, swapItems(this.h.layout(), slot, swap));
@@ -802,6 +834,7 @@ export class ToolbarEditor {
     const place = placeOf(layout, id);
     const upright = isBarUpright(this.h.barDock());
     const menu = this.h.host.createDiv({ cls: "goodobsidian-edit-menu" });
+    menu.dataset.ignoreSwipe = "true";
     menu.setAttribute("role", "menu");
     menu.setAttribute("aria-label", this.h.label(id));
     const row = (icon: string, label: string, next: ToolbarLayout): void => {
