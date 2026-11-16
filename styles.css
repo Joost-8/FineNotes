@@ -22231,3 +22231,70 @@ button:not(.clickable-icon).goodobsidian-share-all,
   display: block;
   max-width: 100%;
 }
+
+/*
+ * Present mode (⋯ › Present, src/view/presenter.ts): the page alone. The
+ * tool bar, the pill, the side panels and the page's own chrome go; a
+ * small bar of ‹ 3 / 12 › ✕ shows while the pointer moves.
+ */
+.goodobsidian-view.goodobsidian-presenting > .goodobsidian-toolbar,
+.goodobsidian-view.goodobsidian-presenting > .goodobsidian-pill-row,
+.goodobsidian-view.goodobsidian-presenting > .goodobsidian-options,
+.goodobsidian-view.goodobsidian-presenting > .goodobsidian-textpanel,
+.goodobsidian-presenting .goodobsidian-body > :not(.goodobsidian-surface),
+.goodobsidian-presenting .goodobsidian-pageindicator,
+.goodobsidian-presenting .goodobsidian-page-tabs,
+.goodobsidian-presenting .goodobsidian-zoomreadout,
+.goodobsidian-presenting .goodobsidian-scrollthumb,
+.goodobsidian-presenting .goodobsidian-pull-add,
+.goodobsidian-presenting .goodobsidian-pull-add-ghost,
+.goodobsidian-presenting .goodobsidian-text-hint,
+.goodobsidian-presenting .goodobsidian-offpage {
+  display: none;
+}
+
+/* Full screen, the view is the screen: no room kept for the status bar. */
+.workspace-leaf-content > .view-content.goodobsidian-view.goodobsidian-presenting:fullscreen {
+  padding: 0;
+}
+
+.goodobsidian-present-bar {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(16px + var(--gob-view-foot, 0px));
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease-out;
+}
+
+.goodobsidian-present-bar.is-shown {
+  opacity: 1;
+  pointer-events: auto;
+  transition: none;
+}
+
+.goodobsidian-present-bar > button.clickable-icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: var(--gob-radius-pill);
+}
+
+.goodobsidian-present-count {
+  min-width: 64px;
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}

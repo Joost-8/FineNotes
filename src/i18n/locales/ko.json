@@ -2920,6 +2920,8 @@
   "view.morePanel.darkPages": "어두운 페이지",
   "view.morePanel.shortcuts": "키보드 단축키",
   "view.morePanel.homeLink": "홈 화면 링크 복사",
+  "view.morePanel.present": "발표",
+  "view.present.stop": "발표 끝내기",
   "view.morePanel.darkPdf": "어두운 PDF 페이지",
   "view.morePanel.drawWithFinger": "손가락으로 그리기",
   "view.morePanel.desk": "책상",

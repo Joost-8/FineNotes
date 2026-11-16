@@ -499,10 +499,13 @@ import { obsidianOpenUri } from "../model/home-link";
 import { familiesIn } from "../model/font-catalogue";
 import { vaultFonts } from "./font-store";
 import { docOf, isElement, onWindowMoved, winOf } from "./host-window";
+import { Presenter } from "./presenter";
 
 /** Quiet time after the page being read changes before it is remembered. */
 /** A notebook that has just opened waits this long before its first page's PDF text is read for OCR, ms. */
 const OCR_OPEN_DELAY_MS = 800;
+/** Present mode fits the page once the pane has its new size (`startPresenting`). */
+const PRESENT_SETTLE_MS = 150;
 /** How long after opening a notebook its PDF pages' text starts being read for Home's search, ms. */
 const PDF_INDEX_DELAY_MS = 4000;
 /** The pause between two PDF pages read for Home's search, ms: never a burst. */
@@ -735,6 +738,8 @@ export class InkView extends TextFileView {
 
   /** The wait before an automatic transcription (see `scheduleAutoTranscription`). */
   private transcribeTimer = 0;
+  /** Present mode while it is on (⋯ › Present). */
+  private presenter: Presenter | null = null;
   /** The next on-device reading for search and the text layer (`scheduleDeviceReading`). */
   private deviceTimer = 0;
   /** A page is being read on the device right now. */
@@ -1310,6 +1315,7 @@ export class InkView extends TextFileView {
   }
 
   override async onClose(): Promise<void> {
+    this.presenter?.stop();
     window.clearTimeout(this.sheetInviteTimer);
     this.recordLastPage();
     this.audio?.destroy();
@@ -3810,6 +3816,7 @@ export class InkView extends TextFileView {
           this.scheduleLastPage();
           this.scheduleWordCheck();
           this.focusPdfText(index);
+          this.presenter?.refresh();
         },
         onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
         onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
@@ -6243,6 +6250,7 @@ export class InkView extends TextFileView {
           if (color !== undefined) this.plugin.settings.deskColor = color;
           void this.plugin.applyPageAppearance();
         },
+        present: this.showingBoard || this.isPractice ? undefined : () => this.startPresenting(),
         showShortcuts: () => this.toggleShortcuts(),
         shortcutsKey: () =>
           Platform.isMobile
@@ -6256,6 +6264,45 @@ export class InkView extends TextFileView {
           navigator.maxTouchPoints > 0 ? (on) => this.plugin.setFingerDrawing(on) : undefined,
       },
     );
+  }
+
+  /**
+   * ⋯ › Present: the notebook as slides (`presenter.ts`). The laser is put
+   * in hand and each page is fitted to the screen; on an iPad, where the
+   * page cannot take the screen, Obsidian's chrome is hidden for the while.
+   * Leaving puts the tool, the full screen setting and the zoom back.
+   */
+  startPresenting(): void {
+    const surface = this.surface;
+    if (!surface || this.presenter?.active) return;
+    const tool = surface.toolInHand;
+    const root = this.contentEl;
+    const screen = docOf(root).fullscreenEnabled && typeof root.requestFullscreen === "function";
+    const hideChrome = !screen && this.plugin.fullScreenOffered && !this.plugin.fullScreen;
+    if (hideChrome) this.plugin.toggleFullScreen();
+    surface.takeTool("laser");
+    const fit = (): void => {
+      if (this.surface !== surface) return;
+      const index = surface.currentPage;
+      surface.resetView();
+      surface.goToPage(index);
+    };
+    this.presenter = new Presenter({
+      root,
+      next: () => surface.nextPage(),
+      previous: () => surface.previousPage(),
+      first: () => surface.goToPage(0, true),
+      last: () => surface.goToPage(surface.document.pages.length - 1, true),
+      page: () => ({ index: surface.currentPage, total: surface.document.pages.length }),
+      onEnd: () => {
+        this.presenter = null;
+        if (this.surface === surface && surface.toolInHand === "laser") surface.takeTool(tool);
+        if (hideChrome && this.plugin.fullScreen) this.plugin.toggleFullScreen();
+        window.setTimeout(fit, PRESENT_SETTLE_MS);
+      },
+    });
+    // The chrome went and the screen grew: fit once the pane has its new size.
+    window.setTimeout(fit, PRESENT_SETTLE_MS);
   }
 
   /**
