@@ -465,6 +465,7 @@ const READING_ROWS = [
   ["Read handwriting with", "dropdown:handwritingOnDevice"],
   ["Underline words it may have misread", "toggle:checkHandwrittenWords"],
   ["Calculate lines that end in =", "toggle:calcNotes"],
+  ["Add up columns of numbers", "toggle:columnSums"],
   ["Learn your handwriting", "render"],
 ] as const;
 
@@ -2068,7 +2069,10 @@ describe("Models on this device", () => {
     const all = rows(makeTab(plugin).tab);
     const at = all.findIndex((r) => r.def.name === "Calculate lines that end in =");
     expect(shown(all[at].def)).toBe(true);
-    expect(all[at + 1].def.name).toBe("Learn your handwriting");
+    // Column sums, on by default too, sits right under it.
+    expect(all[at + 1].def.name).toBe("Add up columns of numbers");
+    expect(plugin.settings.columnSums).toBe(true);
+    expect(all[at + 2].def.name).toBe("Learn your handwriting");
   });
 
   it("offers Grape when reading or underlining is switched on", async () => {

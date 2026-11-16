@@ -27,6 +27,7 @@
  */
 
 import { isDash, isSumInk, pathLength } from "./calc-ink";
+import { type PieceReading, alignChars } from "./calc-layout";
 import { type Bounds, POINT_STRIDE, type Stroke, strokeBounds } from "./document";
 
 /** A single line closes a subtotal, a double line the final total. */
@@ -154,22 +155,31 @@ function pieces(items: readonly Item[], gap: number): Item[][] {
   return out;
 }
 
-/** Bands of ink, bottom to top: strokes whose middles fall inside a band's core join it. */
-function bands(items: readonly Item[]): Item[][] {
-  const sorted = [...items].sort((a, b) => b.box.maxY - a.box.maxY);
-  const out: { items: Item[]; box: Bounds }[] = [];
+/**
+ * Bands of ink, bottom to top. The tallest strokes make the bands; a smaller
+ * one joins the band its middle falls in, or just under (a comma or a full
+ * stop below the baseline, a minus, a dot), else it is a band of its own. A
+ * line (`isLine`: under the amounts) is always a band of its own, or of two
+ * for a double line (an earlier subtotal's line).
+ */
+function bands(items: readonly Item[], isLine: (it: Item) => boolean): Item[][] {
+  const sorted = [...items].sort((a, b) => height(b.box) - height(a.box));
+  const out: { items: Item[]; box: Bounds; tall: number; rule: boolean }[] = [];
   for (const it of sorted) {
+    const rule = isLine(it);
     const y = midY(it.box);
-    const band = out.find((b) => {
-      const pad = 0.15 * height(b.box);
-      return y >= b.box.minY - pad && y <= b.box.maxY + pad;
-    });
+    const band = rule
+      ? out.find((b) => b.rule && b.items.length === 1 && isDoubleRule(b.box, it.box))
+      : out.find((b) => {
+          if (b.rule) return false;
+          const pad = 0.35 * b.tall;
+          return y >= b.box.minY - pad && y <= b.box.maxY + pad;
+        });
     if (band) {
       band.items.push(it);
       band.box = union([band.box, it.box]);
-    } else out.push({ items: [it], box: it.box });
+    } else out.push({ items: [it], box: it.box, tall: height(it.box), rule });
   }
-  // A band whose middle lies inside another (a raised comma, an accent) joins it.
   out.sort((a, b) => b.box.maxY - a.box.maxY);
   return out.map((b) => b.items);
 }
@@ -214,7 +224,11 @@ export function columnAbove(strokes: readonly Stroke[], rule: SumRule): Column |
   const near = above.filter((it) => it.box.minX < right && it.box.maxY > r.minY - 40 * digit);
   const rows: ColumnRow[] = [];
   let bottom = r.minY;
-  for (const band of bands(near)) {
+  // A line under the amounts, not a t's bar or an underlined name.
+  const isLine = (it: Item): boolean =>
+    isRuleStroke(it.stroke, it.box) &&
+    Math.min(it.box.maxX, r.maxX) - Math.max(it.box.minX, r.minX) >= 0.6 * w;
+  for (const band of bands(near, isLine)) {
     const box = union(band.map((it) => it.box));
     if (bottom - box.maxY > 1.6 * digit) break;
     const rowRule = band.length <= 2 ? earlierRule(band, r) : null;
@@ -516,4 +530,202 @@ function straight(
     if (d > tol) return false;
   }
   return true;
+}
+
+/**
+ * A reading with its commas and full stops settled by the ink (Grape takes a
+ * comma for "." or "/" and a full stop for ","): a small mark low in the row
+ * is a comma when it hangs below the baseline or is a short downward tick,
+ * else a full stop. `ink` is the row's amount, in the order Grape read it
+ * (`chars` index it); `digit` the column's digit height. The marks settled
+ * are certain: they raise no doubt.
+ */
+export function marksSettled(
+  reading: PieceReading,
+  ink: readonly Stroke[],
+  digit: number,
+): PieceReading {
+  const chars = reading.chars;
+  if (!chars || chars.length === 0 || digit <= 0) return reading;
+  const boxes = ink.map((s) => strokeBounds(s));
+  const tall = boxes.filter((b): b is Bounds => b !== null && height(b) > 0.6 * digit);
+  if (tall.length === 0) return reading;
+  const baseline = median(tall.map((b) => b.maxY));
+  // The row's own digits' height: the column's counts its marks in too.
+  const h = median(tall.map((b) => height(b)));
+  const settled = chars.map((c) => {
+    const own = c.strokes.map((i) => boxes[i]).filter((b): b is Bounds => b != null);
+    if (own.length === 0 || own.length !== c.strokes.length) return null;
+    const b = union(own);
+    const small = height(b) < 0.45 * h && width(b) < 0.45 * h;
+    if (!small || b.minY < baseline - 0.45 * h) return null;
+    const hangs = b.maxY > baseline + 0.12 * h;
+    const tick = height(b) > 0.2 * h && height(b) > 1.5 * width(b);
+    return hangs || tick ? "," : ".";
+  });
+  if (settled.every((m) => m === null)) return reading;
+  const text = Array.from(reading.text);
+  const map = alignChars(
+    chars.map((c) => c.char),
+    text,
+  );
+  text.forEach((_, at) => {
+    const mark = map[at] >= 0 ? settled[map[at]] : null;
+    if (mark) text[at] = mark;
+  });
+  return {
+    ...reading,
+    text: text.join(""),
+    ...(reading.greedy !== undefined
+      ? { greedy: chars.map((c, i) => settled[i] ?? c.char).join("") }
+      : {}),
+    chars: chars.map((c, i) => {
+      const mark = settled[i];
+      return mark ? { ...c, char: mark, confidence: 1 } : c;
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The card: what was read, lined up, and the total
+
+/**
+ * A row's text as Grape read it, with the shape rule for the 1 it misses
+ * applied: a row Grape read as no digit at all that is one upstroke-1
+ * stroke is "1" ({@link isUpstrokeOne}).
+ */
+export function rowText(read: string, amount: readonly Stroke[], digit: number | null): string {
+  const text = read.replace(/\s+/g, "");
+  if (/\d/.test(text)) return text;
+  return isUpstrokeOne(amount, digit) ? "1" : text;
+}
+
+/** The column's convention when its amounts do not say: the app language's decimal mark. */
+export function conventionOfLocale(locale: string): Convention {
+  try {
+    return new Intl.NumberFormat(locale).format(1.5).includes(",") ? "de" : "en";
+  } catch {
+    return "en";
+  }
+}
+
+export interface ColumnSummary {
+  convention: Convention;
+  /** Per row of the column: what it was read as (null for a line or a row with no amount). */
+  values: Array<RowValue | null>;
+  total: ColumnTotal;
+  /** The total as the column writes it, or null while a row is unread. */
+  totalText: string | null;
+  /** The rows the card lists (the ones the total adds, and the unread), top to bottom. */
+  shown: number[];
+  /** The rows lined up on the decimal mark, the last underlined as the line is drawn. */
+  tex: string;
+  /** The rows as one typed sum ("1.234,50 + 20,00 - 5,00"), for the typing dialog. */
+  expression: string;
+}
+
+/** Characters LaTeX would take as commands, out of a reading shown as text. */
+const TEX_UNSAFE = /[{}\\$^_&%#~]/g;
+
+/**
+ * The card's summary of `column`, its rows read as `texts` (one per row,
+ * null for a line or a row with no amount). `typed` overrides rows with
+ * signed amounts typed in the dialog. The convention comes from what the
+ * rows look like, else `fallback`.
+ */
+export function summarizeColumn(
+  column: Column,
+  texts: ReadonlyArray<string | null>,
+  fallback: Convention,
+  typed: ReadonlyMap<number, Amount> = new Map(),
+): ColumnSummary {
+  const convention = guessConvention(
+    texts.filter((x): x is string => x !== null),
+    fallback,
+  );
+  const values: Array<RowValue | null> = column.rows.map((row, i) => {
+    if (row.rule || row.amount.length === 0) return null;
+    const own = typed.get(i);
+    if (own) {
+      // The row's ink sign still applies in the total: undo it here.
+      return {
+        text: formatAmount(own, convention),
+        value: { ...own, units: own.units * row.sign },
+      };
+    }
+    const text = texts[i] ?? "";
+    return { text, value: parseAmount(text, convention) };
+  });
+  const total = columnTotal(column, values);
+  const shown = [...total.rows, ...total.unread].sort((a, b) => a - b);
+  const signedOf = (i: number): Amount | null => {
+    const v = values[i]?.value;
+    return v ? { units: column.rows[i].sign * v.units, scale: v.scale } : null;
+  };
+  // Every amount is written with the column's decimals, so right-aligned
+  // they line up on the decimal mark.
+  const cells = shown.map((i) => {
+    const signed = signedOf(i);
+    if (!signed) {
+      const raw = (values[i]?.text ?? "").replace(TEX_UNSAFE, "") || "?";
+      return { tex: String.raw`\text{${raw}}`, typed: raw };
+    }
+    const text = formatAmount(signed, convention, total.scale);
+    // Set as one upright run: no space after its comma, as there is after punctuation.
+    return { tex: String.raw`\mathrm{${text}}`, typed: text };
+  });
+  const lines = cells.map((c, k) => {
+    if (k !== cells.length - 1) return c.tex;
+    return column.rule.kind === "total"
+      ? String.raw`\underline{\underline{${c.tex}}}`
+      : String.raw`\underline{${c.tex}}`;
+  });
+  const tex = `\\begin{aligned} ${lines.join(" \\\\ ")} \\end{aligned}`;
+  const expression = cells
+    .map((c, k) => {
+      if (k === 0) return c.typed;
+      return c.typed.startsWith("-") ? `- ${c.typed.slice(1)}` : `+ ${c.typed}`;
+    })
+    .join(" ");
+  const totalText = total.total ? formatAmount(total.total, convention, total.scale) : null;
+  return { convention, values, total, totalText, shown, tex, expression };
+}
+
+/**
+ * A sum typed in the dialog ("1.234,50 + 20 - 5,-"), as signed amounts in
+ * order, or null when a part is not an amount.
+ */
+export function parseTypedColumn(text: string, convention: Convention): Amount[] | null {
+  const out: Amount[] = [];
+  let at = 0;
+  const skip = (): void => {
+    while (at < text.length && /\s/.test(text[at])) at++;
+  };
+  for (;;) {
+    skip();
+    if (at >= text.length) break;
+    let sign = 1;
+    if (text[at] === "+" || text[at] === "-" || text[at] === "−") {
+      sign = text[at] === "+" ? 1 : -1;
+      at++;
+      skip();
+    } else if (out.length > 0) return null;
+    let part = "";
+    while (at < text.length && /[\d.,]/.test(text[at])) part += text[at++];
+    // The whole-amount dash ("20,-"), unless a digit follows it: then its
+    // last dash is the next amount's minus ("20,--5", "20,-5").
+    if (/[.,]$/.test(part)) {
+      let dashes = 0;
+      while (text[at + dashes] === "-") dashes++;
+      let next = at + dashes;
+      while (next < text.length && /\s/.test(text[next])) next++;
+      if (dashes > 0 && /\d/.test(text[next] ?? "") && next === at + dashes) dashes--;
+      at += dashes;
+      part = part.slice(0, -1);
+    }
+    const amount = parseAmount(part, convention);
+    if (!amount) return null;
+    out.push({ units: sign * amount.units, scale: amount.scale });
+  }
+  return out.length > 0 ? out : null;
 }

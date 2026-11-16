@@ -769,21 +769,23 @@ export class CalcNotes {
 
   /** The writer's glyphs from their symbol sheets (the last sample of each character wins). */
   private async ownGlyphs(): Promise<GlyphSet | null> {
-    const host = this.host.learning();
-    const sheets = practiceFiles(host).filter((f) => practiceSetOf(f.name) === SYMBOL_SET);
-    const samples: ReturnType<typeof symbolSamples> = [];
-    for (const file of sheets) {
-      try {
-        const open = host.openNotebook(file.path);
-        const doc =
-          open ??
-          parseInkFile(await this.host.app.vault.read(file), DEFAULT_PAGE_GEOMETRY.width).doc;
-        if (doc) samples.push(...symbolSamples(doc));
-      } catch {
-        // A sheet that does not parse gives no glyphs.
-      }
-    }
-    const glyphs = glyphsFromSamples(samples);
-    return glyphs.size > 0 ? glyphs : null;
+    return writerGlyphs(this.host.app, this.host.learning());
   }
+}
+
+/** The writer's glyphs from their symbol sheets (the last sample of each character wins), or null. */
+export async function writerGlyphs(app: App, host: LearningHost): Promise<GlyphSet | null> {
+  const sheets = practiceFiles(host).filter((f) => practiceSetOf(f.name) === SYMBOL_SET);
+  const samples: ReturnType<typeof symbolSamples> = [];
+  for (const file of sheets) {
+    try {
+      const open = host.openNotebook(file.path);
+      const doc = open ?? parseInkFile(await app.vault.read(file), DEFAULT_PAGE_GEOMETRY.width).doc;
+      if (doc) samples.push(...symbolSamples(doc));
+    } catch {
+      // A sheet that does not parse gives no glyphs.
+    }
+  }
+  const glyphs = glyphsFromSamples(samples);
+  return glyphs.size > 0 ? glyphs : null;
 }

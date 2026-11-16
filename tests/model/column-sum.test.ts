@@ -15,9 +15,14 @@ import {
   formatAmount,
   guessConvention,
   isUpstrokeOne,
+  marksSettled,
   parseAmount,
+  parseTypedColumn,
+  rowText,
   ruleAtEnd,
+  summarizeColumn,
 } from "../../src/model/column-sum";
+import { parseLatex } from "../../src/model/latex";
 import type { Stroke } from "../../src/model/document";
 
 let nextId = 0;
@@ -142,6 +147,43 @@ for (const h of [22, 40]) {
       expect(column.rows.map((r) => r.sign)).toEqual([1, -1, 1]);
       expect(column.rows[1].signStroke).not.toBeNull();
       expect(column.rows[1].label).toHaveLength(5);
+    });
+
+    it("a comma below the baseline and a dash after it stay in their amount's row", () => {
+      const { strokes, rows, right, below } = ledger(h, [4, 3, 4], { names: false });
+      // "12,50": a comma hanging under the baseline between the digits; "120,-": a dash at the end.
+      const extra: Stroke[] = [];
+      rows.forEach((row, i) => {
+        const base = 60 + i * h * 1.8;
+        const x = right - 2 * h * 0.75 - h * 0.1;
+        const comma = stroke([
+          [x, base - h * 0.08],
+          [x - h * 0.08, base + h * 0.3],
+        ]);
+        extra.push(comma);
+        row.push(comma);
+      });
+      const tail = dash(right + h * 0.1, 60 + h * 1.8 - h * 0.45, h * 0.4);
+      extra.push(tail);
+      rows[1].push(tail);
+      const line = dash(right - h * 4, below + h * 0.3, h * 4.6);
+      const all = [...strokes, ...extra, line];
+      const column = columnAbove(all, ruleAtEnd(all)!);
+      expect(column?.rows).toHaveLength(3);
+      column!.rows.forEach((row, i) => {
+        expect(new Set(row.amount.map((s) => s.id))).toEqual(new Set(rows[i].map((s) => s.id)));
+      });
+    });
+
+    it("a t's bar in a name is not taken for an earlier line", () => {
+      const { strokes, right, below } = ledger(h, [3, 3, 3]);
+      // A wide flat bar in the middle row's name, level with the top of its letters.
+      const bar = dash(40, 60 + h * 1.8 - h * 0.5, h * 1.2);
+      const line = dash(right - h * 3, below, h * 3.2);
+      const all = [...strokes, bar, line];
+      const column = columnAbove(all, ruleAtEnd(all)!);
+      expect(column?.rows).toHaveLength(3);
+      expect(column!.rows.every((row) => row.rule === null)).toBe(true);
     });
 
     it("an amount column without names works the same", () => {
@@ -441,5 +483,148 @@ describe("isUpstrokeOne", () => {
         h,
       ),
     ).toBe(false);
+  });
+});
+
+describe("summarizeColumn", () => {
+  const h = 30;
+  function column(n: number, minus: number[] = []): Column {
+    const { strokes, right, below } = ledger(h, Array(n).fill(3) as number[], { minus });
+    const line = dash(right - h * 3, below, h * 3.2);
+    const all = [...strokes, line];
+    return columnAbove(all, ruleAtEnd(all)!)!;
+  }
+
+  it("adds the rows in the convention they are written in, lined up on the comma", () => {
+    const c = column(3, [2]);
+    const s = summarizeColumn(c, ["1.234,50", "20,-", "5"], "en");
+    expect(s.convention).toBe("de");
+    expect(s.totalText).toBe("1.249,50");
+    expect(s.shown).toEqual([0, 1, 2]);
+    expect(s.tex).toContain(String.raw`\mathrm{1.234,50}`);
+    expect(s.tex).toContain(String.raw`\mathrm{20,00}`);
+    expect(s.tex).toContain(String.raw`\underline{\mathrm{-5,00}}`);
+    expect(s.expression).toBe("1.234,50 + 20,00 - 5,00");
+    // The card's LaTeX parses: a matrix of three rows.
+    expect(s.tex.split(String.raw` \\ `)).toHaveLength(3);
+    expect(JSON.stringify(parseLatex(s.tex))).toContain('"matrix"');
+  });
+
+  it("withholds the total while a row does not read, and shows what it read", () => {
+    const s = summarizeColumn(column(2), ["12", "4l"], "de");
+    expect(s.totalText).toBeNull();
+    expect(s.total.unread).toEqual([1]);
+    expect(s.tex).toContain(String.raw`\text{4l}`);
+  });
+
+  it("a typed amount stands in for a row's reading, sign included", () => {
+    const c = column(2, [1]);
+    const typed = new Map([[1, { units: 300, scale: 2 }]]);
+    const s = summarizeColumn(c, ["10", "4l"], "de", typed);
+    // The ink minus is undone: the typed +3,00 is what counts.
+    expect(s.totalText).toBe("13,00");
+  });
+
+  it("a double line gets a double underline", () => {
+    const { strokes, right, below } = ledger(h, [3, 3]);
+    const a = dash(right - h * 3, below, h * 3.2);
+    const b = dash(right - h * 3, below + h * 0.25, h * 3.2);
+    const all = [...strokes, a, b];
+    const c = columnAbove(all, ruleAtEnd(all)!)!;
+    const s = summarizeColumn(c, ["100", "250"], "en");
+    expect(s.totalText).toBe("350");
+    expect(s.tex).toContain(String.raw`\underline{\underline{\mathrm{250}}}`);
+  });
+});
+
+describe("parseTypedColumn", () => {
+  it("reads signed amounts, the whole-amount dash included", () => {
+    expect(parseTypedColumn("1.234,50 + 20,- - 5", "de")).toEqual([
+      { units: 123450, scale: 2 },
+      { units: 20, scale: 0 },
+      { units: -5, scale: 0 },
+    ]);
+    expect(parseTypedColumn("12.50-3", "en")).toEqual([
+      { units: 1250, scale: 2 },
+      { units: -3, scale: 0 },
+    ]);
+  });
+
+  it("refuses a part that is not an amount", () => {
+    expect(parseTypedColumn("12 + abc", "de")).toBeNull();
+    expect(parseTypedColumn("", "de")).toBeNull();
+  });
+});
+
+describe("rowText", () => {
+  it("keeps a reading with a digit, and turns a lone upstroke 1 read as a dot into 1", () => {
+    const one = stroke([
+      [10, 30],
+      [20, 10],
+      [21, 60],
+    ]);
+    expect(rowText("17", [one], 50)).toBe("17");
+    expect(rowText(".", [one], 50)).toBe("1");
+    expect(rowText("a", [dash(0, 0, 40)], 50)).toBe("a");
+  });
+});
+
+describe("marksSettled", () => {
+  // "12,50" at digit height 40, baseline 100: four digits and a mark between 2 and 5.
+  const d = (x: number): Stroke => digit(x, 100, 40);
+  function reading(mark: Stroke, read: string) {
+    const ink = [d(0), d(30), mark, d(70), d(100)];
+    return {
+      ink,
+      piece: {
+        text: `12${read}50`,
+        confidence: 0.9,
+        greedy: `12${read}50`,
+        chars: ["1", "2", read, "5", "0"].map((char, i) => ({
+          char,
+          strokes: [i],
+          confidence: 0.6,
+          alternatives: [{ char: "," }],
+        })),
+      },
+    };
+  }
+
+  it("a mark hanging below the baseline is a comma, whatever Grape read", () => {
+    const comma = stroke([
+      [58, 96],
+      [55, 110],
+    ]);
+    for (const read of [".", "/"]) {
+      const { ink, piece } = reading(comma, read);
+      const out = marksSettled(piece, ink, 40);
+      expect(out.text).toBe("12,50");
+      expect(out.chars?.[2]).toMatchObject({ char: ",", confidence: 1 });
+    }
+  });
+
+  it("settles the text even where only the language model changed the mark", () => {
+    const comma = stroke([
+      [58, 96],
+      [55, 110],
+    ]);
+    const { ink, piece } = reading(comma, ",");
+    const out = marksSettled({ ...piece, text: "12.50" }, ink, 40);
+    expect(out.text).toBe("12,50");
+  });
+
+  it("a dot on the baseline is a full stop", () => {
+    const dot = stroke([
+      [57, 98],
+      [58, 99.5],
+    ]);
+    const { ink, piece } = reading(dot, ",");
+    expect(marksSettled(piece, ink, 40).text).toBe("12.50");
+  });
+
+  it("leaves digits and a minus at mid height alone", () => {
+    const minus = dash(50, 80, 12);
+    const { ink, piece } = reading(minus, "-");
+    expect(marksSettled(piece, ink, 40).text).toBe("12-50");
   });
 });

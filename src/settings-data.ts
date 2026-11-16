@@ -342,6 +342,12 @@ export interface GoodObsidianSettings {
    */
   calcNotes: boolean;
   /**
+   * Column sums (discussion #228): a line drawn under a column of amounts
+   * adds them up, read on this device (view/column-notes.ts). On in the test
+   * build so it can be tried without looking for it.
+   */
+  columnSums: boolean;
+  /**
    * The vault path of a handwriting model file to read with instead of the
    * downloaded Grape (a model tuned to one writer). Blank for Grape.
    */
@@ -604,6 +610,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   replayInk: true,
   checkHandwrittenWords: false,
   calcNotes: true,
+  columnSums: true,
   speechModel: "whisper-base",
   speechLanguage: "auto",
   speechService: "device",

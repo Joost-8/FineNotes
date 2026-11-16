@@ -2251,6 +2251,21 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             ),
             visible: reading,
           },
+          {
+            ...this.tile(
+              toggle("columnSums", t("settings.columnSums.name"), t("settings.columnSums.line"), [
+                "column sums",
+                "add up",
+                "total",
+                "subtotal",
+                "sum",
+                "amounts",
+                "line under numbers",
+              ]),
+              "sigma",
+            ),
+            visible: reading,
+          },
           this.tile(
             drawnRow(
               t("settings.learn.name"),

@@ -102,6 +102,7 @@ import {
 import { sheetButton } from "../recognition/hwr/learn-window-model";
 import { practiceLines } from "../recognition/practice";
 import { CalcNotes } from "./calc-notes";
+import { ColumnNotes } from "./column-notes";
 import {
   type ChatImage,
   type ChatTurn,
@@ -638,6 +639,7 @@ export class InkView extends TextFileView {
   private surface: InkSurface | null = null;
   /** Lines ending in "=" answered on a tap (off unless the setting is on). */
   private readonly calcNotes: CalcNotes;
+  private readonly columnNotes: ColumnNotes;
   private toolbar: Toolbar | null = null;
   private sidebar: PageSidebar | null = null;
   /** The ⋯ panel, while open. */
@@ -790,6 +792,27 @@ export class InkView extends TextFileView {
       surface: () => this.surface,
       page: (pageId) => this.doc.pages.find((p) => p.id === pageId) ?? null,
       openGraph: () => this.calculatorOnLine(null),
+      learning: () => plugin.learningHost(),
+      record: async (pageId, strokes, read, text, kind) => {
+        const note = this.file?.path;
+        if (!note) return;
+        await plugin.wordCheck.record(
+          { note, pageId, word: { text: read, strokeIds: strokes.map((s) => s.id) }, strokes },
+          kind,
+          text,
+        );
+      },
+    });
+    this.columnNotes = new ColumnNotes({
+      app: this.app,
+      reader: plugin.handwriting,
+      enabled: () =>
+        this.settings.columnSums === true &&
+        this.settings.handwritingOnDevice !== false &&
+        !this.isPractice &&
+        !this.isProtected(),
+      surface: () => this.surface,
+      page: (pageId) => this.doc.pages.find((p) => p.id === pageId) ?? null,
       learning: () => plugin.learningHost(),
       record: async (pageId, strokes, read, text, kind) => {
         const note = this.file?.path;
@@ -1181,6 +1204,7 @@ export class InkView extends TextFileView {
     const t = performance.now();
     if (down) {
       this.calcNotes.penDown();
+      this.columnNotes.penDown();
       this.writeHold.penDown(t);
       this.pdfCache?.setHeld(true);
       this.pdfText?.setHeld(true);
@@ -1294,6 +1318,7 @@ export class InkView extends TextFileView {
     this.optionsReturnTimer = 0;
     this.saver.stop();
     this.calcNotes.dispose();
+    this.columnNotes.dispose();
     this.surface?.destroy();
     this.surface = null;
     this.toolbar?.destroy();
@@ -3686,6 +3711,7 @@ export class InkView extends TextFileView {
           this.audio?.syncChrome();
           this.scheduleAutoTranscription();
           this.scheduleDeviceReading();
+          this.columnNotes.pagesChanged(pages);
           this.requestSaveOf(pages);
           this.relinkMovedFiles();
         },
@@ -3701,8 +3727,14 @@ export class InkView extends TextFileView {
             this.toolbar?.tuckOptions();
           }
         },
-        onStrokeDrawn: (pageId) => this.calcNotes.strokeDrawn(pageId),
-        onHistoryStep: (command, redo) => this.calcNotes.historyStep(command, redo),
+        onStrokeDrawn: (pageId) => {
+          this.calcNotes.strokeDrawn(pageId);
+          this.columnNotes.strokeDrawn(pageId);
+        },
+        onHistoryStep: (command, redo) => {
+          this.calcNotes.historyStep(command, redo);
+          this.columnNotes.historyStep(command, redo);
+        },
         onPenShape: () => {
           if (this.surface) this.plugin.offerShapeHint(this.surface);
           this.noteUse("shape.hold");

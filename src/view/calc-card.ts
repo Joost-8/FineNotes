@@ -42,6 +42,8 @@ export interface CalcCardContent {
   noAnswer?: boolean;
   /** What is written instead of the answer alone ("x=2" after a whole equation). */
   written?: string;
+  /** A column's total (discussion #228): no typed equation, the total written under the line. */
+  column?: boolean;
 }
 
 export interface CalcCardActions {
@@ -243,7 +245,10 @@ export class CalcCard {
     this.content = content;
     const graph = content.graph !== undefined;
     this.forms.toggleClass("is-hidden", graph);
-    this.equationButton.toggleClass("is-hidden", graph || content.noAnswer === true);
+    this.equationButton.toggleClass(
+      "is-hidden",
+      graph || content.noAnswer === true || content.column === true,
+    );
     this.writeButton.toggleClass("is-hidden", content.noAnswer === true);
     setIcon(this.writeIcon, graph ? "chart-spline" : "corner-down-left");
     this.writeLabel.setText(t(graph ? "calculator.insertGraph" : "calculator.write"));
