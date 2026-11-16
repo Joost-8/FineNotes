@@ -192,6 +192,8 @@ export interface GoodObsidianSettings {
   askSaveChats: boolean;
   /** Where Ask opens: a window over the notebook, or a sidebar beside the page. */
   askLayout: "window" | "sidebar";
+  /** Where search's results show, in every notebook: a sidebar beside the page, or a window over it (#112). */
+  searchLayout: "sidebar" | "window";
   /**
    * A new Ask AI chat starts with the page being read picked. Off by default
    * (Joost, discussion #107): a chat sends a page only when the user picks one.
@@ -569,6 +571,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   imageAspect: "square",
   askSaveChats: false,
   askLayout: "window",
+  searchLayout: "sidebar",
   askAttachPage: false,
   cloudConsentGiven: false,
   customConsentGiven: false,

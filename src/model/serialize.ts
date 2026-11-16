@@ -227,7 +227,6 @@ interface StoredMeta {
   practice?: PracticeInfo;
   palette?: { id: string; name: string; colors: string[] };
   furniture?: { header?: string; numbers?: "center" | "right" };
-  searchLook?: "window";
 }
 
 /** A sticky note as stored: its paper carries its ink, in the note's own space. */
@@ -457,7 +456,6 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
     practice: normalizePractice(doc.practice),
     palette: readPalette(doc.palette),
     furniture: readFurniture(doc.furniture),
-    searchLook: doc.searchLook === "window" ? "window" : undefined,
   };
   return Object.values(meta).some((value) => value !== undefined) ? meta : undefined;
 }
@@ -1355,7 +1353,6 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   if (palette) doc.palette = palette;
   const furniture = readFurniture(meta.furniture);
   if (furniture) doc.furniture = furniture;
-  if (meta.searchLook === "window") doc.searchLook = "window";
   return doc;
 }
 

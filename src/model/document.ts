@@ -1131,11 +1131,6 @@ export interface InkDocument {
   palette?: { id: string; name: string; colors: string[] };
   /** A header and page numbers on every page (`model/furniture`). */
   furniture?: { header?: string; numbers?: "center" | "right" };
-  /**
-   * Search results in a window over the page rather than the sidebar
-   * (`model/search-look.ts`, discussion #112). Only ever stored as `"window"`.
-   */
-  searchLook?: "window";
 }
 
 /** Which way a notebook's pages run: a column (the default) or a row. */

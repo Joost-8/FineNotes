@@ -373,7 +373,6 @@ import { TryHint } from "./try-hint";
 import { closeMenuOnPressOutside } from "./menu-dismiss";
 import { SearchPanel } from "./search-panel";
 import { type SearchResult, matchesOfKind } from "../search/search-results";
-import { searchLookOf, writeSearchLook } from "../model/search-look";
 import { layoutPlainText, pdfHitGroups } from "../search/pdf-hits";
 import {
   type KeptPrinted,
@@ -4404,10 +4403,12 @@ export class InkView extends TextFileView {
     this.searchPanel ??= new SearchPanel({
       dock: this.searchBody,
       container: this.contentEl,
-      look: () => searchLookOf(this.doc),
+      look: () => (this.settings.searchLayout === "window" ? "window" : "sidebar"),
       setLook: (look) => {
-        // Kept with the notebook; a protected one only remembers it while open.
-        if (writeSearchLook(this.doc, look) && !this.isProtected()) this.requestSave();
+        // One choice for every notebook, as Ask's layout is.
+        if (this.settings.searchLayout === look) return;
+        this.settings.searchLayout = look;
+        void this.plugin.saveSettings();
       },
       goTo: (result, query) => void this.showSearchHits(result.pageIndex, query, result),
       onQuery: (query) => (this.lastSearch = query),

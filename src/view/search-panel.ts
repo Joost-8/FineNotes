@@ -1,7 +1,7 @@
 /**
  * Search this notebook (discussion #112): the field, and every match as a
- * row to step through, in one of two looks the notebook keeps for itself
- * (`model/search-look.ts`):
+ * row to step through, in one of two looks, the last one chosen for every
+ * notebook (the `searchLayout` setting):
  *
  * - the **sidebar**, docked at the right of the notebook as Goodnotes shows
  *   its search, beside the page sidebar's side, so both can be open;
@@ -26,7 +26,6 @@
 import { setIcon } from "obsidian";
 import { t } from "../i18n/translate";
 import type { Feature } from "../model/feature-index";
-import { type SearchLook, otherLook } from "../model/search-look";
 import type { WindowPlace } from "../model/calculator-store";
 import {
   type PageText,
@@ -40,14 +39,17 @@ import { type FeatureHost, featureHits, featureRow } from "./feature-rows";
 import { FloatingWindow } from "./floating-window";
 import { onTap } from "./selection-bar";
 
+/** How the results show: docked beside the page, or floating over it. */
+export type SearchLook = "sidebar" | "window";
+
 export interface SearchPanelHost {
   /** Where the sidebar docks: the notebook's body, beside the page. */
   dock: HTMLElement;
   /** Where the window floats: the notebook view's content area. */
   container: HTMLElement;
-  /** The look this notebook keeps. */
+  /** The look last chosen, in any notebook. */
   look(): SearchLook;
-  /** Keep a new look with the notebook. */
+  /** Keep a new look for every notebook. */
   setLook(look: SearchLook): void;
   /** Turn to a match and light it. */
   goTo(result: SearchResult, query: string): void;
@@ -246,9 +248,9 @@ export class SearchPanel {
     this.frame = null;
   }
 
-  /** The button that shows the results in the other look, and keeps that look with the notebook. */
+  /** The button that shows the results in the other look, and keeps that look for every notebook. */
   private switchButton(look: SearchLook): { icon: string; label: string; run: () => void } {
-    const other = otherLook(look);
+    const other: SearchLook = look === "window" ? "sidebar" : "window";
     return {
       icon: other === "sidebar" ? "panel-right" : "app-window",
       label: other === "sidebar" ? t("view.search.showInSidebar") : t("view.search.showAsWindow"),
