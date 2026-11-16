@@ -2059,14 +2059,73 @@ export default class GoodObsidianPlugin extends Plugin {
     if (!open) await this.app.fileManager.trashFile(file);
   }
 
-  /** Run one of this plugin's commands by its own id; says so when it needs a notebook. */
+  /**
+   * A feature's Show me (a tip's button, a search row's →): one of this
+   * plugin's commands, by its own id. Tips are mostly read on Home, so a
+   * notebook command brings a notebook forward first: the open one, else the
+   * last one opened. Obsidian 1.15's `executeCommandById` says true even when
+   * a command's check refuses it, so the check is asked here.
+   */
   private runOwnCommand(id: string): boolean {
+    // The tip describes the window, not a run started out of sight.
+    if (id === "learn-handwriting") {
+      this.openLearnWindow();
+      return true;
+    }
+    // From Home, opening Home shows nothing: go to its search field.
+    if (id === "open-library") {
+      void this.openLibrary().then(() => this.focusHomeSearch());
+      return true;
+    }
     const commands = (
-      this.app as unknown as { commands?: { executeCommandById?: (id: string) => boolean } }
+      this.app as unknown as {
+        commands?: {
+          commands?: Record<string, { checkCallback?: (checking: boolean) => boolean | void }>;
+          executeCommandById?: (id: string) => boolean;
+        };
+      }
     ).commands;
-    const ran = commands?.executeCommandById?.(`${this.manifest.id}:${id}`) === true;
-    if (!ran) new Notice(t("notebooks.features.needsNotebook"));
-    return ran;
+    const full = `${this.manifest.id}:${id}`;
+    const command = commands?.commands?.[full];
+    if (!command) return false;
+    const available = (): boolean => !command.checkCallback || command.checkCallback(true) === true;
+    if (available()) return commands?.executeCommandById?.(full) === true;
+    void this.bringNotebookForward().then((brought) => {
+      if (brought && available()) commands?.executeCommandById?.(full);
+      else new Notice(t("notebooks.features.needsNotebook"));
+    });
+    return true;
+  }
+
+  /** The open notebook last used, made the active tab; else the last notebook opened. */
+  private async bringNotebookForward(): Promise<boolean> {
+    const workspace = this.app.workspace;
+    const time = (leaf: WorkspaceLeaf): number =>
+      (leaf as unknown as { activeTime?: number }).activeTime ?? 0;
+    const open = workspace
+      .getLeavesOfType(VIEW_TYPE_INK)
+      .filter((leaf) => leaf.view instanceof InkView)
+      .sort((a, b) => time(b) - time(a))[0];
+    if (open) {
+      await workspace.revealLeaf(open);
+      workspace.setActiveLeaf(open, { focus: true });
+      return true;
+    }
+    const last = workspace
+      .getLastOpenFiles()
+      .map((path) => this.app.vault.getFileByPath(path))
+      .find((file): file is TFile => file !== null && this.isInkFile(file));
+    if (!last) return false;
+    const leaf = workspace.getLeaf("tab");
+    await leaf.openFile(last, { active: true });
+    return leaf.view instanceof InkView;
+  }
+
+  private focusHomeSearch(): void {
+    const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
+    leaf?.view.containerEl
+      .querySelector<HTMLInputElement>(".goodobsidian-library-search input")
+      ?.focus();
   }
 
   /** Remember the eraser's mode and size for the next session (and device). */
