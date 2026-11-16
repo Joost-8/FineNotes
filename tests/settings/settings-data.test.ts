@@ -293,7 +293,7 @@ const USED_VAULT = {
   imageAspect: "landscape",
   askSaveChats: true,
   askLayout: "sidebar",
-  searchLayout: "window",
+  searchLayout: "original",
   askAttachPage: true,
   cloudConsentGiven: true,
   customConsentGiven: true,

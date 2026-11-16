@@ -64,7 +64,7 @@ export const view = {
   "view.search.next": "Next match",
   "view.search.position": "{current} / {total}",
   "view.search.showInSidebar": "Show results in the sidebar",
-  "view.search.showAsWindow": "Show results as a window",
+  "view.search.showOriginal": "Show results as a list of pages",
   "view.search.matches.one": "{count} match",
   "view.search.matches.other": "{count} matches",
   "view.search.hintTranscribed":

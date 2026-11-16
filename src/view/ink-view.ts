@@ -372,6 +372,7 @@ import type { Feature } from "../model/feature-index";
 import { TryHint } from "./try-hint";
 import { closeMenuOnPressOutside } from "./menu-dismiss";
 import { SearchPanel } from "./search-panel";
+import { NotebookSearchModal } from "./search-modal";
 import { type SearchResult, matchesOfKind } from "../search/search-results";
 import { layoutPlainText, pdfHitGroups } from "../search/pdf-hits";
 import {
@@ -4400,27 +4401,49 @@ export class InkView extends TextFileView {
     const surface = this.surface;
     const pages = await this.notebookTextIndex(false);
     if (this.surface !== surface) return;
-    this.searchPanel ??= new SearchPanel({
-      dock: this.searchBody,
-      container: this.contentEl,
-      look: () => (this.settings.searchLayout === "window" ? "window" : "sidebar"),
-      setLook: (look) => {
-        // One choice for every notebook, as Ask's layout is.
-        if (this.settings.searchLayout === look) return;
-        this.settings.searchLayout = look;
-        void this.plugin.saveSettings();
-      },
-      goTo: (result, query) => void this.showSearchHits(result.pageIndex, query, result),
-      onQuery: (query) => (this.lastSearch = query),
-      onLayout: () => this.relayoutForSearch(),
-      onClose: () => this.surface?.setSearchHits(null),
-      features: this.plugin.featureHost(),
-    });
-    this.searchPanel.show(pages, this.lastSearch);
-    // The PDF pages not read yet join the list as they are read (#112).
+    // Whatever arrives later (a PDF's pages not read yet) joins the open list (#112).
+    let onIndex: (index: readonly PageText[]) => void;
+    if (this.settings.searchLayout === "original") {
+      const modal = new NotebookSearchModal(this.app, {
+        index: pages,
+        initial: this.lastSearch,
+        onQuery: (query) => (this.lastSearch = query),
+        goTo: (index, query) => void this.showSearchHits(index, query),
+        showFeature: (feature) => this.plugin.showFeature(feature),
+        features: this.plugin.featureHost(),
+        switchToSidebar: (query) => this.switchSearchLayout("sidebar", query),
+      });
+      modal.open();
+      onIndex = (index) => modal.setIndex(index);
+    } else {
+      this.searchPanel ??= new SearchPanel({
+        dock: this.searchBody,
+        switchToOriginal: (query) => this.switchSearchLayout("original", query),
+        goTo: (result, query) => void this.showSearchHits(result.pageIndex, query, result),
+        onQuery: (query) => (this.lastSearch = query),
+        onLayout: () => this.relayoutForSearch(),
+        onClose: () => this.surface?.setSearchHits(null),
+        features: this.plugin.featureHost(),
+      });
+      this.searchPanel.show(pages, this.lastSearch);
+      onIndex = (index) => this.searchPanel?.setIndex(index);
+    }
     void this.readPdfSearchText(surface.document.pages, () => {
-      void this.notebookTextIndex(false).then((index) => this.searchPanel?.setIndex(index));
+      void this.notebookTextIndex(false).then(onIndex);
     });
+  }
+
+  /**
+   * The search's other look, with the query as typed: the sidebar or the
+   * original list. One choice for every notebook, as Ask's layout is.
+   */
+  private switchSearchLayout(layout: "sidebar" | "original", query: string): void {
+    this.lastSearch = query;
+    if (this.settings.searchLayout !== layout) {
+      this.settings.searchLayout = layout;
+      void this.plugin.saveSettings();
+    }
+    void this.openSearch();
   }
 
   /** Search's sidebar came or went: the page narrows or widens beside it, gliding. */

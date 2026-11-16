@@ -11028,6 +11028,51 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
 
 /* ------------------------------------------------ search this notebook */
 
+/* The original look (search-modal.ts): a page per row, in Obsidian's own list. */
+.goodobsidian-search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.goodobsidian-search-page {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-search-count,
+.goodobsidian-search-kind {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: normal;
+}
+
+.goodobsidian-search-snippet {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.goodobsidian-search-kind {
+  margin-right: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Its sidebar button, at the field's end. */
+.prompt-input-container button.goodobsidian-search-switch.clickable-icon {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  color: var(--gob-icon);
+}
+
 /* The field and every match as a row (search-panel.ts, discussion #112):
    docked right of the page (.is-sidebar), as Goodnotes shows its search, or
    in a window over it (.is-window, a FloatingWindow). The rows look like
@@ -11052,10 +11097,6 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   border-left: 1px solid var(--gob-line);
   background: var(--gob-side-bg);
   overscroll-behavior: contain;
-}
-
-.goodobsidian-searchpanel.is-window {
-  flex: 1 1 auto;
 }
 
 .goodobsidian-searchpanel-top {
@@ -15048,7 +15089,6 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
    above the page, below pop-ups; moved by its bar, sized by its corner. */
 .goodobsidian-graph-window,
 .goodobsidian-eq-window,
-.goodobsidian-search-window,
 .goodobsidian-calc-window,
 .goodobsidian-zoombox-window {
   position: absolute;
@@ -15075,7 +15115,6 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 
 .goodobsidian-graph-window-bar,
 .goodobsidian-eq-window-bar,
-.goodobsidian-search-window-bar,
 .goodobsidian-calc-window-bar,
 .goodobsidian-zoombox-window-bar {
   display: flex;
@@ -15090,7 +15129,6 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 
 .goodobsidian-graph-window-title,
 .goodobsidian-eq-window-title,
-.goodobsidian-search-window-title,
 .goodobsidian-calc-window-title,
 .goodobsidian-zoombox-window-title {
   flex: 1 1 auto;
@@ -15109,7 +15147,6 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 
 button.clickable-icon.goodobsidian-graph-window-button,
 button.clickable-icon.goodobsidian-eq-window-button,
-button.clickable-icon.goodobsidian-search-window-button,
 button.clickable-icon.goodobsidian-calc-window-button,
 button.clickable-icon.goodobsidian-zoombox-window-button {
   flex: 0 0 auto;
@@ -15122,7 +15159,6 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 
 .goodobsidian-graph-window-body,
 .goodobsidian-eq-window-body,
-.goodobsidian-search-window-body,
 .goodobsidian-calc-window-body,
 .goodobsidian-zoombox-window-body {
   display: flex;
@@ -15171,7 +15207,6 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 /* The corner to resize from: a 28 px target over the graph's corner. */
 .goodobsidian-graph-window-grip,
 .goodobsidian-eq-window-grip,
-.goodobsidian-search-window-grip,
 .goodobsidian-calc-window-grip,
 .goodobsidian-zoombox-window-grip {
   position: absolute;
@@ -15189,7 +15224,6 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 
 .goodobsidian-graph-window-grip svg,
 .goodobsidian-eq-window-grip svg,
-.goodobsidian-search-window-grip svg,
 .goodobsidian-calc-window-grip svg,
 .goodobsidian-zoombox-window-grip svg {
   width: 14px;

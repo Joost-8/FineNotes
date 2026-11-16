@@ -1,15 +1,13 @@
 /**
- * Search this notebook (discussion #112): the field, and every match as a
- * row to step through, in one of two looks, the last one chosen for every
- * notebook (the `searchLayout` setting):
+ * Search this notebook in its sidebar (discussion #112): the field, and
+ * every match as a row to step through, docked at the right of the
+ * notebook as Goodnotes shows its search, so the page sidebar can stay open
+ * on the left. It is the default look; the other is the original list
+ * (`search-modal.ts`), and the button beside ✕ switches to it. The choice
+ * is the `searchLayout` setting, one for every notebook.
  *
- * - the **sidebar**, docked at the right of the notebook as Goodnotes shows
- *   its search, beside the page sidebar's side, so both can be open;
- * - the **window**, floating over the page (`floating-window.ts`), moved by
- *   its bar and sized from its corner like the calculator.
- *
- *   .goodobsidian-searchpanel            (.is-sidebar | .is-window)
- *     .goodobsidian-searchpanel-top      (field · look switch · ✕; the window's bar holds the last two)
+ *   .goodobsidian-searchpanel.is-sidebar
+ *     .goodobsidian-searchpanel-top      (field · original-list switch · ✕)
  *     .goodobsidian-searchpanel-nav      (3 / 75 · ↑ · ↓)
  *     .goodobsidian-searchpanel-list
  *       .goodobsidian-searchpanel-row × N  (kind icon · snippet with the match · page)
@@ -26,7 +24,6 @@
 import { setIcon } from "obsidian";
 import { t } from "../i18n/translate";
 import type { Feature } from "../model/feature-index";
-import type { WindowPlace } from "../model/calculator-store";
 import {
   type PageText,
   type SourceKind,
@@ -36,21 +33,13 @@ import {
 import { type SearchResult, keepCurrent, listResults, stepResult } from "../search/search-results";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { type FeatureHost, featureHits, featureRow } from "./feature-rows";
-import { FloatingWindow } from "./floating-window";
 import { onTap } from "./selection-bar";
-
-/** How the results show: docked beside the page, or floating over it. */
-export type SearchLook = "sidebar" | "window";
 
 export interface SearchPanelHost {
   /** Where the sidebar docks: the notebook's body, beside the page. */
   dock: HTMLElement;
-  /** Where the window floats: the notebook view's content area. */
-  container: HTMLElement;
-  /** The look last chosen, in any notebook. */
-  look(): SearchLook;
-  /** Keep a new look for every notebook. */
-  setLook(look: SearchLook): void;
+  /** Show the search as the original list instead, with the query as typed. */
+  switchToOriginal(query: string): void;
   /** Turn to a match and light it. */
   goTo(result: SearchResult, query: string): void;
   /** The query as typed, so searching again carries on where it left off. */
@@ -66,9 +55,6 @@ export interface SearchPanelHost {
 /** Rows made at once; more as the list is scrolled or stepped near its end. */
 const ROW_BATCH = 150;
 
-/** Where the window was, for every notebook on this device until Obsidian restarts. */
-let lastPlace: WindowPlace | null = null;
-
 const KIND_ICONS: Record<SourceKind, string> = {
   handwriting: "pen-line",
   text: "type",
@@ -82,12 +68,11 @@ function kindLabel(kind: SourceKind): string {
 }
 
 export class SearchPanel {
-  /** The panel's own content, moved between the sidebar and the window. */
+  /** The panel, docked in the notebook's body while open. */
   readonly el: HTMLElement;
   private readonly top: HTMLElement;
   private readonly field: HTMLInputElement;
   private readonly clear: HTMLButtonElement;
-  private readonly tools: HTMLElement;
   private readonly position: HTMLElement;
   private readonly prev: HTMLButtonElement;
   private readonly next: HTMLButtonElement;
@@ -101,7 +86,6 @@ export class SearchPanel {
   private total = 0;
   private current: number | null = null;
   private rows: HTMLElement[] = [];
-  private frame: FloatingWindow | null = null;
   private open = false;
 
   constructor(private readonly host: SearchPanelHost) {
@@ -128,7 +112,13 @@ export class SearchPanel {
       this.field.focus();
     });
     this.clear.addClass("goodobsidian-searchpanel-clear");
-    this.tools = this.top.createDiv({ cls: "goodobsidian-searchpanel-tools" });
+    const tools = this.top.createDiv({ cls: "goodobsidian-searchpanel-tools" });
+    this.iconButton(tools, "list", t("view.search.showOriginal"), () => {
+      const query = this.field.value;
+      this.close();
+      this.host.switchToOriginal(query);
+    });
+    this.iconButton(tools, "x", t("common.close"), () => this.close());
 
     const nav = this.el.createDiv({ cls: "goodobsidian-searchpanel-nav" });
     this.position = nav.createSpan({ cls: "goodobsidian-searchpanel-position" });
@@ -154,12 +144,7 @@ export class SearchPanel {
     return this.open;
   }
 
-  /** Whether it is docked beside the page, taking room from it. */
-  get isDocked(): boolean {
-    return this.open && this.frame === null;
-  }
-
-  /** Open in the notebook's look with `query` (the last one) selected, or bring the field back. */
+  /** Open with `query` (the last one) selected, or bring the field back. */
   show(index: readonly PageText[], query: string): void {
     this.index = index;
     if (!this.open) {
@@ -205,63 +190,14 @@ export class SearchPanel {
     if (at !== null) this.choose(at);
   }
 
-  // --- Looks ----------------------------------------------------------------
-
   private mount(): void {
-    const look = this.host.look();
-    this.tools.empty();
-    if (look === "window") {
-      this.el.removeClass("is-sidebar");
-      this.el.addClass("is-window");
-      this.frame = new FloatingWindow({
-        container: this.host.container,
-        cls: "goodobsidian-search-window",
-        title: t("toolbar.searchNotebook"),
-        label: t("toolbar.searchNotebook"),
-        buttons: [this.switchButton(look)],
-        min: { w: 260, h: 220 },
-        firstPlace: (bounds) => {
-          const w = Math.min(360, bounds.w - 16);
-          return { x: Math.max(8, bounds.w - w - 16), y: 72, w, h: Math.min(520, bounds.h - 88) };
-        },
-        place: () => lastPlace,
-        savePlace: (place) => {
-          lastPlace = place;
-        },
-        onClose: () => this.close(),
-      });
-      this.frame.body.appendChild(this.el);
-    } else {
-      this.el.removeClass("is-window");
-      this.el.addClass("is-sidebar");
-      const sw = this.switchButton(look);
-      this.iconButton(this.tools, sw.icon, sw.label, sw.run);
-      this.iconButton(this.tools, "x", t("common.close"), () => this.close());
-      this.host.dock.appendChild(this.el);
-    }
+    this.el.addClass("is-sidebar");
+    this.host.dock.appendChild(this.el);
     this.host.onLayout();
   }
 
   private unmount(): void {
     this.el.detach();
-    this.frame?.destroy();
-    this.frame = null;
-  }
-
-  /** The button that shows the results in the other look, and keeps that look for every notebook. */
-  private switchButton(look: SearchLook): { icon: string; label: string; run: () => void } {
-    const other: SearchLook = look === "window" ? "sidebar" : "window";
-    return {
-      icon: other === "sidebar" ? "panel-right" : "app-window",
-      label: other === "sidebar" ? t("view.search.showInSidebar") : t("view.search.showAsWindow"),
-      run: () => {
-        this.host.setLook(other);
-        this.unmount();
-        this.mount();
-        this.field.focus();
-        this.scrollToCurrent();
-      },
-    };
   }
 
   // --- Searching ------------------------------------------------------------
