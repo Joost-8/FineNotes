@@ -10,6 +10,7 @@ export default defineConfig({
       // Pure modules plus the notebook input adapters covered by lifecycle tests.
       include: [
         "src/changelog.ts",
+        "src/model/sponsors.ts",
         "src/settings-data.ts",
         "src/view/settings-art.ts",
         "src/model/contents-drag.ts",

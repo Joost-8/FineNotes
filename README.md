@@ -24,6 +24,15 @@ Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Andro
 
 **Support FineNotes:** [GitHub Sponsors](https://github.com/sponsors/Joost-8)
 
+<!-- sponsors:start -->
+
+**Thank you, sponsors!**
+
+<a href="https://github.com/mcarter-astronautdev" title="Maria Carter"><img src="https://github.com/mcarter-astronautdev.png?size=96" width="48" height="48" alt="Maria Carter"></a>
+<a href="https://github.com/e-kartal" title="e-kartal"><img src="https://github.com/e-kartal.png?size=96" width="48" height="48" alt="e-kartal"></a>
+<a href="https://github.com/fariszyzy" title="Faris"><img src="https://github.com/fariszyzy.png?size=96" width="48" height="48" alt="Faris"></a>
+<!-- sponsors:end -->
+
 ## Features
 
 **Handwriting recognition on your device: Grape (handwriting recognizer model)**

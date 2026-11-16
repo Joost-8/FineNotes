@@ -157,6 +157,7 @@ import {
   nextNewsSince,
   simpleOfferDue,
 } from "./model/tips";
+import { sponsorThanks } from "./model/sponsors";
 import { type TipsPage, TipsModal } from "./view/tips-modal";
 import {
   type Feature,
@@ -1835,9 +1836,12 @@ export default class GoodObsidianPlugin extends Plugin {
     const { newsSince } = this.settings;
     const version = this.manifest.version;
     const tips = highlightsSince(newsSince, version);
-    const kind = homeCardKind(tips.length > 0, simpleOfferDue(this.settings));
+    // New sponsors are news too: thanked on the card even in a release with no pictures.
+    const sponsors = sponsorThanks(newsSince, version);
+    const kind = homeCardKind(tips.length > 0 || sponsors !== null, simpleOfferDue(this.settings));
     if (kind === "news") {
-      return { kind, tips, version: latestHighlighted(newsSince, version) ?? version };
+      const shown = tips.length > 0 ? latestHighlighted(newsSince, version) : null;
+      return { kind, tips, sponsors, version: shown ?? version };
     }
     return kind === "simple" ? { kind } : null;
   }

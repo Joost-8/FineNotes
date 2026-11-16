@@ -10,6 +10,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Thank you, sponsors.** When a release comes with new GitHub sponsors,
+  Home's what's-new card thanks them by name, then everyone who sponsored
+  before them. The heart opens the sponsor page. The README shows every
+  public sponsor's picture.
 - **Search results you can step through**
   ([discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
   Search this notebook opens in a sidebar at the right of the page that

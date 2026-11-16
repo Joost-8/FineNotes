@@ -19207,6 +19207,35 @@ button.goodobsidian-home-card-close.clickable-icon {
   position: relative;
   margin-top: 12px;
 }
+/* New sponsors, thanked by name under the pictures; the heart is GitHub Sponsors' pink. */
+.goodobsidian-home-card-thanks {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+}
+.goodobsidian-home-card-heart {
+  flex: none;
+  display: flex;
+  color: #bf3989;
+  padding-top: 1px;
+}
+.goodobsidian-home-card-heart svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+.goodobsidian-home-card-thanks-words {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.goodobsidian-home-card-thanks-new {
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-home-card-thanks-earlier {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
 .goodobsidian-home-card-pictures {
   display: flex;
   gap: 12px;

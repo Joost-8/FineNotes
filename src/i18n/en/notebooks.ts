@@ -1301,6 +1301,9 @@ export const notebooks = {
   "notebooks.tips.section.draw": "Draw and customize",
   "notebooks.home.newIn": "New in {version}",
   "notebooks.home.dismissCard": "Dismiss",
+  "notebooks.home.newSponsors": "Thank you, {names}, for sponsoring FineNotes!",
+  "notebooks.home.earlierSponsors": "And thanks again to {names}.",
+  "notebooks.home.sponsorPage": "Sponsor FineNotes",
 
   // Home, the notebook library (view/library-view.ts and its models).
   "notebooks.home.title": "Home",

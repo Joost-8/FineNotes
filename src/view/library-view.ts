@@ -80,7 +80,8 @@ import { INBOX_FOLDER } from "../model/inbox";
 import { ASSETS_FOLDER } from "../model/vault-folders";
 import { HOME_FILE, HOME_FILE_FLAG } from "../model/home-file";
 import { notebookOwnedFiles } from "../model/library-files";
-import { type TextKey, t, tn } from "../i18n/translate";
+import { type TextKey, currentLanguage, t, tn } from "../i18n/translate";
+import { SPONSOR_PAGE, type SponsorThanks, joinNames, sponsorName } from "../model/sponsors";
 import {
   CHECK_RESULT_MS,
   type CheckOutcome,
@@ -141,7 +142,9 @@ import {
 
 /** What the view needs from the plugin. */
 /** What Home's one card is showing. */
-export type HomeCard = { kind: "news"; version: string; tips: readonly Tip[] } | { kind: "simple" };
+export type HomeCard =
+  | { kind: "news"; version: string; tips: readonly Tip[]; sponsors: SponsorThanks | null }
+  | { kind: "simple" };
 
 export interface LibraryHost {
   /** Tips: the collections, or one page of them. */
@@ -1691,6 +1694,16 @@ export class LibraryView extends ItemView {
     const head = card.createDiv({ cls: "goodobsidian-home-card-title" });
     setIcon(head.createSpan({ cls: "goodobsidian-home-card-icon" }), "sparkles");
     head.createSpan({ text: title });
+    if (news.tips.length > 0) this.newsPictures(card, news, title);
+    if (news.sponsors) this.sponsorThanks(card, news.sponsors);
+    return card;
+  }
+
+  private newsPictures(
+    card: HTMLElement,
+    news: Extract<HomeCard, { kind: "news" }>,
+    title: string,
+  ): void {
     const frame = card.createDiv({ cls: "goodobsidian-home-card-frame" });
     const row = frame.createDiv({ cls: "goodobsidian-home-card-pictures" });
     const byPicture = new Map<Element, TipVisual>();
@@ -1721,7 +1734,31 @@ export class LibraryView extends ItemView {
       });
     });
     this.addStripArrows(frame, row);
-    return card;
+  }
+
+  /** New sponsors by name, then everyone before them; the heart opens the sponsor page. */
+  private sponsorThanks(card: HTMLElement, thanks: SponsorThanks): void {
+    const lang = currentLanguage();
+    const row = card.createDiv({ cls: "goodobsidian-home-card-thanks", attr: { lang } });
+    const heart = row.createEl("a", {
+      cls: "goodobsidian-home-card-heart",
+      href: SPONSOR_PAGE,
+      attr: { "aria-label": t("notebooks.home.sponsorPage") },
+    });
+    setIcon(heart, "heart");
+    const words = row.createDiv({ cls: "goodobsidian-home-card-thanks-words" });
+    const names = (sponsors: readonly Parameters<typeof sponsorName>[0][]): string =>
+      joinNames(sponsors.map(sponsorName), lang);
+    words.createDiv({
+      cls: "goodobsidian-home-card-thanks-new",
+      text: t("notebooks.home.newSponsors", { names: names(thanks.fresh) }),
+    });
+    if (thanks.earlier.length > 0) {
+      words.createDiv({
+        cls: "goodobsidian-home-card-thanks-earlier",
+        text: t("notebooks.home.earlierSponsors", { names: names(thanks.earlier) }),
+      });
+    }
   }
 
   /** A mouse has no sideways swipe: arrows at the row's ends, there only while it can go further. */
