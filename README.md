@@ -18,10 +18,6 @@ Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Andro
 
 **Website:** [finenotes.app](https://finenotes.app/), with a demo you can [try in your browser](https://finenotes.app/play/)
 
-**Follow FineNotes:** [X](https://x.com/finenotes_) · [Instagram](https://www.instagram.com/finenotesobsidian/) · [TikTok](https://www.tiktok.com/@finenotesobsidian) · [YouTube](https://www.youtube.com/@FineNotesAtObsidian)
-
-**Ideas and questions:** [Discussions](https://github.com/Joost-8/FineNotes/discussions)
-
 **Support FineNotes:** [GitHub Sponsors](https://github.com/sponsors/Joost-8)
 
 <!-- sponsors:start -->
@@ -32,6 +28,10 @@ Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Andro
 <a href="https://github.com/e-kartal" title="e-kartal"><img src="https://github.com/e-kartal.png?size=96" width="48" height="48" alt="e-kartal"></a>
 <a href="https://github.com/fariszyzy" title="Faris"><img src="https://github.com/fariszyzy.png?size=96" width="48" height="48" alt="Faris"></a>
 <!-- sponsors:end -->
+
+**Follow FineNotes:** [X](https://x.com/finenotes_) · [Instagram](https://www.instagram.com/finenotesobsidian/) · [TikTok](https://www.tiktok.com/@finenotesobsidian) · [YouTube](https://www.youtube.com/@FineNotesAtObsidian)
+
+**Ideas and questions:** [Discussions](https://github.com/Joost-8/FineNotes/discussions)
 
 ## Features
 
