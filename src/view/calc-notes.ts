@@ -23,6 +23,7 @@ import { writingLines } from "../canvas/backdrop";
 import { measureEquation } from "../canvas/equation-paint";
 import { t } from "../i18n/translate";
 import {
+  fitAnswer,
   type GlyphSet,
   glyphsFor,
   glyphsFromSamples,
@@ -674,9 +675,16 @@ export class CalcNotes {
     const surface = this.host.surface();
     if (!glyphs || !page || !surface || !stillLast(page, eq, after)) return;
     const pen = eq.strokes[1];
-    const written = fraction
+    const raw = fraction
       ? writeFraction(fraction.n, fraction.d, glyphs, place)
       : writeWithPowers(shown, glyphs, place);
+    const lineLeft = Math.min(...note.strokes.map((s) => strokeBounds(s)?.minX ?? Infinity));
+    const written = fitAnswer(
+      raw,
+      place,
+      Number.isFinite(lineLeft) ? lineLeft : place.x,
+      page.geometry,
+    );
     const ink = written.map((pts) => ({
       color: pen.color,
       size: pen.size,

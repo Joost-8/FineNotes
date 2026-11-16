@@ -132,6 +132,11 @@ extracted from the matching section of this file by `release.yml`.
   Insert image › Photos lets you pick several pictures in one go, instead of
   one per tap. They are placed side by side on the page in view, as one undo
   step.
+- **A written answer stays on the page.** Write answer after an "=" near
+  the right edge wrote the answer past the page. It now shrinks a little to
+  fit after the "=", or, when it is too long for that, goes on the line
+  below, starting under the sum.
+
 - **A tapped word is the word you tapped** (FineNotes#202). On a line with a
   sum, or with two words written close together, the word check could tie
   every word to the ink of the word before it: tapping "This" offered
