@@ -27,7 +27,20 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run build
+        env:
+          # "Help improve Grape" (src/view/grape-sharing.ts) is built in only
+          # with both. The server's address lives in the repository variable
+          # FINENOTES_SHARING_ENDPOINT, not in the code.
+          FINENOTES_SHARING: "1"
+          FINENOTES_SHARING_ENDPOINT: ${{ vars.FINENOTES_SHARING_ENDPOINT }}
+        run: |
+          # Without an address the build would quietly carry no sharing.
+          if [ -z "$FINENOTES_SHARING_ENDPOINT" ]; then
+            echo "::error::The repository variable FINENOTES_SHARING_ENDPOINT is not set."
+            exit 1
+          fi
+          npm run build
+          grep -q "$FINENOTES_SHARING_ENDPOINT" main.js
 
       - name: Attest build provenance of plugin artifacts
         uses: actions/attest-build-provenance@v4

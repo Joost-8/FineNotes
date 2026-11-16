@@ -83,8 +83,8 @@ const BUNDLE_GRAPE = process.env.FINENOTES_BUNDLE_GRAPE === "1";
 
 /**
  * "Help improve Grape" (src/view/grape-sharing.ts): built only with
- * FINENOTES_SHARING=1. Collection is held until TU/e's Ethical Review Board
- * approves it (2026-11-16), so a release carries none of it.
+ * FINENOTES_SHARING=1. Releases are built with it (release.yml, Joost
+ * 2026-11-16); a plain local build carries none of it.
  */
 const SHARING = process.env.FINENOTES_SHARING === "1";
 /**

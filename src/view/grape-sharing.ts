@@ -8,9 +8,9 @@
  * pure part (what an item holds, the ledger, batches) is
  * recognition/hwr/sharing.ts.
  *
- * Loaded only in builds made with FINENOTES_SHARING=1 (sharing-feature.ts):
- * collection is held until TU/e's Ethical Review Board approves it, and the
- * server refuses batches until then too.
+ * Loaded only in builds made with FINENOTES_SHARING=1 (sharing-feature.ts),
+ * which releases are (release.yml); the server refuses batches while its
+ * GRAPE_INK_OPEN is off.
  */
 
 import {

@@ -1,9 +1,8 @@
 # Privacy notice: Help improve Grape
 
-> **Status: not collecting.** This feature is not in any FineNotes release
-> yet, and the server refuses everything sent to it. Collection starts only
-> after the TU/e Ethical Review Board has approved it. This notice will say
-> so when that changes.
+> **Status: collecting, only from people who turn it on.** Help improve
+> Grape is in FineNotes releases from November 2026, off until you agree to
+> it in Settings.
 
 FineNotes sends nothing anywhere on its own. This notice covers one optional
 feature, **Help improve Grape**, which shares handwriting you have labelled
