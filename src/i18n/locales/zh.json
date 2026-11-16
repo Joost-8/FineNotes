@@ -2920,6 +2920,8 @@
   "view.morePanel.darkPages": "深色页面",
   "view.morePanel.shortcuts": "键盘快捷键",
   "view.morePanel.homeLink": "复制主屏幕链接",
+  "view.morePanel.present": "演示",
+  "view.present.stop": "结束演示",
   "view.morePanel.darkPdf": "深色 PDF 页面",
   "view.morePanel.drawWithFinger": "用手指书写",
   "view.morePanel.desk": "桌面",

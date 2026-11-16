@@ -368,6 +368,8 @@ export const view = {
   "view.morePanel.darkPages": "Dark pages",
   "view.morePanel.shortcuts": "Keyboard shortcuts",
   "view.morePanel.homeLink": "Copy home screen link",
+  "view.morePanel.present": "Present",
+  "view.present.stop": "Stop presenting",
   "view.morePanel.darkPdf": "Dark PDF pages",
   "view.morePanel.drawWithFinger": "Draw with finger",
   "view.morePanel.desk": "Desk",

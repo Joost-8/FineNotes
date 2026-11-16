@@ -2920,6 +2920,8 @@
   "view.morePanel.darkPages": "หน้ามืด",
   "view.morePanel.shortcuts": "แป้นพิมพ์ลัด",
   "view.morePanel.homeLink": "คัดลอกลิงก์หน้าจอโฮม",
+  "view.morePanel.present": "นำเสนอ",
+  "view.present.stop": "หยุดการนำเสนอ",
   "view.morePanel.darkPdf": "หน้า PDF มืด",
   "view.morePanel.drawWithFinger": "วาดด้วยนิ้ว",
   "view.morePanel.desk": "โต๊ะ",
