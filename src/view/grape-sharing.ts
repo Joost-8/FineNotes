@@ -90,47 +90,88 @@ export class GrapeSharing implements SharingFeature {
    * device of the vault, or when there is nothing to share.
    */
   drawInvite(parent: HTMLElement): void {
-    void this.load().then(() => {
-      const ledger = this.ledger;
-      const items = this.items;
-      if (!ledger || !items || ledger.invited || sharingOn(ledger)) return;
-      const pending = pendingItems(items, ledger);
-      if (pending.length === 0) return;
-      const card = parent.createDiv({ cls: "goodobsidian-share-invite" });
-      setIcon(card.createDiv({ cls: "goodobsidian-share-invite-icon" }), "heart-handshake");
-      const text = card.createDiv({ cls: "goodobsidian-share-invite-text" });
-      text.createDiv({ cls: "goodobsidian-share-invite-title", text: st("invite.title") });
-      text.createDiv({ cls: "goodobsidian-share-desc", text: st("invite.body") });
-      // Help shares from here, without the sheet, so the card says what it
-      // shares, how, and where the rest is (Joost, 2026-11-16).
-      const terms = text.createDiv({
-        cls: "goodobsidian-share-desc",
-        text: `${stn("invite.terms", pending.length)} `,
-      });
-      terms.createEl("a", { text: st("consent.policy"), href: PRIVACY_URL });
-      const buttons = card.createDiv({ cls: "goodobsidian-share-invite-buttons" });
-      const later = buttons.createEl("button", { text: st("invite.later") });
-      // Not filled: the window's own Done stays its one primary button.
-      const more = buttons.createEl("button", { text: st("invite.more") });
-      const help = buttons.createEl("button", { text: st("invite.help") });
-      const answered = (): void => {
-        if (this.ledger && !sharingOn(this.ledger)) {
-          void this.saveLedger(inviteDismissed(this.ledger));
-        }
-      };
-      later.addEventListener("click", () => {
-        card.remove();
-        answered();
-      });
-      more.addEventListener("click", () => {
-        card.remove();
-        // Closing the sheet without sharing also answers the invite.
-        this.openConsent(() => undefined, answered);
-      });
-      help.addEventListener("click", () => {
-        card.remove();
-        void this.send(agree(ledger, Date.now(), randomBytes), pending, []);
-      });
+    void this.inviteFor().then((pending) => {
+      if (pending) this.inviteCard(parent, "learned", pending, () => undefined);
+    });
+  }
+
+  /**
+   * The same invite as a card in the corner, when a practice sheet's last
+   * line was just written (Joost, 2026-11-16): the other moment someone has
+   * just made labelled handwriting. Shown once per vault, whichever comes
+   * first.
+   */
+  inviteAfterSheet(): void {
+    void this.inviteFor().then((pending) => {
+      if (!pending) return;
+      const notice = new Notice(
+        createFragment((fragment) => {
+          this.inviteCard(fragment.createDiv(), "sheet", pending, () => notice.hide());
+        }),
+        0,
+      );
+    });
+  }
+
+  /** What the invite would share, or null when it is not to be shown. */
+  private async inviteFor(): Promise<ShareItem[] | null> {
+    await this.load();
+    const ledger = this.ledger;
+    const items = this.items;
+    if (!ledger || !items || ledger.invited || sharingOn(ledger)) return null;
+    const pending = pendingItems(items, ledger);
+    return pending.length > 0 ? pending : null;
+  }
+
+  private inviteCard(
+    parent: HTMLElement,
+    moment: "learned" | "sheet",
+    pending: ShareItem[],
+    done: () => void,
+  ): void {
+    const card = parent.createDiv({ cls: "goodobsidian-share-invite" });
+    setIcon(card.createDiv({ cls: "goodobsidian-share-invite-icon" }), "heart-handshake");
+    const text = card.createDiv({ cls: "goodobsidian-share-invite-text" });
+    text.createDiv({ cls: "goodobsidian-share-invite-title", text: st("invite.title") });
+    text.createDiv({
+      cls: "goodobsidian-share-desc",
+      text: st(moment === "sheet" ? "invite.bodySheet" : "invite.body"),
+    });
+    // Help shares from here, without the sheet, so the card says what it
+    // shares, how, and where the rest is (Joost, 2026-11-16).
+    const terms = text.createDiv({
+      cls: "goodobsidian-share-desc",
+      text: `${stn("invite.terms", pending.length)} `,
+    });
+    terms.createEl("a", { text: st("consent.policy"), href: PRIVACY_URL });
+    const buttons = card.createDiv({ cls: "goodobsidian-share-invite-buttons" });
+    const later = buttons.createEl("button", { text: st("invite.later") });
+    // Not filled: the learn window's own Done stays its one primary button.
+    const more = buttons.createEl("button", { text: st("invite.more") });
+    const help = buttons.createEl("button", { text: st("invite.help") });
+    const answered = (): void => {
+      if (this.ledger && !sharingOn(this.ledger)) {
+        void this.saveLedger(inviteDismissed(this.ledger));
+      }
+    };
+    const close = (event: MouseEvent): void => {
+      // A notice hides on any click; the buttons decide for themselves.
+      event.stopPropagation();
+      card.remove();
+      done();
+    };
+    later.addEventListener("click", (event) => {
+      close(event);
+      answered();
+    });
+    more.addEventListener("click", (event) => {
+      close(event);
+      // Closing the sheet without sharing also answers the invite.
+      this.openConsent(() => undefined, answered);
+    });
+    help.addEventListener("click", (event) => {
+      close(event);
+      if (this.ledger) void this.send(agree(this.ledger, Date.now(), randomBytes), pending, []);
     });
   }
 

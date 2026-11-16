@@ -1277,7 +1277,9 @@ export default class GoodObsidianPlugin extends Plugin {
     if (fresh === 0) return;
     this.settings.relearnRemindedAt = count;
     void this.saveSettings();
-    showRelearnNotice(fresh, record !== undefined, () => void this.learner.start());
+    // In the learn window, not in the background: the result, and the
+    // invite to share under a result that helped, show there.
+    showRelearnNotice(fresh, record !== undefined, () => this.learnInWindow());
   }
 
   /**
@@ -1463,6 +1465,12 @@ export default class GoodObsidianPlugin extends Plugin {
   /** The Learn your handwriting window: the AI menu's row, the settings, a practice sheet's button. */
   openLearnWindow(): void {
     new LearnWindow(this.app, this).open();
+  }
+
+  /** Open the learn window and start learning in it. */
+  learnInWindow(): void {
+    this.openLearnWindow();
+    void this.learner.start();
   }
 
   /** Keep the calculator's switches and history (model/calculator-store.ts). */

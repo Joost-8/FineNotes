@@ -100,7 +100,7 @@ import {
   readCorrections,
 } from "./handwriting-learning";
 import { sheetButton } from "../recognition/hwr/learn-window-model";
-import { practiceLines } from "../recognition/practice";
+import { practiceLines, promptCount } from "../recognition/practice";
 import { CalcNotes } from "./calc-notes";
 import {
   type ChatImage,
@@ -622,6 +622,9 @@ function touchedInk(strokeIds: readonly string[], read: SelectionText | null): s
   for (const word of read?.words ?? []) for (const id of word.strokeIds) ids.add(id);
   return [...ids];
 }
+
+/** How long the pen rests after a practice sheet's last line before the sharing invite. */
+const SHEET_INVITE_DELAY_MS = 4000;
 
 export class InkView extends TextFileView {
   /** The notebook on screen; a blank one until a file has loaded. */
@@ -1277,6 +1280,7 @@ export class InkView extends TextFileView {
   }
 
   override async onClose(): Promise<void> {
+    window.clearTimeout(this.sheetInviteTimer);
     this.recordLastPage();
     this.audio?.destroy();
     this.audio = null;
@@ -4836,6 +4840,8 @@ export class InkView extends TextFileView {
     this.sidebar?.setBoard(this.isBoard);
     // A practice file has the pen and the eraser, and nothing else.
     this.toolbar?.setPractice(practice);
+    // Another document in this view: its first count is not "finishing" it.
+    this.practiceFull = null;
     if (practice) void this.loadLearnElsewhere();
     // A PDF's pages become pages: a board has none to add.
     this.toolbar?.setInsertPdfVisible(!this.isBoard);
@@ -4867,10 +4873,30 @@ export class InkView extends TextFileView {
     this.syncLearnButton();
   }
 
+  /**
+   * Whether every line of this practice sheet was copied, as of the last
+   * count; null until the sheet's first count, so opening a finished sheet
+   * is not "finishing" it.
+   */
+  private practiceFull: boolean | null = null;
+  private sheetInviteTimer = 0;
+
   /** The practice sheet's Learn button: lines copied here and elsewhere, against the 10 needed. */
   private syncLearnButton(): void {
     if (!this.isPractice) return;
-    const lines = practiceLines(this.doc).length + this.learnElsewhere.lines;
+    const here = practiceLines(this.doc).length;
+    const full = here >= promptCount(this.doc);
+    // The last line just went down: the moment to ask about sharing. A line
+    // counts from its first stroke, so wait until the pen has rested, and
+    // ask only if the sheet is still full then (not erased again).
+    if (full && this.practiceFull === false) {
+      window.clearTimeout(this.sheetInviteTimer);
+      this.sheetInviteTimer = window.setTimeout(() => {
+        if (this.practiceFull) this.plugin.sharing?.inviteAfterSheet();
+      }, SHEET_INVITE_DELAY_MS);
+    }
+    this.practiceFull = full;
+    const lines = here + this.learnElsewhere.lines;
     const { count, ready } = sheetButton(lines, this.learnElsewhere.corrections);
     this.toolbar?.setLearnCount(count, ready);
   }

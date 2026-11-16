@@ -69,6 +69,8 @@ const TEXT = {
   "invite.title": "Help Grape read everyone's handwriting?",
   "invite.body":
     "Your lines just made Grape read you better. Shared, they help it read strangers too.",
+  "invite.bodySheet":
+    "You just copied a whole practice sheet. Shared, those lines help Grape read strangers' handwriting too.",
   "invite.later": "Not now",
   "invite.more": "Learn more",
   "invite.help": "Help",
