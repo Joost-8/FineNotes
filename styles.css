@@ -9890,6 +9890,17 @@ input[type="range"].goodobsidian-player-scrubber {
   box-shadow: 0 0 0 1.5px hsla(var(--interactive-accent-hsl), 0.55);
 }
 
+/* The results list's current hit (#112): the same mark, filled deeper and
+   ringed in the accent itself, so it stands out among the page's others. */
+.goodobsidian-search-mark.is-current {
+  background: hsla(var(--interactive-accent-hsl), 0.38);
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+.goodobsidian-page-textbox.is-search-current {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
 /* A handwritten task's box beside its ink (2.5), in the ink's colour (set
    inline); a tap ticks it. The export draws the same box (paintTaskBox). */
 .goodobsidian-task-mark {
@@ -11017,6 +11028,7 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
 
 /* ------------------------------------------------ search this notebook */
 
+/* The original look (search-modal.ts): a page per row, in Obsidian's own list. */
 .goodobsidian-search-hit {
   display: flex;
   flex-direction: column;
@@ -11048,6 +11060,232 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   margin-right: 6px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* Its sidebar button, at the field's end. */
+.prompt-input-container button.goodobsidian-search-switch.clickable-icon {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  color: var(--gob-icon);
+}
+
+/* The field and every match as a row (search-panel.ts, discussion #112):
+   docked right of the page (.is-sidebar), as Goodnotes shows its search, or
+   in a window over it (.is-window, a FloatingWindow). The rows look like
+   the page sidebar's Contents rows; the current one has the accent fill. */
+.goodobsidian-searchpanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  color: var(--text-normal);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-searchpanel.is-sidebar {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  order: 10;
+  width: 320px;
+  max-width: 45%;
+  padding-bottom: var(--goodobsidian-keyboard-pad, 0px);
+  border-left: 1px solid var(--gob-line);
+  background: var(--gob-side-bg);
+  overscroll-behavior: contain;
+}
+
+.goodobsidian-searchpanel-top {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.goodobsidian-searchpanel.is-sidebar .goodobsidian-searchpanel-top {
+  padding: 10px 6px 4px 12px;
+}
+
+.goodobsidian-searchpanel-field {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 4px 0 10px;
+  border-radius: var(--gob-radius-m);
+  background: var(--gob-well);
+}
+
+.goodobsidian-searchpanel-glass {
+  display: flex;
+  color: var(--text-faint);
+}
+
+.goodobsidian-searchpanel-glass svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-searchpanel-field input[type="search"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--font-ui-medium);
+}
+
+.goodobsidian-searchpanel-field input[type="search"]::-webkit-search-cancel-button {
+  display: none;
+}
+
+.goodobsidian-searchpanel-tools {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+button.clickable-icon.goodobsidian-searchpanel-button {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  color: var(--gob-icon);
+}
+
+button.clickable-icon.goodobsidian-searchpanel-button:disabled {
+  opacity: 0.35;
+}
+
+button.clickable-icon.goodobsidian-searchpanel-clear {
+  width: 28px;
+  height: 28px;
+  color: var(--text-faint);
+}
+
+.goodobsidian-searchpanel-clear.is-hidden {
+  display: none;
+}
+
+/* "3 / 75" and the steps: the count is the state, the arrows its controls. */
+.goodobsidian-searchpanel-nav {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  min-height: 40px;
+  padding: 0 6px 0 14px;
+}
+
+.goodobsidian-searchpanel-position {
+  flex: 1 1 auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodobsidian-searchpanel-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 12px;
+  /* Chrome, not canvas: vertical scrolling only. */
+  touch-action: pan-y;
+}
+
+button.clickable-icon.goodobsidian-searchpanel-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding: 10px 10px 10px 8px;
+  border-radius: var(--gob-radius-m);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-normal, 400);
+  line-height: 1.35;
+  text-align: start;
+  white-space: normal;
+}
+
+button.clickable-icon.goodobsidian-searchpanel-row + .goodobsidian-searchpanel-row {
+  margin-top: 1px;
+}
+
+button.clickable-icon.goodobsidian-searchpanel-row.is-current {
+  background: var(--gob-active-bg);
+}
+
+.goodobsidian-searchpanel-kind {
+  display: flex;
+  flex: 0 0 auto;
+  padding-top: 1px;
+  color: var(--text-faint);
+}
+
+.goodobsidian-searchpanel-kind svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-searchpanel-row.is-current .goodobsidian-searchpanel-kind {
+  color: var(--gob-active-fg);
+}
+
+/* Two lines at most, so a long match still shows its words around it. */
+.goodobsidian-searchpanel-snippet {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+/* The match, marked as the page marks it. */
+.goodobsidian-searchpanel-match {
+  border-radius: 3px;
+  background: hsla(var(--interactive-accent-hsl), 0.22);
+  box-shadow: 0 0 0 1px hsla(var(--interactive-accent-hsl), 0.35);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-searchpanel-page {
+  flex: 0 0 auto;
+  min-width: 2ch;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.goodobsidian-searchpanel-list .goodobsidian-feature-row {
+  margin-top: 6px;
+}
+
+.goodobsidian-searchpanel-list.has-features .goodobsidian-feature-row:first-of-type {
+  margin-top: 12px;
+}
+
+.goodobsidian-searchpanel-empty {
+  padding: 8px 16px 16px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-searchpanel-empty.is-hidden {
+  display: none;
 }
 
 /* ------------------------------------------------------- colour picker */

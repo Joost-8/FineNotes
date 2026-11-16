@@ -64,7 +64,9 @@ export function notebookText(
       const text = source.kind === "handwriting" ? plainTranscript(source.text) : source.text;
       if (left <= 0) break;
       // Past the budget the rest of the notebook is not kept: one odd notebook never fills the device.
-      sources.push({ ...source, text: text.length > left ? text.slice(0, left) : text });
+      // Home lists pages, not boxes: a box's id is not kept.
+      const { boxId: _box, ...kept } = source;
+      sources.push({ ...kept, text: text.length > left ? text.slice(0, left) : text });
       left -= text.length;
     }
     return {

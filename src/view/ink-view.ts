@@ -121,7 +121,7 @@ import {
   generateImage,
   targetLabel,
 } from "../recognition/ai-client";
-import { InkSurface } from "./ink-surface";
+import { InkSurface, type SearchFocus } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { PdfTextCache } from "./pdf-text-source";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
@@ -372,8 +372,10 @@ import { penGesturesOf } from "../ink/pen-gestures";
 import type { Feature } from "../model/feature-index";
 import { TryHint } from "./try-hint";
 import { closeMenuOnPressOutside } from "./menu-dismiss";
+import { SearchPanel } from "./search-panel";
 import { NotebookSearchModal } from "./search-modal";
-import { layoutPlainText, pdfHitRects } from "../search/pdf-hits";
+import { type SearchResult, matchesOfKind } from "../search/search-results";
+import { layoutPlainText, pdfHitGroups } from "../search/pdf-hits";
 import {
   type KeptPrinted,
   getPrinted,
@@ -710,6 +712,10 @@ export class InkView extends TextFileView {
   private askSession: AskSession | null = null;
   /** Ask in its sidebar, beside the page (the other layout is a window). */
   private chatPanel: AskChatPanel | null = null;
+  /** Search this notebook: the field and its results, in a sidebar or a window (#112). */
+  private searchPanel: SearchPanel | null = null;
+  /** The notebook's body, where search's sidebar docks. */
+  private searchBody: HTMLElement | null = null;
   /** The page sidebar was shut when a pinch opened the overview: shut it again after. */
   private sidebarForOverview = false;
   private imageMenu: { popover: ImageMenuPopover; anchor: HTMLElement } | null = null;
@@ -1328,6 +1334,8 @@ export class InkView extends TextFileView {
     this.sidebar?.destroy();
     this.chatPanel?.destroy();
     this.chatPanel = null;
+    this.searchPanel?.destroy();
+    this.searchPanel = null;
     this.sidebar = null;
     this.morePanel?.close();
     this.morePanel = null;
@@ -2688,7 +2696,9 @@ export class InkView extends TextFileView {
       }
     }
     savePrinted(vault, kept);
-    if (fresh % PDF_SEARCH_BATCH !== 0) onProgress?.();
+    // Also when nothing needed reading: text restored from this device's
+    // store joins an open results list too (#112).
+    if (fresh === 0 || fresh % PDF_SEARCH_BATCH !== 0) onProgress?.();
   }
 
   /** PDF pages' text kept on this device from an earlier read, while the PDF is unchanged. */
@@ -3668,6 +3678,8 @@ export class InkView extends TextFileView {
     );
     this.sidebar.setFileKind(lastFileKind);
     this.sidebar.setDocument(this.doc);
+    // Search's sidebar docks right of the page, once the page is in the body.
+    this.searchBody = body;
     // Between the page sidebar and the page, which it pushes aside.
     this.chatPanel = new AskChatPanel(this.app, body, {
       host: () => this.askHost(),
@@ -4444,22 +4456,63 @@ export class InkView extends TextFileView {
   }
 
   async openSearch(): Promise<void> {
-    if (!this.file || !this.surface) return;
+    if (!this.file || !this.surface || !this.searchBody) return;
+    const surface = this.surface;
     const pages = await this.notebookTextIndex(false);
-    const modal = new NotebookSearchModal(this.app, {
-      index: pages,
-      initial: this.lastSearch,
-      onQuery: (query) => (this.lastSearch = query),
-      goTo: (index, query) => void this.showSearchHits(index, query),
-      showFeature: (feature) => this.plugin.showFeature(feature),
-      features: this.plugin.featureHost(),
+    if (this.surface !== surface) return;
+    // Whatever arrives later (a PDF's pages not read yet) joins the open list (#112).
+    let onIndex: (index: readonly PageText[]) => void;
+    if (this.settings.searchLayout === "original") {
+      const modal = new NotebookSearchModal(this.app, {
+        index: pages,
+        initial: this.lastSearch,
+        onQuery: (query) => (this.lastSearch = query),
+        goTo: (index, query) => void this.showSearchHits(index, query),
+        showFeature: (feature) => this.plugin.showFeature(feature),
+        features: this.plugin.featureHost(),
+        switchToSidebar: (query) => this.switchSearchLayout("sidebar", query),
+      });
+      modal.open();
+      onIndex = (index) => modal.setIndex(index);
+    } else {
+      this.searchPanel ??= new SearchPanel({
+        dock: this.searchBody,
+        switchToOriginal: (query) => this.switchSearchLayout("original", query),
+        goTo: (result, query) => void this.showSearchHits(result.pageIndex, query, result),
+        onQuery: (query) => (this.lastSearch = query),
+        onLayout: () => this.relayoutForSearch(),
+        onClose: () => this.surface?.setSearchHits(null),
+        features: this.plugin.featureHost(),
+      });
+      this.searchPanel.show(pages, this.lastSearch);
+      onIndex = (index) => this.searchPanel?.setIndex(index);
+    }
+    void this.readPdfSearchText(surface.document.pages, () => {
+      void this.notebookTextIndex(false).then(onIndex);
     });
-    modal.open();
-    // The PDF pages not read yet join the list as they are read (#112).
-    const doc = this.surface.document;
-    void this.readPdfSearchText(doc.pages, () => {
-      void this.notebookTextIndex(false).then((index) => modal.setIndex(index));
-    });
+  }
+
+  /**
+   * The search's other look, with the query as typed: the sidebar or the
+   * original list. One choice for every notebook, as Ask's layout is.
+   */
+  private switchSearchLayout(layout: "sidebar" | "original", query: string): void {
+    this.lastSearch = query;
+    if (this.settings.searchLayout !== layout) {
+      this.settings.searchLayout = layout;
+      void this.plugin.saveSettings();
+    }
+    void this.openSearch();
+  }
+
+  /** Search's sidebar came or went: the page narrows or widens beside it, gliding. */
+  private relayoutForSearch(): void {
+    const surface = this.surface;
+    if (!surface) return;
+    const before = surface.pageClientRect();
+    surface.keepScaleOnResize();
+    surface.layout();
+    if (before) surface.glideFrom(before, PANEL_SLIDE_MS);
   }
 
   /**
@@ -4469,14 +4522,22 @@ export class InkView extends TextFileView {
    * the text boxes. Without on-device
    * reading only the text boxes light up.
    */
-  private async showSearchHits(index: number, query: string): Promise<void> {
+  private async showSearchHits(
+    index: number,
+    query: string,
+    result: SearchResult | null = null,
+  ): Promise<void> {
     // On a board, going to its page does nothing: the hits, once lit, take
     // the view to the first of them (`setSearchHits`).
     const surface = this.surface;
     const page = surface?.document.pages[index];
     if (!surface || !page) return;
-    surface.setSearchHits(null);
-    surface.goToPage(index, true);
+    // A step to the next match on the same page glides there from where it is.
+    const sameAsLit = result !== null && surface.currentPage === index;
+    if (!sameAsLit) {
+      surface.setSearchHits(null);
+      surface.goToPage(index, true);
+    }
     let lines: ReadLine[] = [];
     const hash = pageContentHash(page);
     const kept = this.pageReadings.get(page.id);
@@ -4508,13 +4569,34 @@ export class InkView extends TextFileView {
     const { boxes } = pageHits(query, [], page.textBoxes, phrase);
     // The PDF's printed words, lit as handwriting is (#112).
     const backdrop = page.backdrop;
-    const printed =
+    const printedGroups =
       backdrop.kind === "pdf" && this.pdfText
-        ? pdfHitRects(query, await this.pdfText.layout(backdrop, page.geometry), phrase)
+        ? pdfHitGroups(query, await this.pdfText.layout(backdrop, page.geometry), phrase)
         : [];
     if (this.surface !== surface || !surface.document.pages.includes(page)) return;
+    // The results list's match, among the page's (#112). Handwriting found
+    // by this device's reading lines up with the transcript's only when it
+    // found as many: otherwise the page's hits light alike.
+    let focus: SearchFocus | null = null;
+    if (result?.kind === "pdf" && printedGroups[result.nth]?.length) {
+      focus = { printed: printedGroups[result.nth] };
+    } else if (result?.kind === "text" && result.boxId) {
+      focus = { box: result.boxId };
+    } else if (
+      result?.kind === "handwriting" &&
+      words.length === matchesOfKind(pageText, query, phrase, "handwriting")
+    ) {
+      focus = { words: result.nth };
+    }
     // In a text box, the words themselves light, as in the list.
-    surface.setSearchHits(page.id, words, boxes, printed, (text) => matchText(text, query, phrase));
+    surface.setSearchHits(
+      page.id,
+      words,
+      boxes,
+      printedGroups.flat(),
+      (text) => matchText(text, query, phrase),
+      focus,
+    );
   }
 
   /**
