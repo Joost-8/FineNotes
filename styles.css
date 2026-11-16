@@ -5928,6 +5928,11 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   cursor: pointer;
 }
 
+/* Outranks a theme's .clickable-icon padding (FineNotes#240). */
+button.goodobsidian-cover-swatch.clickable-icon {
+  padding: 0;
+}
+
 .goodobsidian-cover-swatch.is-selected {
   border-color: var(--interactive-accent);
 }
@@ -5943,6 +5948,7 @@ button.goodobsidian-import-help-toggle.clickable-icon {
 }
 
 .goodobsidian-cover-swatch-dot {
+  flex: none;
   width: 30px;
   height: 30px;
   border-radius: 50%;
@@ -6720,6 +6726,7 @@ button.goodobsidian-imagemenu-swatch {
 }
 
 .goodobsidian-imagemenu-swatch-dot {
+  flex: none;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -11357,6 +11364,7 @@ button.clickable-icon.goodobsidian-searchpanel-row.is-current {
 }
 
 .goodobsidian-color-disc {
+  flex: none;
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -12362,6 +12370,7 @@ button.goodobsidian-paper-swatch.clickable-icon {
 }
 
 .goodobsidian-paper-swatch-disc {
+  flex: none;
   width: 22px;
   height: 22px;
   border-radius: 999px;
@@ -12490,8 +12499,9 @@ button.goodobsidian-sticker-swatch.clickable-icon {
 }
 
 .goodobsidian-sticker-swatch-disc {
+  flex: none;
   width: 24px;
-  height: calc(var(--icon-size) + 2 * var(--size-2-2));
+  height: 24px;
   border-radius: 999px;
   /* A ring from the theme, so near-black reads on a dark dialog too. */
   box-shadow: 0 0 0 1px var(--background-modifier-border-hover);
@@ -13054,6 +13064,7 @@ button.goodobsidian-learn-button.is-learning {
 }
 
 .goodobsidian-table-swatch-disc {
+  flex: none;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -14785,6 +14796,7 @@ button.clickable-icon.goodobsidian-calc-swatch {
 
 button.clickable-icon.goodobsidian-calc-swatch::before {
   content: "";
+  flex: none;
   width: 14px;
   height: 14px;
   border: 2px solid currentColor;
@@ -19522,6 +19534,7 @@ button.goodobsidian-tips-dot.clickable-icon {
 }
 button.goodobsidian-tips-dot.clickable-icon::before {
   content: "";
+  flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
