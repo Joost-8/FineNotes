@@ -720,7 +720,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.pageEmbeds = this.addChild(
       new PageEmbeds({
         app: this.app,
-        isInkFile: (file) => this.isInkFile(file),
+        isInkFile: (file) => file instanceof TFile && this.isInkFile(file),
         paperWidth: () => this.settings.paperWidth,
         usePressure: () => this.settings.pressureWidth,
         highlighterAlpha: () => this.settings.highlighterAlpha,

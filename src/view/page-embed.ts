@@ -77,10 +77,14 @@ export interface EmbedContext {
   sourcePath: string;
 }
 
-/** A creator in Obsidian's embed registry; what it returns must have `loadFile()`. */
+/**
+ * A creator in Obsidian's embed registry; what it returns must have `loadFile()`.
+ * `file` can be `null`: other plugins call Obsidian's Markdown creator with
+ * no file only to get its editor (#227).
+ */
 export type EmbedCreator = (
   ctx: EmbedContext,
-  file: TFile,
+  file: TFile | null,
   subpath: string,
 ) => (Component & { loadFile(): unknown }) | null;
 
@@ -229,8 +233,9 @@ export class PageEmbeds extends Component {
   }
 
   /** A notebook embed for `file`, or `null` to leave the embed to Obsidian. */
-  private create(ctx: EmbedContext, file: TFile, subpath: string): NotebookEmbed | null {
-    if (!this.active) return null;
+  private create(ctx: EmbedContext, file: TFile | null, subpath: string): NotebookEmbed | null {
+    // No file: another plugin asking for Obsidian's editor, not an embed (#227).
+    if (!this.active || !(file instanceof TFile)) return null;
     const target = embedTarget(subpath);
     if (target === null || !this.host.isInkFile(file)) return null;
     return new NotebookEmbed(this, ctx, file, target, subpath);
