@@ -144,6 +144,12 @@ export interface GoodObsidianSettings {
   lastSeenVersion: string;
   /** Home's what's-new card counts releases after this version; "" when there is none to show. */
   newsSince: string;
+  /**
+   * Sponsors joined after this version are new on the card: the version used
+   * before the latest update, so a sponsor thanked once is never new again.
+   * "" thanks nobody.
+   */
+  sponsorsSince: string;
   /** Toolbar buttons used since that news came: their dots are gone (tips.ts, `newsControls`). */
   newsDotsUsed: string[];
   /** Read once a day whether a newer FineNotes is out, and mark the gear (update-check.ts). */
@@ -565,6 +571,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   scribbleNoticeShown: false,
   lastSeenVersion: "",
   newsSince: "",
+  sponsorsSince: "",
   newsDotsUsed: [],
   checkForUpdates: true,
   updateReminders: true,

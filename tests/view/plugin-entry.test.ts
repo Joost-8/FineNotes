@@ -1366,7 +1366,16 @@ describe("What's new", () => {
     await flush();
     expect(opened).toEqual([]);
     expect(registered.saved.at(-1)?.newsSince).toBe("0.8.0");
+    expect(registered.saved.at(-1)?.sponsorsSince).toBe("0.8.0");
     expect(registered.saved.at(-1)?.lastSeenVersion).toBe(VERSION);
+  });
+
+  it("thanks only the newest update's sponsors while older news waits unread", async () => {
+    await load({ lastSeenVersion: "0.8.1", newsSince: "0.8.0" });
+    app.workspace.fireLayoutReady();
+    await flush();
+    expect(registered.saved.at(-1)?.newsSince).toBe("0.8.0");
+    expect(registered.saved.at(-1)?.sponsorsSince).toBe("0.8.1");
   });
 
   it("has no news to count when the last version is unknown", async () => {

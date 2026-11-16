@@ -1824,6 +1824,8 @@ export default class GoodObsidianPlugin extends Plugin {
       pending: this.settings.newsSince,
       current: version,
     });
+    // Only this update's sponsors are new, even while older news waits unread.
+    this.settings.sponsorsSince = this.firstInstall ? "" : seen;
     this.settings.lastSeenVersion = version;
     // New news: every changed control gets its dot again.
     this.settings.newsDotsUsed = [];
@@ -1837,7 +1839,7 @@ export default class GoodObsidianPlugin extends Plugin {
     const version = this.manifest.version;
     const tips = highlightsSince(newsSince, version);
     // New sponsors are news too: thanked on the card even in a release with no pictures.
-    const sponsors = sponsorThanks(newsSince, version);
+    const sponsors = sponsorThanks(this.settings.sponsorsSince, version);
     const kind = homeCardKind(tips.length > 0 || sponsors !== null, simpleOfferDue(this.settings));
     if (kind === "news") {
       const shown = tips.length > 0 ? latestHighlighted(newsSince, version) : null;
@@ -1852,8 +1854,10 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   dismissHomeCard(kind: HomeCardKind): void {
-    if (kind === "news") this.settings.newsSince = "";
-    else this.settings.simpleLookHinted = true;
+    if (kind === "news") {
+      this.settings.newsSince = "";
+      this.settings.sponsorsSince = "";
+    } else this.settings.simpleLookHinted = true;
     void this.saveSettings();
     this.syncNewsDots();
   }
@@ -1885,6 +1889,8 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Bring Home's what's-new card back, with the latest releases' highlights. */
   showNewsAgain(): void {
     this.settings.newsSince = EARLIEST_NEWS;
+    // Sponsors were thanked when they were new; showing the news again does not repeat it.
+    this.settings.sponsorsSince = "";
     void this.saveSettings();
     this.syncNewsDots();
     void this.openLibrary().then(() => {
