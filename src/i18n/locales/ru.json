@@ -3378,6 +3378,8 @@
   "view.morePanel.darkPages": "Тёмные страницы",
   "view.morePanel.shortcuts": "Сочетания клавиш",
   "view.morePanel.homeLink": "Копировать ссылку для экрана «Домой»",
+  "view.morePanel.present": "Показать",
+  "view.present.stop": "Завершить показ",
   "view.morePanel.darkPdf": "Тёмные страницы PDF",
   "view.morePanel.drawWithFinger": "Рисовать пальцем",
   "view.morePanel.desk": "Стол",

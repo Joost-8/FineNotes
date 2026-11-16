@@ -14,7 +14,8 @@
  *   │ Save page as template               │
  *   │ Go to page                  (1 – 9) │
  *   └─────────────────────────────────────┘
- *   ┌ Dark pages / Light pages            ┐
+ *   ┌ Present                             ┐
+ *   │ Dark pages / Light pages            │
  *   │ Dark PDF pages                   ✓  │  (only while pages are dark)
  *   │ Desk             [◐] [○] [●] [◍]    │
  *   │ Draw with finger                 ✓  │  (only where there is touch)
@@ -105,6 +106,8 @@ export interface MorePanelActions {
   setDarkPdf?: (dark: boolean) => void;
   /** Put the pages on another desk; `color` with custom. Without it the row is not offered. */
   setDesk?: (choice: DeskChoice, color?: string) => void;
+  /** Show the notebook as slides (`presenter.ts`). Without it the row is not offered. */
+  present?: () => void;
   /** Show the keyboard and stylus shortcuts. */
   showShortcuts: () => void;
   /** The key that shows them too, where there is a keyboard; named at the row's end. */
@@ -309,6 +312,10 @@ export class MorePanel {
   private viewRows(): void {
     const { page, actions } = this;
     const view = this.group();
+    const present = actions.present;
+    if (present) {
+      this.row(view, { icon: "presentation", text: t("view.morePanel.present"), run: present });
+    }
     this.row(view, {
       icon: page.darkPages ? "sun" : "moon",
       text: page.darkPages ? t("view.morePanel.lightPages") : t("view.morePanel.darkPages"),

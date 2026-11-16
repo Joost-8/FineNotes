@@ -1753,6 +1753,11 @@ interface GroupDrag {
   selection: GroupSelection;
   /** The selection itself, as it is kept once the drag is over. */
   own: GroupSelection;
+  /**
+   * Set by an Alt drag: the copy made in place at pointerdown, which the
+   * move joins as one undo step, and what was selected before it.
+   */
+  copied?: { command: Command; original: GroupSelection };
   /** The selection's bounds when the drag began, page space. */
   bounds: Bounds;
   /** Page-local point where the pointer went down. */
@@ -4806,6 +4811,16 @@ export class InkSurface {
       return;
     }
     this.putToolInHand(next);
+  }
+
+  /** The tool in hand. */
+  get toolInHand(): ActiveTool {
+    return this.toolState.tool;
+  }
+
+  /** Put `tool` in hand as its key would, the toolbar following (Present mode's laser). */
+  takeTool(tool: ActiveTool): void {
+    this.putToolInHand(tool);
   }
 
   /**
@@ -16798,6 +16813,40 @@ export class InkSurface {
    * share their files), as one undo step, and select the copy — GoodNotes'
    * Duplicate.
    */
+  /**
+   * An Alt drag's copy: everything selected (with what its shapes hold),
+   * copied exactly where it is as one step, and the copy selected so the
+   * drag carries it. The original stays put.
+   */
+  private copyInPlace(own: GroupSelection): { command: Command; own: GroupSelection } | null {
+    if (this.callbacks.isLocked?.()) return null;
+    const sel = this.withShapeContent(own);
+    const copies = copyElements(sel, this.freshIds(), 0, 0);
+    const command = new AddElements(sel.pageId, copies);
+    this.history.push(this.doc, command);
+    this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
+    const copied: GroupSelection = {
+      ...own,
+      strokes: copies.strokes.slice(0, own.strokes.length),
+      images: copies.images.slice(0, own.images.length),
+      textBoxes: copies.textBoxes.slice(0, own.textBoxes.length),
+      tables: copies.tables?.slice(0, own.tables?.length ?? 0),
+      graphs: copies.graphs?.slice(0, own.graphs?.length ?? 0),
+      equations: copies.equations?.slice(0, own.equations?.length ?? 0),
+    };
+    this.selection = copied;
+    this.syncTextBoxes();
+    return { command, own: copied };
+  }
+
+  /** An Alt drag that never moved: its copy goes again, and the original is selected. */
+  private dropCopy(copied: { command: Command; original: GroupSelection }): void {
+    if (!this.history.withdraw(this.doc, copied.command)) return;
+    this.strokeIndex.refreshPages(this.doc.pages, [copied.original.pageId]);
+    this.selection = copied.original;
+    this.syncTextBoxes();
+  }
+
   private duplicateSelection(): void {
     const own = this.liveSelection();
     const box = own ? this.boxForPage(own.pageId) : null;
@@ -17128,12 +17177,17 @@ export class InkSurface {
     if (!turn && this.grabShapePoint(event, sel, from)) return;
     if (!turn && this.grabTapeHandle(event, sel, bounds, from)) return;
     const scale = turn ? null : this.cornerGrabbed(sel, bounds, from);
+    // Alt (Option) dragging a selection drags a copy and leaves it where it
+    // was, as in Excalidraw and Figma; a mouse or pen, never a finger.
+    const copy = event.altKey && !turn && !scale && !finger ? this.copyInPlace(sel) : null;
+    const own = copy?.own ?? sel;
     this.groupDrag = {
       pointerId: event.pointerId,
       // A shape's text and the ink written in it move along (discussion #148);
       // resized, its text keeps its size and wraps again in the new shape.
-      selection: this.withShapeContent(sel, scale === null),
-      own: sel,
+      selection: this.withShapeContent(own, scale === null),
+      own,
+      copied: copy ? { command: copy.command, original: sel } : undefined,
       bounds,
       from,
       clientX: event.clientX,
@@ -17873,6 +17927,12 @@ export class InkSurface {
       this.selectionFrameEl.releasePointerCapture(drag.pointerId);
     }
     if (!drag.lifted) {
+      // An Alt press that never moved: no copy after all.
+      if (drag.copied) {
+        this.dropCopy(drag.copied);
+        this.syncSelectionOverlay();
+        return;
+      }
       // A tap in a cell of a table picked up on its own types in that cell,
       // as a second tap on a table does in Keynote and Numbers. Inside the
       // pointerup, so iPadOS raises the keyboard for the focus.
@@ -17955,8 +18015,8 @@ export class InkSurface {
       after = this.commitFingerTurn(drag.selection, drag.bounds, fingers);
     } else if (moved && onto && box) {
       // (dx, dy) are in the selection's own page's space: shift them into the target's.
-      this.history.push(
-        this.doc,
+      this.recordDrag(
+        drag,
         new MoveElementsToPage(
           pageId,
           onto.id,
@@ -17973,8 +18033,8 @@ export class InkSurface {
       const motion: Reorientation = { kind: "rotate", angle: turn.angle };
       after = this.reorientSelection(drag.selection, drag.bounds, motion, turn.centre);
     } else if (moved) {
-      this.history.push(
-        this.doc,
+      this.recordDrag(
+        drag,
         scale
           ? new ScaleElements(pageId, drag.selection, scale.anchor.x, scale.anchor.y, scale.k)
           : new TranslateElements(pageId, drag.selection, drag.dx, drag.dy),
@@ -17987,6 +18047,8 @@ export class InkSurface {
       }
       after = this.draggedBounds(drag);
     }
+    // An Alt drag let go where it began: no copy after all.
+    if (drag.copied && !moved) this.dropCopy(drag.copied);
     this.selectionFrameEl.setCssStyles({ transform: "" });
     if (box) {
       this.renderer?.invalidateRegion(box.index, unionBounds(drag.bounds, after) ?? drag.bounds);
@@ -17996,6 +18058,16 @@ export class InkSurface {
     this.syncSelectionOverlay();
     // Joined, its mirrors may change on any page the move reached (`syncMirrors`).
     if (moved) this.changed(onto ? (this.joined ? undefined : [pageId, onto.id]) : [pageId]);
+  }
+
+  /**
+   * Record a drag's move. After an Alt drag's copy it joins that step, so
+   * one undo takes back the copy and where it went, as "Duplicate".
+   */
+  private recordDrag(drag: GroupDrag, command: Command): void {
+    const copy = drag.copied?.command;
+    if (copy && this.history.isLatest(copy) && this.history.attach(this.doc, command)) return;
+    this.history.push(this.doc, command);
   }
 
   /**

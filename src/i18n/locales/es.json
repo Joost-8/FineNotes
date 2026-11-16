@@ -3164,6 +3164,8 @@
   "view.morePanel.darkPages": "Páginas oscuras",
   "view.morePanel.shortcuts": "Atajos de teclado",
   "view.morePanel.homeLink": "Copiar enlace de la pantalla de inicio",
+  "view.morePanel.present": "Presentar",
+  "view.present.stop": "Dejar de presentar",
   "view.morePanel.darkPdf": "Páginas de PDF oscuras",
   "view.morePanel.drawWithFinger": "Dibujar con el dedo",
   "view.morePanel.desk": "Escritorio",
