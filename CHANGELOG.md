@@ -85,6 +85,13 @@ extracted from the matching section of this file by `release.yml`.
   Goodnotes and Notability have it. The room goes to the colours: on an iPad
   in landscape the bar shows seven colours or more, the rest a swipe away. Full screen moves into ⋯ to make room, and the pen in
   hand always stays in view.
+- **Curved and elbow arrows are drawn, as in Goodnotes.** With the Shape
+  tool's curved or elbow arrow, draw the arrow as you would with the pen:
+  it is plain ink while the pen is down, and on lifting it becomes a clean
+  arrow that follows how you drew it. An elbow keeps every turn you made
+  (an L, a Z, a U or a staircase), with its runs level and upright; a curve
+  follows your stroke smoothly, and a straight stroke gives a straight
+  arrow. A tap still places the default one.
 - **A board embedded in a note shows its drawing**
   ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167)).
   `![[Mind map.notebook]]` used to paint the board's whole page, metres of

@@ -470,3 +470,185 @@ function moveElbowEnd(knots: Pt[], role: ConnectorRole, p: Pt): Pt[] {
   out[near] = level ? { x: knots[near].x, y: p.y } : { x: p.x, y: knots[near].y };
   return out;
 }
+
+// --- Drawn connectors ---------------------------------------------------------------
+//
+// The Shape tool's curved and elbow arrows are drawn as a stroke, as in
+// Goodnotes ("draw a line, curve, or shape … Goodnotes converts the drawing
+// into a cleaner shape"): the pen leaves plain ink while it is down, and on
+// lift the ink becomes the connector it was drawn as. `trail` is the pen's
+// path; `from` and `to` its ends, which may have been moved onto another
+// shape's point. `unit` is one screen px in page px, so the tolerances look
+// the same at any zoom.
+
+/** How far a curve may stray from the ink, over the ink's diagonal, and its floor in screen px. */
+const TRACE_CURVE_TOL = 0.035;
+const TRACE_CURVE_TOL_MIN = 2.5;
+/** Most runs between bend points a drawn curve is fitted with. */
+const TRACE_MAX_RUNS = 8;
+/** RDP tolerance that finds an elbow's turns, over the diagonal, and its floor in screen px. */
+const TRACE_ELBOW_TOL = 0.07;
+const TRACE_ELBOW_TOL_MIN = 6;
+/** A drawn run shorter than this, over the diagonal (floor in screen px), is a wobble at a turn, not a run. */
+const TRACE_MIN_RUN = 0.1;
+const TRACE_MIN_RUN_PX = 12;
+
+function diagonalOf(points: readonly Pt[]): number {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of points) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  return Math.hypot(maxX - minX, maxY - minY);
+}
+
+/** Indices of the Ramer-Douglas-Peucker simplification of `points`, both ends kept. */
+function rdpIndices(points: readonly Pt[], tolerance: number): number[] {
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const stack: Array<[number, number]> = [[0, points.length - 1]];
+  while (stack.length > 0) {
+    const [a, b] = stack.pop() as [number, number];
+    let worst = -1;
+    let far = 0;
+    for (let i = a + 1; i < b; i++) {
+      const d = distToPolyline(points[i], [points[a], points[b]]);
+      if (d > far) {
+        far = d;
+        worst = i;
+      }
+    }
+    if (worst > 0 && far > tolerance) {
+      keep[worst] = 1;
+      stack.push([a, worst], [worst, b]);
+    }
+  }
+  const out: number[] = [];
+  for (let i = 0; i < points.length; i++) if (keep[i]) out.push(i);
+  return out;
+}
+
+/** The trail with its ends put where the connector's ends are. */
+function endsOn(trail: readonly Pt[], from: Pt, to: Pt): Pt[] {
+  const out = distinct(trail.filter((p) => Number.isFinite(p.x + p.y)));
+  if (out.length === 0) return [from, to];
+  out[0] = from;
+  if (out.length === 1) out.push(to);
+  else out[out.length - 1] = to;
+  return out;
+}
+
+/**
+ * The bend points of the curve a drawn stroke makes, ends `from` and `to`
+ * included: the fewest evenly spaced ones whose spline stays near the ink.
+ * Null when the ink is straight enough to be a straight arrow.
+ */
+export function traceCurve(trail: readonly Pt[], from: Pt, to: Pt, unit = 1): Pt[] | null {
+  const points = endsOn(trail, from, to);
+  const diag = diagonalOf(points);
+  if (!(diag > 0)) return null;
+  const tol = Math.max(TRACE_CURVE_TOL_MIN * unit, TRACE_CURVE_TOL * diag);
+  if (points.every((p) => distToPolyline(p, [from, to]) <= tol)) return null;
+  let knots: Pt[] = [];
+  for (let runs = 2; runs <= TRACE_MAX_RUNS; runs++) {
+    knots = evenAlong(points, runs + 1);
+    const line = pointsOf(splinePoints(knots, 0.5)) ?? [];
+    if (points.every((p) => distToPolyline(p, line) <= tol)) break;
+  }
+  return knots;
+}
+
+/** Whether every run of `points` is level or upright. */
+function allSquare(points: readonly Pt[]): boolean {
+  for (let i = 1; i < points.length; i++) {
+    if (!isLevel(points[i - 1], points[i]) && !isUpright(points[i - 1], points[i])) return false;
+  }
+  return true;
+}
+
+/**
+ * The elbow a drawn stroke makes, from `from` to `to`: each stretch the pen
+ * ran mostly across or mostly down becomes a level or upright run, at the
+ * height (or across) it was drawn, so an L, a Z, a U or a staircase comes
+ * out as drawn. Ink that ran one way only, but not level, bends once along
+ * its longer direction, as a dragged elbow does.
+ */
+export function traceElbow(trail: readonly Pt[], from: Pt, to: Pt, unit = 1): Pt[] {
+  const points = endsOn(trail, from, to);
+  const diag = diagonalOf(points);
+  const fallback = (): Pt[] => tidyElbow(elbowPoints(from, to));
+  if (!(diag > 0)) return fallback();
+  const idx = rdpIndices(points, Math.max(TRACE_ELBOW_TOL_MIN * unit, TRACE_ELBOW_TOL * diag));
+  // The drawn runs: which way each went, how long it is, and where it lies across.
+  type Run = { across: boolean; length: number; from: number; to: number };
+  const runs: Run[] = [];
+  for (let k = 1; k < idx.length; k++) {
+    const a = points[idx[k - 1]];
+    const b = points[idx[k]];
+    const across = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
+    runs.push({ across, length: dist(a, b), from: idx[k - 1], to: idx[k] });
+  }
+  const minRun = Math.max(TRACE_MIN_RUN_PX * unit, TRACE_MIN_RUN * diag);
+  // Join runs that went the same way, and drop wobbles at the turns, until
+  // the runs alternate.
+  let changed = true;
+  while (changed && runs.length > 1) {
+    changed = false;
+    for (let i = 1; i < runs.length; i++) {
+      if (runs[i].across === runs[i - 1].across) {
+        const a = runs[i - 1];
+        const b = runs[i];
+        runs.splice(i - 1, 2, {
+          across: a.across,
+          length: a.length + b.length,
+          from: a.from,
+          to: b.to,
+        });
+        changed = true;
+        break;
+      }
+    }
+    if (changed) continue;
+    let shortest = -1;
+    for (let i = 0; i < runs.length; i++) {
+      if (runs[i].length < minRun && (shortest < 0 || runs[i].length < runs[shortest].length)) {
+        shortest = i;
+      }
+    }
+    if (shortest >= 0 && runs.length > 1) {
+      const gone = runs[shortest];
+      // Its ink goes to a neighbour: the one before, or the first run's own next.
+      if (shortest > 0) runs[shortest - 1].to = gone.to;
+      else runs[1].from = gone.from;
+      runs.splice(shortest, 1);
+      changed = true;
+    }
+  }
+  if (runs.length < 2) return fallback();
+  // Where each run lies across its direction: the mean of its ink, the end
+  // runs on their ends.
+  const lie = runs.map((run, i) => {
+    if (i === 0) return run.across ? from.y : from.x;
+    if (i === runs.length - 1) return run.across ? to.y : to.x;
+    let sum = 0;
+    let n = 0;
+    for (let j = run.from; j <= run.to; j++) {
+      sum += run.across ? points[j].y : points[j].x;
+      n++;
+    }
+    return round2(sum / n);
+  });
+  const out: Pt[] = [{ ...from }];
+  for (let i = 0; i + 1 < runs.length; i++) {
+    out.push(runs[i].across ? { x: lie[i + 1], y: lie[i] } : { x: lie[i], y: lie[i + 1] });
+  }
+  out.push({ ...to });
+  const tidy = tidyElbow(out);
+  return tidy.length >= 2 && allSquare(tidy) ? tidy : fallback();
+}

@@ -60,6 +60,16 @@ export function isConnectorPreset(value: ShapeMode): value is ConnectorPreset {
   return CONNECTOR_PRESETS.includes(value as ConnectorPreset);
 }
 
+/**
+ * The connectors that are drawn rather than dragged out, as in Goodnotes:
+ * the curved arrow and the elbow. The pen leaves plain ink, and on lift it
+ * becomes the arrow it was drawn as (`ink/connector-edit`'s `traceCurve`,
+ * `traceElbow`). A tap still places the default one.
+ */
+export function isDrawnConnector(value: ShapeMode): boolean {
+  return value === "arrow" || value === "elbow";
+}
+
 /** The kind of stroke a preset places: an elbow is a `path`, the rest are their own kind. */
 export function presetKind(preset: ShapePreset): ShapeKind {
   return preset === "elbow" ? "path" : preset;
