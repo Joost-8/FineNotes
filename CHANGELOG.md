@@ -14,6 +14,16 @@ extracted from the matching section of this file by `release.yml`.
   Home's what's-new card thanks them by name, then everyone who sponsored
   before them. The heart opens the sponsor page. The README shows every
   public sponsor's picture.
+- **Help improve Grape** (off until you turn it on). Under Learn your
+  handwriting in Settings, you can share the handwriting you have already
+  labelled (practice lines, corrected words, equations), so the next Grape
+  reads more people's writing. You see every item before it is sent, can
+  keep any of them back, stop at any time, and delete everything you shared
+  from the server. Note names, where on a page anything was written and the
+  rest of your notes are never sent. The
+  [privacy notice](https://github.com/Joost-8/FineNotes/blob/main/PRIVACY.md)
+  says what is kept and why.
+
 - **Search results you can step through**
   ([discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
   Search this notebook opens in a sidebar at the right of the page that

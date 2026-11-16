@@ -1,10 +1,9 @@
 /**
  * The texts of "Help improve Grape" (grape-sharing.ts), in English only.
  *
- * They live beside the feature, not in the translation tables, because the
- * feature is built only with FINENOTES_SHARING=1 while collection waits for
- * TU/e's Ethical Review Board: consent wording is translated once it is
- * final and reviewed, not before. Until then every language sees English.
+ * They live beside the feature, not in the translation tables: consent
+ * wording is translated once it is final, not before, so until then every
+ * language sees English.
  */
 
 const TEXT = {
