@@ -199,6 +199,8 @@ export class ToolbarEditor {
   private swapWith: BarItemId | null = null;
   /** The trash beside New pen, shown while a pen button is dragged. */
   private trash: HTMLElement | null = null;
+  /** The Essentials switch, marked when New pen is tried while it is on. */
+  private presetSwitch: HTMLElement | null = null;
   /** A dragged pen is over the trash: let go, it is deleted. */
   private overTrash = false;
   /** Buttons disabled when the mode opened (undo with nothing to undo): pickable meanwhile. */
@@ -358,7 +360,8 @@ export class ToolbarEditor {
       preset.setAttribute("role", "switch");
       preset.setAttribute("aria-checked", String(on));
       preset.addEventListener("click", () => setPreset(on ? "own" : "essentials"));
-    }
+      this.presetSwitch = preset;
+    } else this.presetSwitch = null;
     this.newPenChip(head);
     if (this.h.newPen?.remove) {
       // Beside New pen, while a pen button is carried: dropped here, it goes.
@@ -714,7 +717,10 @@ export class ToolbarEditor {
         this.move(id, target);
         return;
       }
-      if (!swap) return;
+      if (!swap) {
+        if ((id as string) === NEW_PEN) this.markPresetBlocksPen();
+        return;
+      }
       const slot = (id as string) === NEW_PEN ? this.h.newPen?.make() : id;
       if (slot) this.apply(slot, swapItems(this.h.layout(), slot, swap));
       return;
@@ -724,6 +730,7 @@ export class ToolbarEditor {
       if (dragging) {
         if (target) this.addPen(target);
       } else if (!this.inPreset()) this.customizePen();
+      else this.markPresetBlocksPen();
       return;
     }
     if (!dragging) {
@@ -745,6 +752,22 @@ export class ToolbarEditor {
     const next =
       target === null ? moveTo(layout, slot, afterPen(layout)) : moveTo(layout, slot, target);
     this.apply(slot, next);
+  }
+
+  /**
+   * New pen tried while Essentials holds the bar's layout, where it cannot
+   * add a button: the Essentials switch is marked, and says why, until it is
+   * turned off (Joost, 2026-11-16).
+   */
+  private markPresetBlocksPen(): void {
+    const preset = this.presetSwitch;
+    if (!preset) return;
+    preset.addClass("is-blocking");
+    preset.setAttribute("aria-label", t("toolbar.edit.essentialsBlocksPen"));
+    preset.removeClass("is-nudged");
+    void preset.offsetWidth;
+    preset.addClass("is-nudged");
+    window.setTimeout(() => preset.removeClass("is-nudged"), 500);
   }
 
   /** New pen tapped: the pen dialog, and the pen it saves after the pen's button. */
@@ -943,7 +966,8 @@ export class ToolbarEditor {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       event.stopPropagation();
-      if (this.h.newPen?.can() === true) this.customizePen();
+      if (this.inPreset()) this.markPresetBlocksPen();
+      else if (this.h.newPen?.can() === true) this.customizePen();
       return;
     }
     const upright = isBarUpright(this.h.barDock());

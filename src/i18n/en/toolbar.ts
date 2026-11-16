@@ -250,6 +250,7 @@ export const toolbar = {
   "toolbar.pen.removeFromBar": "Remove from toolbar",
   "toolbar.penSlot.saved": "Saved pen: {name}",
   "toolbar.edit.newPen": "New pen",
+  "toolbar.edit.essentialsBlocksPen": "Turn off Essentials to add a pen",
   "toolbar.edit.newPenTip":
     "New pen: tap to make a pen for the toolbar, or drag the pen in hand onto it",
   "toolbar.eraser.modeTip": "Eraser mode: {mode}",
