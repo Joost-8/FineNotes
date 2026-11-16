@@ -324,3 +324,58 @@ export function writeText(
   }
   return strokes;
 }
+
+/** The least an answer is shrunk to stay on its line before it moves to the next one. */
+const MIN_FIT_SCALE = 0.7;
+/** How far below its line an answer that moves goes, in digit heights. */
+const NEXT_LINE = 1.7;
+
+/**
+ * Keeps a written answer inside the page. An answer that runs past the
+ * right edge is shrunk to fit after the "=" when that costs at most 30 % of
+ * its size; otherwise it goes on the line below, from the sum's left end
+ * (or further left, so that it ends inside the page), shrunk only if it is
+ * wider than the page. With no room below either, it is shrunk to fit
+ * after the "=". `lineLeft` is the left end of the sum's ink. Page px.
+ */
+export function fitAnswer(
+  strokes: number[][],
+  at: { x: number; baseline: number; height: number },
+  lineLeft: number,
+  page: { width: number; height: number },
+): number[][] {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const pts of strokes) {
+    const usable = pts.length - (pts.length % POINT_STRIDE);
+    for (let i = 0; i < usable; i += POINT_STRIDE) {
+      minX = Math.min(minX, pts[i]);
+      maxX = Math.max(maxX, pts[i]);
+      maxY = Math.max(maxY, pts[i + 1]);
+    }
+  }
+  if (!Number.isFinite(minX)) return strokes;
+  const margin = Math.max(6, at.height * 0.3);
+  const right = page.width - margin;
+  if (maxX <= right) return strokes;
+  const width = maxX - minX;
+  const room = right - minX;
+  const move = (sx: number, ox: number, oy: number, dx: number, dy: number): number[][] =>
+    strokes.map((pts) => {
+      const out = pts.slice();
+      const usable = out.length - (out.length % POINT_STRIDE);
+      for (let i = 0; i < usable; i += POINT_STRIDE) {
+        out[i] = ox + (out[i] - ox) * sx + dx;
+        out[i + 1] = oy + (out[i + 1] - oy) * sx + dy;
+      }
+      return out;
+    });
+  const shrink = (): number[][] => move(Math.max(0.05, room / width), minX, at.baseline, 0, 0);
+  if (room >= width * MIN_FIT_SCALE) return shrink();
+  const dy = at.height * NEXT_LINE;
+  const scale = Math.min(1, (page.width - 2 * margin) / width);
+  if (maxY + dy > page.height - margin) return shrink();
+  const left = Math.max(margin, Math.min(lineLeft, right - width * scale));
+  return move(scale, minX, at.baseline, left - minX, dy);
+}
