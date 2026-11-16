@@ -9,7 +9,7 @@
  * here can tell the bubble from a refusal, so both end the same way.
  */
 
-import { cleanPastedText, pickClipboardType } from "./paste-choice";
+import { cleanPastedText, clipboardHidSomething, pickClipboardType } from "./paste-choice";
 
 /** What the system clipboard held, as the press menu pastes it. */
 export type SystemPaste =
@@ -17,6 +17,8 @@ export type SystemPaste =
   | { kind: "text"; text: string }
   /** It could be read, and held nothing a page takes. */
   | { kind: "empty" }
+  /** It could be read, but held something this engine keeps from the page (an iPad photo). */
+  | { kind: "hidden" }
   /** It could not be read: no API here, a declined bubble, or a refusal. */
   | { kind: "unavailable" };
 
@@ -77,7 +79,11 @@ async function fromItems(items: readonly ClipboardItem[]): Promise<SystemPaste> 
         text = await (await item.getType(pick.type)).text();
       }
     }
-    return fromText(text ?? "");
+    const found = fromText(text ?? "");
+    if (found.kind === "empty" && clipboardHidSomething(items.map((item) => item.types))) {
+      return { kind: "hidden" };
+    }
+    return found;
   } catch {
     return { kind: "unavailable" };
   }

@@ -30,11 +30,13 @@ function setup(noWindow = false) {
   const root = { ownerDocument: doc, contains: (target: unknown) => target === inside };
   let active = true;
   const handle = vi.fn(() => true);
+  const left = vi.fn();
   const scope = notebookKeyScope(
     root as unknown as HTMLElement,
     {} as never,
     () => active,
     handle,
+    left,
   ) as unknown as { callback: (event: KeyboardEvent) => true | undefined };
   const fire = (target: unknown = body, flags = {}) => {
     const event = {
@@ -52,6 +54,7 @@ function setup(noWindow = false) {
   return {
     fire,
     handle,
+    left,
     host,
     doc,
     inside,
@@ -85,6 +88,23 @@ describe("notebook keyboard routing", () => {
     s.modal();
     s.fire();
     expect(s.handle).not.toHaveBeenCalled();
+  });
+  it("says why it left each key, but not for another notebook's (FineNotes#226)", () => {
+    const s = setup();
+    s.fire({});
+    s.fire(s.doc.body, { defaultPrevented: true });
+    s.fire(s.doc.body, { isComposing: true });
+    s.active(false);
+    s.fire();
+    s.active(true);
+    s.modal();
+    s.fire();
+    expect(s.left.mock.calls.map((call: unknown[]) => call[1])).toEqual([
+      "outside",
+      "prevented",
+      "composing",
+      "modal",
+    ]);
   });
   it("does not stop keys the surface leaves to text fields or other actions", () => {
     const s = setup();

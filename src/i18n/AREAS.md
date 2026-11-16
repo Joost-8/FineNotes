@@ -104,7 +104,7 @@ An area's agent edits only these files plus src/i18n/en/<area>.ts.
 - src/view/graph-explore.ts
 - src/view/graph-window.ts
 
-## view (12)
+## view (13)
 
 - src/model/contents.ts
 - src/view/comment-modal.ts
@@ -117,6 +117,7 @@ An area's agent edits only these files plus src/i18n/en/<area>.ts.
 - src/view/page-sidebar.ts
 - src/view/screenshot-modal.ts
 - src/view/search-modal.ts
+- src/view/search-panel.ts
 - src/view/text-panel.ts
 
 ## toolbar (9)

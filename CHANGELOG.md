@@ -10,6 +10,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Search results you can step through**
+  ([discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
+  Search this notebook opens in a sidebar at the right of the page that
+  lists every match, not every page: the words around it with the match
+  marked, an icon for handwriting, a text box or a PDF's printed text, and
+  the page. Tap one to go there; ↑ and ↓ (or the arrow keys and Enter) step
+  to the previous and next, and the match being shown is ringed on the page
+  and filled in the list. A PDF's pages join the list as they are read,
+  also when their text was read before on this device. The list button
+  beside ✕ brings back the original list of pages, and its sidebar button
+  returns; the choice is remembered for every notebook.
 - **Transcribe recordings with an online service**
   ([#211](https://github.com/Joost-8/FineNotes/issues/211)). Settings › AI ›
   Recordings › Transcribe recordings with: this device (as before), Groq,
@@ -64,6 +75,8 @@ extracted from the matching section of this file by `release.yml`.
   A type on the bar leaves the pen's row, and once another pen is on the bar
   the pen's own button can go to Hidden, so a bar can hold just a ball pen
   and a highlighter. Hidden, or Remove from toolbar, takes a pen off again.
+  The pen's own button keeps its own pen beside them: it shows that pen and
+  a tap brings it back, also after a pinned highlighter.
 - **Markdown in text boxes**
   ([discussion #107](https://github.com/Joost-8/FineNotes/discussions/107)).
   Pick **Markdown** in the Text tool's Style list, or paste Markdown into
@@ -107,6 +120,39 @@ extracted from the matching section of this file by `release.yml`.
   puts them back to the defaults.
 
 ### Fixed
+
+- **P and H bring back each pen's own colour and width**
+  ([#226](https://github.com/Joost-8/FineNotes/issues/226)). After a small
+  red ball pen, H gave a highlighter in that red and width; now it brings
+  back the highlighter as you left it, as tapping it does. And with the
+  highlighter picked on the bar, P did nothing: it now goes back to the pen
+  you used last. Holding the key works the same way. With pens pinned to
+  the toolbar, a key goes to the pen's own button, as a tap there does: a
+  saved pen's 1–8 marks its pinned button rather than the pen's, H a pinned
+  highlighter's, and P the button of the pen you wrote with last. Diagnostics now also
+  list the last keys pressed on the notebook and why any were left (typed
+  text is never listed), and the input debug overlay shows them.
+- **Pasting a photo on iPad**
+  ([discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
+  Paste, from holding a finger on the page, now takes a picture in any
+  format the clipboard offers, HEIC included. Where iPadOS keeps the copied
+  picture from FineNotes altogether, it says so and points to Insert image ›
+  Photos instead of "nothing to paste". A paste with the keyboard also takes
+  a photo that comes without a type.
+- **Several pictures at once**
+  ([#211](https://github.com/Joost-8/FineNotes/issues/211),
+  [discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
+  Insert image › Photos lets you pick several pictures in one go, instead of
+  one per tap. They are placed side by side on the page in view, as one undo
+  step.
+- **A written answer stays on the page.** Write answer after an "=" near
+  the right edge wrote the answer past the page. It now shrinks a little to
+  fit after the "=", or, when it is too long for that, goes on the line
+  below, starting under the sum.
+- **Customize toolbar says why New pen does nothing with Essentials on.**
+  Essentials keeps the bar's layout, so New pen cannot add a button. Trying
+  it now marks the Essentials switch (a ring and a dot, and a short shake),
+  whose name reads "Turn off Essentials to add a pen".
 
 - **A tapped word is the word you tapped** (FineNotes#202). On a line with a
   sum, or with two words written close together, the word check could tie

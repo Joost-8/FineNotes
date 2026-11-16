@@ -1,7 +1,9 @@
 /** Optional secondary-tool transitions. Pure: no DOM or Obsidian. */
 import { t } from "../i18n/translate";
 import { rejoinsStroke } from "../input/pen-rejoin";
+import type { SavedPenType } from "../model/saved-pens";
 import type { ActiveTool } from "./toolbar";
+import type { PenSlotId } from "./toolbar-layout";
 
 /** Where and when (ms) a use's pen lifted. */
 export interface ToolLift {
@@ -58,6 +60,69 @@ export function selectedTool(
 ): ActiveTool {
   if (!enabled || current !== requested || !SECONDARY_TOOLS.has(requested)) return requested;
   return drawingToolOf(back, back);
+}
+
+/**
+ * The pen type P or H puts in hand (FineNotes#226), as tapping it in the pen
+ * row does, so it comes with that type's own colour and width. H is the
+ * highlighter. P is the pen type in hand while it is a pen; with the
+ * highlighter in hand, the pen used last (`recent`, newest first), else the
+ * first pen in the row (`order`). Turning the tool alone into "pen" kept the
+ * highlighter as the type, and the surface reads that as the highlighter:
+ * P did nothing.
+ */
+export function shortcutPenType(
+  tool: "pen" | "highlighter",
+  inHand: SavedPenType,
+  recent: readonly SavedPenType[],
+  order: readonly SavedPenType[],
+): SavedPenType {
+  if (tool === "highlighter") return "highlighter";
+  if (inHand !== "highlighter") return inHand;
+  return (
+    recent.find((type) => type !== "highlighter") ??
+    order.find((type) => type !== "highlighter") ??
+    "fountain"
+  );
+}
+
+/** A key that puts a pen in hand: P, H, or a saved pen's 1-8 (by its id, if it has one). */
+export type PenKey = "pen" | "highlighter" | { saved: string | null };
+
+/**
+ * The bar button a pen key presses, as a tap would (FineNotes#226, #211):
+ * a pen with a button of its own on the bar (`onBar`) is put in hand on
+ * that button, so its button is the one marked, not the pen's own ("main").
+ * `null`: the key names the pen already in hand, and changes nothing (a key
+ * never tucks the options away, as a second tap does).
+ *
+ * - A saved pen: its own button if pinned, else the pen's.
+ * - H: a pinned highlighter's button, else the pen's (as the highlighter).
+ * - P: the button of the pen last written with (`lastPen`), while it is
+ *   still on the bar, else the pen's. A pen in hand already stays.
+ *
+ * `inHand` is the button holding the pen in hand, `null` for the pen's own
+ * or for another tool; `tool` is the tool in hand.
+ */
+export function keyPenTarget(
+  key: PenKey,
+  tool: ActiveTool,
+  onBar: readonly PenSlotId[],
+  inHand: PenSlotId | null,
+  lastPen: PenSlotId | "main" | null,
+): PenSlotId | "main" | null {
+  const penInHand = tool === "pen" || tool === "highlighter";
+  if (key === "pen") {
+    if (tool === "pen") return null;
+    return lastPen !== null && lastPen !== "main" && onBar.includes(lastPen) ? lastPen : "main";
+  }
+  if (key === "highlighter") {
+    if (tool === "highlighter") return null;
+    return onBar.includes("pen:highlighter") ? "pen:highlighter" : "main";
+  }
+  const slot: PenSlotId | null = key.saved === null ? null : `saved:${key.saved}`;
+  if (slot === null || !onBar.includes(slot)) return "main";
+  return penInHand && inHand === slot ? null : slot;
 }
 
 /**

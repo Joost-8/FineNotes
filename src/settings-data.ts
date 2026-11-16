@@ -193,6 +193,12 @@ export interface GoodObsidianSettings {
   /** Where Ask opens: a window over the notebook, or a sidebar beside the page. */
   askLayout: "window" | "sidebar";
   /**
+   * How search shows its results, in every notebook (#112): the sidebar
+   * beside the page, every match a row to step through, or the original
+   * list of pages.
+   */
+  searchLayout: "sidebar" | "original";
+  /**
    * A new Ask AI chat starts with the page being read picked. Off by default
    * (Joost, discussion #107): a chat sends a page only when the user picks one.
    */
@@ -341,6 +347,12 @@ export interface GoodObsidianSettings {
    * On by default (Joost, 2026-10-25: every Grape now reads maths).
    */
   calcNotes: boolean;
+  /**
+   * Column sums (discussion #228): a line drawn under a column of amounts
+   * adds them up, read on this device (view/column-notes.ts). On in the test
+   * build so it can be tried without looking for it.
+   */
+  columnSums: boolean;
   /**
    * The vault path of a handwriting model file to read with instead of the
    * downloaded Grape (a model tuned to one writer). Blank for Grape.
@@ -569,6 +581,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   imageAspect: "square",
   askSaveChats: false,
   askLayout: "window",
+  searchLayout: "sidebar",
   askAttachPage: false,
   cloudConsentGiven: false,
   customConsentGiven: false,
@@ -604,6 +617,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   replayInk: true,
   checkHandwrittenWords: false,
   calcNotes: true,
+  columnSums: true,
   speechModel: "whisper-base",
   speechLanguage: "auto",
   speechService: "device",

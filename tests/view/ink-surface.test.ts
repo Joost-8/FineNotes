@@ -382,6 +382,64 @@ describe("handleKeyDown", () => {
     }
   });
 
+  it("puts the pen and the highlighter in hand the pen row's way (FineNotes#226)", () => {
+    const calls: string[] = [];
+    const surface = surfaceWith({
+      toolState: { tool: "pen" },
+      cropping: null,
+      pressMenu: null,
+      actionBar: { isMenuOpen: false },
+      callbacks: {
+        onToolChange: (tool: string) => calls.push(`onToolChange(${tool})`),
+        onPenShortcut: (tool: string) => {
+          calls.push(`onPenShortcut(${tool})`);
+          return true;
+        },
+      },
+      editingTextView: () => null,
+      clipboardKey: () => false,
+      liveImageSelection: () => null,
+      liveSelection: () => null,
+      setTool: (tool: string) => calls.push(`setTool(${tool})`),
+    });
+    const key = (k: string) =>
+      run(surface, "handleKeyDown", {
+        key: k,
+        code: `Key${k.toUpperCase()}`,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        target: null,
+        preventDefault: () => {},
+      });
+    key("h");
+    key("p");
+    key("e");
+    expect(calls).toEqual([
+      "onPenShortcut(highlighter)",
+      "onPenShortcut(pen)",
+      "setTool(eraser)",
+      "onToolChange(eraser)",
+    ]);
+    // Each press is noted for the diagnostics.
+    expect((surface.keyLogged as { report(): unknown }).report()).toEqual({
+      seen: 3,
+      verdicts: { taken: 3 },
+      recent: ["h:taken", "p:taken", "e:taken"],
+    });
+  });
+
+  it("notes a key typed into a field without naming it (FineNotes#226)", () => {
+    const surface = surfaceWith({ callbacks: {} });
+    run(surface, "handleKeyDown", { key: "a", code: "KeyA", target: { tagName: "INPUT" } });
+    expect((surface.keyLogged as { report(): unknown }).report()).toEqual({
+      seen: 1,
+      verdicts: { field: 1 },
+      recent: [":field"],
+    });
+  });
+
   it("ignores tool letters with Alt, and offers them to the clipboard with Cmd", () => {
     expect(press("p", { alt: true })).toEqual(PASSED);
     expect(press("p", { meta: true })).toEqual({

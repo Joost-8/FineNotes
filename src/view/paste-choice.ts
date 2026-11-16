@@ -27,15 +27,43 @@ export type ClipboardPick = { kind: "image"; type: string } | { kind: "text"; ty
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"];
 
 /**
- * The type to read from a clipboard item offering `types`: a picture the
- * page can show, else plain text; `null` when it offers neither (HTML alone,
- * a file list, a type of another app's own).
+ * The type to read from a clipboard item offering `types`: a picture, else
+ * plain text; `null` when it offers neither (HTML alone, a file list, a type
+ * of another app's own). The usual web formats are preferred; any other
+ * picture type (a HEIC photo, a TIFF) is taken too, since importing decodes
+ * and re-encodes it, and says so itself where this device cannot
+ * (discussion #112).
  */
 export function pickClipboardType(types: readonly string[]): ClipboardPick | null {
   const lower = types.map((type) => type.toLowerCase());
   for (const type of IMAGE_TYPES) if (lower.includes(type)) return { kind: "image", type };
+  const other = lower.find((type) => type.startsWith("image/"));
+  if (other) return { kind: "image", type: other };
   if (lower.includes("text/plain")) return { kind: "text", type: "text/plain" };
   return null;
+}
+
+/**
+ * Whether a clipboard that held items of `typesPerItem`, none of them
+ * pasteable, held something this engine would not show the page. iPad
+ * WebKit hands over a photo copied in Photos as an item with no types at
+ * all (WebKit bug 229377), so the press menu's Paste found "nothing" where
+ * the user had just copied a picture (discussion #112).
+ */
+export function clipboardHidSomething(typesPerItem: readonly (readonly string[])[]): boolean {
+  return typesPerItem.some((types) => types.length === 0);
+}
+
+/** File name endings of pictures, for a pasted file that came without a type. */
+const PICTURE_NAME = /\.(png|jpe?g|gif|webp|svg|heic|heif|avif|bmp|tiff?)$/i;
+
+/**
+ * Whether a file a paste carries is a picture: its type says so, or it has
+ * no type and its name ends like one (iOS hands some photos over untyped).
+ */
+export function isPictureFile(type: string, name: string): boolean {
+  if (type) return type.toLowerCase().startsWith("image/");
+  return PICTURE_NAME.test(name);
 }
 
 /**

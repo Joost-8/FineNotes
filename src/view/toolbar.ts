@@ -75,7 +75,10 @@ import {
   PEN_OPTIONS_ON_WRITE,
   PEN_OPTIONS_ON_WRITE_NAMES,
   type PenOptionsOnWrite,
+  keyPenTarget,
+  type PenKey,
   selectedTool,
+  shortcutPenType,
 } from "./tool-return";
 import {
   BAR_ITEM_ICONS,
@@ -1245,6 +1248,8 @@ export class Toolbar {
   private readonly penSlotButtons = new Map<PenSlotId, HTMLButtonElement>();
   /** The pen types the pen's button stood for, newest first (`penButtonType`). */
   private penButtonRecent: SavedPenType[] = [];
+  /** The pen types picked, newest first: where P goes back to from the highlighter. */
+  private penKeyRecent?: SavedPenType[];
   /**
    * The pen button last tapped (FineNotes#211): "main" for the pen's own
    * button, or a pinned pen's slot. It decides which button is in hand when
@@ -1253,6 +1258,8 @@ export class Toolbar {
   private handButton: PenSlotId | "main" | null = null;
   /** The pen the pen's own button had in hand last: it keeps showing it while a pinned pen is used. */
   private mainPen: SavedPen | null = null;
+  /** The button of the pen last written with, a slot or the pen's own: where P goes back to. */
+  private lastPenButton: PenSlotId | "main" | null = null;
   /** The pen button the indicator marks while a pen is in hand: a slot, or the pen's (`null`). */
   private indicatorSlot: PenSlotId | null = null;
   /** Pages are shown dark: every colour the bar shows is shown as the ink is (`shownColor`). */
@@ -2416,6 +2423,15 @@ export class Toolbar {
   /** The pen button the pen in hand belongs to: a slot, or the pen's own (`null`). */
   private penSlotInHand(): PenSlotId | null {
     if (this.state.tool !== "pen" && this.state.tool !== "highlighter") return null;
+    return this.penSlotOfState();
+  }
+
+  /**
+   * The pinned button the pen the state holds belongs to, or `null` for the
+   * pen's own: {@link penSlotInHand} whichever tool is in hand, so the pen's
+   * button knows its pen is not the last one used after the eraser too.
+   */
+  private penSlotOfState(): PenSlotId | null {
     if (this.handButton === "main") return null;
     if (this.handButton && penSlotsOf(this.laid()).includes(this.handButton)) {
       return this.handButton;
@@ -2426,13 +2442,37 @@ export class Toolbar {
   /** The pen type the pen's button stands for now (`toolbar-layout.ts`). */
   private penButtonSpec(): PenTypeSpec {
     const order = penRowTypes(this.state).map((spec) => spec.id);
-    const id = penButtonType(
-      order,
-      penTypesOnBar(this.laid()),
-      this.activePenType().id,
-      this.penButtonRecent,
-    );
+    const taken = penTypesOnBar(this.laid());
+    // A saved pen's button holds the state: its type is that button's now.
+    const slot = this.penSlotOfState();
+    if (slot !== null && slotSavedId(slot) !== null) taken.add(this.activePenType().id);
+    const id = penButtonType(order, taken, this.activePenType().id, this.penButtonRecent);
     return PEN_TYPES.find((spec) => spec.id === id) ?? this.activePenType();
+  }
+
+  /**
+   * The pen's own button's pen while a pinned button holds the state (its
+   * pen in hand, or the last pen used before another tool): the pen it kept,
+   * which it shows and a tap gives back. Nothing kept, or what it kept is
+   * the pinned pen itself (a notebook opened with the pinned pen in hand:
+   * the bar's first draw comes before its layout), or its type has a button
+   * of its own by now: the type it stands for, in that type's own ink.
+   * `null` when the state is its own pen, or no type is left for it.
+   */
+  private penButtonPen(): SavedPen | null {
+    if (this.penSlotOfState() === null) return null;
+    const kept = this.mainPen;
+    if (
+      kept &&
+      !samePen(kept, penOfState(this.state)) &&
+      !penTypesOnBar(this.laid()).has(kept.type)
+    ) {
+      return kept;
+    }
+    const spec = this.penButtonSpec();
+    if (spec.id === this.activePenType().id) return null;
+    const ink = penInkFor(this.state.penInks ?? {}, spec.id, this.inkInHand());
+    return { type: spec.id, color: ink.color, size: ink.size ?? this.state.size };
   }
 
   /**
@@ -2440,7 +2480,7 @@ export class Toolbar {
    * a saved pen as its key 1-8 does); tapped in hand, it shows or tucks
    * away its pill, as every tool's button does.
    */
-  private tapPenSlot(slot: PenSlotId, button: HTMLElement): void {
+  private tapPenSlot(slot: PenSlotId, button: HTMLElement | null): void {
     const was = this.penSlotInHand();
     this.handButton = slot;
     if (was === slot) {
@@ -2465,7 +2505,7 @@ export class Toolbar {
       this.leaveToolFor(spec.tool);
     }
     this.choosePenType(spec);
-    button.focus({ preventScroll: true });
+    button?.focus({ preventScroll: true });
   }
 
   /** Put a pen on the bar as a button of its own, or take it off, and keep the layout. */
@@ -2839,7 +2879,9 @@ export class Toolbar {
     const penInHand = this.state.tool === "pen" || this.state.tool === "highlighter";
     const pinnedInHand = penInHand && this.penSlotInHand() !== null;
     if (penInHand && !pinnedInHand) this.mainPen = penOfState(this.state);
-    const own = pinnedInHand ? this.mainPen : null;
+    // Its own pen, also once another tool is in hand after a pinned pen: the
+    // button drew the pinned pen a second time there.
+    const own = this.penButtonPen();
     const spec = own
       ? (PEN_TYPES.find((type) => type.id === own.type) ?? this.penButtonSpec())
       : this.penButtonSpec();
@@ -2937,16 +2979,23 @@ export class Toolbar {
     // it picks the type in hand. Picking plain "pen" with the highlighter as
     // the type wrote opaque pen ink in the highlighter's colour.
     if (tool === "pen") {
-      // While the pen in hand belongs to a type's own button, the pen's
-      // button puts its own type back in hand (FineNotes#211).
-      const slot = this.penSlotInHand();
-      const own = this.penButtonSpec();
-      if (slot !== null && slotPenType(slot) !== null && own.id !== this.activePenType().id) {
-        if (this.practice && own.tool === "highlighter") return;
+      // The pen's own button after a pinned pen, in hand or the last pen used
+      // before another tool: its own pen again, with its type row and menu
+      // (FineNotes#211). Decided here, before `tool` becomes the tool of the
+      // pen in hand: a pinned highlighter's is "highlighter", and the tap
+      // then only tucked its options away.
+      const own = this.penButtonPen();
+      if (own) {
+        const spec = PEN_TYPES.find((type) => type.id === own.type);
+        if (this.practice && spec?.tool === "highlighter") return;
+        this.handButton = "main";
         this.closePopover();
-        this.choosePenType(own);
+        this.tuckedByStroke = false;
+        this.optionsVisible = true;
+        this.applySavedPen(own);
         return;
       }
+      this.handButton = "main";
       tool = this.activePenType().tool;
     }
     const current = this.state.tool;
@@ -2977,21 +3026,6 @@ export class Toolbar {
         this.state.zoomBoxOpen = action === "open" && this.state.zoomBoxOpen === true;
         if (current === "zoom") this.buildOptions();
         this.syncActive();
-        return;
-      }
-    }
-    // The pen's own button after a pinned pen: its own pen again, with its
-    // type row and menu, not the pinned pen's (FineNotes#211).
-    if (tool === "pen") {
-      const pinned =
-        ((current === "pen" || current === "highlighter") && this.penSlotInHand() !== null) ||
-        (this.handButton !== null && this.handButton !== "main");
-      this.handButton = "main";
-      if (pinned && this.mainPen) {
-        this.closePopover();
-        this.tuckedByStroke = false;
-        this.optionsVisible = true;
-        this.applySavedPen(this.mainPen);
         return;
       }
     }
@@ -5729,10 +5763,65 @@ export class Toolbar {
     }
   }
 
+  /**
+   * P, H (pressed or held) or a saved pen's 1-8: the bar button the pen has
+   * is pressed, as a tap would (`keyPenTarget`, FineNotes#226 and #211). A
+   * pinned pen goes in hand on its own button; any other on the pen's, a
+   * saved pen as it was saved and P or H as the pen row puts them in hand.
+   * A key naming the pen in hand changes nothing.
+   */
+  pressPenKey(key: PenKey, saved: SavedPen | null = null): void {
+    const target = keyPenTarget(
+      key,
+      this.state.tool,
+      penSlotsOf(this.laid()),
+      this.penSlotInHand(),
+      this.lastPenButton,
+    );
+    if (target === null) return;
+    if (target !== "main") {
+      this.tapPenSlot(target, null);
+      return;
+    }
+    if (typeof key === "object") {
+      if (!saved) return;
+      this.handButton = "main";
+      this.applySavedPen(saved);
+      return;
+    }
+    this.pickPenByShortcut(key);
+  }
+
+  /**
+   * P or H on the pen's own button: the pen or the highlighter as its button
+   * in the pen row puts it in hand, with that type's own colour and width
+   * (`shortcutPenType`). Switching the tool alone left the pen's red and
+   * width on the highlighter, and kept P on the highlighter.
+   */
+  private pickPenByShortcut(tool: "pen" | "highlighter"): void {
+    const id = shortcutPenType(
+      tool,
+      this.activePenType().id,
+      this.penKeyRecent ?? [],
+      penRowTypes(this.state).map((spec) => spec.id),
+    );
+    const spec = PEN_TYPES.find((type) => type.id === id) ?? PEN_TYPES[0];
+    if (this.practice && spec.tool === "highlighter") return;
+    this.handButton = "main";
+    this.closePopover();
+    if (this.state.tool !== spec.tool) {
+      this.drawingTool = drawingToolOf(this.drawingTool, spec.tool);
+      this.tuckedByStroke = false;
+      this.leaveToolFor(spec.tool);
+    }
+    this.choosePenType(spec);
+  }
+
   private choosePenType(spec: PenTypeSpec): void {
     // Each pen type keeps its own colour, row and width (GoodNotes): the one
     // being left keeps what it wrote with, the one picked brings back its own.
     const from = this.activePenType().id;
+    this.penKeyRecent = rememberPenType(rememberPenType(this.penKeyRecent ?? [], from), spec.id);
     if (from !== spec.id) {
       const { color, size } = this.state;
       const step = switchPenInk(this.state.penInks ?? {}, from, spec.id, this.inkInHand());
@@ -7963,6 +8052,7 @@ export class Toolbar {
     // Highlighter is a pen type, so the pen button stands for both.
     const tool = state.tool === "highlighter" ? "pen" : state.tool;
     const slot = this.penSlotInHand();
+    if (state.tool === "pen") this.lastPenButton = slot ?? "main";
     const from =
       tool === this.indicatorTool && slot === this.indicatorSlot ? null : this.toolPlaces();
     markChosen(this.toolButtons, tool, true);

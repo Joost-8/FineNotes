@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   PASTED_TEXT_ROOM,
   cleanPastedText,
+  clipboardHidSomething,
   inkFirst,
+  isPictureFile,
   pastedTextOrigin,
   pickClipboardType,
 } from "../../src/view/paste-choice";
@@ -44,10 +46,52 @@ describe("pickClipboardType", () => {
     });
   });
 
-  it("finds nothing in HTML alone, a picture type the page cannot show, or nothing", () => {
+  it("takes any other picture type, after the web formats (discussion #112)", () => {
+    expect(pickClipboardType(["image/heic", "web application/x-goodnotes"])).toEqual({
+      kind: "image",
+      type: "image/heic",
+    });
+    expect(pickClipboardType(["image/tiff", "image/jpeg"])).toEqual({
+      kind: "image",
+      type: "image/jpeg",
+    });
+    expect(pickClipboardType(["text/plain", "IMAGE/TIFF"])).toEqual({
+      kind: "image",
+      type: "image/tiff",
+    });
+  });
+
+  it("finds nothing in HTML alone, another app's own type, or nothing", () => {
     expect(pickClipboardType(["text/html"])).toBeNull();
-    expect(pickClipboardType(["image/heic", "web application/x-goodnotes"])).toBeNull();
+    expect(pickClipboardType(["web application/x-goodnotes"])).toBeNull();
     expect(pickClipboardType([])).toBeNull();
+  });
+});
+
+describe("clipboardHidSomething", () => {
+  it("is true when an item came with no types: an iPad photo (discussion #112)", () => {
+    expect(clipboardHidSomething([[]])).toBe(true);
+    expect(clipboardHidSomething([["text/html"], []])).toBe(true);
+  });
+
+  it("is false for an empty clipboard, or items whose types were all shown", () => {
+    expect(clipboardHidSomething([])).toBe(false);
+    expect(clipboardHidSomething([["text/html"]])).toBe(false);
+  });
+});
+
+describe("isPictureFile", () => {
+  it("trusts a file's type", () => {
+    expect(isPictureFile("image/png", "x.txt")).toBe(true);
+    expect(isPictureFile("IMAGE/HEIC", "")).toBe(true);
+    expect(isPictureFile("application/pdf", "scan.png")).toBe(false);
+  });
+
+  it("goes by the name for an untyped file", () => {
+    expect(isPictureFile("", "IMG_0042.HEIC")).toBe(true);
+    expect(isPictureFile("", "photo.jpeg")).toBe(true);
+    expect(isPictureFile("", "notes.pdf")).toBe(false);
+    expect(isPictureFile("", "")).toBe(false);
   });
 });
 

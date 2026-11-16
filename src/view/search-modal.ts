@@ -8,6 +8,10 @@
  * What is searched is decided in `src/search/notebook-search.ts`: the
  * page's transcription (the note's text layer, and the transcript server's
  * `.transcript.md` file), its typed text boxes and its PDF's printed text.
+ *
+ * It is the "original" look of the search (discussion #112): the sidebar
+ * (`search-panel.ts`) lists every match to step through, and a button at
+ * the field's end switches to it, as the sidebar's switches back here.
  */
 
 import { type App, SuggestModal, setIcon } from "obsidian";
@@ -20,6 +24,7 @@ import {
   searchPages,
 } from "../search/notebook-search";
 import { DialogKeyboard } from "./dialog-keyboard";
+import { onTap } from "./selection-bar";
 import type { Feature } from "../model/feature-index";
 import { type FeatureHost, featureHits, hideButton } from "./feature-rows";
 
@@ -47,6 +52,8 @@ export interface NotebookSearchHost {
   showFeature?: (feature: Feature) => void;
   /** What a found feature's × can do: take it out of search results. */
   features?: FeatureHost;
+  /** Show the search in the sidebar instead, with the query as typed (#112). */
+  switchToSidebar?: (query: string) => void;
 }
 
 export class NotebookSearchModal extends SuggestModal<SearchRow> {
@@ -75,6 +82,7 @@ export class NotebookSearchModal extends SuggestModal<SearchRow> {
   override async onOpen(): Promise<void> {
     await super.onOpen();
     this.keyboard.start(this.inputEl);
+    this.addSwitch();
     if (!this.host.initial) return;
     // Opening empties the field; write the last query after, and select it
     // so typing replaces it.
@@ -153,6 +161,23 @@ export class NotebookSearchModal extends SuggestModal<SearchRow> {
       return;
     }
     this.host.goTo(hit.pageIndex, this.inputEl.value);
+  }
+
+  /** The sidebar button at the field's end, as the sidebar has one back here. */
+  private addSwitch(): void {
+    const toSidebar = this.host.switchToSidebar;
+    const row = this.inputEl.parentElement;
+    if (!toSidebar || !row || row.querySelector(".goodobsidian-search-switch")) return;
+    const button = row.createEl("button", {
+      cls: "goodobsidian-search-switch clickable-icon",
+      attr: { type: "button", "aria-label": t("view.search.showInSidebar") },
+    });
+    setIcon(button, "panel-right");
+    onTap(button, () => {
+      const query = this.inputEl.value;
+      this.close();
+      toSidebar(query);
+    });
   }
 
   /** What an empty list says: how to search, or why nothing was found. */
