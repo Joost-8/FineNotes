@@ -21786,6 +21786,30 @@ button.goodobsidian-feature-hide.clickable-icon svg {
 
 /* --- Help improve Grape (view/grape-sharing.ts) --------------------------- */
 
+/*
+ * The sheets are a column no taller than the screen: the long part (the
+ * terms, the review list) scrolls, and the buttons stay on screen. On the
+ * iPad the terms ran past the bottom and took Share with them (Joost,
+ * 2026-11-16).
+ */
+.modal.goodobsidian-share {
+  display: flex;
+  flex-direction: column;
+  max-height: min(88vh, calc(100% - 32px));
+  overflow: hidden;
+}
+.goodobsidian-share .modal-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.goodobsidian-share .modal-button-container {
+  flex: none;
+  margin-top: 12px;
+}
+
 .goodobsidian-share .modal-content p {
   margin: 6px 0;
 }
@@ -21836,9 +21860,13 @@ button.goodobsidian-feature-hide.clickable-icon svg {
   border-top: 1px solid var(--background-modifier-border);
   margin-top: 12px;
 }
+.goodobsidian-share-facts,
 .goodobsidian-share-review {
-  max-height: min(60vh, 520px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .goodobsidian-share-group-head {
   display: flex;
