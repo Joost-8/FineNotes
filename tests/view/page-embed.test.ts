@@ -211,6 +211,15 @@ describe("PageEmbeds' hook into Obsidian's embed registry", () => {
     expect(original).toHaveBeenCalledTimes(4);
   });
 
+  it("hands a call with no file to Obsidian's creator (#227)", () => {
+    // Kanban, True Recall and others call it this way only to get Obsidian's editor.
+    const { reg, original, embeds } = setUp();
+    embeds.onload();
+    const c = { app: {} as never, containerEl: fakeEl() as never } as never;
+    expect(reg.embedByExtension.md!(c, null, "")).toBe(markdownEmbed);
+    expect(original).toHaveBeenCalledWith(c, null, "");
+  });
+
   it("puts Obsidian's creator back when the plugin unloads", () => {
     const { reg, original, embeds } = setUp();
     embeds.onload();

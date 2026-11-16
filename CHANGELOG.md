@@ -130,6 +130,10 @@ extracted from the matching section of this file by `release.yml`.
   ([FineNotes#210](https://github.com/Joost-8/FineNotes/issues/210)). Opened
   from the pen in hand, the second page of the pen menu hung off the pane's
   left edge. Every toolbar popover now stays inside the view, however narrow.
+- **Other plugins' editors work with FineNotes on**
+  ([#227](https://github.com/Joost-8/FineNotes/issues/227)). Plugins such as
+  Kanban and True Recall that ask Obsidian for its Markdown editor got an
+  error and lost their editors; FineNotes now leaves those calls to Obsidian.
 
 ## [2.9.1] - 2026-11-10
 
