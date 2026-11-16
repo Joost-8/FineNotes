@@ -712,7 +712,7 @@ import { edgeScrollSpeed } from "./page-drag-model";
 import { CalcCard, type CalcCardActions, type CalcCardContent } from "./calc-card";
 import { CalcGlow } from "./calc-glow";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
-import { cleanPastedText, inkFirst, pastedTextOrigin } from "./paste-choice";
+import { cleanPastedText, inkFirst, isPictureFile, pastedTextOrigin } from "./paste-choice";
 import {
   canReadSystemClipboard,
   onSystemTextWritten,
@@ -15372,7 +15372,9 @@ export class InkSurface {
       new Notice(
         found.kind === "unavailable"
           ? t("surface.notice.clipboardUnreadable")
-          : t("surface.notice.nothingToPaste"),
+          : found.kind === "hidden"
+            ? t("surface.notice.clipboardHidden")
+            : t("surface.notice.nothingToPaste"),
       );
     });
   }
@@ -21860,12 +21862,12 @@ function isEditable(target: EventTarget | null): boolean {
 function imageFileOf(data: DataTransfer | null): File | null {
   if (!data) return null;
   for (const file of Array.from(data.files)) {
-    if (file.type.startsWith("image/")) return file;
+    if (isPictureFile(file.type, file.name)) return file;
   }
   for (const item of Array.from(data.items)) {
-    if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+    if (item.kind !== "file") continue;
     const file = item.getAsFile();
-    if (file) return file;
+    if (file && isPictureFile(file.type || item.type, file.name)) return file;
   }
   return null;
 }
