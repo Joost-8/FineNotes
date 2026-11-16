@@ -65,12 +65,16 @@ people's handwriting. It may also be used in Joost's research on handwriting
 recognition at Eindhoven University of Technology (TU/e). The legal basis is
 your consent (GDPR art. 6(1)(a)).
 
-## Licence
+## Your items stay private; only Grape is released
 
-You give the items you share under **CC0 1.0**: anyone may use them for any
-purpose without asking you or naming you, and they may be published as part
-of an open handwriting dataset. Grape models trained on them are released
-free under Apache 2.0.
+What you share is **never published** and never given to anyone else: it is
+not released as a dataset, and nobody but Joost works with it. By sharing you
+allow Joost to use your items for the purposes above: to train Grape, to
+test it, and in his research. Research results report measurements, never
+your handwriting itself.
+
+Only the **Grape models** trained on your items are released, free and open
+under the Apache License 2.0. A model holds what it learned, not your items.
 
 ## Where it is kept, and for how long
 

@@ -45,10 +45,15 @@ export const SHARE_KINDS: readonly ShareKind[] = ["practice", "word", "equation"
  * what licence raises it, and everyone who agreed to an older one is asked
  * again before anything more is sent.
  */
-export const CONSENT_VERSION = 1;
+export const CONSENT_VERSION = 2;
 
-/** The licence donors grant (Joost's choice, 2026-11-16). */
-export const SHARE_LICENCE = "CC0-1.0";
+/**
+ * What donors agree to (Joost's choice, 2026-11-16, replacing CC0): the
+ * items stay private, used only to train and test Grape and in Joost's
+ * research; never published as a dataset or given to anyone else. Only the
+ * Grape models trained on them are released, under Apache 2.0.
+ */
+export const SHARE_LICENCE = "finenotes-grape-private-1";
 
 /** The batch format, read by the server and the rig. */
 export const SHARE_FORMAT = "finenotes-ink-share/1";
