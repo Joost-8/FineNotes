@@ -46,6 +46,11 @@ export interface Correction {
   strokes: CorrectionStroke[];
   /** ms since the epoch. */
   at: number;
+  /**
+   * Where the answer was given: "calc" for a piece of a calculation note's
+   * sum. Absent: the word check (underlined words, a lassoed title).
+   */
+  source?: "calc";
 }
 
 export interface CorrectionsFile {
@@ -99,7 +104,7 @@ export function serializeCorrections(file: CorrectionsFile): string {
 
 function readCorrection(item: unknown): Correction | null {
   if (!isRecord(item)) return null;
-  const { kind, read, text, note, page, strokes, at } = item;
+  const { kind, read, text, note, page, strokes, at, source } = item;
   if (!(CORRECTION_KINDS as readonly unknown[]).includes(kind)) return null;
   if (typeof read !== "string" || typeof text !== "string") return null;
   if (typeof note !== "string" || typeof page !== "string") return null;
@@ -126,6 +131,7 @@ function readCorrection(item: unknown): Correction | null {
     page,
     strokes: ink,
     at: typeof at === "number" && Number.isFinite(at) ? at : 0,
+    ...(source === "calc" ? { source: "calc" as const } : {}),
   };
 }
 

@@ -293,6 +293,7 @@ export const settings = {
   "settings.calcNotes.info":
     "Write a sum ending in = (12x4 =; an x between numbers is times) and lift the pen: FineNotes reads the line on this device and shows what it read and the answer beside it. Tap that to write the answer after the =, at your writing's size, in your own hand once you have written the symbol practice sheet (a command); keep writing to leave the page as it was. A letter set on a line above (a = 5) can be used. Check what it read before you tap: a misread digit gives a wrong answer.",
   "settings.learn.name": "Learn your handwriting",
+  "settings.share.name": "Help improve Grape",
   "settings.learn.open": "Open",
 
   // --- API keys ---

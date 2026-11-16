@@ -14,6 +14,7 @@
  * What is stored, and how, lives in `settings-data.ts`.
  */
 
+import { SHARING_BUILT } from "./view/sharing-load";
 import {
   deleteLearnedModel,
   learnedFiles,
@@ -2271,6 +2272,21 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             ),
             "graduation-cap",
           ),
+          // "Help improve Grape": only in a build that has it (view/sharing-load.ts).
+          ...(SHARING_BUILT
+            ? [
+                this.tile(
+                  drawnRow(
+                    t("settings.share.name"),
+                    "",
+                    (s) => this.plugin.sharing?.drawRow(s, () => this.update()),
+                    ["help improve grape", "share", "handwriting", "data", "contribute", "privacy"],
+                    () => reading() && this.plugin.sharing !== null,
+                  ),
+                  "heart-handshake",
+                ),
+              ]
+            : []),
         ],
       ],
       [

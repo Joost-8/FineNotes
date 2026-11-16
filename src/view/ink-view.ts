@@ -798,6 +798,7 @@ export class InkView extends TextFileView {
           { note, pageId, word: { text: read, strokeIds: strokes.map((s) => s.id) }, strokes },
           kind,
           text,
+          "calc",
         );
       },
     });

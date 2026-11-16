@@ -20,6 +20,7 @@
 import { type App, Modal, Notice, normalizePath } from "obsidian";
 import { t } from "../i18n/translate";
 import {
+  type Correction,
   type CorrectionKind,
   type CorrectionsFile,
   type ReadWord,
@@ -265,11 +266,21 @@ export class WordCheck {
   }
 
   /** Record an answer given elsewhere (a lassoed title corrected in its dialog). */
-  record(word: CheckedWord, kind: CorrectionKind, text: string): Promise<void> {
-    return this.answer(word, kind, text);
+  record(
+    word: CheckedWord,
+    kind: CorrectionKind,
+    text: string,
+    source?: Correction["source"],
+  ): Promise<void> {
+    return this.answer(word, kind, text, source);
   }
 
-  private async answer(word: CheckedWord, kind: CorrectionKind, text: string): Promise<void> {
+  private async answer(
+    word: CheckedWord,
+    kind: CorrectionKind,
+    text: string,
+    source?: Correction["source"],
+  ): Promise<void> {
     const strokes = word.strokes.map((s) => ({
       id: s.id,
       pts: Array.from(s.pts),
@@ -283,6 +294,7 @@ export class WordCheck {
       page: word.pageId,
       strokes,
       at: Date.now(),
+      ...(source ? { source } : {}),
     });
     try {
       await this.save();

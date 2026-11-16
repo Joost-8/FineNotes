@@ -21783,3 +21783,100 @@ button.goodobsidian-feature-hide.clickable-icon svg {
   background: var(--text-error);
   color: var(--text-on-accent);
 }
+
+/* --- Help improve Grape (view/grape-sharing.ts) --------------------------- */
+
+.goodobsidian-share .modal-content p {
+  margin: 6px 0;
+}
+.goodobsidian-share h4 {
+  margin: 14px 0 4px;
+  font-size: var(--font-ui-small);
+}
+.goodobsidian-share-what {
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-share-invite {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  align-items: start;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-m);
+  background: hsla(var(--interactive-accent-hsl), 0.1);
+}
+.goodobsidian-share-invite-icon {
+  color: var(--interactive-accent);
+  padding-top: 2px;
+}
+.goodobsidian-share-invite-title {
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-share-invite-buttons {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.goodobsidian-share-invite-buttons button {
+  white-space: normal;
+}
+.goodobsidian-share-desc,
+.goodobsidian-share-facts p,
+.goodobsidian-share-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.goodobsidian-share-desc.is-hidden {
+  display: none;
+}
+.goodobsidian-share-facts {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 12px;
+}
+.goodobsidian-share-review {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+.goodobsidian-share-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+button:not(.clickable-icon).goodobsidian-share-all,
+.goodobsidian-share-all.clickable-icon {
+  width: auto;
+  padding: 2px 8px;
+  font-size: var(--font-ui-smaller);
+  color: var(--interactive-accent);
+  white-space: normal;
+}
+.goodobsidian-share-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  margin: 6px 0;
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}
+.goodobsidian-share-item.is-off {
+  opacity: 0.55;
+}
+.goodobsidian-share-strip {
+  min-width: 0;
+  overflow: hidden;
+}
+.goodobsidian-share-strip canvas {
+  display: block;
+  max-width: 100%;
+}

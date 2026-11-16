@@ -223,7 +223,10 @@ export async function symbolsToWrite(host: LearningHost): Promise<number[] | nul
 }
 
 /** A practice file's document: the open notebook (unsaved ink included), else its file. */
-async function readPracticeDoc(host: LearningHost, path: string): Promise<InkDocument | null> {
+export async function readPracticeDoc(
+  host: LearningHost,
+  path: string,
+): Promise<InkDocument | null> {
   const open = host.openNotebook(path);
   if (open) return open;
   const file = host.app.vault.getFileByPath(path);

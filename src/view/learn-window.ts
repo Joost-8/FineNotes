@@ -10,6 +10,7 @@
  * there rather than in a notice.
  */
 
+import type { SharingFeature } from "./sharing-feature";
 import { type App, Modal, setIcon } from "obsidian";
 import { t } from "../i18n/translate";
 import { PRACTICE_SETS } from "../recognition/practice";
@@ -36,6 +37,8 @@ export interface LearnWindowHost {
   learner: HandwritingLearner;
   /** Read with Grape alone: the result's "Go back to Grape". */
   setHandwritingReader(choice: string): Promise<void>;
+  /** "Help improve Grape", in a build that has it: its invite goes under a run that helped. */
+  sharing: SharingFeature | null;
 }
 
 /** What the vault holds toward learning, read when the window opens and after a run. */
@@ -124,6 +127,11 @@ export class LearnWindow extends Modal {
       const big = contentEl.createDiv({ cls: "goodobsidian-learn-big" });
       big.createSpan({ text: `${before} % → ${after} %` });
       big.createSpan({ cls: "goodobsidian-learn-unit", text: ` ${t("ai.learnWin.mistakes")}` });
+      if (view.note) contentEl.createDiv({ cls: "goodobsidian-learn-note", text: view.note });
+      // A slot of its own: the invite is drawn once the vault is read, above the buttons.
+      this.host.sharing?.drawInvite(contentEl.createDiv());
+      this.drawButtons(contentEl, view);
+      return;
     } else if (view.phase === "kept" && this.result?.kind === "kept") {
       const { kept, learned, mine } = this.result;
       const big = contentEl.createDiv({ cls: "goodobsidian-learn-big" });
@@ -134,7 +142,11 @@ export class LearnWindow extends Modal {
       });
     } else if (view.marks.length > 0) this.drawSheets(contentEl, view, material);
     if (view.note) contentEl.createDiv({ cls: "goodobsidian-learn-note", text: view.note });
-    const row = contentEl.createDiv({ cls: "modal-button-container" });
+    this.drawButtons(contentEl, view);
+  }
+
+  private drawButtons(parent: HTMLElement, view: LearnWindowView): void {
+    const row = parent.createDiv({ cls: "modal-button-container" });
     for (const button of view.buttons) {
       const el = row.createEl("button", { text: button.label });
       if (button.cta) el.addClass("mod-cta");

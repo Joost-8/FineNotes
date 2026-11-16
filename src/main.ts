@@ -19,6 +19,8 @@ import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-regi
 import { EmptyTabHomeButton } from "./view/empty-tab-home-button";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
+import type { SharingFeature } from "./view/sharing-feature";
+import { loadSharing } from "./view/sharing-load";
 import { WordCheck } from "./view/word-check";
 import {
   followPairRename,
@@ -499,6 +501,9 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Checking words read on the device, and the answers to learn from. */
   readonly wordCheck = new WordCheck(this.app, () => this.pluginDir);
 
+  /** "Help improve Grape", in a build that has it (`view/sharing-load.ts`); else null. */
+  sharing: SharingFeature | null = null;
+
   /** This plugin's folder in the vault. */
   get pluginDir(): string {
     return this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
@@ -743,6 +748,15 @@ export default class GoodObsidianPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("delete", (file) => this.libraryPathChanged(file.path)));
     this.register(() => this.fileMoves.destroy());
     this.wordCheck.answered = (count) => this.remindToRelearn(count);
+    void loadSharing({
+      app: this.app,
+      learning: () => this.learningHost(),
+      version: this.manifest.version,
+      grape: () => `${this.grape.id}@${this.grape.model.asset.version}`,
+    }).then((sharing) => {
+      this.sharing = sharing;
+      sharing?.start();
+    });
     // The reader's and the learner's workers end with the plugin.
     this.register(() => {
       this.learner.dispose();
