@@ -295,6 +295,8 @@ export const surface = {
   "surface.notice.nothingHighlighted": "Nothing highlighted on this page covers text.",
   "surface.notice.nothingToPaste": "FineNotes: nothing to paste.",
   "surface.notice.clipboardUnreadable": "FineNotes: couldn't read the clipboard here.",
+  "surface.notice.clipboardHidden":
+    "FineNotes: this device won't hand the clipboard's picture to FineNotes. Add it with Insert image › Photos.",
   "surface.notice.imageLocked": "FineNotes: image locked. To unlock it, hold the lasso on it.",
   "surface.readout.nothingToRedo": "Nothing to redo",
   "surface.readout.nothingToUndo": "Nothing to undo",

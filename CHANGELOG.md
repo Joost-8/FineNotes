@@ -119,6 +119,19 @@ extracted from the matching section of this file by `release.yml`.
   highlighter's, and P the button of the pen you wrote with last. Diagnostics now also
   list the last keys pressed on the notebook and why any were left (typed
   text is never listed), and the input debug overlay shows them.
+- **Pasting a photo on iPad**
+  ([discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
+  Paste, from holding a finger on the page, now takes a picture in any
+  format the clipboard offers, HEIC included. Where iPadOS keeps the copied
+  picture from FineNotes altogether, it says so and points to Insert image ›
+  Photos instead of "nothing to paste". A paste with the keyboard also takes
+  a photo that comes without a type.
+- **Several pictures at once**
+  ([#211](https://github.com/Joost-8/FineNotes/issues/211),
+  [discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
+  Insert image › Photos lets you pick several pictures in one go, instead of
+  one per tap. They are placed side by side on the page in view, as one undo
+  step.
 - **A tapped word is the word you tapped** (FineNotes#202). On a line with a
   sum, or with two words written close together, the word check could tie
   every word to the ink of the word before it: tapping "This" offered
