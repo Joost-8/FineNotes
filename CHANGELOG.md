@@ -147,6 +147,10 @@ extracted from the matching section of this file by `release.yml`.
   the right edge wrote the answer past the page. It now shrinks a little to
   fit after the "=", or, when it is too long for that, goes on the line
   below, starting under the sum.
+- **Customize toolbar says why New pen does nothing with Essentials on.**
+  Essentials keeps the bar's layout, so New pen cannot add a button. Trying
+  it now marks the Essentials switch (a ring and a dot, and a short shake),
+  whose name reads "Turn off Essentials to add a pen".
 
 - **A tapped word is the word you tapped** (FineNotes#202). On a line with a
   sum, or with two words written close together, the word check could tie

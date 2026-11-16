@@ -22021,3 +22021,46 @@ button.goodobsidian-feature-hide.clickable-icon svg {
   background: var(--text-error);
   color: var(--text-on-accent);
 }
+
+/* Customize toolbar: New pen tried while Essentials is on marks the
+   Essentials switch, the one thing in its way (Joost, 2026-11-16). */
+button.goodobsidian-edit-switch.is-blocking {
+  color: var(--text-normal);
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+  border-radius: var(--radius-s);
+}
+
+button.goodobsidian-edit-switch.is-blocking .goodobsidian-edit-toggle::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-red);
+  box-shadow: 0 0 0 2px var(--background-primary);
+}
+
+button.goodobsidian-edit-switch.is-nudged {
+  animation: goodobsidian-edit-nudge 0.4s ease;
+}
+
+@keyframes goodobsidian-edit-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.goodobsidian-edit-switch.is-nudged {
+    animation: none;
+  }
+}
