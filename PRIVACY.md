@@ -12,8 +12,8 @@ README, under "Privacy and network use".
 
 ## Who is responsible
 
-Joost [full name to fill in], the developer of FineNotes, an individual in
-the Netherlands. Contact: [contact address to fill in].
+Joost Dille, the developer of FineNotes, an individual in
+the Netherlands. Contact: fine.notes0@gmail.com.
 
 ## What is shared, and only if you choose it
 
