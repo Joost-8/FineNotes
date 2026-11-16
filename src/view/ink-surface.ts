@@ -430,6 +430,7 @@ import {
   textUnder,
 } from "../canvas/pdf-text";
 import type { TextSpan } from "../search/notebook-search";
+import { readingOrder } from "../search/search-results";
 import { type PageLink, linkAt, notebookPageOf } from "../canvas/pdf-links";
 import {
   type PickEnd,
@@ -1287,6 +1288,13 @@ export interface PdfTextSource {
  * tap; false lets the tap do what it would have done anyway.
  */
 export type StrokeTapHandler = (page: Page, stroke: Stroke) => boolean;
+
+/**
+ * The one hit a results list is on (#112), among a page's lit hits: the
+ * view glides to it and marks it more strongly. A group of `words`, a text
+ * box, or one match's rectangles among the `printed` ones.
+ */
+export type SearchFocus = { words: number } | { box: string } | { printed: readonly TextRect[] };
 
 /** A calculation note as the surface shows it (`showCalcNote`): the glowing sum and its card. */
 export interface CalcNoteSpec {
@@ -2709,6 +2717,8 @@ export class InkSurface {
     boxes: string[];
     /** Printed words of the page's PDF, in page space (#112). */
     printed: TextRect[];
+    /** The results list's current hit among them (#112). */
+    focus: SearchFocus | null;
   } | null = null;
   private readonly searchMarks: HTMLElement[] = [];
   /** Ink a playing recording has not reached yet, drawn pale (2.5). */
@@ -16029,7 +16039,8 @@ export class InkSurface {
    * `matchIn` finds them in what the box shows; a box where it finds none
    * (the words are in a link's target) lights whole. They stay until the
    * page is next touched or edited, or another search is opened; `null`
-   * puts them out.
+   * puts them out. With `focus` (the results list's current one, #112) the
+   * view glides to that hit instead, and it is marked more strongly.
    */
   setSearchHits(
     pageId: string | null,
@@ -16037,11 +16048,20 @@ export class InkSurface {
     boxes: string[] = [],
     printed: TextRect[] = [],
     matchIn: ((text: string) => TextSpan[]) | null = null,
+    focus: SearchFocus | null = null,
   ): void {
     const had = this.searchHits !== null;
+    // The words in reading order, so `focus.words` counts as the results list does.
+    const onPage = this.doc.pages.find((p) => p.id === pageId);
+    if (onPage && words.length > 1) {
+      const spots = words.map(
+        (ids) => inkBounds(onPage, ids) ?? { minX: 0, minY: 0, maxX: 0, maxY: 0 },
+      );
+      words = readingOrder(spots).map((i) => words[i]);
+    }
     this.searchHits =
       pageId !== null && (words.length > 0 || boxes.length > 0 || printed.length > 0)
-        ? { pageId, words, boxes, printed }
+        ? { pageId, words, boxes, printed, focus }
         : null;
     if (!had && !this.searchHits) return;
     for (const view of this.textBoxInputs.values()) {
@@ -16049,6 +16069,15 @@ export class InkSurface {
         this.searchHits?.pageId === view.pageId && this.searchHits.boxes.includes(view.id);
       const marked = this.markSearchWords(view, hit ? matchIn : null);
       view.root.toggleClass("is-search-hit", hit && !marked);
+      const focused = this.searchHits?.focus;
+      view.root.toggleClass(
+        "is-search-current",
+        hit &&
+          focused !== null &&
+          focused !== undefined &&
+          "box" in focused &&
+          focused.box === view.id,
+      );
     }
     this.syncSectionRibbons();
     const hits = this.searchHits;
@@ -16068,16 +16097,38 @@ export class InkSurface {
         .map((box) => ({ x: box.x + box.w / 2, y: box.y })),
       ...hits.printed.map((rect) => ({ x: rect.x + rect.w / 2, y: rect.y })),
     ];
-    const first = spots.reduce<{ x: number; y: number } | null>(
-      (best, spot) => (best && best.y <= spot.y ? best : spot),
-      null,
-    );
+    const first =
+      this.focusSpot(page, hits) ??
+      spots.reduce<{ x: number; y: number } | null>(
+        (best, spot) => (best && best.y <= spot.y ? best : spot),
+        null,
+      );
     if (first) this.goToPagePoint(index, first.y, true, this.board ? first.x : undefined);
     // The next press on the page puts them out.
     this.surfaceEl.addEventListener("pointerdown", () => this.setSearchHits(null), {
       capture: true,
       once: true,
     });
+  }
+
+  /** Where the focused hit is on its page, to glide to; `null` without one. */
+  private focusSpot(
+    page: Page,
+    hits: NonNullable<InkSurface["searchHits"]>,
+  ): { x: number; y: number } | null {
+    const focus = hits.focus;
+    if (!focus) return null;
+    if ("words" in focus) {
+      const ids = hits.words[focus.words];
+      const b = ids ? inkBounds(page, ids) : null;
+      return b ? { x: (b.minX + b.maxX) / 2, y: b.minY } : null;
+    }
+    if ("box" in focus) {
+      const box = page.textBoxes.find((b) => b.id === focus.box);
+      return box ? { x: box.x + box.w / 2, y: box.y } : null;
+    }
+    const rect = focus.printed[0];
+    return rect ? { x: rect.x + rect.w / 2, y: rect.y } : null;
   }
 
   /**
@@ -16136,9 +16187,22 @@ export class InkSurface {
     const page = hits ? this.doc.pages.find((p) => p.id === hits.pageId) : undefined;
     if (hits && box && page) {
       const scale = this.unitScale;
+      const focus = hits.focus;
+      const printedFocus = focus && "printed" in focus ? new Set(focus.printed) : null;
       const marked = [
-        ...hits.words.flatMap((ids) => inkBounds(page, ids) ?? []),
-        ...hits.printed.map((r) => ({ minX: r.x, minY: r.y, maxX: r.x + r.w, maxY: r.y + r.h })),
+        ...hits.words.flatMap((ids, i) => {
+          const b = inkBounds(page, ids);
+          return b
+            ? [{ ...b, current: focus !== null && "words" in focus && focus.words === i }]
+            : [];
+        }),
+        ...hits.printed.map((r) => ({
+          minX: r.x,
+          minY: r.y,
+          maxX: r.x + r.w,
+          maxY: r.y + r.h,
+          current: printedFocus?.has(r) === true,
+        })),
       ];
       for (const bounds of marked) {
         let mark = this.searchMarks[used];
@@ -16148,6 +16212,7 @@ export class InkSurface {
         }
         const pad = SEARCH_MARK_PAD / scale;
         mark.removeClass("is-hidden");
+        mark.toggleClass("is-current", bounds.current);
         mark.setCssStyles({
           left: `${(box.x + bounds.minX - pad) * scale}px`,
           top: `${(box.y + bounds.minY - pad) * scale}px`,

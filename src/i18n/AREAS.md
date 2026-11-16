@@ -116,7 +116,7 @@ An area's agent edits only these files plus src/i18n/en/<area>.ts.
 - src/view/page-embed.ts
 - src/view/page-sidebar.ts
 - src/view/screenshot-modal.ts
-- src/view/search-modal.ts
+- src/view/search-panel.ts
 - src/view/text-panel.ts
 
 ## toolbar (9)

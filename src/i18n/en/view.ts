@@ -59,6 +59,12 @@ export const view = {
   "view.search.kindText": "Text",
   "view.search.kindPdf": "PDF",
   "view.search.page": "Page {page}",
+  "view.search.clear": "Clear search",
+  "view.search.previous": "Previous match",
+  "view.search.next": "Next match",
+  "view.search.position": "{current} / {total}",
+  "view.search.showInSidebar": "Show results in the sidebar",
+  "view.search.showAsWindow": "Show results as a window",
   "view.search.matches.one": "{count} match",
   "view.search.matches.other": "{count} matches",
   "view.search.hintTranscribed":

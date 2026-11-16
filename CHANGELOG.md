@@ -10,6 +10,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Search results you can step through**
+  ([discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
+  Search this notebook now lists every match, not every page: the words
+  around it with the match marked, an icon for handwriting, a text box or a
+  PDF's printed text, and the page. Tap one to go there; ↑ and ↓ (or the
+  arrow keys and Enter) step to the previous and next, and the match being
+  shown is ringed on the page and filled in the list. The results sit in a
+  sidebar at the right of the page, or in a window over it that moves and
+  sizes like the calculator's; the button beside ✕ switches, and each
+  notebook keeps its choice. A PDF's pages join the list as they are read,
+  also when their text was read before on this device.
 - **Transcribe recordings with an online service**
   ([#211](https://github.com/Joost-8/FineNotes/issues/211)). Settings › AI ›
   Recordings › Transcribe recordings with: this device (as before), Groq,
