@@ -3737,7 +3737,8 @@ export class InkView extends TextFileView {
         onShortcutAction: (id) => this.runShortcutAction(id),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];
-          if (pen && !this.isProtected()) this.toolbar?.applySavedPen(pen);
+          // On its own button if it has one on the bar, as a tap there (#226).
+          if (pen && !this.isProtected()) this.toolbar?.pressPenKey({ saved: pen.id ?? null }, pen);
         },
         barrelAction: () => this.settings.barrelButton,
         // The Apple Pencil has no side button, and a Pencil tap on the tool
@@ -3812,7 +3813,7 @@ export class InkView extends TextFileView {
         },
         onPenShortcut: (tool) => {
           if (!this.toolbar) return false;
-          this.toolbar.pickPenByShortcut(tool);
+          this.toolbar.pressPenKey(tool);
           return true;
         },
       },

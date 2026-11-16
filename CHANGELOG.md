@@ -106,7 +106,10 @@ extracted from the matching section of this file by `release.yml`.
   red ball pen, H gave a highlighter in that red and width; now it brings
   back the highlighter as you left it, as tapping it does. And with the
   highlighter picked on the bar, P did nothing: it now goes back to the pen
-  you used last. Holding the key works the same way. Diagnostics now also
+  you used last. Holding the key works the same way. With pens pinned to
+  the toolbar, a key goes to the pen's own button, as a tap there does: a
+  saved pen's 1–8 marks its pinned button rather than the pen's, H a pinned
+  highlighter's, and P the button of the pen you wrote with last. Diagnostics now also
   list the last keys pressed on the notebook and why any were left (typed
   text is never listed), and the input debug overlay shows them.
 - **A tapped word is the word you tapped** (FineNotes#202). On a line with a
