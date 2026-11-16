@@ -3737,7 +3737,8 @@ export class InkView extends TextFileView {
         onShortcutAction: (id) => this.runShortcutAction(id),
         onSavedPen: (index) => {
           const pen = savedPensOf(this.settings.savedPens)[index];
-          if (pen && !this.isProtected()) this.toolbar?.applySavedPen(pen);
+          // On its own button if it has one on the bar, as a tap there (#226).
+          if (pen && !this.isProtected()) this.toolbar?.pressPenKey({ saved: pen.id ?? null }, pen);
         },
         barrelAction: () => this.settings.barrelButton,
         // The Apple Pencil has no side button, and a Pencil tap on the tool
@@ -3809,6 +3810,11 @@ export class InkView extends TextFileView {
         toolOff: (tool) => {
           const item = barItemOfTool(tool);
           return item !== null && this.itemOff(item);
+        },
+        onPenShortcut: (tool) => {
+          if (!this.toolbar) return false;
+          this.toolbar.pressPenKey(tool);
+          return true;
         },
       },
     );
@@ -3941,8 +3947,29 @@ export class InkView extends TextFileView {
       this.app.scope,
       () => this.app.workspace.getActiveViewOfType(InkView) === this,
       // The page sidebar first: Escape leaves its overview before anything else.
-      (event) =>
-        this.sidebar?.handleKeyDown(event) || (this.surface?.handleKeyDown(event) ?? false),
+      (event) => {
+        if (this.sidebar?.handleKeyDown(event)) {
+          this.surface?.noteKey(event, "taken");
+          return true;
+        }
+        return this.surface?.handleKeyDown(event) ?? false;
+      },
+      (event, verdict) => this.surface?.noteKey(event, verdict),
+    );
+    // A key this notebook's scope never heard, while the notebook is the
+    // active view: another scope took it first (FineNotes#226). Obsidian's
+    // keymap listens on the window in the capture phase and was there
+    // first, so this hears the key after the scope has had its turn.
+    this.registerDomEvent(
+      winOf(this.contentEl),
+      "keydown",
+      (event) => {
+        const surface = this.surface;
+        if (!surface || surface.keyNoted(event)) return;
+        if (this.app.workspace.getActiveViewOfType(InkView) !== this) return;
+        surface.noteKey(event, "unheard");
+      },
+      { capture: true },
     );
     // The side button's click with the pen over the tool bar or a popover, not
     // the page, and a pen pressed there. Heard on the way down, before the

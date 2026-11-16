@@ -734,9 +734,11 @@ import {
   type ShortcutTable,
   buttonBit,
   buttonInput,
+  isModifierKey,
   keyInput,
   matchShortcut,
 } from "../model/shortcut-bindings";
+import { KeyLog, type KeyVerdict, keyName } from "../model/key-log";
 import { fastKeys } from "../model/fast-ways";
 import type { NudgeEvent } from "../model/nudges";
 import {
@@ -1085,6 +1087,12 @@ export interface InkSurfaceCallbacks {
    * shortcut then leaves it, as it would be in hand with no button showing it.
    */
   toolOff?: (tool: ActiveTool) => boolean;
+  /**
+   * P or H put the pen or the highlighter in hand the way the pen row does,
+   * with that type's own colour and width (FineNotes#226). Returns whether
+   * it did; otherwise the surface only switches the tool.
+   */
+  onPenShortcut?: (tool: "pen" | "highlighter") => boolean;
   /** Run a shortcut action that belongs to the host (full screen, ruler, stickers…). */
   onShortcutAction?: (actionId: string) => boolean;
   /** What the stylus barrel button does (the settings); erase when absent. */
@@ -2059,6 +2067,9 @@ const SHORTCUT_TOOLS: Readonly<Record<string, ActiveTool>> = {
   "tool.zoom": "zoom",
 };
 
+/** Key presses some notebook has noted already: each is noted once (`noteKey`). */
+const KEYS_NOTED = new WeakSet<KeyboardEvent>();
+
 function shortcutTool(actionId: string): ActiveTool | null {
   return SHORTCUT_TOOLS[actionId] ?? null;
 }
@@ -2907,6 +2918,10 @@ export class InkSurface {
     rejoins: 0,
   };
   private diagHold = { fired: false, verdict: "" };
+  /** Every key pressed on the notebook and what became of it (FineNotes#226). */
+  private keyLogged?: KeyLog;
+  /** Why the key being handled was left, when it was; set while handling it. */
+  private keyVerdict: KeyVerdict | null = null;
   private readonly createdAt = now();
 
   /**
@@ -4598,7 +4613,49 @@ export class InkSurface {
    * field are the field's; which key does what is `keyOutcome`'s table.
    */
   handleKeyDown(event: KeyboardEvent): boolean {
-    if (event.defaultPrevented || event.isComposing || isEditable(event.target)) return false;
+    this.keyVerdict = null;
+    const taken = this.keyDown(event);
+    this.noteKey(event, this.keyVerdict ?? (taken ? "taken" : "unbound"));
+    this.keyVerdict = null;
+    return taken;
+  }
+
+  /**
+   * A key press and what became of it, for diagnostics and the HUD
+   * (FineNotes#226). The host notes the keys its scope left, and those its
+   * scope never heard; each press is noted once, bare modifiers never.
+   */
+  noteKey(event: KeyboardEvent, verdict: KeyVerdict): void {
+    if (KEYS_NOTED.has(event) || isModifierKey(event.key)) return;
+    KEYS_NOTED.add(event);
+    // Typed into a field anywhere (another pane's search too): counted, not named.
+    if (verdict !== "taken" && isEditable(event.target)) verdict = "field";
+    this.keyLog.note(keyName(event.key, event.code ?? "", event.repeat === true), verdict);
+    if (this.debug) this.scheduleHud();
+  }
+
+  /** Whether this press has been noted already (the host's last look). */
+  keyNoted(event: KeyboardEvent): boolean {
+    return KEYS_NOTED.has(event);
+  }
+
+  private get keyLog(): KeyLog {
+    return (this.keyLogged ??= new KeyLog());
+  }
+
+  private keyDown(event: KeyboardEvent): boolean {
+    if (event.defaultPrevented) {
+      this.keyVerdict = "prevented";
+      return false;
+    }
+    if (event.isComposing) {
+      this.keyVerdict = "composing";
+      return false;
+    }
+    if (isEditable(event.target)) {
+      this.keyVerdict = "field";
+      return false;
+    }
     // Space on a focused toolbar button presses the button.
     if (event.key === " " && isButtonLike(event.target)) return false;
     // The user's shortcut table first: a row they recorded (or took away)
@@ -4631,13 +4688,17 @@ export class InkSurface {
     const table = this.callbacks.shortcuts?.();
     if (!table) return false;
     // Typing keeps its keys, whatever a row is bound to.
-    if (this.editingTextView() !== null || this.cellEdit) return false;
+    if (this.editingTextView() !== null || this.cellEdit) {
+      this.keyVerdict = "field";
+      return false;
+    }
     const input = keyInput(event);
     if (!input) return false;
     const match = matchShortcut(table, input);
     if (!match) return false;
     if (match.kind === "conflict" || match.kind === "blocked") {
       event.preventDefault();
+      this.keyVerdict = "conflict";
       return true;
     }
     // Delete, Copy and Paste's own keys belong to the screen until the user
@@ -4726,10 +4787,27 @@ export class InkSurface {
       this.callbacks.returnToPenOnReselect?.() === true,
       this.drawingTool,
     );
-    if (this.practice && !isPracticeTool(next)) return;
-    if (this.callbacks.toolOff?.(next) === true) return;
-    this.setTool(next);
-    this.callbacks.onToolChange?.(next);
+    if (this.practice && !isPracticeTool(next)) {
+      this.keyVerdict = "practice";
+      return;
+    }
+    if (this.callbacks.toolOff?.(next) === true) {
+      this.keyVerdict = "off";
+      return;
+    }
+    this.putToolInHand(next);
+  }
+
+  /**
+   * A key's tool in hand. The pen and the highlighter go through the pen
+   * row's own way in, so each brings back its own colour and width, as a tap
+   * does (FineNotes#226); every other tool is switched here.
+   */
+  private putToolInHand(tool: ActiveTool): void {
+    if ((tool === "pen" || tool === "highlighter") && this.callbacks.onPenShortcut?.(tool) === true)
+      return;
+    this.setTool(tool);
+    this.callbacks.onToolChange?.(tool);
   }
 
   /**
@@ -4768,8 +4846,7 @@ export class InkSurface {
       return;
     }
     this.pendingHeldTool = null;
-    this.setTool(tool);
-    this.callbacks.onToolChange?.(tool);
+    this.putToolInHand(tool);
   }
 
   /** The press is over: a held key's switch that waited for it happens now. */
@@ -11150,6 +11227,7 @@ export class InkSurface {
         holdMs: HOLD_MS,
         holdRadius: HOLD_RADIUS,
         pointers: this.diagSums,
+        keys: this.keyLog.report(),
         strokes: this.diagnostics,
       },
       null,
@@ -11279,6 +11357,8 @@ export class InkSurface {
       `pill=${this.callbacks.textPillState?.() ?? "-"} ` +
       `focus=${focus} zoom=${this.scale.toFixed(2)} kb=${r(keyboardHeight())} ` +
       `app=${r(document.querySelector(".app-container")?.getBoundingClientRect().height ?? -1)}
+` +
+      `${this.keyLog.hudLine()}
 ` +
       this.hudFrames()
     );
