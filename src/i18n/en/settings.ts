@@ -292,6 +292,9 @@ export const settings = {
   "settings.calcNotes.name": "Calculate lines that end in =",
   "settings.calcNotes.info":
     "Write a sum ending in = (12x4 =; an x between numbers is times) and lift the pen: FineNotes reads the line on this device and shows what it read and the answer beside it. Tap that to write the answer after the =, at your writing's size, in your own hand once you have written the symbol practice sheet (a command); keep writing to leave the page as it was. A letter set on a line above (a = 5) can be used. Check what it read before you tap: a misread digit gives a wrong answer.",
+  "settings.columnSums.name": "Add up columns of numbers",
+  "settings.columnSums.info":
+    "Write amounts one under the other and draw a line under them: FineNotes reads them on this device and the column glows. Tap it to see each amount it read, lined up, and the total; Write puts the total under the line. One line is a subtotal, two lines the total of the whole column. Names and dates left of the amounts are not added, a short dash before an amount takes it off, and 1.234,50, 120,- and 1,234.50 are all read. Change an amount and the total follows. Check what it read: a misread digit gives a wrong total.",
   "settings.learn.name": "Learn your handwriting",
   "settings.learn.open": "Open",
 
@@ -441,6 +444,7 @@ export const settings = {
   "settings.readWith.line": "Search finds your writing. Nothing leaves this device.",
   "settings.checkWords.line": "A test. Tap an underlined word to correct its reading.",
   "settings.calcNotes.line": "Write 12x4 = and lift the pen to see the answer.",
+  "settings.columnSums.line": "Draw a line under a column of amounts to add them up.",
   "settings.speech.line": "Bigger reads better and takes longer to transcribe.",
   "settings.ai.service.line": "Transcribes and answers with your own key.",
   "settings.ai.endpointUrl.line": "An OpenAI-compatible server, with /v1 if it uses it.",
