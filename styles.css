@@ -22064,3 +22064,128 @@ button.goodobsidian-edit-switch.is-nudged {
     animation: none;
   }
 }
+
+/* --- Help improve Grape (view/grape-sharing.ts) --------------------------- */
+
+/*
+ * The sheets are a column no taller than the screen: the long part (the
+ * terms, the review list) scrolls, and the buttons stay on screen. On the
+ * iPad the terms ran past the bottom and took Share with them (Joost,
+ * 2026-11-16).
+ */
+.modal.goodobsidian-share {
+  display: flex;
+  flex-direction: column;
+  max-height: min(88vh, calc(100% - 32px));
+  overflow: hidden;
+}
+.goodobsidian-share .modal-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.goodobsidian-share .modal-button-container {
+  flex: none;
+  margin-top: 12px;
+}
+
+.goodobsidian-share .modal-content p {
+  margin: 6px 0;
+}
+.goodobsidian-share h4 {
+  margin: 14px 0 4px;
+  font-size: var(--font-ui-small);
+}
+.goodobsidian-share-what {
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-share-invite {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  align-items: start;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-m);
+  background: hsla(var(--interactive-accent-hsl), 0.1);
+}
+.goodobsidian-share-invite-icon {
+  color: var(--interactive-accent);
+  padding-top: 2px;
+}
+.goodobsidian-share-invite-title {
+  font-weight: var(--font-semibold);
+}
+.goodobsidian-share-invite-buttons {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.goodobsidian-share-invite-buttons button {
+  white-space: normal;
+}
+.goodobsidian-share-desc,
+.goodobsidian-share-facts p,
+.goodobsidian-share-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.goodobsidian-share-desc.is-hidden {
+  display: none;
+}
+.goodobsidian-share-facts {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 12px;
+}
+.goodobsidian-share-facts,
+.goodobsidian-share-review {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.goodobsidian-share-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+button:not(.clickable-icon).goodobsidian-share-all,
+.goodobsidian-share-all.clickable-icon {
+  width: auto;
+  padding: 2px 8px;
+  font-size: var(--font-ui-smaller);
+  color: var(--interactive-accent);
+  white-space: normal;
+}
+.goodobsidian-share-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  margin: 6px 0;
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}
+.goodobsidian-share-item.is-off {
+  opacity: 0.55;
+}
+.goodobsidian-share-strip {
+  min-width: 0;
+  overflow: hidden;
+}
+.goodobsidian-share-strip canvas {
+  display: block;
+  max-width: 100%;
+}

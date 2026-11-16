@@ -81,6 +81,19 @@ const inlineWorker = {
  */
 const BUNDLE_GRAPE = process.env.FINENOTES_BUNDLE_GRAPE === "1";
 
+/**
+ * "Help improve Grape" (src/view/grape-sharing.ts): built only with
+ * FINENOTES_SHARING=1. Collection is held until TU/e's Ethical Review Board
+ * approves it (2026-11-16), so a release carries none of it.
+ */
+const SHARING = process.env.FINENOTES_SHARING === "1";
+/**
+ * Where it sends (FINENOTES_SHARING_ENDPOINT, e.g. ".../grape-ink/v1"). Only
+ * from the builder's environment: the repository names no server, and a
+ * sharing build without an address has no sharing (view/sharing-load.ts).
+ */
+const SHARING_ENDPOINT = process.env.FINENOTES_SHARING_ENDPOINT ?? "";
+
 const context = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/main.ts"],
@@ -109,7 +122,12 @@ const context = await esbuild.context({
   // handwriting model as base64 while BUNDLE_GRAPE is on (not "binary":
   // see src/view/grape-bundle.ts).
   loader: { ".md": "text", ".txt": "text", ".bin": "base64" },
-  define: { __FINENOTES_BUNDLE_GRAPE__: JSON.stringify(BUNDLE_GRAPE) },
+  define: {
+    __FINENOTES_BUNDLE_GRAPE__: JSON.stringify(BUNDLE_GRAPE),
+    __FINENOTES_SHARING__: JSON.stringify(SHARING),
+    // Only a build with the feature carries the address.
+    __FINENOTES_SHARING_ENDPOINT__: JSON.stringify(SHARING ? SHARING_ENDPOINT : ""),
+  },
   logLevel: "info",
   sourcemap: production ? false : "inline",
   treeShaking: true,

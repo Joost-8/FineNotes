@@ -296,6 +296,7 @@ export const settings = {
   "settings.columnSums.info":
     "Write amounts one under the other and draw a line under them: FineNotes reads them on this device and the column glows. Tap it to see each amount it read, lined up, and the total; Write puts the total under the line. One line is a subtotal, two lines the total of the whole column. Names and dates left of the amounts are not added, a short dash before an amount takes it off, and 1.234,50, 120,- and 1,234.50 are all read. Change an amount and the total follows. Check what it read: a misread digit gives a wrong total.",
   "settings.learn.name": "Learn your handwriting",
+  "settings.share.name": "Help improve Grape",
   "settings.learn.open": "Open",
 
   // --- API keys ---
