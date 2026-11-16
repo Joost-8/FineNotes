@@ -30,13 +30,15 @@ export class EmptyTabHomeButton {
     for (const list of lists) {
       if (this.actions.has(list)) continue;
       const name = t("notebooks.home.heading");
+      // Built as Obsidian builds its own actions here (a pill with an icon
+      // and a label, 1.15), so it gets the same border and spacing.
       const action = list.createDiv({
-        cls: "empty-state-action goodobsidian-empty-home",
+        cls: "text-icon-button tappable mod-pill empty-state-action goodobsidian-empty-home",
         attr: { role: "button", tabindex: "0", "aria-label": name },
       });
-      const icon = action.createSpan({ cls: "goodobsidian-empty-home-icon" });
+      const icon = action.createSpan({ cls: "text-button-icon" });
       setIcon(icon, ICON_LIBRARY);
-      action.createSpan({ text: name });
+      action.createSpan({ cls: "text-button-label", text: name });
       const go = () => {
         const leaf = leafOf(list);
         if (leaf) this.openLibrary(leaf);
