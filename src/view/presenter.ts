@@ -3,8 +3,10 @@
  * screen share. The toolbar, pills and page counter go; the page being read
  * fills the screen on a dark desk; the laser pointer is in hand; a
  * presentation clicker or the arrow keys turn the pages (`present-keys.ts`).
- * A small bar of ‹ 3 / 12 › ✕ shows while the pointer moves and goes again
- * when it rests, so a finger or the Pencil can turn pages too.
+ * A small bar of ‹ 3 / 12 › ✕ shows when the page is tapped or clicked, so
+ * a finger or the Pencil can turn pages too, and goes again after a while
+ * or at the next key: turning pages from the keyboard shows no chrome, and
+ * pointing with the laser (hovering, or a press that moves) shows none either.
  *
  * Where the window can go full screen (a computer, Android), the notebook
  * takes the whole screen; on an iPad the host hides Obsidian's chrome
@@ -15,7 +17,7 @@ import { setIcon } from "obsidian";
 import { t } from "../i18n/translate";
 import { swallowGhostClick } from "./ghost-click";
 import { docOf, winOf } from "./host-window";
-import { presentCount, presentStep } from "./present-keys";
+import { type PressPoint, isTap, presentCount, presentStep } from "./present-keys";
 
 export interface PresenterHost {
   /** The view's root: it takes the class and, where it can, the screen. */
@@ -30,7 +32,7 @@ export interface PresenterHost {
   onEnd: () => void;
 }
 
-/** How long the bar stays after the pointer last moved, ms. */
+/** How long the bar stays after the last tap or click, ms. */
 const BAR_REST_MS = 2500;
 
 export const PRESENTING_CLASS = "goodobsidian-presenting";
@@ -61,15 +63,23 @@ export class Presenter {
     // Capture: a clicker's PageDown turns a page before the notebook scrolls.
     win.addEventListener("keydown", onKey, true);
     this.off.push(() => win.removeEventListener("keydown", onKey, true));
-    const wake = (): void => this.showBar();
-    root.addEventListener("pointermove", wake);
-    root.addEventListener("pointerdown", wake);
+    // Capture: the page's own pointer handling must not keep the tap from the bar.
+    let press: PressPoint | null = null;
+    const down = (event: PointerEvent): void => {
+      press = { id: event.pointerId, x: event.clientX, y: event.clientY, t: event.timeStamp };
+    };
+    const up = (event: PointerEvent): void => {
+      const from = press;
+      press = null;
+      if (from && isTap(from, event)) this.showBar();
+    };
+    root.addEventListener("pointerdown", down, true);
+    root.addEventListener("pointerup", up, true);
     this.off.push(() => {
-      root.removeEventListener("pointermove", wake);
-      root.removeEventListener("pointerdown", wake);
+      root.removeEventListener("pointerdown", down, true);
+      root.removeEventListener("pointerup", up, true);
     });
     this.takeScreen();
-    this.showBar();
   }
 
   /** Whether a press of the ✕ or Escape has not ended it yet. */
@@ -111,6 +121,7 @@ export class Presenter {
     if (!step) return;
     event.preventDefault();
     event.stopPropagation();
+    this.hideBar();
     if (step === "leave") {
       this.stop();
       return;
@@ -134,6 +145,11 @@ export class Presenter {
     doc.addEventListener("fullscreenchange", onChange);
     this.off.push(() => doc.removeEventListener("fullscreenchange", onChange));
     void root.requestFullscreen().catch(() => undefined);
+  }
+
+  private hideBar(): void {
+    window.clearTimeout(this.hideTimer);
+    this.bar.removeClass("is-shown");
   }
 
   private showBar(): void {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { presentCount, presentStep } from "../../src/view/present-keys";
+import { isTap, presentCount, presentStep } from "../../src/view/present-keys";
 
 const press = (key: string, mods: Partial<Record<string, boolean>> = {}) => ({
   key,
@@ -43,5 +43,21 @@ describe("Present mode keys", () => {
     expect(presentCount(11, 12)).toBe("12 / 12");
     expect(presentCount(40, 12)).toBe("12 / 12");
     expect(presentCount(0, 0)).toBe("1 / 1");
+  });
+
+  it("shows the bar for a tap, not for pointing with the laser", () => {
+    const down = { id: 1, x: 100, y: 100, t: 1000 };
+    const up = (x: number, y: number, t: number, pointerId = 1) => ({
+      pointerId,
+      clientX: x,
+      clientY: y,
+      timeStamp: t,
+    });
+    expect(isTap(down, up(103, 101, 1120))).toBe(true);
+    // A laser stroke moves, a held point lasts.
+    expect(isTap(down, up(160, 100, 1150))).toBe(false);
+    expect(isTap(down, up(100, 100, 1800))).toBe(false);
+    // Another finger's lift is not this press.
+    expect(isTap(down, up(100, 100, 1100, 2))).toBe(false);
   });
 });
