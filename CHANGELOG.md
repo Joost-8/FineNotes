@@ -101,6 +101,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **P and H bring back each pen's own colour and width**
+  ([#226](https://github.com/Joost-8/FineNotes/issues/226)). After a small
+  red ball pen, H gave a highlighter in that red and width; now it brings
+  back the highlighter as you left it, as tapping it does. And with the
+  highlighter picked on the bar, P did nothing: it now goes back to the pen
+  you used last. Holding the key works the same way. Diagnostics now also
+  list the last keys pressed on the notebook and why any were left (typed
+  text is never listed), and the input debug overlay shows them.
 - **A tapped word is the word you tapped** (FineNotes#202). On a line with a
   sum, or with two words written close together, the word check could tie
   every word to the ink of the word before it: tapping "This" offered

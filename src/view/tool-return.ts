@@ -1,6 +1,7 @@
 /** Optional secondary-tool transitions. Pure: no DOM or Obsidian. */
 import { t } from "../i18n/translate";
 import { rejoinsStroke } from "../input/pen-rejoin";
+import type { SavedPenType } from "../model/saved-pens";
 import type { ActiveTool } from "./toolbar";
 
 /** Where and when (ms) a use's pen lifted. */
@@ -58,6 +59,30 @@ export function selectedTool(
 ): ActiveTool {
   if (!enabled || current !== requested || !SECONDARY_TOOLS.has(requested)) return requested;
   return drawingToolOf(back, back);
+}
+
+/**
+ * The pen type P or H puts in hand (FineNotes#226), as tapping it in the pen
+ * row does, so it comes with that type's own colour and width. H is the
+ * highlighter. P is the pen type in hand while it is a pen; with the
+ * highlighter in hand, the pen used last (`recent`, newest first), else the
+ * first pen in the row (`order`). Turning the tool alone into "pen" kept the
+ * highlighter as the type, and the surface reads that as the highlighter:
+ * P did nothing.
+ */
+export function shortcutPenType(
+  tool: "pen" | "highlighter",
+  inHand: SavedPenType,
+  recent: readonly SavedPenType[],
+  order: readonly SavedPenType[],
+): SavedPenType {
+  if (tool === "highlighter") return "highlighter";
+  if (inHand !== "highlighter") return inHand;
+  return (
+    recent.find((type) => type !== "highlighter") ??
+    order.find((type) => type !== "highlighter") ??
+    "fountain"
+  );
 }
 
 /**

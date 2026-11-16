@@ -7,6 +7,7 @@ import {
   eraserClickStep,
   optionsAfterSwitch,
   selectedTool,
+  shortcutPenType,
   toolAfterUse,
   PEN_OPTIONS_RETURN_MS,
   penOptionsOnWriteOf,
@@ -131,5 +132,32 @@ describe("hide pen options while writing", () => {
     }
     // Longer than the gap between written words, short enough to feel prompt.
     expect(PEN_OPTIONS_RETURN_MS).toBe(1000);
+  });
+});
+
+describe("shortcutPenType (FineNotes#226)", () => {
+  const order = ["fountain", "ball", "brush", "calligraphy", "highlighter"] as const;
+
+  it("H is always the highlighter", () => {
+    expect(shortcutPenType("highlighter", "ball", [], order)).toBe("highlighter");
+    expect(shortcutPenType("highlighter", "highlighter", ["ball"], order)).toBe("highlighter");
+  });
+
+  it("P keeps the pen in hand", () => {
+    expect(shortcutPenType("pen", "ball", ["highlighter"], order)).toBe("ball");
+    expect(shortcutPenType("pen", "brush", [], order)).toBe("brush");
+  });
+
+  it("P from the highlighter is the pen used last, not the highlighter again", () => {
+    expect(shortcutPenType("pen", "highlighter", ["highlighter", "ball", "fountain"], order)).toBe(
+      "ball",
+    );
+  });
+
+  it("P from the highlighter with no pen used yet is the row's first pen", () => {
+    expect(shortcutPenType("pen", "highlighter", [], ["highlighter", "brush", "fountain"])).toBe(
+      "brush",
+    );
+    expect(shortcutPenType("pen", "highlighter", [], ["highlighter"])).toBe("fountain");
   });
 });

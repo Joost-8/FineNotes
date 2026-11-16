@@ -76,6 +76,7 @@ import {
   PEN_OPTIONS_ON_WRITE_NAMES,
   type PenOptionsOnWrite,
   selectedTool,
+  shortcutPenType,
 } from "./tool-return";
 import {
   BAR_ITEM_ICONS,
@@ -1245,6 +1246,8 @@ export class Toolbar {
   private readonly penSlotButtons = new Map<PenSlotId, HTMLButtonElement>();
   /** The pen types the pen's button stood for, newest first (`penButtonType`). */
   private penButtonRecent: SavedPenType[] = [];
+  /** The pen types picked, newest first: where P goes back to from the highlighter. */
+  private penKeyRecent?: SavedPenType[];
   /**
    * The pen button last tapped (FineNotes#211): "main" for the pen's own
    * button, or a pinned pen's slot. It decides which button is in hand when
@@ -5729,10 +5732,35 @@ export class Toolbar {
     }
   }
 
+  /**
+   * P or H (FineNotes#226), pressed or held: the pen or the highlighter as
+   * its button in the pen row puts it in hand, with that type's own colour
+   * and width (`shortcutPenType`). Switching the tool alone left the pen's
+   * red and width on the highlighter, and kept P on the highlighter.
+   */
+  pickPenByShortcut(tool: "pen" | "highlighter"): void {
+    const id = shortcutPenType(
+      tool,
+      this.activePenType().id,
+      this.penKeyRecent ?? [],
+      penRowTypes(this.state).map((spec) => spec.id),
+    );
+    const spec = PEN_TYPES.find((type) => type.id === id) ?? PEN_TYPES[0];
+    if (this.practice && spec.tool === "highlighter") return;
+    this.closePopover();
+    if (this.state.tool !== spec.tool) {
+      this.drawingTool = drawingToolOf(this.drawingTool, spec.tool);
+      this.tuckedByStroke = false;
+      this.leaveToolFor(spec.tool);
+    }
+    this.choosePenType(spec);
+  }
+
   private choosePenType(spec: PenTypeSpec): void {
     // Each pen type keeps its own colour, row and width (GoodNotes): the one
     // being left keeps what it wrote with, the one picked brings back its own.
     const from = this.activePenType().id;
+    this.penKeyRecent = rememberPenType(rememberPenType(this.penKeyRecent ?? [], from), spec.id);
     if (from !== spec.id) {
       const { color, size } = this.state;
       const step = switchPenInk(this.state.penInks ?? {}, from, spec.id, this.inkInHand());
