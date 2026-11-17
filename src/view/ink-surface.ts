@@ -360,6 +360,7 @@ import {
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
 import { FramePace } from "../canvas/frame-pace";
+import { FrameRun } from "../canvas/frame-run";
 import { type RunBox, type RunMark, boundsSince, unionBox } from "../ink/run-window";
 import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
@@ -2904,6 +2905,7 @@ export class InkSurface {
   private hudFps = 0;
   private hudPaintMs = 0;
   private hudInkMs = 0;
+  private readonly hudRun = new FrameRun();
   private hudLastFrameT = 0;
   /** The display's frame length, learned from this surface's own frames. */
   private readonly pace = new FramePace();
@@ -5926,6 +5928,7 @@ export class InkSurface {
     // A board file counts its boards (discussion #160); one board, nothing to count.
     this.indicatorEl.toggleClass("is-hidden", total === 0 || (this.board && total < 2));
     if (index !== this.pageIndex) {
+      this.turnedBack = index < this.pageIndex;
       this.pageIndex = index;
       this.markCurrentTab();
       this.callbacks.onPageChange?.(index, total);
@@ -6282,9 +6285,30 @@ export class InkSurface {
       this.prefetchReq = 0;
       if (!this.renderer || this.frameReq || this.scroller.isDragging || this.pinch) return;
       if (this.pressing) return;
-      const more = this.renderer.prefetch(this.doc, this.inkPressure, PREFETCH_BUDGET_MS);
+      const more = this.renderer.prefetch(
+        this.doc,
+        this.inkPressure,
+        PREFETCH_BUDGET_MS,
+        this.pagesToTurnTo(),
+      );
       if (more) this.schedulePrefetch();
     });
+  }
+
+  /** The last turn went back a page: the pages before this one are made first. */
+  private turnedBack = false;
+
+  /**
+   * The pages a swipe turns to, the one the last turn headed for first: a row turning
+   * page by page has them made whole while it rests (`Renderer.prefetch`).
+   */
+  private pagesToTurnTo(): number[] {
+    if (!this.turnsPages || this.board) return [];
+    const on = this.turnedBack ? -1 : 1;
+    // The page after the next shows at the pane's edge as a turn ends.
+    return [this.pageIndex + on, this.pageIndex - on, this.pageIndex + 2 * on].filter(
+      (index) => index >= 0 && index < this.doc.pages.length,
+    );
   }
 
   private stepZoomAnim(t: number): boolean {
@@ -11397,6 +11421,8 @@ export class InkSurface {
     return (
       `fps=${this.hudFps.toFixed(0)}/${this.pace.hz.toFixed(0)} ` +
       `paint=${this.hudPaintMs.toFixed(1)}ms ink=${this.hudInkMs.toFixed(1)}ms ` +
+      // The last run of frames (a scroll, a page turn): the averages hide its slow frames.
+      `${this.hudRun.line()} ` +
       `tiles=${tiles} prev=${stats?.previews ?? 0} lvl=${stats?.level.toFixed(2) ?? "-"} ` +
       `${this.backdropPainter?.diagnostics?.() ?? "pdf=-"} ` +
       `v=${(v.x * 1000).toFixed(0)},${(v.y * 1000).toFixed(0)}px/s ` +
@@ -11409,6 +11435,7 @@ export class InkSurface {
   private trackFrame(t: number, started: number): void {
     const paint = now() - started;
     this.hudPaintMs = this.hudPaintMs ? this.hudPaintMs * 0.8 + paint * 0.2 : paint;
+    this.hudRun.note(t, paint, this.renderer?.stats().wholePaints ?? 0, this.pace.frameMs);
     this.countFrame(t);
     this.scheduleHud();
   }

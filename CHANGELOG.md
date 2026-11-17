@@ -143,6 +143,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Smoother page turns** in notebooks whose pages run across
+  ([#201](https://github.com/Joost-8/FineNotes/issues/201)). The pages
+  either side are drawn ahead while the page rests, and a turn repaints the
+  screen about a third less often. The Input debug overlay now shows the
+  last scroll or turn (`run=`): frames drawn, frames missed, the slowest
+  frame and how often the whole page was repainted.
 - **Typing into the calculator stays in the calculator.** A letter or a
   digit typed there no longer also picks a tool or a saved pen, and its
   arrows move its cursor only. Arrow keys in Customize toolbar move the

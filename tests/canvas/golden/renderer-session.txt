@@ -314,7 +314,7 @@ el9 fillRect -512,-512 208,-512 208,388 -512,388 {fillStyle=#fdf6e3}
 el9 painter squared 800x1000 weight=1 at 0.9,0,0,0.9,-512,-512
 el9 strokeRect -511.5,-511.5 207.5,-511.5 207.5,387.5 -511.5,387.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16) lineWidth=1.1111}
 dry drawImage el9 -> 536,1340 744,1340 744,1728 536,1728 {fillStyle=#fdf6e3 imageSmoothingEnabled=false}
-complete=true stats={"level":0.9,"tiles":8,"tileBytes":5184000,"previews":0}
+complete=true stats={"level":0.9,"tiles":8,"tileBytes":5184000,"previews":0,"wholePaints":1}
 # prefetch
 el10.width = 800
 el10.height = 1000
@@ -504,7 +504,7 @@ el11 painter squared 800x1000 weight=1 at 1,0,0,1,0,0
 el11 strokeRect 0.5,0.5 799.5,0.5 799.5,999.5 0.5,999.5 {fillStyle=#fdf6e3 strokeStyle=rgba(16, 24, 40, 0.16)}
 el11 stroke path2d#9b533da56a2e at 1,0,0,1,0,0 {fillStyle=#1a1a1a strokeStyle=#1a1a1a lineWidth=2.176 lineCap=round lineJoin=round}
 el11 stroke path2d#343c2e1e01e7 at 1,0,0,1,0,0 {fillStyle=#7dd3fc strokeStyle=#7dd3fc lineWidth=10 lineCap=round lineJoin=round globalAlpha=0.4 globalCompositeOperation=multiply}
-more=false stats={"level":0.9,"tiles":8,"tileBytes":5184000,"previews":2}
+more=false stats={"level":0.9,"tiles":8,"tileBytes":5184000,"previews":2,"wholePaints":1}
 # commit a stroke
 el2.getContext 2d null
 el2 clip nonzero [R(0,0 720,0 720,900 0,900)]
