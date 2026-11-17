@@ -135,6 +135,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Smoother page turns** in notebooks whose pages run across
+  ([#201](https://github.com/Joost-8/FineNotes/issues/201)). The pages
+  either side are drawn ahead while the page rests, and a turn repaints the
+  screen about a third less often. The Input debug overlay now shows the
+  last scroll or turn (`run=`): frames drawn, frames missed, the slowest
+  frame and how often the whole page was repainted.
 - **P and H bring back each pen's own colour and width**
   ([#226](https://github.com/Joost-8/FineNotes/issues/226)). After a small
   red ball pen, H gave a highlighter in that red and width; now it brings
