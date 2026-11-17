@@ -2094,14 +2094,29 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         "ask",
         t("settings.ai.askHeading"),
         [
-          this.art(
-            toggle(
-              "askAttachPage",
-              t("settings.askAttachPage.name"),
-              t("settings.askAttachPage.line"),
-              ["attach page", "current page", "Ask AI", "chat"],
+          this.tile(
+            dropdown(
+              "askVaultScope",
+              t("settings.askVaultScope.name"),
+              t("settings.askVaultScope.line"),
+              {
+                off: t("settings.askVaultScope.off"),
+                folder: t("settings.askVaultScope.folder"),
+                vault: t("settings.askVaultScope.vault"),
+              },
+              ["vault", "other notes", "context", "search notes", "Ask AI"],
             ),
-            "askPage",
+            "folder-search",
+          ),
+          this.tile(
+            toggle("askShowCost", t("settings.askShowCost.name"), t("settings.askShowCost.line"), [
+              "cost",
+              "price",
+              "tokens",
+              "usage",
+              "Ask AI",
+            ]),
+            "coins",
           ),
           {
             ...this.tile(

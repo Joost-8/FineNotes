@@ -347,17 +347,6 @@ export const ART = {
     path("ga-line", "M51 14h12M51 22h12M51 30h8", "auto=on"),
     rect("ga-card-off", 46, 4, 22, 40, 3, "auto=off"),
   ],
-  askPage: [
-    rect("ga-surface", 1, 1, 70, 46, 7),
-    rect("ga-card", 8, 28, 56, 14, 7),
-    path("ga-line", "M16 35h22"),
-    group(
-      "ga-pop-in",
-      [rect("ga-paper", 44, 6, 18, 20, 2), path("ga-rule", "M47 12h12M47 17h12M47 22h7")],
-      "ask=on",
-    ),
-    rect("ga-accent-box ga-attached", 8, 7, 26, 15, 7, "ask=off"),
-  ],
   debugHud: [
     PAPER,
     path("ga-rule", "M8 17h56M8 32h56"),
@@ -454,7 +443,6 @@ export function artStateOf(
       check: YES_NO(settings.checkHandwrittenWords),
       calc: YES_NO(settings.calcNotes),
       auto: extra.autoRecognizing ? "on" : "off",
-      ask: YES_NO(settings.askAttachPage),
       debug: YES_NO(settings.debugHud),
     },
     vars,

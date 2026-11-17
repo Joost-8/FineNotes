@@ -28,6 +28,7 @@ import {
   buildAskFirstTurn,
 } from "./ai-chat";
 import { attachRefusal } from "./ask-attachments";
+import type { AskUsage } from "./ask-usage";
 import type { SavedChat } from "./ask-chat-file";
 import { english, t, tn } from "../i18n/translate";
 import { errorMessage } from "../util/errors";
@@ -59,6 +60,7 @@ export interface AskSessionDeps {
     shown?: string;
     actions?: readonly string[];
     notes?: readonly string[];
+    usage?: AskUsage;
   }>;
   /** Write the chat; `path` is where it was written before (null the first time). Resolves to its path. */
   save: (chat: SavedChat, path: string | null) => Promise<string>;
@@ -303,6 +305,12 @@ export class AskSession {
         }
         return;
       }
+      // The files are on their way: they leave the field now, not when the
+      // answer comes. A question that fails gives them back for Try again.
+      if (files.length && !stale()) {
+        this.attachments = this.attachments.filter((f) => !files.includes(f));
+        this.changed();
+      }
       const history = await this.withImages();
       if (stale()) return;
       let turn: ChatTurn = { role: "user", text, shown: text };
@@ -340,14 +348,18 @@ export class AskSession {
           text: said,
           ...(shown !== said ? { shown } : {}),
           ...(actions.length ? { actions } : {}),
+          ...(answer.usage ? { usage: answer.usage } : {}),
         },
       ];
-      this.attachments = this.attachments.filter((f) => !files.includes(f));
       this.outstanding = null;
       this.changed();
       await this.persist();
     } catch (error) {
       if (stale()) return;
+      this.attachments = [
+        ...files.filter((f) => !this.attachments.includes(f)),
+        ...this.attachments,
+      ];
       this.outstanding = { question: text, status: "", error: errorMessage(error) };
       this.changed();
     }
