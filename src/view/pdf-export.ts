@@ -57,6 +57,12 @@ export interface PdfExportSources {
   withoutTapes?: boolean;
   /** Which page margins to keep (`model/page-margin`); absent keeps them all. */
   margins?: ExportMargins;
+  /**
+   * Most device px per page px to paint at, under the export's own scale:
+   * 1 for a notebook sent to the AI, which reads an A4 page well at
+   * 1024 px wide and would only pay for more.
+   */
+  maxPixelScale?: number;
 }
 
 /** Whether `page` exports as it is under `margins`, or without its margins. */
@@ -201,8 +207,8 @@ async function paintForExport<T>(
 ): Promise<T> {
   const page = withTapesOf(pageOf(original, sources), sources);
   const { width, height } = page.geometry;
-  const scale = exportPixelScale(width, height);
-  if (scale === 0) throw new Error("A page has no size");
+  const scale = Math.min(exportPixelScale(width, height), sources.maxPixelScale ?? Infinity);
+  if (!(scale > 0)) throw new Error("A page has no size");
 
   const painter = await preparePage(page, sources, scale, exactPdf);
 

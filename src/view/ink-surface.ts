@@ -8115,9 +8115,9 @@ export class InkSurface {
       const pageId = this.strokeIndex.pageOf(id);
       const box = this.pageLayout.boxes.find((b) => b.id === pageId);
       if (!stroke || !box) continue;
-      add(box.index, strokeBounds(stroke));
+      add(box.index, inkedBounds(stroke));
       for (const mirror of this.eraseMirrorsOf(box.id, id)) {
-        add(mirror.box.index, strokeBounds(mirror.stroke));
+        add(mirror.box.index, inkedBounds(mirror.stroke));
       }
     }
     this.eraseDirty.clear();
@@ -8143,7 +8143,7 @@ export class InkSurface {
     this.eraseCuts.set(index, [...(this.eraseCuts.get(index) ?? []), area]);
     if (this.eraseCutSeen.has(stroke.id)) return;
     this.eraseCutSeen.add(stroke.id);
-    const bounds = strokeBounds(stroke);
+    const bounds = inkedBounds(stroke);
     if (bounds) this.erasePreview.set(index, [...(this.erasePreview.get(index) ?? []), bounds]);
   }
 
@@ -22179,4 +22179,16 @@ function boundsUnion(a: Bounds, b: Bounds): Bounds {
 /** `b` grown by `by` page px on every side. */
 function padBounds(b: Bounds, by: number): Bounds {
   return { minX: b.minX - by, minY: b.minY - by, maxX: b.maxX + by, maxY: b.maxY + by };
+}
+
+/**
+ * Where a stroke's ink lies, page px: its points grown by its own width. A
+ * broad highlighter (four times the pen's width, a chisel's corners further
+ * still) reaches past the renderer's fixed pad, and erasing one whole left
+ * its edges in the tiles until the page was painted afresh (Joost,
+ * 2026-11-17).
+ */
+function inkedBounds(stroke: Stroke): Bounds | null {
+  const bounds = strokeBounds(stroke);
+  return bounds ? padBounds(bounds, inkReach(stroke) + 2) : null;
 }

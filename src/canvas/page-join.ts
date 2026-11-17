@@ -200,3 +200,25 @@ export function joinLines(layout: DocumentLayout): JoinLine[] {
   }
   return lines;
 }
+
+/** Where a page lies from the first page of its joined run, page px. */
+export interface GridPhase {
+  x: number;
+  y: number;
+}
+
+/**
+ * How far page `index` lies from the first shown page, when the pages are
+ * joined: a squared, dotted or lined paper starts its pattern that far in,
+ * so the squares run on over the join instead of leaving a strip of a
+ * square plus a whole one there. Undefined when the pages are apart, so a
+ * page on its own keeps its own grid.
+ */
+export function gridPhase(layout: DocumentLayout, index: number): GridPhase | undefined {
+  if (layout.joined !== true) return undefined;
+  const shown = shownBoxes(layout);
+  const first = shown[0];
+  const box = shown.find((b) => b.index === index);
+  if (!first || !box) return undefined;
+  return { x: box.x - first.x, y: box.y - first.y };
+}
