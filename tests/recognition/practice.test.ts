@@ -287,6 +287,46 @@ describe("the symbol sheet", () => {
     expect(symbolSamples(text)).toEqual([]);
   });
 
+  describe("a symbol with a stroke that sits mostly on another line (FineNotes#253)", () => {
+    // Symbol 4 on the first page is written above the rule at 40 * 12.
+    const rule = 40 * 12;
+    const stroke = (id: string, pts: number[], extra: Partial<Stroke> = {}): Stroke => ({
+      id,
+      color: "#000",
+      size: 2,
+      tool: "pen",
+      pts,
+      ...extra,
+    });
+    // The "L" of a 4, on its line.
+    const ell = stroke("ell", [100, rule - 28, 0.5, 96, rule - 10, 0.5, 118, rule - 10, 0.5]);
+    const sampleOf = (strokes: Stroke[]) => {
+      const sheet = buildPracticeFile(SYMBOL_SET, A4);
+      sheet.pages[1].strokes = strokes;
+      return symbolSamples(sheet).map((s) => [s.symbol, s.strokes.length]);
+    };
+
+    it("keeps an upright that drops below the rule, so a 4 is not written as an L", () => {
+      // 16 px of it on the 4's line, 24 px on the line below.
+      const upright = stroke("upright", [112, rule - 6, 0.5, 112, rule + 34, 0.5]);
+      expect(sampleOf([ell, upright])).toEqual([["4", 2]]);
+    });
+
+    it("keeps an upright that snapped to a straight line while the pen rested", () => {
+      const upright = stroke("upright", [112, rule - 26, 0.5, 112, rule + 2, 0.5], {
+        shape: "line",
+      });
+      expect(sampleOf([ell, upright])).toEqual([["4", 2]]);
+      // Any other shape is not handwriting.
+      expect(sampleOf([ell, { ...upright, shape: "circle" }])).toEqual([["4", 1]]);
+    });
+
+    it("leaves out ink on the line below that does not touch the symbol", () => {
+      const apart = stroke("apart", [200, rule + 14, 0.5, 200, rule + 40, 0.5]);
+      expect(sampleOf([ell, apart])).toEqual([["4", 1]]);
+    });
+  });
+
   it("labels a link's brackets and a sum sign as written, for a reader that can spell them", () => {
     const sheet = buildPracticeFile(SYMBOL_SET, A4);
     const at = (symbol: string) => SYMBOL_LINES.findIndex((line) => line.symbol === symbol);
