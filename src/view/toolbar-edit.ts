@@ -250,11 +250,7 @@ export class ToolbarEditor {
         if (!menu || (at && menu.contains(at))) return;
         const item = at?.closest<HTMLElement>("[data-item]")?.getAttribute("data-item");
         this.closedBy =
-          at && this.scrim.contains(at)
-            ? "scrim"
-            : item === this.menuItem
-              ? (item as BarItemId)
-              : null;
+          at && this.scrim.contains(at) ? "scrim" : item === this.menuItem ? this.menuItem : null;
         this.closeMenu();
       },
       true,
