@@ -127,11 +127,13 @@ extracted from the matching section of this file by `release.yml`.
   board shows a short strip of its paper.
 - **Each width preset keeps its own width**
   ([#210](https://github.com/Joost-8/FineNotes/issues/210),
-  [#211](https://github.com/Joost-8/FineNotes/issues/211)). Pick a preset,
+  [#211](https://github.com/Joost-8/FineNotes/issues/211),
+  [#247](https://github.com/Joost-8/FineNotes/issues/247)). Pick a preset,
   then move the slider or type a width: that preset changes and the others
   keep theirs, for each pen type and for the eraser's three sizes. The pen's
   More widths shows the same three presets as the pill. The reset button
-  puts them back to the defaults.
+  puts them back to the defaults. An eraser size you set no longer goes
+  when you pick another size or switch to the pen.
 
 ### Fixed
 

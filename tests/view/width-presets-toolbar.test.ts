@@ -142,6 +142,23 @@ describe("eraser presets", () => {
     expect(saved.erasers.at(-1)).toEqual([10, 24, 80]);
   });
 
+  // FineNotes#247 (2.9.1): the slider changed only the size in hand, so
+  // picking another size, then the pen, lost it. The edited preset now stays,
+  // and a tool bar built again from the saved state shows it.
+  it("keeps an edited size after another size and the pen", () => {
+    const { bar, state, saved } = toolbar({ tool: "eraser", eraserSize: 24 });
+    bar.pickEraserPreset(2);
+    bar.editEraserSize(85);
+    bar.pickEraserPreset(1);
+    expect(state.eraserSize).toBe(24);
+    expect(bar.eraserPresets()).toEqual([10, 24, 85]);
+    const again = toolbar({ tool: "pen", eraserSize: 24, eraserPresets: saved.erasers.at(-1) });
+    expect(again.bar.eraserPresets()).toEqual([10, 24, 85]);
+    expect(again.bar.chosenEraserSlot()).toBe(1);
+    again.bar.pickEraserPreset(2);
+    expect(again.state.eraserSize).toBe(85);
+  });
+
   it("resets to the default sizes", () => {
     const { bar, state } = toolbar({ tool: "eraser", eraserPresets: [6, 30, 100], eraserSize: 30 });
     expect(bar.chosenEraserSlot()).toBe(1);
