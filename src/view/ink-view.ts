@@ -169,7 +169,6 @@ import {
   syncMarks,
   pdfPageOf,
   type BesideView,
-  type SlideRef,
 } from "../model/beside-pdfs";
 import { followOnWrite, notesToOpen, slideToOpen } from "../model/slide-follow";
 import type { SurfaceSession } from "./surface-session";
