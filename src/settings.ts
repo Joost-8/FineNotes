@@ -2117,6 +2117,16 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             ),
             "folder-search",
           ),
+          this.tile(
+            toggle("askShowCost", t("settings.askShowCost.name"), t("settings.askShowCost.line"), [
+              "cost",
+              "price",
+              "tokens",
+              "usage",
+              "Ask AI",
+            ]),
+            "coins",
+          ),
           {
             ...this.tile(
               toggle(

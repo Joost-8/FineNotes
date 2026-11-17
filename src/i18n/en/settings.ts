@@ -277,6 +277,9 @@ export const settings = {
   "settings.askVaultScope.name": "Ask AI can read",
   "settings.askVaultScope.info":
     "Besides the open notebook, Ask AI can search your other notes, notebooks and PDFs and read the ones it needs, as text. The search runs on this device; only what it finds and reads is sent with your question. This notebook's folder (the default) keeps it to the folder the notebook is in and its subfolders.",
+  "settings.askShowCost.name": "Show what each answer cost",
+  "settings.askShowCost.info":
+    "Under each Ask AI answer, an estimate of what it cost, from the tokens the service reported: list prices for Claude models, OpenRouter's own figure, and a token count for other models. Nothing for a server of your own.",
   "settings.askVaultScope.off": "This notebook only",
   "settings.askVaultScope.folder": "This notebook's folder",
   "settings.askVaultScope.vault": "The whole vault",
@@ -460,6 +463,7 @@ export const settings = {
   "settings.autoRecognize.line": "About 30 seconds after you stop, on a page that changed.",
   "settings.askAttachPage.line": "Off: a new chat starts with no page picked.",
   "settings.askVaultScope.line": "Other notes it may search and read for context.",
+  "settings.askShowCost.line": "An estimate under each answer, from its tokens.",
   "settings.openRouterSkipCompressed.line":
     "Skips providers that run cheaper, less accurate copies.",
   "settings.imageVendor.line": "Who makes pictures for Generate image.",

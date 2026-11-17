@@ -2253,6 +2253,7 @@ export class InkView extends TextFileView {
       session,
       sourcePath: this.file?.path ?? "",
       target: targetLabel(this.plugin.textAiConfig()),
+      showCost: () => this.settings.askShowCost,
       currentPage: () => (this.surface?.currentPage ?? 0) + 1,
       pageHasContent: (n) => {
         const page = this.doc.pages[n - 1];

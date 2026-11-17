@@ -553,6 +553,7 @@ describe("the rows", () => {
       ["ai", "Recordings", "Groq API key for recordings", "render"],
       ["ai", "Ask AI", "Ask AI starts on the open page", "toggle:askAttachPage"],
       ["ai", "Ask AI", "Ask AI can read", "dropdown:askVaultScope"],
+      ["ai", "Ask AI", "Show what each answer cost", "toggle:askShowCost"],
       ["ai", "Ask AI", "Skip compressed providers", "toggle:openRouterSkipCompressed"],
       ["ai", "Pictures", "Image generation", "dropdown:imageVendor"],
       ["ai", "Pictures", "(block)", "render"],
@@ -768,6 +769,7 @@ describe("which rows show", () => {
       "Transcribe recordings with",
       "Ask AI starts on the open page",
       "Ask AI can read",
+      "Show what each answer cost",
       "Image generation",
       // Claude makes no pictures: the callout saying so.
       expect.stringMatching(/^\(block \d+\)$/),

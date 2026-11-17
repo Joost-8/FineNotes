@@ -68,6 +68,8 @@ export interface AskAiHost {
   sourcePath: string;
   /** Who answers ("Anthropic (Claude)"), for the line under the pages. */
   target: string;
+  /** Whether an answer shows what it cost (the setting). */
+  showCost?: () => boolean;
   /** The page being read, 1-based. */
   currentPage: () => number;
   /** Whether a page (1-based) has anything on it to ask about. */
@@ -1043,7 +1045,9 @@ export class AskChat {
     });
 
     // What the answer cost, as a mark: the numbers behind it in its tooltip.
-    const mark = usageMark(usage, (count) => t("ai.ask.tokens", { count }));
+    const mark = this.host.showCost?.()
+      ? usageMark(usage, (count) => t("ai.ask.tokens", { count }))
+      : null;
     if (mark && usage) {
       actions.createSpan({
         cls: "goodobsidian-chat-cost",

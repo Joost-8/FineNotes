@@ -217,6 +217,8 @@ export interface GoodObsidianSettings {
    * the whole vault. Read through `askVaultScopeOf`.
    */
   askVaultScope: AskVaultScope;
+  /** Ask AI shows what each answer cost, under it. Off by default (Joost, 2026-11-17). */
+  askShowCost: boolean;
   /** The user agreed that cloud AI sends their pages off the device. */
   cloudConsentGiven: boolean;
   /** The same agreement, given separately for the custom endpoint. */
@@ -599,6 +601,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   searchLayout: "sidebar",
   askAttachPage: false,
   askVaultScope: "folder",
+  askShowCost: false,
   cloudConsentGiven: false,
   customConsentGiven: false,
   autoRecognize: false,
