@@ -183,6 +183,9 @@ describe("searching the guide", () => {
     ["bookmark a page", ["bookmarks", "moreBookmark"]],
     ["solve an equation for x", "solveLetter"],
     ["open the calculator", ["calculatorButton", "calculator"]],
+    ["zoom out of the page to see a grid of pages", "pinchOverview"],
+    ["grid view of my pages", ["pageGrid", "pinchOverview"]],
+    ["how do I see all my pages at once", ["pinchOverview", "pageGrid"]],
   ];
 
   it.each(SAMPLES)("“%s” finds %s", (question, wanted) => {
