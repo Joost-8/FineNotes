@@ -671,7 +671,7 @@ export class AskChat {
     text.createSpan({ cls: "goodobsidian-chat-pdf-name", text: t("ai.ask.wholeAsPdf") });
     text.createSpan({
       cls: "goodobsidian-chat-pdf-pages",
-      text: tn("ai.ask.pageCount", this.session.totalPages),
+      text: tn("ai.ask.wholePages", this.session.totalPages),
     });
     const state = row.createSpan({ cls: "goodobsidian-chat-pdf-state" });
     row.addEventListener("click", () => {

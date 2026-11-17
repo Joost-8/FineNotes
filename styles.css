@@ -7079,6 +7079,8 @@ button.goodobsidian-imagemenu-swatch {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   font-weight: normal;
+  /* "0 of 10" is one mark: in the narrow side panel it never breaks. */
+  white-space: nowrap;
 }
 
 .goodobsidian-ask-frame button.goodobsidian-chat-picker-link.clickable-icon {
