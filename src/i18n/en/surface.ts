@@ -274,6 +274,7 @@ export const surface = {
   "surface.pageTab.open": "Open {label}",
   "surface.pageIndicator": "{page} of {total}",
   "surface.slideIndicator": "Slide {page} of {total}",
+  "surface.snippet.openSlide": "Open the slide",
   "surface.zoomBox.title": "Zoom box",
   "surface.zoomBox.close": "Close zoom box",
   "surface.zoomBox.previous": "Previous position",

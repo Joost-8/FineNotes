@@ -169,6 +169,14 @@ import {
   syncMarks,
 } from "../model/beside-pdfs";
 import type { SurfaceSession } from "./surface-session";
+import {
+  SNIPPET_FLIP_MS,
+  type SnippetHover,
+  snippetBox,
+  snippetCrop,
+  snippetPixels,
+  stepSnippetHover,
+} from "../model/snippet";
 import { RenameModal } from "./rename-modal";
 import { WriteHold } from "./write-hold";
 import { PEN_OPTIONS_RETURN_MS, returnsAfterLift, tucksOnWrite } from "./tool-return";
@@ -217,7 +225,13 @@ import {
   sameLayout,
 } from "./toolbar-layout";
 import { needsNewerReader } from "../model/format-features";
-import type { ContentsLevel, ImageElement, PageChapter, PageSection } from "../model/document";
+import type {
+  ContentsLevel,
+  ImageElement,
+  PageChapter,
+  PageSection,
+  SlideRef,
+} from "../model/document";
 import { ScanSheet } from "./scan-sheet";
 import type { ScanItem } from "./scan-io";
 import {
@@ -833,6 +847,21 @@ export class InkView extends TextFileView {
   private notesTool: ActiveTool | null = null;
   private tabViewTimer = 0;
   private pdfTabNoticeAt = 0;
+  /**
+   * A snippet being dragged off a PDF's tab (`startSnippet`): the slide it
+   * is of, its area, its picture as it is drawn, and its rest over the Notes
+   * tab. The timer asks again while it rests there without moving.
+   */
+  private snippet: {
+    tab: string;
+    page: number;
+    size: { width: number; height: number };
+    pixels: { width: number; height: number };
+    picture: Promise<Blob | null>;
+    hover: SnippetHover;
+    at: { x: number; y: number };
+  } | null = null;
+  private snippetTimer = 0;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -1416,6 +1445,9 @@ export class InkView extends TextFileView {
     this.presenter?.stop();
     window.clearTimeout(this.tabViewTimer);
     this.tabViewTimer = 0;
+    window.clearTimeout(this.snippetTimer);
+    this.snippetTimer = 0;
+    this.snippet = null;
     this.pdfTabsPopover?.close();
     this.pdfTabsPopover = null;
     this.pdfTabs?.destroy();
@@ -3847,6 +3879,11 @@ export class InkView extends TextFileView {
         onAskAboutSelection: (index, bounds) => void this.askAboutSelection(index, bounds),
         canAskAi: () => textAvailability(this.plugin.aiSetup()).enabled,
         onRegionScreenshot: (index, bounds) => void this.screenshotRegion(index, bounds),
+        // Snippets: an area of a slide dragged from its tab onto the notes.
+        onSnippetStart: (index, area, viewScale) => this.startSnippet(index, area, viewScale),
+        onSnippetMove: (x, y) => this.hoverSnippet(x, y),
+        onSnippetEnd: (drop) => void this.dropSnippet(drop),
+        onOpenSlide: (slide) => this.openSlide(slide),
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onEquation: (pageId, at, equation) => this.openEquation(pageId, at, equation),
         onChange: (pages) => {
@@ -4390,16 +4427,34 @@ export class InkView extends TextFileView {
     bounds: Bounds,
     withoutInk = false,
   ): Promise<ScreenshotPicture | null> {
-    const shown = this.doc.pages[index];
+    // The page shown: on a PDF's tab, its slide.
+    const shown = (this.surface?.document ?? this.doc).pages[index];
     if (!shown) return null;
     const page = withoutInk ? pageWithoutInk(shown) : shown;
     const { width, height } = page.geometry;
     const crop = pageCrop(bounds, width, height);
     if (!crop) return null;
+    const png = await this.cropPicture(page, crop);
+    return png ? { png, width: Math.round(crop.width), height: Math.round(crop.height) } : null;
+  }
+
+  /**
+   * The patch `crop` of `page` (page px, drawn at `crop.scale` canvas px per
+   * page px) as a PNG, drawn as an export draws it: paper, PDF, ink. Null
+   * when it could not be drawn (a PDF that cannot be read).
+   */
+  private async cropPicture(
+    page: Page,
+    crop: { x: number; y: number; width: number; height: number; scale: number },
+  ): Promise<Blob | null> {
+    const { width, height } = page.geometry;
+    const sources = this.previewSources();
+    // A slide of a PDF's tab is no page of the notebook: no header or footer.
+    if (!this.doc.pages.includes(page)) delete sources.furniture;
     const canvas = createEl("canvas");
     const out = createEl("canvas");
     try {
-      await paintPagePreview(canvas, page, this.previewSources(), width, crop.scale);
+      await paintPagePreview(canvas, page, sources, width, crop.scale);
       out.width = Math.max(1, Math.round(crop.width * crop.scale));
       out.height = Math.max(1, Math.round(crop.height * crop.scale));
       const kx = canvas.width / width;
@@ -4417,8 +4472,7 @@ export class InkView extends TextFileView {
           out.width,
           out.height,
         );
-      const png = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, "image/png"));
-      return png ? { png, width: Math.round(crop.width), height: Math.round(crop.height) } : null;
+      return await new Promise<Blob | null>((resolve) => out.toBlob(resolve, "image/png"));
     } catch {
       return null;
     } finally {
@@ -5482,6 +5536,144 @@ export class InkView extends TextFileView {
     this.requestHeadSave();
     this.syncPdfTabs();
     new Notice(t("view.pdfTabs.relinked", { name: tabLabel(beside) }));
+  }
+
+  // --- Snippets: a slide's area dragged onto the notes -----------------------
+
+  /**
+   * The lasso on a PDF's tab carries area `area` of slide `index` off as a
+   * snippet (ink-surface.ts, `startSnippetDrag`): its picture is drawn now,
+   * as sharp as the view shows it (`viewScale`), for the drag's ghost and
+   * for the drop. Null when there is nothing to carry.
+   */
+  private startSnippet(
+    index: number,
+    area: Bounds,
+    viewScale: number,
+  ): Promise<Blob | null> | null {
+    const page = this.surface?.document.pages[index];
+    if (!this.onPdfTab || !page) return null;
+    const crop = snippetCrop(area, page.geometry.width, page.geometry.height, viewScale);
+    if (!crop) return null;
+    const picture = this.cropPicture(page, crop);
+    this.snippet = {
+      tab: this.activeTab,
+      page: index,
+      size: { width: crop.width, height: crop.height },
+      pixels: snippetPixels(crop),
+      picture,
+      hover: { since: null },
+      at: { x: 0, y: 0 },
+    };
+    return picture;
+  }
+
+  /**
+   * The snippet's pointer moved to client point (x, y). Resting on the
+   * Notes tab lights it, and after `SNIPPET_FLIP_MS` the notes show, the
+   * drag going on over them. Once there it stays: a drop on the PDF's tab
+   * it came from was never a drop.
+   */
+  private hoverSnippet(x: number, y: number): boolean {
+    const snippet = this.snippet;
+    const strip = this.pdfTabs;
+    if (!snippet || !strip) return false;
+    snippet.at = { x, y };
+    window.clearTimeout(this.snippetTimer);
+    this.snippetTimer = 0;
+    if (this.activeTab !== snippet.tab) {
+      strip.setDropTarget(null);
+      return false;
+    }
+    const over = strip.tabAt(x, y) === NOTES_TAB;
+    strip.setDropTarget(over ? NOTES_TAB : null);
+    const step = stepSnippetHover(snippet.hover, over, Date.now());
+    snippet.hover = step.hover;
+    if (step.flip) {
+      strip.setDropTarget(null);
+      this.showTab(NOTES_TAB);
+      return false;
+    }
+    // A pen held still sends no moves: ask again when the wait is up.
+    if (over) {
+      this.snippetTimer = window.setTimeout(() => {
+        if (this.snippet === snippet) this.hoverSnippet(snippet.at.x, snippet.at.y);
+      }, SNIPPET_FLIP_MS);
+    }
+    return over;
+  }
+
+  /**
+   * The snippet was let go: on page `drop.pageIndex` of the notes at page
+   * point (x, y), it lands there as a picture of the slide's area, linked to
+   * the slide (`ImageElement.slide`), as large as it was on the slide (or
+   * fitted to the page), saved as an attachment: one undo step on the
+   * notes. `null`: it went nowhere, and nothing changes.
+   */
+  private async dropSnippet(
+    drop: { pageIndex: number; x: number; y: number } | null,
+  ): Promise<void> {
+    window.clearTimeout(this.snippetTimer);
+    this.snippetTimer = 0;
+    this.pdfTabs?.setDropTarget(null);
+    const snippet = this.snippet;
+    this.snippet = null;
+    const surface = this.surface;
+    const note = this.file;
+    if (!snippet || !drop || !surface || !note || this.onPdfTab || this.isProtected()) return;
+    const beside = findBeside(this.doc, snippet.tab);
+    const png = await snippet.picture;
+    const { pixels } = snippet;
+    if (!png) {
+      new Notice(t("view.pdfTabs.snippetFailed"));
+      return;
+    }
+    try {
+      const prepared = {
+        bytes: await png.arrayBuffer(),
+        mime: "image/png",
+        ext: "png",
+        width: pixels.width,
+        height: pixels.height,
+      };
+      const name = t("view.pdfTabs.snippetName", {
+        name: beside ? tabLabel(beside) : "PDF",
+        page: snippet.page + 1,
+      });
+      const file = await saveImageAttachment(
+        this.app,
+        prepared,
+        name,
+        note.path,
+        this.attachmentFolder("images"),
+      );
+      // Still the notes it was dropped on.
+      if (this.file !== note || this.surface !== surface || this.onPdfTab || this.isProtected())
+        return;
+      const page = this.doc.pages[drop.pageIndex];
+      if (!page) return;
+      const image = newImageElement(
+        this.doc,
+        file.path,
+        snippetBox(snippet.size, drop, page.geometry),
+      );
+      image.slide = { tab: snippet.tab, page: snippet.page };
+      surface.applyCommand(new InsertImage(page.id, image));
+      surface.selectImage(page.id, image.id);
+    } catch (error) {
+      new Notice(t("view.image.addFailed", { message: errorMessage(error) }), 8000);
+    }
+  }
+
+  /**
+   * A snippet's link was tapped: its PDF's tab, at its slide. A closed tab
+   * opens again; a PDF that is gone shows its grey tab, to find the file.
+   */
+  private openSlide(slide: SlideRef): void {
+    const surface = this.surface;
+    if (!surface || !findBeside(this.doc, slide.tab) || !this.takesPdfTabs) return;
+    this.showTab(slide.tab);
+    if (this.activeTab === slide.tab) surface.goToPage(slide.page);
   }
 
   /** The + button: every PDF of this notebook, those beside it, and adding more. */
