@@ -2501,7 +2501,7 @@ export class InkView extends TextFileView {
         return this.createAskNote(call.title, call.text);
       case "finenotes_help":
         return {
-          text: helpText(call.query, helpEntries(call.query, english), english),
+          text: helpText(call.query, helpEntries(call.query, english)),
         };
       case "add_text_box": {
         const refused = editRefused();

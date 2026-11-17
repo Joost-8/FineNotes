@@ -111,9 +111,10 @@ export const ASK_TOOLS = [
   {
     name: "finenotes_help",
     description:
-      "Look up FineNotes itself: what it can do and how (pens, shapes, lasso, pages, PDFs, search, " +
-      "export, gestures, settings, AI). Returns entries from its handbook, each with a link that opens " +
-      "that tip or setting. Use it for any question about using FineNotes, before answering.",
+      "Look up FineNotes itself: what it can do, how, and where each thing is (toolbar, pens, shapes, " +
+      "lasso, pages, Home, PDFs, import, export, recordings, maths, gestures, keyboard shortcuts, " +
+      "settings, AI). Returns entries from its handbook with the path through the app, and links that " +
+      "open a tip or setting. Use it for any question about using FineNotes, before answering.",
     input_schema: {
       type: "object",
       properties: {
