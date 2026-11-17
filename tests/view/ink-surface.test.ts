@@ -451,7 +451,7 @@ describe("handleKeyDown", () => {
   });
 
   it("passes keys it has no use for", () => {
-    for (const key of ["x", "Tab", "Enter", "9", "ArrowLeft", "Escape", "Delete"]) {
+    for (const key of ["x", "Tab", "Enter", "9", "Home", "Escape", "Delete"]) {
       expect(press(key)).toEqual(PASSED);
     }
   });
@@ -586,6 +586,14 @@ describe("handleKeyDown", () => {
       ...TAKEN,
       calls: ["scrollStep(150)"],
     });
+  });
+
+  it("turns the page with ← and →, in a row or a column (FineNotes#248)", () => {
+    for (const scene of [{}, { row: true }, { row: true, rowFits: true }]) {
+      expect(press("ArrowRight", {}, scene)).toEqual({ ...TAKEN, calls: ["nextPage"] });
+      expect(press("ArrowLeft", {}, scene)).toEqual({ ...TAKEN, calls: ["previousPage"] });
+    }
+    expect(press("ArrowRight", { alt: true })).toEqual(PASSED);
   });
 });
 

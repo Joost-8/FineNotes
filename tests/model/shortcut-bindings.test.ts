@@ -411,6 +411,24 @@ describe("the ? sheet", () => {
     // A row with no key is not listed.
     expect(line(groups, "Zoom in")).toBeUndefined();
   });
+
+  it("keeps ← and → on the page lines whatever their rows say (FineNotes#248)", () => {
+    const keys = (groups: ReturnType<typeof boundShortcutGroups>, action: string) =>
+      line(groups, action)?.ways.map((way) => way.keys.join("+"));
+    const plain = boundShortcutGroups(shortcutTable(), SHORTCUT_GROUPS);
+    expect(keys(plain, "Next page")).toEqual(["Page Down", "→"]);
+    expect(keys(plain, "Previous page")).toEqual(["Page Up", "←"]);
+    const overrides = withShortcut(
+      withShortcut({}, "view.next-page", { type: "key", key: "n", mods: [] }, "press"),
+      "view.previous-page",
+      null,
+      "press",
+    );
+    const changed = boundShortcutGroups(shortcutTable(overrides), SHORTCUT_GROUPS);
+    expect(keys(changed, "Next page")).toEqual(["N", "→"]);
+    // Page Up cleared: the line stays, for ←.
+    expect(keys(changed, "Previous page")).toEqual(["←"]);
+  });
 });
 
 describe("buttons", () => {

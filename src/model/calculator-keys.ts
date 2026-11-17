@@ -20,6 +20,7 @@
 
 import { type TextKey, t } from "../i18n/translate";
 import { boxText, layoutExpression } from "./calc-display";
+import { basicKeyFor } from "./basic-calc";
 import { ACTIVE_BOX, CARET, type NumberBase, PLACEHOLDER } from "./calculator";
 
 export { ACTIVE_BOX, CARET };
@@ -833,6 +834,27 @@ export function keyboardKey(
   if (/[0-9.(),]/.test(key)) return { insert: key, continues: false };
   if (/[a-zA-Z]/.test(key)) return { insert: key, continues: false };
   return null;
+}
+
+/** The parts of a key press `calculatorTakesKey` reads. */
+export interface CalcKeyChord {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+}
+
+/**
+ * Whether the calculator, while it is the window in use, types `chord`: in
+ * Basic (`basic`) or on its full keys. The notebook hears every key before
+ * the calculator does (Obsidian's keymap listens on the window), so it
+ * leaves these alone: E types an e instead of picking the eraser, and ←
+ * moves the cursor instead of turning the page (FineNotes#248).
+ */
+export function calculatorTakesKey(chord: CalcKeyChord, basic: boolean): boolean {
+  if (!basic && chord.key === "Escape") return true;
+  if (chord.ctrlKey || chord.metaKey || chord.altKey) return false;
+  return basic ? basicKeyFor(chord.key) !== null : keyboardKey(chord.key) !== null;
 }
 
 /** The cursor moved one sign left or right (a box counts as one sign). */

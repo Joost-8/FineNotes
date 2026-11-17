@@ -4004,6 +4004,18 @@ export class InkView extends TextFileView {
       () => this.app.workspace.getActiveViewOfType(InkView) === this,
       // The page sidebar first: Escape leaves its overview before anything else.
       (event) => {
+        // A key the open calculator types is its own: E is an e there, and
+        // ← moves its cursor, not the page.
+        if (this.calculator?.takesKey(event)) {
+          this.surface?.noteKey(event, "field");
+          return false;
+        }
+        // Customize toolbar is a dialog over the notebook: its arrows move
+        // a button, its Escape closes it, and the page stays as it is.
+        if (this.toolbar?.customizing) {
+          this.surface?.noteKey(event, "modal");
+          return false;
+        }
         if (this.sidebar?.handleKeyDown(event)) {
           this.surface?.noteKey(event, "taken");
           return true;
