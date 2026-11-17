@@ -150,6 +150,7 @@ export const ai = {
   "ai.ask.reach.folder": "This notebook's folder",
   "ai.ask.reach.vault": "The whole vault",
   "ai.ask.costTip": "Estimated from list prices: {input} tokens in, {output} out",
+  "ai.tool.lookingUpHelp": "Looking up “{query}” in FineNotes' handbook…",
   "ai.tool.lookingAtLinks": "Looking at this notebook's links…",
   "ai.tool.makingNote": "Writing the note “{title}”…",
   "ai.tool.searchingVault": "Searching your notes for “{query}”…",

@@ -109,6 +109,24 @@ export const ASK_TOOLS = [
     },
   },
   {
+    name: "finenotes_help",
+    description:
+      "Look up FineNotes itself: what it can do and how (pens, shapes, lasso, pages, PDFs, search, " +
+      "export, gestures, settings, AI). Returns entries from its handbook, each with a link that opens " +
+      "that tip or setting. Use it for any question about using FineNotes, before answering.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "What the user wants to know or do, in a few words.",
+        },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "linked_notes",
     description:
       "List the notes this notebook links to and the notes that link to it: connections the user made " +
@@ -333,6 +351,7 @@ export type AskToolCall =
   | { tool: "search_vault"; query: string }
   | { tool: "read_note"; path: string; from: number }
   | { tool: "linked_notes"; direction: "both" | "to" | "from" }
+  | { tool: "finenotes_help"; query: string }
   | { tool: "create_note"; title: string; text: string }
   | { tool: "add_text_box"; page: number; text: string }
   | { tool: "add_page"; after: number }
@@ -436,6 +455,12 @@ export function parseToolCall(
         return { error: '"from" must be a whole number, 0 or more.' };
       }
       return { tool: "read_note", path: path.trim(), from: from ?? 0 };
+    }
+    case "finenotes_help": {
+      const query = text("query");
+      return query
+        ? { tool: "finenotes_help", query: query.trim() }
+        : { error: '"query" is empty.' };
     }
     case "linked_notes": {
       const direction = args.direction ?? "both";
@@ -602,6 +627,8 @@ export function toolStatus(call: AskToolCall): string {
       return t("ai.tool.readingNote", { name: noteName(call.path) });
     case "linked_notes":
       return t("ai.tool.lookingAtLinks");
+    case "finenotes_help":
+      return t("ai.tool.lookingUpHelp", { query: call.query });
     case "create_note":
       return t("ai.tool.makingNote", { title: call.title });
     case "add_text_box":

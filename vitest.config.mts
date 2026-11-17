@@ -181,6 +181,7 @@ export default defineConfig({
         "src/recognition/ask-tools.ts",
         "src/recognition/vault-context.ts",
         "src/recognition/ask-usage.ts",
+        "src/recognition/finenotes-help.ts",
         "src/recognition/ask-tool-dialects.ts",
         "src/recognition/ai-image.ts",
         "src/recognition/ai-menu-model.ts",

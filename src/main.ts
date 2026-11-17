@@ -3945,6 +3945,14 @@ export default class GoodObsidianPlugin extends Plugin {
 
   // --- obsidian://finenotes links ------------------------------------------------
 
+  /** An `obsidian://finenotes?…` link tapped inside FineNotes (an Ask answer's handbook link). */
+  openFinenotesLink(url: string): void {
+    const query = url.slice(url.indexOf("?") + 1);
+    const params: Record<string, string> = {};
+    for (const [key, value] of new URLSearchParams(query)) params[key] = value;
+    void this.handleFinenotesLink(params);
+  }
+
   private async handleFinenotesLink(params: Record<string, string>): Promise<void> {
     const request = parseFinenotesLink(params);
     if (request.do === "new" && !request.last) {

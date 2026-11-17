@@ -63,6 +63,8 @@ export interface PdfExportSources {
    * 1024 px wide and would only pay for more.
    */
   maxPixelScale?: number;
+  /** JPEG quality of picture pages, 0 to 1; {@link JPEG_QUALITY} when absent. */
+  jpegQuality?: number;
 }
 
 /** Whether `page` exports as it is under `margins`, or without its margins. */
@@ -139,7 +141,9 @@ export async function renderPageJpeg(
   sources: PdfExportSources,
 ): Promise<PdfImagePage> {
   return paintForExport(original, sources, false, async (canvas, page) => ({
-    jpeg: new Uint8Array(await (await canvasToBlob(canvas, "image/jpeg")).arrayBuffer()),
+    jpeg: new Uint8Array(
+      await (await canvasToBlob(canvas, "image/jpeg", sources.jpegQuality)).arrayBuffer(),
+    ),
     pixelWidth: canvas.width,
     pixelHeight: canvas.height,
     widthPt: page.geometry.width * POINTS_PER_PAGE_PX,
@@ -314,8 +318,8 @@ async function preparePage(
   return painter;
 }
 
-/** `canvas` encoded as `type` (JPEG at {@link JPEG_QUALITY}). */
-function canvasToBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
+/** `canvas` encoded as `type` (JPEG at `quality`, else {@link JPEG_QUALITY}). */
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
@@ -323,7 +327,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
         else reject(new Error("The page could not be encoded — it may be too large"));
       },
       type,
-      type === "image/jpeg" ? JPEG_QUALITY : undefined,
+      type === "image/jpeg" ? (quality ?? JPEG_QUALITY) : undefined,
     );
   });
 }

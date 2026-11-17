@@ -127,6 +127,7 @@ import {
   vaultSearchText,
 } from "../recognition/vault-context";
 import { VaultContextSource } from "./vault-context-source";
+import { askAbilitiesPrompt, helpEntries, helpText } from "../recognition/finenotes-help";
 import { generatedImageName } from "../recognition/ai-image";
 import { nextElementId, textBoxBelow, textBoxFrame } from "../recognition/ai-placement";
 import {
@@ -509,7 +510,7 @@ import {
   shownPaperTheme,
 } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
-import { t, tn } from "../i18n/translate";
+import { english, t, tn } from "../i18n/translate";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
 import { obsidianOpenUri } from "../model/home-link";
@@ -521,6 +522,8 @@ import { Presenter } from "./presenter";
 /** Quiet time after the page being read changes before it is remembered. */
 /** A notebook that has just opened waits this long before its first page's PDF text is read for OCR, ms. */
 const OCR_OPEN_DELAY_MS = 800;
+/** JPEG quality of a notebook attached to Ask AI as a PDF: legible to a model, a third the size. */
+const ASK_PDF_QUALITY = 0.6;
 /** Present mode fits the page once the pane has its new size (`startPresenting`). */
 const PRESENT_SETTLE_MS = 150;
 /** How long after opening a notebook its PDF pages' text starts being read for Home's search, ms. */
@@ -2254,6 +2257,7 @@ export class InkView extends TextFileView {
       sourcePath: this.file?.path ?? "",
       target: targetLabel(this.plugin.textAiConfig()),
       showCost: () => this.settings.askShowCost,
+      openAppLink: (url) => this.plugin.openFinenotesLink(url),
       vaultScope: {
         get: () => askVaultScopeOf(this.settings.askVaultScope),
         set: (scope) => {
@@ -2369,7 +2373,13 @@ export class InkView extends TextFileView {
   ): Promise<AskAnswer> {
     const config = this.plugin.textAiConfig();
     const system = buildAskSystemPrompt();
-    const withTools = askAiWithTools(config, `${system}\n${buildAskToolsPrompt()}`, turns, {
+    // What it can do and which settings to suggest; the same text while the settings stay.
+    const abilities = askAbilitiesPrompt(
+      askVaultScopeOf(this.settings.askVaultScope),
+      this.settings.askShowCost,
+    );
+    const prompt = `${system}\n${buildAskToolsPrompt()}\n${abilities}`;
+    const withTools = askAiWithTools(config, prompt, turns, {
       totalPages: () => this.doc.pages.length,
       run: (call) => this.runAskTool(call),
       onStatus,
@@ -2489,6 +2499,10 @@ export class InkView extends TextFileView {
         return this.runVaultTool(call);
       case "create_note":
         return this.createAskNote(call.title, call.text);
+      case "finenotes_help":
+        return {
+          text: helpText(call.query, helpEntries(call.query, english), english),
+        };
       case "add_text_box": {
         const refused = editRefused();
         if (refused || !surface) return refused ?? { text: "", isError: true };
@@ -4959,7 +4973,9 @@ export class InkView extends TextFileView {
     try {
       const bytes = await exportPagesToPdf(
         pages,
-        { ...this.previewSources(), maxPixelScale: 1 },
+        // For the AI, not for print: 1024 px wide at 60% (a 69-page notebook:
+        // 9.3 MB, where print quality made 16.3 MB and broke the services' limits).
+        { ...this.previewSources(), maxPixelScale: 1, jpegQuality: ASK_PDF_QUALITY },
         { title, onProgress },
       );
       return attachmentFromBytes(`${title}.pdf`, bytes);

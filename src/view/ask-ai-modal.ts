@@ -76,6 +76,8 @@ export interface AskAiHost {
   sourcePath: string;
   /** Who answers ("Anthropic (Claude)"), for the line under the pages. */
   target: string;
+  /** Open an `obsidian://finenotes?…` link from an answer (a handbook entry) in FineNotes itself. */
+  openAppLink?: (url: string) => void;
   /** Whether an answer shows what it cost (the setting). */
   showCost?: () => boolean;
   /** The page being read, 1-based. */
@@ -1074,6 +1076,15 @@ export class AskChat {
     }
     // A note the answer links to (one it read, or one it wrote) opens in a tab beside the notebook.
     text.addEventListener("click", (event) => {
+      // A handbook link (finenotes_help) opens its tip or switch here, not through the system.
+      const own = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+        'a[href^="obsidian://finenotes"]',
+      );
+      if (own && this.host.openAppLink) {
+        event.preventDefault();
+        this.host.openAppLink(own.href);
+        return;
+      }
       const link = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
         "a.internal-link",
       );
