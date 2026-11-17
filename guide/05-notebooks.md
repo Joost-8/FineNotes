@@ -10,7 +10,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 
 - **Id:** `newNotebook`
 - **What:** Opens the "New notebook" dialog: a title, a cover, a paper (template, colour, size, orientation) and a folder chip, then Create. A double tap on a paper card creates at once. The dialog remembers the last choices.
-- **Where:** Home › New › New notebook; Home with no notebooks › New notebook; Notebooks sidebar (left) › square-pen button "New notebook"; file explorer right-click a folder › New notebook; command palette "New notebook or page…"
+- **Where:** Home › New › New notebook; Home with no notebooks › New notebook; Notebooks sidebar (left) › square-pen button "New notebook"; file explorer right-click a folder › New notebook; command palette "New notebook or board…"
 - **Words:** new notebook, create notebook, add notebook, start a notebook, blank notebook, new note, Goodnotes new notebook, make a book
 - **Settings:** `newNotebookFolder`, `notebookOwnFolder`, `lastNotebookChoices`, `lastNotebookTemplate`, `showNewNotebookInContextMenu`
 - **Commands:** `create-handwriting-note`

@@ -967,7 +967,7 @@ export interface ToolbarCallbacks {
   // --- Saved pens (FineNotes#24, #25). Without `savedPens`, no star in the pill.
   /** The saved pens, as the settings have them now. */
   savedPens?: () => readonly SavedPen[];
-  /** "Save current pen": add `pen` to the saved pens. Hosts persist it. */
+  /** Add `pen` to the saved pens (Customize toolbar's New pen chip). Hosts persist it. */
   onSavePen?: (pen: SavedPen) => void;
   /**
    * The pen dialog for a new saved pen, starting from `start` (FineNotes#211);
@@ -4142,7 +4142,7 @@ export class Toolbar {
   /**
    * The saved pens' popover: each pen with its number key, the one in hand
    * marked, in an order they are dragged to (a finger after a short hold);
-   * then Save current pen, and a way to the settings, where they are edited
+   * then New pen (the pen dialog), and a way to the settings, where they are edited
    * and deleted.
    */
   private toggleSavedPens(anchor: HTMLElement): void {
@@ -4237,34 +4237,8 @@ export class Toolbar {
         this.closePopover();
         make(current, () => undefined);
       });
-    } else this.saveCurrentPenLink(body, pens, current, inHand);
+    }
     this.editPensLink(body);
-  }
-
-  /** Save current pen, where there is no pen dialog to make one. */
-  private saveCurrentPenLink(
-    body: HTMLElement,
-    pens: readonly SavedPen[],
-    current: SavedPen,
-    inHand: boolean,
-  ): void {
-    const saved = pens.some((pen) => samePen(pen, current));
-    const add = body.createEl("button", {
-      cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
-    });
-    add.createSpan({
-      text: saved
-        ? t("toolbar.savedPens.thisSaved")
-        : pens.length >= MAX_SAVED_PENS
-          ? t("toolbar.savedPens.full", { max: MAX_SAVED_PENS })
-          : t("toolbar.savedPens.saveCurrent"),
-    });
-    add.disabled = !inHand || saved || pens.length >= MAX_SAVED_PENS || !this.callbacks.onSavePen;
-    add.addEventListener("click", () => {
-      if (add.disabled) return;
-      this.callbacks.onSavePen?.(current);
-      this.popoverRender?.();
-    });
   }
 
   /** Edit saved pens: the settings, where they are changed and deleted. */

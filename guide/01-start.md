@@ -10,7 +10,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 
 - **Id:** `aboutFineNotes`
 - **What:** FineNotes is an Obsidian plugin for handwritten notebooks with pages, like Goodnotes: write with a pen or Apple Pencil, add pages from templates, annotate PDFs, and keep everything as files in your vault. It is free and open source (GPL-3.0).
-- **Where:** Notebooks are made from Home (the notebook library) with +, or the command New notebook or page….
+- **Where:** Notebooks are made from Home (the notebook library) with +, or the command New notebook or board….
 - **Words:** what is finenotes, about, goodnotes for obsidian, handwriting plugin, notebooks, paginated, free, open source, price, cost, is it free
 - **Commands:** `open-library`, `create-handwriting-note`
 

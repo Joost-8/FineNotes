@@ -147,7 +147,7 @@ A tip no guide entry links is still found by `finenotes_help`, by its own words.
 ### Hold a finger down
 
 - **Id:** `fingerHoldMenu`
-- **What:** Hold a finger on the page, with any tool, for Paste, Text box, Comment and Select all.
+- **What:** Hold a finger on the page, with any tool, for Paste, Text box and Select all. Comment is under its ⋯.
 - **Reach:** A gesture on the page.
 - **In the guide:** `fingerHoldMenu`
 

@@ -70,10 +70,10 @@ export const view = {
   "view.search.hintTranscribed":
     "Search the transcribed handwriting, typed text and PDF text on every page.",
   "view.search.hintUntranscribed":
-    "Search typed text and PDF text on every page. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).",
+    "Search typed text and PDF text on every page. Handwriting is found once it is read: Settings › Reading and voice › Read handwriting with.",
   "view.search.noneTranscribed": "No page has all of these words.",
   "view.search.noneUntranscribed":
-    "No page has all of these words in typed or PDF text. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).",
+    "No page has all of these words in typed or PDF text. Handwriting is found once it is read: Settings › Reading and voice › Read handwriting with.",
 
   // Text layer panel
   "view.textPanel.label": "Text layer: the transcription, your [[links]] and #tags, all searchable",

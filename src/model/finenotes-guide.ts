@@ -65,7 +65,7 @@ export const SETTING_PLACES: ReadonlyMap<string, string> = (() => {
 
 /** Each command's name in the command palette, in English, by id. */
 export const COMMAND_NAMES: Readonly<Record<string, string>> = {
-  "create-handwriting-note": "New notebook or page…",
+  "create-handwriting-note": "New notebook or board…",
   "create-notebook-with-last-settings": "Create notebook with last settings",
   "insert-new-notebook": "Insert a new notebook here",
   "open-library": "Open the notebook library",

@@ -9,7 +9,8 @@ export const ai = {
   "ai.menu.beta": "Beta",
   "ai.menu.deviceHeading": "Handwriting · on this device",
   "ai.menu.keyHeading": "With your own AI key",
-  "ai.menu.keyHint": "Transcribe, ask about pages and make images. Needs an API key.",
+  "ai.menu.keyHint":
+    "Ask about your notes, make images and transcribe recordings. Needs an API key.",
   "ai.menu.readOnDevice": "Read handwriting on this device…",
   "ai.menu.corrections": "Corrections",
   "ai.menu.correctionsHint": "Underline words it may have misread; tap one to correct it",
@@ -463,9 +464,9 @@ export const ai = {
   "ai.rec.stopWrite": "Recording stopped: the audio could not be written ({problem}).",
   "ai.rec.unknown": "unknown",
   "ai.rec.savedPlay":
-    "{length} saved to {path}. Play it from the Audio tab in the page sidebar; Undo takes it off this note (the file stays).",
+    "{length} saved to {path}. Play it from the page sidebar: Files, then Recordings. Undo takes it off this note (the file stays).",
   "ai.rec.savedListed":
-    "{length} saved to {path}. It is in this note's recordings (the Audio tab in the page sidebar).",
+    "{length} saved to {path}. It is in this note's recordings (the page sidebar: Files, then Recordings).",
   "ai.rec.savedNotAdded": "{length} saved to {path}, but it could not be added to the note.",
   "ai.rec.partMissing": "Part of it may be missing: {problem}.",
   "ai.rec.limitScreenOn":

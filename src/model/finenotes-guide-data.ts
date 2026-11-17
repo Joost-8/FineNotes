@@ -17,7 +17,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
       "what is finenotes, about, goodnotes for obsidian, handwriting plugin, notebooks, paginated, free, open source, price, cost, is it free",
     what: "FineNotes is an Obsidian plugin for handwritten notebooks with pages, like Goodnotes: write with a pen or Apple Pencil, add pages from templates, annotate PDFs, and keep everything as files in your vault. It is free and open source (GPL-3.0).",
     where:
-      "Notebooks are made from Home (the notebook library) with +, or the command New notebook or page….",
+      "Notebooks are made from Home (the notebook library) with +, or the command New notebook or board….",
     commands: ["open-library", "create-handwriting-note"],
   },
   {
@@ -2271,7 +2271,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
       "new notebook, create notebook, add notebook, start a notebook, blank notebook, new note, Goodnotes new notebook, make a book",
     what: 'Opens the "New notebook" dialog: a title, a cover, a paper (template, colour, size, orientation) and a folder chip, then Create. A double tap on a paper card creates at once. The dialog remembers the last choices.',
     where:
-      'Home › New › New notebook; Home with no notebooks › New notebook; Notebooks sidebar (left) › square-pen button "New notebook"; file explorer right-click a folder › New notebook; command palette "New notebook or page…"',
+      'Home › New › New notebook; Home with no notebooks › New notebook; Notebooks sidebar (left) › square-pen button "New notebook"; file explorer right-click a folder › New notebook; command palette "New notebook or board…"',
     settings: [
       "newNotebookFolder",
       "notebookOwnFolder",
