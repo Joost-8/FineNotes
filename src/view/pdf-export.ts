@@ -19,7 +19,8 @@ import { annotationLayers } from "../export/annotation-layers";
 import { type ExportFormat, type ExportMargins, mimeTypeOf } from "../export/export-choice";
 import { type PdfLayer, PdfComposer } from "../export/pdf-composer";
 import { type PaperTheme, inkShade, pageLook } from "../canvas/backdrop";
-import { hasOverInk, renderPageThumbnail } from "../canvas/renderer";
+import { type BackdropPainter, hasOverInk, renderPageThumbnail } from "../canvas/renderer";
+import { PdfCanvasRecorder } from "../export/pdf-canvas";
 import { type VectorInk, vectorInk } from "../export/vector-ink";
 import { isNoteInk, noteIdsOf } from "../model/sticky-notes";
 import { marginBackdrop } from "../model/page-margin";
@@ -67,10 +68,11 @@ export interface PdfExportSources {
    */
   maxPixelScale?: number;
   /**
-   * Write ink, shapes and highlighters as vector paths over a picture of
-   * what lies under them, the way Goodnotes exports: a smaller file, sharp
-   * at any zoom. Text boxes, pictures in front and tapes stay a picture
-   * over the ink. Off: every page that is not a PDF is one picture.
+   * `false`: every page that is not a PDF is one picture, the old export.
+   * Otherwise (the default) ink, shapes and highlighters are vector paths,
+   * the way Goodnotes exports, and so are the paper and its rulings when
+   * nothing under the ink needs a picture; text boxes, pictures and tapes
+   * stay pictures. A smaller file, sharp at any zoom.
    */
   vectorInk?: boolean;
 }
@@ -120,7 +122,7 @@ export async function exportPagesToPdf(
   const out: PdfImagePage[] = [];
   const hasPdf = pages.some((page) => page.backdrop.kind === "pdf");
   if (hasPdf && !sources.readPdf) throw new Error("PDF source reader unavailable");
-  const vector = sources.vectorInk === true;
+  const vector = sources.vectorInk !== false;
   const composer =
     hasPdf || vector ? await PdfComposer.create(options.title, sources.readPdf ?? null) : null;
   for (const [i, original] of pages.entries()) {
@@ -438,15 +440,29 @@ async function* renderVectorPage(
   page: Page,
   sources: PdfExportSources,
 ): AsyncGenerator<PdfLayer> {
-  yield await paintForExport(
-    original,
-    sources,
-    false,
-    async (canvas) => ({
-      jpeg: new Uint8Array(await (await canvasToBlob(canvas, "image/jpeg")).arrayBuffer()),
-    }),
-    "under",
-  );
+  // The paper and its rulings as paths when nothing under the ink needs a picture.
+  const paper =
+    page.images.length === 0
+      ? await recordUnderInk(
+          page,
+          sources,
+          async (scale) => {
+            const painter = await preparePage(page, sources, scale);
+            return { painter, release: () => painter.releaseExact() };
+          },
+          sources.furniture?.(original),
+        )
+      : null;
+  yield paper ??
+    (await paintForExport(
+      original,
+      sources,
+      false,
+      async (canvas) => ({
+        jpeg: new Uint8Array(await (await canvasToBlob(canvas, "image/jpeg")).arrayBuffer()),
+      }),
+      "under",
+    ));
   yield { ink: pageVectorInk(page, sources) };
   if (hasOverInk(page)) {
     yield await paintForExport(
@@ -457,6 +473,44 @@ async function* renderVectorPage(
       "over",
     );
   }
+}
+
+/**
+ * What lies under `page`'s ink, recorded as vector paths by the painters
+ * that draw it on screen ({@link PdfCanvasRecorder}), at the export's scale;
+ * `null` when anything there needs a picture (text, an image, a pattern),
+ * for the caller to paint it as one instead.
+ */
+async function recordUnderInk(
+  page: Page,
+  sources: PdfExportSources,
+  prepare: (scale: number) => Promise<{ painter: BackdropPainter; release: () => void }>,
+  furniture: PageTexts | undefined,
+  transparent = false,
+): Promise<PdfLayer | null> {
+  const { width, height } = page.geometry;
+  const scale = Math.min(exportPixelScale(width, height), sources.maxPixelScale ?? Infinity);
+  if (!(scale > 0)) return null;
+  const { painter, release } = await prepare(scale);
+  const recorder = new PdfCanvasRecorder(0, 0);
+  const ctx = recorder.asContext();
+  const canvas = Object.assign(recorder.canvas, { getContext: () => ctx });
+  try {
+    renderPageThumbnail(canvas as unknown as HTMLCanvasElement, page, painter, width * scale, 1, {
+      usePressure: sources.usePressure,
+      highlighterAlpha: sources.highlighterAlpha,
+      paper: sources.paper,
+      ...(furniture ? { furniture } : {}),
+      ...(transparent ? { transparent } : {}),
+      parts: "under",
+    });
+  } catch {
+    return null;
+  } finally {
+    release();
+  }
+  if (recorder.unsupported) return null;
+  return { ink: recorder.result(), box: [recorder.canvas.width, recorder.canvas.height] };
 }
 
 /** Whether a PDF page has anything under its ink besides the PDF: a margin's paper, pictures, tables… */
@@ -476,7 +530,22 @@ async function* renderVectorOverlay(
   page: Page,
   sources: PdfExportSources,
 ): AsyncGenerator<PdfLayer> {
-  if (hasUnderInk(page)) yield { png: await renderAnnotationPng(page, sources, true, "under") };
+  if (hasUnderInk(page)) {
+    // A margin's paper, tables, connectors: paths, unless a picture or text needs a raster.
+    const margins = new VaultBackdropRenderer(null);
+    margins.theme = sources.paper;
+    const recorded =
+      page.images.length === 0
+        ? await recordUnderInk(
+            page,
+            sources,
+            () => Promise.resolve({ painter: margins, release: () => undefined }),
+            sources.furniture?.(page),
+            true,
+          )
+        : null;
+    yield recorded ?? { png: await renderAnnotationPng(page, sources, true, "under") };
+  }
   yield { ink: pageVectorInk(page, sources) };
   if (hasOverInk(page)) yield { png: await renderAnnotationPng(page, sources, false, "over") };
 }

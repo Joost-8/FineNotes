@@ -4851,11 +4851,7 @@ export class InkView extends TextFileView {
     try {
       const bytes = await exportPagesToPdf(
         pages,
-        {
-          ...this.previewSources(),
-          maxPixelScale: 1,
-          vectorInk: this.settings.exportVectorInk === true,
-        },
+        { ...this.previewSources(), maxPixelScale: 1 },
         { title, onProgress },
       );
       return attachmentFromBytes(`${title}.pdf`, bytes);
@@ -4885,7 +4881,6 @@ export class InkView extends TextFileView {
       plainPaper: this.settings.exportPlainPaper === true,
       withoutTapes: this.settings.exportWithoutTapes === true,
       margins: exportMarginsOf(this.settings.exportMargins),
-      vectorInk: this.settings.exportVectorInk === true,
     });
     const taped = doc.pages.some((page) => page.strokes.some(isTape));
     new ExportPdfModal(this.app, {

@@ -27,6 +27,7 @@ const sources = {
   paper: LIGHT_PAPER,
   usePressure: false,
   highlighterAlpha: 0.3,
+  vectorInk: false,
 };
 const pdfPage = () => ({
   ...blankPage("p1"),

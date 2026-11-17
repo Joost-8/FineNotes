@@ -24,7 +24,17 @@ export interface PdfAnnotationRaster {
 }
 
 /** One layer of a page, bottom first: a raster, or the page's ink as vectors. */
-export type PdfLayer = PdfAnnotationRaster | { jpeg: Uint8Array } | { ink: VectorInk };
+export type PdfLayer =
+  | PdfAnnotationRaster
+  | { jpeg: Uint8Array }
+  | {
+      ink: VectorInk;
+      /**
+       * The size of the space the ink is drawn in, y down, filling the page:
+       * a recorded canvas's device px (`./pdf-canvas`). Absent: page px.
+       */
+      box?: [number, number];
+    };
 
 export class PdfComposer {
   private readonly documents = new Map<string, Promise<PDFDocument>>();
@@ -158,7 +168,7 @@ export class PdfComposer {
     const context = this.output.context;
     const ops: string[] = ["q"];
     if ("ink" in layer) {
-      const { ink } = layer;
+      const { ink, box } = layer;
       if (!ink.ops) return;
       const rename = new Map<string, string>();
       for (const [name, state] of ink.states) {
@@ -188,9 +198,10 @@ export class PdfComposer {
         });
         target.node.setXObject(PDFName.of(own), context.register(form));
       }
-      const s = POINTS_PER_PAGE_PX;
-      // Page px, y down: the page's top-left is (0, h) in points.
-      ops.push(`${s} 0 0 ${-s} 0 ${h} cm`);
+      const sx = box ? w / box[0] : POINTS_PER_PAGE_PX;
+      const sy = box ? h / box[1] : POINTS_PER_PAGE_PX;
+      // y down: the top-left is (0, h) in points.
+      ops.push(`${sx} 0 0 ${-sy} 0 ${h} cm`);
       ops.push(
         rename.size === 0
           ? ink.ops

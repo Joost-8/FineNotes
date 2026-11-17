@@ -80,6 +80,7 @@ export default defineConfig({
         "src/canvas/shape-decor.ts",
         "src/canvas/stroke-style.ts",
         "src/export/vector-ink.ts",
+        "src/export/pdf-canvas.ts",
         "src/canvas/align-snap.ts",
         "src/canvas/paper-style.ts",
         "src/canvas/margin-paper.ts",
