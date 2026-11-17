@@ -53,6 +53,15 @@ import {
   sizeLabel,
 } from "../recognition/ask-attachments";
 import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-session";
+import { type AskUsage, usageMark } from "../recognition/ask-usage";
+import { ASK_VAULT_SCOPES, type AskVaultScope } from "../recognition/vault-context";
+
+/** The reach as a mark: the notebook alone, its folder, or the whole vault. */
+const REACH_ICON: Readonly<Record<AskVaultScope, string>> = {
+  off: "notebook",
+  folder: "folder-search",
+  vault: "library",
+};
 import { bytesToBase64 } from "../recognition/audio-request";
 import { type SavedChatEntry, attachableFiles, readAttachment } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
@@ -67,6 +76,10 @@ export interface AskAiHost {
   sourcePath: string;
   /** Who answers ("Anthropic (Claude)"), for the line under the pages. */
   target: string;
+  /** Open an `obsidian://finenotes?…` link from an answer (a handbook entry) in FineNotes itself. */
+  openAppLink?: (url: string) => void;
+  /** Whether an answer shows what it cost (the setting). */
+  showCost?: () => boolean;
   /** The page being read, 1-based. */
   currentPage: () => number;
   /** Whether a page (1-based) has anything on it to ask about. */
@@ -91,6 +104,8 @@ export interface AskAiHost {
   openSaved: (path: string) => Promise<void>;
   /** Remember "Save chat" for the next new chat. */
   rememberSave: (save: boolean) => void;
+  /** What Ask AI may read besides this notebook (the setting), and changing it from the chat. */
+  vaultScope?: { get: () => AskVaultScope; set: (scope: AskVaultScope) => void };
 }
 
 /**
@@ -179,6 +194,7 @@ export class AskChat {
   /** "Making PDF… n/N" while it is made. */
   private wholeProgress: string | null = null;
   private saveButton: HTMLButtonElement | null = null;
+  private reachButton: HTMLButtonElement | null = null;
   private chatsButton: HTMLButtonElement | null = null;
   private newChatButton: HTMLButtonElement | null = null;
 
@@ -234,6 +250,19 @@ export class AskChat {
     this.chatsButton = this.toolButton(tools, "history", t("ai.ask.chats"), (event) => {
       void this.showChats(event);
     });
+    // What it may read, right of the title: the reach's icon and its name, so
+    // the choice is read at a glance and changed in one tap.
+    if (this.host.vaultScope) {
+      const chip = this.frame.title.createEl("button", {
+        cls: "goodobsidian-chat-reach clickable-icon",
+        attr: { "aria-haspopup": "true" },
+      });
+      chip.createSpan({ cls: "goodobsidian-chat-reach-icon" });
+      chip.createSpan({ cls: "goodobsidian-chat-reach-label" });
+      setIcon(chip.createSpan({ cls: "goodobsidian-chat-reach-chevron" }), "chevron-down");
+      chip.addEventListener("click", () => this.showReachMenu());
+      this.reachButton = chip;
+    }
     const other = this.frame.layout === "window" ? "sidebar" : "window";
     this.toolButton(
       tools,
@@ -323,6 +352,44 @@ export class AskChat {
     button.createSpan({ cls: "goodobsidian-chat-tool-label", text: label });
     button.addEventListener("click", onClick);
     return button;
+  }
+
+  // --- What it may read -----------------------------------------------------
+
+  /** The three reaches, the one in use checked; the choice is the setting's. */
+  private showReachMenu(): void {
+    const scope = this.host.vaultScope;
+    const anchor = this.reachButton?.getBoundingClientRect();
+    if (!scope || !anchor) return;
+    this.closePicker();
+    const menu = new Menu();
+    const now = scope.get();
+    for (const choice of ASK_VAULT_SCOPES) {
+      menu.addItem((item) =>
+        item
+          .setTitle(t(`ai.ask.reach.${choice}`))
+          .setIcon(REACH_ICON[choice])
+          .setChecked(choice === now)
+          .onClick(() => {
+            scope.set(choice);
+            this.renderReach();
+          }),
+      );
+    }
+    menu.showAtPosition({ x: anchor.left, y: anchor.bottom + 4 });
+  }
+
+  /** The pill shows the reach in use: its icon and its name. */
+  private renderReach(): void {
+    const button = this.reachButton;
+    const scope = this.host.vaultScope;
+    if (!button || !scope) return;
+    const now = scope.get();
+    const icon = button.querySelector<HTMLElement>(".goodobsidian-chat-reach-icon");
+    if (icon) setIcon(icon, REACH_ICON[now]);
+    button.querySelector(".goodobsidian-chat-reach-label")?.setText(t(`ai.ask.reach.${now}`));
+    button.setAttribute("aria-label", t("ai.ask.reachNow", { reach: t(`ai.ask.reach.${now}`) }));
+    button.disabled = this.session.busy;
   }
 
   // --- Pages ----------------------------------------------------------------
@@ -480,7 +547,13 @@ export class AskChat {
     if (session.screen) {
       return t(saved ? "ai.ask.noteScreenSaved" : "ai.ask.noteScreen", { target });
     }
-    if (session.selected.length === 0 && sent.size === 0 && session.attachments.length === 0) {
+    // While a question is out its files have left the field, but it is asking, not waiting for a pick.
+    if (
+      session.selected.length === 0 &&
+      sent.size === 0 &&
+      session.attachments.length === 0 &&
+      !session.busy
+    ) {
       return t(saved ? "ai.ask.notePickSaved" : "ai.ask.notePick");
     }
     // Saying it can use the notebook also tells which build is running.
@@ -768,6 +841,7 @@ export class AskChat {
     }
     if (this.pagesButton) this.pagesButton.disabled = busy;
     if (this.chatsButton) this.chatsButton.disabled = busy;
+    this.renderReach();
     if (this.attachButton) this.attachButton.disabled = busy;
     if (this.newChatButton) {
       this.newChatButton.disabled = busy;
@@ -861,7 +935,7 @@ export class AskChat {
     for (let i = this.shownTexts.length; i < texts.length; i++) {
       const turn = session.turns[i];
       if (turn.role === "user") this.questionRow(thread, texts[i], turn.pages, turn.files);
-      else lastAnswer = this.answerRow(thread, texts[i], turn.actions);
+      else lastAnswer = this.answerRow(thread, texts[i], turn.actions, turn.usage);
     }
     this.shownTexts = texts;
 
@@ -976,7 +1050,12 @@ export class AskChat {
     retry.addEventListener("click", () => this.submit(question));
   }
 
-  private answerRow(parent: HTMLElement, markdown: string, done?: readonly string[]): HTMLElement {
+  private answerRow(
+    parent: HTMLElement,
+    markdown: string,
+    done?: readonly string[],
+    usage?: AskUsage,
+  ): HTMLElement {
     const { row, body } = this.aiRow(parent);
     // What Claude did in the notebook on the way to the answer.
     if (done?.length) {
@@ -999,6 +1078,25 @@ export class AskChat {
     } else {
       text.setText(markdown);
     }
+    // A note the answer links to (one it read, or one it wrote) opens in a tab beside the notebook.
+    text.addEventListener("click", (event) => {
+      // A handbook link (finenotes_help) opens its tip or switch here, not through the system.
+      const own = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+        'a[href^="obsidian://finenotes"]',
+      );
+      if (own && this.host.openAppLink) {
+        event.preventDefault();
+        this.host.openAppLink(own.href);
+        return;
+      }
+      const link = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+        "a.internal-link",
+      );
+      const target = link?.getAttribute("data-href") ?? link?.getAttribute("href");
+      if (!link || !target) return;
+      event.preventDefault();
+      void this.app.workspace.openLinkText(target, this.host.sourcePath, "tab");
+    });
 
     const actions = body.createDiv({ cls: "goodobsidian-chat-actions" });
     const copy = actions.createEl("button", { cls: "goodobsidian-chat-action clickable-icon" });
@@ -1019,6 +1117,23 @@ export class AskChat {
         new Notice(t("ai.ask.insertedText"));
       }
     });
+
+    // What the answer cost, as a mark: the numbers behind it in its tooltip.
+    const mark = this.host.showCost?.()
+      ? usageMark(usage, (count) => t("ai.ask.tokens", { count }))
+      : null;
+    if (mark && usage) {
+      actions.createSpan({
+        cls: "goodobsidian-chat-cost",
+        text: mark,
+        attr: {
+          "aria-label": t("ai.ask.costTip", {
+            input: (usage.input + usage.cacheRead + usage.cacheWrite).toLocaleString(),
+            output: usage.output.toLocaleString(),
+          }),
+        },
+      });
+    }
     return row;
   }
 
@@ -1112,6 +1227,8 @@ export type AskLayout = "window" | "sidebar";
 export interface AskChatFrame {
   /** The window or the panel; carries `goodobsidian-ask-frame`. */
   el: HTMLElement;
+  /** The "Ask" title, which the reach pill follows. */
+  title: HTMLElement;
   /** Where the chat's own elements go. */
   content: HTMLElement;
   keyboard: DialogKeyboard;
@@ -1139,9 +1256,12 @@ export class AskAiModal extends Modal {
       "goodobsidian-ask-frame",
     );
     this.titleEl.setText(t("ai.ask.title"));
+    // A row, so the reach pill sits right of the title.
+    this.titleEl.addClass("goodobsidian-ask-title");
     this.contentEl.empty();
     this.chat = new AskChat(this.app, this.host, {
       el: this.modalEl,
+      title: this.titleEl,
       content: this.contentEl,
       keyboard: new DialogKeyboard(this.modalEl, { fit: true }),
       layout: "window",
@@ -1194,7 +1314,7 @@ export class AskChatPanel {
     if (this.isOpen) return;
     this.el.empty();
     const head = this.el.createDiv({ cls: "goodobsidian-chatpanel-head" });
-    head.createDiv({ cls: "goodobsidian-chatpanel-title", text: t("ai.ask.title") });
+    const title = head.createDiv({ cls: "goodobsidian-chatpanel-title", text: t("ai.ask.title") });
     const close = head.createEl("button", {
       cls: "goodobsidian-chatpanel-close clickable-icon",
       attr: { "aria-label": t("common.close") },
@@ -1205,6 +1325,7 @@ export class AskChatPanel {
     this.el.removeClass("is-hidden");
     this.chat = new AskChat(this.app, this.callbacks.host(), {
       el: this.el,
+      title,
       content,
       keyboard: new DialogKeyboard(this.el, { pad: true }),
       layout: "sidebar",

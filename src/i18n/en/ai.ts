@@ -9,7 +9,8 @@ export const ai = {
   "ai.menu.beta": "Beta",
   "ai.menu.deviceHeading": "Handwriting · on this device",
   "ai.menu.keyHeading": "With your own AI key",
-  "ai.menu.keyHint": "Transcribe, ask about pages and make images. Needs an API key.",
+  "ai.menu.keyHint":
+    "Ask about your notes, make images and transcribe recordings. Needs an API key.",
   "ai.menu.readOnDevice": "Read handwriting on this device…",
   "ai.menu.corrections": "Corrections",
   "ai.menu.correctionsHint": "Underline words it may have misread; tap one to correct it",
@@ -143,6 +144,18 @@ export const ai = {
   // --- Notebook tools, as the chat says what they are doing ---------------
   "ai.tool.reading": "Reading {pages}…",
   "ai.tool.searching": "Searching for “{query}”…",
+  "ai.ask.tokens": "{count} tokens",
+  "ai.ask.reach": "What Ask AI can read",
+  "ai.ask.reachNow": "Ask AI can read: {reach}",
+  "ai.ask.reach.off": "This notebook only",
+  "ai.ask.reach.folder": "This notebook's folder",
+  "ai.ask.reach.vault": "The whole vault",
+  "ai.ask.costTip": "Estimated from list prices: {input} tokens in, {output} out",
+  "ai.tool.lookingUpHelp": "Looking up “{query}” in FineNotes' handbook…",
+  "ai.tool.lookingAtLinks": "Looking at this notebook's links…",
+  "ai.tool.makingNote": "Writing the note “{title}”…",
+  "ai.tool.searchingVault": "Searching your notes for “{query}”…",
+  "ai.tool.readingNote": "Reading {name}…",
   "ai.tool.writing": "Writing on page {page}…",
   "ai.tool.addingPage": "Adding a page…",
   "ai.tool.goingTo": "Going to page {page}…",
@@ -451,9 +464,9 @@ export const ai = {
   "ai.rec.stopWrite": "Recording stopped: the audio could not be written ({problem}).",
   "ai.rec.unknown": "unknown",
   "ai.rec.savedPlay":
-    "{length} saved to {path}. Play it from the Audio tab in the page sidebar; Undo takes it off this note (the file stays).",
+    "{length} saved to {path}. Play it from the page sidebar: Files, then Recordings. Undo takes it off this note (the file stays).",
   "ai.rec.savedListed":
-    "{length} saved to {path}. It is in this note's recordings (the Audio tab in the page sidebar).",
+    "{length} saved to {path}. It is in this note's recordings (the page sidebar: Files, then Recordings).",
   "ai.rec.savedNotAdded": "{length} saved to {path}, but it could not be added to the note.",
   "ai.rec.partMissing": "Part of it may be missing: {problem}.",
   "ai.rec.limitScreenOn":

@@ -28,6 +28,7 @@ import {
 import { type ChatImage, type ChatTurn, buildChatRequest, extractRefusal } from "./ai-chat";
 import { ASK_MAX_TOOL_ROUNDS, type AskToolCall, parseToolCall, toolStatus } from "./ask-tools";
 import { TOOL_DIALECTS, type ToolResult } from "./ask-tool-dialects";
+import { type AskUsage, addReplyUsage, emptyUsage } from "./ask-usage";
 import {
   DEFAULT_IMAGE_MODELS,
   type ImageAspect,
@@ -278,6 +279,8 @@ export interface AskAnswer {
   actions: string[];
   /** For the model: what each action did, as its result said it (English). */
   notes: string[];
+  /** For the chat: the tokens the answer took, over all its rounds. */
+  usage?: AskUsage;
 }
 
 /**
@@ -319,21 +322,23 @@ export async function askAiWithTools(
   const more: unknown[] = [];
   const actions: string[] = [];
   const notes: string[] = [];
+  let usage = emptyUsage(config.vendor, config.model.trim() || defaultModelFor(config.vendor));
   for (let round = 0; ; round++) {
     // Out of rounds: answer now, with what has been found.
     const body = dialect.body(baseBody, more, round >= ASK_MAX_TOOL_ROUNDS);
     const json = await sendVendorRequest(config, () => postJson(base.url, base.headers, body));
+    usage = addReplyUsage(usage, VENDORS[config.vendor].dialect, json);
     const refusal = extractRefusal(config.vendor, json);
     if (refusal) throw new Error(t("ai.client.refusal", { label, reason: refusal }));
     const uses = dialect.calls(json);
     if (uses.length === 0) {
       const text = cleanTranscription(extractLlmText(config.vendor, json));
       if (isTruncatedLlmResponse(config.vendor, json)) {
-        if (text) return { ...cutOffAnswer(text), actions, notes };
+        if (text) return { ...cutOffAnswer(text), actions, notes, usage };
         throw new Error(t("ai.client.outputLimit", { label, max: MAX_OUTPUT_TOKENS }));
       }
       if (!text && actions.length === 0) throw new Error(t("ai.client.noAnswer", { label }));
-      return { text, actions, notes };
+      return { text, actions, notes, usage };
     }
     more.push(...dialect.reply(json));
     const results: ToolResult[] = [];

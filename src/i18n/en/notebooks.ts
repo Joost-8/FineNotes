@@ -388,7 +388,7 @@ export const notebooks = {
   "notebooks.template.paper": "Paper",
   "notebooks.page.size.standard": "A4 (Standard)",
   "notebooks.template.current": "Current template",
-  "notebooks.command.newNotebookOrPage": "New notebook or page…",
+  "notebooks.command.newNotebookOrPage": "New notebook or board…",
   "notebooks.command.createWithLastSettings": "Create notebook with last settings",
   "notebooks.command.insertNewNotebook": "Insert a new notebook here",
   "notebooks.command.showWelcome": "Show the welcome",
@@ -1047,7 +1047,7 @@ export const notebooks = {
     "Double tap the page with one finger to fill the screen, and again to see it whole.",
   "notebooks.tips.fingerHoldMenu.title": "Hold a finger down",
   "notebooks.tips.fingerHoldMenu.body":
-    "Hold a finger on the page, with any tool, for Paste, Text box, Comment and Select all.",
+    "Hold a finger on the page, with any tool, for Paste, Text box and Select all. Comment is under its ⋯.",
   "notebooks.tips.colourOff.title": "Drag a colour away",
   "notebooks.tips.colourOff.body":
     "Hold a colour in the pen's bar and drag it off the bar to remove it.",

@@ -225,10 +225,11 @@ bookmark.
 
 ## Getting started
 
-1. Open a new notebook, with the notebook button in the left ribbon or the
-   command **New notebook or page…**. You can also right-click a folder in the
-   file explorer and choose **New notebook**. Turn this entry off with
-   **Show New notebook in right-click menu** in FineNotes settings.
+1. Open a new notebook: the **Notebook library** button in the left ribbon
+   opens Home, where **New** makes one; or use the command **New notebook or
+   board…**. You can also right-click a folder in the file explorer and choose
+   **New notebook**. Turn this entry off with **New notebook in the right-click
+   menu** in FineNotes settings (Pages).
    The file explorer’s top bar also has a **New notebook** button, controlled
    by **Show New notebook in file explorer bar**. The right-click entry starts enabled; the top-bar button starts disabled.
    Choose a cover, a paper and a size.
