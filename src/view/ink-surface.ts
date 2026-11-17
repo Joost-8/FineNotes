@@ -706,6 +706,7 @@ import {
   strokeWidthFor,
   tableSizeFor,
 } from "./toolbar";
+import { isPdfTabTool } from "./toolbar-layout";
 import type { HighlighterTip, SnapMode } from "../settings-data";
 import { RegionFrames, type ShownRegion } from "./region-frames";
 import { SelectionActionBar, onTap } from "./selection-bar";
@@ -2064,6 +2065,11 @@ function swallowClickAfterTap(target: HTMLElement): void {
   }, CLICK_AFTER_TAP_MS);
 }
 
+/** Whether two page lists hold the same pages, in the same order. */
+function samePages(a: readonly Page[], b: readonly Page[]): boolean {
+  return a.length === b.length && a.every((page, i) => page === b[i]);
+}
+
 /** The tools a practice file has: writing and rubbing out. */
 function isPracticeTool(tool: ActiveTool): boolean {
   return tool === "pen" || tool === "eraser";
@@ -2493,6 +2499,8 @@ export class InkSurface {
   private snapRowAfterZoom = false;
   /** Whether pulling past the last page adds one (a notebook, not a single page). */
   private pullAddEnabled = false;
+  /** What the host asked for (`setPullToAddPage`), before a PDF's tab says no. */
+  private pullAddWanted = false;
   private readonly pullAdd: PullAddIndicator;
   /** Pressure the tiles were last rasterised with; a change invalidates them. */
   private tilesPressure: boolean | null = null;
@@ -3720,6 +3728,57 @@ export class InkSurface {
   }
 
   /**
+   * Whether the document shown has fixed pages (a PDF's tab): no page is
+   * added, removed or moved, and only the tools of a PDF's tab work
+   * (`isPdfTabTool`): nothing places text, pictures or shapes on it.
+   */
+  get fixedPages(): boolean {
+    // Read before the constructor sets the first session, too.
+    return (this.session as SurfaceSession | undefined)?.fixedPages === true;
+  }
+
+  /**
+   * Where the reader is, to come back to later (a PDF's tab, `BesideView`):
+   * the page being read, the zoom (1 is fitted) and the page point (page
+   * px) at the pane's top-left corner. `null` before the first layout.
+   */
+  readingView(): { page: number; zoom: number; x: number; y: number } | null {
+    if (!(this.cssW > 0 && this.cssH > 0)) return null;
+    const page = this.pageIndex;
+    const box = this.pageLayout.boxes[page];
+    if (!box) return null;
+    const scale = this.unitScale;
+    const left = -this.offsetX / scale;
+    const top = this.viewport.scrollY;
+    return { page, zoom: this.userZoom, x: left - box.x, y: top - box.y };
+  }
+
+  /**
+   * Go back to a view {@link readingView} gave: its zoom, then the page
+   * point at the pane's top-left corner. A page past the end goes to the
+   * last; a zoom out of range is clamped. Returns whether it could (the
+   * pane is laid out).
+   */
+  showReadingView(view: { page: number; zoom: number; x: number; y: number }): boolean {
+    if (!(this.cssW > 0 && this.cssH > 0) || this.board) return false;
+    const page = Math.max(0, Math.min(this.doc.pages.length - 1, Math.floor(view.page)));
+    this.goToPage(page);
+    const rect = this.surfaceEl.getBoundingClientRect();
+    const zoom = this.clampZoom(view.zoom);
+    if (zoom !== this.userZoom) this.applyZoom(zoom, rect.left, rect.top);
+    const box = this.pageLayout.boxes[page];
+    if (!box) return true;
+    const scale = this.unitScale;
+    const x = Number.isFinite(view.x) ? view.x : 0;
+    const y = Number.isFinite(view.y) ? view.y : 0;
+    this.scroller.setPosition((box.x + x) * scale, Math.max(0, (box.y + y) * scale));
+    this.syncViewport();
+    this.requestFrame();
+    this.reportStatus();
+    return true;
+  }
+
+  /**
    * Show `next` in place of the session shown now. Whatever is under way
    * (a stroke, a drag, a selection, the zoom box, a text box being typed
    * in) ends; the outgoing session keeps its history and the view it was
@@ -3773,6 +3832,14 @@ export class InkSurface {
       next.strokeIndex.rebuild(next.doc.pages);
     }
     this.renderer?.repaintAll();
+    // A PDF's tab takes no pages; the notes take them as the host said.
+    if (this.pullAddEnabled !== (this.pullAddWanted && !this.fixedPages))
+      this.setPullToAddPage(this.pullAddWanted);
+    // A PDF's tab has its own few tools: another one in hand gives way to the pen.
+    if (next.fixedPages && !isPdfTabTool(this.toolState.tool)) {
+      this.setTool("pen");
+      this.callbacks.onToolChange?.(this.toolState.tool);
+    }
     this.layout();
     this.syncHistory();
     this.callbacks.onSessionChange?.(next);
@@ -3970,7 +4037,14 @@ export class InkSurface {
     this.endExplore(true);
     this.dropSelection();
     const place = this.readingPlace();
+    const pagesBefore = this.fixedPages ? [...this.doc.pages] : null;
     this.history.push(this.doc, command);
+    // A PDF's tab keeps its pages as the PDF has them: a command that added,
+    // removed or moved one is taken back at once.
+    if (pagesBefore && !samePages(pagesBefore, this.doc.pages)) {
+      this.history.withdraw(this.doc, command);
+      return;
+    }
     // A host command can bring in elements with ids of their own (a duplicated
     // page does), so the id sequences must never fall behind the document.
     this.strokeIds.catchUp(strokeIdsOf(this.doc));
@@ -4641,6 +4715,9 @@ export class InkSurface {
 
   /** Let (or stop) a pull past the last page add a page. The host knows single pages. */
   setPullToAddPage(enabled: boolean): void {
+    this.pullAddWanted = enabled;
+    // A PDF's tab never takes a page (`fixedPages`).
+    enabled = enabled && !this.fixedPages;
     this.pullAddEnabled = enabled;
     if (!enabled) {
       this.endWheelPull();
@@ -4714,6 +4791,8 @@ export class InkSurface {
     if (tool === "pen" && this.toolState.penType === "highlighter") tool = "highlighter";
     // A practice file has the pen and the eraser only.
     if (this.practice && !isPracticeTool(tool)) tool = "pen";
+    // A PDF's tab has its own few (`isPdfTabTool`).
+    if (this.fixedPages && !isPdfTabTool(tool)) tool = "pen";
     // The toolbar shares `toolState` and has already written the new tool
     // into it, so the one being replaced is read from `toolSeen`.
     if (tool === "text" && this.toolSeen !== "text") this.toolBeforeText = this.toolSeen;
@@ -5028,6 +5107,7 @@ export class InkSurface {
   stylusEraserClick(): void {
     const step = eraserClickStep(this.toolState.tool, this.eraserClickBack, this.drawingTool);
     if (this.practice && !isPracticeTool(step.tool)) return;
+    if (this.fixedPages && !isPdfTabTool(step.tool)) return;
     if (this.callbacks.toolOff?.(step.tool) === true) return;
     this.setTool(step.tool);
     this.eraserClickBack = step.back;
@@ -5044,6 +5124,10 @@ export class InkSurface {
     );
     if (this.practice && !isPracticeTool(next)) {
       this.keyVerdict = "practice";
+      return;
+    }
+    if (this.fixedPages && !isPdfTabTool(next)) {
+      this.keyVerdict = "off";
       return;
     }
     if (this.callbacks.toolOff?.(next) === true) {
@@ -5086,6 +5170,7 @@ export class InkSurface {
     const tool = shortcutTool(row.action.id);
     if (!tool) return;
     if (this.practice && !isPracticeTool(tool)) return;
+    if (this.fixedPages && !isPdfTabTool(tool)) return;
     const mod = input.mods.includes("Mod");
     const key = input.type === "key" ? input.key : null;
     const bit = input.type === "button" ? buttonBit(input.button) : 0;
@@ -6158,8 +6243,10 @@ export class InkSurface {
       const top = this.viewport.scrollY;
       index = currentPageIndex(this.pageLayout, top, top + this.cssH / scale);
     }
+    // A PDF's tab counts slides (`fixedPages`).
+    const counted = { page: total > 0 ? index + 1 : 0, total };
     this.indicatorEl.setText(
-      t("surface.pageIndicator", { page: total > 0 ? index + 1 : 0, total }),
+      this.fixedPages ? t("surface.slideIndicator", counted) : t("surface.pageIndicator", counted),
     );
     const seen = this.visiblePageRect(index);
     if (seen) this.callbacks.onReadingPoint?.(index, seen.y + seen.h / 3);
@@ -15580,8 +15667,8 @@ export class InkSurface {
         run: () => this.pasteHere(press.pageId, press.at),
       },
     ];
-    // A practice file takes the pen alone (`practice.ts`).
-    if (this.practice) return actions;
+    // A practice file takes the pen alone (`practice.ts`); a PDF's tab takes ink only.
+    if (this.practice || this.fixedPages) return actions;
     // Held on handwriting: its word's card comes first.
     const index = page ? this.doc.pages.indexOf(page) : -1;
     const correct = press.ink
@@ -15963,11 +16050,10 @@ export class InkSurface {
       event.preventDefault();
       return true;
     }
-    const onImage = this.imagesShown && !this.practice ? this.callbacks.onPasteImage : undefined;
+    const inkOnly = this.practice !== null || this.fixedPages;
+    const onImage = this.imagesShown && !inkOnly ? this.callbacks.onPasteImage : undefined;
     const file = onImage ? imageFileOf(event.clipboardData) : null;
-    const text = this.practice
-      ? ""
-      : cleanPastedText(event.clipboardData?.getData("text/plain") ?? "");
+    const text = inkOnly ? "" : cleanPastedText(event.clipboardData?.getData("text/plain") ?? "");
     const systemFirst =
       (file !== null || text !== "") &&
       (clipboard.leftSinceCopy || !clipboard.canPaste(this.imagesShown));

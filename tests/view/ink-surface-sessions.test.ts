@@ -73,6 +73,7 @@ function rig(doc: InkDocument) {
     linkSuggestions,
     wordFlags,
     tileOwners: new Map(),
+    toolState: { tool: "pen" },
     renderer,
     scroller,
     callbacks: {

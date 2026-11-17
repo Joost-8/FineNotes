@@ -22313,3 +22313,374 @@ button:not(.clickable-icon).goodobsidian-share-all,
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
+
+/* --- PDF tabs beside the notes ------------------------------------------------
+   pdf-tab-strip.ts and ink-view.ts (showTab). A strip under the tool bar,
+   shown once a PDF is attached, drawn like Obsidian's own tab headers (not
+   like the binder tabs on the page's edge). At the end of the file: the
+   bar's rules above also style the buttons hidden here. */
+
+.goodobsidian-pdf-tabs {
+  position: relative;
+  z-index: 19;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  gap: 2px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 4px 8px 0;
+  background: var(--tab-container-background, var(--gob-bar-bg));
+  border-bottom: 1px solid var(--tab-outline-color, var(--gob-line));
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-pdf-tabs.is-hidden {
+  display: none;
+}
+
+/* Many tabs: the strip scrolls sideways, never wraps. */
+.goodobsidian-pdf-tabs-list {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.goodobsidian-pdf-tabs-list::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-pdf-tab {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  max-width: 200px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--tab-radius, 6px) var(--tab-radius, 6px) 0 0;
+  color: var(--tab-text-color, var(--text-muted));
+}
+
+.goodobsidian-pdf-tab.is-active {
+  background: var(--tab-background-active, var(--background-primary));
+  border-color: var(--tab-outline-color, var(--gob-line));
+  color: var(--tab-text-color-active, var(--text-normal));
+}
+
+/* A file that is gone: grey and italic, its slides and marks kept. */
+.goodobsidian-pdf-tab.is-missing {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.goodobsidian-pdf-tabs button.goodobsidian-pdf-tab-main.clickable-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font-size: var(--tab-font-size, var(--font-ui-small));
+  font-weight: var(--tab-font-weight, inherit);
+  white-space: nowrap;
+}
+
+.goodobsidian-pdf-tab.is-active button.goodobsidian-pdf-tab-main.clickable-icon {
+  padding-right: 4px;
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-pdf-tab:not(.is-active) button.goodobsidian-pdf-tab-main.clickable-icon:hover {
+  background: var(--tab-background-hover, var(--background-modifier-hover));
+}
+
+.goodobsidian-pdf-tab-icon {
+  display: flex;
+  flex: none;
+}
+
+.goodobsidian-pdf-tab-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-pdf-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-pdf-tabs button.goodobsidian-pdf-tab-close.clickable-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 36px;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+.goodobsidian-pdf-tab-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-pdf-tabs button.goodobsidian-pdf-tab-find.clickable-icon {
+  flex: none;
+  height: 26px;
+  margin-left: 2px;
+  padding: 0 10px;
+  border-radius: var(--gob-radius-pill);
+  background: hsla(var(--interactive-accent-hsl), 0.14);
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+  font-style: normal;
+  white-space: normal;
+}
+
+.goodobsidian-pdf-tabs button.goodobsidian-pdf-tab-plus.clickable-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+/* With the bar at a side the view is a grid (bar-dock): the strip takes the
+   first row of the page's column, and the page the row under it. */
+.goodobsidian-view.goodobsidian-has-pdf-tabs.goodobsidian-bar-at-left,
+.goodobsidian-view.goodobsidian-has-pdf-tabs.goodobsidian-bar-at-right {
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-pdf-tabs {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-pdf-tabs {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left.goodobsidian-has-pill-row > .goodobsidian-pdf-tabs {
+  grid-column: 3;
+}
+
+.goodobsidian-view.goodobsidian-has-pdf-tabs.goodobsidian-bar-at-left > .goodobsidian-body,
+.goodobsidian-view.goodobsidian-has-pdf-tabs.goodobsidian-bar-at-right > .goodobsidian-body {
+  grid-row: 2;
+}
+
+/* On a PDF's tab the bar keeps its few tools (toolbar.ts, setPdfTab). */
+.goodobsidian-toolbar .goodobsidian-bar-group > button.goodobsidian-tool.is-pdf-tab-off,
+.goodobsidian-toolbar .goodobsidian-bar-group > button.is-pdf-tab-off {
+  display: none;
+}
+
+/* The + list (PdfTabsPopover). */
+.goodobsidian-pdf-tabs-popover {
+  position: fixed;
+  z-index: var(--layer-popover, 30);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  max-height: calc(100vh - 16px);
+  padding: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  color: var(--text-normal);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-pdf-tabs-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  border-radius: var(--gob-radius-m);
+  background: var(--background-modifier-form-field, var(--background-secondary));
+  color: var(--text-muted);
+}
+
+.goodobsidian-pdf-tabs-search-icon {
+  display: flex;
+}
+
+.goodobsidian-pdf-tabs-search-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 16 px: iPadOS zooms the page into a smaller field on focus. */
+.goodobsidian-pdf-tabs-search input[type="search"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  font-size: 16px;
+}
+
+.goodobsidian-pdf-tabs-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.goodobsidian-pdf-tabs-heading {
+  padding: 8px 8px 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-pdf-tabs-popover button.goodobsidian-pdf-tabs-row.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  height: auto;
+  padding: 6px 8px;
+  border-radius: var(--gob-radius-m);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  text-align: start;
+  white-space: normal;
+}
+
+.goodobsidian-pdf-tabs-popover button.goodobsidian-pdf-tabs-row.clickable-icon.is-missing {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.goodobsidian-pdf-tabs-row-icon {
+  display: flex;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.goodobsidian-pdf-tabs-row-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.goodobsidian-pdf-tabs-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-pdf-tabs-open {
+  display: flex;
+  flex: none;
+  color: var(--text-accent);
+}
+
+.goodobsidian-pdf-tabs-open svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Beside the notebook, not attached yet: a dot. */
+.goodobsidian-pdf-tabs-new {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-pdf-tabs-more {
+  padding: 2px 8px 4px 36px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Import PDF: keep it beside the notes, or write on it (pdf-import-modal.ts). */
+.goodobsidian-pdf-import-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.goodobsidian-pdf-import-choices button.goodobsidian-pdf-import-choice.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  width: 100%;
+  height: auto;
+  min-height: 60px;
+  padding: 10px 16px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-l);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  text-align: start;
+  white-space: normal;
+}
+
+.goodobsidian-pdf-import-choices button.goodobsidian-pdf-import-choice.clickable-icon.mod-cta {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-pdf-import-choice-icon {
+  display: flex;
+  flex: none;
+}
+
+.goodobsidian-pdf-import-choice-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.goodobsidian-pdf-import-choice-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.goodobsidian-pdf-import-choice-title {
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-pdf-import-choice-info {
+  font-size: var(--font-ui-smaller);
+  opacity: 0.8;
+}

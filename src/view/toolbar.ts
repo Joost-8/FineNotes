@@ -92,6 +92,7 @@ import {
   type Zone,
   barItems as layoutBarItems,
   defaultLayout,
+  hiddenOnPdfTab,
   isFoldedInPreset,
   isPenSlot,
   menuItems,
@@ -1310,6 +1311,8 @@ export class Toolbar {
   private beyondWriting: HTMLElement[] = [];
   /** A practice file: only what writing needs ({@link setPractice}). */
   private practice = false;
+  /** A PDF's tab beside the notes: its few tools ({@link setPdfTab}). */
+  private pdfTab = false;
   /** An endless board ({@link setBoard}). */
   private board = false;
   /** A practice file's "Learn my handwriting", shown only there; its count beside it. */
@@ -1823,7 +1826,12 @@ export class Toolbar {
       if (item.tool !== undefined && item.tool === active) continue;
       // Hidden for another reason (a practice file, a single page, taken off
       // the bar in "Customize toolbar"): nothing to fold.
-      if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
+      if (
+        item.button.style.display === "none" ||
+        item.button.hasClass("is-unlisted") ||
+        item.button.hasClass("is-pdf-tab-off")
+      )
+        continue;
       item.button.addClass("is-overflowed");
       this.measureCrowding();
     }
@@ -2073,7 +2081,9 @@ export class Toolbar {
   /** The bar's buttons folded into ⋯ just now, in the bar's order. */
   foldedItems(): FoldedBarItem[] {
     return this.foldable
-      .filter((item) => item.button.hasClass("is-overflowed"))
+      .filter(
+        (item) => item.button.hasClass("is-overflowed") && !item.button.hasClass("is-pdf-tab-off"),
+      )
       .sort((a, b) =>
         a.button.compareDocumentPosition(b.button) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
       )
@@ -2667,6 +2677,8 @@ export class Toolbar {
         const button = this.barItems.get(id);
         const run = this.itemRuns.get(id);
         if (!button || !run) continue;
+        // A PDF's tab offers its own few tools, here too.
+        if (this.pdfTab && hiddenOnPdfTab(id)) continue;
         const row = body.createEl("button", {
           cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-accessory-row",
           attr: { role: "menuitem" },
@@ -7895,6 +7907,24 @@ export class Toolbar {
     if (on && this.activePenType().tool === "highlighter") this.choosePenType(PEN_TYPES[0]);
     this.closePopover();
     this.buildOptions();
+    this.syncActive();
+    // Buttons came or went beside the tool in hand.
+    this.placeIndicator(this.indicatorTool, null);
+  }
+
+  /**
+   * Keep the bars to a PDF's tab (or let them go back to the notes'): the
+   * pens, the eraser, the lasso, moving about, undo and redo, the pages
+   * panel, ⋯ and the settings. Text, shapes, pictures, page actions and
+   * the rest leave the bar, More tools and ⋯ (`hiddenOnPdfTab`).
+   */
+  setPdfTab(on: boolean): void {
+    if (on === this.pdfTab) return;
+    this.pdfTab = on;
+    for (const [id, button] of this.barItems)
+      button.toggleClass("is-pdf-tab-off", on && hiddenOnPdfTab(id));
+    this.closePopover();
+    this.fitBar(this.indicatorTool);
     this.syncActive();
     // Buttons came or went beside the tool in hand.
     this.placeIndicator(this.indicatorTool, null);

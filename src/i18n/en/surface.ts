@@ -273,6 +273,7 @@ export const surface = {
   "surface.selectionBar.turnInto": "Turn into",
   "surface.pageTab.open": "Open {label}",
   "surface.pageIndicator": "{page} of {total}",
+  "surface.slideIndicator": "Slide {page} of {total}",
   "surface.zoomBox.title": "Zoom box",
   "surface.zoomBox.close": "Close zoom box",
   "surface.zoomBox.previous": "Previous position",
