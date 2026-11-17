@@ -65,6 +65,9 @@ describe("FineNotes' handbook for Ask AI", () => {
     expect(askAbilitiesPrompt("vault", true)).toContain("the whole vault");
     expect(askAbilitiesPrompt("off", true)).toContain("only this notebook");
     expect(askAbilitiesPrompt("folder", false)).toBe(folder);
+    expect(askAbilitiesPrompt("folder", false, "A/B.notebook.md")).toContain(
+      "This notebook is A/B.notebook.md.",
+    );
   });
 
   it("is a tool like the others", () => {

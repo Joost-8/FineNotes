@@ -148,8 +148,8 @@ export const ASK_TOOLS = [
     name: "create_note",
     description:
       "Write a new Markdown note beside this notebook: a summary, flashcards, a to-do list, definitions, " +
-      "or what you pulled out of several notes. Never changes an existing note. Use it when the user asks " +
-      `to put something in a note. At most ${MAX_NOTE_CHARS} characters.`,
+      "or what you pulled out of several notes. Never changes a note you did not write in this chat. Use it " +
+      `when the user asks to put something in a note. At most ${MAX_NOTE_CHARS} characters.`,
     input_schema: {
       type: "object",
       properties: {
@@ -157,6 +157,11 @@ export const ASK_TOOLS = [
         text: {
           type: "string",
           description: "The note's Markdown, without the title as a heading.",
+        },
+        replace: {
+          type: "boolean",
+          description:
+            "Rewrite the note of this title you wrote earlier in this chat, to correct it. Only those.",
         },
       },
       required: ["title", "text"],
@@ -353,7 +358,7 @@ export type AskToolCall =
   | { tool: "read_note"; path: string; from: number }
   | { tool: "linked_notes"; direction: "both" | "to" | "from" }
   | { tool: "finenotes_help"; query: string }
-  | { tool: "create_note"; title: string; text: string }
+  | { tool: "create_note"; title: string; text: string; replace: boolean }
   | { tool: "add_text_box"; page: number; text: string }
   | { tool: "add_page"; after: number }
   | { tool: "go_to_page"; page: number }
@@ -478,7 +483,12 @@ export function parseToolCall(
       if (body.length > MAX_NOTE_CHARS) {
         return { error: `The note is too long (at most ${MAX_NOTE_CHARS} characters).` };
       }
-      return { tool: "create_note", title: title.trim(), text: body.trim() };
+      return {
+        tool: "create_note",
+        title: title.trim(),
+        text: body.trim(),
+        replace: args.replace === true,
+      };
     }
     case "add_text_box": {
       const at = page("page");

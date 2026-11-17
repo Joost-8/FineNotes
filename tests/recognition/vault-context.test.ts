@@ -101,6 +101,29 @@ describe("vaultSearchText", () => {
     expect(text).toContain("read_note");
   });
 
+  it('matches a file name by its words, endings included ("networks" finds Network)', () => {
+    const vault = [
+      notebook("CS/Network lecture notes.notebook.md", ["routing"]),
+      note("CS/Networking textbook.md", "TCP"),
+      note("CS/Other.md", "nothing"),
+    ];
+    const text = vaultSearchText(vault, "networks", "v");
+    expect(text).toContain("- CS/Network lecture notes.notebook.md (notebook; its name matches)");
+    // A folder's name is not the file's.
+    expect(vaultSearchText(vault, "cs", "v")).not.toContain("its name matches");
+  });
+
+  it("falls back to files with some of the words when none has all of them", () => {
+    const vault = [notebook("CS/Network lecture notes.notebook.md", ["routing"])];
+    const text = vaultSearchText(vault, "computer networks", "the whole vault");
+    expect(text).toMatch(
+      /^Nothing in the whole vault has all of “computer networks”; these have some/,
+    );
+    expect(text).toContain(
+      "Network lecture notes.notebook.md (notebook; its name matches) [has “networks”]",
+    );
+  });
+
   it("says plainly when nothing matches, and refuses an empty query", () => {
     expect(vaultSearchText(docs, "laplace", "the whole vault")).toMatch(
       /^Nothing in the whole vault matches “laplace”/,
@@ -250,7 +273,11 @@ describe("the vault tools", () => {
       tool: "create_note",
       title: "Cards",
       text: "Q: A?",
+      replace: false,
     });
+    expect(
+      parseToolCall("create_note", { title: "Cards", text: "fixed", replace: true }, 3),
+    ).toMatchObject({ replace: true });
     expect(parseToolCall("create_note", { title: "", text: "x" }, 3)).toEqual({
       error: '"title" is empty.',
     });
@@ -260,7 +287,7 @@ describe("the vault tools", () => {
     expect(
       parseToolCall("create_note", { title: "x", text: "y".repeat(MAX_NOTE_CHARS + 1) }, 3),
     ).toHaveProperty("error");
-    expect(toolStatus({ tool: "create_note", title: "Cards", text: "x" })).toBe(
+    expect(toolStatus({ tool: "create_note", title: "Cards", text: "x", replace: false })).toBe(
       "Writing the note “Cards”…",
     );
     expect(toolStatus({ tool: "linked_notes", direction: "both" })).toBe(

@@ -166,6 +166,7 @@ export const view = {
   "view.ask.markLabel": "Mark",
   "view.ask.doneTextBox": "Added a text box on page {page}",
   "view.ask.doneNote": "Wrote the note {name}",
+  "view.ask.doneNoteFixed": "Corrected the note {name}",
   "view.ask.doneAddPage": "Added page {page}",
   "view.ask.doneGoTo": "Went to page {page}",
   "view.ask.doneDrew": "Drew on page {page}",

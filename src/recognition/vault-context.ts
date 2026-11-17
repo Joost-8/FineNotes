@@ -90,7 +90,7 @@ export function scopeText(notebookPath: string, scope: AskVaultScope): string {
 
 /** What the AI is told when the user has not let it look past the notebook. */
 export const VAULT_OFF_TEXT =
-  "The user has not let you read their other notes (Settings › AI › Ask AI). Answer from this notebook.";
+  "The user has not let you read their other notes. Answer from this notebook, and tell them they can let you: the folder button at the top of this chat, or Settings › AI › Ask AI can read (This notebook's folder or The whole vault).";
 
 /** A Markdown note's text as the search and the reader see it: no notebook payloads. */
 export function noteText(markdown: string): string {
@@ -106,13 +106,53 @@ export function noteText(markdown: string): string {
 export function vaultSearchText(docs: readonly VaultDoc[], query: string, where: string): string {
   const terms = queryTerms(query);
   if (terms.length === 0) return '"query" is empty.';
+  const lines = hitLines(docs, terms, query);
+  if (lines.length > 0) {
+    return [`Found in ${where}:`, ...lines, "", "Read one with read_note to see more."].join("\n");
+  }
+  // Nothing has every word: the files with some of them, the longest word first
+  // ("computer networks" still finds the notebook called Network lecture notes).
+  const some: string[] = [];
+  const seen = new Set<string>();
+  for (const term of [...terms].filter((t) => t.length >= 3).sort((a, b) => b.length - a.length)) {
+    for (const line of hitLines(docs, [term], term)) {
+      if (some.length >= MAX_VAULT_HITS) break;
+      if (seen.has(line)) continue;
+      seen.add(line);
+      some.push(`${line} [has “${term}”]`);
+    }
+  }
+  if (some.length > 0) {
+    return [
+      `Nothing in ${where} has all of “${query}”; these have some of the words:`,
+      ...some,
+      "",
+      "Read one with read_note to see more.",
+    ].join("\n");
+  }
+  return `Nothing in ${where} matches “${query}”. Handwriting that was never transcribed is not searched.`;
+}
+
+/** Whether `term` means `word`: its start, or the word with a short ending either way ("network" and "networks"). */
+function wordMeans(term: string, word: string): boolean {
+  if (word.startsWith(term)) return true;
+  return word.length >= 4 && term.startsWith(word) && term.length - word.length <= 3;
+}
+
+/** A path's words, lower case: folders and file name, extensions dropped. */
+function pathWords(path: string): string[] {
+  return stem(path.toLowerCase())
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word !== "");
+}
+
+/** Files named with every term, then pages holding every term, as lines for the AI. */
+function hitLines(docs: readonly VaultDoc[], terms: readonly string[], query: string): string[] {
   const lines: string[] = [];
-  const named = new Set<string>();
   for (const doc of docs) {
     if (lines.length >= MAX_VAULT_HITS) break;
-    const name = doc.path.toLowerCase();
-    if (terms.every((term) => name.includes(term))) {
-      named.add(doc.path);
+    const words = pathWords(doc.path.slice(doc.path.lastIndexOf("/") + 1));
+    if (terms.every((term) => words.some((word) => wordMeans(term, word)))) {
       lines.push(`- ${doc.path} (${doc.kind}; its name matches)`);
     }
   }
@@ -130,10 +170,7 @@ export function vaultSearchText(docs: readonly VaultDoc[], query: string, where:
       .join(" ");
     lines.push(`- ${hit.path}${page}: ${words}`);
   }
-  if (lines.length === 0) {
-    return `Nothing in ${where} matches “${query}”. Handwriting that was never transcribed is not searched.`;
-  }
-  return [`Found in ${where}:`, ...lines, "", "Read one with read_note to see more."].join("\n");
+  return lines;
 }
 
 /** A note's whole text as the AI reads it: a notebook or PDF page by page. */

@@ -746,6 +746,8 @@ export class InkView extends TextFileView {
   private askSession: AskSession | null = null;
   /** The vault as Ask AI reads it, kept for a few seconds across tool calls. */
   private vaultSource: VaultContextSource | null = null;
+  /** Notes Ask wrote while this notebook is open, by lower-case title: the only ones it may rewrite. */
+  private readonly askNotes = new Map<string, string>();
   /** Ask in its sidebar, beside the page (the other layout is a window). */
   private chatPanel: AskChatPanel | null = null;
   /** Search this notebook: the field and its results, in a sidebar or a window (#112). */
@@ -2377,6 +2379,7 @@ export class InkView extends TextFileView {
     const abilities = askAbilitiesPrompt(
       askVaultScopeOf(this.settings.askVaultScope),
       this.settings.askShowCost,
+      this.file?.path ?? "",
     );
     const prompt = `${system}\n${buildAskToolsPrompt()}\n${abilities}`;
     const withTools = askAiWithTools(config, prompt, turns, {
@@ -2445,22 +2448,45 @@ export class InkView extends TextFileView {
 
   /**
    * `create_note`: a new Markdown note beside the notebook, which the
-   * answer links to. Never an existing note: a taken name gets a number.
+   * answer links to. Never someone's note: a taken name gets a number, and
+   * `replace` rewrites only a note Ask itself wrote while this notebook is
+   * open (`askNotes`), to correct it.
    */
-  private async createAskNote(title: string, text: string): Promise<AskToolOutcome> {
+  private async createAskNote(
+    title: string,
+    text: string,
+    replace: boolean,
+  ): Promise<AskToolOutcome> {
     const notebook = this.file?.path ?? "";
     const vault = this.app.vault;
+    const name = noteFileName(title);
+    const link = (path: string, base: string): string => `[[${path.replace(/\.md$/, "")}|${base}]]`;
+    if (replace) {
+      const own = this.askNotes.get(name.toLowerCase());
+      const file = own ? vault.getFileByPath(own) : null;
+      if (!file) {
+        return {
+          text: `You wrote no note called “${name}” in this chat, so there is nothing to rewrite: notes you did not write are never changed.`,
+          isError: true,
+        };
+      }
+      await vault.modify(file, newNoteText(text, notebook));
+      return {
+        text: `Rewrote ${file.path}. Link to it in your answer as ${link(file.path, file.basename)}.`,
+        done: t("view.ask.doneNoteFixed", { name: file.basename }),
+      };
+    }
     const path = freeNotePath(
       newNoteFolder(notebook),
-      noteFileName(title),
+      name,
       (p) => vault.getAbstractFileByPath(p) !== null,
     );
     const file = await vault.create(path, newNoteText(text, notebook));
+    this.askNotes.set(name.toLowerCase(), file.path);
     // Not opened: that would take the tab, or the focus, from the notebook the chat is about.
-    const name = file.basename;
     return {
-      text: `Wrote the new note ${file.path}. Link to it in your answer as [[${file.path.replace(/\.md$/, "")}|${name}]].`,
-      done: t("view.ask.doneNote", { name }),
+      text: `Wrote the new note ${file.path}. Link to it in your answer as ${link(file.path, file.basename)}. To correct it, call create_note again with this title and replace: true.`,
+      done: t("view.ask.doneNote", { name: file.basename }),
     };
   }
 
@@ -2498,7 +2524,7 @@ export class InkView extends TextFileView {
       case "linked_notes":
         return this.runVaultTool(call);
       case "create_note":
-        return this.createAskNote(call.title, call.text);
+        return this.createAskNote(call.title, call.text, call.replace);
       case "finenotes_help":
         return {
           text: helpText(call.query, helpEntries(call.query, english)),
