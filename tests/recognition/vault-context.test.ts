@@ -65,6 +65,10 @@ describe("vault scope", () => {
     expect(inScope("Signals/.trash/x.md", nb, "vault")).toBe(false);
     expect(inScope("Signals/Week 3.transcript.md", nb, "vault")).toBe(false);
     expect(inScope("Signals/W3/_transcript.md", nb, "vault")).toBe(false);
+    expect(
+      inScope("CS/Transcripts/W.transcript.sync-conflict-20261027-142439-JP5KF2P.md", nb, "vault"),
+    ).toBe(false);
+    expect(inScope("CS/LTI.sync-conflict-20261101-090000-AB.md", nb, "vault")).toBe(false);
   });
 
   it("tells the AI where it looked", () => {

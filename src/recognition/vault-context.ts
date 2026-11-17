@@ -69,10 +69,19 @@ export function scopeFolder(notebookPath: string): string {
 export function inScope(path: string, notebookPath: string, scope: AskVaultScope): boolean {
   if (scope === "off" || path === notebookPath) return false;
   if (path.split("/").some((part) => part.startsWith("."))) return false;
-  if (isTranscriptFile(path)) return false;
+  if (isTranscriptFile(path) || isSyncConflict(path)) return false;
   if (scope === "vault") return true;
   const folder = scopeFolder(notebookPath);
   return folder === "" || path.startsWith(`${folder}/`);
+}
+
+/**
+ * A copy a sync tool kept when two devices changed a file at once
+ * (Syncthing's `X.sync-conflict-20261027-142439-ID.md`): stale, and a
+ * duplicate of the file itself, so the AI is never sent to it.
+ */
+export function isSyncConflict(path: string): boolean {
+  return /\.sync-conflict-\d{8}-\d{6}/i.test(path.slice(path.lastIndexOf("/") + 1));
 }
 
 /** A transcript server's sidecar: `X.transcript.md`, `_transcript.md`. */
