@@ -77,13 +77,13 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Settings:** `onlyStylusMode`
 - **Commands:** `zoom-in`, `zoom-out`
 
-### Pinch in to see all pages
+### Zoom out past the page to see all pages (pinch in)
 
 - **Id:** `pinchOverview`
-- **What:** Pinching the page closed well past the fit and letting go opens the overview of every page.
-- **Where:** Pinch inward hard on a page.
-- **Notes:** touch only
-- **Words:** overview, all pages, page grid, pinch out to grid, thumbnails
+- **What:** Pinch the page closed well past the fit (to about half its size) and let go: every page opens as a grid, the same grid as the page sidebar's Show all pages, where you can select pages and tap one to go to it.
+- **Where:** Two fingers on a page, pinch in hard, then let go.
+- **Notes:** Touch only, and not on a single-page note. The grid is also the page sidebar's Show all pages button.
+- **Words:** zoom out, zoom out to see all pages, zoom out past the page, pinch in, pinch to see all pages, overview, all pages, page grid, grid view, thumbnails, see every page
 
 ### Double tap to fill the screen
 

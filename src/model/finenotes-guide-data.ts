@@ -1672,11 +1672,13 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
   {
     id: "pinchOverview",
     area: "page",
-    title: "Pinch in to see all pages",
-    words: "overview, all pages, page grid, pinch out to grid, thumbnails",
-    what: "Pinching the page closed well past the fit and letting go opens the overview of every page.",
-    where: "Pinch inward hard on a page.",
-    notes: "touch only",
+    title: "Zoom out past the page to see all pages (pinch in)",
+    words:
+      "zoom out, zoom out to see all pages, zoom out past the page, pinch in, pinch to see all pages, overview, all pages, page grid, grid view, thumbnails, see every page",
+    what: "Pinch the page closed well past the fit (to about half its size) and let go: every page opens as a grid, the same grid as the page sidebar's Show all pages, where you can select pages and tap one to go to it.",
+    where: "Two fingers on a page, pinch in hard, then let go.",
+    notes:
+      "Touch only, and not on a single-page note. The grid is also the page sidebar's Show all pages button.",
   },
   {
     id: "doubleTapFit",
