@@ -108,7 +108,30 @@ export function vaultSearchText(docs: readonly VaultDoc[], query: string, where:
   if (terms.length === 0) return '"query" is empty.';
   const lines = hitLines(docs, terms, query);
   if (lines.length > 0) {
-    return [`Found in ${where}:`, ...lines, "", "Read one with read_note to see more."].join("\n");
+    // Files named with some of the words come after: the notebook called Network
+    // lecture notes is what "computer networks" means, though its name lacks "computer".
+    const listed = new Set(lines.map((line) => line.slice(2).split(/[,:(]/)[0].trim()));
+    const named: string[] = [];
+    if (terms.length > 1) {
+      for (const doc of docs) {
+        if (lines.length + named.length >= MAX_VAULT_HITS) break;
+        if (listed.has(doc.path)) continue;
+        const words = pathWords(doc.path.slice(doc.path.lastIndexOf("/") + 1));
+        const has = terms.filter(
+          (term) => term.length >= 4 && words.some((word) => wordMeans(term, word)),
+        );
+        if (has.length > 0) {
+          named.push(`- ${doc.path} (${doc.kind}; its name has “${has.join("”, “")}”)`);
+        }
+      }
+    }
+    return [
+      `Found in ${where}:`,
+      ...lines,
+      ...(named.length ? ["Named with some of the words:", ...named] : []),
+      "",
+      "Read one with read_note to see more.",
+    ].join("\n");
   }
   // Nothing has every word: the files with some of them, the longest word first
   // ("computer networks" still finds the notebook called Network lecture notes).

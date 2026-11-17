@@ -113,6 +113,18 @@ describe("vaultSearchText", () => {
     expect(vaultSearchText(vault, "cs", "v")).not.toContain("its name matches");
   });
 
+  it("also names files with some of the words when another file has all of them", () => {
+    const vault = [
+      note("Books/Computer Networking.md", "Computer networks and the Internet"),
+      notebook("CS/Network lecture notes.notebook.md", ["routing"]),
+    ];
+    const text = vaultSearchText(vault, "computer networks", "v");
+    expect(text).toContain("- Books/Computer Networking.md: Computer networks");
+    expect(text).toContain(
+      "Named with some of the words:\n- CS/Network lecture notes.notebook.md (notebook; its name has “networks”)",
+    );
+  });
+
   it("falls back to files with some of the words when none has all of them", () => {
     const vault = [notebook("CS/Network lecture notes.notebook.md", ["routing"])];
     const text = vaultSearchText(vault, "computer networks", "the whole vault");
