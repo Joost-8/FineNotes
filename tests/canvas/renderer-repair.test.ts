@@ -120,6 +120,26 @@ describe("a changed area is painted again in place", () => {
     expect(log.lines.join("\n")).toContain("clearRect 62,62 338,62 338,138 62,138");
   });
 
+  it("a broad highlighter, even once erased, widens the area past INK_PAD", () => {
+    const { renderer, doc } = setUp();
+    const highlight = {
+      id: "h",
+      color: "#ffe066",
+      size: 60,
+      tool: "highlighter" as const,
+      pts: [100, 100, 0.5, 300, 100, 0.5],
+    };
+    doc.pages[0].strokes.push(highlight);
+    renderer.invalidateRegion(0, { minX: 100, minY: 100, maxX: 300, maxY: 100 });
+    renderer.renderDocument(doc, false);
+    doc.pages[0].strokes.pop();
+    log.lines.length = 0;
+    renderer.invalidateRegion(0, { minX: 100, minY: 100, maxX: 300, maxY: 100 });
+    renderer.renderDocument(doc, false);
+    // 0.75 of its 60 px and 2 for its edge: 47 px round its line, not 24.
+    expect(log.lines.join("\n")).toContain("clearRect 53,53 347,53 347,147 53,147");
+  });
+
   it("an exact area is painted as given, with nothing round it", () => {
     const { renderer, doc } = setUp();
     renderer.invalidateArea(0, { minX: 100, minY: 90, maxX: 140, maxY: 110 });

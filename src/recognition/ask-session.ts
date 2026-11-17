@@ -296,9 +296,6 @@ export class AskSession {
     this.changed();
     const stale = (): boolean => generation !== this.generation;
     try {
-      if (first && newPages.length === 0 && files.length === 0) {
-        throw new Error(t("ai.ask.pickFirst"));
-      }
       if (!(await this.deps.confirm())) {
         if (!stale()) {
           this.outstanding = null;
@@ -312,13 +309,9 @@ export class AskSession {
       if (newPages.length) {
         const pages = await this.deps.preparePages(newPages);
         if (stale()) return;
-        if (pages.images.length === 0) {
-          if (first && files.length === 0) {
-            throw new Error(t(this.screen ? "ai.ask.nothingOnScreen" : "ai.ask.nothingToSend"));
-          }
-        } else {
-          turn = this.questionWithPages(text, pages, first);
-        }
+        // Blank pages send nothing: the question goes on its own, as one
+        // asked with no page picked does.
+        if (pages.images.length > 0) turn = this.questionWithPages(text, pages, first);
         this.outstanding = { question: text, status: "" };
         this.changed();
       }

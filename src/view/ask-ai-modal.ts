@@ -77,6 +77,12 @@ export interface AskAiHost {
   insert: (text: string) => boolean;
   /** Place an SVG drawing from an answer on the page being read. */
   insertDrawing: (svg: string) => Promise<boolean>;
+  /**
+   * The whole notebook as one PDF to attach, for a notebook with more pages
+   * than a question can send as pictures; `onProgress` counts pages made.
+   * Null when it could not be made.
+   */
+  notebookAsPdf?: (onProgress: (done: number, total: number) => void) => Promise<ChatFile | null>;
   /** The notebook's own PDFs, each with the 1-based pages printed on it. */
   notebookPdfs: () => PdfBehind[];
   /** This notebook's saved chats, newest first. */
@@ -341,6 +347,16 @@ export class AskChat {
       text: t("ai.ask.onlyThisPage"),
     });
     only.addEventListener("click", () => this.session.setSelection([this.host.currentPage()]));
+    // More pages than a question takes as pictures: send the whole notebook
+    // as one PDF instead, which the AI reads page by page.
+    const makePdf = this.host.notebookAsPdf;
+    if (makePdf && this.session.totalPages > ASK_MAX_PAGES && !this.session.screen) {
+      const whole = head.createEl("button", {
+        cls: "goodobsidian-chat-picker-link clickable-icon",
+        text: t("ai.ask.wholeAsPdf"),
+      });
+      whole.addEventListener("click", () => void this.attachWholeNotebook(whole, makePdf));
+    }
     const done = head.createEl("button", {
       cls: "mod-cta clickable-icon",
       text: t("common.done"),
@@ -529,6 +545,31 @@ export class AskChat {
     }
     // The same file can be picked again after it was taken off.
     input.value = "";
+  }
+
+  /** Make the notebook's PDF and attach it in place of the picked pages. */
+  private async attachWholeNotebook(
+    button: HTMLButtonElement,
+    make: NonNullable<AskAiHost["notebookAsPdf"]>,
+  ): Promise<void> {
+    if (button.disabled) return;
+    button.disabled = true;
+    const label = button.getText();
+    try {
+      const file = await make((done, total) =>
+        button.setText(t("ai.ask.makingPdf", { done, total })),
+      );
+      if (!file) {
+        new Notice(t("ai.ask.pdfFailed"));
+        return;
+      }
+      const refusal = this.session.attachInstead(file);
+      if (refusal) new Notice(refusal);
+      else this.closePicker();
+    } finally {
+      button.setText(label);
+      button.disabled = false;
+    }
   }
 
   private attachOrSay(file: ChatFile): void {

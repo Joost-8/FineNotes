@@ -104,6 +104,7 @@ import { practiceLines, promptCount } from "../recognition/practice";
 import { CalcNotes } from "./calc-notes";
 import { ColumnNotes } from "./column-notes";
 import {
+  type ChatFile,
   type ChatImage,
   type ChatTurn,
   buildAskSystemPrompt,
@@ -2261,6 +2262,7 @@ export class InkView extends TextFileView {
         );
         return placed !== null;
       },
+      notebookAsPdf: (onProgress) => this.notebookPdfAttachment(onProgress),
       notebookPdfs: () =>
         pdfsBehind(
           this.doc.pages.map((page) => page.backdrop),
@@ -4818,19 +4820,50 @@ export class InkView extends TextFileView {
    * into a new folder there. Read-only on the note, but refused while it is
    * protected: its pages may not be the pages on disk.
    */
-  exportPdf(chosen?: readonly number[]): void {
-    const note = this.file;
-    if (this.isDamaged() || !note) return;
+  /**
+   * The notebook's pages as they export. A board (FineNotes#46), in a board
+   * file or among a notebook's pages, exports as one page the size of its
+   * drawing, not metres of empty paper.
+   */
+  private exportablePages(): Pick<InkDocument, "pages"> {
     const open = this.surface?.document ?? this.doc;
-    // A board (FineNotes#46), in a board file or among a notebook's pages,
-    // exports as one page the size of its drawing, not metres of empty paper.
-    const doc: Pick<InkDocument, "pages"> = hasBoards(open)
+    return hasBoards(open)
       ? {
           pages: open.pages.map((page) =>
             isBoardPage(open, page) ? this.boardDrawing(page) : page,
           ),
         }
       : open;
+  }
+
+  /**
+   * The whole notebook as one PDF for Ask AI: every page, as the export
+   * makes it (a PDF page keeps its own text), at a resolution the AI reads
+   * well and no finer.
+   */
+  private async notebookPdfAttachment(
+    onProgress: (done: number, total: number) => void,
+  ): Promise<ChatFile | null> {
+    const note = this.file;
+    const pages = this.exportablePages().pages;
+    if (!note || pages.length === 0) return null;
+    const title = stripInkSuffix(note.basename);
+    try {
+      const bytes = await exportPagesToPdf(
+        pages,
+        { ...this.previewSources(), maxPixelScale: 1 },
+        { title, onProgress },
+      );
+      return attachmentFromBytes(`${title}.pdf`, bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  exportPdf(chosen?: readonly number[]): void {
+    const note = this.file;
+    if (this.isDamaged() || !note) return;
+    const doc = this.exportablePages();
     const total = doc.pages.length;
     if (total === 0) return;
     const exports = this.attachmentFolder("exports");

@@ -2026,7 +2026,14 @@ describe("partial erase", () => {
     expect(renderer.invalidateRegion).not.toHaveBeenCalled();
     // As the gesture ends, the stroke is painted from the document again, whole.
     run(w.surface, "eraseReset");
-    expect(renderer.invalidateRegion).toHaveBeenCalledExactlyOnceWith(0, strokeBounds(long));
+    // The whole stroke with its own width round it (a size-2 line: 2, and 2 for its edge).
+    const b = strokeBounds(long)!;
+    expect(renderer.invalidateRegion).toHaveBeenCalledExactlyOnceWith(0, {
+      minX: b.minX - 4,
+      minY: b.minY - 4,
+      maxX: b.maxX + 4,
+      maxY: b.maxY + 4,
+    });
   });
 });
 

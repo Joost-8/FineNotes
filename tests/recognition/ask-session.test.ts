@@ -99,18 +99,24 @@ describe("AskSession pages", () => {
     expect(session.draft).toBe("half a thought");
   });
 
-  it("needs a page with something on it for the first question", async () => {
+  it("asks a question on its own when no page is picked, or the pages are blank", async () => {
     const none = setup();
     const a = open(none.deps);
     a.setSelection([]);
-    await a.send("x");
-    expect(a.outstanding?.error).toMatch(/pick a page/);
+    await a.send("What is a monad?");
+    expect(a.outstanding).toBeNull();
+    expect(none.asked[0].at(-1)).toEqual({
+      role: "user",
+      text: "What is a monad?",
+      shown: "What is a monad?",
+    });
     const blank = setup({
       preparePages: () => Promise.resolve({ images: [], pageNumbers: [], totalPages: 9 }),
     });
     const b = open(blank.deps);
     await b.send("x");
-    expect(b.outstanding?.error).toMatch(/nothing on these pages/);
+    expect(b.outstanding).toBeNull();
+    expect(blank.asked[0].at(-1)?.images).toBeUndefined();
   });
 
   it("names pages in prose", () => {
@@ -459,12 +465,13 @@ describe("AskSession on a board: what is on screen, with every question", () => 
     expect(second.images).toHaveLength(1);
   });
 
-  it("says so when nothing is on screen", async () => {
-    const { deps } = setup({
+  it("asks on its own when nothing is on screen", async () => {
+    const { deps, asked } = setup({
       preparePages: () => Promise.resolve({ images: [], pageNumbers: [], totalPages: 1 }),
     });
     const session = board(deps);
     await session.send("Hm?");
-    expect(session.outstanding?.error).toBe("there is nothing on screen to send.");
+    expect(session.outstanding).toBeNull();
+    expect(asked[0].at(-1)?.text).toBe("Hm?");
   });
 });

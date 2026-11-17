@@ -105,7 +105,7 @@ import { type RoutedConnector, paintConnector, paintConnectors } from "./connect
 import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
 import { pagesAhead } from "./look-ahead";
-import { joinLines, joinedSides } from "./page-join";
+import { type GridPhase, gridPhase, joinLines, joinedSides } from "./page-join";
 import { relativeLuminance } from "../model/cover";
 import {
   baselineOffset,
@@ -275,6 +275,15 @@ export interface PageSelection {
  * The asynchronous form is `BackdropRenderer` in `./backdrop` — the interface
  * contracts/api.md §4 specifies. `VaultBackdropRenderer` implements both.
  */
+/** Where and how a backdrop is painted ({@link BackdropPainter.paint}). */
+export interface PaintTarget {
+  deviceScale: number;
+  region?: Bounds;
+  paper?: PaperTheme;
+  /** Joined pages: where the page lies in its run, so a grid runs on (`gridPhase`). */
+  phase?: GridPhase;
+}
+
 export interface BackdropPainter {
   /** Called once per screen paint, never once per ink tile or sidebar thumbnail. */
   prepare?: (
@@ -302,7 +311,7 @@ export interface BackdropPainter {
     backdrop: Backdrop,
     geometry: PageGeometry,
     weight?: number,
-    target?: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+    target?: PaintTarget,
   ): void;
   /** What it holds, for the diagnostic HUD. */
   diagnostics?: () => string;
@@ -419,19 +428,21 @@ export function paintPagePaper(
   ctx: CanvasRenderingContext2D,
   page: Page,
   weight: number,
-  target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+  target: PaintTarget,
   marginsOnly = false,
 ): void {
   const { backdrop, geometry } = page;
+  // A grid runs on over a join only where it fills the page edge to edge.
+  const { phase: _phase, ...framed } = target;
   const margin = marginPaper(page);
   if (margin) {
     for (const strip of marginStrips(page)) {
-      paintInStrip(painter, ctx, margin, strip, weight, target);
+      paintInStrip(painter, ctx, margin, strip, weight, framed);
     }
   }
   if (marginsOnly) return;
   if (backdrop.kind !== "pdf" && backdrop.frame) {
-    paintInStrip(painter, ctx, backdrop, backdrop.frame, weight, target);
+    paintInStrip(painter, ctx, backdrop, backdrop.frame, weight, framed);
   } else {
     painter.paint(ctx, backdrop, geometry, weight, target);
   }
@@ -444,7 +455,7 @@ function paintInStrip(
   backdrop: Backdrop,
   strip: { x: number; y: number; width: number; height: number },
   weight: number,
-  target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+  target: PaintTarget,
 ): void {
   ctx.save();
   ctx.beginPath();
@@ -1224,6 +1235,8 @@ export class Renderer {
       if (stroke.tilt) reach = Math.max(reach, inkReach(stroke));
       // A tape is as tall as its size either side of its two points.
       else if (isTape(stroke)) reach = Math.max(reach, stroke.size / 2 + 2);
+      // A broad highlighter: half its width, a chisel's corner a little more.
+      else if (stroke.tool === "highlighter") reach = Math.max(reach, stroke.size * 0.75 + 2);
     }
     this.widestSeen.set(pageId, reach);
     return reach;
@@ -2465,10 +2478,12 @@ export class Renderer {
     // A 1 page-px rule vanishes at preview scale; keep rules about half a
     // device pixel wide there, as the sidebar thumbnails do.
     if (this.painter) {
+      const phase = gridPhase(this.layout, box.index);
       paintPagePaper(this.painter, ctx, page, Math.max(1, 0.5 / level), {
         deviceScale: level,
         paper: this.paper,
         ...(painterRegion && Number.isFinite(region.minX) ? { region } : {}),
+        ...(phase ? { phase } : {}),
       });
     }
     if (this.doc) {
