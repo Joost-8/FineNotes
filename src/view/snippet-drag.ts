@@ -89,7 +89,13 @@ export class SnippetDrag {
   }
 
   private place(x: number, y: number): void {
-    this.ghost.setCssStyles({ left: `${x}px`, top: `${y}px` });
+    // The ghost is centred on x (CSS translate -50%); keep it on screen, so
+    // it stays whole over the Notes tab at the left edge.
+    const half = this.ghost.offsetWidth / 2;
+    const room = this.doc.documentElement.clientWidth;
+    const cx =
+      half > 0 && room > 2 * half + 8 ? Math.min(Math.max(x, half + 4), room - half - 4) : x;
+    this.ghost.setCssStyles({ left: `${cx}px`, top: `${y}px` });
   }
 
   private readonly onMove = (event: PointerEvent): void => {
