@@ -42,6 +42,11 @@ import { SCHEMA_VERSION } from "../constants";
  *   notebook with a board among its pages (`Page.board`) (discussion #160,
  *   `model/board.ts`); an older build would read them as pages metres long
  *   and drop the board flags on its save.
+ * - `pdf-tabs`: PDFs kept beside the notes as tabs, with the ink written on
+ *   them (`InkDocument.beside`), a page that follows a slide (`Page.follows`)
+ *   or a snippet that remembers its slide (`ImageElement.slide`)
+ *   (`model/beside-pdfs`); an older build would drop the tabs and their ink
+ *   on its next save.
  */
 export const FORMAT_FEATURES = [
   "sticky",
@@ -52,6 +57,7 @@ export const FORMAT_FEATURES = [
   "shape-content",
   "text-turn",
   "boards",
+  "pdf-tabs",
 ] as const;
 
 export type FormatFeature = (typeof FORMAT_FEATURES)[number];

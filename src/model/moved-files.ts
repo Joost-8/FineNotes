@@ -190,6 +190,17 @@ export function relinkDocument(
     if (page.backdrop.kind === "pdf") page.backdrop.path = swap(page.backdrop.path);
     for (const image of page.images) image.path = swap(image.path);
   }
+  // A PDF kept beside the notes, and its pages of ink, which name it too.
+  for (const beside of doc.beside ?? []) {
+    const from = beside.path;
+    beside.path = swap(from);
+    for (const page of beside.marks) {
+      if (page.backdrop.kind === "pdf") {
+        page.backdrop.path = page.backdrop.path === from ? beside.path : swap(page.backdrop.path);
+      }
+      for (const image of page.images) image.path = swap(image.path);
+    }
+  }
   for (const recording of doc.recordings ?? []) {
     recording.path = swap(recording.path);
     if (recording.transcript !== undefined) recording.transcript = swap(recording.transcript);
