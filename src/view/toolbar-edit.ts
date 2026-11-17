@@ -191,6 +191,14 @@ export class ToolbarEditor {
   private menuShelf: HTMLElement | null = null;
   private offShelf: HTMLElement | null = null;
   private menu: HTMLElement | null = null;
+  /** The item whose menu is open. */
+  private menuItem: BarItemId | null = null;
+  /**
+   * A press outside the open menu closed it: that tap's click on the scrim
+   * does not also close Customize toolbar, and a tap on the same item does
+   * not open its menu again.
+   */
+  private closedBy: "scrim" | BarItemId | null = null;
   private press: Press | null = null;
   private ghost: HTMLElement | null = null;
   private gap: HTMLElement | null = null;
@@ -231,9 +239,30 @@ export class ToolbarEditor {
       event.preventDefault();
       event.stopPropagation();
     };
+    // A press anywhere outside the open menu closes it, as a popover does;
+    // a press on another button then goes on to pick that one up.
+    this.listen(
+      this.doc,
+      "pointerdown",
+      (event) => {
+        const menu = this.menu;
+        const at = event.target as Element | null;
+        if (!menu || (at && menu.contains(at))) return;
+        const item = at?.closest<HTMLElement>("[data-item]")?.getAttribute("data-item");
+        this.closedBy =
+          at && this.scrim.contains(at) ? "scrim" : item === this.menuItem ? this.menuItem : null;
+        this.closeMenu();
+      },
+      true,
+    );
     this.listen(this.scrim, "pointerdown", swallow);
     this.listen(this.scrim, "click", (event) => {
       swallow(event);
+      // The tap that closed the menu does not close the mode too.
+      if (this.closedBy === "scrim") {
+        this.closedBy = null;
+        return;
+      }
       this.finish();
     });
     // The bar's buttons do nothing while it is edited: a press picks one up.
@@ -704,6 +733,8 @@ export class ToolbarEditor {
     const swap = event.type === "pointerup" ? this.swapWith : null;
     const toTrash = event.type === "pointerup" && this.overTrash;
     const { id, dragging, el } = press;
+    const closedMenu = this.closedBy === id;
+    this.closedBy = null;
     this.endPress();
     if (dragging && toTrash && isPenSlot(id)) {
       this.h.newPen?.remove?.(id);
@@ -734,7 +765,8 @@ export class ToolbarEditor {
       return;
     }
     if (!dragging) {
-      if (event.type === "pointerup") this.openMenu(id, el);
+      // A tap on the item whose menu that press closed leaves it closed.
+      if (event.type === "pointerup" && !closedMenu) this.openMenu(id, el);
       return;
     }
     if (target) this.move(id, target);
@@ -950,12 +982,14 @@ export class ToolbarEditor {
       menu.setCssStyles({ top: `${Math.round(at.top - host.top - 6 - menu.offsetHeight)}px` });
     }
     this.menu = menu;
+    this.menuItem = id;
     menu.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
   }
 
   private closeMenu(): void {
     this.menu?.remove();
     this.menu = null;
+    this.menuItem = null;
   }
 
   private onKey(event: KeyboardEvent): void {

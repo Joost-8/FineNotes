@@ -31,6 +31,9 @@ export default [
       // Local-only rule the review does not surface (its suggestions are
       // unusable for this codebase: "Openrouter", "#Ff8800", "iOS webkit").
       "obsidianmd/ui/sentence-case": "off",
+      // The community scanner (eslint-plugin-obsidianmd 0.6) reports this as a
+      // warning; 0.4's recommended config does not include it.
+      "@typescript-eslint/no-unnecessary-type-assertion": "error",
     },
   },
 ];

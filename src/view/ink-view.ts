@@ -104,6 +104,7 @@ import { practiceLines, promptCount } from "../recognition/practice";
 import { CalcNotes } from "./calc-notes";
 import { ColumnNotes } from "./column-notes";
 import {
+  type ChatFile,
   type ChatImage,
   type ChatTurn,
   buildAskSystemPrompt,
@@ -637,8 +638,16 @@ export class InkView extends TextFileView {
   private doc: InkDocument;
   /** The note's Markdown outside the ink block: frontmatter, prose, text layer. */
   private noteBody = "";
-  /** Whether the note may be saved over, and what to save while it may not. */
+  /** Whether the note may be saved over: never while a read is held. */
   private readonly guard = new LoadGuard();
+  /**
+   * Not plain text to Obsidian (FineNotes#246). Obsidian's TextFileView
+   * sets this, and while it is set a file changed on disk (a sync landing)
+   * is patched into the view's unsaved text, character by character, before
+   * `setViewData` sees it. Two ink blocks merged that way are one that does
+   * not decode. Off, Obsidian hands over the file as it is on disk.
+   */
+  isPlaintext = false;
 
   /** True from `onOpen` to `onClose`, while the view's DOM exists. */
   private mounted = false;
@@ -783,7 +792,7 @@ export class InkView extends TextFileView {
         target: () => (this.file && !this.guard.locked ? { doc: this.doc, file: this.file } : null),
         body: () => this.syncedBody(),
         write: (contents, behind) => this.writePrepared(contents, behind),
-        writeNow: () => super.save(),
+        writeNow: () => this.writeFile(),
         penBusy: () => this.writeHold.writing(performance.now()),
       },
       // Loaded when first needed, as the recogniser's client is.
@@ -937,6 +946,18 @@ export class InkView extends TextFileView {
   }
 
   /**
+   * Obsidian's own save, the only way this view writes its file; nothing
+   * while a load is held (load-guard.ts). Obsidian writes whenever the
+   * view's text differs from what it last read, and the text a held load
+   * was handed is not always that (FineNotes#246), so echoing it back is
+   * not enough: a held load must never write.
+   */
+  private writeFile(clear?: boolean): Promise<void> {
+    if (this.guard.locked) return Promise.resolve();
+    return super.save(clear);
+  }
+
+  /**
    * A background save's result: Obsidian's save writes it, `getViewData`
    * answering with it (Obsidian asks before its first `await`). `behind`:
    * the notebook changed since, so it is marked unsaved again.
@@ -945,7 +966,7 @@ export class InkView extends TextFileView {
     this.preparedContents = contents;
     let saving: Promise<void>;
     try {
-      saving = super.save();
+      saving = this.writeFile();
     } finally {
       this.preparedContents = null;
     }
@@ -1148,7 +1169,7 @@ export class InkView extends TextFileView {
     this.writeHold.saved();
     if (clear || now) {
       this.saver.supersede();
-      await super.save(clear);
+      await this.writeFile(clear);
       return;
     }
     await this.saver.save();
@@ -2241,6 +2262,7 @@ export class InkView extends TextFileView {
         );
         return placed !== null;
       },
+      notebookAsPdf: (onProgress) => this.notebookPdfAttachment(onProgress),
       notebookPdfs: () =>
         pdfsBehind(
           this.doc.pages.map((page) => page.backdrop),
@@ -4004,6 +4026,18 @@ export class InkView extends TextFileView {
       () => this.app.workspace.getActiveViewOfType(InkView) === this,
       // The page sidebar first: Escape leaves its overview before anything else.
       (event) => {
+        // A key the open calculator types is its own: E is an e there, and
+        // ← moves its cursor, not the page.
+        if (this.calculator?.takesKey(event)) {
+          this.surface?.noteKey(event, "field");
+          return false;
+        }
+        // Customize toolbar is a dialog over the notebook: its arrows move
+        // a button, its Escape closes it, and the page stays as it is.
+        if (this.toolbar?.customizing) {
+          this.surface?.noteKey(event, "modal");
+          return false;
+        }
         if (this.sidebar?.handleKeyDown(event)) {
           this.surface?.noteKey(event, "taken");
           return true;
@@ -4786,19 +4820,50 @@ export class InkView extends TextFileView {
    * into a new folder there. Read-only on the note, but refused while it is
    * protected: its pages may not be the pages on disk.
    */
-  exportPdf(chosen?: readonly number[]): void {
-    const note = this.file;
-    if (this.isDamaged() || !note) return;
+  /**
+   * The notebook's pages as they export. A board (FineNotes#46), in a board
+   * file or among a notebook's pages, exports as one page the size of its
+   * drawing, not metres of empty paper.
+   */
+  private exportablePages(): Pick<InkDocument, "pages"> {
     const open = this.surface?.document ?? this.doc;
-    // A board (FineNotes#46), in a board file or among a notebook's pages,
-    // exports as one page the size of its drawing, not metres of empty paper.
-    const doc: Pick<InkDocument, "pages"> = hasBoards(open)
+    return hasBoards(open)
       ? {
           pages: open.pages.map((page) =>
             isBoardPage(open, page) ? this.boardDrawing(page) : page,
           ),
         }
       : open;
+  }
+
+  /**
+   * The whole notebook as one PDF for Ask AI: every page, as the export
+   * makes it (a PDF page keeps its own text), at a resolution the AI reads
+   * well and no finer.
+   */
+  private async notebookPdfAttachment(
+    onProgress: (done: number, total: number) => void,
+  ): Promise<ChatFile | null> {
+    const note = this.file;
+    const pages = this.exportablePages().pages;
+    if (!note || pages.length === 0) return null;
+    const title = stripInkSuffix(note.basename);
+    try {
+      const bytes = await exportPagesToPdf(
+        pages,
+        { ...this.previewSources(), maxPixelScale: 1 },
+        { title, onProgress },
+      );
+      return attachmentFromBytes(`${title}.pdf`, bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  exportPdf(chosen?: readonly number[]): void {
+    const note = this.file;
+    if (this.isDamaged() || !note) return;
+    const doc = this.exportablePages();
     const total = doc.pages.length;
     if (total === 0) return;
     const exports = this.attachmentFolder("exports");

@@ -962,7 +962,8 @@ function sheetKeys(input: ShortcutInput): string[] {
  * line, "1 – 8", until one of them is changed; then each is its own. Lines
  * nobody changed stay as written. A row the sheet has no line for (the
  * Magnifier, Full screen, a tool bar button) gets one, under its group,
- * once it has a key: everything a key does is on the sheet.
+ * once it has a key: everything a key does is on the sheet. A key the page
+ * listens for itself (a `fixed` way) stays whatever the row says.
  */
 export function boundShortcutGroups(
   table: ShortcutTable,
@@ -983,12 +984,14 @@ export function boundShortcutGroups(
     }
     const row = id ? rows.get(id) : undefined;
     if (!row?.customized) return [shortcut];
-    if (row.inputs.length === 0) return [];
+    // A key the page listens for itself (← and → turn pages) stays.
+    const fixed = shortcut.ways.filter((way) => way.fixed === true);
+    if (row.inputs.length === 0 && fixed.length === 0) return [];
     const gesture = row.mode === "hold" ? shortcut.ways[0]?.gesture : undefined;
     return [
       {
         action: shortcut.action,
-        ways: row.inputs.map((input) => ({ keys: sheetKeys(input), gesture })),
+        ways: [...row.inputs.map((input) => ({ keys: sheetKeys(input), gesture })), ...fixed],
       },
     ];
   };

@@ -105,7 +105,7 @@ import { type RoutedConnector, paintConnector, paintConnectors } from "./connect
 import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
 import { pagesAhead } from "./look-ahead";
-import { joinLines, joinedSides } from "./page-join";
+import { type GridPhase, gridPhase, joinLines, joinedSides } from "./page-join";
 import { relativeLuminance } from "../model/cover";
 import {
   baselineOffset,
@@ -275,6 +275,15 @@ export interface PageSelection {
  * The asynchronous form is `BackdropRenderer` in `./backdrop` — the interface
  * contracts/api.md §4 specifies. `VaultBackdropRenderer` implements both.
  */
+/** Where and how a backdrop is painted ({@link BackdropPainter.paint}). */
+export interface PaintTarget {
+  deviceScale: number;
+  region?: Bounds;
+  paper?: PaperTheme;
+  /** Joined pages: where the page lies in its run, so a grid runs on (`gridPhase`). */
+  phase?: GridPhase;
+}
+
 export interface BackdropPainter {
   /** Called once per screen paint, never once per ink tile or sidebar thumbnail. */
   prepare?: (
@@ -302,7 +311,7 @@ export interface BackdropPainter {
     backdrop: Backdrop,
     geometry: PageGeometry,
     weight?: number,
-    target?: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+    target?: PaintTarget,
   ): void;
   /** What it holds, for the diagnostic HUD. */
   diagnostics?: () => string;
@@ -419,19 +428,21 @@ export function paintPagePaper(
   ctx: CanvasRenderingContext2D,
   page: Page,
   weight: number,
-  target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+  target: PaintTarget,
   marginsOnly = false,
 ): void {
   const { backdrop, geometry } = page;
+  // A grid runs on over a join only where it fills the page edge to edge.
+  const { phase: _phase, ...framed } = target;
   const margin = marginPaper(page);
   if (margin) {
     for (const strip of marginStrips(page)) {
-      paintInStrip(painter, ctx, margin, strip, weight, target);
+      paintInStrip(painter, ctx, margin, strip, weight, framed);
     }
   }
   if (marginsOnly) return;
   if (backdrop.kind !== "pdf" && backdrop.frame) {
-    paintInStrip(painter, ctx, backdrop, backdrop.frame, weight, target);
+    paintInStrip(painter, ctx, backdrop, backdrop.frame, weight, framed);
   } else {
     painter.paint(ctx, backdrop, geometry, weight, target);
   }
@@ -444,7 +455,7 @@ function paintInStrip(
   backdrop: Backdrop,
   strip: { x: number; y: number; width: number; height: number },
   weight: number,
-  target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+  target: PaintTarget,
 ): void {
   ctx.save();
   ctx.beginPath();
@@ -534,6 +545,8 @@ export interface RenderStats {
   tiles: number;
   tileBytes: number;
   previews: number;
+  /** Paints of the whole dry layer so far: a frame of one costs far more than its drawing calls. */
+  wholePaints: number;
 }
 
 const EMPTY_LAYOUT: DocumentLayout = {
@@ -649,6 +662,26 @@ const WET_REPAIR_SHARE = 0.5;
  */
 const OVERSCAN_SHARE = 0.15;
 const OVERSCAN_MAX = 200;
+
+/**
+ * A dry layer painted whole while the view moves is painted this share of
+ * its overscan ahead of the move, so the move goes on for longer before the
+ * next whole paint; the rest stays behind it, for a finger that turns back.
+ */
+const OVERSCAN_LEAD = 0.75;
+
+/**
+ * Where to put a dry layer painted whole, along one axis: its shift from
+ * the middle, CSS px on whole device px. `moved` is how far the picture
+ * went along the axis since the last paint (CSS px, its sign the way the
+ * layer shifts), `margin` the overscan a side. A layer shifted against the
+ * move has more of itself where the view is going. Still: the middle.
+ */
+export function overscanLead(moved: number, margin: number, dpr: number): number {
+  if (margin <= 0 || Math.abs(moved) * dpr < 1) return 0;
+  const lead = Math.round(margin * OVERSCAN_LEAD * dpr) / dpr;
+  return moved > 0 ? -lead : lead;
+}
 
 /**
  * Damage over this share of the dry layer is drawn as one full repaint:
@@ -879,6 +912,10 @@ export class Renderer {
   private shadow: ShadowSprite | null = null;
   /** What the dry layer shows, or null when it must be painted whole. */
   private dryShown: DryShown | null = null;
+  /** The view at the last paint of the dry layer and its scale: how the view moves ({@link planDry}). */
+  private dryLast: { view: DryView; scale: number } | null = null;
+  /** Whole paints of the dry layer so far ({@link stats}). */
+  private dryWholePaints = 0;
   /**
    * Device px of the dry layer drawn from tiles that changed since it was
    * painted: while the view stays, the next paint draws these alone. A
@@ -1147,6 +1184,7 @@ export class Renderer {
       tiles: this.tiles.size,
       tileBytes: this.tiles.bytes,
       previews: this.previews.size,
+      wholePaints: this.dryWholePaints,
     };
   }
 
@@ -1197,6 +1235,8 @@ export class Renderer {
       if (stroke.tilt) reach = Math.max(reach, inkReach(stroke));
       // A tape is as tall as its size either side of its two points.
       else if (isTape(stroke)) reach = Math.max(reach, stroke.size / 2 + 2);
+      // A broad highlighter: half its width, a chisel's corner a little more.
+      else if (stroke.tool === "highlighter") reach = Math.max(reach, stroke.size * 0.75 + 2);
     }
     this.widestSeen.set(pageId, reach);
     return reach;
@@ -1716,6 +1756,7 @@ export class Renderer {
     const { paint, damage, shift } = this.planDry(doc, desk, selection != null);
     this.placeDry(shift);
     if (damage?.length === 0) return true;
+    if (damage === null) this.dryWholePaints++;
     // Mid-zoom only the part in view is painted: the overscan is not seen,
     // and a pinch paints every frame.
     const { x: mx, y: my } = this.overscan;
@@ -1953,7 +1994,22 @@ export class Renderer {
     const now: DryView = { scrollY: this.view.scrollY - my / scale, originX: this.originX + mx };
     const damage = this.dryDamage;
     this.dryDamage = [];
-    const whole = { paint: now, damage: null, shift: { x: 0, y: 0 } };
+    // Moving, a whole paint puts most of the overscan ahead of the move
+    // (FineNotes#201: a page turn outran it five times, each a whole paint).
+    // Not mid-zoom, where only the part in view is painted, in the middle.
+    const last = this.dryLast ?? null;
+    this.dryLast = { view: now, scale };
+    const dpr = this.screen.dpr;
+    const steady = last !== null && last.scale === scale && !this.isTransient;
+    const lead = {
+      x: steady ? overscanLead(now.originX - last.view.originX, mx, dpr) : 0,
+      y: steady ? overscanLead((last.view.scrollY - now.scrollY) * scale, my, dpr) : 0,
+    };
+    const whole = {
+      paint: { scrollY: now.scrollY + lead.y / scale, originX: now.originX - lead.x },
+      damage: null,
+      shift: lead,
+    };
     const shown = this.dryShown;
     if (!shown || shown.clipped || shown.selection || selection) return whole;
     if (shown.key !== this.dryKey(desk) || shown.doc !== doc) return whole;
@@ -1961,7 +2017,6 @@ export class Renderer {
     const { width, height } = this.dry.canvas;
     if (damageArea(damage) > DRY_DAMAGE_SHARE * width * height) return whole;
     // The move since, to whole device px: the tiles stay on the px grid.
-    const dpr = this.screen.dpr;
     const x = Math.round((now.originX - shown.paint.originX) * dpr) / dpr;
     const y = Math.round((shown.paint.scrollY - now.scrollY) * scale * dpr) / dpr;
     if (Math.abs(x) > mx || Math.abs(y) > my) return whole;
@@ -1973,8 +2028,18 @@ export class Renderer {
    * on and around it, so a scroll finds them ready. Never evicts a tile to
    * make room, so it cannot thrash the ones on screen. Returns whether there
    * is more to do — the caller spreads the work over idle frames.
+   *
+   * `whole`: pages to have ready in full, nearest first: the pages a row
+   * turns to. A turn shows a whole page within a few frames, and tiles made
+   * during it were most of its slow frames (FineNotes#201). For these alone
+   * room is made, from the tiles of pages neither here nor near.
    */
-  prefetch(doc: InkDocument, usePressure: boolean, budgetMs: number): boolean {
+  prefetch(
+    doc: InkDocument,
+    usePressure: boolean,
+    budgetMs: number,
+    whole: readonly number[] = [],
+  ): boolean {
     if (this.level === 0 || this.layout.boxes.length === 0) return false;
     const level = this.level;
     const k = this.deviceScale;
@@ -2019,6 +2084,25 @@ export class Renderer {
         // A stale tile is left for the screen paint, which knows what the
         // eraser shows meanwhile; this one paints the document as it is.
         if (this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) continue;
+        if (!this.tiles.fits(tr.w * tr.h * 4)) return false;
+        if (now() > deadline) return true;
+        this.rasterTile(page, box, tr, level, { usePressure });
+      }
+    }
+    let madeRoom = false;
+    for (const index of whole) {
+      const box = this.layout.boxes[index];
+      const page = doc.pages[index];
+      if (!box || !page) continue;
+      const raster = rasterSize(box.width, box.height, level);
+      for (const tr of tilesCovering(box.width, box.height, level, 0, 0, raster.w, raster.h)) {
+        if (this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) continue;
+        if (!this.tiles.fits(tr.w * tr.h * 4) && !madeRoom) {
+          madeRoom = true;
+          const near = new Set(around.map((b) => b.id));
+          for (const i of whole) near.add(this.layout.boxes[i]?.id ?? "");
+          this.tiles.deleteWhere((tile) => !near.has(tile.pageId));
+        }
         if (!this.tiles.fits(tr.w * tr.h * 4)) return false;
         if (now() > deadline) return true;
         this.rasterTile(page, box, tr, level, { usePressure });
@@ -2394,10 +2478,12 @@ export class Renderer {
     // A 1 page-px rule vanishes at preview scale; keep rules about half a
     // device pixel wide there, as the sidebar thumbnails do.
     if (this.painter) {
+      const phase = gridPhase(this.layout, box.index);
       paintPagePaper(this.painter, ctx, page, Math.max(1, 0.5 / level), {
         deviceScale: level,
         paper: this.paper,
         ...(painterRegion && Number.isFinite(region.minX) ? { region } : {}),
+        ...(phase ? { phase } : {}),
       });
     }
     if (this.doc) {

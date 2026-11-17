@@ -5,12 +5,14 @@ import {
   ACTIVE_BOX,
   CARET,
   type CalcKey,
+  type CalcKeyChord,
   type Entry,
   KEY_TABS,
   NUMBER_ROWS,
   TAB_ROWS,
   backspace,
   boxes,
+  calculatorTakesKey,
   centredOrigin,
   fittedFontSize,
   hintFor,
@@ -252,6 +254,33 @@ describe("keyboard and the rest", () => {
     expect(keyboardKey("s")).toEqual({ insert: "s", continues: false });
     expect(keyboardKey("Shift")).toBeNull();
     expect(keyboardKey("#")).toBeNull();
+  });
+
+  it("names the keys the calculator types, so the notebook leaves them (FineNotes#248)", () => {
+    const press = (key: string, mods: Partial<Omit<CalcKeyChord, "key">> = {}): CalcKeyChord => ({
+      key,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      ...mods,
+    });
+    for (const key of ["ArrowLeft", "ArrowRight", "e", "2", "Enter", "Backspace", "Escape"]) {
+      expect(calculatorTakesKey(press(key), false)).toBe(true);
+    }
+    // Not keys it has no use for: ↑ and ↓, Page Down, Space.
+    for (const key of ["ArrowUp", "ArrowDown", "PageDown", " ", "Shift"]) {
+      expect(calculatorTakesKey(press(key), false)).toBe(false);
+    }
+    // Chords stay the notebook's (Cmd+Z undoes the page), Escape aside.
+    expect(calculatorTakesKey(press("z", { metaKey: true }), false)).toBe(false);
+    expect(calculatorTakesKey(press("ArrowLeft", { ctrlKey: true }), false)).toBe(false);
+    expect(calculatorTakesKey(press("Escape", { altKey: true }), false)).toBe(true);
+    // Basic has digits and signs, no letters and no cursor.
+    expect(calculatorTakesKey(press("7"), true)).toBe(true);
+    expect(calculatorTakesKey(press("Escape"), true)).toBe(true);
+    expect(calculatorTakesKey(press("e"), true)).toBe(false);
+    expect(calculatorTakesKey(press("ArrowLeft"), true)).toBe(false);
+    expect(calculatorTakesKey(press("Escape", { ctrlKey: true }), true)).toBe(false);
   });
 
   it("spells out Ans", () => {

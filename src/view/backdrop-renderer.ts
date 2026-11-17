@@ -306,11 +306,16 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     backdrop: Backdrop,
     geometry: PageGeometry,
     weight = 1,
-    target?: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+    target?: {
+      deviceScale: number;
+      region?: Bounds;
+      paper?: PaperTheme;
+      phase?: { x: number; y: number };
+    },
   ): void {
     const theme = target?.paper ?? this.theme;
     if (backdrop.kind !== "pdf") {
-      drawSynthetic(ctx, backdrop, geometry, theme, weight, target?.region);
+      drawSynthetic(ctx, backdrop, geometry, theme, weight, target?.region, target?.phase);
       return;
     }
     if (backdrop.frame) {

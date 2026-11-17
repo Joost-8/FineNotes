@@ -1279,6 +1279,7 @@ select.goodobsidian-choice-select {
 /* Export to PDF: a notebook page is never cut across two sheets. */
 @media print {
   .goodobsidian-page-embed-page {
+    /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- print page breaks work in Chromium; only multi-column breaks are partial */
     break-inside: avoid;
     box-shadow: 0 0 0 1px var(--background-modifier-border);
   }
@@ -3658,6 +3659,7 @@ button.goodobsidian-nav-back.clickable-icon {
   vector-effect: non-scaling-stroke;
 }
 
+/* stylelint-disable-next-line selector-pseudo-class-disallowed-list -- settings preview reacts to its own switch; scoped to the settings tab */
 .goodobsidian-settings:has(.ga-handle.is-on) .ga-text-box {
   stroke: var(--interactive-accent);
   transform: scaleX(2.3);
@@ -3677,6 +3679,7 @@ button.goodobsidian-nav-back.clickable-icon {
   transform-origin: 30% 95%;
 }
 
+/* stylelint-disable-next-line selector-pseudo-class-disallowed-list -- settings preview reacts to its own switch; scoped to the settings tab */
 .goodobsidian-settings:has(.ga-ink-broad.is-on) .ga-tilt-pen {
   transform: rotate(62deg);
 }
@@ -7076,6 +7079,8 @@ button.goodobsidian-imagemenu-swatch {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   font-weight: normal;
+  /* "0 of 10" is one mark: in the narrow side panel it never breaks. */
+  white-space: nowrap;
 }
 
 .goodobsidian-ask-frame button.goodobsidian-chat-picker-link.clickable-icon {
@@ -10991,6 +10996,7 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
 }
 
 /* Beside a switch, the last switch is the one pushed left. */
+/* stylelint-disable-next-line selector-pseudo-class-disallowed-list -- sibling layout in one small row */
 .goodobsidian-ask-actions .goodobsidian-export-format:has(+ button) {
   margin-right: 0;
 }
@@ -13502,6 +13508,7 @@ button.goodobsidian-calc-card-doubt.clickable-icon {
   color: var(--text-normal);
   font-size: 20px;
   font-variant-numeric: tabular-nums;
+  /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- dotted accent underline renders in Chromium and iOS 16.4+ */
   text-decoration: underline dotted var(--interactive-accent) 2px;
   text-underline-offset: 5px;
 }
@@ -15495,6 +15502,7 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
    showRelearnNotice): a wider notice, the learn icon in a soft accent disc,
    a title and one line, and a full-size button. On the notice's own
    colours, whatever the theme gives it. */
+/* stylelint-disable-next-line selector-pseudo-class-disallowed-list -- styles Obsidian's own notice box, which has no class of ours */
 .notice:has(.goodobsidian-relearn-notice) {
   max-width: min(400px, calc(100vw - 20px));
   padding: 14px 16px;
@@ -15505,7 +15513,7 @@ body:not(.is-phone) .modal.goodobsidian-move-modal {
 .goodobsidian-relearn-notice {
   display: grid;
   grid-template-columns: 40px 1fr;
-  column-gap: 12px;
+  gap: 0 12px;
   align-items: start;
 }
 
@@ -16528,6 +16536,7 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
 /* The Grape download card rests on the window's foot, where a bar along the
    bottom of the open notebook now is: it rises above the bar (the bar, plus
    Obsidian's foot padding under it). */
+/* stylelint-disable-next-line selector-pseudo-class-disallowed-list -- follows the active tab's bar; replacing it needs a body class kept in sync from JS */
 body:has(.workspace-leaf.mod-active .goodobsidian-bar-at-bottom) .goodobsidian-download-card {
   bottom: calc(
     24px + var(--gob-bar-h) + 34px + var(--keyboard-height, 0px) + env(safe-area-inset-bottom, 0px)
@@ -16714,6 +16723,7 @@ button.clickable-icon.goodobsidian-calc-bkey.is-wide {
 }
 
 /* Beside another switch, the tapes switch is the last one pushed left. */
+/* stylelint-disable-next-line selector-pseudo-class-disallowed-list -- sibling layout in one small row */
 .goodobsidian-ask-actions button:has(+ button.goodobsidian-export-tapes) {
   margin-right: 0;
 }
@@ -16912,6 +16922,7 @@ button.goodobsidian-learn-sheet.clickable-icon.is-ready {
 /* The FineNotes inbox (src/model/inbox.ts) empties itself: out of sight in
    the file list, so nobody files anything there by hand. The iPad's Files
    app and Shortcuts still see it. */
+/* stylelint-disable-next-line selector-pseudo-class-disallowed-list -- hides a folder in Obsidian's file list, which has no class of ours */
 .nav-folder:has(> .nav-folder-title[data-path="FineNotes inbox"]) {
   display: none;
 }
@@ -18200,6 +18211,7 @@ button.goodobsidian-library-star:active {
   border-radius: 8px;
   cursor: pointer;
 }
+/* stylelint-disable-next-line selector-pseudo-class-disallowed-list -- checked state of a native checkbox, no JS needed */
 .goodobsidian-ocr-offer-row:has(input:checked) {
   border-color: var(--interactive-accent);
 }
@@ -19068,12 +19080,6 @@ button.goodobsidian-calc-card-write.mod-cta.is-hidden {
     transform: translateY(10px);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .goodobsidian-welcome-row,
-  .goodobsidian-tips-tile {
-    animation: none !important;
-  }
-}
 
 /* The Welcome. */
 .modal.goodobsidian-welcome {
@@ -19384,6 +19390,14 @@ button.goodobsidian-tips-tile.clickable-icon {
   animation: goodobsidian-rise 0.36s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
   animation-delay: calc(var(--gob-i, 0) * 45ms);
   transition: transform 0.16s;
+}
+/* Reduced motion: the same selectors that start the animations, after them,
+   so no !important is needed. */
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-welcome-row,
+  button.goodobsidian-tips-tile.clickable-icon {
+    animation: none;
+  }
 }
 button.goodobsidian-tips-tile.clickable-icon:hover {
   transform: translateY(-2px);
@@ -21770,6 +21784,7 @@ button.goodobsidian-tips-copy.clickable-icon {
 .goodobsidian-text-hint-label.is-link {
   cursor: pointer;
   text-decoration: underline;
+  /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- underline colour renders in Chromium and iOS 16.4+ */
   text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
   text-underline-offset: 3px;
 }

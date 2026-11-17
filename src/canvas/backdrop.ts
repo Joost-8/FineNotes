@@ -325,6 +325,26 @@ export interface RulingContext {
    * theme's. A cover derives every colour it paints from this.
    */
   paper: string;
+  /**
+   * Joined pages: how far this page lies from the first page of its run
+   * (`gridPhase`). A repeating pattern starts that far in, so it runs on
+   * over the join. Absent: the pattern starts one pitch in from the edge.
+   */
+  phase?: { x: number; y: number };
+}
+
+/**
+ * Where a repeating pattern's first line falls on a page, page px: one pitch
+ * in on a page of its own (and on the first of joined pages), otherwise
+ * where the run's pattern crosses this page. A 0 draws a line along the
+ * joined edge, which the page before left out (its lines stop short of its
+ * own edge).
+ */
+export function patternStart(spacing: number, offset: number | undefined): number {
+  if (offset === undefined || !Number.isFinite(offset) || offset === 0) return spacing;
+  const start = ((-offset % spacing) + spacing) % spacing;
+  // Within a hair of a whole pitch: the line belongs to the page before.
+  return start > spacing - 1e-6 ? 0 : start;
 }
 
 /**
@@ -343,7 +363,7 @@ function horizontalRules(
   x0 = 0,
   x1 = c.geometry.width,
 ): void {
-  for (let y = c.spacing; y < c.geometry.height; y += c.spacing) {
+  for (let y = patternStart(c.spacing, c.phase?.y); y < c.geometry.height; y += c.spacing) {
     const py = crisp(y);
     ctx.moveTo(x0, py);
     ctx.lineTo(x1, py);
@@ -351,7 +371,7 @@ function horizontalRules(
 }
 
 function verticalRules(ctx: CanvasRenderingContext2D, c: RulingContext): void {
-  for (let x = c.spacing; x < c.geometry.width; x += c.spacing) {
+  for (let x = patternStart(c.spacing, c.phase?.x); x < c.geometry.width; x += c.spacing) {
     const px = crisp(x);
     ctx.moveTo(px, 0);
     ctx.lineTo(px, c.geometry.height);
@@ -383,8 +403,8 @@ export const RULINGS: Record<Ruling, { spacing: number; draw: RulingPainter }> =
   dotted: {
     spacing: 40,
     draw: (ctx, c) => {
-      for (let y = c.spacing; y < c.geometry.height; y += c.spacing) {
-        for (let x = c.spacing; x < c.geometry.width; x += c.spacing) {
+      for (let y = patternStart(c.spacing, c.phase?.y); y < c.geometry.height; y += c.spacing) {
+        for (let x = patternStart(c.spacing, c.phase?.x); x < c.geometry.width; x += c.spacing) {
           const r = DOT_RADIUS * c.weight;
           ctx.moveTo(x + r, y);
           ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -1445,6 +1465,20 @@ function rulingEntry(ruling: Ruling): { spacing: number; draw: RulingPainter } {
 }
 
 /**
+ * The rulings that are one pattern repeated over the whole page, which run
+ * on over a join of joined pages. Papers laid out from an edge (a Cornell
+ * cue column, a header, music systems) keep their own layout per page.
+ */
+const PHASED_RULINGS: ReadonlySet<Ruling> = new Set<Ruling>([
+  "squared",
+  "grid",
+  "dotted",
+  "ruled-narrow",
+  "ruled-wide",
+  "lined",
+]);
+
+/**
  * Draw a synthetic backdrop's ruling on top of the already-filled paper.
  * `blank` draws nothing, by design.
  *
@@ -1457,6 +1491,7 @@ export function drawSyntheticRules(
   geometry: PageGeometry,
   theme: PaperTheme,
   weight = 1,
+  phase?: { x: number; y: number },
 ): void {
   const paper = backdrop;
   const entry = rulingEntry(paper.kind);
@@ -1478,6 +1513,9 @@ export function drawSyntheticRules(
     theme: look.theme,
     paper: look.paper,
   };
+  if (phase && PHASED_RULINGS.has(paper.kind) && !ruledArea(paper, geometry)) {
+    context.phase = phase;
+  }
 
   ctx.save();
   // Designed paper: the ruling stops at the margins and the blank band, and
@@ -1573,13 +1611,15 @@ export function drawSynthetic(
   weight = 1,
   /** The part of the page being painted (a tile), so the grain draws only there. */
   region?: TextureRegion,
+  /** Joined pages: where this page lies in its run ({@link RulingContext.phase}). */
+  phase?: { x: number; y: number },
 ): void {
   const look = pageLook(backdrop, theme);
   fillPaper(ctx, geometry, theme, look.paper);
   if (backdrop.texture === "fine" || backdrop.texture === "heavy") {
     drawTexture(ctx, backdrop.texture, geometry, weight, look.paper, region);
   }
-  drawSyntheticRules(ctx, backdrop, geometry, theme, weight);
+  drawSyntheticRules(ctx, backdrop, geometry, theme, weight, phase);
   if (backdrop.marginLines) drawMarginLines(ctx, backdrop, geometry, look.night, weight);
   if (backdrop.printed?.length) drawPrinted(ctx, backdrop.printed, look.night);
 }
