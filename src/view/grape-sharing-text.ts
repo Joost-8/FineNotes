@@ -50,7 +50,7 @@ const TEXT = {
   "consent.who":
     "It is kept on a server in the Netherlands run by Joost, who makes FineNotes, and used to train Grape and to test it on writers it has never seen. It may also be used in his research on handwriting recognition at TU Eindhoven.",
   "consent.licence":
-    "You give these items away under CC0: anyone may use them for anything, without asking you or naming you, and they may be published as an open dataset. Grape itself is released free under Apache 2.0.",
+    "Your items stay private. They are never published as a dataset or given to anyone else; they are only used to train and test Grape, and in Joost's research. Only Grape itself is released, free under Apache 2.0.",
   "consent.control":
     "Review first shows every item, and lets you keep any of them. Stop at any time, and delete everything you shared from the server. A Grape that was already released cannot unlearn what it learned from your items; Grapes trained after the delete never see them.",
   "consent.policy": "Privacy notice",
@@ -74,9 +74,9 @@ const TEXT = {
   "invite.more": "Learn more",
   "invite.help": "Help",
   "invite.terms.other":
-    "Help shares {count} labelled items, only their ink and text, to train Grape, under CC0. Learn more shows them first; you can delete them any time.",
+    "Help shares {count} labelled items, only their ink and text, to train Grape. They stay private; only Grape is released. Learn more shows them first; you can delete them any time.",
   "invite.terms.one":
-    "Help shares {count} labelled item, only its ink and text, to train Grape, under CC0. Learn more shows it first; you can delete it any time.",
+    "Help shares {count} labelled item, only its ink and text, to train Grape. It stays private; only Grape is released. Learn more shows it first; you can delete it any time.",
 
   "review.title.other": "Review {count} items",
   "review.title.one": "Review {count} item",

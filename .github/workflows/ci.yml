@@ -31,6 +31,9 @@ jobs:
       - name: Lint (plugin-review parity)
         run: npm run lint:review
 
+      - name: Lint styles.css (plugin-review parity)
+        run: npm run lint:css
+
       - name: Typecheck
         run: npm run typecheck
 

@@ -222,6 +222,12 @@ export class TextFileView extends Component {
   readonly containerEl: unknown = {};
   /** How many times the view asked for a save. */
   saveRequests = 0;
+  /**
+   * Obsidian 1.15 sets this on every TextFileView. While it is true and the
+   * view has unsaved changes, a change on disk is merged into the view's
+   * text (diff-match-patch) before `setViewData` sees it (`loadFileInternal`).
+   */
+  isPlaintext = true;
 
   constructor(public leaf: WorkspaceLeaf) {
     super();

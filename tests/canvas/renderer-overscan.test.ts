@@ -12,7 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DocumentLayout } from "../../src/canvas/page-layout";
-import { Renderer } from "../../src/canvas/renderer";
+import { Renderer, overscanLead } from "../../src/canvas/renderer";
 import { type InkDocument, blankPage, emptyDocument } from "../../src/model/document";
 import { DrawLog, LoggedPath2D } from "./draw-log";
 
@@ -75,14 +75,51 @@ describe("the dry layer with overscan", () => {
     expect(renderer.dryOrigin()).toEqual({ x: -240, y: -300 });
   });
 
-  it("is painted whole for the view now once a scroll passes it, and put back", () => {
+  it("is painted whole once a scroll passes it, most of its overscan ahead of the scroll", () => {
     const { renderer, doc, dry } = setUp();
     renderer.setViewport({ scrollY: 1060, scale: 1, width: 800 }, 0);
     renderer.renderDocument(doc, false);
     expect(dry.style.transform).not.toBe("");
+    const before = renderer.stats().wholePaints;
     renderer.setViewport({ scrollY: 1100, scale: 1, width: 800 }, 0);
     renderer.renderDocument(doc, false);
     expect(dryDraws()[0]).toContain("dry fillRect 0,0 2080,0 2080,1560 0,1560");
+    expect(renderer.stats().wholePaints).toBe(before + 1);
+    // Three quarters of the 90 px below the view now, a quarter above.
+    expect(dry.style.transform).toBe("translate(0px, 67.5px)");
+    // 157 px more of the scroll are covered, where the middle gave 90.
+    log.lines.length = 0;
+    renderer.setViewport({ scrollY: 1257, scale: 1, width: 800 }, 0);
+    renderer.renderDocument(doc, false);
+    expect(dryDraws()).toHaveLength(0);
+    expect(dry.style.transform).toBe("translate(0px, -89.5px)");
+    renderer.setViewport({ scrollY: 1259, scale: 1, width: 800 }, 0);
+    renderer.renderDocument(doc, false);
+    expect(dryDraws().length).toBeGreaterThan(0);
+  });
+
+  it("leads a move across too, and the other way when it goes back", () => {
+    const { renderer, doc, dry } = setUp();
+    // The picture moves 130 px left (a page turn going on): past the 120.
+    renderer.setViewport({ scrollY: 1000, scale: 1, width: 800 }, -130);
+    renderer.renderDocument(doc, false);
+    expect(dry.style.transform).toBe("translate(90px, 0px)");
+    renderer.setViewport({ scrollY: 1000, scale: 1, width: 800 }, -130 - 209);
+    renderer.renderDocument(doc, false);
+    expect(dry.style.transform).toBe("translate(-119px, 0px)");
+    // Back to the right, past what was left behind: led to the right now.
+    renderer.setViewport({ scrollY: 1000, scale: 1, width: 800 }, 0);
+    renderer.renderDocument(doc, false);
+    expect(dry.style.transform).toBe("translate(-90px, 0px)");
+  });
+
+  it("is painted in the middle when painted whole while the view stays", () => {
+    const { renderer, doc, dry } = setUp();
+    renderer.setViewport({ scrollY: 1100, scale: 1, width: 800 }, 0);
+    renderer.renderDocument(doc, false);
+    expect(dry.style.transform).toBe("translate(0px, 67.5px)");
+    renderer.invalidateAll();
+    renderer.renderDocument(doc, false);
     expect(dry.style.transform).toBe("");
   });
 
@@ -118,5 +155,65 @@ describe("the dry layer with overscan", () => {
     expect(dry.width).toBe(1600);
     expect(renderer.dryOrigin()).toEqual({ x: 0, y: 0 });
     expect(log.lines.some((l) => l.includes("plain.style.transform"))).toBe(false);
+  });
+});
+
+describe("where a dry layer painted whole is put", () => {
+  it("is shifted against the move by three quarters of the overscan, on whole device px", () => {
+    expect(overscanLead(-40, 90, 2)).toBe(67.5);
+    expect(overscanLead(40, 90, 2)).toBe(-67.5);
+    expect(overscanLead(5, 167, 2)).toBe(-125.5);
+  });
+
+  it("stays in the middle when still, or without overscan", () => {
+    expect(overscanLead(0, 90, 2)).toBe(0);
+    expect(overscanLead(0.2, 90, 2)).toBe(0);
+    expect(overscanLead(-40, 0, 2)).toBe(0);
+  });
+});
+
+describe("pages made whole ahead of a turn", () => {
+  const ROW: DocumentLayout = {
+    boxes: [0, 1, 2, 3].map((index) => ({
+      index,
+      id: `p${index}`,
+      x: index * 2000,
+      y: 0,
+      width: 800,
+      height: 600,
+    })),
+    width: 6800,
+    height: 600,
+    direction: "horizontal",
+    fitWidth: 800,
+  };
+
+  function row(): { renderer: Renderer; doc: InkDocument } {
+    const doc = emptyDocument(800);
+    doc.pages = ROW.boxes.map((box) => ({ ...blankPage(box.id, { width: 800, height: 600 }) }));
+    const renderer = new Renderer(log.canvas("bd"), log.canvas("dry"), log.canvas("wet"), false);
+    renderer.resize(800, 600, 1);
+    renderer.setLayout(ROW);
+    renderer.setViewport({ scrollY: 0, scale: 1, width: 800 }, 0);
+    renderer.renderDocument(doc, false);
+    return { renderer, doc };
+  }
+
+  it("makes every tile of the pages named, though they are a screen away", () => {
+    const { renderer, doc } = row();
+    const shown = renderer.stats().tiles;
+    expect(renderer.prefetch(doc, false, 1000)).toBe(false);
+    expect(renderer.stats().tiles).toBe(shown);
+    expect(renderer.prefetch(doc, false, 1000, [1, 2])).toBe(false);
+    expect(renderer.stats().tiles).toBe(3 * shown);
+    // The turn itself then makes none.
+    renderer.setViewport({ scrollY: 0, scale: 1, width: 800 }, -2000);
+    renderer.renderDocument(doc, false);
+    expect(renderer.stats().tiles).toBe(3 * shown);
+  });
+
+  it("stops at the budget and says there is more", () => {
+    const { renderer, doc } = row();
+    expect(renderer.prefetch(doc, false, -1, [1])).toBe(true);
   });
 });

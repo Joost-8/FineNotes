@@ -1705,3 +1705,52 @@ describe("Stylus only shown nowhere", () => {
     expect(plugin.settings.onlyStylusMode).toBe(false);
   });
 });
+
+describe("Show me runs a notebook command from Home", () => {
+  /** Obsidian 1.15's runner: true whatever the command's own check says. */
+  function withCommands(lastOpen: string[] = []): void {
+    const workspace = app.workspace as unknown as Record<string, unknown>;
+    workspace.setActiveLeaf = (leaf: WorkspaceLeaf) => {
+      app.workspace.active = leaf.view;
+    };
+    workspace.getLastOpenFiles = () => lastOpen;
+    (app as Record<string, unknown>).commands = {
+      commands: Object.fromEntries(registered.commands.map((c) => [`goodobsidian:${c.id}`, c])),
+      executeCommandById: (id: string) => {
+        run(id.slice("goodobsidian:".length));
+        return true;
+      },
+    };
+  }
+
+  it("brings the open notebook forward, then runs the command", async () => {
+    await load({ lastSeenVersion: VERSION });
+    withCommands();
+    const copyPageLink = vi.fn();
+    inkLeaf(app.addFile("A.notebook.md"), { copyPageLink, isBoard: false });
+    app.workspace.active = null; // Home is in front
+    plugin.featureHost().runCommand("copy-page-link");
+    await flush();
+    expect(copyPageLink).toHaveBeenCalledTimes(1);
+    expect(notices).toHaveLength(0);
+  });
+
+  it("says a notebook is needed when none is open or was opened", async () => {
+    await load({ lastSeenVersion: VERSION });
+    withCommands();
+    app.workspace.active = null;
+    plugin.featureHost().runCommand("copy-page-link");
+    await flush();
+    expect(notices.map((n) => n.message)).toEqual(["Open a notebook first."]);
+  });
+
+  it("runs at once where the command is available", async () => {
+    await load({ lastSeenVersion: VERSION });
+    withCommands();
+    const copyPageLink = vi.fn();
+    const leaf = inkLeaf(app.addFile("A.notebook.md"), { copyPageLink, isBoard: false });
+    app.workspace.active = leaf.view;
+    plugin.featureHost().runCommand("copy-page-link");
+    expect(copyPageLink).toHaveBeenCalledTimes(1);
+  });
+});

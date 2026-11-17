@@ -77,6 +77,12 @@ export interface AskAiHost {
   insert: (text: string) => boolean;
   /** Place an SVG drawing from an answer on the page being read. */
   insertDrawing: (svg: string) => Promise<boolean>;
+  /**
+   * The whole notebook as one PDF to attach, for a notebook with more pages
+   * than a question can send as pictures; `onProgress` counts pages made.
+   * Null when it could not be made.
+   */
+  notebookAsPdf?: (onProgress: (done: number, total: number) => void) => Promise<ChatFile | null>;
   /** The notebook's own PDFs, each with the 1-based pages printed on it. */
   notebookPdfs: () => PdfBehind[];
   /** This notebook's saved chats, newest first. */
@@ -166,6 +172,12 @@ export class AskChat {
   private filesEl: HTMLElement | null = null;
   /** The notebook's PDFs in the picker, by vault path. */
   private readonly pdfRows = new Map<string, { row: HTMLButtonElement; state: HTMLElement }>();
+  /** The whole notebook as one PDF, first in the PDF list (more pages than a question takes). */
+  private wholeRow: { row: HTMLButtonElement; state: HTMLElement } | null = null;
+  /** The whole notebook's PDF, once made: attached, or sent with a question. */
+  private wholeFile: ChatFile | null = null;
+  /** "Making PDF… n/N" while it is made. */
+  private wholeProgress: string | null = null;
   private saveButton: HTMLButtonElement | null = null;
   private chatsButton: HTMLButtonElement | null = null;
   private newChatButton: HTMLButtonElement | null = null;
@@ -531,6 +543,36 @@ export class AskChat {
     input.value = "";
   }
 
+  /**
+   * Attach the notebook's PDF in place of the picked pages, making it first
+   * (once: taken off and attached again, the same file goes).
+   */
+  private async attachWholeNotebook(make: NonNullable<AskAiHost["notebookAsPdf"]>): Promise<void> {
+    if (this.wholeProgress !== null) return;
+    let file = this.wholeFile;
+    if (!file) {
+      this.wholeProgress = t("ai.ask.makingPdf", { done: 0, total: this.session.totalPages });
+      this.renderWhole();
+      try {
+        file = await make((done, total) => {
+          this.wholeProgress = t("ai.ask.makingPdf", { done, total });
+          this.renderWhole();
+        });
+      } finally {
+        this.wholeProgress = null;
+      }
+      if (!file) {
+        this.renderWhole();
+        new Notice(t("ai.ask.pdfFailed"));
+        return;
+      }
+      this.wholeFile = file;
+    }
+    const refusal = this.session.attachInstead(file);
+    if (refusal) new Notice(refusal);
+    this.renderWhole();
+  }
+
   private attachOrSay(file: ChatFile): void {
     const refusal = this.session.attach(file);
     if (refusal) new Notice(t("ai.ask.refusal", { reason: refusal }));
@@ -569,11 +611,18 @@ export class AskChat {
    * again to take it off.
    */
   private buildPdfList(picker: HTMLElement): void {
-    const pdfs = this.host.notebookPdfs();
     // Closed with its ✕, it stays closed while the notebook is open, and the
     // pages get its room. The paperclip still attaches any PDF.
-    if (pdfs.length === 0 || this.session.pdfListClosed) return;
+    const pdfs = this.session.pdfListClosed ? [] : this.host.notebookPdfs();
+    // More pages than a question takes as pictures: the whole notebook as one
+    // PDF, a row like the notebook's own PDFs, which the AI reads page by page.
+    const makePdf = this.host.notebookAsPdf;
+    const whole =
+      makePdf && this.session.totalPages > ASK_MAX_PAGES && !this.session.screen ? makePdf : null;
+    if (pdfs.length === 0 && !whole) return;
     const section = picker.createDiv({ cls: "goodobsidian-chat-pdfs" });
+    if (whole) this.buildWholeRow(section.createDiv({ cls: "goodobsidian-chat-pdfs-list" }), whole);
+    if (pdfs.length === 0) return;
     const head = section.createDiv({ cls: "goodobsidian-chat-pdfs-head" });
     const words = head.createDiv({ cls: "goodobsidian-chat-pdfs-words" });
     words.createSpan({ cls: "goodobsidian-chat-pdfs-title", text: t("ai.ask.pdfsTitle") });
@@ -588,7 +637,10 @@ export class AskChat {
     setIcon(close, "x");
     close.addEventListener("click", () => {
       this.session.pdfListClosed = true;
-      section.remove();
+      // The whole notebook's row stays: only the notebook's own PDFs go.
+      head.remove();
+      list.remove();
+      if (!this.wholeRow) section.remove();
       this.pdfRows.clear();
     });
     const list = section.createDiv({ cls: "goodobsidian-chat-pdfs-list" });
@@ -611,8 +663,55 @@ export class AskChat {
     }
   }
 
+  /** The whole notebook's row: its icon, name and page count, and Attach. */
+  private buildWholeRow(list: HTMLElement, make: NonNullable<AskAiHost["notebookAsPdf"]>): void {
+    const row = list.createEl("button", { cls: "goodobsidian-chat-pdf clickable-icon" });
+    setIcon(row.createSpan({ cls: "goodobsidian-chat-pdf-icon" }), "files");
+    const text = row.createSpan({ cls: "goodobsidian-chat-pdf-text" });
+    text.createSpan({ cls: "goodobsidian-chat-pdf-name", text: t("ai.ask.wholeAsPdf") });
+    text.createSpan({
+      cls: "goodobsidian-chat-pdf-pages",
+      text: tn("ai.ask.wholePages", this.session.totalPages),
+    });
+    const state = row.createSpan({ cls: "goodobsidian-chat-pdf-state" });
+    row.addEventListener("click", () => {
+      const attached = this.wholeFile && this.session.attachments.includes(this.wholeFile);
+      if (attached && this.wholeFile) this.session.detach(this.wholeFile);
+      else void this.attachWholeNotebook(make);
+    });
+    this.wholeRow = { row, state };
+  }
+
+  /** The whole notebook's row: Attach, Making PDF… n/N, Attached, or In chat. */
+  private renderWhole(): void {
+    const whole = this.wholeRow;
+    if (!whole) return;
+    const session = this.session;
+    const file = this.wholeFile;
+    const inChat = !!file && session.sentFiles.includes(file);
+    const attached = !!file && session.attachments.includes(file);
+    const making = this.wholeProgress !== null;
+    whole.row.toggleClass("is-attached", attached || inChat);
+    whole.row.disabled = session.busy || inChat || making;
+    whole.row.setAttribute("aria-pressed", String(attached));
+    const { state } = whole;
+    state.empty();
+    if (making) {
+      state.createSpan({ text: this.wholeProgress ?? "" });
+    } else if (inChat) {
+      state.setText(t("ai.ask.inChat"));
+    } else if (attached) {
+      setIcon(state.createSpan(), "check");
+      state.createSpan({ text: t("ai.ask.attached") });
+    } else {
+      setIcon(state.createSpan(), "paperclip");
+      state.createSpan({ text: t("ai.ask.attachShort") });
+    }
+  }
+
   /** Each PDF row: Attach, Attached, or In chat. */
   private renderPdfs(): void {
+    this.renderWhole();
     const session = this.session;
     const sent = session.sentFiles;
     for (const [path, { row, state }] of this.pdfRows) {
