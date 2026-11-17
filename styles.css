@@ -2399,12 +2399,60 @@ select.goodobsidian-choice-select {
   -webkit-user-select: none;
 }
 
+/* Experimental bridge for Android WebView S-Pen hold-to-erase (FineNotes#149). */
+.goodobsidian-stylus-select-bridge {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  color: transparent;
+  background: transparent;
+  font-family: monospace;
+  font-size: 6px;
+  line-height: 6px;
+  white-space: pre;
+}
+
+.goodobsidian-stylus-select-bridge.is-active {
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.goodobsidian-stylus-select-bridge.is-barrel-held {
+  z-index: 20;
+}
+
+.goodobsidian-stylus-select-row {
+  height: 6px;
+  line-height: 6px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-stylus-select-bridge.is-active .goodobsidian-stylus-select-row {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.goodobsidian-stylus-select-bridge::selection,
+.goodobsidian-stylus-select-bridge *::selection {
+  background: transparent;
+  color: transparent;
+}
+
 /* The paper is the text boxes' frame: sized to the scaled page stack and
    moved by the surface's scroll transform, never by the DOM. */
 .goodobsidian-paper {
   position: absolute;
   left: 0;
   top: 0;
+  z-index: 1;
   transform-origin: 0 0;
   pointer-events: none;
 }
