@@ -13,6 +13,7 @@ import {
   askVaultScopeOf,
   docText,
   inScope,
+  isSavedChat,
   noteText,
   readSlice,
   resolveNotePath,
@@ -77,6 +78,18 @@ describe("vault scope", () => {
     );
     expect(scopeText("W.notebook.md", "folder")).toBe("the whole vault");
     expect(scopeText("Signals/W.notebook.md", "vault")).toBe("the whole vault");
+  });
+});
+
+describe("saved chats", () => {
+  it("knows a saved Ask chat by its front matter, and nothing else", () => {
+    const lines = (...l: string[]): string => l.join("\n");
+    expect(
+      isSavedChat(lines("---", "finenotes-chat: 1", 'notebook: "[[A]]"', "---", "", "# Q")),
+    ).toBe(true);
+    expect(isSavedChat(lines("---", "tags: x", "finenotes-chat: 1", "---", ""))).toBe(true);
+    expect(isSavedChat(lines("# Notes", "finenotes-chat: 1"))).toBe(false);
+    expect(isSavedChat(lines("---", "tags: x", "---", "body"))).toBe(false);
   });
 });
 

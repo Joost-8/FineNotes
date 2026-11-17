@@ -25,6 +25,7 @@ import {
   MAX_SCANNED_FILES,
   type VaultDoc,
   inScope,
+  isSavedChat,
   noteText,
 } from "../recognition/vault-context";
 import {
@@ -137,7 +138,10 @@ export class VaultContextSource {
         paged: false,
       };
     }
-    const text = noteText(await this.app.vault.cachedRead(file));
+    const raw = await this.app.vault.cachedRead(file);
+    // A saved Ask chat repeats old questions and would outrank the notes it was about.
+    if (isSavedChat(raw)) return null;
+    const text = noteText(raw);
     return {
       path: file.path,
       kind: "note",

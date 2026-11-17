@@ -101,6 +101,15 @@ export function scopeText(notebookPath: string, scope: AskVaultScope): string {
 export const VAULT_OFF_TEXT =
   "The user has not let you read their other notes. Answer from this notebook, and tell them they can let you: the folder button at the top of this chat, or Settings › AI › Ask AI can read (This notebook's folder or The whole vault).";
 
+/**
+ * Whether a note is a saved Ask chat (`ask-chat-file.ts`, `finenotes-chat`
+ * in its front matter). Never searched: a chat repeats earlier questions,
+ * and once saved it outranks the notes it was about.
+ */
+export function isSavedChat(markdown: string): boolean {
+  return /^---\r?\n(?:[^\n]*\n)*?finenotes-chat:/.test(markdown);
+}
+
 /** A Markdown note's text as the search and the reader see it: no notebook payloads. */
 export function noteText(markdown: string): string {
   // A handwritten note's ink is a base64 block between %% markers: never text.
