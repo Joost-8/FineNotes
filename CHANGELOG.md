@@ -103,6 +103,12 @@ extracted from the matching section of this file by `release.yml`.
   tick it. Markdown pasted from a note looks as it did there. The text is
   stored as typed, so older versions show it as plain Markdown.
 
+- **Turn pages with ← and →**
+  ([#248](https://github.com/Joost-8/FineNotes/issues/248)). On a keyboard,
+  → goes to the next page and ← to the previous one, whether pages run down
+  or across, as Page Down and Page Up already did. The ? shortcut list
+  shows them.
+
 ### Changed
 
 - **More colours in the bar with Dock tool options on**
@@ -134,6 +140,11 @@ extracted from the matching section of this file by `release.yml`.
   puts them back to the defaults.
 
 ### Fixed
+
+- **Typing into the calculator stays in the calculator.** A letter or a
+  digit typed there no longer also picks a tool or a saved pen, and its
+  arrows move its cursor only. Arrow keys in Customize toolbar move the
+  button without scrolling or turning the page.
 
 - **P and H bring back each pen's own colour and width**
   ([#226](https://github.com/Joost-8/FineNotes/issues/226)). After a small

@@ -61,6 +61,7 @@ import {
   TAB_ROWS,
   backspace,
   boxes,
+  calculatorTakesKey,
   fittedFontSize,
   hintFor,
   keyEnabled,
@@ -1383,6 +1384,15 @@ export class CalculatorPopover {
     };
     this.el.addEventListener("touchstart", guard, { passive: false });
     this.dispose.push(() => this.el.removeEventListener("touchstart", guard));
+  }
+
+  /**
+   * Whether this key is the calculator's now: it is the window in use and
+   * types the key. The notebook asks first and leaves such keys alone.
+   */
+  takesKey(event: KeyboardEvent): boolean {
+    if (!this.active || this.frame.isMinimised) return false;
+    return calculatorTakesKey(event, this.mode === "basic");
   }
 
   /**
