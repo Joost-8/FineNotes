@@ -166,7 +166,9 @@ export class PdfCanvasRecorder {
           };
         }
         const value: unknown = Reflect.get(target, key, receiver);
-        return typeof value === "function" ? value.bind(target) : value;
+        if (typeof value !== "function") return value;
+        const method = value as (...args: unknown[]) => unknown;
+        return method.bind(target) as unknown;
       },
       set: (target, key, value: unknown) => {
         if (typeof key === "string" && !(key in target) && !(key in target.state)) {
