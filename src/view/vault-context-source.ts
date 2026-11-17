@@ -92,7 +92,9 @@ export class VaultContextSource {
       .filter(
         (f) =>
           (f.extension === "md" || f.extension === "pdf") &&
-          (f.extension !== "md" || f.stat.size <= MAX_NOTE_BYTES) &&
+          // A plain note that large is data. A notebook is large with its ink, and
+          // only its text layer is read, so it is never left out for its size.
+          (f.extension !== "md" || f.stat.size <= MAX_NOTE_BYTES || this.isNotebook(f)) &&
           inScope(f.path, notebookPath, scope),
       )
       .sort((a, b) => b.stat.mtime - a.stat.mtime)
