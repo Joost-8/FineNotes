@@ -7848,9 +7848,54 @@ textarea.goodobsidian-chat-input:focus-visible {
 }
 
 .goodobsidian-chatpanel-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
   margin-right: auto;
   font-size: var(--font-ui-medium);
   font-weight: var(--font-semibold, 600);
+}
+
+/* Right of the "Ask" title: what it may read, as an icon and its name. */
+.goodobsidian-ask-modal .modal-title.goodobsidian-ask-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.goodobsidian-ask-frame button.goodobsidian-chat-reach.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 28px;
+  margin-left: 10px;
+  padding: 0 8px 0 9px;
+  border: 1px solid var(--gob-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal, 400);
+  white-space: nowrap;
+}
+
+.goodobsidian-chat-reach-icon,
+.goodobsidian-chat-reach-chevron {
+  display: inline-flex;
+  flex: none;
+  --icon-size: 14px;
+}
+
+.goodobsidian-chat-reach-chevron {
+  --icon-size: 12px;
+  color: var(--text-faint);
+}
+
+.goodobsidian-chat-reach-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .goodobsidian-ask-frame button.goodobsidian-chatpanel-close.clickable-icon {
@@ -7872,8 +7917,7 @@ textarea.goodobsidian-chat-input:focus-visible {
 
 /* The narrow column keeps the tools to their icons. */
 .goodobsidian-chatpanel .goodobsidian-chat-tool-label,
-.goodobsidian-chat-layout .goodobsidian-chat-tool-label,
-.goodobsidian-chat-reach .goodobsidian-chat-tool-label {
+.goodobsidian-chat-layout .goodobsidian-chat-tool-label {
   display: none;
 }
 

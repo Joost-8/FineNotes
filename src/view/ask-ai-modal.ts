@@ -250,15 +250,18 @@ export class AskChat {
     this.chatsButton = this.toolButton(tools, "history", t("ai.ask.chats"), (event) => {
       void this.showChats(event);
     });
-    const scope = this.host.vaultScope;
-    if (scope) {
-      this.reachButton = this.toolButton(
-        tools,
-        REACH_ICON[scope.get()],
-        t("ai.ask.reach"),
-        () => this.showReachMenu(),
-        "goodobsidian-chat-reach",
-      );
+    // What it may read, right of the title: the reach's icon and its name, so
+    // the choice is read at a glance and changed in one tap.
+    if (this.host.vaultScope) {
+      const chip = this.frame.title.createEl("button", {
+        cls: "goodobsidian-chat-reach clickable-icon",
+        attr: { "aria-haspopup": "true" },
+      });
+      chip.createSpan({ cls: "goodobsidian-chat-reach-icon" });
+      chip.createSpan({ cls: "goodobsidian-chat-reach-label" });
+      setIcon(chip.createSpan({ cls: "goodobsidian-chat-reach-chevron" }), "chevron-down");
+      chip.addEventListener("click", () => this.showReachMenu());
+      this.reachButton = chip;
     }
     const other = this.frame.layout === "window" ? "sidebar" : "window";
     this.toolButton(
@@ -376,14 +379,15 @@ export class AskChat {
     menu.showAtPosition({ x: anchor.left, y: anchor.bottom + 4 });
   }
 
-  /** The button's icon is the reach in use; its name says which. */
+  /** The pill shows the reach in use: its icon and its name. */
   private renderReach(): void {
     const button = this.reachButton;
     const scope = this.host.vaultScope;
     if (!button || !scope) return;
     const now = scope.get();
-    const icon = button.querySelector<HTMLElement>(".goodobsidian-chat-tool-icon");
+    const icon = button.querySelector<HTMLElement>(".goodobsidian-chat-reach-icon");
     if (icon) setIcon(icon, REACH_ICON[now]);
+    button.querySelector(".goodobsidian-chat-reach-label")?.setText(t(`ai.ask.reach.${now}`));
     button.setAttribute("aria-label", t("ai.ask.reachNow", { reach: t(`ai.ask.reach.${now}`) }));
     button.disabled = this.session.busy;
   }
@@ -1223,6 +1227,8 @@ export type AskLayout = "window" | "sidebar";
 export interface AskChatFrame {
   /** The window or the panel; carries `goodobsidian-ask-frame`. */
   el: HTMLElement;
+  /** The "Ask" title, which the reach pill follows. */
+  title: HTMLElement;
   /** Where the chat's own elements go. */
   content: HTMLElement;
   keyboard: DialogKeyboard;
@@ -1250,9 +1256,12 @@ export class AskAiModal extends Modal {
       "goodobsidian-ask-frame",
     );
     this.titleEl.setText(t("ai.ask.title"));
+    // A row, so the reach pill sits right of the title.
+    this.titleEl.addClass("goodobsidian-ask-title");
     this.contentEl.empty();
     this.chat = new AskChat(this.app, this.host, {
       el: this.modalEl,
+      title: this.titleEl,
       content: this.contentEl,
       keyboard: new DialogKeyboard(this.modalEl, { fit: true }),
       layout: "window",
@@ -1305,7 +1314,7 @@ export class AskChatPanel {
     if (this.isOpen) return;
     this.el.empty();
     const head = this.el.createDiv({ cls: "goodobsidian-chatpanel-head" });
-    head.createDiv({ cls: "goodobsidian-chatpanel-title", text: t("ai.ask.title") });
+    const title = head.createDiv({ cls: "goodobsidian-chatpanel-title", text: t("ai.ask.title") });
     const close = head.createEl("button", {
       cls: "goodobsidian-chatpanel-close clickable-icon",
       attr: { "aria-label": t("common.close") },
@@ -1316,6 +1325,7 @@ export class AskChatPanel {
     this.el.removeClass("is-hidden");
     this.chat = new AskChat(this.app, this.callbacks.host(), {
       el: this.el,
+      title,
       content,
       keyboard: new DialogKeyboard(this.el, { pad: true }),
       layout: "sidebar",
