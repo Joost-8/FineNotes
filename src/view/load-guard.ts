@@ -7,9 +7,11 @@
  * it sometimes does not: iCloud can hand over an empty placeholder for a
  * file whose bytes have not arrived yet, and a sync caught half-way can
  * leave the ink block cut short. Rebuilding from either would replace the
- * user's ink with an empty page, so such a read is held instead: every save
- * writes it back unchanged, and the view refuses edits until a later load
- * comes through clean.
+ * user's ink with an empty page, so such a read is held instead: the view
+ * writes nothing at all, and refuses edits, until a later load comes
+ * through clean. Echoing the read back is not enough: Obsidian writes
+ * whenever the view's text differs from what it last read from disk, and
+ * the text it hands the view is not always that (FineNotes#246).
  *
  * No DOM, no Obsidian.
  */
@@ -66,7 +68,10 @@ export class LoadGuard {
     return this.held !== null;
   }
 
-  /** The file's next contents: the held read while locked, else `rebuild()`. */
+  /**
+   * What the view answers when asked for its text: the held read while
+   * locked, else `rebuild()`. While locked this is never written.
+   */
   contents(rebuild: () => string): string {
     return this.held ?? rebuild();
   }

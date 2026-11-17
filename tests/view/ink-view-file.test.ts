@@ -213,6 +213,23 @@ describe("a load that cannot be trusted", () => {
     expect(notices.length).toBeGreaterThanOrEqual(1);
   });
 
+  // FineNotes#246: a held read is not always what is on disk (Obsidian may
+  // have merged a synced file into the view's text), so echoing it is not
+  // safe: nothing may reach Obsidian's save while a load is held.
+  it("never saves while held, closing included", async () => {
+    const proto = Object.getPrototypeOf(InkView.prototype) as { save: () => Promise<void> };
+    const save = vi.spyOn(proto, "save").mockImplementation(() => Promise.resolve());
+    try {
+      const view = openView();
+      view.setViewData("Prose.\n\n%%goodobsidian\nv2:@@@@\n%%\n", true);
+      await view.save();
+      await view.save(true);
+      expect(save).not.toHaveBeenCalled();
+    } finally {
+      save.mockRestore();
+    }
+  });
+
   it("says so once on load", () => {
     const view = openView();
     view.setViewData("", true);
@@ -269,6 +286,16 @@ describe("a load that cannot be trusted", () => {
     const text = notebookFile("About the %%goodobsidian block.\n");
     view.setViewData(text, true);
     expect(inside(view).isProtected()).toBe(false);
+  });
+});
+
+describe("a change on disk (FineNotes#246)", () => {
+  // Obsidian patches a file changed on disk into a plain-text view's unsaved
+  // text (diff-match-patch). Two ink blocks merged that way are one that decodes
+  // to nothing, and the guard then held (and echoed) the mix.
+  it("is never merged into the view's text: the notebook is not plain text", () => {
+    const view = openView();
+    expect((view as unknown as { isPlaintext: boolean }).isPlaintext).toBe(false);
   });
 });
 

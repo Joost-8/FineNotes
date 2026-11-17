@@ -637,8 +637,16 @@ export class InkView extends TextFileView {
   private doc: InkDocument;
   /** The note's Markdown outside the ink block: frontmatter, prose, text layer. */
   private noteBody = "";
-  /** Whether the note may be saved over, and what to save while it may not. */
+  /** Whether the note may be saved over: never while a read is held. */
   private readonly guard = new LoadGuard();
+  /**
+   * Not plain text to Obsidian (FineNotes#246). Obsidian's TextFileView
+   * sets this, and while it is set a file changed on disk (a sync landing)
+   * is patched into the view's unsaved text, character by character, before
+   * `setViewData` sees it. Two ink blocks merged that way are one that does
+   * not decode. Off, Obsidian hands over the file as it is on disk.
+   */
+  isPlaintext = false;
 
   /** True from `onOpen` to `onClose`, while the view's DOM exists. */
   private mounted = false;
@@ -783,7 +791,7 @@ export class InkView extends TextFileView {
         target: () => (this.file && !this.guard.locked ? { doc: this.doc, file: this.file } : null),
         body: () => this.syncedBody(),
         write: (contents, behind) => this.writePrepared(contents, behind),
-        writeNow: () => super.save(),
+        writeNow: () => this.writeFile(),
         penBusy: () => this.writeHold.writing(performance.now()),
       },
       // Loaded when first needed, as the recogniser's client is.
@@ -937,6 +945,18 @@ export class InkView extends TextFileView {
   }
 
   /**
+   * Obsidian's own save, the only way this view writes its file; nothing
+   * while a load is held (load-guard.ts). Obsidian writes whenever the
+   * view's text differs from what it last read, and the text a held load
+   * was handed is not always that (FineNotes#246), so echoing it back is
+   * not enough: a held load must never write.
+   */
+  private writeFile(clear?: boolean): Promise<void> {
+    if (this.guard.locked) return Promise.resolve();
+    return super.save(clear);
+  }
+
+  /**
    * A background save's result: Obsidian's save writes it, `getViewData`
    * answering with it (Obsidian asks before its first `await`). `behind`:
    * the notebook changed since, so it is marked unsaved again.
@@ -945,7 +965,7 @@ export class InkView extends TextFileView {
     this.preparedContents = contents;
     let saving: Promise<void>;
     try {
-      saving = super.save();
+      saving = this.writeFile();
     } finally {
       this.preparedContents = null;
     }
@@ -1148,7 +1168,7 @@ export class InkView extends TextFileView {
     this.writeHold.saved();
     if (clear || now) {
       this.saver.supersede();
-      await super.save(clear);
+      await this.writeFile(clear);
       return;
     }
     await this.saver.save();
