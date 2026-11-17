@@ -759,6 +759,13 @@ import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
+import { newSession, type SurfaceSession, type SurfaceSessionOptions } from "./surface-session";
+import {
+  claimTilePages,
+  clampSavedView,
+  staleTilePages,
+  type SavedView,
+} from "./surface-session-state";
 import { type PenCursorStyle, cursorCss, cursorFor, cursorSize, cursorToolOf } from "./pen-cursor";
 import { type Span, toastSide } from "./toast-side";
 import { RulerOverlay } from "./ruler-overlay";
@@ -1157,6 +1164,12 @@ export interface InkSurfaceCallbacks {
   onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
   /** An undo (`redo` false) or redo took `command` back or did it again. */
   onHistoryStep?: (command: Command, redo: boolean) => void;
+  /**
+   * Another session is shown (`showSession`): its document is the one
+   * edited now. A host supplies again what it lit on the document shown
+   * before (search hits, faded playback strokes), which the swap put out.
+   */
+  onSessionChange?: (session: SurfaceSession) => void;
   /**
    * The user scrolled onto a different page. `index` is 0-based.
    * Hosts use it to keep the toolbar's page navigation in step.
@@ -2573,13 +2586,17 @@ export class InkSurface {
   /** Set by a host while taps on ink mean something else (audio replay). */
   private strokeTapHandler: StrokeTapHandler | null = null;
   /** New strokes' and text boxes' ids: `s<N>` and `t<N>`, above any the document holds. */
-  private readonly strokeIds = new IdSequence("s");
-  private readonly textBoxIds = new IdSequence("t");
-  private readonly history = new History();
+  private strokeIds = new IdSequence("s");
+  private textBoxIds = new IdSequence("t");
+  private history = new History();
+  /** The session shown: these fields are its own (`surface-session.ts`). */
+  private session!: SurfaceSession;
+  /** Which session the cached tiles of each page id were made for (`staleTilePages`). */
+  private readonly tileOwners = new Map<string, SurfaceSession>();
   /** The undo/redo availability last reported to the host, as "undo/redo". */
   private historyShown = "";
   /** Every stroke by page position and by id; kept in step with each edit. */
-  private readonly strokeIndex = (() => {
+  private strokeIndex = (() => {
     const index = new StrokeIndex();
     // With the pages joined no tool acts on a mirror: tools find its owner.
     index.skip = (stroke) => this.joined && isMirror(stroke);
@@ -2741,9 +2758,9 @@ export class InkSurface {
   /** Ink a playing recording has not reached yet, drawn pale (2.5). */
   private fadedStrokes: ReadonlySet<string> = new Set();
   /** `[[links]]` written by hand, found on the device, by page id: offered, not made. */
-  private readonly linkSuggestions = new Map<string, readonly HandwrittenLink[]>();
+  private linkSuggestions = new Map<string, readonly HandwrittenLink[]>();
   /** Words Grape may have misread, by page id: a wavy underline each. */
-  private readonly wordFlags = new Map<string, ReadonlyArray<readonly string[]>>();
+  private wordFlags = new Map<string, ReadonlyArray<readonly string[]>>();
   private readonly wordMarks: HTMLElement[] = [];
   /** The flagged word whose menu is open (page id, stroke key): drawn red. */
   private activeWordFlag: { pageId: string; key: string; strokes: readonly string[] } | null = null;
@@ -3487,6 +3504,20 @@ export class InkSurface {
     // Every path that changes the history — a stroke, an erase, a withdrawn
     // empty text box, undo, a new file — reaches the host's buttons this way.
     this.history.onChange = () => this.syncHistory();
+    // The first session is made of the fields above (`surface-session.ts`).
+    this.session = {
+      doc,
+      history: this.history,
+      strokeIds: this.strokeIds,
+      textBoxIds: this.textBoxIds,
+      strokeIndex: this.strokeIndex,
+      fixedPages: false,
+      view: null,
+      indexed: true,
+      mirroredStep: null,
+      linkSuggestions: this.linkSuggestions,
+      wordFlags: this.wordFlags,
+    };
     this.setDocument(doc);
   }
 
@@ -3650,6 +3681,9 @@ export class InkSurface {
     this.endExplore(false);
     if (this.zoomBox) this.closeZoomBox(true);
     this.doc = doc;
+    // The session shown takes the new document; its history starts again.
+    this.session.doc = doc;
+    this.session.indexed = true;
     this.parkedText = null;
     this.strokeIds.restart(strokeIdsOf(doc));
     this.textBoxIds.restart(textBoxIdsOf(doc));
@@ -3662,10 +3696,214 @@ export class InkSurface {
     this.eraseReset();
     this.strokeIndex.rebuild(doc.pages);
     this.renderer?.invalidateAll();
+    // Every tile is gone: whatever is made from here on is this session's.
+    this.tileOwners.clear();
     this.layout();
     // Opening a note says where you are, page and zoom, then both fade.
     this.flashChrome(true);
     this.reportStatus();
+  }
+
+  // --- Sessions: several documents shown by one surface ------------------------
+
+  /** The session shown now. */
+  get activeSession(): SurfaceSession {
+    return this.session;
+  }
+
+  /**
+   * A session for `doc`, not shown yet (`showSession` shows it): its own
+   * history, id counters and stroke index. A PDF's tab passes `fixedPages`.
+   */
+  createSession(doc: InkDocument, options: SurfaceSessionOptions = {}): SurfaceSession {
+    return newSession(doc, options, (stroke) => this.joined && isMirror(stroke));
+  }
+
+  /**
+   * Show `next` in place of the session shown now. Whatever is under way
+   * (a stroke, a drag, a selection, the zoom box, a text box being typed
+   * in) ends; the outgoing session keeps its history and the view it was
+   * left at; the incoming one comes back to its own view, or opens as a
+   * notebook opens the first time it is shown. The tile cache is kept: each
+   * document's tiles stay warm, and only a page id the two documents share
+   * has its tiles dropped. The host hears of it through `onSessionChange`
+   * and `onHistoryChange`.
+   */
+  showSession(next: SurfaceSession): void {
+    const prev = this.session;
+    if (next === prev) return;
+    this.interruptForSwap();
+    // The outgoing session: its view, its mirror mark, the pages its tiles are of.
+    prev.view = this.saveView();
+    prev.mirroredStep = this.mirroredStep;
+    claimTilePages(
+      this.tileOwners,
+      prev,
+      prev.doc.pages.map((page) => page.id),
+    );
+    prev.history.onChange = null;
+
+    this.session = next;
+    this.doc = next.doc;
+    this.history = next.history;
+    this.strokeIds = next.strokeIds;
+    this.textBoxIds = next.textBoxIds;
+    this.strokeIndex = next.strokeIndex;
+    this.linkSuggestions = next.linkSuggestions;
+    this.wordFlags = next.wordFlags;
+    this.mirroredStep = next.mirroredStep;
+    // New ids count on past any the document gained while it was not shown.
+    this.strokeIds.catchUp(strokeIdsOf(next.doc));
+    this.textBoxIds.catchUp(textBoxIdsOf(next.doc));
+    this.history.onChange = () => this.syncHistory();
+
+    const pageIds = next.doc.pages.map((page) => page.id);
+    for (const id of staleTilePages(this.tileOwners, next, pageIds)) {
+      this.renderer?.invalidatePage(id);
+    }
+    claimTilePages(this.tileOwners, next, pageIds);
+
+    if (next.view) {
+      this.restoreView(clampSavedView(next.view, next.doc.pages.length, next.doc.pages));
+    } else {
+      this.freshView(next.doc);
+    }
+    if (!next.indexed) {
+      next.indexed = true;
+      next.strokeIndex.rebuild(next.doc.pages);
+    }
+    this.renderer?.repaintAll();
+    this.layout();
+    this.syncHistory();
+    this.callbacks.onSessionChange?.(next);
+    this.reportStatus();
+  }
+
+  /** End everything under way that belongs to the session shown, before a swap. */
+  private interruptForSwap(): void {
+    this.endExplore(false);
+    if (this.zoomBox) this.closeZoomBox(true);
+    this.endWetStroke();
+    this.activePage = null;
+    this.stopPress();
+    this.cancelImageDrag();
+    this.cancelGroupDrag();
+    this.endCrop(false);
+    this.dropSelection();
+    this.eraseReset();
+    this.dropTextBoxViews();
+    this.parkedText = null;
+    this.lastTextBoxAdd = null;
+    this.heldText = null;
+    this.circleLoop = null;
+    this.circlePress = null;
+    this.picking = null;
+    this.textMark = null;
+    this.hideOffPage();
+    this.hideTextCopy();
+    this.zoomPositionHistory.length = 0;
+    this.setSearchHits(null);
+    this.setFadedStrokes(null);
+    this.setActiveWordFlag(null);
+    // The view stops where it is; the outgoing session keeps that spot.
+    this.scroller.stop();
+    this.pinch = null;
+    this.zoomAnim = null;
+    this.rowSettle = null;
+  }
+
+  /**
+   * Remove every text box element: they are keyed by page and box id, which
+   * another document may share. The layout makes the incoming ones.
+   */
+  private dropTextBoxViews(): void {
+    const views = [...this.textBoxInputs.values()];
+    this.textBoxInputs.clear();
+    for (const view of views) {
+      if (this.viewDoc.activeElement === view.input) this.blurTextInput(view.input, "gone");
+      view.root.remove();
+    }
+  }
+
+  /** The view as it is now, for {@link restoreView}. */
+  private saveView(): SavedView {
+    const at = this.scroller.position;
+    return {
+      scrollX: at.x,
+      scrollY: at.y,
+      userZoom: this.userZoom,
+      minZoom: this.minZoom,
+      baseScale: this.baseScale,
+      zoomInitialised: this.zoomInitialised,
+      pageIndex: this.pageIndex,
+      heldPage: this.heldPage,
+      direction: this.direction,
+      joined: this.joined,
+      board: this.board,
+      boardRef: this.boardRef,
+      boardLaidOut: this.boardLaidOut,
+      boardDrawn: this.boardDrawn,
+      boardHold: this.boardHold,
+      rowSlot: this.rowSlot,
+      rowGap: this.rowGap,
+      pageLayout: this.pageLayout,
+      viewport: { ...this.viewport },
+      offsetX: this.offsetX,
+      cssW: this.cssW,
+      cssH: this.cssH,
+    };
+  }
+
+  /**
+   * Put a saved view back, as it was before it was left; the layout that
+   * follows then treats any change of pane since as a resize.
+   */
+  private restoreView(view: SavedView): void {
+    this.userZoom = view.userZoom;
+    this.minZoom = view.minZoom;
+    this.baseScale = view.baseScale;
+    this.zoomInitialised = view.zoomInitialised;
+    this.pageIndex = view.pageIndex;
+    this.heldPage = view.heldPage;
+    this.direction = view.direction;
+    this.joined = view.joined;
+    this.board = view.board;
+    this.boardRef = view.boardRef;
+    this.boardLaidOut = view.boardLaidOut;
+    this.boardDrawn = view.boardDrawn;
+    this.boardHold = view.boardHold;
+    this.boardShift = { x: 0, y: 0 };
+    this.rowSlot = view.rowSlot;
+    this.rowGap = view.rowGap;
+    this.pageLayout = view.pageLayout;
+    this.renderer?.setLayout(view.pageLayout);
+    this.renderer?.setPreviewWindow(view.board ? () => this.boardPreviewWindow() : null);
+    this.viewport = { ...view.viewport };
+    this.offsetX = view.offsetX;
+    this.cssW = view.cssW;
+    this.cssH = view.cssH;
+    this.ensurePaperSize();
+    this.scroller.setPosition(view.scrollX, view.scrollY);
+  }
+
+  /** A session shown for the first time opens as a notebook does: its first page, fitted. */
+  private freshView(doc: InkDocument): void {
+    this.userZoom = 1;
+    this.zoomInitialised = false;
+    this.pageIndex = 0;
+    this.heldPage = null;
+    this.direction = scrollDirectionOf(doc);
+    // The index is built under the incoming document's joining.
+    this.joined = joinedPagesOf(doc);
+    this.board = false;
+    this.boardRef = null;
+    this.boardLaidOut = null;
+    this.boardDrawn = null;
+    this.boardHold = null;
+    this.boardShift = { x: 0, y: 0 };
+    this.rowGap = Number.NaN;
+    this.renderer?.setPreviewWindow(null);
+    this.scroller.setPosition(0, 0);
   }
 
   /**
