@@ -1214,6 +1214,9 @@ export default class GoodObsidianPlugin extends Plugin {
     // The folded sections before the compact settings (2026-10-21): now the
     // open ones are kept, and every section starts folded.
     delete loaded.foldedSettingsSections;
+    // "Ask AI starts on the open page" is gone (2026-11-17): a chat starts
+    // with no page picked, and Ask's own reach button took its row's place.
+    delete loaded.askAttachPage;
     // A list of its own, read as pens: the default's must stay as it is.
     // Each with an id, for a button of its own on the bar (FineNotes#211).
     this.settings.savedPens = withPenIds(savedPensOf(this.settings.savedPens));

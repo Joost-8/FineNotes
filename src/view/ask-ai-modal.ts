@@ -54,6 +54,14 @@ import {
 } from "../recognition/ask-attachments";
 import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-session";
 import { type AskUsage, usageMark } from "../recognition/ask-usage";
+import { ASK_VAULT_SCOPES, type AskVaultScope } from "../recognition/vault-context";
+
+/** The reach as a mark: the notebook alone, its folder, or the whole vault. */
+const REACH_ICON: Readonly<Record<AskVaultScope, string>> = {
+  off: "notebook",
+  folder: "folder-search",
+  vault: "library",
+};
 import { bytesToBase64 } from "../recognition/audio-request";
 import { type SavedChatEntry, attachableFiles, readAttachment } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
@@ -94,6 +102,8 @@ export interface AskAiHost {
   openSaved: (path: string) => Promise<void>;
   /** Remember "Save chat" for the next new chat. */
   rememberSave: (save: boolean) => void;
+  /** What Ask AI may read besides this notebook (the setting), and changing it from the chat. */
+  vaultScope?: { get: () => AskVaultScope; set: (scope: AskVaultScope) => void };
 }
 
 /**
@@ -182,6 +192,7 @@ export class AskChat {
   /** "Making PDF… n/N" while it is made. */
   private wholeProgress: string | null = null;
   private saveButton: HTMLButtonElement | null = null;
+  private reachButton: HTMLButtonElement | null = null;
   private chatsButton: HTMLButtonElement | null = null;
   private newChatButton: HTMLButtonElement | null = null;
 
@@ -237,6 +248,16 @@ export class AskChat {
     this.chatsButton = this.toolButton(tools, "history", t("ai.ask.chats"), (event) => {
       void this.showChats(event);
     });
+    const scope = this.host.vaultScope;
+    if (scope) {
+      this.reachButton = this.toolButton(
+        tools,
+        REACH_ICON[scope.get()],
+        t("ai.ask.reach"),
+        () => this.showReachMenu(),
+        "goodobsidian-chat-reach",
+      );
+    }
     const other = this.frame.layout === "window" ? "sidebar" : "window";
     this.toolButton(
       tools,
@@ -326,6 +347,43 @@ export class AskChat {
     button.createSpan({ cls: "goodobsidian-chat-tool-label", text: label });
     button.addEventListener("click", onClick);
     return button;
+  }
+
+  // --- What it may read -----------------------------------------------------
+
+  /** The three reaches, the one in use checked; the choice is the setting's. */
+  private showReachMenu(): void {
+    const scope = this.host.vaultScope;
+    const anchor = this.reachButton?.getBoundingClientRect();
+    if (!scope || !anchor) return;
+    this.closePicker();
+    const menu = new Menu();
+    const now = scope.get();
+    for (const choice of ASK_VAULT_SCOPES) {
+      menu.addItem((item) =>
+        item
+          .setTitle(t(`ai.ask.reach.${choice}`))
+          .setIcon(REACH_ICON[choice])
+          .setChecked(choice === now)
+          .onClick(() => {
+            scope.set(choice);
+            this.renderReach();
+          }),
+      );
+    }
+    menu.showAtPosition({ x: anchor.left, y: anchor.bottom + 4 });
+  }
+
+  /** The button's icon is the reach in use; its name says which. */
+  private renderReach(): void {
+    const button = this.reachButton;
+    const scope = this.host.vaultScope;
+    if (!button || !scope) return;
+    const now = scope.get();
+    const icon = button.querySelector<HTMLElement>(".goodobsidian-chat-tool-icon");
+    if (icon) setIcon(icon, REACH_ICON[now]);
+    button.setAttribute("aria-label", t("ai.ask.reachNow", { reach: t(`ai.ask.reach.${now}`) }));
+    button.disabled = this.session.busy;
   }
 
   // --- Pages ----------------------------------------------------------------
@@ -777,6 +835,7 @@ export class AskChat {
     }
     if (this.pagesButton) this.pagesButton.disabled = busy;
     if (this.chatsButton) this.chatsButton.disabled = busy;
+    this.renderReach();
     if (this.attachButton) this.attachButton.disabled = busy;
     if (this.newChatButton) {
       this.newChatButton.disabled = busy;

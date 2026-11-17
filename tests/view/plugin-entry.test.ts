@@ -1242,6 +1242,15 @@ describe("loading settings", () => {
     expect(registered.saved.at(-1)).not.toHaveProperty("pressureEnabled");
   });
 
+  it("drops the removed open-page setting: a chat starts with no page picked (2026-11-17)", async () => {
+    await load({ askAttachPage: true, lastSeenVersion: VERSION });
+    expect(plugin.settings).not.toHaveProperty("askAttachPage");
+    expect(plugin.settings.askVaultScope).toBe("folder");
+    expect(plugin.settings.askShowCost).toBe(false);
+    await plugin.saveSettings();
+    expect(registered.saved.at(-1)).not.toHaveProperty("askAttachPage");
+  });
+
   it("carries the old crosshair toggle over to the cursor choice (FineNotes#27)", async () => {
     await load({ penCursor: true, lastSeenVersion: VERSION });
     expect(plugin.settings.penCursor).toBe("ink");

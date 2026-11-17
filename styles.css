@@ -7872,7 +7872,8 @@ textarea.goodobsidian-chat-input:focus-visible {
 
 /* The narrow column keeps the tools to their icons. */
 .goodobsidian-chatpanel .goodobsidian-chat-tool-label,
-.goodobsidian-chat-layout .goodobsidian-chat-tool-label {
+.goodobsidian-chat-layout .goodobsidian-chat-tool-label,
+.goodobsidian-chat-reach .goodobsidian-chat-tool-label {
   display: none;
 }
 

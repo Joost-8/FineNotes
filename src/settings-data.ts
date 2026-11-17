@@ -206,11 +206,6 @@ export interface GoodObsidianSettings {
    */
   searchLayout: "sidebar" | "original";
   /**
-   * A new Ask AI chat starts with the page being read picked. Off by default
-   * (Joost, discussion #107): a chat sends a page only when the user picks one.
-   */
-  askAttachPage: boolean;
-  /**
    * How far Ask AI may look for context besides the open notebook
    * (`vault-context.ts`): nowhere, the notebook's folder (the default, so a
    * whole vault is not sent to a cloud service unless someone chooses it), or
@@ -599,7 +594,6 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   askSaveChats: false,
   askLayout: "window",
   searchLayout: "sidebar",
-  askAttachPage: false,
   askVaultScope: "folder",
   askShowCost: false,
   cloudConsentGiven: false,

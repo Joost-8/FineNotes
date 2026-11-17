@@ -2254,6 +2254,14 @@ export class InkView extends TextFileView {
       sourcePath: this.file?.path ?? "",
       target: targetLabel(this.plugin.textAiConfig()),
       showCost: () => this.settings.askShowCost,
+      vaultScope: {
+        get: () => askVaultScopeOf(this.settings.askVaultScope),
+        set: (scope) => {
+          this.settings.askVaultScope = scope;
+          this.vaultSource = null;
+          void this.plugin.saveSettings();
+        },
+      },
       currentPage: () => (this.surface?.currentPage ?? 0) + 1,
       pageHasContent: (n) => {
         const page = this.doc.pages[n - 1];
@@ -2337,14 +2345,14 @@ export class InkView extends TextFileView {
           page: current,
           totalPages: this.doc.pages.length,
           save: this.settings.askSaveChats,
-          attachPage: this.settings.askAttachPage,
+          // A chat sends a page only when the user picks one (discussion #107).
+          attachPage: false,
           screen: this.showingBoard,
         },
       );
       this.askSession = session;
     } else {
       session.setTotalPages(this.doc.pages.length);
-      session.attachPage = this.settings.askAttachPage;
       session.follow(current);
     }
     return session;

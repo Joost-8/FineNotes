@@ -551,7 +551,6 @@ describe("the rows", () => {
       ["ai", "Recordings", "Transcription model", "text:speechServiceModel"],
       ["ai", "Recordings", "Transcription server URL", "text:speechBaseUrl"],
       ["ai", "Recordings", "Groq API key for recordings", "render"],
-      ["ai", "Ask AI", "Ask AI starts on the open page", "toggle:askAttachPage"],
       ["ai", "Ask AI", "Ask AI can read", "dropdown:askVaultScope"],
       ["ai", "Ask AI", "Show what each answer cost", "toggle:askShowCost"],
       ["ai", "Ask AI", "Skip compressed providers", "toggle:openRouterSkipCompressed"],
@@ -767,7 +766,6 @@ describe("which rows show", () => {
       `${label} API key`,
       "Handwriting recognition",
       "Transcribe recordings with",
-      "Ask AI starts on the open page",
       "Ask AI can read",
       "Show what each answer cost",
       "Image generation",
@@ -966,7 +964,7 @@ describe("which rows show", () => {
     const rowsFor = (overrides: Partial<Settings>) => {
       const names = visibleNames(makePlugin(overrides));
       const from = names.indexOf("Transcribe recordings with");
-      return names.slice(from, names.indexOf("Ask AI starts on the open page"));
+      return names.slice(from, names.indexOf("Ask AI can read"));
     };
     expect(rowsFor({})).toEqual(["Transcribe recordings with"]);
     expect(rowsFor({ speechService: "groq" })).toEqual([

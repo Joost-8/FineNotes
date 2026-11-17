@@ -271,9 +271,6 @@ export const settings = {
     "Transcribe the page you are writing on in the background about 30 seconds after you stop, and only when it actually changed. Requires the one-time consent (run a transcription by hand once first).",
   "settings.ai.more.openrouter": "OpenRouter providers; Ask's page; pictures and their key",
   "settings.ai.more.other": "Ask's page; pictures: service, model and key",
-  "settings.askAttachPage.name": "Ask AI starts on the open page",
-  "settings.askAttachPage.info":
-    "A new chat in Ask AI starts with the page you are on picked, so the first question is about it. Off (the default), it starts with no page: pick pages in the chat, attach a file, or select something with the lasso and choose Ask AI.",
   "settings.askVaultScope.name": "Ask AI can read",
   "settings.askVaultScope.info":
     "Besides the open notebook, Ask AI can search your other notes, notebooks and PDFs and read the ones it needs, as text. The search runs on this device; only what it finds and reads is sent with your question. This notebook's folder (the default) keeps it to the folder the notebook is in and its subfolders.",
@@ -461,7 +458,6 @@ export const settings = {
   "settings.openRouter.line": "Gets a key from the browser, no copying.",
   "settings.recognition.line": "What the Recognize handwriting command uses.",
   "settings.autoRecognize.line": "About 30 seconds after you stop, on a page that changed.",
-  "settings.askAttachPage.line": "Off: a new chat starts with no page picked.",
   "settings.askVaultScope.line": "Other notes it may search and read for context.",
   "settings.askShowCost.line": "An estimate under each answer, from its tokens.",
   "settings.openRouterSkipCompressed.line":
