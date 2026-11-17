@@ -103,6 +103,12 @@ extracted from the matching section of this file by `release.yml`.
   tick it. Markdown pasted from a note looks as it did there. The text is
   stored as typed, so older versions show it as plain Markdown.
 
+- **Turn pages with ← and →**
+  ([#248](https://github.com/Joost-8/FineNotes/issues/248)). On a keyboard,
+  → goes to the next page and ← to the previous one, whether pages run down
+  or across, as Page Down and Page Up already did. The ? shortcut list
+  shows them.
+
 ### Changed
 
 - **More colours in the bar with Dock tool options on**
@@ -127,11 +133,13 @@ extracted from the matching section of this file by `release.yml`.
   board shows a short strip of its paper.
 - **Each width preset keeps its own width**
   ([#210](https://github.com/Joost-8/FineNotes/issues/210),
-  [#211](https://github.com/Joost-8/FineNotes/issues/211)). Pick a preset,
+  [#211](https://github.com/Joost-8/FineNotes/issues/211),
+  [#247](https://github.com/Joost-8/FineNotes/issues/247)). Pick a preset,
   then move the slider or type a width: that preset changes and the others
   keep theirs, for each pen type and for the eraser's three sizes. The pen's
   More widths shows the same three presets as the pill. The reset button
-  puts them back to the defaults.
+  puts them back to the defaults. An eraser size you set no longer goes
+  when you pick another size or switch to the pen.
 
 ### Fixed
 
@@ -141,6 +149,11 @@ extracted from the matching section of this file by `release.yml`.
   screen about a third less often. The Input debug overlay now shows the
   last scroll or turn (`run=`): frames drawn, frames missed, the slowest
   frame and how often the whole page was repainted.
+- **Typing into the calculator stays in the calculator.** A letter or a
+  digit typed there no longer also picks a tool or a saved pen, and its
+  arrows move its cursor only. Arrow keys in Customize toolbar move the
+  button without scrolling or turning the page.
+
 - **P and H bring back each pen's own colour and width**
   ([#226](https://github.com/Joost-8/FineNotes/issues/226)). After a small
   red ball pen, H gave a highlighter in that red and width; now it brings

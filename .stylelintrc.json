@@ -1,0 +1,11 @@
+{
+  "plugins": ["stylelint-no-unsupported-browser-features"],
+  "rules": {
+    "declaration-no-important": true,
+    "selector-pseudo-class-disallowed-list": [["has"]],
+    "plugin/no-unsupported-browser-features": [
+      true,
+      { "browsers": ["chrome 130"], "ignorePartialSupport": false }
+    ]
+  }
+}
