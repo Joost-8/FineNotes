@@ -349,6 +349,7 @@ import {
 } from "../model/board";
 import { afterPainted } from "./after-painted";
 import { lowMemoryDevice } from "./pdf-backdrop";
+import { slidesAround } from "../model/slide-follow";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
   BRUSH_PRESSURE,
@@ -3706,6 +3707,8 @@ export class InkSurface {
     this.renderer?.invalidateAll();
     // Every tile is gone: whatever is made from here on is this session's.
     this.tileOwners.clear();
+    // No PDF's tab yet: the usual tile budget, until one is made (`createSession`).
+    this.renderer?.setWarmViewports(0);
     this.layout();
     // Opening a note says where you are, page and zoom, then both fade.
     this.flashChrome(true);
@@ -3724,6 +3727,9 @@ export class InkSurface {
    * history, id counters and stroke index. A PDF's tab passes `fixedPages`.
    */
   createSession(doc: InkDocument, options: SurfaceSessionOptions = {}): SurfaceSession {
+    // A PDF's tab beside the notes: room for both to stay warm, so a switch
+    // back and forth makes no tile (a 2 GB device gets less).
+    if (options.fixedPages) this.renderer?.setWarmViewports(lowMemoryDevice() ? 1 : 2);
     return newSession(doc, options, (stroke) => this.joined && isMirror(stroke));
   }
 
@@ -6628,7 +6634,12 @@ export class InkSurface {
    * page by page has them made whole while it rests (`Renderer.prefetch`).
    */
   private pagesToTurnTo(): number[] {
-    if (!this.turnsPages || this.board) return [];
+    if (this.board) return [];
+    // A PDF's tab: the slides either side of the one read, the next first,
+    // so going on to it never meets a tile still to make.
+    if (this.fixedPages && !this.turnsPages)
+      return slidesAround(this.pageIndex, this.doc.pages.length);
+    if (!this.turnsPages) return [];
     const on = this.turnedBack ? -1 : 1;
     // The page after the next shows at the pane's edge as a turn ends.
     return [this.pageIndex + on, this.pageIndex - on, this.pageIndex + 2 * on].filter(

@@ -255,3 +255,63 @@ describe("the notes' own", () => {
     expect(view.exportablePages()).toBe(doc);
   });
 });
+
+describe("notes follow the slide", () => {
+  /** `followSlide` and the surface's page index, which the recorder holds as a plain field. */
+  type Following = Inside & { followSlide(ids: readonly string[] | undefined): void };
+
+  it("a notes page written on follows the slide read last, set in place", () => {
+    const { view, doc, surface } = setup();
+    const v = view as Following;
+    view.showTab("b1");
+    (surface as { currentPage: number }).currentPage = 2;
+    view.showTab(NOTES_TAB);
+    v.followSlide([doc.pages[1].id]);
+    expect(doc.pages[1].follows).toEqual({ tab: "b1", page: 2 });
+    expect(doc.pages[0].follows).toBeUndefined();
+  });
+
+  it("follows nothing before a slide was read", () => {
+    const { view, doc } = setup();
+    (view as Following).followSlide([doc.pages[0].id]);
+    expect(doc.pages[0].follows).toBeUndefined();
+  });
+
+  it("going to the tab from a page that follows it opens that slide, at the zoom it was left", () => {
+    const { view, doc, surface } = setup();
+    doc.pages[0].follows = { tab: "b1", page: 3 };
+    findBeside(doc, "b1")!.view = { page: 1, zoom: 2, x: 5, y: 40 };
+    view.showTab("b1");
+    expect(surface.showReadingView).toHaveBeenCalledWith({ page: 3, zoom: 2, x: 5, y: 0 });
+  });
+
+  it("a session already shown goes to the slide", () => {
+    const { view, doc, surface } = setup();
+    view.showTab("b1");
+    view.showTab(NOTES_TAB);
+    doc.pages[0].follows = { tab: "b1", page: 2 };
+    view.showTab("b1");
+    expect(
+      (surface as unknown as { goToPage: { mock: { calls: unknown[][] } } }).goToPage.mock.calls,
+    ).toContainEqual([2]);
+  });
+
+  it("a page following another tab leaves this one where it was", () => {
+    const { view, doc, surface } = setup();
+    doc.pages[0].follows = { tab: "b2", page: 1 };
+    findBeside(doc, "b1")!.view = { page: 1, zoom: 2, x: 5, y: 40 };
+    view.showTab("b1");
+    expect(surface.showReadingView).toHaveBeenCalledWith({ page: 1, zoom: 2, x: 5, y: 40 });
+  });
+
+  it("back on the notes, the one page written beside the slide is shown", () => {
+    const { view, doc, surface } = setup();
+    doc.pages[1].follows = { tab: "b1", page: 2 };
+    view.showTab("b1");
+    (surface as { currentPage: number }).currentPage = 2;
+    view.showTab(NOTES_TAB);
+    expect(
+      (surface as unknown as { goToPage: { mock: { calls: unknown[][] } } }).goToPage.mock.calls,
+    ).toContainEqual([1]);
+  });
+});

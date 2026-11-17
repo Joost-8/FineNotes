@@ -167,7 +167,11 @@ import {
   showTab as showBesideTab,
   sizesToRuns,
   syncMarks,
+  pdfPageOf,
+  type BesideView,
+  type SlideRef,
 } from "../model/beside-pdfs";
+import { followOnWrite, notesToOpen, slideToOpen } from "../model/slide-follow";
 import type { SurfaceSession } from "./surface-session";
 import { RenameModal } from "./rename-modal";
 import { WriteHold } from "./write-hold";
@@ -3860,6 +3864,8 @@ export class InkView extends TextFileView {
           this.columnNotes.pagesChanged(pages);
           // Ink on a PDF's tab is the notebook's: its pages with marks go in.
           if (this.onPdfTab) this.syncTabMarks();
+          // Notes written on remember the slide last read: before the save touches them.
+          else this.followSlide(pages);
           this.requestSaveOf(pages);
           this.relinkMovedFiles();
         },
@@ -4933,6 +4939,8 @@ export class InkView extends TextFileView {
     const tabs = this.loadLastTabs();
     const nextTabs = to === null ? forgetTab(tabs, from) : renameInLastTabs(tabs, from, to);
     if (nextTabs !== tabs) this.saveLastTabs(nextTabs);
+    if (this.lastSlide?.path === from)
+      this.lastSlide = to === null ? null : { path: to, ref: this.lastSlide.ref };
     if (to !== null && this.loadedPath === from) {
       this.loadedPath = to;
       if (this.restoredPath === from) this.restoredPath = to;
@@ -5345,9 +5353,11 @@ export class InkView extends TextFileView {
     if (id === NOTES_TAB) {
       const notes = this.notesSession;
       if (!notes) return;
+      this.noteShownSlide();
       this.saveTabView();
       this.activeTab = NOTES_TAB;
       surface.showSession(notes);
+      this.openFollowingNotes();
       const tool = this.notesTool;
       this.notesTool = null;
       if (tool !== null && tool !== this.toolState.tool) {
@@ -5361,8 +5371,12 @@ export class InkView extends TextFileView {
     if (!beside || !this.takesPdfTabs) return;
     // A closed tab opened from the + list comes back to the strip.
     if (!isReadOnly(this.doc) && showBesideTab(this.doc, id)) this.requestHeadSave();
-    if (this.onPdfTab) this.saveTabView();
-    else {
+    // From the notes: the page read may follow a slide of this tab.
+    const notesPage = this.onPdfTab ? null : (surface.document.pages[surface.currentPage] ?? null);
+    if (this.onPdfTab) {
+      this.noteShownSlide();
+      this.saveTabView();
+    } else {
       // Leaving the notes: their page is remembered, and the tool in hand.
       this.recordLastPage();
       this.notesSession = surface.activeSession;
@@ -5376,8 +5390,11 @@ export class InkView extends TextFileView {
     }
     this.activeTab = id;
     surface.showSession(session);
-    // Shown for the first time since the notebook opened: where it was left.
-    if (fresh && beside.view) this.restoreTabView(id, beside.view);
+    // Shown for the first time since the notebook opened: where it was left,
+    // or the slide the notes page followed.
+    if (!this.openFollowedSlide(id, session, notesPage, fresh ? beside.view : undefined, fresh)) {
+      if (fresh && beside.view) this.restoreTabView(id, beside.view);
+    }
     this.afterTabChange();
   }
 
@@ -5700,6 +5717,84 @@ export class InkView extends TextFileView {
     const map = this.loadLastTabs();
     const next = rememberTab(map, path, this.activeTab);
     if (next !== map) this.saveLastTabs(next);
+  }
+
+  // --- Notes follow the slide (`model/slide-follow.ts`) ----------------------------
+
+  /** The slide shown when a PDF's tab was last left, and the notebook it is of. */
+  private lastSlide: { path: string; ref: SlideRef } | null = null;
+
+  /** On a PDF's tab, about to leave it: the slide read is the one notes written next follow. */
+  private noteShownSlide(): void {
+    const surface = this.surface;
+    const path = this.file?.path;
+    if (!this.onPdfTab || !surface || !path) return;
+    const page = surface.document.pages[surface.currentPage];
+    const slide = page ? pdfPageOf(page) : null;
+    if (slide !== null) this.lastSlide = { path, ref: { tab: this.activeTab, page: slide } };
+  }
+
+  /** The slide last read, if it is of this notebook and its tab is still attached. */
+  private shownSlide(): SlideRef | null {
+    const last = this.lastSlide;
+    if (!last || last.path !== this.file?.path || !findBeside(this.doc, last.ref.tab)) return null;
+    return last.ref;
+  }
+
+  /**
+   * Notes pages written on (`pageIds`) follow the slide last read: set in
+   * place, not an undo step; the save that follows touches them.
+   */
+  private followSlide(pageIds: readonly string[] | undefined): void {
+    const shown = this.shownSlide();
+    if (!shown || !pageIds || pageIds.length === 0 || isReadOnly(this.doc)) return;
+    const ids = new Set(pageIds);
+    for (const page of this.doc.pages) {
+      if (!ids.has(page.id)) continue;
+      const next = followOnWrite(shown, page);
+      if (next) page.follows = next;
+    }
+  }
+
+  /**
+   * Opening tab `id` from the notes page `notesPage`: show the slide it
+   * follows, at the zoom the tab is read at. `left` is where the tab was
+   * left, for a session shown for the first time. Whether it did.
+   */
+  private openFollowedSlide(
+    id: string,
+    session: SurfaceSession,
+    notesPage: Page | null,
+    left: BesideView | undefined,
+    fresh: boolean,
+  ): boolean {
+    const surface = this.surface;
+    if (!surface || !notesPage) return false;
+    const pages = session.doc.pages;
+    const current = pages[surface.currentPage];
+    const shownPage = fresh ? (left?.page ?? 0) : current ? pdfPageOf(current) : null;
+    const slide = slideToOpen(
+      notesPage,
+      id,
+      shownPage === null ? null : { page: shownPage },
+      pages.length,
+    );
+    if (slide === null) return false;
+    const index = pages.findIndex((page) => pdfPageOf(page) === slide);
+    if (index < 0) return false;
+    // A fresh session waits for the pane: the slide's top, at the zoom left.
+    if (fresh)
+      this.restoreTabView(id, { page: index, zoom: left?.zoom ?? 1, x: left?.x ?? 0, y: 0 });
+    else surface.goToPage(index);
+    return true;
+  }
+
+  /** Back on the notes from a slide: the one page written beside it, if exactly one was. */
+  private openFollowingNotes(): void {
+    const surface = this.surface;
+    if (!surface) return;
+    const index = notesToOpen(this.shownSlide(), this.doc.pages, surface.currentPage);
+    if (index !== null) surface.goToPage(index);
   }
 
   // --- Page sidebar ---------------------------------------------------------

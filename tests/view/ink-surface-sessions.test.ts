@@ -46,6 +46,7 @@ function rig(doc: InkDocument) {
     setLayout: vi.fn(),
     setPreviewWindow: vi.fn(),
     repaintAll: vi.fn(),
+    setWarmViewports: vi.fn(),
   };
   let position = { x: 0, y: 0 };
   const scroller = {
@@ -159,6 +160,14 @@ describe("showSession", () => {
     const pdf = docOf("x1", "x2");
     const b = run<SurfaceSession>(surface, "createSession", pdf, { fixedPages: true });
     expect(b.fixedPages).toBe(true);
+    // Room for both sessions' tiles to stay warm.
+    expect(
+      (surface.renderer as { setWarmViewports: ReturnType<typeof vi.fn> }).setWarmViewports,
+    ).toHaveBeenCalled();
+    // The slides either side are made whole ahead (the first has none before it).
+    Object.assign(surface, { session: b, doc: pdf, pageIndex: 0, direction: "vertical" });
+    expect(run(surface, "pagesToTurnTo")).toEqual([1]);
+    Object.assign(surface, { session: a, doc: notes, pageIndex: 0 });
     run(surface, "showSession", b);
     expect(surface.doc).toBe(pdf);
     expect(surface.history).toBe(b.history);
