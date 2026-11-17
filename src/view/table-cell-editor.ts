@@ -243,7 +243,7 @@ export class TableCellEditor {
     // Text editing never starts ink on the page beneath.
     this.input.addEventListener("pointerdown", (event) => event.stopPropagation());
     this.input.addEventListener("input", (event) =>
-      callbacks.onInput(this.input.value, (event as InputEvent).isComposing === true),
+      callbacks.onInput(this.input.value, "isComposing" in event && event.isComposing === true),
     );
     // What an input method settles on is checked once it is settled.
     this.input.addEventListener("compositionend", () => callbacks.onInput(this.input.value, false));
