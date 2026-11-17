@@ -552,6 +552,7 @@ describe("the rows", () => {
       ["ai", "Recordings", "Transcription server URL", "text:speechBaseUrl"],
       ["ai", "Recordings", "Groq API key for recordings", "render"],
       ["ai", "Ask AI", "Ask AI starts on the open page", "toggle:askAttachPage"],
+      ["ai", "Ask AI", "Ask AI can read", "dropdown:askVaultScope"],
       ["ai", "Ask AI", "Skip compressed providers", "toggle:openRouterSkipCompressed"],
       ["ai", "Pictures", "Image generation", "dropdown:imageVendor"],
       ["ai", "Pictures", "(block)", "render"],
@@ -766,6 +767,7 @@ describe("which rows show", () => {
       "Handwriting recognition",
       "Transcribe recordings with",
       "Ask AI starts on the open page",
+      "Ask AI can read",
       "Image generation",
       // Claude makes no pictures: the callout saying so.
       expect.stringMatching(/^\(block \d+\)$/),

@@ -20,6 +20,7 @@
 import { t, tn } from "../i18n/translate";
 import { ASK_MAX_PAGES } from "./ai-chat";
 import { isRecord } from "./llm-request";
+import { MAX_READ_CHARS } from "./vault-context";
 
 /** Rounds of tool calls one question may take before the answer has to come. */
 export const ASK_MAX_TOOL_ROUNDS = 8;
@@ -70,6 +71,40 @@ export const ASK_TOOLS = [
       type: "object",
       properties: { query: { type: "string", description: "Words to look for." } },
       required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "search_vault",
+    description:
+      "Find the user's other notes, notebooks and PDFs that mention some words: names, Markdown text, " +
+      "transcribed handwriting, text boxes and PDF text already read on this device. Searches the folders " +
+      "the user allows, never this notebook (use search_notebook). Returns paths with the words around each " +
+      "match. Use it when the question needs something outside this notebook.",
+    input_schema: {
+      type: "object",
+      properties: { query: { type: "string", description: "Words to look for." } },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "read_note",
+    description:
+      "Read one of the user's other notes, notebooks or PDFs as text, by the path search_vault gave (or a " +
+      "note's name). A notebook comes as its transcribed handwriting and text boxes, page by page. Long " +
+      `files come ${MAX_READ_CHARS} characters at a time; "from" reads on.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The file's path in the vault, or its name." },
+        from: {
+          type: "integer",
+          minimum: 0,
+          description: "Character to start at, for reading on in a long file. Default 0.",
+        },
+      },
+      required: ["path"],
       additionalProperties: false,
     },
   },
@@ -259,6 +294,8 @@ export const ASK_TOOLS = [
 export type AskToolCall =
   | { tool: "read_pages"; pages: number[] }
   | { tool: "search_notebook"; query: string }
+  | { tool: "search_vault"; query: string }
+  | { tool: "read_note"; path: string; from: number }
   | { tool: "add_text_box"; page: number; text: string }
   | { tool: "add_page"; after: number }
   | { tool: "go_to_page"; page: number }
@@ -348,6 +385,19 @@ export function parseToolCall(
       return query
         ? { tool: "search_notebook", query: query.trim() }
         : { error: '"query" is empty.' };
+    }
+    case "search_vault": {
+      const query = text("query");
+      return query ? { tool: "search_vault", query: query.trim() } : { error: '"query" is empty.' };
+    }
+    case "read_note": {
+      const path = text("path");
+      if (!path) return { error: '"path" is empty.' };
+      const from = args.from;
+      if (from !== undefined && (typeof from !== "number" || !Number.isInteger(from) || from < 0)) {
+        return { error: '"from" must be a whole number, 0 or more.' };
+      }
+      return { tool: "read_note", path: path.trim(), from: from ?? 0 };
     }
     case "add_text_box": {
       const at = page("page");
@@ -491,6 +541,10 @@ export function toolStatus(call: AskToolCall): string {
       return t("ai.tool.reading", { pages: pagesWord(call.pages) });
     case "search_notebook":
       return t("ai.tool.searching", { query: call.query });
+    case "search_vault":
+      return t("ai.tool.searchingVault", { query: call.query });
+    case "read_note":
+      return t("ai.tool.readingNote", { name: noteName(call.path) });
     case "add_text_box":
       return t("ai.tool.writing", { page: call.page });
     case "add_page":
@@ -540,6 +594,12 @@ function boxOf(
   }
   if (width <= 0 || height <= 0) return "The area is empty: give it a width and a height.";
   return { x, y, width: Math.min(width, 1 - x), height: Math.min(height, 1 - y) };
+}
+
+/** A path or link as the chat names it: the file's name without its extensions. */
+function noteName(path: string): string {
+  const bare = path.replace(/^\[\[|\]\]$/g, "").replace(/[|#].*$/, "");
+  return bare.slice(bare.lastIndexOf("/") + 1).replace(/\.(notebook|page|ink)\.md$|\.md$/i, "");
 }
 
 /** "page 3", "pages 2, 5 and 7". */

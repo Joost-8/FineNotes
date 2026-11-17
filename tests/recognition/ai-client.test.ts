@@ -62,7 +62,7 @@ describe("askAi", () => {
     expect(sent).toHaveLength(1);
     const body = JSON.parse(sent[0].body as string) as Record<string, unknown>;
     expect(body.system).toBe("be brief");
-    expect(body.model).toBe("claude-opus-4-8");
+    expect(body.model).toBe("claude-sonnet-5-5");
     expect(body.messages).toEqual([
       { role: "user", content: [{ type: "text", text: "What is this?" }] },
     ]);

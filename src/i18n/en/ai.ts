@@ -143,6 +143,8 @@ export const ai = {
   // --- Notebook tools, as the chat says what they are doing ---------------
   "ai.tool.reading": "Reading {pages}…",
   "ai.tool.searching": "Searching for “{query}”…",
+  "ai.tool.searchingVault": "Searching your notes for “{query}”…",
+  "ai.tool.readingNote": "Reading {name}…",
   "ai.tool.writing": "Writing on page {page}…",
   "ai.tool.addingPage": "Adding a page…",
   "ai.tool.goingTo": "Going to page {page}…",

@@ -111,6 +111,16 @@ import {
   buildAskToolsPrompt,
 } from "../recognition/ai-chat";
 import { type AskToolCall, searchResultText } from "../recognition/ask-tools";
+import {
+  VAULT_OFF_TEXT,
+  askVaultScopeOf,
+  docText,
+  readSlice,
+  resolveNotePath,
+  scopeText,
+  vaultSearchText,
+} from "../recognition/vault-context";
+import { VaultContextSource } from "./vault-context-source";
 import { generatedImageName } from "../recognition/ai-image";
 import { nextElementId, textBoxBelow, textBoxFrame } from "../recognition/ai-placement";
 import {
@@ -725,6 +735,8 @@ export class InkView extends TextFileView {
   private images: VaultImageCache | null = null;
   /** The Ask AI conversation about this notebook, while it is open (see `askConversation`). */
   private askSession: AskSession | null = null;
+  /** The vault as Ask AI reads it, kept for a few seconds across tool calls. */
+  private vaultSource: VaultContextSource | null = null;
   /** Ask in its sidebar, beside the page (the other layout is a window). */
   private chatPanel: AskChatPanel | null = null;
   /** Search this notebook: the field and its results, in a sidebar or a window (#112). */
@@ -2352,6 +2364,37 @@ export class InkView extends TextFileView {
     return withTools.catch(() => askAi(config, system, turns));
   }
 
+  /** `search_vault` and `read_note`: the other notes the settings let Ask AI read, as text. */
+  private async runVaultTool(
+    call: Extract<AskToolCall, { tool: "search_vault" | "read_note" }>,
+  ): Promise<AskToolOutcome> {
+    const scope = askVaultScopeOf(this.settings.askVaultScope);
+    const notebook = this.file?.path ?? "";
+    if (scope === "off" || !notebook) return { text: VAULT_OFF_TEXT, isError: true };
+    this.vaultSource ??= new VaultContextSource(this.app, (file) => this.plugin.isInkFile(file));
+    const docs = await this.vaultSource.docs(notebook, scope);
+    if (call.tool === "search_vault") {
+      return { text: vaultSearchText(docs, call.query, scopeText(notebook, scope)) };
+    }
+    const found = resolveNotePath(
+      call.path,
+      docs.map((doc) => doc.path),
+    );
+    if ("error" in found) {
+      const own = resolveNotePath(call.path, [notebook]);
+      return {
+        text:
+          "path" in own
+            ? "That is this notebook: use read_pages or search_notebook for it."
+            : found.error,
+        isError: true,
+      };
+    }
+    const doc = docs.find((d) => d.path === found.path);
+    if (!doc) return { text: `${found.path} cannot be read now.`, isError: true };
+    return { text: readSlice(doc.path, doc.kind, docText(doc), call.from) };
+  }
+
   /** Run one of the AI's notebook tools (`ask-tools.ts`). */
   private async runAskTool(call: AskToolCall): Promise<AskToolOutcome> {
     const surface = this.surface;
@@ -2381,6 +2424,9 @@ export class InkView extends TextFileView {
           ),
         };
       }
+      case "search_vault":
+      case "read_note":
+        return this.runVaultTool(call);
       case "add_text_box": {
         const refused = editRefused();
         if (refused || !surface) return refused ?? { text: "", isError: true };

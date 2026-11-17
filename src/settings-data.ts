@@ -10,6 +10,7 @@
 
 import type { FolderStyles } from "./model/library-style";
 import { LLM_PROVIDER_ID } from "./recognition/llm-request";
+import type { AskVaultScope } from "./recognition/vault-context";
 import { type ShapeToolStyle } from "./model/shape-style";
 import type { LearnedModel } from "./recognition/hwr/learned-model";
 import {
@@ -209,6 +210,13 @@ export interface GoodObsidianSettings {
    * (Joost, discussion #107): a chat sends a page only when the user picks one.
    */
   askAttachPage: boolean;
+  /**
+   * How far Ask AI may look for context besides the open notebook
+   * (`vault-context.ts`): nowhere, the notebook's folder (the default, so a
+   * whole vault is not sent to a cloud service unless someone chooses it), or
+   * the whole vault. Read through `askVaultScopeOf`.
+   */
+  askVaultScope: AskVaultScope;
   /** The user agreed that cloud AI sends their pages off the device. */
   cloudConsentGiven: boolean;
   /** The same agreement, given separately for the custom endpoint. */
@@ -590,6 +598,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   askLayout: "window",
   searchLayout: "sidebar",
   askAttachPage: false,
+  askVaultScope: "folder",
   cloudConsentGiven: false,
   customConsentGiven: false,
   autoRecognize: false,

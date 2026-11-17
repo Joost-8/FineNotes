@@ -86,7 +86,7 @@ describe("the vendor table", () => {
 
   it("starts each vendor on a default model", () => {
     expect(DEFAULT_MODELS).toEqual({
-      anthropic: "claude-opus-4-8",
+      anthropic: "claude-sonnet-5-5",
       openai: "gpt-4o-mini",
       google: "gemini-3.5-flash",
       openrouter: "google/gemini-3.5-flash",

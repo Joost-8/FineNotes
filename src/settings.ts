@@ -2103,6 +2103,20 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             ),
             "askPage",
           ),
+          this.tile(
+            dropdown(
+              "askVaultScope",
+              t("settings.askVaultScope.name"),
+              t("settings.askVaultScope.line"),
+              {
+                off: t("settings.askVaultScope.off"),
+                folder: t("settings.askVaultScope.folder"),
+                vault: t("settings.askVaultScope.vault"),
+              },
+              ["vault", "other notes", "context", "search notes", "Ask AI"],
+            ),
+            "folder-search",
+          ),
           {
             ...this.tile(
               toggle(
