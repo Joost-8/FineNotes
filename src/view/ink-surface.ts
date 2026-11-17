@@ -409,6 +409,7 @@ import {
   type PageGeometry,
   type PdfBackdrop,
   type ShapeKind,
+  type SlideRef,
   CONNECTOR_SIDES,
   POINT_STRIDE,
   type ConnectorSide,
@@ -762,6 +763,8 @@ import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 import { newSession, type SurfaceSession, type SurfaceSessionOptions } from "./surface-session";
+import { SnippetDrag } from "./snippet-drag";
+import { SlideDots } from "./slide-dots";
 import {
   claimTilePages,
   clampSavedView,
@@ -1071,6 +1074,31 @@ export interface InkSurfaceCallbacks {
    * as it exports it (its paper, PDF and ink) and offers Copy and Share.
    */
   onRegionScreenshot?: (pageIndex: number, bounds: Bounds) => void;
+  /**
+   * A PDF's tab (`fixedPages`): an area of slide `pageIndex` (page px),
+   * lassoed, is being dragged off as a snippet (`model/snippet.ts`);
+   * `viewScale` is the device px per page px the view shows it at. Returns
+   * the picture for the drag's ghost, or null for an outline. Without it a
+   * PDF's tab has no snippets.
+   */
+  onSnippetStart?: (
+    pageIndex: number,
+    area: Bounds,
+    viewScale: number,
+  ) => Promise<Blob | null> | null;
+  /**
+   * The dragged snippet's pointer moved (client px): over the tab strip,
+   * maybe. True while it is over a tab it can go to.
+   */
+  onSnippetMove?: (clientX: number, clientY: number) => boolean;
+  /**
+   * The snippet was let go: on page `pageIndex` of the session shown by
+   * then, at page point (x, y); `null` when it went nowhere (the tab it came
+   * from is still shown, or the lift was off the pages).
+   */
+  onSnippetEnd?: (drop: { pageIndex: number; x: number; y: number } | null) => void;
+  /** A snippet's link dot, or a finger with a writing tool, tapped it: open its slide. */
+  onOpenSlide?: (slide: SlideRef) => void;
   /**
    * "Edit graph" on a selected graph: the host opens the calculator with its
    * expressions, and commits what comes back (`EditGraph`). Without it the
@@ -2675,6 +2703,18 @@ export class InkSurface {
   private selection: GroupSelection | null = null;
   /** Where the lasso that made `selection` was drawn (`selectionPatch`). */
   private selectionArea: DrawnArea | null = null;
+  /**
+   * A snippet being dragged off a PDF's tab (`startSnippetDrag`): the drag,
+   * the session it came from, and a lassoed area's loop, hidden meanwhile
+   * and shown again if the drag goes nowhere.
+   */
+  private snippetDrag: {
+    drag: SnippetDrag;
+    session: SurfaceSession;
+    hold: HTMLElement | null;
+  } | null = null;
+  /** The link dot on each snippet on the notes (`slide-dots.ts`). */
+  private readonly slideDots: SlideDots;
   /** An arrow joining two shapes, picked up on its own (a lasso tap on it), by page and id. */
   private connectorSel: { pageId: string; id: string } | null = null;
   /** Its highlight over the page: the route drawn wide in the accent colour. */
@@ -3169,6 +3209,8 @@ export class InkSurface {
     this.commentMarkersEl = this.paperEl.createDiv({
       cls: "goodobsidian-comment-markers is-hidden",
     });
+    // A dot on each snippet from a PDF's slide; a tap on it opens the slide.
+    this.slideDots = new SlideDots(this.paperEl, (slide) => this.callbacks.onOpenSlide?.(slide));
     this.regionFrames = new RegionFrames(this.paperEl, (shown, anchor) =>
       this.callbacks.onTapRegion?.(shown, anchor),
     );
@@ -3619,6 +3661,9 @@ export class InkSurface {
    * host's to remove.
    */
   destroy(): void {
+    this.snippetDrag?.drag.cancel();
+    this.snippetDrag?.hold?.remove();
+    this.snippetDrag = null;
     this.dropEmptyLasso();
     this.endCellEdit(true);
     this.cellEditor?.remove();
@@ -3854,6 +3899,8 @@ export class InkSurface {
 
   /** End everything under way that belongs to the session shown, before a swap. */
   private interruptForSwap(): void {
+    // A lasso round nothing is of the page going away (a snippet's drag outlives it).
+    this.dropEmptyLasso();
     this.endExplore(false);
     if (this.zoomBox) this.closeZoomBox(true);
     this.endWetStroke();
@@ -14009,6 +14056,13 @@ export class InkSurface {
       if (ask)
         action(t("surface.selectionBar.askAi"), "messages-square", () => ask(box.index, bounds));
     }
+    // On a PDF's tab the area stays until the next press, to be dragged off
+    // onto the notes as a snippet (`startSnippetDrag`).
+    if (this.snippetsOn) {
+      this.addSnippetGrip(el, box, bounds);
+      this.emptyLasso = { el, timers: [] };
+      return;
+    }
     const win = this.surfaceEl.ownerDocument.defaultView ?? window;
     this.emptyLasso = {
       el,
@@ -14018,6 +14072,141 @@ export class InkSurface {
         win.setTimeout(() => this.dropEmptyLasso(), EMPTY_LASSO_MS + EMPTY_LASSO_FADE_MS),
       ],
     };
+  }
+
+  // --- Snippets: an area of a PDF's slide dragged onto the notes ---------------
+
+  /** Whether a lassoed area of this tab's slides can be dragged off as a snippet. */
+  private get snippetsOn(): boolean {
+    return this.fixedPages && this.callbacks.onSnippetStart !== undefined;
+  }
+
+  /**
+   * The lassoed area `bounds` (page px of `box`), inside the empty lasso's
+   * element `el`, as something to press: a drag past the slop carries it
+   * off as a snippet, a tap lets go of it.
+   */
+  private addSnippetGrip(el: HTMLElement, box: PageBox, bounds: Bounds): void {
+    const scale = this.unitScale;
+    const grip = el.createDiv({ cls: "goodobsidian-snippet-grip" });
+    grip.setCssStyles({
+      left: `${((box.x + bounds.minX) * scale).toFixed(1)}px`,
+      top: `${((box.y + bounds.minY) * scale).toFixed(1)}px`,
+      width: `${((bounds.maxX - bounds.minX) * scale).toFixed(1)}px`,
+      height: `${((bounds.maxY - bounds.minY) * scale).toFixed(1)}px`,
+    });
+    let press: { id: number; x: number; y: number } | null = null;
+    grip.addEventListener("pointerdown", (event) => {
+      // The page below never sees it, so the area is not let go of.
+      event.stopPropagation();
+      event.preventDefault();
+      if (press || this.snippetDrag || this.callbacks.isLocked?.()) return;
+      press = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      try {
+        grip.setPointerCapture(event.pointerId);
+      } catch {
+        // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
+      }
+    });
+    grip.addEventListener("pointermove", (event) => {
+      if (!press || event.pointerId !== press.id) return;
+      event.stopPropagation();
+      event.preventDefault();
+      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < IMAGE_DRAG_SLOP_PX) return;
+      press = null;
+      this.startSnippetDrag(event, box, bounds, el);
+    });
+    const lift = (event: PointerEvent): void => {
+      if (!press || event.pointerId !== press.id) return;
+      event.stopPropagation();
+      press = null;
+      // A tap on the area lets go of it, as a tap beside it does.
+      this.dropEmptyLasso();
+    };
+    grip.addEventListener("pointerup", lift);
+    grip.addEventListener("pointercancel", lift);
+  }
+
+  /**
+   * Carry the area `area` (page px of `box`) off as a snippet, from pointer
+   * `event`: the host draws its picture for the ghost, and hears where it
+   * goes (`onSnippetMove`) and where it lands (`endSnippetDrag`). `hold` is
+   * a lassoed area's loop, hidden meanwhile. The slide's ink stays where it
+   * is: a snippet is a picture of the slide, never a move.
+   */
+  private startSnippetDrag(
+    event: PointerEvent,
+    box: PageBox,
+    area: Bounds,
+    hold: HTMLElement | null,
+  ): void {
+    const start = this.callbacks.onSnippetStart;
+    if (!start || this.snippetDrag) return;
+    const picture = start(box.index, area, this.deviceScale);
+    if (hold && this.emptyLasso?.el === hold) {
+      // Kept out of `dropEmptyLasso`'s reach while it is carried.
+      const win = this.surfaceEl.ownerDocument.defaultView ?? window;
+      for (const timer of this.emptyLasso.timers) win.clearTimeout(timer);
+      this.emptyLasso = null;
+    }
+    hold?.addClass("is-carried");
+    const scale = this.unitScale;
+    const drag = new SnippetDrag(
+      this.surfaceEl,
+      event.pointerId,
+      event.clientX,
+      event.clientY,
+      (area.maxX - area.minX) * scale,
+      (area.maxY - area.minY) * scale,
+      picture,
+      {
+        move: (x, y) => this.callbacks.onSnippetMove?.(x, y) === true,
+        end: (x, y, cancelled) => this.endSnippetDrag(x, y, cancelled),
+      },
+    );
+    this.snippetDrag = { drag, session: this.session, hold };
+  }
+
+  /**
+   * The snippet's pointer lifted at client point (x, y): dropped on a page
+   * when another session (the notes) is shown by now, else nothing, and a
+   * lassoed area comes back where it was.
+   */
+  private endSnippetDrag(clientX: number, clientY: number, cancelled: boolean): void {
+    const held = this.snippetDrag;
+    this.snippetDrag = null;
+    if (!held) return;
+    let drop: { pageIndex: number; x: number; y: number } | null = null;
+    if (!cancelled && this.session !== held.session) {
+      const at = this.toLayout(clientX, clientY);
+      const box = boxAtPoint(this.pageLayout, at.x, at.y);
+      if (box) drop = { pageIndex: box.index, ...this.toPage(box, at) };
+    }
+    if (held.hold) {
+      if (this.session === held.session && !this.emptyLasso) {
+        held.hold.removeClass("is-carried");
+        this.emptyLasso = { el: held.hold, timers: [] };
+      } else held.hold.remove();
+    }
+    this.callbacks.onSnippetEnd?.(drop);
+  }
+
+  /**
+   * A tap at page point `p` of `page` on a snippet (a picture of a PDF's
+   * slide, `ImageElement.slide`): open the slide. False when the picture on
+   * top there is not one.
+   */
+  private openSlideAt(page: Page, p: Pt): boolean {
+    const open = this.callbacks.onOpenSlide;
+    if (!open || this.fixedPages) return false;
+    const image = topImageAt(
+      page.images.filter((candidate) => !isFolded(candidate)),
+      p,
+      0,
+    );
+    if (!image?.slide) return false;
+    open(image.slide);
+    return true;
   }
 
   /** Take an empty lasso's loop and button away (`showEmptyLasso`). */
@@ -16947,6 +17136,13 @@ export class InkSurface {
       this.commentMarkers[i].addClass("is-hidden");
     }
     this.commentMarkersEl.toggleClass("is-hidden", targets.length === 0);
+    // Snippets' link dots move with the same layouts and edits.
+    this.slideDots.sync(
+      this.pageLayout.boxes,
+      (index) => this.pageAt(index),
+      scale,
+      !this.fixedPages && this.callbacks.onOpenSlide !== undefined,
+    );
   }
 
   private syncLockBadges(): void {
@@ -17779,6 +17975,19 @@ export class InkSurface {
     if (!drag.lifted && moved < IMAGE_DRAG_SLOP_PX) return;
     const box = this.boxForPage(drag.selection.pageId);
     if (!box) return;
+    // On a PDF's tab the selection's body is dragged off as a snippet of
+    // the lassoed area, its ink in the picture and left where it is.
+    if (!drag.lifted && !drag.scale && !drag.turn && !drag.copied && this.snippetsOn) {
+      const area = this.selectionArea;
+      this.endGroupDrag(false);
+      this.startSnippetDrag(
+        event,
+        box,
+        area && area.pageId === drag.selection.pageId ? area.loop : drag.bounds,
+        null,
+      );
+      return;
+    }
     this.moveGroupDrag(drag, box, this.pagePoint(box, event.clientX, event.clientY));
   };
 
@@ -19574,6 +19783,10 @@ export class InkSurface {
       }
       if (this.openLinkAt(tapped, this.toPage(box, at), tolerance)) return;
       if (this.followPdfLink(box.index, this.toPage(box, at), tolerance)) return;
+      // A snippet opens its slide; with the lasso a tap selects it, as any picture.
+      if (this.toolState.tool !== "select" && this.openSlideAt(tapped, this.toPage(box, at))) {
+        return;
+      }
     }
     if (box && this.offerStrokeTap(box, this.toPage(box, at), FINGER_TAP_TOLERANCE_PX)) {
       this.clearSelection();

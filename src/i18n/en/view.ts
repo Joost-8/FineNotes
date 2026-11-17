@@ -410,4 +410,6 @@ export const view = {
   "view.pdfTabs.pdfOnly": "FineNotes: switch to Notes to do that.",
   "view.pdfTabs.relinked": "FineNotes: {name} found again.",
   "view.pdfTabs.unreadable": "FineNotes: couldn't read {name} — {message}",
+  "view.pdfTabs.snippetName": "{name} slide {page}",
+  "view.pdfTabs.snippetFailed": "FineNotes: couldn't copy that part of the slide.",
 } as const;

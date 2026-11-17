@@ -58,6 +58,8 @@ export class PdfTabStrip {
   /** A long press opened a menu: the click that follows is not a tap. */
   private pressedMenu = false;
   private pressTimer = 0;
+  /** The tab a dragged snippet is over (`setDropTarget`). */
+  private dropTarget: string | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -89,6 +91,27 @@ export class PdfTabStrip {
   }
 
   /**
+   * The tab at client point (x, y), by id, or null. A dragged snippet holds
+   * its pointer captured, so no tab hears it enter: the drag asks here.
+   */
+  tabAt(x: number, y: number): string | null {
+    if (this.el.hasClass("is-hidden")) return null;
+    for (const el of Array.from(this.list.querySelectorAll<HTMLElement>(".goodobsidian-pdf-tab"))) {
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return el.dataset.tab ?? null;
+    }
+    return null;
+  }
+
+  /** Light tab `id` up as where a dragged snippet will go (null: none). */
+  setDropTarget(id: string | null): void {
+    if (id === this.dropTarget) return;
+    this.dropTarget = id;
+    for (const el of Array.from(this.list.querySelectorAll<HTMLElement>(".goodobsidian-pdf-tab")))
+      el.toggleClass("is-drop-target", el.dataset.tab === id);
+  }
+
+  /**
    * Show these PDF tabs after Notes, `active` raised. `shown` false hides
    * the strip (a notebook with no PDF attached looks as it always did).
    */
@@ -114,6 +137,7 @@ export class PdfTabStrip {
     });
     el.toggleClass("is-active", active);
     el.toggleClass("is-missing", tab.missing);
+    el.toggleClass("is-drop-target", tab.id === this.dropTarget);
     const button = el.createEl("button", {
       cls: "goodobsidian-pdf-tab-main clickable-icon",
       attr: {

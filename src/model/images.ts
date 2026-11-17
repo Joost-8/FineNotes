@@ -177,6 +177,8 @@ export function duplicateImage(
   if (image.crop) copy.crop = { ...image.crop };
   if (image.flipX === true) copy.flipX = true;
   if (image.flipY === true) copy.flipY = true;
+  // A snippet's copy opens the same slide.
+  if (image.slide) copy.slide = { ...image.slide };
   // A note's copy is a note of the same colour, stuck on as the note is.
   if (image.sticky) {
     if (image.front === true) copy.front = true;
