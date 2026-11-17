@@ -7498,6 +7498,19 @@ button.goodobsidian-imagemenu-swatch {
   font-size: var(--font-ui-small);
 }
 
+/* What an answer cost: a quiet mark at the end of its actions. */
+.goodobsidian-chat-cost {
+  align-self: center;
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--gob-line);
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .goodobsidian-chat-error + button.goodobsidian-chat-action {
   margin: 6px 0 0 -8px;
 }

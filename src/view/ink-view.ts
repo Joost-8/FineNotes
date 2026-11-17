@@ -115,6 +115,12 @@ import {
   VAULT_OFF_TEXT,
   askVaultScopeOf,
   docText,
+  freeNotePath,
+  inScope,
+  linkedNotesText,
+  newNoteFolder,
+  newNoteText,
+  noteFileName,
   readSlice,
   resolveNotePath,
   scopeText,
@@ -2366,11 +2372,34 @@ export class InkView extends TextFileView {
 
   /** `search_vault` and `read_note`: the other notes the settings let Ask AI read, as text. */
   private async runVaultTool(
-    call: Extract<AskToolCall, { tool: "search_vault" | "read_note" }>,
+    call: Extract<AskToolCall, { tool: "search_vault" | "read_note" | "linked_notes" }>,
   ): Promise<AskToolOutcome> {
     const scope = askVaultScopeOf(this.settings.askVaultScope);
     const notebook = this.file?.path ?? "";
     if (scope === "off" || !notebook) return { text: VAULT_OFF_TEXT, isError: true };
+    if (call.tool === "linked_notes") {
+      const { resolvedLinks: links, unresolvedLinks: loose } = this.app.metadataCache;
+      const outgoing = Object.keys(links[notebook] ?? {});
+      // [[Week 4]] does not resolve to Week 4.notebook.md, but it is a link to it all the same.
+      const name = this.file?.basename.replace(/\.(notebook|page|ink)$/i, "").toLowerCase() ?? "";
+      const incoming = [
+        ...Object.keys(links).filter((from) => links[from]?.[notebook] !== undefined),
+        ...Object.keys(loose).filter((from) =>
+          Object.keys(loose[from] ?? {}).some(
+            (target) => target.split("/").pop()?.toLowerCase() === name,
+          ),
+        ),
+      ];
+      const readable = (path: string): boolean =>
+        /\.(md|pdf)$/i.test(path) && inScope(path, notebook, scope);
+      return {
+        text: linkedNotesText(
+          call.direction === "from" ? [] : outgoing,
+          call.direction === "to" ? [] : incoming,
+          readable,
+        ),
+      };
+    }
     this.vaultSource ??= new VaultContextSource(this.app, (file) => this.plugin.isInkFile(file));
     const docs = await this.vaultSource.docs(notebook, scope);
     if (call.tool === "search_vault") {
@@ -2393,6 +2422,27 @@ export class InkView extends TextFileView {
     const doc = docs.find((d) => d.path === found.path);
     if (!doc) return { text: `${found.path} cannot be read now.`, isError: true };
     return { text: readSlice(doc.path, doc.kind, docText(doc), call.from) };
+  }
+
+  /**
+   * `create_note`: a new Markdown note beside the notebook, which the
+   * answer links to. Never an existing note: a taken name gets a number.
+   */
+  private async createAskNote(title: string, text: string): Promise<AskToolOutcome> {
+    const notebook = this.file?.path ?? "";
+    const vault = this.app.vault;
+    const path = freeNotePath(
+      newNoteFolder(notebook),
+      noteFileName(title),
+      (p) => vault.getAbstractFileByPath(p) !== null,
+    );
+    const file = await vault.create(path, newNoteText(text, notebook));
+    // Not opened: that would take the tab, or the focus, from the notebook the chat is about.
+    const name = file.basename;
+    return {
+      text: `Wrote the new note ${file.path}. Link to it in your answer as [[${file.path.replace(/\.md$/, "")}|${name}]].`,
+      done: t("view.ask.doneNote", { name }),
+    };
   }
 
   /** Run one of the AI's notebook tools (`ask-tools.ts`). */
@@ -2426,7 +2476,10 @@ export class InkView extends TextFileView {
       }
       case "search_vault":
       case "read_note":
+      case "linked_notes":
         return this.runVaultTool(call);
+      case "create_note":
+        return this.createAskNote(call.title, call.text);
       case "add_text_box": {
         const refused = editRefused();
         if (refused || !surface) return refused ?? { text: "", isError: true };

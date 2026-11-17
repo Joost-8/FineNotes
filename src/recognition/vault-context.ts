@@ -224,6 +224,79 @@ export function resolveNotePath(
   };
 }
 
+// --- Linked notes -------------------------------------------------------------
+
+/**
+ * The notes this notebook links to and the ones that link to it, as the AI
+ * reads them: names it can pass to read_note. Links the user may not let it
+ * read are counted, not named.
+ */
+export function linkedNotesText(
+  outgoing: readonly string[],
+  incoming: readonly string[],
+  allowed: (path: string) => boolean,
+): string {
+  const lines: string[] = [];
+  let hidden = 0;
+  const list = (title: string, paths: readonly string[]): void => {
+    const shown = [...new Set(paths)].filter((p) => {
+      const ok = allowed(p);
+      if (!ok) hidden++;
+      return ok;
+    });
+    if (shown.length) lines.push(title, ...shown.slice(0, 30).map((p) => `- ${p}`));
+  };
+  list("This notebook links to:", outgoing);
+  list("Linked from:", incoming);
+  if (lines.length === 0 && hidden === 0)
+    return "This notebook has no links to or from other notes.";
+  if (hidden) lines.push(`(${hidden} more outside the folders you may read.)`);
+  return lines.join("\n");
+}
+
+// --- New notes ----------------------------------------------------------------
+
+/** Longest text create_note writes, characters. */
+export const MAX_NOTE_CHARS = 20_000;
+
+/** A title as a file name: no characters a vault refuses or links break on. */
+export function noteFileName(title: string): string {
+  const clean = title
+    .replace(/[\\/:*?"<>|#^[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\.+/, "")
+    .slice(0, 100)
+    .trim();
+  return clean || "AI note";
+}
+
+/** `folder/name.md`, or `name 2.md` and so on when that is taken. */
+export function freeNotePath(
+  folder: string,
+  name: string,
+  taken: (path: string) => boolean,
+): string {
+  const at = (n: number): string =>
+    `${folder ? `${folder}/` : ""}${name}${n > 1 ? ` ${n}` : ""}.md`;
+  let n = 1;
+  while (taken(at(n)) && n < 1000) n++;
+  return at(n);
+}
+
+/** A new note's text: where it came from, as a property, then what the AI wrote. */
+export function newNoteText(text: string, notebookPath: string): string {
+  const name = stem(notebookPath.slice(notebookPath.lastIndexOf("/") + 1));
+  const link = notebookPath.replace(/\.md$/i, "");
+  const source = `"[[${link}|${name.replace(/"/g, "'")}]]"`;
+  return `---\nsource: ${source}\n---\n\n${text.trim()}\n`;
+}
+
+/** The folder a new note goes in: beside the notebook (in its own folder, when it has one). */
+export function newNoteFolder(notebookPath: string): string {
+  return parentOf(notebookPath);
+}
+
 /** A file name without its extensions: `Week 3.notebook.md` → `week 3`. */
 function stem(name: string): string {
   return name.replace(/\.(notebook|page|ink)\.md$|\.md$|\.pdf$/i, "");

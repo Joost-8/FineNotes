@@ -20,7 +20,7 @@
 import { t, tn } from "../i18n/translate";
 import { ASK_MAX_PAGES } from "./ai-chat";
 import { isRecord } from "./llm-request";
-import { MAX_READ_CHARS } from "./vault-context";
+import { MAX_NOTE_CHARS, MAX_READ_CHARS } from "./vault-context";
 
 /** Rounds of tool calls one question may take before the answer has to come. */
 export const ASK_MAX_TOOL_ROUNDS = 8;
@@ -105,6 +105,42 @@ export const ASK_TOOLS = [
         },
       },
       required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "linked_notes",
+    description:
+      "List the notes this notebook links to and the notes that link to it: connections the user made " +
+      "themselves, often the best place to look first. Returns paths to pass to read_note.",
+    input_schema: {
+      type: "object",
+      properties: {
+        direction: {
+          type: "string",
+          enum: ["both", "to", "from"],
+          description: "Links from this notebook (to), to it (from), or both. Default both.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_note",
+    description:
+      "Write a new Markdown note beside this notebook: a summary, flashcards, a to-do list, definitions, " +
+      "or what you pulled out of several notes. Never changes an existing note. Use it when the user asks " +
+      `to put something in a note. At most ${MAX_NOTE_CHARS} characters.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "The note's title, which becomes its file name." },
+        text: {
+          type: "string",
+          description: "The note's Markdown, without the title as a heading.",
+        },
+      },
+      required: ["title", "text"],
       additionalProperties: false,
     },
   },
@@ -296,6 +332,8 @@ export type AskToolCall =
   | { tool: "search_notebook"; query: string }
   | { tool: "search_vault"; query: string }
   | { tool: "read_note"; path: string; from: number }
+  | { tool: "linked_notes"; direction: "both" | "to" | "from" }
+  | { tool: "create_note"; title: string; text: string }
   | { tool: "add_text_box"; page: number; text: string }
   | { tool: "add_page"; after: number }
   | { tool: "go_to_page"; page: number }
@@ -398,6 +436,23 @@ export function parseToolCall(
         return { error: '"from" must be a whole number, 0 or more.' };
       }
       return { tool: "read_note", path: path.trim(), from: from ?? 0 };
+    }
+    case "linked_notes": {
+      const direction = args.direction ?? "both";
+      if (direction !== "both" && direction !== "to" && direction !== "from") {
+        return { error: '"direction" must be "both", "to" or "from".' };
+      }
+      return { tool: "linked_notes", direction };
+    }
+    case "create_note": {
+      const title = text("title");
+      if (!title) return { error: '"title" is empty.' };
+      const body = text("text");
+      if (!body) return { error: '"text" is empty.' };
+      if (body.length > MAX_NOTE_CHARS) {
+        return { error: `The note is too long (at most ${MAX_NOTE_CHARS} characters).` };
+      }
+      return { tool: "create_note", title: title.trim(), text: body.trim() };
     }
     case "add_text_box": {
       const at = page("page");
@@ -545,6 +600,10 @@ export function toolStatus(call: AskToolCall): string {
       return t("ai.tool.searchingVault", { query: call.query });
     case "read_note":
       return t("ai.tool.readingNote", { name: noteName(call.path) });
+    case "linked_notes":
+      return t("ai.tool.lookingAtLinks");
+    case "create_note":
+      return t("ai.tool.makingNote", { title: call.title });
     case "add_text_box":
       return t("ai.tool.writing", { page: call.page });
     case "add_page":

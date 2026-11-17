@@ -53,6 +53,7 @@ import {
   sizeLabel,
 } from "../recognition/ask-attachments";
 import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-session";
+import { type AskUsage, usageMark } from "../recognition/ask-usage";
 import { bytesToBase64 } from "../recognition/audio-request";
 import { type SavedChatEntry, attachableFiles, readAttachment } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
@@ -480,7 +481,13 @@ export class AskChat {
     if (session.screen) {
       return t(saved ? "ai.ask.noteScreenSaved" : "ai.ask.noteScreen", { target });
     }
-    if (session.selected.length === 0 && sent.size === 0 && session.attachments.length === 0) {
+    // While a question is out its files have left the field, but it is asking, not waiting for a pick.
+    if (
+      session.selected.length === 0 &&
+      sent.size === 0 &&
+      session.attachments.length === 0 &&
+      !session.busy
+    ) {
       return t(saved ? "ai.ask.notePickSaved" : "ai.ask.notePick");
     }
     // Saying it can use the notebook also tells which build is running.
@@ -861,7 +868,7 @@ export class AskChat {
     for (let i = this.shownTexts.length; i < texts.length; i++) {
       const turn = session.turns[i];
       if (turn.role === "user") this.questionRow(thread, texts[i], turn.pages, turn.files);
-      else lastAnswer = this.answerRow(thread, texts[i], turn.actions);
+      else lastAnswer = this.answerRow(thread, texts[i], turn.actions, turn.usage);
     }
     this.shownTexts = texts;
 
@@ -976,7 +983,12 @@ export class AskChat {
     retry.addEventListener("click", () => this.submit(question));
   }
 
-  private answerRow(parent: HTMLElement, markdown: string, done?: readonly string[]): HTMLElement {
+  private answerRow(
+    parent: HTMLElement,
+    markdown: string,
+    done?: readonly string[],
+    usage?: AskUsage,
+  ): HTMLElement {
     const { row, body } = this.aiRow(parent);
     // What Claude did in the notebook on the way to the answer.
     if (done?.length) {
@@ -999,6 +1011,16 @@ export class AskChat {
     } else {
       text.setText(markdown);
     }
+    // A note the answer links to (one it read, or one it wrote) opens in a tab beside the notebook.
+    text.addEventListener("click", (event) => {
+      const link = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+        "a.internal-link",
+      );
+      const target = link?.getAttribute("data-href") ?? link?.getAttribute("href");
+      if (!link || !target) return;
+      event.preventDefault();
+      void this.app.workspace.openLinkText(target, this.host.sourcePath, "tab");
+    });
 
     const actions = body.createDiv({ cls: "goodobsidian-chat-actions" });
     const copy = actions.createEl("button", { cls: "goodobsidian-chat-action clickable-icon" });
@@ -1019,6 +1041,21 @@ export class AskChat {
         new Notice(t("ai.ask.insertedText"));
       }
     });
+
+    // What the answer cost, as a mark: the numbers behind it in its tooltip.
+    const mark = usageMark(usage, (count) => t("ai.ask.tokens", { count }));
+    if (mark && usage) {
+      actions.createSpan({
+        cls: "goodobsidian-chat-cost",
+        text: mark,
+        attr: {
+          "aria-label": t("ai.ask.costTip", {
+            input: (usage.input + usage.cacheRead + usage.cacheWrite).toLocaleString(),
+            output: usage.output.toLocaleString(),
+          }),
+        },
+      });
+    }
     return row;
   }
 

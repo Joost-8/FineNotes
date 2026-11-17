@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { parseToolCall, toolStatus } from "../../src/recognition/ask-tools";
 import {
+  MAX_NOTE_CHARS,
   MAX_READ_CHARS,
   MAX_VAULT_HITS,
+  freeNotePath,
+  linkedNotesText,
+  newNoteFolder,
+  newNoteText,
+  noteFileName,
   type VaultDoc,
   askVaultScopeOf,
   docText,
@@ -184,7 +190,84 @@ describe("resolveNotePath", () => {
   });
 });
 
+describe("linked notes", () => {
+  it("names the links it may read and counts the rest", () => {
+    const allowed = (p: string) => p.startsWith("Signals/");
+    expect(
+      linkedNotesText(
+        ["Signals/LTI systems.md", "Journal/today.md", "Signals/LTI systems.md"],
+        ["Signals/Index.md"],
+        allowed,
+      ),
+    ).toBe(
+      "This notebook links to:\n- Signals/LTI systems.md\nLinked from:\n- Signals/Index.md\n(1 more outside the folders you may read.)",
+    );
+    expect(linkedNotesText([], [], allowed)).toBe(
+      "This notebook has no links to or from other notes.",
+    );
+    expect(linkedNotesText(["Journal/a.md"], [], allowed)).toBe(
+      "(1 more outside the folders you may read.)",
+    );
+  });
+});
+
+describe("new notes", () => {
+  it("makes a file name a vault and links accept", () => {
+    expect(noteFileName("Week 3: Fourier / Laplace?")).toBe("Week 3 Fourier Laplace");
+    expect(noteFileName("[[x]] #tag ^id")).toBe("x tag id");
+    expect(noteFileName("...hidden")).toBe("hidden");
+    expect(noteFileName("  ")).toBe("AI note");
+    expect(noteFileName("a".repeat(300))).toHaveLength(100);
+  });
+
+  it("never takes a name that is already used", () => {
+    const taken = new Set(["Signals/Summary.md", "Signals/Summary 2.md"]);
+    expect(freeNotePath("Signals", "Summary", (p) => taken.has(p))).toBe("Signals/Summary 3.md");
+    expect(freeNotePath("", "Summary", () => false)).toBe("Summary.md");
+  });
+
+  it("goes beside the notebook, in its own folder when it has one, and links back to it", () => {
+    expect(newNoteFolder("Signals/Week 4.notebook.md")).toBe("Signals");
+    expect(newNoteFolder("Signals/Week 4/Week 4.notebook.md")).toBe("Signals/Week 4");
+    expect(newNoteText(" # Cards\nQ: A? ", "Signals/Week 4.notebook.md")).toBe(
+      '---\nsource: "[[Signals/Week 4.notebook|Week 4]]"\n---\n\n# Cards\nQ: A?\n',
+    );
+  });
+});
+
 describe("the vault tools", () => {
+  it("check the note and link tools' input", () => {
+    expect(parseToolCall("linked_notes", {}, 3)).toEqual({
+      tool: "linked_notes",
+      direction: "both",
+    });
+    expect(parseToolCall("linked_notes", { direction: "from" }, 3)).toEqual({
+      tool: "linked_notes",
+      direction: "from",
+    });
+    expect(parseToolCall("linked_notes", { direction: "up" }, 3)).toHaveProperty("error");
+    expect(parseToolCall("create_note", { title: " Cards ", text: " Q: A? " }, 3)).toEqual({
+      tool: "create_note",
+      title: "Cards",
+      text: "Q: A?",
+    });
+    expect(parseToolCall("create_note", { title: "", text: "x" }, 3)).toEqual({
+      error: '"title" is empty.',
+    });
+    expect(parseToolCall("create_note", { title: "x" }, 3)).toEqual({
+      error: '"text" is empty.',
+    });
+    expect(
+      parseToolCall("create_note", { title: "x", text: "y".repeat(MAX_NOTE_CHARS + 1) }, 3),
+    ).toHaveProperty("error");
+    expect(toolStatus({ tool: "create_note", title: "Cards", text: "x" })).toBe(
+      "Writing the note “Cards”…",
+    );
+    expect(toolStatus({ tool: "linked_notes", direction: "both" })).toBe(
+      "Looking at this notebook's links…",
+    );
+  });
+
   it("checks their input", () => {
     expect(parseToolCall("search_vault", { query: " fourier " }, 3)).toEqual({
       tool: "search_vault",
