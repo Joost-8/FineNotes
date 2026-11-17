@@ -17,9 +17,12 @@
 
 import { annotationLayers } from "../export/annotation-layers";
 import { type ExportFormat, type ExportMargins, mimeTypeOf } from "../export/export-choice";
-import { type PdfAnnotationRaster, PdfComposer } from "../export/pdf-composer";
-import type { PaperTheme } from "../canvas/backdrop";
-import { renderPageThumbnail } from "../canvas/renderer";
+import { type PdfLayer, PdfComposer } from "../export/pdf-composer";
+import { type PaperTheme, inkShade, pageLook } from "../canvas/backdrop";
+import { hasOverInk, renderPageThumbnail } from "../canvas/renderer";
+import { type VectorInk, vectorInk } from "../export/vector-ink";
+import { isNoteInk, noteIdsOf } from "../model/sticky-notes";
+import { marginBackdrop } from "../model/page-margin";
 import type { PageTexts } from "../model/furniture";
 import {
   POINTS_PER_PAGE_PX,
@@ -63,6 +66,13 @@ export interface PdfExportSources {
    * 1024 px wide and would only pay for more.
    */
   maxPixelScale?: number;
+  /**
+   * Write ink, shapes and highlighters as vector paths over a picture of
+   * what lies under them, the way Goodnotes exports: a smaller file, sharp
+   * at any zoom. Text boxes, pictures in front and tapes stay a picture
+   * over the ink. Off: every page that is not a PDF is one picture.
+   */
+  vectorInk?: boolean;
 }
 
 /** Whether `page` exports as it is under `margins`, or without its margins. */
@@ -110,7 +120,9 @@ export async function exportPagesToPdf(
   const out: PdfImagePage[] = [];
   const hasPdf = pages.some((page) => page.backdrop.kind === "pdf");
   if (hasPdf && !sources.readPdf) throw new Error("PDF source reader unavailable");
-  const composer = hasPdf ? await PdfComposer.create(options.title, sources.readPdf!) : null;
+  const vector = sources.vectorInk === true;
+  const composer =
+    hasPdf || vector ? await PdfComposer.create(options.title, sources.readPdf ?? null) : null;
   for (const [i, original] of pages.entries()) {
     if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
     options.onProgress?.(i, pages.length);
@@ -120,7 +132,18 @@ export async function exportPagesToPdf(
       // Margins and plain paper reach a PDF page here; a picture page gets
       // them in paintForExport, which asks the furniture for the original.
       const page = withTapesOf(pageOf(original, sources), sources);
-      await composer.addPdf(page, () => renderAnnotationLayers(page, sources, options));
+      await composer.addPdf(page, () =>
+        vector
+          ? renderVectorOverlay(page, sources)
+          : renderAnnotationLayers(page, sources, options),
+      );
+    } else if (composer && vector) {
+      const page = withTapesOf(pageOf(original, sources), sources);
+      await composer.addLayered(
+        page.geometry.width * POINTS_PER_PAGE_PX,
+        page.geometry.height * POINTS_PER_PAGE_PX,
+        renderVectorPage(original, page, sources),
+      );
     } else {
       const rendered = await renderPageJpeg(original, sources);
       if (composer) await composer.addImage(rendered);
@@ -204,13 +227,18 @@ async function paintForExport<T>(
   sources: PdfExportSources,
   exactPdf: boolean,
   use: (canvas: HTMLCanvasElement, page: Page) => Promise<T>,
+  parts?: "under" | "over",
 ): Promise<T> {
   const page = withTapesOf(pageOf(original, sources), sources);
   const { width, height } = page.geometry;
   const scale = Math.min(exportPixelScale(width, height), sources.maxPixelScale ?? Infinity);
   if (!(scale > 0)) throw new Error("A page has no size");
 
-  const painter = await preparePage(page, sources, scale, exactPdf);
+  // What lies over the ink needs neither the paper nor a PDF slide.
+  const painter =
+    parts === "over"
+      ? await preparePage({ ...page, backdrop: plainBackdrop(page.backdrop) }, sources, scale)
+      : await preparePage(page, sources, scale, exactPdf);
 
   // Offscreen: never inserted into a DOM, so the main-window createEl is right
   // even when the view lives in a popout window.
@@ -222,6 +250,7 @@ async function paintForExport<T>(
       paper: sources.paper,
       ...(sources.images ? { images: sources.images } : {}),
       ...(sources.furniture ? { furniture: sources.furniture(original) } : {}),
+      ...(parts ? { parts } : {}),
     });
     return await use(canvas, page);
   } finally {
@@ -333,6 +362,7 @@ async function renderAnnotationPng(
   page: Page,
   sources: PdfExportSources,
   paper = false,
+  parts?: "under" | "over",
 ): Promise<Uint8Array> {
   const scale = exportPixelScale(page.geometry.width, page.geometry.height);
   if (!scale) throw new Error("A page has no size");
@@ -350,19 +380,25 @@ async function renderAnnotationPng(
       highlighterAlpha: sources.highlighterAlpha,
       ...(sources.images ? { images: sources.images } : {}),
       ...(sources.furniture ? { furniture: sources.furniture(page) } : {}),
+      ...(parts ? { parts } : {}),
     });
-    return await new Promise<Uint8Array>((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          reject(new Error("PDF annotations could not be encoded"));
-          return;
-        }
-        blob.arrayBuffer().then((bytes) => resolve(new Uint8Array(bytes)), reject);
-      }, "image/png");
-    });
+    return await canvasToPng(canvas);
   } finally {
     releaseCanvas(canvas);
   }
+}
+
+/** `canvas` as PNG bytes. */
+function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+  return new Promise<Uint8Array>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("PDF annotations could not be encoded"));
+        return;
+      }
+      blob.arrayBuffer().then((bytes) => resolve(new Uint8Array(bytes)), reject);
+    }, "image/png");
+  });
 }
 
 /** Encode and release one layer at a time, preserving highlighter blending and stroke order. */
@@ -370,7 +406,7 @@ async function* renderAnnotationLayers(
   page: Page,
   sources: PdfExportSources,
   options: PdfExportOptions,
-): AsyncGenerator<PdfAnnotationRaster> {
+): AsyncGenerator<PdfLayer> {
   for (const layer of annotationLayers(page)) {
     if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
     await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -379,4 +415,68 @@ async function* renderAnnotationLayers(
       multiply: layer.multiply,
     };
   }
+}
+
+/** The ink `page` paints in its ink pass, as vectors: not a sticky note's (drawn with its note), not a tape. */
+export function pageVectorInk(page: Page, sources: PdfExportSources): VectorInk {
+  const notes = noteIdsOf(page.images);
+  const strokes = page.strokes.filter((stroke) => !isNoteInk(stroke, notes) && !isTape(stroke));
+  return vectorInk(strokes, {
+    usePressure: sources.usePressure,
+    highlighterAlpha: sources.highlighterAlpha,
+    shade: inkShade(pageLook(page.backdrop, sources.paper)),
+  });
+}
+
+/**
+ * A page that is not a PDF as layers: a JPEG of everything under its ink,
+ * the ink in vectors, and a PNG of what lies over the ink when anything does.
+ * One raster at a time, each released before the next.
+ */
+async function* renderVectorPage(
+  original: Page,
+  page: Page,
+  sources: PdfExportSources,
+): AsyncGenerator<PdfLayer> {
+  yield await paintForExport(
+    original,
+    sources,
+    false,
+    async (canvas) => ({
+      jpeg: new Uint8Array(await (await canvasToBlob(canvas, "image/jpeg")).arrayBuffer()),
+    }),
+    "under",
+  );
+  yield { ink: pageVectorInk(page, sources) };
+  if (hasOverInk(page)) {
+    yield await paintForExport(
+      original,
+      sources,
+      false,
+      async (canvas) => ({ png: await canvasToPng(canvas) }),
+      "over",
+    );
+  }
+}
+
+/** Whether a PDF page has anything under its ink besides the PDF: a margin's paper, pictures, tables… */
+function hasUnderInk(page: Page): boolean {
+  return (
+    marginBackdrop(page) !== null ||
+    page.images.length > 0 ||
+    (page.tables?.length ?? 0) > 0 ||
+    (page.graphs?.length ?? 0) > 0 ||
+    (page.equations?.length ?? 0) > 0 ||
+    (page.connectors?.length ?? 0) > 0
+  );
+}
+
+/** A PDF page's annotations: a PNG of what lies under the ink, the ink in vectors, a PNG of what lies over it. */
+async function* renderVectorOverlay(
+  page: Page,
+  sources: PdfExportSources,
+): AsyncGenerator<PdfLayer> {
+  if (hasUnderInk(page)) yield { png: await renderAnnotationPng(page, sources, true, "under") };
+  yield { ink: pageVectorInk(page, sources) };
+  if (hasOverInk(page)) yield { png: await renderAnnotationPng(page, sources, false, "over") };
 }

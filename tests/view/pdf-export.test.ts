@@ -10,6 +10,7 @@ vi.mock("../../src/canvas/renderer", () => ({
     canvas.width = 8;
     canvas.height = 8;
   }),
+  hasOverInk: (page: { textBoxes: unknown[] }) => page.textBoxes.length > 0,
 }));
 const { renderPageThumbnail } = await import("../../src/canvas/renderer");
 const { exportPagesToPdf } = await import("../../src/view/pdf-export");
@@ -179,5 +180,85 @@ describe("existing PDF export integration", () => {
     vi.mocked(renderPageThumbnail).mockClear();
     await exportPagesToPdf([ruled], sources, { title: "P" });
     expect(vi.mocked(renderPageThumbnail).mock.calls[0][1]).toBe(ruled);
+  });
+});
+
+describe("PDF export with vector ink", () => {
+  const ink: Stroke[] = [
+    { id: "s1", tool: "pen", color: "#000000", size: 3, pts: [10, 10, 0.5, 40, 12, 0.5] },
+    { id: "h1", tool: "highlighter", color: "#ffff00", size: 12, pts: [10, 30, 0.5, 40, 30, 0.5] },
+  ] as Stroke[];
+  const parts = (): Array<string | undefined> =>
+    vi.mocked(renderPageThumbnail).mock.calls.map((call) => call[5].parts);
+  const streamsOf = async (bytes: Uint8Array): Promise<string> => {
+    const { decodePDFRawStream, PDFName, PDFRawStream } = await import("pdf-lib");
+    const doc = await PDFDocument.load(bytes);
+    return doc.context
+      .enumerateIndirectObjects()
+      .flatMap(([, object]) =>
+        object instanceof PDFRawStream &&
+        object.dict.get(PDFName.of("Subtype")) !== PDFName.of("Image")
+          ? [Buffer.from(decodePDFRawStream(object).decode()).toString("latin1")]
+          : [],
+      )
+      .join("\n");
+  };
+
+  it("paints only what lies under the ink, and writes the ink as paths", async () => {
+    const page = { ...blankPage("p1"), strokes: ink };
+    const bytes = await exportPagesToPdf([page], { ...sources, vectorInk: true }, { title: "V" });
+    expect(parts()).toEqual(["under"]);
+    const text = await streamsOf(bytes);
+    expect(text).toContain("10 10 m");
+    expect(text).toContain(" gs");
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1);
+  });
+
+  it("paints what lies over the ink as a picture of its own, after the ink", async () => {
+    const page = { ...blankPage("p1"), strokes: ink };
+    page.textBoxes.push({
+      id: "t",
+      x: 0,
+      y: 0,
+      w: 100,
+      text: "Typed",
+      fontSize: 16,
+      color: "#000",
+    });
+    await exportPagesToPdf([page], { ...sources, vectorInk: true }, { title: "V" });
+    expect(parts()).toEqual(["under", "over"]);
+  });
+
+  it("lays a PDF page's ink over its own content, painting nothing for a page with only ink", async () => {
+    const page = { ...pdfPage(), strokes: ink };
+    const bytes = await exportPagesToPdf(
+      [page],
+      { ...sources, vectorInk: true, readPdf: source },
+      { title: "V" },
+    );
+    expect(renderPageThumbnail).not.toHaveBeenCalled();
+    const text = await streamsOf(bytes);
+    expect(text).toMatch(/EmbeddedPdfPage-\d+ Do/);
+    expect(text).toContain("10 10 m");
+  });
+
+  it("paints a PDF page's pictures under its ink and its text over it", async () => {
+    const page = { ...pdfPage(), strokes: ink };
+    page.images.push({ id: "i", path: "a.png", x: 0, y: 0, w: 10, h: 10 } as never);
+    page.textBoxes.push({
+      id: "t",
+      x: 0,
+      y: 0,
+      w: 100,
+      text: "Typed",
+      fontSize: 16,
+      color: "#000",
+    });
+    await exportPagesToPdf(
+      [page],
+      { ...sources, vectorInk: true, readPdf: source },
+      { title: "V" },
+    );
+    expect(parts()).toEqual(["under", "over"]);
   });
 });

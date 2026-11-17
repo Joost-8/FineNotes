@@ -166,6 +166,7 @@ const FRESH_INSTALL = {
   desk: "auto",
   deskColor: "#3b3e45",
   exportPlainPaper: false,
+  exportVectorInk: false,
   exportFormat: "pdf",
   exportMargins: "all",
 
@@ -341,6 +342,7 @@ const USED_VAULT = {
   desk: "custom",
   deskColor: "#204060",
   exportPlainPaper: true,
+  exportVectorInk: true,
   exportFormat: "png",
   exportMargins: "inked",
 

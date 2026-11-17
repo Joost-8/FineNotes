@@ -7,7 +7,14 @@
  * can be tested by their numbers.
  */
 
-import { POINT_STRIDE, type ArrowHead, type ShapeDash } from "../model/document";
+import {
+  POINT_STRIDE,
+  type ArrowHead,
+  type ArrowHeads,
+  type ShapeDash,
+  type ShapeKind,
+} from "../model/document";
+import { isClosedLoop } from "../model/shape-style";
 
 export interface Pt {
   x: number;
@@ -255,4 +262,52 @@ export function pathHeads(
 export function dashPattern(dash: ShapeDash, width: number): number[] {
   const w = Math.max(0.5, width);
   return dash === "dot" ? [0, 2.2 * w] : [2 * w, 3 * w];
+}
+
+/** A styled shape's line and heads, as the renderer and the PDF export draw them. */
+export interface ShapeGeometry {
+  /** The line, rounded where it has corners, cut back where a filled head sits. */
+  outline: OutlineOp[];
+  /** Whether the line ends where it starts, so it has an inside to fill. */
+  closed: boolean;
+  heads: HeadGeometry[];
+}
+
+/**
+ * The geometry of a styled shape drawn `width` page px wide: its outline
+ * (rounded by `radius`) and its arrowheads. A `path` keeps its corners and
+ * points its heads along its own last stretch ({@link pathHeads}); any other
+ * line points them along the line between its ends.
+ */
+export function shapeGeometry(
+  pts: readonly number[],
+  width: number,
+  decor: { kind: ShapeKind; heads?: ArrowHeads; radius?: number },
+): ShapeGeometry {
+  const closed = isClosedLoop(pts);
+  let line: readonly number[] = pts;
+  const heads: HeadGeometry[] = [];
+  if (decor.heads && decor.kind === "path") {
+    const headed = pathHeads(pts, width, decor.heads);
+    line = headed.pts;
+    heads.push(...headed.heads);
+  } else if (decor.heads) {
+    const points = pointsOf(pts);
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (first && last) {
+      const span = Math.hypot(last.x - first.x, last.y - first.y);
+      const start = decor.heads.start
+        ? arrowHead(last, first, width, decor.heads.start, span)
+        : null;
+      const end = decor.heads.end ? arrowHead(first, last, width, decor.heads.end, span) : null;
+      const from = start ? start.stop : first;
+      const to = end ? end.stop : last;
+      const p = pts[2] ?? 0.5;
+      line = [from.x, from.y, p, to.x, to.y, p];
+      if (start) heads.push(start);
+      if (end) heads.push(end);
+    }
+  }
+  return { outline: outlineOps(line, decor.radius ?? 0, closed), closed, heads };
 }

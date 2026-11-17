@@ -49,7 +49,16 @@ import {
   nightColor,
   nightHighlighter,
 } from "./night";
-import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import { type InkRun, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import {
+  type ShapeDecor,
+  type StrokeStyle,
+  decorOf,
+  penFor,
+  pressureFor,
+  styleOf,
+} from "./stroke-style";
+export { type ShapeDecor, type StrokeStyle, decorOf, penFor, styleOf } from "./stroke-style";
 import { type RunBox, stretchesWithin } from "../ink/run-window";
 import { addDamage, damageArea, grow, rectArea, rectsMeet, staleRect, unite } from "./damage";
 import { type PixelRect, boxPixelRect, inkPixelRect } from "./layer-rect";
@@ -68,9 +77,6 @@ import {
   type InkTip,
   type Page,
   type PageGeometry,
-  type ArrowHeads,
-  type ShapeDash,
-  type ShapeKind,
   type Stroke,
   type GraphElement,
   type EquationElement,
@@ -120,17 +126,9 @@ import type { TextStyle } from "../model/text-style";
 import { displayText } from "../model/text-links";
 import { layoutMarkdownOn, paintMarkdownText } from "./markdown-paint";
 import { normalizeBorder, shownCase } from "../model/text-style";
-import { canFill, canRound, isClosedLoop, splitFill } from "../model/shape-style";
+import { splitFill } from "../model/shape-style";
 import { type PageTexts, furnitureText } from "../model/furniture";
-import {
-  HEAD_MAX,
-  type OutlineOp,
-  arrowHead,
-  dashPattern,
-  outlineOps,
-  pathHeads,
-  pointsOf,
-} from "./shape-decor";
+import { HEAD_MAX, type OutlineOp, dashPattern, shapeGeometry } from "./shape-decor";
 import {
   ByteLru,
   TILE_SIZE,
@@ -161,67 +159,6 @@ const CROP_VEIL = "rgba(0, 0, 0, 0.55)";
 const SELECTION_LINE = "#1a6fd6";
 /** The class that hides the wet layer while nothing is being drawn on it. */
 const WET_HIDDEN = "goodobsidian-wet-hidden";
-
-/** A stroke's look without its points: what the wet layer draws a stroke in progress with. */
-export interface StrokeStyle {
-  color: string;
-  /** Nib width, in page px. */
-  size: number;
-  tool: Tool;
-  /** Whether pressure varies the width. The highlighter ignores it and keeps one width. */
-  usePressure: boolean;
-  /** Clean shape geometry (a snapped or placed shape), not freehand ink. */
-  shape?: boolean;
-  /** A shape's fill, dash, corners and arrowheads, when it has any. */
-  decor?: ShapeDecor | null;
-  /** A flat calligraphy nib's angle, degrees; absent for a round nib. */
-  nib?: number;
-  /** A highlighter's flat chisel tip (`Stroke.tip`); absent for a round one. */
-  tip?: InkTip;
-  /** A stored stroke's Pencil altitude per point (`Stroke.tilt`); absent: upright. */
-  tilt?: readonly number[];
-}
-
-/** What a shape is drawn with beyond its colour and width (`model/shape-style`). */
-export interface ShapeDecor {
-  kind: ShapeKind;
-  fill?: string;
-  dash?: ShapeDash;
-  radius?: number;
-  heads?: ArrowHeads;
-  /** The outline is not drawn: only set with a fill. */
-  noLine?: true;
-}
-
-/** A stroke's decor, or `null` when it is drawn as plain ink. */
-export function decorOf(stroke: {
-  shape?: ShapeKind;
-  fill?: string;
-  dash?: ShapeDash;
-  radius?: number;
-  heads?: ArrowHeads;
-  noLine?: true;
-}): ShapeDecor | null {
-  const kind = stroke.shape;
-  if (kind === undefined) return null;
-  const fill = canFill(kind) ? stroke.fill : undefined;
-  const radius =
-    canRound(kind) && stroke.radius !== undefined && stroke.radius > 0 ? stroke.radius : undefined;
-  const heads =
-    (kind === "line" || kind === "path") && (stroke.heads?.start || stroke.heads?.end)
-      ? stroke.heads
-      : undefined;
-  if (!fill && !stroke.dash && !radius && !heads) return null;
-  return {
-    kind,
-    ...(fill ? { fill } : {}),
-    ...(stroke.dash ? { dash: stroke.dash } : {}),
-    ...(radius ? { radius } : {}),
-    ...(heads ? { heads } : {}),
-    // A shape is never drawn as nothing: no line only while it is filled.
-    ...(fill && stroke.noLine ? { noLine: true as const } : {}),
-  };
-}
 
 /** Header and page-number type: a real family list (canvas reads no CSS variables). */
 const FURNITURE_FONT = '13px "Helvetica Neue", Helvetica, Arial, sans-serif';
@@ -758,22 +695,6 @@ function selectionLine(ctx: CanvasRenderingContext2D, scale: number): void {
   ctx.strokeStyle = SELECTION_LINE;
   ctx.lineWidth = 1.5 / scale;
   ctx.setLineDash([6, 4].map((length) => length / scale));
-}
-
-/** Highlighter ink keeps one width: pressure never thins it. */
-function pressureFor(tool: Tool, usePressure: boolean): boolean {
-  return tool !== "highlighter" && usePressure;
-}
-
-/** The pen a stroke of this style is traced with. */
-export function penFor(style: {
-  size: number;
-  tool: Tool;
-  usePressure: boolean;
-  nib?: number;
-  tip?: InkTip;
-}): PenOptions {
-  return penOptions(style.size, pressureFor(style.tool, style.usePressure), style.nib, style.tip);
 }
 
 /** Give the backing store back now; iOS holds canvas memory until then. */
@@ -3569,22 +3490,6 @@ export class Renderer {
   }
 }
 
-/** The style a stored stroke is drawn with, `pressure` being the user's setting. */
-export function styleOf(stroke: Stroke, pressure: boolean): StrokeStyle {
-  const { color, size, tool, shape } = stroke;
-  return {
-    color,
-    size,
-    tool,
-    usePressure: pressure,
-    shape: shape !== undefined,
-    decor: decorOf(stroke),
-    ...(stroke.nib !== undefined ? { nib: stroke.nib } : {}),
-    ...(stroke.tip !== undefined ? { tip: stroke.tip } : {}),
-    ...(stroke.tilt !== undefined ? { tilt: stroke.tilt } : {}),
-  };
-}
-
 /**
  * How far a stored stroke's ink can reach past its centreline, page px, at
  * most: its nib (pressure draws it at up to 0.8 of that), times the most the
@@ -3718,33 +3623,8 @@ function paintShape(
   night: boolean,
 ): void {
   const ink = ctx.fillStyle;
-  const closed = isClosedLoop(pts);
-  let line = pts;
-  const heads: Array<{ points: Array<{ x: number; y: number }>; filled: boolean }> = [];
-  if (decor.heads && decor.kind === "path") {
-    // Its heads follow its own end runs, and it keeps its corners.
-    const headed = pathHeads(pts, width, decor.heads);
-    line = headed.pts;
-    heads.push(...headed.heads);
-  } else if (decor.heads) {
-    const points = pointsOf(pts);
-    const first = points[0];
-    const last = points[points.length - 1];
-    if (first && last) {
-      const span = Math.hypot(last.x - first.x, last.y - first.y);
-      const start = decor.heads.start
-        ? arrowHead(last, first, width, decor.heads.start, span)
-        : null;
-      const end = decor.heads.end ? arrowHead(first, last, width, decor.heads.end, span) : null;
-      const from = start ? start.stop : first;
-      const to = end ? end.stop : last;
-      const p = pts[2] ?? 0.5;
-      line = [from.x, from.y, p, to.x, to.y, p];
-      if (start) heads.push(start);
-      if (end) heads.push(end);
-    }
-  }
-  const path = pathFromOps(outlineOps(line, decor.radius ?? 0, closed));
+  const { outline, closed, heads } = shapeGeometry(pts, width, decor);
+  const path = pathFromOps(outline);
   if (decor.fill && closed) {
     const { color, alpha } = splitFill(decor.fill);
     ctx.save();
@@ -3802,6 +3682,24 @@ export interface ThumbnailOptions {
    * drawn where it lies on the page, so the ruling stays on the ink's grid.
    */
   crop?: { x: number; y: number; width: number; height: number };
+  /**
+   * Paint only what lies under the page's ink (`"under"`: paper, pictures
+   * behind the ink, tables, graphs, equations, connectors) or only what lies
+   * over it (`"over"`: task boxes, pictures in front, text boxes, cover
+   * tapes, on a transparent canvas): the PDF export draws the ink between
+   * them in vectors (`export/vector-ink`). Absent paints everything.
+   */
+  parts?: "under" | "over";
+}
+
+/** Whether `page` has anything {@link renderPageThumbnail} paints over its ink (`parts: "over"`). */
+export function hasOverInk(page: Page): boolean {
+  return (
+    (page.tasks?.length ?? 0) > 0 ||
+    page.images.some((image) => image.front === true) ||
+    page.textBoxes.some((box) => !noteOfText(page, box)) ||
+    page.strokes.some(isTape)
+  );
 }
 
 /**
@@ -3828,10 +3726,13 @@ export function renderPageThumbnail(
   if (!ctx) return;
   const ox = crop?.x ?? 0;
   const oy = crop?.y ?? 0;
+  const under = options.parts !== "over";
+  const over = options.parts !== "under";
+  const transparent = options.transparent === true || !under;
 
   const look = pageLook(page.backdrop, options.paper ?? LIGHT_PAPER);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (!options.transparent) {
+  if (!transparent) {
     ctx.fillStyle = look.paper;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
@@ -3851,14 +3752,14 @@ export function renderPageThumbnail(
     : undefined;
   // A 1 page-px rule is about a tenth of a CSS pixel at thumbnail size and
   // would vanish; draw rules roughly half a CSS pixel wide instead.
-  if (!options.transparent) {
+  if (!transparent) {
     paintPagePaper(painter, ctx, page, Math.max(1, (0.5 * width) / cssWidth), {
       deviceScale: k,
       paper: options.paper ?? LIGHT_PAPER,
       ...(region ? { region } : {}),
     });
     if (options.furniture) paintFurniture(ctx, page.geometry, options.furniture, look.night);
-  } else if (marginBackdrop(page)) {
+  } else if (under && marginBackdrop(page)) {
     // Over a PDF drawn elsewhere (export): the margin's paper is not the PDF's, so it comes along.
     paintPagePaper(
       painter,
@@ -3900,21 +3801,29 @@ export function renderPageThumbnail(
       );
     }
   };
-  pictures(false);
-  // Tables lie under the ink, so handwriting in a cell shows over its lines.
-  for (const table of page.tables ?? []) paintTable(ctx, table, look.night);
-  // So do graphs: a note written over a curve shows over it.
-  for (const graph of page.graphs ?? []) {
-    paintGraph(ctx, graph, { level: k, night: look.night, paper: look.paper });
+  if (under) {
+    pictures(false);
+    // Tables lie under the ink, so handwriting in a cell shows over its lines.
+    for (const table of page.tables ?? []) paintTable(ctx, table, look.night);
+    // So do graphs: a note written over a curve shows over it.
+    for (const graph of page.graphs ?? []) {
+      paintGraph(ctx, graph, { level: k, night: look.night, paper: look.paper });
+    }
+    // And typed equations, over the graphs.
+    for (const equation of page.equations ?? []) paintEquation(ctx, equation, look.night);
+    // And the arrows joining shapes.
+    paintConnectors(ctx, page, look.night);
   }
-  // And typed equations, over the graphs.
-  for (const equation of page.equations ?? []) paintEquation(ctx, equation, look.night);
-  // And the arrows joining shapes.
-  paintConnectors(ctx, page, look.night);
-
-  for (const stroke of page.strokes) {
-    if (isNoteInk(stroke, notes) || isTape(stroke)) continue;
-    fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, inkShade(look));
+  if (!over) {
+    ctx.restore();
+    return;
+  }
+  // The ink itself: neither part has it, the export draws it in vectors between them.
+  if (!options.parts) {
+    for (const stroke of page.strokes) {
+      if (isNoteInk(stroke, notes) || isTape(stroke)) continue;
+      fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, inkShade(look));
+    }
   }
   // Handwriting made a checklist item has its box beside it, in its ink colour.
   for (const task of page.tasks ?? []) paintTaskBox(ctx, page, task, look.night);

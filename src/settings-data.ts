@@ -428,6 +428,11 @@ export interface GoodObsidianSettings {
   deskColor: string;
   /** Export as PDF leaves out the paper's lines, grid, dots and texture. */
   exportPlainPaper: boolean;
+  /**
+   * Export as PDF (and Ask AI's notebook PDF) writes the ink as vector paths
+   * over a picture of the paper (`export/vector-ink`): smaller, sharp at any zoom.
+   */
+  exportVectorInk: boolean;
   /** The export dialog's format, as last picked: PDF, PNG or JPG. Checked where it is read. */
   exportFormat: ExportFormat;
   /** Which page margins an export keeps, as last picked. Checked where it is read. */
@@ -643,6 +648,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   desk: "auto",
   deskColor: LIGHT_PAPER.desk,
   exportPlainPaper: false,
+  exportVectorInk: false,
   exportFormat: "pdf",
   exportMargins: "all",
 
