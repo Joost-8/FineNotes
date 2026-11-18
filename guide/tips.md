@@ -87,6 +87,12 @@ A tip no guide entry links is still found by `finenotes_help`, by its own words.
 - **What:** In the page sidebar, tap a page's ribbon.
 - **In the guide:** `moreBookmark`, `bookmarks`
 
+### Try a gesture from its tip
+
+- **Id:** `tryGesture`
+- **What:** A gesture's tip has Try it: a scratch page opens. Do the gesture, the ✓ fills, and you are back.
+- **In the guide:** none
+
 ## Pen gestures
 
 ### Size it while you hold
@@ -123,10 +129,10 @@ A tip no guide entry links is still found by `finenotes_help`, by its own words.
 - **Reach:** A gesture on the page.
 - **In the guide:** none
 
-### Curved and elbow arrows
+### Draw curved and elbow arrows
 
 - **Id:** `curvedElbow`
-- **What:** Pick either in the Shape tool and drag. A middle dot bends the curve; an elbow's end re-routes it.
+- **What:** In the Shape tool, pick either and draw the arrow: on lifting it turns clean and keeps your path.
 - **In the guide:** `curvedElbow`
 
 ### Things line up as they move
@@ -272,11 +278,23 @@ A tip no guide entry links is still found by `finenotes_help`, by its own words.
 - **What:** The chevron after the pen widths takes a typed width in millimetres.
 - **In the guide:** `penWidthPopover`
 
+### Each width keeps its own
+
+- **Id:** `widthPresets`
+- **What:** Pick a width preset, then move the slider or type a width: only that preset changes. Reset puts them back.
+- **In the guide:** none
+
 ### Typed equations
 
 - **Id:** `typedEquation`
 - **What:** The Text tool's Σ places a formula. Type LaTeX and see it set.
 - **In the guide:** `textEquation`, `typedEquation`
+
+### Markdown in text boxes
+
+- **Id:** `markdownText`
+- **What:** Pick Markdown in the Text tool's Style list, or paste Markdown. Let go and it is drawn formatted.
+- **In the guide:** none
 
 ### Write big, land small
 
@@ -386,6 +404,12 @@ A tip no guide entry links is still found by `finenotes_help`, by its own words.
 - **What:** Home's New menu has a board: one page that grows as you write near its edges.
 - **Words:** infinite canvas endless whiteboard
 - **In the guide:** `newBoard`
+
+### Several boards in one file
+
+- **Id:** `boardsInFile`
+- **What:** A board's sidebar lists its boards like pages: + adds one. In a notebook, Add page ends with Add board.
+- **In the guide:** none
 
 ### Write across pages
 
@@ -509,6 +533,12 @@ A tip no guide entry links is still found by `finenotes_help`, by its own words.
 - **What:** With a recording's player open, tap your writing to hear what was said.
 - **In the guide:** `recordAudio`, `playbackReplayInk`
 
+### Transcribe with an online service
+
+- **Id:** `onlineTranscribe`
+- **What:** Settings › AI › Recordings › Transcribe recordings with: pick Groq, OpenAI or another service, add a key.
+- **In the guide:** none
+
 ### Laser pointer
 
 - **Id:** `laser`
@@ -580,6 +610,12 @@ A tip no guide entry links is still found by `finenotes_help`, by its own words.
 - **What:** In a note, type ![[Name.notebook#page=3]] to show that page. A tap opens the notebook there.
 - **Words:** embed markdown note
 - **In the guide:** `embedPages`
+
+### Embed part of a board
+
+- **Id:** `frameEmbed`
+- **What:** Lasso it and choose Turn into › Frame to embed. Paste the copied link into any note to show just that part.
+- **In the guide:** none
 
 ### PDF links work
 
@@ -729,6 +765,12 @@ A tip no guide entry links is still found by `finenotes_help`, by its own words.
 - **What:** Tap the star in the pen's bar to save the pen in hand. On a keyboard, 1 to 8 pick them.
 - **In the guide:** `settingSavedPens`, `savedPens`
 
+### Pens on the toolbar
+
+- **Id:** `penOnBar`
+- **What:** In the pen's menu, Add to toolbar gives the pen in hand its own button. In Saved pens, the pin puts one there.
+- **In the guide:** none
+
 ### Reorder your pens
 
 - **Id:** `penOrder`
@@ -773,6 +815,12 @@ A tip no guide entry links is still found by `finenotes_help`, by its own words.
 - **Id:** `dockOptions`
 - **What:** In Customize toolbar, Dock tool options keeps a tool's bar beside the toolbar, off the page.
 - **In the guide:** `dockToolOptions`
+
+### More colours in a docked bar
+
+- **Id:** `dockColours`
+- **What:** With Dock tool options on, the widths are one button, so the bar holds more colours. Swipe it for the rest.
+- **In the guide:** none
 
 ### Every shortcut listed
 

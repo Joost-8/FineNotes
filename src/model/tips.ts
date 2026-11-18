@@ -67,6 +67,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("searchInk", "searchInk"),
           tip("tapColour", "tapColour"),
           tip("ribbon", "ribbon"),
+          tip("tryGesture", "tryGesture"),
         ],
       },
     ],
@@ -131,7 +132,9 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("checklist", "checklist"),
           tip("eyedropper", "eyedropper"),
           tip("widthMm", "widthMm"),
+          tip("widthPresets", "widthPresets"),
           tip("typedEquation", "typedEquation"),
+          tip("markdownText", "markdownText"),
           tip("zoomBox", "zoomBox"),
           tip("zoomFrame", "zoomFrame"),
           tip("zoomAdvance", "zoomAdvance"),
@@ -155,6 +158,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("margins", "margins"),
           tip("darkDesk", "darkDesk"),
           tip("newBoard", "newBoard"),
+          tip("boardsInFile", "boardsInFile"),
           tip("joinedPages", "joinedPages"),
           tip("plainExport", "plainExport"),
           tip("pictureExport", "pictureExport"),
@@ -192,6 +196,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("snap", "snap"),
           tip("holdWord", "holdWord"),
           tip("hear", "hear"),
+          tip("onlineTranscribe", "onlineTranscribe"),
           tip("laser", "laser"),
           tip("tapeMagnet", "tapeMagnet"),
           tip("tapeExport", "tapeExport"),
@@ -209,6 +214,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("linkTo", "linkTo"),
           tip("inkLink", "inkLink"),
           tip("embedPages", "embedPages"),
+          tip("frameEmbed", "frameEmbed"),
           tip("pdfLinks", "pdfLinks"),
           tip("learnWriting", "learnWriting"),
         ],
@@ -262,6 +268,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
         title: "notebooks.tips.collection.yours",
         tips: [
           tip("savedPens", "savedPens"),
+          tip("penOnBar", "penOnBar"),
           tip("penOrder", "penOrder"),
           tip("colourOff", "colourOff"),
           tip("pillDock", "pillDock"),
@@ -269,6 +276,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("looks", "looks"),
           tip("toolbarEdge", "toolbarEdge"),
           tip("dockOptions", "dockOptions"),
+          tip("dockColours", "dockColours"),
           tip("shortcutSheet", "shortcutSheet"),
           tip("spaceDrag", "spaceDrag"),
           tip("shiftErase", "shiftErase"),
@@ -284,6 +292,20 @@ export const TIP_COLLECTIONS: readonly TipCollection[] = TIP_SECTIONS.flatMap((s
 
 /** Newest first. Every release with something to show adds an entry. */
 export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlights[] = [
+  {
+    version: "2.10.0",
+    tips: [
+      tip("boardsInFile", "boardsInFile"),
+      tip("frameEmbed", "frameEmbed"),
+      tip("markdownText", "markdownText"),
+      tip("penOnBar", "penOnBar"),
+      tip("curvedElbow", "curvedElbow"),
+      tip("onlineTranscribe", "onlineTranscribe"),
+      tip("tryGesture", "tryGesture"),
+      tip("dockColours", "dockColours"),
+      tip("widthPresets", "widthPresets"),
+    ],
+  },
   {
     // 2.9.0's card missed most of that release and could ignore taps: 2.9.1
     // shows all of 2.9 again, to those who closed the first card too.
@@ -413,6 +435,12 @@ export function homeCardKind(hasNews: boolean, offerDue: boolean): HomeCardKind 
  */
 export const TIP_CONTROLS: Readonly<Record<string, string>> = {
   looks: "settings",
+  frameEmbed: "select",
+  markdownText: "text",
+  penOnBar: "pen",
+  curvedElbow: "shape",
+  onlineTranscribe: "record",
+  widthPresets: "pen",
   insertGraph: "calculator",
   lockFit: "more",
   margins: "more",
