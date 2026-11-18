@@ -388,7 +388,7 @@ export const notebooks = {
   "notebooks.template.paper": "Paper",
   "notebooks.page.size.standard": "A4 (Standard)",
   "notebooks.template.current": "Current template",
-  "notebooks.command.newNotebookOrPage": "New notebook or page…",
+  "notebooks.command.newNotebookOrPage": "New notebook or board…",
   "notebooks.command.createWithLastSettings": "Create notebook with last settings",
   "notebooks.command.insertNewNotebook": "Insert a new notebook here",
   "notebooks.command.showWelcome": "Show the welcome",
@@ -1056,7 +1056,7 @@ export const notebooks = {
     "Double tap the page with one finger to fill the screen, and again to see it whole.",
   "notebooks.tips.fingerHoldMenu.title": "Hold a finger down",
   "notebooks.tips.fingerHoldMenu.body":
-    "Hold a finger on the page, with any tool, for Paste, Text box, Comment and Select all.",
+    "Hold a finger on the page, with any tool, for Paste, Text box and Select all. Comment is under its ⋯.",
   "notebooks.tips.colourOff.title": "Drag a colour away",
   "notebooks.tips.colourOff.body":
     "Hold a colour in the pen's bar and drag it off the bar to remove it.",
@@ -1129,9 +1129,9 @@ export const notebooks = {
   "notebooks.tips.arcsHearts.title": "More shapes snap",
   "notebooks.tips.arcsHearts.body":
     "Draw a heart, an arc or a pie slice and hold the pen still: they snap clean too.",
-  "notebooks.tips.curvedElbow.title": "Curved and elbow arrows",
+  "notebooks.tips.curvedElbow.title": "Draw curved and elbow arrows",
   "notebooks.tips.curvedElbow.body":
-    "Pick either in the Shape tool and drag. A middle dot bends the curve; an elbow's end re-routes it.",
+    "In the Shape tool, pick either and draw the arrow: on lifting it turns clean and keeps your path.",
   "notebooks.tips.lineUpMoves.title": "Things line up as they move",
   "notebooks.tips.lineUpMoves.body":
     "Move a selection, picture or sticky note near a shape: it snaps to edges and centres, with red guides.",
@@ -1201,6 +1201,30 @@ export const notebooks = {
   "notebooks.tips.newBoard.title": "Endless boards",
   "notebooks.tips.newBoard.body":
     "Home's New menu has a board: one page that grows as you write near its edges.",
+  "notebooks.tips.boardsInFile.title": "Several boards in one file",
+  "notebooks.tips.boardsInFile.body":
+    "A board's sidebar lists its boards like pages: + adds one. In a notebook, Add page ends with Add board.",
+  "notebooks.tips.frameEmbed.title": "Embed part of a board",
+  "notebooks.tips.frameEmbed.body":
+    "Lasso it and choose Turn into › Frame to embed. Paste the copied link into any note to show just that part.",
+  "notebooks.tips.markdownText.title": "Markdown in text boxes",
+  "notebooks.tips.markdownText.body":
+    "Pick Markdown in the Text tool's Style list, or paste Markdown. Let go and it is drawn formatted.",
+  "notebooks.tips.penOnBar.title": "Pens on the toolbar",
+  "notebooks.tips.penOnBar.body":
+    "In the pen's menu, Add to toolbar gives the pen in hand its own button. In Saved pens, the pin puts one there.",
+  "notebooks.tips.onlineTranscribe.title": "Transcribe with an online service",
+  "notebooks.tips.onlineTranscribe.body":
+    "Settings › AI › Recordings › Transcribe recordings with: pick Groq, OpenAI or another service, add a key.",
+  "notebooks.tips.tryGesture.title": "Try a gesture from its tip",
+  "notebooks.tips.tryGesture.body":
+    "A gesture's tip has Try it: a scratch page opens. Do the gesture, the ✓ fills, and you are back.",
+  "notebooks.tips.dockColours.title": "More colours in a docked bar",
+  "notebooks.tips.dockColours.body":
+    "With Dock tool options on, the widths are one button, so the bar holds more colours. Swipe it for the rest.",
+  "notebooks.tips.widthPresets.title": "Each width keeps its own",
+  "notebooks.tips.widthPresets.body":
+    "Pick a width preset, then move the slider or type a width: only that preset changes. Reset puts them back.",
   "notebooks.tips.embedPages.title": "Pages inside notes",
   "notebooks.tips.embedPages.body":
     "In a note, type ![[Name.notebook#page=3]] to show that page. A tap opens the notebook there.",

@@ -12,6 +12,7 @@
  * No DOM, no Obsidian, no network — the IO lives in `ai-client.ts`.
  */
 
+import type { AskUsage } from "./ask-usage";
 import {
   type LlmDialect,
   type LlmHttpRequest,
@@ -61,6 +62,8 @@ export interface ChatTurn {
   pages?: readonly number[];
   /** On an answer: what Claude did in the notebook to give it. Shown; never sent. */
   actions?: readonly string[];
+  /** On an answer: the tokens it took (`ask-usage.ts`). Shown as its cost; never sent or saved. */
+  usage?: AskUsage;
 }
 
 /** A conversation for one vendor. A transcription is one of these, one question long. */
@@ -310,6 +313,7 @@ export function buildAskSystemPrompt(): string {
 export function buildAskToolsPrompt(): string {
   return [
     "You can use tools on the user's notebook: read other pages, search its text, add a text box, a table, a page or a practice page, go to a page, put a drawing on a page, mark an area of a page, pin a comment to a spot, and organise the notebook (page titles, contents headings, bookmarks, page order).",
+    "You can also search the user's other notes, notebooks and PDFs (search_vault) and read one as text (read_note), in the folders they allow, starting with the notes this notebook links to (linked_notes). Do that only when the question needs something outside this notebook, and name the notes you used. When the user asks for something in a note of its own (a summary, flashcards, a to-do list), write it with create_note.",
     "Read or search when the question needs pages you were not given. Change the notebook only when the user asks for it, and say what you did.",
     "When asked to check work, point at each problem where it is: a comment at that spot, or mark_area with a comment. Positions are fractions of the page (0 to 1 from the top-left), read off the page's image.",
   ].join("\n");

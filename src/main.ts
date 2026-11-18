@@ -1222,6 +1222,9 @@ export default class GoodObsidianPlugin extends Plugin {
     // The folded sections before the compact settings (2026-10-21): now the
     // open ones are kept, and every section starts folded.
     delete loaded.foldedSettingsSections;
+    // "Ask AI starts on the open page" is gone (2026-11-17): a chat starts
+    // with no page picked, and Ask's own reach button took its row's place.
+    delete loaded.askAttachPage;
     // A list of its own, read as pens: the default's must stay as it is.
     // Each with an id, for a button of its own on the bar (FineNotes#211).
     this.settings.savedPens = withPenIds(savedPensOf(this.settings.savedPens));
@@ -3976,6 +3979,14 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   // --- obsidian://finenotes links ------------------------------------------------
+
+  /** An `obsidian://finenotes?…` link tapped inside FineNotes (an Ask answer's handbook link). */
+  openFinenotesLink(url: string): void {
+    const query = url.slice(url.indexOf("?") + 1);
+    const params: Record<string, string> = {};
+    for (const [key, value] of new URLSearchParams(query)) params[key] = value;
+    void this.handleFinenotesLink(params);
+  }
 
   private async handleFinenotesLink(params: Record<string, string>): Promise<void> {
     const request = parseFinenotesLink(params);

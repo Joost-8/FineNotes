@@ -155,6 +155,27 @@ describe("AskSession files", () => {
     expect(saved[1].chat.turns[0].files).toEqual([{ name: "Week 2.pdf", path: "L/Week 2.pdf" }]);
   });
 
+  it("takes the files out of the field once sent, not when the answer comes", async () => {
+    const answer = deferred<{ text: string }>();
+    const { deps } = setup({ ask: () => answer.promise });
+    const session = open(deps);
+    session.attach(pdf);
+    const sent = session.send("Explain slide 4");
+    await vi.waitFor(() => expect(session.attachments).toEqual([]));
+    expect(session.busy).toBe(true);
+    answer.resolve({ text: "ok" });
+    await sent;
+    expect(session.attachments).toEqual([]);
+  });
+
+  it("keeps the files in the field when the user declines to send", async () => {
+    const { deps } = setup({ confirm: () => Promise.resolve(false) });
+    const session = open(deps);
+    session.attach(pdf);
+    await session.send("Explain");
+    expect(session.attachments).toEqual([pdf]);
+  });
+
   it("can ask about a file alone, and keeps the files when the question fails", async () => {
     const fail = setup({ ask: () => Promise.reject(new Error("HTTP 400")) });
     const a = open(fail.deps);

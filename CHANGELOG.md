@@ -8,6 +8,8 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-11-18
+
 ### Added
 
 - **Thank you, sponsors.** When a release comes with new GitHub sponsors,
@@ -108,9 +110,44 @@ extracted from the matching section of this file by `release.yml`.
   → goes to the next page and ← to the previous one, whether pages run down
   or across, as Page Down and Page Up already did. The ? shortcut list
   shows them.
+- **Ask AI reads your other notes, and can write one**
+  ([#259](https://github.com/Joost-8/FineNotes/pull/259)). Ask AI can now
+  search the vault, read a note or another notebook (as its transcriptions),
+  follow the links to and from this notebook, and write a new Markdown note
+  beside it (a summary, flashcards, to-dos) that links back. It never changes
+  a note you have. Settings › AI › Ask AI can read: this notebook only, this
+  notebook's folder (the default) or the whole vault; the same choice is a
+  button in Ask's top bar. The search runs on your device. Show what each
+  answer cost (off by default) puts an estimate under each answer. Claude
+  Sonnet 5.5 is the default model. The setting Ask AI starts on the open
+  page is gone: a chat starts with no page picked.
+- **Present** (⋯ › Present) shows the notebook as slides: the toolbar and
+  sidebar go, the page fills the screen and the laser pointer is in hand.
+  → ↓ Space and Page Down turn forward, ← ↑ and Page Up turn back (a
+  presentation clicker works), Esc leaves.
+- **Alt-drag to duplicate.** Hold Alt (Option) while dragging a lasso
+  selection to drag a copy and leave the original. One undo takes back both.
+- **The S Pen's side button works on Android**
+  ([#149](https://github.com/Joost-8/FineNotes/issues/149)). Hold the side
+  button and write: the stroke erases, or does what Pen gestures sets the
+  side button to. Thanks to @phfleitao.
+- **Column sums**
+  ([discussion #228](https://github.com/Joost-8/FineNotes/discussions/228)).
+  Draw a line under a column of handwritten amounts: they glow, and a tap
+  shows each amount read and the total; Write puts the total under the line.
+  One line is a subtotal, two a total, and the total follows if you rewrite
+  an amount. Turn it off in Settings with Add up columns of numbers.
 
 ### Changed
 
+- **Export as PDF writes handwriting and paper as vector paths**
+  ([#261](https://github.com/Joost-8/FineNotes/pull/261)), as Goodnotes does,
+  not as a picture of each page. A 69-page handwritten notebook went from
+  39.8 MB to 7.7 MB, exports faster, and stays sharp at any zoom. Ask AI's
+  copy of a notebook gets smaller the same way.
+- **Ask AI without a page, or a whole notebook as one PDF.** A question with
+  no page picked now goes on its own instead of being refused. Past the
+  10-page limit, the page picker offers the whole notebook as one PDF.
 - **More colours in the bar with Dock tool options on**
   ([discussion #200](https://github.com/Joost-8/FineNotes/discussions/200)).
   With the bar along the top or bottom, the pen's widths are one button
@@ -220,6 +257,24 @@ extracted from the matching section of this file by `release.yml`.
   ([#227](https://github.com/Joost-8/FineNotes/issues/227)). Plugins such as
   Kanban and True Recall that ask Obsidian for its Markdown editor got an
   error and lost their editors; FineNotes now leaves those calls to Obsidian.
+- **A synced notebook is never overwritten by a mix of two versions**
+  ([#246](https://github.com/Joost-8/FineNotes/issues/246)). When a notebook
+  changed on disk while it had unsaved changes, Obsidian merged the two as
+  plain text, which could make a notebook that does not open; FineNotes then
+  saved that over the good one. Obsidian no longer merges notebooks, and a
+  notebook whose load is held is never saved.
+- **Squared, dotted and lined paper runs on across joined pages.** Where two
+  joined pages met, the grid restarted with a strip and a whole square.
+- **The whole-stroke eraser leaves no highlighter edges.** A broad
+  highlighter's edges stayed on the page until it was repainted.
+- **Customize toolbar's menus.** A press outside a tool's menu closes just
+  that menu, and a tap on the same tool again closes it.
+- **A written answer's 4 is a 4**
+  ([#253](https://github.com/Joost-8/FineNotes/issues/253)). On the symbol
+  practice sheet, a stroke that reached into the next line (the upright of a 4) was left out, so calculation notes wrote it as an L.
+- **Every tip's Show me works from Home**
+  ([#245](https://github.com/Joost-8/FineNotes/pull/245)). Most did nothing
+  there; they now bring a notebook forward first, or say one is needed.
 
 ## [2.9.1] - 2026-11-10
 

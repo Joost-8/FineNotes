@@ -113,6 +113,23 @@ import {
   buildAskToolsPrompt,
 } from "../recognition/ai-chat";
 import { type AskToolCall, searchResultText } from "../recognition/ask-tools";
+import {
+  VAULT_OFF_TEXT,
+  askVaultScopeOf,
+  docText,
+  freeNotePath,
+  inScope,
+  linkedNotesText,
+  newNoteFolder,
+  newNoteText,
+  noteFileName,
+  readSlice,
+  resolveNotePath,
+  scopeText,
+  vaultSearchText,
+} from "../recognition/vault-context";
+import { VaultContextSource } from "./vault-context-source";
+import { askAbilitiesPrompt, helpEntries, helpText } from "../recognition/finenotes-help";
 import { generatedImageName } from "../recognition/ai-image";
 import { nextElementId, textBoxBelow, textBoxFrame } from "../recognition/ai-placement";
 import {
@@ -554,7 +571,7 @@ import {
   shownPaperTheme,
 } from "../settings-data";
 import { penCursorStyleOf } from "./pen-cursor";
-import { t, tn } from "../i18n/translate";
+import { english, t, tn } from "../i18n/translate";
 import { errorMessage } from "../util/errors";
 import { writeSystemText } from "./system-clipboard";
 import { obsidianOpenUri } from "../model/home-link";
@@ -566,6 +583,8 @@ import { Presenter } from "./presenter";
 /** Quiet time after the page being read changes before it is remembered. */
 /** A notebook that has just opened waits this long before its first page's PDF text is read for OCR, ms. */
 const OCR_OPEN_DELAY_MS = 800;
+/** JPEG quality of a notebook attached to Ask AI as a PDF: legible to a model, a third the size. */
+const ASK_PDF_QUALITY = 0.6;
 /** Present mode fits the page once the pane has its new size (`startPresenting`). */
 const PRESENT_SETTLE_MS = 150;
 /** How long after opening a notebook its PDF pages' text starts being read for Home's search, ms. */
@@ -788,6 +807,10 @@ export class InkView extends TextFileView {
   private images: VaultImageCache | null = null;
   /** The Ask AI conversation about this notebook, while it is open (see `askConversation`). */
   private askSession: AskSession | null = null;
+  /** The vault as Ask AI reads it, kept for a few seconds across tool calls. */
+  private vaultSource: VaultContextSource | null = null;
+  /** Notes Ask wrote while this notebook is open, by lower-case title: the only ones it may rewrite. */
+  private readonly askNotes = new Map<string, string>();
   /** Ask in its sidebar, beside the page (the other layout is a window). */
   private chatPanel: AskChatPanel | null = null;
   /** Search this notebook: the field and its results, in a sidebar or a window (#112). */
@@ -2361,6 +2384,16 @@ export class InkView extends TextFileView {
       session,
       sourcePath: this.file?.path ?? "",
       target: targetLabel(this.plugin.textAiConfig()),
+      showCost: () => this.settings.askShowCost,
+      openAppLink: (url) => this.plugin.openFinenotesLink(url),
+      vaultScope: {
+        get: () => askVaultScopeOf(this.settings.askVaultScope),
+        set: (scope) => {
+          this.settings.askVaultScope = scope;
+          this.vaultSource = null;
+          void this.plugin.saveSettings();
+        },
+      },
       currentPage: () => (this.surface?.currentPage ?? 0) + 1,
       pageHasContent: (n) => {
         const page = this.doc.pages[n - 1];
@@ -2444,14 +2477,14 @@ export class InkView extends TextFileView {
           page: current,
           totalPages: this.doc.pages.length,
           save: this.settings.askSaveChats,
-          attachPage: this.settings.askAttachPage,
+          // A chat sends a page only when the user picks one (discussion #107).
+          attachPage: false,
           screen: this.showingBoard,
         },
       );
       this.askSession = session;
     } else {
       session.setTotalPages(this.doc.pages.length);
-      session.attachPage = this.settings.askAttachPage;
       session.follow(current);
     }
     return session;
@@ -2468,7 +2501,14 @@ export class InkView extends TextFileView {
   ): Promise<AskAnswer> {
     const config = this.plugin.textAiConfig();
     const system = buildAskSystemPrompt();
-    const withTools = askAiWithTools(config, `${system}\n${buildAskToolsPrompt()}`, turns, {
+    // What it can do and which settings to suggest; the same text while the settings stay.
+    const abilities = askAbilitiesPrompt(
+      askVaultScopeOf(this.settings.askVaultScope),
+      this.settings.askShowCost,
+      this.file?.path ?? "",
+    );
+    const prompt = `${system}\n${buildAskToolsPrompt()}\n${abilities}`;
+    const withTools = askAiWithTools(config, prompt, turns, {
       totalPages: () => this.doc.pages.length,
       run: (call) => this.runAskTool(call),
       onStatus,
@@ -2476,6 +2516,104 @@ export class InkView extends TextFileView {
     if (config.vendor !== "custom") return withTools;
     // A self-hosted server may not do tools: then it answers from what was sent.
     return withTools.catch(() => askAi(config, system, turns));
+  }
+
+  /** `search_vault` and `read_note`: the other notes the settings let Ask AI read, as text. */
+  private async runVaultTool(
+    call: Extract<AskToolCall, { tool: "search_vault" | "read_note" | "linked_notes" }>,
+  ): Promise<AskToolOutcome> {
+    const scope = askVaultScopeOf(this.settings.askVaultScope);
+    const notebook = this.file?.path ?? "";
+    if (scope === "off" || !notebook) return { text: VAULT_OFF_TEXT, isError: true };
+    if (call.tool === "linked_notes") {
+      const { resolvedLinks: links, unresolvedLinks: loose } = this.app.metadataCache;
+      const outgoing = Object.keys(links[notebook] ?? {});
+      // [[Week 4]] does not resolve to Week 4.notebook.md, but it is a link to it all the same.
+      const name = this.file?.basename.replace(/\.(notebook|page|ink)$/i, "").toLowerCase() ?? "";
+      const incoming = [
+        ...Object.keys(links).filter((from) => links[from]?.[notebook] !== undefined),
+        ...Object.keys(loose).filter((from) =>
+          Object.keys(loose[from] ?? {}).some(
+            (target) => target.split("/").pop()?.toLowerCase() === name,
+          ),
+        ),
+      ];
+      const readable = (path: string): boolean =>
+        /\.(md|pdf)$/i.test(path) && inScope(path, notebook, scope);
+      return {
+        text: linkedNotesText(
+          call.direction === "from" ? [] : outgoing,
+          call.direction === "to" ? [] : incoming,
+          readable,
+        ),
+      };
+    }
+    this.vaultSource ??= new VaultContextSource(this.app, (file) => this.plugin.isInkFile(file));
+    const docs = await this.vaultSource.docs(notebook, scope);
+    if (call.tool === "search_vault") {
+      return { text: vaultSearchText(docs, call.query, scopeText(notebook, scope)) };
+    }
+    const found = resolveNotePath(
+      call.path,
+      docs.map((doc) => doc.path),
+    );
+    if ("error" in found) {
+      const own = resolveNotePath(call.path, [notebook]);
+      return {
+        text:
+          "path" in own
+            ? "That is this notebook: use read_pages or search_notebook for it."
+            : found.error,
+        isError: true,
+      };
+    }
+    const doc = docs.find((d) => d.path === found.path);
+    if (!doc) return { text: `${found.path} cannot be read now.`, isError: true };
+    return { text: readSlice(doc.path, doc.kind, docText(doc), call.from) };
+  }
+
+  /**
+   * `create_note`: a new Markdown note beside the notebook, which the
+   * answer links to. Never someone's note: a taken name gets a number, and
+   * `replace` rewrites only a note Ask itself wrote while this notebook is
+   * open (`askNotes`), to correct it.
+   */
+  private async createAskNote(
+    title: string,
+    text: string,
+    replace: boolean,
+  ): Promise<AskToolOutcome> {
+    const notebook = this.file?.path ?? "";
+    const vault = this.app.vault;
+    const name = noteFileName(title);
+    const link = (path: string, base: string): string => `[[${path.replace(/\.md$/, "")}|${base}]]`;
+    if (replace) {
+      const own = this.askNotes.get(name.toLowerCase());
+      const file = own ? vault.getFileByPath(own) : null;
+      if (!file) {
+        return {
+          text: `You wrote no note called “${name}” in this chat, so there is nothing to rewrite: notes you did not write are never changed.`,
+          isError: true,
+        };
+      }
+      await vault.modify(file, newNoteText(text, notebook));
+      return {
+        text: `Rewrote ${file.path}. Link to it in your answer as ${link(file.path, file.basename)}.`,
+        done: t("view.ask.doneNoteFixed", { name: file.basename }),
+      };
+    }
+    const path = freeNotePath(
+      newNoteFolder(notebook),
+      name,
+      (p) => vault.getAbstractFileByPath(p) !== null,
+    );
+    const file = await vault.create(path, newNoteText(text, notebook));
+    this.askNotes.set(name.toLowerCase(), file.path);
+    // Not opened: that would take the tab, or the focus, from the notebook the chat is about.
+    return {
+      text: `Wrote the new note ${file.path}. Link to it in your answer as ${link(file.path, file.basename)}. To correct it, call create_note again with this title and replace: true.`,
+      done: t("view.ask.doneNote", { name: file.basename }),
+    };
   }
 
   /** Run one of the AI's notebook tools (`ask-tools.ts`). */
@@ -2507,6 +2645,16 @@ export class InkView extends TextFileView {
           ),
         };
       }
+      case "search_vault":
+      case "read_note":
+      case "linked_notes":
+        return this.runVaultTool(call);
+      case "create_note":
+        return this.createAskNote(call.title, call.text, call.replace);
+      case "finenotes_help":
+        return {
+          text: helpText(call.query, helpEntries(call.query, english)),
+        };
       case "add_text_box": {
         const refused = editRefused();
         if (refused || !surface) return refused ?? { text: "", isError: true };
@@ -5043,7 +5191,9 @@ export class InkView extends TextFileView {
     try {
       const bytes = await exportPagesToPdf(
         pages,
-        { ...this.previewSources(), maxPixelScale: 1 },
+        // For the AI, not for print: 1024 px wide at 60% (a 69-page notebook:
+        // 9.3 MB, where print quality made 16.3 MB and broke the services' limits).
+        { ...this.previewSources(), maxPixelScale: 1, jpegQuality: ASK_PDF_QUALITY },
         { title, onProgress },
       );
       return attachmentFromBytes(`${title}.pdf`, bytes);

@@ -68,7 +68,7 @@ export const VENDORS: Record<LlmVendor, VendorDescriptor> = {
   anthropic: {
     ...CLOUD,
     label: "Anthropic (Claude)",
-    defaultModel: "claude-opus-4-8",
+    defaultModel: "claude-sonnet-5-5",
     dialect: "anthropic",
     url: () => "https://api.anthropic.com/v1/messages",
     headers: (apiKey) => ({ "x-api-key": apiKey, "anthropic-version": "2023-06-01" }),
