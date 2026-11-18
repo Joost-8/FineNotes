@@ -62,7 +62,7 @@ describe("askAi", () => {
     expect(sent).toHaveLength(1);
     const body = JSON.parse(sent[0].body as string) as Record<string, unknown>;
     expect(body.system).toBe("be brief");
-    expect(body.model).toBe("claude-opus-4-8");
+    expect(body.model).toBe("claude-sonnet-5-5");
     expect(body.messages).toEqual([
       { role: "user", content: [{ type: "text", text: "What is this?" }] },
     ]);
@@ -142,6 +142,7 @@ describe("askAiWithTools", () => {
       text: "Done: wrote it on page 3.",
       actions: ["Added a text box on page 3"],
       notes: ["Added."],
+      usage: expect.objectContaining({ vendor: "anthropic" }),
     });
     expect(statuses).toEqual(["Reading page 3…", "Writing on page 3…"]);
     const [first, second, third] = bodies();
@@ -295,6 +296,7 @@ describe("askAiWithTools", () => {
         text: "Showing page 2.",
         actions: ["Went to page 2"],
         notes: ["Showing page 2."],
+        usage: expect.objectContaining({ vendor: config.vendor }),
       });
       const [first, second] = bodies();
       expect(first.tools, config.vendor).toEqual(second.tools);

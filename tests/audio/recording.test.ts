@@ -12,7 +12,6 @@ import {
   SEEK_LEAD_MS,
   audioExtensionForMime,
   audioMimeForExtension,
-  audioUploadLimit,
   baseNameOf,
   buildTranscriptNote,
   concatChunks,
@@ -32,12 +31,8 @@ import {
   transcriptParagraphs,
   transcriptPathFor,
   transcriptText,
-  uploadSizeProblem,
 } from "../../src/audio/recording";
 import type { Recording } from "../../src/model/document";
-import { OPENAI_AUDIO_MAX_BYTES } from "../../src/recognition/audio-request";
-
-const MB = 1024 * 1024;
 
 describe("recorderMimeCandidates", () => {
   it("offers AAC in MP4 first where it is supported, then the browser default", () => {
@@ -245,27 +240,6 @@ describe("stroke ↔ recording time", () => {
     expect(seekTargetMs(900_000, 600_000)).toBe(600_000);
     expect(seekTargetMs(60_000, 600_000, 10_000)).toBe(50_000);
     expect(seekTargetMs(10, -5)).toBe(0);
-  });
-});
-
-describe("upload limits", () => {
-  it("knows OpenAI's 25 MB and Gemini's inline budget; a custom endpoint has none", () => {
-    expect(audioUploadLimit("openai")).toBe(OPENAI_AUDIO_MAX_BYTES);
-    expect(audioUploadLimit("google")).toBe(14 * MB);
-    expect(audioUploadLimit("custom")).toBeNull();
-    expect(audioUploadLimit("anthropic")).toBeNull();
-  });
-
-  it("refuses a file that is too big before anything is read or sent", () => {
-    expect(uploadSizeProblem("openai", 21.6 * MB)).toBeNull();
-    expect(uploadSizeProblem("openai", 30 * MB)).toBe(
-      "This recording is 30.0 MB, and OpenAI takes at most 25.0 MB. Record shorter parts.",
-    );
-    expect(uploadSizeProblem("google", 14 * MB)).toBeNull();
-    expect(uploadSizeProblem("google", 20 * MB)).toMatch(
-      /^This recording is 20\.0 MB, and Gemini takes at most about 14\.0 MB .*OpenAI key/,
-    );
-    expect(uploadSizeProblem("custom", 500 * MB)).toBeNull();
   });
 });
 

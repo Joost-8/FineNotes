@@ -1,5 +1,11 @@
 import { bindScrollThumb } from "./scroll-thumb-drag";
 import { type PdfRenderArea, boundsMeet } from "../canvas/pdf-raster";
+import {
+  ALIGN_GUIDE_OVERSHOOT_PX,
+  ALIGN_SNAP_PX,
+  type AlignResult,
+  alignMove,
+} from "../canvas/align-snap";
 import { t, tn } from "../i18n/translate";
 /**
  * The notebook's drawing surface: the part of `InkView` the pen touches.
@@ -129,6 +135,8 @@ import {
   minScaleForSide,
   paperBox,
   polygonOf,
+  type DrawnArea,
+  selectionPatchBounds,
   rectLoop,
   scaleBounds,
   selectionKnobPoint,
@@ -213,6 +221,7 @@ import {
   pageSnapIndex,
   pullAddProgress,
   columnScrollRangeX,
+  columnScrollRangeY,
   rowPageScrollRange,
   rowScrollInsets,
   rowScrollXForPage,
@@ -223,6 +232,7 @@ import {
   ROW_PULL_ADD_PX,
   PULL_ADD_PAGE_PX,
   rowEdgeTurn,
+  rowHeldTurn,
   pullAddAllowed,
   WHEEL_PULL_PAUSE_MS,
   WHEEL_PULL_REST,
@@ -235,7 +245,9 @@ import {
   boardCentre,
   boardScrollRange,
   boardScrollToCentre,
-  layoutBoard,
+  layoutBoards,
+  layoutNotebook,
+  shownBoxes,
 } from "../canvas/page-layout";
 import { movePagePts, pagesReached } from "../canvas/page-join";
 import {
@@ -326,7 +338,17 @@ import { KineticScroller, easeOutCubic, softZoom } from "../canvas/scroll-physic
 import { pairsAsDoubleTap, type PlainTap } from "../input/multi-finger-tap";
 import { scrollThumb } from "../canvas/scroll-thumb";
 import { WRITING_SCALE, formatMm, zoomPercent } from "../model/units";
-import { GrowBoard, boardGrowth, drawnBounds, isBoard, isNoGrowth } from "../model/board";
+import {
+  GrowBoard,
+  boardGrowth,
+  drawnBounds,
+  isBoard,
+  isBoardPage,
+  isNoGrowth,
+  pageAfterTurn,
+} from "../model/board";
+import { afterPainted } from "./after-painted";
+import { lowMemoryDevice } from "./pdf-backdrop";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
   BRUSH_PRESSURE,
@@ -337,6 +359,9 @@ import {
 } from "../ink/stroke-builder";
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
+import { FramePace } from "../canvas/frame-pace";
+import { FrameRun } from "../canvas/frame-run";
+import { type RunBox, type RunMark, boundsSince, unionBox } from "../ink/run-window";
 import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
 import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
@@ -358,10 +383,15 @@ import {
   type BoxPreset,
   isClosedKind,
   isConnectorPreset,
+  isDrawnConnector,
+  presetDecor,
+  presetKind,
   presetGeometry,
   shapePivot,
   transformShape,
+  ELBOW_RADIUS,
 } from "../ink/shape-geometry";
+import { splinePoints, traceCurve, traceElbow } from "../ink/connector-edit";
 import {
   type TableStroke,
   draggedTableBox,
@@ -401,6 +431,7 @@ import {
   textUnder,
 } from "../canvas/pdf-text";
 import type { TextSpan } from "../search/notebook-search";
+import { readingOrder } from "../search/search-results";
 import { type PageLink, linkAt, notebookPageOf } from "../canvas/pdf-links";
 import {
   type PickEnd,
@@ -560,6 +591,7 @@ import {
   lineHeightOf,
   normalizeBorder,
   shownCase,
+  textStyleKey,
   textStyleOf,
 } from "../model/text-style";
 import {
@@ -580,14 +612,29 @@ import {
   type ListKind,
   type TextEdit,
   continueList,
-  setTaskDone,
   taskBoxes,
   toggleList,
 } from "../model/text-list";
+import { continueMarkdownList, setMarkdownTaskDone } from "../model/markdown-text";
+import { looksLikeMarkdown } from "../model/markdown-detect";
+import {
+  fitMarkdownWidth,
+  markdownLinkRects,
+  taskBoxSize,
+  type MarkdownBox,
+  type MarkdownLayout,
+} from "../canvas/markdown-layout";
+import {
+  MARKDOWN_LINK_COLOR,
+  layoutMarkdownOn,
+  markdownMeasure,
+  paintMarkdownText,
+} from "../canvas/markdown-paint";
 import { keyboardHeight } from "./keyboard";
 import { type ViewSpot, carriedOutOfSight, revealDelta, showsIn } from "./text-reveal";
 import { DEFAULT_SHAPE_COLOR, pushRecentColor, sameColor } from "../model/colors";
 import {
+  TEXT_FIT_SLACK,
   canvasFont,
   fitTextWidth,
   layoutTextBox,
@@ -660,13 +707,14 @@ import {
   tableSizeFor,
 } from "./toolbar";
 import type { HighlighterTip, SnapMode } from "../settings-data";
+import { RegionFrames, type ShownRegion } from "./region-frames";
 import { SelectionActionBar, onTap } from "./selection-bar";
 import { swallowGhostClick } from "./ghost-click";
 import { edgeScrollSpeed } from "./page-drag-model";
 import { CalcCard, type CalcCardActions, type CalcCardContent } from "./calc-card";
 import { CalcGlow } from "./calc-glow";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
-import { cleanPastedText, inkFirst, pastedTextOrigin } from "./paste-choice";
+import { cleanPastedText, inkFirst, isPictureFile, pastedTextOrigin } from "./paste-choice";
 import {
   canReadSystemClipboard,
   onSystemTextWritten,
@@ -688,9 +736,13 @@ import {
   type ShortcutTable,
   buttonBit,
   buttonInput,
+  isModifierKey,
   keyInput,
   matchShortcut,
 } from "../model/shortcut-bindings";
+import { KeyLog, type KeyVerdict, keyName } from "../model/key-log";
+import { fastKeys } from "../model/fast-ways";
+import type { NudgeEvent } from "../model/nudges";
 import {
   type ToolLift,
   type ToolUse,
@@ -710,7 +762,14 @@ import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 import { type PenCursorStyle, cursorCss, cursorFor, cursorSize, cursorToolOf } from "./pen-cursor";
 import { type Span, toastSide } from "./toast-side";
 import { RulerOverlay } from "./ruler-overlay";
-import { type PointHandles, movePoint, pickPointHandle, pointHandles } from "../ink/shape-points";
+import {
+  type PointHandles,
+  levelAnchor,
+  movePoint,
+  pickPointHandle,
+  pointHandles,
+  snapsToShapes,
+} from "../ink/shape-points";
 import {
   besideOffset,
   boundsOfPts,
@@ -740,14 +799,26 @@ import {
   nextConnectorId,
 } from "../model/connectors";
 import { DEFAULT_RULER_SNAP } from "../canvas/ruler-geometry";
+import {
+  docOf,
+  type HostWindow,
+  isElement,
+  isHTMLElement,
+  isNode,
+  onWindowMoved,
+  watchSize,
+  winOf,
+} from "./host-window";
 
 /** Zoom in multiplies the zoom by this, and Zoom out divides by it. */
 const ZOOM_STEP = 1.25;
 
 /**
- * Rasterising budget for a frame that is scrolling or zooming, in ms. The
- * rest of a 16.7 ms frame is the blits, the compositor and headroom; a tile
- * the budget skips is drawn from the page preview until the next frame.
+ * Rasterising budget for a frame that is scrolling or zooming, in ms, on a
+ * 60 Hz display; a faster display gets the same share of its shorter frame
+ * (`FramePace.budget`). The rest of a 16.7 ms frame is the blits, the
+ * compositor and headroom; a tile the budget skips is drawn from the page
+ * preview until the next frame.
  */
 const SCROLL_FRAME_BUDGET_MS = 6;
 /**
@@ -758,6 +829,16 @@ const SCROLL_FRAME_BUDGET_MS = 6;
  * so did a PDF page arriving.
  */
 const REST_FRAME_BUDGET_MS = 10;
+/** Rasterising budget for the frame that swaps in a sharper PDF image. */
+const SHARPEN_FRAME_BUDGET_MS = 120;
+/** One fade waits this long after the last PDF image of a zoom, ms. */
+const SHARPEN_QUIET_MS = 90;
+/** And never longer than this after the first, ms. */
+const SHARPEN_WAIT_MAX_MS = 350;
+/** How long a sharper PDF image takes to fade in over the blurred one, ms. */
+const PDF_SHARPEN_FADE_MS = 160;
+/** How long after the last frame of a zoom PDF rendering starts again, ms. */
+const ZOOM_PDF_HOLD_MS = 150;
 /** Clear space round a sticker saved from a selection, page px: room for the ink's width. */
 const STICKER_PAD = 8;
 /** Budget for one idle prefetch frame (tiles just off screen, page previews). */
@@ -820,6 +901,8 @@ const SEARCH_MARK_PAD = 3;
 const WORD_FLAG_GAP_PX = 5;
 /** How far below the top of the view a section lands when the contents goes to it, screen px. */
 const SECTION_LEAD_PX = 96;
+/** How much of the pane a named region fills when a link opens a board on it. */
+const REGION_FIT = 0.85;
 /** How long "Undo" or "Redo" from a finger double tap stays in the readout pill. */
 const READOUT_WORD_HOLD_MS = 900;
 /** An undo or redo's notice ("Undid: Move selection") is a phrase: held longer. */
@@ -1006,6 +1089,12 @@ export interface InkSurfaceCallbacks {
    * shortcut then leaves it, as it would be in hand with no button showing it.
    */
   toolOff?: (tool: ActiveTool) => boolean;
+  /**
+   * P or H put the pen or the highlighter in hand the way the pen row does,
+   * with that type's own colour and width (FineNotes#226). Returns whether
+   * it did; otherwise the surface only switches the tool.
+   */
+  onPenShortcut?: (tool: "pen" | "highlighter") => boolean;
   /** Run a shortcut action that belongs to the host (full screen, ruler, stickers…). */
   onShortcutAction?: (actionId: string) => boolean;
   /** What the stylus barrel button does (the settings); erase when absent. */
@@ -1093,6 +1182,14 @@ export interface InkSurfaceCallbacks {
    */
   onAddSection?: (index: number, at: { x: number; y: number }, strokeIds: string[]) => void;
   /**
+   * Turn into › Frame to embed on a lasso selection (discussion #167): the
+   * host asks for a name and adds a region of page `index` round `bounds`
+   * (page px, the selection's), pre-filled from its ink.
+   */
+  onAddRegion?: (index: number, bounds: Bounds, strokeIds: string[]) => void;
+  /** A region's name was tapped on its frame (shown with the lasso): `anchor` is the name. */
+  onTapRegion?: (shown: ShownRegion, anchor: HTMLElement) => void;
+  /**
    * "Link to…" on a lasso selection of ink: the host asks where to, and
    * applies `linkStrokes` for these stroke ids on page `index`. `current`
    * is where the ink leads now, when all of it is in one link.
@@ -1147,12 +1244,20 @@ export interface InkSurfaceCallbacks {
    * enables it with {@link InkSurface.setPullToAddPage}.
    */
   onPullAddPage?: () => void;
+  /** Something was done a way the earned hints count (model/nudges.ts). */
+  onUse?: (event: NudgeEvent) => void;
   /**
    * A pinch closed well past the fit and let go (`pinchOpensOverview`): show
    * every page in the overview. Only while the host enables it with
    * {@link InkSurface.setPinchToOverview}.
    */
   onPinchOverview?: (snapshot: PageSnapshot | null) => void;
+  /**
+   * A zoom started moving (true), or has been still for a moment (false). PDF
+   * pages wait in between: rendering them during a pinch stalled its last
+   * frames by about 200 ms on an iPad.
+   */
+  onZoomMotion?: (moving: boolean) => void;
   /**
    * A page text box took focus (its style), or editing ended (`null`). Hosts
    * show the box's style in the text pill. Also sent after an undo or redo
@@ -1192,6 +1297,13 @@ export interface PdfTextSource {
  * tap; false lets the tap do what it would have done anyway.
  */
 export type StrokeTapHandler = (page: Page, stroke: Stroke) => boolean;
+
+/**
+ * The one hit a results list is on (#112), among a page's lit hits: the
+ * view glides to it and marks it more strongly. A group of `words`, a text
+ * box, or one match's rectangles among the `printed` ones.
+ */
+export type SearchFocus = { words: number } | { box: string } | { printed: readonly TextRect[] };
 
 /** A calculation note as the surface shows it (`showCalcNote`): the glowing sum and its card. */
 export interface CalcNoteSpec {
@@ -1272,7 +1384,20 @@ interface TextBoxView {
   zoomScaled: boolean;
   /** When it was last focused (`now()`), for the HUD's text-end line. */
   focusedAt: number;
+  /**
+   * A Markdown box at rest (discussion #107): its text painted formatted, by
+   * the painter thumbnails and exports use, with tap targets for its links
+   * and tasks over it. Made the first time it is needed.
+   */
+  md: HTMLElement | null;
+  /** What `md` was last painted for. */
+  mdKey: string;
+  /** The formatted height in page px while a Markdown box is at rest; 0 otherwise. */
+  mdH: number;
 }
+
+/** Longest side of a Markdown box's canvas, device px: a huge box at 5x is drawn softer, not out of memory. */
+const MARKDOWN_CANVAS_MAX = 4096;
 
 /** A text-tool drag shorter than this (page px) is a tap: a box that fits its text. */
 const TEXT_TAP_SLOP = 12;
@@ -1498,6 +1623,8 @@ interface ImageDrag {
   turn?: TurnSnap;
   /** Another finger joined it, so its lift is no tap. */
   crowded?: boolean;
+  /** What a move of it lines up with (`canvas/align-snap.ts`), found when first needed. */
+  alignTargets?: Bounds[];
 }
 
 /**
@@ -1621,10 +1748,17 @@ interface LassoDraft {
  */
 interface GroupDrag {
   pointerId: number;
+  /** Set by a move: its text boxes and frame are placed on the next frame, against this page. */
+  placeBox?: PageBox | null;
   /** What moves: the selection, and what its closed shapes hold (`withShapeContent`). */
   selection: GroupSelection;
   /** The selection itself, as it is kept once the drag is over. */
   own: GroupSelection;
+  /**
+   * Set by an Alt drag: the copy made in place at pointerdown, which the
+   * move joins as one undo step, and what was selected before it.
+   */
+  copied?: { command: Command; original: GroupSelection };
   /** The selection's bounds when the drag began, page space. */
   bounds: Bounds;
   /** Page-local point where the pointer went down. */
@@ -1653,6 +1787,12 @@ interface GroupDrag {
   screen?: Pt;
   /** The connectors joined to the selection's shapes, drawn on the wet layer while it moves. */
   connectors?: Set<string>;
+  /**
+   * What a move lines up with (`canvas/align-snap.ts`): the bounds of the
+   * page's shapes and objects outside the selection, found once when the
+   * move first needs them.
+   */
+  alignTargets?: Bounds[];
 }
 
 /**
@@ -1900,7 +2040,7 @@ function swallowClickAfterTap(target: HTMLElement): void {
   const win = target.ownerDocument.defaultView;
   if (!win) return;
   const stop = (event: Event): void => {
-    if (!(event.target instanceof Node) || !target.contains(event.target)) return;
+    if (!isNode(event.target) || !target.contains(event.target)) return;
     event.preventDefault();
     event.stopPropagation();
   };
@@ -1940,6 +2080,9 @@ const SHORTCUT_TOOLS: Readonly<Record<string, ActiveTool>> = {
   "tool.pan": "pan",
   "tool.zoom": "zoom",
 };
+
+/** Key presses some notebook has noted already: each is noted once (`noteKey`). */
+const KEYS_NOTED = new WeakSet<KeyboardEvent>();
 
 function shortcutTool(actionId: string): ActiveTool | null {
   return SHORTCUT_TOOLS[actionId] ?? null;
@@ -1985,6 +2128,8 @@ const ZOOM_PINCH_DEAD = 0.04;
 export class InkSurface {
   readonly surfaceEl: HTMLElement;
   private readonly scrollEl: HTMLElement;
+  private boundWin: HostWindow | null = null;
+  private windowListeners: (() => void) | null = null;
   private readonly paperEl: HTMLElement;
   private readonly textBoxesEl: HTMLElement;
   private readonly textBoxInputs = new Map<string, TextBoxView>();
@@ -2079,6 +2224,8 @@ export class InkSurface {
   private readonly textHintEl: HTMLElement;
   private readonly textHintLabel: HTMLElement;
   private textHintDismiss: (() => void) | null = null;
+  /** What a tap on the hint's line does, when it leads somewhere. */
+  private textHintShow: (() => void) | null = null;
   /** "Part of this stroke is outside the page", with Undo (`noteOffPage`). */
   private readonly offPageEl: HTMLElement;
   /** The stroke the notice's Undo takes back; `null` while it is hidden. */
@@ -2260,7 +2407,7 @@ export class InkSurface {
   /** The box canvas's rectangle for the stroke under way, read once per press. */
   private zoomCanvasRect: DOMRect | null = null;
   /** Repaints the window while its corner is dragged to a new size. */
-  private zoomResize: ResizeObserver | null = null;
+  private stopZoomResize: (() => void) | null = null;
   /** A window repaint asked for by a wet stroke, outside the page's frame loop. */
   private zoomPaintFrame = 0;
   /** The readout last written, so a still window is not touched every frame. */
@@ -2378,6 +2525,15 @@ export class InkSurface {
   private boardShift = { x: 0, y: 0 };
   /** Steps the board's growth has looked at, so an undo never grows it again. */
   private boardChecked = new WeakSet<Command>();
+  /**
+   * The board shown of a board file (discussion #160), followed by identity
+   * through a reorder (`shownBoard`); `null` before the first layout.
+   */
+  private boardRef: Page | null = null;
+  /** The id of the board the last layout showed, to tell a switch from a relayout. */
+  private boardLaidOut: string | null = null;
+  /** Where each board was left this session (`boardSpot`), to go back to it. */
+  private boardSpots = new WeakMap<Page, { x: number; y: number; zoom: number }>();
   private paper: PaperTheme;
   private pageIndex = 0;
 
@@ -2491,6 +2647,8 @@ export class InkSurface {
   // serves both. Frame, bar and menu are DOM over the page, like the text
   // boxes, so a finger works them as well as the Pencil.
   private selection: GroupSelection | null = null;
+  /** Where the lasso that made `selection` was drawn (`selectionPatch`). */
+  private selectionArea: DrawnArea | null = null;
   /** An arrow joining two shapes, picked up on its own (a lasso tap on it), by page and id. */
   private connectorSel: { pageId: string; id: string } | null = null;
   /** Its highlight over the page: the route drawn wide in the accent colour. */
@@ -2557,6 +2715,8 @@ export class InkSurface {
   private readonly commentMarkers: HTMLButtonElement[] = [];
   /** What each marker in the pool stands for now: its page and comment. */
   private commentTargets: Array<{ index: number; comment: PageComment }> = [];
+  /** The named regions' frames, shown while the lasso is the tool (discussion #167). */
+  private readonly regionFrames: RegionFrames;
   /** The by-line lasso's insert-space markers: a column per block of lines per page. */
   private readonly spaceHandlesEl: HTMLElement;
   private readonly spaceHandleEls: HTMLElement[] = [];
@@ -2574,6 +2734,8 @@ export class InkSurface {
     boxes: string[];
     /** Printed words of the page's PDF, in page space (#112). */
     printed: TextRect[];
+    /** The results list's current hit among them (#112). */
+    focus: SearchFocus | null;
   } | null = null;
   private readonly searchMarks: HTMLElement[] = [];
   /** Ink a playing recording has not reached yet, drawn pale (2.5). */
@@ -2666,6 +2828,11 @@ export class InkSurface {
     moved: boolean;
     /** The end is on another shape's point: a connector is not levelled off it. */
     snapped?: boolean;
+    /**
+     * The curved and elbow arrows are drawn, not dragged out (Goodnotes):
+     * the pen's path, page px. Shown as plain ink until the lift traces it.
+     */
+    trail?: Pt[];
   } | null = null;
 
   /**
@@ -2712,6 +2879,12 @@ export class InkSurface {
    */
   private wetTracer: InkTracer | null = null;
   private wetRevision = -1;
+  /**
+   * What the last frame of the stroke in progress drew: where the tracer's
+   * settled ink ended, and the box of the unsettled tip beyond it. The next
+   * frame repaints only from there (`ink/run-window`).
+   */
+  private wetSeen: { tracer: InkTracer; settled: RunMark; tip: RunBox | null } | null = null;
   /** A pane with no size yet is laid out again on the next frames, a bounded number of times. */
   private readonly sizeWait = new SizeWait();
 
@@ -2731,7 +2904,13 @@ export class InkSurface {
   /** Frame rate and paint time while something moves, smoothed. */
   private hudFps = 0;
   private hudPaintMs = 0;
+  private hudInkMs = 0;
+  private readonly hudRun = new FrameRun();
   private hudLastFrameT = 0;
+  /** The display's frame length, learned from this surface's own frames. */
+  private readonly pace = new FramePace();
+  /** The frame now asked for was asked for by the frame before it. */
+  private frameFollows = false;
 
   // Shape diagnostics, kept whether or not the HUD is on: the last strokes and
   // what the recogniser made of each, for the "Copy shape diagnostics"
@@ -2756,6 +2935,10 @@ export class InkSurface {
     rejoins: 0,
   };
   private diagHold = { fired: false, verdict: "" };
+  /** Every key pressed on the notebook and what became of it (FineNotes#226). */
+  private keyLogged?: KeyLog;
+  /** Why the key being handled was left, when it was; set while handling it. */
+  private keyVerdict: KeyVerdict | null = null;
   private readonly createdAt = now();
 
   /**
@@ -2889,6 +3072,14 @@ export class InkSurface {
     this.textHintEl.setAttribute("role", "status");
     iconInto(this.textHintEl.createSpan({ cls: "goodobsidian-text-hint-icon" }), "info", "i");
     this.textHintLabel = this.textHintEl.createSpan({ cls: "goodobsidian-text-hint-label" });
+    this.textHintLabel.addEventListener("pointerup", (up) => {
+      const show = this.textHintShow;
+      if (!show) return;
+      // What it opens must not get the click Android sends after the lift.
+      swallowGhostClick(this.surfaceEl.ownerDocument, up);
+      this.hideTextHint();
+      show();
+    });
     const hintClose = this.textHintEl.createEl("button", {
       cls: "goodobsidian-text-hint-close clickable-icon",
       attr: { "aria-label": t("surface.textHint.dismiss") },
@@ -2952,6 +3143,9 @@ export class InkSurface {
     this.commentMarkersEl = this.paperEl.createDiv({
       cls: "goodobsidian-comment-markers is-hidden",
     });
+    this.regionFrames = new RegionFrames(this.paperEl, (shown, anchor) =>
+      this.callbacks.onTapRegion?.(shown, anchor),
+    );
     // A ribbon beside each heading listed in the contents. Takes no presses either.
     this.sectionRibbonsEl = this.paperEl.createDiv({
       cls: "goodobsidian-section-ribbons is-hidden",
@@ -3075,6 +3269,9 @@ export class InkSurface {
       this.selectionFrameEl.addEventListener(type, this.onSelectionFinger);
     }
     this.actionBar = new SelectionActionBar(this.selectionUiEl, t("surface.selectionBar.title"));
+    // A key that does an entry too is named beside it, where there is a keyboard.
+    this.actionBar.keysFor = (id) =>
+      Platform.isMobile ? null : fastKeys(id, this.callbacks.shortcuts?.() ?? null, macKeys());
     this.textPickView = new TextPickView(this.selectionUiEl, {
       grab: (end, x, y) => this.grabTextHandle(end, x, y),
       drag: (x, y) => this.dragTextHandle(x, y),
@@ -3135,6 +3332,7 @@ export class InkSurface {
         onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
         fingerDraws: () => this.callbacks.fingerDrawing?.() === true,
         stylusClicks: () => this.stylusClickWanted(),
+        stylusSelectBridge: () => Platform.isAndroidApp === true,
       },
     );
     input.attach();
@@ -3280,17 +3478,41 @@ export class InkSurface {
     // The on-screen keyboard changes the visual viewport, and a WebView may
     // report that without resizing any element the ResizeObserver watches.
     // Repaint on it anyway, so the canvases can never sit stale under the page.
-    const vv = window.visualViewport;
-    if (vv) {
-      const onViewport = (): void => this.scheduleRelayout();
-      vv.addEventListener("resize", onViewport);
-      vv.addEventListener("scroll", onViewport);
-      this.disposers.push(() => {
-        vv.removeEventListener("resize", onViewport);
-        vv.removeEventListener("scroll", onViewport);
-      });
-    }
+    this.bindWindow();
+    this.disposers.push(() => this.unbindWindow());
+    this.disposers.push(onWindowMoved(this.surfaceEl, () => this.windowMoved()));
 
+    // A pane that changes size (a sidebar, a rotation, a split) is laid out again.
+    this.disposers.push(watchSize(this.surfaceEl, () => this.layout()));
+
+    // Every path that changes the history — a stroke, an erase, a withdrawn
+    // empty text box, undo, a new file — reaches the host's buttons this way.
+    this.history.onChange = () => this.syncHistory();
+    this.setDocument(doc);
+  }
+
+  /** The window the page is shown in, which a tab moved to a new window changes. */
+  private get win(): HostWindow {
+    return winOf(this.surfaceEl);
+  }
+
+  private get viewDoc(): Document {
+    return docOf(this.surfaceEl);
+  }
+
+  /** Listen to what only the page's own window reports. */
+  private bindWindow(): void {
+    this.unbindWindow();
+    const win = this.win;
+    const doc = this.viewDoc;
+    this.boundWin = win;
+    // The on-screen keyboard changes the visual viewport, and a WebView may
+    // report that without resizing any element the ResizeObserver watches.
+    // Repaint on it anyway, so the canvases can never sit stale under the page.
+    const vv = win.visualViewport;
+    const onViewport = (): void => this.scheduleRelayout();
+    vv?.addEventListener("resize", onViewport);
+    vv?.addEventListener("scroll", onViewport);
     // Leaving the app may put something newer on the system clipboard: from
     // then on, a picture pasted from there wins over the plugin's clipboard
     // (see `handlePaste`). Idempotent, so every open surface may report it.
@@ -3308,24 +3530,48 @@ export class InkSurface {
         this.layout();
       } else this.requestFrame();
     };
-    // The surface's own document: a popout window hides and shows its own.
-    const viewDoc = this.surfaceEl.ownerDocument;
-    window.addEventListener("blur", onLeave);
-    viewDoc.addEventListener("visibilitychange", onVisibility);
-    this.disposers.push(() => {
-      window.removeEventListener("blur", onLeave);
-      viewDoc.removeEventListener("visibilitychange", onVisibility);
-    });
+    win.addEventListener("blur", onLeave);
+    doc.addEventListener("visibilitychange", onVisibility);
+    this.windowListeners = () => {
+      vv?.removeEventListener("resize", onViewport);
+      vv?.removeEventListener("scroll", onViewport);
+      win.removeEventListener("blur", onLeave);
+      doc.removeEventListener("visibilitychange", onVisibility);
+    };
+  }
 
-    // A pane that changes size (a sidebar, a rotation, a split) is laid out again.
-    const sizeWatch = new ResizeObserver(() => this.layout());
-    sizeWatch.observe(this.surfaceEl);
-    this.disposers.push(() => sizeWatch.disconnect());
+  private unbindWindow(): void {
+    this.windowListeners?.();
+    this.windowListeners = null;
+  }
 
-    // Every path that changes the history — a stroke, an erase, a withdrawn
-    // empty text box, undo, a new file — reaches the host's buttons this way.
-    this.history.onChange = () => this.syncHistory();
-    this.setDocument(doc);
+  /**
+   * The tab went to another window. A frame asked of the old one may never
+   * come (it closed, or sits covered), and would leave its request standing.
+   */
+  private windowMoved(): void {
+    const from = this.boundWin;
+    for (const frame of [
+      this.frameReq,
+      this.prefetchReq,
+      this.hudFrame,
+      this.wetFrame,
+      this.focusHoldFrame,
+      this.relayoutFrame,
+      this.laserFrame,
+      this.zoomPaintFrame,
+      this.zoomSlideFrame,
+    ]) {
+      if (frame) from?.cancelAnimationFrame(frame);
+    }
+    this.frameReq = this.prefetchReq = this.hudFrame = this.wetFrame = 0;
+    this.focusHoldFrame = this.relayoutFrame = this.laserFrame = 0;
+    this.zoomPaintFrame = this.zoomSlideFrame = 0;
+    this.bindWindow();
+    // The new window may be on a screen of another density.
+    this.renderer?.repaintAll();
+    this.scheduleRelayout();
+    this.requestFrame();
   }
 
   /**
@@ -3356,7 +3602,7 @@ export class InkSurface {
       this.relayoutFrame,
       this.laserFrame,
     ]) {
-      if (frame) window.cancelAnimationFrame(frame);
+      if (frame) this.win.cancelAnimationFrame(frame);
     }
     this.frameReq = this.prefetchReq = this.hudFrame = this.wetFrame = 0;
     this.ruler?.destroy();
@@ -3379,9 +3625,9 @@ export class InkSurface {
     this.endCrop(false);
     this.actionBar.destroy();
     this.textPickView.destroy();
-    this.zoomResize?.disconnect();
-    this.zoomResize = null;
-    if (this.zoomPaintFrame) window.cancelAnimationFrame(this.zoomPaintFrame);
+    this.stopZoomResize?.();
+    this.stopZoomResize = null;
+    if (this.zoomPaintFrame) this.win.cancelAnimationFrame(this.zoomPaintFrame);
     this.zoomPaintFrame = 0;
     this.zoomFrame?.destroy();
     this.zoomFrame = null;
@@ -3389,7 +3635,7 @@ export class InkSurface {
     this.flip?.cancel();
     this.flip = null;
     this.renderer?.destroy();
-    document.body.removeClass(TEXT_EDITING_BODY_CLASS);
+    this.viewDoc.body.removeClass(TEXT_EDITING_BODY_CLASS);
     while (this.disposers.length > 0) this.disposers.shift()?.();
     // From here on every late callback finds no renderer and does nothing.
     this.renderer = null;
@@ -3536,7 +3782,8 @@ export class InkSurface {
    * gone, the view stays where it is.
    */
   private keepReading(place: ReturnType<InkSurface["readingPlace"]>): void {
-    if (!place) return;
+    // A board file keeps its board by identity, where it was (`shownBoard`).
+    if (!place || this.board) return;
     const index = this.doc.pages.indexOf(place.page);
     const box = this.pageLayout.boxes[index];
     if (index < 0 || !box) return;
@@ -3833,6 +4080,7 @@ export class InkSurface {
     this.syncSpaceHandles();
     // A comment added, resolved or removed (an undo too).
     this.syncCommentMarkers();
+    this.syncRegionFrames();
     this.syncCalcChip();
     this.callbacks.onChange(pages);
   }
@@ -3912,9 +4160,19 @@ export class InkSurface {
    * {@link showBoardSpot}). Anything else: {@link resetView}, the page fitted.
    */
   showHome(): void {
+    // A notebook opens on its pages, not on a board among them.
+    if (this.board && !isBoard(this.doc)) this.leaveBoard();
     if (!this.board) {
       this.resetView();
       return;
+    }
+    // A board file opens on its first board (discussion #160), each board
+    // as if never visited.
+    this.boardSpots = new WeakMap();
+    const first = this.doc.pages[0];
+    if (first && this.boardPage !== first) {
+      this.boardRef = first;
+      this.layout();
     }
     this.pinch = null;
     this.zoomAnim = null;
@@ -3924,6 +4182,34 @@ export class InkSurface {
     this.reportStatus();
     // The zoom jumped without a layout: the size marks follow it.
     this.reportSizeScale();
+  }
+
+  /**
+   * A board file's other boards (discussion #160): where each was left this
+   * session, by page id, the one shown left out ({@link boardSpot} has it).
+   */
+  otherBoardSpots(): Map<string, { x: number; y: number; zoom: number }> {
+    const spots = new Map<string, { x: number; y: number; zoom: number }>();
+    if (!this.board) return spots;
+    const shown = this.boardPage;
+    for (const page of this.doc.pages) {
+      const spot = page !== shown ? this.boardSpots.get(page) : undefined;
+      if (spot) spots.set(page.id, spot);
+    }
+    return spots;
+  }
+
+  /**
+   * Where a board file's other boards were left on an earlier visit, by
+   * page id: switching to one goes there. The board shown is left alone.
+   */
+  restoreBoardSpots(spots: ReadonlyMap<string, { x: number; y: number; zoom: number }>): void {
+    const shown = this.boardPage;
+    for (const page of this.doc.pages) {
+      const spot = spots.get(page.id);
+      if (spot && page !== shown)
+        this.boardSpots.set(page, { x: spot.x, y: spot.y, zoom: spot.zoom });
+    }
   }
 
   /**
@@ -3943,7 +4229,7 @@ export class InkSurface {
 
   /** Show a board as it was left: `spot` ({@link boardSpot}) in the middle, at its zoom. */
   showBoardSpot(spot: { x: number; y: number; zoom: number }): void {
-    const page = this.doc.pages[0];
+    const page = this.boardPage;
     if (!this.board || !page) return;
     this.pinch = null;
     this.zoomAnim = null;
@@ -3961,9 +4247,29 @@ export class InkSurface {
     this.reportSizeScale();
   }
 
+  /**
+   * Show a named region (page `index`, `rect` in page px), as a link to it
+   * opens the notebook: on a board, in the middle of the pane, zoomed out
+   * just enough to fit it, never past the writing size; on a page, its top
+   * a little below the view's.
+   */
+  showRegion(index: number, rect: { x: number; y: number; w: number; h: number }): void {
+    if (!this.board) {
+      this.goToPagePoint(index, rect.y);
+      return;
+    }
+    const base = this.baseScale || 1;
+    const fit = REGION_FIT * Math.min(this.cssW / (rect.w * base), this.cssH / (rect.h * base));
+    this.showBoardSpot({
+      x: rect.x + rect.w / 2,
+      y: rect.y + rect.h / 2,
+      zoom: Number.isFinite(fit) && fit > 0 ? Math.min(1, fit) : 1,
+    });
+  }
+
   /** Put the middle of a board's drawing (or of its page) in the middle of the pane. */
   private centreBoard(animate: boolean): void {
-    const page = this.doc.pages[0];
+    const page = this.boardPage;
     if (!page) return;
     const centre = boardCentre(page.geometry, this.boardDrawn);
     const at = boardScrollToCentre(centre, this.scale, this.cssW, this.cssH);
@@ -3989,9 +4295,18 @@ export class InkSurface {
    */
   goToPage(index: number, animate = false): void {
     this.parkedText = null;
-    // A board is one page, always under the view: there is nowhere to go.
-    if (this.board) return;
     const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
+    // A board is shown on its own (discussion #160): going to one is going to
+    // that board, where it was left; going from one to a page, back to the pages.
+    const target = this.doc.pages[clamped];
+    if (target && isBoardPage(this.doc, target)) {
+      this.switchBoard(clamped);
+      return;
+    }
+    if (this.board) {
+      this.leaveBoard();
+      animate = false;
+    }
     const row = this.direction === "horizontal";
     // Zoomed in, a row lands on the page's top-left corner at the same zoom;
     // centring it would only show its middle.
@@ -4022,6 +4337,17 @@ export class InkSurface {
    */
   goToPagePoint(index: number, y: number, animate = false, pointX?: number): void {
     const clamped = Math.max(0, Math.min(this.doc.pages.length - 1, index));
+    // On another board (discussion #160): that board first, then straight
+    // to the point; a glide from where it was left would cross it. From a
+    // board to a page: back to the pages first.
+    const target = this.doc.pages[clamped];
+    if (target && isBoardPage(this.doc, target) && this.boardPage !== target) {
+      this.switchBoard(clamped);
+      animate = false;
+    } else if (this.board && target && !isBoardPage(this.doc, target)) {
+      this.leaveBoard();
+      animate = false;
+    }
     const box = this.pageLayout.boxes[clamped];
     // A board (FineNotes#46) is one wide page: given an x too, the point
     // goes to the middle of the pane, at the zoom it is read at.
@@ -4091,11 +4417,26 @@ export class InkSurface {
   }
 
   nextPage(): void {
-    this.goToPage(this.pageIndex + 1, true);
+    this.goToPage(this.pageStep(1), true);
   }
 
   previousPage(): void {
-    this.goToPage(this.pageIndex - 1, true);
+    this.goToPage(this.pageStep(-1), true);
+  }
+
+  /**
+   * The page `step` pages on from the one being read, as paging reaches it:
+   * in a notebook, boards among the pages are stepped over (discussion #160),
+   * as their column leaves them out; a board file steps from board to board.
+   * The page being read when there is none that way.
+   */
+  private pageStep(step: -1 | 1): number {
+    const pages = this.doc.pages;
+    if (isBoard(this.doc)) return this.pageIndex + step;
+    for (let i = this.pageIndex + step; i >= 0 && i < pages.length; i += step) {
+      if (pages[i]?.board !== true) return i;
+    }
+    return this.pageIndex;
   }
 
   /** Whether an add-page control should be enabled (see `onAddPageRequested`). */
@@ -4290,7 +4631,49 @@ export class InkSurface {
    * field are the field's; which key does what is `keyOutcome`'s table.
    */
   handleKeyDown(event: KeyboardEvent): boolean {
-    if (event.defaultPrevented || event.isComposing || isEditable(event.target)) return false;
+    this.keyVerdict = null;
+    const taken = this.keyDown(event);
+    this.noteKey(event, this.keyVerdict ?? (taken ? "taken" : "unbound"));
+    this.keyVerdict = null;
+    return taken;
+  }
+
+  /**
+   * A key press and what became of it, for diagnostics and the HUD
+   * (FineNotes#226). The host notes the keys its scope left, and those its
+   * scope never heard; each press is noted once, bare modifiers never.
+   */
+  noteKey(event: KeyboardEvent, verdict: KeyVerdict): void {
+    if (KEYS_NOTED.has(event) || isModifierKey(event.key)) return;
+    KEYS_NOTED.add(event);
+    // Typed into a field anywhere (another pane's search too): counted, not named.
+    if (verdict !== "taken" && isEditable(event.target)) verdict = "field";
+    this.keyLog.note(keyName(event.key, event.code ?? "", event.repeat === true), verdict);
+    if (this.debug) this.scheduleHud();
+  }
+
+  /** Whether this press has been noted already (the host's last look). */
+  keyNoted(event: KeyboardEvent): boolean {
+    return KEYS_NOTED.has(event);
+  }
+
+  private get keyLog(): KeyLog {
+    return (this.keyLogged ??= new KeyLog());
+  }
+
+  private keyDown(event: KeyboardEvent): boolean {
+    if (event.defaultPrevented) {
+      this.keyVerdict = "prevented";
+      return false;
+    }
+    if (event.isComposing) {
+      this.keyVerdict = "composing";
+      return false;
+    }
+    if (isEditable(event.target)) {
+      this.keyVerdict = "field";
+      return false;
+    }
     // Space on a focused toolbar button presses the button.
     if (event.key === " " && isButtonLike(event.target)) return false;
     // The user's shortcut table first: a row they recorded (or took away)
@@ -4323,13 +4706,17 @@ export class InkSurface {
     const table = this.callbacks.shortcuts?.();
     if (!table) return false;
     // Typing keeps its keys, whatever a row is bound to.
-    if (this.editingTextView() !== null || this.cellEdit) return false;
+    if (this.editingTextView() !== null || this.cellEdit) {
+      this.keyVerdict = "field";
+      return false;
+    }
     const input = keyInput(event);
     if (!input) return false;
     const match = matchShortcut(table, input);
     if (!match) return false;
     if (match.kind === "conflict" || match.kind === "blocked") {
       event.preventDefault();
+      this.keyVerdict = "conflict";
       return true;
     }
     // Delete, Copy and Paste's own keys belong to the screen until the user
@@ -4418,10 +4805,37 @@ export class InkSurface {
       this.callbacks.returnToPenOnReselect?.() === true,
       this.drawingTool,
     );
-    if (this.practice && !isPracticeTool(next)) return;
-    if (this.callbacks.toolOff?.(next) === true) return;
-    this.setTool(next);
-    this.callbacks.onToolChange?.(next);
+    if (this.practice && !isPracticeTool(next)) {
+      this.keyVerdict = "practice";
+      return;
+    }
+    if (this.callbacks.toolOff?.(next) === true) {
+      this.keyVerdict = "off";
+      return;
+    }
+    this.putToolInHand(next);
+  }
+
+  /** The tool in hand. */
+  get toolInHand(): ActiveTool {
+    return this.toolState.tool;
+  }
+
+  /** Put `tool` in hand as its key would, the toolbar following (Present mode's laser). */
+  takeTool(tool: ActiveTool): void {
+    this.putToolInHand(tool);
+  }
+
+  /**
+   * A key's tool in hand. The pen and the highlighter go through the pen
+   * row's own way in, so each brings back its own colour and width, as a tap
+   * does (FineNotes#226); every other tool is switched here.
+   */
+  private putToolInHand(tool: ActiveTool): void {
+    if ((tool === "pen" || tool === "highlighter") && this.callbacks.onPenShortcut?.(tool) === true)
+      return;
+    this.setTool(tool);
+    this.callbacks.onToolChange?.(tool);
   }
 
   /**
@@ -4460,8 +4874,7 @@ export class InkSurface {
       return;
     }
     this.pendingHeldTool = null;
-    this.setTool(tool);
-    this.callbacks.onToolChange?.(tool);
+    this.putToolInHand(tool);
   }
 
   /** The press is over: a held key's switch that waited for it happens now. */
@@ -4820,7 +5233,7 @@ export class InkSurface {
     }
     const { clientWidth: cssW, clientHeight: cssH } = this.surfaceEl;
     const size = this.sizeWait.check(cssW, cssH);
-    if (size === "retry") window.requestAnimationFrame(() => this.layout());
+    if (size === "retry") this.win.requestAnimationFrame(() => this.layout());
     if (size !== "layout") return;
     this.hudLayouts += 1;
     // Only a pane that lost or gained that much height at its top moved with the row.
@@ -4830,7 +5243,11 @@ export class InkSurface {
     // when the pane changes width (the sidebar, the Ask AI panel, a rotation,
     // Split View): the scale and the gap between pages both follow the width,
     // so the old scroll offset would name a spot pages away.
-    if (isBoard(this.doc) && this.doc.pages.length === 1) {
+    // A notebook of boards only has no pages to show: its first board.
+    if (!isBoard(this.doc) && !this.showsBoardPage() && this.doc.pages.every((p) => p.board)) {
+      this.boardRef = this.doc.pages[0] ?? null;
+    }
+    if (isBoard(this.doc) || this.showsBoardPage()) {
       this.layoutBoardView(cssW, cssH);
       this.layoutTail(cssW, cssH);
       return;
@@ -4841,6 +5258,8 @@ export class InkSurface {
       this.board = false;
       this.boardDrawn = null;
       this.boardHold = null;
+      this.boardRef = null;
+      this.boardLaidOut = null;
       this.zoomInitialised = false;
     }
     const rowAnchor =
@@ -4869,7 +5288,8 @@ export class InkSurface {
     const rejoined = joined !== (this.joined === true);
     this.joined = joined;
     if (rejoined) this.strokeIndex?.rebuild(this.doc.pages);
-    this.pageLayout = layoutPages(this.doc.pages, { direction, joined });
+    // A board among the pages (discussion #160) is left out of their column.
+    this.pageLayout = layoutNotebook(this.doc.pages, { direction, joined });
     renderer.setLayout(this.pageLayout);
     // Fit the page stack to the available width, but never magnify past 1:1 —
     // on a wide desktop pane an upscaled page looks like a zoom bug, and the
@@ -4899,7 +5319,8 @@ export class InkSurface {
       // floor just computed still hold.
       // Zoomed in, the gap closes so the next page shows beside this one.
       // Joined pages have no gap to space or close: 0 keeps `syncRowGap` out.
-      this.rowSlot = joined ? 0 : rowSlotGap(this.doc.pages, cssW, this.baseScale * this.minZoom);
+      const shown = this.doc.pages.filter((page) => page.board !== true);
+      this.rowSlot = joined ? 0 : rowSlotGap(shown, cssW, this.baseScale * this.minZoom);
       this.rowGap = Number.NaN;
       this.syncRowGap();
     }
@@ -4927,7 +5348,9 @@ export class InkSurface {
     if (turned) {
       this.userZoom = this.minZoom;
       this.ensurePaperSize();
-      this.goToPage(reading);
+      // Not back onto a board just left (`pageAfterTurn`).
+      const stay = pageAfterTurn(this.doc, reading);
+      if (stay !== null) this.goToPage(stay);
     } else if (direction === "horizontal" && this.atZoomFloor && this.isScrollIdle) {
       // A pane that changed shape (rotation, split view) keeps the page centred.
       this.scroller.setPosition(this.rowX(this.pageIndex), this.rowY(this.pageIndex));
@@ -4937,7 +5360,7 @@ export class InkSurface {
 
   /** The end of every layout: size the canvases, place the paper and paint. */
   private layoutTail(cssW: number, cssH: number): void {
-    this.renderer?.resize(cssW, cssH, backingScale(window.devicePixelRatio));
+    this.renderer?.resize(cssW, cssH, backingScale(this.win.devicePixelRatio));
     this.syncViewport();
     this.syncInkCursor();
     this.settleIfIdle();
@@ -4953,15 +5376,23 @@ export class InkSurface {
    * drawing. Afterwards the point in the middle of the pane stays there
    * when the pane changes shape, and moves with the board's content when a
    * left or up growth shifts it (`boardShift`), so the view never jumps.
+   * A file of several boards (discussion #160) shows one, {@link boardRef};
+   * another one shown (a switch, or the one shown deleted) opens where it
+   * was left this session, else as a board opens.
    */
   private layoutBoardView(cssW: number, cssH: number): void {
-    const page = this.doc.pages[0];
+    const { page, index } = this.shownBoard();
+    const switched = this.boardLaidOut !== null && this.boardLaidOut !== page.id;
+    this.boardLaidOut = page.id;
+    this.boardRef = page;
+    // A board again after another, or after a notebook's pages: where it was left.
+    const remembered = switched || !this.board ? this.boardSpots.get(page) : undefined;
     const scaleBefore = this.unitScale;
-    const shift = this.boardShift;
+    const shift = switched ? { x: 0, y: 0 } : this.boardShift;
     this.boardShift = { x: 0, y: 0 };
     // The page point in the middle of the pane, before anything changes.
     // Opened anew, or a notebook before in this leaf: 100% on the middle.
-    const fresh = !this.zoomInitialised || !this.board;
+    const fresh = !this.zoomInitialised || !this.board || switched;
     const anchor = !fresh
       ? {
           x: (this.cssW / 2 - this.offsetX) / scaleBefore + shift.x,
@@ -4974,22 +5405,28 @@ export class InkSurface {
     this.cssH = cssH;
     this.board = true;
     this.direction = "vertical";
-    this.pageLayout = layoutBoard(page);
+    this.pageLayout = layoutBoards(this.doc.pages, index);
     // The stand-in while tiles catch up covers the drawing, not the whole board.
     if (fresh) this.renderer?.setPreviewWindow(() => this.boardPreviewWindow());
     this.renderer?.setLayout(this.pageLayout);
     this.boardDrawn = drawnBounds(page);
+    if (switched) this.boardHold = null;
     this.baseScale = WRITING_SCALE;
     this.minZoom = boardFitZoom(this.boardDrawn, WRITING_SCALE, cssW, cssH);
     if (fresh) {
-      this.userZoom = 1;
+      this.userZoom = remembered ? this.clampZoom(remembered.zoom) : 1;
       this.zoomAnim = null;
     }
     this.zoomInitialised = true;
     this.ensurePaperSize();
     const scale = this.scale;
     if (!anchor) {
-      const centre = boardCentre(page.geometry, this.boardDrawn);
+      const centre = remembered
+        ? {
+            x: Math.min(Math.max(0, remembered.x), page.geometry.width),
+            y: Math.min(Math.max(0, remembered.y), page.geometry.height),
+          }
+        : boardCentre(page.geometry, this.boardDrawn);
       const home = boardScrollToCentre(centre, scale, cssW, cssH);
       this.scroller.setPosition(home.x, home.y);
     } else if (this.pinch) {
@@ -5004,6 +5441,76 @@ export class InkSurface {
   }
 
   /**
+   * The board shown of a board file (discussion #160): {@link boardRef}, by
+   * identity through a reorder, else by id (a reload makes new pages), else
+   * the board at the index being read, kept inside the file (the one shown
+   * was deleted: its neighbour). A document always has a page.
+   */
+  private shownBoard(): { page: Page; index: number } {
+    const pages = this.doc.pages;
+    const ref = this.boardRef;
+    let index = ref ? pages.indexOf(ref) : -1;
+    if (index < 0 && ref) index = pages.findIndex((page) => page.id === ref.id);
+    if (index < 0) index = Math.max(0, Math.min(pages.length - 1, this.pageIndex));
+    return { page: pages[index], index };
+  }
+
+  /** The page of the board being shown, on a board; `undefined` elsewhere. */
+  private get boardPage(): Page | undefined {
+    return this.board ? this.shownBoard().page : undefined;
+  }
+
+  /**
+   * Whether the view shows a board of an ordinary notebook (discussion #160):
+   * {@link boardRef} is one of its pages, by identity or by id, flagged `board`.
+   */
+  private showsBoardPage(): boolean {
+    const ref = this.boardRef;
+    if (!ref || isBoard(this.doc)) return false;
+    const pages = this.doc.pages;
+    const page = pages.includes(ref) ? ref : pages.find((p) => p.id === ref.id);
+    return page?.board === true;
+  }
+
+  /**
+   * Back from a board of an ordinary notebook to its pages: the board's spot
+   * is kept, and the pages lay out as they do, fitted afresh.
+   */
+  private leaveBoard(): void {
+    const shown = this.boardPage;
+    const spot = this.boardSpot();
+    if (shown && spot) this.boardSpots.set(shown, spot);
+    this.parkedText = null;
+    this.dropSelection();
+    this.pinch = null;
+    this.boardRef = null;
+    this.renderer?.invalidateAll();
+    this.layout();
+  }
+
+  /**
+   * Show board `index` of a board file (discussion #160): the one shown is
+   * left where it is (its spot kept for this session), and the other opens
+   * where it was left, or at 100% on the middle of its drawing.
+   */
+  private switchBoard(index: number): void {
+    const next = this.doc.pages[index];
+    const shown = this.boardPage;
+    if (!next || next === shown) return;
+    const spot = this.boardSpot();
+    if (shown && spot) this.boardSpots.set(shown, spot);
+    this.parkedText = null;
+    this.dropSelection();
+    this.pinch = null;
+    this.boardRef = next;
+    this.renderer?.invalidateAll();
+    this.layout();
+    this.flashChrome(true);
+    this.reportStatus();
+    this.reportSizeScale();
+  }
+
+  /**
    * After an edit on a board: keep what is drawn, the zoom floor and the
    * scroll range up to date, and grow the page where the newest edit came
    * within a screen of an edge, as part of that edit's undo step (once per
@@ -5012,7 +5519,7 @@ export class InkSurface {
    */
   private growBoard(): void {
     if (!this.board) return;
-    const page = this.doc.pages[0];
+    const page = this.boardPage;
     if (!page) return;
     const before = this.boardDrawn;
     this.boardDrawn = drawnBounds(page);
@@ -5031,10 +5538,7 @@ export class InkSurface {
         y: this.cssH / scale,
       });
       if (!isNoGrowth(growth)) {
-        const grow = new GrowBoard(page.id, growth, (dx, dy) => {
-          this.boardShift.x += dx;
-          this.boardShift.y += dy;
-        });
+        const grow = new GrowBoard(page.id, growth, (dx, dy) => this.boardMoved(page, dx, dy));
         // Its `onChange` lays the board out again (`syncBoardLayout`).
         if (this.history.attach(this.doc, grow) && this.history.latest) {
           this.boardChecked.add(this.history.latest);
@@ -5043,6 +5547,21 @@ export class InkSurface {
       }
     }
     this.ensurePaperSize();
+  }
+
+  /**
+   * A growth on `page` moved everything on it by (`dx`, `dy`) page px: the
+   * view moves along when it is the board shown; an undo while another board
+   * is shown (discussion #160) moves the spot that board was left at instead.
+   */
+  private boardMoved(page: Page, dx: number, dy: number): void {
+    if (page === this.boardPage) {
+      this.boardShift.x += dx;
+      this.boardShift.y += dy;
+      return;
+    }
+    const spot = this.boardSpots.get(page);
+    if (spot) this.boardSpots.set(page, { ...spot, x: spot.x + dx, y: spot.y + dy });
   }
 
   /**
@@ -5068,7 +5587,7 @@ export class InkSurface {
    * made around them.
    */
   private dropStaleBoardPreview(): void {
-    const page = this.doc.pages[0];
+    const page = this.boardPage;
     if (!this.board || !page || !this.renderer) return;
     const area = this.renderer.previewArea(page.id);
     if (!area) return;
@@ -5165,7 +5684,7 @@ export class InkSurface {
   /** Coalesce viewport events into one layout per frame. */
   private scheduleRelayout(): void {
     if (this.relayoutFrame) return;
-    this.relayoutFrame = window.requestAnimationFrame(() => {
+    this.relayoutFrame = this.win.requestAnimationFrame(() => {
       this.relayoutFrame = 0;
       this.layout();
     });
@@ -5185,7 +5704,7 @@ export class InkSurface {
       newFloor: this.floorForPane(cssH),
       initialised: this.zoomInitialised,
       // A pane made short by the keyboard must not re-fit the page into it.
-      keyboard: hold || document.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
+      keyboard: hold || this.viewDoc.body.hasClass(TEXT_EDITING_BODY_CLASS) || keyboardHeight() > 0,
     });
     this.minZoom = step.floor;
     this.zoomInitialised = true;
@@ -5207,7 +5726,7 @@ export class InkSurface {
     const layout = this.pageLayout;
     let tallest = 0;
     let widest = 0;
-    for (const box of layout.boxes) {
+    for (const box of shownBoxes(layout)) {
       tallest = Math.max(tallest, box.height);
       widest = Math.max(widest, box.width);
     }
@@ -5243,7 +5762,7 @@ export class InkSurface {
     const width = Math.ceil(this.pageLayout.width * scale);
     const height = Math.ceil(this.pageLayout.height * scale);
     this.paperEl.setCssStyles({ width: `${width}px`, height: `${height}px` });
-    const page = this.doc.pages[0];
+    const page = this.boardPage;
     if (this.board && page) {
       // Free both ways, a screen past the drawing (and past the view an erase left).
       const drawn = this.boardDrawn;
@@ -5276,7 +5795,7 @@ export class InkSurface {
     // (`rowEdgeTurn`). While a pinch is on, the whole row is free, so the
     // neighbours show beside the page; letting go settles on the page then
     // in the middle (`onPinchEnd`). Joined pages are never held (`heldRow`).
-    const last = this.pageLayout.boxes.length - 1;
+    const last = shownBoxes(this.pageLayout).at(-1)?.index ?? -1;
     const desk = this.freePageEdges ? this.cssW / 2 : 0;
     // Pages down: held centred while the pages fit the pane's width, and
     // never panned onto the desk beside them (discussion #43, as Goodnotes).
@@ -5304,14 +5823,17 @@ export class InkSurface {
       alwaysBounceX: row,
       rangeX,
       // Held centred, a diagonal drag scrolls only down (Goodnotes).
-      diagonalsScrollY: !row,
+      diagonalsScrollY: !row || (this.heldRow && !this.pinch),
       // Turning pages, the view rests centred on each page (`rowY`), never
       // scrolled up or down: the row's whole range is the pages' centres.
-      rangeY:
-        row && this.turnsPages && !this.joined
+      // Pages down, filled to the pane's width, no desk shows above page 1
+      // or below the last, as none shows beside them (discussion #43).
+      rangeY: !row
+        ? columnScrollRangeY(this.pageLayout, scale, this.cssW, this.cssH)
+        : this.turnsPages && !this.joined
           ? rowRestRangeY(this.pageLayout, scale, this.cssH)
           : undefined,
-      holdX: !row && this.holdFitWidth(),
+      holdX: (!row || (this.heldRow && !this.pinch)) && this.holdFitWidth(),
       // While a box is typed in, room to lift it above the keyboard: a page
       // that fits the screen (a cover, a single page) has none of its own.
       trailY: this.typingField() ? keyboardHeight() : 0,
@@ -5404,9 +5926,10 @@ export class InkSurface {
     );
     const seen = this.visiblePageRect(index);
     if (seen) this.callbacks.onReadingPoint?.(index, seen.y + seen.h / 3);
-    // A board has no pages to count; the zoom readout stays.
-    this.indicatorEl.toggleClass("is-hidden", total === 0 || this.board);
+    // A board file counts its boards (discussion #160); one board, nothing to count.
+    this.indicatorEl.toggleClass("is-hidden", total === 0 || (this.board && total < 2));
     if (index !== this.pageIndex) {
+      this.turnedBack = index < this.pageIndex;
       this.pageIndex = index;
       this.markCurrentTab();
       this.callbacks.onPageChange?.(index, total);
@@ -5514,7 +6037,7 @@ export class InkSurface {
 
   private requestFrame(): void {
     if (this.frameReq) return;
-    this.frameReq = window.requestAnimationFrame(this.frame);
+    this.frameReq = this.win.requestAnimationFrame(this.frame);
   }
 
   /**
@@ -5524,7 +6047,7 @@ export class InkSurface {
    */
   private requestZoomPaint(): void {
     if (!this.zoomBox || this.frameReq || this.zoomPaintFrame) return;
-    this.zoomPaintFrame = window.requestAnimationFrame(() => {
+    this.zoomPaintFrame = this.win.requestAnimationFrame(() => {
       this.zoomPaintFrame = 0;
       this.paintZoomBox();
     });
@@ -5534,6 +6057,8 @@ export class InkSurface {
     this.frameReq = 0;
     if (!this.renderer) return;
     const started = now();
+    this.pace.note(t, this.frameFollows);
+    this.frameFollows = false;
     // Both advance every frame: a pinch usually ends with one finger still
     // moving, so a fling and the zoom spring run together. Short-circuiting
     // here froze the spring for the length of the fling, then snapped it.
@@ -5545,6 +6070,8 @@ export class InkSurface {
     const carrying = this.stepGroupDragScroll();
     const moving = scrolling || zooming || settling || carrying;
     const busy = moving || this.scroller.isDragging || this.pinch !== null;
+    if (busy) this.endSharpenFade();
+    this.noteZoomMotion();
     this.noteViewMotion(busy);
     this.syncViewport();
     // The ruler's centimetres are the page's, at the zoom now.
@@ -5562,9 +6089,19 @@ export class InkSurface {
     this.reportTextAnchor();
     this.syncPullAdd();
     if (busy) this.flashChrome();
-    const complete = this.paint(busy ? SCROLL_FRAME_BUDGET_MS : REST_FRAME_BUDGET_MS);
-    if (this.debug) this.trackFrame(t, started, moving);
+    // Under the fade, every tile changes at once: nothing moves, and tiles
+    // arriving a few a frame would ripple across the text.
+    const complete = this.paint(
+      busy
+        ? this.pace.budget(SCROLL_FRAME_BUDGET_MS)
+        : this.fadeTimer !== 0
+          ? SHARPEN_FRAME_BUDGET_MS
+          : this.pace.budget(REST_FRAME_BUDGET_MS),
+    );
+    if (this.debug) this.trackFrame(t, started);
     if (moving || !complete) {
+      // The next frame is the display's next: the time between them is a frame.
+      this.frameFollows = true;
       this.requestFrame();
       return;
     }
@@ -5576,6 +6113,101 @@ export class InkSurface {
     if (this.imageSel) this.syncImageOverlay();
     if (this.selection) this.syncSelectionOverlay();
     if (this.pressMenu) this.syncActionBar();
+  };
+
+  private fadeCover: HTMLCanvasElement | null = null;
+  private fadeTimer = 0;
+  private fadeAnimation: Animation | null = null;
+  /** The fade has not started: more images may still join it. */
+  private fadeWaiting = false;
+  private fadeBegan = 0;
+  private fadeStopWaiting: (() => void) | null = null;
+
+  /**
+   * A sharper PDF image arrived while nothing moves. Swapped in at once, the
+   * text visibly jumps from blurred to sharp after every zoom: the picture as
+   * it was stays on top instead and fades away.
+   */
+  private fadeInSharper(pageIndex: number): void {
+    if (!this.renderer || this.viewMoving || prefersReducedMotion() || lowMemoryDevice()) return;
+    if (!this.renderer.isPageOnScreen(pageIndex, this.doc.pages.length)) return;
+    // More of the same zoom's images: they all go under the one fade.
+    if (this.fadeTimer !== 0) {
+      if (this.fadeWaiting && now() - this.fadeBegan < SHARPEN_WAIT_MAX_MS) this.armSharpenFade();
+      return;
+    }
+    const cover = (this.fadeCover ??= createEl("canvas", {
+      cls: "goodobsidian-canvas goodobsidian-canvas-dry goodobsidian-canvas-fading",
+    }));
+    if (typeof cover.animate !== "function") return;
+    this.renderer.coverDry(cover);
+    const fade = cover.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: PDF_SHARPEN_FADE_MS,
+      easing: "ease-out",
+      fill: "forwards",
+    });
+    fade.pause();
+    this.fadeAnimation = fade;
+    this.fadeBegan = now();
+    this.fadeWaiting = true;
+    this.armSharpenFade();
+  }
+
+  /** Start the fade once no image has arrived for a moment and the new text is drawn. */
+  private armSharpenFade(): void {
+    window.clearTimeout(this.fadeTimer);
+    this.fadeTimer = window.setTimeout(() => {
+      // Started before the swap is on screen, its first frames are lost.
+      this.fadeStopWaiting = afterPainted(window, () => {
+        this.fadeStopWaiting = null;
+        this.fadeWaiting = false;
+        this.fadeAnimation?.play();
+        // A timer, not `finish`: finish events land late (ledger).
+        window.clearTimeout(this.fadeTimer);
+        this.fadeTimer = window.setTimeout(this.endSharpenFade, PDF_SHARPEN_FADE_MS);
+      });
+      this.requestFrame();
+    }, SHARPEN_QUIET_MS);
+  }
+
+  private readonly endSharpenFade = (): void => {
+    if (this.fadeTimer === 0) return;
+    window.clearTimeout(this.fadeTimer);
+    this.fadeTimer = 0;
+    this.fadeWaiting = false;
+    this.fadeStopWaiting?.();
+    this.fadeStopWaiting = null;
+    this.fadeAnimation?.cancel();
+    this.fadeAnimation = null;
+    const cover = this.fadeCover;
+    if (!cover) return;
+    cover.remove();
+    // WebKit frees a canvas's memory only once it has no size.
+    cover.width = 0;
+    cover.height = 0;
+  };
+
+  private zoomHeld = false;
+  private zoomHoldTimer = 0;
+
+  /** A zoom frame: hold PDF rendering, until the zoom has been still for a moment. */
+  private noteZoomMotion(): void {
+    if (!this.zoomTransient) return;
+    if (!this.zoomHeld) {
+      this.zoomHeld = true;
+      this.callbacks.onZoomMotion?.(true);
+    }
+    window.clearTimeout(this.zoomHoldTimer);
+    this.zoomHoldTimer = window.setTimeout(this.releaseZoomHold, ZOOM_PDF_HOLD_MS);
+  }
+
+  private readonly releaseZoomHold = (): void => {
+    this.zoomHoldTimer = this.zoomTransient
+      ? window.setTimeout(this.releaseZoomHold, ZOOM_PDF_HOLD_MS)
+      : 0;
+    if (this.zoomHoldTimer !== 0 || !this.zoomHeld) return;
+    this.zoomHeld = false;
+    this.callbacks.onZoomMotion?.(false);
   };
 
   /** Whether the zoom is mid-gesture, so the tiles' level must not change yet. */
@@ -5616,7 +6248,7 @@ export class InkSurface {
     if (!this.renderer || this.zoomTransient || !this.renderer.isTransient) return;
     this.renderer.settle();
     // A few tiles a frame, the last zoom's scaled meanwhile.
-    if (!this.paint(REST_FRAME_BUDGET_MS)) this.requestFrame();
+    if (!this.paint(this.pace.budget(REST_FRAME_BUDGET_MS))) this.requestFrame();
   }
 
   /** Paint the backdrop and the dry layer. Returns whether every tile was ready. */
@@ -5633,7 +6265,10 @@ export class InkSurface {
     // cropped, lives on the wet layer, which does not follow a scroll or zoom
     // by itself.
     if (this.imageDrag?.lifted) this.renderImageDraft();
-    if (this.groupDrag?.lifted) this.renderGroupDraft();
+    if (this.groupDrag?.lifted) {
+      this.renderGroupDraft();
+      this.placeGroupDrag(this.groupDrag);
+    }
     if (this.cropping) this.renderCropDraft();
     this.paintZoomBox();
     return complete;
@@ -5647,13 +6282,34 @@ export class InkSurface {
    */
   private schedulePrefetch(): void {
     if (this.prefetchReq || !this.renderer) return;
-    this.prefetchReq = window.requestAnimationFrame(() => {
+    this.prefetchReq = this.win.requestAnimationFrame(() => {
       this.prefetchReq = 0;
       if (!this.renderer || this.frameReq || this.scroller.isDragging || this.pinch) return;
       if (this.pressing) return;
-      const more = this.renderer.prefetch(this.doc, this.inkPressure, PREFETCH_BUDGET_MS);
+      const more = this.renderer.prefetch(
+        this.doc,
+        this.inkPressure,
+        PREFETCH_BUDGET_MS,
+        this.pagesToTurnTo(),
+      );
       if (more) this.schedulePrefetch();
     });
+  }
+
+  /** The last turn went back a page: the pages before this one are made first. */
+  private turnedBack = false;
+
+  /**
+   * The pages a swipe turns to, the one the last turn headed for first: a row turning
+   * page by page has them made whole while it rests (`Renderer.prefetch`).
+   */
+  private pagesToTurnTo(): number[] {
+    if (!this.turnsPages || this.board) return [];
+    const on = this.turnedBack ? -1 : 1;
+    // The page after the next shows at the pane's edge as a turn ends.
+    return [this.pageIndex + on, this.pageIndex - on, this.pageIndex + 2 * on].filter(
+      (index) => index >= 0 && index < this.doc.pages.length,
+    );
   }
 
   private stepZoomAnim(t: number): boolean {
@@ -5739,7 +6395,8 @@ export class InkSurface {
     // by 3% (well under a px on screen), not on every frame of a pinch.
     if (Math.abs(gap - this.rowGap) < Math.max(0.01, this.rowGap * 0.03)) return false;
     this.rowGap = gap;
-    this.pageLayout = layoutPages(this.doc.pages, { direction: "horizontal", gap });
+    // A board among the pages stays parked: a swipe never lands on it (discussion #160).
+    this.pageLayout = layoutNotebook(this.doc.pages, { direction: "horizontal", gap });
     this.renderer?.setLayout(this.pageLayout);
     return true;
   }
@@ -5908,7 +6565,9 @@ export class InkSurface {
    * to the previous page's right edge (`rowEdgeTurn`).
    */
   private turnHeldPage(step: -1 | 1): void {
-    const to = this.heldIndex() + step;
+    // The next page of the row, a board among the pages stepped over.
+    let to = this.heldIndex() + step;
+    while (this.doc.pages[to]?.board === true) to += step;
     if (to < 0 || to >= this.doc.pages.length) return;
     const range = rowPageScrollRange(this.pageLayout, to, this.scale, this.cssW);
     this.glideHeldTo(to, step > 0 ? range.min : range.max, this.scroller.position.y, true);
@@ -5983,6 +6642,7 @@ export class InkSurface {
   private get pinchOverviewArmed(): boolean {
     return (
       this.pinchOverviewEnabled &&
+      !this.board &&
       this.pinch !== null &&
       pinchOpensOverview(this.pinch.raw, this.minZoom)
     );
@@ -6031,7 +6691,9 @@ export class InkSurface {
   private pullOverscroll(): number {
     // Zoomed in, a row is held to one page: past its end is past the
     // notebook's end only on the last page (elsewhere a pull turns the page).
-    if (this.heldRow && this.heldIndex() !== this.doc.pages.length - 1) return 0;
+    // The last page shown: a board after it is parked, not a page (discussion #160).
+    const last = shownBoxes(this.pageLayout).at(-1)?.index ?? this.doc.pages.length - 1;
+    if (this.heldRow && this.heldIndex() !== last) return 0;
     const end = this.scroller.overscrollEnd;
     return this.direction === "horizontal" ? end.x : end.y;
   }
@@ -6059,11 +6721,13 @@ export class InkSurface {
   /** Keep the pull-to-add ring in step with the stretch while a finger holds it. */
   private syncPullAdd(): void {
     const wheel = wheelPullProgress(this.wheelPull);
-    if (this.pullAddEnabled && !this.touchPanning && wheel > 0) {
+    // A board shows no end of pages to pull past.
+    const enabled = this.pullAddEnabled && !this.board;
+    if (enabled && !this.touchPanning && wheel > 0) {
       this.pullAdd.update(this.direction, this.pullOverscroll(), wheel);
       return;
     }
-    if (!this.pullAddEnabled || !this.touchPanning || !this.pullAllowed()) {
+    if (!enabled || !this.touchPanning || !this.pullAllowed()) {
       this.pullAdd.hide();
       return;
     }
@@ -6096,6 +6760,8 @@ export class InkSurface {
     // crawl. The rest are hidden until the zoom rests and are placed then.
     const zooming = this.zoomTransient;
     this.textBoxesProvisional = false;
+    // Read again, once, when a Markdown box first needs it: the theme may have changed.
+    this.markdownAccent = null;
     const seen = zooming ? this.visiblePaperRect() : null;
     const marginX = this.cssW;
     const marginY = this.cssH;
@@ -6130,14 +6796,14 @@ export class InkSurface {
         // Never the box being typed in or held: hiding it would blur it.
         const park =
           (parked || drawnOnNote) &&
-          !root.contains(document.activeElement) &&
+          !root.contains(this.viewDoc.activeElement) &&
           this.heldText !== view;
         root.toggleClass("is-parked", park);
         if (park) {
           if (parked) this.textBoxesProvisional = true;
           continue;
         }
-        if (document.activeElement !== input && input.value !== textBox.text)
+        if (this.viewDoc.activeElement !== input && input.value !== textBox.text)
           input.value = textBox.text;
         this.renderShownText(view, textBox.text);
         // Mid-zoom a box keeps the layout it last had and is scaled whole from
@@ -6146,7 +6812,7 @@ export class InkSurface {
         if (
           zooming &&
           view.laidAt > 0 &&
-          document.activeElement !== input &&
+          this.viewDoc.activeElement !== input &&
           this.frameDraft?.key !== key &&
           this.groupDrag === null
         ) {
@@ -6229,7 +6895,7 @@ export class InkSurface {
           // A covered tape over the box hides it there, as it hides ink;
           // never the box being typed in.
           clipPath:
-            document.activeElement === input || turn !== 0
+            this.viewDoc.activeElement === input || turn !== 0
               ? ""
               : tapeClipPath(
                   page.strokes,
@@ -6274,7 +6940,15 @@ export class InkSurface {
         });
         // The shown text lies exactly over the textarea, the frame's full height.
         view.shown.setCssStyles({ ...typeStyle, height: `${100 / shrink}%` });
-        view.styleKey = `${input.style.fontFamily}|${input.style.fontWeight}|${input.style.fontStyle}|${lineHeight}|${input.style.padding}`;
+        // A Markdown box shows its raw text while edited and is drawn
+        // formatted at rest, as tall as the formatted text (discussion #107).
+        const markdown = textBox.markdown === true;
+        root.toggleClass("is-markdown", markdown);
+        view.mdH =
+          markdown && this.viewDoc.activeElement !== input
+            ? this.syncMarkdownView(view, textBox, width, frame.h, scale, night)
+            : 0;
+        view.styleKey = `${input.style.fontFamily}|${input.style.fontWeight}|${input.style.fontStyle}|${lineHeight}|${input.style.padding}|${view.mdH}`;
         if (!fixedHeight && this.needsMeasure(view, heightModeChanged, zooming)) measure.push(view);
       }
     }
@@ -6291,7 +6965,7 @@ export class InkSurface {
     for (const view of stale) {
       // Removing a focused element fires no blur in every engine; an undo
       // that takes away the box being edited must still end the edit.
-      if (document.activeElement === view.input) this.blurTextInput(view.input, "gone");
+      if (this.viewDoc.activeElement === view.input) this.blurTextInput(view.input, "gone");
       // A kept box that went (an undo took it): nothing is held any more.
       if (this.heldText === view) this.heldText = null;
       view.root.remove();
@@ -6313,6 +6987,14 @@ export class InkSurface {
    * straight down again (2.5.1).
    */
   private renderShownText(view: TextBoxView, text: string): void {
+    // A Markdown box is drawn by its canvas, links and tasks included.
+    if (this.liveTextBox(view.pageId, view.id)?.markdown === true) {
+      if (view.shownText === null) return;
+      view.shownText = null;
+      view.shown.empty();
+      view.root.removeClass("has-links", "has-checks");
+      return;
+    }
     if (view.shownText === text) return;
     view.shownText = text;
     view.shown.empty();
@@ -6371,7 +7053,7 @@ export class InkSurface {
       pressed = null;
       const live = this.liveTextBox(view.pageId, view.id);
       if (!live || this.callbacks.isLocked?.()) return;
-      const text = setTaskDone(live.text, line, done);
+      const text = setMarkdownTaskDone(live.text, line, done);
       if (text === live.text) return;
       this.history.push(
         this.doc,
@@ -6384,6 +7066,8 @@ export class InkSurface {
       );
       view.input.value = text;
       this.renderShownText(view, text);
+      // A Markdown box's tick is painted: draw it again.
+      if (live.markdown === true) this.syncTextBoxes();
       this.changed([view.pageId]);
     });
     el.addEventListener("pointercancel", () => {
@@ -6452,7 +7136,11 @@ export class InkSurface {
     if (views.length === 0) return;
     const scale = this.unitScale;
     for (const view of views) view.input.setCssStyles({ height: "auto" });
-    const heights = views.map((view) => view.input.scrollHeight);
+    // A Markdown box at rest is as tall as its formatted text, which the
+    // canvas measured; its textarea is stretched over it to take the taps.
+    const heights = views.map((view) =>
+      view.mdH > 0 ? (view.mdH * scale) / view.shrink : view.input.scrollHeight,
+    );
     views.forEach((view, i) => {
       const h = heights[i];
       view.input.setCssStyles({ height: `${h}px` });
@@ -6481,7 +7169,8 @@ export class InkSurface {
     const room = pageWidth - x;
     const inset = textInset(textBox).x;
     const shown = shownCase(textBox.text, textBox);
-    const key = `${font}|${room}|${inset}|${shown}`;
+    const markdown = textBox.markdown === true;
+    const key = `${font}|${room}|${inset}|${shown}|${markdown}`;
     if (view.fitKey === key) return view.fitW;
     this.measureCtx ??= createEl("canvas").getContext("2d");
     const ctx = this.measureCtx;
@@ -6491,7 +7180,131 @@ export class InkSurface {
     ctx.font = font;
     view.fitKey = key;
     view.fitW = fitTextWidth(shown, min, room, (text) => ctx.measureText(text).width, inset);
+    // A Markdown box is as wide as the wider of its raw and formatted text,
+    // so it keeps its width as it is edited and let go (a heading is larger).
+    if (markdown) {
+      const formatted = fitMarkdownWidth(
+        { ...textBox, x, w: room },
+        min,
+        room,
+        markdownMeasure(ctx, textBox),
+        TEXT_FIT_SLACK,
+      );
+      view.fitW = Math.max(view.fitW, formatted);
+    }
     return view.fitW;
+  }
+
+  /** The theme's accent for Markdown boxes' links, read once a sync (`syncTextBoxes`). */
+  private markdownAccent: string | null = null;
+
+  /**
+   * A Markdown box at rest (discussion #107): lay its text out formatted, at
+   * `width` (and `fixedH`, a fixed box's height), paint it into the box's
+   * canvas when anything it shows changed, and give back its height in page
+   * px. Painted by the painter thumbnails and exports use, so the page, its
+   * thumbnail and an export break at the same words.
+   */
+  private syncMarkdownView(
+    view: TextBoxView,
+    textBox: TextBoxElement,
+    width: number,
+    fixedH: number | undefined,
+    scale: number,
+    night: boolean,
+  ): number {
+    this.measureCtx ??= createEl("canvas").getContext("2d");
+    const ctx = this.measureCtx;
+    if (!ctx) return 0;
+    // In the box's own frame: its top-left at 0, 0, turned with the frame.
+    const box: MarkdownBox = { ...textBox, x: 0, y: 0, w: width, h: fixedH };
+    const layout = layoutMarkdownOn(ctx, box);
+    if (this.markdownAccent === null) {
+      const accent = this.win
+        .getComputedStyle(this.surfaceEl)
+        .getPropertyValue("--interactive-accent");
+      this.markdownAccent = accent.trim() || MARKDOWN_LINK_COLOR;
+    }
+    const accent = this.markdownAccent;
+    const dpr = this.win.devicePixelRatio || 1;
+    const key = [box.text, textStyleKey(box), width, layout.height, scale, dpr, night, accent].join(
+      "|",
+    );
+    if (view.mdKey !== key) {
+      view.mdKey = key;
+      this.paintMarkdownView(view, box, layout, scale * dpr, night, accent);
+    }
+    return layout.height;
+  }
+
+  /**
+   * Paint a Markdown box's canvas at `k` device px a page px, and lay its
+   * links' and tasks' tap targets over it, placed in shares of the box so a
+   * pinch, which scales the box whole, keeps them on their words.
+   */
+  private paintMarkdownView(
+    view: TextBoxView,
+    box: MarkdownBox,
+    layout: MarkdownLayout,
+    k: number,
+    night: boolean,
+    accent: string,
+  ): void {
+    let md = view.md;
+    if (!md) {
+      // Over the textarea, which stays to take the tap that edits the box,
+      // and under the handles.
+      md = createDiv({ cls: "goodobsidian-page-textbox-md" });
+      view.input.after(md);
+      view.md = md;
+    }
+    md.empty();
+    const w = Math.max(1, box.w);
+    const h = Math.max(1, layout.height);
+    const scale = Math.min(k, MARKDOWN_CANVAS_MAX / w, MARKDOWN_CANVAS_MAX / h);
+    const canvas = md.createEl("canvas", { cls: "goodobsidian-page-textbox-md-canvas" });
+    canvas.width = Math.max(1, Math.ceil(w * scale));
+    canvas.height = Math.max(1, Math.ceil(h * scale));
+    const paint = canvas.getContext("2d");
+    if (paint) {
+      paint.scale(scale, scale);
+      paintMarkdownText(paint, box, layout, night, accent);
+    }
+    const place = (el: HTMLElement, x: number, y: number, rw: number, rh: number): void => {
+      el.setCssStyles({
+        left: `${((x / w) * 100).toFixed(3)}%`,
+        top: `${((y / h) * 100).toFixed(3)}%`,
+        width: `${((rw / w) * 100).toFixed(3)}%`,
+        height: `${((rh / h) * 100).toFixed(3)}%`,
+      });
+    };
+    for (const rect of markdownLinkRects(layout)) {
+      const el = md.createSpan({
+        cls: "goodobsidian-textbox-hit is-link",
+        attr: { role: "link", "aria-label": rect.target },
+      });
+      place(el, rect.x, rect.y, rect.w, rect.h);
+      this.bindTextLink(el, rect.target);
+    }
+    for (const mark of layout.marks) {
+      if (mark.kind !== "task") continue;
+      const lineBox = mark.size * lineHeightOf(box);
+      const side = taskBoxSize(mark.size);
+      // A larger target than the box, which is a few px wide at fit zoom.
+      const pad = mark.size * 0.25;
+      const el = md.createSpan({
+        cls: "goodobsidian-textbox-hit is-task",
+        attr: { role: "checkbox", "aria-checked": String(mark.done) },
+      });
+      place(
+        el,
+        layout.x + mark.x + mark.size * 0.1 - pad,
+        layout.y + mark.y + (lineBox - side) / 2 - pad,
+        side + 2 * pad,
+        side + 2 * pad,
+      );
+      this.bindTextTask(el, view, mark.line, !mark.done);
+    }
   }
 
   private createTextBoxView(pageId: string, textBox: TextBoxElement, key: string): TextBoxView {
@@ -6544,6 +7357,9 @@ export class InkSurface {
       laidAt: 0,
       zoomScaled: false,
       focusedAt: 0,
+      md: null,
+      mdKey: "",
+      mdH: 0,
     };
 
     // Text editing must never start an ink gesture on the scroll overlay
@@ -6551,7 +7367,7 @@ export class InkSurface {
     // box, so a jump it makes to "reveal" the caret can be undone.
     input.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
-      if (document.activeElement !== input) this.pendingFocusHold = this.scrollSnapshot();
+      if (this.viewDoc.activeElement !== input) this.pendingFocusHold = this.scrollSnapshot();
     });
     input.addEventListener("focus", () => {
       view.focusedAt = now();
@@ -6595,14 +7411,51 @@ export class InkSurface {
       }
       this.endTextEditing(view);
     });
-    // Enter on a list line continues the list; on an empty item, ends it.
+    // A Markdown box swaps its raw text for the formatted one, and back, as
+    // it is edited and let go: laid out again either way.
+    input.addEventListener("focus", () => {
+      if (this.liveTextBox(pageId, textBox.id)?.markdown === true) this.syncTextBoxes();
+    });
+    input.addEventListener("blur", () => {
+      if (this.liveTextBox(pageId, textBox.id)?.markdown === true) this.syncTextBoxes();
+    });
+    // Enter on a list line continues the list; on an empty item, ends it. In
+    // a Markdown box, Markdown's lists and quotes go on too.
     input.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
       if (input.selectionStart !== input.selectionEnd) return;
-      const edit = continueList(input.value, input.selectionStart);
+      const markdown = this.liveTextBox(pageId, textBox.id)?.markdown === true;
+      const edit = (markdown ? continueMarkdownList : continueList)(
+        input.value,
+        input.selectionStart,
+      );
       if (!edit) return;
       event.preventDefault();
       this.setTextInput(input, edit);
+    });
+    // Markdown pasted into a box that is not Markdown yet switches it
+    // (discussion #107): the text and the switch are one step of undo. A
+    // Markdown box stays one, and plain text pastes as the browser pastes it.
+    input.addEventListener("paste", (event) => {
+      const live = this.liveTextBox(pageId, textBox.id);
+      if (!live || live.markdown === true || this.callbacks.isLocked?.()) return;
+      const raw = event.clipboardData?.getData("text/plain") ?? "";
+      const pasted = raw.replace(/\r\n?/g, "\n");
+      if (!looksLikeMarkdown(pasted)) return;
+      event.preventDefault();
+      const start = input.selectionStart;
+      const text = input.value.slice(0, start) + pasted + input.value.slice(input.selectionEnd);
+      const caret = start + pasted.length;
+      this.pushTextCommand(
+        key,
+        new CompositeCommand(t("common.paste"), [
+          new SetTextBoxText(pageId, textBox.id, text),
+          new SetTextBoxStyle(pageId, textBox.id, { markdown: true }),
+        ]),
+      );
+      this.setTextInput(input, { text, selectionStart: caret, selectionEnd: caret });
+      this.syncTextBoxes();
+      this.reportTextEditing();
     });
     input.addEventListener("input", () => {
       const live = this.liveTextBox(pageId, textBox.id);
@@ -6717,9 +7570,9 @@ export class InkSurface {
     const startY = event.clientY;
     const back = this.heldReturnTool;
     const stop = (): void => {
-      window.removeEventListener("pointermove", onMove, true);
-      window.removeEventListener("pointerup", onUp, true);
-      window.removeEventListener("pointercancel", onCancel, true);
+      this.win.removeEventListener("pointermove", onMove, true);
+      this.win.removeEventListener("pointerup", onUp, true);
+      this.win.removeEventListener("pointercancel", onCancel, true);
     };
     const onMove = (e: PointerEvent): void => {
       if (e.pointerId !== event.pointerId) return;
@@ -6745,9 +7598,9 @@ export class InkSurface {
     const onCancel = (e: PointerEvent): void => {
       if (e.pointerId === event.pointerId) stop();
     };
-    window.addEventListener("pointermove", onMove, true);
-    window.addEventListener("pointerup", onUp, true);
-    window.addEventListener("pointercancel", onCancel, true);
+    this.win.addEventListener("pointermove", onMove, true);
+    this.win.addEventListener("pointerup", onUp, true);
+    this.win.addEventListener("pointercancel", onCancel, true);
   }
 
   /**
@@ -6772,7 +7625,7 @@ export class InkSurface {
     event.preventDefault();
     const handle = grip ?? (event.currentTarget as HTMLElement);
     handle.setPointerCapture(event.pointerId);
-    const typing = document.activeElement === view.input;
+    const typing = this.viewDoc.activeElement === view.input;
     // Before any blur below, so the blur handler knows a drag is under way.
     view.root.addClass("is-dragging");
     this.textFrameDrag = key;
@@ -6852,7 +7705,7 @@ export class InkSurface {
       // A move finished the edit when it began; wrap it up now the box has
       // landed (and is no longer mid-drag, so an empty one may go). The box
       // is not refocused: that would bring the keyboard straight back.
-      if (document.activeElement !== view.input) this.endTextEditing(view);
+      if (this.viewDoc.activeElement !== view.input) this.endTextEditing(view);
     };
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onEnd);
@@ -7055,7 +7908,7 @@ export class InkSurface {
       top: this.scroller.position.y,
       left: this.scroller.position.x,
       windowX: window.scrollX,
-      windowY: window.scrollY,
+      windowY: this.win.scrollY,
       ancestors,
     };
   }
@@ -7075,17 +7928,17 @@ export class InkSurface {
    * above the keyboard.
    */
   private holdScroll(input: HTMLTextAreaElement, snapshot: ScrollSnapshot): void {
-    if (this.focusHoldFrame) window.cancelAnimationFrame(this.focusHoldFrame);
+    if (this.focusHoldFrame) this.win.cancelAnimationFrame(this.focusHoldFrame);
     const until = now() + TEXT_FOCUS_HOLD_MS;
     let top = snapshot.top;
     const step = (): void => {
       this.focusHoldFrame = 0;
-      if (document.activeElement !== input || !this.renderer) return;
+      if (this.viewDoc.activeElement !== input || !this.renderer) return;
       for (const a of snapshot.ancestors) {
         if (a.el.scrollTop !== a.top) a.el.scrollTop = a.top;
         if (a.el.scrollLeft !== a.left) a.el.scrollLeft = a.left;
       }
-      if (window.scrollX !== snapshot.windowX || window.scrollY !== snapshot.windowY)
+      if (window.scrollX !== snapshot.windowX || this.win.scrollY !== snapshot.windowY)
         window.scrollTo(snapshot.windowX, snapshot.windowY);
       const position = this.scroller.position;
       if (position.x !== snapshot.left || position.y !== top) {
@@ -7096,7 +7949,7 @@ export class InkSurface {
 
       // Keep the box above the on-screen keyboard, with room for the pill.
       if (this.keepTypingBoxVisible()) top = this.scroller.position.y;
-      if (now() < until) this.focusHoldFrame = window.requestAnimationFrame(step);
+      if (now() < until) this.focusHoldFrame = this.win.requestAnimationFrame(step);
     };
     step();
   }
@@ -7112,15 +7965,15 @@ export class InkSurface {
     const view = this.typingField();
     if (!view || !this.renderer) return false;
     const surface = this.surfaceEl.getBoundingClientRect();
-    const vv = window.visualViewport;
+    const vv = this.win.visualViewport;
     // A floating or minimised keyboard reports a small height, or none,
     // but still sits low on the screen: the box rises above it either way.
-    const keyboard = Math.max(keyboardHeight(), window.innerHeight * TYPING_KEYBOARD_SHARE);
+    const keyboard = Math.max(keyboardHeight(), this.win.innerHeight * TYPING_KEYBOARD_SHARE);
     const bottom =
       Math.min(
         surface.bottom,
-        vv ? vv.offsetTop + vv.height : window.innerHeight,
-        window.innerHeight - keyboard,
+        vv ? vv.offsetTop + vv.height : this.win.innerHeight,
+        this.win.innerHeight - keyboard,
       ) - TEXT_REVEAL_MARGIN_PX;
     const box = view.root.getBoundingClientRect();
     const { input } = view;
@@ -7263,9 +8116,9 @@ export class InkSurface {
       const pageId = this.strokeIndex.pageOf(id);
       const box = this.pageLayout.boxes.find((b) => b.id === pageId);
       if (!stroke || !box) continue;
-      add(box.index, strokeBounds(stroke));
+      add(box.index, inkedBounds(stroke));
       for (const mirror of this.eraseMirrorsOf(box.id, id)) {
-        add(mirror.box.index, strokeBounds(mirror.stroke));
+        add(mirror.box.index, inkedBounds(mirror.stroke));
       }
     }
     this.eraseDirty.clear();
@@ -7291,7 +8144,7 @@ export class InkSurface {
     this.eraseCuts.set(index, [...(this.eraseCuts.get(index) ?? []), area]);
     if (this.eraseCutSeen.has(stroke.id)) return;
     this.eraseCutSeen.add(stroke.id);
-    const bounds = strokeBounds(stroke);
+    const bounds = inkedBounds(stroke);
     if (bounds) this.erasePreview.set(index, [...(this.erasePreview.get(index) ?? []), bounds]);
   }
 
@@ -7374,7 +8227,7 @@ export class InkSurface {
     const page = this.doc.pages[this.pageIndex];
     const seen = this.visibleRegion(this.pageIndex);
     if (!page || !seen || !(width > 0) || !(height > 0)) return false;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = this.win.devicePixelRatio || 1;
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     const ctx = canvas.getContext("2d");
@@ -7479,6 +8332,7 @@ export class InkSurface {
           maxY: r.maxY + frame.y,
         });
       } else renderer.refreshPage(index);
+      this.fadeInSharper(index);
       shown = true;
     });
     if (shown) this.requestFrame();
@@ -7827,7 +8681,9 @@ export class InkSurface {
       const bounds = this.scroller.bounds;
       const edgeTurn =
         this.heldRow && !pulled && this.pullGesture?.pinched === false
-          ? rowEdgeTurn(this.scroller.position.x, bounds.minX, bounds.maxX)
+          ? this.scroller.heldSideways
+            ? rowHeldTurn(this.scroller.dragTravel.x, this.scroller.dragTravel.y)
+            : rowEdgeTurn(this.scroller.position.x, bounds.minX, bounds.maxX)
           : 0;
       this.pullGesture = null;
       this.touchPanning = false;
@@ -7993,8 +8849,13 @@ export class InkSurface {
       this.flashReadout(
         redo ? t("surface.readout.nothingToRedo") : t("surface.readout.nothingToUndo"),
       );
-    else if (redo) this.redo();
-    else this.undo();
+    else if (redo) {
+      this.redo();
+      this.callbacks.onUse?.("redo.gesture");
+    } else {
+      this.undo();
+      this.callbacks.onUse?.("undo.gesture");
+    }
   }
 
   /** Show a word in the readout pill for `holdMs`, faded on the zoom readout's clock. */
@@ -8271,7 +9132,7 @@ export class InkSurface {
    * pressed there is not taken for it.
    */
   penInView(event: PointerEvent): void {
-    if (event.target instanceof Node && this.scrollEl.contains(event.target)) return;
+    if (isNode(event.target) && this.scrollEl.contains(event.target)) return;
     this.pointerInput?.penElsewhere(event);
   }
 
@@ -8561,9 +9422,9 @@ export class InkSurface {
     this.resetZoomMarqueePointer();
     this.zoomMarqueeEl?.addClass("is-hidden");
     this.zoomTargetEl?.addClass("is-hidden");
-    this.zoomResize?.disconnect();
-    this.zoomResize = null;
-    if (this.zoomPaintFrame) window.cancelAnimationFrame(this.zoomPaintFrame);
+    this.stopZoomResize?.();
+    this.stopZoomResize = null;
+    if (this.zoomPaintFrame) this.win.cancelAnimationFrame(this.zoomPaintFrame);
     this.zoomPaintFrame = 0;
     this.zoomFrame?.destroy();
     this.zoomFrame = null;
@@ -8702,15 +9563,14 @@ export class InkSurface {
     // A corner drag changes the window's size, not its place record, until the
     // pointer is lifted; follow the size so the magnified page never stretches.
     if (typeof ResizeObserver === "function") {
-      this.zoomResize = new ResizeObserver(() => this.requestFrame());
-      this.zoomResize.observe(canvas);
+      this.stopZoomResize = watchSize(canvas, () => this.requestFrame());
     }
   }
 
   /** Every frame: keep the frame over its page and draw the magnified view. */
   private paintZoomBox(): void {
     if (this.zoomPaintFrame) {
-      window.cancelAnimationFrame(this.zoomPaintFrame);
+      this.win.cancelAnimationFrame(this.zoomPaintFrame);
       this.zoomPaintFrame = 0;
     }
     const state = this.zoomBox;
@@ -8740,7 +9600,7 @@ export class InkSurface {
     if (!(width > 0) || !(height > 0)) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const dpr = backingScale(window.devicePixelRatio);
+    const dpr = backingScale(this.win.devicePixelRatio);
     const deviceW = Math.max(1, Math.round(width * dpr));
     const deviceH = Math.max(1, Math.round(height * dpr));
     if (canvas.width !== deviceW || canvas.height !== deviceH) {
@@ -9073,7 +9933,7 @@ export class InkSurface {
   /** A hand on the box or a manual step ends an auto-advance glide. */
   private cancelZoomSlide(): void {
     if (!this.zoomSlideFrame) return;
-    window.cancelAnimationFrame(this.zoomSlideFrame);
+    this.win.cancelAnimationFrame(this.zoomSlideFrame);
     this.zoomSlideFrame = 0;
   }
 
@@ -9318,7 +10178,7 @@ export class InkSurface {
     if (!state) return;
     this.cancelZoomSlide();
     const from = { ...state.box };
-    if (typeof window.requestAnimationFrame !== "function") {
+    if (typeof this.win.requestAnimationFrame !== "function") {
       state.box = to;
       this.syncZoomTarget();
       this.ensureZoomTargetVisible();
@@ -9338,13 +10198,13 @@ export class InkSurface {
       this.syncZoomTarget();
       this.requestFrame();
       if (t < 1) {
-        this.zoomSlideFrame = window.requestAnimationFrame(tick);
+        this.zoomSlideFrame = this.win.requestAnimationFrame(tick);
       } else {
         this.zoomSlideFrame = 0;
         this.ensureZoomTargetVisible();
       }
     };
-    this.zoomSlideFrame = window.requestAnimationFrame(tick);
+    this.zoomSlideFrame = this.win.requestAnimationFrame(tick);
   }
 
   /** − or +: the target shrinks or grows about its centre, so the window magnifies more or less. */
@@ -9402,7 +10262,7 @@ export class InkSurface {
     const state = this.zoomBox;
     const pageBox = state ? this.boxForPage(state.pageId) : null;
     if (!state || !pageBox || event.button !== 0) return;
-    const target = event.target instanceof HTMLElement ? event.target : null;
+    const target = isHTMLElement(event.target) ? event.target : null;
     const grip = target?.closest<HTMLElement>("[data-zoom-handle]");
     const handle = (grip?.dataset.zoomHandle ?? null) as ZoomHandle | null;
     const press = zoomTargetPress(handle);
@@ -9909,7 +10769,7 @@ export class InkSurface {
 
   private requestLaser(): void {
     if (this.laserFrame) return;
-    this.laserFrame = window.requestAnimationFrame(() => {
+    this.laserFrame = this.win.requestAnimationFrame(() => {
       this.laserFrame = 0;
       this.paintLaser();
     });
@@ -9922,7 +10782,7 @@ export class InkSurface {
    */
   private paintLaser(): void {
     const canvas = this.laserCanvas;
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = this.win.devicePixelRatio || 1;
     const width = Math.round(this.cssW * ratio);
     const height = Math.round(this.cssH * ratio);
     if (canvas.width !== width || canvas.height !== height) {
@@ -10064,6 +10924,7 @@ export class InkSurface {
       // A preset is dragged out as its bounding box, as in GoodNotes.
       const origin = this.snapDragEnd(box, mode, at);
       this.shapeDrag = { preset: mode, origin, to: origin, moved: false };
+      if (isDrawnConnector(mode)) this.shapeDrag.trail = [origin];
       this.showShapeDraft(box);
       return;
     }
@@ -10131,9 +10992,19 @@ export class InkSurface {
       return;
     }
     if (this.shapeDrag) {
+      const drag = this.shapeDrag;
+      if (drag.trail) {
+        const room = this.shapeRoom(box);
+        for (const sample of samples) {
+          const p = this.toPage(box, sample);
+          drag.trail.push({
+            x: clamp(p.x, room.minX, room.maxX),
+            y: clamp(p.y, room.minY, room.maxY),
+          });
+        }
+      }
       if (last) {
         const local = this.toPage(box, last);
-        const drag = this.shapeDrag;
         const room = this.shapeRoom(box);
         const to = {
           x: clamp(local.x, room.minX, room.maxX),
@@ -10396,7 +11267,7 @@ export class InkSurface {
           phone: Platform.isPhone,
           desktop: Platform.isDesktop,
         },
-        devicePixelRatio: window.devicePixelRatio,
+        devicePixelRatio: this.win.devicePixelRatio,
         coalescedEvents: proto !== null && "getCoalescedEvents" in proto,
         predictedEvents: proto !== null && "getPredictedEvents" in proto,
         roundedPen: this.penController?.strokeRounded ?? null,
@@ -10406,6 +11277,7 @@ export class InkSurface {
         holdMs: HOLD_MS,
         holdRadius: HOLD_RADIUS,
         pointers: this.diagSums,
+        keys: this.keyLog.report(),
         strokes: this.diagnostics,
       },
       null,
@@ -10468,7 +11340,7 @@ export class InkSurface {
     const record: TextEndRecord = {
       by: this.textBlurBy,
       ms: view.focusedAt ? now() - view.focusedAt : 0,
-      to: event.relatedTarget instanceof Element ? event.relatedTarget : null,
+      to: isElement(event.relatedTarget) ? event.relatedTarget : null,
       keyboard: keyboardHeight(),
       surfaceH: surface.height,
       boxTop: box.top - surface.top,
@@ -10477,16 +11349,16 @@ export class InkSurface {
       hidden: document.visibilityState === "hidden",
       removed: false,
     };
-    window.requestAnimationFrame(() => {
+    this.win.requestAnimationFrame(() => {
       record.removed = !this.liveTextBox(view.pageId, view.id);
-      this.hudTextEnd = textEndLine(record, document.activeElement);
+      this.hudTextEnd = textEndLine(record, this.viewDoc.activeElement);
       this.scheduleHud();
     });
   }
 
   private scheduleHud(): void {
     if (this.hudFrame !== 0) return;
-    this.hudFrame = window.requestAnimationFrame(this.drawHud);
+    this.hudFrame = this.win.requestAnimationFrame(this.drawHud);
   }
 
   private readonly drawHud = (): void => {
@@ -10517,16 +11389,16 @@ export class InkSurface {
    * scroll offset that a focused text box can disturb, and the canvas size.
    */
   private hudGeometry(): string {
-    const vv = window.visualViewport;
+    const vv = this.win.visualViewport;
     const r = (n: number): number => Math.round(n);
     const canvas = this.surfaceEl.querySelector("canvas");
-    const active = document.activeElement;
+    const active = this.viewDoc.activeElement;
     const focus = active?.classList.contains("goodobsidian-page-textbox-input")
       ? "textbox"
       : (active?.tagName.toLowerCase() ?? "-");
     return (
       `vv ${vv ? `${r(vv.width)}x${r(vv.height)} @${r(vv.offsetLeft)},${r(vv.offsetTop)} z=${vv.scale.toFixed(2)}` : "-"} ` +
-      `win ${r(window.innerWidth)}x${r(window.innerHeight)} sy=${r(window.scrollY)}
+      `win ${r(this.win.innerWidth)}x${r(this.win.innerHeight)} sy=${r(this.win.scrollY)}
 ` +
       `surf ${this.cssW}x${this.cssH} st=${r(this.surfaceEl.scrollTop)} ` +
       `scroll x=${r(this.scroller.position.x)} y=${r(this.scroller.position.y)} ` +
@@ -10535,6 +11407,8 @@ export class InkSurface {
       `pill=${this.callbacks.textPillState?.() ?? "-"} ` +
       `focus=${focus} zoom=${this.scale.toFixed(2)} kb=${r(keyboardHeight())} ` +
       `app=${r(document.querySelector(".app-container")?.getBoundingClientRect().height ?? -1)}
+` +
+      `${this.keyLog.hudLine()}
 ` +
       this.hudFrames()
     );
@@ -10546,7 +11420,10 @@ export class InkSurface {
     const v = this.scroller.velocity;
     const tiles = stats ? `${stats.tiles}/${(stats.tileBytes / 1048576).toFixed(0)}MB` : "-";
     return (
-      `fps=${this.hudFps.toFixed(0)} paint=${this.hudPaintMs.toFixed(1)}ms ` +
+      `fps=${this.hudFps.toFixed(0)}/${this.pace.hz.toFixed(0)} ` +
+      `paint=${this.hudPaintMs.toFixed(1)}ms ink=${this.hudInkMs.toFixed(1)}ms ` +
+      // The last run of frames (a scroll, a page turn): the averages hide its slow frames.
+      `${this.hudRun.line()} ` +
       `tiles=${tiles} prev=${stats?.previews ?? 0} lvl=${stats?.level.toFixed(2) ?? "-"} ` +
       `${this.backdropPainter?.diagnostics?.() ?? "pdf=-"} ` +
       `v=${(v.x * 1000).toFixed(0)},${(v.y * 1000).toFixed(0)}px/s ` +
@@ -10555,19 +11432,30 @@ export class InkSurface {
     );
   }
 
-  /** Smooth the frame interval and paint time over consecutive moving frames. */
-  private trackFrame(t: number, started: number, moving: boolean): void {
+  /** Smooth the paint time of the page's frames, and count the frame. */
+  private trackFrame(t: number, started: number): void {
     const paint = now() - started;
     this.hudPaintMs = this.hudPaintMs ? this.hudPaintMs * 0.8 + paint * 0.2 : paint;
-    if (moving && this.hudLastFrameT) {
-      const dt = t - this.hudLastFrameT;
-      if (dt > 0 && dt < 250) {
-        const fps = 1000 / dt;
-        this.hudFps = this.hudFps ? this.hudFps * 0.8 + fps * 0.2 : fps;
-      }
-    }
-    this.hudLastFrameT = moving ? t : 0;
+    this.hudRun.note(t, paint, this.renderer?.stats().wholePaints ?? 0, this.pace.frameMs);
+    this.countFrame(t);
     this.scheduleHud();
+  }
+
+  /**
+   * A frame was drawn at `t`: the page's (a scroll, a zoom, a dragged
+   * selection, the eraser) or the stroke being written, which has its own.
+   * Frames within 100 ms of each other are a run, and `fps` is its rate; the
+   * readout stood still while writing or dragging a selection before
+   * (FineNotes#201). Two in one display frame count once.
+   */
+  private countFrame(t: number): void {
+    const dt = t - this.hudLastFrameT;
+    if (dt === 0) return;
+    if (this.hudLastFrameT && dt > 0 && dt < 100) {
+      const fps = 1000 / dt;
+      this.hudFps = this.hudFps ? this.hudFps * 0.8 + fps * 0.2 : fps;
+    }
+    this.hudLastFrameT = t;
   }
 
   // --- Drawing a stroke ------------------------------------------------------------
@@ -10578,7 +11466,18 @@ export class InkSurface {
    */
   private scheduleWet(): void {
     if (this.wetFrame !== 0 || !this.builder) return;
-    this.wetFrame = window.requestAnimationFrame(() => this.drawWet());
+    this.wetFrame = this.win.requestAnimationFrame((t) => {
+      if (!this.debug) {
+        this.drawWet();
+        return;
+      }
+      const started = now();
+      this.drawWet();
+      const ink = now() - started;
+      this.hudInkMs = this.hudInkMs ? this.hudInkMs * 0.8 + ink * 0.2 : ink;
+      this.countFrame(t);
+      this.scheduleHud();
+    });
   }
 
   private drawWet(): void {
@@ -10607,6 +11506,7 @@ export class InkSurface {
     for (let i = tracer.length * 3; i + 2 < pts.length; i += 3) {
       tracer.push(pts[i], pts[i + 1], pts[i + 2], tiltFactor(tilt[i / 3]));
     }
+    const settled = tracer.mark();
     const runs = tracer.runs();
     // Samples still provisional (`densify` waits for the next to fix the
     // curve; centred smoothing for the next few): straight lines through
@@ -10614,7 +11514,13 @@ export class InkSurface {
     // changes nothing kept.
     const open = runs[runs.length - 1];
     if (open) for (const tip of builder.tail) open.pts.push(tip[0], tip[1]);
-    this.renderer?.renderWetRuns(box.index, runs, style);
+    // What differs from the last frame: the ink settled since, and the tip
+    // that was not settled then or is not now. Only that is painted again.
+    const seen = this.wetSeen?.tracer === tracer ? this.wetSeen : null;
+    const tip = boundsSince(runs, settled);
+    const changed = seen ? unionBox(boundsSince(runs, seen.settled), seen.tip) : null;
+    this.wetSeen = { tracer, settled, tip };
+    this.renderer?.renderWetRuns(box.index, runs, style, changed);
     this.requestZoomPaint();
   }
 
@@ -10636,12 +11542,13 @@ export class InkSurface {
    * the wet layer clear. Returns its builder, for a caller that keeps it.
    */
   private endWetStroke(): StrokeBuilder | null {
-    if (this.wetFrame !== 0) window.cancelAnimationFrame(this.wetFrame);
+    if (this.wetFrame !== 0) this.win.cancelAnimationFrame(this.wetFrame);
     this.wetFrame = 0;
     const builder = this.builder;
     this.builder = null;
     this.snap = null;
     this.wetTracer = null;
+    this.wetSeen = null;
     this.stopHold();
     this.renderer?.clearWet();
     this.showSnapMarker(null, null);
@@ -11253,7 +12160,8 @@ export class InkSurface {
       const halfW = this.atFitZoom(SHAPE_DEFAULT_SIZE) / 2;
       const connector = isConnectorPreset(preset);
       const aspect = preset === "star" ? STAR_ASPECT : preset === "heart" ? HEART_ASPECT : 1;
-      const halfH = connector ? 0 : halfW * aspect;
+      // A tapped elbow shows its bend: half as tall as it is wide.
+      const halfH = preset === "elbow" ? halfW / 2 : connector ? 0 : halfW * aspect;
       const cx = clamp(origin.x, halfW, Math.max(halfW, box.width - halfW));
       const cy = clamp(origin.y, halfH, Math.max(halfH, box.height - halfH));
       origin = { x: cx - halfW, y: cy - halfH };
@@ -11299,6 +12207,14 @@ export class InkSurface {
       }
       return;
     }
+    if (drag.trail) {
+      // A drawn arrow is plain ink while the pen is down; the lift traces it.
+      const ink = drag.trail.flatMap((p) => [p.x, p.y, FALLBACK_PRESSURE]);
+      if (ink.length === POINT_STRIDE) ink.push(...ink);
+      this.renderer?.renderWet(box.index, ink, { ...this.currentStyle(), shape: true });
+      this.requestZoomPaint();
+      return;
+    }
     // While dragging, preview the real size — even a tiny one; the tap
     // default only applies if the pen lifts without having moved.
     const rise = drag.snapped === true ? 0 : this.atFitZoom(LINE_LEVEL_RISE);
@@ -11308,7 +12224,7 @@ export class InkSurface {
       this.requestZoomPaint();
       return;
     }
-    this.renderWetShape(box.index, drag.preset, pts);
+    this.renderWetShape(box.index, presetKind(drag.preset), pts, presetDecor(drag.preset));
   }
 
   /** A table is ruled in the pen's colour, thinner than handwriting. */
@@ -11330,6 +12246,21 @@ export class InkSurface {
       this.commitTable(box, page, table);
       return;
     }
+    const traced = drag.moved ? this.traceDrawnArrow(drag) : null;
+    if (traced) {
+      this.commitStroke(
+        box,
+        page,
+        this.styleShape({
+          id: this.strokeIds.next(),
+          color: this.strokeColor(),
+          size: this.strokeSize(),
+          tool: "pen",
+          ...traced,
+        }),
+      );
+      return;
+    }
     if (pts.length === 0) return;
     this.commitStroke(
       box,
@@ -11340,9 +12271,36 @@ export class InkSurface {
         size: this.strokeSize(),
         tool: "pen",
         pts,
-        shape: drag.preset,
+        shape: presetKind(drag.preset),
+        ...presetDecor(drag.preset),
       }),
     );
+  }
+
+  /**
+   * The connector a drawn curved or elbow arrow becomes on lift: the elbow's
+   * runs as the pen went (an L, Z, U…), or the curve through the ink. A
+   * curved arrow drawn straight is the straight arrow, levelled as a dragged
+   * one is. Null for anything else, which is placed from its drag.
+   */
+  private traceDrawnArrow(
+    drag: NonNullable<InkSurface["shapeDrag"]>,
+  ): Pick<Stroke, "pts" | "shape" | "radius"> | null {
+    const trail = drag.trail;
+    if (!trail || drag.preset === "table") return null;
+    const unit = this.atFitZoom(1);
+    if (drag.preset === "elbow") {
+      const points = traceElbow(trail, drag.origin, drag.to, unit);
+      if (points.length < 2) return null;
+      return {
+        pts: points.flatMap((p) => [p.x, p.y, FALLBACK_PRESSURE]),
+        shape: "path",
+        radius: ELBOW_RADIUS,
+      };
+    }
+    const knots = traceCurve(trail, drag.origin, drag.to, unit);
+    if (!knots) return null;
+    return { pts: splinePoints(knots, FALLBACK_PRESSURE), shape: "path" };
   }
 
   /**
@@ -11695,7 +12653,7 @@ export class InkSurface {
     if (!this.joined || this.board) return [box];
     const boxes = this.pageLayout.boxes;
     return [boxes[box.index - 1], box, boxes[box.index + 1]].filter(
-      (b): b is PageBox => b !== undefined,
+      (b): b is PageBox => b !== undefined && b.parked !== true,
     );
   }
 
@@ -11986,6 +12944,7 @@ export class InkSurface {
     if (erased) this.renderer?.invalidateRegion(box.index, erased);
     if (this.debug) this.hud.mark("scribble");
     this.inkChanged([page.id]);
+    this.callbacks.onUse?.("erase.scribble");
     return true;
   }
 
@@ -12137,6 +13096,7 @@ export class InkSurface {
     const { stroke } = candidate;
     const mirrors = this.strokeMirrors(page.id, stroke.id);
     if (!this.history.withdraw(this.doc, candidate.command)) return;
+    this.callbacks.onUse?.("lasso.circle");
     this.strokeIndex.remove(stroke.id, page.id);
     this.repaintMirrors(mirrors);
     const drawn = selectionBounds([stroke], [], []);
@@ -12653,7 +13613,10 @@ export class InkSurface {
       return;
     }
     this.selectInside(lasso.box, loop);
-    if (!this.liveSelection()) {
+    const made = this.liveSelection();
+    const picked = made ? this.groupBounds(made) : null;
+    if (made && picked && b) this.selectionArea = { pageId: made.pageId, loop: { ...b }, picked };
+    if (!made) {
       // Round nothing: the loop stays a moment, with a Screenshot button.
       this.showEmptyLasso(lasso.box, lasso.mode === "rect" ? loop : smoothPath(loop), lasso.to);
       return;
@@ -13257,6 +14220,7 @@ export class InkSurface {
     if (live && withText.includes(live)) this.blurTextBox();
     // So does a table being typed in.
     if (this.cellEdit && tables.includes(this.cellEdit.table)) this.endCellEdit(true);
+    this.selectionArea = null;
     this.selection = {
       pageId,
       strokes: [...strokes],
@@ -13266,8 +14230,13 @@ export class InkSurface {
       graphs: [...graphs],
       equations: [...equations],
     };
-    this.selectionCorners = isLoneShape(this.selection) || this.loneTape(this.selection) !== null;
-    this.shapePointsOn = false;
+    // A lone connector (a line, a curve, an elbow) shows its bend handles
+    // straight away and no resize frame, as Goodnotes' does; other shapes
+    // their resize handles, the corner points behind the bar's button.
+    const connector = this.loneShape(this.selection)?.handles.connector !== undefined;
+    this.selectionCorners =
+      !connector && (isLoneShape(this.selection) || this.loneTape(this.selection) !== null);
+    this.shapePointsOn = connector;
     this.syncSelectionOverlay();
   }
 
@@ -13294,6 +14263,7 @@ export class InkSurface {
     const pressed = this.pressMenu !== null;
     this.pressMenu = null;
     this.selectionOutline = null;
+    this.selectionArea = null;
     if (!this.selection) {
       if (pressed) this.syncActionBar();
       return;
@@ -13446,6 +14416,7 @@ export class InkSurface {
         : null;
     this.selectionFrameEl.toggleClass("is-hidden", !box || !bounds);
     this.selectionFrameEl.toggleClass("no-corners", !this.selectionCorners);
+    this.selectionFrameEl.toggleClass("is-connector", this.connectorChrome);
     if (box && bounds) {
       const scale = this.unitScale;
       const pad = this.framePad;
@@ -13570,6 +14541,7 @@ export class InkSurface {
     if (!bounds) return null;
     // A lasso's loop has no knob until the resize handles are asked for.
     if (this.outlineShown(sel) && !this.selectionCorners) return bounds;
+    if (this.connectorChrome) return bounds;
     const scale = this.unitScale;
     const knob = selectionKnobPoint(this.selectionFrameOf(bounds), ROTATE_HANDLE_OFFSET_PX / scale);
     const r = ROTATE_KNOB_RADIUS_PX / scale;
@@ -13663,7 +14635,6 @@ export class InkSurface {
         icon: "scissors",
         label: t("common.cut"),
         group: "edit",
-        bar: true,
         menu: "tile",
         run: () => this.cutSelection(),
       },
@@ -13672,7 +14643,8 @@ export class InkSurface {
         icon: "copy",
         label: t("common.copy"),
         group: "edit",
-        menu: "tile",
+        bar: true,
+        menu: "none",
         run: () => this.copySelection(),
       },
       {
@@ -13681,7 +14653,7 @@ export class InkSurface {
         label: t("common.duplicate"),
         group: "edit",
         bar: true,
-        menu: "tile",
+        menu: "none",
         run: () => this.duplicateSelectedImage(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
@@ -13710,13 +14682,6 @@ export class InkSurface {
         group: "edit",
         run: () => this.lockSelectedImage(),
       },
-      {
-        id: "crop-image",
-        icon: "crop",
-        label: t("surface.command.cropImage"),
-        group: "crop-image",
-        run: () => this.startCrop(),
-      },
       ...flipActions((axis) => this.flipSelectedImage(axis), "arrange"),
       {
         id: "in-front",
@@ -13741,8 +14706,8 @@ export class InkSurface {
         icon: "trash-2",
         label: t("common.delete"),
         group: "edit",
-        menuGroup: "delete",
         bar: true,
+        menu: "none",
         destructive: true,
         run: () => this.deleteSelectedImage(),
       },
@@ -13750,11 +14715,11 @@ export class InkSurface {
   }
 
   /**
-   * The bar for a lasso selection: Cut · Duplicate · Delete · "…". The menu
-   * (2.5, redrawn when its shape options reached 22 rows) has Cut · Copy ·
-   * Duplicate · Paste across the top, then Screenshot; Colour when it holds ink; one segmented
-   * row each for a shape's fill, line, corners and arrows, and for Flip; Turn
-   * into ›, which holds what the selection can become; and Delete. What it
+   * The bar for a lasso selection: its colour · Copy · Duplicate · Delete ·
+   * the handles' switch · "…". Nothing stands in both the bar and the menu
+   * (2026-11-09, when the bar had grown to nine buttons): the menu has Cut ·
+   * Paste · Screenshot · Copy style across the top, then what the ink can be
+   * asked or become (Ask AI, Correct, Turn into ›) and Flip. What it
    * holds decides the rest (`selectionMenu`): one kind keeps its own options,
    * a mix gets only its ink's colour, and Turn into offers what fits.
    */
@@ -13767,7 +14732,6 @@ export class InkSurface {
         icon: "scissors",
         label: t("common.cut"),
         group: "edit",
-        bar: true,
         menu: "tile",
         run: () => this.cutSelection(),
       },
@@ -13777,7 +14741,7 @@ export class InkSurface {
         label: t("common.copy"),
         group: "edit",
         bar: true,
-        menu: "tile",
+        menu: "none",
         run: () => this.copySelection(),
       },
       {
@@ -13786,7 +14750,7 @@ export class InkSurface {
         label: t("common.duplicate"),
         group: "edit",
         bar: true,
-        menu: "tile",
+        menu: "none",
         run: () => this.duplicateSelection(),
       },
       { ...this.pasteAction(sel.pageId), menu: "tile" },
@@ -13796,6 +14760,7 @@ export class InkSurface {
         icon: "camera",
         label: t("surface.selectionBar.screenshot"),
         group: "edit",
+        menu: "tile",
         run: () => void this.showSelectionScreenshot(),
       },
     ];
@@ -13907,6 +14872,7 @@ export class InkSurface {
         icon: "paintbrush",
         label: t("surface.selectionBar.copyStyle"),
         group: "style",
+        menu: "tile",
         run: () => this.copyStyle(sel.strokes),
       });
     }
@@ -13965,6 +14931,24 @@ export class InkSurface {
         },
       });
     }
+    const region = this.callbacks.onAddRegion;
+    if (heading && index >= 0 && region) {
+      actions.push({
+        id: "region",
+        icon: "frame",
+        label: t("surface.selectionBar.region"),
+        group: "turn",
+        submenu: TURN_INTO,
+        run: () => {
+          this.clearSelection();
+          region(
+            index,
+            heading,
+            sel.strokes.map((stroke) => stroke.id),
+          );
+        },
+      });
+    }
     if (menu.link) actions.push(...this.linkActions(sel, index));
     if (menu.sticker && this.callbacks.onSaveSticker) {
       actions.push({
@@ -14001,13 +14985,13 @@ export class InkSurface {
       icon: "trash-2",
       label: t("common.delete"),
       group: "edit",
-      menuGroup: "delete",
       bar: true,
+      menu: "none",
       destructive: true,
       run: () => this.deleteSelection(),
     });
-    // The bar, as Joost asked (2026-10-28): Cut · Copy · Duplicate · Delete ·
-    // the resize handles, then the "…". A lone shape shows its handles from
+    // The resize handles' switch stands with the "…", apart from the three
+    // actions (Cut moved to the menu, 2026-11-09). A lone shape shows its handles from
     // the start, so it has only the corner points' switch (Joost, 2026-10-30).
     const lone = this.loneShape(sel);
     // A curved shape (heart, arc, circle…) has no corner points, but it is a
@@ -14019,7 +15003,7 @@ export class InkSurface {
         label: this.selectionCorners
           ? t("surface.selectionBar.hideResizeHandles")
           : t("surface.selectionBar.showResizeHandles"),
-        group: "edit",
+        group: "handles",
         bar: true,
         menu: "none",
         checked: this.selectionCorners,
@@ -14036,7 +15020,7 @@ export class InkSurface {
         label: this.shapePointsOn
           ? t("surface.selectionBar.hideCornerPoints")
           : t("surface.selectionBar.editCornerPoints"),
-        group: "edit",
+        group: "handles",
         bar: true,
         menu: "none",
         checked: this.shapePointsOn,
@@ -14046,6 +15030,9 @@ export class InkSurface {
         },
       });
     }
+    // Turn into › stands with Ask AI and Correct, what the ink can be asked
+    // or become: one group, so three rows are not cut apart by two lines.
+    for (const action of actions) if (action.submenu) action.menuGroup = "edit";
     return actions;
   }
 
@@ -14438,7 +15425,9 @@ export class InkSurface {
       new Notice(
         found.kind === "unavailable"
           ? t("surface.notice.clipboardUnreadable")
-          : t("surface.notice.nothingToPaste"),
+          : found.kind === "hidden"
+            ? t("surface.notice.clipboardHidden")
+            : t("surface.notice.nothingToPaste"),
       );
     });
   }
@@ -14457,6 +15446,8 @@ export class InkSurface {
       text,
       ...textStyleOf(this.toolState.textStyle ?? DEFAULT_TEXT_STYLE),
     };
+    // Markdown pasted onto the page makes a Markdown box (discussion #107).
+    if (looksLikeMarkdown(text)) textBox.markdown = true;
     this.dropSelection();
     this.history.push(this.doc, new AddTextBoxToPage(page.id, textBox));
     this.syncTextBoxes();
@@ -14525,7 +15516,10 @@ export class InkSurface {
   /** Delete everything selected, as one undo step. */
   private deleteSelection(): void {
     if (this.callbacks.isLocked?.()) return;
-    if (this.removeSelection(t("surface.command.deleteSelection"))) this.selectionTakenAway();
+    if (this.removeSelection(t("surface.command.deleteSelection"))) {
+      this.selectionTakenAway();
+      this.callbacks.onUse?.("erase.lasso");
+    }
   }
 
   /**
@@ -14810,23 +15804,20 @@ export class InkSurface {
   }
 
   /**
-   * The patch of the page a selection covers, page space: its bounds with
-   * the margin `selectionPicture` gives them, so both pictures frame it alike.
+   * The patch of the page a selection's picture takes, page space: the
+   * loop as the lasso drew it, while the selection is the one it made
+   * (FineNotes#210); else its bounds with the margin `selectionPicture`
+   * gives them, so both pictures frame it alike.
    */
   private selectionPatch(sel: GroupSelection): { pageIndex: number; bounds: Bounds } | null {
-    const bounds = this.groupBounds(sel);
     const pageIndex = this.doc.pages.findIndex((page) => page.id === sel.pageId);
-    if (!bounds || pageIndex < 0) return null;
-    const pad = STICKER_PAD;
-    return {
-      pageIndex,
-      bounds: {
-        minX: bounds.minX - pad,
-        minY: bounds.minY - pad,
-        maxX: bounds.maxX + pad,
-        maxY: bounds.maxY + pad,
-      },
-    };
+    const bounds = selectionPatchBounds(
+      this.selectionArea,
+      sel.pageId,
+      this.groupBounds(sel),
+      STICKER_PAD,
+    );
+    return bounds && pageIndex >= 0 ? { pageIndex, bounds } : null;
   }
 
   /**
@@ -15173,7 +16164,8 @@ export class InkSurface {
    * `matchIn` finds them in what the box shows; a box where it finds none
    * (the words are in a link's target) lights whole. They stay until the
    * page is next touched or edited, or another search is opened; `null`
-   * puts them out.
+   * puts them out. With `focus` (the results list's current one, #112) the
+   * view glides to that hit instead, and it is marked more strongly.
    */
   setSearchHits(
     pageId: string | null,
@@ -15181,11 +16173,20 @@ export class InkSurface {
     boxes: string[] = [],
     printed: TextRect[] = [],
     matchIn: ((text: string) => TextSpan[]) | null = null,
+    focus: SearchFocus | null = null,
   ): void {
     const had = this.searchHits !== null;
+    // The words in reading order, so `focus.words` counts as the results list does.
+    const onPage = this.doc.pages.find((p) => p.id === pageId);
+    if (onPage && words.length > 1) {
+      const spots = words.map(
+        (ids) => inkBounds(onPage, ids) ?? { minX: 0, minY: 0, maxX: 0, maxY: 0 },
+      );
+      words = readingOrder(spots).map((i) => words[i]);
+    }
     this.searchHits =
       pageId !== null && (words.length > 0 || boxes.length > 0 || printed.length > 0)
-        ? { pageId, words, boxes, printed }
+        ? { pageId, words, boxes, printed, focus }
         : null;
     if (!had && !this.searchHits) return;
     for (const view of this.textBoxInputs.values()) {
@@ -15193,6 +16194,15 @@ export class InkSurface {
         this.searchHits?.pageId === view.pageId && this.searchHits.boxes.includes(view.id);
       const marked = this.markSearchWords(view, hit ? matchIn : null);
       view.root.toggleClass("is-search-hit", hit && !marked);
+      const focused = this.searchHits?.focus;
+      view.root.toggleClass(
+        "is-search-current",
+        hit &&
+          focused !== null &&
+          focused !== undefined &&
+          "box" in focused &&
+          focused.box === view.id,
+      );
     }
     this.syncSectionRibbons();
     const hits = this.searchHits;
@@ -15212,16 +16222,38 @@ export class InkSurface {
         .map((box) => ({ x: box.x + box.w / 2, y: box.y })),
       ...hits.printed.map((rect) => ({ x: rect.x + rect.w / 2, y: rect.y })),
     ];
-    const first = spots.reduce<{ x: number; y: number } | null>(
-      (best, spot) => (best && best.y <= spot.y ? best : spot),
-      null,
-    );
+    const first =
+      this.focusSpot(page, hits) ??
+      spots.reduce<{ x: number; y: number } | null>(
+        (best, spot) => (best && best.y <= spot.y ? best : spot),
+        null,
+      );
     if (first) this.goToPagePoint(index, first.y, true, this.board ? first.x : undefined);
     // The next press on the page puts them out.
     this.surfaceEl.addEventListener("pointerdown", () => this.setSearchHits(null), {
       capture: true,
       once: true,
     });
+  }
+
+  /** Where the focused hit is on its page, to glide to; `null` without one. */
+  private focusSpot(
+    page: Page,
+    hits: NonNullable<InkSurface["searchHits"]>,
+  ): { x: number; y: number } | null {
+    const focus = hits.focus;
+    if (!focus) return null;
+    if ("words" in focus) {
+      const ids = hits.words[focus.words];
+      const b = ids ? inkBounds(page, ids) : null;
+      return b ? { x: (b.minX + b.maxX) / 2, y: b.minY } : null;
+    }
+    if ("box" in focus) {
+      const box = page.textBoxes.find((b) => b.id === focus.box);
+      return box ? { x: box.x + box.w / 2, y: box.y } : null;
+    }
+    const rect = focus.printed[0];
+    return rect ? { x: rect.x + rect.w / 2, y: rect.y } : null;
   }
 
   /**
@@ -15280,9 +16312,22 @@ export class InkSurface {
     const page = hits ? this.doc.pages.find((p) => p.id === hits.pageId) : undefined;
     if (hits && box && page) {
       const scale = this.unitScale;
+      const focus = hits.focus;
+      const printedFocus = focus && "printed" in focus ? new Set(focus.printed) : null;
       const marked = [
-        ...hits.words.flatMap((ids) => inkBounds(page, ids) ?? []),
-        ...hits.printed.map((r) => ({ minX: r.x, minY: r.y, maxX: r.x + r.w, maxY: r.y + r.h })),
+        ...hits.words.flatMap((ids, i) => {
+          const b = inkBounds(page, ids);
+          return b
+            ? [{ ...b, current: focus !== null && "words" in focus && focus.words === i }]
+            : [];
+        }),
+        ...hits.printed.map((r) => ({
+          minX: r.x,
+          minY: r.y,
+          maxX: r.x + r.w,
+          maxY: r.y + r.h,
+          current: printedFocus?.has(r) === true,
+        })),
       ];
       for (const bounds of marked) {
         let mark = this.searchMarks[used];
@@ -15292,6 +16337,7 @@ export class InkSurface {
         }
         const pad = SEARCH_MARK_PAD / scale;
         mark.removeClass("is-hidden");
+        mark.toggleClass("is-current", bounds.current);
         mark.setCssStyles({
           left: `${(box.x + bounds.minX - pad) * scale}px`,
           top: `${(box.y + bounds.minY - pad) * scale}px`,
@@ -15602,6 +16648,20 @@ export class InkSurface {
     }
     for (let i = used; i < this.lockBadges.length; i++) this.lockBadges[i].addClass("is-hidden");
     this.lockBadgesEl.toggleClass("is-hidden", used === 0);
+    // Named regions' frames show with the lasso too, and move with the same layouts.
+    this.syncRegionFrames();
+  }
+
+  /** Each named region's frame, while the lasso is the tool; none otherwise. */
+  private syncRegionFrames(): void {
+    // Not built yet (the first change can come from the constructor's load).
+    if (!this.regionFrames || !this.pageLayout) return;
+    this.regionFrames.sync(
+      this.pageLayout.boxes,
+      (index) => this.pageAt(index),
+      this.unitScale,
+      this.toolState.tool === "select",
+    );
   }
 
   /**
@@ -15781,6 +16841,40 @@ export class InkSurface {
    * share their files), as one undo step, and select the copy — GoodNotes'
    * Duplicate.
    */
+  /**
+   * An Alt drag's copy: everything selected (with what its shapes hold),
+   * copied exactly where it is as one step, and the copy selected so the
+   * drag carries it. The original stays put.
+   */
+  private copyInPlace(own: GroupSelection): { command: Command; own: GroupSelection } | null {
+    if (this.callbacks.isLocked?.()) return null;
+    const sel = this.withShapeContent(own);
+    const copies = copyElements(sel, this.freshIds(), 0, 0);
+    const command = new AddElements(sel.pageId, copies);
+    this.history.push(this.doc, command);
+    this.strokeIndex.refreshPages(this.doc.pages, [sel.pageId]);
+    const copied: GroupSelection = {
+      ...own,
+      strokes: copies.strokes.slice(0, own.strokes.length),
+      images: copies.images.slice(0, own.images.length),
+      textBoxes: copies.textBoxes.slice(0, own.textBoxes.length),
+      tables: copies.tables?.slice(0, own.tables?.length ?? 0),
+      graphs: copies.graphs?.slice(0, own.graphs?.length ?? 0),
+      equations: copies.equations?.slice(0, own.equations?.length ?? 0),
+    };
+    this.selection = copied;
+    this.syncTextBoxes();
+    return { command, own: copied };
+  }
+
+  /** An Alt drag that never moved: its copy goes again, and the original is selected. */
+  private dropCopy(copied: { command: Command; original: GroupSelection }): void {
+    if (!this.history.withdraw(this.doc, copied.command)) return;
+    this.strokeIndex.refreshPages(this.doc.pages, [copied.original.pageId]);
+    this.selection = copied.original;
+    this.syncTextBoxes();
+  }
+
   private duplicateSelection(): void {
     const own = this.liveSelection();
     const box = own ? this.boxForPage(own.pageId) : null;
@@ -16111,12 +17205,17 @@ export class InkSurface {
     if (!turn && this.grabShapePoint(event, sel, from)) return;
     if (!turn && this.grabTapeHandle(event, sel, bounds, from)) return;
     const scale = turn ? null : this.cornerGrabbed(sel, bounds, from);
+    // Alt (Option) dragging a selection drags a copy and leaves it where it
+    // was, as in Excalidraw and Figma; a mouse or pen, never a finger.
+    const copy = event.altKey && !turn && !scale && !finger ? this.copyInPlace(sel) : null;
+    const own = copy?.own ?? sel;
     this.groupDrag = {
       pointerId: event.pointerId,
       // A shape's text and the ink written in it move along (discussion #148);
       // resized, its text keeps its size and wraps again in the new shape.
-      selection: this.withShapeContent(sel, scale === null),
-      own: sel,
+      selection: this.withShapeContent(own, scale === null),
+      own,
+      copied: copy ? { command: copy.command, original: sel } : undefined,
       bounds,
       from,
       clientX: event.clientX,
@@ -16204,6 +17303,8 @@ export class InkSurface {
     const snap = new TurnSnap(spread / 2, this.pageAngleOf(drag.selection));
     const motion = fingerTurnMotion(state, (raw) => snap.turn(raw));
     drag.fingers = { state, snap, motion, page, owned };
+    // Turning, it no longer lines up: the move's guides go.
+    this.showAlignGuides(null, null);
     return true;
   }
   /**
@@ -16365,6 +17466,7 @@ export class InkSurface {
 
   /** The turn a press at page point `from` starts, or `null` when it missed the rotate knob. */
   private knobGrabbed(bounds: Bounds, from: Pt): GroupTurn | null {
+    if (this.connectorChrome) return null;
     const scale = this.unitScale;
     const frame = this.selectionFrameOf(bounds);
     const hit = hitSelectionKnob(
@@ -16481,10 +17583,14 @@ export class InkSurface {
       const dx = at.x - own.x - drag.from.x;
       const dy = at.y - own.y - drag.from.y;
       // Joined, the pages are one sheet: it may lie over the join, as ink may.
-      const d =
+      let d =
         this.joined && !this.board
           ? joinedDelta(drag.bounds, dx, dy, own, paperBox(boxes))
           : crossPageDelta(drag.bounds, dx, dy, own, target);
+      // On its own page it lines up with what is there, as in Goodnotes.
+      const aligned = target === own ? this.alignGroupDrag(drag, d.dx, d.dy) : null;
+      if (aligned) d = aligned;
+      this.showAlignGuides(aligned ? own : null, aligned);
       drag.dx = d.dx;
       drag.dy = d.dy;
       drag.target = target;
@@ -16495,9 +17601,140 @@ export class InkSurface {
       if (this.edgeSpeed(drag.screen).some((v) => v !== 0)) this.requestFrame();
     }
     if (!drag.lifted) this.liftSelection(drag, box);
-    this.renderGroupDraft();
+    // Drawn once a frame, however many samples the pen or finger sends.
+    drag.placeBox = box;
+    this.requestFrame();
+  }
+
+  /** The text boxes and frame of a selection that moved since the last frame. */
+  private placeGroupDrag(drag: GroupDrag): void {
+    const box = drag.placeBox;
+    if (!box) return;
+    drag.placeBox = null;
     this.placeDraggedTextBoxes(drag, box);
     this.syncSelectionOverlay();
+  }
+
+  /**
+   * A move of (`dx`, `dy`) lined up with the page's other shapes and
+   * objects within {@link ALIGN_SNAP_PX} screen px; null when nothing is
+   * there to line up with.
+   */
+  private alignGroupDrag(drag: GroupDrag, dx: number, dy: number): AlignResult | null {
+    // Goodnotes moves a text box, picked up alone or lassoed, without lining it up.
+    const sel = drag.selection;
+    const onlyText =
+      sel.strokes.length === 0 &&
+      sel.images.length === 0 &&
+      (sel.tables ?? []).length === 0 &&
+      (sel.graphs ?? []).length === 0 &&
+      (sel.equations ?? []).length === 0;
+    if (onlyText) return null;
+    const targets = (drag.alignTargets ??= this.alignTargetsOf(sel));
+    return this.alignMoveOf(drag.bounds, dx, dy, targets);
+  }
+
+  /** `box` moved by (`dx`, `dy`) and lined up with `targets`; null when there are none. */
+  private alignMoveOf(box: Bounds, dx: number, dy: number, targets: Bounds[]): AlignResult | null {
+    if (targets.length === 0) return null;
+    const perScreenPx = 1 / this.unitScale;
+    return alignMove(
+      box,
+      dx,
+      dy,
+      targets,
+      ALIGN_SNAP_PX * perScreenPx,
+      ALIGN_GUIDE_OVERSHOOT_PX * perScreenPx,
+    );
+  }
+
+  /**
+   * What a selection on its page lines up with: the bounds of each shape,
+   * picture or sticky note, text box, table, graph and equation it does not
+   * hold. Not handwriting, highlighter or tape: Goodnotes lines a moved
+   * selection up with these, never with a line of writing. What is written
+   * or typed on a sticky note counts as the note.
+   */
+  private alignTargetsOf(sel: GroupSelection): Bounds[] {
+    const page = this.doc.pages.find((p) => p.id === sel.pageId);
+    if (!page) return [];
+    const held = new Set<object>([
+      ...sel.strokes,
+      ...sel.images,
+      ...sel.textBoxes,
+      ...(sel.tables ?? []),
+      ...(sel.graphs ?? []),
+      ...(sel.equations ?? []),
+    ]);
+    const out: Bounds[] = [];
+    const add = (b: Bounds | null): void => {
+      if (b) out.push(b);
+    };
+    for (const stroke of page.strokes) {
+      // A shape drawn on a sticky note moves with it: the note is the target.
+      if (held.has(stroke) || stroke.shape === undefined || isTape(stroke) || stroke.onSticky)
+        continue;
+      add(selectionBounds([stroke], [], []));
+    }
+    for (const image of page.images) if (!held.has(image)) add(imageBounds(transformOf(image)));
+    const frames: BoxFrame[] = [
+      ...page.textBoxes
+        .filter((t) => !held.has(t) && t.onSticky === undefined)
+        .map((t) => this.textBoxCoverOf(page.id, t)),
+      ...(page.tables ?? []).filter((t) => !held.has(t)).map((t) => this.tableFrameOf(t)),
+      ...(page.graphs ?? []).filter((g) => !held.has(g)).map(graphFrame),
+      ...(page.equations ?? []).filter((e) => !held.has(e)).map(graphFrame),
+    ];
+    for (const f of frames) add({ minX: f.x, minY: f.y, maxX: f.x + f.w, maxY: f.y + f.h });
+    return out;
+  }
+
+  private alignGuidesEl: SVGSVGElement | null = null;
+
+  /**
+   * Draw a move's alignment guides on page `box`, or hide them (null): thin
+   * lines in the alert colour, solid on an edge, dashed on a centre with a
+   * dot at the selection's centre, as Goodnotes draws them.
+   */
+  private showAlignGuides(box: PageBox | null, result: AlignResult | null): void {
+    if (!box || !result || result.guides.length === 0) {
+      this.alignGuidesEl?.addClass("is-hidden");
+      return;
+    }
+    let svg = this.alignGuidesEl;
+    if (!svg) {
+      svg = activeDocument.createElementNS(SVG_NS, "svg");
+      svg.setAttribute("class", "goodobsidian-align-guides is-hidden");
+      svg.setAttribute("aria-hidden", "true");
+      this.paperEl.append(svg);
+      this.alignGuidesEl = svg;
+    }
+    while (svg.firstChild) svg.firstChild.remove();
+    const scale = this.unitScale;
+    const at = (x: number, y: number): [string, string] => [
+      ((box.x + x) * scale).toFixed(1),
+      ((box.y + y) * scale).toFixed(1),
+    ];
+    for (const guide of result.guides) {
+      const [x1, y1] = guide.axis === "x" ? at(guide.at, guide.from) : at(guide.from, guide.at);
+      const [x2, y2] = guide.axis === "x" ? at(guide.at, guide.to) : at(guide.to, guide.at);
+      const line = activeDocument.createElementNS(SVG_NS, "line");
+      line.setAttribute("x1", x1);
+      line.setAttribute("y1", y1);
+      line.setAttribute("x2", x2);
+      line.setAttribute("y2", y2);
+      line.setAttribute("class", guide.centre ? "is-centre" : "is-edge");
+      svg.append(line);
+    }
+    if (result.dot) {
+      const [cx, cy] = at(result.dot.x, result.dot.y);
+      const dot = activeDocument.createElementNS(SVG_NS, "circle");
+      dot.setAttribute("cx", cx);
+      dot.setAttribute("cy", cy);
+      dot.setAttribute("r", "2.5");
+      svg.append(dot);
+    }
+    svg.removeClass("is-hidden");
   }
 
   /** How fast a selection held at pane point `at` scrolls the view, px a frame, per axis. */
@@ -16705,9 +17942,12 @@ export class InkSurface {
   private endGroupDrag(commit: boolean): void {
     const drag = this.groupDrag;
     if (!drag) return;
+    this.placeGroupDrag(drag);
+    this.renderer?.releaseSelectionRaster();
     this.groupDrag = null;
     this.circleDrag = false;
     this.showTurnLabel(null, null, 0, false);
+    this.showAlignGuides(null, null);
     this.selectionFrameEl.removeEventListener("pointermove", this.onSelectionPointerMove);
     this.selectionFrameEl.removeEventListener("pointerup", this.onSelectionPointerEnd);
     this.selectionFrameEl.removeEventListener("pointercancel", this.onSelectionPointerEnd);
@@ -16715,6 +17955,12 @@ export class InkSurface {
       this.selectionFrameEl.releasePointerCapture(drag.pointerId);
     }
     if (!drag.lifted) {
+      // An Alt press that never moved: no copy after all.
+      if (drag.copied) {
+        this.dropCopy(drag.copied);
+        this.syncSelectionOverlay();
+        return;
+      }
       // A tap in a cell of a table picked up on its own types in that cell,
       // as a second tap on a table does in Keynote and Numbers. Inside the
       // pointerup, so iPadOS raises the keyboard for the focus.
@@ -16797,8 +18043,8 @@ export class InkSurface {
       after = this.commitFingerTurn(drag.selection, drag.bounds, fingers);
     } else if (moved && onto && box) {
       // (dx, dy) are in the selection's own page's space: shift them into the target's.
-      this.history.push(
-        this.doc,
+      this.recordDrag(
+        drag,
         new MoveElementsToPage(
           pageId,
           onto.id,
@@ -16815,8 +18061,8 @@ export class InkSurface {
       const motion: Reorientation = { kind: "rotate", angle: turn.angle };
       after = this.reorientSelection(drag.selection, drag.bounds, motion, turn.centre);
     } else if (moved) {
-      this.history.push(
-        this.doc,
+      this.recordDrag(
+        drag,
         scale
           ? new ScaleElements(pageId, drag.selection, scale.anchor.x, scale.anchor.y, scale.k)
           : new TranslateElements(pageId, drag.selection, drag.dx, drag.dy),
@@ -16829,6 +18075,8 @@ export class InkSurface {
       }
       after = this.draggedBounds(drag);
     }
+    // An Alt drag let go where it began: no copy after all.
+    if (drag.copied && !moved) this.dropCopy(drag.copied);
     this.selectionFrameEl.setCssStyles({ transform: "" });
     if (box) {
       this.renderer?.invalidateRegion(box.index, unionBounds(drag.bounds, after) ?? drag.bounds);
@@ -16838,6 +18086,16 @@ export class InkSurface {
     this.syncSelectionOverlay();
     // Joined, its mirrors may change on any page the move reached (`syncMirrors`).
     if (moved) this.changed(onto ? (this.joined ? undefined : [pageId, onto.id]) : [pageId]);
+  }
+
+  /**
+   * Record a drag's move. After an Alt drag's copy it joins that step, so
+   * one undo takes back the copy and where it went, as "Duplicate".
+   */
+  private recordDrag(drag: GroupDrag, command: Command): void {
+    const copy = drag.copied?.command;
+    if (copy && this.history.isLatest(copy) && this.history.attach(this.doc, command)) return;
+    this.history.push(this.doc, command);
   }
 
   /**
@@ -17466,6 +18724,18 @@ export class InkSurface {
       : SELECTION_PAD_PX;
   }
 
+  /**
+   * A lone connector showing its handles and not its resize frame: then,
+   * as in Goodnotes, the handles are all its chrome (no dashed box, no knob).
+   */
+  private get connectorChrome(): boolean {
+    return (
+      this.shapePointsOn &&
+      !this.selectionCorners &&
+      this.loneShape(this.selection)?.handles.connector !== undefined
+    );
+  }
+
   /** The one shape a selection holds on its own, and its point handles; null otherwise. */
   private loneShape(sel: GroupSelection | null): { stroke: Stroke; handles: PointHandles } | null {
     if (!sel || sel.strokes.length !== 1 || sel.images.length > 0 || sel.textBoxes.length > 0) {
@@ -17473,7 +18743,7 @@ export class InkSurface {
     }
     if (hasFramed(sel)) return null;
     const stroke = sel.strokes[0];
-    const handles = pointHandles(stroke.shape, stroke.pts);
+    const handles = pointHandles(stroke.shape, stroke.pts, (stroke.radius ?? 0) > 0);
     return handles ? { stroke, handles } : null;
   }
 
@@ -17493,18 +18763,37 @@ export class InkSurface {
       cls: "goodobsidian-shape-points",
     }));
     el.removeClass("is-hidden");
-    const at = lone.handles.at;
+    // A connector being bent shows the handles its draft has (a new bend
+    // point, runs that came or went), the one under the pen marked.
+    const shown =
+      drag?.draft && drag.handles.connector
+        ? (pointHandles(
+            drag.draft.kind,
+            drag.draft.pts,
+            lone.handles.connector?.kind === "elbow",
+          ) ?? lone.handles)
+        : lone.handles;
+    const at = shown.at;
     const count = at.length / 2;
+    let held = drag?.lifted === true ? drag.handle : -1;
+    if (held >= 0 && shown !== lone.handles && drag?.draft) {
+      held = pickPointHandle(at, drag.draft.at, Infinity);
+    }
     while (el.childElementCount < count) el.createDiv({ cls: "goodobsidian-shape-point" });
     while (el.childElementCount > count) el.lastElementChild?.remove();
     const scale = this.unitScale;
     for (let h = 0; h < count; h++) {
       const dot = el.children[h] as HTMLElement;
-      const moved = drag?.draft && drag.handle === h ? drag.draft.at : null;
+      const moved =
+        drag?.draft && shown === lone.handles && drag.handle === h ? drag.draft.at : null;
       const x = moved ? moved.x : at[h * 2];
       const y = moved ? moved.y : at[h * 2 + 1];
       dot.setCssStyles({ left: `${(box.x + x) * scale}px`, top: `${(box.y + y) * scale}px` });
-      dot.toggleClass("is-dragging", drag?.lifted === true && drag.handle === h);
+      const look = shown.looks?.[h] ?? "ring";
+      dot.toggleClass("is-dot", look === "dot");
+      dot.toggleClass("is-pill", look === "pill-x" || look === "pill-y");
+      dot.toggleClass("is-upright", look === "pill-y");
+      dot.toggleClass("is-dragging", h === held);
     }
   }
 
@@ -17598,21 +18887,21 @@ export class InkSurface {
    * within a few degrees of either.
    */
   private snapDraggedPoint(box: PageBox, drag: PointDrag, p: Pt): Pt {
-    this.shapeSnapper.exclude = drag.stroke;
-    const snapped = this.snapNear(box, p.x, p.y);
-    this.shapeSnapper.exclude = null;
-    if (snapped) {
-      const hit = this.shapeSnapper.hit;
-      this.showSnapMarker(box, hit);
-      return { x: hit.x, y: hit.y };
+    if (snapsToShapes(drag.handles, drag.handle)) {
+      this.shapeSnapper.exclude = drag.stroke;
+      const snapped = this.snapNear(box, p.x, p.y);
+      this.shapeSnapper.exclude = null;
+      if (snapped) {
+        const hit = this.shapeSnapper.hit;
+        this.showSnapMarker(box, hit);
+        return { x: hit.x, y: hit.y };
+      }
     }
     this.showSnapMarker(null, null);
-    const { at, points, arrow } = drag.handles;
-    const line = arrow || (points.length === 2 && points.every((list) => list.length === 1));
-    if (!line) return p;
-    const other = 1 - drag.handle;
-    const ox = at[other * 2];
-    const oy = at[other * 2 + 1];
+    const anchor = levelAnchor(drag.handles, drag.handle);
+    if (!anchor) return p;
+    const ox = anchor.x;
+    const oy = anchor.y;
     const turn = levelTurn(p.x - ox, p.y - oy, this.atFitZoom(LINE_LEVEL_RISE));
     if (turn === 0) return p;
     const c = Math.cos(turn);
@@ -17997,7 +19286,7 @@ export class InkSurface {
 
   /**
    * One finger tapped twice where nothing took the taps: zoom until the
-   * tapped page is as wide as the pane (pages down) or covers it (a row),
+   * tapped page is as wide as the pane,
    * its left edge on the pane's and the tapped
    * spot as high as it was (inside the page), so nothing but the page shows;
    * from there, back to the whole page, centred. Zoom and scroll land as one
@@ -18021,9 +19310,8 @@ export class InkSurface {
       boxAtPoint(this.pageLayout, at.x, at.y) ?? this.pageLayout.boxes[this.pageIndex] ?? null;
     if (!box) return;
     const row = this.direction === "horizontal";
-    // A slide as large as fits whole; a tall page as wide as the pane (pages
-    // down) or covering it (a row) (discussion #43).
-    const fill = doubleTapFill(box.width, box.height, this.baseScale, this.cssW, this.cssH, row);
+    // A slide as large as fits whole; a tall page as wide as the pane (discussion #43).
+    const fill = doubleTapFill(box.width, box.height, this.baseScale, this.cssW, this.cssH);
     const target = this.clampZoom(doubleTapZoom(this.userZoom, this.minZoom, fill));
     if (Math.abs(target - this.userZoom) < 1e-3) return;
     const rect = this.surfaceEl.getBoundingClientRect();
@@ -18509,7 +19797,7 @@ export class InkSurface {
       (box.x + g.x) * scale,
       (box.y + g.y) * scale,
       scale,
-      window.devicePixelRatio || 1,
+      this.win.devicePixelRatio || 1,
     );
   }
 
@@ -18716,7 +20004,7 @@ export class InkSurface {
         const view = this.textBoxInputs.get(key);
         const typing =
           view !== undefined &&
-          (view.root.contains(document.activeElement) || this.heldText === view);
+          (view.root.contains(this.viewDoc.activeElement) || this.heldText === view);
         if (typing || this.noteTextOpen === key) shown.add(textBox.id);
       }
     }
@@ -18928,14 +20216,24 @@ export class InkSurface {
     if (!box) return;
     const p = this.pagePoint(box, event.clientX, event.clientY);
     switch (drag.part) {
-      case "body":
-        drag.draft = moveImage(
-          drag.start,
-          p.x - drag.from.x,
-          p.y - drag.from.y,
-          this.imageRoom(box),
+      case "body": {
+        // A picture or a sticky note lines up with the page's shapes and
+        // objects as it moves, as in Goodnotes.
+        const room = this.imageRoom(box);
+        const moved = moveImage(drag.start, p.x - drag.from.x, p.y - drag.from.y, room);
+        const targets = (drag.alignTargets ??= this.alignTargetsOf(
+          this.imageAsSelection(drag.pageId, drag.image),
+        ));
+        const aligned = this.alignMoveOf(
+          imageBounds(drag.start),
+          moved.x - drag.start.x,
+          moved.y - drag.start.y,
+          targets,
         );
+        drag.draft = aligned ? moveImage(drag.start, aligned.dx, aligned.dy, room) : moved;
+        this.showAlignGuides(aligned ? box : null, aligned);
         break;
+      }
       case "rotate": {
         const swept = sweptTurn(imageCentre(drag.start), drag.from, p, 0);
         const turn = drag.turn ? drag.turn.turn(swept) : swept;
@@ -19420,6 +20718,7 @@ export class InkSurface {
     if (!drag) return;
     this.imageDrag = null;
     this.showTurnLabel(null, null, 0, false);
+    this.showAlignGuides(null, null);
     this.imageFrameEl.removeEventListener("pointermove", this.onImagePointerMove);
     this.imageFrameEl.removeEventListener("pointerup", this.onImagePointerEnd);
     this.imageFrameEl.removeEventListener("pointercancel", this.onImagePointerEnd);
@@ -19503,6 +20802,7 @@ export class InkSurface {
     const place = this.readingPlace();
     const command = step(this.doc);
     if (!command) return;
+    this.refreshTypedText();
     // What was selected may have moved, gone or come back: start afresh.
     this.dropSelection();
     this.strokeIndex.rebuild(this.doc.pages);
@@ -19515,6 +20815,16 @@ export class InkSurface {
     this.revealChange(command);
     this.flashReadout(historyNotice(redo, command.label), READOUT_NOTICE_HOLD_MS);
     this.callbacks.onHistoryStep?.(command, redo);
+  }
+
+  /**
+   * The box being typed in shows the text an undo or redo left in it (a
+   * Markdown paste taken back): the sync leaves a focused box's field alone.
+   */
+  private refreshTypedText(): void {
+    const typing = this.editingTextView();
+    const typed = typing ? this.liveTextBox(typing.pageId, typing.id) : undefined;
+    if (typing && typed && typing.input.value !== typed.text) typing.input.value = typed.text;
   }
 
   /** Whether `command` is the newest step, so {@link undo} would take exactly it back. */
@@ -19562,18 +20872,13 @@ export class InkSurface {
 
   /** The document no longer matches the layout: its scroll direction or page count changed. */
   private layoutStale(): boolean {
-    const box = this.pageLayout.boxes[0];
-    const page = this.doc.pages[0];
     return (
       (!isBoard(this.doc) && scrollDirectionOf(this.doc) !== this.direction) ||
       (!isBoard(this.doc) && joinedPagesOf(this.doc) !== this.joined) ||
       this.pageLayout.boxes.length !== this.doc.pages.length ||
-      isBoard(this.doc) !== this.board ||
-      // A board's one page grew, or an undo took the growth back.
-      (this.board &&
-        box !== undefined &&
-        page !== undefined &&
-        (box.width !== page.geometry.width || box.height !== page.geometry.height)) ||
+      (isBoard(this.doc) || this.showsBoardPage()) !== this.board ||
+      // A board file's boards moved (discussion #160): each box follows its board.
+      (this.board && this.pageLayout.boxes.some((b, i) => b.id !== this.doc.pages[i]?.id)) ||
       // A page changed size (Add space, a template with another size) or an
       // undo took that back: its box must follow, or it keeps the old size on screen.
       this.pageLayout.boxes.some((b, i) => {
@@ -19623,7 +20928,7 @@ export class InkSurface {
     const view = this.editingTextView();
     if (view) return view;
     const editor = this.cellEditor;
-    return this.cellEdit && editor && document.activeElement === editor.input ? editor : null;
+    return this.cellEdit && editor && this.viewDoc.activeElement === editor.input ? editor : null;
   }
 
   /** A table laid out with the surface's measuring canvas. */
@@ -19763,7 +21068,7 @@ export class InkSurface {
     if (previous && previous.table !== table) this.repaintTable(previous.pageId, previous.table);
     this.repaintTable(pageId, table);
     this.placeCellEditor();
-    if (document.activeElement !== editor.input) this.focusTextBox(editor.input);
+    if (this.viewDoc.activeElement !== editor.input) this.focusTextBox(editor.input);
     const end = editor.input.value.length;
     editor.input.setSelectionRange(end, end);
   }
@@ -19804,7 +21109,7 @@ export class InkSurface {
     this.endGripDrag(false);
     this.renderer?.setEditingCell(null);
     const editor = this.cellEditor;
-    if (blur && editor && document.activeElement === editor.input) editor.input.blur();
+    if (blur && editor && this.viewDoc.activeElement === editor.input) editor.input.blur();
     editor?.hide();
     this.watchTypingKeyboard(false);
     this.releaseTextEditingClass();
@@ -20217,7 +21522,7 @@ export class InkSurface {
 
   /** The page text box that has focus, if any. */
   private editingTextView(): TextBoxView | null {
-    const active = document.activeElement;
+    const active = this.viewDoc.activeElement;
     for (const view of this.textBoxInputs.values()) {
       if (view.input === active) return view;
     }
@@ -20253,7 +21558,7 @@ export class InkSurface {
       return;
     }
     const editable =
-      to instanceof HTMLElement &&
+      isHTMLElement(to) &&
       (to.isContentEditable || to.tagName === "INPUT" || to.tagName === "TEXTAREA");
     if (editable || !this.liveTextBox(view.pageId, view.id)) {
       this.endTextEditing(view);
@@ -20539,7 +21844,7 @@ export class InkSurface {
   private holdTextEditingClass(): void {
     window.clearTimeout(this.textClassTimer);
     this.textClassTimer = 0;
-    document.body.addClass(TEXT_EDITING_BODY_CLASS);
+    this.viewDoc.body.addClass(TEXT_EDITING_BODY_CLASS);
   }
 
   /**
@@ -20566,7 +21871,7 @@ export class InkSurface {
         // The clock starts when the drag ends.
         deadline = now() + TEXT_CLASS_RELEASE_MS;
       } else if (keyboardHeight() === 0 || now() >= deadline) {
-        document.body.removeClass(TEXT_EDITING_BODY_CLASS);
+        this.viewDoc.body.removeClass(TEXT_EDITING_BODY_CLASS);
         // The zoom floor was held while the keyboard was up; catch it up now.
         this.scheduleRelayout();
         return;
@@ -20576,9 +21881,15 @@ export class InkSurface {
     attempt();
   }
 
-  /** Show the Text tool's hint pill; `onDismiss` runs when its × is tapped. */
-  showTextHint(text: string, onDismiss: () => void): void {
+  /**
+   * Show the Text tool's hint pill; `onDismiss` runs when its × is tapped.
+   * With `onShow` the line itself can be tapped, to see how (an earned hint
+   * opens its tip).
+   */
+  showTextHint(text: string, onDismiss: () => void, onShow?: () => void): void {
     this.textHintLabel.setText(text);
+    this.textHintShow = onShow ?? null;
+    this.textHintLabel.toggleClass("is-link", onShow !== undefined);
     this.textHintDismiss = onDismiss;
     this.textHintEl.removeClass("is-hidden");
     this.placeToasts();
@@ -20603,6 +21914,7 @@ export class InkSurface {
 
   hideTextHint(): void {
     this.textHintDismiss = null;
+    this.textHintShow = null;
     this.textHintEl.addClass("is-hidden");
   }
 
@@ -20715,12 +22027,12 @@ function isEditable(target: EventTarget | null): boolean {
 function imageFileOf(data: DataTransfer | null): File | null {
   if (!data) return null;
   for (const file of Array.from(data.files)) {
-    if (file.type.startsWith("image/")) return file;
+    if (isPictureFile(file.type, file.name)) return file;
   }
   for (const item of Array.from(data.items)) {
-    if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+    if (item.kind !== "file") continue;
     const file = item.getAsFile();
-    if (file) return file;
+    if (file && isPictureFile(file.type || item.type, file.name)) return file;
   }
   return null;
 }
@@ -20835,6 +22147,7 @@ function nearestRowBox(boxes: readonly PageBox[], x: number): number {
   let bestAway = Infinity;
   for (let i = 0; i < boxes.length; i++) {
     const box = boxes[i];
+    if (box.parked) continue;
     const away = x < box.x ? box.x - x : x > box.x + box.width ? x - box.x - box.width : 0;
     if (away < bestAway) {
       bestAway = away;
@@ -20867,4 +22180,16 @@ function boundsUnion(a: Bounds, b: Bounds): Bounds {
 /** `b` grown by `by` page px on every side. */
 function padBounds(b: Bounds, by: number): Bounds {
   return { minX: b.minX - by, minY: b.minY - by, maxX: b.maxX + by, maxY: b.maxY + by };
+}
+
+/**
+ * Where a stroke's ink lies, page px: its points grown by its own width. A
+ * broad highlighter (four times the pen's width, a chisel's corners further
+ * still) reaches past the renderer's fixed pad, and erasing one whole left
+ * its edges in the tiles until the page was painted afresh (Joost,
+ * 2026-11-17).
+ */
+function inkedBounds(stroke: Stroke): Bounds | null {
+  const bounds = strokeBounds(stroke);
+  return bounds ? padBounds(bounds, inkReach(stroke) + 2) : null;
 }

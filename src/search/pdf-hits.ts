@@ -51,10 +51,19 @@ export function layoutPlainText(layout: TextLayout): string {
  * Matching folds case and accents, as the search does.
  */
 export function pdfHitRects(query: string, layout: TextLayout, phrase = false): TextRect[] {
+  return pdfHitGroups(query, layout, phrase).flat();
+}
+
+/**
+ * {@link pdfHitRects}, one group per match, in the order the search lists
+ * them (#112's results list): the nth group is the page's nth PDF result.
+ * A match no laid-out letter carries keeps its place as an empty group.
+ */
+export function pdfHitGroups(query: string, layout: TextLayout, phrase = false): TextRect[][] {
   if (queryTerms(query).length === 0 || layout.lines.length === 0) return [];
   const plain = plainText(layout);
   const folded = fold(plain.text);
-  const rects: TextRect[] = [];
+  const groups: TextRect[][] = [];
   for (const span of matchFolded(folded.text, query, phrase)) {
     // Folded -> plain text -> layout characters; line breaks are skipped.
     const chars: number[] = [];
@@ -62,7 +71,10 @@ export function pdfHitRects(query: string, layout: TextLayout, phrase = false): 
       const c = plain.at[folded.map[i]];
       if (c !== undefined && c >= 0) chars.push(c);
     }
-    if (chars.length === 0) continue;
+    if (chars.length === 0) {
+      groups.push([]);
+      continue;
+    }
     // Whole words light, as the list already names them: "andro" lights
     // "androgen". A word ends at a space, a line or punctuation.
     let start = Math.min(...chars);
@@ -71,7 +83,7 @@ export function pdfHitRects(query: string, layout: TextLayout, phrase = false): 
     while (first && start > first.start && isWordChar(layout.chars[start - 1].ch)) start--;
     const last = layout.lines.find((l) => l.start < end && end <= l.end);
     while (last && end < last.end && isWordChar(layout.chars[end].ch)) end++;
-    rects.push(...rangeRects(layout, { start, end }));
+    groups.push(rangeRects(layout, { start, end }));
   }
-  return rects;
+  return groups;
 }

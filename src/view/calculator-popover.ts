@@ -61,6 +61,7 @@ import {
   TAB_ROWS,
   backspace,
   boxes,
+  calculatorTakesKey,
   fittedFontSize,
   hintFor,
   keyEnabled,
@@ -95,6 +96,7 @@ import { t } from "../i18n/translate";
 import { BasicPad } from "./calculator-basic";
 import { GraphPanel, type GraphState, graphChanged, newGraphState } from "./calculator-graph";
 import { FloatingWindow } from "./floating-window";
+import { docOf } from "./host-window";
 
 const RESULT_MAX_PX = 32;
 const RESULT_MIN_PX = 15;
@@ -1385,6 +1387,15 @@ export class CalculatorPopover {
   }
 
   /**
+   * Whether this key is the calculator's now: it is the window in use and
+   * types the key. The notebook asks first and leaves such keys alone.
+   */
+  takesKey(event: KeyboardEvent): boolean {
+    if (!this.active || this.frame.isMinimised) return false;
+    return calculatorTakesKey(event, this.mode === "basic");
+  }
+
+  /**
    * A hardware keyboard types into the calculator while it is the window in
    * use: from opening it, or a tap inside it, until a tap anywhere else.
    * Escape then cancels a graph line being typed, or closes the calculator.
@@ -1436,11 +1447,11 @@ export class CalculatorPopover {
     };
     // Capture: the drawing surface consumes its own pointer events, and its
     // single-letter shortcuts (P, E, T) must not fire while typing a sum.
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("keydown", onKey, true);
+    docOf(this.el).addEventListener("pointerdown", onDown, true);
+    docOf(this.el).addEventListener("keydown", onKey, true);
     this.dispose.push(() => {
-      document.removeEventListener("pointerdown", onDown, true);
-      document.removeEventListener("keydown", onKey, true);
+      docOf(this.el).removeEventListener("pointerdown", onDown, true);
+      docOf(this.el).removeEventListener("keydown", onKey, true);
     });
   }
 

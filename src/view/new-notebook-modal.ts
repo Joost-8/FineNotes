@@ -44,6 +44,8 @@ import {
   type PaperLibraryHost,
   PaperControls,
   TemplateGrid,
+  BOARD_PREVIEW_GEOMETRY,
+  boardPaperName,
   paintTemplatePreview,
 } from "./template-picker";
 import { currentLanguage, t } from "../i18n/translate";
@@ -96,15 +98,7 @@ export interface NewNotebookOptions {
 const PREVIEW_WIDTH = 72;
 /** Preview width of a board's paper card, CSS px: three to a row. */
 const BOARD_PREVIEW_WIDTH = 132;
-/** A board's paper cards show a landscape piece of it, 4 by 3. */
-const BOARD_PREVIEW_GEOMETRY: PageGeometry = { width: 560, height: 420 };
 /** The cards' names, in `BOARD_RULINGS` order. */
-function boardPaperName(ruling: Ruling): string {
-  if (ruling === "blank") return t("notebooks.newNotebook.boardBlank");
-  if (ruling === "dotted") return t("notebooks.newNotebook.boardDotted");
-  if (ruling === "squared") return t("notebooks.newNotebook.boardSquared");
-  return ruling;
-}
 /** How long after the title takes focus the dialog owns scrolling (keyboard animation), ms. */
 const FOCUS_HOLD_MS = 1200;
 /** After closing, the app is held in place until the keyboard is down: at least, at most, ms. */

@@ -8,6 +8,8 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-11-18
+
 ### Added
 
 - **Text notes.** A second kind of note beside notebooks, in the manner
@@ -30,42 +32,320 @@ extracted from the matching section of this file by `release.yml`.
     title: it reads in any Markdown editor, and Obsidian's search, links and
     sync treat it as a note. Handwriting is kept in a comment Obsidian's
     reading view hides.
-- **Lock fit to width**
-  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
-  A new check in the notebook's ⋯ panel: after a double tap fits the page
-  to the width, a finger no longer moves the page sideways at all. Off, as
-  before, a sideways pull stretches the page and it springs back, as in
-  Goodnotes. Pinching still moves it either way.
+- **Thank you, sponsors.** When a release comes with new GitHub sponsors,
+  Home's what's-new card thanks them by name, then everyone who sponsored
+  before them. The heart opens the sponsor page. The README shows every
+  public sponsor's picture.
+- **Help improve Grape** (off until you turn it on). Under Learn your
+  handwriting in Settings, you can share the handwriting you have already
+  labelled (practice lines, corrected words, equations), so the next Grape
+  reads more people's writing. You see every item before it is sent, can
+  keep any of them back, stop at any time, and delete everything you shared
+  from the server. Note names, where on a page anything was written and the
+  rest of your notes are never sent. The
+  [privacy notice](https://github.com/Joost-8/FineNotes/blob/main/PRIVACY.md)
+  says what is kept and why.
+
+- **Search results you can step through**
+  ([discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
+  Search this notebook opens in a sidebar at the right of the page that
+  lists every match, not every page: the words around it with the match
+  marked, an icon for handwriting, a text box or a PDF's printed text, and
+  the page. Tap one to go there; ↑ and ↓ (or the arrow keys and Enter) step
+  to the previous and next, and the match being shown is ringed on the page
+  and filled in the list. A PDF's pages join the list as they are read,
+  also when their text was read before on this device. The list button
+  beside ✕ brings back the original list of pages, and its sidebar button
+  returns; the choice is remembered for every notebook.
+- **Transcribe recordings with an online service**
+  ([#211](https://github.com/Joost-8/FineNotes/issues/211)). Settings › AI ›
+  Recordings › Transcribe recordings with: this device (as before), Groq,
+  OpenAI, OpenRouter, Google (Gemini) or a server of your own, with your own
+  key. The recording's Transcribe button then sends it there in one tap.
+  Whisper models (Groq's default, `whisper-large-v3-turbo`) give a
+  transcript with times, like the device's. A recording over the service's
+  25 MB limit is sent in parts of up to ten minutes and joined again, so a
+  long lecture no longer needs cutting up.
+- **Try a gesture from its tip.** A tip for a gesture on the page (Circle
+  to select, Scribble to erase, hold to snap a shape, the finger taps for
+  undo and redo, pulling in a page and more) has Try it: a scratch page with
+  a few lines of writing opens, with the tip's picture over it. Do the
+  gesture and the ✓ fills; you are back where you were, and the scratch page
+  goes to the trash. A gesture with a switch shows it in its tip, as Circle
+  to select, Scribble to erase and Scribble to fill now do. The link to a
+  tip moved behind the tip's ⋯.
+- **Several boards in one board file**
+  ([discussion #160](https://github.com/Joost-8/FineNotes/discussions/160)).
+  A board file can hold more than one endless board, listed like pages, as
+  in OneNote. The sidebar's first tab is Boards: a picture of each board's
+  drawing, + to add one, the ⌄ to name, move, clear or delete it, and a
+  drag to reorder. Tap a board to show it; each opens where you left it.
+  Add board and Go to board are in the command palette, and search and the
+  contents go to the board they found. A file with one board stays as it
+  was. A file with several boards opens read-only in FineNotes 2.9.1 and
+  older, which cannot show them, so nothing on it is lost.
+- **A board inside a notebook.** Add page ends with Add board and its three
+  papers (blank, dotted, squared): an endless board among the notebook's
+  pages, marked ∞ in the sidebar.
+  Tap it to show it on its own; tap any page to go back. Scrolling and
+  Page Up/Down go past it, and a page added next to it takes a page's size.
+  A notebook with a board opens read-only in FineNotes 2.9.1 and older.
+- **Embed part of a board in a note**
+  ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167)).
+  Lasso something on a board (or any page) and choose Turn into › Frame to
+  embed: name it, and `![[Mind map.notebook#Krebs cycle]]` in any note shows
+  just that part, at the note's width. The embed link is copied for you, the
+  name is filled in from your handwriting when the reader is on, and the
+  embed follows the board as you write. A tap opens the board on that part,
+  and Export to PDF of the note prints it. While the lasso is the tool,
+  frames show as a thin outline with their name; tap the name to copy the
+  link again, rename or delete it. `#page=3` still means page 3, and a name
+  that is no frame still shows that heading of the note, as before.
+- **Pens on the toolbar as buttons of their own**
+  ([#211](https://github.com/Joost-8/FineNotes/issues/211)). In the pen's
+  menu (the ⌄ after the pen types), Add to toolbar puts the pen type in hand
+  on the bar, keeping its own colour and width as it does in the row. In
+  Saved pens, the pin at the end of a row puts that saved pen on the bar,
+  marked with a small star; a tap writes with it, as its key does. Customize
+  toolbar has a New pen: drag it onto the bar to save the pen in hand there.
+  A type on the bar leaves the pen's row, and once another pen is on the bar
+  the pen's own button can go to Hidden, so a bar can hold just a ball pen
+  and a highlighter. Hidden, or Remove from toolbar, takes a pen off again.
+  The pen's own button keeps its own pen beside them: it shows that pen and
+  a tap brings it back, also after a pinned highlighter.
+- **Markdown in text boxes**
+  ([discussion #107](https://github.com/Joost-8/FineNotes/discussions/107)).
+  Pick **Markdown** in the Text tool's Style list, or paste Markdown into
+  any text box and it switches by itself (one undo takes back both). The box
+  reads Markdown as Obsidian writes it: headings, bold, italic, strikethrough, highlights, inline and
+  fenced code, bulleted, numbered and task lists, quotes, rules, and links
+  (`[[Note]]` and `[text](url)`). While you type, the box shows the
+  Markdown; once you let go it is drawn formatted, on the page, in
+  thumbnails and in exports alike. Tap a link to open it, or a task's box to
+  tick it. Markdown pasted from a note looks as it did there. The text is
+  stored as typed, so older versions show it as plain Markdown.
+
+- **Turn pages with ← and →**
+  ([#248](https://github.com/Joost-8/FineNotes/issues/248)). On a keyboard,
+  → goes to the next page and ← to the previous one, whether pages run down
+  or across, as Page Down and Page Up already did. The ? shortcut list
+  shows them.
+- **Ask AI reads your other notes, and can write one**
+  ([#259](https://github.com/Joost-8/FineNotes/pull/259)). Ask AI can now
+  search the vault, read a note or another notebook (as its transcriptions),
+  follow the links to and from this notebook, and write a new Markdown note
+  beside it (a summary, flashcards, to-dos) that links back. It never changes
+  a note you have. Settings › AI › Ask AI can read: this notebook only, this
+  notebook's folder (the default) or the whole vault; the same choice is a
+  button in Ask's top bar. The search runs on your device. Show what each
+  answer cost (off by default) puts an estimate under each answer. Claude
+  Sonnet 5.5 is the default model. The setting Ask AI starts on the open
+  page is gone: a chat starts with no page picked.
+- **Present** (⋯ › Present) shows the notebook as slides: the toolbar and
+  sidebar go, the page fills the screen and the laser pointer is in hand.
+  → ↓ Space and Page Down turn forward, ← ↑ and Page Up turn back (a
+  presentation clicker works), Esc leaves.
+- **Alt-drag to duplicate.** Hold Alt (Option) while dragging a lasso
+  selection to drag a copy and leave the original. One undo takes back both.
+- **The S Pen's side button works on Android**
+  ([#149](https://github.com/Joost-8/FineNotes/issues/149)). Hold the side
+  button and write: the stroke erases, or does what Pen gestures sets the
+  side button to. Thanks to @phfleitao.
+- **Column sums**
+  ([discussion #228](https://github.com/Joost-8/FineNotes/discussions/228)).
+  Draw a line under a column of handwritten amounts: they glow, and a tap
+  shows each amount read and the total; Write puts the total under the line.
+  One line is a subtotal, two a total, and the total follows if you rewrite
+  an amount. Turn it off in Settings with Add up columns of numbers.
+
+### Changed
+
+- **Export as PDF writes handwriting and paper as vector paths**
+  ([#261](https://github.com/Joost-8/FineNotes/pull/261)), as Goodnotes does,
+  not as a picture of each page. A 69-page handwritten notebook went from
+  39.8 MB to 7.7 MB, exports faster, and stays sharp at any zoom. Ask AI's
+  copy of a notebook gets smaller the same way.
+- **Ask AI without a page, or a whole notebook as one PDF.** A question with
+  no page picked now goes on its own instead of being refused. Past the
+  10-page limit, the page picker offers the whole notebook as one PDF.
+- **More colours in the bar with Dock tool options on**
+  ([discussion #200](https://github.com/Joost-8/FineNotes/discussions/200)).
+  With the bar along the top or bottom, the pen's widths are one button
+  showing the width in use (tap it for all widths and the slider), as
+  Goodnotes and Notability have it. The room goes to the colours: on an iPad
+  in landscape the bar shows seven colours or more, the rest a swipe away. Full screen moves into ⋯ to make room, and the pen in
+  hand always stays in view.
+- **Curved and elbow arrows are drawn, as in Goodnotes.** With the Shape
+  tool's curved or elbow arrow, draw the arrow as you would with the pen:
+  it is plain ink while the pen is down, and on lifting it becomes a clean
+  arrow that follows how you drew it. An elbow keeps every turn you made
+  (an L, a Z, a U or a staircase), with its runs level and upright; a curve
+  follows your stroke smoothly, and a straight stroke gives a straight
+  arrow. A tap still places the default one.
+- **A board embedded in a note shows its drawing**
+  ([discussion #167](https://github.com/Joost-8/FineNotes/discussions/167)).
+  `![[Mind map.notebook]]` used to paint the board's whole page, metres of
+  mostly empty paper shrunk to the note's width. It now shows what is drawn
+  with a little paper round it, the same cut Export as PDF makes; an empty
+  board shows a short strip of its paper.
+- **Each width preset keeps its own width**
+  ([#210](https://github.com/Joost-8/FineNotes/issues/210),
+  [#211](https://github.com/Joost-8/FineNotes/issues/211),
+  [#247](https://github.com/Joost-8/FineNotes/issues/247)). Pick a preset,
+  then move the slider or type a width: that preset changes and the others
+  keep theirs, for each pen type and for the eraser's three sizes. The pen's
+  More widths shows the same three presets as the pill. The reset button
+  puts them back to the defaults. An eraser size you set no longer goes
+  when you pick another size or switch to the pen.
 
 ### Fixed
 
-- **Slides fill the screen with pages across**
-  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
-  Each page now fits the screen on its own, as in Goodnotes: a lecture slide
-  next to a portrait page used to open at two thirds of the screen, because
-  every page was fitted to the tallest one. Turning to a page of another
-  shape fits that page. A 16:9 slide, wider than the screen, keeps only a
-  thin margin at its sides, as in Goodnotes, instead of a wide band of desk.
-- **A double tap on a slide shows the whole slide**, as large as fits and
-  centred, instead of filling the width and cutting off its foot. Portrait
-  pages still fill the width.
-- **Click the pen's side button for the eraser** (FineNotes#149). On Android,
-  holding an S Pen's button while writing does not reach FineNotes. Settings →
-  Pens and shortcuts, **Side button click**, now has **Switch to the eraser**:
-  a click with the pen just above the page takes the eraser, another goes back
-  to the tool you had.
+- **Smoother page turns** in notebooks whose pages run across
+  ([#201](https://github.com/Joost-8/FineNotes/issues/201)). The pages
+  either side are drawn ahead while the page rests, and a turn repaints the
+  screen about a third less often. The Input debug overlay now shows the
+  last scroll or turn (`run=`): frames drawn, frames missed, the slowest
+  frame and how often the whole page was repainted.
+- **Typing into the calculator stays in the calculator.** A letter or a
+  digit typed there no longer also picks a tool or a saved pen, and its
+  arrows move its cursor only. Arrow keys in Customize toolbar move the
+  button without scrolling or turning the page.
+
+- **P and H bring back each pen's own colour and width**
+  ([#226](https://github.com/Joost-8/FineNotes/issues/226)). After a small
+  red ball pen, H gave a highlighter in that red and width; now it brings
+  back the highlighter as you left it, as tapping it does. And with the
+  highlighter picked on the bar, P did nothing: it now goes back to the pen
+  you used last. Holding the key works the same way. With pens pinned to
+  the toolbar, a key goes to the pen's own button, as a tap there does: a
+  saved pen's 1–8 marks its pinned button rather than the pen's, H a pinned
+  highlighter's, and P the button of the pen you wrote with last. Diagnostics now also
+  list the last keys pressed on the notebook and why any were left (typed
+  text is never listed), and the input debug overlay shows them.
+- **Pasting a photo on iPad**
+  ([discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
+  Paste, from holding a finger on the page, now takes a picture in any
+  format the clipboard offers, HEIC included. Where iPadOS keeps the copied
+  picture from FineNotes altogether, it says so and points to Insert image ›
+  Photos instead of "nothing to paste". A paste with the keyboard also takes
+  a photo that comes without a type.
+- **Several pictures at once**
+  ([#211](https://github.com/Joost-8/FineNotes/issues/211),
+  [discussion #112](https://github.com/Joost-8/FineNotes/discussions/112)).
+  Insert image › Photos lets you pick several pictures in one go, instead of
+  one per tap. They are placed side by side on the page in view, as one undo
+  step.
+- **A written answer stays on the page.** Write answer after an "=" near
+  the right edge wrote the answer past the page. It now shrinks a little to
+  fit after the "=", or, when it is too long for that, goes on the line
+  below, starting under the sum.
+- **Customize toolbar says why New pen does nothing with Essentials on.**
+  Essentials keeps the bar's layout, so New pen cannot add a button. Trying
+  it now marks the Essentials switch (a ring and a dot, and a short shake),
+  whose name reads "Turn off Essentials to add a pen".
+
+- **A tapped word is the word you tapped** (FineNotes#202). On a line with a
+  sum, or with two words written close together, the word check could tie
+  every word to the ink of the word before it: tapping "This" offered
+  "another". Each word now gets the strokes Grape (handwriting recognizer
+  model) read it from, not a guess from the gaps in the ink. The same goes
+  for Correct, for what lassoed ink says, and for what a search lights up,
+  and five times as many words can now be underlined or corrected at all.
+- **Calculation notes: a fraction keeps its small marks** (FineNotes#178).
+  "7·2 over 3 =" with a short "=" lost the raised dot and the bar of a
+  crossed 7, and was read as 72 over 3.
+- A notebook moved to a new window (Move to new window) no longer lags or freezes while the main
+  window is covered: the page, pen, sidebar, menus and text boxes now work from the window the
+  notebook is in, and it keeps working when moved back (FineNotes#199).
+- **No grey above or below a page a double tap filled.** With pages running
+  down, a double tap fills the screen's width with the page, but scrolling to
+  the top still showed a grey band above page 1, and one below the last page
+  at the end ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  Now the page stops at the screen's edges there, as at its sides. Zoomed out
+  to the whole page, the margin around it stays. The gap between pages stays
+  too; Join pages in Notebook settings closes it.
+- **A lasso's Screenshot is the area you drew**
+  ([FineNotes#210](https://github.com/Joost-8/FineNotes/issues/210)). It
+  used to grow or shift to the ink the lasso picked up; now ink that sticks
+  out of the loop is cut at its edge. Ask AI about a selection sends the
+  same area. Once the selection is resized, the picture follows its frame.
+- **Pen settings and Pen gestures fit an iPad Split View pane**
+  ([FineNotes#210](https://github.com/Joost-8/FineNotes/issues/210)). Opened
+  from the pen in hand, the second page of the pen menu hung off the pane's
+  left edge. Every toolbar popover now stays inside the view, however narrow.
+- **Other plugins' editors work with FineNotes on**
+  ([#227](https://github.com/Joost-8/FineNotes/issues/227)). Plugins such as
+  Kanban and True Recall that ask Obsidian for its Markdown editor got an
+  error and lost their editors; FineNotes now leaves those calls to Obsidian.
+- **A synced notebook is never overwritten by a mix of two versions**
+  ([#246](https://github.com/Joost-8/FineNotes/issues/246)). When a notebook
+  changed on disk while it had unsaved changes, Obsidian merged the two as
+  plain text, which could make a notebook that does not open; FineNotes then
+  saved that over the good one. Obsidian no longer merges notebooks, and a
+  notebook whose load is held is never saved.
+- **Squared, dotted and lined paper runs on across joined pages.** Where two
+  joined pages met, the grid restarted with a strip and a whole square.
+- **The whole-stroke eraser leaves no highlighter edges.** A broad
+  highlighter's edges stayed on the page until it was repainted.
+- **Customize toolbar's menus.** A press outside a tool's menu closes just
+  that menu, and a tap on the same tool again closes it.
+- **A written answer's 4 is a 4**
+  ([#253](https://github.com/Joost-8/FineNotes/issues/253)). On the symbol
+  practice sheet, a stroke that reached into the next line (the upright of a 4) was left out, so calculation notes wrote it as an L.
+- **Every tip's Show me works from Home**
+  ([#245](https://github.com/Joost-8/FineNotes/pull/245)). Most did nothing
+  there; they now bring a notebook forward first, or say one is needed.
+
+## [2.9.1] - 2026-11-10
+
+2.9.0's What's new card on Home had a bug and was incomplete: it could
+ignore taps on its X and its pictures, and it showed three of that
+release's features and left out the rest. This release fixes the card and
+shows all of 2.9 again, also to anyone who already closed it.
 
 ### Fixed
 
-- **Fast, small writing no longer wobbles on newer iPads**
-  ([#179](https://github.com/Joost-8/FineNotes/issues/179)). On some iPads
-  the Pencil's position arrives rounded to the screen's pixels, which made
-  quick strokes zigzag slightly. FineNotes now recognises this and steadies
-  the ink as it does on older iPads, without stabilization's delay. The
-  end of a stroke also no longer shifts as the pen lifts.
+- **Home's What's new card could ignore clicks.** When Home redrew itself
+  between a press and its release (while it was still reading notebooks,
+  say), the card was taken off the page and put back, and neither its X nor
+  its pictures got the click. The card now stays in place while Home redraws.
+
+### Changed
+
+- **What's new shows all of 2.9.** The card comes back once with eight
+  pictures: the looks, a sum that glows and its maths card, putting a graph
+  on the page, solving for x and the lasso's lighter menu, which 2.9.0's
+  card left out, and then curved and elbow arrows, things lining up as they
+  move, and Lock fit to width. The five new pictures are under Tips too.
+- **Tidier pictures in Tips.** The printed pages in the pictures are set
+  in letters of one size (words used to be stretched or squeezed to fit, and
+  looked bold and thin by turns). "Fix a misread word" writes the word its
+  menu corrects, and "Screenshot any patch" shows the camera in the lasso's
+  own pill, clear of the text, and copies print, not handwriting.
+- **Tool options inside the bar**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  With Dock tool options on and the bar along the top or bottom, the pen's
+  widths and colours sit in the bar itself, after the tools, as in Goodnotes.
+  The buttons that fold first go into ⋯ to make room. Where there is too
+  little room, the options keep a row of their own.
+
+## [2.9.0] - 2026-11-09
 
 ### Added
 
+- **Things line up when you move them.** A selection, picture or sticky note
+  snaps to the edges and centres of the shapes and objects on the page, with
+  thin red guides.
+- **Two kinds of arrow in the Shape tool, as in Goodnotes:** curved and elbow.
+  Drag the dot in a line's middle to bend it through a smooth curve, or a pill
+  on an elbow to slide that run sideways.
+- **Lock fit to width**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  A new check in the notebook's ⋯ panel: after a double tap fits the page
+  to the width, a finger no longer moves the page sideways at all. With
+  pages across, a sideways swipe still turns the page. Off, as before, a
+  sideways pull stretches the page and it springs back, as in Goodnotes.
+  Pinching still moves it either way.
 - **A recognised sum glows, and a tap opens its maths card** (FineNotes#178).
   When a line ending in "=" is read as maths, its ink glows in the accent
   instead of a chip appearing over it; a part Grape was unsure of gets a
@@ -94,30 +374,33 @@ extracted from the matching section of this file by `release.yml`.
   short line says what the dotted characters are ("Not sure:") and what to
   pick ("Which did you write?"). Typing the reading opens a dialog that rises
   above the keyboard and shows the sum typeset as it is typed.
-
-### Fixed
-
-- **Calculation notes read a raised dot as times, and fractions**
-  (FineNotes#178). "3·3 =" offered nothing, because the dot was read as a
-  decimal point; a fraction such as 3×2 over 7 was read as 3×2. A dot
-  halfway up the digits is now times and a dot on the baseline stays a
-  decimal point; a bar with a number over and under it is a fraction, and the
-  answer goes level with the "=". A dash with a dot over and under it is ÷.
-  A crossed 7 beside the dot no longer hides it, a number read as look-alike
-  letters next to it ("Zo" for 20) counts as that number, and the first
-  stroke of a × is no longer taken for a power.
-- **Tips.** The lightbulb on Home opens moving pictures of what is easy to
-  miss, ordered by what helps most: pen gestures, cover tape, tapping your
-  writing to hear it, and more. The first two pen gestures can be tried right
-  there.
-- **What's new is on Home.** After an update a card shows the highlights in
-  pictures; nothing opens by itself. A dot on the toolbar's Home button waits
-  for anyone who goes straight to a notebook.
-- **A way back from the simple look, always in sight:** a switch at the foot of
-  Home's folder rail.
+- **A check-for-updates button on Home,** left of search. It grows into
+  "Update to x" when a new version is out, and the daily check updates it
+  live.
 
 ### Changed
 
+- **A lighter lasso bar and menu.** Nothing stands in both any more. The
+  bar keeps the colour, Copy, Duplicate, Delete and the handles' switch;
+  Cut moved to the ⋯ menu, whose top is now a tray of four: Cut, Paste,
+  Screenshot and Copy style. Delete, Copy and Duplicate left the menu, and
+  a picture's menu lost its second Crop. What the ink can become (Ask AI,
+  Correct, Turn into) is one group, then Flip.
+- **Smoother bars.** The lasso's bar rises from the selection and fades
+  away when it goes; its menu and colour panel grow from the button they
+  hang on and shrink back into it; Turn into slides its rows in and the
+  menu glides to its new height. Buttons show a press at once, with the
+  Pencil too. The table's bar, the audio player, the recording pill and a
+  few more now arrive the same way instead of appearing from nothing, and
+  hovering or picking something in a popover, a dialog, the page sidebar
+  or Home eases instead of snapping. With Reduce Motion on, none of it
+  moves.
+- **Looks reach further.** Paper marks what is chosen with an ink outline
+  instead of the accent; Fluent with its neutral well; Brutalist and Retro
+  box it as thickly as everything else; Material uses a tonal fill. Glass
+  keeps the tool bar readable over the desk. The lasso's dark bar and menu
+  follow each look (Soft's light, Brutalist's thick line, Retro's mono
+  face and inverted press).
 - **The simple look is off for new installs,** and offered as a live switch in
   a redrawn Welcome. Anyone already using it keeps it.
 - **Themes for FineNotes' own bars, menus and dialogs.** Settings → Look
@@ -129,9 +412,6 @@ extracted from the matching section of this file by `release.yml`.
   them: "Look: next style" and "Look: next colours". Translated into every
   language. Customize toolbar has them too, as two rows of chips under
   Hidden, so a look is tried on the bar it changes; Reset takes it back.
-
-### Changed
-
 - **The top of FineNotes' settings reads as one list.** Look and Simple
   look use the section headers' text and spacing, with quieter menus and a
   smaller switch, so every name on the left sits the same distance apart.
@@ -164,9 +444,50 @@ extracted from the matching section of this file by `release.yml`.
   bookmarked one carries its ribbon; a link's preview ends with a +N that
   opens the notebook. A shorter notebook shows every page, and
   `![[Physics.notebook]]` in a note still shows every page.
+- **Pen width buttons are level bars with the pen's own ends,** as Goodnotes
+  draws its widths; calligraphy's rise to the right.
 
 ### Fixed
 
+- **Slides fill the screen with pages across**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  Each page now fits the screen on its own, as in Goodnotes: a lecture slide
+  next to a portrait page used to open at two thirds of the screen, because
+  every page was fitted to the tallest one. Turning to a page of another
+  shape fits that page. A 16:9 slide, wider than the screen, keeps only a
+  thin margin at its sides, as in Goodnotes, instead of a wide band of desk.
+- **A double tap on a slide shows the whole slide**, as large as fits and
+  centred, instead of filling the width and cutting off its foot. Portrait
+  pages still fill the width.
+- **Click the pen's side button for the eraser** (FineNotes#149). On Android,
+  holding an S Pen's button while writing does not reach FineNotes. Settings →
+  Pens and shortcuts, **Side button click**, now has **Switch to the eraser**:
+  a click with the pen just above the page takes the eraser, another goes back
+  to the tool you had.
+- **Fast, small writing no longer wobbles on newer iPads**
+  ([#179](https://github.com/Joost-8/FineNotes/issues/179)). On some iPads
+  the Pencil's position arrives rounded to the screen's pixels, which made
+  quick strokes zigzag slightly. FineNotes now recognises this and steadies
+  the ink as it does on older iPads, without stabilization's delay. The
+  end of a stroke also no longer shifts as the pen lifts.
+- **Calculation notes read a raised dot as times, and fractions**
+  (FineNotes#178). "3·3 =" offered nothing, because the dot was read as a
+  decimal point; a fraction such as 3×2 over 7 was read as 3×2. A dot
+  halfway up the digits is now times and a dot on the baseline stays a
+  decimal point; a bar with a number over and under it is a fraction, and the
+  answer goes level with the "=". A dash with a dot over and under it is ÷.
+  A crossed 7 beside the dot no longer hides it, a number read as look-alike
+  letters next to it ("Zo" for 20) counts as that number, and the first
+  stroke of a × is no longer taken for a power.
+- **Tips.** The lightbulb on Home opens moving pictures of what is easy to
+  miss, ordered by what helps most: pen gestures, cover tape, tapping your
+  writing to hear it, and more. The first two pen gestures can be tried right
+  there.
+- **What's new is on Home.** After an update a card shows the highlights in
+  pictures; nothing opens by itself. A dot on the toolbar's Home button waits
+  for anyone who goes straight to a notebook.
+- **A way back from the simple look, always in sight:** a switch at the foot of
+  Home's folder rail.
 - **The scanned-page reader no longer asks to be downloaded again after an
   update or a vault sync.** Its files were looked for once, when FineNotes
   started; if sync was still bringing them in, the download was offered and
@@ -175,6 +496,16 @@ extracted from the matching section of this file by `release.yml`.
   while part of the model is still arriving.
 - The AI menu in the tool bar scrolls when it does not fit below the bar,
   instead of running off the screen, in full screen too.
+- **A double tap fits the width with pages across too**
+  ([discussion #43](https://github.com/Joost-8/FineNotes/discussions/43)).
+  It made the page cover the screen, which on an iPad left it a little wider
+  than the screen, so it could still be moved sideways.
+- **An elbow arrow bends on its own when you drag its end,** along the longer
+  direction first, and one lying straight bends as soon as the end leaves
+  its line. One you slid into a Z or U keeps that shape.
+- **Longer languages fit.** The pen settings popover, the ⋯ panel and menus
+  wrap long names instead of cutting them off, spilling or breaking mid-word.
+- **The AI menu** always stays in the room below the bar.
 
 ## [2.8.3] - 2026-11-06
 

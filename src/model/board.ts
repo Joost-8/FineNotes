@@ -26,9 +26,11 @@ import {
   type Page,
   type PageComment,
   type PageGeometry,
+  type PageRegion,
   type PageSection,
   type Ruling,
   type TextBoxElement,
+  type Backdrop,
   POINT_STRIDE,
   pageById,
 } from "./document";
@@ -59,9 +61,37 @@ export const BOARD_MAX_BLOCKS = 60;
 /** The papers a board offers: the three a mind map is drawn on. White, always. */
 export const BOARD_RULINGS: readonly Ruling[] = ["blank", "dotted", "squared"];
 
-/** Whether `doc` is an endless board. */
+/** Whether `doc` is an endless board file (every page a board). */
 export function isBoard(doc: Pick<InkDocument, "endless">): boolean {
   return doc.endless === true;
+}
+
+/**
+ * Whether `page` of `doc` is a board: every page of a board file is, and in
+ * an ordinary notebook a page flagged `board` (discussion #160).
+ */
+export function isBoardPage(doc: Pick<InkDocument, "endless">, page: Pick<Page, "board">): boolean {
+  return doc.endless === true || page.board === true;
+}
+
+/**
+ * The page to stay on when the pages turn (the layout changed direction),
+ * given the page `reading` was being read. Null when that was a board among
+ * a notebook's pages: leaving it turns the layout too, and going back to it
+ * would undo the leaving (discussion #160); whoever left goes on to their page.
+ */
+export function pageAfterTurn(
+  doc: Pick<InkDocument, "endless" | "pages">,
+  reading: number,
+): number | null {
+  const page = doc.pages[reading];
+  if (!page) return null;
+  return !doc.endless && page.board === true ? null : reading;
+}
+
+/** Whether `doc` has any board, in a board file or among a notebook's pages. */
+export function hasBoards(doc: Pick<InkDocument, "endless" | "pages">): boolean {
+  return doc.endless === true || doc.pages.some((page) => page.board === true);
 }
 
 /** The page a new board starts with: {@link BOARD_START_BLOCKS} blocks each way. */
@@ -207,8 +237,8 @@ export function boardGrowth(
 /**
  * Grow a board's page by `growth` blocks, as one undo step. Left and top
  * blocks move everything on the page right and down by those blocks (the
- * lasso's {@link TranslateElements} over every element, plus the comments and
- * headings, which a selection never holds), so it all stays where it was on
+ * lasso's {@link TranslateElements} over every element, plus the comments,
+ * headings and named regions, which a selection never holds), so it all stays where it was on
  * the paper. `onShift` hears that move, page px, on every apply (`+`) and
  * invert (`-`): the view moves by it, so nothing on screen jumps.
  *
@@ -222,6 +252,7 @@ export class GrowBoard implements Command {
     move: TranslateElements | null;
     comments: Array<{ comment: PageComment; x: number; y: number }>;
     sections: Array<{ section: PageSection; x: number; y: number }>;
+    regions: Array<{ region: PageRegion; x: number; y: number }>;
   } | null = null;
 
   constructor(
@@ -249,6 +280,7 @@ export class GrowBoard implements Command {
     let move: TranslateElements | null = null;
     const comments: Array<{ comment: PageComment; x: number; y: number }> = [];
     const sections: Array<{ section: PageSection; x: number; y: number }> = [];
+    const regions: Array<{ region: PageRegion; x: number; y: number }> = [];
     if (dx !== 0 || dy !== 0) {
       move = new TranslateElements(
         page.id,
@@ -274,8 +306,14 @@ export class GrowBoard implements Command {
         section.x += dx;
         section.y += dy;
       }
+      // Named regions stay round what they framed.
+      for (const region of page.regions ?? []) {
+        regions.push({ region, x: region.x, y: region.y });
+        region.x += dx;
+        region.y += dy;
+      }
     }
-    this.applied = { geometry, move, comments, sections };
+    this.applied = { geometry, move, comments, sections, regions };
     if (dx !== 0 || dy !== 0) this.onShift?.(dx, dy);
   }
 
@@ -295,6 +333,10 @@ export class GrowBoard implements Command {
     for (const { section, x, y } of applied.sections) {
       section.x = x;
       section.y = y;
+    }
+    for (const { region, x, y } of applied.regions) {
+      region.x = x;
+      region.y = y;
     }
     const { x, y } = this.shift;
     this.onShift?.(-x, -y);
@@ -375,9 +417,81 @@ export function boardDrawing(
     -box.x,
     -box.y,
   ).apply(doc);
-  for (const item of [...(copy.comments ?? []), ...(copy.sections ?? [])]) {
+  for (const item of [
+    ...(copy.comments ?? []),
+    ...(copy.sections ?? []),
+    ...(copy.regions ?? []),
+  ]) {
     item.x -= box.x;
     item.y -= box.y;
   }
   return copy;
+}
+
+// --- A file of several boards (discussion #160) --------------------------------
+
+/**
+ * A new board as page `id`: as big as a board starts
+ * ({@link boardStartGeometry}), empty, on the paper of `like` (the page
+ * being read) when that is one a board offers, else blank. `inNotebook`:
+ * a board among an ordinary notebook's pages, flagged `board`.
+ */
+export function newBoardPage(
+  id: string,
+  like: Page | undefined,
+  inNotebook = false,
+  /** One of `BOARD_RULINGS`, picked in Add page; otherwise `like`'s, when a board paper. */
+  ruling?: Ruling,
+): Page {
+  const backdrop: Backdrop =
+    ruling && BOARD_RULINGS.includes(ruling)
+      ? { kind: ruling }
+      : like && (BOARD_RULINGS as readonly string[]).includes(like.backdrop.kind)
+        ? structuredClone(like.backdrop)
+        : { kind: "blank" };
+  return {
+    id,
+    kind: "ink",
+    geometry: boardStartGeometry(),
+    backdrop,
+    strokes: [],
+    images: [],
+    textBoxes: [],
+    ...(inNotebook ? { board: true as const } : {}),
+  };
+}
+
+/** A board's thumbnail is never wider than this, nor taller than its inverse. */
+export const BOARD_THUMB_ASPECT = 4 / 3;
+
+/**
+ * The part of a board its thumbnail shows: the drawing ({@link boardDrawingBox}),
+ * widened about its middle to between 3:4 and 4:3, so one long line of
+ * writing still shows as a picture and not a sliver. Inside the page.
+ */
+export function boardThumbBox(
+  page: Page,
+  textHeight?: (text: TextBoxElement) => number,
+): { x: number; y: number; width: number; height: number } {
+  const box = boardDrawingBox(page, textHeight);
+  const { width: pageW, height: pageH } = page.geometry;
+  let { width, height } = box;
+  if (width > height * BOARD_THUMB_ASPECT) height = width / BOARD_THUMB_ASPECT;
+  else if (height > width * BOARD_THUMB_ASPECT) width = height / BOARD_THUMB_ASPECT;
+  width = Math.min(width, pageW);
+  height = Math.min(height, pageH);
+  const place = (start: number, was: number, now: number, room: number): number =>
+    Math.min(Math.max(0, start - (now - was) / 2), Math.max(0, room - now));
+  return {
+    x: place(box.x, box.width, width, pageW),
+    y: place(box.y, box.height, height, pageH),
+    width,
+    height,
+  };
+}
+
+/** How a board reads in a list: its number, and its name when it has one ("2  Plan"). */
+export function boardLabel(page: Page | undefined, index: number): string {
+  const name = page?.title;
+  return name ? `${index + 1}  ${name}` : String(index + 1);
 }

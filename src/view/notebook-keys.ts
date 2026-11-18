@@ -6,13 +6,17 @@ export function notebookKeyScope(
   parent: Scope,
   active: () => boolean,
   handle: (event: KeyboardEvent) => boolean,
+  /** A key this scope left before `handle`, and why (FineNotes#226's diagnostics). */
+  left?: (event: KeyboardEvent, verdict: "prevented" | "composing" | "modal" | "outside") => void,
 ): Scope {
   const doc = root.ownerDocument;
   const scope = new Scope(parent);
   scope.register(null, null, (event) => {
-    if (!active() || event.defaultPrevented || event.isComposing) return;
+    if (!active()) return;
+    if (event.defaultPrevented) return left?.(event, "prevented");
+    if (event.isComposing) return left?.(event, "composing");
     // Other panes and host menus keep their own keyboard handling.
-    if (doc.querySelector(".modal-container, .menu")) return;
+    if (doc.querySelector(".modal-container, .menu")) return left?.(event, "modal");
     const target = event.target;
     if (
       target !== doc.defaultView &&
@@ -20,7 +24,7 @@ export function notebookKeyScope(
       target !== doc.body &&
       !root.contains(target as Node)
     )
-      return;
+      return left?.(event, "outside");
     if (!handle(event)) return;
     // A defined result stops the parent scope. Unlike false, true leaves the
     // browser default intact when needed (notably the native paste event),

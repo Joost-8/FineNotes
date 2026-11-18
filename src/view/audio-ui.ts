@@ -13,7 +13,7 @@
  * Pencil's touchstart, and a Pencil tap then never becomes a click.
  */
 
-import { type App, FuzzySuggestModal, Menu, setIcon } from "obsidian";
+import { type App, FuzzySuggestModal, setIcon } from "obsidian";
 import { t } from "../i18n/translate";
 import {
   type TranscriptParagraph,
@@ -27,6 +27,7 @@ import type { Recording } from "../model/document";
 import { swallowGhostClick } from "./ghost-click";
 import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
+import { winOf } from "./host-window";
 
 /** `setIcon`, with a text fallback for mobile builds where an icon comes up blank. */
 function iconInto(el: HTMLElement, icon: string, fallback: string): void {
@@ -404,13 +405,13 @@ export class AudioPlayerBar {
     if (!this.hooks.onTime || this.frame !== 0) return;
     const step = (): void => {
       this.reportTime();
-      this.frame = this.audio.paused ? 0 : window.requestAnimationFrame(step);
+      this.frame = this.audio.paused ? 0 : winOf(this.el).requestAnimationFrame(step);
     };
-    this.frame = window.requestAnimationFrame(step);
+    this.frame = winOf(this.el).requestAnimationFrame(step);
   }
 
   private stopFrames(): void {
-    if (this.frame !== 0) window.cancelAnimationFrame(this.frame);
+    if (this.frame !== 0) winOf(this.el).cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.reportTime();
   }
@@ -464,7 +465,11 @@ export interface RecordingsActions {
   openAiSettings: () => void;
 }
 
-/** Whether recordings can be transcribed with the AI set up, and if not, why. */
+/**
+ * Where recordings are transcribed: `enabled` when an online service is
+ * chosen in the settings (`reason` says what it still needs, if anything),
+ * otherwise on this device.
+ */
 export interface TranscribeState {
   enabled: boolean;
   reason: string;
@@ -541,7 +546,7 @@ export class RecordingsPanel {
     );
   }
 
-  private renderEntry(entry: RecordingEntry, canTranscribe: boolean): void {
+  private renderEntry(entry: RecordingEntry, online: boolean): void {
     const { recording } = entry;
     const block = this.list.createDiv({ cls: "goodobsidian-recordings-entry" });
     // Remove sits beside the label, apart from Play and Transcribe.
@@ -603,34 +608,16 @@ export class RecordingsPanel {
         status,
       );
     } else {
-      // On this device always works; with a key set up as well, ask which.
+      // Where it is transcribed is a setting (on this device, or an online
+      // service): one tap does it there.
       const label = entry.hasTranscript ? t("ai.audio.transcribeAgain") : t("ai.audio.transcribe");
       act(
         "file-text",
         label,
         t("ai.audio.transcribe"),
         () => {
-          if (!canTranscribe) {
-            this.actions.transcribeOnDevice(recording);
-            return;
-          }
-          const menu = new Menu();
-          menu.addItem((item) =>
-            item
-              .setTitle(t("ai.audio.onDevice"))
-              .setIcon("audio-waveform")
-              .onClick(() => this.actions.transcribeOnDevice(recording)),
-          );
-          menu.addItem((item) =>
-            item
-              .setTitle(t("ai.audio.withKey"))
-              .setIcon("cloud")
-              .onClick(() => this.actions.transcribe(recording)),
-          );
-          const button = block.querySelector<HTMLElement>(".goodobsidian-recordings-transcribe");
-          const rect = button?.getBoundingClientRect();
-          if (rect) menu.showAtPosition({ x: rect.left, y: rect.bottom });
-          else menu.showAtPosition({ x: 0, y: 0 });
+          if (online) this.actions.transcribe(recording);
+          else this.actions.transcribeOnDevice(recording);
         },
         entry.available,
       );

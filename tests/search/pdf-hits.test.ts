@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { type Matrix, type PdfTextItem, layoutText, pdfToPage } from "../../src/canvas/pdf-text";
-import { layoutPlainText, pdfHitRects } from "../../src/search/pdf-hits";
+import { layoutPlainText, pdfHitGroups, pdfHitRects } from "../../src/search/pdf-hits";
 
 const VIEWPORT: Matrix = [1, 0, 0, -1, 0, 800];
 const SOURCE = { width: 600, height: 800 };
@@ -94,5 +94,24 @@ describe("pdfHitRects", () => {
 
   it("does not match across a line break", () => {
     expect(pdfHitRects("transformof", slide)).toEqual([]);
+  });
+});
+
+describe("pdfHitGroups", () => {
+  it("gives one group per match, in the order the results list them", () => {
+    const page = layoutText(
+      [item("DNA polymerase III", 40, 100), item("and DNA polymerase I", 40, 160)],
+      PAGE,
+    );
+    const groups = pdfHitGroups("polymerase", page);
+    expect(groups).toHaveLength(2);
+    expect(groups[0][0].y).toBeLessThan(groups[1][0].y);
+    expect(groups.flat()).toEqual(pdfHitRects("polymerase", page));
+  });
+
+  it("keeps a phrase over a line break as one match of two rectangles", () => {
+    const groups = pdfHitGroups("transform of", slide, true);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(2);
   });
 });

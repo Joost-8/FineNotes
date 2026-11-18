@@ -10,9 +10,9 @@ import {
   resolveImageVendor,
   textAvailability,
 } from "../../src/recognition/ai-menu-model";
-import type { LlmVendor } from "../../src/recognition/llm-request";
+import type { KeySlot } from "../../src/recognition/audio-request";
 
-function setup(fields: Partial<AiSetup> & { keys?: LlmVendor[] } = {}): AiSetup {
+function setup(fields: Partial<AiSetup> & { keys?: KeySlot[] } = {}): AiSetup {
   const keys = new Set(fields.keys ?? []);
   return {
     vendor: "anthropic",
@@ -73,13 +73,24 @@ describe("availability", () => {
     expect(resolveImageVendor("google", "anthropic")).toBe("google");
   });
 
-  it("gates audio on a vendor that can transcribe it", () => {
-    expect(audioAvailability(setup({ keys: ["anthropic"] })).reason).toMatch(/OpenAI or Google/);
-    expect(audioAvailability(setup({ vendor: "openrouter", keys: ["openrouter"] })).enabled).toBe(
-      false,
+  it("gates audio on the service chosen for recordings, not the chat's", () => {
+    expect(audioAvailability(setup({ keys: ["anthropic"] })).enabled).toBe(false);
+    expect(audioAvailability(setup({ speechService: "device", keys: ["openai"] })).reason).toBe(
+      "Recordings are transcribed on this device",
     );
-    expect(audioAvailability(setup({ vendor: "openai" })).reason).toBe("Needs an OpenAI key");
-    expect(audioAvailability(setup({ vendor: "openai", keys: ["openai"] })).enabled).toBe(true);
+    expect(audioAvailability(setup({ speechService: "groq" })).reason).toBe("Needs a Groq key");
+    expect(audioAvailability(setup({ speechService: "groq", keys: ["groq"] })).enabled).toBe(true);
+    expect(
+      audioAvailability(setup({ speechService: "openrouter", keys: ["openrouter"] })).enabled,
+    ).toBe(true);
+    expect(audioAvailability(setup({ speechService: "openai" })).reason).toBe(
+      "Needs an OpenAI key",
+    );
+    expect(audioAvailability(setup({ speechService: "custom" })).reason).toMatch(/endpoint/);
+    expect(
+      audioAvailability(setup({ speechService: "custom", speechBaseUrl: "http://nas:8000/v1" }))
+        .enabled,
+    ).toBe(true);
   });
 });
 
@@ -114,7 +125,11 @@ describe("buildAiMenu", () => {
 
   it("offers 'Transcribe recording…' last, after images, only where recording exists", () => {
     expect(buildAiMenu(context()).map((i) => i.id)).not.toContain("transcribe-recording");
-    const withAudio = setup({ vendor: "openai", keys: ["openai"] });
+    const withAudio = setup({ speechService: "openai", keys: ["openai"] });
+    // On this device, the device section's entry transcribes.
+    expect(
+      buildAiMenu(context({ setup: setup({ keys: ["openai"] }), recordings: 2 })).map((i) => i.id),
+    ).not.toContain("transcribe-recording");
     const ids = buildAiMenu(context({ setup: withAudio, recordings: 2 }))
       .filter((i) => i.section !== "device")
       .map((i) => i.id);
@@ -125,17 +140,15 @@ describe("buildAiMenu", () => {
     expect(entry).toMatchObject({ label: "Transcribe recording…", enabled: true, reason: "" });
   });
 
-  it("greys 'Transcribe recording…' out with the reason: no audio vendor, or nothing recorded", () => {
-    // Claude reads ink but cannot hear.
-    const claude = byId(buildAiMenu(context({ recordings: 1 })))["transcribe-recording"];
-    expect(claude.enabled).toBe(false);
-    expect(claude.reason).toMatch(/OpenAI or Google/);
-    const noKey = byId(buildAiMenu(context({ setup: setup({ vendor: "google" }), recordings: 1 })))[
-      "transcribe-recording"
-    ];
+  it("greys 'Transcribe recording…' out with the reason: no key, or nothing recorded", () => {
+    const noKey = byId(
+      buildAiMenu(context({ setup: setup({ speechService: "google" }), recordings: 1 })),
+    )["transcribe-recording"];
     expect(noKey).toMatchObject({ enabled: false, reason: "Needs a Google key" });
     const none = byId(
-      buildAiMenu(context({ setup: setup({ vendor: "openai", keys: ["openai"] }), recordings: 0 })),
+      buildAiMenu(
+        context({ setup: setup({ speechService: "openai", keys: ["openai"] }), recordings: 0 }),
+      ),
     )["transcribe-recording"];
     expect(none.enabled).toBe(false);
     expect(none.reason).toMatch(/^No recordings in this note yet/);
@@ -246,6 +259,9 @@ describe("aiKeyFolded", () => {
     expect(aiKeyFolded(setup({ keys: ["anthropic"] }))).toBe(false);
     // Images alone are enough to show it.
     expect(aiKeyFolded(setup({ imageVendor: "openai", keys: ["openai"] }))).toBe(false);
+    // So is a key for transcribing recordings alone.
+    expect(aiKeyFolded(setup({ speechService: "groq", keys: ["groq"] }))).toBe(false);
+    expect(aiKeyFolded(setup({ speechService: "groq" }))).toBe(true);
   });
 });
 

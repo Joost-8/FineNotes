@@ -28,6 +28,7 @@ import {
   buildAskFirstTurn,
 } from "./ai-chat";
 import { attachRefusal } from "./ask-attachments";
+import type { AskUsage } from "./ask-usage";
 import type { SavedChat } from "./ask-chat-file";
 import { english, t, tn } from "../i18n/translate";
 import { errorMessage } from "../util/errors";
@@ -59,6 +60,7 @@ export interface AskSessionDeps {
     shown?: string;
     actions?: readonly string[];
     notes?: readonly string[];
+    usage?: AskUsage;
   }>;
   /** Write the chat; `path` is where it was written before (null the first time). Resolves to its path. */
   save: (chat: SavedChat, path: string | null) => Promise<string>;
@@ -296,9 +298,6 @@ export class AskSession {
     this.changed();
     const stale = (): boolean => generation !== this.generation;
     try {
-      if (first && newPages.length === 0 && files.length === 0) {
-        throw new Error(t("ai.ask.pickFirst"));
-      }
       if (!(await this.deps.confirm())) {
         if (!stale()) {
           this.outstanding = null;
@@ -306,19 +305,21 @@ export class AskSession {
         }
         return;
       }
+      // The files are on their way: they leave the field now, not when the
+      // answer comes. A question that fails gives them back for Try again.
+      if (files.length && !stale()) {
+        this.attachments = this.attachments.filter((f) => !files.includes(f));
+        this.changed();
+      }
       const history = await this.withImages();
       if (stale()) return;
       let turn: ChatTurn = { role: "user", text, shown: text };
       if (newPages.length) {
         const pages = await this.deps.preparePages(newPages);
         if (stale()) return;
-        if (pages.images.length === 0) {
-          if (first && files.length === 0) {
-            throw new Error(t(this.screen ? "ai.ask.nothingOnScreen" : "ai.ask.nothingToSend"));
-          }
-        } else {
-          turn = this.questionWithPages(text, pages, first);
-        }
+        // Blank pages send nothing: the question goes on its own, as one
+        // asked with no page picked does.
+        if (pages.images.length > 0) turn = this.questionWithPages(text, pages, first);
         this.outstanding = { question: text, status: "" };
         this.changed();
       }
@@ -347,14 +348,18 @@ export class AskSession {
           text: said,
           ...(shown !== said ? { shown } : {}),
           ...(actions.length ? { actions } : {}),
+          ...(answer.usage ? { usage: answer.usage } : {}),
         },
       ];
-      this.attachments = this.attachments.filter((f) => !files.includes(f));
       this.outstanding = null;
       this.changed();
       await this.persist();
     } catch (error) {
       if (stale()) return;
+      this.attachments = [
+        ...files.filter((f) => !this.attachments.includes(f)),
+        ...this.attachments,
+      ];
       this.outstanding = { question: text, status: "", error: errorMessage(error) };
       this.changed();
     }

@@ -40,6 +40,7 @@ const STYLE_KEYS = [
   "radius",
   "padding",
   "caps",
+  "markdown",
 ] as const;
 
 /** A box's style keys before a change. A key absent here was absent on the box. */

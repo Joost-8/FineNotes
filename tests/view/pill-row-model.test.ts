@@ -6,7 +6,29 @@ import {
   parsePillRowOn,
   pillRow,
   pillRowEdge,
+  pillFitsBar,
+  widestRow,
+  foldedBadge,
+  ROW_NEED_SEEDS,
+  penWidthsShown,
 } from "../../src/view/pill-row-model";
+
+describe("penWidthsShown", () => {
+  it("is one button when docked along the top or bottom, so the colours get the room", () => {
+    expect(penWidthsShown({ upright: false, roomy: false, edge: "top" })).toBe("one");
+    expect(penWidthsShown({ upright: false, roomy: false, edge: "bottom" })).toBe("one");
+  });
+
+  it("keeps the quick widths on a floating pill across the page", () => {
+    expect(penWidthsShown({ upright: false, roomy: false, edge: null })).toBe("quick");
+  });
+
+  it("is one button upright beside the page, all of them in a column of its own", () => {
+    expect(penWidthsShown({ upright: true, roomy: false, edge: null })).toBe("one");
+    expect(penWidthsShown({ upright: true, roomy: true, edge: "left" })).toBe("quick");
+    expect(penWidthsShown({ upright: true, roomy: true, edge: "right" })).toBe("quick");
+  });
+});
 
 describe("parsePillRowOn", () => {
   it("is on only when it was saved on", () => {
@@ -80,6 +102,23 @@ describe("pillRow", () => {
   });
 });
 
+describe("pillFitsBar", () => {
+  const fit = { edge: "top" as const, room: 500, need: 400, height: 44, barHeight: 57 };
+  it("takes a pill that fits along the top or bottom", () => {
+    expect(pillFitsBar(fit)).toBe(true);
+    expect(pillFitsBar({ ...fit, edge: "bottom" })).toBe(true);
+  });
+  it("leaves a pill too wide or too tall to its row", () => {
+    expect(pillFitsBar({ ...fit, need: 502 })).toBe(false);
+    expect(pillFitsBar({ ...fit, height: 60 })).toBe(false);
+    expect(pillFitsBar({ ...fit, room: 0 })).toBe(false);
+  });
+  it("never at a side, or with no dock", () => {
+    expect(pillFitsBar({ ...fit, edge: "left" })).toBe(false);
+    expect(pillFitsBar({ ...fit, edge: null })).toBe(false);
+  });
+});
+
 describe("pageTopShift", () => {
   const top = { edge: "top" as const, room: 60 };
   const bottom = { edge: "bottom" as const, room: 60 };
@@ -112,5 +151,22 @@ describe("followTopShift", () => {
 
   it("does nothing for no shift", () => {
     expect(followTopShift(123, 0, 0)).toBe(123);
+  });
+});
+
+describe("widestRow (docking design B)", () => {
+  it("starts from the measured seeds, the shapes row widest", () => {
+    expect(widestRow(new Map())).toBe(ROW_NEED_SEEDS.shape);
+  });
+  it("lets a measured row replace its seed, wider or narrower", () => {
+    expect(widestRow(new Map([["text", 720]]))).toBe(720);
+    expect(widestRow(new Map([["shape", 300]]))).toBe(ROW_NEED_SEEDS.text);
+  });
+});
+
+describe("foldedBadge", () => {
+  it("shows the count, nothing at none", () => {
+    expect(foldedBadge(0)).toBeNull();
+    expect(foldedBadge(9)).toBe("9");
   });
 });

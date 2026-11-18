@@ -11,12 +11,14 @@
  *
  * One slot per vendor, so the text vendor and the image vendor can hold
  * different keys, and so a key is only ever sent to the vendor it belongs to.
+ * Groq has a slot of its own: it only transcribes recordings.
  * The `custom` slot is the self-hosted endpoint's key and is never sent
  * anywhere else (the property `llmCustomApiKey` existed to protect).
  *
  * No DOM, no Obsidian imports: the secret storage is passed in by shape.
  */
 
+import type { KeySlot } from "./audio-request";
 import type { LlmVendor } from "./llm-request";
 
 /** The subset of Obsidian's `SecretStorage` this module relies on. */
@@ -29,15 +31,15 @@ export interface KeyStore {
   /** True when keys are kept outside the vault's files. */
   readonly secure: boolean;
   /** The key for `slot`, or "" when none is set. */
-  get(slot: LlmVendor): string;
+  get(slot: KeySlot): string;
   /** Store a key. True only once it reads back identical. */
-  set(slot: LlmVendor, key: string): boolean;
+  set(slot: KeySlot, key: string): boolean;
   /** Forget a key. True when the slot now reads as empty. */
-  remove(slot: LlmVendor): boolean;
+  remove(slot: KeySlot): boolean;
 }
 
 /** Keychain id per slot: "lowercase alphanumeric with optional dashes". */
-export function secretIdFor(slot: LlmVendor): string {
+export function secretIdFor(slot: KeySlot): string {
   return `goodobsidian-${slot}-api-key`;
 }
 
@@ -47,7 +49,7 @@ export class SecretKeyStore implements KeyStore {
 
   constructor(private readonly storage: SecretStorageLike) {}
 
-  get(slot: LlmVendor): string {
+  get(slot: KeySlot): string {
     try {
       return (this.storage.getSecret(secretIdFor(slot)) ?? "").trim();
     } catch {
@@ -55,7 +57,7 @@ export class SecretKeyStore implements KeyStore {
     }
   }
 
-  set(slot: LlmVendor, key: string): boolean {
+  set(slot: KeySlot, key: string): boolean {
     const value = key.trim();
     if (!value) return this.remove(slot);
     try {
@@ -66,7 +68,7 @@ export class SecretKeyStore implements KeyStore {
     return this.get(slot) === value;
   }
 
-  remove(slot: LlmVendor): boolean {
+  remove(slot: KeySlot): boolean {
     // SecretStorage has no delete; an empty secret is what "no key" reads as.
     try {
       this.storage.setSecret(secretIdFor(slot), "");
@@ -85,16 +87,16 @@ export class SettingsKeyStore implements KeyStore {
   readonly secure = false;
 
   constructor(
-    private readonly keys: Partial<Record<LlmVendor, string>>,
+    private readonly keys: Partial<Record<KeySlot, string>>,
     private readonly save: () => void,
   ) {}
 
-  get(slot: LlmVendor): string {
+  get(slot: KeySlot): string {
     const value = this.keys[slot];
     return typeof value === "string" ? value.trim() : "";
   }
 
-  set(slot: LlmVendor, key: string): boolean {
+  set(slot: KeySlot, key: string): boolean {
     const value = key.trim();
     if (value) this.keys[slot] = value;
     else delete this.keys[slot];
@@ -102,7 +104,7 @@ export class SettingsKeyStore implements KeyStore {
     return this.get(slot) === value;
   }
 
-  remove(slot: LlmVendor): boolean {
+  remove(slot: KeySlot): boolean {
     return this.set(slot, "");
   }
 }

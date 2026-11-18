@@ -67,6 +67,7 @@ import type { HomeCardKind, Tip } from "../model/tips";
 import { tipScene } from "../model/tip-scenes";
 import { TipVisual } from "./tip-visual";
 import type { TipsPage } from "./tips-modal";
+import { type FeatureHost, askRow, featureList } from "./feature-rows";
 import { coverUrlNow, loadCover, loadEntries, saveCover, saveEntries } from "./home-cache";
 import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { thumbnailRasterScale } from "./page-sidebar";
@@ -79,7 +80,8 @@ import { INBOX_FOLDER } from "../model/inbox";
 import { ASSETS_FOLDER } from "../model/vault-folders";
 import { HOME_FILE, HOME_FILE_FLAG } from "../model/home-file";
 import { notebookOwnedFiles } from "../model/library-files";
-import { type TextKey, t, tn } from "../i18n/translate";
+import { type TextKey, currentLanguage, t, tn } from "../i18n/translate";
+import { SPONSOR_PAGE, type SponsorThanks, joinNames, sponsorName } from "../model/sponsors";
 import {
   CHECK_RESULT_MS,
   type CheckOutcome,
@@ -140,11 +142,15 @@ import {
 
 /** What the view needs from the plugin. */
 /** What Home's one card is showing. */
-export type HomeCard = { kind: "news"; version: string; tips: readonly Tip[] } | { kind: "simple" };
+export type HomeCard =
+  | { kind: "news"; version: string; tips: readonly Tip[]; sponsors: SponsorThanks | null }
+  | { kind: "simple" };
 
 export interface LibraryHost {
   /** Tips: the collections, or one page of them. */
   openTips(page?: TipsPage | null): void;
+  /** What a found feature's row can do (feature-rows.ts). */
+  features: FeatureHost;
   homeCard(): HomeCard | null;
   dismissHomeCard(kind: HomeCardKind): void;
   simpleLook(): boolean;
@@ -295,6 +301,8 @@ export class LibraryView extends ItemView {
   private texts = new Map<string, NotebookTextRecord>();
   /** What this device read on pages (Grape, PDF text); `null` until a search wants it, or after a notebook was visited. */
   private extras: SearchExtras | null = null;
+  /** Features the search now showing found: "no notebook matches" stays quiet when one did. */
+  private featureCount = 0;
   private extrasLoading: Promise<SearchExtras> | null = null;
   /** The transcript server's transcriptions, by notebook path, as of the sidecar's version. */
   private readonly sidecars = new Map<string, { stamp: string; byKey: Map<string, string> }>();
@@ -1010,7 +1018,13 @@ export class LibraryView extends ItemView {
     this.upEl.toggleClass("is-hidden", this.folder === "");
     this.unloadPreviews();
     this.paintUpdate();
-    this.bodyEl.empty();
+    // Home's card stays where it is. Taken out and put back between a press and
+    // its release, a button never gets its click: the card's X and pictures
+    // went dead whenever Home repainted under the pointer.
+    const kept = !searching && this.folder === "" ? this.cardEl : null;
+    for (const child of Array.from(this.bodyEl.childNodes)) {
+      if (child !== kept) child.remove();
+    }
 
     const all = this.entries();
     this.simple = document.body.hasClass(SIMPLE_CLASS);
@@ -1045,6 +1059,13 @@ export class LibraryView extends ItemView {
         searchEntries(all.filter(keep), this.query),
         this.sort,
         this.reverse,
+      );
+      // What FineNotes can do comes first: a few rows, only when the words mean a feature.
+      this.featureCount = featureList(
+        this.bodyEl.createDiv({ cls: "goodobsidian-library-features" }),
+        this.query,
+        this.host.features,
+        { hideable: true },
       );
       // Titles answer at once; the pages holding the words follow under them.
       if (found.length > 0) this.grid(found, t("notebooks.home.results"));
@@ -1548,7 +1569,7 @@ export class LibraryView extends ItemView {
       cover.style.setProperty("--gob-cover-hi", palette.sheenLight);
       cover.style.setProperty("--gob-cover-lo", palette.sheenDark);
       cover.createSpan({ cls: "goodobsidian-library-cover-title", text: entry.title });
-      if (entry.covered) this.paintOwnCover(cover, entry);
+      if (entry.covered || entry.pictured) this.paintOwnCover(cover, entry);
       else if (entry.pdf) this.paintPdfCover(cover, entry.pdf);
     } else this.paintFileCover(cover, entry);
     this.starButton(cover, entry.path, entry.title);
@@ -1641,7 +1662,8 @@ export class LibraryView extends ItemView {
         { duration: 320, easing: "cubic-bezier(.2,.7,.2,1)" },
       );
     }
-    if (this.cardEl) this.bodyEl.appendChild(this.cardEl);
+    // First on the page, and only moved when it is not there already.
+    if (this.cardEl && this.bodyEl.firstChild !== this.cardEl) this.bodyEl.prepend(this.cardEl);
   }
 
   private dropCard(): void {
@@ -1674,6 +1696,16 @@ export class LibraryView extends ItemView {
     const head = card.createDiv({ cls: "goodobsidian-home-card-title" });
     setIcon(head.createSpan({ cls: "goodobsidian-home-card-icon" }), "sparkles");
     head.createSpan({ text: title });
+    if (news.tips.length > 0) this.newsPictures(card, news, title);
+    if (news.sponsors) this.sponsorThanks(card, news.sponsors);
+    return card;
+  }
+
+  private newsPictures(
+    card: HTMLElement,
+    news: Extract<HomeCard, { kind: "news" }>,
+    title: string,
+  ): void {
     const frame = card.createDiv({ cls: "goodobsidian-home-card-frame" });
     const row = frame.createDiv({ cls: "goodobsidian-home-card-pictures" });
     const byPicture = new Map<Element, TipVisual>();
@@ -1704,7 +1736,31 @@ export class LibraryView extends ItemView {
       });
     });
     this.addStripArrows(frame, row);
-    return card;
+  }
+
+  /** New sponsors by name, then everyone before them; the heart opens the sponsor page. */
+  private sponsorThanks(card: HTMLElement, thanks: SponsorThanks): void {
+    const lang = currentLanguage();
+    const row = card.createDiv({ cls: "goodobsidian-home-card-thanks", attr: { lang } });
+    const heart = row.createEl("a", {
+      cls: "goodobsidian-home-card-heart",
+      href: SPONSOR_PAGE,
+      attr: { "aria-label": t("notebooks.home.sponsorPage") },
+    });
+    setIcon(heart, "heart");
+    const words = row.createDiv({ cls: "goodobsidian-home-card-thanks-words" });
+    const names = (sponsors: readonly Parameters<typeof sponsorName>[0][]): string =>
+      joinNames(sponsors.map(sponsorName), lang);
+    words.createDiv({
+      cls: "goodobsidian-home-card-thanks-new",
+      text: t("notebooks.home.newSponsors", { names: names(thanks.fresh) }),
+    });
+    if (thanks.earlier.length > 0) {
+      words.createDiv({
+        cls: "goodobsidian-home-card-thanks-earlier",
+        text: t("notebooks.home.earlierSponsors", { names: names(thanks.earlier) }),
+      });
+    }
   }
 
   /** A mouse has no sideways swipe: arrows at the row's ends, there only while it can go further. */
@@ -1885,7 +1941,8 @@ export class LibraryView extends ItemView {
 
   /**
    * A notebook with a cover page shows that page as its cover, as the
-   * notebook draws it (design, colour, title). It is drawn once, kept as a
+   * notebook draws it (design, colour, title); one with no cover whose first
+   * page holds a picture shows that page (`pictured`). It is drawn once, kept as a
    * small picture on this device, and shown over the plain cover when ready.
    */
   private ownCoverKey(file: TFile): string {
@@ -2099,7 +2156,11 @@ export class LibraryView extends ItemView {
   /** "No notebook matches", once neither a title nor a page did. */
   private noMatch(el: HTMLElement): void {
     el.empty();
+    // A feature answered the search: nothing is missing.
+    if (this.featureCount > 0) return;
     el.createDiv({ cls: "goodobsidian-library-label", text: t("notebooks.home.noMatch") });
+    // Nothing at all: the words may be a feature FineNotes lacks.
+    askRow(el, this.query, this.host.features);
   }
 
   /** What this device kept about pages, loaded once per search (and again after visiting a notebook). */

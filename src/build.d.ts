@@ -9,6 +9,8 @@
  * - `*.bin`: the file's bytes as base64 (Grape, models/grape-2.0.bin, while
  *   bundled; grape-bundle.ts says why not as bytes).
  * - `__FINENOTES_BUNDLE_GRAPE__`: whether Grape is bundled (a `define`).
+ * - `__FINENOTES_SHARING__`: whether "Help improve Grape" is built in (a `define`),
+ *   and `__FINENOTES_SHARING_ENDPOINT__` where it sends.
  */
 declare module "worker:*" {
   const source: string;
@@ -26,3 +28,5 @@ declare module "*.bin" {
 }
 
 declare const __FINENOTES_BUNDLE_GRAPE__: boolean;
+declare const __FINENOTES_SHARING__: boolean;
+declare const __FINENOTES_SHARING_ENDPOINT__: string;

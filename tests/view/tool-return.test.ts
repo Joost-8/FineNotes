@@ -7,6 +7,8 @@ import {
   eraserClickStep,
   optionsAfterSwitch,
   selectedTool,
+  keyPenTarget,
+  shortcutPenType,
   toolAfterUse,
   PEN_OPTIONS_RETURN_MS,
   penOptionsOnWriteOf,
@@ -131,5 +133,74 @@ describe("hide pen options while writing", () => {
     }
     // Longer than the gap between written words, short enough to feel prompt.
     expect(PEN_OPTIONS_RETURN_MS).toBe(1000);
+  });
+});
+
+describe("shortcutPenType (FineNotes#226)", () => {
+  const order = ["fountain", "ball", "brush", "calligraphy", "highlighter"] as const;
+
+  it("H is always the highlighter", () => {
+    expect(shortcutPenType("highlighter", "ball", [], order)).toBe("highlighter");
+    expect(shortcutPenType("highlighter", "highlighter", ["ball"], order)).toBe("highlighter");
+  });
+
+  it("P keeps the pen in hand", () => {
+    expect(shortcutPenType("pen", "ball", ["highlighter"], order)).toBe("ball");
+    expect(shortcutPenType("pen", "brush", [], order)).toBe("brush");
+  });
+
+  it("P from the highlighter is the pen used last, not the highlighter again", () => {
+    expect(shortcutPenType("pen", "highlighter", ["highlighter", "ball", "fountain"], order)).toBe(
+      "ball",
+    );
+  });
+
+  it("P from the highlighter with no pen used yet is the row's first pen", () => {
+    expect(shortcutPenType("pen", "highlighter", [], ["highlighter", "brush", "fountain"])).toBe(
+      "brush",
+    );
+    expect(shortcutPenType("pen", "highlighter", [], ["highlighter"])).toBe("fountain");
+  });
+});
+
+describe("keyPenTarget: a pen key presses the button its pen has (FineNotes#226, #211)", () => {
+  const bar = ["saved:red", "pen:highlighter"] as const;
+  const none: readonly never[] = [];
+
+  it("a saved pen's key presses its own button when it is pinned", () => {
+    expect(keyPenTarget({ saved: "red" }, "eraser", bar, null, "main")).toBe("saved:red");
+    expect(keyPenTarget({ saved: "red" }, "pen", bar, null, "main")).toBe("saved:red");
+  });
+
+  it("a saved pen's key changes nothing while its button holds the pen in hand", () => {
+    expect(keyPenTarget({ saved: "red" }, "pen", bar, "saved:red", "saved:red")).toBeNull();
+    // After another tool its button no longer holds the pen in hand.
+    expect(keyPenTarget({ saved: "red" }, "eraser", bar, null, "saved:red")).toBe("saved:red");
+  });
+
+  it("a saved pen with no button of its own goes on the pen's button", () => {
+    expect(keyPenTarget({ saved: "blue" }, "pen", bar, "saved:red", "saved:red")).toBe("main");
+    expect(keyPenTarget({ saved: null }, "pen", bar, null, "main")).toBe("main");
+  });
+
+  it("H presses a pinned highlighter, else the pen's button", () => {
+    expect(keyPenTarget("highlighter", "pen", bar, "saved:red", "saved:red")).toBe(
+      "pen:highlighter",
+    );
+    expect(keyPenTarget("highlighter", "pen", none, null, "main")).toBe("main");
+    expect(keyPenTarget("highlighter", "highlighter", bar, "pen:highlighter", "main")).toBeNull();
+  });
+
+  it("P goes back to the button of the pen last written with", () => {
+    expect(keyPenTarget("pen", "highlighter", bar, "pen:highlighter", "saved:red")).toBe(
+      "saved:red",
+    );
+    expect(keyPenTarget("pen", "eraser", bar, null, "main")).toBe("main");
+    expect(keyPenTarget("pen", "laser", bar, null, null)).toBe("main");
+  });
+
+  it("P keeps a pen in hand, and forgets a button taken off the bar", () => {
+    expect(keyPenTarget("pen", "pen", bar, "saved:red", "saved:red")).toBeNull();
+    expect(keyPenTarget("pen", "highlighter", none, null, "saved:red")).toBe("main");
   });
 });

@@ -155,6 +155,48 @@ describe("PdfBackdropCache", () => {
     expect(pdf.calls[0].viewport.width).toBe(9600);
   });
 
+  it("renders a page with nothing to show during a zoom, but not during writing", async () => {
+    const zooming = cache();
+    zooming.setHeld(true, "zoom");
+    zooming.request("a.pdf", 0, 2);
+    await settle();
+    expect(zooming.peek("a.pdf", 0, 2)?.ok).toBe(true);
+    const renders = pdf.renders;
+
+    const writing = cache();
+    writing.setHeld(true);
+    writing.request("a.pdf", 0, 2);
+    await settle();
+    expect(pdf.renders).toBe(renders);
+  });
+
+  it("makes a page that has an image wait for the zoom to end", async () => {
+    const c = cache();
+    await c.resolve("a.pdf", 0, 2);
+    const renders = pdf.renders;
+    c.setHeld(true, "zoom");
+    c.request("a.pdf", 0, 3);
+    await settle();
+    expect(pdf.renders).toBe(renders);
+    c.setHeld(false, "zoom");
+    await settle();
+    expect(pdf.renders).toBe(renders + 1);
+  });
+
+  it("waits until the pen and the zoom have both let go", async () => {
+    const c = cache();
+    c.setHeld(true);
+    c.setHeld(true, "zoom");
+    c.request("a.pdf", 0, 2);
+    await settle();
+    c.setHeld(false);
+    await settle();
+    expect(pdf.renders).toBe(0);
+    c.setHeld(false, "zoom");
+    await settle();
+    expect(pdf.renders).toBe(1);
+  });
+
   it("says which page landed", async () => {
     const c = cache();
     const landed: Array<[string, number]> = [];

@@ -9,9 +9,44 @@
  * No DOM, no Obsidian.
  */
 
+import { BOARD_BLOCK, BOARD_CUT_STEP, boardDrawingBox, drawnBounds } from "../model/board";
+import type { Page, TextBoxElement } from "../model/document";
 import { stripInkSuffix } from "../model/new-notebook";
+import { findRegion, regionSubpathName } from "../model/regions";
 import { pageFromSubpath } from "../search/notebook-search";
 import { type PreviewPage, previewPageIndexes } from "../model/preview-pages";
+
+/** The part of a page an embed shows, page px. */
+export interface EmbedCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * What an embed of a board shows (`![[Mind map.notebook]]`): its drawing
+ * with a little paper round it, the same cut its PDF export makes
+ * (`boardDrawingBox`), not the metres of empty page it has grown to. An
+ * empty board shows a strip of its paper, a block wide and half a block
+ * tall, from its middle: there is nothing to frame, and a full square of
+ * blank paper would push the note's text a screen down.
+ */
+export function boardEmbedBox(
+  page: Page,
+  textHeight?: (text: TextBoxElement) => number,
+): EmbedCrop {
+  if (drawnBounds(page, textHeight) !== null) return boardDrawingBox(page, textHeight);
+  const step = (v: number): number => Math.max(0, Math.floor(v / BOARD_CUT_STEP) * BOARD_CUT_STEP);
+  const width = Math.min(BOARD_BLOCK, page.geometry.width);
+  const height = Math.min(BOARD_BLOCK / 2, page.geometry.height);
+  return {
+    x: step(page.geometry.width / 2 - width / 2),
+    y: step(page.geometry.height / 2 - height / 2),
+    width,
+    height,
+  };
+}
 
 /**
  * The page a link's subpath names, 1-based, in every form `pageFromSubpath`
@@ -23,23 +58,52 @@ export function embeddedPageNumber(subpath: string): number | null {
   return index === null ? null : index + 1;
 }
 
-/** What an embed of a notebook shows: page `page` (1-based); `whole` for a link to the notebook itself. */
+/**
+ * What an embed of a notebook shows: page `page` (1-based); `whole` for a
+ * link to the notebook itself; `region` for a named part of a page.
+ */
 export interface EmbedTarget {
-  /** The page named; 1 for a notebook embedded whole. */
+  /** The page named; 1 for a notebook embedded whole, or until a region is found. */
   page: number;
   /** `![[Physics.notebook]]`: every page is shown, one under the other. */
   whole: boolean;
+  /** `![[Mind map.notebook#Krebs cycle]]`: the region of that name, alone (discussion #167). */
+  region?: string;
 }
 
 /**
- * What an embed of a notebook with this subpath shows: the page it names, or
- * the whole notebook (no subpath). `null` for any other subpath,
- * such as a heading: those stay Obsidian's.
+ * What an embed of a notebook with this subpath shows, the first that
+ * matches:
+ *
+ * 1. no subpath: the whole notebook;
+ * 2. a page (`#page=3`, `#Page 3`, `#p3`): that page, even when a region
+ *    is named like one;
+ * 3. a block (`#^id`): `null`, left to Obsidian;
+ * 4. any other text: the region of that name (`#Krebs cycle`). Whether the
+ *    notebook has one is only known once it is read; when it has none, the
+ *    embed is handed back to Obsidian, which shows the heading of that name
+ *    in the note's text as it always did (`regionEmbedPart`).
  */
 export function embedTarget(subpath: string): EmbedTarget | null {
   if (/^#?\s*$/.test(subpath)) return { page: 1, whole: true };
   const page = embeddedPageNumber(subpath);
-  return page === null ? null : { page, whole: false };
+  if (page !== null) return { page, whole: false };
+  const region = regionSubpathName(subpath);
+  return region === null ? null : { page: 1, whole: false, region };
+}
+
+/**
+ * The page (1-based) and the part of it an embed of region `name` shows,
+ * or `null` when the notebook has no region of that name.
+ */
+export function regionEmbedPart(
+  pages: readonly Page[],
+  name: string,
+): { page: number; crop: EmbedCrop } | null {
+  const found = findRegion(pages, name);
+  if (!found) return null;
+  const { x, y, w, h } = found.region;
+  return { page: found.index + 1, crop: { x, y, width: w, height: h } };
 }
 
 /**
@@ -84,14 +148,17 @@ export function embedPageLink(linktext: string, target: EmbedTarget, page: numbe
   return `${path}#page=${page}`;
 }
 
-/** A page's label in an embed: "Physics, page 3", or the notebook's name for its only page. */
+/**
+ * A page's label in an embed: "Physics, page 3", the notebook's name for
+ * its only page, or "Mind map, Krebs cycle" for a region.
+ */
 export function embedPageLabel(
   basename: string,
   target: EmbedTarget,
   page: number,
   pageCount: number,
 ): string {
-  return target.whole && pageCount <= 1
+  return (target.whole && pageCount <= 1) || target.region !== undefined
     ? embedLabel(basename, target)
     : pageLinkLabel(basename, page);
 }
@@ -105,11 +172,14 @@ export const PRINT_FALLBACK_WIDTH = 680;
 /** Device px per CSS px when painting for a PDF export: sharp on paper, not a screen's ratio. */
 export const PRINT_DPR = 2;
 
-/** The size to paint at for a PDF export of a box `cssWidth` wide (0 when unknown). */
-export function printPaintSize(cssWidth: number): { cssWidth: number; dpr: number } {
+/**
+ * The size to paint at for a PDF export of a box `cssWidth` wide (0 when
+ * unknown); `aspect` as for {@link embedPaintSize}.
+ */
+export function printPaintSize(cssWidth: number, aspect = 0): { cssWidth: number; dpr: number } {
   const width = cssWidth > 0 && Number.isFinite(cssWidth) ? cssWidth : PRINT_FALLBACK_WIDTH;
   // Never null: the width is positive.
-  return embedPaintSize(width, PRINT_DPR) ?? { cssWidth: PRINT_FALLBACK_WIDTH, dpr: 1 };
+  return embedPaintSize(width, PRINT_DPR, aspect) ?? { cssWidth: PRINT_FALLBACK_WIDTH, dpr: 1 };
 }
 
 /**
@@ -133,8 +203,12 @@ export function embedInsertion(
   return `${head}${embed}${tail}`;
 }
 
-/** What an embed reads as when it is a link: "Physics" for the whole notebook, else "Physics, page 3". */
+/**
+ * What an embed reads as when it is a link: "Physics" for the whole
+ * notebook, "Mind map, Krebs cycle" for a region, else "Physics, page 3".
+ */
 export function embedLabel(basename: string, target: EmbedTarget): string {
+  if (target.region !== undefined) return `${stripInkSuffix(basename)}, ${target.region}`;
   return target.whole ? stripInkSuffix(basename) : pageLinkLabel(basename, target.page);
 }
 
@@ -162,22 +236,32 @@ export function embedWidth(widthAttr: string | null, alt: string | null): number
 export const EMBED_WIDTH_STEP = 64;
 /** The widest an embed is painted, device px: past it the canvas only costs memory. */
 export const MAX_EMBED_DEVICE_WIDTH = 2048;
+/**
+ * The tallest a cut-out embed (a board's drawing, a region) is painted,
+ * device px: a tall narrow cut shown at the note's width would otherwise
+ * make a canvas many screens high.
+ */
+export const MAX_EMBED_DEVICE_HEIGHT = 4096;
 
 /**
  * The size to paint at for a box `cssWidth` CSS px wide on a screen of
  * `dpr`: the width rounded up to the next step (the canvas is shown at the
  * box's width, so a little larger is sharp and a little smaller is not), and
  * the pixel ratio lowered so the canvas stays within
- * `MAX_EMBED_DEVICE_WIDTH`. `null` while the box has no width yet.
+ * `MAX_EMBED_DEVICE_WIDTH`, and, given a cut's `aspect` (height / width),
+ * within `MAX_EMBED_DEVICE_HEIGHT`. `null` while the box has no width yet.
  */
 export function embedPaintSize(
   cssWidth: number,
   dpr: number,
+  aspect = 0,
 ): { cssWidth: number; dpr: number } | null {
   if (!(cssWidth > 0)) return null;
   const width = Math.ceil(cssWidth / EMBED_WIDTH_STEP) * EMBED_WIDTH_STEP;
   const ratio = dpr > 0 && Number.isFinite(dpr) ? dpr : 1;
-  return { cssWidth: width, dpr: Math.min(ratio, MAX_EMBED_DEVICE_WIDTH / width) };
+  const tall =
+    aspect > 0 && Number.isFinite(aspect) ? MAX_EMBED_DEVICE_HEIGHT / (width * aspect) : 1 / 0;
+  return { cssWidth: width, dpr: Math.min(ratio, MAX_EMBED_DEVICE_WIDTH / width, tall) };
 }
 
 /** One painted embed, as the budget sees it. */

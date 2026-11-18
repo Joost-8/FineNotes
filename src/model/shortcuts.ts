@@ -21,6 +21,12 @@ export interface ShortcutWay {
   keys: readonly string[];
   /** What the pen, mouse or finger does with them held ("write", "drag"); none for a plain key. */
   gesture?: string;
+  /**
+   * Built into the page rather than the line's row in `./shortcut-bindings.ts`
+   * (← and → turn pages there): it stays on the sheet when the user changes
+   * that row.
+   */
+  fixed?: boolean;
 }
 
 export interface Shortcut {
@@ -43,6 +49,8 @@ export interface ShortcutGroup {
 }
 
 const key = (...keys: string[]): ShortcutWay => ({ keys });
+/** A key the page itself listens for, whatever the user records for the line's row. */
+const fixedKey = (name: string): ShortcutWay => ({ keys: [name], fixed: true });
 /** Keys held while the pen does something; the gesture is read in the language in use. */
 const held = (keys: string[], gesture: TextKey): ShortcutWay => ({
   keys,
@@ -111,8 +119,13 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     line("toolbar.shortcut.sheet.movePage", [held(["Space"], "toolbar.shortcut.gesture.drag")], {
       binding: "tool.pan",
     }),
-    line("toolbar.shortcut.previousPage", [key("Page Up")], { binding: "view.previous-page" }),
-    line("toolbar.shortcut.nextPage", [key("Page Down")], { binding: "view.next-page" }),
+    // ← and → too, whichever way the pages run (FineNotes#248).
+    line("toolbar.shortcut.previousPage", [key("Page Up"), fixedKey("←")], {
+      binding: "view.previous-page",
+    }),
+    line("toolbar.shortcut.nextPage", [key("Page Down"), fixedKey("→")], {
+      binding: "view.next-page",
+    }),
     line("toolbar.shortcut.sheet.toggleList", [key("?")], { binding: "view.shortcuts" }),
   ]),
   group("toolbar.shortcut.group.stylus", [

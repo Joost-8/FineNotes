@@ -27,6 +27,7 @@ import {
   defaultPlace,
 } from "../model/calculator-store";
 import { t } from "../i18n/translate";
+import { sizeObserver } from "./host-window";
 
 /** Every floating window's class, for bringing one over the others. */
 const FLOATING_WINDOWS =
@@ -274,7 +275,7 @@ export class FloatingWindow {
   private installRefit(): void {
     if (typeof ResizeObserver !== "function") return;
     let last = this.bounds();
-    const observer = new ResizeObserver(() => {
+    const observer = sizeObserver(this.options.container, () => {
       const now = this.bounds();
       if (now.w === last.w && now.h === last.h) return;
       last = now;

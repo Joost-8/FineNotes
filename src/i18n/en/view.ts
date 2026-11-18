@@ -24,6 +24,16 @@ export const view = {
   "view.contentsTitle.pageLabel": "Title for page {page}",
   "view.contentsTitle.sectionLabel": "Title for a section on page {page}",
 
+  // Frames: named parts of a page a note embeds (model/regions.ts, discussion #167)
+  "view.region.add": "Name this frame",
+  "view.region.rename": "Rename frame",
+  "view.region.note": "A note can embed what is in it by this name.",
+  "view.region.label": "Name of the frame",
+  "view.region.fallback": "Frame {n}",
+  "view.region.copyLink": "Copy embed link",
+  "view.region.linkCopied": "Embed link copied",
+  "view.region.delete": "Delete frame",
+
   // Comment dialog
   "view.comment.title": "Comment",
   "view.comment.newTitle": "New comment on page {page}",
@@ -49,15 +59,21 @@ export const view = {
   "view.search.kindText": "Text",
   "view.search.kindPdf": "PDF",
   "view.search.page": "Page {page}",
+  "view.search.clear": "Clear search",
+  "view.search.previous": "Previous match",
+  "view.search.next": "Next match",
+  "view.search.position": "{current} / {total}",
+  "view.search.showInSidebar": "Show results in the sidebar",
+  "view.search.showOriginal": "Show results as a list of pages",
   "view.search.matches.one": "{count} match",
   "view.search.matches.other": "{count} matches",
   "view.search.hintTranscribed":
     "Search the transcribed handwriting, typed text and PDF text on every page.",
   "view.search.hintUntranscribed":
-    "Search typed text and PDF text on every page. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).",
+    "Search typed text and PDF text on every page. Handwriting is found once it is read: Settings › Reading and voice › Read handwriting with.",
   "view.search.noneTranscribed": "No page has all of these words.",
   "view.search.noneUntranscribed":
-    "No page has all of these words in typed or PDF text. Handwriting is searchable once it is transcribed (AI → Transcribe whole notebook).",
+    "No page has all of these words in typed or PDF text. Handwriting is found once it is read: Settings › Reading and voice › Read handwriting with.",
 
   // Text layer panel
   "view.textPanel.label": "Text layer: the transcription, your [[links]] and #tags, all searchable",
@@ -91,7 +107,10 @@ export const view = {
   // Screenshot dialog
   "view.screenshot.title": "Screenshot",
   "view.screenshot.alt": "The selection as a picture",
-  "view.screenshot.pageBehind": "Page behind",
+  "view.screenshot.include": "Include",
+  "view.screenshot.partAll": "Everything",
+  "view.screenshot.partSelection": "Selection only",
+  "view.screenshot.partPage": "Page only, without ink",
   "view.screenshot.share": "Share…",
   "view.screenshot.saveImage": "Save image",
   "view.screenshot.saveFailed": "The picture could not be saved.",
@@ -146,6 +165,8 @@ export const view = {
   "view.ask.practiceLabel": "Add practice page",
   "view.ask.markLabel": "Mark",
   "view.ask.doneTextBox": "Added a text box on page {page}",
+  "view.ask.doneNote": "Wrote the note {name}",
+  "view.ask.doneNoteFixed": "Corrected the note {name}",
   "view.ask.doneAddPage": "Added page {page}",
   "view.ask.doneGoTo": "Went to page {page}",
   "view.ask.doneDrew": "Drew on page {page}",
@@ -229,6 +250,7 @@ export const view = {
 
   // Deleting pages
   "view.deletePage.done": "Deleted page {page}. Undo (Cmd/Ctrl+Z) brings it back.",
+  "view.deleteBoard.done": "Deleted board {board}. Undo (Cmd/Ctrl+Z) brings it back.",
   "view.deletePages.title.one": "Delete {count} page?",
   "view.deletePages.title.other": "Delete {count} pages?",
   "view.deletePages.message.one":
@@ -267,11 +289,13 @@ export const view = {
   "view.pageEmbed.noPages": "This notebook has no pages.",
   "view.pageEmbed.missingFile": "This notebook is not in the vault.",
   "view.pageEmbed.unreadable": "This notebook could not be read.",
+  "view.pageEmbed.missingRegion": "This notebook has no frame named {name}.",
   "view.pageEmbed.morePages.one": "{count} more page",
   "view.pageEmbed.morePages.other": "{count} more pages",
 
   // Page sidebar
   "view.sidebar.pages": "Pages",
+  "view.sidebar.boards": "Boards",
   "view.sidebar.contents": "Contents",
   "view.sidebar.files": "Files",
   "view.sidebar.close": "Close sidebar",
@@ -290,6 +314,7 @@ export const view = {
   "view.sidebar.bookmark": "Bookmark",
   "view.sidebar.export": "Export",
   "view.sidebar.addPage": "Add page",
+  "view.sidebar.addBoard": "Add board",
   "view.sidebar.removeBookmark": "Remove bookmark",
   "view.sidebar.bookmarkPage": "Bookmark page",
   "view.sidebar.toggleHeadings": "Show or hide this page's headings",
@@ -322,6 +347,7 @@ export const view = {
   "view.sidebar.moveUp": "Move up",
   "view.sidebar.moveDown": "Move down",
   "view.sidebar.deletePage": "Delete page",
+  "view.sidebar.deleteBoard": "Delete board",
 
   // The ⋯ panel
   "view.morePanel.clearBoard": "Clear board",
@@ -344,6 +370,8 @@ export const view = {
   "view.morePanel.darkPages": "Dark pages",
   "view.morePanel.shortcuts": "Keyboard shortcuts",
   "view.morePanel.homeLink": "Copy home screen link",
+  "view.morePanel.present": "Present",
+  "view.present.stop": "Stop presenting",
   "view.morePanel.darkPdf": "Dark PDF pages",
   "view.morePanel.drawWithFinger": "Draw with finger",
   "view.morePanel.desk": "Desk",

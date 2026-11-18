@@ -122,7 +122,7 @@ describe("the request a transcription sends", () => {
     });
     // The whole body, so no `cache_control`: one question has no follow-up to read it.
     expect(request.json).toEqual({
-      model: "claude-opus-4-8",
+      model: "claude-sonnet-5-5",
       max_tokens: 8192,
       messages: [
         {

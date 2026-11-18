@@ -434,6 +434,16 @@ stroke, as the retrace arrow is.
   upright put on it. The stroke gets `radius` 14 (the rounded corners).
 - **A smooth curve** (no corner, a turn of 30–300° in all) becomes the ink
   smoothed, a sample at most every 8 page px and at least 24 of them.
+- **Edited by its handles** (2026-11-08, Goodnotes' connectors): a
+  `line` or a straight `path` bent by its middle dot becomes a curve
+  through its bend points (a centripetal Catmull-Rom spline, each end run
+  mirroring its neighbour), sampled with the same number of points on
+  every run between two bend points (16–64, about every 6 page px), so the
+  bend points are the samples at every k-th index and are read back by
+  regenerating the spline through them. An elbow (every run level or
+  upright) keeps that: a run slid sideways moves its corners, and an end
+  run slid off its end gets a new run back to it. Both keep `heads` and
+  `radius`; older versions read either as an ordinary `path`.
 - Either gets `heads: { end: "open" }`. The head is not in `pts`: it is drawn
   from `heads` along the path's own last stretch (its last segment, or half
   a head back, whichever is shorter), sized by the path's whole length, and
@@ -831,6 +841,7 @@ ignore them.
 | `lineHeight?: number`                                                         | multiple of the font size, 0.8–3; absent = 1.25                                                                                                                                                                                                                                                                                                                                     |
 | `fill?: string`                                                               | box background, `#rgb[a]` / `#rrggbb[aa]` only (it reaches a style attribute); absent = none                                                                                                                                                                                                                                                                                        |
 | `TextBoxElement.fit?: true`                                                   | the width follows the text (GoodNotes' default): the editor keeps `w` as wide as the widest line, up to the page edge, and stores it, so every reader wraps as the editor did. Only `true` is stored; a resize drops it. A fitted `w` may be under 80                                                                                                                               |
+| `TextBoxElement.markdown?: true`                                              | Markdown mode (discussion #107): `text` is Markdown, kept as typed; at rest the box is drawn formatted (`model/markdown-text.ts`, `canvas/markdown-layout.ts`), while edited it shows the raw text. Only `true` is stored; a reader that does not know it shows the raw text                                                                                                        |
 | File names                                                                    | `Title.notebook.md` (a notebook) and `Title.page.md` (`single`), 0.6.3 on; `.ink.md` before that, still read, never written (`INK_FILE_SUFFIXES`, `inkFileSuffix`). Not the §1b per-page layout                                                                                                                                                                                     |
 | `ShapeKind` `"star"`                                                          | a snapped star; its `pts` are the closed outline                                                                                                                                                                                                                                                                                                                                    |
 | `ShapeKind` `"cloud"`                                                         | a snapped cloud; its `pts` are the closed outline (2026-10-01)                                                                                                                                                                                                                                                                                                                      |
@@ -1430,3 +1441,93 @@ studying or keep something out of sight.
   with `"requires": ["tape"]`. An older FineNotes would read a tape as pen
   ink and save it back as a thick line, so it holds the notebook read-only
   instead (§ "Payload label: refusing instead of dropping").
+
+## Board files of several boards (2026-11-10, discussion #160)
+
+An endless board file (`InkDocument.endless`, FineNotes#46) may hold more
+than one board: each page is a board that grows on its own (`GrowBoard` is
+per page id), and the view shows one at a time, like OneNote's pages.
+
+- **On disk:** `meta.endless` (with `meta.single`) is written for any number
+  of pages. A file of two or more boards is labelled `v2+boards:` with
+  `"requires": ["boards"]` (last in `FORMAT_FEATURES`), so FineNotes 2.9.1
+  and older refuse the payload and hold the note read-only instead of
+  reading the boards as pages metres long and dropping `endless` on their
+  next save (§ "Payload label: refusing instead of dropping"). A one-board
+  file keeps the plain `v2:` label and its bytes (pinned by a payload 2.9.1
+  saved, `tests/model/multi-board.test.ts`). Deleting down to one board
+  drops the label again.
+- **Reading:** `endless` is kept on a file of several pages only when its
+  `requires` names `boards`; without it (a hand edit) the pages load as a
+  notebook, none lost.
+- **A board's name** is its page's `title`, its line in the contents, as
+  for a page; unnamed boards show their number.
+- **Layout:** `layoutBoards(pages, current)` puts the board shown at the
+  origin, as `layoutBoard` did, and parks every other board below
+  `BOARD_PARKED_Y` (1e7 layout px), so `boxes[i]` stays `pages[i]` for every
+  caller and no band, hit test or scroll range reaches a parked board.
+- **View:** `InkSurface.goToPage(i)` on a board file switches boards; each
+  board keeps where it was left this session (zoom and middle point) and on
+  this device (`LastPage.boards`, by page id, with the anchors a board's
+  spot already has). Page-addressed tools (search, contents, undo's reveal)
+  switch to the board they name.
+- **A board among a notebook's pages:** `Page.board: true` (stored after
+  `backdrop`, only as `true`). The notebook is labelled `boards` too.
+  `layoutNotebook(pages, options)` is `layoutPages` with every such page
+  left out of the column or row and parked (`PageBox.parked`), its box at
+  its index; every measure of the layout (`shownBoxes`: ranges, the page
+  being read, row snapping, joins) leaves parked boxes out. The view shows a
+  board page on its own (as a board file's board) when gone to, and goes
+  back to the pages for any other page; Page Up/Down and a held row's turn
+  step over boards. A page added next to one takes the nearest page's size
+  and paper (`shapePageFor`, `paperPageFor`). `isBoardPage(doc, page)`
+  answers for both kinds.
+- **Still per file, not per board:** export makes one PDF page per board,
+  each cut to its drawing; Ask AI reads the board shown as the screen shows
+  it and any other board it is given as its whole drawing.
+
+## Named regions (2026-11-10, discussion #167)
+
+A part of a board, or of any page, lassoed and named so an ordinary Markdown
+note can embed it alone (`src/model/regions.ts`):
+
+```ts
+Page.regions?: PageRegion[]; // absent when there are none
+interface PageRegion {
+  id: string; // "rg<N>", unique in the notebook
+  name: string; // one line, trimmed, at most 80 characters, no # | ^ [ ] \
+  x: number; // page px
+  y: number;
+  w: number; // > 0
+  h: number; // > 0
+}
+```
+
+- **Boards and pages alike.** A region is a rectangle over the page; it
+  holds no elements. An embed shows whatever is drawn inside it when it
+  paints. Lassoed with Turn into › Frame to embed (the UI calls a region a
+  frame), its rectangle is the selection's bounds with 24 page px of paper,
+  rounded out to whole px, kept on the page.
+- **Loading** (`normalizeRegions`) drops, never mends: a record needs an id
+  not seen before in the notebook, a name that survives the name rules,
+  a finite `x`/`y` and a finite `w`/`h` above 0.
+- **Moves with the page:** a board growing left or up shifts regions with
+  everything else (`GrowBoard`, undone exactly), as does a page margin
+  (`x`), and a board's drawing cut out for export moves them with the cut.
+  A duplicated page starts without them (names are what links reach).
+  Insert space and the lasso do not move them.
+- **One command:** `SetRegion(page, id, value | null)` adds, renames,
+  moves or resizes (same id, same place in the list) or removes; its
+  inverse restores the page's list exactly.
+- **Embedding** (`embedTarget`, first match wins): no subpath, the whole
+  notebook (a board cut to its drawing, `boardEmbedBox`); a page
+  (`#page=3`, `#Page 3`, `#p3`), even over a region named like one; a block
+  (`#^id`), Obsidian's; any other text, the region of that name, matched
+  without regard to case or runs of spaces (`regionKey`). When the notebook
+  has no region of that name the embed is handed back to Obsidian's
+  Markdown embed, so `#Some heading` shows the note text's heading as
+  before. A link opens the notebook centred on the region.
+- **Older builds** (2.9.1 and earlier) keep the plain `v2:` label: no
+  `requires`, so they open the notebook and read everything else as before
+  (checked against 2.9.1's own decoder). They drop `regions` when they save,
+  losing only the names and frames, never ink.

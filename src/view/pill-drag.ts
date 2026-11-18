@@ -18,6 +18,7 @@
 
 import { setIcon } from "obsidian";
 import { HOLD_MS, POINTER_SLOP_PX, TOUCH_SLOP_PX } from "./page-drag-model";
+import { isElement, winOf } from "./host-window";
 
 export interface PillDragHost {
   /** The element the pill is placed in; the square is drawn there too. */
@@ -80,7 +81,7 @@ export function bindPillDrag(pill: HTMLElement, drag: PillDragHost): void {
 
   const press = (target: EventTarget | null, x: number, y: number): boolean => {
     if (!drag.canDrag()) return false;
-    if (target instanceof Element && target.closest(NOT_A_HANDLE)) return false;
+    if (isElement(target) && target.closest(NOT_A_HANDLE)) return false;
     window.clearTimeout(timer);
     startX = x;
     startY = y;
@@ -151,14 +152,14 @@ export function bindPillDrag(pill: HTMLElement, drag: PillDragHost): void {
       else place(e.clientX, e.clientY);
     };
     const up = (e: PointerEvent): void => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
+      winOf(pill).removeEventListener("pointermove", move);
+      winOf(pill).removeEventListener("pointerup", up);
+      winOf(pill).removeEventListener("pointercancel", up);
       end(e.clientX, e.clientY);
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    winOf(pill).addEventListener("pointermove", move);
+    winOf(pill).addEventListener("pointerup", up);
+    winOf(pill).addEventListener("pointercancel", up);
   });
 
   // The long press's menu, and the click a hold ends in.

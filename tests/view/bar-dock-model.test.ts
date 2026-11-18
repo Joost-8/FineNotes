@@ -304,3 +304,24 @@ describe("a popover beside an upright pill", () => {
     expect(sideLift(300, 900, 8, 700)).toBe(158);
   });
 });
+
+describe("a popover under the pill in a narrow pane (FineNotes#210)", () => {
+  // iPad Split View: a pane 375 wide, the pen's ⌄ 60 px from its left edge,
+  // the pen settings page 320 wide. The same sum slides it sideways.
+  it("slides right until its left edge is inside the pane", () => {
+    const shift = sideLift(60, 320, 8, 375 - 8);
+    expect(60 + shift - 320 / 2).toBe(8);
+  });
+
+  it("gives the same answer when run again, whatever slide it had before", () => {
+    // Worked out from where it rests (centred on its button), never from
+    // where an earlier slide left it, so the menu's second page lands alike.
+    expect(sideLift(60, 320, 8, 367)).toBe(sideLift(60, 320, 8, 367));
+    expect(sideLift(60, 240, 8, 367)).toBe(68);
+    expect(sideLift(60, 320, 8, 367)).toBe(108);
+  });
+
+  it("keeps a popover wider than the pane against its left edge", () => {
+    expect(60 + sideLift(60, 400, 8, 367) - 400 / 2).toBe(8);
+  });
+});

@@ -5,7 +5,6 @@ import {
   ERASER_MAX_SIZE,
   ERASER_MIN_SIZE,
   eraserStops,
-  quickEraserSizes,
 } from "../../src/model/eraser-sizes";
 
 describe("eraserStops", () => {
@@ -44,33 +43,5 @@ describe("clampEraserSize", () => {
     expect(clampEraserSize(Infinity)).toBe(DEFAULT_ERASER_SIZE);
     expect(clampEraserSize(0)).toBe(DEFAULT_ERASER_SIZE);
     expect(clampEraserSize(-5)).toBe(DEFAULT_ERASER_SIZE);
-  });
-});
-
-describe("quickEraserSizes", () => {
-  it("shows the presets when the live size is one of them", () => {
-    expect(quickEraserSizes(24)).toEqual([...ERASER_SIZES]);
-  });
-
-  it("puts a slider size in place of the nearest preset, by ratio", () => {
-    // 30 is nearer 24 than 48 by ratio (1.25x vs 1.6x).
-    expect(quickEraserSizes(30)).toEqual([10, 30, 48]);
-    // 6 replaces 10, 100 replaces 48.
-    expect(quickEraserSizes(6)).toEqual([6, 24, 48]);
-    expect(quickEraserSizes(100)).toEqual([10, 24, 100]);
-  });
-
-  it("stays sorted smallest first", () => {
-    const quick = quickEraserSizes(17);
-    expect([...quick].sort((a, b) => a - b)).toEqual(quick);
-  });
-
-  it("does not change the shared presets", () => {
-    quickEraserSizes(100);
-    expect([...ERASER_SIZES]).toEqual([10, 24, 48]);
-  });
-
-  it("ignores a nonsense live size", () => {
-    expect(quickEraserSizes(Number.NaN)).toEqual([...ERASER_SIZES]);
   });
 });

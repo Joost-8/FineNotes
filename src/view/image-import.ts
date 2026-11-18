@@ -306,6 +306,21 @@ export async function saveImageAttachment(
 /**
  * Open the system picker for one picture: the photo library, or with
  * `capture` the camera. Resolves with the chosen file, or `null` on cancel.
+ * See {@link pickImageFiles}.
+ */
+export function pickImageFile(
+  host: HTMLElement,
+  capture: boolean,
+  accept = "image/*",
+): Promise<File | null> {
+  return pickImageFiles(host, capture, accept, false).then((files) => files[0] ?? null);
+}
+
+/**
+ * Open the system picker for pictures: the photo library, where several may
+ * be chosen at once (FineNotes#211), or with `capture` the camera, which
+ * takes one. Resolves with the chosen files in the order the picker gave
+ * them, or none on cancel.
  *
  * Must be called synchronously from the user's tap: iPadOS only opens a
  * picker for a `click()` made inside a user gesture. The input is appended to
@@ -316,28 +331,30 @@ export async function saveImageAttachment(
  *
  * `accept` widens what may be picked (scanning also takes a PDF).
  */
-export function pickImageFile(
+export function pickImageFiles(
   host: HTMLElement,
   capture: boolean,
   accept = "image/*",
-): Promise<File | null> {
+  multiple = !capture,
+): Promise<File[]> {
   const input = host.createEl("input", {
     cls: "goodobsidian-file-input",
     attr: { type: "file", accept, "aria-hidden": "true", tabindex: "-1" },
   });
   if (capture) input.setAttribute("capture", "environment");
+  else if (multiple) input.multiple = true;
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (file: File | null): void => {
+    const finish = (files: File[]): void => {
       if (settled) return;
       settled = true;
       input.remove();
-      resolve(file);
+      resolve(files);
     };
-    input.addEventListener("change", () => finish(input.files?.[0] ?? null));
+    input.addEventListener("change", () => finish(Array.from(input.files ?? [])));
     // `cancel` is recent (Safari 16.4); without it a dismissed picker leaves
     // the hidden input behind until the view closes, which is harmless.
-    input.addEventListener("cancel", () => finish(null));
+    input.addEventListener("cancel", () => finish([]));
     input.click();
   });
 }

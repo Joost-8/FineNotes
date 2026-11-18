@@ -302,6 +302,20 @@ function pullFractionSides(
       else if (mid > y && b.minY >= y - 0.2 * digit && b.minY <= y + digit) under.push(s);
     });
     if (over.length === 0 || under.length === 0) return;
+    // The small marks of a side lie further from the bar than its digits'
+    // feet: a raised dot, the bar of a crossed 7 (FineNotes#178, "7·2 over
+    // 3" with a short "=" read as 72 over 3). Whatever lies inside a side,
+    // between its far edge and the bar, is that side's too.
+    const overTop = Math.min(...over.map((s) => strokeBounds(s)?.minY ?? y));
+    const underBottom = Math.max(...under.map((s) => strokeBounds(s)?.maxY ?? y));
+    ink.forEach((s, i) => {
+      const b = boxes[i];
+      if (!b || s === bar || over.includes(s) || under.includes(s)) return;
+      const x = (b.minX + b.maxX) / 2;
+      if (x < box.minX - 0.1 * w || x > box.maxX + 0.1 * w) return;
+      if (b.maxY <= y && b.minY >= overTop) over.push(s);
+      else if (b.minY >= y && b.maxY <= underBottom) under.push(s);
+    });
     for (const s of [bar, ...over, ...under]) {
       if (keptIds.has(s.id)) continue;
       keptIds.add(s.id);

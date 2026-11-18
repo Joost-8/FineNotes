@@ -36,6 +36,8 @@ export interface PageSource {
    * lets a word be a little off in it.
    */
   guess?: true;
+  /** The text box it is, for a text box's text (#112's results list). */
+  boxId?: string;
 }
 
 /** Everything searchable on one page. */
@@ -172,7 +174,7 @@ export function collectPageText(
     if (own) sources.push({ kind: "handwriting", text: own });
     if (server && server !== own) sources.push({ kind: "handwriting", text: server });
     for (const box of page.textBoxes ?? []) {
-      if (box.text?.trim()) sources.push({ kind: "text", text: box.text });
+      if (box.text?.trim()) sources.push({ kind: "text", text: box.text, boxId: box.id });
     }
     const printed = pdfText(page);
     if (printed?.trim()) sources.push({ kind: "pdf", text: printed });

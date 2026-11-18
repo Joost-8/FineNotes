@@ -53,12 +53,22 @@ import {
   sizeLabel,
 } from "../recognition/ask-attachments";
 import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-session";
+import { type AskUsage, usageMark } from "../recognition/ask-usage";
+import { ASK_VAULT_SCOPES, type AskVaultScope } from "../recognition/vault-context";
+
+/** The reach as a mark: the notebook alone, its folder, or the whole vault. */
+const REACH_ICON: Readonly<Record<AskVaultScope, string>> = {
+  off: "notebook",
+  folder: "folder-search",
+  vault: "library",
+};
 import { bytesToBase64 } from "../recognition/audio-request";
 import { type SavedChatEntry, attachableFiles, readAttachment } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { keyboardHeight } from "./keyboard";
 import { writeSystemText } from "./system-clipboard";
+import { sizeObserver } from "./host-window";
 
 export interface AskAiHost {
   session: AskSession;
@@ -66,6 +76,10 @@ export interface AskAiHost {
   sourcePath: string;
   /** Who answers ("Anthropic (Claude)"), for the line under the pages. */
   target: string;
+  /** Open an `obsidian://finenotes?…` link from an answer (a handbook entry) in FineNotes itself. */
+  openAppLink?: (url: string) => void;
+  /** Whether an answer shows what it cost (the setting). */
+  showCost?: () => boolean;
   /** The page being read, 1-based. */
   currentPage: () => number;
   /** Whether a page (1-based) has anything on it to ask about. */
@@ -76,6 +90,12 @@ export interface AskAiHost {
   insert: (text: string) => boolean;
   /** Place an SVG drawing from an answer on the page being read. */
   insertDrawing: (svg: string) => Promise<boolean>;
+  /**
+   * The whole notebook as one PDF to attach, for a notebook with more pages
+   * than a question can send as pictures; `onProgress` counts pages made.
+   * Null when it could not be made.
+   */
+  notebookAsPdf?: (onProgress: (done: number, total: number) => void) => Promise<ChatFile | null>;
   /** The notebook's own PDFs, each with the 1-based pages printed on it. */
   notebookPdfs: () => PdfBehind[];
   /** This notebook's saved chats, newest first. */
@@ -84,6 +104,8 @@ export interface AskAiHost {
   openSaved: (path: string) => Promise<void>;
   /** Remember "Save chat" for the next new chat. */
   rememberSave: (save: boolean) => void;
+  /** What Ask AI may read besides this notebook (the setting), and changing it from the chat. */
+  vaultScope?: { get: () => AskVaultScope; set: (scope: AskVaultScope) => void };
 }
 
 /**
@@ -165,7 +187,14 @@ export class AskChat {
   private filesEl: HTMLElement | null = null;
   /** The notebook's PDFs in the picker, by vault path. */
   private readonly pdfRows = new Map<string, { row: HTMLButtonElement; state: HTMLElement }>();
+  /** The whole notebook as one PDF, first in the PDF list (more pages than a question takes). */
+  private wholeRow: { row: HTMLButtonElement; state: HTMLElement } | null = null;
+  /** The whole notebook's PDF, once made: attached, or sent with a question. */
+  private wholeFile: ChatFile | null = null;
+  /** "Making PDF… n/N" while it is made. */
+  private wholeProgress: string | null = null;
   private saveButton: HTMLButtonElement | null = null;
+  private reachButton: HTMLButtonElement | null = null;
   private chatsButton: HTMLButtonElement | null = null;
   private newChatButton: HTMLButtonElement | null = null;
 
@@ -221,6 +250,19 @@ export class AskChat {
     this.chatsButton = this.toolButton(tools, "history", t("ai.ask.chats"), (event) => {
       void this.showChats(event);
     });
+    // What it may read, right of the title: the reach's icon and its name, so
+    // the choice is read at a glance and changed in one tap.
+    if (this.host.vaultScope) {
+      const chip = this.frame.title.createEl("button", {
+        cls: "goodobsidian-chat-reach clickable-icon",
+        attr: { "aria-haspopup": "true" },
+      });
+      chip.createSpan({ cls: "goodobsidian-chat-reach-icon" });
+      chip.createSpan({ cls: "goodobsidian-chat-reach-label" });
+      setIcon(chip.createSpan({ cls: "goodobsidian-chat-reach-chevron" }), "chevron-down");
+      chip.addEventListener("click", () => this.showReachMenu());
+      this.reachButton = chip;
+    }
     const other = this.frame.layout === "window" ? "sidebar" : "window";
     this.toolButton(
       tools,
@@ -276,7 +318,7 @@ export class AskChat {
     this.keyboard.watch(input, composer);
 
     this.unsubscribe = this.session.onChange(() => this.render());
-    this.resize = new ResizeObserver(() => this.syncInput());
+    this.resize = sizeObserver(contentEl, () => this.syncInput());
     this.resize.observe(contentEl);
     this.render();
     this.scrollToEnd();
@@ -310,6 +352,44 @@ export class AskChat {
     button.createSpan({ cls: "goodobsidian-chat-tool-label", text: label });
     button.addEventListener("click", onClick);
     return button;
+  }
+
+  // --- What it may read -----------------------------------------------------
+
+  /** The three reaches, the one in use checked; the choice is the setting's. */
+  private showReachMenu(): void {
+    const scope = this.host.vaultScope;
+    const anchor = this.reachButton?.getBoundingClientRect();
+    if (!scope || !anchor) return;
+    this.closePicker();
+    const menu = new Menu();
+    const now = scope.get();
+    for (const choice of ASK_VAULT_SCOPES) {
+      menu.addItem((item) =>
+        item
+          .setTitle(t(`ai.ask.reach.${choice}`))
+          .setIcon(REACH_ICON[choice])
+          .setChecked(choice === now)
+          .onClick(() => {
+            scope.set(choice);
+            this.renderReach();
+          }),
+      );
+    }
+    menu.showAtPosition({ x: anchor.left, y: anchor.bottom + 4 });
+  }
+
+  /** The pill shows the reach in use: its icon and its name. */
+  private renderReach(): void {
+    const button = this.reachButton;
+    const scope = this.host.vaultScope;
+    if (!button || !scope) return;
+    const now = scope.get();
+    const icon = button.querySelector<HTMLElement>(".goodobsidian-chat-reach-icon");
+    if (icon) setIcon(icon, REACH_ICON[now]);
+    button.querySelector(".goodobsidian-chat-reach-label")?.setText(t(`ai.ask.reach.${now}`));
+    button.setAttribute("aria-label", t("ai.ask.reachNow", { reach: t(`ai.ask.reach.${now}`) }));
+    button.disabled = this.session.busy;
   }
 
   // --- Pages ----------------------------------------------------------------
@@ -467,7 +547,13 @@ export class AskChat {
     if (session.screen) {
       return t(saved ? "ai.ask.noteScreenSaved" : "ai.ask.noteScreen", { target });
     }
-    if (session.selected.length === 0 && sent.size === 0 && session.attachments.length === 0) {
+    // While a question is out its files have left the field, but it is asking, not waiting for a pick.
+    if (
+      session.selected.length === 0 &&
+      sent.size === 0 &&
+      session.attachments.length === 0 &&
+      !session.busy
+    ) {
       return t(saved ? "ai.ask.notePickSaved" : "ai.ask.notePick");
     }
     // Saying it can use the notebook also tells which build is running.
@@ -530,6 +616,36 @@ export class AskChat {
     input.value = "";
   }
 
+  /**
+   * Attach the notebook's PDF in place of the picked pages, making it first
+   * (once: taken off and attached again, the same file goes).
+   */
+  private async attachWholeNotebook(make: NonNullable<AskAiHost["notebookAsPdf"]>): Promise<void> {
+    if (this.wholeProgress !== null) return;
+    let file = this.wholeFile;
+    if (!file) {
+      this.wholeProgress = t("ai.ask.makingPdf", { done: 0, total: this.session.totalPages });
+      this.renderWhole();
+      try {
+        file = await make((done, total) => {
+          this.wholeProgress = t("ai.ask.makingPdf", { done, total });
+          this.renderWhole();
+        });
+      } finally {
+        this.wholeProgress = null;
+      }
+      if (!file) {
+        this.renderWhole();
+        new Notice(t("ai.ask.pdfFailed"));
+        return;
+      }
+      this.wholeFile = file;
+    }
+    const refusal = this.session.attachInstead(file);
+    if (refusal) new Notice(refusal);
+    this.renderWhole();
+  }
+
   private attachOrSay(file: ChatFile): void {
     const refusal = this.session.attach(file);
     if (refusal) new Notice(t("ai.ask.refusal", { reason: refusal }));
@@ -568,11 +684,18 @@ export class AskChat {
    * again to take it off.
    */
   private buildPdfList(picker: HTMLElement): void {
-    const pdfs = this.host.notebookPdfs();
     // Closed with its ✕, it stays closed while the notebook is open, and the
     // pages get its room. The paperclip still attaches any PDF.
-    if (pdfs.length === 0 || this.session.pdfListClosed) return;
+    const pdfs = this.session.pdfListClosed ? [] : this.host.notebookPdfs();
+    // More pages than a question takes as pictures: the whole notebook as one
+    // PDF, a row like the notebook's own PDFs, which the AI reads page by page.
+    const makePdf = this.host.notebookAsPdf;
+    const whole =
+      makePdf && this.session.totalPages > ASK_MAX_PAGES && !this.session.screen ? makePdf : null;
+    if (pdfs.length === 0 && !whole) return;
     const section = picker.createDiv({ cls: "goodobsidian-chat-pdfs" });
+    if (whole) this.buildWholeRow(section.createDiv({ cls: "goodobsidian-chat-pdfs-list" }), whole);
+    if (pdfs.length === 0) return;
     const head = section.createDiv({ cls: "goodobsidian-chat-pdfs-head" });
     const words = head.createDiv({ cls: "goodobsidian-chat-pdfs-words" });
     words.createSpan({ cls: "goodobsidian-chat-pdfs-title", text: t("ai.ask.pdfsTitle") });
@@ -587,7 +710,10 @@ export class AskChat {
     setIcon(close, "x");
     close.addEventListener("click", () => {
       this.session.pdfListClosed = true;
-      section.remove();
+      // The whole notebook's row stays: only the notebook's own PDFs go.
+      head.remove();
+      list.remove();
+      if (!this.wholeRow) section.remove();
       this.pdfRows.clear();
     });
     const list = section.createDiv({ cls: "goodobsidian-chat-pdfs-list" });
@@ -610,8 +736,55 @@ export class AskChat {
     }
   }
 
+  /** The whole notebook's row: its icon, name and page count, and Attach. */
+  private buildWholeRow(list: HTMLElement, make: NonNullable<AskAiHost["notebookAsPdf"]>): void {
+    const row = list.createEl("button", { cls: "goodobsidian-chat-pdf clickable-icon" });
+    setIcon(row.createSpan({ cls: "goodobsidian-chat-pdf-icon" }), "files");
+    const text = row.createSpan({ cls: "goodobsidian-chat-pdf-text" });
+    text.createSpan({ cls: "goodobsidian-chat-pdf-name", text: t("ai.ask.wholeAsPdf") });
+    text.createSpan({
+      cls: "goodobsidian-chat-pdf-pages",
+      text: tn("ai.ask.wholePages", this.session.totalPages),
+    });
+    const state = row.createSpan({ cls: "goodobsidian-chat-pdf-state" });
+    row.addEventListener("click", () => {
+      const attached = this.wholeFile && this.session.attachments.includes(this.wholeFile);
+      if (attached && this.wholeFile) this.session.detach(this.wholeFile);
+      else void this.attachWholeNotebook(make);
+    });
+    this.wholeRow = { row, state };
+  }
+
+  /** The whole notebook's row: Attach, Making PDF… n/N, Attached, or In chat. */
+  private renderWhole(): void {
+    const whole = this.wholeRow;
+    if (!whole) return;
+    const session = this.session;
+    const file = this.wholeFile;
+    const inChat = !!file && session.sentFiles.includes(file);
+    const attached = !!file && session.attachments.includes(file);
+    const making = this.wholeProgress !== null;
+    whole.row.toggleClass("is-attached", attached || inChat);
+    whole.row.disabled = session.busy || inChat || making;
+    whole.row.setAttribute("aria-pressed", String(attached));
+    const { state } = whole;
+    state.empty();
+    if (making) {
+      state.createSpan({ text: this.wholeProgress ?? "" });
+    } else if (inChat) {
+      state.setText(t("ai.ask.inChat"));
+    } else if (attached) {
+      setIcon(state.createSpan(), "check");
+      state.createSpan({ text: t("ai.ask.attached") });
+    } else {
+      setIcon(state.createSpan(), "paperclip");
+      state.createSpan({ text: t("ai.ask.attachShort") });
+    }
+  }
+
   /** Each PDF row: Attach, Attached, or In chat. */
   private renderPdfs(): void {
+    this.renderWhole();
     const session = this.session;
     const sent = session.sentFiles;
     for (const [path, { row, state }] of this.pdfRows) {
@@ -668,6 +841,7 @@ export class AskChat {
     }
     if (this.pagesButton) this.pagesButton.disabled = busy;
     if (this.chatsButton) this.chatsButton.disabled = busy;
+    this.renderReach();
     if (this.attachButton) this.attachButton.disabled = busy;
     if (this.newChatButton) {
       this.newChatButton.disabled = busy;
@@ -761,7 +935,7 @@ export class AskChat {
     for (let i = this.shownTexts.length; i < texts.length; i++) {
       const turn = session.turns[i];
       if (turn.role === "user") this.questionRow(thread, texts[i], turn.pages, turn.files);
-      else lastAnswer = this.answerRow(thread, texts[i], turn.actions);
+      else lastAnswer = this.answerRow(thread, texts[i], turn.actions, turn.usage);
     }
     this.shownTexts = texts;
 
@@ -876,7 +1050,12 @@ export class AskChat {
     retry.addEventListener("click", () => this.submit(question));
   }
 
-  private answerRow(parent: HTMLElement, markdown: string, done?: readonly string[]): HTMLElement {
+  private answerRow(
+    parent: HTMLElement,
+    markdown: string,
+    done?: readonly string[],
+    usage?: AskUsage,
+  ): HTMLElement {
     const { row, body } = this.aiRow(parent);
     // What Claude did in the notebook on the way to the answer.
     if (done?.length) {
@@ -899,6 +1078,25 @@ export class AskChat {
     } else {
       text.setText(markdown);
     }
+    // A note the answer links to (one it read, or one it wrote) opens in a tab beside the notebook.
+    text.addEventListener("click", (event) => {
+      // A handbook link (finenotes_help) opens its tip or switch here, not through the system.
+      const own = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+        'a[href^="obsidian://finenotes"]',
+      );
+      if (own && this.host.openAppLink) {
+        event.preventDefault();
+        this.host.openAppLink(own.href);
+        return;
+      }
+      const link = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+        "a.internal-link",
+      );
+      const target = link?.getAttribute("data-href") ?? link?.getAttribute("href");
+      if (!link || !target) return;
+      event.preventDefault();
+      void this.app.workspace.openLinkText(target, this.host.sourcePath, "tab");
+    });
 
     const actions = body.createDiv({ cls: "goodobsidian-chat-actions" });
     const copy = actions.createEl("button", { cls: "goodobsidian-chat-action clickable-icon" });
@@ -919,6 +1117,23 @@ export class AskChat {
         new Notice(t("ai.ask.insertedText"));
       }
     });
+
+    // What the answer cost, as a mark: the numbers behind it in its tooltip.
+    const mark = this.host.showCost?.()
+      ? usageMark(usage, (count) => t("ai.ask.tokens", { count }))
+      : null;
+    if (mark && usage) {
+      actions.createSpan({
+        cls: "goodobsidian-chat-cost",
+        text: mark,
+        attr: {
+          "aria-label": t("ai.ask.costTip", {
+            input: (usage.input + usage.cacheRead + usage.cacheWrite).toLocaleString(),
+            output: usage.output.toLocaleString(),
+          }),
+        },
+      });
+    }
     return row;
   }
 
@@ -1012,6 +1227,8 @@ export type AskLayout = "window" | "sidebar";
 export interface AskChatFrame {
   /** The window or the panel; carries `goodobsidian-ask-frame`. */
   el: HTMLElement;
+  /** The "Ask" title, which the reach pill follows. */
+  title: HTMLElement;
   /** Where the chat's own elements go. */
   content: HTMLElement;
   keyboard: DialogKeyboard;
@@ -1039,9 +1256,12 @@ export class AskAiModal extends Modal {
       "goodobsidian-ask-frame",
     );
     this.titleEl.setText(t("ai.ask.title"));
+    // A row, so the reach pill sits right of the title.
+    this.titleEl.addClass("goodobsidian-ask-title");
     this.contentEl.empty();
     this.chat = new AskChat(this.app, this.host, {
       el: this.modalEl,
+      title: this.titleEl,
       content: this.contentEl,
       keyboard: new DialogKeyboard(this.modalEl, { fit: true }),
       layout: "window",
@@ -1094,7 +1314,7 @@ export class AskChatPanel {
     if (this.isOpen) return;
     this.el.empty();
     const head = this.el.createDiv({ cls: "goodobsidian-chatpanel-head" });
-    head.createDiv({ cls: "goodobsidian-chatpanel-title", text: t("ai.ask.title") });
+    const title = head.createDiv({ cls: "goodobsidian-chatpanel-title", text: t("ai.ask.title") });
     const close = head.createEl("button", {
       cls: "goodobsidian-chatpanel-close clickable-icon",
       attr: { "aria-label": t("common.close") },
@@ -1105,6 +1325,7 @@ export class AskChatPanel {
     this.el.removeClass("is-hidden");
     this.chat = new AskChat(this.app, this.callbacks.host(), {
       el: this.el,
+      title,
       content,
       keyboard: new DialogKeyboard(this.el, { pad: true }),
       layout: "sidebar",

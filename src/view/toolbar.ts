@@ -68,34 +68,59 @@ import {
   type RulerKind,
 } from "../canvas/ruler-geometry";
 import { LASER_COLOR } from "../canvas/laser-trail";
+import { paintTape } from "../canvas/tape-paint";
 import {
   drawingToolOf,
   optionsAfterSwitch,
   PEN_OPTIONS_ON_WRITE,
   PEN_OPTIONS_ON_WRITE_NAMES,
   type PenOptionsOnWrite,
+  keyPenTarget,
+  type PenKey,
   selectedTool,
+  shortcutPenType,
 } from "./tool-return";
 import {
   BAR_ITEM_ICONS,
   BAR_ITEM_LABELS,
   type BarItemId,
+  type BarPreset,
+  type CoreItemId,
+  type PenSlotId,
   type ToolbarLayout,
   ZONES,
   type Zone,
   barItems as layoutBarItems,
   defaultLayout,
+  isFoldedInPreset,
+  isPenSlot,
   menuItems,
   normalizeLayout,
+  penButtonType,
+  penMenuPin,
+  penRowOffers,
+  penSlotInHand,
+  penSlotsOf,
+  rememberPenType,
+  penTypesOnBar,
+  placeOf,
+  savedPenSlot,
+  setPenSlot,
+  slotPenType,
+  slotSavedId,
 } from "./toolbar-layout";
 import { ToolbarEditor } from "./toolbar-edit";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import {
+  MAX_TAPE_HEIGHT,
+  MIN_TAPE_HEIGHT,
   TAPE_COLORS,
-  TAPE_HEIGHTS,
   type TapeMode,
   tapeColorOf,
   tapeHeightOf,
+  tapeHeightsOf,
+  tapePresetIndex,
+  withTapePreset,
   tapeModeOf,
 } from "../model/cover-tape";
 import { magnifierTap, zoomButtonState } from "../model/zoom-box";
@@ -108,7 +133,7 @@ import { errorMessage } from "../util/errors";
 import { downloadLabel } from "../model/font-catalogue";
 import { familyStack, matchesFamily } from "../model/text-family";
 import type { LookPalette, LookStyle } from "../model/look";
-import { DEFAULT_ERASER_SIZE, ERASER_SIZES, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
+import { DEFAULT_ERASER_SIZE, ICON_STYLUS_ONLY, PALETTE, SIZES } from "../constants";
 import {
   CONNECTOR_PRESETS,
   SHAPE_PRESETS,
@@ -203,14 +228,36 @@ import {
   sideLift,
   uprightButtonSize,
 } from "./bar-dock-model";
-import { NO_PILL_ROW, type PillRow, pageTopShift, pillRow, pillRowEdge } from "./pill-row-model";
+import {
+  NO_PILL_ROW,
+  type PillRow,
+  foldedBadge,
+  pageTopShift,
+  penWidthsShown,
+  pillFitsBar,
+  pillRow,
+  pillRowEdge,
+  widestRow,
+} from "./pill-row-model";
 import { hiddenEnds, pageScroll, scrollToShow } from "./swatch-drag-model";
 import { closingPressStops } from "./popover-dismiss";
 import { formatMm } from "../model/units";
 import { chosenWidth, nearestStop, widthStops } from "../model/pen-widths";
 import { dragRange } from "./range-drag";
+import { RowDrag } from "./row-drag";
+import { moveTo } from "./row-drag-model";
 import { syncRangeFill } from "./range-fill";
-import { clampEraserSize, eraserStops, quickEraserSizes } from "../model/eraser-sizes";
+import { clampEraserSize, eraserStops } from "../model/eraser-sizes";
+import {
+  DEFAULT_WIDTH_PRESETS,
+  type WidthPresets,
+  chosenSlot,
+  eraserPresetsOf,
+  presetsFor,
+  withEraserPreset,
+  withWidthPreset,
+  withoutWidthPresets,
+} from "../model/width-presets";
 import { PANEL_SLIDE_MS, prefersReducedMotion, springCurve } from "./motion";
 import {
   EASE_OUT_FALLBACK,
@@ -243,8 +290,10 @@ import type { HighlighterTip, PenPreferences, ReturnToPen, SnapMode } from "../s
 import {
   MAX_SAVED_PENS,
   type SavedPen,
+  type SavedPenType,
   mmText,
   samePen,
+  savedPenById,
   savedPenLabel,
   widthFromMm,
 } from "../model/saved-pens";
@@ -264,6 +313,7 @@ import {
   nearestFillOpacity,
   readShapeToolStyle,
 } from "../model/shape-style";
+import { isElement, sizeObserver, watchSize, winOf } from "./host-window";
 
 /**
  * Tools selectable in the toolbar. Pen, highlighter and shape produce
@@ -509,6 +559,27 @@ export function lassoFilterFor(state: ToolbarState): LassoFilter {
   return lassoFilterOf(state.lassoFilter);
 }
 
+/** A symbol for each kind of thing the lasso picks up, for its row in the bar. */
+/** The laser's colours in a docked bar: its own red first. */
+const LASER_COLORS: readonly string[] = [
+  LASER_COLOR,
+  "#ff9500",
+  "#ffcc00",
+  "#34c759",
+  "#0a84ff",
+  "#bf5af2",
+];
+
+const LASSO_FILTER_ICONS: Record<(typeof LASSO_FILTER_KEYS)[number], string> = {
+  handwriting: "signature",
+  images: "image",
+  shapes: "shapes",
+  arrows: "move-up-right",
+  textBoxes: "type",
+  tables: "table",
+  graphs: "chart-spline",
+};
+
 const LASSO_MODE_LABELS: Record<LassoMode, string> = {
   get rect() {
     return t("toolbar.lasso.mode.rect");
@@ -605,6 +676,9 @@ const SHAPE_LABELS: Record<ShapeMode, string> = {
   get arrow() {
     return t("toolbar.shape.arrow");
   },
+  get elbow() {
+    return t("toolbar.shape.elbow");
+  },
   get table() {
     return t("toolbar.shape.table");
   },
@@ -679,6 +753,13 @@ export interface ToolbarState {
   eraserMode?: EraserMode;
   /** Eraser diameter in page px. `undefined` counts as {@link DEFAULT_ERASER_SIZE}. */
   eraserSize?: number;
+  /**
+   * Each pen type's three width presets (`model/width-presets.ts`). A type
+   * left out, or `undefined`, has the defaults.
+   */
+  widthPresets?: WidthPresets;
+  /** The eraser's three preset sizes. `undefined`: the defaults. */
+  eraserPresets?: number[];
   /** What the eraser may erase. `undefined` counts as everything. */
   eraserFilter?: EraserFilter;
   /**
@@ -724,6 +805,8 @@ export interface ToolbarState {
   tapeColor?: string;
   /** Cover tape's height, page px. `undefined` counts as the medium height. */
   tapeHeight?: number;
+  /** The tape pill's three heights, each as the slider left it. `undefined`: the defaults. */
+  tapeHeights?: readonly number[];
   /** How a new cover tape is laid. `undefined` counts as straight. */
   tapeMode?: TapeMode;
   /** Whether a cover tape dragged along a PDF's text covers its lines. `undefined` is off. */
@@ -753,6 +836,10 @@ export interface ToolbarCallbacks {
   onPenTypeChange?: (spec: PenTypeSpec) => void;
   /** Eraser mode or size changed. Hosts persist it across sessions. */
   onEraserChange?: (mode: EraserMode, size: number) => void;
+  /** A pen type's width presets changed (`ToolbarState.widthPresets`). Hosts persist them. */
+  onWidthPresets?: (presets: WidthPresets) => void;
+  /** The eraser's preset sizes changed (`ToolbarState.eraserPresets`). Hosts persist them. */
+  onEraserPresets?: (presets: number[]) => void;
   /**
    * Screen px per page px for the size previews: the pen's at the zoom now,
    * the eraser's at fit-to-page. Left out, a page px is drawn as a screen px.
@@ -837,8 +924,13 @@ export interface ToolbarCallbacks {
   onPenPreferences?: (patch: Partial<PenPreferences>) => void;
   /** The Shape tool's colour changed. Hosts persist it. */
   onShapeColorChange?: (color: string) => void;
-  /** Cover tape's colour, height or mode changed. Hosts persist it. */
-  onTapeChange?: (color: string, height: number, mode: TapeMode) => void;
+  /** Cover tape's colour, height, mode or one of its three heights changed. Hosts persist it. */
+  onTapeChange?: (
+    color: string,
+    height: number,
+    mode: TapeMode,
+    heights: readonly number[],
+  ) => void;
   /** Cover tape's Snap to PDF text was switched. Hosts persist it. */
   onTapeSnapTextChange?: (on: boolean) => void;
   /**
@@ -875,8 +967,17 @@ export interface ToolbarCallbacks {
   // --- Saved pens (FineNotes#24, #25). Without `savedPens`, no star in the pill.
   /** The saved pens, as the settings have them now. */
   savedPens?: () => readonly SavedPen[];
-  /** "Save current pen": add `pen` to the saved pens. Hosts persist it. */
+  /** Add `pen` to the saved pens (Customize toolbar's New pen chip). Hosts persist it. */
   onSavePen?: (pen: SavedPen) => void;
+  /**
+   * The pen dialog for a new saved pen, starting from `start` (FineNotes#211);
+   * `onMade` gets the pen once it is saved, its id included.
+   */
+  onNewPen?: (start: SavedPen, onMade: (pen: SavedPen) => void) => void;
+  /** The saved pens dragged into another order (FineNotes#211). Hosts persist it. */
+  onReorderPens?: (pens: SavedPen[]) => void;
+  /** A saved pen deleted from Saved pens or Customize toolbar. Hosts persist it. */
+  onDeletePen?: (id: string) => void;
   /** "Edit saved pens": open where they are edited (the settings). */
   onEditPens?: () => void;
   /** Bring the ruler out or put it away. Without it the bar has no ruler. */
@@ -900,6 +1001,8 @@ export interface ToolbarCallbacks {
   onSetBarDock?: (dock: BarDock) => void;
   /** Customize toolbar switched "Dock tool options" (`pill-row-model.ts`). */
   onSetPillRow?: (on: boolean) => void;
+  /** Customize toolbar switched the bar's preset (`toolbar-layout.ts`, `BarPreset`). */
+  onSetPreset?: (preset: BarPreset) => void;
   /** The look worn now (`model/look.ts`), for Customize toolbar's Style and Colours rows. */
   lookNow?: () => { style: LookStyle; palette: LookPalette };
   /** Customize toolbar picked a style or colours. */
@@ -932,6 +1035,8 @@ export interface ToolbarOptions {
   barDock?: BarDock;
   /** "Dock tool options": the pill by the bar is a row the page starts past (`pill-row-model.ts`). */
   pillRow?: boolean;
+  /** The bar's preset: in Essentials the end's buttons live in ⋯ (`isFoldedInPreset`). */
+  preset?: BarPreset;
   /** Where every button is (`toolbar-layout.ts`); the default layout when absent. */
   layout?: ToolbarLayout;
   /** Stylus-only mode is on, so its toolbar toggle starts on. */
@@ -976,6 +1081,9 @@ export interface TextAnchor {
   moving?: boolean;
 }
 
+/** A bar button that may fold into ⋯, with its rank and the tool it picks, if any. */
+type FoldableItem = FoldedBarItem & { rank: number; button: HTMLElement; tool?: ActiveTool };
+
 /** The least room kept between the centred tools and the groups beside them. */
 const BAR_GAP = 8;
 
@@ -993,9 +1101,10 @@ export interface FoldedBarItem {
 
 /**
  * INVARIANT: the tool bar never scrolls sideways. When its buttons do not
- * fit, they fold into the ⋯ panel, least important first, in this order
- * (lower folds first). Undo, the pen, the eraser and ⋯ itself never fold,
- * and neither does the tool in hand.
+ * fit, they fold into the ⋯ panel (`foldOrder`): the buttons at the sides
+ * from their outer ends in, as the user arranged them; the rest, and the
+ * tools last, in this order (lower folds first). Undo, redo, the pen, the eraser and ⋯ itself never
+ * fold, and neither does the tool in hand.
  */
 const FOLD_RANK = {
   fullScreen: 0,
@@ -1018,8 +1127,8 @@ const FOLD_RANK = {
   select: 11,
   stylus: 11.8,
   addPage: 12,
-  redo: 13,
   thumbnails: 14,
+  home: 14.5,
 } as const;
 
 /** The sticky-note colour picked last, ringed in the colours; the classic yellow at first. */
@@ -1028,8 +1137,8 @@ let lastStickyColor = DEFAULT_STICKY_COLOR;
 /** The strip of the ruler button, from its right edge, that opens its popover: the chevron, px. */
 const RULER_CARET_STRIP = 22;
 
-/** How many stroke widths tier 2 shows before the "more" chevron. */
-const QUICK_WIDTHS = 3;
+/** The folded pill's one width button, in `widthButtons` beside the preset slots. */
+const FOLDED_WIDTH = -1;
 
 /** The pill changing width and place for a new tool: GoodNotes' 0.3 s `ease`. */
 const PILL_MORPH_MS = 300;
@@ -1082,6 +1191,8 @@ export class Toolbar {
   private readonly rowEl: HTMLElement;
   /** "Dock tool options" is on, on this device. */
   private pillRowOn = false;
+  /** The bar's preset: in Essentials the end's buttons live in ⋯ (`isFoldedInPreset`). */
+  private preset: BarPreset = "own";
   /** How far the docked side pill's colour column is scrolled. */
   private colorColumnScroll = 0;
   /** Where the pill rested before "Dock tool options" brought it to the bar, to give back when it is off. */
@@ -1103,15 +1214,25 @@ export class Toolbar {
   private barDock: BarDock = DEFAULT_BAR_DOCK;
   /** Watches the pen's colour row give way to a narrow pane (`fitColorRow`). */
   private colorRowWatch: ResizeObserver | null = null;
+  /** Watches the pen row give way to the colours in the bar (`fitPenRow`). */
+  private penRowWatch: ResizeObserver | null = null;
   /** How far the pen's colour row was scrolled, kept across rebuilds of the pill. */
   private colorRowScroll = 0;
   /** How far the pen type row was scrolled, kept across rebuilds of the pill. */
   private penRowScroll = 0;
   /** A colour was just added with the "+": the row scrolls to its end once to show it. */
   private revealNewColor = false;
+  /** The pill's width buttons by preset slot ({@link FOLDED_WIDTH} for the folded pill's one). */
   private readonly widthButtons = new Map<number, HTMLElement>();
+  /** The width each of {@link widthButtons} draws, page px. */
+  private readonly widthButtonSizes = new Map<number, number>();
   private readonly penTypeButtons = new Map<PenType, HTMLButtonElement>();
+  /** The pill's eraser size buttons, by preset slot. */
   private readonly eraserSizeButtons = new Map<number, HTMLButtonElement>();
+  /** The width preset picked last: between two holding the same width, this one is chosen. */
+  private widthSlot: number | null = null;
+  /** The eraser preset picked last, as {@link widthSlot}. */
+  private eraserSlot: number | null = null;
   private readonly shapeButtons = new Map<ShapeMode, HTMLButtonElement>();
   /** The Table button's "3 × 4" caption, kept in step with the picked size. */
   private tableCaption: HTMLElement | null = null;
@@ -1123,14 +1244,30 @@ export class Toolbar {
   private penToolButton: HTMLElement | null = null;
   /** What the pen button last drew, so an unchanged pen is not redrawn. */
   private penPreviewKey = "";
+  /** Pens on the bar as buttons of their own (FineNotes#211), by slot. */
+  private readonly penSlotButtons = new Map<PenSlotId, HTMLButtonElement>();
+  /** The pen types the pen's button stood for, newest first (`penButtonType`). */
+  private penButtonRecent: SavedPenType[] = [];
+  /** The pen types picked, newest first: where P goes back to from the highlighter. */
+  private penKeyRecent?: SavedPenType[];
+  /**
+   * The pen button last tapped (FineNotes#211): "main" for the pen's own
+   * button, or a pinned pen's slot. It decides which button is in hand when
+   * two hold the same pen; without a tap the pens are compared.
+   */
+  private handButton: PenSlotId | "main" | null = null;
+  /** The pen the pen's own button had in hand last: it keeps showing it while a pinned pen is used. */
+  private mainPen: SavedPen | null = null;
+  /** The button of the pen last written with, a slot or the pen's own: where P goes back to. */
+  private lastPenButton: PenSlotId | "main" | null = null;
+  /** The pen button the indicator marks while a pen is in hand: a slot, or the pen's (`null`). */
+  private indicatorSlot: PenSlotId | null = null;
   /** Pages are shown dark: every colour the bar shows is shown as the ink is (`shownColor`). */
   private night = false;
   /** The writing tools, centred on the bar while there is room. */
   private toolsGroup: HTMLElement | null = null;
   /** The tier-1 buttons that may fold into ⋯ (`fitBar`), ranked by `FOLD_RANK`. */
-  private readonly foldable: Array<
-    FoldedBarItem & { rank: number; button: HTMLElement; tool?: ActiveTool }
-  > = [];
+  private readonly foldable: FoldableItem[] = [];
   private moreButton: HTMLButtonElement | null = null;
   /** Every button the bar has, by its item, for placing them (`setLayout`). */
   private readonly barItems = new Map<BarItemId, HTMLButtonElement>();
@@ -1268,6 +1405,7 @@ export class Toolbar {
     // the page body gives it its height.
     this.rowEl = host.createDiv({ cls: "goodobsidian-pill-row" });
     this.pillRowOn = options.pillRow === true;
+    this.preset = options.preset ?? "own";
     // The pill always floats over the page (styles.css, `.is-floating`).
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
     this.optionsEl.setAttribute("role", "toolbar");
@@ -1299,6 +1437,7 @@ export class Toolbar {
     });
 
     this.disposers.push(() => this.colorRowWatch?.disconnect());
+    this.disposers.push(() => this.penRowWatch?.disconnect());
 
     this.buildBar();
     this.buildOptions();
@@ -1405,6 +1544,8 @@ export class Toolbar {
     const home = cb.onHome;
     if (home) {
       this.homeButton = this.barButton(start, "house", t("toolbar.item.home"), home);
+      // Home may fold, last of all (Joost, 2026-11-13).
+      this.fold(FOLD_RANK.home, this.homeButton, "house", t("toolbar.item.home"), home);
       item("home", this.homeButton, home, false);
     }
     this.thumbnailsButton = this.barButton(
@@ -1449,7 +1590,8 @@ export class Toolbar {
     );
     this.redoButton = item(
       "redo",
-      this.foldButton(start, FOLD_RANK.redo, "redo-2", t("toolbar.redoTip"), redo),
+      // Undo and redo never fold (Joost, 2026-11-13).
+      this.barButton(start, "redo-2", t("toolbar.redoTip"), redo),
       redo,
       false,
     );
@@ -1622,11 +1764,14 @@ export class Toolbar {
       this.placeIndicator(this.indicatorTool, null);
       this.placeUpdateTip();
     };
-    this.measureBar = measure;
+    // What the bar's groups leave is the room a docked pill has inside it.
+    const measureAll = (): void => {
+      measure();
+      if (this.pillRowOn) this.placePill();
+    };
+    this.measureBar = measureAll;
     if (typeof ResizeObserver === "function") {
-      const observer = new ResizeObserver(measure);
-      observer.observe(this.barEl);
-      this.disposers.push(() => observer.disconnect());
+      this.disposers.push(watchSize(this.barEl, measureAll));
     }
     measure();
   }
@@ -1652,6 +1797,7 @@ export class Toolbar {
       this.fitUprightBar();
       this.moreButton?.removeClass("has-folded");
       this.moreButton?.removeClass("has-mark");
+      this.moreButton?.removeAttribute("data-folded-count");
       return;
     }
     const style = getComputedStyle(bar);
@@ -1663,8 +1809,16 @@ export class Toolbar {
         const at = along(group.getBoundingClientRect());
         return at.length > 0 && (at.end > right + 0.5 || at.start < left - 0.5);
       });
-    const order = [...this.foldable].sort((a, b) => a.rank - b.rank);
-    for (const item of order) {
+    // Essentials: the end's buttons always sit in ⋯ (Joost, 2026-11-13).
+    if (this.preset === "essentials") {
+      const layout = this.layoutNow;
+      for (const item of this.foldable) {
+        const id = item.button.getAttribute("data-item") as BarItemId | null;
+        if (id && isFoldedInPreset(layout, id)) item.button.addClass("is-overflowed");
+      }
+      this.measureCrowding();
+    }
+    for (const item of this.foldOrder()) {
       if (!overflows()) break;
       if (item.tool !== undefined && item.tool === active) continue;
       // Hidden for another reason (a practice file, a single page, taken off
@@ -1673,7 +1827,93 @@ export class Toolbar {
       item.button.addClass("is-overflowed");
       this.measureCrowding();
     }
-    this.moreButton?.toggleClass("has-folded", this.foldedItems().length > 0);
+    // The rows in the bar keep the room they were placed with (`dockWant`).
+    if (bar.hasClass("has-pill-inside")) {
+      // Folding moved the tools: the pill starts where they end now.
+      this.alignPillInBar();
+    }
+    this.settleFolds();
+  }
+
+  /**
+   * The order the bar's buttons fold into ⋯, first to fold first. The bar's
+   * own order chooses it, so Customize toolbar does (Joost, 2026-11-13): what
+   * sits among the tools but is no tool (insert image, PDF…), then each side
+   * from its outer end in, the end's first, then the start's. Tools fold
+   * last, the least used first (`FOLD_RANK`).
+   */
+  private foldOrder(): FoldableItem[] {
+    const byButton = new Map<Element, FoldableItem>(
+      this.foldable.map((item) => [item.button, item]),
+    );
+    const inZone = (zone: HTMLElement | undefined): FoldableItem[] =>
+      Array.from(zone?.children ?? []).flatMap((el) => {
+        const item = byButton.get(el);
+        return item ? [item] : [];
+      });
+    const byRank = (a: FoldableItem, b: FoldableItem): number => a.rank - b.rank;
+    const { start, middle, end } = this.zoneEls;
+    const notTool = (item: FoldableItem): boolean => item.tool === undefined;
+    const order = [
+      ...inZone(middle).filter(notTool).sort(byRank),
+      ...inZone(end).filter(notTool).reverse(),
+      ...inZone(start).filter(notTool),
+    ];
+    const placed = new Set(order);
+    return [...order, ...this.foldable.filter((item) => !placed.has(item)).sort(byRank)];
+  }
+
+  /**
+   * The folds are made: ⋯ counts them. In Customize toolbar nothing hides,
+   * so every button can be moved: what would fold is marked (`will-fold`).
+   */
+  private settleFolds(): void {
+    if (this.editor) {
+      for (const item of this.foldable) {
+        const folded = item.button.hasClass("is-overflowed");
+        item.button.removeClass("is-overflowed");
+        item.button.toggleClass("will-fold", folded);
+      }
+      // Every button back: the tools follow the start (is-crowded) rather
+      // than stay centred over the end's (Joost, 2026-11-13).
+      this.measureCrowding();
+    }
+    this.wrapForEditing();
+    this.markFolded();
+  }
+
+  /**
+   * In Customize toolbar every button shows, so the zones may not fit one
+   * line: the bar then grows a second line for the end (`is-wrapped`),
+   * rather than let them overlap (Joost, 2026-11-13). Along the top or
+   * bottom only; an upright bar scrolls.
+   */
+  private wrapForEditing(): void {
+    const bar = this.barEl;
+    bar.removeClass("is-wrapped");
+    if (!this.editor || isBarUpright(this.barDock)) return;
+    const box = (el: HTMLElement | undefined): DOMRect | null => {
+      const r = el?.getBoundingClientRect();
+      return r && r.width > 0 ? r : null;
+    };
+    const { start, middle, end } = this.zoneEls;
+    const zones = [box(start), box(middle), box(end)].filter((r): r is DOMRect => r !== null);
+    const inner =
+      bar.getBoundingClientRect().right - parseFloat(getComputedStyle(bar).paddingRight);
+    const clash = zones.some(
+      (r, i) => r.right > inner + 0.5 || (i > 0 && zones[i - 1].right > r.left + 0.5),
+    );
+    bar.toggleClass("is-wrapped", clash);
+  }
+
+  /** The ⋯ button shows that it holds folded buttons, and any that want attention. */
+  private markFolded(): void {
+    const count = this.foldedItems().length;
+    this.moreButton?.toggleClass("has-folded", count > 0);
+    // How many folded into it, on the bar without opening it (Joost, 2026-11-13).
+    const badge = foldedBadge(count);
+    if (badge === null) this.moreButton?.removeAttribute("data-folded-count");
+    else this.moreButton?.setAttribute("data-folded-count", badge);
     this.moreButton?.toggleClass(
       "has-mark",
       this.foldedItems().some((item) => item.marked),
@@ -1887,6 +2127,38 @@ export class Toolbar {
     this.homeButton?.toggleClass("goodobsidian-has-news", on);
   }
 
+  /** The bar items that carry an update's dot now. */
+  private newsItems = new Set<string>();
+  private onNewsUsed: ((id: string) => void) | null = null;
+
+  /**
+   * A dot on each button an update changed something behind (`items`, bar
+   * item ids); `onUsed` runs the first time one is tapped, and its dot goes.
+   */
+  setNewsItems(items: readonly string[], onUsed: (id: string) => void): void {
+    this.onNewsUsed = onUsed;
+    this.newsItems = new Set(items);
+    for (const [id, button] of this.barItems) {
+      if (id !== "home") button.toggleClass("goodobsidian-has-news", this.newsItems.has(id));
+    }
+    if (this.newsWatched) return;
+    this.newsWatched = true;
+    // One listener for the whole bar, before the buttons' own.
+    this.barEl.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target as Element | null;
+        const id = target?.closest("[data-item]")?.getAttribute("data-item");
+        if (!id || !this.newsItems.has(id)) return;
+        this.newsItems.delete(id);
+        this.barItems.get(id as BarItemId)?.removeClass("goodobsidian-has-news");
+        this.onNewsUsed?.(id);
+      },
+      true,
+    );
+  }
+  private newsWatched = false;
+
   private barButton(
     parent: HTMLElement,
     icon: string,
@@ -1995,8 +2267,12 @@ export class Toolbar {
    * indicator, as a live change needs.
    */
   setLayout(raw: ToolbarLayout, relayout = true): void {
-    const layout = normalizeLayout(raw);
+    // A saved pen deleted meanwhile has no button.
+    const pens = this.callbacks.savedPens?.() ?? [];
+    const ids = new Set(pens.flatMap((pen) => (pen.id === undefined ? [] : [pen.id])));
+    const layout = normalizeLayout(raw, ids);
     this.layoutNow = layout;
+    this.syncPenSlots(layout);
     const onBar = new Set(layoutBarItems(layout));
     for (const zone of ZONES) {
       const el = this.zoneEls[zone];
@@ -2016,12 +2292,258 @@ export class Toolbar {
     this.editor?.refresh();
     if (!relayout) return;
     const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
+    // The pen's row loses or gains the types now on the bar.
+    if (tool === "pen") this.buildOptions();
+    this.syncActive();
     this.fitBar(tool);
     this.placeIndicator(tool, null);
   }
 
+  // --- Pens as buttons of their own (FineNotes#211) -------------------------
+
+  /**
+   * Make a button for every pen `layout` puts on the bar, and drop those it
+   * no longer does. Each sits in the tools' group until `setLayout` puts it
+   * in its zone.
+   */
+  private syncPenSlots(layout: ToolbarLayout): void {
+    const slots = new Set(penSlotsOf(layout));
+    for (const [slot, button] of this.penSlotButtons) {
+      if (slots.has(slot)) continue;
+      button.remove();
+      this.penSlotButtons.delete(slot);
+      this.barItems.delete(slot);
+    }
+    const parent = this.toolsGroup;
+    if (!parent) return;
+    for (const slot of slots) {
+      if (this.penSlotButtons.has(slot)) continue;
+      const button = parent.createEl("button", {
+        cls: "goodobsidian-tool goodobsidian-tool-pen goodobsidian-pen-slot",
+      });
+      button.setAttribute("data-item", slot);
+      button.setAttribute("aria-pressed", "false");
+      button.addEventListener("click", () => {
+        if (!button.disabled) this.tapPenSlot(slot, button);
+      });
+      this.penSlotButtons.set(slot, button);
+      this.barItems.set(slot, button);
+    }
+    this.drawPenSlots();
+  }
+
+  /** The layout shown; the default before the bar is built (a bare toolbar in tests). */
+  private laid(): ToolbarLayout {
+    const shown: ToolbarLayout | undefined = this.layoutNow;
+    return shown ?? defaultLayout();
+  }
+
+  /** The pen buttons, none before the bar is built. */
+  private slotButtons(): Map<PenSlotId, HTMLButtonElement> {
+    const buttons: Map<PenSlotId, HTMLButtonElement> | undefined = this.penSlotButtons;
+    return buttons ?? new Map<PenSlotId, HTMLButtonElement>();
+  }
+
+  /** The saved pen a `saved:` slot names, or `null` (deleted meanwhile). */
+  private savedPenOf(id: string): SavedPen | null {
+    return savedPenById(this.callbacks.savedPens?.() ?? [], id);
+  }
+
+  /** The pen a slot's button writes with: a type in its own ink, or the saved pen. */
+  private slotPen(slot: PenSlotId): SavedPen | null {
+    const type = slotPenType(slot);
+    if (type) {
+      if (type === this.activePenType().id) return penOfState(this.state);
+      const ink = penInkFor(this.state.penInks ?? {}, type, this.inkInHand());
+      return { type, color: ink.color, size: ink.size ?? this.state.size };
+    }
+    const id = slotSavedId(slot);
+    return id === null ? null : this.savedPenOf(id);
+  }
+
+  /** What a pen as a button is called: its type's name, or the saved pen's. */
+  private slotLabel(slot: PenSlotId): string {
+    const type = slotPenType(slot);
+    if (type) return PEN_TYPES.find((spec) => spec.id === type)?.label ?? type;
+    const pen = this.slotPen(slot);
+    return pen ? t("toolbar.penSlot.saved", { name: savedPenLabel(pen) }) : "";
+  }
+
+  /** A bar item's name: its own, or a pen's. */
+  private itemLabel(id: BarItemId): string {
+    return isPenSlot(id) ? this.slotLabel(id) : BAR_ITEM_LABELS[id];
+  }
+
+  /** Draw every pen button: its type's glyph in its ink, and its width under it. */
+  private drawPenSlots(): void {
+    for (const [slot, button] of this.slotButtons()) {
+      const pen = this.slotPen(slot);
+      if (!pen) continue;
+      this.drawPenFace(button, pen, slotSavedId(slot) !== null, this.slotLabel(slot));
+    }
+  }
+
+  /**
+   * Draw a pen button: the pen's glyph in its ink with its width under it,
+   * as the pen's button shows the pen in hand; a saved pen with a small star,
+   * the mark it is saved under.
+   */
+  private drawPenFace(button: HTMLElement, pen: SavedPen, saved: boolean, label: string): void {
+    const spec = PEN_TYPES.find((type) => type.id === pen.type) ?? PEN_TYPES[0];
+    const color = this.shown(pen.color);
+    const width = strokeWidthFor({
+      ...this.state,
+      tool: spec.tool,
+      penType: spec.id,
+      size: pen.size,
+    });
+    const dark = activeDocument.body.hasClass("theme-dark");
+    const key = `${spec.id}|${color}|${width}|${dark}|${saved}|${label}`;
+    if (button.getAttribute("data-face") === key) return;
+    button.setAttribute("data-face", key);
+    button.empty();
+    const glyph = penGlyph(spec.id, color);
+    glyph.classList.add("goodobsidian-tool-pen-glyph");
+    button.append(glyph);
+    const mark = button.createSpan({ cls: "goodobsidian-tool-pen-width" });
+    mark.toggleClass("is-highlighter", spec.tool === "highlighter");
+    mark.toggleClass("is-rimmed", inkNeedsRim(color, dark));
+    mark.setCssProps({
+      "--gob-ink": color,
+      "--gob-ink-width": `${widthMarkThickness(width)}px`,
+    });
+    // A little pin at its top right: a pen pinned to the bar, not the pen
+    // menu's own button (FineNotes#211).
+    iconOrText(button.createSpan({ cls: "goodobsidian-pen-slot-star" }), "pin", "");
+    // In Customize toolbar the editor names it by what a press does.
+    if (!button.hasAttribute("data-label")) button.setAttribute("aria-label", label);
+    else button.setAttribute("data-label", label);
+  }
+
+  /** The pen button the pen in hand belongs to: a slot, or the pen's own (`null`). */
+  private penSlotInHand(): PenSlotId | null {
+    if (this.state.tool !== "pen" && this.state.tool !== "highlighter") return null;
+    return this.penSlotOfState();
+  }
+
+  /**
+   * The pinned button the pen the state holds belongs to, or `null` for the
+   * pen's own: {@link penSlotInHand} whichever tool is in hand, so the pen's
+   * button knows its pen is not the last one used after the eraser too.
+   */
+  private penSlotOfState(): PenSlotId | null {
+    if (this.handButton === "main") return null;
+    if (this.handButton && penSlotsOf(this.laid()).includes(this.handButton)) {
+      return this.handButton;
+    }
+    return penSlotInHand(this.laid(), penOfState(this.state), (id) => this.savedPenOf(id));
+  }
+
+  /** The pen type the pen's button stands for now (`toolbar-layout.ts`). */
+  private penButtonSpec(): PenTypeSpec {
+    const order = penRowTypes(this.state).map((spec) => spec.id);
+    const taken = penTypesOnBar(this.laid());
+    // A saved pen's button holds the state: its type is that button's now.
+    const slot = this.penSlotOfState();
+    if (slot !== null && slotSavedId(slot) !== null) taken.add(this.activePenType().id);
+    const id = penButtonType(order, taken, this.activePenType().id, this.penButtonRecent);
+    return PEN_TYPES.find((spec) => spec.id === id) ?? this.activePenType();
+  }
+
+  /**
+   * The pen's own button's pen while a pinned button holds the state (its
+   * pen in hand, or the last pen used before another tool): the pen it kept,
+   * which it shows and a tap gives back. Nothing kept, or what it kept is
+   * the pinned pen itself (a notebook opened with the pinned pen in hand:
+   * the bar's first draw comes before its layout), or its type has a button
+   * of its own by now: the type it stands for, in that type's own ink.
+   * `null` when the state is its own pen, or no type is left for it.
+   */
+  private penButtonPen(): SavedPen | null {
+    if (this.penSlotOfState() === null) return null;
+    const kept = this.mainPen;
+    if (
+      kept &&
+      !samePen(kept, penOfState(this.state)) &&
+      !penTypesOnBar(this.laid()).has(kept.type)
+    ) {
+      return kept;
+    }
+    const spec = this.penButtonSpec();
+    if (spec.id === this.activePenType().id) return null;
+    const ink = penInkFor(this.state.penInks ?? {}, spec.id, this.inkInHand());
+    return { type: spec.id, color: ink.color, size: ink.size ?? this.state.size };
+  }
+
+  /**
+   * A pen as a button was tapped: put it in hand (a type with its own ink,
+   * a saved pen as its key 1-8 does); tapped in hand, it shows or tucks
+   * away its pill, as every tool's button does.
+   */
+  private tapPenSlot(slot: PenSlotId, button: HTMLElement | null): void {
+    const was = this.penSlotInHand();
+    this.handButton = slot;
+    if (was === slot) {
+      this.closePopover();
+      this.tuckedByStroke = false;
+      this.optionsVisible = !this.optionsVisible;
+      this.showOptions(this.optionsVisible);
+      this.syncActive();
+      return;
+    }
+    const type = slotPenType(slot);
+    const pen = type ? null : this.slotPen(slot);
+    const spec = PEN_TYPES.find((p) => p.id === (type ?? pen?.type));
+    if (!spec || (this.practice && spec.tool === "highlighter")) return;
+    this.closePopover();
+    if (pen) {
+      this.applySavedPen(pen);
+      return;
+    }
+    if (this.state.tool !== spec.tool) {
+      this.drawingTool = drawingToolOf(this.drawingTool, spec.tool);
+      this.leaveToolFor(spec.tool);
+    }
+    this.choosePenType(spec);
+    button?.focus({ preventScroll: true });
+  }
+
+  /** Put a pen on the bar as a button of its own, or take it off, and keep the layout. */
+  private togglePenSlot(slot: PenSlotId): void {
+    const save = this.callbacks.onLayout;
+    if (!save) return;
+    const on = placeOf(this.laid(), slot) === "off";
+    this.setLayout(setPenSlot(this.laid(), slot, on));
+    save(this.laid());
+  }
+
+  /**
+   * Customize toolbar's New pen: the pen in hand as a saved pen (saved now if
+   * it is not yet), for a button of its own. `null` when it cannot be: saved
+   * pens are full, or that pen is on the bar already.
+   */
+  private newPenSlot(save: boolean): PenSlotId | null {
+    const current = penOfState(this.state);
+    const pens = this.callbacks.savedPens?.() ?? [];
+    let pen = pens.find((saved) => samePen(saved, current)) ?? null;
+    if (!pen) {
+      if (pens.length >= MAX_SAVED_PENS || !this.callbacks.onSavePen) return null;
+      if (!save) return "saved:new";
+      this.callbacks.onSavePen(current);
+      pen = (this.callbacks.savedPens?.() ?? []).find((saved) => samePen(saved, current)) ?? null;
+    }
+    if (!pen?.id) return null;
+    const slot = savedPenSlot(pen.id);
+    return placeOf(this.laid(), slot) === "off" ? slot : null;
+  }
+
+  /** The saved pens changed (added, edited, reordered, deleted): the bar's pens follow. */
+  refreshSavedPens(): void {
+    this.setLayout(this.laid());
+  }
+
   /** The buttons its More tools menu lists now, in catalogue order. */
-  get menuListed(): readonly BarItemId[] {
+  get menuListed(): readonly CoreItemId[] {
     return menuItems(this.layout).filter((id) => this.itemRuns.has(id));
   }
 
@@ -2051,6 +2573,34 @@ export class Toolbar {
       zones: () => this.zoneEls,
       button: (id) => this.barItems.get(id),
       has: (id) => this.barItems.has(id),
+      label: (id) => this.itemLabel(id),
+      newPen: this.callbacks.onSavePen
+        ? {
+            // A tap opens the pen dialog, which makes any pen while there is room.
+            can: () =>
+              this.newPenSlot(false) !== null ||
+              (this.callbacks.onNewPen !== undefined &&
+                (this.callbacks.savedPens?.() ?? []).length < MAX_SAVED_PENS),
+            make: () => this.newPenSlot(true),
+            draw: (chip) => {
+              const current = penOfState(this.state);
+              chip.append(penGlyph(current.type, this.shown(current.color)));
+            },
+            remove: (id) => {
+              const savedId = slotSavedId(id);
+              if (savedId !== null) this.deleteSavedPen(savedId);
+              else if (isPenSlot(id) && placeOf(this.laid(), id) !== "off") this.togglePenSlot(id);
+            },
+            customize: this.callbacks.onNewPen
+              ? (place) =>
+                  this.callbacks.onNewPen?.(penOfState(this.state), (pen) => {
+                    if (!pen.id) return;
+                    const slot = savedPenSlot(pen.id);
+                    if (placeOf(this.laid(), slot) === "off") place(slot);
+                  })
+              : undefined,
+          }
+        : undefined,
       layout: () => this.layoutNow,
       apply: (layout) => {
         this.setLayout(layout);
@@ -2061,6 +2611,8 @@ export class Toolbar {
       pillRow: () => this.pillRowOn,
       setBarDock: this.callbacks.onSetBarDock,
       setPillRow: this.callbacks.onSetPillRow,
+      preset: () => this.preset,
+      setPreset: this.callbacks.onSetPreset,
       look: this.callbacks.lookNow,
       setLook: this.callbacks.onSetLook,
       done: () => {
@@ -2092,11 +2644,7 @@ export class Toolbar {
    */
   private markFolds(): void {
     this.fitBar(this.indicatorTool);
-    for (const item of this.foldable) {
-      const folded = item.button.hasClass("is-overflowed");
-      item.button.removeClass("is-overflowed");
-      item.button.toggleClass("will-fold", folded);
-    }
+    if (this.barEl.hasClass("has-pill-inside")) this.placePill();
   }
 
   /**
@@ -2326,9 +2874,33 @@ export class Toolbar {
   private drawPenPreview(): void {
     const button = this.penToolButton;
     if (!button) return;
-    const spec = this.activePenType();
-    const color = this.shown(this.state.color);
-    const width = strokeWidthFor({ ...this.state, tool: spec.tool });
+    // With types on the bar as buttons of their own, the pen's button shows
+    // the type it stands for, in that type's own ink (FineNotes#211).
+    const penInHand = this.state.tool === "pen" || this.state.tool === "highlighter";
+    const pinnedInHand = penInHand && this.penSlotInHand() !== null;
+    if (penInHand && !pinnedInHand) this.mainPen = penOfState(this.state);
+    // Its own pen, also once another tool is in hand after a pinned pen: the
+    // button drew the pinned pen a second time there.
+    const own = this.penButtonPen();
+    const spec = own
+      ? (PEN_TYPES.find((type) => type.id === own.type) ?? this.penButtonSpec())
+      : this.penButtonSpec();
+    if (penInHand && !pinnedInHand && this.penButtonRecent[0] !== spec.id) {
+      this.penButtonRecent = rememberPenType(this.penButtonRecent, spec.id);
+    }
+    const inHand = !own && spec.id === this.activePenType().id;
+    const ink = own
+      ? null
+      : inHand
+        ? null
+        : penInkFor(this.state.penInks ?? {}, spec.id, this.inkInHand());
+    const color = this.shown(own ? own.color : ink ? ink.color : this.state.color);
+    const width = strokeWidthFor({
+      ...this.state,
+      tool: spec.tool,
+      penType: spec.id,
+      size: own ? own.size : (ink?.size ?? this.state.size),
+    });
     const dark = activeDocument.body.hasClass("theme-dark");
     const key = `${spec.id}|${color}|${width}|${dark}`;
     if (key === this.penPreviewKey) return;
@@ -2406,7 +2978,26 @@ export class Toolbar {
     // The pen button stands for every pen type, the highlighter included:
     // it picks the type in hand. Picking plain "pen" with the highlighter as
     // the type wrote opaque pen ink in the highlighter's colour.
-    if (tool === "pen") tool = this.activePenType().tool;
+    if (tool === "pen") {
+      // The pen's own button after a pinned pen, in hand or the last pen used
+      // before another tool: its own pen again, with its type row and menu
+      // (FineNotes#211). Decided here, before `tool` becomes the tool of the
+      // pen in hand: a pinned highlighter's is "highlighter", and the tap
+      // then only tucked its options away.
+      const own = this.penButtonPen();
+      if (own) {
+        const spec = PEN_TYPES.find((type) => type.id === own.type);
+        if (this.practice && spec?.tool === "highlighter") return;
+        this.handButton = "main";
+        this.closePopover();
+        this.tuckedByStroke = false;
+        this.optionsVisible = true;
+        this.applySavedPen(own);
+        return;
+      }
+      this.handButton = "main";
+      tool = this.activePenType().tool;
+    }
     const current = this.state.tool;
     this.drawingTool = drawingToolOf(this.drawingTool, current);
     tool = selectedTool(
@@ -2415,7 +3006,9 @@ export class Toolbar {
       this.callbacks.returnToPenOnReselect?.() === true,
       this.drawingTool,
     );
-    if (tool === "select" && current === "select") {
+    // Docked, the lasso's types and filters are its row: a second tap shows
+    // or hides the row, as for every tool (docking design B, 2026-11-13).
+    if (tool === "select" && current === "select" && !this.dockedAcross()) {
       this.toggleLassoPopover(button);
       return;
     }
@@ -2495,8 +3088,10 @@ export class Toolbar {
     const colorRow = this.optionsEl.querySelector<HTMLElement>(".goodobsidian-pen-colors");
     if (colorRow) this.colorRowScroll = colorRow.scrollLeft;
     this.optionsEl.empty();
+    this.optionsEl.removeClass("has-one-width");
     this.colorSwatches.clear();
     this.widthButtons.clear();
+    this.widthButtonSizes.clear();
     this.penTypeButtons.clear();
     this.eraserSizeButtons.clear();
     this.shapeButtons.clear();
@@ -2516,6 +3111,7 @@ export class Toolbar {
       }
       // The laser's picker lives in its pill; a picker opened from its palette closes with it.
       if (this.popoverKind === "laser-color" && this.state.tool !== "laser") this.closePopover();
+      if (this.popoverKind === "tape-height" && this.state.tool !== "tape") this.closePopover();
       switch (this.state.tool) {
         case "pen":
         case "highlighter":
@@ -2566,6 +3162,14 @@ export class Toolbar {
     const upright = isUpright(this.pillDock);
     const roomy = upright && this.dockedAtSide();
     const folded = upright && !roomy;
+    // Docked along the top or bottom the widths are one button too, and
+    // their room goes to the colours (discussion #200).
+    const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
+    // A pen with a button of its own has no pen-type row (FineNotes#211):
+    // docked, its widths take that room, as they did before docking.
+    const oneWidth =
+      penWidthsShown({ upright, roomy, edge }) === "one" && (upright || this.penRowShown());
+    this.optionsEl.toggleClass("has-one-width", oneWidth && !folded);
     this.buildPenRow(upright);
     // The rest of the old pen menu: the laser pointer, the pen's settings and
     // the pen gestures. A practice sheet has none of them.
@@ -2575,7 +3179,7 @@ export class Toolbar {
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    if (folded) {
+    if (oneWidth) {
       const width = this.state.size;
       const button = widthButton(
         this.optionsEl,
@@ -2585,24 +3189,26 @@ export class Toolbar {
         () => this.toggleWidthList(button),
       );
       button.setAttribute("aria-label", t("toolbar.width.moreWidths", { mm: this.widthMm(width) }));
-      this.widthButtons.set(width, button);
+      this.widthButtons.set(FOLDED_WIDTH, button);
+      this.widthButtonSizes.set(FOLDED_WIDTH, width);
     } else {
-      // Stroke widths, drawn as literal strokes of increasing weight.
-      const quick = this.quickWidths();
-      const marks = this.widthMarks(quick);
-      for (const width of quick) {
+      // The pen type's own presets, each drawn as the stroke it lays down.
+      const presets = this.widthPresets();
+      const marks = this.widthMarks(presets);
+      presets.forEach((width, slot) => {
         const button = widthButton(
           this.optionsEl,
           this.widthMm(width),
           active.id,
           marks.get(width),
           () => {
-            this.setWidth(width);
+            this.pickWidthPreset(slot);
             this.syncActive();
           },
         );
-        this.widthButtons.set(width, button);
-      }
+        this.widthButtons.set(slot, button);
+        this.widthButtonSizes.set(slot, width);
+      });
       this.chevron(t("toolbar.width.more"), (button) => this.toggleWidthList(button));
     }
 
@@ -2682,12 +3288,37 @@ export class Toolbar {
    * FineNotes#164); on a narrow pane the rest scroll, across the pill or,
    * upright, down it.
    */
+  /**
+   * The pen types the row offers for the pen in hand: none for a pen with a
+   * button of its own, a type's or a saved pen's (FineNotes#211).
+   */
+  private penRowOffered(): ReturnType<typeof penRowOffers> {
+    if (this.penSlotInHand()?.startsWith("saved:")) return [];
+    const order = penRowTypes(this.state).map((spec) => spec.id);
+    return penRowOffers(
+      shownPenTypes(order, this.practice, "highlighter"),
+      penTypesOnBar(this.laid()),
+      this.activePenType().id,
+    );
+  }
+
+  /** The pen-type row has types to offer for the pen in hand (`buildPenRow`). */
+  private penRowShown(): boolean {
+    return this.penRowOffered().length > 0;
+  }
+
   private buildPenRow(upright: boolean): void {
     const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-types" });
     // A swipe here scrolls the row, never Obsidian's sidebars.
     row.dataset.ignoreSwipe = "true";
+    // Types on the bar as buttons of their own leave the row; the row goes
+    // when the pen in hand has a button of its own, or one type is left (FineNotes#211).
     const order = penRowTypes(this.state).map((spec) => spec.id);
-    const shown = shownPenTypes(order, this.practice, "highlighter");
+    const shown = this.penRowOffered();
+    if (shown.length === 0) {
+      row.remove();
+      return;
+    }
     for (const id of shown) {
       const spec = PEN_TYPES.find((type) => type.id === id);
       if (!spec) continue;
@@ -2749,7 +3380,8 @@ export class Toolbar {
       }
     } else {
       row.scrollLeft = this.penRowScroll;
-      if (chosen) {
+      const showChosen = (): void => {
+        if (!chosen) return;
         row.scrollLeft = scrollToShow(
           row.scrollLeft,
           row.clientWidth,
@@ -2757,12 +3389,27 @@ export class Toolbar {
           chosen.offsetWidth,
           COLOR_ROW_FADE_PX,
         );
+      };
+      showChosen();
+      // In the bar the row gives way to the colours once the pill is placed,
+      // after it was built: keep the pen in hand in view then too.
+      this.penRowWatch?.disconnect();
+      this.penRowWatch = null;
+      if (typeof ResizeObserver !== "undefined") {
+        let width = row.clientWidth;
+        this.penRowWatch = sizeObserver(row, () => {
+          if (row.clientWidth === width) return;
+          width = row.clientWidth;
+          showChosen();
+          fade();
+        });
+        this.penRowWatch.observe(row);
       }
     }
     this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
     fade();
     // The pill may still settle round it: place the arrows again once it has.
-    window.requestAnimationFrame(fade);
+    winOf(this.barEl).requestAnimationFrame(fade);
     row.addEventListener("scroll", () => {
       this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
       fade();
@@ -2996,7 +3643,7 @@ export class Toolbar {
     }
     this.colorColumnScroll = column.scrollTop;
     fade();
-    window.requestAnimationFrame(fade);
+    winOf(this.barEl).requestAnimationFrame(fade);
     column.addEventListener("scroll", () => {
       this.colorColumnScroll = column.scrollTop;
       fade();
@@ -3036,14 +3683,14 @@ export class Toolbar {
       fade();
     };
     showChosen();
-    window.requestAnimationFrame(fade);
+    winOf(this.barEl).requestAnimationFrame(fade);
     // The row gives way when the pill has too little room, which can settle
     // after it was built (the pill is placed afterwards): look again then.
     this.colorRowWatch?.disconnect();
     this.colorRowWatch = null;
     if (typeof ResizeObserver !== "undefined") {
       let width = row.clientWidth;
-      this.colorRowWatch = new ResizeObserver(() => {
+      this.colorRowWatch = sizeObserver(row, () => {
         if (row.clientWidth === width) return;
         width = row.clientWidth;
         showChosen();
@@ -3168,6 +3815,8 @@ export class Toolbar {
 
   /** A tool pill with nothing to set: an icon and one line. */
   private toolNote(icon: string, text: string): void {
+    // Docked in the bar, its room goes to the tool's choices (discussion #200).
+    if (this.dockedAcross()) return;
     const note = this.optionsEl.createDiv({ cls: "goodobsidian-tool-note" });
     const mark = note.createSpan({ cls: "goodobsidian-tool-note-icon" });
     iconOrText(mark, icon, "");
@@ -3182,8 +3831,20 @@ export class Toolbar {
    */
   private buildLaserOptions(): void {
     this.toolNote("pointer", t("toolbar.laser.note"));
-    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    if (!this.dockedAcross()) this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const color = this.laserColor();
+    if (this.dockedAcross()) {
+      this.colorRow(
+        LASER_COLORS,
+        color,
+        (picked) => this.setLaserColor(picked),
+        (anchor) =>
+          this.toggleColorPopover("laser-color", anchor, color, (picked) =>
+            this.setLaserColor(picked),
+          ),
+      );
+      return;
+    }
     const button = this.optionsEl.createEl("button", {
       cls: "goodobsidian-shape-color clickable-icon goodobsidian-laser-color",
     });
@@ -3210,19 +3871,20 @@ export class Toolbar {
   }
 
   /**
-   * Cover tape: straight or freehand, its colours, its three heights, and an
-   * eye that shows the tapes on the page in view through, or covers them
+   * Cover tape: straight or freehand, its colours, its three heights and a
+   * chevron to any other height, and an eye that shows the tapes on the page in view through, or covers them
    * again (lit while they are shown). A tap on a tape shows or covers that one.
    */
   private buildTapeOptions(): void {
     const color = tapeColorOf(this.state.tapeColor);
     const height = tapeHeightOf(this.state.tapeHeight);
+    const heights = tapeHeightsOf(this.state.tapeHeights);
     const mode = tapeModeOf(this.state.tapeMode);
     const set = (nextColor: string, nextHeight: number, nextMode = mode): void => {
       this.state.tapeColor = nextColor;
       this.state.tapeHeight = nextHeight;
       this.state.tapeMode = nextMode;
-      this.callbacks.onTapeChange?.(nextColor, nextHeight, nextMode);
+      this.callbacks.onTapeChange?.(nextColor, nextHeight, nextMode, heights);
       this.buildOptions();
     };
     for (const [each, icon, label] of tapeModes()) {
@@ -3239,17 +3901,22 @@ export class Toolbar {
       swatch.toggleClass("is-active", each === color);
     }
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
-    TAPE_HEIGHTS.forEach((each, i) => {
+    // Three heights, each kept as the slider left it, as the pens' widths
+    // are (FineNotes#211): one is always the tape in hand.
+    const inHand = tapePresetIndex(heights, height);
+    heights.forEach((each, i) => {
       const button = this.optionsEl.createEl("button", {
         cls: "goodobsidian-width goodobsidian-tape-height clickable-icon",
       });
-      button.append(tapeHeightGlyph(i));
-      const label = tapeHeightLabels()[i] ?? `${each}`;
+      button.append(tapeHeightGlyph(each));
+      const label = `${tapeHeightLabels()[i] ?? ""} ${formatMm(each)}`.trim();
       button.setAttribute("aria-label", t("toolbar.tape.height", { label }));
       button.setAttribute("title", label);
-      button.toggleClass("is-active", each === height);
+      button.toggleClass("is-active", i === inHand);
       button.addEventListener("click", () => set(color, each));
     });
+    // The height in hand on a slider, anywhere on its range (FineNotes#211).
+    this.chevron(t("toolbar.tape.anyHeight"), (button) => this.toggleTapeHeight(button));
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     // Snap to PDF text: a magnet, as the ruler's angle snap, lit as a picked option while on (#164).
     const snap = this.state.tapeSnapText === true;
@@ -3287,6 +3954,67 @@ export class Toolbar {
     if (shown === null) eye.setAttribute("title", t("toolbar.tape.none"));
   }
 
+  /**
+   * The tape's height on a slider, as the pens' width popover has one: the
+   * height in mm and any height from {@link MIN_TAPE_HEIGHT} to
+   * {@link MAX_TAPE_HEIGHT} page px (FineNotes#211). It changes the pill's
+   * height in hand, which keeps it, as a pen's width preset does; the others
+   * stay as they are.
+   */
+  private toggleTapeHeight(anchor: HTMLElement): void {
+    if (this.popoverKind === "tape-height") {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("tape-height", anchor);
+    body.addClass("goodobsidian-width-popover", "goodobsidian-tape-height-popover");
+    const head = body.createDiv({ cls: "goodobsidian-width-head" });
+    head.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.tape.heightTitle") });
+    const readout = head.createDiv({ cls: "goodobsidian-text-size-readout" });
+    const slider = body.createDiv({ cls: "goodobsidian-width-slider" });
+    const range = slider.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: { "aria-label": t("toolbar.tape.heightTitle") },
+    });
+    dragRange(range);
+    range.min = String(MIN_TAPE_HEIGHT);
+    range.max = String(MAX_TAPE_HEIGHT);
+    range.step = "1";
+    // The tape as it will lie on the page now, on the page's own paper, as
+    // the pens' and the eraser's sliders show theirs.
+    const preview = tapePreview(body, this.callbacks.paintSizePaper);
+    const show = (height: number): void => {
+      readout.setText(formatMm(height));
+      range.value = String(height);
+      syncRangeFill(range);
+      preview(height, this.previewScales().pen, tapeColorOf(this.state.tapeColor));
+    };
+    show(tapeHeightOf(this.state.tapeHeight));
+    range.addEventListener("input", () => show(tapeHeightOf(Number(range.value))));
+    range.addEventListener("change", () => {
+      const height = tapeHeightOf(Number(range.value));
+      const before = tapeHeightsOf(this.state.tapeHeights);
+      const heights = withTapePreset(
+        before,
+        tapePresetIndex(before, tapeHeightOf(this.state.tapeHeight)),
+        height,
+      );
+      this.state.tapeHeight = height;
+      this.state.tapeHeights = heights;
+      this.callbacks.onTapeChange?.(
+        tapeColorOf(this.state.tapeColor),
+        height,
+        tapeModeOf(this.state.tapeMode),
+        heights,
+      );
+      show(height);
+      // The pill's band for that height is redrawn at its new size.
+      this.buildOptions();
+    });
+    this.keepPopoverInside(anchor);
+  }
+
   /** The hand has nothing to set: its pill says what dragging does with it. */
   private buildPanOptions(): void {
     this.toolNote("hand", t("toolbar.hand.note"));
@@ -3300,22 +4028,31 @@ export class Toolbar {
    */
   private buildFillOptions(): void {
     const color = this.state.fillColor ?? DEFAULT_FILL_COLOR;
-    const colorButton = this.optionsEl.createEl("button", {
-      cls: "goodobsidian-shape-color clickable-icon",
-    });
-    colorButton
-      .createSpan({ cls: "goodobsidian-text-disc" })
-      .setCssStyles({ background: this.shown(color, false) });
-    caretIn(colorButton);
-    colorButton.setAttribute("aria-label", t("toolbar.fill.colourValue", { color }));
-    colorButton.setAttribute("title", t("toolbar.fill.colour"));
-    colorButton.addEventListener("click", () =>
-      this.toggleColorPopover("fill-color", colorButton, color, (picked) => {
-        this.state.fillColor = picked;
-        this.callbacks.onFillColorChange?.(picked);
-        this.buildOptions();
-      }),
-    );
+    const setFill = (picked: string): void => {
+      this.state.fillColor = picked;
+      this.callbacks.onFillColorChange?.(picked);
+      this.buildOptions();
+    };
+    if (this.dockedAcross()) {
+      // Docked: the colours as swatches in the bar, as the pen has them.
+      const colors = this.palette.filter((c) => c.toLowerCase() !== "#ffffff").slice(0, 8);
+      this.colorRow(colors, color, setFill, (anchor) =>
+        this.toggleColorPopover("fill-color", anchor, color, setFill),
+      );
+    } else {
+      const colorButton = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-shape-color clickable-icon",
+      });
+      colorButton
+        .createSpan({ cls: "goodobsidian-text-disc" })
+        .setCssStyles({ background: this.shown(color, false) });
+      caretIn(colorButton);
+      colorButton.setAttribute("aria-label", t("toolbar.fill.colourValue", { color }));
+      colorButton.setAttribute("title", t("toolbar.fill.colour"));
+      colorButton.addEventListener("click", () =>
+        this.toggleColorPopover("fill-color", colorButton, color, setFill),
+      );
+    }
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const gap = readFillGap(this.state.fillGap);
     for (const choice of FILL_GAPS) {
@@ -3396,7 +4133,7 @@ export class Toolbar {
     );
     // Page zoom keeps the note it always had; the Zoom box needs none: the
     // target it draws, and the window, show what a drag did.
-    if (!boxMode) {
+    if (!boxMode && !this.dockedAcross()) {
       this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
       this.toolNote("zoom-in", t("toolbar.zoom.note"));
     }
@@ -3404,8 +4141,9 @@ export class Toolbar {
 
   /**
    * The saved pens' popover: each pen with its number key, the one in hand
-   * marked; then Save current pen, and a way to the settings, where they are
-   * reordered and deleted.
+   * marked, in an order they are dragged to (a finger after a short hold);
+   * then New pen (the pen dialog), and a way to the settings, where they are edited
+   * and deleted.
    */
   private toggleSavedPens(anchor: HTMLElement): void {
     if (this.popoverKind === "saved-pens") {
@@ -3414,10 +4152,21 @@ export class Toolbar {
     }
     const body = this.openPopover("saved-pens", anchor);
     body.addClass("goodobsidian-saved-pens-popover");
+    let at = anchor;
     this.popoverRender = () => {
       body.empty();
       this.renderSavedPens(body);
-      this.keepPopoverInside(anchor);
+      // A pin rebuilds the pill, its star with it (FineNotes#211). Placed
+      // against the removed star, which measures 0, 0, the popover jumped
+      // to the view's left edge: hang it from the new star instead.
+      const popover = this.popover;
+      if (!at.isConnected && popover) {
+        const star = this.optionsEl.querySelector<HTMLElement>(".goodobsidian-saved-pens");
+        if (!star) return;
+        at = star;
+        this.placePopover(popover, at);
+      }
+      this.keepPopoverInside(at);
     };
     this.popoverRender();
   }
@@ -3427,41 +4176,73 @@ export class Toolbar {
     const pens = this.callbacks.savedPens?.() ?? [];
     const current = penOfState(this.state);
     const inHand = this.state.tool === "pen" || this.state.tool === "highlighter";
+    // Dragged into another order (FineNotes#211): the keys 1 to 8 follow it.
+    const list = body.createDiv({ cls: "goodobsidian-saved-pen-list" });
+    const pick = (pen: SavedPen): void => {
+      this.closePopover();
+      this.applySavedPen(pen);
+    };
+    const reorder = this.callbacks.onReorderPens;
+    const drag = new RowDrag(list, ".goodobsidian-saved-pen", {
+      canDrag: () => reorder !== undefined && pens.length > 1,
+      onMove: (from, to) => {
+        reorder?.(moveTo(pens, from, to));
+        this.popoverRender?.();
+      },
+      onPenTap: (index) => {
+        const pen = pens[index];
+        if (pen) pick(pen);
+      },
+    });
     pens.forEach((pen, index) => {
       const spec = PEN_TYPES.find((type) => type.id === pen.type) ?? PEN_TYPES[0];
-      const row = body.createEl("button", {
+      const row = list.createEl("button", {
         cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-saved-pen",
       });
       row.append(penGlyph(spec.id, pen.color));
       row.createSpan({ cls: "goodobsidian-saved-pen-label", text: savedPenLabel(pen) });
       row.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: String(index + 1) });
+      if (pen.id !== undefined && this.callbacks.onLayout && !this.practice) {
+        this.savedPenPin(row, pen, pen.id);
+      }
+      if (pen.id !== undefined && this.callbacks.onDeletePen) {
+        this.savedPenDelete(row, pen, pen.id);
+      }
       row.toggleClass("is-active", inHand && samePen(pen, current));
       row.addEventListener("click", () => {
-        this.closePopover();
-        this.applySavedPen(pen);
+        if (!drag.consumeClick()) pick(pen);
       });
     });
     if (pens.length === 0) {
       body.createDiv({ cls: "goodobsidian-popover-hint", text: t("toolbar.savedPens.none") });
     }
     body.createDiv({ cls: "goodobsidian-popover-divider" });
-    const saved = pens.some((pen) => samePen(pen, current));
-    const add = body.createEl("button", {
-      cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
-    });
-    add.createSpan({
-      text: saved
-        ? t("toolbar.savedPens.thisSaved")
-        : pens.length >= MAX_SAVED_PENS
+    const make = this.callbacks.onNewPen;
+    if (make && !this.practice) {
+      // New pen: the pen dialog, starting from the pen in hand, to save it
+      // as it is or changed first (FineNotes#211).
+      const add = body.createEl("button", {
+        cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
+      });
+      const full = pens.length >= MAX_SAVED_PENS;
+      add.createSpan({
+        text: full
           ? t("toolbar.savedPens.full", { max: MAX_SAVED_PENS })
-          : t("toolbar.savedPens.saveCurrent"),
-    });
-    add.disabled = !inHand || saved || pens.length >= MAX_SAVED_PENS || !this.callbacks.onSavePen;
-    add.addEventListener("click", () => {
-      if (add.disabled) return;
-      this.callbacks.onSavePen?.(current);
-      this.popoverRender?.();
-    });
+          : t("toolbar.savedPen.newPen"),
+      });
+      iconOrText(add.createSpan({ cls: "goodobsidian-popover-link-icon" }), "plus", "+");
+      add.disabled = full;
+      add.addEventListener("click", () => {
+        if (add.disabled) return;
+        this.closePopover();
+        make(current, () => undefined);
+      });
+    }
+    this.editPensLink(body);
+  }
+
+  /** Edit saved pens: the settings, where they are changed and deleted. */
+  private editPensLink(body: HTMLElement): void {
     if (!this.callbacks.onEditPens) return;
     const edit = body.createEl("button", {
       cls: "goodobsidian-wide goodobsidian-popover-link clickable-icon",
@@ -3471,6 +4252,91 @@ export class Toolbar {
     edit.addEventListener("click", () => {
       this.closePopover();
       this.callbacks.onEditPens?.();
+    });
+  }
+
+  /**
+   * Delete a saved pen (FineNotes#211): off the bar first, if it is on it,
+   * so no button is left for a pen that is gone; then out of Saved pens.
+   */
+  private deleteSavedPen(id: string): void {
+    const slot = savedPenSlot(id);
+    if (placeOf(this.laid(), slot) !== "off") this.togglePenSlot(slot);
+    if (this.handButton === slot) this.handButton = null;
+    this.callbacks.onDeletePen?.(id);
+  }
+
+  /**
+   * A saved pen's trash, at the end of its row: a first tap readies it (it
+   * turns red), a second deletes the pen. It acts on its own lift, as the
+   * pin does, and keeps its press from the row.
+   */
+  private savedPenDelete(row: HTMLElement, pen: SavedPen, id: string): void {
+    const trash = row.createSpan({ cls: "goodobsidian-saved-pen-delete" });
+    iconOrText(trash, "trash-2", "");
+    const name = savedPenLabel(pen);
+    trash.setAttribute("role", "button");
+    trash.setAttribute("aria-label", t("toolbar.savedPens.delete", { name }));
+    let pressed = false;
+    trash.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      pressed = true;
+    });
+    trash.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      if (!pressed) return;
+      pressed = false;
+      if (!trash.hasClass("is-armed")) {
+        trash.addClass("is-armed");
+        trash.setAttribute("aria-label", t("toolbar.savedPens.deleteConfirm", { name }));
+        return;
+      }
+      this.deleteSavedPen(id);
+      this.popoverRender?.();
+    });
+    trash.addEventListener("pointercancel", () => {
+      pressed = false;
+    });
+    trash.addEventListener("click", (event) => event.stopPropagation());
+  }
+
+  /**
+   * A saved pen's pin: on the bar as a button of its own, or not
+   * (FineNotes#211). It sits in the row, which is itself a button and can be
+   * dragged, so it acts on its own lift (the Pencil sends no click here)
+   * and keeps its press from the row.
+   */
+  private savedPenPin(row: HTMLElement, pen: SavedPen, id: string): void {
+    const slot = savedPenSlot(id);
+    const on = placeOf(this.laid(), slot) !== "off";
+    const pin = row.createSpan({ cls: "goodobsidian-saved-pen-pin" });
+    pin.toggleClass("is-on", on);
+    iconOrText(pin, "pin", "");
+    const name = savedPenLabel(pen);
+    pin.setAttribute("role", "button");
+    pin.setAttribute("aria-pressed", String(on));
+    pin.setAttribute(
+      "aria-label",
+      on ? t("toolbar.savedPens.unpin", { name }) : t("toolbar.savedPens.pin", { name }),
+    );
+    let pressed = false;
+    pin.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      pressed = true;
+    });
+    pin.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      if (!pressed) return;
+      pressed = false;
+      this.togglePenSlot(slot);
+      this.popoverRender?.();
+    });
+    pin.addEventListener("pointercancel", () => {
+      pressed = false;
+    });
+    pin.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
     });
   }
 
@@ -3513,21 +4379,21 @@ export class Toolbar {
 
     this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
 
-    // Sizes, drawn as eraser footprints of increasing diameter: the presets,
-    // with a size set on the slider in place of the nearest one. The chevron
-    // opens the slider, as the pen's widths do.
-    const sizes = quickEraserSizes(eraserSizeFor(this.state));
+    // Sizes, drawn as eraser footprints: the three presets, each keeping the
+    // size it was given on the slider. The chevron opens the slider, as the
+    // pen's widths do.
+    const sizes = this.eraserPresets();
     const marks = this.eraserMarks(sizes, PILL_ERASER_BOX);
-    for (const size of sizes) {
+    sizes.forEach((size, slot) => {
       const button = this.optionsEl.createEl("button", { cls: "goodobsidian-erasersize" });
       button.append(eraserSizeGlyph(marks.get(size), PILL_ERASER_BOX));
       button.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
       button.addEventListener("click", () => {
-        this.setEraserSize(size);
+        this.pickEraserPreset(slot);
         this.syncActive();
       });
-      this.eraserSizeButtons.set(size, button);
-    }
+      this.eraserSizeButtons.set(slot, button);
+    });
     this.chevron(t("toolbar.eraser.size"), (anchor) => this.toggleEraserSizeList(anchor));
 
     // What it erases: GoodNotes' "Erase highlighter only", and "pen only".
@@ -3966,6 +4832,11 @@ export class Toolbar {
    * button says so), and an empty pill hides itself.
    */
   private buildSelectOptions(): void {
+    // Docked along the top or bottom, the lasso's options are in the bar itself.
+    if (this.dockedAcross()) {
+      this.buildLassoRow();
+      return;
+    }
     // Repeated selection may now return to Pen, so keep the lasso settings reachable.
     if (this.callbacks.returnToPenOnReselect?.() === true)
       this.barButton(this.optionsEl, "settings-2", t("toolbar.lasso.options"), (button) =>
@@ -4023,6 +4894,81 @@ export class Toolbar {
         this.state.lassoFilter = { ...lassoFilterFor(this.state), [key]: on };
         this.saveLasso();
         this.popoverRender?.();
+      });
+    }
+  }
+
+  /**
+   * Docked along the top or bottom (discussion #200): a tool's choices are
+   * a row of the bar, each one a button, rather than a menu behind one.
+   */
+  private dockedAcross(): boolean {
+    const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
+    return edge === "top" || edge === "bottom";
+  }
+
+  /**
+   * A row of colour swatches for a tool with one colour (the laser, fill):
+   * `colors`, the one in use among them, and a + that opens the picker for
+   * any other.
+   */
+  private colorRow(
+    colors: readonly string[],
+    current: string,
+    pick: (color: string) => void,
+    openPicker: (anchor: HTMLElement) => void,
+  ): void {
+    const row = this.optionsEl.createDiv({ cls: "goodobsidian-pen-colors" });
+    row.dataset.ignoreSwipe = "true";
+    const shown = colors.some((c) => sameColor(c, current)) ? colors : [current, ...colors];
+    for (const color of shown) {
+      const swatch = this.swatchButton(row, color, () => pick(color));
+      swatch.toggleClass("is-active", sameColor(color, current));
+    }
+    const more = row.createEl("button", {
+      cls: "goodobsidian-color-more clickable-icon",
+      attr: { type: "button", "aria-label": t("toolbar.color.add") },
+    });
+    iconOrText(more, "plus", "+");
+    more.addEventListener("click", () => openPicker(more));
+  }
+
+  /**
+   * The lasso popover's choices as a row of the bar (discussion #200): its
+   * types, then what it picks up, each a symbol that is lit while on.
+   */
+  private buildLassoRow(): void {
+    const mode = lassoModeFor(this.state);
+    for (const option of [...LASSO_MODES].reverse()) {
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-shape goodobsidian-lasso-mode clickable-icon",
+        attr: { type: "button", "aria-label": LASSO_MODE_LABELS[option] },
+      });
+      button.append(lassoGlyph(option, 24));
+      button.toggleClass("is-active", option === mode);
+      button.setAttribute("aria-pressed", String(option === mode));
+      button.addEventListener("click", () => {
+        this.state.lassoMode = option;
+        this.saveLasso();
+        this.drawLassoIcon();
+        this.buildOptions();
+      });
+    }
+    this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const filter = lassoFilterFor(this.state);
+    for (const key of LASSO_FILTER_KEYS) {
+      const on = filter[key];
+      const button = this.optionsEl.createEl("button", {
+        cls: "goodobsidian-shape goodobsidian-lasso-filter clickable-icon",
+        attr: { type: "button", "aria-label": LASSO_FILTER_LABELS[key] },
+      });
+      setIcon(button, LASSO_FILTER_ICONS[key]);
+      button.toggleClass("is-active", on);
+      button.setAttribute("aria-pressed", String(on));
+      button.addEventListener("click", () => {
+        this.state.lassoFilter = { ...lassoFilterFor(this.state), [key]: !on };
+        this.saveLasso();
+        this.buildOptions();
       });
     }
   }
@@ -4401,7 +5347,8 @@ export class Toolbar {
     }
     const hostBox = this.host.getBoundingClientRect();
     const anchorBox = anchor.getBoundingClientRect();
-    const floor = Math.min(hostBox.bottom, window.innerHeight - keyboardHeight()) - EDGE_INSET;
+    const floor =
+      Math.min(hostBox.bottom, winOf(this.barEl).innerHeight - keyboardHeight()) - EDGE_INSET;
     const below = floor - (anchorBox.bottom + 8);
     const above = anchorBox.top - 8 - (hostBox.top + EDGE_INSET);
     const height = popover.offsetHeight;
@@ -4592,7 +5539,7 @@ export class Toolbar {
   private textFieldDone(to: EventTarget | null): void {
     if (!this.textFieldOpen) return;
     this.textFieldOpen = false;
-    this.callbacks.onTextFieldDone?.(to instanceof Element ? to : null);
+    this.callbacks.onTextFieldDone?.(isElement(to) ? to : null);
   }
 
   /** The named styles, each shown in its own look; a pick applies it and closes. */
@@ -4643,6 +5590,7 @@ export class Toolbar {
       button.setAttribute("aria-pressed", String(on));
       button.toggleClass("is-active", on);
     }
+    // Markdown mode (discussion #107) is a style in the Style list, not a flag here.
   }
 
   private renderTextAlign(body: HTMLElement): void {
@@ -4789,10 +5737,65 @@ export class Toolbar {
     }
   }
 
+  /**
+   * P, H (pressed or held) or a saved pen's 1-8: the bar button the pen has
+   * is pressed, as a tap would (`keyPenTarget`, FineNotes#226 and #211). A
+   * pinned pen goes in hand on its own button; any other on the pen's, a
+   * saved pen as it was saved and P or H as the pen row puts them in hand.
+   * A key naming the pen in hand changes nothing.
+   */
+  pressPenKey(key: PenKey, saved: SavedPen | null = null): void {
+    const target = keyPenTarget(
+      key,
+      this.state.tool,
+      penSlotsOf(this.laid()),
+      this.penSlotInHand(),
+      this.lastPenButton,
+    );
+    if (target === null) return;
+    if (target !== "main") {
+      this.tapPenSlot(target, null);
+      return;
+    }
+    if (typeof key === "object") {
+      if (!saved) return;
+      this.handButton = "main";
+      this.applySavedPen(saved);
+      return;
+    }
+    this.pickPenByShortcut(key);
+  }
+
+  /**
+   * P or H on the pen's own button: the pen or the highlighter as its button
+   * in the pen row puts it in hand, with that type's own colour and width
+   * (`shortcutPenType`). Switching the tool alone left the pen's red and
+   * width on the highlighter, and kept P on the highlighter.
+   */
+  private pickPenByShortcut(tool: "pen" | "highlighter"): void {
+    const id = shortcutPenType(
+      tool,
+      this.activePenType().id,
+      this.penKeyRecent ?? [],
+      penRowTypes(this.state).map((spec) => spec.id),
+    );
+    const spec = PEN_TYPES.find((type) => type.id === id) ?? PEN_TYPES[0];
+    if (this.practice && spec.tool === "highlighter") return;
+    this.handButton = "main";
+    this.closePopover();
+    if (this.state.tool !== spec.tool) {
+      this.drawingTool = drawingToolOf(this.drawingTool, spec.tool);
+      this.tuckedByStroke = false;
+      this.leaveToolFor(spec.tool);
+    }
+    this.choosePenType(spec);
+  }
+
   private choosePenType(spec: PenTypeSpec): void {
     // Each pen type keeps its own colour, row and width (GoodNotes): the one
     // being left keeps what it wrote with, the one picked brings back its own.
     const from = this.activePenType().id;
+    this.penKeyRecent = rememberPenType(rememberPenType(this.penKeyRecent ?? [], from), spec.id);
     if (from !== spec.id) {
       const { color, size } = this.state;
       const step = switchPenInk(this.state.penInks ?? {}, from, spec.id, this.inkInHand());
@@ -4824,15 +5827,96 @@ export class Toolbar {
     this.syncActive();
   }
 
-  /** Three widths around the active one, per the reference screenshot. */
-  private quickWidths(): number[] {
-    const quick = this.widths.slice(0, QUICK_WIDTHS);
-    // The live width takes the last slot, a preset or one set on the slider.
-    const size = this.state.size;
-    if (!quick.includes(size) && Number.isFinite(size) && size > 0) {
-      quick[quick.length - 1] = size;
+  /** The pen type in hand's width presets (FineNotes#210): each keeps its own width. */
+  private widthPresets(): number[] {
+    return presetsFor(this.state.widthPresets ?? {}, this.activePenType().id);
+  }
+
+  /** The width preset holding the width in hand, or `null` when none does (a saved pen's). */
+  private chosenWidthSlot(): number | null {
+    this.widthSlot = chosenSlot(this.widthPresets(), this.state.size, this.widthSlot);
+    return this.widthSlot;
+  }
+
+  /** Write with preset `slot`'s width; the slider now changes that preset. */
+  private pickWidthPreset(slot: number): void {
+    const width = this.widthPresets()[slot];
+    if (width === undefined) return;
+    this.widthSlot = slot;
+    this.setWidth(width);
+  }
+
+  /**
+   * A width from the slider or the mm field: the chosen preset becomes it,
+   * the others keep theirs. With none chosen, only the width in hand changes.
+   */
+  private editWidth(width: number): void {
+    const slot = this.chosenWidthSlot();
+    if (slot !== null) {
+      this.state.widthPresets = withWidthPreset(
+        this.state.widthPresets ?? {},
+        this.activePenType().id,
+        slot,
+        width,
+      );
+      this.callbacks.onWidthPresets?.(this.state.widthPresets);
     }
-    return quick;
+    this.setWidth(width);
+  }
+
+  /** The reset: the pen type's presets back to the defaults, and the chosen one's width in hand. */
+  private resetWidthPresets(): void {
+    const slot = this.chosenWidthSlot();
+    this.state.widthPresets = withoutWidthPresets(
+      this.state.widthPresets ?? {},
+      this.activePenType().id,
+    );
+    this.callbacks.onWidthPresets?.(this.state.widthPresets);
+    const width =
+      slot !== null
+        ? DEFAULT_WIDTH_PRESETS[slot]
+        : (this.options.defaultSize ?? DEFAULT_WIDTH_PRESETS[1]);
+    this.widthSlot = slot;
+    this.setWidth(width);
+  }
+
+  /** The eraser's preset sizes. */
+  private eraserPresets(): number[] {
+    return eraserPresetsOf(this.state.eraserPresets);
+  }
+
+  /** The eraser preset holding the size in hand, or `null` when none does. */
+  private chosenEraserSlot(): number | null {
+    this.eraserSlot = chosenSlot(this.eraserPresets(), eraserSizeFor(this.state), this.eraserSlot);
+    return this.eraserSlot;
+  }
+
+  /** Erase with preset `slot`'s size; the slider now changes that preset. */
+  private pickEraserPreset(slot: number): void {
+    const size = this.eraserPresets()[slot];
+    if (size === undefined) return;
+    this.eraserSlot = slot;
+    this.setEraserSize(size);
+  }
+
+  /** A size from the slider: the chosen preset becomes it, as {@link editWidth}. */
+  private editEraserSize(size: number): void {
+    const slot = this.chosenEraserSlot();
+    const clamped = clampEraserSize(size);
+    if (slot !== null) {
+      this.state.eraserPresets = withEraserPreset(this.eraserPresets(), slot, clamped);
+      this.callbacks.onEraserPresets?.(this.state.eraserPresets);
+    }
+    this.setEraserSize(clamped);
+  }
+
+  /** The reset: the eraser's presets back to the defaults, and the chosen one's size in hand. */
+  private resetEraserPresets(): void {
+    const slot = this.chosenEraserSlot();
+    this.state.eraserPresets = eraserPresetsOf(undefined);
+    this.callbacks.onEraserPresets?.(this.state.eraserPresets);
+    this.eraserSlot = slot;
+    this.setEraserSize(slot !== null ? this.state.eraserPresets[slot] : DEFAULT_ERASER_SIZE);
   }
 
   /** The settings' own colours, which keep their slots in the pen's row. */
@@ -4911,7 +5995,19 @@ export class Toolbar {
     range.step = "1";
     const preview = strokePreview(body, this.callbacks.paintSizePaper);
     const row = body.createDiv({ cls: "goodobsidian-sizes" });
+    // By slot: each preset keeps its own width, and the chosen one follows the slider.
     const presets = new Map<number, HTMLElement>();
+    const drawPresets = (): void => {
+      const widths = this.widthPresets();
+      const marks = this.widthMarks(widths);
+      const pen = this.activePenType().id;
+      for (const [slot, preset] of presets) {
+        const width = widths[slot];
+        preset.querySelector("svg")?.replaceWith(widthGlyph(marks.get(width), pen));
+        preset.setAttribute("aria-label", t("toolbar.width.value", { mm: this.widthMm(width) }));
+        preset.setAttribute("title", this.widthMm(width));
+      }
+    };
     // The readout, the thumb, the preview and the presets always show the live width.
     const show = (): void => {
       const width = chosenWidth(this.state.size, floor);
@@ -4920,7 +6016,8 @@ export class Toolbar {
       field.setAttribute("title", this.widthMm(width));
       range.value = String(nearestStop(stops, width));
       syncRangeFill(range);
-      markChosen(presets, this.state.size);
+      drawPresets();
+      markChosen(presets, this.chosenWidthSlot());
       const color =
         this.state.tool === "shape"
           ? (this.state.shapeColor ?? DEFAULT_SHAPE_COLOR)
@@ -4929,52 +6026,48 @@ export class Toolbar {
       const pen = this.state.tool === "shape" ? "ball" : this.activePenType().id;
       preview(strokeWidthFor(this.state) * this.previewScales().pen, this.shown(color), pen);
     };
-    const pick = (width: number): void => {
-      this.setWidth(width);
+    // A new width for the chosen preset, from the slider or the field.
+    const edit = (width: number): void => {
+      this.editWidth(width);
       show();
     };
-    // After a preset or a reset, the pill's quick widths are rebuilt around it.
+    // After a preset, an edit or a reset, the pill's widths are drawn again.
     const settle = (): void => {
       this.buildOptions();
       this.syncActive();
     };
-    const marks = this.widthMarks(this.widths);
-    for (const width of this.widths) {
+    const first = this.widthPresets();
+    const firstMarks = this.widthMarks(first);
+    first.forEach((width, slot) => {
       const preset = widthButton(
         row,
         this.widthMm(width),
         this.activePenType().id,
-        marks.get(width),
+        firstMarks.get(width),
         () => {
-          pick(width);
+          this.pickWidthPreset(slot);
+          show();
           this.closePopover();
           settle();
         },
       );
-      presets.set(width, preset);
-    }
+      presets.set(slot, preset);
+    });
     // The zoom changed under the open popover: its marks follow the ink.
-    this.sizeMarksRender = () => {
-      const marks = this.widthMarks([...presets.keys()]);
-      for (const [width, preset] of presets) {
-        preset
-          .querySelector("svg")
-          ?.replaceWith(widthGlyph(marks.get(width), this.activePenType().id));
-      }
-      show();
-    };
+    this.sizeMarksRender = show;
     // Live while dragging; the pill's widths follow once the thumb is let go.
-    range.addEventListener("input", () => pick(stops[Number(range.value)] ?? this.state.size));
+    range.addEventListener("input", () => edit(stops[Number(range.value)] ?? this.state.size));
     range.addEventListener("change", settle);
     reset.addEventListener("click", () => {
-      pick(this.options.defaultSize ?? this.widths[Math.floor(this.widths.length / 2)]);
+      this.resetWidthPresets();
+      show();
       settle();
     });
     const typed = (): void => {
       const width = widthFromMm(field.value, this.inkScale());
       field.toggleClass("is-invalid", width === null);
       if (width === null) return;
-      pick(width);
+      edit(width);
       field.value = mmText(chosenWidth(this.state.size, floor), this.inkScale());
       settle();
     };
@@ -5053,12 +6146,15 @@ export class Toolbar {
    */
   refreshSizeMarks(): void {
     const pen = this.activePenType().id;
-    const widths = this.widthMarks([...this.widthButtons.keys()]);
-    for (const [width, button] of this.widthButtons) {
+    const widths = this.widthMarks([...this.widthButtonSizes.values()]);
+    for (const [slot, button] of this.widthButtons) {
+      const width = this.widthButtonSizes.get(slot) ?? NaN;
       button.querySelector("svg")?.replaceWith(widthGlyph(widths.get(width), pen));
     }
-    const sizes = this.eraserMarks([...this.eraserSizeButtons.keys()], PILL_ERASER_BOX);
-    for (const [size, button] of this.eraserSizeButtons) {
+    const presets = this.eraserPresets();
+    const sizes = this.eraserMarks(presets, PILL_ERASER_BOX);
+    for (const [slot, button] of this.eraserSizeButtons) {
+      const size = presets[slot];
       button.querySelector("svg")?.replaceWith(eraserSizeGlyph(sizes.get(size), PILL_ERASER_BOX));
       button.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
     }
@@ -5113,59 +6209,57 @@ export class Toolbar {
     range.step = "1";
     const preview = eraserPreview(body, this.callbacks.paintSizePaper);
     const row = body.createDiv({ cls: "goodobsidian-sizes" });
+    // By slot: each preset keeps its own size, and the chosen one follows the slider.
     const presets = new Map<number, HTMLElement>();
-    // The readout, the thumb, the preview and the presets always show the live size.
-    const show = (): void => {
-      const size = eraserSizeFor(this.state);
-      readout.setText(this.eraserMm(size));
-      range.value = String(nearestStop(stops, size));
-      syncRangeFill(range);
-      markChosen(presets, size);
-      preview(size * this.previewScales().eraser);
-    };
-    const pick = (size: number): void => {
-      this.setEraserSize(size);
-      show();
-    };
-    // The pill's quick sizes are rebuilt around a new size once it is chosen.
-    const settle = (): void => {
-      this.buildOptions();
-      this.syncActive();
-    };
-    const marks = this.eraserMarks(ERASER_SIZES, POPOVER_ERASER_BOX);
-    for (const size of ERASER_SIZES) {
-      const preset = row.createEl("button", { cls: "goodobsidian-erasersize" });
-      preset.append(eraserSizeGlyph(marks.get(size), POPOVER_ERASER_BOX));
-      preset.setAttribute("aria-label", t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }));
-      preset.setAttribute("title", this.eraserMm(size));
-      preset.addEventListener("click", () => {
-        pick(size);
-        this.closePopover();
-        settle();
-      });
-      presets.set(size, preset);
-    }
-    this.sizeMarksRender = () => {
-      const marks = this.eraserMarks([...presets.keys()], POPOVER_ERASER_BOX);
-      for (const [size, preset] of presets) {
-        preset
-          .querySelector("svg")
-          ?.replaceWith(eraserSizeGlyph(marks.get(size), POPOVER_ERASER_BOX));
+    const drawPresets = (): void => {
+      const sizes = this.eraserPresets();
+      const marks = this.eraserMarks(sizes, POPOVER_ERASER_BOX);
+      for (const [slot, preset] of presets) {
+        const size = sizes[slot];
+        preset.empty();
+        preset.append(eraserSizeGlyph(marks.get(size), POPOVER_ERASER_BOX));
         preset.setAttribute(
           "aria-label",
           t("toolbar.eraser.sizeValue", { mm: this.eraserMm(size) }),
         );
         preset.setAttribute("title", this.eraserMm(size));
       }
-      show();
     };
+    // The readout, the thumb, the preview and the presets always show the live size.
+    const show = (): void => {
+      const size = eraserSizeFor(this.state);
+      readout.setText(this.eraserMm(size));
+      range.value = String(nearestStop(stops, size));
+      syncRangeFill(range);
+      drawPresets();
+      markChosen(presets, this.chosenEraserSlot());
+      preview(size * this.previewScales().eraser);
+    };
+    // After a preset, an edit or a reset, the pill's sizes are drawn again.
+    const settle = (): void => {
+      this.buildOptions();
+      this.syncActive();
+    };
+    this.eraserPresets().forEach((_, slot) => {
+      const preset = row.createEl("button", { cls: "goodobsidian-erasersize" });
+      preset.addEventListener("click", () => {
+        this.pickEraserPreset(slot);
+        show();
+        this.closePopover();
+        settle();
+      });
+      presets.set(slot, preset);
+    });
+    this.sizeMarksRender = show;
     // Live while dragging; the pill follows once the thumb is let go.
-    range.addEventListener("input", () =>
-      pick(stops[Number(range.value)] ?? eraserSizeFor(this.state)),
-    );
+    range.addEventListener("input", () => {
+      this.editEraserSize(stops[Number(range.value)] ?? eraserSizeFor(this.state));
+      show();
+    });
     range.addEventListener("change", settle);
     reset.addEventListener("click", () => {
-      pick(DEFAULT_ERASER_SIZE);
+      this.resetEraserPresets();
+      show();
       settle();
     });
     show();
@@ -5323,6 +6417,26 @@ export class Toolbar {
     openSettings: () => void,
     openGestures: () => void,
   ): void {
+    // The pen in hand's type as a button of its own on the bar, or off it
+    // again (FineNotes#211). Not on a practice sheet, whose bar is fixed.
+    if (this.callbacks.onLayout && !this.practice) {
+      // The button the bar marks as in hand: a pinned saved pen's own slot.
+      const { slot, on } = penMenuPin(this.laid(), this.penSlotInHand(), this.activePenType().id);
+      const pin = body.createEl("button", {
+        cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-pen-pin-row",
+      });
+      iconOrText(
+        pin.createSpan({ cls: "goodobsidian-laser-row-icon" }),
+        on ? "pin-off" : "pin",
+        "",
+      );
+      pin.createSpan({ text: on ? t("toolbar.pen.removeFromBar") : t("toolbar.pen.addToBar") });
+      pin.addEventListener("click", () => {
+        this.closePopover();
+        this.togglePenSlot(slot);
+      });
+      body.createDiv({ cls: "goodobsidian-popover-divider" });
+    }
     // The highlighter's tip, first: its one choice no other pen has.
     if (this.activePenType().tool === "highlighter" && this.renderHighlighterTip(body)) {
       body.createDiv({ cls: "goodobsidian-popover-divider" });
@@ -5724,14 +6838,37 @@ export class Toolbar {
     // Removed with the popover, so its listeners need no disposer.
     this.keepFocus(popover, false);
     const body = popover.createDiv({ cls: "goodobsidian-popover-body" });
+    this.placePopover(popover, anchor);
 
+    this.popover = popover;
+    this.popoverKind = kind;
+    this.growPopover(popover);
+    // Once the caller has filled it, every popover is kept inside the view,
+    // whether or not its caller asks again: some never did, and in iPad
+    // Split View a pane is narrow enough for any of them to hang off it
+    // (FineNotes#210). A text popover is placed by its own refit.
+    queueMicrotask(() => {
+      if (this.popover !== popover || !anchor.isConnected) return;
+      if (this.popoverRefit) this.popoverRefit();
+      else this.keepPopoverInside(anchor);
+    });
+    return body;
+  }
+
+  /**
+   * Put `popover` beside `anchor`: toward the page from wherever the pill
+   * rests (pill-dock-model.ts), placed by the edge it opens from, so its
+   * size is not needed yet. Returns the side it opens toward.
+   */
+  private placePopover(popover: HTMLElement, anchor: HTMLElement): PopoverSide {
     const hostBox = this.host.getBoundingClientRect();
     const anchorBox = anchor.getBoundingClientRect();
-    // Toward the page from wherever the pill rests (pill-dock-model.ts);
-    // placed by the edge it opens from, so its size is not needed yet.
     const side = this.popoverSideFor(anchor);
     const centreX = anchorBox.left - hostBox.left + anchorBox.width / 2;
     const centreY = anchorBox.top - hostBox.top + anchorBox.height / 2;
+    for (const each of ["up", "left", "right"]) popover.removeClass(`opens-${each}`);
+    popover.style.removeProperty("top");
+    popover.style.removeProperty("bottom");
     if (side !== "down") popover.addClass(`opens-${side}`);
     if (side === "down") {
       popover.setCssStyles({
@@ -5750,18 +6887,7 @@ export class Toolbar {
         top: `${Math.round(centreY)}px`,
       });
     }
-
-    this.popover = popover;
-    this.popoverKind = kind;
-    this.growPopover(popover);
-    // Once the caller has filled it: beside an upright pill, every popover is
-    // kept inside the page area, whether or not its caller asks again.
-    if (side === "left" || side === "right") {
-      queueMicrotask(() => {
-        if (this.popover === popover && anchor.isConnected) this.keepPopoverInside(anchor);
-      });
-    }
-    return body;
+    return side;
   }
 
   /**
@@ -5898,6 +7024,11 @@ export class Toolbar {
       // from its box: it is still growing in (scale, translate) when this
       // first runs, and a box read then put it 100 px above the view on the
       // iPad (CLAUDE.md ledger, "Measuring an element that is still gliding").
+      // As wide as the room on the side it opens to (a narrow Split View pane).
+      const besideX = popover.hasClass("opens-right")
+        ? hostBox.right - EDGE_INSET - (anchorBox.right + 8)
+        : anchorBox.left - 8 - (hostBox.left + EDGE_INSET);
+      popover.setCssProps({ "--gob-popover-room": `${Math.round(Math.max(120, besideX))}px` });
       const area = this.pillArea(hostBox, 0);
       const top = area.top;
       const floor = Math.max(top, area.bottom - EDGE_INSET);
@@ -5917,14 +7048,17 @@ export class Toolbar {
       ? anchorBox.top - hostBox.top - EDGE_INSET - gap
       : hostBox.bottom - anchorBox.bottom - EDGE_INSET - gap;
     this.limitPopoverHeight(popover, roomVertical);
-    const box = popover.getBoundingClientRect();
-    let shift = 0;
-    if (box.right > hostBox.right - EDGE_INSET) shift = hostBox.right - EDGE_INSET - box.right;
-    if (box.left + shift < hostBox.left + EDGE_INSET) shift = hostBox.left + EDGE_INSET - box.left;
+    // Slid sideways into the view, worked out from where it rests (centred
+    // on its button, `offsetWidth`), never from its box: that box carries
+    // the slide of an earlier call (the pen menu re-renders as its pages
+    // change) and the grow's scale, and in iPad Split View the settings
+    // page was left hanging off the pane's left edge (FineNotes#210).
+    const room = Math.max(0, hostBox.width - 2 * EDGE_INSET);
+    popover.setCssProps({ "--gob-popover-room": `${Math.round(room)}px` });
+    const centre = anchorBox.left - hostBox.left + anchorBox.width / 2;
+    const shift = sideLift(centre, popover.offsetWidth, EDGE_INSET, hostBox.width - EDGE_INSET);
     // A popover with an arrow keeps it pointing at the anchor.
     popover.setCssProps({ "--gob-popover-arrow": `${Math.round(-shift)}px` });
-    if (shift === 0) return;
-    const centre = anchorBox.left - hostBox.left + anchorBox.width / 2;
     popover.setCssStyles({ left: `${Math.round(centre + shift)}px` });
   }
 
@@ -6065,6 +7199,14 @@ export class Toolbar {
    * "Dock tool options" was switched on this device (main.ts, `pillRow`):
    * the pill by the bar becomes a row the page starts past, or floats again.
    */
+  /** The bar's preset changed (Customize toolbar): the end folds into ⋯ in Essentials. */
+  setPreset(preset: BarPreset): void {
+    if (preset === this.preset) return;
+    this.preset = preset;
+    this.editor?.refresh();
+    this.measureBar();
+  }
+
   setPillRow(on: boolean): void {
     if (on === this.pillRowOn) return;
     this.pillRowOn = on;
@@ -6092,7 +7234,10 @@ export class Toolbar {
       gap: this.pillInset(),
       previous: this.row,
     });
-    this.optionsEl.toggleClass("is-docked", next.edge !== null && !anchored);
+    this.optionsEl.toggleClass(
+      "is-docked",
+      (next.edge !== null || this.optionsEl.hasClass("is-in-bar")) && !anchored,
+    );
     const before = this.row;
     if (next.edge === before.edge && next.room === before.room) return;
     this.row = next;
@@ -6119,9 +7264,154 @@ export class Toolbar {
     return spans.map(({ top, bottom }) => ({ top, bottom }));
   }
 
+  /**
+   * The pen's pill is showing (not the text pill over it): its colours are a
+   * row that scrolls. The laser's and fill's colour rows look the same but
+   * belong to other tools.
+   */
+  private penPillShown(): boolean {
+    const tool = this.state.tool;
+    return !this.optionsEl.hasClass("is-text") && (tool === "pen" || tool === "highlighter");
+  }
+
+  /** The room the row in the bar was placed with, which a later `fitBar` keeps. */
+  private pillWant = 0;
+  /** The room the bar keeps for the widest row (`widestRow`), which a later `fitBar` keeps. */
+  private dockWant = 0;
+  /** What each tool's row was measured to need in the bar, by its options key. */
+  private readonly rowNeeds = new Map<string, number>();
+
+  /** Whose row the pill shows: the text pill's over the pen, else the tool's. */
+  private rowKey(): string {
+    return this.optionsEl.hasClass("is-text") ? "text" : optionsKey(this.state.tool);
+  }
+
+  /**
+   * The room the row wants inside the bar: all of it, so no control is cut
+   * (docking design B, 2026-11-13), except the pen's colours, which scroll
+   * down to their least (styles.css, `.is-in-bar .goodobsidian-pen-colors`).
+   */
+  private pillNeed(): number {
+    const pill = this.optionsEl;
+    pill.setCssProps({ "--gob-pill-inside": "100000px" });
+    this.fitTextPill(100000);
+    // The text row in the bar may take its compact form (`fitTextPill`):
+    // narrower dropdowns, the pin's word gone, every control still shown.
+    if (pill.hasClass("is-text")) pill.addClass("is-compact");
+    let need = Math.ceil(pill.scrollWidth) + 2;
+    const colours = this.penPillShown()
+      ? pill.querySelector<HTMLElement>(".goodobsidian-pen-colors")
+      : null;
+    if (colours) {
+      const least = parseFloat(getComputedStyle(colours).minWidth) || 0;
+      need -= Math.max(0, Math.ceil(colours.scrollWidth) - least);
+    }
+    return need;
+  }
+
+  /** Put the pill in the bar right after the tools, with the room between them and the end. */
+  private alignPillInBar(): void {
+    const { from, room } = this.pillSpan();
+    const hostBox = this.host.getBoundingClientRect();
+    this.optionsEl.setCssProps({ "--gob-pill-inside": `${Math.max(0, room)}px` });
+    this.optionsEl.setCssStyles({ left: `${Math.round(from + BAR_GAP - hostBox.left)}px` });
+    this.markPillOverflow();
+  }
+
+  /**
+   * The last resort when nothing more may fold (discussion #200): a pill
+   * still wider than its room scrolls sideways in the bar rather than
+   * losing its last buttons.
+   */
+  private markPillOverflow(): void {
+    const pill = this.optionsEl;
+    pill.removeClass("is-overflowing");
+    if (!pill.hasClass("is-in-bar")) return;
+    // From what it needs against its room: its own width may still be gliding
+    // from the last tool's (morphPill). The pen's colours scroll by themselves.
+    if (this.penPillShown()) return;
+    pill.toggleClass("is-overflowing", this.pillWant > this.pillSpan().room + 1);
+  }
+
+  /** Take the pill back out of the bar: it is put in again only if it still fits. */
+  private leaveBar(): void {
+    this.barEl.removeClass("has-pill-inside");
+    this.optionsEl.removeClass("is-in-bar");
+  }
+
+  /** Where the pill's place in the bar starts, and how wide it is, between the bar's groups. */
+  private pillSpan(): { from: number; room: number } {
+    const boxOf = (zone: HTMLElement | undefined): DOMRect | null => {
+      const box = zone?.getBoundingClientRect();
+      return box && box.width > 0 ? box : null;
+    };
+    const bar = this.barEl.getBoundingClientRect();
+    const { start, middle, end } = this.zoneEls;
+    const before = [boxOf(start), boxOf(middle)].flatMap((box) => (box ? [box.right] : []));
+    const from = Math.max(bar.left, ...before);
+    const to = boxOf(end)?.left ?? bar.right;
+    return { from, room: Math.floor(to - from - 2 * BAR_GAP) };
+  }
+
+  /**
+   * Docking design B (2026-11-13): put the row docked along the top or
+   * bottom inside the bar, after the tools, when the widest row any tool
+   * shows (`widestRow`) fits beside them as the bar is. Nothing folds for
+   * it: only Essentials keeps its end in ⋯ (Joost, 2026-11-13). The room is
+   * decided by the widest row, not by the tool in hand, so switching tools
+   * never moves a button. False when it does not fit: then every tool's
+   * row is a row of its own under the bar.
+   */
+  private placeInsideBar(hostBox: DOMRect): boolean {
+    const edge = pillRowEdge(this.pillRowOn, this.pillDock, this.barDock);
+    if (edge !== "top" && edge !== "bottom") return false;
+    this.fitBar(this.indicatorTool);
+    this.barEl.addClass("has-pill-inside");
+    const pill = this.optionsEl;
+    pill.addClass("is-in-bar");
+    pill.addClass("is-docked");
+    this.pillWant = this.pillNeed();
+    this.rowNeeds.set(this.rowKey(), this.pillWant);
+    this.dockWant = widestRow(this.rowNeeds);
+    const { from, room } = this.pillSpan();
+    pill.setCssProps({ "--gob-pill-inside": `${Math.max(0, room)}px` });
+    this.fitTextPill(room);
+    const bar = this.barEl.getBoundingClientRect();
+    const box = pill.getBoundingClientRect();
+    if (
+      !pillFitsBar({ edge, room, need: this.dockWant, height: box.height, barHeight: bar.height })
+    ) {
+      this.leaveBar();
+      this.fitTextPill();
+      // The buttons folded for the rows come back: the bar folds only for itself.
+      this.fitBar(this.indicatorTool);
+      return false;
+    }
+    this.settleFolds();
+    pill.setCssStyles({
+      left: `${Math.round(from + BAR_GAP - hostBox.left)}px`,
+      top: `${Math.round(bar.top - hostBox.top + (bar.height - box.height) / 2)}px`,
+    });
+    this.markPillOverflow();
+    return true;
+  }
+
   private placePill(): void {
+    const wasInside = this.barEl.hasClass("has-pill-inside");
+    this.placePillNow();
+    // Into or out of the bar, the tools move and buttons fold or come back.
+    const inside = this.barEl.hasClass("has-pill-inside");
+    if (wasInside && !inside) this.fitBar(this.indicatorTool);
+    if (wasInside !== inside || inside) this.placeIndicator(this.indicatorTool, null);
+  }
+
+  private placePillNow(): void {
     // A glide in progress would be measured as the pill's size.
     this.stopPillMorph();
+    this.leaveBar();
+    this.optionsEl.removeClass("is-overflowing");
+    // The lasso's chevron goes while its options are a docked row (styles.css).
+    this.barEl.toggleClass("has-docked-row", this.dockedAcross());
     // Docked, the pill is as wide as the row allows: measure it so.
     this.optionsEl.toggleClass(
       "is-docked",
@@ -6148,6 +7438,18 @@ export class Toolbar {
       this.syncPillRow(false, 0, true);
       return;
     }
+    if (this.placeInsideBar(hostBox)) {
+      this.clearForPill(null, hostBox);
+      this.syncPillRow(false, 0);
+      return;
+    }
+    // A row of its own narrower than the tool's controls (Split View): they
+    // scroll sideways, faded at the end, rather than being cut off.
+    const across = this.optionsEl.hasClass("is-docked") && !isUpright(this.pillDock);
+    this.optionsEl.toggleClass(
+      "is-overflowing",
+      across && this.optionsEl.scrollWidth > this.optionsEl.clientWidth + 1,
+    );
     const area = this.pillArea(hostBox, pill.width);
     // An upright pill taller than the room scrolls (styles.css).
     this.optionsEl.setCssProps({
@@ -6422,13 +7724,13 @@ export class Toolbar {
    * Anything still too wide scrolls inside the pill instead of leaving the
    * screen.
    */
-  private fitTextPill(): void {
+  private fitTextPill(inside?: number): void {
     const pill = this.optionsEl;
     pill.removeClass("is-short");
     pill.removeClass("is-compact");
     if (!pill.hasClass("is-text")) return;
     const area = this.pillArea(this.host.getBoundingClientRect(), 0);
-    const room = area.right - area.left - 2 * EDGE_INSET;
+    const room = inside ?? area.right - area.left - 2 * EDGE_INSET;
     if (pill.scrollWidth <= room) return;
     pill.addClass("is-short");
     if (pill.scrollWidth > room) {
@@ -6640,7 +7942,12 @@ export class Toolbar {
     for (const slide of this.toolSlides) slide.cancel();
     this.toolSlides = [];
     this.indicatorTool = tool;
-    let target = tool === null ? undefined : this.toolButtons.get(tool);
+    const slot = tool === "pen" ? this.indicatorSlot : null;
+    let target =
+      tool === null
+        ? undefined
+        : ((slot !== null ? this.slotButtons().get(slot) : undefined) ??
+          this.toolButtons.get(tool));
     // A tool taken off the bar is in hand from the accessories menu: the
     // indicator marks that button instead.
     if (target?.hasClass("is-unlisted") && this.accessoriesButton) target = this.accessoriesButton;
@@ -6718,8 +8025,22 @@ export class Toolbar {
     const { state } = this;
     // Highlighter is a pen type, so the pen button stands for both.
     const tool = state.tool === "highlighter" ? "pen" : state.tool;
-    const from = tool === this.indicatorTool ? null : this.toolPlaces();
+    const slot = this.penSlotInHand();
+    if (state.tool === "pen") this.lastPenButton = slot ?? "main";
+    const from =
+      tool === this.indicatorTool && slot === this.indicatorSlot ? null : this.toolPlaces();
     markChosen(this.toolButtons, tool, true);
+    // The pen in hand may be one of the pens on the bar (FineNotes#211).
+    this.indicatorSlot = slot;
+    for (const [id, button] of this.slotButtons()) {
+      button.toggleClass("is-active", id === slot);
+      button.setAttribute("aria-pressed", String(id === slot));
+    }
+    if (slot !== null) {
+      this.penToolButton?.removeClass("is-active");
+      this.penToolButton?.setAttribute("aria-pressed", "false");
+    }
+    this.drawPenSlots();
     // An open Zoom box keeps the Magnifier lit while another tool writes.
     // `is-on` is exactly what Stylus only uses: the whole button takes the
     // active background and icon colour, not just the glyph.
@@ -6733,8 +8054,11 @@ export class Toolbar {
     if (tool !== this.indicatorTool) this.fitBar(tool);
     this.placeIndicator(tool, from);
     markChosen(this.colorSwatches, state.color);
-    markChosen(this.widthButtons, state.size);
-    markChosen(this.eraserSizeButtons, eraserSizeFor(state));
+    markChosen(
+      this.widthButtons,
+      this.widthButtons.has(FOLDED_WIDTH) ? FOLDED_WIDTH : this.chosenWidthSlot(),
+    );
+    markChosen(this.eraserSizeButtons, this.chosenEraserSlot());
     markChosen(this.penTypeButtons, this.activePenType().id);
     markChosen(this.shapeButtons, shapeModeFor(state), true);
     this.drawPenPreview();
@@ -6853,7 +8177,7 @@ export class Toolbar {
  * Mark the button keyed `chosen` as active and every other one as not;
  * `pressed` mirrors that in `aria-pressed`, for buttons that toggle.
  */
-function markChosen<K>(buttons: Map<K, HTMLElement>, chosen: K, pressed = false): void {
+function markChosen<K>(buttons: Map<K, HTMLElement>, chosen: K | null, pressed = false): void {
   for (const [key, button] of buttons) {
     const isChosen = key === chosen;
     button.toggleClass("is-active", isChosen);
@@ -6906,7 +8230,10 @@ function shapeGlyph(mode: ShapeMode): SVGElement {
       add("path", { d: `${d.join(" ")}Z` });
     },
     line: () => add("path", { d: "M5 19 19 5" }),
-    arrow: () => add("path", { d: "M5 19 19 5M10.5 5H19V13.5" }),
+    // A curve to a head: it is drawn straight and bends by its middle dot.
+    arrow: () => add("path", { d: "M4 18C5 8 15 6 18.5 17M14.3 14.3l4.2 2.7 1.9-4.6" }),
+    // Across, a rounded bend, then down to a head: the elbow it places.
+    elbow: () => add("path", { d: "M4 6h9.5a3.5 3.5 0 0 1 3.5 3.5V19M13.5 15.5 17 19l3.5-3.5" }),
     table: () => {
       add("rect", { x: "3.5", y: "5", width: "17", height: "14", rx: "1.5" });
       add("path", { d: "M3.5 9.7h17M3.5 14.3h17M9.2 5v14M14.8 5v14" });
@@ -7030,6 +8357,39 @@ function strokePreview(
 }
 
 /**
+ * A strip of paper under the tape-height slider with a piece of tape on it,
+ * drawn by the page's own tape painter at the height it will have on the
+ * page now (`scale` screen px per page px). A tape taller than the strip is
+ * cut at its edges, which still reads as wide. Returns the redraw function.
+ */
+function tapePreview(
+  parent: HTMLElement,
+  paint?: PaperPainter,
+): (height: number, scale: number, color: string) => void {
+  const strip = parent.createDiv({ cls: "goodobsidian-size-preview is-tape" });
+  strip.setAttribute("aria-hidden", "true");
+  const paper = paperUnder(strip, paint);
+  const canvas = strip.createEl("canvas", { cls: "goodobsidian-size-preview-tape" });
+  return (height, scale, color) => {
+    paper();
+    const width = strip.clientWidth || 240;
+    const tall = strip.clientHeight || 72;
+    const ratio = activeWindow.devicePixelRatio || 1;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(tall * ratio);
+    canvas.setCssStyles({ width: `${width}px`, height: `${tall}px` });
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Page px from here on, so the painter draws the tape as the page does.
+    ctx.setTransform(ratio * scale, 0, 0, ratio * scale, 0, 0);
+    const across = width / scale;
+    const middle = tall / scale / 2;
+    paintTape(ctx, [across * 0.12, middle, 0.5, across * 0.88, middle, 0.5], height, color);
+  };
+}
+
+/**
  * A strip of paper under the eraser slider with the eraser's footprint on
  * it, at the size it erases on screen. A size larger than the strip is cut
  * at its edges, which still reads as large. Returns the redraw function.
@@ -7112,15 +8472,17 @@ function tapeModes(): readonly (readonly [TapeMode, string, string])[] {
   ];
 }
 
-/** A tape height button's mark: a band, taller for each height. */
-
-function tapeHeightGlyph(index: number): SVGElement {
+/**
+ * A tape height button's mark: a band as tall as the height, in step with
+ * the others (the default heights draw 5, 9 and 15 px), never past the glyph.
+ */
+function tapeHeightGlyph(height: number): SVGElement {
   const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 28 24");
   svg.setAttribute("width", "28");
   svg.setAttribute("height", "24");
   svg.setAttribute("aria-hidden", "true");
-  const tall = [5, 9, 15][index] ?? 9;
+  const tall = Math.max(3, Math.min(20, Math.round(height / 4.8)));
   const rect = activeDocument.createElementNS(SVG_NS, "rect");
   rect.setAttribute("x", "3");
   rect.setAttribute("y", String(12 - tall / 2));

@@ -37,6 +37,7 @@ import {
   readContentsLevel,
 } from "./contents";
 import { normalizeLinks } from "./links";
+import { normalizeRegions } from "./regions";
 import { normalizeTasks } from "./tasks";
 import { isStyledConnector, liveConnectors, readConnectors } from "./connectors";
 import { isTape } from "./cover-tape";
@@ -66,6 +67,7 @@ import {
   type InkDocument,
   type Page,
   type PageChapter,
+  type PageRegion,
   type PageSection,
   type ContentsLevel,
   type InkLink,
@@ -192,12 +194,14 @@ interface StoredPage {
   kind: string;
   geometry: PageGeometry;
   backdrop: Backdrop;
+  board?: true;
   epoch?: number;
   bookmarked?: boolean;
   tab?: string;
   title?: string;
   titleLevel?: ContentsLevel;
   sections?: PageSection[];
+  regions?: PageRegion[];
   chapters?: PageChapter[];
   links?: InkLink[];
   tasks?: InkTask[];
@@ -360,6 +364,7 @@ function storePage(page: Page): StoredPage {
     kind: page.kind,
     geometry: page.geometry,
     backdrop: page.backdrop,
+    board: page.board === true ? true : undefined,
     epoch: isEpoch(page.epoch) ? Math.round(page.epoch) : undefined,
     bookmarked: page.bookmarked === true ? true : undefined,
     tab: readTabColor(page.tab),
@@ -369,6 +374,7 @@ function storePage(page: Page): StoredPage {
         ? page.titleLevel
         : undefined,
     sections: page.sections && page.sections.length > 0 ? page.sections : undefined,
+    regions: page.regions && page.regions.length > 0 ? page.regions : undefined,
     chapters: page.chapters && page.chapters.length > 0 ? page.chapters : undefined,
     links: page.links && page.links.length > 0 ? page.links : undefined,
     tasks: page.tasks && page.tasks.length > 0 ? page.tasks : undefined,
@@ -431,6 +437,9 @@ function featuresOf(doc: InkDocument): FormatFeature[] {
   if (doc.pages.some((page) => page.textBoxes.some((box) => box.rotation !== undefined))) {
     features.push("text-turn");
   }
+  if ((doc.endless === true && doc.pages.length > 1) || doc.pages.some((p) => p.board === true)) {
+    features.push("boards");
+  }
   return features;
 }
 
@@ -439,7 +448,7 @@ function storeMeta(doc: InkDocument): StoredMeta | undefined {
   const meta: StoredMeta = {
     recognizedHash: doc.recognizedHash || undefined,
     single: doc.single === true ? true : undefined,
-    endless: doc.endless === true && doc.pages.length === 1 ? true : undefined,
+    endless: doc.endless === true ? true : undefined,
     folders: normalizeAttachmentFolders(doc.folders),
     scroll: doc.scroll === "horizontal" ? "horizontal" : undefined,
     joined: doc.joined === true ? true : undefined,
@@ -1062,6 +1071,7 @@ function normalizeTextStyle(raw: Record<string, unknown>): Partial<TextBoxElemen
   if (isCornerRadius(raw.radius)) style.radius = raw.radius;
   if (isTextPadding(raw.padding)) style.padding = raw.padding;
   if (raw.caps === true) style.caps = true;
+  if (raw.markdown === true) style.markdown = true;
   return style;
 }
 
@@ -1110,6 +1120,7 @@ function normalizePage(
   seenLinks: Set<string> = new Set(),
   seenTasks: Set<string> = new Set(),
   seenConnectors: Set<string> = new Set(),
+  seenRegions: Set<string> = new Set(),
 ): Page {
   const page = isRecord(raw) ? raw : {};
   const images: ImageElement[] = [];
@@ -1178,12 +1189,14 @@ function normalizePage(
     strokes,
     images,
     textBoxes,
+    ...(page.board === true ? { board: true as const } : {}),
     ...(isEpoch(page.epoch) ? { epoch: Math.round(page.epoch) } : {}),
     // Only a literal `true`: anything else in the file is "not bookmarked".
     ...(page.bookmarked === true ? { bookmarked: true as const } : {}),
     ...(readTabColor(page.tab) ? { tab: readTabColor(page.tab) } : {}),
     ...titleOf(page.title, page.titleLevel),
     ...sectionsOf(page.sections, seenSections),
+    ...regionsOf(page.regions, seenRegions),
     ...chaptersOf(page.chapters, seenSections),
     ...linksOf(page.links, strokes, seenLinks),
     ...tasksOf(page.tasks, strokes, seenTasks),
@@ -1236,6 +1249,12 @@ function sectionsOf(raw: unknown, seen: Set<string>): { sections?: PageSection[]
   return sections.length > 0 ? { sections } : {};
 }
 
+/** A page's named regions (discussion #167), spread into the page only when it has any. */
+function regionsOf(raw: unknown, seen: Set<string>): { regions?: PageRegion[] } {
+  const regions = normalizeRegions(raw, seen);
+  return regions.length > 0 ? { regions } : {};
+}
+
 /**
  * v1 -> v2. An upstream region is an unbounded paper roll, so its page height
  * is derived from how far the ink actually reaches; anything shorter would
@@ -1281,8 +1300,18 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
     const seenLinks = new Set<string>();
     const seenTasks = new Set<string>();
     const seenConnectors = new Set<string>();
+    const seenRegions = new Set<string>();
     pages = raw.pages.map((p, i) =>
-      normalizePage(p, i, view.width, seenSections, seenLinks, seenTasks, seenConnectors),
+      normalizePage(
+        p,
+        i,
+        view.width,
+        seenSections,
+        seenLinks,
+        seenTasks,
+        seenConnectors,
+        seenRegions,
+      ),
     );
   } else if (Array.isArray(raw.regions)) {
     pages = raw.regions.map((r, i) => migrateV1Region(r, i, view.width));
@@ -1307,9 +1336,12 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   const doc: InkDocument = { version: SCHEMA_VERSION, view, pages };
   if (typeof meta.recognizedHash === "string") doc.recognizedHash = meta.recognizedHash;
   if (meta.single === true) doc.single = true;
-  // A board is one page. Pages added to it by a build that knows no boards
-  // make it a notebook again, with every page kept.
-  if (meta.endless === true && pages.length === 1) doc.endless = true;
+  // A board file holds one board, or several under the `boards` label
+  // (discussion #160). Pages added to a one-board file without that label
+  // (a hand edit) make it a notebook again, with every page kept.
+  if (meta.endless === true && (pages.length === 1 || namesBoards(raw.requires))) {
+    doc.endless = true;
+  }
   if (recordings.length > 0) doc.recordings = recordings;
   if (folders) doc.folders = folders;
   if (meta.scroll === "horizontal") doc.scroll = "horizontal";
@@ -1322,6 +1354,11 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   const furniture = readFurniture(meta.furniture);
   if (furniture) doc.furniture = furniture;
   return doc;
+}
+
+/** Whether the stored `requires` list names `boards`: a file of several boards. */
+function namesBoards(requires: unknown): boolean {
+  return Array.isArray(requires) && requires.includes("boards");
 }
 
 /** Run one stage of unpacking, turning its failure into a {@link SerializeError}. */

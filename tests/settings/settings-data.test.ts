@@ -21,7 +21,6 @@ import {
   endpointWarning,
   greyWhileErasingOf,
   laserDefaultColorOf,
-  openSectionsOf,
   pagesAreDark,
   handwritingReaderOf,
   highlighterAlphaOf,
@@ -30,7 +29,10 @@ import {
   paperWidthFrom,
   parseColorList,
   returnToPenOf,
-  sectionOpen,
+  AUTO_RECOGNITION,
+  recognitionChoiceOf,
+  shownSectionOf,
+  storeRecognitionChoice,
   snapCurveOf,
   snapModeOf,
   storeSnapMode,
@@ -43,8 +45,9 @@ import {
   switchLlmVendor,
   storeReturnToPen,
   storeShownValue,
-  withSection,
+  withShownSection,
 } from "../../src/settings-data";
+import { LLM_PROVIDER_ID } from "../../src/recognition/llm-request";
 import { DARK_PAPER, LIGHT_DESK, LIGHT_PAPER, pageLook } from "../../src/canvas/backdrop";
 
 /**
@@ -86,6 +89,8 @@ const FRESH_INSTALL = {
   scribbleNoticeShown: false,
   lastSeenVersion: "",
   newsSince: "",
+  sponsorsSince: "",
+  newsDotsUsed: [],
   checkForUpdates: true,
   updateReminders: true,
   llmVendor: "anthropic",
@@ -101,7 +106,9 @@ const FRESH_INSTALL = {
   imageAspect: "square",
   askSaveChats: false,
   askLayout: "window",
-  askAttachPage: false,
+  searchLayout: "sidebar",
+  askVaultScope: "folder",
+  askShowCost: false,
   cloudConsentGiven: false,
   customConsentGiven: false,
   autoRecognize: false,
@@ -111,6 +118,8 @@ const FRESH_INSTALL = {
   textHintShown: 0,
   textHintDismissed: false,
   shapeHintShown: false,
+  gestureHints: true,
+  searchHidden: [],
   penAutoShape: false,
   penGestures: {
     scribbleErase: true,
@@ -139,8 +148,12 @@ const FRESH_INSTALL = {
   replayInk: true,
   checkHandwrittenWords: false,
   calcNotes: true,
+  columnSums: true,
   speechModel: "whisper-base",
   speechLanguage: "auto",
+  speechService: "device",
+  speechServiceModel: "",
+  speechBaseUrl: "",
   interfaceLanguage: "auto",
   notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
@@ -158,20 +171,37 @@ const FRESH_INSTALL = {
   exportMargins: "all",
 
   savedPens: [
-    { type: "ball", color: "#1971c2", size: 2 },
-    { type: "ball", color: "#e03131", size: 2 },
-    { type: "ball", color: "#2f9e44", size: 2 },
-    { type: "fountain", color: "#1971c2", size: 5 },
-    { type: "fountain", color: "#1a1a1a", size: 3 },
-    { type: "ball", color: "#1a1a1a", size: 1.22 },
-    { type: "brush", color: "#9c36b5", size: 3 },
-    { type: "highlighter", color: "#fab005", size: 5 },
+    { type: "ball", color: "#1971c2", size: 2, id: "pen1" },
+    { type: "ball", color: "#e03131", size: 2, id: "pen2" },
+    { type: "ball", color: "#2f9e44", size: 2, id: "pen3" },
+    { type: "fountain", color: "#1971c2", size: 5, id: "pen4" },
+    { type: "fountain", color: "#1a1a1a", size: 3, id: "pen5" },
+    { type: "ball", color: "#1a1a1a", size: 1.22, id: "pen6" },
+    { type: "brush", color: "#9c36b5", size: 3, id: "pen7" },
+    { type: "highlighter", color: "#fab005", size: 5, id: "pen8" },
   ],
   toolbarLayout: {
     start: ["home", "thumbnails", "search", "ai", "calculator", "undo", "redo"],
     middle: ["select", "pen", "eraser", "text", "shape", "image", "pdf", "accessories"],
     end: ["fullscreen", "addPage", "share", "more", "settings"],
     off: [],
+  },
+  toolbarPreset: "own",
+  toolbarEssentials: {
+    start: ["thumbnails", "undo", "redo"],
+    middle: ["select", "pen", "eraser", "text", "shape", "accessories"],
+    end: [
+      "fullscreen",
+      "addPage",
+      "search",
+      "calculator",
+      "ai",
+      "share",
+      "settings",
+      "home",
+      "more",
+    ],
+    off: ["pan", "zoom", "stylus", "fill"],
   },
   toolbarHomeAdded: true,
   simpleLook: false,
@@ -231,8 +261,12 @@ const USED_VAULT = {
   replayInk: false,
   checkHandwrittenWords: true,
   calcNotes: false,
+  columnSums: false,
   speechModel: "whisper-tiny",
   speechLanguage: "nl",
+  speechService: "groq",
+  speechServiceModel: "whisper-large-v3",
+  speechBaseUrl: "http://nas.local:8000/v1",
   interfaceLanguage: "de",
   notebookOwnFolder: false,
   showNewNotebookInContextMenu: false,
@@ -247,6 +281,8 @@ const USED_VAULT = {
   scribbleNoticeShown: true,
   lastSeenVersion: "0.8.1",
   newsSince: "",
+  sponsorsSince: "",
+  newsDotsUsed: [],
   checkForUpdates: false,
   updateReminders: false,
   llmVendor: "custom",
@@ -262,7 +298,9 @@ const USED_VAULT = {
   imageAspect: "landscape",
   askSaveChats: true,
   askLayout: "sidebar",
-  askAttachPage: true,
+  searchLayout: "original",
+  askVaultScope: "vault",
+  askShowCost: true,
   cloudConsentGiven: true,
   customConsentGiven: true,
   autoRecognize: true,
@@ -272,6 +310,8 @@ const USED_VAULT = {
   textHintShown: 3,
   textHintDismissed: true,
   shapeHintShown: true,
+  gestureHints: true,
+  searchHidden: ["circleLasso"],
   penAutoShape: true,
   penGestures: {
     scribbleErase: false,
@@ -313,6 +353,23 @@ const USED_VAULT = {
     middle: ["pen", "undo", "sticky", "select", "ruler", "accessories"],
     end: ["fullscreen", "addPage", "share", "more", "settings"],
     off: ["pan", "record"],
+  },
+  toolbarPreset: "own",
+  toolbarEssentials: {
+    start: ["thumbnails", "undo", "redo"],
+    middle: ["select", "pen", "eraser", "text", "shape", "accessories"],
+    end: [
+      "fullscreen",
+      "addPage",
+      "search",
+      "calculator",
+      "ai",
+      "share",
+      "settings",
+      "home",
+      "more",
+    ],
+    off: ["pan", "zoom", "stylus", "fill"],
   },
   toolbarHomeAdded: true,
   simpleLook: true,
@@ -624,38 +681,28 @@ describe("control values", () => {
   });
 });
 
-describe("settings sections", () => {
-  it("opens none on a fresh install", () => {
-    expect(openSectionsOf(undefined)).toEqual([]);
-    expect(openSectionsOf(DEFAULT_SETTINGS.settingsOpen)).toEqual([]);
-    expect(sectionOpen(undefined, "writing")).toBe(false);
+describe("the section shown", () => {
+  it("is General on a fresh install", () => {
+    expect(shownSectionOf(undefined)).toBe("general");
+    expect(shownSectionOf(DEFAULT_SETTINGS.settingsOpen)).toBe("general");
   });
 
   it("reads a hand-edited value without trusting it", () => {
-    expect(openSectionsOf("writing")).toEqual([]);
-    expect(openSectionsOf(null)).toEqual([]);
-    // Unknown ids go; known ones come back in the tab's order, once each.
-    expect(openSectionsOf(["ai", "nope", "pages", "ai", 7, "toString", "shortcuts"])).toEqual([
-      "shortcuts",
-      "pages",
-      "ai",
-    ]);
+    expect(shownSectionOf("writing")).toBe("general");
+    expect(shownSectionOf(null)).toBe("general");
+    expect(shownSectionOf(["nope", 7, "toString", "pages"])).toBe("pages");
   });
 
-  it("opens and folds one section, leaving the others", () => {
-    const open = withSection(["pages"], "advanced", true);
-    expect(open).toEqual(["pages", "advanced"]);
-    expect(withSection(open, "pages", false)).toEqual(["advanced"]);
-    expect(withSection(open, "advanced", true)).toEqual(["pages", "advanced"]);
-    expect(withSection(["pages"], "toString" as never, true)).toEqual(["pages"]);
+  it("keeps what the folding sections stored: the first one open", () => {
+    expect(shownSectionOf(["writing"])).toBe("writing");
+    expect(shownSectionOf(["shortcuts", "ai"])).toBe("shortcuts");
+    expect(shownSectionOf(["on-device"])).toBe("reading");
+    expect(shownSectionOf(["advanced", "pages"])).toBe("files");
   });
 
-  it("keeps one open at a time on a tablet, the first of several synced from a computer", () => {
-    expect(withSection(["pages", "ai"], "on-device", true, true)).toEqual(["on-device"]);
-    expect(withSection(["pages"], "pages", false, true)).toEqual([]);
-    expect(sectionOpen(["pages", "ai"], "pages", true)).toBe(true);
-    expect(sectionOpen(["pages", "ai"], "ai", true)).toBe(false);
-    expect(sectionOpen(["pages", "ai"], "ai")).toBe(true);
+  it("stores the section as a one-id list", () => {
+    expect(withShownSection("reading")).toEqual(["reading"]);
+    expect(shownSectionOf(withShownSection("troubleshooting"))).toBe("troubleshooting");
   });
 });
 
@@ -833,5 +880,29 @@ describe("choices that set two switches", () => {
       "light",
       true,
     ]);
+  });
+});
+
+describe("handwriting recognition as one choice", () => {
+  const recognition = (provider: string, auto: boolean) => ({
+    recognitionProviderId: provider,
+    autoRecognize: auto,
+  });
+
+  it("reads the two stored keys as one choice", () => {
+    expect(recognitionChoiceOf(recognition(LLM_PROVIDER_ID, true))).toBe(AUTO_RECOGNITION);
+    expect(recognitionChoiceOf(recognition(LLM_PROVIDER_ID, false))).toBe(LLM_PROVIDER_ID);
+    // The old switch only ever acted with Cloud AI: with Manual it is Manual.
+    expect(recognitionChoiceOf(recognition("manual", true))).toBe("manual");
+  });
+
+  it("stores a choice as the two keys", () => {
+    const settings = recognition("manual", false);
+    storeRecognitionChoice(settings, AUTO_RECOGNITION);
+    expect(settings).toEqual(recognition(LLM_PROVIDER_ID, true));
+    storeRecognitionChoice(settings, LLM_PROVIDER_ID);
+    expect(settings).toEqual(recognition(LLM_PROVIDER_ID, false));
+    storeRecognitionChoice(settings, "manual");
+    expect(settings).toEqual(recognition("manual", false));
   });
 });

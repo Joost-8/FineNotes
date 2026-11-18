@@ -63,9 +63,11 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("circleLasso", "circleLasso"),
           tip("pullPage", "pullPage"),
           tip("fillScreen", "fillScreen"),
+          tip("lockFit", "lockFit"),
           tip("searchInk", "searchInk"),
           tip("tapColour", "tapColour"),
           tip("ribbon", "ribbon"),
+          tip("tryGesture", "tryGesture"),
         ],
       },
     ],
@@ -83,6 +85,8 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("arrow", "arrow"),
           tip("scribbleFill", "scribbleFill"),
           tip("pathArrow", "pathArrow"),
+          tip("curvedElbow", "curvedElbow"),
+          tip("lineUpMoves", "lineUpMoves"),
         ],
       },
       {
@@ -107,6 +111,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("lassoFilter", "lassoFilter"),
           tip("copyStyle", "copyStyle"),
           tip("oneItem", "oneItem"),
+          tip("lassoTray", "lassoTray"),
           tip("correctWord", "correctWord"),
           tip("screenshotLasso", "screenshotLasso"),
           tip("saveSticker", "saveSticker"),
@@ -127,7 +132,9 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("checklist", "checklist"),
           tip("eyedropper", "eyedropper"),
           tip("widthMm", "widthMm"),
+          tip("widthPresets", "widthPresets"),
           tip("typedEquation", "typedEquation"),
+          tip("markdownText", "markdownText"),
           tip("zoomBox", "zoomBox"),
           tip("zoomFrame", "zoomFrame"),
           tip("zoomAdvance", "zoomAdvance"),
@@ -151,6 +158,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("margins", "margins"),
           tip("darkDesk", "darkDesk"),
           tip("newBoard", "newBoard"),
+          tip("boardsInFile", "boardsInFile"),
           tip("joinedPages", "joinedPages"),
           tip("plainExport", "plainExport"),
           tip("pictureExport", "pictureExport"),
@@ -188,6 +196,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("snap", "snap"),
           tip("holdWord", "holdWord"),
           tip("hear", "hear"),
+          tip("onlineTranscribe", "onlineTranscribe"),
           tip("laser", "laser"),
           tip("tapeMagnet", "tapeMagnet"),
           tip("tapeExport", "tapeExport"),
@@ -205,6 +214,7 @@ export const TIP_SECTIONS: readonly TipSection[] = [
           tip("linkTo", "linkTo"),
           tip("inkLink", "inkLink"),
           tip("embedPages", "embedPages"),
+          tip("frameEmbed", "frameEmbed"),
           tip("pdfLinks", "pdfLinks"),
           tip("learnWriting", "learnWriting"),
         ],
@@ -214,7 +224,10 @@ export const TIP_SECTIONS: readonly TipSection[] = [
         title: "notebooks.tips.collection.maths",
         tips: [
           tip("calc", "calc"),
+          tip("sumGlow", "sumGlow"),
+          tip("solveLetter", "solveLetter"),
           tip("basicCalc", "basicCalc"),
+          tip("insertGraph", "insertGraph"),
           tip("graphFit", "graphFit"),
           tip("graphPin", "graphPin"),
           tip("graphPopOut", "graphPopOut"),
@@ -255,12 +268,15 @@ export const TIP_SECTIONS: readonly TipSection[] = [
         title: "notebooks.tips.collection.yours",
         tips: [
           tip("savedPens", "savedPens"),
+          tip("penOnBar", "penOnBar"),
           tip("penOrder", "penOrder"),
           tip("colourOff", "colourOff"),
           tip("pillDock", "pillDock"),
           tip("customizeBar", "customizeBar"),
+          tip("looks", "looks"),
           tip("toolbarEdge", "toolbarEdge"),
           tip("dockOptions", "dockOptions"),
+          tip("dockColours", "dockColours"),
           tip("shortcutSheet", "shortcutSheet"),
           tip("spaceDrag", "spaceDrag"),
           tip("shiftErase", "shiftErase"),
@@ -276,6 +292,43 @@ export const TIP_COLLECTIONS: readonly TipCollection[] = TIP_SECTIONS.flatMap((s
 
 /** Newest first. Every release with something to show adds an entry. */
 export const RELEASE_HIGHLIGHTS: readonly ReleaseHighlights[] = [
+  {
+    version: "2.10.0",
+    tips: [
+      tip("boardsInFile", "boardsInFile"),
+      tip("frameEmbed", "frameEmbed"),
+      tip("markdownText", "markdownText"),
+      tip("penOnBar", "penOnBar"),
+      tip("curvedElbow", "curvedElbow"),
+      tip("onlineTranscribe", "onlineTranscribe"),
+      tip("tryGesture", "tryGesture"),
+      tip("dockColours", "dockColours"),
+      tip("widthPresets", "widthPresets"),
+    ],
+  },
+  {
+    // 2.9.0's card missed most of that release and could ignore taps: 2.9.1
+    // shows all of 2.9 again, to those who closed the first card too.
+    version: "2.9.1",
+    tips: [
+      tip("looks", "looks"),
+      tip("sumGlow", "sumGlow"),
+      tip("insertGraph", "insertGraph"),
+      tip("solveLetter", "solveLetter"),
+      tip("lassoTray", "lassoTray"),
+      tip("curvedElbow", "curvedElbow"),
+      tip("lineUpMoves", "lineUpMoves"),
+      tip("lockFit", "lockFit"),
+    ],
+  },
+  {
+    version: "2.9.0",
+    tips: [
+      tip("curvedElbow", "curvedElbow"),
+      tip("lineUpMoves", "lineUpMoves"),
+      tip("lockFit", "lockFit"),
+    ],
+  },
   {
     version: "2.8.3",
     tips: [
@@ -373,4 +426,33 @@ export type HomeCardKind = "news" | "simple";
 export function homeCardKind(hasNews: boolean, offerDue: boolean): HomeCardKind | null {
   if (hasNews) return "news";
   return offerDue ? "simple" : null;
+}
+
+/**
+ * The toolbar button a highlighted tip's feature sits behind (a bar item's
+ * id, toolbar-layout.ts). After an update that button carries a dot until
+ * it is used, so the news is where the change is, not only on Home.
+ */
+export const TIP_CONTROLS: Readonly<Record<string, string>> = {
+  looks: "settings",
+  frameEmbed: "select",
+  markdownText: "text",
+  penOnBar: "pen",
+  curvedElbow: "shape",
+  onlineTranscribe: "record",
+  widthPresets: "pen",
+  insertGraph: "calculator",
+  lockFit: "more",
+  margins: "more",
+  tapeMagnet: "tape",
+};
+
+/** The buttons to dot for these highlights, each once, leaving out the ones used since. */
+export function newsControls(tips: readonly Tip[], used: readonly string[]): string[] {
+  const controls: string[] = [];
+  for (const item of tips) {
+    const control = TIP_CONTROLS[item.id];
+    if (control && !used.includes(control) && !controls.includes(control)) controls.push(control);
+  }
+  return controls;
 }

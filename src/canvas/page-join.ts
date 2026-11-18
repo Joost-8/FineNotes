@@ -15,7 +15,7 @@
  */
 
 import { POINT_STRIDE } from "../model/document";
-import type { DocumentLayout, PageBox } from "./page-layout";
+import { type DocumentLayout, type PageBox, shownBoxes } from "./page-layout";
 
 /**
  * How far a stroke's ink may reach past its points, page px: half the
@@ -143,10 +143,12 @@ export interface JoinedSides {
  */
 export function joinedSides(layout: DocumentLayout, index: number): JoinedSides {
   const none = { top: false, bottom: false, left: false, right: false };
-  const n = layout.boxes.length;
-  if (layout.joined !== true || index < 0 || index >= n) return none;
-  const before = index > 0;
-  const after = index < n - 1;
+  // Among the pages shown: a parked board (discussion #160) joins nothing.
+  const shown = shownBoxes(layout);
+  const at = shown.findIndex((box) => box.index === index);
+  if (layout.joined !== true || at < 0) return none;
+  const before = at > 0;
+  const after = at < shown.length - 1;
   return layout.direction === "horizontal"
     ? { ...none, left: before, right: after }
     : { ...none, top: before, bottom: after };
@@ -174,9 +176,10 @@ export function joinLines(layout: DocumentLayout): JoinLine[] {
   if (layout.joined !== true) return [];
   const lines: JoinLine[] = [];
   const across = layout.direction !== "horizontal";
-  for (let i = 1; i < layout.boxes.length; i++) {
-    const a = layout.boxes[i - 1];
-    const b = layout.boxes[i];
+  const shown = shownBoxes(layout);
+  for (let i = 1; i < shown.length; i++) {
+    const a = shown[i - 1];
+    const b = shown[i];
     lines.push(
       across
         ? {
@@ -196,4 +199,26 @@ export function joinLines(layout: DocumentLayout): JoinLine[] {
     );
   }
   return lines;
+}
+
+/** Where a page lies from the first page of its joined run, page px. */
+export interface GridPhase {
+  x: number;
+  y: number;
+}
+
+/**
+ * How far page `index` lies from the first shown page, when the pages are
+ * joined: a squared, dotted or lined paper starts its pattern that far in,
+ * so the squares run on over the join instead of leaving a strip of a
+ * square plus a whole one there. Undefined when the pages are apart, so a
+ * page on its own keeps its own grid.
+ */
+export function gridPhase(layout: DocumentLayout, index: number): GridPhase | undefined {
+  if (layout.joined !== true) return undefined;
+  const shown = shownBoxes(layout);
+  const first = shown[0];
+  const box = shown.find((b) => b.index === index);
+  if (!first || !box) return undefined;
+  return { x: box.x - first.x, y: box.y - first.y };
 }

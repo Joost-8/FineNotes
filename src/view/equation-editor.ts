@@ -11,6 +11,7 @@ import type { WindowPlace } from "../model/calculator-store";
 import { equationFrameSize, equationLayout, paintLayout } from "../canvas/equation-paint";
 import { FloatingWindow } from "./floating-window";
 import { t } from "../i18n/translate";
+import { sizeObserver, winOf } from "./host-window";
 
 export interface EquationEditorOptions {
   /** The notebook view's content area. */
@@ -108,7 +109,7 @@ export class EquationEditor {
       event.stopPropagation();
     });
     if (typeof ResizeObserver !== "undefined") {
-      this.resizeWatch = new ResizeObserver(() => this.draw());
+      this.resizeWatch = sizeObserver(this.preview, () => this.draw());
       this.resizeWatch.observe(this.preview);
     }
     this.draw();
@@ -147,7 +148,7 @@ export class EquationEditor {
     const cssH = canvas.clientHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx || cssW === 0 || cssH === 0) return;
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const dpr = Math.min(3, winOf(this.preview).devicePixelRatio || 1);
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

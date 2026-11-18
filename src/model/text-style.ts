@@ -149,6 +149,8 @@ export interface TextStyle {
   radius?: number;
   padding?: number;
   caps?: true;
+  /** The text is Markdown, drawn formatted at rest (discussion #107). */
+  markdown?: true;
 }
 
 /**
@@ -182,6 +184,8 @@ export interface TextStylePatch {
   padding?: number | null;
   /** Show the text in capitals. */
   caps?: boolean;
+  /** Read the text as Markdown. */
+  markdown?: boolean;
 }
 
 /** The style a Text tool starts with, and "Reset to default" returns to. */
@@ -315,6 +319,8 @@ export function applyTextStyle(target: TextStyle, patch: TextStylePatch): void {
   else if (isTextPadding(patch.padding)) target.padding = patch.padding;
   if (patch.caps === true) target.caps = true;
   else if (patch.caps === false) delete target.caps;
+  if (patch.markdown === true) target.markdown = true;
+  else if (patch.markdown === false) delete target.markdown;
 }
 
 /**
@@ -341,6 +347,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: true,
       italic: false,
       caps: false,
+      markdown: false,
       lineHeight: 1.15,
     },
   },
@@ -356,6 +363,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: true,
       italic: false,
       caps: false,
+      markdown: false,
       lineHeight: 1.15,
     },
   },
@@ -371,6 +379,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: true,
       italic: false,
       caps: false,
+      markdown: false,
       lineHeight: 1.25,
     },
   },
@@ -386,6 +395,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: false,
       italic: false,
       caps: false,
+      markdown: false,
       lineHeight: DEFAULT_LINE_HEIGHT,
     },
   },
@@ -401,6 +411,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: false,
       italic: true,
       caps: false,
+      markdown: false,
       lineHeight: 1.25,
     },
   },
@@ -416,13 +427,37 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
       bold: true,
       italic: false,
       caps: true,
+      markdown: false,
       lineHeight: 1.25,
+    },
+  },
+  {
+    // Markdown mode (discussion #107) as a style of its own: Body's look,
+    // the text read as Markdown. Raw while typed, formatted once let go.
+    id: "markdown",
+    get name() {
+      return t("surface.textPreset.markdown");
+    },
+    patch: {
+      font: "sans",
+      family: null,
+      fontSize: 18,
+      bold: false,
+      italic: false,
+      caps: false,
+      markdown: true,
+      lineHeight: DEFAULT_LINE_HEIGHT,
     },
   },
 ];
 
-/** The preset a style matches (font, size, weight, slant and case all equal), if any. */
+/**
+ * The preset a style matches (font, size, weight, slant and case all equal),
+ * if any. A Markdown box is "Markdown" whatever its look: the mode is what
+ * the name tells.
+ */
 export function presetOf(style: TextStyle): TextPreset | undefined {
+  if (style.markdown === true) return TEXT_PRESETS.find((preset) => preset.id === "markdown");
   return TEXT_PRESETS.find((preset) => !changesTextStyle(style, preset.patch));
 }
 
@@ -531,6 +566,7 @@ export function textStyleOf(source: TextStyle): TextStyle {
   if (source.radius !== undefined) style.radius = source.radius;
   if (source.padding !== undefined) style.padding = source.padding;
   if (source.caps === true) style.caps = true;
+  if (source.markdown === true) style.markdown = true;
   return style;
 }
 
@@ -560,6 +596,7 @@ export function textStyleKey(style: TextStyle): string {
     s.radius ?? 0,
     s.padding ?? 0,
     s.caps ? "C" : "",
+    s.markdown ? "M" : "",
   ].join("|");
 }
 
@@ -612,6 +649,7 @@ export function sanitizeTextStyle(raw: unknown): TextStyle {
     radius: typeof r.radius === "number" ? r.radius : undefined,
     padding: typeof r.padding === "number" ? r.padding : undefined,
     caps: r.caps === true ? true : undefined,
+    markdown: r.markdown === true ? true : undefined,
   });
   const border = normalizeBorder(r.border);
   if (border) style.border = border;

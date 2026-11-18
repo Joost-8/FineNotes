@@ -871,3 +871,49 @@ export function textBoxFrame(box: TextBoxElement, measuredHeight: number): BoxFr
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+/**
+ * Where a lasso was drawn, beside what it picked up (FineNotes#210): the
+ * loop's bounds and the bounds of the selection it made, both page space,
+ * on page `pageId`.
+ */
+export interface DrawnArea {
+  pageId: string;
+  loop: Bounds;
+  picked: Bounds;
+}
+
+/**
+ * The patch of page a selection's picture (Screenshot, Ask AI) takes. While
+ * the selection is still the one the lasso made, that is the loop as drawn:
+ * ink partly inside is cut at its edge, and does not stretch the picture
+ * towards it. After a move the loop goes along; after anything else (a
+ * resize, another selection, a page change) it is the selection's bounds
+ * `now` with `pad` round them. Null when nothing is selected.
+ */
+export function selectionPatchBounds(
+  area: DrawnArea | null,
+  pageId: string,
+  now: Bounds | null,
+  pad: number,
+): Bounds | null {
+  if (!now) return null;
+  if (area && area.pageId === pageId) {
+    const same = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6;
+    const { picked, loop } = area;
+    if (
+      same(now.maxX - now.minX, picked.maxX - picked.minX) &&
+      same(now.maxY - now.minY, picked.maxY - picked.minY)
+    ) {
+      const dx = now.minX - picked.minX;
+      const dy = now.minY - picked.minY;
+      return {
+        minX: loop.minX + dx,
+        minY: loop.minY + dy,
+        maxX: loop.maxX + dx,
+        maxY: loop.maxY + dy,
+      };
+    }
+  }
+  return { minX: now.minX - pad, minY: now.minY - pad, maxX: now.maxX + pad, maxY: now.maxY + pad };
+}

@@ -12,6 +12,9 @@
  *
  * Only by the bar: a pill at another edge than the bar's is one the user
  * carried away from it, and floats where it was left.
+ *
+ * A bar along the top or bottom with room to spare holds the pill itself,
+ * after its tools, as Goodnotes does: no row at all ({@link pillFitsBar}).
  */
 
 import type { BarDock } from "./bar-dock-model";
@@ -40,6 +43,40 @@ export function parsePillRowOn(raw: unknown): boolean {
 /** The edge the row takes, when docking is on and the pill rests by the bar, wherever the bar is. */
 export function pillRowEdge(on: boolean, pill: PillDock, bar: BarDock): PillRowEdge {
   return on && pill === bar ? bar : null;
+}
+
+/**
+ * How the pen's widths show. `"one"`: a single button, the width in use,
+ * whose tap lists them all, as Goodnotes and Notability keep it. That is
+ * so upright beside the page when the pill is not docked in a column of
+ * its own, and when it is docked along the top or bottom, where the bar's
+ * room goes to the colours instead (discussion #200). Otherwise `"quick"`:
+ * the three quick widths and a ⌄.
+ */
+export function penWidthsShown(input: {
+  upright: boolean;
+  /** Docked in a column of its own beside the page. */
+  roomy: boolean;
+  edge: PillRowEdge;
+}): "one" | "quick" {
+  if (input.upright) return input.roomy ? "quick" : "one";
+  return input.edge === "top" || input.edge === "bottom" ? "one" : "quick";
+}
+
+/**
+ * Whether a pill docked along the top or bottom goes inside the bar: all of
+ * it (`need` px wide at its narrowest) fits the `room` left between the
+ * bar's groups, and it is no taller than the bar. Otherwise it has a row.
+ */
+export function pillFitsBar(input: {
+  edge: PillRowEdge;
+  room: number;
+  need: number;
+  height: number;
+  barHeight: number;
+}): boolean {
+  if (input.edge !== "top" && input.edge !== "bottom") return false;
+  return input.room > 0 && input.need <= input.room + 1 && input.height <= input.barHeight;
 }
 
 /**
@@ -82,4 +119,41 @@ export function pageTopShift(before: PillRow, after: PillRow): number {
 export function followTopShift(y: number, shift: number, minY: number): number {
   if (shift === 0 || y <= minY + 0.5) return y;
   return Math.max(minY, y + shift);
+}
+
+/**
+ * What each tool's row needs inside the bar until it has been measured, px,
+ * with the colours given way (measured in the UI gallery in English,
+ * 2026-11-13). The bar decides from the widest, so these keep the first
+ * decision close to the one measuring every row would make.
+ */
+export const ROW_NEED_SEEDS: Readonly<Record<string, number>> = {
+  pen: 512,
+  shape: 645,
+  text: 625,
+  tape: 573,
+  select: 485,
+  eraser: 469,
+  fill: 427,
+  laser: 262,
+};
+
+/**
+ * The widest row any tool shows (docking design B, 2026-11-13): the bar holds
+ * the rows only when this one fits beside its tools, so switching tools never
+ * moves a button. A measured row replaces its seed, since a longer language or
+ * a pinned pen changes it.
+ */
+export function widestRow(measured: ReadonlyMap<string, number>): number {
+  const needs: Record<string, number> = { ...ROW_NEED_SEEDS };
+  for (const [tool, need] of measured) needs[tool] = need;
+  return Math.max(0, ...Object.values(needs));
+}
+
+/**
+ * How many of the bar's buttons are folded into ⋯, as its badge shows it:
+ * nothing at none.
+ */
+export function foldedBadge(count: number): string | null {
+  return count > 0 ? String(count) : null;
 }

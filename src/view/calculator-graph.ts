@@ -60,6 +60,7 @@ import {
   valueOfLine,
 } from "../model/graph-sample";
 import { dragRange } from "./range-drag";
+import { sizeObserver, winOf } from "./host-window";
 
 /** Desmos' order of colours; lighter ones on dark paper. */
 export const CURVES_LIGHT = ["#2d70b3", "#c74440", "#388c46", "#6042a6", "#e07400", "#1a1a1a"];
@@ -196,9 +197,9 @@ export class GraphPanel {
     watchers.set(state, set);
     this.dispose.push(() => set.delete(watch));
     if (typeof ResizeObserver === "function") {
-      const observer = new ResizeObserver(() => this.schedule());
+      const observer = sizeObserver(this.wrap, () => this.schedule());
       observer.observe(this.wrap);
-      const shape = new ResizeObserver(() => this.reflow());
+      const shape = sizeObserver(this.el, () => this.reflow());
       shape.observe(this.el);
       this.dispose.push(() => {
         observer.disconnect();
@@ -219,8 +220,8 @@ export class GraphPanel {
   }
 
   destroy(): void {
-    window.cancelAnimationFrame(this.frame);
-    window.cancelAnimationFrame(this.playFrame);
+    winOf(this.el).cancelAnimationFrame(this.frame);
+    winOf(this.el).cancelAnimationFrame(this.playFrame);
     window.clearTimeout(this.poiTimer);
     if (this.gesture) window.clearTimeout(this.gesture.holdTimer);
     this.playing = null;
@@ -273,7 +274,7 @@ export class GraphPanel {
     const h = this.wrap.clientHeight;
     const prepared = this.prepared;
     if (w === 0 || h === 0 || !prepared) return;
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = winOf(this.el).devicePixelRatio || 1;
     const pw = Math.round(w * ratio);
     const ph = Math.round(h * ratio);
     if (this.canvas.width !== pw || this.canvas.height !== ph) {
@@ -396,7 +397,7 @@ export class GraphPanel {
       return;
     }
     if (this.frame) return;
-    this.frame = window.requestAnimationFrame(() => this.paintNow());
+    this.frame = winOf(this.el).requestAnimationFrame(() => this.paintNow());
   }
 
   private recompile(): void {
@@ -946,7 +947,7 @@ export class GraphPanel {
   togglePlay(name: string): void {
     this.playing = this.playing === name ? null : name;
     this.renderList();
-    window.cancelAnimationFrame(this.playFrame);
+    winOf(this.el).cancelAnimationFrame(this.playFrame);
     if (!this.playing) {
       this.settled();
       return;
@@ -954,9 +955,9 @@ export class GraphPanel {
     this.lastPlay = performance.now();
     const step = (now: number): void => {
       this.playStep(now);
-      if (this.playing) this.playFrame = window.requestAnimationFrame(step);
+      if (this.playing) this.playFrame = winOf(this.el).requestAnimationFrame(step);
     };
-    this.playFrame = window.requestAnimationFrame(step);
+    this.playFrame = winOf(this.el).requestAnimationFrame(step);
   }
 
   /** One frame of a playing slider (exposed for the gallery's timer-driven measurement). */

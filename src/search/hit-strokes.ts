@@ -56,16 +56,13 @@ export function searchMatchTarget(
   return null;
 }
 
-/** One line of the device's reading: its text, and its ink's word groups left to right. */
+/**
+ * One line of the device's reading: its text, and the ink of each of its
+ * words in order (`PageLineReading.words`, from word-ink.ts).
+ */
 export interface ReadLine {
   text: string;
   words: readonly (readonly string[])[];
-}
-
-/** A box, page px. */
-export interface Box {
-  minX: number;
-  maxX: number;
 }
 
 /** Letters and digits only, folded: how a word is compared when it was misread. */
@@ -101,117 +98,21 @@ function misreadAllowance(length: number): number {
   return length >= 8 ? 2 : length >= 3 ? 1 : 0;
 }
 
-/** A line's tokens, and the word groups each one owns (by where it falls along the ink). */
+/** A line's words (its text split on spaces), and the ink of each. */
 export interface Placed {
   tokens: RegExpMatchArray[];
   owned: string[][];
 }
 
 /**
- * Place a line's words along its ink. The device's reading of a line often
- * has fewer words than the ink has word groups (a word written in two
- * pieces, a gap read as none): on a real lecture page only a quarter of the
- * lines matched one for one. Each word gets its share of the line's
- * characters laid along the ink's width; with at least as many groups as
- * words, the breaks between words then go in the ink's gaps, each in a wide
- * gap near where its share puts it ({@link wordBreaks}). With fewer groups,
- * every group goes to the word whose span is nearest its middle.
+ * A line's words with their ink. The reading gives each word of its text the
+ * strokes it was read from; a line whose words and ink do not pair one for
+ * one (its text could not be laid over its ink) lights nothing.
  */
-export function placeLine(
-  line: ReadLine,
-  boundsOf: (strokeIds: readonly string[]) => Box | null,
-): Placed | null {
+export function placeLine(line: ReadLine): Placed | null {
   const tokens = [...line.text.matchAll(/\S+/g)];
-  const groups = line.words.filter((g) => g.length > 0);
-  if (tokens.length === 0 || groups.length === 0) return null;
-  const placed = groups.map((g) => ({ ids: g, box: boundsOf(g) }));
-  const xs = placed.flatMap((p) => (p.box ? [p.box.minX, p.box.maxX] : []));
-  const left = Math.min(...xs);
-  const width = Math.max(...xs) - left;
-  const length = line.text.length;
-  const spans = tokens.map((token) => {
-    const start = token.index ?? 0;
-    return {
-      from: left + (start / length) * width,
-      to: left + ((start + token[0].length) / length) * width,
-    };
-  });
-  const owned: string[][] = tokens.map(() => []);
-  const boxed = placed
-    .filter((p): p is { ids: readonly string[]; box: Box } => p.box !== null)
-    .sort((a, b) => a.box.minX + a.box.maxX - (b.box.minX + b.box.maxX));
-  if (tokens.length > 1 && boxed.length >= tokens.length) {
-    const expected = spans.slice(1).map((span, k) => (spans[k].to + span.from) / 2);
-    const breaks = wordBreaks(
-      boxed.map((p) => p.box),
-      expected,
-    );
-    let word = 0;
-    boxed.forEach((p, g) => {
-      if (word < breaks.length && g >= breaks[word]) word++;
-      owned[word].push(...p.ids);
-    });
-    return { tokens, owned };
-  }
-  for (const p of placed) {
-    if (!p.box) continue;
-    const mid = (p.box.minX + p.box.maxX) / 2;
-    let best = 0;
-    let bestGap = Infinity;
-    spans.forEach((span, i) => {
-      const gap = mid < span.from ? span.from - mid : mid > span.to ? mid - span.to : 0;
-      if (gap < bestGap) {
-        bestGap = gap;
-        best = i;
-      }
-    });
-    owned[best].push(...p.ids);
-  }
-  return { tokens, owned };
-}
-
-/** How much a break is worth per page px of gap, against each px it lies from where expected. */
-const BREAK_DRIFT = 0.25;
-
-/**
- * Where the words of a line break, as the index of the first group of each
- * word after the first: one break per `expected` position, in order, each
- * in a gap between neighbouring groups (`boxes`, left to right), chosen so
- * that wide gaps near where they are expected win (dynamic programming).
- */
-function wordBreaks(boxes: readonly Box[], expected: readonly number[]): number[] {
-  const gaps = boxes.slice(1).map((box, i) => ({
-    width: box.minX - boxes[i].maxX,
-    at: (box.minX + boxes[i].maxX) / 2,
-  }));
-  const n = expected.length;
-  const m = gaps.length;
-  // score[k][g]: the best total with break k in gap g; from[k][g]: break k-1's gap.
-  const score = expected.map(() => new Array<number>(m).fill(-Infinity));
-  const from = expected.map(() => new Array<number>(m).fill(-1));
-  for (let k = 0; k < n; k++) {
-    for (let g = k; g <= m - (n - k); g++) {
-      const own = gaps[g].width - BREAK_DRIFT * Math.abs(gaps[g].at - expected[k]);
-      if (k === 0) {
-        score[k][g] = own;
-        continue;
-      }
-      for (let h = k - 1; h < g; h++) {
-        if (score[k - 1][h] + own > score[k][g]) {
-          score[k][g] = score[k - 1][h] + own;
-          from[k][g] = h;
-        }
-      }
-    }
-  }
-  let g = 0;
-  for (let h = 1; h < m; h++) if (score[n - 1][h] > score[n - 1][g]) g = h;
-  const breaks = new Array<number>(n);
-  for (let k = n - 1; k >= 0; k--) {
-    breaks[k] = g + 1;
-    g = from[k][g];
-  }
-  return breaks;
+  if (tokens.length === 0 || tokens.length !== line.words.length) return null;
+  return { tokens, owned: line.words.map((ink) => [...ink]) };
 }
 
 /** The ink of the line's words that overlap characters `from..to` of its text. */
@@ -357,7 +258,6 @@ function transcriptHits(
 export function lineHits(
   query: string,
   lines: readonly ReadLine[],
-  boundsOf: (strokeIds: readonly string[]) => Box | null,
   transcript = "",
   phrase = false,
 ): string[][] {
@@ -365,7 +265,7 @@ export function lineHits(
   if (terms.length === 0) return [];
   const placedLines = new Map<number, Placed | null>();
   const placedOf = (index: number): Placed | null => {
-    if (!placedLines.has(index)) placedLines.set(index, placeLine(lines[index], boundsOf));
+    if (!placedLines.has(index)) placedLines.set(index, placeLine(lines[index]));
     return placedLines.get(index) ?? null;
   };
   if (phrase) {

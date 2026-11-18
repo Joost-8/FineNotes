@@ -49,9 +49,19 @@ import {
   nightColor,
   nightHighlighter,
 } from "./night";
-import { type InkRun, type PenOptions, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import { type InkRun, inkRuns, penOptions, traceRun } from "../ink/freehand";
+import {
+  type ShapeDecor,
+  type StrokeStyle,
+  decorOf,
+  penFor,
+  pressureFor,
+  styleOf,
+} from "./stroke-style";
+export { type ShapeDecor, type StrokeStyle, decorOf, penFor, styleOf } from "./stroke-style";
+import { type RunBox, stretchesWithin } from "../ink/run-window";
 import { addDamage, damageArea, grow, rectArea, rectsMeet, staleRect, unite } from "./damage";
-import { type PixelRect, inkPixelRect } from "./layer-rect";
+import { type PixelRect, boxPixelRect, inkPixelRect } from "./layer-rect";
 import { widestTiltFactor } from "../ink/tilt";
 import { isTape, tapesLast } from "../model/cover-tape";
 import { paintTape } from "./tape-paint";
@@ -67,9 +77,6 @@ import {
   type InkTip,
   type Page,
   type PageGeometry,
-  type ArrowHeads,
-  type ShapeDash,
-  type ShapeKind,
   type Stroke,
   type GraphElement,
   type EquationElement,
@@ -104,7 +111,7 @@ import { type RoutedConnector, paintConnector, paintConnectors } from "./connect
 import { graphBounds } from "../model/graph-element";
 import type { DocumentLayout, PageBox } from "./page-layout";
 import { pagesAhead } from "./look-ahead";
-import { joinLines, joinedSides } from "./page-join";
+import { type GridPhase, gridPhase, joinLines, joinedSides } from "./page-join";
 import { relativeLuminance } from "../model/cover";
 import {
   baselineOffset,
@@ -117,18 +124,11 @@ import {
 } from "./text-layout";
 import type { TextStyle } from "../model/text-style";
 import { displayText } from "../model/text-links";
+import { layoutMarkdownOn, paintMarkdownText } from "./markdown-paint";
 import { normalizeBorder, shownCase } from "../model/text-style";
-import { canFill, canRound, isClosedLoop, splitFill } from "../model/shape-style";
+import { splitFill } from "../model/shape-style";
 import { type PageTexts, furnitureText } from "../model/furniture";
-import {
-  HEAD_MAX,
-  type OutlineOp,
-  arrowHead,
-  dashPattern,
-  outlineOps,
-  pathHeads,
-  pointsOf,
-} from "./shape-decor";
+import { HEAD_MAX, type OutlineOp, dashPattern, shapeGeometry } from "./shape-decor";
 import {
   ByteLru,
   TILE_SIZE,
@@ -140,6 +140,11 @@ import {
   tilesCovering,
   tilesForBounds,
 } from "./tile-grid";
+import {
+  SELECTION_RASTER_MIN_STROKES,
+  selectionRasterBox,
+  selectionRasterDetail,
+} from "./selection-raster";
 import type { ViewportState } from "./viewport";
 
 /** How strongly ink a playing recording has not reached yet is drawn (2.5). */
@@ -154,67 +159,6 @@ const CROP_VEIL = "rgba(0, 0, 0, 0.55)";
 const SELECTION_LINE = "#1a6fd6";
 /** The class that hides the wet layer while nothing is being drawn on it. */
 const WET_HIDDEN = "goodobsidian-wet-hidden";
-
-/** A stroke's look without its points: what the wet layer draws a stroke in progress with. */
-export interface StrokeStyle {
-  color: string;
-  /** Nib width, in page px. */
-  size: number;
-  tool: Tool;
-  /** Whether pressure varies the width. The highlighter ignores it and keeps one width. */
-  usePressure: boolean;
-  /** Clean shape geometry (a snapped or placed shape), not freehand ink. */
-  shape?: boolean;
-  /** A shape's fill, dash, corners and arrowheads, when it has any. */
-  decor?: ShapeDecor | null;
-  /** A flat calligraphy nib's angle, degrees; absent for a round nib. */
-  nib?: number;
-  /** A highlighter's flat chisel tip (`Stroke.tip`); absent for a round one. */
-  tip?: InkTip;
-  /** A stored stroke's Pencil altitude per point (`Stroke.tilt`); absent: upright. */
-  tilt?: readonly number[];
-}
-
-/** What a shape is drawn with beyond its colour and width (`model/shape-style`). */
-export interface ShapeDecor {
-  kind: ShapeKind;
-  fill?: string;
-  dash?: ShapeDash;
-  radius?: number;
-  heads?: ArrowHeads;
-  /** The outline is not drawn: only set with a fill. */
-  noLine?: true;
-}
-
-/** A stroke's decor, or `null` when it is drawn as plain ink. */
-export function decorOf(stroke: {
-  shape?: ShapeKind;
-  fill?: string;
-  dash?: ShapeDash;
-  radius?: number;
-  heads?: ArrowHeads;
-  noLine?: true;
-}): ShapeDecor | null {
-  const kind = stroke.shape;
-  if (kind === undefined) return null;
-  const fill = canFill(kind) ? stroke.fill : undefined;
-  const radius =
-    canRound(kind) && stroke.radius !== undefined && stroke.radius > 0 ? stroke.radius : undefined;
-  const heads =
-    (kind === "line" || kind === "path") && (stroke.heads?.start || stroke.heads?.end)
-      ? stroke.heads
-      : undefined;
-  if (!fill && !stroke.dash && !radius && !heads) return null;
-  return {
-    kind,
-    ...(fill ? { fill } : {}),
-    ...(stroke.dash ? { dash: stroke.dash } : {}),
-    ...(radius ? { radius } : {}),
-    ...(heads ? { heads } : {}),
-    // A shape is never drawn as nothing: no line only while it is filled.
-    ...(fill && stroke.noLine ? { noLine: true as const } : {}),
-  };
-}
 
 /** Header and page-number type: a real family list (canvas reads no CSS variables). */
 const FURNITURE_FONT = '13px "Helvetica Neue", Helvetica, Arial, sans-serif';
@@ -268,6 +212,15 @@ export interface PageSelection {
  * The asynchronous form is `BackdropRenderer` in `./backdrop` — the interface
  * contracts/api.md §4 specifies. `VaultBackdropRenderer` implements both.
  */
+/** Where and how a backdrop is painted ({@link BackdropPainter.paint}). */
+export interface PaintTarget {
+  deviceScale: number;
+  region?: Bounds;
+  paper?: PaperTheme;
+  /** Joined pages: where the page lies in its run, so a grid runs on (`gridPhase`). */
+  phase?: GridPhase;
+}
+
 export interface BackdropPainter {
   /** Called once per screen paint, never once per ink tile or sidebar thumbnail. */
   prepare?: (
@@ -295,7 +248,7 @@ export interface BackdropPainter {
     backdrop: Backdrop,
     geometry: PageGeometry,
     weight?: number,
-    target?: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+    target?: PaintTarget,
   ): void;
   /** What it holds, for the diagnostic HUD. */
   diagnostics?: () => string;
@@ -412,19 +365,21 @@ export function paintPagePaper(
   ctx: CanvasRenderingContext2D,
   page: Page,
   weight: number,
-  target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+  target: PaintTarget,
   marginsOnly = false,
 ): void {
   const { backdrop, geometry } = page;
+  // A grid runs on over a join only where it fills the page edge to edge.
+  const { phase: _phase, ...framed } = target;
   const margin = marginPaper(page);
   if (margin) {
     for (const strip of marginStrips(page)) {
-      paintInStrip(painter, ctx, margin, strip, weight, target);
+      paintInStrip(painter, ctx, margin, strip, weight, framed);
     }
   }
   if (marginsOnly) return;
   if (backdrop.kind !== "pdf" && backdrop.frame) {
-    paintInStrip(painter, ctx, backdrop, backdrop.frame, weight, target);
+    paintInStrip(painter, ctx, backdrop, backdrop.frame, weight, framed);
   } else {
     painter.paint(ctx, backdrop, geometry, weight, target);
   }
@@ -437,7 +392,7 @@ function paintInStrip(
   backdrop: Backdrop,
   strip: { x: number; y: number; width: number; height: number },
   weight: number,
-  target: { deviceScale: number; region?: Bounds; paper?: PaperTheme },
+  target: PaintTarget,
 ): void {
   ctx.save();
   ctx.beginPath();
@@ -488,6 +443,32 @@ export function paintInk(
   });
 }
 
+/**
+ * The stretches of a run (`stretchesWithin`) as one `Path2D`, so the canvas
+ * still strokes them as one shape: where two of them cross, the ink is laid
+ * down once, as when the run is drawn whole.
+ */
+function pathOfStretches(run: InkRun, stretches: readonly number[]): Path2D {
+  const count = Math.floor(run.pts.length / 2);
+  const whole = stretches.length === 2 && stretches[0] === 0 && stretches[1] === count - 1;
+  if (whole || run.closed) return pathOf(run);
+  const path = new Path2D();
+  const { pts } = run;
+  for (let s = 0; s + 1 < stretches.length; s += 2) {
+    const first = stretches[s];
+    const last = stretches[s + 1];
+    if (run.chisel) {
+      // The tip sweeps each segment by itself, so a stretch traces as the run does.
+      traceRun(path, { ...run, pts: pts.slice(2 * first, 2 * last + 2) });
+      continue;
+    }
+    path.moveTo(pts[2 * first], pts[2 * first + 1]);
+    for (let i = first + 1; i <= last; i++) path.lineTo(pts[2 * i], pts[2 * i + 1]);
+    if (first === last) path.lineTo(pts[2 * first], pts[2 * first + 1]);
+  }
+  return path;
+}
+
 /** A run's polyline as a `Path2D`. */
 export function pathOf(run: InkRun): Path2D {
   const path = new Path2D();
@@ -501,6 +482,8 @@ export interface RenderStats {
   tiles: number;
   tileBytes: number;
   previews: number;
+  /** Paints of the whole dry layer so far: a frame of one costs far more than its drawing calls. */
+  wholePaints: number;
 }
 
 const EMPTY_LAYOUT: DocumentLayout = {
@@ -604,12 +587,38 @@ interface DryShown {
 }
 
 /**
+ * A frame of the stroke being written repaints only what changed while that
+ * is under this share of the wet layer; past it the layer is cleared whole.
+ */
+const WET_REPAIR_SHARE = 0.5;
+
+/**
  * How far the dry layer reaches past the view on each side with overscan
  * on ({@link Renderer.useOverscan}): this share of the view's width and
  * height, and at most this many CSS px.
  */
 const OVERSCAN_SHARE = 0.15;
 const OVERSCAN_MAX = 200;
+
+/**
+ * A dry layer painted whole while the view moves is painted this share of
+ * its overscan ahead of the move, so the move goes on for longer before the
+ * next whole paint; the rest stays behind it, for a finger that turns back.
+ */
+const OVERSCAN_LEAD = 0.75;
+
+/**
+ * Where to put a dry layer painted whole, along one axis: its shift from
+ * the middle, CSS px on whole device px. `moved` is how far the picture
+ * went along the axis since the last paint (CSS px, its sign the way the
+ * layer shifts), `margin` the overscan a side. A layer shifted against the
+ * move has more of itself where the view is going. Still: the middle.
+ */
+export function overscanLead(moved: number, margin: number, dpr: number): number {
+  if (margin <= 0 || Math.abs(moved) * dpr < 1) return 0;
+  const lead = Math.round(margin * OVERSCAN_LEAD * dpr) / dpr;
+  return moved > 0 ? -lead : lead;
+}
 
 /**
  * Damage over this share of the dry layer is drawn as one full repaint:
@@ -688,22 +697,6 @@ function selectionLine(ctx: CanvasRenderingContext2D, scale: number): void {
   ctx.setLineDash([6, 4].map((length) => length / scale));
 }
 
-/** Highlighter ink keeps one width: pressure never thins it. */
-function pressureFor(tool: Tool, usePressure: boolean): boolean {
-  return tool !== "highlighter" && usePressure;
-}
-
-/** The pen a stroke of this style is traced with. */
-export function penFor(style: {
-  size: number;
-  tool: Tool;
-  usePressure: boolean;
-  nib?: number;
-  tip?: InkTip;
-}): PenOptions {
-  return penOptions(style.size, pressureFor(style.tool, style.usePressure), style.nib, style.tip);
-}
-
 /** Give the backing store back now; iOS holds canvas memory until then. */
 function releaseCanvas(canvas: HTMLCanvasElement): void {
   canvas.width = 0;
@@ -755,6 +748,26 @@ export class Renderer {
    * null when it shows nothing, or something only its pixels hold.
    */
   private wetReplay: WetReplay | null = null;
+  /**
+   * What the stroke being written was last drawn under ({@link wetInkKey}),
+   * while the wet layer still shows that frame: the next frame may then
+   * repaint only what changed. Null once anything else touched the layer.
+   */
+  private wetInk: string | null = null;
+  /** The picture of the selection being dragged ({@link blitSelectionRaster}). */
+  private selectionRaster: {
+    selection: readonly Stroke[];
+    /** Device px per page px of the view it was made for. */
+    base: number;
+    /** How many times that the picture holds (`selectionRasterDetail`); 0 before it is made. */
+    detail: number;
+    usePressure: boolean;
+    shade: InkShade;
+    alpha: number;
+    canvas: HTMLCanvasElement | null;
+    x: number;
+    y: number;
+  } | null = null;
   /** The wet layer holds pixels {@link wetReplay} cannot paint again. */
   private wetRaster = false;
   /** The viewport canvases' size in CSS px, and device px per CSS px. */
@@ -820,6 +833,10 @@ export class Renderer {
   private shadow: ShadowSprite | null = null;
   /** What the dry layer shows, or null when it must be painted whole. */
   private dryShown: DryShown | null = null;
+  /** The view at the last paint of the dry layer and its scale: how the view moves ({@link planDry}). */
+  private dryLast: { view: DryView; scale: number } | null = null;
+  /** Whole paints of the dry layer so far ({@link stats}). */
+  private dryWholePaints = 0;
   /**
    * Device px of the dry layer drawn from tiles that changed since it was
    * painted: while the view stays, the next paint draws these alone. A
@@ -1088,6 +1105,7 @@ export class Renderer {
       tiles: this.tiles.size,
       tileBytes: this.tiles.bytes,
       previews: this.previews.size,
+      wholePaints: this.dryWholePaints,
     };
   }
 
@@ -1138,6 +1156,8 @@ export class Renderer {
       if (stroke.tilt) reach = Math.max(reach, inkReach(stroke));
       // A tape is as tall as its size either side of its two points.
       else if (isTape(stroke)) reach = Math.max(reach, stroke.size / 2 + 2);
+      // A broad highlighter: half its width, a chisel's corner a little more.
+      else if (stroke.tool === "highlighter") reach = Math.max(reach, stroke.size * 0.75 + 2);
     }
     this.widestSeen.set(pageId, reach);
     return reach;
@@ -1268,6 +1288,7 @@ export class Renderer {
     if (ctx === this.wet.ctx) {
       this.wetReplay = null;
       this.wetRaster = false;
+      this.wetInk = null;
     }
     const { width, height, dpr } = this.screen;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1656,6 +1677,7 @@ export class Renderer {
     const { paint, damage, shift } = this.planDry(doc, desk, selection != null);
     this.placeDry(shift);
     if (damage?.length === 0) return true;
+    if (damage === null) this.dryWholePaints++;
     // Mid-zoom only the part in view is painted: the overscan is not seen,
     // and a pinch paints every frame.
     const { x: mx, y: my } = this.overscan;
@@ -1893,7 +1915,22 @@ export class Renderer {
     const now: DryView = { scrollY: this.view.scrollY - my / scale, originX: this.originX + mx };
     const damage = this.dryDamage;
     this.dryDamage = [];
-    const whole = { paint: now, damage: null, shift: { x: 0, y: 0 } };
+    // Moving, a whole paint puts most of the overscan ahead of the move
+    // (FineNotes#201: a page turn outran it five times, each a whole paint).
+    // Not mid-zoom, where only the part in view is painted, in the middle.
+    const last = this.dryLast ?? null;
+    this.dryLast = { view: now, scale };
+    const dpr = this.screen.dpr;
+    const steady = last !== null && last.scale === scale && !this.isTransient;
+    const lead = {
+      x: steady ? overscanLead(now.originX - last.view.originX, mx, dpr) : 0,
+      y: steady ? overscanLead((last.view.scrollY - now.scrollY) * scale, my, dpr) : 0,
+    };
+    const whole = {
+      paint: { scrollY: now.scrollY + lead.y / scale, originX: now.originX - lead.x },
+      damage: null,
+      shift: lead,
+    };
     const shown = this.dryShown;
     if (!shown || shown.clipped || shown.selection || selection) return whole;
     if (shown.key !== this.dryKey(desk) || shown.doc !== doc) return whole;
@@ -1901,7 +1938,6 @@ export class Renderer {
     const { width, height } = this.dry.canvas;
     if (damageArea(damage) > DRY_DAMAGE_SHARE * width * height) return whole;
     // The move since, to whole device px: the tiles stay on the px grid.
-    const dpr = this.screen.dpr;
     const x = Math.round((now.originX - shown.paint.originX) * dpr) / dpr;
     const y = Math.round((shown.paint.scrollY - now.scrollY) * scale * dpr) / dpr;
     if (Math.abs(x) > mx || Math.abs(y) > my) return whole;
@@ -1913,8 +1949,18 @@ export class Renderer {
    * on and around it, so a scroll finds them ready. Never evicts a tile to
    * make room, so it cannot thrash the ones on screen. Returns whether there
    * is more to do — the caller spreads the work over idle frames.
+   *
+   * `whole`: pages to have ready in full, nearest first: the pages a row
+   * turns to. A turn shows a whole page within a few frames, and tiles made
+   * during it were most of its slow frames (FineNotes#201). For these alone
+   * room is made, from the tiles of pages neither here nor near.
    */
-  prefetch(doc: InkDocument, usePressure: boolean, budgetMs: number): boolean {
+  prefetch(
+    doc: InkDocument,
+    usePressure: boolean,
+    budgetMs: number,
+    whole: readonly number[] = [],
+  ): boolean {
     if (this.level === 0 || this.layout.boxes.length === 0) return false;
     const level = this.level;
     const k = this.deviceScale;
@@ -1959,6 +2005,25 @@ export class Renderer {
         // A stale tile is left for the screen paint, which knows what the
         // eraser shows meanwhile; this one paints the document as it is.
         if (this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) continue;
+        if (!this.tiles.fits(tr.w * tr.h * 4)) return false;
+        if (now() > deadline) return true;
+        this.rasterTile(page, box, tr, level, { usePressure });
+      }
+    }
+    let madeRoom = false;
+    for (const index of whole) {
+      const box = this.layout.boxes[index];
+      const page = doc.pages[index];
+      if (!box || !page) continue;
+      const raster = rasterSize(box.width, box.height, level);
+      for (const tr of tilesCovering(box.width, box.height, level, 0, 0, raster.w, raster.h)) {
+        if (this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) continue;
+        if (!this.tiles.fits(tr.w * tr.h * 4) && !madeRoom) {
+          madeRoom = true;
+          const near = new Set(around.map((b) => b.id));
+          for (const i of whole) near.add(this.layout.boxes[i]?.id ?? "");
+          this.tiles.deleteWhere((tile) => !near.has(tile.pageId));
+        }
         if (!this.tiles.fits(tr.w * tr.h * 4)) return false;
         if (now() > deadline) return true;
         this.rasterTile(page, box, tr, level, { usePressure });
@@ -2334,10 +2399,12 @@ export class Renderer {
     // A 1 page-px rule vanishes at preview scale; keep rules about half a
     // device pixel wide there, as the sidebar thumbnails do.
     if (this.painter) {
+      const phase = gridPhase(this.layout, box.index);
       paintPagePaper(this.painter, ctx, page, Math.max(1, 0.5 / level), {
         deviceScale: level,
         paper: this.paper,
         ...(painterRegion && Number.isFinite(region.minX) ? { region } : {}),
+        ...(phase ? { phase } : {}),
       });
     }
     if (this.doc) {
@@ -2858,11 +2925,11 @@ export class Renderer {
       ctx.rotate(turn.angle);
       ctx.translate(-turn.x, -turn.y);
     }
-    const draw = (stroke: Stroke, shade: InkShade): void => {
+    const drawOn = (c: CanvasRenderingContext2D, stroke: Stroke, shade: InkShade): void => {
       const entry = this.pathEntry(stroke, usePressure);
       const revealed = this.tapeRevealed(stroke);
       paintStroke(
-        ctx,
+        c,
         entry,
         stroke,
         this.highlighterAlpha,
@@ -2872,6 +2939,7 @@ export class Renderer {
         revealed,
       );
     };
+    const draw = (stroke: Stroke, shade: InkShade): void => drawOn(ctx, stroke, shade);
     const notes = noteIdsOf(images);
     const onPage = this.doc?.pages[pageIndex];
     const pictures = (front: boolean): void => {
@@ -2889,11 +2957,172 @@ export class Renderer {
       }
     };
     pictures(false);
-    for (const stroke of tapesLast(strokes))
-      if (!isNoteInk(stroke, notes)) draw(stroke, this.shadeAt(pageIndex));
+    const ink = tapesLast(strokes).filter((stroke) => !isNoteInk(stroke, notes));
+    const shade = this.shadeAt(pageIndex);
+    const grown = scale && scale.k > 0 && Number.isFinite(scale.k) ? scale.k : 1;
+    const placed = !scale && !turn;
+    if (!this.blitSelectionRaster(ctx, strokes, ink, usePressure, shade, drawOn, placed, grown)) {
+      for (const stroke of ink) draw(stroke, shade);
+    }
     pictures(true);
     ctx.restore();
     this.setWetVisible(true);
+  }
+
+  /**
+   * Draw a dragged selection's ink from one picture, made the first time, so
+   * a frame costs a copy however many strokes it holds. Returns false when
+   * the ink should be drawn stroke by stroke: too few strokes to be worth it,
+   * or a picture too large to keep. A move (`placed`) puts it on a whole
+   * device px, so the ink stays as sharp as in the tiles. A resize or a turn
+   * draws the same picture through `ctx`'s transform, `grown` times the
+   * size: it redrew every stroke on every frame before (2,000 strokes: 10 to
+   * 12 ms a frame on an iPad Air, FineNotes#201). Enlarged, the picture is
+   * made again with more detail ({@link selectionRasterDetail}) while one
+   * that size may be kept, so the ink is soft only between those steps, and
+   * only until the lift commits it to the tiles.
+   */
+  private blitSelectionRaster(
+    ctx: CanvasRenderingContext2D,
+    selection: readonly Stroke[],
+    ink: readonly Stroke[],
+    usePressure: boolean,
+    shade: InkShade,
+    drawOn: (c: CanvasRenderingContext2D, stroke: Stroke, shade: InkShade) => void,
+    placed = true,
+    grown = 1,
+  ): boolean {
+    if (ink.length < SELECTION_RASTER_MIN_STROKES) return false;
+    const base = this.deviceScale;
+    let raster = this.selectionRaster;
+    if (
+      !raster ||
+      raster.selection !== selection ||
+      raster.base !== base ||
+      raster.usePressure !== usePressure ||
+      raster.shade !== shade ||
+      raster.alpha !== this.highlighterAlpha
+    ) {
+      this.releaseSelectionRaster();
+      raster = {
+        selection,
+        base,
+        detail: 0,
+        usePressure,
+        shade,
+        alpha: this.highlighterAlpha,
+        canvas: null,
+        x: 0,
+        y: 0,
+      };
+      this.selectionRaster = raster;
+    }
+    // Never coarser than the picture it has: a resize that shrinks again keeps it.
+    const wanted = Math.max(selectionRasterDetail(grown), raster.detail);
+    if (wanted !== raster.detail) {
+      const bounds = this.inkBounds(ink, usePressure);
+      let detail = wanted;
+      let box = bounds ? selectionRasterBox(bounds, base * detail) : null;
+      while (!box && bounds && detail > 1 && detail / 2 > raster.detail) {
+        detail /= 2;
+        box = selectionRasterBox(bounds, base * detail);
+      }
+      // No larger picture may be kept: the one it has goes on, softer.
+      if (!box && raster.detail > 0) return this.drawSelectionRaster(ctx, raster, placed);
+      raster.detail = detail;
+      if (raster.canvas) {
+        raster.canvas.width = 0;
+        raster.canvas.height = 0;
+        raster.canvas = null;
+      }
+      if (box) {
+        const level = base * detail;
+        const canvas = createEl("canvas");
+        canvas.width = box.width;
+        canvas.height = box.height;
+        const c = canvas.getContext("2d");
+        if (c) {
+          c.setTransform(level, 0, 0, level, -box.x * level, -box.y * level);
+          for (const stroke of ink) drawOn(c, stroke, shade);
+          raster.canvas = canvas;
+          raster.x = box.x;
+          raster.y = box.y;
+        }
+      }
+    }
+    return this.drawSelectionRaster(ctx, raster, placed);
+  }
+
+  /** Copy the selection's picture into `ctx`, which is in the dragged selection's page space. */
+  private drawSelectionRaster(
+    ctx: CanvasRenderingContext2D,
+    raster: NonNullable<Renderer["selectionRaster"]>,
+    placed: boolean,
+  ): boolean {
+    const { canvas } = raster;
+    if (!canvas) return false;
+    const level = raster.base * raster.detail;
+    if (placed && raster.detail === 1) {
+      const view = ctx.getTransform();
+      ctx.save();
+      ctx.setTransform(
+        1,
+        0,
+        0,
+        1,
+        Math.round(view.a * raster.x + view.e),
+        Math.round(view.d * raster.y + view.f),
+      );
+      ctx.drawImage(canvas, 0, 0);
+      ctx.restore();
+      return true;
+    }
+    ctx.drawImage(canvas, raster.x, raster.y, canvas.width / level, canvas.height / level);
+    return true;
+  }
+
+  /** The union of what these strokes paint, page px; null when they paint nothing. */
+  private inkBounds(ink: readonly Stroke[], usePressure: boolean): Bounds | null {
+    let out: Bounds | null = null;
+    for (const stroke of ink) {
+      const b = this.pathEntry(stroke, usePressure).bounds;
+      if (!b) continue;
+      out = out
+        ? {
+            minX: Math.min(out.minX, b.minX),
+            minY: Math.min(out.minY, b.minY),
+            maxX: Math.max(out.maxX, b.maxX),
+            maxY: Math.max(out.maxY, b.maxY),
+          }
+        : b;
+    }
+    return out;
+  }
+
+  /** Lay `cover` exactly over the dry layer, showing what the dry layer shows now. */
+  coverDry(cover: HTMLCanvasElement): void {
+    const { canvas } = this.dry;
+    cover.width = canvas.width;
+    cover.height = canvas.height;
+    cover.style.cssText = canvas.style.cssText;
+    cover.getContext("2d")?.drawImage(canvas, 0, 0);
+    canvas.after(cover);
+  }
+
+  /** Whether page `pageIndex` of a document of `count` pages is on screen. */
+  isPageOnScreen(pageIndex: number, count: number): boolean {
+    return this.boxesOnScreen(count).some((box) => box.index === pageIndex);
+  }
+
+  /** Let go of a dragged selection's picture: the drag is over. */
+  releaseSelectionRaster(): void {
+    const canvas = this.selectionRaster?.canvas;
+    if (canvas) {
+      // WebKit frees a canvas's memory only once it has no size.
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    this.selectionRaster = null;
   }
 
   /**
@@ -3130,21 +3359,128 @@ export class Renderer {
    * Draw the handwriting being written, already traced into `runs` (page
    * space), on the wet layer, painted as a stored stroke of `style` is.
    */
-  renderWetRuns(pageIndex: number, runs: readonly InkRun[], style: StrokeStyle): void {
+  renderWetRuns(
+    pageIndex: number,
+    runs: readonly InkRun[],
+    style: StrokeStyle,
+    changed: RunBox | null = null,
+  ): void {
     const box = this.layout.boxes[pageIndex];
     const ctx = this.wet.ctx;
-    this.wipe(ctx);
-    if (!box) return;
-    this.toLayoutSpace(ctx);
-    this.enterWetPage(ctx, box);
     const shade = this.shadeAt(pageIndex);
     const paint = (c: CanvasRenderingContext2D): void => {
       paintStroke(c, { runs }, style, this.highlighterAlpha, shade);
     };
+    const key = box ? this.wetInkKey(pageIndex, box, style, shade) : null;
+    if (
+      box &&
+      changed &&
+      key === this.wetInk &&
+      this.repairWetRuns(box, runs, style, shade, changed)
+    ) {
+      this.wetReplay = { pageIndex, paint };
+      return;
+    }
+    this.wipe(ctx);
+    if (!box) return;
+    this.toLayoutSpace(ctx);
+    this.enterWetPage(ctx, box);
     paint(ctx);
     ctx.restore();
     this.wetReplay = { pageIndex, paint };
+    this.wetInk = key;
     this.setWetVisible(true);
+  }
+
+  /** Everything a frame of the stroke being written was drawn under, bar the stroke itself. */
+  private wetInkKey(pageIndex: number, box: PageBox, style: StrokeStyle, shade: InkShade): string {
+    const { width, height } = this.wet.canvas;
+    return [
+      pageIndex,
+      this.deviceScale,
+      this.originX,
+      this.view.scrollY,
+      box.x,
+      box.y,
+      width,
+      height,
+      this.layout.joined === true,
+      style.tool,
+      style.color,
+      shade,
+      this.highlighterAlpha,
+    ].join("|");
+  }
+
+  /**
+   * Bring the wet layer, which shows the last frame of the stroke being
+   * written, up to `runs`: only `changed` (page px: the ink added since, and
+   * the unsettled tip then and now) is cleared and painted again, with the
+   * stretches of ink that reach into it. A frame of writing cleared and
+   * repainted the whole pane before, however little of it had changed
+   * (FineNotes#201). False when it cannot: the caller paints it all.
+   */
+  private repairWetRuns(
+    box: PageBox,
+    runs: readonly InkRun[],
+    style: StrokeStyle,
+    shade: InkShade,
+    changed: RunBox,
+  ): boolean {
+    const ctx = this.wet.ctx;
+    if (style.tool === "tape" || !("getTransform" in ctx) || typeof Path2D === "undefined")
+      return false;
+    const { width, height } = this.wet.canvas;
+    this.toLayoutSpace(ctx);
+    ctx.translate(box.x, box.y);
+    const m = ctx.getTransform();
+    if (!(m.a > 0) || m.b !== 0 || m.c !== 0) return false;
+    // Two device px more a side: the anti-aliased rim of the ink.
+    const rim = 2 / m.a;
+    const area: RunBox = {
+      minX: changed.minX - rim,
+      minY: changed.minY - rim,
+      maxX: changed.maxX + rim,
+      maxY: changed.maxY + rim,
+    };
+    const rect = boxPixelRect(area, m, width, height);
+    // Nothing of it is on the layer: what the layer shows is still right.
+    if (!rect) return true;
+    // Most of the layer: clearing it whole costs no more.
+    if (rect.w * rect.h > WET_REPAIR_SHARE * width * height) return false;
+    // Whole px were cleared, so ink a px past the box is painted again too.
+    const reach: RunBox = {
+      minX: area.minX - rim,
+      minY: area.minY - rim,
+      maxX: area.maxX + rim,
+      maxY: area.maxY + rim,
+    };
+    const kept: InkRun[] = [];
+    const paths: Path2D[] = [];
+    for (const run of runs) {
+      const stretches = stretchesWithin(run, reach);
+      if (stretches.length === 0) continue;
+      kept.push(run);
+      paths.push(pathOfStretches(run, stretches));
+    }
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.beginPath();
+    ctx.rect(rect.x, rect.y, rect.w, rect.h);
+    ctx.clip();
+    this.toLayoutSpace(ctx);
+    this.enterWetPage(ctx, box);
+    const limit = scratchLimit;
+    scratchLimit = rect;
+    try {
+      paintStroke(ctx, { runs: kept, paths }, style, this.highlighterAlpha, shade);
+    } finally {
+      scratchLimit = limit;
+    }
+    ctx.restore();
+    ctx.restore();
+    return true;
   }
 
   /** Nothing is in flight any more: empty the wet layer and hide it. */
@@ -3152,22 +3488,6 @@ export class Renderer {
     this.wipe(this.wet.ctx);
     this.setWetVisible(false);
   }
-}
-
-/** The style a stored stroke is drawn with, `pressure` being the user's setting. */
-export function styleOf(stroke: Stroke, pressure: boolean): StrokeStyle {
-  const { color, size, tool, shape } = stroke;
-  return {
-    color,
-    size,
-    tool,
-    usePressure: pressure,
-    shape: shape !== undefined,
-    decor: decorOf(stroke),
-    ...(stroke.nib !== undefined ? { nib: stroke.nib } : {}),
-    ...(stroke.tip !== undefined ? { tip: stroke.tip } : {}),
-    ...(stroke.tilt !== undefined ? { tilt: stroke.tilt } : {}),
-  };
 }
 
 /**
@@ -3303,33 +3623,8 @@ function paintShape(
   night: boolean,
 ): void {
   const ink = ctx.fillStyle;
-  const closed = isClosedLoop(pts);
-  let line = pts;
-  const heads: Array<{ points: Array<{ x: number; y: number }>; filled: boolean }> = [];
-  if (decor.heads && decor.kind === "path") {
-    // Its heads follow its own end runs, and it keeps its corners.
-    const headed = pathHeads(pts, width, decor.heads);
-    line = headed.pts;
-    heads.push(...headed.heads);
-  } else if (decor.heads) {
-    const points = pointsOf(pts);
-    const first = points[0];
-    const last = points[points.length - 1];
-    if (first && last) {
-      const span = Math.hypot(last.x - first.x, last.y - first.y);
-      const start = decor.heads.start
-        ? arrowHead(last, first, width, decor.heads.start, span)
-        : null;
-      const end = decor.heads.end ? arrowHead(first, last, width, decor.heads.end, span) : null;
-      const from = start ? start.stop : first;
-      const to = end ? end.stop : last;
-      const p = pts[2] ?? 0.5;
-      line = [from.x, from.y, p, to.x, to.y, p];
-      if (start) heads.push(start);
-      if (end) heads.push(end);
-    }
-  }
-  const path = pathFromOps(outlineOps(line, decor.radius ?? 0, closed));
+  const { outline, closed, heads } = shapeGeometry(pts, width, decor);
+  const path = pathFromOps(outline);
   if (decor.fill && closed) {
     const { color, alpha } = splitFill(decor.fill);
     ctx.save();
@@ -3381,6 +3676,30 @@ export interface ThumbnailOptions {
   images?: ImagePainter;
   /** The page's header and page number, when the notebook has them. */
   furniture?: PageTexts;
+  /**
+   * Paint only this part of the page, page px (a board's drawing, a named
+   * region): the canvas is its size and `cssWidth` its width. The paper is
+   * drawn where it lies on the page, so the ruling stays on the ink's grid.
+   */
+  crop?: { x: number; y: number; width: number; height: number };
+  /**
+   * Paint only what lies under the page's ink (`"under"`: paper, pictures
+   * behind the ink, tables, graphs, equations, connectors) or only what lies
+   * over it (`"over"`: task boxes, pictures in front, text boxes, cover
+   * tapes, on a transparent canvas): the PDF export draws the ink between
+   * them in vectors (`export/vector-ink`). Absent paints everything.
+   */
+  parts?: "under" | "over";
+}
+
+/** Whether `page` has anything {@link renderPageThumbnail} paints over its ink (`parts: "over"`). */
+export function hasOverInk(page: Page): boolean {
+  return (
+    (page.tasks?.length ?? 0) > 0 ||
+    page.images.some((image) => image.front === true) ||
+    page.textBoxes.some((box) => !noteOfText(page, box)) ||
+    page.strokes.some(isTape)
+  );
 }
 
 /**
@@ -3397,37 +3716,50 @@ export function renderPageThumbnail(
   dpr: number,
   options: ThumbnailOptions,
 ): void {
-  const { width, height } = page.geometry;
+  const crop = options.crop;
+  const { width, height } = crop ?? page.geometry;
   if (!(width > 0) || !(height > 0)) return;
   const k = (cssWidth / width) * dpr;
   canvas.width = Math.max(1, Math.round(width * k));
   canvas.height = Math.max(1, Math.round(height * k));
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+  const ox = crop?.x ?? 0;
+  const oy = crop?.y ?? 0;
+  const under = options.parts !== "over";
+  const over = options.parts !== "under";
+  const transparent = options.transparent === true || !under;
 
   const look = pageLook(page.backdrop, options.paper ?? LIGHT_PAPER);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (!options.transparent) {
+  if (!transparent) {
     ctx.fillStyle = look.paper;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
   // Each axis scaled to the rounded canvas, so the page fills it exactly: at
   // the unrounded scale the last row or column was only partly painted and
   // showed the base through — a light line along a cover's bottom edge.
-  ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
+  const sx = canvas.width / width;
+  const sy = canvas.height / height;
+  ctx.setTransform(sx, 0, 0, sy, -ox * sx, -oy * sy);
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, 0, width, height);
+  ctx.rect(ox, oy, width, height);
   ctx.clip();
+  // Only the cut's part of the paper is drawn: a board's is metres of it.
+  const region = crop
+    ? { minX: crop.x, minY: crop.y, maxX: crop.x + crop.width, maxY: crop.y + crop.height }
+    : undefined;
   // A 1 page-px rule is about a tenth of a CSS pixel at thumbnail size and
   // would vanish; draw rules roughly half a CSS pixel wide instead.
-  if (!options.transparent) {
+  if (!transparent) {
     paintPagePaper(painter, ctx, page, Math.max(1, (0.5 * width) / cssWidth), {
       deviceScale: k,
       paper: options.paper ?? LIGHT_PAPER,
+      ...(region ? { region } : {}),
     });
     if (options.furniture) paintFurniture(ctx, page.geometry, options.furniture, look.night);
-  } else if (marginBackdrop(page)) {
+  } else if (under && marginBackdrop(page)) {
     // Over a PDF drawn elsewhere (export): the margin's paper is not the PDF's, so it comes along.
     paintPagePaper(
       painter,
@@ -3469,21 +3801,29 @@ export function renderPageThumbnail(
       );
     }
   };
-  pictures(false);
-  // Tables lie under the ink, so handwriting in a cell shows over its lines.
-  for (const table of page.tables ?? []) paintTable(ctx, table, look.night);
-  // So do graphs: a note written over a curve shows over it.
-  for (const graph of page.graphs ?? []) {
-    paintGraph(ctx, graph, { level: k, night: look.night, paper: look.paper });
+  if (under) {
+    pictures(false);
+    // Tables lie under the ink, so handwriting in a cell shows over its lines.
+    for (const table of page.tables ?? []) paintTable(ctx, table, look.night);
+    // So do graphs: a note written over a curve shows over it.
+    for (const graph of page.graphs ?? []) {
+      paintGraph(ctx, graph, { level: k, night: look.night, paper: look.paper });
+    }
+    // And typed equations, over the graphs.
+    for (const equation of page.equations ?? []) paintEquation(ctx, equation, look.night);
+    // And the arrows joining shapes.
+    paintConnectors(ctx, page, look.night);
   }
-  // And typed equations, over the graphs.
-  for (const equation of page.equations ?? []) paintEquation(ctx, equation, look.night);
-  // And the arrows joining shapes.
-  paintConnectors(ctx, page, look.night);
-
-  for (const stroke of page.strokes) {
-    if (isNoteInk(stroke, notes) || isTape(stroke)) continue;
-    fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, inkShade(look));
+  if (!over) {
+    ctx.restore();
+    return;
+  }
+  // The ink itself: neither part has it, the export draws it in vectors between them.
+  if (!options.parts) {
+    for (const stroke of page.strokes) {
+      if (isNoteInk(stroke, notes) || isTape(stroke)) continue;
+      fillStroke(ctx, stroke.pts, styleOf(stroke, options.usePressure), alpha, inkShade(look));
+    }
   }
   // Handwriting made a checklist item has its box beside it, in its ink colour.
   for (const task of page.tasks ?? []) paintTaskBox(ctx, page, task, look.night);
@@ -3555,7 +3895,11 @@ export function paintTextBox(
   night = false,
 ): void {
   // Links in the text show as their text, brackets hidden, as on the page.
-  const box = { ...typed, text: shownCase(displayText(typed.text), typed) };
+  // A Markdown box is read by its own layout, which does both itself.
+  const markdown = typed.markdown === true;
+  const box = markdown
+    ? { ...typed }
+    : { ...typed, text: shownCase(displayText(typed.text), typed) };
   const border = normalizeBorder(box.border);
   if (!box.text && !box.fill && !border) return;
   ctx.save();
@@ -3567,21 +3911,24 @@ export function paintTextBox(
     ctx.translate(-box.x, -box.y);
   }
   ctx.font = canvasFont(box, box.fontSize);
-  const layout = layoutTextBox(box, (text) => ctx.measureText(text).width);
+  const md = markdown ? layoutMarkdownOn(ctx, box) : null;
+  const plain = md ? null : layoutTextBox(box, (text) => ctx.measureText(text).width);
+  const height = md?.height ?? plain?.height ?? 0;
+  ctx.font = canvasFont(box, box.fontSize);
   // The corners the page's frame has (its CSS `border-radius`).
-  const radius = cornerRadiusOf(box.radius, box.w, layout.height);
+  const radius = cornerRadiusOf(box.radius, box.w, height);
   if (box.fill) {
     ctx.fillStyle = shownColor(box.fill, night);
     if (radius > 0) {
       ctx.beginPath();
-      traceBoxPath(ctx, box.x, box.y, box.w, layout.height, radius);
+      traceBoxPath(ctx, box.x, box.y, box.w, height, radius);
       ctx.fill();
-    } else ctx.fillRect(box.x, box.y, box.w, layout.height);
+    } else ctx.fillRect(box.x, box.y, box.w, height);
   }
   if (border) {
     // Inside the edge, as the frame's inset shadow is: the line's centre
     // sits half its width in, on corners half its width tighter.
-    const width = Math.min(border.width, box.w / 2, layout.height / 2);
+    const width = Math.min(border.width, box.w / 2, height / 2);
     const half = width / 2;
     ctx.strokeStyle = shownColor(border.color, night);
     ctx.lineWidth = width;
@@ -3591,12 +3938,13 @@ export function paintTextBox(
       box.x + half,
       box.y + half,
       box.w - width,
-      layout.height - width,
+      height - width,
       Math.max(0, radius - half),
     );
     ctx.stroke();
   }
-  if (box.text) paintTextLines(ctx, box, layout, { x: box.x, y: box.y, w: box.w }, night);
+  if (md && box.text) paintMarkdownText(ctx, box, md, night);
+  if (plain && box.text) paintTextLines(ctx, box, plain, { x: box.x, y: box.y, w: box.w }, night);
   ctx.restore();
 }
 
@@ -3644,10 +3992,15 @@ function paintTextLines(
  */
 export function paintedTextHeight(ctx: CanvasRenderingContext2D, typed: TextBoxElement): number {
   if (typed.h !== undefined) return typed.h;
-  const box = { ...typed, text: shownCase(displayText(typed.text), typed) };
+  const markdown = typed.markdown === true;
+  const box = markdown
+    ? { ...typed }
+    : { ...typed, text: shownCase(displayText(typed.text), typed) };
   ctx.save();
   ctx.font = canvasFont(box, box.fontSize);
-  const { height } = layoutTextBox(box, (text) => ctx.measureText(text).width);
+  const { height } = markdown
+    ? layoutMarkdownOn(ctx, box)
+    : layoutTextBox(box, (text) => ctx.measureText(text).width);
   ctx.restore();
   return height;
 }

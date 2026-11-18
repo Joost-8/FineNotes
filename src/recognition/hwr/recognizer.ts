@@ -22,6 +22,7 @@ import { networkFrames } from "./curves";
 import { type InkStroke, LineTooLongError, lineFeatures } from "./features";
 import { REREAD_MARGIN, type RereadList, rereadOutOfList } from "./lexicon";
 import { type Box, type PageInk, lineStrokes, segmentPage, withStrokeTimes } from "./lines";
+import { wordInk } from "./word-ink";
 
 /** Nats per letter a page word earns while decoding (EXP-PCONFIRM: lam 1). */
 export const PAGE_WORD_WEIGHT = 1;
@@ -48,12 +49,24 @@ export interface LineReading {
    * read), its confidence and its runner-ups; only when asked (`chars`).
    */
   chars?: CharReading[];
+  /**
+   * The strokes each word of `text` was read from (indices into the strokes
+   * read), one entry per word in order (word-ink.ts); only when asked
+   * (`wordInk`), and absent when the text could not be laid over the frames.
+   */
+  wordStrokes?: number[][];
 }
 
 export interface PageLineReading extends LineReading {
   strokeIds: string[];
-  /** The line's words, as stroke ids, so a caller need not find them again. */
+  /**
+   * The line's words, as stroke ids. With `aligned`, one entry per word of
+   * `text`, in order: the ink each word was read from. Without it (the text
+   * could not be laid over the ink), the line's strokes cut at wide gaps,
+   * which need not agree with the text's words.
+   */
   words: string[][];
+  aligned: boolean;
   box: Box;
 }
 
@@ -94,6 +107,8 @@ export interface ReadOptions {
   logp?: (line: number, logp: Float32Array, frames: number) => void;
   /** Also give each character with its strokes and runner-ups (`LineReading.chars`). */
   chars?: boolean;
+  /** Also give each word's strokes (`LineReading.wordStrokes`); `readPage` always asks. */
+  wordInk?: boolean;
   /**
    * The four reading fixes of EXP-PCONFIRM (set P whole pages 33.7 → 29.2 %
    * CER), each on unless turned off here:
@@ -159,7 +174,7 @@ export function readLine(
       points.frames,
       points.frameStroke,
     );
-    if (options.chars) order = points.strokes.map((s) => strokes.indexOf(s));
+    if (options.chars || options.wordInk) order = points.strokes.map((s) => strokes.indexOf(s));
   } catch (error) {
     if (!(error instanceof LineTooLongError)) throw error;
     const timings = { features: now() - t0, network: 0, greedy: 0, beam: 0 };
@@ -177,10 +192,11 @@ export function readLine(
   const decoder = { ...bundle.meta.decoder, ...options.beam };
   const math = options.math === true;
   let text = greedy.text;
+  const read = math && lm ? mathLogp(logp, frames, alphabet) : logp;
   if (lm) {
     text = math
       ? beamDecode(
-          mathLogp(logp, frames, alphabet),
+          read,
           frames,
           alphabet,
           lm,
@@ -195,6 +211,11 @@ export function readLine(
     text = rereadOutOfList(line, alphabet, lm, decoder.alpha, text, options.rereadList, margin);
   }
   const t4 = now();
+  let wordStrokes: number[][] | null = null;
+  if (options.wordInk && line.frameStroke) {
+    const found = wordInk(read, frames, alphabet, text, line.frameStroke, order.length);
+    wordStrokes = found && found.map((word) => word.map((s) => order[s]).sort((a, b) => a - b));
+  }
   return {
     greedy: greedy.text,
     text,
@@ -214,6 +235,7 @@ export function readLine(
           ),
         }
       : {}),
+    ...(wordStrokes ? { wordStrokes } : {}),
   };
 }
 
@@ -239,14 +261,19 @@ export function readPage(
     lines: lines.map((line, index) => {
       const ink = lineStrokes(line).map((s) => stored.get(s.id) ?? s);
       const keep = options.logp;
+      const { wordStrokes, ...reading } = readLine(bundle, ink, {
+        ...options,
+        bias,
+        wordInk: true,
+        logp: keep && ((_, logp, frames) => keep(index, logp, frames)),
+      });
       return {
-        ...readLine(bundle, ink, {
-          ...options,
-          bias,
-          logp: keep && ((_, logp, frames) => keep(index, logp, frames)),
-        }),
+        ...reading,
         strokeIds: ink.map((s) => s.id),
-        words: line.words.map((word) => word.strokes.map((s) => s.id)),
+        words: wordStrokes
+          ? wordStrokes.map((word) => word.map((s) => ink[s].id))
+          : line.words.map((word) => word.strokes.map((s) => s.id)),
+        aligned: wordStrokes !== undefined,
         box: line.box,
       };
     }),

@@ -71,6 +71,67 @@ export function placeImageBox(
   };
 }
 
+/** The gap between pictures placed together, page px. */
+export const IMAGE_GRID_GAP = 16;
+
+/**
+ * Where several pictures chosen at once land (FineNotes#211): one after
+ * another in reading order, in a grid of near-square cells over the part of
+ * the page on screen (`visible`, clipped to the page; the whole page without
+ * it), each fitted inside its cell as {@link placeImageBox} fits one inside
+ * the page (aspect kept, never enlarged past its own pixel size), centred in
+ * its cell. One picture is placed as {@link placeImageBox} places it.
+ */
+export function placeImageGrid(
+  naturals: readonly { width: number; height: number }[],
+  page: PageGeometry,
+  visible?: Bounds | null,
+): { x: number; y: number; w: number; h: number }[] {
+  const n = naturals.length;
+  if (n === 0) return [];
+  if (n === 1) return [placeImageBox(naturals[0], page, visible)];
+  const area = clipToPage(visible ?? null, page);
+  const areaW = area.maxX - area.minX;
+  const areaH = area.maxY - area.minY;
+  // Columns for cells as square as the area allows.
+  const cols = Math.max(1, Math.min(n, Math.round(Math.sqrt((n * areaW) / Math.max(1, areaH)))));
+  const rows = Math.ceil(n / cols);
+  const gap = IMAGE_GRID_GAP;
+  const cellW = Math.max(1, (areaW - gap * (cols + 1)) / cols);
+  const cellH = Math.max(1, (areaH - gap * (rows + 1)) / rows);
+  return naturals.map((natural, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const cell: Bounds = {
+      minX: area.minX + gap + col * (cellW + gap),
+      minY: area.minY + gap + row * (cellH + gap),
+      maxX: area.minX + gap + col * (cellW + gap) + cellW,
+      maxY: area.minY + gap + row * (cellH + gap) + cellH,
+    };
+    // Fitted inside the whole cell: a cell is the "page" a picture fits in.
+    const box = placeImageBox(natural, { ...page, width: cellW, height: cellH }, null, 1);
+    return {
+      x: clamp(cell.minX + (cellW - box.w) / 2, 0, Math.max(0, page.width - box.w)),
+      y: clamp(cell.minY + (cellH - box.h) / 2, 0, Math.max(0, page.height - box.h)),
+      w: box.w,
+      h: box.h,
+    };
+  });
+}
+
+/**
+ * New image elements for `paths`, at `boxes`, with fresh ids counted on from
+ * {@link nextImageId}, so pictures placed together never share one.
+ */
+export function newImageElements(
+  doc: InkDocument,
+  paths: readonly string[],
+  boxes: readonly { x: number; y: number; w: number; h: number }[],
+): ImageElement[] {
+  const first = Number(nextImageId(doc).slice(1));
+  return paths.map((path, i) => ({ ...newImageElement(doc, path, boxes[i]), id: `i${first + i}` }));
+}
+
 /** A new image element with a fresh id. */
 export function newImageElement(
   doc: InkDocument,

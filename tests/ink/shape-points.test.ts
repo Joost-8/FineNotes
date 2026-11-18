@@ -7,9 +7,11 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_POINT_HANDLES,
+  levelAnchor,
   movePoint,
   pickPointHandle,
   pointHandles,
+  snapsToShapes,
 } from "../../src/ink/shape-points";
 import { arcPoints, arrowPoints, presetGeometry } from "../../src/ink/shape-geometry";
 import { recognizeShape } from "../../src/ink/shape-recognizer";
@@ -44,10 +46,29 @@ describe("pointHandles", () => {
     }
   });
 
-  it("a line's two ends", () => {
+  it("a line's two ends, and a dot between them that bends it", () => {
     const handles = pointHandles("line", [10, 20, 0.5, 90, 20, 0.5])!;
-    expect(handles.at).toEqual([10, 20, 90, 20]);
-    expect(handles.points).toEqual([[0], [1]]);
+    expect(handles.at).toEqual([10, 20, 50, 20, 90, 20]);
+    expect(handles.looks).toEqual(["ring", "dot", "ring"]);
+    expect(handles.connector?.kind).toBe("curve");
+    const bent = movePoint("line", [10, 20, 0.5, 90, 20, 0.5], handles, 1, { x: 50, y: 60 })!;
+    expect(bent.kind).toBe("path");
+  });
+
+  it("an elbow's ends and a pill on each run", () => {
+    const elbow = flat([
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 80 },
+    ]);
+    const handles = pointHandles("path", elbow)!;
+    expect(handles.looks).toEqual(["ring", "pill-x", "pill-y", "ring"]);
+    expect(xy(movePoint("path", elbow, handles, 2, { x: 140, y: 40 })!.pts)).toEqual([
+      [0, 0],
+      [140, 0],
+      [140, 80],
+      [100, 80],
+    ]);
   });
 
   it("an arrow's tail and tip only, the tip's three copies as one", () => {
@@ -160,7 +181,6 @@ describe("movePoint", () => {
 
   it("keeps every other kind", () => {
     const cases: Array<[ShapeKind, number[]]> = [
-      ["line", [0, 0, 0.5, 100, 0, 0.5]],
       ["star", presetGeometry("star", from, to, 0.5)],
       ["polygon", presetGeometry("diamond", from, to, 0.5)],
     ];
@@ -214,7 +234,7 @@ describe("movePoint", () => {
 
   it("refuses to shrink a line or a shaft to nothing, or to go nowhere", () => {
     const line = [0, 0, 0.5, 100, 0, 0.5];
-    expect(movePoint("line", line, pointHandles("line", line)!, 1, { x: 0.2, y: 0.3 })).toBeNull();
+    expect(movePoint("line", line, pointHandles("line", line)!, 2, { x: 0.2, y: 0.3 })).toBeNull();
     const arrow = flat(arrowPoints({ x: 0, y: 0 }, { x: 100, y: 0 }));
     expect(movePoint("arrow", arrow, pointHandles("arrow", arrow)!, 1, { x: 0, y: 0 })).toBeNull();
     expect(movePoint("line", line, pointHandles("line", line)!, 0, { x: NaN, y: 0 })).toBeNull();
@@ -223,8 +243,8 @@ describe("movePoint", () => {
 
   it("rounds to the 1/100 px the file keeps, and keeps the pressure", () => {
     const line = [0, 0, 0.3, 100, 0, 0.7];
-    const moved = movePoint("line", line, pointHandles("line", line)!, 1, { x: 50.123, y: 9.876 })!;
-    expect(moved.pts).toEqual([0, 0, 0.3, 50.12, 9.88, 0.7]);
+    const moved = movePoint("line", line, pointHandles("line", line)!, 2, { x: 50.123, y: 9.876 })!;
+    expect(moved).toEqual({ kind: "line", pts: [0, 0, 0.3, 50.12, 9.88, 0.7] });
   });
 });
 
@@ -241,5 +261,38 @@ describe("pickPointHandle", () => {
     const frameCorner = { x: 92, y: 92 };
     expect(pickPointHandle(at, { x: 99, y: 99 }, 18, [frameCorner])).toBe(0);
     expect(pickPointHandle(at, { x: 94, y: 94 }, 18, [frameCorner])).toBe(-1);
+  });
+});
+
+describe("levelAnchor and snapsToShapes", () => {
+  it("a straight line's end levels with its other end; a bend point does neither", () => {
+    const line = pointHandles("line", [0, 0, 0.5, 100, 0, 0.5])!;
+    expect(levelAnchor(line, 0)).toEqual({ x: 100, y: 0 });
+    expect(levelAnchor(line, 2)).toEqual({ x: 0, y: 0 });
+    expect(levelAnchor(line, 1)).toBeNull();
+    expect(snapsToShapes(line, 0)).toBe(true);
+    expect(snapsToShapes(line, 1)).toBe(false);
+  });
+
+  it("a whole arrow's ends level with each other; a rectangle's corners snap but do not level", () => {
+    const arrow = pointHandles("arrow", flat(arrowPoints({ x: 0, y: 0 }, { x: 100, y: 0 })))!;
+    expect(levelAnchor(arrow, 1)).toEqual({ x: 0, y: 0 });
+    const rect = pointHandles("rect", presetGeometry("rect", from, to, 0.5))!;
+    expect(levelAnchor(rect, 0)).toBeNull();
+    expect(snapsToShapes(rect, 0)).toBe(true);
+  });
+
+  it("an elbow's runs never snap, its ends do; a curve's ends do not level", () => {
+    const elbow = pointHandles(
+      "path",
+      flat([
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 80 },
+      ]),
+    )!;
+    expect(snapsToShapes(elbow, 1)).toBe(false);
+    expect(snapsToShapes(elbow, 3)).toBe(true);
+    expect(levelAnchor(elbow, 0)).toBeNull();
   });
 });

@@ -32,6 +32,8 @@ import { renderColorMixer, renderColorPicker } from "./color-picker";
 import type { Bounds } from "../model/document";
 import { FILL_OPACITIES, nearestFillOpacity } from "../model/shape-style";
 import { swallowGhostClick } from "./ghost-click";
+import { prefersReducedMotion, springCurve } from "./motion";
+import { EASE_OUT_FALLBACK, POPOVER_IN, springMs } from "./springs";
 import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import {
@@ -46,6 +48,7 @@ import {
   placeFloating,
 } from "./selection-bar-model";
 import { t } from "../i18n/translate";
+import { withKeys } from "../model/fast-ways";
 
 /** Space between the selection (and anything sticking out of it) and the bar, px. */
 const BAR_GAP_PX = 12;
@@ -53,6 +56,12 @@ const BAR_GAP_PX = 12;
 const EDGE_MARGIN_PX = 8;
 /** Space between the "…" button and the menu, px. */
 const MENU_GAP_PX = 6;
+/**
+ * How long the bar, the menu or a panel takes to leave (styles.css's
+ * `goodobsidian-sel-out` runs for --gob-t-popover-out). It is removed on a
+ * timer of this length, never on the animation's `finish`, which can lag.
+ */
+const LEAVE_MS = 240;
 /** The menu's height cap never goes below this, however little room is left. */
 const MENU_MIN_HEIGHT_PX = 160;
 
@@ -79,6 +88,8 @@ export class SelectionActionBar {
   /** The colour panel, open from the bar's colour disc; and the entry it belongs to. */
   private panelEl: HTMLElement | null = null;
   private panelFor: string | null = null;
+  /** The bar's own leaving timer; a menu or panel that leaves is removed by its own. */
+  private leaveTimer = 0;
   private readonly onOutsideDown = (event: PointerEvent): void => {
     const target = event.target as Node | null;
     if (target && (this.menuEl?.contains(target) || this.moreButton?.contains(target))) return;
@@ -117,6 +128,8 @@ export class SelectionActionBar {
    * inside `visible`. Both are in the parent element's px.
    */
   show(anchor: Bounds, visible: Bounds, options: ShowOptions = {}): void {
+    window.clearTimeout(this.leaveTimer);
+    this.el.removeClass("is-leaving");
     this.el.removeClass("is-hidden");
     this.visible = visible;
     const at = placeFloating(anchor, { w: this.el.offsetWidth, h: this.el.offsetHeight }, visible, {
@@ -135,7 +148,26 @@ export class SelectionActionBar {
   hide(): void {
     this.closeMenu();
     this.closePanel();
+    if (this.el.hasClass("is-hidden")) return;
     this.el.addClass("is-hidden");
+    // Hidden to everything that asks; drawn a moment longer while it fades.
+    if (prefersReducedMotion()) return;
+    this.el.addClass("is-leaving");
+    window.clearTimeout(this.leaveTimer);
+    this.leaveTimer = window.setTimeout(() => this.el.removeClass("is-leaving"), LEAVE_MS);
+  }
+
+  /**
+   * Take a menu or panel away: it shrinks back towards the bar, takes no
+   * taps meanwhile, and is removed on a timer.
+   */
+  private dismiss(el: HTMLElement): void {
+    if (prefersReducedMotion()) {
+      el.remove();
+      return;
+    }
+    el.addClass("is-leaving");
+    window.setTimeout(() => el.remove(), LEAVE_MS);
   }
 
   /** Whether the colour panel is open. */
@@ -153,7 +185,7 @@ export class SelectionActionBar {
 
   closeMenu(): void {
     if (!this.menuEl) return;
-    this.menuEl.remove();
+    this.dismiss(this.menuEl);
     this.menuEl = null;
     this.submenu = null;
     this.swatchesOpen = false;
@@ -163,7 +195,7 @@ export class SelectionActionBar {
 
   closePanel(): void {
     if (!this.panelEl) return;
-    this.panelEl.remove();
+    this.dismiss(this.panelEl);
     this.panelEl = null;
     this.panelButton()?.removeClass("is-active");
     this.panelFor = null;
@@ -173,6 +205,7 @@ export class SelectionActionBar {
   destroy(): void {
     this.closeMenu();
     this.closePanel();
+    window.clearTimeout(this.leaveTimer);
     this.el.remove();
   }
 
@@ -264,7 +297,23 @@ export class SelectionActionBar {
     });
   }
 
+  /**
+   * The key that does an entry too, as this device has it (fast-ways.ts);
+   * the surface sets it. Shown in the entry's tooltip and at a row's end.
+   */
+  keysFor: ((id: string) => string | null) | null = null;
+
   private decorate(button: HTMLButtonElement, action: SelectionAction): void {
+    const keys = this.keysFor?.(action.id) ?? null;
+    if (keys) {
+      // Obsidian's own tooltip reads the label, the browser's the title: both name the key.
+      button.title = withKeys(action.label, keys);
+      button.setAttribute("aria-label", withKeys(action.label, keys));
+      const row = button.hasClass("goodobsidian-selection-row");
+      if (row && !button.querySelector(".goodobsidian-selection-row-keys")) {
+        button.createSpan({ cls: "goodobsidian-selection-row-keys", text: keys });
+      }
+    }
     button.toggleClass("mod-warning", action.destructive === true);
     // A choice in the bar itself (a linked shape's type) marks the one it is.
     if (action.checked !== undefined && action.bar === true) {
@@ -512,6 +561,7 @@ export class SelectionActionBar {
       prefer: below >= above ? "below" : "above",
     });
     panel.setCssStyles({ left: `${Math.round(at.x)}px`, top: `${Math.round(at.y)}px` });
+    growFrom(panel, anchor, at);
   }
 
   // --- The "…" menu -----------------------------------------------------------
@@ -549,10 +599,7 @@ export class SelectionActionBar {
       );
       iconInto(back.createSpan({ cls: "goodobsidian-selection-row-icon" }), ["chevron-left"], "‹");
       back.createSpan({ cls: "goodobsidian-selection-row-label", text: open.label });
-      onTap(back, () => {
-        this.submenu = null;
-        this.renderMenu();
-      });
+      onTap(back, () => this.swapMenu(null));
       menu.createDiv({ cls: "goodobsidian-selection-menu-divider" });
       for (const action of open.actions) this.renderRow(menu, action);
       this.placeMenu();
@@ -569,6 +616,10 @@ export class SelectionActionBar {
           "",
         );
         tile.createSpan({ cls: "goodobsidian-selection-tile-label", text: action.label });
+        if (action.checked !== undefined) {
+          tile.setAttribute("aria-pressed", String(action.checked));
+          tile.toggleClass("is-on", action.checked);
+        }
         this.decorate(tile, action);
         onTap(tile, () => this.run(action.id, true));
       }
@@ -595,10 +646,7 @@ export class SelectionActionBar {
           "›",
         );
         const label = row.label;
-        onTap(button, () => {
-          this.submenu = label;
-          this.renderMenu();
-        });
+        onTap(button, () => this.swapMenu(label));
       } else if (row.action.swatches) {
         this.renderSwatches(menu, row.action);
       } else {
@@ -606,6 +654,34 @@ export class SelectionActionBar {
       }
     }
     this.placeMenu();
+  }
+
+  /**
+   * Step into a sub-panel, or back out of it: the rows slide in from the side
+   * they come from and the menu glides to its new height, so the swap reads
+   * as one menu turning a page, not as another menu.
+   */
+  private swapMenu(submenu: string | null): void {
+    const menu = this.menuEl;
+    if (!menu) return;
+    const before = menu.offsetHeight;
+    this.submenu = submenu;
+    this.renderMenu();
+    if (prefersReducedMotion()) return;
+    menu.removeClass("is-forward");
+    menu.removeClass("is-back");
+    // Read between the two class changes, so the slide starts again.
+    const after = menu.offsetHeight;
+    menu.addClass(submenu === null ? "is-back" : "is-forward");
+    // Hung above the bar, its top moves with its height: let that one jump.
+    if (before === after || menu.hasClass("is-above") || typeof menu.animate !== "function") return;
+    menu.addClass("is-morphing");
+    const duration = springMs(POPOVER_IN);
+    menu.animate([{ height: `${before}px` }, { height: `${after}px` }], {
+      duration,
+      easing: springCurve(POPOVER_IN, EASE_OUT_FALLBACK),
+    });
+    window.setTimeout(() => menu.removeClass("is-morphing"), duration);
   }
 
   /** One row of the menu: icon, label, and a check when it is a choice that is on. */
@@ -786,7 +862,18 @@ export class SelectionActionBar {
       prefer: "below",
     });
     menu.setCssStyles({ left: `${Math.round(at.x)}px`, top: `${Math.round(at.y)}px` });
+    growFrom(menu, anchor, at);
   }
+}
+
+/**
+ * Tell a menu or panel where it hangs from, for styles.css to grow it from
+ * there: the middle of its button along the bar, and the bar's side.
+ */
+function growFrom(el: HTMLElement, anchor: Bounds, at: { x: number; below: boolean }): void {
+  const x = Math.round((anchor.minX + anchor.maxX) / 2 - at.x);
+  el.toggleClass("is-above", !at.below);
+  el.setCssStyles({ transformOrigin: `${x}px ${at.below ? "top" : "bottom"}` });
 }
 
 /** The index of the value in `stops` nearest `value`. */
@@ -819,9 +906,16 @@ export function onTap(button: HTMLButtonElement, action: () => void): void {
     event.stopPropagation();
     event.preventDefault();
     armed = event.pointerId;
+    // The press shows at once (`:active` never comes for a Pencil here).
+    if (!button.disabled) button.dataset.pressed = "";
   });
+  const release = (): void => {
+    delete button.dataset.pressed;
+  };
+  button.addEventListener("pointerleave", release);
   button.addEventListener("pointerup", (event) => {
     event.stopPropagation();
+    release();
     if (armed !== event.pointerId) return;
     armed = null;
     if (button.disabled) return;
@@ -832,6 +926,7 @@ export function onTap(button: HTMLButtonElement, action: () => void): void {
   });
   button.addEventListener("pointercancel", () => {
     armed = null;
+    release();
   });
   button.addEventListener("click", (event) => {
     event.stopPropagation();

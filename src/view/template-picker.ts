@@ -27,6 +27,7 @@ import {
   typedSpacing,
 } from "../canvas/paper-style";
 import { type App, Menu, Modal, setIcon } from "obsidian";
+import { BOARD_RULINGS } from "../model/board";
 import { renderColorMixer } from "./color-picker";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { mmStepper } from "./mm-stepper";
@@ -62,6 +63,7 @@ import {
 } from "../model/templates";
 import { currentLanguage, t, tn } from "../i18n/translate";
 import { fitCardNames } from "./card-name-fit";
+import { docOf, shownDoc, winOf } from "./host-window";
 
 /** Paint a template preview into `canvas`, `cssWidth` CSS px wide. */
 export function paintTemplatePreview(
@@ -92,21 +94,21 @@ export function paintTemplatePreview(
  */
 export function placePopover(el: HTMLElement, anchor: HTMLElement, maxWidth: number): void {
   const r = anchor.getBoundingClientRect();
-  const width = Math.min(maxWidth, window.innerWidth - 16);
+  const width = Math.min(maxWidth, winOf(el).innerWidth - 16);
   const { side, box } = menuAnchor(anchor);
   if (side !== "down") {
     const size = { width, height: el.offsetHeight };
-    const room = { width: window.innerWidth, height: window.innerHeight };
+    const room = { width: winOf(el).innerWidth, height: winOf(el).innerHeight };
     const at = menuPlace(side, box, size, room, "end", 6, 8);
     el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px`, width: `${width}px` });
     return;
   }
   let left = r.right - width;
-  if (left < 8) left = Math.min(r.left, window.innerWidth - width - 8);
+  if (left < 8) left = Math.min(r.left, winOf(el).innerWidth - width - 8);
   left = Math.max(8, left);
   const height = el.offsetHeight;
   let top = r.bottom + 6;
-  if (top + height > window.innerHeight - 8) top = Math.max(8, r.top - height - 6);
+  if (top + height > winOf(el).innerHeight - 8) top = Math.max(8, r.top - height - 6);
   el.setCssStyles({ left: `${left}px`, top: `${top}px`, width: `${width}px` });
 }
 
@@ -135,15 +137,15 @@ export function installPopoverDismiss(
     else close();
   };
   // Capture: the drawing surface consumes its own pointer events.
-  document.addEventListener("pointerdown", onDown, true);
-  document.addEventListener("keydown", onKey);
-  window.addEventListener("resize", onResize);
+  docOf(el).addEventListener("pointerdown", onDown, true);
+  docOf(el).addEventListener("keydown", onKey);
+  winOf(el).addEventListener("resize", onResize);
   // A second tap on the anchor is the host's to handle: it closes the
   // popover instead of opening another (see each popover's `isOpen`).
   return () => {
-    document.removeEventListener("pointerdown", onDown, true);
-    document.removeEventListener("keydown", onKey);
-    window.removeEventListener("resize", onResize);
+    docOf(el).removeEventListener("pointerdown", onDown, true);
+    docOf(el).removeEventListener("keydown", onKey);
+    winOf(el).removeEventListener("resize", onResize);
   };
 }
 
@@ -162,6 +164,8 @@ export interface AddPagePopoverOptions {
   paintPaper?: (canvas: HTMLCanvasElement, backdrop: PdfBackdrop, cssWidth: number) => void;
   onPick: (backdrop: Backdrop, position: InsertPosition) => void;
   onMore: (position: InsertPosition) => void;
+  /** Add an endless board among the pages (discussion #160); without it the row is not offered. */
+  onBoard?: (position: InsertPosition, ruling: Ruling) => void;
 }
 
 const POPOVER_WIDTH = 340;
@@ -181,7 +185,7 @@ export class AddPagePopover {
     private readonly options: AddPagePopoverOptions,
   ) {
     this.position = options.position;
-    this.el = document.body.createDiv({ cls: "goodobsidian-addpage" });
+    this.el = shownDoc().body.createDiv({ cls: "goodobsidian-addpage" });
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute("aria-label", t("notebooks.picker.addPage"));
     this.build();
@@ -275,6 +279,33 @@ export class AddPagePopover {
       this.close();
       this.options.onMore(this.position);
     });
+    const onBoard = this.options.onBoard;
+    if (onBoard) {
+      // A board, on the paper of its card: the three a new board offers.
+      const head = this.el.createDiv({ cls: "goodobsidian-addpage-boardhead" });
+      setIcon(head.createSpan({ cls: "goodobsidian-addpage-row-icon" }), "infinity");
+      head.createSpan({ text: t("notebooks.command.addBoard") });
+      const row = this.el.createDiv({ cls: "goodobsidian-addpage-boards" });
+      for (const ruling of BOARD_RULINGS) {
+        const name = boardPaperName(ruling);
+        const card = row.createEl("button", {
+          cls: "goodobsidian-template-card clickable-icon",
+          attr: { type: "button", "aria-label": `${t("notebooks.command.addBoard")}: ${name}` },
+        });
+        const canvas = card.createEl("canvas", { cls: "goodobsidian-template-preview" });
+        paintTemplatePreview(
+          canvas,
+          { kind: ruling },
+          BOARD_PREVIEW_GEOMETRY,
+          ADD_BOARD_PREVIEW_WIDTH,
+        );
+        card.createDiv({ cls: "goodobsidian-template-name", text: name });
+        card.addEventListener("click", () => {
+          this.close();
+          onBoard(this.position, ruling);
+        });
+      }
+    }
   }
 
   private syncSegments(): void {
@@ -286,6 +317,19 @@ export class AddPagePopover {
 }
 
 // --- Picker parts -------------------------------------------------------------
+
+/** A board's paper cards show a landscape piece of it, 4 by 3. */
+export const BOARD_PREVIEW_GEOMETRY: PageGeometry = { width: 560, height: 420 };
+/** Preview width of a board's paper card in Add page, CSS px: three to the popover's row. */
+const ADD_BOARD_PREVIEW_WIDTH = 64;
+
+/** A board paper's name, as New notebook and Add page show it. */
+export function boardPaperName(ruling: Ruling): string {
+  if (ruling === "blank") return t("notebooks.newNotebook.boardBlank");
+  if (ruling === "dotted") return t("notebooks.newNotebook.boardDotted");
+  if (ruling === "squared") return t("notebooks.newNotebook.boardSquared");
+  return ruling;
+}
 
 /** Size-select value meaning "leave the page the size it is". */
 export const KEEP_SIZE = "keep";
@@ -920,7 +964,7 @@ export class TemplatePickerModal extends Modal {
 
     this.repaint();
     // Bring the preselected template into view.
-    window.requestAnimationFrame(() => this.grid?.reveal());
+    winOf(this.contentEl).requestAnimationFrame(() => this.grid?.reveal());
   }
 
   override onClose(): void {
@@ -1019,10 +1063,12 @@ export class TemplatePickerModal extends Modal {
         set({ spacing: step.k === 1 ? undefined : step.k, pitch: undefined }),
       );
     }
-    // The pitch itself, in mm, for the template chosen: typed, or stepped by half a mm.
+    // The pitch itself, in mm, for the template chosen: dragged in half mm, or typed.
     const shown = spacingMm(spacingOf(this.ruling, this.style));
     mmStepper(spacingRow, {
       label: t("notebooks.designer.spacing"),
+      min: DESIGN_RANGES.spacing.min,
+      max: DESIGN_RANGES.spacing.max,
       step: DESIGN_RANGES.spacing.step,
       get: () => shown,
       format: (mm) => mm.toFixed(1),

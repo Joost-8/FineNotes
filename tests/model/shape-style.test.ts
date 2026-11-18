@@ -231,12 +231,37 @@ describe("styleNewShape: what the Shape tool places", () => {
     expect(line.noLine).toBeUndefined();
   });
 
-  it("keeps a default arrow as it always was", () => {
+  it("makes even a default arrow a line with an open head at its end, drawn to its width", () => {
     const s = arrow();
     styleNewShape(s, {});
-    expect(s).toEqual(arrow());
-    styleNewShape(s, { heads: { end: "open" } });
-    expect(s).toEqual(arrow());
+    expect(s).toMatchObject({ shape: "line", heads: { end: "open" } });
+    expect(s.pts).toEqual(arrow().pts.slice(0, 6));
+  });
+
+  it("gives an elbow (a path) the tool's heads, the default open end too", () => {
+    const elbow = (): Stroke => ({
+      id: "e",
+      color: "#000000",
+      size: 3,
+      tool: "pen",
+      shape: "path",
+      radius: 14,
+      pts: flat([
+        [0, 0],
+        [100, 0],
+        [100, 60],
+      ]),
+    });
+    const plain = elbow();
+    styleNewShape(plain, {});
+    expect(plain).toMatchObject({ shape: "path", heads: { end: "open" }, radius: 14 });
+    expect(plain.pts).toHaveLength(9);
+    const both = elbow();
+    styleNewShape(both, { heads: { start: "filled", end: "filled" } });
+    expect(both.heads).toEqual({ start: "filled", end: "filled" });
+    const none = elbow();
+    styleNewShape(none, { heads: {} });
+    expect(none.heads).toBeUndefined();
   });
 
   it("makes any other arrow a line with those heads, or none", () => {

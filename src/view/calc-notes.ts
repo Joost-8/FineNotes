@@ -23,6 +23,7 @@ import { writingLines } from "../canvas/backdrop";
 import { measureEquation } from "../canvas/equation-paint";
 import { t } from "../i18n/translate";
 import {
+  fitAnswer,
   type GlyphSet,
   glyphsFor,
   glyphsFromSamples,
@@ -674,9 +675,16 @@ export class CalcNotes {
     const surface = this.host.surface();
     if (!glyphs || !page || !surface || !stillLast(page, eq, after)) return;
     const pen = eq.strokes[1];
-    const written = fraction
+    const raw = fraction
       ? writeFraction(fraction.n, fraction.d, glyphs, place)
       : writeWithPowers(shown, glyphs, place);
+    const lineLeft = Math.min(...note.strokes.map((s) => strokeBounds(s)?.minX ?? Infinity));
+    const written = fitAnswer(
+      raw,
+      place,
+      Number.isFinite(lineLeft) ? lineLeft : place.x,
+      page.geometry,
+    );
     const ink = written.map((pts) => ({
       color: pen.color,
       size: pen.size,
@@ -769,21 +777,23 @@ export class CalcNotes {
 
   /** The writer's glyphs from their symbol sheets (the last sample of each character wins). */
   private async ownGlyphs(): Promise<GlyphSet | null> {
-    const host = this.host.learning();
-    const sheets = practiceFiles(host).filter((f) => practiceSetOf(f.name) === SYMBOL_SET);
-    const samples: ReturnType<typeof symbolSamples> = [];
-    for (const file of sheets) {
-      try {
-        const open = host.openNotebook(file.path);
-        const doc =
-          open ??
-          parseInkFile(await this.host.app.vault.read(file), DEFAULT_PAGE_GEOMETRY.width).doc;
-        if (doc) samples.push(...symbolSamples(doc));
-      } catch {
-        // A sheet that does not parse gives no glyphs.
-      }
-    }
-    const glyphs = glyphsFromSamples(samples);
-    return glyphs.size > 0 ? glyphs : null;
+    return writerGlyphs(this.host.app, this.host.learning());
   }
+}
+
+/** The writer's glyphs from their symbol sheets (the last sample of each character wins), or null. */
+export async function writerGlyphs(app: App, host: LearningHost): Promise<GlyphSet | null> {
+  const sheets = practiceFiles(host).filter((f) => practiceSetOf(f.name) === SYMBOL_SET);
+  const samples: ReturnType<typeof symbolSamples> = [];
+  for (const file of sheets) {
+    try {
+      const open = host.openNotebook(file.path);
+      const doc = open ?? parseInkFile(await app.vault.read(file), DEFAULT_PAGE_GEOMETRY.width).doc;
+      if (doc) samples.push(...symbolSamples(doc));
+    } catch {
+      // A sheet that does not parse gives no glyphs.
+    }
+  }
+  const glyphs = glyphsFromSamples(samples);
+  return glyphs.size > 0 ? glyphs : null;
 }

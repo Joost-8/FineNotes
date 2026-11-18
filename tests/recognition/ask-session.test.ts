@@ -99,18 +99,24 @@ describe("AskSession pages", () => {
     expect(session.draft).toBe("half a thought");
   });
 
-  it("needs a page with something on it for the first question", async () => {
+  it("asks a question on its own when no page is picked, or the pages are blank", async () => {
     const none = setup();
     const a = open(none.deps);
     a.setSelection([]);
-    await a.send("x");
-    expect(a.outstanding?.error).toMatch(/pick a page/);
+    await a.send("What is a monad?");
+    expect(a.outstanding).toBeNull();
+    expect(none.asked[0].at(-1)).toEqual({
+      role: "user",
+      text: "What is a monad?",
+      shown: "What is a monad?",
+    });
     const blank = setup({
       preparePages: () => Promise.resolve({ images: [], pageNumbers: [], totalPages: 9 }),
     });
     const b = open(blank.deps);
     await b.send("x");
-    expect(b.outstanding?.error).toMatch(/nothing on these pages/);
+    expect(b.outstanding).toBeNull();
+    expect(blank.asked[0].at(-1)?.images).toBeUndefined();
   });
 
   it("names pages in prose", () => {
@@ -147,6 +153,27 @@ describe("AskSession files", () => {
     expect(asked[1][2].files).toBeUndefined();
     expect(asked[1][0].files).toEqual([pdf]);
     expect(saved[1].chat.turns[0].files).toEqual([{ name: "Week 2.pdf", path: "L/Week 2.pdf" }]);
+  });
+
+  it("takes the files out of the field once sent, not when the answer comes", async () => {
+    const answer = deferred<{ text: string }>();
+    const { deps } = setup({ ask: () => answer.promise });
+    const session = open(deps);
+    session.attach(pdf);
+    const sent = session.send("Explain slide 4");
+    await vi.waitFor(() => expect(session.attachments).toEqual([]));
+    expect(session.busy).toBe(true);
+    answer.resolve({ text: "ok" });
+    await sent;
+    expect(session.attachments).toEqual([]);
+  });
+
+  it("keeps the files in the field when the user declines to send", async () => {
+    const { deps } = setup({ confirm: () => Promise.resolve(false) });
+    const session = open(deps);
+    session.attach(pdf);
+    await session.send("Explain");
+    expect(session.attachments).toEqual([pdf]);
   });
 
   it("can ask about a file alone, and keeps the files when the question fails", async () => {
@@ -459,12 +486,13 @@ describe("AskSession on a board: what is on screen, with every question", () => 
     expect(second.images).toHaveLength(1);
   });
 
-  it("says so when nothing is on screen", async () => {
-    const { deps } = setup({
+  it("asks on its own when nothing is on screen", async () => {
+    const { deps, asked } = setup({
       preparePages: () => Promise.resolve({ images: [], pageNumbers: [], totalPages: 1 }),
     });
     const session = board(deps);
     await session.send("Hm?");
-    expect(session.outstanding?.error).toBe("there is nothing on screen to send.");
+    expect(session.outstanding).toBeNull();
+    expect(asked[0].at(-1)?.text).toBe("Hm?");
   });
 });

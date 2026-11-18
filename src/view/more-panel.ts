@@ -14,7 +14,8 @@
  *   │ Save page as template               │
  *   │ Go to page                  (1 – 9) │
  *   └─────────────────────────────────────┘
- *   ┌ Dark pages / Light pages            ┐
+ *   ┌ Present                             ┐
+ *   │ Dark pages / Light pages            │
  *   │ Dark PDF pages                   ✓  │  (only while pages are dark)
  *   │ Desk             [◐] [○] [●] [◍]    │
  *   │ Draw with finger                 ✓  │  (only where there is touch)
@@ -40,6 +41,7 @@ import type { FoldedBarItem } from "./toolbar";
 import type { DeskChoice } from "../settings-data";
 import { DARK_PAPER, LIGHT_DESK, LIGHT_PAPER } from "../canvas/backdrop";
 import { menuAnchor, menuPlace, menuRoom } from "./bar-dock-model";
+import { docOf, shownDoc, winOf } from "./host-window";
 
 export interface MorePanelPage {
   /** Zero-based index of the page the panel is about. */
@@ -104,8 +106,12 @@ export interface MorePanelActions {
   setDarkPdf?: (dark: boolean) => void;
   /** Put the pages on another desk; `color` with custom. Without it the row is not offered. */
   setDesk?: (choice: DeskChoice, color?: string) => void;
+  /** Show the notebook as slides (`presenter.ts`). Without it the row is not offered. */
+  present?: () => void;
   /** Show the keyboard and stylus shortcuts. */
   showShortcuts: () => void;
+  /** The key that shows them too, where there is a keyboard; named at the row's end. */
+  shortcutsKey?: () => string | null;
   /** Copy the link that opens this notebook from a home-screen shortcut. */
   copyHomeLink: () => void;
   /** Let a finger draw until the Pencil writes again, or stop. Without it (no touch) the row is not offered. */
@@ -149,7 +155,7 @@ export class MorePanel {
     private readonly page: MorePanelPage,
     private readonly actions: MorePanelActions,
   ) {
-    this.el = document.body.createDiv({ cls: "goodobsidian-more" });
+    this.el = shownDoc().body.createDiv({ cls: "goodobsidian-more" });
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute("aria-label", t("common.more"));
     this.keyboard = new DialogKeyboard(this.el);
@@ -306,6 +312,10 @@ export class MorePanel {
   private viewRows(): void {
     const { page, actions } = this;
     const view = this.group();
+    const present = actions.present;
+    if (present) {
+      this.row(view, { icon: "presentation", text: t("view.morePanel.present"), run: present });
+    }
     this.row(view, {
       icon: page.darkPages ? "sun" : "moon",
       text: page.darkPages ? t("view.morePanel.lightPages") : t("view.morePanel.darkPages"),
@@ -319,6 +329,7 @@ export class MorePanel {
     this.row(view, {
       icon: "keyboard",
       text: t("view.morePanel.shortcuts"),
+      value: actions.shortcutsKey?.() ?? undefined,
       run: () => actions.showShortcuts(),
     });
     this.row(view, {
@@ -389,7 +400,8 @@ export class MorePanel {
   /**
    * "Lock fit to width" (discussion #43): a check while a page fitted to the
    * pane's width holds still under a sideways pull, instead of stretching and
-   * springing back. A tap switches it and the panel stays.
+   * springing back; pages across turn on a swipe. A tap switches it and the
+   * panel stays.
    */
   private lockFitRow(parent: HTMLElement): void {
     const set = this.actions.setLockFitWidth;
@@ -538,6 +550,8 @@ export class MorePanel {
       text: string;
       cls?: string;
       enabled?: boolean;
+      /** A word at the row's end: the key that does the same. */
+      value?: string;
       run: (button: HTMLButtonElement) => void;
     },
   ): HTMLButtonElement {
@@ -546,6 +560,7 @@ export class MorePanel {
     });
     setIcon(button.createSpan({ cls: "goodobsidian-more-icon" }), options.icon);
     button.createSpan({ cls: "goodobsidian-more-label", text: options.text });
+    if (options.value) button.createSpan({ cls: "goodobsidian-more-value", text: options.value });
     button.disabled = options.enabled === false;
     button.addEventListener("click", () => {
       if (button.disabled) return;
@@ -583,7 +598,7 @@ export class MorePanel {
     // must undo the scroll iPadOS makes to reveal the field, as one on the
     // field itself does.
     row.addEventListener("pointerdown", (event) => {
-      if (event.target !== input && document.activeElement !== input) {
+      if (event.target !== input && docOf(this.el).activeElement !== input) {
         this.keyboard.holdWindow(input);
       }
     });
@@ -596,10 +611,10 @@ export class MorePanel {
    */
   private place(): void {
     const r = this.anchor.getBoundingClientRect();
-    const width = Math.min(PANEL_WIDTH, window.innerWidth - 16);
+    const width = Math.min(PANEL_WIDTH, winOf(this.el).innerWidth - 16);
     const { side, box } = menuAnchor(this.anchor);
     if (side !== "down") {
-      const room = { width: window.innerWidth, height: window.innerHeight };
+      const room = { width: winOf(this.el).innerWidth, height: winOf(this.el).innerHeight };
       const maxHeight = Math.max(160, menuRoom(side, box, room, 6, 8));
       this.el.setCssStyles({ width: `${width}px`, maxHeight: `${maxHeight}px` });
       const size = { width, height: Math.min(this.el.offsetHeight, maxHeight) };
@@ -607,13 +622,13 @@ export class MorePanel {
       this.el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px` });
       return;
     }
-    const left = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8));
+    const left = Math.max(8, Math.min(r.right - width, winOf(this.el).innerWidth - width - 8));
     const top = r.bottom + 6;
     this.el.setCssStyles({
       left: `${left}px`,
       top: `${top}px`,
       width: `${width}px`,
-      maxHeight: `${Math.max(160, window.innerHeight - top - 8)}px`,
+      maxHeight: `${Math.max(160, winOf(this.el).innerHeight - top - 8)}px`,
     });
   }
 
@@ -632,17 +647,17 @@ export class MorePanel {
     };
     // Capture: the drawing surface consumes its own pointer events. A swipe
     // anywhere else starts with one of these, so it closes the panel too.
-    document.addEventListener("pointerdown", outside, true);
-    document.addEventListener("touchstart", outside, { capture: true, passive: true });
-    document.addEventListener("wheel", outside, { capture: true, passive: true });
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
+    docOf(this.el).addEventListener("pointerdown", outside, true);
+    docOf(this.el).addEventListener("touchstart", outside, { capture: true, passive: true });
+    docOf(this.el).addEventListener("wheel", outside, { capture: true, passive: true });
+    docOf(this.el).addEventListener("keydown", onKey);
+    winOf(this.el).addEventListener("resize", onResize);
     this.dispose.push(() => {
-      document.removeEventListener("pointerdown", outside, true);
-      document.removeEventListener("touchstart", outside, true);
-      document.removeEventListener("wheel", outside, true);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
+      docOf(this.el).removeEventListener("pointerdown", outside, true);
+      docOf(this.el).removeEventListener("touchstart", outside, true);
+      docOf(this.el).removeEventListener("wheel", outside, true);
+      docOf(this.el).removeEventListener("keydown", onKey);
+      winOf(this.el).removeEventListener("resize", onResize);
     });
   }
 }

@@ -20,6 +20,7 @@
 import { t, tn } from "../i18n/translate";
 import { ASK_MAX_PAGES } from "./ai-chat";
 import { isRecord } from "./llm-request";
+import { MAX_NOTE_CHARS, MAX_READ_CHARS } from "./vault-context";
 
 /** Rounds of tool calls one question may take before the answer has to come. */
 export const ASK_MAX_TOOL_ROUNDS = 8;
@@ -70,6 +71,100 @@ export const ASK_TOOLS = [
       type: "object",
       properties: { query: { type: "string", description: "Words to look for." } },
       required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "search_vault",
+    description:
+      "Find the user's other notes, notebooks and PDFs that mention some words: names, Markdown text, " +
+      "transcribed handwriting, text boxes and PDF text already read on this device. Searches the folders " +
+      "the user allows, never this notebook (use search_notebook). Returns paths with the words around each " +
+      "match. Use it when the question needs something outside this notebook.",
+    input_schema: {
+      type: "object",
+      properties: { query: { type: "string", description: "Words to look for." } },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "read_note",
+    description:
+      "Read one of the user's other notes, notebooks or PDFs as text, by the path search_vault gave (or a " +
+      "note's name). A notebook comes as its transcribed handwriting and text boxes, page by page. Long " +
+      `files come ${MAX_READ_CHARS} characters at a time; "from" reads on.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The file's path in the vault, or its name." },
+        from: {
+          type: "integer",
+          minimum: 0,
+          description: "Character to start at, for reading on in a long file. Default 0.",
+        },
+      },
+      required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "finenotes_help",
+    description:
+      "Look up FineNotes itself: what it can do, how, and where each thing is (toolbar, pens, shapes, " +
+      "lasso, pages, Home, PDFs, import, export, recordings, maths, gestures, keyboard shortcuts, " +
+      "settings, AI). Returns entries from its handbook with the path through the app, and links that " +
+      "open a tip or setting. Use it for any question about using FineNotes, before answering.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "What the user wants to know or do, in a few words.",
+        },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "linked_notes",
+    description:
+      "List the notes this notebook links to and the notes that link to it: connections the user made " +
+      "themselves, often the best place to look first. Returns paths to pass to read_note.",
+    input_schema: {
+      type: "object",
+      properties: {
+        direction: {
+          type: "string",
+          enum: ["both", "to", "from"],
+          description: "Links from this notebook (to), to it (from), or both. Default both.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_note",
+    description:
+      "Write a new Markdown note beside this notebook: a summary, flashcards, a to-do list, definitions, " +
+      "or what you pulled out of several notes. Never changes a note you did not write in this chat. Use it " +
+      `when the user asks to put something in a note. At most ${MAX_NOTE_CHARS} characters.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "The note's title, which becomes its file name." },
+        text: {
+          type: "string",
+          description: "The note's Markdown, without the title as a heading.",
+        },
+        replace: {
+          type: "boolean",
+          description:
+            "Rewrite the note of this title you wrote earlier in this chat, to correct it. Only those.",
+        },
+      },
+      required: ["title", "text"],
       additionalProperties: false,
     },
   },
@@ -259,6 +354,11 @@ export const ASK_TOOLS = [
 export type AskToolCall =
   | { tool: "read_pages"; pages: number[] }
   | { tool: "search_notebook"; query: string }
+  | { tool: "search_vault"; query: string }
+  | { tool: "read_note"; path: string; from: number }
+  | { tool: "linked_notes"; direction: "both" | "to" | "from" }
+  | { tool: "finenotes_help"; query: string }
+  | { tool: "create_note"; title: string; text: string; replace: boolean }
   | { tool: "add_text_box"; page: number; text: string }
   | { tool: "add_page"; after: number }
   | { tool: "go_to_page"; page: number }
@@ -348,6 +448,47 @@ export function parseToolCall(
       return query
         ? { tool: "search_notebook", query: query.trim() }
         : { error: '"query" is empty.' };
+    }
+    case "search_vault": {
+      const query = text("query");
+      return query ? { tool: "search_vault", query: query.trim() } : { error: '"query" is empty.' };
+    }
+    case "read_note": {
+      const path = text("path");
+      if (!path) return { error: '"path" is empty.' };
+      const from = args.from;
+      if (from !== undefined && (typeof from !== "number" || !Number.isInteger(from) || from < 0)) {
+        return { error: '"from" must be a whole number, 0 or more.' };
+      }
+      return { tool: "read_note", path: path.trim(), from: from ?? 0 };
+    }
+    case "finenotes_help": {
+      const query = text("query");
+      return query
+        ? { tool: "finenotes_help", query: query.trim() }
+        : { error: '"query" is empty.' };
+    }
+    case "linked_notes": {
+      const direction = args.direction ?? "both";
+      if (direction !== "both" && direction !== "to" && direction !== "from") {
+        return { error: '"direction" must be "both", "to" or "from".' };
+      }
+      return { tool: "linked_notes", direction };
+    }
+    case "create_note": {
+      const title = text("title");
+      if (!title) return { error: '"title" is empty.' };
+      const body = text("text");
+      if (!body) return { error: '"text" is empty.' };
+      if (body.length > MAX_NOTE_CHARS) {
+        return { error: `The note is too long (at most ${MAX_NOTE_CHARS} characters).` };
+      }
+      return {
+        tool: "create_note",
+        title: title.trim(),
+        text: body.trim(),
+        replace: args.replace === true,
+      };
     }
     case "add_text_box": {
       const at = page("page");
@@ -491,6 +632,16 @@ export function toolStatus(call: AskToolCall): string {
       return t("ai.tool.reading", { pages: pagesWord(call.pages) });
     case "search_notebook":
       return t("ai.tool.searching", { query: call.query });
+    case "search_vault":
+      return t("ai.tool.searchingVault", { query: call.query });
+    case "read_note":
+      return t("ai.tool.readingNote", { name: noteName(call.path) });
+    case "linked_notes":
+      return t("ai.tool.lookingAtLinks");
+    case "finenotes_help":
+      return t("ai.tool.lookingUpHelp", { query: call.query });
+    case "create_note":
+      return t("ai.tool.makingNote", { title: call.title });
     case "add_text_box":
       return t("ai.tool.writing", { page: call.page });
     case "add_page":
@@ -540,6 +691,12 @@ function boxOf(
   }
   if (width <= 0 || height <= 0) return "The area is empty: give it a width and a height.";
   return { x, y, width: Math.min(width, 1 - x), height: Math.min(height, 1 - y) };
+}
+
+/** A path or link as the chat names it: the file's name without its extensions. */
+function noteName(path: string): string {
+  const bare = path.replace(/^\[\[|\]\]$/g, "").replace(/[|#].*$/, "");
+  return bare.slice(bare.lastIndexOf("/") + 1).replace(/\.(notebook|page|ink)\.md$|\.md$/i, "");
 }
 
 /** "page 3", "pages 2, 5 and 7". */

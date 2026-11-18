@@ -19,8 +19,9 @@
 
 import { t, tn } from "../i18n/translate";
 import { type ImageVendor, canGenerateImages, imageUnsupportedReason } from "./ai-image";
-import { audioUnsupportedReason, canTranscribeAudio } from "./audio-request";
-import { type LlmVendor, VENDORS, chatCompletionsUrl } from "./llm-request";
+import { type KeySlot, audioService } from "./audio-request";
+import { type LlmVendor, VENDORS, chatCompletionsUrl, openAiEndpointUrl } from "./llm-request";
+import { type SpeechService, isOnlineSpeechService } from "../audio/online-speech";
 
 /** The image-generation setting: follow the text vendor, or a vendor of its own. */
 export type ImageVendorChoice = "same" | ImageVendor;
@@ -38,8 +39,12 @@ export interface AiSetup {
   /** The custom endpoint's base URL (only read for `custom`). */
   baseUrl: string;
   imageVendor: ImageVendorChoice;
+  /** Where recordings are transcribed; absent means on this device. */
+  speechService?: SpeechService;
+  /** The transcription server of the user's own (only read for `custom`). */
+  speechBaseUrl?: string;
   /** Whether a key is stored for a slot. */
-  hasKey: (slot: LlmVendor) => boolean;
+  hasKey: (slot: KeySlot) => boolean;
 }
 
 export interface Availability {
@@ -52,8 +57,11 @@ const OK: Availability = { enabled: true, reason: "" };
 const no = (reason: string): Availability => ({ enabled: false, reason });
 
 /** "Needs an OpenAI key", "Needs a Google key" … for reasons; `forImages` adds " for images". */
-function needsKey(vendor: LlmVendor, forImages: boolean): string {
-  const name = VENDORS[vendor].label.replace(/\s*\(.*\)$/, "");
+function needsKey(vendor: KeySlot, forImages: boolean): string {
+  const name = (vendor === "groq" ? audioService("groq") : VENDORS[vendor]).label.replace(
+    /\s*\(.*\)$/,
+    "",
+  );
   const an = /^[AEIOU]/i.test(name);
   if (forImages) return t(an ? "ai.menu.needsKeyImagesAn" : "ai.menu.needsKeyImagesA", { name });
   return t(an ? "ai.menu.needsKeyAn" : "ai.menu.needsKeyA", { name });
@@ -89,10 +97,27 @@ export function imageAvailability(setup: AiSetup): Availability {
   return setup.hasKey(vendor) ? OK : no(needsKey(vendor, true));
 }
 
-/** Audio transcription with the text vendor (for the audio feature). */
+/**
+ * Transcribing recordings with the online service the settings chose: what
+ * it still needs (a key, a server's address). Disabled, with no reason
+ * shown, while recordings are transcribed on this device.
+ */
 export function audioAvailability(setup: AiSetup): Availability {
-  if (!canTranscribeAudio(setup.vendor)) return no(audioUnsupportedReason(setup.vendor));
-  return textAvailability(setup);
+  const service = setup.speechService;
+  if (!isOnlineSpeechService(service)) return no(t("ai.menu.speechOnDevice"));
+  if (service === "custom") {
+    return transcriptionsUrlUsable(setup.speechBaseUrl ?? "") ? OK : no(t("ai.menu.needsEndpoint"));
+  }
+  return setup.hasKey(service) ? OK : no(needsKey(service, false));
+}
+
+function transcriptionsUrlUsable(baseUrl: string): boolean {
+  try {
+    openAiEndpointUrl(baseUrl, "/audio/transcriptions");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export type AiMenuId =
@@ -187,10 +212,14 @@ export interface AiMenuContext {
 
 /**
  * Whether the key section folds into one row: nothing in it can run, since
- * no AI service is set up for text or for images.
+ * no AI service is set up for text, images or recordings.
  */
 export function aiKeyFolded(setup: AiSetup): boolean {
-  return !textAvailability(setup).enabled && !imageAvailability(setup).enabled;
+  return (
+    !textAvailability(setup).enabled &&
+    !imageAvailability(setup).enabled &&
+    !audioAvailability(setup).enabled
+  );
 }
 
 /**
@@ -361,8 +390,9 @@ function keyItems(ctx: AiMenuContext): AiMenuItem[] {
     icon: "image-plus",
     ...imageAvailability(ctx.setup),
   });
-  // Last: it needs a speech-capable vendor, which the rest do not.
-  if (ctx.recordings !== undefined) {
+  // Last, and only with an online service chosen for recordings: on this
+  // device, the device section's entry transcribes.
+  if (ctx.recordings !== undefined && isOnlineSpeechService(ctx.setup.speechService)) {
     items.push({
       id: "transcribe-recording",
       label: t("ai.menu.transcribeRecording"),

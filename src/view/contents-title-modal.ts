@@ -11,13 +11,16 @@
  * The field starts empty for a new entry, with "Page N" as its placeholder,
  * so typing starts the title at once; an empty field adds "Page N". For a
  * heading inside a page (a section), the note says where it is listed and
- * the fallback is "Section on page N". It only hands back the title; the
- * host applies it as an undoable command.
+ * the fallback is "Section on page N". A frame to embed (discussion #167,
+ * `kind` "region") is named the same way: its fallback is "Frame N", N
+ * being `index` + 1, and its name loses the characters a link cannot hold.
+ * It only hands back the title; the host applies it as an undoable command.
  */
 
 import { type App, Modal } from "obsidian";
 import { t } from "../i18n/translate";
 import { MAX_PAGE_TITLE_LENGTH, normalizePageTitle } from "../model/contents";
+import { normalizeRegionName } from "../model/regions";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { type SpellingFix, SpellingRows } from "./spelling-row";
@@ -31,13 +34,16 @@ export class ContentsTitleModal extends Modal {
 
   constructor(
     app: App,
-    /** Zero-based index of the page being titled. */
+    /** Zero-based index of the page being titled; for a frame, of the frame. */
     private readonly index: number,
     /** Its title now; `undefined` when it is not in the contents yet. */
     private readonly current: string | undefined,
     private readonly submit: (title: string) => void,
-    /** What is being named: the page itself, a heading inside it, or a chapter of its own. */
-    private readonly kind: "page" | "section" | "chapter" = "page",
+    /**
+     * What is being named: the page itself, a heading inside it, a chapter of
+     * its own, or a frame a note can embed.
+     */
+    private readonly kind: "page" | "section" | "chapter" | "region" = "page",
   ) {
     super(app);
     this.keyboard = new DialogKeyboard(this.modalEl);
@@ -46,27 +52,34 @@ export class ContentsTitleModal extends Modal {
   override onOpen(): void {
     const renaming = this.current !== undefined;
     const page = this.index + 1;
-    const fallback =
-      this.kind === "chapter"
+    const region = this.kind === "region";
+    const fallback = region
+      ? t("view.region.fallback", { n: page })
+      : this.kind === "chapter"
         ? t("view.contentsTitle.chapterFallback")
         : this.kind === "section"
           ? t("view.contentsTitle.sectionFallback", { page })
           : t("view.contentsTitle.pageFallback", { page });
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-contents-modal");
     this.titleEl.setText(
-      renaming
-        ? t("view.contents.rename")
-        : this.kind === "chapter"
-          ? t("view.contents.newChapter")
-          : t("view.contents.add"),
+      region
+        ? renaming
+          ? t("view.region.rename")
+          : t("view.region.add")
+        : renaming
+          ? t("view.contents.rename")
+          : this.kind === "chapter"
+            ? t("view.contents.newChapter")
+            : t("view.contents.add"),
     );
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
-    if (this.kind !== "chapter") {
+    if (this.kind !== "chapter" && !(region && renaming)) {
       body.createDiv({
         cls: "goodobsidian-ask-note",
-        text:
-          this.kind === "section"
+        text: region
+          ? t("view.region.note")
+          : this.kind === "section"
             ? t("view.contentsTitle.sectionNote")
             : t("view.contentsTitle.pageNote"),
       });
@@ -77,8 +90,9 @@ export class ContentsTitleModal extends Modal {
       type: "text",
       attr: {
         placeholder: fallback,
-        "aria-label":
-          this.kind === "chapter"
+        "aria-label": region
+          ? t("view.region.label")
+          : this.kind === "chapter"
             ? t("view.contentsTitle.chapterLabel")
             : this.kind === "section"
               ? t("view.contentsTitle.sectionLabel", { page })
@@ -111,7 +125,7 @@ export class ContentsTitleModal extends Modal {
       text: renaming ? t("common.save") : t("view.contentsTitle.add"),
     });
     const finish = (): void => {
-      const title = normalizePageTitle(field.value) ?? fallback;
+      const title = (region ? normalizeRegionName : normalizePageTitle)(field.value) ?? fallback;
       this.close();
       if (title !== this.current) this.submit(title);
     };
@@ -132,7 +146,7 @@ export class ContentsTitleModal extends Modal {
    */
   suggest(title: string, fixes: readonly SpellingFix[] = []): void {
     const field = this.field;
-    const text = normalizePageTitle(title);
+    const text = (this.kind === "region" ? normalizeRegionName : normalizePageTitle)(title);
     if (!field || this.typed || this.current !== undefined || text === undefined) return;
     field.value = text.slice(0, MAX_PAGE_TITLE_LENGTH);
     this.updateCount();

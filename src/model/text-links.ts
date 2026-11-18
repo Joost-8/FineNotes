@@ -31,9 +31,35 @@ export interface TextSegment {
 // A wikilink, a markdown link, or a bare address. One line each.
 const LINK_RE =
   /\[\[([^[\]\n]+?)\]\]|\[([^[\]\n]+)\]\(([^()\s]+)\)|((?:https?:\/\/|www\.)[^\s<>]+)/gi;
+/** {@link LINK_RE}, matching only where it is told to start. */
+const LINK_AT = new RegExp(LINK_RE.source, "iy");
 
 /** Punctuation that ends a sentence after an address, not the address itself. */
 const TRAILING = /[.,;:!?'"]+$/;
+
+/** What one match of {@link LINK_RE} is: how much of the text it takes, and the link. */
+function readLink(match: RegExpExecArray): { whole: string; link: TextSegment | null } {
+  let whole = match[0];
+  let link: TextSegment | null = null;
+  if (match[1] !== undefined) {
+    const bar = match[1].indexOf("|");
+    const target = targetOf(bar >= 0 ? match[1].slice(0, bar) : match[1]);
+    const shown = (bar >= 0 ? match[1].slice(bar + 1) : match[1]).trim();
+    if (target) link = { text: shown || target, target };
+  } else if (match[2] !== undefined) {
+    const target = targetOf(match[3]);
+    if (target) link = { text: match[2], target };
+  } else {
+    // A bare address gives back the full stop or comma that ends its sentence,
+    // and a closing bracket it did not open.
+    let address = whole.replace(TRAILING, "");
+    if (address.endsWith(")") && !address.includes("(")) address = address.slice(0, -1);
+    address = address.replace(TRAILING, "");
+    whole = address;
+    link = { text: address, target: address };
+  }
+  return { whole, link };
+}
 
 /** A box's text as plain runs and links, in order. Text without links is one plain run. */
 export function textSegments(raw: string): TextSegment[] {
@@ -47,25 +73,7 @@ export function textSegments(raw: string): TextSegment[] {
   let at = 0;
   for (const match of raw.matchAll(LINK_RE)) {
     const start = match.index;
-    let whole = match[0];
-    let link: TextSegment | null = null;
-    if (match[1] !== undefined) {
-      const bar = match[1].indexOf("|");
-      const target = targetOf(bar >= 0 ? match[1].slice(0, bar) : match[1]);
-      const shown = (bar >= 0 ? match[1].slice(bar + 1) : match[1]).trim();
-      if (target) link = { text: shown || target, target };
-    } else if (match[2] !== undefined) {
-      const target = targetOf(match[3]);
-      if (target) link = { text: match[2], target };
-    } else {
-      // A bare address gives back the full stop or comma that ends its sentence,
-      // and a closing bracket it did not open.
-      let address = whole.replace(TRAILING, "");
-      if (address.endsWith(")") && !address.includes("(")) address = address.slice(0, -1);
-      address = address.replace(TRAILING, "");
-      whole = address;
-      link = { text: address, target: address };
-    }
+    const { whole, link } = readLink(match);
     plain(raw.slice(at, start));
     if (link) out.push(link);
     else plain(whole);
@@ -73,6 +81,20 @@ export function textSegments(raw: string): TextSegment[] {
   }
   plain(raw.slice(at));
   return out;
+}
+
+/**
+ * The link starting exactly at `at` in `raw`, read by the rules of
+ * {@link textSegments}, and how many characters of `raw` it takes; `null`
+ * when no link starts there. For readers that walk the text themselves
+ * (`markdown-text.ts`).
+ */
+export function linkAt(raw: string, at: number): { length: number; link: TextSegment } | null {
+  LINK_AT.lastIndex = at;
+  const match = LINK_AT.exec(raw);
+  if (!match) return null;
+  const { whole, link } = readLink(match);
+  return link && whole.length > 0 ? { length: whole.length, link } : null;
 }
 
 /** What a box shows when it is not being edited: its links as their shown text. */

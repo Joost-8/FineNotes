@@ -167,6 +167,13 @@ export function renderColorPicker(body: HTMLElement, options: ColorPickerOptions
     options.onEyedropper,
   );
   open(options.customOpen === true);
+  // Dark pages draw ink in another shade than the one picked: said once, where
+  // a colour is chosen, so the shade on the page is no surprise (FineNotes#186).
+  if (options.shown !== undefined && offered.some((c) => !sameColor(shown(c), c))) {
+    const note = body.createDiv({ cls: "goodobsidian-color-note" });
+    setIcon(note.createSpan({ cls: "goodobsidian-color-note-icon" }), "moon");
+    note.createSpan({ text: t("notebooks.features.darkShade") });
+  }
 }
 
 /**

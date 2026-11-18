@@ -9,7 +9,8 @@ export const ai = {
   "ai.menu.beta": "Beta",
   "ai.menu.deviceHeading": "Handwriting · on this device",
   "ai.menu.keyHeading": "With your own AI key",
-  "ai.menu.keyHint": "Transcribe, ask about pages and make images. Needs an API key.",
+  "ai.menu.keyHint":
+    "Ask about your notes, make images and transcribe recordings. Needs an API key.",
   "ai.menu.readOnDevice": "Read handwriting on this device…",
   "ai.menu.corrections": "Corrections",
   "ai.menu.correctionsHint": "Underline words it may have misread; tap one to correct it",
@@ -35,6 +36,7 @@ export const ai = {
   "ai.menu.settings": "AI settings…",
   "ai.menu.setUp": "Set up AI…",
   "ai.menu.needsEndpoint": "Needs your endpoint's URL in settings",
+  "ai.menu.speechOnDevice": "Recordings are transcribed on this device",
   "ai.menu.needsKeyA": "Needs a {name} key",
   "ai.menu.needsKeyAn": "Needs an {name} key",
   "ai.menu.needsKeyImagesA": "Needs a {name} key for images",
@@ -57,6 +59,11 @@ export const ai = {
   "ai.ask.followUp": "Ask a follow-up…",
   "ai.ask.pagesToSend": "Pages to send",
   "ai.ask.onlyThisPage": "Only this page",
+  "ai.ask.wholeAsPdf": "Whole notebook",
+  "ai.ask.wholePages.one": "{count} page, one PDF",
+  "ai.ask.wholePages.other": "{count} pages, one PDF",
+  "ai.ask.makingPdf": "Making… {done}/{total}",
+  "ai.ask.pdfFailed": "FineNotes: could not make a PDF of this notebook.",
   "ai.ask.page": "Page {page}",
   "ai.ask.pageEmpty": "Page {page}, empty",
   "ai.ask.thisPage": "This page",
@@ -137,6 +144,18 @@ export const ai = {
   // --- Notebook tools, as the chat says what they are doing ---------------
   "ai.tool.reading": "Reading {pages}…",
   "ai.tool.searching": "Searching for “{query}”…",
+  "ai.ask.tokens": "{count} tokens",
+  "ai.ask.reach": "What Ask AI can read",
+  "ai.ask.reachNow": "Ask AI can read: {reach}",
+  "ai.ask.reach.off": "This notebook only",
+  "ai.ask.reach.folder": "This notebook's folder",
+  "ai.ask.reach.vault": "The whole vault",
+  "ai.ask.costTip": "Estimated from list prices: {input} tokens in, {output} out",
+  "ai.tool.lookingUpHelp": "Looking up “{query}” in FineNotes' handbook…",
+  "ai.tool.lookingAtLinks": "Looking at this notebook's links…",
+  "ai.tool.makingNote": "Writing the note “{title}”…",
+  "ai.tool.searchingVault": "Searching your notes for “{query}”…",
+  "ai.tool.readingNote": "Reading {name}…",
   "ai.tool.writing": "Writing on page {page}…",
   "ai.tool.addingPage": "Adding a page…",
   "ai.tool.goingTo": "Going to page {page}…",
@@ -183,23 +202,15 @@ export const ai = {
   "ai.client.noImage": "{label} returned no image.",
   "ai.client.undecodable": "{label} returned an image FineNotes could not decode.",
   "ai.client.uploading": "Uploading {size} MB to {label}…",
-  "ai.client.waiting": "Waiting for the transcript…",
+  "ai.client.uploadingPart": "Uploading part {part} of {parts} ({size} MB) to {label}…",
   "ai.client.audioLimit":
     "{label} hit the {max}-token output limit before the end of the recording. Transcribe shorter parts.",
   "ai.client.noTranscript": "{label} returned no transcript.",
-  "ai.audio.claudeUnsupported":
-    "Claude cannot transcribe audio files — needs an OpenAI or Google key",
-  "ai.audio.openrouterUnsupported":
-    "OpenRouter has no audio transcription — needs an OpenAI or Google key",
   "ai.audio.empty": "the recording is empty",
   "ai.audio.tooBigGemini":
     "the recording is {size} — Gemini takes at most about {max} in one request. Use an OpenAI key (up to 25 MB), or record shorter parts.",
   "ai.audio.tooBigOpenai":
     "the recording is {size} — OpenAI takes at most 25 MB. Record shorter parts, or at a lower bitrate.",
-  "ai.audio.uploadGemini":
-    "This recording is {size}, and Gemini takes at most about {max} in one request. Use an OpenAI key (up to 25 MB), or record shorter parts.",
-  "ai.audio.uploadOpenai":
-    "This recording is {size}, and OpenAI takes at most {max}. Record shorter parts.",
   "ai.image.claudeUnsupported":
     "Claude cannot make images — needs an OpenAI, Google or OpenRouter key",
   "ai.image.needsKey": "Needs an OpenAI, Google or OpenRouter key",
@@ -427,8 +438,6 @@ export const ai = {
   "ai.audio.stopTranscribing": "Stop transcribing",
   "ai.audio.transcribeAgain": "Transcribe again",
   "ai.audio.transcribe": "Transcribe",
-  "ai.audio.onDevice": "On this device",
-  "ai.audio.withKey": "With your AI key",
   "ai.audio.openTranscript": "Open transcript note",
   "ai.audio.pasteTranscript": "Paste transcript onto the page",
   "ai.audio.remove": "Remove from note",
@@ -455,9 +464,9 @@ export const ai = {
   "ai.rec.stopWrite": "Recording stopped: the audio could not be written ({problem}).",
   "ai.rec.unknown": "unknown",
   "ai.rec.savedPlay":
-    "{length} saved to {path}. Play it from the Audio tab in the page sidebar; Undo takes it off this note (the file stays).",
+    "{length} saved to {path}. Play it from the page sidebar: Files, then Recordings. Undo takes it off this note (the file stays).",
   "ai.rec.savedListed":
-    "{length} saved to {path}. It is in this note's recordings (the Audio tab in the page sidebar).",
+    "{length} saved to {path}. It is in this note's recordings (the page sidebar: Files, then Recordings).",
   "ai.rec.savedNotAdded": "{length} saved to {path}, but it could not be added to the note.",
   "ai.rec.partMissing": "Part of it may be missing: {problem}.",
   "ai.rec.limitScreenOn":

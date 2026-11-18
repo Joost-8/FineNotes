@@ -388,7 +388,7 @@ export const notebooks = {
   "notebooks.template.paper": "Paper",
   "notebooks.page.size.standard": "A4 (Standard)",
   "notebooks.template.current": "Current template",
-  "notebooks.command.newNotebookOrPage": "New notebook or page…",
+  "notebooks.command.newNotebookOrPage": "New notebook or board…",
   "notebooks.command.createWithLastSettings": "Create notebook with last settings",
   "notebooks.command.insertNewNotebook": "Insert a new notebook here",
   "notebooks.command.showWelcome": "Show the welcome",
@@ -424,6 +424,8 @@ export const notebooks = {
   "notebooks.command.readOnDevice": "Show this page read on this device",
   "notebooks.command.fitReset": "Fit the page and go to the top",
   "notebooks.command.fitBoardDrawing": "Fit the whole drawing on screen",
+  "notebooks.command.addBoard": "Add board",
+  "notebooks.command.goToBoard": "Go to board",
   "notebooks.command.zoomIn": "Zoom in",
   "notebooks.command.zoomOut": "Zoom out",
   "notebooks.command.stylusOnly": "Turn Stylus-only mode on or off",
@@ -537,6 +539,7 @@ export const notebooks = {
   "notebooks.welcome.simple": "Only here for FineNotes?",
   "notebooks.welcome.simpleInfo": "Hide Obsidian's menus and sidebars.",
   "notebooks.pdfImport.find": "Find a PDF in the vault…",
+  "notebooks.pdfImport.none": "No PDF here",
   "notebooks.stickerModal.title": "Stickers",
   "notebooks.stickerModal.hintOwn":
     "Your own stickers live in “{folder}”: one folder per collection.",
@@ -662,7 +665,6 @@ export const notebooks = {
   "notebooks.noteSettings.update": "Update",
   "notebooks.noteSettings.updateOpen": "Open FineNotes in Community plugins to update it",
   "notebooks.noteSettings.muteUpdate": "Don't show again",
-  "notebooks.noteSettings.look": "Look",
   "notebooks.noteSettings.simpleLookDesc":
     "Hide Obsidian's sidebars, ribbon and bars. Off brings normal Obsidian back.",
   "notebooks.noteSettings.muteUpdateInfo": 'Stop showing "Update available"; the gear\'s dot stays',
@@ -671,7 +673,6 @@ export const notebooks = {
   "notebooks.noteSettings.pages.one": "1 page",
   "notebooks.noteSettings.pages.other": "{count} pages",
   "notebooks.noteSettings.edited": "edited {date}",
-  "notebooks.noteSettings.pagesGroup": "Pages",
   "notebooks.noteSettings.scroll": "Scroll direction",
   "notebooks.noteSettings.vertical": "Vertical",
   "notebooks.noteSettings.horizontal": "Horizontal",
@@ -684,11 +685,11 @@ export const notebooks = {
   "notebooks.noteSettings.numbersRight": "Bottom right",
   "notebooks.noteSettings.header": "Header",
   "notebooks.noteSettings.headerInfo": "{title}, {page} and {pages} are filled in.",
-  "notebooks.noteSettings.editing": "Editing",
   "notebooks.noteSettings.readOnly": "Read-only",
   "notebooks.noteSettings.readOnlyInfo": "Scroll, zoom, search and export still work.",
   "notebooks.noteSettings.created": "Created {date}",
   "notebooks.noteSettings.allSettings": "All FineNotes settings",
+  "notebooks.noteSettings.allSettingsInfo": "Pens, toolbar, handwriting, AI and more",
   "notebooks.noteSettings.allSettingsUpdate": "All FineNotes settings · FineNotes {version} is out",
   "notebooks.designer.line.softRed": "Soft red",
   "notebooks.designer.line.red": "Red",
@@ -736,11 +737,7 @@ export const notebooks = {
   "notebooks.designer.inset": "Inset",
   "notebooks.designer.lineInset": "Margin line inset",
   "notebooks.designer.anyColour": "Any colour",
-  "notebooks.designer.less": "{label}: less",
-  "notebooks.designer.lessTitle": "Less",
   "notebooks.designer.inMm": "{label}, mm",
-  "notebooks.designer.more": "{label}: more",
-  "notebooks.designer.moreTitle": "More",
   "notebooks.designer.defaultName": "My paper",
   "notebooks.library.deleteTitle": "Delete template",
   "notebooks.library.deleteMessage.one":
@@ -900,12 +897,37 @@ export const notebooks = {
   "notebooks.tips.title": "Tips",
   "notebooks.tips.tryIt": "Try it",
   "notebooks.tips.watch": "Watch again",
+  "notebooks.tips.tryDone": "Done",
+  "notebooks.tips.more": "More for this tip",
   "notebooks.tips.previous": "Previous tip",
   "notebooks.tips.next": "Next tip",
   "notebooks.tips.allTips": "All tips",
   "notebooks.tips.tour": "Take the tour",
   "notebooks.tips.allChanges": "All changes",
   "notebooks.tips.whatsNew": "What's new",
+  "notebooks.tips.welcome": "Welcome",
+
+  // Features found by search, a tip's own button, and links (model/feature-index.ts).
+  "notebooks.features.heading": "Features",
+  "notebooks.features.search": "Search tips and settings",
+  "notebooks.features.open": "Open",
+  "notebooks.features.showMe": "Show me",
+  "notebooks.features.ask": "Not in FineNotes yet? Ask for it",
+  "notebooks.features.needsNotebook": "Open a notebook first.",
+  "notebooks.features.unknown": "FineNotes has no feature called {what}.",
+  "notebooks.features.copyLink": "Copy a link to this tip",
+  "notebooks.features.linkCopied": "Link copied",
+  "notebooks.features.hide": "Hide from search",
+  "notebooks.features.unhide": "Show in search again",
+  "notebooks.features.darkShade": "Dark pages show colours in another shade",
+
+  // One-time hints after doing something the slow way (model/nudges.ts).
+  "notebooks.nudge.undo": "Two-finger double tap undoes",
+  "notebooks.nudge.redoThree": "Three-finger double tap redoes",
+  "notebooks.nudge.scribble": "Scribble over ink to erase it",
+  "notebooks.nudge.circleLasso": "Circle ink and hold to select it",
+  "notebooks.nudge.hold": "Draw and hold to make a shape",
+  "notebooks.nudge.pullPage": "Pull past the last page to add one",
   "notebooks.tips.collection.gestures": "Pen gestures",
   "notebooks.tips.collection.study": "Cover, listen, highlight",
   "notebooks.tips.collection.find": "Find and link",
@@ -939,6 +961,21 @@ export const notebooks = {
   "notebooks.tips.calc.title": "Write a sum, get the answer",
   "notebooks.tips.calc.body":
     "End a sum with =, then tap what FineNotes offers to write the answer in.",
+  "notebooks.tips.sumGlow.title": "A sum glows when it is read",
+  "notebooks.tips.sumGlow.body":
+    "End a sum with =. Tap the glow for its card: the answer, Write, or a typed equation.",
+  "notebooks.tips.solveLetter.title": "Solve for x",
+  "notebooks.tips.solveLetter.body":
+    "Write x = under an equation in x, then tap the glow: the card offers its solutions.",
+  "notebooks.tips.insertGraph.title": "Put a graph on the page",
+  "notebooks.tips.insertGraph.body":
+    "Type a function of x in the calculator, open Graph and tap Insert graph.",
+  "notebooks.tips.looks.title": "Looks for FineNotes",
+  "notebooks.tips.looks.body":
+    "Settings → Look restyles FineNotes' bars and menus: pick a style and a set of colours.",
+  "notebooks.tips.lassoTray.title": "A lighter lasso menu",
+  "notebooks.tips.lassoTray.body":
+    "The bar keeps Copy, Duplicate and Delete. ⋯ opens Cut, Paste, Screenshot and Copy style.",
   "notebooks.tips.searchInk.title": "Search your handwriting",
   "notebooks.tips.searchInk.body":
     "Once handwriting reading is on, search finds the words you wrote.",
@@ -1010,7 +1047,7 @@ export const notebooks = {
     "Double tap the page with one finger to fill the screen, and again to see it whole.",
   "notebooks.tips.fingerHoldMenu.title": "Hold a finger down",
   "notebooks.tips.fingerHoldMenu.body":
-    "Hold a finger on the page, with any tool, for Paste, Text box, Comment and Select all.",
+    "Hold a finger on the page, with any tool, for Paste, Text box and Select all. Comment is under its ⋯.",
   "notebooks.tips.colourOff.title": "Drag a colour away",
   "notebooks.tips.colourOff.body":
     "Hold a colour in the pen's bar and drag it off the bar to remove it.",
@@ -1083,6 +1120,15 @@ export const notebooks = {
   "notebooks.tips.arcsHearts.title": "More shapes snap",
   "notebooks.tips.arcsHearts.body":
     "Draw a heart, an arc or a pie slice and hold the pen still: they snap clean too.",
+  "notebooks.tips.curvedElbow.title": "Draw curved and elbow arrows",
+  "notebooks.tips.curvedElbow.body":
+    "In the Shape tool, pick either and draw the arrow: on lifting it turns clean and keeps your path.",
+  "notebooks.tips.lineUpMoves.title": "Things line up as they move",
+  "notebooks.tips.lineUpMoves.body":
+    "Move a selection, picture or sticky note near a shape: it snaps to edges and centres, with red guides.",
+  "notebooks.tips.lockFit.title": "Hold a fitted page still",
+  "notebooks.tips.lockFit.body":
+    "With Lock fit to width in ⋯, a double-tapped page stays put. With pages across, a swipe turns it.",
   "notebooks.tips.pathArrow.title": "Arrows with bends",
   "notebooks.tips.pathArrow.body":
     "Draw a path with turns, end it with an arrowhead and hold: it snaps to a clean bent arrow.",
@@ -1146,6 +1192,30 @@ export const notebooks = {
   "notebooks.tips.newBoard.title": "Endless boards",
   "notebooks.tips.newBoard.body":
     "Home's New menu has a board: one page that grows as you write near its edges.",
+  "notebooks.tips.boardsInFile.title": "Several boards in one file",
+  "notebooks.tips.boardsInFile.body":
+    "A board's sidebar lists its boards like pages: + adds one. In a notebook, Add page ends with Add board.",
+  "notebooks.tips.frameEmbed.title": "Embed part of a board",
+  "notebooks.tips.frameEmbed.body":
+    "Lasso it and choose Turn into › Frame to embed. Paste the copied link into any note to show just that part.",
+  "notebooks.tips.markdownText.title": "Markdown in text boxes",
+  "notebooks.tips.markdownText.body":
+    "Pick Markdown in the Text tool's Style list, or paste Markdown. Let go and it is drawn formatted.",
+  "notebooks.tips.penOnBar.title": "Pens on the toolbar",
+  "notebooks.tips.penOnBar.body":
+    "In the pen's menu, Add to toolbar gives the pen in hand its own button. In Saved pens, the pin puts one there.",
+  "notebooks.tips.onlineTranscribe.title": "Transcribe with an online service",
+  "notebooks.tips.onlineTranscribe.body":
+    "Settings › AI › Recordings › Transcribe recordings with: pick Groq, OpenAI or another service, add a key.",
+  "notebooks.tips.tryGesture.title": "Try a gesture from its tip",
+  "notebooks.tips.tryGesture.body":
+    "A gesture's tip has Try it: a scratch page opens. Do the gesture, the ✓ fills, and you are back.",
+  "notebooks.tips.dockColours.title": "More colours in a docked bar",
+  "notebooks.tips.dockColours.body":
+    "With Dock tool options on, the widths are one button, so the bar holds more colours. Swipe it for the rest.",
+  "notebooks.tips.widthPresets.title": "Each width keeps its own",
+  "notebooks.tips.widthPresets.body":
+    "Pick a width preset, then move the slider or type a width: only that preset changes. Reset puts them back.",
   "notebooks.tips.embedPages.title": "Pages inside notes",
   "notebooks.tips.embedPages.body":
     "In a note, type ![[Name.notebook#page=3]] to show that page. A tap opens the notebook there.",
@@ -1255,6 +1325,9 @@ export const notebooks = {
   "notebooks.tips.section.draw": "Draw and customize",
   "notebooks.home.newIn": "New in {version}",
   "notebooks.home.dismissCard": "Dismiss",
+  "notebooks.home.newSponsors": "Thank you, {names}, for sponsoring FineNotes!",
+  "notebooks.home.earlierSponsors": "And thanks again to {names}.",
+  "notebooks.home.sponsorPage": "Sponsor FineNotes",
 
   // Home, the notebook library (view/library-view.ts and its models).
   "notebooks.home.title": "Home",

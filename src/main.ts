@@ -13,12 +13,14 @@ import {
 import type { PickedFile } from "./view/import-notebook-modal";
 import { mimeForExtension } from "./canvas/image-raster";
 import { StickerModal } from "./view/sticker-modal";
-import { stickerFileName, stickerFolderOf, stickerSvg } from "./model/stickers";
+import { stickerFileName, stickerSvg } from "./model/stickers";
 import { type ShapeToolStyle, readShapeToolStyle } from "./model/shape-style";
 import { DEFAULT_FILL_COLOR, type FillGap, readFillGap } from "./model/fill-region";
 import { EmptyTabHomeButton } from "./view/empty-tab-home-button";
 import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button";
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
+import type { SharingFeature } from "./view/sharing-feature";
+import { loadSharing } from "./view/sharing-load";
 import { WordCheck } from "./view/word-check";
 import {
   followPairRename,
@@ -26,8 +28,14 @@ import {
   outsideNotebookFolder,
 } from "./model/folder-notebook";
 import { DEFAULT_SHAPE_COLOR, parseHexColor, recentColorsOf } from "./model/colors";
-import { type TapeMode, tapeColorOf, tapeHeightOf, tapeModeOf } from "./model/cover-tape";
-import { type PenGestures, penGesturesOf } from "./ink/pen-gestures";
+import {
+  type TapeMode,
+  tapeColorOf,
+  tapeHeightOf,
+  tapeHeightsOf,
+  tapeModeOf,
+} from "./model/cover-tape";
+import { DEFAULT_PEN_GESTURES, type PenGestures, penGesturesOf } from "./ink/pen-gestures";
 import {
   type Editor,
   MarkdownView,
@@ -104,11 +112,14 @@ import { DEFAULT_IMAGE_MODELS, canGenerateImages } from "./recognition/ai-image"
 import {
   type AiVendorConfig,
   type ImageConfig,
-  assertConfigured,
+  type SpeechConfig,
+  assertSpeechConfigured,
+  speechLabel,
   targetLabel,
   transcribeAudio,
 } from "./recognition/ai-client";
-import { audioUnsupportedReason, canTranscribeAudio } from "./recognition/audio-request";
+import type { KeySlot } from "./recognition/audio-request";
+import { isOnlineSpeechService, isSpeechService } from "./audio/online-speech";
 import {
   OPENROUTER_CALLBACK_ACTION,
   buildKeyExchangeRequest,
@@ -132,7 +143,8 @@ import {
   folderMoves,
   legacyCorrectionsFile,
   movedPath,
-  templateFolderOf,
+  stickerFolderFor,
+  templateFolderFor,
 } from "./model/vault-folders";
 import { UpdateNotice } from "./view/update-notice";
 import { releasedChangelog } from "./changelog";
@@ -142,12 +154,33 @@ import {
   homeCardKind,
   EARLIEST_NEWS,
   latestHighlighted,
+  newsControls,
   nextNewsSince,
   simpleOfferDue,
 } from "./model/tips";
+import { sponsorThanks } from "./model/sponsors";
 import { type TipsPage, TipsModal } from "./view/tips-modal";
 import { ICON_TEXT_NOTE, TextNoteView } from "./view/note-view";
 import { freeNoteName, isTextNoteName, newNoteFile } from "./model/text-note-file";
+import {
+  type Feature,
+  PEN_GESTURE_PREFIX,
+  featureById,
+  hiddenFeatureIds,
+  switchValue,
+  withHiddenFeature,
+} from "./model/feature-index";
+import { TRY_PAGE_PATH, tryPageDocument } from "./model/try-page";
+import type { FeatureHost } from "./view/feature-rows";
+import {
+  type NudgeEvent,
+  type NudgeState,
+  dayOf,
+  dueNudge,
+  markShown,
+  parseNudges,
+  recordUse,
+} from "./model/nudges";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
@@ -245,7 +278,7 @@ import { type ImageMenuContext, registerImageMenuEntry } from "./view/image-menu
 import type { InkSurface } from "./view/ink-surface";
 import { GrapeFiles } from "./view/grape-files";
 import { StartupLog } from "./view/startup-log";
-import { DeviceTranscriber } from "./view/device-transcriber";
+import { DeviceTranscriber, decodeForSpeech } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
 import { obsidianOcrDeps } from "./view/ocr-deps";
 import { cleanupText, removeOtherOcrModels } from "./view/ocr-models";
@@ -273,13 +306,18 @@ import type { TextStyle } from "./model/text-style";
 import { errorMessage } from "./util/errors";
 import changelogMd from "../CHANGELOG.md";
 import { type PenInks } from "./model/pen-inks";
+import { type WidthPresets } from "./model/width-presets";
 import { type PenStabilization, penStabilizationOf } from "./model/pen-stabilization";
-import { type SavedPen, savedPensOf } from "./model/saved-pens";
+import { type SavedPen, savedPensOf, withPenIds } from "./model/saved-pens";
 import {
+  type BarPreset,
   type ToolbarLayout,
+  essentialsLayout,
   isItemOff,
+  layoutInUse,
   migrateLayout,
   normalizeLayout,
+  parseBarPreset,
   placeOf,
 } from "./view/toolbar-layout";
 import {
@@ -294,6 +332,12 @@ import { t, tn } from "./i18n/translate";
 
 /** How many times the Text tool's hint pill is shown before it stops by itself. */
 const TEXT_HINT_SHOWS = 3;
+
+/** What this device counted for the earned hints: per device, never synced. */
+const NUDGES_KEY = "finenotes:nudges";
+
+/** Where "Ask for it" starts a request; the searched words become its title. */
+const ASK_URL = "https://github.com/Joost-8/FineNotes/discussions/new?category=ideas";
 
 /** The pen in hand is saved once it has been left alone this long, ms: a width slider drags. */
 const LAST_PEN_SAVE_MS = 600;
@@ -461,6 +505,9 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Checking words read on the device, and the answers to learn from. */
   readonly wordCheck = new WordCheck(this.app, () => this.pluginDir);
 
+  /** "Help improve Grape", in a build that has it (`view/sharing-load.ts`); else null. */
+  sharing: SharingFeature | null = null;
+
   /** This plugin's folder in the vault. */
   get pluginDir(): string {
     return this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
@@ -560,6 +607,7 @@ export default class GoodObsidianPlugin extends Plugin {
           importImage: (file, folder) => void this.createNotebookFromImage(file, folder),
           openSettings: () => this.openOwnSettings(),
           openTips: (page) => this.openTips(page),
+          features: this.featureHost(),
           homeCard: () => this.homeCard(),
           dismissHomeCard: (kind) => this.dismissHomeCard(kind),
           simpleLook: () => this.settings.simpleLook,
@@ -701,7 +749,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.pageEmbeds = this.addChild(
       new PageEmbeds({
         app: this.app,
-        isInkFile: (file) => this.isInkFile(file),
+        isInkFile: (file) => file instanceof TFile && this.isInkFile(file),
         paperWidth: () => this.settings.paperWidth,
         usePressure: () => this.settings.pressureWidth,
         highlighterAlpha: () => this.settings.highlighterAlpha,
@@ -724,6 +772,15 @@ export default class GoodObsidianPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("delete", (file) => this.libraryPathChanged(file.path)));
     this.register(() => this.fileMoves.destroy());
     this.wordCheck.answered = (count) => this.remindToRelearn(count);
+    void loadSharing({
+      app: this.app,
+      learning: () => this.learningHost(),
+      version: this.manifest.version,
+      grape: () => `${this.grape.id}@${this.grape.model.asset.version}`,
+    }).then((sharing) => {
+      this.sharing = sharing;
+      sharing?.start();
+    });
     // The reader's and the learner's workers end with the plugin.
     this.register(() => {
       this.learner.dispose();
@@ -1086,6 +1143,19 @@ export default class GoodObsidianPlugin extends Plugin {
       (view) => view.resetView(),
       (view) => view.isBoard,
     );
+    // A board file's boards (discussion #160), in place of the page commands.
+    this.notebookCommand(
+      "add-board",
+      t("notebooks.command.addBoard"),
+      (view) => view.addBoard(),
+      (view) => view.isBoard,
+    );
+    this.notebookCommand(
+      "go-to-board",
+      t("notebooks.command.goToBoard"),
+      (view) => view.goToBoard(),
+      (view) => view.isBoard && view.document.pages.length > 1,
+    );
     this.notebookCommand("zoom-in", t("notebooks.command.zoomIn"), (view) => view.zoomIn());
     this.notebookCommand("zoom-out", t("notebooks.command.zoomOut"), (view) => view.zoomOut());
 
@@ -1157,6 +1227,7 @@ export default class GoodObsidianPlugin extends Plugin {
     // "trocr-local", was removed in 2026-09) lands on Manual, so the settings
     // dropdown never shows a blank choice. The removed provider's own two
     // settings are dropped, so they are not written back.
+    if (!isSpeechService(this.settings.speechService)) this.settings.speechService = "device";
     if (!this.providers.has(this.settings.recognitionProviderId)) {
       this.settings.recognitionProviderId = MANUAL_PROVIDER_ID;
     }
@@ -1172,8 +1243,12 @@ export default class GoodObsidianPlugin extends Plugin {
     // The folded sections before the compact settings (2026-10-21): now the
     // open ones are kept, and every section starts folded.
     delete loaded.foldedSettingsSections;
+    // "Ask AI starts on the open page" is gone (2026-11-17): a chat starts
+    // with no page picked, and Ask's own reach button took its row's place.
+    delete loaded.askAttachPage;
     // A list of its own, read as pens: the default's must stay as it is.
-    this.settings.savedPens = savedPensOf(this.settings.savedPens);
+    // Each with an id, for a button of its own on the bar (FineNotes#211).
+    this.settings.savedPens = withPenIds(savedPensOf(this.settings.savedPens));
     // The whole bar's layout (discussion #43) replaced the tools' three
     // lists: a vault that has only those is read as the bar it showed.
     const toolbar =
@@ -1187,13 +1262,19 @@ export default class GoodObsidianPlugin extends Plugin {
     }
     this.settings.toolbarHomeAdded = true;
     this.settings.toolbarLayout = toolbar;
+    this.settings.toolbarPreset = parseBarPreset(this.settings.toolbarPreset);
+    this.settings.toolbarEssentials = normalizeLayout(
+      saved !== null && "toolbarEssentials" in saved
+        ? this.settings.toolbarEssentials
+        : essentialsLayout(),
+    );
     delete loaded.toolbarItems;
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
-    if (isItemOff(toolbar, "stylus")) this.settings.onlyStylusMode = false;
+    if (isItemOff(this.toolbarLayoutNow(), "stylus")) this.settings.onlyStylusMode = false;
     // A Zoom box line step outside the slider's range is a hand-edited file,
     // not a value to honour; a negative step overlaps the next line.
     const lineStep = Number(this.settings.zoomBoxLineStep);
@@ -1229,7 +1310,9 @@ export default class GoodObsidianPlugin extends Plugin {
     if (fresh === 0) return;
     this.settings.relearnRemindedAt = count;
     void this.saveSettings();
-    showRelearnNotice(fresh, record !== undefined, () => void this.learner.start());
+    // In the learn window, not in the background: the result, and the
+    // invite to share under a result that helped, show there.
+    showRelearnNotice(fresh, record !== undefined, () => this.learnInWindow());
   }
 
   /**
@@ -1417,6 +1500,12 @@ export default class GoodObsidianPlugin extends Plugin {
     new LearnWindow(this.app, this).open();
   }
 
+  /** Open the learn window and start learning in it. */
+  learnInWindow(): void {
+    this.openLearnWindow();
+    void this.learner.start();
+  }
+
   /** Keep the calculator's switches and history (model/calculator-store.ts). */
   saveCalculator(data: CalculatorData): void {
     this.settings.calculator = data;
@@ -1545,7 +1634,7 @@ export default class GoodObsidianPlugin extends Plugin {
    * be told from its prefix stays in `llmApiKey` (see `planKeyMigration`) and
    * keeps working exactly as it did: for the selected cloud vendor only.
    */
-  apiKeyFor(slot: LlmVendor): string {
+  apiKeyFor(slot: KeySlot): string {
     const stored = this.keys.get(slot);
     if (stored) return stored;
     if (slot === this.settings.llmVendor && !VENDORS[slot].userEndpoint) {
@@ -1555,7 +1644,7 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Store a key; false (with a notice) when it did not read back. */
-  storeApiKey(slot: LlmVendor, key: string): boolean {
+  storeApiKey(slot: KeySlot, key: string): boolean {
     const ok = this.keys.set(slot, key);
     if (ok && slot === this.settings.llmVendor && this.settings.llmApiKey) {
       // The slot now has a key of its own; drop the unassigned legacy one.
@@ -1585,7 +1674,7 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Forget a key. */
-  removeApiKey(slot: LlmVendor): void {
+  removeApiKey(slot: KeySlot): void {
     if (slot === this.settings.llmVendor && this.settings.llmApiKey) {
       this.settings.llmApiKey = "";
       void this.saveSettings();
@@ -1624,7 +1713,28 @@ export default class GoodObsidianPlugin extends Plugin {
       vendor: this.settings.llmVendor,
       baseUrl: this.settings.llmBaseUrl,
       imageVendor: this.settings.imageVendor,
+      speechService: this.settings.speechService,
+      speechBaseUrl: this.speechBaseUrl(),
       hasKey: (slot) => this.apiKeyFor(slot) !== "",
+    };
+  }
+
+  /** The transcription server of the user's own: its own address, else the AI service's. */
+  speechBaseUrl(): string {
+    return this.settings.speechBaseUrl?.trim() || this.settings.llmBaseUrl;
+  }
+
+  /** The online service recordings are transcribed with, or null for this device. */
+  speechConfig(): SpeechConfig | null {
+    const service = this.settings.speechService;
+    if (!isOnlineSpeechService(service)) return null;
+    const language = this.settings.speechLanguage;
+    return {
+      vendor: service,
+      model: this.settings.speechServiceModel ?? "",
+      apiKey: this.apiKeyFor(service),
+      baseUrl: service === "custom" ? this.speechBaseUrl() : "",
+      language: language && language !== "auto" ? language : undefined,
     };
   }
 
@@ -1633,8 +1743,8 @@ export default class GoodObsidianPlugin extends Plugin {
    * destination. The user's own endpoint and the named cloud services are
    * asked about separately.
    */
-  consentedTo(vendor: LlmVendor): boolean {
-    return VENDORS[vendor].userEndpoint
+  consentedTo(vendor: KeySlot): boolean {
+    return isUserEndpoint(vendor)
       ? this.settings.customConsentGiven
       : this.settings.cloudConsentGiven;
   }
@@ -1647,18 +1757,21 @@ export default class GoodObsidianPlugin extends Plugin {
    * `what` complete "<action> sends <what> to <destination>".
    */
   async confirmAiSend(
-    target: { vendor: LlmVendor; baseUrl: string },
+    target: { vendor: KeySlot; baseUrl: string },
     action: string,
     what: string,
   ): Promise<boolean> {
-    const custom = VENDORS[target.vendor].userEndpoint;
+    const custom = isUserEndpoint(target.vendor);
     if (this.consentedTo(target.vendor)) return true;
     const confirmed = await ConfirmModal.confirm(this.app, {
       title: custom ? t("notebooks.consent.titleCustom") : t("notebooks.consent.titleCloud"),
       message: t(custom ? "notebooks.consent.messageCustom" : "notebooks.consent.messageCloud", {
         action,
         what,
-        target: targetLabel(target),
+        target:
+          target.vendor === "groq"
+            ? speechLabel({ vendor: "groq", baseUrl: "" })
+            : targetLabel({ vendor: target.vendor, baseUrl: target.baseUrl }),
       }),
       cta: t("notebooks.consent.send"),
     });
@@ -1669,30 +1782,31 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * Transcribe an audio recording with the configured AI service, after the
-   * one-time consent. Resolves to the transcript, or `null` when the user
-   * declined to send it; throws an `Error` with a Notice-ready message
-   * otherwise (unsupported vendor, no key, too large, network, HTTP). The
-   * audio feature's entry point — see `transcribeAudio` in ai-client.ts.
+   * Transcribe an audio recording with the online service chosen for
+   * recordings, after the one-time consent. Resolves to the transcript, or
+   * `null` when the user declined to send it; throws an `Error` with a
+   * Notice-ready message otherwise (none chosen, no key, network, HTTP). A
+   * recording over the service's upload limit is decoded here and sent in
+   * windows. The audio feature's entry point — see `transcribeAudio` in
+   * ai-client.ts.
    */
   async transcribeAudioFile(
     bytes: ArrayBuffer,
     mimeType: string,
     onProgress?: (message: string) => void,
   ): Promise<string | null> {
-    const text = this.textAiConfig();
-    // The text model is not a speech model except on Gemini, which does both.
-    const config = { ...text, model: text.vendor === "google" ? text.model : "" };
+    const config = this.speechConfig();
+    if (!config) throw new Error(`${t("ai.menu.speechOnDevice")}.`);
     // Refuse what cannot work before asking to send anything.
-    if (!canTranscribeAudio(config.vendor)) {
-      throw new Error(`${audioUnsupportedReason(config.vendor)}.`);
-    }
-    assertConfigured(config);
+    assertSpeechConfigured(config);
     const action = t("notebooks.consent.audioAction");
     if (!(await this.confirmAiSend(config, action, t("notebooks.consent.audioWhat")))) {
       return null;
     }
-    return transcribeAudio(config, bytes, mimeType, onProgress);
+    return transcribeAudio(config, bytes, mimeType, {
+      onProgress,
+      decode: () => decodeForSpeech(bytes),
+    });
   }
 
   /** Close the settings window, to show a note opened from it (the same app API as below). */
@@ -1742,7 +1856,11 @@ export default class GoodObsidianPlugin extends Plugin {
       pending: this.settings.newsSince,
       current: version,
     });
+    // Only this update's sponsors are new, even while older news waits unread.
+    this.settings.sponsorsSince = this.firstInstall ? "" : seen;
     this.settings.lastSeenVersion = version;
+    // New news: every changed control gets its dot again.
+    this.settings.newsDotsUsed = [];
     await this.saveSettings();
     this.syncNewsDots();
   }
@@ -1752,9 +1870,12 @@ export default class GoodObsidianPlugin extends Plugin {
     const { newsSince } = this.settings;
     const version = this.manifest.version;
     const tips = highlightsSince(newsSince, version);
-    const kind = homeCardKind(tips.length > 0, simpleOfferDue(this.settings));
+    // New sponsors are news too: thanked on the card even in a release with no pictures.
+    const sponsors = sponsorThanks(this.settings.sponsorsSince, version);
+    const kind = homeCardKind(tips.length > 0 || sponsors !== null, simpleOfferDue(this.settings));
     if (kind === "news") {
-      return { kind, tips, version: latestHighlighted(newsSince, version) ?? version };
+      const shown = tips.length > 0 ? latestHighlighted(newsSince, version) : null;
+      return { kind, tips, sponsors, version: shown ?? version };
     }
     return kind === "simple" ? { kind } : null;
   }
@@ -1765,22 +1886,43 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   dismissHomeCard(kind: HomeCardKind): void {
-    if (kind === "news") this.settings.newsSince = "";
-    else this.settings.simpleLookHinted = true;
+    if (kind === "news") {
+      this.settings.newsSince = "";
+      this.settings.sponsorsSince = "";
+    } else this.settings.simpleLookHinted = true;
     void this.saveSettings();
     this.syncNewsDots();
   }
 
   private syncNewsDots(): void {
     const on = this.hasNews();
+    const controls = this.newsControlIds();
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_INK)) {
-      (leaf.view as InkView).setNewsDot(on);
+      // A tab Obsidian has not loaded yet holds a placeholder view; it reads the dots when it opens.
+      if (leaf.view instanceof InkView) leaf.view.setNewsDot(on, controls);
     }
+  }
+
+  /** The toolbar buttons an update's news sits behind, not used since. */
+  newsControlIds(): string[] {
+    const tips = highlightsSince(this.settings.newsSince, this.manifest.version);
+    return newsControls(tips, this.settings.newsDotsUsed ?? []);
+  }
+
+  /** A dotted button was used: its dot goes, in every open notebook and on the other devices. */
+  markNewsControlUsed(id: string): void {
+    const used = this.settings.newsDotsUsed ?? [];
+    if (used.includes(id)) return;
+    this.settings.newsDotsUsed = [...used, id];
+    void this.saveSettings();
+    this.syncNewsDots();
   }
 
   /** Bring Home's what's-new card back, with the latest releases' highlights. */
   showNewsAgain(): void {
     this.settings.newsSince = EARLIEST_NEWS;
+    // Sponsors were thanked when they were new; showing the news again does not repeat it.
+    this.settings.sponsorsSince = "";
     void this.saveSettings();
     this.syncNewsDots();
     void this.openLibrary().then(() => {
@@ -1798,9 +1940,224 @@ export default class GoodObsidianPlugin extends Plugin {
         openTour: () => void this.openWelcomeTour(),
         openChangelog: () => this.showChangelog(releasedChangelog(changelogMd)),
         showNews: () => this.showNewsAgain(),
+        showWelcome: () => this.showWelcome(),
+        features: this.featureHost(),
       },
       page,
     ).open();
+  }
+
+  // --- Earned hints (model/nudges.ts) -------------------------------------------
+
+  /** What this device counted, read once from its own storage. */
+  private nudges: NudgeState | null = null;
+
+  /**
+   * Count `event`; when it was the slow way once too often for someone who
+   * never used the fast way, say the fast way in the hint pill. A tap on
+   * the line opens its tip.
+   */
+  noteUse(event: NudgeEvent, surface: InkSurface): void {
+    if (!this.settings.gestureHints) return;
+    const before: NudgeState =
+      this.nudges ?? parseNudges(this.app.loadLocalStorage(NUDGES_KEY) as unknown);
+    let state = recordUse(before, event);
+    const day = dayOf(new Date());
+    const rule = dueNudge(state, event, { day, touch: Platform.isMobile });
+    if (rule) {
+      state = markShown(state, rule, day);
+      const feature = featureById(rule.id);
+      surface.showTextHint(
+        t(rule.text),
+        () => undefined,
+        feature ? () => this.showFeature(feature) : undefined,
+      );
+    }
+    this.nudges = state;
+    this.app.saveLocalStorage(NUDGES_KEY, state);
+  }
+
+  /** Hints for faster ways on or off; off forgets what was counted. */
+  async setGestureHints(on: boolean): Promise<void> {
+    this.settings.gestureHints = on;
+    if (!on) {
+      this.nudges = null;
+      this.app.saveLocalStorage(NUDGES_KEY, null);
+    }
+    await this.saveSettings();
+  }
+
+  // --- The feature index (model/feature-index.ts) ---------------------------------
+
+  /** What a feature's row or a tip's button can do, wherever it is drawn. */
+  featureHost(): FeatureHost {
+    return {
+      settingOn: (key) =>
+        switchValue(
+          this.settings as unknown as Record<string, unknown>,
+          key,
+          DEFAULT_PEN_GESTURES,
+        ) === true,
+      setSetting: async (key, on) => {
+        if (key.startsWith(PEN_GESTURE_PREFIX)) {
+          const name = key.slice(PEN_GESTURE_PREFIX.length);
+          this.savePenGestures({ ...penGesturesOf(this.settings.penGestures), [name]: on });
+          for (const view of this.openNotebooks()) view.syncPenPreferences();
+        } else if (key === "simpleLook") this.setSimpleLook(on);
+        else await this.settingTab?.setControlValue(key, on);
+      },
+      tryFeature: (feature) => void this.tryFeature(feature),
+      hiddenFeatures: () => hiddenFeatureIds(this.settings.searchHidden),
+      hideFeature: (id, hide) => {
+        this.settings.searchHidden = withHiddenFeature(
+          hiddenFeatureIds(this.settings.searchHidden),
+          id,
+          hide,
+        );
+        void this.saveSettings();
+      },
+      runCommand: (id) => this.runOwnCommand(id),
+      show: (feature) => this.showFeature(feature),
+      ask: (query) => {
+        window.open(`${ASK_URL}&title=${encodeURIComponent(query)}`);
+      },
+    };
+  }
+
+  /** A feature's tip among its collection's; without a tip, its row in settings. */
+  showFeature(feature: Feature): void {
+    const tip = feature.tip;
+    if (!tip) {
+      this.openSettingsTab();
+      this.settingTab?.revealRow(t(feature.title));
+      return;
+    }
+    const tips = feature.collection?.tips ?? [tip];
+    this.openTips({
+      title: feature.collection ? t(feature.collection.title) : t(tip.title),
+      tips,
+      index: Math.max(0, tips.indexOf(tip)),
+    });
+  }
+
+  /**
+   * A tip's Try it: a scratch page (try-page.ts) in the current tab, with the
+   * tip's picture over it until the gesture is done or the hint is closed.
+   * Then the tab goes back to what it showed, and the page to the trash.
+   */
+  /** What the tab showed before the first Try it of a run, to go back to. */
+  private tryBack: ViewState | null = null;
+
+  async tryFeature(feature: Feature): Promise<void> {
+    if (!feature.tip || !feature.tryOn) return;
+    const leaf = this.app.workspace.getLeaf(false);
+    const now = leaf.getViewState();
+    // Trying another tip from the scratch page: go back to where the first try began.
+    const onScratch = (now.state as { file?: unknown } | undefined)?.file === TRY_PAGE_PATH;
+    const back: ViewState = onScratch ? (this.tryBack ?? { type: "empty" }) : now;
+    this.tryBack = back;
+    let file: TFile;
+    try {
+      const folder = TRY_PAGE_PATH.slice(0, TRY_PAGE_PATH.lastIndexOf("/"));
+      if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
+      const choices = parseNotebookChoices(this.settings.lastNotebookChoices);
+      const title = t(feature.tip.title);
+      const content = buildInkFile(
+        newNoteBody(title, new Date().toISOString()),
+        tryPageDocument(choices, title),
+      );
+      const existing = this.app.vault.getFileByPath(TRY_PAGE_PATH);
+      if (existing) await this.app.vault.modify(existing, content);
+      file = existing ?? (await this.app.vault.create(TRY_PAGE_PATH, content));
+    } catch (error) {
+      new Notice(errorMessage(error));
+      return;
+    }
+    await leaf.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
+    const view = leaf.view;
+    if (!(view instanceof InkView)) return;
+    view.startTry(feature, () => void this.endTry(leaf, back, file));
+  }
+
+  /** The try is over: the tab shows what it did before, and the scratch page goes. */
+  private async endTry(leaf: WorkspaceLeaf, back: ViewState, file: TFile): Promise<void> {
+    this.tryBack = null;
+    if (back.type && back.type !== "empty") await leaf.setViewState(back);
+    else leaf.detach();
+    // Still open in another tab (a split): leave it, it is written over next time.
+    const open = this.app.workspace
+      .getLeavesOfType(VIEW_TYPE_INK)
+      .some((other) => (other.view as { file?: TFile | null }).file?.path === file.path);
+    if (!open) await this.app.fileManager.trashFile(file);
+  }
+
+  /**
+   * A feature's Show me (a tip's button, a search row's →): one of this
+   * plugin's commands, by its own id. Tips are mostly read on Home, so a
+   * notebook command brings a notebook forward first: the open one, else the
+   * last one opened. Obsidian 1.15's `executeCommandById` says true even when
+   * a command's check refuses it, so the check is asked here.
+   */
+  private runOwnCommand(id: string): boolean {
+    // The tip describes the window, not a run started out of sight.
+    if (id === "learn-handwriting") {
+      this.openLearnWindow();
+      return true;
+    }
+    // From Home, opening Home shows nothing: go to its search field.
+    if (id === "open-library") {
+      void this.openLibrary().then(() => this.focusHomeSearch());
+      return true;
+    }
+    const commands = (
+      this.app as unknown as {
+        commands?: {
+          commands?: Record<string, { checkCallback?: (checking: boolean) => boolean | void }>;
+          executeCommandById?: (id: string) => boolean;
+        };
+      }
+    ).commands;
+    const full = `${this.manifest.id}:${id}`;
+    const command = commands?.commands?.[full];
+    if (!command) return false;
+    const available = (): boolean => !command.checkCallback || command.checkCallback(true) === true;
+    if (available()) return commands?.executeCommandById?.(full) === true;
+    void this.bringNotebookForward().then((brought) => {
+      if (brought && available()) commands?.executeCommandById?.(full);
+      else new Notice(t("notebooks.features.needsNotebook"));
+    });
+    return true;
+  }
+
+  /** The open notebook last used, made the active tab; else the last notebook opened. */
+  private async bringNotebookForward(): Promise<boolean> {
+    const workspace = this.app.workspace;
+    const time = (leaf: WorkspaceLeaf): number =>
+      (leaf as unknown as { activeTime?: number }).activeTime ?? 0;
+    const open = workspace
+      .getLeavesOfType(VIEW_TYPE_INK)
+      .filter((leaf) => leaf.view instanceof InkView)
+      .sort((a, b) => time(b) - time(a))[0];
+    if (open) {
+      await workspace.revealLeaf(open);
+      workspace.setActiveLeaf(open, { focus: true });
+      return true;
+    }
+    const last = workspace
+      .getLastOpenFiles()
+      .map((path) => this.app.vault.getFileByPath(path))
+      .find((file): file is TFile => file !== null && this.isInkFile(file));
+    if (!last) return false;
+    const leaf = workspace.getLeaf("tab");
+    await leaf.openFile(last, { active: true });
+    return leaf.view instanceof InkView;
+  }
+
+  private focusHomeSearch(): void {
+    const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIBRARY)[0];
+    leaf?.view.containerEl
+      .querySelector<HTMLInputElement>(".goodobsidian-library-search input")
+      ?.focus();
   }
 
   /** Remember the eraser's mode and size for the next session (and device). */
@@ -1852,10 +2209,11 @@ export default class GoodObsidianPlugin extends Plugin {
     void this.saveSettings();
   }
 
-  /** Remember cover tape's colour, height and mode, for the next session. */
-  saveTape(color: string, height: number, mode: TapeMode): void {
+  /** Remember cover tape's colour, height, the pill's three heights and mode, for the next session. */
+  saveTape(color: string, height: number, mode: TapeMode, heights: readonly number[]): void {
     this.settings.tapeColor = tapeColorOf(color);
     this.settings.tapeHeight = tapeHeightOf(height);
+    this.settings.tapeHeights = tapeHeightsOf(heights);
     this.settings.tapeMode = tapeModeOf(mode);
     void this.saveSettings();
   }
@@ -1922,6 +2280,30 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
+   * Remember each pen type's width presets (FineNotes#210), for every
+   * notebook. Saved once the slider rests, as the pen inks are.
+   */
+  saveWidthPresets(presets: WidthPresets): void {
+    this.settings.widthPresets = { ...presets };
+    this.saveSoon();
+  }
+
+  /** Remember the eraser's preset sizes, for every notebook. Saved once the slider rests. */
+  saveEraserPresets(presets: number[]): void {
+    this.settings.eraserPresets = [...presets];
+    this.saveSoon();
+  }
+
+  /** Save once the picking rests, on the last pen's timer (flushed on unload). */
+  private saveSoon(): void {
+    window.clearTimeout(this.lastPenTimer);
+    this.lastPenTimer = window.setTimeout(() => {
+      this.lastPenTimer = 0;
+      void this.saveSettings();
+    }, LAST_PEN_SAVE_MS);
+  }
+
+  /**
    * Remember each pen type's own colour, row and width, for every notebook.
    * Saved once the picking rests, as the last pen is: the width slider
    * reports every step of a drag.
@@ -1951,8 +2333,10 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Keep the saved pens (FineNotes#24), and show them in every open notebook's toolbar. */
   saveSavedPens(pens: readonly SavedPen[]): void {
-    this.settings.savedPens = pens.map((pen) => ({ ...pen }));
+    this.settings.savedPens = withPenIds(pens);
     void this.saveSettings();
+    // A pen on the bar as a button of its own follows its saved pen (FineNotes#211).
+    for (const view of this.openNotebooks()) view.refreshSavedPens();
   }
 
   /**
@@ -1961,7 +2345,7 @@ export default class GoodObsidianPlugin extends Plugin {
    * link to the stickers folder) and placed like any picture.
    */
   openStickerPicker(ctx: Pick<ImageMenuContext, "insertBytes">): void {
-    new StickerModal(this.app, stickerFolderOf(this.settings.stickerFolder), (choice) => {
+    new StickerModal(this.app, stickerFolderFor(this.settings), (choice) => {
       void (async () => {
         if (choice.kind === "builtin") {
           const svg = stickerSvg(choice.sticker, choice.color);
@@ -1980,10 +2364,36 @@ export default class GoodObsidianPlugin extends Plugin {
     }).open();
   }
 
+  /** The layout the bar shows: the preset's (Essentials) or the person's own. */
+  toolbarLayoutNow(): ToolbarLayout {
+    return layoutInUse(
+      this.settings.toolbarLayout,
+      this.settings.toolbarEssentials,
+      this.settings.toolbarPreset,
+      this.pillRow,
+    );
+  }
+
+  /** Customize toolbar switched the bar's preset: every open notebook shows its layout. */
+  setToolbarPreset(preset: BarPreset): void {
+    if (preset === this.settings.toolbarPreset) return;
+    this.settings.toolbarPreset = preset;
+    void this.saveSettings();
+    const toolbar = this.toolbarLayoutNow();
+    const shown = this.pillRow ? preset : "own";
+    for (const view of this.openNotebooks()) view.showToolbarPreset(shown, toolbar);
+    if (this.settings.onlyStylusMode && isItemOff(toolbar, "stylus")) {
+      void this.setOnlyStylusMode(false);
+    }
+  }
+
   /** Customize toolbar changed the bar or its menu: every open notebook shows the new one. */
   saveToolbarLayout(layout: ToolbarLayout): void {
     const toolbar = normalizeLayout(layout);
-    this.settings.toolbarLayout = toolbar;
+    // The preset in use keeps the change; the other layout stays as it was.
+    if (this.settings.toolbarPreset === "essentials" && this.pillRow)
+      this.settings.toolbarEssentials = toolbar;
+    else this.settings.toolbarLayout = toolbar;
     void this.saveSettings();
     // Each notebook ends what an item now shown nowhere left on (effectsOfOffItems).
     for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
@@ -2019,7 +2429,7 @@ export default class GoodObsidianPlugin extends Plugin {
    */
   async setOnlyStylusMode(on: boolean): Promise<void> {
     // Shown nowhere, Stylus only stays off: a command must not turn it on unseen.
-    if (on && isItemOff(this.settings.toolbarLayout, "stylus")) return;
+    if (on && isItemOff(this.toolbarLayoutNow(), "stylus")) return;
     this.settings.onlyStylusMode = on;
     // Asking for the pen alone means the Pencil is in hand: fingers stop drawing.
     if (on) this.setFingerDrawing(false);
@@ -2361,6 +2771,12 @@ export default class GoodObsidianPlugin extends Plugin {
     this.pillRowSeen = on;
     this.app.saveLocalStorage(GoodObsidianPlugin.PILL_ROW_KEY, on ? "on" : null);
     for (const view of this.openNotebooks()) view.showPillRow(on);
+    // Essentials is for docked options: it comes and goes with them.
+    if (this.settings.toolbarPreset === "essentials") {
+      const toolbar = this.toolbarLayoutNow();
+      const preset = on ? "essentials" : "own";
+      for (const view of this.openNotebooks()) view.showToolbarPreset(preset, toolbar);
+    }
   }
 
   private static readonly BAR_DOCK_KEY = "goodobsidian:bar-dock";
@@ -2638,13 +3054,13 @@ export default class GoodObsidianPlugin extends Plugin {
       if (entry.kind === "paper") {
         const library = new VaultPaperLibrary(
           this.app,
-          () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
+          () => templateFolderFor(this.settings),
           () => undefined,
         );
         const ext = entry.download.split(/[?#]/)[0].split(".").pop() ?? "pdf";
         return await library.addFile(bytes, `${entry.name}.${ext}`);
       }
-      const folder = templateFolderOf(normalizeFolder(this.settings.templateFolder));
+      const folder = templateFolderFor(this.settings);
       if (!this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
       const name = `${entry.name.replace(/[\\/:*?"<>|#^[\]]+/g, " ").trim() || "Template"}.${TEMPLATE_EXTENSION}`;
       const path = normalizePath(`${folder}/${name}`);
@@ -2866,7 +3282,7 @@ export default class GoodObsidianPlugin extends Plugin {
   ): VaultPaperLibrary {
     return new VaultPaperLibrary(
       this.app,
-      () => templateFolderOf(normalizeFolder(this.settings.templateFolder)),
+      () => templateFolderFor(this.settings),
       paint,
       () => this.openTemplateGallery(),
       (path) => void this.openShareTemplate(path),
@@ -3593,6 +4009,14 @@ export default class GoodObsidianPlugin extends Plugin {
 
   // --- obsidian://finenotes links ------------------------------------------------
 
+  /** An `obsidian://finenotes?…` link tapped inside FineNotes (an Ask answer's handbook link). */
+  openFinenotesLink(url: string): void {
+    const query = url.slice(url.indexOf("?") + 1);
+    const params: Record<string, string> = {};
+    for (const [key, value] of new URLSearchParams(query)) params[key] = value;
+    void this.handleFinenotesLink(params);
+  }
+
   private async handleFinenotesLink(params: Record<string, string>): Promise<void> {
     const request = parseFinenotesLink(params);
     if (request.do === "new" && !request.last) {
@@ -3606,6 +4030,10 @@ export default class GoodObsidianPlugin extends Plugin {
     } else if (request.do === "pdf") {
       const notebook = await this.notebookForPdfLink(request.file);
       if (notebook) await this.showNotebook(notebook);
+    } else if (request.do === "show") {
+      const feature = featureById(request.feature);
+      if (feature) this.showFeature(feature);
+      else new Notice(t("notebooks.features.unknown", { what: request.feature }));
     } else {
       new Notice(t("notebooks.notice.linkUnknown", { what: request.what }));
     }
@@ -3654,4 +4082,9 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     return null;
   }
+}
+
+/** A server of the user's own: a key slot and a consent of its own. */
+function isUserEndpoint(slot: KeySlot): boolean {
+  return slot !== "groq" && VENDORS[slot].userEndpoint;
 }

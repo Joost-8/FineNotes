@@ -1,16 +1,15 @@
 /**
- * The eraser-size slider: its range and stops, and the three quick sizes
- * the toolbar shows.
+ * The eraser-size slider: its range and stops.
  *
  * Sizes are diameters in page px at fit-to-page zoom (the surface scales them
  * for the zoom, so the eraser covers the same screen area at any zoom). The
- * three presets in `ERASER_SIZES` stay the quick picks; the slider reaches
- * finer and much larger sizes in between and beyond them.
+ * presets the toolbar shows are in `model/width-presets.ts`; the slider
+ * reaches finer and much larger sizes in between and beyond them.
  *
  * PURE: no DOM.
  */
 
-import { DEFAULT_ERASER_SIZE, ERASER_SIZES } from "../constants";
+import { DEFAULT_ERASER_SIZE } from "../constants";
 
 /** The smallest diameter the slider offers, page px: a precise tip for single letters. */
 export const ERASER_MIN_SIZE = 4;
@@ -37,26 +36,4 @@ export function eraserStops(): number[] {
 export function clampEraserSize(size: number): number {
   if (!Number.isFinite(size) || size <= 0) return DEFAULT_ERASER_SIZE;
   return Math.min(ERASER_MAX_SIZE, Math.max(ERASER_MIN_SIZE, size));
-}
-
-/**
- * The three sizes the toolbar shows: the presets, unless the live size is
- * none of them, when it takes the place of the preset nearest it (by ratio,
- * as sizes are compared by eye). Smallest first, as the glyphs grow.
- */
-export function quickEraserSizes(
-  live: number,
-  presets: readonly number[] = ERASER_SIZES,
-): number[] {
-  const quick = [...presets];
-  if (!quick.includes(live) && Number.isFinite(live) && live > 0) {
-    let nearest = 0;
-    for (let i = 1; i < quick.length; i++) {
-      if (Math.abs(Math.log(quick[i] / live)) < Math.abs(Math.log(quick[nearest] / live))) {
-        nearest = i;
-      }
-    }
-    quick[nearest] = live;
-  }
-  return quick.sort((a, b) => a - b);
 }

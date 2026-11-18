@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  assetsFolderOf,
+  chosenFolder,
+  stickerFolderFor,
+  templateFolderFor,
   DEFAULT_STICKER_FOLDER,
   DEFAULT_TEMPLATE_FOLDER,
   correctionsFile,
@@ -57,5 +61,46 @@ describe("FineNotes' folders", () => {
       }),
     ).toEqual(both);
     expect(folderMoves({ templateFolder: "Planners", stickerFolder: "Art/Stickers" })).toEqual([]);
+  });
+});
+
+describe("one assets folder for stickers and templates (2026-11-11)", () => {
+  it("puts both in FineNotes assets until another folder is chosen", () => {
+    const fresh = {
+      stickerFolder: "FineNotes assets/Stickers",
+      templateFolder: "FineNotes assets/Templates",
+    };
+    expect(stickerFolderFor(fresh)).toBe("FineNotes assets/Stickers");
+    expect(templateFolderFor(fresh)).toBe("FineNotes assets/Templates");
+    expect(stickerFolderFor({})).toBe("FineNotes assets/Stickers");
+    const moved = { ...fresh, assetsFolder: " School\\Assets/ " };
+    expect(assetsFolderOf(moved.assetsFolder)).toBe("School/Assets");
+    expect(stickerFolderFor(moved)).toBe("School/Assets/Stickers");
+    expect(templateFolderFor(moved)).toBe("School/Assets/Templates");
+  });
+
+  it("keeps a stickers or templates folder typed before, whatever the assets folder", () => {
+    const own = {
+      assetsFolder: "Elsewhere",
+      stickerFolder: "Art/Stickers/",
+      templateFolder: "Paper",
+    };
+    expect(stickerFolderFor(own)).toBe("Art/Stickers");
+    expect(templateFolderFor(own)).toBe("Paper");
+  });
+
+  it("counts no default as a folder of the user's, old or new", () => {
+    for (const value of [
+      "",
+      "  ",
+      undefined,
+      7,
+      "FineNotes stickers",
+      "FineNotes assets/Stickers",
+    ]) {
+      expect(chosenFolder(value, "stickers"), String(value)).toBeNull();
+    }
+    expect(chosenFolder("FineNotes templates", "templates")).toBeNull();
+    expect(chosenFolder("FineNotes templates", "stickers")).toBe("FineNotes templates");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inkPixelRect } from "../../src/canvas/layer-rect";
+import { boxPixelRect, inkPixelRect } from "../../src/canvas/layer-rect";
 
 const identity = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
 
@@ -33,5 +33,21 @@ describe("inkPixelRect (FineNotes#85)", () => {
     expect(inkPixelRect([], identity, 100, 100)).toBeNull();
     const runs = [{ width: 2, pts: [Number.NaN, 0, 10, 10] }];
     expect(inkPixelRect(runs, identity, 100, 100)).toEqual({ x: 8, y: 8, w: 4, h: 4 });
+  });
+});
+
+describe("boxPixelRect (FineNotes#201)", () => {
+  const box = { minX: 10.2, minY: 20.7, maxX: 30.1, maxY: 40.3 };
+
+  it("grows to whole device px through the scale and offset", () => {
+    expect(boxPixelRect(box, identity, 500, 500)).toEqual({ x: 10, y: 20, w: 21, h: 21 });
+    const m = { a: 2, b: 0, c: 0, d: 2, e: -5, f: 100 };
+    expect(boxPixelRect(box, m, 500, 500)).toEqual({ x: 15, y: 141, w: 41, h: 40 });
+  });
+
+  it("is cut to the canvas, and null when off it", () => {
+    expect(boxPixelRect(box, identity, 25, 30)).toEqual({ x: 10, y: 20, w: 15, h: 10 });
+    expect(boxPixelRect(box, identity, 10, 500)).toBeNull();
+    expect(boxPixelRect({ ...box, maxX: Number.NaN }, identity, 500, 500)).toBeNull();
   });
 });

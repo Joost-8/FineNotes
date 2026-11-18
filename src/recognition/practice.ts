@@ -23,7 +23,7 @@
  */
 
 import { writingLines } from "../canvas/backdrop";
-import { assignLines, lineAt } from "../canvas/writing-lines";
+import { assignLines, boxGap, lineAt } from "../canvas/writing-lines";
 import { SCHEMA_VERSION } from "../constants";
 import {
   type InkDocument,
@@ -549,6 +549,17 @@ function isWriting(stroke: Stroke): boolean {
 }
 
 /**
+ * Ink a glyph sample is made of: handwriting, and a pen line that snapped
+ * straight while the pen rested (the upright of a 4 or a 1 held a moment).
+ */
+function isGlyphInk(stroke: Stroke): boolean {
+  return stroke.tool === "pen" && (!stroke.shape || stroke.shape === "line");
+}
+
+/** How near a stroke on a neighbouring line must come to a symbol to be part of it, in pitches. */
+const TOUCH_REACH = 0.15;
+
+/**
  * The lines copied in a practice file: for each prompt, the pen strokes on
  * the lines between it and the next prompt (the writing line and the spare
  * one), so writing that drifts onto the spare line is not cut off. Prompts
@@ -603,20 +614,34 @@ export function symbolSamples(
     const prompts = (page.backdrop.printed ?? []).filter((line) => line.prompt);
     if (prompts.length === 0) continue;
     const blocks = writingLines(page.backdrop, page.geometry);
-    const writing = page.strokes.filter(isWriting);
-    const refs = assignLines(
-      blocks,
-      writing.map((s) => strokeBounds(s) ?? { minX: 0, minY: -1e9, maxX: 0, maxY: -1e9 }),
+    const writing = page.strokes.filter(isGlyphInk);
+    const bounds = writing.map(
+      (s) => strokeBounds(s) ?? { minX: 0, minY: -1e9, maxX: 0, maxY: -1e9 },
     );
+    const refs = assignLines(blocks, bounds);
     for (const prompt of prompts) {
       const ref = lineAt(blocks, prompt.x, prompt.y);
       if (!ref || Array.from(prompt.text).length !== 1) continue;
       const line = ref.line + 1;
       const baseline = blocks[ref.block].baselines[line];
       if (baseline === undefined) continue;
-      const strokes = writing
-        .filter((_, j) => refs[j]?.block === ref.block && refs[j]?.line === line)
-        .map((s) => s.pts);
+      const on = (j: number, l: number) => refs[j]?.block === ref.block && refs[j]?.line === l;
+      const taken = writing.map((_, j) => on(j, line));
+      // A stroke of the same character may sit mostly on the line above or
+      // below (the upright of a 4 dropped under the rule, FineNotes#253):
+      // it joins when it touches what is already taken.
+      const reach = blocks[ref.block].pitch * TOUCH_REACH;
+      for (let grew = true; grew;) {
+        grew = false;
+        writing.forEach((_, j) => {
+          if (taken[j] || !(on(j, line - 1) || on(j, line + 1))) return;
+          if (bounds.some((b, k) => taken[k] && boxGap(b, bounds[j]) <= reach)) {
+            taken[j] = true;
+            grew = true;
+          }
+        });
+      }
+      const strokes = writing.filter((_, j) => taken[j]).map((s) => s.pts);
       if (strokes.length > 0) out.push({ symbol: prompt.text, strokes, baseline });
     }
   }

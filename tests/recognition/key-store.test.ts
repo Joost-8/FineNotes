@@ -1,3 +1,4 @@
+import type { KeySlot } from "../../src/recognition/audio-request";
 import { describe, expect, it } from "vitest";
 import {
   type LegacyKeyFields,
@@ -39,7 +40,8 @@ const legacy = (fields: Partial<LegacyKeyFields> = {}): LegacyKeyFields => ({
 
 describe("secretIdFor", () => {
   it("is a valid, plugin-prefixed keychain id for every slot", () => {
-    const slots: LlmVendor[] = ["anthropic", "openai", "google", "openrouter", "custom"];
+    // Groq's slot holds a key for transcribing recordings only.
+    const slots: KeySlot[] = ["anthropic", "openai", "google", "openrouter", "custom", "groq"];
     const secrets = new FakeSecrets();
     for (const slot of slots) {
       expect(secretIdFor(slot)).toBe(`goodobsidian-${slot}-api-key`);

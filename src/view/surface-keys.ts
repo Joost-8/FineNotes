@@ -137,6 +137,11 @@ export function keyOutcome(chord: KeyChord, scene: KeyScene): KeyOutcome | null 
   if (bare && (key === "PageDown" || key === "PageUp")) {
     return cancelling(key === "PageDown" ? "next-page" : "previous-page");
   }
+  // ← and → turn pages, whichever way they run (FineNotes#248): the page
+  // never scrolls sideways by key, so they have nothing else to do here.
+  if (bare && (key === "ArrowRight" || key === "ArrowLeft")) {
+    return cancelling(key === "ArrowRight" ? "next-page" : "previous-page");
+  }
   if (bare && (key === "ArrowDown" || key === "ArrowUp")) {
     const down = key === "ArrowDown";
     if (scene.rowFitsPane()) return cancelling(down ? "next-page" : "previous-page");

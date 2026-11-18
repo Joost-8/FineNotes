@@ -33,6 +33,15 @@ that repository instead.
      its scene and its text in `src/i18n/en/notebooks.ts`. Fixes, and features
      that explain themselves, get none. Check every claim in a tip against
      the code that handles it, never against the changelog.
+   - **Thank new sponsors.** With the version about to be tagged:
+     ```bash
+     npm run sponsors -- --release x.y.z
+     ```
+     It adds FineNotes' new public GitHub sponsors to `sponsors.json`, marks
+     them as thanked in this release and redraws the README's avatars. Home's
+     what's-new card then thanks them by name, before everyone earlier; a
+     release with no new sponsor thanks nobody. Between releases,
+     `npm run sponsors` alone updates the README.
    - **Update the languages.** Every text added or changed since the last
      release, tips included, goes into each table in `src/i18n/locales/`:
      ```bash

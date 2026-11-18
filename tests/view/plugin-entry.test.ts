@@ -549,6 +549,7 @@ describe("registration", () => {
     await load();
     expect(registered.commands.map((c) => c.id).sort()).toEqual(
       [
+        "add-board",
         "convert-to-notebook",
         "copy-highlighted-text",
         "copy-page-link",
@@ -561,6 +562,7 @@ describe("registration", () => {
         "export-pdf",
         "fit-board-drawing",
         "fit-reset-view",
+        "go-to-board",
         "import-pdf",
         "import-vault-pdf",
         "insert-new-notebook",
@@ -1246,6 +1248,15 @@ describe("loading settings", () => {
     expect(registered.saved.at(-1)).not.toHaveProperty("pressureEnabled");
   });
 
+  it("drops the removed open-page setting: a chat starts with no page picked (2026-11-17)", async () => {
+    await load({ askAttachPage: true, lastSeenVersion: VERSION });
+    expect(plugin.settings).not.toHaveProperty("askAttachPage");
+    expect(plugin.settings.askVaultScope).toBe("folder");
+    expect(plugin.settings.askShowCost).toBe(false);
+    await plugin.saveSettings();
+    expect(registered.saved.at(-1)).not.toHaveProperty("askAttachPage");
+  });
+
   it("carries the old crosshair toggle over to the cursor choice (FineNotes#27)", async () => {
     await load({ penCursor: true, lastSeenVersion: VERSION });
     expect(plugin.settings.penCursor).toBe("ink");
@@ -1370,7 +1381,16 @@ describe("What's new", () => {
     await flush();
     expect(opened).toEqual([]);
     expect(registered.saved.at(-1)?.newsSince).toBe("0.8.0");
+    expect(registered.saved.at(-1)?.sponsorsSince).toBe("0.8.0");
     expect(registered.saved.at(-1)?.lastSeenVersion).toBe(VERSION);
+  });
+
+  it("thanks only the newest update's sponsors while older news waits unread", async () => {
+    await load({ lastSeenVersion: "0.8.1", newsSince: "0.8.0" });
+    app.workspace.fireLayoutReady();
+    await flush();
+    expect(registered.saved.at(-1)?.newsSince).toBe("0.8.0");
+    expect(registered.saved.at(-1)?.sponsorsSince).toBe("0.8.1");
   });
 
   it("has no news to count when the last version is unknown", async () => {
@@ -1698,5 +1718,54 @@ describe("Stylus only shown nowhere", () => {
   it("is never on at load when its button is off", async () => {
     await load({ lastSeenVersion: VERSION, onlyStylusMode: true, toolbarOff: ["stylus"] });
     expect(plugin.settings.onlyStylusMode).toBe(false);
+  });
+});
+
+describe("Show me runs a notebook command from Home", () => {
+  /** Obsidian 1.15's runner: true whatever the command's own check says. */
+  function withCommands(lastOpen: string[] = []): void {
+    const workspace = app.workspace as unknown as Record<string, unknown>;
+    workspace.setActiveLeaf = (leaf: WorkspaceLeaf) => {
+      app.workspace.active = leaf.view;
+    };
+    workspace.getLastOpenFiles = () => lastOpen;
+    (app as Record<string, unknown>).commands = {
+      commands: Object.fromEntries(registered.commands.map((c) => [`goodobsidian:${c.id}`, c])),
+      executeCommandById: (id: string) => {
+        run(id.slice("goodobsidian:".length));
+        return true;
+      },
+    };
+  }
+
+  it("brings the open notebook forward, then runs the command", async () => {
+    await load({ lastSeenVersion: VERSION });
+    withCommands();
+    const copyPageLink = vi.fn();
+    inkLeaf(app.addFile("A.notebook.md"), { copyPageLink, isBoard: false });
+    app.workspace.active = null; // Home is in front
+    plugin.featureHost().runCommand("copy-page-link");
+    await flush();
+    expect(copyPageLink).toHaveBeenCalledTimes(1);
+    expect(notices).toHaveLength(0);
+  });
+
+  it("says a notebook is needed when none is open or was opened", async () => {
+    await load({ lastSeenVersion: VERSION });
+    withCommands();
+    app.workspace.active = null;
+    plugin.featureHost().runCommand("copy-page-link");
+    await flush();
+    expect(notices.map((n) => n.message)).toEqual(["Open a notebook first."]);
+  });
+
+  it("runs at once where the command is available", async () => {
+    await load({ lastSeenVersion: VERSION });
+    withCommands();
+    const copyPageLink = vi.fn();
+    const leaf = inkLeaf(app.addFile("A.notebook.md"), { copyPageLink, isBoard: false });
+    app.workspace.active = leaf.view;
+    plugin.featureHost().runCommand("copy-page-link");
+    expect(copyPageLink).toHaveBeenCalledTimes(1);
   });
 });

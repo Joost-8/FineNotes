@@ -29,7 +29,7 @@ import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequ
 import { PointerHud } from "../../src/view/pointer-hud";
 import { StrokeIndex } from "../../src/view/stroke-index";
 import { SizeWait } from "../../src/view/surface-size";
-import { type SelectionAction, menuLayout } from "../../src/view/selection-bar-model";
+import { type SelectionAction, barItems, menuLayout } from "../../src/view/selection-bar-model";
 
 vi.mock("obsidian", () => ({
   Notice: class {},
@@ -382,6 +382,64 @@ describe("handleKeyDown", () => {
     }
   });
 
+  it("puts the pen and the highlighter in hand the pen row's way (FineNotes#226)", () => {
+    const calls: string[] = [];
+    const surface = surfaceWith({
+      toolState: { tool: "pen" },
+      cropping: null,
+      pressMenu: null,
+      actionBar: { isMenuOpen: false },
+      callbacks: {
+        onToolChange: (tool: string) => calls.push(`onToolChange(${tool})`),
+        onPenShortcut: (tool: string) => {
+          calls.push(`onPenShortcut(${tool})`);
+          return true;
+        },
+      },
+      editingTextView: () => null,
+      clipboardKey: () => false,
+      liveImageSelection: () => null,
+      liveSelection: () => null,
+      setTool: (tool: string) => calls.push(`setTool(${tool})`),
+    });
+    const key = (k: string) =>
+      run(surface, "handleKeyDown", {
+        key: k,
+        code: `Key${k.toUpperCase()}`,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        target: null,
+        preventDefault: () => {},
+      });
+    key("h");
+    key("p");
+    key("e");
+    expect(calls).toEqual([
+      "onPenShortcut(highlighter)",
+      "onPenShortcut(pen)",
+      "setTool(eraser)",
+      "onToolChange(eraser)",
+    ]);
+    // Each press is noted for the diagnostics.
+    expect((surface.keyLogged as { report(): unknown }).report()).toEqual({
+      seen: 3,
+      verdicts: { taken: 3 },
+      recent: ["h:taken", "p:taken", "e:taken"],
+    });
+  });
+
+  it("notes a key typed into a field without naming it (FineNotes#226)", () => {
+    const surface = surfaceWith({ callbacks: {} });
+    run(surface, "handleKeyDown", { key: "a", code: "KeyA", target: { tagName: "INPUT" } });
+    expect((surface.keyLogged as { report(): unknown }).report()).toEqual({
+      seen: 1,
+      verdicts: { field: 1 },
+      recent: [":field"],
+    });
+  });
+
   it("ignores tool letters with Alt, and offers them to the clipboard with Cmd", () => {
     expect(press("p", { alt: true })).toEqual(PASSED);
     expect(press("p", { meta: true })).toEqual({
@@ -393,7 +451,7 @@ describe("handleKeyDown", () => {
   });
 
   it("passes keys it has no use for", () => {
-    for (const key of ["x", "Tab", "Enter", "9", "ArrowLeft", "Escape", "Delete"]) {
+    for (const key of ["x", "Tab", "Enter", "9", "Home", "Escape", "Delete"]) {
       expect(press(key)).toEqual(PASSED);
     }
   });
@@ -528,6 +586,14 @@ describe("handleKeyDown", () => {
       ...TAKEN,
       calls: ["scrollStep(150)"],
     });
+  });
+
+  it("turns the page with ← and →, in a row or a column (FineNotes#248)", () => {
+    for (const scene of [{}, { row: true }, { row: true, rowFits: true }]) {
+      expect(press("ArrowRight", {}, scene)).toEqual({ ...TAKEN, calls: ["nextPage"] });
+      expect(press("ArrowLeft", {}, scene)).toEqual({ ...TAKEN, calls: ["previousPage"] });
+    }
+    expect(press("ArrowRight", { alt: true })).toEqual(PASSED);
   });
 });
 
@@ -1629,7 +1695,7 @@ describe("Add to contents on a selection", () => {
     expect(cleared).toBe(1);
   });
 
-  it("sits above Link to under Turn into, with Comment after it, and Delete last", () => {
+  it("sits above Link to under Turn into, with Comment after it; nothing is in both the bar and the menu", () => {
     const p = page("p1", [line("h", 100, 300, 115)]);
     const comments: unknown[] = [];
     const surface = surfaceWith({
@@ -1653,14 +1719,27 @@ describe("Add to contents on a selection", () => {
     const into = turn?.kind === "submenu" ? turn.actions.map((a) => a.id) : [];
     expect(into.indexOf("contents")).toBeLessThan(into.indexOf("link"));
     expect(into.indexOf("link")).toBeLessThan(into.indexOf("comment"));
-    // The flips are one segmented row with the style; Delete is the menu's foot.
+    // The flips are one segmented row, the menu's last.
     const flip = rows.find((r) => r.kind === "segments" && r.label === "Flip");
     expect(flip?.kind === "segments" && flip.actions.map((a) => a.id)).toEqual([
       "flip-x",
       "flip-y",
     ]);
     const last = rows[rows.length - 1];
-    expect(last.kind === "action" && last.action.id).toBe("delete");
+    expect(last).toBe(flip);
+    // Delete, Copy and Duplicate are the bar's; Cut, Paste, Screenshot and
+    // Copy style are the menu's tiles. No action stands in both.
+    const { tiles } = menuLayout(actions);
+    const bar = barItems(actions).flatMap((item) =>
+      item.kind === "action" ? [item.action.id] : [],
+    );
+    expect(bar).toEqual(["colour", "copy", "duplicate", "delete", "corners"]);
+    expect(tiles.map((a) => a.id)).toEqual(["cut", "paste", "screenshot", "copy-style"]);
+    const inMenu = [
+      ...tiles.map((a) => a.id),
+      ...rows.flatMap((r) => (r.kind === "action" ? [r.action.id] : [])),
+    ];
+    expect(inMenu.filter((id) => bar.includes(id))).toEqual([]);
     // A comment is pinned at the selection's top-right corner.
     actions.find((a) => a.id === "comment")?.run?.();
     expect(comments).toEqual([[0, { x: 300, y: 105 }]]);
@@ -1947,7 +2026,14 @@ describe("partial erase", () => {
     expect(renderer.invalidateRegion).not.toHaveBeenCalled();
     // As the gesture ends, the stroke is painted from the document again, whole.
     run(w.surface, "eraseReset");
-    expect(renderer.invalidateRegion).toHaveBeenCalledExactlyOnceWith(0, strokeBounds(long));
+    // The whole stroke with its own width round it (a size-2 line: 2, and 2 for its edge).
+    const b = strokeBounds(long)!;
+    expect(renderer.invalidateRegion).toHaveBeenCalledExactlyOnceWith(0, {
+      minX: b.minX - 4,
+      minY: b.minY - 4,
+      maxX: b.maxX + 4,
+      maxY: b.maxY + 4,
+    });
   });
 });
 
@@ -2172,8 +2258,12 @@ describe("the wet stroke", () => {
     builder.add({ x: 10, y: 10, pressure: 0.5 });
     builder.add({ x: 15, y: 10, pressure: 0.5 });
     run(surface, "drawWet");
-    // page, runs, style: a fourth argument could make a note's live ink differ from its committed ink.
-    expect(calls[calls.length - 1]).toHaveLength(3);
+    // page, runs, style, and the box that changed since the last frame (none
+    // on the first): nothing about the note, which could make its live ink
+    // differ from its committed ink.
+    const last = calls[calls.length - 1];
+    expect(last).toHaveLength(4);
+    expect(last[3]).toBeNull();
   });
 
   it("traces each kept point once, and a finished stroke looks as it did wet", () => {

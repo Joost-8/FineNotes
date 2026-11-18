@@ -416,7 +416,16 @@ const PRINT_WORDS = [
   "water",
   "sugar",
   "lipid",
+  "virus",
+  "spore",
+  "fungi",
+  "light",
+  "acids",
+  "roots",
   "enzyme",
+  "oxygen",
+  "glucose",
+  "hormone",
   "energy",
   "carbon",
   "tissue",
@@ -428,16 +437,69 @@ const PRINT_WORDS = [
   "organism",
   "bacteria",
   "ribosome",
+  "cytoplasm",
+  "organelle",
+  "metabolism",
   "chromosome",
+  "chloroplast",
   "respiration",
 ];
 
 /** A word as long as a printed gap of `w`, varying with `index`. */
-function printWord(w: number, index: number): string {
-  const target = Math.round(w / 6);
-  const fits = PRINT_WORDS.filter((word) => Math.abs(word.length - target) <= 2);
-  const pool = fits.length > 0 ? fits : PRINT_WORDS;
-  return pool[(index * 7) % pool.length];
+/** Roughly how wide a serif sets each letter, in em; the rest count as 0.55. */
+const PRINT_EM: Record<string, number> = {
+  " ": 0.26,
+  i: 0.29,
+  j: 0.29,
+  l: 0.29,
+  f: 0.34,
+  t: 0.35,
+  r: 0.41,
+  s: 0.43,
+  a: 0.5,
+  c: 0.46,
+  e: 0.48,
+  g: 0.51,
+  z: 0.45,
+  k: 0.53,
+  v: 0.5,
+  x: 0.5,
+  y: 0.5,
+  m: 0.88,
+  w: 0.75,
+};
+const PRINT_SIZE = 11;
+
+const printWidth = (text: string): number =>
+  [...text].reduce((sum, letter) => sum + (PRINT_EM[letter] ?? 0.57), 0) * PRINT_SIZE;
+
+type Print = readonly [text: string, width: number];
+const sized = (text: string): Print => [text, printWidth(text)];
+const SMALL_WORDS = PRINT_WORDS.slice(0, 4);
+const PRINT_SINGLES: readonly Print[] = PRINT_WORDS.map(sized);
+/** For the gaps no word fills: a small word before a noun, "in water". */
+const PRINT_PAIRS: readonly Print[] = SMALL_WORDS.flatMap((small) =>
+  PRINT_WORDS.slice(10).map((noun) => sized(`${small} ${noun}`)),
+);
+
+/**
+ * Print as wide as a gap of `w`, varying with `index`, never `after` twice
+ * running. Set to the gap it is stretched or squeezed, so only what a serif
+ * sets within a twelfth of the gap is offered: letters of one size across a
+ * page, on any device's font. One word where one fits.
+ */
+function printWord(w: number, index: number, after = ""): string {
+  const near = (from: readonly Print[]): Print[] =>
+    from.filter(([text, width]) => text !== after && Math.abs(width - w) <= w / 12);
+  let pool = near(PRINT_SINGLES);
+  if (pool.length === 0) pool = near(PRINT_PAIRS);
+  if (pool.length === 0) {
+    pool = [...PRINT_SINGLES, ...PRINT_PAIRS]
+      .filter(([text]) => text !== after)
+      .sort((x, y) => Math.abs(x[1] - w) - Math.abs(y[1] - w))
+      .slice(0, 1);
+  }
+  return pool[(index * 7) % pool.length][0];
 }
 
 /** Typed text across `w`, its top where a bar of that width would be. */
@@ -454,18 +516,20 @@ function typed(
 }
 
 /** Rows of printed words: a page of a textbook. */
-function printed(rows: ReadonlyArray<readonly [y: number, widths: readonly number[]]>) {
+function printed(rows: ReadonlyArray<readonly [y: number, widths: readonly number[]]>, left = 34) {
   const shapes: SceneShape[] = [];
   let index = 0;
+  let last = "";
   for (const [y, widths] of rows) {
-    let x = 34;
+    let x = left;
     for (const w of widths) {
+      last = printWord(w, index, last);
       shapes.push({
         kind: "text",
         x,
         y: y + 8,
-        text: printWord(w, index),
-        size: 11,
+        text: last,
+        size: PRINT_SIZE,
         fit: w,
         face: "print",
         tone: "print",
@@ -680,6 +744,20 @@ const ICONS = {
   pen: "M4 20l1-5L17 3l4 4L9 19z",
   folder: "M3 6h6l2 3h10v11H3z",
   file: "M6 2h9l5 5v15H6zM15 2v5h5",
+  // Lucide, as Obsidian draws them (setIcon): the toolbar's own icons.
+  pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",
+  lasso:
+    "M3.704 14.467a10 8 0 1 1 3.115 2.375M7 22a5 5 0 0 1-2-3.994M3 16a2 2 0 1 0 4 0a2 2 0 1 0-4 0",
+  penTool:
+    "M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414zM18 13l-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18M2.3 2.3l7.286 7.286M9 11a2 2 0 1 0 4 0a2 2 0 1 0-4 0",
+  eraserTool:
+    "M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21M5.082 11.09l8.828 8.828",
+  type: "M12 4v16M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2M9 20h6",
+  shapes:
+    "M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1ZM4 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1zM14 17.5a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0",
+  audioLines: "M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3",
+  chevronDown: "M6 9l6 6 6-6",
+  rotateCcw: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5",
 } as const;
 
 function icon(
@@ -696,6 +774,46 @@ function icon(
     motion,
     children: [{ kind: "path", d: ICONS[name], tone, width: 2 }],
   };
+}
+
+/** The outline and inked tip of a pen type's toolbar glyph (view/pen-glyphs.ts), upright. */
+const PEN_GLYPHS = {
+  ball: { body: "M9.8 1.5h4.4v11H9.8zM14.2 3h1.3v6.5", tip: "M9.4 12.5h5.2l-1.8 7.4h-1.6z" },
+  highlighter: {
+    body: "M8.5 1.5h7v10h-7zM9.2 11.5h5.6l-.6 3H9.8z",
+    tip: "M9.8 14.5h4.4v3.2l-4.4 3.3z",
+  },
+} as const;
+
+/** A pen button on the bar: the pen's glyph leaning 45°, its tip in the pen's ink, a pin at its top right. */
+function penButton(
+  type: keyof typeof PEN_GLYPHS,
+  x: number,
+  y: number,
+  ink: Tone,
+  motion?: Motion,
+): SceneShape {
+  const glyph = PEN_GLYPHS[type];
+  return group(
+    motion,
+    {
+      kind: "group",
+      place: { x: x - 10, y: y - 10, scale: 20 / 24 },
+      children: [
+        group(
+          {
+            rotate: [
+              [0, 45],
+              [1, 45],
+            ],
+          },
+          { kind: "path", d: glyph.body, tone: "print", width: 1.6 },
+          { kind: "path", d: glyph.tip, tone: ink, fill: true },
+        ),
+      ],
+    },
+    icon("pin", x + 10, y - 9, "accent", 9),
+  );
 }
 
 /** A small menu of bars; `pick` is the row a tap lands on. */
@@ -1494,7 +1612,7 @@ const SCENES = {
     shapes: [
       ...ruledPaper(),
       ink(scrawl(44, 106, 74, 37, 13)),
-      ink(scrawl(130, 106, 76, 38, 13)),
+      ink(handwrite("mitosis", 130, 106, 76, 13)),
       ink(scrawl(218, 106, 58, 39, 13)),
       {
         kind: "path",
@@ -1878,14 +1996,24 @@ const SCENES = {
   screenshotLasso: sc(
     0.78,
     printed(PRINT),
-    frame(60, 54, 150, 62, "accent", 3, { opacity: shownFrom(0.08) }, true),
-    icon("camera", 240, 40, "accent", 34, { opacity: between(0.3, 0.56) }),
-    taps(240, 40, [0.48]),
+    frame(60, 58, 150, 62, "accent", 3, { opacity: shownFrom(0.08) }, true),
     group(
-      { opacity: shownFrom(0.56), x: movedTo(60, 0.56, 0.78), y: movedTo(26, 0.56, 0.78) },
-      box(60, 54, 150, 62, "page", 4),
-      frame(60, 54, 150, 62, "soft", 4),
-      word(74, 92, 110, 49, 10),
+      { opacity: between(0.26, 0.56) },
+      box(113, 16, 44, 32, "ink", 16),
+      icon("camera", 135, 32, "page", 20),
+    ),
+    taps(135, 32, [0.48]),
+    group(
+      { opacity: shownFrom(0.56), x: movedTo(84, 0.58, 0.8), y: movedTo(58, 0.58, 0.8) },
+      box(60, 58, 150, 62, "page", 4),
+      frame(60, 58, 150, 62, "accent", 4),
+      printed(
+        [
+          [68, [48, 30, 44]],
+          [98, [26, 62, 34]],
+        ],
+        70,
+      ),
     ),
   ),
   lassoFilter: sc(
@@ -2232,6 +2360,61 @@ const SCENES = {
     ink(WOBBLY_HEART, { draw: drawnBetween(0.04, 0.36), opacity: shownUntil(0.54) }, [0.04, 0.36]),
     holdRing(158, 146, 0.38, 0.54),
     ink(HEART, { opacity: shownFrom(0.54) }),
+  ),
+  curvedElbow: sc(
+    0.9,
+    // A curve drawn by hand becomes a clean curved arrow on lifting.
+    ink(
+      "M40 70C80 40 120 30 160 34C210 38 250 52 280 70",
+      {
+        draw: drawnBetween(0.04, 0.3),
+        opacity: between(0.04, 0.34),
+      },
+      [0.04, 0.3],
+    ),
+    line("M40 70Q160 2 280 70", "ink", 2.4, { opacity: shownFrom(0.34) }),
+    line("M280 70L260 64M280 70L268 52", "ink", 2.4, { opacity: shownFrom(0.34) }),
+    // An elbow drawn with its turns keeps them, level and upright.
+    ink(
+      "M40 112C42 130 40 148 44 160C90 162 150 158 200 160C202 140 198 124 202 104",
+      {
+        draw: drawnBetween(0.44, 0.74),
+        opacity: between(0.44, 0.78),
+      },
+      [0.44, 0.74],
+    ),
+    line("M42 108V160H200V106", "ink", 2.4, { opacity: shownFrom(0.78) }),
+    line("M200 106L189 122M200 106L211 122", "ink", 2.4, { opacity: shownFrom(0.78) }),
+  ),
+  lineUpMoves: sc(
+    0.78,
+    line("M60 8V172", "red", 1.2, { opacity: between(0.5, 0.74) }),
+    line("M8 62H312", "red", 1.2, { opacity: between(0.5, 0.74) }),
+    frame(60, 62, 76, 56, "ink", 3),
+    group(
+      { x: movedTo(-120, 0.1, 0.5) },
+      box(180, 62, 76, 76, "soft", 3),
+      frame(180, 62, 76, 76, "accent", 3),
+    ),
+  ),
+  lockFit: sc(
+    0.8,
+    desk(),
+    box(0, 0, 320, 180, "page", 0),
+    printed([
+      [40, [70, 60, 40, 80]],
+      [76, [90, 50, 70, 40]],
+      [112, [50, 80, 60, 60]],
+      [148, [80, 40, 90, 50]],
+    ]),
+    dot(230, 92, 13, "accent", {
+      x: movedTo(-140, 0.18, 0.56),
+      opacity: between(0.14, 0.6),
+    }),
+    icon("lock", 160, 90, "accent", 40, {
+      opacity: shownFrom(0.58),
+      scale: movedTo(1, 0.58, 0.7, 1.4),
+    }),
   ),
   pathArrow: sc(
     0.78,
@@ -2666,6 +2849,279 @@ const SCENES = {
     group({ scale: movedTo(1.6, 0.4, 0.78, 1) }, box(110, 50, 100, 80, "page", 3)),
     written(scrawl(122, 96, 80, 80, 10), 0.08, 0.4),
   ),
+  boardsInFile: sc(
+    0.5,
+    desk(),
+    box(8, 8, 64, 164, "page", 8),
+    frame(8, 8, 64, 164, "soft", 8),
+    // Three boards in the sidebar, a fourth added by the +.
+    [0, 1, 2].map((i) => frame(16, 18 + i * 38, 48, 30, "soft", 4)),
+    frame(16, 132, 48, 30, "soft", 4, { opacity: shownFrom(0.7) }),
+    line("M28 33h24M40 26v14", "soft", 1.5),
+    line("M24 62h32M24 70h22", "soft", 1.5),
+    dot(40, 109, 8, "soft"),
+    line("M40 140v14M33 147h14", "accent", 2, { opacity: shownUntil(0.7) }),
+    frame(16, 18, 48, 30, "accent", 4, { opacity: shownUntil(0.32) }),
+    frame(16, 56, 48, 30, "accent", 4, { opacity: between(0.32, 0.68) }),
+    frame(16, 132, 48, 30, "accent", 4, { opacity: shownFrom(0.7) }),
+    taps(40, 71, [0.3]),
+    taps(40, 147, [0.68]),
+    box(82, 8, 230, 164, "page", 8),
+    // Board 1: a mind map.
+    group(
+      { opacity: shownUntil(0.32) },
+      line("M197 90L130 46M197 90L268 46M197 90L140 140M197 90L262 140", "soft", 1.5),
+      ink(ellipsePath(197, 90, 34, 20)),
+      ink(scrawl(178, 95, 40, 3, 10)),
+      ink(ellipsePath(130, 46, 24, 14)),
+      ink(ellipsePath(268, 46, 24, 14)),
+      ink(ellipsePath(140, 140, 24, 14)),
+      ink(ellipsePath(262, 140, 24, 14)),
+    ),
+    // Board 2: notes.
+    group(
+      { opacity: between(0.32, 0.68) },
+      word(100, 46, 150, 21, 13),
+      word(100, 78, 180, 22, 13),
+      word(100, 110, 120, 23, 13),
+    ),
+    // Board 3: new and empty, then written on.
+    written(scrawl(110, 70, 140, 24, 14), 0.76, 0.94),
+  ),
+  frameEmbed: sc(
+    0.9,
+    desk(),
+    box(8, 8, 148, 164, "page", 8),
+    line("M62 66L112 134", "soft", 1.5),
+    ink(ellipsePath(62, 66, 34, 20)),
+    ink(scrawl(42, 71, 40, 5, 10)),
+    ink(ellipsePath(112, 134, 30, 18)),
+    ink(scrawl(96, 139, 32, 6, 9)),
+    {
+      kind: "path",
+      d: ellipsePath(62, 64, 50, 36),
+      tone: "accent",
+      width: 1.8,
+      dashed: true,
+      pen: [0.06, 0.3],
+      motion: { draw: drawnBetween(0.06, 0.3), opacity: between(0.06, 0.4) },
+    },
+    frame(14, 28, 98, 72, "accent", 6, { opacity: shownFrom(0.4) }),
+    typed("Krebs cycle", 16, 14, 64, "accent", { opacity: shownFrom(0.4) }),
+    icon("link", 62, 64, "accent", 22, {
+      opacity: between(0.44, 0.62),
+      x: movedTo(178, 0.46, 0.62),
+      y: movedTo(-30, 0.46, 0.62),
+    }),
+    box(166, 8, 146, 164, "page", 8),
+    typed("Respiration", 180, 18, 70, "ink"),
+    typed("![[Mind map#Krebs cycle]]", 180, 40, 118, "print", { opacity: between(0.6, 0.64) }),
+    frame(180, 64, 118, 86, "soft", 6, { opacity: shownFrom(0.64) }),
+    group(
+      { opacity: shownFrom(0.64), scale: movedTo(1, 0.64, 0.76, 0.9) },
+      ink(ellipsePath(239, 107, 44, 26)),
+      ink(scrawl(213, 113, 52, 5, 13)),
+    ),
+  ),
+  markdownText: sc(
+    0.9,
+    box(0, 0, 320, 180, "page", 0),
+    frame(36, 22, 248, 138, "accent", 6, { opacity: shownUntil(0.56) }),
+    typed("# Mitosis", 50, 36, 56, "print", { opacity: between(0.04, 0.56) }),
+    typed("**Prophase**: chromosomes", 50, 64, 152, "print", { opacity: between(0.18, 0.56) }),
+    typed("- [ ] Learn the phases", 50, 92, 132, "print", { opacity: between(0.32, 0.56) }),
+    typed("- [ ] Draw the spindle", 50, 120, 128, "print", { opacity: between(0.44, 0.56) }),
+    {
+      kind: "text",
+      x: 50,
+      y: 52,
+      text: "Mitosis",
+      size: 22,
+      fit: 82,
+      face: "typed",
+      tone: "ink",
+      motion: { opacity: shownFrom(0.58) },
+    },
+    typed("Prophase", 50, 68, 62, "ink", { opacity: shownFrom(0.58) }),
+    typed("Prophase", 50.6, 68, 62, "ink", { opacity: shownFrom(0.58) }),
+    typed(": chromosomes", 114, 68, 84, "print", { opacity: shownFrom(0.58) }),
+    frame(52, 94, 13, 13, "ink", 3, { opacity: shownFrom(0.58) }),
+    typed("Learn the phases", 74, 94, 104, "print", { opacity: shownFrom(0.58) }),
+    frame(52, 120, 13, 13, "ink", 3, { opacity: shownFrom(0.58) }),
+    typed("Draw the spindle", 74, 120, 100, "print", { opacity: shownFrom(0.58) }),
+    taps(58, 100, [0.76]),
+    icon("check", 58, 100, "accent", 14, { opacity: shownFrom(0.78) }),
+  ),
+  penOnBar: sc(
+    0.62,
+    desk(),
+    box(24, 12, 272, 36, "page", 18),
+    frame(24, 12, 272, 36, "soft", 18),
+    icon("lasso", 50, 30, "print", 18),
+    box(73, 19, 22, 22, "soft", 6),
+    icon("penTool", 84, 30, "accent", 18),
+    icon("eraserTool", 118, 30, "print", 18),
+    icon("type", 152, 30, "print", 18),
+    icon("shapes", 186, 30, "print", 18),
+    // The highlighter in hand, added as a button of its own.
+    penButton("highlighter", 222, 30, "mark", {
+      opacity: shownFrom(0.36),
+      scale: movedTo(1, 0.36, 0.46, 0.4),
+    }),
+    // A saved pen pinned from Saved pens.
+    penButton("ball", 260, 30, "red", {
+      opacity: shownFrom(0.78),
+      scale: movedTo(1, 0.78, 0.88, 0.4),
+    }),
+    // The pen's menu: Add to toolbar.
+    group(
+      { opacity: between(0.04, 0.36) },
+      box(40, 56, 170, 106, "page", 10),
+      frame(40, 56, 170, 106, "soft", 10),
+      typed("Ball pen", 56, 68, 50, "print"),
+      typed("Highlighter", 56, 92, 66, "accent"),
+      line("M52 122H198", "soft", 1),
+      icon("pin", 62, 140, "print", 14),
+      typed("Add to toolbar", 76, 133, 86, "ink"),
+    ),
+    taps(110, 140, [0.3]),
+    // Saved pens: the pin at the end of a row.
+    group(
+      { opacity: between(0.44, 0.78) },
+      box(90, 56, 200, 106, "page", 10),
+      frame(90, 56, 200, 106, "soft", 10),
+      typed("Saved pens", 104, 64, 64, "print"),
+      [0, 1, 2].flatMap((i): SceneShape[] => [
+        dot(112, 96 + i * 22, 7, (["ink", "red", "blue"] as const)[i]),
+        typed(["Fine black", "Red 0.5", "Blue 0.7"][i], 128, 89 + i * 22, 60, "print"),
+        icon("pin", 270, 96 + i * 22, "print", 13),
+      ]),
+      icon("pin", 270, 118, "accent", 13, { opacity: shownFrom(0.73) }),
+    ),
+    taps(270, 118, [0.72]),
+  ),
+  onlineTranscribe: sc(
+    0.9,
+    desk(),
+    // Settings: Transcribe recordings with › Groq.
+    group(
+      { opacity: between(0.02, 0.36) },
+      box(20, 30, 280, 46, "page", 10),
+      typed("Transcribe recordings with", 34, 40, 150, "print"),
+      box(206, 40, 80, 26, "soft", 6),
+      typed("Groq", 216, 44, 30, "ink"),
+      icon("chevronDown", 272, 53, "print", 12),
+    ),
+    taps(246, 53, [0.2]),
+    // The recording, then its transcript with times.
+    box(20, 18, 280, 40, "page", 20, { opacity: shownFrom(0.38) }),
+    icon("audioLines", 44, 38, "accent", 18, { opacity: shownFrom(0.38) }),
+    line("M64 38H200", "soft", 3, { opacity: shownFrom(0.38) }),
+    box(212, 26, 76, 24, "soft", 12, { opacity: shownFrom(0.38) }),
+    typed("Transcribe", 220, 29, 60, "ink", { opacity: shownFrom(0.38) }),
+    taps(250, 38, [0.5]),
+    box(20, 70, 280, 98, "page", 10, { opacity: shownFrom(0.54) }),
+    [0, 1, 2].flatMap((i): SceneShape[] => {
+      const at = 0.58 + i * 0.1;
+      return [
+        typed(["0:00", "0:14", "0:31"][i], 32, 80 + i * 28, 26, "accent", {
+          opacity: shownFrom(at),
+        }),
+        typed(NOTES[i], 66, 80 + i * 28, 170 - i * 20, "print", { opacity: shownFrom(at) }),
+      ];
+    }),
+  ),
+  tryGesture: sc(
+    0.86,
+    desk(),
+    // The tip, and its Try it.
+    group(
+      { opacity: between(0.02, 0.3) },
+      box(60, 20, 200, 140, "page", 12),
+      box(76, 32, 168, 70, "desk", 8),
+      word(96, 58, 100, 31, 11),
+      line(zigzag(96, 50, 70, 8, 100), "ink", 2),
+      typed("Scribble to erase", 76, 110, 104, "ink"),
+      box(176, 132, 68, 22, "accent", 11),
+      typed("Try it", 190, 135, 40, "page"),
+    ),
+    taps(210, 143, [0.24]),
+    // The scratch page: a word scribbled away, and the check fills.
+    box(20, 12, 280, 156, "page", 8, { opacity: shownFrom(0.3) }),
+    word(44, 52, 120, 31, 13, { opacity: shownFrom(0.3) }),
+    word(44, 90, 150, 32, 13, { opacity: between(0.3, 0.64) }),
+    word(44, 128, 100, 33, 13, { opacity: shownFrom(0.3) }),
+    {
+      kind: "path",
+      d: zigzag(44, 78, 100, 10, 150),
+      tone: "ink",
+      width: 2.4,
+      pen: [0.38, 0.62],
+      motion: { draw: drawnBetween(0.38, 0.62), opacity: between(0.38, 0.64) },
+    },
+    {
+      kind: "circle",
+      cx: 268,
+      cy: 40,
+      r: 14,
+      tone: "soft",
+      width: 2,
+      motion: { opacity: between(0.3, 0.7) },
+    },
+    dot(268, 40, 15, "accent", { opacity: shownFrom(0.7), scale: movedTo(1, 0.7, 0.78, 0.5) }),
+    icon("check", 268, 40, "page", 16, { opacity: shownFrom(0.7) }),
+  ),
+  dockColours: sc(
+    0.8,
+    desk(),
+    box(24, 12, 272, 36, "page", 18),
+    frame(24, 12, 272, 36, "soft", 18),
+    icon("lasso", 50, 30, "print", 18),
+    box(73, 19, 22, 22, "soft", 6),
+    icon("penTool", 84, 30, "accent", 18),
+    icon("eraserTool", 118, 30, "print", 18),
+    icon("type", 152, 30, "print", 18),
+    icon("shapes", 186, 30, "print", 18),
+    box(24, 58, 272, 36, "page", 18),
+    frame(24, 58, 272, 36, "soft", 18),
+    // Before: three widths and four colours.
+    group(
+      { opacity: shownUntil(0.4) },
+      [0, 1, 2].map((i) => line(`M${44 + i * 30} 76h16`, "ink", 1.5 + i * 2)),
+      (["ink", "red", "blue", "green"] as const).map((tone, i) => dot(150 + i * 30, 76, 9, tone)),
+    ),
+    // After: one width button and every colour.
+    group(
+      { opacity: shownFrom(0.44) },
+      box(36, 66, 34, 20, "soft", 10),
+      line("M45 76h16", "ink", 3.5),
+      (["ink", "red", "blue", "green", "mark", "accent", "print"] as const).map((tone, i) =>
+        dot(92 + i * 28, 76, 9, tone, {
+          opacity: shownFrom(0.44 + i * 0.04),
+          scale: movedTo(1, 0.44 + i * 0.04, 0.52 + i * 0.04, 0.4),
+        }),
+      ),
+    ),
+    word(40, 138, 180, 34, 13),
+  ),
+  widthPresets: sc(
+    0.86,
+    desk(),
+    box(40, 20, 240, 140, "page", 12),
+    frame(40, 20, 240, 140, "soft", 12),
+    // Three presets; the middle one is picked and changed.
+    [0, 1, 2].map((i) => box(64 + i * 66, 36, 56, 40, "soft", 8)),
+    frame(130, 36, 56, 40, "accent", 8, { opacity: shownFrom(0.18) }),
+    taps(158, 56, [0.16]),
+    line("M78 56h28", "ink", 2),
+    line("M144 56h28", "ink", 4, { opacity: shownUntil(0.5) }),
+    line("M144 56h28", "ink", 8, { opacity: shownFrom(0.5) }),
+    line("M210 56h28", "ink", 7),
+    // The slider moves; only the picked preset follows.
+    line("M64 112H256", "soft", 4),
+    dot(140, 112, 9, "accent", { x: movedTo(60, 0.26, 0.56) }),
+    icon("rotateCcw", 256, 140, "print", 14),
+  ),
   plainExport: sc(
     0.8,
     box(0, 0, 320, 180, "page", 0),
@@ -2781,6 +3237,207 @@ const SCENES = {
       line(CURVE, "blue", 2.8),
     ),
     taps(160, 90, [0.16, 0.26]),
+  ),
+  sumGlow: sc(
+    0.8,
+    ruledPaper(),
+    { kind: "text", x: 34, y: 106, text: "3 × 4 =", size: 34, tone: "ink" },
+    // The glow: the same ink in the accent, with a soft line under it.
+    {
+      kind: "text",
+      x: 34,
+      y: 106,
+      text: "3 × 4 =",
+      size: 34,
+      tone: "accent",
+      motion: { opacity: shownFrom(0.2) },
+    },
+    line("M34 116H150", "accent", 3, { opacity: shownFrom(0.2), draw: drawnBetween(0.2, 0.3) }),
+    taps(92, 94, [0.4]),
+    group(
+      {
+        opacity: between(0.46, 0.75),
+        y: [
+          [0, 8],
+          [0.46, 8],
+          [0.52, 0],
+          [1, 0],
+        ],
+      },
+      box(170, 44, 124, 98, "page", 12),
+      frame(170, 44, 124, 98, "soft", 12),
+      { kind: "text", x: 184, y: 70, text: "3 × 4", size: 16, tone: "print" },
+      { kind: "text", x: 184, y: 98, text: "= 12", size: 24, tone: "ink" },
+      box(184, 110, 60, 22, "accent", 11),
+      typed("Write", 199, 115, 30, "page"),
+    ),
+    taps(214, 121, [0.72]),
+    {
+      kind: "text",
+      x: 160,
+      y: 106,
+      text: "12",
+      size: 34,
+      tone: "ink",
+      motion: { opacity: shownFrom(0.78) },
+    },
+  ),
+  solveLetter: sc(
+    0.82,
+    ruledPaper(),
+    { kind: "text", x: 44, y: 76, text: "2x + 3 = 7", size: 30, tone: "ink" },
+    {
+      kind: "text",
+      x: 44,
+      y: 128,
+      text: "x =",
+      size: 30,
+      tone: "ink",
+      motion: { opacity: shownFrom(0.16) },
+    },
+    {
+      kind: "text",
+      x: 44,
+      y: 128,
+      text: "x =",
+      size: 30,
+      tone: "accent",
+      motion: { opacity: between(0.32, 0.66) },
+    },
+    line("M44 138H92", "accent", 3, {
+      opacity: between(0.32, 0.66),
+      draw: drawnBetween(0.32, 0.4),
+    }),
+    taps(68, 118, [0.48]),
+    group(
+      { opacity: between(0.54, 0.7) },
+      box(130, 100, 92, 40, "page", 12),
+      frame(130, 100, 92, 40, "soft", 12),
+      { kind: "text", x: 146, y: 127, text: "x = 2", size: 20, tone: "ink" },
+    ),
+    taps(176, 120, [0.64]),
+    {
+      kind: "text",
+      x: 106,
+      y: 128,
+      text: "2",
+      size: 30,
+      tone: "ink",
+      motion: { opacity: shownFrom(0.7) },
+    },
+  ),
+  insertGraph: sc(
+    0.82,
+    ruledPaper(),
+    word(30, 62, 110, 41, 12),
+    // The calculator's graph, with its Insert graph button.
+    box(176, 14, 130, 132, "page", 10),
+    frame(176, 14, 130, 132, "soft", 10),
+    typed("y = x² − 2", 190, 22, 64, "print"),
+    line("M190 98H292M241 108V44", "soft", 1.2),
+    line("M200 46C216 112 266 112 282 46", "blue", 2.6, { draw: drawnBetween(0.04, 0.22) }),
+    box(196, 116, 90, 22, "accent", 11),
+    typed("Insert graph", 208, 121, 66, "page"),
+    taps(241, 127, [0.34]),
+    // Its copy lands on the page.
+    group(
+      {
+        opacity: shownFrom(0.38),
+        x: movedTo(-158, 0.4, 0.7),
+        y: movedTo(40, 0.4, 0.7),
+      },
+      box(186, 38, 110, 76, "page", 6),
+      frame(186, 38, 110, 76, "accent", 6),
+      line("M190 98H292M241 108V44", "soft", 1.2),
+      line("M200 46C216 112 266 112 282 46", "blue", 2.6),
+    ),
+  ),
+  looks: sc(
+    0.5,
+    desk(),
+    // One tool bar, three looks.
+    group(
+      { opacity: shownUntil(0.28) },
+      box(44, 46, 232, 40, "page", 20),
+      frame(44, 46, 232, 40, "soft", 20),
+      box(62, 54, 24, 24, "accent", 12),
+      [1, 2, 3, 4].map((i) => box(66 + i * 42, 57, 18, 18, "soft", 5)),
+    ),
+    group(
+      { opacity: between(0.33, 0.6) },
+      box(48, 50, 232, 40, "ink", 0),
+      box(44, 46, 232, 40, "page", 0),
+      { kind: "rect", x: 44, y: 46, w: 232, h: 40, tone: "ink", width: 3 },
+      box(62, 54, 24, 24, "mark", 0),
+      { kind: "rect", x: 62, y: 54, w: 24, h: 24, tone: "ink", width: 3 },
+      [1, 2, 3, 4].map((i) => box(66 + i * 42, 57, 18, 18, "ink", 0)),
+    ),
+    group(
+      { opacity: between(0.65, 0.93) },
+      box(44, 46, 232, 40, "page", 8),
+      { kind: "rect", x: 44, y: 46, w: 232, h: 40, r: 8, tone: "ink", width: 1 },
+      { kind: "rect", x: 62, y: 54, w: 24, h: 24, r: 4, tone: "ink", width: 1.5 },
+      [0, 1, 2, 3, 4].map((i): SceneShape => ({
+        kind: "circle",
+        cx: 74 + i * 42 + (i === 0 ? 0 : 1),
+        cy: 66,
+        r: 7,
+        tone: "ink",
+        width: 1.2,
+      })),
+    ),
+    // The chips that pick one.
+    ...["Default", "Brutalist", "Paper"].map((name, i): SceneShape[] => [
+      box(52 + i * 76, 118, 66, 26, "page", 13),
+      frame(52 + i * 76, 118, 66, 26, "soft", 13),
+      {
+        kind: "rect",
+        x: 52 + i * 76,
+        y: 118,
+        w: 66,
+        h: 26,
+        r: 13,
+        tone: "accent",
+        width: 2.5,
+        motion: { opacity: i === 0 ? shownUntil(0.28) : between(0.03 + i * 0.3, 0.3 + i * 0.3) },
+      },
+      typed(name, 62 + i * 76, 126, 46, "print"),
+    ]),
+    taps(161, 131, [0.31]),
+    taps(237, 131, [0.63]),
+  ),
+  lassoTray: sc(
+    0.8,
+    ruledPaper(),
+    word(40, 132, 96, 23, 13),
+    selection(32, 110, 112, 34),
+    // The bar: colour, Copy, Duplicate, Delete, and the menu's dots.
+    box(36, 70, 132, 30, "ink", 15),
+    dot(54, 85, 6, "accent"),
+    [0, 1].map((i) => box(71 + i * 24, 78, 14, 14, "soft", 4)),
+    box(119, 78, 14, 14, "red", 4),
+    [0, 1, 2].map((i) => dot(145 + i * 6, 85, 2, "page")),
+    taps(151, 85, [0.24]),
+    // The menu: a tray of four, then rows.
+    group(
+      {
+        opacity: shownFrom(0.3),
+        y: [
+          [0, -8],
+          [0.3, -8],
+          [0.38, 0],
+          [1, 0],
+        ],
+      },
+      box(176, 30, 124, 128, "ink", 12),
+      box(184, 38, 108, 44, "print", 9),
+      [0, 1, 2, 3].flatMap((i): SceneShape[] => [
+        box(193 + i * 26, 45, 12, 12, "page", 3, { opacity: shownFrom(0.36 + i * 0.05) }),
+        box(191 + i * 26, 64, 16, 5, "soft", 2, { opacity: shownFrom(0.36 + i * 0.05) }),
+      ]),
+      [0, 1, 2].map((i) => box(190, 96 + i * 20, 70 - i * 14, 7, "soft", 3)),
+    ),
+    taps(199, 58, [0.72]),
   ),
   graphPopOut: sc(
     0.8,

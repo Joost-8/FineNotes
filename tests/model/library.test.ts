@@ -58,6 +58,28 @@ describe("entryFromText", () => {
     expect(entryFromText("x.notebook.md", 1, buildInkFile("", doc)).hasPdf).toBe(true);
   });
 
+  it("marks a notebook whose first page holds a picture, so the picture is its cover", () => {
+    const picture = { id: "i1", path: "Images/scan.jpg", x: 0, y: 0, w: 400, h: 300 };
+    const doc = emptyDocument();
+    doc.pages[0].images = [picture] as never;
+    expect(entryFromText("Scan.notebook.md", 1, buildInkFile("", doc)).pictured).toBe(true);
+    // A sticky note is painted paper, not a picture.
+    doc.pages[0].images = [{ ...picture, sticky: { color: "#ffe066" } }] as never;
+    expect(entryFromText("Scan.notebook.md", 1, buildInkFile("", doc)).pictured).toBeUndefined();
+    // A cover page is the cover, whatever the page after it holds.
+    const covered = emptyDocument();
+    const cover = blankPage("c1");
+    cover.backdrop = coverBackdrop("cover-plain", "navy");
+    covered.pages[0].images = [picture] as never;
+    covered.pages.unshift(cover);
+    expect(entryFromText("C.notebook.md", 1, buildInkFile("", covered)).pictured).toBeUndefined();
+    // A PDF page is drawn as the PDF's cover already.
+    const pdf = emptyDocument();
+    pdf.pages[0].backdrop = { kind: "pdf", path: "a.pdf", page: 1 } as never;
+    pdf.pages[0].images = [picture] as never;
+    expect(entryFromText("P.notebook.md", 1, buildInkFile("", pdf)).pictured).toBeUndefined();
+  });
+
   it("keeps the placeholder for a note with no readable block", () => {
     const read = entryFromText("Notes/Plain.notebook.md", 9, "just text");
     expect(read).toEqual(placeholderEntry("Notes/Plain.notebook.md", 9));

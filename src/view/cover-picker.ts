@@ -23,6 +23,7 @@ import { COVER_COLORS, COVER_SECTIONS } from "../model/templates";
 import { installPopoverDismiss, paintTemplatePreview, placePopover } from "./template-picker";
 import { currentLanguage, t } from "../i18n/translate";
 import { fitCardNames } from "./card-name-fit";
+import { shownDoc } from "./host-window";
 
 export interface CoverPickerOptions {
   design: CoverChoice;
@@ -197,7 +198,7 @@ export class CoverPopover {
   private closed = false;
 
   constructor(anchor: HTMLElement, options: CoverPopoverOptions) {
-    this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-coverpopover" });
+    this.el = shownDoc().body.createDiv({ cls: "goodobsidian-addpage goodobsidian-coverpopover" });
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute("aria-label", t("notebooks.cover.change"));
     this.el.createDiv({ cls: "goodobsidian-addpage-title", text: t("notebooks.cover.change") });

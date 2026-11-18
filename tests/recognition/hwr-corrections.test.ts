@@ -42,6 +42,7 @@ function line(text: string, words: string[][]): PageLineReading {
     timings: { features: 0, network: 0, greedy: 0, beam: 0 },
     strokeIds: words.flat(),
     words,
+    aligned: true,
     box: [0, 0, 1, 1],
   };
 }
@@ -128,37 +129,14 @@ describe("readWords", () => {
   });
 });
 
-describe("readWords, placed along the ink", () => {
-  // One stroke per word group, laid left to right: a stroke "a" is at 0-40, "b" at 50-90.
-  const boxes: Record<string, { minX: number; maxX: number }> = {
-    a: { minX: 0, maxX: 40 },
-    b: { minX: 50, maxX: 90 },
-    c: { minX: 100, maxX: 140 },
-    d: { minX: 150, maxX: 190 },
-  };
-  const boundsOf = (ids: readonly string[]) => {
-    const [first, ...rest] = ids.map((id) => boxes[id]);
-    if (!first) return null;
-    return {
-      minX: Math.min(first.minX, ...rest.map((b) => b.minX)),
-      maxX: Math.max(first.maxX, ...rest.map((b) => b.maxX)),
-    };
-  };
-
-  it("gives a line whose counts differ the ink under each word, so its words can be corrected", () => {
-    // Four ink groups, two words read: each word owns the two groups under its share of the line.
-    const words = readWords([line("hand written", [["a"], ["b"], ["c"], ["d"]])], boundsOf);
+describe("readWords, with each word's own ink", () => {
+  it("skips a word no stroke fell to, and keeps the others in place", () => {
+    const words = readWords([line("a sum here", [["a"], [], ["b", "c"]])]);
     expect(words.map((w) => [w.text, w.strokeIds])).toEqual([
-      ["hand", ["a", "b"]],
-      ["written", ["c", "d"]],
+      ["a", ["a"]],
+      ["here", ["b", "c"]],
     ]);
-    expect(words[1].at).toEqual({ line: 0, start: 5, end: 12 });
-  });
-
-  it("leaves matching lines as they were, and skips mismatched ones without bounds", () => {
-    const lines = [line("two words", [["a"], ["b"]]), line("one", [["c"], ["d"]])];
-    expect(readWords(lines).map((w) => w.text)).toEqual(["two", "words"]);
-    expect(readWords(lines, boundsOf).map((w) => w.text)).toEqual(["two", "words", "one"]);
+    expect(words[1].at).toEqual({ line: 0, start: 6, end: 10 });
   });
 });
 

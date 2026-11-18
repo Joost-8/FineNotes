@@ -44,7 +44,6 @@ import {
   transcriptParagraphs,
   transcriptPathFor,
   transcriptText,
-  uploadSizeProblem,
 } from "../audio/recording";
 import {
   type ReplayStroke,
@@ -60,6 +59,7 @@ import type { InkDocument, Page, Recording, Stroke } from "../model/document";
 import { stripInkSuffix } from "../model/new-notebook";
 import { AddRecording, RemoveRecording, SetRecordingTranscript } from "../model/recording-commands";
 import { audioAvailability } from "../recognition/ai-menu-model";
+import { isOnlineSpeechService } from "../audio/online-speech";
 import { buildTimedTranscript } from "../audio/speech-chunks";
 import { speechModelInfo } from "../audio/speech-models";
 import { ConfirmModal } from "../ui/confirm-modal";
@@ -449,9 +449,11 @@ export class NoteAudio {
     }
   }
 
-  /** Whether the AI set up can transcribe speech, and if not, what it needs. */
+  /** Whether recordings go to an online service, and what it still needs. */
   private transcribeState(): TranscribeState {
-    return audioAvailability(this.host.plugin.aiSetup());
+    const setup = this.host.plugin.aiSetup();
+    if (!isOnlineSpeechService(setup.speechService)) return { enabled: false, reason: "" };
+    return { enabled: true, reason: audioAvailability(setup).reason };
   }
 
   private entries(): RecordingEntry[] {
@@ -744,10 +746,11 @@ export class NoteAudio {
   }
 
   /**
-   * Transcribe a recording into a note of its own beside the audio, and
-   * point the recording at it. Everything that can be refused is refused
-   * before the file is read or anything is sent: no audio-capable service,
-   * or a file over the service's upload limit.
+   * Transcribe a recording with the online service chosen in the settings
+   * into a note of its own beside the audio, and point the recording at it.
+   * What can be refused (no service chosen, no key) is refused before the
+   * file is read or anything is sent; a recording over the service's upload
+   * limit goes in windows.
    */
   async transcribe(recording: Recording): Promise<void> {
     const { app, plugin } = this.host;
@@ -767,11 +770,6 @@ export class NoteAudio {
     const availability = audioAvailability(plugin.aiSetup());
     if (!availability.enabled) {
       new Notice(t("ai.rec.cannotTranscribe", { reason: availability.reason }), 10000);
-      return;
-    }
-    const tooBig = uploadSizeProblem(plugin.settings.llmVendor, audio.stat.size);
-    if (tooBig) {
-      new Notice(t("ai.rec.notice", { text: tooBig }), 12000);
       return;
     }
     if (recording.transcript && app.vault.getFileByPath(recording.transcript)) {

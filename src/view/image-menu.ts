@@ -27,12 +27,14 @@
  * opens, so an entry registered late still shows up.
  */
 
-import { type App, FuzzySuggestModal, Notice, Platform, type TFile, setIcon } from "obsidian";
+import { type App, Notice, Platform, type TFile, setIcon } from "obsidian";
 import { isImagePath } from "../canvas/image-raster";
 import type { ImageElement } from "../model/document";
-import { pickImageFile } from "./image-import";
+import { pickImageFiles } from "./image-import";
+import { VaultFilePicker } from "./vault-file-picker";
 import { menuAnchor, menuPlace } from "./bar-dock-model";
 import { t } from "../i18n/translate";
+import { docOf, shownDoc, winOf } from "./host-window";
 
 /** Options for placing a picture; every field is optional. */
 export interface InsertImageOptions {
@@ -72,6 +74,14 @@ export interface ImageMenuContext {
     suggestedName: string,
     options?: InsertImageOptions,
   ) => Promise<ImageElement | null>;
+  /**
+   * Save several pictures chosen at once and place them on the page in view
+   * side by side, as **one** undo step (FineNotes#211). Absent, each goes in
+   * through `insertBytes`.
+   */
+  insertManyBytes?: (
+    pictures: readonly { bytes: ArrayBuffer; mime: string; name: string }[],
+  ) => Promise<void>;
   /** Place a picture that is already in the vault, by path. No copy is made. */
   insertVaultFile: (path: string, options?: InsertImageOptions) => Promise<ImageElement | null>;
 }
@@ -169,20 +179,26 @@ export function imageMenuEntries(): ImageMenuEntry[] {
 }
 
 /**
- * Photos / Take photo. `pickImageFile` runs before this function's first
+ * Photos / Take photo. `pickImageFiles` runs before this function's first
  * `await`, i.e. still inside the tap, which is what lets the picker open.
+ * Photos takes several at once (FineNotes#211).
  */
 async function pickAndInsert(ctx: ImageMenuContext, capture: boolean): Promise<void> {
-  const file = await pickImageFile(ctx.host, capture);
-  if (!file) return;
-  let bytes: ArrayBuffer;
-  try {
-    bytes = await file.arrayBuffer();
-  } catch {
-    new Notice(t("surface.imageMenu.readFailed"));
+  const files = await pickImageFiles(ctx.host, capture);
+  if (files.length === 0) return;
+  const pictures: { bytes: ArrayBuffer; mime: string; name: string }[] = [];
+  for (const file of files) {
+    try {
+      pictures.push({ bytes: await file.arrayBuffer(), mime: file.type, name: file.name });
+    } catch {
+      new Notice(t("surface.imageMenu.readFailed"));
+    }
+  }
+  if (pictures.length > 1 && ctx.insertManyBytes) {
+    await ctx.insertManyBytes(pictures);
     return;
   }
-  await ctx.insertBytes(bytes, file.type, file.name);
+  for (const picture of pictures) await ctx.insertBytes(picture.bytes, picture.mime, picture.name);
 }
 
 const POPOVER_WIDTH = 280;
@@ -202,7 +218,7 @@ export class ImageMenuPopover {
     private readonly context: ImageMenuContext,
     title = t("surface.command.insertImage"),
   ) {
-    this.el = document.body.createDiv({ cls: "goodobsidian-addpage goodobsidian-imagemenu" });
+    this.el = shownDoc().body.createDiv({ cls: "goodobsidian-addpage goodobsidian-imagemenu" });
     this.el.setAttribute("role", "menu");
     this.el.setAttribute("aria-label", title);
     this.el.createDiv({ cls: "goodobsidian-addpage-title", text: title });
@@ -264,21 +280,21 @@ export class ImageMenuPopover {
    */
   private place(): void {
     const r = this.anchor.getBoundingClientRect();
-    const width = Math.min(POPOVER_WIDTH, window.innerWidth - 16);
+    const width = Math.min(POPOVER_WIDTH, winOf(this.el).innerWidth - 16);
     const { side, box } = menuAnchor(this.anchor);
     if (side !== "down") {
       const size = { width, height: this.el.offsetHeight };
-      const room = { width: window.innerWidth, height: window.innerHeight };
+      const room = { width: winOf(this.el).innerWidth, height: winOf(this.el).innerHeight };
       const at = menuPlace(side, box, size, room, "end", 6, 8);
       this.el.setCssStyles({ left: `${at.left}px`, top: `${at.top}px`, width: `${width}px` });
       return;
     }
     let left = r.right - width;
-    if (left < 8) left = Math.min(r.left, window.innerWidth - width - 8);
+    if (left < 8) left = Math.min(r.left, winOf(this.el).innerWidth - width - 8);
     left = Math.max(8, left);
     const height = this.el.offsetHeight;
     let top = r.bottom + 6;
-    if (top + height > window.innerHeight - 8) top = Math.max(8, r.top - height - 6);
+    if (top + height > winOf(this.el).innerHeight - 8) top = Math.max(8, r.top - height - 6);
     this.el.setCssStyles({ left: `${left}px`, top: `${top}px`, width: `${width}px` });
   }
 
@@ -296,42 +312,38 @@ export class ImageMenuPopover {
       else this.close();
     };
     // Capture: the drawing surface consumes its own pointer events.
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
+    docOf(this.el).addEventListener("pointerdown", onDown, true);
+    docOf(this.el).addEventListener("keydown", onKey);
+    winOf(this.el).addEventListener("resize", onResize);
     this.dispose.push(() => {
-      document.removeEventListener("pointerdown", onDown, true);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
+      docOf(this.el).removeEventListener("pointerdown", onDown, true);
+      docOf(this.el).removeEventListener("keydown", onKey);
+      winOf(this.el).removeEventListener("resize", onResize);
     });
   }
 }
 
+/** Where the last picture was picked from the vault (this session). */
+const lastImageFolder = { folder: "" };
+
 /**
- * "From vault": a fuzzy search over every picture in the vault. The chosen
- * file is placed by its existing path — nothing is copied.
+ * "From vault": the vault's folders and the pictures in them, with search on
+ * top (vault-file-picker.ts), as Import PDF's. The chosen file is placed by
+ * its existing path — nothing is copied.
  */
-export class VaultImageSuggestModal extends FuzzySuggestModal<TFile> {
-  constructor(
-    app: App,
-    private readonly onPick: (file: TFile) => void,
-  ) {
-    super(app);
-    this.setPlaceholder(t("surface.imageMenu.findPlaceholder"));
-  }
-
-  getItems(): TFile[] {
-    return this.app.vault
-      .getFiles()
-      .filter((file) => isImagePath(file.path))
-      .sort((a, b) => b.stat.mtime - a.stat.mtime);
-  }
-
-  getItemText(file: TFile): string {
-    return file.path;
-  }
-
-  onChooseItem(file: TFile): void {
-    this.onPick(file);
+export class VaultImageSuggestModal extends VaultFilePicker {
+  constructor(app: App, onPick: (file: TFile) => void) {
+    super(
+      app,
+      {
+        accepts: isImagePath,
+        placeholder: t("surface.imageMenu.findPlaceholder"),
+        empty: t("surface.imageMenu.none"),
+        icon: "image",
+        showExtension: true,
+        memory: lastImageFolder,
+      },
+      onPick,
+    );
   }
 }

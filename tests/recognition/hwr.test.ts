@@ -19,7 +19,7 @@ import {
   robustLine,
   writingOrder,
 } from "../../src/recognition/hwr/features";
-import { autoWordGap, segmentPage } from "../../src/recognition/hwr/lines";
+import { autoWordGap, segmentPage, withStrokeTimes } from "../../src/recognition/hwr/lines";
 import {
   fitLine,
   interp,
@@ -250,9 +250,21 @@ describe("a page", () => {
 
   it("gives each line's words, as the reference finds them", () => {
     for (const page of golden.pages) {
+      const found = segmentPage(withStrokeTimes(page.strokes), { rows: true });
+      expect(found.lines.map((l) => l.words.map((w) => w.strokes.map((s) => s.id)))).toEqual(
+        page.lines.map((l) => l.words),
+      );
+    }
+  });
+
+  it("gives each word of a line's text its own ink, every stroke once (FineNotes#202)", () => {
+    for (const page of golden.pages) {
       const reading = readPage(bundle, page.strokes, { useLm: false });
-      expect(reading.lines.map((l) => l.words)).toEqual(page.lines.map((l) => l.words));
-      for (const line of reading.lines) expect(line.words.flat()).toEqual(line.strokeIds);
+      for (const line of reading.lines) {
+        expect(line.aligned).toBe(true);
+        expect(line.words).toHaveLength(line.text.match(/\S+/g)?.length ?? 0);
+        if (line.words.length) expect(line.words.flat().sort()).toEqual([...line.strokeIds].sort());
+      }
     }
   });
 

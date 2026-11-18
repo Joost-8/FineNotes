@@ -28,6 +28,7 @@ import {
 import { type ChatImage, type ChatTurn, buildChatRequest, extractRefusal } from "./ai-chat";
 import { ASK_MAX_TOOL_ROUNDS, type AskToolCall, parseToolCall, toolStatus } from "./ask-tools";
 import { TOOL_DIALECTS, type ToolResult } from "./ask-tool-dialects";
+import { type AskUsage, addReplyUsage, emptyUsage } from "./ask-usage";
 import {
   DEFAULT_IMAGE_MODELS,
   type ImageAspect,
@@ -39,13 +40,17 @@ import {
 } from "./ai-image";
 import {
   AUDIO_MAX_OUTPUT_TOKENS,
+  type AudioVendor,
   DEFAULT_AUDIO_MODELS,
-  audioUnsupportedReason,
+  audioMaxBytes,
+  audioService,
   buildAudioRequest,
-  canTranscribeAudio,
+  extractAudioSegments,
   extractAudioTranscript,
   makeBoundary,
+  wantsSegments,
 } from "./audio-request";
+import { type OnlineAnswer, transcribeOnline } from "../audio/online-speech";
 
 /** Everything needed to reach one vendor. Keys are resolved by the caller. */
 export interface AiVendorConfig {
@@ -80,12 +85,19 @@ export function assertConfigured(config: AiVendorConfig): void {
  * Send one request and hand back the parsed JSON of a 2xx response, or throw
  * an `Error` whose message is ready for a Notice.
  */
-export async function sendVendorRequest(
+export function sendVendorRequest(
   config: Pick<AiVendorConfig, "vendor" | "baseUrl">,
   send: () => Promise<RequestUrlResponse>,
 ): Promise<unknown> {
-  const vendor = VENDORS[config.vendor];
-  const label = targetLabel(config);
+  return sendTo(targetLabel(config), VENDORS[config.vendor].userEndpoint, send);
+}
+
+/** {@link sendVendorRequest} for a destination named by its label. */
+async function sendTo(
+  label: string,
+  userEndpoint: boolean,
+  send: () => Promise<RequestUrlResponse>,
+): Promise<unknown> {
   let response: RequestUrlResponse;
   try {
     response = await send();
@@ -95,7 +107,7 @@ export async function sendVendorRequest(
     const message = errorMessage(err, "");
     const detail = message ? ` (${message})` : "";
     throw new Error(
-      t(vendor.userEndpoint ? "ai.client.unreachableOwn" : "ai.client.unreachable", {
+      t(userEndpoint ? "ai.client.unreachableOwn" : "ai.client.unreachable", {
         label,
         detail,
       }),
@@ -103,7 +115,7 @@ export async function sendVendorRequest(
   }
 
   const { status } = response;
-  if (status < 200 || status >= 300) throw failedStatus(label, vendor.userEndpoint, response);
+  if (status < 200 || status >= 300) throw failedStatus(label, userEndpoint, response);
 
   try {
     return response.json as unknown;
@@ -267,6 +279,8 @@ export interface AskAnswer {
   actions: string[];
   /** For the model: what each action did, as its result said it (English). */
   notes: string[];
+  /** For the chat: the tokens the answer took, over all its rounds. */
+  usage?: AskUsage;
 }
 
 /**
@@ -308,21 +322,23 @@ export async function askAiWithTools(
   const more: unknown[] = [];
   const actions: string[] = [];
   const notes: string[] = [];
+  let usage = emptyUsage(config.vendor, config.model.trim() || defaultModelFor(config.vendor));
   for (let round = 0; ; round++) {
     // Out of rounds: answer now, with what has been found.
     const body = dialect.body(baseBody, more, round >= ASK_MAX_TOOL_ROUNDS);
     const json = await sendVendorRequest(config, () => postJson(base.url, base.headers, body));
+    usage = addReplyUsage(usage, VENDORS[config.vendor].dialect, json);
     const refusal = extractRefusal(config.vendor, json);
     if (refusal) throw new Error(t("ai.client.refusal", { label, reason: refusal }));
     const uses = dialect.calls(json);
     if (uses.length === 0) {
       const text = cleanTranscription(extractLlmText(config.vendor, json));
       if (isTruncatedLlmResponse(config.vendor, json)) {
-        if (text) return { ...cutOffAnswer(text), actions, notes };
+        if (text) return { ...cutOffAnswer(text), actions, notes, usage };
         throw new Error(t("ai.client.outputLimit", { label, max: MAX_OUTPUT_TOKENS }));
       }
       if (!text && actions.length === 0) throw new Error(t("ai.client.noAnswer", { label }));
-      return { text, actions, notes };
+      return { text, actions, notes, usage };
     }
     more.push(...dialect.reply(json));
     const results: ToolResult[] = [];
@@ -401,64 +417,114 @@ export async function generateImage(
 
 // --- Transcribe audio -------------------------------------------------------------
 
-export interface AudioTranscriptionConfig extends AiVendorConfig {
+/** Everything needed to send a recording to one transcription service. */
+export interface SpeechConfig {
+  vendor: AudioVendor;
+  /** Empty means the service's default (`DEFAULT_AUDIO_MODELS`). */
+  model: string;
+  /** Optional for `custom`. Never another service's key. */
+  apiKey: string;
+  /** OpenAI-compatible base URL; only read for `custom`. */
+  baseUrl: string;
   /** ISO-639-1 hint ("en", "nl"); optional. */
   language?: string;
 }
 
+/** The service's name, or "your configured endpoint (host)". */
+export function speechLabel(config: Pick<SpeechConfig, "vendor" | "baseUrl">): string {
+  return config.vendor === "groq"
+    ? audioService("groq").label
+    : describeLlmTarget(config.vendor, config.baseUrl);
+}
+
+/** Refuse early, in the words the settings use, when a recording cannot be sent. */
+export function assertSpeechConfigured(config: SpeechConfig): void {
+  const service = audioService(config.vendor);
+  if (service.userEndpoint && !config.baseUrl.trim()) throw new Error(t("ai.client.noEndpoint"));
+  if (service.requiresKey && !config.apiKey.trim()) {
+    throw new Error(t("ai.client.noKey", { label: speechLabel(config) }));
+  }
+}
+
+export interface TranscribeOptions {
+  /** Short status lines ("Uploading part 2 of 5 to Groq…"). */
+  onProgress?: (message: string) => void;
+  /** The recording as 16 kHz mono samples, for one over the service's limit. */
+  decode: () => Promise<Float32Array>;
+  /** True to stop before the next upload. */
+  stopped?: () => boolean;
+}
+
 /**
- * Transcribe one audio recording with the user's own key.
+ * Transcribe one audio recording with an online service and the user's own
+ * key: Groq, OpenAI, OpenRouter, Gemini or a server of the user's own.
  *
- * - `config.vendor` must be `openai`, `google` or `custom`; Anthropic and
- *   OpenRouter throw a one-line "not supported" error naming what would work.
- * - `config.model` empty means the vendor's default (`DEFAULT_AUDIO_MODELS`:
- *   `gpt-4o-mini-transcribe`, Gemini's text model, `whisper-1`).
+ * - `config.model` empty means the service's default (`DEFAULT_AUDIO_MODELS`).
  * - `bytes` is the whole recording; `mimeType` is what `MediaRecorder`
- *   reported (`audio/mp4` on the iPad). OpenAI takes up to 25 MB, Gemini
- *   about 14 MB inline; larger throws before anything is sent.
- * - `onProgress` gets short status lines ("Uploading 12.3 MB to …",
- *   "Waiting for the transcript…"). `requestUrl` reports no byte progress.
+ *   reported (`audio/mp4` on the iPad). Within the service's upload limit
+ *   it is sent as it is; over it, it is decoded (`options.decode`) and sent
+ *   in windows of a few minutes, stitched back into one transcript
+ *   (`audio/online-speech.ts`).
+ * - Whisper models answer with timed segments, and the transcript then has
+ *   times like the device's.
  *
  * Resolves to the transcript text (never empty); throws an `Error` whose
  * message is ready for a Notice. It asks no consent and reads no settings —
  * go through `GoodObsidianPlugin.transcribeAudioFile` for both.
  */
 export async function transcribeAudio(
-  config: AudioTranscriptionConfig,
+  config: SpeechConfig,
   bytes: ArrayBuffer,
   mimeType: string,
-  onProgress?: (message: string) => void,
+  options: TranscribeOptions,
 ): Promise<string> {
-  const label = targetLabel(config);
-  if (!canTranscribeAudio(config.vendor)) {
-    throw new Error(`${audioUnsupportedReason(config.vendor)}.`);
-  }
-  assertConfigured(config);
-  const boundaryBytes = new Uint8Array(16);
-  crypto.getRandomValues(boundaryBytes);
+  const label = speechLabel(config);
+  assertSpeechConfigured(config);
   const vendor = config.vendor;
-  const request = buildAudioRequest({
-    vendor,
-    model: config.model.trim() || DEFAULT_AUDIO_MODELS[vendor],
-    apiKey: config.apiKey.trim(),
-    baseUrl: config.baseUrl,
-    audio: new Uint8Array(bytes),
+  const service = audioService(vendor);
+  const model = config.model.trim() || DEFAULT_AUDIO_MODELS[vendor];
+  const segments = wantsSegments(vendor, model);
+  const send = async (audio: Uint8Array, type: string): Promise<OnlineAnswer> => {
+    const boundaryBytes = new Uint8Array(16);
+    crypto.getRandomValues(boundaryBytes);
+    const request = buildAudioRequest({
+      vendor,
+      model,
+      apiKey: config.apiKey.trim(),
+      baseUrl: config.baseUrl,
+      audio,
+      mimeType: type,
+      boundary: makeBoundary(boundaryBytes),
+      language: config.language,
+      segments,
+    });
+    const json = await sendTo(label, service.userEndpoint, () =>
+      postBytes(request.url, request.headers, request.contentType, request.body),
+    );
+    if (vendor === "google" && isTruncatedLlmResponse("google", json)) {
+      throw new Error(t("ai.client.audioLimit", { label, max: AUDIO_MAX_OUTPUT_TOKENS }));
+    }
+    return {
+      text: extractAudioTranscript(vendor, json),
+      segments: segments ? extractAudioSegments(json) : undefined,
+    };
+  };
+  const text = await transcribeOnline({
+    bytes: new Uint8Array(bytes),
     mimeType,
-    boundary: makeBoundary(boundaryBytes),
-    language: config.language,
+    maxBytes: audioMaxBytes(vendor),
+    decode: options.decode,
+    send,
+    stopped: options.stopped,
+    onUpload: (part, parts, size) => {
+      const mb = (size / (1024 * 1024)).toFixed(1);
+      options.onProgress?.(
+        parts > 1
+          ? t("ai.client.uploadingPart", { part, parts, size: mb, label })
+          : t("ai.client.uploading", { size: mb, label }),
+      );
+    },
   });
-  onProgress?.(
-    t("ai.client.uploading", { size: (bytes.byteLength / (1024 * 1024)).toFixed(1), label }),
-  );
-  const pending = sendVendorRequest(config, () =>
-    postBytes(request.url, request.headers, request.contentType, request.body),
-  );
-  onProgress?.(t("ai.client.waiting"));
-  const json = await pending;
-  if (vendor === "google" && isTruncatedLlmResponse("google", json)) {
-    throw new Error(t("ai.client.audioLimit", { label, max: AUDIO_MAX_OUTPUT_TOKENS }));
-  }
-  const text = extractAudioTranscript(vendor, json);
   if (!text) throw new Error(t("ai.client.noTranscript", { label }));
   return text;
 }

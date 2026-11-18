@@ -61,6 +61,12 @@ export interface SavedPen {
   type: SavedPenType;
   color: string;
   size: number;
+  /**
+   * Its name for the tool bar, which can hold a saved pen as a button of its
+   * own (`saved:<id>` in the layout, FineNotes#211): kept through a reorder
+   * or an edit, so the button follows the pen. A pen in hand has none.
+   */
+  id?: string;
 }
 
 /** How many saved pens there can be: one per number key, 1 to 8. */
@@ -82,14 +88,14 @@ export const MAX_PEN_WIDTH = Math.round(mmToPage(MAX_PEN_MM) * 100) / 100;
  * presets (`SIZES`): 2 page px is 0.41 mm, the issue's own "default stroke".
  */
 export const DEFAULT_SAVED_PENS: readonly SavedPen[] = [
-  { type: "ball", color: "#1971c2", size: 2 },
-  { type: "ball", color: "#e03131", size: 2 },
-  { type: "ball", color: "#2f9e44", size: 2 },
-  { type: "fountain", color: "#1971c2", size: 5 },
-  { type: "fountain", color: "#1a1a1a", size: 3 },
-  { type: "ball", color: "#1a1a1a", size: 1.22 },
-  { type: "brush", color: "#9c36b5", size: 3 },
-  { type: "highlighter", color: "#fab005", size: 5 },
+  { type: "ball", color: "#1971c2", size: 2, id: "pen1" },
+  { type: "ball", color: "#e03131", size: 2, id: "pen2" },
+  { type: "ball", color: "#2f9e44", size: 2, id: "pen3" },
+  { type: "fountain", color: "#1971c2", size: 5, id: "pen4" },
+  { type: "fountain", color: "#1a1a1a", size: 3, id: "pen5" },
+  { type: "ball", color: "#1a1a1a", size: 1.22, id: "pen6" },
+  { type: "brush", color: "#9c36b5", size: 3, id: "pen7" },
+  { type: "highlighter", color: "#fab005", size: 5, id: "pen8" },
 ];
 
 /** A fresh copy of the default saved pens, for the settings' defaults. */
@@ -114,10 +120,52 @@ export function isPenWidth(size: unknown): size is number {
 /** A stored pen as a pen, or `null` when it is not one. The colour comes back as `#rrggbb`. */
 export function savedPenOf(value: unknown): SavedPen | null {
   if (typeof value !== "object" || value === null) return null;
-  const { type, color, size } = value as Record<string, unknown>;
+  const { type, color, size, id } = value as Record<string, unknown>;
   if (!isPenType(type) || typeof color !== "string" || !isPenWidth(size)) return null;
   const hex = parseHexColor(color);
-  return hex ? { type, color: hex, size } : null;
+  if (!hex) return null;
+  return isPenId(id) ? { type, color: hex, size, id } : { type, color: hex, size };
+}
+
+/** Whether `value` can name a saved pen: short, and only letters and digits. */
+export function isPenId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z0-9]{1,16}$/i.test(value);
+}
+
+/**
+ * The id a saved pen without one gets: a hash of what it draws and where it
+ * is in the list, so two devices that read the same synced list before
+ * either saved it give it the same id (a random one would make the bar's
+ * pins point at nothing on one of them).
+ */
+export function penIdFor(pen: SavedPen, index: number): string {
+  const text = `${pen.type}|${pen.color.toLowerCase()}|${pen.size}|${index}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `p${hash.toString(36)}`;
+}
+
+/**
+ * `pens` with an id on every pen: a pen that has none, or one another pen
+ * before it already has, gets {@link penIdFor}'s. The pens are copies.
+ */
+export function withPenIds(pens: readonly SavedPen[]): SavedPen[] {
+  const seen = new Set<string>();
+  return pens.map((pen, index) => {
+    let id =
+      pen.id !== undefined && isPenId(pen.id) && !seen.has(pen.id) ? pen.id : penIdFor(pen, index);
+    for (let n = 1; seen.has(id); n += 1) id = penIdFor(pen, index + n * MAX_SAVED_PENS);
+    seen.add(id);
+    return { ...pen, id };
+  });
+}
+
+/** The saved pen named `id`, or `null`. */
+export function savedPenById(pens: readonly SavedPen[], id: string): SavedPen | null {
+  return pens.find((pen) => pen.id === id) ?? null;
 }
 
 /**
@@ -292,7 +340,10 @@ export function putSavedPen(
     return [...pens, valid];
   }
   if (index < 0 || index >= pens.length || duplicateIndex(pens, valid, index) >= 0) return null;
-  return pens.map((saved, i) => (i === index ? valid : saved));
+  // The pen changed keeps its id, so a button on the tool bar follows it.
+  const id = pens[index].id;
+  const kept = id === undefined ? { ...valid } : { ...valid, id };
+  return pens.map((saved, i) => (i === index ? kept : saved));
 }
 
 /** What a new pen starts as: the pen last written with, or a black ball pen. */

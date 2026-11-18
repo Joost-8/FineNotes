@@ -127,6 +127,25 @@ describe("keyOutcome", () => {
     expect(keyOutcome(chord("ArrowDown", { ctrlKey: true }), scene())).toBeNull();
   });
 
+  it("turns pages with ← and →, whichever way pages run (FineNotes#248)", () => {
+    const asked: string[] = [];
+    expect(keyOutcome(chord("ArrowRight"), scene({}, asked))).toEqual(loud("next-page"));
+    expect(keyOutcome(chord("ArrowLeft"), scene({}, asked))).toEqual(loud("previous-page"));
+    // Not a question of fit: nothing scrolls sideways by key.
+    expect(asked).toEqual([]);
+    expect(keyOutcome(chord("ArrowRight"), scene({ rowFitsPane: true }))).toEqual(
+      loud("next-page"),
+    );
+    // A selection on the page does not take them (nothing nudges by key).
+    expect(keyOutcome(chord("ArrowLeft"), scene({ groupSelected: true }))).toEqual(
+      loud("previous-page"),
+    );
+    for (const mods of [{ metaKey: true }, { ctrlKey: true }, { altKey: true }]) {
+      expect(keyOutcome(chord("ArrowRight", mods), scene())).toBeNull();
+      expect(keyOutcome(chord("ArrowLeft", mods), scene())).toBeNull();
+    }
+  });
+
   it("picks a tool with its letter, in either case, and only a bare letter", () => {
     for (const [letter, tool] of TOOL_KEYS) {
       expect(keyOutcome(chord(letter), scene())).toEqual(quiet({ tool }));
@@ -141,7 +160,7 @@ describe("keyOutcome", () => {
   });
 
   it("has no use for other keys, including names an object would inherit", () => {
-    for (const key of ["x", "Tab", "0", "9", "ArrowLeft", "constructor", "toString", "__proto__"]) {
+    for (const key of ["x", "Tab", "0", "9", "Home", "constructor", "toString", "__proto__"]) {
       expect(keyOutcome(chord(key), scene())).toBeNull();
     }
   });

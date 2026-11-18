@@ -16,13 +16,22 @@ Handwriting notebooks for any stylus, inspired by Goodnotes: Apple Pencil, Andro
 
 ![A lecture slide opened in FineNotes, with highlights, a circled formula and handwritten notes](assets/readme/pdf-annotation.png)
 
-**Website:** [finenotes.vercel.app](https://finenotes.vercel.app), with a demo you can [try in your browser](https://finenotes.vercel.app/play/)
+**Website:** [finenotes.app](https://finenotes.app/), with a demo you can [try in your browser](https://finenotes.app/play/)
+
+**Support FineNotes:** [GitHub Sponsors](https://github.com/sponsors/Joost-8)
+
+<!-- sponsors:start -->
+
+**Thank you, sponsors!**
+
+<a href="https://github.com/mcarter-astronautdev" title="Maria Carter"><img src="https://github.com/mcarter-astronautdev.png?size=96" width="48" height="48" alt="Maria Carter"></a>
+<a href="https://github.com/e-kartal" title="e-kartal"><img src="https://github.com/e-kartal.png?size=96" width="48" height="48" alt="e-kartal"></a>
+<a href="https://github.com/fariszyzy" title="Faris"><img src="https://github.com/fariszyzy.png?size=96" width="48" height="48" alt="Faris"></a>
+<!-- sponsors:end -->
 
 **Follow FineNotes:** [X](https://x.com/finenotes_) · [Instagram](https://www.instagram.com/finenotesobsidian/) · [TikTok](https://www.tiktok.com/@finenotesobsidian) · [YouTube](https://www.youtube.com/@FineNotesAtObsidian)
 
 **Ideas and questions:** [Discussions](https://github.com/Joost-8/FineNotes/discussions)
-
-**Support FineNotes:** [GitHub Sponsors](https://github.com/sponsors/Joost-8)
 
 ## Features
 
@@ -216,10 +225,11 @@ bookmark.
 
 ## Getting started
 
-1. Open a new notebook, with the notebook button in the left ribbon or the
-   command **New notebook or page…**. You can also right-click a folder in the
-   file explorer and choose **New notebook**. Turn this entry off with
-   **Show New notebook in right-click menu** in FineNotes settings.
+1. Open a new notebook: the **Notebook library** button in the left ribbon
+   opens Home, where **New** makes one; or use the command **New notebook or
+   board…**. You can also right-click a folder in the file explorer and choose
+   **New notebook**. Turn this entry off with **New notebook in the right-click
+   menu** in FineNotes settings (Pages).
    The file explorer’s top bar also has a **New notebook** button, controlled
    by **Show New notebook in file explorer bar**. The right-click entry starts enabled; the top-bar button starts disabled.
    Choose a cover, a paper and a size.

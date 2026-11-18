@@ -9,6 +9,8 @@
  */
 
 import type { FolderStyles } from "./model/library-style";
+import { LLM_PROVIDER_ID } from "./recognition/llm-request";
+import type { AskVaultScope } from "./recognition/vault-context";
 import { type ShapeToolStyle } from "./model/shape-style";
 import type { LearnedModel } from "./recognition/hwr/learned-model";
 import {
@@ -32,7 +34,12 @@ import type { BarrelAction } from "./input/pen-modifiers";
 import type { ExportFormat, ExportMargins } from "./export/export-choice";
 import type { StylusClickAction } from "./input/stylus-click";
 import { type SavedPen, defaultSavedPens } from "./model/saved-pens";
-import { type ToolbarLayout, defaultLayout } from "./view/toolbar-layout";
+import {
+  type BarPreset,
+  type ToolbarLayout,
+  defaultLayout,
+  essentialsLayout,
+} from "./view/toolbar-layout";
 import type { EraserFilter } from "./ink/stroke-eraser";
 import { DEFAULT_SHAPE_COLOR, parseHexColor } from "./model/colors";
 import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-folders";
@@ -40,6 +47,8 @@ import type { AttachmentKind } from "./model/document";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
 import type { ImageAspect } from "./recognition/ai-image";
 import type { ImageVendorChoice } from "./recognition/ai-menu-model";
+import type { KeySlot } from "./recognition/audio-request";
+import type { SpeechService } from "./audio/online-speech";
 import { type LlmVendor, chatCompletionsUrl, isPlainHttpUrl } from "./recognition/llm-request";
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import type { EraserMode } from "./view/toolbar";
@@ -136,6 +145,14 @@ export interface GoodObsidianSettings {
   lastSeenVersion: string;
   /** Home's what's-new card counts releases after this version; "" when there is none to show. */
   newsSince: string;
+  /**
+   * Sponsors joined after this version are new on the card: the version used
+   * before the latest update, so a sponsor thanked once is never new again.
+   * "" thanks nobody.
+   */
+  sponsorsSince: string;
+  /** Toolbar buttons used since that news came: their dots are gone (tips.ts, `newsControls`). */
+  newsDotsUsed: string[];
   /** Read once a day whether a newer FineNotes is out, and mark the gear (update-check.ts). */
   checkForUpdates: boolean;
   /**
@@ -171,7 +188,7 @@ export interface GoodObsidianSettings {
    * 1.11.4); with one, this stays empty. The `custom` slot's key only ever
    * goes to the custom endpoint.
    */
-  apiKeys: Partial<Record<LlmVendor, string>>;
+  apiKeys: Partial<Record<KeySlot, string>>;
   /** "same" makes pictures with the text vendor; otherwise that vendor. */
   imageVendor: ImageVendorChoice;
   /** Empty for the image vendor's default model. */
@@ -183,10 +200,20 @@ export interface GoodObsidianSettings {
   /** Where Ask opens: a window over the notebook, or a sidebar beside the page. */
   askLayout: "window" | "sidebar";
   /**
-   * A new Ask AI chat starts with the page being read picked. Off by default
-   * (Joost, discussion #107): a chat sends a page only when the user picks one.
+   * How search shows its results, in every notebook (#112): the sidebar
+   * beside the page, every match a row to step through, or the original
+   * list of pages.
    */
-  askAttachPage: boolean;
+  searchLayout: "sidebar" | "original";
+  /**
+   * How far Ask AI may look for context besides the open notebook
+   * (`vault-context.ts`): nowhere, the notebook's folder (the default, so a
+   * whole vault is not sent to a cloud service unless someone chooses it), or
+   * the whole vault. Read through `askVaultScopeOf`.
+   */
+  askVaultScope: AskVaultScope;
+  /** Ask AI shows what each answer cost, under it. Off by default (Joost, 2026-11-17). */
+  askShowCost: boolean;
   /** The user agreed that cloud AI sends their pages off the device. */
   cloudConsentGiven: boolean;
   /** The same agreement, given separately for the custom endpoint. */
@@ -207,6 +234,10 @@ export interface GoodObsidianSettings {
   textHintDismissed: boolean;
   /** Where Make shapes lives was said, at the first pen stroke that snapped. */
   shapeHintShown: boolean;
+  /** One line names a faster way after the slow one was used a few times (model/nudges.ts). */
+  gestureHints: boolean;
+  /** Features taken out of search results with their ×; their tips stay in Tips (feature-index.ts). */
+  searchHidden: string[];
   /** Mirror of `snapMode === "auto"`, read by builds before it. */
   penAutoShape: boolean;
   /** Scribble to erase and Circle to lasso (the pen type menu). Checked where it is read. */
@@ -217,6 +248,8 @@ export interface GoodObsidianSettings {
   tapeColor?: string;
   /** Cover tape's height, page px. Absent: the medium height. */
   tapeHeight?: number;
+  /** The tape pill's three heights, each as the slider left it (`tapeHeightsOf`). Checked where read. */
+  tapeHeights?: unknown;
   /** How a new cover tape is laid, "straight" or "freehand". Absent: straight. */
   tapeMode?: string;
   /**
@@ -224,7 +257,17 @@ export interface GoodObsidianSettings {
    * (`model/tape-text.ts`). Absent: off, a tape is laid where it is dragged.
    */
   tapeSnapText?: boolean;
-  /** Vault folder of the user's sticker collections: one subfolder per collection. */
+  /**
+   * The folder stickers and templates live in (`Stickers`, `Templates`).
+   * Absent or blank: `FineNotes assets`. Read through `stickerFolderFor` and
+   * `templateFolderFor` (model/vault-folders.ts).
+   */
+  assetsFolder?: string;
+  /**
+   * Vault folder of the user's sticker collections: one subfolder per
+   * collection. Since 2026-11-11 only a folder the user typed counts; a
+   * default follows {@link GoodObsidianSettings.assetsFolder}.
+   */
   stickerFolder: string;
   /**
    * Where notebooks without a folder of their own save new files, by kind;
@@ -260,6 +303,13 @@ export interface GoodObsidianSettings {
    * pens brings each one's colours back. Checked where it is read.
    */
   penInks?: Record<string, unknown>;
+  /**
+   * Each pen type's three width presets (`model/width-presets.ts`,
+   * FineNotes#210); a type left out has the defaults. Checked where it is read.
+   */
+  widthPresets?: Record<string, unknown>;
+  /** The eraser's three preset sizes (`eraserPresetsOf`). Checked where it is read. */
+  eraserPresets?: unknown;
   /**
    * Each pen type's stroke stabilization, whole percent
    * (`model/pen-stabilization.ts`); a pen left out is off. Checked where it
@@ -309,6 +359,12 @@ export interface GoodObsidianSettings {
    */
   calcNotes: boolean;
   /**
+   * Column sums (discussion #228): a line drawn under a column of amounts
+   * adds them up, read on this device (view/column-notes.ts). On in the test
+   * build so it can be tried without looking for it.
+   */
+  columnSums: boolean;
+  /**
    * The vault path of a handwriting model file to read with instead of the
    * downloaded Grape (a model tuned to one writer). Blank for Grape.
    */
@@ -338,6 +394,16 @@ export interface GoodObsidianSettings {
   speechModel?: string;
   /** The spoken language as an ISO 639-1 code, or "auto" to detect it. */
   speechLanguage?: string;
+  /**
+   * Where recordings are transcribed: "device", or an online service with
+   * the user's own key (`audio/online-speech.ts`). The language above is
+   * sent to it as a hint.
+   */
+  speechService?: SpeechService;
+  /** The online service's model; empty for its default (`DEFAULT_AUDIO_MODELS`). */
+  speechServiceModel?: string;
+  /** A transcription server of the user's own; empty uses the AI service's endpoint. */
+  speechBaseUrl?: string;
   /** The interface language: a code from `INTERFACE_LANGUAGES`, or "auto" to follow Obsidian. */
   interfaceLanguage?: string;
 
@@ -381,6 +447,14 @@ export interface GoodObsidianSettings {
    * `toolbarItems`, `toolbarOff` and `toolbarHome`, read once on load.
    */
   toolbarLayout: ToolbarLayout;
+  /**
+   * Which layout the bar shows: the person's own (`toolbarLayout`) or the
+   * Essentials preset (`toolbarEssentials`), whose tools are replaced, never
+   * added, and whose end lives in ⋯ (Joost, 2026-11-13).
+   */
+  toolbarPreset: BarPreset;
+  /** The Essentials preset's layout, as Customize toolbar left it. */
+  toolbarEssentials: ToolbarLayout;
   /** The Home button has been put on a bar customized before it existed (once). */
   toolbarHomeAdded: boolean;
   /** The simple look: Obsidian's own chrome hidden (`model/simple-mode.ts`). On for a new install, and for a vault that updates (with an Undo in the note shown once). */
@@ -459,10 +533,9 @@ export interface GoodObsidianSettings {
   greyWhileErasing: boolean;
 
   /**
-   * The settings tab's sections shown open, by id; every other one is
-   * folded. Checked where read ({@link openSectionsOf}). It replaced
-   * `foldedSettingsSections` (2026-10-21, the compact settings), which is
-   * dropped on load, so everyone starts with every section folded.
+   * The settings tab's section shown, as a one-id list, read through
+   * {@link shownSectionOf}. Before the list of sections (2026-11-11) it held
+   * every section left open; those ids are still understood.
    */
   settingsOpen: string[];
   /** The iPad's "switch off Scribble" tip was dismissed with its ✕. */
@@ -503,6 +576,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   scribbleNoticeShown: false,
   lastSeenVersion: "",
   newsSince: "",
+  sponsorsSince: "",
+  newsDotsUsed: [],
   checkForUpdates: true,
   updateReminders: true,
   llmVendor: "anthropic",
@@ -518,7 +593,9 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   imageAspect: "square",
   askSaveChats: false,
   askLayout: "window",
-  askAttachPage: false,
+  searchLayout: "sidebar",
+  askVaultScope: "folder",
+  askShowCost: false,
   cloudConsentGiven: false,
   customConsentGiven: false,
   autoRecognize: false,
@@ -528,6 +605,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   textHintShown: 0,
   textHintDismissed: false,
   shapeHintShown: false,
+  gestureHints: true,
+  searchHidden: [],
   penAutoShape: false,
   penGestures: { ...DEFAULT_PEN_GESTURES },
   shapeColor: DEFAULT_SHAPE_COLOR,
@@ -551,8 +630,12 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   replayInk: true,
   checkHandwrittenWords: false,
   calcNotes: true,
+  columnSums: true,
   speechModel: "whisper-base",
   speechLanguage: "auto",
+  speechService: "device",
+  speechServiceModel: "",
+  speechBaseUrl: "",
   interfaceLanguage: "auto",
   notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
@@ -571,6 +654,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
 
   savedPens: defaultSavedPens(),
   toolbarLayout: defaultLayout(),
+  toolbarPreset: "own",
+  toolbarEssentials: essentialsLayout(),
   toolbarHomeAdded: true,
   simpleLook: false,
   simpleLookHinted: false,
@@ -605,56 +690,88 @@ export function laserDefaultColorOf(raw: unknown): string {
 // --- Settings sections -----------------------------------------------------------
 
 /**
- * The settings tab's sections, by the id `settingsOpen` keeps. Ids, not
- * headings, so a renamed heading keeps its state.
+ * The settings tab's sections, in the order of its list, by the id
+ * `settingsOpen` keeps. Ids, not headings, so a renamed heading keeps its
+ * state.
  */
 export const SETTINGS_SECTIONS = [
+  "general",
   "writing",
-  "shortcuts",
   "pages",
-  "on-device",
+  "shortcuts",
+  "reading",
   "ai",
-  "advanced",
+  "files",
+  "troubleshooting",
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+/**
+ * Sections that folded before the list of sections, and where their rows
+ * went (2026-11-11). A stored "advanced" opens Files and folders, which holds
+ * most of its rows.
+ */
+const OLD_SECTIONS: Readonly<Record<string, SettingsSection>> = {
+  "on-device": "reading",
+  advanced: "files",
+};
 
 function isSection(value: unknown): value is SettingsSection {
   return (SETTINGS_SECTIONS as readonly unknown[]).includes(value);
 }
 
 /**
- * The open sections a stored value names, in the tab's order, once each.
- * Anything but a list (a missing key, a hand-edited file) opens none; ids
- * this build does not know are dropped.
+ * The section shown, from `settingsOpen`: the first one it names that this
+ * build knows, an id from before the list included. Anything but a list (a
+ * missing key, a hand-edited file) shows General.
  */
-export function openSectionsOf(raw: unknown): SettingsSection[] {
-  if (!Array.isArray(raw)) return [];
-  return SETTINGS_SECTIONS.filter((id) => raw.includes(id));
+export function shownSectionOf(raw: unknown): SettingsSection {
+  if (Array.isArray(raw)) {
+    for (const id of raw as unknown[]) {
+      const current = typeof id === "string" ? (OLD_SECTIONS[id] ?? id) : id;
+      if (isSection(current)) return current;
+    }
+  }
+  return "general";
 }
+
+/** What `settingsOpen` keeps when `id` is the section shown. */
+export function withShownSection(id: SettingsSection): SettingsSection[] {
+  return [id];
+}
+
+// --- Handwriting recognition ----------------------------------------------------
+
+/** "Handwriting recognition"'s choice for Cloud AI that runs by itself. */
+export const AUTO_RECOGNITION = `${LLM_PROVIDER_ID}:auto`;
 
 /**
- * Whether `id` is shown open. `alone`: one section open at a time (on an
- * iPad or a phone), so of several stored open (synced from a computer) only
- * the first is.
+ * The choice "Handwriting recognition" shows: the recognition provider, or
+ * {@link AUTO_RECOGNITION} for Cloud AI with automatic recognition on. Two
+ * stored keys, as before 2026-11-11, when automatic was a switch of its own.
  */
-export function sectionOpen(raw: unknown, id: SettingsSection, alone = false): boolean {
-  const open = openSectionsOf(raw);
-  return alone ? open[0] === id : open.includes(id);
+export function recognitionChoiceOf(
+  settings: Pick<GoodObsidianSettings, "recognitionProviderId" | "autoRecognize">,
+): string {
+  const provider = settings.recognitionProviderId;
+  return provider === LLM_PROVIDER_ID && settings.autoRecognize === true
+    ? AUTO_RECOGNITION
+    : provider;
 }
 
-/** The open sections with `id` opened or folded; `alone`: opening it folds the rest. */
-export function withSection(
-  raw: unknown,
-  id: SettingsSection,
-  open: boolean,
-  alone = false,
-): SettingsSection[] {
-  if (!isSection(id)) return openSectionsOf(raw);
-  if (open && alone) return [id];
-  const rest = openSectionsOf(raw).filter((section) => section !== id);
-  return open ? SETTINGS_SECTIONS.filter((s) => s === id || rest.includes(s)) : rest;
+/** Store a "Handwriting recognition" choice as its two keys. */
+export function storeRecognitionChoice(
+  settings: Pick<GoodObsidianSettings, "recognitionProviderId" | "autoRecognize">,
+  choice: string,
+): void {
+  const auto = choice === AUTO_RECOGNITION;
+  settings.recognitionProviderId = auto ? LLM_PROVIDER_ID : choice;
+  settings.autoRecognize = auto;
 }
+
+/** The longest line a settings row may show under its name, in characters. */
+export const SETTINGS_LINE_MAX = 70;
 
 // --- The eraser ------------------------------------------------------------------
 
@@ -1056,6 +1173,8 @@ export function changesTabLayout(key: string): boolean {
     key === "imageVendor" ||
     key === "pressureWidth" ||
     key === "speechModel" ||
+    // The online service brings its model, key and endpoint rows.
+    key === "speechService" ||
     // The row "Scanned pages · <choice>" is named by it.
     key === "ocrModel" ||
     key === "useLearnedHandwriting"

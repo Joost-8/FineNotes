@@ -620,6 +620,14 @@ export interface TextBoxElement {
   /** Shown in capitals (a label, a kicker); the typed text keeps its case. */
   caps?: true;
   /**
+   * Markdown mode (discussion #107): `text` is Markdown, stored exactly as
+   * typed. At rest the box is drawn formatted (`model/markdown-text.ts`,
+   * `canvas/markdown-layout.ts`); while it is edited the textarea shows the
+   * raw text. A reader that does not know the field shows the raw text, as
+   * a note would in source mode. Only stored as `true`.
+   */
+  markdown?: true;
+  /**
    * Turned this many radians clockwise about the box's top-left corner
    * (`x`, `y`), so a box that grows with its text or is widened turns about
    * a corner that stays put. `w` and `h` are the box unturned. Absent:
@@ -823,6 +831,14 @@ export interface Page {
    */
   epoch?: number;
   /**
+   * An endless board inside an ordinary notebook (discussion #160,
+   * `model/board.ts`): listed among the pages, left out of their column, and
+   * shown on its own as a board when gone to. Stored only as `true`; a
+   * notebook with one is labelled `boards`. Every page of a board file
+   * (`InkDocument.endless`) is a board without it.
+   */
+  board?: true;
+  /**
    * Bookmarked (GoodNotes' "Add to Favourites"): the page sidebar can show
    * bookmarked pages only. Stored only as `true`; absent means not.
    */
@@ -847,6 +863,12 @@ export interface Page {
    * to bottom (FineNotes#20). Absent when there are none.
    */
   sections?: PageSection[];
+  /**
+   * Named parts of the page that a note can embed alone,
+   * `![[Mind map.notebook#Krebs cycle]]` (discussion #167; `model/regions`).
+   * Absent when there are none.
+   */
+  regions?: PageRegion[];
   /**
    * Chapters with no page of their own that stand just before this page in
    * the contents, or after it with `after` (discussion #185). Absent when
@@ -980,6 +1002,24 @@ export interface PageSection {
   level?: ContentsLevel;
 }
 
+/**
+ * A named rectangle of a page, page px, lassoed and named on a board or a
+ * page, that a Markdown note embeds alone by its name (discussion #167).
+ * It holds no elements: it is a frame over the page, and what is drawn in
+ * it when the embed paints is what shows.
+ */
+export interface PageRegion {
+  /** `rg<N>`, unique in the notebook. */
+  id: string;
+  /** What links name it by: one line, trimmed, at most 80 characters, no `#|^[]\`. */
+  name: string;
+  x: number;
+  y: number;
+  /** Width and height, page px, greater than 0. */
+  w: number;
+  h: number;
+}
+
 /** A contents entry's depth: 1 a chapter, 2 a section of it, 3 a part of that. */
 export type ContentsLevel = 1 | 2 | 3;
 
@@ -1050,10 +1090,13 @@ export interface InkDocument {
    */
   single?: boolean;
   /**
-   * An endless board (FineNotes#46, `model/board.ts`): its one page grows as
-   * it is written on, and the view scrolls freely across it. A board is
-   * written with `single` too, so a build that knows no boards opens it as a
-   * single page. Only ever stored as `true`, and only on a one-page document.
+   * An endless board (FineNotes#46, `model/board.ts`): each page is a board
+   * that grows as it is written on, and the view shows one at a time,
+   * scrolled freely. A board file is written with `single` too, so a build
+   * that knows no boards opens a one-board file as a single page; a file of
+   * several boards (discussion #160) is labelled `boards`
+   * (`format-features.ts`), which an older build holds read-only. Only ever
+   * stored as `true`.
    */
   endless?: true;
   /** Audio recorded against this note, oldest first. Absent when there are none. */
