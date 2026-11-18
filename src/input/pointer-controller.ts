@@ -40,6 +40,7 @@ import { type PointerRole, roleOf } from "./palm-rejection";
 import type { PressInput } from "./pen-modifiers";
 import { freshSamples, type RawSample } from "./repeat-samples";
 import { StylusClicks } from "./stylus-click";
+import { type BridgePoint, StylusSelectBridge } from "./stylus-select-bridge";
 
 export type { PinchInfo };
 
@@ -199,6 +200,8 @@ export interface PointerControllerOptions {
   touchTarget?: (event: PointerEvent) => boolean;
   /** A click of the pen's side button is wanted: only then is a press of it in the air held back. */
   stylusClicks?: () => boolean;
+  /** Android-only selection bridge for S-Pen hold-to-erase; enabled unless returning false. */
+  stylusSelectBridge?: () => boolean;
   /** The screen's device px per CSS px; absent, the element's window's `devicePixelRatio`. */
   pixelRatio?: () => number;
 }
@@ -227,6 +230,10 @@ export class PointerController {
   private readonly taps: MultiFingerTap;
   /** Hears the pen's side button clicked in the air, however it is reported. */
   private readonly clicks = new StylusClicks();
+  /** Experimental bridge capturing Android WebView StylusTextSelector drags via selectionchange. */
+  private readonly selectBridge: StylusSelectBridge;
+  /** Route chosen for the active selection-bridge stroke. */
+  private bridgeRoute: PressRoute = "ignore";
   /** A press of the side button in the air, held back until it is a click or a stroke. */
   private held: PointerEvent | null = null;
   /** The pen's last press came down with the side button held in its hovering moves (`pressOf`). */
@@ -256,13 +263,20 @@ export class PointerController {
       pointerup: (event) => this.released(event, false),
       pointercancel: (event) => this.released(event, true),
     };
+    this.selectBridge = new StylusSelectBridge(this.element, {
+      onStart: (pt) => this.bridgeStarted(pt),
+      onMove: (pt) => this.bridgeMoved(pt),
+      onEnd: (pt) => this.bridgeEnded(pt),
+    });
   }
 
   attach(): void {
     for (const phase of PHASES) this.element.addEventListener(phase, this.handlers[phase]);
+    if (this.options.stylusSelectBridge?.() !== false) this.selectBridge.attach();
   }
 
   detach(): void {
+    this.selectBridge.detach();
     for (const phase of PHASES) this.element.removeEventListener(phase, this.handlers[phase]);
   }
 
@@ -340,6 +354,8 @@ export class PointerController {
    * click the hovering moves were watching for.
    */
   private down(event: PointerEvent): void {
+    this.selectBridge.endStroke(event.timeStamp);
+    this.selectBridge.setArmed(false);
     // A browser that sends the held press's touch-down as a press of its own: that one counts.
     if (this.held?.pointerId === event.pointerId) this.held = null;
     const pen = event.pointerType === "pen";
@@ -380,17 +396,111 @@ export class PointerController {
     this.notePenReturned(event);
     if (event.pointerType !== "pen" || this.held !== null) return;
     if (event.type === "pointermove") this.hearHover(event);
-    else if (event.type === "pointerdown") this.clicks.landed();
-    else this.clicks.lifted(event.timeStamp);
+    else {
+      this.selectBridge.endStroke(event.timeStamp);
+      if (event.type === "pointerdown") {
+        this.selectBridge.setArmed(false);
+        this.clicks.landed();
+      } else {
+        this.selectBridge.setArmed(
+          event.type !== "pointercancel",
+          event.clientX,
+          event.clientY,
+          event.timeStamp,
+          false,
+        );
+        this.clicks.lifted(event.timeStamp);
+      }
+    }
   }
 
   /** A hovering pen's move: the side button's click, if it makes one (`stylus-click.ts`). */
   private hearHover(event: PointerEvent): void {
     if (event.pointerType !== "pen" || this.stroke !== null) return;
+    this.selectBridge.warmUp();
+    if (this.selectBridge.isActive && event.pressure === 0) {
+      this.selectBridge.endStroke(event.timeStamp);
+    }
     // Always heard, so a pen touching down knows its side button is held
     // (`pressOf`); reported as a click only when a click is wanted.
     const click = this.clicks.hover(event);
+    this.selectBridge.setArmed(
+      true,
+      event.clientX,
+      event.clientY,
+      event.timeStamp,
+      this.clicks.barrelHeld,
+    );
     if (click && this.stylusClicks()) this.listener.onStylusClick?.(event.clientX, event.clientY);
+  }
+
+  private bridgePress(pt: BridgePoint): { event: PointerEvent; press: PressInput } {
+    const press: PressInput = {
+      pointerType: "pen",
+      button: 2,
+      buttons: 3,
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+    };
+    const event = {
+      ...press,
+      pointerId: -1,
+      clientX: pt.clientX,
+      clientY: pt.clientY,
+      timeStamp: pt.timeStamp,
+    } as unknown as PointerEvent;
+    return { event, press };
+  }
+
+  private bridgeSample(pt: BridgePoint): PointerSample {
+    const at = this.toLocal(pt.clientX, pt.clientY);
+    return {
+      x: at.x,
+      y: at.y,
+      pressure: 0.5,
+      tiltX: 0,
+      tiltY: 0,
+      altitude: Number.NaN,
+      t: pt.timeStamp,
+      pointerType: "pen",
+    };
+  }
+
+  private bridgeStarted(pt: BridgePoint): void {
+    this.clicks.touched();
+    const { event, press } = this.bridgePress(pt);
+    const route = this.options.route?.(event, press) ?? "draw";
+    this.bridgeRoute = route;
+    if (route === "ignore") return;
+    this.clearFingersForPen(true);
+    if (route === "pan") {
+      this.listener.onPanStart?.(pt.clientX, pt.clientY, pt.timeStamp);
+      return;
+    }
+    this.rounded = false;
+    this.listener.onStart(this.bridgeSample(pt), press);
+  }
+
+  private bridgeMoved(pt: BridgePoint): void {
+    if (this.bridgeRoute === "ignore") return;
+    if (this.bridgeRoute === "pan") {
+      this.listener.onPanMove?.(pt.clientX, pt.clientY, pt.timeStamp);
+      return;
+    }
+    this.listener.onMove([this.bridgeSample(pt)]);
+  }
+
+  private bridgeEnded(pt: BridgePoint): void {
+    const route = this.bridgeRoute;
+    this.bridgeRoute = "ignore";
+    if (route === "ignore") return;
+    if (route === "pan") {
+      this.listener.onPanEnd?.(pt.timeStamp);
+      return;
+    }
+    this.listener.onEnd(this.bridgeSample(pt));
   }
 
   /**
@@ -399,7 +509,8 @@ export class PointerController {
    * button held (`stylus-click.ts`). True when it was that.
    */
   stylusTouched(): boolean {
-    return this.stylusClicks() && this.clicks.touched();
+    const touched = this.stylusClicks() && this.clicks.touched();
+    return this.selectBridge.wasRecentlyActive || touched;
   }
 
   private pressed(event: PointerEvent): void {
@@ -505,11 +616,15 @@ export class PointerController {
     this.releaseCapture(waiting.down.pointerId);
   }
 
-  private beginStroke(event: PointerEvent): void {
+  private clearFingersForPen(isPen: boolean): void {
     for (const finger of this.fingers.cancel()) this.releaseCapture(finger);
-    if (event.pointerType === "pen") this.dropWaiting();
+    if (isPen) this.dropWaiting();
     // A pen on the page means the fingers were the writing hand, not a tap.
     this.taps.penDown();
+  }
+
+  private beginStroke(event: PointerEvent): void {
+    this.clearFingersForPen(event.pointerType === "pen");
     if (this.stroke !== null) {
       // The last stroke's pointerup never came (see the top of the file).
       this.releaseCapture(this.stroke);
@@ -591,6 +706,7 @@ export class PointerController {
     if (this.held?.pointerId === id) {
       this.held = null;
       this.releaseCapture(id);
+      if (event.pointerType === "pen") this.selectBridge.setArmed(false);
       if (!cancelled && this.clicks.heldUp(event)) {
         this.listener.onStylusClick?.(event.clientX, event.clientY);
       } else {
@@ -598,7 +714,10 @@ export class PointerController {
       }
       return;
     }
-    if (event.pointerType === "pen") this.clicks.lifted(event.timeStamp);
+    if (event.pointerType === "pen") {
+      this.clicks.lifted(event.timeStamp);
+      this.selectBridge.setArmed(!cancelled, event.clientX, event.clientY, event.timeStamp, false);
+    }
     if (this.waiting?.down.pointerId === id) {
       // Lifted before it wrote: a tap, as the pen's. Cancelled, it never was.
       if (cancelled) {

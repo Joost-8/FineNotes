@@ -3332,6 +3332,7 @@ export class InkSurface {
         onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
         fingerDraws: () => this.callbacks.fingerDrawing?.() === true,
         stylusClicks: () => this.stylusClickWanted(),
+        stylusSelectBridge: () => Platform.isAndroidApp === true,
       },
     );
     input.attach();
