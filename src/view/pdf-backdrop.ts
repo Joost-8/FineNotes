@@ -289,6 +289,8 @@ export class PdfBackdropCache {
   private readonly running = new Set<RasterWork>();
   private readonly work = new Map<string, RasterWork>();
   private readonly documents = new Map<string, Promise<PdfDocumentLike | null>>();
+  /** Renders on this thread using each path's document now ({@link closeIdleMainDocs}). */
+  private readonly mainUsers = new Map<string, number>();
   /** Why rendering waits: the pen is writing, or a zoom is moving. */
   private readonly holds = new Set<"pen" | "zoom">();
   /** Requests made while held, started on {@link setHeld}(false). */
@@ -557,6 +559,22 @@ export class PdfBackdropCache {
     if (this.worker === worker) return;
     this.closeWorkerDocs();
     this.worker = worker;
+    this.closeIdleMainDocs();
+  }
+
+  /**
+   * Close what this thread's pdf.js opened once the worker draws instead:
+   * the pages drawn before it started kept a second whole copy of the PDF
+   * open for as long as the notebook was, 157 MB more for a 157 MB textbook.
+   * A document still drawing is closed when it is done.
+   */
+  private closeIdleMainDocs(): void {
+    if (!this.worker?.alive) return;
+    for (const [path, open] of [...this.documents]) {
+      if ((this.mainUsers.get(path) ?? 0) > 0) continue;
+      this.documents.delete(path);
+      void open.then((doc) => doc?.destroy()).catch(() => undefined);
+    }
   }
 
   /** Whether renders run off the main thread, so they may go on while the view moves. */
@@ -859,9 +877,10 @@ export class PdfBackdropCache {
     // Read-only. Nothing in this plugin ever writes to the source PDF.
     const bytes = await this.app.vault.readBinary(file);
     const lib = await this.pdfjs();
-    // pdf.js may detach the buffer it is handed; give it a private copy so a
-    // second read of the same file cannot fail on a neutered ArrayBuffer.
-    return await lib.getDocument({ data: new Uint8Array(bytes.slice(0)), ...pdfAssets() }).promise;
+    // pdf.js may detach the buffer it is handed. Nothing reads these bytes
+    // again (every open reads the file afresh), so they are handed over
+    // without a copy, as in pdf-text-source.ts (#107).
+    return await lib.getDocument({ data: new Uint8Array(bytes), ...pdfAssets() }).promise;
   }
 
   /** As `rasterise`, drawn by pdf.js in the worker. Throws if the worker fails. */
@@ -910,9 +929,11 @@ export class PdfBackdropCache {
       open = (async () => {
         const file: TFile | null = this.app.vault.getFileByPath(path);
         if (!file) return null;
-        // Read-only, as on the main thread. The worker gets its own copy.
+        // Read-only, as on the main thread. A read gives a buffer of its own,
+        // which is moved to the worker as it is: a copy first doubled a
+        // textbook's memory at the moment the notebook opened.
         const bytes = await this.app.vault.readBinary(file);
-        return worker.open(path, bytes.slice(0));
+        return worker.open(path, bytes);
       })();
       this.workerDocs.set(path, open);
       open.catch(() => this.workerDocs.delete(path));
@@ -957,6 +978,25 @@ export class PdfBackdropCache {
         if (!worker.alive && this.worker === worker) this.setWorker(null);
       }
     }
+    this.mainUsers.set(path, (this.mainUsers.get(path) ?? 0) + 1);
+    try {
+      return await this.rasteriseHere(path, page, dprScale, area, job);
+    } finally {
+      const left = (this.mainUsers.get(path) ?? 1) - 1;
+      if (left > 0) this.mainUsers.set(path, left);
+      else this.mainUsers.delete(path);
+      this.closeIdleMainDocs();
+    }
+  }
+
+  /** As {@link rasterise}, drawn by pdf.js on this thread. */
+  private async rasteriseHere(
+    path: string,
+    page: number,
+    dprScale: number,
+    area?: PdfRenderArea,
+    job?: RasterWork,
+  ): Promise<PdfEntry> {
     const doc = await this.document(path);
     if (job?.cancelled) return { ok: false, reason: t("surface.pdf.superseded") };
     if (!doc) return { ok: false, reason: t("surface.pdf.missing", { path }) };

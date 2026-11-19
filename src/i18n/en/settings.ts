@@ -155,7 +155,12 @@ export const settings = {
     "Add a button that opens the notebook library, beside New note and New folder in the file explorer.",
   "settings.simpleLook.name": "Simple look",
   "settings.simpleLook.info":
-    "Hide Obsidian's title bar, status bar, left ribbon and sidebars, and keep the tabs, so FineNotes looks like an app of its own. Turn it off here to bring them back.",
+    "Hide Obsidian's title bar, status bar, left ribbon and sidebars, and keep the tabs, so FineNotes looks like an app of its own. Bring back parts of Obsidian with the buttons under it (a sidebar starts closed); turn it off to bring them all back.",
+  "settings.simpleLook.show": "Show in Simple look",
+  "settings.simpleLook.leftSidebar": "Left sidebar",
+  "settings.simpleLook.rightSidebar": "Right sidebar",
+  "settings.simpleLook.ribbon": "Ribbon",
+  "settings.simpleLook.statusBar": "Status bar",
   "settings.look.name": "Look",
   "settings.look.info":
     "The style and colours of FineNotes' own bars, menus and dialogs. Your pages, your ink and the rest of Obsidian stay as they are.",

@@ -171,11 +171,11 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     area: "settings",
     title: "Simple look (hide Obsidian's bars)",
     words:
-      "simple look, hide obsidian, clean, distraction free, focus, sidebars, ribbon, status bar, title bar, app look, full app",
-    what: "Hides Obsidian's title bar, status bar, ribbon and sidebars so FineNotes looks like an app of its own; the tabs stay. Turn it off to bring them back.",
+      "simple look, easy mode, hide obsidian, clean, distraction free, focus, sidebars, right sidebar, other plugins, calendar, pomodoro, ribbon, status bar, title bar, app look, full app",
+    what: "Hides Obsidian's title bar, status bar, ribbon and sidebars so FineNotes looks like an app of its own; the tabs stay. While it is on, the buttons under it (or the ⌄ beside Simple look on Home's folder rail) bring back parts one by one: Left sidebar, Right sidebar, Ribbon, Status bar (all off by default; a sidebar brought back starts closed, behind its own button, for other plugins' panels such as a calendar or a timer). With the left sidebar back, Home's folder rail steps aside. Turn the look off to bring everything back.",
     where:
-      "Settings › General › Simple look. Also in Notebook settings (gear), on the Welcome, and the command Simple look: hide or show….",
-    settings: ["simpleLook"],
+      "Settings › General › Simple look, and the buttons under it. Also Home › folder rail › ⌄ beside Simple look, Notebook settings (gear), the Welcome, and the command Simple look: hide or show….",
+    settings: ["simpleLook", "simpleLookShow"],
     commands: ["toggle-simple-look"],
     feature: "simpleLook",
   },
@@ -2441,6 +2441,16 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
       "sort, order, by name, by date, last edited, date created, page count, list view, grid view, hide files, notebooks only",
     what: 'The Sort button\'s menu: Select items, Grid or List, "Notebooks only" (hides other files), and sort by Date created, Last edited, Name or Pages (tap the current one again to reverse).',
     where: "Home › Sort (up-down arrows icon)",
+  },
+  {
+    id: "homeHide",
+    area: "notebooks",
+    title: "Hide notebooks and files from Home",
+    words:
+      "hide, hide notebook, hide file, unhide, show hidden, declutter, archive, take off home, hidden items",
+    what: 'A cover\'s or folder\'s ⌄ menu has "Hide from Home": the item (and all a folder holds) leaves Home, Continue, the folder rail and search; the file stays in the vault. Sort › "Show hidden items" (there only while something is hidden) shows them dimmed, and their ⌄ menu has "Show on Home".',
+    where: "Home › an item's ⌄ › Hide from Home; Home › Sort › Show hidden items",
+    settings: ["libraryHidden"],
   },
   {
     id: "homeFavorites",

@@ -180,7 +180,12 @@ import {
 } from "./model/nudges";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
-import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
+import {
+  type SimplePart,
+  allSimpleClasses,
+  simpleClasses,
+  simplePartsOf,
+} from "./model/simple-mode";
 import {
   LOOK_PALETTES,
   LOOK_STYLES,
@@ -579,7 +584,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.applyLook();
     this.register(() => this.wearLook([]));
     this.register(() => {
-      if (typeof document !== "undefined") document.body.classList.remove(SIMPLE_CLASS);
+      if (typeof document !== "undefined") document.body.classList.remove(...allSimpleClasses());
     });
     // Fonts fetched for text boxes leave the document with the plugin.
     this.register(disposeVaultFonts);
@@ -599,6 +604,8 @@ export default class GoodObsidianPlugin extends Plugin {
           dismissHomeCard: (kind) => this.dismissHomeCard(kind),
           simpleLook: () => this.settings.simpleLook,
           setSimpleLook: (on) => this.setSimpleLook(on),
+          simpleParts: () => this.settings.simpleLookShow,
+          setSimpleParts: (parts) => this.setSimpleParts(parts),
           update: () => this.updates.available,
           openUpdate: () => this.openUpdatePage(),
           checkUpdate: () => this.updates.checkNow(),
@@ -619,6 +626,11 @@ export default class GoodObsidianPlugin extends Plugin {
           stars: () => this.settings.libraryStars,
           setStars: (stars) => {
             this.settings.libraryStars = stars;
+            void this.saveSettings();
+          },
+          hidden: () => this.settings.libraryHidden,
+          setHidden: (hidden) => {
+            this.settings.libraryHidden = hidden;
             void this.saveSettings();
           },
           folderStyles: () => this.settings.libraryFolders,
@@ -1243,6 +1255,8 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
+    this.settings.libraryHidden = starsOf(this.settings.libraryHidden);
+    this.settings.simpleLookShow = simplePartsOf(this.settings.simpleLookShow);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
     if (isItemOff(this.toolbarLayoutNow(), "stylus")) this.settings.onlyStylusMode = false;
@@ -1503,8 +1517,8 @@ export default class GoodObsidianPlugin extends Plugin {
   applySimpleLook(): void {
     if (typeof document === "undefined") return;
     const body = document.body;
-    body.classList.remove(SIMPLE_CLASS);
-    body.classList.add(...simpleClasses(this.settings.simpleLook));
+    body.classList.remove(...allSimpleClasses());
+    body.classList.add(...simpleClasses(this.settings.simpleLook, this.settings.simpleLookShow));
   }
 
   private lookWorn: string[] = [];
@@ -1542,9 +1556,25 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   setSimpleLook(on: boolean): void {
+    // A sidebar the look shows starts closed, behind its button.
+    if (on && !this.settings.simpleLook) this.collapseSidebars(this.settings.simpleLookShow);
     this.settings.simpleLook = on;
     this.settings.simpleLookHinted = true;
     void this.saveSettings();
+  }
+
+  /** Show these parts of Obsidian in the simple look; a sidebar brought back starts closed. */
+  setSimpleParts(parts: SimplePart[]): void {
+    const was = this.settings.simpleLookShow;
+    const next = simplePartsOf(parts);
+    if (this.settings.simpleLook) this.collapseSidebars(next.filter((p) => !was.includes(p)));
+    this.settings.simpleLookShow = next;
+    void this.saveSettings();
+  }
+
+  private collapseSidebars(parts: readonly SimplePart[]): void {
+    if (parts.includes("leftSidebar")) this.app.workspace.leftSplit?.collapse();
+    if (parts.includes("rightSidebar")) this.app.workspace.rightSplit?.collapse();
   }
 
   async saveSettings(): Promise<void> {
@@ -3367,19 +3397,23 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * The library's stars and folder looks follow a file or folder renamed or
+   * The library's stars, hidden items and folder looks follow a file or folder renamed or
    * moved to `to`, and go with one deleted (no `to`). Here rather than in
    * the library, so they follow while Home is closed too.
    */
   private libraryPathChanged(from: string, to?: string): void {
-    const { libraryStars: stars, libraryFolders: styles } = this.settings;
-    const nextStars = to === undefined ? dropPaths(stars, from) : movePaths(stars, from, to);
+    const { libraryStars: stars, libraryHidden: hidden, libraryFolders: styles } = this.settings;
+    const follow = (paths: string[]): string[] =>
+      to === undefined ? dropPaths(paths, from) : movePaths(paths, from, to);
+    const nextStars = follow(stars);
+    const nextHidden = follow(hidden);
     const nextStyles = to === undefined ? dropStyles(styles, from) : moveStyles(styles, from, to);
-    const starsChanged =
-      nextStars.length !== stars.length || nextStars.some((p, i) => p !== stars[i]);
+    const same = (a: string[], b: string[]): boolean =>
+      a.length === b.length && a.every((p, i) => p === b[i]);
     const stylesChanged = JSON.stringify(nextStyles) !== JSON.stringify(styles);
-    if (!starsChanged && !stylesChanged) return;
+    if (same(nextStars, stars) && same(nextHidden, hidden) && !stylesChanged) return;
     this.settings.libraryStars = nextStars;
+    this.settings.libraryHidden = nextHidden;
     this.settings.libraryFolders = nextStyles;
     void this.saveSettings();
   }
