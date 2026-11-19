@@ -11200,6 +11200,13 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   inset-inline-end: calc(36px + var(--size-4-2) + var(--size-4-1));
 }
 
+/* On mobile Obsidian keeps an empty "create file" slot at the row's end,
+   40 px in; search never fills it, and it would take the taps on the
+   button's left edge and the ✕ (measured on the iPad, Obsidian 1.15.1). */
+.goodobsidian-search-modal .prompt-input-cta {
+  display: none;
+}
+
 /* The field and every match as a row (search-panel.ts, discussion #112):
    docked right of the page (.is-sidebar), as Goodnotes shows its search, or
    in a window over it (.is-window, a FloatingWindow). The rows look like
