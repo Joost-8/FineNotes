@@ -124,6 +124,11 @@ export const ART = {
     rect("ga-card", 27, 10, 42, 28, 3, "simple=off"),
     path("ga-accent-line", "M34 18h18M34 25h24M34 32h12", "simple=off"),
     path("ga-accent-line", "M13 18h34M13 26h46M13 34h24", "simple=on"),
+    // The parts the look shows again, over its page (none by default).
+    rect("ga-chrome-part", 3, 10, 4, 28, 1.5, "sribbon=on"),
+    rect("ga-chrome-part", 8, 10, 11, 28, 2, "sleft=on"),
+    rect("ga-chrome-part", 56, 10, 13, 28, 2, "sright=on"),
+    rect("ga-chrome-part", 3, 40, 66, 5, 2, "sstatus=on"),
   ],
   updates: [
     rect("ga-surface", 1, 1, 70, 46, 7),
@@ -425,6 +430,10 @@ export function artStateOf(
       style: lookStyleOf(settings.lookStyle),
       palette: lookPaletteOf(settings.lookPalette),
       simple: YES_NO(settings.simpleLook),
+      sleft: YES_NO(settings.simpleLook && settings.simpleLookShow.includes("leftSidebar")),
+      sright: YES_NO(settings.simpleLook && settings.simpleLookShow.includes("rightSidebar")),
+      sribbon: YES_NO(settings.simpleLook && settings.simpleLookShow.includes("ribbon")),
+      sstatus: YES_NO(settings.simpleLook && settings.simpleLookShow.includes("statusBar")),
       updates: extra.updates,
       tool,
       undo: YES_NO(settings.fingerTapUndo),

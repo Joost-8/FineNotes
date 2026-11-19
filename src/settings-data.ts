@@ -9,6 +9,7 @@
  */
 
 import type { FolderStyles } from "./model/library-style";
+import type { SimplePart } from "./model/simple-mode";
 import { LLM_PROVIDER_ID } from "./recognition/llm-request";
 import type { AskVaultScope } from "./recognition/vault-context";
 import { type ShapeToolStyle } from "./model/shape-style";
@@ -461,6 +462,8 @@ export interface GoodObsidianSettings {
   simpleLook: boolean;
   /** The note saying how to get normal Obsidian back has been shown (once). */
   simpleLookHinted: boolean;
+  /** Parts of Obsidian the simple look shows again (`model/simple-mode.ts`); none by default. Cleaned where read. */
+  simpleLookShow: SimplePart[];
   /** Prototype: the chrome's style (`look.ts`), `default` for today's. */
   lookStyle: string;
   /** Prototype: the chrome's colour palette (`look.ts`), `obsidian` to match the theme. */
@@ -661,6 +664,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   toolbarHomeAdded: true,
   simpleLook: false,
   simpleLookHinted: false,
+  simpleLookShow: [],
   lookStyle: "default",
   lookPalette: "obsidian",
   libraryStars: [],

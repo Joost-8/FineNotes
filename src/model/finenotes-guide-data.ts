@@ -172,10 +172,10 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     title: "Simple look (hide Obsidian's bars)",
     words:
       "simple look, easy mode, hide obsidian, clean, distraction free, focus, sidebars, right sidebar, other plugins, calendar, pomodoro, ribbon, status bar, title bar, app look, full app",
-    what: "Hides Obsidian's title bar, status bar, ribbon and left sidebar so FineNotes looks like an app of its own; the tabs stay, and so does the right sidebar's button (other plugins' panels, such as a calendar or a timer), closed at first. Home's folder rail stands in for the left sidebar. Turn it off to bring them back.",
+    what: "Hides Obsidian's title bar, status bar, ribbon and sidebars so FineNotes looks like an app of its own; the tabs stay. While it is on, the buttons under it (or the ⌄ beside Simple look on Home's folder rail) bring back parts one by one: Left sidebar, Right sidebar, Ribbon, Status bar (all off by default; a sidebar brought back starts closed, behind its own button, for other plugins' panels such as a calendar or a timer). With the left sidebar back, Home's folder rail steps aside. Turn the look off to bring everything back.",
     where:
-      "Settings › General › Simple look. Also in Notebook settings (gear), on the Welcome, and the command Simple look: hide or show….",
-    settings: ["simpleLook"],
+      "Settings › General › Simple look, and the buttons under it. Also Home › folder rail › ⌄ beside Simple look, Notebook settings (gear), the Welcome, and the command Simple look: hide or show….",
+    settings: ["simpleLook", "simpleLookShow"],
     commands: ["toggle-simple-look"],
     feature: "simpleLook",
   },

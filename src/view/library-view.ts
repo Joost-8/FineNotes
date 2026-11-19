@@ -62,7 +62,15 @@ import { PdfBackdropCache } from "./pdf-backdrop";
 import { NotebookPages } from "./library-pages";
 import type { Page } from "../model/document";
 import { type Tap, isDoubleTap, railFolders } from "../model/library-rail";
-import { SIMPLE_CLASS } from "../model/simple-mode";
+import {
+  SIMPLE_CLASS,
+  SIMPLE_PARTS,
+  SIMPLE_PART_ICONS,
+  SIMPLE_PART_NAMES,
+  type SimplePart,
+  simplePartClass,
+  toggleSimplePart,
+} from "../model/simple-mode";
 import type { HomeCardKind, Tip } from "../model/tips";
 import { tipScene } from "../model/tip-scenes";
 import { TipVisual } from "./tip-visual";
@@ -156,6 +164,9 @@ export interface LibraryHost {
   dismissHomeCard(kind: HomeCardKind): void;
   simpleLook(): boolean;
   setSimpleLook(on: boolean): void;
+  /** The parts of Obsidian the simple look shows again. */
+  simpleParts(): readonly SimplePart[];
+  setSimpleParts(parts: SimplePart[]): void;
   /** The New notebook / New board dialogs, made in `folder` ("" the root). */
   newNotebook(folder: string): void;
   newBoard(folder: string): void;
@@ -348,6 +359,8 @@ export class LibraryView extends ItemView {
   private drawerOpen = false;
   /** Home lists notebooks only, no other files (the sort menu); kept on this device. */
   private onlyNotebooks = this.app.loadLocalStorage(ONLY_NOTEBOOKS_KEY) === "1";
+  /** The rail brought out beside Obsidian's own left sidebar (simple look), until Home closes. */
+  private railWithSidebar = false;
   /** Hidden items shown, dimmed, until Home closes (the Sort menu, while any are hidden). */
   private showHidden = false;
   /** The simple look as of the last paint, so a change of it repaints. */
@@ -547,8 +560,20 @@ export class LibraryView extends ItemView {
    */
   private railMode(): "side" | "drawer" | "none" {
     if (!document.body.hasClass(SIMPLE_CLASS)) return "none";
+    // Obsidian's own left sidebar is back: its file explorer does the rail's
+    // job, so the rail starts put away; its button still brings it (and the
+    // simple look's ⌄ at its foot) back.
+    if (this.leftSidebarBack()) {
+      if (this.narrowForRail()) return this.drawerOpen ? "drawer" : "none";
+      return this.railWithSidebar ? "side" : "none";
+    }
     if (this.narrowForRail()) return this.drawerOpen ? "drawer" : "none";
     return this.railHidden ? "none" : "side";
+  }
+
+  /** Whether the simple look shows Obsidian's left sidebar again. */
+  private leftSidebarBack(): boolean {
+    return document.body.hasClass(simplePartClass("leftSidebar"));
   }
 
   private hasRail(): boolean {
@@ -558,6 +583,7 @@ export class LibraryView extends ItemView {
   /** The rail's button: put the rail away or bring it back (wide), or open and close the drawer (narrow). */
   private toggleRail(): void {
     if (this.narrowForRail()) this.drawerOpen = !this.drawerOpen;
+    else if (this.leftSidebarBack()) this.railWithSidebar = !this.railWithSidebar;
     else {
       this.railHidden = !this.railHidden;
       this.app.saveLocalStorage(RAIL_HIDDEN_KEY, this.railHidden ? "1" : "0");
@@ -1883,6 +1909,17 @@ export class LibraryView extends ItemView {
       cls: "goodobsidian-library-rail-name",
       text: t("settings.simpleLook.name"),
     });
+    // Its ⌄, as on every Home item: the parts of Obsidian to show again.
+    const caret = foot.createEl("button", {
+      cls: "clickable-icon goodobsidian-library-caret",
+      attr: {
+        type: "button",
+        "aria-label": t("settings.simpleLook.show"),
+        "aria-haspopup": "menu",
+      },
+    });
+    setIcon(caret, "chevron-down");
+    caret.addEventListener("click", (event) => this.openSimplePartsMenu(event));
     new ToggleComponent(foot).setValue(this.host.simpleLook()).onChange((on) => {
       this.host.setSimpleLook(on);
       this.paintNow();
@@ -2842,6 +2879,26 @@ export class LibraryView extends ItemView {
           });
         }),
     );
+    this.show(menu, event);
+  }
+
+  /** The parts of Obsidian the simple look shows again, ticked; one tap shows or hides one. */
+  private openSimplePartsMenu(event: MouseEvent): void {
+    const menu = this.newMenu();
+    menu.addItem((item) => item.setTitle(t("settings.simpleLook.show")).setIsLabel(true));
+    const shown = this.host.simpleParts();
+    for (const part of SIMPLE_PARTS) {
+      menu.addItem((item) =>
+        item
+          .setTitle(t(SIMPLE_PART_NAMES[part]))
+          .setIcon(SIMPLE_PART_ICONS[part])
+          .setChecked(shown.includes(part))
+          .onClick(() => {
+            this.host.setSimpleParts(toggleSimplePart(this.host.simpleParts(), part));
+            this.paintNow();
+          }),
+      );
+    }
     this.show(menu, event);
   }
 
