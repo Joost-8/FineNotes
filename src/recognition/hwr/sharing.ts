@@ -45,15 +45,20 @@ export const SHARE_KINDS: readonly ShareKind[] = ["practice", "word", "equation"
  * what licence raises it, and everyone who agreed to an older one is asked
  * again before anything more is sent.
  */
-export const CONSENT_VERSION = 2;
+export const CONSENT_VERSION = 3;
 
 /**
  * What donors agree to (Joost's choice, 2026-11-16, replacing CC0): the
  * items stay private, used only to train and test Grape and in Joost's
- * research; never published as a dataset or given to anyone else. Only the
- * Grape models trained on them are released, under Apache 2.0.
+ * research; never published as a dataset. Only the Grape models trained on
+ * them are released, under Apache 2.0.
+ *
+ * Version 3 (2026-11-19): to check that each label matches its ink, an item
+ * may be shown to Anthropic's Claude through its API, as a picture of the ink
+ * and its text only, under Anthropic's commercial terms (no training on it).
+ * Items shared under `finenotes-grape-private-1` never are.
  */
-export const SHARE_LICENCE = "finenotes-grape-private-1";
+export const SHARE_LICENCE = "finenotes-grape-private-2";
 
 /** The batch format, read by the server and the rig. */
 export const SHARE_FORMAT = "finenotes-ink-share/1";
