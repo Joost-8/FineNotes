@@ -157,6 +157,8 @@ export interface LibraryHost {
   setSimpleLook(on: boolean): void;
   /** The New notebook / New board dialogs, made in `folder` ("" the root). */
   newNotebook(folder: string): void;
+  /** A new text note, made in `folder` and opened. */
+  newNote(folder: string): void;
   newBoard(folder: string): void;
   /** The import dialog for Goodnotes, Notability and other apps, into `folder`. */
   importFromApp(folder: string): void;
@@ -2616,6 +2618,12 @@ export class LibraryView extends ItemView {
         .setTitle(t("notebooks.menu.newNotebook"))
         .setIcon("notebook-pen")
         .onClick(() => this.host.newNotebook(this.folder)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle(t("notebooks.note.new"))
+        .setIcon("notepad-text")
+        .onClick(() => this.host.newNote(this.folder)),
     );
     menu.addItem((item) =>
       item

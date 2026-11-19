@@ -12,7 +12,12 @@
  * No DOM, no Obsidian.
  */
 
-import { FRONTMATTER_FLAG, LEGACY_FRONTMATTER_FLAG, VIEW_TYPE_INK } from "../constants";
+import {
+  FRONTMATTER_FLAG,
+  LEGACY_FRONTMATTER_FLAG,
+  VIEW_TYPE_INK,
+  VIEW_TYPE_NOTE,
+} from "../constants";
 import { inkFileSuffix } from "../model/new-notebook";
 
 /** Obsidian's own type id for its Markdown view. */
@@ -68,8 +73,15 @@ export class ViewRouter {
    * view state's `state.file`, which may be anything). Only a request for
    * the Markdown view of an ink note is changed.
    */
-  typeToOpen(type: string, file: unknown, isInk: (path: string) => boolean): string {
+  typeToOpen(
+    type: string,
+    file: unknown,
+    isInk: (path: string) => boolean,
+    isTextNote: (path: string) => boolean = () => false,
+  ): string {
     if (type !== MARKDOWN_VIEW_TYPE || typeof file !== "string") return type;
+    // A text note (`Title.note.md`) opens in its own view, by its name alone.
+    if (isTextNote(file)) return VIEW_TYPE_NOTE;
     return this.wantsNotebook(file, () => isInk(file)) ? VIEW_TYPE_INK : type;
   }
 

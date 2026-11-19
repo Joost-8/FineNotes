@@ -398,7 +398,7 @@ describe("New notebook context menu", () => {
     await load({ newNotebookFolder: "Default" });
     const open = vi.spyOn(plugin, "openNewNotebookDialog").mockImplementation(() => {});
     const items = menuFor(new TFolder(path));
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     expect(items[0]).toMatchObject({
       title: "New notebook",
       icon: "notebook-pen",
@@ -435,7 +435,7 @@ describe("New notebook context menu", () => {
     const folder = new TFolder("School");
     expect(menuFor(folder)).toHaveLength(0);
     plugin.settings.showNewNotebookInContextMenu = true;
-    expect(menuFor(folder)).toHaveLength(2);
+    expect(menuFor(folder)).toHaveLength(3);
     expect(menuFor(folder, "link-context-menu")).toHaveLength(0);
     expect(menuFor(folder, "file-explorer")).toHaveLength(0);
     plugin.settings.showNewNotebookInContextMenu = false;
@@ -557,6 +557,7 @@ describe("registration", () => {
         "create-handwriting-note",
         "create-notebook-from-pdf",
         "create-notebook-with-last-settings",
+        "create-text-note",
         "customize-toolbar",
         "export-pdf",
         "fit-board-drawing",
@@ -609,7 +610,12 @@ describe("registration", () => {
 
   it("registers the notebook view, the ribbon button and the two link handlers", async () => {
     await load();
-    expect([...registered.views.keys()]).toEqual([INK, "finenotes-library", "finenotes-notebooks"]);
+    expect([...registered.views.keys()]).toEqual([
+      INK,
+      "finenotes-note",
+      "finenotes-library",
+      "finenotes-notebooks",
+    ]);
     expect(registered.ribbon.map((r) => r.icon)).toEqual(["finenotes-library"]);
     expect(registered.ribbon[0].title).toBe("Notebook library");
     expect(registered.ribbon[0].label).toBe("Notebook library");

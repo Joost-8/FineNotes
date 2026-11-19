@@ -143,6 +143,13 @@ describe("homePreviewPages", () => {
 });
 
 describe("fileEntry", () => {
+  it("names a text note without its suffix", () => {
+    expect(fileEntry("Trips/Dolomites.note.md", 1)).toMatchObject({
+      kind: "note",
+      title: "Dolomites",
+    });
+  });
+
   it("names a file without its extension and says what kind it is", () => {
     expect(fileEntry("Uni/N0 Number theory.md", 1)).toMatchObject({
       kind: "note",

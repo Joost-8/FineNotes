@@ -9,6 +9,7 @@
  * No DOM, no Obsidian.
  */
 
+import { isTextNoteName, stripTextNoteSuffix } from "./text-note-file";
 import { localeTag, t, tn } from "../i18n/translate";
 import { type InkDocument, type PageGeometry, type PdfBackdrop, isCoverRuling } from "./document";
 import { inkFileSuffix, stripInkSuffix } from "./new-notebook";
@@ -140,7 +141,12 @@ export function fileEntry(path: string, edited: number): LibraryEntry {
   return {
     ...placeholderEntry(path, edited),
     kind,
-    title: extension === "" ? name : name.slice(0, -extension.length - 1),
+    // A text note is `Title.note.md`: neither part of the suffix is its name.
+    title: isTextNoteName(name)
+      ? stripTextNoteSuffix(name)
+      : extension === ""
+        ? name
+        : name.slice(0, -extension.length - 1),
     // The page keeps the PDF's own size; the cover reads it as it draws.
     pdf: kind === "pdf" ? { path, page: 0, width: 0, height: 0 } : null,
   };
