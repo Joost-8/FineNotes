@@ -34,7 +34,8 @@ interface Inside {
   saveRequests: number;
   doc: { recognizedHash?: string; pages: { id: string }[] };
   surface: unknown;
-  scheduleAutoTranscription(): void;
+  scheduleAutoTranscription(changed?: readonly string[]): void;
+  transcription: unknown;
   clearPage(): void;
   isProtected(): boolean;
 }
@@ -319,7 +320,7 @@ describe("automatic transcription", () => {
 
   it("runs once the ink has been idle for 30 s", () => {
     const view = armed({ autoRecognize: true, cloudConsentGiven: true });
-    inside(view).scheduleAutoTranscription();
+    inside(view).scheduleAutoTranscription([]);
     vi.advanceTimersByTime(29_999);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
@@ -328,9 +329,9 @@ describe("automatic transcription", () => {
 
   it("starts the wait again on every change", () => {
     const view = armed({ autoRecognize: true, cloudConsentGiven: true });
-    inside(view).scheduleAutoTranscription();
+    inside(view).scheduleAutoTranscription([]);
     vi.advanceTimersByTime(20_000);
-    inside(view).scheduleAutoTranscription();
+    inside(view).scheduleAutoTranscription([]);
     vi.advanceTimersByTime(20_000);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
     vi.advanceTimersByTime(10_000);
@@ -339,7 +340,7 @@ describe("automatic transcription", () => {
 
   it("runs for the user's own endpoint once that is agreed to", () => {
     const view = armed({ autoRecognize: true, llmVendor: "custom", customConsentGiven: true });
-    inside(view).scheduleAutoTranscription();
+    inside(view).scheduleAutoTranscription([]);
     vi.advanceTimersByTime(30_000);
     expect(plugin.runRecognition).toHaveBeenCalledWith(view, true);
   });
@@ -351,7 +352,7 @@ describe("automatic transcription", () => {
     [{ autoRecognize: true, llmVendor: "custom", cloudConsentGiven: true }],
   ])("does not run with %j", (settings) => {
     const view = armed(settings);
-    inside(view).scheduleAutoTranscription();
+    inside(view).scheduleAutoTranscription([]);
     vi.advanceTimersByTime(60_000);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
   });
@@ -359,18 +360,106 @@ describe("automatic transcription", () => {
   it("does not run for a provider that stays on the device", () => {
     const view = armed({ autoRecognize: true, cloudConsentGiven: true });
     plugin.activeProvider = () => ({ id: "manual", requiresNetwork: false });
-    inside(view).scheduleAutoTranscription();
+    inside(view).scheduleAutoTranscription([]);
     vi.advanceTimersByTime(60_000);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
   });
 
   it("a change with the setting off cancels a pending run", () => {
     const view = armed({ autoRecognize: true, cloudConsentGiven: true });
-    inside(view).scheduleAutoTranscription();
+    inside(view).scheduleAutoTranscription([]);
     plugin.settings.autoRecognize = false;
-    inside(view).scheduleAutoTranscription();
+    inside(view).scheduleAutoTranscription([]);
     vi.advanceTimersByTime(60_000);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
+  });
+  describe("which pages it reads (FineNotes#265 review)", () => {
+    /** A notebook of three inked pages, the view on the first. */
+    function threePages(): View {
+      vi.useFakeTimers();
+      vi.stubGlobal("window", globalThis);
+      const view = openView(100, { autoRecognize: true, cloudConsentGiven: true });
+      const doc = emptyDocument(1024);
+      doc.pages.push(blankPage("p2"), blankPage("p3"));
+      doc.pages.forEach((page, i) =>
+        page.strokes.push({
+          id: `s${i}`,
+          tool: "pen",
+          color: "#000",
+          size: 3,
+          pts: [10, 20, 0.5, 30, 40, 0.5],
+        } as never),
+      );
+      view.setViewData(`# T\n\n%%goodobsidian\n${encodeDocument(doc)}\n%%\n`, true);
+      inside(view).surface = { currentPage: 0 };
+      // As if on screen: a closed note stops a run after its first page.
+      (view as unknown as { mounted: boolean }).mounted = true;
+      return view;
+    }
+    const reader = () => ({
+      id: "llm-byok",
+      requiresNetwork: true,
+      recognize: vi.fn((req: { strokes: { id: string }[] }) =>
+        Promise.resolve({ text: `read ${req.strokes.map((s) => s.id).join()}` }),
+      ),
+    });
+
+    it("reads the page written on, not the page in view", async () => {
+      const view = threePages();
+      const ids = inside(view).doc.pages.map((p) => p.id);
+      inside(view).scheduleAutoTranscription([ids[2]]);
+      const provider = reader();
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(1);
+      expect(provider.recognize.mock.calls[0][0].strokes[0].id).toBe("s2");
+      // Written under the third page's heading.
+      expect(view.getViewData()).toMatch(/### Page 3\n<!--goodobsidian-page [^>]*-->\nread s2/);
+      // Taken: the next quiet moment has nothing left to read.
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the pages waiting while another run is going, and runs again after", async () => {
+      const view = threePages();
+      const ids = inside(view).doc.pages.map((p) => p.id);
+      inside(view).scheduleAutoTranscription([ids[1]]);
+      vi.advanceTimersByTime(30_000);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
+      inside(view).transcription = { cancelled: false };
+      const provider = reader();
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(30_000);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(2);
+      inside(view).transcription = null;
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(1);
+      expect(provider.recognize.mock.calls[0][0].strokes[0].id).toBe("s1");
+    });
+
+    it("sends three pages at a time and comes back for the rest", async () => {
+      const view = threePages();
+      const doc = inside(view).doc as unknown as { pages: unknown[] };
+      for (const id of ["p4", "p5"]) {
+        const page = blankPage(id);
+        page.strokes.push({
+          id: `s-${id}`,
+          tool: "pen",
+          color: "#000",
+          size: 3,
+          pts: [1, 2, 0.5, 3, 4, 0.5],
+        } as never);
+        doc.pages.push(page);
+      }
+      inside(view).scheduleAutoTranscription(inside(view).doc.pages.map((p) => p.id));
+      const provider = reader();
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(3);
+      vi.advanceTimersByTime(30_000);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(5);
+    });
   });
 });
 

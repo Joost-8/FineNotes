@@ -405,8 +405,14 @@ export function updatePageTranscripts(
 
 /**
  * FNV-1a over everything a page transcription reads: strokes (ids and
- * quantized points), typed text boxes and the paper. Base 36, lower case —
- * the alphabet the page comment accepts.
+ * quantized points), typed text boxes, the paper, and the tables, graphs,
+ * equations and pictures the page shows. Base 36, lower case — the alphabet
+ * the page comment accepts.
+ *
+ * The last four were missing until FineNotes#265's review: a page whose
+ * table was edited stayed "up to date". They are mixed in only when a page
+ * has them, so a page without them keeps the hash it was recorded with and
+ * is not sent again.
  */
 export function pageContentHash(page: Page): string {
   let h = 0x811c9dc5;
@@ -428,7 +434,31 @@ export function pageContentHash(page: Page): string {
     for (const v of [box.x, box.y, box.w, box.fontSize]) mix(Math.round(v));
   }
   mixText(JSON.stringify(page.backdrop));
+  const shown = [page.tables, page.graphs, page.equations, page.images];
+  for (const elements of shown) {
+    if (!elements || elements.length === 0) continue;
+    for (const element of elements) mixText(JSON.stringify(element));
+  }
   return (h >>> 0).toString(36);
+}
+
+/** At most this many pages go out in one automatic transcription; the rest wait for the next. */
+export const AUTO_TRANSCRIBE_MAX_PAGES = 3;
+
+/**
+ * Which of the pages changed since the last automatic transcription go out
+ * now (`now`, in page order, at most `max`) and which wait for the next
+ * quiet moment (`later`). A page deleted meanwhile is dropped. Automatic
+ * transcription reads the pages that were written on, not whichever page is
+ * in view when the wait runs out.
+ */
+export function autoTranscriptionBatch(
+  changed: ReadonlySet<string>,
+  pageIds: readonly string[],
+  max = AUTO_TRANSCRIBE_MAX_PAGES,
+): { now: string[]; later: string[] } {
+  const waiting = pageIds.filter((id) => changed.has(id));
+  return { now: waiting.slice(0, max), later: waiting.slice(max) };
 }
 
 /** Whether a page has anything a transcription could read. */

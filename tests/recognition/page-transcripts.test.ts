@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { type Page, blankPage } from "../../src/model/document";
 import {
+  AUTO_TRANSCRIBE_MAX_PAGES,
+  autoTranscriptionBatch,
   hasAskableContent,
   hasTranscribableContent,
   pageContentHash,
@@ -191,6 +193,79 @@ describe("pageContentHash", () => {
     expect(pageContentHash(withText)).not.toBe(h);
     const ruled = page("p1", { strokes: [stroke("s1")], backdrop: { kind: "ruled-wide" } });
     expect(pageContentHash(ruled)).not.toBe(h);
+  });
+});
+
+describe("pageContentHash and what else a page shows (FineNotes#265 review)", () => {
+  const inked = () =>
+    page("p1", {
+      strokes: [stroke("s1")],
+      textBoxes: [{ id: "t1", x: 0, y: 0, w: 100, text: "hi", color: "#000", fontSize: 22 }],
+    });
+
+  it("keeps the hash a page was recorded with before tables and pictures counted", () => {
+    // Computed with the hash as it was in 2.10.0: such a page is not sent again.
+    expect(pageContentHash(inked())).toBe("12qs1ou");
+    expect(pageContentHash({ ...inked(), tables: [], graphs: [], equations: [] })).toBe("12qs1ou");
+  });
+
+  it("moves when a table's text, an equation, a graph or a picture changes", () => {
+    const table = {
+      id: "g1",
+      x: 0,
+      y: 0,
+      cols: [80, 80],
+      rows: [30],
+      cells: [["a", "b"]],
+      color: "#000",
+      size: 1,
+      textColor: "#000",
+      fontSize: 16,
+    };
+    const withTable = { ...inked(), tables: [table] } as unknown as Page;
+    const edited = { ...inked(), tables: [{ ...table, cells: [["a", "c"]] }] } as unknown as Page;
+    const h = pageContentHash(withTable);
+    expect(h).not.toBe(pageContentHash(inked()));
+    expect(pageContentHash(edited)).not.toBe(h);
+    const equation = { id: "e1", x: 0, y: 0, latex: "x^2" };
+    const withEquation = { ...inked(), equations: [equation] } as unknown as Page;
+    const otherEquation = {
+      ...inked(),
+      equations: [{ ...equation, latex: "x^3" }],
+    } as unknown as Page;
+    expect(pageContentHash(withEquation)).not.toBe(pageContentHash(otherEquation));
+    const picture = { id: "i1", path: "a.png", x: 0, y: 0, w: 10, h: 10 };
+    const withPicture = { ...inked(), images: [picture] } as unknown as Page;
+    expect(pageContentHash(withPicture)).not.toBe(pageContentHash(inked()));
+    const graph = { id: "q1", x: 0, y: 0, expr: "sin(x)" };
+    const withGraph = { ...inked(), graphs: [graph] } as unknown as Page;
+    expect(pageContentHash(withGraph)).not.toBe(pageContentHash(inked()));
+  });
+});
+
+describe("autoTranscriptionBatch", () => {
+  it("reads the pages written on, in page order, not the page in view", () => {
+    const batch = autoTranscriptionBatch(new Set(["p3", "p1"]), ["p1", "p2", "p3", "p4"]);
+    expect(batch).toEqual({ now: ["p1", "p3"], later: [] });
+  });
+
+  it("drops a page deleted meanwhile", () => {
+    expect(autoTranscriptionBatch(new Set(["gone", "p2"]), ["p1", "p2"])).toEqual({
+      now: ["p2"],
+      later: [],
+    });
+    expect(autoTranscriptionBatch(new Set(), ["p1"])).toEqual({ now: [], later: [] });
+  });
+
+  it("sends at most a few at once; the rest wait for the next quiet moment", () => {
+    const ids = ["p1", "p2", "p3", "p4", "p5"];
+    const batch = autoTranscriptionBatch(new Set(ids), ids);
+    expect(batch.now).toHaveLength(AUTO_TRANSCRIBE_MAX_PAGES);
+    expect(batch).toEqual({ now: ["p1", "p2", "p3"], later: ["p4", "p5"] });
+    expect(autoTranscriptionBatch(new Set(ids), ids, 1)).toEqual({
+      now: ["p1"],
+      later: ["p2", "p3", "p4", "p5"],
+    });
   });
 });
 

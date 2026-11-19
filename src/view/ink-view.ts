@@ -74,6 +74,7 @@ import { readTextSection, writeTextSection } from "../recognition/text-layer";
 import {
   type TranscriptUpdate,
   hasAskableContent,
+  autoTranscriptionBatch,
   hasTranscribableContent,
   pageContentHash,
   pageKeys,
@@ -770,6 +771,8 @@ export class InkView extends TextFileView {
 
   /** The wait before an automatic transcription (see `scheduleAutoTranscription`). */
   private transcribeTimer = 0;
+  /** Ids of the pages written on since the last automatic transcription took them. */
+  private autoPages = new Set<string>();
   /** Present mode while it is on (⋯ › Present). */
   private presenter: Presenter | null = null;
   /** The next on-device reading for search and the text layer (`scheduleDeviceReading`). */
@@ -1624,7 +1627,24 @@ export class InkView extends TextFileView {
    * request for every page of a long notebook.
    */
   async recognize(engine: RecognitionProvider, background = false): Promise<void> {
-    await this.transcribe(engine, background ? "page" : "notebook", background);
+    if (!background) {
+      await this.transcribe(engine, "notebook");
+      return;
+    }
+    // Another run is going (the command, or a slow automatic one): the pages
+    // stay waiting for the next quiet moment rather than being dropped.
+    if (this.transcription) {
+      this.scheduleAutoTranscription();
+      return;
+    }
+    const { now, later } = autoTranscriptionBatch(
+      this.autoPages,
+      this.doc.pages.map((page) => page.id),
+    );
+    this.autoPages = new Set(later);
+    const pages = this.doc.pages.filter((page) => now.includes(page.id));
+    if (pages.length > 0) await this.transcribe(engine, pages, true);
+    if (this.autoPages.size > 0) this.scheduleAutoTranscription();
   }
 
   /**
@@ -1641,7 +1661,7 @@ export class InkView extends TextFileView {
    */
   async transcribe(
     provider: RecognitionProvider,
-    scope: "page" | "notebook",
+    scope: "page" | "notebook" | readonly Page[],
     auto = false,
   ): Promise<void> {
     if (this.guard.locked) {
@@ -1662,7 +1682,8 @@ export class InkView extends TextFileView {
 
     const doc = this.doc;
     const current = doc.pages[this.surface?.currentPage ?? 0];
-    const pages = scope === "page" ? (current ? [current] : []) : [...doc.pages];
+    const pages =
+      scope === "page" ? (current ? [current] : []) : scope === "notebook" ? [...doc.pages] : scope;
     const keys = pageKeys(doc.pages);
     const recorded = transcriptHashes(readTextSection(this.noteBody));
     const cleared: TranscriptUpdate[] = [];
@@ -3070,16 +3091,6 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * Automatic transcription, a setting that is off by default: every change
-   * to the ink restarts a wait of AUTO_RECOGNIZE_IDLE_MS, and when the wait
-   * runs out the page in view is transcribed. It cannot ask for consent, so
-   * it is only armed for an engine that needs the network once the user has
-   * agreed to send to the chosen vendor's kind of destination: a cloud
-   * service and the user's own endpoint are agreed to separately. A page
-   * whose ink has not changed since its last transcription costs nothing
-   * (see `transcribe`).
-   */
-  /**
    * Read pages on this device for search and the text layer, a moment after
    * writing stops (`device-reading.ts` picks the page): one page at a time,
    * the page in view first, never while the pen is down, never replacing a
@@ -3552,14 +3563,38 @@ export class InkView extends TextFileView {
     }
   }
 
-  private scheduleAutoTranscription(): void {
+  /**
+   * Automatic transcription, a setting that is off by default: every change
+   * to the ink restarts a wait of AUTO_RECOGNIZE_IDLE_MS, and when the wait
+   * runs out the pages written on since the last run are transcribed (a few
+   * at a time, `autoTranscriptionBatch`), wherever the view has scrolled to
+   * meanwhile. It cannot ask for consent, so it is only armed for an engine
+   * that needs the network once the user has agreed to send to the chosen
+   * vendor's kind of destination: a cloud service and the user's own
+   * endpoint are agreed to separately. A page whose content has not changed
+   * since its last transcription costs nothing (see `transcribe`).
+   *
+   * `changed` is the ids of the pages an edit touched; without them (an
+   * edit that does not say), the page in view.
+   */
+  private scheduleAutoTranscription(changed?: readonly string[]): void {
     window.clearTimeout(this.transcribeTimer);
     const { autoRecognize, llmVendor } = this.settings;
     const armed =
       autoRecognize &&
       this.plugin.activeProvider().requiresNetwork &&
       this.plugin.consentedTo(llmVendor);
-    if (!armed) return;
+    if (!armed) {
+      this.autoPages.clear();
+      return;
+    }
+    if (changed && changed.length > 0) {
+      for (const id of changed) this.autoPages.add(id);
+    } else if (changed) {
+      const current = this.doc.pages[this.surface?.currentPage ?? 0];
+      if (current) this.autoPages.add(current.id);
+    }
+    if (this.autoPages.size === 0) return;
     const transcribeNow = (): void => void this.plugin.runRecognition(this, true);
     this.transcribeTimer = window.setTimeout(transcribeNow, AUTO_RECOGNIZE_IDLE_MS);
   }
@@ -3902,7 +3937,7 @@ export class InkView extends TextFileView {
           this.syncSingle();
           // …and undo can take a recording off the note, or bring one back.
           this.audio?.syncChrome();
-          this.scheduleAutoTranscription();
+          this.scheduleAutoTranscription(pages ?? []);
           this.scheduleDeviceReading();
           this.columnNotes.pagesChanged(pages);
           this.requestSaveOf(pages);
