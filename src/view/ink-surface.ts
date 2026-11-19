@@ -349,7 +349,7 @@ import {
 } from "../model/board";
 import { afterPainted } from "./after-painted";
 import { lowMemoryDevice } from "./pdf-backdrop";
-import { slidesAround } from "../model/slide-follow";
+import { slidesAround } from "../model/beside-pdfs";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
   BRUSH_PRESSURE,
@@ -14009,6 +14009,14 @@ export class InkSurface {
       const span = this.lassoSpan(lasso);
       if (span) this.selectOnLines(lasso.box, lasso.lines, span);
       this.keepOutline(this.lassoLoop(lasso));
+      return;
+    }
+    // On a PDF's tab a lasso's job is the snippet: it always keeps the
+    // AREA (its outline and the drag-to-Notes chip), ink in it or not, and
+    // the ink inside is part of the picture, never a selection of its own.
+    if (this.snippetsOn) {
+      this.dropSelection();
+      this.showEmptyLasso(lasso.box, lasso.mode === "rect" ? loop : smoothPath(loop), lasso.to);
       return;
     }
     this.selectInside(lasso.box, loop);
