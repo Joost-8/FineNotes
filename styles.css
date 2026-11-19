@@ -5966,8 +5966,9 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   opacity: 0.4;
 }
 
-/* A 44 px target around a 30 px dot; the selected one is ringed in the
-   accent colour, which reads on light and dark themes alike. */
+/* A 44 px target around a 30 px dot; the selected dot is ringed in the
+   accent colour past a gap, as every colour picker marks its choice
+   (FineNotes#240: the button's own border made it a double ring). */
 .goodobsidian-cover-swatch {
   display: inline-flex;
   align-items: center;
@@ -5975,20 +5976,17 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   width: var(--gob-touch);
   height: var(--gob-touch);
   padding: 0;
-  border: 2px solid transparent;
+  border: none;
   border-radius: 50%;
   background: transparent;
   box-shadow: none;
   cursor: pointer;
 }
 
-/* Outranks a theme's .clickable-icon padding (FineNotes#240). */
+/* Outranks a theme's .clickable-icon padding and border (FineNotes#240). */
 button.goodobsidian-cover-swatch.clickable-icon {
   padding: 0;
-}
-
-.goodobsidian-cover-swatch.is-selected {
-  border-color: var(--interactive-accent);
+  border: none;
 }
 
 .goodobsidian-cover-swatch.is-selected .goodobsidian-cover-swatch-dot {
@@ -11193,6 +11191,21 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   padding: 0;
   border-radius: var(--gob-radius-m);
   color: var(--gob-icon);
+  margin-inline-end: var(--size-4-2);
+}
+
+/* Obsidian places the prompt's clear ✕ (which closes it while the field is
+   empty) absolutely, 16 px from the row's end: on the sidebar button. Move
+   it to just before the button (36 px plus the button's margin). */
+.goodobsidian-search-modal.has-search-switch .prompt-input-container .search-input-clear-button {
+  inset-inline-end: calc(36px + var(--size-4-2) + var(--size-4-1));
+}
+
+/* On mobile Obsidian keeps an empty "create file" slot at the row's end,
+   40 px in; search never fills it, and it would take the taps on the
+   button's left edge and the ✕ (measured on the iPad, Obsidian 1.15.1). */
+.goodobsidian-search-modal .prompt-input-cta {
+  display: none;
 }
 
 /* The field and every match as a row (search-panel.ts, discussion #112):
@@ -17445,19 +17458,66 @@ button.goodobsidian-edit-menu-row {
 
 /* --- The simple look (model/simple-mode.ts) ----------------------------- */
 
-/* Obsidian's own chrome tucked away; the tabs stay. Nothing is removed. */
-body.goodobsidian-simple .status-bar,
-body.goodobsidian-simple .workspace-ribbon,
-body.goodobsidian-simple .workspace-split.mod-left-split,
-body.goodobsidian-simple .workspace-split.mod-right-split,
-body.goodobsidian-simple .workspace-drawer,
-body.goodobsidian-simple .sidebar-toggle-button {
+/* Obsidian's own chrome tucked away; the tabs stay. Nothing is removed. Each
+   part can be shown again (settings, or Home's rail ⌄); all are hidden by
+   default. A sidebar shown again starts closed, behind its own button. */
+body.goodobsidian-simple:not(.goodobsidian-simple-show-statusBar) .status-bar,
+body.goodobsidian-simple:not(.goodobsidian-simple-show-ribbon) .workspace-ribbon,
+body.goodobsidian-simple:not(.goodobsidian-simple-show-leftSidebar)
+  :is(.workspace-split.mod-left-split, .workspace-drawer.mod-left, .sidebar-toggle-button.mod-left),
+body.goodobsidian-simple:not(.goodobsidian-simple-show-rightSidebar)
+  :is(
+    .workspace-split.mod-right-split,
+    .workspace-drawer.mod-right,
+    .sidebar-toggle-button.mod-right
+  ) {
   display: none;
 }
 body.goodobsidian-simple
   .workspace-leaf-content:is([data-type="goodobsidian-view"], [data-type="finenotes-library"])
   > .view-header {
   display: none;
+}
+
+/* Settings › General, under the simple look's switch: the parts it can show again. */
+.goodobsidian-simple-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  /* Lined up with the row's name, past its 72 px drawing, and tucked under
+     that row: its name and switch above, these under them. */
+  margin-top: calc(-1 * var(--setting-items-padding-y, 12px));
+  padding: 0 var(--setting-items-padding-x, 16px) var(--setting-items-padding-y, 12px)
+    calc(var(--setting-items-padding-x, 16px) + 72px + var(--size-4-3, 12px));
+}
+/* One row with the switch above: no divider between them. */
+.setting-group .setting-item.goodobsidian-simple-parts-row::before {
+  display: none;
+}
+button.goodobsidian-simple-part.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--gob-touch-compact, 36px);
+  padding: 0 12px;
+  border: 1px solid var(--gob-line);
+  border-radius: 999px;
+  background: var(--gob-well);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+button.goodobsidian-simple-part.clickable-icon.is-on {
+  border-color: hsla(var(--interactive-accent-hsl), 0.45);
+  background: hsla(var(--interactive-accent-hsl), 0.14);
+  color: var(--text-normal);
+}
+.goodobsidian-simple-part-icon {
+  display: inline-flex;
+}
+.goodobsidian-simple-part-icon .svg-icon {
+  width: 14px;
+  height: 14px;
 }
 
 /* --- Notebook library (src/view/library-view.ts) ------------------------- */
@@ -17711,6 +17771,14 @@ button.goodobsidian-library-new:active {
 }
 .goodobsidian-library-card.is-dragging {
   opacity: 0.45;
+}
+/* Hidden from Home, shown while "Show hidden items" is on. */
+.goodobsidian-library-card.is-off-home .goodobsidian-library-cover {
+  opacity: 0.4;
+  filter: grayscale(0.6);
+}
+.goodobsidian-library-card.is-off-home .goodobsidian-library-caption {
+  opacity: 0.6;
 }
 .goodobsidian-library-card.is-drop .goodobsidian-library-cover {
   transform: scale(1.06);

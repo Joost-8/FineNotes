@@ -139,6 +139,14 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Where:** Home › Sort (up-down arrows icon)
 - **Words:** sort, order, by name, by date, last edited, date created, page count, list view, grid view, hide files, notebooks only
 
+### Hide notebooks and files from Home
+
+- **Id:** `homeHide`
+- **What:** A cover's or folder's ⌄ menu has "Hide from Home": the item (and all a folder holds) leaves Home, Continue, the folder rail and search; the file stays in the vault. Sort › "Show hidden items" (there only while something is hidden) shows them dimmed, and their ⌄ menu has "Show on Home".
+- **Where:** Home › an item's ⌄ › Hide from Home; Home › Sort › Show hidden items
+- **Words:** hide, hide notebook, hide file, unhide, show hidden, declutter, archive, take off home, hidden items
+- **Settings:** `libraryHidden`
+
 ### Favorites (star notebooks and folders)
 
 - **Id:** `homeFavorites`

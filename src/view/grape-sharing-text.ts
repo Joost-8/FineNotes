@@ -50,7 +50,7 @@ const TEXT = {
   "consent.who":
     "It is kept on a server in the Netherlands run by Joost, who makes FineNotes, and used to train Grape and to test it on writers it has never seen. It may also be used in his research on handwriting recognition at TU Eindhoven.",
   "consent.licence":
-    "Your items stay private. They are never published as a dataset or given to anyone else; they are only used to train and test Grape, and in Joost's research. Only Grape itself is released, free under Apache 2.0.",
+    "Your items stay private. They are never published as a dataset; they are only used to train and test Grape, and in Joost's research. To check that each label matches its ink, an item may be shown to Claude, an AI by Anthropic (USA): only a picture of the ink and its text, nothing that says who wrote it. Anthropic may not train on it, and deletes it within 30 days. Only Grape itself is released, free under Apache 2.0.",
   "consent.control":
     "Review first shows every item, and lets you keep any of them. Stop at any time, and delete everything you shared from the server. A Grape that was already released cannot unlearn what it learned from your items; Grapes trained after the delete never see them.",
   "consent.policy": "Privacy notice",

@@ -51,6 +51,12 @@ import {
   setIcon,
 } from "obsidian";
 import { ICON_NEW_NOTEBOOK, SIZES } from "./constants";
+import {
+  SIMPLE_PARTS,
+  SIMPLE_PART_ICONS,
+  SIMPLE_PART_NAMES,
+  toggleSimplePart,
+} from "./model/simple-mode";
 import { SHORTCUT_NEW_NOTEBOOK_URL, SHORTCUT_PDF_URL } from "./model/inbox";
 import {
   ASSETS_FOLDER,
@@ -971,6 +977,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.update();
       return;
     }
+    if (key === "simpleLook") {
+      // Saved by the plugin; the parts it can show again appear under it while it is on.
+      this.plugin.setSimpleLook(value === true);
+      this.update();
+      return;
+    }
     if (key === "gestureHints") {
       // Saved by the plugin, which forgets what it counted when the hints go off.
       await this.plugin.setGestureHints(value === true);
@@ -1097,6 +1109,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
               "ribbon",
             ]),
             "simpleLook",
+          ),
+          block(
+            (el) => this.drawSimpleParts(el),
+            () => this.plugin.settings.simpleLook,
           ),
           this.tile(
             toggle(
@@ -2536,6 +2552,33 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /** The chrome's style and colours (`model/look.ts`). */
+  /**
+   * Under the simple look's switch, while it is on: the parts of Obsidian it
+   * can show again, one button each, filled while shown (all off by default).
+   */
+  private drawSimpleParts(el: HTMLElement): void {
+    el.addClass("goodobsidian-simple-parts-row");
+    const row = el.createDiv({
+      cls: "goodobsidian-simple-parts",
+      attr: { role: "group", "aria-label": t("settings.simpleLook.show") },
+    });
+    const shown = this.plugin.settings.simpleLookShow;
+    for (const part of SIMPLE_PARTS) {
+      const on = shown.includes(part);
+      const chip = row.createEl("button", {
+        cls: "clickable-icon goodobsidian-simple-part",
+        attr: { type: "button", "aria-pressed": String(on) },
+      });
+      chip.toggleClass("is-on", on);
+      setIcon(chip.createSpan({ cls: "goodobsidian-simple-part-icon" }), SIMPLE_PART_ICONS[part]);
+      chip.createSpan({ text: t(SIMPLE_PART_NAMES[part]) });
+      chip.addEventListener("click", () => {
+        this.plugin.setSimpleParts(toggleSimplePart(this.plugin.settings.simpleLookShow, part));
+        this.update();
+      });
+    }
+  }
+
   private drawStyle(setting: Setting): void {
     const settings = this.plugin.settings;
     setting.addDropdown((d) => {

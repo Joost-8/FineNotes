@@ -8,6 +8,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Help improve Grape: new terms (version 3).** Before a shared item is used
+  to train Grape, its label may be checked against its ink by Claude, an AI by
+  Anthropic: only a picture of the ink and its text are sent, and Anthropic
+  may not train on it. Everyone who shares is asked to agree again before
+  anything more is sent; items shared under the old terms are never checked
+  this way. See PRIVACY.md, "The label check by Anthropic".
+
 ## [2.10.0] - 2026-11-18
 
 ### Added

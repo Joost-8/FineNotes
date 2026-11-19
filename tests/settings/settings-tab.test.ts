@@ -499,6 +499,7 @@ describe("the rows", () => {
       ["general", "", "Style", "render"],
       ["general", "", "Colours", "render"],
       ["general", "", "Simple look", "toggle:simpleLook"],
+      ["general", "", "(block)", "render"],
       ["general", "", "Hints for faster ways", "toggle:gestureHints"],
       ["general", "", "Updates", "dropdown:checkForUpdates"],
       ["writing", "Pens", "Start with", "render"],

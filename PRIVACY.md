@@ -67,14 +67,34 @@ your consent (GDPR art. 6(1)(a)).
 
 ## Your items stay private; only Grape is released
 
-What you share is **never published** and never given to anyone else: it is
-not released as a dataset, and nobody but Joost works with it. By sharing you
-allow Joost to use your items for the purposes above: to train Grape, to
+What you share is **never published**: it is not released as a dataset, and
+nobody but Joost works with it, apart from the label check below. By sharing
+you allow Joost to use your items for the purposes above: to train Grape, to
 test it, and in his research. Research results report measurements, never
 your handwriting itself.
 
 Only the **Grape models** trained on your items are released, free and open
 under the Apache License 2.0. A model holds what it learned, not your items.
+
+## The label check by Anthropic
+
+A wrong label teaches Grape the wrong thing, so before an item is used, its
+label is checked against its ink. For that check an item may be sent to
+**Claude**, an AI model by **Anthropic PBC** (USA), through Anthropic's API:
+
+- **What is sent:** a picture of the item's ink and the text it should say.
+  Not the contributor number, the pen timing, the device, the FineNotes
+  version or anything else from the batch.
+- **What Anthropic may do with it:** only answer whether the text matches
+  the ink. Anthropic acts as Joost's processor under its commercial terms
+  and data processing agreement: it may not train its models on what it is
+  sent, and deletes it within 30 days (longer only for what it flags as
+  breaking its usage policy).
+- **Transfer outside the EU:** Anthropic processes data in the USA, under
+  the standard contractual clauses in its data processing agreement.
+
+Items shared under the terms before this check was added (version 2) are
+never sent to Anthropic.
 
 ## Where it is kept, and for how long
 

@@ -302,6 +302,8 @@ interface ThumbView {
   count: HTMLElement;
   /** Content signature at the last paint; empty means "never painted". */
   painted: string;
+  /** What `sync()` last wrote into its row (number, title, aspect); empty means never. */
+  shown: string;
   /** The canvas holds pixels (it was painted and not given back since). */
   held: boolean;
   visible: boolean;
@@ -408,6 +410,8 @@ export class PageSidebar {
 
   private doc: InkDocument | null = null;
   private current = 0;
+  /** The thumbnail wearing the "current" mark now. */
+  private marked: ThumbView | null = null;
   private open = false;
   /** A single page: no way to add, duplicate or reorder pages. */
   private single = false;
@@ -1211,7 +1215,7 @@ export class PageSidebar {
   setCurrentPage(index: number): void {
     if (index === this.current) return;
     this.current = index;
-    this.syncCurrent();
+    this.moveCurrent();
     if (this.open) {
       if (this.tab === "contents") this.revealCurrentEntry();
       else this.revealCurrent();
@@ -1269,14 +1273,19 @@ export class PageSidebar {
     if (this.anchor && !pages.includes(this.anchor)) this.anchor = null;
     this.thumbs.forEach((view, index) => {
       view.page = pages[index] ?? null;
+      const page = pages[index];
+      const entries = page ? pageContentsEntries(page, index).length : 0;
+      const title = thumbnailTitleOf(page);
+      const aspect = page ? aspectOf(this.thumbPage(page)) : "";
+      // A long book's edit touches one row: the others are left as they are.
+      const shown = `${index}|${entries}|${aspect}|${page?.board === true}|${this.board}|${title}`;
+      if (shown === view.shown) return;
+      view.shown = shown;
       view.label.setText(String(index + 1));
       // The frame, not the root: it is only in the root near the view (#207).
       view.frame
         .querySelector(".goodobsidian-thumb-kind")
-        ?.toggleClass("is-hidden", pages[index]?.board !== true || this.board);
-      const page = pages[index];
-      const entries = page ? pageContentsEntries(page, index).length : 0;
-      const title = thumbnailTitleOf(page);
+        ?.toggleClass("is-hidden", page?.board !== true || this.board);
       view.title.setText(title);
       view.count.setText(entries > 1 ? `+${entries - 1}` : "");
       view.count.toggleClass("is-hidden", entries < 2);
@@ -1285,7 +1294,6 @@ export class PageSidebar {
         "aria-label",
         entries > 1 ? t("view.sidebar.moreInContents", { title, count: entries - 1 }) : title,
       );
-      const aspect = page ? aspectOf(this.thumbPage(page)) : "";
       view.canvas.setCssStyles({ aspectRatio: aspect });
       view.root.setCssProps({ "--goodobsidian-thumb-aspect": aspect });
     });
@@ -1574,6 +1582,7 @@ export class PageSidebar {
       title,
       count,
       painted: "",
+      shown: "",
       held: false,
       visible: false,
       seen: 0,
@@ -1619,15 +1628,33 @@ export class PageSidebar {
   }
 
   private syncCurrent(): void {
-    this.thumbs.forEach((view, index) => {
-      const active = index === this.current;
-      view.root.toggleClass("is-current", active);
-      view.frame.setAttribute("aria-current", active ? "page" : "false");
-      // The overview measures the page being read to fly it into its place.
-      if (active) this.attachThumb(view);
-    });
+    this.thumbs.forEach((view, index) => this.markThumb(view, index === this.current));
+    this.marked = this.thumbs[this.current] ?? null;
     this.syncCurrentEntry();
     this.syncContentsAdd();
+  }
+
+  /**
+   * The page being read changed and the thumbnails did not: only the one
+   * marked before and the new one are touched. A 600-page book rewrote all
+   * 600 on every page turn.
+   */
+  private moveCurrent(): void {
+    const next = this.thumbs[this.current] ?? null;
+    if (next !== this.marked) {
+      if (this.marked) this.markThumb(this.marked, false);
+      if (next) this.markThumb(next, true);
+      this.marked = next;
+    }
+    this.syncCurrentEntry();
+    this.syncContentsAdd();
+  }
+
+  private markThumb(view: ThumbView, active: boolean): void {
+    view.root.toggleClass("is-current", active);
+    view.frame.setAttribute("aria-current", active ? "page" : "false");
+    // The overview measures the page being read to fly it into its place.
+    if (active) this.attachThumb(view);
   }
 
   /**

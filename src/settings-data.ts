@@ -9,6 +9,7 @@
  */
 
 import type { FolderStyles } from "./model/library-style";
+import type { SimplePart } from "./model/simple-mode";
 import { LLM_PROVIDER_ID } from "./recognition/llm-request";
 import type { AskVaultScope } from "./recognition/vault-context";
 import { type ShapeToolStyle } from "./model/shape-style";
@@ -461,12 +462,16 @@ export interface GoodObsidianSettings {
   simpleLook: boolean;
   /** The note saying how to get normal Obsidian back has been shown (once). */
   simpleLookHinted: boolean;
+  /** Parts of Obsidian the simple look shows again (`model/simple-mode.ts`); none by default. Cleaned where read. */
+  simpleLookShow: SimplePart[];
   /** Prototype: the chrome's style (`look.ts`), `default` for today's. */
   lookStyle: string;
   /** Prototype: the chrome's colour palette (`look.ts`), `obsidian` to match the theme. */
   lookPalette: string;
   /** Notebooks and folders starred in the library, by vault path. Cleaned where read. */
   libraryStars: string[];
+  /** Notebooks, files and folders hidden from Home, by vault path (`model/library-hidden.ts`). Cleaned where read. */
+  libraryHidden: string[];
   /** The colour and icon chosen for library folders, by vault path. Cleaned where read. */
   libraryFolders: FolderStyles;
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
@@ -659,9 +664,11 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   toolbarHomeAdded: true,
   simpleLook: false,
   simpleLookHinted: false,
+  simpleLookShow: [],
   lookStyle: "default",
   lookPalette: "obsidian",
   libraryStars: [],
+  libraryHidden: [],
   libraryFolders: {},
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",

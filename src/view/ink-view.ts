@@ -144,7 +144,7 @@ import {
 import { InkSurface, type SearchFocus } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { PdfTextCache } from "./pdf-text-source";
-import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
+import { type PdfWorker, acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { measurePdfPages } from "./pdf-pages";
 import { VaultPaperLibrary, templateNamesIn } from "./paper-library-host";
@@ -778,6 +778,8 @@ export class InkView extends TextFileView {
   private pdfIndexTimer = 0;
   /** Whether this view holds a use of the shared PDF worker (`acquirePdfWorker`). */
   private pdfWorkerHeld = false;
+  /** That worker once it is up: the PDF pages' text is read from its documents too. */
+  private pdfWorker: PdfWorker | null = null;
   /** The search box's last query, for the next search. */
   private lastSearch = "";
   /** A link's `#Page N`, until the pages it names have loaded. */
@@ -1555,6 +1557,7 @@ export class InkView extends TextFileView {
     this.pdfText = null;
     if (this.pdfWorkerHeld) {
       this.pdfWorkerHeld = false;
+      this.pdfWorker = null;
       releasePdfWorker();
     }
     this.backdrops = null;
@@ -3970,7 +3973,9 @@ export class InkView extends TextFileView {
       this.pdfWorkerHeld = true;
       void acquirePdfWorker().then((worker) => {
         if (worker && this.pdfCache === pdfCache) {
+          this.pdfWorker = worker;
           pdfCache.setWorker(worker);
+          this.pdfText?.setWorker(worker);
           this.surface?.refreshPdfDetail();
         }
       });
@@ -4235,6 +4240,7 @@ export class InkView extends TextFileView {
     this.surface.holdFitWidth = () => this.settings.holdFitWidth;
     this.pdfText?.destroy();
     this.pdfText = new PdfTextCache(this.app, this.plugin.ocr);
+    this.pdfText.setWorker(this.pdfWorker);
     // A finger tap on a PDF link that waited for the page to be read; and a
     // page that was read again with its OCR text is searched again.
     this.pdfText.onReady = (path, page) => {
