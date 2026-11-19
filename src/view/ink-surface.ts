@@ -678,6 +678,7 @@ import {
   type BarrelAction,
   type PressInput,
   barrelActionOf,
+  barrelErasesOnHover,
   dragZoom,
   pressOverride,
   stylusButtonDown,
@@ -3332,6 +3333,7 @@ export class InkSurface {
         onlyStylus: () => this.callbacks.onlyStylusMode?.() === true,
         fingerDraws: () => this.callbacks.fingerDrawing?.() === true,
         stylusClicks: () => this.stylusClickWanted(),
+        hoverErase: () => this.hoverEraseWanted(),
         stylusSelectBridge: () => Platform.isAndroidApp === true,
       },
     );
@@ -3412,6 +3414,11 @@ export class InkSurface {
         return;
       }
       const type = (event as Partial<PointerEvent>).pointerType;
+      if (type === "pen") {
+        const { buttons, button, timeStamp } = event;
+        const pressure = (event as Partial<PointerEvent>).pressure ?? 0;
+        this.pointerInput?.logPen("contextmenu", { buttons, button, pressure, timeStamp });
+      }
       // Android's WebView: the pen touching down with its side button held is
       // this alone, as a mouse's. It is no click of the button, and no menu.
       if (type !== "touch" && this.pointerInput?.stylusTouched()) return;
@@ -8833,6 +8840,9 @@ export class InkSurface {
       );
     },
     onDebug: (record) => this.onPointerEvent(record),
+    onHoverErase: (kind) => {
+      if (this.debug) this.hud.mark(`hover-erase:${kind}`);
+    },
   };
 
   /**
@@ -9111,6 +9121,18 @@ export class InkSurface {
 
   private barrel(): BarrelAction {
     return barrelActionOf(this.callbacks.barrelAction?.());
+  }
+
+  /**
+   * Whether the hovering pen with its side button held erases (discussion
+   * #209): the setting asks for it, the button is not a shortcut's, and
+   * nothing else is waiting for the pen (text being typed, a sticky note to
+   * place).
+   */
+  private hoverEraseWanted(): boolean {
+    if (!barrelErasesOnHover(this.barrel()) || this.sideButtonBound()) return false;
+    if (this.stickyPlace !== null || this.practice !== null) return false;
+    return !this.editingTextView() && !this.heldText && !this.cellEdit;
   }
 
   /**
@@ -11277,6 +11299,8 @@ export class InkSurface {
         holdMs: HOLD_MS,
         holdRadius: HOLD_RADIUS,
         pointers: this.diagSums,
+        sideButton: this.barrel(),
+        penHover: this.pointerInput?.penReport() ?? [],
         keys: this.keyLog.report(),
         strokes: this.diagnostics,
       },

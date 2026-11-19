@@ -101,8 +101,9 @@ export const settings = {
     "Tap a key to record a new one; Escape or a tap anywhere cancels. The keys are kept on this device only, so a laptop and a tablet each have their own. A tool with the hand icon on is in hand only while its key is held, then the tool before it is back. Two shortcuts on one key both stop until one of them changes. None act while you type in a text box; ? in a notebook lists them all.",
   "settings.barrel.name": "Stylus side button",
   "settings.barrel.info":
-    "What a pen tablet's side button does while you write with it. The eraser end of the pen always erases. On Android tablets, holding the button while writing may not work.",
+    "What a pen tablet's side button does while you write with it. The eraser end of the pen always erases. On Android tablets, holding the button while writing may not work: choose Erase, also hovering, then hold the button with the pen just above the page and move it over what to erase.",
   "settings.barrel.erase": "Erase",
+  "settings.barrel.eraseHover": "Erase, also hovering",
   "settings.barrel.lasso": "Lasso select",
   "settings.barrel.pan": "Move the page",
   "settings.barrel.none": "Nothing",

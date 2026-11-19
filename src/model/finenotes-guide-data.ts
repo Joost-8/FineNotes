@@ -245,10 +245,10 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     title: "Stylus side button",
     words:
       "side button, barrel button, stylus button, pen button, wacom, surface pen, samsung s pen, eraser button",
-    what: "What a pen's side button does while you write: Erase (default), Lasso select, Move the page or Nothing; and what a click above the page does: open the pen menu (default), switch to the eraser, or nothing. A pen's eraser end always erases.",
+    what: "What a pen's side button does while you write: Erase (default), Erase, also hovering (the button held with the pen just above the page erases what it passes over), Lasso select, Move the page or Nothing; and what a click above the page does: open the pen menu (default), switch to the eraser, or nothing. A pen's eraser end always erases.",
     where: "Settings › Writing › Stylus side button",
     notes:
-      "Apple Pencil has no side button, so the click choice is hidden on iPad and iPhone. Holding the button while writing may not work on Android tablets.",
+      "Apple Pencil has no side button, so the click choice is hidden on iPad and iPhone. Holding the button while writing may not work on Android tablets; Erase, also hovering does.",
     settings: ["barrelButton", "stylusButtonClick"],
   },
   {
@@ -1778,9 +1778,11 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     id: "barrelButton",
     area: "page",
     title: "Stylus side button while writing",
-    words: "side button, barrel button, pen button, s pen, wacom button, erase with button",
-    what: "Holding a tablet pen's side button while writing erases (default), lassos, moves the page, or does nothing.",
-    where: 'Settings › "Stylus side button" (Erase, Lasso select, Move the page, Nothing).',
+    words:
+      "side button, barrel button, pen button, s pen, wacom button, erase with button, erase on hover, hover erase",
+    what: "Holding a tablet pen's side button while writing erases (default), lassos, moves the page, or does nothing. Erase, also hovering erases with the pen held just above the page too, the button held: the way to erase with the S Pen's button on Android.",
+    where:
+      'Settings › "Stylus side button" (Erase, Erase also hovering, Lasso select, Move the page, Nothing).',
     notes: "desktop/Android pens with a side button (not the Apple Pencil)",
     settings: ["barrelButton"],
   },

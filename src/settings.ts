@@ -247,6 +247,7 @@ function updateChoiceOf(settings: GoodObsidianSettings): "remind" | "dot" | "off
 function barrelNames(): Record<BarrelAction, string> {
   return {
     erase: t("settings.barrel.erase"),
+    "erase-hover": t("settings.barrel.eraseHover"),
     lasso: t("settings.barrel.lasso"),
     pan: t("settings.barrel.pan"),
     none: t("settings.barrel.none"),
@@ -2521,7 +2522,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private drawSideButton(setting: Setting): void {
     const settings = this.plugin.settings;
     setting.addDropdown((d) => {
-      for (const [id, name] of Object.entries(barrelNames())) d.addOption(id, name);
+      for (const [id, name] of Object.entries(barrelNames())) {
+        // The Apple Pencil has no side button to hover with.
+        if (id === "erase-hover" && Platform.isIosApp) continue;
+        d.addOption(id, name);
+      }
       d.selectEl.setAttribute("aria-label", t("settings.barrel.whileWriting"));
       d.setValue(String(shownValue(settings, "barrelButton")));
       d.onChange((value) => void this.setControlValue("barrelButton", value));
