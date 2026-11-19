@@ -173,6 +173,8 @@ export class NotebookSearchModal extends SuggestModal<SearchRow> {
       attr: { type: "button", "aria-label": t("view.search.showInSidebar") },
     });
     setIcon(button, "panel-right");
+    // Moves Obsidian's clear ✕ off the button (styles.css).
+    this.modalEl.addClass("has-search-switch");
     onTap(button, () => {
       const query = this.inputEl.value;
       this.close();
