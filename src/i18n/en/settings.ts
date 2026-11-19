@@ -267,7 +267,7 @@ export const settings = {
   "settings.fallbackModel.line": "Tried once when a model hits its rate limit or quota.",
   "settings.fallbackModel.placeholder": "None",
   "settings.transcribeModel.name": "Page transcription model",
-  "settings.transcribeModel.line": "Empty: the AI model. Ask AI keeps the AI model.",
+  "settings.transcribeModel.line": "For transcribing pages; Ask AI keeps the AI model.",
   "settings.transcribeModel.placeholder": "Same as AI model",
   "settings.recognition.name": "Handwriting recognition",
   "settings.recognition.info":
