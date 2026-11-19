@@ -408,16 +408,6 @@ function speechItems(ctx: AiMenuContext): AiMenuItem[] {
 function keyItems(ctx: AiMenuContext): AiMenuItem[] {
   const text = textAvailability(ctx.setup);
   const items: AiMenuItem[] = [];
-  // Automatic transcription waits until a page is done; this reads the page
-  // in view now (FineNotes#265).
-  if (ctx.pageTranscribable !== undefined) {
-    items.push({
-      id: "transcribe-page",
-      label: t("ai.menu.transcribePage"),
-      icon: "file-text",
-      ...gate(transcriptionAvailability(ctx.setup), ctx.pageTranscribable, t("ai.menu.pageEmpty")),
-    });
-  }
   // One way into the chat, whose page picker chooses what it is about.
   items.push({
     id: "ask",
@@ -435,6 +425,16 @@ function keyItems(ctx: AiMenuContext): AiMenuItem[] {
     icon: "image-plus",
     ...imageAvailability(ctx.setup),
   });
+  // Automatic transcription waits until a page is done; this reads the page
+  // in view now (FineNotes#265), under Generate image.
+  if (ctx.pageTranscribable !== undefined) {
+    items.push({
+      id: "transcribe-page",
+      label: t("ai.menu.transcribePage"),
+      icon: "file-text",
+      ...gate(transcriptionAvailability(ctx.setup), ctx.pageTranscribable, t("ai.menu.pageEmpty")),
+    });
+  }
   // Last, and only with an online service chosen for recordings: on this
   // device, the device section's entry transcribes.
   if (ctx.recordings !== undefined && isOnlineSpeechService(ctx.setup.speechService)) {

@@ -126,15 +126,15 @@ describe("buildAiMenu", () => {
     expect(single.ask.reason).toBe("This page is empty");
   });
 
-  it("offers 'Transcribe this page' first in a notebook, never the whole notebook", () => {
+  it("offers 'Transcribe this page' under Generate image, never the whole notebook", () => {
     expect(buildAiMenu(context()).map((i) => i.id)).not.toContain("transcribe-page");
     const items = buildAiMenu(context({ pageTranscribable: true })).filter(
       (i) => i.section !== "device",
     );
     expect(items.map((i) => i.id)).toEqual([
-      "transcribe-page",
       "ask",
       "generate-image",
+      "transcribe-page",
       "settings",
     ]);
     expect(byId(items)["transcribe-page"]).toMatchObject({
