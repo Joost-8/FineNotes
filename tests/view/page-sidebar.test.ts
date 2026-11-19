@@ -280,3 +280,58 @@ describe("select mode in the docked panel", () => {
     expect(sidebar.selecting).toBe(false);
   });
 });
+
+describe("the current page's mark in a long book", () => {
+  type Priv = Record<string, (...args: never[]) => unknown>;
+  const proto = PageSidebar.prototype as unknown as Priv;
+
+  function marks(count: number) {
+    let writes = 0;
+    const thumbs = Array.from({ length: count }, () => {
+      const classes = new Set<string>();
+      const attrs: Record<string, string> = {};
+      return {
+        attached: true,
+        root: {
+          toggleClass: (name: string, on: boolean) => {
+            writes++;
+            if (on) classes.add(name);
+            else classes.delete(name);
+          },
+        },
+        frame: { setAttribute: (k: string, v: string) => (attrs[k] = v) },
+        classes,
+        attrs,
+      };
+    });
+    const sidebar = Object.assign(Object.create(PageSidebar.prototype) as object, {
+      thumbs,
+      current: 0,
+      marked: null,
+      open: false,
+      syncCurrentEntry: () => {},
+      syncContentsAdd: () => {},
+    }) as Record<string, unknown>;
+    const current = (): number[] =>
+      thumbs.flatMap((t, i) => (t.classes.has("is-current") ? [i] : []));
+    return { sidebar, thumbs, current, writes: () => writes, reset: () => (writes = 0) };
+  }
+
+  it("moves from the old page to the new one, touching only those two", () => {
+    const { sidebar, thumbs, current, writes, reset } = marks(600);
+    (proto.syncCurrent as () => void).call(sidebar);
+    expect(current()).toEqual([0]);
+    reset();
+    (proto.setCurrentPage as (i: number) => void).call(sidebar, 412);
+    expect(current()).toEqual([412]);
+    expect(writes()).toBe(2);
+    expect(thumbs[412].attrs["aria-current"]).toBe("page");
+    expect(thumbs[0].attrs["aria-current"]).toBe("false");
+  });
+
+  it("marks the new page when nothing was marked yet", () => {
+    const { sidebar, current } = marks(10);
+    (proto.setCurrentPage as (i: number) => void).call(sidebar, 3);
+    expect(current()).toEqual([3]);
+  });
+});
