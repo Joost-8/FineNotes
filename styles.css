@@ -11190,6 +11190,21 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
   padding: 0;
   border-radius: var(--gob-radius-m);
   color: var(--gob-icon);
+  margin-inline-end: var(--size-4-2);
+}
+
+/* Obsidian places the prompt's clear ✕ (which closes it while the field is
+   empty) absolutely, 16 px from the row's end: on the sidebar button. Move
+   it to just before the button (36 px plus the button's margin). */
+.goodobsidian-search-modal.has-search-switch .prompt-input-container .search-input-clear-button {
+  inset-inline-end: calc(36px + var(--size-4-2) + var(--size-4-1));
+}
+
+/* On mobile Obsidian keeps an empty "create file" slot at the row's end,
+   40 px in; search never fills it, and it would take the taps on the
+   button's left edge and the ✕ (measured on the iPad, Obsidian 1.15.1). */
+.goodobsidian-search-modal .prompt-input-cta {
+  display: none;
 }
 
 /* The field and every match as a row (search-panel.ts, discussion #112):
