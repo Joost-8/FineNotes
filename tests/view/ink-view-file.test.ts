@@ -18,12 +18,24 @@ import { AUTO_RECOGNIZE_IDLE_MS, AUTO_RECOGNIZE_LEAVE_MS } from "../../src/const
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
+/** The typing dialog, as the view last opened it: its page, its text, and Save. */
+let typing: { page: number; text: string; submit: (text: string) => void } | null = null;
+vi.mock("../../src/view/transcript-modal", () => ({
+  TranscriptModal: class {
+    constructor(_app: unknown, page: number, text: string, submit: (text: string) => void) {
+      typing = { page, text, submit };
+    }
+    open(): void {}
+  },
+}));
+
 const { InkView } = await import("../../src/view/ink-view");
 const { DEFAULT_SETTINGS } = await import("../../src/settings");
 const { buildInkFile, parseInkFile } = await import("../../src/model/serialize");
 const { blankPage, emptyDocument } = await import("../../src/model/document");
 const { readTextSection, writeTextSection } = await import("../../src/recognition/text-layer");
-const { pageKeys, updatePageTranscripts } = await import("../../src/recognition/page-transcripts");
+const transcripts = await import("../../src/recognition/page-transcripts");
+const { pageKeys, updatePageTranscripts } = transcripts;
 const { encodeDocument } = await import("../../src/model/serialize");
 const { VENDORS } = await import("../../src/recognition/llm-request");
 const { StartupLog } = await import("../../src/view/startup-log");
@@ -389,6 +401,15 @@ describe("automatic transcription", () => {
     vi.advanceTimersByTime(2 * IDLE);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
   });
+  /** What the sidebar's Files tab lists under Transcripts. */
+  const sidebarViews = (view: View) => {
+    const { pageTranscriptViews } = transcripts;
+    return pageTranscriptViews(
+      readTextSection((view as unknown as { noteBody: string }).noteBody),
+      pageKeys(inside(view).doc.pages),
+    );
+  };
+
   describe("which pages it reads (FineNotes#265 review)", () => {
     /** A notebook of three inked pages, the view on the first. */
     function threePages(): View {
@@ -429,7 +450,9 @@ describe("automatic transcription", () => {
       expect(provider.recognize).toHaveBeenCalledTimes(1);
       expect(provider.recognize.mock.calls[0][0].strokes[0].id).toBe("s2");
       // Written under the third page's heading.
-      expect(view.getViewData()).toMatch(/### Page 3\n<!--goodobsidian-page [^>]*-->\nread s2/);
+      expect(view.getViewData()).toMatch(
+        /### Page 3\n<!--goodobsidian-page [^>]*-->\n<!--goodobsidian-meta [^>]*-->\nread s2/,
+      );
       // Taken: the next quiet moment has nothing left to read.
       await view.recognize(provider as never, true);
       expect(provider.recognize).toHaveBeenCalledTimes(1);
@@ -539,6 +562,66 @@ describe("automatic transcription", () => {
       const provider = reader();
       await view.recognize(provider as never, true);
       expect(provider.recognize.mock.calls[0][0].strokes[0].id).toBe("s2");
+    });
+
+    it("leaves the text view shut, and says the transcript is in the Files tab", async () => {
+      const view = threePages();
+      const provider = reader();
+      await view.transcribe(provider as never, "notebook");
+      expect(provider.recognize).toHaveBeenCalledTimes(3);
+      expect((view as unknown as { textPanelOpen: boolean }).textPanelOpen).toBe(false);
+      expect(String(notices[notices.length - 1].message)).toMatch(/Files tab, under Transcripts/);
+    });
+
+    it("keeps a transcript typed by hand, and puts the new one beside it to compare", async () => {
+      const view = threePages();
+      typing = null;
+      view.typePageTranscript(0);
+      expect(typing).toMatchObject({ page: 1, text: "" });
+      typing!.submit("my own words");
+      const provider = reader();
+      // The page changed since: transcribing it again finds the typed text.
+      (inside(view).doc.pages[0] as unknown as { strokes: unknown[] }).strokes.push({
+        id: "x",
+        tool: "pen",
+        color: "#000",
+        size: 3,
+        pts: [1, 2, 0.5, 3, 4, 0.5],
+      } as never);
+      await view.transcribe(provider as never, "page");
+      expect(String(notices[notices.length - 1].message)).toMatch(/your own transcript/);
+      const views = sidebarViews(view);
+      expect(views[0]).toMatchObject({ text: "my own words", source: "typed" });
+      expect(views[0].pending).toMatch(/^read s0/);
+      // Choosing the new one in the Files tab makes it the page's.
+      (view as unknown as { transcriptAction(k: string, a: string): void }).transcriptAction(
+        views[0].key,
+        "use-new",
+      );
+      expect(sidebarViews(view)[0]).toMatchObject({ source: "ai" });
+      expect(sidebarViews(view)[0].pending).toBeUndefined();
+      // Edit opens the dialog on the page's text as it is now.
+      (view as unknown as { transcriptAction(k: string, a: string): void }).transcriptAction(
+        views[0].key,
+        "edit",
+      );
+      expect(typing).toMatchObject({ page: 1, text: sidebarViews(view)[0].text });
+    });
+
+    it("opens the typing dialog for Manual, and for Transcribe this page without an AI", async () => {
+      const view = threePages();
+      typing = null;
+      await view.transcribe({ id: "manual", requiresNetwork: false } as never, "notebook");
+      expect(typing).toMatchObject({ page: 1 });
+      typing = null;
+      (plugin as unknown as { aiSetup: () => unknown }).aiSetup = () => ({
+        vendor: "anthropic",
+        baseUrl: "",
+        imageVendor: "same",
+        hasKey: () => false,
+      });
+      await view.transcribePageNow();
+      expect(typing).toMatchObject({ page: 1 });
     });
 
     it("sends three pages at a time and comes back for the rest", async () => {

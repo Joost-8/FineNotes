@@ -149,13 +149,19 @@ describe("buildAiMenu", () => {
     });
   });
 
-  it("asks for the transcription service's key when transcription has its own", () => {
+  it("lets the page be typed by hand when its transcription service has no key", () => {
     const own = setup({ transcribeVendor: "google", keys: ["anthropic"] });
     const items = byId(buildAiMenu(context({ setup: own, pageTranscribable: true })));
     expect(items["transcribe-page"]).toMatchObject({
-      enabled: false,
-      reason: "Needs a Google key",
+      enabled: true,
+      detail: "No AI set up: type it yourself",
     });
+    // Nothing set up at all: the same.
+    const none = byId(buildAiMenu(context({ setup: setup(), pageTranscribable: true })));
+    expect(none["transcribe-page"]).toMatchObject({ enabled: true, detail: expect.any(String) });
+    // With a key, no line under it.
+    const ready = byId(buildAiMenu(context({ pageTranscribable: true })));
+    expect(ready["transcribe-page"].detail).toBeUndefined();
     // Ask still runs on the AI service.
     expect(items.ask.enabled).toBe(true);
     expect(transcriptionAvailability({ ...own, hasKey: (slot) => slot === "google" }).enabled).toBe(

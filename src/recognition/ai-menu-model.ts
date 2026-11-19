@@ -178,6 +178,8 @@ export interface AiMenuItem {
   detail?: string;
   /** Rendered below a divider, after the actions. */
   footer?: boolean;
+  /** Works without a key: shown even while the key section is folded. */
+  keyless?: boolean;
   /** Which section: the on-device reader, or the features that need a key (the default). */
   section?: "device" | "key";
   /** A mark at the row's end: the reader still has to be downloaded. */
@@ -428,11 +430,15 @@ function keyItems(ctx: AiMenuContext): AiMenuItem[] {
   // Automatic transcription waits until a page is done; this reads the page
   // in view now (FineNotes#265), under Generate image.
   if (ctx.pageTranscribable !== undefined) {
+    // Without an AI it still works: the page is typed by hand.
+    const ai = transcriptionAvailability(ctx.setup).enabled;
     items.push({
       id: "transcribe-page",
       label: t("ai.menu.transcribePage"),
       icon: "file-text",
-      ...gate(transcriptionAvailability(ctx.setup), ctx.pageTranscribable, t("ai.menu.pageEmpty")),
+      ...gate(OK, ctx.pageTranscribable, t("ai.menu.pageEmpty")),
+      ...(!ai ? { keyless: true } : {}),
+      ...(!ai && ctx.pageTranscribable ? { detail: t("ai.menu.transcribeByHand") } : {}),
     });
   }
   // Last, and only with an online service chosen for recordings: on this

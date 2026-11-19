@@ -89,6 +89,11 @@ export class AiMenuPopover {
       );
       return;
     }
+    // What works without a key stays in sight (typing a page's transcript).
+    this.rows(
+      this.el,
+      key.filter((item) => item.keyless),
+    );
     // No key: one row, which opens the section in place.
     const toggle = this.el.createEl("button", {
       cls: "goodobsidian-addpage-row goodobsidian-aimenu-row goodobsidian-aimenu-fold clickable-icon",
@@ -103,7 +108,10 @@ export class AiMenuPopover {
       text: t("ai.menu.keyHint"),
     });
     const body = this.el.createDiv({ cls: "goodobsidian-aimenu-folded is-hidden" });
-    this.rows(body, key);
+    this.rows(
+      body,
+      key.filter((item) => !item.keyless),
+    );
     toggle.addEventListener("click", () => {
       const open = body.hasClass("is-hidden");
       body.toggleClass("is-hidden", !open);
