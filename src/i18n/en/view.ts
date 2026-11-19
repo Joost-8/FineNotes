@@ -146,6 +146,7 @@ export const view = {
   "view.transcribe.progressPageOf":
     "FineNotes: transcribing page {page} ({n} of {total})… Tap to stop.",
   "view.transcribe.failed": "FineNotes: transcription failed on page {page}: {message}",
+  "view.transcribe.autoWaits": "Automatic transcription tries again in 10 minutes.",
   "view.transcribe.failedSaved.one":
     "FineNotes: transcription failed on page {page}: {message} (the {count} page before it were saved)",
   "view.transcribe.failedSaved.other":

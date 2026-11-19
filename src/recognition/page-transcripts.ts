@@ -43,7 +43,8 @@
  * No DOM, no Obsidian.
  */
 
-import type { Page } from "../model/document";
+import type { Page, TextBoxElement } from "../model/document";
+import { drawnBounds } from "../model/board";
 import { externalUrl, isExternalTarget, normalizeLinkTarget } from "../model/links";
 import { readTextSection, writeTextSection } from "./text-layer";
 
@@ -459,6 +460,32 @@ export function autoTranscriptionBatch(
 ): { now: string[]; later: string[] } {
   const waiting = pageIds.filter((id) => changed.has(id));
   return { now: waiting.slice(0, max), later: waiting.slice(max) };
+}
+
+/** Paper kept below the lowest writing when a page is cut for transcription, page px. */
+export const AI_CROP_MARGIN = 48;
+/** A cut that would save less than this share of the page is not worth making. */
+export const AI_CROP_MIN_SAVING = 0.15;
+
+/**
+ * How much of a page, from its top, a transcription needs to see: down to
+ * the lowest writing, text, table or picture, plus a margin; `null` for the
+ * whole page. Image tokens grow with pixels, so a page written to halfway
+ * costs about half (the image keeps the whole page's scale, see
+ * `renderPageForAi`). Only the bottom is cut: the paper's lines stay where
+ * they are under the ink. A PDF page is never cut, as its printed text may
+ * be read too.
+ */
+export function transcriptionCropHeight(
+  page: Page,
+  textHeight?: (text: TextBoxElement) => number,
+): number | null {
+  if (page.backdrop.kind === "pdf") return null;
+  const drawn = drawnBounds(page, textHeight);
+  if (!drawn) return null;
+  const { height } = page.geometry;
+  const keep = Math.min(height, Math.ceil(Math.max(0, drawn.maxY) + AI_CROP_MARGIN));
+  return keep <= height * (1 - AI_CROP_MIN_SAVING) ? keep : null;
 }
 
 /** Whether a page has anything a transcription could read. */

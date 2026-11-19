@@ -78,6 +78,7 @@ import {
   hasTranscribableContent,
   pageContentHash,
   pageKeys,
+  transcriptionCropHeight,
   transcriptHashes,
   transcriptSources,
   renamedLinkTargets,
@@ -1637,6 +1638,12 @@ export class InkView extends TextFileView {
       this.scheduleAutoTranscription();
       return;
     }
+    // A failure a moment ago (a spent quota, no connection): wait it out.
+    const wait = this.plugin.autoTranscriptionWait();
+    if (wait > 0) {
+      this.scheduleAutoTranscription(undefined, wait);
+      return;
+    }
     const { now, later } = autoTranscriptionBatch(
       this.autoPages,
       this.doc.pages.map((page) => page.id),
@@ -1644,7 +1651,20 @@ export class InkView extends TextFileView {
     this.autoPages = new Set(later);
     const pages = this.doc.pages.filter((page) => now.includes(page.id));
     if (pages.length > 0) await this.transcribe(engine, pages, true);
-    if (this.autoPages.size > 0) this.scheduleAutoTranscription();
+    // A page that failed, or was written on while it was read, waits for the next run.
+    const recorded = transcriptHashes(readTextSection(this.noteBody));
+    const keys = pageKeys(this.doc.pages);
+    for (const page of pages) {
+      const index = this.doc.pages.indexOf(page);
+      if (index < 0 || !hasTranscribableContent(page) || this.guard.locked) continue;
+      if (recorded.get(keys[index]) !== pageContentHash(page)) this.autoPages.add(page.id);
+    }
+    if (this.autoPages.size > 0) {
+      this.scheduleAutoTranscription(
+        undefined,
+        Math.max(AUTO_RECOGNIZE_IDLE_MS, this.plugin.autoTranscriptionWait()),
+      );
+    }
   }
 
   /**
@@ -1737,7 +1757,7 @@ export class InkView extends TextFileView {
         );
         const hash = pageContentHash(page);
         try {
-          const image = provider.requiresNetwork ? await this.renderForAi(page) : null;
+          const image = provider.requiresNetwork ? await this.renderForTranscription(page) : null;
           const result = await provider.recognize({
             strokes: page.strokes,
             pageImage: image ?? undefined,
@@ -1761,14 +1781,17 @@ export class InkView extends TextFileView {
       this.transcription = null;
     }
 
+    if (done > 0) this.plugin.transcriptionWorked();
     if (failure) {
+      // An automatic run says so once, then waits (`auto-backoff.ts`)
+      // rather than failing again after every pause in writing.
+      if (auto && !this.plugin.autoTranscriptionFailed()) return;
       const failed = { page: failure.page, message: failure.message };
-      new Notice(
+      const said =
         done > 0
           ? tn("view.transcribe.failedSaved", done, failed)
-          : t("view.transcribe.failed", failed),
-        10000,
-      );
+          : t("view.transcribe.failed", failed);
+      new Notice(auto ? `${said} ${t("view.transcribe.autoWaits")}` : said, 10000);
       return;
     }
     if (auto) return;
@@ -1848,6 +1871,28 @@ export class InkView extends TextFileView {
       // the missing-image box rather than holding the request up.
       ...(this.images ? { images: this.images } : {}),
     });
+  }
+
+  /**
+   * {@link renderForAi} for a page transcription: down to the lowest
+   * writing only (`transcriptionCropHeight`), at the whole page's scale.
+   */
+  private async renderForTranscription(page: Page): Promise<RenderedPage | null> {
+    if (!this.backdrops || isBoardPage(this.doc, page)) return this.renderForAi(page);
+    const keep = transcriptionCropHeight(page, (text) => this.textHeight(text));
+    if (keep === null) return this.renderForAi(page);
+    const { width, height } = page.geometry;
+    const cut = boardDrawing(page, { x: 0, y: 0, width, height: keep });
+    return renderPageForAi(
+      cut,
+      this.backdrops,
+      {
+        usePressure: this.settings.pressureWidth,
+        highlighterAlpha: this.settings.highlighterAlpha,
+        ...(this.images ? { images: this.images } : {}),
+      },
+      { width, height },
+    );
   }
 
   // --- AI menu --------------------------------------------------------------
@@ -3577,7 +3622,10 @@ export class InkView extends TextFileView {
    * `changed` is the ids of the pages an edit touched; without them (an
    * edit that does not say), the page in view.
    */
-  private scheduleAutoTranscription(changed?: readonly string[]): void {
+  private scheduleAutoTranscription(
+    changed?: readonly string[],
+    delay = AUTO_RECOGNIZE_IDLE_MS,
+  ): void {
     window.clearTimeout(this.transcribeTimer);
     const { autoRecognize, llmVendor } = this.settings;
     const armed =
@@ -3596,7 +3644,7 @@ export class InkView extends TextFileView {
     }
     if (this.autoPages.size === 0) return;
     const transcribeNow = (): void => void this.plugin.runRecognition(this, true);
-    this.transcribeTimer = window.setTimeout(transcribeNow, AUTO_RECOGNIZE_IDLE_MS);
+    this.transcribeTimer = window.setTimeout(transcribeNow, delay);
   }
 
   /**

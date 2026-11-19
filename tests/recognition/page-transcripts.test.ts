@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Page, blankPage } from "../../src/model/document";
 import {
+  AI_CROP_MARGIN,
   AUTO_TRANSCRIBE_MAX_PAGES,
   autoTranscriptionBatch,
   hasAskableContent,
@@ -8,6 +9,7 @@ import {
   pageContentHash,
   pageKeys,
   parsePageTranscripts,
+  transcriptionCropHeight,
   transcriptHashes,
   updatePageTranscripts,
 } from "../../src/recognition/page-transcripts";
@@ -240,6 +242,40 @@ describe("pageContentHash and what else a page shows (FineNotes#265 review)", ()
     const graph = { id: "q1", x: 0, y: 0, expr: "sin(x)" };
     const withGraph = { ...inked(), graphs: [graph] } as unknown as Page;
     expect(pageContentHash(withGraph)).not.toBe(pageContentHash(inked()));
+  });
+});
+
+describe("transcriptionCropHeight", () => {
+  const at = (y: number) => stroke("s1", [100, y - 10, 0.5, 300, y, 0.5]);
+
+  it("cuts a page below its lowest writing, with a margin", () => {
+    const top = page("p1", { strokes: [at(400)] });
+    const { height } = top.geometry;
+    const keep = transcriptionCropHeight(top);
+    expect(keep).toBe(Math.ceil(400 + 1 + AI_CROP_MARGIN));
+    expect(keep).toBeLessThan(height / 2);
+  });
+
+  it("counts text boxes, and leaves a full page whole", () => {
+    const withText = page("p1", {
+      strokes: [at(100)],
+      textBoxes: [
+        { id: "t1", x: 0, y: 600, w: 100, h: 40, text: "hi", color: "#000", fontSize: 22 },
+      ],
+    });
+    expect(transcriptionCropHeight(withText)).toBe(600 + 40 + AI_CROP_MARGIN);
+    const full = page("p1");
+    full.strokes.push(at(full.geometry.height - 100));
+    expect(transcriptionCropHeight(full)).toBeNull();
+  });
+
+  it("never cuts a PDF page or an empty one", () => {
+    const pdf = page("p1", {
+      strokes: [at(100)],
+      backdrop: { kind: "pdf", path: "a.pdf", page: 1 } as unknown as Page["backdrop"],
+    });
+    expect(transcriptionCropHeight(pdf)).toBeNull();
+    expect(transcriptionCropHeight(page("p1"))).toBeNull();
   });
 });
 

@@ -101,6 +101,13 @@ import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import { LlmProvider } from "./recognition/llm";
 import { LLM_PROVIDER_ID, type LlmVendor, VENDORS } from "./recognition/llm-request";
 import { transcriptionModel } from "./recognition/model-choice";
+import {
+  type AutoBackoff,
+  NO_BACKOFF,
+  afterAutoFailure,
+  autoWaitLeft,
+  showsAutoFailure,
+} from "./recognition/auto-backoff";
 import { postJson } from "./recognition/http";
 import {
   type KeyStore,
@@ -2501,6 +2508,25 @@ export default class GoodObsidianPlugin extends Plugin {
    * background run (`background`) never asks, and goes ahead only where that
    * consent was already given.
    */
+  /** Automatic transcription's wait after failures, shared by every notebook (`auto-backoff.ts`). */
+  private autoBackoff: AutoBackoff = NO_BACKOFF;
+
+  /** How long automatic transcription still waits after a failure, in ms; 0: it may run. */
+  autoTranscriptionWait(): number {
+    return autoWaitLeft(this.autoBackoff, Date.now());
+  }
+
+  /** An automatic transcription failed: wait before the next. True when this failure is the one to show. */
+  autoTranscriptionFailed(): boolean {
+    this.autoBackoff = afterAutoFailure(this.autoBackoff, Date.now());
+    return showsAutoFailure(this.autoBackoff);
+  }
+
+  /** A transcription, automatic or by hand, went through: automatic runs may go again. */
+  transcriptionWorked(): void {
+    this.autoBackoff = NO_BACKOFF;
+  }
+
   async runRecognition(target: RecognitionTarget, background = false): Promise<void> {
     const engine = this.activeProvider();
     if (engine.requiresNetwork && !(await this.maySendPages(background))) return;

@@ -39,6 +39,23 @@ export function aiRenderWidth(width: number, height: number): number {
 }
 
 /**
+ * Output width for `cut`, a part of a page of size `whole`, at no larger a
+ * scale than the whole page gets: sized on its own, a page cut for
+ * transcription would be enlarged back to the budget and save nothing.
+ */
+export function aiCutWidth(
+  cut: { width: number; height: number },
+  whole: { width: number; height: number },
+): number {
+  const own = aiRenderWidth(cut.width, cut.height);
+  if (!(whole.width > 0)) return own;
+  const atWholeScale = Math.floor(
+    (aiRenderWidth(whole.width, whole.height) * cut.width) / whole.width,
+  );
+  return Math.min(own, Math.max(1, atWholeScale));
+}
+
+/**
  * Anything that can wait for a page's backdrop to be ready to paint (a PDF
  * raster). `VaultBackdropRenderer.draw` does exactly that.
  */
@@ -59,8 +76,9 @@ export async function renderPageForAi(
   page: Page,
   painter: BackdropPainter & BackdropPreparer,
   ink: { usePressure: boolean; highlighterAlpha: number; images?: ImagePainter },
+  scaleOf: { width: number; height: number } = page.geometry,
 ): Promise<RenderedPage | null> {
-  const width = aiRenderWidth(page.geometry.width, page.geometry.height);
+  const width = aiCutWidth(page.geometry, scaleOf);
   if (width === 0) return null;
   if (page.backdrop.kind === "pdf") {
     // Warm the raster cache; the synchronous paint below then finds it.

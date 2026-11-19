@@ -49,6 +49,9 @@ function fakePlugin(settings: Record<string, unknown> = {}) {
     consentedTo: (vendor: LlmVendor) =>
       VENDORS[vendor].userEndpoint ? merged.customConsentGiven : merged.cloudConsentGiven,
     runRecognition: vi.fn(() => Promise.resolve()),
+    autoTranscriptionWait: vi.fn(() => 0),
+    autoTranscriptionFailed: vi.fn(() => true),
+    transcriptionWorked: vi.fn(),
     activeProvider: () => ({ id: "llm-byok", requiresNetwork: true }),
     maybeShowScribbleNotice: () => Promise.resolve(),
     // Files moved while the note was closed (#14): `moves` is what the log knows.
@@ -435,6 +438,54 @@ describe("automatic transcription", () => {
       await view.recognize(provider as never, true);
       expect(provider.recognize).toHaveBeenCalledTimes(1);
       expect(provider.recognize.mock.calls[0][0].strokes[0].id).toBe("s1");
+    });
+
+    it("says a failure once, then waits before trying the page again", async () => {
+      const view = threePages();
+      const ids = inside(view).doc.pages.map((p) => p.id);
+      inside(view).scheduleAutoTranscription([ids[1]]);
+      const provider = {
+        id: "llm-byok",
+        requiresNetwork: true,
+        recognize: vi.fn(() => Promise.reject(new Error("HTTP 429"))),
+      };
+      const before = notices.length;
+      // As the plugin does: a failure starts the wait.
+      plugin.autoTranscriptionFailed.mockImplementation(() => {
+        plugin.autoTranscriptionWait.mockReturnValue(10 * 60_000);
+        return true;
+      });
+      await view.recognize(provider as never, true);
+      plugin.autoTranscriptionWait.mockReturnValue(0);
+      expect(plugin.autoTranscriptionFailed).toHaveBeenCalledTimes(1);
+      expect(notices).toHaveLength(before + 1);
+      expect(String(notices[before].message)).toMatch(/tries again in 10 minutes/);
+      // The page waits out the pause rather than going again after 30 s.
+      vi.advanceTimersByTime(30_000);
+      expect(plugin.runRecognition).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
+      // The next failure in a row is not shown again.
+      plugin.autoTranscriptionFailed.mockImplementation(() => false);
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(2);
+      expect(notices).toHaveLength(before + 1);
+      expect(plugin.transcriptionWorked).not.toHaveBeenCalled();
+    });
+
+    it("does not send while a failure's wait is running", async () => {
+      const view = threePages();
+      inside(view).scheduleAutoTranscription([inside(view).doc.pages[0].id]);
+      plugin.autoTranscriptionWait.mockReturnValue(5 * 60_000);
+      const provider = reader();
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).not.toHaveBeenCalled();
+      plugin.autoTranscriptionWait.mockReturnValue(0);
+      vi.advanceTimersByTime(5 * 60_000);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(1);
+      expect(plugin.transcriptionWorked).toHaveBeenCalledTimes(1);
     });
 
     it("sends three pages at a time and comes back for the rest", async () => {
