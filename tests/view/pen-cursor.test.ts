@@ -11,10 +11,15 @@ import {
   cursorCss,
   cursorFor,
   cursorSize,
+  crosshairCursor,
   cursorToolOf,
+  drawsPenHoverCursor,
   escapeSvg,
+  hoverCursorOffset,
   penCursorStyleOf,
+  penHoverAction,
 } from "../../src/view/pen-cursor";
+import { readFileSync } from "node:fs";
 
 const PREFIX = "data:image/svg+xml,";
 
@@ -203,5 +208,48 @@ describe("escaping for a CSS url()", () => {
   it("writes a CSS cursor value with the hotspot and a fallback", () => {
     const cursor = cursorFor("pen", "#000", 10);
     expect(cursorCss(cursor, "crosshair")).toBe(`url("${cursor.url}") 7 7, crosshair`);
+  });
+});
+
+describe("the cursor drawn for a hovering pen (FineNotes#266)", () => {
+  it("is drawn on Linux computers only", () => {
+    expect(drawsPenHoverCursor({ isLinux: true, isMobile: false })).toBe(true);
+    expect(drawsPenHoverCursor({ isLinux: false, isMobile: false })).toBe(false);
+    // Android reports Linux too; its pen hover keeps its own.
+    expect(drawsPenHoverCursor({ isLinux: true, isMobile: true })).toBe(false);
+  });
+
+  it("shows for a hovering pen and hides when it touches down or leaves", () => {
+    const pen = (type: string, buttons = 0) => penHoverAction({ type, pointerType: "pen", buttons });
+    expect(pen("pointermove")).toBe("show");
+    expect(pen("pointermove", 1)).toBe("hide");
+    // The side button held while hovering is still a hover.
+    expect(pen("pointermove", 2)).toBe("show");
+    expect(pen("pointerdown", 1)).toBe("hide");
+    expect(pen("pointerup")).toBe("hide");
+    expect(pen("pointercancel")).toBe("hide");
+    expect(pen("pointerleave")).toBe("hide");
+    expect(pen("pointerover")).toBe("keep");
+  });
+
+  it("gives the page back to a mouse or finger the moment one moves", () => {
+    expect(penHoverAction({ type: "pointermove", pointerType: "mouse", buttons: 0 })).toBe("hide");
+    expect(penHoverAction({ type: "pointermove", pointerType: "touch", buttons: 1 })).toBe("hide");
+    expect(penHoverAction({ type: "pointerleave", pointerType: "mouse", buttons: 0 })).toBe("keep");
+  });
+
+  it("puts the hotspot on the pen, in whole px", () => {
+    const cursor = cursorFor("pen", "#000", 10);
+    expect([cursor.width, cursor.height, cursor.hotX, cursor.hotY]).toEqual([15, 15, 7, 7]);
+    expect(hoverCursorOffset(100.4, 50.6, { left: 20, top: 10 }, cursor)).toEqual({ x: 73, y: 34 });
+  });
+
+  it("draws the crosshair the mouse wears, from styles.css", () => {
+    const css = readFileSync("styles.css", "utf8");
+    const rule = /\.is-pen-cursor \.goodobsidian-scroll[^{]*\{\s*cursor:\s*url\("([^"]+)"\)\s*8 8/.exec(css);
+    expect(rule).not.toBeNull();
+    const cursor = crosshairCursor();
+    expect(svgOf(cursor.url).replace(/ viewBox='[^']*'/, "")).toBe(svgOf(rule![1]));
+    expect([cursor.width, cursor.hotX, cursor.hotY]).toEqual([17, 8, 8]);
   });
 });

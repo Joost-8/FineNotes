@@ -759,7 +759,16 @@ import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
-import { type PenCursorStyle, cursorCss, cursorFor, cursorSize, cursorToolOf } from "./pen-cursor";
+import {
+  type PenCursorStyle,
+  crosshairCursor,
+  cursorCss,
+  cursorFor,
+  cursorSize,
+  cursorToolOf,
+  drawsPenHoverCursor,
+} from "./pen-cursor";
+import { PenHoverCursor } from "./pen-hover-cursor";
 import { type Span, toastSide } from "./toast-side";
 import { RulerOverlay } from "./ruler-overlay";
 import {
@@ -2434,6 +2443,8 @@ export class InkSurface {
   private penCursor: PenCursorStyle = "arrow";
   /** What the ink cursor was last drawn for, so an unchanged one is not set again. */
   private inkCursorKey = "";
+  /** The cursor drawn under a hovering tablet pen, on Linux (FineNotes#266). */
+  private penHover: PenHoverCursor | null = null;
   /** Where the page was when the current finger gesture began, to undo a palm's scroll. */
   private palmUndo: {
     t: number;
@@ -2969,6 +2980,9 @@ export class InkSurface {
         }),
     );
     this.scrollEl = this.surfaceEl.createDiv({ cls: "goodobsidian-scroll" });
+    if (drawsPenHoverCursor({ isLinux: Platform.isLinux, isMobile: Platform.isMobile })) {
+      this.penHover = new PenHoverCursor(this.surfaceEl, this.scrollEl);
+    }
     // A first Zoom box drag is UI, not a stroke: in Stylus-only mode, where
     // fingers do nothing on the page, a catcher over it lets a finger draw it
     // too. It is shown only then, with the Magnifier in hand and no target
@@ -3580,6 +3594,8 @@ export class InkSurface {
    * host's to remove.
    */
   destroy(): void {
+    this.penHover?.destroy();
+    this.penHover = null;
     this.dropEmptyLasso();
     this.endCellEdit(true);
     this.cellEditor?.remove();
@@ -5034,6 +5050,7 @@ export class InkSurface {
     this.surfaceEl.toggleClass("is-ink-cursor", style === "ink" && pen);
     this.surfaceEl.toggleClass("is-no-cursor", style === "none" && pen);
     this.surfaceEl.toggleClass("is-laser", tool === "laser");
+    if (style !== "ink") this.penHover?.setImage(style === "crosshair" ? crosshairCursor() : null);
     this.syncInkCursor();
   }
 
@@ -5061,6 +5078,7 @@ export class InkSurface {
     this.inkCursorKey = key;
     const hover = cursorFor(tool, shown, width, { highlighterAlpha });
     const down = cursorFor(tool, shown, width, { highlighterAlpha, drawing: true });
+    this.penHover?.setImage(hover);
     this.surfaceEl.setCssProps({
       "--goodobsidian-pen-cursor": cursorCss(hover, "crosshair"),
       "--goodobsidian-pen-cursor-drawing": cursorCss(down, "crosshair"),
