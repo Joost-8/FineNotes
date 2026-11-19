@@ -76,6 +76,8 @@ import {
   type TranscriptUpdate,
   hasAskableContent,
   autoTranscriptionBatch,
+  choosePageTranscript,
+  pageTranscriptViews,
   hasTranscribableContent,
   pageContentHash,
   pageKeys,
@@ -95,6 +97,7 @@ import {
   aiKeyFolded,
   buildAiMenu,
   resolveTranscribeVendor,
+  transcriptionAvailability,
   textAvailability,
 } from "../recognition/ai-menu-model";
 import {
@@ -445,6 +448,7 @@ import type { NudgeEvent } from "../model/nudges";
 import { ContentsTitleModal } from "./contents-title-modal";
 import { TaskModal } from "./task-modal";
 import { InkTextModal } from "./ink-text-modal";
+import { TranscriptModal } from "./transcript-modal";
 import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import {
   DEFAULT_SHAPE_COLOR,
@@ -466,6 +470,7 @@ import {
   thumbnailRasterScale,
   type SectionAction,
   type SelectionAction,
+  type TranscriptAction,
 } from "./page-sidebar";
 import { PEN_TYPES, Toolbar, type ToolbarState, penOfState, penTypeFor } from "./toolbar";
 import type { PillDock } from "./pill-dock-model";
@@ -1701,10 +1706,8 @@ export class InkView extends TextFileView {
       return;
     }
     if (provider.id === MANUAL_PROVIDER_ID) {
-      if (!auto) {
-        if (!this.textPanelOpen) this.toggleTextPanel();
-        new Notice(t("view.transcribe.manual"));
-      }
+      // Manual: the page in view is typed by hand (FineNotes#265).
+      if (!auto) this.typePageTranscript(this.surface?.currentPage ?? 0);
       return;
     }
 
@@ -1803,12 +1806,89 @@ export class InkView extends TextFileView {
       return;
     }
     if (auto) return;
-    if (done > 0 && !this.textPanelOpen) this.toggleTextPanel();
+    // Where to read them: the sidebar's Files tab (FineNotes#265), not a
+    // panel opened under the page. A page whose text is the person's keeps
+    // it; the new one waits there to be compared.
+    const views = pageTranscriptViews(readTextSection(this.noteBody), pageKeys(this.doc.pages));
+    const waiting = views.filter(
+      (view) => view.pending !== undefined && work.includes(this.doc.pages[view.page]),
+    ).length;
     const summary =
       run.cancelled && done < work.length
         ? t("view.transcribe.stopped", { done, total: work.length })
-        : tn("view.transcribe.done", done);
-    new Notice(unchanged > 0 ? `${summary} ${tn("view.transcribe.skipped", unchanged)}` : summary);
+        : waiting > 0
+          ? tn("view.transcribe.compare", waiting)
+          : tn("view.transcribe.ready", done);
+    const notice = new Notice(
+      unchanged > 0 ? `${summary} ${tn("view.transcribe.skipped", unchanged)}` : summary,
+      8000,
+    );
+    if (done > 0) {
+      notice.messageEl.addEventListener("click", () => this.showTranscriptsInSidebar());
+    }
+  }
+
+  /** Open the sidebar on its Files tab, listing Transcripts. */
+  showTranscriptsInSidebar(): void {
+    const sidebar = this.sidebar;
+    if (!sidebar) return;
+    lastFileKind = "transcripts";
+    sidebar.setFileKind("transcripts");
+    sidebar.showTab("files");
+    if (!sidebar.isOpen) this.toggleSidebar();
+    else sidebar.refreshFiles();
+  }
+
+  /**
+   * Type page `index`'s transcript by hand, starting from what it says now.
+   * Saved as the person's: no machine transcription replaces it.
+   */
+  typePageTranscript(index: number): void {
+    const page = this.doc.pages[index];
+    if (!page) return;
+    if (this.guard.locked) {
+      new Notice(t("view.notice.readOnly"));
+      return;
+    }
+    const key = pageKeys(this.doc.pages)[index];
+    const now = pageTranscriptViews(readTextSection(this.noteBody), pageKeys(this.doc.pages)).find(
+      (view) => view.key === key,
+    );
+    new TranscriptModal(this.app, index + 1, now?.text ?? "", (text) => {
+      const at = this.doc.pages.indexOf(page);
+      if (at < 0) return;
+      this.writeTranscripts([{ page, text, hash: pageContentHash(page), typed: true }]);
+      this.sidebar?.refreshFiles();
+    }).open();
+  }
+
+  /** The Files tab's actions on a page's transcription. */
+  private transcriptAction(key: string, action: TranscriptAction): void {
+    const keys = pageKeys(this.doc.pages);
+    const index = keys.indexOf(key);
+    if (index < 0) return;
+    if (action === "go") {
+      this.surface?.goToPage(index, true);
+      return;
+    }
+    if (action === "edit") {
+      this.typePageTranscript(index);
+      return;
+    }
+    if (this.guard.locked) {
+      new Notice(t("view.notice.readOnly"));
+      return;
+    }
+    const section = choosePageTranscript(
+      readTextSection(this.noteBody),
+      keys,
+      key,
+      action === "use-new" ? "new" : "mine",
+    );
+    this.noteBody = writeTextSection(this.noteBody, section);
+    this.textPanel?.load(this.noteBody);
+    this.requestBodySave();
+    this.sidebar?.refreshFiles();
   }
 
   /**
@@ -1818,7 +1898,8 @@ export class InkView extends TextFileView {
    */
   private writeTranscripts(
     updates: ReadonlyArray<
-      TranscriptUpdate | { page: Page; text: string; hash: string; device?: boolean }
+      | TranscriptUpdate
+      | { page: Page; text: string; hash: string; device?: boolean; typed?: boolean }
     >,
   ): void {
     const keys = pageKeys(this.doc.pages);
@@ -1830,8 +1911,14 @@ export class InkView extends TextFileView {
       }
       const index = this.doc.pages.indexOf(update.page);
       if (index >= 0) {
-        const { text, hash, device } = update;
-        resolved.push({ key: keys[index], text, hash, ...(device ? { device } : {}) });
+        const { text, hash, device, typed } = update;
+        resolved.push({
+          key: keys[index],
+          text,
+          hash,
+          ...(device ? { device } : {}),
+          ...(typed ? { typed } : {}),
+        });
       }
     }
     const section = updatePageTranscripts(readTextSection(this.noteBody), keys, resolved);
@@ -1889,6 +1976,11 @@ export class InkView extends TextFileView {
    * this is for when the text is wanted at once.
    */
   async transcribePageNow(): Promise<void> {
+    // No AI to ask: the page is typed by hand instead (FineNotes#265).
+    if (!transcriptionAvailability(this.plugin.aiSetup()).enabled) {
+      this.typePageTranscript(this.surface?.currentPage ?? 0);
+      return;
+    }
     const config = this.plugin.transcriptionAiConfig();
     const confirmed = await this.plugin.confirmAiSend(
       config,
@@ -3996,6 +4088,9 @@ export class InkView extends TextFileView {
         listFiles: (kind) => this.listNotebookFiles(kind),
         onOpenFile: (kind, row) => this.openNotebookFile(kind, row),
         onFileKind: (kind) => (lastFileKind = kind),
+        pageTranscripts: () =>
+          pageTranscriptViews(readTextSection(this.noteBody), pageKeys(this.doc.pages)),
+        onTranscript: (key, action) => this.transcriptAction(key, action),
       },
       this.sidebarRendering(this.thumbBackdrops),
     );

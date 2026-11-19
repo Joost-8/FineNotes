@@ -8,6 +8,10 @@ import {
   hasTranscribableContent,
   pageContentHash,
   pageKeys,
+  pageTranscriptViews,
+  choosePageTranscript,
+  isPersonsTranscript,
+  transcriptTextHash,
   parsePageTranscripts,
   transcriptionCropHeight,
   transcriptHashes,
@@ -18,6 +22,9 @@ import { readTextSection, writeTextSection } from "../../src/recognition/text-la
 function page(id: string, extra: Partial<Page> = {}): Page {
   return { ...blankPage(id), ...extra };
 }
+
+/** The line a machine-written entry carries under its marker: its text's hash. */
+const meta = (text: string) => `<!--goodobsidian-meta t=${transcriptTextHash(text)}-->\n`;
 
 const stroke = (id: string, pts = [10, 20, 0.5, 30, 40, 0.5]) => ({
   id,
@@ -49,8 +56,8 @@ describe("updatePageTranscripts", () => {
       ],
     );
     expect(out).toBe(
-      "### Page 1\n<!--goodobsidian-page p1 a1-->\nfirst\n\n" +
-        "### Page 3\n<!--goodobsidian-page p3 c3-->\nthird",
+      `### Page 1\n<!--goodobsidian-page p1 a1-->\n${meta("first")}first\n\n` +
+        `### Page 3\n<!--goodobsidian-page p3 c3-->\n${meta("third")}third`,
     );
   });
 
@@ -69,8 +76,8 @@ describe("updatePageTranscripts", () => {
       [{ key: "p2", text: "two, again", hash: "h9" }],
     );
     expect(parsePageTranscripts(next).entries).toEqual([
-      { key: "p1", hash: "h1", text: "one" },
-      { key: "p2", hash: "h9", text: "two, again" },
+      { key: "p1", hash: "h1", text: "one", textHash: transcriptTextHash("one") },
+      { key: "p2", hash: "h9", text: "two, again", textHash: transcriptTextHash("two, again") },
     ]);
   });
 
@@ -87,8 +94,8 @@ describe("updatePageTranscripts", () => {
     // p1 deleted, p3 moved to the front.
     const out = updatePageTranscripts(section, ["p3", "p2"], []);
     expect(out).toBe(
-      "### Page 1\n<!--goodobsidian-page p3 h3-->\nthree\n\n" +
-        "### Page 2\n<!--goodobsidian-page p2 h2-->\ntwo",
+      `### Page 1\n<!--goodobsidian-page p3 h3-->\n${meta("three")}three\n\n` +
+        `### Page 2\n<!--goodobsidian-page p2 h2-->\n${meta("two")}two`,
     );
   });
 
@@ -109,7 +116,7 @@ describe("updatePageTranscripts", () => {
     );
     expect(parsePageTranscripts(out).entries).toEqual([
       { key: "p1", hash: "", text: "# Notes\nWritten on page one." },
-      { key: "p2", hash: "h2", text: "two" },
+      { key: "p2", hash: "h2", text: "two", textHash: transcriptTextHash("two") },
     ]);
     // …so page 1 counts as changed, and the next run replaces it.
     expect(transcriptHashes(out).get("p1")).toBe("");
@@ -118,7 +125,9 @@ describe("updatePageTranscripts", () => {
   it("keeps text written inside the section before the first page", () => {
     const section = "My own summary.\n\n### Page 1\n<!--goodobsidian-page p1 h1-->\none";
     const out = updatePageTranscripts(section, ["p1"], [{ key: "p1", text: "uno", hash: "h2" }]);
-    expect(out).toBe("My own summary.\n\n### Page 1\n<!--goodobsidian-page p1 h2-->\nuno");
+    expect(out).toBe(
+      `My own summary.\n\n### Page 1\n<!--goodobsidian-page p1 h2-->\n${meta("uno")}uno`,
+    );
   });
 
   it("merges an entry a hand edit duplicated instead of losing one copy", () => {
@@ -162,6 +171,131 @@ describe("updatePageTranscripts", () => {
     expect(read).toBe(inner);
     const crlf = (read ?? "").replace(/\n/g, "\r\n");
     expect(parsePageTranscripts(crlf).entries.map((e) => e.text)).toEqual(["one", "two"]);
+  });
+});
+
+describe("a person's transcription (FineNotes#265)", () => {
+  const keys = ["p1", "p2"];
+  const machine = () =>
+    updatePageTranscripts(null, keys, [
+      { key: "p1", text: "machine one", hash: "h1" },
+      { key: "p2", text: "machine two", hash: "h2" },
+    ]);
+  const entry = (section: string, key: string) =>
+    parsePageTranscripts(section).entries.find((e) => e.key === key);
+
+  it("is the machine's until a person edits it", () => {
+    const section = machine();
+    expect(isPersonsTranscript(entry(section, "p1")!)).toBe(false);
+    const edited = section.replace("machine one", "machine one, corrected");
+    expect(isPersonsTranscript(entry(edited, "p1")!)).toBe(true);
+    // Text from before 2.11 has no hash: the machine's, as it always was.
+    expect(isPersonsTranscript({ key: "p1", hash: "h", text: "old" })).toBe(false);
+  });
+
+  it("is replaced by a new transcription while it is the machine's", () => {
+    const next = updatePageTranscripts(machine(), keys, [{ key: "p1", text: "newer", hash: "h9" }]);
+    expect(entry(next, "p1")).toMatchObject({ text: "newer", hash: "h9" });
+    expect(entry(next, "p1")?.pending).toBeUndefined();
+  });
+
+  it("keeps an edited page's text, and puts the new transcription beside it", () => {
+    const edited = machine().replace("machine one", "my fixed text");
+    const next = updatePageTranscripts(edited, keys, [{ key: "p1", text: "newer", hash: "h9" }]);
+    expect(entry(next, "p1")).toMatchObject({
+      text: "my fixed text",
+      hash: "h9",
+      pending: { hash: "h9", text: "newer" },
+    });
+    // The hash moved on: the page is not sent again.
+    expect(transcriptHashes(next).get("p1")).toBe("h9");
+    // A new transcription that says the same leaves nothing to compare.
+    const same = updatePageTranscripts(edited, keys, [
+      { key: "p1", text: "my fixed text", hash: "h9" },
+    ]);
+    expect(entry(same, "p1")?.pending).toBeUndefined();
+  });
+
+  it("never lets a reading on the device touch a person's text", () => {
+    const typed = updatePageTranscripts(null, keys, [
+      { key: "p1", text: "typed by me", hash: "h1", typed: true },
+    ]);
+    const next = updatePageTranscripts(typed, keys, [
+      { key: "p1", text: "grape read", hash: "h2", device: true },
+    ]);
+    expect(entry(next, "p1")).toMatchObject({ text: "typed by me", typed: true, hash: "h1" });
+    expect(entry(next, "p1")?.pending).toBeUndefined();
+  });
+
+  it("is replaced by what a person types, whatever was there", () => {
+    const edited = machine().replace("machine one", "my fixed text");
+    const waiting = updatePageTranscripts(edited, keys, [{ key: "p1", text: "newer", hash: "h9" }]);
+    const typed = updatePageTranscripts(waiting, keys, [
+      { key: "p1", text: "typed now", hash: "h9", typed: true },
+    ]);
+    expect(entry(typed, "p1")).toMatchObject({ text: "typed now", typed: true });
+    expect(entry(typed, "p1")?.pending).toBeUndefined();
+  });
+
+  it("survives a write, a reread and the other pages' updates, waiting version and all", () => {
+    const edited = machine().replace("machine one", "mine");
+    const waiting = updatePageTranscripts(edited, keys, [
+      { key: "p1", text: "new: with --> and\nlines", hash: "h9" },
+    ]);
+    const again = updatePageTranscripts(waiting, keys, [{ key: "p2", text: "two b", hash: "h3" }]);
+    expect(entry(again, "p1")).toMatchObject({
+      text: "mine",
+      pending: { text: "new: with --> and\nlines" },
+    });
+    // The waiting text never shows as the page's own.
+    expect(again).not.toContain("new: with -->");
+  });
+
+  it("is settled by choosing: mine drops the new one, new replaces mine", () => {
+    const edited = machine().replace("machine one", "mine");
+    const waiting = updatePageTranscripts(edited, keys, [{ key: "p1", text: "newer", hash: "h9" }]);
+    const kept = choosePageTranscript(waiting, keys, "p1", "mine");
+    expect(entry(kept, "p1")).toMatchObject({ text: "mine", hash: "h9" });
+    expect(entry(kept, "p1")?.pending).toBeUndefined();
+    const taken = choosePageTranscript(waiting, keys, "p1", "new");
+    expect(entry(taken, "p1")).toMatchObject({ text: "newer", hash: "h9" });
+    expect(isPersonsTranscript(entry(taken, "p1")!)).toBe(false);
+    // The other page is untouched either way.
+    expect(entry(taken, "p2")?.text).toBe("machine two");
+    // Nothing waiting: nothing changes.
+    expect(choosePageTranscript(machine(), keys, "p1", "new")).toBe(machine());
+  });
+
+  it("lists every page's transcription for the Files tab, saying where it came from", () => {
+    const section = updatePageTranscripts(
+      null,
+      ["p1", "p2", "p3", "p4"],
+      [
+        { key: "p1", text: "ai", hash: "a" },
+        { key: "p2", text: "grape", hash: "b", device: true },
+        { key: "p3", text: "typed", hash: "c", typed: true },
+        { key: "p4", text: "ai four", hash: "d" },
+      ],
+    );
+    const edited = section.replace("ai four", "fixed four");
+    const waiting = updatePageTranscripts(
+      edited,
+      ["p1", "p2", "p3", "p4"],
+      [{ key: "p4", text: "ai four again", hash: "e" }],
+    );
+    expect(pageTranscriptViews(waiting, ["p1", "p2", "p3", "p4"])).toEqual([
+      { key: "p1", page: 0, text: "ai", source: "ai" },
+      { key: "p2", page: 1, text: "grape", source: "device" },
+      { key: "p3", page: 2, text: "typed", source: "typed" },
+      { key: "p4", page: 3, text: "fixed four", source: "edited", pending: "ai four again" },
+    ]);
+  });
+
+  it("reads an entry an older FineNotes left without the meta line", () => {
+    const old = "### Page 1\n<!--goodobsidian-page p1 h1-->\nold text";
+    expect(pageTranscriptViews(old, ["p1"])).toEqual([
+      { key: "p1", page: 0, text: "old text", source: "ai" },
+    ]);
   });
 });
 

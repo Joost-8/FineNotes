@@ -247,6 +247,82 @@ export interface PageTranscript {
   text: string;
   /** Read by the on-device recogniser, not transcribed. */
   device?: true;
+  /** Typed by a person (FineNotes#265): a machine never replaces it. */
+  typed?: true;
+  /**
+   * A hash of the text as a machine wrote it ({@link transcriptTextHash}).
+   * Text that no longer matches it was edited by a person. Absent on
+   * entries written before 2.11: those count as the machine's.
+   */
+  textHash?: string;
+  /**
+   * A machine transcription that arrived for a page whose text is a
+   * person's: kept beside it, for the person to compare and choose
+   * ({@link choosePageTranscript}), never written over it.
+   */
+  pending?: { hash: string; text: string };
+}
+
+/**
+ * The line under a page's marker with what the marker cannot say (2.11):
+ *
+ *     <!--goodobsidian-meta typed t=1x9k3a new=1x9k3b~Encoded%20text-->
+ *
+ * A separate comment rather than more words on the marker, so a FineNotes
+ * from before it, reading the marker with its stricter pattern, still finds
+ * every page and keeps this line as part of the page's text.
+ */
+const META_RE = /^<!--goodobsidian-meta((?: \S+)*)-->$/;
+
+/** A hash of a transcription's text, to tell later whether a person changed it. */
+export function transcriptTextHash(text: string): string {
+  let h = 0x811c9dc5;
+  const clean = text.replace(/\r\n?/g, "\n").trim();
+  for (let i = 0; i < clean.length; i++) {
+    h ^= clean.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/** Whether an entry's text is a person's: typed, or a machine's text edited since. */
+export function isPersonsTranscript(entry: PageTranscript): boolean {
+  if (entry.typed) return true;
+  return entry.textHash !== undefined && entry.textHash !== transcriptTextHash(entry.text);
+}
+
+type Meta = Pick<PageTranscript, "typed" | "textHash" | "pending">;
+
+function readMeta(line: string): Meta | null {
+  const match = META_RE.exec(line.trim());
+  if (!match) return null;
+  const meta: Meta = {};
+  for (const token of match[1].trim().split(" ")) {
+    if (token === "typed") meta.typed = true;
+    else if (token.startsWith("t=")) meta.textHash = token.slice(2);
+    else if (token.startsWith("new=")) {
+      const [hash, encoded] = token.slice(4).split("~");
+      const text = decodeKey(encoded ?? "");
+      if (text.trim()) meta.pending = { hash: hash ?? "", text };
+    }
+  }
+  return meta;
+}
+
+function writeMeta(entry: PageTranscript): string {
+  const tokens: string[] = [];
+  if (entry.typed) tokens.push("typed");
+  if (entry.textHash) tokens.push(`t=${entry.textHash}`);
+  if (entry.pending) {
+    tokens.push(`new=${entry.pending.hash}~${encodeURIComponent(entry.pending.text)}`);
+  }
+  return tokens.length > 0 ? `<!--goodobsidian-meta ${tokens.join(" ")}-->\n` : "";
+}
+
+/** One page's block in the section: heading, marker, meta line and text. */
+function entryBlock(entry: PageTranscript, index: number): string {
+  const marker = `<!--goodobsidian-page ${encodeURIComponent(entry.key)} ${entry.hash}${entry.device ? " device" : ""}-->`;
+  return `### Page ${index + 1}\n${marker}\n${writeMeta(entry)}${entry.text}`;
 }
 
 export interface ParsedTranscripts {
@@ -311,15 +387,17 @@ export function parsePageTranscripts(raw: string | null): ParsedTranscripts {
   });
   if (starts.length === 0) return { preamble: section.trim(), entries: [], legacy: true };
 
-  const entries = starts.map((s, n) => ({
-    key: s.key,
-    hash: s.hash,
-    ...(s.device ? { device: true as const } : {}),
-    text: lines
-      .slice(s.body, n + 1 < starts.length ? starts[n + 1].start : lines.length)
-      .join("\n")
-      .trim(),
-  }));
+  const entries = starts.map((s, n): PageTranscript => {
+    const body = lines.slice(s.body, n + 1 < starts.length ? starts[n + 1].start : lines.length);
+    const meta = body.length > 0 ? readMeta(body[0]) : null;
+    return {
+      key: s.key,
+      hash: s.hash,
+      ...(s.device ? { device: true as const } : {}),
+      ...(meta ?? {}),
+      text: (meta ? body.slice(1) : body).join("\n").trim(),
+    };
+  });
   return { preamble: lines.slice(0, starts[0].start).join("\n").trim(), entries, legacy: false };
 }
 
@@ -353,6 +431,8 @@ export interface TranscriptUpdate {
   hash: string;
   /** Read by the on-device recogniser. */
   device?: boolean;
+  /** Typed by a person: replaces whatever is there, a person's text included. */
+  typed?: boolean;
 }
 
 /**
@@ -365,6 +445,7 @@ export function updatePageTranscripts(
   section: string | null,
   keys: readonly string[],
   updates: readonly TranscriptUpdate[],
+  exact?: PageTranscript,
 ): string {
   const parsed = parsePageTranscripts(section);
   const links = splitLinkIndex(section ?? "").links;
@@ -383,25 +464,136 @@ export function updatePageTranscripts(
       prior ? { ...entry, text: `${prior.text}\n\n${entry.text}`.trim() } : entry,
     );
   }
+  if (exact) byKey.set(exact.key, exact);
   for (const update of updates) {
     const text = update.text.trim();
+    const prior = byKey.get(update.key);
+    if (update.typed) {
+      if (text) byKey.set(update.key, { key: update.key, hash: update.hash, text, typed: true });
+      else byKey.delete(update.key);
+      continue;
+    }
+    // A machine never writes over a person's text (FineNotes#265): a reading
+    // on the device is dropped, a transcription waits beside it to be chosen.
+    // The page's hash moves on either way, so the page is not sent again.
+    if (prior && isPersonsTranscript(prior)) {
+      if (update.device) continue;
+      const same = !text || text === prior.text.trim();
+      byKey.set(update.key, {
+        ...prior,
+        hash: update.hash,
+        pending: same ? undefined : { hash: update.hash, text },
+      });
+      continue;
+    }
     const device = update.device === true ? { device: true as const } : {};
-    if (text) byKey.set(update.key, { key: update.key, hash: update.hash, text, ...device });
-    else byKey.delete(update.key);
+    if (text) {
+      byKey.set(update.key, {
+        key: update.key,
+        hash: update.hash,
+        text,
+        ...device,
+        textHash: transcriptTextHash(text),
+      });
+    } else byKey.delete(update.key);
   }
 
   const blocks: string[] = preamble ? [preamble] : [];
   keys.forEach((key, index) => {
     const entry = byKey.get(key);
     if (!entry || !entry.text) return;
-    blocks.push(
-      `### Page ${index + 1}\n<!--goodobsidian-page ${encodeURIComponent(key)} ${entry.hash}${entry.device ? " device" : ""}-->\n${entry.text}`,
-    );
+    blocks.push(entryBlock(entry, index));
   });
   // The checklist and the links list stay at the end; they are rewritten on save, not here.
   if (tasks) blocks.push(tasks);
   if (links) blocks.push(links);
   return blocks.join("\n\n");
+}
+
+/**
+ * Settle a page that has a transcription waiting beside a person's text:
+ * `"mine"` keeps the person's text and drops the new one; `"new"` takes the
+ * new one, which is then the machine's text like any other.
+ */
+export function choosePageTranscript(
+  section: string | null,
+  keys: readonly string[],
+  key: string,
+  choice: "mine" | "new",
+): string {
+  const parsed = parsePageTranscripts(section);
+  const entry = parsed.entries.find((e) => e.key === key);
+  const pending = entry?.pending;
+  if (!entry || !pending) return section ?? "";
+  const chosen: PageTranscript =
+    choice === "mine"
+      ? { ...entry, pending: undefined }
+      : { key, hash: pending.hash, text: pending.text, textHash: transcriptTextHash(pending.text) };
+  // Typed through the normal write, so headings, links and the checklist stay as they are.
+  return updatePageTranscripts(
+    section === null ? null : withoutEntry(section, entry, keys),
+    keys,
+    [],
+    chosen,
+  );
+}
+
+/** The section without `entry`'s block, re-read so the entry can be put back changed. */
+function withoutEntry(section: string, entry: PageTranscript, keys: readonly string[]): string {
+  const others = parsePageTranscripts(section).entries.filter((e) => e.key !== entry.key);
+  const links = splitLinkIndex(section).links;
+  const tasks = splitTaskIndex(section);
+  const preamble = parsePageTranscripts(section).preamble;
+  const blocks: string[] = preamble ? [preamble] : [];
+  keys.forEach((key, index) => {
+    const other = others.find((e) => e.key === key);
+    if (other && other.text) blocks.push(entryBlock(other, index));
+  });
+  if (tasks) blocks.push(tasks);
+  if (links) blocks.push(links);
+  return blocks.join("\n\n");
+}
+
+/** Where a page's transcription came from, as the Files tab says it. */
+export type TranscriptSource = "ai" | "device" | "typed" | "edited";
+
+/** One page's transcription, for the Files tab. */
+export interface PageTranscriptView {
+  key: string;
+  /** 0-based page index. */
+  page: number;
+  text: string;
+  source: TranscriptSource;
+  /** A new transcription waiting beside a person's text. */
+  pending?: string;
+}
+
+/** Every transcribed page, in page order, for the Files tab's Transcripts. */
+export function pageTranscriptViews(
+  section: string | null,
+  keys: readonly string[],
+): PageTranscriptView[] {
+  const entries = new Map(parsePageTranscripts(section).entries.map((e) => [e.key, e]));
+  const views: PageTranscriptView[] = [];
+  keys.forEach((key, page) => {
+    const entry = entries.get(key);
+    if (!entry || !entry.text) return;
+    const source: TranscriptSource = entry.typed
+      ? "typed"
+      : isPersonsTranscript(entry)
+        ? "edited"
+        : entry.device
+          ? "device"
+          : "ai";
+    views.push({
+      key,
+      page,
+      text: entry.text,
+      source,
+      ...(entry.pending ? { pending: entry.pending.text } : {}),
+    });
+  });
+  return views;
 }
 
 /**

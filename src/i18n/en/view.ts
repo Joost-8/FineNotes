@@ -134,7 +134,6 @@ export const view = {
 
   // Transcription
   "view.transcribe.running": "FineNotes: a transcription is already running.",
-  "view.transcribe.manual": "FineNotes: manual transcription — type it in the text-layer panel.",
   "view.transcribe.progress": "FineNotes: transcribing…",
   "view.transcribe.cleared.one":
     "FineNotes: cleared the transcription of a page that no longer has any writing.",
@@ -152,10 +151,14 @@ export const view = {
   "view.transcribe.failedSaved.other":
     "FineNotes: transcription failed on page {page}: {message} (the {count} pages before it were saved)",
   "view.transcribe.stopped": "FineNotes: stopped — transcribed {done} of {total} pages.",
-  "view.transcribe.done.one":
-    "FineNotes: transcribed the page into the text layer — review and edit it.",
-  "view.transcribe.done.other":
-    "FineNotes: transcribed {count} pages into the text layer — review and edit it.",
+  "view.transcribe.ready.one":
+    "FineNotes: page transcribed. Tap to read it in the sidebar's Files tab, under Transcripts.",
+  "view.transcribe.ready.other":
+    "FineNotes: {count} pages transcribed. Tap to read them in the sidebar's Files tab, under Transcripts.",
+  "view.transcribe.compare.one":
+    "FineNotes: the page has your own transcript, so the new one waits beside it. Tap to compare them in the sidebar's Files tab.",
+  "view.transcribe.compare.other":
+    "FineNotes: {count} pages have your own transcript, so the new ones wait beside them. Tap to compare them in the sidebar's Files tab.",
   "view.transcribe.skipped.one": "{count} unchanged page skipped.",
   "view.transcribe.skipped.other": "{count} unchanged pages skipped.",
 
@@ -236,6 +239,20 @@ export const view = {
   "view.rename.failed": "FineNotes: could not rename the notebook — {message}",
   "view.files.gone": "FineNotes: {path} is not in the vault any more.",
   "view.files.serverTranscript": "Handwriting, from the transcript server",
+  "view.files.pageTranscript": "Page {page}",
+  "view.files.source.ai": "Transcribed by AI",
+  "view.files.source.device": "Read on this device",
+  "view.files.source.typed": "Typed by you",
+  "view.files.source.edited": "Edited by you",
+  "view.files.pending": "New transcription to compare",
+  "view.files.yours": "Yours",
+  "view.files.new": "New transcription",
+  "view.files.keep": "Keep this",
+  "view.files.edit": "Edit transcript",
+  "view.files.goToPage": "Go to page",
+  "view.typeTranscript.title": "Page {page}",
+  "view.typeTranscript.placeholder": "Type what the page says…",
+  "view.typeTranscript.fieldLabel": "The page's transcript",
   "view.practice.penOnly": "A practice file is for copying its lines: pen and eraser only.",
   "view.practice.fixedPages": "A practice file keeps its pages as they are.",
   "view.single.converted":

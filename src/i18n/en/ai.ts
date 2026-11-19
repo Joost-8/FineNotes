@@ -30,6 +30,7 @@ export const ai = {
   "ai.menu.noRecordings": "No recordings in this note yet — tap the mic to record",
   "ai.menu.ask": "Ask…",
   "ai.menu.transcribePage": "Transcribe this page",
+  "ai.menu.transcribeByHand": "No AI set up: type it yourself",
   "ai.menu.notebookEmpty": "This notebook is empty",
   "ai.menu.pageEmpty": "This page is empty",
   "ai.menu.generateImage": "Generate image…",
