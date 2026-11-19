@@ -2009,6 +2009,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "cpu",
           ),
           this.tile(
+            controlRow(
+              t("settings.fallbackModel.name"),
+              t("settings.fallbackModel.line"),
+              {
+                type: "text",
+                key: "llmFallbackModel",
+                placeholder: t("settings.fallbackModel.placeholder"),
+              },
+              ["rate limit", "quota", "429", "backup model", "second model"],
+            ),
+            "life-buoy",
+          ),
+          this.tile(
             drawnRow(keyName, this.keyLine(vendor), (s) => this.renderKeyRow(s, vendor), [
               "token",
               "secret",
@@ -2032,6 +2045,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
               ["OCR", "handwriting to text", "auto recognition", "recognize automatically"],
             ),
             "autoRecognize",
+          ),
+          this.tile(
+            controlRow(
+              t("settings.transcribeModel.name"),
+              t("settings.transcribeModel.line"),
+              {
+                type: "text",
+                key: "llmTranscribeModel",
+                placeholder: t("settings.transcribeModel.placeholder"),
+              },
+              ["cheaper model", "model for transcription", "transcribe model", "OCR model"],
+            ),
+            "cpu",
           ),
         ],
       ],

@@ -544,9 +544,11 @@ describe("the rows", () => {
       ["ai", "Service", "(block)", "render"],
       ["ai", "Service", "Connect OpenRouter", "render"],
       ["ai", "Service", "AI model", "text:llmModel"],
+      ["ai", "Service", "Fallback model", "text:llmFallbackModel"],
       ["ai", "Service", `${label} API key`, "render"],
       ["ai", "Service", "(block)", "render"],
       ["ai", "Transcribing", "Handwriting recognition", "dropdown:recognitionProviderId"],
+      ["ai", "Transcribing", "Page transcription model", "text:llmTranscribeModel"],
       ["ai", "Recordings", "Transcribe recordings with", "dropdown:speechService"],
       ["ai", "Recordings", "Transcription model", "text:speechServiceModel"],
       ["ai", "Recordings", "Transcription server URL", "text:speechBaseUrl"],
@@ -763,8 +765,10 @@ describe("which rows show", () => {
     expect(names.slice(from, names.indexOf("Assets folder"))).toEqual([
       "AI service",
       "AI model",
+      "Fallback model",
       `${label} API key`,
       "Handwriting recognition",
+      "Page transcription model",
       "Transcribe recordings with",
       "Ask AI can read",
       "Show what each answer cost",
@@ -1099,14 +1103,18 @@ describe("control values", () => {
     await tab.setControlValue("customColors", " #ff8800,#00CCAA , #abc,red, #12345, #1234567,,");
     await tab.setControlValue("llmModel", "  claude-haiku-4-5 ");
     await tab.setControlValue("imageModel", " gpt-image-1\n");
+    await tab.setControlValue("llmTranscribeModel", " claude-haiku-4-5\t");
+    await tab.setControlValue("llmFallbackModel", " claude-sonnet-4-5 ");
     await tab.setControlValue("defaultColor", "#123456");
     expect(plugin.settings.defaultSize).toBe(4);
     expect(plugin.settings.highlighterAlpha).toBe(0.4);
     expect(plugin.settings.customColors).toEqual(["#ff8800", "#00CCAA", "#abc"]);
     expect(plugin.settings.llmModel).toBe("claude-haiku-4-5");
     expect(plugin.settings.imageModel).toBe("gpt-image-1");
+    expect(plugin.settings.llmTranscribeModel).toBe("claude-haiku-4-5");
+    expect(plugin.settings.llmFallbackModel).toBe("claude-sonnet-4-5");
     expect(plugin.settings.defaultColor).toBe("#123456");
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(6);
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(8);
     expect(plugin.calls).not.toContain("update");
   });
 

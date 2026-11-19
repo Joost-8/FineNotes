@@ -51,6 +51,12 @@ import {
   wantsSegments,
 } from "./audio-request";
 import { type OnlineAnswer, transcribeOnline } from "../audio/online-speech";
+import {
+  VendorStatusError,
+  fallbackModelOf,
+  shouldFallBack,
+  withModelFallback,
+} from "./model-choice";
 
 /** Everything needed to reach one vendor. Keys are resolved by the caller. */
 export interface AiVendorConfig {
@@ -63,6 +69,11 @@ export interface AiVendorConfig {
   baseUrl: string;
   /** Skip providers that say they compress the model; only read for `openrouter`. */
   skipCompressed?: boolean;
+  /**
+   * Tried once when `model` is turned down for its rate limit or quota
+   * (`model-choice.ts`); empty or absent for none.
+   */
+  fallbackModel?: string;
 }
 
 /** A vendor's label, or "your configured endpoint (host)". */
@@ -131,17 +142,6 @@ async function sendTo(
  */
 function failedStatus(label: string, userEndpoint: boolean, response: RequestUrlResponse): Error {
   const { status } = response;
-  if (status === 401 || status === 403) {
-    // From a named vendor this is the key. From a self-hosted server it is
-    // more often the server's own access rules: Ollama answers only requests
-    // addressed to localhost unless told otherwise, so through a tunnel or a
-    // proxy it sends back an empty 403.
-    return new Error(
-      userEndpoint
-        ? t("ai.client.deniedOwn", { label, status })
-        : t("ai.client.deniedKey", { label }),
-    );
-  }
   let body: unknown;
   try {
     body = response.json;
@@ -149,10 +149,25 @@ function failedStatus(label: string, userEndpoint: boolean, response: RequestUrl
     body = undefined; // not JSON: the status is all there is to go on
   }
   const detail = extractLlmErrorMessage(body);
-  return new Error(
+  if (status === 401 || status === 403) {
+    // From a named vendor this is the key. From a self-hosted server it is
+    // more often the server's own access rules: Ollama answers only requests
+    // addressed to localhost unless told otherwise, so through a tunnel or a
+    // proxy it sends back an empty 403.
+    return new VendorStatusError(
+      userEndpoint
+        ? t("ai.client.deniedOwn", { label, status })
+        : t("ai.client.deniedKey", { label }),
+      status,
+      detail,
+    );
+  }
+  return new VendorStatusError(
     detail
       ? t("ai.client.requestFailedDetail", { label, status, detail })
       : t("ai.client.requestFailed", { label, status }),
+    status,
+    detail,
   );
 }
 
@@ -163,14 +178,28 @@ interface ChatReply {
   cutOff: boolean;
 }
 
-/** Send one conversation to the configured text vendor and read what comes back. */
-async function sendChat(
+/**
+ * Send one conversation to the configured text vendor and read what comes
+ * back; turned down for the rate limit or quota, it goes once more to the
+ * fallback model, when there is one.
+ */
+function sendChat(
   config: AiVendorConfig,
   system: string,
   turns: readonly ChatTurn[],
   cache = false,
 ): Promise<ChatReply> {
   assertConfigured(config);
+  return withModelFallback(config, (chosen) => sendChatTo(chosen, system, turns, cache));
+}
+
+/** {@link sendChat} to `config.model` alone. */
+async function sendChatTo(
+  config: AiVendorConfig,
+  system: string,
+  turns: readonly ChatTurn[],
+  cache: boolean,
+): Promise<ChatReply> {
   const request = buildChatRequest({
     vendor: config.vendor,
     model: config.model.trim() || defaultModelFor(config.vendor),
@@ -306,27 +335,45 @@ export async function askAiWithTools(
   },
 ): Promise<AskAnswer> {
   assertConfigured(config);
-  const base = buildChatRequest({
-    vendor: config.vendor,
-    model: config.model.trim() || defaultModelFor(config.vendor),
-    apiKey: config.apiKey.trim(),
-    baseUrl: config.baseUrl,
-    skipCompressed: config.skipCompressed,
-    system,
-    turns,
-    cache: true,
-  });
-  const baseBody = base.body as Record<string, unknown>;
+  const requestFor = (model: string) =>
+    buildChatRequest({
+      vendor: config.vendor,
+      model: model.trim() || defaultModelFor(config.vendor),
+      apiKey: config.apiKey.trim(),
+      baseUrl: config.baseUrl,
+      skipCompressed: config.skipCompressed,
+      system,
+      turns,
+      cache: true,
+    });
+  let model = config.model;
+  let base = requestFor(model);
   const dialect = TOOL_DIALECTS[VENDORS[config.vendor].dialect];
   const label = targetLabel(config);
   const more: unknown[] = [];
   const actions: string[] = [];
   const notes: string[] = [];
-  let usage = emptyUsage(config.vendor, config.model.trim() || defaultModelFor(config.vendor));
+  let usage = emptyUsage(config.vendor, model.trim() || defaultModelFor(config.vendor));
   for (let round = 0; ; round++) {
     // Out of rounds: answer now, with what has been found.
-    const body = dialect.body(baseBody, more, round >= ASK_MAX_TOOL_ROUNDS);
-    const json = await sendVendorRequest(config, () => postJson(base.url, base.headers, body));
+    const send = () =>
+      postJson(
+        base.url,
+        base.headers,
+        dialect.body(base.body as Record<string, unknown>, more, round >= ASK_MAX_TOOL_ROUNDS),
+      );
+    let json: unknown;
+    try {
+      json = await sendVendorRequest(config, send);
+    } catch (error) {
+      // Only before anything ran: a later round goes on where the model
+      // left off (its thinking, its tool calls), which another model cannot.
+      if (round > 0 || !shouldFallBack(config, error)) throw error;
+      model = fallbackModelOf(config) ?? model;
+      base = requestFor(model);
+      usage = emptyUsage(config.vendor, model || defaultModelFor(config.vendor));
+      json = await sendVendorRequest(config, send);
+    }
     usage = addReplyUsage(usage, VENDORS[config.vendor].dialect, json);
     const refusal = extractRefusal(config.vendor, json);
     if (refusal) throw new Error(t("ai.client.refusal", { label, reason: refusal }));

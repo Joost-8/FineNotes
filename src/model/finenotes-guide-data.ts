@@ -3195,6 +3195,19 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     settings: ["llmVendor", "llmModel", "llmModels", "apiKeys", "llmBaseUrl"],
   },
   {
+    id: "aiModelChoice",
+    area: "ai",
+    title: "A cheaper model for transcription, and a fallback model",
+    words:
+      "transcription model, cheaper model, different model, second model, fallback model, backup model, rate limit, quota, 429, too many requests, out of credits, free model",
+    what: 'Transcription can use a model of its own: type it in "Page transcription model" (empty uses "AI model"), so automatic transcription can run on a cheap model while Ask AI keeps a stronger one. "Fallback model" is tried once when the model is turned down for its rate limit or quota (also when OpenRouter credits run out or Claude is overloaded), for transcription and Ask alike; a wrong key or any other error is shown at once. Both are models of the same AI service, with the same key, and each service remembers its own.',
+    where:
+      'Settings › AI › Transcribing › "Page transcription model". Settings › AI › Service › "Fallback model".',
+    notes:
+      "In Ask AI, the fallback takes over only when the first request of an answer is turned down; once the notebook's tools have run, the answer stays with the model that began it.",
+    settings: ["llmTranscribeModel", "llmFallbackModel"],
+  },
+  {
     id: "apiKeyStorage",
     area: "ai",
     title: "Where API keys are stored",

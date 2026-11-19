@@ -72,6 +72,8 @@ import {
   type PageAppearance,
   type PenPreferences,
   loadSnapSettings,
+  modelIdOf,
+  modelMemoryOf,
   shownPaperTheme,
   storeHandwritingReader,
   storePenPreferences,
@@ -98,6 +100,7 @@ import { createProviderRegistry, resolveProvider } from "./recognition/registry"
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import { LlmProvider } from "./recognition/llm";
 import { LLM_PROVIDER_ID, type LlmVendor, VENDORS } from "./recognition/llm-request";
+import { transcriptionModel } from "./recognition/model-choice";
 import { postJson } from "./recognition/http";
 import {
   type KeyStore,
@@ -557,7 +560,7 @@ export default class GoodObsidianPlugin extends Plugin {
     // an arbitrary user-configured URL (the custom endpoint has a slot of its own).
     // Registered before the settings load, which check the saved provider
     // against this registry; the config is read lazily, on each request.
-    const cloud = new LlmProvider(() => this.textAiConfig());
+    const cloud = new LlmProvider(() => this.transcriptionAiConfig());
     this.providers.set(cloud.id, cloud);
 
     await this.loadSettings();
@@ -1253,10 +1256,11 @@ export default class GoodObsidianPlugin extends Plugin {
       ? Math.max(-50, Math.min(100, lineStep))
       : 0;
     this.settings.openRouterSkipCompressed = this.settings.openRouterSkipCompressed === true;
-    const models: unknown = this.settings.llmModels;
-    if (typeof models !== "object" || models === null || Array.isArray(models)) {
-      this.settings.llmModels = {};
-    }
+    this.settings.llmModels = modelMemoryOf(this.settings.llmModels);
+    this.settings.llmTranscribeModels = modelMemoryOf(this.settings.llmTranscribeModels);
+    this.settings.llmFallbackModels = modelMemoryOf(this.settings.llmFallbackModels);
+    this.settings.llmTranscribeModel = modelIdOf(this.settings.llmTranscribeModel);
+    this.settings.llmFallbackModel = modelIdOf(this.settings.llmFallbackModel);
     this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
     this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
@@ -1655,7 +1659,7 @@ export default class GoodObsidianPlugin extends Plugin {
     }
   }
 
-  /** The text/vision vendor: transcription and questions. */
+  /** The text/vision vendor: questions, and transcription with {@link transcriptionAiConfig}. */
   textAiConfig(): AiVendorConfig {
     const vendor = this.settings.llmVendor;
     return {
@@ -1664,7 +1668,14 @@ export default class GoodObsidianPlugin extends Plugin {
       apiKey: this.apiKeyFor(vendor),
       baseUrl: this.settings.llmBaseUrl,
       skipCompressed: this.settings.openRouterSkipCompressed,
+      fallbackModel: this.settings.llmFallbackModel,
     };
+  }
+
+  /** {@link textAiConfig} for page transcription: its own model, when one is set. */
+  transcriptionAiConfig(): AiVendorConfig {
+    const config = this.textAiConfig();
+    return { ...config, model: transcriptionModel(config.model, this.settings.llmTranscribeModel) };
   }
 
   /** The image vendor, or null when the configured one cannot make images. */

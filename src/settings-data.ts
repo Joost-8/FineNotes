@@ -49,7 +49,12 @@ import type { ImageAspect } from "./recognition/ai-image";
 import type { ImageVendorChoice } from "./recognition/ai-menu-model";
 import type { KeySlot } from "./recognition/audio-request";
 import type { SpeechService } from "./audio/online-speech";
-import { type LlmVendor, chatCompletionsUrl, isPlainHttpUrl } from "./recognition/llm-request";
+import {
+  type LlmVendor,
+  VENDORS,
+  chatCompletionsUrl,
+  isPlainHttpUrl,
+} from "./recognition/llm-request";
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import type { EraserMode } from "./view/toolbar";
 import type { PenCursorStyle } from "./view/pen-cursor";
@@ -171,6 +176,19 @@ export interface GoodObsidianSettings {
    * service and back does not lose it ({@link switchLlmVendor}).
    */
   llmModels: Partial<Record<LlmVendor, string>>;
+  /**
+   * The model pages are transcribed with, of the same vendor (FineNotes#265);
+   * empty for `llmModel`. Ask AI always uses `llmModel`.
+   */
+  llmTranscribeModel: string;
+  /**
+   * Tried once when the model is turned down for its rate limit or quota
+   * (`model-choice.ts`), for transcription and Ask alike; empty for none.
+   */
+  llmFallbackModel: string;
+  /** `llmTranscribeModel` and `llmFallbackModel` of each vendor the user left, as `llmModels`. */
+  llmTranscribeModels: Partial<Record<LlmVendor, string>>;
+  llmFallbackModels: Partial<Record<LlmVendor, string>>;
   /** With OpenRouter, serve the model only from providers that do not say they compress it. */
   openRouterSkipCompressed: boolean;
   /**
@@ -583,6 +601,10 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   llmVendor: "anthropic",
   llmModel: "",
   llmModels: {},
+  llmTranscribeModel: "",
+  llmFallbackModel: "",
+  llmTranscribeModels: {},
+  llmFallbackModels: {},
   openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
@@ -978,19 +1000,65 @@ export function storePenPreferences(
  * meaning "the service chosen") is the caller's to pin to `from` first.
  */
 export function switchLlmVendor(
-  settings: Pick<GoodObsidianSettings, "llmVendor" | "llmModel" | "llmModels">,
+  settings: Pick<
+    GoodObsidianSettings,
+    | "llmVendor"
+    | "llmModel"
+    | "llmModels"
+    | "llmTranscribeModel"
+    | "llmTranscribeModels"
+    | "llmFallbackModel"
+    | "llmFallbackModels"
+  >,
   next: LlmVendor,
 ): void {
   const from = settings.llmVendor;
   if (from === next) return;
-  const models = { ...(settings.llmModels ?? {}) };
-  const typed = settings.llmModel.trim();
-  if (typed) models[from] = typed;
-  else delete models[from];
+  /** Keep the model typed for `from` in its memory, and bring back `next`'s. */
+  const swap = (
+    typed: string | undefined,
+    memory: Partial<Record<LlmVendor, string>> | undefined,
+  ) => {
+    const models = { ...(memory ?? {}) };
+    const kept = (typed ?? "").trim();
+    if (kept) models[from] = kept;
+    else delete models[from];
+    const back = models[next] ?? "";
+    delete models[next];
+    return [back, models] as const;
+  };
+  [settings.llmModel, settings.llmModels] = swap(settings.llmModel, settings.llmModels);
+  [settings.llmTranscribeModel, settings.llmTranscribeModels] = swap(
+    settings.llmTranscribeModel,
+    settings.llmTranscribeModels,
+  );
+  [settings.llmFallbackModel, settings.llmFallbackModels] = swap(
+    settings.llmFallbackModel,
+    settings.llmFallbackModels,
+  );
   settings.llmVendor = next;
-  settings.llmModel = models[next] ?? "";
-  delete models[next];
-  settings.llmModels = models;
+}
+
+/** A stored model id, trimmed; anything that is not text is no model (""). */
+export function modelIdOf(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * A stored per-vendor model memory (`llmModels` and its kin): only vendors
+ * FineNotes knows, each with a model id; anything else in a hand-edited
+ * file is dropped, not carried.
+ */
+export function modelMemoryOf(value: unknown): Partial<Record<LlmVendor, string>> {
+  const memory: Partial<Record<LlmVendor, string>> = {};
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return memory;
+  for (const [vendor, model] of Object.entries(value as Record<string, unknown>)) {
+    const id = modelIdOf(model);
+    if (id && Object.prototype.hasOwnProperty.call(VENDORS, vendor)) {
+      memory[vendor as LlmVendor] = id;
+    }
+  }
+  return memory;
 }
 
 /** The vault-wide folders for each kind of file, as `resolveAttachmentFolder` takes them. */
@@ -1130,6 +1198,8 @@ const CONVERSIONS: Record<
     store: (text) => parseColorList(text as string),
   },
   llmModel: { show: (id) => id, store: (id) => (id as string).trim() },
+  llmTranscribeModel: { show: (id) => id, store: (id) => (id as string).trim() },
+  llmFallbackModel: { show: (id) => id, store: (id) => (id as string).trim() },
   imageModel: { show: (id) => id, store: (id) => (id as string).trim() },
   useLearnedHandwriting: { show: (on) => on !== false, store: (on) => on === true },
   tuckPenOptionsOnWrite: { show: penOptionsOnWriteOf, store: penOptionsOnWriteOf },

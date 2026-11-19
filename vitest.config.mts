@@ -177,6 +177,7 @@ export default defineConfig({
         "src/recognition/registry.ts",
         "src/recognition/manual.ts",
         "src/recognition/llm-request.ts",
+        "src/recognition/model-choice.ts",
         "src/recognition/openrouter-auth.ts",
         "src/recognition/ai-chat.ts",
         "src/recognition/ask-chat-file.ts",

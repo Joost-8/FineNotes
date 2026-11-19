@@ -43,6 +43,8 @@ import {
   storeHandwritingReader,
   storePenPreferences,
   switchLlmVendor,
+  modelIdOf,
+  modelMemoryOf,
   storeReturnToPen,
   storeShownValue,
   withShownSection,
@@ -96,6 +98,10 @@ const FRESH_INSTALL = {
   llmVendor: "anthropic",
   llmModel: "",
   llmModels: {},
+  llmTranscribeModel: "",
+  llmFallbackModel: "",
+  llmTranscribeModels: {},
+  llmFallbackModels: {},
   openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
@@ -288,6 +294,10 @@ const USED_VAULT = {
   llmVendor: "custom",
   llmModel: "llava:13b",
   llmModels: { openai: "gpt-4o" },
+  llmTranscribeModel: "moondream",
+  llmFallbackModel: "llava:7b",
+  llmTranscribeModels: { openai: "gpt-4.1-mini" },
+  llmFallbackModels: { openrouter: "google/gemma-3-27b-it:free" },
   openRouterSkipCompressed: true,
   llmApiKey: "sk-ant-legacy",
   llmBaseUrl: "http://nas.local:11434/v1",
@@ -804,6 +814,38 @@ describe("choices that set two switches", () => {
     expect(settings.llmModel).toBe("gpt-4o");
     switchLlmVendor(settings, "openai");
     expect(settings.llmModel).toBe("gpt-4o");
+  });
+
+  it("keeps each service's transcription and fallback models the same way (FineNotes#265)", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.llmVendor = "openrouter";
+    settings.llmTranscribeModel = " google/gemini-2.5-flash ";
+    settings.llmFallbackModel = "google/gemma-3-27b-it:free";
+    switchLlmVendor(settings, "openai");
+    expect([settings.llmTranscribeModel, settings.llmFallbackModel]).toEqual(["", ""]);
+    settings.llmTranscribeModel = "gpt-4.1-mini";
+    switchLlmVendor(settings, "openrouter");
+    expect([settings.llmTranscribeModel, settings.llmFallbackModel]).toEqual([
+      "google/gemini-2.5-flash",
+      "google/gemma-3-27b-it:free",
+    ]);
+    expect(settings.llmTranscribeModels).toEqual({ openai: "gpt-4.1-mini" });
+    expect(settings.llmFallbackModels).toEqual({});
+  });
+
+  it("reads stored model ids and model memories, dropping what is not one", () => {
+    expect(modelIdOf(" gpt-4o ")).toBe("gpt-4o");
+    expect(modelIdOf(4)).toBe("");
+    expect(modelIdOf(undefined)).toBe("");
+    expect(modelMemoryOf(undefined)).toEqual({});
+    expect(modelMemoryOf(["gpt-4o"])).toEqual({});
+    expect(modelMemoryOf({ openai: " gpt-4o ", google: 3, mistral: "x", custom: "" })).toEqual({
+      openai: "gpt-4o",
+    });
+    // Not an inherited member either.
+    expect(modelMemoryOf(JSON.parse('{"toString":"x","anthropic":"claude-haiku-4-5"}'))).toEqual({
+      anthropic: "claude-haiku-4-5",
+    });
   });
 
   it("reads handwriting on this device as one choice, stored as its two switches", () => {

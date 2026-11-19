@@ -263,6 +263,12 @@ export const settings = {
   "settings.aiModel.name": "AI model",
   "settings.aiModel.info":
     "For transcription and questions. Leave empty for the default ({model}). Any model that reads images will do; a cheaper one, such as claude-haiku-4-5, saves money at some cost in accuracy.",
+  "settings.fallbackModel.name": "Fallback model",
+  "settings.fallbackModel.line": "Tried once when a model hits its rate limit or quota.",
+  "settings.fallbackModel.placeholder": "None",
+  "settings.transcribeModel.name": "Page transcription model",
+  "settings.transcribeModel.line": "Empty: the AI model. Ask AI keeps the AI model.",
+  "settings.transcribeModel.placeholder": "Same as AI model",
   "settings.recognition.name": "Handwriting recognition",
   "settings.recognition.info":
     "What the “Recognize handwriting” command and automatic recognition use. Manual = you type the transcription; Cloud AI sends an image of each page to the AI service above. The AI menu's Transcribe entries always use AI.",
