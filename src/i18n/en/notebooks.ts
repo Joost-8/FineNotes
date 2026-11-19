@@ -417,6 +417,7 @@ export const notebooks = {
   "notebooks.command.switchView": "Switch between notebook and Markdown view",
   "notebooks.command.toggleTextLayer": "Show or hide the text layer",
   "notebooks.command.transcribe": "Transcribe this notebook's handwriting",
+  "notebooks.command.transcribePage": "Transcribe this page",
   "notebooks.command.practiceSet": "Write a handwriting practice set",
   "notebooks.command.symbolPractice": "Write the symbol practice sheet (digits, operators, signs)",
   "notebooks.command.learnHandwriting": "Learn my handwriting from the practice files",

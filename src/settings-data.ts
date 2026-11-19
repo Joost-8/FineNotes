@@ -46,7 +46,11 @@ import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-f
 import type { AttachmentKind } from "./model/document";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
 import type { ImageAspect } from "./recognition/ai-image";
-import type { ImageVendorChoice } from "./recognition/ai-menu-model";
+import {
+  type ImageVendorChoice,
+  type TranscribeVendorChoice,
+  resolveTranscribeVendor,
+} from "./recognition/ai-menu-model";
 import type { KeySlot } from "./recognition/audio-request";
 import type { SpeechService } from "./audio/online-speech";
 import {
@@ -186,6 +190,11 @@ export interface GoodObsidianSettings {
    * (`model-choice.ts`), for transcription and Ask alike; empty for none.
    */
   llmFallbackModel: string;
+  /**
+   * Who transcribes pages: the AI service ("same"), or another service with
+   * its own key (FineNotes#265). `llmTranscribeModel` is that service's model.
+   */
+  transcribeVendor: TranscribeVendorChoice;
   /** `llmTranscribeModel` and `llmFallbackModel` of each vendor the user left, as `llmModels`. */
   llmTranscribeModels: Partial<Record<LlmVendor, string>>;
   llmFallbackModels: Partial<Record<LlmVendor, string>>;
@@ -603,6 +612,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   llmModels: {},
   llmTranscribeModel: "",
   llmFallbackModel: "",
+  transcribeVendor: "same",
   llmTranscribeModels: {},
   llmFallbackModels: {},
   openRouterSkipCompressed: false,
@@ -992,51 +1002,87 @@ export function storePenPreferences(
   }
 }
 
+/** Keep `typed`, the model for `from`, in `memory`, and bring back `next`'s. */
+function swapModel(
+  typed: string | undefined,
+  memory: Partial<Record<LlmVendor, string>> | undefined,
+  from: LlmVendor,
+  next: LlmVendor,
+): [string, Partial<Record<LlmVendor, string>>] {
+  const models = { ...(memory ?? {}) };
+  const kept = (typed ?? "").trim();
+  if (kept) models[from] = kept;
+  else delete models[from];
+  const back = models[next] ?? "";
+  delete models[next];
+  return [back, models];
+}
+
+type VendorModels = Pick<
+  GoodObsidianSettings,
+  | "llmVendor"
+  | "llmModel"
+  | "llmModels"
+  | "llmTranscribeModel"
+  | "llmTranscribeModels"
+  | "llmFallbackModel"
+  | "llmFallbackModels"
+  | "transcribeVendor"
+>;
+
 /**
  * Change the AI service, keeping what was set up for the one left: its
- * model is remembered and the next one's comes back, so trying another
- * service and returning costs nothing. The keys are kept per service by the
- * key store already; the one key that is not (`llmApiKey`, from before 0.5,
- * meaning "the service chosen") is the caller's to pin to `from` first.
+ * models are remembered and the next one's come back, so trying another
+ * service and returning costs nothing. The transcription model goes with
+ * them only while transcription follows the AI service. The keys are kept
+ * per service by the key store already; the one key that is not
+ * (`llmApiKey`, from before 0.5, meaning "the service chosen") is the
+ * caller's to pin to `from` first.
  */
-export function switchLlmVendor(
-  settings: Pick<
-    GoodObsidianSettings,
-    | "llmVendor"
-    | "llmModel"
-    | "llmModels"
-    | "llmTranscribeModel"
-    | "llmTranscribeModels"
-    | "llmFallbackModel"
-    | "llmFallbackModels"
-  >,
-  next: LlmVendor,
-): void {
+export function switchLlmVendor(settings: VendorModels, next: LlmVendor): void {
   const from = settings.llmVendor;
   if (from === next) return;
-  /** Keep the model typed for `from` in its memory, and bring back `next`'s. */
-  const swap = (
-    typed: string | undefined,
-    memory: Partial<Record<LlmVendor, string>> | undefined,
-  ) => {
-    const models = { ...(memory ?? {}) };
-    const kept = (typed ?? "").trim();
-    if (kept) models[from] = kept;
-    else delete models[from];
-    const back = models[next] ?? "";
-    delete models[next];
-    return [back, models] as const;
-  };
-  [settings.llmModel, settings.llmModels] = swap(settings.llmModel, settings.llmModels);
-  [settings.llmTranscribeModel, settings.llmTranscribeModels] = swap(
-    settings.llmTranscribeModel,
-    settings.llmTranscribeModels,
+  [settings.llmModel, settings.llmModels] = swapModel(
+    settings.llmModel,
+    settings.llmModels,
+    from,
+    next,
   );
-  [settings.llmFallbackModel, settings.llmFallbackModels] = swap(
+  [settings.llmFallbackModel, settings.llmFallbackModels] = swapModel(
     settings.llmFallbackModel,
     settings.llmFallbackModels,
+    from,
+    next,
   );
+  const transcribeFrom = resolveTranscribeVendor(settings.transcribeVendor, from);
+  const transcribeNext = resolveTranscribeVendor(settings.transcribeVendor, next);
+  if (transcribeFrom !== transcribeNext) {
+    [settings.llmTranscribeModel, settings.llmTranscribeModels] = swapModel(
+      settings.llmTranscribeModel,
+      settings.llmTranscribeModels,
+      transcribeFrom,
+      transcribeNext,
+    );
+  }
   settings.llmVendor = next;
+}
+
+/**
+ * Change who transcribes pages (FineNotes#265): the transcription model
+ * typed for the service left is remembered, and the next one's comes back.
+ */
+export function switchTranscribeVendor(settings: VendorModels, next: TranscribeVendorChoice): void {
+  const from = resolveTranscribeVendor(settings.transcribeVendor, settings.llmVendor);
+  const to = resolveTranscribeVendor(next, settings.llmVendor);
+  if (from !== to) {
+    [settings.llmTranscribeModel, settings.llmTranscribeModels] = swapModel(
+      settings.llmTranscribeModel,
+      settings.llmTranscribeModels,
+      from,
+      to,
+    );
+  }
+  settings.transcribeVendor = next;
 }
 
 /** A stored model id, trimmed; anything that is not text is no model (""). */
@@ -1241,6 +1287,8 @@ export function changesTabLayout(key: string): boolean {
     key === "recognitionProviderId" ||
     key === "llmVendor" ||
     key === "imageVendor" ||
+    // Brings its key row, and the model's placeholder.
+    key === "transcribeVendor" ||
     key === "pressureWidth" ||
     key === "speechModel" ||
     // The online service brings its model, key and endpoint rows.

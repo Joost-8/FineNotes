@@ -78,6 +78,7 @@ import {
   storeHandwritingReader,
   storePenPreferences,
   switchLlmVendor,
+  switchTranscribeVendor,
 } from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { LearnWindow } from "./view/learn-window";
@@ -116,7 +117,13 @@ import {
   SettingsKeyStore,
   migrateKeys,
 } from "./recognition/key-store";
-import { type AiSetup, resolveImageVendor } from "./recognition/ai-menu-model";
+import {
+  type AiSetup,
+  TRANSCRIBE_VENDOR_CHOICES,
+  type TranscribeVendorChoice,
+  resolveImageVendor,
+  resolveTranscribeVendor,
+} from "./recognition/ai-menu-model";
 import { DEFAULT_IMAGE_MODELS, canGenerateImages } from "./recognition/ai-image";
 import {
   type AiVendorConfig,
@@ -1077,6 +1084,9 @@ export default class GoodObsidianPlugin extends Plugin {
     this.notebookCommand("toggle-text-layer", t("notebooks.command.toggleTextLayer"), (view) =>
       view.toggleTextPanel(),
     );
+    this.notebookCommand("transcribe-page", t("notebooks.command.transcribePage"), (view) =>
+      view.transcribePageNow(),
+    );
     this.notebookCommand("recognize-handwriting", t("notebooks.command.transcribe"), (view) =>
       this.runRecognition(view),
     );
@@ -1268,6 +1278,11 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings.llmFallbackModels = modelMemoryOf(this.settings.llmFallbackModels);
     this.settings.llmTranscribeModel = modelIdOf(this.settings.llmTranscribeModel);
     this.settings.llmFallbackModel = modelIdOf(this.settings.llmFallbackModel);
+    this.settings.transcribeVendor = TRANSCRIBE_VENDOR_CHOICES.includes(
+      this.settings.transcribeVendor,
+    )
+      ? this.settings.transcribeVendor
+      : "same";
     this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
     this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
@@ -1679,10 +1694,54 @@ export default class GoodObsidianPlugin extends Plugin {
     };
   }
 
-  /** {@link textAiConfig} for page transcription: its own model, when one is set. */
+  /** Who transcribes pages: the AI service, or the one chosen for transcription (FineNotes#265). */
+  transcriptionVendor(): LlmVendor {
+    return resolveTranscribeVendor(this.settings.transcribeVendor, this.settings.llmVendor);
+  }
+
+  /**
+   * {@link textAiConfig} for page transcription: its own model when one is
+   * set, and its own service and key when one is chosen. The fallback model
+   * is the AI service's, so it only goes with that service.
+   */
   transcriptionAiConfig(): AiVendorConfig {
     const config = this.textAiConfig();
-    return { ...config, model: transcriptionModel(config.model, this.settings.llmTranscribeModel) };
+    const vendor = this.transcriptionVendor();
+    if (vendor === config.vendor) {
+      return {
+        ...config,
+        model: transcriptionModel(config.model, this.settings.llmTranscribeModel),
+      };
+    }
+    return {
+      ...config,
+      vendor,
+      model: this.settings.llmTranscribeModel,
+      apiKey: this.apiKeyFor(vendor),
+      fallbackModel: "",
+    };
+  }
+
+  /** Change who transcribes pages, keeping each service's transcription model. */
+  async switchTranscribeVendor(next: TranscribeVendorChoice): Promise<void> {
+    switchTranscribeVendor(this.settings, next);
+    await this.saveSettings();
+  }
+
+  /** In memory only: pages written on in a notebook closed before they were transcribed, by path. */
+  private waitingPages = new Map<string, string[]>();
+
+  /** Keep a closing notebook's pages that were waiting for automatic transcription. */
+  keepWaitingPages(path: string, pageIds: readonly string[]): void {
+    if (pageIds.length > 0) this.waitingPages.set(path, [...pageIds]);
+    else this.waitingPages.delete(path);
+  }
+
+  /** Take back the pages a notebook left waiting when it was closed (once). */
+  takeWaitingPages(path: string): string[] {
+    const ids = this.waitingPages.get(path) ?? [];
+    this.waitingPages.delete(path);
+    return ids;
   }
 
   /** The image vendor, or null when the configured one cannot make images. */
@@ -1702,6 +1761,7 @@ export default class GoodObsidianPlugin extends Plugin {
       vendor: this.settings.llmVendor,
       baseUrl: this.settings.llmBaseUrl,
       imageVendor: this.settings.imageVendor,
+      transcribeVendor: this.settings.transcribeVendor,
       speechService: this.settings.speechService,
       speechBaseUrl: this.speechBaseUrl(),
       hasKey: (slot) => this.apiKeyFor(slot) !== "",
@@ -2534,9 +2594,9 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   private maySendPages(background: boolean): Promise<boolean> {
-    if (background) return Promise.resolve(this.consentedTo(this.settings.llmVendor));
+    if (background) return Promise.resolve(this.consentedTo(this.transcriptionVendor()));
     return this.confirmAiSend(
-      this.textAiConfig(),
+      this.transcriptionAiConfig(),
       t("notebooks.consent.pagesAction"),
       t("notebooks.consent.pagesWhat"),
     );

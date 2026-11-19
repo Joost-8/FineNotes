@@ -47,6 +47,7 @@ import {
 import type { ShownRegion } from "./region-frames";
 import {
   AUTO_RECOGNIZE_IDLE_MS,
+  AUTO_RECOGNIZE_LEAVE_MS,
   DEVICE_READ_IDLE_MS,
   DEVICE_READ_NEXT_MS,
   DEVICE_READ_OPEN_MS,
@@ -93,6 +94,7 @@ import {
   type HandwritingReading,
   aiKeyFolded,
   buildAiMenu,
+  resolveTranscribeVendor,
   textAvailability,
 } from "../recognition/ai-menu-model";
 import {
@@ -774,6 +776,8 @@ export class InkView extends TextFileView {
   private transcribeTimer = 0;
   /** Ids of the pages written on since the last automatic transcription took them. */
   private autoPages = new Set<string>();
+  /** The page in view, to tell which page was left when another comes into view. */
+  private shownPageId: string | null = null;
   /** Present mode while it is on (⋯ › Present). */
   private presenter: Presenter | null = null;
   /** The next on-device reading for search and the text layer (`scheduleDeviceReading`). */
@@ -1030,6 +1034,7 @@ export class InkView extends TextFileView {
     if (doc && !held && this.relinkDoc() + this.adoptRenamedLinks(body) > 0) this.requestSave();
     // Ticks made in the note (the Tasks plugin) since the notebook wrote it.
     if (doc && !held) this.adoptTicks(body);
+    this.handOverWaitingPages(this.loadedPath, this.file?.path ?? null);
     this.loadedPath = this.file?.path ?? null;
     this.textPanel?.load(body);
     if (!this.mounted) return;
@@ -1369,6 +1374,9 @@ export class InkView extends TextFileView {
     this.audio?.destroy();
     this.audio = null;
     window.clearTimeout(this.transcribeTimer);
+    // Pages written on and not read yet are read when the notebook opens again.
+    if (this.loadedPath) this.plugin.keepWaitingPages(this.loadedPath, [...this.autoPages]);
+    this.autoPages.clear();
     window.clearTimeout(this.deviceTimer);
     this.deviceTimer = 0;
     window.clearTimeout(this.pdfIndexTimer);
@@ -1874,6 +1882,54 @@ export class InkView extends TextFileView {
   }
 
   /**
+   * The AI menu's "Transcribe this page" and the command of that name: the
+   * page in view, now, with the AI (also when the recognition setting says
+   * Manual: asking for it is asking for a machine transcription), after the
+   * one-time consent. Automatic transcription waits until a page is done;
+   * this is for when the text is wanted at once.
+   */
+  async transcribePageNow(): Promise<void> {
+    const config = this.plugin.transcriptionAiConfig();
+    const confirmed = await this.plugin.confirmAiSend(
+      config,
+      t("notebooks.consent.pagesAction"),
+      t("notebooks.consent.pagesWhat"),
+    );
+    if (!confirmed) return;
+    await this.transcribe(this.plugin.aiTranscriber(), "page");
+  }
+
+  /**
+   * Page `index` came into view. Turning away from a page written on means
+   * it is done for now: automatic transcription reads it a moment later
+   * (AUTO_RECOGNIZE_LEAVE_MS), not after the long quiet wait.
+   */
+  private pageShown(index: number): void {
+    const left = this.shownPageId;
+    this.shownPageId = this.doc.pages[index]?.id ?? null;
+    if (left && left !== this.shownPageId && this.autoPages.has(left)) {
+      this.scheduleAutoTranscription(undefined, AUTO_RECOGNIZE_LEAVE_MS);
+    }
+  }
+
+  /**
+   * Pages left waiting for automatic transcription follow their notebook:
+   * when this view moves from `from` to another file they are kept for
+   * `from`, and the ones `to` left waiting when it was closed come back.
+   */
+  private handOverWaitingPages(from: string | null, to: string | null): void {
+    if (from === to) return;
+    window.clearTimeout(this.transcribeTimer);
+    if (from) this.plugin.keepWaitingPages(from, [...this.autoPages]);
+    this.autoPages.clear();
+    if (!to) return;
+    const waiting = this.plugin.takeWaitingPages(to);
+    if (waiting.length === 0) return;
+    for (const id of waiting) this.autoPages.add(id);
+    this.scheduleAutoTranscription(undefined, AUTO_RECOGNIZE_LEAVE_MS);
+  }
+
+  /**
    * {@link renderForAi} for a page transcription: down to the lowest
    * writing only (`transcriptionCropHeight`), at the whole page's scale.
    */
@@ -1906,8 +1962,10 @@ export class InkView extends TextFileView {
       if (open.anchorEl === anchor) return;
     }
     const doc = this.doc;
+    const current = doc.pages[this.surface?.currentPage ?? 0];
     const items = buildAiMenu({
       setup: this.plugin.aiSetup(),
+      pageTranscribable: !!current && hasTranscribableContent(current),
       notebookAskable: doc.pages.some(hasAskableContent),
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
@@ -2205,6 +2263,7 @@ export class InkView extends TextFileView {
       "learn-window": () => this.plugin.openLearnWindow(),
       "scan-pdf-download": () => this.plugin.offerOcrReader(true),
       "device-settings": () => this.plugin.openSettingsTab(),
+      "transcribe-page": () => void this.transcribePageNow(),
       "transcribe-recording": () => this.audio?.transcribeFromMenu(),
       "transcribe-device": () => this.audio?.transcribeOnDeviceFromMenu(),
       "transcribe-device-cancel": () => this.plugin.speech.cancel(),
@@ -3627,11 +3686,11 @@ export class InkView extends TextFileView {
     delay = AUTO_RECOGNIZE_IDLE_MS,
   ): void {
     window.clearTimeout(this.transcribeTimer);
-    const { autoRecognize, llmVendor } = this.settings;
+    const { autoRecognize, llmVendor, transcribeVendor } = this.settings;
     const armed =
       autoRecognize &&
       this.plugin.activeProvider().requiresNetwork &&
-      this.plugin.consentedTo(llmVendor);
+      this.plugin.consentedTo(resolveTranscribeVendor(transcribeVendor, llmVendor));
     if (!armed) {
       this.autoPages.clear();
       return;
@@ -4064,6 +4123,7 @@ export class InkView extends TextFileView {
         onSizeScale: () => this.toolbar?.refreshSizeMarks(),
         onTapesToggled: () => this.toolbar?.refreshTape(),
         onPageChange: (index) => {
+          this.pageShown(index);
           this.toolbar?.refreshTape();
           this.sidebar?.setCurrentPage(index);
           this.scheduleLastPage();

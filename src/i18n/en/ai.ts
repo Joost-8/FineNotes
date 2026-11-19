@@ -29,6 +29,7 @@ export const ai = {
   "ai.menu.transcribeOnDevice": "Transcribe on this device…",
   "ai.menu.noRecordings": "No recordings in this note yet — tap the mic to record",
   "ai.menu.ask": "Ask…",
+  "ai.menu.transcribePage": "Transcribe this page",
   "ai.menu.notebookEmpty": "This notebook is empty",
   "ai.menu.pageEmpty": "This page is empty",
   "ai.menu.generateImage": "Generate image…",

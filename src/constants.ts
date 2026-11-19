@@ -166,8 +166,16 @@ export const ERASER_SIZES = [10, 24, 48] as const;
 /** Default eraser diameter (medium). */
 export const DEFAULT_ERASER_SIZE = ERASER_SIZES[1];
 
-/** How long the ink must be left alone before automatic transcription runs. */
-export const AUTO_RECOGNIZE_IDLE_MS = 30_000;
+/**
+ * How long a page must be left alone before automatic transcription reads
+ * it. Five minutes, not 30 s (FineNotes#265 review): replayed on real
+ * notebooks, 30 s sent each page about 6 times while it was being written,
+ * 5 minutes about 1.6. A page is also read once it is left (below).
+ */
+export const AUTO_RECOGNIZE_IDLE_MS = 5 * 60_000;
+
+/** After turning away from a page written on, how long until it is read: a quick look back costs nothing. */
+export const AUTO_RECOGNIZE_LEAVE_MS = 3_000;
 
 /** How long after writing stops a page is read on the device (search, text layer), ms. */
 export const DEVICE_READ_IDLE_MS = 4000;
