@@ -91,6 +91,7 @@ import {
 } from "../model/update-button";
 import { inkFileSuffix } from "../model/new-notebook";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
+import { hiddenBy, hide, isHidden, shownItems, unhide } from "../model/library-hidden";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
 import {
   HOME_PREVIEW_PAGES,
@@ -180,6 +181,9 @@ export interface LibraryHost {
   /** The starred notebooks and folders, by vault path. */
   stars(): readonly string[];
   setStars(stars: string[]): void;
+  /** The notebooks, files and folders hidden from Home, by vault path. */
+  hidden(): readonly string[];
+  setHidden(hidden: string[]): void;
   /** The colour and icon chosen for folders, by vault path. */
   folderStyles(): FolderStyles;
   setFolderStyles(styles: FolderStyles): void;
@@ -344,6 +348,8 @@ export class LibraryView extends ItemView {
   private drawerOpen = false;
   /** Home lists notebooks only, no other files (the sort menu); kept on this device. */
   private onlyNotebooks = this.app.loadLocalStorage(ONLY_NOTEBOOKS_KEY) === "1";
+  /** Hidden items shown, dimmed, until Home closes (the Sort menu, while any are hidden). */
+  private showHidden = false;
   /** The simple look as of the last paint, so a change of it repaints. */
   private simple = false;
   private previewEl!: HTMLElement;
@@ -1024,7 +1030,7 @@ export class LibraryView extends ItemView {
       if (child !== kept) child.remove();
     }
 
-    const all = this.entries();
+    const all = shownItems(this.entries(), this.host.hidden(), (e) => e.path, this.showHidden);
     this.simple = document.body.hasClass(SIMPLE_CLASS);
     const mode = this.railMode();
     const rail = mode === "side";
@@ -1167,6 +1173,7 @@ export class LibraryView extends ItemView {
           !c.name.startsWith(".") &&
           c.path !== INBOX_FOLDER &&
           made[c.path] !== undefined &&
+          (this.showHidden || !isHidden(this.host.hidden(), c.path)) &&
           !holdsFiles(c) &&
           !listed.some((l) => l.path === c.path),
       )
@@ -1247,6 +1254,7 @@ export class LibraryView extends ItemView {
       attr: { role: "button", tabindex: "0", "aria-label": folder.name },
     });
     this.enter(card, `folder:${folder.path}`);
+    card.toggleClass("is-off-home", isHidden(this.host.hidden(), folder.path));
     const style = this.host.folderStyles()[folder.path] ?? {};
     const cover = card.createDiv({ cls: "goodobsidian-library-cover is-folder" });
     cover.style.setProperty("--gob-folder", style.color ?? DEFAULT_FOLDER_COLOR);
@@ -1556,6 +1564,7 @@ export class LibraryView extends ItemView {
       attr: { role: "button", tabindex: "0", "aria-label": entry.title },
     });
     this.enter(card, entry.path, settled);
+    card.toggleClass("is-off-home", isHidden(this.host.hidden(), entry.path));
     this.cards.set(entry.path, [...(this.cards.get(entry.path) ?? []), { el: card, leftAt }]);
     const cover = card.createDiv({ cls: "goodobsidian-library-cover" });
     const notebook = entry.kind === "notebook";
@@ -1845,7 +1854,7 @@ export class LibraryView extends ItemView {
     };
     row(t("notebooks.home.title"), "house", null, "", 0, this.folder === "");
     rail.createDiv({ cls: "goodobsidian-library-rail-label", text: t("notebooks.home.folders") });
-    const made = Object.keys(styles);
+    const made = shownItems(Object.keys(styles), this.host.hidden(), (p) => p, this.showHidden);
     const listed = hoistSingles(all, (folder) => styles[folder] !== undefined).filter(keep);
     for (const folder of railFolders(listed, this.folder, made)) {
       const el = row(
@@ -2238,7 +2247,12 @@ export class LibraryView extends ItemView {
     const extras = await this.searchExtras();
     const books: LibraryBook[] = [];
     // The notebooks edited last first: among equal pages, the one in use now is nearer the top.
-    const files = this.notebookFiles().sort((a, b) => b.stat.mtime - a.stat.mtime);
+    const files = shownItems(
+      this.notebookFiles(),
+      this.host.hidden(),
+      (f) => f.path,
+      this.showHidden,
+    ).sort((a, b) => b.stat.mtime - a.stat.mtime);
     for (const file of files) {
       const record = this.texts.get(file.path);
       if (!record) continue;
@@ -2428,6 +2442,18 @@ export class LibraryView extends ItemView {
           this.paintNow(true);
         }),
     );
+    // Only while something is hidden: otherwise there is nothing to show.
+    if (this.showHidden || this.host.hidden().length > 0)
+      menu.addItem((item) =>
+        item
+          .setTitle(t("notebooks.home.showHidden"))
+          .setIcon("eye")
+          .setChecked(this.showHidden)
+          .onClick(() => {
+            this.showHidden = !this.showHidden;
+            this.paintNow(true);
+          }),
+      );
     menu.addSeparator();
     for (const option of SORTS) {
       const current = this.sort === option.by;
@@ -2753,6 +2779,7 @@ export class LibraryView extends ItemView {
         .setIcon("folder-input")
         .onClick(() => this.move(file)),
     );
+    this.hideItem(menu, file.path);
     menu.addSeparator();
     menu.addItem((item) =>
       item
@@ -2802,6 +2829,7 @@ export class LibraryView extends ItemView {
         .setIcon("folder-input")
         .onClick(() => this.move(target)),
     );
+    this.hideItem(menu, target.path);
     menu.addSeparator();
     menu.addItem((item) =>
       item
@@ -2815,6 +2843,26 @@ export class LibraryView extends ItemView {
         }),
     );
     this.show(menu, event);
+  }
+
+  /** "Hide from Home", or "Show on Home" for an item hidden now (itself, or the folder it is in). */
+  private hideItem(menu: Menu, path: string): void {
+    const hidden = this.host.hidden();
+    const by = hiddenBy(hidden, path);
+    menu.addItem((item) =>
+      item
+        .setTitle(t(by === null ? "notebooks.home.hide" : "notebooks.home.unhide"))
+        .setIcon(by === null ? "eye-off" : "eye")
+        .onClick(() => {
+          if (by === null) {
+            this.host.setHidden(hide(hidden, path));
+            // Once only: where hidden items are found again.
+            if (!this.showHidden && hidden.length === 0)
+              new Notice(t("notebooks.home.hiddenWhere"), 6000);
+          } else this.host.setHidden(unhide(hidden, path));
+          this.paintNow();
+        }),
+    );
   }
 
   /** The colours as a menu of their own, the current one ticked. */

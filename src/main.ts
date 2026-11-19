@@ -621,6 +621,11 @@ export default class GoodObsidianPlugin extends Plugin {
             this.settings.libraryStars = stars;
             void this.saveSettings();
           },
+          hidden: () => this.settings.libraryHidden,
+          setHidden: (hidden) => {
+            this.settings.libraryHidden = hidden;
+            void this.saveSettings();
+          },
           folderStyles: () => this.settings.libraryFolders,
           setFolderStyles: (styles) => {
             this.settings.libraryFolders = styles;
@@ -1243,6 +1248,7 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
+    this.settings.libraryHidden = starsOf(this.settings.libraryHidden);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
     if (isItemOff(this.toolbarLayoutNow(), "stylus")) this.settings.onlyStylusMode = false;
@@ -1542,6 +1548,8 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   setSimpleLook(on: boolean): void {
+    // The right sidebar stays reachable in the simple look; it starts closed there.
+    if (on && !this.settings.simpleLook) this.app.workspace.rightSplit?.collapse();
     this.settings.simpleLook = on;
     this.settings.simpleLookHinted = true;
     void this.saveSettings();
@@ -3367,19 +3375,23 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * The library's stars and folder looks follow a file or folder renamed or
+   * The library's stars, hidden items and folder looks follow a file or folder renamed or
    * moved to `to`, and go with one deleted (no `to`). Here rather than in
    * the library, so they follow while Home is closed too.
    */
   private libraryPathChanged(from: string, to?: string): void {
-    const { libraryStars: stars, libraryFolders: styles } = this.settings;
-    const nextStars = to === undefined ? dropPaths(stars, from) : movePaths(stars, from, to);
+    const { libraryStars: stars, libraryHidden: hidden, libraryFolders: styles } = this.settings;
+    const follow = (paths: string[]): string[] =>
+      to === undefined ? dropPaths(paths, from) : movePaths(paths, from, to);
+    const nextStars = follow(stars);
+    const nextHidden = follow(hidden);
     const nextStyles = to === undefined ? dropStyles(styles, from) : moveStyles(styles, from, to);
-    const starsChanged =
-      nextStars.length !== stars.length || nextStars.some((p, i) => p !== stars[i]);
+    const same = (a: string[], b: string[]): boolean =>
+      a.length === b.length && a.every((p, i) => p === b[i]);
     const stylesChanged = JSON.stringify(nextStyles) !== JSON.stringify(styles);
-    if (!starsChanged && !stylesChanged) return;
+    if (same(nextStars, stars) && same(nextHidden, hidden) && !stylesChanged) return;
     this.settings.libraryStars = nextStars;
+    this.settings.libraryHidden = nextHidden;
     this.settings.libraryFolders = nextStyles;
     void this.saveSettings();
   }

@@ -467,6 +467,8 @@ export interface GoodObsidianSettings {
   lookPalette: string;
   /** Notebooks and folders starred in the library, by vault path. Cleaned where read. */
   libraryStars: string[];
+  /** Notebooks, files and folders hidden from Home, by vault path (`model/library-hidden.ts`). Cleaned where read. */
+  libraryHidden: string[];
   /** The colour and icon chosen for library folders, by vault path. Cleaned where read. */
   libraryFolders: FolderStyles;
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
@@ -662,6 +664,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   lookStyle: "default",
   lookPalette: "obsidian",
   libraryStars: [],
+  libraryHidden: [],
   libraryFolders: {},
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",

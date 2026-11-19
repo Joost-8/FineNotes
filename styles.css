@@ -17457,13 +17457,15 @@ button.goodobsidian-edit-menu-row {
 
 /* --- The simple look (model/simple-mode.ts) ----------------------------- */
 
-/* Obsidian's own chrome tucked away; the tabs stay. Nothing is removed. */
+/* Obsidian's own chrome tucked away; the tabs stay. Nothing is removed. The
+   right sidebar stays within reach behind its own button, for other plugins'
+   panels (a calendar, a timer); it starts closed. Home's folder rail stands in
+   for the left one. */
 body.goodobsidian-simple .status-bar,
 body.goodobsidian-simple .workspace-ribbon,
 body.goodobsidian-simple .workspace-split.mod-left-split,
-body.goodobsidian-simple .workspace-split.mod-right-split,
-body.goodobsidian-simple .workspace-drawer,
-body.goodobsidian-simple .sidebar-toggle-button {
+body.goodobsidian-simple .workspace-drawer.mod-left,
+body.goodobsidian-simple .sidebar-toggle-button.mod-left {
   display: none;
 }
 body.goodobsidian-simple
@@ -17723,6 +17725,14 @@ button.goodobsidian-library-new:active {
 }
 .goodobsidian-library-card.is-dragging {
   opacity: 0.45;
+}
+/* Hidden from Home, shown while "Show hidden items" is on. */
+.goodobsidian-library-card.is-off-home .goodobsidian-library-cover {
+  opacity: 0.4;
+  filter: grayscale(0.6);
+}
+.goodobsidian-library-card.is-off-home .goodobsidian-library-caption {
+  opacity: 0.6;
 }
 .goodobsidian-library-card.is-drop .goodobsidian-library-cover {
   transform: scale(1.06);

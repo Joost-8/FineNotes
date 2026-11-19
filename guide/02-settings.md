@@ -27,9 +27,9 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Simple look (hide Obsidian's bars)
 
 - **Id:** `settingSimpleLook`
-- **What:** Hides Obsidian's title bar, status bar, ribbon and sidebars so FineNotes looks like an app of its own; the tabs stay. Turn it off to bring them back.
+- **What:** Hides Obsidian's title bar, status bar, ribbon and left sidebar so FineNotes looks like an app of its own; the tabs stay, and so does the right sidebar's button (other plugins' panels, such as a calendar or a timer), closed at first. Home's folder rail stands in for the left sidebar. Turn it off to bring them back.
 - **Where:** Settings › General › Simple look. Also in Notebook settings (gear), on the Welcome, and the command Simple look: hide or show….
-- **Words:** simple look, hide obsidian, clean, distraction free, focus, sidebars, ribbon, status bar, title bar, app look, full app
+- **Words:** simple look, easy mode, hide obsidian, clean, distraction free, focus, sidebars, right sidebar, other plugins, calendar, pomodoro, ribbon, status bar, title bar, app look, full app
 - **Settings:** `simpleLook`
 - **Commands:** `toggle-simple-look`
 - **Tip:** `simpleLook`
