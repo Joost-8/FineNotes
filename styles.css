@@ -1769,11 +1769,14 @@ select.goodobsidian-choice-select {
    ribbons, a few boards rather than a hundred pages; the grid starts where
    the chip stood. */
 .goodobsidian-pagesidebar.is-board .goodobsidian-pagesidebar-filter.clickable-icon,
-.goodobsidian-pagesidebar.is-board .goodobsidian-thumb-ribbon {
+.goodobsidian-pagesidebar.is-board .goodobsidian-thumb-ribbon,
+.goodobsidian-pagesidebar.is-pdf-tab .goodobsidian-pagesidebar-filter.clickable-icon,
+.goodobsidian-pagesidebar.is-pdf-tab .goodobsidian-thumb-ribbon {
   display: none;
 }
 
-.goodobsidian-pagesidebar.is-board .goodobsidian-pagesidebar-grid {
+.goodobsidian-pagesidebar.is-board .goodobsidian-pagesidebar-grid,
+.goodobsidian-pagesidebar.is-pdf-tab .goodobsidian-pagesidebar-grid {
   padding-top: 12px;
 }
 

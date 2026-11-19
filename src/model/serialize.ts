@@ -74,7 +74,6 @@ import {
 import {
   type BesidePdf,
   type BesideView,
-  type SlideRef,
   type AttachmentFolders,
   type Backdrop,
   type ImageElement,
@@ -220,7 +219,6 @@ interface StoredPage {
   links?: InkLink[];
   tasks?: InkTask[];
   connectors?: ShapeConnector[];
-  follows?: SlideRef;
   images: Array<ImageElement | StoredNote>;
   textBoxes: TextBoxElement[];
   tables?: TableElement[];
@@ -413,7 +411,6 @@ function storePage(page: Page): StoredPage {
     links: page.links && page.links.length > 0 ? page.links : undefined,
     tasks: page.tasks && page.tasks.length > 0 ? page.tasks : undefined,
     connectors: storedConnectors(page),
-    follows: readSlideRef(page.follows),
     images: page.images.some(isStickyNote)
       ? page.images.map((image) => storeImage(image, noteInk))
       : page.images,
@@ -1269,7 +1266,6 @@ function normalizePage(
     ...linksOf(page.links, strokes, seenLinks),
     ...tasksOf(page.tasks, strokes, seenTasks),
     ...connectorsIn(page.connectors, strokes, seenConnectors),
-    ...(readSlideRef(page.follows) ? { follows: readSlideRef(page.follows) } : {}),
     ...(tables.length > 0 ? { tables } : {}),
     ...(graphs.length > 0 ? { graphs } : {}),
     ...(equations.length > 0 ? { equations } : {}),
@@ -1481,8 +1477,6 @@ function readMarks(raw: unknown, beside: BesidePdf, fallbackWidth: number): Page
     const page = normalizePage(item, i, width);
     page.id = besidePageId(beside.id, index);
     page.backdrop = { kind: "pdf", path: beside.path, page: index };
-    // Only notes pages follow a slide.
-    delete page.follows;
     byPage.set(index, page);
   });
   return [...byPage.entries()].sort((a, b) => a[0] - b[0]).map(([, page]) => page);
@@ -1492,7 +1486,6 @@ function readMarks(raw: unknown, beside: BesidePdf, fallbackWidth: number): Page
 function dropDanglingSlides(doc: InkDocument): void {
   const tabs = new Set((doc.beside ?? []).map((beside) => beside.id));
   for (const page of [...doc.pages, ...(doc.beside ?? []).flatMap((b) => b.marks)]) {
-    if (page.follows && !tabs.has(page.follows.tab)) delete page.follows;
     for (const image of page.images) {
       if (image.slide && !tabs.has(image.slide.tab)) delete image.slide;
     }

@@ -348,10 +348,17 @@ export function syncMarks(beside: BesidePdf, doc: InkDocument): boolean {
   return changed;
 }
 
-/** Whether a notebook uses anything of PDF tabs: a tab, a page following a slide, or a snippet. */
+/** Whether a notebook uses anything of PDF tabs: a tab, or a snippet that remembers its slide. */
 export function usesPdfTabs(doc: InkDocument): boolean {
   if ((doc.beside?.length ?? 0) > 0) return true;
-  return doc.pages.some(
-    (page) => page.follows !== undefined || page.images.some((image) => image.slide !== undefined),
-  );
+  return doc.pages.some((page) => page.images.some((image) => image.slide !== undefined));
+}
+
+/**
+ * The slides kept ready around slide `index` of `count`: the next first,
+ * then the one before, then the one after the next (it shows at the pane's
+ * foot once the next is gone to). A reader mostly goes on.
+ */
+export function slidesAround(index: number, count: number): number[] {
+  return [index + 1, index - 1, index + 2].filter((i) => i >= 0 && i < count);
 }

@@ -12,10 +12,19 @@ import { notices, resetFakes } from "./fake-obsidian";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
+/** A PDF's outline as pdf.js would give it: every PDF here has the same. */
+const readPdfOutline = vi.fn(async () => [
+  { title: "Hashing", depth: 1, page: 0 },
+  { title: "Chaining", depth: 2, page: 1 },
+  { title: "Probing", depth: 2, page: 1, y: 0.6 },
+]);
+vi.mock("../../src/view/pdf-outline", () => ({ readPdfOutline }));
+
 const { InkView } = await import("../../src/view/ink-view");
 const { blankPage, emptyDocument } = await import("../../src/model/document");
 const { attachPdf, besidePageId, findBeside } = await import("../../src/model/beside-pdfs");
 const { NOTES_TAB, LAST_TABS_KEY } = await import("../../src/model/pdf-tabs-list");
+const { contentsEntries } = await import("../../src/model/contents");
 
 interface Session {
   doc: ReturnType<typeof emptyDocument>;
@@ -112,7 +121,11 @@ function setup() {
     plugin: recorder({ settings: {} }),
     contentEl: recorder({}),
     app: {
-      vault: { getAbstractFileByPath: (p: string) => (p.includes("Exercises") ? null : {}) },
+      vault: {
+        getAbstractFileByPath: (p: string) => (p.includes("Exercises") ? null : {}),
+        getFileByPath: (p: string) => (p.includes("Exercises") ? null : { path: p }),
+        readBinary: async () => new ArrayBuffer(8),
+      },
       loadLocalStorage: (key: string) => storage.get(key) ?? null,
       saveLocalStorage: (key: string, value: unknown) => storage.set(key, value),
     },
@@ -128,6 +141,7 @@ function setup() {
     encoder,
     saveRequest,
     storage,
+    sidebar: (view as { sidebar: { setPdfTab: ReturnType<typeof vi.fn> } }).sidebar,
   };
 }
 
@@ -256,62 +270,84 @@ describe("the notes' own", () => {
   });
 });
 
-describe("notes follow the slide", () => {
-  /** `followSlide` and the surface's page index, which the recorder holds as a plain field. */
-  type Following = Inside & { followSlide(ids: readonly string[] | undefined): void };
-
-  it("a notes page written on follows the slide read last, set in place", () => {
+describe("no jumping between notes and slides", () => {
+  it("a tab shows where it was left, whatever notes page it is opened from", () => {
     const { view, doc, surface } = setup();
-    const v = view as Following;
-    view.showTab("b1");
-    (surface as { currentPage: number }).currentPage = 2;
-    view.showTab(NOTES_TAB);
-    v.followSlide([doc.pages[1].id]);
-    expect(doc.pages[1].follows).toEqual({ tab: "b1", page: 2 });
-    expect(doc.pages[0].follows).toBeUndefined();
-  });
-
-  it("follows nothing before a slide was read", () => {
-    const { view, doc } = setup();
-    (view as Following).followSlide([doc.pages[0].id]);
-    expect(doc.pages[0].follows).toBeUndefined();
-  });
-
-  it("going to the tab from a page that follows it opens that slide, at the zoom it was left", () => {
-    const { view, doc, surface } = setup();
-    doc.pages[0].follows = { tab: "b1", page: 3 };
-    findBeside(doc, "b1")!.view = { page: 1, zoom: 2, x: 5, y: 40 };
-    view.showTab("b1");
-    expect(surface.showReadingView).toHaveBeenCalledWith({ page: 3, zoom: 2, x: 5, y: 0 });
-  });
-
-  it("a session already shown goes to the slide", () => {
-    const { view, doc, surface } = setup();
-    view.showTab("b1");
-    view.showTab(NOTES_TAB);
-    doc.pages[0].follows = { tab: "b1", page: 2 };
-    view.showTab("b1");
-    expect(
-      (surface as unknown as { goToPage: { mock: { calls: unknown[][] } } }).goToPage.mock.calls,
-    ).toContainEqual([2]);
-  });
-
-  it("a page following another tab leaves this one where it was", () => {
-    const { view, doc, surface } = setup();
-    doc.pages[0].follows = { tab: "b2", page: 1 };
+    (surface as { currentPage: number }).currentPage = 1;
     findBeside(doc, "b1")!.view = { page: 1, zoom: 2, x: 5, y: 40 };
     view.showTab("b1");
     expect(surface.showReadingView).toHaveBeenCalledWith({ page: 1, zoom: 2, x: 5, y: 40 });
   });
 
-  it("back on the notes, they stay where they were left, even beside a page that follows the slide", () => {
-    const { view, doc, surface } = setup();
-    doc.pages[1].follows = { tab: "b1", page: 2 };
+  it("a session already shown is not moved when shown again", () => {
+    const { view, surface } = setup();
     view.showTab("b1");
-    (surface as { currentPage: number }).currentPage = 2;
     view.showTab(NOTES_TAB);
+    view.showTab("b1");
     expect(
       (surface as unknown as { goToPage: { mock: { calls: unknown[][] } } }).goToPage.mock.calls,
     ).toEqual([]);
+  });
+
+  it("writing on the notes after reading a slide records nothing on the page", () => {
+    const { view, doc, surface } = setup();
+    view.showTab("b1");
+    (surface as { currentPage: number }).currentPage = 2;
+    view.showTab(NOTES_TAB);
+    expect(Object.keys(doc.pages[0])).not.toContain("follows");
+    expect(
+      (surface as unknown as { goToPage: { mock: { calls: unknown[][] } } }).goToPage.mock.calls,
+    ).toEqual([]);
+  });
+});
+
+describe("a PDF tab's contents", () => {
+  const flush = async (): Promise<void> => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  };
+  type Entry = { title: string; index: number; level: number };
+  const lastOutline = (fn: ReturnType<typeof vi.fn>): [boolean, Entry[] | undefined] =>
+    fn.mock.calls.at(-1) as [boolean, Entry[] | undefined];
+
+  beforeEach(() => readPdfOutline.mockClear());
+
+  it("are the PDF's own outline, nested, read once per PDF", async () => {
+    const { view, sidebar } = setup();
+    view.showTab("b1");
+    await flush();
+    const [on, entries] = lastOutline(sidebar.setPdfTab);
+    expect(on).toBe(true);
+    expect(entries!.map((e) => [e.title, e.index, e.level])).toEqual([
+      ["Hashing", 0, 1],
+      ["Chaining", 1, 2],
+      ["Probing", 1, 2],
+    ]);
+    view.showTab(NOTES_TAB);
+    expect(lastOutline(sidebar.setPdfTab)[0]).toBe(false);
+    view.showTab("b1");
+    expect(lastOutline(sidebar.setPdfTab)[1]).toHaveLength(3);
+    expect(readPdfOutline).toHaveBeenCalledTimes(1);
+  });
+
+  it("never go into the notebook's own contents", async () => {
+    const { view, doc } = setup();
+    view.showTab("b1");
+    await flush();
+    expect(contentsEntries(doc)).toEqual([]);
+  });
+
+  it("keeping a PDF beside the notes adds nothing to the notebook's contents", async () => {
+    const { view, doc } = setup();
+    expect(view.attachMeasured("Algo/W4.pdf", [{ width: 960, height: 540 }])).toBe(true);
+    await flush();
+    expect(contentsEntries(doc)).toEqual([]);
+    expect(doc.pages.every((page) => page.title === undefined)).toBe(true);
+  });
+
+  it("a PDF that is missing shows no outline", async () => {
+    const { view, sidebar } = setup();
+    view.showTab("b2");
+    await flush();
+    expect(lastOutline(sidebar.setPdfTab)).toEqual([true, []]);
   });
 });

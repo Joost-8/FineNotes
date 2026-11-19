@@ -896,12 +896,6 @@ export interface Page {
    * the ink. Absent when there are none.
    */
   connectors?: ShapeConnector[];
-  /**
-   * The slide of a PDF kept beside the notes (`model/beside-pdfs`) that was
-   * last shown while this page was written on, so the page can bring it back.
-   * Absent until then.
-   */
-  follows?: SlideRef;
 }
 
 /** A side of a shape's bounds: where a connector meets the shape. */

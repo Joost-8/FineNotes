@@ -308,6 +308,7 @@ export const view = {
     "No pages in the contents yet. Give a page a title, or add a heading, from its ⌄ menu.",
   "view.sidebar.contentsEmpty":
     "Nothing in the contents yet. Give a page a title here, from ⋯ in the toolbar, or from its ⌄ menu, and it starts a section.",
+  "view.sidebar.noOutline": "This PDF has no outline.",
   "view.sidebar.kindOfFile": "Kind of file",
   "view.sidebar.selectedPages": "Selected pages",
   "view.sidebar.move": "Move",

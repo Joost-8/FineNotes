@@ -1,7 +1,6 @@
 /**
  * PDFs kept beside the notes as tabs (`src/model/beside-pdfs.ts`): the model,
- * its place in the file (`beside` in the head, `Page.follows`,
- * `ImageElement.slide`, the `pdf-tabs` label) and relinking a moved PDF.
+ * its place in the file (`beside` in the head, `ImageElement.slide`,, the `pdf-tabs` label) and relinking a moved PDF.
  */
 
 import { describe, expect, it } from "vitest";
@@ -18,6 +17,7 @@ import {
   isBesidePageId,
   nextTabId,
   pageCount,
+  slidesAround,
   pageSizeAt,
   parseBesidePageId,
   readSizeRuns,
@@ -76,7 +76,6 @@ function sample(): InkDocument {
   const shown = besideDocument(tab);
   shown.pages[1].strokes.push(line());
   syncMarks(tab, shown);
-  doc.pages[0].follows = { tab: tab.id, page: 1 };
   doc.pages[0].images.push({
     id: "i1",
     path: "Attachments/snippet.png",
@@ -293,7 +292,6 @@ describe("on disk", () => {
     expect(read.marks[0].backdrop).toEqual({ kind: "pdf", path: SLIDES, page: 1 });
     expect(read.marks[0].geometry).toEqual({ width: 960, height: 540 });
     expect(read.marks[0].strokes[0].pts[0]).toBeCloseTo(10.12, 5);
-    expect(back.pages[0].follows).toEqual({ tab: "b1", page: 1 });
     expect(back.pages[0].images[0].slide).toEqual({ tab: "b1", page: 1 });
     // Written again, the same bytes.
     expect(encodeDocument(back)).toBe(payload);
@@ -310,15 +308,37 @@ describe("on disk", () => {
     expect(encodeDocument(doc)).toBe(payload);
   });
 
-  it("is labelled pdf-tabs by a following page or a snippet alone", () => {
+  it("is labelled pdf-tabs by a snippet alone", () => {
     const doc = sample();
-    const follows = { ...doc, beside: undefined, pages: [blankPage()] } as InkDocument;
-    follows.pages[0].follows = { tab: "b1", page: 0 };
-    expect(encodeDocument(follows).startsWith("v2+pdf-tabs:")).toBe(true);
-    // ... but read back without its tab, the page forgets it, and the label goes.
-    const back = decodeDocument(encodeDocument(follows));
-    expect(back.pages[0].follows).toBeUndefined();
+    const snippet = { ...doc, beside: undefined, pages: [blankPage()] } as InkDocument;
+    snippet.pages[0].images.push({ ...doc.pages[0].images[0], slide: { tab: "b1", page: 0 } });
+    expect(encodeDocument(snippet).startsWith("v2+pdf-tabs:")).toBe(true);
+    // ... but read back without its tab, the snippet forgets it, and the label goes.
+    const back = decodeDocument(encodeDocument(snippet));
+    expect(back.pages[0].images[0].slide).toBeUndefined();
     expect(encodeDocument(back).startsWith("v2:")).toBe(true);
+  });
+
+  it("reads a beta's `follows` key, and drops it", () => {
+    // A beta of PDF tabs had notes pages follow a slide; the key is gone.
+    const json = {
+      version: 2,
+      view: { scrollY: 0, width: 1000, scale: 1 },
+      pages: [{ id: "p1", follows: { tab: "b1", page: 2 } }],
+    };
+    const doc = decodeDocument(payloadOf(json));
+    expect(doc.pages).toHaveLength(1);
+    expect(Object.keys(doc.pages[0])).not.toContain("follows");
+    const written = encodeDocument(doc);
+    expect(written.startsWith("v2:")).toBe(true);
+    expect(JSON.stringify(stored(written))).not.toContain("follows");
+  });
+
+  it("keeps slides either side of the one read ready, the next first", () => {
+    expect(slidesAround(3, 10)).toEqual([4, 2, 5]);
+    expect(slidesAround(0, 10)).toEqual([1, 2]);
+    expect(slidesAround(9, 10)).toEqual([8]);
+    expect(slidesAround(0, 1)).toEqual([]);
   });
 
   it("names features used only on a tab's ink", () => {
@@ -406,9 +426,9 @@ describe("on disk", () => {
     expect(b.hidden).toBeUndefined();
     expect(b.marks.map((page) => page.id)).toEqual(["~tb4~0", "~tb4~1"]);
     expect(b.marks[0].backdrop).toEqual({ kind: "pdf", path: "b.pdf", page: 0 });
-    expect(b.marks[0].follows).toBeUndefined();
+    expect(Object.keys(b.marks[0])).not.toContain("follows");
     expect(b.marks[1].strokes).toHaveLength(1);
-    expect(doc.pages[0].follows).toBeUndefined();
+    expect(Object.keys(doc.pages[0])).not.toContain("follows");
     expect(doc.pages[0].images.map((image) => image.slide)).toEqual([
       undefined,
       { tab: "b4", page: 2 },

@@ -368,6 +368,12 @@ export class PageSidebar {
   private readonly tabButtons = new Map<SidebarTab, HTMLButtonElement>();
   private tab: SidebarTab = "pages";
   private filter: PageFilter = "all";
+  /**
+   * Showing a PDF's tab: its Contents are the PDF's own outline
+   * (`outline`, read only), and its slides take no bookmarks or filter.
+   */
+  private pdfTab = false;
+  private outline: readonly ContentsEntry[] = [];
   private readonly addTile: HTMLElement;
   private thumbs: ThumbView[] = [];
   private readonly drag: PageDrag;
@@ -582,6 +588,7 @@ export class PageSidebar {
         this.open &&
         !this.board &&
         !this.single &&
+        !this.pdfTab &&
         this.callbacks.canEdit?.() !== false &&
         !!this.callbacks.onMoveContents,
       document: () => this.doc,
@@ -1047,8 +1054,10 @@ export class PageSidebar {
    */
   private applyFilter(): void {
     const pages = this.doc?.pages ?? [];
-    const filtered = this.filter !== "all";
-    this.filterLabel.setText(filterInfo(this.filter).label);
+    // A PDF's slides take no bookmarks: the notes' filter waits for the notes.
+    const filter: PageFilter = this.pdfTab ? "all" : this.filter;
+    const filtered = filter !== "all";
+    this.filterLabel.setText(filterInfo(filter).label);
     this.filterChip.toggleClass("is-filtered", filtered);
     let shown = 0;
     this.thumbs.forEach((view, index) => {
@@ -1059,13 +1068,13 @@ export class PageSidebar {
         "title",
         marked ? t("view.sidebar.removeBookmark") : t("view.sidebar.bookmarkPage"),
       );
-      const passes = !filtered || (page !== undefined && pagePassesFilter(page, this.filter));
+      const passes = !filtered || (page !== undefined && pagePassesFilter(page, filter));
       if (passes) shown++;
       view.root.toggleClass("is-hidden", !passes);
     });
     this.addTile.toggleClass("is-hidden", filtered || this.single);
     const none = filtered && this.doc !== null && shown === 0;
-    this.emptyEl.setText(filterInfo(this.filter).empty);
+    this.emptyEl.setText(filterInfo(filter).empty);
     this.emptyEl.toggleClass("is-hidden", !none);
     if (this.open) this.schedulePaint();
   }
@@ -1095,6 +1104,23 @@ export class PageSidebar {
     if (this.single) this.setOverview(false);
     this.applyFilter();
     this.syncChrome();
+  }
+
+  /**
+   * A PDF's tab is shown (`on`), or the notes again. On a tab the Contents
+   * tab lists the PDF's own outline (`outline`, from `tabOutlineEntries`),
+   * read only: a tap goes to the slide, nothing is added, renamed or dragged.
+   * The notes' contents and filter come back with the notes.
+   */
+  setPdfTab(on: boolean, outline: readonly ContentsEntry[] = []): void {
+    if (on === this.pdfTab && outline === this.outline) return;
+    this.pdfTab = on;
+    this.outline = on ? outline : [];
+    this.el.toggleClass("is-pdf-tab", on);
+    this.contentsEmpty.setText(on ? t("view.sidebar.noOutline") : t("view.sidebar.contentsEmpty"));
+    this.applyFilter();
+    this.renderContents();
+    this.syncCurrent();
   }
 
   /**
@@ -1283,7 +1309,7 @@ export class PageSidebar {
    */
   private renderContents(): void {
     this.contentsDrag.cancel();
-    const entries = this.doc ? contentsEntries(this.doc) : [];
+    const entries = this.pdfTab ? [...this.outline] : this.doc ? contentsEntries(this.doc) : [];
     this.contentsItems = entries;
     this.contentsList.empty();
     const rows: Array<{ row: HTMLElement; parents: number[]; key: string | null }> = [];
@@ -1328,6 +1354,8 @@ export class PageSidebar {
 
   /** What remembers an entry's fold: its page's id for a title, its own id for a heading. */
   private foldKey(entry: ContentsEntry): string {
+    // A tab's outline ids are made up as it is shown: kept apart from the notes'.
+    if (this.pdfTab) return `o:${this.doc?.pages[entry.index]?.id ?? entry.index}:${entry.title}`;
     if (entry.section) return `s:${entry.section.id}`;
     if (entry.chapter) return `s:${entry.chapter.id}`;
     return `p:${this.doc?.pages[entry.index]?.id ?? entry.index}`;
@@ -1395,6 +1423,8 @@ export class PageSidebar {
     });
     // A board's page menu holds page actions it has none of; its headings keep theirs.
     if (this.board && !section) return row;
+    // A PDF's outline is the PDF's: read only.
+    if (this.pdfTab) return row;
     const more = row.createEl("button", { cls: "goodobsidian-contents-more clickable-icon" });
     setIcon(more, "chevron-down");
     more.setAttribute("aria-label", t("view.sidebar.entryOptions"));
@@ -1459,9 +1489,15 @@ export class PageSidebar {
    */
   private syncContentsAdd(): void {
     const page = this.doc?.pages[this.current];
-    this.contentsAdd.toggleClass("is-hidden", this.board || !page || page.title !== undefined);
+    this.contentsAdd.toggleClass(
+      "is-hidden",
+      this.board || this.pdfTab || !page || page.title !== undefined,
+    );
     this.contentsAddLabel.setText(t("view.sidebar.addPageToContents", { page: this.current + 1 }));
-    this.contentsChapter.toggleClass("is-hidden", this.board || this.single || !page);
+    this.contentsChapter.toggleClass(
+      "is-hidden",
+      this.board || this.single || this.pdfTab || !page,
+    );
   }
 
   private showContentsMenu(

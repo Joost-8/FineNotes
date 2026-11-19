@@ -43,8 +43,7 @@ import { SCHEMA_VERSION } from "../constants";
  *   `model/board.ts`); an older build would read them as pages metres long
  *   and drop the board flags on its save.
  * - `pdf-tabs`: PDFs kept beside the notes as tabs, with the ink written on
- *   them (`InkDocument.beside`), a page that follows a slide (`Page.follows`)
- *   or a snippet that remembers its slide (`ImageElement.slide`)
+ *   them (`InkDocument.beside`) or a snippet that remembers its slide (`ImageElement.slide`)
  *   (`model/beside-pdfs`); an older build would drop the tabs and their ink
  *   on its next save.
  */
