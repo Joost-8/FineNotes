@@ -24,7 +24,7 @@ const { saveImageAttachment } = await import("../../src/view/image-import");
 const { blankPage, emptyDocument } = await import("../../src/model/document");
 const { attachPdf, besideDocument, findBeside } = await import("../../src/model/beside-pdfs");
 const { NOTES_TAB } = await import("../../src/model/pdf-tabs-list");
-const { SNIPPET_FLIP_MS } = await import("../../src/model/snippet");
+const { SNIPPET_FLIP_MS, SNIPPET_PAGE_MARGIN } = await import("../../src/model/snippet");
 const { InsertImage } = await import("../../src/model/commands");
 
 type Doc = ReturnType<typeof emptyDocument>;
@@ -182,7 +182,7 @@ describe("a snippet's drag", () => {
     expect(strip.setDropTarget).toHaveBeenLastCalledWith(null);
   });
 
-  it("lands on the notes as a picture linked to its slide, centred where it was let go", async () => {
+  it("lands on the notes as a picture linked to its slide, centred where it was let go, its share of the slide's width", async () => {
     const { view, doc, applied, surface } = setup();
     view.showTab("b1");
     view.startSnippet(3, { minX: 100, minY: 50, maxX: 300, maxY: 150 }, 2);
@@ -195,12 +195,14 @@ describe("a snippet's drag", () => {
     const image = doc.pages[1].images[0];
     expect(image).toMatchObject({
       path: "Algo/W3 Hashing slide 4.png",
-      x: 400,
-      y: 550,
-      w: 200,
-      h: 100,
       slide: { tab: "b1", page: 3 },
     });
+    // A quarter of the 800 px slide: a quarter of the notes page inside its margins.
+    const usable = doc.pages[1].geometry.width * (1 - 2 * SNIPPET_PAGE_MARGIN);
+    expect(image.w).toBeCloseTo(usable / 4);
+    expect(image.h).toBeCloseTo(usable / 8);
+    expect(image.x + image.w / 2).toBeCloseTo(500);
+    expect(image.y + image.h / 2).toBeCloseTo(600);
     expect(surface.selectImage).toHaveBeenCalledWith(doc.pages[1].id, image.id);
     const [, prepared] = vi.mocked(saveImageAttachment).mock.lastCall!;
     expect(prepared).toMatchObject({ mime: "image/png", width: 400, height: 200 });

@@ -763,7 +763,7 @@ import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
 import { newSession, type SurfaceSession, type SurfaceSessionOptions } from "./surface-session";
-import { SnippetDrag } from "./snippet-drag";
+import { SnippetDrag, bindSnippetGrip } from "./snippet-drag";
 import { SlideDots } from "./slide-dots";
 import {
   claimTilePages,
@@ -1097,8 +1097,20 @@ export interface InkSurfaceCallbacks {
    * from is still shown, or the lift was off the pages).
    */
   onSnippetEnd?: (drop: { pageIndex: number; x: number; y: number } | null) => void;
-  /** A snippet's link dot, or a finger with a writing tool, tapped it: open its slide. */
+  /**
+   * How large the dragged snippet lands on page `pageIndex` of the session
+   * shown now (page px), or null: its ghost takes that size over the notes.
+   */
+  snippetLanding?: (pageIndex: number) => { w: number; h: number } | null;
+  /**
+   * An area was lassoed on a PDF's tab: true the first time on this device
+   * (the host remembers it), when the area says in words where it can go.
+   */
+  snippetHintOnce?: () => boolean;
+  /** A snippet's slide chip was tapped: open its slide (a tap on the picture is a picture's tap). */
   onOpenSlide?: (slide: SlideRef) => void;
+  /** The name of PDF tab `tab`, for a slide chip's label. */
+  slideTabName?: (tab: string) => string;
   /**
    * "Edit graph" on a selected graph: the host opens the calculator with its
    * expressions, and commits what comes back (`EditGraph`). Without it the
@@ -3209,8 +3221,12 @@ export class InkSurface {
     this.commentMarkersEl = this.paperEl.createDiv({
       cls: "goodobsidian-comment-markers is-hidden",
     });
-    // A dot on each snippet from a PDF's slide; a tap on it opens the slide.
-    this.slideDots = new SlideDots(this.paperEl, (slide) => this.callbacks.onOpenSlide?.(slide));
+    // A chip on each snippet from a PDF's slide; a tap on it opens the slide.
+    this.slideDots = new SlideDots(
+      this.paperEl,
+      (slide) => this.callbacks.onOpenSlide?.(slide),
+      (tab) => this.callbacks.slideTabName?.(tab) ?? "PDF",
+    );
     this.regionFrames = new RegionFrames(this.paperEl, (shown, anchor) =>
       this.callbacks.onTapRegion?.(shown, anchor),
     );
@@ -14090,42 +14106,57 @@ export class InkSurface {
   private addSnippetGrip(el: HTMLElement, box: PageBox, bounds: Bounds): void {
     const scale = this.unitScale;
     const grip = el.createDiv({ cls: "goodobsidian-snippet-grip" });
+    const left = (box.x + bounds.minX) * scale;
+    const top = (box.y + bounds.minY) * scale;
+    const width = (bounds.maxX - bounds.minX) * scale;
+    const height = (bounds.maxY - bounds.minY) * scale;
     grip.setCssStyles({
-      left: `${((box.x + bounds.minX) * scale).toFixed(1)}px`,
-      top: `${((box.y + bounds.minY) * scale).toFixed(1)}px`,
-      width: `${((bounds.maxX - bounds.minX) * scale).toFixed(1)}px`,
-      height: `${((bounds.maxY - bounds.minY) * scale).toFixed(1)}px`,
+      left: `${left.toFixed(1)}px`,
+      top: `${top.toFixed(1)}px`,
+      width: `${width.toFixed(1)}px`,
+      height: `${height.toFixed(1)}px`,
     });
-    let press: { id: number; x: number; y: number } | null = null;
-    grip.addEventListener("pointerdown", (event) => {
-      // The page below never sees it, so the area is not let go of.
-      event.stopPropagation();
-      event.preventDefault();
-      if (press || this.snippetDrag || this.callbacks.isLocked?.()) return;
-      press = { id: event.pointerId, x: event.clientX, y: event.clientY };
-      try {
-        grip.setPointerCapture(event.pointerId);
-      } catch {
-        // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
-      }
+    // Where it goes, as a mark: grip, arrow, Notes. Pressing it drags too.
+    const chip = el.createDiv({
+      cls: "goodobsidian-snippet-chip",
+      attr: { role: "button", "aria-label": t("surface.snippet.dragToNotes") },
     });
-    grip.addEventListener("pointermove", (event) => {
-      if (!press || event.pointerId !== press.id) return;
-      event.stopPropagation();
-      event.preventDefault();
-      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < IMAGE_DRAG_SLOP_PX) return;
-      press = null;
-      this.startSnippetDrag(event, box, bounds, el);
+    iconInto(chip.createSpan({ cls: "goodobsidian-snippet-chip-icon" }), "grip", "");
+    iconInto(
+      chip.createSpan({ cls: "goodobsidian-snippet-chip-icon is-arrow" }),
+      "arrow-right",
+      "",
+    );
+    iconInto(chip.createSpan({ cls: "goodobsidian-snippet-chip-icon" }), "notebook-pen", "");
+    chip.setCssStyles({
+      left: `${(left + width / 2).toFixed(1)}px`,
+      top: `${(top + height).toFixed(1)}px`,
     });
-    const lift = (event: PointerEvent): void => {
-      if (!press || event.pointerId !== press.id) return;
-      event.stopPropagation();
-      press = null;
-      // A tap on the area lets go of it, as a tap beside it does.
-      this.dropEmptyLasso();
-    };
-    grip.addEventListener("pointerup", lift);
-    grip.addEventListener("pointercancel", lift);
+    // The first time on this device, in words, under the chip.
+    if (this.callbacks.snippetHintOnce?.() === true) {
+      const hint = el.createDiv({
+        cls: "goodobsidian-snippet-hint",
+        text: t("surface.snippet.dragHint"),
+      });
+      hint.setCssStyles({
+        left: `${(left + width / 2).toFixed(1)}px`,
+        top: `${(top + height).toFixed(1)}px`,
+      });
+      // Any press anywhere ends it.
+      const doc = this.surfaceEl.ownerDocument;
+      const end = (): void => {
+        hint.remove();
+        doc.removeEventListener("pointerdown", end, true);
+      };
+      doc.addEventListener("pointerdown", end, true);
+    }
+    for (const target of [grip, chip])
+      bindSnippetGrip(target, {
+        blocked: () => this.snippetDrag !== null || this.callbacks.isLocked?.() === true,
+        drag: (event) => this.startSnippetDrag(event, box, bounds, el),
+        // A tap on the area lets go of it, as a tap beside it does.
+        tap: () => this.dropEmptyLasso(),
+      });
   }
 
   /**
@@ -14161,11 +14192,32 @@ export class InkSurface {
       (area.maxY - area.minY) * scale,
       picture,
       {
-        move: (x, y) => this.callbacks.onSnippetMove?.(x, y) === true,
+        move: (x, y) => {
+          const over = this.callbacks.onSnippetMove?.(x, y) === true;
+          this.sizeSnippetGhost(x, y);
+          return over;
+        },
         end: (x, y, cancelled) => this.endSnippetDrag(x, y, cancelled),
       },
     );
     this.snippetDrag = { drag, session: this.session, hold };
+  }
+
+  /**
+   * Over the notes (another session than the one the drag began on), the
+   * ghost takes exactly the size the picture will land at, on the page
+   * under client point (x, y) (the page in view when it is off the pages),
+   * at this zoom; over the PDF's tab it keeps the area's own size.
+   */
+  private sizeSnippetGhost(clientX: number, clientY: number): void {
+    const held = this.snippetDrag;
+    if (!held || this.session === held.session) return;
+    const at = this.toLayout(clientX, clientY);
+    const index = boxAtPoint(this.pageLayout, at.x, at.y)?.index ?? this.currentPage;
+    const size = this.callbacks.snippetLanding?.(index);
+    if (!size) return;
+    const scale = this.unitScale;
+    held.drag.landingSize(size.w * scale, size.h * scale);
   }
 
   /**
@@ -14190,24 +14242,6 @@ export class InkSurface {
       } else held.hold.remove();
     }
     this.callbacks.onSnippetEnd?.(drop);
-  }
-
-  /**
-   * A tap at page point `p` of `page` on a snippet (a picture of a PDF's
-   * slide, `ImageElement.slide`): open the slide. False when the picture on
-   * top there is not one.
-   */
-  private openSlideAt(page: Page, p: Pt): boolean {
-    const open = this.callbacks.onOpenSlide;
-    if (!open || this.fixedPages) return false;
-    const image = topImageAt(
-      page.images.filter((candidate) => !isFolded(candidate)),
-      p,
-      0,
-    );
-    if (!image?.slide) return false;
-    open(image.slide);
-    return true;
   }
 
   /** Take an empty lasso's loop and button away (`showEmptyLasso`). */
@@ -19784,10 +19818,6 @@ export class InkSurface {
       }
       if (this.openLinkAt(tapped, this.toPage(box, at), tolerance)) return;
       if (this.followPdfLink(box.index, this.toPage(box, at), tolerance)) return;
-      // A snippet opens its slide; with the lasso a tap selects it, as any picture.
-      if (this.toolState.tool !== "select" && this.openSlideAt(tapped, this.toPage(box, at))) {
-        return;
-      }
     }
     if (box && this.offerStrokeTap(box, this.toPage(box, at), FINGER_TAP_TOLERANCE_PX)) {
       this.clearSelection();

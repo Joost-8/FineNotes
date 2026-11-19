@@ -14,6 +14,11 @@
  * ones marked), "In this folder" (PDFs beside the notebook not attached
  * yet, newest first), then From the vault… and From this device….
  *
+ * The chevron at its right end folds it away: only a small caret stays at
+ * its left, over the page's top edge (with a file mark while a PDF's tab is
+ * shown), and a tap on it brings the strip back. Folded or not is kept per
+ * device by the view.
+ *
  * It only shows and reports; the notebook view does the rest.
  */
 
@@ -42,6 +47,8 @@ export interface PdfTabStripCallbacks {
   onFindFile: (id: string) => void;
   /** The + button: the list of PDFs. */
   onPlus: (anchor: HTMLElement) => void;
+  /** The strip was folded away (true) or brought back (false) by its chevron or caret. */
+  onCollapse?: (collapsed: boolean) => void;
 }
 
 /** How long a finger rests on a tab before its menu opens, ms. */
@@ -53,6 +60,10 @@ export class PdfTabStrip {
   readonly el: HTMLElement;
   private readonly list: HTMLElement;
   private readonly plus: HTMLButtonElement;
+  private readonly fold: HTMLButtonElement;
+  private readonly caret: HTMLButtonElement;
+  private readonly caretMark: HTMLElement;
+  private collapsed = false;
   private tabs: StripTab[] = [];
   private active = NOTES_TAB;
   /** A long press opened a menu: the click that follows is not a tap. */
@@ -78,6 +89,38 @@ export class PdfTabStrip {
     });
     setIcon(this.plus, "plus");
     this.plus.addEventListener("click", () => this.callbacks.onPlus(this.plus));
+    this.fold = this.el.createEl("button", {
+      cls: "goodobsidian-pdf-tabs-fold clickable-icon",
+      attr: { "aria-label": t("view.pdfTabs.hide") },
+    });
+    setIcon(this.fold, "chevron-up");
+    this.fold.addEventListener("click", () => this.toggleCollapsed(true));
+    this.caret = this.el.createEl("button", {
+      cls: "goodobsidian-pdf-tabs-caret clickable-icon",
+      attr: { "aria-label": t("view.pdfTabs.show") },
+    });
+    this.caretMark = this.caret.createSpan({ cls: "goodobsidian-pdf-tabs-caret-mark" });
+    setIcon(this.caretMark, "file-text");
+    setIcon(this.caret.createSpan({ cls: "goodobsidian-pdf-tabs-caret-icon" }), "chevron-down");
+    this.caret.addEventListener("click", () => this.toggleCollapsed(false));
+  }
+
+  /** Whether the strip is folded away to its caret. */
+  get isCollapsed(): boolean {
+    return this.collapsed;
+  }
+
+  /** Fold the strip away to its caret, or show it whole, without telling the view. */
+  setCollapsed(on: boolean): void {
+    this.collapsed = on;
+    this.el.toggleClass("is-collapsed", on);
+  }
+
+  private toggleCollapsed(on: boolean): void {
+    if (on === this.collapsed) return;
+    this.setCollapsed(on);
+    this.callbacks.onCollapse?.(on);
+    if (!on) this.revealActive();
   }
 
   /** The tab that is shown, by id. */
@@ -95,7 +138,7 @@ export class PdfTabStrip {
    * its pointer captured, so no tab hears it enter: the drag asks here.
    */
   tabAt(x: number, y: number): string | null {
-    if (this.el.hasClass("is-hidden")) return null;
+    if (this.el.hasClass("is-hidden") || this.collapsed) return null;
     for (const el of Array.from(this.list.querySelectorAll<HTMLElement>(".goodobsidian-pdf-tab"))) {
       const r = el.getBoundingClientRect();
       if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return el.dataset.tab ?? null;
@@ -122,9 +165,20 @@ export class PdfTabStrip {
     this.list.empty();
     this.tab({ id: NOTES_TAB, label: t("view.pdfTabs.notes"), missing: false }, "notebook-pen");
     for (const tab of this.tabs) this.tab(tab, "file-text");
-    // The active tab in view, on a strip that scrolls sideways.
+    // Folded away, the caret says a PDF is shown: a mark, not a word.
+    const pdf = this.tabs.find((tab) => tab.id === active);
+    this.caret.toggleClass("is-pdf", pdf !== undefined);
+    this.caret.setAttribute(
+      "aria-label",
+      pdf ? t("view.pdfTabs.showWith", { name: pdf.label }) : t("view.pdfTabs.show"),
+    );
+    if (shown) this.revealActive();
+  }
+
+  /** The active tab in view, on a strip that scrolls sideways. */
+  private revealActive(): void {
     const on = this.list.querySelector<HTMLElement>(".is-active");
-    if (on && shown && typeof on.scrollIntoView === "function")
+    if (on && !this.collapsed && typeof on.scrollIntoView === "function")
       on.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 

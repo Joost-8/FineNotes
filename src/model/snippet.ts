@@ -65,20 +65,48 @@ export function snippetPixels(crop: SnippetCrop): { width: number; height: numbe
   };
 }
 
+/** The notes page's margin either side that a snippet's width is measured inside, a share of its width. */
+export const SNIPPET_PAGE_MARGIN = 0.06;
+
 /**
- * Where a snippet of `size` (page px, as it was on the slide) lands on a
- * notes page of `page`'s size, dropped at page point `at`: centred there,
- * as large as it was, shrunk to fit a page it is larger than, and moved in
- * so that all of it is on the page.
+ * How large a snippet of `size` (page px, as it was on a slide
+ * `slideWidth` page px wide) is on a notes page of `page`'s size: it keeps
+ * its share of the slide's width, of the page's width inside a margin of
+ * {@link SNIPPET_PAGE_MARGIN} each side (half the slide's width becomes half
+ * of that), its height by its own aspect ratio, and never taller than the
+ * page (it shrinks, aspect kept, to fit).
+ */
+export function snippetSize(
+  size: { width: number; height: number },
+  slideWidth: number,
+  page: PageGeometry,
+): { w: number; h: number } {
+  const share =
+    slideWidth > 0 && Number.isFinite(slideWidth) ? Math.min(1, size.width / slideWidth) : 1;
+  const usable = page.width * (1 - 2 * SNIPPET_PAGE_MARGIN);
+  const aspect = size.width > 0 ? size.height / size.width : 1;
+  let w = Math.max(1, share * usable);
+  let h = w * aspect;
+  if (h > page.height) {
+    w *= page.height / h;
+    h = page.height;
+  }
+  return { w, h };
+}
+
+/**
+ * Where a snippet of `size` (page px, as it was on a slide `slideWidth`
+ * wide) lands on a notes page of `page`'s size, dropped at page point `at`:
+ * centred there at {@link snippetSize}, and moved in so that all of it is
+ * on the page.
  */
 export function snippetBox(
   size: { width: number; height: number },
+  slideWidth: number,
   at: { x: number; y: number },
   page: PageGeometry,
 ): { x: number; y: number; w: number; h: number } {
-  const k = Math.min(1, page.width / size.width, page.height / size.height);
-  const w = size.width * k;
-  const h = size.height * k;
+  const { w, h } = snippetSize(size, slideWidth, page);
   const clamp = (v: number, max: number): number => Math.max(0, Math.min(max, v));
   return { x: clamp(at.x - w / 2, page.width - w), y: clamp(at.y - h / 2, page.height - h), w, h };
 }

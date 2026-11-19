@@ -3,9 +3,9 @@
  *
  * A notes page written on while a PDF kept beside the notes was being read
  * remembers that slide (`Page.follows`). Going from that page to the PDF's
- * tab opens the slide; going back from a slide to the notes finds the page
- * written beside it, when there is exactly one. And on a PDF's tab, the
- * slides either side of the one read are kept ready ahead.
+ * tab opens the slide; going back to the notes shows them as they were left.
+ * And on a PDF's tab, the slides either side of the one read are kept ready
+ * ahead.
  */
 
 import type { BesideView, Page, SlideRef } from "./document";
@@ -43,29 +43,6 @@ export function slideToOpen(
   if (follows.page >= slideCount) return null;
   if (tabView && tabView.page === follows.page) return null;
   return follows.page;
-}
-
-/**
- * The notes page (index) to go back to from slide `shown`, or `null` to keep
- * the notes where they were left: kept when the page shown (`current`)
- * already follows that slide, or when no page, or several, do.
- */
-export function notesToOpen(
-  shown: SlideRef | null,
-  pages: ReadonlyArray<Pick<Page, "follows">>,
-  current: number,
-): number | null {
-  if (!shown) return null;
-  const follows = (page: Pick<Page, "follows"> | undefined): boolean =>
-    page?.follows?.tab === shown.tab && page.follows.page === shown.page;
-  if (follows(pages[current])) return null;
-  let found: number | null = null;
-  for (let i = 0; i < pages.length; i++) {
-    if (!follows(pages[i])) continue;
-    if (found !== null) return null;
-    found = i;
-  }
-  return found;
 }
 
 /**

@@ -20,6 +20,57 @@ const GHOST_MAX_PX = 220;
 /** And at least, so a thin area still shows something to carry. */
 const GHOST_MIN_PX = 40;
 
+/** How far a press on a grip moves before it is a drag, CSS px. */
+export const GRIP_DRAG_SLOP_PX = 3;
+
+/** What a grip over a lassoed area does with a press (`bindSnippetGrip`). */
+export interface SnippetGripActions {
+  /** True while a press may not start: a drag is under way, or the notebook is locked. */
+  blocked: () => boolean;
+  /** The press moved past the slop: carry the area off from this move. */
+  drag: (event: PointerEvent) => void;
+  /** It lifted without moving: a tap. */
+  tap: () => void;
+}
+
+/**
+ * Make `grip` (a lassoed area, or its Drag to Notes chip) take a press from
+ * any pointer, the finger as much as the Pencil and the mouse: the page
+ * below never hears it (so a finger does not pan the page, and the area is
+ * not let go of), a move past {@link GRIP_DRAG_SLOP_PX} drags, a lift
+ * without one taps.
+ */
+export function bindSnippetGrip(grip: HTMLElement, actions: SnippetGripActions): void {
+  let press: { id: number; x: number; y: number } | null = null;
+  grip.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (press || actions.blocked()) return;
+    press = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    try {
+      grip.setPointerCapture(event.pointerId);
+    } catch {
+      // A synthetic pointer (a test harness) cannot be captured; moves still arrive.
+    }
+  });
+  grip.addEventListener("pointermove", (event) => {
+    if (!press || event.pointerId !== press.id) return;
+    event.stopPropagation();
+    event.preventDefault();
+    if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < GRIP_DRAG_SLOP_PX) return;
+    press = null;
+    actions.drag(event);
+  });
+  const lift = (event: PointerEvent): void => {
+    if (!press || event.pointerId !== press.id) return;
+    event.stopPropagation();
+    press = null;
+    actions.tap();
+  };
+  grip.addEventListener("pointerup", lift);
+  grip.addEventListener("pointercancel", lift);
+}
+
 export interface SnippetDragHost {
   /**
    * The pointer moved to client point (x, y). True when it is over a tab
@@ -36,6 +87,9 @@ export class SnippetDrag {
   private readonly doc: Document;
   private url: string | null = null;
   private done = false;
+  /** The ghost's size now, CSS px. */
+  private width: number;
+  private height: number;
 
   /**
    * Start dragging for pointer `pointerId`, now at client point (x, y),
@@ -57,6 +111,8 @@ export class SnippetDrag {
     const w = Math.max(GHOST_MIN_PX, width * k);
     const h = Math.max(GHOST_MIN_PX, height * k);
     this.ghost = this.doc.body.createDiv({ cls: "goodobsidian-snippet-ghost" });
+    this.width = w;
+    this.height = h;
     this.ghost.setCssStyles({ width: `${w.toFixed(0)}px`, height: `${h.toFixed(0)}px` });
     this.place(x, y);
     this.doc.addEventListener("pointermove", this.onMove, true);
@@ -75,6 +131,20 @@ export class SnippetDrag {
     return this.done;
   }
 
+  /**
+   * Over the notes: the ghost takes the size the picture will land at
+   * (CSS px), exactly, so what is carried is what lands. A small change is
+   * left alone; the change itself eases (styles.css).
+   */
+  landingSize(width: number, height: number): void {
+    if (this.done || !(width > 0) || !(height > 0)) return;
+    if (Math.abs(width - this.width) < 0.5 && Math.abs(height - this.height) < 0.5) return;
+    this.width = width;
+    this.height = height;
+    this.ghost.addClass("is-landing");
+    this.ghost.setCssStyles({ width: `${width.toFixed(1)}px`, height: `${height.toFixed(1)}px` });
+  }
+
   /** End the drag without a drop: the host is going away. */
   cancel(): void {
     if (this.done) return;
@@ -91,7 +161,7 @@ export class SnippetDrag {
   private place(x: number, y: number): void {
     // The ghost is centred on x (CSS translate -50%); keep it on screen, so
     // it stays whole over the Notes tab at the left edge.
-    const half = this.ghost.offsetWidth / 2;
+    const half = this.width / 2;
     const room = this.doc.documentElement.clientWidth;
     const cx =
       half > 0 && room > 2 * half + 8 ? Math.min(Math.max(x, half + 4), room - half - 4) : x;

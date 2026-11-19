@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  followOnWrite,
-  notesToOpen,
-  slideToOpen,
-  slidesAround,
-} from "../../src/model/slide-follow";
+import { followOnWrite, slideToOpen, slidesAround } from "../../src/model/slide-follow";
 
 describe("followOnWrite", () => {
   it("records the slide read last", () => {
@@ -58,30 +53,6 @@ describe("slideToOpen", () => {
 
   it("ignores a slide the PDF no longer has", () => {
     expect(slideToOpen(page, "b1", { page: 0 }, 5)).toBeNull();
-  });
-});
-
-describe("notesToOpen", () => {
-  const slide = { tab: "b1", page: 2 };
-  const on = { follows: { tab: "b1", page: 2 } };
-  const off = { follows: { tab: "b1", page: 3 } };
-
-  it("goes to the one page written beside the slide", () => {
-    expect(notesToOpen(slide, [{}, off, on], 0)).toBe(2);
-  });
-
-  it("keeps the notes when the page shown already follows the slide", () => {
-    expect(notesToOpen(slide, [on, {}, on], 0)).toBeNull();
-  });
-
-  it("keeps the notes when several pages, or none, follow the slide", () => {
-    expect(notesToOpen(slide, [{}, on, on], 0)).toBeNull();
-    expect(notesToOpen(slide, [{}, off], 0)).toBeNull();
-    expect(notesToOpen(null, [on], 0)).toBeNull();
-  });
-
-  it("tells tabs apart", () => {
-    expect(notesToOpen({ tab: "b2", page: 2 }, [{}, on], 0)).toBeNull();
   });
 });
 

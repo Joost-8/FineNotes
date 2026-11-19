@@ -163,12 +163,16 @@ import {
   LAST_TABS_KEY,
   type LastTabs,
   NOTES_TAB,
+  SNIPPET_HINT_KEY,
+  STRIP_COLLAPSED_KEY,
+  flagToStore,
   forgetTab,
   parseLastTabs,
   plusList,
   rememberTab,
   renameInLastTabs,
   showsStrip,
+  storedFlag,
   stripTabs,
   tabAfterClosing,
   tabLabel,
@@ -187,12 +191,13 @@ import {
   pdfPageOf,
   type BesideView,
 } from "../model/beside-pdfs";
-import { followOnWrite, notesToOpen, slideToOpen } from "../model/slide-follow";
+import { followOnWrite, slideToOpen } from "../model/slide-follow";
 import type { SurfaceSession } from "./surface-session";
 import {
   SNIPPET_FLIP_MS,
   type SnippetHover,
   snippetBox,
+  snippetSize,
   snippetCrop,
   snippetPixels,
   stepSnippetHover,
@@ -882,6 +887,8 @@ export class InkView extends TextFileView {
     tab: string;
     page: number;
     size: { width: number; height: number };
+    /** The width of the slide it came from, page px (`snippetSize`). */
+    slideWidth: number;
     pixels: { width: number; height: number };
     picture: Promise<Blob | null>;
     hover: SnippetHover;
@@ -3847,6 +3854,7 @@ export class InkView extends TextFileView {
         onStickyColor: (color) => this.armStickyNote(color),
         onStickyCancel: () => this.armStickyNote(null),
         onLayout: (layout) => this.plugin.saveToolbarLayout(layout),
+        onLeavePdfTab: () => this.showTab(NOTES_TAB),
         onSetBarDock: (dock) => this.plugin.setBarDock(dock),
         onSetPillRow: (on) => this.plugin.setPillRow(on),
         onSetPreset: (preset) => this.plugin.setToolbarPreset(preset),
@@ -3904,7 +3912,15 @@ export class InkView extends TextFileView {
       onRename: (id) => this.renameTabAsked(id),
       onFindFile: (id) => this.findTabFile(id),
       onPlus: (anchor) => this.togglePdfTabsPopover(anchor),
+      onCollapse: (collapsed) => {
+        this.setDeviceFlag(STRIP_COLLAPSED_KEY, collapsed);
+        // The pill and the text bar measure from below the strip (toolbar.ts, pillArea).
+        this.toolbar?.applyPosition();
+      },
     });
+    this.pdfTabs.setCollapsed(this.deviceFlag(STRIP_COLLAPSED_KEY));
+    // The pill rests below the strip while it shows.
+    this.toolbar.setPageTop(this.pdfTabs.el);
     this.toolbar.setHomeDot(this.plugin.hasNews());
     this.toolbar.setNewsItems(this.plugin.newsControlIds(), (id) =>
       this.plugin.markNewsControlUsed(id),
@@ -4032,9 +4048,15 @@ export class InkView extends TextFileView {
         onRegionScreenshot: (index, bounds) => void this.screenshotRegion(index, bounds),
         // Snippets: an area of a slide dragged from its tab onto the notes.
         onSnippetStart: (index, area, viewScale) => this.startSnippet(index, area, viewScale),
+        snippetHintOnce: () => this.deviceFlagOnce(SNIPPET_HINT_KEY),
         onSnippetMove: (x, y) => this.hoverSnippet(x, y),
         onSnippetEnd: (drop) => void this.dropSnippet(drop),
+        snippetLanding: (index) => this.snippetLanding(index),
         onOpenSlide: (slide) => this.openSlide(slide),
+        slideTabName: (tab) => {
+          const beside = findBeside(this.doc, tab);
+          return beside ? tabLabel(beside) : "PDF";
+        },
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onEquation: (pageId, at, equation) => this.openEquation(pageId, at, equation),
         onChange: (pages) => {
@@ -5541,7 +5563,10 @@ export class InkView extends TextFileView {
       missing: !this.pdfExists(beside.path),
     }));
     strip.render(tabs, this.activeTab, shown);
+    const was = this.contentEl.hasClass("goodobsidian-has-pdf-tabs");
     this.contentEl.toggleClass("goodobsidian-has-pdf-tabs", shown);
+    // The strip came or went: the pill moves below it, or back up.
+    if (was !== shown) this.toolbar?.applyPosition();
   }
 
   /**
@@ -5559,8 +5584,9 @@ export class InkView extends TextFileView {
       this.noteShownSlide();
       this.saveTabView();
       this.activeTab = NOTES_TAB;
+      // The notes come back exactly as they were left: their own page,
+      // scroll and zoom, never a page that follows the slide just read.
       surface.showSession(notes);
-      this.openFollowingNotes();
       const tool = this.notesTool;
       this.notesTool = null;
       if (tool !== null && tool !== this.toolState.tool) {
@@ -5726,6 +5752,7 @@ export class InkView extends TextFileView {
       tab: this.activeTab,
       page: index,
       size: { width: crop.width, height: crop.height },
+      slideWidth: page.geometry.width,
       pixels: snippetPixels(crop),
       picture,
       hover: { since: null },
@@ -5772,8 +5799,8 @@ export class InkView extends TextFileView {
   /**
    * The snippet was let go: on page `drop.pageIndex` of the notes at page
    * point (x, y), it lands there as a picture of the slide's area, linked to
-   * the slide (`ImageElement.slide`), as large as it was on the slide (or
-   * fitted to the page), saved as an attachment: one undo step on the
+   * the slide (`ImageElement.slide`), keeping its share of the slide's width
+   * on the notes page (`snippetSize`), saved as an attachment: one undo step on the
    * notes. `null`: it went nowhere, and nothing changes.
    */
   private async dropSnippet(
@@ -5821,7 +5848,7 @@ export class InkView extends TextFileView {
       const image = newImageElement(
         this.doc,
         file.path,
-        snippetBox(snippet.size, drop, page.geometry),
+        snippetBox(snippet.size, snippet.slideWidth, drop, page.geometry),
       );
       image.slide = { tab: snippet.tab, page: snippet.page };
       surface.applyCommand(new InsertImage(page.id, image));
@@ -5829,6 +5856,18 @@ export class InkView extends TextFileView {
     } catch (error) {
       new Notice(t("view.image.addFailed", { message: errorMessage(error) }), 8000);
     }
+  }
+
+  /**
+   * How large the snippet being dragged lands on notes page `index`, page
+   * px (`snippetSize`), for its ghost over the notes; null when there is no
+   * snippet or no such page.
+   */
+  private snippetLanding(index: number): { w: number; h: number } | null {
+    const snippet = this.snippet;
+    const page = this.surface?.document.pages[index];
+    if (!snippet || !page || this.onPdfTab) return null;
+    return snippetSize(snippet.size, snippet.slideWidth, page.geometry);
   }
 
   /**
@@ -6051,6 +6090,30 @@ export class InkView extends TextFileView {
     this.app.saveLocalStorage(LAST_TABS_KEY, JSON.stringify(map));
   }
 
+  /** A yes/no this device keeps (`storedFlag`); no when storage cannot be read. */
+  private deviceFlag(key: string): boolean {
+    try {
+      return storedFlag(this.app.loadLocalStorage(key));
+    } catch {
+      return false;
+    }
+  }
+
+  private setDeviceFlag(key: string, on: boolean): void {
+    try {
+      this.app.saveLocalStorage(key, flagToStore(on));
+    } catch {
+      // Storage refused: it is asked again next time.
+    }
+  }
+
+  /** True the first time on this device, and never again. */
+  private deviceFlagOnce(key: string): boolean {
+    if (this.deviceFlag(key)) return false;
+    this.setDeviceFlag(key, true);
+    return true;
+  }
+
   /** This device remembers the tab the notebook is on (not the file: it would change it). */
   private rememberActiveTab(): void {
     const path = this.file?.path;
@@ -6128,14 +6191,6 @@ export class InkView extends TextFileView {
       this.restoreTabView(id, { page: index, zoom: left?.zoom ?? 1, x: left?.x ?? 0, y: 0 });
     else surface.goToPage(index);
     return true;
-  }
-
-  /** Back on the notes from a slide: the one page written beside it, if exactly one was. */
-  private openFollowingNotes(): void {
-    const surface = this.surface;
-    if (!surface) return;
-    const index = notesToOpen(this.shownSlide(), this.doc.pages, surface.currentPage);
-    if (index !== null) surface.goToPage(index);
   }
 
   // --- Page sidebar ---------------------------------------------------------

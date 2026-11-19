@@ -4,9 +4,11 @@ import {
   SNIPPET_MAX_PAGE_SIDE,
   SNIPPET_MAX_SIDE,
   SNIPPET_MIN_SCALE,
+  SNIPPET_PAGE_MARGIN,
   snippetBox,
   snippetCrop,
   snippetPixels,
+  snippetSize,
   stepSnippetHover,
 } from "../../src/model/snippet";
 
@@ -63,32 +65,56 @@ describe("snippetCrop", () => {
   });
 });
 
+describe("snippetSize", () => {
+  const PAGE = { width: 1000, height: 1414 };
+  const USABLE = 1000 * (1 - 2 * SNIPPET_PAGE_MARGIN);
+
+  it("keeps its share of the slide's width, of the page's width inside the margins", () => {
+    // Half the slide wide: half the usable page wide, whatever the slide's px.
+    const half = snippetSize({ width: 910, height: 256 }, SLIDE.width, PAGE);
+    expect(half.w).toBeCloseTo(USABLE / 2);
+    expect(half.h).toBeCloseTo((USABLE / 2) * (256 / 910));
+    const whole = snippetSize({ width: 1820, height: 1024 }, SLIDE.width, PAGE);
+    expect(whole.w).toBeCloseTo(USABLE);
+    expect(whole.h).toBeCloseTo(USABLE * (1024 / 1820));
+  });
+
+  it("is the same share on a wider page", () => {
+    const wide = snippetSize({ width: 455, height: 200 }, SLIDE.width, {
+      width: 2000,
+      height: 1414,
+    });
+    expect(wide.w).toBeCloseTo(2000 * (1 - 2 * SNIPPET_PAGE_MARGIN) * 0.25);
+  });
+
+  it("is never taller than the page, its shape kept", () => {
+    // A tall strip of the slide: a tenth of its width, all of its height.
+    const tall = snippetSize({ width: 182, height: 1024 }, SLIDE.width, {
+      width: 1000,
+      height: 400,
+    });
+    expect(tall.h).toBeCloseTo(400);
+    expect(tall.w / tall.h).toBeCloseTo(182 / 1024);
+  });
+
+  it("takes the whole usable width when the slide's width is unknown", () => {
+    expect(snippetSize({ width: 300, height: 150 }, 0, PAGE).w).toBeCloseTo(USABLE);
+  });
+});
+
 describe("snippetBox", () => {
   const PAGE = { width: 1024, height: 1448 };
 
-  it("centres the picture where it was dropped, at its size on the slide", () => {
-    expect(snippetBox({ width: 400, height: 200 }, { x: 500, y: 700 }, PAGE)).toEqual({
-      x: 300,
-      y: 600,
-      w: 400,
-      h: 200,
-    });
+  it("centres the picture where it was dropped, at its size on the notes page", () => {
+    const box = snippetBox({ width: 455, height: 256 }, SLIDE.width, { x: 500, y: 700 }, PAGE);
+    const { w, h } = snippetSize({ width: 455, height: 256 }, SLIDE.width, PAGE);
+    expect(box).toEqual({ x: 500 - w / 2, y: 700 - h / 2, w, h });
   });
 
   it("moves it in so all of it is on the page", () => {
-    expect(snippetBox({ width: 400, height: 200 }, { x: 990, y: 20 }, PAGE)).toEqual({
-      x: 624,
-      y: 0,
-      w: 400,
-      h: 200,
-    });
-  });
-
-  it("shrinks a snippet wider than the page to fit it, keeping its shape", () => {
-    const box = snippetBox({ width: 1820, height: 1024 }, { x: 512, y: 700 }, PAGE);
-    expect(box.w).toBeCloseTo(1024);
-    expect(box.h).toBeCloseTo((1024 * 1024) / 1820);
-    expect(box.x).toBeCloseTo(0);
+    const box = snippetBox({ width: 455, height: 256 }, SLIDE.width, { x: 1020, y: 5 }, PAGE);
+    expect(box.x + box.w).toBeCloseTo(1024);
+    expect(box.y).toBe(0);
   });
 });
 

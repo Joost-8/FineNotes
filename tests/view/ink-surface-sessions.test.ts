@@ -217,6 +217,28 @@ describe("showSession", () => {
     expect(surface.pageIndex).toBe(0);
   });
 
+  it("notes on page 5, a PDF's tab, and back: page 5 at the same scroll and zoom", () => {
+    const { surface } = rig(docOf("p1", "p2", "p3", "p4", "p5", "p6"));
+    const notes = active(surface);
+    Object.assign(surface, { userZoom: 1.4, pageIndex: 4, heldPage: null });
+    const scroller = surface.scroller as {
+      position: { x: number; y: number };
+      setPosition: (x: number, y: number) => void;
+    };
+    scroller.setPosition(12, 4321);
+    const pdf = run<SurfaceSession>(surface, "createSession", docOf("x1", "x2", "x3"), {
+      fixedPages: true,
+    });
+    run(surface, "showSession", pdf);
+    // Read on the slides meanwhile.
+    Object.assign(surface, { userZoom: 2, pageIndex: 2 });
+    scroller.setPosition(0, 900);
+    run(surface, "showSession", notes);
+    expect(surface.pageIndex).toBe(4);
+    expect(surface.userZoom).toBe(1.4);
+    expect(scroller.position).toEqual({ x: 12, y: 4321 });
+  });
+
   it("ends what was under way and keeps the tiles", () => {
     const { surface, calls, renderer } = rig(docOf("p1"));
     const b = run<SurfaceSession>(surface, "createSession", docOf("x1"));

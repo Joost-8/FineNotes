@@ -9,6 +9,7 @@ import { emptyDocument } from "../../src/model/document";
 import {
   LAST_TABS_MAX,
   NOTES_TAB,
+  flagToStore,
   folderOf,
   forgetTab,
   matchesQuery,
@@ -18,6 +19,7 @@ import {
   rememberTab,
   renameInLastTabs,
   showsStrip,
+  storedFlag,
   stripTabs,
   tabAfterClosing,
   tabLabel,
@@ -175,5 +177,14 @@ describe("the bar on a PDF's tab", () => {
     for (const id of ["pen", "eraser", "select", "undo", "redo", "more", "thumbnails"] as const)
       expect(hiddenOnPdfTab(id)).toBe(false);
     expect(hiddenOnPdfTab("pen:highlighter")).toBe(false);
+  });
+});
+
+describe("storedFlag", () => {
+  it("reads only what flagToStore wrote for yes as yes", () => {
+    expect(storedFlag(flagToStore(true))).toBe(true);
+    expect(storedFlag(flagToStore(false))).toBe(false);
+    for (const raw of [null, undefined, "", "true", 1, true, "yes"])
+      expect(storedFlag(raw)).toBe(false);
   });
 });

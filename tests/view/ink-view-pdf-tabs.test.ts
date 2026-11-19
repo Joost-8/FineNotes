@@ -304,7 +304,7 @@ describe("notes follow the slide", () => {
     expect(surface.showReadingView).toHaveBeenCalledWith({ page: 1, zoom: 2, x: 5, y: 40 });
   });
 
-  it("back on the notes, the one page written beside the slide is shown", () => {
+  it("back on the notes, they stay where they were left, even beside a page that follows the slide", () => {
     const { view, doc, surface } = setup();
     doc.pages[1].follows = { tab: "b1", page: 2 };
     view.showTab("b1");
@@ -312,6 +312,6 @@ describe("notes follow the slide", () => {
     view.showTab(NOTES_TAB);
     expect(
       (surface as unknown as { goToPage: { mock: { calls: unknown[][] } } }).goToPage.mock.calls,
-    ).toContainEqual([1]);
+    ).toEqual([]);
   });
 });

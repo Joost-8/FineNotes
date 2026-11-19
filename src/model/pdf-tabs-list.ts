@@ -173,3 +173,22 @@ export function renameInLastTabs(map: LastTabs, from: string, to: string): LastT
 
 /** Where the map is kept (vault-scoped local storage): which tab each notebook was left on. */
 export const LAST_TABS_KEY = "goodobsidian:last-tabs";
+
+/** Where this device keeps that the strip was folded away (`stripCollapsedFrom`). */
+export const STRIP_COLLAPSED_KEY = "goodobsidian:pdf-tabs-collapsed";
+
+/** Where this device keeps that "Drag it onto Notes" was shown once. */
+export const SNIPPET_HINT_KEY = "goodobsidian:snippet-hint-shown";
+
+/**
+ * A yes/no kept in local storage, as read back: only the string "1" is yes,
+ * so anything missing, cleared or written by another version is no.
+ */
+export function storedFlag(raw: unknown): boolean {
+  return raw === "1";
+}
+
+/** A yes/no as it is kept in local storage (`storedFlag` reads it back). */
+export function flagToStore(on: boolean): string {
+  return on ? "1" : "0";
+}
