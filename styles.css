@@ -5963,8 +5963,9 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   opacity: 0.4;
 }
 
-/* A 44 px target around a 30 px dot; the selected one is ringed in the
-   accent colour, which reads on light and dark themes alike. */
+/* A 44 px target around a 30 px dot; the selected dot is ringed in the
+   accent colour past a gap, as every colour picker marks its choice
+   (FineNotes#240: the button's own border made it a double ring). */
 .goodobsidian-cover-swatch {
   display: inline-flex;
   align-items: center;
@@ -5972,20 +5973,17 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   width: var(--gob-touch);
   height: var(--gob-touch);
   padding: 0;
-  border: 2px solid transparent;
+  border: none;
   border-radius: 50%;
   background: transparent;
   box-shadow: none;
   cursor: pointer;
 }
 
-/* Outranks a theme's .clickable-icon padding (FineNotes#240). */
+/* Outranks a theme's .clickable-icon padding and border (FineNotes#240). */
 button.goodobsidian-cover-swatch.clickable-icon {
   padding: 0;
-}
-
-.goodobsidian-cover-swatch.is-selected {
-  border-color: var(--interactive-accent);
+  border: none;
 }
 
 .goodobsidian-cover-swatch.is-selected .goodobsidian-cover-swatch-dot {
