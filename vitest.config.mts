@@ -114,6 +114,8 @@ export default defineConfig({
         "src/view/text-panel.ts",
         "src/view/id-sequence.ts",
         "src/view/stroke-index.ts",
+        "src/view/surface-session.ts",
+        "src/view/surface-session-state.ts",
         "src/view/surface-keys.ts",
         "src/view/notebook-keys.ts",
         "src/view/scroll-thumb-drag.ts",

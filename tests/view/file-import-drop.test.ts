@@ -54,7 +54,7 @@ describe("file drop routing", () => {
     const { pdf, event, drop } = setup();
     await drop([file]);
     // A drop adds every page after the last, without the page picker.
-    expect(pdf).toHaveBeenCalledWith(file, false);
+    expect(pdf).toHaveBeenCalledWith(file);
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(event.stopPropagation).toHaveBeenCalledOnce();
   });
@@ -77,7 +77,7 @@ describe("file drop routing", () => {
   it("references an existing vault PDF without copying it", async () => {
     const { vaultPdf, pdf, drop } = setup("[[Lecture.pdf#page=2|Lecture]]");
     await drop();
-    expect(vaultPdf).toHaveBeenCalledWith("Lecture.pdf", false);
+    expect(vaultPdf).toHaveBeenCalledWith("Lecture.pdf");
     expect(pdf).not.toHaveBeenCalled();
   });
   it("takes a file dragged from Obsidian's file list when the drop carries no text (iPad)", async () => {
@@ -87,7 +87,7 @@ describe("file drop routing", () => {
       dragManager: { draggable: { type: "file", file: new TFile("Lecture.pdf", 100) } },
     });
     await drop();
-    expect(vaultPdf).toHaveBeenCalledWith("Lecture.pdf", false);
+    expect(vaultPdf).toHaveBeenCalledWith("Lecture.pdf");
   });
   it("takes every PDF and picture of a dragged selection, in order, and skips notes", async () => {
     const { internal, vaultPdf, vaultImage, drop } = setup("ignored.pdf");
@@ -99,7 +99,7 @@ describe("file drop routing", () => {
     ];
     Object.assign(app, { dragManager: { draggable: { type: "files", files } } });
     await drop();
-    expect(vaultPdf).toHaveBeenCalledExactlyOnceWith("Lecture.pdf", false);
+    expect(vaultPdf).toHaveBeenCalledExactlyOnceWith("Lecture.pdf");
     expect(vaultImage).toHaveBeenCalledExactlyOnceWith("photo.png");
   });
   it.each([

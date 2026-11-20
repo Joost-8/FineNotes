@@ -271,6 +271,7 @@ export interface TransferReceipt {
 }
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
+import { NotebookPickModal } from "./view/notebook-pick-modal";
 import { readPdfOutline } from "./view/pdf-outline";
 import { SetPagesContents } from "./model/contents";
 import { addedEntries, outlineContents } from "./model/pdf-outline";
@@ -722,6 +723,13 @@ export default class GoodObsidianPlugin extends Plugin {
             .setTitle(t("notebooks.menu.newFromPdf"))
             .setIcon(ICON_NEW_NOTEBOOK)
             .onClick(() => void this.createNotebookFromPdf(file)),
+        );
+        // Beside a notebook's notes, as a tab: the notebook is picked, opened on it.
+        menu.addItem((item) =>
+          item
+            .setTitle(t("notebooks.menu.keepBeside"))
+            .setIcon("panel-top")
+            .onClick(() => this.keepPdfBesideNotebook(file)),
         );
         const view = this.app.workspace.getActiveViewOfType(InkView);
         if (!view) return;
@@ -3561,6 +3569,33 @@ export default class GoodObsidianPlugin extends Plugin {
     if (board) boards.add(path);
     else boards.delete(path);
     this.app.saveLocalStorage(BOARDS_KEY, JSON.stringify([...boards]));
+  }
+
+  /**
+   * "Keep beside notebook…" on a PDF: pick a notebook, open it (or the tab
+   * it is open in), and keep the PDF beside its notes, shown as its tab.
+   */
+  keepPdfBesideNotebook(pdf: TFile): void {
+    new NotebookPickModal(
+      this.app,
+      this.transferTargets(),
+      this.recentTransferTargets(),
+      (target) => void this.openBeside(target.path, pdf.path),
+    ).open();
+  }
+
+  private async openBeside(notebookPath: string, pdfPath: string): Promise<void> {
+    const file = this.app.vault.getFileByPath(notebookPath);
+    if (!file) return;
+    let view = this.openNotebooks().find((open) => open.file?.path === notebookPath);
+    if (!view) {
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(file);
+      view = leaf.view instanceof InkView ? leaf.view : undefined;
+    } else {
+      this.app.workspace.setActiveLeaf(view.leaf, { focus: true });
+    }
+    if (view) await view.keepPdfBeside(pdfPath);
   }
 
   /** The notebooks pages went to last, most recent first (kept on this device). */

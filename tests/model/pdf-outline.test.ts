@@ -6,7 +6,13 @@
 import { describe, expect, it } from "vitest";
 import { emptyDocument, type InkDocument, type Page } from "../../src/model/document";
 import { SetPagesContents, contentsEntries, contentsTree } from "../../src/model/contents";
-import { MAX_OUTLINE_ITEMS, addedEntries, outlineContents } from "../../src/model/pdf-outline";
+import {
+  MAX_OUTLINE_ITEMS,
+  addedEntries,
+  outlineContents,
+  tabOutlineEntries,
+} from "../../src/model/pdf-outline";
+import { attachPdf, besideDocument } from "../../src/model/beside-pdfs";
 
 function pdfPage(id: string, page: number, path = "book.pdf"): Page {
   return {
@@ -153,5 +159,55 @@ describe("outlineContents", () => {
 
   it("returns nothing for a notebook without that PDF", () => {
     expect(outlineContents(book(2), "else.pdf", [{ title: "A", depth: 1, page: 0 }])).toEqual([]);
+  });
+});
+
+describe("tabOutlineEntries (a PDF's tab)", () => {
+  function tab(): { doc: InkDocument; shown: InkDocument } {
+    const doc = emptyDocument(1000);
+    const beside = attachPdf(doc, "book.pdf", [[960, 540, 6]]);
+    return { doc, shown: besideDocument(beside) };
+  }
+
+  it("shows the outline nested on the tab's slides, slide i on page i", () => {
+    const { shown } = tab();
+    const entries = tabOutlineEntries(shown, "book.pdf", [
+      { title: "Part I", depth: 1, page: 0 },
+      { title: "Chapter 1", depth: 2, page: 1 },
+      { title: "1.1 Detail", depth: 3, page: 1, y: 0.6 },
+      { title: "Part II", depth: 1, page: 4 },
+      { title: "Gone", depth: 1, page: 40 },
+    ]);
+    expect(entries.map((e) => [e.title, e.index, e.level])).toEqual([
+      ["Part I", 0, 1],
+      ["Chapter 1", 1, 2],
+      ["1.1 Detail", 1, 3],
+      ["Part II", 4, 1],
+    ]);
+    // A heading carries its spot on the slide, for a tap to go to.
+    expect(entries[2].section!.y).toBeGreaterThan(0);
+    const tree = contentsTree(entries);
+    expect(tree.map((node) => node.entry.title)).toEqual(["Part I", "Part II"]);
+    expect(tree[0].children[0].children[0].entry.title).toBe("1.1 Detail");
+  });
+
+  it("stores nothing: the tab's pages and the notebook keep no contents", () => {
+    const { doc, shown } = tab();
+    tabOutlineEntries(shown, "book.pdf", [{ title: "Part I", depth: 1, page: 0 }]);
+    expect(shown.pages.every((page) => page.title === undefined)).toBe(true);
+    expect(contentsEntries(doc)).toEqual([]);
+  });
+
+  it("is empty for a PDF without an outline, or one for another PDF", () => {
+    const { shown } = tab();
+    expect(tabOutlineEntries(shown, "book.pdf", [])).toEqual([]);
+    expect(tabOutlineEntries(shown, "other.pdf", [{ title: "X", depth: 1, page: 0 }])).toEqual([]);
+  });
+
+  it("ignores contents a tab's page carries in its file", () => {
+    const { shown } = tab();
+    shown.pages[0].title = "Stale";
+    const entries = tabOutlineEntries(shown, "book.pdf", [{ title: "Real", depth: 1, page: 0 }]);
+    expect(entries.map((e) => e.title)).toEqual(["Real"]);
   });
 });

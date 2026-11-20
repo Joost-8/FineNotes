@@ -92,6 +92,7 @@ import {
   type Zone,
   barItems as layoutBarItems,
   defaultLayout,
+  hiddenOnPdfTab,
   isFoldedInPreset,
   isPenSlot,
   menuItems,
@@ -997,6 +998,8 @@ export interface ToolbarCallbacks {
    * no "Customize toolbar" row.
    */
   onLayout?: (layout: ToolbarLayout) => void;
+  /** Show the notes instead of a PDF's tab (Customize toolbar opens there). */
+  onLeavePdfTab?: () => void;
   /** Customize toolbar moved the bar to another edge (`bar-dock-model.ts`). */
   onSetBarDock?: (dock: BarDock) => void;
   /** Customize toolbar switched "Dock tool options" (`pill-row-model.ts`). */
@@ -1310,6 +1313,10 @@ export class Toolbar {
   private beyondWriting: HTMLElement[] = [];
   /** A practice file: only what writing needs ({@link setPractice}). */
   private practice = false;
+  /** A PDF's tab beside the notes: its few tools ({@link setPdfTab}). */
+  private pdfTab = false;
+  /** What sits over the page's top ({@link setPageTop}). */
+  private pageTopEl: HTMLElement | null = null;
   /** An endless board ({@link setBoard}). */
   private board = false;
   /** A practice file's "Learn my handwriting", shown only there; its count beside it. */
@@ -1823,7 +1830,12 @@ export class Toolbar {
       if (item.tool !== undefined && item.tool === active) continue;
       // Hidden for another reason (a practice file, a single page, taken off
       // the bar in "Customize toolbar"): nothing to fold.
-      if (item.button.style.display === "none" || item.button.hasClass("is-unlisted")) continue;
+      if (
+        item.button.style.display === "none" ||
+        item.button.hasClass("is-unlisted") ||
+        item.button.hasClass("is-pdf-tab-off")
+      )
+        continue;
       item.button.addClass("is-overflowed");
       this.measureCrowding();
     }
@@ -2073,7 +2085,9 @@ export class Toolbar {
   /** The bar's buttons folded into ⋯ just now, in the bar's order. */
   foldedItems(): FoldedBarItem[] {
     return this.foldable
-      .filter((item) => item.button.hasClass("is-overflowed"))
+      .filter(
+        (item) => item.button.hasClass("is-overflowed") && !item.button.hasClass("is-pdf-tab-off"),
+      )
       .sort((a, b) =>
         a.button.compareDocumentPosition(b.button) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
       )
@@ -2283,6 +2297,7 @@ export class Toolbar {
       }
     }
     for (const [id, button] of this.barItems) button.toggleClass("is-unlisted", !onBar.has(id));
+    if (this.pdfTab) this.syncPdfTabOff();
     // A practice sheet's button sits just before ⋯, wherever ⋯ is.
     const learn = this.learnButton;
     const more = this.moreButton;
@@ -2559,6 +2574,12 @@ export class Toolbar {
   startCustomize(): void {
     const save = this.callbacks.onLayout;
     if (!save || this.editor) return;
+    // A PDF's tab shows only a few of the bar's buttons: the bar is edited
+    // on the notes, where every one of them is.
+    if (this.pdfTab) {
+      this.callbacks.onLeavePdfTab?.();
+      if (this.pdfTab) return;
+    }
     this.closePopover();
     // The tool's pill is put away while the bar is edited, so it takes none
     // of the room the edit mode uses.
@@ -2663,16 +2684,20 @@ export class Toolbar {
     this.popoverRender = () => {
       body.empty();
       const hidden = this.menuListed;
+      let rows = 0;
       for (const id of hidden) {
         const button = this.barItems.get(id);
         const run = this.itemRuns.get(id);
         if (!button || !run) continue;
+        // A PDF's tab offers its own few tools, here too.
+        if (this.pdfTab && hiddenOnPdfTab(id)) continue;
         const row = body.createEl("button", {
           cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-accessory-row",
           attr: { role: "menuitem" },
         });
         iconOrText(row.createSpan({ cls: "goodobsidian-accessory-icon" }), BAR_ITEM_ICONS[id], "");
         row.createSpan({ text: BAR_ITEM_LABELS[id] });
+        rows++;
         row.toggleClass("is-active", button.hasClass("is-on") || button.hasClass("is-active"));
         row.addEventListener("click", () => {
           // Sticky notes swap this menu for their colours, hanging from the same place.
@@ -2681,7 +2706,8 @@ export class Toolbar {
         });
       }
       if (this.callbacks.onLayout) {
-        if (hidden.length > 0) body.createDiv({ cls: "goodobsidian-popover-divider" });
+        // A divider only under rows that are there (a PDF's tab lists fewer).
+        if (rows > 0) body.createDiv({ cls: "goodobsidian-popover-divider" });
         const customize = body.createEl("button", {
           cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-accessory-row",
           attr: { role: "menuitem" },
@@ -7171,6 +7197,30 @@ export class Toolbar {
     return Math.min(hostBox.height - foot, windowBottom - hostBox.top);
   }
 
+  /**
+   * Where the page starts below what sits over it ({@link setPageTop}: the
+   * PDF tab strip), host px; 0 when nothing does. Not while the pill is
+   * docked in a row between the bar and the strip: the row is above it.
+   */
+  private pageTop(hostBox: DOMRect): number {
+    const el = this.pageTopEl;
+    if (!el || !el.isConnected) return 0;
+    if (pillRowEdge(this.pillRowOn, this.pillDock, this.barDock) === "top") return 0;
+    const box = el.getBoundingClientRect();
+    if (box.height <= 0) return 0;
+    return box.bottom - hostBox.top;
+  }
+
+  /**
+   * What sits over the top of the page, below a bar along the top (the PDF
+   * tab strip): the pill, the text bar and the docked pill rest below it
+   * while it shows. Hosts call {@link applyPosition} when it comes or goes.
+   */
+  setPageTop(el: HTMLElement | null): void {
+    this.pageTopEl = el;
+    this.applyPosition();
+  }
+
   /** The bar's box in host px. */
   private barBox(hostBox: DOMRect): { left: number; top: number; right: number; bottom: number } {
     const bar = this.barEl.getBoundingClientRect();
@@ -7518,6 +7568,7 @@ export class Toolbar {
         left: pad(style?.paddingLeft),
         right: hostBox.width - pad(style?.paddingRight),
         bottom: this.pageBottom(hostBox),
+        top: this.pageTop(hostBox),
       },
       this.pillInset(),
       this.leftInset,
@@ -7872,6 +7923,38 @@ export class Toolbar {
     this.syncActive();
     // Buttons came or went beside the tool in hand.
     this.placeIndicator(this.indicatorTool, null);
+  }
+
+  /**
+   * Keep the bars to a PDF's tab (or let them go back to the notes'): the
+   * pens, the eraser, the lasso, moving about, undo and redo, the pages
+   * panel, ⋯ and the settings. Text, shapes, pictures, page actions and
+   * the rest leave the bar, More tools and ⋯ (`hiddenOnPdfTab`).
+   */
+  setPdfTab(on: boolean): void {
+    if (on === this.pdfTab) return;
+    this.pdfTab = on;
+    this.syncPdfTabOff();
+    this.closePopover();
+    this.fitBar(this.indicatorTool);
+    this.syncActive();
+    // Buttons came or went beside the tool in hand.
+    this.placeIndicator(this.indicatorTool, null);
+  }
+
+  /**
+   * Mark what a PDF's tab hides (`hiddenOnPdfTab`). The tool chest goes too
+   * when nothing it lists is of use there: "Customize toolbar" alone is the
+   * notes' (Customize opens on the notes, `startCustomize`).
+   */
+  private syncPdfTabOff(): void {
+    const on = this.pdfTab;
+    for (const [id, button] of this.barItems)
+      button.toggleClass("is-pdf-tab-off", on && hiddenOnPdfTab(id));
+    this.accessoriesButton?.toggleClass(
+      "is-pdf-tab-off",
+      on && !this.menuListed.some((id) => this.barItems.has(id) && !hiddenOnPdfTab(id)),
+    );
   }
 
   private activePenType(): PenTypeSpec {

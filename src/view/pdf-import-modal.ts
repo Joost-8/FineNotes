@@ -1,9 +1,9 @@
-import { type App, Modal, Notice, Setting, type TFile } from "obsidian";
+import { type App, Modal, Notice, Setting, type TFile, setIcon } from "obsidian";
 import { allPages, parsePageRange } from "../export/page-range";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { VaultFilePicker } from "./vault-file-picker";
 import { errorMessage } from "../util/errors";
-import { t } from "../i18n/translate";
+import { t, tn } from "../i18n/translate";
 
 /** Where the last PDF was picked from the vault (this session). */
 const lastPdfFolder = { folder: "" };
@@ -25,7 +25,11 @@ export class VaultPdfSuggestModal extends VaultFilePicker {
   }
 }
 
-/** Choose source pages before any attachment is saved or notebook changed. */
+/**
+ * Import PDF: first how (`keepBeside` given): keep the PDF beside the notes
+ * as a tab, or write on it, its pages added to the notes; then, for the
+ * latter, which pages, before any attachment is saved or notebook changed.
+ */
 export class PdfImportModal extends Modal {
   private range = "";
   private all = true;
@@ -37,6 +41,8 @@ export class PdfImportModal extends Modal {
     private readonly name: string,
     private readonly total: number,
     private readonly insert: (indices: number[]) => Promise<boolean>,
+    /** Keep it beside the notes as a tab instead; whether that was done. */
+    private readonly keepBeside?: () => Promise<boolean>,
   ) {
     super(app);
   }
@@ -44,9 +50,69 @@ export class PdfImportModal extends Modal {
   override onOpen(): void {
     this.titleEl.setText(t("notebooks.pdfImport.title"));
     this.modalEl.addClass("goodobsidian-dialog");
-    this.contentEl.createEl("p", {
-      text: t("notebooks.pdfImport.summary", { name: this.name, total: this.total }),
+    // The question first; what Write on it does is said where its pages are picked.
+    const summary = this.contentEl.createEl("p", {
+      text: this.keepBeside
+        ? tn("notebooks.pdfImport.size", this.total, { name: this.name })
+        : t("notebooks.pdfImport.summary", { name: this.name, total: this.total }),
     });
+    if (this.keepBeside) this.chooseHow(this.keepBeside, summary);
+    else this.choosePages();
+  }
+
+  /** The one question: a tab beside the notes, or pages in them. */
+  private chooseHow(keep: () => Promise<boolean>, summary: HTMLElement): void {
+    const choices = this.contentEl.createDiv({ cls: "goodobsidian-pdf-import-choices" });
+    const choice = (icon: string, title: string, info: string, cta: boolean): HTMLButtonElement => {
+      const button = choices.createEl("button", {
+        cls: "goodobsidian-pdf-import-choice clickable-icon",
+      });
+      button.toggleClass("mod-cta", cta);
+      setIcon(button.createSpan({ cls: "goodobsidian-pdf-import-choice-icon" }), icon);
+      const words = button.createSpan({ cls: "goodobsidian-pdf-import-choice-words" });
+      words.createSpan({ cls: "goodobsidian-pdf-import-choice-title", text: title });
+      words.createSpan({ cls: "goodobsidian-pdf-import-choice-info", text: info });
+      return button;
+    };
+    const beside = choice(
+      "panel-top",
+      t("notebooks.pdfImport.keepBeside"),
+      t("notebooks.pdfImport.keepBesideInfo"),
+      true,
+    );
+    const write = choice(
+      "file-pen-line",
+      t("notebooks.pdfImport.writeOn"),
+      t("notebooks.pdfImport.writeOnInfo"),
+      false,
+    );
+    beside.addEventListener("click", () => {
+      if (this.busy) return;
+      this.busy = true;
+      beside.disabled = true;
+      keep()
+        .then((done) => {
+          if (done) this.close();
+        })
+        .catch(
+          (error: unknown) =>
+            new Notice(t("notebooks.pdfImport.failed", { reason: errorMessage(error) }), 8000),
+        )
+        .finally(() => {
+          this.busy = false;
+          beside.disabled = false;
+        });
+    });
+    write.addEventListener("click", () => {
+      if (this.busy) return;
+      choices.remove();
+      summary.setText(t("notebooks.pdfImport.summary", { name: this.name, total: this.total }));
+      this.choosePages();
+    });
+  }
+
+  /** Which pages to write on: all, or a range. */
+  private choosePages(): void {
     this.keyboard = new DialogKeyboard(this.modalEl);
     new Setting(this.contentEl).setName(t("notebooks.pdfImport.pages")).addDropdown((dropdown) =>
       dropdown

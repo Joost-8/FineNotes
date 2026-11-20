@@ -104,6 +104,14 @@ describe("newImageElement", () => {
 });
 
 describe("duplicateImage", () => {
+  it("keeps a snippet's slide, as its own object", () => {
+    const slide = { tab: "b1", page: 3 };
+    const doc = docWith([image("i1", { slide })]);
+    const copy = duplicateImage(doc, PAGE, doc.pages[0].images[0]);
+    expect(copy.slide).toEqual(slide);
+    expect(copy.slide).not.toBe(slide);
+  });
+
   it("keeps the crop, as its own object, and never the lock", () => {
     const crop = { x: 0.1, y: 0.2, w: 0.5, h: 0.6 };
     const doc = docWith([image("i1", { crop, locked: true })]);
