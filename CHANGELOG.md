@@ -17,6 +17,15 @@ extracted from the matching section of this file by `release.yml`.
   anything more is sent; items shared under the old terms are never checked
   this way. See PRIVACY.md, "The label check by Anthropic".
 
+### Fixed
+
+- **Small handwriting keeps its letters on older iPads** (#275). On iPadOS
+  before 26.2 the Pencil arrives rounded to whole pixels, and the smoothing
+  that steadies it could flatten letters written small, as on a Learn your
+  handwriting sheet ("Five" came out "Fi~"). Smoothing now moves each point
+  no further than the rounding did, so straight lines stay steady and letters
+  keep their shape.
+
 ## [2.10.0] - 2026-11-18
 
 ### Added

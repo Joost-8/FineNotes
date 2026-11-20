@@ -12,6 +12,9 @@ import deviceRounded from "./fixtures/real-pencil-device-px-ipad.json";
 
 type Sample = { x: number; y: number; pressure: number };
 
+/** One device px of the fixture's iPad, page px: the grid its Pencil was rounded to. */
+const DEVICE_GRID = 1 / (deviceRounded.scale * deviceRounded.devicePixelRatio);
+
 /** A straight line as the reporter's iPad gave it: ~2-4 px steps, rounded to whole px. */
 function roundedLine(n = 40, step = 3, angle = 0.62): Sample[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -61,7 +64,13 @@ const mid = (pts: number[][]): number[][] => pts.slice(pts.length / 5, (pts.leng
 
 function build(
   samples: Sample[],
-  options: { smoothing?: Smoothing; densify?: boolean; minDistance?: number },
+  options: {
+    smoothing?: Smoothing;
+    densify?: boolean;
+    minDistance?: number;
+    grid?: number;
+    stabilize?: number;
+  },
 ): number[][] {
   const b = new StrokeBuilder({ minDistance: 1.4, ...options });
   for (const s of samples.slice(0, -1)) b.add(s);
@@ -143,7 +152,11 @@ describe("StrokeBuilder smoothing", () => {
   });
 
   it("centred: the tail is drawn where a pen-up would leave it (FineNotes#179)", () => {
-    for (const options of [{ smoothing: "centred" as const }, { stabilize: 6 }]) {
+    for (const options of [
+      { smoothing: "centred" as const },
+      { smoothing: "centred" as const, grid: DEVICE_GRID },
+      { stabilize: 6 },
+    ]) {
       for (const xy of deviceRounded.strokes) {
         const b = new StrokeBuilder({ minDistance: 0.01, ...options });
         for (let i = 0; i + 1 < xy.length; i += 2) {
@@ -235,5 +248,148 @@ describe("StrokeBuilder smoothing", () => {
     // Measured: 30.9° off, 13.5° centred.
     expect(off).toBeGreaterThan(25);
     expect(centred).toBeLessThan(off * 0.55);
+  });
+});
+
+/**
+ * FineNotes#275: on a practice sheet, which opens with the whole page on
+ * screen (~0.45 on an iPad in landscape), small handwriting came out
+ * flattened ("Five" read "Fi~"). The centred window spans 7 samples, about
+ * 13 screen px at a Pencil's 2 px spacing, wider than a letter written that
+ * small, and a quadratic through it cannot follow a loop. Rounding moved
+ * each sample at most half a grid step, so the filter may move it no
+ * further: the steps go, the letter stays.
+ */
+describe("StrokeBuilder centred smoothing within the rounding grid (FineNotes#275)", () => {
+  /** Cursive "veve", `h` page px tall: two v-and-loop pairs. */
+  function cursive(h: number): number[][] {
+    const out: number[][] = [];
+    for (let i = 0; i <= 400; i++) {
+      const t = (i / 400) * 4 * Math.PI;
+      out.push([
+        h * (t / Math.PI) * 0.9 + 0.35 * h * Math.sin(t),
+        -h * 0.5 * (1 - Math.cos(t)) - 0.25 * h * Math.sin(2 * t),
+      ]);
+    }
+    return out;
+  }
+
+  /** `path` (page px) as a Pencil reports it at `zoom`: every `step` screen px, rounded to whole px. */
+  function penAt(path: number[][], zoom: number, step: number, ox: number, oy: number): Sample[] {
+    const screen = path.map(([x, y]) => [x * zoom + ox, y * zoom + oy]);
+    const out: Sample[] = [];
+    let carry = 0;
+    const take = (x: number, y: number): void => {
+      out.push({ x: (Math.round(x) - ox) / zoom, y: (Math.round(y) - oy) / zoom, pressure: 0.4 });
+    };
+    take(screen[0][0], screen[0][1]);
+    for (let i = 1; i < screen.length; i++) {
+      const [ax, ay] = screen[i - 1];
+      const [bx, by] = screen[i];
+      const len = Math.hypot(bx - ax, by - ay);
+      let d = step - carry;
+      for (; d <= len; d += step) take(ax + ((bx - ax) * d) / len, ay + ((by - ay) * d) / len);
+      carry = len - (d - step);
+    }
+    return out;
+  }
+
+  /** The farthest the true path gets from the drawn one: detail the stroke lost. */
+  function lost(truth: number[][], drawn: number[][]): number {
+    let worst = 0;
+    for (const [x, y] of truth.slice(20, -20)) {
+      let best = Infinity;
+      for (let i = 1; i < drawn.length; i++) {
+        const [ax, ay] = drawn[i - 1];
+        const [bx, by] = drawn[i];
+        const dx = bx - ax;
+        const dy = by - ay;
+        const l = dx * dx + dy * dy;
+        const u = l ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l)) : 0;
+        best = Math.min(best, Math.hypot(ax + u * dx - x, ay + u * dy - y));
+      }
+      worst = Math.max(worst, best);
+    }
+    return worst;
+  }
+
+  const OFFSETS = [
+    [100.3, 200.7],
+    [100.71, 200.12],
+    [100.5, 200.5],
+    [100.05, 200.9],
+  ];
+
+  it("never moves a sample further than half a grid step", () => {
+    const samples = roundedLine(40);
+    const pts = build(samples, { smoothing: "centred", grid: 1, minDistance: 0.01 });
+    expect(pts.length).toBe(samples.length);
+    pts.forEach(([x, y], i) => {
+      expect(Math.abs(x - samples[i].x)).toBeLessThanOrEqual(0.5 + 1e-9);
+      expect(Math.abs(y - samples[i].y)).toBeLessThanOrEqual(0.5 + 1e-9);
+    });
+  });
+
+  it("keeps small letters the window alone flattens", () => {
+    // The reporter's notebook strokes are ~16 page px tall; on a sheet at
+    // 0.45 that is ~8 screen px.
+    const h = 18;
+    const zoom = 0.45;
+    const truth = cursive(h);
+    for (const densify of [false, true]) {
+      let window = 0;
+      let gridded = 0;
+      for (const [ox, oy] of OFFSETS) {
+        const samples = penAt(truth, zoom, 2.2, ox, oy);
+        const options = { smoothing: "centred" as const, densify, minDistance: 1.4 / zoom };
+        window += lost(truth, build(samples, options)) / h;
+        gridded += lost(truth, build(samples, { ...options, grid: 1 / zoom })) / h;
+      }
+      // Measured with densify: 32% of the letter's height lost, 20% within the grid.
+      expect(window / OFFSETS.length).toBeGreaterThan(0.28);
+      expect(gridded / OFFSETS.length).toBeLessThan(0.23);
+    }
+  });
+
+  it("steadies a rounded straight line as much as before", () => {
+    const samples = roundedLine();
+    for (const densify of [false, true]) {
+      const window = build(samples, { densify, smoothing: "centred" });
+      const gridded = build(samples, { densify, smoothing: "centred", grid: 1 });
+      expect(rms(offLine(mid(gridded)))).toBeLessThanOrEqual(rms(offLine(mid(window))) * 1.05);
+      expect(turning(mid(gridded))).toBeLessThanOrEqual(turning(mid(window)) * 1.05);
+    }
+  });
+
+  it("still keeps an arc of exact samples on it", () => {
+    const pts = build(arc(40), { smoothing: "centred", grid: 1, minDistance: 0.1 }).slice(2, -2);
+    const off = pts.map(([x, y]) => Math.abs(Math.hypot(x - 100, y - 100) - 20));
+    expect(Math.max(...off)).toBeLessThan(0.01);
+  });
+
+  it("steadies real Pencil ink rounded to device px as much as before", () => {
+    const strokes = deviceRounded.strokes.map((xy) => {
+      const samples: Sample[] = [];
+      for (let i = 0; i + 1 < xy.length; i += 2)
+        samples.push({ x: xy[i], y: xy[i + 1], pressure: 0.5 });
+      return samples;
+    });
+    const turns = (grid?: number): number =>
+      strokes.reduce(
+        (sum, s) => sum + turning(build(s, { smoothing: "centred", minDistance: 0.01, grid })),
+        0,
+      );
+    expect(turns(DEVICE_GRID)).toBeLessThanOrEqual(turns() * 1.1);
+  });
+
+  it("leaves stroke stabilization alone: it is meant to move the pen further", () => {
+    const samples = penAt(cursive(18), 0.45, 2.2, 100.3, 200.7);
+    const options = { smoothing: "centred" as const, stabilize: 12, minDistance: 0.01 };
+    expect(build(samples, { ...options, grid: 1 / 0.45 })).toEqual(build(samples, options));
+  });
+
+  it("does nothing with smoothing off", () => {
+    const samples = roundedLine();
+    expect(build(samples, { grid: 1 })).toEqual(build(samples, {}));
   });
 });

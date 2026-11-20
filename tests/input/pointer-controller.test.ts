@@ -426,6 +426,25 @@ describe("a drawing pointer", () => {
       expect(rig.controller.strokeRounded).toBe(false);
     });
 
+    it("names the grid it rounds to: one whole px, then one device px once one is seen (FineNotes#275)", () => {
+      const rig = new Rig(undefined, 2);
+      rig.pen("pointerdown", 1, { x: 10, y: 20 });
+      expect(rig.controller.strokeGrid).toBe(1);
+      rig.pen("pointermove", 1, { x: 11.5, y: 20 });
+      rig.pen("pointerup", 1, { x: 11.5, y: 20 });
+      rig.pen("pointerdown", 2, { x: 40, y: 50 });
+      expect(rig.controller.strokeGrid).toBe(0.5);
+    });
+
+    it("names no grid for a precise pen or a mouse", () => {
+      const pen = new Rig(undefined, 2);
+      pen.pen("pointerdown", 1, { x: 10.3, y: 20 });
+      expect(pen.controller.strokeGrid).toBeNull();
+      const mouse = new Rig(undefined, 2);
+      mouse.fire("pointerdown", 1, "mouse", { x: 10, y: 20 });
+      expect(mouse.controller.strokeGrid).toBeNull();
+    });
+
     it("tells device px from fractions between them, allowing float error", () => {
       expect(isOnDevicePixel({ clientX: 455.5, clientY: 911 }, 2)).toBe(true);
       expect(isOnDevicePixel({ clientX: 455.913, clientY: 911.1 }, 2)).toBe(false);
