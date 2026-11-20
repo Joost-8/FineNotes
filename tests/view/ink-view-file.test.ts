@@ -32,7 +32,7 @@ type View = InstanceType<typeof InkView>;
 /** The members a test reaches that TypeScript keeps private. */
 interface Inside {
   saveRequests: number;
-  doc: { recognizedHash?: string; pages: { id: string }[] };
+  doc: { recognizedHash?: string; pages: { id: string; strokes: unknown[] }[] };
   surface: unknown;
   scheduleAutoTranscription(): void;
   clearPage(): void;
@@ -296,6 +296,76 @@ describe("a change on disk (FineNotes#246)", () => {
   it("is never merged into the view's text: the notebook is not plain text", () => {
     const view = openView();
     expect((view as unknown as { isPlaintext: boolean }).isPlaintext).toBe(false);
+  });
+});
+
+describe("the file read again while open (FineNotes#273)", () => {
+  // Obsidian hands a non-plain-text view the file as it is on disk, which
+  // replaced every stroke written since the last save, and the undo history.
+  interface Reloads {
+    diskReloads: { own: number; merged: number; carried: number; replaced: number };
+  }
+
+  /** Write a stroke on the first page, as a pen lift does: changed, save asked for. */
+  function write(view: View, id: string): void {
+    inside(view).doc.pages[0].strokes.push({
+      id,
+      tool: "pen",
+      color: "#1a1a1a",
+      size: 3,
+      pts: [50, 60, 0.5, 70, 80, 0.5],
+    } as never);
+    view.requestSave();
+  }
+
+  function strokeIds(text: string): string[][] {
+    return parseInkFile(text, 1024).doc!.pages.map((page) => page.strokes.map((s) => s.id));
+  }
+
+  it("keeps unsaved ink when the read is a text the view already had", () => {
+    const view = openView();
+    const text = notebookFile();
+    view.setViewData(text, true);
+    write(view, "s2");
+    view.setViewData(text, false);
+    expect(strokeIds(view.getViewData())).toEqual([["s1", "s2"]]);
+    expect((view as unknown as Reloads).diskReloads.own).toBe(1);
+  });
+
+  it("carries unsaved ink onto a change made elsewhere", () => {
+    const view = openView();
+    const text = notebookFile();
+    view.setViewData(text, true);
+    write(view, "s2");
+    const theirs = parseInkFile(text, 1024);
+    theirs.doc!.pages[0].strokes.push({ ...theirs.doc!.pages[0].strokes[0], id: "r1" });
+    theirs.doc!.pages.push(blankPage("p2"));
+    const saves = inside(view).saveRequests;
+    view.setViewData(buildInkFile(theirs.body, theirs.doc!), false);
+    expect(strokeIds(view.getViewData())).toEqual([["s1", "s2", "r1"], []]);
+    expect(inside(view).saveRequests).toBeGreaterThan(saves);
+    expect((view as unknown as Reloads).diskReloads).toMatchObject({ merged: 1, carried: 1 });
+  });
+
+  it("takes a change made elsewhere as it is when nothing is unsaved", () => {
+    const view = openView();
+    const text = notebookFile();
+    view.setViewData(text, true);
+    const theirs = parseInkFile(text, 1024);
+    theirs.doc!.pages[0].strokes = [];
+    const changed = buildInkFile(theirs.body, theirs.doc!);
+    view.setViewData(changed, false);
+    expect(strokeIds(view.getViewData())).toEqual([[]]);
+    expect((view as unknown as Reloads).diskReloads.replaced).toBe(1);
+  });
+
+  it("opens another file as it is", () => {
+    const view = openView();
+    view.setViewData(notebookFile(), true);
+    write(view, "s2");
+    (view as unknown as { file: TFile }).file = new TFile("Other.notebook.md", 100);
+    view.setViewData(notebookFile(), true);
+    expect(strokeIds(view.getViewData())).toEqual([["s1"]]);
   });
 });
 

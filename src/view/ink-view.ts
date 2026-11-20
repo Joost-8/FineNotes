@@ -562,6 +562,7 @@ import {
 } from "../model/last-page";
 import { NoteAudio } from "./note-audio";
 import { LoadGuard } from "./load-guard";
+import { OwnTexts, mergeReload } from "../model/reload-merge";
 import { TextPanel } from "./text-panel";
 import type GoodObsidianPlugin from "../main";
 import type { GoodObsidianSettings } from "../settings";
@@ -735,6 +736,17 @@ export class InkView extends TextFileView {
   private noteBody = "";
   /** Whether the note may be saved over: never while a read is held. */
   private readonly guard = new LoadGuard();
+  /** Texts this view loaded or wrote lately: a read of one holds nothing new (FineNotes#273). */
+  private readonly ownTexts = new OwnTexts();
+  /** The file's text as this view last loaded or wrote it; `null` when not known. */
+  private knownText: string | null = null;
+  /**
+   * The file read again while open (FineNotes#273), for the diagnostics:
+   * `own` reads of a text this view had, skipped; `merged` changes from
+   * elsewhere taken in with this view's unsaved changes, `carried` of
+   * those kept; `replaced` loaded as they were, nothing being unsaved.
+   */
+  private readonly diskReloads = { own: 0, merged: 0, carried: 0, replaced: 0 };
   /**
    * Not plain text to Obsidian (FineNotes#246). Obsidian's TextFileView
    * sets this, and while it is set a file changed on disk (a sync landing)
@@ -1089,9 +1101,22 @@ export class InkView extends TextFileView {
    * was handed is not always that (FineNotes#246), so echoing it back is
    * not enough: a held load must never write.
    */
-  private writeFile(clear?: boolean): Promise<void> {
-    if (this.guard.locked) return Promise.resolve();
-    return super.save(clear);
+  private async writeFile(clear?: boolean): Promise<void> {
+    if (this.guard.locked) return;
+    const saving = super.save(clear);
+    // Obsidian sets `data` to what it writes before its first wait, unless
+    // another save is still running: a read of it is this view's own text.
+    this.noteOwnText();
+    await saving;
+    if (clear) return;
+    this.noteOwnText();
+    // On disk now: what the next change from elsewhere is measured against.
+    if (this.loadedPath !== null && this.file?.path === this.loadedPath) this.knownText = this.data;
+  }
+
+  /** Obsidian's `data` is a text this view wrote: remember it as its own (FineNotes#273). */
+  private noteOwnText(): void {
+    if (typeof this.data === "string" && this.data !== "") this.ownTexts.note(this.data);
   }
 
   /**
@@ -1112,17 +1137,32 @@ export class InkView extends TextFileView {
   }
 
   /** Obsidian read the file (on open, or because it changed on disk). */
-  setViewData(data: string, _clear: boolean): void {
+  setViewData(data: string, clear: boolean): void {
     const began = performance.now();
-    this.loadViewData(data);
+    this.loadViewData(data, !clear);
     const kb = Math.round(data.length / 1024);
     this.plugin.startup.timed(`notebook loaded, ${kb} KB`, performance.now() - began);
   }
 
-  private loadViewData(data: string): void {
+  /**
+   * Load `data`. `reread`: Obsidian read the file again because the vault
+   * said it changed, rather than opening it.
+   */
+  private loadViewData(data: string, reread = false): void {
+    const sameFile = this.file !== null && this.file.path === this.loadedPath;
+    const again = reread && sameFile && !this.guard.locked;
+    // A text this view loaded or wrote itself: nothing new is on disk, so the
+    // notebook, and its undo history, stay as they are (FineNotes#273).
+    if (again && this.ownTexts.has(data)) {
+      this.diskReloads.own++;
+      // An older one, perhaps put back by a sync: the file gets this view's again.
+      this.saveRequest();
+      return;
+    }
     // The same file read again (changed on disk): stay on the tab shown.
-    const stayOn =
-      this.file !== null && this.file.path === this.loadedPath ? this.activeTab : NOTES_TAB;
+    const stayOn = sameFile ? this.activeTab : NOTES_TAB;
+    // What this view has not saved yet, to carry onto the file as it is now.
+    const unsaved = again ? this.unsavedSinceKnown() : null;
     const { body, doc, payload, json } = parseInkFile(data, this.settings.paperWidth);
     const held = this.guard.admit({
       text: data,
@@ -1137,14 +1177,33 @@ export class InkView extends TextFileView {
     }
     this.noteBody = body;
     this.doc = doc ?? this.blankNotebook();
+    if (!sameFile || held) this.ownTexts.forget();
+    this.knownText = held ? null : data;
+    if (!held) this.ownTexts.note(data);
+    let merged = false;
+    if (again && !held && doc) {
+      if (unsaved) {
+        const result = mergeReload(unsaved.base, unsaved.doc, doc);
+        this.doc = result.doc;
+        // The note's own text: this view's, unless it changed over there.
+        if (body === unsaved.baseBody) this.noteBody = unsaved.body;
+        this.diskReloads.merged++;
+        this.diskReloads.carried += result.carried;
+        merged = true;
+      } else {
+        this.diskReloads.replaced++;
+      }
+    }
     if (doc && payload !== undefined && !held) this.encoder.remember(payload, json);
     // Files it points at that moved while it was closed (#14), and notes
     // its links lead to that Obsidian renamed in the links list.
     if (doc && !held && this.relinkDoc() + this.adoptRenamedLinks(body) > 0) this.requestSave();
     // Ticks made in the note (the Tasks plugin) since the notebook wrote it.
     if (doc && !held) this.adoptTicks(body);
+    // What this view carried over is not on disk yet.
+    if (merged) this.requestSave();
     this.loadedPath = this.file?.path ?? null;
-    this.textPanel?.load(body);
+    this.textPanel?.load(this.noteBody);
     if (!this.mounted) return;
     this.showDocument();
     this.matchPdfResolution();
@@ -1158,6 +1217,28 @@ export class InkView extends TextFileView {
     this.scheduleDeviceReading(DEVICE_READ_OPEN_MS);
     window.clearTimeout(this.pdfIndexTimer);
     this.pdfIndexTimer = window.setTimeout(() => void this.indexPdfText(), PDF_INDEX_DELAY_MS);
+  }
+
+  /**
+   * This view's notebook and note as stored, with the text it last loaded or
+   * wrote, when they differ from it: what it has not saved yet. `null` when
+   * nothing is unsaved, or nothing is known to measure it against.
+   */
+  private unsavedSinceKnown(): {
+    base: InkDocument;
+    baseBody: string;
+    doc: InkDocument;
+    body: string;
+  } | null {
+    const known = this.knownText;
+    if (known === null) return null;
+    const text = this.getViewData();
+    if (text === known) return null;
+    const width = this.settings.paperWidth;
+    const base = parseInkFile(known, width);
+    const local = parseInkFile(text, width);
+    if (!base.doc || !local.doc) return null;
+    return { base: base.doc, baseBody: base.body, doc: local.doc, body: local.body };
   }
 
   /**
@@ -1249,6 +1330,8 @@ export class InkView extends TextFileView {
     this.recordLastPage();
     this.restoredPath = null;
     this.loadedPath = null;
+    this.knownText = null;
+    this.ownTexts.forget();
     // The worker holds this notebook's pages: let it go with them.
     this.saver.stop();
     this.noteBody = "";
@@ -1752,6 +1835,8 @@ export class InkView extends TextFileView {
         file: this.file?.path ?? null,
         // A lag after a cold start, pinned without a console (startup-log.ts).
         startup: this.plugin.startup.report(),
+        // The file read again while open, and what became of this view's ink (#273).
+        diskReloads: { ...this.diskReloads },
       }) ?? null
     );
   }
@@ -4213,6 +4298,10 @@ export class InkView extends TextFileView {
         onTextEditing: (style) => this.toolbar?.setTextTarget(style),
         onTextAnchor: (rect) => this.toolbar?.setTextAnchor(rect),
         textPillState: () => this.toolbar?.textPillState ?? "-",
+        diskState: () => {
+          const { own, merged, carried, replaced } = this.diskReloads;
+          return `own${own}/merged${merged}+${carried}/replaced${replaced}`;
+        },
         // A copied picture also goes to the system clipboard, for other apps;
         // one pasted from there comes in as any other picture does.
         onCopyImage: (image) => copyPictureToSystemClipboard(this.app, image),
