@@ -1530,11 +1530,157 @@ function decodePayload(payload: string, fallbackWidth: number): { doc: InkDocume
         : "the payload's version is not a number",
     );
   }
+  // Its pages are only names: decoded here they would be empty pages, and a
+  // save from them would put an empty notebook over the real one.
+  if (label.features.includes("page-files")) {
+    throw new SerializeError("the notebook keeps its pages in files of their own");
+  }
   const json = stage("the payload is not base64 of DEFLATE data", () =>
     inflateFromBase64(text.slice(colon + 1)),
   );
   const parsed = stage("the payload is not JSON", () => JSON.parse(json) as unknown);
   return { doc: readDocument(parsed, fallbackWidth), json };
+}
+
+// --- Pages kept in files of their own (FineNotes#274) -----------------------------
+
+/** A page kept in a file of its own: its id, and its file relative to the notebook's folder. */
+export interface PageFileRef {
+  readonly id: string;
+  readonly file: string;
+}
+
+/** A notebook split for one file per page: the notebook's payload, and each page's. */
+export interface SplitDocument {
+  /** The manifest: everything but the pages, which it names in order. */
+  readonly manifest: string;
+  readonly pages: readonly { readonly ref: PageFileRef; readonly payload: string }[];
+}
+
+/**
+ * A notebook as a manifest plus one payload per page. `files` names each
+ * page's file (relative to the notebook's folder), in page order; the
+ * caller makes them unique. The manifest's label names `page-files` beside
+ * every feature the notebook uses, so a build that cannot read it refuses
+ * it; each page's label names the features that page uses.
+ */
+export function splitDocument(doc: InkDocument, files: readonly string[]): SplitDocument {
+  if (files.length !== doc.pages.length) throw new Error("one file name per page");
+  const head = storeHead(doc);
+  const requires: FormatFeature[] = [...(head.requires ?? []), "page-files"];
+  const refs: PageFileRef[] = doc.pages.map((page, i) => ({ id: page.id, file: files[i] }));
+  const manifestJson = JSON.stringify({ ...head, requires, pages: refs });
+  return {
+    manifest: `${payloadLabel(requires)}:${deflateToBase64(manifestJson, SAVE_LEVEL)}`,
+    pages: doc.pages.map((page, i) => ({ ref: refs[i], payload: encodePagePayload(doc, page) })),
+  };
+}
+
+/** One page as a `v<n>:<base64>` payload, its label naming what the page uses. */
+function encodePagePayload(doc: InkDocument, page: Page): string {
+  const alone: InkDocument = { version: doc.version, view: doc.view, pages: [page] };
+  return `${payloadLabel(featuresOf(alone))}:${deflateToBase64(JSON.stringify(storePage(page)), SAVE_LEVEL)}`;
+}
+
+/** A notebook put together from its page files, and the pages whose files were not there. */
+export interface InkDocumentLoad {
+  doc: InkDocument;
+  missing: PageFileRef[];
+}
+
+/** A notebook payload that keeps its pages in files of their own, read. */
+export interface PageFilesManifest {
+  /** The pages' files, in page order. */
+  readonly refs: readonly PageFileRef[];
+  /** The stored head (everything but the pages), as read. */
+  readonly head: Record<string, unknown>;
+}
+
+/** Whether a payload's label says its pages are kept in files of their own. */
+export function isPageFilesPayload(payload: string): boolean {
+  const text = payload.trim();
+  const colon = text.indexOf(":");
+  if (colon < 0) return false;
+  const label = readPayloadLabel(text.slice(0, colon));
+  return !isLabelProblem(label) && label.features.includes("page-files");
+}
+
+/**
+ * Read a page-files manifest. `null` when the payload is not one (or names a
+ * feature this build lacks). Throws {@link SerializeError} for a manifest
+ * that cannot be read. A page named twice, or with no file, is skipped: a
+ * page id must lead to one page.
+ */
+export function readPageFilesManifest(payload: string): PageFilesManifest | null {
+  if (!isPageFilesPayload(payload)) return null;
+  const text = payload.trim();
+  const json = stage("the manifest is not base64 of DEFLATE data", () =>
+    inflateFromBase64(text.slice(text.indexOf(":") + 1)),
+  );
+  const raw = stage("the manifest is not JSON", () => JSON.parse(json) as unknown);
+  if (!isRecord(raw)) throw new SerializeError("the manifest is not a JSON object");
+  const seen = new Set<string>();
+  const refs: PageFileRef[] = [];
+  for (const entry of Array.isArray(raw.pages) ? raw.pages : []) {
+    if (!isRecord(entry) || typeof entry.id !== "string" || typeof entry.file !== "string") {
+      continue;
+    }
+    if (!entry.id || !entry.file || seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    refs.push({ id: entry.id, file: entry.file });
+  }
+  const head: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) if (key !== "pages") head[key] = value;
+  return { refs, head };
+}
+
+/**
+ * Read one page's payload to its stored JSON. Throws {@link SerializeError}
+ * when it cannot be read, or names a feature this build lacks.
+ */
+export function readPagePayload(payload: string): unknown {
+  const text = payload.trim();
+  const colon = text.indexOf(":");
+  if (!text.startsWith("v") || colon < 0) {
+    throw new SerializeError("the page does not start with `v<n>:`");
+  }
+  const label = readPayloadLabel(text.slice(0, colon));
+  if (isLabelProblem(label)) {
+    throw new SerializeError(
+      label.kind === "unknown-feature"
+        ? `the page uses "${label.feature}", which needs a newer FineNotes`
+        : "the page's version is not a number",
+    );
+  }
+  const json = stage("the page is not base64 of DEFLATE data", () =>
+    inflateFromBase64(text.slice(colon + 1)),
+  );
+  return stage("the page is not JSON", () => JSON.parse(json) as unknown);
+}
+
+/**
+ * The notebook a manifest and its pages make. `pageOf` hands back a page's
+ * stored JSON (from {@link readPagePayload}), or `undefined` when its file
+ * is missing or unreadable: those pages come back blank, with their refs in
+ * `missing`, and a notebook with any missing must not be saved.
+ */
+export function assemblePageFiles(
+  manifest: PageFilesManifest,
+  pageOf: (ref: PageFileRef) => unknown,
+  fallbackWidth = DEFAULT_PAPER_WIDTH,
+): InkDocumentLoad {
+  const missing: PageFileRef[] = [];
+  const pages = manifest.refs.map((ref) => {
+    const raw = pageOf(ref);
+    if (!isRecord(raw)) {
+      missing.push(ref);
+      return { id: ref.id };
+    }
+    // The manifest names the page: its file cannot give it another id.
+    return { ...raw, id: ref.id };
+  });
+  const doc = readDocument({ ...manifest.head, pages }, fallbackWidth);
+  return { doc, missing };
 }
 
 // --- The note file ---------------------------------------------------------------

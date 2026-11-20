@@ -26,6 +26,8 @@ const { pageKeys, updatePageTranscripts } = await import("../../src/recognition/
 const { encodeDocument } = await import("../../src/model/serialize");
 const { VENDORS } = await import("../../src/recognition/llm-request");
 const { StartupLog } = await import("../../src/view/startup-log");
+const { splitDocument, inkFileText: fileText } = await import("../../src/model/serialize");
+const { pageFileNames, pageFileText } = await import("../../src/model/page-files");
 
 type View = InstanceType<typeof InkView>;
 
@@ -516,5 +518,100 @@ describe("saving while the pen writes", () => {
     pen(view)(true);
     await view.save(true);
     expect(saves).toBe(1);
+  });
+});
+
+describe("a notebook kept as one file per page (#274)", () => {
+  /** A view over a vault holding `files`, its notebook at `Physics/Physics.notebook.md`. */
+  function openOver(files: Map<string, string>): View {
+    plugin = fakePlugin();
+    const app = {
+      vault: {
+        getAbstractFileByPath: (path: string) => (files.has(path) ? new TFile(path) : null),
+        read: (file: TFile) => Promise.resolve(files.get(file.path) ?? ""),
+      },
+    };
+    const view = new InkView(new WorkspaceLeaf(app) as never, plugin as never);
+    (view as unknown as { file: TFile }).file = new TFile("Physics/Physics.notebook.md", 100);
+    return view;
+  }
+
+  /** A three-page notebook as page files, and its notebook file. */
+  function threePages(): { notebook: string; files: Map<string, string> } {
+    const doc = emptyDocument(1024);
+    doc.pages = [blankPage("p1"), blankPage("p2"), blankPage("p3")];
+    doc.pages[1].strokes.push({
+      id: "s1",
+      tool: "pen",
+      color: "#1a1a1a",
+      size: 3,
+      pts: [10, 20, 0.5, 30, 40, 0.5],
+    } as never);
+    const split = splitDocument(doc, pageFileNames(doc.pages));
+    const files = new Map<string, string>();
+    for (const { ref, payload } of split.pages) {
+      files.set(`Physics/${ref.file}`, pageFileText(payload));
+    }
+    return { notebook: fileText("# Physics\n\nMy prose.", split.manifest), files };
+  }
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  };
+
+  it("shows its pages from their files, read-only, and writes nothing", async () => {
+    const { notebook, files } = threePages();
+    const view = openOver(files);
+    view.setViewData(notebook, true);
+    await settle();
+    const doc = inside(view).doc as unknown as { pages: { id: string; strokes: unknown[] }[] };
+    expect(doc.pages.map((page) => page.id)).toEqual(["p1", "p2", "p3"]);
+    expect(doc.pages[1].strokes).toHaveLength(1);
+    // Held: what it would save is the file exactly as read, and it takes no edits.
+    expect(view.getViewData()).toBe(notebook);
+    expect(inside(view).isProtected()).toBe(true);
+    expect(notices.map((n) => n.message)).toEqual([
+      expect.stringContaining("files of their own"),
+      expect.stringContaining("read-only"),
+    ]);
+  });
+
+  it("shows a page not synced yet as blank, and reads it when it arrives", async () => {
+    vi.useFakeTimers();
+    const { notebook, files } = threePages();
+    const late = files.get("Physics/Pages/p2.md") ?? "";
+    files.delete("Physics/Pages/p2.md");
+    const view = openOver(files);
+    view.setViewData(notebook, true);
+    await settle();
+    const pages = (): { strokes: unknown[] }[] =>
+      (inside(view).doc as unknown as { pages: { strokes: unknown[] }[] }).pages;
+    expect(pages()[1].strokes).toHaveLength(0);
+    expect(notices).toHaveLength(1);
+    expect(notices[0].message).toContain("not finished syncing");
+    files.set("Physics/Pages/p2.md", late);
+    (view as unknown as { pageFileChanged(path: string): void }).pageFileChanged(
+      "Physics/Pages/p2.md",
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await settle();
+    expect(pages()[1].strokes).toHaveLength(1);
+    // Read again without a second notice.
+    expect(notices).toHaveLength(1);
+    expect(view.getViewData()).toBe(notebook);
+  });
+
+  it("ignores files that are not its pages", async () => {
+    vi.useFakeTimers();
+    const { notebook, files } = threePages();
+    const view = openOver(files);
+    view.setViewData(notebook, true);
+    await settle();
+    const before = inside(view).doc;
+    (view as unknown as { pageFileChanged(path: string): void }).pageFileChanged(
+      "Physics/Images/p2.md",
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(inside(view).doc).toBe(before);
   });
 });

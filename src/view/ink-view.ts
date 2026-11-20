@@ -68,7 +68,14 @@ import {
   blankPage,
   emptyDocument,
 } from "../model/document";
-import { DocumentEncoder, buildInkFile, parseInkFile } from "../model/serialize";
+import {
+  DocumentEncoder,
+  type PageFilesManifest,
+  buildInkFile,
+  parseInkFile,
+  readPageFilesManifest,
+} from "../model/serialize";
+import { readPageFilesNotebook, resolvePageFile } from "../model/page-files";
 import { BackgroundSaver } from "./background-save";
 import type { RecognitionProvider } from "../recognition/provider";
 import { MANUAL_PROVIDER_ID } from "../recognition/manual";
@@ -719,6 +726,18 @@ function touchedInk(strokeIds: readonly string[], read: SelectionText | null): s
   return [...ids];
 }
 
+/** Page files changing together (a sync landing) are read once they have settled, ms. */
+const PAGE_FILES_SETTLE_MS = 300;
+
+/** The manifest a held payload holds, when it is one of a notebook kept as one file per page. */
+function pageFilesManifestOf(payload: string): PageFilesManifest | null {
+  try {
+    return readPageFilesManifest(payload);
+  } catch {
+    return null;
+  }
+}
+
 /** How long the pen rests after a practice sheet's last line before the sharing invite. */
 const SHEET_INVITE_DELAY_MS = 4000;
 
@@ -796,6 +815,18 @@ export class InkView extends TextFileView {
   private lastPageTimer = 0;
   /** The file whose data `setViewData` last loaded; `null` after `clear`. */
   private loadedPath: string | null = null;
+  /**
+   * The notebook shown keeps each page in a file of its own (FineNotes#274):
+   * its manifest and its pages' vault paths. Such a notebook is shown from
+   * its page files and held read-only, so it is never saved as one file.
+   */
+  private pageFiles: { path: string; manifest: PageFilesManifest; files: Set<string> } | null =
+    null;
+  /** Counts loads, so page files read for an earlier one are dropped. */
+  private pageFilesRead = 0;
+  private pageFilesTimer = 0;
+  /** The notebook whose page-files notice has shown, so a reload does not repeat it. */
+  private pageFilesNoticed: string | null = null;
   private backdrops: VaultBackdropRenderer | null = null;
   /** The same PDFs at thumbnail size, so the sidebar never asks for page-sized rasters. */
   private thumbBackdrops: VaultBackdropRenderer | null = null;
@@ -1129,7 +1160,9 @@ export class InkView extends TextFileView {
       bytesOnDisk: this.file?.stat.size ?? 0,
       decoded: doc !== null,
     });
-    if (held) {
+    // A notebook kept as one file per page is held too: its pages come from their files.
+    const manifest = held && payload !== undefined ? pageFilesManifestOf(payload) : null;
+    if (held && !manifest) {
       const newer = payload !== undefined && needsNewerReader(payload);
       // Shown once when a load is held (see load-guard.ts); the second text is
       // for a notebook a newer FineNotes wrote with something this one cannot keep.
@@ -1137,6 +1170,8 @@ export class InkView extends TextFileView {
     }
     this.noteBody = body;
     this.doc = doc ?? this.blankNotebook();
+    this.pageFiles = null;
+    this.pageFilesRead++;
     if (doc && payload !== undefined && !held) this.encoder.remember(payload, json);
     // Files it points at that moved while it was closed (#14), and notes
     // its links lead to that Obsidian renamed in the links list.
@@ -1144,6 +1179,7 @@ export class InkView extends TextFileView {
     // Ticks made in the note (the Tasks plugin) since the notebook wrote it.
     if (doc && !held) this.adoptTicks(body);
     this.loadedPath = this.file?.path ?? null;
+    if (manifest && this.loadedPath !== null) void this.readPageFiles(this.loadedPath, manifest);
     this.textPanel?.load(body);
     if (!this.mounted) return;
     this.showDocument();
@@ -1151,13 +1187,73 @@ export class InkView extends TextFileView {
     // A recording still running here means the file changed underneath
     // it: it stops, and joins the document now shown.
     this.audio?.documentReplaced();
-    this.applyPendingPage();
+    // The page to open on waits for the pages, when they are still being read.
+    if (!manifest) this.applyPendingPage();
     if (stayOn !== NOTES_TAB && this.offersPdfTab(stayOn)) this.showTab(stayOn);
     // Another notebook, or this one changed on disk: read what is unread.
     this.deviceRead.clear();
     this.scheduleDeviceReading(DEVICE_READ_OPEN_MS);
     window.clearTimeout(this.pdfIndexTimer);
     this.pdfIndexTimer = window.setTimeout(() => void this.indexPdfText(), PDF_INDEX_DELAY_MS);
+  }
+
+  /**
+   * Show a notebook kept as one file per page (FineNotes#274) from its page
+   * files. The load stays held, so nothing is written: this build reads the
+   * layout but does not save it. A page whose file has not synced yet shows
+   * blank, and the notebook is read again when its files change.
+   */
+  private async readPageFiles(path: string, manifest: PageFilesManifest): Promise<void> {
+    const read = ++this.pageFilesRead;
+    const files = new Set<string>();
+    for (const ref of manifest.refs) {
+      const file = resolvePageFile(path, ref.file);
+      if (file !== null) files.add(file);
+    }
+    this.pageFiles = { path, manifest, files };
+    const texts = new Map<string, string>();
+    await Promise.all(
+      [...files].map(async (filePath) => {
+        const file = this.app.vault.getAbstractFileByPath(filePath);
+        if (!(file instanceof TFile)) return;
+        try {
+          texts.set(filePath, await this.app.vault.read(file));
+        } catch {
+          // Unreadable: the page shows blank, as one not synced yet.
+        }
+      }),
+    );
+    if (read !== this.pageFilesRead || this.file?.path !== path) return;
+    const { doc, missing } = readPageFilesNotebook(
+      path,
+      manifest,
+      (filePath) => texts.get(filePath),
+      this.settings.paperWidth,
+    );
+    this.doc = doc;
+    if (this.pageFilesNoticed !== path) {
+      this.pageFilesNoticed = path;
+      new Notice(
+        missing.length > 0 ? t("view.notice.pageFilesMissing") : t("view.notice.pageFiles"),
+        10000,
+      );
+    }
+    if (!this.mounted) return;
+    this.showDocument();
+    this.matchPdfResolution();
+    this.applyPendingPage();
+  }
+
+  /** A file changed: a page of the notebook shown is read again, once the sync settles. */
+  private pageFileChanged(path: string): void {
+    if (!this.pageFiles?.files.has(path)) return;
+    window.clearTimeout(this.pageFilesTimer);
+    this.pageFilesTimer = window.setTimeout(() => {
+      this.pageFilesTimer = 0;
+      const shown = this.pageFiles;
+      if (shown && this.file?.path === shown.path)
+        void this.readPageFiles(shown.path, shown.manifest);
+    }, PAGE_FILES_SETTLE_MS);
   }
 
   /**
@@ -1249,6 +1345,8 @@ export class InkView extends TextFileView {
     this.recordLastPage();
     this.restoredPath = null;
     this.loadedPath = null;
+    this.pageFiles = null;
+    this.pageFilesRead++;
     // The worker holds this notebook's pages: let it go with them.
     this.saver.stop();
     this.noteBody = "";
@@ -1513,6 +1611,8 @@ export class InkView extends TextFileView {
     this.wordPopover = null;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
+    window.clearTimeout(this.pageFilesTimer);
+    this.pageFilesTimer = 0;
     window.clearTimeout(this.optionsReturnTimer);
     this.optionsReturnTimer = 0;
     this.saver.stop();
@@ -4280,6 +4380,16 @@ export class InkView extends TextFileView {
     );
     this.registerEvent(
       this.app.vault.on("delete", (file) => this.lastPageFileMoved(file.path, null)),
+    );
+    // A page of a notebook kept as one file per page synced in or changed.
+    this.registerEvent(this.app.vault.on("create", (file) => this.pageFileChanged(file.path)));
+    this.registerEvent(this.app.vault.on("modify", (file) => this.pageFileChanged(file.path)));
+    this.registerEvent(this.app.vault.on("delete", (file) => this.pageFileChanged(file.path)));
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        this.pageFileChanged(file.path);
+        this.pageFileChanged(oldPath);
+      }),
     );
     // Only what shows the page that landed is redrawn (FineNotes#1).
     this.pdfCache.onReady = (path, page, area) => {

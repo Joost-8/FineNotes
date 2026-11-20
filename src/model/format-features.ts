@@ -46,6 +46,10 @@ import { SCHEMA_VERSION } from "../constants";
  *   them (`InkDocument.beside`) or a snippet that remembers its slide (`ImageElement.slide`)
  *   (`model/beside-pdfs`); an older build would drop the tabs and their ink
  *   on its next save.
+ * - `page-files`: the payload is a manifest, and each page is kept in a file
+ *   of its own (`model/page-files`, FineNotes#274). Even a build that knows
+ *   the feature never decodes such a payload as a whole notebook: its pages
+ *   are only names, and a notebook saved from them would be empty.
  */
 export const FORMAT_FEATURES = [
   "sticky",
@@ -57,6 +61,7 @@ export const FORMAT_FEATURES = [
   "text-turn",
   "boards",
   "pdf-tabs",
+  "page-files",
 ] as const;
 
 export type FormatFeature = (typeof FORMAT_FEATURES)[number];

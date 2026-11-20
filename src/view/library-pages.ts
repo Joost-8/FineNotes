@@ -13,12 +13,19 @@
  * page's own ink, as the PDF export does.
  */
 
-import type { App, TFile } from "obsidian";
+import { type App, TFile, TFolder } from "obsidian";
 import { type ImagePainter, renderPageThumbnail } from "../canvas/renderer";
-import { parseInkFile } from "../model/serialize";
+import { type PageFilesManifest, parseInkFile, readPageFilesManifest } from "../model/serialize";
+import {
+  type FileStamp,
+  notebookStat,
+  pagesFolderOf,
+  readPageFilesNotebook,
+  resolvePageFile,
+} from "../model/page-files";
 import { readTextSection } from "../recognition/text-layer";
 import { type IndexedPage, notebookText } from "../search/library-search";
-import type { Page } from "../model/document";
+import type { InkDocument, Page } from "../model/document";
 import { type LibraryEntry, entryFromDoc, placeholderEntry } from "../model/library";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
@@ -37,6 +44,57 @@ interface Kept {
   stamp: string;
   count: number;
   pages: Map<number, Page>;
+}
+
+/**
+ * A notebook file's size and last change, counting the Markdown files in its
+ * `Pages/` folder (#274): a notebook kept as one file per page may save
+ * without its own file changing.
+ */
+export function notebookStatOf(app: App, file: TFile): FileStamp {
+  const folder = app.vault.getAbstractFileByPath(pagesFolderOf(file.path));
+  if (!(folder instanceof TFolder) || !Array.isArray(folder.children)) return file.stat;
+  const pages = folder.children
+    .filter((child): child is TFile => child instanceof TFile && child.extension === "md")
+    .map((page) => page.stat);
+  return notebookStat(file.stat, pages);
+}
+
+/** The manifest a payload holds, when it is one of a notebook kept as one file per page. */
+function manifestOf(payload: string): PageFilesManifest | null {
+  try {
+    return readPageFilesManifest(payload);
+  } catch {
+    return null;
+  }
+}
+
+/** What Home wants of a notebook read: its page count, the pages asked for, its facts and text. */
+function resultOf(
+  doc: InkDocument | null,
+  body: string,
+  want: number[],
+  facts: { path: string; edited: number } | undefined,
+  searchText: boolean,
+): ReadResult {
+  const pages = doc?.pages ?? [];
+  return {
+    count: pages.length,
+    pages: new Map(want.flatMap((i) => (pages[i] ? [[i, pages[i]] as [number, Page]] : []))),
+    ...(facts ? { entry: entryFromDoc(facts.path, facts.edited, doc) } : {}),
+    ...(searchText ? { searchText: notebookText(pages, readTextSection(body)) } : {}),
+  };
+}
+
+/** {@link resultOf} a notebook file's text, decoded on this thread. */
+function readText(
+  text: string,
+  want: number[],
+  facts: { path: string; edited: number } | undefined,
+  searchText: boolean,
+): ReadResult {
+  const parsed = parseInkFile(text);
+  return resultOf(parsed.doc, parsed.body, want, facts, searchText);
 }
 
 export class NotebookPages {
@@ -78,10 +136,21 @@ export class NotebookPages {
     facts?: { path: string; edited: number },
     searchText = false,
   ): Promise<ReadResult> {
-    const key = `${file.path}@${file.stat.mtime}:${file.stat.size}`;
+    const stat = notebookStatOf(this.app, file);
+    const key = `${file.path}@${stat.mtime}:${stat.size}`;
     // Home's own read takes the file as it is on disk, as it always has; pictures may take Obsidian's copy.
     const text = (): Promise<string> =>
       facts ? this.app.vault.read(file) : this.app.vault.cachedRead(file);
+    // A notebook with a `Pages/` folder may keep each page in a file of its
+    // own (#274): those are put together here, from their files.
+    if (this.app.vault.getAbstractFileByPath(pagesFolderOf(file.path)) instanceof TFolder) {
+      const whole = await text();
+      const parsed = parseInkFile(whole);
+      const manifest = parsed.payload === undefined ? null : manifestOf(parsed.payload);
+      if (manifest)
+        return this.readPageFiles(file.path, parsed.body, manifest, want, facts, searchText);
+      return readText(whole, want, facts, searchText);
+    }
     const client = await this.client();
     if (client) {
       try {
@@ -90,15 +159,36 @@ export class NotebookPages {
         // The worker stopped: this read and every later one on the main thread.
       }
     }
-    const parsed = parseInkFile(await text());
-    const doc = parsed.doc;
-    const pages = doc?.pages ?? [];
-    return {
-      count: pages.length,
-      pages: new Map(want.flatMap((i) => (pages[i] ? [[i, pages[i]] as [number, Page]] : []))),
-      ...(facts ? { entry: entryFromDoc(facts.path, facts.edited, doc) } : {}),
-      ...(searchText ? { searchText: notebookText(pages, readTextSection(parsed.body)) } : {}),
-    };
+    return readText(await text(), want, facts, searchText);
+  }
+
+  /** {@link read} for a notebook kept as one file per page, from its manifest and page files. */
+  private async readPageFiles(
+    path: string,
+    body: string,
+    manifest: PageFilesManifest,
+    want: number[],
+    facts: { path: string; edited: number } | undefined,
+    searchText: boolean,
+  ): Promise<ReadResult> {
+    // Only the pages asked for are read, unless the whole notebook is (its facts and text).
+    const all = facts !== undefined || searchText;
+    const wanted = all ? manifest.refs : want.flatMap((i) => manifest.refs[i] ?? []);
+    const texts = new Map<string, string>();
+    await Promise.all(
+      wanted.map(async (ref) => {
+        const filePath = resolvePageFile(path, ref.file);
+        const file = filePath === null ? null : this.app.vault.getAbstractFileByPath(filePath);
+        if (filePath === null || !(file instanceof TFile)) return;
+        try {
+          texts.set(filePath, await this.app.vault.cachedRead(file));
+        } catch {
+          // Unreadable: the page is blank, as one not synced yet.
+        }
+      }),
+    );
+    const { doc } = readPageFilesNotebook(path, manifest, (filePath) => texts.get(filePath));
+    return resultOf(doc, body, want, facts, searchText);
   }
 
   /**
@@ -128,7 +218,8 @@ export class NotebookPages {
   /** Page `index` of `file`, fetched with the pages after it and kept a while. */
   private async page(file: TFile, index: number): Promise<Page | null> {
     this.releaseLater();
-    const stamp = `${file.stat.mtime}:${file.stat.size}`;
+    const stat = notebookStatOf(this.app, file);
+    const stamp = `${stat.mtime}:${stat.size}`;
     for (;;) {
       const kept = this.kept.get(file.path);
       if (kept?.stamp === stamp && (kept.pages.has(index) || index >= kept.count))
