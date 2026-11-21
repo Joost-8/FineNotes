@@ -31,6 +31,7 @@ import {
   Platform,
   TextFileView,
   TFile,
+  TFolder,
   type WorkspaceLeaf,
   normalizePath,
 } from "obsidian";
@@ -70,6 +71,14 @@ import {
   emptyDocument,
 } from "../model/document";
 import { DocumentEncoder, buildInkFile, parseInkFile } from "../model/serialize";
+import {
+  type DevicePagesLoad,
+  devicePagesFolderOf,
+  isDevicePagesPayload,
+  notebookIdOf,
+  readDeviceFileName,
+  readDevicePagesNotebook,
+} from "../model/device-pages";
 import { BackgroundSaver } from "./background-save";
 import type { RecognitionProvider } from "../recognition/provider";
 import { MANUAL_PROVIDER_ID } from "../recognition/manual";
@@ -728,6 +737,9 @@ function touchedInk(strokeIds: readonly string[], read: SelectionText | null): s
   return [...ids];
 }
 
+/** Files of a notebook changing together (a sync landing) are read once they have settled, ms. */
+const DEVICE_PAGES_SETTLE_MS = 300;
+
 /** How long the pen rests after a practice sheet's last line before the sharing invite. */
 const SHEET_INVITE_DELAY_MS = 4000;
 
@@ -805,6 +817,17 @@ export class InkView extends TextFileView {
   private lastPageTimer = 0;
   /** The file whose data `setViewData` last loaded; `null` after `clear`. */
   private loadedPath: string | null = null;
+  /**
+   * The notebook shown keeps its pages in one file per page per device
+   * (FineNotes#274): its payload and its page folder. It is shown from those
+   * files and held read-only, so nothing of it is ever written here.
+   */
+  private devicePages: { path: string; payload: string; folder: string } | null = null;
+  /** Counts loads, so page files read for an earlier one are dropped. */
+  private devicePagesRead = 0;
+  private devicePagesTimer = 0;
+  /** The notebook whose page-files notice has shown, so a reread does not repeat it. */
+  private devicePagesNoticed: string | null = null;
   private backdrops: VaultBackdropRenderer | null = null;
   /** The same PDFs at thumbnail size, so the sidebar never asks for page-sized rasters. */
   private thumbBackdrops: VaultBackdropRenderer | null = null;
@@ -1142,7 +1165,12 @@ export class InkView extends TextFileView {
       bytesOnDisk: this.file?.stat.size ?? 0,
       decoded: doc !== null,
     });
-    if (held) {
+    // Kept as one file per page per device: held too, its pages come from their files.
+    const pageFolder =
+      held && payload !== undefined && isDevicePagesPayload(payload)
+        ? this.devicePagesFolder(body)
+        : null;
+    if (held && !pageFolder) {
       const newer = payload !== undefined && needsNewerReader(payload);
       // Shown once when a load is held (see load-guard.ts); the second text is
       // for a notebook a newer FineNotes wrote with something this one cannot keep.
@@ -1150,6 +1178,8 @@ export class InkView extends TextFileView {
     }
     this.noteBody = body;
     this.doc = doc ?? this.blankNotebook();
+    this.devicePages = null;
+    this.devicePagesRead++;
     if (doc && payload !== undefined && !held) this.encoder.remember(payload, json);
     // Files it points at that moved while it was closed (#14), and notes
     // its links lead to that Obsidian renamed in the links list.
@@ -1158,6 +1188,10 @@ export class InkView extends TextFileView {
     if (doc && !held) this.adoptTicks(body);
     this.handOverWaitingPages(this.loadedPath, this.file?.path ?? null);
     this.loadedPath = this.file?.path ?? null;
+    if (pageFolder && payload !== undefined && this.loadedPath !== null) {
+      this.devicePages = { path: this.loadedPath, payload, folder: pageFolder };
+      void this.readDevicePages();
+    }
     this.textPanel?.load(body);
     if (!this.mounted) return;
     this.showDocument();
@@ -1165,13 +1199,81 @@ export class InkView extends TextFileView {
     // A recording still running here means the file changed underneath
     // it: it stops, and joins the document now shown.
     this.audio?.documentReplaced();
-    this.applyPendingPage();
+    // The page to open on waits for the pages, while they are being read.
+    if (!pageFolder) this.applyPendingPage();
     if (stayOn !== NOTES_TAB && this.offersPdfTab(stayOn)) this.showTab(stayOn);
     // Another notebook, or this one changed on disk: read what is unread.
     this.deviceRead.clear();
     this.scheduleDeviceReading(DEVICE_READ_OPEN_MS);
     window.clearTimeout(this.pdfIndexTimer);
     this.pdfIndexTimer = window.setTimeout(() => void this.indexPdfText(), PDF_INDEX_DELAY_MS);
+  }
+
+  /** The page folder of a notebook kept as one file per page per device, or `null` without an id. */
+  private devicePagesFolder(body: string): string | null {
+    const id = notebookIdOf(body);
+    const path = this.file?.path;
+    return id !== null && path ? devicePagesFolderOf(path, id) : null;
+  }
+
+  /**
+   * Show a notebook kept as one file per page per device (FineNotes#274)
+   * from its files. The load stays held, so nothing is written: this build
+   * reads the layout but does not save it. A page whose file has not synced
+   * yet shows what has, and the notebook is read again as its files change.
+   */
+  private async readDevicePages(): Promise<void> {
+    const shown = this.devicePages;
+    if (!shown) return;
+    const read = ++this.devicePagesRead;
+    const texts = new Map<string, string>();
+    const folder = this.app.vault.getAbstractFileByPath(shown.folder);
+    const children = folder instanceof TFolder ? folder.children : [];
+    await Promise.all(
+      children.map(async (file) => {
+        if (!(file instanceof TFile) || !readDeviceFileName(file.name)) return;
+        try {
+          texts.set(file.name, await this.app.vault.read(file));
+        } catch {
+          // Unreadable: as one not synced yet.
+        }
+      }),
+    );
+    if (read !== this.devicePagesRead || this.file?.path !== shown.path) return;
+    let load: DevicePagesLoad;
+    try {
+      load = readDevicePagesNotebook(shown.payload, texts, this.settings.paperWidth);
+    } catch {
+      // The notebook file's own payload is cut short: held, as any such load.
+      new Notice(t("view.notice.heldLoad"), 10000);
+      return;
+    }
+    this.doc = load.doc;
+    if (this.devicePagesNoticed !== shown.path) {
+      this.devicePagesNoticed = shown.path;
+      new Notice(
+        load.syncing ? t("view.notice.devicePagesSyncing") : t("view.notice.devicePages"),
+        10000,
+      );
+    }
+    if (!this.mounted) return;
+    this.showDocument();
+    this.matchPdfResolution();
+    this.applyPendingPage();
+  }
+
+  /** A file changed: a file of the notebook shown is read again, once the sync settles. */
+  private devicePageChanged(path: string): void {
+    const shown = this.devicePages;
+    if (!shown || !path.startsWith(`${shown.folder}/`)) return;
+    if (!readDeviceFileName(path.slice(shown.folder.length + 1))) return;
+    window.clearTimeout(this.devicePagesTimer);
+    this.devicePagesTimer = window.setTimeout(() => {
+      this.devicePagesTimer = 0;
+      if (this.devicePages === shown && this.file?.path === shown.path) {
+        void this.readDevicePages();
+      }
+    }, DEVICE_PAGES_SETTLE_MS);
   }
 
   /**
@@ -1263,6 +1365,8 @@ export class InkView extends TextFileView {
     this.recordLastPage();
     this.restoredPath = null;
     this.loadedPath = null;
+    this.devicePages = null;
+    this.devicePagesRead++;
     // The worker holds this notebook's pages: let it go with them.
     this.saver.stop();
     this.noteBody = "";
@@ -1530,6 +1634,8 @@ export class InkView extends TextFileView {
     this.wordPopover = null;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
+    window.clearTimeout(this.devicePagesTimer);
+    this.devicePagesTimer = 0;
     window.clearTimeout(this.optionsReturnTimer);
     this.optionsReturnTimer = 0;
     this.saver.stop();
@@ -4518,6 +4624,16 @@ export class InkView extends TextFileView {
     );
     this.registerEvent(
       this.app.vault.on("delete", (file) => this.lastPageFileMoved(file.path, null)),
+    );
+    // A file of a notebook kept as one file per page per device synced in or changed.
+    this.registerEvent(this.app.vault.on("create", (file) => this.devicePageChanged(file.path)));
+    this.registerEvent(this.app.vault.on("modify", (file) => this.devicePageChanged(file.path)));
+    this.registerEvent(this.app.vault.on("delete", (file) => this.devicePageChanged(file.path)));
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        this.devicePageChanged(file.path);
+        this.devicePageChanged(oldPath);
+      }),
     );
     // Only what shows the page that landed is redrawn (FineNotes#1).
     this.pdfCache.onReady = (path, page, area) => {

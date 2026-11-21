@@ -13,12 +13,22 @@
  * page's own ink, as the PDF export does.
  */
 
-import type { App, TFile } from "obsidian";
+import { type App, TFile, TFolder } from "obsidian";
 import { type ImagePainter, renderPageThumbnail } from "../canvas/renderer";
 import { parseInkFile } from "../model/serialize";
+import {
+  type FileStamp,
+  NOTEBOOK_ID_KEY,
+  devicePagesFolderOf,
+  isDevicePagesPayload,
+  isNotebookId,
+  notebookStat,
+  readDeviceFileName,
+  readDevicePagesNotebook,
+} from "../model/device-pages";
 import { readTextSection } from "../recognition/text-layer";
 import { type IndexedPage, notebookText } from "../search/library-search";
-import type { Page } from "../model/document";
+import type { InkDocument, Page } from "../model/document";
 import { type LibraryEntry, entryFromDoc, placeholderEntry } from "../model/library";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
@@ -37,6 +47,55 @@ interface Kept {
   stamp: string;
   count: number;
   pages: Map<number, Page>;
+}
+
+/**
+ * The page folder of a notebook kept as one file per page per device
+ * (#274), from the id in its frontmatter, when that folder is there.
+ */
+export function devicePagesFolderFor(app: App, file: TFile): TFolder | null {
+  const id: unknown = app.metadataCache.getFileCache(file)?.frontmatter?.[NOTEBOOK_ID_KEY];
+  if (!isNotebookId(id)) return null;
+  const folder = app.vault.getAbstractFileByPath(devicePagesFolderOf(file.path, id));
+  return folder instanceof TFolder ? folder : null;
+}
+
+/** The files of a page folder that belong to the layout. */
+function deviceFilesIn(folder: TFolder): TFile[] {
+  return (Array.isArray(folder.children) ? folder.children : []).filter(
+    (child): child is TFile => child instanceof TFile && readDeviceFileName(child.name) !== null,
+  );
+}
+
+/**
+ * A notebook file's size and last change, counting the files in its page
+ * folder (#274): a notebook kept as one file per page per device saves
+ * without its own file changing.
+ */
+export function notebookStatOf(app: App, file: TFile): FileStamp {
+  const folder = devicePagesFolderFor(app, file);
+  if (!folder) return file.stat;
+  return notebookStat(
+    file.stat,
+    deviceFilesIn(folder).map((page) => page.stat),
+  );
+}
+
+/** What Home wants of a notebook read: its page count, the pages asked for, its facts and text. */
+function resultOf(
+  doc: InkDocument | null,
+  body: string,
+  want: number[],
+  facts: { path: string; edited: number } | undefined,
+  searchText: boolean,
+): ReadResult {
+  const pages = doc?.pages ?? [];
+  return {
+    count: pages.length,
+    pages: new Map(want.flatMap((i) => (pages[i] ? [[i, pages[i]] as [number, Page]] : []))),
+    ...(facts ? { entry: entryFromDoc(facts.path, facts.edited, doc) } : {}),
+    ...(searchText ? { searchText: notebookText(pages, readTextSection(body)) } : {}),
+  };
 }
 
 export class NotebookPages {
@@ -78,10 +137,21 @@ export class NotebookPages {
     facts?: { path: string; edited: number },
     searchText = false,
   ): Promise<ReadResult> {
-    const key = `${file.path}@${file.stat.mtime}:${file.stat.size}`;
+    const stat = notebookStatOf(this.app, file);
+    const key = `${file.path}@${stat.mtime}:${stat.size}`;
     // Home's own read takes the file as it is on disk, as it always has; pictures may take Obsidian's copy.
     const text = (): Promise<string> =>
       facts ? this.app.vault.read(file) : this.app.vault.cachedRead(file);
+    // Kept as one file per page per device (#274): put together here, from its files.
+    const folder = devicePagesFolderFor(this.app, file);
+    if (folder) {
+      const parsed = parseInkFile(await text());
+      if (parsed.payload !== undefined && isDevicePagesPayload(parsed.payload)) {
+        const doc = await this.readDevicePages(parsed.payload, folder);
+        return resultOf(doc, parsed.body, want, facts, searchText);
+      }
+      return resultOf(parsed.doc, parsed.body, want, facts, searchText);
+    }
     const client = await this.client();
     if (client) {
       try {
@@ -91,14 +161,26 @@ export class NotebookPages {
       }
     }
     const parsed = parseInkFile(await text());
-    const doc = parsed.doc;
-    const pages = doc?.pages ?? [];
-    return {
-      count: pages.length,
-      pages: new Map(want.flatMap((i) => (pages[i] ? [[i, pages[i]] as [number, Page]] : []))),
-      ...(facts ? { entry: entryFromDoc(facts.path, facts.edited, doc) } : {}),
-      ...(searchText ? { searchText: notebookText(pages, readTextSection(parsed.body)) } : {}),
-    };
+    return resultOf(parsed.doc, parsed.body, want, facts, searchText);
+  }
+
+  /** A notebook kept as one file per page per device, put together from its files; `null` if unreadable. */
+  private async readDevicePages(payload: string, folder: TFolder): Promise<InkDocument | null> {
+    const texts = new Map<string, string>();
+    await Promise.all(
+      deviceFilesIn(folder).map(async (file) => {
+        try {
+          texts.set(file.name, await this.app.vault.cachedRead(file));
+        } catch {
+          // Unreadable: as one not synced yet.
+        }
+      }),
+    );
+    try {
+      return readDevicePagesNotebook(payload, texts).doc;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -128,7 +210,8 @@ export class NotebookPages {
   /** Page `index` of `file`, fetched with the pages after it and kept a while. */
   private async page(file: TFile, index: number): Promise<Page | null> {
     this.releaseLater();
-    const stamp = `${file.stat.mtime}:${file.stat.size}`;
+    const stat = notebookStatOf(this.app, file);
+    const stamp = `${stat.mtime}:${stat.size}`;
     for (;;) {
       const kept = this.kept.get(file.path);
       if (kept?.stamp === stamp && (kept.pages.has(index) || index >= kept.count))

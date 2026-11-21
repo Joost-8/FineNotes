@@ -61,6 +61,8 @@ export function memoryVault(paths: string[]) {
     [...nodes.keys()].filter((p) => p === path || p.startsWith(`${path}/`)).sort();
 
   const app = {
+    // No file here has frontmatter.
+    metadataCache: { getFileCache: () => null },
     vault: {
       on(name: string, handler: Handler) {
         handlers.set(name, [...(handlers.get(name) ?? []), handler]);
