@@ -8,7 +8,16 @@ import {
 } from "../../src/model/device-pages-writer";
 import { notebookIdOf, readDevicePagesNotebook } from "../../src/model/device-pages";
 import { DotClock, attachDotClock, mintedId } from "../../src/model/dot-ids";
-import { blankPage, emptyDocument, type InkDocument, type Stroke } from "../../src/model/document";
+import {
+  type BesidePdf,
+  type InkDocument,
+  type Page,
+  type Stroke,
+  blankPage,
+  emptyDocument,
+} from "../../src/model/document";
+import { attachPdf, besidePage, isTabId } from "../../src/model/beside-pdfs";
+import { nextRecordingId } from "../../src/audio/recording";
 import { nextPageId } from "../../src/model/page-commands";
 import { decodeDocument, encodeDocument } from "../../src/model/serialize";
 import { readDot } from "../../src/model/provenance";
@@ -352,5 +361,86 @@ describe("writing one file per page per device (#274)", () => {
       legacyPayload(legacyDoc(), "n7k2q9ab").replace("+device-pages=n7k2q9ab", ""),
     );
     expect(doc.pages).toHaveLength(2);
+  });
+});
+
+describe("PDF tabs and recordings on two devices (#274)", () => {
+  /** A notebook with a PDF tab "b1" whose first PDF page has a stroke, and one recording. */
+  function withTab(): InkDocument {
+    const doc = legacyDoc();
+    const tab: BesidePdf = { id: "b1", path: "Slides.pdf", sizes: [[600, 800, 3]], marks: [] };
+    const page = besidePage(tab, 0, { width: 600, height: 800 });
+    page.strokes.push({
+      id: "s9",
+      tool: "pen",
+      color: "#111",
+      size: 3,
+      pts: [1, 2, 0.5, 3, 4, 0.5],
+    } as Stroke);
+    tab.marks.push(page);
+    doc.beside = [tab];
+    doc.recordings = [{ id: "r1", path: "a.webm", start: 1_700_000_000_000, duration: 1000 }];
+    return doc;
+  }
+
+  function devices(): [Device, Device] {
+    const payload = legacyPayload(withTab(), "n7k2q9ab");
+    return [new Device(A, payload).open(), new Device(B, payload).open()];
+  }
+
+  const tabInk = (d: Device, tab = 0, page = 0) =>
+    (d.doc.beside?.[tab]?.marks[page]?.strokes ?? []).map((s) => s.id);
+
+  it("reads a notebook's PDF tabs, their ink and its recordings back as they were", () => {
+    const [a] = devices();
+    expect(a.doc.beside?.map((t) => t.id)).toEqual(["b1"]);
+    expect(tabInk(a)).toEqual(["s9"]);
+    expect(a.doc.recordings?.map((r) => r.id)).toEqual(["r1"]);
+    expect(a.save()).toEqual([]);
+  });
+
+  it("keeps both devices' ink written at once on one PDF page", () => {
+    const [a, b] = devices();
+    const on = (d: Device) => d.doc.beside?.[0]?.marks[0] as Page;
+    on(a).strokes.push(stroke(a.doc));
+    on(b).strokes.push(stroke(b.doc));
+    a.save();
+    b.save();
+    a.pull(b).open();
+    b.pull(a).open();
+    expect(tabInk(a)).toEqual(["s9", `${A}.1`, `${B}.1`]);
+    expect(tabInk(b)).toEqual(tabInk(a));
+    // An erase on the tab reaches the other device.
+    on(b).strokes = on(b).strokes.filter((s) => s.id !== "s9");
+    b.save();
+    a.pull(b).open();
+    expect(tabInk(a)).toEqual([`${A}.1`, `${B}.1`]);
+  });
+
+  it("keeps PDF tabs and recordings two devices add at once, with ids that never collide", () => {
+    const [a, b] = devices();
+    const tabA = attachPdf(a.doc, "A.pdf", [[600, 800, 2]]);
+    const tabB = attachPdf(b.doc, "B.pdf", [[600, 800, 2]]);
+    expect(tabA.id).not.toBe(tabB.id);
+    expect(isTabId(tabA.id) && isTabId(tabB.id)).toBe(true);
+    (a.doc.recordings ??= []).push({
+      id: nextRecordingId(a.doc.recordings, a.doc),
+      path: "x.webm",
+      start: 1_700_000_000_001,
+      duration: 5,
+    });
+    (b.doc.recordings ??= []).push({
+      id: nextRecordingId(b.doc.recordings, b.doc),
+      path: "y.webm",
+      start: 1_700_000_000_002,
+      duration: 5,
+    });
+    a.save();
+    b.save();
+    a.pull(b).open();
+    b.pull(a).open();
+    expect(a.doc.beside?.map((t) => t.path).sort()).toEqual(["A.pdf", "B.pdf", "Slides.pdf"]);
+    expect(a.doc.recordings?.map((r) => r.path).sort()).toEqual(["a.webm", "x.webm", "y.webm"]);
+    expect(b.doc.beside?.map((t) => t.id)).toEqual(a.doc.beside?.map((t) => t.id));
   });
 });

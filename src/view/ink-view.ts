@@ -61,6 +61,7 @@ import {
 import {
   type AttachmentKind,
   type Bounds,
+  type BesidePdf,
   type InkDocument,
   type PageComment,
   type Page,
@@ -70,7 +71,7 @@ import {
   emptyDocument,
 } from "../model/document";
 import { DocumentEncoder, buildInkFile, inkFileText, parseInkFile } from "../model/serialize";
-import { DotClock, attachDotClock, idsIn } from "../model/dot-ids";
+import { DotClock, attachDotClock, dotClockOf, idsIn } from "../model/dot-ids";
 import {
   type DevicePagesLoad,
   devicePagesFolderOf,
@@ -6534,7 +6535,7 @@ export class InkView extends TextFileView {
     let session = this.tabSessions.get(id);
     const fresh = session === undefined;
     if (!session) {
-      session = surface.createSession(besideDocument(beside), { fixedPages: true });
+      session = surface.createSession(this.tabDocument(beside), { fixedPages: true });
       this.tabSessions.set(id, session);
     }
     this.activeTab = id;
@@ -6695,7 +6696,7 @@ export class InkView extends TextFileView {
     const old = this.tabSessions.get(id);
     this.tabSessions.delete(id);
     if (old && this.activeTab === id && this.surface) {
-      const session = this.surface.createSession(besideDocument(beside), { fixedPages: true });
+      const session = this.surface.createSession(this.tabDocument(beside), { fixedPages: true });
       this.tabSessions.set(id, session);
       this.surface.showSession(session);
       this.afterTabChange();
@@ -6982,6 +6983,18 @@ export class InkView extends TextFileView {
     this.syncPdfTabs();
     this.showTab(beside.id);
     return true;
+  }
+
+  /**
+   * A PDF tab as a document of its own (`besideDocument`). In a notebook kept
+   * as page files its new ids come from the notebook's clock (#274), so ink
+   * written on one PDF on two devices at once never shares an id.
+   */
+  private tabDocument(beside: BesidePdf): InkDocument {
+    const doc = besideDocument(beside);
+    const clock = dotClockOf(this.doc);
+    if (clock) attachDotClock(doc, clock);
+    return doc;
   }
 
   /** Every tab's pages that gained or lost marks, into the notebook (before a save). */

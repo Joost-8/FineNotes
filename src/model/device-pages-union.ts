@@ -57,6 +57,9 @@ export const ELEMENT_LISTS = [
   "links",
   "tasks",
   "connectors",
+  // Only on the notebook's own page (NOTEBOOK_PAGE): its PDF tabs and recordings.
+  "beside",
+  "recordings",
 ] as const;
 
 /** The fields of a stored page that are its register (kept in the metas), not elements. */
@@ -70,7 +73,105 @@ export const PAGE_FIELDS = [
   "tab",
   "title",
   "titleLevel",
+  // A PDF tab's page of marks: its own id (the page's id here is made of the tab's and its PDF page).
+  "markId",
 ] as const;
+
+/**
+ * The notebook's own page: what the notebook holds beside its pages, kept
+ * as elements so two devices adding at once both keep theirs: its PDF tabs
+ * (without their ink) and its recordings.
+ */
+export const NOTEBOOK_PAGE = "~notebook";
+
+/** Whether a page id is one of these made-up pages (the notebook's own, a PDF tab's page of marks). */
+export function isVirtualPage(id: string): boolean {
+  return id.startsWith("~");
+}
+
+/** The made-up page id of PDF tab `tab`'s page of marks on its PDF page `pdfPage`. */
+export function markPageId(tab: string, pdfPage: number): string {
+  return `~${tab}.${pdfPage}`;
+}
+
+/**
+ * A stored notebook as the union and the writer see it: its head (without
+ * its PDF tabs and recordings), its pages, and made-up pages for the rest,
+ * which is joined by id as pages are (FineNotes#274):
+ * - the notebook's own page (`NOTEBOOK_PAGE`): its PDF tabs, without their
+ *   ink, and its recordings, as element lists;
+ * - each PDF tab's page of marks, as a page of its own (`markPageId`), so
+ *   ink written on a PDF on two devices at once is joined like any page's.
+ */
+export function explodeStored(stored: Readonly<Record<string, unknown>>): {
+  head: Record<string, unknown>;
+  pages: Record<string, unknown>[];
+} {
+  const head: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(stored)) {
+    if (name !== "pages" && name !== "beside" && name !== "recordings") head[name] = value;
+  }
+  const pages = (Array.isArray(stored.pages) ? stored.pages : []).filter(isRecord);
+  const tabs: Record<string, unknown>[] = [];
+  const marks: Record<string, unknown>[] = [];
+  for (const tab of (Array.isArray(stored.beside) ? stored.beside : []).filter(isRecord)) {
+    const { marks: tabMarks, ...rest } = tab;
+    tabs.push(rest);
+    if (typeof tab.id !== "string") continue;
+    for (const mark of (Array.isArray(tabMarks) ? tabMarks : []).filter(isRecord)) {
+      const backdrop = mark.backdrop;
+      const pdfPage =
+        isRecord(backdrop) && typeof backdrop.page === "number" ? backdrop.page : null;
+      if (pdfPage === null) continue;
+      marks.push({
+        ...mark,
+        id: markPageId(tab.id, pdfPage),
+        ...(typeof mark.id === "string" ? { markId: mark.id } : {}),
+      });
+    }
+  }
+  const recordings = Array.isArray(stored.recordings) ? stored.recordings : [];
+  const own =
+    tabs.length > 0 || recordings.length > 0
+      ? [{ id: NOTEBOOK_PAGE, beside: tabs, recordings }]
+      : [];
+  return { head, pages: [...pages, ...own, ...marks] };
+}
+
+/** {@link explodeStored} the other way: the stored notebook made of its head and joined pages. */
+export function implodeStored(
+  head: Readonly<Record<string, unknown>>,
+  pages: readonly Record<string, unknown>[],
+): Record<string, unknown> {
+  const stored: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(head)) {
+    if (name !== "pages" && name !== "beside" && name !== "recordings") stored[name] = value;
+  }
+  const own = pages.find((page) => page.id === NOTEBOOK_PAGE);
+  const marksOf = new Map<string, Record<string, unknown>[]>();
+  for (const page of pages) {
+    const id = page.id;
+    if (typeof id !== "string" || !isVirtualPage(id) || id === NOTEBOOK_PAGE) continue;
+    const dot = id.lastIndexOf(".");
+    const tab = id.slice(1, dot);
+    const { markId, ...mark } = page;
+    const list = marksOf.get(tab) ?? [];
+    list.push({ ...mark, id: typeof markId === "string" ? markId : id });
+    marksOf.set(tab, list);
+  }
+  const tabs = own && Array.isArray(own.beside) ? own.beside.filter(isRecord) : [];
+  if (tabs.length > 0) {
+    stored.beside = tabs.map((tab) => ({
+      ...tab,
+      marks: typeof tab.id === "string" ? (marksOf.get(tab.id) ?? []) : [],
+    }));
+  }
+  if (own && Array.isArray(own.recordings) && own.recordings.length > 0) {
+    stored.recordings = own.recordings;
+  }
+  stored.pages = pages.filter((page) => typeof page.id !== "string" || !isVirtualPage(page.id));
+  return stored;
+}
 
 /**
  * An erased element of another device (or of the legacy notebook): its id,
@@ -288,8 +389,9 @@ function joinElements(
 
 /** Put a notebook together from its legacy payload, its metas and its page files. */
 export function joinDevicePages(sources: DevicePagesSources): DevicePagesUnion {
-  const legacy = sources.legacy ?? {};
-  const legacyPages = (Array.isArray(legacy.pages) ? legacy.pages : []).filter(isRecord);
+  const exploded = explodeStored(sources.legacy ?? {});
+  const legacy = exploded.head;
+  const legacyPages = exploded.pages;
   const metas = [...sources.metas].sort((a, b) => (a.device < b.device ? -1 : 1));
   const metaOf = new Map(metas.map((meta) => [meta.device, meta]));
 
@@ -339,17 +441,23 @@ export function joinDevicePages(sources: DevicePagesSources): DevicePagesUnion {
   }
 
   const listed = [...registers.entries()]
-    .filter(([, register]) => !register.gone)
+    .filter(([id, register]) => !register.gone && !isVirtualPage(id))
     .sort(([idA, a], [idB, b]) =>
       a.key !== b.key ? (a.key < b.key ? -1 : 1) : idA < idB ? -1 : idA > idB ? 1 : 0,
     )
     .map(([id]) => id);
-  const unlisted = [...filesOf.keys()].filter((id) => !registers.has(id)).sort();
+  const unlisted = [...filesOf.keys()]
+    .filter((id) => !registers.has(id) && !isVirtualPage(id))
+    .sort();
+  // The notebook's own page and PDF tabs' pages: in no order, and never "still syncing" alone.
+  const virtual = [...new Set([...registers.keys(), ...filesOf.keys()])]
+    .filter((id) => isVirtualPage(id) && !registers.get(id)?.gone)
+    .sort();
 
   const stale: string[] = [];
   const missing: string[] = [];
   const detail = new Map<string, PageDetail>();
-  const pages = [...listed, ...unlisted].map((id) => {
+  const pages = [...listed, ...unlisted, ...virtual].map((id) => {
     const files = filesOf.get(id) ?? [];
     const legacyPage = legacyById.get(id);
     const elementSources: ElementSource[] = [
@@ -386,9 +494,7 @@ export function joinDevicePages(sources: DevicePagesSources): DevicePagesUnion {
     return { ...(register?.fields ?? {}), id, ...joined.lists };
   });
 
-  const stored: Record<string, unknown> = {};
-  for (const [name, value] of Object.entries(head)) if (name !== "pages") stored[name] = value;
-  stored.pages = pages;
+  const stored = implodeStored(head, pages);
   const vv = joinVersionVectors(...metas.map((meta) => meta.vv), ...sources.pages.map((p) => p.vv));
   let clock = headClaim.c;
   for (const register of registers.values()) clock = Math.max(clock, register.c);

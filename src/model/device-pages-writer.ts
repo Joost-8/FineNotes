@@ -33,6 +33,7 @@ import {
   ELEMENT_LISTS,
   PAGE_FIELDS,
   elementKey,
+  explodeStored,
   orderKeyAt,
 } from "./device-pages-union";
 import { metaFileText, pageFileText, payloadHash } from "./device-pages";
@@ -122,6 +123,45 @@ function* elementsOf(
   }
 }
 
+/** One page the writer writes: a page of the notebook, or a made-up one (`explodeStored`). */
+interface WriterPage {
+  readonly id: string;
+  /** A page of the notebook (placed by order keys), not a made-up one. */
+  readonly real: boolean;
+  /** The page as stored: made only when the page is looked at. */
+  readonly stored: () => Record<string, unknown>;
+  readonly features: () => FormatFeature[];
+}
+
+/**
+ * The pages the writer writes for `doc`, and the settings it keeps as a
+ * register: the notebook's pages, then its own page (PDF tabs, recordings)
+ * and each PDF tab's page of marks (`explodeStored`), which the union joins
+ * by id as it joins pages.
+ */
+function writerPages(doc: InkDocument): { head: Record<string, unknown>; pages: WriterPage[] } {
+  const exploded = explodeStored({ ...storedHead(doc), pages: [] });
+  const requires = exploded.head.requires;
+  const headFeatures = Array.isArray(requires) ? (requires as FormatFeature[]) : [];
+  return {
+    head: exploded.head,
+    pages: [
+      ...doc.pages.map((page) => ({
+        id: page.id,
+        real: true,
+        stored: () => storedPage(page),
+        features: () => pageFeatures(doc, page),
+      })),
+      ...exploded.pages.map((page) => ({
+        id: String(page.id),
+        real: false,
+        stored: () => page,
+        features: () => headFeatures,
+      })),
+    ],
+  };
+}
+
 /**
  * The name of this device's file for `pageId`: the id itself when it is safe
  * as a file name on every file system (lower case, so two ids never differ
@@ -189,9 +229,10 @@ export class DevicePagesWriter {
     const myFiles = new Map(
       (sources?.pages ?? []).filter((file) => file.device === device).map((f) => [f.page, f]),
     );
-    this.head = headJson(storedHead(doc));
-    doc.pages.forEach((page) => {
-      const stored = storedPage(page);
+    const parts = writerPages(doc);
+    this.head = headJson(parts.head);
+    parts.pages.forEach((page) => {
+      const stored = page.stored();
       const detail = union?.detail.get(page.id);
       const known = new Map<string, Known>();
       const elsewhere = new Set<string>();
@@ -277,34 +318,40 @@ export class DevicePagesWriter {
    * will be made.
    */
   save(doc: InkDocument, changed: ReadonlySet<string> | null = null): DeviceFileWrite[] {
-    const head = storedHead(doc);
+    const parts = writerPages(doc);
+    const head = parts.head;
     const writes: DeviceFileWrite[] = [];
     let metaChanged = false;
     const vvNow = (): VersionVector =>
       joinVersionVectors(this.vv, { [this.device]: this.dots.last });
 
-    // Where each page stands: as many keys kept as possible.
-    const keys = orderKeys(doc.pages.map((page) => this.pages.get(page.id)?.key || null));
+    // Where each page of the notebook stands: as many keys kept as possible.
+    const real = parts.pages.filter((page) => page.real);
+    const placed = orderKeys(real.map((page) => this.pages.get(page.id)?.key || null));
+    const keyOf = new Map(real.map((page, i) => [page.id, placed[i]]));
 
     const pagesNow = new Set<string>();
-    const bodies: { id: string; state: PageState; body: string; page: number }[] = [];
-    doc.pages.forEach((page, index) => {
+    const bodies: { id: string; state: PageState; body: string; page: WriterPage }[] = [];
+    parts.pages.forEach((page) => {
       pagesNow.add(page.id);
       let state = this.pages.get(page.id);
-      const named = changed === null || changed.has(page.id) || !state;
+      // Made-up pages carry no place.
+      const key = keyOf.get(page.id) ?? state?.key ?? "";
+      // Made-up pages are looked at every time; the notebook's, when named.
+      const named = !page.real || changed === null || changed.has(page.id) || !state;
       if (state && !named) {
         // Not named as changed: only its place may have moved.
-        if (keys[index] !== state.key) {
-          state.key = keys[index];
+        if (key !== state.key) {
+          state.key = key;
           this.setEntry(page.id, state);
           metaChanged = true;
         }
         return;
       }
-      const stored = storedPage(page);
+      const stored = page.stored();
       // The page as stored, whole: when it is as it was, nothing on it changed.
       const pageJson = JSON.stringify(stored);
-      if (state?.pageJson === pageJson && keys[index] === state.key) return;
+      if (state?.pageJson === pageJson && key === state.key) return;
       if (!state) {
         state = {
           known: new Map(),
@@ -321,9 +368,9 @@ export class DevicePagesWriter {
       state.pageJson = pageJson;
       // The page's register: its place and fields.
       const fields = fieldsJson(stored);
-      if (fields !== state.fields || keys[index] !== state.key) {
+      if (fields !== state.fields || key !== state.key) {
         state.fields = fields;
-        state.key = keys[index];
+        state.key = key;
         this.setEntry(page.id, state);
         metaChanged = true;
       }
@@ -348,7 +395,7 @@ export class DevicePagesWriter {
       const body = this.bodyOf(state, stored);
       // A page with nothing of this device's and no file of it yet needs none.
       if (body === EMPTY_BODY && state.rev === 0) state.body = body;
-      else if (body !== state.body) bodies.push({ id: page.id, state, body, page: index });
+      else if (body !== state.body) bodies.push({ id: page.id, state, body, page });
     });
 
     // Pages gone from the notebook: a page tombstone in the meta.
@@ -379,7 +426,7 @@ export class DevicePagesWriter {
       state.body = body;
       const content = JSON.parse(body) as Record<string, unknown>;
       const json = { dev: this.device, page: id, rev: state.rev, vv, ...content };
-      const features: FormatFeature[] = pageFeatures(doc, doc.pages[page]);
+      const features: FormatFeature[] = page.features();
       const payload = labelledPayload(json, features);
       this.files.set(id, { rev: state.rev, hash: payloadHash(payload) });
       writes.push({ name: pageFileName(id, this.device), text: pageFileText(payload) });
