@@ -1149,6 +1149,33 @@ export class InkView extends TextFileView {
     await super.onRename(file);
     this.surface?.setNotebookTitle(this.notebookTitle());
     this.updateSidebarRendering();
+    await this.followDevicePages(file.path);
+  }
+
+  /**
+   * The notebook shown moved or was renamed (#274): its page folder is found
+   * at its new place, or taken along from the old one, and saves go there.
+   * What it had not written yet goes to the old place first, and moves with it.
+   */
+  private async followDevicePages(path: string): Promise<void> {
+    const shown = this.devicePages;
+    const id = notebookIdOf(this.noteBody);
+    if (!shown || id === null) return;
+    const folder = devicePagesFolderOf(path, id);
+    if (folder === shown.folder && path === shown.path) return;
+    if (!this.guard.locked) await this.saveDevicePages(shown, true);
+    const next = new DevicePagesSession(
+      this.app,
+      path,
+      shown.payload,
+      folder,
+      shown.device,
+      shown,
+      shown.clock,
+    );
+    next.writer = shown.writer;
+    this.devicePages = next;
+    await next.reattach(id);
   }
 
   // --- Reading and writing the file ------------------------------------------

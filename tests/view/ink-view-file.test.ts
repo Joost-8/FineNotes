@@ -1047,6 +1047,45 @@ describe("a notebook kept as one file per page per device (#274)", () => {
     expect(pagesOf(view)[2].strokes[0].id.startsWith(`${ME}.`)).toBe(true);
   });
 
+  it("takes its pages along when it is moved while open, and saves there", async () => {
+    const { notebook, files } = await threePages();
+    const view = openOver(files);
+    const app = (view as unknown as { app: Record<string, unknown> }).app;
+    // Obsidian's rename of a folder: every file under it moves.
+    app.fileManager = {
+      renameFile: (from: { path: string }, to: string) => {
+        for (const [path, text] of [...files]) {
+          if (path.startsWith(`${from.path}/`)) {
+            files.delete(path);
+            files.set(to + path.slice(from.path.length), text);
+          }
+        }
+        return Promise.resolve();
+      },
+    };
+    (app.vault as Record<string, unknown>).getAllLoadedFiles = () => [
+      Object.assign(new TFolder(FOLDER), {
+        name: "n7k2q9ab",
+        parent: Object.assign(new TFolder("Physics/Pages"), { name: "Pages" }),
+      }),
+    ];
+    view.setViewData(notebook, true);
+    await settle();
+    const moved = new TFile("Course/Physics.notebook.md", 100);
+    (view as unknown as { file: TFile }).file = moved;
+    await view.onRename(moved as never);
+    await settle();
+    addStroke(view, 2);
+    await view.save();
+    await settle();
+    const paths = [...files.keys()].sort();
+    expect(paths).toEqual([
+      "Course/Pages/n7k2q9ab/_meta.me111111.md",
+      "Course/Pages/n7k2q9ab/p2.a1.md",
+      "Course/Pages/n7k2q9ab/p3.me111111.md",
+    ]);
+  });
+
   it("keeps showing another device's page while its file is being written whole", async () => {
     vi.useFakeTimers();
     const { notebook, files } = await threePages();
