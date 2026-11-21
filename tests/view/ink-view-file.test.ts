@@ -39,6 +39,7 @@ const { pageKeys, updatePageTranscripts } = transcripts;
 const { encodeDocument } = await import("../../src/model/serialize");
 const { VENDORS } = await import("../../src/recognition/llm-request");
 const { StartupLog } = await import("../../src/view/startup-log");
+const { MAX_SAVE_HOLD_MS, QUIET_MS, SAVE_QUIET_MS } = await import("../../src/view/write-hold");
 
 type View = InstanceType<typeof InkView>;
 
@@ -819,7 +820,7 @@ describe("saving while the pen writes", () => {
     expect(saves).toBe(1);
   });
 
-  it("puts a save off until the pen has been up a second", async () => {
+  it("puts a save off until the pen has rested, past the PDF's short pause (#274)", async () => {
     const view = openView();
     const set = pen(view);
     set(true);
@@ -829,8 +830,28 @@ describe("saving while the pen writes", () => {
     set(false);
     await view.save();
     expect(saves).toBe(0);
-    clock = 1500;
-    await vi.advanceTimersByTimeAsync(1000);
+    // The pen's short quiet: PDF pages may render, the save still waits.
+    clock = 500 + QUIET_MS;
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+    expect(saves).toBe(0);
+    clock = 500 + SAVE_QUIET_MS;
+    await vi.advanceTimersByTimeAsync(SAVE_QUIET_MS - QUIET_MS);
+    expect(saves).toBe(1);
+  });
+
+  it("makes a save Obsidian asks for after the pen's timer has run", async () => {
+    const view = openView();
+    const set = pen(view);
+    set(true);
+    clock = 100;
+    set(false);
+    clock = 100 + QUIET_MS;
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+    // Obsidian's own 2 s timer lands now: held, and looked at again later.
+    await view.save();
+    expect(saves).toBe(0);
+    clock = 100 + SAVE_QUIET_MS;
+    await vi.advanceTimersByTimeAsync(SAVE_QUIET_MS - QUIET_MS);
     expect(saves).toBe(1);
   });
 
@@ -853,7 +874,14 @@ describe("saving while the pen writes", () => {
     const set = pen(view);
     set(true);
     await view.save();
-    clock = 25_000;
+    // Writing on with never a long enough rest: a stroke every 2 s.
+    for (clock = 1000; clock < MAX_SAVE_HOLD_MS; clock += 1000) {
+      set(clock % 2000 === 0);
+      expect(saves).toBe(0);
+    }
+    clock = MAX_SAVE_HOLD_MS;
+    set(true);
+    clock = MAX_SAVE_HOLD_MS + 50;
     set(false);
     // The save starts at the lift; it reaches Obsidian a few promise steps on.
     await vi.advanceTimersByTimeAsync(0);

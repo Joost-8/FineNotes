@@ -1417,7 +1417,14 @@ export class InkView extends TextFileView {
    * has been up a moment.
    */
   override async save(clear?: boolean): Promise<void> {
-    if (!clear && this.writeHold.holdSave(performance.now())) return;
+    if (!clear && this.writeHold.holdSave(performance.now())) {
+      // Obsidian's timer can fire after the pen's quiet timer has run: look again then.
+      if (!this.quietTimer) {
+        const wait = this.writeHold.saveQuietIn(performance.now());
+        this.quietTimer = window.setTimeout(() => this.penQuiet(), wait);
+      }
+      return;
+    }
     await this.saveNow(clear);
   }
 
@@ -1516,12 +1523,18 @@ export class InkView extends TextFileView {
     this.quietTimer = window.setTimeout(() => this.penQuiet(), this.writeHold.quietIn(t));
   }
 
-  /** The pen has been up a moment: rasterise what waited, and make the save that did. */
+  /**
+   * The pen has been up a moment: rasterise what waited, and make the save
+   * that did once the pen has rested a little longer (write-hold.ts).
+   */
   private penQuiet(): void {
     this.quietTimer = 0;
     this.pdfCache?.setHeld(false);
     this.pdfText?.setHeld(false);
-    if (this.writeHold.savePending) void this.saveNow();
+    if (!this.writeHold.savePending) return;
+    const wait = this.writeHold.saveQuietIn(performance.now());
+    if (wait > 0) this.quietTimer = window.setTimeout(() => this.penQuiet(), wait);
+    else void this.saveNow();
   }
 
   /**
