@@ -1144,7 +1144,8 @@ export class InkView extends TextFileView {
     await super.onRename(file);
     this.surface?.setNotebookTitle(this.notebookTitle());
     this.updateSidebarRendering();
-    await this.followDevicePages(file.path);
+    // Obsidian calls this for other files too (a page file moved along): only this notebook counts.
+    if (file === this.file) await this.followDevicePages(file.path);
   }
 
   /**

@@ -57,12 +57,18 @@ export function devicePagesFolderFor(app: App, file: TFile): TFolder | null {
  * left behind (`pagesFolderMove`). Several callers may ask for one move;
  * the first does it and the others find nothing left to move.
  */
-export async function movePagesFolder(
-  app: App,
-  from: string,
-  to: string,
-  id: string,
-): Promise<void> {
+export function movePagesFolder(app: App, from: string, to: string, id: string): Promise<void> {
+  // One move at a time, each looking afresh: two callers asking at once (the
+  // view and the rename handler) must not both move the folder.
+  const run = moving.then(() => moveNow(app, from, to, id));
+  moving = run.catch(() => undefined);
+  return run;
+}
+
+/** The moves asked for, in turn. */
+let moving: Promise<void> = Promise.resolve();
+
+async function moveNow(app: App, from: string, to: string, id: string): Promise<void> {
   const exists = (path: string): boolean => app.vault.getAbstractFileByPath(path) !== null;
   const move = pagesFolderMove(from, to, id, exists);
   if (!move) return;

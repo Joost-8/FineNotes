@@ -1088,6 +1088,11 @@ describe("a notebook kept as one file per page per device (#274)", () => {
       "Course/Pages/n7k2q9ab/p2.a1.md",
       "Course/Pages/n7k2q9ab/p3.me111111.md",
     ]);
+    // Obsidian also tells the view of other files renamed (its page files moving
+    // along): those move nothing (in the rig they nested `Pages/Pages/…`).
+    await view.onRename(new TFile("Course/Pages/n7k2q9ab/p2.a1.md") as never);
+    await settle();
+    expect([...files.keys()].sort()).toEqual(paths);
   });
 
   it("keeps showing another device's page while its file is being written whole", async () => {
