@@ -30,13 +30,17 @@ extracted from the matching section of this file by `release.yml`.
   the way to erase with the button. "Copy shape diagnostics" now includes
   the pen's last hover and button events, to send if it does not work on
   your tablet.
-- **Ready for notebooks that sync page by page** (#274). A coming FineNotes
-  will keep a notebook's pages in small files of their own, one per device,
-  so Obsidian Sync stores a few MB an hour of writing instead of hundreds,
-  and two devices writing at once both keep their ink. This version opens
-  such a notebook read-only, with every device's ink on its pages, and
-  writes nothing to it. Its pages embedded in a note show the same. Pages
-  still on their way show what has arrived.
+- **Notebooks sync page by page** (#274). A notebook now keeps its pages in
+  small files of their own, one per page per device, in a `Pages` folder
+  beside it. A save writes only the pages you changed, so Obsidian Sync
+  stores a few MB an hour of writing instead of hundreds, no file nears
+  Sync's 5 MB limit, and two devices writing in one notebook at once both
+  keep their ink. Every notebook moves over by itself at its first save
+  after updating; new notebooks start that way. While some of a notebook's
+  pages are still on their way it stays read-only and shows what has
+  arrived. A device still on an older FineNotes opens such a notebook
+  read-only until it updates; for it, **Export notebook as one file** (in
+  the command palette) makes a copy in the old layout.
 
 ### Fixed
 

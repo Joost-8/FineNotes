@@ -338,9 +338,13 @@ export class SharedNotebooks<T> {
     return value;
   }
 
-  /** The file at `path` changed, moved or went: the next ask reads it again. */
+  /** The file at `path` changed, moved or went: the next ask reads it again (its single pages too). */
   forget(path: string): boolean {
-    return this.entries.delete(path);
+    let forgot = this.entries.delete(path);
+    for (const key of [...this.entries.keys()]) {
+      if (key.startsWith(`${path}#page=`)) forgot = this.entries.delete(key) || forgot;
+    }
+    return forgot;
   }
 
   clear(): void {

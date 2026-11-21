@@ -1588,6 +1588,31 @@ export function readStoredDocument(raw: unknown, fallbackWidth = DEFAULT_PAPER_W
   return readDocument(raw, fallbackWidth);
 }
 
+/**
+ * The notebook's head as it is stored (everything but the pages, `pages`
+ * left out), as a plain object, for the writer of page files
+ * (`device-pages-writer`).
+ */
+export function storedHead(doc: InkDocument): Record<string, unknown> {
+  const { pages: _pages, ...head } = storeHead(doc);
+  return head;
+}
+
+/** One page as it is stored, as a plain object, for the writer of page files. */
+export function storedPage(page: Page): Record<string, unknown> {
+  return storePage(page) as unknown as Record<string, unknown>;
+}
+
+/** The features one page of `doc` uses, for its page file's label. */
+export function pageFeatures(doc: InkDocument, page: Page): FormatFeature[] {
+  return featuresOf({ version: doc.version, view: doc.view, pages: [page] });
+}
+
+/** Stored JSON as a `v<n>[+features]:<base64>` payload. */
+export function labelledPayload(json: unknown, features: readonly FormatFeature[]): string {
+  return `${payloadLabel(features)}:${deflateToBase64(JSON.stringify(json), SAVE_LEVEL)}`;
+}
+
 /** A stored payload labelled with `extra` beside the features the notebook uses. */
 export function encodeDocumentWith(doc: InkDocument, extra: readonly FormatFeature[]): string {
   const stored = storeDocument(doc);

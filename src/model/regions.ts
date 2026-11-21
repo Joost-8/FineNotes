@@ -14,6 +14,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import { t } from "../i18n/translate";
 import type { Command } from "./commands";
 import { normalizePageTitle } from "./contents";
@@ -105,6 +106,8 @@ export function uniqueRegionName(pages: readonly Page[], name: string, exceptId?
 
 /** The next free region id in the notebook: `rg<N>`. */
 export function nextRegionId(doc: Pick<InkDocument, "pages">): string {
+  const minted = mintedId(doc);
+  if (minted) return minted;
   let max = 0;
   for (const { region } of allRegions(doc.pages)) {
     const m = /^rg(\d+)$/.exec(region.id);

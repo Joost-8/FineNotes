@@ -88,6 +88,9 @@ import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-mo
 import { parsePillRowOn } from "./view/pill-row-model";
 import { ShortcutStore } from "./view/shortcut-store";
 import { buildInkFile, parseInkFile } from "./model/serialize";
+import { devicePagesNotebookText } from "./model/device-pages-writer";
+import { notebookIdOfText } from "./model/device-pages";
+import { movePagesFolder } from "./view/device-pages-files";
 import {
   ReceivePages,
   type TransferTarget,
@@ -774,6 +777,7 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.vault.on("rename", (file, oldPath) => {
         this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
+        void this.followPagesFolder(file, oldPath);
         this.libraryPathChanged(oldPath, file.path);
         this.calculatorFileMoved(oldPath, file.path);
         this.practiceNotebookMoved(oldPath, file.path);
@@ -1103,6 +1107,10 @@ export default class GoodObsidianPlugin extends Plugin {
 
     this.notebookCommand("toggle-text-layer", t("notebooks.command.toggleTextLayer"), (view) =>
       view.toggleTextPanel(),
+    );
+    // A copy in one file, for a device that cannot update yet (#274).
+    this.notebookCommand("export-one-file", t("notebooks.command.exportOneFile"), (view) =>
+      view.exportOneFile(),
     );
     this.notebookCommand("transcribe-page", t("notebooks.command.transcribePage"), (view) =>
       view.transcribePageNow(),
@@ -3475,6 +3483,20 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
+   * A notebook kept as one file per page per device moved (#274): its page
+   * folder follows, exactly (`movePagesFolder`). Its id is in its file.
+   */
+  private async followPagesFolder(file: TAbstractFile, oldPath: string): Promise<void> {
+    if (!(file instanceof TFile) || !this.isInkFile(file)) return;
+    try {
+      const id = notebookIdOfText(await this.app.vault.cachedRead(file));
+      if (id !== null) await movePagesFolder(this.app, oldPath, file.path, id);
+    } catch (error) {
+      console.error("FineNotes: could not follow a notebook's pages", error);
+    }
+  }
+
+  /**
    * A notebook and its own folder keep one name: renaming either renames
    * the other (`followPairRename`). Run after Obsidian's own rename has
    * finished, through `fileManager.renameFile` so links follow too.
@@ -3590,7 +3612,8 @@ export default class GoodObsidianPlugin extends Plugin {
       if (choices.type === "notebook" && choices.scroll === "horizontal") {
         doc.scroll = "horizontal";
       }
-      const content = buildInkFile(newNoteBody(heading, new Date().toISOString()), doc);
+      // Made in one file per page per device (#274) from the start.
+      const content = devicePagesNotebookText(newNoteBody(heading, new Date().toISOString()), doc);
       const file = await this.app.vault.create(
         normalizePath(joinVaultPath(paths.folder, name)),
         content,

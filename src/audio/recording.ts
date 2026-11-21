@@ -14,6 +14,7 @@
  * Pure: no DOM, no Obsidian.
  */
 
+import { mintedId } from "../model/dot-ids";
 import type { Page, Recording, Stroke } from "../model/document";
 import { monthName } from "../recognition/hwr/learned-model";
 
@@ -194,8 +195,16 @@ export function describeRecording(recording: Pick<Recording, "start" | "duration
   return `${formatRecordingDate(recording.start)} · ${formatClock(recording.duration)}`;
 }
 
-/** The next free `r<N>` recording id; seeded from the maximum, as stroke ids are. */
-export function nextRecordingId(recordings: readonly Pick<Recording, "id">[] | undefined): string {
+/**
+ * The next free `r<N>` recording id; seeded from the maximum, as stroke ids
+ * are. In a notebook kept as page files (`doc`'s clock), this device's dot.
+ */
+export function nextRecordingId(
+  recordings: readonly Pick<Recording, "id">[] | undefined,
+  doc?: object,
+): string {
+  const minted = doc ? mintedId(doc) : null;
+  if (minted) return minted;
   let max = 0;
   for (const recording of recordings ?? []) {
     const match = /^r(\d+)$/.exec(recording.id);

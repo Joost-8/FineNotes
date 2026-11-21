@@ -5,6 +5,7 @@
  * a placed image undoes with the ink.
  */
 
+import { mintedId } from "./dot-ids";
 import type { Bounds, ImageElement, InkDocument, PageGeometry } from "./document";
 
 /** A new picture fits inside this fraction of the page's width and height. */
@@ -21,6 +22,11 @@ export const DUPLICATE_OFFSET = 24;
  * never minted again while its undo is still on the stack.
  */
 export function nextImageId(doc: InkDocument): string {
+  return mintedId(doc) ?? `i${maxImageNumber(doc) + 1}`;
+}
+
+/** The highest `N` among the document's `i<N>` image ids, 0 for none. */
+function maxImageNumber(doc: InkDocument): number {
   let max = 0;
   for (const page of doc.pages) {
     for (const image of page.images) {
@@ -28,7 +34,7 @@ export function nextImageId(doc: InkDocument): string {
       if (match) max = Math.max(max, Number(match[1]));
     }
   }
-  return `i${max + 1}`;
+  return max;
 }
 
 /**
@@ -128,8 +134,11 @@ export function newImageElements(
   paths: readonly string[],
   boxes: readonly { x: number; y: number; w: number; h: number }[],
 ): ImageElement[] {
-  const first = Number(nextImageId(doc).slice(1));
-  return paths.map((path, i) => ({ ...newImageElement(doc, path, boxes[i]), id: `i${first + i}` }));
+  const first = maxImageNumber(doc) + 1;
+  return paths.map((path, i) => ({
+    ...newImageElement(doc, path, boxes[i]),
+    id: mintedId(doc) ?? `i${first + i}`,
+  }));
 }
 
 /** A new image element with a fresh id. */

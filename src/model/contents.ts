@@ -12,6 +12,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import { t } from "../i18n/translate";
 import type { Command } from "./commands";
 import type { ContentsLevel, InkDocument, Page, PageChapter, PageSection } from "./document";
@@ -194,6 +195,8 @@ function setTitleLevel(page: Page, level: ContentsLevel | undefined): void {
 
 /** The next free section id in the notebook: `c<N>`. */
 export function nextSectionId(doc: InkDocument): string {
+  const minted = mintedId(doc);
+  if (minted) return minted;
   return `c${maxSectionNumber(doc) + 1}`;
 }
 

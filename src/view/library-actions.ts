@@ -4,7 +4,11 @@
  * notebook never leaves its pictures, recordings and transcripts behind.
  */
 
-import { type App, Notice } from "obsidian";
+import { type App, Notice, type TFile } from "obsidian";
+import { devicePagesFolderOf, isDevicePagesPayload, notebookIdOf } from "../model/device-pages";
+import { devicePagesNotebookText } from "../model/device-pages-writer";
+import { parseInkFile } from "../model/serialize";
+import { readDevicePagesFolder } from "./device-pages-files";
 import { t } from "../i18n/translate";
 import { parentPath } from "../model/folder-notebook";
 import {
@@ -73,8 +77,22 @@ export class LibraryActions {
     for (const folder of plan.folders) {
       if (!vault.getAbstractFileByPath(folder)) await vault.createFolder(folder);
     }
-    await vault.copy(file, plan.note);
+    // Kept as one file per page per device (#274): the copy is a notebook of its own,
+    // with an id of its own, made of every device's pages as they are now.
+    const forked = await this.forkDevicePages(file);
+    if (forked !== null) await vault.create(plan.note, forked);
+    else await vault.copy(file, plan.note);
     return plan.note;
+  }
+
+  /** A copy's file text for a notebook kept as page files, or `null` for any other notebook. */
+  private async forkDevicePages(file: TFile): Promise<string | null> {
+    const { body, payload } = parseInkFile(await this.app.vault.read(file));
+    const id =
+      payload !== undefined && isDevicePagesPayload(payload) ? notebookIdOf(payload) : null;
+    if (id === null || payload === undefined) return null;
+    const doc = await readDevicePagesFolder(this.app, payload, devicePagesFolderOf(file.path, id));
+    return doc ? devicePagesNotebookText(body, doc) : null;
   }
 
   /** Ask once, naming what goes and what stays, then put it in the trash. Whether anything went. */

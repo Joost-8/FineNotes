@@ -13,6 +13,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import {
   type ContentsEntry,
   type PageContents,
@@ -95,7 +96,7 @@ export function placeOutline(
       continue;
     }
     const section: PageSection = {
-      id: `c${++next}`,
+      id: mintedId(doc) ?? `c${++next}`,
       x: Math.round(HEADING_LEFT * page.geometry.width),
       y: Math.round(y * page.geometry.height),
       title,

@@ -9,6 +9,7 @@
  * Pure: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import type { Command } from "./commands";
 import { type InkDocument, type PageComment, pageById } from "./document";
 import { t } from "../i18n/translate";
@@ -18,6 +19,8 @@ export const MAX_COMMENT_LENGTH = 2000;
 
 /** A comment id not yet used anywhere in `doc`: one above the highest `cm<N>`. */
 export function nextCommentId(doc: InkDocument): string {
+  const minted = mintedId(doc);
+  if (minted) return minted;
   let max = 0;
   for (const page of doc.pages) {
     for (const comment of page.comments ?? []) {
