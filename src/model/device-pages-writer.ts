@@ -45,7 +45,8 @@ import {
   labelledPayload,
   pageFeatures,
   splitFrontmatter,
-  storedParts,
+  storedHead,
+  storedPage,
 } from "./serialize";
 
 /** What the writer last knew of one element. */
@@ -66,6 +67,8 @@ interface PageState {
   key: string;
   c: number;
   fields: string;
+  /** The whole stored page as JSON when last looked at (undefined: not yet). */
+  pageJson?: string;
   /** This device's file for the page: its rev, and its content (rev and vector left out). */
   rev: number;
   body: string;
@@ -85,6 +88,9 @@ export interface DeviceFileWrite {
   readonly name: string;
   readonly text: string;
 }
+
+/** A page file's content holding nothing: no element, no tombstone. */
+const EMPTY_BODY = JSON.stringify({ tomb: [] });
 
 /** The fields of a stored page that are its register, as JSON. */
 function fieldsJson(page: Record<string, unknown>): string {
@@ -183,10 +189,9 @@ export class DevicePagesWriter {
     const myFiles = new Map(
       (sources?.pages ?? []).filter((file) => file.device === device).map((f) => [f.page, f]),
     );
-    const parts = storedParts(doc);
-    this.head = headJson(parts.head);
-    doc.pages.forEach((page, index) => {
-      const stored = parts.pages[index];
+    this.head = headJson(storedHead(doc));
+    doc.pages.forEach((page) => {
+      const stored = storedPage(page);
       const detail = union?.detail.get(page.id);
       const known = new Map<string, Known>();
       const elsewhere = new Set<string>();
@@ -259,10 +264,13 @@ export class DevicePagesWriter {
   /**
    * What to write for `doc` as it is now: this device's file for each page
    * that changed, and its meta when anything did. Empty when nothing did.
-   * The writer takes it as written: call only when the writes will be made.
+   * `changed` names the pages that may have changed (`null`: any), so a big
+   * notebook is not stored whole at every save; a page not named is taken
+   * as it was. The writer takes it as written: call only when the writes
+   * will be made.
    */
-  save(doc: InkDocument): DeviceFileWrite[] {
-    const parts = storedParts(doc);
+  save(doc: InkDocument, changed: ReadonlySet<string> | null = null): DeviceFileWrite[] {
+    const head = storedHead(doc);
     const writes: DeviceFileWrite[] = [];
     let metaChanged = false;
     const vvNow = (): VersionVector =>
@@ -275,8 +283,21 @@ export class DevicePagesWriter {
     const bodies: { id: string; state: PageState; body: string; page: number }[] = [];
     doc.pages.forEach((page, index) => {
       pagesNow.add(page.id);
-      const stored = parts.pages[index];
       let state = this.pages.get(page.id);
+      const named = changed === null || changed.has(page.id) || !state;
+      if (state && !named) {
+        // Not named as changed: only its place may have moved.
+        if (keys[index] !== state.key) {
+          state.key = keys[index];
+          this.setEntry(page.id, state);
+          metaChanged = true;
+        }
+        return;
+      }
+      const stored = storedPage(page);
+      // The page as stored, whole: when it is as it was, nothing on it changed.
+      const pageJson = JSON.stringify(stored);
+      if (state?.pageJson === pageJson && keys[index] === state.key) return;
       if (!state) {
         state = {
           known: new Map(),
@@ -290,19 +311,13 @@ export class DevicePagesWriter {
         };
         this.pages.set(page.id, state);
       }
+      state.pageJson = pageJson;
       // The page's register: its place and fields.
       const fields = fieldsJson(stored);
       if (fields !== state.fields || keys[index] !== state.key) {
-        this.clock += 1;
         state.fields = fields;
         state.key = keys[index];
-        state.c = this.clock;
-        this.entries.set(page.id, {
-          id: page.id,
-          key: state.key,
-          c: state.c,
-          ...(JSON.parse(fields) as Record<string, unknown>),
-        });
+        this.setEntry(page.id, state);
         metaChanged = true;
       }
       // Its elements: changed ones get a fresh dot; erased ones a tombstone where needed.
@@ -324,7 +339,9 @@ export class DevicePagesWriter {
         state.tomb.set(key, { id, l: list, ...(known.d !== undefined ? { d: known.d } : {}) });
       }
       const body = this.bodyOf(state, stored);
-      if (body !== state.body) bodies.push({ id: page.id, state, body, page: index });
+      // A page with nothing of this device's and no file of it yet needs none.
+      if (body === EMPTY_BODY && state.rev === 0) state.body = body;
+      else if (body !== state.body) bodies.push({ id: page.id, state, body, page: index });
     });
 
     // Pages gone from the notebook: a page tombstone in the meta.
@@ -337,19 +354,16 @@ export class DevicePagesWriter {
     }
 
     // Settings.
-    const head = headJson(parts.head);
-    if (head !== this.head) {
+    const settings = headJson(head);
+    if (settings !== this.head) {
       this.clock += 1;
-      this.head = head;
+      this.head = settings;
       this.headC = this.clock;
-      this.settings = { c: this.clock, head: parts.head };
+      this.settings = { c: this.clock, head };
       metaChanged = true;
     } else if (this.settings) {
       // The view is this device's own: kept up to date, without a new clock.
-      this.settings = {
-        c: this.settings.c,
-        head: { ...this.settings.head, view: parts.head.view },
-      };
+      this.settings = { c: this.settings.c, head: { ...this.settings.head, view: head.view } };
     }
 
     const vv = vvNow();
@@ -367,6 +381,18 @@ export class DevicePagesWriter {
     if (metaChanged || this.forceMeta) writes.push(this.metaWrite(vv));
     this.forceMeta = false;
     return writes;
+  }
+
+  /** This device's entry for a page: its place and fields as `state` has them, at a new clock. */
+  private setEntry(id: string, state: PageState): void {
+    this.clock += 1;
+    state.c = this.clock;
+    this.entries.set(id, {
+      id,
+      key: state.key,
+      c: state.c,
+      ...(JSON.parse(state.fields || "{}") as Record<string, unknown>),
+    });
   }
 
   /** This device's meta as it stands. */

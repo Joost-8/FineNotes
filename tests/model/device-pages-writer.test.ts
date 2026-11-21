@@ -269,6 +269,24 @@ describe("writing one file per page per device (#274)", () => {
     expect(b.ids()).toHaveLength(3);
   });
 
+  it("looks only at the pages named as changed, unless none are named", () => {
+    const [a] = twoDevices();
+    a.doc.pages[1].strokes.push(stroke(a.doc));
+    // A change not named is not seen...
+    expect(a.writer.save(a.doc, new Set(["p1"]))).toEqual([]);
+    // ...until it is named, or a save looks at everything.
+    expect(a.writer.save(a.doc, new Set(["p2"])).map((w) => w.name)).toEqual([
+      `p2.${A}.md`,
+      `_meta.${A}.md`,
+    ]);
+    a.doc.pages[0].strokes.push(stroke(a.doc));
+    expect(a.writer.save(a.doc, null).map((w) => w.name)).toEqual([`p1.${A}.md`, `_meta.${A}.md`]);
+    // A page moved is placed again even when not named.
+    a.doc.pages.reverse();
+    const writes = a.writer.save(a.doc, new Set());
+    expect(writes.map((w) => w.name)).toEqual([`_meta.${A}.md`]);
+  });
+
   it("names a page file by its id when safe, else by a hash of it", () => {
     expect(pageFileName("p1", A)).toBe(`p1.${A}.md`);
     expect(pageFileName(`${A}.3`, B)).toBe(`${A}.3.${B}.md`);

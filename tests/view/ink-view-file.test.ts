@@ -1007,6 +1007,8 @@ describe("a notebook kept as one file per page per device (#274)", () => {
       size: 3,
       pts: [10, 20, 0.5, 30, 40, 0.5],
     });
+    // As an edit does: it asks for a save.
+    (view as unknown as { requestSave(): void }).requestSave();
   };
 
   it("shows its pages joined from their files, and can be written", async () => {

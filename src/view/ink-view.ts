@@ -870,6 +870,12 @@ export class InkView extends TextFileView {
   private devicePagesNoticed: string | null = null;
   /** When the "still syncing" notice last showed for an edit refused, ms. */
   private syncingNoticeAt = 0;
+  /**
+   * The pages changed since the last save of page files, as the changes
+   * named them; `null` when a change did not say (then every page is looked
+   * at). A big notebook is not stored whole at every save.
+   */
+  private changedPages: Set<string> | null = new Set();
   private backdrops: VaultBackdropRenderer | null = null;
   /** The same PDFs at thumbnail size, so the sidebar never asks for page-sized rasters. */
   private thumbBackdrops: VaultBackdropRenderer | null = null;
@@ -1005,6 +1011,7 @@ export class InkView extends TextFileView {
     this.saveRequest = this.requestSave.bind(this);
     this.requestSave = () => {
       this.encoder.touchAll();
+      this.changedPages = null;
       this.saveRequest();
     };
     this.saver = new BackgroundSaver(
@@ -1166,6 +1173,8 @@ export class InkView extends TextFileView {
   private requestSaveOf(pageIds?: readonly string[]): void {
     if (pageIds) this.encoder.touchIds(this.doc, pageIds);
     else this.encoder.touchAll();
+    if (!pageIds) this.changedPages = null;
+    else if (this.changedPages) for (const id of pageIds) this.changedPages.add(id);
     this.saveRequest();
   }
 
@@ -1258,7 +1267,9 @@ export class InkView extends TextFileView {
       payload !== undefined && isDevicePagesPayload(payload) ? this.devicePagesFolder(body) : null;
     // What this view has not written yet goes to its page files before they are read again.
     const previousPages = this.devicePages;
-    if (previousPages && sameFile && !this.guard.locked) void previousPages.save(this.doc);
+    if (previousPages && sameFile && !this.guard.locked) {
+      void this.saveDevicePages(previousPages, true);
+    }
     const held = this.guard.admit({
       text: data,
       bytesOnDisk: this.file?.stat.size ?? 0,
@@ -1384,6 +1395,19 @@ export class InkView extends TextFileView {
     this.applyPendingPage();
   }
 
+  /**
+   * Write this device's page files for what changed: the pages the changes
+   * named, or every page when one did not say, or with `all` (the note is
+   * closing: a last look at everything).
+   */
+  private saveDevicePages(pages: DevicePagesSession, all = false): Promise<void> {
+    const changed = all ? null : this.changedPages;
+    // Decided now, at the call: what changes next is counted for the next save.
+    const saving = pages.save(this.doc, changed);
+    this.changedPages = new Set();
+    return saving;
+  }
+
   /** Whether the notebook is kept as page files that are still syncing: then it takes no edits. */
   private devicePagesSyncing(): boolean {
     // (A view made without its fields, as some tests make one, has none.)
@@ -1433,7 +1457,7 @@ export class InkView extends TextFileView {
         this.devicePagesTimer = window.setTimeout(reread, DEVICE_PAGES_SETTLE_MS);
         return;
       }
-      void shown.save(this.doc).then(() => this.readDevicePages());
+      void this.saveDevicePages(shown).then(() => this.readDevicePages());
     };
     this.devicePagesTimer = window.setTimeout(reread, DEVICE_PAGES_SETTLE_MS);
   }
@@ -1646,7 +1670,7 @@ export class InkView extends TextFileView {
     if (pages) {
       // Only this device's changed pages and its meta: small, so on this thread.
       this.saver.supersede();
-      if (!this.guard.locked) await pages.save(this.doc);
+      if (!this.guard.locked) await this.saveDevicePages(pages, clear === true);
       await this.writeFile(clear);
       return;
     }
@@ -4485,8 +4509,11 @@ export class InkView extends TextFileView {
     const file = this.file;
     if (!file || this.guard.locked) return;
     const suffix = inkFileSuffix(file.name) ?? ".md";
-    const folder = file.parent?.path ?? "";
-    const taken = new Set(file.parent?.children.map((child) => child.name) ?? []);
+    // Beside a notebook's own folder, not in it: that folder holds one notebook.
+    const own = file.parent?.name === stripInkSuffix(file.name) ? file.parent : null;
+    const parent = own ? own.parent : file.parent;
+    const folder = parent?.path ?? "";
+    const taken = new Set(parent?.children.map((child) => child.name) ?? []);
     const base = t("notebooks.exportOneFile.name", { title: stripInkSuffix(file.basename) });
     const name = uniqueFileName(base, suffix, taken);
     const path = normalizePath(folder && folder !== "/" ? `${folder}/${name}` : name);

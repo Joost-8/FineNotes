@@ -88,9 +88,14 @@ export class DevicePagesSession {
           file instanceof TFolder && file.name === id && file.parent?.name === PAGES_FOLDER,
       );
     if (!away) return;
+    const left = away.parent;
     try {
       await this.ensureFolder(parentOf(this.folder));
       await this.app.fileManager.renameFile(away, this.folder);
+      // The `Pages/` it left, when nothing else is in it now.
+      if (left && !left.isRoot() && left.children.length === 0) {
+        await this.app.fileManager.trashFile(left);
+      }
     } catch (error) {
       console.error("FineNotes: could not move a notebook's pages along with it", error);
     }
@@ -138,14 +143,15 @@ export class DevicePagesSession {
 
   /**
    * Write what changed in `doc` since the last save: this device's changed
-   * page files, then its meta. What to write is decided now; the writing
-   * waits for the save before it. Nothing when nothing changed, or when the
-   * notebook may not be written (still syncing).
+   * page files, then its meta. `changed`: the pages that may have changed
+   * (`null`: any). What to write is decided now; the writing waits for the
+   * save before it. Nothing when nothing changed, or when the notebook may
+   * not be written (still syncing).
    */
-  save(doc: InkDocument): Promise<void> {
+  save(doc: InkDocument, changed: ReadonlySet<string> | null = null): Promise<void> {
     const writer = this.writer;
     if (!writer) return this.writing;
-    const writes = writer.save(doc);
+    const writes = writer.save(doc, changed);
     if (writes.length === 0) return this.writing;
     this.writing = this.writing.then(async () => {
       try {

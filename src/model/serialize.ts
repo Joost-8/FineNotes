@@ -1589,19 +1589,18 @@ export function readStoredDocument(raw: unknown, fallbackWidth = DEFAULT_PAPER_W
 }
 
 /**
- * The notebook as it is stored, in parts: the head (everything but the
- * pages, `pages` left out) and each page, as plain objects. The writer of
- * page files (`device-pages-writer`) compares and writes these.
+ * The notebook's head as it is stored (everything but the pages, `pages`
+ * left out), as a plain object, for the writer of page files
+ * (`device-pages-writer`).
  */
-export function storedParts(doc: InkDocument): {
-  head: Record<string, unknown>;
-  pages: Record<string, unknown>[];
-} {
+export function storedHead(doc: InkDocument): Record<string, unknown> {
   const { pages: _pages, ...head } = storeHead(doc);
-  return {
-    head: head,
-    pages: doc.pages.map((page) => storePage(page) as unknown as Record<string, unknown>),
-  };
+  return head;
+}
+
+/** One page as it is stored, as a plain object, for the writer of page files. */
+export function storedPage(page: Page): Record<string, unknown> {
+  return storePage(page) as unknown as Record<string, unknown>;
 }
 
 /** The features one page of `doc` uses, for its page file's label. */
