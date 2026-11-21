@@ -167,3 +167,25 @@ describe("eraser presets", () => {
     expect(state.eraserSize).toBe(24);
   });
 });
+
+// FineNotes#281: a preset picked in the pill while the Stroke width (or
+// eraser size) popover is open left its slider and preview on the old width
+// until it was opened again.
+describe("an open size popover", () => {
+  it("shows the width of a preset picked in the pill", () => {
+    const { bar, state } = toolbar();
+    const shown: unknown[] = [];
+    Object.assign(bar, { sizeMarksRender: () => shown.push(state.size) });
+    bar.pickWidthPreset(2);
+    bar.pickWidthPreset(0);
+    expect(shown).toEqual([5, 2]);
+  });
+
+  it("shows the size of an eraser preset picked in the pill", () => {
+    const { bar, state } = toolbar({ tool: "eraser" });
+    const shown: unknown[] = [];
+    Object.assign(bar, { sizeMarksRender: () => shown.push(state.eraserSize) });
+    bar.pickEraserPreset(2);
+    expect(shown).toEqual([48]);
+  });
+});

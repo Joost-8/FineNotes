@@ -5870,6 +5870,8 @@ export class Toolbar {
     if (width === undefined) return;
     this.widthSlot = slot;
     this.setWidth(width);
+    // An open Stroke width popover follows a preset picked in the pill (FineNotes#281).
+    this.sizeMarksRender?.();
   }
 
   /**
@@ -5923,6 +5925,7 @@ export class Toolbar {
     if (size === undefined) return;
     this.eraserSlot = slot;
     this.setEraserSize(size);
+    this.sizeMarksRender?.();
   }
 
   /** A size from the slider: the chosen preset becomes it, as {@link editWidth}. */
