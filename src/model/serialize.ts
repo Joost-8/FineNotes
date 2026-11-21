@@ -1530,11 +1530,70 @@ function decodePayload(payload: string, fallbackWidth: number): { doc: InkDocume
         : "the payload's version is not a number",
     );
   }
+  // Only the starting state of a notebook kept as one file per page per
+  // device: decoded here it would be saved back over every page written since.
+  if (label.features.includes("device-pages")) {
+    throw new SerializeError("the notebook keeps its pages in files of their own");
+  }
   const json = stage("the payload is not base64 of DEFLATE data", () =>
     inflateFromBase64(text.slice(colon + 1)),
   );
   const parsed = stage("the payload is not JSON", () => JSON.parse(json) as unknown);
   return { doc: readDocument(parsed, fallbackWidth), json };
+}
+
+// --- Labelled payloads read as stored JSON (FineNotes#274) -------------------------
+
+/** The features a payload's label names, or `null` when it has no readable label. */
+export function payloadFeatures(payload: string): FormatFeature[] | null {
+  const text = payload.trim();
+  const colon = text.indexOf(":");
+  if (!text.startsWith("v") || colon < 0) return null;
+  const label = readPayloadLabel(text.slice(0, colon));
+  return isLabelProblem(label) ? null : label.features;
+}
+
+/**
+ * A `v<n>[+features]:<base64>` payload unpacked to the JSON it holds, without
+ * reading it as a notebook. `what` names it in errors ("the page"). Throws
+ * {@link SerializeError} when it cannot be read, or names a feature this
+ * build lacks.
+ */
+export function readLabelledJson(payload: string, what: string): unknown {
+  const text = payload.trim();
+  const colon = text.indexOf(":");
+  if (!text.startsWith("v") || colon < 0) {
+    throw new SerializeError(`${what} does not start with \`v<n>:\``);
+  }
+  const label = readPayloadLabel(text.slice(0, colon));
+  if (isLabelProblem(label)) {
+    throw new SerializeError(
+      label.kind === "unknown-feature"
+        ? `${what} uses "${label.feature}", which needs a newer FineNotes`
+        : `${what}'s version is not a number`,
+    );
+  }
+  const json = stage(`${what} is not base64 of DEFLATE data`, () =>
+    inflateFromBase64(text.slice(colon + 1)),
+  );
+  return stage(`${what} is not JSON`, () => JSON.parse(json) as unknown);
+}
+
+/**
+ * Stored notebook JSON (`{ view, meta, pages, … }`) read as a notebook, every
+ * field made safe as a payload's would be. Throws {@link SerializeError} when
+ * it is not an object.
+ */
+export function readStoredDocument(raw: unknown, fallbackWidth = DEFAULT_PAPER_WIDTH): InkDocument {
+  return readDocument(raw, fallbackWidth);
+}
+
+/** A stored payload labelled with `extra` beside the features the notebook uses. */
+export function encodeDocumentWith(doc: InkDocument, extra: readonly FormatFeature[]): string {
+  const stored = storeDocument(doc);
+  const requires = [...(stored.requires ?? []), ...extra];
+  stored.requires = requires;
+  return `${payloadLabel(requires)}:${deflateToBase64(JSON.stringify(stored))}`;
 }
 
 // --- The note file ---------------------------------------------------------------

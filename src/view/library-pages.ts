@@ -16,9 +16,13 @@
 import type { App, TFile } from "obsidian";
 import { type ImagePainter, renderPageThumbnail } from "../canvas/renderer";
 import { parseInkFile } from "../model/serialize";
+import { isDevicePagesPayload } from "../model/device-pages";
+import { devicePagesFolderFor, notebookStatOf, readDevicePagesFolder } from "./device-pages-files";
+
+export { notebookStatOf } from "./device-pages-files";
 import { readTextSection } from "../recognition/text-layer";
 import { type IndexedPage, notebookText } from "../search/library-search";
-import type { Page } from "../model/document";
+import type { InkDocument, Page } from "../model/document";
 import { type LibraryEntry, entryFromDoc, placeholderEntry } from "../model/library";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
@@ -37,6 +41,23 @@ interface Kept {
   stamp: string;
   count: number;
   pages: Map<number, Page>;
+}
+
+/** What Home wants of a notebook read: its page count, the pages asked for, its facts and text. */
+function resultOf(
+  doc: InkDocument | null,
+  body: string,
+  want: number[],
+  facts: { path: string; edited: number } | undefined,
+  searchText: boolean,
+): ReadResult {
+  const pages = doc?.pages ?? [];
+  return {
+    count: pages.length,
+    pages: new Map(want.flatMap((i) => (pages[i] ? [[i, pages[i]] as [number, Page]] : []))),
+    ...(facts ? { entry: entryFromDoc(facts.path, facts.edited, doc) } : {}),
+    ...(searchText ? { searchText: notebookText(pages, readTextSection(body)) } : {}),
+  };
 }
 
 export class NotebookPages {
@@ -78,10 +99,21 @@ export class NotebookPages {
     facts?: { path: string; edited: number },
     searchText = false,
   ): Promise<ReadResult> {
-    const key = `${file.path}@${file.stat.mtime}:${file.stat.size}`;
+    const stat = notebookStatOf(this.app, file);
+    const key = `${file.path}@${stat.mtime}:${stat.size}`;
     // Home's own read takes the file as it is on disk, as it always has; pictures may take Obsidian's copy.
     const text = (): Promise<string> =>
       facts ? this.app.vault.read(file) : this.app.vault.cachedRead(file);
+    // Kept as one file per page per device (#274): put together here, from its files.
+    const folder = devicePagesFolderFor(this.app, file);
+    if (folder) {
+      const parsed = parseInkFile(await text());
+      if (parsed.payload !== undefined && isDevicePagesPayload(parsed.payload)) {
+        const doc = await readDevicePagesFolder(this.app, parsed.payload, folder);
+        return resultOf(doc, parsed.body, want, facts, searchText);
+      }
+      return resultOf(parsed.doc, parsed.body, want, facts, searchText);
+    }
     const client = await this.client();
     if (client) {
       try {
@@ -91,14 +123,7 @@ export class NotebookPages {
       }
     }
     const parsed = parseInkFile(await text());
-    const doc = parsed.doc;
-    const pages = doc?.pages ?? [];
-    return {
-      count: pages.length,
-      pages: new Map(want.flatMap((i) => (pages[i] ? [[i, pages[i]] as [number, Page]] : []))),
-      ...(facts ? { entry: entryFromDoc(facts.path, facts.edited, doc) } : {}),
-      ...(searchText ? { searchText: notebookText(pages, readTextSection(parsed.body)) } : {}),
-    };
+    return resultOf(parsed.doc, parsed.body, want, facts, searchText);
   }
 
   /**
@@ -128,7 +153,8 @@ export class NotebookPages {
   /** Page `index` of `file`, fetched with the pages after it and kept a while. */
   private async page(file: TFile, index: number): Promise<Page | null> {
     this.releaseLater();
-    const stamp = `${file.stat.mtime}:${file.stat.size}`;
+    const stat = notebookStatOf(this.app, file);
+    const stamp = `${stat.mtime}:${stat.size}`;
     for (;;) {
       const kept = this.kept.get(file.path);
       if (kept?.stamp === stamp && (kept.pages.has(index) || index >= kept.count))

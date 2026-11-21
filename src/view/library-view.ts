@@ -59,7 +59,8 @@ import {
   withFolderStyle,
 } from "../model/library-style";
 import { PdfBackdropCache } from "./pdf-backdrop";
-import { NotebookPages } from "./library-pages";
+import { NotebookPages, notebookStatOf } from "./library-pages";
+import { type FileStamp, devicePagesFolderOfFile } from "../model/device-pages";
 import type { Page } from "../model/document";
 import { type Tap, isDoubleTap, railFolders } from "../model/library-rail";
 import {
@@ -288,6 +289,11 @@ export function unstackTabsOf(leaf: WorkspaceLeaf): void {
     setStacked?: (on: boolean) => void;
   } | null;
   if (group?.isStacked && typeof group.setStacked === "function") group.setStacked(false);
+}
+
+/** A file's stamp as Home keys reads on it: `<mtime>:<size>`. */
+function stampOf(stat: FileStamp): string {
+  return `${stat.mtime}:${stat.size}`;
 }
 
 export class LibraryView extends ItemView {
@@ -638,7 +644,11 @@ export class LibraryView extends ItemView {
       else this.stale = true;
     };
     const touched = (file: TAbstractFile): void => {
-      if (file instanceof TFile && !this.reads.has(file.path) && !this.isNotebook(file)) return;
+      // A file of a notebook kept as one file per page per device changes that notebook (#274).
+      const page = file instanceof TFile && devicePagesFolderOfFile(file.path) !== null;
+      if (file instanceof TFile && !page && !this.reads.has(file.path) && !this.isNotebook(file)) {
+        return;
+      }
       // A notebook saved while Home is a tab in the background is read when Home is shown.
       if (this.containerEl.isShown()) this.refreshSoon();
       else this.stale = true;
@@ -814,13 +824,20 @@ export class LibraryView extends ItemView {
     ];
   }
 
+  /**
+   * A notebook's size and last change, counting its page files when it keeps
+   * its pages in one file per page per device (#274): what Home keys its reads on.
+   */
+  private stat(file: TFile): FileStamp {
+    return notebookStatOf(this.app, file);
+  }
+
   /** What a notebook's card shows: its last read, or its file's facts until it is read. */
   private entryOf(file: TFile): LibraryEntry {
     const read = this.reads.get(file.path);
-    const fresh = read && read.mtime === file.stat.mtime && read.size === file.stat.size;
-    const entry = fresh
-      ? read.entry
-      : (read?.entry ?? placeholderEntry(file.path, file.stat.mtime));
+    const stat = this.stat(file);
+    const fresh = read && read.mtime === stat.mtime && read.size === stat.size;
+    const entry = fresh ? read.entry : (read?.entry ?? placeholderEntry(file.path, stat.mtime));
     return { ...entry, created: file.stat.ctime };
   }
 
@@ -896,7 +913,7 @@ export class LibraryView extends ItemView {
         saveNotebookTexts(this.vaultKey(), textChanges);
         return;
       }
-      const { mtime, size } = file.stat;
+      const { mtime, size } = this.stat(file);
       // Only its text was missing (kept from before searching inside notebooks): its card stays.
       const textOnly = this.entryFresh(file);
       // Decoded in the read worker; its cover drawn from that same read, never a second one.
@@ -945,9 +962,7 @@ export class LibraryView extends ItemView {
     try {
       this.app.saveLocalStorage(
         READING_MARK_KEY,
-        file
-          ? JSON.stringify({ path: file.path, stamp: `${file.stat.mtime}:${file.stat.size}` })
-          : null,
+        file ? JSON.stringify({ path: file.path, stamp: stampOf(this.stat(file)) }) : null,
       );
     } catch {
       // No storage: nothing to guard with.
@@ -975,12 +990,10 @@ export class LibraryView extends ItemView {
       return;
     }
     this.markReading(null);
-    const at = stale.findIndex(
-      (f) => f.path === path && `${f.stat.mtime}:${f.stat.size}` === stamp,
-    );
+    const at = stale.findIndex((f) => f.path === path && stampOf(this.stat(f)) === stamp);
     if (at < 0) return;
     const [file] = stale.splice(at, 1);
-    const { mtime, size } = file.stat;
+    const { mtime, size } = this.stat(file);
     const read = this.entryFresh(file)
       ? this.reads.get(file.path)
       : { mtime, size, entry: placeholderEntry(file.path, mtime) };
@@ -996,13 +1009,15 @@ export class LibraryView extends ItemView {
   /** Whether a notebook's card is from its file as it is now. */
   private entryFresh(file: TFile): boolean {
     const read = this.reads.get(file.path);
-    return !!read && read.mtime === file.stat.mtime && read.size === file.stat.size;
+    const stat = this.stat(file);
+    return !!read && read.mtime === stat.mtime && read.size === stat.size;
   }
 
   /** Whether a notebook's text for searching is from its file as it is now. */
   private textFresh(file: TFile): boolean {
     const text = this.texts.get(file.path);
-    return !!text && text.mtime === file.stat.mtime && text.size === file.stat.size;
+    const stat = this.stat(file);
+    return !!text && text.mtime === stat.mtime && text.size === stat.size;
   }
 
   // --- Painting ---------------------------------------------------------------
@@ -1991,7 +2006,7 @@ export class LibraryView extends ItemView {
    */
   private ownCoverKey(file: TFile): string {
     const dpr = window.devicePixelRatio || 1;
-    return `cover:${file.path}@${file.stat.mtime}:${file.stat.size}:${Math.round(COVER_WIDTH * dpr)}`;
+    return `cover:${file.path}@${stampOf(this.stat(file))}:${Math.round(COVER_WIDTH * dpr)}`;
   }
 
   /** The cover page of a notebook just read, kept as its cover picture unless one is kept already. */
@@ -2036,7 +2051,8 @@ export class LibraryView extends ItemView {
       }
       // Not read since it changed: Home's own read draws the cover (keepOwnCover), then this card again.
       const read = this.reads.get(file.path);
-      if (!read || read.mtime !== file.stat.mtime || read.size !== file.stat.size) return;
+      const stat = this.stat(file);
+      if (!read || read.mtime !== stat.mtime || read.size !== stat.size) return;
       const canvas = await this.pages().render(file, 0, COVER_WIDTH);
       if (!canvas || this.closed) return;
       const url = await saveCover(vault, key, canvas);
@@ -2155,7 +2171,7 @@ export class LibraryView extends ItemView {
       sheet.addClass("is-ready");
     };
     const keyFor = (width: number): string =>
-      `page:${file.path}#${index}@${file.stat.mtime}:${file.stat.size}:${Math.round(width * dpr)}`;
+      `page:${file.path}#${index}@${stampOf(this.stat(file))}:${Math.round(width * dpr)}`;
     const vault = this.vaultKey();
     this.whenSeen(sheet, async () => {
       if (this.closed || !sheet.isConnected) return;

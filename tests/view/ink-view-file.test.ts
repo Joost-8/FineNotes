@@ -13,7 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmVendor } from "../../src/recognition/llm-request";
-import { TFile, WorkspaceLeaf, notices, resetFakes } from "./fake-obsidian";
+import { TFile, TFolder, WorkspaceLeaf, notices, resetFakes } from "./fake-obsidian";
 import { AUTO_RECOGNIZE_IDLE_MS, AUTO_RECOGNIZE_LEAVE_MS } from "../../src/constants";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
@@ -903,5 +903,114 @@ describe("saving while the pen writes", () => {
     pen(view)(true);
     await view.save(true);
     expect(saves).toBe(1);
+  });
+});
+
+describe("a notebook kept as one file per page per device (#274)", () => {
+  const NOTEBOOK = "Physics/Physics.notebook.md";
+  const FOLDER = "Physics/Pages/n7k2q9ab";
+  const BODY = "---\nfinenotes-id: n7k2q9ab\n---\n# Physics\n\nMy prose.";
+
+  /** A view over a vault holding `files` by path; the page folder lists those in it. */
+  function openOver(files: Map<string, string>): View {
+    plugin = fakePlugin();
+    const folder = (): TFolder =>
+      Object.assign(new TFolder(FOLDER), {
+        children: [...files.keys()]
+          .filter((path) => path.startsWith(`${FOLDER}/`))
+          .map((path) => new TFile(path)),
+      });
+    const app = {
+      vault: {
+        getAbstractFileByPath: (path: string) =>
+          path === FOLDER ? folder() : files.has(path) ? new TFile(path) : null,
+        read: (file: TFile) => Promise.resolve(files.get(file.path) ?? ""),
+      },
+    };
+    const view = new InkView(new WorkspaceLeaf(app) as never, plugin as never);
+    (view as unknown as { file: TFile }).file = new TFile(NOTEBOOK, 100);
+    return view;
+  }
+
+  /** A three-page notebook moved to the layout; device a1 wrote a stroke on p2. */
+  async function threePages(): Promise<{ notebook: string; files: Map<string, string> }> {
+    const { encodeDocumentWith, inkFileText } = await import("../../src/model/serialize");
+    const { pageFileText } = await import("../../src/model/device-pages");
+    const { deflateToBase64 } = await import("../../src/model/compress");
+    const doc = emptyDocument(1024);
+    doc.pages = [blankPage("p1"), blankPage("p2"), blankPage("p3")];
+    const page = {
+      dev: "a1",
+      page: "p2",
+      rev: 1,
+      vv: { a1: 1 },
+      strokes: [
+        { id: "a1.1", d: "a1.1", tool: "pen", color: "#1a1a1a", size: 3, pts: [1, 2, 128] },
+      ],
+    };
+    const files = new Map([
+      [`${FOLDER}/p2.a1.md`, pageFileText(`v2:${deflateToBase64(JSON.stringify(page))}`)],
+    ]);
+    return { notebook: inkFileText(BODY, encodeDocumentWith(doc, ["device-pages"])), files };
+  }
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  };
+  const pagesOf = (view: View) =>
+    (inside(view).doc as unknown as { pages: { id: string; strokes: { id: string }[] }[] }).pages;
+
+  it("shows its pages joined from their files, read-only, and writes nothing", async () => {
+    const { notebook, files } = await threePages();
+    const view = openOver(files);
+    view.setViewData(notebook, true);
+    await settle();
+    expect(pagesOf(view).map((page) => page.id)).toEqual(["p1", "p2", "p3"]);
+    expect(pagesOf(view)[1].strokes.map((s) => s.id)).toEqual(["a1.1"]);
+    // Held: what it would save is the file exactly as read, and it takes no edits.
+    expect(view.getViewData()).toBe(notebook);
+    expect(inside(view).isProtected()).toBe(true);
+    // The second is what an edit refused says (isProtected asked).
+    expect(notices.map((n) => n.message)).toEqual([
+      expect.stringContaining("files of their own"),
+      expect.stringContaining("read-only"),
+    ]);
+  });
+
+  it("reads a file of its own again when it changes, without a second notice", async () => {
+    vi.useFakeTimers();
+    const { notebook, files } = await threePages();
+    const late = files.get(`${FOLDER}/p2.a1.md`) ?? "";
+    files.delete(`${FOLDER}/p2.a1.md`);
+    const view = openOver(files);
+    view.setViewData(notebook, true);
+    await settle();
+    expect(pagesOf(view)[1].strokes).toHaveLength(0);
+    files.set(`${FOLDER}/p2.a1.md`, late);
+    const changed = (path: string): void =>
+      (view as unknown as { devicePageChanged(path: string): void }).devicePageChanged(path);
+    // Not its files: nothing happens.
+    changed("Physics/Pages/q3x9/p2.a1.md");
+    changed(`${FOLDER}/notes.md`);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(pagesOf(view)[1].strokes).toHaveLength(0);
+    changed(`${FOLDER}/p2.a1.md`);
+    await vi.advanceTimersByTimeAsync(1000);
+    await settle();
+    expect(pagesOf(view)[1].strokes).toHaveLength(1);
+    expect(notices).toHaveLength(1);
+    expect(view.getViewData()).toBe(notebook);
+  });
+
+  it("without an id in its frontmatter is held as a load it cannot read", async () => {
+    const { notebook, files } = await threePages();
+    const view = openOver(files);
+    const noId = notebook.replace("finenotes-id: n7k2q9ab\n", "");
+    view.setViewData(noId, true);
+    await settle();
+    expect(notices.map((n) => n.message)).toEqual([expect.stringContaining("did not load")]);
+    expect(pagesOf(view)).toHaveLength(1);
+    expect(inside(view).isProtected()).toBe(true);
+    expect(view.getViewData()).toBe(noId);
   });
 });
