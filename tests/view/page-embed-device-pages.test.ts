@@ -16,7 +16,7 @@ const { deflateToBase64 } = await import("../../src/model/compress");
 
 const NOTEBOOK = "Physics/Physics.notebook.md";
 const FOLDER = "Physics/Pages/n7k2q9ab";
-const BODY = "---\nfinenotes-id: n7k2q9ab\n---\n# Physics";
+const BODY = "# Physics";
 
 /** The members a test reaches that TypeScript keeps private. */
 interface Inside {
@@ -41,10 +41,7 @@ function embedsOver(texts: Map<string, string>) {
         (path === FOLDER ? Object.assign(new TFolder(FOLDER), { children }) : null),
       cachedRead: (file: TFile) => Promise.resolve(texts.get(file.path) ?? ""),
     },
-    metadataCache: {
-      getFileCache: (file: TFile) =>
-        file.path === NOTEBOOK ? { frontmatter: { "finenotes-id": "n7k2q9ab" } } : null,
-    },
+    metadataCache: { getFileCache: () => null },
     workspace: { on: () => ({}) },
   };
   const embeds = new PageEmbeds({
@@ -69,7 +66,16 @@ function devicePagesNotebook(): Map<string, string> {
     strokes: [{ id: "a1.1", tool: "pen", color: "#1a1a1a", size: 3, pts: [1, 2, 128] }],
   };
   return new Map([
-    [NOTEBOOK, inkFileText(BODY, encodeDocumentWith(doc, ["device-pages"]))],
+    [
+      NOTEBOOK,
+      inkFileText(
+        BODY,
+        encodeDocumentWith(doc, ["device-pages"]).replace(
+          "+device-pages:",
+          "+device-pages=n7k2q9ab:",
+        ),
+      ),
+    ],
     [`${FOLDER}/p2.a1.md`, pageFileText(`v2:${deflateToBase64(JSON.stringify(page))}`)],
   ]);
 }

@@ -9,8 +9,8 @@
  * page it changed, and no file is ever changed on two devices.
  *
  * ```
- * Physics/Physics.notebook.md    frontmatter `finenotes-id: n7k2q9ab`, prose,
- *                                and the notebook as it was (`v2+device-pages:`)
+ * Physics/Physics.notebook.md    prose, and the notebook as it was, labelled
+ *                                with its id (`v2+device-pages=n7k2q9ab:`)
  * Physics/Pages/n7k2q9ab/
  *   p1.ab12cd34.md               page p1, as device ab12cd34 wrote it
  *   p1.ef56gh78.md               page p1, as device ef56gh78 wrote it
@@ -41,20 +41,13 @@ import {
   PAGE_FIELDS,
   joinDevicePages,
 } from "./device-pages-union";
-import { needsNewerReader } from "./format-features";
+import { BLOCK_LABEL } from "../constants";
+import { isLabelProblem, needsNewerReader, readPayloadLabel } from "./format-features";
 import { isDeviceId, readVersionVector } from "./provenance";
-import {
-  payloadFeatures,
-  readLabelledJson,
-  readStoredDocument,
-  splitFrontmatter,
-} from "./serialize";
+import { payloadFeatures, readLabelledJson, readStoredDocument } from "./serialize";
 
 /** The folder beside the notebook file that holds the page folders, one per notebook id. */
 export const PAGES_FOLDER = "Pages";
-
-/** The frontmatter key holding a notebook's id. */
-export const NOTEBOOK_ID_KEY = "finenotes-id";
 
 /** The block a page file keeps its page in. */
 export const PAGE_BLOCK_LABEL = "finenotes-page";
@@ -81,22 +74,32 @@ export function isDevicePagesPayload(payload: string): boolean {
 // --- The notebook's id -----------------------------------------------------------
 
 /**
- * The `finenotes-id` in a note's leading frontmatter, or `null` when it has
- * none or the id could name anything but one folder. Quotes are allowed.
+ * The id of a notebook kept as page files, from its payload's label
+ * (`device-pages=<id>`), or `null` when the label names none.
  */
-export function notebookIdOf(body: string): string | null {
-  const { frontmatter } = splitFrontmatter(body);
-  if (!frontmatter) return null;
-  for (const line of frontmatter.split(/\r?\n/)) {
-    if (!line.startsWith(`${NOTEBOOK_ID_KEY}:`)) continue;
-    let value = line.slice(NOTEBOOK_ID_KEY.length + 1).trim();
-    const quote = value[0];
-    if ((quote === '"' || quote === "'") && value.endsWith(quote) && value.length >= 2) {
-      value = value.slice(1, -1);
-    }
-    return isNotebookId(value) ? value : null;
-  }
-  return null;
+export function notebookIdOf(payload: string): string | null {
+  const text = payload.trim();
+  const colon = text.indexOf(":");
+  if (colon < 0) return null;
+  const label = readPayloadLabel(text.slice(0, colon));
+  return isLabelProblem(label) ? null : (label.pagesId ?? null);
+}
+
+/** The block a notebook file keeps its payload in: where its label starts. */
+const BLOCK_START = `%%${BLOCK_LABEL}`;
+
+/**
+ * The id of a notebook kept as page files from its whole file text, reading
+ * only its block's label: cheap enough for Home to ask of every notebook.
+ */
+export function notebookIdOfText(text: string): string | null {
+  const at = text.indexOf(BLOCK_START);
+  if (at < 0) return null;
+  const start = text.indexOf("\n", at);
+  if (start < 0) return null;
+  const colon = text.indexOf(":", start);
+  if (colon < 0 || colon - start > 400) return null;
+  return notebookIdOf(text.slice(start + 1, colon + 1));
 }
 
 // --- Paths ---------------------------------------------------------------------

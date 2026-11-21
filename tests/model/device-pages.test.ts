@@ -14,6 +14,7 @@ import {
   metaFileText,
   metaPayloadOf,
   notebookIdOf,
+  notebookIdOfText,
   notebookStat,
   pageFileText,
   pagePayloadOf,
@@ -94,7 +95,7 @@ const strokeIds = (doc: InkDocument, page = 0) => doc.pages[page].strokes.map((s
 
 describe("the notebook file of the layout (#274)", () => {
   it("is never decoded as a whole notebook, so no save puts the old pages back", () => {
-    const text = inkFileText("---\nfinenotes-id: n7k2q9ab\n---\nProse.", legacyOf(twoPages()));
+    const text = inkFileText("Prose.", legacyOf(twoPages()));
     const parsed = parseInkFile(text);
     expect(parsed.doc).toBeNull();
     expect(parsed.payload?.startsWith("v2+device-pages:")).toBe(true);
@@ -106,15 +107,22 @@ describe("the notebook file of the layout (#274)", () => {
     expect(isDevicePagesPayload(encodeDocument(twoPages()))).toBe(false);
   });
 
-  it("names its id in the frontmatter, and nothing unsafe passes as one", () => {
-    expect(notebookIdOf("---\nfinenotes-id: n7k2q9ab\n---\n")).toBe("n7k2q9ab");
-    expect(notebookIdOf('---\r\ntags: [x]\r\nfinenotes-id: "n7k2"\r\n---\r\n')).toBe("n7k2");
-    expect(notebookIdOf("---\nfinenotes-id: 'n7k2'\n---\n")).toBe("n7k2");
+  it("names its id in its label, and nothing unsafe passes as one", () => {
+    expect(notebookIdOf("v2+device-pages=n7k2q9ab:abc")).toBe("n7k2q9ab");
+    expect(notebookIdOf("v2+boards+device-pages=n7k2:abc")).toBe("n7k2");
+    // Twice (Sync's merge applying one edit twice): the first.
+    expect(notebookIdOf("v2+device-pages=n7k2+device-pages=n7k2:abc")).toBe("n7k2");
+    expect(notebookIdOf("v2+device-pages:abc")).toBeNull();
+    expect(notebookIdOf("v2:abc")).toBeNull();
     for (const bad of ["../x", "a/b", "", "a b"]) {
-      expect(notebookIdOf(`---\nfinenotes-id: ${bad}\n---\n`)).toBeNull();
+      expect(notebookIdOf(`v2+device-pages=${bad}:abc`)).toBeNull();
     }
-    expect(notebookIdOf("finenotes-id: n7k2\n")).toBeNull();
-    expect(notebookIdOf("---\ntitle: x\n---\nfinenotes-id: n7k2")).toBeNull();
+    // A value on any other feature is a label this build cannot read.
+    expect(isDevicePagesPayload("v2+boards=x:abc")).toBe(false);
+    expect(needsNewerReader("v2+boards=x:abc")).toBe(true);
+    const file = inkFileText("---\ntags: [x]\n---\nProse.", "v2+device-pages=n7k2q9ab:abc");
+    expect(notebookIdOfText(file)).toBe("n7k2q9ab");
+    expect(notebookIdOfText("No block here.")).toBeNull();
   });
 });
 

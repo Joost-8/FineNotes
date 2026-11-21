@@ -6,7 +6,7 @@
 
 import { type App, Notice, type TFile } from "obsidian";
 import { devicePagesFolderOf, isDevicePagesPayload, notebookIdOf } from "../model/device-pages";
-import { devicePagesNotebookText, withoutNotebookId } from "../model/device-pages-writer";
+import { devicePagesNotebookText } from "../model/device-pages-writer";
 import { parseInkFile } from "../model/serialize";
 import { readDevicePagesFolder } from "./device-pages-files";
 import { t } from "../i18n/translate";
@@ -88,10 +88,11 @@ export class LibraryActions {
   /** A copy's file text for a notebook kept as page files, or `null` for any other notebook. */
   private async forkDevicePages(file: TFile): Promise<string | null> {
     const { body, payload } = parseInkFile(await this.app.vault.read(file));
-    const id = payload !== undefined && isDevicePagesPayload(payload) ? notebookIdOf(body) : null;
+    const id =
+      payload !== undefined && isDevicePagesPayload(payload) ? notebookIdOf(payload) : null;
     if (id === null || payload === undefined) return null;
     const doc = await readDevicePagesFolder(this.app, payload, devicePagesFolderOf(file.path, id));
-    return doc ? devicePagesNotebookText(withoutNotebookId(body), doc) : null;
+    return doc ? devicePagesNotebookText(body, doc) : null;
   }
 
   /** Ask once, naming what goes and what stays, then put it in the trash. Whether anything went. */

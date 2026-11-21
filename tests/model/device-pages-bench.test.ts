@@ -7,7 +7,7 @@ import { DotClock, attachDotClock } from "../../src/model/dot-ids";
 describe("the writer on a big notebook (#274)", () => {
   it("saves one changed page of 300 in well under a frame budget", () => {
     const load = readDevicePagesNotebook(
-      legacyPayload(stressNotebook(300, { density: "typical" })),
+      legacyPayload(stressNotebook(300, { density: "typical" }), "n7k2q9ab"),
       new Map(),
     );
     const clock = new DotClock("aaaa1111");

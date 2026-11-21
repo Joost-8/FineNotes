@@ -84,13 +84,8 @@ import {
   notebookIdOf,
   readDeviceFileName,
 } from "../model/device-pages";
-import {
-  legacyPayload,
-  movedNotebook,
-  randomId,
-  withNotebookId,
-  withoutNotebookId,
-} from "../model/device-pages-writer";
+import { legacyPayload, movedNotebook, randomId } from "../model/device-pages-writer";
+import { rememberNotebookId } from "./device-pages-files";
 import { DevicePagesSession, deviceIdOf } from "./device-pages-session";
 import { BackgroundSaver } from "./background-save";
 import type { RecognitionProvider } from "../recognition/provider";
@@ -1159,7 +1154,7 @@ export class InkView extends TextFileView {
    */
   private async followDevicePages(path: string): Promise<void> {
     const shown = this.devicePages;
-    const id = notebookIdOf(this.noteBody);
+    const id = shown ? notebookIdOf(shown.payload) : null;
     if (!shown || id === null) return;
     const folder = devicePagesFolderOf(path, id);
     if (folder === shown.folder && path === shown.path) return;
@@ -1305,7 +1300,10 @@ export class InkView extends TextFileView {
     // Kept as one file per page per device: its pages come from their files.
     // Without an id in its frontmatter its folder is unknown: held, as ink that will not load.
     const pageFolder =
-      payload !== undefined && isDevicePagesPayload(payload) ? this.devicePagesFolder(body) : null;
+      payload !== undefined && isDevicePagesPayload(payload)
+        ? this.devicePagesFolder(payload)
+        : null;
+    if (this.file) rememberNotebookId(this.file.path, payload ? notebookIdOf(payload) : null);
     // What this view has not written yet goes to its page files before they are read again.
     const previousPages = this.devicePages;
     if (previousPages && sameFile && !this.guard.locked) {
@@ -1372,7 +1370,7 @@ export class InkView extends TextFileView {
         deviceIdOf(this.app),
         previousPages,
       );
-      void this.readDevicePages(notebookIdOf(body));
+      void this.readDevicePages(notebookIdOf(payload));
     }
     this.textPanel?.load(this.noteBody);
     if (!this.mounted) return;
@@ -1392,8 +1390,8 @@ export class InkView extends TextFileView {
   }
 
   /** The page folder of a notebook kept as one file per page per device, or `null` without an id. */
-  private devicePagesFolder(body: string): string | null {
-    const id = notebookIdOf(body);
+  private devicePagesFolder(payload: string): string | null {
+    const id = notebookIdOf(payload);
     const path = this.file?.path;
     return id !== null && path ? devicePagesFolderOf(path, id) : null;
   }
@@ -1476,7 +1474,7 @@ export class InkView extends TextFileView {
     // so two devices moving it at once make the same file. What changed since goes
     // to this device's page files.
     const move = this.pendingMove;
-    const moved = move ? movedNotebook(path, this.noteBody, move.payload) : null;
+    const moved = move ? movedNotebook(path, move.payload) : null;
     let legacy: InkDocument | null = null;
     if (move && moved) {
       try {
@@ -1487,7 +1485,6 @@ export class InkView extends TextFileView {
     }
     let session: DevicePagesSession;
     if (move && moved && legacy) {
-      this.noteBody = moved.body;
       session = new DevicePagesSession(
         this.app,
         path,
@@ -1501,11 +1498,10 @@ export class InkView extends TextFileView {
     } else {
       // Nothing read to move with (a note without ink yet): the notebook as it is.
       const id = randomId();
-      this.noteBody = withNotebookId(this.noteBody, id);
       session = new DevicePagesSession(
         this.app,
         path,
-        legacyPayload(this.doc),
+        legacyPayload(this.doc, id),
         devicePagesFolderOf(path, id),
         deviceIdOf(this.app),
       );
@@ -4596,10 +4592,7 @@ export class InkView extends TextFileView {
     const name = uniqueFileName(base, suffix, taken);
     const path = normalizePath(folder && folder !== "/" ? `${folder}/${name}` : name);
     try {
-      await this.app.vault.create(
-        path,
-        buildInkFile(withoutNotebookId(this.syncedBody()), this.doc),
-      );
+      await this.app.vault.create(path, buildInkFile(this.syncedBody(), this.doc));
       new Notice(t("notebooks.export.savedOne", { path }));
     } catch (error) {
       new Notice(errorMessage(error));

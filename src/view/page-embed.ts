@@ -50,7 +50,12 @@ import {
   isDevicePagesPayload,
   notebookIdOf,
 } from "../model/device-pages";
-import { devicePagesFolderPath, notebookStatOf, readDevicePagesFolder } from "./device-pages-files";
+import {
+  devicePagesFolderPath,
+  notebookStatOf,
+  readDevicePagesFolder,
+  rememberNotebookId,
+} from "./device-pages-files";
 import { VaultImageCache } from "./image-cache";
 import { releaseCanvas } from "./image-import";
 import {
@@ -455,11 +460,12 @@ export class PageEmbeds extends Component {
     const key = onlyPage === undefined ? file.path : `${file.path}#page=${onlyPage + 1}`;
     return this.notebooks.get(key, version, async () => {
       const text = await this.host.app.vault.cachedRead(file);
-      const { doc, payload, body } = parseInkFile(text, this.host.paperWidth());
+      const { doc, payload } = parseInkFile(text, this.host.paperWidth());
       if (doc) return { pages: doc.pages, board: isBoard(doc) };
       if (payload === undefined) return { pages: [], board: false };
       // Kept as one file per page per device (#274): joined from its files.
-      const id = isDevicePagesPayload(payload) ? notebookIdOf(body) : null;
+      const id = isDevicePagesPayload(payload) ? notebookIdOf(payload) : null;
+      rememberNotebookId(file.path, id);
       const joined =
         id === null
           ? null

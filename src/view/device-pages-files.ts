@@ -10,21 +10,40 @@ import type { InkDocument } from "../model/document";
 import { pageFileName } from "../model/device-pages-writer";
 import {
   type FileStamp,
-  NOTEBOOK_ID_KEY,
   devicePagesFolderOf,
-  isNotebookId,
   notebookStat,
   readDeviceFileName,
   readDevicePagesNotebook,
 } from "../model/device-pages";
 
-/** The vault path of a notebook's page folder, from the id in its frontmatter (`null`: none). */
-export function devicePagesFolderPath(app: App, file: TFile): string | null {
-  const id: unknown = app.metadataCache.getFileCache(file)?.frontmatter?.[NOTEBOOK_ID_KEY];
-  return isNotebookId(id) ? devicePagesFolderOf(file.path, id) : null;
+/**
+ * The id of each notebook kept as page files, by path, as its file was last
+ * read here (the id is in its payload's label, which only a read sees).
+ * What asks without reading (Home's stamps) goes by this.
+ */
+const knownIds = new Map<string, { id: string | null; stamp?: string }>();
+
+/**
+ * A notebook's file was read: remember its id (`null`: not kept as page
+ * files), and the file's `stamp` (`<mtime>:<size>`) when the reader knows it.
+ */
+export function rememberNotebookId(path: string, id: string | null, stamp?: string): void {
+  knownIds.set(path, { id, stamp });
 }
 
-/** A notebook's page folder, when its frontmatter names one and it is there. */
+/** The id read in the file at `path` as of `stamp`: `undefined` when not read as of then. */
+export function knownNotebookId(path: string, stamp: string): string | null | undefined {
+  const known = knownIds.get(path);
+  return known && known.stamp === stamp ? known.id : undefined;
+}
+
+/** The vault path of a notebook's page folder, from the id last read in its file (`null`: none). */
+export function devicePagesFolderPath(_app: App, file: TFile): string | null {
+  const id = knownIds.get(file.path)?.id;
+  return id ? devicePagesFolderOf(file.path, id) : null;
+}
+
+/** A notebook's page folder, when it is kept as page files and the folder is there. */
 export function devicePagesFolderFor(app: App, file: TFile): TFolder | null {
   const path = devicePagesFolderPath(app, file);
   const folder = path === null ? null : app.vault.getAbstractFileByPath(path);

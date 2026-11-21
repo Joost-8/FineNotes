@@ -5,7 +5,6 @@ import {
   movedNotebook,
   pageFileName,
   randomId,
-  withNotebookId,
 } from "../../src/model/device-pages-writer";
 import { notebookIdOf, readDevicePagesNotebook } from "../../src/model/device-pages";
 import { DotClock, attachDotClock, mintedId } from "../../src/model/dot-ids";
@@ -98,44 +97,45 @@ const B = "bbbb2222";
 
 /** Two devices on one notebook just moved to the layout, both open. */
 function twoDevices(): [Device, Device] {
-  const payload = legacyPayload(legacyDoc());
+  const payload = legacyPayload(legacyDoc(), "n7k2q9ab");
   return [new Device(A, payload).open(), new Device(B, payload).open()];
 }
 
 describe("two devices moving one notebook at once (#274)", () => {
-  it("make the same notebook file, so Sync has nothing to merge", () => {
-    const body = "---\ntags: [x]\n---\n# Lecture";
+  it("make the same edit, which reads the same even when Sync applies it twice", () => {
     const loaded = encodeDocument(legacyDoc());
     const path = "Uni/Lecture.notebook.md";
     // Each device made its own edit before its first save: the move is still the same.
-    const onLaptop = movedNotebook(path, body, loaded) as NonNullable<
-      ReturnType<typeof movedNotebook>
-    >;
-    const onIpad = movedNotebook(path, body, loaded);
-    expect(onIpad).toEqual(onLaptop);
+    const onLaptop = movedNotebook(path, loaded) as NonNullable<ReturnType<typeof movedNotebook>>;
+    expect(movedNotebook(path, loaded)).toEqual(onLaptop);
     expect(onLaptop.id).toMatch(/^[a-z0-9]{8}$/);
     // Another notebook (another path or content) gets another id.
-    expect(movedNotebook("Uni/Other.notebook.md", body, loaded)?.id).not.toBe(onLaptop.id);
-    // The legacy payload is the loaded one, relabelled: it reads back as it was.
-    expect(onLaptop.payload.startsWith("v2+device-pages:")).toBe(true);
+    expect(movedNotebook("Uni/Other.notebook.md", loaded)?.id).not.toBe(onLaptop.id);
+    // Only the label changes: the data is the loaded one, and reads back as it was.
+    expect(onLaptop.payload).toBe(loaded.replace(/^v2:/, `v2+device-pages=${onLaptop.id}:`));
     const back = readDevicePagesNotebook(onLaptop.payload, new Map()).doc;
     expect(encodeDocument(back)).toBe(loaded);
-    expect(notebookIdOf(onLaptop.body)).toBe(onLaptop.id);
+    expect(notebookIdOf(onLaptop.payload)).toBe(onLaptop.id);
+    // Sync's merge applying the same insertion twice: the same notebook, the same id.
+    const twice = onLaptop.payload.replace(":", `+device-pages=${onLaptop.id}:`);
+    expect(notebookIdOf(twice)).toBe(onLaptop.id);
+    expect(encodeDocument(readDevicePagesNotebook(twice, new Map()).doc)).toBe(loaded);
   });
 
   it("keep a label's other features when relabelling", () => {
     const doc = legacyDoc();
     doc.pages[1].board = true;
-    const moved = movedNotebook("a.notebook.md", "", encodeDocument(doc));
-    expect(moved?.payload.startsWith("v2+boards+device-pages:")).toBe(true);
+    const moved = movedNotebook("a.notebook.md", encodeDocument(doc));
+    expect(moved?.payload.startsWith(`v2+boards+device-pages=${moved.id}:`)).toBe(true);
   });
 });
 
 describe("moving a notebook to the layout (#274)", () => {
   it("keeps the notebook whole as its legacy payload, and writes nothing until it changes", () => {
     const doc = legacyDoc();
-    const payload = legacyPayload(doc);
-    expect(payload.startsWith("v2+device-pages:")).toBe(true);
+    const payload = legacyPayload(doc, "n7k2q9ab");
+    expect(payload.startsWith("v2+device-pages=n7k2q9ab:")).toBe(true);
+    expect(notebookIdOf(payload)).toBe("n7k2q9ab");
     const back = readDevicePagesNotebook(payload, new Map());
     expect(back.doc.pages.map((p) => p.id)).toEqual(["p1", "p2"]);
     const clock = new DotClock(A);
@@ -144,19 +144,7 @@ describe("moving a notebook to the layout (#274)", () => {
     expect(fresh.save(back.doc)).toEqual([]);
     const read = DevicePagesWriter.fromRead(A, clock, back.doc, back.sources, back.union);
     expect(read.save(back.doc)).toEqual([]);
-  });
-
-  it("puts the id in the frontmatter, made if need be", () => {
-    expect(withNotebookId("# Hi", "n1")).toBe("---\nfinenotes-id: n1\n---\n# Hi");
-    expect(withNotebookId("---\ntags: [a]\n---\n# Hi", "n1")).toBe(
-      "---\ntags: [a]\nfinenotes-id: n1\n---\n# Hi",
-    );
-    expect(withNotebookId("---\nfinenotes-id: old\n---\n", "n1")).toBe(
-      "---\nfinenotes-id: n1\n---\n",
-    );
-    expect(notebookIdOf(withNotebookId("---\na: 1\n---\nx", "ab12cd34"))).toBe("ab12cd34");
-    const id = randomId();
-    expect(id).toMatch(/^[a-z0-9]{8}$/);
+    expect(randomId()).toMatch(/^[a-z0-9]{8}$/);
   });
 });
 
@@ -346,7 +334,7 @@ describe("writing one file per page per device (#274)", () => {
   });
 
   it("counts on from its own dots after reopening, so ids never repeat", () => {
-    const payload = legacyPayload(legacyDoc());
+    const payload = legacyPayload(legacyDoc(), "n7k2q9ab");
     const a = new Device(A, payload).open();
     a.doc.pages[0].strokes.push(stroke(a.doc), stroke(a.doc));
     a.save();
@@ -360,7 +348,9 @@ describe("writing one file per page per device (#274)", () => {
   });
 
   it("keeps the legacy payload a whole notebook any reader of the old label could decode", () => {
-    const doc = decodeDocument(legacyPayload(legacyDoc()).replace("+device-pages", ""));
+    const doc = decodeDocument(
+      legacyPayload(legacyDoc(), "n7k2q9ab").replace("+device-pages=n7k2q9ab", ""),
+    );
     expect(doc.pages).toHaveLength(2);
   });
 });

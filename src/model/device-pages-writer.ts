@@ -35,7 +35,7 @@ import {
   elementKey,
   orderKeyAt,
 } from "./device-pages-union";
-import { NOTEBOOK_ID_KEY, metaFileText, pageFileText, payloadHash } from "./device-pages";
+import { metaFileText, pageFileText, payloadHash } from "./device-pages";
 import { type FormatFeature, payloadLabel } from "./format-features";
 import { orderKeys } from "./order-keys";
 import { type VersionVector, joinVersionVectors, readDot } from "./provenance";
@@ -45,7 +45,6 @@ import {
   labelledPayload,
   pageFeatures,
   payloadFeatures,
-  splitFrontmatter,
   storedHead,
   storedPage,
 } from "./serialize";
@@ -446,73 +445,53 @@ export function randomId(random: () => number = Math.random): string {
 }
 
 /**
- * `body` with `finenotes-id: <id>` in its frontmatter: the line replaced if
- * there is one, added at the end of the frontmatter if not, and a
- * frontmatter made for it when the note has none.
+ * The notebook file's payload when it moves to the layout: the notebook as
+ * it is, kept as legacy, its label naming the notebook's id.
  */
-export function withNotebookId(body: string, id: string): string {
-  const line = `${NOTEBOOK_ID_KEY}: ${id}`;
-  const { frontmatter, prose } = splitFrontmatter(body);
-  if (!frontmatter) return `---\n${line}\n---\n${body}`;
-  const lines = frontmatter.split("\n");
-  const at = lines.findIndex((text) => text.startsWith(`${NOTEBOOK_ID_KEY}:`));
-  if (at >= 0) {
-    lines[at] = line;
-    return lines.join("\n") + prose;
-  }
-  // Before the closing `---` (the last line holding it).
-  let close = lines.length - 1;
-  while (close > 0 && !lines[close].startsWith("---")) close--;
-  lines.splice(close, 0, line);
-  return lines.join("\n") + prose;
+export function legacyPayload(doc: InkDocument, id: string): string {
+  return withPagesId(encodeDocumentWith(doc, ["device-pages"]), id);
 }
 
-/** The notebook file's payload when it moves to the layout: the notebook as it is, kept as legacy. */
-export function legacyPayload(doc: InkDocument): string {
-  return encodeDocumentWith(doc, ["device-pages"]);
+/** `payload` labelled `device-pages=<id>`, beside the features it names; `null` without a label. */
+function withPagesIdOrNull(payload: string, id: string): string | null {
+  const text = payload.trim();
+  const colon = text.indexOf(":");
+  const features = payloadFeatures(text);
+  if (colon < 0 || features === null) return null;
+  return `${payloadLabel([...features, "device-pages"], id)}${text.slice(colon)}`;
+}
+
+function withPagesId(payload: string, id: string): string {
+  return withPagesIdOrNull(payload, id) ?? payload;
 }
 
 /**
  * A one-file notebook moved to the layout, from the file as it was read:
- * its payload kept as it is and labelled `device-pages` (no re-encoding,
- * so a big notebook moves at once), and an id made from its path and that
- * payload. Two devices moving the same file at once so make the same file,
- * byte for byte, and Sync has nothing to merge; what each changed since goes
- * to its own page files. `null` when the payload has no readable label.
+ * its payload kept as it is, labelled `device-pages=<id>` (no re-encoding,
+ * so a big notebook moves at once), the id made from its path and that
+ * payload. Only the label changes, and two devices moving the same file at
+ * once make the same change: should Sync's merge apply it twice, the label
+ * holds the id twice, which reads the same. What each device changed since
+ * goes to its own page files. `null` when the payload has no readable label.
  */
 export function movedNotebook(
   path: string,
-  body: string,
   loaded: string,
-): { id: string; body: string; payload: string } | null {
+): { id: string; payload: string } | null {
   const text = loaded.trim();
-  const colon = text.indexOf(":");
-  const features = payloadFeatures(text);
-  if (colon < 0 || features === null) return null;
-  const payload = `${payloadLabel([...features, "device-pages"])}${text.slice(colon)}`;
   const id = payloadHash(`${path}\n${text}`).slice(0, 8);
-  return { id, body: withNotebookId(body, id), payload };
+  const payload = withPagesIdOrNull(text, id);
+  return payload === null ? null : { id, payload };
 }
 
 /**
- * A new notebook's file, made in the layout from the start: the note with
- * the notebook's id in its frontmatter, and `doc` as its legacy notebook.
+ * A new notebook's file, made in the layout from the start: the note, and
+ * `doc` as its legacy notebook, labelled with a new id.
  */
 export function devicePagesNotebookText(
   body: string,
   doc: InkDocument,
   id: string = randomId(),
 ): string {
-  return inkFileText(withNotebookId(body, id), legacyPayload(doc));
-}
-
-const NL = "\n";
-
-/** `body` without the notebook id in its frontmatter: for a copy kept as one file. */
-export function withoutNotebookId(body: string): string {
-  const { frontmatter, prose } = splitFrontmatter(body);
-  if (!frontmatter) return body;
-  const lines = frontmatter.split(NL).filter((line) => !line.startsWith(`${NOTEBOOK_ID_KEY}:`));
-  // A frontmatter that held only the id goes with it.
-  return lines.filter((line) => line.trim() !== "").length <= 2 ? prose : lines.join(NL) + prose;
+  return inkFileText(body, legacyPayload(doc, id));
 }

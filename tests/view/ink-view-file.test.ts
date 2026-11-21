@@ -928,7 +928,7 @@ describe("saving while the pen writes", () => {
 describe("a notebook kept as one file per page per device (#274)", () => {
   const NOTEBOOK = "Physics/Physics.notebook.md";
   const FOLDER = "Physics/Pages/n7k2q9ab";
-  const BODY = "---\nfinenotes-id: n7k2q9ab\n---\n# Physics\n\nMy prose.";
+  const BODY = "# Physics\n\nMy prose.";
   const ME = "me111111";
 
   /**
@@ -990,7 +990,16 @@ describe("a notebook kept as one file per page per device (#274)", () => {
     const files = new Map([
       [`${FOLDER}/p2.a1.md`, pageFileText(`v2:${deflateToBase64(JSON.stringify(page))}`)],
     ]);
-    return { notebook: inkFileText(BODY, encodeDocumentWith(doc, ["device-pages"])), files };
+    return {
+      notebook: inkFileText(
+        BODY,
+        encodeDocumentWith(doc, ["device-pages"]).replace(
+          "+device-pages:",
+          "+device-pages=n7k2q9ab:",
+        ),
+      ),
+      files,
+    };
   }
 
   const settle = async (): Promise<void> => {
@@ -1162,8 +1171,10 @@ describe("a notebook kept as one file per page per device (#274)", () => {
     expect(parsed.doc).toBeNull();
     // The payload read, relabelled, not encoded again.
     const before = parseInkFile(one, 1024).payload ?? "";
-    expect(parsed.payload).toBe(before.replace(/^v2:/, "v2+device-pages:"));
-    expect(text).toMatch(/^---\nfinenotes-id: [a-z0-9]{8}\n---\n# Physics/);
+    expect(parsed.payload?.replace(/^v2\+device-pages=[a-z0-9]{8}:/, "v2:")).toBe(before);
+    // Only the label changed: the note is as it was, the id in the label.
+    expect(parsed.body).toBe(parseInkFile(one, 1024).body);
+    expect(parsed.payload).toMatch(/^v2\+device-pages=[a-z0-9]{8}:/);
     // The stroke made before that save is this device's, in its page file.
     const names = [...files.keys()].map((path) => path.replace(/^Pages\/[a-z0-9]+\//, ""));
     expect(names).toEqual([`p1.${ME}.md`, `_meta.${ME}.md`]);
@@ -1191,7 +1202,7 @@ describe("a notebook kept as one file per page per device (#274)", () => {
   it("without an id in its frontmatter is held as a load it cannot read", async () => {
     const { notebook, files } = await threePages();
     const view = openOver(files);
-    const noId = notebook.replace("finenotes-id: n7k2q9ab\n", "");
+    const noId = notebook.replace("+device-pages=n7k2q9ab:", "+device-pages:");
     view.setViewData(noId, true);
     await settle();
     expect(notices.map((n) => n.message)).toEqual([expect.stringContaining("did not load")]);

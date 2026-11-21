@@ -53,7 +53,7 @@ describe.skipIf(!CORPUS)("real notebooks moved to page files (#274)", () => {
       if (!parsed.doc) return;
       const original = parsed.doc;
       const began = performance.now();
-      const payload = legacyPayload(original);
+      const payload = legacyPayload(original, "n7k2q9ab");
       const converted = performance.now() - began;
 
       // Read back with no page files: the notebook as it was.

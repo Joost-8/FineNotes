@@ -88,7 +88,7 @@ describe.skipIf(!process.env.FINENOTES_BENCH)("Sync storage for an hour of writi
     // After: this device's page file and meta.
     const after = new SyncMeter();
     const load = readDevicePagesNotebook(
-      legacyPayload(stressNotebook(30, { density: "typical" })),
+      legacyPayload(stressNotebook(30, { density: "typical" }), "n7k2q9ab"),
       new Map(),
     );
     const clock = new DotClock("aaaa1111");
