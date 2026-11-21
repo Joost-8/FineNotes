@@ -1659,6 +1659,79 @@ describe("insert space from the margin", () => {
   });
 });
 
+describe("insert space on a board (discussion #276)", () => {
+  /** A drag from (400, 1000) by (dx, dy) on a dotted board, with ink above and below. */
+  function boardDrag(dx: number, dy: number, moved = Math.hypot(dx, dy)) {
+    const p = page("p1", [line("above", 100, 300, 900), line("below", 100, 300, 1200)]);
+    p.backdrop = { kind: "dotted" };
+    p.geometry = { width: 5600, height: 5600 };
+    const doc = documentOf(p);
+    const applied: unknown[] = [];
+    const flashes: string[] = [];
+    const taps: string[] = [];
+    const surface = surfaceWith({
+      doc,
+      board: true,
+      pressTimer: 0,
+      renderer: null,
+      activePage: null,
+      pageAt: () => p,
+      textBoxFrameOf: () => ({ x: 0, y: 0, w: 0, h: 0 }),
+      flashReadout: (t: string) => flashes.push(t),
+      requestZoomPaint: () => {},
+      offerStrokeTap: () => false,
+      tapSelect: () => taps.push("tap"),
+      applyCommand: (c: { apply(d: InkDocument): void }) => {
+        applied.push(c);
+        c.apply(doc);
+      },
+    });
+    surface.lasso = {
+      box: { index: 0 },
+      mode: "lines",
+      origin: { x: 400, y: 1000 },
+      to: { x: 400 + dx, y: 1000 + dy },
+      held: false,
+      lines: [],
+      space: null,
+      boardSpace: { axis: null, amount: 0, plan: null, text: "" },
+    };
+    run(surface, "dragBoardSpace", surface.lasso, (surface.lasso as State).boardSpace, moved);
+    const axis = ((surface.lasso as State).boardSpace as State).axis;
+    run(surface, "selectEnd");
+    return { p, applied, flashes, axis, taps };
+  }
+
+  it("a drag down pushes what is below the pen down by whole dots, and says so", () => {
+    const { p, applied, flashes, axis } = boardDrag(0, 130);
+    expect(axis).toBe("y");
+    expect(applied).toHaveLength(1);
+    expect(p.strokes.map((s) => s.pts[1])).toEqual([900, 1320]);
+    expect(flashes.at(-1)).toBe("Insert space");
+  });
+
+  it("a drag right pushes what starts right of the pen to the right", () => {
+    const p0 = boardDrag(90, 10);
+    expect(p0.axis).toBe("x");
+    // Both lines start at x = 100, left of the pen: nothing moves.
+    expect(p0.applied).toHaveLength(0);
+  });
+
+  it("a drag up closes the empty space above, never over ink", () => {
+    const { p, flashes } = boardDrag(0, -400);
+    // "above" reaches 901: 99 px empty, two dots of 40.
+    expect(p.strokes.map((s) => s.pts[1])).toEqual([900, 1120]);
+    expect(flashes.at(-1)).toBe("Remove space");
+  });
+
+  it("a press that never moved past a tap inserts nothing: it is the lasso's tap", () => {
+    const { applied, axis, taps } = boardDrag(0, 4);
+    expect(axis).toBeNull();
+    expect(applied).toHaveLength(0);
+    expect(taps).toEqual(["tap"]);
+  });
+});
+
 describe("spaceReadout", () => {
   it("says what the drag will do", async () => {
     const { spaceReadout } = await import("../../src/view/ink-surface");

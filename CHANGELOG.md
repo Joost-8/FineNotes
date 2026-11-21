@@ -19,6 +19,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Insert space on boards**
+  ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
+  With the lasso on **By line**, press anywhere on a board and drag down: everything
+  below the pen moves down, across the whole board, by whole dots or squares
+  (drag right to push things right instead). Drag back up to close empty
+  space again; it never closes over anything drawn. Ink, text, pictures,
+  sticky notes, tables and comments all move together, straight lines and
+  arrows stretch so branches stay joined, and one undo puts it all back.
+
 - **Erase on hover with the S Pen**
   ([discussion #209](https://github.com/Joost-8/FineNotes/discussions/209)).
   Settings › Stylus side button › **Erase, also hovering**: hold the side

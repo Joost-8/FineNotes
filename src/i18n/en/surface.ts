@@ -309,6 +309,8 @@ export const surface = {
   "surface.readout.noLinesSelecting": "No lines on this page: selecting a rectangle",
   "surface.readout.dragToInsertOrRemove": "Drag down to insert lines, up to remove empty ones",
   "surface.readout.noEmptyLines": "No empty lines to remove here",
+  "surface.readout.noEmptySpace": "No empty space to remove here",
+  "surface.readout.boardDragToInsert": "Drag down or right to insert space, back to remove it",
   "surface.readout.dragToInsert": "Drag down to insert lines",
   "surface.readout.copiedAsPicture": "Copied as a picture",
   "surface.readout.copyPictureFailed": "Couldn't copy the picture",
