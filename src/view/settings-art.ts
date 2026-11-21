@@ -196,11 +196,20 @@ export const ART = {
       tag: "g",
       attrs: { transform: "translate(11 41) scale(.85)" },
       kids: [...STYLUS, dot("ga-fill", 12, -13, 2.4)],
+      when: "barrel=erase|lasso|pan|none",
     },
+    // Erase, also hovering: the pen held above the paper's line (discussion #209).
+    {
+      tag: "g",
+      attrs: { transform: "translate(13 33) scale(.85)" },
+      kids: [...STYLUS, dot("ga-fill", 12, -13, 2.4)],
+      when: "barrel=erase-hover",
+    },
+    path("ga-dash", "M6 40h16", "barrel=erase-hover"),
     group(
       "",
       [rect("ga-accent-box", 44, 12, 18, 12, 3), path("ga-accent-line", "M50 12v12")],
-      "barrel=erase",
+      "barrel=erase|erase-hover",
     ),
     {
       tag: "ellipse",

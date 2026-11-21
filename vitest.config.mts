@@ -153,6 +153,7 @@ export default defineConfig({
         "src/input/pen-modifiers.ts",
         "src/input/stylus-click.ts",
         "src/input/stylus-select-bridge.ts",
+        "src/input/hover-erase.ts",
         "src/input/finger-gesture.ts",
         "src/input/multi-finger-tap.ts",
         "src/input/finger-hold.ts",

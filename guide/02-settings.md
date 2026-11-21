@@ -90,9 +90,9 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Stylus side button
 
 - **Id:** `settingStylusButton`
-- **What:** What a pen's side button does while you write: Erase (default), Lasso select, Move the page or Nothing; and what a click above the page does: open the pen menu (default), switch to the eraser, or nothing. A pen's eraser end always erases.
+- **What:** What a pen's side button does while you write: Erase (default), Erase, also hovering (the button held with the pen just above the page erases what it passes over), Lasso select, Move the page or Nothing; and what a click above the page does: open the pen menu (default), switch to the eraser, or nothing. A pen's eraser end always erases.
 - **Where:** Settings › Writing › Stylus side button
-- **Notes:** Apple Pencil has no side button, so the click choice is hidden on iPad and iPhone. Holding the button while writing may not work on Android tablets.
+- **Notes:** Apple Pencil has no side button, so the click choice is hidden on iPad and iPhone. Holding the button while writing may not work on Android tablets; Erase, also hovering does.
 - **Words:** side button, barrel button, stylus button, pen button, wacom, surface pen, samsung s pen, eraser button
 - **Settings:** `barrelButton`, `stylusButtonClick`
 

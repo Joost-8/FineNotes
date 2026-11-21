@@ -1569,7 +1569,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     // The side button is not in the key table yet: its own row still sets it.
     const button = renderRow(named(all, "Stylus side button"));
     expect(button.dropdowns.map((d) => Object.keys(d.options))).toEqual([
-      ["erase", "lasso", "pan", "none"],
+      ["erase", "erase-hover", "lasso", "pan", "none"],
       ["pen-menu", "eraser", "none"],
     ]);
     await button.dropdowns[0].pick("pan");
@@ -1591,8 +1591,10 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     try {
       const mobile = rows(makeTab(makePlugin()).tab);
       expect(shown(named(mobile, "Cursor over the page"))).toBe(false);
-      // The Apple Pencil has no side button to click.
-      expect(renderRow(named(mobile, "Stylus side button")).dropdowns).toHaveLength(1);
+      // The Apple Pencil has no side button to click, nor to hover with.
+      const pencil = renderRow(named(mobile, "Stylus side button")).dropdowns;
+      expect(pencil).toHaveLength(1);
+      expect(Object.keys(pencil[0].options)).toEqual(["erase", "lasso", "pan", "none"]);
     } finally {
       Platform.isMobile = false;
       Platform.isIosApp = false;

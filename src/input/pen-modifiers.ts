@@ -12,7 +12,9 @@
  * - A tablet pen's **eraser end** erases. It reports `buttons & 32`, and
  *   some drivers `button === 5` on the press.
  * - The pen's **barrel button** (`buttons & 2`) does what the settings say:
- *   erase, lasso, move the page, or nothing.
+ *   erase, lasso, move the page, or nothing. "Erase, also hovering" erases
+ *   as "erase" does, and the hovering pen with it held erases too
+ *   (`hover-erase.ts`, discussion #209).
  * - A pen or mouse pressed **beside the pages** (the margin or the gutter)
  *   moves the page, with a fling, as a finger does (rnote). Fingers are left
  *   to `palm-rejection.ts`.
@@ -24,9 +26,20 @@
  */
 
 /** What the barrel button does, as the settings store it. */
-export type BarrelAction = "erase" | "lasso" | "pan" | "none";
+export type BarrelAction = "erase" | "erase-hover" | "lasso" | "pan" | "none";
 
-export const BARREL_ACTIONS: readonly BarrelAction[] = ["erase", "lasso", "pan", "none"];
+export const BARREL_ACTIONS: readonly BarrelAction[] = [
+  "erase",
+  "erase-hover",
+  "lasso",
+  "pan",
+  "none",
+];
+
+/** Whether the hovering pen with the side button held erases (`hover-erase.ts`). */
+export function barrelErasesOnHover(barrel: BarrelAction): boolean {
+  return barrel === "erase-hover";
+}
 
 /** A stored barrel setting as one, or the default (erase) when it is not one. */
 export function barrelActionOf(value: unknown): BarrelAction {
@@ -77,6 +90,7 @@ function stylusOverride(press: PressInput, barrel: BarrelAction): PressOverride 
   if ((press.buttons & BARREL_BIT) === 0 && press.button !== 2) return undefined;
   switch (barrel) {
     case "erase":
+    case "erase-hover":
       return "eraser";
     case "lasso":
       return "select";

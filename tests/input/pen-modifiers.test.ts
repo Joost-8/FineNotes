@@ -7,6 +7,7 @@ import {
   type PressInput,
   ZOOM_DOUBLING_PX,
   barrelActionOf,
+  barrelErasesOnHover,
   dragZoom,
   pressOverride,
   stylusButtonDown,
@@ -80,6 +81,7 @@ describe("pressOverride: stylus buttons", () => {
   it("does what the barrel is set to, over any key", () => {
     const barrel = press({ buttons: 3, altKey: true });
     expect(pressOverride(barrel, { ...PC, barrel: "erase" })).toBe("eraser");
+    expect(pressOverride(barrel, { ...PC, barrel: "erase-hover" })).toBe("eraser");
     expect(pressOverride(barrel, { ...PC, barrel: "lasso" })).toBe("select");
     expect(pressOverride(barrel, { ...PC, barrel: "pan" })).toBe("pan");
     expect(pressOverride(press({ button: 2, buttons: 2 }), PC)).toBe("eraser");
@@ -108,6 +110,10 @@ describe("barrelActionOf", () => {
     for (const action of BARREL_ACTIONS) expect(barrelActionOf(action)).toBe(action);
     expect(barrelActionOf("zoom")).toBe("erase");
     expect(barrelActionOf(undefined)).toBe("erase");
+  });
+
+  it("erases on hover only when set to (discussion #209)", () => {
+    expect(BARREL_ACTIONS.filter(barrelErasesOnHover)).toEqual(["erase-hover"]);
   });
 });
 

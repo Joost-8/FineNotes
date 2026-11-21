@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { DARK_PAPER, LIGHT_PAPER } from "../../src/canvas/backdrop";
 import { nightColor } from "../../src/canvas/night";
+import { BARREL_ACTIONS } from "../../src/input/pen-modifiers";
 import { DEFAULT_SETTINGS, type GoodObsidianSettings } from "../../src/settings-data";
 import {
   ART,
@@ -37,6 +38,20 @@ describe("the drawings", () => {
         expect(on, `${id}: ${part.when}`).toHaveProperty(key);
       }
     }
+  });
+
+  it("draw every side-button choice, and the eraser for both erase choices (discussion #209)", () => {
+    const shown = (barrelButton: (typeof BARREL_ACTIONS)[number]) =>
+      parts(ART.barrel)
+        .filter((part) => part.when?.startsWith("barrel="))
+        .filter((part) => artPartOn(part.when ?? "", state({ barrelButton }).on));
+    for (const action of BARREL_ACTIONS) expect(shown(action).length, action).toBeGreaterThan(0);
+    const eraser = parts(ART.barrel).find((part) => part.when === "barrel=erase|erase-hover");
+    expect(eraser).toBeDefined();
+    expect(shown("erase")).toContain(eraser);
+    expect(shown("erase-hover")).toContain(eraser);
+    // The pen hovers over the paper's line, not on it.
+    expect(shown("erase-hover")).not.toEqual(shown("erase"));
   });
 
   it("draw Colours inside the Looks preview, so the chosen palette reaches Obsidian's settings window", () => {

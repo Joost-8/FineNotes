@@ -30,11 +30,17 @@
  * The pen's side button pressed with the pen in the air is held back until
  * it is a click (`stylus-click.ts`) or the stroke it would have been: it
  * touches down or travels, and only then starts, from where it was pressed.
+ *
+ * With erase on hover wanted (`hover-erase.ts`, discussion #209), hovering
+ * moves with the side button held are a stroke of their own: the eraser's,
+ * reported as one with the barrel's buttons, so the surface erases as for
+ * any barrel stroke. Android's WebView shows the button only in those moves.
  */
 
 import { altitudeOf } from "../ink/tilt";
 import { endsFingerDrawing, fingerDrawRole, fingerWrites } from "./finger-draw";
 import { FingerGesture, type PinchInfo } from "./finger-gesture";
+import { HoverErase, type HoverStep, PenLog, type PenLogEvent } from "./hover-erase";
 import { MultiFingerTap, type TapReport } from "./multi-finger-tap";
 import { type PointerRole, roleOf } from "./palm-rejection";
 import type { PressInput } from "./pen-modifiers";
@@ -181,6 +187,8 @@ export interface PointerControllerCallbacks {
   onStylusClick?(clientX: number, clientY: number): void;
   /** A pen event came while fingers draw: the Pencil is back, and finger drawing ends. */
   onPenReturned?(): void;
+  /** An erase-on-hover pass opened, ended, or ended to start afresh, for the debug HUD. */
+  onHoverErase?(kind: "start" | "end" | "restart"): void;
 }
 
 /**
@@ -200,13 +208,21 @@ export interface PointerControllerOptions {
   touchTarget?: (event: PointerEvent) => boolean;
   /** A click of the pen's side button is wanted: only then is a press of it in the air held back. */
   stylusClicks?: () => boolean;
+  /** The hovering pen with its side button held erases (`hover-erase.ts`, discussion #209). */
+  hoverErase?: () => boolean;
   /** Android-only selection bridge for S-Pen hold-to-erase; enabled unless returning false. */
   stylusSelectBridge?: () => boolean;
   /** The screen's device px per CSS px; absent, the element's window's `devicePixelRatio`. */
   pixelRatio?: () => number;
 }
 
-const PHASES = ["pointerdown", "pointermove", "pointerup", "pointercancel"] as const;
+const PHASES = [
+  "pointerdown",
+  "pointermove",
+  "pointerup",
+  "pointercancel",
+  "pointerleave",
+] as const;
 
 /** `buttons` bit of a pen's barrel (secondary) button. */
 const BARREL_BIT = 2;
@@ -232,6 +248,10 @@ export class PointerController {
   private readonly clicks = new StylusClicks();
   /** Experimental bridge capturing Android WebView StylusTextSelector drags via selectionchange. */
   private readonly selectBridge: StylusSelectBridge;
+  /** Erase on hover: the pass under way, if any (`hover-erase.ts`). */
+  private readonly hover = new HoverErase();
+  /** The pen's recent hover and button events, for the diagnostics. */
+  private readonly penLog = new PenLog();
   /** Route chosen for the active selection-bridge stroke. */
   private bridgeRoute: PressRoute = "ignore";
   /** A press of the side button in the air, held back until it is a click or a stroke. */
@@ -262,6 +282,7 @@ export class PointerController {
       pointermove: (event) => this.moved(event),
       pointerup: (event) => this.released(event, false),
       pointercancel: (event) => this.released(event, true),
+      pointerleave: (event) => this.left(event),
     };
     this.selectBridge = new StylusSelectBridge(this.element, {
       onStart: (pt) => this.bridgeStarted(pt),
@@ -276,6 +297,7 @@ export class PointerController {
   }
 
   detach(): void {
+    this.hover.stop();
     this.selectBridge.detach();
     for (const phase of PHASES) this.element.removeEventListener(phase, this.handlers[phase]);
   }
@@ -354,6 +376,11 @@ export class PointerController {
    * click the hovering moves were watching for.
    */
   private down(event: PointerEvent): void {
+    if (event.pointerType === "pen") {
+      this.penLog.note("pointerdown", event);
+      // The pen touched down: the hovering pass is over, before the press begins.
+      this.stopHover(event);
+    }
     this.selectBridge.endStroke(event.timeStamp);
     this.selectBridge.setArmed(false);
     // A browser that sends the held press's touch-down as a press of its own: that one counts.
@@ -432,13 +459,108 @@ export class PointerController {
       this.clicks.barrelHeld,
     );
     if (click && this.stylusClicks()) this.listener.onStylusClick?.(event.clientX, event.clientY);
+    const step = this.hover.step({
+      x: event.clientX,
+      y: event.clientY,
+      t: event.timeStamp,
+      barrel: this.clicks.barrelHeld,
+      enabled: this.hoverErases(),
+    });
+    this.penLog.note("pointermove", event, step.kind);
+    this.hovered(step, event);
   }
 
-  private bridgePress(pt: BridgePoint): { event: PointerEvent; press: PressInput } {
+  /** The hovering pen erases with its side button held (discussion #209). */
+  private hoverErases(): boolean {
+    return this.options.hoverErase?.() === true;
+  }
+
+  /**
+   * What a hovering move did to the erase-on-hover pass: a stroke of the
+   * eraser begun, carried on or ended, as the barrel's (`bridgePress`).
+   */
+  private hovered(step: HoverStep, event: PointerEvent): void {
+    switch (step.kind) {
+      case "idle":
+      case "wait":
+        return;
+      case "start": {
+        const from = step.from;
+        const { event: press, press: input } = this.bridgePress(
+          { clientX: from.x, clientY: from.y, timeStamp: from.t },
+          BARREL_BIT,
+        );
+        // Wherever the pen began, only the eraser may have it: not a pan, nor nothing.
+        if ((this.options.route?.(press, input) ?? "draw") !== "draw") {
+          this.hover.stop();
+          return;
+        }
+        this.clearFingersForPen(true);
+        this.rounded = false;
+        this.debug("down", event, 0);
+        this.listener.onStart(this.hoverSample(from.x, from.y, from.t), input);
+        this.listener.onHoverErase?.("start");
+        this.hoverMoved(event);
+        return;
+      }
+      case "move":
+        this.hoverMoved(event);
+        return;
+      case "end":
+      case "restart":
+        this.debug("up", event, 0);
+        this.listener.onEnd(this.hoverSample(step.at.x, step.at.y, step.at.t));
+        this.listener.onHoverErase?.(step.kind);
+    }
+  }
+
+  /** A move of the open erase-on-hover pass: every sample it carried. */
+  private hoverMoved(event: PointerEvent): void {
+    const taken = event.getCoalescedEvents?.() ?? [];
+    const events = taken.length > 0 ? taken : [event];
+    this.debug("move", event, events.length, taken);
+    this.listener.onMove(events.map((e) => this.hoverSample(e.clientX, e.clientY, e.timeStamp)));
+  }
+
+  /** The pen touched down or left: an open erase-on-hover pass ends where it last was. */
+  private stopHover(event: PointerEvent): void {
+    const at = this.hover.stop();
+    if (at === null) return;
+    this.debug("up", event, 0);
+    this.listener.onEnd(this.hoverSample(at.x, at.y, at.t));
+    this.listener.onHoverErase?.("end");
+  }
+
+  /** A hovering pen's point as a stroke sample: no pressure reading in the air, so a middling one. */
+  private hoverSample(clientX: number, clientY: number, t: number): PointerSample {
+    return this.bridgeSample({ clientX, clientY, timeStamp: t });
+  }
+
+  /** A pen left the page (out of range, or off over the tool bar): the pass ends there. */
+  private left(event: PointerEvent): void {
+    if (event.pointerType !== "pen") return;
+    this.penLog.note("pointerleave", event);
+    this.stopHover(event);
+  }
+
+  /**
+   * A pen's event this controller does not see as a pointer event (its
+   * `contextmenu`), for the pen log.
+   */
+  logPen(type: string, event: PenLogEvent): void {
+    this.penLog.note(type, event);
+  }
+
+  /** The pen's recent hover and button events, oldest first (`hover-erase.ts`). */
+  penReport(): ReturnType<PenLog["report"]> {
+    return this.penLog.report();
+  }
+
+  private bridgePress(pt: BridgePoint, buttons = 3): { event: PointerEvent; press: PressInput } {
     const press: PressInput = {
       pointerType: "pen",
       button: 2,
-      buttons: 3,
+      buttons,
       shiftKey: false,
       ctrlKey: false,
       metaKey: false,
@@ -469,6 +591,12 @@ export class PointerController {
   }
 
   private bridgeStarted(pt: BridgePoint): void {
+    // The pen touched down after all: the hovering pass ends where it last was.
+    const at = this.hover.stop();
+    if (at !== null) {
+      this.listener.onEnd(this.hoverSample(at.x, at.y, at.t));
+      this.listener.onHoverErase?.("end");
+    }
     this.clicks.touched();
     const { event, press } = this.bridgePress(pt);
     const route = this.options.route?.(event, press) ?? "draw";
@@ -703,6 +831,9 @@ export class PointerController {
   private released(event: PointerEvent, cancelled: boolean): void {
     const id = event.pointerId;
     this.notePenSeen(event);
+    if (event.pointerType === "pen") {
+      this.penLog.note(cancelled ? "pointercancel" : "pointerup", event);
+    }
     if (this.held?.pointerId === id) {
       this.held = null;
       this.releaseCapture(id);
