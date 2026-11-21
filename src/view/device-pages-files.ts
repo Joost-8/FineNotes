@@ -12,6 +12,7 @@ import {
   type FileStamp,
   devicePagesFolderOf,
   notebookStat,
+  pagesFolderMove,
   readDeviceFileName,
   readDevicePagesNotebook,
 } from "../model/device-pages";
@@ -48,6 +49,38 @@ export function devicePagesFolderFor(app: App, file: TFile): TFolder | null {
   const path = devicePagesFolderPath(app, file);
   const folder = path === null ? null : app.vault.getAbstractFileByPath(path);
   return folder instanceof TFolder ? folder : null;
+}
+
+/**
+ * A notebook kept as page files moved from `from` to `to` (closed, or open:
+ * the view calls this too): its page folder follows, exactly, when it was
+ * left behind (`pagesFolderMove`). Several callers may ask for one move;
+ * the first does it and the others find nothing left to move.
+ */
+export async function movePagesFolder(
+  app: App,
+  from: string,
+  to: string,
+  id: string,
+): Promise<void> {
+  const exists = (path: string): boolean => app.vault.getAbstractFileByPath(path) !== null;
+  const move = pagesFolderMove(from, to, id, exists);
+  if (!move) return;
+  const folder = app.vault.getAbstractFileByPath(move.from);
+  if (!(folder instanceof TFolder)) return;
+  try {
+    const parent = move.to.slice(0, move.to.lastIndexOf("/"));
+    if (parent && !exists(parent)) await app.vault.createFolder(parent);
+    await app.fileManager.renameFile(folder, move.to);
+    // The `Pages/` it left, when nothing else is in it now.
+    const left = app.vault.getAbstractFileByPath(move.from.slice(0, move.from.lastIndexOf("/")));
+    if (left instanceof TFolder && left.children.length === 0) {
+      await app.fileManager.trashFile(left);
+    }
+  } catch (error) {
+    // Moved meanwhile by another caller, or the place was taken: left as it is.
+    if (exists(move.from)) console.error("FineNotes: could not move a notebook's pages", error);
+  }
 }
 
 /** The files of a page folder that belong to the layout. */

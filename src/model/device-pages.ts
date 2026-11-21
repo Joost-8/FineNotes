@@ -116,6 +116,27 @@ export function devicePagesFolderOf(notebookPath: string, notebookId: string): s
   return folder ? `${folder}/${PAGES_FOLDER}/${notebookId}` : `${PAGES_FOLDER}/${notebookId}`;
 }
 
+/**
+ * The page folder to move when the notebook kept as page files with `id`
+ * moved from `from` to `to` (paths of the notebook file): exactly its old
+ * folder to its new place, `null` when the place does not change (a rename
+ * in the same folder, or a notebook whose own folder moved with it, whose
+ * pages are already there) or `exists` says either side is not as expected
+ * (nothing at the old place, or something at the new one). Never a search:
+ * another notebook's folder is never taken.
+ */
+export function pagesFolderMove(
+  from: string,
+  to: string,
+  id: string,
+  exists: (path: string) => boolean,
+): { from: string; to: string } | null {
+  const old = devicePagesFolderOf(from, id);
+  const next = devicePagesFolderOf(to, id);
+  if (old === next || !exists(old) || exists(next)) return null;
+  return { from: old, to: next };
+}
+
 /** What a file in a page folder is, by its name. */
 export type DeviceFileName =
   | { readonly kind: "meta"; readonly device: string }

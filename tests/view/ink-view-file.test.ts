@@ -1071,13 +1071,8 @@ describe("a notebook kept as one file per page per device (#274)", () => {
         }
         return Promise.resolve();
       },
+      trashFile: () => Promise.resolve(),
     };
-    (app.vault as Record<string, unknown>).getAllLoadedFiles = () => [
-      Object.assign(new TFolder(FOLDER), {
-        name: "n7k2q9ab",
-        parent: Object.assign(new TFolder("Physics/Pages"), { name: "Pages" }),
-      }),
-    ];
     view.setViewData(notebook, true);
     await settle();
     const moved = new TFile("Course/Physics.notebook.md", 100);

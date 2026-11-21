@@ -85,7 +85,7 @@ import {
   readDeviceFileName,
 } from "../model/device-pages";
 import { legacyPayload, movedNotebook, randomId } from "../model/device-pages-writer";
-import { rememberNotebookId } from "./device-pages-files";
+import { movePagesFolder, rememberNotebookId } from "./device-pages-files";
 import { DevicePagesSession, deviceIdOf } from "./device-pages-session";
 import { BackgroundSaver } from "./background-save";
 import type { RecognitionProvider } from "../recognition/provider";
@@ -1170,7 +1170,7 @@ export class InkView extends TextFileView {
     );
     next.writer = shown.writer;
     this.devicePages = next;
-    await next.reattach(id);
+    await movePagesFolder(this.app, shown.path, path, id);
   }
 
   // --- Reading and writing the file ------------------------------------------
@@ -1370,7 +1370,7 @@ export class InkView extends TextFileView {
         deviceIdOf(this.app),
         previousPages,
       );
-      void this.readDevicePages(notebookIdOf(payload));
+      void this.readDevicePages();
     }
     this.textPanel?.load(this.noteBody);
     if (!this.mounted) return;
@@ -1400,15 +1400,12 @@ export class InkView extends TextFileView {
    * Show a notebook kept as one file per page per device (FineNotes#274)
    * from its files. When every file is in (nothing still syncing) it can be
    * written from here on; otherwise it is shown as it is, takes no edits and
-   * writes nothing, and is read again as its files arrive. `id` (the
-   * notebook's, on a first read): its page folder is looked for elsewhere
-   * when the notebook moved without it.
+   * writes nothing, and is read again as its files arrive.
    */
-  private async readDevicePages(id: string | null = null): Promise<void> {
+  private async readDevicePages(): Promise<void> {
     const shown = this.devicePages;
     if (!shown) return;
     const read = ++this.devicePagesRead;
-    if (id !== null) await shown.reattach(id);
     const texts = await shown.readFiles();
     if (read !== this.devicePagesRead || this.devicePages !== shown) return;
     if (this.file?.path !== shown.path) return;

@@ -89,6 +89,8 @@ import { parsePillRowOn } from "./view/pill-row-model";
 import { ShortcutStore } from "./view/shortcut-store";
 import { buildInkFile, parseInkFile } from "./model/serialize";
 import { devicePagesNotebookText } from "./model/device-pages-writer";
+import { notebookIdOfText } from "./model/device-pages";
+import { movePagesFolder } from "./view/device-pages-files";
 import {
   ReceivePages,
   type TransferTarget,
@@ -775,6 +777,7 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.vault.on("rename", (file, oldPath) => {
         this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
+        void this.followPagesFolder(file, oldPath);
         this.libraryPathChanged(oldPath, file.path);
         this.calculatorFileMoved(oldPath, file.path);
         this.practiceNotebookMoved(oldPath, file.path);
@@ -3477,6 +3480,20 @@ export default class GoodObsidianPlugin extends Plugin {
       ownFolder,
       open,
     );
+  }
+
+  /**
+   * A notebook kept as one file per page per device moved (#274): its page
+   * folder follows, exactly (`movePagesFolder`). Its id is in its file.
+   */
+  private async followPagesFolder(file: TAbstractFile, oldPath: string): Promise<void> {
+    if (!(file instanceof TFile) || !this.isInkFile(file)) return;
+    try {
+      const id = notebookIdOfText(await this.app.vault.cachedRead(file));
+      if (id !== null) await movePagesFolder(this.app, oldPath, file.path, id);
+    } catch (error) {
+      console.error("FineNotes: could not follow a notebook's pages", error);
+    }
   }
 
   /**

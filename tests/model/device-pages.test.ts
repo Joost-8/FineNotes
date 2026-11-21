@@ -17,6 +17,7 @@ import {
   notebookIdOfText,
   notebookStat,
   pageFileText,
+  pagesFolderMove,
   pagePayloadOf,
   payloadHash,
   readDeviceFileName,
@@ -148,6 +149,24 @@ describe("the page folder (#274)", () => {
     expect(devicePagesFolderOfFile(`Physics/Images/n7k2/p1.${A}.md`)).toBeNull();
     expect(devicePagesFolderOfFile(`Physics/Pages/p1.${A}.md`)).toBeNull();
     expect(devicePagesFolderOfFile("Physics/Pages/n7k2/notes.md")).toBeNull();
+  });
+});
+
+describe("a notebook moved (#274)", () => {
+  it("takes exactly its own page folder along, and never another's", () => {
+    const there = new Set(["Uni/Pages/n7k2", "Uni/Pages/q3x9", "Old/Pages/n7k2"]);
+    const exists = (path: string) => there.has(path);
+    expect(pagesFolderMove("Uni/A.notebook.md", "Course/A.notebook.md", "n7k2", exists)).toEqual({
+      from: "Uni/Pages/n7k2",
+      to: "Course/Pages/n7k2",
+    });
+    // Renamed in its folder, or its own folder moved with it: nothing to move.
+    expect(pagesFolderMove("Uni/A.notebook.md", "Uni/B.notebook.md", "n7k2", exists)).toBeNull();
+    expect(pagesFolderMove("X/A.notebook.md", "Y/A.notebook.md", "n7k2", exists)).toBeNull();
+    // Something already at the new place (a copy with this id): left alone.
+    expect(pagesFolderMove("Uni/A.notebook.md", "Old/A.notebook.md", "n7k2", exists)).toBeNull();
+    // Not its folder, even with pages beside it.
+    expect(pagesFolderMove("Uni/A.notebook.md", "Course/A.notebook.md", "zz99", exists)).toBeNull();
   });
 });
 

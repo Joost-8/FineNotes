@@ -11,7 +11,6 @@ import { type App, TFile, TFolder, normalizePath } from "obsidian";
 import type { InkDocument } from "../model/document";
 import {
   type DevicePagesLoad,
-  PAGES_FOLDER,
   readDeviceFileName,
   readDevicePagesNotebook,
   readMetaFile,
@@ -86,33 +85,6 @@ export class DevicePagesSession {
   /** Whether `name` (a file in the page folder) is one this device writes. */
   isOwn(name: string): boolean {
     return readDeviceFileName(name)?.device === this.device;
-  }
-
-  /**
-   * The page folder, found again when the notebook moved without it: a
-   * folder named by the notebook's id under some other `Pages/` is moved
-   * here. Nothing is moved when the folder is where it should be.
-   */
-  async reattach(id: string): Promise<void> {
-    if (this.app.vault.getAbstractFileByPath(this.folder)) return;
-    const away = this.app.vault
-      .getAllLoadedFiles()
-      .find(
-        (file): file is TFolder =>
-          file instanceof TFolder && file.name === id && file.parent?.name === PAGES_FOLDER,
-      );
-    if (!away) return;
-    const left = away.parent;
-    try {
-      await this.ensureFolder(parentOf(this.folder));
-      await this.app.fileManager.renameFile(away, this.folder);
-      // The `Pages/` it left, when nothing else is in it now.
-      if (left && !left.isRoot() && left.children.length === 0) {
-        await this.app.fileManager.trashFile(left);
-      }
-    } catch (error) {
-      console.error("FineNotes: could not move a notebook's pages along with it", error);
-    }
   }
 
   /** The text of every file of the layout in the page folder, by name. */
