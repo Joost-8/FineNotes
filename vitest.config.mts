@@ -10,6 +10,8 @@ export default defineConfig({
       // Pure modules plus the notebook input adapters covered by lifecycle tests.
       include: [
         "src/changelog.ts",
+        "src/ink/tidy.ts",
+        "src/model/tidy-commands.ts",
         "src/model/sponsors.ts",
         "src/model/note-merge.ts",
         "src/settings-data.ts",

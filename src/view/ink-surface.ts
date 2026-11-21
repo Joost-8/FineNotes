@@ -377,6 +377,8 @@ import { FrameRun } from "../canvas/frame-run";
 import { type RunBox, type RunMark, boundsSince, unionBox } from "../ink/run-window";
 import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
+import { measureHand, tidyInk } from "../ink/tidy";
+import { SetStrokePoints } from "../model/tidy-commands";
 import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
 import { explainShape, recognizeAtZoom, styleOfShape } from "../ink/shape-recognizer";
 import { SNAP_RADIUS_PX, ShapeSnapper, penForPoint } from "../ink/shape-snap";
@@ -15864,6 +15866,16 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     // The word check's card, for any word, underlined or not.
     const correct = this.correctWordAction(index, sel.strokes);
     if (menu.handwriting && correct) actions.push(correct);
+    // Tidy: the selected writing set level, on its margin and evenly spaced.
+    if (menu.handwriting && sel.strokes.some((stroke) => stroke.tool === "pen" && !stroke.shape)) {
+      actions.push({
+        id: "tidy",
+        icon: "wand-sparkles",
+        label: t("surface.selectionBar.tidy"),
+        group: "edit",
+        run: () => this.tidySelection(),
+      });
+    }
     if (menu.handwriting && heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -19387,6 +19399,36 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     this.renderer?.invalidateRegion(box.index, unionBounds(before, after) ?? before);
     this.renderDry();
     this.syncTextBoxes();
+    this.syncSelectionOverlay();
+    this.changed([sel.pageId]);
+  }
+
+  /**
+   * Tidy the selected handwriting (`ink/tidy.ts`): nothing is read and nothing
+   * is redrawn, the strokes are only moved, so no word can change. The hand
+   * it tidies toward is measured from the whole page, and on ruled paper the
+   * lines are set on the rules. One undo step; the selection stays.
+   */
+  private tidySelection(): void {
+    const sel = this.liveSelection();
+    if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
+    const page = this.doc.pages.find((candidate) => candidate.id === sel.pageId);
+    const box = this.boxForPage(sel.pageId);
+    const before = this.groupBounds(sel);
+    if (!page || !box || !before) return;
+    const result = tidyInk(sel.strokes, {
+      profile: measureHand(page.strokes),
+      rules: writingLines(page.backdrop, page.geometry),
+    });
+    const changes = sel.strokes.flatMap((stroke) => {
+      const pts = result.pts.get(stroke.id);
+      return pts ? [{ stroke, pts }] : [];
+    });
+    if (changes.length === 0) return;
+    this.history.push(this.doc, new SetStrokePoints(sel.pageId, changes));
+    const after = this.groupBounds(sel);
+    this.renderer?.invalidateRegion(box.index, unionBounds(before, after ?? before) ?? before);
+    this.renderDry();
     this.syncSelectionOverlay();
     this.changed([sel.pageId]);
   }

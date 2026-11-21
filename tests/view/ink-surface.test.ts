@@ -3603,3 +3603,98 @@ describe("the lasso on a PDF's tab", () => {
     expect(lift("rect", false, false)).toEqual(["select", "area"]);
   });
 });
+
+describe("Tidy on a selection", () => {
+  /** One written line that climbs: letters as small zigzags, 24 of them in six words. */
+  function climbingLine(): Stroke[] {
+    const strokes: Stroke[] = [];
+    let x = 40;
+    let t0 = 0;
+    for (let word = 0; word < 6; word++) {
+      for (let letter = 0; letter < 4; letter++) {
+        const base = 300 - 0.06 * (x - 40);
+        const pts: number[] = [];
+        const corners = [
+          [0, -12],
+          [2.5, 0],
+          [5, -12],
+          [7.5, 0],
+          [10, -12],
+        ];
+        for (let c = 0; c + 1 < corners.length; c++) {
+          for (let k = 0; k < 6; k++) {
+            const f = k / 6;
+            pts.push(
+              Math.round((x + corners[c][0] + f * (corners[c + 1][0] - corners[c][0])) * 100) / 100,
+              Math.round((base + corners[c][1] + f * (corners[c + 1][1] - corners[c][1])) * 100) /
+                100,
+              0.5,
+            );
+          }
+        }
+        pts.push(x + 10, Math.round((base - 12) * 100) / 100, 0.5);
+        t0 += 300;
+        strokes.push({ id: `w${strokes.length}`, color: "#000000", size: 2, tool: "pen", pts, t0 });
+        x += 13;
+      }
+      x += 13;
+    }
+    return strokes;
+  }
+
+  function tidySurface(strokes: Stroke[], locked = false) {
+    const p = page("p1", strokes);
+    const doc = documentOf(p);
+    const history = new History();
+    const calls = { invalidated: 0, changed: 0, overlay: 0 };
+    const sel = { pageId: "p1", strokes: p.strokes, images: [], textBoxes: [] };
+    const surface = surfaceWith({
+      doc,
+      history,
+      groupDrag: null,
+      callbacks: { isLocked: () => locked },
+      liveSelection: () => sel,
+      boxForPage: () => boxOf(doc, 0),
+      groupBounds: () => ({ minX: 0, minY: 0, maxX: 500, maxY: 400 }),
+      renderer: { invalidateRegion: () => calls.invalidated++ },
+      renderDry: () => undefined,
+      syncSelectionOverlay: () => calls.overlay++,
+      changed: () => calls.changed++,
+    });
+    return { surface, doc, history, calls, page: p };
+  }
+
+  const bottomOf = (s: Stroke): number => Math.max(...s.pts.filter((_, i) => i % 3 === 1));
+
+  it("levels the selected line in one undo step, and keeps the same strokes selected", () => {
+    const strokes = climbingLine();
+    const before = strokes.map((s) => [...s.pts]);
+    const { surface, doc, history, calls, page: p } = tidySurface(strokes);
+    run(surface, "tidySelection");
+    const spread = (v: number[]): number => Math.max(...v) - Math.min(...v);
+    expect(
+      spread(before.map((pts) => Math.max(...pts.filter((_, i) => i % 3 === 1)))),
+    ).toBeGreaterThan(15);
+    expect(spread(p.strokes.map(bottomOf))).toBeLessThan(5);
+    // The page holds the same stroke objects, each with as many points as before.
+    expect(p.strokes).toHaveLength(before.length);
+    p.strokes.forEach((s, i) => {
+      expect(s).toBe(strokes[i]);
+      expect(s.pts).toHaveLength(before[i].length);
+    });
+    expect(calls).toEqual({ invalidated: 1, changed: 1, overlay: 1 });
+    history.undo(doc);
+    p.strokes.forEach((s, i) => expect(s.pts).toEqual(before[i]));
+  });
+
+  it("does nothing on a locked notebook, and nothing when there is nothing to tidy", () => {
+    const strokes = climbingLine();
+    const locked = tidySurface(strokes, true);
+    run(locked.surface, "tidySelection");
+    expect(locked.calls.changed).toBe(0);
+    const one = tidySurface([line("only", 100, 140, 200)]);
+    run(one.surface, "tidySelection");
+    expect(one.calls.changed).toBe(0);
+    expect(one.history.undo(one.doc)).toBeNull();
+  });
+});
