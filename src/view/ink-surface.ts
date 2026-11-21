@@ -432,6 +432,7 @@ import {
   textMarkNote,
   textUnder,
 } from "../canvas/pdf-text";
+import { withFocusInk } from "../search/hit-strokes";
 import type { TextSpan } from "../search/notebook-search";
 import { readingOrder } from "../search/search-results";
 import { type PageLink, linkAt, notebookPageOf } from "../canvas/pdf-links";
@@ -1368,7 +1369,12 @@ export type StrokeTapHandler = (page: Page, stroke: Stroke) => boolean;
  * view glides to it and marks it more strongly. A group of `words`, a text
  * box, or one match's rectangles among the `printed` ones.
  */
-export type SearchFocus = { words: number } | { box: string } | { printed: readonly TextRect[] };
+export type SearchFocus =
+  | { words: number }
+  /** One match's own ink, lit with the rest (added to them when none is the same ink). */
+  | { ink: readonly string[] }
+  | { box: string }
+  | { printed: readonly TextRect[] };
 
 /** A calculation note as the surface shows it (`showCalcNote`): the glowing sum and its card. */
 export interface CalcNoteSpec {
@@ -16815,6 +16821,9 @@ export class InkSurface {
     focus: SearchFocus | null = null,
   ): void {
     const had = this.searchHits !== null;
+    // A match's own ink is one of the lit words: the same ink, or added.
+    let focusInk: string[] | null = null;
+    if (focus && "ink" in focus) ({ words, focus: focusInk } = withFocusInk(words, focus.ink));
     // The words in reading order, so `focus.words` counts as the results list does.
     const onPage = this.doc.pages.find((p) => p.id === pageId);
     if (onPage && words.length > 1) {
@@ -16823,6 +16832,7 @@ export class InkSurface {
       );
       words = readingOrder(spots).map((i) => words[i]);
     }
+    if (focus && "ink" in focus) focus = focusInk ? { words: words.indexOf(focusInk) } : null;
     this.searchHits =
       pageId !== null && (words.length > 0 || boxes.length > 0 || printed.length > 0)
         ? { pageId, words, boxes, printed, focus }
@@ -16891,6 +16901,8 @@ export class InkSurface {
       const box = page.textBoxes.find((b) => b.id === focus.box);
       return box ? { x: box.x + box.w / 2, y: box.y } : null;
     }
+    // A match's ink was made one of `words` when the hits were set.
+    if (!("printed" in focus)) return null;
     const rect = focus.printed[0];
     return rect ? { x: rect.x + rect.w / 2, y: rect.y } : null;
   }

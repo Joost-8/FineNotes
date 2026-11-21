@@ -413,7 +413,13 @@ import { pageWords } from "../recognition/hwr/page-words";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
-import { type ReadLine, lineHits, pageHits, searchMatchTarget } from "../search/hit-strokes";
+import {
+  type ReadLine,
+  lineHits,
+  pageHits,
+  searchMatchTarget,
+  transcriptMatchInk,
+} from "../search/hit-strokes";
 import {
   type LexiconSuggestion,
   SUGGEST_MARGIN,
@@ -5425,12 +5431,12 @@ export class InkView extends TextFileView {
         // No model, or the page could not be read: the text boxes still light up.
       }
     }
-    // The page's transcript finds the words this device misread (2.5.2).
+    // The page's transcripts find the words this device misread (2.5.2),
+    // each lined up with the reading on its own.
     const pageText = (await this.notebookTextIndex(false))[index];
-    const transcript = pageText?.sources
-      .filter((source) => source.kind === "handwriting")
-      .map((source) => source.text)
-      .join("\n");
+    const transcripts =
+      pageText?.sources.filter((source) => source.kind === "handwriting") ?? [];
+    const transcript = transcripts.map((source) => source.text);
     // A page holding the words as typed ("recipe for defining") lights
     // that phrase, wherever it is, and not each word on its own.
     const phrase = holdsPhrase(pageText, query);
@@ -5444,19 +5450,21 @@ export class InkView extends TextFileView {
         ? pdfHitGroups(query, await this.pdfText.layout(backdrop, page.geometry), phrase)
         : [];
     if (this.surface !== surface || !surface.document.pages.includes(page)) return;
-    // The results list's match, among the page's (#112). Handwriting found
-    // by this device's reading lines up with the transcript's only when it
-    // found as many: otherwise the page's hits light alike.
+    // The results list's match, among the page's (#112). A transcript's
+    // match is lined up with the reading on its own, so the list's nth
+    // match is its own ink, wherever the reading found more or fewer words;
+    // one that cannot be placed leaves the page's hits lit alike.
     let focus: SearchFocus | null = null;
     if (result?.kind === "pdf" && printedGroups[result.nth]?.length) {
       focus = { printed: printedGroups[result.nth] };
     } else if (result?.kind === "text" && result.boxId) {
       focus = { box: result.boxId };
-    } else if (
-      result?.kind === "handwriting" &&
-      words.length === matchesOfKind(pageText, query, phrase, "handwriting")
-    ) {
-      focus = { words: result.nth };
+    } else if (result?.kind === "handwriting") {
+      const own = transcriptMatchInk(query, lines, transcripts, phrase)[result.nth];
+      if (own?.length) focus = { ink: own };
+      else if (words.length === matchesOfKind(pageText, query, phrase, "handwriting")) {
+        focus = { words: result.nth };
+      }
     }
     // In a text box, the words themselves light, as in the list.
     surface.setSearchHits(

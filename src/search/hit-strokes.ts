@@ -138,6 +138,47 @@ function lettersOf(folded: string): { text: string; at: number[] } {
   return { text, at };
 }
 
+/**
+ * Parts of a transcript the hand never wrote: LaTeX command names (`\cdot`,
+ * `\frac`: their letters are not on the page) and the AI's own notes in
+ * single brackets, of two words or more ("[placed picture not shown]";
+ * "[0, 1]" and `[[links]]` are kept).
+ */
+const UNWRITTEN =
+  /\\[a-z]+|(?<!\[)\[(?!\[)(?=[^\]\n]*\p{L}{3,}[^\]\n]*\s[^\]\n]*\p{L}{3,})[^\]\n]*\](?!\])/gu;
+
+/** Commands whose name is what the hand wrote: `\gcd` is "gcd" on the page. */
+const WRITTEN_COMMANDS = new Set(
+  "gcd lcm mod log ln lg exp sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh lim max min sup inf det dim deg ker arg hom pr".split(
+    " ",
+  ),
+);
+
+/**
+ * {@link lettersOf} for a transcript: letters the hand wrote, so the
+ * alignment is not spent on `\cdot`'s "cdot" or a note about a picture.
+ * `\bmod` and `\pmod` were written "mod".
+ */
+export function writtenLettersOf(folded: string): { text: string; at: number[] } {
+  const skip = new Uint8Array(folded.length);
+  for (const m of folded.matchAll(UNWRITTEN)) {
+    const name = m[0].startsWith("\\") ? m[0].slice(1) : null;
+    let end = m.index + m[0].length;
+    if (name !== null && WRITTEN_COMMANDS.has(name)) end = m.index + 1;
+    else if (name === "bmod" || name === "pmod") end -= 3;
+    skip.fill(1, m.index, end);
+  }
+  let text = "";
+  const at: number[] = [];
+  for (let i = 0; i < folded.length; i++) {
+    if (!skip[i] && /[\p{L}\p{N}]/u.test(folded[i])) {
+      text += folded[i];
+      at.push(i);
+    }
+  }
+  return { text, at };
+}
+
 /** Letters of transcript kept on each side of a word, to find where it is in the reading. */
 const CONTEXT = 12;
 /** The most edits per letter an aligned stretch may need and still be the same place. */
@@ -195,9 +236,19 @@ function transcriptHits(
   lines: readonly ReadLine[],
   placedOf: (line: number) => Placed | null,
 ): string[][] {
+  return transcriptInk(spansOf, transcript, lines, placedOf).filter((ink) => ink.length > 0);
+}
+
+/** {@link transcriptHits}, one entry per place found, empty where it could not be placed. */
+function transcriptInk(
+  spansOf: (folded: string) => TextSpan[],
+  transcript: string,
+  lines: readonly ReadLine[],
+  placedOf: (line: number) => Placed | null,
+): string[][] {
   const folded = fold(transcript).text;
-  const said = lettersOf(folded);
-  if (said.text.length === 0) return [];
+  const said = writtenLettersOf(folded);
+  if (said.text.length === 0) return spansOf(folded).map(() => []);
   // Folded index → index of the first letter at or after it.
   const letterAt = new Array<number>(folded.length + 1);
   let k = 0;
@@ -217,11 +268,13 @@ function transcriptHits(
   for (const span of spansOf(folded)) {
     const a = letterAt[span.start];
     const b = letterAt[span.end];
-    if (b <= a) continue;
     const lo = Math.max(0, a - CONTEXT);
     const hi = Math.min(said.text.length, b + CONTEXT);
-    const match = alignInto(said.text.slice(lo, hi), read);
-    if (!match) continue;
+    const match = b > a ? alignInto(said.text.slice(lo, hi), read) : null;
+    if (!match) {
+      out.push([]);
+      continue;
+    }
     // The word's letters in the reading, as a character range per line.
     const ranges = new Map<number, { from: number; to: number }>();
     for (const j of match.slice(a - lo, b - lo)) {
@@ -238,7 +291,7 @@ function transcriptHits(
       const placed = placedOf(line);
       if (placed) ink.push(...inkOfRange(placed, range.from, range.to));
     }
-    if (ink.length > 0) out.push(ink);
+    out.push([...new Set(ink)]);
   }
   return out;
 }
@@ -254,11 +307,16 @@ function transcriptHits(
  * With `phrase` (the page holds the query as typed, "recipe for
  * defining"), the ink of each place the phrase is written lights as one,
  * across lines too; when it is not found there, the words light one by one.
+ *
+ * When the reading holds the query exactly and the transcript points at
+ * other ink altogether (no stroke in common), the reading's own words light
+ * alone: measured on Joost's notebooks, the reading was right there 27 times
+ * in 36, the transcript 19 ({@link preferReading}).
  */
 export function lineHits(
   query: string,
   lines: readonly ReadLine[],
-  transcript = "",
+  transcript: string | readonly string[] = "",
   phrase = false,
 ): string[][] {
   const terms = queryTerms(query);
@@ -268,12 +326,16 @@ export function lineHits(
     if (!placedLines.has(index)) placedLines.set(index, placeLine(lines[index]));
     return placedLines.get(index) ?? null;
   };
+  // Each transcript of the page lined up on its own: joined, a word at the
+  // start of one took the end of the other as its context, and was lost.
+  const transcripts = typeof transcript === "string" ? [transcript] : transcript;
+  const inTranscripts = (spansOf: (folded: string) => TextSpan[]): string[][] =>
+    transcripts.flatMap((text) => transcriptHits(spansOf, text, lines, placedOf));
   if (phrase) {
     const spansOf = (folded: string): TextSpan[] => matchFolded(folded, query, true);
-    const found = unique([
-      ...phraseInReading(spansOf, lines, placedOf),
-      ...transcriptHits(spansOf, transcript, lines, placedOf),
-    ]);
+    const found = unique(
+      preferReading(phraseInReading(spansOf, lines, placedOf), inTranscripts(spansOf)),
+    );
     if (found.length > 0) return found;
   }
   const exact = (token: string): boolean => terms.some((term) => fold(token).text.includes(term));
@@ -304,9 +366,32 @@ export function lineHits(
       }
       return spans;
     });
-  const hits = [...found(exact), ...transcriptHits(everyTerm, transcript, lines, placedOf)];
+  const hits = preferReading(found(exact), inTranscripts(everyTerm));
   if (hits.length === 0) return found(near);
   return unique(hits);
+}
+
+/**
+ * The ink of each match of `query` in the page's transcripts, one entry per
+ * match in the order the results list counts them (`search-results.ts`:
+ * source by source, each in reading order), so a result's `nth` names its
+ * own place on the page. An entry is empty where that match could not be
+ * lined up with the reading.
+ */
+export function transcriptMatchInk(
+  query: string,
+  lines: readonly ReadLine[],
+  sources: readonly { text: string }[],
+  phrase = false,
+): string[][] {
+  if (queryTerms(query).length === 0) return [];
+  const placedLines = new Map<number, Placed | null>();
+  const placedOf = (index: number): Placed | null => {
+    if (!placedLines.has(index)) placedLines.set(index, placeLine(lines[index]));
+    return placedLines.get(index) ?? null;
+  };
+  const spansOf = (folded: string): TextSpan[] => matchFolded(folded, query, phrase);
+  return sources.flatMap((source) => transcriptInk(spansOf, source.text, lines, placedOf));
 }
 
 /** The ink of each place the device's reading holds the phrase, lines read as one text. */
@@ -338,6 +423,46 @@ function phraseInReading(
     if (ink.length > 0) out.push(ink);
   }
   return out;
+}
+
+/**
+ * The lit word that is one match's own ink: the group that is the same ink,
+ * else the one sharing most strokes with it. Null when no lit word shares a
+ * stroke with it (the reading was preferred there, {@link preferReading}):
+ * ink that is not lit is never made current. Returned by identity, so it can
+ * be found again once the words are reordered.
+ */
+export function withFocusInk(
+  words: readonly string[][],
+  ink: readonly string[],
+): { words: string[][]; focus: string[] | null } {
+  const mine = new Set(ink);
+  let focus: string[] | null = null;
+  let best = 0;
+  for (const ids of words) {
+    const shared = ids.filter((id) => mine.has(id)).length;
+    const same = shared === mine.size && new Set(ids).size === mine.size;
+    if (same) return { words: [...words], focus: ids };
+    if (shared > best) [focus, best] = [ids, shared];
+  }
+  return { words: [...words], focus };
+}
+
+/**
+ * The reading's hits and the transcript's together; the reading's alone when
+ * both found something and they share no stroke (they disagree on where the
+ * word is written, and the reading's exact match is the likelier).
+ */
+export function preferReading(
+  reading: readonly string[][],
+  transcript: readonly string[][],
+): string[][] {
+  const read = new Set(reading.flat());
+  const conflict =
+    read.size > 0 &&
+    transcript.length > 0 &&
+    !transcript.some((ink) => ink.some((id) => read.has(id)));
+  return conflict ? [...reading] : [...reading, ...transcript];
 }
 
 /** Each group of ink once, its ids once: the reading and the transcript often find the same. */
