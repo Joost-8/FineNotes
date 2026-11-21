@@ -69,6 +69,7 @@ import {
   type FileRow,
   fileName,
 } from "../model/notebook-files";
+import type { PageTranscriptView, TranscriptSource } from "../recognition/page-transcripts";
 import {
   type ContentsEntry,
   type ContentsNode,
@@ -178,7 +179,17 @@ export interface PageSidebarCallbacks {
   onOpenFile?: (kind: FileKind, row: FileRow) => void;
   /** The Files tab's dropdown was changed. */
   onFileKind?: (kind: FileKind) => void;
+  /**
+   * The pages' own transcriptions, listed under Transcripts above the
+   * recordings' transcript files (FineNotes#265). Asked when that list is shown.
+   */
+  pageTranscripts?: () => PageTranscriptView[];
+  /** Something was done to a page's transcription in the Files tab. */
+  onTranscript?: (key: string, action: TranscriptAction) => void;
 }
+
+/** What can be done to a page's transcription from the Files tab. */
+export type TranscriptAction = "keep-mine" | "use-new" | "edit" | "go";
 
 export interface PageSidebarRenderOptions {
   painter: BackdropPainter;
@@ -189,6 +200,20 @@ export interface PageSidebarRenderOptions {
   highlighterAlpha: number;
   /** What a header's `{title}` becomes. */
   notebookTitle?: string;
+}
+
+/** Where a page's transcription came from, as its row says it. */
+function transcriptSourceLabel(source: TranscriptSource): string {
+  switch (source) {
+    case "device":
+      return t("view.files.source.device");
+    case "typed":
+      return t("view.files.source.typed");
+    case "edited":
+      return t("view.files.source.edited");
+    default:
+      return t("view.files.source.ai");
+  }
 }
 
 /** The sidebar's panes: the page thumbnails, the contents, or the note's files. */
@@ -974,7 +999,9 @@ export class PageSidebar {
 
   private renderFiles(kind: FileKind, rows: readonly FileRow[]): void {
     this.filesList.empty();
-    if (rows.length === 0) {
+    const pages = kind === "transcripts" ? (this.callbacks.pageTranscripts?.() ?? []) : [];
+    for (const page of pages) this.renderPageTranscript(page);
+    if (rows.length === 0 && pages.length === 0) {
       this.filesList.createDiv({
         cls: "goodobsidian-files-empty",
         text: FILE_KIND_EMPTY[kind],
@@ -994,6 +1021,71 @@ export class PageSidebar {
         text.createSpan({ cls: "goodobsidian-files-row-detail", text: row.detail });
       }
       button.addEventListener("click", () => this.callbacks.onOpenFile?.(kind, row));
+    }
+  }
+
+  /** Pages whose transcription is open in the Files tab, by key. */
+  private readonly openTranscripts = new Set<string>();
+
+  /**
+   * A page's transcription as a row: "Page 3" and where its text came from,
+   * or that a new one waits to be compared. A tap opens it in place: its
+   * text, with Edit and Go to page; or, while a new one waits, both texts,
+   * each with Keep this.
+   */
+  private renderPageTranscript(view: PageTranscriptView): void {
+    const item = this.filesList.createDiv({
+      cls: "goodobsidian-files-transcript",
+      attr: { role: "listitem" },
+    });
+    const button = item.createEl("button", {
+      cls: "goodobsidian-files-row clickable-icon",
+      attr: { "aria-expanded": String(this.openTranscripts.has(view.key)) },
+    });
+    setIcon(button.createSpan({ cls: "goodobsidian-files-row-icon" }), "file-text");
+    const text = button.createSpan({ cls: "goodobsidian-files-row-text" });
+    text.createSpan({
+      cls: "goodobsidian-files-row-name",
+      text: t("view.files.pageTranscript", { page: view.page + 1 }),
+    });
+    text.createSpan({
+      cls: "goodobsidian-files-row-detail",
+      text: view.pending ? t("view.files.pending") : transcriptSourceLabel(view.source),
+    });
+    if (view.pending) button.createSpan({ cls: "goodobsidian-files-row-dot" });
+    const act = (action: TranscriptAction) => () => this.callbacks.onTranscript?.(view.key, action);
+    button.addEventListener("click", () => {
+      if (this.openTranscripts.has(view.key)) this.openTranscripts.delete(view.key);
+      else this.openTranscripts.add(view.key);
+      this.refreshFiles();
+    });
+    if (!this.openTranscripts.has(view.key)) return;
+
+    const open = item.createDiv({ cls: "goodobsidian-files-transcript-open" });
+    if (view.pending) {
+      const version = (label: string, body: string, action: TranscriptAction): void => {
+        const card = open.createDiv({ cls: "goodobsidian-files-transcript-version" });
+        card.createDiv({ cls: "goodobsidian-files-transcript-label", text: label });
+        card.createDiv({ cls: "goodobsidian-files-transcript-text", text: body });
+        const keep = card.createEl("button", { text: t("view.files.keep") });
+        keep.addEventListener("click", act(action));
+      };
+      version(t("view.files.yours"), view.text, "keep-mine");
+      version(t("view.files.new"), view.pending, "use-new");
+      return;
+    }
+    open.createDiv({ cls: "goodobsidian-files-transcript-text", text: view.text });
+    const actions = open.createDiv({ cls: "goodobsidian-files-transcript-actions" });
+    for (const [action, icon, label] of [
+      ["edit", "pencil", t("view.files.edit")],
+      ["go", "arrow-right", t("view.files.goToPage")],
+    ] as const) {
+      const control = actions.createEl("button", {
+        cls: "clickable-icon",
+        attr: { "aria-label": label, title: label },
+      });
+      setIcon(control, icon);
+      control.addEventListener("click", act(action));
     }
   }
 

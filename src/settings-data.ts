@@ -47,10 +47,19 @@ import { DEFAULT_STICKER_FOLDER, DEFAULT_TEMPLATE_FOLDER } from "./model/vault-f
 import type { AttachmentKind } from "./model/document";
 import { DEFAULT_TEXT_STYLE, type TextStyle } from "./model/text-style";
 import type { ImageAspect } from "./recognition/ai-image";
-import type { ImageVendorChoice } from "./recognition/ai-menu-model";
+import {
+  type ImageVendorChoice,
+  type TranscribeVendorChoice,
+  resolveTranscribeVendor,
+} from "./recognition/ai-menu-model";
 import type { KeySlot } from "./recognition/audio-request";
 import type { SpeechService } from "./audio/online-speech";
-import { type LlmVendor, chatCompletionsUrl, isPlainHttpUrl } from "./recognition/llm-request";
+import {
+  type LlmVendor,
+  VENDORS,
+  chatCompletionsUrl,
+  isPlainHttpUrl,
+} from "./recognition/llm-request";
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import type { EraserMode } from "./view/toolbar";
 import type { PenCursorStyle } from "./view/pen-cursor";
@@ -172,6 +181,24 @@ export interface GoodObsidianSettings {
    * service and back does not lose it ({@link switchLlmVendor}).
    */
   llmModels: Partial<Record<LlmVendor, string>>;
+  /**
+   * The model pages are transcribed with, of the same vendor (FineNotes#265);
+   * empty for `llmModel`. Ask AI always uses `llmModel`.
+   */
+  llmTranscribeModel: string;
+  /**
+   * Tried once when the model is turned down for its rate limit or quota
+   * (`model-choice.ts`), for transcription and Ask alike; empty for none.
+   */
+  llmFallbackModel: string;
+  /**
+   * Who transcribes pages: the AI service ("same"), or another service with
+   * its own key (FineNotes#265). `llmTranscribeModel` is that service's model.
+   */
+  transcribeVendor: TranscribeVendorChoice;
+  /** `llmTranscribeModel` and `llmFallbackModel` of each vendor the user left, as `llmModels`. */
+  llmTranscribeModels: Partial<Record<LlmVendor, string>>;
+  llmFallbackModels: Partial<Record<LlmVendor, string>>;
   /** With OpenRouter, serve the model only from providers that do not say they compress it. */
   openRouterSkipCompressed: boolean;
   /**
@@ -588,6 +615,11 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   llmVendor: "anthropic",
   llmModel: "",
   llmModels: {},
+  llmTranscribeModel: "",
+  llmFallbackModel: "",
+  transcribeVendor: "same",
+  llmTranscribeModels: {},
+  llmFallbackModels: {},
   openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
@@ -977,27 +1009,109 @@ export function storePenPreferences(
   }
 }
 
+/** Keep `typed`, the model for `from`, in `memory`, and bring back `next`'s. */
+function swapModel(
+  typed: string | undefined,
+  memory: Partial<Record<LlmVendor, string>> | undefined,
+  from: LlmVendor,
+  next: LlmVendor,
+): [string, Partial<Record<LlmVendor, string>>] {
+  const models = { ...(memory ?? {}) };
+  const kept = (typed ?? "").trim();
+  if (kept) models[from] = kept;
+  else delete models[from];
+  const back = models[next] ?? "";
+  delete models[next];
+  return [back, models];
+}
+
+type VendorModels = Pick<
+  GoodObsidianSettings,
+  | "llmVendor"
+  | "llmModel"
+  | "llmModels"
+  | "llmTranscribeModel"
+  | "llmTranscribeModels"
+  | "llmFallbackModel"
+  | "llmFallbackModels"
+  | "transcribeVendor"
+>;
+
 /**
  * Change the AI service, keeping what was set up for the one left: its
- * model is remembered and the next one's comes back, so trying another
- * service and returning costs nothing. The keys are kept per service by the
- * key store already; the one key that is not (`llmApiKey`, from before 0.5,
- * meaning "the service chosen") is the caller's to pin to `from` first.
+ * models are remembered and the next one's come back, so trying another
+ * service and returning costs nothing. The transcription model goes with
+ * them only while transcription follows the AI service. The keys are kept
+ * per service by the key store already; the one key that is not
+ * (`llmApiKey`, from before 0.5, meaning "the service chosen") is the
+ * caller's to pin to `from` first.
  */
-export function switchLlmVendor(
-  settings: Pick<GoodObsidianSettings, "llmVendor" | "llmModel" | "llmModels">,
-  next: LlmVendor,
-): void {
+export function switchLlmVendor(settings: VendorModels, next: LlmVendor): void {
   const from = settings.llmVendor;
   if (from === next) return;
-  const models = { ...(settings.llmModels ?? {}) };
-  const typed = settings.llmModel.trim();
-  if (typed) models[from] = typed;
-  else delete models[from];
+  [settings.llmModel, settings.llmModels] = swapModel(
+    settings.llmModel,
+    settings.llmModels,
+    from,
+    next,
+  );
+  [settings.llmFallbackModel, settings.llmFallbackModels] = swapModel(
+    settings.llmFallbackModel,
+    settings.llmFallbackModels,
+    from,
+    next,
+  );
+  const transcribeFrom = resolveTranscribeVendor(settings.transcribeVendor, from);
+  const transcribeNext = resolveTranscribeVendor(settings.transcribeVendor, next);
+  if (transcribeFrom !== transcribeNext) {
+    [settings.llmTranscribeModel, settings.llmTranscribeModels] = swapModel(
+      settings.llmTranscribeModel,
+      settings.llmTranscribeModels,
+      transcribeFrom,
+      transcribeNext,
+    );
+  }
   settings.llmVendor = next;
-  settings.llmModel = models[next] ?? "";
-  delete models[next];
-  settings.llmModels = models;
+}
+
+/**
+ * Change who transcribes pages (FineNotes#265): the transcription model
+ * typed for the service left is remembered, and the next one's comes back.
+ */
+export function switchTranscribeVendor(settings: VendorModels, next: TranscribeVendorChoice): void {
+  const from = resolveTranscribeVendor(settings.transcribeVendor, settings.llmVendor);
+  const to = resolveTranscribeVendor(next, settings.llmVendor);
+  if (from !== to) {
+    [settings.llmTranscribeModel, settings.llmTranscribeModels] = swapModel(
+      settings.llmTranscribeModel,
+      settings.llmTranscribeModels,
+      from,
+      to,
+    );
+  }
+  settings.transcribeVendor = next;
+}
+
+/** A stored model id, trimmed; anything that is not text is no model (""). */
+export function modelIdOf(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * A stored per-vendor model memory (`llmModels` and its kin): only vendors
+ * FineNotes knows, each with a model id; anything else in a hand-edited
+ * file is dropped, not carried.
+ */
+export function modelMemoryOf(value: unknown): Partial<Record<LlmVendor, string>> {
+  const memory: Partial<Record<LlmVendor, string>> = {};
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return memory;
+  for (const [vendor, model] of Object.entries(value as Record<string, unknown>)) {
+    const id = modelIdOf(model);
+    if (id && Object.prototype.hasOwnProperty.call(VENDORS, vendor)) {
+      memory[vendor as LlmVendor] = id;
+    }
+  }
+  return memory;
 }
 
 /** The vault-wide folders for each kind of file, as `resolveAttachmentFolder` takes them. */
@@ -1137,6 +1251,8 @@ const CONVERSIONS: Record<
     store: (text) => parseColorList(text as string),
   },
   llmModel: { show: (id) => id, store: (id) => (id as string).trim() },
+  llmTranscribeModel: { show: (id) => id, store: (id) => (id as string).trim() },
+  llmFallbackModel: { show: (id) => id, store: (id) => (id as string).trim() },
   imageModel: { show: (id) => id, store: (id) => (id as string).trim() },
   useLearnedHandwriting: { show: (on) => on !== false, store: (on) => on === true },
   tuckPenOptionsOnWrite: { show: penOptionsOnWriteOf, store: penOptionsOnWriteOf },
@@ -1178,6 +1294,8 @@ export function changesTabLayout(key: string): boolean {
     key === "recognitionProviderId" ||
     key === "llmVendor" ||
     key === "imageVendor" ||
+    // Brings its key row, and the model's placeholder.
+    key === "transcribeVendor" ||
     key === "pressureWidth" ||
     key === "speechModel" ||
     // The online service brings its model, key and endpoint rows.

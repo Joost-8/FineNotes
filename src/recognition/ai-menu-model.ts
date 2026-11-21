@@ -33,9 +33,33 @@ export const IMAGE_VENDOR_CHOICES: readonly ImageVendorChoice[] = [
   "openrouter",
 ];
 
+/**
+ * The vendor pages are transcribed with: the AI service's, or another one
+ * with a key of its own (FineNotes#265). Not a custom endpoint: there is one
+ * of those, and it is the AI service's.
+ */
+export type TranscribeVendorChoice = "same" | Exclude<LlmVendor, "custom">;
+
+export const TRANSCRIBE_VENDOR_CHOICES: readonly TranscribeVendorChoice[] = [
+  "same",
+  "anthropic",
+  "openai",
+  "google",
+  "openrouter",
+];
+
+/** The vendor pages are transcribed with; anything unknown is the AI service's. */
+export function resolveTranscribeVendor(choice: unknown, textVendor: LlmVendor): LlmVendor {
+  return choice !== "same" && TRANSCRIBE_VENDOR_CHOICES.includes(choice as TranscribeVendorChoice)
+    ? (choice as LlmVendor)
+    : textVendor;
+}
+
 export interface AiSetup {
-  /** The text/vision vendor: transcription and questions. */
+  /** The text/vision vendor: questions, and transcription unless it has its own. */
   vendor: LlmVendor;
+  /** Who transcribes pages; absent is the AI service. */
+  transcribeVendor?: TranscribeVendorChoice;
   /** The custom endpoint's base URL (only read for `custom`). */
   baseUrl: string;
   imageVendor: ImageVendorChoice;
@@ -81,7 +105,15 @@ export function resolveImageVendor(choice: ImageVendorChoice, textVendor: LlmVen
   return choice === "same" ? textVendor : choice;
 }
 
-/** Transcription and questions (a vision chat model). */
+/** Page transcription, with whichever vendor the setting resolves to. */
+export function transcriptionAvailability(setup: AiSetup): Availability {
+  return textAvailability({
+    ...setup,
+    vendor: resolveTranscribeVendor(setup.transcribeVendor, setup.vendor),
+  });
+}
+
+/** Questions, and transcription with the same vendor (a vision chat model). */
 export function textAvailability(setup: AiSetup): Availability {
   const vendor = VENDORS[setup.vendor];
   if (vendor.userEndpoint) {
@@ -125,6 +157,7 @@ export type AiMenuId =
   | "learn"
   | "practice"
   | "device-settings"
+  | "transcribe-page"
   | "transcribe-recording"
   | "transcribe-device"
   | "transcribe-device-cancel"
@@ -145,6 +178,8 @@ export interface AiMenuItem {
   detail?: string;
   /** Rendered below a divider, after the actions. */
   footer?: boolean;
+  /** Works without a key: shown even while the key section is folded. */
+  keyless?: boolean;
   /** Which section: the on-device reader, or the features that need a key (the default). */
   section?: "device" | "key";
   /** A mark at the row's end: the reader still has to be downloaded. */
@@ -190,6 +225,8 @@ export interface ScanReading {
 
 export interface AiMenuContext {
   setup: AiSetup;
+  /** The page in view has ink or typed text to transcribe; absent leaves the entry out. */
+  pageTranscribable?: boolean;
   /** Some page has anything at all to ask about (the chat picks which). */
   notebookAskable: boolean;
   /** More than one page (otherwise the notebook entries say nothing new). */
@@ -390,6 +427,20 @@ function keyItems(ctx: AiMenuContext): AiMenuItem[] {
     icon: "image-plus",
     ...imageAvailability(ctx.setup),
   });
+  // Automatic transcription waits until a page is done; this reads the page
+  // in view now (FineNotes#265), under Generate image.
+  if (ctx.pageTranscribable !== undefined) {
+    // Without an AI it still works: the page is typed by hand.
+    const ai = transcriptionAvailability(ctx.setup).enabled;
+    items.push({
+      id: "transcribe-page",
+      label: t("ai.menu.transcribePage"),
+      icon: "file-text",
+      ...gate(OK, ctx.pageTranscribable, t("ai.menu.pageEmpty")),
+      ...(!ai ? { keyless: true } : {}),
+      ...(!ai && ctx.pageTranscribable ? { detail: t("ai.menu.transcribeByHand") } : {}),
+    });
+  }
   // Last, and only with an online service chosen for recordings: on this
   // device, the device section's entry transcribes.
   if (ctx.recordings !== undefined && isOnlineSpeechService(ctx.setup.speechService)) {

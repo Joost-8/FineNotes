@@ -70,6 +70,9 @@ import {
   type ImageVendorChoice,
   aiKeyFolded,
   resolveImageVendor,
+  TRANSCRIBE_VENDOR_CHOICES,
+  type TranscribeVendorChoice,
+  resolveTranscribeVendor,
 } from "./recognition/ai-menu-model";
 import {
   DEFAULT_IMAGE_MODELS,
@@ -329,6 +332,14 @@ function speechServiceLabels(): Record<SpeechService, string> {
     google: "Google (Gemini)",
     custom: t("settings.speechService.custom"),
   };
+}
+
+function transcribeVendorLabels(): Record<TranscribeVendorChoice, string> {
+  const labels = { same: t("settings.imageVendor.same") } as Record<TranscribeVendorChoice, string>;
+  for (const id of TRANSCRIBE_VENDOR_CHOICES) {
+    if (id !== "same") labels[id] = VENDOR_LABELS[id];
+  }
+  return labels;
 }
 
 function imageVendorLabels(): Record<ImageVendorChoice, string> {
@@ -998,6 +1009,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       // Saved by the plugin, which redraws every open notebook with it.
       storeShownValue(this.plugin.settings, key, value);
       await this.plugin.applyPageAppearance();
+      return;
+    }
+    if (key === "transcribeVendor") {
+      // Saved by the plugin, which keeps each service's transcription model.
+      await this.plugin.switchTranscribeVendor(value as TranscribeVendorChoice);
+      this.update();
       return;
     }
     if (key === "llmVendor") {
@@ -1956,6 +1973,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       ? t("settings.ai.endpointKey")
       : t("settings.ai.keyName", { service: VENDORS[vendor].label });
     const imageKeyName = t("settings.ai.imageKeyName", { service: VENDORS[imageVendor].label });
+    const transcribeVendor = resolveTranscribeVendor(settings.transcribeVendor, vendor);
+    const transcribeKeyName = t("settings.ai.transcribeKeyName", {
+      service: VENDORS[transcribeVendor].label,
+    });
     const speechService = settings.speechService ?? "device";
     const speechOnline = isOnlineSpeechService(speechService);
     const speechModel = DEFAULT_AUDIO_MODELS[speechOnline ? speechService : "groq"];
@@ -2025,6 +2046,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "cpu",
           ),
           this.tile(
+            controlRow(
+              t("settings.fallbackModel.name"),
+              t("settings.fallbackModel.line"),
+              {
+                type: "text",
+                key: "llmFallbackModel",
+                placeholder: t("settings.fallbackModel.placeholder"),
+              },
+              ["rate limit", "quota", "429", "backup model", "second model"],
+            ),
+            "life-buoy",
+          ),
+          this.tile(
             drawnRow(keyName, this.keyLine(vendor), (s) => this.renderKeyRow(s, vendor), [
               "token",
               "secret",
@@ -2048,6 +2082,42 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
               ["OCR", "handwriting to text", "auto recognition", "recognize automatically"],
             ),
             "autoRecognize",
+          ),
+          this.tile(
+            dropdown(
+              "transcribeVendor",
+              t("settings.transcribeVendor.name"),
+              t("settings.transcribeVendor.line"),
+              transcribeVendorLabels(),
+              ["transcription service", "transcription key", "other provider", "Gemini", "OpenAI"],
+            ),
+            "file-text",
+          ),
+          this.tile(
+            controlRow(
+              t("settings.transcribeModel.name"),
+              t("settings.transcribeModel.line"),
+              {
+                type: "text",
+                key: "llmTranscribeModel",
+                placeholder:
+                  transcribeVendor === vendor
+                    ? t("settings.transcribeModel.placeholder")
+                    : DEFAULT_MODELS[transcribeVendor],
+              },
+              ["cheaper model", "model for transcription", "transcribe model", "OCR model"],
+            ),
+            "cpu",
+          ),
+          this.tile(
+            drawnRow(
+              transcribeKeyName,
+              this.keyLine(transcribeVendor),
+              (s) => this.renderKeyRow(s, transcribeVendor),
+              ["transcription key"],
+              transcribeVendor !== vendor,
+            ),
+            "key-round",
           ),
         ],
       ],

@@ -47,6 +47,7 @@ import {
 import type { ShownRegion } from "./region-frames";
 import {
   AUTO_RECOGNIZE_IDLE_MS,
+  AUTO_RECOGNIZE_LEAVE_MS,
   DEVICE_READ_IDLE_MS,
   DEVICE_READ_NEXT_MS,
   DEVICE_READ_OPEN_MS,
@@ -76,9 +77,13 @@ import { readTextSection, writeTextSection } from "../recognition/text-layer";
 import {
   type TranscriptUpdate,
   hasAskableContent,
+  autoTranscriptionBatch,
+  choosePageTranscript,
+  pageTranscriptViews,
   hasTranscribableContent,
   pageContentHash,
   pageKeys,
+  transcriptionCropHeight,
   transcriptHashes,
   transcriptSources,
   renamedLinkTargets,
@@ -93,6 +98,8 @@ import {
   type HandwritingReading,
   aiKeyFolded,
   buildAiMenu,
+  resolveTranscribeVendor,
+  transcriptionAvailability,
   textAvailability,
 } from "../recognition/ai-menu-model";
 import {
@@ -502,6 +509,7 @@ import type { NudgeEvent } from "../model/nudges";
 import { ContentsTitleModal } from "./contents-title-modal";
 import { TaskModal } from "./task-modal";
 import { InkTextModal } from "./ink-text-modal";
+import { TranscriptModal } from "./transcript-modal";
 import { sanitizeTextStyle, textStyleOf } from "../model/text-style";
 import {
   DEFAULT_SHAPE_COLOR,
@@ -523,6 +531,7 @@ import {
   thumbnailRasterScale,
   type SectionAction,
   type SelectionAction,
+  type TranscriptAction,
 } from "./page-sidebar";
 import {
   type ActiveTool,
@@ -848,6 +857,10 @@ export class InkView extends TextFileView {
 
   /** The wait before an automatic transcription (see `scheduleAutoTranscription`). */
   private transcribeTimer = 0;
+  /** Ids of the pages written on since the last automatic transcription took them. */
+  private autoPages = new Set<string>();
+  /** The page in view, to tell which page was left when another comes into view. */
+  private shownPageId: string | null = null;
   /** Present mode while it is on (⋯ › Present). */
   private presenter: Presenter | null = null;
   /** The next on-device reading for search and the text layer (`scheduleDeviceReading`). */
@@ -1143,6 +1156,7 @@ export class InkView extends TextFileView {
     if (doc && !held && this.relinkDoc() + this.adoptRenamedLinks(body) > 0) this.requestSave();
     // Ticks made in the note (the Tasks plugin) since the notebook wrote it.
     if (doc && !held) this.adoptTicks(body);
+    this.handOverWaitingPages(this.loadedPath, this.file?.path ?? null);
     this.loadedPath = this.file?.path ?? null;
     this.textPanel?.load(body);
     if (!this.mounted) return;
@@ -1503,6 +1517,9 @@ export class InkView extends TextFileView {
     this.audio?.destroy();
     this.audio = null;
     window.clearTimeout(this.transcribeTimer);
+    // Pages written on and not read yet are read when the notebook opens again.
+    if (this.loadedPath) this.plugin.keepWaitingPages(this.loadedPath, [...this.autoPages]);
+    this.autoPages.clear();
     window.clearTimeout(this.deviceTimer);
     this.deviceTimer = 0;
     window.clearTimeout(this.pdfIndexTimer);
@@ -1763,7 +1780,43 @@ export class InkView extends TextFileView {
    * request for every page of a long notebook.
    */
   async recognize(engine: RecognitionProvider, background = false): Promise<void> {
-    await this.transcribe(engine, background ? "page" : "notebook", background);
+    if (!background) {
+      await this.transcribe(engine, "notebook");
+      return;
+    }
+    // Another run is going (the command, or a slow automatic one): the pages
+    // stay waiting for the next quiet moment rather than being dropped.
+    if (this.transcription) {
+      this.scheduleAutoTranscription();
+      return;
+    }
+    // A failure a moment ago (a spent quota, no connection): wait it out.
+    const wait = this.plugin.autoTranscriptionWait();
+    if (wait > 0) {
+      this.scheduleAutoTranscription(undefined, wait);
+      return;
+    }
+    const { now, later } = autoTranscriptionBatch(
+      this.autoPages,
+      this.doc.pages.map((page) => page.id),
+    );
+    this.autoPages = new Set(later);
+    const pages = this.doc.pages.filter((page) => now.includes(page.id));
+    if (pages.length > 0) await this.transcribe(engine, pages, true);
+    // A page that failed, or was written on while it was read, waits for the next run.
+    const recorded = transcriptHashes(readTextSection(this.noteBody));
+    const keys = pageKeys(this.doc.pages);
+    for (const page of pages) {
+      const index = this.doc.pages.indexOf(page);
+      if (index < 0 || !hasTranscribableContent(page) || this.guard.locked) continue;
+      if (recorded.get(keys[index]) !== pageContentHash(page)) this.autoPages.add(page.id);
+    }
+    if (this.autoPages.size > 0) {
+      this.scheduleAutoTranscription(
+        undefined,
+        Math.max(AUTO_RECOGNIZE_IDLE_MS, this.plugin.autoTranscriptionWait()),
+      );
+    }
   }
 
   /**
@@ -1780,7 +1833,7 @@ export class InkView extends TextFileView {
    */
   async transcribe(
     provider: RecognitionProvider,
-    scope: "page" | "notebook",
+    scope: "page" | "notebook" | readonly Page[],
     auto = false,
   ): Promise<void> {
     if (this.guard.locked) {
@@ -1792,16 +1845,15 @@ export class InkView extends TextFileView {
       return;
     }
     if (provider.id === MANUAL_PROVIDER_ID) {
-      if (!auto) {
-        if (!this.textPanelOpen) this.toggleTextPanel();
-        new Notice(t("view.transcribe.manual"));
-      }
+      // Manual: the page in view is typed by hand (FineNotes#265).
+      if (!auto) this.typePageTranscript(this.surface?.currentPage ?? 0);
       return;
     }
 
     const doc = this.doc;
     const current = doc.pages[this.surface?.currentPage ?? 0];
-    const pages = scope === "page" ? (current ? [current] : []) : [...doc.pages];
+    const pages =
+      scope === "page" ? (current ? [current] : []) : scope === "notebook" ? [...doc.pages] : scope;
     const keys = pageKeys(doc.pages);
     const recorded = transcriptHashes(readTextSection(this.noteBody));
     const cleared: TranscriptUpdate[] = [];
@@ -1855,7 +1907,7 @@ export class InkView extends TextFileView {
         );
         const hash = pageContentHash(page);
         try {
-          const image = provider.requiresNetwork ? await this.renderForAi(page) : null;
+          const image = provider.requiresNetwork ? await this.renderForTranscription(page) : null;
           const result = await provider.recognize({
             strokes: page.strokes,
             pageImage: image ?? undefined,
@@ -1879,23 +1931,103 @@ export class InkView extends TextFileView {
       this.transcription = null;
     }
 
+    if (done > 0) this.plugin.transcriptionWorked();
     if (failure) {
+      // An automatic run says so once, then waits (`auto-backoff.ts`)
+      // rather than failing again after every pause in writing.
+      if (auto && !this.plugin.autoTranscriptionFailed()) return;
       const failed = { page: failure.page, message: failure.message };
-      new Notice(
+      const said =
         done > 0
           ? tn("view.transcribe.failedSaved", done, failed)
-          : t("view.transcribe.failed", failed),
-        10000,
-      );
+          : t("view.transcribe.failed", failed);
+      new Notice(auto ? `${said} ${t("view.transcribe.autoWaits")}` : said, 10000);
       return;
     }
     if (auto) return;
-    if (done > 0 && !this.textPanelOpen) this.toggleTextPanel();
+    // Where to read them: the sidebar's Files tab (FineNotes#265), not a
+    // panel opened under the page. A page whose text is the person's keeps
+    // it; the new one waits there to be compared.
+    const views = pageTranscriptViews(readTextSection(this.noteBody), pageKeys(this.doc.pages));
+    const waiting = views.filter(
+      (view) => view.pending !== undefined && work.includes(this.doc.pages[view.page]),
+    ).length;
     const summary =
       run.cancelled && done < work.length
         ? t("view.transcribe.stopped", { done, total: work.length })
-        : tn("view.transcribe.done", done);
-    new Notice(unchanged > 0 ? `${summary} ${tn("view.transcribe.skipped", unchanged)}` : summary);
+        : waiting > 0
+          ? tn("view.transcribe.compare", waiting)
+          : tn("view.transcribe.ready", done);
+    const notice = new Notice(
+      unchanged > 0 ? `${summary} ${tn("view.transcribe.skipped", unchanged)}` : summary,
+      8000,
+    );
+    if (done > 0) {
+      notice.messageEl.addEventListener("click", () => this.showTranscriptsInSidebar());
+    }
+  }
+
+  /** Open the sidebar on its Files tab, listing Transcripts. */
+  showTranscriptsInSidebar(): void {
+    const sidebar = this.sidebar;
+    if (!sidebar) return;
+    lastFileKind = "transcripts";
+    sidebar.setFileKind("transcripts");
+    sidebar.showTab("files");
+    if (!sidebar.isOpen) this.toggleSidebar();
+    else sidebar.refreshFiles();
+  }
+
+  /**
+   * Type page `index`'s transcript by hand, starting from what it says now.
+   * Saved as the person's: no machine transcription replaces it.
+   */
+  typePageTranscript(index: number): void {
+    const page = this.doc.pages[index];
+    if (!page) return;
+    if (this.guard.locked) {
+      new Notice(t("view.notice.readOnly"));
+      return;
+    }
+    const key = pageKeys(this.doc.pages)[index];
+    const now = pageTranscriptViews(readTextSection(this.noteBody), pageKeys(this.doc.pages)).find(
+      (view) => view.key === key,
+    );
+    new TranscriptModal(this.app, index + 1, now?.text ?? "", (text) => {
+      const at = this.doc.pages.indexOf(page);
+      if (at < 0) return;
+      this.writeTranscripts([{ page, text, hash: pageContentHash(page), typed: true }]);
+      this.sidebar?.refreshFiles();
+    }).open();
+  }
+
+  /** The Files tab's actions on a page's transcription. */
+  private transcriptAction(key: string, action: TranscriptAction): void {
+    const keys = pageKeys(this.doc.pages);
+    const index = keys.indexOf(key);
+    if (index < 0) return;
+    if (action === "go") {
+      this.surface?.goToPage(index, true);
+      return;
+    }
+    if (action === "edit") {
+      this.typePageTranscript(index);
+      return;
+    }
+    if (this.guard.locked) {
+      new Notice(t("view.notice.readOnly"));
+      return;
+    }
+    const section = choosePageTranscript(
+      readTextSection(this.noteBody),
+      keys,
+      key,
+      action === "use-new" ? "new" : "mine",
+    );
+    this.noteBody = writeTextSection(this.noteBody, section);
+    this.textPanel?.load(this.noteBody);
+    this.requestBodySave();
+    this.sidebar?.refreshFiles();
   }
 
   /**
@@ -1905,7 +2037,8 @@ export class InkView extends TextFileView {
    */
   private writeTranscripts(
     updates: ReadonlyArray<
-      TranscriptUpdate | { page: Page; text: string; hash: string; device?: boolean }
+      | TranscriptUpdate
+      | { page: Page; text: string; hash: string; device?: boolean; typed?: boolean }
     >,
   ): void {
     const keys = pageKeys(this.doc.pages);
@@ -1917,8 +2050,14 @@ export class InkView extends TextFileView {
       }
       const index = this.doc.pages.indexOf(update.page);
       if (index >= 0) {
-        const { text, hash, device } = update;
-        resolved.push({ key: keys[index], text, hash, ...(device ? { device } : {}) });
+        const { text, hash, device, typed } = update;
+        resolved.push({
+          key: keys[index],
+          text,
+          hash,
+          ...(device ? { device } : {}),
+          ...(typed ? { typed } : {}),
+        });
       }
     }
     const section = updatePageTranscripts(readTextSection(this.noteBody), keys, resolved);
@@ -1968,6 +2107,81 @@ export class InkView extends TextFileView {
     });
   }
 
+  /**
+   * The AI menu's "Transcribe this page" and the command of that name: the
+   * page in view, now, with the AI (also when the recognition setting says
+   * Manual: asking for it is asking for a machine transcription), after the
+   * one-time consent. Automatic transcription waits until a page is done;
+   * this is for when the text is wanted at once.
+   */
+  async transcribePageNow(): Promise<void> {
+    // No AI to ask: the page is typed by hand instead (FineNotes#265).
+    if (!transcriptionAvailability(this.plugin.aiSetup()).enabled) {
+      this.typePageTranscript(this.surface?.currentPage ?? 0);
+      return;
+    }
+    const config = this.plugin.transcriptionAiConfig();
+    const confirmed = await this.plugin.confirmAiSend(
+      config,
+      t("notebooks.consent.pagesAction"),
+      t("notebooks.consent.pagesWhat"),
+    );
+    if (!confirmed) return;
+    await this.transcribe(this.plugin.aiTranscriber(), "page");
+  }
+
+  /**
+   * Page `index` came into view. Turning away from a page written on means
+   * it is done for now: automatic transcription reads it a moment later
+   * (AUTO_RECOGNIZE_LEAVE_MS), not after the long quiet wait.
+   */
+  private pageShown(index: number): void {
+    const left = this.shownPageId;
+    this.shownPageId = this.doc.pages[index]?.id ?? null;
+    if (left && left !== this.shownPageId && this.autoPages.has(left)) {
+      this.scheduleAutoTranscription(undefined, AUTO_RECOGNIZE_LEAVE_MS);
+    }
+  }
+
+  /**
+   * Pages left waiting for automatic transcription follow their notebook:
+   * when this view moves from `from` to another file they are kept for
+   * `from`, and the ones `to` left waiting when it was closed come back.
+   */
+  private handOverWaitingPages(from: string | null, to: string | null): void {
+    if (from === to) return;
+    window.clearTimeout(this.transcribeTimer);
+    if (from) this.plugin.keepWaitingPages(from, [...this.autoPages]);
+    this.autoPages.clear();
+    if (!to) return;
+    const waiting = this.plugin.takeWaitingPages(to);
+    if (waiting.length === 0) return;
+    for (const id of waiting) this.autoPages.add(id);
+    this.scheduleAutoTranscription(undefined, AUTO_RECOGNIZE_LEAVE_MS);
+  }
+
+  /**
+   * {@link renderForAi} for a page transcription: down to the lowest
+   * writing only (`transcriptionCropHeight`), at the whole page's scale.
+   */
+  private async renderForTranscription(page: Page): Promise<RenderedPage | null> {
+    if (!this.backdrops || isBoardPage(this.doc, page)) return this.renderForAi(page);
+    const keep = transcriptionCropHeight(page, (text) => this.textHeight(text));
+    if (keep === null) return this.renderForAi(page);
+    const { width, height } = page.geometry;
+    const cut = boardDrawing(page, { x: 0, y: 0, width, height: keep });
+    return renderPageForAi(
+      cut,
+      this.backdrops,
+      {
+        usePressure: this.settings.pressureWidth,
+        highlighterAlpha: this.settings.highlighterAlpha,
+        ...(this.images ? { images: this.images } : {}),
+      },
+      { width, height },
+    );
+  }
+
   // --- AI menu --------------------------------------------------------------
 
   /** Open the AI menu on `anchor`; a second tap on the same button closes it. */
@@ -1981,8 +2195,10 @@ export class InkView extends TextFileView {
       if (open.anchorEl === anchor) return;
     }
     const doc = this.doc;
+    const current = doc.pages[this.surface?.currentPage ?? 0];
     const items = buildAiMenu({
       setup: this.plugin.aiSetup(),
+      pageTranscribable: !!current && hasTranscribableContent(current),
       notebookAskable: doc.pages.some(hasAskableContent),
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
@@ -2282,6 +2498,7 @@ export class InkView extends TextFileView {
       "learn-window": () => this.plugin.openLearnWindow(),
       "scan-pdf-download": () => this.plugin.offerOcrReader(true),
       "device-settings": () => this.plugin.openSettingsTab(),
+      "transcribe-page": () => void this.transcribePageNow(),
       "transcribe-recording": () => this.audio?.transcribeFromMenu(),
       "transcribe-device": () => this.audio?.transcribeOnDeviceFromMenu(),
       "transcribe-device-cancel": () => this.plugin.speech.cancel(),
@@ -3215,16 +3432,6 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * Automatic transcription, a setting that is off by default: every change
-   * to the ink restarts a wait of AUTO_RECOGNIZE_IDLE_MS, and when the wait
-   * runs out the page in view is transcribed. It cannot ask for consent, so
-   * it is only armed for an engine that needs the network once the user has
-   * agreed to send to the chosen vendor's kind of destination: a cloud
-   * service and the user's own endpoint are agreed to separately. A page
-   * whose ink has not changed since its last transcription costs nothing
-   * (see `transcribe`).
-   */
-  /**
    * Read pages on this device for search and the text layer, a moment after
    * writing stops (`device-reading.ts` picks the page): one page at a time,
    * the page in view first, never while the pen is down, never replacing a
@@ -3697,16 +3904,43 @@ export class InkView extends TextFileView {
     }
   }
 
-  private scheduleAutoTranscription(): void {
+  /**
+   * Automatic transcription, a setting that is off by default: every change
+   * to the ink restarts a wait of AUTO_RECOGNIZE_IDLE_MS, and when the wait
+   * runs out the pages written on since the last run are transcribed (a few
+   * at a time, `autoTranscriptionBatch`), wherever the view has scrolled to
+   * meanwhile. It cannot ask for consent, so it is only armed for an engine
+   * that needs the network once the user has agreed to send to the chosen
+   * vendor's kind of destination: a cloud service and the user's own
+   * endpoint are agreed to separately. A page whose content has not changed
+   * since its last transcription costs nothing (see `transcribe`).
+   *
+   * `changed` is the ids of the pages an edit touched; without them (an
+   * edit that does not say), the page in view.
+   */
+  private scheduleAutoTranscription(
+    changed?: readonly string[],
+    delay = AUTO_RECOGNIZE_IDLE_MS,
+  ): void {
     window.clearTimeout(this.transcribeTimer);
-    const { autoRecognize, llmVendor } = this.settings;
+    const { autoRecognize, llmVendor, transcribeVendor } = this.settings;
     const armed =
       autoRecognize &&
       this.plugin.activeProvider().requiresNetwork &&
-      this.plugin.consentedTo(llmVendor);
-    if (!armed) return;
+      this.plugin.consentedTo(resolveTranscribeVendor(transcribeVendor, llmVendor));
+    if (!armed) {
+      this.autoPages.clear();
+      return;
+    }
+    if (changed && changed.length > 0) {
+      for (const id of changed) this.autoPages.add(id);
+    } else if (changed) {
+      const current = this.doc.pages[this.surface?.currentPage ?? 0];
+      if (current) this.autoPages.add(current.id);
+    }
+    if (this.autoPages.size === 0) return;
     const transcribeNow = (): void => void this.plugin.runRecognition(this, true);
-    this.transcribeTimer = window.setTimeout(transcribeNow, AUTO_RECOGNIZE_IDLE_MS);
+    this.transcribeTimer = window.setTimeout(transcribeNow, delay);
   }
 
   /**
@@ -4019,6 +4253,9 @@ export class InkView extends TextFileView {
         listFiles: (kind) => this.listNotebookFiles(kind),
         onOpenFile: (kind, row) => this.openNotebookFile(kind, row),
         onFileKind: (kind) => (lastFileKind = kind),
+        pageTranscripts: () =>
+          pageTranscriptViews(readTextSection(this.noteBody), pageKeys(this.doc.pages)),
+        onTranscript: (key, action) => this.transcriptAction(key, action),
       },
       this.sidebarRendering(this.thumbBackdrops),
     );
@@ -4078,7 +4315,7 @@ export class InkView extends TextFileView {
           this.syncSingle();
           // …and undo can take a recording off the note, or bring one back.
           this.audio?.syncChrome();
-          this.scheduleAutoTranscription();
+          this.scheduleAutoTranscription(pages ?? []);
           this.scheduleDeviceReading();
           this.columnNotes.pagesChanged(pages);
           // Ink on a PDF's tab is the notebook's: its pages with marks go in.
@@ -4162,6 +4399,7 @@ export class InkView extends TextFileView {
         onSizeScale: () => this.toolbar?.refreshSizeMarks(),
         onTapesToggled: () => this.toolbar?.refreshTape(),
         onPageChange: (index) => {
+          this.pageShown(index);
           this.toolbar?.refreshTape();
           this.sidebar?.setCurrentPage(index);
           this.scheduleLastPage();

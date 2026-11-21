@@ -589,6 +589,7 @@ describe("registration", () => {
         "toggle-only-stylus-mode",
         "toggle-simple-look",
         "toggle-text-layer",
+        "transcribe-page",
         "turn-selection-into-text",
         "view-changelog",
         "write-handwriting-practice",
@@ -1464,6 +1465,71 @@ describe("the Make shapes hint", () => {
 });
 
 // --- Consent before recognition -----------------------------------------------------------
+
+describe("transcription's own service, model and waits (FineNotes#265)", () => {
+  it("uses the AI service with transcription's own model, and the fallback", async () => {
+    await load({
+      lastSeenVersion: VERSION,
+      llmModel: "claude-opus-5-5",
+      llmTranscribeModel: "claude-haiku-4-5",
+      llmFallbackModel: "claude-sonnet-5-5",
+    });
+    expect(plugin.textAiConfig()).toMatchObject({ vendor: "anthropic", model: "claude-opus-5-5" });
+    expect(plugin.transcriptionAiConfig()).toMatchObject({
+      vendor: "anthropic",
+      model: "claude-haiku-4-5",
+      fallbackModel: "claude-sonnet-5-5",
+    });
+  });
+
+  it("uses another service with its own key, without the AI service's fallback", async () => {
+    await load({
+      lastSeenVersion: VERSION,
+      transcribeVendor: "google",
+      llmTranscribeModel: "gemini-3.5-flash-lite",
+      llmFallbackModel: "claude-sonnet-5-5",
+    });
+    plugin.storeApiKey("google", "AIza-transcribe");
+    plugin.storeApiKey("anthropic", "sk-ant-ask");
+    expect(plugin.transcriptionVendor()).toBe("google");
+    expect(plugin.transcriptionAiConfig()).toMatchObject({
+      vendor: "google",
+      model: "gemini-3.5-flash-lite",
+      apiKey: "AIza-transcribe",
+      fallbackModel: "",
+    });
+    // Ask keeps the AI service and its key.
+    expect(plugin.textAiConfig()).toMatchObject({ vendor: "anthropic", apiKey: "sk-ant-ask" });
+    expect(plugin.aiSetup().transcribeVendor).toBe("google");
+  });
+
+  it("reads an unknown transcription service as the AI service's", async () => {
+    await load({ lastSeenVersion: VERSION, transcribeVendor: "custom" });
+    expect(plugin.settings.transcribeVendor).toBe("same");
+    expect(plugin.transcriptionVendor()).toBe("anthropic");
+  });
+
+  it("waits after automatic failures, says the first, and stops waiting after a success", async () => {
+    await load({ lastSeenVersion: VERSION });
+    expect(plugin.autoTranscriptionWait()).toBe(0);
+    expect(plugin.autoTranscriptionFailed()).toBe(true);
+    expect(plugin.autoTranscriptionWait()).toBeGreaterThan(9 * 60_000);
+    expect(plugin.autoTranscriptionFailed()).toBe(false);
+    plugin.transcriptionWorked();
+    expect(plugin.autoTranscriptionWait()).toBe(0);
+  });
+
+  it("keeps the pages a closed notebook left waiting, for when it opens again", async () => {
+    await load({ lastSeenVersion: VERSION });
+    plugin.keepWaitingPages("A.notebook.md", ["p2", "p3"]);
+    expect(plugin.takeWaitingPages("B.notebook.md")).toEqual([]);
+    expect(plugin.takeWaitingPages("A.notebook.md")).toEqual(["p2", "p3"]);
+    expect(plugin.takeWaitingPages("A.notebook.md")).toEqual([]);
+    plugin.keepWaitingPages("A.notebook.md", ["p1"]);
+    plugin.keepWaitingPages("A.notebook.md", []);
+    expect(plugin.takeWaitingPages("A.notebook.md")).toEqual([]);
+  });
+});
 
 describe("running recognition", () => {
   function target() {

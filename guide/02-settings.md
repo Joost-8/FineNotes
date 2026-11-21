@@ -263,7 +263,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Handwriting recognition (transcribe with AI)
 
 - **Id:** `settingRecognitionProvider`
-- **What:** What the Transcribe this notebook's handwriting command uses: Manual (default; you type the text yourself in the text layer), Cloud AI (an image of each page goes to your AI service), or Cloud AI by itself after you write (about 30 seconds after you stop, only changed pages).
+- **What:** What the Transcribe this notebook's handwriting command uses: Manual (default; you type the text yourself in the text layer), Cloud AI (an image of each page goes to your AI service), or Cloud AI by itself after you write (a page once you turn away from it or after 5 minutes without writing, only changed pages).
 - **Where:** Settings › AI › Handwriting recognition
 - **Notes:** Separate from Grape, which reads on the device for search.
 - **Words:** handwriting recognition, transcribe notebook, cloud ai transcription, text layer, automatic transcription

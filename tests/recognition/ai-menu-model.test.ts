@@ -8,7 +8,9 @@ import {
   buildAiMenu,
   imageAvailability,
   resolveImageVendor,
+  resolveTranscribeVendor,
   textAvailability,
+  transcriptionAvailability,
 } from "../../src/recognition/ai-menu-model";
 import type { KeySlot } from "../../src/recognition/audio-request";
 
@@ -68,6 +70,13 @@ describe("availability", () => {
     expect(imageAvailability(setup({ vendor: "google", keys: ["google"] })).enabled).toBe(true);
   });
 
+  it("resolves the transcription vendor, an unknown one as the AI service's", () => {
+    expect(resolveTranscribeVendor("same", "openai")).toBe("openai");
+    expect(resolveTranscribeVendor("google", "openai")).toBe("google");
+    expect(resolveTranscribeVendor("custom", "openai")).toBe("openai");
+    expect(resolveTranscribeVendor(undefined, "anthropic")).toBe("anthropic");
+  });
+
   it("resolves the image vendor", () => {
     expect(resolveImageVendor("same", "openrouter")).toBe("openrouter");
     expect(resolveImageVendor("google", "anthropic")).toBe("google");
@@ -117,10 +126,47 @@ describe("buildAiMenu", () => {
     expect(single.ask.reason).toBe("This page is empty");
   });
 
-  it("has no transcription entries; the chat does that", () => {
-    const ids = buildAiMenu(context()).map((i) => i.id);
-    expect(ids).not.toContain("transcribe-page");
-    expect(ids).not.toContain("transcribe-notebook");
+  it("offers 'Transcribe this page' under Generate image, never the whole notebook", () => {
+    expect(buildAiMenu(context()).map((i) => i.id)).not.toContain("transcribe-page");
+    const items = buildAiMenu(context({ pageTranscribable: true })).filter(
+      (i) => i.section !== "device",
+    );
+    expect(items.map((i) => i.id)).toEqual([
+      "ask",
+      "generate-image",
+      "transcribe-page",
+      "settings",
+    ]);
+    expect(byId(items)["transcribe-page"]).toMatchObject({
+      label: "Transcribe this page",
+      enabled: true,
+    });
+    expect(items.map((i) => i.id)).not.toContain("transcribe-notebook");
+    const empty = byId(buildAiMenu(context({ pageTranscribable: false })));
+    expect(empty["transcribe-page"]).toMatchObject({
+      enabled: false,
+      reason: "This page is empty",
+    });
+  });
+
+  it("lets the page be typed by hand when its transcription service has no key", () => {
+    const own = setup({ transcribeVendor: "google", keys: ["anthropic"] });
+    const items = byId(buildAiMenu(context({ setup: own, pageTranscribable: true })));
+    expect(items["transcribe-page"]).toMatchObject({
+      enabled: true,
+      detail: "No AI set up: type it yourself",
+    });
+    // Nothing set up at all: the same.
+    const none = byId(buildAiMenu(context({ setup: setup(), pageTranscribable: true })));
+    expect(none["transcribe-page"]).toMatchObject({ enabled: true, detail: expect.any(String) });
+    // With a key, no line under it.
+    const ready = byId(buildAiMenu(context({ pageTranscribable: true })));
+    expect(ready["transcribe-page"].detail).toBeUndefined();
+    // Ask still runs on the AI service.
+    expect(items.ask.enabled).toBe(true);
+    expect(transcriptionAvailability({ ...own, hasKey: (slot) => slot === "google" }).enabled).toBe(
+      true,
+    );
   });
 
   it("offers 'Transcribe recording…' last, after images, only where recording exists", () => {
