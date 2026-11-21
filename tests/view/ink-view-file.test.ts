@@ -352,11 +352,24 @@ describe("the file read again while open (FineNotes#273)", () => {
     const text = notebookFile();
     view.setViewData(text, true);
     const theirs = parseInkFile(text, 1024);
-    theirs.doc!.pages[0].strokes = [];
+    theirs.doc!.pages[0].strokes.push({ ...theirs.doc!.pages[0].strokes[0], id: "r1" });
     const changed = buildInkFile(theirs.body, theirs.doc!);
     view.setViewData(changed, false);
-    expect(strokeIds(view.getViewData())).toEqual([[]]);
+    expect(strokeIds(view.getViewData())).toEqual([["s1", "r1"]]);
     expect((view as unknown as Reloads).diskReloads.replaced).toBe(1);
+  });
+
+  it("keeps saved ink that an older copy from elsewhere lacks, and saves it again", () => {
+    const view = openView();
+    const text = notebookFile();
+    view.setViewData(text, true);
+    const older = parseInkFile(text, 1024);
+    older.doc!.pages[0].strokes = [];
+    const saves = inside(view).saveRequests;
+    view.setViewData(buildInkFile(older.body, older.doc!), false);
+    expect(strokeIds(view.getViewData())).toEqual([["s1"]]);
+    expect(inside(view).saveRequests).toBeGreaterThan(saves);
+    expect((view as unknown as Reloads).diskReloads.merged).toBe(1);
   });
 
   it("opens another file as it is", () => {

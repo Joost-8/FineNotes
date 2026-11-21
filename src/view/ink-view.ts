@@ -1161,8 +1161,8 @@ export class InkView extends TextFileView {
     }
     // The same file read again (changed on disk): stay on the tab shown.
     const stayOn = sameFile ? this.activeTab : NOTES_TAB;
-    // What this view has not saved yet, to carry onto the file as it is now.
-    const unsaved = again ? this.unsavedSinceKnown() : null;
+    // What this view has, saved or not, to carry onto the file as it is now.
+    const mine = again ? this.sinceKnown() : null;
     const { body, doc, payload, json } = parseInkFile(data, this.settings.paperWidth);
     const held = this.guard.admit({
       text: data,
@@ -1182,15 +1182,18 @@ export class InkView extends TextFileView {
     if (!held) this.ownTexts.note(data);
     let merged = false;
     if (again && !held && doc) {
-      if (unsaved) {
-        const result = mergeReload(unsaved.base, unsaved.doc, doc);
+      const result = mine ? mergeReload(mine.base, mine.doc, doc) : null;
+      // Kept as the file is when the merge adds nothing to it.
+      const adds = result !== null && JSON.stringify(result.doc) !== JSON.stringify(doc);
+      if (mine && result && (mine.unsaved || adds)) {
         this.doc = result.doc;
         // The note's own text: this view's, unless it changed over there.
-        if (body === unsaved.baseBody) this.noteBody = unsaved.body;
+        if (body === mine.baseBody) this.noteBody = mine.body;
         this.diskReloads.merged++;
         this.diskReloads.carried += result.carried;
         merged = true;
       } else {
+        // Nothing here the file lacks: the file as it is.
         this.diskReloads.replaced++;
       }
     }
@@ -1224,21 +1227,34 @@ export class InkView extends TextFileView {
    * wrote, when they differ from it: what it has not saved yet. `null` when
    * nothing is unsaved, or nothing is known to measure it against.
    */
-  private unsavedSinceKnown(): {
+  private sinceKnown(): {
     base: InkDocument;
     baseBody: string;
     doc: InkDocument;
     body: string;
+    /** Whether anything differs from the known text: not saved yet. */
+    unsaved: boolean;
   } | null {
     const known = this.knownText;
     if (known === null) return null;
     const text = this.getViewData();
-    if (text === known) return null;
     const width = this.settings.paperWidth;
     const base = parseInkFile(known, width);
+    if (!base.doc) return null;
+    if (text === known) {
+      // Nothing unsaved, but what this view saved still counts: an older copy
+      // of the file must not take it away (mergeReload).
+      return {
+        base: base.doc,
+        baseBody: base.body,
+        doc: base.doc,
+        body: base.body,
+        unsaved: false,
+      };
+    }
     const local = parseInkFile(text, width);
-    if (!base.doc || !local.doc) return null;
-    return { base: base.doc, baseBody: base.body, doc: local.doc, body: local.body };
+    if (!local.doc) return null;
+    return { base: base.doc, baseBody: base.body, doc: local.doc, body: local.body, unsaved: true };
   }
 
   /**

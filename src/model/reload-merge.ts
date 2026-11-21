@@ -15,10 +15,12 @@
  *   so a save that starts during the read makes the view's own previous save
  *   look like a change from elsewhere.
  * - {@link mergeReload}: a real change from elsewhere is merged with this
- *   view's unsaved changes, three ways, by id. Pages and the elements on them
- *   (strokes, text boxes, images, …) that either side added are kept; one
- *   that a side removed goes unless the other side changed it; a change on
- *   one side only is taken; a change on both sides keeps this device's.
+ *   view's notebook, three ways, by id. Pages and the elements on them
+ *   (strokes, text boxes, images, …) that either side added are kept, two
+ *   added under one id included; one this device removed goes unless the
+ *   other side changed it; one the file lacks is kept, since the file may be
+ *   an older copy (a stale copy from another device dropped saved ink, too);
+ *   a change on one side only is taken; a change on both keeps this device's.
  *
  * All three notebooks are compared as stored (each decoded from a file's
  * text), so runtime-only state never looks like a change.
@@ -125,8 +127,9 @@ function stringify(value: Json, cache: WeakMap<object, string>): string {
 }
 
 function merge3(base: Json, local: Json, remote: Json, same: (a: Json, b: Json) => boolean): Json {
-  if (same(local, base)) return remote;
   if (same(remote, base) || same(local, remote)) return local;
+  // Looked inside even when nothing changed here: a page this device saved
+  // whole may still hold ink the file lacks, and it is kept (see mergeById).
   if (isIdList(local) && isIdList(remote) && (base === undefined || isIdList(base))) {
     return mergeById(base ?? [], local, remote, same);
   }
@@ -135,13 +138,32 @@ function merge3(base: Json, local: Json, remote: Json, same: (a: Json, b: Json) 
     const from = base ?? {};
     // The local key order first, so a merged object stores like a local one.
     for (const key of unionKeys(local, remote)) {
-      const value = merge3(from[key], local[key], remote[key], same);
-      if (value !== undefined) merged[key] = value;
+      const value = merge3(...listsOf(from[key], local[key], remote[key]), same);
+      // A list neither side stores (an empty one is left out) stays out.
+      if (value === undefined) continue;
+      if (isEmptyList(value) && local[key] === undefined && remote[key] === undefined) continue;
+      merged[key] = value;
     }
     return merged;
   }
-  // Changed on both sides, and not something to look inside: this device's.
+  // Not something to look inside: the one side's change, or this device's.
+  if (same(local, base)) return remote;
   return local;
+}
+
+/**
+ * Three values of one key: when one is a list of things with ids, a side
+ * that has no such key holds an empty list, as stores leave empty lists out.
+ * Without this, a file whose page holds no pictures would drop the pictures
+ * this device saved on it.
+ */
+function listsOf(base: Json, local: Json, remote: Json): [Json, Json, Json] {
+  if (!isIdList(base) && !isIdList(local) && !isIdList(remote)) return [base, local, remote];
+  return [base ?? [], local ?? [], remote ?? []];
+}
+
+function isEmptyList(value: Json): boolean {
+  return Array.isArray(value) && value.length === 0;
 }
 
 /**
@@ -159,6 +181,7 @@ function mergeById(
   const localBy = byKey(local);
   const remoteBy = byKey(remote);
   const out: { key: string; value: WithId }[] = [];
+  const fresh = freshIds([...local, ...remote]);
 
   for (const [key, theirs] of remoteBy) {
     const ours = localBy.get(key);
@@ -168,24 +191,60 @@ function mergeById(
       if (was === undefined || !same(theirs, was)) out.push({ key, value: theirs });
       continue;
     }
+    if (was === undefined && !same(ours, theirs)) {
+      // Added on both sides under one id: two devices counted on from the
+      // same highest id. They are two things, and both are kept.
+      out.push({ key, value: ours });
+      out.push({ key: `${key}~theirs`, value: { ...theirs, id: fresh(theirs.id) } });
+      continue;
+    }
     out.push({ key, value: merge3(was, ours, theirs, same) as WithId });
   }
 
-  // What only this side has: added here, or removed over there.
+  // What only this side has: added here, or missing from the file. Missing is
+  // kept, never taken for an erase over there: the file may be an older copy
+  // from another device (a sync landing late) that never had it. The price
+  // is that something erased on another device while this one holds the
+  // notebook open comes back.
   let previous: string | null = null;
   for (const [key, ours] of localBy) {
     if (remoteBy.has(key)) {
       previous = key;
       continue;
     }
-    const was = baseBy.get(key);
-    // Removed over there and untouched here: it goes.
-    if (was !== undefined && same(ours, was)) continue;
     const after = previous === null ? -1 : out.findIndex((item) => item.key === previous);
     out.splice(after + 1, 0, { key, value: ours });
     previous = key;
   }
   return out.map((item) => item.value);
+}
+
+/**
+ * New ids not used by `items`: `s12` becomes the next `s<n>` above every one
+ * in use (the shape the surface hands out, id-sequence.ts); any other id gets
+ * `-2`, `-3`, … until it is free.
+ */
+function freshIds(items: readonly WithId[]): (id: string) => string {
+  const taken = new Set(items.map((item) => item.id));
+  return (id) => {
+    const numbered = /^([A-Za-z]+)([0-9]+)$/.exec(id);
+    let next: string;
+    if (numbered) {
+      const prefix = numbered[1];
+      let highest = 0;
+      for (const used of taken) {
+        const match = /^([A-Za-z]+)([0-9]+)$/.exec(used);
+        if (match && match[1] === prefix) highest = Math.max(highest, Number(match[2]));
+      }
+      next = `${prefix}${highest + 1}`;
+    } else {
+      let n = 2;
+      while (taken.has(`${id}-${n}`)) n++;
+      next = `${id}-${n}`;
+    }
+    taken.add(next);
+    return next;
+  };
 }
 
 /** Items by `id#n`, n counting the items before it with the same id. */

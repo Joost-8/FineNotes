@@ -26,7 +26,10 @@ extracted from the matching section of this file by `release.yml`.
   notebook), the notebook was replaced by the file: those strokes were gone,
   and undo could not bring them back. A read of what the notebook already
   had is now skipped, and a real change from elsewhere is merged with what
-  you wrote: pages and ink added on either side are kept. The diagnostics
+  you wrote: pages and ink added on either side are kept. Ink this device
+  saved also stays when an older copy of the file arrives from another
+  device; in exchange, something erased on another device while this one
+  has the notebook open can come back. The diagnostics
   export counts these reads (`diskReloads`).
 
 ## [2.10.0] - 2026-11-18

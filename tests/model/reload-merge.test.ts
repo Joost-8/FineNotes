@@ -72,11 +72,59 @@ describe("mergeReload", () => {
     expect(carried).toBe(1);
   });
 
-  it("removes what either side erased and the other left alone", () => {
+  it("removes what this device erased, and keeps what the file lacks", () => {
     const base = notebook(["p1", ["s1", "s2", "s3"]]);
     const local = notebook(["p1", ["s2", "s3", "s4"]]);
     const remote = notebook(["p1", ["s1", "s2"]]);
-    expect(strokesOf(mergeReload(base, local, remote).doc)).toEqual([["p1", ["s2", "s4"]]]);
+    expect(strokesOf(mergeReload(base, local, remote).doc)).toEqual([["p1", ["s2", "s3", "s4"]]]);
+  });
+
+  it("keeps ink this device saved when an older copy of the file comes in", () => {
+    // Saved here: s1-s3 on p1, and p2. The copy from elsewhere predates both
+    // s3 and p2, and p1 has nothing unsaved: before, p1 was taken whole from it.
+    const base = notebook(["p1", ["s1", "s2", "s3"]], ["p2", ["s4"]]);
+    const remote = notebook(["p1", ["s1", "s2"]]);
+    const { doc, carried } = mergeReload(base, copy(base), remote);
+    expect(strokesOf(doc)).toEqual([
+      ["p1", ["s1", "s2", "s3"]],
+      ["p2", ["s4"]],
+    ]);
+    expect(carried).toBe(2);
+  });
+
+  it("keeps pictures saved here on a page the file stores without any", () => {
+    const base = notebook(["p1", []]);
+    (base.pages[0] as unknown as { images: unknown[] }).images = [
+      { id: "i1", path: "a.png", x: 0, y: 0, w: 10, h: 10 },
+    ];
+    const remote = notebook(["p1", ["r1"]]);
+    delete (remote.pages[0] as unknown as { images?: unknown[] }).images;
+    const { doc } = mergeReload(base, copy(base), remote);
+    expect(
+      (doc.pages[0] as unknown as { images: { id: string }[] }).images.map((i) => i.id),
+    ).toEqual(["i1"]);
+    expect(doc.pages[0].strokes.map((s) => s.id)).toEqual(["r1"]);
+  });
+
+  it("keeps both strokes when two devices gave new ink the same id", () => {
+    // Each counted on from s1, so both called their new stroke s2.
+    const base = notebook(["p1", ["s1"]]);
+    const local = notebook(["p1", ["s1", "s2"]]);
+    const remote = notebook(["p1", ["s1", "s2"]]);
+    remote.pages[0].strokes[1].color = "#0000ff";
+    const { doc } = mergeReload(base, local, remote);
+    expect(doc.pages[0].strokes.map((s) => [s.id, s.color])).toEqual([
+      ["s1", "#1a1a1a"],
+      ["s2", "#1a1a1a"],
+      ["s3", "#0000ff"],
+    ]);
+  });
+
+  it("does not double ink that both sides added the same", () => {
+    const base = notebook(["p1", ["s1"]]);
+    const local = notebook(["p1", ["s1", "s2"]]);
+    const { doc } = mergeReload(base, local, copy(local));
+    expect(strokesOf(doc)).toEqual([["p1", ["s1", "s2"]]]);
   });
 
   it("keeps a stroke erased over there but changed here", () => {
