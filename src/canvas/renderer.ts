@@ -869,10 +869,29 @@ export class Renderer {
     this.backdrop = layerOf(backdrop, false);
     this.dry = layerOf(dry, false);
     this.wet = layerOf(wet, wetDesynchronized);
+    this.wetAsked = wetDesynchronized;
     // The same WebKit can fail to clear a desynchronized canvas to
     // transparent, and the wet layer lies over the dry one: it is shown only
     // while something is drawn on it, so a stale frame can never hide ink.
     this.setWetVisible(false);
+  }
+
+  /** Whether the wet layer asked for a low-latency (`desynchronized`) context. */
+  private readonly wetAsked: boolean;
+
+  /**
+   * The wet layer's low-latency context, for the HUD: `on` (granted), `asked`
+   * (asked for and refused: browsers refuse it silently), `off` (not asked
+   * for), or `?` where the browser cannot say.
+   */
+  wetLowLatency(): "on" | "asked" | "off" | "?" {
+    if (!this.wetAsked) return "off";
+    const ctx = this.wet.ctx as CanvasRenderingContext2D & {
+      getContextAttributes?: () => { desynchronized?: boolean };
+    };
+    const granted = ctx.getContextAttributes?.().desynchronized;
+    if (granted === undefined) return "?";
+    return granted ? "on" : "asked";
   }
 
   /** Release every cached bitmap. The renderer is unusable afterwards. */

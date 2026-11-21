@@ -27,6 +27,7 @@ import {
 } from "../../src/model/document";
 import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequence";
 import { PointerHud } from "../../src/view/pointer-hud";
+import { InkLatency } from "../../src/view/ink-latency";
 import { StrokeIndex } from "../../src/view/stroke-index";
 import { SizeWait } from "../../src/view/surface-size";
 import { type SelectionAction, barItems, menuLayout } from "../../src/view/selection-bar-model";
@@ -1110,6 +1111,7 @@ function hud(debug = true): Hud {
   const surface = surfaceWith({
     debug,
     hud: pointerHud,
+    inkLatency: new InkLatency(),
     hudFrame: 0,
     hudLastVerdict: "-",
     hudEl: {

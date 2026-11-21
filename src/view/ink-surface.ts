@@ -1,4 +1,5 @@
 import { bindScrollThumb } from "./scroll-thumb-drag";
+import { InkLatency, paintsPenDown } from "./ink-latency";
 import { type PdfRenderArea, boundsMeet } from "../canvas/pdf-raster";
 import {
   ALIGN_GUIDE_OVERSHOOT_PX,
@@ -3003,6 +3004,8 @@ export class InkSurface {
   private hudFps = 0;
   private hudPaintMs = 0;
   private hudInkMs = 0;
+  /** Pen sample to wet paint, and to the frame after it (FineNotes#287). */
+  private readonly inkLatency = new InkLatency();
   private readonly hudRun = new FrameRun();
   private hudLastFrameT = 0;
   /** The display's frame length, learned from this surface's own frames. */
@@ -5059,6 +5062,7 @@ export class InkSurface {
     this.hudEl.toggleClass("is-hidden", !enabled);
     if (!enabled) return;
     this.hud.restart();
+    this.inkLatency.reset();
     this.renderHud();
   }
 
@@ -11422,6 +11426,13 @@ export class InkSurface {
     // A carried-on stroke is drawn wet at once: its committed ink has just
     // been taken back, and the dry layer drops it on the next frame.
     if (resumed) this.drawWet();
+    else if (paintsPenDown(builder.awaitingReading)) {
+      // The dot under the pen shows on the next frame, not after the first
+      // move's: a pen that rests a moment before it moves showed nothing
+      // (FineNotes#287).
+      if (this.debug) this.inkLatency.input([sample.t], now());
+      this.scheduleWet();
+    }
   }
 
   /**
@@ -11535,6 +11546,7 @@ export class InkSurface {
       builder.add({ ...sample, ...local });
       this.trackHold(local);
     }
+    if (this.debug) this.inkLatency.input(samples.map((sample) => sample.t), now());
     this.scheduleWet();
   }
 
@@ -11891,7 +11903,9 @@ export class InkSurface {
 ` +
       `${this.keyLog.hudLine()}
 ` +
-      this.hudFrames()
+      this.hudFrames() +
+      `
+${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     );
   }
 
@@ -11954,8 +11968,13 @@ export class InkSurface {
       }
       const started = now();
       this.drawWet();
-      const ink = now() - started;
+      const ended = now();
+      const ink = ended - started;
       this.hudInkMs = this.hudInkMs ? this.hudInkMs * 0.8 + ink * 0.2 : ink;
+      const shown = this.inkLatency.painted(ended);
+      if (shown !== null) {
+        this.win.requestAnimationFrame(() => this.inkLatency.framed(shown, now()));
+      }
       this.countFrame(t);
       this.scheduleHud();
     });
@@ -22629,6 +22648,7 @@ function macKeys(): boolean {
 function now(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
+
 
 /** Whether an event's target is a page text box, or inside one. */
 /**
