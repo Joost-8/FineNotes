@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   lineHits,
   pageHits,
+  preferReading,
   searchMatchTarget,
   transcriptMatchInk,
   withFocusInk,
@@ -183,11 +184,56 @@ describe("withFocusInk", () => {
     expect(focus).toBe(out[1]);
   });
 
-  it("adds the match's ink when no lit group is the same", () => {
-    const { words: out, focus } = withFocusInk([["g0"]], ["g1", "g1", "g2"]);
-    expect(out).toEqual([["g0"], ["g1", "g2"]]);
-    expect(focus).toBe(out[1]);
+  it("takes the lit group sharing most strokes when none is the same", () => {
+    const words = [
+      ["g0", "g9"],
+      ["g1", "g2", "g3"],
+    ];
+    const { focus } = withFocusInk(words, ["g1", "g2"]);
+    expect(focus).toBe(words[1]);
+  });
+
+  it("never makes ink current that is not lit", () => {
+    const { words: out, focus } = withFocusInk([["g0"]], ["g1", "g2"]);
+    expect(out).toEqual([["g0"]]);
+    expect(focus).toBeNull();
     expect(withFocusInk([["g0"]], []).focus).toBeNull();
+  });
+});
+
+describe("when the reading and the transcript disagree (Network lecture notes, page 20)", () => {
+  // Grape read "5 flags" right; the AI wrote "… plus congestion notification) ← flags",
+  // so lined up, the transcript's "flags" fell on the "pint" ink at the end of the
+  // header line.
+  const lines = [
+    { text: ".", words: [["d0"]] },
+    { text: "/(p", words: [["d1"]] },
+    { text: ",", words: [["d2"]] },
+    { text: "5 flags", words: [["f0"], ["f1"]] },
+    { text: "Header: (STNFT)-N, RST, Ack, pint", words: [["h0"], ["h1"], ["h2"], ["h3"], ["h4"]] },
+    {
+      text: "Sequence number, Ack * harder length,",
+      words: [["q0"], ["q1"], ["q2"], ["q3"], ["q4"], ["q5"]],
+    },
+  ];
+  const ai =
+    "TCP:\n\nHeader: (SYN, FIN, RST, ACK, plus congestion notification) ← flags\n" +
+    "Sequence number, ACK #, header length,";
+
+  it("lights the reading's exact match alone", () => {
+    expect(transcriptMatchInk("flags", lines, [{ text: ai }])).toEqual([["h4"]]);
+    expect(lineHits("flags", lines, [ai])).toEqual([["f1"]]);
+  });
+
+  it("keeps both when they share ink, and the transcript's when the reading has none", () => {
+    expect(preferReading([["a", "b"]], [["b", "c"], ["d"]])).toEqual([
+      ["a", "b"],
+      ["b", "c"],
+      ["d"],
+    ]);
+    expect(preferReading([], [["d"]])).toEqual([["d"]]);
+    expect(preferReading([["a"]], [["d"]])).toEqual([["a"]]);
+    expect(preferReading([["a"]], [])).toEqual([["a"]]);
   });
 });
 

@@ -25,7 +25,12 @@ import { pageWords } from "../../src/recognition/hwr/page-words";
 import { readPage } from "../../src/recognition/hwr/recognizer";
 import { pageContentHash, pageKeys } from "../../src/recognition/page-transcripts";
 import { readTextSection } from "../../src/recognition/text-layer";
-import { type ReadLine, lineHits, transcriptMatchInk } from "../../src/search/hit-strokes";
+import {
+  type ReadLine,
+  lineHits,
+  transcriptMatchInk,
+  withFocusInk,
+} from "../../src/search/hit-strokes";
 import {
   collectPageText,
   folderNotebookSidecarPath,
@@ -143,7 +148,8 @@ for (const path of notebooks(vault).filter((p) => p.includes(filter))) {
       const count = matchesOfKind(pageText, word, phrase, "handwriting");
       tally.matches += count;
       const each = transcriptMatchInk(word, lines, sources, phrase);
-      tally.placed += each.filter((ink) => ink.length > 0).length;
+      // A result steers to its own word when that ink is lit (`withFocusInk`, as the surface).
+      tally.placed += each.filter((ink) => withFocusInk(lit, ink).focus !== null).length;
       if (lit.length === count) tally.focused += count;
     }
   });

@@ -307,6 +307,11 @@ function transcriptInk(
  * With `phrase` (the page holds the query as typed, "recipe for
  * defining"), the ink of each place the phrase is written lights as one,
  * across lines too; when it is not found there, the words light one by one.
+ *
+ * When the reading holds the query exactly and the transcript points at
+ * other ink altogether (no stroke in common), the reading's own words light
+ * alone: measured on Joost's notebooks, the reading was right there 27 times
+ * in 36, the transcript 19 ({@link preferReading}).
  */
 export function lineHits(
   query: string,
@@ -328,10 +333,9 @@ export function lineHits(
     transcripts.flatMap((text) => transcriptHits(spansOf, text, lines, placedOf));
   if (phrase) {
     const spansOf = (folded: string): TextSpan[] => matchFolded(folded, query, true);
-    const found = unique([
-      ...phraseInReading(spansOf, lines, placedOf),
-      ...inTranscripts(spansOf),
-    ]);
+    const found = unique(
+      preferReading(phraseInReading(spansOf, lines, placedOf), inTranscripts(spansOf)),
+    );
     if (found.length > 0) return found;
   }
   const exact = (token: string): boolean => terms.some((term) => fold(token).text.includes(term));
@@ -362,7 +366,7 @@ export function lineHits(
       }
       return spans;
     });
-  const hits = [...found(exact), ...inTranscripts(everyTerm)];
+  const hits = preferReading(found(exact), inTranscripts(everyTerm));
   if (hits.length === 0) return found(near);
   return unique(hits);
 }
@@ -422,20 +426,43 @@ function phraseInReading(
 }
 
 /**
- * The lit words with one match's own ink among them: the group that is the
- * same ink, or that ink added. Returns the words and the group itself (by
- * identity, so it can be found again once the words are reordered).
+ * The lit word that is one match's own ink: the group that is the same ink,
+ * else the one sharing most strokes with it. Null when no lit word shares a
+ * stroke with it (the reading was preferred there, {@link preferReading}):
+ * ink that is not lit is never made current. Returned by identity, so it can
+ * be found again once the words are reordered.
  */
 export function withFocusInk(
   words: readonly string[][],
   ink: readonly string[],
 ): { words: string[][]; focus: string[] | null } {
-  if (ink.length === 0) return { words: [...words], focus: null };
-  const key = [...new Set(ink)].sort().join(" ");
-  const same = words.find((ids) => [...new Set(ids)].sort().join(" ") === key);
-  if (same) return { words: [...words], focus: same };
-  const focus = [...new Set(ink)];
-  return { words: [...words, focus], focus };
+  const mine = new Set(ink);
+  let focus: string[] | null = null;
+  let best = 0;
+  for (const ids of words) {
+    const shared = ids.filter((id) => mine.has(id)).length;
+    const same = shared === mine.size && new Set(ids).size === mine.size;
+    if (same) return { words: [...words], focus: ids };
+    if (shared > best) [focus, best] = [ids, shared];
+  }
+  return { words: [...words], focus };
+}
+
+/**
+ * The reading's hits and the transcript's together; the reading's alone when
+ * both found something and they share no stroke (they disagree on where the
+ * word is written, and the reading's exact match is the likelier).
+ */
+export function preferReading(
+  reading: readonly string[][],
+  transcript: readonly string[][],
+): string[][] {
+  const read = new Set(reading.flat());
+  const conflict =
+    read.size > 0 &&
+    transcript.length > 0 &&
+    !transcript.some((ink) => ink.some((id) => read.has(id)));
+  return conflict ? [...reading] : [...reading, ...transcript];
 }
 
 /** Each group of ink once, its ids once: the reading and the transcript often find the same. */
