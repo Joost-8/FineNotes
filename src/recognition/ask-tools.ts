@@ -2,7 +2,8 @@
  * The notebook tools the AI can use while answering in Ask: read pages,
  * search the notebook, add a text box, a table, a page or a practice page,
  * go to a page, put a drawing on a page, mark an area or pin a comment, and
- * organise the notebook (titles, contents, bookmarks, page order). Claude calls them by itself in the middle of an answer
+ * organise the notebook (titles, contents and its whole outline, bookmarks,
+ * page order), and take back what it changed. Claude calls them by itself in the middle of an answer
  * (tool use, Anthropic Messages API); FineNotes runs each call and sends the
  * result back, until Claude answers in words.
  *
@@ -21,6 +22,7 @@ import { t, tn } from "../i18n/translate";
 import { ASK_MAX_PAGES } from "./ai-chat";
 import { isRecord } from "./llm-request";
 import { MAX_NOTE_CHARS, MAX_READ_CHARS } from "./vault-context";
+import { MAX_OUTLINE_ENTRIES, type OutlineEntry } from "../model/outline-edit";
 
 /** Rounds of tool calls one question may take before the answer has to come. */
 export const ASK_MAX_TOOL_ROUNDS = 8;
@@ -244,6 +246,65 @@ export const ASK_TOOLS = [
     },
   },
   {
+    name: "read_outline",
+    description:
+      "Read the notebook's outline (its contents): every entry in order, with its page, its level " +
+      "(1 a chapter, 2 a section of it, 3 a part of that) and whether it is a page's title or a heading " +
+      "inside a page. Also names the PDFs behind the pages and lists each one's own outline (its " +
+      "bookmarks), where it has one. Read it before changing the outline.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "set_outline",
+    description:
+      "Write the notebook's outline in one step that the user can undo: chapters, sections and parts. " +
+      "Each entry is a page, a title, a level (1 to 3, default 1) and `y`, how far down the page it " +
+      "starts (0 top to 1 bottom, default 0). An entry at the top of a page becomes the page's title; " +
+      "any other is a heading inside the page. With `replace` true, the outline becomes exactly these " +
+      "entries (read_outline first, and keep what should stay; no entries clears it); without it, " +
+      "they are added to what is there. For an outline of a PDF, use its own outline from " +
+      "read_outline when it has one, or read its pages.",
+    input_schema: {
+      type: "object",
+      properties: {
+        entries: {
+          type: "array",
+          maxItems: MAX_OUTLINE_ENTRIES,
+          items: {
+            type: "object",
+            properties: {
+              page: pageNumber,
+              title: { type: "string" },
+              level: { type: "integer", minimum: 1, maximum: 3 },
+              y: fraction,
+            },
+            required: ["page", "title"],
+            additionalProperties: false,
+          },
+        },
+        replace: { type: "boolean" },
+      },
+      required: ["entries"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "undo_changes",
+    description:
+      "Take back changes you made to the notebook in this chat. Each change has a number (results " +
+      'say "change 3", and your earlier answers list theirs). Give the numbers, or leave `changes` ' +
+      "out to take back everything your latest answer that changed the notebook did. Only your own " +
+      "changes are taken back: when the user has edited what one touched since, nothing is changed " +
+      "and the result says which pages; then tell the user.",
+    input_schema: {
+      type: "object",
+      properties: {
+        changes: { type: "array", items: { type: "integer", minimum: 1 }, minItems: 1 },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "bookmark_page",
     description:
       "Bookmark a page (for example, one to review before an exam), or remove its bookmark.",
@@ -366,6 +427,9 @@ export type AskToolCall =
   | { tool: "set_page_title"; page: number; title: string }
   | { tool: "add_section"; page: number; title: string; y: number }
   | { tool: "bookmark_page"; page: number; bookmarked: boolean }
+  | { tool: "read_outline" }
+  | { tool: "set_outline"; entries: OutlineEntry[]; replace: boolean }
+  | { tool: "undo_changes"; changes: number[] }
   | { tool: "move_page"; page: number; to: number }
   | {
       tool: "add_table";
@@ -543,6 +607,21 @@ export function parseToolCall(
         return { error: '"bookmarked" must be true or false.' };
       return { tool: "bookmark_page", page: at, bookmarked: args.bookmarked };
     }
+    case "read_outline":
+      return { tool: "read_outline" };
+    case "set_outline":
+      return outlineCall(args, totalPages);
+    case "undo_changes": {
+      if (args.changes === undefined) return { tool: "undo_changes", changes: [] };
+      const raw = Array.isArray(args.changes) ? (args.changes as unknown[]) : [];
+      const changes = [...new Set(raw)].filter(
+        (n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 1,
+      );
+      if (changes.length === 0 || changes.length !== new Set(raw).size) {
+        return { error: '"changes" must be change numbers (1, 2, 3…), or left out.' };
+      }
+      return { tool: "undo_changes", changes: changes.sort((a, b) => a - b) };
+    }
     case "move_page": {
       const from = page("page");
       if (typeof from === "string") return { error: from };
@@ -660,6 +739,12 @@ export function toolStatus(call: AskToolCall): string {
       });
     case "move_page":
       return t("ai.tool.moving", { page: call.page });
+    case "read_outline":
+      return t("ai.tool.readingOutline");
+    case "set_outline":
+      return t("ai.tool.writingOutline");
+    case "undo_changes":
+      return t("ai.tool.undoing");
     case "add_table":
       return t("ai.tool.makingTable", { page: call.page });
     case "add_practice_page":
@@ -669,6 +754,57 @@ export function toolStatus(call: AskToolCall): string {
     case "add_comment":
       return t("ai.tool.commenting", { page: call.page });
   }
+}
+
+/** `set_outline`'s entries, each checked; or every entry that is wrong, so all are fixed at once. */
+function outlineCall(
+  args: Record<string, unknown>,
+  totalPages: number,
+): AskToolCall | { error: string } {
+  if (!Array.isArray(args.entries)) return { error: '"entries" must be a list of entries.' };
+  const raw = args.entries as unknown[];
+  if (raw.length > MAX_OUTLINE_ENTRIES) {
+    return { error: `At most ${MAX_OUTLINE_ENTRIES} entries in one call.` };
+  }
+  const replace = args.replace === true;
+  if (raw.length === 0 && !replace) {
+    return {
+      error: '"entries" is empty: give at least one, or replace: true to clear the outline.',
+    };
+  }
+  const entries: OutlineEntry[] = [];
+  const wrong: string[] = [];
+  raw.forEach((item, i) => {
+    const entry = isRecord(item) ? item : {};
+    const where = `Entry ${i + 1}`;
+    const at = entry.page;
+    if (typeof at !== "number" || !Number.isInteger(at) || at < 1 || at > totalPages) {
+      wrong.push(`${where}: "page" must be a page from 1 to ${totalPages}.`);
+      return;
+    }
+    const title = typeof entry.title === "string" ? entry.title.trim() : "";
+    if (!title) {
+      wrong.push(`${where}: "title" is empty.`);
+      return;
+    }
+    const level = entry.level ?? 1;
+    if (level !== 1 && level !== 2 && level !== 3) {
+      wrong.push(`${where}: "level" must be 1, 2 or 3.`);
+      return;
+    }
+    let y: number | undefined;
+    if (entry.y !== undefined) {
+      const value = fractionOf(entry.y);
+      if (value === null) {
+        wrong.push(`${where}: "y" must be a number from 0 to 1.`);
+        return;
+      }
+      y = value;
+    }
+    entries.push(y === undefined ? { page: at, title, level } : { page: at, title, level, y });
+  });
+  if (wrong.length > 0) return { error: wrong.join("\n") };
+  return { tool: "set_outline", entries, replace };
 }
 
 /** A number from 0 to 1 (a little past either edge is let in, at the edge); null when it is not one. */

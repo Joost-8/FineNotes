@@ -380,6 +380,16 @@ import {
 } from "../model/pdf-outline";
 import { readPdfOutline } from "./pdf-outline";
 import {
+  type ChangeSet,
+  type PagesSnapshot,
+  diffPages,
+  isEmptyChange,
+  snapshotPages,
+} from "../model/change-set";
+import { ChangeLedger } from "../model/change-ledger";
+import { type PdfOutlineOf, outlineText, placeOutline } from "../model/outline-edit";
+import { pagesPhrase } from "../recognition/ask-session";
+import {
   DuplicatePages,
   MovePages,
   RemovePages,
@@ -737,6 +747,11 @@ interface PdfOutlineRead {
   items?: OutlineItem[];
 }
 
+/** Why the outline tools refuse on a PDF's tab, for the model. */
+const PDF_TAB_OUTLINE_TEXT =
+  "The user is on a PDF's tab beside the notes: its contents are the PDF's own outline and cannot be " +
+  "changed. Ask them to go back to the notes' tab to work on the notebook's outline.";
+
 export class InkView extends TextFileView {
   /** The notebook on screen; a blank one until a file has loaded. */
   private doc: InkDocument;
@@ -831,6 +846,17 @@ export class InkView extends TextFileView {
   private images: VaultImageCache | null = null;
   /** The Ask AI conversation about this notebook, while it is open (see `askConversation`). */
   private askSession: AskSession | null = null;
+  /** What Ask AI changed in this notebook while it is open, numbered, to take back later. */
+  private readonly askChanges = new ChangeLedger();
+  /** Ask AI answers given so far; each answer's number. */
+  private askAnswers = 0;
+  /** The answer being given: its number, and every command its tools made, for one undo step. */
+  private askTurn: { answer: number; commands: Command[] } | null = null;
+  /** The tool call running: what the notebook was before its first edit, and what it changed. */
+  private askCall: { before: PagesSnapshot | null; set: ChangeSet | null; record: boolean } | null =
+    null;
+  /** The chats showing Ask AI's changes, told when the notebook changes. */
+  private readonly askChangeListeners = new Set<() => void>();
   /** The vault as Ask AI reads it, kept for a few seconds across tool calls. */
   private vaultSource: VaultContextSource | null = null;
   /** Notes Ask wrote while this notebook is open, by lower-case title: the only ones it may rewrite. */
@@ -2647,6 +2673,14 @@ export class InkView extends TextFileView {
         }
       },
       insert: (text) => this.insertAnswer(text),
+      changes: {
+        state: (id) => (this.surface ? this.askChanges.state(this.surface.document, id) : null),
+        toggle: (id) => this.toggleAskChange(id),
+        onChange: (listener) => {
+          this.askChangeListeners.add(listener);
+          return () => this.askChangeListeners.delete(listener);
+        },
+      },
       insertDrawing: async (svg) => {
         const bytes = new TextEncoder().encode(svg);
         const placed = await this.insertImageBytes(
@@ -2743,11 +2777,18 @@ export class InkView extends TextFileView {
       this.file?.path ?? "",
     );
     const prompt = `${system}\n${buildAskToolsPrompt()}\n${abilities}`;
+    const turn = { answer: ++this.askAnswers, commands: [] as Command[] };
+    this.askTurn = turn;
+    // Everything the answer changed is one step of the notebook's undo.
+    const finish = (): void => {
+      if (this.askTurn === turn) this.askTurn = null;
+      this.surface?.groupSteps(turn.commands, t("view.ask.stepLabel"));
+    };
     const withTools = askAiWithTools(config, prompt, turns, {
       totalPages: () => this.doc.pages.length,
-      run: (call) => this.runAskTool(call),
+      run: (call) => this.runAskToolAsAi(call, turn.answer),
       onStatus,
-    });
+    }).finally(finish);
     if (config.vendor !== "custom") return withTools;
     // A self-hosted server may not do tools: then it answers from what was sent.
     return withTools.catch(() => askAi(config, system, turns));
@@ -2851,6 +2892,112 @@ export class InkView extends TextFileView {
     };
   }
 
+  /**
+   * Run one of the AI's tools, recording what it changed in the notebook
+   * (`asAi`) as a numbered change the chat, or the AI, can take back later.
+   */
+  private async runAskToolAsAi(call: AskToolCall, answer: number): Promise<AskToolOutcome> {
+    const context: NonNullable<typeof this.askCall> = {
+      before: null,
+      set: null,
+      record: call.tool !== "undo_changes",
+    };
+    this.askCall = context;
+    let outcome: AskToolOutcome;
+    try {
+      outcome = await this.runAskTool(call);
+    } finally {
+      if (this.askCall === context) this.askCall = null;
+    }
+    const set = context.set;
+    if (!set || isEmptyChange(set) || outcome.isError || !outcome.done) return outcome;
+    const change = this.askChanges.record(set, outcome.done, answer);
+    this.notifyAskChanges();
+    return { ...outcome, change, text: `${outcome.text} (This is change ${change}.)` };
+  }
+
+  /**
+   * Run `edit`, one of the AI's edits, so that its commands join the
+   * answer's undo step and what it changed is recorded for the call. It is
+   * synchronous, so no edit of the user's can come in between.
+   */
+  private asAi<T>(edit: () => T): T {
+    const surface = this.surface;
+    const turn = this.askTurn;
+    const call = this.askCall;
+    if (!surface || !turn || !call) return edit();
+    if (call.record) call.before ??= snapshotPages(surface.document);
+    try {
+      return surface.recordCommands((command) => turn.commands.push(command), edit);
+    } finally {
+      if (call.before) call.set = diffPages(call.before, surface.document);
+    }
+  }
+
+  private notifyAskChanges(): void {
+    for (const listener of [...this.askChangeListeners]) listener();
+  }
+
+  /**
+   * Take back one of Ask AI's changes from the chat, or make it again once
+   * taken back: one step of the notebook's undo. Refused, with a notice,
+   * when an edit since touched what it changed.
+   */
+  private toggleAskChange(id: number): void {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) {
+      new Notice(t("view.ask.changeLocked"));
+      return;
+    }
+    const doc = surface.document;
+    const redo = this.askChanges.state(doc, id) === "undone";
+    const result = this.askChanges.revert(
+      doc,
+      [id],
+      redo ? "redo" : "undo",
+      t(redo ? "view.ask.redoStepLabel" : "view.ask.undoStepLabel"),
+    );
+    if ("reason" in result) {
+      if (result.reason === "changed") {
+        new Notice(
+          result.pages.length > 0
+            ? t(redo ? "view.ask.redoRefused" : "view.ask.undoRefused", {
+                pages: pagesPhrase(result.pages),
+              })
+            : t(redo ? "view.ask.redoRefusedOrder" : "view.ask.undoRefusedOrder"),
+          8000,
+        );
+      }
+      this.notifyAskChanges();
+      return;
+    }
+    surface.applyCommand(result);
+    this.sidebar?.flush();
+    this.requestSave();
+  }
+
+  /** `read_outline`: the contents, and each PDF behind the pages with its own outline. */
+  private async readOutlineForAi(): Promise<AskToolOutcome> {
+    const surface = this.surface;
+    if (!surface) return { text: "The notebook is not open.", isError: true };
+    if (this.onPdfTab) return { text: PDF_TAB_OUTLINE_TEXT, isError: true };
+    const doc = surface.document;
+    const behind = pdfsBehind(
+      doc.pages.map((page) => page.backdrop),
+      doc.pages.map((_, i) => i + 1),
+    );
+    const pdfs: PdfOutlineOf[] = [];
+    for (const pdf of behind) {
+      const items = await this.readOutline(pdf.path);
+      pdfs.push({
+        name: pdf.path.slice(pdf.path.lastIndexOf("/") + 1),
+        pages: pdf.pages,
+        entries: tabOutlineEntries(doc, pdf.path, items),
+      });
+    }
+    return { text: outlineText(doc, pdfs) };
+  }
+
   /** Run one of the AI's notebook tools (`ask-tools.ts`). */
   private async runAskTool(call: AskToolCall): Promise<AskToolOutcome> {
     const surface = this.surface;
@@ -2897,16 +3044,18 @@ export class InkView extends TextFileView {
         const page = surface.document.pages[index];
         if (!page) return { text: `There is no page ${call.page}.`, isError: true };
         const frame = textBoxFrame(page.geometry, null);
-        surface.applyCommand(
-          new AddTextBoxToPage(page.id, {
-            id: nextElementId(surface.document, "t"),
-            x: frame.x,
-            y: frame.y,
-            w: frame.w,
-            text: call.text,
-            color: "#1a1a1a",
-            fontSize: 22,
-          }),
+        this.asAi(() =>
+          surface.applyCommand(
+            new AddTextBoxToPage(page.id, {
+              id: nextElementId(surface.document, "t"),
+              x: frame.x,
+              y: frame.y,
+              w: frame.w,
+              text: call.text,
+              color: "#1a1a1a",
+              fontSize: 22,
+            }),
+          ),
         );
         this.requestSave();
         return {
@@ -2921,7 +3070,7 @@ export class InkView extends TextFileView {
           return { text: "This note is a single page; it cannot have more.", isError: true };
         }
         const before = this.doc.pages.length;
-        this.addPage(call.after - 1, true);
+        this.asAi(() => this.addPage(call.after - 1, true));
         if (this.doc.pages.length === before) return { text: "No page was added.", isError: true };
         return {
           text: `Added page ${call.after + 1} after page ${call.after}. Pages after it moved up by one.`,
@@ -2934,6 +3083,8 @@ export class InkView extends TextFileView {
           text: `Showing page ${call.page}.`,
           done: t("view.ask.doneGoTo", { page: call.page }),
         };
+      case "read_outline":
+        return this.readOutlineForAi();
       case "insert_drawing": {
         const refused = editRefused();
         if (refused) return refused;
@@ -2942,7 +3093,7 @@ export class InkView extends TextFileView {
           bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
           "image/svg+xml",
           `${call.title}.svg`,
-          { pageIndex: call.page - 1, select: false },
+          { pageIndex: call.page - 1, select: false, around: (place) => this.asAi(place) },
         );
         if (!placed) return { text: "The drawing could not be placed.", isError: true };
         return {
@@ -2968,7 +3119,7 @@ export class InkView extends TextFileView {
     const doc = surface.document;
     const pageAt = (n: number): Page | null => doc.pages[n - 1] ?? null;
     const apply = (command: Command): void => {
-      surface.applyCommand(command);
+      this.asAi(() => surface.applyCommand(command));
       this.requestSave();
     };
     switch (call.tool) {
@@ -3016,6 +3167,24 @@ export class InkView extends TextFileView {
               done: t("view.ask.doneUnbookmarked", { page: call.page }),
             };
       }
+      case "set_outline": {
+        if (this.onPdfTab) return { text: PDF_TAB_OUTLINE_TEXT, isError: true };
+        const contents = placeOutline(doc, call.entries, call.replace);
+        if (contents.length === 0) return { text: "The outline is already like that." };
+        apply(new SetPagesContents(contents, t("view.ask.outlineLabel")));
+        this.sidebar?.flush();
+        const count = call.entries.length;
+        return {
+          text: call.replace
+            ? `The outline is now these ${count} entr${count === 1 ? "y" : "ies"}.`
+            : `Added ${count} entr${count === 1 ? "y" : "ies"} to the outline.`,
+          done: call.replace
+            ? tn("view.ask.doneOutline", count)
+            : tn("view.ask.doneOutlineAdded", count),
+        };
+      }
+      case "undo_changes":
+        return this.undoAskChanges(call.changes);
       case "move_page": {
         if (this.isSinglePage) return { text: "This note is a single page.", isError: true };
         apply(new MovePage(call.page - 1, call.to - 1));
@@ -3148,6 +3317,61 @@ export class InkView extends TextFileView {
         return { text: "That tool is not here.", isError: true };
     }
     return { text: "That page is not in the notebook.", isError: true };
+  }
+
+  /**
+   * `undo_changes`: take back changes the AI made in this chat (by number,
+   * or the latest answer's), as one step, never the user's own edits.
+   */
+  private undoAskChanges(asked: readonly number[]): AskToolOutcome {
+    const surface = this.surface;
+    if (!surface || this.isProtected()) {
+      return { text: "The notebook cannot be changed right now.", isError: true };
+    }
+    const doc = surface.document;
+    const ids =
+      asked.length > 0
+        ? asked
+        : this.askChanges.latestApplied(doc, this.askTurn?.answer ?? Infinity);
+    if (ids.length === 0) {
+      return {
+        text: "None of your changes to this notebook in this chat is still in place: there is nothing to take back.",
+        isError: true,
+      };
+    }
+    const list = ids.join(", ");
+    const result = this.askChanges.revert(doc, ids, "undo", t("view.ask.undoStepLabel"));
+    if ("reason" in result) {
+      switch (result.reason) {
+        case "unknown":
+          return {
+            text: `There is no change ${result.ids.join(", ")} in this chat; your changes are numbered 1 to ${this.askChanges.size}.`,
+            isError: true,
+          };
+        case "already":
+          return {
+            text: `Change${ids.length === 1 ? "" : "s"} ${list} ${ids.length === 1 ? "is" : "are"} already taken back.`,
+          };
+        case "changed":
+          return {
+            text:
+              `Nothing was taken back: the user has edited ${result.pages.length > 0 ? `page${result.pages.length === 1 ? "" : "s"} ${result.pages.join(", ")}` : "the page order"} ` +
+              `since, where change${ids.length === 1 ? "" : "s"} ${list} made ${ids.length === 1 ? "its" : "their"} edit, and taking ${ids.length === 1 ? "it" : "them"} back would undo theirs. Tell the user, and that they can undo their own edit first.`,
+            isError: true,
+          };
+      }
+    }
+    // Only those still in place are taken back; say only those.
+    const taken = ids.filter((id) => this.askChanges.state(doc, id) !== "undone");
+    const what = taken.join(", ");
+    this.asAi(() => surface.applyCommand(result));
+    this.sidebar?.flush();
+    this.requestSave();
+    this.notifyAskChanges();
+    return {
+      text: `Took back change${taken.length === 1 ? "" : "s"} ${what}. The user's own edits are untouched; undo brings ${taken.length === 1 ? "it" : "them"} back.`,
+      done: tn("view.ask.doneUndid", taken.length, { list: what }),
+    };
   }
 
   /** A comment by the AI at page point (`x`, `y`), kept on the page. */
@@ -4322,6 +4546,8 @@ export class InkView extends TextFileView {
           if (this.onPdfTab) this.syncTabMarks();
           this.requestSaveOf(pages);
           this.relinkMovedFiles();
+          // An undo, redo or edit may take Ask AI's changes back, or touch them.
+          this.notifyAskChanges();
         },
         // The zoom or the screen changed: keep PDF pages as sharp as the ink.
         onStatus: () => {
@@ -8297,7 +8523,8 @@ export class InkView extends TextFileView {
         this.attachmentFolder("images"),
       );
       if (this.file !== note || this.surface !== surface || this.isProtected()) return null;
-      return this.placeImage(file.path, prepared.width, prepared.height, options);
+      const place = () => this.placeImage(file.path, prepared.width, prepared.height, options);
+      return options.around ? options.around(place) : place();
     } catch (error) {
       const message = errorMessage(error);
       new Notice(t("view.image.addFailed", { message }), 8000);

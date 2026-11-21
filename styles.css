@@ -13339,6 +13339,35 @@ button.goodobsidian-learn-button.is-learning {
   color: var(--interactive-accent);
 }
 
+/* Ask AI's change, taken back from the chat: struck through, its check gone grey. */
+.goodobsidian-chat-done-item.is-undone .goodobsidian-chat-done-text {
+  text-decoration: line-through;
+  color: var(--text-faint);
+}
+
+.goodobsidian-chat-done-item.is-undone .goodobsidian-chat-done-mark svg,
+.goodobsidian-chat-done-item.is-changed .goodobsidian-chat-done-mark svg {
+  color: var(--text-faint);
+}
+
+/* Undo (or redo) one change: a symbol at the row's end, big enough for a finger. */
+.goodobsidian-chat-done-undo.clickable-icon {
+  margin-left: auto;
+  padding: 4px 6px;
+  min-height: 26px;
+  flex: none;
+}
+
+.goodobsidian-chat-done-undo.clickable-icon svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+.goodobsidian-chat-done-undo.is-hidden {
+  display: none;
+}
+
 .goodobsidian-chat-figure {
   display: flex;
   flex-direction: column;

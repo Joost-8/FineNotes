@@ -4150,6 +4150,33 @@ export class InkSurface {
   }
 
   /**
+   * Run `run`, handing `sink` each command it makes a step of: how Ask AI's
+   * edits are told from the user's (`run` is synchronous, so nothing else
+   * can come in between).
+   */
+  recordCommands<T>(sink: (command: Command) => void, run: () => T): T {
+    const was = this.history.onPush;
+    this.history.onPush = (command) => {
+      was?.(command);
+      sink(command);
+    };
+    try {
+      return run();
+    } finally {
+      this.history.onPush = was;
+    }
+  }
+
+  /**
+   * Make `commands`, the newest steps, one undo step named `label` (an Ask
+   * AI answer). False, and nothing changed, when something else came after
+   * or among them.
+   */
+  groupSteps(commands: readonly Command[], label: string): boolean {
+    return this.history.group(commands, label);
+  }
+
+  /**
    * Take back `previous` if it is still the newest step, then make `next` in
    * its place (none: just take it back): one step that a live control keeps
    * changing, such as the Margin popover. Returns whether `previous` was

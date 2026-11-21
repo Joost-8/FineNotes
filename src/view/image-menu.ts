@@ -49,6 +49,8 @@ export interface InsertImageOptions {
   center?: { x: number; y: number };
   /** Select it once placed, as GoodNotes does. Default `true`. */
   select?: boolean;
+  /** Wraps the placing itself, which is synchronous (Ask AI records what it changed). */
+  around?: <T>(place: () => T) => T;
 }
 
 /** What an entry can do. Built fresh by the view each time the menu opens. */

@@ -54,6 +54,7 @@ import {
 } from "../recognition/ask-attachments";
 import { type AskSession, pagesPhrase, shownText } from "../recognition/ask-session";
 import { type AskUsage, usageMark } from "../recognition/ask-usage";
+import type { ChangeState } from "../model/change-set";
 import { ASK_VAULT_SCOPES, type AskVaultScope } from "../recognition/vault-context";
 
 /** The reach as a mark: the notebook alone, its folder, or the whole vault. */
@@ -88,6 +89,16 @@ export interface AskAiHost {
   paintThumbnail: (canvas: HTMLCanvasElement, page: number, cssWidth: number) => Promise<void>;
   /** Place `text` on the page being read; true when it was placed. */
   insert: (text: string) => boolean;
+  /**
+   * Ask AI's changes to the notebook, by number (`model/change-ledger`):
+   * where each stands, taking one back or making it again, and a call when
+   * the notebook changed (so the marks follow an undo).
+   */
+  changes?: {
+    state: (id: number) => ChangeState | null;
+    toggle: (id: number) => void;
+    onChange: (listener: () => void) => () => void;
+  };
   /** Place an SVG drawing from an answer on the page being read. */
   insertDrawing: (svg: string) => Promise<boolean>;
   /**
@@ -216,6 +227,9 @@ export class AskChat {
   private outstandingKey = "";
   /** What the empty thread's suggestions are for. */
   private emptyFor: SuggestionKind | null = null;
+  /** Each action row that changed the notebook, by its change's number. */
+  private readonly changeRows = new Map<number, { item: HTMLElement; button: HTMLButtonElement }>();
+  private unsubscribeChanges: (() => void) | null = null;
 
   private readonly keyboard: DialogKeyboard;
 
@@ -318,6 +332,7 @@ export class AskChat {
     this.keyboard.watch(input, composer);
 
     this.unsubscribe = this.session.onChange(() => this.render());
+    this.unsubscribeChanges = this.host.changes?.onChange(() => this.refreshChanges()) ?? null;
     this.resize = sizeObserver(contentEl, () => this.syncInput());
     this.resize.observe(contentEl);
     this.render();
@@ -331,6 +346,8 @@ export class AskChat {
     this.resize = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.unsubscribeChanges?.();
+    this.unsubscribeChanges = null;
     this.keyboard.end();
     this.component?.unload();
     this.component = null;
@@ -922,6 +939,7 @@ export class AskChat {
       this.shownTexts.every((text, i) => text === texts[i]);
     if (!same) {
       thread.empty();
+      this.changeRows.clear();
       this.outstandingEl = null;
       this.outstandingKey = "";
       this.emptyFor = null;
@@ -935,9 +953,10 @@ export class AskChat {
     for (let i = this.shownTexts.length; i < texts.length; i++) {
       const turn = session.turns[i];
       if (turn.role === "user") this.questionRow(thread, texts[i], turn.pages, turn.files);
-      else lastAnswer = this.answerRow(thread, texts[i], turn.actions, turn.usage);
+      else lastAnswer = this.answerRow(thread, texts[i], turn.actions, turn.usage, turn.changes);
     }
     this.shownTexts = texts;
+    this.refreshChanges();
 
     if (session.empty) {
       const count = session.selected.length;
@@ -974,6 +993,30 @@ export class AskChat {
     if (added && lastAnswer) this.scrollToAnswer(lastAnswer);
     else if (key !== this.outstandingKey && outstanding) this.scrollToEnd();
     this.outstandingKey = key;
+  }
+
+  /**
+   * Each action that changed the notebook, marked as it stands now: in
+   * place (its control undoes it), taken back (struck through; the control
+   * redoes it), or touched since (the control says why it cannot, on a tap).
+   */
+  private refreshChanges(): void {
+    const changes = this.host.changes;
+    if (!changes) return;
+    for (const [id, { item, button }] of this.changeRows) {
+      const state = changes.state(id);
+      const undone = state === "undone";
+      item.toggleClass("is-undone", undone);
+      item.toggleClass("is-changed", state === "changed");
+      button.toggleClass("is-hidden", state === null);
+      const icon = undone ? "redo-2" : "undo-2";
+      if (button.dataset.icon !== icon) {
+        button.empty();
+        setIcon(button, icon);
+        button.dataset.icon = icon;
+      }
+      button.setAttribute("aria-label", t(undone ? "ai.ask.redoChange" : "ai.ask.undoChange"));
+    }
   }
 
   /** The thread before the first question: what this is, and a few questions to start with. */
@@ -1055,16 +1098,25 @@ export class AskChat {
     markdown: string,
     done?: readonly string[],
     usage?: AskUsage,
+    changes?: readonly (number | null)[],
   ): HTMLElement {
     const { row, body } = this.aiRow(parent);
-    // What Claude did in the notebook on the way to the answer.
+    // What Claude did in the notebook on the way to the answer; what changed
+    // the notebook can be taken back from here, however much was done since.
     if (done?.length) {
       const list = body.createDiv({ cls: "goodobsidian-chat-done" });
-      for (const action of done) {
+      done.forEach((action, i) => {
         const item = list.createDiv({ cls: "goodobsidian-chat-done-item" });
-        setIcon(item.createSpan(), "check");
-        item.createSpan({ text: action });
-      }
+        setIcon(item.createSpan({ cls: "goodobsidian-chat-done-mark" }), "check");
+        item.createSpan({ cls: "goodobsidian-chat-done-text", text: action });
+        const id = changes?.[i] ?? null;
+        if (id === null || !this.host.changes) return;
+        const button = item.createEl("button", {
+          cls: "goodobsidian-chat-done-undo clickable-icon",
+        });
+        button.addEventListener("click", () => this.host.changes?.toggle(id));
+        this.changeRows.set(id, { item, button });
+      });
     }
     const text = body.createDiv({ cls: "goodobsidian-chat-markdown markdown-rendered" });
     if (this.component) {

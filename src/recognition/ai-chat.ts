@@ -62,6 +62,12 @@ export interface ChatTurn {
   pages?: readonly number[];
   /** On an answer: what Claude did in the notebook to give it. Shown; never sent. */
   actions?: readonly string[];
+  /**
+   * On an answer: for each of `actions`, the number of what it changed in the
+   * notebook (`model/change-ledger`), so the chat can take it back; null where
+   * it changed nothing there. Never sent or saved.
+   */
+  changes?: readonly (number | null)[];
   /** On an answer: the tokens it took (`ask-usage.ts`). Shown as its cost; never sent or saved. */
   usage?: AskUsage;
 }
@@ -312,9 +318,11 @@ export function buildAskSystemPrompt(): string {
  */
 export function buildAskToolsPrompt(): string {
   return [
-    "You can use tools on the user's notebook: read other pages, search its text, add a text box, a table, a page or a practice page, go to a page, put a drawing on a page, mark an area of a page, pin a comment to a spot, and organise the notebook (page titles, contents headings, bookmarks, page order).",
+    "You can use tools on the user's notebook: read other pages, search its text, add a text box, a table, a page or a practice page, go to a page, put a drawing on a page, mark an area of a page, pin a comment to a spot, and organise the notebook (page titles, contents headings, the whole outline at levels 1 to 3, bookmarks, page order).",
     "You can also search the user's other notes, notebooks and PDFs (search_vault) and read one as text (read_note), in the folders they allow, starting with the notes this notebook links to (linked_notes). Do that only when the question needs something outside this notebook, and name the notes you used. When the user asks for something in a note of its own (a summary, flashcards, a to-do list), write it with create_note.",
     "Read or search when the question needs pages you were not given. Change the notebook only when the user asks for it, and say what you did.",
+    "To make or change an outline (of the notebook, or of the PDF its pages show), read_outline first, then set_outline once with every entry; for a PDF without an outline of its own, read its pages to find the chapters.",
+    "Each change you make has a number. When the user asks to undo what you did, use undo_changes; it never takes back the user's own edits, and refuses when they edited what you changed: then say so.",
     "When asked to check work, point at each problem where it is: a comment at that spot, or mark_area with a comment. Positions are fractions of the page (0 to 1 from the top-left), read off the page's image.",
   ].join("\n");
 }

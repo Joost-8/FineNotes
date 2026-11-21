@@ -130,7 +130,7 @@ describe("askAiWithTools", () => {
       Promise.resolve(
         call.tool === "read_pages"
           ? { text: "Page 3 of 9.", images: [page] }
-          : { text: "Added.", done: "Added a text box on page 3" },
+          : { text: "Added.", done: "Added a text box on page 3", change: 7 },
       ),
     );
     const result = await askAiWithTools(anthropic, "sys", question, {
@@ -142,6 +142,7 @@ describe("askAiWithTools", () => {
       text: "Done: wrote it on page 3.",
       actions: ["Added a text box on page 3"],
       notes: ["Added."],
+      changes: [7],
       usage: expect.objectContaining({ vendor: "anthropic" }),
     });
     expect(statuses).toEqual(["Reading page 3…", "Writing on page 3…"]);
@@ -296,6 +297,7 @@ describe("askAiWithTools", () => {
         text: "Showing page 2.",
         actions: ["Went to page 2"],
         notes: ["Showing page 2."],
+        changes: [null],
         usage: expect.objectContaining({ vendor: config.vendor }),
       });
       const [first, second] = bodies();

@@ -296,6 +296,8 @@ export interface AskToolOutcome {
   isError?: boolean;
   /** For the chat, once done: "Added a text box on page 3". */
   done?: string;
+  /** The number the notebook gave what this call changed, for undoing it later (`model/change-ledger`). */
+  change?: number;
 }
 
 /** An answer, and what Claude did in the notebook on the way to it. */
@@ -306,6 +308,8 @@ export interface AskAnswer {
   shown?: string;
   /** For the chat: each action's `done`, in the interface's language. */
   actions: string[];
+  /** For each action, the number of what it changed in the notebook; null where it changed nothing there. */
+  changes?: Array<number | null>;
   /** For the model: what each action did, as its result said it (English). */
   notes: string[];
   /** For the chat: the tokens the answer took, over all its rounds. */
@@ -353,6 +357,7 @@ export async function askAiWithTools(
   const more: unknown[] = [];
   const actions: string[] = [];
   const notes: string[] = [];
+  const changes: Array<number | null> = [];
   let usage = emptyUsage(config.vendor, model.trim() || defaultModelFor(config.vendor));
   for (let round = 0; ; round++) {
     // Out of rounds: answer now, with what has been found.
@@ -381,11 +386,11 @@ export async function askAiWithTools(
     if (uses.length === 0) {
       const text = cleanTranscription(extractLlmText(config.vendor, json));
       if (isTruncatedLlmResponse(config.vendor, json)) {
-        if (text) return { ...cutOffAnswer(text), actions, notes, usage };
+        if (text) return { ...cutOffAnswer(text), actions, notes, changes, usage };
         throw new Error(t("ai.client.outputLimit", { label, max: MAX_OUTPUT_TOKENS }));
       }
       if (!text && actions.length === 0) throw new Error(t("ai.client.noAnswer", { label }));
-      return { text, actions, notes, usage };
+      return { text, actions, notes, changes, usage };
     }
     more.push(...dialect.reply(json));
     const results: ToolResult[] = [];
@@ -405,6 +410,7 @@ export async function askAiWithTools(
       if (outcome.done) {
         actions.push(outcome.done);
         notes.push(outcome.text);
+        changes.push(outcome.change ?? null);
       }
       results.push({ use, text: outcome.text, images: outcome.images, isError: outcome.isError });
     }

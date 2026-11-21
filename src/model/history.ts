@@ -23,6 +23,12 @@ export class History {
    */
   onChange: (() => void) | null = null;
 
+  /**
+   * Called with each command {@link push} records, once it is applied: how
+   * a host keeps track of what one source of edits made (Ask AI's tools).
+   */
+  onPush: ((command: Command) => void) | null = null;
+
   constructor(private readonly limit: number = DEFAULT_LIMIT) {}
 
   /**
@@ -42,7 +48,25 @@ export class History {
     }
     if (this.done.length > this.limit) this.done.shift();
     this.undone.length = 0;
+    this.onPush?.(command);
     this.onChange?.();
+  }
+
+  /**
+   * Make `commands` (oldest first) one step, named `label`, so one undo
+   * takes them all back: Ask AI's answer, whatever tools it used. Only if
+   * they are exactly the newest steps, with nothing to redo; returns false
+   * and changes nothing otherwise (they stay steps of their own). Nothing is
+   * run: the step holds the commands as they were applied.
+   */
+  group(commands: readonly Command[], label: string): boolean {
+    const start = this.done.length - commands.length;
+    if (commands.length < 2 || start < 0 || this.undone.length > 0) return false;
+    if (commands.some((command, i) => baseOf(this.done[start + i]) !== command)) return false;
+    const steps = this.done.splice(start);
+    this.done.push(new GroupStep(label, steps));
+    this.onChange?.();
+    return true;
   }
 
   /**
@@ -194,6 +218,33 @@ export class JoinedStep implements Command {
   invert(doc: InkDocument): void {
     this.base.invert(doc);
     this.first.invert(doc);
+  }
+}
+
+/** Several steps as one ({@link History.group}), under a name of its own. */
+export class GroupStep implements Command {
+  readonly keepsReading: boolean;
+
+  constructor(
+    readonly label: string,
+    readonly steps: readonly Command[],
+  ) {
+    this.keepsReading = steps.some((step) => step.keepsReading === true);
+  }
+
+  /** The page every step that names one agrees on; none when they differ. */
+  get pageId(): string | undefined {
+    const ids = new Set(this.steps.map((step) => step.pageId));
+    const [only] = ids;
+    return ids.size === 1 ? only : undefined;
+  }
+
+  apply(doc: InkDocument): void {
+    for (const step of this.steps) step.apply(doc);
+  }
+
+  invert(doc: InkDocument): void {
+    for (let i = this.steps.length - 1; i >= 0; i--) this.steps[i].invert(doc);
   }
 }
 

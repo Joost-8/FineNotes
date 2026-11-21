@@ -5,6 +5,7 @@ import { useLanguage } from "../../src/i18n/translate";
 import {
   AskSession,
   type AskSessionDeps,
+  changesLine,
   pagesPhrase,
   shownText,
 } from "../../src/recognition/ask-session";
@@ -325,6 +326,31 @@ describe("AskSession tools", () => {
       shown: "Added a text box on page 5",
       actions: ["Added a text box on page 5"],
     });
+  });
+
+  it("numbers what the answer changed, for the model, and keeps the numbers for the chat", async () => {
+    const { deps } = setup({
+      ask: () =>
+        Promise.resolve({
+          text: "Done: the outline has two chapters.",
+          actions: ["Showing page 2", "Wrote the outline: 2 entries"],
+          notes: ["Showing page 2.", "The outline is now these 2 entries. (This is change 4.)"],
+          changes: [null, 4],
+        }),
+    });
+    const session = open(deps);
+    await session.send("Outline this notebook");
+    expect(session.turns[1]).toEqual({
+      role: "assistant",
+      text:
+        "Done: the outline has two chapters.\n\n[Your changes to the notebook in this answer, " +
+        "change 4: The outline is now these 2 entries. (This is change 4.)]",
+      shown: "Done: the outline has two chapters.",
+      actions: ["Showing page 2", "Wrote the outline: 2 entries"],
+      changes: [null, 4],
+    });
+    expect(changesLine([null], ["x"])).toBe("");
+    expect(changesLine([2], [])).toContain("change 2: a change");
   });
 
   it("keeps the history in English when the interface is not", async () => {
