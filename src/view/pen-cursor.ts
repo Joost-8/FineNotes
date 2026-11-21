@@ -41,9 +41,11 @@ export function cursorToolOf(tool: string): CursorTool | null {
     : null;
 }
 
-/** A CSS cursor image and its hotspot, in CSS px from the image's top left. */
+/** A CSS cursor image, its size and its hotspot, in CSS px from the image's top left. */
 export interface PenCursor {
   url: string;
+  width: number;
+  height: number;
   hotX: number;
   hotY: number;
 }
@@ -99,6 +101,75 @@ export function cursorSize(widthPx: number): number {
 /** A cursor as the value of CSS `cursor`, with `fallback` for a browser that refuses the image. */
 export function cursorCss(cursor: PenCursor, fallback: string): string {
   return `url("${cursor.url}") ${cursor.hotX} ${cursor.hotY}, ${fallback}`;
+}
+
+/**
+ * The small crosshair (FineNotes#25), 17 px with a white halo: the same
+ * image `styles.css` gives the mouse, for the pen-hover cursor to draw.
+ */
+export function crosshairCursor(): PenCursor {
+  const arms = "M8.5 1v6M8.5 10v6M1 8.5h6M10 8.5h6";
+  return image(17, 17, [
+    `<path d='${arms}' stroke='white' stroke-width='3' stroke-linecap='round'/>`,
+    `<path d='${arms}' stroke='black' stroke-width='1' stroke-linecap='round'/>`,
+  ]);
+}
+
+// --- A hovering pen (FineNotes#266) ------------------------------------------
+
+/**
+ * Whether the page draws the cursor itself while a pen hovers: on Linux
+ * computers only. There a tablet pen hovering over Obsidian (Chromium on
+ * Wayland) shows the system arrow whatever CSS `cursor` asks for, while a
+ * mouse shows the ink dot. On Windows and macOS the CSS cursor reaches the
+ * pen, and on a phone or tablet the pen hover shows its own.
+ */
+export function drawsPenHoverCursor(platform: { isLinux: boolean; isMobile: boolean }): boolean {
+  return platform.isLinux && !platform.isMobile;
+}
+
+/** The parts of a pointer event the pen-hover cursor reads. */
+export interface HoverEventLike {
+  type: string;
+  pointerType: string;
+  buttons: number;
+}
+
+/**
+ * What one pointer event over the page does to the drawn pen cursor:
+ * `"show"` (and follow) for a pen hovering, its tip up (a side button may be held); `"hide"` for
+ * a pen touching down or leaving, and for any mouse or finger, which wear
+ * the CSS cursor; `"keep"` for anything else.
+ */
+export function penHoverAction(event: HoverEventLike): "show" | "hide" | "keep" {
+  if (event.pointerType !== "pen") return event.type === "pointermove" ? "hide" : "keep";
+  switch (event.type) {
+    case "pointermove":
+      return (event.buttons & 1) === 0 ? "show" : "hide";
+    case "pointerdown":
+    case "pointerup":
+    case "pointercancel":
+    case "pointerleave":
+      return "hide";
+    default:
+      return "keep";
+  }
+}
+
+/**
+ * Where the drawn cursor's top left goes, in px from the surface's top left,
+ * so its hotspot sits on the pen: whole px, as a CSS cursor is.
+ */
+export function hoverCursorOffset(
+  clientX: number,
+  clientY: number,
+  host: { left: number; top: number },
+  cursor: { hotX: number; hotY: number },
+): { x: number; y: number } {
+  return {
+    x: Math.round(clientX - host.left) - cursor.hotX,
+    y: Math.round(clientY - host.top) - cursor.hotY,
+  };
 }
 
 // --- Shapes ----------------------------------------------------------------
@@ -176,6 +247,8 @@ function image(width: number, height: number, parts: string[]): PenCursor {
     `viewBox='0 0 ${width} ${height}'>${parts.join("")}</svg>`;
   return {
     url: `data:image/svg+xml,${escapeSvg(svg)}`,
+    width,
+    height,
     hotX: Math.floor(width / 2),
     hotY: Math.floor(height / 2),
   };

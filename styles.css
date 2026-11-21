@@ -3006,6 +3006,34 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   cursor: var(--goodobsidian-pen-cursor-drawing, crosshair);
 }
 
+/* A tablet pen hovering on Linux, whose system arrow ignores the cursors
+   above (FineNotes#266): the page draws the same image under the pen
+   (`pen-hover-cursor.ts`) and asks for no cursor of its own. Shown only
+   where the mouse would wear it; Space's hand wins. */
+.goodobsidian-pen-hover-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Over the page (the scroll area is 3), under the zoom catcher, the HUD
+     and the page's own controls. */
+  z-index: 4;
+  display: none;
+  background: no-repeat center / 100% 100%;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.goodobsidian-surface.is-pen-hovering:is(.is-ink-cursor, .is-pen-cursor)
+  .goodobsidian-scroll:not(.is-hand, .is-hand-dragging)
+  ~ .goodobsidian-pen-hover-cursor {
+  display: block;
+}
+
+.goodobsidian-surface.is-pen-hovering:is(.is-ink-cursor, .is-pen-cursor)
+  .goodobsidian-scroll:not(.is-hand, .is-hand-dragging) {
+  cursor: none;
+}
+
 /* "None": no pointer over the page while a pen is in hand, for a pen
    display that shows the nib itself. Space's hand still wins. */
 .goodobsidian-surface.is-no-cursor .goodobsidian-scroll:not(.is-hand, .is-hand-dragging) {
