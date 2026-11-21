@@ -44,13 +44,13 @@ import { isBoard, textLinesHeight } from "../model/board";
 import { DEFAULT_PAGE_GEOMETRY, type Page, type TextBoxElement } from "../model/document";
 import { pageSignature } from "../model/page-signature";
 import { parseInkFile } from "../model/serialize";
-import { devicePagesFolderOfFile, isDevicePagesPayload } from "../model/device-pages";
 import {
-  devicePagesFolderFor,
-  devicePagesFolderPath,
-  notebookStatOf,
-  readDevicePagesFolder,
-} from "./device-pages-files";
+  devicePagesFolderOf,
+  devicePagesFolderOfFile,
+  isDevicePagesPayload,
+  notebookIdOf,
+} from "../model/device-pages";
+import { devicePagesFolderPath, notebookStatOf, readDevicePagesFolder } from "./device-pages-files";
 import { VaultImageCache } from "./image-cache";
 import { releaseCanvas } from "./image-import";
 import {
@@ -381,7 +381,9 @@ export class PageEmbeds extends Component {
     // A notebook kept as one file per page per device changes with any of its files (#274).
     const version = notebookStatOf(this.host.app, file).mtime;
     if (embed.version === version) return !embed.isLink;
-    const notebook = await this.notebook(file, version);
+    const { target } = embed;
+    const onePage = !target.whole && target.region === undefined ? target.page - 1 : undefined;
+    const notebook = await this.notebook(file, version, onePage);
     if (embed.version === version) return !embed.isLink;
     embed.version = version;
     const reason = embed.setPages(notebook);
@@ -448,19 +450,26 @@ export class PageEmbeds extends Component {
    * every embed of it: none when the file has no ink block yet (a decoded
    * notebook always has a page), `null` when its block does not decode.
    */
-  private notebook(file: TFile, version: number): Promise<EmbedNotebook | null> {
-    return this.notebooks.get(file.path, version, async () => {
+  private notebook(file: TFile, version: number, onlyPage?: number): Promise<EmbedNotebook | null> {
+    // One page of a notebook kept as page files is read alone, and kept apart from the whole.
+    const key = onlyPage === undefined ? file.path : `${file.path}#page=${onlyPage + 1}`;
+    return this.notebooks.get(key, version, async () => {
       const text = await this.host.app.vault.cachedRead(file);
-      const { doc, payload } = parseInkFile(text, this.host.paperWidth());
+      const { doc, payload, body } = parseInkFile(text, this.host.paperWidth());
       if (doc) return { pages: doc.pages, board: isBoard(doc) };
       if (payload === undefined) return { pages: [], board: false };
       // Kept as one file per page per device (#274): joined from its files.
-      const folder = isDevicePagesPayload(payload)
-        ? devicePagesFolderFor(this.host.app, file)
-        : null;
-      const joined = folder
-        ? await readDevicePagesFolder(this.host.app, payload, folder, this.host.paperWidth())
-        : null;
+      const id = isDevicePagesPayload(payload) ? notebookIdOf(body) : null;
+      const joined =
+        id === null
+          ? null
+          : await readDevicePagesFolder(
+              this.host.app,
+              payload,
+              devicePagesFolderOf(file.path, id),
+              this.host.paperWidth(),
+              onlyPage,
+            );
       return joined ? { pages: joined.pages, board: isBoard(joined) } : null;
     });
   }

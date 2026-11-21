@@ -7,6 +7,7 @@
 
 import { type App, TFile, TFolder } from "obsidian";
 import type { InkDocument } from "../model/document";
+import { pageFileName } from "../model/device-pages-writer";
 import {
   type FileStamp,
   NOTEBOOK_ID_KEY,
@@ -51,20 +52,11 @@ export function notebookStatOf(app: App, file: TFile): FileStamp {
   );
 }
 
-/**
- * A notebook kept as one file per page per device, joined from the files in
- * `folder` (Obsidian's cached copies). `null` when the notebook file's own
- * payload cannot be read.
- */
-export async function readDevicePagesFolder(
-  app: App,
-  payload: string,
-  folder: TFolder,
-  fallbackWidth?: number,
-): Promise<InkDocument | null> {
+/** The text of `files` (Obsidian's cached copies), by name; an unreadable one is left out. */
+async function textsOf(app: App, files: readonly TFile[]): Promise<Map<string, string>> {
   const texts = new Map<string, string>();
   await Promise.all(
-    deviceFilesIn(folder).map(async (file) => {
+    files.map(async (file) => {
       try {
         texts.set(file.name, await app.vault.cachedRead(file));
       } catch {
@@ -72,8 +64,40 @@ export async function readDevicePagesFolder(
       }
     }),
   );
+  return texts;
+}
+
+/**
+ * A notebook kept as one file per page per device, joined from the files in
+ * its page folder at `folderPath` (none yet: the legacy notebook alone).
+ * With `onlyPage` (an index), only that page's files are read besides the
+ * metas, so an embed of one page reads one page: the notebook's other pages
+ * are then as the legacy notebook and the metas have them. `null` when the
+ * notebook file's own payload cannot be read.
+ */
+export async function readDevicePagesFolder(
+  app: App,
+  payload: string,
+  folderPath: string,
+  fallbackWidth?: number,
+  onlyPage?: number,
+): Promise<InkDocument | null> {
+  const folder = app.vault.getAbstractFileByPath(folderPath);
+  let files = folder instanceof TFolder ? deviceFilesIn(folder) : [];
   try {
-    return readDevicePagesNotebook(payload, texts, fallbackWidth).doc;
+    if (onlyPage !== undefined) {
+      const metas = files.filter((file) => readDeviceFileName(file.name)?.kind === "meta");
+      const order = readDevicePagesNotebook(payload, await textsOf(app, metas), fallbackWidth);
+      const id = order.doc.pages[onlyPage]?.id;
+      const devices = new Set(files.map((file) => readDeviceFileName(file.name)?.device));
+      const names = new Set(
+        id === undefined
+          ? []
+          : [...devices].flatMap((device) => (device ? [pageFileName(id, device)] : [])),
+      );
+      files = [...metas, ...files.filter((file) => names.has(file.name))];
+    }
+    return readDevicePagesNotebook(payload, await textsOf(app, files), fallbackWidth).doc;
   } catch {
     return null;
   }

@@ -74,7 +74,7 @@ export function orderKeys(keys: readonly (string | null)[]): string[] {
       let next: string | null = null;
       for (let j = i + 1; j < keys.length; j++) {
         if (kept.has(j)) {
-          next = keys[j] as string;
+          next = keys[j];
           break;
         }
       }

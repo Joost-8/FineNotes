@@ -17,7 +17,7 @@ import type { App, TFile } from "obsidian";
 import { type ImagePainter, renderPageThumbnail } from "../canvas/renderer";
 import { parseInkFile } from "../model/serialize";
 import { isDevicePagesPayload } from "../model/device-pages";
-import { devicePagesFolderFor, notebookStatOf, readDevicePagesFolder } from "./device-pages-files";
+import { devicePagesFolderPath, notebookStatOf, readDevicePagesFolder } from "./device-pages-files";
 
 export { notebookStatOf } from "./device-pages-files";
 import { readTextSection } from "../recognition/text-layer";
@@ -105,8 +105,9 @@ export class NotebookPages {
     const text = (): Promise<string> =>
       facts ? this.app.vault.read(file) : this.app.vault.cachedRead(file);
     // Kept as one file per page per device (#274): put together here, from its files.
-    const folder = devicePagesFolderFor(this.app, file);
-    if (folder) {
+    // (Its frontmatter names its id; its page folder may not be made yet.)
+    const folder = devicePagesFolderPath(this.app, file);
+    if (folder !== null) {
       const parsed = parseInkFile(await text());
       if (parsed.payload !== undefined && isDevicePagesPayload(parsed.payload)) {
         const doc = await readDevicePagesFolder(this.app, parsed.payload, folder);

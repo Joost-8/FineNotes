@@ -558,6 +558,7 @@ describe("registration", () => {
         "create-notebook-from-pdf",
         "create-notebook-with-last-settings",
         "customize-toolbar",
+        "export-one-file",
         "export-pdf",
         "fit-board-drawing",
         "fit-reset-view",

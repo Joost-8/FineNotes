@@ -41,6 +41,7 @@ import { orderKeys } from "./order-keys";
 import { type VersionVector, joinVersionVectors, readDot } from "./provenance";
 import {
   encodeDocumentWith,
+  inkFileText,
   labelledPayload,
   pageFeatures,
   splitFrontmatter,
@@ -150,6 +151,8 @@ export class DevicePagesWriter {
   private readonly files = new Map<string, { rev: number; hash: string }>();
   /** What the notebook includes of every device. */
   private vv: VersionVector;
+  /** The meta must be written at the next save, changed or not (after a failed write). */
+  private forceMeta = false;
 
   private constructor(
     readonly device: string,
@@ -361,7 +364,8 @@ export class DevicePagesWriter {
       writes.push({ name: pageFileName(id, this.device), text: pageFileText(payload) });
       metaChanged = true;
     }
-    if (metaChanged) writes.push(this.metaWrite(vv));
+    if (metaChanged || this.forceMeta) writes.push(this.metaWrite(vv));
+    this.forceMeta = false;
     return writes;
   }
 
@@ -378,6 +382,16 @@ export class DevicePagesWriter {
       files: Object.fromEntries(this.files),
     };
     return { name: metaFileName(this.device), text: metaFileText(labelledPayload(json, features)) };
+  }
+
+  /**
+   * A write failed: every page file and the meta are written again whole at
+   * the next save, so nothing this device holds stays off the disk.
+   */
+  unwritten(): void {
+    // Only pages with a file of this device: the others hold nothing of it.
+    for (const state of this.pages.values()) if (state.rev > 0) state.body = "";
+    this.forceMeta = true;
   }
 
   /** The settings' clock as shown (for tests). */
@@ -422,4 +436,27 @@ export function withNotebookId(body: string, id: string): string {
 /** The notebook file's payload when it moves to the layout: the notebook as it is, kept as legacy. */
 export function legacyPayload(doc: InkDocument): string {
   return encodeDocumentWith(doc, ["device-pages"]);
+}
+
+/**
+ * A new notebook's file, made in the layout from the start: the note with
+ * the notebook's id in its frontmatter, and `doc` as its legacy notebook.
+ */
+export function devicePagesNotebookText(
+  body: string,
+  doc: InkDocument,
+  id: string = randomId(),
+): string {
+  return inkFileText(withNotebookId(body, id), legacyPayload(doc));
+}
+
+const NL = "\n";
+
+/** `body` without the notebook id in its frontmatter: for a copy kept as one file. */
+export function withoutNotebookId(body: string): string {
+  const { frontmatter, prose } = splitFrontmatter(body);
+  if (!frontmatter) return body;
+  const lines = frontmatter.split(NL).filter((line) => !line.startsWith(`${NOTEBOOK_ID_KEY}:`));
+  // A frontmatter that held only the id goes with it.
+  return lines.filter((line) => line.trim() !== "").length <= 2 ? prose : lines.join(NL) + prose;
 }

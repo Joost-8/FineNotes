@@ -88,6 +88,7 @@ import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-mo
 import { parsePillRowOn } from "./view/pill-row-model";
 import { ShortcutStore } from "./view/shortcut-store";
 import { buildInkFile, parseInkFile } from "./model/serialize";
+import { devicePagesNotebookText } from "./model/device-pages-writer";
 import {
   ReceivePages,
   type TransferTarget,
@@ -1103,6 +1104,10 @@ export default class GoodObsidianPlugin extends Plugin {
 
     this.notebookCommand("toggle-text-layer", t("notebooks.command.toggleTextLayer"), (view) =>
       view.toggleTextPanel(),
+    );
+    // A copy in one file, for a device that cannot update yet (#274).
+    this.notebookCommand("export-one-file", t("notebooks.command.exportOneFile"), (view) =>
+      view.exportOneFile(),
     );
     this.notebookCommand("transcribe-page", t("notebooks.command.transcribePage"), (view) =>
       view.transcribePageNow(),
@@ -3590,7 +3595,8 @@ export default class GoodObsidianPlugin extends Plugin {
       if (choices.type === "notebook" && choices.scroll === "horizontal") {
         doc.scroll = "horizontal";
       }
-      const content = buildInkFile(newNoteBody(heading, new Date().toISOString()), doc);
+      // Made in one file per page per device (#274) from the start.
+      const content = devicePagesNotebookText(newNoteBody(heading, new Date().toISOString()), doc);
       const file = await this.app.vault.create(
         normalizePath(joinVaultPath(paths.folder, name)),
         content,

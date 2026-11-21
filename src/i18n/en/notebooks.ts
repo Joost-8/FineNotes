@@ -416,6 +416,8 @@ export const notebooks = {
   "notebooks.command.shareTemplate": "Share a template with the community…",
   "notebooks.command.switchView": "Switch between notebook and Markdown view",
   "notebooks.command.toggleTextLayer": "Show or hide the text layer",
+  "notebooks.command.exportOneFile": "Export notebook as one file",
+  "notebooks.exportOneFile.name": "{title} (one file)",
   "notebooks.command.transcribe": "Transcribe this notebook's handwriting",
   "notebooks.command.transcribePage": "Transcribe this page",
   "notebooks.command.practiceSet": "Write a handwriting practice set",

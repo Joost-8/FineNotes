@@ -31,7 +31,6 @@ import {
   Platform,
   TextFileView,
   TFile,
-  TFolder,
   type WorkspaceLeaf,
   normalizePath,
 } from "obsidian";
@@ -70,15 +69,21 @@ import {
   blankPage,
   emptyDocument,
 } from "../model/document";
-import { DocumentEncoder, buildInkFile, parseInkFile } from "../model/serialize";
+import { DocumentEncoder, buildInkFile, inkFileText, parseInkFile } from "../model/serialize";
 import {
   type DevicePagesLoad,
   devicePagesFolderOf,
   isDevicePagesPayload,
   notebookIdOf,
   readDeviceFileName,
-  readDevicePagesNotebook,
 } from "../model/device-pages";
+import {
+  legacyPayload,
+  randomId,
+  withNotebookId,
+  withoutNotebookId,
+} from "../model/device-pages-writer";
+import { DevicePagesSession, deviceIdOf } from "./device-pages-session";
 import { BackgroundSaver } from "./background-save";
 import type { RecognitionProvider } from "../recognition/provider";
 import { MANUAL_PROVIDER_ID } from "../recognition/manual";
@@ -522,7 +527,7 @@ import {
   exportTarget,
   mimeTypeOf,
 } from "../export/export-choice";
-import { stripInkSuffix, uniqueFileName } from "../model/new-notebook";
+import { inkFileSuffix, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
 import { MorePanel } from "./more-panel";
@@ -853,15 +858,18 @@ export class InkView extends TextFileView {
   private loadedPath: string | null = null;
   /**
    * The notebook shown keeps its pages in one file per page per device
-   * (FineNotes#274): its payload and its page folder. It is shown from those
-   * files and held read-only, so nothing of it is ever written here.
+   * (FineNotes#274): its page folder, and this device's writing in it. The
+   * notebook file itself then holds only the note and the legacy notebook,
+   * written once; a save writes this device's changed page files.
    */
-  private devicePages: { path: string; payload: string; folder: string } | null = null;
+  private devicePages: DevicePagesSession | null = null;
   /** Counts loads, so page files read for an earlier one are dropped. */
   private devicePagesRead = 0;
   private devicePagesTimer = 0;
-  /** The notebook whose page-files notice has shown, so a reread does not repeat it. */
+  /** The notebook whose "still syncing" notice has shown, so a reread does not repeat it. */
   private devicePagesNoticed: string | null = null;
+  /** When the "still syncing" notice last showed for an edit refused, ms. */
+  private syncingNoticeAt = 0;
   private backdrops: VaultBackdropRenderer | null = null;
   /** The same PDFs at thumbnail size, so the sidebar never asks for page-sized rasters. */
   private thumbBackdrops: VaultBackdropRenderer | null = null;
@@ -1129,6 +1137,9 @@ export class InkView extends TextFileView {
     if (this.preparedContents !== null) return this.preparedContents;
     const body = this.syncedBody();
     this.syncTabMarks();
+    // Kept as page files: the notebook file holds the note and the legacy notebook, as it is.
+    const pages = this.devicePages;
+    if (pages) return this.guard.contents(() => inkFileText(body, pages.payload));
     const missed = this.encoder.missed;
     const text = this.guard.contents(() => buildInkFile(body, this.doc, this.encoder));
     if (this.encoder.missed > missed && !this.missedReported) {
@@ -1241,17 +1252,19 @@ export class InkView extends TextFileView {
     // What this view has, saved or not, to carry onto the file as it is now.
     const mine = again ? this.sinceKnown() : null;
     const { body, doc, payload, json } = parseInkFile(data, this.settings.paperWidth);
+    // Kept as one file per page per device: its pages come from their files.
+    // Without an id in its frontmatter its folder is unknown: held, as ink that will not load.
+    const pageFolder =
+      payload !== undefined && isDevicePagesPayload(payload) ? this.devicePagesFolder(body) : null;
+    // What this view has not written yet goes to its page files before they are read again.
+    const previousPages = this.devicePages;
+    if (previousPages && sameFile && !this.guard.locked) void previousPages.save(this.doc);
     const held = this.guard.admit({
       text: data,
       bytesOnDisk: this.file?.stat.size ?? 0,
-      decoded: doc !== null,
+      decoded: doc !== null || pageFolder !== null,
     });
-    // Kept as one file per page per device: held too, its pages come from their files.
-    const pageFolder =
-      held && payload !== undefined && isDevicePagesPayload(payload)
-        ? this.devicePagesFolder(body)
-        : null;
-    if (held && !pageFolder) {
+    if (held) {
       const newer = payload !== undefined && needsNewerReader(payload);
       // Shown once when a load is held (see load-guard.ts); the second text is
       // for a notebook a newer FineNotes wrote with something this one cannot keep.
@@ -1291,9 +1304,16 @@ export class InkView extends TextFileView {
     // What this view carried over is not on disk yet.
     if (merged) this.requestSave();
     this.loadedPath = this.file?.path ?? null;
-    if (pageFolder && payload !== undefined && this.loadedPath !== null) {
-      this.devicePages = { path: this.loadedPath, payload, folder: pageFolder };
-      void this.readDevicePages();
+    if (pageFolder && !held && payload !== undefined && this.loadedPath !== null) {
+      this.devicePages = new DevicePagesSession(
+        this.app,
+        this.loadedPath,
+        payload,
+        pageFolder,
+        deviceIdOf(this.app),
+        previousPages,
+      );
+      void this.readDevicePages(notebookIdOf(body));
     }
     this.textPanel?.load(this.noteBody);
     if (!this.mounted) return;
@@ -1321,43 +1341,42 @@ export class InkView extends TextFileView {
 
   /**
    * Show a notebook kept as one file per page per device (FineNotes#274)
-   * from its files. The load stays held, so nothing is written: this build
-   * reads the layout but does not save it. A page whose file has not synced
-   * yet shows what has, and the notebook is read again as its files change.
+   * from its files. When every file is in (nothing still syncing) it can be
+   * written from here on; otherwise it is shown as it is, takes no edits and
+   * writes nothing, and is read again as its files arrive. `id` (the
+   * notebook's, on a first read): its page folder is looked for elsewhere
+   * when the notebook moved without it.
    */
-  private async readDevicePages(): Promise<void> {
+  private async readDevicePages(id: string | null = null): Promise<void> {
     const shown = this.devicePages;
     if (!shown) return;
     const read = ++this.devicePagesRead;
-    const texts = new Map<string, string>();
-    const folder = this.app.vault.getAbstractFileByPath(shown.folder);
-    const children = folder instanceof TFolder ? folder.children : [];
-    await Promise.all(
-      children.map(async (file) => {
-        if (!(file instanceof TFile) || !readDeviceFileName(file.name)) return;
-        try {
-          texts.set(file.name, await this.app.vault.read(file));
-        } catch {
-          // Unreadable: as one not synced yet.
-        }
-      }),
-    );
-    if (read !== this.devicePagesRead || this.file?.path !== shown.path) return;
+    if (id !== null) await shown.reattach(id);
+    const texts = await shown.readFiles();
+    if (read !== this.devicePagesRead || this.devicePages !== shown) return;
+    if (this.file?.path !== shown.path) return;
     let load: DevicePagesLoad;
     try {
-      load = readDevicePagesNotebook(shown.payload, texts, this.settings.paperWidth);
+      load = shown.load(texts, this.settings.paperWidth);
     } catch {
-      // The notebook file's own payload is cut short: held, as any such load.
+      // The notebook file's own payload is cut short: not one this view can write.
+      this.devicePages = null;
       new Notice(t("view.notice.heldLoad"), 10000);
       return;
     }
     this.doc = load.doc;
-    if (this.devicePagesNoticed !== shown.path) {
+    if (load.newer.length > 0) {
+      if (this.devicePagesNoticed !== shown.path) new Notice(t("view.notice.newerFormat"), 10000);
       this.devicePagesNoticed = shown.path;
-      new Notice(
-        load.syncing ? t("view.notice.devicePagesSyncing") : t("view.notice.devicePages"),
-        10000,
-      );
+    } else if (load.syncing) {
+      if (this.devicePagesNoticed !== shown.path) {
+        new Notice(t("view.notice.devicePagesSyncing"), 10000);
+      }
+      this.devicePagesNoticed = shown.path;
+    } else {
+      this.devicePagesNoticed = null;
+      // Files it points at that moved while it was closed (#14).
+      if (this.relinkDoc() > 0) this.requestSave();
     }
     if (!this.mounted) return;
     this.showDocument();
@@ -1365,18 +1384,58 @@ export class InkView extends TextFileView {
     this.applyPendingPage();
   }
 
-  /** A file changed: a file of the notebook shown is read again, once the sync settles. */
+  /** Whether the notebook is kept as page files that are still syncing: then it takes no edits. */
+  private devicePagesSyncing(): boolean {
+    // (A view made without its fields, as some tests make one, has none.)
+    return !!this.devicePages && this.devicePages.writer === null;
+  }
+
+  /**
+   * Move this single-file notebook to one file per page per device, at its
+   * first save: the notebook as it is becomes the legacy payload, written
+   * once; from then on a save writes only this device's changed pages. Not
+   * for a practice sheet (read as training data) or a load that is held.
+   */
+  private moveToDevicePages(): void {
+    const path = this.file?.path;
+    if (this.devicePages || this.guard.locked || !path || path !== this.loadedPath) return;
+    if (this.doc.practice) return;
+    const id = randomId();
+    this.noteBody = withNotebookId(this.noteBody, id);
+    const session = new DevicePagesSession(
+      this.app,
+      path,
+      legacyPayload(this.doc),
+      devicePagesFolderOf(path, id),
+      deviceIdOf(this.app),
+    );
+    session.startFresh(this.doc);
+    this.devicePages = session;
+    this.textPanel?.load(this.noteBody);
+  }
+
+  /**
+   * A file changed: another device's file of the notebook shown is read
+   * again, once the sync settles and the pen is up, after this view's own
+   * changes are written. This device's own files are only ever its writes.
+   */
   private devicePageChanged(path: string): void {
     const shown = this.devicePages;
     if (!shown || !path.startsWith(`${shown.folder}/`)) return;
-    if (!readDeviceFileName(path.slice(shown.folder.length + 1))) return;
+    const name = path.slice(shown.folder.length + 1);
+    if (!readDeviceFileName(name) || shown.isOwn(name)) return;
     window.clearTimeout(this.devicePagesTimer);
-    this.devicePagesTimer = window.setTimeout(() => {
+    const reread = (): void => {
       this.devicePagesTimer = 0;
-      if (this.devicePages === shown && this.file?.path === shown.path) {
-        void this.readDevicePages();
+      if (this.devicePages !== shown || this.file?.path !== shown.path) return;
+      // Never under a pen that is writing: a little later.
+      if (this.penIsDown) {
+        this.devicePagesTimer = window.setTimeout(reread, DEVICE_PAGES_SETTLE_MS);
+        return;
       }
-    }, DEVICE_PAGES_SETTLE_MS);
+      void shown.save(this.doc).then(() => this.readDevicePages());
+    };
+    this.devicePagesTimer = window.setTimeout(reread, DEVICE_PAGES_SETTLE_MS);
   }
 
   /**
@@ -1581,6 +1640,16 @@ export class InkView extends TextFileView {
    */
   private async saveNow(clear?: boolean, now = false): Promise<void> {
     this.writeHold.saved();
+    // One file per page per device (#274): a notebook moves there at its first save.
+    this.moveToDevicePages();
+    const pages = this.devicePages;
+    if (pages) {
+      // Only this device's changed pages and its meta: small, so on this thread.
+      this.saver.supersede();
+      if (!this.guard.locked) await pages.save(this.doc);
+      await this.writeFile(clear);
+      return;
+    }
     if (clear || now) {
       this.saver.supersede();
       await this.writeFile(clear);
@@ -4406,6 +4475,32 @@ export class InkView extends TextFileView {
    * Open or close the text layer. Opening shows the body as it is now and
    * puts the cursor in it; the pages then lay out in the height that is left.
    */
+  /**
+   * "Export notebook as one file" (#274): a copy of the notebook as it is
+   * shown, in the single-file layout, beside it, for a device whose
+   * FineNotes cannot read page files yet. A copy, not a mode: the notebook
+   * itself stays as it is.
+   */
+  async exportOneFile(): Promise<void> {
+    const file = this.file;
+    if (!file || this.guard.locked) return;
+    const suffix = inkFileSuffix(file.name) ?? ".md";
+    const folder = file.parent?.path ?? "";
+    const taken = new Set(file.parent?.children.map((child) => child.name) ?? []);
+    const base = t("notebooks.exportOneFile.name", { title: stripInkSuffix(file.basename) });
+    const name = uniqueFileName(base, suffix, taken);
+    const path = normalizePath(folder && folder !== "/" ? `${folder}/${name}` : name);
+    try {
+      await this.app.vault.create(
+        path,
+        buildInkFile(withoutNotebookId(this.syncedBody()), this.doc),
+      );
+      new Notice(t("notebooks.export.savedOne", { path }));
+    } catch (error) {
+      new Notice(errorMessage(error));
+    }
+  }
+
   toggleTextPanel(): void {
     this.textPanelOpen = !this.textPanelOpen;
     const panel = this.textPanel;
@@ -5677,8 +5772,7 @@ export class InkView extends TextFileView {
     // The page's transcripts find the words this device misread (2.5.2),
     // each lined up with the reading on its own.
     const pageText = (await this.notebookTextIndex(false))[index];
-    const transcripts =
-      pageText?.sources.filter((source) => source.kind === "handwriting") ?? [];
+    const transcripts = pageText?.sources.filter((source) => source.kind === "handwriting") ?? [];
     const transcript = transcripts.map((source) => source.text);
     // A page holding the words as typed ("recipe for defining") lights
     // that phrase, wherever it is, and not each word on its own.
@@ -9200,8 +9294,19 @@ export class InkView extends TextFileView {
     return true;
   }
 
-  /** Whether the notebook's ink failed to load, so it must not even be saved over. */
+  /**
+   * Whether the notebook's ink failed to load, so it must not even be saved
+   * over; or it is kept as page files still syncing, so it waits for them.
+   */
   private isDamaged(): boolean {
+    if (this.devicePagesSyncing()) {
+      const now = Date.now();
+      if (now - this.syncingNoticeAt > READ_ONLY_NOTICE_MS) {
+        this.syncingNoticeAt = now;
+        new Notice(t("view.notice.devicePagesSyncing"));
+      }
+      return true;
+    }
     if (!this.guard.locked) return false;
     new Notice(t("view.notice.readOnly"));
     return true;

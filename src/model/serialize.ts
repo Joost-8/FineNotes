@@ -1599,7 +1599,7 @@ export function storedParts(doc: InkDocument): {
 } {
   const { pages: _pages, ...head } = storeHead(doc);
   return {
-    head: head as unknown as Record<string, unknown>,
+    head: head,
     pages: doc.pages.map((page) => storePage(page) as unknown as Record<string, unknown>),
   };
 }
