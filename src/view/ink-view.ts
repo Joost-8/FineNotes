@@ -170,6 +170,7 @@ import { PdfBackdropCache } from "./pdf-backdrop";
 import { PdfTextCache } from "./pdf-text-source";
 import { type PdfWorker, acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { vaultPathFromDrop } from "../model/file-drop";
+import { droppedText, outsideDropEffect, takesDrag } from "./drop-text";
 import { measurePdfPages } from "./pdf-pages";
 import { VaultPaperLibrary, templateNamesIn } from "./paper-library-host";
 import { paintedTextHeight, renderPageThumbnail } from "../canvas/renderer";
@@ -649,6 +650,8 @@ const TAB_VIEW_SETTLE_MS = 2000;
 const WORD_CHECK_WAIT_MS = 1500;
 /** How long after one "this notebook is read-only" notice the next may show, ms. */
 const READ_ONLY_NOTICE_MS = 4000;
+/** A drag event this long after the last one starts a new drag, for the debug HUD. */
+const DRAG_NOTE_GAP_MS = 1000;
 /** PDF pages read for search between refreshes of an open search list (#112). */
 const PDF_SEARCH_BATCH = 8;
 /** How long after a notebook opens "Update available" appears, ms: once the bar is laid out. */
@@ -811,6 +814,8 @@ export class InkView extends TextFileView {
   private mounted = false;
   /** When the last "this notebook is read-only" notice showed, ms. */
   private readOnlyNoticeAt = 0;
+  /** When the last drag event came over the notebook (`noteDrag`), ms. */
+  private dragSeenAt = 0;
   private surface: InkSurface | null = null;
   /** Lines ending in "=" answered on a tap (off unless the setting is on). */
   private readonly calcNotes: CalcNotes;
@@ -5320,15 +5325,7 @@ export class InkView extends TextFileView {
         capture: true,
       });
 
-    this.registerDomEvent(root, "dragover", (event) => {
-      const types = event.dataTransfer?.types ?? [];
-      if (
-        types.includes("Files") ||
-        types.includes("text/plain") ||
-        types.includes("text/uri-list")
-      )
-        event.preventDefault();
-    });
+    this.registerDomEvent(root, "dragover", (event) => this.acceptDrag(event));
     this.registerDomEvent(root, "drop", (event) => void this.handleFileDrop(event));
 
     // First layout pass: the pill has no measured size until the view is in
@@ -5390,12 +5387,17 @@ export class InkView extends TextFileView {
     // it is dropped on the backdrop, outside this view. Take a drop on that
     // backdrop whose point lies over this view; a drop in the drawer itself
     // (moving a file to a folder) is the file list's.
-    on("drop", (event) => {
+    const overBackdrop = (event: DragEvent): boolean => {
       const target = event.target;
-      if (event.defaultPrevented || !isElement(target)) return;
-      if (!target.matches(".workspace-drawer-backdrop")) return;
-      if (!pointInside(root.getBoundingClientRect(), event.clientX, event.clientY)) return;
-      void this.handleFileDrop(event);
+      if (event.defaultPrevented || !isElement(target)) return false;
+      if (!target.matches(".workspace-drawer-backdrop")) return false;
+      return pointInside(root.getBoundingClientRect(), event.clientX, event.clientY);
+    };
+    on("dragover", (event) => {
+      if (overBackdrop(event)) this.acceptDrag(event);
+    });
+    on("drop", (event) => {
+      if (overBackdrop(event)) void this.handleFileDrop(event);
     });
     const onBlur = (): void => {
       this.surface?.setHand(false);
@@ -9164,6 +9166,38 @@ export class InkView extends TextFileView {
     await this.preparePdfImport(() => this.app.vault.readBinary(file), file.name, path, ask);
   }
 
+  /**
+   * A drag over the notebook, or over the tablet drawer's backdrop above
+   * it: a page takes files, text and links. A drag from outside Obsidian
+   * drops as a copy (`outsideDropEffect`), since Obsidian's mobile drag
+   * manager would otherwise make it a move the drag may not allow.
+   */
+  private acceptDrag(event: DragEvent): void {
+    const transfer = event.dataTransfer;
+    if (!transfer) return;
+    this.noteDrag(transfer);
+    if (!takesDrag(Array.from(transfer.types))) return;
+    event.preventDefault();
+    if (obsidianDragging(this.app)) return;
+    const effect = outsideDropEffect(transfer.effectAllowed);
+    if (effect) transfer.dropEffect = effect;
+  }
+
+  /**
+   * A drag over the notebook, on the debug HUD once per drag: a drag from
+   * another app that never shows there never reached the page. Every
+   * dragover moves `dragSeenAt` on, so only a pause starts a new drag.
+   */
+  private noteDrag(transfer: DataTransfer): void {
+    const now = Date.now();
+    const fresh = now - this.dragSeenAt > DRAG_NOTE_GAP_MS;
+    this.dragSeenAt = now;
+    if (!fresh) return;
+    const types = Array.from(transfer.types).join(",") || "-";
+    const own = obsidianDragging(this.app) ? " obsidian" : "";
+    this.surface?.debugDrop("drag", `types=${types} allowed=${transfer.effectAllowed}${own}`);
+  }
+
   private async handleFileDrop(event: DragEvent): Promise<void> {
     const transfer = event.dataTransfer;
     // A practice file takes handwriting only.
@@ -9187,11 +9221,41 @@ export class InkView extends TextFileView {
     const vaultFiles = (dragged.length ? dragged : resolved ? [resolved] : []).filter(
       (file) => /\.pdf$/i.test(file.path) || isImagePath(file.path),
     );
-    this.surface?.debugMark(
-      `drop types=${transfer.types.join(",") || "-"} files=${transfer.files.length} ` +
-        `text=${text ? "yes" : "no"} vault=${vaultFiles.length}`,
-    );
-    if (!files.length && !vaultFiles.length) return;
+    // Text from another app (discussion #288), when no file claims the drop.
+    // A text field being typed in keeps its own drop.
+    const words =
+      files.length || vaultFiles.length || isEditableTarget(event.target)
+        ? ""
+        : droppedText({
+            types: transfer.types,
+            plain: transfer.getData("text/plain"),
+            html: transfer.getData("text/html"),
+            // A bare word that names a note is still words; a link or a
+            // path with its extension is the file's.
+            vaultFile:
+              obsidianDragging(this.app) ||
+              (!!resolved && (path !== text.trim() || /\.[a-z0-9]+$/i.test(path ?? ""))),
+          });
+    // Which element took the drop, what it carried and what it became: on
+    // the debug HUD, whether iPadOS hands a drag from another app to the
+    // page at all is settled by this line.
+    const seen =
+      `on=${elementName(event.target)} types=${transfer.types.join(",") || "-"} ` +
+      `files=${transfer.files.length} text=${text ? text.length : "no"} ` +
+      `vault=${vaultFiles.length} words=${words.length}`;
+    if (words) {
+      const taken =
+        this.isProtected() || !!this.surface?.dropText(event.clientX, event.clientY, words);
+      this.surface?.debugDrop("drop", `${seen} -> ${taken ? "text box" : "refused"}`);
+      if (taken) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+    const taken = files.length > 0 || vaultFiles.length > 0;
+    this.surface?.debugDrop("drop", `${seen} -> ${taken ? "file" : "nothing"}`);
+    if (!taken) return;
     event.preventDefault();
     event.stopPropagation();
     if (vaultFiles.length) {
@@ -9576,6 +9640,14 @@ function markStroke(
 }
 
 /**
+ * Whether Obsidian's own drag manager is dragging something now (a file, a
+ * link, a heading, a tab): such a drop is Obsidian's, never text to write.
+ */
+function obsidianDragging(app: unknown): boolean {
+  return !!(app as { dragManager?: { draggable?: unknown } }).dragManager?.draggable;
+}
+
+/**
  * The vault files Obsidian is dragging now (one file, or a selection from its
  * file list), read from its drag manager, which is not in the public API: an
  * empty list when there is none, or when a later Obsidian changes its shape.
@@ -9594,6 +9666,21 @@ function draggedVaultFiles(app: unknown): TFile[] {
         ? draggable.files
         : [];
   return all.filter((file): file is TFile => file instanceof TFile);
+}
+
+/** Whether an event's target is a field the user types in, which takes its own drops. */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!isElement(target)) return false;
+  return (
+    (target as HTMLElement).isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)
+  );
+}
+
+/** An element as the debug HUD names it: its tag and first class, or `-`. */
+function elementName(target: EventTarget | null): string {
+  if (!isElement(target)) return "-";
+  const cls = target.classList[0];
+  return target.tagName.toLowerCase() + (cls ? `.${cls}` : "");
 }
 
 /** Whether (x, y) lies inside `rect`; a rect with no size (a hidden view) holds nothing. */

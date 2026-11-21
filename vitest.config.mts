@@ -159,6 +159,7 @@ export default defineConfig({
         "src/input/finger-hold.ts",
         "src/input/repeat-samples.ts",
         "src/view/paste-choice.ts",
+        "src/view/drop-text.ts",
         "src/recognition/text-layer.ts",
         "src/recognition/device-reading.ts",
         "src/recognition/reading-guard.ts",
