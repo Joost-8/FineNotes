@@ -8,6 +8,28 @@ extracted from the matching section of this file by `release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Help improve Grape: new terms (version 3).** Before a shared item is used
+  to train Grape, its label may be checked against its ink by Claude, an AI by
+  Anthropic: only a picture of the ink and its text are sent, and Anthropic
+  may not train on it. Everyone who shares is asked to agree again before
+  anything more is sent; items shared under the old terms are never checked
+  this way. See PRIVACY.md, "The label check by Anthropic".
+### Added
+
+- **Erase on hover with the S Pen**
+  ([discussion #209](https://github.com/Joost-8/FineNotes/discussions/209)).
+  Settings › Stylus side button › **Erase, also hovering**: hold the side
+  button with the pen just above the page, not touching it, and move it over
+  what you want gone. It erases with your eraser's mode and size, the eraser
+  ring shows where, and each pass is one undo. A quick click of the button
+  still does what Side button click says. On Android, where holding the
+  button while the pen touches the screen may not reach FineNotes, this is
+  the way to erase with the button. "Copy shape diagnostics" now includes
+  the pen's last hover and button events, to send if it does not work on
+  your tablet.
+
 ## [2.10.0] - 2026-11-18
 
 ### Added

@@ -12,12 +12,18 @@
  *   where the PDF points.
  * - Its depth in the outline is its level, the deepest kept being 3.
  *
+ * On a PDF's tab (`model/beside-pdfs`) the same outline is shown, read only,
+ * as that tab's contents ({@link tabOutlineEntries}); it never goes into the
+ * notebook's.
+ *
  * PURE: no DOM, no Obsidian.
  */
 
 import {
+  type ContentsEntry,
   type PageContents,
   clampContentsLevel,
+  contentsEntries,
   maxSectionNumber,
   normalizePageTitle,
   sectionDefaultLevel,
@@ -138,4 +144,44 @@ export function addedEntries(contents: readonly PageContents[]): number {
 function fraction(value: number | undefined): number | undefined {
   if (value === undefined || !Number.isFinite(value)) return undefined;
   return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * The contents a PDF's tab shows: the PDF's own outline laid on the tab's
+ * pages (`doc`, from `besideDocument`; slide i is the tab's page i), in the
+ * notes' shape (titles, headings inside, levels), so the sidebar draws it as
+ * it draws the notes'. Nothing of it is stored: the tab's pages are copied,
+ * and whatever contents they carry are left out. Empty when the PDF has no
+ * outline, or none of it lands on a slide.
+ */
+export function tabOutlineEntries(
+  doc: InkDocument,
+  path: string,
+  items: readonly OutlineItem[],
+): ContentsEntry[] {
+  if (items.length === 0) return [];
+  const bare: InkDocument = {
+    ...doc,
+    pages: doc.pages.map((page) => ({
+      ...page,
+      title: undefined,
+      titleLevel: undefined,
+      sections: undefined,
+      chapters: undefined,
+    })),
+  };
+  const placed = outlineContents(bare, path, items);
+  if (placed.length === 0) return [];
+  const byPage = new Map(placed.map((contents) => [contents.page, contents]));
+  const pages = bare.pages.map((page) => {
+    const contents = byPage.get(page);
+    if (!contents) return page;
+    return {
+      ...page,
+      title: contents.title,
+      titleLevel: contents.title === undefined ? undefined : contents.titleLevel,
+      sections: contents.sections && contents.sections.length > 0 ? contents.sections : undefined,
+    };
+  });
+  return contentsEntries({ ...bare, pages });
 }

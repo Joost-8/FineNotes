@@ -27,10 +27,10 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Simple look (hide Obsidian's bars)
 
 - **Id:** `settingSimpleLook`
-- **What:** Hides Obsidian's title bar, status bar, ribbon and sidebars so FineNotes looks like an app of its own; the tabs stay. Turn it off to bring them back.
-- **Where:** Settings › General › Simple look. Also in Notebook settings (gear), on the Welcome, and the command Simple look: hide or show….
-- **Words:** simple look, hide obsidian, clean, distraction free, focus, sidebars, ribbon, status bar, title bar, app look, full app
-- **Settings:** `simpleLook`
+- **What:** Hides Obsidian's title bar, status bar, ribbon and sidebars so FineNotes looks like an app of its own; the tabs stay. While it is on, the buttons under it (or the ⌄ beside Simple look on Home's folder rail) bring back parts one by one: Left sidebar, Right sidebar, Ribbon, Status bar (all off by default; a sidebar brought back starts closed, behind its own button, for other plugins' panels such as a calendar or a timer). With the left sidebar back, Home's folder rail steps aside. Turn the look off to bring everything back.
+- **Where:** Settings › General › Simple look, and the buttons under it. Also Home › folder rail › ⌄ beside Simple look, Notebook settings (gear), the Welcome, and the command Simple look: hide or show….
+- **Words:** simple look, easy mode, hide obsidian, clean, distraction free, focus, sidebars, right sidebar, other plugins, calendar, pomodoro, ribbon, status bar, title bar, app look, full app
+- **Settings:** `simpleLook`, `simpleLookShow`
 - **Commands:** `toggle-simple-look`
 - **Tip:** `simpleLook`
 
@@ -90,9 +90,9 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Stylus side button
 
 - **Id:** `settingStylusButton`
-- **What:** What a pen's side button does while you write: Erase (default), Lasso select, Move the page or Nothing; and what a click above the page does: open the pen menu (default), switch to the eraser, or nothing. A pen's eraser end always erases.
+- **What:** What a pen's side button does while you write: Erase (default), Erase, also hovering (the button held with the pen just above the page erases what it passes over), Lasso select, Move the page or Nothing; and what a click above the page does: open the pen menu (default), switch to the eraser, or nothing. A pen's eraser end always erases.
 - **Where:** Settings › Writing › Stylus side button
-- **Notes:** Apple Pencil has no side button, so the click choice is hidden on iPad and iPhone. Holding the button while writing may not work on Android tablets.
+- **Notes:** Apple Pencil has no side button, so the click choice is hidden on iPad and iPhone. Holding the button while writing may not work on Android tablets; Erase, also hovering does.
 - **Words:** side button, barrel button, stylus button, pen button, wacom, surface pen, samsung s pen, eraser button
 - **Settings:** `barrelButton`, `stylusButtonClick`
 
@@ -263,7 +263,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Handwriting recognition (transcribe with AI)
 
 - **Id:** `settingRecognitionProvider`
-- **What:** What the Transcribe this notebook's handwriting command uses: Manual (default; you type the text yourself in the text layer), Cloud AI (an image of each page goes to your AI service), or Cloud AI by itself after you write (about 30 seconds after you stop, only changed pages).
+- **What:** What the Transcribe this notebook's handwriting command uses: Manual (default; you type the text yourself in the text layer), Cloud AI (an image of each page goes to your AI service), or Cloud AI by itself after you write (a page once you turn away from it or after 5 minutes without writing, only changed pages).
 - **Where:** Settings › AI › Handwriting recognition
 - **Notes:** Separate from Grape, which reads on the device for search.
 - **Words:** handwriting recognition, transcribe notebook, cloud ai transcription, text layer, automatic transcription

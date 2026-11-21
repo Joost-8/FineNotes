@@ -14,15 +14,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmVendor } from "../../src/recognition/llm-request";
 import { TFile, WorkspaceLeaf, notices, resetFakes } from "./fake-obsidian";
+import { AUTO_RECOGNIZE_IDLE_MS, AUTO_RECOGNIZE_LEAVE_MS } from "../../src/constants";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
+
+/** The typing dialog, as the view last opened it: its page, its text, and Save. */
+let typing: { page: number; text: string; submit: (text: string) => void } | null = null;
+vi.mock("../../src/view/transcript-modal", () => ({
+  TranscriptModal: class {
+    constructor(_app: unknown, page: number, text: string, submit: (text: string) => void) {
+      typing = { page, text, submit };
+    }
+    open(): void {}
+  },
+}));
 
 const { InkView } = await import("../../src/view/ink-view");
 const { DEFAULT_SETTINGS } = await import("../../src/settings");
 const { buildInkFile, parseInkFile } = await import("../../src/model/serialize");
 const { blankPage, emptyDocument } = await import("../../src/model/document");
 const { readTextSection, writeTextSection } = await import("../../src/recognition/text-layer");
-const { pageKeys, updatePageTranscripts } = await import("../../src/recognition/page-transcripts");
+const transcripts = await import("../../src/recognition/page-transcripts");
+const { pageKeys, updatePageTranscripts } = transcripts;
 const { encodeDocument } = await import("../../src/model/serialize");
 const { VENDORS } = await import("../../src/recognition/llm-request");
 const { StartupLog } = await import("../../src/view/startup-log");
@@ -34,7 +47,8 @@ interface Inside {
   saveRequests: number;
   doc: { recognizedHash?: string; pages: { id: string }[] };
   surface: unknown;
-  scheduleAutoTranscription(): void;
+  scheduleAutoTranscription(changed?: readonly string[]): void;
+  transcription: unknown;
   clearPage(): void;
   isProtected(): boolean;
 }
@@ -48,6 +62,20 @@ function fakePlugin(settings: Record<string, unknown> = {}) {
     consentedTo: (vendor: LlmVendor) =>
       VENDORS[vendor].userEndpoint ? merged.customConsentGiven : merged.cloudConsentGiven,
     runRecognition: vi.fn(() => Promise.resolve()),
+    autoTranscriptionWait: vi.fn(() => 0),
+    autoTranscriptionFailed: vi.fn(() => true),
+    transcriptionWorked: vi.fn(),
+    // As the plugin keeps them: pages left waiting, by notebook path.
+    waiting: new Map<string, string[]>(),
+    keepWaitingPages(path: string, ids: readonly string[]) {
+      if (ids.length > 0) this.waiting.set(path, [...ids]);
+      else this.waiting.delete(path);
+    },
+    takeWaitingPages(path: string): string[] {
+      const ids = this.waiting.get(path) ?? [];
+      this.waiting.delete(path);
+      return ids;
+    },
     activeProvider: () => ({ id: "llm-byok", requiresNetwork: true }),
     maybeShowScribbleNotice: () => Promise.resolve(),
     // Files moved while the note was closed (#14): `moves` is what the log knows.
@@ -309,6 +337,7 @@ describe("clear()", () => {
 });
 
 describe("automatic transcription", () => {
+  const IDLE = AUTO_RECOGNIZE_IDLE_MS;
   function armed(settings: Record<string, unknown>): View {
     vi.useFakeTimers();
     vi.stubGlobal("window", globalThis);
@@ -317,10 +346,10 @@ describe("automatic transcription", () => {
     return view;
   }
 
-  it("runs once the ink has been idle for 30 s", () => {
+  it("runs once the ink has been idle for 5 minutes", () => {
     const view = armed({ autoRecognize: true, cloudConsentGiven: true });
-    inside(view).scheduleAutoTranscription();
-    vi.advanceTimersByTime(29_999);
+    inside(view).scheduleAutoTranscription([]);
+    vi.advanceTimersByTime(IDLE - 1);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(plugin.runRecognition).toHaveBeenCalledWith(view, true);
@@ -328,10 +357,10 @@ describe("automatic transcription", () => {
 
   it("starts the wait again on every change", () => {
     const view = armed({ autoRecognize: true, cloudConsentGiven: true });
-    inside(view).scheduleAutoTranscription();
-    vi.advanceTimersByTime(20_000);
-    inside(view).scheduleAutoTranscription();
-    vi.advanceTimersByTime(20_000);
+    inside(view).scheduleAutoTranscription([]);
+    vi.advanceTimersByTime(IDLE - 10_000);
+    inside(view).scheduleAutoTranscription([]);
+    vi.advanceTimersByTime(IDLE - 10_000);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
     vi.advanceTimersByTime(10_000);
     expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
@@ -339,8 +368,8 @@ describe("automatic transcription", () => {
 
   it("runs for the user's own endpoint once that is agreed to", () => {
     const view = armed({ autoRecognize: true, llmVendor: "custom", customConsentGiven: true });
-    inside(view).scheduleAutoTranscription();
-    vi.advanceTimersByTime(30_000);
+    inside(view).scheduleAutoTranscription([]);
+    vi.advanceTimersByTime(IDLE);
     expect(plugin.runRecognition).toHaveBeenCalledWith(view, true);
   });
 
@@ -351,26 +380,273 @@ describe("automatic transcription", () => {
     [{ autoRecognize: true, llmVendor: "custom", cloudConsentGiven: true }],
   ])("does not run with %j", (settings) => {
     const view = armed(settings);
-    inside(view).scheduleAutoTranscription();
-    vi.advanceTimersByTime(60_000);
+    inside(view).scheduleAutoTranscription([]);
+    vi.advanceTimersByTime(2 * IDLE);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
   });
 
   it("does not run for a provider that stays on the device", () => {
     const view = armed({ autoRecognize: true, cloudConsentGiven: true });
     plugin.activeProvider = () => ({ id: "manual", requiresNetwork: false });
-    inside(view).scheduleAutoTranscription();
-    vi.advanceTimersByTime(60_000);
+    inside(view).scheduleAutoTranscription([]);
+    vi.advanceTimersByTime(2 * IDLE);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
   });
 
   it("a change with the setting off cancels a pending run", () => {
     const view = armed({ autoRecognize: true, cloudConsentGiven: true });
-    inside(view).scheduleAutoTranscription();
+    inside(view).scheduleAutoTranscription([]);
     plugin.settings.autoRecognize = false;
-    inside(view).scheduleAutoTranscription();
-    vi.advanceTimersByTime(60_000);
+    inside(view).scheduleAutoTranscription([]);
+    vi.advanceTimersByTime(2 * IDLE);
     expect(plugin.runRecognition).not.toHaveBeenCalled();
+  });
+  /** What the sidebar's Files tab lists under Transcripts. */
+  const sidebarViews = (view: View) => {
+    const { pageTranscriptViews } = transcripts;
+    return pageTranscriptViews(
+      readTextSection((view as unknown as { noteBody: string }).noteBody),
+      pageKeys(inside(view).doc.pages),
+    );
+  };
+
+  describe("which pages it reads (FineNotes#265 review)", () => {
+    /** A notebook of three inked pages, the view on the first. */
+    function threePages(): View {
+      vi.useFakeTimers();
+      vi.stubGlobal("window", globalThis);
+      const view = openView(100, { autoRecognize: true, cloudConsentGiven: true });
+      const doc = emptyDocument(1024);
+      doc.pages.push(blankPage("p2"), blankPage("p3"));
+      doc.pages.forEach((page, i) =>
+        page.strokes.push({
+          id: `s${i}`,
+          tool: "pen",
+          color: "#000",
+          size: 3,
+          pts: [10, 20, 0.5, 30, 40, 0.5],
+        } as never),
+      );
+      view.setViewData(`# T\n\n%%goodobsidian\n${encodeDocument(doc)}\n%%\n`, true);
+      inside(view).surface = { currentPage: 0 };
+      // As if on screen: a closed note stops a run after its first page.
+      (view as unknown as { mounted: boolean }).mounted = true;
+      return view;
+    }
+    const reader = () => ({
+      id: "llm-byok",
+      requiresNetwork: true,
+      recognize: vi.fn((req: { strokes: { id: string }[] }) =>
+        Promise.resolve({ text: `read ${req.strokes.map((s) => s.id).join()}` }),
+      ),
+    });
+
+    it("reads the page written on, not the page in view", async () => {
+      const view = threePages();
+      const ids = inside(view).doc.pages.map((p) => p.id);
+      inside(view).scheduleAutoTranscription([ids[2]]);
+      const provider = reader();
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(1);
+      expect(provider.recognize.mock.calls[0][0].strokes[0].id).toBe("s2");
+      // Written under the third page's heading.
+      expect(view.getViewData()).toMatch(
+        /### Page 3\n<!--goodobsidian-page [^>]*-->\n<!--goodobsidian-meta [^>]*-->\nread s2/,
+      );
+      // Taken: the next quiet moment has nothing left to read.
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the pages waiting while another run is going, and runs again after", async () => {
+      const view = threePages();
+      const ids = inside(view).doc.pages.map((p) => p.id);
+      inside(view).scheduleAutoTranscription([ids[1]]);
+      vi.advanceTimersByTime(IDLE);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
+      inside(view).transcription = { cancelled: false };
+      const provider = reader();
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(IDLE);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(2);
+      inside(view).transcription = null;
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(1);
+      expect(provider.recognize.mock.calls[0][0].strokes[0].id).toBe("s1");
+    });
+
+    it("says a failure once, then waits before trying the page again", async () => {
+      const view = threePages();
+      const ids = inside(view).doc.pages.map((p) => p.id);
+      inside(view).scheduleAutoTranscription([ids[1]]);
+      const provider = {
+        id: "llm-byok",
+        requiresNetwork: true,
+        recognize: vi.fn(() => Promise.reject(new Error("HTTP 429"))),
+      };
+      const before = notices.length;
+      // As the plugin does: a failure starts the wait.
+      plugin.autoTranscriptionFailed.mockImplementation(() => {
+        plugin.autoTranscriptionWait.mockReturnValue(10 * 60_000);
+        return true;
+      });
+      await view.recognize(provider as never, true);
+      plugin.autoTranscriptionWait.mockReturnValue(0);
+      expect(plugin.autoTranscriptionFailed).toHaveBeenCalledTimes(1);
+      expect(notices).toHaveLength(before + 1);
+      expect(String(notices[before].message)).toMatch(/tries again in 10 minutes/);
+      // The page waits out the pause, longer than the usual wait.
+      vi.advanceTimersByTime(10 * 60_000 - 1);
+      expect(plugin.runRecognition).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
+      // The next failure in a row is not shown again.
+      plugin.autoTranscriptionFailed.mockImplementation(() => false);
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(2);
+      expect(notices).toHaveLength(before + 1);
+      expect(plugin.transcriptionWorked).not.toHaveBeenCalled();
+    });
+
+    it("does not send while a failure's wait is running", async () => {
+      const view = threePages();
+      inside(view).scheduleAutoTranscription([inside(view).doc.pages[0].id]);
+      plugin.autoTranscriptionWait.mockReturnValue(5 * 60_000);
+      const provider = reader();
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).not.toHaveBeenCalled();
+      plugin.autoTranscriptionWait.mockReturnValue(0);
+      vi.advanceTimersByTime(5 * 60_000);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(1);
+      expect(plugin.transcriptionWorked).toHaveBeenCalledTimes(1);
+    });
+
+    it("reads a page written on a few seconds after it is left, not after the long wait", () => {
+      const view = threePages();
+      const ids = inside(view).doc.pages.map((p) => p.id);
+      const shown = (index: number) =>
+        (view as unknown as { pageShown(i: number): void }).pageShown(index);
+      shown(0);
+      inside(view).scheduleAutoTranscription([ids[0]]);
+      // Leaving a page nobody wrote on changes nothing.
+      shown(0);
+      vi.advanceTimersByTime(AUTO_RECOGNIZE_LEAVE_MS);
+      expect(plugin.runRecognition).not.toHaveBeenCalled();
+      shown(1);
+      vi.advanceTimersByTime(AUTO_RECOGNIZE_LEAVE_MS - 1);
+      expect(plugin.runRecognition).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps waiting pages for their notebook when the view opens another, and reads them on return", async () => {
+      const view = threePages();
+      const ids = inside(view).doc.pages.map((p) => p.id);
+      inside(view).scheduleAutoTranscription([ids[2]]);
+      const notebook = view.getViewData();
+      const own = (view as unknown as { file: TFile }).file;
+      // Off screen: the fake surface cannot show another document.
+      (view as unknown as { mounted: boolean }).mounted = false;
+      (view as unknown as { file: TFile }).file = new TFile("Other.notebook.md", 100);
+      view.setViewData(notebookFile(), true);
+      expect(plugin.waiting.get("Physics.notebook.md")).toEqual([ids[2]]);
+      vi.advanceTimersByTime(IDLE);
+      expect(plugin.runRecognition).not.toHaveBeenCalled();
+      (view as unknown as { file: TFile }).file = own;
+      view.setViewData(notebook, true);
+      vi.advanceTimersByTime(AUTO_RECOGNIZE_LEAVE_MS);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
+      const provider = reader();
+      await view.recognize(provider as never, true);
+      expect(provider.recognize.mock.calls[0][0].strokes[0].id).toBe("s2");
+    });
+
+    it("leaves the text view shut, and says the transcript is in the Files tab", async () => {
+      const view = threePages();
+      const provider = reader();
+      await view.transcribe(provider as never, "notebook");
+      expect(provider.recognize).toHaveBeenCalledTimes(3);
+      expect((view as unknown as { textPanelOpen: boolean }).textPanelOpen).toBe(false);
+      expect(String(notices[notices.length - 1].message)).toMatch(/Files tab, under Transcripts/);
+    });
+
+    it("keeps a transcript typed by hand, and puts the new one beside it to compare", async () => {
+      const view = threePages();
+      typing = null;
+      view.typePageTranscript(0);
+      expect(typing).toMatchObject({ page: 1, text: "" });
+      typing!.submit("my own words");
+      const provider = reader();
+      // The page changed since: transcribing it again finds the typed text.
+      (inside(view).doc.pages[0] as unknown as { strokes: unknown[] }).strokes.push({
+        id: "x",
+        tool: "pen",
+        color: "#000",
+        size: 3,
+        pts: [1, 2, 0.5, 3, 4, 0.5],
+      } as never);
+      await view.transcribe(provider as never, "page");
+      expect(String(notices[notices.length - 1].message)).toMatch(/your own transcript/);
+      const views = sidebarViews(view);
+      expect(views[0]).toMatchObject({ text: "my own words", source: "typed" });
+      expect(views[0].pending).toMatch(/^read s0/);
+      // Choosing the new one in the Files tab makes it the page's.
+      (view as unknown as { transcriptAction(k: string, a: string): void }).transcriptAction(
+        views[0].key,
+        "use-new",
+      );
+      expect(sidebarViews(view)[0]).toMatchObject({ source: "ai" });
+      expect(sidebarViews(view)[0].pending).toBeUndefined();
+      // Edit opens the dialog on the page's text as it is now.
+      (view as unknown as { transcriptAction(k: string, a: string): void }).transcriptAction(
+        views[0].key,
+        "edit",
+      );
+      expect(typing).toMatchObject({ page: 1, text: sidebarViews(view)[0].text });
+    });
+
+    it("opens the typing dialog for Manual, and for Transcribe this page without an AI", async () => {
+      const view = threePages();
+      typing = null;
+      await view.transcribe({ id: "manual", requiresNetwork: false } as never, "notebook");
+      expect(typing).toMatchObject({ page: 1 });
+      typing = null;
+      (plugin as unknown as { aiSetup: () => unknown }).aiSetup = () => ({
+        vendor: "anthropic",
+        baseUrl: "",
+        imageVendor: "same",
+        hasKey: () => false,
+      });
+      await view.transcribePageNow();
+      expect(typing).toMatchObject({ page: 1 });
+    });
+
+    it("sends three pages at a time and comes back for the rest", async () => {
+      const view = threePages();
+      const doc = inside(view).doc as unknown as { pages: unknown[] };
+      for (const id of ["p4", "p5"]) {
+        const page = blankPage(id);
+        page.strokes.push({
+          id: `s-${id}`,
+          tool: "pen",
+          color: "#000",
+          size: 3,
+          pts: [1, 2, 0.5, 3, 4, 0.5],
+        } as never);
+        doc.pages.push(page);
+      }
+      inside(view).scheduleAutoTranscription(inside(view).doc.pages.map((p) => p.id));
+      const provider = reader();
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(3);
+      vi.advanceTimersByTime(IDLE);
+      expect(plugin.runRecognition).toHaveBeenCalledTimes(1);
+      await view.recognize(provider as never, true);
+      expect(provider.recognize).toHaveBeenCalledTimes(5);
+    });
   });
 });
 

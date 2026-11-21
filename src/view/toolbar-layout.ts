@@ -825,3 +825,44 @@ export function rememberPenType(
 ): SavedPenType[] {
   return [type, ...recent.filter((each) => each !== type)].slice(0, 8);
 }
+
+// --- A PDF's tab beside the notes ------------------------------------------------
+
+/**
+ * The tools a PDF's tab has (`model/beside-pdfs.ts`): writing on a slide,
+ * highlighting it, rubbing out what was written, the lasso, and moving
+ * about. Text, shapes, pictures, tape and fill stay with the notes.
+ */
+export function isPdfTabTool(tool: string): boolean {
+  return (
+    tool === "pen" ||
+    tool === "highlighter" ||
+    tool === "eraser" ||
+    tool === "select" ||
+    tool === "laser" ||
+    tool === "pan" ||
+    tool === "zoom"
+  );
+}
+
+/** Bar items a PDF's tab hides: what makes or adds something other than ink, and page actions. */
+const PDF_TAB_HIDES: ReadonlySet<BarItemId> = new Set<BarItemId>([
+  "text",
+  "shape",
+  "image",
+  "pdf",
+  "sticker",
+  "sticky",
+  "tape",
+  "fill",
+  "record",
+  "calculator",
+  "ai",
+  "addPage",
+  "share",
+]);
+
+/** Whether a PDF's tab hides `id` from the bar. Pens on buttons of their own stay. */
+export function hiddenOnPdfTab(id: BarItemId): boolean {
+  return PDF_TAB_HIDES.has(id);
+}

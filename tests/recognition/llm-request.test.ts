@@ -34,7 +34,12 @@ import {
 import { buildChatRequest } from "../../src/recognition/ai-chat";
 import { IMAGE_VENDORS, buildImageRequest } from "../../src/recognition/ai-image";
 import { buildAudioRequest } from "../../src/recognition/audio-request";
-import { AI_MAX_EDGE, AI_MAX_PIXELS, aiRenderWidth } from "../../src/recognition/page-render";
+import {
+  AI_MAX_EDGE,
+  AI_MAX_PIXELS,
+  aiCutWidth,
+  aiRenderWidth,
+} from "../../src/recognition/page-render";
 
 const ALL: LlmVendor[] = ["anthropic", "openai", "google", "openrouter", "custom"];
 
@@ -57,6 +62,22 @@ describe("aiRenderWidth", () => {
     expect(aiRenderWidth(1024, 1448)).toBeLessThan(920);
     // A long strip is limited by its long edge.
     expect(aiRenderWidth(4000, 300)).toBe(AI_MAX_EDGE);
+  });
+
+  it("keeps a page cut for transcription at the whole page's scale (FineNotes#265 review)", () => {
+    const whole = { width: 1024, height: 1448 };
+    const full = aiRenderWidth(whole.width, whole.height);
+    // The top third of an A4 page: as wide as the whole page's picture, a third of its pixels.
+    const third = { width: 1024, height: 483 };
+    expect(aiCutWidth(third, whole)).toBe(full);
+    const pixels = (w: number, size: { width: number; height: number }) =>
+      w * ((w * size.height) / size.width);
+    expect(pixels(aiCutWidth(third, whole), third) / pixels(full, whole)).toBeCloseTo(1 / 3, 2);
+    // Alone, the same strip would be blown up to the whole budget.
+    expect(aiRenderWidth(third.width, third.height)).toBeGreaterThan(full * 1.5);
+    // The whole page cut nowhere is the whole page.
+    expect(aiCutWidth(whole, whole)).toBe(full);
+    expect(aiCutWidth(third, { width: 0, height: 0 })).toBe(aiRenderWidth(1024, 483));
   });
 
   it("is 0 for a degenerate page", () => {

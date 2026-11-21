@@ -171,11 +171,11 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     area: "settings",
     title: "Simple look (hide Obsidian's bars)",
     words:
-      "simple look, hide obsidian, clean, distraction free, focus, sidebars, ribbon, status bar, title bar, app look, full app",
-    what: "Hides Obsidian's title bar, status bar, ribbon and sidebars so FineNotes looks like an app of its own; the tabs stay. Turn it off to bring them back.",
+      "simple look, easy mode, hide obsidian, clean, distraction free, focus, sidebars, right sidebar, other plugins, calendar, pomodoro, ribbon, status bar, title bar, app look, full app",
+    what: "Hides Obsidian's title bar, status bar, ribbon and sidebars so FineNotes looks like an app of its own; the tabs stay. While it is on, the buttons under it (or the ⌄ beside Simple look on Home's folder rail) bring back parts one by one: Left sidebar, Right sidebar, Ribbon, Status bar (all off by default; a sidebar brought back starts closed, behind its own button, for other plugins' panels such as a calendar or a timer). With the left sidebar back, Home's folder rail steps aside. Turn the look off to bring everything back.",
     where:
-      "Settings › General › Simple look. Also in Notebook settings (gear), on the Welcome, and the command Simple look: hide or show….",
-    settings: ["simpleLook"],
+      "Settings › General › Simple look, and the buttons under it. Also Home › folder rail › ⌄ beside Simple look, Notebook settings (gear), the Welcome, and the command Simple look: hide or show….",
+    settings: ["simpleLook", "simpleLookShow"],
     commands: ["toggle-simple-look"],
     feature: "simpleLook",
   },
@@ -245,10 +245,10 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     title: "Stylus side button",
     words:
       "side button, barrel button, stylus button, pen button, wacom, surface pen, samsung s pen, eraser button",
-    what: "What a pen's side button does while you write: Erase (default), Lasso select, Move the page or Nothing; and what a click above the page does: open the pen menu (default), switch to the eraser, or nothing. A pen's eraser end always erases.",
+    what: "What a pen's side button does while you write: Erase (default), Erase, also hovering (the button held with the pen just above the page erases what it passes over), Lasso select, Move the page or Nothing; and what a click above the page does: open the pen menu (default), switch to the eraser, or nothing. A pen's eraser end always erases.",
     where: "Settings › Writing › Stylus side button",
     notes:
-      "Apple Pencil has no side button, so the click choice is hidden on iPad and iPhone. Holding the button while writing may not work on Android tablets.",
+      "Apple Pencil has no side button, so the click choice is hidden on iPad and iPhone. Holding the button while writing may not work on Android tablets; Erase, also hovering does.",
     settings: ["barrelButton", "stylusButtonClick"],
   },
   {
@@ -455,7 +455,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     title: "Handwriting recognition (transcribe with AI)",
     words:
       "handwriting recognition, transcribe notebook, cloud ai transcription, text layer, automatic transcription",
-    what: "What the Transcribe this notebook's handwriting command uses: Manual (default; you type the text yourself in the text layer), Cloud AI (an image of each page goes to your AI service), or Cloud AI by itself after you write (about 30 seconds after you stop, only changed pages).",
+    what: "What the Transcribe this notebook's handwriting command uses: Manual (default; you type the text yourself in the text layer), Cloud AI (an image of each page goes to your AI service), or Cloud AI by itself after you write (a page once you turn away from it or after 5 minutes without writing, only changed pages).",
     where: "Settings › AI › Handwriting recognition",
     notes: "Separate from Grape, which reads on the device for search.",
     settings: ["recognitionProviderId", "autoRecognize"],
@@ -1778,9 +1778,11 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     id: "barrelButton",
     area: "page",
     title: "Stylus side button while writing",
-    words: "side button, barrel button, pen button, s pen, wacom button, erase with button",
-    what: "Holding a tablet pen's side button while writing erases (default), lassos, moves the page, or does nothing.",
-    where: 'Settings › "Stylus side button" (Erase, Lasso select, Move the page, Nothing).',
+    words:
+      "side button, barrel button, pen button, s pen, wacom button, erase with button, erase on hover, hover erase",
+    what: "Holding a tablet pen's side button while writing erases (default), lassos, moves the page, or does nothing. Erase, also hovering erases with the pen held just above the page too, the button held: the way to erase with the S Pen's button on Android.",
+    where:
+      'Settings › "Stylus side button" (Erase, Erase also hovering, Lasso select, Move the page, Nothing).',
     notes: "desktop/Android pens with a side button (not the Apple Pencil)",
     settings: ["barrelButton"],
   },
@@ -2441,6 +2443,16 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
       "sort, order, by name, by date, last edited, date created, page count, list view, grid view, hide files, notebooks only",
     what: 'The Sort button\'s menu: Select items, Grid or List, "Notebooks only" (hides other files), and sort by Date created, Last edited, Name or Pages (tap the current one again to reverse).',
     where: "Home › Sort (up-down arrows icon)",
+  },
+  {
+    id: "homeHide",
+    area: "notebooks",
+    title: "Hide notebooks and files from Home",
+    words:
+      "hide, hide notebook, hide file, unhide, show hidden, declutter, archive, take off home, hidden items",
+    what: 'A cover\'s or folder\'s ⌄ menu has "Hide from Home": the item (and all a folder holds) leaves Home, Continue, the folder rail and search; the file stays in the vault. Sort › "Show hidden items" (there only while something is hidden) shows them dimmed, and their ⌄ menu has "Show on Home".',
+    where: "Home › an item's ⌄ › Hide from Home; Home › Sort › Show hidden items",
+    settings: ["libraryHidden"],
   },
   {
     id: "homeFavorites",
@@ -3195,6 +3207,19 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     settings: ["llmVendor", "llmModel", "llmModels", "apiKeys", "llmBaseUrl"],
   },
   {
+    id: "aiModelChoice",
+    area: "ai",
+    title: "A cheaper model for transcription, and a fallback model",
+    words:
+      "transcription model, cheaper model, different model, second model, fallback model, backup model, rate limit, quota, 429, too many requests, out of credits, free model",
+    what: 'Transcription can use a model of its own: type it in "Page transcription model" (empty uses "AI model"), so automatic transcription can run on a cheap model while Ask AI keeps a stronger one. It can also use another service with its own API key: pick it in "Transcribe pages with" (for example Gemini for transcription while Ask uses Claude), then add that service\'s key in the row that appears below. "Fallback model" is tried once when the model is turned down for its rate limit or quota (also when OpenRouter credits run out or Claude is overloaded), for transcription and Ask alike; a wrong key or any other error is shown at once. The fallback is a model of the AI service, so it is not used when transcription has a service of its own. Each service remembers its own models.',
+    where:
+      'Settings › AI › Transcribing › "Transcribe pages with", "Page transcription model" and "<Service> API key for transcription". Settings › AI › Service › "Fallback model".',
+    notes:
+      "In Ask AI, the fallback takes over only when the first request of an answer is turned down; once the notebook's tools have run, the answer stays with the model that began it.",
+    settings: ["transcribeVendor", "llmTranscribeModel", "llmFallbackModel"],
+  },
+  {
     id: "apiKeyStorage",
     area: "ai",
     title: "Where API keys are stored",
@@ -3470,8 +3495,8 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     area: "ai",
     title: "Transcribe automatically after writing",
     words:
-      "auto transcribe, automatic recognition, background transcription, recognize automatically",
-    what: "About 30 seconds after you stop writing, the page you are on is transcribed by cloud AI in the background, and only when it changed. It works only after you have agreed to send once (run a transcription by hand first).",
+      "auto transcribe, automatic recognition, background transcription, recognize automatically, transcribe now, transcribe this page, when does it transcribe, where is my transcript, transcript list, compare transcripts, type transcript, transcribe by hand, manual transcription, overwritten transcript",
+    what: "A page you wrote on is transcribed by cloud AI in the background once you are done with it: a few seconds after you turn to another page, or after 5 minutes without writing on it, and only when it changed. A page still waiting when you close the notebook is read when you open it again. To have the page in view transcribed right away, use AI menu › \"Transcribe this page\" (or the command of that name); without an AI set up, the same entry lets you type the page's transcript yourself. Every page's transcription is listed in the sidebar's Files tab under Transcripts (where it came from: AI, this device, typed or edited by you); tap one to read it, edit it or go to its page. A transcript you typed or edited is never overwritten: a new transcription waits beside it, marked with a dot, and you keep one of the two there. After a failure (a spent quota, a wrong key, no connection) it says so once and waits 10 minutes, then longer, before trying again. It works only after you have agreed to send once (run a transcription by hand first).",
     where:
       'Settings › AI › Transcribing › "Handwriting recognition" › "Cloud AI, by itself after you write".',
     notes: "needs a key and internet.",

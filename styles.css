@@ -1769,11 +1769,14 @@ select.goodobsidian-choice-select {
    ribbons, a few boards rather than a hundred pages; the grid starts where
    the chip stood. */
 .goodobsidian-pagesidebar.is-board .goodobsidian-pagesidebar-filter.clickable-icon,
-.goodobsidian-pagesidebar.is-board .goodobsidian-thumb-ribbon {
+.goodobsidian-pagesidebar.is-board .goodobsidian-thumb-ribbon,
+.goodobsidian-pagesidebar.is-pdf-tab .goodobsidian-pagesidebar-filter.clickable-icon,
+.goodobsidian-pagesidebar.is-pdf-tab .goodobsidian-thumb-ribbon {
   display: none;
 }
 
-.goodobsidian-pagesidebar.is-board .goodobsidian-pagesidebar-grid {
+.goodobsidian-pagesidebar.is-board .goodobsidian-pagesidebar-grid,
+.goodobsidian-pagesidebar.is-pdf-tab .goodobsidian-pagesidebar-grid {
   padding-top: 12px;
 }
 
@@ -5991,8 +5994,9 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   opacity: 0.4;
 }
 
-/* A 44 px target around a 30 px dot; the selected one is ringed in the
-   accent colour, which reads on light and dark themes alike. */
+/* A 44 px target around a 30 px dot; the selected dot is ringed in the
+   accent colour past a gap, as every colour picker marks its choice
+   (FineNotes#240: the button's own border made it a double ring). */
 .goodobsidian-cover-swatch {
   display: inline-flex;
   align-items: center;
@@ -6000,20 +6004,17 @@ button.goodobsidian-import-help-toggle.clickable-icon {
   width: var(--gob-touch);
   height: var(--gob-touch);
   padding: 0;
-  border: 2px solid transparent;
+  border: none;
   border-radius: 50%;
   background: transparent;
   box-shadow: none;
   cursor: pointer;
 }
 
-/* Outranks a theme's .clickable-icon padding (FineNotes#240). */
+/* Outranks a theme's .clickable-icon padding and border (FineNotes#240). */
 button.goodobsidian-cover-swatch.clickable-icon {
   padding: 0;
-}
-
-.goodobsidian-cover-swatch.is-selected {
-  border-color: var(--interactive-accent);
+  border: none;
 }
 
 .goodobsidian-cover-swatch.is-selected .goodobsidian-cover-swatch-dot {
@@ -13012,6 +13013,68 @@ button.goodobsidian-learn-button.is-learning {
   font-size: var(--font-ui-small);
 }
 
+/* A page's transcription under Transcripts (FineNotes#265): a row that opens
+   in place to its text, or to two versions to choose between. */
+.goodobsidian-files-transcript + .goodobsidian-files-transcript,
+.goodobsidian-files-transcript + .goodobsidian-files-row {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.goodobsidian-files-row-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-inline-start: auto;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-files-transcript-open {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px 42px;
+}
+
+.goodobsidian-files-transcript-text {
+  max-height: 240px;
+  overflow-y: auto;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.goodobsidian-files-transcript-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.goodobsidian-files-transcript-version {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+}
+
+.goodobsidian-files-transcript-version > button {
+  align-self: flex-start;
+}
+
+.goodobsidian-files-transcript-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+}
+
+.goodobsidian-transcript-input {
+  min-height: 240px;
+}
+
 /* While the iPad keyboard is up, the line under the chat's tools gives its
    room to the field (AskChat, ask-ai-modal.ts). */
 .goodobsidian-chat.is-typing .goodobsidian-chat-note {
@@ -13816,7 +13879,7 @@ button.goodobsidian-gallery-chip.clickable-icon.is-active {
   margin: 8px 0 4px;
   padding: 10px 12px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: var(--gob-radius-m, 8px);
+  border-radius: var(--gob-radius-m);
   background: var(--background-secondary);
 }
 
@@ -17485,19 +17548,66 @@ button.goodobsidian-edit-menu-row {
 
 /* --- The simple look (model/simple-mode.ts) ----------------------------- */
 
-/* Obsidian's own chrome tucked away; the tabs stay. Nothing is removed. */
-body.goodobsidian-simple .status-bar,
-body.goodobsidian-simple .workspace-ribbon,
-body.goodobsidian-simple .workspace-split.mod-left-split,
-body.goodobsidian-simple .workspace-split.mod-right-split,
-body.goodobsidian-simple .workspace-drawer,
-body.goodobsidian-simple .sidebar-toggle-button {
+/* Obsidian's own chrome tucked away; the tabs stay. Nothing is removed. Each
+   part can be shown again (settings, or Home's rail ⌄); all are hidden by
+   default. A sidebar shown again starts closed, behind its own button. */
+body.goodobsidian-simple:not(.goodobsidian-simple-show-statusBar) .status-bar,
+body.goodobsidian-simple:not(.goodobsidian-simple-show-ribbon) .workspace-ribbon,
+body.goodobsidian-simple:not(.goodobsidian-simple-show-leftSidebar)
+  :is(.workspace-split.mod-left-split, .workspace-drawer.mod-left, .sidebar-toggle-button.mod-left),
+body.goodobsidian-simple:not(.goodobsidian-simple-show-rightSidebar)
+  :is(
+    .workspace-split.mod-right-split,
+    .workspace-drawer.mod-right,
+    .sidebar-toggle-button.mod-right
+  ) {
   display: none;
 }
 body.goodobsidian-simple
   .workspace-leaf-content:is([data-type="goodobsidian-view"], [data-type="finenotes-library"])
   > .view-header {
   display: none;
+}
+
+/* Settings › General, under the simple look's switch: the parts it can show again. */
+.goodobsidian-simple-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  /* Lined up with the row's name, past its 72 px drawing, and tucked under
+     that row: its name and switch above, these under them. */
+  margin-top: calc(-1 * var(--setting-items-padding-y, 12px));
+  padding: 0 var(--setting-items-padding-x, 16px) var(--setting-items-padding-y, 12px)
+    calc(var(--setting-items-padding-x, 16px) + 72px + var(--size-4-3, 12px));
+}
+/* One row with the switch above: no divider between them. */
+.setting-group .setting-item.goodobsidian-simple-parts-row::before {
+  display: none;
+}
+button.goodobsidian-simple-part.clickable-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--gob-touch-compact, 36px);
+  padding: 0 12px;
+  border: 1px solid var(--gob-line);
+  border-radius: 999px;
+  background: var(--gob-well);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+button.goodobsidian-simple-part.clickable-icon.is-on {
+  border-color: hsla(var(--interactive-accent-hsl), 0.45);
+  background: hsla(var(--interactive-accent-hsl), 0.14);
+  color: var(--text-normal);
+}
+.goodobsidian-simple-part-icon {
+  display: inline-flex;
+}
+.goodobsidian-simple-part-icon .svg-icon {
+  width: 14px;
+  height: 14px;
 }
 
 /* --- Notebook library (src/view/library-view.ts) ------------------------- */
@@ -17751,6 +17861,14 @@ button.goodobsidian-library-new:active {
 }
 .goodobsidian-library-card.is-dragging {
   opacity: 0.45;
+}
+/* Hidden from Home, shown while "Show hidden items" is on. */
+.goodobsidian-library-card.is-off-home .goodobsidian-library-cover {
+  opacity: 0.4;
+  filter: grayscale(0.6);
+}
+.goodobsidian-library-card.is-off-home .goodobsidian-library-caption {
+  opacity: 0.6;
 }
 .goodobsidian-library-card.is-drop .goodobsidian-library-cover {
   transform: scale(1.06);
@@ -22461,4 +22579,638 @@ button:not(.clickable-icon).goodobsidian-share-all,
   font-size: var(--font-ui-small);
   font-variant-numeric: tabular-nums;
   text-align: center;
+}
+
+/* --- PDF tabs beside the notes ------------------------------------------------
+   pdf-tab-strip.ts and ink-view.ts (showTab). A strip under the tool bar,
+   shown once a PDF is attached, drawn like Obsidian's own tab headers (not
+   like the binder tabs on the page's edge). At the end of the file: the
+   bar's rules above also style the buttons hidden here. */
+
+.goodobsidian-pdf-tabs {
+  position: relative;
+  z-index: 19;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  gap: 2px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 4px 8px 0;
+  background: var(--tab-container-background, var(--gob-bar-bg));
+  border-bottom: 1px solid var(--tab-outline-color, var(--gob-line));
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-pdf-tabs.is-hidden {
+  display: none;
+}
+
+/* Many tabs: the strip scrolls sideways, never wraps. */
+.goodobsidian-pdf-tabs-list {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.goodobsidian-pdf-tabs-list::-webkit-scrollbar {
+  display: none;
+}
+
+.goodobsidian-pdf-tab {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  max-width: 200px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--tab-radius, 6px) var(--tab-radius, 6px) 0 0;
+  color: var(--tab-text-color, var(--text-muted));
+}
+
+.goodobsidian-pdf-tab.is-active {
+  background: var(--tab-background-active, var(--background-primary));
+  border-color: var(--tab-outline-color, var(--gob-line));
+  color: var(--tab-text-color-active, var(--text-normal));
+}
+
+/* A file that is gone: grey and italic, its slides and marks kept. */
+.goodobsidian-pdf-tab.is-missing {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.goodobsidian-pdf-tabs button.goodobsidian-pdf-tab-main.clickable-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font-size: var(--tab-font-size, var(--font-ui-small));
+  font-weight: var(--tab-font-weight, inherit);
+  white-space: nowrap;
+}
+
+.goodobsidian-pdf-tab.is-active button.goodobsidian-pdf-tab-main.clickable-icon {
+  padding-right: 4px;
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-pdf-tab:not(.is-active) button.goodobsidian-pdf-tab-main.clickable-icon:hover {
+  background: var(--tab-background-hover, var(--background-modifier-hover));
+}
+
+.goodobsidian-pdf-tab-icon {
+  display: flex;
+  flex: none;
+}
+
+.goodobsidian-pdf-tab-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-pdf-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-pdf-tabs button.goodobsidian-pdf-tab-close.clickable-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 36px;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+.goodobsidian-pdf-tab-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-pdf-tabs button.goodobsidian-pdf-tab-find.clickable-icon {
+  flex: none;
+  height: 26px;
+  margin-left: 2px;
+  padding: 0 10px;
+  border-radius: var(--gob-radius-pill);
+  background: hsla(var(--interactive-accent-hsl), 0.14);
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+  font-style: normal;
+  white-space: normal;
+}
+
+.goodobsidian-pdf-tabs button.goodobsidian-pdf-tab-plus.clickable-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+/* Its chevron folds it away (pdf-tab-strip.ts, setCollapsed), at the right end. */
+.goodobsidian-pdf-tabs button.goodobsidian-pdf-tabs-fold.clickable-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+/* Folded away: no height, so the page and the pill take the room back;
+   only the caret stays, floating over the page's top-left edge. */
+.goodobsidian-pdf-tabs.is-collapsed {
+  height: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+.goodobsidian-pdf-tabs.is-collapsed > .goodobsidian-pdf-tabs-list,
+.goodobsidian-pdf-tabs.is-collapsed > button.goodobsidian-pdf-tab-plus,
+.goodobsidian-pdf-tabs.is-collapsed > button.goodobsidian-pdf-tabs-fold {
+  display: none;
+}
+
+.goodobsidian-pdf-tabs button.goodobsidian-pdf-tabs-caret.clickable-icon {
+  position: absolute;
+  top: 0;
+  left: 8px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 32px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--tab-outline-color, var(--gob-line));
+  border-top: none;
+  border-radius: 0 0 var(--tab-radius, 6px) var(--tab-radius, 6px);
+  background: var(--tab-container-background, var(--gob-bar-bg));
+  box-shadow: var(--gob-shadow-mark);
+  color: var(--text-muted);
+}
+
+.goodobsidian-pdf-tabs.is-collapsed > button.goodobsidian-pdf-tabs-caret.clickable-icon {
+  display: flex;
+}
+
+.goodobsidian-pdf-tabs-caret-mark {
+  display: none;
+  color: var(--text-accent);
+}
+
+.goodobsidian-pdf-tabs-caret.is-pdf > .goodobsidian-pdf-tabs-caret-mark {
+  display: flex;
+}
+
+.goodobsidian-pdf-tabs-caret-mark svg,
+.goodobsidian-pdf-tabs-caret-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-pdf-tabs-caret-icon {
+  display: flex;
+}
+
+/* With the bar at a side the view is a grid (bar-dock): the strip takes the
+   first row of the page's column, and the page the row under it. */
+.goodobsidian-view.goodobsidian-has-pdf-tabs.goodobsidian-bar-at-left,
+.goodobsidian-view.goodobsidian-has-pdf-tabs.goodobsidian-bar-at-right {
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left > .goodobsidian-pdf-tabs {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-right > .goodobsidian-pdf-tabs {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.goodobsidian-view.goodobsidian-bar-at-left.goodobsidian-has-pill-row > .goodobsidian-pdf-tabs {
+  grid-column: 3;
+}
+
+.goodobsidian-view.goodobsidian-has-pdf-tabs.goodobsidian-bar-at-left > .goodobsidian-body,
+.goodobsidian-view.goodobsidian-has-pdf-tabs.goodobsidian-bar-at-right > .goodobsidian-body {
+  grid-row: 2;
+}
+
+/* On a PDF's tab the bar keeps its few tools (toolbar.ts, setPdfTab). */
+.goodobsidian-toolbar .goodobsidian-bar-group > button.goodobsidian-tool.is-pdf-tab-off,
+.goodobsidian-toolbar .goodobsidian-bar-group > button.is-pdf-tab-off {
+  display: none;
+}
+
+/* The + list (PdfTabsPopover). */
+.goodobsidian-pdf-tabs-popover {
+  position: fixed;
+  z-index: var(--layer-popover, 30);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  max-height: calc(100vh - 16px);
+  padding: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  color: var(--text-normal);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-pdf-tabs-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  border-radius: var(--gob-radius-m);
+  background: var(--background-modifier-form-field, var(--background-secondary));
+  color: var(--text-muted);
+}
+
+.goodobsidian-pdf-tabs-search-icon {
+  display: flex;
+}
+
+.goodobsidian-pdf-tabs-search-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 16 px: iPadOS zooms the page into a smaller field on focus. */
+.goodobsidian-pdf-tabs-search input[type="search"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  font-size: 16px;
+}
+
+.goodobsidian-pdf-tabs-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.goodobsidian-pdf-tabs-heading {
+  padding: 8px 8px 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-pdf-tabs-popover button.goodobsidian-pdf-tabs-row.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  height: auto;
+  padding: 6px 8px;
+  border-radius: var(--gob-radius-m);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  text-align: start;
+  white-space: normal;
+}
+
+.goodobsidian-pdf-tabs-popover button.goodobsidian-pdf-tabs-row.clickable-icon.is-missing {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.goodobsidian-pdf-tabs-row-icon {
+  display: flex;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.goodobsidian-pdf-tabs-row-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.goodobsidian-pdf-tabs-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goodobsidian-pdf-tabs-open {
+  display: flex;
+  flex: none;
+  color: var(--text-accent);
+}
+
+.goodobsidian-pdf-tabs-open svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Beside the notebook, not attached yet: a dot. */
+.goodobsidian-pdf-tabs-new {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+}
+
+.goodobsidian-pdf-tabs-more {
+  padding: 2px 8px 4px 36px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Import PDF: keep it beside the notes, or write on it (pdf-import-modal.ts). */
+.goodobsidian-pdf-import-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.goodobsidian-pdf-import-choices button.goodobsidian-pdf-import-choice.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  width: 100%;
+  height: auto;
+  min-height: 60px;
+  padding: 10px 16px;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-radius-l);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  text-align: start;
+  white-space: normal;
+}
+
+.goodobsidian-pdf-import-choices button.goodobsidian-pdf-import-choice.clickable-icon.mod-cta {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-pdf-import-choice-icon {
+  display: flex;
+  flex: none;
+}
+
+.goodobsidian-pdf-import-choice-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.goodobsidian-pdf-import-choice-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.goodobsidian-pdf-import-choice-title {
+  font-weight: var(--font-semibold, 600);
+}
+
+.goodobsidian-pdf-import-choice-info {
+  font-size: var(--font-ui-smaller);
+  opacity: 0.8;
+}
+
+/* Snippets (model/snippet.ts): an area lassoed on a PDF's tab is pressed
+   and dragged onto the notes. The area takes the press, faintly filled; while
+   it is carried its loop hides and a ghost of the picture follows the
+   pointer; the Notes tab lights while the ghost rests on it. */
+.goodobsidian-snippet-grip {
+  position: absolute;
+  border-radius: 4px;
+  background: hsla(var(--interactive-accent-hsl), 0.08);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Under the area, where it goes: grip, arrow, Notes (ink-surface.ts,
+   addSnippetGrip). A mark, and a handle: pressing it drags the area too,
+   with a finger as well. The press target is 44 px tall; the chip shows 28. */
+.goodobsidian-snippet-chip {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 4px;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  transform: translate(-50%, 0);
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.goodobsidian-snippet-chip::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  right: 0;
+  left: 0;
+  height: 28px;
+  border-radius: var(--gob-radius-pill, 999px);
+  background: var(--interactive-accent);
+  box-shadow: var(--gob-shadow-float);
+}
+
+.goodobsidian-snippet-chip-icon {
+  position: relative;
+  display: flex;
+  padding: 0 3px;
+  color: var(--text-on-accent);
+}
+
+.goodobsidian-snippet-chip-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.goodobsidian-snippet-chip-icon.is-arrow svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0.8;
+}
+
+/* The first time on this device, in words, under the chip; any press ends it. */
+.goodobsidian-snippet-hint {
+  position: absolute;
+  max-width: 240px;
+  margin-top: 48px;
+  padding: 6px 10px;
+  border-radius: var(--gob-radius-m, 8px);
+  background: var(--background-primary);
+  box-shadow: var(--gob-shadow-float);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+  transform: translate(-50%, 0);
+  pointer-events: none;
+}
+
+.goodobsidian-empty-lasso.is-carried {
+  visibility: hidden;
+}
+
+.goodobsidian-snippet-ghost {
+  position: fixed;
+  z-index: var(--layer-dragged-item, 1000);
+  overflow: hidden;
+  border: 2px solid var(--interactive-accent);
+  border-radius: 6px;
+  background: hsla(var(--interactive-accent-hsl), 0.12);
+  box-shadow: var(--gob-shadow-float);
+  opacity: 0.92;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* Over a tab, it hangs below the pointer so the tab shows lit. */
+.goodobsidian-snippet-ghost.is-hanging {
+  transform: translate(-50%, 18px);
+}
+
+.goodobsidian-snippet-ghost.has-picture {
+  background: #fff;
+}
+
+/* Over the notes it takes the size it will land at (snippet-drag.ts,
+   landingSize), easing there. */
+.goodobsidian-snippet-ghost.is-landing {
+  transition:
+    width 0.15s ease-out,
+    height 0.15s ease-out;
+}
+
+.goodobsidian-snippet-ghost img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}
+
+.goodobsidian-pdf-tab.is-drop-target {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+  color: var(--text-accent);
+}
+
+/* The slide chip on a snippet (slide-dots.ts): a small accent chip at the
+   picture's top-right corner, the slides icon and the slide's number, on a
+   target of 32 px or more; a tap opens the slide. The button never sets its
+   own display, so .is-hidden still hides it. */
+.goodobsidian-slide-dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.goodobsidian-slide-dots.is-hidden,
+.goodobsidian-slide-dot.is-hidden {
+  display: none;
+}
+
+button.goodobsidian-slide-dot.clickable-icon {
+  position: absolute;
+  min-width: 44px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--gob-radius-pill, 999px);
+  background: transparent;
+  box-shadow: none;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.goodobsidian-slide-chip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 7px 0 6px;
+  border-radius: var(--gob-radius-pill, 999px);
+  background: var(--interactive-accent);
+  box-shadow: var(--gob-shadow-mark);
+  color: var(--text-on-accent);
+  font-size: 12px;
+  font-weight: var(--font-semibold, 600);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+
+.goodobsidian-slide-chip-icon {
+  display: flex;
+}
+
+.goodobsidian-slide-chip-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+button.goodobsidian-slide-dot.clickable-icon:hover .goodobsidian-slide-chip,
+button.goodobsidian-slide-dot.clickable-icon[data-pressed] .goodobsidian-slide-chip {
+  background: var(--interactive-accent-hover);
 }

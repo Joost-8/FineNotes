@@ -220,11 +220,12 @@ class Rig {
 }
 
 describe("attaching", () => {
-  it("listens for the four pointer events, and detach stops listening", () => {
+  it("listens for the pointer events, a pen leaving included, and detach stops listening", () => {
     const rig = new Rig();
     expect([...rig.el.listeners.keys()].sort()).toEqual([
       "pointercancel",
       "pointerdown",
+      "pointerleave",
       "pointermove",
       "pointerup",
     ]);
@@ -1486,5 +1487,174 @@ describe("the side button held as the pen touches down, as Android's WebView rep
     fire("pointermove", { x: 10, y: 10, t: 0, buttons: 1, pressure: 0 });
     fire("pointerdown", { x: 10, y: 10, t: 40, button: 5, buttons: 33, pressure: 0.4 });
     expect(log).toEqual(["route buttons=33", "start buttons=33"]);
+  });
+});
+
+describe("erase on hover: the side button held with the pen in the air (discussion #209)", () => {
+  /** A controller with erase on hover on or off, logging strokes, routes and passes. */
+  function hoverRig(opts: { on?: boolean; route?: PressRoute; clicks?: boolean } = {}) {
+    const el = new StandInElement();
+    const log: string[] = [];
+    const enabled = { on: opts.on ?? true };
+    const at = (s: PointerSample): string => `${s.x - 1000},${s.y - 2000}`;
+    const controller = new PointerController(
+      el as unknown as HTMLElement,
+      toSurface,
+      {
+        onStart: (s, press) => log.push(`start ${at(s)} buttons=${press.buttons}`),
+        onMove: (c) => log.push(`move ${c.map(at).join(" ")}`),
+        onEnd: (s) => log.push(`end ${at(s)}`),
+        onCancel: () => log.push("cancel"),
+        onStylusClick: () => log.push("click"),
+        onHoverErase: (kind) => log.push(`pass ${kind}`),
+      },
+      {
+        route: () => opts.route ?? "draw",
+        stylusClicks: () => opts.clicks ?? true,
+        hoverErase: () => enabled.on,
+      },
+    );
+    controller.attach();
+    const fire = (phase: Phase | "pointerleave", c: Contact): void => {
+      el.listeners.get(phase)?.(eventFor(1, "pen", c));
+    };
+    /** A hovering move as Android's WebView sends it: the button as the contact bit, no pressure. */
+    const hover = (x: number, t: number, button = true, more: Partial<Contact> = {}): void =>
+      fire("pointermove", { x, y: 10, t, buttons: button ? 1 : 0, pressure: 0, ...more });
+    return { log, fire, hover, enabled, controller };
+  }
+
+  it("erases what the hovering pen passes over, from where the button was seen, as one stroke", () => {
+    const { log, hover } = hoverRig();
+    hover(0, 0, false);
+    hover(10, 16);
+    hover(15, 32);
+    hover(40, 48);
+    hover(60, 64);
+    hover(61, 80, false);
+    expect(log).toEqual([
+      "start 10,10 buttons=2",
+      "pass start",
+      "move 40,10",
+      "move 60,10",
+      "end 60,10",
+      "pass end",
+    ]);
+  });
+
+  it("hears the barrel bit too, as a desktop driver may report hovering moves", () => {
+    const { log, fire } = hoverRig({ clicks: false });
+    fire("pointermove", { x: 0, y: 10, t: 0, buttons: 2, pressure: 0 });
+    fire("pointermove", { x: 30, y: 10, t: 16, buttons: 2, pressure: 0 });
+    fire("pointermove", { x: 30, y: 10, t: 32, buttons: 0, pressure: 0 });
+    expect(log).toEqual([
+      "start 0,10 buttons=2",
+      "pass start",
+      "move 30,10",
+      "end 30,10",
+      "pass end",
+    ]);
+  });
+
+  it("passes on every coalesced sample of a hovering move", () => {
+    const { log, hover } = hoverRig();
+    hover(0, 0);
+    hover(30, 32, true, {
+      coalesced: [
+        { x: 20, y: 10, t: 24, buttons: 1, pressure: 0 },
+        { x: 30, y: 10, t: 32, buttons: 1, pressure: 0 },
+      ],
+    });
+    expect(log).toEqual(["start 0,10 buttons=2", "pass start", "move 20,10 30,10"]);
+  });
+
+  it("keeps a click a click: a press that hardly moves erases nothing", () => {
+    const { log, hover } = hoverRig();
+    hover(0, 0, false);
+    hover(0, 100);
+    hover(4, 200);
+    hover(4, 300, false);
+    expect(log).toEqual(["click"]);
+  });
+
+  it("does nothing with the setting off", () => {
+    const { log, hover, enabled } = hoverRig({ on: false, clicks: false });
+    hover(0, 0);
+    hover(40, 16);
+    hover(80, 32);
+    expect(log).toEqual([]);
+    // Turned on mid-hover, the pass counts its travel from there.
+    enabled.on = true;
+    hover(85, 48);
+    hover(120, 64);
+    expect(log).toEqual(["start 85,10 buttons=2", "pass start", "move 120,10"]);
+  });
+
+  it("opens no pass where the press would not draw", () => {
+    const { log, hover } = hoverRig({ route: "ignore", clicks: false });
+    hover(0, 0);
+    hover(40, 16);
+    hover(80, 32);
+    expect(log).toEqual([]);
+  });
+
+  it("ends the pass when the pen touches down, before the press begins", () => {
+    const { log, hover, fire } = hoverRig({ clicks: false });
+    hover(0, 0);
+    hover(30, 16);
+    fire("pointerdown", { x: 32, y: 10, t: 40, button: 0, buttons: 1, pressure: 0.4 });
+    expect(log).toEqual([
+      "start 0,10 buttons=2",
+      "pass start",
+      "move 30,10",
+      "end 30,10",
+      "pass end",
+      "start 32,10 buttons=3",
+    ]);
+  });
+
+  it("ends the pass when the pen leaves the page", () => {
+    const { log, hover, fire } = hoverRig({ clicks: false });
+    hover(0, 0);
+    hover(30, 16);
+    fire("pointerleave", { x: 35, y: 10, t: 40, buttons: 1, pressure: 0 });
+    hover(40, 400, false);
+    expect(log.slice(-2)).toEqual(["end 30,10", "pass end"]);
+  });
+
+  it("starts afresh when the pen comes back elsewhere after a pause", () => {
+    const { log, hover } = hoverRig({ clicks: false });
+    hover(0, 0);
+    hover(30, 16);
+    hover(300, 600);
+    hover(340, 616);
+    expect(log).toEqual([
+      "start 0,10 buttons=2",
+      "pass start",
+      "move 30,10",
+      "end 30,10",
+      "pass restart",
+      "start 300,10 buttons=2",
+      "pass start",
+      "move 340,10",
+    ]);
+  });
+
+  it("logs the pen's hover and button events for the diagnostics", () => {
+    const { hover, fire, controller } = hoverRig({ clicks: false });
+    hover(0, 0, false);
+    hover(0, 16);
+    hover(30, 32);
+    fire("pointerdown", { x: 30, y: 10, t: 48, button: 0, buttons: 1, pressure: 0.4 });
+    fire("pointerup", { x: 30, y: 10, t: 64, button: 0, buttons: 0, pressure: 0 });
+    controller.logPen("contextmenu", { buttons: 2, button: 2, pressure: 0, timeStamp: 80 });
+    expect(controller.penReport()).toEqual([
+      { e: "move", bs: 0, b: 0, p: 0, t: 0, h: "idle" },
+      { e: "move", bs: 1, b: 0, p: 0, t: 16, h: "wait" },
+      { e: "move", bs: 1, b: 0, p: 0, t: 32, h: "start" },
+      { e: "down", bs: 1, b: 0, p: 0.4, t: 48 },
+      { e: "up", bs: 0, b: 0, p: 0, t: 64 },
+      { e: "contextmenu", bs: 2, b: 2, p: 0, t: 80 },
+    ]);
   });
 });

@@ -134,7 +134,6 @@ export const view = {
 
   // Transcription
   "view.transcribe.running": "FineNotes: a transcription is already running.",
-  "view.transcribe.manual": "FineNotes: manual transcription — type it in the text-layer panel.",
   "view.transcribe.progress": "FineNotes: transcribing…",
   "view.transcribe.cleared.one":
     "FineNotes: cleared the transcription of a page that no longer has any writing.",
@@ -146,15 +145,20 @@ export const view = {
   "view.transcribe.progressPageOf":
     "FineNotes: transcribing page {page} ({n} of {total})… Tap to stop.",
   "view.transcribe.failed": "FineNotes: transcription failed on page {page}: {message}",
+  "view.transcribe.autoWaits": "Automatic transcription tries again in 10 minutes.",
   "view.transcribe.failedSaved.one":
     "FineNotes: transcription failed on page {page}: {message} (the {count} page before it were saved)",
   "view.transcribe.failedSaved.other":
     "FineNotes: transcription failed on page {page}: {message} (the {count} pages before it were saved)",
   "view.transcribe.stopped": "FineNotes: stopped — transcribed {done} of {total} pages.",
-  "view.transcribe.done.one":
-    "FineNotes: transcribed the page into the text layer — review and edit it.",
-  "view.transcribe.done.other":
-    "FineNotes: transcribed {count} pages into the text layer — review and edit it.",
+  "view.transcribe.ready.one":
+    "FineNotes: page transcribed. Tap to read it in the sidebar's Files tab, under Transcripts.",
+  "view.transcribe.ready.other":
+    "FineNotes: {count} pages transcribed. Tap to read them in the sidebar's Files tab, under Transcripts.",
+  "view.transcribe.compare.one":
+    "FineNotes: the page has your own transcript, so the new one waits beside it. Tap to compare them in the sidebar's Files tab.",
+  "view.transcribe.compare.other":
+    "FineNotes: {count} pages have your own transcript, so the new ones wait beside them. Tap to compare them in the sidebar's Files tab.",
   "view.transcribe.skipped.one": "{count} unchanged page skipped.",
   "view.transcribe.skipped.other": "{count} unchanged pages skipped.",
 
@@ -235,6 +239,20 @@ export const view = {
   "view.rename.failed": "FineNotes: could not rename the notebook — {message}",
   "view.files.gone": "FineNotes: {path} is not in the vault any more.",
   "view.files.serverTranscript": "Handwriting, from the transcript server",
+  "view.files.pageTranscript": "Page {page}",
+  "view.files.source.ai": "Transcribed by AI",
+  "view.files.source.device": "Read on this device",
+  "view.files.source.typed": "Typed by you",
+  "view.files.source.edited": "Edited by you",
+  "view.files.pending": "New transcription to compare",
+  "view.files.yours": "Yours",
+  "view.files.new": "New transcription",
+  "view.files.keep": "Keep this",
+  "view.files.edit": "Edit transcript",
+  "view.files.goToPage": "Go to page",
+  "view.typeTranscript.title": "Page {page}",
+  "view.typeTranscript.placeholder": "Type what the page says…",
+  "view.typeTranscript.fieldLabel": "The page's transcript",
   "view.practice.penOnly": "A practice file is for copying its lines: pen and eraser only.",
   "view.practice.fixedPages": "A practice file keeps its pages as they are.",
   "view.single.converted":
@@ -308,6 +326,7 @@ export const view = {
     "No pages in the contents yet. Give a page a title, or add a heading, from its ⌄ menu.",
   "view.sidebar.contentsEmpty":
     "Nothing in the contents yet. Give a page a title here, from ⋯ in the toolbar, or from its ⌄ menu, and it starts a section.",
+  "view.sidebar.noOutline": "This PDF has no outline.",
   "view.sidebar.kindOfFile": "Kind of file",
   "view.sidebar.selectedPages": "Selected pages",
   "view.sidebar.move": "Move",
@@ -392,4 +411,29 @@ export const view = {
   "view.ocr.off":
     'FineNotes: reading scanned pages is off. Turn on "Scanned pages" in the AI menu.',
   "view.ocr.rereading": "FineNotes: reading this PDF's scanned pages again.",
+  // PDF tabs beside the notes (pdf-tab-strip.ts, ink-view.ts)
+  "view.pdfTabs.label": "Notes and PDFs",
+  "view.pdfTabs.notes": "Notes",
+  "view.pdfTabs.add": "PDFs beside the notes",
+  "view.pdfTabs.close": "Close {name}",
+  "view.pdfTabs.closeTab": "Close tab",
+  "view.pdfTabs.hide": "Hide tabs",
+  "view.pdfTabs.show": "Show tabs",
+  "view.pdfTabs.showWith": "Show tabs ({name} shown)",
+  "view.pdfTabs.missing": "{name} (file not found)",
+  "view.pdfTabs.findFile": "Find file",
+  "view.pdfTabs.find": "Find a PDF",
+  "view.pdfTabs.inNotebook": "In this notebook · {count}",
+  "view.pdfTabs.inFolder": "In this folder",
+  "view.pdfTabs.openRow": "{name} (open)",
+  "view.pdfTabs.attachRow": "{name} (not attached yet)",
+  "view.pdfTabs.more": "+ {count} more",
+  "view.pdfTabs.fromVault": "From the vault…",
+  "view.pdfTabs.fromDevice": "From this device…",
+  "view.pdfTabs.renameTitle": "Rename tab",
+  "view.pdfTabs.pdfOnly": "FineNotes: switch to Notes to do that.",
+  "view.pdfTabs.relinked": "FineNotes: {name} found again.",
+  "view.pdfTabs.unreadable": "FineNotes: couldn't read {name} — {message}",
+  "view.pdfTabs.snippetName": "{name} slide {page}",
+  "view.pdfTabs.snippetFailed": "FineNotes: couldn't copy that part of the slide.",
 } as const;

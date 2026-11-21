@@ -908,8 +908,32 @@ export class Renderer {
       this.dry.canvas.style.top = `${-my / dpr}px`;
       this.placeDry({ x: 0, y: 0 });
     }
-    const viewportBytes = deviceWidth * deviceHeight * 4;
-    this.tiles.setBudget(Math.max(MIN_TILE_BUDGET, TILE_BUDGET_VIEWPORTS * viewportBytes));
+    this.viewportBytes = deviceWidth * deviceHeight * 4;
+    this.applyTileBudget();
+  }
+
+  /** One pane's worth of device px, bytes: what the tile budget scales with. */
+  private viewportBytes = 0;
+  /** Panes' worth of tiles kept besides the view's own ({@link setWarmViewports}). */
+  private warmViewports = 0;
+
+  /**
+   * Keep room for `viewports` more panes' worth of tiles: what another
+   * document shown by the same surface (a PDF's tab beside the notes) needs
+   * to come back without a tile made. 0 is the usual budget.
+   */
+  setWarmViewports(viewports: number): void {
+    const next = Number.isFinite(viewports) && viewports > 0 ? viewports : 0;
+    if (next === this.warmViewports) return;
+    this.warmViewports = next;
+    this.applyTileBudget();
+  }
+
+  private applyTileBudget(): void {
+    const warm = this.warmViewports * this.viewportBytes;
+    this.tiles.setBudget(
+      Math.max(MIN_TILE_BUDGET, TILE_BUDGET_VIEWPORTS * this.viewportBytes) + warm,
+    );
   }
 
   /**
@@ -2022,7 +2046,10 @@ export class Renderer {
           madeRoom = true;
           const near = new Set(around.map((b) => b.id));
           for (const i of whole) near.add(this.layout.boxes[i]?.id ?? "");
-          this.tiles.deleteWhere((tile) => !near.has(tile.pageId));
+          // Only this document's far pages make room: another document's
+          // tiles (the notes, while a PDF's tab is read) are kept warm.
+          const ours = new Set(doc.pages.map((p) => p.id));
+          this.tiles.deleteWhere((tile) => ours.has(tile.pageId) && !near.has(tile.pageId));
         }
         if (!this.tiles.fits(tr.w * tr.h * 4)) return false;
         if (now() > deadline) return true;

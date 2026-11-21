@@ -101,8 +101,9 @@ export const settings = {
     "Tap a key to record a new one; Escape or a tap anywhere cancels. The keys are kept on this device only, so a laptop and a tablet each have their own. A tool with the hand icon on is in hand only while its key is held, then the tool before it is back. Two shortcuts on one key both stop until one of them changes. None act while you type in a text box; ? in a notebook lists them all.",
   "settings.barrel.name": "Stylus side button",
   "settings.barrel.info":
-    "What a pen tablet's side button does while you write with it. The eraser end of the pen always erases. On Android tablets, holding the button while writing may not work.",
+    "What a pen tablet's side button does while you write with it. The eraser end of the pen always erases. On Android tablets, holding the button while writing may not work: choose Erase, also hovering, then hold the button with the pen just above the page and move it over what to erase.",
   "settings.barrel.erase": "Erase",
+  "settings.barrel.eraseHover": "Erase, also hovering",
   "settings.barrel.lasso": "Lasso select",
   "settings.barrel.pan": "Move the page",
   "settings.barrel.none": "Nothing",
@@ -155,7 +156,12 @@ export const settings = {
     "Add a button that opens the notebook library, beside New note and New folder in the file explorer.",
   "settings.simpleLook.name": "Simple look",
   "settings.simpleLook.info":
-    "Hide Obsidian's title bar, status bar, left ribbon and sidebars, and keep the tabs, so FineNotes looks like an app of its own. Turn it off here to bring them back.",
+    "Hide Obsidian's title bar, status bar, left ribbon and sidebars, and keep the tabs, so FineNotes looks like an app of its own. Bring back parts of Obsidian with the buttons under it (a sidebar starts closed); turn it off to bring them all back.",
+  "settings.simpleLook.show": "Show in Simple look",
+  "settings.simpleLook.leftSidebar": "Left sidebar",
+  "settings.simpleLook.rightSidebar": "Right sidebar",
+  "settings.simpleLook.ribbon": "Ribbon",
+  "settings.simpleLook.statusBar": "Status bar",
   "settings.look.name": "Look",
   "settings.look.info":
     "The style and colours of FineNotes' own bars, menus and dialogs. Your pages, your ink and the rest of Obsidian stay as they are.",
@@ -263,12 +269,21 @@ export const settings = {
   "settings.aiModel.name": "AI model",
   "settings.aiModel.info":
     "For transcription and questions. Leave empty for the default ({model}). Any model that reads images will do; a cheaper one, such as claude-haiku-4-5, saves money at some cost in accuracy.",
+  "settings.fallbackModel.name": "Fallback model",
+  "settings.fallbackModel.line": "Tried once when a model hits its rate limit or quota.",
+  "settings.fallbackModel.placeholder": "None",
+  "settings.transcribeVendor.name": "Transcribe pages with",
+  "settings.transcribeVendor.line": "Another service with its own key, or the AI service.",
+  "settings.ai.transcribeKeyName": "{service} API key for transcription",
+  "settings.transcribeModel.name": "Page transcription model",
+  "settings.transcribeModel.line": "For transcribing pages; Ask AI keeps the AI model.",
+  "settings.transcribeModel.placeholder": "Same as AI model",
   "settings.recognition.name": "Handwriting recognition",
   "settings.recognition.info":
     "What the “Recognize handwriting” command and automatic recognition use. Manual = you type the transcription; Cloud AI sends an image of each page to the AI service above. The AI menu's Transcribe entries always use AI.",
   "settings.autoRecognize.name": "Recognize automatically",
   "settings.autoRecognize.info":
-    "Transcribe the page you are writing on in the background about 30 seconds after you stop, and only when it actually changed. Requires the one-time consent (run a transcription by hand once first).",
+    "Transcribe a page in the background once you are done with it: when you turn to another page, or after 5 minutes without writing on it, and only when it actually changed. Requires the one-time consent (run a transcription by hand once first).",
   "settings.ai.more.openrouter": "OpenRouter providers; Ask's page; pictures and their key",
   "settings.ai.more.other": "Ask's page; pictures: service, model and key",
   "settings.askVaultScope.name": "Ask AI can read",
@@ -457,7 +472,7 @@ export const settings = {
   "settings.ai.endpointUrl.line": "An OpenAI-compatible server, with /v1 if it uses it.",
   "settings.openRouter.line": "Gets a key from the browser, no copying.",
   "settings.recognition.line": "What the Recognize handwriting command uses.",
-  "settings.autoRecognize.line": "About 30 seconds after you stop, on a page that changed.",
+  "settings.autoRecognize.line": "Once you leave a page you wrote on, or after 5 minutes.",
   "settings.askVaultScope.line": "Other notes it may search and read for context.",
   "settings.askShowCost.line": "An estimate under each answer, from its tokens.",
   "settings.openRouterSkipCompressed.line":

@@ -309,6 +309,60 @@ describe("askAiWithTools", () => {
   });
 });
 
+describe("the fallback model (FineNotes#265)", () => {
+  const withFallback = {
+    ...anthropic,
+    model: "claude-opus-5-5",
+    fallbackModel: "claude-haiku-4-5",
+  };
+  const models = () => sent.map((s) => (JSON.parse(s.body as string) as { model: string }).model);
+  const limited = () =>
+    response(429, { error: { type: "rate_limit_error", message: "Number of requests exceeded" } });
+  const text = (t: string) => response(200, { content: [{ type: "text", text: t }] });
+
+  it("answers a rate-limited question from the fallback, once", async () => {
+    const replies = [limited(), text("From the fallback.")];
+    answer = () => Promise.resolve(replies.shift() as RequestUrlResponse);
+    expect((await askAi(withFallback, "", question)).text).toBe("From the fallback.");
+    expect(models()).toEqual(["claude-opus-5-5", "claude-haiku-4-5"]);
+  });
+
+  it("shows the fallback's own failure, and tries nothing after it", async () => {
+    answer = () => Promise.resolve(limited());
+    await expect(askAi(withFallback, "", question)).rejects.toThrow(/429/);
+    expect(models()).toEqual(["claude-opus-5-5", "claude-haiku-4-5"]);
+  });
+
+  it("leaves a wrong key, and a setup without a fallback, to fail at once", async () => {
+    answer = () => Promise.resolve(response(401, {}));
+    await expect(askAi(withFallback, "", question)).rejects.toThrow(/key/);
+    expect(sent).toHaveLength(1);
+    sent = [];
+    answer = () => Promise.resolve(limited());
+    await expect(askAi({ ...withFallback, fallbackModel: "" }, "", question)).rejects.toThrow();
+    expect(sent).toHaveLength(1);
+  });
+
+  it("moves a tool conversation to the fallback only before its first round", async () => {
+    const readPages = { type: "tool_use", id: "t1", name: "read_pages", input: { pages: [1] } };
+    const run = vi.fn(() => Promise.resolve({ text: "Page 1 of 2." }));
+    const options = { totalPages: () => 2, run, onStatus: () => undefined };
+    let replies = [limited(), response(200, { content: [readPages], stop_reason: "tool_use" })];
+    replies.push(text("Answered."));
+    answer = () => Promise.resolve(replies.shift() as RequestUrlResponse);
+    const answered = await askAiWithTools(withFallback, "sys", question, options);
+    expect(answered.text).toBe("Answered.");
+    // The whole conversation stays with the model that began it.
+    expect(models()).toEqual(["claude-opus-5-5", "claude-haiku-4-5", "claude-haiku-4-5"]);
+    expect(answered.usage).toEqual(expect.objectContaining({ model: "claude-haiku-4-5" }));
+
+    sent = [];
+    replies = [response(200, { content: [readPages], stop_reason: "tool_use" }), limited()];
+    await expect(askAiWithTools(withFallback, "sys", question, options)).rejects.toThrow(/429/);
+    expect(models()).toEqual(["claude-opus-5-5", "claude-opus-5-5"]);
+  });
+});
+
 describe("sendVendorRequest", () => {
   it("hands back the parsed JSON of a 2xx reply", async () => {
     const json = await sendVendorRequest(openai, () => Promise.resolve(response(201, { a: 1 })));

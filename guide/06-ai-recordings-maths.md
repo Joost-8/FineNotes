@@ -24,6 +24,15 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Words:** api key, key, set up ai, provider, openai, anthropic, claude, gpt, gemini, google, openrouter, model, ai service, token, secret, configure ai
 - **Settings:** `llmVendor`, `llmModel`, `llmModels`, `apiKeys`, `llmBaseUrl`
 
+### A cheaper model for transcription, and a fallback model
+
+- **Id:** `aiModelChoice`
+- **What:** Transcription can use a model of its own: type it in "Page transcription model" (empty uses "AI model"), so automatic transcription can run on a cheap model while Ask AI keeps a stronger one. It can also use another service with its own API key: pick it in "Transcribe pages with" (for example Gemini for transcription while Ask uses Claude), then add that service's key in the row that appears below. "Fallback model" is tried once when the model is turned down for its rate limit or quota (also when OpenRouter credits run out or Claude is overloaded), for transcription and Ask alike; a wrong key or any other error is shown at once. The fallback is a model of the AI service, so it is not used when transcription has a service of its own. Each service remembers its own models.
+- **Where:** Settings › AI › Transcribing › "Transcribe pages with", "Page transcription model" and "<Service> API key for transcription". Settings › AI › Service › "Fallback model".
+- **Notes:** In Ask AI, the fallback takes over only when the first request of an answer is turned down; once the notebook's tools have run, the answer stays with the model that began it.
+- **Words:** transcription model, cheaper model, different model, second model, fallback model, backup model, rate limit, quota, 429, too many requests, out of credits, free model
+- **Settings:** `transcribeVendor`, `llmTranscribeModel`, `llmFallbackModel`
+
 ### Where API keys are stored
 
 - **Id:** `apiKeyStorage`
@@ -239,10 +248,10 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Transcribe automatically after writing
 
 - **Id:** `autoRecognize`
-- **What:** About 30 seconds after you stop writing, the page you are on is transcribed by cloud AI in the background, and only when it changed. It works only after you have agreed to send once (run a transcription by hand first).
+- **What:** A page you wrote on is transcribed by cloud AI in the background once you are done with it: a few seconds after you turn to another page, or after 5 minutes without writing on it, and only when it changed. A page still waiting when you close the notebook is read when you open it again. To have the page in view transcribed right away, use AI menu › "Transcribe this page" (or the command of that name); without an AI set up, the same entry lets you type the page's transcript yourself. Every page's transcription is listed in the sidebar's Files tab under Transcripts (where it came from: AI, this device, typed or edited by you); tap one to read it, edit it or go to its page. A transcript you typed or edited is never overwritten: a new transcription waits beside it, marked with a dot, and you keep one of the two there. After a failure (a spent quota, a wrong key, no connection) it says so once and waits 10 minutes, then longer, before trying again. It works only after you have agreed to send once (run a transcription by hand first).
 - **Where:** Settings › AI › Transcribing › "Handwriting recognition" › "Cloud AI, by itself after you write".
 - **Notes:** needs a key and internet.
-- **Words:** auto transcribe, automatic recognition, background transcription, recognize automatically
+- **Words:** auto transcribe, automatic recognition, background transcription, recognize automatically, transcribe now, transcribe this page, when does it transcribe, where is my transcript, transcript list, compare transcripts, type transcript, transcribe by hand, manual transcription, overwritten transcript
 - **Settings:** `autoRecognize`, `recognitionProviderId`
 
 ### The text layer (transcription, links, tags)

@@ -172,10 +172,10 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Stylus side button while writing
 
 - **Id:** `barrelButton`
-- **What:** Holding a tablet pen's side button while writing erases (default), lassos, moves the page, or does nothing.
-- **Where:** Settings › "Stylus side button" (Erase, Lasso select, Move the page, Nothing).
+- **What:** Holding a tablet pen's side button while writing erases (default), lassos, moves the page, or does nothing. Erase, also hovering erases with the pen held just above the page too, the button held: the way to erase with the S Pen's button on Android.
+- **Where:** Settings › "Stylus side button" (Erase, Erase also hovering, Lasso select, Move the page, Nothing).
 - **Notes:** desktop/Android pens with a side button (not the Apple Pencil)
-- **Words:** side button, barrel button, pen button, s pen, wacom button, erase with button
+- **Words:** side button, barrel button, pen button, s pen, wacom button, erase with button, erase on hover, hover erase
 - **Settings:** `barrelButton`
 
 ### Side button click in the air

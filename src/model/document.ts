@@ -493,6 +493,18 @@ export interface ImageElement {
    * is the strokes whose `onSticky` names this element.
    */
   sticky?: StickyPaper;
+  /**
+   * A snippet lassoed from a PDF kept beside the notes (`model/beside-pdfs`):
+   * the tab it came from and the 0-based PDF page, so a tap can go back to
+   * it. Absent on any other picture.
+   */
+  slide?: SlideRef;
+}
+
+/** A page of a PDF kept beside the notes: its tab's id and the 0-based PDF page. */
+export interface SlideRef {
+  tab: string;
+  page: number;
 }
 
 /** A sticky note's paper. Replaced as a whole, never edited in place. */
@@ -1131,6 +1143,48 @@ export interface InkDocument {
   palette?: { id: string; name: string; colors: string[] };
   /** A header and page numbers on every page (`model/furniture`). */
   furniture?: { header?: string; numbers?: "center" | "right" };
+  /**
+   * PDFs kept beside the notes as tabs, each with the ink written on it
+   * (`model/beside-pdfs`). Absent when there are none; a notebook with one is
+   * labelled `pdf-tabs`.
+   */
+  beside?: BesidePdf[];
+}
+
+/**
+ * A PDF kept beside a notebook's notes as a tab (`model/beside-pdfs`). The
+ * PDF is linked by vault path, never copied; the ink written on it lives
+ * here, one page per PDF page that has any.
+ */
+export interface BesidePdf {
+  /** Unique within the notebook; letters, digits, `_` and `-` only. */
+  id: string;
+  /** Vault-relative path to the PDF; follows moves (`moved-files.ts`). */
+  path: string;
+  /** The tab's name when the user gave one; absent: the file's name. */
+  label?: string;
+  /** Closed from the tab bar, its ink kept. Stored only as `true`. */
+  hidden?: true;
+  /** Where the tab was last left: 0-based PDF page, zoom, and scroll in page px. */
+  view?: BesideView;
+  /**
+   * The PDF's page sizes, page px, run-length: `[width, height, count]`. Kept
+   * so the tab lays out (and its ink stays put) while the file is missing.
+   */
+  sizes: Array<[width: number, height: number, count: number]>;
+  /**
+   * The pages that hold ink or anything else, in PDF page order, each a pdf
+   * backdrop naming its 0-based PDF page. Pages without marks are not kept.
+   */
+  marks: Page[];
+}
+
+/** Where a tab beside the notes was left. */
+export interface BesideView {
+  page: number;
+  zoom: number;
+  x: number;
+  y: number;
 }
 
 /** Which way a notebook's pages run: a column (the default) or a row. */

@@ -15,6 +15,12 @@
  */
 
 import { loadPdfJs } from "obsidian";
+import {
+  type TextWorker,
+  type WorkerPageText,
+  keptOperators,
+  shapePageText,
+} from "./pdf-worker-text";
 
 /** Tags this module's messages: pdf.js's own worker code posts on the same port. */
 const TAG = "fineNotesPdf";
@@ -55,6 +61,8 @@ export class PdfCanvasUnavailable extends Error {
 const WORKER_SOURCE = `
 self.activeWindow = self;
 const TAG = ${JSON.stringify(TAG)};
+const shapePageText = (${shapePageText.toString()});
+const keptOperators = (${keptOperators.toString()});
 let lib = null;
 let assets = {};
 const docs = new Map();
@@ -99,6 +107,24 @@ self.addEventListener("message", async (event) => {
         docs.delete(m.path);
         open.promise.then((d) => d.destroy()).catch(() => undefined);
       }
+    } else if (m.type === "share") {
+      // Another use of a PDF already open here (its text, beside its pages): no bytes needed.
+      const open = docs.get(m.path);
+      if (!open) return reply(id, { ok: true });
+      open.users++;
+      reply(id, { ok: true, pages: (await open.promise).numPages });
+    } else if (m.type === "text") {
+      const page = await (await doc(m.path)).getPage(m.page + 1);
+      const content = await page.getTextContent();
+      const annotations = await page.getAnnotations().catch(() => []);
+      reply(id, { ok: true, value: shapePageText(page.getViewport({ scale: 1 }), content, annotations) });
+    } else if (m.type === "ops") {
+      const page = await (await doc(m.path)).getPage(m.page + 1);
+      reply(id, { ok: true, value: keptOperators(await page.getOperatorList(), m.keep) });
+    } else if (m.type === "dest") {
+      reply(id, { ok: true, value: await (await doc(m.path)).getDestination(m.name) });
+    } else if (m.type === "pageIndex") {
+      reply(id, { ok: true, value: await (await doc(m.path)).getPageIndex(m.ref) });
     } else if (m.type === "size") {
       const page = await (await doc(m.path)).getPage(m.page + 1);
       const v = page.getViewport({ scale: 1 });
@@ -154,6 +180,8 @@ interface Reply {
   width?: number;
   height?: number;
   bitmap?: ImageBitmap;
+  /** What a text, operator or destination question was answered with. */
+  value?: unknown;
 }
 
 interface Pending {
@@ -202,7 +230,7 @@ export function pdfAssets(base = pdfJsBase()): PdfAssets {
   };
 }
 
-export class PdfWorker {
+export class PdfWorker implements TextWorker {
   private readonly pending = new Map<number, Pending>();
   private next = 1;
   private dead = false;
@@ -264,6 +292,45 @@ export class PdfWorker {
     return reply.pages;
   }
 
+  /**
+   * One more use of `path` if it is open here already (its pages are drawn
+   * here), with its page count; `null` if it is not: then `open` it.
+   */
+  async share(path: string): Promise<number | null> {
+    const reply = await this.call({ type: "share", path });
+    if (!reply.ok) throw new Error(reply.error ?? "PDF did not open");
+    return reply.pages ?? null;
+  }
+
+  /** A page's size, text and links (`page` is 0-based), from a PDF opened here. */
+  async pageText(path: string, page: number): Promise<WorkerPageText> {
+    return (await this.ask({ type: "text", path, page })) as WorkerPageText;
+  }
+
+  /** A page's operators among `keep`, for finding its pictures. */
+  async operators(
+    path: string,
+    page: number,
+    keep: readonly number[],
+  ): Promise<{ fnArray: number[]; argsArray: unknown[] }> {
+    return (await this.ask({ type: "ops", path, page, keep: [...keep] })) as {
+      fnArray: number[];
+      argsArray: unknown[];
+    };
+  }
+
+  /** A named destination of the PDF (a link's target). */
+  destination(path: string, name: string): Promise<unknown> {
+    return this.ask({ type: "dest", path, name });
+  }
+
+  /** The 0-based index of the page a destination's reference names. */
+  async pageIndex(path: string, ref: unknown): Promise<number> {
+    const index = await this.ask({ type: "pageIndex", path, ref });
+    if (typeof index !== "number") throw new Error("PDF page reference unresolved");
+    return index;
+  }
+
   /** Drop one `open` of `path`; the document closes when none are left. */
   close(path: string): void {
     this.post({ type: "close", path });
@@ -313,6 +380,12 @@ export class PdfWorker {
     this.pending.clear();
     this.worker.terminate();
     URL.revokeObjectURL(this.url);
+  }
+
+  private async ask(message: object): Promise<unknown> {
+    const reply = await this.call(message);
+    if (!reply.ok) throw new Error(reply.error ?? "PDF worker could not answer");
+    return reply.value;
   }
 
   private post(message: object, transfer: Transferable[] = []): number {

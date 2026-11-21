@@ -72,10 +72,13 @@ import {
   type PageAppearance,
   type PenPreferences,
   loadSnapSettings,
+  modelIdOf,
+  modelMemoryOf,
   shownPaperTheme,
   storeHandwritingReader,
   storePenPreferences,
   switchLlmVendor,
+  switchTranscribeVendor,
 } from "./settings-data";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { LearnWindow } from "./view/learn-window";
@@ -98,6 +101,14 @@ import { createProviderRegistry, resolveProvider } from "./recognition/registry"
 import { MANUAL_PROVIDER_ID } from "./recognition/manual";
 import { LlmProvider } from "./recognition/llm";
 import { LLM_PROVIDER_ID, type LlmVendor, VENDORS } from "./recognition/llm-request";
+import { transcriptionModel } from "./recognition/model-choice";
+import {
+  type AutoBackoff,
+  NO_BACKOFF,
+  afterAutoFailure,
+  autoWaitLeft,
+  showsAutoFailure,
+} from "./recognition/auto-backoff";
 import { postJson } from "./recognition/http";
 import {
   type KeyStore,
@@ -106,7 +117,13 @@ import {
   SettingsKeyStore,
   migrateKeys,
 } from "./recognition/key-store";
-import { type AiSetup, resolveImageVendor } from "./recognition/ai-menu-model";
+import {
+  type AiSetup,
+  TRANSCRIBE_VENDOR_CHOICES,
+  type TranscribeVendorChoice,
+  resolveImageVendor,
+  resolveTranscribeVendor,
+} from "./recognition/ai-menu-model";
 import { DEFAULT_IMAGE_MODELS, canGenerateImages } from "./recognition/ai-image";
 import {
   type AiVendorConfig,
@@ -180,7 +197,12 @@ import {
 } from "./model/nudges";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
-import { SIMPLE_CLASS, simpleClasses } from "./model/simple-mode";
+import {
+  type SimplePart,
+  allSimpleClasses,
+  simpleClasses,
+  simplePartsOf,
+} from "./model/simple-mode";
 import {
   LOOK_PALETTES,
   LOOK_STYLES,
@@ -266,6 +288,7 @@ export interface TransferReceipt {
 }
 import { FileMoveTracker } from "./view/file-moves";
 import { measurePdfPages } from "./view/pdf-pages";
+import { NotebookPickModal } from "./view/notebook-pick-modal";
 import { readPdfOutline } from "./view/pdf-outline";
 import { SetPagesContents } from "./model/contents";
 import { addedEntries, outlineContents } from "./model/pdf-outline";
@@ -557,7 +580,7 @@ export default class GoodObsidianPlugin extends Plugin {
     // an arbitrary user-configured URL (the custom endpoint has a slot of its own).
     // Registered before the settings load, which check the saved provider
     // against this registry; the config is read lazily, on each request.
-    const cloud = new LlmProvider(() => this.textAiConfig());
+    const cloud = new LlmProvider(() => this.transcriptionAiConfig());
     this.providers.set(cloud.id, cloud);
 
     await this.loadSettings();
@@ -579,7 +602,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.applyLook();
     this.register(() => this.wearLook([]));
     this.register(() => {
-      if (typeof document !== "undefined") document.body.classList.remove(SIMPLE_CLASS);
+      if (typeof document !== "undefined") document.body.classList.remove(...allSimpleClasses());
     });
     // Fonts fetched for text boxes leave the document with the plugin.
     this.register(disposeVaultFonts);
@@ -599,6 +622,8 @@ export default class GoodObsidianPlugin extends Plugin {
           dismissHomeCard: (kind) => this.dismissHomeCard(kind),
           simpleLook: () => this.settings.simpleLook,
           setSimpleLook: (on) => this.setSimpleLook(on),
+          simpleParts: () => this.settings.simpleLookShow,
+          setSimpleParts: (parts) => this.setSimpleParts(parts),
           update: () => this.updates.available,
           openUpdate: () => this.openUpdatePage(),
           checkUpdate: () => this.updates.checkNow(),
@@ -619,6 +644,11 @@ export default class GoodObsidianPlugin extends Plugin {
           stars: () => this.settings.libraryStars,
           setStars: (stars) => {
             this.settings.libraryStars = stars;
+            void this.saveSettings();
+          },
+          hidden: () => this.settings.libraryHidden,
+          setHidden: (hidden) => {
+            this.settings.libraryHidden = hidden;
             void this.saveSettings();
           },
           folderStyles: () => this.settings.libraryFolders,
@@ -710,6 +740,13 @@ export default class GoodObsidianPlugin extends Plugin {
             .setTitle(t("notebooks.menu.newFromPdf"))
             .setIcon(ICON_NEW_NOTEBOOK)
             .onClick(() => void this.createNotebookFromPdf(file)),
+        );
+        // Beside a notebook's notes, as a tab: the notebook is picked, opened on it.
+        menu.addItem((item) =>
+          item
+            .setTitle(t("notebooks.menu.keepBeside"))
+            .setIcon("panel-top")
+            .onClick(() => this.keepPdfBesideNotebook(file)),
         );
         const view = this.app.workspace.getActiveViewOfType(InkView);
         if (!view) return;
@@ -1067,6 +1104,9 @@ export default class GoodObsidianPlugin extends Plugin {
     this.notebookCommand("toggle-text-layer", t("notebooks.command.toggleTextLayer"), (view) =>
       view.toggleTextPanel(),
     );
+    this.notebookCommand("transcribe-page", t("notebooks.command.transcribePage"), (view) =>
+      view.transcribePageNow(),
+    );
     this.notebookCommand("recognize-handwriting", t("notebooks.command.transcribe"), (view) =>
       this.runRecognition(view),
     );
@@ -1243,6 +1283,8 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarOff;
     delete loaded.toolbarHome;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
+    this.settings.libraryHidden = starsOf(this.settings.libraryHidden);
+    this.settings.simpleLookShow = simplePartsOf(this.settings.simpleLookShow);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
     if (isItemOff(this.toolbarLayoutNow(), "stylus")) this.settings.onlyStylusMode = false;
@@ -1253,10 +1295,16 @@ export default class GoodObsidianPlugin extends Plugin {
       ? Math.max(-50, Math.min(100, lineStep))
       : 0;
     this.settings.openRouterSkipCompressed = this.settings.openRouterSkipCompressed === true;
-    const models: unknown = this.settings.llmModels;
-    if (typeof models !== "object" || models === null || Array.isArray(models)) {
-      this.settings.llmModels = {};
-    }
+    this.settings.llmModels = modelMemoryOf(this.settings.llmModels);
+    this.settings.llmTranscribeModels = modelMemoryOf(this.settings.llmTranscribeModels);
+    this.settings.llmFallbackModels = modelMemoryOf(this.settings.llmFallbackModels);
+    this.settings.llmTranscribeModel = modelIdOf(this.settings.llmTranscribeModel);
+    this.settings.llmFallbackModel = modelIdOf(this.settings.llmFallbackModel);
+    this.settings.transcribeVendor = TRANSCRIBE_VENDOR_CHOICES.includes(
+      this.settings.transcribeVendor,
+    )
+      ? this.settings.transcribeVendor
+      : "same";
     this.settings.zoomBoxAutoAdvance = this.settings.zoomBoxAutoAdvance === true;
     this.settings.magnifierZoomBox = this.settings.magnifierZoomBox === true;
     // "Crosshair cursor" was a toggle until FineNotes#27: on is now the ink dot.
@@ -1503,8 +1551,8 @@ export default class GoodObsidianPlugin extends Plugin {
   applySimpleLook(): void {
     if (typeof document === "undefined") return;
     const body = document.body;
-    body.classList.remove(SIMPLE_CLASS);
-    body.classList.add(...simpleClasses(this.settings.simpleLook));
+    body.classList.remove(...allSimpleClasses());
+    body.classList.add(...simpleClasses(this.settings.simpleLook, this.settings.simpleLookShow));
   }
 
   private lookWorn: string[] = [];
@@ -1542,9 +1590,25 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   setSimpleLook(on: boolean): void {
+    // A sidebar the look shows starts closed, behind its button.
+    if (on && !this.settings.simpleLook) this.collapseSidebars(this.settings.simpleLookShow);
     this.settings.simpleLook = on;
     this.settings.simpleLookHinted = true;
     void this.saveSettings();
+  }
+
+  /** Show these parts of Obsidian in the simple look; a sidebar brought back starts closed. */
+  setSimpleParts(parts: SimplePart[]): void {
+    const was = this.settings.simpleLookShow;
+    const next = simplePartsOf(parts);
+    if (this.settings.simpleLook) this.collapseSidebars(next.filter((p) => !was.includes(p)));
+    this.settings.simpleLookShow = next;
+    void this.saveSettings();
+  }
+
+  private collapseSidebars(parts: readonly SimplePart[]): void {
+    if (parts.includes("leftSidebar")) this.app.workspace.leftSplit?.collapse();
+    if (parts.includes("rightSidebar")) this.app.workspace.rightSplit?.collapse();
   }
 
   async saveSettings(): Promise<void> {
@@ -1655,7 +1719,7 @@ export default class GoodObsidianPlugin extends Plugin {
     }
   }
 
-  /** The text/vision vendor: transcription and questions. */
+  /** The text/vision vendor: questions, and transcription with {@link transcriptionAiConfig}. */
   textAiConfig(): AiVendorConfig {
     const vendor = this.settings.llmVendor;
     return {
@@ -1664,7 +1728,58 @@ export default class GoodObsidianPlugin extends Plugin {
       apiKey: this.apiKeyFor(vendor),
       baseUrl: this.settings.llmBaseUrl,
       skipCompressed: this.settings.openRouterSkipCompressed,
+      fallbackModel: this.settings.llmFallbackModel,
     };
+  }
+
+  /** Who transcribes pages: the AI service, or the one chosen for transcription (FineNotes#265). */
+  transcriptionVendor(): LlmVendor {
+    return resolveTranscribeVendor(this.settings.transcribeVendor, this.settings.llmVendor);
+  }
+
+  /**
+   * {@link textAiConfig} for page transcription: its own model when one is
+   * set, and its own service and key when one is chosen. The fallback model
+   * is the AI service's, so it only goes with that service.
+   */
+  transcriptionAiConfig(): AiVendorConfig {
+    const config = this.textAiConfig();
+    const vendor = this.transcriptionVendor();
+    if (vendor === config.vendor) {
+      return {
+        ...config,
+        model: transcriptionModel(config.model, this.settings.llmTranscribeModel),
+      };
+    }
+    return {
+      ...config,
+      vendor,
+      model: this.settings.llmTranscribeModel,
+      apiKey: this.apiKeyFor(vendor),
+      fallbackModel: "",
+    };
+  }
+
+  /** Change who transcribes pages, keeping each service's transcription model. */
+  async switchTranscribeVendor(next: TranscribeVendorChoice): Promise<void> {
+    switchTranscribeVendor(this.settings, next);
+    await this.saveSettings();
+  }
+
+  /** In memory only: pages written on in a notebook closed before they were transcribed, by path. */
+  private waitingPages = new Map<string, string[]>();
+
+  /** Keep a closing notebook's pages that were waiting for automatic transcription. */
+  keepWaitingPages(path: string, pageIds: readonly string[]): void {
+    if (pageIds.length > 0) this.waitingPages.set(path, [...pageIds]);
+    else this.waitingPages.delete(path);
+  }
+
+  /** Take back the pages a notebook left waiting when it was closed (once). */
+  takeWaitingPages(path: string): string[] {
+    const ids = this.waitingPages.get(path) ?? [];
+    this.waitingPages.delete(path);
+    return ids;
   }
 
   /** The image vendor, or null when the configured one cannot make images. */
@@ -1684,6 +1799,7 @@ export default class GoodObsidianPlugin extends Plugin {
       vendor: this.settings.llmVendor,
       baseUrl: this.settings.llmBaseUrl,
       imageVendor: this.settings.imageVendor,
+      transcribeVendor: this.settings.transcribeVendor,
       speechService: this.settings.speechService,
       speechBaseUrl: this.speechBaseUrl(),
       hasKey: (slot) => this.apiKeyFor(slot) !== "",
@@ -2490,6 +2606,25 @@ export default class GoodObsidianPlugin extends Plugin {
    * background run (`background`) never asks, and goes ahead only where that
    * consent was already given.
    */
+  /** Automatic transcription's wait after failures, shared by every notebook (`auto-backoff.ts`). */
+  private autoBackoff: AutoBackoff = NO_BACKOFF;
+
+  /** How long automatic transcription still waits after a failure, in ms; 0: it may run. */
+  autoTranscriptionWait(): number {
+    return autoWaitLeft(this.autoBackoff, Date.now());
+  }
+
+  /** An automatic transcription failed: wait before the next. True when this failure is the one to show. */
+  autoTranscriptionFailed(): boolean {
+    this.autoBackoff = afterAutoFailure(this.autoBackoff, Date.now());
+    return showsAutoFailure(this.autoBackoff);
+  }
+
+  /** A transcription, automatic or by hand, went through: automatic runs may go again. */
+  transcriptionWorked(): void {
+    this.autoBackoff = NO_BACKOFF;
+  }
+
   async runRecognition(target: RecognitionTarget, background = false): Promise<void> {
     const engine = this.activeProvider();
     if (engine.requiresNetwork && !(await this.maySendPages(background))) return;
@@ -2497,9 +2632,9 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   private maySendPages(background: boolean): Promise<boolean> {
-    if (background) return Promise.resolve(this.consentedTo(this.settings.llmVendor));
+    if (background) return Promise.resolve(this.consentedTo(this.transcriptionVendor()));
     return this.confirmAiSend(
-      this.textAiConfig(),
+      this.transcriptionAiConfig(),
       t("notebooks.consent.pagesAction"),
       t("notebooks.consent.pagesWhat"),
     );
@@ -3367,19 +3502,23 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /**
-   * The library's stars and folder looks follow a file or folder renamed or
+   * The library's stars, hidden items and folder looks follow a file or folder renamed or
    * moved to `to`, and go with one deleted (no `to`). Here rather than in
    * the library, so they follow while Home is closed too.
    */
   private libraryPathChanged(from: string, to?: string): void {
-    const { libraryStars: stars, libraryFolders: styles } = this.settings;
-    const nextStars = to === undefined ? dropPaths(stars, from) : movePaths(stars, from, to);
+    const { libraryStars: stars, libraryHidden: hidden, libraryFolders: styles } = this.settings;
+    const follow = (paths: string[]): string[] =>
+      to === undefined ? dropPaths(paths, from) : movePaths(paths, from, to);
+    const nextStars = follow(stars);
+    const nextHidden = follow(hidden);
     const nextStyles = to === undefined ? dropStyles(styles, from) : moveStyles(styles, from, to);
-    const starsChanged =
-      nextStars.length !== stars.length || nextStars.some((p, i) => p !== stars[i]);
+    const same = (a: string[], b: string[]): boolean =>
+      a.length === b.length && a.every((p, i) => p === b[i]);
     const stylesChanged = JSON.stringify(nextStyles) !== JSON.stringify(styles);
-    if (!starsChanged && !stylesChanged) return;
+    if (same(nextStars, stars) && same(nextHidden, hidden) && !stylesChanged) return;
     this.settings.libraryStars = nextStars;
+    this.settings.libraryHidden = nextHidden;
     this.settings.libraryFolders = nextStyles;
     void this.saveSettings();
   }
@@ -3527,6 +3666,33 @@ export default class GoodObsidianPlugin extends Plugin {
     if (board) boards.add(path);
     else boards.delete(path);
     this.app.saveLocalStorage(BOARDS_KEY, JSON.stringify([...boards]));
+  }
+
+  /**
+   * "Keep beside notebook…" on a PDF: pick a notebook, open it (or the tab
+   * it is open in), and keep the PDF beside its notes, shown as its tab.
+   */
+  keepPdfBesideNotebook(pdf: TFile): void {
+    new NotebookPickModal(
+      this.app,
+      this.transferTargets(),
+      this.recentTransferTargets(),
+      (target) => void this.openBeside(target.path, pdf.path),
+    ).open();
+  }
+
+  private async openBeside(notebookPath: string, pdfPath: string): Promise<void> {
+    const file = this.app.vault.getFileByPath(notebookPath);
+    if (!file) return;
+    let view = this.openNotebooks().find((open) => open.file?.path === notebookPath);
+    if (!view) {
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(file);
+      view = leaf.view instanceof InkView ? leaf.view : undefined;
+    } else {
+      this.app.workspace.setActiveLeaf(view.leaf, { focus: true });
+    }
+    if (view) await view.keepPdfBeside(pdfPath);
   }
 
   /** The notebooks pages went to last, most recent first (kept on this device). */

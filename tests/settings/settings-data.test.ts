@@ -43,6 +43,9 @@ import {
   storeHandwritingReader,
   storePenPreferences,
   switchLlmVendor,
+  switchTranscribeVendor,
+  modelIdOf,
+  modelMemoryOf,
   storeReturnToPen,
   storeShownValue,
   withShownSection,
@@ -96,6 +99,11 @@ const FRESH_INSTALL = {
   llmVendor: "anthropic",
   llmModel: "",
   llmModels: {},
+  llmTranscribeModel: "",
+  llmFallbackModel: "",
+  transcribeVendor: "same",
+  llmTranscribeModels: {},
+  llmFallbackModels: {},
   openRouterSkipCompressed: false,
   llmApiKey: "",
   llmBaseUrl: "",
@@ -206,9 +214,11 @@ const FRESH_INSTALL = {
   toolbarHomeAdded: true,
   simpleLook: false,
   simpleLookHinted: false,
+  simpleLookShow: [],
   lookStyle: "default",
   lookPalette: "obsidian",
   libraryStars: [],
+  libraryHidden: [],
   libraryFolders: {},
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",
@@ -288,6 +298,11 @@ const USED_VAULT = {
   llmVendor: "custom",
   llmModel: "llava:13b",
   llmModels: { openai: "gpt-4o" },
+  llmTranscribeModel: "moondream",
+  llmFallbackModel: "llava:7b",
+  transcribeVendor: "google",
+  llmTranscribeModels: { openai: "gpt-4.1-mini" },
+  llmFallbackModels: { openrouter: "google/gemma-3-27b-it:free" },
   openRouterSkipCompressed: true,
   llmApiKey: "sk-ant-legacy",
   llmBaseUrl: "http://nas.local:11434/v1",
@@ -374,9 +389,11 @@ const USED_VAULT = {
   toolbarHomeAdded: true,
   simpleLook: true,
   simpleLookHinted: true,
+  simpleLookShow: ["rightSidebar"],
   lookStyle: "glass",
   lookPalette: "nord",
   libraryStars: ["Maths", "Maths/Analysis.notebook.md"],
+  libraryHidden: ["Archive"],
   libraryFolders: { Maths: { color: "#e5534b", icon: "calculator" } },
   lastPen: { type: "highlighter", color: "#fab005", size: 8 },
   barrelButton: "pan",
@@ -804,6 +821,65 @@ describe("choices that set two switches", () => {
     expect(settings.llmModel).toBe("gpt-4o");
     switchLlmVendor(settings, "openai");
     expect(settings.llmModel).toBe("gpt-4o");
+  });
+
+  it("keeps each service's transcription and fallback models the same way (FineNotes#265)", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.llmVendor = "openrouter";
+    settings.llmTranscribeModel = " google/gemini-2.5-flash ";
+    settings.llmFallbackModel = "google/gemma-3-27b-it:free";
+    switchLlmVendor(settings, "openai");
+    expect([settings.llmTranscribeModel, settings.llmFallbackModel]).toEqual(["", ""]);
+    settings.llmTranscribeModel = "gpt-4.1-mini";
+    switchLlmVendor(settings, "openrouter");
+    expect([settings.llmTranscribeModel, settings.llmFallbackModel]).toEqual([
+      "google/gemini-2.5-flash",
+      "google/gemma-3-27b-it:free",
+    ]);
+    expect(settings.llmTranscribeModels).toEqual({ openai: "gpt-4.1-mini" });
+    expect(settings.llmFallbackModels).toEqual({});
+  });
+
+  it("keeps transcription's own service and its model when the AI service changes", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.llmTranscribeModel = "claude-haiku-4-5";
+    switchTranscribeVendor(settings, "google");
+    expect(settings.transcribeVendor).toBe("google");
+    // Anthropic's transcription model is kept for it; Google's starts empty.
+    expect(settings.llmTranscribeModel).toBe("");
+    expect(settings.llmTranscribeModels).toEqual({ anthropic: "claude-haiku-4-5" });
+    settings.llmTranscribeModel = "gemini-3.5-flash-lite";
+    // The AI service moves; transcription stays with Google, model and all.
+    switchLlmVendor(settings, "openai");
+    expect(settings.llmTranscribeModel).toBe("gemini-3.5-flash-lite");
+    // Back to following the AI service (now OpenAI): Google's model is kept for later.
+    switchTranscribeVendor(settings, "same");
+    expect(settings.llmTranscribeModel).toBe("");
+    expect(settings.llmTranscribeModels).toEqual({
+      anthropic: "claude-haiku-4-5",
+      google: "gemini-3.5-flash-lite",
+    });
+    switchTranscribeVendor(settings, "google");
+    expect(settings.llmTranscribeModel).toBe("gemini-3.5-flash-lite");
+    // Choosing the service the AI service already is changes no model.
+    switchTranscribeVendor(settings, "openai");
+    switchTranscribeVendor(settings, "same");
+    expect(settings.transcribeVendor).toBe("same");
+  });
+
+  it("reads stored model ids and model memories, dropping what is not one", () => {
+    expect(modelIdOf(" gpt-4o ")).toBe("gpt-4o");
+    expect(modelIdOf(4)).toBe("");
+    expect(modelIdOf(undefined)).toBe("");
+    expect(modelMemoryOf(undefined)).toEqual({});
+    expect(modelMemoryOf(["gpt-4o"])).toEqual({});
+    expect(modelMemoryOf({ openai: " gpt-4o ", google: 3, mistral: "x", custom: "" })).toEqual({
+      openai: "gpt-4o",
+    });
+    // Not an inherited member either.
+    expect(modelMemoryOf(JSON.parse('{"toString":"x","anthropic":"claude-haiku-4-5"}'))).toEqual({
+      anthropic: "claude-haiku-4-5",
+    });
   });
 
   it("reads handwriting on this device as one choice, stored as its two switches", () => {

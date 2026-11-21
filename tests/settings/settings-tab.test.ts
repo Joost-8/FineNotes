@@ -499,6 +499,7 @@ describe("the rows", () => {
       ["general", "", "Style", "render"],
       ["general", "", "Colours", "render"],
       ["general", "", "Simple look", "toggle:simpleLook"],
+      ["general", "", "(block)", "render"],
       ["general", "", "Hints for faster ways", "toggle:gestureHints"],
       ["general", "", "Updates", "dropdown:checkForUpdates"],
       ["writing", "Pens", "Start with", "render"],
@@ -544,9 +545,13 @@ describe("the rows", () => {
       ["ai", "Service", "(block)", "render"],
       ["ai", "Service", "Connect OpenRouter", "render"],
       ["ai", "Service", "AI model", "text:llmModel"],
+      ["ai", "Service", "Fallback model", "text:llmFallbackModel"],
       ["ai", "Service", `${label} API key`, "render"],
       ["ai", "Service", "(block)", "render"],
       ["ai", "Transcribing", "Handwriting recognition", "dropdown:recognitionProviderId"],
+      ["ai", "Transcribing", "Transcribe pages with", "dropdown:transcribeVendor"],
+      ["ai", "Transcribing", "Page transcription model", "text:llmTranscribeModel"],
+      ["ai", "Transcribing", `${label} API key for transcription`, "render"],
       ["ai", "Recordings", "Transcribe recordings with", "dropdown:speechService"],
       ["ai", "Recordings", "Transcription model", "text:speechServiceModel"],
       ["ai", "Recordings", "Transcription server URL", "text:speechBaseUrl"],
@@ -763,8 +768,11 @@ describe("which rows show", () => {
     expect(names.slice(from, names.indexOf("Assets folder"))).toEqual([
       "AI service",
       "AI model",
+      "Fallback model",
       `${label} API key`,
       "Handwriting recognition",
+      "Transcribe pages with",
+      "Page transcription model",
       "Transcribe recordings with",
       "Ask AI can read",
       "Show what each answer cost",
@@ -1099,14 +1107,18 @@ describe("control values", () => {
     await tab.setControlValue("customColors", " #ff8800,#00CCAA , #abc,red, #12345, #1234567,,");
     await tab.setControlValue("llmModel", "  claude-haiku-4-5 ");
     await tab.setControlValue("imageModel", " gpt-image-1\n");
+    await tab.setControlValue("llmTranscribeModel", " claude-haiku-4-5\t");
+    await tab.setControlValue("llmFallbackModel", " claude-sonnet-4-5 ");
     await tab.setControlValue("defaultColor", "#123456");
     expect(plugin.settings.defaultSize).toBe(4);
     expect(plugin.settings.highlighterAlpha).toBe(0.4);
     expect(plugin.settings.customColors).toEqual(["#ff8800", "#00CCAA", "#abc"]);
     expect(plugin.settings.llmModel).toBe("claude-haiku-4-5");
     expect(plugin.settings.imageModel).toBe("gpt-image-1");
+    expect(plugin.settings.llmTranscribeModel).toBe("claude-haiku-4-5");
+    expect(plugin.settings.llmFallbackModel).toBe("claude-sonnet-4-5");
     expect(plugin.settings.defaultColor).toBe("#123456");
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(6);
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(8);
     expect(plugin.calls).not.toContain("update");
   });
 
@@ -1557,7 +1569,7 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     // The side button is not in the key table yet: its own row still sets it.
     const button = renderRow(named(all, "Stylus side button"));
     expect(button.dropdowns.map((d) => Object.keys(d.options))).toEqual([
-      ["erase", "lasso", "pan", "none"],
+      ["erase", "erase-hover", "lasso", "pan", "none"],
       ["pen-menu", "eraser", "none"],
     ]);
     await button.dropdowns[0].pick("pan");
@@ -1579,8 +1591,10 @@ describe("pens and shortcuts (FineNotes#24, #25)", () => {
     try {
       const mobile = rows(makeTab(makePlugin()).tab);
       expect(shown(named(mobile, "Cursor over the page"))).toBe(false);
-      // The Apple Pencil has no side button to click.
-      expect(renderRow(named(mobile, "Stylus side button")).dropdowns).toHaveLength(1);
+      // The Apple Pencil has no side button to click, nor to hover with.
+      const pencil = renderRow(named(mobile, "Stylus side button")).dropdowns;
+      expect(pencil).toHaveLength(1);
+      expect(Object.keys(pencil[0].options)).toEqual(["erase", "lasso", "pan", "none"]);
     } finally {
       Platform.isMobile = false;
       Platform.isIosApp = false;

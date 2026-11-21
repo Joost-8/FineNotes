@@ -9,6 +9,7 @@ import {
   parsePageTranscripts,
   transcriptHashes,
   transcriptSources,
+  transcriptTextHash as textHash,
   updatePageTranscripts,
 } from "../../src/recognition/page-transcripts";
 
@@ -24,8 +25,19 @@ describe("device readings in the text layer", () => {
     expect(section).toContain("<!--goodobsidian-page p1 aaa-->");
     expect(section).toContain("<!--goodobsidian-page p2 bbb device-->");
     expect(parsePageTranscripts(section).entries).toEqual([
-      { key: "p1", hash: "aaa", text: "Transcribed by AI" },
-      { key: "p2", hash: "bbb", device: true, text: "Read on the iPad" },
+      {
+        key: "p1",
+        hash: "aaa",
+        text: "Transcribed by AI",
+        textHash: textHash("Transcribed by AI"),
+      },
+      {
+        key: "p2",
+        hash: "bbb",
+        device: true,
+        text: "Read on the iPad",
+        textHash: textHash("Read on the iPad"),
+      },
     ]);
   });
 
@@ -45,11 +57,17 @@ describe("device readings in the text layer", () => {
       key: "p2",
       hash: "ccc",
       text: "Transcribed now",
+      textHash: textHash("Transcribed now"),
     });
   });
 
   it("survive another page's update unchanged", () => {
     const next = updatePageTranscripts(section, keys, [{ key: "p1", text: "Again", hash: "ddd" }]);
-    expect(next).toContain("<!--goodobsidian-page p2 bbb device-->\nRead on the iPad");
+    expect(parsePageTranscripts(next).entries[1]).toMatchObject({
+      key: "p2",
+      hash: "bbb",
+      device: true,
+      text: "Read on the iPad",
+    });
   });
 });

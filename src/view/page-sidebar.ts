@@ -69,6 +69,7 @@ import {
   type FileRow,
   fileName,
 } from "../model/notebook-files";
+import type { PageTranscriptView, TranscriptSource } from "../recognition/page-transcripts";
 import {
   type ContentsEntry,
   type ContentsNode,
@@ -178,7 +179,17 @@ export interface PageSidebarCallbacks {
   onOpenFile?: (kind: FileKind, row: FileRow) => void;
   /** The Files tab's dropdown was changed. */
   onFileKind?: (kind: FileKind) => void;
+  /**
+   * The pages' own transcriptions, listed under Transcripts above the
+   * recordings' transcript files (FineNotes#265). Asked when that list is shown.
+   */
+  pageTranscripts?: () => PageTranscriptView[];
+  /** Something was done to a page's transcription in the Files tab. */
+  onTranscript?: (key: string, action: TranscriptAction) => void;
 }
+
+/** What can be done to a page's transcription from the Files tab. */
+export type TranscriptAction = "keep-mine" | "use-new" | "edit" | "go";
 
 export interface PageSidebarRenderOptions {
   painter: BackdropPainter;
@@ -189,6 +200,20 @@ export interface PageSidebarRenderOptions {
   highlighterAlpha: number;
   /** What a header's `{title}` becomes. */
   notebookTitle?: string;
+}
+
+/** Where a page's transcription came from, as its row says it. */
+function transcriptSourceLabel(source: TranscriptSource): string {
+  switch (source) {
+    case "device":
+      return t("view.files.source.device");
+    case "typed":
+      return t("view.files.source.typed");
+    case "edited":
+      return t("view.files.source.edited");
+    default:
+      return t("view.files.source.ai");
+  }
 }
 
 /** The sidebar's panes: the page thumbnails, the contents, or the note's files. */
@@ -302,6 +327,8 @@ interface ThumbView {
   count: HTMLElement;
   /** Content signature at the last paint; empty means "never painted". */
   painted: string;
+  /** What `sync()` last wrote into its row (number, title, aspect); empty means never. */
+  shown: string;
   /** The canvas holds pixels (it was painted and not given back since). */
   held: boolean;
   visible: boolean;
@@ -368,6 +395,12 @@ export class PageSidebar {
   private readonly tabButtons = new Map<SidebarTab, HTMLButtonElement>();
   private tab: SidebarTab = "pages";
   private filter: PageFilter = "all";
+  /**
+   * Showing a PDF's tab: its Contents are the PDF's own outline
+   * (`outline`, read only), and its slides take no bookmarks or filter.
+   */
+  private pdfTab = false;
+  private outline: readonly ContentsEntry[] = [];
   private readonly addTile: HTMLElement;
   private thumbs: ThumbView[] = [];
   private readonly drag: PageDrag;
@@ -402,6 +435,8 @@ export class PageSidebar {
 
   private doc: InkDocument | null = null;
   private current = 0;
+  /** The thumbnail wearing the "current" mark now. */
+  private marked: ThumbView | null = null;
   private open = false;
   /** A single page: no way to add, duplicate or reorder pages. */
   private single = false;
@@ -582,6 +617,7 @@ export class PageSidebar {
         this.open &&
         !this.board &&
         !this.single &&
+        !this.pdfTab &&
         this.callbacks.canEdit?.() !== false &&
         !!this.callbacks.onMoveContents,
       document: () => this.doc,
@@ -963,7 +999,9 @@ export class PageSidebar {
 
   private renderFiles(kind: FileKind, rows: readonly FileRow[]): void {
     this.filesList.empty();
-    if (rows.length === 0) {
+    const pages = kind === "transcripts" ? (this.callbacks.pageTranscripts?.() ?? []) : [];
+    for (const page of pages) this.renderPageTranscript(page);
+    if (rows.length === 0 && pages.length === 0) {
       this.filesList.createDiv({
         cls: "goodobsidian-files-empty",
         text: FILE_KIND_EMPTY[kind],
@@ -983,6 +1021,71 @@ export class PageSidebar {
         text.createSpan({ cls: "goodobsidian-files-row-detail", text: row.detail });
       }
       button.addEventListener("click", () => this.callbacks.onOpenFile?.(kind, row));
+    }
+  }
+
+  /** Pages whose transcription is open in the Files tab, by key. */
+  private readonly openTranscripts = new Set<string>();
+
+  /**
+   * A page's transcription as a row: "Page 3" and where its text came from,
+   * or that a new one waits to be compared. A tap opens it in place: its
+   * text, with Edit and Go to page; or, while a new one waits, both texts,
+   * each with Keep this.
+   */
+  private renderPageTranscript(view: PageTranscriptView): void {
+    const item = this.filesList.createDiv({
+      cls: "goodobsidian-files-transcript",
+      attr: { role: "listitem" },
+    });
+    const button = item.createEl("button", {
+      cls: "goodobsidian-files-row clickable-icon",
+      attr: { "aria-expanded": String(this.openTranscripts.has(view.key)) },
+    });
+    setIcon(button.createSpan({ cls: "goodobsidian-files-row-icon" }), "file-text");
+    const text = button.createSpan({ cls: "goodobsidian-files-row-text" });
+    text.createSpan({
+      cls: "goodobsidian-files-row-name",
+      text: t("view.files.pageTranscript", { page: view.page + 1 }),
+    });
+    text.createSpan({
+      cls: "goodobsidian-files-row-detail",
+      text: view.pending ? t("view.files.pending") : transcriptSourceLabel(view.source),
+    });
+    if (view.pending) button.createSpan({ cls: "goodobsidian-files-row-dot" });
+    const act = (action: TranscriptAction) => () => this.callbacks.onTranscript?.(view.key, action);
+    button.addEventListener("click", () => {
+      if (this.openTranscripts.has(view.key)) this.openTranscripts.delete(view.key);
+      else this.openTranscripts.add(view.key);
+      this.refreshFiles();
+    });
+    if (!this.openTranscripts.has(view.key)) return;
+
+    const open = item.createDiv({ cls: "goodobsidian-files-transcript-open" });
+    if (view.pending) {
+      const version = (label: string, body: string, action: TranscriptAction): void => {
+        const card = open.createDiv({ cls: "goodobsidian-files-transcript-version" });
+        card.createDiv({ cls: "goodobsidian-files-transcript-label", text: label });
+        card.createDiv({ cls: "goodobsidian-files-transcript-text", text: body });
+        const keep = card.createEl("button", { text: t("view.files.keep") });
+        keep.addEventListener("click", act(action));
+      };
+      version(t("view.files.yours"), view.text, "keep-mine");
+      version(t("view.files.new"), view.pending, "use-new");
+      return;
+    }
+    open.createDiv({ cls: "goodobsidian-files-transcript-text", text: view.text });
+    const actions = open.createDiv({ cls: "goodobsidian-files-transcript-actions" });
+    for (const [action, icon, label] of [
+      ["edit", "pencil", t("view.files.edit")],
+      ["go", "arrow-right", t("view.files.goToPage")],
+    ] as const) {
+      const control = actions.createEl("button", {
+        cls: "clickable-icon",
+        attr: { "aria-label": label, title: label },
+      });
+      setIcon(control, icon);
+      control.addEventListener("click", act(action));
     }
   }
 
@@ -1047,8 +1150,10 @@ export class PageSidebar {
    */
   private applyFilter(): void {
     const pages = this.doc?.pages ?? [];
-    const filtered = this.filter !== "all";
-    this.filterLabel.setText(filterInfo(this.filter).label);
+    // A PDF's slides take no bookmarks: the notes' filter waits for the notes.
+    const filter: PageFilter = this.pdfTab ? "all" : this.filter;
+    const filtered = filter !== "all";
+    this.filterLabel.setText(filterInfo(filter).label);
     this.filterChip.toggleClass("is-filtered", filtered);
     let shown = 0;
     this.thumbs.forEach((view, index) => {
@@ -1059,13 +1164,13 @@ export class PageSidebar {
         "title",
         marked ? t("view.sidebar.removeBookmark") : t("view.sidebar.bookmarkPage"),
       );
-      const passes = !filtered || (page !== undefined && pagePassesFilter(page, this.filter));
+      const passes = !filtered || (page !== undefined && pagePassesFilter(page, filter));
       if (passes) shown++;
       view.root.toggleClass("is-hidden", !passes);
     });
     this.addTile.toggleClass("is-hidden", filtered || this.single);
     const none = filtered && this.doc !== null && shown === 0;
-    this.emptyEl.setText(filterInfo(this.filter).empty);
+    this.emptyEl.setText(filterInfo(filter).empty);
     this.emptyEl.toggleClass("is-hidden", !none);
     if (this.open) this.schedulePaint();
   }
@@ -1095,6 +1200,23 @@ export class PageSidebar {
     if (this.single) this.setOverview(false);
     this.applyFilter();
     this.syncChrome();
+  }
+
+  /**
+   * A PDF's tab is shown (`on`), or the notes again. On a tab the Contents
+   * tab lists the PDF's own outline (`outline`, from `tabOutlineEntries`),
+   * read only: a tap goes to the slide, nothing is added, renamed or dragged.
+   * The notes' contents and filter come back with the notes.
+   */
+  setPdfTab(on: boolean, outline: readonly ContentsEntry[] = []): void {
+    if (on === this.pdfTab && outline === this.outline) return;
+    this.pdfTab = on;
+    this.outline = on ? outline : [];
+    this.el.toggleClass("is-pdf-tab", on);
+    this.contentsEmpty.setText(on ? t("view.sidebar.noOutline") : t("view.sidebar.contentsEmpty"));
+    this.applyFilter();
+    this.renderContents();
+    this.syncCurrent();
   }
 
   /**
@@ -1185,7 +1307,7 @@ export class PageSidebar {
   setCurrentPage(index: number): void {
     if (index === this.current) return;
     this.current = index;
-    this.syncCurrent();
+    this.moveCurrent();
     if (this.open) {
       if (this.tab === "contents") this.revealCurrentEntry();
       else this.revealCurrent();
@@ -1243,14 +1365,19 @@ export class PageSidebar {
     if (this.anchor && !pages.includes(this.anchor)) this.anchor = null;
     this.thumbs.forEach((view, index) => {
       view.page = pages[index] ?? null;
+      const page = pages[index];
+      const entries = page ? pageContentsEntries(page, index).length : 0;
+      const title = thumbnailTitleOf(page);
+      const aspect = page ? aspectOf(this.thumbPage(page)) : "";
+      // A long book's edit touches one row: the others are left as they are.
+      const shown = `${index}|${entries}|${aspect}|${page?.board === true}|${this.board}|${title}`;
+      if (shown === view.shown) return;
+      view.shown = shown;
       view.label.setText(String(index + 1));
       // The frame, not the root: it is only in the root near the view (#207).
       view.frame
         .querySelector(".goodobsidian-thumb-kind")
-        ?.toggleClass("is-hidden", pages[index]?.board !== true || this.board);
-      const page = pages[index];
-      const entries = page ? pageContentsEntries(page, index).length : 0;
-      const title = thumbnailTitleOf(page);
+        ?.toggleClass("is-hidden", page?.board !== true || this.board);
       view.title.setText(title);
       view.count.setText(entries > 1 ? `+${entries - 1}` : "");
       view.count.toggleClass("is-hidden", entries < 2);
@@ -1259,7 +1386,6 @@ export class PageSidebar {
         "aria-label",
         entries > 1 ? t("view.sidebar.moreInContents", { title, count: entries - 1 }) : title,
       );
-      const aspect = page ? aspectOf(this.thumbPage(page)) : "";
       view.canvas.setCssStyles({ aspectRatio: aspect });
       view.root.setCssProps({ "--goodobsidian-thumb-aspect": aspect });
     });
@@ -1283,7 +1409,7 @@ export class PageSidebar {
    */
   private renderContents(): void {
     this.contentsDrag.cancel();
-    const entries = this.doc ? contentsEntries(this.doc) : [];
+    const entries = this.pdfTab ? [...this.outline] : this.doc ? contentsEntries(this.doc) : [];
     this.contentsItems = entries;
     this.contentsList.empty();
     const rows: Array<{ row: HTMLElement; parents: number[]; key: string | null }> = [];
@@ -1328,6 +1454,8 @@ export class PageSidebar {
 
   /** What remembers an entry's fold: its page's id for a title, its own id for a heading. */
   private foldKey(entry: ContentsEntry): string {
+    // A tab's outline ids are made up as it is shown: kept apart from the notes'.
+    if (this.pdfTab) return `o:${this.doc?.pages[entry.index]?.id ?? entry.index}:${entry.title}`;
     if (entry.section) return `s:${entry.section.id}`;
     if (entry.chapter) return `s:${entry.chapter.id}`;
     return `p:${this.doc?.pages[entry.index]?.id ?? entry.index}`;
@@ -1395,6 +1523,8 @@ export class PageSidebar {
     });
     // A board's page menu holds page actions it has none of; its headings keep theirs.
     if (this.board && !section) return row;
+    // A PDF's outline is the PDF's: read only.
+    if (this.pdfTab) return row;
     const more = row.createEl("button", { cls: "goodobsidian-contents-more clickable-icon" });
     setIcon(more, "chevron-down");
     more.setAttribute("aria-label", t("view.sidebar.entryOptions"));
@@ -1459,9 +1589,15 @@ export class PageSidebar {
    */
   private syncContentsAdd(): void {
     const page = this.doc?.pages[this.current];
-    this.contentsAdd.toggleClass("is-hidden", this.board || !page || page.title !== undefined);
+    this.contentsAdd.toggleClass(
+      "is-hidden",
+      this.board || this.pdfTab || !page || page.title !== undefined,
+    );
     this.contentsAddLabel.setText(t("view.sidebar.addPageToContents", { page: this.current + 1 }));
-    this.contentsChapter.toggleClass("is-hidden", this.board || this.single || !page);
+    this.contentsChapter.toggleClass(
+      "is-hidden",
+      this.board || this.single || this.pdfTab || !page,
+    );
   }
 
   private showContentsMenu(
@@ -1538,6 +1674,7 @@ export class PageSidebar {
       title,
       count,
       painted: "",
+      shown: "",
       held: false,
       visible: false,
       seen: 0,
@@ -1583,15 +1720,33 @@ export class PageSidebar {
   }
 
   private syncCurrent(): void {
-    this.thumbs.forEach((view, index) => {
-      const active = index === this.current;
-      view.root.toggleClass("is-current", active);
-      view.frame.setAttribute("aria-current", active ? "page" : "false");
-      // The overview measures the page being read to fly it into its place.
-      if (active) this.attachThumb(view);
-    });
+    this.thumbs.forEach((view, index) => this.markThumb(view, index === this.current));
+    this.marked = this.thumbs[this.current] ?? null;
     this.syncCurrentEntry();
     this.syncContentsAdd();
+  }
+
+  /**
+   * The page being read changed and the thumbnails did not: only the one
+   * marked before and the new one are touched. A 600-page book rewrote all
+   * 600 on every page turn.
+   */
+  private moveCurrent(): void {
+    const next = this.thumbs[this.current] ?? null;
+    if (next !== this.marked) {
+      if (this.marked) this.markThumb(this.marked, false);
+      if (next) this.markThumb(next, true);
+      this.marked = next;
+    }
+    this.syncCurrentEntry();
+    this.syncContentsAdd();
+  }
+
+  private markThumb(view: ThumbView, active: boolean): void {
+    view.root.toggleClass("is-current", active);
+    view.frame.setAttribute("aria-current", active ? "page" : "false");
+    // The overview measures the page being read to fly it into its place.
+    if (active) this.attachThumb(view);
   }
 
   /**

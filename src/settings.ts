@@ -51,6 +51,12 @@ import {
   setIcon,
 } from "obsidian";
 import { ICON_NEW_NOTEBOOK, SIZES } from "./constants";
+import {
+  SIMPLE_PARTS,
+  SIMPLE_PART_ICONS,
+  SIMPLE_PART_NAMES,
+  toggleSimplePart,
+} from "./model/simple-mode";
 import { SHORTCUT_NEW_NOTEBOOK_URL, SHORTCUT_PDF_URL } from "./model/inbox";
 import {
   ASSETS_FOLDER,
@@ -64,6 +70,9 @@ import {
   type ImageVendorChoice,
   aiKeyFolded,
   resolveImageVendor,
+  TRANSCRIBE_VENDOR_CHOICES,
+  type TranscribeVendorChoice,
+  resolveTranscribeVendor,
 } from "./recognition/ai-menu-model";
 import {
   DEFAULT_IMAGE_MODELS,
@@ -247,6 +256,7 @@ function updateChoiceOf(settings: GoodObsidianSettings): "remind" | "dot" | "off
 function barrelNames(): Record<BarrelAction, string> {
   return {
     erase: t("settings.barrel.erase"),
+    "erase-hover": t("settings.barrel.eraseHover"),
     lasso: t("settings.barrel.lasso"),
     pan: t("settings.barrel.pan"),
     none: t("settings.barrel.none"),
@@ -323,6 +333,14 @@ function speechServiceLabels(): Record<SpeechService, string> {
     google: "Google (Gemini)",
     custom: t("settings.speechService.custom"),
   };
+}
+
+function transcribeVendorLabels(): Record<TranscribeVendorChoice, string> {
+  const labels = { same: t("settings.imageVendor.same") } as Record<TranscribeVendorChoice, string>;
+  for (const id of TRANSCRIBE_VENDOR_CHOICES) {
+    if (id !== "same") labels[id] = VENDOR_LABELS[id];
+  }
+  return labels;
 }
 
 function imageVendorLabels(): Record<ImageVendorChoice, string> {
@@ -971,6 +989,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       this.update();
       return;
     }
+    if (key === "simpleLook") {
+      // Saved by the plugin; the parts it can show again appear under it while it is on.
+      this.plugin.setSimpleLook(value === true);
+      this.update();
+      return;
+    }
     if (key === "gestureHints") {
       // Saved by the plugin, which forgets what it counted when the hints go off.
       await this.plugin.setGestureHints(value === true);
@@ -986,6 +1010,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       // Saved by the plugin, which redraws every open notebook with it.
       storeShownValue(this.plugin.settings, key, value);
       await this.plugin.applyPageAppearance();
+      return;
+    }
+    if (key === "transcribeVendor") {
+      // Saved by the plugin, which keeps each service's transcription model.
+      await this.plugin.switchTranscribeVendor(value as TranscribeVendorChoice);
+      this.update();
       return;
     }
     if (key === "llmVendor") {
@@ -1097,6 +1127,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
               "ribbon",
             ]),
             "simpleLook",
+          ),
+          block(
+            (el) => this.drawSimpleParts(el),
+            () => this.plugin.settings.simpleLook,
           ),
           this.tile(
             toggle(
@@ -1940,6 +1974,10 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       ? t("settings.ai.endpointKey")
       : t("settings.ai.keyName", { service: VENDORS[vendor].label });
     const imageKeyName = t("settings.ai.imageKeyName", { service: VENDORS[imageVendor].label });
+    const transcribeVendor = resolveTranscribeVendor(settings.transcribeVendor, vendor);
+    const transcribeKeyName = t("settings.ai.transcribeKeyName", {
+      service: VENDORS[transcribeVendor].label,
+    });
     const speechService = settings.speechService ?? "device";
     const speechOnline = isOnlineSpeechService(speechService);
     const speechModel = DEFAULT_AUDIO_MODELS[speechOnline ? speechService : "groq"];
@@ -2009,6 +2047,19 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             "cpu",
           ),
           this.tile(
+            controlRow(
+              t("settings.fallbackModel.name"),
+              t("settings.fallbackModel.line"),
+              {
+                type: "text",
+                key: "llmFallbackModel",
+                placeholder: t("settings.fallbackModel.placeholder"),
+              },
+              ["rate limit", "quota", "429", "backup model", "second model"],
+            ),
+            "life-buoy",
+          ),
+          this.tile(
             drawnRow(keyName, this.keyLine(vendor), (s) => this.renderKeyRow(s, vendor), [
               "token",
               "secret",
@@ -2032,6 +2083,42 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
               ["OCR", "handwriting to text", "auto recognition", "recognize automatically"],
             ),
             "autoRecognize",
+          ),
+          this.tile(
+            dropdown(
+              "transcribeVendor",
+              t("settings.transcribeVendor.name"),
+              t("settings.transcribeVendor.line"),
+              transcribeVendorLabels(),
+              ["transcription service", "transcription key", "other provider", "Gemini", "OpenAI"],
+            ),
+            "file-text",
+          ),
+          this.tile(
+            controlRow(
+              t("settings.transcribeModel.name"),
+              t("settings.transcribeModel.line"),
+              {
+                type: "text",
+                key: "llmTranscribeModel",
+                placeholder:
+                  transcribeVendor === vendor
+                    ? t("settings.transcribeModel.placeholder")
+                    : DEFAULT_MODELS[transcribeVendor],
+              },
+              ["cheaper model", "model for transcription", "transcribe model", "OCR model"],
+            ),
+            "cpu",
+          ),
+          this.tile(
+            drawnRow(
+              transcribeKeyName,
+              this.keyLine(transcribeVendor),
+              (s) => this.renderKeyRow(s, transcribeVendor),
+              ["transcription key"],
+              transcribeVendor !== vendor,
+            ),
+            "key-round",
           ),
         ],
       ],
@@ -2521,7 +2608,11 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private drawSideButton(setting: Setting): void {
     const settings = this.plugin.settings;
     setting.addDropdown((d) => {
-      for (const [id, name] of Object.entries(barrelNames())) d.addOption(id, name);
+      for (const [id, name] of Object.entries(barrelNames())) {
+        // The Apple Pencil has no side button to hover with.
+        if (id === "erase-hover" && Platform.isIosApp) continue;
+        d.addOption(id, name);
+      }
       d.selectEl.setAttribute("aria-label", t("settings.barrel.whileWriting"));
       d.setValue(String(shownValue(settings, "barrelButton")));
       d.onChange((value) => void this.setControlValue("barrelButton", value));
@@ -2536,6 +2627,33 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   }
 
   /** The chrome's style and colours (`model/look.ts`). */
+  /**
+   * Under the simple look's switch, while it is on: the parts of Obsidian it
+   * can show again, one button each, filled while shown (all off by default).
+   */
+  private drawSimpleParts(el: HTMLElement): void {
+    el.addClass("goodobsidian-simple-parts-row");
+    const row = el.createDiv({
+      cls: "goodobsidian-simple-parts",
+      attr: { role: "group", "aria-label": t("settings.simpleLook.show") },
+    });
+    const shown = this.plugin.settings.simpleLookShow;
+    for (const part of SIMPLE_PARTS) {
+      const on = shown.includes(part);
+      const chip = row.createEl("button", {
+        cls: "clickable-icon goodobsidian-simple-part",
+        attr: { type: "button", "aria-pressed": String(on) },
+      });
+      chip.toggleClass("is-on", on);
+      setIcon(chip.createSpan({ cls: "goodobsidian-simple-part-icon" }), SIMPLE_PART_ICONS[part]);
+      chip.createSpan({ text: t(SIMPLE_PART_NAMES[part]) });
+      chip.addEventListener("click", () => {
+        this.plugin.setSimpleParts(toggleSimplePart(this.plugin.settings.simpleLookShow, part));
+        this.update();
+      });
+    }
+  }
+
   private drawStyle(setting: Setting): void {
     const settings = this.plugin.settings;
     setting.addDropdown((d) => {

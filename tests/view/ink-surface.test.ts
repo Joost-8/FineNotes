@@ -3428,3 +3428,50 @@ describe("the Zoom box's first-drag catcher", () => {
     expect(hidden()).toBe(false);
   });
 });
+
+describe("the lasso on a PDF's tab", () => {
+  /** A lasso of `mode` lifted over a slide; `onTab` makes it a PDF's tab. */
+  function lift(mode: "rect" | "free", onTab: boolean, inkInside: boolean) {
+    const calls: string[] = [];
+    const loop = [10, 10, 200, 10, 200, 120, 10, 120];
+    const surface = surfaceWith({
+      lasso: {
+        box: { index: 0 },
+        mode,
+        origin: { x: 10, y: 10 },
+        to: { x: 200, y: 120 },
+        held: false,
+        path: { points: loop },
+      },
+      activePage: null,
+      renderer: null,
+      callbacks: onTab ? { onSnippetStart: () => null } : {},
+      stopPress: () => undefined,
+      endTextSweep: () => undefined,
+      lassoLoop: () => loop,
+      keepOutline: () => calls.push("outline"),
+      selectInside: () => calls.push("select"),
+      liveSelection: () => (inkInside && calls.includes("select") ? { pageId: "p1" } : null),
+      groupBounds: () => ({ minX: 20, minY: 20, maxX: 60, maxY: 40 }),
+      dropSelection: () => calls.push("drop"),
+      showEmptyLasso: () => calls.push("area"),
+    });
+    Object.defineProperty(surface, "fixedPages", { value: onTab });
+    Object.defineProperty(surface, "gestureScale", { value: 1 });
+    run(surface, "selectEnd");
+    return calls;
+  }
+
+  for (const mode of ["rect", "free"] as const) {
+    it(`keeps the lassoed area (${mode}), with ink in it or not`, () => {
+      expect(lift(mode, true, true)).toEqual(["drop", "area"]);
+      expect(lift(mode, true, false)).toEqual(["drop", "area"]);
+    });
+  }
+
+  it("selects the ink inside on the notes, as before", () => {
+    expect(lift("rect", false, true)).toEqual(["select"]);
+    expect(lift("free", false, true)).toEqual(["select", "outline"]);
+    expect(lift("rect", false, false)).toEqual(["select", "area"]);
+  });
+});

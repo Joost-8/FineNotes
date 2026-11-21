@@ -9,6 +9,7 @@ import { layoutText } from "../../src/canvas/pdf-text";
 
 const pdf = {
   opened: 0,
+  destroyed: 0,
   reads: 0,
   pages: 3,
   fail: false,
@@ -45,7 +46,10 @@ vi.mock("obsidian", async () => ({
                 },
                 cleanup: () => undefined,
               }),
-            destroy: () => Promise.resolve(),
+            destroy: () => {
+              pdf.destroyed++;
+              return Promise.resolve();
+            },
           }),
         };
       },
@@ -87,6 +91,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   pdf.opened = 0;
+  pdf.destroyed = 0;
   pdf.reads = 0;
   pdf.fail = false;
   pdf.items = [];
@@ -326,5 +331,102 @@ describe("PdfTextCache", () => {
     expect(c.peek(BACKDROP, GEOMETRY)).toBeNull();
     expect(c.peek({ ...BACKDROP, page: 200 }, GEOMETRY)).not.toBeNull();
     pdf.pages = 3;
+  });
+});
+
+// A 157 MB textbook was held a third time, by this cache's own pdf.js copy,
+// while the PDF worker held it already to draw the pages.
+describe("PdfTextCache reading through the PDF worker", () => {
+  const SIGNALS = {
+    str: "Signals",
+    transform: [20, 0, 0, 20, 100, 700],
+    width: 70,
+    height: 20,
+    fontName: "f1",
+  };
+  function fakeWorker(shared: number | null = 3) {
+    return {
+      alive: true,
+      share: vi.fn(async () => shared),
+      open: vi.fn(async (_path: string, _bytes: ArrayBuffer) => 3),
+      pageText: vi.fn(async () => ({
+        width: 600,
+        height: 800,
+        transform: [1, 0, 0, -1, 0, 800],
+        items: [SIGNALS],
+        styles: { f1: { ascent: 0.9, descent: -0.3 } },
+        annotations: [],
+      })),
+      operators: vi.fn(async () => ({ fnArray: [], argsArray: [] })),
+      destination: vi.fn(async () => null),
+      pageIndex: vi.fn(async () => 0),
+      close: vi.fn(),
+    };
+  }
+  function cacheReading(read = vi.fn(() => Promise.resolve(new ArrayBuffer(8)))) {
+    const app = { vault: { getFileByPath: () => ({}), readBinary: read } };
+    return { c: new PdfTextCache(app as never), read };
+  }
+
+  it("reads the worker's document of a PDF whose pages are drawn there, without reading the file", async () => {
+    const { c, read } = cacheReading();
+    const worker = fakeWorker();
+    c.setWorker(worker);
+    const layout = await c.layout(BACKDROP, GEOMETRY);
+    expect(layout.lines).toHaveLength(1);
+    expect(layout.lines[0].top).toBeCloseTo(82);
+    expect(worker.share).toHaveBeenCalledWith("Slides.pdf");
+    expect(worker.pageText).toHaveBeenCalledWith("Slides.pdf", 0);
+    expect([read.mock.calls.length, pdf.opened]).toEqual([0, 0]);
+    c.destroy();
+    await settle();
+    expect(worker.close).toHaveBeenCalledWith("Slides.pdf");
+  });
+
+  it("opens it there from the file when its pages are not drawn there", async () => {
+    const { c, read } = cacheReading();
+    const worker = fakeWorker(null);
+    c.setWorker(worker);
+    expect((await c.layout(BACKDROP, GEOMETRY)).lines).toHaveLength(1);
+    expect(read).toHaveBeenCalledOnce();
+    expect(worker.open.mock.calls[0][0]).toBe("Slides.pdf");
+    expect(pdf.opened).toBe(0);
+    c.destroy();
+  });
+
+  it("reads here when the worker cannot, and here again once it has died", async () => {
+    pdf.items = [SIGNALS];
+    const { c } = cacheReading();
+    const worker = fakeWorker();
+    worker.share.mockRejectedValueOnce(new Error("worker busy dying"));
+    c.setWorker(worker);
+    expect((await c.layout(BACKDROP, GEOMETRY)).lines).toHaveLength(1);
+    expect(pdf.opened).toBe(1);
+
+    const { c: d } = cacheReading();
+    const dying = fakeWorker();
+    d.setWorker(dying);
+    expect((await d.layout(BACKDROP, GEOMETRY)).lines).toHaveLength(1);
+    dying.alive = false;
+    pdf.opened = 0;
+    expect((await d.layout({ ...BACKDROP, page: 1 }, GEOMETRY)).lines).toHaveLength(1);
+    expect(pdf.opened).toBe(1);
+    c.destroy();
+    d.destroy();
+  });
+
+  it("closes this thread's copy once the worker is up, after the page being read", async () => {
+    pdf.items = [SIGNALS];
+    const { c } = cacheReading();
+    expect((await c.layout(BACKDROP, GEOMETRY)).lines).toHaveLength(1);
+    expect([pdf.opened, pdf.destroyed]).toEqual([1, 0]);
+    const worker = fakeWorker();
+    c.setWorker(worker);
+    await settle();
+    expect(pdf.destroyed).toBe(1);
+    expect((await c.layout({ ...BACKDROP, page: 1 }, GEOMETRY)).lines).toHaveLength(1);
+    expect(pdf.opened).toBe(1);
+    expect(worker.pageText).toHaveBeenCalledWith("Slides.pdf", 1);
+    c.destroy();
   });
 });

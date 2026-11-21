@@ -44,14 +44,16 @@ export interface Box {
  * The page area, host px: where the pill rests, `gap` clear of the bar and
  * of the view's top. `bar` is the bar's box at `dock`; `view` is where the
  * view's page body runs: its sides inside the view's padding, its bottom
- * above Obsidian's foot padding and the keyboard. A panel docked at the
+ * above Obsidian's foot padding and the keyboard, and its top (`view.top`,
+ * 0 when not given) below what sits over the page, such as the PDF tab
+ * strip; a bar along the top is cleared as well. A panel docked at the
  * page's left (the page sidebar, the Ask chat) `leftInset` wide is kept
  * clear of, unless a pill of `pillWidth` would not fit beside it.
  */
 export function pageArea(
   dock: BarDock,
   bar: Box,
-  view: { left: number; right: number; bottom: number },
+  view: { left: number; right: number; bottom: number; top?: number },
   gap: number,
   leftInset: number,
   pillWidth: number,
@@ -60,7 +62,7 @@ export function pageArea(
   const right = dock === "right" ? bar.left : view.right;
   return {
     left: left + Math.min(leftInset, Math.max(0, right - left - pillWidth)),
-    top: dock === "top" ? bar.bottom + gap : gap,
+    top: Math.max(dock === "top" ? bar.bottom : 0, view.top ?? 0) + gap,
     right,
     // Under the iPad keyboard a bottom bar is covered, and the page ends above it.
     bottom: dock === "bottom" ? Math.min(bar.top, view.bottom) : view.bottom,

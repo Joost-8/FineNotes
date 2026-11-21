@@ -26,6 +26,10 @@ const pdf = {
     task: { onContinue?: ((next: () => void) => void) | null };
   }>,
   pages: 40,
+  /** Documents opened and destroyed, and the bytes the last one was given. */
+  opened: 0,
+  destroyed: 0,
+  data: null as Uint8Array | null,
   calls: [] as Array<{ viewport: { width: number; height: number }; transform?: number[] }>,
 };
 
@@ -33,41 +37,48 @@ vi.mock("obsidian", async () => ({
   ...(await import("./fake-obsidian")),
   loadPdfJs: () =>
     Promise.resolve({
-      getDocument: () => ({
-        promise: Promise.resolve({
-          numPages: pdf.pages,
-          getPage: () =>
-            Promise.resolve({
-              getViewport: ({ scale }: { scale: number }) => ({
-                width: 600 * scale,
-                height: 800 * scale,
+      getDocument: ({ data }: { data: Uint8Array }) => {
+        pdf.opened++;
+        pdf.data = data;
+        return {
+          promise: Promise.resolve({
+            numPages: pdf.pages,
+            getPage: () =>
+              Promise.resolve({
+                getViewport: ({ scale }: { scale: number }) => ({
+                  width: 600 * scale,
+                  height: 800 * scale,
+                }),
+                render: (params: {
+                  viewport: { width: number; height: number };
+                  transform?: number[];
+                }) => {
+                  pdf.calls.push(params);
+                  pdf.renders++;
+                  pdf.active++;
+                  pdf.peak = Math.max(pdf.peak, pdf.active);
+                  let finish!: () => void, reject!: (error: Error) => void;
+                  const promise = new Promise<void>((resolve, fail) => {
+                    finish = resolve;
+                    reject = fail;
+                  });
+                  const done = promise.finally(() => {
+                    pdf.active--;
+                  });
+                  const cancel = vi.fn(() => reject(new Error("cancelled")));
+                  const task = { promise: done, cancel, onContinue: null };
+                  pdf.tasks.push({ finish, cancel, task });
+                  if (!pdf.blocked) finish();
+                  return task;
+                },
               }),
-              render: (params: {
-                viewport: { width: number; height: number };
-                transform?: number[];
-              }) => {
-                pdf.calls.push(params);
-                pdf.renders++;
-                pdf.active++;
-                pdf.peak = Math.max(pdf.peak, pdf.active);
-                let finish!: () => void, reject!: (error: Error) => void;
-                const promise = new Promise<void>((resolve, fail) => {
-                  finish = resolve;
-                  reject = fail;
-                });
-                const done = promise.finally(() => {
-                  pdf.active--;
-                });
-                const cancel = vi.fn(() => reject(new Error("cancelled")));
-                const task = { promise: done, cancel, onContinue: null };
-                pdf.tasks.push({ finish, cancel, task });
-                if (!pdf.blocked) finish();
-                return task;
-              },
-            }),
-          destroy: () => Promise.resolve(),
-        }),
-      }),
+            destroy: () => {
+              pdf.destroyed++;
+              return Promise.resolve();
+            },
+          }),
+        };
+      },
     }),
 }));
 
@@ -85,6 +96,8 @@ beforeEach(() => {
   pdf.blocked = false;
   pdf.tasks.length = 0;
   pdf.pages = 40;
+  pdf.opened = pdf.destroyed = 0;
+  pdf.data = null;
   pdf.calls.length = 0;
   clock = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => clock);
@@ -928,6 +941,64 @@ describe("rendering in the PDF worker", () => {
     expect(cancel).toHaveBeenCalledOnce();
     expect(c.peek("a.pdf", 0, 8, tile)).toBeNull();
     c.destroy();
+  });
+
+  // A 157 MB textbook was held twice for as long as the notebook was open:
+  // the pages drawn before the worker started kept this thread's copy.
+  it("closes this thread's copy of the PDF once the worker draws", async () => {
+    const c = cache();
+    expect((await c.resolve("a.pdf", 0, 1)).ok).toBe(true);
+    expect([pdf.renders, pdf.opened, pdf.destroyed]).toEqual([1, 1, 0]);
+    const { worker } = fakeWorker();
+    c.setWorker(asWorker(worker));
+    await settle();
+    expect(pdf.destroyed).toBe(1);
+    expect((await c.resolve("a.pdf", 1, 1)).ok).toBe(true);
+    expect(worker.render).toHaveBeenCalledOnce();
+    expect([pdf.renders, pdf.opened]).toEqual([1, 1]);
+    c.destroy();
+  });
+
+  it("closes it only once a render still drawing with it is done", async () => {
+    const c = cache();
+    pdf.blocked = true;
+    const drawing = c.resolve("a.pdf", 0, 1);
+    await settle();
+    expect(pdf.tasks).toHaveLength(1);
+    const { worker } = fakeWorker();
+    c.setWorker(asWorker(worker));
+    await settle();
+    expect(pdf.destroyed).toBe(0);
+    pdf.tasks[0].finish();
+    expect((await drawing).ok).toBe(true);
+    await settle();
+    expect(pdf.destroyed).toBe(1);
+    c.destroy();
+  });
+
+  it("hands what it read to pdf.js and to the worker without copying it", async () => {
+    const read: ArrayBuffer[] = [];
+    const app = {
+      vault: {
+        getFileByPath: (path: string) => ({ path, extension: "pdf" }),
+        readBinary: () => {
+          const bytes = new ArrayBuffer(8);
+          read.push(bytes);
+          return Promise.resolve(bytes);
+        },
+      },
+    };
+    const here = new PdfBackdropCache(app as never, PDF_BUDGET);
+    await here.resolve("a.pdf", 0, 1);
+    expect(pdf.data?.buffer).toBe(read[0]);
+    const there = new PdfBackdropCache(app as never, PDF_BUDGET);
+    const { worker } = fakeWorker();
+    there.setWorker(asWorker(worker));
+    await there.resolve("a.pdf", 0, 1);
+    expect(worker.open.mock.calls[0]).toEqual(["a.pdf", read[1]]);
+    expect((worker.open.mock.calls[0] as unknown[])[1]).toBe(read[1]);
+    here.destroy();
+    there.destroy();
   });
 
   it("falls back to this thread for good when the worker dies", async () => {

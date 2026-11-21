@@ -61,6 +61,19 @@ import {
 } from "./format-features";
 import { foldNoteInk, isStickyNote, readStickyPaper, unfoldNoteInk } from "./sticky-notes";
 import {
+  type SizeRun,
+  besidePageId,
+  isTabId,
+  pageSizeAt,
+  readBesideView,
+  readLabel,
+  readSizeRuns,
+  readSlideRef,
+  usesPdfTabs,
+} from "./beside-pdfs";
+import {
+  type BesidePdf,
+  type BesideView,
   type AttachmentFolders,
   type Backdrop,
   type ImageElement,
@@ -241,8 +254,27 @@ interface StoredDocument {
   view: ViewState;
   meta?: StoredMeta;
   recordings?: Recording[];
+  /** PDFs kept beside the notes (`model/beside-pdfs`); absent when none. */
+  beside?: StoredBeside[];
   pages: StoredPage[];
 }
+
+/**
+ * A PDF tab as stored. Its pages with marks are stored as notes pages are,
+ * except that the backdrop holds only the 0-based PDF page: the path is the
+ * tab's own.
+ */
+interface StoredBeside {
+  id: string;
+  path: string;
+  label?: string;
+  hidden?: true;
+  view?: BesideView;
+  sizes: SizeRun[];
+  marks?: StoredMarkPage[];
+}
+
+type StoredMarkPage = Omit<StoredPage, "backdrop"> & { backdrop: { page: number } };
 
 /** A stroke `t0`: milliseconds from the page's first pen-down, so never negative. */
 function isTime(value: unknown): value is number {
@@ -428,19 +460,48 @@ function hasShapeContent(page: Page): boolean {
 /** The features a document uses that an older reader would lose. */
 function featuresOf(doc: InkDocument): FormatFeature[] {
   const features: FormatFeature[] = [];
-  if (doc.pages.some((page) => page.images.some(isStickyNote))) features.push("sticky");
-  if (doc.pages.some((page) => liveConnectors(page).length > 0)) features.push("connectors");
-  if (doc.pages.some((page) => page.strokes.some(hasTilt))) features.push("tilt");
-  if (doc.pages.some((page) => page.strokes.some(isTape))) features.push("tape");
-  if (doc.pages.some((page) => page.backdrop.frame)) features.push("side-space");
-  if (doc.pages.some(hasShapeContent)) features.push("shape-content");
-  if (doc.pages.some((page) => page.textBoxes.some((box) => box.rotation !== undefined))) {
+  // The pages of PDF tabs hold ink too, written by the same tools.
+  const pages = doc.beside?.length
+    ? [...doc.pages, ...doc.beside.flatMap((beside) => beside.marks)]
+    : doc.pages;
+  if (pages.some((page) => page.images.some(isStickyNote))) features.push("sticky");
+  if (pages.some((page) => liveConnectors(page).length > 0)) features.push("connectors");
+  if (pages.some((page) => page.strokes.some(hasTilt))) features.push("tilt");
+  if (pages.some((page) => page.strokes.some(isTape))) features.push("tape");
+  if (pages.some((page) => page.backdrop.frame)) features.push("side-space");
+  if (pages.some(hasShapeContent)) features.push("shape-content");
+  if (pages.some((page) => page.textBoxes.some((box) => box.rotation !== undefined))) {
     features.push("text-turn");
   }
   if ((doc.endless === true && doc.pages.length > 1) || doc.pages.some((p) => p.board === true)) {
     features.push("boards");
   }
+  if (usesPdfTabs(doc)) features.push("pdf-tabs");
   return features;
+}
+
+/** The PDF tabs as stored, or `undefined` when there are none. */
+function storeBeside(doc: InkDocument): StoredBeside[] | undefined {
+  if (!doc.beside?.length) return undefined;
+  return doc.beside.map((beside) => {
+    const marks = beside.marks.filter((page) => page.backdrop.kind === "pdf").map(storeMarkPage);
+    return {
+      id: beside.id,
+      path: beside.path,
+      label: readLabel(beside.label),
+      hidden: beside.hidden === true ? true : undefined,
+      view: readBesideView(beside.view),
+      sizes: beside.sizes,
+      marks: marks.length > 0 ? marks : undefined,
+    };
+  });
+}
+
+/** A page of a PDF tab as stored: its backdrop is only the PDF page it shows. */
+function storeMarkPage(page: Page): StoredMarkPage {
+  const pdfPage = page.backdrop.kind === "pdf" ? page.backdrop.page : 0;
+  // Spreading keeps `backdrop` in its place among the keys.
+  return { ...storePage(page), backdrop: { page: pdfPage } };
 }
 
 /** The meta block, or `undefined` when none of its fields has anything to say. */
@@ -473,6 +534,9 @@ function storeHead(doc: InkDocument): StoredDocument {
     view: doc.view,
     meta: storeMeta(doc),
     recordings: doc.recordings?.length ? doc.recordings : undefined,
+    // In the head, so it is serialised afresh at every save: the page
+    // fragment cache never serves a stale tab.
+    beside: storeBeside(doc),
     pages: [],
   };
 }
@@ -989,6 +1053,7 @@ function normalizeImage(raw: unknown, mintId: () => string): ImageElement | null
       ? { opacity: readImageOpacity(raw.opacity) }
       : {}),
     ...(sticky ? { sticky } : {}),
+    ...(readSlideRef(raw.slide) ? { slide: readSlideRef(raw.slide) } : {}),
   };
 }
 
@@ -1353,7 +1418,78 @@ function readDocument(raw: unknown, fallbackWidth: number): InkDocument {
   if (palette) doc.palette = palette;
   const furniture = readFurniture(meta.furniture);
   if (furniture) doc.furniture = furniture;
+  const beside = readBeside(raw.beside, view.width);
+  if (beside.length > 0) doc.beside = beside;
+  dropDanglingSlides(doc);
   return doc;
+}
+
+/**
+ * The PDF tabs, made safe. A tab without a path is dropped (it names no
+ * file). An id that is malformed or taken by an earlier tab is minted anew
+ * (`b<n>`, above every good one). A page of marks that names no PDF page,
+ * or one an earlier page already has, is dropped.
+ */
+function readBeside(raw: unknown, fallbackWidth: number): BesidePdf[] {
+  if (!Array.isArray(raw)) return [];
+  const entries = raw.filter(
+    (entry): entry is Record<string, unknown> =>
+      isRecord(entry) && typeof entry.path === "string" && entry.path.length > 0,
+  );
+  const good = new Set<string>();
+  const ids = entries.map((entry) => {
+    if (!isTabId(entry.id) || good.has(entry.id)) return null;
+    good.add(entry.id);
+    return entry.id;
+  });
+  let lastId = 0;
+  for (const id of good) {
+    const m = /^b(\d+)$/.exec(id);
+    if (m) lastId = Math.max(lastId, Number(m[1]));
+  }
+  return entries.map((entry, i) => {
+    const beside: BesidePdf = {
+      id: ids[i] ?? `b${++lastId}`,
+      path: entry.path as string,
+      sizes: readSizeRuns(entry.sizes),
+      marks: [],
+    };
+    const label = readLabel(entry.label);
+    if (label !== undefined) beside.label = label;
+    if (entry.hidden === true) beside.hidden = true;
+    const view = readBesideView(entry.view);
+    if (view) beside.view = view;
+    beside.marks = readMarks(entry.marks, beside, fallbackWidth);
+    return beside;
+  });
+}
+
+/** A tab's pages of marks, in PDF page order, each a page of that tab. */
+function readMarks(raw: unknown, beside: BesidePdf, fallbackWidth: number): Page[] {
+  if (!Array.isArray(raw)) return [];
+  const byPage = new Map<number, Page>();
+  raw.forEach((item, i) => {
+    if (!isRecord(item) || !isRecord(item.backdrop)) return;
+    const index = item.backdrop.page;
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) return;
+    if (byPage.has(index)) return;
+    const width = pageSizeAt(beside, index)?.width ?? fallbackWidth;
+    const page = normalizePage(item, i, width);
+    page.id = besidePageId(beside.id, index);
+    page.backdrop = { kind: "pdf", path: beside.path, page: index };
+    byPage.set(index, page);
+  });
+  return [...byPage.entries()].sort((a, b) => a[0] - b[0]).map(([, page]) => page);
+}
+
+/** Pages and snippets that name a tab the notebook does not have forget it. */
+function dropDanglingSlides(doc: InkDocument): void {
+  const tabs = new Set((doc.beside ?? []).map((beside) => beside.id));
+  for (const page of [...doc.pages, ...(doc.beside ?? []).flatMap((b) => b.marks)]) {
+    for (const image of page.images) {
+      if (image.slide && !tabs.has(image.slide.tab)) delete image.slide;
+    }
+  }
 }
 
 /** Whether the stored `requires` list names `boards`: a file of several boards. */

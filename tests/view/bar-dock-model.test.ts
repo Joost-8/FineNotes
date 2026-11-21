@@ -85,6 +85,17 @@ describe("the page area", () => {
     expect(pageArea("right", BARS.right, padded, 8, 0, 300).left).toBe(12);
   });
 
+  it("starts below the PDF tab strip, wherever the bar is", () => {
+    // The strip under a top bar (57 px) ends at 101; at a side or under a
+    // bottom bar it is the view's first row, ending at 44.
+    expect(pageArea("top", BARS.top, { ...view, top: 101 }, 8, 0, 300).top).toBe(109);
+    expect(pageArea("bottom", BARS.bottom, { ...view, top: 44 }, 8, 0, 300).top).toBe(52);
+    expect(pageArea("left", BARS.left, { ...view, top: 44 }, 8, 0, 300).top).toBe(52);
+    expect(pageArea("right", BARS.right, { ...view, top: 44 }, 8, 0, 300).top).toBe(52);
+    // Folded away (no height): as if it were not there.
+    expect(pageArea("top", BARS.top, { ...view, top: 0 }, 8, 0, 300).top).toBe(65);
+  });
+
   it("keeps clear of a panel docked at the page's left, beside a bar at the left too", () => {
     expect(pageArea("top", BARS.top, view, 8, 320, 300).left).toBe(320);
     expect(pageArea("left", BARS.left, view, 8, 320, 300).left).toBe(377);
