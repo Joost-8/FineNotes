@@ -16,7 +16,13 @@
 
 import { type PenCursor, hoverCursorOffset, penHoverAction } from "./pen-cursor";
 
-const EVENTS = ["pointermove", "pointerdown", "pointerup", "pointercancel", "pointerleave"] as const;
+const EVENTS = [
+  "pointermove",
+  "pointerdown",
+  "pointerup",
+  "pointercancel",
+  "pointerleave",
+] as const;
 
 export class PenHoverCursor {
   private readonly el: HTMLElement;

@@ -16,6 +16,7 @@ extracted from the matching section of this file by `release.yml`.
   may not train on it. Everyone who shares is asked to agree again before
   anything more is sent; items shared under the old terms are never checked
   this way. See PRIVACY.md, "The label check by Anthropic".
+
 ### Added
 
 - **Erase on hover with the S Pen**
