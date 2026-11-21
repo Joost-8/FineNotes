@@ -138,6 +138,47 @@ function lettersOf(folded: string): { text: string; at: number[] } {
   return { text, at };
 }
 
+/**
+ * Parts of a transcript the hand never wrote: LaTeX command names (`\cdot`,
+ * `\frac`: their letters are not on the page) and the AI's own notes in
+ * single brackets, of two words or more ("[placed picture not shown]";
+ * "[0, 1]" and `[[links]]` are kept).
+ */
+const UNWRITTEN =
+  /\\[a-z]+|(?<!\[)\[(?!\[)(?=[^\]\n]*\p{L}{3,}[^\]\n]*\s[^\]\n]*\p{L}{3,})[^\]\n]*\](?!\])/gu;
+
+/** Commands whose name is what the hand wrote: `\gcd` is "gcd" on the page. */
+const WRITTEN_COMMANDS = new Set(
+  "gcd lcm mod log ln lg exp sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh lim max min sup inf det dim deg ker arg hom pr".split(
+    " ",
+  ),
+);
+
+/**
+ * {@link lettersOf} for a transcript: letters the hand wrote, so the
+ * alignment is not spent on `\cdot`'s "cdot" or a note about a picture.
+ * `\bmod` and `\pmod` were written "mod".
+ */
+export function writtenLettersOf(folded: string): { text: string; at: number[] } {
+  const skip = new Uint8Array(folded.length);
+  for (const m of folded.matchAll(UNWRITTEN)) {
+    const name = m[0].startsWith("\\") ? m[0].slice(1) : null;
+    let end = m.index + m[0].length;
+    if (name !== null && WRITTEN_COMMANDS.has(name)) end = m.index + 1;
+    else if (name === "bmod" || name === "pmod") end -= 3;
+    skip.fill(1, m.index, end);
+  }
+  let text = "";
+  const at: number[] = [];
+  for (let i = 0; i < folded.length; i++) {
+    if (!skip[i] && /[\p{L}\p{N}]/u.test(folded[i])) {
+      text += folded[i];
+      at.push(i);
+    }
+  }
+  return { text, at };
+}
+
 /** Letters of transcript kept on each side of a word, to find where it is in the reading. */
 const CONTEXT = 12;
 /** The most edits per letter an aligned stretch may need and still be the same place. */
@@ -195,9 +236,19 @@ function transcriptHits(
   lines: readonly ReadLine[],
   placedOf: (line: number) => Placed | null,
 ): string[][] {
+  return transcriptInk(spansOf, transcript, lines, placedOf).filter((ink) => ink.length > 0);
+}
+
+/** {@link transcriptHits}, one entry per place found, empty where it could not be placed. */
+function transcriptInk(
+  spansOf: (folded: string) => TextSpan[],
+  transcript: string,
+  lines: readonly ReadLine[],
+  placedOf: (line: number) => Placed | null,
+): string[][] {
   const folded = fold(transcript).text;
-  const said = lettersOf(folded);
-  if (said.text.length === 0) return [];
+  const said = writtenLettersOf(folded);
+  if (said.text.length === 0) return spansOf(folded).map(() => []);
   // Folded index → index of the first letter at or after it.
   const letterAt = new Array<number>(folded.length + 1);
   let k = 0;
@@ -217,11 +268,13 @@ function transcriptHits(
   for (const span of spansOf(folded)) {
     const a = letterAt[span.start];
     const b = letterAt[span.end];
-    if (b <= a) continue;
     const lo = Math.max(0, a - CONTEXT);
     const hi = Math.min(said.text.length, b + CONTEXT);
-    const match = alignInto(said.text.slice(lo, hi), read);
-    if (!match) continue;
+    const match = b > a ? alignInto(said.text.slice(lo, hi), read) : null;
+    if (!match) {
+      out.push([]);
+      continue;
+    }
     // The word's letters in the reading, as a character range per line.
     const ranges = new Map<number, { from: number; to: number }>();
     for (const j of match.slice(a - lo, b - lo)) {
@@ -238,7 +291,7 @@ function transcriptHits(
       const placed = placedOf(line);
       if (placed) ink.push(...inkOfRange(placed, range.from, range.to));
     }
-    if (ink.length > 0) out.push(ink);
+    out.push([...new Set(ink)]);
   }
   return out;
 }
@@ -258,7 +311,7 @@ function transcriptHits(
 export function lineHits(
   query: string,
   lines: readonly ReadLine[],
-  transcript = "",
+  transcript: string | readonly string[] = "",
   phrase = false,
 ): string[][] {
   const terms = queryTerms(query);
@@ -268,11 +321,16 @@ export function lineHits(
     if (!placedLines.has(index)) placedLines.set(index, placeLine(lines[index]));
     return placedLines.get(index) ?? null;
   };
+  // Each transcript of the page lined up on its own: joined, a word at the
+  // start of one took the end of the other as its context, and was lost.
+  const transcripts = typeof transcript === "string" ? [transcript] : transcript;
+  const inTranscripts = (spansOf: (folded: string) => TextSpan[]): string[][] =>
+    transcripts.flatMap((text) => transcriptHits(spansOf, text, lines, placedOf));
   if (phrase) {
     const spansOf = (folded: string): TextSpan[] => matchFolded(folded, query, true);
     const found = unique([
       ...phraseInReading(spansOf, lines, placedOf),
-      ...transcriptHits(spansOf, transcript, lines, placedOf),
+      ...inTranscripts(spansOf),
     ]);
     if (found.length > 0) return found;
   }
@@ -304,9 +362,32 @@ export function lineHits(
       }
       return spans;
     });
-  const hits = [...found(exact), ...transcriptHits(everyTerm, transcript, lines, placedOf)];
+  const hits = [...found(exact), ...inTranscripts(everyTerm)];
   if (hits.length === 0) return found(near);
   return unique(hits);
+}
+
+/**
+ * The ink of each match of `query` in the page's transcripts, one entry per
+ * match in the order the results list counts them (`search-results.ts`:
+ * source by source, each in reading order), so a result's `nth` names its
+ * own place on the page. An entry is empty where that match could not be
+ * lined up with the reading.
+ */
+export function transcriptMatchInk(
+  query: string,
+  lines: readonly ReadLine[],
+  sources: readonly { text: string }[],
+  phrase = false,
+): string[][] {
+  if (queryTerms(query).length === 0) return [];
+  const placedLines = new Map<number, Placed | null>();
+  const placedOf = (index: number): Placed | null => {
+    if (!placedLines.has(index)) placedLines.set(index, placeLine(lines[index]));
+    return placedLines.get(index) ?? null;
+  };
+  const spansOf = (folded: string): TextSpan[] => matchFolded(folded, query, phrase);
+  return sources.flatMap((source) => transcriptInk(spansOf, source.text, lines, placedOf));
 }
 
 /** The ink of each place the device's reading holds the phrase, lines read as one text. */
@@ -338,6 +419,23 @@ function phraseInReading(
     if (ink.length > 0) out.push(ink);
   }
   return out;
+}
+
+/**
+ * The lit words with one match's own ink among them: the group that is the
+ * same ink, or that ink added. Returns the words and the group itself (by
+ * identity, so it can be found again once the words are reordered).
+ */
+export function withFocusInk(
+  words: readonly string[][],
+  ink: readonly string[],
+): { words: string[][]; focus: string[] | null } {
+  if (ink.length === 0) return { words: [...words], focus: null };
+  const key = [...new Set(ink)].sort().join(" ");
+  const same = words.find((ids) => [...new Set(ids)].sort().join(" ") === key);
+  if (same) return { words: [...words], focus: same };
+  const focus = [...new Set(ink)];
+  return { words: [...words, focus], focus };
 }
 
 /** Each group of ink once, its ids once: the reading and the transcript often find the same. */

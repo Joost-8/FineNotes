@@ -3,7 +3,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { lineHits, pageHits, searchMatchTarget } from "../../src/search/hit-strokes";
+import {
+  lineHits,
+  pageHits,
+  searchMatchTarget,
+  transcriptMatchInk,
+  withFocusInk,
+  writtenLettersOf,
+} from "../../src/search/hit-strokes";
 
 const words = [
   { text: "Mitochondria", strokeIds: ["s1", "s2"] },
@@ -124,6 +131,63 @@ describe("lineHits", () => {
       const other = [{ text: "zzzz qqqq", words: [["g0"], ["g1"]] }];
       expect(lineHits("plus", other, "a flag plus")).toEqual([]);
     });
+  });
+});
+
+describe("a page with two transcripts (Joost's Algebra notebook, page 14)", () => {
+  // The device read the title "CRT Exercises" as "(R)", "- F", "exercise".
+  const lines = [
+    { text: "(R)", words: [["g0"]] },
+    { text: "- F", words: [["g1"], ["g2"]] },
+    { text: "exercise 5", words: [["g3"], ["g4"]] },
+    { text: "gcd(m, n) = d = 1", words: [["g5"], ["g6"], ["g7"], ["g8"], ["g9"], ["g10"]] },
+    { text: "sol exists", words: [["g11"], ["g12"]] },
+  ];
+  // The note's own entry (an older device reading), then the AI's transcript.
+  const own = "gcd(m, n) = d = 1\nxercises\nsol exists\nA.";
+  const ai = "CRT Exercises\n\n$\\gcd(m,n) = d = 1$\nsol exists";
+
+  it("lights a word at the start of the second, each lined up on its own", () => {
+    expect(lineHits("crt", lines, [own, ai], true)).toEqual([["g0", "g2"]]);
+    // Joined, the first one's last letters were the word's context, and it was lost.
+    expect(lineHits("crt", lines, `${own}\n${ai}`, true)).toEqual([]);
+  });
+
+  it("gives each match its own ink, in the results list's order, empty where unplaced", () => {
+    const each = transcriptMatchInk("sol", lines, [{ text: own }, { text: ai }], true);
+    expect(each).toEqual([["g11"], ["g11"]]);
+    const none = transcriptMatchInk("zzz", lines, [{ text: "zzz qqq" }], true);
+    expect(none).toEqual([[]]);
+    expect(transcriptMatchInk("", lines, [{ text: ai }])).toEqual([]);
+  });
+});
+
+describe("writtenLettersOf", () => {
+  it("leaves out LaTeX command names and the AI's own notes, not what was written", () => {
+    const { text } = writtenLettersOf(
+      String.raw`$27 \equiv 2 \bmod 5$ [placed picture not shown] \gcd(a,n) [0, 1] [[page 2]]`,
+    );
+    expect(text).toBe("272mod5gcdan01page2");
+  });
+
+  it("says where each letter came from", () => {
+    expect(writtenLettersOf(String.raw`a \cdot b`)).toEqual({ text: "ab", at: [0, 8] });
+  });
+});
+
+describe("withFocusInk", () => {
+  it("finds the lit group that is the match's ink, in any order", () => {
+    const words = [["g0"], ["g2", "g1"]];
+    const { words: out, focus } = withFocusInk(words, ["g1", "g2"]);
+    expect(out).toEqual(words);
+    expect(focus).toBe(out[1]);
+  });
+
+  it("adds the match's ink when no lit group is the same", () => {
+    const { words: out, focus } = withFocusInk([["g0"]], ["g1", "g1", "g2"]);
+    expect(out).toEqual([["g0"], ["g1", "g2"]]);
+    expect(focus).toBe(out[1]);
+    expect(withFocusInk([["g0"]], []).focus).toBeNull();
   });
 });
 
