@@ -6,7 +6,7 @@ import {
   pageFileName,
   randomId,
 } from "../../src/model/device-pages-writer";
-import { notebookIdOf, readDevicePagesNotebook } from "../../src/model/device-pages";
+import { notebookIdOf, readDevicePagesNotebook, readPageFile } from "../../src/model/device-pages";
 import { DotClock, attachDotClock, mintedId } from "../../src/model/dot-ids";
 import {
   type BesidePdf,
@@ -332,6 +332,37 @@ describe("writing one file per page per device (#274)", () => {
     expect(b.syncing).toBe(false);
     expect(b.ids(1)).toEqual(a.ids(1));
     expect(a.save()).toEqual([]);
+  });
+
+  it("drops an erase record once no other copy holds what it erased", () => {
+    const [a, b] = twoDevices();
+    a.doc.pages[0].strokes.push(stroke(a.doc), stroke(a.doc, 60));
+    a.save();
+    b.pull(a).open();
+    // B erases one of A's strokes, and the legacy stroke: two records.
+    b.doc.pages[0].strokes = b.doc.pages[0].strokes.filter((s) => s.id === `${A}.2`);
+    b.save();
+    const records = (d: Device) => {
+      const text = d.folder.get(`p1.${d.id}.md`) ?? "";
+      const page = readPageFile(text, d.id);
+      return typeof page === "string" ? [] : page.tomb.map((t) => t.id).sort();
+    };
+    expect(records(b)).toEqual([`${A}.1`, "s1"]);
+    // A sees the erase and writes the page again: its file no longer holds the stroke.
+    a.pull(b).open();
+    a.doc.pages[0].strokes.push(stroke(a.doc, 90));
+    a.save();
+    // B, reading that, keeps only the record the legacy notebook still needs.
+    b.pull(a).open();
+    b.doc.pages[0].strokes.push(stroke(b.doc, 120));
+    b.save();
+    expect(records(b)).toEqual(["s1"]);
+    // Nothing came back.
+    b.open();
+    expect(b.ids()).not.toContain(`${A}.1`);
+    expect(b.ids()).not.toContain("s1");
+    a.pull(b).open();
+    expect(a.ids()).toEqual(b.ids());
   });
 
   it("names a page file by its id when safe, else by a hash of it", () => {

@@ -256,8 +256,18 @@ export class DevicePagesWriter {
         this.files.set(page.id, { rev: file.rev, hash: file.hash });
         this.forceMeta = true;
       }
+      // This device's erase records, but only those still needed: one whose
+      // element no other copy holds any more (its device saw the erase and
+      // let it go) hides nothing and goes at the page's next write. A record
+      // of the legacy notebook's ink stays, since that copy never changes.
       const tomb = new Map<string, Tombstone>();
-      for (const entry of file?.tomb ?? []) tomb.set(elementKey(entry.l ?? "", entry.id), entry);
+      for (const entry of file?.tomb ?? []) {
+        const key = elementKey(entry.l ?? "", entry.id);
+        const held = detail?.holders.get(key);
+        const needed =
+          entry.l === undefined || !detail || [...(held ?? [])].some((holder) => holder !== device);
+        if (needed) tomb.set(key, entry);
+      }
       const state: PageState = {
         known,
         elsewhere,
