@@ -60,6 +60,8 @@ export interface AskSessionDeps {
     shown?: string;
     actions?: readonly string[];
     notes?: readonly string[];
+    /** For each action, the number of what it changed in the notebook, or null. */
+    changes?: readonly (number | null)[];
     usage?: AskUsage;
   }>;
   /** Write the chat; `path` is where it was written before (null the first time). Resolves to its path. */
@@ -335,7 +337,12 @@ export class AskSession {
       // What goes back to the model stays English (the tools' own results);
       // the chat shows the same in the interface's language.
       const answered = answer.text.trim();
-      const said = answered || answer.notes?.join("\n") || english("ai.ask.done");
+      const changes = answer.changes ?? [];
+      // The model is told which changes it made, by number, so a later question
+      // can take them back (undo_changes); the chat shows them as controls.
+      const said =
+        (answered || answer.notes?.join("\n") || english("ai.ask.done")) +
+        changesLine(changes, answer.notes ?? []);
       const shown = answer.shown?.trim() || answered || actions.join("\n") || t("ai.ask.done");
       this.created ??= this.deps.now().toISOString();
       // Only a question that was answered joins the history, so a failed one
@@ -348,6 +355,7 @@ export class AskSession {
           text: said,
           ...(shown !== said ? { shown } : {}),
           ...(actions.length ? { actions } : {}),
+          ...(changes.some((id) => id !== null) ? { changes } : {}),
           ...(answer.usage ? { usage: answer.usage } : {}),
         },
       ];
@@ -485,6 +493,19 @@ ${question}`,
 /** Whether a file still holds its contents (a reloaded chat's hold only names). */
 function hasData(file: ChatFile): boolean {
   return file.base64 !== undefined || file.text !== undefined;
+}
+
+/**
+ * The line after an answer, for the model only, numbering what it changed in
+ * the notebook: "[Your changes to the notebook in this answer: change 3:
+ * Added …]". Empty when it changed nothing.
+ */
+export function changesLine(changes: readonly (number | null)[], notes: readonly string[]): string {
+  const items = changes.flatMap((id, i) =>
+    id === null ? [] : [`change ${id}: ${(notes[i] ?? "").trim() || "a change"}`],
+  );
+  if (items.length === 0) return "";
+  return `\n\n[Your changes to the notebook in this answer, ${items.join("; ")}]`;
 }
 
 /** "a", "a and b", "a, b and c". */

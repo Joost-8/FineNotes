@@ -180,3 +180,77 @@ describe("ask tools", () => {
     );
   });
 });
+
+describe("outline and undo tools", () => {
+  it("reads the outline with no input", () => {
+    expect(parseToolCall("read_outline", {}, 3)).toEqual({ tool: "read_outline" });
+    expect(toolStatus({ tool: "read_outline" })).toBe("Reading the outline…");
+  });
+
+  it("checks every outline entry, saying all that is wrong at once", () => {
+    expect(
+      parseToolCall(
+        "set_outline",
+        {
+          entries: [
+            { page: 1, title: " Lecture 1 " },
+            { page: 12, title: "Lecture 4", level: 2, y: 0.3 },
+          ],
+          replace: true,
+        },
+        20,
+      ),
+    ).toEqual({
+      tool: "set_outline",
+      entries: [
+        { page: 1, title: "Lecture 1", level: 1 },
+        { page: 12, title: "Lecture 4", level: 2, y: 0.3 },
+      ],
+      replace: true,
+    });
+    const wrong = parseToolCall(
+      "set_outline",
+      {
+        entries: [
+          { page: 30, title: "x" },
+          { page: 1, title: "" },
+          { page: 1, title: "x", level: 4 },
+          { page: 1, title: "x", y: 3 },
+          "nonsense",
+        ],
+      },
+      20,
+    );
+    expect("error" in wrong && wrong.error.split("\n")).toEqual([
+      'Entry 1: "page" must be a page from 1 to 20.',
+      'Entry 2: "title" is empty.',
+      'Entry 3: "level" must be 1, 2 or 3.',
+      'Entry 4: "y" must be a number from 0 to 1.',
+      'Entry 5: "page" must be a page from 1 to 20.',
+    ]);
+    expect(parseToolCall("set_outline", { entries: "x" }, 2)).toHaveProperty("error");
+    expect(parseToolCall("set_outline", { entries: [] }, 2)).toHaveProperty("error");
+    expect(parseToolCall("set_outline", { entries: [], replace: true }, 2)).toEqual({
+      tool: "set_outline",
+      entries: [],
+      replace: true,
+    });
+    const many = Array.from({ length: 201 }, () => ({ page: 1, title: "x" }));
+    expect(parseToolCall("set_outline", { entries: many }, 2)).toHaveProperty("error");
+    expect(toolStatus({ tool: "set_outline", entries: [], replace: false })).toBe(
+      "Writing the outline…",
+    );
+  });
+
+  it("takes back changes by number, or the latest answer's", () => {
+    expect(parseToolCall("undo_changes", {}, 2)).toEqual({ tool: "undo_changes", changes: [] });
+    expect(parseToolCall("undo_changes", { changes: [3, 1, 3] }, 2)).toEqual({
+      tool: "undo_changes",
+      changes: [1, 3],
+    });
+    expect(parseToolCall("undo_changes", { changes: [0] }, 2)).toHaveProperty("error");
+    expect(parseToolCall("undo_changes", { changes: ["2"] }, 2)).toHaveProperty("error");
+    expect(parseToolCall("undo_changes", { changes: "all" }, 2)).toHaveProperty("error");
+    expect(toolStatus({ tool: "undo_changes", changes: [] })).toBe("Taking back changes…");
+  });
+});

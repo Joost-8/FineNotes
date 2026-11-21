@@ -616,6 +616,8 @@ export interface PageContents {
   title?: string;
   titleLevel?: ContentsLevel;
   sections?: PageSection[];
+  /** Its page-less chapters; absent leaves them as they are, `[]` takes them out. */
+  chapters?: PageChapter[];
 }
 
 /**
@@ -623,7 +625,7 @@ export interface PageContents {
  * adds when it is imported, and what the notice's Undo takes out again.
  */
 export class SetPagesContents implements Command {
-  private previous: PageContents[] | null = null;
+  private previous: Array<PageContents & { chapters: PageChapter[] | undefined }> | null = null;
 
   constructor(
     private readonly next: readonly PageContents[],
@@ -637,6 +639,7 @@ export class SetPagesContents implements Command {
       title: page.title,
       titleLevel: page.titleLevel,
       sections: page.sections,
+      chapters: page.chapters,
     }));
     for (const contents of here) writeContents(contents);
   }
@@ -644,17 +647,22 @@ export class SetPagesContents implements Command {
   invert(doc: InkDocument): void {
     if (this.previous === null) return;
     for (const contents of this.previous) {
-      if (doc.pages.includes(contents.page)) writeContents(contents);
+      if (!doc.pages.includes(contents.page)) continue;
+      writeContents(contents);
+      if (contents.chapters === undefined) delete contents.page.chapters;
     }
     this.previous = null;
   }
 }
 
-function writeContents({ page, title, titleLevel, sections }: PageContents): void {
+function writeContents({ page, title, titleLevel, sections, chapters }: PageContents): void {
   setTitle(page, title);
   setTitleLevel(page, titleLevel);
   if (sections === undefined || sections.length === 0) delete page.sections;
   else page.sections = sections;
+  if (chapters === undefined) return;
+  if (chapters.length === 0) delete page.chapters;
+  else page.chapters = chapters;
 }
 
 /** These pages with nothing in the contents: what taking an imported outline out leaves. */

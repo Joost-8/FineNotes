@@ -266,3 +266,40 @@ describe("historyNotice", () => {
     expect(historyNotice(true, "  ")).toBe("Redid");
   });
 });
+
+describe("History: grouping steps", () => {
+  it("makes the newest steps one, which one undo and one redo take whole", () => {
+    const { doc, log, history, step } = setup();
+    const seen: Command[] = [];
+    history.onPush = (command) => seen.push(command);
+    history.push(doc, step("user"));
+    const a = step("a");
+    const b = step("b");
+    history.push(doc, a);
+    history.push(doc, b);
+    expect(seen).toHaveLength(3);
+    expect(history.group([a, b], "AI")).toBe(true);
+    expect(history.latest?.label).toBe("AI");
+    log.length = 0;
+    history.undo(doc);
+    expect(log).toEqual(["-b", "-a"]);
+    history.redo(doc);
+    expect(log).toEqual(["-b", "-a", "+a", "+b"]);
+    history.undo(doc);
+    history.undo(doc);
+    expect(log.slice(-1)).toEqual(["-user"]);
+  });
+
+  it("leaves the steps alone when something came between, or after", () => {
+    const { doc, history, step } = setup();
+    const a = step("a");
+    const b = step("b");
+    history.push(doc, a);
+    history.push(doc, step("user"));
+    history.push(doc, b);
+    expect(history.group([a, b], "AI")).toBe(false);
+    expect(history.group([b], "AI")).toBe(false);
+    history.undo(doc);
+    expect(history.group([a], "AI")).toBe(false);
+  });
+});
