@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DevicePagesWriter,
   legacyPayload,
+  movedNotebook,
   pageFileName,
   randomId,
   withNotebookId,
@@ -10,7 +11,7 @@ import { notebookIdOf, readDevicePagesNotebook } from "../../src/model/device-pa
 import { DotClock, attachDotClock, mintedId } from "../../src/model/dot-ids";
 import { blankPage, emptyDocument, type InkDocument, type Stroke } from "../../src/model/document";
 import { nextPageId } from "../../src/model/page-commands";
-import { decodeDocument } from "../../src/model/serialize";
+import { decodeDocument, encodeDocument } from "../../src/model/serialize";
 import { readDot } from "../../src/model/provenance";
 
 /** A stroke with a fresh id from the notebook's clock. */
@@ -100,6 +101,35 @@ function twoDevices(): [Device, Device] {
   const payload = legacyPayload(legacyDoc());
   return [new Device(A, payload).open(), new Device(B, payload).open()];
 }
+
+describe("two devices moving one notebook at once (#274)", () => {
+  it("make the same notebook file, so Sync has nothing to merge", () => {
+    const body = "---\ntags: [x]\n---\n# Lecture";
+    const loaded = encodeDocument(legacyDoc());
+    const path = "Uni/Lecture.notebook.md";
+    // Each device made its own edit before its first save: the move is still the same.
+    const onLaptop = movedNotebook(path, body, loaded) as NonNullable<
+      ReturnType<typeof movedNotebook>
+    >;
+    const onIpad = movedNotebook(path, body, loaded);
+    expect(onIpad).toEqual(onLaptop);
+    expect(onLaptop.id).toMatch(/^[a-z0-9]{8}$/);
+    // Another notebook (another path or content) gets another id.
+    expect(movedNotebook("Uni/Other.notebook.md", body, loaded)?.id).not.toBe(onLaptop.id);
+    // The legacy payload is the loaded one, relabelled: it reads back as it was.
+    expect(onLaptop.payload.startsWith("v2+device-pages:")).toBe(true);
+    const back = readDevicePagesNotebook(onLaptop.payload, new Map()).doc;
+    expect(encodeDocument(back)).toBe(loaded);
+    expect(notebookIdOf(onLaptop.body)).toBe(onLaptop.id);
+  });
+
+  it("keep a label's other features when relabelling", () => {
+    const doc = legacyDoc();
+    doc.pages[1].board = true;
+    const moved = movedNotebook("a.notebook.md", "", encodeDocument(doc));
+    expect(moved?.payload.startsWith("v2+boards+device-pages:")).toBe(true);
+  });
+});
 
 describe("moving a notebook to the layout (#274)", () => {
   it("keeps the notebook whole as its legacy payload, and writes nothing until it changes", () => {
@@ -285,6 +315,26 @@ describe("writing one file per page per device (#274)", () => {
     a.doc.pages.reverse();
     const writes = a.writer.save(a.doc, new Set());
     expect(writes.map((w) => w.name)).toEqual([`_meta.${A}.md`]);
+  });
+
+  it("repairs its meta after a crash between a page file and the meta", () => {
+    const [a] = twoDevices();
+    a.doc.pages[0].strokes.push(stroke(a.doc));
+    a.save();
+    const metaBefore = a.folder.get(`_meta.${A}.md`) ?? "";
+    a.doc.pages[1].strokes.push(stroke(a.doc));
+    // The page file is written, then the app dies before the meta.
+    const writes = a.writer.save(a.doc);
+    for (const w of writes) if (!w.name.startsWith("_meta")) a.folder.set(w.name, w.text);
+    expect(a.folder.get(`_meta.${A}.md`)).toBe(metaBefore);
+    // Reopened: nothing lost, and the next save writes the meta that matches the files.
+    a.open();
+    expect(a.ids(1)).toHaveLength(1);
+    expect(a.save()).toEqual([`_meta.${A}.md`]);
+    const b = new Device(B, a.payload).pull(a).open();
+    expect(b.syncing).toBe(false);
+    expect(b.ids(1)).toEqual(a.ids(1));
+    expect(a.save()).toEqual([]);
   });
 
   it("names a page file by its id when safe, else by a hash of it", () => {

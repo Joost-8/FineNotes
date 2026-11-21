@@ -69,7 +69,14 @@ import {
   blankPage,
   emptyDocument,
 } from "../model/document";
-import { DocumentEncoder, buildInkFile, inkFileText, parseInkFile } from "../model/serialize";
+import {
+  DocumentEncoder,
+  buildInkFile,
+  decodeDocument,
+  inkFileText,
+  parseInkFile,
+} from "../model/serialize";
+import { DotClock, attachDotClock, idsIn } from "../model/dot-ids";
 import {
   type DevicePagesLoad,
   devicePagesFolderOf,
@@ -79,6 +86,7 @@ import {
 } from "../model/device-pages";
 import {
   legacyPayload,
+  movedNotebook,
   randomId,
   withNotebookId,
   withoutNotebookId,
@@ -868,6 +876,12 @@ export class InkView extends TextFileView {
   private devicePagesTimer = 0;
   /** The notebook whose "still syncing" notice has shown, so a reread does not repeat it. */
   private devicePagesNoticed: string | null = null;
+  /**
+   * A one-file notebook as it was read, for its move to page files at its
+   * first save (#274): the payload it moves with, and the clock its new ids
+   * already come from, so ids made before that save are dots too.
+   */
+  private pendingMove: { payload: string; clock: DotClock } | null = null;
   /** When the "still syncing" notice last showed for an edit refused, ms. */
   private syncingNoticeAt = 0;
   /**
@@ -1315,6 +1329,13 @@ export class InkView extends TextFileView {
     // What this view carried over is not on disk yet.
     if (merged) this.requestSave();
     this.loadedPath = this.file?.path ?? null;
+    this.pendingMove = null;
+    if (!pageFolder && doc && !held && payload !== undefined && !this.doc.practice) {
+      const clock = new DotClock(deviceIdOf(this.app));
+      clock.raise(idsIn(this.doc));
+      attachDotClock(this.doc, clock);
+      this.pendingMove = { payload, clock };
+    }
     if (pageFolder && !held && payload !== undefined && this.loadedPath !== null) {
       this.devicePages = new DevicePagesSession(
         this.app,
@@ -1424,16 +1445,46 @@ export class InkView extends TextFileView {
     const path = this.file?.path;
     if (this.devicePages || this.guard.locked || !path || path !== this.loadedPath) return;
     if (this.doc.practice) return;
-    const id = randomId();
-    this.noteBody = withNotebookId(this.noteBody, id);
-    const session = new DevicePagesSession(
-      this.app,
-      path,
-      legacyPayload(this.doc),
-      devicePagesFolderOf(path, id),
-      deviceIdOf(this.app),
-    );
-    session.startFresh(this.doc);
+    // From the file as read: its payload relabelled, an id from its path and payload,
+    // so two devices moving it at once make the same file. What changed since goes
+    // to this device's page files.
+    const move = this.pendingMove;
+    const moved = move ? movedNotebook(path, this.noteBody, move.payload) : null;
+    let legacy: InkDocument | null = null;
+    if (move && moved) {
+      try {
+        legacy = decodeDocument(move.payload, this.settings.paperWidth);
+      } catch {
+        legacy = null;
+      }
+    }
+    let session: DevicePagesSession;
+    if (move && moved && legacy) {
+      this.noteBody = moved.body;
+      session = new DevicePagesSession(
+        this.app,
+        path,
+        moved.payload,
+        devicePagesFolderOf(path, moved.id),
+        move.clock.device,
+        null,
+        move.clock,
+      );
+      session.startFresh(legacy, this.doc);
+    } else {
+      // Nothing read to move with (a note without ink yet): the notebook as it is.
+      const id = randomId();
+      this.noteBody = withNotebookId(this.noteBody, id);
+      session = new DevicePagesSession(
+        this.app,
+        path,
+        legacyPayload(this.doc),
+        devicePagesFolderOf(path, id),
+        deviceIdOf(this.app),
+      );
+      session.startFresh(this.doc, this.doc);
+    }
+    this.pendingMove = null;
     this.devicePages = session;
     this.textPanel?.load(this.noteBody);
   }

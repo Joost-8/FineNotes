@@ -14,6 +14,8 @@ import {
   PAGES_FOLDER,
   readDeviceFileName,
   readDevicePagesNotebook,
+  readMetaFile,
+  readPageFile,
 } from "../model/device-pages";
 import { DevicePagesWriter, randomId } from "../model/device-pages-writer";
 import { DotClock, attachDotClock } from "../model/dot-ids";
@@ -52,6 +54,12 @@ export class DevicePagesSession {
   readonly clock: DotClock;
   /** The writes under way, one save after another. */
   private writing: Promise<void> = Promise.resolve();
+  /**
+   * The last text of each file that read whole, by name. A file a sync is
+   * writing (empty first, or cut short) is read as this meanwhile, so the
+   * page it holds never blanks; it is read again once it is whole.
+   */
+  private readonly whole = new Map<string, string>();
 
   constructor(
     private readonly app: App,
@@ -64,9 +72,15 @@ export class DevicePagesSession {
     readonly device: string,
     /** The session this one follows (the same notebook read again): its writes come first. */
     previous: DevicePagesSession | null = null,
+    /** The clock the notebook's ids already come from (a notebook moving here), if any. */
+    clock: DotClock | null = null,
   ) {
-    this.clock = new DotClock(device);
-    if (previous) this.writing = previous.writing;
+    this.clock = clock ?? new DotClock(device);
+    if (previous) {
+      this.writing = previous.writing;
+      if (previous.folder === folder)
+        for (const [name, text] of previous.whole) this.whole.set(name, text);
+    }
   }
 
   /** Whether `name` (a file in the page folder) is one this device writes. */
@@ -110,12 +124,29 @@ export class DevicePagesSession {
     const children = folder instanceof TFolder ? folder.children : [];
     await Promise.all(
       children.map(async (file) => {
-        if (!(file instanceof TFile) || !readDeviceFileName(file.name)) return;
+        const kind = file instanceof TFile ? readDeviceFileName(file.name) : null;
+        if (!(file instanceof TFile) || !kind) return;
+        let text: string | null = null;
         try {
-          texts.set(file.name, await this.app.vault.read(file));
+          text = await this.app.vault.read(file);
         } catch {
-          // Unreadable: as one not synced yet.
+          // Unreadable: as one being written.
         }
+        const read =
+          text === null
+            ? null
+            : kind.kind === "meta"
+              ? readMetaFile(text, kind.device)
+              : readPageFile(text, kind.device);
+        // Not whole (empty, cut short): what it last held, if anything.
+        if (text === null || read === "unreadable" || read === "not-a-file") {
+          const last = this.whole.get(file.name);
+          if (last !== undefined) texts.set(file.name, last);
+          else if (text !== null) texts.set(file.name, text);
+          return;
+        }
+        this.whole.set(file.name, text);
+        texts.set(file.name, text);
       }),
     );
     return texts;
@@ -135,10 +166,14 @@ export class DevicePagesSession {
     return load;
   }
 
-  /** Begin writing a notebook just moved to the layout: `doc` is all legacy. */
-  startFresh(doc: InkDocument): void {
+  /**
+   * Begin writing a notebook just moved to the layout: `legacy` is the
+   * notebook its payload holds, `doc` the one shown (what changed since is
+   * written to page files at the next save).
+   */
+  startFresh(legacy: InkDocument, doc: InkDocument): void {
     attachDotClock(doc, this.clock);
-    this.writer = DevicePagesWriter.fresh(this.device, this.clock, doc);
+    this.writer = DevicePagesWriter.fresh(this.device, this.clock, legacy);
   }
 
   /**

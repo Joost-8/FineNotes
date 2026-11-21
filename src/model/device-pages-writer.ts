@@ -36,7 +36,7 @@ import {
   orderKeyAt,
 } from "./device-pages-union";
 import { NOTEBOOK_ID_KEY, metaFileText, pageFileText, payloadHash } from "./device-pages";
-import { type FormatFeature } from "./format-features";
+import { type FormatFeature, payloadLabel } from "./format-features";
 import { orderKeys } from "./order-keys";
 import { type VersionVector, joinVersionVectors, readDot } from "./provenance";
 import {
@@ -44,6 +44,7 @@ import {
   inkFileText,
   labelledPayload,
   pageFeatures,
+  payloadFeatures,
   splitFrontmatter,
   storedHead,
   storedPage,
@@ -208,6 +209,13 @@ export class DevicePagesWriter {
       }
       dots.raise([page.id]);
       const file = myFiles.get(page.id);
+      // A page file this device wrote that its meta does not describe (the app
+      // stopped between the two): the meta is put right at the next save.
+      const said = this.files.get(page.id);
+      if (file && (said?.rev !== file.rev || said.hash !== file.hash)) {
+        this.files.set(page.id, { rev: file.rev, hash: file.hash });
+        this.forceMeta = true;
+      }
       const tomb = new Map<string, Tombstone>();
       for (const entry of file?.tomb ?? []) tomb.set(elementKey(entry.l ?? "", entry.id), entry);
       const state: PageState = {
@@ -462,6 +470,28 @@ export function withNotebookId(body: string, id: string): string {
 /** The notebook file's payload when it moves to the layout: the notebook as it is, kept as legacy. */
 export function legacyPayload(doc: InkDocument): string {
   return encodeDocumentWith(doc, ["device-pages"]);
+}
+
+/**
+ * A one-file notebook moved to the layout, from the file as it was read:
+ * its payload kept as it is and labelled `device-pages` (no re-encoding,
+ * so a big notebook moves at once), and an id made from its path and that
+ * payload. Two devices moving the same file at once so make the same file,
+ * byte for byte, and Sync has nothing to merge; what each changed since goes
+ * to its own page files. `null` when the payload has no readable label.
+ */
+export function movedNotebook(
+  path: string,
+  body: string,
+  loaded: string,
+): { id: string; body: string; payload: string } | null {
+  const text = loaded.trim();
+  const colon = text.indexOf(":");
+  const features = payloadFeatures(text);
+  if (colon < 0 || features === null) return null;
+  const payload = `${payloadLabel([...features, "device-pages"])}${text.slice(colon)}`;
+  const id = payloadHash(`${path}\n${text}`).slice(0, 8);
+  return { id, body: withNotebookId(body, id), payload };
 }
 
 /**

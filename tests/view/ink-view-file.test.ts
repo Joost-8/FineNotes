@@ -1047,6 +1047,28 @@ describe("a notebook kept as one file per page per device (#274)", () => {
     expect(pagesOf(view)[2].strokes[0].id.startsWith(`${ME}.`)).toBe(true);
   });
 
+  it("keeps showing another device's page while its file is being written whole", async () => {
+    vi.useFakeTimers();
+    const { notebook, files } = await threePages();
+    const view = openOver(files);
+    view.setViewData(notebook, true);
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+    expect(pagesOf(view)[1].strokes).toHaveLength(1);
+    const changed = (path: string): void =>
+      (view as unknown as { devicePageChanged(path: string): void }).devicePageChanged(path);
+    // A sync writes the file empty first, then fills it (the empty-read trap, #273).
+    const full = files.get(`${FOLDER}/p2.a1.md`) ?? "";
+    for (const partial of ["", full.slice(0, full.length / 2)]) {
+      files.set(`${FOLDER}/p2.a1.md`, partial);
+      changed(`${FOLDER}/p2.a1.md`);
+      await vi.advanceTimersByTimeAsync(1000);
+      await settle();
+      expect(pagesOf(view)[1].strokes.map((s) => s.id)).toEqual(["a1.1"]);
+      expect(inside(view).isProtected()).toBe(false);
+    }
+  });
+
   it("reads another device's file again when it changes, and never its own", async () => {
     vi.useFakeTimers();
     const { notebook, files } = await threePages();
@@ -1091,23 +1113,40 @@ describe("a notebook kept as one file per page per device (#274)", () => {
   it("moves a one-file notebook to the layout at its first save", async () => {
     const files = new Map<string, string>();
     const view = openOver(files, "Physics.notebook.md");
-    view.setViewData(notebookFile(), true);
+    const one = notebookFile();
+    view.setViewData(one, true);
     addStroke(view, 0);
     await view.save();
     await settle();
     const text = view.getViewData();
     const parsed = parseInkFile(text, 1024);
     expect(parsed.doc).toBeNull();
-    expect(parsed.payload?.startsWith("v2+device-pages:")).toBe(true);
+    // The payload read, relabelled, not encoded again.
+    const before = parseInkFile(one, 1024).payload ?? "";
+    expect(parsed.payload).toBe(before.replace(/^v2:/, "v2+device-pages:"));
     expect(text).toMatch(/^---\nfinenotes-id: [a-z0-9]{8}\n---\n# Physics/);
-    // All of it is the legacy notebook: no page file yet.
-    expect(files.size).toBe(0);
-    // The next stroke goes to a page file of this device.
-    addStroke(view, 0);
-    await view.save();
-    await settle();
+    // The stroke made before that save is this device's, in its page file.
     const names = [...files.keys()].map((path) => path.replace(/^Pages\/[a-z0-9]+\//, ""));
     expect(names).toEqual([`p1.${ME}.md`, `_meta.${ME}.md`]);
+    expect(pagesOf(view)[0].strokes.map((s) => s.id)).toEqual(["s1", `${ME}.1`]);
+  });
+
+  it("makes the same notebook file on two devices moving it at once", async () => {
+    const one = notebookFile();
+    const texts: string[] = [];
+    for (const device of ["laptop11", "ipad2222"]) {
+      const files = new Map<string, string>();
+      const view = openOver(files, "Physics.notebook.md");
+      const app = (view as unknown as { app: { loadLocalStorage: (k: string) => unknown } }).app;
+      app.loadLocalStorage = (key) => (key === "finenotes-device-id" ? device : null);
+      view.setViewData(one, true);
+      addStroke(view, 0);
+      await view.save();
+      await settle();
+      texts.push(view.getViewData());
+      expect(pagesOf(view)[0].strokes.map((s) => s.id)).toEqual(["s1", `${device}.1`]);
+    }
+    expect(texts[1]).toBe(texts[0]);
   });
 
   it("without an id in its frontmatter is held as a load it cannot read", async () => {

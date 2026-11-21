@@ -68,6 +68,19 @@ export function dotClockOf(doc: object): DotClock | undefined {
   return clocks.get(doc);
 }
 
+/** Every id in a notebook: its pages' and their elements' (any list of things with an id). */
+export function* idsIn(doc: { readonly pages: readonly object[] }): Generator<unknown> {
+  for (const page of doc.pages) {
+    yield (page as { id?: unknown }).id;
+    for (const value of Object.values(page)) {
+      if (!Array.isArray(value)) continue;
+      for (const item of value) {
+        if (typeof item === "object" && item !== null) yield (item as { id?: unknown }).id;
+      }
+    }
+  }
+}
+
 /** A new dot for an id in `doc`, or `null` when `doc` has no clock (the id is made as before). */
 export function mintedId(doc: object): string | null {
   return clocks.get(doc)?.next() ?? null;
