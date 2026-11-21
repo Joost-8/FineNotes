@@ -128,8 +128,6 @@ export const view = {
     "FineNotes: this notebook's ink did not load, perhaps because the file has not finished syncing. Nothing on disk has changed. The notebook stays read-only until it loads cleanly: reopen it once the sync is done.",
   "view.notice.newerFormat":
     "FineNotes: this notebook uses something a newer FineNotes added. It stays read-only here, so nothing in it is lost: update FineNotes to edit it.",
-  "view.notice.devicePages":
-    "FineNotes: a newer FineNotes keeps this notebook's pages in files of their own. It stays read-only here, so nothing in it is lost: update FineNotes to edit it.",
   "view.notice.devicePagesSyncing":
     "FineNotes: some of this notebook's pages have not finished syncing, so they may look incomplete. It stays read-only here; they fill in as they arrive.",
   "view.clipboardUnavailable": "FineNotes could not use the clipboard here.",
