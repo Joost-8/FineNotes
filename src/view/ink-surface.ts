@@ -1180,6 +1180,8 @@ export interface InkSurfaceCallbacks {
   onTextAnchor?: (rect: TextAnchorRect | null) => void;
   /** What the host did with the text pill last (debug HUD): where it put it, or why it hid it. */
   textPillState?: () => string;
+  /** The file read again while open, and what became of the ink (debug HUD, FineNotes#273). */
+  diskState?: () => string;
   /** "Drag to size text boxes" (settings): a Text-tool drag draws the new box. Read live. */
   textDragSize?: () => boolean;
   /** Whether a two-finger double tap undoes and a three-finger one redoes. */
@@ -11850,6 +11852,7 @@ export class InkSurface {
       `cv ${canvas ? `${canvas.width}x${canvas.height}` : "-"} layouts=${this.hudLayouts}
 ` +
       `pill=${this.callbacks.textPillState?.() ?? "-"} ` +
+      `disk=${this.callbacks.diskState?.() ?? "-"} ` +
       `focus=${focus} zoom=${this.scale.toFixed(2)} kb=${r(keyboardHeight())} ` +
       `app=${r(document.querySelector(".app-container")?.getBoundingClientRect().height ?? -1)}
 ` +

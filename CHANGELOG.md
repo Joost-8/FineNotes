@@ -39,6 +39,21 @@ extracted from the matching section of this file by `release.yml`.
   no further than the rounding did, so straight lines stay steady and letters
   keep their shape.
 
+### Fixed
+
+- **Ink no longer vanishes when the notebook's file changes while you write**
+  ([#273](https://github.com/Joost-8/FineNotes/issues/273)). Since 2.10.0,
+  when the file changed on disk before your newest strokes were saved (a
+  sync landing, another app, or Obsidian reading back an older save of this
+  notebook), the notebook was replaced by the file: those strokes were gone,
+  and undo could not bring them back. A read of what the notebook already
+  had is now skipped, and a real change from elsewhere is merged with what
+  you wrote: pages and ink added on either side are kept. Ink this device
+  saved also stays when an older copy of the file arrives from another
+  device; in exchange, something erased on another device while this one
+  has the notebook open can come back. The diagnostics
+  export counts these reads (`diskReloads`).
+
 ## [2.10.0] - 2026-11-18
 
 ### Added
