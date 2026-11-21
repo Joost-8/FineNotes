@@ -235,6 +235,8 @@ export class PointerController {
   private stroke: number | null = null;
   /** A pen has reported a position off the px and device-px grids: this device does not round. */
   private penIsPrecise = false;
+  /** A pen position off whole CSS px but on the device-pixel grid was seen ({@link strokeGrid}). */
+  private penOnDevicePx = false;
   /** See {@link strokeRounded}. */
   private rounded = false;
   /** See {@link lastPenAt}. */
@@ -315,6 +317,16 @@ export class PointerController {
    */
   get strokeRounded(): boolean {
     return this.rounded;
+  }
+
+  /**
+   * With {@link strokeRounded}, the grid the pen's positions are rounded to,
+   * CSS px: one device px once a position between whole px has been seen on
+   * that grid, else one whole px. Null when the stroke is not rounded.
+   */
+  get strokeGrid(): number | null {
+    if (!this.rounded) return null;
+    return this.penOnDevicePx ? 1 / this.pixelRatio() : 1;
   }
 
   /**
@@ -910,7 +922,8 @@ export class PointerController {
    */
   private notePen(position: { clientX: number; clientY: number }): void {
     if (this.penIsPrecise || isWholePixel(position)) return;
-    if (!isOnDevicePixel(position, this.pixelRatio())) this.penIsPrecise = true;
+    if (isOnDevicePixel(position, this.pixelRatio())) this.penOnDevicePx = true;
+    else this.penIsPrecise = true;
   }
 
   private pixelRatio(): number {

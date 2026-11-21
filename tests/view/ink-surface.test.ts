@@ -2329,6 +2329,27 @@ describe("smoothing a pen whose positions arrive rounded (FineNotes#1)", () => {
     expect(opts(false, false)).toMatchObject({ smoothing: "off", densify: true });
     expect(opts(false, true)).toMatchObject({ smoothing: "off", densify: false });
   });
+
+  it("gives the builder the rounding grid in page px where the pen writes (FineNotes#275)", () => {
+    const at = (strokeGrid: number | null, baseScale: number, userZoom: number) =>
+      run<Record<string, unknown>>(
+        surfaceWith({
+          penPressure: null,
+          toolState: { pressureEnabled: false },
+          atFitZoom: (v: number) => v,
+          pointerInput: { strokeRounded: strokeGrid !== null, strokeGrid },
+          coalescedInput: false,
+          baseScale,
+          userZoom,
+        }),
+        "builderOpts",
+      );
+    // A practice sheet with the whole page on an iPad: 0.45 CSS px per page px.
+    expect(at(1, 0.9, 0.5).grid).toBeCloseTo(1 / 0.45, 12);
+    // Device px at a ratio of 2, zoomed in to 2 CSS px per page px.
+    expect(at(0.5, 1, 2).grid).toBeCloseTo(0.25, 12);
+    expect(at(null, 1, 1)).not.toHaveProperty("grid");
+  });
 });
 
 // --- A Pencil whose contact flickered (2026-10-01) ---------------------------------

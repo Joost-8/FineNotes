@@ -30,6 +30,15 @@ extracted from the matching section of this file by `release.yml`.
   the pen's last hover and button events, to send if it does not work on
   your tablet.
 
+### Fixed
+
+- **Small handwriting keeps its letters on older iPads** (#275). On iPadOS
+  before 26.2 the Pencil arrives rounded to whole pixels, and the smoothing
+  that steadies it could flatten letters written small, as on a Learn your
+  handwriting sheet ("Five" came out "Fi~"). Smoothing now moves each point
+  no further than the rounding did, so straight lines stay steady and letters
+  keep their shape.
+
 ## [2.10.0] - 2026-11-18
 
 ### Added

@@ -8844,6 +8844,9 @@ export class InkSurface {
     // 26.2) is smoothed; one that reports fractions is kept exact.
     const rounded = this.penController?.strokeRounded ?? false;
     const smoothing: Smoothing = rounded ? "centred" : "off";
+    // Smoothing moves a sample no further than the rounding did: half a
+    // step of that grid, in page px where the pen writes (FineNotes#275).
+    const grid = this.penController?.strokeGrid ?? null;
     // The pen in hand's stroke stabilization, on screen like the spacing.
     // Not for the Shape tool, whose strokes become clean shapes, nor for a
     // practice file's training data.
@@ -8871,6 +8874,7 @@ export class InkSurface {
       // them. Where every sample arrives, the stroke is stored as it is.
       densify: !this.coalescedInput,
       smoothing,
+      ...(grid !== null ? { grid: grid / this.gestureScale } : {}),
       stabilize: this.atFitZoom(stabilizationReach(percent / 100)),
       // A practice file is training data: keep the pen's samples as they came.
       record: this.practice !== null,
