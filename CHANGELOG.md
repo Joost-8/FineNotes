@@ -34,7 +34,8 @@ extracted from the matching section of this file by `release.yml`.
   so Obsidian Sync stores a few MB an hour of writing instead of hundreds,
   and two devices writing at once both keep their ink. This version opens
   such a notebook read-only, with every device's ink on its pages, and
-  writes nothing to it. Pages still on their way show what has arrived.
+  writes nothing to it. Its pages embedded in a note show the same. Pages
+  still on their way show what has arrived.
 
 ### Fixed
 

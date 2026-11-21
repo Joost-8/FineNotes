@@ -44,6 +44,13 @@ import { isBoard, textLinesHeight } from "../model/board";
 import { DEFAULT_PAGE_GEOMETRY, type Page, type TextBoxElement } from "../model/document";
 import { pageSignature } from "../model/page-signature";
 import { parseInkFile } from "../model/serialize";
+import { devicePagesFolderOfFile, isDevicePagesPayload } from "../model/device-pages";
+import {
+  devicePagesFolderFor,
+  devicePagesFolderPath,
+  notebookStatOf,
+  readDevicePagesFolder,
+} from "./device-pages-files";
 import { VaultImageCache } from "./image-cache";
 import { releaseCanvas } from "./image-import";
 import {
@@ -371,7 +378,8 @@ export class PageEmbeds extends Component {
       embed.showLink("missing-file");
       return false;
     }
-    const version = file.stat.mtime;
+    // A notebook kept as one file per page per device changes with any of its files (#274).
+    const version = notebookStatOf(this.host.app, file).mtime;
     if (embed.version === version) return !embed.isLink;
     const notebook = await this.notebook(file, version);
     if (embed.version === version) return !embed.isLink;
@@ -445,7 +453,15 @@ export class PageEmbeds extends Component {
       const text = await this.host.app.vault.cachedRead(file);
       const { doc, payload } = parseInkFile(text, this.host.paperWidth());
       if (doc) return { pages: doc.pages, board: isBoard(doc) };
-      return payload === undefined ? { pages: [], board: false } : null;
+      if (payload === undefined) return { pages: [], board: false };
+      // Kept as one file per page per device (#274): joined from its files.
+      const folder = isDevicePagesPayload(payload)
+        ? devicePagesFolderFor(this.host.app, file)
+        : null;
+      const joined = folder
+        ? await readDevicePagesFolder(this.host.app, payload, folder, this.host.paperWidth())
+        : null;
+      return joined ? { pages: joined.pages, board: isBoard(joined) } : null;
     });
   }
 
@@ -509,6 +525,7 @@ export class PageEmbeds extends Component {
   private fileChanged(file: TAbstractFile): void {
     if (!(file instanceof TFile)) return;
     this.sourceChanged(file.path);
+    this.devicePageChanged(file.path);
     if (!this.watches(file.path)) return;
     // A notebook open beside the note saves a second after the pen lifts; one repaint will do.
     window.clearTimeout(this.changeTimers.get(file.path));
@@ -519,6 +536,8 @@ export class PageEmbeds extends Component {
         this.notebooks.forget(file.path);
         for (const embed of this.live) {
           if (embed.file.path !== file.path) continue;
+          // Read again even at the same stamp: a page file gone leaves the newest change (#274).
+          embed.version = -1;
           // An embed showing a link has no page on screen to report it: read it anyway.
           const first = embed.slots[0];
           if (embed.isLink && first) this.schedule(first, true);
@@ -531,8 +550,23 @@ export class PageEmbeds extends Component {
   private fileDeleted(file: TAbstractFile): void {
     this.notebooks.forget(file.path);
     this.sourceChanged(file.path);
+    this.devicePageChanged(file.path);
     for (const embed of this.live) {
       if (embed.file.path === file.path) embed.showLink("missing-file");
+    }
+  }
+
+  /**
+   * A file of a notebook kept as one file per page per device changed (#274):
+   * the embeds of that notebook read it again, as if its own file had.
+   */
+  private devicePageChanged(path: string): void {
+    const folder = devicePagesFolderOfFile(path);
+    if (folder === null) return;
+    for (const embed of this.live) {
+      if (devicePagesFolderPath(this.host.app, embed.file) !== folder) continue;
+      this.fileChanged(embed.file);
+      return;
     }
   }
 
