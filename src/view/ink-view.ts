@@ -763,11 +763,12 @@ export class InkView extends TextFileView {
   private knownText: string | null = null;
   /**
    * The file read again while open (FineNotes#273), for the diagnostics:
-   * `own` reads of a text this view had, skipped; `merged` changes from
+   * `own` reads of a text this view had, skipped; `empty` reads of an
+   * emptied file, skipped; `merged` changes from
    * elsewhere taken in with this view's unsaved changes, `carried` of
    * those kept; `replaced` loaded as they were, nothing being unsaved.
    */
-  private readonly diskReloads = { own: 0, merged: 0, carried: 0, replaced: 0 };
+  private readonly diskReloads = { own: 0, empty: 0, merged: 0, carried: 0, replaced: 0 };
   /**
    * Not plain text to Obsidian (FineNotes#246). Obsidian's TextFileView
    * sets this, and while it is set a file changed on disk (a sync landing)
@@ -1193,6 +1194,14 @@ export class InkView extends TextFileView {
       this.diskReloads.own++;
       // An older one, perhaps put back by a sync: the file gets this view's again.
       this.saveRequest();
+      return;
+    }
+    // An empty file, read while something writes it whole (a copy, some
+    // syncs: emptied first, then filled). It holds nothing, and taken as a
+    // notebook it would blank this one; the read of the filled file follows.
+    // Nothing is saved now, or this view would write over that copy.
+    if (again && data.trim() === "") {
+      this.diskReloads.empty++;
       return;
     }
     // The same file read again (changed on disk): stay on the tab shown.
@@ -4672,8 +4681,8 @@ export class InkView extends TextFileView {
         onTextAnchor: (rect) => this.toolbar?.setTextAnchor(rect),
         textPillState: () => this.toolbar?.textPillState ?? "-",
         diskState: () => {
-          const { own, merged, carried, replaced } = this.diskReloads;
-          return `own${own}/merged${merged}+${carried}/replaced${replaced}`;
+          const { own, empty, merged, carried, replaced } = this.diskReloads;
+          return `own${own}/empty${empty}/merged${merged}+${carried}/replaced${replaced}`;
         },
         // A copied picture also goes to the system clipboard, for other apps;
         // one pasted from there comes in as any other picture does.

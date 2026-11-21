@@ -332,7 +332,7 @@ describe("the file read again while open (FineNotes#273)", () => {
   // Obsidian hands a non-plain-text view the file as it is on disk, which
   // replaced every stroke written since the last save, and the undo history.
   interface Reloads {
-    diskReloads: { own: number; merged: number; carried: number; replaced: number };
+    diskReloads: { own: number; empty: number; merged: number; carried: number; replaced: number };
   }
 
   /** Write a stroke on the first page, as a pen lift does: changed, save asked for. */
@@ -399,6 +399,24 @@ describe("the file read again while open (FineNotes#273)", () => {
     expect(strokeIds(view.getViewData())).toEqual([["s1"]]);
     expect(inside(view).saveRequests).toBeGreaterThan(saves);
     expect((view as unknown as Reloads).diskReloads.merged).toBe(1);
+  });
+
+  it("keeps the notebook through an empty read while the file is being written", () => {
+    // A copy over the file empties it, then fills it: seen in the real-Obsidian
+    // rig, where the empty read blanked the notebook and the next merge had no base.
+    const view = openView();
+    const text = notebookFile();
+    view.setViewData(text, true);
+    const saves = inside(view).saveRequests;
+    view.setViewData("", false);
+    expect(strokeIds(view.getViewData())).toEqual([["s1"]]);
+    expect(inside(view).saveRequests).toBe(saves);
+    // Then the filled file: an older copy from elsewhere, which lacks s1.
+    const older = parseInkFile(text, 1024);
+    older.doc!.pages[0].strokes = [];
+    view.setViewData(buildInkFile(`${older.body}\nOther device.`, older.doc!), false);
+    expect(strokeIds(view.getViewData())).toEqual([["s1"]]);
+    expect((view as unknown as Reloads).diskReloads).toMatchObject({ empty: 1, merged: 1 });
   });
 
   it("opens another file as it is", () => {
