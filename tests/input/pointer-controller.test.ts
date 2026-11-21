@@ -1677,3 +1677,64 @@ describe("erase on hover: the side button held with the pen in the air (discussi
     ]);
   });
 });
+
+describe("the side button in the air on a WebView with no hovering moves (discussion #209)", () => {
+  function airRig(bridge = true) {
+    const el = new StandInElement();
+    const log: string[] = [];
+    const controller = new PointerController(
+      el as unknown as HTMLElement,
+      toSurface,
+      {
+        onStart: () => log.push("start"),
+        onMove: () => undefined,
+        onEnd: () => log.push("end"),
+        onCancel: () => undefined,
+        onAirMenu: () => log.push("air"),
+      },
+      { route: () => "draw", stylusSelectBridge: () => bridge },
+    );
+    controller.attach();
+    const fire = (phase: Phase, c: Contact): void => {
+      el.listeners.get(phase)?.(eventFor(1, "pen", c));
+    };
+    const menu = (t: number, pointerType = "pen"): void =>
+      controller.airMenu({ pointerType, clientX: 10, clientY: 10, timeStamp: t });
+    return { controller, log, fire, menu };
+  }
+
+  it("arms the selection bridge at the lone contextmenu, as the tester's tablet sends it", () => {
+    const { controller, log, fire, menu } = airRig();
+    // Writing reaches the page; hovering never does.
+    fire("pointerdown", { x: 10, y: 10, t: 0, button: 0, buttons: 1, pressure: 0.4 });
+    fire("pointerup", { x: 30, y: 10, t: 200, button: 0, buttons: 0, pressure: 0 });
+    log.length = 0;
+    menu(45_000);
+    expect(log).toEqual(["air"]);
+    expect(controller.hoverSummary()).toMatchObject({
+      hoverMoves: 0,
+      penDowns: 1,
+      airMenus: 1,
+      hover: "none",
+    });
+  });
+
+  it("leaves it to the hovering moves where they come, and to the stroke while one is down", () => {
+    const { log, fire, menu } = airRig();
+    fire("pointermove", { x: 10, y: 10, t: 0, buttons: 1, pressure: 0 });
+    menu(40);
+    fire("pointerdown", { x: 10, y: 10, t: 5000, button: 0, buttons: 1, pressure: 0.4 });
+    menu(5600);
+    expect(log).toEqual(["start"]);
+  });
+
+  it("does nothing where there is no bridge (the iPad, desktop), nor for a finger", () => {
+    const off = airRig(false);
+    off.menu(5000);
+    expect(off.log).toEqual([]);
+    expect(off.controller.hoverSummary().menus).toBe(0);
+    const on = airRig();
+    on.menu(5000, "touch");
+    expect(on.log).toEqual([]);
+  });
+});
