@@ -11,6 +11,7 @@
  */
 
 import type { InkDocument } from "../model/document";
+import { mintedId } from "../model/dot-ids";
 
 const DIGITS = /^[0-9]+$/;
 
@@ -27,11 +28,18 @@ export function highestIdNumber(ids: Iterable<string>, prefix: string): number {
   return highest;
 }
 
-/** Hands out `<prefix><n>` ids, counting up from the highest it has been shown. */
+/**
+ * Hands out `<prefix><n>` ids, counting up from the highest it has been
+ * shown; or dots, when the notebook `docOf` gives is kept as page files
+ * (`dot-ids`).
+ */
 export class IdSequence {
   private last = 0;
 
-  constructor(private readonly prefix: string) {}
+  constructor(
+    private readonly prefix: string,
+    private readonly docOf: () => object | null = () => null,
+  ) {}
 
   /** Count on from the ids of a document just opened, whatever came before. */
   restart(inUse: Iterable<string>): void {
@@ -44,6 +52,9 @@ export class IdSequence {
   }
 
   next(): string {
+    const doc = this.docOf();
+    const minted = doc ? mintedId(doc) : null;
+    if (minted) return minted;
     this.last += 1;
     return `${this.prefix}${this.last}`;
   }

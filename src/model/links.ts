@@ -8,6 +8,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import type { Command } from "./commands";
 import type { InkDocument, InkLink, Page } from "./document";
 import { isExternalTarget, renameTextLinks, textLinkTargets } from "./text-links";
@@ -39,6 +40,8 @@ export function externalUrl(target: string): string {
 
 /** The next free link id in the notebook: `l<N>`. */
 export function nextLinkId(doc: InkDocument): string {
+  const minted = mintedId(doc);
+  if (minted) return minted;
   let max = 0;
   for (const page of doc.pages) {
     for (const link of page.links ?? []) {

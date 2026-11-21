@@ -2655,8 +2655,8 @@ export class InkSurface {
   /** Set by a host while taps on ink mean something else (audio replay). */
   private strokeTapHandler: StrokeTapHandler | null = null;
   /** New strokes' and text boxes' ids: `s<N>` and `t<N>`, above any the document holds. */
-  private strokeIds = new IdSequence("s");
-  private textBoxIds = new IdSequence("t");
+  private strokeIds = new IdSequence("s", () => this.doc);
+  private textBoxIds = new IdSequence("t", () => this.doc);
   private history = new History();
   /** The session shown: these fields are its own (`surface-session.ts`). */
   private session!: SurfaceSession;

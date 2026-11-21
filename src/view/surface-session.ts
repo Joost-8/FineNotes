@@ -85,13 +85,16 @@ export function newSession(
   options: SurfaceSessionOptions = {},
   skip: ((stroke: Stroke) => boolean) | null = null,
 ): SurfaceSession {
-  const strokeIds = new IdSequence("s");
-  const textBoxIds = new IdSequence("t");
+  // The session's document may be swapped (`setDocument`): ids come from the one it holds.
+  let session: SurfaceSession | null = null;
+  const docOf = (): InkDocument => session?.doc ?? doc;
+  const strokeIds = new IdSequence("s", docOf);
+  const textBoxIds = new IdSequence("t", docOf);
   strokeIds.restart(strokeIdsOf(doc));
   textBoxIds.restart(textBoxIdsOf(doc));
   const strokeIndex = new StrokeIndex();
   strokeIndex.skip = skip;
-  return {
+  session = {
     doc,
     history: new History(),
     strokeIds,
@@ -104,4 +107,5 @@ export function newSession(
     linkSuggestions: new Map(),
     wordFlags: new Map(),
   };
+  return session;
 }

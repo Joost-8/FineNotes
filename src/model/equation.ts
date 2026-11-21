@@ -13,6 +13,7 @@
  * Pure: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import type { Command } from "./commands";
 import { type EquationElement, type InkDocument, pageById } from "./document";
 import { LATEX_MAX_CHARS } from "./latex";
@@ -57,6 +58,8 @@ export function makeEquation(spec: NewEquation): EquationElement {
 
 /** An equation id not yet used anywhere in `doc`: one above the highest `q<N>`. */
 export function nextEquationId(doc: InkDocument): string {
+  const minted = mintedId(doc);
+  if (minted) return minted;
   let max = 0;
   for (const page of doc.pages) {
     for (const equation of page.equations ?? []) {

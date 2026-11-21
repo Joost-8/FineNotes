@@ -19,6 +19,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import {
   type ContentsEntry,
   type PageContents,
@@ -104,7 +105,7 @@ export function outlineContents(
     }
     const frame = pdfFrameOf(page.backdrop, page.geometry);
     const section: PageSection = {
-      id: `c${++next}`,
+      id: mintedId(doc) ?? `c${++next}`,
       x: Math.round(frame.x + (fraction(item.x) ?? DEFAULT_LEFT) * frame.width),
       y: Math.round(frame.y + y * frame.height),
       title,

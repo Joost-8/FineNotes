@@ -17,6 +17,7 @@
  * Pure: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import type { Command } from "./commands";
 import { type GraphElement, type GraphSpecData, type InkDocument, pageById } from "./document";
 import { isHexColor } from "./text-style";
@@ -122,6 +123,8 @@ export function graphFrameHeight(spec: GraphSpec, w: number, fallback: number): 
 
 /** A graph id not yet used anywhere in `doc`: one above the highest `f<N>`. */
 export function nextGraphId(doc: InkDocument): string {
+  const minted = mintedId(doc);
+  if (minted) return minted;
   let max = 0;
   for (const page of doc.pages) {
     for (const graph of page.graphs ?? []) {

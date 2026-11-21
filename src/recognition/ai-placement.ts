@@ -9,6 +9,7 @@
  * No DOM, no Obsidian.
  */
 
+import { mintedId } from "../model/dot-ids";
 import type { InkDocument, PageGeometry } from "../model/document";
 
 export interface PageRect {
@@ -64,6 +65,8 @@ function clamp(value: number, min: number, max: number): number {
  * placed element can never collide with one already in the notebook.
  */
 export function nextElementId(doc: InkDocument, prefix: "i" | "t"): string {
+  const minted = mintedId(doc);
+  if (minted) return minted;
   const pattern = new RegExp(`^${prefix}(\\d+)$`);
   let max = 0;
   for (const page of doc.pages) {

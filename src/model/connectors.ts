@@ -13,6 +13,7 @@
  * Pure: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import type { Command } from "./commands";
 import { readDash, readHeads } from "./shape-style";
 import {
@@ -45,6 +46,8 @@ export function connectorsOf(page: Page, id: string): ShapeConnector[] {
 
 /** The next free `cn<N>` id in the notebook. */
 export function nextConnectorId(doc: InkDocument): string {
+  const minted = mintedId(doc);
+  if (minted) return minted;
   let max = 0;
   for (const page of doc.pages) {
     for (const c of page.connectors ?? []) {

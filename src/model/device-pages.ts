@@ -31,6 +31,7 @@
 
 import { type InkDocument } from "./document";
 import {
+  type DevicePagesSources,
   type DevicePagesUnion,
   type MetaPageEntry,
   type MetaRead,
@@ -238,7 +239,11 @@ export function readPageFile(text: string, device: string): PageFileRead | Devic
   const tomb: Tombstone[] = [];
   for (const entry of Array.isArray(json.tomb) ? json.tomb : []) {
     if (!isRecord(entry) || typeof entry.id !== "string" || !entry.id) continue;
-    tomb.push(typeof entry.d === "string" ? { id: entry.id, d: entry.d } : { id: entry.id });
+    tomb.push({
+      id: entry.id,
+      ...(typeof entry.d === "string" ? { d: entry.d } : {}),
+      ...(typeof entry.l === "string" ? { l: entry.l } : {}),
+    });
   }
   return {
     device,
@@ -310,6 +315,9 @@ export interface DevicePagesLoad {
   readonly newer: string[];
   /** Whether anything above is not up to date: show the "still syncing" mark. */
   readonly syncing: boolean;
+  /** What was read and how it was joined, for the writer (`device-pages-writer`). */
+  readonly sources: DevicePagesSources;
+  readonly union: DevicePagesUnion;
 }
 
 /**
@@ -338,11 +346,8 @@ export function readDevicePagesNotebook(
     else if (kind.kind === "meta") metas.push(read as MetaRead);
     else pages.push(read as PageFileRead);
   }
-  const union: DevicePagesUnion = joinDevicePages({
-    legacy: isRecord(legacy) ? legacy : null,
-    metas,
-    pages,
-  });
+  const sources: DevicePagesSources = { legacy: isRecord(legacy) ? legacy : null, metas, pages };
+  const union = joinDevicePages(sources);
   const doc = readStoredDocument(union.stored, fallbackWidth);
   return {
     doc,
@@ -352,7 +357,14 @@ export function readDevicePagesNotebook(
     unreadable,
     newer,
     syncing:
-      union.stale.length + union.missing.length + union.unlisted.length + unreadable.length > 0,
+      union.stale.length +
+        union.missing.length +
+        union.unlisted.length +
+        unreadable.length +
+        newer.length >
+      0,
+    sources,
+    union,
   };
 }
 

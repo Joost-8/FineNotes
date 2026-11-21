@@ -15,6 +15,7 @@
  * PURE: no DOM. Page px throughout.
  */
 
+import { mintedId } from "../model/dot-ids";
 import { AddPage } from "../model/commands";
 import { SetSection } from "../model/contents";
 import { SetLink } from "../model/links";
@@ -30,7 +31,7 @@ import {
   type TextBoxElement,
   strokeBounds,
 } from "../model/document";
-import { CompositeCommand, nextPageId } from "../model/page-commands";
+import { CompositeCommand, maxPageNumber } from "../model/page-commands";
 import {
   AddElements,
   type ElementLists,
@@ -237,7 +238,7 @@ export function planInsertSpace(
   if (!page || !Number.isInteger(count) || count === 0) return none;
   const blocks = layout.lines(page);
   if (!blocks[target.block]) return none;
-  let idNumber = Number(nextPageId(doc).slice(1));
+  let idNumber = maxPageNumber(doc) + 1;
   const walk: Walk = {
     doc,
     layout,
@@ -246,7 +247,7 @@ export function planInsertSpace(
     moves: [],
     moved: 0,
     spilled: 0,
-    nextId: () => `p${idNumber++}`,
+    nextId: () => mintedId(doc) ?? `p${idNumber++}`,
   };
   const lines = count > 0 ? count : -closeUp(walk, pageIndex, target, -count);
   if (count > 0) pushDown(walk, pageIndex, target, count);

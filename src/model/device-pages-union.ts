@@ -72,10 +72,14 @@ export const PAGE_FIELDS = [
   "titleLevel",
 ] as const;
 
-/** An erased element of another device: its id, and the dot of the version erased. */
+/**
+ * An erased element of another device (or of the legacy notebook): its id,
+ * the dot of the version erased, and the list it was in (`l`; absent: any).
+ */
 export interface Tombstone {
   readonly id: string;
   readonly d?: string;
+  readonly l?: string;
 }
 
 /** One device's page file, read. */
@@ -131,15 +135,37 @@ export interface DevicePagesUnion {
   readonly unlisted: string[];
   /** What the union includes from every device. */
   readonly vv: VersionVector;
+  /** For the writer: what each page's sources hold, by page id. */
+  readonly detail: ReadonlyMap<string, PageDetail>;
+  /** For the writer: the settings' clock, and the highest clock of any register. */
+  readonly settingsClock: number;
+  readonly clock: number;
+}
+
+/** What a page's sources hold, for the writer (`device-pages-writer`). */
+export interface PageDetail {
+  /** The register the page took: its order key, clock and device ("" for legacy). */
+  readonly key: string;
+  readonly c: number;
+  /** For each element shown, by {@link elementKey}: the dot of its last change, if any. */
+  readonly dots: ReadonlyMap<string, string | undefined>;
+  /** For each element any source holds, by {@link elementKey}: the devices holding it ("" for legacy). */
+  readonly holders: ReadonlyMap<string, ReadonlySet<string>>;
+}
+
+/** An element's key on its page: its list and its id. */
+export function elementKey(list: string, id: string): string {
+  return `${list}\u0000${id}`;
 }
 
 /**
  * The order key of the `index`th page of the legacy notebook: six base-36
- * digits, so they sort in page order by code unit and a key between two of
- * them can always be made.
+ * digits and an `i`, so they sort in page order by code unit and a key
+ * between two of them can always be made (`model/order-keys`).
  */
 export function orderKeyAt(index: number): string {
-  return Math.max(0, Math.floor(index)).toString(36).padStart(6, "0");
+  // Never ending in "0", so a key before the first can always be made too.
+  return `${Math.max(0, Math.floor(index)).toString(36).padStart(6, "0")}i`;
 }
 
 /** A register's claim: its clock and the device that wrote it ("" for legacy). */
@@ -187,21 +213,32 @@ interface ElementSource {
 /** A tombstone and the vector of the file that holds it. */
 interface HeldTombstone {
   readonly d?: string;
+  readonly l?: string;
   readonly vv: VersionVector;
 }
 
-/** Whether a tombstone erased this version (`d`) of its element. */
+/**
+ * Whether a tombstone erased this version (`d`) of its element: the version
+ * it names, one its file had seen, or a version of unknown origin (legacy,
+ * which every device starts from).
+ */
 function erases(tomb: HeldTombstone, d: unknown): boolean {
-  if (tomb.d === undefined ? d === undefined : tomb.d === d) return true;
+  if (d === undefined || tomb.d === d) return true;
   return covers(tomb.vv, d);
 }
 
-/** The element lists of one page, joined from its sources. */
+/** The element lists of one page, joined from its sources, and what the writer needs of them. */
 function joinElements(
   sources: readonly ElementSource[],
   tombs: ReadonlyMap<string, readonly HeldTombstone[]>,
-): Record<string, unknown[]> {
+): {
+  lists: Record<string, unknown[]>;
+  dots: Map<string, string | undefined>;
+  holders: Map<string, Set<string>>;
+} {
   const out: Record<string, unknown[]> = {};
+  const dots = new Map<string, string | undefined>();
+  const holders = new Map<string, Set<string>>();
   for (const list of ELEMENT_LISTS) {
     const order: string[] = [];
     const chosen = new Map<string, { element: Record<string, unknown>; source: ElementSource }>();
@@ -211,6 +248,10 @@ function joinElements(
       for (const element of entries) {
         const id = idOf(element);
         if (id === null || !isRecord(element)) continue;
+        const key = elementKey(list, id);
+        const holding = holders.get(key) ?? new Set<string>();
+        holding.add(source.device);
+        holders.set(key, holding);
         const held = chosen.get(id);
         if (!held) {
           order.push(id);
@@ -233,12 +274,16 @@ function joinElements(
     }
     const kept = order.flatMap((id) => {
       const { element } = chosen.get(id) as { element: Record<string, unknown> };
-      const erased = (tombs.get(id) ?? []).some((tomb) => erases(tomb, element.d));
-      return erased ? [] : [element];
+      const erased = (tombs.get(id) ?? []).some(
+        (tomb) => (tomb.l === undefined || tomb.l === list) && erases(tomb, element.d),
+      );
+      if (erased) return [];
+      dots.set(elementKey(list, id), typeof element.d === "string" ? element.d : undefined);
+      return [element];
     });
     if (kept.length > 0) out[list] = kept;
   }
-  return out;
+  return { lists: out, dots, holders };
 }
 
 /** Put a notebook together from its legacy payload, its metas and its page files. */
@@ -303,6 +348,7 @@ export function joinDevicePages(sources: DevicePagesSources): DevicePagesUnion {
 
   const stale: string[] = [];
   const missing: string[] = [];
+  const detail = new Map<string, PageDetail>();
   const pages = [...listed, ...unlisted].map((id) => {
     const files = filesOf.get(id) ?? [];
     const legacyPage = legacyById.get(id);
@@ -314,7 +360,7 @@ export function joinDevicePages(sources: DevicePagesSources): DevicePagesUnion {
     for (const file of files) {
       for (const tomb of file.tomb) {
         const list = tombs.get(tomb.id) ?? [];
-        list.push({ d: tomb.d, vv: file.vv });
+        list.push({ d: tomb.d, l: tomb.l, vv: file.vv });
         tombs.set(tomb.id, list);
       }
     }
@@ -329,14 +375,37 @@ export function joinDevicePages(sources: DevicePagesSources): DevicePagesUnion {
         if (!missing.includes(id)) missing.push(id);
       }
     }
-    return { ...(registers.get(id)?.fields ?? {}), id, ...joinElements(elementSources, tombs) };
+    const joined = joinElements(elementSources, tombs);
+    const register = registers.get(id);
+    detail.set(id, {
+      key: register?.key ?? "",
+      c: register?.c ?? 0,
+      dots: joined.dots,
+      holders: joined.holders,
+    });
+    return { ...(register?.fields ?? {}), id, ...joined.lists };
   });
 
   const stored: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(head)) if (name !== "pages") stored[name] = value;
   stored.pages = pages;
   const vv = joinVersionVectors(...metas.map((meta) => meta.vv), ...sources.pages.map((p) => p.vv));
-  return { stored, stale, missing, unlisted, vv };
+  let clock = headClaim.c;
+  for (const register of registers.values()) clock = Math.max(clock, register.c);
+  for (const meta of metas) {
+    for (const entry of meta.pages) clock = Math.max(clock, entry.c);
+    if (meta.settings) clock = Math.max(clock, meta.settings.c);
+  }
+  return {
+    stored,
+    stale,
+    missing,
+    unlisted,
+    vv,
+    detail,
+    settingsClock: headClaim.c,
+    clock,
+  };
 }
 
 /** The element lists of a stored page. */

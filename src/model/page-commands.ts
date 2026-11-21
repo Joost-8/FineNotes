@@ -11,6 +11,7 @@
  * they touch no DOM and no Obsidian API. Pure, like the rest of `src/model/`.
  */
 
+import { mintedId } from "./dot-ids";
 import type { Command } from "./commands";
 import {
   type Backdrop,
@@ -23,7 +24,7 @@ import {
   pageById,
 } from "./document";
 import { type TextAdoption, adoptText, relinkNoteInk, releaseText } from "./sticky-notes";
-import { nextConnectorId, remapConnectors } from "./connectors";
+import { remapConnectors } from "./connectors";
 import { paperPageFor, repeatedPaper, shapePageFor } from "./templates";
 import { t } from "../i18n/translate";
 
@@ -308,14 +309,19 @@ export function pageToInsertAfter(
   };
 }
 
-/** Next free `p<N>` page id for a document. */
+/** Next free page id for a document: a dot in one kept as page files (`dot-ids`), else `p<N>`. */
 export function nextPageId(doc: InkDocument): string {
+  return mintedId(doc) ?? `p${maxPageNumber(doc) + 1}`;
+}
+
+/** The highest `N` among the document's `p<N>` page ids, 0 for none. */
+export function maxPageNumber(doc: InkDocument): number {
   let max = 0;
   for (const page of doc.pages) {
     const m = /^p(\d+)$/.exec(page.id);
     if (m) max = Math.max(max, Number(m[1]));
   }
-  return `p${max + 1}`;
+  return max;
 }
 
 /**
@@ -413,30 +419,36 @@ export function duplicatePageAfter(
   delete copy.tasks;
   const strokeIds = new Map<string, string>();
   for (const stroke of copy.strokes) {
-    const id = `s${++strokeSeq}`;
+    const id = mintedId(doc) ?? `s${++strokeSeq}`;
     strokeIds.set(stroke.id, id);
     stroke.id = id;
   }
   // Its arrows join the copies of their shapes.
   if (copy.connectors) {
-    let connectorSeq = Number(nextConnectorId(doc).slice(2)) - 1;
-    const connectors = remapConnectors(copy.connectors, strokeIds, () => `cn${++connectorSeq}`);
+    let connectorSeq = maxNumericId(doc, (page) => page.connectors ?? [], "cn");
+    const connectors = remapConnectors(
+      copy.connectors,
+      strokeIds,
+      () => mintedId(doc) ?? `cn${++connectorSeq}`,
+    );
     if (connectors.length > 0) copy.connectors = connectors;
     else delete copy.connectors;
   }
-  for (const textBox of copy.textBoxes) textBox.id = `t${++textSeq}`;
+  for (const textBox of copy.textBoxes) textBox.id = mintedId(doc) ?? `t${++textSeq}`;
   const imageIds = new Map<string, string>();
   for (const image of copy.images) {
-    const id = `i${++imageSeq}`;
+    const id = mintedId(doc) ?? `i${++imageSeq}`;
     imageIds.set(image.id, id);
     image.id = id;
   }
   // The ink and text on a note follow the note's new id.
   relinkNoteInk(copy.strokes, imageIds);
   relinkNoteInk(copy.textBoxes, imageIds);
-  for (const table of copy.tables ?? []) table.id = `g${++tableSeq}`;
-  for (const graph of copy.graphs ?? []) graph.id = `f${++graphSeq}`;
-  for (const equation of copy.equations ?? []) equation.id = `q${++equationSeq}`;
+  for (const table of copy.tables ?? []) table.id = mintedId(doc) ?? `g${++tableSeq}`;
+  for (const graph of copy.graphs ?? []) graph.id = mintedId(doc) ?? `f${++graphSeq}`;
+  for (const equation of copy.equations ?? []) {
+    equation.id = mintedId(doc) ?? `q${++equationSeq}`;
+  }
   return { index: index + 1, page: copy };
 }
 
