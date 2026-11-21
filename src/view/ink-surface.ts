@@ -193,6 +193,7 @@ import { erasedPieces, erasesGrey } from "../canvas/erase-look";
 import { nightHighlighter } from "../canvas/night";
 import {
   type LineSpan,
+  MARGIN_SHARE,
   RuledEraser,
   inLineSpan,
   lineSpan,
@@ -13725,8 +13726,10 @@ export class InkSurface {
     let lines: LineBlock[] = [];
     let space: LassoDraft["space"] = null;
     let boardSpace: LassoDraft["boardSpace"] = null;
-    if (mode === "lines" && this.board) {
-      // A board has no lines to select: by line, it inserts space (discussion #276).
+    const spacePage = mode === "lines" ? this.pageAt(box.index) : undefined;
+    if (mode === "lines" && spacePage && this.insertsFreeSpace(spacePage)) {
+      // A board, or paper with no lines, has no lines to select: by line, it
+      // inserts space from wherever the pen goes down (discussion #276).
       boardSpace = {
         axis: null,
         amount: 0,
@@ -14110,7 +14113,11 @@ export class InkSurface {
       this.renderer?.clearWet();
       this.requestZoomPaint();
       space.text =
-        amount < 0 ? t("surface.readout.noEmptySpace") : t("surface.readout.boardDragToInsert");
+        amount < 0
+          ? t("surface.readout.noEmptySpace")
+          : amount > 0 && !this.board
+            ? t("surface.readout.noRoomOnPage")
+            : t("surface.readout.boardDragToInsert");
       this.flashReadout(space.text);
       return;
     }
@@ -14147,7 +14154,22 @@ export class InkSurface {
       lasso.to[axis] - lasso.origin[axis],
       boardSpaceStep(page.backdrop),
       (text) => this.textBoxCoverOf(page.id, text).h,
+      // A board grows; a notebook page keeps its size, so nothing goes past its edge.
+      this.board ? undefined : axis === "x" ? page.geometry.width : page.geometry.height,
     );
+  }
+
+  /**
+   * Whether the by-line lasso inserts space freely on `page` (discussion
+   * #276): on a board, and on notebook paper with no lines to select
+   * (blank, dots, squares, planners). Not on a PDF, whose notes belong by
+   * its printed words, nor on a cover.
+   */
+  private insertsFreeSpace(page: Page): boolean {
+    if (this.board) return true;
+    const kind = page.backdrop.kind;
+    if (kind === "pdf" || kind.startsWith("cover-")) return false;
+    return writingLines(page.backdrop, page.geometry).length === 0;
   }
 
   /** How the insert-space planner sees this surface's pages. */
@@ -16766,7 +16788,18 @@ export class InkSurface {
         const page = this.pageAt(box.index);
         if (!page) continue;
         const lines = writingLines(page.backdrop, page.geometry);
-        for (const column of spaceHandles(lines, page.geometry.width)) {
+        const columns = spaceHandles(lines, page.geometry.width);
+        if (lines.length === 0 && this.insertsFreeSpace(page)) {
+          // Paper with no lines: one column in the margin, a step of the paper apart (#276).
+          const pitch = boardSpaceStep(page.backdrop);
+          columns.push({
+            x: (page.geometry.width * MARGIN_SHARE) / 2,
+            top: 0,
+            pitch,
+            lines: Math.floor(page.geometry.height / pitch),
+          });
+        }
+        for (const column of columns) {
           let el = this.spaceHandleEls[used];
           if (!el) {
             el = this.spaceHandlesEl.createDiv({ cls: "goodobsidian-space-handle" });

@@ -417,9 +417,9 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Insert space between lines
 
 - **Id:** `insertSpace`
-- **What:** With the lasso on By line, small arrows sit in the margin of lined paper; drag one down to push the writing below down by whole lines (onto the next page, adding pages if needed), or up to close empty lines. On a board, press anywhere and drag down (or right) to push everything below (or right of) the pen across the whole board, by whole dots; drag back to close empty space.
+- **What:** With the lasso on By line, small arrows sit in the margin of lined paper; drag one down to push the writing below down by whole lines (onto the next page, adding pages if needed), or up to close empty lines. On a board, or on paper with no lines (blank, dotted, squared, planners), press anywhere and drag down (or right) to push everything below (or right of) the pen, by whole dots or squares; drag back to close empty space. On a notebook page nothing is pushed off the page.
 - **Where:** Lasso › Lasso type "By line", then drag a margin arrow (on a board, drag anywhere).
-- **Notes:** (lined paper and boards)
+- **Notes:** (any paper but PDFs; lined paper from the margin)
 - **Words:** insert space, make room, push down, push right, add lines, remove empty lines, board
 - **Settings:** `lassoMode`
 - **Tip:** `insertSpace`

@@ -213,6 +213,14 @@ describe("planBoardSpace", () => {
     expect(planBoardSpace(page, "y", 1000, STEP, STEP).command).toBeNull();
   });
 
+  it("never pushes anything past a notebook page's edge when given one", () => {
+    const doc = mindMap();
+    const page = doc.pages[0];
+    // The region reaches 2200; with the edge at 2300, two whole steps of 40 fit.
+    expect(planBoardSpace(page, "y", 1000, 10 * STEP, STEP, undefined, 2300).amount).toBe(2 * STEP);
+    expect(planBoardSpace(page, "y", 1000, 10 * STEP, STEP, undefined, 2210).command).toBeNull();
+  });
+
   it("measures self-sizing text with the height it is given", () => {
     const doc = mindMap();
     const page = doc.pages[0];

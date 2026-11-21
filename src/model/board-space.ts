@@ -203,9 +203,10 @@ type EquationList = NonNullable<ElementLists["equations"]>;
  * Plan pushing everything on a board's `page` that starts at or past `at`
  * along `axis` by `amount` page px (rounded to whole `step`s, toward zero),
  * or for a negative amount, closing up as much of that as is empty just
- * before the line. A push never takes anything past the largest board
- * (`BOARD_MAX_BLOCKS`); a close-up never goes over anything drawn, nor past
- * the board's edge.
+ * before the line. A push never takes anything past `limit` along the axis:
+ * the largest board (`BOARD_MAX_BLOCKS`) by default, or a notebook page's
+ * own edge on paper with no lines; a close-up never goes over anything
+ * drawn, nor past the page's start.
  */
 export function planBoardSpace(
   page: Page,
@@ -214,6 +215,7 @@ export function planBoardSpace(
   amount: number,
   step: number,
   textHeight: (text: TextBoxElement) => number = textLinesHeight,
+  limit: number = BOARD_BLOCK * BOARD_MAX_BLOCKS,
 ): BoardSpacePlan {
   const none: BoardSpacePlan = { command: null, amount: 0, moved: 0 };
   if (![at, amount, step].every(Number.isFinite) || !(step > 0)) return none;
@@ -223,7 +225,7 @@ export function planBoardSpace(
   if (parts.count === 0) return none;
   let shift: number;
   if (steps > 0) {
-    const room = BOARD_BLOCK * BOARD_MAX_BLOCKS - parts.reach;
+    const room = Math.max(0, limit - parts.reach);
     shift = Math.min(steps, Math.floor(room / step)) * step;
   } else {
     // Empty from what stays (or the board's edge) to the line.

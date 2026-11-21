@@ -1661,17 +1661,22 @@ describe("insert space from the margin", () => {
 
 describe("insert space on a board (discussion #276)", () => {
   /** A drag from (400, 1000) by (dx, dy) on a dotted board, with ink above and below. */
-  function boardDrag(dx: number, dy: number, moved = Math.hypot(dx, dy)) {
+  function boardDrag(
+    dx: number,
+    dy: number,
+    moved = Math.hypot(dx, dy),
+    on: { board: boolean; height: number } = { board: true, height: 5600 },
+  ) {
     const p = page("p1", [line("above", 100, 300, 900), line("below", 100, 300, 1200)]);
     p.backdrop = { kind: "dotted" };
-    p.geometry = { width: 5600, height: 5600 };
+    p.geometry = { width: 5600, height: on.height };
     const doc = documentOf(p);
     const applied: unknown[] = [];
     const flashes: string[] = [];
     const taps: string[] = [];
     const surface = surfaceWith({
       doc,
-      board: true,
+      board: on.board,
       pressTimer: 0,
       renderer: null,
       activePage: null,
@@ -1722,6 +1727,33 @@ describe("insert space on a board (discussion #276)", () => {
     // "above" reaches 901: 99 px empty, two dots of 40.
     expect(p.strokes.map((s) => s.pts[1])).toEqual([900, 1120]);
     expect(flashes.at(-1)).toBe("Remove space");
+  });
+
+  it("on notebook paper with no lines it inserts space too, but never past the page's edge", () => {
+    const notebook = { board: false, height: 1300 };
+    const fits = boardDrag(0, 80, undefined, notebook);
+    expect(fits.p.strokes.map((s) => s.pts[1])).toEqual([900, 1280]);
+    // A push that would run past the edge goes as far as fits (99 px: two dots) …
+    expect(boardDrag(0, 130, undefined, notebook).p.strokes[1].pts[1]).toBe(1280);
+    // … and none at all where the ink already reaches the edge.
+    const full = boardDrag(0, 130, undefined, { board: false, height: 1210 });
+    expect(full.applied).toHaveLength(0);
+    expect(full.flashes.at(-1)).toBe("No room left on this page");
+  });
+
+  it("is free space on a board and on unlined paper, not on lines, a PDF or a cover", () => {
+    const at = (kind: string, board = false) =>
+      run<boolean>(surfaceWith({ board }), "insertsFreeSpace", {
+        ...blankPage("p"),
+        backdrop: { kind },
+      });
+    expect(at("ruled-wide", true)).toBe(true);
+    expect(at("dotted")).toBe(true);
+    expect(at("squared")).toBe(true);
+    expect(at("blank")).toBe(true);
+    expect(at("ruled-wide")).toBe(false);
+    expect(at("pdf")).toBe(false);
+    expect(at("cover-plain")).toBe(false);
   });
 
   it("a press that never moved past a tap inserts nothing: it is the lasso's tap", () => {
