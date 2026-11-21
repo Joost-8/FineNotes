@@ -146,6 +146,8 @@ function setUp(app: Record<string, unknown> = {}, paper: PaperTheme = LIGHT_PAPE
   const opened: string[] = [];
   const fullApp = {
     embedRegistry: reg,
+    // No frontmatter: no notebook here keeps its pages in files of their own.
+    metadataCache: { getFileCache: () => null },
     vault: {
       on: () => ({}),
       getFileByPath: (path: string) => (path === notebook.path ? notebook : null),

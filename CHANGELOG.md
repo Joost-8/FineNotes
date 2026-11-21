@@ -16,6 +16,7 @@ extracted from the matching section of this file by `release.yml`.
   may not train on it. Everyone who shares is asked to agree again before
   anything more is sent; items shared under the old terms are never checked
   this way. See PRIVACY.md, "The label check by Anthropic".
+
 ### Added
 
 - **Erase on hover with the S Pen**
@@ -29,6 +30,13 @@ extracted from the matching section of this file by `release.yml`.
   the way to erase with the button. "Copy shape diagnostics" now includes
   the pen's last hover and button events, to send if it does not work on
   your tablet.
+- **Ready for notebooks that sync page by page** (#274). A coming FineNotes
+  will keep a notebook's pages in small files of their own, one per device,
+  so Obsidian Sync stores a few MB an hour of writing instead of hundreds,
+  and two devices writing at once both keep their ink. This version opens
+  such a notebook read-only, with every device's ink on its pages, and
+  writes nothing to it. Its pages embedded in a note show the same. Pages
+  still on their way show what has arrived.
 
 ### Fixed
 
@@ -38,6 +46,21 @@ extracted from the matching section of this file by `release.yml`.
   handwriting sheet ("Five" came out "Fi~"). Smoothing now moves each point
   no further than the rounding did, so straight lines stay steady and letters
   keep their shape.
+
+### Fixed
+
+- **Ink no longer vanishes when the notebook's file changes while you write**
+  ([#273](https://github.com/Joost-8/FineNotes/issues/273)). Since 2.10.0,
+  when the file changed on disk before your newest strokes were saved (a
+  sync landing, another app, or Obsidian reading back an older save of this
+  notebook), the notebook was replaced by the file: those strokes were gone,
+  and undo could not bring them back. A read of what the notebook already
+  had is now skipped, and a real change from elsewhere is merged with what
+  you wrote: pages and ink added on either side are kept. Ink this device
+  saved also stays when an older copy of the file arrives from another
+  device; in exchange, something erased on another device while this one
+  has the notebook open can come back. The diagnostics
+  export counts these reads (`diskReloads`).
 
 ## [2.10.0] - 2026-11-18
 

@@ -220,7 +220,8 @@ describe("the cursor drawn for a hovering pen (FineNotes#266)", () => {
   });
 
   it("shows for a hovering pen and hides when it touches down or leaves", () => {
-    const pen = (type: string, buttons = 0) => penHoverAction({ type, pointerType: "pen", buttons });
+    const pen = (type: string, buttons = 0) =>
+      penHoverAction({ type, pointerType: "pen", buttons });
     expect(pen("pointermove")).toBe("show");
     expect(pen("pointermove", 1)).toBe("hide");
     // The side button held while hovering is still a hover.
@@ -246,7 +247,8 @@ describe("the cursor drawn for a hovering pen (FineNotes#266)", () => {
 
   it("draws the crosshair the mouse wears, from styles.css", () => {
     const css = readFileSync("styles.css", "utf8");
-    const rule = /\.is-pen-cursor \.goodobsidian-scroll[^{]*\{\s*cursor:\s*url\("([^"]+)"\)\s*8 8/.exec(css);
+    const rule =
+      /\.is-pen-cursor \.goodobsidian-scroll[^{]*\{\s*cursor:\s*url\("([^"]+)"\)\s*8 8/.exec(css);
     expect(rule).not.toBeNull();
     const cursor = crosshairCursor();
     expect(svgOf(cursor.url).replace(/ viewBox='[^']*'/, "")).toBe(svgOf(rule![1]));
