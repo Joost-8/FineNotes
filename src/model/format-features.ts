@@ -46,6 +46,11 @@ import { SCHEMA_VERSION } from "../constants";
  *   them (`InkDocument.beside`) or a snippet that remembers its slide (`ImageElement.slide`)
  *   (`model/beside-pdfs`); an older build would drop the tabs and their ink
  *   on its next save.
+ * - `device-pages`: the notebook keeps its pages in one file per page per
+ *   device (`model/device-pages`, FineNotes#274); the payload is only the
+ *   notebook as it was when it moved there. Even a build that knows the
+ *   feature never decodes it as the whole notebook: a save from it would put
+ *   the old pages back over every page written since.
  */
 export const FORMAT_FEATURES = [
   "sticky",
@@ -57,6 +62,7 @@ export const FORMAT_FEATURES = [
   "text-turn",
   "boards",
   "pdf-tabs",
+  "device-pages",
 ] as const;
 
 export type FormatFeature = (typeof FORMAT_FEATURES)[number];
