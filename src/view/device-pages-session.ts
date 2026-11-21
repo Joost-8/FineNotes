@@ -138,6 +138,12 @@ export class DevicePagesSession {
     return load;
   }
 
+  /** Begin writing a notebook just moved to the layout, with a writer made when it was read. */
+  startWith(writer: DevicePagesWriter, doc: InkDocument): void {
+    attachDotClock(doc, this.clock);
+    this.writer = writer;
+  }
+
   /**
    * Begin writing a notebook just moved to the layout: `legacy` is the
    * notebook its payload holds, `doc` the one shown (what changed since is

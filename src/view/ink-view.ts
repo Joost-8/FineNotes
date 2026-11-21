@@ -69,13 +69,7 @@ import {
   blankPage,
   emptyDocument,
 } from "../model/document";
-import {
-  DocumentEncoder,
-  buildInkFile,
-  decodeDocument,
-  inkFileText,
-  parseInkFile,
-} from "../model/serialize";
+import { DocumentEncoder, buildInkFile, inkFileText, parseInkFile } from "../model/serialize";
 import { DotClock, attachDotClock, idsIn } from "../model/dot-ids";
 import {
   type DevicePagesLoad,
@@ -84,7 +78,12 @@ import {
   notebookIdOf,
   readDeviceFileName,
 } from "../model/device-pages";
-import { legacyPayload, movedNotebook, randomId } from "../model/device-pages-writer";
+import {
+  DevicePagesWriter,
+  legacyPayload,
+  movedNotebook,
+  randomId,
+} from "../model/device-pages-writer";
 import { movePagesFolder, rememberNotebookId } from "./device-pages-files";
 import { DevicePagesSession, deviceIdOf } from "./device-pages-session";
 import { BackgroundSaver } from "./background-save";
@@ -876,7 +875,12 @@ export class InkView extends TextFileView {
    * first save (#274): the payload it moves with, and the clock its new ids
    * already come from, so ids made before that save are dots too.
    */
-  private pendingMove: { payload: string; clock: DotClock } | null = null;
+  private pendingMove: {
+    payload: string;
+    clock: DotClock;
+    /** The notebook as read, ready to write what changes from it. */
+    writer: DevicePagesWriter;
+  } | null = null;
   /** When the "still syncing" notice last showed for an edit refused, ms. */
   private syncingNoticeAt = 0;
   /**
@@ -1299,7 +1303,7 @@ export class InkView extends TextFileView {
     const mine = again ? this.sinceKnown() : null;
     const { body, doc, payload, json } = parseInkFile(data, this.settings.paperWidth);
     // Kept as one file per page per device: its pages come from their files.
-    // Without an id in its frontmatter its folder is unknown: held, as ink that will not load.
+    // Without an id in its label its folder is unknown: held, as ink that will not load.
     const pageFolder =
       payload !== undefined && isDevicePagesPayload(payload)
         ? this.devicePagesFolder(payload)
@@ -1315,6 +1319,20 @@ export class InkView extends TextFileView {
       bytesOnDisk: this.file?.stat.size ?? 0,
       decoded: doc !== null || pageFolder !== null,
     });
+    // A one-file notebook moves to page files at its first save (#274). What it
+    // holds as read is taken now, before anything changes it (a merge, a relink,
+    // an edit): the first save then only relabels the file and writes what
+    // changed since, at no cost the pen could feel.
+    let moveFrom: NonNullable<typeof this.pendingMove> | null = null;
+    if (!pageFolder && doc && !held && payload !== undefined && !doc.practice) {
+      const clock = new DotClock(deviceIdOf(this.app));
+      clock.raise(idsIn(doc));
+      moveFrom = {
+        payload,
+        clock,
+        writer: DevicePagesWriter.fresh(clock.device, clock, doc),
+      };
+    }
     if (held) {
       const newer = payload !== undefined && needsNewerReader(payload);
       // Shown once when a load is held (see load-guard.ts); the second text is
@@ -1355,12 +1373,11 @@ export class InkView extends TextFileView {
     // What this view carried over is not on disk yet.
     if (merged) this.requestSave();
     this.loadedPath = this.file?.path ?? null;
-    this.pendingMove = null;
-    if (!pageFolder && doc && !held && payload !== undefined && !this.doc.practice) {
-      const clock = new DotClock(deviceIdOf(this.app));
-      clock.raise(idsIn(this.doc));
-      attachDotClock(this.doc, clock);
-      this.pendingMove = { payload, clock };
+    this.pendingMove = moveFrom;
+    if (moveFrom) {
+      // New ids from now on are this device's dots (a merge may have brought more ids).
+      moveFrom.clock.raise(idsIn(this.doc));
+      attachDotClock(this.doc, moveFrom.clock);
     }
     if (pageFolder && !held && payload !== undefined && this.loadedPath !== null) {
       this.devicePages = new DevicePagesSession(
@@ -1473,16 +1490,8 @@ export class InkView extends TextFileView {
     // to this device's page files.
     const move = this.pendingMove;
     const moved = move ? movedNotebook(path, move.payload) : null;
-    let legacy: InkDocument | null = null;
-    if (move && moved) {
-      try {
-        legacy = decodeDocument(move.payload, this.settings.paperWidth);
-      } catch {
-        legacy = null;
-      }
-    }
     let session: DevicePagesSession;
-    if (move && moved && legacy) {
+    if (move && moved) {
       session = new DevicePagesSession(
         this.app,
         path,
@@ -1492,7 +1501,7 @@ export class InkView extends TextFileView {
         null,
         move.clock,
       );
-      session.startFresh(legacy, this.doc);
+      session.startWith(move.writer, this.doc);
     } else {
       // Nothing read to move with (a note without ink yet): the notebook as it is.
       const id = randomId();
