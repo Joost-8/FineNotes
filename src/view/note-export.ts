@@ -9,13 +9,17 @@
  *   pictures copied into a folder beside it.
  * - Copy as text: the note's plain text on the clipboard.
  *
- * A saved export says where it went in a notice with Share… (the system's
- * share sheet, where there is one: it needs a fresh tap, which the notice's
- * button is) and Open.
+ * Both exports first show the note's pages in the notebook's own export
+ * dialog (`export-modal.ts`, one pattern everywhere): every page ticked, a
+ * tap unticks one, Select all / None, and Export. Only ticked pages are
+ * exported; for Markdown, the blocks those pages show (`noteOnPages`: a
+ * block split over pages comes along when any of its pages is ticked). The
+ * dialog's done screen offers Share… (the system's share sheet) and Open.
  */
 
 import { type App, Menu, Notice, type TFile, normalizePath } from "obsidian";
 import { t } from "../i18n/translate";
+import { exportBaseName } from "../export/page-range";
 import { makeGraph } from "../model/graph-element";
 import { uniqueFileName } from "../model/new-notebook";
 import {
@@ -26,26 +30,31 @@ import {
   notePlainText,
   relativePath,
 } from "../model/note-export";
-import { NOTE_PAGE_WIDTH } from "../model/note-pages";
+import { NOTE_PAGE_HEIGHT, NOTE_PAGE_WIDTH, noteOnPages } from "../model/note-pages";
 import { stripTextNoteSuffix } from "../model/text-note-file";
 import { INK_WIDTH, imageShare, type ImageBlock, type TextNote } from "../model/text-note";
 import { paintGraph } from "../canvas/graph-paint";
 import { errorMessage } from "../util/errors";
+import { type ExportedFiles, ExportPdfModal } from "./export-modal";
 import { inkSectionImages } from "./note-ask";
 import { noteGraphHeight } from "./note-graph";
-import { type NotePicture, drawNotePage } from "./note-page-render";
-import { exportNoteToPdf } from "./note-pdf";
+import { type NoteLayout, type NotePicture, drawNotePage } from "./note-page-render";
+import { type NotePdfSources, exportNoteToPdf, layoutNoteForPdf } from "./note-pdf";
 
 export interface NoteExportHost {
   readonly app: App;
   file(): TFile | null;
   /** The note as it is now. */
   note(): TextNote;
-  /** The note's Exports folder, made if missing; undefined: beside the note. */
+  /** Where exports are saved, without making the folder; undefined: the vault's root. */
+  exportsPath(): string | undefined;
+  /** The note's Exports folder, made if missing; undefined: the vault's root. */
   exportsFolder(): Promise<string | undefined>;
   pressure(): boolean;
   highlighterAlpha(): number;
 }
+
+type NoteFormat = "pdf" | "md";
 
 /** The longest side a picture is put in a PDF at, px: print quality for a picture a page wide. */
 const PICTURE_PX = 2400;
@@ -61,13 +70,13 @@ export function shareMenu(anchor: HTMLElement, host: NoteExportHost): void {
     item
       .setTitle(t("notebooks.note.exportPdf"))
       .setIcon("file-text")
-      .onClick(() => void run(host, () => exportPdf(host))),
+      .onClick(() => void openExport(host, "pdf")),
   );
   menu.addItem((item) =>
     item
       .setTitle(t("notebooks.note.exportMarkdown"))
       .setIcon("file-code-2")
-      .onClick(() => void run(host, () => exportMarkdown(host))),
+      .onClick(() => void openExport(host, "md")),
   );
   menu.addSeparator();
   menu.addItem((item) =>
@@ -81,72 +90,80 @@ export function shareMenu(anchor: HTMLElement, host: NoteExportHost): void {
   menu.showAtPosition({ x: at.right, y: at.bottom + 6, left: true });
 }
 
-/** One export at a time, its failure said in a notice. */
-let busy = false;
+/** One dialog being prepared at a time. */
+let opening = false;
 
-async function run(host: NoteExportHost, work: () => Promise<Saved | null>): Promise<void> {
-  if (busy) return;
-  busy = true;
-  const working = new Notice(t("notebooks.export.saving"), 0);
+/** The note's pages, as they will export, in the export dialog. */
+async function openExport(host: NoteExportHost, format: NoteFormat): Promise<void> {
+  const file = host.file();
+  if (!file || opening) return;
+  opening = true;
+  const { app } = host;
+  const note = host.note();
+  const title = stripTextNoteSuffix(file.name);
+  let pictures = new Map<string, NotePicture>();
   try {
-    const saved = await work();
-    working.hide();
-    if (saved) savedNotice(host, saved);
+    pictures = await decodePictures(app, note, file.path);
+    const sources = pdfSources(host, pictures);
+    // The PDF's own layout (its fonts' widths), so the preview is the file's pages.
+    const layout = await layoutNoteForPdf(note, sources);
+    const total = layout.pages.length;
+    const look = { usePressure: host.pressure(), highlighterAlpha: host.highlighterAlpha() };
+    const folder = host.exportsPath();
+    const names = (): Set<string> => namesIn(app, folder);
+    const modal = new ExportPdfModal(app, {
+      noun: "notebook",
+      pageCount: total,
+      currentPage: 0,
+      pageSize: () => ({ width: NOTE_PAGE_WIDTH, height: NOTE_PAGE_HEIGHT }),
+      folder: folder ?? null,
+      scopes: false,
+      ordered: false,
+      formats: false,
+      title: t(format === "pdf" ? "notebooks.note.exportPdf" : "notebooks.note.exportMarkdown"),
+      paintPreview: (canvas, index, cssWidth) => {
+        const dpr = canvas.win.devicePixelRatio || 1;
+        drawNotePage(canvas, layout, index, cssWidth, dpr, look);
+        return Promise.resolve();
+      },
+      targetFor: (pages) => {
+        const base = exportBaseName(title, pages, total);
+        const name =
+          format === "pdf"
+            ? uniqueFileName(base, ".pdf", names())
+            : markdownTarget(base, names()).file;
+        return { kind: "file", name };
+      },
+      export: (pages, _format, onProgress, cancelled) =>
+        format === "pdf"
+          ? exportPdf(host, note, title, sources, { pages, total, onProgress, cancelled })
+          : exportMarkdown(host, noteOnPages(note, layout.pages, pages), title, pages, total),
+      open: (path) => void app.workspace.openLinkText(path, "", true),
+    });
+    // The pictures are needed until the dialog closes: its previews and the PDF draw them.
+    const close = modal.onClose.bind(modal);
+    modal.onClose = () => {
+      close();
+      releasePictures(pictures);
+    };
+    modal.open();
   } catch (error) {
-    working.hide();
+    releasePictures(pictures);
     console.error("FineNotes: note export failed", error);
     new Notice(t("notebooks.note.exportFailed", { error: errorMessage(error) }));
   } finally {
-    busy = false;
+    opening = false;
   }
 }
 
-interface Saved {
-  /** The file to open. */
-  path: string;
-  /** What the share sheet gets: the file, and the copy's pictures. */
-  files: File[];
-}
-
-/** "Saved …", with Share… and Open. */
-function savedNotice(host: NoteExportHost, saved: Saved): void {
-  const body = createFragment();
-  const box = body.createDiv({ cls: "finenotes-note-export-notice" });
-  box.createDiv({ text: t("notebooks.export.savedOne", { path: saved.path }) });
-  const actions = box.createDiv({ cls: "finenotes-note-export-actions" });
-  const notice = new Notice(body, 10000);
-  if (canShareFiles(saved.files)) {
-    const share = actions.createEl("button", { text: t("notebooks.export.share") });
-    share.addEventListener("click", (event) => {
-      event.stopPropagation();
-      // This tap is the gesture the share sheet needs.
-      const one = saved.files.length === 1 ? { title: saved.files[0].name } : {};
-      navigator.share({ files: saved.files, ...one }).catch((error: unknown) => {
-        // Dismissing the sheet rejects with AbortError; that is not a failure.
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        new Notice(errorMessage(error));
-      });
-      notice.hide();
-    });
+function releasePictures(pictures: Map<string, NotePicture>): void {
+  for (const picture of pictures.values()) {
+    if (picture.source instanceof HTMLCanvasElement) {
+      picture.source.width = 0;
+      picture.source.height = 0;
+    }
   }
-  const open = actions.createEl("button", { cls: "mod-cta", text: t("notebooks.export.open") });
-  open.addEventListener("click", (event) => {
-    event.stopPropagation();
-    notice.hide();
-    void host.app.workspace.openLinkText(saved.path, "", true);
-  });
-}
-
-/** Whether the platform's share sheet takes these files; there may be none. */
-function canShareFiles(files: File[]): boolean {
-  if (typeof navigator.share !== "function" || typeof navigator.canShare !== "function") {
-    return false;
-  }
-  try {
-    return files.length > 0 && navigator.canShare({ files });
-  } catch {
-    return false;
-  }
+  pictures.clear();
 }
 
 function bufferOf(bytes: Uint8Array): ArrayBuffer {
@@ -180,19 +197,16 @@ async function canvasBytes(
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-// --- PDF -----------------------------------------------------------------------------
-
-async function exportPdf(host: NoteExportHost): Promise<Saved | null> {
-  const file = host.file();
-  if (!file) return null;
-  const { app } = host;
-  const note = host.note();
-  const title = stripTextNoteSuffix(file.name);
-  // Each picture decoded once, at print size, on white (a PDF picture is opaque).
+/** Each picture decoded once, at print size, on white (a PDF picture is opaque). */
+async function decodePictures(
+  app: App,
+  note: TextNote,
+  from: string,
+): Promise<Map<string, NotePicture>> {
   const pictures = new Map<string, NotePicture>();
   for (const block of note.blocks) {
     if (block.type !== "image") continue;
-    const target = pictureFile(app, block, file.path);
+    const target = pictureFile(app, block, from);
     if (!target) continue;
     const image = new Image();
     image.src = app.vault.getResourcePath(target);
@@ -217,66 +231,90 @@ async function exportPdf(host: NoteExportHost): Promise<Saved | null> {
     const width = INK_WIDTH * imageShare(block);
     pictures.set(block.id, { width, height: (width * h) / w, source: canvas });
   }
+  return pictures;
+}
+
+/** What the PDF writer needs from the page: pictures, their bytes, and a picture of a page it cannot write. */
+function pdfSources(host: NoteExportHost, pictures: Map<string, NotePicture>): NotePdfSources {
   const measuring = createEl("canvas").getContext("2d");
-  try {
-    const pdf = await exportNoteToPdf(note, title, {
-      usePressure: host.pressure(),
-      highlighterAlpha: host.highlighterAlpha(),
-      picture: (block) => pictures.get(block.id) ?? null,
-      encodePicture: async (source) => {
-        if (!(source instanceof HTMLCanvasElement)) return null;
-        // Our pictures are opaque photos; anything else drawn (a graph's shading) keeps its alpha.
-        const ours = [...pictures.values()].some((p) => p.source === source);
-        return ours
-          ? { jpeg: await canvasBytes(source, "image/jpeg", 0.9) }
-          : { png: await canvasBytes(source, "image/png") };
-      },
-      ...(measuring
-        ? {
-            measureFallback: (font: string, text: string) => {
-              measuring.font = font;
-              return measuring.measureText(text).width;
-            },
-          }
-        : {}),
-      rasterPage: async (layout, index) => {
-        const canvas = createEl("canvas");
-        drawNotePage(canvas, layout, index, NOTE_PAGE_WIDTH * RASTER_SCALE, 1, {
-          usePressure: host.pressure(),
-          highlighterAlpha: host.highlighterAlpha(),
-        });
-        const bytes = await canvasBytes(canvas, "image/jpeg", 0.9);
-        canvas.width = 0;
-        canvas.height = 0;
-        return bytes;
-      },
-    });
-    const folder = await host.exportsFolder();
-    const name = uniqueFileName(title, ".pdf", namesIn(app, folder));
-    const path = inFolder(folder, name);
-    const buffer = bufferOf(pdf.bytes);
-    await app.vault.createBinary(path, buffer);
-    return { path, files: [new File([buffer], name, { type: "application/pdf" })] };
-  } finally {
-    for (const picture of pictures.values()) {
-      if (picture.source instanceof HTMLCanvasElement) {
-        picture.source.width = 0;
-        picture.source.height = 0;
-      }
-    }
-  }
+  return {
+    usePressure: host.pressure(),
+    highlighterAlpha: host.highlighterAlpha(),
+    picture: (block) => pictures.get(block.id) ?? null,
+    encodePicture: async (source) => {
+      if (!(source instanceof HTMLCanvasElement)) return null;
+      // Our pictures are opaque photos; anything else drawn (a graph's shading) keeps its alpha.
+      const ours = [...pictures.values()].some((p) => p.source === source);
+      return ours
+        ? { jpeg: await canvasBytes(source, "image/jpeg", 0.9) }
+        : { png: await canvasBytes(source, "image/png") };
+    },
+    ...(measuring
+      ? {
+          measureFallback: (font: string, text: string) => {
+            measuring.font = font;
+            return measuring.measureText(text).width;
+          },
+        }
+      : {}),
+    rasterPage: async (layout: NoteLayout, index: number) => {
+      const canvas = createEl("canvas");
+      drawNotePage(canvas, layout, index, NOTE_PAGE_WIDTH * RASTER_SCALE, 1, {
+        usePressure: host.pressure(),
+        highlighterAlpha: host.highlighterAlpha(),
+      });
+      const bytes = await canvasBytes(canvas, "image/jpeg", 0.9);
+      canvas.width = 0;
+      canvas.height = 0;
+      return bytes;
+    },
+  };
+}
+
+// --- PDF -----------------------------------------------------------------------------
+
+async function exportPdf(
+  host: NoteExportHost,
+  note: TextNote,
+  title: string,
+  sources: NotePdfSources,
+  choice: {
+    pages: readonly number[];
+    total: number;
+    onProgress: (done: number, total: number) => void;
+    cancelled: () => boolean;
+  },
+): Promise<ExportedFiles> {
+  const { app } = host;
+  const pdf = await exportNoteToPdf(note, title, sources, choice);
+  const folder = await host.exportsFolder();
+  // Named at save time: another export may have taken the name since the dialog opened.
+  const base = exportBaseName(title, choice.pages, choice.total);
+  const name = uniqueFileName(base, ".pdf", namesIn(app, folder));
+  const path = inFolder(folder, name);
+  const buffer = bufferOf(pdf.bytes);
+  await app.vault.createBinary(path, buffer);
+  return {
+    paths: [path],
+    where: path,
+    files: [new File([buffer], name, { type: "application/pdf" })],
+  };
 }
 
 // --- Markdown ------------------------------------------------------------------------
 
-async function exportMarkdown(host: NoteExportHost): Promise<Saved | null> {
+async function exportMarkdown(
+  host: NoteExportHost,
+  note: TextNote,
+  title: string,
+  pages: readonly number[],
+  total: number,
+): Promise<ExportedFiles> {
   const file = host.file();
-  if (!file) return null;
+  if (!file) throw new Error("The note is closed");
   const { app } = host;
-  const note = host.note();
-  const title = stripTextNoteSuffix(file.name);
   const folder = await host.exportsFolder();
-  const target = markdownTarget(title, namesIn(app, folder));
+  const target = markdownTarget(exportBaseName(title, pages, total), namesIn(app, folder));
   const mdPath = inFolder(folder, target.file);
   const assets = inFolder(folder, target.assets);
   const here = folder ?? "";
@@ -362,7 +400,7 @@ async function exportMarkdown(host: NoteExportHost): Promise<Saved | null> {
       (w) => new File([w.bytes], w.path.slice(w.path.lastIndexOf("/") + 1), { type: w.type }),
     ),
   ];
-  return { path: mdPath, files };
+  return { paths: [mdPath], where: mdPath, files };
 }
 
 // --- Text ----------------------------------------------------------------------------

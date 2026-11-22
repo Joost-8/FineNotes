@@ -150,33 +150,74 @@ function inkPainter(sources: NotePdfSources) {
   };
 }
 
-/** `note` as a PDF titled `title`. */
+/** Every standard face embedded in `doc`: a standard font is only a name in the file. */
+async function embedFaces(doc: PDFDocument): Promise<Map<PdfFace, PDFFont>> {
+  const fonts = new Map<PdfFace, PDFFont>();
+  for (const face of Object.keys(FACES) as PdfFace[]) {
+    fonts.set(face, await doc.embedFont(FACES[face]));
+  }
+  return fonts;
+}
+
+function layoutWith(
+  note: TextNote,
+  book: PdfFontBook,
+  sources: Pick<NotePdfSources, "picture">,
+): NoteLayout {
+  const measuring = new PdfPageRecorder(1, 1, book).asContext();
+  return layoutNote(note, measuring, sources.picture, PDF_NOTE_FONTS);
+}
+
+/**
+ * `note` laid out on pages exactly as {@link exportNoteToPdf} lays it out
+ * (the same font widths), for a preview of the pages before exporting.
+ */
+export async function layoutNoteForPdf(
+  note: TextNote,
+  sources: Pick<NotePdfSources, "picture" | "measureFallback">,
+): Promise<NoteLayout> {
+  const fonts = await embedFaces(await PDFDocument.create());
+  return layoutWith(note, fontBook(fonts, sources.measureFallback), sources);
+}
+
+export interface NotePdfOptions {
+  /** The pages to write, 0-based, in the note's order; absent: all of them. */
+  pages?: readonly number[];
+  /** Counts finished pages. */
+  onProgress?: (done: number, total: number) => void;
+  /** Checked between pages; when it returns true the export stops with an `AbortError`. */
+  cancelled?: () => boolean;
+}
+
+/** `note` as a PDF titled `title`: every page, or those `options.pages` names. */
 export async function exportNoteToPdf(
   note: TextNote,
   title: string,
   sources: NotePdfSources,
+  options: NotePdfOptions = {},
 ): Promise<NotePdf> {
   const doc = await PDFDocument.create();
   doc.setTitle(title);
   doc.setProducer("FineNotes");
   doc.setCreationDate(new Date());
-  // Every face up front: the layout measures with them before any page is written, and a
-  // standard font is only a name in the file (a few bytes each), never the font itself.
-  const fonts = new Map<PdfFace, PDFFont>();
-  for (const face of Object.keys(FACES) as PdfFace[]) {
-    fonts.set(face, await doc.embedFont(FACES[face]));
-  }
+  // Every face up front: the layout measures with them before any page is written.
+  const fonts = await embedFaces(doc);
   const book = fontBook(fonts, sources.measureFallback);
-  const measuring = new PdfPageRecorder(1, 1, book).asContext();
-  const layout = layoutNote(note, measuring, sources.picture, PDF_NOTE_FONTS);
+  const layout = layoutWith(note, book, sources);
 
   const width = NOTE_PAGE_WIDTH * POINTS;
   const height = NOTE_PAGE_HEIGHT * POINTS;
   const pictures = new Map<unknown, Promise<PDFRef | null>>();
   const rastered: NotePdf["rastered"] = [];
   const paintInk = inkPainter(sources);
+  const wanted = (options.pages ?? layout.pages.map((_, i) => i))
+    .filter((i) => Number.isInteger(i) && i >= 0 && i < layout.pages.length)
+    .sort((a, b) => a - b);
+  if (wanted.length === 0) throw new Error("No page to export");
 
-  for (let index = 0; index < layout.pages.length; index++) {
+  for (const [done, index] of wanted.entries()) {
+    if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
+    options.onProgress?.(done, wanted.length);
     const recorder = new PdfPageRecorder(NOTE_PAGE_WIDTH, NOTE_PAGE_HEIGHT, book);
     const ctx = recorder.asContext();
     paintNotePage(ctx, layout, index, 1, {
@@ -207,7 +248,8 @@ export async function exportNoteToPdf(
       return embedded;
     });
   }
-  return { bytes: await doc.save(), pages: layout.pages.length, rastered };
+  options.onProgress?.(wanted.length, wanted.length);
+  return { bytes: await doc.save(), pages: wanted.length, rastered };
 }
 
 /** A recorded page's operators and resources onto `page`, page px with y down mapped to points. */

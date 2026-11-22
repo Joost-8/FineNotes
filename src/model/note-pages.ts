@@ -15,7 +15,7 @@
  */
 
 import { DEFAULT_PAGE_HEIGHT, DEFAULT_PAPER_WIDTH } from "../constants";
-import { INK_WIDTH, type TextRun } from "./text-note";
+import { INK_WIDTH, type TextNote, type TextRun } from "./text-note";
 
 /** Room round the column, page px: the column is {@link INK_WIDTH} wide, as in the note. */
 export const NOTE_PAGE_MARGIN_X = 64;
@@ -134,6 +134,33 @@ export function paginate(blocks: readonly MeasuredBlock[], room: number): PageSl
     y += block.after;
   });
   return pages;
+}
+
+/**
+ * The blocks `ticked` pages show any part of, by index: a paragraph, list
+ * or section split over pages belongs to every page it reaches, so it is
+ * kept whole when any of them is ticked.
+ */
+export function blocksOnPages(
+  pages: readonly PageSlice[][],
+  ticked: Iterable<number>,
+): Set<number> {
+  const blocks = new Set<number>();
+  for (const page of ticked) for (const slice of pages[page] ?? []) blocks.add(slice.block);
+  return blocks;
+}
+
+/**
+ * `note` with only the blocks `ticked` pages show (`pages` its layout, one
+ * measured block per note block, as `layoutNote` lays it out), in order.
+ */
+export function noteOnPages(
+  note: TextNote,
+  pages: readonly PageSlice[][],
+  ticked: Iterable<number>,
+): TextNote {
+  const kept = blocksOnPages(pages, ticked);
+  return { blocks: note.blocks.filter((_, i) => kept.has(i)) };
 }
 
 /** The index of the page `block` starts on, or 0 when no page shows it. */

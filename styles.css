@@ -23999,14 +23999,6 @@ button.clickable-icon.finenotes-note-button.is-recording::before {
   content: "";
 }
 
-/* Text note export: the saved notice's Share… and Open (src/view/note-export.ts). */
-.finenotes-note-export-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 8px;
-}
-
 /* --- Organising notes by tag (note-organiser.ts, library-organise.ts, note-list.ts) ----
    After Apple Notes: tags as chips (picked: an accent fill; left out: struck
    through), smart folders as folder tiles with a gear, and the note list
@@ -24341,4 +24333,21 @@ button.clickable-icon.goodobsidian-ask-window-button {
 .goodobsidian-ask-window-grip svg {
   width: 14px;
   height: 14px;
+}
+
+/* A text note's export (src/view/note-export.ts): its pages export in their
+   own order, so a ticked page shows a tick, never its place. */
+.goodobsidian-export-grid.is-choosing.is-unordered
+  .goodobsidian-export-tile.is-selected
+  .goodobsidian-export-check-icon {
+  display: flex;
+}
+
+.goodobsidian-export-grid.is-choosing.is-unordered
+  .goodobsidian-export-tile.is-selected
+  .goodobsidian-export-check {
+  width: 22px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
 }
