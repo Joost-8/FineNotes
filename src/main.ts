@@ -287,7 +287,7 @@ import { isBusy } from "./downloads/model-manifest";
 import { OcrService } from "./view/ocr-service";
 import { OcrStatus } from "./view/ocr-status";
 import { OCR_TIERS, effectiveOcrTier, ocrTiersFor } from "./recognition/ocr/ocr-model";
-import { HandwritingReader } from "./view/handwriting";
+import { HandwritingReader, readingText } from "./view/handwriting";
 import { ReadingGuard } from "./recognition/reading-guard";
 import {
   HandwritingLearner,
@@ -599,6 +599,17 @@ export default class GoodObsidianPlugin extends Plugin {
           fullScreenOffered: () => this.fullScreenOffered,
           fullScreen: () => this.fullScreen,
           toggleFullScreen: () => this.toggleFullScreen(),
+          reading: {
+            enabled: () => this.settings.handwritingOnDevice !== false,
+            guard: this.readingGuard,
+            read: async (strokes) => {
+              const reading = await this.handwriting.readPage(strokes);
+              return {
+                text: readingText(reading),
+                lines: reading.lines.map((line) => ({ text: line.text, words: line.words })),
+              };
+            },
+          },
         }),
     );
     this.registerView(

@@ -1483,4 +1483,11 @@ export const notebooks = {
   "notebooks.note.home": "Home",
   "notebooks.note.size": "Size",
   "notebooks.note.moveTools": "Drag to move the tools to another side",
+  "notebooks.note.search": "Search notes and notebooks",
+  "notebooks.note.searchPlaceholder": "Search notes and notebooks",
+  "notebooks.note.searchHint": "Finds typed text and handwriting in every note and notebook",
+  "notebooks.note.searchNone": "Nothing found",
+  "notebooks.note.toText": "Turn into text",
+  "notebooks.note.nothingRead": "No writing was found in this handwriting",
+  "notebooks.note.readFailed": "This handwriting could not be read on this device",
 } as const;

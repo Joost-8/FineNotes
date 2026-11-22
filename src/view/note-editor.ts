@@ -79,6 +79,17 @@ import {
 } from "../model/text-note";
 import { offsetOf, positionAt, readRuns } from "./note-dom";
 import { InkSection, type InkSectionHost, type NotePen } from "./note-ink";
+import { inkReadingHash, turnInkIntoText, withReading } from "../model/ink-reading";
+import type { NoteHits } from "../search/note-search";
+
+/** The name of the highlight a search lights typed words with (styles.css). */
+const SEARCH_HIGHLIGHT = "finenotes-note-search";
+
+/** A window with the CSS Custom Highlight API (Safari 17.2, Chrome 105); older ones light no text. */
+type HighlightWindow = Window & {
+  CSS?: { highlights?: HighlightRegistry };
+  Highlight?: typeof Highlight;
+};
 
 /** What the editor needs from the view that holds it. */
 export interface NoteEditorHost {
@@ -100,7 +111,13 @@ export interface NoteEditorHost {
   /** The caret, the styles under it, undo or the mode changed: the bar may need redrawing. */
   stateChanged(): void;
   /** Texts shown on the page. */
-  text(key: "title" | "delete" | "missing" | "unreadable" | "paper"): string;
+  text(key: "title" | "delete" | "missing" | "unreadable" | "paper" | "toText"): string;
+  /**
+   * What a handwriting section says, for "Turn into text": its reading,
+   * read now when the one kept is out of date; null when nothing could be
+   * read. Without it the section has no such button.
+   */
+  turnIntoText?(block: InkBlock): Promise<string | null>;
 }
 
 /** What the bar shows about the place the caret is. */
@@ -207,6 +224,10 @@ export class NoteEditor {
   private readonly manual = new Set<string>();
   private readonly inkHost: InkSectionHost;
   private readonly stamp = Date.now().toString(36);
+  /** The section written in last: it is read first. */
+  private lastWritten: string | null = null;
+  /** What a search found is lit, until the next touch or key. */
+  private lit = false;
 
   constructor(
     parent: HTMLElement,
@@ -264,9 +285,12 @@ export class NoteEditor {
     this.tail.addEventListener("touchstart", this.onTailTouch, { passive: false });
     this.tail.addEventListener("touchmove", this.onTailTouch, { passive: false });
     this.el.doc.addEventListener("selectionchange", this.onSelectionChange);
+    this.el.addEventListener("pointerdown", () => this.clearHits(), { capture: true });
+    this.el.addEventListener("keydown", () => this.clearHits(), { capture: true });
   }
 
   destroy(): void {
+    this.clearHits();
     this.el.doc.removeEventListener("selectionchange", this.onSelectionChange);
     this.endDrag(false);
     this.el.win.cancelAnimationFrame(this.stateFrame);
@@ -509,6 +533,22 @@ export class NoteEditor {
         event.preventDefault();
         event.stopPropagation();
         this.paperMenu(id, event);
+      });
+    }
+    if (ink && this.host.turnIntoText) {
+      const toText = bar.createEl("button", {
+        cls: "clickable-icon finenotes-note-island-button",
+        attr: { "aria-label": this.host.text("toText"), type: "button" },
+      });
+      setIcon(toText, "type");
+      toText.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      toText.addEventListener("pointerup", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void this.turnIntoText(id);
       });
     }
     const button = bar.createEl("button", {
@@ -1090,7 +1130,109 @@ export class NoteEditor {
     if (index < 0) return;
     if (manual) this.manual.add(id);
     else this.grown.add(id);
+    this.lastWritten = id;
     this.apply(replaceBlock(this.note, index, next));
+  }
+
+  // -------------------------------------------------------------- readings and search
+
+  /** The section written in last, if it is still there. */
+  lastInk(): string | null {
+    return this.lastWritten && indexOfBlock(this.note, this.lastWritten) >= 0
+      ? this.lastWritten
+      : null;
+  }
+
+  /** Whether a stroke is open: nothing should change the note under the pen. */
+  isPenDown(): boolean {
+    return this.penIsDown;
+  }
+
+  /**
+   * Keep what the device read a section as (null: no reading), when its
+   * ink is still the ink that was read (`of`). Nothing to undo: it is
+   * housekeeping, as saving the file is. False when the section has gone
+   * or its ink changed meanwhile.
+   */
+  setReading(id: string, reading: { text: string; of: string } | null): boolean {
+    const index = indexOfBlock(this.note, id);
+    const block = this.note.blocks[index];
+    if (!block || block.type !== "ink") return false;
+    if (reading && inkReadingHash(block.strokes) !== reading.of) return false;
+    const next = withReading(block, reading);
+    if (next !== block) this.apply(replaceBlock(this.note, index, next), null, true);
+    return true;
+  }
+
+  /** Replace a handwriting section with typed paragraphs of what it says: one undo step. */
+  private async turnIntoText(id: string): Promise<void> {
+    const block = this.note.blocks.find((b) => b.id === id);
+    if (!block || block.type !== "ink" || !this.host.turnIntoText) return;
+    const text = await this.host.turnIntoText(block);
+    // The section may have changed or gone while it was read (a reading kept meanwhile is no change).
+    const index = indexOfBlock(this.note, id);
+    const now = this.note.blocks[index];
+    if (text === null || now?.type !== "ink" || now.strokes !== block.strokes) return;
+    const edit = turnInkIntoText(this.note, index, text, this.newId);
+    if (!edit) return;
+    this.selectIsland(null);
+    if (this.drawing) this.setDrawing(false);
+    this.apply(edit.note, edit.caret);
+  }
+
+  /**
+   * Light what a search found: typed words with a highlight over the text
+   * (the browser's own, so neither the caret nor the keyboard moves), and
+   * the sections that hold it with an outline, until `markInk` lights
+   * their words. The first hit is scrolled into view.
+   */
+  showHits(hits: NoteHits): void {
+    this.clearHits();
+    const ranges: Range[] = [];
+    for (const hit of hits.text) {
+      const start = this.domPoint({ block: hit.block, offset: hit.start });
+      const end = this.domPoint({ block: hit.block, offset: hit.end });
+      const range = this.root.doc.createRange();
+      try {
+        range.setStart(start.node, start.offset);
+        range.setEnd(end.node, end.offset);
+        ranges.push(range);
+      } catch {
+        // A line the page has not drawn: nothing to light there.
+      }
+    }
+    const win = this.root.win as HighlightWindow;
+    const registry = win.CSS?.highlights;
+    if (registry && win.Highlight && ranges.length > 0) {
+      registry.set(SEARCH_HIGHLIGHT, new win.Highlight(...ranges));
+    }
+    for (const index of hits.ink) {
+      this.views.get(this.note.blocks[index]?.id ?? "")?.el.addClass("is-search-hit");
+    }
+    this.lit = ranges.length > 0 || hits.ink.length > 0;
+    // The first hit in the note's order.
+    const first = Math.min(hits.text[0]?.block ?? Infinity, hits.ink[0] ?? Infinity);
+    const block = Number.isFinite(first) ? this.note.blocks[first] : undefined;
+    if (block) this.views.get(block.id)?.el.scrollIntoView({ block: "center" });
+  }
+
+  /** Light the words a search found in a section, each its strokes. */
+  markInk(id: string, groups: readonly (readonly string[])[]): void {
+    const view = this.views.get(id);
+    if (!view?.ink || groups.length === 0) return;
+    view.ink.setHits(groups);
+    view.el.removeClass("is-search-hit");
+    this.lit = true;
+  }
+
+  clearHits(): void {
+    if (!this.lit) return;
+    this.lit = false;
+    (this.root.win as HighlightWindow).CSS?.highlights?.delete(SEARCH_HIGHLIGHT);
+    for (const view of this.views.values()) {
+      view.el.removeClass("is-search-hit");
+      view.ink?.setHits(null);
+    }
   }
 
   private islandAt(target: EventTarget | null): BlockView | null {

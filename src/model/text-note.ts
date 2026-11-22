@@ -114,6 +114,16 @@ export interface InkBlock {
   readonly strokes: readonly Stroke[];
   /** Absent: blank. */
   readonly paper?: InkPaper;
+  /** What this device read the handwriting as, for search (`ink-reading.ts`). */
+  readonly reading?: InkReading;
+}
+
+/** A handwriting section read on the device: its lines, and the ink they were read from. */
+export interface InkReading {
+  /** One line of writing a line. */
+  readonly text: string;
+  /** `inkReadingHash` of the strokes it was read from: other strokes are read again. */
+  readonly of: string;
 }
 
 /** The least width a picture is shown at, as a share of the column. */

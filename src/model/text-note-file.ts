@@ -31,7 +31,9 @@
  *   hides it. Its payload is a one-page notebook document
  *   ({@link INK_WIDTH} wide, the section's height), written and read by the
  *   notebook's own serializer: every stroke field a notebook keeps, a
- *   section keeps.
+ *   section keeps. What the device read the ink as follows the opener on
+ *   its line, as JSON (`%%finenotes-ink {"read":"…","of":"<ink hash>"}`),
+ *   so search finds handwriting; older versions read such a section too.
  * - A picture is an embed on a line of its own; the number is its width.
  * - Text that would read as one of the above is written with a backslash.
  * - A section this version cannot read is kept as it is ({@link RawBlock}).
@@ -42,6 +44,7 @@ import { decodeDocument, encodeDocument } from "./serialize";
 import {
   BOLD,
   HIGHLIGHT,
+  INK_MIN_HEIGHT,
   INK_PAPERS,
   INK_WIDTH,
   ITALIC,
@@ -353,7 +356,38 @@ function packInk(block: InkBlock): string[] {
   page.geometry = { width: INK_WIDTH, height: clampInkHeight(block.height) };
   if (block.paper && block.paper !== "blank") page.backdrop = { kind: block.paper };
   page.strokes = block.strokes.map((stroke) => ({ ...stroke, pts: stroke.pts.slice() }));
-  return [INK_OPEN, encodeDocument(doc), INK_CLOSE];
+  return [inkOpener(block.reading), encodeDocument(doc), INK_CLOSE];
+}
+
+/** A `%` written as JSON's escape for it: `%%` in the line would end Obsidian's comment. */
+const PERCENT_ESCAPE = `${String.fromCharCode(92)}u0025`;
+
+/**
+ * A section's first line. With a reading, the reading follows on the same
+ * line as JSON (`%%finenotes-ink {"read":"…","of":"…"}`): still inside the
+ * comment, and a version that knows no readings reads the section anyway,
+ * since it only looks at what the line starts with.
+ */
+export function inkOpener(reading?: { text: string; of: string }): string {
+  if (!reading || (reading.text === "" && reading.of === "")) return INK_OPEN;
+  // Ink read as nothing (a drawing) keeps only its hash, so it is not read again at every open.
+  const value = reading.text === "" ? { of: reading.of } : { read: reading.text, of: reading.of };
+  return `${INK_OPEN} ${JSON.stringify(value).replace(/%/g, PERCENT_ESCAPE)}`;
+}
+
+/** The reading a section's first line carries, or null (none, or not understood). */
+export function readingOfOpener(line: string): { text: string; of: string } | null {
+  const rest = line.slice(INK_OPEN.length).trim();
+  if (!rest.startsWith("{")) return null;
+  try {
+    const value = JSON.parse(rest) as { read?: unknown; of?: unknown } | null;
+    const text = typeof value?.read === "string" ? value.read : "";
+    const of = typeof value?.of === "string" ? value.of : "";
+    if (text === "" && of === "") return null;
+    return { text, of };
+  } catch {
+    return null;
+  }
 }
 
 const HEADING_MARK: Partial<Record<TextBlock["kind"], string>> = {
@@ -428,7 +462,11 @@ export function encodeNote(note: TextNote): string {
   return lines.join("\n");
 }
 
-function readInk(payload: string, id: string): InkBlock | null {
+function readInk(
+  payload: string,
+  id: string,
+  reading: { text: string; of: string } | null,
+): InkBlock | null {
   try {
     const page = decodeDocument(payload, INK_WIDTH).pages[0];
     if (!page) return null;
@@ -440,14 +478,24 @@ function readInk(payload: string, id: string): InkBlock | null {
       height: clampInkHeight(page.geometry.height),
       strokes: page.strokes,
       ...(paper ? { paper } : {}),
+      ...(reading ? { reading } : {}),
     };
   } catch {
     return null;
   }
 }
 
+export interface DecodeOptions {
+  /**
+   * Leave handwriting undecoded: each section is an empty one that keeps
+   * only its reading. For searching many notes, where the strokes are not
+   * needed and unpacking them is the slow part.
+   */
+  readingsOnly?: boolean;
+}
+
 /** A Markdown body as a note. Any text is a note: what is not understood is body text. */
-export function decodeNote(body: string, newId: IdSource): TextNote {
+export function decodeNote(body: string, newId: IdSource, options: DecodeOptions = {}): TextNote {
   const lines = body.replace(/\r\n?/g, "\n").split("\n");
   const blocks: NoteBlock[] = [];
   /** The last line read was a list item or quote: one empty line after it is a separator. */
@@ -460,7 +508,19 @@ export function decodeNote(body: string, newId: IdSource): TextNote {
       let end = i + 1;
       while (end < lines.length && lines[end].trim() !== INK_CLOSE) end++;
       const id = newId();
-      const ink = end < lines.length ? readInk(lines.slice(i + 1, end).join(""), id) : null;
+      const reading = readingOfOpener(line);
+      let ink: InkBlock | null = null;
+      if (end < lines.length && options.readingsOnly) {
+        ink = {
+          type: "ink",
+          id,
+          height: INK_MIN_HEIGHT,
+          strokes: [],
+          ...(reading ? { reading } : {}),
+        };
+      } else if (end < lines.length) {
+        ink = readInk(lines.slice(i + 1, end).join(""), id, reading);
+      }
       blocks.push(
         ink ?? {
           type: "raw",
@@ -575,10 +635,14 @@ export interface ParsedNoteFile {
 }
 
 /** Read a text note's file. The one line break a file ends with is not a paragraph. */
-export function parseNoteFile(text: string, newId: IdSource): ParsedNoteFile {
+export function parseNoteFile(
+  text: string,
+  newId: IdSource,
+  options: DecodeOptions = {},
+): ParsedNoteFile {
   const { frontmatter, body } = splitNoteFile(text);
   const trimmed = body.endsWith("\n") ? body.slice(0, -1) : body;
-  return { frontmatter, note: decodeNote(trimmed, newId) };
+  return { frontmatter, note: decodeNote(trimmed, newId, options) };
 }
 
 /** A text note's file: its frontmatter as it was, then the note. */

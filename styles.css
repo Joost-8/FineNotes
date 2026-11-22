@@ -23506,3 +23506,19 @@ button.clickable-icon.finenotes-note-style.is-active {
     animation: none;
   }
 }
+
+/* Text notes: what a search found. Typed words are tinted as Obsidian tints a
+   match; a handwriting section that holds it is outlined until its words light. */
+::highlight(finenotes-note-search) {
+  background-color: var(--text-highlight-bg);
+}
+
+.finenotes-note-ink.is-search-hit {
+  outline-color: var(--text-highlight-bg);
+}
+
+/* A note's search lists notes and notebooks: each result is headed by its name. */
+.goodobsidian-search-modal .finenotes-search-title {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
