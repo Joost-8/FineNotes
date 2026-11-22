@@ -20,11 +20,14 @@ export interface NoteGraphHost {
 
 /** A graph is never taller than this share of its width, nor shorter than half of it. */
 const MAX_SHAPE = 0.75;
+/** Nor taller than this, CSS px: on a wide pane it stays a figure in the text, not a page. */
+const MAX_HEIGHT = 480;
 
 /** The height a graph `width` CSS px wide is shown at: the shape of its view, within bounds. */
 export function noteGraphHeight(block: GraphBlock, width: number): number {
   const fallback = Math.round(width * 0.6);
-  return Math.min(Math.round(width * MAX_SHAPE), graphFrameHeight(block.spec, width, fallback));
+  const shaped = graphFrameHeight(block.spec, width, fallback);
+  return Math.min(MAX_HEIGHT, Math.round(width * MAX_SHAPE), shaped);
 }
 
 export class NoteGraph {

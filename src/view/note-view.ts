@@ -49,7 +49,11 @@ import { NoteEditor } from "./note-editor";
 import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import type { NotePen, NoteTool } from "./note-ink";
-import { parseCalculatorData, type CalculatorData } from "../model/calculator-store";
+import {
+  defaultCalcPlace,
+  parseCalculatorData,
+  type CalculatorData,
+} from "../model/calculator-store";
 import type { GraphSpecData } from "../model/document";
 import type { GraphSpec } from "../model/graph";
 import { CalculatorPopover, type CalculatorHost } from "./calculator-popover";
@@ -795,10 +799,22 @@ export class TextNoteView extends TextFileView {
 
   private calculatorHost(graphs = true): CalculatorHost {
     const host = this.host;
+    // Until it is moved, the window opens on the right, off the text it serves;
+    // that first place is the note's own and is not saved as the window's place.
+    const bounds = { w: this.contentEl.clientWidth, h: this.contentEl.clientHeight };
+    const left = defaultCalcPlace(bounds);
+    const first = { ...left, x: Math.max(16, bounds.w - left.w - 16) };
     return {
       path: this.file?.path ?? "",
-      load: () => host.loadCalculator?.() ?? parseCalculatorData(null),
-      save: (data) => host.saveCalculator?.(data),
+      load: () => {
+        const data = host.loadCalculator?.() ?? parseCalculatorData(null);
+        return data.calcWindow ? data : { ...data, calcWindow: first };
+      },
+      save: (data) => {
+        const place = data.calcWindow;
+        const moved = place && !(place.x === first.x && place.y === first.y);
+        host.saveCalculator?.(moved ? data : { ...data, calcWindow: undefined });
+      },
       insert: (text) => {
         if (!this.editor) return false;
         this.editor.insertText(text);
