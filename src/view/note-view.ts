@@ -67,6 +67,7 @@ import { inkReadingHash, nextSectionStep } from "../model/ink-reading";
 import type { InkBlock } from "../model/text-note";
 import type { ReadingGuard } from "../recognition/reading-guard";
 import type { InkMathsHost } from "./note-ink-maths";
+import { mergeNotes, OwnTexts } from "../model/note-merge";
 import { type ReadLine, lineHits } from "../search/hit-strokes";
 import { noteHits } from "../search/note-search";
 import { NoteList } from "./note-list";
@@ -273,11 +274,37 @@ export function nearestDock(x: number, y: number, width: number, height: number)
   return distances[0][0];
 }
 
+/** How long typing must pause before a change made elsewhere is merged in, ms. */
+const TYPING_PAUSE_MS = 2000;
+
 export class TextNoteView extends TextFileView {
+  /**
+   * Obsidian 1.15 merges a file changed on disk into a plain-text view's
+   * unsaved text by characters (diff-match-patch). That would cut through a
+   * handwriting section's packed ink; the note merges by section itself
+   * (`note-merge.ts`), as the notebook does.
+   */
+  isPlaintext = false;
   private editor: NoteEditor | null = null;
   private frontmatter = "";
-  /** What `getViewData` last answered: the file coming back as that is not a change. */
+  /**
+   * The text on disk as this view last knew it (read or written): the base a
+   * change made elsewhere is merged over.
+   */
   private written: string | null = null;
+  /** Texts this view wrote or read: one coming back from a sync is old news (`note-merge.ts`). */
+  private readonly ownTexts = new OwnTexts();
+  /** Which file `written` is of. */
+  private loadedPath: string | null = null;
+  /** Each read's ids differ from the last's, so a merge never holds two blocks with one id. */
+  private loads = 0;
+  /** A text that arrived while the pen was down: merged once it lifts. */
+  private pendingDisk: string | null = null;
+  private pendingTimer = 0;
+  /** When the note was last edited here: a merge waits for typing to pause. */
+  private lastEdit = 0;
+  /** How rereads went, for the diagnostics: own, empty, merged, replaced. */
+  readonly diskReloads = { own: 0, empty: 0, merged: 0, carried: 0, replaced: 0 };
   private choices: PenChoices;
   private bar: HTMLElement | null = null;
   private palette: HTMLElement | null = null;
@@ -350,28 +377,107 @@ export class TextNoteView extends TextFileView {
   getViewData(): string {
     const note = this.editor?.current() ?? emptyNote(() => "b0");
     this.written = buildNoteFile(this.frontmatter, note);
+    this.ownTexts.note(this.written);
     return this.written;
   }
 
   setViewData(data: string, clear: boolean): void {
-    if (!clear && data === this.written) return;
-    let sequence = 0;
-    const parsed = parseNoteFile(data, () => `f${(++sequence).toString(36)}`);
+    const again = !clear && this.file !== null && this.file.path === this.loadedPath;
+    if (again && data === this.written) return;
+    if (again && this.reread(data)) return;
+    const parsed = this.parse(data);
     this.frontmatter = parsed.frontmatter;
     this.written = data;
+    this.loadedPath = this.file?.path ?? null;
+    if (clear || !again) this.ownTexts.forget();
+    this.ownTexts.note(data);
+    const top = this.editor?.el.scrollTop ?? 0;
     this.editor?.load(parsed.note);
-    const folds = this.file
-      ? readFolds(this.app.loadLocalStorage(FOLDS_KEY))[this.file.path]
-      : null;
-    if (folds?.length) this.editor?.foldTitles(folds);
+    this.restoreFolds();
+    // Read again (changed elsewhere): stay where the reader was.
+    if (again && this.editor) this.editor.el.scrollTop = top;
     this.extras?.relinkFromLog(parsed.note);
     this.showDate();
     if (clear) this.editor?.el.scrollTo({ top: 0 });
   }
 
+  /** Fold the headings this note was left with folded. */
+  private restoreFolds(): void {
+    const folds = this.file
+      ? readFolds(this.app.loadLocalStorage(FOLDS_KEY))[this.file.path]
+      : null;
+    if (folds?.length) this.editor?.foldTitles(folds);
+  }
+
+  /** The file read, with ids no earlier read of this view used. */
+  private parse(data: string): ReturnType<typeof parseNoteFile> {
+    const load = (++this.loads).toString(36);
+    let sequence = 0;
+    return parseNoteFile(data, () => `f${load}-${(++sequence).toString(36)}`);
+  }
+
+  /**
+   * The same file read again because it changed on disk (a sync, another
+   * app). True when it was handled here: an old text of this view's, an
+   * empty file being written, or a merge with what this view has. False:
+   * load it as it is (nothing here the file lacks).
+   */
+  private reread(data: string): boolean {
+    const editor = this.editor;
+    if (!editor) return false;
+    // A text this view wrote or read: nothing new; an older one put back gets this view's again.
+    if (this.ownTexts.has(data)) {
+      this.diskReloads.own++;
+      this.requestSave();
+      return true;
+    }
+    // Emptied while something writes it whole (a copy, some syncs): the filled file follows.
+    // Nothing is saved now, or this view would write over that copy.
+    if (data.trim() === "") {
+      this.diskReloads.empty++;
+      return true;
+    }
+    // Not under the pen or mid-sentence: merged once it lifts, or typing pauses.
+    if (editor.isPenDown() || Date.now() - this.lastEdit < TYPING_PAUSE_MS) {
+      this.pendingDisk = data;
+      this.contentEl.win.clearTimeout(this.pendingTimer);
+      this.pendingTimer = this.contentEl.win.setTimeout(() => {
+        const next = this.pendingDisk;
+        this.pendingDisk = null;
+        if (next !== null) this.setViewData(next, false);
+      }, 300);
+      return true;
+    }
+    const base = this.written;
+    const mine = editor.current();
+    const parsed = this.parse(data);
+    const baseNote = base === null ? null : this.parse(base).note;
+    const unsaved = base !== null && buildNoteFile(this.frontmatter, mine) !== base;
+    if (!baseNote || !unsaved) {
+      this.diskReloads.replaced++;
+      return false;
+    }
+    const merged = mergeNotes(baseNote, mine, parsed.note);
+    this.diskReloads.merged++;
+    this.diskReloads.carried += merged.carried;
+    this.frontmatter = parsed.frontmatter;
+    this.written = data;
+    this.ownTexts.note(data);
+    const top = editor.el.scrollTop;
+    editor.load(merged.note);
+    this.restoreFolds();
+    editor.el.scrollTop = top;
+    this.extras?.relinkFromLog(merged.note);
+    this.showDate();
+    // The file gets what this view had too.
+    this.requestSave();
+    return true;
+  }
+
   clear(): void {
     this.frontmatter = "";
     this.written = null;
+    this.loadedPath = null;
     this.editor?.load(emptyNote(() => "b0"));
   }
 
@@ -444,6 +550,7 @@ export class TextNoteView extends TextFileView {
       imageUrl: (path) => this.imageUrl(path),
       saveImages: (files) => this.saveImages(files),
       changed: () => {
+        this.lastEdit = Date.now();
         this.requestSave();
         this.queueRename();
         this.scheduleReading(DEVICE_READ_IDLE_MS);

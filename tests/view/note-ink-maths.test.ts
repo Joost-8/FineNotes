@@ -102,20 +102,47 @@ function sumBlock(): InkBlock {
   };
 }
 
-function setup(reading: string, enabled = true) {
-  let block = sumBlock();
+/** Three amounts of 3, 4 and 2 digits, right-aligned, and a line under them. */
+function columnBlock(): InkBlock {
+  const h = 30;
+  const right = 400;
+  const strokes: Stroke[] = [];
+  [3, 4, 2].forEach((n, i) => {
+    const baseline = 60 + i * h * 1.8;
+    for (let k = 0; k < n; k++) strokes.push(digit(right - (n - k) * h * 0.75, baseline, h));
+  });
+  const below = 60 + 2 * h * 1.8 + h * 0.5;
+  strokes.push(
+    stroke([
+      [right - h * 3.5, below],
+      [right + h * 0.1, below + 0.5],
+    ]),
+  );
+  return { type: "ink", id: "ink1", height: 400, strokes };
+}
+
+function setup(
+  reading: string | string[],
+  enabled = true,
+  start: () => InkBlock = sumBlock,
+  columns = false,
+) {
+  let block = start();
   const shown: Array<InkAnswer | null> = [];
   const commits: InkBlock[] = [];
   const reader = {
     model: vi.fn(async () => ({}) as never),
     readGroups: vi.fn(async (groups: readonly unknown[]) =>
-      groups.map(() => ({ text: reading, confidence: 0.9, greedy: reading, chars: [] })),
+      groups.map((_g, i) => {
+        const text = Array.isArray(reading) ? reading[i] : reading;
+        return { text, confidence: 0.9, greedy: text, chars: [] };
+      }),
     ) as never,
     readPage: vi.fn(async () => ({ lines: [] })) as never,
   };
   let ids = 0;
   const maths = new InkMaths(
-    { enabled: () => enabled, reader, glyphs: async () => null },
+    { enabled: () => enabled, columns: () => columns, reader, glyphs: async () => null },
     {
       block: (id) => (id === block.id ? block : null),
       show: (_id, answer) => shown.push(answer),
@@ -184,6 +211,34 @@ describe("handwritten sums in a text note", () => {
 
   it("shows nothing for a line that is not a sum", async () => {
     const t = setup("hello=");
+    t.maths.strokeDrawn("ink1");
+    await vi.advanceTimersByTimeAsync(CALC_DELAY_MS + 10);
+    expect(t.shown.filter((a) => a !== null)).toEqual([]);
+  });
+
+  it("a line under a column of amounts shows its total under the line, and a tap writes it", async () => {
+    const t = setup(["123", "4000", "56"], true, columnBlock, true);
+    const rule = t.block.strokes.at(-1)!;
+    t.maths.strokeDrawn("ink1");
+    await vi.advanceTimersByTimeAsync(CALC_DELAY_MS + 10);
+    const answer = t.shown.at(-1);
+    expect(answer?.label).toMatch(/4\D?179$/);
+    // Under the line.
+    const ruleY = rule.pts[1];
+    expect(answer!.baseline).toBeGreaterThan(ruleY);
+    const before = t.block.strokes.length;
+    answer!.write();
+    await vi.runAllTimersAsync();
+    const added = t.block.strokes.slice(before);
+    expect(added.length).toBeGreaterThan(0);
+    // Right-aligned with the amounts (their right edge is at 400 or just short of it).
+    const right = Math.max(...added.flatMap((s) => s.pts.filter((_v, i) => i % 3 === 0)));
+    expect(right).toBeGreaterThan(360);
+    expect(right).toBeLessThan(420);
+  });
+
+  it("columns stay off without the setting", async () => {
+    const t = setup(["123", "4000", "56"], true, columnBlock, false);
     t.maths.strokeDrawn("ink1");
     await vi.advanceTimersByTimeAsync(CALC_DELAY_MS + 10);
     expect(t.shown.filter((a) => a !== null)).toEqual([]);

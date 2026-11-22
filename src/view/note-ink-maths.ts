@@ -10,11 +10,32 @@
  * solves the equation on the line or above it, and a line with ink after its
  * "=" ("2x + 3 = 7") offers its solution.
  *
+ * Column sums too (`column-notes.ts`): a line drawn under a column of
+ * amounts shows the total under it; a single line a subtotal, a double line
+ * the whole column. A tap writes the total, right-aligned with the amounts.
+ *
  * A misread digit would give a confident wrong answer, so nothing is written
  * until the user has seen what was read and tapped it.
  */
 
-import { fitAnswer, type GlyphSet, glyphsFor, writeWithPowers } from "../model/answer-glyphs";
+import { localeTag } from "../i18n/translate";
+import {
+  fitAnswer,
+  type GlyphSet,
+  glyphsFor,
+  textWidth,
+  writeWithPowers,
+} from "../model/answer-glyphs";
+import {
+  type Column,
+  type SumRule,
+  columnAbove,
+  conventionOfLocale,
+  marksSettled,
+  rowText,
+  ruleAtEnd,
+  summarizeColumn,
+} from "../model/column-sum";
 import {
   type AnswerPlace,
   type EqualsSign,
@@ -49,6 +70,8 @@ import { type HandwritingReader, inkForReading } from "./handwriting";
 export interface InkMathsHost {
   /** Whether to work sums out now: calculation notes and reading on the device are on. */
   enabled(): boolean;
+  /** Whether to add up columns now (the column sums setting); absent, never. */
+  columns?(): boolean;
   reader: Pick<HandwritingReader, "model" | "readGroups" | "readPage">;
   /** The writer's glyphs from their symbol sheet, or null (the clean ones are used). */
   glyphs(): Promise<GlyphSet | null>;
@@ -90,6 +113,27 @@ function lastIds(strokes: readonly Stroke[], n: number): string {
     .join(" ");
 }
 
+/** Where a column's total goes: under its line, as tall as its digits, its right edge the amounts'. */
+interface ColumnPlace {
+  left: number;
+  right: number;
+  baseline: number;
+  height: number;
+}
+
+function columnPlace(column: Column, shown: readonly number[]): ColumnPlace {
+  const amounts = shown.flatMap((i) => column.rows[i].amount);
+  const boxes = amounts.map((s) => strokeBounds(s)).filter((b) => b !== null);
+  const tall = boxes
+    .filter((b) => b.maxY - b.minY > 0.6 * column.digit)
+    .map((b) => b.maxY - b.minY)
+    .sort((a, b) => a - b);
+  const height = tall.length > 0 ? tall[Math.floor(tall.length / 2)] : column.digit;
+  const right = boxes.length > 0 ? Math.max(...boxes.map((b) => b.maxX)) : column.rule.bounds.maxX;
+  const left = boxes.length > 0 ? Math.min(...boxes.map((b) => b.minX)) : column.rule.bounds.minX;
+  return { left, right, baseline: column.rule.bounds.maxY + height * 1.25, height };
+}
+
 export class InkMaths {
   private timer = 0;
   /** Bumped by every stroke and pen-down: a reading that comes back after one is dropped. */
@@ -106,9 +150,21 @@ export class InkMaths {
   /** A pen stroke was drawn in a section: if it finished a sum, read the line once the pen rests. */
   strokeDrawn(id: string): void {
     this.cancel();
-    if (!this.host.enabled()) return;
     const block = this.owner.block(id);
     if (!block) return;
+    if (this.host.columns?.()) {
+      const rule = ruleAtEnd(block.strokes);
+      const column = rule ? columnAbove(block.strokes, rule) : null;
+      if (rule && column) {
+        const token = this.token;
+        this.timer = this.win.setTimeout(() => {
+          this.timer = 0;
+          void this.suggestColumn(id, rule, token).catch(() => undefined);
+        }, CALC_DELAY_MS);
+        return;
+      }
+    }
+    if (!this.host.enabled()) return;
     const eq = equalsAtEnd(block.strokes);
     const rest = eq ? null : equalsAfter(block.strokes, []);
     if (!eq && !rest) return;
@@ -226,6 +282,96 @@ export class InkMaths {
     // Beside the equation, a little apart from it.
     const spaced = { ...place, x: place.x + place.height * 0.8 };
     this.open(id, last, after.length, strokes, spaced, eq, found, token);
+  }
+
+  /** A line under a column of amounts: the total, under the line. */
+  private async suggestColumn(id: string, rule: SumRule, token: number): Promise<void> {
+    const reader = this.host.reader;
+    await reader.model();
+    const block = this.owner.block(id);
+    if (!block || token !== this.token || !this.host.columns?.()) return;
+    const column = columnAbove(block.strokes, rule);
+    if (!column) return;
+    const last = lastIds(block.strokes, rule.strokes.length);
+    const order = new Map(block.strokes.map((s, i) => [s.id, i]));
+    const rows = column.rows
+      .map((row, i) => ({
+        i,
+        ink: [...row.amount].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)),
+      }))
+      .filter(({ i, ink }) => !column.rows[i].rule && ink.length > 0);
+    const lines = await reader.readGroups(
+      rows.map((r) => inkForReading(r.ink)),
+      { chars: true, math: true },
+    );
+    if (token !== this.token) return;
+    const texts: Array<string | null> = column.rows.map(() => null);
+    rows.forEach((r, k) => {
+      const line = lines[k];
+      if (!line) return;
+      // The letters as written, as a notebook's column reads them (`column-notes.ts`).
+      const piece = marksSettled(
+        {
+          text: line.greedy ?? line.text,
+          confidence: line.confidence,
+          greedy: line.greedy,
+          chars: line.chars,
+        },
+        r.ink,
+        column.digit,
+      );
+      texts[r.i] = rowText(readWhole(r.ink, piece).text, r.ink, column.digit);
+    });
+    const summary = summarizeColumn(column, texts, conventionOfLocale(localeTag()));
+    const total = summary.totalText;
+    if (total === null) return;
+    const place = columnPlace(column, summary.shown);
+    const block2 = this.owner.block(id);
+    if (!block2 || lastIds(block2.strokes, rule.strokes.length) !== last) return;
+    this.hide();
+    this.showing = id;
+    this.owner.show(id, {
+      x: place.left,
+      baseline: place.baseline,
+      height: place.height,
+      label: `Σ ${total}`,
+      write: () => void this.writeColumn(id, last, rule, column, place, total),
+    });
+  }
+
+  /** Write a column's total under its line, right-aligned with the amounts, in the line's pen. */
+  private async writeColumn(
+    id: string,
+    last: string,
+    rule: SumRule,
+    column: Column,
+    place: ColumnPlace,
+    total: string,
+  ): Promise<void> {
+    const glyphs = glyphsFor(total, await this.host.glyphs());
+    this.hide();
+    const block = this.owner.block(id);
+    if (!glyphs || !block || lastIds(block.strokes, rule.strokes.length) !== last) return;
+    const x = place.right - textWidth(total, glyphs, place.height);
+    const pen = column.rule.strokes[column.rule.strokes.length - 1];
+    const ink: Stroke[] = writeWithPowers(total, glyphs, {
+      x,
+      baseline: place.baseline,
+      height: place.height,
+    }).map((pts) => ({
+      id: this.owner.newStrokeId(),
+      color: pen.color,
+      size: pen.size,
+      tool: pen.tool,
+      ...(pen.nib !== undefined ? { nib: pen.nib } : {}),
+      pts,
+    }));
+    const bottom = place.baseline + place.height;
+    this.owner.commit(id, {
+      ...block,
+      strokes: [...block.strokes, ...ink],
+      height: Math.max(block.height, Math.ceil(bottom + place.height)),
+    });
   }
 
   /** The reading worked out, "variables" when it needs ones set above, or null. */

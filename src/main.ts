@@ -617,6 +617,8 @@ export default class GoodObsidianPlugin extends Plugin {
           maths: {
             enabled: () =>
               this.settings.calcNotes === true && this.settings.handwritingOnDevice !== false,
+            columns: () =>
+              this.settings.columnSums === true && this.settings.handwritingOnDevice !== false,
             reader: this.handwriting,
             glyphs: () => writerGlyphs(this.app, this.learningHost()),
           },
