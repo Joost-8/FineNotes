@@ -338,6 +338,15 @@ export class NoteEditor {
     return this.note;
   }
 
+  /** Scroll so block `index` is at the top (Home opens a note at one of its pages). */
+  revealBlock(index: number): void {
+    const block = this.note.blocks[index];
+    const el = block ? this.views.get(block.id)?.el : undefined;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top - this.el.getBoundingClientRect().top;
+    this.el.scrollTo({ top: Math.max(0, this.el.scrollTop + top - 16) });
+  }
+
   /** The small line over the title: when the note was last changed. */
   setDate(text: string): void {
     this.dateEl.setText(text);

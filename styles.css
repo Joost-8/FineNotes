@@ -18176,6 +18176,25 @@ button.goodobsidian-library-star:active {
 .goodobsidian-library-cover.is-note.is-ready .goodobsidian-library-note {
   opacity: 1;
 }
+/* A text note: its first page as Home lays it out, on white paper like a notebook's page;
+   the cover shows the top of it. */
+.goodobsidian-library-cover.is-note.is-textnote {
+  padding: 0;
+  background: #fff;
+  color: #666;
+}
+.goodobsidian-library-textnote-page {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.goodobsidian-library-cover.is-textnote.is-ready .goodobsidian-library-textnote-page {
+  opacity: 1;
+}
+.goodobsidian-library-cover.is-textnote .goodobsidian-library-cover-title {
+  padding: 10px;
+}
 .goodobsidian-library-cover.is-file.is-ready .goodobsidian-library-cover-title {
   display: none;
 }

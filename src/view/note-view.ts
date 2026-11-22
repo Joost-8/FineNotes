@@ -308,6 +308,13 @@ export class TextNoteView extends TextFileView {
     if (clear) this.editor?.el.scrollTo({ top: 0 });
   }
 
+  /** `{ noteBlock }`: Home opened the note at a page of its preview, which starts at that block. */
+  override setEphemeralState(state: unknown): void {
+    super.setEphemeralState(state);
+    const block = (state as { noteBlock?: unknown } | null)?.noteBlock;
+    if (typeof block === "number" && Number.isInteger(block)) this.editor?.revealBlock(block);
+  }
+
   clear(): void {
     this.frontmatter = "";
     this.written = null;
