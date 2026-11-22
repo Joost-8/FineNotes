@@ -605,23 +605,7 @@ export class CalcNotes {
    * for the doubts. Null when it cannot be read.
    */
   private async read(strokes: readonly Stroke[], eq: EqualsSign): Promise<SumReading | null> {
-    const reader = this.host.reader;
-    const eqIds = new Set(eq.strokes.map((s) => s.id));
-    const body = strokes.filter((s) => !eqIds.has(s.id));
-    const piece = (l: LineReading): PieceReading => ({
-      text: l.text,
-      confidence: l.confidence,
-      greedy: l.greedy,
-      chars: l.chars,
-    });
-    const laidOut = await readLaidOut(body, async (groups) =>
-      (await reader.readGroups(groups.map(inkForReading), { chars: true, math: true })).map(piece),
-    );
-    if (laidOut !== null) return laidOut;
-    // `inkForReading` keeps pen ink only, in order: the indices `chars` names.
-    const ink = strokes.filter((s) => s.tool === "pen" && !s.shape);
-    const [line] = await reader.readGroups([inkForReading(ink)], { chars: true, math: true });
-    return line ? readWhole(ink, piece(line)) : null;
+    return readSumLine(this.host.reader, strokes, eq);
   }
 
   /** The reading worked out, "variables" when it needs ones set above, or null. */
@@ -779,6 +763,34 @@ export class CalcNotes {
   private async ownGlyphs(): Promise<GlyphSet | null> {
     return writerGlyphs(this.host.app, this.host.learning());
   }
+}
+
+/**
+ * A sum's line, read on this device (as {@link CalcNotes} reads one): a
+ * plain line whole, a line with a raised dot or a fraction piece by piece.
+ * Null when it cannot be read.
+ */
+export async function readSumLine(
+  reader: Pick<HandwritingReader, "readGroups">,
+  strokes: readonly Stroke[],
+  eq: EqualsSign,
+): Promise<SumReading | null> {
+  const eqIds = new Set(eq.strokes.map((s) => s.id));
+  const body = strokes.filter((s) => !eqIds.has(s.id));
+  const piece = (l: LineReading): PieceReading => ({
+    text: l.text,
+    confidence: l.confidence,
+    greedy: l.greedy,
+    chars: l.chars,
+  });
+  const laidOut = await readLaidOut(body, async (groups) =>
+    (await reader.readGroups(groups.map(inkForReading), { chars: true, math: true })).map(piece),
+  );
+  if (laidOut !== null) return laidOut;
+  // `inkForReading` keeps pen ink only, in order: the indices `chars` names.
+  const ink = strokes.filter((s) => s.tool === "pen" && !s.shape);
+  const [line] = await reader.readGroups([inkForReading(ink)], { chars: true, math: true });
+  return line ? readWhole(ink, piece(line)) : null;
 }
 
 /** The writer's glyphs from their symbol sheets (the last sample of each character wins), or null. */

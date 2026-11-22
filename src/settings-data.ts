@@ -223,7 +223,7 @@ export interface GoodObsidianSettings {
   imageModel: string;
   /** The shape last picked in "Generate image". */
   imageAspect: ImageAspect;
-  /** "Save chat" as last left in Ask AI: new chats start saved to the notebook's AI chats folder. */
+  /** Not read since every Ask chat is saved (2026-11-22); kept so a stored value loads. On by default. */
   askSaveChats: boolean;
   /** Where Ask opens: a window over the notebook, or a sidebar beside the page. */
   askLayout: "window" | "sidebar";
@@ -628,7 +628,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   imageVendor: "same",
   imageModel: "",
   imageAspect: "square",
-  askSaveChats: false,
+  askSaveChats: true,
   askLayout: "window",
   searchLayout: "sidebar",
   askVaultScope: "folder",

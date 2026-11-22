@@ -349,8 +349,9 @@ import {
   SetCommentText,
   nextCommentId,
 } from "../model/comments";
-import { type AskAiHost, AskAiModal, AskChatPanel } from "./ask-ai-modal";
-import { listChats, readAttachment, readChat, trashChat, writeChat } from "./ask-chats-io";
+import { type AskAiHost, AskChatPanel } from "./ask-ai-modal";
+import { AskChatWindow } from "./ask-window";
+import { listChats, readAttachment, trashChat, writeChat } from "./ask-chats-io";
 import {
   type FileKind,
   type FileRow,
@@ -933,6 +934,8 @@ export class InkView extends TextFileView {
   private readonly askNotes = new Map<string, string>();
   /** Ask in its sidebar, beside the page (the other layout is a window). */
   private chatPanel: AskChatPanel | null = null;
+  /** Ask as a window floating over the notebook (the layout `window`). */
+  private askWindow: AskChatWindow | null = null;
   /** Search this notebook: the field and its results, in a sidebar or a window (#112). */
   private searchPanel: SearchPanel | null = null;
   /** The notebook's body, where search's sidebar docks. */
@@ -1708,6 +1711,7 @@ export class InkView extends TextFileView {
     this.tryHint = null;
     // The conversation was about this notebook's pages.
     this.chatPanel?.close();
+    this.askWindow?.close();
     this.askSession = null;
     if (await this.audio?.finishForUnload()) {
       this.encoder.touchAll();
@@ -1978,6 +1982,8 @@ export class InkView extends TextFileView {
     this.sidebar?.destroy();
     this.chatPanel?.destroy();
     this.chatPanel = null;
+    this.askWindow?.close();
+    this.askWindow = null;
     this.searchPanel?.destroy();
     this.searchPanel = null;
     this.sidebar = null;
@@ -3016,10 +3022,15 @@ export class InkView extends TextFileView {
       this.setChatPanel(true);
       return;
     }
-    new AskAiModal(this.app, this.askHost(), () => {
-      this.setAskLayout("sidebar");
-      this.setChatPanel(true);
-    }).open();
+    // A window over the notebook, moved and sized as the calculator's (ask-window.ts).
+    this.askWindow ??= new AskChatWindow(this.app, this.contentEl, {
+      host: () => this.askHost(),
+      switchLayout: () => {
+        this.setAskLayout("sidebar");
+        this.setChatPanel(true);
+      },
+    });
+    this.askWindow.open();
   }
 
   private setAskLayout(layout: "window" | "sidebar"): void {
@@ -3106,20 +3117,6 @@ export class InkView extends TextFileView {
           this.doc.pages.map((page) => page.backdrop),
           this.doc.pages.map((_, i) => i + 1),
         ),
-      savedChats: () =>
-        this.file ? listChats(this.app, this.file.path, this.chatsFolder()) : Promise.resolve([]),
-      openSaved: async (path) => {
-        const chat = await readChat(this.app, path);
-        if (!chat) {
-          new Notice(t("view.ask.chatUnreadable"));
-          return;
-        }
-        session.load(chat, path);
-      },
-      rememberSave: (save) => {
-        this.settings.askSaveChats = save;
-        void this.plugin.saveSettings();
-      },
     };
   }
 
@@ -3155,7 +3152,8 @@ export class InkView extends TextFileView {
         {
           page: current,
           totalPages: this.doc.pages.length,
-          save: this.settings.askSaveChats,
+          // Every chat is kept in the AI chats folder, and deleted there.
+          save: true,
           // A chat sends a page only when the user picks one (discussion #107).
           attachPage: false,
           screen: this.showingBoard,

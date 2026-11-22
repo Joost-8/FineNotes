@@ -64,6 +64,7 @@ import {
   ICON_STYLUS_ONLY_SVG,
   PREVIOUS_PLUGIN_ID,
   VIEW_TYPE_INK,
+  VIEW_TYPE_NOTE,
   VIEW_TYPE_LIBRARY,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
@@ -179,6 +180,9 @@ import {
 } from "./model/tips";
 import { sponsorThanks } from "./model/sponsors";
 import { type TipsPage, TipsModal } from "./view/tips-modal";
+import { ICON_TEXT_NOTE, TextNoteView } from "./view/note-view";
+import { followNoteFiles } from "./view/note-files";
+import { freeNoteName, isTextNoteName, newNoteFile } from "./model/text-note-file";
 import {
   type Feature,
   PEN_GESTURE_PREFIX,
@@ -310,7 +314,8 @@ import { isBusy } from "./downloads/model-manifest";
 import { OcrService } from "./view/ocr-service";
 import { OcrStatus } from "./view/ocr-status";
 import { OCR_TIERS, effectiveOcrTier, ocrTiersFor } from "./recognition/ocr/ocr-model";
-import { HandwritingReader } from "./view/handwriting";
+import { HandwritingReader, readingText } from "./view/handwriting";
+import { writerGlyphs } from "./view/calc-notes";
 import { ReadingGuard } from "./recognition/reading-guard";
 import {
   HandwritingLearner,
@@ -611,10 +616,47 @@ export default class GoodObsidianPlugin extends Plugin {
     this.register(disposeVaultFonts);
     this.registerView(VIEW_TYPE_INK, (leaf) => new InkView(leaf, this));
     this.registerView(
+      VIEW_TYPE_NOTE,
+      (leaf) =>
+        new TextNoteView(leaf, {
+          pressure: () => this.settings.pressureWidth,
+          highlighterAlpha: () => this.settings.highlighterAlpha,
+          onlyStylus: () => this.settings.onlyStylusMode,
+          openLibrary: () => void this.openLibrary(),
+          newNote: (folder) => void this.createTextNote(folder),
+          fullScreenOffered: () => this.fullScreenOffered,
+          fullScreen: () => this.fullScreen,
+          toggleFullScreen: () => this.toggleFullScreen(),
+          loadCalculator: () => parseCalculatorData(this.settings.calculator),
+          saveCalculator: (data) => this.saveCalculator(data),
+          reading: {
+            enabled: () => this.settings.handwritingOnDevice !== false,
+            guard: this.readingGuard,
+            read: async (strokes) => {
+              const reading = await this.handwriting.readPage(strokes);
+              return {
+                text: readingText(reading),
+                lines: reading.lines.map((line) => ({ text: line.text, words: line.words })),
+              };
+            },
+          },
+          maths: {
+            enabled: () =>
+              this.settings.calcNotes === true && this.settings.handwritingOnDevice !== false,
+            columns: () =>
+              this.settings.columnSums === true && this.settings.handwritingOnDevice !== false,
+            reader: this.handwriting,
+            glyphs: () => writerGlyphs(this.app, this.learningHost()),
+          },
+          plugin: this,
+        }),
+    );
+    this.registerView(
       VIEW_TYPE_LIBRARY,
       (leaf) =>
         new LibraryView(leaf, {
           newNotebook: (folder) => this.openNewNotebookDialog(folder),
+          newNote: (folder) => void this.createTextNote(folder),
           newBoard: (folder) => this.openNewNotebookDialog(folder, "endless"),
           importFromApp: (folder) => this.openImportNotebook(folder),
           importImage: (file, folder) => void this.createNotebookFromImage(file, folder),
@@ -736,6 +778,16 @@ export default class GoodObsidianPlugin extends Plugin {
                 this.openImportNotebook(folder && !folder.isRoot() ? folder.path : ""),
               ),
           );
+          // And a text note, typed rather than written.
+          menu.addItem((item) =>
+            item
+              .setTitle(t("notebooks.note.new"))
+              .setIcon(ICON_TEXT_NOTE)
+              .setSection("action-primary")
+              .onClick(
+                () => void this.createTextNote(folder && !folder.isRoot() ? folder.path : ""),
+              ),
+          );
         }
         if (!(file instanceof TFile) || file.extension.toLowerCase() !== "pdf") return;
         menu.addItem((item) =>
@@ -778,6 +830,7 @@ export default class GoodObsidianPlugin extends Plugin {
         this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
         void this.followPagesFolder(file, oldPath);
+        followNoteFiles(this.app, file, oldPath);
         this.libraryPathChanged(oldPath, file.path);
         this.calculatorFileMoved(oldPath, file.path);
         this.practiceNotebookMoved(oldPath, file.path);
@@ -929,6 +982,12 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "create-handwriting-note",
       name: t("notebooks.command.newNotebookOrPage"),
       callback: () => this.openNewNotebookDialog(),
+    });
+
+    this.addCommand({
+      id: "create-text-note",
+      name: t("notebooks.note.command.new"),
+      callback: () => void this.createTextNote(),
     });
 
     this.addCommand({
@@ -1265,6 +1324,8 @@ export default class GoodObsidianPlugin extends Plugin {
     // "Ask AI starts on the open page" is gone (2026-11-17): a chat starts
     // with no page picked, and Ask's own reach button took its row's place.
     delete loaded.askAttachPage;
+    // Smart folders were tried on a local build and taken out (2026-11-22).
+    delete loaded.smartFolders;
     // A list of its own, read as pens: the default's must stay as it is.
     // Each with an id, for a button of its own on the bar (FineNotes#211).
     this.settings.savedPens = withPenIds(savedPensOf(this.settings.savedPens));
@@ -2797,7 +2858,14 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Put the class on the tab groups whose tab in front is a notebook, and only on those. */
   syncFullScreen(): void {
-    const places = this.openNotebooks().flatMap((view) => {
+    const views = [
+      ...this.openNotebooks(),
+      ...this.app.workspace
+        .getLeavesOfType(VIEW_TYPE_NOTE)
+        .map((leaf) => leaf.view)
+        .filter((view) => view instanceof TextNoteView),
+    ];
+    const places = views.flatMap((view) => {
       const group = view.containerEl.closest<HTMLElement>(".workspace-tabs");
       return group ? [{ group, shown: view.containerEl.isShown() }] : [];
     });
@@ -2977,8 +3045,11 @@ export default class GoodObsidianPlugin extends Plugin {
     // eslint-disable-next-line @typescript-eslint/unbound-method -- only ever called with a leaf as `this` (below), and put back as-is on unload
     const setViewState = WorkspaceLeaf.prototype.setViewState;
     const route = (state: ViewState): ViewState => {
-      const type = this.router.typeToOpen(state.type, state.state?.file, (path) =>
-        this.isInkPath(path),
+      const type = this.router.typeToOpen(
+        state.type,
+        state.state?.file,
+        (path) => this.isInkPath(path),
+        isTextNoteName,
       );
       return type === state.type ? state : { ...state, type };
     };
@@ -3062,7 +3133,9 @@ export default class GoodObsidianPlugin extends Plugin {
   private moveInkNotesOver(): void {
     for (const leaf of this.app.workspace.getLeavesOfType(MARKDOWN_VIEW_TYPE)) {
       const file = leaf.view instanceof MarkdownView ? leaf.view.file : null;
-      if (file && this.router.wantsNotebook(file.path, () => this.isInkFile(file))) {
+      if (file && isTextNoteName(file.name)) {
+        void this.showIn(leaf, VIEW_TYPE_NOTE, file);
+      } else if (file && this.router.wantsNotebook(file.path, () => this.isInkFile(file))) {
         void this.showIn(leaf, VIEW_TYPE_INK, file);
       }
     }
@@ -3627,6 +3700,36 @@ export default class GoodObsidianPlugin extends Plugin {
       const tab = this.app.workspace.getLeaf(fromHome ? "tab" : false);
       if (fromHome) unstackTabsOf(tab);
       await tab.setViewState({ type: VIEW_TYPE_INK, active: true, state: { file: file.path } });
+      await this.app.workspace.revealLeaf(tab);
+      return file;
+    } catch (error) {
+      new Notice(t("notebooks.notice.createFailed", { reason: errorMessage(error) }), 8000);
+      return null;
+    }
+  }
+
+  /**
+   * A new text note (`Untitled.note.md`, named after its title once it has
+   * one) in `folder`, opened ready to type. Made from Home it gets a tab of
+   * its own, as a notebook does.
+   */
+  async createTextNote(folder?: string): Promise<TFile | null> {
+    const dir = this.outsideNotebook(folder ?? this.newNotebookFolder());
+    try {
+      if (dir && !this.app.vault.getFolderByPath(dir)) await this.app.vault.createFolder(dir);
+      const name = freeNoteName(t("notebooks.note.untitled"), (candidate) =>
+        Boolean(this.app.vault.getAbstractFileByPath(normalizePath(joinVaultPath(dir, candidate)))),
+      );
+      let sequence = 0;
+      const file = await this.app.vault.create(
+        normalizePath(joinVaultPath(dir, name)),
+        newNoteFile(new Date().toISOString(), () => `b${++sequence}`),
+      );
+      const fromHome =
+        this.app.workspace.getMostRecentLeaf()?.view.getViewType() === VIEW_TYPE_LIBRARY;
+      const tab = this.app.workspace.getLeaf(fromHome ? "tab" : false);
+      if (fromHome) unstackTabsOf(tab);
+      await tab.setViewState({ type: VIEW_TYPE_NOTE, active: true, state: { file: file.path } });
       await this.app.workspace.revealLeaf(tab);
       return file;
     } catch (error) {

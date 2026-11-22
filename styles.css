@@ -4587,6 +4587,7 @@ body,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range,
+.finenotes-note-palette input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   position: absolute;
   inset: 0;
@@ -4606,6 +4607,7 @@ body,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range,
+.finenotes-note-palette input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   --gob-slider-height: var(--gob-touch);
 }
@@ -4629,6 +4631,7 @@ input[type="range"].goodobsidian-player-scrubber {
   input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-mm-stepper
   input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+.finenotes-note-palette input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
   height: var(--gob-slider-height);
@@ -4657,6 +4660,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track 
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+.finenotes-note-palette input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   top: 0;
@@ -4679,6 +4683,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
 .goodobsidian-colour-panel
   input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+.finenotes-note-palette input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
@@ -4695,6 +4700,7 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  .finenotes-note-palette input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
     transition: none;
@@ -15980,7 +15986,7 @@ button.goodobsidian-ns-update-mute.clickable-icon {
    status bar's inset above them stays (Obsidian pads the split for it). */
 .workspace-tabs.goodobsidian-full-screen > .workspace-tab-header-container,
 .workspace-tabs.goodobsidian-full-screen
-  .workspace-leaf-content[data-type="goodobsidian-view"]
+  .workspace-leaf-content:is([data-type="goodobsidian-view"], [data-type="finenotes-note"])
   > .view-header {
   display: none;
 }
@@ -17593,7 +17599,11 @@ body.goodobsidian-simple:not(.goodobsidian-simple-show-rightSidebar)
   display: none;
 }
 body.goodobsidian-simple
-  .workspace-leaf-content:is([data-type="goodobsidian-view"], [data-type="finenotes-library"])
+  .workspace-leaf-content:is(
+    [data-type="goodobsidian-view"],
+    [data-type="finenotes-library"],
+    [data-type="finenotes-note"]
+  )
   > .view-header {
   display: none;
 }
@@ -18355,6 +18365,25 @@ button.goodobsidian-library-star:active {
 }
 .goodobsidian-library-cover.is-note.is-ready .goodobsidian-library-note {
   opacity: 1;
+}
+/* A text note: its first page as Home lays it out, on white paper like a notebook's page;
+   the cover shows the top of it. */
+.goodobsidian-library-cover.is-note.is-textnote {
+  padding: 0;
+  background: #fff;
+  color: #666;
+}
+.goodobsidian-library-textnote-page {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.goodobsidian-library-cover.is-textnote.is-ready .goodobsidian-library-textnote-page {
+  opacity: 1;
+}
+.goodobsidian-library-cover.is-textnote .goodobsidian-library-cover-title {
+  padding: 10px;
 }
 .goodobsidian-library-cover.is-file.is-ready .goodobsidian-library-cover-title {
   display: none;
@@ -19868,6 +19897,7 @@ body[class*="finenotes-palette-"]
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19877,6 +19907,7 @@ body[class*="finenotes-palette-"]
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19918,6 +19949,7 @@ body[class*="finenotes-palette-"]
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19931,6 +19963,7 @@ body.finenotes-palette-nord.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19974,6 +20007,7 @@ body.finenotes-palette-nord.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19983,6 +20017,7 @@ body.finenotes-palette-nord
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20027,6 +20062,7 @@ body.finenotes-palette-catppuccin.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20070,6 +20106,7 @@ body.finenotes-palette-catppuccin.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20079,6 +20116,7 @@ body.finenotes-palette-catppuccin
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20123,6 +20161,7 @@ body.finenotes-palette-dracula.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20166,6 +20205,7 @@ body.finenotes-palette-dracula.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20175,6 +20215,7 @@ body.finenotes-palette-dracula
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20219,6 +20260,7 @@ body.finenotes-palette-rose-pine.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20262,6 +20304,7 @@ body.finenotes-palette-rose-pine.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20271,6 +20314,7 @@ body.finenotes-palette-rose-pine
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20315,6 +20359,7 @@ body.finenotes-palette-gruvbox.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20358,6 +20403,7 @@ body.finenotes-palette-gruvbox.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20367,6 +20413,7 @@ body.finenotes-palette-gruvbox
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20411,6 +20458,7 @@ body.finenotes-palette-solarized.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20454,6 +20502,7 @@ body.finenotes-palette-solarized.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20463,6 +20512,7 @@ body.finenotes-palette-solarized
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20507,6 +20557,7 @@ body.finenotes-palette-tokyo-night.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20550,6 +20601,7 @@ body.finenotes-palette-tokyo-night.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20559,6 +20611,7 @@ body.finenotes-palette-tokyo-night
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20603,6 +20656,7 @@ body.finenotes-palette-everforest.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20646,6 +20700,7 @@ body.finenotes-palette-everforest.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20655,6 +20710,7 @@ body.finenotes-palette-everforest
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20699,6 +20755,7 @@ body.finenotes-palette-high-contrast.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20742,6 +20799,7 @@ body.finenotes-palette-high-contrast.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20751,6 +20809,7 @@ body.finenotes-palette-high-contrast
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20799,6 +20858,7 @@ body.finenotes-style-glass
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20830,6 +20890,7 @@ body.finenotes-style-material
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20865,6 +20926,7 @@ body.finenotes-style-fluent
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20896,6 +20958,7 @@ body.finenotes-style-paper
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20931,6 +20994,7 @@ body.finenotes-style-brutalist
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20971,6 +21035,7 @@ body.finenotes-style-soft
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -21001,6 +21066,7 @@ body.finenotes-style-retro
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -21040,6 +21106,7 @@ body.finenotes-style-compact
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -23242,4 +23309,2024 @@ button.goodobsidian-slide-dot.clickable-icon {
 button.goodobsidian-slide-dot.clickable-icon:hover .goodobsidian-slide-chip,
 button.goodobsidian-slide-dot.clickable-icon[data-pressed] .goodobsidian-slide-chip {
   background: var(--interactive-accent-hover);
+}
+
+/* ==========================================================================
+   Text notes (`Title.note.md`, src/view/note-view.ts): typed text first,
+   with handwriting sections and pictures between the paragraphs.
+   ========================================================================== */
+
+.workspace-leaf-content > .view-content.finenotes-note-view {
+  --fn-note-accent: var(--interactive-accent);
+  --fn-note-tint: color-mix(in srgb, var(--interactive-accent) 16%, transparent);
+  --fn-note-glass: color-mix(in srgb, var(--background-primary) 80%, transparent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+/* --- the bar: Apple Notes' layout ------------------------------------------
+   Where you are and undo on the left, what goes into the note in the middle,
+   the pen on the right; each group a pill floating over the note, in the
+   notebooks' look (`--gob-*`, so a chosen style and palette reach it). */
+
+.finenotes-note-bar {
+  position: relative;
+  z-index: 12;
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 14px 6px;
+}
+
+.finenotes-note-bar-group {
+  display: flex;
+  flex: 1 1 0;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.finenotes-note-bar-group.is-middle {
+  flex: none;
+  justify-content: center;
+}
+
+.finenotes-note-bar-group.is-right {
+  justify-content: flex-end;
+}
+
+.finenotes-note-pill {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+  padding: 3px;
+  background: var(--gob-pill-bg);
+  border: var(--gob-bar-border);
+  border-radius: var(--gob-radius-pill);
+  box-shadow: var(--gob-shadow-float);
+  -webkit-backdrop-filter: var(--gob-blur, blur(18px) saturate(1.6));
+  backdrop-filter: var(--gob-blur, blur(18px) saturate(1.6));
+}
+
+button.clickable-icon.finenotes-note-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: var(--text-normal);
+  background: transparent;
+  border-radius: var(--gob-tool-radius, 999px);
+  transition:
+    background-color 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.12s ease;
+}
+
+button.clickable-icon.finenotes-note-button .svg-icon {
+  width: 21px;
+  height: 21px;
+  stroke-width: var(--gob-icon-stroke, 1.75px);
+}
+
+/* "Aa", and the lettered lists' "A." and "a.": a word where no symbol says it. */
+button.clickable-icon.finenotes-note-button.is-text {
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+button.clickable-icon.finenotes-note-button:active {
+  transform: scale(0.92);
+}
+
+button.clickable-icon.finenotes-note-button.is-active {
+  color: var(--gob-active-fg);
+  background: var(--gob-active-bg);
+}
+
+button.clickable-icon.finenotes-note-button:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .finenotes-note-bar {
+    gap: 6px;
+    padding: 8px 8px 4px;
+  }
+
+  .finenotes-note-bar-group {
+    gap: 4px;
+  }
+
+  button.clickable-icon.finenotes-note-button {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+/* --- the page ------------------------------------------------------------ */
+
+.finenotes-note-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.finenotes-note-column {
+  --fn-col-pad: clamp(18px, 6vw, 72px);
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 4px var(--fn-col-pad) 0;
+}
+
+/* When the note was last changed: a small strip, centred over the title, as in Apple Notes. */
+.finenotes-note-date {
+  width: fit-content;
+  min-height: 16px;
+  margin: 2px auto 14px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: center;
+  background: var(--gob-well);
+  border-radius: 999px;
+  user-select: none;
+}
+
+.finenotes-note-date:empty {
+  display: none;
+}
+
+.finenotes-note-doc {
+  font-size: 17px;
+  line-height: 1.47;
+  color: var(--text-normal);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  caret-color: var(--fn-note-accent);
+  outline: none;
+  counter-reset: fn-n0 fn-n1 fn-n2 fn-n3;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.finenotes-note-doc::selection,
+.finenotes-note-doc *::selection {
+  background: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+}
+
+.finenotes-note-line {
+  --fn-indent: 0;
+  position: relative;
+  min-height: 1.47em;
+  margin: 0;
+  padding: 1px 0;
+  counter-reset: fn-n0 fn-n1 fn-n2 fn-n3;
+}
+
+.finenotes-note-line[data-indent="1"] {
+  --fn-indent: 1;
+}
+
+.finenotes-note-line[data-indent="2"] {
+  --fn-indent: 2;
+}
+
+.finenotes-note-line[data-indent="3"] {
+  --fn-indent: 3;
+}
+
+/* Body text and quotes indent as list items do. */
+.finenotes-note-line:is([data-kind="body"], [data-kind="quote"])[data-indent] {
+  margin-inline-start: calc(var(--fn-indent) * 26px);
+}
+
+.finenotes-note-line[data-kind="title"] {
+  min-height: 1.2em;
+  margin-bottom: 6px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+}
+
+.finenotes-note-line[data-kind="heading"] {
+  min-height: 1.25em;
+  margin-top: 14px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.008em;
+}
+
+.finenotes-note-line[data-kind="subheading"] {
+  margin-top: 8px;
+  font-weight: 650;
+}
+
+.finenotes-note-line[data-kind="title"]:first-child,
+.finenotes-note-line[data-kind="heading"]:first-child,
+.finenotes-note-line[data-kind="subheading"]:first-child {
+  margin-top: 0;
+}
+
+.finenotes-note-line[data-kind="mono"] {
+  padding: 1px 14px;
+  font-family: var(--font-monospace);
+  font-size: 14.5px;
+  line-height: 1.6;
+  background: var(--background-secondary);
+}
+
+.finenotes-note-doc > :not([data-kind="mono"]) + [data-kind="mono"],
+.finenotes-note-doc > [data-kind="mono"]:first-child {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-start-start-radius: 10px;
+  border-start-end-radius: 10px;
+}
+
+/* stylelint-disable-next-line selector-pseudo-class-disallowed-list -- rounds the last line of a monostyled run; scoped to the note's own lines */
+.finenotes-note-doc > [data-kind="mono"]:not(:has(+ [data-kind="mono"])) {
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+  border-end-start-radius: 10px;
+  border-end-end-radius: 10px;
+}
+
+.finenotes-note-line[data-kind="quote"] {
+  margin-inline-start: 2px;
+  padding-inline-start: 14px;
+  color: var(--text-muted);
+  border-inline-start: 3px solid var(--fn-note-accent);
+}
+
+.finenotes-note-line:is(
+  [data-kind="bullet"],
+  [data-kind="dash"],
+  [data-kind="number"],
+  [data-kind="upper"],
+  [data-kind="lower"],
+  [data-kind="check"]
+) {
+  padding-inline-start: calc(30px + var(--fn-indent) * 26px);
+  counter-reset: none;
+}
+
+.finenotes-note-line:is(
+    [data-kind="bullet"],
+    [data-kind="dash"],
+    [data-kind="number"],
+    [data-kind="upper"],
+    [data-kind="lower"],
+    [data-kind="check"]
+  )::before {
+  position: absolute;
+  inset-inline-start: calc(var(--fn-indent) * 26px);
+  top: 1px;
+  box-sizing: border-box;
+  width: 24px;
+  color: var(--text-muted);
+  text-align: end;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.finenotes-note-line[data-kind="bullet"]::before {
+  width: 20px;
+  font-weight: 700;
+  content: "•";
+}
+
+.finenotes-note-line[data-kind="bullet"][data-indent="1"]::before,
+.finenotes-note-line[data-kind="bullet"][data-indent="3"]::before {
+  content: "◦";
+}
+
+.finenotes-note-line[data-kind="dash"]::before {
+  width: 20px;
+  content: "–";
+}
+
+/* Numbers and letters: the page counts them as the file does (`listMarkers`). */
+.finenotes-note-line:is([data-kind="number"], [data-kind="upper"], [data-kind="lower"])::before {
+  font-variant-numeric: tabular-nums;
+  content: attr(data-marker);
+}
+
+/* Links, as Obsidian draws them; a tap opens them. */
+.finenotes-note-doc .finenotes-note-link {
+  color: var(--link-color);
+  border-bottom: 1px solid color-mix(in srgb, var(--link-color) 45%, transparent);
+  cursor: pointer;
+}
+
+/* Typing [[: the vault's notes that match, under the caret. */
+.finenotes-note-suggest {
+  position: absolute;
+  top: var(--fn-suggest-y, 0);
+  left: var(--fn-suggest-x, 0);
+  z-index: 30;
+  min-width: 200px;
+  max-width: min(360px, 90%);
+  padding: 4px;
+  background: var(--gob-pop-bg);
+  border: var(--gob-bar-border);
+  border-radius: 12px;
+  box-shadow: var(--gob-shadow-sheet);
+  -webkit-backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+  backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+}
+
+.finenotes-note-suggest-row {
+  padding: 6px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.finenotes-note-suggest-row.is-selected {
+  color: var(--gob-active-fg);
+  background: var(--gob-active-bg);
+}
+
+/* A highlight in the text, in the ink highlighter's colours. */
+.finenotes-note-doc mark {
+  --fn-tint: #ffd43b;
+  color: inherit;
+  background: color-mix(in srgb, var(--fn-tint) 48%, transparent);
+  border-radius: 3px;
+}
+
+.finenotes-note-doc mark[data-tint="green"] {
+  --fn-tint: #8ce99a;
+}
+
+.finenotes-note-doc mark[data-tint="pink"] {
+  --fn-tint: #ffa8a8;
+}
+
+.finenotes-note-doc mark[data-tint="blue"] {
+  --fn-tint: #74c0fc;
+}
+
+.finenotes-note-doc mark[data-tint="purple"] {
+  --fn-tint: #eebefa;
+}
+
+/* Folding: a heading that holds something shows a chevron in the margin before it;
+   folded, the chevron turns and what it holds is hidden. The tap is read by position. */
+.finenotes-note-line[data-foldable]::after {
+  position: absolute;
+  inset-inline-start: -26px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  content: "";
+  cursor: pointer;
+  background-color: var(--text-muted);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition:
+    opacity 0.15s ease,
+    transform 0.2s cubic-bezier(0.2, 0.9, 0.25, 1);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+.finenotes-note-line[data-foldable]:hover::after,
+.finenotes-note-line[data-foldable="folded"]::after {
+  opacity: 0.8;
+}
+
+.finenotes-note-line[data-foldable="folded"]::after {
+  color: var(--interactive-accent);
+  background-color: var(--interactive-accent);
+  transform: translateY(-50%) rotate(-90deg);
+}
+
+/* On a touch screen there is no hover: the chevron shows faintly all the time. */
+@media (hover: none) {
+  .finenotes-note-line[data-foldable="open"]::after {
+    opacity: 0.35;
+  }
+}
+
+.finenotes-note-doc > .is-folded-away {
+  display: none;
+}
+
+/* The checklist's circle: empty, or filled with a tick. The click is read by position. */
+.finenotes-note-line[data-kind="check"] {
+  cursor: text;
+}
+
+.finenotes-note-line[data-kind="check"]::before {
+  top: 0.26em;
+  width: 21px;
+  height: 21px;
+  content: "";
+  border: 1.6px solid var(--text-faint);
+  border-radius: 50%;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.finenotes-note-line[data-kind="check"][data-checked="true"]::before {
+  background-color: var(--fn-note-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 15px;
+  border-color: var(--fn-note-accent);
+}
+
+.finenotes-note-line[data-kind="check"][data-checked="true"] {
+  color: var(--text-faint);
+}
+
+/* The title's placeholder, on the first line while it is empty. */
+.finenotes-note-line.is-blank[data-placeholder]::after {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 1px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  pointer-events: none;
+  content: attr(data-placeholder);
+}
+
+.finenotes-note-line.is-blank[data-placeholder]:not([data-kind="title"])::after {
+  display: none;
+}
+
+.finenotes-note-tail {
+  min-height: 46vh;
+  cursor: text;
+  touch-action: pan-y pinch-zoom;
+}
+
+/* --- tables ----------------------------------------------------------------
+   A table is one section on the page; its cells are fields of their own.
+   Its buttons (rows, columns, delete) show while the caret is in it. */
+
+.finenotes-note-table {
+  position: relative;
+  margin: 10px 0;
+  border-radius: 8px;
+  outline: 2px solid transparent;
+  outline-offset: 4px;
+}
+
+.finenotes-note-table.is-selected {
+  outline-color: var(--interactive-accent);
+}
+
+.finenotes-note-table-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.finenotes-note-table table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.finenotes-note-table :is(th, td) {
+  min-width: 80px;
+  padding: 8px 10px;
+  font-size: inherit;
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border: 1px solid var(--background-modifier-border);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.finenotes-note-table th {
+  font-weight: 650;
+  background: var(--gob-well);
+}
+
+.finenotes-note-table :is(th, td):focus {
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+
+/* Above the table, so it never covers a cell. */
+.finenotes-note-table > .finenotes-note-table-bar {
+  top: auto;
+  bottom: calc(100% + 4px);
+  gap: 2px;
+}
+
+.finenotes-note-table:focus-within > .finenotes-note-table-bar,
+.finenotes-note-table.is-selected > .finenotes-note-table-bar {
+  display: flex;
+}
+
+/* --- sections: handwriting, pictures -------------------------------------- */
+
+.finenotes-note-ink,
+.finenotes-note-image,
+.finenotes-note-raw {
+  position: relative;
+  counter-reset: fn-n0 fn-n1 fn-n2 fn-n3;
+  box-sizing: border-box;
+  margin: 8px 0;
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition:
+    outline-color 0.15s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.finenotes-note-ink {
+  width: calc(100% + 2 * var(--fn-col-pad, 0px) - 16px);
+  margin-inline: calc(8px - var(--fn-col-pad, 0px));
+  aspect-ratio: var(--fn-ink-ratio, 720 / 260);
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+  transition:
+    outline-color 0.15s ease,
+    box-shadow 0.2s ease,
+    background-color 0.25s ease;
+}
+
+.finenotes-note-ink.is-pen-near,
+.finenotes-note-view.is-finger-draw.is-drawing .finenotes-note-ink {
+  touch-action: none;
+}
+
+.finenotes-note-ink-layer {
+  position: absolute;
+  inset-block-start: 0;
+  left: 0;
+  width: var(--fn-layer-w, 100%);
+  height: var(--fn-layer-h, 100%);
+  pointer-events: none;
+}
+
+/* A section with paper of its own draws its rules; nothing else goes behind them. */
+.finenotes-note-scroll.is-drawing .finenotes-note-ink[data-paper] {
+  background-image: none;
+}
+
+/* With the pen out, every section shows as paper to write on. */
+.finenotes-note-scroll.is-drawing .finenotes-note-ink {
+  cursor: crosshair;
+  background-color: color-mix(in srgb, var(--text-normal) 3.5%, transparent);
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--text-normal) 20%, transparent) 1px,
+    transparent 1.5px
+  );
+  background-position: 11px 11px;
+  background-size: 22px 22px;
+}
+
+.finenotes-note-scroll.is-drawing .finenotes-note-tail {
+  cursor: crosshair;
+}
+
+.finenotes-note-scroll.is-drawing .finenotes-note-doc {
+  cursor: default;
+}
+
+.finenotes-note-ink.is-selected,
+.finenotes-note-image.is-selected,
+.finenotes-note-raw.is-selected {
+  outline-color: var(--fn-note-accent);
+}
+
+/* The foot of a section: a line with a dot, dragged to give it more or less room. */
+.finenotes-note-ink-edge {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  display: none;
+  height: 26px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.finenotes-note-ink-edge::before {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2px;
+  content: "";
+  background: var(--fn-note-accent);
+}
+
+.finenotes-note-ink-grip {
+  position: absolute;
+  inset-inline-start: 14px;
+  bottom: -5px;
+  width: 12px;
+  height: 12px;
+  background: var(--fn-note-accent);
+  border: 2px solid var(--background-primary);
+  border-radius: 50%;
+}
+
+.finenotes-note-scroll.is-drawing .finenotes-note-ink.is-active .finenotes-note-ink-edge,
+.finenotes-note-ink.is-selected .finenotes-note-ink-edge,
+.finenotes-note-ink.is-resizing .finenotes-note-ink-edge {
+  display: block;
+}
+
+.finenotes-note-ink.is-active,
+.finenotes-note-ink.is-selected,
+.finenotes-note-ink.is-resizing {
+  overflow: visible;
+}
+
+.finenotes-note-image {
+  width: calc(var(--fn-share, 1) * 100%);
+  min-width: 48px;
+  line-height: 0;
+}
+
+.finenotes-note-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+.finenotes-note-image.is-missing {
+  min-height: 96px;
+  background: var(--background-secondary);
+  background-image: linear-gradient(
+    135deg,
+    transparent 46%,
+    var(--background-modifier-border) 46%,
+    var(--background-modifier-border) 54%,
+    transparent 54%
+  );
+}
+
+.finenotes-note-image.is-missing img {
+  display: none;
+}
+
+.finenotes-note-handle {
+  position: absolute;
+  inset-inline-end: -9px;
+  bottom: -9px;
+  display: none;
+  width: 30px;
+  height: 30px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.finenotes-note-handle::before {
+  position: absolute;
+  inset: 8px;
+  content: "";
+  background: var(--fn-note-accent);
+  border: 2px solid var(--background-primary);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.finenotes-note-image.is-selected .finenotes-note-handle {
+  display: block;
+}
+
+.finenotes-note-raw {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+}
+
+.finenotes-note-raw-icon {
+  display: inline-flex;
+}
+
+/* The one control a selected section shows. */
+.finenotes-note-island-bar {
+  position: absolute;
+  inset-inline-end: 8px;
+  top: 8px;
+  z-index: 2;
+  display: none;
+}
+
+.finenotes-note-ink.is-selected > .finenotes-note-island-bar,
+.finenotes-note-image.is-selected > .finenotes-note-island-bar,
+.finenotes-note-raw.is-selected > .finenotes-note-island-bar {
+  display: flex;
+}
+
+button.clickable-icon.finenotes-note-island-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--text-error);
+  background: var(--fn-note-glass);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  backdrop-filter: blur(14px) saturate(1.6);
+}
+
+/* A section lifted to move it, and the line that shows where it will land. */
+.finenotes-note-ink.is-lifted,
+.finenotes-note-image.is-lifted,
+.finenotes-note-raw.is-lifted {
+  z-index: 5;
+  background-color: var(--background-primary);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+  transform: translateY(var(--fn-lift, 0)) scale(1.015);
+  transition: box-shadow 0.2s ease;
+}
+
+.finenotes-note-scroll.is-moving {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.finenotes-note-drop {
+  position: absolute;
+  inset-inline: 24px;
+  top: var(--fn-drop, 0);
+  display: none;
+  height: 3px;
+  margin-top: -2px;
+  pointer-events: none;
+  background: var(--fn-note-accent);
+  border-radius: 2px;
+}
+
+.finenotes-note-drop.is-shown {
+  display: block;
+}
+
+/* --- the pen's palette ------------------------------------------------------
+   Upright at the left by default, as in Apple Notes; dragged by its grip it
+   docks on whichever side of the note it is let go nearest
+   (`note-view.ts`, `nearestDock`). */
+
+.finenotes-note-palette {
+  --fn-drag-x: 0px;
+  --fn-drag-y: 0px;
+  --fn-hide-x: 0px;
+  --fn-hide-y: 0px;
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 10px 8px;
+  pointer-events: none;
+  background: var(--gob-pop-bg);
+  border: var(--gob-bar-border);
+  border-radius: 30px;
+  box-shadow: var(--gob-shadow-sheet);
+  opacity: 0;
+  transition:
+    transform 0.34s cubic-bezier(0.2, 0.9, 0.25, 1),
+    opacity 0.2s ease;
+  scrollbar-width: none;
+  -webkit-backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+  backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+}
+
+.finenotes-note-palette[data-dock="left"],
+.finenotes-note-palette[data-dock="right"] {
+  top: 50%;
+  flex-direction: column;
+  gap: 6px;
+  width: 56px;
+  max-height: calc(100% - 96px);
+  padding: 8px 4px;
+  transform: translate(calc(var(--fn-hide-x) + var(--fn-drag-x)), calc(-50% + var(--fn-drag-y)));
+}
+
+.finenotes-note-palette[data-dock="left"] {
+  --fn-hide-x: -140%;
+  left: 14px;
+}
+
+.finenotes-note-palette[data-dock="right"] {
+  --fn-hide-x: 140%;
+  right: 14px;
+}
+
+.finenotes-note-palette[data-dock="top"],
+.finenotes-note-palette[data-dock="bottom"] {
+  left: 50%;
+  flex-direction: row;
+  max-width: calc(100% - 24px);
+  padding: 4px 10px;
+  transform: translate(calc(-50% + var(--fn-drag-x)), calc(var(--fn-hide-y) + var(--fn-drag-y)));
+}
+
+.finenotes-note-palette[data-dock="top"] {
+  --fn-hide-y: -60px;
+  top: 66px;
+}
+
+.finenotes-note-palette[data-dock="bottom"] {
+  --fn-hide-y: 160%;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+}
+
+/* On a computer Obsidian's status bar floats over the window's foot. */
+body:not(.is-mobile) .finenotes-note-palette[data-dock="bottom"] {
+  bottom: 44px;
+}
+
+.finenotes-note-view.is-drawing > .finenotes-note-palette {
+  --fn-hide-x: 0px;
+  --fn-hide-y: 0px;
+  pointer-events: auto;
+  opacity: 1;
+}
+
+/* While it folds, moves and unfolds, the docking slide stays out of the way. */
+.finenotes-note-palette.is-settling {
+  transition: opacity 0.2s ease;
+}
+
+/* The grip: a short bar, with a wider target round it. */
+/* The grab line, as on Apple's palette: a short bar centred on the edge away from
+   the note's edge (on top, or underneath when the palette hangs from the top). */
+.finenotes-note-palette-grip {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  box-sizing: content-box;
+  width: 30px;
+  height: 4px;
+  padding: 6px 14px;
+  cursor: grab;
+  background: var(--text-faint);
+  background-clip: content-box;
+  border-radius: 10px;
+  opacity: 0.7;
+  transform: translateX(-50%);
+  touch-action: none;
+}
+
+.finenotes-note-palette[data-dock="top"] .finenotes-note-palette-grip {
+  top: auto;
+  bottom: 0;
+}
+
+.finenotes-note-palette:is([data-dock="left"], [data-dock="right"]) .finenotes-note-palette-grip {
+  width: 22px;
+}
+
+/* Room for the grab line. */
+.finenotes-note-palette:is([data-dock="left"], [data-dock="right"]) {
+  padding-top: 18px;
+}
+
+.finenotes-note-palette[data-dock="bottom"] {
+  padding-top: 14px;
+}
+
+.finenotes-note-palette[data-dock="top"] {
+  padding-bottom: 14px;
+}
+
+/* Moving it: the palette folds away into a round token with the tool in hand,
+   which follows the finger; a bar marks the side it will dock on. */
+.finenotes-note-view.is-drawing > .finenotes-note-palette.is-folded {
+  opacity: 0;
+}
+
+.finenotes-note-palette-token {
+  position: absolute;
+  top: var(--fn-token-y, 0);
+  left: var(--fn-token-x, 0);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  color: var(--gob-active-fg);
+  pointer-events: none;
+  background: var(--gob-pop-bg);
+  border: var(--gob-bar-border);
+  border-radius: 50%;
+  box-shadow: var(--gob-shadow-sheet);
+  transform: translate(-50%, -50%);
+  animation: finenotes-note-token-in 0.2s cubic-bezier(0.2, 1.2, 0.32, 1);
+  transition:
+    top 0.24s cubic-bezier(0.2, 0.9, 0.25, 1),
+    left 0.24s cubic-bezier(0.2, 0.9, 0.25, 1),
+    opacity 0.24s ease,
+    scale 0.24s ease;
+  -webkit-backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+  backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+}
+
+/* Following the finger it moves at once; only its landing glides. */
+.finenotes-note-palette-token:not(.is-landing) {
+  transition: none;
+}
+
+.finenotes-note-palette-token.is-landing {
+  opacity: 0;
+  scale: 0.6;
+}
+
+.finenotes-note-palette-token .svg-icon {
+  width: 24px;
+  height: 24px;
+}
+
+@keyframes finenotes-note-token-in {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+
+.finenotes-note-dock-hint {
+  position: absolute;
+  z-index: 29;
+  pointer-events: none;
+  background: var(--interactive-accent);
+  border-radius: 4px;
+  opacity: 0.55;
+  transition:
+    inset 0.18s ease,
+    width 0.18s ease,
+    height 0.18s ease;
+}
+
+.finenotes-note-dock-hint[data-dock="left"] {
+  top: 25%;
+  left: 6px;
+  width: 4px;
+  height: 50%;
+}
+
+.finenotes-note-dock-hint[data-dock="right"] {
+  top: 25%;
+  right: 6px;
+  width: 4px;
+  height: 50%;
+}
+
+.finenotes-note-dock-hint[data-dock="top"] {
+  top: 62px;
+  left: 25%;
+  width: 50%;
+  height: 4px;
+}
+
+.finenotes-note-dock-hint[data-dock="bottom"] {
+  bottom: 10px;
+  left: 25%;
+  width: 50%;
+  height: 4px;
+}
+
+.finenotes-note-palette-group {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+}
+
+.finenotes-note-palette:is([data-dock="left"], [data-dock="right"]) .finenotes-note-palette-group {
+  flex-direction: column;
+}
+
+.finenotes-note-palette:is([data-dock="left"], [data-dock="right"])
+  .finenotes-note-palette-group
+  + .finenotes-note-palette-group {
+  padding-top: 6px;
+  border-top: 1px solid var(--gob-line);
+}
+
+.finenotes-note-palette:is([data-dock="top"], [data-dock="bottom"])
+  .finenotes-note-palette-group
+  + .finenotes-note-palette-group {
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid var(--gob-line);
+}
+
+.finenotes-note-palette button.clickable-icon.finenotes-note-button {
+  color: var(--text-muted);
+}
+
+.finenotes-note-palette button.clickable-icon.finenotes-note-button.is-active {
+  color: var(--gob-active-fg);
+  background: var(--gob-active-bg);
+}
+
+.finenotes-note-palette-group.is-history button.clickable-icon.finenotes-note-button {
+  width: 36px;
+  height: 36px;
+}
+
+.finenotes-note-palette-group.is-tools button.clickable-icon.finenotes-note-button .svg-icon {
+  width: 24px;
+  height: 24px;
+}
+
+button.clickable-icon.finenotes-note-swatch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+button.clickable-icon.finenotes-note-swatch::before {
+  width: 24px;
+  height: 24px;
+  content: "";
+  background: var(--fn-swatch);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.3);
+  transition: transform 0.16s cubic-bezier(0.2, 0.9, 0.25, 1.4);
+}
+
+button.clickable-icon.finenotes-note-swatch.is-active::before {
+  box-shadow:
+    0 0 0 2px var(--background-primary),
+    0 0 0 4px var(--fn-swatch);
+  transform: scale(0.8);
+}
+
+/* The size: the mark the tool makes; tapped, a slider for any size opens beside the palette. */
+.finenotes-note-palette-group.is-size {
+  position: relative;
+}
+
+button.clickable-icon.finenotes-note-size {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+  border-radius: 50%;
+}
+
+button.clickable-icon.finenotes-note-size.is-active {
+  background: var(--gob-active-bg);
+}
+
+.finenotes-note-size-pop {
+  position: absolute;
+  z-index: 1;
+  display: none;
+  padding: 6px 14px;
+  background: var(--gob-pop-bg);
+  border: var(--gob-bar-border);
+  border-radius: 999px;
+  box-shadow: var(--gob-shadow-sheet);
+  -webkit-backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+  backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+}
+
+.finenotes-note-palette-group.is-size.is-open > .finenotes-note-size-pop {
+  display: block;
+}
+
+.finenotes-note-palette[data-dock="left"] .finenotes-note-size-pop {
+  top: 50%;
+  left: calc(100% + 14px);
+  transform: translateY(-50%);
+}
+
+.finenotes-note-palette[data-dock="right"] .finenotes-note-size-pop {
+  top: 50%;
+  right: calc(100% + 14px);
+  transform: translateY(-50%);
+}
+
+.finenotes-note-palette[data-dock="bottom"] .finenotes-note-size-pop {
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.finenotes-note-palette[data-dock="top"] .finenotes-note-size-pop {
+  top: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.finenotes-note-size-mark {
+  flex: none;
+  width: var(--fn-mark, 6px);
+  height: var(--fn-mark, 6px);
+  background: var(--fn-mark-color, var(--text-normal));
+  border-radius: 50%;
+}
+
+.finenotes-note-size-mark.is-ring {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-muted);
+}
+
+.finenotes-note-size-track {
+  width: 180px;
+  margin: 0;
+}
+
+button.clickable-icon.finenotes-note-done {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-radius: 50%;
+}
+
+button.clickable-icon.finenotes-note-done:hover {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent-hover);
+}
+
+/* --- the Aa menu ------------------------------------------------------------
+   Apple Notes' format sheet: the text styles as words across the top, then
+   rows of grouped buttons: marks and the highlight; lists, depth and quote. */
+
+.finenotes-note-styles {
+  position: absolute;
+  top: var(--fn-styles-y, 56px);
+  left: var(--fn-styles-x, 50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100% - 16px);
+  padding: 12px;
+  background: var(--gob-pop-bg);
+  border: var(--gob-bar-border);
+  border-radius: 26px;
+  box-shadow: var(--gob-shadow-sheet);
+  transform: translateX(-50%);
+  transform-origin: 50% 0;
+  animation: finenotes-note-pop 0.18s cubic-bezier(0.2, 0.9, 0.25, 1.15);
+  -webkit-backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+  backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+}
+
+@keyframes finenotes-note-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.92);
+  }
+}
+
+.finenotes-note-styles-kinds {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+button.clickable-icon.finenotes-note-style {
+  flex: none;
+  width: auto;
+  height: 40px;
+  padding: 0 14px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-normal);
+  white-space: nowrap;
+  background: transparent;
+  border-radius: 999px;
+}
+
+button.clickable-icon.finenotes-note-style[data-kind="title"] {
+  font-size: 21px;
+  font-weight: 700;
+}
+
+button.clickable-icon.finenotes-note-style[data-kind="heading"] {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+button.clickable-icon.finenotes-note-style[data-kind="subheading"] {
+  font-weight: 650;
+}
+
+button.clickable-icon.finenotes-note-style[data-kind="mono"] {
+  font-family: var(--font-monospace);
+  font-size: 14px;
+}
+
+button.clickable-icon.finenotes-note-style.is-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+.finenotes-note-styles-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.finenotes-note-styles-group {
+  display: flex;
+  gap: 0;
+  align-items: center;
+  overflow: hidden;
+  background: var(--gob-well);
+  border-radius: 18px;
+}
+
+.finenotes-note-styles-group button.clickable-icon.finenotes-note-button {
+  width: 46px;
+  height: 46px;
+  border-radius: 0;
+}
+
+.finenotes-note-styles-group button.clickable-icon.finenotes-note-button + button {
+  box-shadow: inset 1px 0 0 var(--gob-line);
+}
+
+.finenotes-note-styles-group button.clickable-icon.finenotes-note-button.is-text {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* The highlight's colour: a dot beside the highlighter; tapped, the five colours. */
+.finenotes-note-styles-group
+  button.clickable-icon.finenotes-note-button.finenotes-note-tint-dot::before {
+  width: 22px;
+  height: 22px;
+  content: "";
+  background: var(--fn-swatch);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.3);
+}
+
+.finenotes-note-tints {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  animation: finenotes-note-tints-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+
+@keyframes finenotes-note-tints-in {
+  from {
+    opacity: 0;
+    translate: -8px 0;
+  }
+}
+
+.finenotes-note-tints.is-hidden {
+  display: none;
+}
+
+@media (max-width: 520px) {
+  .finenotes-note-styles-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .finenotes-note-styles-group button.clickable-icon.finenotes-note-button {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+@media (max-width: 520px) {
+  .finenotes-note-drop {
+    inset-inline: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finenotes-note-palette,
+  .finenotes-note-styles,
+  button.clickable-icon.finenotes-note-button {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* --- maths and graphs ------------------------------------------------------
+   A typed sum that ends in "=" shows its answer after it, in the accent, as
+   Apple Notes' Math Notes does; a tap types it in. A graph is a section like
+   a picture, the column's width, drawn by the notebook's graph painter. */
+
+.finenotes-note-line[data-answer]::after {
+  padding-inline-start: 0.3em;
+  font-weight: 600;
+  color: var(--fn-note-accent);
+  cursor: pointer;
+  content: attr(data-answer);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* A function line's mark: its graph, one tap away (put in under the line). */
+.finenotes-note-line[data-graph]:not([data-answer])::after {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  margin-inline-start: 0.45em;
+  vertical-align: -0.18em;
+  cursor: pointer;
+  content: "";
+  background-color: var(--fn-note-accent);
+  -webkit-mask: var(--fn-graph-mark) center / contain no-repeat;
+  mask: var(--fn-graph-mark) center / contain no-repeat;
+  --fn-graph-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3v18h18'/%3E%3Cpath d='M7 16c2.5-7 5.5-10 12-11'/%3E%3C/svg%3E");
+}
+
+.finenotes-note-graph {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--fn-graph-h, 320px);
+  margin: 8px 0;
+  overflow: hidden;
+  line-height: 0;
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 0.15s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.finenotes-note-graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.finenotes-note-graph.is-selected {
+  outline-color: var(--fn-note-accent);
+}
+
+.finenotes-note-graph.is-selected > .finenotes-note-island-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.finenotes-note-graph.is-lifted {
+  z-index: 5;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+  transform: translateY(var(--fn-lift, 0)) scale(1.015);
+}
+
+button.clickable-icon.finenotes-note-island-button.is-edit {
+  color: var(--text-normal);
+}
+
+/* Text notes: what a search found. Typed words are tinted as Obsidian tints a
+   match; a handwriting section that holds it is outlined until its words light. */
+::highlight(finenotes-note-search) {
+  /* Custom properties reach a highlight from the root, where Obsidian defines none: the fallback is its yellow. */
+  background-color: var(--text-highlight-bg, rgba(255, 208, 0, 0.4));
+}
+
+.finenotes-note-ink.is-search-hit {
+  outline-color: var(--text-highlight-bg);
+}
+
+/* A note's search lists notes and notebooks: each result is headed by its name. */
+.goodobsidian-search-modal .finenotes-search-title {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+/* --- Text notes: recordings ---------------------------------------------------
+   note-recording.ts (the card, the pill, the player) and note-view.ts (the
+   paperclip's recording mark). The notebook's audio buttons are styled
+   inside its own view; the same look here. */
+
+.finenotes-note-view .goodobsidian-audio-button.clickable-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--gob-radius-pill);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  opacity: 1;
+  cursor: pointer;
+}
+
+.finenotes-note-view .goodobsidian-audio-button.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+}
+
+.finenotes-note-view .goodobsidian-audio-button.clickable-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.finenotes-note-view .goodobsidian-rec-pill .goodobsidian-rec-stop.clickable-icon {
+  color: var(--color-red);
+  font-weight: var(--font-semibold, 600);
+}
+
+.finenotes-note-view .goodobsidian-rec-pill .goodobsidian-rec-discard.clickable-icon {
+  color: var(--text-muted);
+}
+
+/* Under the bar, at the right, as in a notebook. */
+.finenotes-note-view .goodobsidian-rec-pill {
+  top: 64px;
+}
+
+/* The player's standing hint is about tapping ink, which a note does not do. */
+.finenotes-note-view .goodobsidian-player-hint:not(.is-message) {
+  display: none;
+}
+
+.finenotes-note-view .goodobsidian-player {
+  bottom: 20px;
+}
+
+/* A recording in the note: play, its name and length, its transcript. */
+.finenotes-note-audio {
+  position: relative;
+  box-sizing: border-box;
+  margin: 8px 0;
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 0.15s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.finenotes-note-audio.is-selected {
+  outline-color: var(--fn-note-accent);
+}
+
+.finenotes-note-audio.is-selected > .finenotes-note-island-bar {
+  top: 50%;
+  display: flex;
+  transform: translateY(-50%);
+}
+
+/* Room for the bin while selected, so it never covers the transcript button. */
+.finenotes-note-audio.is-selected .finenotes-note-audio-card {
+  padding-inline-end: 52px;
+}
+
+.finenotes-note-audio.is-lifted {
+  z-index: 5;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+  transform: translateY(var(--fn-lift, 0)) scale(1.015);
+}
+
+.finenotes-note-audio-card {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: var(--background-secondary);
+}
+
+.finenotes-note-view .finenotes-note-audio-play.clickable-icon {
+  width: var(--gob-touch);
+  padding: 0;
+  border-radius: 50%;
+  background: var(--fn-note-accent);
+  color: var(--text-on-accent);
+}
+
+.finenotes-note-view .finenotes-note-audio-play.clickable-icon:hover {
+  background: var(--fn-note-accent);
+}
+
+.finenotes-note-view .finenotes-note-audio-play.is-active {
+  box-shadow: 0 0 0 3px var(--fn-note-tint);
+}
+
+.finenotes-note-audio-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.finenotes-note-audio-name {
+  overflow: hidden;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finenotes-note-audio-meta {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finenotes-note-audio-card.is-missing .finenotes-note-audio-meta {
+  color: var(--text-error);
+}
+
+/* A transcript there is: the button is tinted, a mark rather than a word. */
+.finenotes-note-view .finenotes-note-audio-transcript.has-transcript {
+  color: var(--fn-note-accent);
+  background: var(--fn-note-tint);
+}
+
+/* Recording: a red dot on the paperclip it was started from. */
+button.clickable-icon.finenotes-note-button.is-recording {
+  position: relative;
+}
+
+button.clickable-icon.finenotes-note-button.is-recording::before {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-red);
+  content: "";
+}
+
+/* --- The note list and search (note-list.ts) ---------------------------------
+   After Apple Notes on the iPad: a search field at the bar's right; the list
+   on the left of the note in the page sidebar's look, its folder's notes, or
+   while searching what was found, in sections, hairlines between rows. */
+
+/* The bar's search field: a pill, the magnifier, a ✕ while it holds words. */
+.finenotes-note-find {
+  display: flex;
+  flex: 0 1 240px;
+  gap: 6px;
+  align-items: center;
+  min-width: 120px;
+  height: 40px;
+  padding: 0 6px 0 14px;
+  border-radius: 999px;
+  /* The bar's pills' own look, so the field reads as one of them. */
+  background: var(--gob-pill-bg);
+  border: var(--gob-bar-border);
+  box-shadow: var(--gob-shadow-float);
+  color: var(--text-faint);
+  -webkit-backdrop-filter: var(--gob-blur, blur(18px) saturate(1.6));
+  backdrop-filter: var(--gob-blur, blur(18px) saturate(1.6));
+}
+
+.finenotes-note-find:focus-within {
+  box-shadow:
+    inset 0 0 0 1.5px var(--interactive-accent),
+    var(--gob-shadow-float);
+}
+
+.finenotes-note-find-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Obsidian styles input[type="search"] above one class: the field says it all again. */
+.finenotes-note-find input[type="search"],
+.finenotes-note-find input[type="search"]:hover,
+.finenotes-note-find input[type="search"]:focus,
+.finenotes-note-find input[type="search"]:focus-visible {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  color: var(--text-normal);
+  /* 16 px: iPadOS zooms into a smaller field on focus. */
+  font-size: 16px;
+}
+
+/* Obsidian's own ✕ in a search field: ours replaces it. */
+.finenotes-note-find input[type="search"]::-webkit-search-cancel-button {
+  display: none;
+}
+
+button.finenotes-note-find-clear.clickable-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+button.finenotes-note-find-clear.clickable-icon.is-hidden,
+button.finenotes-note-button.clickable-icon.is-hidden {
+  display: none;
+}
+
+/* The list: on the left of the note, full height, the bar and the page beside it. */
+.finenotes-note-view > .goodobsidian-pagesidebar.finenotes-note-list {
+  position: absolute;
+  z-index: 14;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-width: 85%;
+  overflow: hidden;
+}
+
+.finenotes-note-view > .goodobsidian-pagesidebar.finenotes-note-list.is-hidden {
+  display: none;
+}
+
+.finenotes-note-view.has-note-list > .finenotes-note-bar,
+.finenotes-note-view.has-note-list > .finenotes-note-scroll {
+  width: auto;
+  margin-left: 320px;
+}
+
+/* Narrow: the list lies over the note instead. */
+@media (max-width: 700px) {
+  .finenotes-note-view.has-note-list > .finenotes-note-bar,
+  .finenotes-note-view.has-note-list > .finenotes-note-scroll {
+    margin-left: 0;
+  }
+
+  .finenotes-note-view > .goodobsidian-pagesidebar.finenotes-note-list {
+    box-shadow: var(--shadow-l);
+  }
+}
+
+/* The head: the toggle, the title (two lines while searching), the ⋯. */
+.finenotes-note-list-head {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  min-height: 60px;
+  padding: 10px 10px 6px;
+}
+
+button.finenotes-note-list-toggle.clickable-icon,
+button.finenotes-note-list-more.clickable-icon {
+  flex: none;
+  width: var(--gob-touch, 40px);
+  height: var(--gob-touch, 40px);
+  padding: 0;
+  border-radius: 50%;
+  color: var(--interactive-accent);
+}
+
+.finenotes-note-list-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.finenotes-note-list-title {
+  overflow: hidden;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-bold, 700);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finenotes-note-list-subtitle {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.finenotes-note-list-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 0 calc(12px + var(--goodobsidian-keyboard-pad, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+/* A section's head: its name, and how many at the right; a hairline under it. */
+.finenotes-note-list-section {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 14px 16px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--gob-line, var(--background-modifier-border));
+}
+
+.finenotes-note-list-section-name {
+  font-weight: var(--font-bold, 700);
+}
+
+.finenotes-note-list-section-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+button.finenotes-note-list-row.clickable-icon {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: stretch;
+  width: calc(100% - 16px);
+  height: auto;
+  margin: 0 8px;
+  padding: 10px 8px;
+  border-radius: 10px;
+  color: var(--text-normal);
+  text-align: left;
+  white-space: normal;
+}
+
+/* Found rows: hairlines between them, as Apple's list draws them. */
+button.finenotes-note-list-row.clickable-icon.is-found {
+  position: relative;
+  border-radius: 0;
+}
+
+button.finenotes-note-list-row.clickable-icon.is-found + .finenotes-note-list-row::before {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  left: 8px;
+  border-top: 1px solid var(--gob-line, var(--background-modifier-border));
+  content: "";
+}
+
+button.finenotes-note-list-row.clickable-icon.is-current {
+  border-radius: 10px;
+  background: var(--fn-note-tint, color-mix(in srgb, var(--interactive-accent) 16%, transparent));
+}
+
+.finenotes-note-list-name {
+  overflow: hidden;
+  font-weight: var(--font-bold, 700);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finenotes-note-list-line {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--font-ui-small);
+}
+
+.finenotes-note-list-when {
+  flex: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.finenotes-note-list
+  > .finenotes-note-list-rows
+  .finenotes-note-list-row:not(.is-found)
+  .finenotes-note-list-when {
+  color: var(--text-muted);
+}
+
+.finenotes-note-list-snippet {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finenotes-note-list-hit {
+  color: var(--interactive-accent);
+}
+
+.finenotes-note-list-folder {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+.finenotes-note-list-folder-icon .svg-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.finenotes-note-list-empty {
+  padding: 24px 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* --- The Ask AI window -------------------------------------------------------
+   ask-window.ts: the chat in a FloatingWindow over a notebook or a text note,
+   as the calculator's window (moved by its bar, sized from its corner). The
+   notebook's sidebar layout (.goodobsidian-chatpanel) is styled above. */
+
+.goodobsidian-ask-window {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  color: var(--text-normal);
+}
+
+.goodobsidian-ask-window-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 4px 0 14px;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.goodobsidian-ask-window.is-front {
+  z-index: 21;
+}
+
+.goodobsidian-ask-window-title {
+  flex: 0 0 auto;
+  margin-right: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+}
+
+/* The reach pill's holder takes the rest of the bar, so the cross stays right. */
+.goodobsidian-ask-window-reach {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+}
+
+button.clickable-icon.goodobsidian-ask-window-button {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  color: var(--gob-icon);
+}
+
+/* While the iPad keyboard covers the window's foot, DialogKeyboard's `pad` lifts the field. */
+.goodobsidian-ask-window-body.goodobsidian-chat {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 0 12px calc(12px + var(--goodobsidian-keyboard-pad, 0px));
+}
+
+.goodobsidian-ask-window .goodobsidian-chat-tool-label {
+  display: none;
+}
+
+.goodobsidian-ask-window-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-faint);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.goodobsidian-ask-window-grip svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* A text note's export (src/view/note-export.ts): its pages export in their
+   own order, so a ticked page shows a tick, never its place. */
+.goodobsidian-export-grid.is-choosing.is-unordered
+  .goodobsidian-export-tile.is-selected
+  .goodobsidian-export-check-icon {
+  display: flex;
+}
+
+.goodobsidian-export-grid.is-choosing.is-unordered
+  .goodobsidian-export-tile.is-selected
+  .goodobsidian-export-check {
+  width: 22px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+}
+
+/* A handwritten sum's answer, after its "=" in a text note's handwriting
+   section: what was read and the answer, in the accent colour; a tap writes it. */
+.finenotes-note-ink button.finenotes-note-ink-answer.clickable-icon {
+  position: absolute;
+  top: var(--fn-answer-y, 0);
+  left: var(--fn-answer-x, 0);
+  z-index: 3;
+  height: var(--fn-answer-h, 28px);
+  padding: 0 10px;
+  font-size: calc(var(--fn-answer-h, 28px) * 0.6);
+  color: var(--interactive-accent);
+  white-space: nowrap;
+  background: hsla(var(--interactive-accent-hsl), 0.12);
+  border-radius: 999px;
+  animation: finenotes-note-tints-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1);
 }

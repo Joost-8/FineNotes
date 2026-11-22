@@ -70,6 +70,26 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Text notes.** A second kind of note beside notebooks, in the manner
+  of Apple Notes: you type into it, and handwriting and pictures sit in
+  sections of their own between the paragraphs. New › New note on Home, the
+  file list's right-click menu, or the command "New text note".
+  - Tap anywhere and type. The first line is the title; the Aa button has
+    Title, Heading, Subheading, Body and Monostyled, bold, italic, underline
+    and strikethrough, bulleted, numbered and check lists, and quotes.
+    Typing `- `, `1. `, `[] `, `> ` or `# ` at the start of a line makes the
+    list or heading, as in Markdown.
+  - The pen button, or simply the pen touching the space under the note,
+    starts a handwriting section. It grows as you write toward its foot,
+    its foot drags to size it, and Done trims it to what it holds. Fingers
+    scroll while the pen writes.
+  - A picture (the picture button, a paste or a drop) takes a line of its
+    own. Tap a picture or a handwriting section to select it: drag it to
+    move it between paragraphs, drag a picture's corner to size it.
+  - The file is ordinary Markdown, `Title.note.md`, named after the note's
+    title: it reads in any Markdown editor, and Obsidian's search, links and
+    sync treat it as a note. Handwriting is kept in a comment Obsidian's
+    reading view hides.
 - **Thank you, sponsors.** When a release comes with new GitHub sponsors,
   Home's what's-new card thanks them by name, then everyone who sponsored
   before them. The heart opens the sponsor page. The README shows every
