@@ -455,6 +455,7 @@ import {
 } from "../recognition/hwr/selection-words";
 import type { SpellingFix } from "./spelling-row";
 import type { WordPopover } from "./word-popover";
+import { TranslateWindow, type TranslateTarget } from "./translate-window";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
 import {
@@ -832,6 +833,8 @@ export class InkView extends TextFileView {
   private marginPopover: MarginPopover | null = null;
   private aiMenu: AiMenuPopover | null = null;
   private calculator: CalculatorPopover | null = null;
+  /** The Translate window, while it is open. */
+  private translateWindow: TranslateWindow | null = null;
   /** The equation window, while one is open (discussion #166). */
   private equationEditor: EquationEditor | null = null;
   /** The graph popped out of the calculator, floating over the notebook. */
@@ -2008,6 +2011,8 @@ export class InkView extends TextFileView {
     this.aiMenu = null;
     this.calculator?.close();
     this.calculator = null;
+    this.translateWindow?.close();
+    this.translateWindow = null;
     this.graphWindow?.close();
     this.graphWindow = null;
     this.equationEditor?.close();
@@ -2699,6 +2704,48 @@ export class InkView extends TextFileView {
    * Open the calculator's window, or close it when it is open: the toolbar's
    * calculator button (or its row in ⋯) toggles it, and its cross closes it.
    */
+  /**
+   * The Translate window: with selected text (from a selection's
+   * Translate), or empty to type into (the Translate tool). One per
+   * notebook; opening it again loads the new text, and the tool closes it.
+   */
+  private openTranslate(target: TranslateTarget | null): void {
+    const open = this.translateWindow?.isOpen ? this.translateWindow : null;
+    if (!target && open) {
+      open.close();
+      return;
+    }
+    const surface = this.surface;
+    const first: TranslateTarget = target ?? {
+      text: "",
+      onInsert: surface ? (text) => void surface.addTextInView(text) : undefined,
+    };
+    if (open) {
+      open.load(first);
+      return;
+    }
+    const settings = this.plugin.settings;
+    this.translateWindow = new TranslateWindow(
+      {
+        container: this.contentEl,
+        translator: this.plugin.translator,
+        memory: {
+          from: () => settings.translateFrom ?? "",
+          to: () => settings.translateTo ?? "",
+          remember: (from, to) => {
+            settings.translateFrom = from;
+            settings.translateTo = to;
+            void this.plugin.saveSettings();
+          },
+        },
+        onClosed: () => {
+          this.translateWindow = null;
+        },
+      },
+      first,
+    );
+  }
+
   private toggleCalculator(): void {
     const open = this.calculator;
     this.calculator = null;
@@ -4774,6 +4821,7 @@ export class InkView extends TextFileView {
         onInsertPdf: (anchor) => this.openImageMenu(anchor, true),
         onAi: (anchor) => this.openAiMenu(anchor),
         onCalculator: () => this.toggleCalculator(),
+        onTranslate: () => this.openTranslate(null),
         // Inside the tap: the microphone is only granted from a user gesture.
         onRecord: () => this.audio?.toggleRecording(),
         onSettings: () => this.openNoteSettings(),
@@ -4958,6 +5006,7 @@ export class InkView extends TextFileView {
             : this.showScreenshot({ png, width, height }),
         onAskAboutSelection: (index, bounds) => void this.askAboutSelection(index, bounds),
         canAskAi: () => textAvailability(this.plugin.aiSetup()).enabled,
+        onTranslate: (target) => this.openTranslate(target),
         onRegionScreenshot: (index, bounds) => void this.screenshotRegion(index, bounds),
         // Snippets: an area of a slide dragged from its tab onto the notes.
         onSnippetStart: (index, area, viewScale) => this.startSnippet(index, area, viewScale),

@@ -602,4 +602,34 @@ export const ai = {
     "FineNotes: removed {count} other OCR models ({size}) and the folder of an old version.",
   "ai.ocr.pageFailed":
     "FineNotes: a scanned PDF page could not be read on this device. The page stays as it is; details are in the developer console.",
+
+  // --- Translating selected text on this device ---------------------------
+  "ai.translate.title": "Translate",
+  "ai.translate.from": "Translate from",
+  "ai.translate.into": "Translate into",
+  "ai.translate.detect": "Detect language",
+  /** {language} is the language recognised in the text ("Dutch"). */
+  "ai.translate.detected": "{language} · detected",
+  "ai.translate.swap": "Swap languages",
+  "ai.translate.source": "Text to translate",
+  "ai.translate.placeholder": "Type or paste text",
+  "ai.translate.clear": "Clear",
+  "ai.translate.result": "Translation",
+  "ai.translate.speak": "Read aloud",
+  "ai.translate.insert": "Add as text box",
+  "ai.translate.replace": "Replace the text",
+  "ai.translate.working": "Translating…",
+  /** {from} and {to} are language names ("Dutch", "English"). */
+  "ai.translate.downloadTitle": "{from} → {to}",
+  "ai.translate.downloadDetail": "One-time download · {size}",
+  "ai.translate.downloading": "Downloading · {percent} %",
+  "ai.translate.private": "From Mozilla. What you translate stays on this device.",
+  "ai.translate.unsupported": "{from} → {to} cannot be translated on this device.",
+  "ai.translate.failed": "Could not translate: {message}",
+  "ai.translate.engineLabel": "Translation engine",
+  "ai.translate.enginePurpose":
+    "Translates selected text on this device and recognises its language.",
+  "ai.translate.pairLabel": "Translation {from} → {to}",
+  "ai.translate.pairPurpose": "Translates {from} into {to} on this device.",
+  "ai.translate.noAnswer": "The translation engine stopped answering.",
 } as const;
