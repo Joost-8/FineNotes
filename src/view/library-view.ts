@@ -93,23 +93,7 @@ import {
   updateButtonLook,
 } from "../model/update-button";
 import { inkFileSuffix } from "../model/new-notebook";
-import {
-  type ShowKind,
-  type SmartFolder,
-  nextPick,
-  showKindOf,
-  shownBy,
-  tagCounts,
-} from "../model/note-organise";
-import {
-  type OrganiseHost,
-  convertToSmart,
-  editSmartFolder,
-  newSmartFolder,
-  onSmartFolders,
-  tagsOf,
-} from "./note-organiser";
-import { type TagView, itemsOf, picked, smartTile, tagRow } from "./library-organise";
+import { type ShowKind, showKindOf, shownBy } from "../model/note-listing";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
 import {
@@ -210,8 +194,6 @@ export interface LibraryHost {
   exportPdf(file: TFile): Promise<void>;
   /** Whether a file is an ink note: a notebook, a single page, a board, or a pre-0.2 `.ink.md`. */
   isInkFile(file: TFile): boolean;
-  /** The smart folders (`note-organiser.ts`); absent: Home shows none. */
-  organise?: OrganiseHost;
 }
 
 /** A folder as the library lists it. */
@@ -374,8 +356,6 @@ export class LibraryView extends ItemView {
     (this.app.loadLocalStorage(SHOW_KEY) as string | null) ??
       (this.app.loadLocalStorage(ONLY_NOTEBOOKS_KEY) as string | null),
   );
-  /** The Tag Browser or a smart folder, shown instead of a folder; null for the folders. */
-  private tagView: TagView | null = null;
   /** The simple look as of the last paint, so a change of it repaints. */
   private simple = false;
   private previewEl!: HTMLElement;
@@ -450,9 +430,7 @@ export class LibraryView extends ItemView {
     setIcon(this.upEl, "arrow-left");
     this.makeDropTarget(this.upEl, () => this.folder.split("/").slice(0, -1).join("/"));
     this.upEl.addEventListener("click", () =>
-      this.tagView
-        ? this.openTagView(null)
-        : this.openFolder(this.folder.split("/").slice(0, -1).join("/")),
+      this.openFolder(this.folder.split("/").slice(0, -1).join("/")),
     );
     this.titleEl = head.createEl("h4", { cls: "goodobsidian-library-title" });
 
@@ -657,13 +635,6 @@ export class LibraryView extends ItemView {
     // Stars and folder looks follow renames and deletes in the plugin (main.ts), Home open or not.
     this.registerEvent(this.app.vault.on("rename", listed));
     this.registerEvent(this.app.vault.on("modify", touched));
-    // A text note's tags changed: the Tags row and the smart folders follow.
-    this.registerEvent(
-      this.app.metadataCache.on("changed", (file) => {
-        if (isTextNoteName(file.name)) listed();
-      }),
-    );
-    this.registerEvent(onSmartFolders(this.app, listed));
 
     // A notebook read since: its place has moved.
     this.registerEvent(
@@ -1128,10 +1099,6 @@ export class LibraryView extends ItemView {
     }
     this.hitsEl = null;
     window.clearTimeout(this.hitsTimer);
-    if (this.tagView) {
-      this.paintTagView(this.tagView, all.filter(keep));
-      return;
-    }
 
     const left = this.lastPages();
     const stars = this.host.stars();
@@ -1186,7 +1153,6 @@ export class LibraryView extends ItemView {
       for (const folder of starredFirst(folders, stars, (f) => f.path))
         this.folderCard(row, folder);
     }
-    if (this.folder === "") this.paintOrganise(all.filter(keep));
     // At the top, the root's own files, then every notebook in the vault; inside a folder,
     // its notebooks and files together.
     const atTop = this.folder === "";
@@ -1230,121 +1196,6 @@ export class LibraryView extends ItemView {
 
   private label(text: string): void {
     this.bodyEl.createDiv({ cls: "goodobsidian-library-label", text });
-  }
-
-  // --- Tags and smart folders (library-organise.ts) ---------------------------------
-
-  /** Each item with its tags, as Obsidian indexed them. */
-  private tagged(entries: readonly LibraryEntry[]): Array<LibraryEntry & { tags: string[] }> {
-    return entries.map((entry) => {
-      const file = this.app.vault.getFileByPath(entry.path);
-      return { ...entry, tags: file ? tagsOf(this.app, file) : [] };
-    });
-  }
-
-  private smartFolders(): readonly SmartFolder[] {
-    return this.host.organise?.smartFolders() ?? [];
-  }
-
-  /** At the top, under the folders: the smart folders, then the tags (Apple's folder list, then its Tag Browser). */
-  private paintOrganise(entries: readonly LibraryEntry[]): void {
-    const items = this.tagged(entries);
-    const smart = this.smartFolders();
-    if (smart.length > 0) {
-      this.label(t("notebooks.organise.smartFolders"));
-      const row = this.bodyEl.createDiv({ cls: this.gridClass() });
-      for (const folder of smart) {
-        const count = itemsOf({ kind: "smart", id: folder.id }, items, smart).length;
-        smartTile(
-          row,
-          folder,
-          count,
-          () => this.openTagView({ kind: "smart", id: folder.id }),
-          (event) => this.openSmartMenu(event, folder),
-        );
-      }
-    }
-    const counts = tagCounts(items);
-    if (counts.length === 0) return;
-    this.label(t("notebooks.organise.tags"));
-    tagRow(
-      this.bodyEl,
-      counts,
-      () => "off",
-      (tag) =>
-        this.openTagView({ kind: "tags", picks: new Map(tag === null ? [] : [[tag, "on"]]) }),
-    );
-  }
-
-  /** The Tag Browser or a smart folder, in place of a folder's covers. */
-  private paintTagView(view: TagView, entries: readonly LibraryEntry[]): void {
-    const items = this.tagged(entries);
-    const smart = this.smartFolders();
-    this.upEl.removeClass("is-hidden");
-    if (view.kind === "smart") {
-      const folder = smart.find((f) => f.id === view.id);
-      if (!folder) {
-        this.tagView = null;
-        this.paintNow();
-        return;
-      }
-      this.titleEl.setText(folder.name);
-    } else {
-      const { on } = picked(view);
-      this.titleEl.setText(
-        on.length > 0 ? on.map((tag) => `#${tag}`).join(" ") : t("notebooks.organise.allTags"),
-      );
-      tagRow(
-        this.bodyEl,
-        tagCounts(items),
-        (tag) => view.picks.get(tag) ?? "off",
-        (tag) => {
-          if (tag === null) view.picks.clear();
-          else {
-            const next = nextPick(view.picks.get(tag) ?? "off");
-            if (next === "off") view.picks.delete(tag);
-            else view.picks.set(tag, next);
-          }
-          this.paintNow();
-        },
-      );
-    }
-    const found = itemsOf(view, items, smart);
-    if (found.length === 0) {
-      this.bodyEl.createDiv({
-        cls: "goodobsidian-library-empty",
-        text: t("notebooks.organise.noNotes"),
-      });
-      return;
-    }
-    const grid = this.bodyEl.createDiv({ cls: this.gridClass() });
-    for (const entry of sortEntries(found, this.sort, this.reverse)) this.card(grid, entry);
-  }
-
-  private openTagView(view: TagView | null): void {
-    this.tagView = view;
-    this.paintNow(true);
-  }
-
-  /** A smart folder's ⌄: edit it, or delete it (its notes stay where they are). */
-  private openSmartMenu(event: MouseEvent, folder: SmartFolder): void {
-    const host = this.host.organise;
-    if (!host) return;
-    const menu = this.newMenu();
-    menu.addItem((item) =>
-      item
-        .setTitle(t("notebooks.organise.editSmart"))
-        .setIcon("pencil")
-        .onClick(() => editSmartFolder(this.app, host, folder)),
-    );
-    menu.addSeparator();
-    menu.addItem((item) =>
-      item
-        .setTitle(t("common.delete"))
-        .setIcon("trash-2")
-        .onClick(() => host.setSmartFolders(host.smartFolders().filter((f) => f.id !== folder.id))),
-    );
-    this.show(menu, event);
   }
 
   /** A heading with a caret that folds what is under it; the choice is kept on this device. */
@@ -2640,7 +2491,6 @@ export class LibraryView extends ItemView {
 
   private openFolder(folder: string): void {
     this.folder = folder;
-    this.tagView = null;
     this.query = "";
     const input = this.contentEl.querySelector<HTMLInputElement>(
       ".goodobsidian-library-search input",
@@ -2693,18 +2543,6 @@ export class LibraryView extends ItemView {
             this.app.saveLocalStorage(SHOW_KEY, show);
             this.paintNow(true);
           }),
-      );
-    }
-    const organise = this.host.organise;
-    if (organise) {
-      const view = this.tagView;
-      menu.addItem((item) =>
-        item
-          .setTitle(t("notebooks.organise.newSmart"))
-          .setIcon("folder-cog")
-          .onClick(() =>
-            newSmartFolder(this.app, organise, view?.kind === "tags" ? picked(view).on : []),
-          ),
       );
     }
     menu.addSeparator();
@@ -3092,15 +2930,6 @@ export class LibraryView extends ItemView {
         .setIcon("folder-input")
         .onClick(() => this.move(target)),
     );
-    const organise = this.host.organise;
-    if (organise) {
-      menu.addItem((item) =>
-        item
-          .setTitle(t("notebooks.organise.convert"))
-          .setIcon("folder-cog")
-          .onClick(() => convertToSmart(this.app, organise, folder.path)),
-      );
-    }
     menu.addSeparator();
     menu.addItem((item) =>
       item

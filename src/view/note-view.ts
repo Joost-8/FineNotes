@@ -69,7 +69,7 @@ import type { ReadingGuard } from "../recognition/reading-guard";
 import { type ReadLine, lineHits } from "../search/hit-strokes";
 import { noteHits } from "../search/note-search";
 import { NoteList } from "./note-list";
-import { type OrganiseHost, onSmartFolders } from "./note-organiser";
+import { DialogKeyboard } from "./dialog-keyboard";
 import { NoteExtras } from "./note-extras";
 import { type NoteExportHost, shareMenu } from "./note-export";
 import type GoodObsidianPlugin from "../main";
@@ -98,8 +98,6 @@ export interface TextNoteHost {
   reading?: NoteReadingHost;
   /** For recordings, their transcription and Ask AI (`note-extras.ts`); absent in the UI gallery. */
   plugin?: GoodObsidianPlugin;
-  /** The smart folders, for the note list's menu; absent: none. */
-  organise?: OrganiseHost;
 }
 
 /** What reading a note's handwriting on the device needs from the plugin. */
@@ -294,6 +292,9 @@ export class TextNoteView extends TextFileView {
   private extras: NoteExtras | null = null;
   /** The list of notes beside the note, with its search (`note-list.ts`). */
   private list: NoteList | null = null;
+  /** The bar's search field, and what keeps it working above the iPad keyboard. */
+  private findField: HTMLInputElement | null = null;
+  private findKeyboard: DialogKeyboard | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -309,8 +310,9 @@ export class TextNoteView extends TextFileView {
     const mark = (modifiers: Modifier[], key: string, marks: Marks): void => {
       this.scope?.register(modifiers, key, () => {
         if (!this.editor || this.editor.isDrawing()) return true;
-        // Typing a question in the Ask AI window: the keys are the field's.
-        if (this.contentEl.doc.activeElement?.closest(".goodobsidian-ask-window")) return true;
+        // Typing a question in the Ask AI window, or a search in the bar: the keys are the field's.
+        const active = this.contentEl.doc.activeElement;
+        if (active?.closest(".goodobsidian-ask-window, .finenotes-note-find")) return true;
         this.editor.toggleMark(marks);
         return false;
       });
@@ -422,7 +424,6 @@ export class TextNoteView extends TextFileView {
       tableLabel: (key) => t(TABLE_LABELS[key]),
       linkNames: () => this.app.vault.getMarkdownFiles().map((file) => file.basename),
       openLink: (target) => void this.app.workspace.openLinkText(target, this.file?.path ?? ""),
-      openTag: (tag) => this.openTag(tag),
       foldsChanged: (titles) => {
         const path = this.file?.path;
         if (!path) return;
@@ -471,21 +472,20 @@ export class TextNoteView extends TextFileView {
       app: this.app,
       file: () => this.file,
       note: () => this.editor?.current() ?? null,
-      smartFolders: () => this.host.organise?.smartFolders() ?? [],
+      // The bar's toggle hides while the list shows its own, as Apple Notes does.
       toggled: (open) => {
         content.toggleClass("has-note-list", open);
-        this.buttons.get("list")?.toggleClass("is-active", open);
+        this.buttons.get("list")?.toggleClass("is-hidden", open);
       },
+      clearSearch: () => this.setFind(""),
     });
     this.buildBar(this.bar);
-    this.buttons.get("list")?.toggleClass("is-active", this.list.isOpen);
-    // The list follows notes made, gone, renamed or retagged, and the smart folders.
+    this.buttons.get("list")?.toggleClass("is-hidden", this.list.isOpen);
+    // The list follows notes made, gone or renamed.
     const relist = (): void => this.list?.refresh();
     this.registerEvent(this.app.vault.on("create", relist));
     this.registerEvent(this.app.vault.on("delete", relist));
     this.registerEvent(this.app.vault.on("rename", relist));
-    this.registerEvent(this.app.metadataCache.on("changed", relist));
-    this.registerEvent(onSmartFolders(this.app, relist));
     this.palette = content.createDiv({ cls: "finenotes-note-palette" });
     this.buildPalette();
     this.refresh();
@@ -547,6 +547,9 @@ export class TextNoteView extends TextFileView {
     this.extras = null;
     this.list?.destroy();
     this.list = null;
+    this.findKeyboard?.end();
+    this.findKeyboard = null;
+    this.findField = null;
     this.editor?.destroy();
     this.editor = null;
     this.buttons.clear();
@@ -609,7 +612,7 @@ export class TextNoteView extends TextFileView {
     const left = bar.createDiv({ cls: "finenotes-note-bar-group is-left" });
     const where = this.pill(left);
     // The note list, first in the bar as Apple Notes' sidebar button is.
-    this.button(where, "list", "panel-left", "notebooks.organise.list", () =>
+    this.button(where, "list", "panel-left", "notebooks.noteList.toggle", () =>
       this.list?.setOpen(!this.list.isOpen),
     );
     if (this.host.fullScreenOffered()) {
@@ -663,9 +666,60 @@ export class TextNoteView extends TextFileView {
       this.closeStyles();
       this.editor?.setDrawing(!this.editor.isDrawing());
     });
-    // Search, at the bar's far end as in Apple Notes: it opens the note list with its field.
-    const find = this.pill(right);
-    this.button(find, "search", "search", "notebooks.note.search", () => this.openSearch());
+    this.buildFind(right);
+  }
+
+  /**
+   * Search, at the bar's far end as in Apple Notes: a field. Typing in it
+   * shows what it found in the note list on the left; the ✕ (or Escape)
+   * ends the search and gives the list its folder back.
+   */
+  private buildFind(parent: HTMLElement): void {
+    const find = parent.createDiv({ cls: "finenotes-note-find" });
+    setIcon(find.createSpan({ cls: "finenotes-note-find-icon" }), "search");
+    const field = find.createEl("input", {
+      attr: {
+        type: "search",
+        placeholder: t("notebooks.noteSearch.placeholder"),
+        "aria-label": t("notebooks.note.search"),
+        enterkeyhint: "search",
+        autocomplete: "off",
+        spellcheck: "false",
+      },
+    });
+    const clear = find.createEl("button", {
+      cls: "clickable-icon finenotes-note-find-clear is-hidden",
+      attr: { type: "button", "aria-label": t("notebooks.noteSearch.clear") },
+    });
+    setIcon(clear, "x");
+    clear.addEventListener("pointerdown", (event) => event.preventDefault());
+    clear.addEventListener("click", () => this.setFind(""));
+    field.addEventListener("input", () => {
+      this.closeStyles();
+      clear.toggleClass("is-hidden", field.value === "");
+      this.list?.setQuery(field.value);
+    });
+    field.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      this.setFind("");
+      field.blur();
+    });
+    this.findField = field;
+    // The iPad keyboard: Obsidian's cap is lifted while typing, as in every field of ours.
+    this.findKeyboard = new DialogKeyboard(find, { pad: true });
+    this.findKeyboard.watch(field, find);
+  }
+
+  /** Set the bar's search field (empty ends the search). */
+  private setFind(query: string): void {
+    const field = this.findField;
+    if (!field) return;
+    field.value = query;
+    field.parentElement
+      ?.querySelector(".finenotes-note-find-clear")
+      ?.toggleClass("is-hidden", query === "");
+    this.list?.setQuery(query);
   }
 
   private exportHost(): NoteExportHost {
@@ -1059,16 +1113,6 @@ export class TextNoteView extends TextFileView {
     this.refresh();
   }
 
-  /** Search the vault for a tag, in Obsidian's own search (as its tags do). */
-  private openTag(tag: string): void {
-    const plugins: unknown = (this.app as unknown as { internalPlugins?: unknown }).internalPlugins;
-    const search = (
-      plugins as { getPluginById?: (id: string) => unknown } | undefined
-    )?.getPluginById?.("global-search") as
-      { instance?: { openGlobalSearch?: (query: string) => void } } | undefined;
-    search?.instance?.openGlobalSearch?.(`tag:${tag}`);
-  }
-
   // -------------------------------------------------------------- the calculator
 
   /**
@@ -1235,16 +1279,6 @@ export class TextNoteView extends TextFileView {
   }
 
   // -------------------------------------------------------------- search
-
-  /**
-   * Search every text note and notebook, this note's folder first: the
-   * note list opens on the left with its field focused (Apple Notes'
-   * sidebar search), the button staying at the bar's right.
-   */
-  private openSearch(): void {
-    this.closeStyles();
-    this.list?.search();
-  }
 
   /**
    * `{ noteBlock }`: Home opened the note at a page of its preview, which

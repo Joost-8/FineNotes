@@ -1,26 +1,24 @@
 /**
- * Links and tags in a text note's typed text, found as Obsidian finds them:
- * `[[Note]]`, `[[Note|shown text]]`, `[[Note#Heading]]`, and `#tag`. PURE.
+ * Links in a text note's typed text, found as Obsidian finds them:
+ * `[[Note]]`, `[[Note|shown text]]`, `[[Note#Heading]]`. PURE.
  *
  * The page draws them as links while you type (`note-editor.ts`); the
- * Markdown on disk is unchanged, so Obsidian's own links, backlinks and tag
- * pane see them as in any note.
+ * Markdown on disk is unchanged, so Obsidian's own links and backlinks see
+ * them as in any note.
  */
 
 export interface TextMark {
-  readonly kind: "link" | "tag";
+  readonly kind: "link";
   /** Character offsets in the line, end exclusive. */
   readonly from: number;
   readonly to: number;
-  /** A link's target (without its `|text` or `#heading`), or a tag's name with its `#`. */
+  /** The link's target, without its `|text` or `#heading`. */
   readonly target: string;
 }
 
 const LINK = /\[\[([^[\]\n|]+?)(?:\|[^[\]\n]*)?\]\]/g;
-/** A tag: `#` after a space or the line's start, then letters, digits, `_`, `-`, `/`; not all digits. */
-const TAG = /(^|[\s(])(#[\p{L}\p{N}_\-/]*[\p{L}_\-/][\p{L}\p{N}_\-/]*)/gu;
 
-/** The links and tags in a line of text, in order; a tag inside a link is the link's. */
+/** The links in a line of text, in order. */
 export function findMarks(text: string): TextMark[] {
   const out: TextMark[] = [];
   for (const match of text.matchAll(LINK)) {
@@ -28,13 +26,7 @@ export function findMarks(text: string): TextMark[] {
     const target = match[1].split("#")[0].trim() || match[1].trim();
     out.push({ kind: "link", from, to: from + match[0].length, target });
   }
-  for (const match of text.matchAll(TAG)) {
-    const from = (match.index ?? 0) + match[1].length;
-    const to = from + match[2].length;
-    if (out.some((m) => m.kind === "link" && from < m.to && to > m.from)) continue;
-    out.push({ kind: "tag", from, to, target: match[2] });
-  }
-  return out.sort((a, b) => a.from - b.from);
+  return out;
 }
 
 /** A short key for a line's marks: the page redraws a line only when it changes. */

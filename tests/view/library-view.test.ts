@@ -23,17 +23,11 @@ function viewOn(paths: string[]) {
   const vault = memoryVault(paths);
   const leafHandlers: ((leaf: unknown) => void)[] = [];
   const workspace = {
-    on: (name: string, handler: (leaf: unknown) => void) =>
-      name === "active-leaf-change" ? leafHandlers.push(handler) : 0,
+    on: (_name: string, handler: (leaf: unknown) => void) => leafHandlers.push(handler),
     /** The user taps a tab. */
     activate: (leaf: unknown) => leafHandlers.forEach((handler) => handler(leaf)),
   };
-  const app = {
-    ...vault.app,
-    workspace,
-    metadataCache: { on: () => ({}), getFileCache: () => null },
-    loadLocalStorage: () => null,
-  };
+  const app = { ...vault.app, workspace, loadLocalStorage: () => null };
   // The plugin's isInkFile, by name only: these fakes have no frontmatter.
   const host = {
     isInkFile: (file: FakeFile) => /.(notebook|page|practice|ink).md$/i.test(file.name),
