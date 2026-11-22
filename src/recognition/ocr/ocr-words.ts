@@ -109,6 +109,27 @@ export const OCR_TUNING = {
   figurePad: 6,
   /** A sparse page with a picture covering this share of it is a scan: the whole page is read. */
   scannedShare: 0.6,
+  /**
+   * A page is cut into this many bands from top to bottom to see how far its
+   * own text runs down it ({@link textSpread}) ...
+   */
+  designBands: 12,
+  /**
+   * ... and a picture filling the page is the page's design, not a figure,
+   * when the page's own text lies in at least this share of the bands: it is
+   * not read. Measured on the vault (2026-11-22): a textbook whose every page
+   * is a full-page image of boxes and borders under real text (De finale
+   * 2025) puts text in 0.75 of the bands or more on nine pages in ten; a
+   * slide's title over a full-slide screenshot, 0.08 to 0.17.
+   */
+  designSpread: 0.5,
+  /**
+   * "Filling the page": to within this share of each side's length, on every
+   * side. That textbook's pictures fill their pages to 0.3 pt (0.05 %); the
+   * screenshots and plots on the vault's slides behind as much text stop
+   * 37 pt (13 %) and 110 pt (20 %) short of an edge.
+   */
+  designEdge: 0.01,
   /** A figure is drawn at its stored resolution, but at least this ... (the page rate, OCR_DPI) */
   figureMinDpi: 170,
   /** ... and at most this, dpi: past it the recogniser gains nothing and memory is lost. */
@@ -159,6 +180,31 @@ export function nativeCoverage(layout: TextLayout): { chars: number; area: numbe
     }
   }
   return { chars, area };
+}
+
+/**
+ * The share of the page's horizontal bands (`tuning.designBands`, top to
+ * bottom) that hold a character of its own text: how far down the page that
+ * text runs, whatever its size. 0 for a page without text.
+ */
+export function textSpread(
+  layout: TextLayout,
+  pageHeight: number,
+  tuning: OcrTuning = OCR_TUNING,
+): number {
+  const bands = tuning.designBands;
+  if (!(pageHeight > 0) || bands < 1) return 0;
+  const used = new Set<number>();
+  for (const line of layout.lines) {
+    for (let i = line.start; i < line.end; i++) {
+      const c = layout.chars[i];
+      if (c.virtual || c.ch.trim() === "") continue;
+      const middle = (line.top + line.bottom) / 2 / pageHeight;
+      used.add(Math.min(bands - 1, Math.max(0, Math.floor(middle * bands))));
+      break;
+    }
+  }
+  return used.size / bands;
 }
 
 /**

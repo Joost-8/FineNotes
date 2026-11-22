@@ -449,6 +449,8 @@ export const notebooks = {
   "notebooks.hint.shape": "When strokes become shapes: tap the pen in hand, then Pen gestures.",
   "notebooks.notice.readingCrash":
     'FineNotes: Obsidian closed while page {page} of "{name}" was being read on this device. That page is skipped until it changes, and reading on this device is paused until Obsidian restarts. If this happens again, turn off "Read handwriting on this device" in the settings.',
+  "notebooks.notice.ocrCrash":
+    'FineNotes: Obsidian closed while page {page} of "{name}" was being read for search on this device. That PDF is not read on this device again; its own text can still be searched. If this happens with other PDFs, turn off "Scanned pages" in the AI menu.',
   "notebooks.notice.keysMoved.one":
     "FineNotes moved your API key out of this vault's plugin data into Obsidian's keychain (Settings → Keychain). If another device asks for a key, enter it there once.",
   "notebooks.notice.keysMoved.other":

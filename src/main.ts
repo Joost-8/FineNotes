@@ -480,6 +480,7 @@ export default class GoodObsidianPlugin extends Plugin {
       tier: () => effectiveOcrTier(this.settings.ocrModel, Platform.isMobile),
       mobile: () => Platform.isMobile,
       offer: (ask) => this.offerOcrReader(ask),
+      guard: () => this.ocrGuard,
     }).deps,
   );
 
@@ -526,6 +527,8 @@ export default class GoodObsidianPlugin extends Plugin {
    * from being read again at every launch (set up in `onload`).
    */
   readingGuard!: ReadingGuard;
+  /** The same for reading PDF pages (ocr-service.ts); null until the plugin has loaded. */
+  ocrGuard: ReadingGuard | null = null;
 
   /** Learning the user's handwriting, in the background; one run at a time. */
   readonly learner = new HandwritingLearner(() => this.learningHost());
@@ -1704,9 +1707,41 @@ export default class GoodObsidianPlugin extends Plugin {
       this.manifest.version,
     );
     const crash = this.readingGuard.crash;
+    if (crash) {
+      const name = crash.path.split("/").pop() ?? crash.path;
+      new Notice(t("notebooks.notice.readingCrash", { page: crash.page, name }), 20_000);
+    }
+    this.setUpOcrGuard();
+  }
+
+  /**
+   * The OCR's own crash marks, beside the handwriting reader's: a PDF whose
+   * reading took Obsidian down on this device is not read here again
+   * (ocr-service.ts). Lifted while the app is in the background, which
+   * iPadOS may end at any time through no fault of the PDF.
+   */
+  private setUpOcrGuard(): void {
+    const key = "finenotes:device-ocr";
+    const guard = new ReadingGuard(
+      {
+        load: () => {
+          const raw: unknown = this.app.loadLocalStorage(key);
+          return raw;
+        },
+        save: (value) => this.app.saveLocalStorage(key, value),
+      },
+      this.manifest.version,
+    );
+    this.ocrGuard = guard;
+    if (typeof document !== "undefined") {
+      this.registerDomEvent(document, "visibilitychange", () =>
+        guard.setHidden(document.visibilityState === "hidden"),
+      );
+    }
+    const crash = guard.crash;
     if (!crash) return;
     const name = crash.path.split("/").pop() ?? crash.path;
-    new Notice(t("notebooks.notice.readingCrash", { page: crash.page, name }), 20_000);
+    new Notice(t("notebooks.notice.ocrCrash", { page: crash.page, name }), 20_000);
   }
 
   // --- API keys and AI configuration -----------------------------------------

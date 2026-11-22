@@ -43,7 +43,13 @@ import { type PageGeometry, type PdfBackdrop, pdfFrameOf } from "../model/docume
 import { classifyPage } from "../recognition/ocr/figures";
 import { wordsOfLayout } from "../recognition/ocr/ocr-text";
 import { parseWordList } from "../recognition/hwr/corrections";
-import { isSparse, mergedItems, nativeBoxes } from "../recognition/ocr/ocr-words";
+import {
+  OCR_TUNING,
+  isSparse,
+  mergedItems,
+  nativeBoxes,
+  textSpread,
+} from "../recognition/ocr/ocr-words";
 import { type OperatorPageLike, opCodes, readFigures } from "./pdf-figures";
 import { type TextWorker, workerTextDocument } from "./pdf-worker-text";
 import type { OcrOwner, OcrService } from "./ocr-service";
@@ -477,11 +483,8 @@ export class PdfTextCache implements OcrOwner {
     const ocr = this.ocr;
     if (!ocr?.enabled) return native;
     const figures = ocr.figures === true;
-    const sparse = isSparse(
-      layoutText(native, pdfToPage(viewport, source, source)),
-      source.width,
-      source.height,
-    );
+    const layout = layoutText(native, pdfToPage(viewport, source, source));
+    const sparse = isSparse(layout, source.width, source.height);
     // Pictures are not looked at (the setting is off): only sparse pages are read, as before.
     if (!sparse && !figures) {
       ocr.settled(backdrop.path, backdrop.page);
@@ -529,7 +532,7 @@ export class PdfTextCache implements OcrOwner {
     const scan = operators
       ? await readFigures({ getOperatorList: operators }, await this.operators(), viewport, source)
       : null;
-    const plan = classifyPage(sparse, scan, source);
+    const plan = classifyPage(sparse, scan, source, OCR_TUNING, textSpread(layout, source.height));
     if (plan.condition === "TEXT_ONLY") {
       ocr.settled(backdrop.path, backdrop.page);
       // Only a page whose pictures were looked at is known to need nothing.

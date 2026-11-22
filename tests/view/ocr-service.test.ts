@@ -13,13 +13,16 @@ import {
   withPage,
 } from "../../src/recognition/ocr/ocr-cache";
 import { OCR_MODEL, OCR_TIERS } from "../../src/recognition/ocr/ocr-model";
+import { ReadingGuard } from "../../src/recognition/reading-guard";
 import type { OcrPage } from "../../src/recognition/ocr/ocr-words";
 import {
   IDLE_MS,
   MODEL_RECHECK_MS,
   MAX_FAILURES,
   type NativeInfo,
+  OCR_GUARD_KEY,
   type OcrDeps,
+  type OcrGuard,
   type OcrOwner,
   OcrService,
   RETRY_MS,
@@ -83,7 +86,7 @@ function tierModel(i: number): ActiveOcrModel {
   };
 }
 
-function rig(options: { ready?: boolean; ink?: boolean } = {}) {
+function rig(options: { ready?: boolean; ink?: boolean; guard?: OcrGuard } = {}) {
   const log = {
     rendered: [] as string[],
     closed: 0,
@@ -238,6 +241,7 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
       };
     },
     sleep: () => new Promise((resolve) => setTimeout(resolve, 0)),
+    guard: () => options.guard ?? null,
   };
   const service = new OcrService(deps);
   const owner = {
@@ -285,6 +289,22 @@ function rig(options: { ready?: boolean; ink?: boolean } = {}) {
     advance,
     makeReady,
   };
+}
+
+/** A reading guard on an in-memory store, as the plugin keeps one on the device's storage. */
+function memoryGuard(raw: string | null = null, version = "1.0.0") {
+  const store = { value: raw, saves: [] as string[] };
+  const guard = new ReadingGuard(
+    {
+      load: () => store.value,
+      save: (value) => {
+        store.value = value;
+        store.saves.push(value);
+      },
+    },
+    version,
+  );
+  return { guard, store };
 }
 
 describe("OcrService", () => {
@@ -1111,5 +1131,67 @@ describe("OcrService", () => {
       expect(r.files.has(sidecar("a.pdf"))).toBe(false);
       expect(r.owner.ready).toEqual([]);
     });
+  });
+});
+
+describe("OcrService after Obsidian closed mid-reading", () => {
+  it("marks the PDF while a page is read and clears the mark when it is done", async () => {
+    const { guard, store } = memoryGuard();
+    const r = rig({ guard });
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+    await r.settle();
+    expect(r.log.read).toHaveLength(1);
+    const marks = store.saves.map((v) => (JSON.parse(v) as { reading: unknown }).reading);
+    expect(marks).toContainEqual({
+      path: "a.pdf",
+      key: OCR_GUARD_KEY,
+      hash: hashOf("a.pdf"),
+      page: 1,
+    });
+    expect(JSON.parse(store.value ?? "{}")).toMatchObject({ reading: null });
+  });
+
+  it("clears the mark when a page fails, so a failure is not taken for a crash", async () => {
+    const { guard, store } = memoryGuard();
+    const r = rig({ guard });
+    r.state.failRender = true;
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+    await r.settle();
+    expect(JSON.parse(store.value ?? "{}")).toMatchObject({ reading: null });
+  });
+
+  it("reads nothing more of a PDF whose reading was never finished, and other PDFs as before", async () => {
+    // What the last run left behind: a mark on a.pdf that was never lifted.
+    const left = JSON.stringify({
+      version: "1.0.0",
+      reading: { path: "a.pdf", key: OCR_GUARD_KEY, hash: hashOf("a.pdf"), page: 4 },
+      crashed: [],
+    });
+    const { guard } = memoryGuard(left);
+    expect(guard.crash).toMatchObject({ path: "a.pdf", page: 4 });
+    const r = rig({ guard });
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+    r.service.want(r.owner, "b.pdf", 0, 1, NONE);
+    await r.advance(IDLE_MS + 5000);
+    expect(r.log.rendered.every((x) => x.startsWith("b.pdf"))).toBe(true);
+    expect(r.log.read).toHaveLength(1);
+    expect(r.log.offers).toBe(0);
+  });
+
+  it("reads such a PDF again once FineNotes is updated", async () => {
+    const left = JSON.stringify({
+      version: "1.0.0",
+      reading: null,
+      crashed: [{ path: "a.pdf", key: OCR_GUARD_KEY, hash: hashOf("a.pdf"), page: 4 }],
+    });
+    const { guard } = memoryGuard(left, "1.0.1");
+    const r = rig({ guard });
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+    await r.settle();
+    expect(r.log.read).toHaveLength(1);
   });
 });
