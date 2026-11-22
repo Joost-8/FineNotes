@@ -66,6 +66,7 @@ import type { Stroke } from "../model/document";
 import { inkReadingHash, nextSectionStep } from "../model/ink-reading";
 import type { InkBlock } from "../model/text-note";
 import type { ReadingGuard } from "../recognition/reading-guard";
+import type { InkMathsHost } from "./note-ink-maths";
 import { type ReadLine, lineHits } from "../search/hit-strokes";
 import { noteHits } from "../search/note-search";
 import { NoteList } from "./note-list";
@@ -96,6 +97,8 @@ export interface TextNoteHost {
   saveCalculator?: (data: CalculatorData) => void;
   /** Reading handwriting on this device (Grape); absent, nothing is read. */
   reading?: NoteReadingHost;
+  /** Handwritten sums worked out after their "=" (`note-ink-maths.ts`); absent, none are. */
+  maths?: InkMathsHost;
   /** For recordings, their transcription and Ask AI (`note-extras.ts`); absent in the UI gallery. */
   plugin?: GoodObsidianPlugin;
 }
@@ -446,6 +449,7 @@ export class TextNoteView extends TextFileView {
         this.scheduleReading(DEVICE_READ_IDLE_MS);
       },
       turnIntoText: this.host.reading ? (block) => this.sectionText(block) : undefined,
+      maths: this.host.maths,
       stateChanged: () => this.refresh(),
       ...(this.host.loadCalculator
         ? {
@@ -489,6 +493,8 @@ export class TextNoteView extends TextFileView {
     this.registerEvent(this.app.vault.on("delete", relist));
     this.registerEvent(this.app.vault.on("rename", relist));
     this.palette = content.createDiv({ cls: "finenotes-note-palette" });
+    // Obsidian's swipes (sidebars, the pull-down to the command palette) leave it alone.
+    this.palette.dataset.ignoreSwipe = "true";
     this.buildPalette();
     this.refresh();
 
@@ -921,6 +927,14 @@ export class TextNoteView extends TextFileView {
       attr: { "aria-label": t("notebooks.note.moveTools"), role: "button" },
     });
     grip.addEventListener("pointerdown", (event) => this.dragPalette(event));
+    // A drag of the grip is the palette's own: no touch of it reaches Obsidian's
+    // swipe recogniser, and WebKit does not scroll or long-press it.
+    const holdTouch = (event: TouchEvent): void => {
+      event.stopPropagation();
+      if (event.cancelable) event.preventDefault();
+    };
+    grip.addEventListener("touchstart", holdTouch, { passive: false });
+    grip.addEventListener("touchmove", holdTouch, { passive: false });
 
     const history = palette.createDiv({ cls: "finenotes-note-palette-group is-history" });
     this.button(history, "p-undo", "undo-2", "common.undo", () => this.editor?.undo());
@@ -1049,7 +1063,10 @@ export class TextNoteView extends TextFileView {
     const still = content.win.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const view = (): DOMRect => content.getBoundingClientRect();
     // The palette folds into one round token with the tool in hand, which follows the finger.
-    const token = content.createDiv({ cls: "finenotes-note-palette-token" });
+    const token = content.createDiv({
+      cls: "finenotes-note-palette-token",
+      attr: { "data-ignore-swipe": "true" },
+    });
     setIcon(token, TOOL_ICONS[this.choices.tool]);
     const hint = content.createDiv({ cls: "finenotes-note-dock-hint" });
     const place = (x: number, y: number): void => {

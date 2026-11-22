@@ -22,6 +22,8 @@ import { nightColor } from "../canvas/night";
 import { paintInk, penFor } from "../canvas/renderer";
 import { inkRuns } from "../ink/freehand";
 import { StrokeBuilder } from "../ink/stroke-builder";
+import { swallowGhostClick } from "./ghost-click";
+import type { InkAnswer } from "./note-ink-maths";
 import { recognizeAtZoom, styleOfShape, type ShapeResult } from "../ink/shape-recognizer";
 import { eraseCircleFromStroke } from "../ink/stroke-eraser";
 import { deliversCoalescedSamples, isOnDevicePixel } from "../input/pointer-controller";
@@ -78,6 +80,8 @@ export interface InkSectionHost {
   touched(id: string): void;
   /** A stroke is open (or no longer): the note holds still under the hand meanwhile. */
   penDown(down: boolean): void;
+  /** A pen stroke was added to the section (not a highlight, a shape or an erase). */
+  strokeDrawn?(id: string): void;
 }
 
 /** A pen on this device has reported a position between whole px: it does not round. */
@@ -120,6 +124,8 @@ export class InkSection {
   private snapped: ShapeResult | null = null;
   /** Words a search found here, each its strokes' ids. */
   private hits: string[][] | null = null;
+  /** The answer a handwritten sum shows after its "=" (`note-ink-maths.ts`). */
+  private answer: { el: HTMLElement; spec: InkAnswer } | null = null;
 
   constructor(
     block: InkBlock,
@@ -218,6 +224,46 @@ export class InkSection {
    * Light up words a search found, each a group of stroke ids, as a
    * notebook lights them: a highlighter's tint under the ink. `null` clears.
    */
+  /** Show the answer a handwritten sum works out to after its "=", or with null take it away. */
+  showAnswer(spec: InkAnswer | null): void {
+    this.answer?.el.remove();
+    this.answer = null;
+    if (!spec) return;
+    const el = this.el.createEl("button", {
+      cls: "finenotes-note-ink-answer clickable-icon",
+      text: spec.label,
+      attr: { type: "button", "data-ignore-swipe": "true" },
+    });
+    // The pen's own: a press here writes the answer, never a stroke under it.
+    el.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+    });
+    el.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      swallowGhostClick(el.doc, event);
+      spec.write();
+    });
+    el.addEventListener("click", (event) => {
+      // Keyboard only: a pointer acted on its pointerup (a Pencil tap makes no click).
+      if (event.detail === 0) spec.write();
+    });
+    this.answer = { el, spec };
+    this.placeAnswer();
+  }
+
+  private placeAnswer(): void {
+    const answer = this.answer;
+    if (!answer) return;
+    const { x, baseline, height } = answer.spec;
+    const s = this.scale;
+    answer.el.setCssProps({
+      "--fn-answer-x": `${x * s}px`,
+      "--fn-answer-y": `${(baseline - height) * s}px`,
+      "--fn-answer-h": `${Math.max(20, height * s)}px`,
+    });
+  }
+
   setHits(groups: readonly (readonly string[])[] | null): void {
     const next = groups && groups.length > 0 ? groups.map((g) => [...g]) : null;
     if (!next && !this.hits) return;
@@ -286,6 +332,7 @@ export class InkSection {
     const same = this.dry.width === pxWidth && this.dry.height === pxHeight;
     this.scale = scale;
     this.ratio = ratio;
+    this.placeAnswer();
     if (same && !force) return;
     for (const canvas of [this.dry, this.wet]) {
       if (canvas.width !== pxWidth) canvas.width = pxWidth;
@@ -552,6 +599,7 @@ export class InkSection {
     if (event.pointerType !== "pen") this.el.removeClass("is-pen-near");
     const height = this.liveHeight;
     let next: InkBlock | null = null;
+    let drawn = false;
     if (this.erased) {
       const strokes = this.erased;
       const changed =
@@ -591,6 +639,7 @@ export class InkSection {
           tool: this.pen.tool === "highlighter" ? "highlighter" : "pen",
           pts,
         };
+        drawn = stroke.tool === "pen";
         next = {
           ...this.block,
           strokes: [...this.block.strokes, stroke],
@@ -607,6 +656,7 @@ export class InkSection {
       // Painted before the wet layer's stroke is missed: the commit comes straight back here.
       this.liveHeight = height;
       this.host.commit(this.block.id, next);
+      if (drawn) this.host.strokeDrawn?.(this.block.id);
     } else if (height !== this.block.height) {
       this.host.commit(this.block.id, { ...this.block, height });
     } else {

@@ -99,6 +99,7 @@ import {
   type LineAnswer,
 } from "../model/note-math";
 import { NoteGraph } from "./note-graph";
+import { InkMaths, type InkMathsHost } from "./note-ink-maths";
 import { inkReadingHash, turnInkIntoText, withReading } from "../model/ink-reading";
 import type { NoteHits } from "../search/note-search";
 
@@ -150,6 +151,11 @@ export interface NoteEditorHost {
    * read. Without it the section has no such button.
    */
   turnIntoText?(block: InkBlock): Promise<string | null>;
+  /**
+   * Handwritten sums work out after their "=" (`note-ink-maths.ts`).
+   * Without it nothing is worked out.
+   */
+  maths?: InkMathsHost;
   /** Draw a recording's card into `card` (emptied first); again whenever its block changes. */
   drawAudio?: (card: HTMLElement, block: AudioBlock) => void;
 }
@@ -287,6 +293,8 @@ export class NoteEditor {
   private readonly grown = new Set<string>();
   private readonly manual = new Set<string>();
   private readonly inkHost: InkSectionHost;
+  /** Handwritten sums, worked out after their "=". */
+  private readonly maths: InkMaths | null;
   private readonly stamp = Date.now().toString(36);
   /** The graphs shown, by block id, and the answers typed sums show. */
   private readonly graphs = new Map<string, NoteGraph>();
@@ -333,8 +341,25 @@ export class NoteEditor {
       touched: (id) => this.setActive(id),
       penDown: (down) => {
         this.penIsDown = down;
+        if (down) this.maths?.penDown();
       },
+      strokeDrawn: (id) => this.maths?.strokeDrawn(id),
     };
+    this.maths = host.maths
+      ? new InkMaths(
+          host.maths,
+          {
+            block: (id) => {
+              const block = this.note.blocks[indexOfBlock(this.note, id)];
+              return block?.type === "ink" ? block : null;
+            },
+            show: (id, answer) => this.views.get(id)?.ink?.showAnswer(answer),
+            newStrokeId: () => this.newStrokeId(),
+            commit: (id, next) => this.commitInk(id, next, false),
+          },
+          this.el.win,
+        )
+      : null;
 
     this.root.addEventListener("beforeinput", this.onBeforeInput);
     this.root.addEventListener("input", this.onInput);
@@ -362,6 +387,7 @@ export class NoteEditor {
     this.clearHits();
     this.el.doc.removeEventListener("selectionchange", this.onSelectionChange);
     this.endDrag(false);
+    this.maths?.dispose();
     this.el.win.cancelAnimationFrame(this.stateFrame);
     for (const view of this.views.values()) view.ink?.destroy();
     this.views.clear();

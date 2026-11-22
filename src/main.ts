@@ -289,6 +289,7 @@ import { OcrService } from "./view/ocr-service";
 import { OcrStatus } from "./view/ocr-status";
 import { OCR_TIERS, effectiveOcrTier, ocrTiersFor } from "./recognition/ocr/ocr-model";
 import { HandwritingReader, readingText } from "./view/handwriting";
+import { writerGlyphs } from "./view/calc-notes";
 import { ReadingGuard } from "./recognition/reading-guard";
 import {
   HandwritingLearner,
@@ -612,6 +613,12 @@ export default class GoodObsidianPlugin extends Plugin {
                 lines: reading.lines.map((line) => ({ text: line.text, words: line.words })),
               };
             },
+          },
+          maths: {
+            enabled: () =>
+              this.settings.calcNotes === true && this.settings.handwritingOnDevice !== false,
+            reader: this.handwriting,
+            glyphs: () => writerGlyphs(this.app, this.learningHost()),
           },
           plugin: this,
         }),

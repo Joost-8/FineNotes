@@ -24489,3 +24489,20 @@ button.clickable-icon.goodobsidian-ask-window-button {
   padding: 0;
   border-radius: 50%;
 }
+
+/* A handwritten sum's answer, after its "=" in a text note's handwriting
+   section: what was read and the answer, in the accent colour; a tap writes it. */
+.finenotes-note-ink button.finenotes-note-ink-answer.clickable-icon {
+  position: absolute;
+  top: var(--fn-answer-y, 0);
+  left: var(--fn-answer-x, 0);
+  z-index: 3;
+  height: var(--fn-answer-h, 28px);
+  padding: 0 10px;
+  font-size: calc(var(--fn-answer-h, 28px) * 0.6);
+  color: var(--interactive-accent);
+  white-space: nowrap;
+  background: hsla(var(--interactive-accent-hsl), 0.12);
+  border-radius: 999px;
+  animation: finenotes-note-tints-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1);
+}
