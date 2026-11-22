@@ -23755,6 +23755,21 @@ button.clickable-icon.finenotes-note-style.is-active {
   user-select: none;
 }
 
+/* A function line's mark: its graph, one tap away (put in under the line). */
+.finenotes-note-line[data-graph]:not([data-answer])::after {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  margin-inline-start: 0.45em;
+  vertical-align: -0.18em;
+  cursor: pointer;
+  content: "";
+  background-color: var(--fn-note-accent);
+  -webkit-mask: var(--fn-graph-mark) center / contain no-repeat;
+  mask: var(--fn-graph-mark) center / contain no-repeat;
+  --fn-graph-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3v18h18'/%3E%3Cpath d='M7 16c2.5-7 5.5-10 12-11'/%3E%3C/svg%3E");
+}
+
 .finenotes-note-graph {
   position: relative;
   box-sizing: border-box;

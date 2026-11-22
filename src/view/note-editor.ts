@@ -91,7 +91,13 @@ import { findMarks, marksKey, openLinkAt, rankNames, type TextMark } from "../mo
 import type { GraphSpecData } from "../model/document";
 import { makeGraph } from "../model/graph-element";
 import type { GraphBlock } from "../model/text-note";
-import { answerSuffix, noteAnswers, type LineAnswer } from "../model/note-math";
+import {
+  answerSuffix,
+  noteAnswers,
+  noteGraphs,
+  withBlockAfter,
+  type LineAnswer,
+} from "../model/note-math";
 import { NoteGraph } from "./note-graph";
 import { inkReadingHash, turnInkIntoText, withReading } from "../model/ink-reading";
 import type { NoteHits } from "../search/note-search";
@@ -286,6 +292,8 @@ export class NoteEditor {
   /** The graphs shown, by block id, and the answers typed sums show. */
   private readonly graphs = new Map<string, NoteGraph>();
   private answers = new Map<string, LineAnswer>();
+  /** The graphs function lines offer, by block id. */
+  private offers = new Map<string, GraphSpecData>();
   /** The section written in last: it is read first. */
   private lastWritten: string | null = null;
   /** What a search found is lit, until the next touch or key. */
@@ -2012,8 +2020,13 @@ export class NoteEditor {
    */
   private markAnswers(): void {
     this.answers = noteAnswers(this.note.blocks);
+    this.offers = noteGraphs(this.note.blocks, this.answers);
     for (const view of this.views.values()) {
       if (view.block.type !== "text") continue;
+      // A function line shows a graph mark after it; a tap puts its graph in under it.
+      const offers = this.offers.has(view.block.id);
+      if (offers && view.el.dataset.graph === undefined) view.el.dataset.graph = "";
+      else if (!offers && view.el.dataset.graph !== undefined) delete view.el.dataset.graph;
       const shown = this.answers.get(view.block.id)?.shown;
       if (shown === undefined) {
         if (view.el.dataset.answer !== undefined) delete view.el.dataset.answer;
@@ -2027,11 +2040,13 @@ export class NoteEditor {
   private takeAnswer(event: MouseEvent): boolean {
     const node = event.target as Node | null;
     const line = node?.instanceOf(Element) ? node.closest(".finenotes-note-line") : null;
-    if (!line?.instanceOf(HTMLElement) || line.dataset.answer === undefined) return false;
+    if (!line?.instanceOf(HTMLElement)) return false;
+    if (line.dataset.answer === undefined && line.dataset.graph === undefined) return false;
     const index = indexOfBlock(this.note, line.dataset.fnId ?? "");
     const block = this.note.blocks[index];
     const answer = block ? this.answers.get(block.id) : undefined;
-    if (!block || block.type !== "text" || !answer) return false;
+    const offer = block ? this.offers.get(block.id) : undefined;
+    if (!block || block.type !== "text" || (!answer && !offer)) return false;
     // The answer is drawn after the line's last character: a tap past it.
     const range = this.root.doc.createRange();
     range.selectNodeContents(line);
@@ -2041,6 +2056,15 @@ export class NoteEditor {
     const rtl = this.root.win.getComputedStyle(line).direction === "rtl";
     if (rtl ? event.clientX >= last.left : event.clientX <= last.right) return false;
     event.preventDefault();
+    if (!answer && offer) {
+      const stored = storedSpec(offer);
+      if (!stored) return false;
+      const graph: GraphBlock = { type: "graph", id: this.newId(), spec: stored };
+      this.apply(withBlockAfter(this.note, index, graph));
+      this.selectIsland(graph.id);
+      return true;
+    }
+    if (!answer) return false;
     const text = blockText(block);
     const edit = insertText(
       this.note,
