@@ -184,7 +184,18 @@ export interface GraphBlock {
   readonly spec: GraphSpecData;
 }
 
-export type NoteBlock = TextBlock | InkBlock | ImageBlock | TableBlock | RawBlock | GraphBlock;
+/** A recording in the note (`model/note-audio-embed.ts`), played with the notebook's player. */
+export interface AudioBlock {
+  readonly type: "audio";
+  readonly id: string;
+  /** The vault path, or whatever link text the file was written with. */
+  readonly path: string;
+  /** Its length, ms, as measured while recording; absent when only the file can say. */
+  readonly duration?: number;
+}
+
+export type NoteBlock =
+  TextBlock | InkBlock | ImageBlock | TableBlock | RawBlock | GraphBlock | AudioBlock;
 
 export interface TextNote {
   readonly blocks: readonly NoteBlock[];

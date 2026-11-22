@@ -251,6 +251,12 @@ export function layoutNote(
       measured.push({ before: SECTION_GAP, after: SECTION_GAP, lines: [RAW_HEIGHT], whole: true });
       return;
     }
+    if (block.type === "audio") {
+      const name = block.path.split("/").pop() ?? block.path;
+      laid.push({ type: "raw", text: name });
+      measured.push({ before: SECTION_GAP, after: SECTION_GAP, lines: [RAW_HEIGHT], whole: true });
+      return;
+    }
     laid.push({ type: "raw", text: block.text.split("\n")[0] ?? "" });
     measured.push({ before: SECTION_GAP, after: SECTION_GAP, lines: [RAW_HEIGHT], whole: true });
   });

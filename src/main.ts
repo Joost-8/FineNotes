@@ -161,6 +161,7 @@ import {
 import { sponsorThanks } from "./model/sponsors";
 import { type TipsPage, TipsModal } from "./view/tips-modal";
 import { ICON_TEXT_NOTE, TextNoteView } from "./view/note-view";
+import { followNoteFiles } from "./view/note-files";
 import { freeNoteName, isTextNoteName, newNoteFile } from "./model/text-note-file";
 import {
   type Feature,
@@ -612,6 +613,7 @@ export default class GoodObsidianPlugin extends Plugin {
               };
             },
           },
+          plugin: this,
         }),
     );
     this.registerView(
@@ -778,6 +780,7 @@ export default class GoodObsidianPlugin extends Plugin {
       this.app.vault.on("rename", (file, oldPath) => {
         this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
+        followNoteFiles(this.app, file, oldPath);
         this.libraryPathChanged(oldPath, file.path);
         this.calculatorFileMoved(oldPath, file.path);
         this.practiceNotebookMoved(oldPath, file.path);

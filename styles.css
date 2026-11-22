@@ -23814,3 +23814,172 @@ button.clickable-icon.finenotes-note-island-button.is-edit {
   font-weight: var(--font-semibold);
   color: var(--text-normal);
 }
+
+/* --- Text notes: recordings ---------------------------------------------------
+   note-recording.ts (the card, the pill, the player) and note-view.ts (the
+   paperclip's recording mark). The notebook's audio buttons are styled
+   inside its own view; the same look here. */
+
+.finenotes-note-view .goodobsidian-audio-button.clickable-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: var(--gob-touch);
+  height: var(--gob-touch);
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--gob-radius-pill);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  opacity: 1;
+  cursor: pointer;
+}
+
+.finenotes-note-view .goodobsidian-audio-button.clickable-icon:hover {
+  background: var(--background-modifier-hover);
+}
+
+.finenotes-note-view .goodobsidian-audio-button.clickable-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.finenotes-note-view .goodobsidian-rec-pill .goodobsidian-rec-stop.clickable-icon {
+  color: var(--color-red);
+  font-weight: var(--font-semibold, 600);
+}
+
+.finenotes-note-view .goodobsidian-rec-pill .goodobsidian-rec-discard.clickable-icon {
+  color: var(--text-muted);
+}
+
+/* Under the bar, at the right, as in a notebook. */
+.finenotes-note-view .goodobsidian-rec-pill {
+  top: 64px;
+}
+
+/* The player's standing hint is about tapping ink, which a note does not do. */
+.finenotes-note-view .goodobsidian-player-hint:not(.is-message) {
+  display: none;
+}
+
+.finenotes-note-view .goodobsidian-player {
+  bottom: 20px;
+}
+
+/* A recording in the note: play, its name and length, its transcript. */
+.finenotes-note-audio {
+  position: relative;
+  box-sizing: border-box;
+  margin: 8px 0;
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 0.15s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.finenotes-note-audio.is-selected {
+  outline-color: var(--fn-note-accent);
+}
+
+.finenotes-note-audio.is-selected > .finenotes-note-island-bar {
+  top: 50%;
+  display: flex;
+  transform: translateY(-50%);
+}
+
+/* Room for the bin while selected, so it never covers the transcript button. */
+.finenotes-note-audio.is-selected .finenotes-note-audio-card {
+  padding-inline-end: 52px;
+}
+
+.finenotes-note-audio.is-lifted {
+  z-index: 5;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+  transform: translateY(var(--fn-lift, 0)) scale(1.015);
+}
+
+.finenotes-note-audio-card {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: var(--background-secondary);
+}
+
+.finenotes-note-view .finenotes-note-audio-play.clickable-icon {
+  width: var(--gob-touch);
+  padding: 0;
+  border-radius: 50%;
+  background: var(--fn-note-accent);
+  color: var(--text-on-accent);
+}
+
+.finenotes-note-view .finenotes-note-audio-play.clickable-icon:hover {
+  background: var(--fn-note-accent);
+}
+
+.finenotes-note-view .finenotes-note-audio-play.is-active {
+  box-shadow: 0 0 0 3px var(--fn-note-tint);
+}
+
+.finenotes-note-audio-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.finenotes-note-audio-name {
+  overflow: hidden;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finenotes-note-audio-meta {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finenotes-note-audio-card.is-missing .finenotes-note-audio-meta {
+  color: var(--text-error);
+}
+
+/* A transcript there is: the button is tinted, a mark rather than a word. */
+.finenotes-note-view .finenotes-note-audio-transcript.has-transcript {
+  color: var(--fn-note-accent);
+  background: var(--fn-note-tint);
+}
+
+/* Recording: a red dot on the paperclip it was started from. */
+button.clickable-icon.finenotes-note-button.is-recording {
+  position: relative;
+}
+
+button.clickable-icon.finenotes-note-button.is-recording::before {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-red);
+  content: "";
+}

@@ -21,6 +21,7 @@
 
 import { Menu, setIcon } from "obsidian";
 import { decodeNote } from "../model/text-note-file";
+import { relinkNotePaths } from "../model/note-files";
 import {
   BOLD,
   HIGHLIGHTS,
@@ -68,6 +69,7 @@ import {
   trimmedHeight,
   withTypingLine,
   INK_PAPERS,
+  type AudioBlock,
   type ImageBlock,
   type InkBlock,
   type InkPaper,
@@ -143,6 +145,8 @@ export interface NoteEditorHost {
    * read. Without it the section has no such button.
    */
   turnIntoText?(block: InkBlock): Promise<string | null>;
+  /** Draw a recording's card into `card` (emptied first); again whenever its block changes. */
+  drawAudio?: (card: HTMLElement, block: AudioBlock) => void;
 }
 
 /** What the bar shows about the place the caret is. */
@@ -589,6 +593,15 @@ export class NoteEditor {
       return { el: table.el, block, table };
     }
     if (block.type === "graph") return this.createGraphView(block);
+    if (block.type === "audio") {
+      const el = createDiv({
+        cls: "finenotes-note-audio",
+        attr: { contenteditable: "false", "data-fn-id": block.id, "data-fn-island": "audio" },
+      });
+      this.host.drawAudio?.(el.createDiv({ cls: "finenotes-note-audio-card" }), block);
+      this.addIslandBar(el, block.id);
+      return { el, block };
+    }
     if (block.type === "raw") {
       const el = createDiv({
         cls: "finenotes-note-raw",
@@ -616,6 +629,8 @@ export class NoteEditor {
       this.drawImage(view, block);
     } else if (block.type === "graph") {
       this.graphs.get(block.id)?.setBlock(block);
+    } else if (block.type === "audio") {
+      this.drawAudioCard(view.el, block);
     } else if (block.type === "text") {
       this.drawLine(view.el, block, previous.type !== "text");
     }
@@ -2102,5 +2117,84 @@ export class NoteEditor {
     if (this.drawing) this.setDrawing(false);
     const clean = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "");
     if (clean) this.insertBlocks(decodeNote(clean, this.newId).blocks);
+  }
+  // -------------------------------------------------------------- recordings and moved files
+
+  private drawAudioCard(el: HTMLElement, block: AudioBlock): void {
+    const card = el.querySelector<HTMLElement>(".finenotes-note-audio-card");
+    if (!card) return;
+    card.empty();
+    this.host.drawAudio?.(card, block);
+  }
+
+  /** Draw every recording's card again (a transcript arrived, a job's state changed). */
+  refreshAudio(): void {
+    for (const view of this.views.values()) {
+      if (view.block.type === "audio") this.drawAudioCard(view.el, view.block);
+    }
+  }
+
+  /** Put Markdown (an AI answer) in at the caret, read as the note reads its file; one undo step. */
+  insertMarkdown(text: string): boolean {
+    const blocks = decodeNote(text.trim(), this.newId).blocks;
+    if (blocks.length === 0) return false;
+    if (this.drawing) this.setDrawing(false);
+    this.insertBlocks(blocks);
+    return true;
+  }
+
+  /** Put a recording in at the caret (or at the end, with none); one undo step. */
+  insertAudio(path: string, duration?: number): void {
+    const block: AudioBlock = {
+      type: "audio",
+      id: this.newId(),
+      path,
+      ...(duration !== undefined && duration > 0 ? { duration } : {}),
+    };
+    if (this.drawing) this.setDrawing(false);
+    this.insertBlocks([block]);
+  }
+
+  /**
+   * Put `text` in as paragraphs right after the block `id` (a recording's
+   * transcript under it); one undo step. False when there is no such block.
+   */
+  insertTextAfter(id: string, text: string): boolean {
+    const index = indexOfBlock(this.note, id);
+    if (index < 0) return false;
+    const lines = text
+      .split(/\n{2,}/)
+      .map((line) => line.replace(/\s*\n\s*/g, " ").trim())
+      .filter((line) => line !== "");
+    if (lines.length === 0) return false;
+    const added = lines.map((line) => textBlock(this.newId(), "body", [{ text: line, marks: 0 }]));
+    const blocks = [
+      ...this.note.blocks.slice(0, index + 1),
+      ...added,
+      ...this.note.blocks.slice(index + 1),
+    ];
+    const last = index + added.length;
+    this.apply({ ...this.note, blocks }, { block: last, offset: blockLength(blocks[last]) });
+    return true;
+  }
+
+  /**
+   * Point pictures and recordings at where their files are now (`relink`
+   * gives a new path, or `undefined` to keep one). Not an undo step: undo
+   * must not point back at a file that moved, so the steps are relinked too.
+   */
+  relinkPaths(relink: (path: string) => string | undefined): boolean {
+    const next = relinkNotePaths(this.note, relink);
+    if (!next) return false;
+    const follow = (snapshot: Snapshot): Snapshot => ({
+      ...snapshot,
+      note: relinkNotePaths(snapshot.note, relink) ?? snapshot.note,
+    });
+    this.undoStack = this.undoStack.map(follow);
+    this.redoStack = this.redoStack.map(follow);
+    this.note = next;
+    this.render();
+    this.host.changed();
+    return true;
   }
 }

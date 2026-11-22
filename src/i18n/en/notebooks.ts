@@ -1502,4 +1502,16 @@ export const notebooks = {
   "notebooks.note.toText": "Turn into text",
   "notebooks.note.nothingRead": "No writing was found in this handwriting",
   "notebooks.note.readFailed": "This handwriting could not be read on this device",
+  "notebooks.note.attach": "Attach",
+  "notebooks.note.missingRecording": "Recording not found",
+  "notebooks.note.transcript": "Transcript",
+  "notebooks.note.putTranscript": "Put the transcript in the note",
+  "notebooks.note.askAi": "Ask AI",
+  "notebooks.note.askConsentWhat":
+    "this note's text and pictures of its handwriting, together with your question,",
+  "notebooks.note.askLine": "Sends this note to {target} with your question.",
+  "notebooks.note.askLineSaved":
+    "Sends this note to {target} with your question. Saved in AI chats.",
+  "notebooks.note.askEmpty": "Ask about this note",
+  "notebooks.note.askKeyPoints": "What are the key points?",
 } as const;
