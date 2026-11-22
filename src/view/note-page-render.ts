@@ -149,7 +149,11 @@ type Laid =
     }
   | { type: "ink"; block: InkBlock }
   | { type: "image"; block: ImageBlock; picture: NotePicture }
+  | { type: "table"; rows: readonly (readonly string[])[] }
   | { type: "raw"; text: string };
+
+/** A table's row height on a page, and the most rows a preview draws. */
+const TABLE_ROW = 30;
 
 /** A note laid out on pages, ready to draw any of them. */
 export interface NoteLayout {
@@ -232,6 +236,21 @@ export function layoutNote(
       });
       return;
     }
+    if (block.type === "table") {
+      laid.push({ type: "table", rows: block.rows });
+      measured.push({
+        before: SECTION_GAP,
+        after: SECTION_GAP,
+        lines: block.rows.map(() => TABLE_ROW),
+        whole: false,
+      });
+      return;
+    }
+    if (block.type === "graph") {
+      laid.push({ type: "raw", text: "ƒ(x)" });
+      measured.push({ before: SECTION_GAP, after: SECTION_GAP, lines: [RAW_HEIGHT], whole: true });
+      return;
+    }
     laid.push({ type: "raw", text: block.text.split("\n")[0] ?? "" });
     measured.push({ before: SECTION_GAP, after: SECTION_GAP, lines: [RAW_HEIGHT], whole: true });
   });
@@ -277,6 +296,7 @@ export function drawNotePage(
       ctx.translate(0, slice.y - slice.offset);
       if (item.type === "ink") drawInk(ctx, item.block, options);
       else if (item.type === "image") drawPicture(ctx, item.picture, palette);
+      else if (item.type === "table") drawTable(ctx, item.rows, layout.fonts, palette);
       else drawRaw(ctx, item.text, layout.fonts, palette);
     }
     ctx.restore();
@@ -444,6 +464,41 @@ function drawPicture(
   ctx.clip();
   ctx.drawImage(picture.source, 0, 0, picture.width, picture.height);
   ctx.restore();
+}
+
+/** A table: its grid, the header row shaded, each cell's text cut to fit. */
+function drawTable(
+  ctx: CanvasRenderingContext2D,
+  rows: readonly (readonly string[])[],
+  fonts: NoteFonts,
+  palette: NotePagePalette,
+): void {
+  const columns = Math.max(1, rows[0]?.length ?? 1);
+  const width = INK_WIDTH / columns;
+  ctx.fillStyle = palette.code;
+  ctx.fillRect(0, 0, INK_WIDTH, TABLE_ROW);
+  ctx.strokeStyle = palette.faint;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let r = 0; r <= rows.length; r++) {
+    ctx.moveTo(0, r * TABLE_ROW);
+    ctx.lineTo(INK_WIDTH, r * TABLE_ROW);
+  }
+  for (let c = 0; c <= columns; c++) {
+    ctx.moveTo(c * width, 0);
+    ctx.lineTo(c * width, rows.length * TABLE_ROW);
+  }
+  ctx.stroke();
+  ctx.textBaseline = "middle";
+  rows.forEach((cells, r) => {
+    ctx.font = `${r === 0 ? 650 : 400} 15px ${fonts.text}`;
+    ctx.fillStyle = palette.text;
+    cells.forEach((cell, c) => {
+      let text = cell;
+      while (text.length > 1 && ctx.measureText(text).width > width - 16) text = text.slice(0, -1);
+      ctx.fillText(text === cell ? text : `${text}…`, c * width + 8, r * TABLE_ROW + TABLE_ROW / 2);
+    });
+  });
 }
 
 function drawRaw(

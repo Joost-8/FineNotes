@@ -86,6 +86,11 @@ import { InkSection, type InkSectionHost, type NotePen } from "./note-ink";
 import { NoteTableView, type TableLabel } from "./note-table-view";
 import { emptyTable } from "../model/note-table";
 import { findMarks, marksKey, openLinkAt, rankNames, type TextMark } from "../model/note-links";
+import type { GraphSpecData } from "../model/document";
+import { makeGraph } from "../model/graph-element";
+import type { GraphBlock } from "../model/text-note";
+import { answerSuffix, noteAnswers, type LineAnswer } from "../model/note-math";
+import { NoteGraph } from "./note-graph";
 
 /** What the editor needs from the view that holds it. */
 export interface NoteEditorHost {
@@ -116,7 +121,9 @@ export interface NoteEditorHost {
   /** The caret, the styles under it, undo or the mode changed: the bar may need redrawing. */
   stateChanged(): void;
   /** Texts shown on the page. */
-  text(key: "title" | "delete" | "missing" | "unreadable" | "paper"): string;
+  text(key: "title" | "delete" | "missing" | "unreadable" | "paper" | "editGraph"): string;
+  /** Edit a graph in the calculator; `done` gets the edited one. Absent: graphs cannot be edited. */
+  editGraph?: (spec: GraphSpecData, done: (spec: GraphSpecData) => void) => void;
 }
 
 /** What the bar shows about the place the caret is. */
@@ -209,6 +216,12 @@ function kindOf(raw: string | undefined): TextKind {
   return TEXT_KINDS.includes(raw as TextKind) ? (raw as TextKind) : "body";
 }
 
+/** A graph's spec as a note keeps it (as a notebook page would); null when it plots nothing. */
+function storedSpec(spec: GraphSpecData): GraphSpecData | null {
+  const stored = makeGraph({ id: "g", x: 0, y: 0, spec }).spec;
+  return stored.expressions.length > 0 ? stored : null;
+}
+
 function touchIsStylus(event: TouchEvent): boolean {
   for (let i = 0; i < event.changedTouches.length; i++) {
     const touch = event.changedTouches[i] as Touch & { touchType?: string };
@@ -247,6 +260,9 @@ export class NoteEditor {
   private readonly manual = new Set<string>();
   private readonly inkHost: InkSectionHost;
   private readonly stamp = Date.now().toString(36);
+  /** The graphs shown, by block id, and the answers typed sums show. */
+  private readonly graphs = new Map<string, NoteGraph>();
+  private answers = new Map<string, LineAnswer>();
 
   constructor(
     parent: HTMLElement,
@@ -312,6 +328,7 @@ export class NoteEditor {
     this.el.win.cancelAnimationFrame(this.stateFrame);
     for (const view of this.views.values()) view.ink?.destroy();
     this.views.clear();
+    this.sweepGraphs();
     this.el.remove();
   }
 
@@ -422,6 +439,8 @@ export class NoteEditor {
     this.markFirst();
     this.markLists();
     this.markFolds();
+    this.markAnswers();
+    this.sweepGraphs();
     if (this.selected && !seen.has(this.selected)) this.selected = null;
     if (this.active && !seen.has(this.active)) this.active = null;
   }
@@ -543,6 +562,7 @@ export class NoteEditor {
       });
       return { el: table.el, block, table };
     }
+    if (block.type === "graph") return this.createGraphView(block);
     if (block.type === "raw") {
       const el = createDiv({
         cls: "finenotes-note-raw",
@@ -568,6 +588,8 @@ export class NoteEditor {
       view.table.setBlock(block);
     } else if (block.type === "image") {
       this.drawImage(view, block);
+    } else if (block.type === "graph") {
+      this.graphs.get(block.id)?.setBlock(block);
     } else if (block.type === "text") {
       this.drawLine(view.el, block, previous.type !== "text");
     }
@@ -838,6 +860,7 @@ export class NoteEditor {
   /** The theme or a pen setting changed. */
   refreshInk(): void {
     for (const view of this.views.values()) view.ink?.redraw();
+    for (const graph of this.graphs.values()) graph.redraw();
   }
 
   // -------------------------------------------------------------- selection
@@ -1043,6 +1066,8 @@ export class NoteEditor {
         this.views.delete(id);
       }
       this.markFirst();
+      this.markAnswers();
+      this.sweepGraphs();
     }
     return changed;
   }
@@ -1463,6 +1488,7 @@ export class NoteEditor {
       else this.host.openLink?.(mark.target);
       return;
     }
+    if (this.takeAnswer(event)) return;
     const index = this.checkAt(event);
     if (index === null) return;
     event.preventDefault();
@@ -1816,5 +1842,121 @@ export class NoteEditor {
   /** Put the caret in the title (a new note opens ready to type). */
   focusStart(): void {
     if (this.note.blocks[0]?.type === "text") this.caretTo({ block: 0, offset: 0 });
+  }
+
+  // -------------------------------------------------------------- maths and graphs
+
+  /**
+   * A line that ends in "=" shows its answer after it (a mark drawn by CSS
+   * from `data-answer`, so the page's text stays the note's): the
+   * notebook's calculation notes, on typed text.
+   */
+  private markAnswers(): void {
+    this.answers = noteAnswers(this.note.blocks);
+    for (const view of this.views.values()) {
+      if (view.block.type !== "text") continue;
+      const shown = this.answers.get(view.block.id)?.shown;
+      if (shown === undefined) {
+        if (view.el.dataset.answer !== undefined) delete view.el.dataset.answer;
+      } else if (view.el.dataset.answer !== shown) {
+        view.el.dataset.answer = shown;
+      }
+    }
+  }
+
+  /** A tap on a line's answer types it in after the "=": one undo step. */
+  private takeAnswer(event: MouseEvent): boolean {
+    const node = event.target as Node | null;
+    const line = node?.instanceOf(Element) ? node.closest(".finenotes-note-line") : null;
+    if (!line?.instanceOf(HTMLElement) || line.dataset.answer === undefined) return false;
+    const index = indexOfBlock(this.note, line.dataset.fnId ?? "");
+    const block = this.note.blocks[index];
+    const answer = block ? this.answers.get(block.id) : undefined;
+    if (!block || block.type !== "text" || !answer) return false;
+    // The answer is drawn after the line's last character: a tap past it.
+    const range = this.root.doc.createRange();
+    range.selectNodeContents(line);
+    const rects = range.getClientRects();
+    const last = rects[rects.length - 1];
+    if (!last || event.clientY < last.top || event.clientY > last.bottom) return false;
+    const rtl = this.root.win.getComputedStyle(line).direction === "rtl";
+    if (rtl ? event.clientX >= last.left : event.clientX <= last.right) return false;
+    event.preventDefault();
+    const text = blockText(block);
+    const edit = insertText(
+      this.note,
+      { block: index, offset: text.length },
+      answerSuffix(text, answer),
+      0,
+    );
+    this.apply(edit.note, edit.caret);
+    return true;
+  }
+
+  private createGraphView(block: GraphBlock): BlockView {
+    this.graphs.get(block.id)?.destroy();
+    const graph = new NoteGraph(block, { dark: () => this.host.dark() });
+    this.graphs.set(block.id, graph);
+    this.addIslandBar(graph.el, block.id);
+    const edit = this.host.editGraph;
+    if (edit) {
+      const bar = graph.el.querySelector(".finenotes-note-island-bar");
+      const button = createEl("button", {
+        cls: "clickable-icon finenotes-note-island-button is-edit",
+        attr: { "aria-label": this.host.text("editGraph"), type: "button" },
+      });
+      setIcon(button, "pencil");
+      bar?.prepend(button);
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      button.addEventListener("pointerup", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.editGraph(block.id);
+      });
+    }
+    return { el: graph.el, block };
+  }
+
+  /** Graphs no longer in the note let go of their canvas and their size watch. */
+  private sweepGraphs(): void {
+    for (const [id, graph] of this.graphs) {
+      if (this.views.get(id)?.el === graph.el) continue;
+      graph.destroy();
+      this.graphs.delete(id);
+    }
+  }
+
+  /** Open graph `id` in the calculator; what comes back replaces it, one undo step. */
+  editGraph(id: string): void {
+    const block = this.note.blocks.find((b) => b.id === id);
+    if (!block || block.type !== "graph" || !this.host.editGraph) return;
+    this.host.editGraph(structuredClone(block.spec), (spec) => {
+      const index = indexOfBlock(this.note, id);
+      const now = this.note.blocks[index];
+      const stored = storedSpec(spec);
+      if (index < 0 || now?.type !== "graph" || !stored) return;
+      this.apply(replaceBlock(this.note, index, { ...now, spec: stored }));
+    });
+  }
+
+  /** Put a graph in at the caret (or at the end, with none), selected. */
+  insertGraph(spec: GraphSpecData): boolean {
+    const stored = storedSpec(spec);
+    if (!stored) return false;
+    if (this.drawing) this.setDrawing(false);
+    const block: GraphBlock = { type: "graph", id: this.newId(), spec: stored };
+    this.insertBlocks([block]);
+    this.selectIsland(block.id);
+    return true;
+  }
+
+  /** Put text in at the caret as if it were pasted: lines become paragraphs. */
+  insertText(text: string): void {
+    if (this.drawing) this.setDrawing(false);
+    const clean = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+    if (clean) this.insertBlocks(decodeNote(clean, this.newId).blocks);
   }
 }

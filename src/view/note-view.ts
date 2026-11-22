@@ -52,6 +52,14 @@ import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import type { NotePen, NoteTool } from "./note-ink";
 import type { TableLabel } from "./note-table-view";
+import {
+  defaultCalcPlace,
+  parseCalculatorData,
+  type CalculatorData,
+} from "../model/calculator-store";
+import type { GraphSpecData } from "../model/document";
+import type { GraphSpec } from "../model/graph";
+import { CalculatorPopover, type CalculatorHost } from "./calculator-popover";
 
 export const ICON_TEXT_NOTE = "notepad-text";
 
@@ -70,6 +78,9 @@ export interface TextNoteHost {
   fullScreenOffered(): boolean;
   fullScreen(): boolean;
   toggleFullScreen(): void;
+  /** The calculator's switches and history, shared with the notebooks; absent: no calculator. */
+  loadCalculator?: () => CalculatorData;
+  saveCalculator?: (data: CalculatorData) => void;
 }
 
 /** The colours the palette offers, by tool; the first of each is the default. */
@@ -243,6 +254,8 @@ export class TextNoteView extends TextFileView {
   private renameTimer = 0;
   /** The highlight colour last picked (the Aa menu's dot). */
   private tint: Marks;
+  /** The calculator's window, while it is open over the note. */
+  private calculator: CalculatorPopover | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -379,17 +392,25 @@ export class TextNoteView extends TextFileView {
         this.queueRename();
       },
       stateChanged: () => this.refresh(),
+      ...(this.host.loadCalculator
+        ? {
+            editGraph: (spec: GraphSpecData, done: (spec: GraphSpecData) => void) =>
+              this.editGraph(spec, done),
+          }
+        : {}),
       text: (key) =>
         t(
-          key === "title"
-            ? "notebooks.note.titlePlaceholder"
-            : key === "delete"
-              ? "common.delete"
-              : key === "missing"
-                ? "notebooks.note.missingPicture"
-                : key === "paper"
-                  ? "notebooks.note.paper"
-                  : "notebooks.note.unreadable",
+          key === "editGraph"
+            ? "calculator.editGraph"
+            : key === "title"
+              ? "notebooks.note.titlePlaceholder"
+              : key === "delete"
+                ? "common.delete"
+                : key === "missing"
+                  ? "notebooks.note.missingPicture"
+                  : key === "paper"
+                    ? "notebooks.note.paper"
+                    : "notebooks.note.unreadable",
         ),
     });
     this.buildBar(this.bar);
@@ -438,6 +459,8 @@ export class TextNoteView extends TextFileView {
 
   override async onClose(): Promise<void> {
     this.contentEl.win.clearTimeout(this.renameTimer);
+    this.calculator?.close();
+    this.calculator = null;
     this.editor?.destroy();
     this.editor = null;
     this.buttons.clear();
@@ -527,6 +550,11 @@ export class TextNoteView extends TextFileView {
     this.button(insert, "picture", "paperclip", "notebooks.note.addPicture", () =>
       this.pickPicture(),
     );
+    if (this.host.loadCalculator) {
+      this.button(insert, "calculator", "calculator", "calculator.calculator", () =>
+        this.toggleCalculator(),
+      );
+    }
 
     const right = bar.createDiv({ cls: "finenotes-note-bar-group is-right" });
     const pen = this.pill(right);
@@ -553,6 +581,7 @@ export class TextNoteView extends TextFileView {
     enable("styles", !state.drawing);
     enable("kind:check", !state.drawing);
     enable("table", !state.drawing);
+    set("calculator", this.calculator?.isOpen === true);
     const full = this.buttons.get("full");
     if (full) {
       const on = this.host.fullScreen();
@@ -913,6 +942,60 @@ export class TextNoteView extends TextFileView {
     )?.getPluginById?.("global-search") as
       { instance?: { openGlobalSearch?: (query: string) => void } } | undefined;
     search?.instance?.openGlobalSearch?.(`tag:${tag}`);
+  }
+
+  // -------------------------------------------------------------- the calculator
+
+  /**
+   * The notebooks' calculator, over the note: its Insert types the answer
+   * (or the steps) in at the caret, its Insert graph puts the graph in as a
+   * section. The bar's calculator button opens and closes it.
+   */
+  private toggleCalculator(): void {
+    this.closeStyles();
+    const open = this.calculator;
+    this.calculator = null;
+    if (open?.isOpen) open.close();
+    else this.calculator = new CalculatorPopover(this.contentEl, this.calculatorHost());
+    this.refresh();
+  }
+
+  private calculatorHost(graphs = true): CalculatorHost {
+    const host = this.host;
+    // Until it is moved, the window opens on the right, off the text it serves;
+    // that first place is the note's own and is not saved as the window's place.
+    const bounds = { w: this.contentEl.clientWidth, h: this.contentEl.clientHeight };
+    const left = defaultCalcPlace(bounds);
+    const first = { ...left, x: Math.max(16, bounds.w - left.w - 16) };
+    return {
+      path: this.file?.path ?? "",
+      load: () => {
+        const data = host.loadCalculator?.() ?? parseCalculatorData(null);
+        return data.calcWindow ? data : { ...data, calcWindow: first };
+      },
+      save: (data) => {
+        const place = data.calcWindow;
+        const moved = place && !(place.x === first.x && place.y === first.y);
+        host.saveCalculator?.(moved ? data : { ...data, calcWindow: undefined });
+      },
+      insert: (text) => {
+        if (!this.editor) return false;
+        this.editor.insertText(text);
+        return true;
+      },
+      ...(graphs
+        ? { insertGraph: (spec: GraphSpec) => this.editor?.insertGraph(spec) ?? false }
+        : {}),
+    };
+  }
+
+  /** A graph's pencil: the calculator on its graph pane, and Update graph puts it back. */
+  private editGraph(spec: GraphSpecData, done: (spec: GraphSpecData) => void): void {
+    this.calculator?.close();
+    const host = this.calculatorHost(false);
+    this.calculator = new CalculatorPopover(this.contentEl, host, {
+      editGraph: { spec: spec, done },
+    });
   }
 
   // -------------------------------------------------------------- pictures
