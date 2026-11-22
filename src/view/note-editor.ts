@@ -122,9 +122,8 @@ export interface NoteEditorHost {
   tableLabel(key: TableLabel): string;
   /** The names a `[[` link can point at: the vault's notes and notebooks. */
   linkNames?(): string[];
-  /** Open what a link points at, or search for a tag. */
+  /** Open what a link points at. */
   openLink?(target: string): void;
-  openTag?(tag: string): void;
   /** The folded headings changed (by their text): keep them for the next time the note opens. */
   foldsChanged?(titles: string[]): void;
   pressure(): boolean;
@@ -218,7 +217,7 @@ function sameRuns(a: readonly TextRun[], b: readonly TextRun[]): boolean {
   return true;
 }
 
-/** `text` (which starts `at` characters into its line) appended, its links and tags as spans. */
+/** `text` (which starts `at` characters into its line) appended, its links as spans. */
 function appendMarked(
   holder: HTMLElement,
   text: string,
@@ -232,7 +231,7 @@ function appendMarked(
     if (to <= from || to <= i) continue;
     if (from > i) holder.appendText(text.slice(i, from));
     holder.createSpan({
-      cls: mark.kind === "tag" ? "finenotes-note-tag" : "finenotes-note-link",
+      cls: "finenotes-note-link",
       text: text.slice(Math.max(i, from), to),
       attr: { "data-fn-kind": mark.kind, "data-fn-target": mark.target },
     });
@@ -683,7 +682,7 @@ export class NoteEditor {
     }
   }
 
-  /** Lines whose links or tags changed as they were typed: drawn again, the caret kept. */
+  /** Lines whose links changed as they were typed: drawn again, the caret kept. */
   private redecorate(): void {
     const range = this.selection();
     let drawn = false;
@@ -808,7 +807,7 @@ export class NoteEditor {
     return true;
   }
 
-  /** A link or tag under a tap: open it (Obsidian's live preview does the same). */
+  /** A link under a tap: open it (Obsidian's live preview does the same). */
   private markAt(event: MouseEvent): { kind: string; target: string } | null {
     const node = event.target as Node | null;
     const el = node?.instanceOf(Element) ? node.closest("[data-fn-target]") : null;
@@ -1651,8 +1650,7 @@ export class NoteEditor {
     const tapped = this.selection();
     if (mark && (!tapped || isCollapsed(tapped))) {
       event.preventDefault();
-      if (mark.kind === "tag") this.host.openTag?.(mark.target);
-      else this.host.openLink?.(mark.target);
+      this.host.openLink?.(mark.target);
       return;
     }
     if (this.takeAnswer(event)) return;

@@ -113,7 +113,8 @@ export async function vaultSearchBooks(
   const own = current ? [{ path: current.path, pages: [notePageText(current.note)] }] : [];
   const [notes, notebooks] = await Promise.all([
     noteBooks(app, current?.path ?? null),
-    notebookBooks(app),
+    // What this device kept of its notebooks may be out of reach (no storage): the notes still answer.
+    notebookBooks(app).catch((): LibraryBook[] => []),
   ]);
   return [...own, ...notes, ...notebooks];
 }

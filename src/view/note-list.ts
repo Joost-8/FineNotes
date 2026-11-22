@@ -1,37 +1,47 @@
 /**
- * The note list beside a text note, as Apple Notes shows it on an iPad: a
- * search field at its top, and under it the notes of the note's folder, or
- * of a tag or a smart folder picked from the title's menu. Typing searches
- * every text note and notebook (the folder's first), as Apple's sidebar
- * search does; the bar's search button opens the list with the field
- * focused. It wears the notebook's page sidebar look (`goodobsidian-
- * pagesidebar` and its head), and slides over the note on a narrow pane.
+ * The list beside a text note, as Apple Notes shows it on an iPad: the
+ * notes of the note's folder, newest first; and while the bar's search
+ * field holds words, what search found in every text note and notebook,
+ * under "Search · Found N notes", in sections (Top hits, Notes, Notebooks).
+ * Each found row is its title (the words in the accent colour), a short
+ * date and the line that holds the words, and its folder.
+ *
+ * It wears the notebook's page sidebar look (`goodobsidian-pagesidebar`),
+ * and lies over the note on a narrow pane. The rules are pure, in
+ * `model/note-listing.ts`; the text it searches is the note search's
+ * (`vaultSearchBooks`, `searchLibrary`), so a word is found here as on Home.
  */
 
 import { type App, Menu, TFile, setIcon } from "obsidian";
 import { VIEW_TYPE_NOTE } from "../constants";
-import { t } from "../i18n/translate";
+import { localeTag, t, tn } from "../i18n/translate";
 import { placeholderEntry, whenText } from "../model/library";
 import {
-  type NoteScope,
-  type SearchRow,
-  type SmartFolder,
+  type Findable,
+  type FoundRow,
+  type ShowKind,
+  folderOf,
+  foundSections,
+  leadOf,
+  markSpans,
   notesIn,
-  scopeOf,
   searchRows,
-  tagCounts,
-} from "../model/note-organise";
+  shortWhen,
+} from "../model/note-listing";
 import type { TextNote } from "../model/text-note";
 import { isTextNoteName, stripTextNoteSuffix } from "../model/text-note-file";
 import { type LibraryBook, searchLibrary } from "../search/library-search";
-import { DialogKeyboard } from "./dialog-keyboard";
-import { listedNotes } from "./note-organiser";
 import { openSearchHit, vaultSearchBooks } from "./vault-search-modal";
 
 const OPEN_KEY = "finenotes-note-list-open";
-const SCOPE_KEY = "finenotes-note-list-scope";
+/** What search looks through on this device (the ⋯ menu). */
+const SEARCH_KIND_KEY = "finenotes-note-search-kind";
 /** How long typing must pause before the text is searched, ms: titles answer at once. */
 const SEARCH_DELAY_MS = 120;
+/** The most text hits searched for. */
+const MAX_HITS = 80;
+/** Characters of a found line kept before the words, so the words still show. */
+const SNIPPET_LEAD = 14;
 
 export interface NoteListHost {
   app: App;
@@ -39,23 +49,20 @@ export interface NoteListHost {
   file(): TFile | null;
   /** The note as it is now, saved or not, for searching it. */
   note(): TextNote | null;
-  smartFolders(): readonly SmartFolder[];
   /** The list opened or closed: the view makes room for it. */
   toggled(open: boolean): void;
-}
-
-function folderOf(path: string): string {
-  const cut = path.lastIndexOf("/");
-  return cut < 0 ? "" : path.slice(0, cut);
+  /** The list's own toggle was used mid-search: empty the bar's field. */
+  clearSearch(): void;
 }
 
 export class NoteList {
   readonly el: HTMLElement;
-  private readonly titleEl: HTMLElement;
-  private readonly field: HTMLInputElement;
+  private readonly headEl: HTMLElement;
   private readonly rowsEl: HTMLElement;
-  private readonly keyboard: DialogKeyboard;
-  private scope: NoteScope | null;
+  private query = "";
+  /** The list was opened by a search, and closes again when the search ends. */
+  private openedForSearch = false;
+  private kind: ShowKind;
   private books: LibraryBook[] | null = null;
   private loading: Promise<void> | null = null;
   private timer = 0;
@@ -68,55 +75,9 @@ export class NoteList {
     this.el = parent.createDiv({ cls: "goodobsidian-pagesidebar finenotes-note-list is-hidden" });
     // A finger on the list scrolls it; Obsidian's swipes stay out.
     this.el.dataset.ignoreSwipe = "true";
-    let stored: unknown = null;
-    try {
-      const raw: unknown = app.loadLocalStorage(SCOPE_KEY);
-      stored = typeof raw === "string" ? JSON.parse(raw) : null;
-    } catch {
-      stored = null;
-    }
-    // A folder scope follows the note; only a tag or a smart folder is kept.
-    const kept = scopeOf(stored);
-    this.scope = kept?.kind === "folder" ? null : kept;
-
-    const top = this.el.createDiv({ cls: "goodobsidian-pagesidebar-top" });
-    const head = top.createDiv({ cls: "goodobsidian-pagesidebar-head" });
-    const pick = head.createEl("button", {
-      cls: "clickable-icon finenotes-note-list-scope",
-      attr: { type: "button", "aria-haspopup": "menu" },
-    });
-    this.titleEl = pick.createSpan({ cls: "goodobsidian-pagesidebar-title" });
-    setIcon(pick.createSpan({ cls: "finenotes-note-list-caret" }), "chevron-down");
-    pick.addEventListener("click", (event) => this.openScopeMenu(event));
-    const close = head.createEl("button", {
-      cls: "clickable-icon goodobsidian-pagesidebar-close",
-      attr: { type: "button", "aria-label": t("common.close") },
-    });
-    setIcon(close, "x");
-    close.addEventListener("click", () => this.setOpen(false));
-
-    const search = top.createDiv({ cls: "finenotes-note-list-search" });
-    setIcon(search.createSpan(), "search");
-    this.field = search.createEl("input", {
-      attr: {
-        type: "search",
-        placeholder: t("notebooks.note.searchPlaceholder"),
-        "aria-label": t("notebooks.note.search"),
-        enterkeyhint: "search",
-        autocomplete: "off",
-      },
-    });
-    this.field.addEventListener("input", () => this.paint());
-    this.field.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && this.field.value !== "") {
-        event.preventDefault();
-        this.field.value = "";
-        this.paint();
-      }
-    });
-    // A panel that cannot rise: the keyboard only pads its foot (and Obsidian's cap is lifted).
-    this.keyboard = new DialogKeyboard(this.el, { pad: true });
-    this.keyboard.watch(this.field, search);
+    const kind: unknown = app.loadLocalStorage(SEARCH_KIND_KEY);
+    this.kind = kind === "notes" || kind === "notebooks" ? kind : "all";
+    this.headEl = this.el.createDiv({ cls: "finenotes-note-list-head" });
     this.rowsEl = this.el.createDiv({ cls: "finenotes-note-list-rows" });
     if (app.loadLocalStorage(OPEN_KEY) === "1") this.setOpen(true, false);
   }
@@ -125,23 +86,36 @@ export class NoteList {
     return !this.el.hasClass("is-hidden");
   }
 
+  /** Open or close the list; `remember` keeps the choice for the next note. */
   setOpen(open: boolean, remember = true): void {
     this.el.toggleClass("is-hidden", !open);
-    if (remember) this.host.app.saveLocalStorage(OPEN_KEY, open ? "1" : "0");
-    if (!open) {
-      this.field.blur();
-      this.keyboard.end();
+    if (remember) {
+      this.host.app.saveLocalStorage(OPEN_KEY, open ? "1" : "0");
+      this.openedForSearch = false;
     }
     this.host.toggled(open);
     if (open) this.paint();
   }
 
-  /** Open with the search field focused, ready to type (the bar's search button). */
-  search(): void {
-    if (!this.isOpen) this.setOpen(true);
-    this.books = null;
-    this.field.focus();
-    this.field.select();
+  /**
+   * What the bar's search field holds. Words open the list on the results
+   * (and it closes again when they are gone, if it was closed before);
+   * none show the folder's notes again.
+   */
+  setQuery(query: string): void {
+    const was = this.query;
+    this.query = query.trim();
+    if (this.query !== "" && was === "") this.books = null;
+    if (this.query !== "" && !this.isOpen) {
+      this.setOpen(true, false);
+      this.openedForSearch = true;
+      return;
+    }
+    if (this.query === "" && this.openedForSearch) {
+      this.openedForSearch = false;
+      this.setOpen(false, false);
+      return;
+    }
     this.paint();
   }
 
@@ -153,113 +127,143 @@ export class NoteList {
 
   destroy(): void {
     this.el.win.clearTimeout(this.timer);
-    this.keyboard.end();
   }
 
-  private currentScope(): NoteScope {
-    if (this.scope) return this.scope;
-    return { kind: "folder", folder: folderOf(this.host.file()?.path ?? "") };
+  /** The head: the list's toggle, the title, and while searching the ⋯ of search's choices. */
+  private paintHead(title: string, subtitle?: string): void {
+    const head = this.headEl;
+    head.empty();
+    const toggle = head.createEl("button", {
+      cls: "clickable-icon finenotes-note-list-toggle",
+      attr: { type: "button", "aria-label": t("notebooks.noteList.toggle") },
+    });
+    setIcon(toggle, "panel-left");
+    toggle.addEventListener("click", () => {
+      if (this.query !== "") {
+        this.openedForSearch = false;
+        this.query = "";
+        this.host.clearSearch();
+      }
+      this.setOpen(false);
+    });
+    const titles = head.createDiv({ cls: "finenotes-note-list-titles" });
+    titles.createDiv({ cls: "finenotes-note-list-title", text: title });
+    if (subtitle !== undefined)
+      titles.createDiv({ cls: "finenotes-note-list-subtitle", text: subtitle });
+    if (subtitle === undefined) return;
+    const more = head.createEl("button", {
+      cls: "clickable-icon finenotes-note-list-more",
+      attr: {
+        type: "button",
+        "aria-label": t("notebooks.noteSearch.options"),
+        "aria-haspopup": "menu",
+      },
+    });
+    setIcon(more, "more-horizontal");
+    more.addEventListener("click", (event) => this.openOptions(event));
   }
 
-  private scopeName(scope: NoteScope): string {
-    if (scope.kind === "tag") return `#${scope.tag}`;
-    if (scope.kind === "smart")
-      return this.host.smartFolders().find((f) => f.id === scope.id)?.name ?? "";
-    return scope.folder === ""
-      ? t("notebooks.organise.root")
-      : scope.folder.slice(scope.folder.lastIndexOf("/") + 1);
-  }
-
-  private setScope(scope: NoteScope | null): void {
-    this.scope = scope;
-    this.host.app.saveLocalStorage(SCOPE_KEY, JSON.stringify(scope));
-    this.field.value = "";
-    this.paint();
-  }
-
-  /** The title's menu: this folder, the smart folders, the tags; the current one ticked. */
-  private openScopeMenu(event: MouseEvent): void {
-    const now = this.currentScope();
+  /** The ⋯ menu: what search looks through, as Home's Show filter offers it. */
+  private openOptions(event: MouseEvent): void {
     const menu = new Menu();
-    menu.addItem((item) =>
-      item
-        .setTitle(t("notebooks.organise.thisFolder"))
-        .setIcon("folder")
-        .setChecked(now.kind === "folder")
-        .onClick(() => this.setScope(null)),
-    );
-    const smart = this.host.smartFolders();
-    if (smart.length > 0) {
-      menu.addSeparator();
-      for (const folder of smart) {
-        menu.addItem((item) =>
-          item
-            .setTitle(folder.name)
-            .setIcon("folder-cog")
-            .setChecked(now.kind === "smart" && now.id === folder.id)
-            .onClick(() => this.setScope({ kind: "smart", id: folder.id })),
-        );
-      }
-    }
-    const tags = tagCounts(listedNotes(this.host.app));
-    if (tags.length > 0) {
-      menu.addSeparator();
-      for (const { tag } of tags) {
-        menu.addItem((item) =>
-          item
-            .setTitle(`#${tag}`)
-            .setIcon("hash")
-            .setChecked(now.kind === "tag" && now.tag === tag)
-            .onClick(() => this.setScope({ kind: "tag", tag })),
-        );
-      }
+    for (const [kind, label, icon] of [
+      ["all", "notebooks.home.showAll", "layers"],
+      ["notes", "notebooks.home.showNotes", "notepad-text"],
+      ["notebooks", "notebooks.home.onlyNotebooks", "notebook"],
+    ] as const) {
+      menu.addItem((item) =>
+        item
+          .setTitle(t(label))
+          .setIcon(icon)
+          .setChecked(this.kind === kind)
+          .onClick(() => {
+            this.kind = kind;
+            this.host.app.saveLocalStorage(SEARCH_KIND_KEY, kind);
+            this.paint();
+          }),
+      );
     }
     menu.showAtMouseEvent(event);
   }
 
   private paint(): void {
     if (!this.isOpen) return;
-    const scope = this.currentScope();
-    this.titleEl.setText(this.scopeName(scope));
-    const query = this.field.value.trim();
-    if (query !== "") {
-      this.paintSearch(query);
+    if (this.query !== "") {
+      this.paintSearch(this.query);
       return;
     }
+    const folder = folderOf(this.host.file()?.path ?? "");
+    this.paintHead(
+      folder === "" ? this.host.app.vault.getName() : folder.slice(folder.lastIndexOf("/") + 1),
+    );
     this.rowsEl.empty();
-    const notes = notesIn(listedNotes(this.host.app), scope, this.host.smartFolders());
-    const current = this.host.file()?.path;
+    const app = this.host.app;
+    const notes = notesIn(
+      app.vault
+        .getFiles()
+        .filter((file) => isTextNoteName(file.name))
+        .map((file) => ({
+          path: file.path,
+          title: stripTextNoteSuffix(file.name),
+          edited: file.stat.mtime,
+        })),
+      folder,
+    );
     if (notes.length === 0) {
       this.rowsEl.createDiv({
         cls: "finenotes-note-list-empty",
-        text: t("notebooks.organise.noNotes"),
+        text: t("notebooks.noteList.empty"),
       });
       return;
     }
+    const current = this.host.file()?.path;
     const now = Date.now();
     for (const note of notes) {
-      const row = this.row(note.title, whenText(note.edited, now), note.path === current);
+      const row = this.row(note.path === current);
+      row.createDiv({
+        cls: "finenotes-note-list-name",
+        text: note.title || t("notebooks.note.untitled"),
+      });
+      row.createDiv({ cls: "finenotes-note-list-when", text: whenText(note.edited, now) });
       row.addEventListener("click", () => this.openNote(note.path));
     }
   }
 
+  /** Every note and notebook search may show, with a note's first lines once its text is read. */
+  private findables(): Findable[] {
+    const leads = new Map<string, string>();
+    for (const book of this.books ?? []) {
+      const text = book.pages[0]?.sources[0]?.text;
+      if (text) leads.set(book.path, text);
+    }
+    return this.host.app.vault
+      .getFiles()
+      .filter((f) => {
+        const note = isTextNoteName(f.name);
+        const book = !note && f.name.endsWith(".notebook.md");
+        return this.kind === "notes" ? note : this.kind === "notebooks" ? book : note || book;
+      })
+      .map((f) => {
+        const note = isTextNoteName(f.name);
+        const title = note ? stripTextNoteSuffix(f.name) : placeholderEntry(f.path, 0).title;
+        const lead = leads.get(f.path);
+        return {
+          path: f.path,
+          title,
+          edited: f.stat.mtime,
+          ...(note ? {} : { notebook: true }),
+          ...(lead ? { lead: leadOf(lead, title) } : {}),
+        };
+      });
+  }
+
   /** Titles answer at once; the text found follows when typing pauses. */
   private paintSearch(query: string): void {
-    const app = this.host.app;
-    const items = app.vault
-      .getFiles()
-      .filter((f) => isTextNoteName(f.name) || f.name.endsWith(".notebook.md"))
-      .map((f) => ({
-        path: f.path,
-        title: isTextNoteName(f.name)
-          ? stripTextNoteSuffix(f.name)
-          : placeholderEntry(f.path, 0).title,
-      }));
     const folder = folderOf(this.host.file()?.path ?? "");
     const draw = (): void => {
-      if (this.field.value.trim() !== query) return;
-      const hits = this.books ? searchLibrary(this.books, query, 80) : [];
-      this.drawResults(searchRows(items, hits, query, folder), query);
+      if (this.query !== query) return;
+      const hits = this.books ? searchLibrary(this.books, query, MAX_HITS) : [];
+      this.drawResults(searchRows(this.findables(), hits, query, folder), query);
     };
     draw();
     this.el.win.clearTimeout(this.timer);
@@ -289,7 +293,12 @@ export class NoteList {
     return this.loading;
   }
 
-  private drawResults(rows: readonly SearchRow[], query: string): void {
+  private drawResults(rows: readonly FoundRow[], query: string): void {
+    const sections = foundSections(rows);
+    this.paintHead(
+      t("notebooks.noteSearch.title"),
+      tn("notebooks.noteSearch.found", sections.total),
+    );
     this.rowsEl.empty();
     if (rows.length === 0) {
       this.rowsEl.createDiv({
@@ -298,41 +307,90 @@ export class NoteList {
       });
       return;
     }
-    const current = this.host.file()?.path;
-    for (const result of rows) {
-      const row = this.row(result.title, "", result.path === current);
-      if (result.snippet) {
-        const line = row.createDiv({ cls: "finenotes-note-list-snippet" });
-        line.appendText(result.snippet.before);
-        line.createSpan({ cls: "suggestion-highlight", text: result.snippet.match });
-        line.appendText(result.snippet.after);
-      }
-      row.addEventListener("click", () => {
-        openSearchHit(
-          this.host.app,
-          {
-            path: result.path,
-            pageIndex: result.pageIndex,
-            phrase: false,
-            near: false,
-            count: 1,
-            snippets: [],
-          },
-          query,
-        );
-      });
+    const section = (name: string, count: string, found: readonly FoundRow[]): void => {
+      if (found.length === 0) return;
+      const head = this.rowsEl.createDiv({ cls: "finenotes-note-list-section" });
+      head.createSpan({ cls: "finenotes-note-list-section-name", text: name });
+      head.createSpan({ cls: "finenotes-note-list-section-count", text: count });
+      for (const result of found) this.foundRow(result, query);
+    };
+    section(
+      t("notebooks.noteSearch.topHits"),
+      tn("notebooks.noteSearch.results", sections.top.length),
+      sections.top,
+    );
+    section(
+      t("notebooks.noteSearch.notes"),
+      tn("notebooks.noteSearch.count", sections.notes.length),
+      sections.notes,
+    );
+    section(
+      t("notebooks.noteSearch.notebooks"),
+      tn("notebooks.noteSearch.count", sections.notebooks.length),
+      sections.notebooks,
+    );
+  }
+
+  /** A found row: its title, its date and the line that holds the words, its folder. */
+  private foundRow(result: FoundRow, query: string): void {
+    const row = this.row(result.path === this.host.file()?.path);
+    row.addClass("is-found");
+    const name = row.createDiv({ cls: "finenotes-note-list-name" });
+    this.marked(name, result.title || t("notebooks.note.untitled"), query);
+    const line = row.createDiv({ cls: "finenotes-note-list-line" });
+    line.createSpan({
+      cls: "finenotes-note-list-when",
+      text: shortWhen(result.edited, Date.now(), localeTag()),
+    });
+    const snippet = result.snippet;
+    if (snippet) {
+      const text = line.createSpan({ cls: "finenotes-note-list-snippet" });
+      const before =
+        snippet.match !== "" && snippet.before.length > SNIPPET_LEAD
+          ? `…${snippet.before.slice(-SNIPPET_LEAD).trimStart()}`
+          : snippet.before;
+      text.appendText(before);
+      if (snippet.match) text.createSpan({ cls: "finenotes-note-list-hit", text: snippet.match });
+      text.appendText(snippet.after);
+    }
+    const where = row.createDiv({ cls: "finenotes-note-list-folder" });
+    setIcon(where.createSpan({ cls: "finenotes-note-list-folder-icon" }), "folder");
+    const folder = folderOf(result.path);
+    where.createSpan({
+      text:
+        folder === "" ? this.host.app.vault.getName() : folder.slice(folder.lastIndexOf("/") + 1),
+    });
+    row.addEventListener("click", () => {
+      openSearchHit(
+        this.host.app,
+        {
+          path: result.path,
+          pageIndex: result.pageIndex,
+          phrase: false,
+          near: false,
+          count: 1,
+          snippets: [],
+        },
+        query,
+      );
+    });
+  }
+
+  /** `text` with the query's words in the accent colour. */
+  private marked(el: HTMLElement, text: string, query: string): void {
+    for (const span of markSpans(text, query)) {
+      if (span.hit) el.createSpan({ cls: "finenotes-note-list-hit", text: span.text });
+      else el.appendText(span.text);
     }
   }
 
-  /** A row: the note's name, when it was edited, the open note an accent fill. */
-  private row(title: string, when: string, current: boolean): HTMLElement {
+  /** A row, the open note an accent fill. */
+  private row(current: boolean): HTMLElement {
     const row = this.rowsEl.createEl("button", {
       cls: "clickable-icon finenotes-note-list-row",
       attr: { type: "button", "aria-current": current ? "page" : "false" },
     });
     row.toggleClass("is-current", current);
-    row.createDiv({ cls: "finenotes-note-list-name", text: title || t("notebooks.note.untitled") });
-    if (when) row.createDiv({ cls: "finenotes-note-list-when", text: when });
     return row;
   }
 

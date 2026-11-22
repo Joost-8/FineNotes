@@ -22811,15 +22811,10 @@ button.clickable-icon.finenotes-note-button:disabled {
   content: attr(data-marker);
 }
 
-/* Links and tags, as Obsidian draws them; a tap opens them. */
+/* Links, as Obsidian draws them; a tap opens them. */
 .finenotes-note-doc .finenotes-note-link {
   color: var(--link-color);
   border-bottom: 1px solid color-mix(in srgb, var(--link-color) 45%, transparent);
-  cursor: pointer;
-}
-
-.finenotes-note-doc .finenotes-note-tag {
-  color: var(--tag-color, var(--text-accent));
   cursor: pointer;
 }
 
@@ -24114,98 +24109,80 @@ button.clickable-icon.finenotes-note-button.is-recording::before {
   content: "";
 }
 
-/* --- Organising notes by tag (note-organiser.ts, library-organise.ts, note-list.ts) ----
-   After Apple Notes: tags as chips (picked: an accent fill; left out: struck
-   through), smart folders as folder tiles with a gear, and the note list
-   beside a text note in the page sidebar's look. */
+/* --- The note list and search (note-list.ts) ---------------------------------
+   After Apple Notes on the iPad: a search field at the bar's right; the list
+   on the left of the note in the page sidebar's look, its folder's notes, or
+   while searching what was found, in sections, hairlines between rows. */
 
-.finenotes-tag-row,
-.finenotes-smart-tags {
+/* The bar's search field: a pill, the magnifier, a ✕ while it holds words. */
+.finenotes-note-find {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 4px 0 16px;
-}
-
-button.finenotes-tag-chip.clickable-icon {
-  display: inline-flex;
-  flex: none;
+  flex: 0 1 240px;
   gap: 6px;
   align-items: center;
-  width: auto;
-  height: 32px;
-  padding: 0 12px;
+  min-width: 120px;
+  height: 40px;
+  padding: 0 6px 0 14px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
-  color: var(--text-normal);
-  font-size: var(--font-ui-small);
-  white-space: nowrap;
-}
-
-button.finenotes-tag-chip.clickable-icon.is-on {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-
-button.finenotes-tag-chip.clickable-icon.is-out {
-  color: var(--text-muted);
-  text-decoration: line-through;
-}
-
-.finenotes-tag-chip-count {
+  /* The bar's pills' own look, so the field reads as one of them. */
+  background: var(--gob-pill-bg);
+  border: var(--gob-bar-border);
+  box-shadow: var(--gob-shadow-float);
   color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
+  -webkit-backdrop-filter: var(--gob-blur, blur(18px) saturate(1.6));
+  backdrop-filter: var(--gob-blur, blur(18px) saturate(1.6));
 }
 
-button.finenotes-tag-chip.clickable-icon.is-on .finenotes-tag-chip-count {
-  color: inherit;
-  opacity: 0.8;
+.finenotes-note-find:focus-within {
+  box-shadow:
+    inset 0 0 0 1.5px var(--interactive-accent),
+    var(--gob-shadow-float);
 }
 
-.goodobsidian-library-cover.is-smart .goodobsidian-library-folder-art {
-  --gob-folder: var(--text-faint);
+.finenotes-note-find-icon .svg-icon {
+  width: 16px;
+  height: 16px;
 }
 
-/* The smart folder dialog. */
-.finenotes-smart-name-row {
-  margin-bottom: 12px;
-}
-
-.finenotes-smart-modal input.finenotes-smart-name {
-  width: 100%;
+/* Obsidian styles input[type="search"] above one class: the field says it all again. */
+.finenotes-note-find input[type="search"],
+.finenotes-note-find input[type="search"]:hover,
+.finenotes-note-find input[type="search"]:focus,
+.finenotes-note-find input[type="search"]:focus-visible {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  color: var(--text-normal);
   /* 16 px: iPadOS zooms into a smaller field on focus. */
   font-size: 16px;
 }
 
-.finenotes-smart-empty {
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-}
-
-.finenotes-smart-match {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.finenotes-smart-match.is-hidden {
+/* Obsidian's own ✕ in a search field: ours replaces it. */
+.finenotes-note-find input[type="search"]::-webkit-search-cancel-button {
   display: none;
 }
 
-button.finenotes-smart-match-option.clickable-icon {
-  width: auto;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  white-space: normal;
+button.finenotes-note-find-clear.clickable-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
 }
 
-button.finenotes-smart-match-option.clickable-icon.is-on {
-  background: var(--fn-note-tint, color-mix(in srgb, var(--interactive-accent) 16%, transparent));
-  color: var(--interactive-accent);
+button.finenotes-note-find-clear.clickable-icon.is-hidden,
+button.finenotes-note-button.clickable-icon.is-hidden {
+  display: none;
 }
 
-/* The note list: on the left of the note, full height, the bar and the page beside it. */
+/* The list: on the left of the note, full height, the bar and the page beside it. */
 .finenotes-note-view > .goodobsidian-pagesidebar.finenotes-note-list {
   position: absolute;
   z-index: 14;
@@ -24214,7 +24191,7 @@ button.finenotes-smart-match-option.clickable-icon.is-on {
   left: 0;
   display: flex;
   flex-direction: column;
-  width: 300px;
+  width: 320px;
   max-width: 85%;
   overflow: hidden;
 }
@@ -24225,8 +24202,8 @@ button.finenotes-smart-match-option.clickable-icon.is-on {
 
 .finenotes-note-view.has-note-list > .finenotes-note-bar,
 .finenotes-note-view.has-note-list > .finenotes-note-scroll {
-  margin-left: 300px;
   width: auto;
+  margin-left: 320px;
 }
 
 /* Narrow: the list lies over the note instead. */
@@ -24241,76 +24218,71 @@ button.finenotes-smart-match-option.clickable-icon.is-on {
   }
 }
 
-button.finenotes-note-list-scope.clickable-icon {
+/* The head: the toggle, the title (two lines while searching), the ⋯. */
+.finenotes-note-list-head {
   display: flex;
-  gap: 4px;
+  flex: none;
+  gap: 8px;
   align-items: center;
-  justify-content: center;
-  min-width: 0;
-  width: auto;
-  height: var(--gob-touch);
-  padding: 0 8px;
-  color: var(--text-normal);
-  grid-column: 2;
+  min-height: 60px;
+  padding: 10px 10px 6px;
 }
 
-.finenotes-note-list-scope .goodobsidian-pagesidebar-title {
+button.finenotes-note-list-toggle.clickable-icon,
+button.finenotes-note-list-more.clickable-icon {
+  flex: none;
+  width: var(--gob-touch, 40px);
+  height: var(--gob-touch, 40px);
+  padding: 0;
+  border-radius: 50%;
+  color: var(--interactive-accent);
+}
+
+.finenotes-note-list-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.finenotes-note-list-title {
   overflow: hidden;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-bold, 700);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.finenotes-note-list-caret .svg-icon {
-  width: 14px;
-  height: 14px;
-  color: var(--text-faint);
-}
-
-.finenotes-note-list-search {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  height: 36px;
-  margin: 0 12px;
-  padding: 0 12px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
-  color: var(--text-faint);
-}
-
-.finenotes-note-list-search:focus-within {
-  box-shadow: inset 0 0 0 1.5px var(--interactive-accent);
-}
-
-.finenotes-note-list-search .svg-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.finenotes-note-list-search input[type="search"],
-.finenotes-note-list-search input[type="search"]:hover,
-.finenotes-note-list-search input[type="search"]:focus,
-.finenotes-note-list-search input[type="search"]:focus-visible {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  outline: none;
-  /* 16 px: iPadOS zooms into a smaller field on focus. */
-  font-size: 16px;
+.finenotes-note-list-subtitle {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
 }
 
 .finenotes-note-list-rows {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 0 8px calc(12px + var(--goodobsidian-keyboard-pad, 0px));
+  padding: 0 0 calc(12px + var(--goodobsidian-keyboard-pad, 0px));
   overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
+}
+
+/* A section's head: its name, and how many at the right; a hairline under it. */
+.finenotes-note-list-section {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 14px 16px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--gob-line, var(--background-modifier-border));
+}
+
+.finenotes-note-list-section-name {
+  font-weight: var(--font-bold, 700);
+}
+
+.finenotes-note-list-section-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
 }
 
 button.finenotes-note-list-row.clickable-icon {
@@ -24318,37 +24290,88 @@ button.finenotes-note-list-row.clickable-icon {
   flex-direction: column;
   gap: 2px;
   align-items: stretch;
-  width: 100%;
+  width: calc(100% - 16px);
   height: auto;
-  padding: 10px 12px;
+  margin: 0 8px;
+  padding: 10px 8px;
   border-radius: 10px;
   color: var(--text-normal);
   text-align: left;
   white-space: normal;
 }
 
+/* Found rows: hairlines between them, as Apple's list draws them. */
+button.finenotes-note-list-row.clickable-icon.is-found {
+  position: relative;
+  border-radius: 0;
+}
+
+button.finenotes-note-list-row.clickable-icon.is-found + .finenotes-note-list-row::before {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  left: 8px;
+  border-top: 1px solid var(--gob-line, var(--background-modifier-border));
+  content: "";
+}
+
 button.finenotes-note-list-row.clickable-icon.is-current {
+  border-radius: 10px;
   background: var(--fn-note-tint, color-mix(in srgb, var(--interactive-accent) 16%, transparent));
 }
 
 .finenotes-note-list-name {
   overflow: hidden;
-  font-weight: var(--font-semibold, 600);
+  font-weight: var(--font-bold, 700);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.finenotes-note-list-when,
-.finenotes-note-list-snippet {
-  color: var(--text-muted);
+.finenotes-note-list-line {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
   font-size: var(--font-ui-small);
 }
 
+.finenotes-note-list-when {
+  flex: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.finenotes-note-list
+  > .finenotes-note-list-rows
+  .finenotes-note-list-row:not(.is-found)
+  .finenotes-note-list-when {
+  color: var(--text-muted);
+}
+
 .finenotes-note-list-snippet {
-  display: -webkit-box;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  min-width: 0;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finenotes-note-list-hit {
+  color: var(--interactive-accent);
+}
+
+.finenotes-note-list-folder {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+.finenotes-note-list-folder-icon .svg-icon {
+  width: 13px;
+  height: 13px;
 }
 
 .finenotes-note-list-empty {

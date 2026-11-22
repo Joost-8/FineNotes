@@ -9,7 +9,6 @@
  */
 
 import type { FolderStyles } from "./model/library-style";
-import type { SmartFolder } from "./model/note-organise";
 import { LLM_PROVIDER_ID } from "./recognition/llm-request";
 import type { AskVaultScope } from "./recognition/vault-context";
 import { type ShapeToolStyle } from "./model/shape-style";
@@ -470,8 +469,6 @@ export interface GoodObsidianSettings {
   libraryStars: string[];
   /** The colour and icon chosen for library folders, by vault path. Cleaned where read. */
   libraryFolders: FolderStyles;
-  /** Home's smart folders: saved tag rules (`model/note-organise.ts`). Cleaned where read. */
-  smartFolders: SmartFolder[];
   /** The pen last written with, which every notebook opens with. Checked where it is read. */
   lastPen?: SavedPen;
   /** What a tablet pen's barrel button does: erase, lasso, pan, or nothing. Checked where read. */
@@ -666,7 +663,6 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   lookPalette: "obsidian",
   libraryStars: [],
   libraryFolders: {},
-  smartFolders: [],
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",
   penCursor: "ink",

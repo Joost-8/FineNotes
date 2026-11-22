@@ -210,7 +210,6 @@ const FRESH_INSTALL = {
   lookPalette: "obsidian",
   libraryStars: [],
   libraryFolders: {},
-  smartFolders: [],
   barrelButton: "erase",
   stylusButtonClick: "pen-menu",
   penCursor: "ink",
@@ -379,9 +378,6 @@ const USED_VAULT = {
   lookPalette: "nord",
   libraryStars: ["Maths", "Maths/Analysis.notebook.md"],
   libraryFolders: { Maths: { color: "#e5534b", icon: "calculator" } },
-  smartFolders: [
-    { id: "s1", name: "Exams", tags: ["uni"], exclude: [], match: "all", fileTo: "Maths" },
-  ],
   lastPen: { type: "highlighter", color: "#fab005", size: 8 },
   barrelButton: "pan",
   stylusButtonClick: "none",

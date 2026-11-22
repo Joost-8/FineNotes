@@ -1,26 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { findMarks, marksKey, openLinkAt, rankNames } from "../../src/model/note-links";
 
-describe("links and tags in a line", () => {
-  it("finds links with aliases and headings, and tags", () => {
-    const marks = findMarks(
-      "See [[Trip]] and [[Huts#Puez|the hut]] #travel/italy, not a#b or #2026",
-    );
+describe("links in a line", () => {
+  it("finds links with aliases and headings, and leaves #tags as text", () => {
+    const marks = findMarks("See [[Trip]] and [[Huts#Puez|the hut]] #travel/italy");
     expect(marks.map((m) => [m.kind, m.target])).toEqual([
       ["link", "Trip"],
       ["link", "Huts"],
-      ["tag", "#travel/italy"],
     ]);
     expect(marks[0]).toMatchObject({ from: 4, to: 12 });
-  });
-
-  it("finds a tag at the line's start, and none inside a link", () => {
-    expect(findMarks("#todo now").map((m) => m.target)).toEqual(["#todo"]);
-    expect(findMarks("[[Note #1]]").map((m) => m.kind)).toEqual(["link"]);
+    expect(findMarks("#todo now")).toEqual([]);
   });
 
   it("keys a line's marks by kind and place", () => {
-    expect(marksKey(findMarks("[[a]] #b"))).toBe("l0-5,t6-8");
+    expect(marksKey(findMarks("[[a]] #b [[c]]"))).toBe("l0-5,l9-14");
     expect(marksKey(findMarks("plain"))).toBe("");
   });
 });

@@ -163,8 +163,6 @@ import { type TipsPage, TipsModal } from "./view/tips-modal";
 import { ICON_TEXT_NOTE, TextNoteView } from "./view/note-view";
 import { followNoteFiles } from "./view/note-files";
 import { freeNoteName, isTextNoteName, newNoteFile } from "./model/text-note-file";
-import { dropFilingTargets, moveFilingTargets, smartFoldersOf } from "./model/note-organise";
-import { NoteFiler, type OrganiseHost, SMART_FOLDERS_EVENT } from "./view/note-organiser";
 import {
   type Feature,
   PEN_GESTURE_PREFIX,
@@ -541,16 +539,6 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Notes keep pointing at the PDFs, pictures and recordings that move (#14). */
-  /** Home's smart folders, for Home, the note list and filing by tag. */
-  readonly organise: OrganiseHost = {
-    smartFolders: () => this.settings.smartFolders,
-    setSmartFolders: (folders) => {
-      this.settings.smartFolders = folders;
-      void this.saveSettings();
-      this.app.workspace.trigger(SMART_FOLDERS_EVENT);
-    },
-  };
-  private readonly filer = new NoteFiler(this.app, this.organise);
   readonly fileMoves = new FileMoveTracker(this.app, {
     isInkFile: (file) => file instanceof TFile && this.isInkFile(file),
     openNotePaths: () =>
@@ -626,7 +614,6 @@ export default class GoodObsidianPlugin extends Plugin {
             },
           },
           plugin: this,
-          organise: this.organise,
         }),
     );
     this.registerView(
@@ -678,7 +665,6 @@ export default class GoodObsidianPlugin extends Plugin {
             if (leaf.view instanceof InkView) leaf.view.exportPdf();
           },
           isInkFile: (file) => this.isInkFile(file),
-          organise: this.organise,
         }),
     );
     this.registerView(
@@ -796,7 +782,6 @@ export default class GoodObsidianPlugin extends Plugin {
         this.keepFolderNotebookPaired(file, oldPath);
         followNoteFiles(this.app, file, oldPath);
         this.libraryPathChanged(oldPath, file.path);
-        if (file instanceof TFile) this.filer.renamed(file, oldPath);
         this.calculatorFileMoved(oldPath, file.path);
         this.practiceNotebookMoved(oldPath, file.path);
         if (this.knownBoards().has(oldPath)) {
@@ -805,13 +790,7 @@ export default class GoodObsidianPlugin extends Plugin {
         }
       }),
     );
-    this.registerEvent(
-      this.app.vault.on("delete", (file) => {
-        this.libraryPathChanged(file.path);
-        this.filer.forget(file.path);
-      }),
-    );
-    this.app.workspace.onLayoutReady(() => this.filer.start((ref) => this.registerEvent(ref)));
+    this.registerEvent(this.app.vault.on("delete", (file) => this.libraryPathChanged(file.path)));
     this.register(() => this.fileMoves.destroy());
     this.wordCheck.answered = (count) => this.remindToRelearn(count);
     void loadSharing({
@@ -1288,6 +1267,8 @@ export default class GoodObsidianPlugin extends Plugin {
     // "Ask AI starts on the open page" is gone (2026-11-17): a chat starts
     // with no page picked, and Ask's own reach button took its row's place.
     delete loaded.askAttachPage;
+    // Smart folders were tried on a local build and taken out (2026-11-22).
+    delete loaded.smartFolders;
     // A list of its own, read as pens: the default's must stay as it is.
     // Each with an id, for a button of its own on the bar (FineNotes#211).
     this.settings.savedPens = withPenIds(savedPensOf(this.settings.savedPens));
@@ -1315,7 +1296,6 @@ export default class GoodObsidianPlugin extends Plugin {
     delete loaded.toolbarHome;
     this.settings.libraryStars = starsOf(this.settings.libraryStars);
     this.settings.libraryFolders = folderStylesOf(this.settings.libraryFolders);
-    this.settings.smartFolders = smartFoldersOf(this.settings.smartFolders);
     // Stylus only shown nowhere cannot be on: nothing would show it or turn it off.
     if (isItemOff(this.toolbarLayoutNow(), "stylus")) this.settings.onlyStylusMode = false;
     // A Zoom box line step outside the slider's range is a hand-edited file,
@@ -3462,15 +3442,9 @@ export default class GoodObsidianPlugin extends Plugin {
     const starsChanged =
       nextStars.length !== stars.length || nextStars.some((p, i) => p !== stars[i]);
     const stylesChanged = JSON.stringify(nextStyles) !== JSON.stringify(styles);
-    // A smart folder's filing folder follows it too, and stops with it.
-    const smart = this.settings.smartFolders;
-    const nextSmart =
-      to === undefined ? dropFilingTargets(smart, from) : moveFilingTargets(smart, from, to);
-    const smartChanged = JSON.stringify(nextSmart) !== JSON.stringify(smart);
-    if (!starsChanged && !stylesChanged && !smartChanged) return;
+    if (!starsChanged && !stylesChanged) return;
     this.settings.libraryStars = nextStars;
     this.settings.libraryFolders = nextStyles;
-    this.settings.smartFolders = nextSmart;
     void this.saveSettings();
   }
 
