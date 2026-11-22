@@ -3018,6 +3018,9 @@ export class InkSurface {
   private hudTextEnd = "";
   /** What the highlighter last did on a PDF page (`textMarkNote`). */
   private hudTextMark = "";
+  /** The debug HUD's last drag over the notebook, and its drop (`debugDrop`). */
+  private hudDragIn = "";
+  private hudDrop = "";
   /** The surface's path blurring a text box right now; "" while the browser does it. */
   private textBlurBy = "";
   private hudLayouts = 0;
@@ -5084,10 +5087,18 @@ export class InkSurface {
     this.renderHud();
   }
 
-  /** A line in the debug HUD for something the view saw, such as a drop. */
-  debugMark(label: string): void {
+  /**
+   * The debug HUD's drag and drop lines (discussion #288): a drag that came
+   * over the notebook (`drag`, which starts a new pair), and what its drop
+   * carried and became (`drop`). Lines of their own, so the pointer log's
+   * run never pushes them off the screen in a recording.
+   */
+  debugDrop(kind: "drag" | "drop", label: string): void {
     if (!this.debug) return;
-    this.hud.mark(label);
+    if (kind === "drag") {
+      this.hudDragIn = label;
+      this.hudDrop = "";
+    } else this.hudDrop = label;
     this.renderHud();
   }
 
@@ -11872,7 +11883,8 @@ export class InkSurface {
 
   /**
    * The HUD's text: the pointer log and counts, the last shape verdict, the
-   * pointer and page, then where everything is on screen.
+   * pointer and page, the last drag and drop, then where everything is on
+   * screen.
    */
   private renderHud(): void {
     if (!this.debug) return;
@@ -11883,6 +11895,8 @@ export class InkSurface {
         `${this.hud.tilt()}\n` +
         (this.hudTextEnd ? `${this.hudTextEnd}\n` : "") +
         (this.hudTextMark ? `highlighter ${this.hudTextMark}\n` : "") +
+        (this.hudDragIn ? `drag ${this.hudDragIn}\n` : "") +
+        (this.hudDrop ? `drop ${this.hudDrop}\n` : "") +
         this.hudGeometry(),
     );
   }
@@ -16223,6 +16237,31 @@ export class InkSurface {
             : t("surface.notice.nothingToPaste"),
       );
     });
+  }
+
+  /**
+   * Text dropped at a client point (discussion #288): a text box whose
+   * corner is the drop, on the page or board under it, else on the page in
+   * view; one undo step, selected, as a paste makes. False when the drop is
+   * not this surface's to take: a practice file or fixed pages take
+   * handwriting only, a protected note refuses it, and a text box being
+   * typed in keeps its own drops.
+   */
+  dropText(clientX: number, clientY: number, text: string): boolean {
+    if (!text || this.practice !== null || this.fixedPages || this.cropping) return false;
+    if (this.editingTextView() || this.callbacks.isLocked?.()) return false;
+    const layoutAt = this.toLayout(clientX, clientY);
+    const box = boxAtPoint(this.pageLayout, layoutAt.x, layoutAt.y);
+    if (box) {
+      this.addPastedText(box.index, this.toPage(box, layoutAt), text);
+      return true;
+    }
+    // Between pages: the page in view, as a paste does.
+    const region = this.visibleRegion(this.pageIndex);
+    if (!region) return false;
+    const at = { x: (region.minX + region.maxX) / 2, y: (region.minY + region.maxY) / 2 };
+    this.addPastedText(this.pageIndex, at, text);
+    return true;
   }
 
   /** Text from the system clipboard as a new text box at `at`, selected: one undo step. */
