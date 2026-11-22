@@ -675,6 +675,12 @@ export class TextNoteView extends TextFileView {
       app: this.app,
       file: () => this.file,
       note: () => this.editor?.current() ?? emptyNote(() => "b0"),
+      exportsPath: () => {
+        const own = this.extras?.folder("exports");
+        if (own) return own;
+        const parent = this.file?.parent;
+        return parent && !parent.isRoot() ? parent.path : undefined;
+      },
       exportsFolder: async () => {
         const own = await this.extras?.madeFolder("exports");
         if (own) return own;

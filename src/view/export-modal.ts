@@ -111,6 +111,17 @@ export interface ExportPdfHost {
    * shapes follow `pageSize`.
    */
   setMargins?: (margins: ExportMargins) => void;
+  /**
+   * `false`: no All / This page / Choose segment; the grid opens with every
+   * page ticked, and a tap unticks one (a text note, which has no page in view).
+   */
+  scopes?: false;
+  /** `false`: pages export in their own order, ticks show no place numbers. */
+  ordered?: false;
+  /** `false`: no PDF / PNG / JPG control; the host exports in its one format. */
+  formats?: false;
+  /** The dialog's title; "Export" when not given. */
+  title?: string;
 }
 
 /** The margins button's icon and name for each choice: the name is its tooltip. */
@@ -203,13 +214,17 @@ export class ExportPdfModal extends Modal {
     this.preset = opening.preset;
     this.pageScope = opening.scope;
     this.chosen = opening.chosen;
+    if (host.scopes === false && !opening.preset) {
+      this.pageScope = "custom";
+      this.chosen = allPages(host.pageCount);
+    }
     this.format = host.format ?? "pdf";
   }
 
   override onOpen(): void {
     this.closed = false;
     this.modalEl.addClass("goodobsidian-export-modal", "goodobsidian-dialog");
-    this.titleEl.setText(t("notebooks.export.title"));
+    this.titleEl.setText(this.host.title ?? t("notebooks.export.title"));
     this.renderChoose();
   }
 
@@ -226,7 +241,7 @@ export class ExportPdfModal extends Modal {
   private pages(): number[] {
     if (this.pageScope === "all") return allPages(this.host.pageCount);
     if (this.pageScope === "current") return [this.host.currentPage];
-    return this.chosen;
+    return this.host.ordered === false ? [...this.chosen].sort((a, b) => a - b) : this.chosen;
   }
 
   // --- Choose pages ----------------------------------------------------------
@@ -238,7 +253,7 @@ export class ExportPdfModal extends Modal {
     this.scopeButtons.clear();
     const { pageCount, currentPage } = this.host;
 
-    if (pageCount > 1 && !this.preset) {
+    if (pageCount > 1 && !this.preset && this.host.scopes !== false) {
       const seg = contentEl.createDiv({ cls: "goodobsidian-segmented goodobsidian-export-scope" });
       const scopes: ReadonlyArray<{ id: ExportScope; label: string }> = [
         { id: "all", label: t("notebooks.export.scopeAll", { count: pageCount }) },
@@ -436,6 +451,7 @@ export class ExportPdfModal extends Modal {
    * each page. `changed` runs after a pick, for the summary to follow.
    */
   private formatControl(parent: HTMLElement, changed: () => void): HTMLButtonElement[] {
+    if (this.host.formats === false) return [];
     const seg = parent.createDiv({
       cls: "goodobsidian-segmented goodobsidian-export-format",
       attr: { role: "group", "aria-label": t("notebooks.export.format") },
@@ -666,6 +682,7 @@ class PageGrid {
     only?: readonly number[],
   ) {
     this.el = parent.createDiv({ cls: "goodobsidian-export-grid" });
+    this.el.toggleClass("is-unordered", host.ordered === false);
     this.el.setAttribute("aria-label", t("notebooks.export.pages"));
     if (onTap) {
       this.el.setAttribute("role", "listbox");
@@ -730,6 +747,8 @@ class PageGrid {
    */
   setSelection(order: readonly number[], choosing: boolean): void {
     this.el.toggleClass("is-choosing", choosing);
+    // Pages that export in their own order are ticked, not numbered.
+    const numbered = choosing && this.host.ordered !== false;
     const place = new Map(order.map((page, i) => [page, i + 1]));
     this.tiles.forEach((tile) => {
       const index = tile.page;
@@ -739,12 +758,12 @@ class PageGrid {
       frame?.setAttribute("aria-selected", String(at !== undefined));
       frame?.setAttribute(
         "aria-label",
-        at !== undefined && choosing
+        at !== undefined && numbered
           ? t("notebooks.export.pageAs", { page: index + 1, at })
           : t("notebooks.export.page", { page: index + 1 }),
       );
       const label = tile.root.querySelector(".goodobsidian-export-order");
-      if (label) label.textContent = at !== undefined && choosing ? String(at) : "";
+      if (label) label.textContent = at !== undefined && numbered ? String(at) : "";
     });
   }
 

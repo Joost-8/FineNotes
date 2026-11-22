@@ -1,7 +1,7 @@
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { textBlock, type TextNote } from "../../src/model/text-note";
-import { exportNoteToPdf } from "../../src/view/note-pdf";
+import { exportNoteToPdf, layoutNoteForPdf } from "../../src/view/note-pdf";
 
 const note = (text: string): TextNote => ({
   blocks: [
@@ -70,5 +70,23 @@ describe("exportNoteToPdf", () => {
       rasterPage: () => Promise.resolve(jpeg),
     });
     expect(pdf.rastered).toEqual([{ page: 0, why: "text the PDF's fonts cannot show" }]);
+  });
+
+  it("writes only the pages asked for, in the note's order, laid out as the preview is", async () => {
+    const long = note("Many words to fill the page. ".repeat(400));
+    const layout = await layoutNoteForPdf(long, sources);
+    expect(layout.pages.length).toBeGreaterThan(2);
+    const progress: number[] = [];
+    const pdf = await exportNoteToPdf(long, "Trip", sources, {
+      pages: [2, 0, 99],
+      onProgress: (done) => progress.push(done),
+    });
+    expect(pdf.pages).toBe(2);
+    expect((await PDFDocument.load(pdf.bytes)).getPageCount()).toBe(2);
+    expect(progress).toEqual([0, 1, 2]);
+    await expect(exportNoteToPdf(long, "Trip", sources, { pages: [] })).rejects.toThrow(/No page/);
+    await expect(exportNoteToPdf(long, "Trip", sources, { cancelled: () => true })).rejects.toThrow(
+      /cancelled/,
+    );
   });
 });
