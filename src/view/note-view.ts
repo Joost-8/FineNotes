@@ -68,7 +68,8 @@ import type { InkBlock } from "../model/text-note";
 import type { ReadingGuard } from "../recognition/reading-guard";
 import { type ReadLine, lineHits } from "../search/hit-strokes";
 import { noteHits } from "../search/note-search";
-import { VaultSearchModal, vaultSearchBooks } from "./vault-search-modal";
+import { NoteList } from "./note-list";
+import { type OrganiseHost, onSmartFolders } from "./note-organiser";
 import { NoteExtras } from "./note-extras";
 import type GoodObsidianPlugin from "../main";
 
@@ -96,6 +97,8 @@ export interface TextNoteHost {
   reading?: NoteReadingHost;
   /** For recordings, their transcription and Ask AI (`note-extras.ts`); absent in the UI gallery. */
   plugin?: GoodObsidianPlugin;
+  /** The smart folders, for the note list's menu; absent: none. */
+  organise?: OrganiseHost;
 }
 
 /** What reading a note's handwriting on the device needs from the plugin. */
@@ -168,8 +171,6 @@ const TINT_NAMES: Readonly<Record<string, TextKey>> = {
 };
 /** Set once a stylus has written on this device: from then on fingers scroll and never write. */
 const PEN_SEEN_KEY = "finenotes-note-pen-seen";
-/** The last search, so searching again carries on where it left off (across notes). */
-let lastQuery = "";
 
 function clampSize(tool: NoteTool, value: unknown): number {
   const range = SIZES[tool];
@@ -290,6 +291,8 @@ export class TextNoteView extends TextFileView {
   /** What a search opened the note to light, until the note is in. */
   private pendingSearch: string | null = null;
   private extras: NoteExtras | null = null;
+  /** The list of notes beside the note, with its search (`note-list.ts`). */
+  private list: NoteList | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -370,6 +373,7 @@ export class TextNoteView extends TextFileView {
       this.contentEl.win.setTimeout(() => this.editor?.focusStart(), 60);
     }
     if (this.pendingSearch) this.contentEl.win.setTimeout(() => void this.showSearch(), 60);
+    this.list?.refresh();
     this.scheduleReading(DEVICE_READ_OPEN_MS);
   }
 
@@ -460,7 +464,25 @@ export class TextNoteView extends TextFileView {
                       : "notebooks.note.unreadable",
         ),
     });
+    this.list = new NoteList(content, {
+      app: this.app,
+      file: () => this.file,
+      note: () => this.editor?.current() ?? null,
+      smartFolders: () => this.host.organise?.smartFolders() ?? [],
+      toggled: (open) => {
+        content.toggleClass("has-note-list", open);
+        this.buttons.get("list")?.toggleClass("is-active", open);
+      },
+    });
     this.buildBar(this.bar);
+    this.buttons.get("list")?.toggleClass("is-active", this.list.isOpen);
+    // The list follows notes made, gone, renamed or retagged, and the smart folders.
+    const relist = (): void => this.list?.refresh();
+    this.registerEvent(this.app.vault.on("create", relist));
+    this.registerEvent(this.app.vault.on("delete", relist));
+    this.registerEvent(this.app.vault.on("rename", relist));
+    this.registerEvent(this.app.metadataCache.on("changed", relist));
+    this.registerEvent(onSmartFolders(this.app, relist));
     this.palette = content.createDiv({ cls: "finenotes-note-palette" });
     this.buildPalette();
     this.refresh();
@@ -520,6 +542,8 @@ export class TextNoteView extends TextFileView {
     this.contentEl.win.clearTimeout(this.readTimer);
     this.extras?.destroy();
     this.extras = null;
+    this.list?.destroy();
+    this.list = null;
     this.editor?.destroy();
     this.editor = null;
     this.buttons.clear();
@@ -581,6 +605,10 @@ export class TextNoteView extends TextFileView {
   private buildBar(bar: HTMLElement): void {
     const left = bar.createDiv({ cls: "finenotes-note-bar-group is-left" });
     const where = this.pill(left);
+    // The note list, first in the bar as Apple Notes' sidebar button is.
+    this.button(where, "list", "panel-left", "notebooks.organise.list", () =>
+      this.list?.setOpen(!this.list.isOpen),
+    );
     if (this.host.fullScreenOffered()) {
       this.button(where, "full", "maximize-2", "toolbar.fullScreen", () => {
         this.host.toggleFullScreen();
@@ -627,9 +655,9 @@ export class TextNoteView extends TextFileView {
       this.closeStyles();
       this.editor?.setDrawing(!this.editor.isDrawing());
     });
-    // Search, at the bar's far end as in Apple Notes: every note and notebook.
+    // Search, at the bar's far end as in Apple Notes: it opens the note list with its field.
     const find = this.pill(right);
-    this.button(find, "search", "search", "notebooks.note.search", () => void this.openSearch());
+    this.button(find, "search", "search", "notebooks.note.search", () => this.openSearch());
   }
 
   private refresh(): void {
@@ -1183,17 +1211,14 @@ export class TextNoteView extends TextFileView {
 
   // -------------------------------------------------------------- search
 
-  /** Search every text note and notebook, this note first. */
-  private async openSearch(): Promise<void> {
-    const editor = this.editor;
-    const file = this.file;
-    const books = await vaultSearchBooks(
-      this.app,
-      editor && file ? { path: file.path, note: editor.current() } : null,
-    );
-    new VaultSearchModal(this.app, books, file?.path ?? null, lastQuery, (query) => {
-      lastQuery = query;
-    }).open();
+  /**
+   * Search every text note and notebook, this note's folder first: the
+   * note list opens on the left with its field focused (Apple Notes'
+   * sidebar search), the button staying at the bar's right.
+   */
+  private openSearch(): void {
+    this.closeStyles();
+    this.list?.search();
   }
 
   /**
