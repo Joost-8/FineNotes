@@ -212,6 +212,7 @@ function fakeApp(
       },
     },
     metadataCache: {
+      on: () => ({}),
       getFileCache: (file: TFile) => {
         const fm = frontmatter.get(file.path);
         return fm ? { frontmatter: fm } : null;

@@ -24006,3 +24006,246 @@ button.clickable-icon.finenotes-note-button.is-recording::before {
   justify-content: flex-end;
   margin-top: 8px;
 }
+
+/* --- Organising notes by tag (note-organiser.ts, library-organise.ts, note-list.ts) ----
+   After Apple Notes: tags as chips (picked: an accent fill; left out: struck
+   through), smart folders as folder tiles with a gear, and the note list
+   beside a text note in the page sidebar's look. */
+
+.finenotes-tag-row,
+.finenotes-smart-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 16px;
+}
+
+button.finenotes-tag-chip.clickable-icon {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  width: auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+button.finenotes-tag-chip.clickable-icon.is-on {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+button.finenotes-tag-chip.clickable-icon.is-out {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.finenotes-tag-chip-count {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+button.finenotes-tag-chip.clickable-icon.is-on .finenotes-tag-chip-count {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.goodobsidian-library-cover.is-smart .goodobsidian-library-folder-art {
+  --gob-folder: var(--text-faint);
+}
+
+/* The smart folder dialog. */
+.finenotes-smart-name-row {
+  margin-bottom: 12px;
+}
+
+.finenotes-smart-modal input.finenotes-smart-name {
+  width: 100%;
+  /* 16 px: iPadOS zooms into a smaller field on focus. */
+  font-size: 16px;
+}
+
+.finenotes-smart-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.finenotes-smart-match {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.finenotes-smart-match.is-hidden {
+  display: none;
+}
+
+button.finenotes-smart-match-option.clickable-icon {
+  width: auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  white-space: normal;
+}
+
+button.finenotes-smart-match-option.clickable-icon.is-on {
+  background: var(--fn-note-tint, color-mix(in srgb, var(--interactive-accent) 16%, transparent));
+  color: var(--interactive-accent);
+}
+
+/* The note list: on the left of the note, full height, the bar and the page beside it. */
+.finenotes-note-view > .goodobsidian-pagesidebar.finenotes-note-list {
+  position: absolute;
+  z-index: 14;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  max-width: 85%;
+  overflow: hidden;
+}
+
+.finenotes-note-view > .goodobsidian-pagesidebar.finenotes-note-list.is-hidden {
+  display: none;
+}
+
+.finenotes-note-view.has-note-list > .finenotes-note-bar,
+.finenotes-note-view.has-note-list > .finenotes-note-scroll {
+  margin-left: 300px;
+  width: auto;
+}
+
+/* Narrow: the list lies over the note instead. */
+@media (max-width: 700px) {
+  .finenotes-note-view.has-note-list > .finenotes-note-bar,
+  .finenotes-note-view.has-note-list > .finenotes-note-scroll {
+    margin-left: 0;
+  }
+
+  .finenotes-note-view > .goodobsidian-pagesidebar.finenotes-note-list {
+    box-shadow: var(--shadow-l);
+  }
+}
+
+button.finenotes-note-list-scope.clickable-icon {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: auto;
+  height: var(--gob-touch);
+  padding: 0 8px;
+  color: var(--text-normal);
+  grid-column: 2;
+}
+
+.finenotes-note-list-scope .goodobsidian-pagesidebar-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finenotes-note-list-caret .svg-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+}
+
+.finenotes-note-list-search {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 36px;
+  margin: 0 12px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  color: var(--text-faint);
+}
+
+.finenotes-note-list-search:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--interactive-accent);
+}
+
+.finenotes-note-list-search .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.finenotes-note-list-search input[type="search"],
+.finenotes-note-list-search input[type="search"]:hover,
+.finenotes-note-list-search input[type="search"]:focus,
+.finenotes-note-list-search input[type="search"]:focus-visible {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  /* 16 px: iPadOS zooms into a smaller field on focus. */
+  font-size: 16px;
+}
+
+.finenotes-note-list-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 8px calc(12px + var(--goodobsidian-keyboard-pad, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+button.finenotes-note-list-row.clickable-icon {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: stretch;
+  width: 100%;
+  height: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--text-normal);
+  text-align: left;
+  white-space: normal;
+}
+
+button.finenotes-note-list-row.clickable-icon.is-current {
+  background: var(--fn-note-tint, color-mix(in srgb, var(--interactive-accent) 16%, transparent));
+}
+
+.finenotes-note-list-name {
+  overflow: hidden;
+  font-weight: var(--font-semibold, 600);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finenotes-note-list-when,
+.finenotes-note-list-snippet {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.finenotes-note-list-snippet {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.finenotes-note-list-empty {
+  padding: 24px 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
