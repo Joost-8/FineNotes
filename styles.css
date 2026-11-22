@@ -23125,10 +23125,10 @@ button.clickable-icon.finenotes-note-island-button {
 .finenotes-note-palette[data-dock="right"] {
   top: 50%;
   flex-direction: column;
-  width: 92px;
+  gap: 6px;
+  width: 56px;
   max-height: calc(100% - 96px);
-  overflow-x: hidden;
-  overflow-y: auto;
+  padding: 8px 4px;
   transform: translate(calc(var(--fn-hide-x) + var(--fn-drag-x)), calc(-50% + var(--fn-drag-y)));
 }
 
@@ -23147,9 +23147,7 @@ button.clickable-icon.finenotes-note-island-button {
   left: 50%;
   flex-direction: row;
   max-width: calc(100% - 24px);
-  padding: 6px 12px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  padding: 4px 10px;
   transform: translate(calc(-50% + var(--fn-drag-x)), calc(var(--fn-hide-y) + var(--fn-drag-y)));
 }
 
@@ -23208,19 +23206,13 @@ body:not(.is-mobile) .finenotes-note-palette[data-dock="bottom"] {
 }
 
 .finenotes-note-palette:is([data-dock="left"], [data-dock="right"]) .finenotes-note-palette-group {
-  flex-wrap: wrap;
-  width: 76px;
-}
-
-.finenotes-note-palette:is([data-dock="left"], [data-dock="right"])
-  .finenotes-note-palette-group.is-tools {
   flex-direction: column;
 }
 
 .finenotes-note-palette:is([data-dock="left"], [data-dock="right"])
   .finenotes-note-palette-group
   + .finenotes-note-palette-group {
-  padding-top: 8px;
+  padding-top: 6px;
   border-top: 1px solid var(--gob-line);
 }
 
@@ -23245,14 +23237,9 @@ body:not(.is-mobile) .finenotes-note-palette[data-dock="bottom"] {
   height: 36px;
 }
 
-.finenotes-note-palette-group.is-tools button.clickable-icon.finenotes-note-button {
-  width: 46px;
-  height: 46px;
-}
-
 .finenotes-note-palette-group.is-tools button.clickable-icon.finenotes-note-button .svg-icon {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
 }
 
 button.clickable-icon.finenotes-note-swatch {
@@ -23261,8 +23248,8 @@ button.clickable-icon.finenotes-note-swatch {
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   background: transparent;
   border-radius: 50%;
@@ -23270,8 +23257,8 @@ button.clickable-icon.finenotes-note-swatch {
 }
 
 button.clickable-icon.finenotes-note-swatch::before {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   content: "";
   background: var(--fn-swatch);
   border-radius: 50%;
@@ -23286,15 +23273,66 @@ button.clickable-icon.finenotes-note-swatch.is-active::before {
   transform: scale(0.8);
 }
 
-/* The size: the mark the tool makes, then a slider for any size in its range. */
+/* The size: the mark the tool makes; tapped, a slider for any size opens beside the palette. */
 .finenotes-note-palette-group.is-size {
-  flex-direction: column;
-  gap: 6px;
+  position: relative;
 }
 
-.finenotes-note-palette:is([data-dock="top"], [data-dock="bottom"])
-  .finenotes-note-palette-group.is-size {
-  flex-direction: row;
+button.clickable-icon.finenotes-note-size {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+  border-radius: 50%;
+}
+
+button.clickable-icon.finenotes-note-size.is-active {
+  background: var(--gob-active-bg);
+}
+
+.finenotes-note-size-pop {
+  position: absolute;
+  z-index: 1;
+  display: none;
+  padding: 6px 14px;
+  background: var(--gob-pop-bg);
+  border: var(--gob-bar-border);
+  border-radius: 999px;
+  box-shadow: var(--gob-shadow-sheet);
+  -webkit-backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+  backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+}
+
+.finenotes-note-palette-group.is-size.is-open > .finenotes-note-size-pop {
+  display: block;
+}
+
+.finenotes-note-palette[data-dock="left"] .finenotes-note-size-pop {
+  top: 50%;
+  left: calc(100% + 14px);
+  transform: translateY(-50%);
+}
+
+.finenotes-note-palette[data-dock="right"] .finenotes-note-size-pop {
+  top: 50%;
+  right: calc(100% + 14px);
+  transform: translateY(-50%);
+}
+
+.finenotes-note-palette[data-dock="bottom"] .finenotes-note-size-pop {
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.finenotes-note-palette[data-dock="top"] .finenotes-note-size-pop {
+  top: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .finenotes-note-size-mark {
@@ -23311,11 +23349,8 @@ button.clickable-icon.finenotes-note-swatch.is-active::before {
 }
 
 .finenotes-note-size-track {
-  width: 76px;
-}
-
-.finenotes-note-palette:is([data-dock="top"], [data-dock="bottom"]) .finenotes-note-size-track {
-  width: 110px;
+  width: 180px;
+  margin: 0;
 }
 
 button.clickable-icon.finenotes-note-done {
@@ -23323,8 +23358,8 @@ button.clickable-icon.finenotes-note-done {
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   color: var(--text-on-accent);
   background: var(--interactive-accent);

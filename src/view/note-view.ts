@@ -334,6 +334,11 @@ export class TextNoteView extends TextFileView {
         if (event.pointerType === "pen" && !this.app.loadLocalStorage(PEN_SEEN_KEY)) {
           this.app.saveLocalStorage(PEN_SEEN_KEY, "1");
         }
+        const size = this.palette?.querySelector(".finenotes-note-palette-group.is-size.is-open");
+        if (size && !size.contains(event.target as Node)) {
+          size.removeClass("is-open");
+          size.querySelector(".finenotes-note-size")?.removeClass("is-active");
+        }
         if (this.styles && !this.styles.contains(event.target as Node)) {
           const anchor = this.buttons.get("styles");
           if (!anchor?.contains(event.target as Node)) this.closeStyles();
@@ -642,9 +647,21 @@ export class TextNoteView extends TextFileView {
           ? this.choices.highlighter
           : this.choices.pen;
     const group = palette.createDiv({ cls: "finenotes-note-palette-group is-size" });
-    const mark = group.createDiv({ cls: "finenotes-note-size-mark" });
+    // The size is a mark of the line it draws; tapping it shows the slider beside the palette.
+    const toggle = group.createEl("button", {
+      cls: "clickable-icon finenotes-note-size",
+      attr: { type: "button", "aria-label": t("notebooks.note.size") },
+    });
+    const mark = toggle.createDiv({ cls: "finenotes-note-size-mark" });
+    const pop = group.createDiv({ cls: "finenotes-note-size-pop" });
+    toggle.addEventListener("pointerdown", (event) => event.preventDefault());
+    toggle.addEventListener("click", () => {
+      const open = !group.hasClass("is-open");
+      group.toggleClass("is-open", open);
+      toggle.toggleClass("is-active", open);
+    });
     // The tool bar's own slider, so a size is set the same way everywhere.
-    const track = group.createDiv({ cls: "goodobsidian-width-slider finenotes-note-size-track" });
+    const track = pop.createDiv({ cls: "goodobsidian-width-slider finenotes-note-size-track" });
     const slider = track.createEl("input", {
       cls: "goodobsidian-width-range",
       type: "range",
@@ -671,7 +688,6 @@ export class TextNoteView extends TextFileView {
               : (choice as ToolChoice).color,
       });
       mark.toggleClass("is-ring", tool === "eraser");
-      mark.setAttribute("aria-label", String(size));
     };
     show(choice.size);
     slider.addEventListener("input", () => {
