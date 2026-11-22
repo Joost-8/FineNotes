@@ -12,6 +12,7 @@
 
 import {
   BOLD,
+  HIGHLIGHT,
   ITALIC,
   STRIKE,
   UNDERLINE,
@@ -47,6 +48,7 @@ const TAG_MARKS: Readonly<Record<string, Marks>> = {
   S: STRIKE,
   STRIKE: STRIKE,
   DEL: STRIKE,
+  MARK: HIGHLIGHT,
 };
 
 /** The marks an element gives the text inside it, by its tag and its inline style. */

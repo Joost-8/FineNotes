@@ -24,7 +24,9 @@ export const BOLD = 1;
 export const ITALIC = 2;
 export const UNDERLINE = 4;
 export const STRIKE = 8;
-export const ALL_MARKS = BOLD | ITALIC | UNDERLINE | STRIKE;
+/** A highlight behind the text (`==text==` on disk). */
+export const HIGHLIGHT = 16;
+export const ALL_MARKS = BOLD | ITALIC | UNDERLINE | STRIKE | HIGHLIGHT;
 export type Marks = number;
 
 export interface TextRun {
@@ -33,7 +35,18 @@ export interface TextRun {
 }
 
 export type TextKind =
-  "title" | "heading" | "subheading" | "body" | "mono" | "bullet" | "number" | "check" | "quote";
+  | "title"
+  | "heading"
+  | "subheading"
+  | "body"
+  | "mono"
+  | "bullet"
+  | "dash"
+  | "number"
+  | "upper"
+  | "lower"
+  | "check"
+  | "quote";
 
 export const TEXT_KINDS: readonly TextKind[] = [
   "title",
@@ -42,13 +55,26 @@ export const TEXT_KINDS: readonly TextKind[] = [
   "body",
   "mono",
   "bullet",
+  "dash",
   "number",
+  "upper",
+  "lower",
   "check",
   "quote",
 ];
 
 /** The kinds that are list items: they indent, and Return on an empty one ends the list. */
-export const LIST_KINDS: readonly TextKind[] = ["bullet", "number", "check"];
+export const LIST_KINDS: readonly TextKind[] = [
+  "bullet",
+  "dash",
+  "number",
+  "upper",
+  "lower",
+  "check",
+];
+
+/** The list kinds that count their items (1., A., a.). */
+export const ORDERED_KINDS: readonly TextKind[] = ["number", "upper", "lower"];
 
 /** The deepest a list item indents. */
 export const MAX_INDENT = 3;
@@ -72,16 +98,22 @@ export const INK_MIN_HEIGHT = 72;
 /** No section grows past this: a canvas that tall is slow, and a new section is one stroke away. */
 export const INK_MAX_HEIGHT = 6000;
 /** Ink this close to a section's foot makes it grow, and by how much room it then leaves. */
-export const INK_GROW_MARGIN = 56;
+export const INK_GROW_MARGIN = 120;
 export const INK_GROW_ROOM = 150;
 /** The room kept under the lowest ink when a section is trimmed to what it holds. */
 export const INK_TRIM_ROOM = 28;
+
+/** The paper a handwriting section shows under its ink: the notebook's four basic ones. */
+export type InkPaper = "blank" | "lined" | "squared" | "dotted";
+export const INK_PAPERS: readonly InkPaper[] = ["blank", "lined", "squared", "dotted"];
 
 export interface InkBlock {
   readonly type: "ink";
   readonly id: string;
   readonly height: number;
   readonly strokes: readonly Stroke[];
+  /** Absent: blank. */
+  readonly paper?: InkPaper;
 }
 
 /** The least width a picture is shown at, as a share of the column. */
@@ -660,11 +692,19 @@ export function shortcutKind(kind: TextKind, typed: string): TextKind | null {
   if (kind !== "body") return null;
   switch (typed) {
     case "-":
+      return "dash";
     case "*":
+    case "•":
       return "bullet";
     case "1.":
     case "1)":
       return "number";
+    case "A.":
+    case "A)":
+      return "upper";
+    case "a.":
+    case "a)":
+      return "lower";
     case "[]":
     case "[ ]":
       return "check";
@@ -679,6 +719,44 @@ export function shortcutKind(kind: TextKind, typed: string): TextKind | null {
     default:
       return null;
   }
+}
+
+// ---------------------------------------------------------------- list markers
+
+/** The n-th letter (1 = a), round again after z. */
+export function letterOf(n: number, upper: boolean): string {
+  const letter = String.fromCharCode(97 + ((Math.max(1, n) - 1) % 26));
+  return upper ? letter.toUpperCase() : letter;
+}
+
+/**
+ * The marker each counted list item shows (`3.`, `C.`, `c.`), by block;
+ * null for every other block. A list counts from 1 at each depth, starts
+ * again where its kind changes at that depth, and ends at anything that is
+ * not a list item. The page and the file both count this way.
+ */
+export function listMarkers(blocks: readonly NoteBlock[]): Array<string | null> {
+  const out: Array<string | null> = [];
+  let counts: Array<{ kind: TextKind; n: number } | undefined> = [];
+  for (const block of blocks) {
+    if (!(block.type === "text" && isList(block.kind))) {
+      counts = [];
+      out.push(null);
+      continue;
+    }
+    const depth = block.indent ?? 0;
+    counts.length = depth + 1;
+    if (!ORDERED_KINDS.includes(block.kind)) {
+      counts[depth] = undefined;
+      out.push(null);
+      continue;
+    }
+    const seen = counts[depth];
+    const n = seen && seen.kind === block.kind ? seen.n + 1 : 1;
+    counts[depth] = { kind: block.kind, n };
+    out.push(block.kind === "number" ? `${n}.` : `${letterOf(n, block.kind === "upper")}.`);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- ink

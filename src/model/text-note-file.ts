@@ -9,9 +9,11 @@
  * ---
  * # Title
  * Body text with **bold**, *italic*, <u>underline</u> and ~~strike~~.
- * - a bullet
- * 	- an indented one (a tab a level)
+ * * a bullet
+ * 	* an indented one (a tab a level)
+ * - a dashed item
  * 1. a numbered item
+ * A. a lettered item (a. in small letters)
  * - [x] a ticked checklist item
  * > a quote
  * ![[Pictures/photo.jpg|360]]
@@ -39,6 +41,8 @@ import { emptyDocument } from "./document";
 import { decodeDocument, encodeDocument } from "./serialize";
 import {
   BOLD,
+  HIGHLIGHT,
+  INK_PAPERS,
   INK_WIDTH,
   ITALIC,
   MAX_INDENT,
@@ -47,6 +51,8 @@ import {
   clampInkHeight,
   emptyNote,
   isList,
+  listMarkers,
+  type InkPaper,
   normalizeRuns,
   textBlock,
   type IdSource,
@@ -122,6 +128,7 @@ const MARK_ORDER: ReadonlyArray<[Marks, string, string]> = [
   [ITALIC, "*", "*"],
   [STRIKE, "~~", "~~"],
   [UNDERLINE, "<u>", "</u>"],
+  [HIGHLIGHT, "==", "=="],
 ];
 
 const PUNCTUATION = /[!-/:-@[-`{-~]/;
@@ -139,6 +146,8 @@ function escapeText(text: string): string {
       out += "\\*";
     } else if (c === "~") {
       out += "\\~";
+    } else if (c === "=" && (next === "=" || text[i - 1] === "=")) {
+      out += "\\=";
     } else if (c === "<" && /^<\/?u>/i.test(text.slice(i, i + 4))) {
       out += "\\<";
     } else {
@@ -211,7 +220,7 @@ function later(text: string, needle: string, from: number): boolean {
   return false;
 }
 
-/** Markdown as runs: `**`, `*`, `~~`, `<u>` and backslash escapes; all else is text. */
+/** Markdown as runs: `**`, `*`, `~~`, `==`, `<u>` and backslash escapes; all else is text. */
 export function decodeInline(text: string): TextRun[] {
   const runs: TextRun[] = [];
   let marks: Marks = 0;
@@ -263,6 +272,12 @@ export function decodeInline(text: string): TextRun[] {
         i += 2;
         continue;
       }
+    } else if (c === "=" && text[i + 1] === "=") {
+      if ((marks & HIGHLIGHT) !== 0 || (!spaceAt(i + 2) && later(text, "==", i + 2))) {
+        toggle(HIGHLIGHT);
+        i += 2;
+        continue;
+      }
     } else if (c === "<") {
       const tag = text.slice(i, i + 4).toLowerCase();
       if (
@@ -291,6 +306,8 @@ export function decodeInline(text: string): TextRun[] {
 
 const HEADING = /^(#{1,6})(?: (.*)|$)/;
 const LIST = /^([\t ]*)(?:([-*+])|(\d{1,9})[.)])(?: (.*)|$)/;
+/** A lettered item: `A.` or `a.` (one letter; the view counts them). */
+const LETTER = /^([\t ]*)([A-Za-z])[.)](?: (.*)|$)/;
 const CHECK = /^\[([ xX])\](?: (.*)|$)/;
 const QUOTE = /^>(?: ?(.*))$/;
 const FENCE = /^(`{3,})(.*)$/;
@@ -308,6 +325,11 @@ function guardLine(line: string): string {
     // A bullet escapes its marker; a number escapes the dot after it.
     if (list[2]) return `${line.slice(0, lead)}\\${line.slice(lead)}`;
     const dot = lead + list[3].length;
+    return `${line.slice(0, dot)}\\${line.slice(dot)}`;
+  }
+  const letter = LETTER.exec(line);
+  if (letter) {
+    const dot = letter[1].length + 1;
     return `${line.slice(0, dot)}\\${line.slice(dot)}`;
   }
   return line;
@@ -329,6 +351,7 @@ function packInk(block: InkBlock): string[] {
   const doc = emptyDocument(INK_WIDTH);
   const page = doc.pages[0];
   page.geometry = { width: INK_WIDTH, height: clampInkHeight(block.height) };
+  if (block.paper && block.paper !== "blank") page.backdrop = { kind: block.paper };
   page.strokes = block.strokes.map((stroke) => ({ ...stroke, pts: stroke.pts.slice() }));
   return [INK_OPEN, encodeDocument(doc), INK_CLOSE];
 }
@@ -342,12 +365,10 @@ const HEADING_MARK: Partial<Record<TextBlock["kind"], string>> = {
 /** A note's blocks as the lines of its Markdown body. */
 export function encodeNote(note: TextNote): string {
   const lines: string[] = [];
-  /** The numbered items so far in the list being written, by depth. */
-  let counts: number[] = [];
   const blocks = note.blocks;
+  const markers = listMarkers(blocks);
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
-    if (!(block.type === "text" && isList(block.kind))) counts = [];
     if (block.type === "ink") {
       lines.push(...inkLines(block));
       continue;
@@ -382,12 +403,8 @@ export function encodeNote(note: TextNote): string {
       lines.push(text ? `> ${text}` : ">");
     } else if (isList(block.kind)) {
       const depth = block.indent ?? 0;
-      let marker = "-";
-      if (block.kind === "number") {
-        counts.length = depth + 1;
-        counts[depth] = (counts[depth] ?? 0) + 1;
-        marker = `${counts[depth]}.`;
-      } else if (block.kind === "check") {
+      let marker = markers[i] ?? (block.kind === "bullet" ? "*" : "-");
+      if (block.kind === "check") {
         marker = block.checked ? "- [x]" : "- [ ]";
       }
       const lead = "\t".repeat(depth);
@@ -415,11 +432,14 @@ function readInk(payload: string, id: string): InkBlock | null {
   try {
     const page = decodeDocument(payload, INK_WIDTH).pages[0];
     if (!page) return null;
+    const kind: string = page.backdrop.kind;
+    const paper = INK_PAPERS.find((p): p is InkPaper => p === kind && p !== "blank");
     return {
       type: "ink",
       id,
       height: clampInkHeight(page.geometry.height),
       strokes: page.strokes,
+      ...(paper ? { paper } : {}),
     };
   } catch {
     return null;
@@ -511,10 +531,21 @@ export function decodeNote(body: string, newId: IdSource): TextNote {
           }),
         );
       } else {
-        blocks.push(
-          textBlock(newId(), list[2] ? "bullet" : "number", decodeInline(rest), { indent }),
-        );
+        const kind = !list[2] ? "number" : list[2] === "-" ? "dash" : "bullet";
+        blocks.push(textBlock(newId(), kind, decodeInline(rest), { indent }));
       }
+      afterList = true;
+      continue;
+    }
+    const letter = LETTER.exec(line);
+    if (letter) {
+      const lead = letter[1];
+      const tabs = lead.split("\t").length - 1;
+      const indent = Math.min(MAX_INDENT, tabs + Math.floor((lead.length - tabs) / 2));
+      const upper = letter[2] === letter[2].toUpperCase();
+      blocks.push(
+        textBlock(newId(), upper ? "upper" : "lower", decodeInline(letter[3] ?? ""), { indent }),
+      );
       afterList = true;
       continue;
     }

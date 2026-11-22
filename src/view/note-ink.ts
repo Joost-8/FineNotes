@@ -17,10 +17,12 @@
  */
 
 import { FALLBACK_PRESSURE, MIN_SAMPLE_DISTANCE } from "../constants";
+import { drawSyntheticRules, paperTheme } from "../canvas/backdrop";
 import { nightColor } from "../canvas/night";
 import { paintInk, penFor } from "../canvas/renderer";
 import { inkRuns } from "../ink/freehand";
 import { StrokeBuilder } from "../ink/stroke-builder";
+import { recognizeAtZoom, styleOfShape, type ShapeResult } from "../ink/shape-recognizer";
 import { eraseCircleFromStroke } from "../ink/stroke-eraser";
 import { deliversCoalescedSamples, isOnDevicePixel } from "../input/pointer-controller";
 import type { Stroke } from "../model/document";
@@ -41,12 +43,14 @@ export type NoteTool = "pen" | "highlighter" | "eraser";
 export interface NotePen {
   tool: NoteTool;
   color: string;
-  /** The line's width, section units. */
+  /** The line's width, section units; the eraser's radius in CSS px (the same on screen at any width). */
   size: number;
 }
 
-/** The eraser's radius, CSS px: the same on screen at any column width. */
-const ERASER_RADIUS_PX = 11;
+/** A pen held still this long turns its stroke into the shape it drew (as in a notebook). */
+const HOLD_MS = 500;
+/** Moving further than this, CSS px, starts the wait again. */
+const HOLD_RADIUS_PX = 6;
 /** No canvas is backed by more device px per CSS px than this. */
 const MAX_PIXEL_RATIO = 2;
 /** The room kept under the lowest ink when a section's foot is dragged up. */
@@ -54,6 +58,8 @@ const RESIZE_ROOM = 6;
 
 export interface InkSectionHost {
   pen(): NotePen;
+  /** The eraser's radius, CSS px, for a pen's other end. */
+  eraserSize(): number;
   /** Pens thin and swell with pressure (the plugin's setting). */
   pressure(): boolean;
   highlighterAlpha(): number;
@@ -107,6 +113,11 @@ export class InkSection {
   private frame = 0;
   private lastDownType = "";
   private dragging: { pointer: number; startY: number; startHeight: number } | null = null;
+  /** Where the pen last came to rest, and the timer that snaps the stroke if it stays. */
+  private holdAt: { x: number; y: number } | null = null;
+  private holdTimer = 0;
+  /** The shape the held stroke became: drawn and kept instead of the ink. */
+  private snapped: ShapeResult | null = null;
 
   constructor(
     block: InkBlock,
@@ -123,6 +134,7 @@ export class InkSection {
     this.edge = this.el.createDiv({ cls: "finenotes-note-ink-edge" });
     this.edge.createDiv({ cls: "finenotes-note-ink-grip" });
     this.applyHeight(block.height);
+    this.showPaper();
 
     this.el.addEventListener("pointerdown", this.onDown);
     this.el.addEventListener("pointermove", this.onMove);
@@ -152,6 +164,7 @@ export class InkSection {
 
   destroy(): void {
     this.observer.disconnect();
+    this.el.win.clearTimeout(this.holdTimer);
     this.el.win.cancelAnimationFrame(this.frame);
     if (this.pointer !== null) this.host.penDown(false);
     // iOS holds a canvas's memory until its size is given back.
@@ -167,6 +180,7 @@ export class InkSection {
     const previous = this.block;
     this.block = next;
     this.el.toggleClass("is-empty", next.strokes.length === 0);
+    this.showPaper();
     if (this.busy) return;
     const appended =
       next.height === previous.height &&
@@ -184,6 +198,13 @@ export class InkSection {
     }
     if (next.height !== this.liveHeight) this.applyHeight(next.height);
     this.layout(true);
+  }
+
+  /** A section with paper of its own shows no other pattern behind it. */
+  private showPaper(): void {
+    const paper = this.block.paper;
+    if (paper && paper !== "blank") this.el.dataset.paper = paper;
+    else delete this.el.dataset.paper;
   }
 
   /** The theme or a pen setting changed: draw everything again. */
@@ -270,9 +291,22 @@ export class InkSection {
     ctx.globalAlpha = 1;
   }
 
+  /** The section's paper: its rules, in the notebook's colours for the theme. */
+  private paintPaper(ctx: CanvasRenderingContext2D): void {
+    const paper = this.block.paper;
+    if (!paper || paper === "blank") return;
+    drawSyntheticRules(
+      ctx,
+      { kind: paper },
+      { width: INK_WIDTH, height: this.liveHeight },
+      paperTheme(this.host.dark()),
+    );
+  }
+
   private paintDry(): void {
     const ctx = this.wipe(this.dry);
     if (!ctx) return;
+    this.paintPaper(ctx);
     const strokes = this.erased ?? this.block.strokes;
     // Highlights first: they sit under the writing, which stays crisp.
     for (const stroke of strokes) if (stroke.tool === "highlighter") this.paintStroke(ctx, stroke);
@@ -283,7 +317,7 @@ export class InkSection {
     const ctx = this.wipe(this.wet);
     if (!ctx) return;
     if (this.eraserAt) {
-      const radius = ERASER_RADIUS_PX / this.scale;
+      const radius = this.eraserRadius();
       ctx.beginPath();
       ctx.arc(this.eraserAt.x, this.eraserAt.y, radius, 0, Math.PI * 2);
       ctx.lineWidth = 1 / this.scale;
@@ -296,6 +330,18 @@ export class InkSection {
     const builder = this.builder;
     const pen = this.pen;
     if (!builder || !pen || pen.tool === "eraser") return;
+    if (this.snapped) {
+      this.paintStroke(ctx, {
+        id: "",
+        color: pen.color,
+        size: pen.size,
+        tool: pen.tool,
+        pts: this.snapped.pts,
+        shape: this.snapped.kind,
+        ...styleOfShape(this.snapped),
+      });
+      return;
+    }
     // The points kept, then the few still waiting to settle: drawn as the stroke will be kept.
     const pts = builder.view.slice();
     for (const point of builder.tail) pts.push(point[0], point[1], point[2]);
@@ -363,7 +409,10 @@ export class InkSection {
     this.host.penDown(true);
     const pen = { ...this.host.pen() };
     // The other end of a pen that has one erases, whatever tool is picked.
-    if ((event.buttons & 32) !== 0) pen.tool = "eraser";
+    if ((event.buttons & 32) !== 0) {
+      pen.tool = "eraser";
+      pen.size = this.host.eraserSize();
+    }
     this.pen = pen;
     const at = this.local(event);
     if (pen.tool === "eraser") {
@@ -384,6 +433,32 @@ export class InkSection {
       smoothing: isPen && !penIsPrecise ? "centred" : "off",
     });
     this.builder.add({ ...at, pressure: event.pressure, t: event.timeStamp });
+    this.snapped = null;
+    this.holdAt = null;
+    if (pen.tool === "pen") this.trackHold(at);
+    this.requestWet();
+  }
+
+  /** "Nothing moved for a while" is a timer: a pen held still sends no events at all. */
+  private trackHold(at: { x: number; y: number }): void {
+    if (this.pen?.tool !== "pen") return;
+    const radius = HOLD_RADIUS_PX / this.scale;
+    if (this.holdAt && Math.hypot(at.x - this.holdAt.x, at.y - this.holdAt.y) <= radius) return;
+    this.holdAt = at;
+    const win = this.el.win;
+    win.clearTimeout(this.holdTimer);
+    this.holdTimer = win.setTimeout(() => this.snapHeld(), HOLD_MS);
+  }
+
+  private snapHeld(): void {
+    const builder = this.builder;
+    if (this.pointer === null || !builder || this.snapped) return;
+    const pts = builder.points();
+    if (pts.length < 6) return;
+    // The recogniser's lengths were tuned where a page px is a screen px.
+    const shape = recognizeAtZoom(pts, this.scale, { held: true });
+    if (!shape) return;
+    this.snapped = shape;
     this.requestWet();
   }
 
@@ -403,7 +478,9 @@ export class InkSection {
         continue;
       }
       if (event.pointerType === "pen" && !isOnDevicePixel(sample, ratio)) penIsPrecise = true;
+      if (this.snapped) continue;
       this.builder?.add({ ...at, pressure: sample.pressure, t: sample.timeStamp });
+      this.trackHold(at);
     }
     // Writing that reaches the foot gets more paper under it at once, not on lifting.
     if (!this.erased && lowest > this.liveHeight - INK_GROW_MARGIN / 2) {
@@ -419,6 +496,10 @@ export class InkSection {
   private readonly onUp = (event: PointerEvent): void => {
     if (event.pointerId !== this.pointer) return;
     this.pointer = null;
+    this.el.win.clearTimeout(this.holdTimer);
+    this.holdAt = null;
+    const snapped = this.snapped;
+    this.snapped = null;
     this.host.penDown(false);
     if (event.pointerType !== "pen") this.el.removeClass("is-pen-near");
     const height = this.liveHeight;
@@ -429,6 +510,21 @@ export class InkSection {
         strokes.length !== this.block.strokes.length ||
         strokes.some((stroke, i) => stroke !== this.block.strokes[i]);
       if (changed) next = { ...this.block, strokes, height };
+    } else if (snapped && this.pen) {
+      const stroke: Stroke = {
+        id: this.host.newStrokeId(),
+        color: this.pen.color,
+        size: this.pen.size,
+        tool: "pen",
+        pts: snapped.pts,
+        shape: snapped.kind,
+        ...styleOfShape(snapped),
+      };
+      next = {
+        ...this.block,
+        strokes: [...this.block.strokes, stroke],
+        height: grownHeight(height, inkBottom([stroke])),
+      };
     } else if (this.builder && this.pen) {
       // A pen that the system took away mid-stroke still wrote what it wrote.
       if (event.type === "pointerup") {
@@ -470,11 +566,17 @@ export class InkSection {
     }
   };
 
+  /** The eraser's radius in section units: its size is CSS px, the same on screen at any width. */
+  private eraserRadius(): number {
+    const px = this.pen?.tool === "eraser" ? this.pen.size : this.host.pen().size;
+    return Math.max(2, px) / this.scale;
+  }
+
   private eraseAt(at: { x: number; y: number }): void {
     this.eraserAt = at;
     const strokes = this.erased;
     if (!strokes) return;
-    const radius = ERASER_RADIUS_PX / this.scale;
+    const radius = this.eraserRadius();
     const out: Stroke[] = [];
     let changed = false;
     for (const stroke of strokes) {

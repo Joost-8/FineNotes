@@ -4556,6 +4556,7 @@ body,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range,
+.finenotes-note-palette input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   position: absolute;
   inset: 0;
@@ -4575,6 +4576,7 @@ body,
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range,
+.finenotes-note-palette input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   --gob-slider-height: var(--gob-touch);
 }
@@ -4598,6 +4600,7 @@ input[type="range"].goodobsidian-player-scrubber {
   input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-mm-stepper
   input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+.finenotes-note-palette input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
   height: var(--gob-slider-height);
@@ -4626,6 +4629,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track 
 .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+.finenotes-note-palette input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   top: 0;
@@ -4648,6 +4652,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
 .goodobsidian-colour-panel
   input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+.finenotes-note-palette input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
@@ -4664,6 +4669,7 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   .goodobsidian-zoombox-settings input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  .finenotes-note-palette input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
     transition: none;
@@ -15845,7 +15851,7 @@ button.goodobsidian-ns-update-mute.clickable-icon {
    status bar's inset above them stays (Obsidian pads the split for it). */
 .workspace-tabs.goodobsidian-full-screen > .workspace-tab-header-container,
 .workspace-tabs.goodobsidian-full-screen
-  .workspace-leaf-content[data-type="goodobsidian-view"]
+  .workspace-leaf-content:is([data-type="goodobsidian-view"], [data-type="finenotes-note"])
   > .view-header {
   display: none;
 }
@@ -17452,7 +17458,11 @@ body.goodobsidian-simple .sidebar-toggle-button {
   display: none;
 }
 body.goodobsidian-simple
-  .workspace-leaf-content:is([data-type="goodobsidian-view"], [data-type="finenotes-library"])
+  .workspace-leaf-content:is(
+    [data-type="goodobsidian-view"],
+    [data-type="finenotes-library"],
+    [data-type="finenotes-note"]
+  )
   > .view-header {
   display: none;
 }
@@ -19678,6 +19688,7 @@ body[class*="finenotes-palette-"]
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19687,6 +19698,7 @@ body[class*="finenotes-palette-"]
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19728,6 +19740,7 @@ body[class*="finenotes-palette-"]
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19741,6 +19754,7 @@ body.finenotes-palette-nord.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19784,6 +19798,7 @@ body.finenotes-palette-nord.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19793,6 +19808,7 @@ body.finenotes-palette-nord
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19837,6 +19853,7 @@ body.finenotes-palette-catppuccin.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19880,6 +19897,7 @@ body.finenotes-palette-catppuccin.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19889,6 +19907,7 @@ body.finenotes-palette-catppuccin
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19933,6 +19952,7 @@ body.finenotes-palette-dracula.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19976,6 +19996,7 @@ body.finenotes-palette-dracula.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -19985,6 +20006,7 @@ body.finenotes-palette-dracula
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20029,6 +20051,7 @@ body.finenotes-palette-rose-pine.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20072,6 +20095,7 @@ body.finenotes-palette-rose-pine.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20081,6 +20105,7 @@ body.finenotes-palette-rose-pine
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20125,6 +20150,7 @@ body.finenotes-palette-gruvbox.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20168,6 +20194,7 @@ body.finenotes-palette-gruvbox.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20177,6 +20204,7 @@ body.finenotes-palette-gruvbox
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20221,6 +20249,7 @@ body.finenotes-palette-solarized.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20264,6 +20293,7 @@ body.finenotes-palette-solarized.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20273,6 +20303,7 @@ body.finenotes-palette-solarized
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20317,6 +20348,7 @@ body.finenotes-palette-tokyo-night.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20360,6 +20392,7 @@ body.finenotes-palette-tokyo-night.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20369,6 +20402,7 @@ body.finenotes-palette-tokyo-night
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20413,6 +20447,7 @@ body.finenotes-palette-everforest.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20456,6 +20491,7 @@ body.finenotes-palette-everforest.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20465,6 +20501,7 @@ body.finenotes-palette-everforest
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20509,6 +20546,7 @@ body.finenotes-palette-high-contrast.theme-light
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20552,6 +20590,7 @@ body.finenotes-palette-high-contrast.theme-dark
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20561,6 +20600,7 @@ body.finenotes-palette-high-contrast
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20609,6 +20649,7 @@ body.finenotes-style-glass
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20640,6 +20681,7 @@ body.finenotes-style-material
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20675,6 +20717,7 @@ body.finenotes-style-fluent
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20706,6 +20749,7 @@ body.finenotes-style-paper
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20741,6 +20785,7 @@ body.finenotes-style-brutalist
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20781,6 +20826,7 @@ body.finenotes-style-soft
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20811,6 +20857,7 @@ body.finenotes-style-retro
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -20850,6 +20897,7 @@ body.finenotes-style-compact
   :is(
     .workspace-leaf-content[data-type="goodobsidian-view"],
     .workspace-leaf-content[data-type="finenotes-library"],
+    .workspace-leaf-content[data-type="finenotes-note"],
     .modal[class*="goodobsidian-"],
     .modal[class*="finenotes-"],
     body > [class*="goodobsidian-"],
@@ -22437,24 +22485,52 @@ button:not(.clickable-icon).goodobsidian-share-all,
   background: var(--background-primary);
 }
 
-/* --- the bar ------------------------------------------------------------- */
+/* --- the bar: Apple Notes' layout ------------------------------------------
+   Where you are and undo on the left, what goes into the note in the middle,
+   the pen on the right; each group a pill floating over the note, in the
+   notebooks' look (`--gob-*`, so a chosen style and palette reach it). */
 
 .finenotes-note-bar {
+  position: relative;
+  z-index: 12;
   display: flex;
   flex: none;
+  gap: 8px;
   align-items: center;
-  justify-content: space-between;
   box-sizing: border-box;
   width: 100%;
-  max-width: 768px;
-  margin: 0 auto;
-  padding: 6px 16px 2px;
+  padding: 10px 14px 6px;
 }
 
 .finenotes-note-bar-group {
   display: flex;
+  flex: 1 1 0;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.finenotes-note-bar-group.is-middle {
+  flex: none;
+  justify-content: center;
+}
+
+.finenotes-note-bar-group.is-right {
+  justify-content: flex-end;
+}
+
+.finenotes-note-pill {
+  display: flex;
+  flex: none;
   gap: 2px;
   align-items: center;
+  padding: 3px;
+  background: var(--gob-pill-bg);
+  border: var(--gob-bar-border);
+  border-radius: var(--gob-radius-pill);
+  box-shadow: var(--gob-shadow-float);
+  -webkit-backdrop-filter: var(--gob-blur, blur(18px) saturate(1.6));
+  backdrop-filter: var(--gob-blur, blur(18px) saturate(1.6));
 }
 
 button.clickable-icon.finenotes-note-button {
@@ -22462,11 +22538,12 @@ button.clickable-icon.finenotes-note-button {
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   padding: 0;
-  color: var(--fn-note-accent);
-  border-radius: 10px;
+  color: var(--text-normal);
+  background: transparent;
+  border-radius: var(--gob-tool-radius, 999px);
   transition:
     background-color 0.15s ease,
     opacity 0.15s ease,
@@ -22476,6 +22553,14 @@ button.clickable-icon.finenotes-note-button {
 button.clickable-icon.finenotes-note-button .svg-icon {
   width: 21px;
   height: 21px;
+  stroke-width: var(--gob-icon-stroke, 1.75px);
+}
+
+/* "Aa", and the lettered lists' "A." and "a.": a word where no symbol says it. */
+button.clickable-icon.finenotes-note-button.is-text {
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 button.clickable-icon.finenotes-note-button:active {
@@ -22483,12 +22568,29 @@ button.clickable-icon.finenotes-note-button:active {
 }
 
 button.clickable-icon.finenotes-note-button.is-active {
-  background: var(--fn-note-tint);
+  color: var(--gob-active-fg);
+  background: var(--gob-active-bg);
 }
 
 button.clickable-icon.finenotes-note-button:disabled {
   opacity: 0.3;
   pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .finenotes-note-bar {
+    gap: 6px;
+    padding: 8px 8px 4px;
+  }
+
+  .finenotes-note-bar-group {
+    gap: 4px;
+  }
+
+  button.clickable-icon.finenotes-note-button {
+    width: 34px;
+    height: 34px;
+  }
 }
 
 /* --- the page ------------------------------------------------------------ */
@@ -22504,12 +22606,13 @@ button.clickable-icon.finenotes-note-button:disabled {
 }
 
 .finenotes-note-column {
+  --fn-col-pad: clamp(18px, 6vw, 72px);
   position: relative;
   box-sizing: border-box;
   width: 100%;
-  max-width: 768px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 4px 24px 0;
+  padding: 4px var(--fn-col-pad) 0;
 }
 
 .finenotes-note-date {
@@ -22620,16 +22723,26 @@ button.clickable-icon.finenotes-note-button:disabled {
   border-inline-start: 3px solid var(--fn-note-accent);
 }
 
-.finenotes-note-line[data-kind="bullet"],
-.finenotes-note-line[data-kind="number"],
-.finenotes-note-line[data-kind="check"] {
+.finenotes-note-line:is(
+  [data-kind="bullet"],
+  [data-kind="dash"],
+  [data-kind="number"],
+  [data-kind="upper"],
+  [data-kind="lower"],
+  [data-kind="check"]
+) {
   padding-inline-start: calc(30px + var(--fn-indent) * 26px);
   counter-reset: none;
 }
 
-.finenotes-note-line[data-kind="bullet"]::before,
-.finenotes-note-line[data-kind="number"]::before,
-.finenotes-note-line[data-kind="check"]::before {
+.finenotes-note-line:is(
+    [data-kind="bullet"],
+    [data-kind="dash"],
+    [data-kind="number"],
+    [data-kind="upper"],
+    [data-kind="lower"],
+    [data-kind="check"]
+  )::before {
   position: absolute;
   inset-inline-start: calc(var(--fn-indent) * 26px);
   top: 1px;
@@ -22653,40 +22766,22 @@ button.clickable-icon.finenotes-note-button:disabled {
   content: "◦";
 }
 
-.finenotes-note-line[data-kind="number"]:not([data-indent]) {
-  counter-increment: fn-n0;
-  counter-reset: fn-n1 fn-n2 fn-n3;
+.finenotes-note-line[data-kind="dash"]::before {
+  width: 20px;
+  content: "–";
 }
 
-.finenotes-note-line[data-kind="number"][data-indent="1"] {
-  counter-increment: fn-n1;
-  counter-reset: fn-n2 fn-n3;
-}
-
-.finenotes-note-line[data-kind="number"][data-indent="2"] {
-  counter-increment: fn-n2;
-  counter-reset: fn-n3;
-}
-
-.finenotes-note-line[data-kind="number"][data-indent="3"] {
-  counter-increment: fn-n3;
-}
-
-.finenotes-note-line[data-kind="number"]::before {
+/* Numbers and letters: the page counts them as the file does (`listMarkers`). */
+.finenotes-note-line:is([data-kind="number"], [data-kind="upper"], [data-kind="lower"])::before {
   font-variant-numeric: tabular-nums;
-  content: counter(fn-n0) ".";
+  content: attr(data-marker);
 }
 
-.finenotes-note-line[data-kind="number"][data-indent="1"]::before {
-  content: counter(fn-n1) ".";
-}
-
-.finenotes-note-line[data-kind="number"][data-indent="2"]::before {
-  content: counter(fn-n2) ".";
-}
-
-.finenotes-note-line[data-kind="number"][data-indent="3"]::before {
-  content: counter(fn-n3) ".";
+/* A highlight in the text, in the highlighter's yellow. */
+.finenotes-note-doc mark {
+  color: inherit;
+  background: color-mix(in srgb, #ffd43b 48%, transparent);
+  border-radius: 3px;
 }
 
 /* The checklist's circle: empty, or filled with a tick. The click is read by position. */
@@ -22762,7 +22857,8 @@ button.clickable-icon.finenotes-note-button:disabled {
 }
 
 .finenotes-note-ink {
-  width: 100%;
+  width: calc(100% + 2 * var(--fn-col-pad, 0px) - 16px);
+  margin-inline: calc(8px - var(--fn-col-pad, 0px));
   aspect-ratio: var(--fn-ink-ratio, 720 / 260);
   overflow: hidden;
   touch-action: pan-y pinch-zoom;
@@ -22784,6 +22880,11 @@ button.clickable-icon.finenotes-note-button:disabled {
   width: var(--fn-layer-w, 100%);
   height: var(--fn-layer-h, 100%);
   pointer-events: none;
+}
+
+/* A section with paper of its own draws its rules; nothing else goes behind them. */
+.finenotes-note-scroll.is-drawing .finenotes-note-ink[data-paper] {
+  background-image: none;
 }
 
 /* With the pen out, every section shows as paper to write on. */
@@ -22989,45 +23090,113 @@ button.clickable-icon.finenotes-note-island-button {
   display: block;
 }
 
-/* --- the pen's palette ----------------------------------------------------- */
+/* --- the pen's palette ------------------------------------------------------
+   Upright at the left by default, as in Apple Notes; dragged by its grip it
+   docks on whichever side of the note it is let go nearest
+   (`note-view.ts`, `nearestDock`). */
 
 .finenotes-note-palette {
+  --fn-drag-x: 0px;
+  --fn-drag-y: 0px;
+  --fn-hide-x: 0px;
+  --fn-hide-y: 0px;
   position: absolute;
-  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-  left: 50%;
   z-index: 10;
   display: flex;
-  gap: 4px;
+  gap: 8px;
   align-items: center;
-  max-width: calc(100% - 24px);
-  padding: 6px 8px;
-  overflow-x: auto;
+  box-sizing: border-box;
+  padding: 10px 8px;
   pointer-events: none;
-  background: var(--fn-note-glass);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 26px;
-  box-shadow:
-    0 10px 34px rgba(0, 0, 0, 0.16),
-    0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--gob-pop-bg);
+  border: var(--gob-bar-border);
+  border-radius: 30px;
+  box-shadow: var(--gob-shadow-sheet);
   opacity: 0;
-  transform: translate(-50%, 130%);
   transition:
     transform 0.34s cubic-bezier(0.2, 0.9, 0.25, 1),
     opacity 0.2s ease;
   scrollbar-width: none;
-  -webkit-backdrop-filter: blur(20px) saturate(1.7);
-  backdrop-filter: blur(20px) saturate(1.7);
+  -webkit-backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+  backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+}
+
+.finenotes-note-palette[data-dock="left"],
+.finenotes-note-palette[data-dock="right"] {
+  top: 50%;
+  flex-direction: column;
+  width: 92px;
+  max-height: calc(100% - 96px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  transform: translate(calc(var(--fn-hide-x) + var(--fn-drag-x)), calc(-50% + var(--fn-drag-y)));
+}
+
+.finenotes-note-palette[data-dock="left"] {
+  --fn-hide-x: -140%;
+  left: 14px;
+}
+
+.finenotes-note-palette[data-dock="right"] {
+  --fn-hide-x: 140%;
+  right: 14px;
+}
+
+.finenotes-note-palette[data-dock="top"],
+.finenotes-note-palette[data-dock="bottom"] {
+  left: 50%;
+  flex-direction: row;
+  max-width: calc(100% - 24px);
+  padding: 6px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  transform: translate(calc(-50% + var(--fn-drag-x)), calc(var(--fn-hide-y) + var(--fn-drag-y)));
+}
+
+.finenotes-note-palette[data-dock="top"] {
+  --fn-hide-y: -60px;
+  top: 66px;
+}
+
+.finenotes-note-palette[data-dock="bottom"] {
+  --fn-hide-y: 160%;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
 }
 
 /* On a computer Obsidian's status bar floats over the window's foot. */
-body:not(.is-mobile) .finenotes-note-palette {
+body:not(.is-mobile) .finenotes-note-palette[data-dock="bottom"] {
   bottom: 44px;
 }
 
 .finenotes-note-view.is-drawing > .finenotes-note-palette {
+  --fn-hide-x: 0px;
+  --fn-hide-y: 0px;
   pointer-events: auto;
   opacity: 1;
-  transform: translate(-50%, 0);
+}
+
+.finenotes-note-palette.is-dragging {
+  transition: opacity 0.2s ease;
+}
+
+/* The grip: a short bar, with a wider target round it. */
+.finenotes-note-palette-grip {
+  box-sizing: content-box;
+  flex: none;
+  width: 34px;
+  height: 5px;
+  padding: 8px 12px;
+  cursor: grab;
+  background: var(--text-faint);
+  background-clip: content-box;
+  border-radius: 10px;
+  opacity: 0.6;
+  touch-action: none;
+}
+
+.finenotes-note-palette:is([data-dock="top"], [data-dock="bottom"]) .finenotes-note-palette-grip {
+  width: 5px;
+  height: 30px;
 }
 
 .finenotes-note-palette-group {
@@ -23035,32 +23204,65 @@ body:not(.is-mobile) .finenotes-note-palette {
   flex: none;
   gap: 2px;
   align-items: center;
+  justify-content: center;
 }
 
-.finenotes-note-palette-group + .finenotes-note-palette-group {
-  padding-inline-start: 6px;
-  margin-inline-start: 2px;
-  border-inline-start: 1px solid var(--background-modifier-border);
+.finenotes-note-palette:is([data-dock="left"], [data-dock="right"]) .finenotes-note-palette-group {
+  flex-wrap: wrap;
+  width: 76px;
+}
+
+.finenotes-note-palette:is([data-dock="left"], [data-dock="right"])
+  .finenotes-note-palette-group.is-tools {
+  flex-direction: column;
+}
+
+.finenotes-note-palette:is([data-dock="left"], [data-dock="right"])
+  .finenotes-note-palette-group
+  + .finenotes-note-palette-group {
+  padding-top: 8px;
+  border-top: 1px solid var(--gob-line);
+}
+
+.finenotes-note-palette:is([data-dock="top"], [data-dock="bottom"])
+  .finenotes-note-palette-group
+  + .finenotes-note-palette-group {
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid var(--gob-line);
 }
 
 .finenotes-note-palette button.clickable-icon.finenotes-note-button {
   color: var(--text-muted);
-  border-radius: 50%;
 }
 
 .finenotes-note-palette button.clickable-icon.finenotes-note-button.is-active {
-  color: var(--fn-note-accent);
+  color: var(--gob-active-fg);
+  background: var(--gob-active-bg);
 }
 
-button.clickable-icon.finenotes-note-swatch,
-button.clickable-icon.finenotes-note-size {
+.finenotes-note-palette-group.is-history button.clickable-icon.finenotes-note-button {
+  width: 36px;
+  height: 36px;
+}
+
+.finenotes-note-palette-group.is-tools button.clickable-icon.finenotes-note-button {
+  width: 46px;
+  height: 46px;
+}
+
+.finenotes-note-palette-group.is-tools button.clickable-icon.finenotes-note-button .svg-icon {
+  width: 26px;
+  height: 26px;
+}
+
+button.clickable-icon.finenotes-note-swatch {
   position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   background: transparent;
   border-radius: 50%;
@@ -23068,8 +23270,8 @@ button.clickable-icon.finenotes-note-size {
 }
 
 button.clickable-icon.finenotes-note-swatch::before {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   content: "";
   background: var(--fn-swatch);
   border-radius: 50%;
@@ -23081,23 +23283,39 @@ button.clickable-icon.finenotes-note-swatch.is-active::before {
   box-shadow:
     0 0 0 2px var(--background-primary),
     0 0 0 4px var(--fn-swatch);
-  transform: scale(0.84);
+  transform: scale(0.8);
 }
 
-button.clickable-icon.finenotes-note-size::before {
-  width: var(--fn-dot, 6px);
-  height: var(--fn-dot, 6px);
-  content: "";
-  background: var(--text-muted);
+/* The size: the mark the tool makes, then a slider for any size in its range. */
+.finenotes-note-palette-group.is-size {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.finenotes-note-palette:is([data-dock="top"], [data-dock="bottom"])
+  .finenotes-note-palette-group.is-size {
+  flex-direction: row;
+}
+
+.finenotes-note-size-mark {
+  flex: none;
+  width: var(--fn-mark, 6px);
+  height: var(--fn-mark, 6px);
+  background: var(--fn-mark-color, var(--text-normal));
   border-radius: 50%;
 }
 
-button.clickable-icon.finenotes-note-size.is-active {
-  background: var(--fn-note-tint);
+.finenotes-note-size-mark.is-ring {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-muted);
 }
 
-button.clickable-icon.finenotes-note-size.is-active::before {
-  background: var(--fn-note-accent);
+.finenotes-note-size-track {
+  width: 76px;
+}
+
+.finenotes-note-palette:is([data-dock="top"], [data-dock="bottom"]) .finenotes-note-size-track {
+  width: 110px;
 }
 
 button.clickable-icon.finenotes-note-done {
@@ -23105,12 +23323,11 @@ button.clickable-icon.finenotes-note-done {
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   padding: 0;
-  margin-inline-start: 6px;
   color: var(--text-on-accent);
-  background: var(--fn-note-accent);
+  background: var(--interactive-accent);
   border-radius: 50%;
 }
 
@@ -23119,62 +23336,68 @@ button.clickable-icon.finenotes-note-done:hover {
   background: var(--interactive-accent-hover);
 }
 
-/* --- text styles ----------------------------------------------------------- */
+/* --- the Aa menu ------------------------------------------------------------
+   Apple Notes' format sheet: the text styles as words across the top, then
+   rows of grouped buttons: marks and the highlight; lists, depth and quote. */
 
 .finenotes-note-styles {
   position: absolute;
-  top: var(--fn-styles-y, 48px);
-  left: var(--fn-styles-x, 12px);
+  top: var(--fn-styles-y, 56px);
+  left: var(--fn-styles-x, 50%);
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   box-sizing: border-box;
-  width: 248px;
+  width: max-content;
   max-width: calc(100% - 16px);
-  padding: 8px;
-  background: var(--fn-note-glass);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 16px;
-  box-shadow:
-    0 14px 40px rgba(0, 0, 0, 0.18),
-    0 1px 3px rgba(0, 0, 0, 0.08);
-  transform-origin: 20px 0;
+  padding: 12px;
+  background: var(--gob-pop-bg);
+  border: var(--gob-bar-border);
+  border-radius: 26px;
+  box-shadow: var(--gob-shadow-sheet);
+  transform: translateX(-50%);
+  transform-origin: 50% 0;
   animation: finenotes-note-pop 0.18s cubic-bezier(0.2, 0.9, 0.25, 1.15);
-  -webkit-backdrop-filter: blur(22px) saturate(1.7);
-  backdrop-filter: blur(22px) saturate(1.7);
+  -webkit-backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+  backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
 }
 
 @keyframes finenotes-note-pop {
   from {
     opacity: 0;
-    transform: scale(0.92);
+    transform: translateX(-50%) scale(0.92);
   }
 }
 
 .finenotes-note-styles-kinds {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 button.clickable-icon.finenotes-note-style {
-  display: block;
-  width: 100%;
-  height: auto;
-  padding: 6px 10px;
+  flex: none;
+  width: auto;
+  height: 40px;
+  padding: 0 14px;
   font-size: 16px;
-  line-height: 1.3;
+  line-height: 1;
   color: var(--text-normal);
-  text-align: start;
-  white-space: normal;
-  border-radius: 9px;
+  white-space: nowrap;
+  background: transparent;
+  border-radius: 999px;
 }
 
 button.clickable-icon.finenotes-note-style[data-kind="title"] {
-  font-size: 23px;
+  font-size: 21px;
   font-weight: 700;
 }
 
 button.clickable-icon.finenotes-note-style[data-kind="heading"] {
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 700;
 }
 
@@ -23188,38 +23411,53 @@ button.clickable-icon.finenotes-note-style[data-kind="mono"] {
 }
 
 button.clickable-icon.finenotes-note-style.is-active {
-  color: var(--fn-note-accent);
-  background: var(--fn-note-tint);
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
 }
 
 .finenotes-note-styles-row {
   display: flex;
-  gap: 2px;
+  gap: 10px;
   align-items: center;
-  padding-top: 6px;
-  margin-top: 6px;
-  border-top: 1px solid var(--background-modifier-border);
 }
 
-.finenotes-note-styles-row button.clickable-icon.finenotes-note-button {
-  width: 36px;
-  height: 36px;
-  color: var(--text-normal);
+.finenotes-note-styles-group {
+  display: flex;
+  gap: 0;
+  align-items: center;
+  overflow: hidden;
+  background: var(--gob-well);
+  border-radius: 18px;
 }
 
-.finenotes-note-styles-row button.clickable-icon.finenotes-note-button.is-active {
-  color: var(--fn-note-accent);
+.finenotes-note-styles-group button.clickable-icon.finenotes-note-button {
+  width: 46px;
+  height: 46px;
+  border-radius: 0;
 }
 
-.finenotes-note-styles-gap {
-  flex: 1 1 auto;
+.finenotes-note-styles-group button.clickable-icon.finenotes-note-button + button {
+  box-shadow: inset 1px 0 0 var(--gob-line);
+}
+
+.finenotes-note-styles-group button.clickable-icon.finenotes-note-button.is-text {
+  font-size: 16px;
+  font-weight: 600;
 }
 
 @media (max-width: 520px) {
-  .finenotes-note-column {
-    padding-inline: 18px;
+  .finenotes-note-styles-row {
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
+  .finenotes-note-styles-group button.clickable-icon.finenotes-note-button {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+@media (max-width: 520px) {
   .finenotes-note-drop {
     inset-inline: 18px;
   }

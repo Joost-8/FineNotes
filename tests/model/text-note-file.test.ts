@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Stroke } from "../../src/model/document";
 import {
   BOLD,
+  HIGHLIGHT,
   ITALIC,
   STRIKE,
   UNDERLINE,
@@ -151,8 +152,8 @@ describe("blocks as lines", () => {
       "## Today",
       "### Later",
       "plain",
-      "- milk",
-      "\t- oat",
+      "* milk",
+      "\t* oat",
       "1. one",
       "2. two",
       "- [x] done",
@@ -195,7 +196,7 @@ describe("blocks as lines", () => {
       body("end"),
     ];
     expect(encodeNote({ blocks }).split("\n")).toEqual([
-      "- item",
+      "* item",
       "",
       "text",
       "> q",
@@ -212,13 +213,13 @@ describe("blocks as lines", () => {
       body("item", "bullet"),
     ];
     expect(encodeNote({ blocks: picture }).split("\n")).toEqual([
-      "- item",
+      "* item",
       "",
       "![[a.png]]",
       "> q",
       "",
       "![[b.png|200]]",
-      "- item",
+      "* item",
     ]);
     expect(roundTrip(picture)).toEqual(shape({ blocks: picture }));
     const last = [body("item", "check"), body("")];
@@ -283,7 +284,7 @@ describe("blocks as lines", () => {
           body("Deep", "subheading"),
           body("star", "bullet"),
           body("plus", "bullet"),
-          textBlock("x", "bullet", [run("four spaces")], { indent: 2 }),
+          textBlock("x", "dash", [run("four spaces")], { indent: 2 }),
           body("three", "number"),
           textBlock("x", "check", [run("big x")], { checked: true }),
           body("tight", "quote"),
@@ -442,5 +443,55 @@ describe("the file", () => {
     expect(isTextNoteName("Ideas.notebook.md")).toBe(false);
     expect(stripTextNoteSuffix("Ideas.note.md")).toBe("Ideas");
     expect(stripTextNoteSuffix("Ideas.md")).toBe("Ideas.md");
+  });
+});
+
+describe("Apple Notes lists, highlights and paper", () => {
+  it("writes and reads dashed, bulleted and lettered lists, counting each kind apart", () => {
+    const blocks: NoteBlock[] = [
+      body("dash", "dash"),
+      body("dot", "bullet"),
+      body("one", "upper"),
+      body("two", "upper"),
+      textBlock("x", "lower", [run("inner")], { indent: 1 }),
+      textBlock("x", "lower", [run("inner two")], { indent: 1 }),
+      body("three", "upper"),
+      body("first", "number"),
+    ];
+    expect(encodeNote({ blocks }).split("\n")).toEqual([
+      "- dash",
+      "* dot",
+      "A. one",
+      "B. two",
+      "\ta. inner",
+      "\tb. inner two",
+      "C. three",
+      "1. first",
+    ]);
+    expect(roundTrip(blocks)).toEqual(shape({ blocks }));
+  });
+
+  it("keeps body text that starts like a lettered item as body text", () => {
+    const blocks = [body("A. Smith wrote this"), body("e.g. not a list")];
+    expect(roundTrip(blocks)).toEqual(shape({ blocks }));
+  });
+
+  it("writes a highlight as ==text== and reads it back", () => {
+    const runs = [run("a "), run("marked", HIGHLIGHT), run(" b")];
+    expect(encodeInline(runs)).toBe("a ==marked== b");
+    expect(decodeInline("a ==marked== b")).toEqual(runs);
+    expect(decodeInline(encodeInline([run("x == y")]))).toEqual([run("x == y")]);
+  });
+
+  it("keeps a handwriting section's paper", () => {
+    for (const paper of ["lined", "squared", "dotted"] as const) {
+      const blocks: NoteBlock[] = [
+        { type: "ink", id: "x", height: 300, strokes: [], paper },
+        body(""),
+      ];
+      expect(roundTrip(blocks)).toEqual(shape({ blocks }));
+    }
+    const blank: NoteBlock[] = [{ type: "ink", id: "x", height: 300, strokes: [] }, body("")];
+    expect(roundTrip(blank)).toEqual(shape({ blocks: blank }));
   });
 });

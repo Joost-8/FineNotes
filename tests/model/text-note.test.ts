@@ -391,7 +391,7 @@ describe("styles", () => {
   });
 
   it("turns typed Markdown markers into kinds on body text only", () => {
-    expect(shortcutKind("body", "-")).toBe("bullet");
+    expect(shortcutKind("body", "-")).toBe("dash");
     expect(shortcutKind("body", "*")).toBe("bullet");
     expect(shortcutKind("body", "1.")).toBe("number");
     expect(shortcutKind("body", "1)")).toBe("number");

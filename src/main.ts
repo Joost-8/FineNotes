@@ -594,6 +594,11 @@ export default class GoodObsidianPlugin extends Plugin {
           pressure: () => this.settings.pressureWidth,
           highlighterAlpha: () => this.settings.highlighterAlpha,
           onlyStylus: () => this.settings.onlyStylusMode,
+          openLibrary: () => void this.openLibrary(),
+          newNote: (folder) => void this.createTextNote(folder),
+          fullScreenOffered: () => this.fullScreenOffered,
+          fullScreen: () => this.fullScreen,
+          toggleFullScreen: () => this.toggleFullScreen(),
         }),
     );
     this.registerView(
@@ -2683,7 +2688,14 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Put the class on the tab groups whose tab in front is a notebook, and only on those. */
   syncFullScreen(): void {
-    const places = this.openNotebooks().flatMap((view) => {
+    const views = [
+      ...this.openNotebooks(),
+      ...this.app.workspace
+        .getLeavesOfType(VIEW_TYPE_NOTE)
+        .map((leaf) => leaf.view)
+        .filter((view) => view instanceof TextNoteView),
+    ];
+    const places = views.flatMap((view) => {
       const group = view.containerEl.closest<HTMLElement>(".workspace-tabs");
       return group ? [{ group, shown: view.containerEl.isShown() }] : [];
     });

@@ -5,8 +5,10 @@
  * It is a file view over a Markdown file (`Title.note.md`,
  * `model/text-note-file.ts`), so Obsidian reads, saves, renames and syncs
  * it like any note. The page itself is `NoteEditor`; this file is what is
- * round it: the bar (styles, a picture, the pen, undo), the pen's palette
- * in drawing mode, and where pictures are kept.
+ * round it: the bar along the top (as Apple Notes lays it out: where you
+ * are and undo on the left, what goes into the note in the middle, the pen
+ * on the right), the Aa menu of text styles, the pen's palette, which docks
+ * on any side of the note, and where pictures are kept.
  */
 
 import {
@@ -32,16 +34,20 @@ import {
 } from "../model/text-note-file";
 import {
   BOLD,
+  HIGHLIGHT,
   ITALIC,
   STRIKE,
   UNDERLINE,
   emptyNote,
   noteTitle,
+  type InkPaper,
   type Marks,
   type TextKind,
 } from "../model/text-note";
 import { pickImageFile, prepareImageBytes, saveImageAttachment } from "./image-import";
 import { NoteEditor } from "./note-editor";
+import { dragRange } from "./range-drag";
+import { syncRangeFill } from "./range-fill";
 import type { NotePen, NoteTool } from "./note-ink";
 
 export const ICON_TEXT_NOTE = "notepad-text";
@@ -53,57 +59,91 @@ export interface TextNoteHost {
   highlighterAlpha(): number;
   /** Only a stylus writes: fingers never do. */
   onlyStylus(): boolean;
+  /** Open Home, the notebook library. */
+  openLibrary(): void;
+  /** Make a new text note in `folder` (vault path, "" for the root) and open it. */
+  newNote(folder: string): void;
+  /** A tablet: notes and notebooks can hide Obsidian's tab bar and header. */
+  fullScreenOffered(): boolean;
+  fullScreen(): boolean;
+  toggleFullScreen(): void;
 }
 
-/** The colours and widths the palette offers, by tool; the first of each is the default. */
+/** The colours the palette offers, by tool; the first of each is the default. */
 const PEN_COLORS = ["#1a1a1a", "#e03131", "#1971c2", "#2f9e44", "#f08c00", "#9c36b5"] as const;
 const MARKER_COLORS = ["#ffd43b", "#8ce99a", "#ffa8a8", "#74c0fc", "#eebefa", "#ffc078"] as const;
-const PEN_SIZES = [2, 3.5, 6] as const;
-const MARKER_SIZES = [12, 18, 26] as const;
+
+/** Each tool's size range and default: pens and highlighters in section units, the eraser in CSS px. */
+const SIZES: Readonly<Record<NoteTool, { min: number; max: number; step: number; base: number }>> =
+  {
+    pen: { min: 0.5, max: 14, step: 0.5, base: 3.5 },
+    highlighter: { min: 6, max: 48, step: 1, base: 18 },
+    eraser: { min: 4, max: 60, step: 1, base: 12 },
+  };
 
 interface ToolChoice {
   color: string;
   size: number;
 }
 
+/** Where the pen's palette rests. */
+type Dock = "left" | "right" | "top" | "bottom";
+const DOCKS: readonly Dock[] = ["left", "right", "top", "bottom"];
+
 /** The pen in hand, kept for the session and across notes. */
 interface PenChoices {
   tool: NoteTool;
   pen: ToolChoice;
   highlighter: ToolChoice;
+  eraser: { size: number };
+  dock: Dock;
 }
 
 const PEN_KEY = "finenotes-note-pen";
 /** Set once a stylus has written on this device: from then on fingers scroll and never write. */
 const PEN_SEEN_KEY = "finenotes-note-pen-seen";
 
-function readChoices(raw: unknown): PenChoices {
+function clampSize(tool: NoteTool, value: unknown): number {
+  const range = SIZES[tool];
+  if (typeof value !== "number" || !Number.isFinite(value)) return range.base;
+  return Math.max(range.min, Math.min(range.max, value));
+}
+
+export function readChoices(raw: unknown): PenChoices {
   const fallback: PenChoices = {
     tool: "pen",
-    pen: { color: PEN_COLORS[0], size: PEN_SIZES[1] },
-    highlighter: { color: MARKER_COLORS[0], size: MARKER_SIZES[1] },
+    pen: { color: PEN_COLORS[0], size: SIZES.pen.base },
+    highlighter: { color: MARKER_COLORS[0], size: SIZES.highlighter.base },
+    eraser: { size: SIZES.eraser.base },
+    dock: "left",
   };
   if (typeof raw !== "string") return fallback;
   try {
     const stored = JSON.parse(raw) as Partial<PenChoices> | null;
-    const choice = (value: unknown, base: ToolChoice): ToolChoice => {
+    const choice = (tool: "pen" | "highlighter", value: unknown, base: ToolChoice): ToolChoice => {
       const v = value as Partial<ToolChoice> | undefined;
       return {
         color:
           typeof v?.color === "string" && /^#[0-9a-f]{6}$/i.test(v.color) ? v.color : base.color,
-        size: typeof v?.size === "number" && v.size > 0 && v.size < 80 ? v.size : base.size,
+        size: v?.size === undefined ? base.size : clampSize(tool, v.size),
       };
     };
+    const eraser = stored?.eraser as { size?: unknown } | undefined;
     return {
       tool: stored?.tool === "highlighter" || stored?.tool === "eraser" ? stored.tool : "pen",
-      pen: choice(stored?.pen, fallback.pen),
-      highlighter: choice(stored?.highlighter, fallback.highlighter),
+      pen: choice("pen", stored?.pen, fallback.pen),
+      highlighter: choice("highlighter", stored?.highlighter, fallback.highlighter),
+      eraser: {
+        size: eraser?.size === undefined ? SIZES.eraser.base : clampSize("eraser", eraser.size),
+      },
+      dock: DOCKS.find((d) => d === stored?.dock) ?? "left",
     };
   } catch {
     return fallback;
   }
 }
 
+/** The text styles along the top of the Aa menu, as Apple Notes lists them. */
 const KIND_ROWS: ReadonlyArray<[TextKind, TextKey]> = [
   ["title", "notebooks.note.title"],
   ["heading", "notebooks.note.heading"],
@@ -119,12 +159,33 @@ const MARK_BUTTONS: ReadonlyArray<[Marks, string, TextKey]> = [
   [STRIKE, "strikethrough", "notebooks.note.strike"],
 ];
 
-const LIST_BUTTONS: ReadonlyArray<[TextKind, string, TextKey]> = [
-  ["bullet", "list", "notebooks.note.bullets"],
-  ["number", "list-ordered", "notebooks.note.numbers"],
-  ["check", "list-checks", "notebooks.note.checklist"],
-  ["quote", "text-quote", "notebooks.note.quote"],
+/** The lists in the Aa menu: an icon, or the marker itself where no icon says it. */
+const LIST_BUTTONS: ReadonlyArray<[TextKind, string | null, string, TextKey]> = [
+  ["dash", "list-minus", "", "notebooks.note.dashes"],
+  ["bullet", "list", "", "notebooks.note.bullets"],
+  ["number", "list-ordered", "", "notebooks.note.numbers"],
+  ["upper", null, "A.", "notebooks.note.lettersUpper"],
+  ["lower", null, "a.", "notebooks.note.lettersLower"],
 ];
+
+const PAPER_NAMES: Readonly<Record<InkPaper, TextKey>> = {
+  blank: "notebooks.note.paperBlank",
+  lined: "notebooks.note.paperLined",
+  squared: "notebooks.note.paperSquared",
+  dotted: "notebooks.note.paperDotted",
+};
+
+/** The side a palette dropped at `x, y` docks on: the nearest edge of the note. */
+export function nearestDock(x: number, y: number, width: number, height: number): Dock {
+  const distances: Array<[Dock, number]> = [
+    ["left", x / Math.max(1, width)],
+    ["right", (width - x) / Math.max(1, width)],
+    ["top", y / Math.max(1, height)],
+    ["bottom", (height - y) / Math.max(1, height)],
+  ];
+  distances.sort((a, b) => a[1] - b[1]);
+  return distances[0][0];
+}
 
 export class TextNoteView extends TextFileView {
   private editor: NoteEditor | null = null;
@@ -160,6 +221,7 @@ export class TextNoteView extends TextFileView {
     mark(["Mod"], "i", ITALIC);
     mark(["Mod"], "u", UNDERLINE);
     mark(["Mod", "Shift"], "x", STRIKE);
+    mark(["Mod", "Shift"], "h", HIGHLIGHT);
   }
 
   getViewType(): string {
@@ -233,6 +295,8 @@ export class TextNoteView extends TextFileView {
     this.bar = content.createDiv({ cls: "finenotes-note-bar" });
     this.editor = new NoteEditor(content, {
       pen: () => this.penInHand(),
+      eraserSize: () => this.choices.eraser.size,
+      paperName: (paper) => t(PAPER_NAMES[paper]),
       pressure: () => this.host.pressure(),
       highlighterAlpha: () => this.host.highlighterAlpha(),
       dark: () => this.isDark(),
@@ -252,7 +316,9 @@ export class TextNoteView extends TextFileView {
               ? "common.delete"
               : key === "missing"
                 ? "notebooks.note.missingPicture"
-                : "notebooks.note.unreadable",
+                : key === "paper"
+                  ? "notebooks.note.paper"
+                  : "notebooks.note.unreadable",
         ),
     });
     this.buildBar(this.bar);
@@ -268,7 +334,10 @@ export class TextNoteView extends TextFileView {
         if (event.pointerType === "pen" && !this.app.loadLocalStorage(PEN_SEEN_KEY)) {
           this.app.saveLocalStorage(PEN_SEEN_KEY, "1");
         }
-        if (this.styles && !this.styles.contains(event.target as Node)) this.closeStyles();
+        if (this.styles && !this.styles.contains(event.target as Node)) {
+          const anchor = this.buttons.get("styles");
+          if (!anchor?.contains(event.target as Node)) this.closeStyles();
+        }
       },
       { capture: true },
     );
@@ -278,6 +347,7 @@ export class TextNoteView extends TextFileView {
         this.buildPalette();
       }),
     );
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.refresh()));
     const refreshImages = (): void => this.editor?.refreshImages();
     this.registerEvent(this.app.vault.on("create", refreshImages));
     this.registerEvent(this.app.vault.on("delete", refreshImages));
@@ -303,6 +373,7 @@ export class TextNoteView extends TextFileView {
 
   private penInHand(): NotePen {
     const { tool } = this.choices;
+    if (tool === "eraser") return { tool, color: "", size: this.choices.eraser.size };
     const choice = tool === "highlighter" ? this.choices.highlighter : this.choices.pen;
     return { tool, color: choice.color, size: choice.size };
   }
@@ -316,12 +387,19 @@ export class TextNoteView extends TextFileView {
     icon: string,
     label: TextKey,
     act: () => void,
+    text?: string,
   ): HTMLElement {
+    const name = t(label);
     const button = parent.createEl("button", {
       cls: "clickable-icon finenotes-note-button",
-      attr: { "aria-label": t(label), type: "button" },
+      attr: { "aria-label": name, type: "button" },
     });
-    setIcon(button, icon);
+    if (text) {
+      button.addClass("is-text");
+      button.setText(text);
+    } else {
+      setIcon(button, icon);
+    }
     button.addEventListener("pointerdown", (event) => event.preventDefault());
     button.addEventListener("mousedown", (event) => event.preventDefault());
     button.addEventListener("click", (event) => {
@@ -332,19 +410,44 @@ export class TextNoteView extends TextFileView {
     return button;
   }
 
+  private pill(parent: HTMLElement): HTMLElement {
+    return parent.createDiv({ cls: "finenotes-note-pill" });
+  }
+
   private buildBar(bar: HTMLElement): void {
-    const left = bar.createDiv({ cls: "finenotes-note-bar-group" });
-    this.button(left, "styles", "type", "notebooks.note.styles", () => this.toggleStyles());
-    this.button(left, "picture", "image-plus", "notebooks.note.addPicture", () =>
+    const left = bar.createDiv({ cls: "finenotes-note-bar-group is-left" });
+    const where = this.pill(left);
+    if (this.host.fullScreenOffered()) {
+      this.button(where, "full", "maximize-2", "toolbar.fullScreen", () => {
+        this.host.toggleFullScreen();
+        this.refresh();
+      });
+    }
+    this.button(where, "home", "home", "notebooks.note.home", () => this.host.openLibrary());
+    this.button(where, "new", "square-pen", "notebooks.note.new", () => {
+      const parent = this.file?.parent;
+      this.host.newNote(parent && !parent.isRoot() ? parent.path : "");
+    });
+    const history = this.pill(left);
+    this.button(history, "undo", "undo-2", "common.undo", () => this.editor?.undo());
+    this.button(history, "redo", "redo-2", "common.redo", () => this.editor?.redo());
+
+    const middle = bar.createDiv({ cls: "finenotes-note-bar-group is-middle" });
+    const insert = this.pill(middle);
+    this.button(insert, "styles", "", "notebooks.note.styles", () => this.toggleStyles(), "Aa");
+    this.button(insert, "kind:check", "list-checks", "notebooks.note.checklist", () =>
+      this.editor?.setKind("check"),
+    );
+    this.button(insert, "picture", "paperclip", "notebooks.note.addPicture", () =>
       this.pickPicture(),
     );
-    this.button(left, "draw", "pencil", "notebooks.note.draw", () => {
+
+    const right = bar.createDiv({ cls: "finenotes-note-bar-group is-right" });
+    const pen = this.pill(right);
+    this.button(pen, "draw", "pen-tool", "notebooks.note.draw", () => {
       this.closeStyles();
       this.editor?.setDrawing(!this.editor.isDrawing());
     });
-    const right = bar.createDiv({ cls: "finenotes-note-bar-group" });
-    this.button(right, "undo", "undo-2", "common.undo", () => this.editor?.undo());
-    this.button(right, "redo", "redo-2", "common.redo", () => this.editor?.redo());
   }
 
   private refresh(): void {
@@ -362,16 +465,28 @@ export class TextNoteView extends TextFileView {
     enable("undo", state.canUndo);
     enable("redo", state.canRedo);
     enable("styles", !state.drawing);
+    enable("kind:check", !state.drawing);
+    const full = this.buttons.get("full");
+    if (full) {
+      const on = this.host.fullScreen();
+      setIcon(full, on ? "minimize-2" : "maximize-2");
+      full.setAttribute("aria-label", t(on ? "toolbar.leaveFullScreen" : "toolbar.fullScreen"));
+    }
     this.contentEl.toggleClass("is-drawing", state.drawing);
     this.contentEl.toggleClass("is-finger-draw", this.fingerDraws());
+    this.contentEl.dataset.dock = this.choices.dock;
     if (state.drawing) this.closeStyles();
-    for (const [kind] of [...KIND_ROWS, ...LIST_BUTTONS]) set(`kind:${kind}`, state.kind === kind);
+    const kinds: TextKind[] = [...KIND_ROWS.map(([k]) => k), ...LIST_BUTTONS.map(([k]) => k)];
+    for (const kind of [...kinds, "check" as const, "quote" as const]) {
+      set(`kind:${kind}`, state.kind === kind);
+    }
     for (const [mark] of MARK_BUTTONS) set(`mark:${mark}`, (state.marks & mark) !== 0);
+    set(`mark:${HIGHLIGHT}`, (state.marks & HIGHLIGHT) !== 0);
     enable("indent", state.inList);
     enable("outdent", state.inList);
   }
 
-  // -------------------------------------------------------------- styles
+  // -------------------------------------------------------------- the Aa menu
 
   private toggleStyles(): void {
     if (this.styles) this.closeStyles();
@@ -384,6 +499,7 @@ export class TextNoteView extends TextFileView {
     const panel = this.styles;
     this.styles = null;
     for (const id of Array.from(this.buttons.keys())) {
+      if (id === "kind:check") continue;
       if (id.startsWith("kind:") || id.startsWith("mark:") || id.endsWith("dent")) {
         this.buttons.delete(id);
       }
@@ -397,13 +513,14 @@ export class TextNoteView extends TextFileView {
     if (!anchor || !this.bar) return;
     const panel = this.contentEl.createDiv({ cls: "finenotes-note-styles" });
     this.styles = panel;
-    const bar = this.contentEl.getBoundingClientRect();
+    const view = this.contentEl.getBoundingClientRect();
     const at = anchor.getBoundingClientRect();
     panel.setCssProps({
-      "--fn-styles-x": `${Math.max(8, at.left - bar.left)}px`,
-      "--fn-styles-y": `${at.bottom - bar.top + 6}px`,
+      "--fn-styles-x": `${at.left + at.width / 2 - view.left}px`,
+      "--fn-styles-y": `${at.bottom - view.top + 8}px`,
     });
 
+    // Title, Heading, Subheading, Body, Monostyled: words, as Apple Notes shows them.
     const kinds = panel.createDiv({ cls: "finenotes-note-styles-kinds" });
     for (const [kind, label] of KIND_ROWS) {
       const row = kinds.createEl("button", {
@@ -416,20 +533,39 @@ export class TextNoteView extends TextFileView {
       row.addEventListener("click", () => this.editor?.setKind(kind));
       this.buttons.set(`kind:${kind}`, row);
     }
-    const marks = panel.createDiv({ cls: "finenotes-note-styles-row" });
+
+    const first = panel.createDiv({ cls: "finenotes-note-styles-row" });
+    const marks = first.createDiv({ cls: "finenotes-note-styles-group" });
     for (const [mark, icon, label] of MARK_BUTTONS) {
       this.button(marks, `mark:${mark}`, icon, label, () => this.editor?.toggleMark(mark));
     }
-    const lists = panel.createDiv({ cls: "finenotes-note-styles-row" });
-    for (const [kind, icon, label] of LIST_BUTTONS) {
-      this.button(lists, `kind:${kind}`, icon, label, () => this.editor?.setKind(kind));
+    const tint = first.createDiv({ cls: "finenotes-note-styles-group" });
+    this.button(tint, `mark:${HIGHLIGHT}`, "highlighter", "notebooks.note.highlight", () =>
+      this.editor?.toggleMark(HIGHLIGHT),
+    );
+
+    const second = panel.createDiv({ cls: "finenotes-note-styles-row" });
+    const lists = second.createDiv({ cls: "finenotes-note-styles-group" });
+    for (const [kind, icon, text, label] of LIST_BUTTONS) {
+      this.button(
+        lists,
+        `kind:${kind}`,
+        icon ?? "",
+        label,
+        () => this.editor?.setKind(kind),
+        icon ? undefined : text,
+      );
     }
-    lists.createDiv({ cls: "finenotes-note-styles-gap" });
-    this.button(lists, "outdent", "indent-decrease", "notebooks.note.outdent", () =>
+    const depth = second.createDiv({ cls: "finenotes-note-styles-group" });
+    this.button(depth, "outdent", "indent-decrease", "notebooks.note.outdent", () =>
       this.editor?.indent(-1),
     );
-    this.button(lists, "indent", "indent-increase", "notebooks.note.indent", () =>
+    this.button(depth, "indent", "indent-increase", "notebooks.note.indent", () =>
       this.editor?.indent(1),
+    );
+    const quote = second.createDiv({ cls: "finenotes-note-styles-group" });
+    this.button(quote, "kind:quote", "text-quote", "notebooks.note.quote", () =>
+      this.editor?.setKind("quote"),
     );
   }
 
@@ -439,13 +575,26 @@ export class TextNoteView extends TextFileView {
     const palette = this.palette;
     if (!palette) return;
     palette.empty();
+    palette.dataset.dock = this.choices.dock;
+    this.contentEl.dataset.dock = this.choices.dock;
     const { tool } = this.choices;
+
+    const grip = palette.createDiv({
+      cls: "finenotes-note-palette-grip",
+      attr: { "aria-label": t("notebooks.note.moveTools"), role: "button" },
+    });
+    grip.addEventListener("pointerdown", (event) => this.dragPalette(event));
+
+    const history = palette.createDiv({ cls: "finenotes-note-palette-group is-history" });
+    this.button(history, "p-undo", "undo-2", "common.undo", () => this.editor?.undo());
+    this.button(history, "p-redo", "redo-2", "common.redo", () => this.editor?.redo());
+
     const tools: ReadonlyArray<[NoteTool, string, TextKey]> = [
-      ["pen", "pencil", "notebooks.note.pen"],
+      ["pen", "pen-line", "notebooks.note.pen"],
       ["highlighter", "highlighter", "notebooks.note.highlighter"],
       ["eraser", "eraser", "notebooks.note.eraser"],
     ];
-    const toolGroup = palette.createDiv({ cls: "finenotes-note-palette-group" });
+    const toolGroup = palette.createDiv({ cls: "finenotes-note-palette-group is-tools" });
     for (const [id, icon, label] of tools) {
       const button = this.button(toolGroup, `tool:${id}`, icon, label, () => {
         this.choices.tool = id;
@@ -453,10 +602,11 @@ export class TextNoteView extends TextFileView {
       });
       button.toggleClass("is-active", tool === id);
     }
+
     if (tool !== "eraser") {
       const choice = tool === "highlighter" ? this.choices.highlighter : this.choices.pen;
       const dark = this.isDark();
-      const colors = palette.createDiv({ cls: "finenotes-note-palette-group" });
+      const colors = palette.createDiv({ cls: "finenotes-note-palette-group is-colors" });
       for (const color of tool === "highlighter" ? MARKER_COLORS : PEN_COLORS) {
         const swatch = colors.createEl("button", {
           cls: "clickable-icon finenotes-note-swatch",
@@ -471,21 +621,9 @@ export class TextNoteView extends TextFileView {
           this.choicesChanged();
         });
       }
-      const sizes = palette.createDiv({ cls: "finenotes-note-palette-group" });
-      const all = tool === "highlighter" ? MARKER_SIZES : PEN_SIZES;
-      all.forEach((size, i) => {
-        const dot = sizes.createEl("button", {
-          cls: "clickable-icon finenotes-note-size",
-          attr: { type: "button", "aria-label": String(size) },
-        });
-        dot.setCssProps({ "--fn-dot": `${5 + i * 4}px` });
-        dot.toggleClass("is-active", choice.size === size);
-        dot.addEventListener("click", () => {
-          choice.size = size;
-          this.choicesChanged();
-        });
-      });
     }
+    this.buildSize(palette, tool);
+
     const done = palette.createEl("button", {
       cls: "clickable-icon finenotes-note-done",
       attr: { type: "button", "aria-label": t("common.done") },
@@ -494,9 +632,108 @@ export class TextNoteView extends TextFileView {
     done.addEventListener("click", () => this.editor?.setDrawing(false));
   }
 
+  /** The size of the tool in hand: any size in its range, shown as the mark it makes. */
+  private buildSize(palette: HTMLElement, tool: NoteTool): void {
+    const range = SIZES[tool];
+    const choice =
+      tool === "eraser"
+        ? this.choices.eraser
+        : tool === "highlighter"
+          ? this.choices.highlighter
+          : this.choices.pen;
+    const group = palette.createDiv({ cls: "finenotes-note-palette-group is-size" });
+    const mark = group.createDiv({ cls: "finenotes-note-size-mark" });
+    // The tool bar's own slider, so a size is set the same way everywhere.
+    const track = group.createDiv({ cls: "goodobsidian-width-slider finenotes-note-size-track" });
+    const slider = track.createEl("input", {
+      cls: "goodobsidian-width-range",
+      type: "range",
+      attr: {
+        min: String(range.min),
+        max: String(range.max),
+        step: String(range.step),
+        "aria-label": t("notebooks.note.size"),
+      },
+    });
+    slider.value = String(choice.size);
+    dragRange(slider);
+    syncRangeFill(slider);
+    const show = (size: number): void => {
+      // A mark as big as the line it draws (capped to the palette), the eraser as a ring.
+      const px = Math.max(3, Math.min(30, tool === "eraser" ? size : size * 1.3));
+      mark.setCssProps({
+        "--fn-mark": `${px}px`,
+        "--fn-mark-color":
+          tool === "eraser"
+            ? "transparent"
+            : this.isDark() && tool === "pen"
+              ? nightColor(this.choices.pen.color)
+              : (choice as ToolChoice).color,
+      });
+      mark.toggleClass("is-ring", tool === "eraser");
+      mark.setAttribute("aria-label", String(size));
+    };
+    show(choice.size);
+    slider.addEventListener("input", () => {
+      choice.size = clampSize(tool, Number(slider.value));
+      syncRangeFill(slider);
+      show(choice.size);
+    });
+    slider.addEventListener("change", () => {
+      choice.size = clampSize(tool, Number(slider.value));
+      this.app.saveLocalStorage(PEN_KEY, JSON.stringify(this.choices));
+    });
+  }
+
+  /** Drag the palette by its grip; it docks on the side of the note nearest where it is let go. */
+  private dragPalette(down: PointerEvent): void {
+    const palette = this.palette;
+    if (!palette) return;
+    down.preventDefault();
+    down.stopPropagation();
+    const grip = down.currentTarget as HTMLElement;
+    try {
+      grip.setPointerCapture(down.pointerId);
+    } catch {
+      // A synthetic pointer cannot be captured.
+    }
+    const start = { x: down.clientX, y: down.clientY };
+    palette.addClass("is-dragging");
+    const move = (event: PointerEvent): void => {
+      if (event.pointerId !== down.pointerId) return;
+      palette.setCssProps({
+        "--fn-drag-x": `${event.clientX - start.x}px`,
+        "--fn-drag-y": `${event.clientY - start.y}px`,
+      });
+    };
+    const up = (event: PointerEvent): void => {
+      if (event.pointerId !== down.pointerId) return;
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      grip.removeEventListener("pointercancel", up);
+      palette.removeClass("is-dragging");
+      palette.setCssProps({ "--fn-drag-x": "0px", "--fn-drag-y": "0px" });
+      const rect = this.contentEl.getBoundingClientRect();
+      const dock = nearestDock(
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+        rect.width,
+        rect.height,
+      );
+      if (dock !== this.choices.dock) {
+        this.choices.dock = dock;
+        this.choicesChanged();
+      }
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+    grip.addEventListener("pointercancel", up);
+  }
+
   private choicesChanged(): void {
     this.app.saveLocalStorage(PEN_KEY, JSON.stringify(this.choices));
     this.buildPalette();
+    this.refresh();
   }
 
   // -------------------------------------------------------------- pictures

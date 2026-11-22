@@ -19,10 +19,11 @@
  * into while it draws.
  */
 
-import { setIcon } from "obsidian";
+import { Menu, setIcon } from "obsidian";
 import { decodeNote } from "../model/text-note-file";
 import {
   BOLD,
+  HIGHLIGHT,
   INK_DEFAULT_HEIGHT,
   INK_GROW_ROOM,
   INK_WIDTH,
@@ -45,6 +46,8 @@ import {
   insertBlock,
   insertBlocksAt,
   insertText,
+  isList,
+  listMarkers,
   isCollapsed,
   kindIn,
   marksBefore,
@@ -61,8 +64,10 @@ import {
   toggleMark,
   trimmedHeight,
   withTypingLine,
+  INK_PAPERS,
   type ImageBlock,
   type InkBlock,
+  type InkPaper,
   type Marks,
   type NoteBlock,
   type NotePoint,
@@ -78,6 +83,10 @@ import { InkSection, type InkSectionHost, type NotePen } from "./note-ink";
 /** What the editor needs from the view that holds it. */
 export interface NoteEditorHost {
   pen(): NotePen;
+  /** The eraser's radius, CSS px. */
+  eraserSize(): number;
+  /** The names of a handwriting section's papers, for its paper menu. */
+  paperName(paper: InkPaper): string;
   pressure(): boolean;
   highlighterAlpha(): number;
   dark(): boolean;
@@ -91,7 +100,7 @@ export interface NoteEditorHost {
   /** The caret, the styles under it, undo or the mode changed: the bar may need redrawing. */
   stateChanged(): void;
   /** Texts shown on the page. */
-  text(key: "title" | "delete" | "missing" | "unreadable"): string;
+  text(key: "title" | "delete" | "missing" | "unreadable" | "paper"): string;
 }
 
 /** What the bar shows about the place the caret is. */
@@ -222,6 +231,7 @@ export class NoteEditor {
 
     this.inkHost = {
       pen: () => host.pen(),
+      eraserSize: () => host.eraserSize(),
       pressure: () => host.pressure(),
       highlighterAlpha: () => host.highlighterAlpha(),
       dark: () => host.dark(),
@@ -300,10 +310,10 @@ export class NoteEditor {
     let inList = false;
     if (range) {
       kind = kindIn(this.note, range);
-      inList = kind === "bullet" || kind === "number" || kind === "check";
+      inList = kind !== null && isList(kind);
       if (this.pending) marks = this.pending.marks;
       else {
-        for (const mark of [BOLD, ITALIC, UNDERLINE, STRIKE]) {
+        for (const mark of [BOLD, ITALIC, UNDERLINE, STRIKE, HIGHLIGHT]) {
           if (hasMark(this.note, range, mark)) marks |= mark;
         }
       }
@@ -361,8 +371,24 @@ export class NoteEditor {
       this.views.delete(id);
     }
     this.markFirst();
+    this.markLists();
     if (this.selected && !seen.has(this.selected)) this.selected = null;
     if (this.active && !seen.has(this.active)) this.active = null;
+  }
+
+  /** Counted list items show their number or letter, as the file writes it. */
+  private markLists(): void {
+    const markers = listMarkers(this.note.blocks);
+    this.note.blocks.forEach((block, i) => {
+      const el = this.views.get(block.id)?.el;
+      if (!el) return;
+      const marker = markers[i];
+      if (marker === null) {
+        if (el.dataset.marker !== undefined) delete el.dataset.marker;
+      } else if (el.dataset.marker !== marker) {
+        el.dataset.marker = marker;
+      }
+    });
   }
 
   /** The first line shows the title's placeholder while it is empty. */
@@ -380,7 +406,7 @@ export class NoteEditor {
     if (block.type === "ink") {
       const ink = new InkSection(block, this.inkHost);
       ink.el.toggleClass("is-empty", block.strokes.length === 0);
-      this.addIslandBar(ink.el, block.id);
+      this.addIslandBar(ink.el, block.id, true);
       return { el: ink.el, block, ink };
     }
     if (block.type === "image") {
@@ -445,6 +471,7 @@ export class NoteEditor {
       if (run.marks & ITALIC) holder = holder.createEl("i");
       if (run.marks & UNDERLINE) holder = holder.createEl("u");
       if (run.marks & STRIKE) holder = holder.createEl("s");
+      if (run.marks & HIGHLIGHT) holder = holder.createEl("mark");
       holder.appendText(run.text);
     }
   }
@@ -465,9 +492,25 @@ export class NoteEditor {
     }
   }
 
-  /** The one control a selected section shows: remove it. */
-  private addIslandBar(el: HTMLElement, id: string): void {
+  /** What a selected section shows: its paper (handwriting only), and remove it. */
+  private addIslandBar(el: HTMLElement, id: string, ink = false): void {
     const bar = el.createDiv({ cls: "finenotes-note-island-bar" });
+    if (ink) {
+      const paper = bar.createEl("button", {
+        cls: "clickable-icon finenotes-note-island-button",
+        attr: { "aria-label": this.host.text("paper"), type: "button" },
+      });
+      setIcon(paper, "notebook-text");
+      paper.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      paper.addEventListener("pointerup", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.paperMenu(id, event);
+      });
+    }
     const button = bar.createEl("button", {
       cls: "clickable-icon finenotes-note-island-button",
       attr: { "aria-label": this.host.text("delete"), type: "button" },
@@ -483,6 +526,37 @@ export class NoteEditor {
       event.stopPropagation();
       this.removeIsland(id);
     });
+  }
+
+  private paperMenu(id: string, event: PointerEvent): void {
+    const block = this.note.blocks.find((b) => b.id === id);
+    if (!block || block.type !== "ink") return;
+    const menu = new Menu();
+    const icons: Record<InkPaper, string> = {
+      blank: "square",
+      lined: "align-justify",
+      squared: "grid-3x3",
+      dotted: "grip",
+    };
+    for (const paper of INK_PAPERS) {
+      menu.addItem((item) =>
+        item
+          .setTitle(this.host.paperName(paper))
+          .setIcon(icons[paper])
+          .setChecked((block.paper ?? "blank") === paper)
+          .onClick(() => this.setPaper(id, paper)),
+      );
+    }
+    menu.showAtPosition({ x: event.clientX, y: event.clientY });
+  }
+
+  /** Give a handwriting section another paper; one undo step. */
+  setPaper(id: string, paper: InkPaper): void {
+    const block = this.note.blocks.find((b) => b.id === id);
+    if (!block || block.type !== "ink" || (block.paper ?? "blank") === paper) return;
+    const { paper: _old, ...rest } = block;
+    const next: InkBlock = paper === "blank" ? rest : { ...rest, paper };
+    this.apply(replaceBlock(this.note, indexOfBlock(this.note, id), next));
   }
 
   /** Pictures whose file has appeared, moved or gone: look them up again. */
