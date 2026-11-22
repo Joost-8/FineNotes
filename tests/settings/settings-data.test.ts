@@ -104,7 +104,7 @@ const FRESH_INSTALL = {
   imageVendor: "same",
   imageModel: "",
   imageAspect: "square",
-  askSaveChats: false,
+  askSaveChats: true,
   askLayout: "window",
   searchLayout: "sidebar",
   askVaultScope: "folder",

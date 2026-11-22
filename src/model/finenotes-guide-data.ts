@@ -3260,14 +3260,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
       'Toolbar › AI › "Ask…". Send with the round arrow button or Return; Shift+Return adds a new line.',
     notes:
       'Needs an AI service with a key (or your own endpoint) and internet. Greyed out with the reason when not set up, and "This page is empty" / "This notebook is empty" when nothing is on any page.',
-    settings: [
-      "llmVendor",
-      "llmModel",
-      "askLayout",
-      "askSaveChats",
-      "askVaultScope",
-      "askShowCost",
-    ],
+    settings: ["llmVendor", "llmModel", "askLayout", "askVaultScope", "askShowCost"],
   },
   {
     id: "askPagePicker",
@@ -3323,20 +3316,21 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     id: "askLayout",
     area: "ai",
     title: "Show Ask AI as a sidebar or a window",
-    words: "sidebar, side panel, window, dock, layout, beside the page",
-    what: "The chat can be a window over the notebook or a sidebar on the left of the page, which pushes the page aside and closes the page sidebar. The choice is remembered.",
+    words: "sidebar, side panel, window, dock, layout, beside the page, move, resize, drag",
+    what: "The chat can be a window over the notebook or a sidebar on the left of the page, which pushes the page aside and closes the page sidebar. The window is moved by its title bar and sized from its bottom-right corner, and opens where it was left on this device. The choice is remembered. In a text note, Ask AI is always the window.",
     where: 'Ask › "Show in the sidebar" / "Show as a window" button in the chat\'s top bar.',
     settings: ["askLayout"],
   },
   {
     id: "askSaveChats",
     area: "ai",
-    title: "Save Ask AI chats and reopen them",
-    words: "save chat, chat history, previous chats, conversation history, keep chat, reopen chat",
-    what: '"Save chat" keeps the conversation as a Markdown note, by default in an "AI chats" folder next to the notebook; while saved it updates as you go, and tapping again stops saving (the note goes to the trash). "Chats" lists this notebook\'s saved chats to continue one. "New chat" starts fresh. The Save chat choice is remembered for new chats.',
+    title: "Where Ask AI chats are kept, and deleting one",
+    words:
+      "save chat, chat history, previous chats, conversation history, keep chat, delete chat, AI chats folder",
+    what: 'Every Ask AI conversation is kept as a Markdown note in the "AI chats" folder of the notebook or text note it was about, and updates as you go. Open or delete one there, as any file; the chat has no save or history buttons. "New chat" starts fresh.',
     where:
-      'Ask › top bar: Save chat (bookmark icon), Chats (history icon), New chat. Folder: Settings › Files and folders › "Folder for AI chats".',
-    settings: ["askSaveChats", "chatsFolder"],
+      'The notebook\'s (or note\'s) "AI chats" folder in the file list. Folder: Settings › Files and folders › "Folder for AI chats".',
+    settings: ["chatsFolder"],
   },
   {
     id: "askVaultScope",

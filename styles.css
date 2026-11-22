@@ -23983,3 +23983,96 @@ button.clickable-icon.finenotes-note-button.is-recording::before {
   background: var(--color-red);
   content: "";
 }
+
+/* --- The Ask AI window -------------------------------------------------------
+   ask-window.ts: the chat in a FloatingWindow over a notebook or a text note,
+   as the calculator's window (moved by its bar, sized from its corner). The
+   notebook's sidebar layout (.goodobsidian-chatpanel) is styled above. */
+
+.goodobsidian-ask-window {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pop-radius);
+  background: var(--gob-pop-bg);
+  box-shadow: var(--gob-shadow-sheet);
+  color: var(--text-normal);
+}
+
+.goodobsidian-ask-window-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 4px 0 14px;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.goodobsidian-ask-window.is-front {
+  z-index: 21;
+}
+
+.goodobsidian-ask-window-title {
+  flex: 0 0 auto;
+  margin-right: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+}
+
+/* The reach pill's holder takes the rest of the bar, so the cross stays right. */
+.goodobsidian-ask-window-reach {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+}
+
+button.clickable-icon.goodobsidian-ask-window-button {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--gob-radius-m);
+  color: var(--gob-icon);
+}
+
+/* While the iPad keyboard covers the window's foot, DialogKeyboard's `pad` lifts the field. */
+.goodobsidian-ask-window-body.goodobsidian-chat {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 0 12px calc(12px + var(--goodobsidian-keyboard-pad, 0px));
+}
+
+.goodobsidian-ask-window .goodobsidian-chat-tool-label {
+  display: none;
+}
+
+.goodobsidian-ask-window-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-faint);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.goodobsidian-ask-window-grip svg {
+  width: 14px;
+  height: 14px;
+}
