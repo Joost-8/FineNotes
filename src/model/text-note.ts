@@ -16,7 +16,7 @@
  * On disk a note is ordinary Markdown (`text-note-file.ts`).
  */
 
-import type { Stroke } from "./document";
+import type { GraphSpecData, Stroke } from "./document";
 import { strokeBounds } from "./document";
 
 /** A run's marks, as bits. */
@@ -135,7 +135,19 @@ export interface RawBlock {
   readonly text: string;
 }
 
-export type NoteBlock = TextBlock | InkBlock | ImageBlock | RawBlock;
+/**
+ * A graph on a line of its own: the calculator's graph, kept whole as the
+ * notebook's graph elements keep it (`model/graph-element.ts`), and drawn
+ * by the same code. Its frame is the column's width; its height follows
+ * the shape of its view.
+ */
+export interface GraphBlock {
+  readonly type: "graph";
+  readonly id: string;
+  readonly spec: GraphSpecData;
+}
+
+export type NoteBlock = TextBlock | InkBlock | ImageBlock | RawBlock | GraphBlock;
 
 export interface TextNote {
   readonly blocks: readonly NoteBlock[];

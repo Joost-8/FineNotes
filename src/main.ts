@@ -599,6 +599,8 @@ export default class GoodObsidianPlugin extends Plugin {
           fullScreenOffered: () => this.fullScreenOffered,
           fullScreen: () => this.fullScreen,
           toggleFullScreen: () => this.toggleFullScreen(),
+          loadCalculator: () => parseCalculatorData(this.settings.calculator),
+          saveCalculator: (data) => this.saveCalculator(data),
         }),
     );
     this.registerView(

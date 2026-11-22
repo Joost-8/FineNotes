@@ -23506,3 +23506,61 @@ button.clickable-icon.finenotes-note-style.is-active {
     animation: none;
   }
 }
+
+/* --- maths and graphs ------------------------------------------------------
+   A typed sum that ends in "=" shows its answer after it, in the accent, as
+   Apple Notes' Math Notes does; a tap types it in. A graph is a section like
+   a picture, the column's width, drawn by the notebook's graph painter. */
+
+.finenotes-note-line[data-answer]::after {
+  padding-inline-start: 0.3em;
+  font-weight: 600;
+  color: var(--fn-note-accent);
+  cursor: pointer;
+  content: attr(data-answer);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.finenotes-note-graph {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--fn-graph-h, 320px);
+  margin: 8px 0;
+  overflow: hidden;
+  line-height: 0;
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 0.15s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.finenotes-note-graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.finenotes-note-graph.is-selected {
+  outline-color: var(--fn-note-accent);
+}
+
+.finenotes-note-graph.is-selected > .finenotes-note-island-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.finenotes-note-graph.is-lifted {
+  z-index: 5;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+  transform: translateY(var(--fn-lift, 0)) scale(1.015);
+}
+
+button.clickable-icon.finenotes-note-island-button.is-edit {
+  color: var(--text-normal);
+}

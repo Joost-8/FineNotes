@@ -20,6 +20,9 @@
  * %%finenotes-ink
  * v2:<the strokes, as a notebook page stores them>
  * %%
+ * %%finenotes-graph
+ * {"expressions":["y = x^2"],"xMin":-10, …}
+ * %%
  * ```
  *
  * - A line is a block; an empty line is an empty paragraph. One empty line
@@ -38,6 +41,7 @@
  */
 
 import { emptyDocument } from "./document";
+import { makeGraph } from "./graph-element";
 import { decodeDocument, encodeDocument } from "./serialize";
 import {
   BOLD,
@@ -62,6 +66,7 @@ import {
   type TextBlock,
   type TextNote,
   type TextRun,
+  type GraphBlock,
 } from "./text-note";
 
 /** The file name suffix of a text note: `Title.note.md`. */
@@ -73,6 +78,15 @@ export const TEXT_NOTE_FLAG = "finenotes-note";
 /** Opens a handwriting section; a line that is only `%%` closes it. */
 export const INK_OPEN = "%%finenotes-ink";
 const INK_CLOSE = "%%";
+
+/**
+ * Opens a graph: the calculator's graph as one line of JSON, then a line
+ * that is only `%%`. A comment like a handwriting section, so reading view
+ * hides it; the JSON names its expressions, so another editor shows what
+ * is plotted.
+ */
+export const GRAPH_OPEN = "%%finenotes-graph";
+const BACKSLASH = String.fromCharCode(92);
 
 /** Whether a file name is a text note's. */
 export function isTextNoteName(name: string): boolean {
@@ -318,7 +332,14 @@ const RULE = /^([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 /** Body text that would read as something else gets a backslash where the marker is. */
 function guardLine(line: string): string {
   if (HEADING.test(line) || QUOTE.test(line) || RULE.test(line)) return `\\${line}`;
-  if (line.startsWith("```") || line.startsWith(INK_OPEN) || EMBED.test(line)) return `\\${line}`;
+  if (
+    line.startsWith("```") ||
+    line.startsWith(INK_OPEN) ||
+    line.startsWith(GRAPH_OPEN) ||
+    EMBED.test(line)
+  ) {
+    return `\\${line}`;
+  }
   const list = LIST.exec(line);
   if (list) {
     const lead = list[1].length;
@@ -380,6 +401,10 @@ export function encodeNote(note: TextNote): string {
     }
     if (block.type === "raw") {
       lines.push(block.text);
+      continue;
+    }
+    if (block.type === "graph") {
+      lines.push(...graphLines(block));
       continue;
     }
     const text = encodeInline(block.runs);
@@ -446,6 +471,28 @@ function readInk(payload: string, id: string): InkBlock | null {
   }
 }
 
+/**
+ * A graph's lines. A `%` is written as its JSON escape (backslash, u0025):
+ * two of them would end Obsidian's comment in the middle of the graph.
+ */
+function graphLines(block: GraphBlock): string[] {
+  const json = JSON.stringify(block.spec).replace(/%/g, `${BACKSLASH}u0025`);
+  return [GRAPH_OPEN, json, INK_CLOSE];
+}
+
+/** A graph's JSON as a block; null when it is not a graph the calculator can draw. */
+function readGraph(payload: string, id: string): GraphBlock | null {
+  try {
+    const raw: unknown = JSON.parse(payload);
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+    const graph = makeGraph({ id, x: 0, y: 0, spec: raw as GraphBlock["spec"] });
+    if (graph.spec.expressions.length === 0) return null;
+    return { type: "graph", id, spec: graph.spec };
+  } catch {
+    return null;
+  }
+}
+
 /** A Markdown body as a note. Any text is a note: what is not understood is body text. */
 export function decodeNote(body: string, newId: IdSource): TextNote {
   const lines = body.replace(/\r\n?/g, "\n").split("\n");
@@ -463,6 +510,21 @@ export function decodeNote(body: string, newId: IdSource): TextNote {
       const ink = end < lines.length ? readInk(lines.slice(i + 1, end).join(""), id) : null;
       blocks.push(
         ink ?? {
+          type: "raw",
+          id,
+          text: lines.slice(i, Math.min(end + 1, lines.length)).join("\n"),
+        },
+      );
+      i = end;
+      continue;
+    }
+    if (line === GRAPH_OPEN || line.startsWith(`${GRAPH_OPEN} `)) {
+      let end = i + 1;
+      while (end < lines.length && lines[end].trim() !== INK_CLOSE) end++;
+      const id = newId();
+      const graph = end < lines.length ? readGraph(lines.slice(i + 1, end).join(""), id) : null;
+      blocks.push(
+        graph ?? {
           type: "raw",
           id,
           text: lines.slice(i, Math.min(end + 1, lines.length)).join("\n"),
