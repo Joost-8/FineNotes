@@ -1,6 +1,8 @@
 /**
- * Ask AI about a text note, in the notebook's own chat (`AskAiModal`, an
- * `AskSession`): the note's text, and each handwriting section as a
+ * Ask AI about a text note, in the notebook's own chat (`AskChat`, an
+ * `AskSession`), in a window floating over the note that is moved by its
+ * bar and sized from its corner (`FloatingWindow`, as the calculator's),
+ * opened where it was left on this device. The note's text, and each handwriting section as a
  * picture, go with every question as the note is then
  * (`recognition/ask-note.ts`). Nothing is sent before the same one-time
  * consent a notebook asks for (`plugin.confirmAiSend`, which records it);
@@ -8,7 +10,7 @@
  * folder, linking back to it.
  */
 
-import { type App, Notice, type TFile } from "obsidian";
+import { type App, type TFile } from "obsidian";
 import { t } from "../i18n/translate";
 import { paintInk, penFor } from "../canvas/renderer";
 import { drawSyntheticRules, paperTheme } from "../canvas/backdrop";
@@ -19,8 +21,10 @@ import type { ChatImage, ChatTurn } from "../recognition/ai-chat";
 import { buildNoteAskSystemPrompt, noteAskFile, withNoteContext } from "../recognition/ask-note";
 import { AskSession } from "../recognition/ask-session";
 import type GoodObsidianPlugin from "../main";
-import { AskAiModal } from "./ask-ai-modal";
-import { listChats, readAttachment, readChat, trashChat, writeChat } from "./ask-chats-io";
+import type { AskAiHost } from "./ask-ai-modal";
+import { AskChatWindow } from "./ask-window";
+import { ensureFolder } from "./note-files";
+import { readAttachment, trashChat, writeChat } from "./ask-chats-io";
 
 export interface NoteAskHost {
   readonly app: App;
@@ -34,6 +38,10 @@ export interface NoteAskHost {
   insert: (text: string) => boolean;
   /** Put an answer's drawing in the note as a picture. */
   insertDrawing: (svg: string) => Promise<boolean>;
+  /** What the window floats over and stays inside: the note view's content. */
+  container: () => HTMLElement;
+  /** The window opened or closed (the bar's button shows it). */
+  changed: () => void;
 }
 
 /** The handwriting sections' pictures are this many px a section unit: legible, and small. */
@@ -94,14 +102,35 @@ export function inkSectionImages(
 export class NoteAsk {
   private session: AskSession | null = null;
   private sessionFor = "";
+  private window: AskChatWindow | null = null;
 
   constructor(private readonly host: NoteAskHost) {}
 
-  /** Open the chat about this note; the same chat as last time while the note stays open. */
-  open(): void {
+  get isOpen(): boolean {
+    return this.window?.isOpen === true;
+  }
+
+  /**
+   * Open the chat about this note as a window over it (`AskChatWindow`, as
+   * a notebook's), or close it when it is open: a second tap on the bar's
+   * button, as the calculator's. The same chat comes back while the note
+   * stays open.
+   */
+  toggle(): void {
     const file = this.host.file();
-    if (!file) return;
-    new AskAiModal(this.host.app, this.askHost(file), () => {}).open();
+    if (this.isOpen || !file) {
+      this.close();
+      return;
+    }
+    this.window ??= new AskChatWindow(this.host.app, this.host.container(), {
+      host: () => this.askHost(this.host.file() ?? file),
+      changed: () => this.host.changed(),
+    });
+    this.window.open();
+  }
+
+  close(): void {
+    this.window?.close();
   }
 
   private conversation(file: TFile): AskSession {
@@ -120,12 +149,17 @@ export class NoteAsk {
           ),
         preparePages: () => Promise.resolve({ images: [], pageNumbers: [], totalPages: 0 }),
         ask: (turns) => this.ask(turns),
-        save: (chat, path) => writeChat(this.host.app, chat, path, this.host.chatsFolder()),
+        // Every chat is kept, in the note's AI chats folder (made with the folders above it).
+        save: async (chat, path) => {
+          const folder = this.host.chatsFolder();
+          await ensureFolder(this.host.app, folder);
+          return writeChat(this.host.app, chat, path, folder);
+        },
         unsave: (path) => trashChat(this.host.app, path),
         readFile: (path) => readAttachment(this.host.app, path),
         now: () => new Date(),
       },
-      { page: 0, totalPages: 0, save: plugin.settings.askSaveChats, attachPage: false },
+      { page: 0, totalPages: 0, save: true, attachPage: false },
     );
     return this.session;
   }
@@ -147,8 +181,8 @@ export class NoteAsk {
     return askAi(plugin.textAiConfig(), buildNoteAskSystemPrompt(), sent);
   }
 
-  private askHost(file: TFile): ConstructorParameters<typeof AskAiModal>[1] {
-    const { app, plugin } = this.host;
+  private askHost(file: TFile): AskAiHost {
+    const { plugin } = this.host;
     const session = this.conversation(file);
     return {
       session,
@@ -175,19 +209,6 @@ export class NoteAsk {
       insert: (text) => this.host.insert(text),
       insertDrawing: (svg) => this.host.insertDrawing(svg),
       notebookPdfs: () => [],
-      savedChats: () => listChats(app, file.path, this.host.chatsFolder()),
-      openSaved: async (path) => {
-        const chat = await readChat(app, path);
-        if (!chat) {
-          new Notice(t("view.ask.chatUnreadable"));
-          return;
-        }
-        session.load(chat, path);
-      },
-      rememberSave: (save) => {
-        plugin.settings.askSaveChats = save;
-        void plugin.saveSettings();
-      },
     };
   }
 }

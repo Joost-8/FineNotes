@@ -309,6 +309,8 @@ export class TextNoteView extends TextFileView {
     const mark = (modifiers: Modifier[], key: string, marks: Marks): void => {
       this.scope?.register(modifiers, key, () => {
         if (!this.editor || this.editor.isDrawing()) return true;
+        // Typing a question in the Ask AI window: the keys are the field's.
+        if (this.contentEl.doc.activeElement?.closest(".goodobsidian-ask-window")) return true;
         this.editor.toggleMark(marks);
         return false;
       });
@@ -694,6 +696,7 @@ export class TextNoteView extends TextFileView {
     };
     set("draw", state.drawing);
     set("styles", this.styles !== null);
+    set("ask", this.extras?.askOpen === true);
     // Recording is a mark on the paperclip it was started from; the pill says the rest.
     this.buttons
       .get("picture")

@@ -26,7 +26,7 @@ export interface NoteExtrasHost {
   editor: () => NoteEditor | null;
   /** What the recording pill and the player float over. */
   container: () => HTMLElement;
-  /** A recording started or stopped. */
+  /** A recording started or stopped, or the Ask AI window opened or closed: the bar shows it. */
   recordingChanged: () => void;
 }
 
@@ -88,7 +88,12 @@ export class NoteExtras {
     menu.showAtPosition({ x: at.left, y: at.bottom + 6 });
   }
 
-  /** Ask AI about this note. */
+  /** Whether the Ask AI window is open. */
+  get askOpen(): boolean {
+    return this.ask?.isOpen === true;
+  }
+
+  /** Open the Ask AI window about this note, or close it. */
   openAsk(): void {
     const plugin = this.host.plugin();
     if (!plugin) return;
@@ -112,8 +117,10 @@ export class NoteExtras {
         await editor.insertImages([new File([svg], "Drawing.svg", { type: "image/svg+xml" })]);
         return true;
       },
+      container: this.host.container,
+      changed: this.host.recordingChanged,
     });
-    this.ask.open();
+    this.ask.toggle();
   }
 
   /**
@@ -158,5 +165,6 @@ export class NoteExtras {
 
   destroy(): void {
     this.recordings.destroy();
+    this.ask?.close();
   }
 }

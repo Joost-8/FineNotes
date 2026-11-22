@@ -1,6 +1,6 @@
 /**
  * "Ask", laid out as a chat: the pages to send and the chat's controls on
- * top (Save chat, Chats, New chat), the conversation in the middle (your
+ * top (New chat), the conversation in the middle (your
  * questions as bubbles on the right, the answers rendered as markdown on the
  * left, each with Copy and Insert as text box), and the question field at the
  * bottom with a paperclip and a round send button. Before the first question,
@@ -63,7 +63,7 @@ const REACH_ICON: Readonly<Record<AskVaultScope, string>> = {
   vault: "library",
 };
 import { bytesToBase64 } from "../recognition/audio-request";
-import { type SavedChatEntry, attachableFiles, readAttachment } from "./ask-chats-io";
+import { attachableFiles, readAttachment } from "./ask-chats-io";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { keyboardHeight } from "./keyboard";
@@ -98,12 +98,6 @@ export interface AskAiHost {
   notebookAsPdf?: (onProgress: (done: number, total: number) => void) => Promise<ChatFile | null>;
   /** The notebook's own PDFs, each with the 1-based pages printed on it. */
   notebookPdfs: () => PdfBehind[];
-  /** This notebook's saved chats, newest first. */
-  savedChats: () => Promise<SavedChatEntry[]>;
-  /** Continue a saved chat in the session. */
-  openSaved: (path: string) => Promise<void>;
-  /** Remember "Save chat" for the next new chat. */
-  rememberSave: (save: boolean) => void;
   /** What Ask AI may read besides this notebook (the setting), and changing it from the chat. */
   vaultScope?: { get: () => AskVaultScope; set: (scope: AskVaultScope) => void };
   /**
@@ -203,9 +197,7 @@ export class AskChat {
   private wholeFile: ChatFile | null = null;
   /** "Making PDF… n/N" while it is made. */
   private wholeProgress: string | null = null;
-  private saveButton: HTMLButtonElement | null = null;
   private reachButton: HTMLButtonElement | null = null;
-  private chatsButton: HTMLButtonElement | null = null;
   private newChatButton: HTMLButtonElement | null = null;
 
   /** The page picker: its chip, and the grid it opens. */
@@ -249,17 +241,9 @@ export class AskChat {
     const top = contentEl.createDiv({ cls: "goodobsidian-chat-top" });
     // A board sends what is on screen: there are no pages to pick.
     if (!this.session.screen && !this.host.subject) this.buildPagesChip(top);
+    // Every chat is kept, as a note in the notebook's (or note's) AI chats
+    // folder, and is opened or deleted there, as any file: no controls for it here.
     const tools = top.createDiv({ cls: "goodobsidian-chat-tools" });
-    this.saveButton = this.toolButton(tools, "bookmark", t("ai.ask.saveChat"), () => {
-      const save = !this.session.save;
-      this.host.rememberSave(save);
-      void this.session.setSave(save).catch((error: unknown) => {
-        new Notice(t(save ? "ai.ask.saveFailed" : "ai.ask.removeFailed", { error: String(error) }));
-      });
-    });
-    this.chatsButton = this.toolButton(tools, "history", t("ai.ask.chats"), (event) => {
-      void this.showChats(event);
-    });
     // What it may read, right of the title: the reach's icon and its name, so
     // the choice is read at a glance and changed in one tap.
     if (this.host.vaultScope) {
@@ -837,22 +821,7 @@ export class AskChat {
   private render(): void {
     const session = this.session;
     const busy = session.busy;
-    const saved = session.save;
-    if (this.saveButton) {
-      this.saveButton.toggleClass("is-active", saved);
-      this.saveButton.setAttribute("aria-pressed", String(saved));
-      this.saveButton.setAttribute(
-        "aria-label",
-        saved ? t("ai.ask.savedTip") : t("ai.ask.saveChat"),
-      );
-      const icon = this.saveButton.querySelector<HTMLElement>(".goodobsidian-chat-tool-icon");
-      if (icon) setIcon(icon, saved ? "bookmark-check" : "bookmark");
-      this.saveButton
-        .querySelector(".goodobsidian-chat-tool-label")
-        ?.setText(saved ? t("ai.ask.saved") : t("ai.ask.saveChat"));
-    }
     if (this.pagesButton) this.pagesButton.disabled = busy;
-    if (this.chatsButton) this.chatsButton.disabled = busy;
     this.renderReach();
     if (this.attachButton) this.attachButton.disabled = busy;
     if (this.newChatButton) {
@@ -1185,28 +1154,6 @@ export class AskChat {
     }
   }
 
-  /** The saved chats of this notebook, as a menu; picking one continues it. */
-  private async showChats(event: MouseEvent): Promise<void> {
-    this.closePicker();
-    const anchor = this.chatsButton?.getBoundingClientRect();
-    const chats = await this.host.savedChats();
-    const menu = new Menu();
-    if (chats.length === 0) {
-      menu.addItem((item) => item.setTitle(t("ai.ask.noSavedChats")).setDisabled(true));
-    }
-    for (const chat of chats) {
-      menu.addItem((item) =>
-        item
-          .setTitle(`${chat.title}${chat.created ? ` · ${shortDate(chat.created)}` : ""}`)
-          .setIcon("message-square")
-          .setChecked(chat.path === this.session.savedPath)
-          .onClick(() => void this.host.openSaved(chat.path)),
-      );
-    }
-    if (anchor) menu.showAtPosition({ x: anchor.left, y: anchor.bottom + 4 });
-    else menu.showAtMouseEvent(event);
-  }
-
   /**
    * Scroll the thread itself, never `scrollIntoView`: on the iPad that also
    * scrolls the window, which the keyboard handling then has to undo.
@@ -1222,18 +1169,6 @@ export class AskChat {
     if (!thread) return;
     thread.scrollTop = Math.min(answerEl.offsetTop - 8, thread.scrollHeight);
   }
-}
-
-/** "17 Oct" this year, "17 Oct 2025" before. */
-function shortDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  const sameYear = date.getFullYear() === new Date().getFullYear();
-  return date.toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    ...(sameYear ? {} : { year: "numeric" }),
-  });
 }
 
 /** Where the chat is shown: a window over the notebook, or a sidebar beside the page. */
