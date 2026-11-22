@@ -350,6 +350,9 @@ export class TextNoteView extends TextFileView {
       eraserSize: () => this.choices.eraser.size,
       paperName: (paper) => t(PAPER_NAMES[paper]),
       tableLabel: (key) => t(TABLE_LABELS[key]),
+      linkNames: () => this.app.vault.getMarkdownFiles().map((file) => file.basename),
+      openLink: (target) => void this.app.workspace.openLinkText(target, this.file?.path ?? ""),
+      openTag: (tag) => this.openTag(tag),
       foldsChanged: (titles) => {
         const path = this.file?.path;
         if (!path) return;
@@ -414,6 +417,12 @@ export class TextNoteView extends TextFileView {
       }),
     );
     this.registerEvent(this.app.workspace.on("layout-change", () => this.refresh()));
+    // The date strip follows the file: each save (after typing or drawing stops) moves it on.
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (file === this.file) this.showDate();
+      }),
+    );
     const refreshImages = (): void => this.editor?.refreshImages();
     this.registerEvent(this.app.vault.on("create", refreshImages));
     this.registerEvent(this.app.vault.on("delete", refreshImages));
@@ -887,6 +896,16 @@ export class TextNoteView extends TextFileView {
     this.app.saveLocalStorage(PEN_KEY, JSON.stringify(this.choices));
     this.buildPalette();
     this.refresh();
+  }
+
+  /** Search the vault for a tag, in Obsidian's own search (as its tags do). */
+  private openTag(tag: string): void {
+    const plugins: unknown = (this.app as unknown as { internalPlugins?: unknown }).internalPlugins;
+    const search = (
+      plugins as { getPluginById?: (id: string) => unknown } | undefined
+    )?.getPluginById?.("global-search") as
+      { instance?: { openGlobalSearch?: (query: string) => void } } | undefined;
+    search?.instance?.openGlobalSearch?.(`tag:${tag}`);
   }
 
   // -------------------------------------------------------------- pictures

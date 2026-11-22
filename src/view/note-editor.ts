@@ -85,6 +85,7 @@ import { offsetOf, positionAt, readRuns } from "./note-dom";
 import { InkSection, type InkSectionHost, type NotePen } from "./note-ink";
 import { NoteTableView, type TableLabel } from "./note-table-view";
 import { emptyTable } from "../model/note-table";
+import { findMarks, marksKey, openLinkAt, rankNames, type TextMark } from "../model/note-links";
 
 /** What the editor needs from the view that holds it. */
 export interface NoteEditorHost {
@@ -95,6 +96,11 @@ export interface NoteEditorHost {
   paperName(paper: InkPaper): string;
   /** The names of a table's buttons. */
   tableLabel(key: TableLabel): string;
+  /** The names a `[[` link can point at: the vault's notes and notebooks. */
+  linkNames?(): string[];
+  /** Open what a link points at, or search for a tag. */
+  openLink?(target: string): void;
+  openTag?(tag: string): void;
   /** The folded headings changed (by their text): keep them for the next time the note opens. */
   foldsChanged?(titles: string[]): void;
   pressure(): boolean;
@@ -174,6 +180,29 @@ function sameRuns(a: readonly TextRun[], b: readonly TextRun[]): boolean {
     if (a[i].text !== b[i].text || a[i].marks !== b[i].marks) return false;
   }
   return true;
+}
+
+/** `text` (which starts `at` characters into its line) appended, its links and tags as spans. */
+function appendMarked(
+  holder: HTMLElement,
+  text: string,
+  at: number,
+  marks: readonly TextMark[],
+): void {
+  let i = 0;
+  for (const mark of marks) {
+    const from = Math.max(0, mark.from - at);
+    const to = Math.min(text.length, mark.to - at);
+    if (to <= from || to <= i) continue;
+    if (from > i) holder.appendText(text.slice(i, from));
+    holder.createSpan({
+      cls: mark.kind === "tag" ? "finenotes-note-tag" : "finenotes-note-link",
+      text: text.slice(Math.max(i, from), to),
+      attr: { "data-fn-kind": mark.kind, "data-fn-target": mark.target },
+    });
+    i = to;
+  }
+  if (i < text.length) holder.appendText(text.slice(i));
 }
 
 function kindOf(raw: string | undefined): TextKind {
@@ -543,14 +572,24 @@ export class NoteEditor {
     if (block.checked) el.dataset.checked = "true";
     else delete el.dataset.checked;
     el.toggleClass("is-blank", block.runs.length === 0);
-    if (!fresh && sameRuns(readRuns(el), block.runs) && (block.runs.length > 0 || el.firstChild)) {
+    const marks = block.kind === "mono" ? [] : findMarks(blockText(block));
+    const key = marksKey(marks);
+    if (
+      !fresh &&
+      (el.dataset.marks ?? "") === key &&
+      sameRuns(readRuns(el), block.runs) &&
+      (block.runs.length > 0 || el.firstChild)
+    ) {
       return;
     }
+    if (key) el.dataset.marks = key;
+    else delete el.dataset.marks;
     el.empty();
     if (block.runs.length === 0) {
       el.createEl("br");
       return;
     }
+    let at = 0;
     for (const run of block.runs) {
       let holder: HTMLElement = el;
       if (run.marks & BOLD) holder = holder.createEl("b");
@@ -559,8 +598,142 @@ export class NoteEditor {
       if (run.marks & STRIKE) holder = holder.createEl("s");
       const tint = HIGHLIGHTS.find((h) => (run.marks & h.mark) !== 0);
       if (tint) holder = holder.createEl("mark", { attr: { "data-tint": tint.name } });
-      holder.appendText(run.text);
+      appendMarked(holder, run.text, at, marks);
+      at += run.text.length;
     }
+  }
+
+  /** Lines whose links or tags changed as they were typed: drawn again, the caret kept. */
+  private redecorate(): void {
+    const range = this.selection();
+    let drawn = false;
+    for (const view of this.views.values()) {
+      const block = view.block;
+      if (block.type !== "text" || block.kind === "mono") continue;
+      const key = marksKey(findMarks(blockText(block)));
+      if ((view.el.dataset.marks ?? "") === key) continue;
+      this.drawLine(view.el, block, true);
+      drawn = true;
+    }
+    if (drawn && range) this.select(range);
+  }
+
+  // -------------------------------------------------------------- [[ suggestions
+
+  private suggest: {
+    el: HTMLElement;
+    names: string[];
+    index: number;
+    block: number;
+    from: number;
+  } | null = null;
+
+  /** After typing: offer the vault's notes while a `[[` is open before the caret. */
+  private updateSuggest(): void {
+    const range = this.selection();
+    const names = this.host.linkNames?.();
+    const block = range ? this.note.blocks[range.start.block] : undefined;
+    const open =
+      range && isCollapsed(range) && block?.type === "text" && block.kind !== "mono"
+        ? openLinkAt(blockText(block), range.start.offset)
+        : null;
+    if (!range || !open || !names) {
+      this.closeSuggest();
+      return;
+    }
+    const ranked = rankNames(names, open.query);
+    if (ranked.length === 0) {
+      this.closeSuggest();
+      return;
+    }
+    let el = this.suggest?.el;
+    if (!el) {
+      el = this.column.createDiv({ cls: "finenotes-note-suggest" });
+      el.addEventListener("pointerdown", (event) => event.preventDefault());
+      el.addEventListener("mousedown", (event) => event.preventDefault());
+    }
+    this.suggest = { el, names: ranked, index: 0, block: range.start.block, from: open.from };
+    this.drawSuggest();
+    // Under the caret.
+    const caret = this.root.win.getSelection()?.getRangeAt(0).getBoundingClientRect();
+    const column = this.column.getBoundingClientRect();
+    if (caret) {
+      el.setCssProps({
+        "--fn-suggest-x": `${Math.max(0, caret.left - column.left)}px`,
+        "--fn-suggest-y": `${caret.bottom - column.top + 6}px`,
+      });
+    }
+  }
+
+  private drawSuggest(): void {
+    const suggest = this.suggest;
+    if (!suggest) return;
+    suggest.el.empty();
+    suggest.names.forEach((name, i) => {
+      const row = suggest.el.createDiv({ cls: "finenotes-note-suggest-row", text: name });
+      row.toggleClass("is-selected", i === suggest.index);
+      row.addEventListener("click", () => this.takeSuggest(i));
+    });
+  }
+
+  private closeSuggest(): void {
+    this.suggest?.el.remove();
+    this.suggest = null;
+  }
+
+  /** Put the chosen name in as `[[Name]]`, the caret after it. */
+  private takeSuggest(index: number): void {
+    const suggest = this.suggest;
+    const range = this.selection();
+    if (!suggest || !range) return;
+    const name = suggest.names[index];
+    this.closeSuggest();
+    if (!name) return;
+    const block = this.note.blocks[suggest.block];
+    const text = blockText(block);
+    // A `]]` the browser already closed the link with is taken over, not doubled.
+    const end = text.startsWith("]]", range.start.offset)
+      ? range.start.offset + 2
+      : range.start.offset;
+    const removed = deleteRange(
+      this.note,
+      {
+        start: { block: suggest.block, offset: suggest.from },
+        end: { block: suggest.block, offset: end },
+      },
+      this.newId,
+    );
+    const marks = block.type === "text" ? marksBefore(block.runs, suggest.from) : 0;
+    const edit = insertText(removed.note, removed.caret, `[[${name}]]`, marks);
+    this.apply(edit.note, edit.caret);
+  }
+
+  /** The suggestion list's keys: up, down, Return or Tab to take one, Escape to close. */
+  private suggestKey(event: KeyboardEvent): boolean {
+    const suggest = this.suggest;
+    if (!suggest) return false;
+    const move = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+    if (move) {
+      suggest.index = (suggest.index + move + suggest.names.length) % suggest.names.length;
+      this.drawSuggest();
+    } else if (event.key === "Enter" || event.key === "Tab") {
+      this.takeSuggest(suggest.index);
+    } else if (event.key === "Escape") {
+      this.closeSuggest();
+    } else {
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  }
+
+  /** A link or tag under a tap: open it (Obsidian's live preview does the same). */
+  private markAt(event: MouseEvent): { kind: string; target: string } | null {
+    const node = event.target as Node | null;
+    const el = node?.instanceOf(Element) ? node.closest("[data-fn-target]") : null;
+    if (!el?.instanceOf(HTMLElement) || !this.root.contains(el)) return null;
+    return { kind: el.dataset.fnKind ?? "", target: el.dataset.fnTarget ?? "" };
   }
 
   private drawImage(view: BlockView, block: ImageBlock): void {
@@ -721,6 +894,10 @@ export class NoteEditor {
   }
 
   private readonly onSelectionChange = (): void => {
+    if (this.suggest) {
+      const at = this.selection();
+      if (!at || at.start.block !== this.suggest.block) this.closeSuggest();
+    }
     const range = this.selection();
     if (!range) return;
     this.lastSelection = range;
@@ -980,6 +1157,10 @@ export class NoteEditor {
       this.record(before, this.selectionBefore, true);
       this.host.changed();
     }
+    if (!(event as InputEvent).isComposing) {
+      this.redecorate();
+      this.updateSuggest();
+    }
     this.queueState();
   };
 
@@ -990,6 +1171,7 @@ export class NoteEditor {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (this.suggestKey(event)) return;
     const mod = event.ctrlKey || event.metaKey;
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
     const handled = (): void => {
@@ -1262,6 +1444,14 @@ export class NoteEditor {
     if (fold) {
       event.preventDefault();
       this.toggleFold(fold);
+      return;
+    }
+    const mark = this.markAt(event);
+    const tapped = this.selection();
+    if (mark && (!tapped || isCollapsed(tapped))) {
+      event.preventDefault();
+      if (mark.kind === "tag") this.host.openTag?.(mark.target);
+      else this.host.openLink?.(mark.target);
       return;
     }
     const index = this.checkAt(event);

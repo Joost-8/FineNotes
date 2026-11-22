@@ -22615,13 +22615,23 @@ button.clickable-icon.finenotes-note-button:disabled {
   padding: 4px var(--fn-col-pad) 0;
 }
 
+/* When the note was last changed: a small strip, centred over the title, as in Apple Notes. */
 .finenotes-note-date {
+  width: fit-content;
   min-height: 16px;
-  margin: 2px 0 14px;
+  margin: 2px auto 14px;
+  padding: 2px 10px;
   font-size: 12px;
-  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
   text-align: center;
+  background: var(--gob-well);
+  border-radius: 999px;
   user-select: none;
+}
+
+.finenotes-note-date:empty {
+  display: none;
 }
 
 .finenotes-note-doc {
@@ -22780,6 +22790,49 @@ button.clickable-icon.finenotes-note-button:disabled {
 .finenotes-note-line:is([data-kind="number"], [data-kind="upper"], [data-kind="lower"])::before {
   font-variant-numeric: tabular-nums;
   content: attr(data-marker);
+}
+
+/* Links and tags, as Obsidian draws them; a tap opens them. */
+.finenotes-note-doc .finenotes-note-link {
+  color: var(--link-color);
+  border-bottom: 1px solid color-mix(in srgb, var(--link-color) 45%, transparent);
+  cursor: pointer;
+}
+
+.finenotes-note-doc .finenotes-note-tag {
+  color: var(--tag-color, var(--text-accent));
+  cursor: pointer;
+}
+
+/* Typing [[: the vault's notes that match, under the caret. */
+.finenotes-note-suggest {
+  position: absolute;
+  top: var(--fn-suggest-y, 0);
+  left: var(--fn-suggest-x, 0);
+  z-index: 30;
+  min-width: 200px;
+  max-width: min(360px, 90%);
+  padding: 4px;
+  background: var(--gob-pop-bg);
+  border: var(--gob-bar-border);
+  border-radius: 12px;
+  box-shadow: var(--gob-shadow-sheet);
+  -webkit-backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+  backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+}
+
+.finenotes-note-suggest-row {
+  padding: 6px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.finenotes-note-suggest-row.is-selected {
+  color: var(--gob-active-fg);
+  background: var(--gob-active-bg);
 }
 
 /* A highlight in the text, in the ink highlighter's colours. */
