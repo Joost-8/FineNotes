@@ -193,6 +193,7 @@ import { erasedPieces, erasesGrey } from "../canvas/erase-look";
 import { nightHighlighter } from "../canvas/night";
 import {
   type LineSpan,
+  MARGIN_SHARE,
   RuledEraser,
   inLineSpan,
   lineSpan,
@@ -347,6 +348,13 @@ import {
   isNoGrowth,
   pageAfterTurn,
 } from "../model/board";
+import {
+  type BoardSpacePlan,
+  type SpaceAxis,
+  boardSpaceStep,
+  boardSpaceStrip,
+  planBoardSpace,
+} from "../model/board-space";
 import { afterPainted } from "./after-painted";
 import { lowMemoryDevice } from "./pdf-backdrop";
 import { slidesAround } from "../model/beside-pdfs";
@@ -1519,6 +1527,9 @@ const IOS_MIN_INPUT_FONT_PX = 16;
 
 /** A lasso press that moves less than this, in screen px, is a tap, not a lasso. */
 const TAP_SLOP_PX = 8;
+
+/** How far in from the view's left edge a board's insert-space column stands, screen px (#276). */
+const BOARD_SPACE_INSET_PX = 22;
 /** A press on a folded note that moves less than this, screen px, opens it on lift. */
 const FOLDED_TAP_SLOP_PX = 12;
 /** Lasso points closer than this to the previous one are dropped, screen px. */
@@ -1809,6 +1820,17 @@ interface LassoDraft {
    * line it started from, and how many lines the drag has opened so far.
    */
   space: { target: SpaceTarget; count: number; plan: SpacePlan | null; text: string } | null;
+  /**
+   * A by-line lasso on a board, which has no lines (discussion #276): it
+   * inserts space from wherever it went down, down or right as the drag
+   * first heads (`axis`, null until it has moved), and back to close it up.
+   */
+  boardSpace: {
+    axis: SpaceAxis | null;
+    amount: number;
+    plan: BoardSpacePlan | null;
+    text: string;
+  } | null;
 }
 
 /**
@@ -6357,6 +6379,8 @@ export class InkSurface {
         ? (this.cssW - paperWidth) / 2
         : -x;
     this.paperEl.setCssStyles({ transform: `translate(${this.offsetX}px, ${-y}px)` });
+    // A board's insert-space column stays at the view's edge as it scrolls.
+    if (this.board && this.toolState.tool === "select") this.syncSpaceHandles();
     this.viewport = { scrollY: y / scale, scale, width: this.pageLayout.width };
     this.renderer.setViewport(this.viewport, this.offsetX);
     this.updatePageIndicator();
@@ -13701,7 +13725,19 @@ export class InkSurface {
     let mode = lassoModeFor(this.toolState);
     let lines: LineBlock[] = [];
     let space: LassoDraft["space"] = null;
-    if (mode === "lines") {
+    let boardSpace: LassoDraft["boardSpace"] = null;
+    const spacePage = mode === "lines" ? this.pageAt(box.index) : undefined;
+    if (mode === "lines" && spacePage && this.insertsFreeSpace(spacePage)) {
+      // A board, or paper with no lines, has no lines to select: by line, it
+      // inserts space from wherever the pen goes down (discussion #276).
+      boardSpace = {
+        axis: null,
+        amount: 0,
+        plan: null,
+        text: t("surface.readout.boardDragToInsert"),
+      };
+      this.flashReadout(boardSpace.text);
+    } else if (mode === "lines") {
       // By line needs a line under the pen; elsewhere it drags a rectangle.
       // From the margin next to a line, it inserts space instead.
       const page = this.pageAt(box.index);
@@ -13730,6 +13766,7 @@ export class InkSurface {
       held: false,
       lines,
       space,
+      boardSpace,
     };
     // Held still, the press opens the Paste / Unlock bar instead.
     this.startPress(() => this.lassoHeld());
@@ -13752,6 +13789,10 @@ export class InkSurface {
     lasso.to = { x: last.x, y: last.y };
     if (lasso.space) {
       this.dragSpace(lasso, lasso.space);
+      return;
+    }
+    if (lasso.boardSpace) {
+      this.dragBoardSpace(lasso, lasso.boardSpace, moved);
       return;
     }
     const loop = this.lassoLoop(lasso);
@@ -14034,6 +14075,103 @@ export class InkSurface {
     this.flashReadout(space.text);
   }
 
+  /**
+   * A board's insert-space drag moved (discussion #276): once past a tap, it
+   * picks down or right by where it first heads; then the band it opens (or
+   * closes) is drawn across the whole board, with what will happen in the
+   * readout, planned again only when the whole steps change.
+   */
+  private dragBoardSpace(
+    lasso: LassoDraft,
+    space: NonNullable<LassoDraft["boardSpace"]>,
+    moved: number,
+  ): void {
+    if (!space.axis) {
+      if (moved <= TAP_SLOP_PX) {
+        this.flashReadout(space.text);
+        return;
+      }
+      const dx = Math.abs(lasso.to.x - lasso.origin.x);
+      const dy = Math.abs(lasso.to.y - lasso.origin.y);
+      space.axis = dx > dy ? "x" : "y";
+      space.amount = Number.NaN;
+    }
+    const page = this.pageAt(lasso.box.index);
+    if (!page) return;
+    const axis = space.axis;
+    const step = boardSpaceStep(page.backdrop);
+    const amount = Math.trunc((lasso.to[axis] - lasso.origin[axis]) / step) * step;
+    if (amount === space.amount) {
+      // Kept up while the pen is down, or the readout would fade mid-drag.
+      this.flashReadout(space.text);
+      return;
+    }
+    space.amount = amount;
+    space.plan = this.planBoardSpaceFor(lasso, axis);
+    const shift = space.plan?.amount ?? 0;
+    if (shift === 0) {
+      this.renderer?.clearWet();
+      this.requestZoomPaint();
+      space.text =
+        amount < 0
+          ? t("surface.readout.noEmptySpace")
+          : amount > 0 && !this.board
+            ? t("surface.readout.noRoomOnPage")
+            : t("surface.readout.boardDragToInsert");
+      this.flashReadout(space.text);
+      return;
+    }
+    const strip = boardSpaceStrip(
+      axis,
+      lasso.origin[axis],
+      shift,
+      page.geometry.width,
+      page.geometry.height,
+    );
+    this.renderer?.renderLasso(lasso.box.index, [
+      strip.minX,
+      strip.minY,
+      strip.maxX,
+      strip.minY,
+      strip.maxX,
+      strip.maxY,
+      strip.minX,
+      strip.maxY,
+    ]);
+    this.requestZoomPaint();
+    space.text = shift > 0 ? t("surface.command.insertSpace") : t("surface.command.removeSpace");
+    this.flashReadout(space.text);
+  }
+
+  /** A board insert from the lasso's pen-down to the pen along `axis`, on the board as it is now. */
+  private planBoardSpaceFor(lasso: LassoDraft, axis: SpaceAxis): BoardSpacePlan | null {
+    const page = this.pageAt(lasso.box.index);
+    if (!page) return null;
+    return planBoardSpace(
+      page,
+      axis,
+      lasso.origin[axis],
+      lasso.to[axis] - lasso.origin[axis],
+      boardSpaceStep(page.backdrop),
+      (text) => this.textBoxCoverOf(page.id, text).h,
+      // A board grows; a notebook page keeps its size, so nothing goes past its edge.
+      this.board ? undefined : axis === "x" ? page.geometry.width : page.geometry.height,
+    );
+  }
+
+  /**
+   * Whether the by-line lasso inserts space freely on `page` (discussion
+   * #276): on a board, and on notebook paper with no lines to select
+   * (blank, dots, squares, planners). Not on a PDF, whose notes belong by
+   * its printed words, nor on a cover.
+   */
+  private insertsFreeSpace(page: Page): boolean {
+    if (this.board) return true;
+    const kind = page.backdrop.kind;
+    if (kind === "pdf" || kind.startsWith("cover-")) return false;
+    return writingLines(page.backdrop, page.geometry).length === 0;
+  }
+
   /** How the insert-space planner sees this surface's pages. */
   private spaceLayout(): SpaceLayout {
     return {
@@ -14068,6 +14206,12 @@ export class InkSurface {
         count === 0
           ? null
           : planInsertSpace(this.doc, lasso.box.index, target, count, this.spaceLayout());
+      if (plan?.command) this.applyCommand(plan.command);
+      return;
+    }
+    // A board's insert that never moved was a tap: it selects, as any lasso's tap does.
+    if (lasso.boardSpace?.axis) {
+      const plan = this.planBoardSpaceFor(lasso, lasso.boardSpace.axis);
       if (plan?.command) this.applyCommand(plan.command);
       return;
     }
@@ -16621,13 +16765,41 @@ export class InkSurface {
     // Not built yet (the first change can come from the constructor's load).
     if (!this.spaceHandlesEl || !this.pageLayout) return;
     let used = 0;
-    if (this.toolState.tool === "select" && lassoModeFor(this.toolState) === "lines") {
+    const board = this.board ? this.boardSpaceColumn() : null;
+    if (board) {
+      // A board has no margin: one column down the view's left edge, kept
+      // there as it scrolls, its marks a step of the paper apart (#276).
+      let el = this.spaceHandleEls[0];
+      if (!el) {
+        el = this.spaceHandlesEl.createDiv({ cls: "goodobsidian-space-handle" });
+        this.spaceHandleEls.push(el);
+      }
+      el.removeClass("is-hidden");
+      el.setCssStyles({
+        left: `${board.left}px`,
+        top: `${board.top}px`,
+        height: `${board.height}px`,
+      });
+      el.setCssProps({ "--gob-space-pitch": `${board.pitch}px` });
+      used = 1;
+    } else if (this.toolState.tool === "select" && lassoModeFor(this.toolState) === "lines") {
       const scale = this.unitScale;
       for (const box of this.pageLayout.boxes) {
         const page = this.pageAt(box.index);
         if (!page) continue;
         const lines = writingLines(page.backdrop, page.geometry);
-        for (const column of spaceHandles(lines, page.geometry.width)) {
+        const columns = spaceHandles(lines, page.geometry.width);
+        if (lines.length === 0 && this.insertsFreeSpace(page)) {
+          // Paper with no lines: one column in the margin, a step of the paper apart (#276).
+          const pitch = boardSpaceStep(page.backdrop);
+          columns.push({
+            x: (page.geometry.width * MARGIN_SHARE) / 2,
+            top: 0,
+            pitch,
+            lines: Math.floor(page.geometry.height / pitch),
+          });
+        }
+        for (const column of columns) {
           let el = this.spaceHandleEls[used];
           if (!el) {
             el = this.spaceHandlesEl.createDiv({ cls: "goodobsidian-space-handle" });
@@ -16648,6 +16820,30 @@ export class InkSurface {
       this.spaceHandleEls[i].addClass("is-hidden");
     }
     this.spaceHandlesEl.toggleClass("is-hidden", used === 0);
+  }
+
+  /**
+   * Where a board's insert-space column goes while the by-line lasso is the
+   * tool, in the paper element's px: a screen inset from the view's left
+   * edge, from a step above the view's top to a step below its bottom,
+   * starting on a step of the paper. Null off a board, or with another tool.
+   */
+  private boardSpaceColumn(): { left: number; top: number; height: number; pitch: number } | null {
+    if (this.toolState.tool !== "select" || lassoModeFor(this.toolState) !== "lines") return null;
+    const page = this.boardPage;
+    const box = this.pageLayout.boxes[0];
+    if (!page || !box) return null;
+    const scale = this.unitScale;
+    const pitch = boardSpaceStep(page.backdrop) * scale;
+    const origin = box.y * scale;
+    const y = this.scroller.position.y;
+    const top = origin + Math.floor((y - origin) / pitch) * pitch;
+    return {
+      left: -this.offsetX + BOARD_SPACE_INSET_PX,
+      top,
+      height: Math.ceil((y + this.cssH - top) / pitch + 1) * pitch,
+      pitch,
+    };
   }
 
   /**
