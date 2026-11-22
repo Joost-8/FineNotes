@@ -113,7 +113,7 @@ export class PdfCanvasRecorder {
   /** Whether anything was painted. */
   painted = false;
 
-  private readonly out: string[] = [];
+  protected readonly out: string[] = [];
   private readonly states = new Map<string, InkGraphicsState>();
   private state: DrawState = {
     matrix: [...IDENTITY],
@@ -470,7 +470,7 @@ export class PdfCanvasRecorder {
     return this.unsupported === null;
   }
 
-  private alphaState(alpha: number): string | null {
+  protected alphaState(alpha: number): string | null {
     if (alpha >= 1) return null;
     const a = Math.round(Math.max(0, alpha) * 1000) / 1000;
     for (const [name, s] of this.states) if (s.alpha === a && s.blend === "Normal") return name;

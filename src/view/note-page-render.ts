@@ -14,8 +14,11 @@
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
 import { drawSyntheticRules, paperTheme } from "../canvas/backdrop";
 import { paintInk, penFor } from "../canvas/renderer";
+import { paintGraph } from "../canvas/graph-paint";
 import { inkRuns } from "../ink/freehand";
 import type { Stroke } from "../model/document";
+import { makeGraph } from "../model/graph-element";
+import { noteGraphHeight } from "./note-graph";
 import {
   NOTE_CONTENT_HEIGHT,
   NOTE_PAGE_HEIGHT,
@@ -38,6 +41,7 @@ import {
   isList,
   listMarkers,
   type ImageBlock,
+  type GraphBlock,
   type InkBlock,
   type NoteBlock,
   type TextBlock,
@@ -150,6 +154,7 @@ type Laid =
   | { type: "ink"; block: InkBlock }
   | { type: "image"; block: ImageBlock; picture: NotePicture }
   | { type: "table"; rows: readonly (readonly string[])[] }
+  | { type: "graph"; block: GraphBlock; height: number }
   | { type: "raw"; text: string };
 
 /** A table's row height on a page, and the most rows a preview draws. */
@@ -247,8 +252,10 @@ export function layoutNote(
       return;
     }
     if (block.type === "graph") {
-      laid.push({ type: "raw", text: "ƒ(x)" });
-      measured.push({ before: SECTION_GAP, after: SECTION_GAP, lines: [RAW_HEIGHT], whole: true });
+      // As the note shows it: the column's width, its height the shape of its view.
+      const height = noteGraphHeight(block, INK_WIDTH);
+      laid.push({ type: "graph", block, height });
+      measured.push({ before: SECTION_GAP, after: SECTION_GAP, lines: [height], whole: true });
       return;
     }
     if (block.type === "audio") {
@@ -267,6 +274,8 @@ export interface NotePageOptions {
   palette?: NotePagePalette;
   usePressure?: boolean;
   highlighterAlpha?: number;
+  /** Draws a handwriting section in its own units; absent, through the canvas ink pipeline. */
+  ink?: (ctx: CanvasRenderingContext2D, block: InkBlock) => void;
 }
 
 /** Page `index` of `layout` drawn into `canvas`, `cssWidth` CSS px wide at `dpr`. */
@@ -283,30 +292,58 @@ export function drawNotePage(
   canvas.height = Math.max(1, Math.round(NOTE_PAGE_HEIGHT * k));
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+  paintNotePage(ctx, layout, index, k, options);
+}
+
+/**
+ * Page `index` of `layout` painted into `ctx`, `k` device px a page px, from
+ * the top-left: the paper, then each slice. A canvas, or a PDF page's
+ * recorder (`export/pdf-page-canvas`).
+ */
+export function paintNotePage(
+  ctx: CanvasRenderingContext2D,
+  layout: NoteLayout,
+  index: number,
+  k: number,
+  options: NotePageOptions = {},
+): void {
   const palette = options.palette ?? DEFAULT_PALETTE;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const base = new DOMMatrix([k, 0, 0, k, NOTE_PAGE_MARGIN_X * k, NOTE_PAGE_MARGIN_TOP * k]);
+  ctx.fillRect(0, 0, NOTE_PAGE_WIDTH * k, NOTE_PAGE_HEIGHT * k);
   for (const slice of layout.pages[index] ?? []) {
     const item = layout.laid[slice.block];
     if (!item) continue;
     ctx.save();
-    ctx.setTransform(base);
+    ctx.setTransform(k, 0, 0, k, NOTE_PAGE_MARGIN_X * k, NOTE_PAGE_MARGIN_TOP * k);
     if (item.type === "text") drawText(ctx, item, slice, layout.fonts, palette);
     else {
       // Only the slice's part of the section: a section taller than a page is cut.
       ctx.beginPath();
       ctx.rect(-NOTE_PAGE_MARGIN_X, slice.y, NOTE_PAGE_WIDTH, slice.height);
       ctx.clip();
-      ctx.translate(0, slice.y - slice.offset);
-      if (item.type === "ink") drawInk(ctx, item.block, options);
+      // A table breaks between rows: a slice shows rows `from` to `to`.
+      const into = item.type === "table" ? slice.from * TABLE_ROW : slice.offset;
+      ctx.translate(0, slice.y - into);
+      if (item.type === "ink") (options.ink ?? ((c, b) => drawInk(c, b, options)))(ctx, item.block);
       else if (item.type === "image") drawPicture(ctx, item.picture, palette);
       else if (item.type === "table") drawTable(ctx, item.rows, layout.fonts, palette);
+      else if (item.type === "graph") drawGraph(ctx, item.block, item.height, k);
       else drawRaw(ctx, item.text, layout.fonts, palette);
     }
     ctx.restore();
   }
+}
+
+/** A graph, as the note draws it (`note-graph.ts`), on white paper. */
+function drawGraph(
+  ctx: CanvasRenderingContext2D,
+  block: GraphBlock,
+  height: number,
+  k: number,
+): void {
+  const graph = makeGraph({ id: block.id, x: 0, y: 0, w: INK_WIDTH, h: height, spec: block.spec });
+  paintGraph(ctx, graph, { level: Math.max(1, k), night: false, paper: "#ffffff" });
 }
 
 function roundedRect(
@@ -408,16 +445,24 @@ function drawMarker(
     return;
   }
   const depth = block.indent ?? 0;
-  const mark =
-    block.kind === "bullet"
-      ? depth % 2 === 1
-        ? "◦"
-        : "•"
-      : block.kind === "dash"
-        ? "–"
-        : (item.marker ?? "");
-  const width = block.kind === "bullet" || block.kind === "dash" ? 20 : 24;
-  ctx.font = font(style, block.kind === "bullet" ? BOLD : 0, fonts);
+  if (block.kind === "bullet") {
+    // Drawn, not typed: a ring for every other depth, as the note shows "◦" (not in every PDF font).
+    const r = style.size * 0.17;
+    ctx.beginPath();
+    ctx.arc(start + 20 - r, y + style.lineHeight / 2, r, 0, Math.PI * 2);
+    if (depth % 2 === 1) {
+      ctx.strokeStyle = palette.muted;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = palette.muted;
+      ctx.fill();
+    }
+    return;
+  }
+  const mark = block.kind === "dash" ? "–" : (item.marker ?? "");
+  const width = block.kind === "dash" ? 20 : 24;
+  ctx.font = font(style, 0, fonts);
   ctx.fillStyle = palette.muted;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";

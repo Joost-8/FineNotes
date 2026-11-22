@@ -1514,4 +1514,10 @@ export const notebooks = {
     "Sends this note to {target} with your question. Saved in AI chats.",
   "notebooks.note.askEmpty": "Ask about this note",
   "notebooks.note.askKeyPoints": "What are the key points?",
+  "notebooks.note.share": "Share",
+  "notebooks.note.exportPdf": "Export as PDF",
+  "notebooks.note.exportMarkdown": "Export as Markdown",
+  "notebooks.note.copyText": "Copy as text",
+  "notebooks.note.copied": "Copied the note as text.",
+  "notebooks.note.exportFailed": "The note could not be exported: {error}",
 } as const;

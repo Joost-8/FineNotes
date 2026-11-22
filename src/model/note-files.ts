@@ -10,6 +10,7 @@
  *   <dir>/<Title>/Recordings/
  *   <dir>/<Title>/Transcripts/
  *   <dir>/<Title>/AI chats/
+ *   <dir>/<Title>/Exports/
  *
  * Each folder is made the first time something is saved in it, as a
  * board's are. When the note is renamed or moved, its folder goes with it
@@ -23,6 +24,7 @@
 import {
   OWN_FOLDER_AUDIO,
   OWN_FOLDER_CHATS,
+  OWN_FOLDER_EXPORTS,
   OWN_FOLDER_IMAGES,
   OWN_FOLDER_TRANSCRIPTS,
 } from "./new-notebook";
@@ -30,13 +32,14 @@ import type { NoteBlock, TextNote } from "./text-note";
 import { transcriptPathFor } from "../audio/recording";
 
 /** The kinds of file a text note keeps. */
-export type NoteFileKind = "images" | "audio" | "transcripts" | "chats";
+export type NoteFileKind = "images" | "audio" | "transcripts" | "chats" | "exports";
 
 const SUBFOLDER: Readonly<Record<NoteFileKind, string>> = {
   images: OWN_FOLDER_IMAGES,
   audio: OWN_FOLDER_AUDIO,
   transcripts: OWN_FOLDER_TRANSCRIPTS,
   chats: OWN_FOLDER_CHATS,
+  exports: OWN_FOLDER_EXPORTS,
 };
 
 const SUFFIX = ".note.md";
