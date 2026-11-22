@@ -38,10 +38,13 @@
  */
 
 import { emptyDocument } from "./document";
+import { encodeTable, readTable, tableStartsAt } from "./note-table";
 import { decodeDocument, encodeDocument } from "./serialize";
 import {
+  ANY_HIGHLIGHT,
   BOLD,
   HIGHLIGHT,
+  HIGHLIGHTS,
   INK_PAPERS,
   INK_WIDTH,
   ITALIC,
@@ -129,6 +132,12 @@ const MARK_ORDER: ReadonlyArray<[Marks, string, string]> = [
   [STRIKE, "~~", "~~"],
   [UNDERLINE, "<u>", "</u>"],
   [HIGHLIGHT, "==", "=="],
+  // Markdown has one highlight; the other colours are Obsidian-readable HTML.
+  ...HIGHLIGHTS.filter((h) => h.mark !== HIGHLIGHT).map((h): [Marks, string, string] => [
+    h.mark,
+    `<mark class="fn-${h.name}">`,
+    "</mark>",
+  ]),
 ];
 
 const PUNCTUATION = /[!-/:-@[-`{-~]/;
@@ -148,7 +157,7 @@ function escapeText(text: string): string {
       out += "\\~";
     } else if (c === "=" && (next === "=" || text[i - 1] === "=")) {
       out += "\\=";
-    } else if (c === "<" && /^<\/?u>/i.test(text.slice(i, i + 4))) {
+    } else if (c === "<" && /^<\/?(?:u>|mark[ >])/i.test(text.slice(i, i + 6))) {
       out += "\\<";
     } else {
       out += c;
@@ -294,6 +303,18 @@ export function decodeInline(text: string): TextRun[] {
         i += 4;
         continue;
       }
+      const open = /^<mark(?: class="fn-([a-z]+)")?>/i.exec(text.slice(i, i + 32));
+      if (open && (marks & ANY_HIGHLIGHT) === 0 && later(text.toLowerCase(), "</mark>", i)) {
+        const tint = HIGHLIGHTS.find((h) => h.name === (open[1] ?? "yellow").toLowerCase());
+        toggle(tint?.mark ?? HIGHLIGHT);
+        i += open[0].length;
+        continue;
+      }
+      if (text.slice(i, i + 7).toLowerCase() === "</mark>" && (marks & ANY_HIGHLIGHT) !== 0) {
+        toggle(marks & ANY_HIGHLIGHT);
+        i += 7;
+        continue;
+      }
     }
     pending += c;
     i++;
@@ -303,6 +324,20 @@ export function decodeInline(text: string): TextRun[] {
 }
 
 // ---------------------------------------------------------------- lines
+
+/** A no-break space: an indented paragraph starts with four a level. */
+const NBSP = String.fromCharCode(0xa0);
+const INDENT_LEAD = new RegExp(`^(?:${NBSP}{4})+`);
+
+function indentLead(indent: number | undefined): string {
+  return NBSP.repeat(4 * Math.max(0, indent ?? 0));
+}
+
+/** A paragraph's indent read from its no-break spaces, and the text after them. */
+function readIndent(text: string): { indent: number; rest: string } {
+  const lead = INDENT_LEAD.exec(text)?.[0] ?? "";
+  return { indent: Math.min(MAX_INDENT, lead.length / 4), rest: text.slice(lead.length) };
+}
 
 const HEADING = /^(#{1,6})(?: (.*)|$)/;
 const LIST = /^([\t ]*)(?:([-*+])|(\d{1,9})[.)])(?: (.*)|$)/;
@@ -318,6 +353,11 @@ const RULE = /^([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 /** Body text that would read as something else gets a backslash where the marker is. */
 function guardLine(line: string): string {
   if (HEADING.test(line) || QUOTE.test(line) || RULE.test(line)) return `\\${line}`;
+  // A line of pipes could start a table.
+  if (line.trimStart().startsWith("|")) {
+    const lead = line.length - line.trimStart().length;
+    return `${line.slice(0, lead)}\\${line.slice(lead)}`;
+  }
   if (line.startsWith("```") || line.startsWith(INK_OPEN) || EMBED.test(line)) return `\\${line}`;
   const list = LIST.exec(line);
   if (list) {
@@ -382,6 +422,14 @@ export function encodeNote(note: TextNote): string {
       lines.push(block.text);
       continue;
     }
+    if (block.type === "table") {
+      // Markdown reads a line right above or below a table into it: an empty line keeps them apart.
+      const before = blocks[i - 1];
+      if (before?.type === "text") lines.push("");
+      lines.push(...encodeTable(block));
+      if (blocks[i + 1]?.type === "text") lines.push("");
+      continue;
+    }
     const text = encodeInline(block.runs);
     const mark = HEADING_MARK[block.kind];
     if (mark) {
@@ -400,7 +448,8 @@ export function encodeNote(note: TextNote): string {
       const fence = "`".repeat(Math.max(3, longest + 1));
       lines.push(fence, ...run, fence);
     } else if (block.kind === "quote") {
-      lines.push(text ? `> ${text}` : ">");
+      const lead = indentLead(block.indent);
+      lines.push(text || lead ? `> ${lead}${text}` : ">");
     } else if (isList(block.kind)) {
       const depth = block.indent ?? 0;
       let marker = markers[i] ?? (block.kind === "bullet" ? "*" : "-");
@@ -412,7 +461,7 @@ export function encodeNote(note: TextNote): string {
       // "- - -" would read as a rule, not as a bullet holding "- -".
       lines.push(RULE.test(item) ? `${lead}${marker} \\${text}` : item);
     } else {
-      lines.push(guardLine(text));
+      lines.push(indentLead(block.indent) + guardLine(text));
     }
     // Body text or a picture right under a list or quote would be read into it.
     const next = blocks[i + 1];
@@ -452,10 +501,26 @@ export function decodeNote(body: string, newId: IdSource): TextNote {
   const blocks: NoteBlock[] = [];
   /** The last line read was a list item or quote: one empty line after it is a separator. */
   let afterList = false;
+  /** The last line read ended a table: one empty line after it is a separator. */
+  let afterTable = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const wasList = afterList;
+    const wasTable = afterTable;
     afterList = false;
+    afterTable = false;
+    if (line === "" && wasTable && lines[i + 1] !== undefined) continue;
+    // The empty line written above a table, under text, only separates them.
+    if (line === "" && blocks[blocks.length - 1]?.type === "text" && tableStartsAt(lines, i + 1)) {
+      continue;
+    }
+    if (tableStartsAt(lines, i)) {
+      const table = readTable(lines, i, newId());
+      blocks.push(table.block);
+      i = table.end;
+      afterTable = true;
+      continue;
+    }
     if (line === INK_OPEN || line.startsWith(`${INK_OPEN} `)) {
       let end = i + 1;
       while (end < lines.length && lines[end].trim() !== INK_CLOSE) end++;
@@ -512,7 +577,8 @@ export function decodeNote(body: string, newId: IdSource): TextNote {
     }
     const quote = QUOTE.exec(line);
     if (quote) {
-      blocks.push(textBlock(newId(), "quote", decodeInline(quote[1] ?? "")));
+      const { indent, rest } = readIndent(quote[1] ?? "");
+      blocks.push(textBlock(newId(), "quote", decodeInline(rest), { indent }));
       afterList = true;
       continue;
     }
@@ -549,7 +615,8 @@ export function decodeNote(body: string, newId: IdSource): TextNote {
       afterList = true;
       continue;
     }
-    blocks.push(textBlock(newId(), "body", decodeInline(line)));
+    const { indent, rest } = readIndent(line);
+    blocks.push(textBlock(newId(), "body", decodeInline(rest), { indent }));
   }
   return blocks.length > 0 ? { blocks } : emptyNote(newId);
 }

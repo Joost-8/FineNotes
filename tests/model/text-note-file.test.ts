@@ -3,6 +3,10 @@ import type { Stroke } from "../../src/model/document";
 import {
   BOLD,
   HIGHLIGHT,
+  HIGHLIGHT_BLUE,
+  HIGHLIGHT_GREEN,
+  HIGHLIGHT_PINK,
+  withMarkOn,
   ITALIC,
   STRIKE,
   UNDERLINE,
@@ -493,5 +497,50 @@ describe("Apple Notes lists, highlights and paper", () => {
     }
     const blank: NoteBlock[] = [{ type: "ink", id: "x", height: 300, strokes: [] }, body("")];
     expect(roundTrip(blank)).toEqual(shape({ blocks: blank }));
+  });
+});
+
+describe("highlight colours", () => {
+  it("writes yellow as ==text== and the other colours as Obsidian-readable <mark>", () => {
+    const runs = [
+      run("a", HIGHLIGHT),
+      run(" "),
+      run("b", HIGHLIGHT_PINK),
+      run(" "),
+      run("c", HIGHLIGHT_BLUE | BOLD),
+    ];
+    const text = encodeInline(runs);
+    expect(text).toBe('==a== <mark class="fn-pink">b</mark> **<mark class="fn-blue">c</mark>**');
+    expect(decodeInline(text)).toEqual(runs);
+  });
+
+  it("reads a plain <mark> as yellow and keeps a literal <mark> typed as text", () => {
+    expect(decodeInline("<mark>x</mark>")).toEqual([run("x", HIGHLIGHT)]);
+    const typed = [run("type <mark> here")];
+    expect(decodeInline(encodeInline(typed))).toEqual(typed);
+  });
+
+  it("gives a run one colour: a new colour replaces the old", () => {
+    expect(withMarkOn(HIGHLIGHT | BOLD, HIGHLIGHT_GREEN)).toBe(HIGHLIGHT_GREEN | BOLD);
+    expect(withMarkOn(HIGHLIGHT_GREEN, ITALIC)).toBe(HIGHLIGHT_GREEN | ITALIC);
+  });
+});
+
+describe("indented paragraphs", () => {
+  it("keeps body text and quotes indented, as no-break spaces Markdown leaves alone", () => {
+    const blocks: NoteBlock[] = [
+      textBlock("a", "body", [run("in one")], { indent: 1 }),
+      textBlock("b", "body", [run("in two")], { indent: 2 }),
+      textBlock("c", "quote", [run("said")], { indent: 1 }),
+      body("flush"),
+    ];
+    const lines = encodeNote({ blocks }).split("\n");
+    expect(lines[0].startsWith(" ")).toBe(false);
+    expect(lines[0].charCodeAt(0)).toBe(0xa0);
+    expect(roundTrip(blocks)).toEqual(shape({ blocks }));
+  });
+
+  it("does not indent headings", () => {
+    expect(textBlock("x", "heading", [run("h")], { indent: 2 }).indent).toBeUndefined();
   });
 });

@@ -33,8 +33,10 @@ import {
   titleFileName,
 } from "../model/text-note-file";
 import {
+  ANY_HIGHLIGHT,
   BOLD,
   HIGHLIGHT,
+  HIGHLIGHTS,
   ITALIC,
   STRIKE,
   UNDERLINE,
@@ -49,6 +51,7 @@ import { NoteEditor } from "./note-editor";
 import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import type { NotePen, NoteTool } from "./note-ink";
+import type { TableLabel } from "./note-table-view";
 
 export const ICON_TEXT_NOTE = "notepad-text";
 
@@ -100,6 +103,33 @@ interface PenChoices {
 }
 
 const PEN_KEY = "finenotes-note-pen";
+const TINT_KEY = "finenotes-note-tint";
+/** Folded headings, by note path then heading text: a view state kept on this device. */
+const FOLDS_KEY = "finenotes-note-folds";
+
+function readFolds(raw: unknown): Record<string, string[]> {
+  if (typeof raw !== "string") return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, string[]> = {};
+    for (const [path, titles] of Object.entries(parsed as Record<string, unknown>)) {
+      if (Array.isArray(titles))
+        out[path] = titles.filter((x): x is string => typeof x === "string");
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+const TINT_NAMES: Readonly<Record<string, TextKey>> = {
+  yellow: "notebooks.note.tint.yellow",
+  green: "notebooks.note.tint.green",
+  pink: "notebooks.note.tint.pink",
+  blue: "notebooks.note.tint.blue",
+  purple: "notebooks.note.tint.purple",
+};
 /** Set once a stylus has written on this device: from then on fingers scroll and never write. */
 const PEN_SEEN_KEY = "finenotes-note-pen-seen";
 
@@ -175,6 +205,19 @@ const PAPER_NAMES: Readonly<Record<InkPaper, TextKey>> = {
   dotted: "notebooks.note.paperDotted",
 };
 
+const TABLE_LABELS: Readonly<Record<TableLabel, TextKey>> = {
+  addRow: "notebooks.note.table.addRow",
+  addColumn: "notebooks.note.table.addColumn",
+  deleteRow: "notebooks.note.table.deleteRow",
+  deleteColumn: "notebooks.note.table.deleteColumn",
+  deleteTable: "notebooks.note.table.delete",
+};
+
+/** A palette standing upright at a side, rather than lying along the top or bottom. */
+function upright(dock: Dock): boolean {
+  return dock === "left" || dock === "right";
+}
+
 /** The side a palette dropped at `x, y` docks on: the nearest edge of the note. */
 export function nearestDock(x: number, y: number, width: number, height: number): Dock {
   const distances: Array<[Dock, number]> = [
@@ -198,8 +241,8 @@ export class TextNoteView extends TextFileView {
   private styles: HTMLElement | null = null;
   private readonly buttons = new Map<string, HTMLElement>();
   private renameTimer = 0;
-  /** The file name the note's title stood for when it was read or last renamed. */
-  private namedAfter = "";
+  /** The highlight colour last picked (the Aa menu's dot). */
+  private tint: Marks;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -207,6 +250,8 @@ export class TextNoteView extends TextFileView {
   ) {
     super(leaf);
     this.choices = readChoices(this.app.loadLocalStorage(PEN_KEY));
+    const tint: unknown = this.app.loadLocalStorage(TINT_KEY);
+    this.tint = HIGHLIGHTS.find((h) => h.name === tint)?.mark ?? HIGHLIGHT;
     // Obsidian takes Mod+B and Mod+I for its own editor before the page hears
     // them; a scope of the view's own gets them first while the note is active.
     this.scope = new Scope(this.app.scope);
@@ -221,7 +266,11 @@ export class TextNoteView extends TextFileView {
     mark(["Mod"], "i", ITALIC);
     mark(["Mod"], "u", UNDERLINE);
     mark(["Mod", "Shift"], "x", STRIKE);
-    mark(["Mod", "Shift"], "h", HIGHLIGHT);
+    this.scope.register(["Mod", "Shift"], "h", () => {
+      if (!this.editor || this.editor.isDrawing()) return true;
+      this.editor.toggleMark(this.tint);
+      return false;
+    });
   }
 
   getViewType(): string {
@@ -250,8 +299,11 @@ export class TextNoteView extends TextFileView {
     const parsed = parseNoteFile(data, () => `f${(++sequence).toString(36)}`);
     this.frontmatter = parsed.frontmatter;
     this.written = data;
-    this.namedAfter = titleFileName(noteTitle(parsed.note));
     this.editor?.load(parsed.note);
+    const folds = this.file
+      ? readFolds(this.app.loadLocalStorage(FOLDS_KEY))[this.file.path]
+      : null;
+    if (folds?.length) this.editor?.foldTitles(folds);
     this.showDate();
     if (clear) this.editor?.el.scrollTo({ top: 0 });
   }
@@ -297,6 +349,15 @@ export class TextNoteView extends TextFileView {
       pen: () => this.penInHand(),
       eraserSize: () => this.choices.eraser.size,
       paperName: (paper) => t(PAPER_NAMES[paper]),
+      tableLabel: (key) => t(TABLE_LABELS[key]),
+      foldsChanged: (titles) => {
+        const path = this.file?.path;
+        if (!path) return;
+        const all = readFolds(this.app.loadLocalStorage(FOLDS_KEY));
+        if (titles.length > 0) all[path] = titles;
+        else delete all[path];
+        this.app.saveLocalStorage(FOLDS_KEY, JSON.stringify(all));
+      },
       pressure: () => this.host.pressure(),
       highlighterAlpha: () => this.host.highlighterAlpha(),
       dark: () => this.isDark(),
@@ -443,6 +504,10 @@ export class TextNoteView extends TextFileView {
     this.button(insert, "kind:check", "list-checks", "notebooks.note.checklist", () =>
       this.editor?.setKind("check"),
     );
+    this.button(insert, "table", "table", "notebooks.note.table.add", () => {
+      this.closeStyles();
+      this.editor?.insertTable();
+    });
     this.button(insert, "picture", "paperclip", "notebooks.note.addPicture", () =>
       this.pickPicture(),
     );
@@ -471,6 +536,7 @@ export class TextNoteView extends TextFileView {
     enable("redo", state.canRedo);
     enable("styles", !state.drawing);
     enable("kind:check", !state.drawing);
+    enable("table", !state.drawing);
     const full = this.buttons.get("full");
     if (full) {
       const on = this.host.fullScreen();
@@ -486,7 +552,7 @@ export class TextNoteView extends TextFileView {
       set(`kind:${kind}`, state.kind === kind);
     }
     for (const [mark] of MARK_BUTTONS) set(`mark:${mark}`, (state.marks & mark) !== 0);
-    set(`mark:${HIGHLIGHT}`, (state.marks & HIGHLIGHT) !== 0);
+    set("highlight", (state.marks & ANY_HIGHLIGHT) !== 0);
     enable("indent", state.inList);
     enable("outdent", state.inList);
   }
@@ -505,7 +571,13 @@ export class TextNoteView extends TextFileView {
     this.styles = null;
     for (const id of Array.from(this.buttons.keys())) {
       if (id === "kind:check") continue;
-      if (id.startsWith("kind:") || id.startsWith("mark:") || id.endsWith("dent")) {
+      if (
+        id.startsWith("kind:") ||
+        id.startsWith("mark:") ||
+        id.endsWith("dent") ||
+        id === "highlight" ||
+        id === "tint"
+      ) {
         this.buttons.delete(id);
       }
     }
@@ -544,10 +616,40 @@ export class TextNoteView extends TextFileView {
     for (const [mark, icon, label] of MARK_BUTTONS) {
       this.button(marks, `mark:${mark}`, icon, label, () => this.editor?.toggleMark(mark));
     }
+    // The highlight, in the colour last picked; the dot beside it picks another (as Apple Notes).
     const tint = first.createDiv({ cls: "finenotes-note-styles-group" });
-    this.button(tint, `mark:${HIGHLIGHT}`, "highlighter", "notebooks.note.highlight", () =>
-      this.editor?.toggleMark(HIGHLIGHT),
+    this.button(tint, "highlight", "highlighter", "notebooks.note.highlight", () =>
+      this.editor?.toggleMark(this.tint),
     );
+    const dot = this.button(tint, "tint", "", "notebooks.note.highlightColor", () => {
+      tints.toggleClass("is-hidden", !tints.hasClass("is-hidden"));
+    });
+    dot.addClass("finenotes-note-tint-dot");
+    const color = (): string => HIGHLIGHTS.find((h) => h.mark === this.tint)?.color ?? "#ffd43b";
+    dot.setCssProps({ "--fn-swatch": color() });
+    const tints = panel.createDiv({
+      cls: "finenotes-note-styles-row finenotes-note-tints is-hidden",
+    });
+    for (const h of HIGHLIGHTS) {
+      const swatch = tints.createEl("button", {
+        cls: "clickable-icon finenotes-note-swatch",
+        attr: { type: "button", "aria-label": t(TINT_NAMES[h.name] ?? "notebooks.note.highlight") },
+      });
+      swatch.setCssProps({ "--fn-swatch": h.color });
+      swatch.toggleClass("is-active", h.mark === this.tint);
+      swatch.addEventListener("pointerdown", (event) => event.preventDefault());
+      swatch.addEventListener("mousedown", (event) => event.preventDefault());
+      swatch.addEventListener("click", () => {
+        this.tint = h.mark;
+        this.app.saveLocalStorage(TINT_KEY, h.name);
+        dot.setCssProps({ "--fn-swatch": h.color });
+        tints.querySelectorAll(".finenotes-note-swatch").forEach((el, i) => {
+          el.toggleClass("is-active", HIGHLIGHTS[i].mark === h.mark);
+        });
+        tints.addClass("is-hidden");
+        this.editor?.toggleMark(h.mark);
+      });
+    }
 
     const second = panel.createDiv({ cls: "finenotes-note-styles-row" });
     const lists = second.createDiv({ cls: "finenotes-note-styles-group" });
@@ -727,8 +829,6 @@ export class TextNoteView extends TextFileView {
       grip.removeEventListener("pointermove", move);
       grip.removeEventListener("pointerup", up);
       grip.removeEventListener("pointercancel", up);
-      palette.removeClass("is-dragging");
-      palette.setCssProps({ "--fn-drag-x": "0px", "--fn-drag-y": "0px" });
       const rect = this.contentEl.getBoundingClientRect();
       const dock = nearestDock(
         event.clientX - rect.left,
@@ -736,14 +836,51 @@ export class TextNoteView extends TextFileView {
         rect.width,
         rect.height,
       );
-      if (dock !== this.choices.dock) {
+      // Where it is let go, then where it rests: it glides from the one to the other.
+      const from = palette.getBoundingClientRect();
+      const was = this.choices.dock;
+      palette.addClass("is-settling");
+      palette.removeClass("is-dragging");
+      palette.setCssProps({ "--fn-drag-x": "0px", "--fn-drag-y": "0px" });
+      if (dock !== was) {
         this.choices.dock = dock;
         this.choicesChanged();
       }
+      this.glidePalette(from, was !== dock && upright(was) !== upright(dock));
     };
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", up);
     grip.addEventListener("pointercancel", up);
+  }
+
+  /**
+   * Glide the palette from `from` (where it was let go) to where it rests now:
+   * a little overshoot, as a sheet settles on iPadOS. Turning between upright
+   * and lying along an edge, it also fades and grows in, since its shape changes.
+   */
+  private glidePalette(from: DOMRect, turned: boolean): void {
+    const palette = this.palette;
+    if (!palette) return;
+    const win = palette.win;
+    const settle = (): void => palette.removeClass("is-settling");
+    const still = win.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const to = palette.getBoundingClientRect();
+    const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+    const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+    if (still || typeof palette.animate !== "function" || (Math.abs(dx) < 1 && Math.abs(dy) < 1)) {
+      settle();
+      return;
+    }
+    const start: Keyframe = turned
+      ? { translate: `${dx}px ${dy}px`, scale: "0.86", opacity: 0.3 }
+      : { translate: `${dx}px ${dy}px`, scale: "1.04" };
+    const duration = turned ? 460 : 420;
+    palette.animate([start, { translate: "0px 0px", scale: "1", opacity: 1 }], {
+      duration,
+      easing: "cubic-bezier(0.2, 1.18, 0.32, 1)",
+    });
+    // A timer, not `finish`: the browser pane's animation clock can stall (ledger).
+    win.setTimeout(settle, duration + 30);
   }
 
   private choicesChanged(): void {
@@ -787,28 +924,22 @@ export class TextNoteView extends TextFileView {
   // -------------------------------------------------------------- the file's name
 
   /**
-   * The file is named after the note's title, as long as nobody named it
-   * otherwise: a note still called "Untitled", or one whose name is the
-   * title it had when it was opened, is renamed a moment after the title
-   * was last typed in. A file the user named differently stays theirs.
+   * The file, and with it the tab, is named after the note's title: a
+   * moment after the title was last typed in, whatever it was called before.
    */
   private queueRename(): void {
     const win = this.contentEl.win;
     win.clearTimeout(this.renameTimer);
-    this.renameTimer = win.setTimeout(() => void this.renameFromTitle(), 2500);
+    this.renameTimer = win.setTimeout(() => void this.renameFromTitle(), 1200);
   }
 
   private async renameFromTitle(): Promise<void> {
     const file = this.file;
     const note = this.editor?.current();
     if (!file || !note) return;
-    // The name follows the title while it is still the one a title gave it.
-    const follows =
-      hasDefaultName(file.name, t("notebooks.note.untitled")) ||
-      (this.namedAfter !== "" && hasDefaultName(file.name, this.namedAfter));
+    // The name always follows the title (an empty title leaves it alone).
     const base = titleFileName(noteTitle(note));
-    if (!follows || !base || base === this.namedAfter) return;
-    this.namedAfter = base;
+    if (!base || hasDefaultName(file.name, base)) return;
     await renameNote(this.app, file, base);
   }
 }

@@ -24,9 +24,29 @@ export const BOLD = 1;
 export const ITALIC = 2;
 export const UNDERLINE = 4;
 export const STRIKE = 8;
-/** A highlight behind the text (`==text==` on disk). */
+/** A highlight behind the text: yellow (`==text==` on disk), and four more colours. */
 export const HIGHLIGHT = 16;
-export const ALL_MARKS = BOLD | ITALIC | UNDERLINE | STRIKE | HIGHLIGHT;
+export const HIGHLIGHT_GREEN = 32;
+export const HIGHLIGHT_PINK = 64;
+export const HIGHLIGHT_BLUE = 128;
+export const HIGHLIGHT_PURPLE = 256;
+/** The highlight colours, as the ink highlighter offers them; a run has at most one. */
+export const HIGHLIGHTS: ReadonlyArray<{ mark: Marks; name: string; color: string }> = [
+  { mark: HIGHLIGHT, name: "yellow", color: "#ffd43b" },
+  { mark: HIGHLIGHT_GREEN, name: "green", color: "#8ce99a" },
+  { mark: HIGHLIGHT_PINK, name: "pink", color: "#ffa8a8" },
+  { mark: HIGHLIGHT_BLUE, name: "blue", color: "#74c0fc" },
+  { mark: HIGHLIGHT_PURPLE, name: "purple", color: "#eebefa" },
+];
+export const ANY_HIGHLIGHT =
+  HIGHLIGHT | HIGHLIGHT_GREEN | HIGHLIGHT_PINK | HIGHLIGHT_BLUE | HIGHLIGHT_PURPLE;
+export const ALL_MARKS = BOLD | ITALIC | UNDERLINE | STRIKE | ANY_HIGHLIGHT;
+
+/** `marks` with `mark` added; a highlight colour replaces any other. */
+export function withMarkOn(marks: Marks, mark: Marks): Marks {
+  const clear = (mark & ANY_HIGHLIGHT) !== 0 ? ANY_HIGHLIGHT : 0;
+  return (marks & ~clear) | mark;
+}
 export type Marks = number;
 
 export interface TextRun {
@@ -128,6 +148,13 @@ export interface ImageBlock {
   readonly width?: number;
 }
 
+/** A table: rows of plain-text cells, the first row the header (`note-table.ts`). */
+export interface TableBlock {
+  readonly type: "table";
+  readonly id: string;
+  readonly rows: readonly (readonly string[])[];
+}
+
 /** Lines of the file this version cannot read: kept as they are, shown as a chip. */
 export interface RawBlock {
   readonly type: "raw";
@@ -135,7 +162,7 @@ export interface RawBlock {
   readonly text: string;
 }
 
-export type NoteBlock = TextBlock | InkBlock | ImageBlock | RawBlock;
+export type NoteBlock = TextBlock | InkBlock | ImageBlock | TableBlock | RawBlock;
 
 export interface TextNote {
   readonly blocks: readonly NoteBlock[];
@@ -228,7 +255,7 @@ function trimmedStart(runs: readonly TextRun[]): TextRun[] {
 function withMark(runs: readonly TextRun[], from: number, to: number, mark: Marks, on: boolean) {
   const middle = sliceRuns(runs, from, to).map((run) => ({
     text: run.text,
-    marks: on ? run.marks | mark : run.marks & ~mark,
+    marks: on ? withMarkOn(run.marks, mark) : run.marks & ~mark,
   }));
   return normalizeRuns([...sliceRuns(runs, 0, from), ...middle, ...sliceRuns(runs, to)]);
 }
@@ -241,7 +268,7 @@ export function textBlock(
   runs: readonly TextRun[] = [],
   extra: { indent?: number; checked?: boolean } = {},
 ): TextBlock {
-  const indent = isList(kind) ? clampIndent(extra.indent ?? 0) : 0;
+  const indent = canIndent(kind) ? clampIndent(extra.indent ?? 0) : 0;
   return {
     type: "text",
     id,
@@ -254,6 +281,11 @@ export function textBlock(
 
 export function isList(kind: TextKind): boolean {
   return LIST_KINDS.includes(kind);
+}
+
+/** Whether a kind of line indents: lists, body text and quotes (not headings or code). */
+export function canIndent(kind: TextKind): boolean {
+  return isList(kind) || kind === "body" || kind === "quote";
 }
 
 function clampIndent(indent: number): number {
@@ -662,7 +694,7 @@ export function indentBlocks(note: TextNote, range: NoteRange, delta: number): T
   let changed = false;
   for (let i = start.block; i <= end.block; i++) {
     const block = next[i];
-    if (!block || block.type !== "text" || !isList(block.kind)) continue;
+    if (!block || block.type !== "text" || !canIndent(block.kind)) continue;
     const indent = clampIndent((block.indent ?? 0) + delta);
     if (indent === (block.indent ?? 0)) continue;
     next[i] = textBlock(block.id, block.kind, block.runs, { indent, checked: block.checked });
@@ -719,6 +751,49 @@ export function shortcutKind(kind: TextKind, typed: string): TextKind | null {
     default:
       return null;
   }
+}
+
+// ---------------------------------------------------------------- folding
+
+/** A heading's rank (1 the highest), or 0 for anything that is not a heading. */
+export function headingRank(block: NoteBlock): number {
+  if (block.type !== "text") return 0;
+  return block.kind === "title"
+    ? 1
+    : block.kind === "heading"
+      ? 2
+      : block.kind === "subheading"
+        ? 3
+        : 0;
+}
+
+/**
+ * What folding does to each block: `foldable` for a heading with something
+ * under it (not the note's first line, its title), `hidden` for what a
+ * folded heading above holds: everything up to the next heading of its rank
+ * or higher. `folded` names the headings folded, by block id.
+ */
+export function foldPlan(
+  blocks: readonly NoteBlock[],
+  folded: ReadonlySet<string>,
+): Array<{ foldable: boolean; hidden: boolean; folded: boolean }> {
+  const out: Array<{ foldable: boolean; hidden: boolean; folded: boolean }> = [];
+  let hidingRank = 0;
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const rank = headingRank(block);
+    if (hidingRank > 0 && rank > 0 && rank <= hidingRank) hidingRank = 0;
+    const next = blocks[i + 1];
+    const holds =
+      rank > 0 &&
+      i > 0 &&
+      next !== undefined &&
+      !(headingRank(next) > 0 && headingRank(next) <= rank);
+    const isFolded = holds && folded.has(block.id);
+    out.push({ foldable: holds, hidden: hidingRank > 0, folded: isFolded && hidingRank === 0 });
+    if (isFolded && hidingRank === 0) hidingRank = rank;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- list markers

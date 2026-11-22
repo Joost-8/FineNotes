@@ -13,6 +13,7 @@
 import {
   BOLD,
   HIGHLIGHT,
+  HIGHLIGHTS,
   ITALIC,
   STRIKE,
   UNDERLINE,
@@ -30,6 +31,7 @@ export interface NodeLike {
   readonly nodeName: string;
   readonly nodeValue: string | null;
   readonly childNodes: ArrayLike<NodeLike>;
+  getAttribute?(name: string): string | null;
   readonly style?: {
     readonly fontWeight?: string;
     readonly fontStyle?: string;
@@ -54,6 +56,12 @@ const TAG_MARKS: Readonly<Record<string, Marks>> = {
 /** The marks an element gives the text inside it, by its tag and its inline style. */
 export function marksOf(node: NodeLike): Marks {
   let marks = TAG_MARKS[node.nodeName.toUpperCase()] ?? 0;
+  if (marks === HIGHLIGHT) {
+    // A coloured highlight names its colour; a plain <mark> is yellow.
+    const tint = node.getAttribute?.("data-tint") ?? node.getAttribute?.("class") ?? "";
+    const named = HIGHLIGHTS.find((h) => tint === h.name || tint === `fn-${h.name}`);
+    if (named) marks = named.mark;
+  }
   const style = node.style;
   if (style) {
     const weight = style.fontWeight ?? "";

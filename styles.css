@@ -22663,6 +22663,11 @@ button.clickable-icon.finenotes-note-button:disabled {
   --fn-indent: 3;
 }
 
+/* Body text and quotes indent as list items do. */
+.finenotes-note-line:is([data-kind="body"], [data-kind="quote"])[data-indent] {
+  margin-inline-start: calc(var(--fn-indent) * 26px);
+}
+
 .finenotes-note-line[data-kind="title"] {
   min-height: 1.2em;
   margin-bottom: 6px;
@@ -22777,11 +22782,72 @@ button.clickable-icon.finenotes-note-button:disabled {
   content: attr(data-marker);
 }
 
-/* A highlight in the text, in the highlighter's yellow. */
+/* A highlight in the text, in the ink highlighter's colours. */
 .finenotes-note-doc mark {
+  --fn-tint: #ffd43b;
   color: inherit;
-  background: color-mix(in srgb, #ffd43b 48%, transparent);
+  background: color-mix(in srgb, var(--fn-tint) 48%, transparent);
   border-radius: 3px;
+}
+
+.finenotes-note-doc mark[data-tint="green"] {
+  --fn-tint: #8ce99a;
+}
+
+.finenotes-note-doc mark[data-tint="pink"] {
+  --fn-tint: #ffa8a8;
+}
+
+.finenotes-note-doc mark[data-tint="blue"] {
+  --fn-tint: #74c0fc;
+}
+
+.finenotes-note-doc mark[data-tint="purple"] {
+  --fn-tint: #eebefa;
+}
+
+/* Folding: a heading that holds something shows a chevron in the margin before it;
+   folded, the chevron turns and what it holds is hidden. The tap is read by position. */
+.finenotes-note-line[data-foldable]::after {
+  position: absolute;
+  inset-inline-start: -26px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  content: "";
+  cursor: pointer;
+  background-color: var(--text-muted);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition:
+    opacity 0.15s ease,
+    transform 0.2s cubic-bezier(0.2, 0.9, 0.25, 1);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+.finenotes-note-line[data-foldable]:hover::after,
+.finenotes-note-line[data-foldable="folded"]::after {
+  opacity: 0.8;
+}
+
+.finenotes-note-line[data-foldable="folded"]::after {
+  color: var(--interactive-accent);
+  background-color: var(--interactive-accent);
+  transform: translateY(-50%) rotate(-90deg);
+}
+
+/* On a touch screen there is no hover: the chevron shows faintly all the time. */
+@media (hover: none) {
+  .finenotes-note-line[data-foldable="open"]::after {
+    opacity: 0.35;
+  }
+}
+
+.finenotes-note-doc > .is-folded-away {
+  display: none;
 }
 
 /* The checklist's circle: empty, or filled with a tick. The click is read by position. */
@@ -22833,6 +22899,68 @@ button.clickable-icon.finenotes-note-button:disabled {
   min-height: 46vh;
   cursor: text;
   touch-action: pan-y pinch-zoom;
+}
+
+/* --- tables ----------------------------------------------------------------
+   A table is one section on the page; its cells are fields of their own.
+   Its buttons (rows, columns, delete) show while the caret is in it. */
+
+.finenotes-note-table {
+  position: relative;
+  margin: 10px 0;
+  border-radius: 8px;
+  outline: 2px solid transparent;
+  outline-offset: 4px;
+}
+
+.finenotes-note-table.is-selected {
+  outline-color: var(--interactive-accent);
+}
+
+.finenotes-note-table-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.finenotes-note-table table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.finenotes-note-table :is(th, td) {
+  min-width: 80px;
+  padding: 8px 10px;
+  font-size: inherit;
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border: 1px solid var(--background-modifier-border);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.finenotes-note-table th {
+  font-weight: 650;
+  background: var(--gob-well);
+}
+
+.finenotes-note-table :is(th, td):focus {
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+
+/* Above the table, so it never covers a cell. */
+.finenotes-note-table > .finenotes-note-table-bar {
+  top: auto;
+  bottom: calc(100% + 4px);
+  gap: 2px;
+}
+
+.finenotes-note-table:focus-within > .finenotes-note-table-bar,
+.finenotes-note-table.is-selected > .finenotes-note-table-bar {
+  display: flex;
 }
 
 /* --- sections: handwriting, pictures -------------------------------------- */
@@ -23173,7 +23301,21 @@ body:not(.is-mobile) .finenotes-note-palette[data-dock="bottom"] {
   opacity: 1;
 }
 
+/* Picked up: it lifts a little and follows the finger without lag. */
 .finenotes-note-palette.is-dragging {
+  scale: 1.05;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.28),
+    0 4px 12px rgba(0, 0, 0, 0.12);
+  cursor: grabbing;
+  transition:
+    scale 0.2s cubic-bezier(0.2, 0.9, 0.25, 1.2),
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+}
+
+/* Let go: the glide (`glidePalette`) moves it; the docking slide stays out of its way. */
+.finenotes-note-palette.is-settling {
   transition: opacity 0.2s ease;
 }
 
@@ -23478,6 +23620,25 @@ button.clickable-icon.finenotes-note-style.is-active {
 .finenotes-note-styles-group button.clickable-icon.finenotes-note-button.is-text {
   font-size: 16px;
   font-weight: 600;
+}
+
+/* The highlight's colour: a dot beside the highlighter; tapped, the five colours. */
+.finenotes-note-styles-group
+  button.clickable-icon.finenotes-note-button.finenotes-note-tint-dot::before {
+  width: 22px;
+  height: 22px;
+  content: "";
+  background: var(--fn-swatch);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.3);
+}
+
+.finenotes-note-tints {
+  justify-content: flex-end;
+}
+
+.finenotes-note-tints.is-hidden {
+  display: none;
 }
 
 @media (max-width: 520px) {

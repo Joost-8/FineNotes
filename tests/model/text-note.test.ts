@@ -10,6 +10,8 @@ import {
   INK_WIDTH,
   ITALIC,
   backspaceAtStart,
+  foldPlan,
+  headingRank,
   blockText,
   clampInkHeight,
   clampPoint,
@@ -121,10 +123,10 @@ describe("runs", () => {
   });
 
   it("drops what a kind cannot carry", () => {
-    expect(textBlock("a", "body", [], { indent: 2, checked: true })).toEqual({
+    expect(textBlock("a", "heading", [], { indent: 2, checked: true })).toEqual({
       type: "text",
       id: "a",
-      kind: "body",
+      kind: "heading",
       runs: [],
     });
     expect(textBlock("a", "check", [], { indent: 9, checked: true })).toMatchObject({
@@ -370,13 +372,14 @@ describe("styles", () => {
     expect(hasMark(note(ink("i")), span(0, 0, 0, 0), BOLD)).toBe(false);
   });
 
-  it("indents list items only, within bounds", () => {
-    const start = note(t("a", "x"), t("b", "y", "bullet"));
-    const range = span(0, 0, 1, 0);
+  it("indents list items and body text, not headings, within bounds", () => {
+    const start = note(t("a", "x", "heading"), t("b", "y", "bullet"), t("c", "z"));
+    const range = span(0, 0, 2, 0);
     let current = start;
     for (let i = 0; i < 5; i++) current = indentBlocks(current, range, 1);
     expect((current.blocks[0] as TextBlock).indent).toBeUndefined();
     expect((current.blocks[1] as TextBlock).indent).toBe(3);
+    expect((current.blocks[2] as TextBlock).indent).toBe(3);
     expect(indentBlocks(current, range, 1)).toBe(current);
     for (let i = 0; i < 5; i++) current = indentBlocks(current, range, -1);
     expect(current).toEqual(start);
@@ -522,5 +525,43 @@ describe("reading a note", () => {
     expect(isBlankNote(note(t("a", "x")))).toBe(false);
     expect(isBlankNote(note(image("p")))).toBe(false);
     expect(isBlankNote(note(ink("i", [stroke([0, 0, 0.5])])))).toBe(false);
+  });
+});
+
+describe("folding headings", () => {
+  const h = (id: string, kind: TextKind): TextBlock =>
+    textBlock(id, kind, [{ text: id, marks: 0 }]);
+  const b = (id: string): TextBlock => textBlock(id, "body", [{ text: id, marks: 0 }]);
+
+  it("hides what a folded heading holds, up to the next heading of its rank or higher", () => {
+    const blocks = [
+      h("T", "title"),
+      h("A", "heading"),
+      b("a1"),
+      h("A1", "subheading"),
+      b("a2"),
+      h("B", "heading"),
+      b("b1"),
+    ];
+    const plan = foldPlan(blocks, new Set(["A"]));
+    expect(plan.map((p) => p.hidden)).toEqual([false, false, true, true, true, false, false]);
+    expect(plan.map((p) => p.foldable)).toEqual([false, true, false, true, false, true, false]);
+    expect(plan[1].folded).toBe(true);
+  });
+
+  it("never folds the title, a heading with nothing under it, or one already hidden", () => {
+    const blocks = [h("T", "title"), b("x"), h("A", "heading"), h("B", "heading"), b("y")];
+    const plan = foldPlan(blocks, new Set(["T", "A"]));
+    expect(plan.map((p) => p.hidden)).toEqual([false, false, false, false, false]);
+    const nested = [h("T", "title"), h("A", "heading"), h("S", "subheading"), b("z")];
+    const inner = foldPlan(nested, new Set(["A", "S"]));
+    expect(inner.map((p) => p.hidden)).toEqual([false, false, true, true]);
+    expect(inner[2].folded).toBe(false);
+  });
+
+  it("ranks headings", () => {
+    expect(
+      [h("a", "title"), h("b", "heading"), h("c", "subheading"), b("d")].map(headingRank),
+    ).toEqual([1, 2, 3, 0]);
   });
 });

@@ -23,7 +23,8 @@ import { Menu, setIcon } from "obsidian";
 import { decodeNote } from "../model/text-note-file";
 import {
   BOLD,
-  HIGHLIGHT,
+  HIGHLIGHTS,
+  withMarkOn,
   INK_DEFAULT_HEIGHT,
   INK_GROW_ROOM,
   INK_WIDTH,
@@ -46,7 +47,9 @@ import {
   insertBlock,
   insertBlocksAt,
   insertText,
-  isList,
+  foldPlan,
+  headingRank,
+  canIndent,
   listMarkers,
   isCollapsed,
   kindIn,
@@ -68,6 +71,7 @@ import {
   type ImageBlock,
   type InkBlock,
   type InkPaper,
+  type TableBlock,
   type Marks,
   type NoteBlock,
   type NotePoint,
@@ -79,6 +83,8 @@ import {
 } from "../model/text-note";
 import { offsetOf, positionAt, readRuns } from "./note-dom";
 import { InkSection, type InkSectionHost, type NotePen } from "./note-ink";
+import { NoteTableView, type TableLabel } from "./note-table-view";
+import { emptyTable } from "../model/note-table";
 
 /** What the editor needs from the view that holds it. */
 export interface NoteEditorHost {
@@ -87,6 +93,10 @@ export interface NoteEditorHost {
   eraserSize(): number;
   /** The names of a handwriting section's papers, for its paper menu. */
   paperName(paper: InkPaper): string;
+  /** The names of a table's buttons. */
+  tableLabel(key: TableLabel): string;
+  /** The folded headings changed (by their text): keep them for the next time the note opens. */
+  foldsChanged?(titles: string[]): void;
   pressure(): boolean;
   highlighterAlpha(): number;
   dark(): boolean;
@@ -118,6 +128,7 @@ interface BlockView {
   el: HTMLElement;
   block: NoteBlock;
   ink?: InkSection;
+  table?: NoteTableView;
 }
 
 interface Snapshot {
@@ -310,10 +321,10 @@ export class NoteEditor {
     let inList = false;
     if (range) {
       kind = kindIn(this.note, range);
-      inList = kind !== null && isList(kind);
+      inList = kind !== null && canIndent(kind);
       if (this.pending) marks = this.pending.marks;
       else {
-        for (const mark of [BOLD, ITALIC, UNDERLINE, STRIKE, HIGHLIGHT]) {
+        for (const mark of [BOLD, ITALIC, UNDERLINE, STRIKE, ...HIGHLIGHTS.map((h) => h.mark)]) {
           if (hasMark(this.note, range, mark)) marks |= mark;
         }
       }
@@ -372,8 +383,73 @@ export class NoteEditor {
     }
     this.markFirst();
     this.markLists();
+    this.markFolds();
     if (this.selected && !seen.has(this.selected)) this.selected = null;
     if (this.active && !seen.has(this.active)) this.active = null;
+  }
+
+  /** Headings folded now, by block id. */
+  private readonly folded = new Set<string>();
+
+  /** The folded headings by their text, to keep across a reload (block ids are not kept). */
+  foldedTitles(): string[] {
+    return this.note.blocks
+      .filter((b) => this.folded.has(b.id))
+      .map((b) => blockText(b))
+      .filter((text) => text !== "");
+  }
+
+  /** Fold the headings with these texts (after a load). */
+  foldTitles(titles: readonly string[]): void {
+    this.folded.clear();
+    const wanted = new Set(titles);
+    for (const block of this.note.blocks) {
+      if (headingRank(block) > 0 && wanted.has(blockText(block))) this.folded.add(block.id);
+    }
+    this.markFolds();
+  }
+
+  /** Fold or unfold a heading; the caret leaves what it hides. */
+  toggleFold(id: string): void {
+    if (this.folded.has(id)) this.folded.delete(id);
+    else this.folded.add(id);
+    this.markFolds();
+    const index = indexOfBlock(this.note, id);
+    const range = this.selection();
+    if (index >= 0 && range && this.folded.has(id) && range.start.block > index) {
+      const view = this.views.get(this.note.blocks[range.start.block]?.id ?? "");
+      if (view?.el.hasClass("is-folded-away")) {
+        this.caretTo({ block: index, offset: blockLength(this.note.blocks[index]) });
+      }
+    }
+    this.host.foldsChanged?.(this.foldedTitles());
+  }
+
+  /** Show a fold's chevron on headings that hold something, and hide what folded ones hold. */
+  private markFolds(): void {
+    const plan = foldPlan(this.note.blocks, this.folded);
+    this.note.blocks.forEach((block, i) => {
+      const el = this.views.get(block.id)?.el;
+      const step = plan[i];
+      if (!el || !step) return;
+      el.toggleClass("is-folded-away", step.hidden);
+      if (step.foldable) el.dataset.foldable = step.folded ? "folded" : "open";
+      else if (el.dataset.foldable !== undefined) delete el.dataset.foldable;
+    });
+    for (const id of Array.from(this.folded)) {
+      if (!this.views.has(id)) this.folded.delete(id);
+    }
+  }
+
+  /** The heading whose chevron (in the margin before it) is under the pointer. */
+  private foldAt(event: MouseEvent): string | null {
+    const node = event.target as Node | null;
+    const line = node?.instanceOf(Element) ? node.closest(".finenotes-note-line") : null;
+    if (!line?.instanceOf(HTMLElement) || line.dataset.foldable === undefined) return null;
+    const rect = line.getBoundingClientRect();
+    const rtl = this.root.win.getComputedStyle(line).direction === "rtl";
+    const inMargin = rtl ? event.clientX > rect.right : event.clientX < rect.left;
+    return inMargin ? (line.dataset.fnId ?? null) : null;
   }
 
   /** Counted list items show their number or letter, as the file writes it. */
@@ -421,6 +497,14 @@ export class NoteEditor {
       this.drawImage(view, block);
       return view;
     }
+    if (block.type === "table") {
+      const table = new NoteTableView(block, {
+        commit: (id, next, typing) => this.commitTable(id, next, typing),
+        remove: (id) => this.removeIsland(id),
+        label: (key) => this.host.tableLabel(key),
+      });
+      return { el: table.el, block, table };
+    }
     if (block.type === "raw") {
       const el = createDiv({
         cls: "finenotes-note-raw",
@@ -442,6 +526,8 @@ export class NoteEditor {
     view.block = block;
     if (block.type === "ink" && view.ink) {
       view.ink.setBlock(block);
+    } else if (block.type === "table" && view.table) {
+      view.table.setBlock(block);
     } else if (block.type === "image") {
       this.drawImage(view, block);
     } else if (block.type === "text") {
@@ -471,7 +557,8 @@ export class NoteEditor {
       if (run.marks & ITALIC) holder = holder.createEl("i");
       if (run.marks & UNDERLINE) holder = holder.createEl("u");
       if (run.marks & STRIKE) holder = holder.createEl("s");
-      if (run.marks & HIGHLIGHT) holder = holder.createEl("mark");
+      const tint = HIGHLIGHTS.find((h) => (run.marks & h.mark) !== 0);
+      if (tint) holder = holder.createEl("mark", { attr: { "data-tint": tint.name } });
       holder.appendText(run.text);
     }
   }
@@ -789,6 +876,7 @@ export class NoteEditor {
       return;
     }
     const type = event.inputType;
+    if (this.inCell(event.target) && !type.startsWith("history")) return;
     const range = this.selection();
     this.selectionBefore = range;
     if (type === "historyUndo" || type === "historyRedo") {
@@ -817,6 +905,8 @@ export class NoteEditor {
 
     if (type === "insertParagraph" || type === "insertLineBreak") {
       event.preventDefault();
+      const here = this.note.blocks[range.end.block];
+      if (here && this.folded.has(here.id)) this.toggleFold(here.id);
       let note = this.note;
       let at = range.start;
       if (!collapsed) ({ note, caret: at } = deleteRange(note, range, this.newId));
@@ -883,7 +973,8 @@ export class NoteEditor {
     }
   };
 
-  private readonly onInput = (): void => {
+  private readonly onInput = (event: Event): void => {
+    if (this.inCell(event.target)) return;
     const before = this.note;
     if (this.syncFromDom()) {
       this.record(before, this.selectionBefore, true);
@@ -911,6 +1002,7 @@ export class NoteEditor {
       else this.undo();
       return;
     }
+    if (this.inCell(event.target)) return;
     if (this.selected) {
       const index = indexOfBlock(this.note, this.selected);
       if (key === "Backspace" || key === "Delete") {
@@ -983,7 +1075,8 @@ export class NoteEditor {
       const block = this.note.blocks[range.start.block];
       if (!block || block.type !== "text" || block.kind === "mono") return;
       const base = this.pending?.marks ?? marksBefore(block.runs, range.start.offset);
-      this.pending = { marks: base ^ mark, at: range.start };
+      const marks = (base & mark) !== 0 ? base & ~mark : withMarkOn(base, mark);
+      this.pending = { marks, at: range.start };
       this.select(range);
       this.queueState();
       return;
@@ -1085,6 +1178,32 @@ export class NoteEditor {
     this.apply(next, !this.drawing && block?.type === "text" ? { block: at, offset: 0 } : null);
   }
 
+  /** A table's cells or shape changed; typing in a cell groups with the typing around it. */
+  private commitTable(id: string, next: TableBlock, typing: boolean): void {
+    const index = indexOfBlock(this.note, id);
+    if (index < 0) return;
+    this.record(this.note, this.lastSelection, typing);
+    this.note = replaceBlock(this.note, index, next);
+    this.render();
+    this.host.changed();
+    this.queueState();
+  }
+
+  /** Put a new table in at the caret, its first cell ready to type in. */
+  insertTable(): void {
+    if (this.drawing) return;
+    const table = emptyTable(this.newId());
+    this.insertBlocks([table]);
+    this.views.get(table.id)?.table?.focusCell({ row: 0, column: 0 });
+  }
+
+  /** Whether an event happened inside a table's cell: the table handles it. */
+  private inCell(target: EventTarget | null): boolean {
+    const node = target as Node | null;
+    const el = node?.instanceOf(Element) ? node : node?.parentElement;
+    return el?.closest(".finenotes-note-table [data-row]") != null;
+  }
+
   private commitInk(id: string, next: InkBlock, manual: boolean): void {
     const index = indexOfBlock(this.note, id);
     if (index < 0) return;
@@ -1113,6 +1232,11 @@ export class NoteEditor {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const target = event.target as HTMLElement;
     if (target.closest(".finenotes-note-island-bar, .finenotes-note-ink-edge")) return;
+    // A press in a table's cell puts the caret there; the table's edge selects and drags it.
+    if (this.inCell(target)) {
+      if (this.selected) this.selectIsland(null);
+      return;
+    }
     if (target.closest(".finenotes-note-handle") && view.block.type === "image") {
       event.preventDefault();
       this.selectIsland(view.block.id);
@@ -1126,11 +1250,20 @@ export class NoteEditor {
 
   /** A press on a checklist item's box, or on a section, must not move the caret. */
   private readonly onRootMouseDown = (event: MouseEvent): void => {
-    if (this.checkAt(event) !== null || this.islandAt(event.target)) event.preventDefault();
+    if (this.inCell(event.target)) return;
+    if (this.checkAt(event) !== null || this.foldAt(event) || this.islandAt(event.target)) {
+      event.preventDefault();
+    }
   };
 
   private readonly onRootClick = (event: MouseEvent): void => {
     if (this.drawing) return;
+    const fold = this.foldAt(event);
+    if (fold) {
+      event.preventDefault();
+      this.toggleFold(fold);
+      return;
+    }
     const index = this.checkAt(event);
     if (index === null) return;
     event.preventDefault();
