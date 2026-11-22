@@ -49,6 +49,8 @@ import { NoteEditor } from "./note-editor";
 import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
 import type { NotePen, NoteTool } from "./note-ink";
+import { NoteExtras } from "./note-extras";
+import type GoodObsidianPlugin from "../main";
 
 export const ICON_TEXT_NOTE = "notepad-text";
 
@@ -67,6 +69,8 @@ export interface TextNoteHost {
   fullScreenOffered(): boolean;
   fullScreen(): boolean;
   toggleFullScreen(): void;
+  /** For recordings, their transcription and Ask AI (`note-extras.ts`); absent in the UI gallery. */
+  plugin?: GoodObsidianPlugin;
 }
 
 /** The colours the palette offers, by tool; the first of each is the default. */
@@ -200,6 +204,7 @@ export class TextNoteView extends TextFileView {
   private renameTimer = 0;
   /** The file name the note's title stood for when it was read or last renamed. */
   private namedAfter = "";
+  private extras: NoteExtras | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -252,6 +257,7 @@ export class TextNoteView extends TextFileView {
     this.written = data;
     this.namedAfter = titleFileName(noteTitle(parsed.note));
     this.editor?.load(parsed.note);
+    this.extras?.relinkFromLog(parsed.note);
     this.showDate();
     if (clear) this.editor?.el.scrollTo({ top: 0 });
   }
@@ -273,6 +279,8 @@ export class TextNoteView extends TextFileView {
 
   override async onUnloadFile(file: TFile): Promise<void> {
     this.contentEl.win.clearTimeout(this.renameTimer);
+    // A recording still running lands in this note before it goes.
+    await this.extras?.finishForUnload();
     await super.onUnloadFile(file);
   }
 
@@ -293,7 +301,16 @@ export class TextNoteView extends TextFileView {
     content.empty();
     content.addClass("finenotes-note-view");
     this.bar = content.createDiv({ cls: "finenotes-note-bar" });
+    this.extras = new NoteExtras({
+      app: this.app,
+      plugin: () => this.host.plugin ?? null,
+      file: () => this.file,
+      editor: () => this.editor,
+      container: () => this.contentEl,
+      recordingChanged: () => this.refresh(),
+    });
     this.editor = new NoteEditor(content, {
+      drawAudio: (card, block) => this.extras?.recordings.drawCard(card, block),
       pen: () => this.penInHand(),
       eraserSize: () => this.choices.eraser.size,
       paperName: (paper) => t(PAPER_NAMES[paper]),
@@ -357,10 +374,21 @@ export class TextNoteView extends TextFileView {
     this.registerEvent(this.app.vault.on("create", refreshImages));
     this.registerEvent(this.app.vault.on("delete", refreshImages));
     this.registerEvent(this.app.vault.on("rename", refreshImages));
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        this.extras?.moved(file, oldPath);
+        this.editor?.refreshAudio();
+      }),
+    );
+    this.registerDomEvent(this.contentEl.doc, "visibilitychange", () => {
+      if (this.contentEl.doc.visibilityState === "hidden") this.extras?.onHidden();
+    });
   }
 
   override async onClose(): Promise<void> {
     this.contentEl.win.clearTimeout(this.renameTimer);
+    this.extras?.destroy();
+    this.extras = null;
     this.editor?.destroy();
     this.editor = null;
     this.buttons.clear();
@@ -443,12 +471,18 @@ export class TextNoteView extends TextFileView {
     this.button(insert, "kind:check", "list-checks", "notebooks.note.checklist", () =>
       this.editor?.setKind("check"),
     );
-    this.button(insert, "picture", "paperclip", "notebooks.note.addPicture", () =>
-      this.pickPicture(),
-    );
+    // A picture or a recording, as Apple Notes' paperclip offers them.
+    const attach = this.button(insert, "picture", "paperclip", "notebooks.note.attach", () => {
+      this.closeStyles();
+      this.extras?.attachMenu(attach, () => this.pickPicture());
+    });
 
     const right = bar.createDiv({ cls: "finenotes-note-bar-group is-right" });
     const pen = this.pill(right);
+    this.button(pen, "ask", "sparkles", "notebooks.note.askAi", () => {
+      this.closeStyles();
+      this.extras?.openAsk();
+    });
     this.button(pen, "draw", "pen-tool", "notebooks.note.draw", () => {
       this.closeStyles();
       this.editor?.setDrawing(!this.editor.isDrawing());
@@ -467,6 +501,10 @@ export class TextNoteView extends TextFileView {
     };
     set("draw", state.drawing);
     set("styles", this.styles !== null);
+    // Recording is a mark on the paperclip it was started from; the pill says the rest.
+    this.buttons
+      .get("picture")
+      ?.toggleClass("is-recording", this.extras?.recordings.isRecording === true);
     enable("undo", state.canUndo);
     enable("redo", state.canRedo);
     enable("styles", !state.drawing);
@@ -775,7 +813,8 @@ export class TextNoteView extends TextFileView {
       try {
         const prepared = await prepareImageBytes(await file.arrayBuffer(), file.type);
         const name = file.name.replace(/\.[^.]+$/, "") || t("notebooks.note.picture");
-        const kept = await saveImageAttachment(this.app, prepared, name, note.path);
+        const folder = await this.extras?.madeFolder("images");
+        const kept = await saveImageAttachment(this.app, prepared, name, note.path, folder);
         saved.push({ path: kept.path, width: prepared.width });
       } catch (error) {
         console.error("FineNotes: could not add the picture", error);

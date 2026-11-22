@@ -33,11 +33,14 @@
  *   notebook's own serializer: every stroke field a notebook keeps, a
  *   section keeps.
  * - A picture is an embed on a line of its own; the number is its width.
+ * - A recording is one too, `![[Recordings/x.m4a|1:23]]`: the time is its
+ *   length ({@link readAudioEmbed}).
  * - Text that would read as one of the above is written with a backslash.
  * - A section this version cannot read is kept as it is ({@link RawBlock}).
  */
 
 import { emptyDocument } from "./document";
+import { audioEmbedLine, readAudioEmbed } from "./note-audio-embed";
 import { decodeDocument, encodeDocument } from "./serialize";
 import {
   BOLD,
@@ -319,6 +322,7 @@ const RULE = /^([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 function guardLine(line: string): string {
   if (HEADING.test(line) || QUOTE.test(line) || RULE.test(line)) return `\\${line}`;
   if (line.startsWith("```") || line.startsWith(INK_OPEN) || EMBED.test(line)) return `\\${line}`;
+  if (readAudioEmbed(line)) return `\\${line}`;
   const list = LIST.exec(line);
   if (list) {
     const lead = list[1].length;
@@ -382,6 +386,10 @@ export function encodeNote(note: TextNote): string {
       lines.push(block.text);
       continue;
     }
+    if (block.type === "audio") {
+      lines.push(audioEmbedLine(block));
+      continue;
+    }
     const text = encodeInline(block.runs);
     const mark = HEADING_MARK[block.kind];
     if (mark) {
@@ -420,7 +428,9 @@ export function encodeNote(note: TextNote): string {
     if (
       current.type === "text" &&
       (isList(current.kind) || current.kind === "quote") &&
-      ((next?.type === "text" && next.kind === "body") || next?.type === "image")
+      ((next?.type === "text" && next.kind === "body") ||
+        next?.type === "image" ||
+        next?.type === "audio")
     ) {
       lines.push("");
     }
@@ -494,6 +504,11 @@ export function decodeNote(body: string, newId: IdSource): TextNote {
         path: embed[1].trim(),
         ...(width !== undefined && width > 0 ? { width } : {}),
       });
+      continue;
+    }
+    const audio = readAudioEmbed(line);
+    if (audio) {
+      blocks.push({ type: "audio", id: newId(), ...audio });
       continue;
     }
     if (line === "") {

@@ -106,6 +106,16 @@ export interface AskAiHost {
   rememberSave: (save: boolean) => void;
   /** What Ask AI may read besides this notebook (the setting), and changing it from the chat. */
   vaultScope?: { get: () => AskVaultScope; set: (scope: AskVaultScope) => void };
+  /**
+   * A chat about something that is not pages (a text note, `note-ask.ts`):
+   * what goes with each question is said by `line`; there are no pages to
+   * pick and no sidebar to move to.
+   */
+  subject?: {
+    line: (saved: boolean) => string;
+    empty: string;
+    suggestions: readonly string[];
+  };
 }
 
 /**
@@ -238,7 +248,7 @@ export class AskChat {
 
     const top = contentEl.createDiv({ cls: "goodobsidian-chat-top" });
     // A board sends what is on screen: there are no pages to pick.
-    if (!this.session.screen) this.buildPagesChip(top);
+    if (!this.session.screen && !this.host.subject) this.buildPagesChip(top);
     const tools = top.createDiv({ cls: "goodobsidian-chat-tools" });
     this.saveButton = this.toolButton(tools, "bookmark", t("ai.ask.saveChat"), () => {
       const save = !this.session.save;
@@ -264,13 +274,14 @@ export class AskChat {
       this.reachButton = chip;
     }
     const other = this.frame.layout === "window" ? "sidebar" : "window";
-    this.toolButton(
-      tools,
-      other === "sidebar" ? "panel-left" : "app-window",
-      other === "sidebar" ? t("ai.ask.showInSidebar") : t("ai.ask.showAsWindow"),
-      () => this.frame.switchLayout(),
-      "goodobsidian-chat-layout",
-    );
+    if (!this.host.subject)
+      this.toolButton(
+        tools,
+        other === "sidebar" ? "panel-left" : "app-window",
+        other === "sidebar" ? t("ai.ask.showInSidebar") : t("ai.ask.showAsWindow"),
+        () => this.frame.switchLayout(),
+        "goodobsidian-chat-layout",
+      );
     this.newChatButton = this.toolButton(tools, "square-pen", t("ai.ask.newChat"), () => {
       this.closePicker();
       this.session.newChat(this.host.currentPage());
@@ -278,7 +289,7 @@ export class AskChat {
     });
 
     this.noteEl = contentEl.createDiv({ cls: "goodobsidian-chat-note" });
-    if (!this.session.screen) this.buildPicker(contentEl);
+    if (!this.session.screen && !this.host.subject) this.buildPicker(contentEl);
     this.threadEl = contentEl.createDiv({ cls: "goodobsidian-chat-thread" });
 
     const composer = contentEl.createDiv({ cls: "goodobsidian-chat-composer" });
@@ -544,6 +555,7 @@ export class AskChat {
     const fresh = session.selected.filter((p) => !sent.has(p));
     const saved = session.save;
     const target = this.host.target;
+    if (this.host.subject) return this.host.subject.line(saved);
     if (session.screen) {
       return t(saved ? "ai.ask.noteScreenSaved" : "ai.ask.noteScreen", { target });
     }
@@ -987,8 +999,12 @@ export class AskChat {
       screen: t("ai.ask.emptyScreen"),
       file: t("ai.ask.emptyFile"),
     };
-    empty.createDiv({ cls: "goodobsidian-chat-empty-title", text: title[kind] });
-    const choices = suggestions(kind);
+    const subject = this.host.subject;
+    empty.createDiv({
+      cls: "goodobsidian-chat-empty-title",
+      text: subject ? subject.empty : title[kind],
+    });
+    const choices = subject ? subject.suggestions : suggestions(kind);
     if (choices.length === 0) return;
     const chips = empty.createDiv({ cls: "goodobsidian-chat-suggestions" });
     for (const text of choices) {
