@@ -23373,42 +23373,147 @@ body:not(.is-mobile) .finenotes-note-palette[data-dock="bottom"] {
   opacity: 1;
 }
 
-/* Picked up: it lifts a little and follows the finger without lag. */
-.finenotes-note-palette.is-dragging {
-  scale: 1.05;
-  box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.28),
-    0 4px 12px rgba(0, 0, 0, 0.12);
-  cursor: grabbing;
-  transition:
-    scale 0.2s cubic-bezier(0.2, 0.9, 0.25, 1.2),
-    box-shadow 0.2s ease,
-    opacity 0.2s ease;
-}
-
-/* Let go: the glide (`glidePalette`) moves it; the docking slide stays out of its way. */
+/* While it folds, moves and unfolds, the docking slide stays out of the way. */
 .finenotes-note-palette.is-settling {
   transition: opacity 0.2s ease;
 }
 
 /* The grip: a short bar, with a wider target round it. */
+/* The grab line, as on Apple's palette: a short bar centred on the edge away from
+   the note's edge (on top, or underneath when the palette hangs from the top). */
 .finenotes-note-palette-grip {
+  position: absolute;
+  top: 0;
+  left: 50%;
   box-sizing: content-box;
-  flex: none;
-  width: 34px;
-  height: 5px;
-  padding: 8px 12px;
+  width: 30px;
+  height: 4px;
+  padding: 6px 14px;
   cursor: grab;
   background: var(--text-faint);
   background-clip: content-box;
   border-radius: 10px;
-  opacity: 0.6;
+  opacity: 0.7;
+  transform: translateX(-50%);
   touch-action: none;
 }
 
-.finenotes-note-palette:is([data-dock="top"], [data-dock="bottom"]) .finenotes-note-palette-grip {
-  width: 5px;
-  height: 30px;
+.finenotes-note-palette[data-dock="top"] .finenotes-note-palette-grip {
+  top: auto;
+  bottom: 0;
+}
+
+.finenotes-note-palette:is([data-dock="left"], [data-dock="right"]) .finenotes-note-palette-grip {
+  width: 22px;
+}
+
+/* Room for the grab line. */
+.finenotes-note-palette:is([data-dock="left"], [data-dock="right"]) {
+  padding-top: 18px;
+}
+
+.finenotes-note-palette[data-dock="bottom"] {
+  padding-top: 14px;
+}
+
+.finenotes-note-palette[data-dock="top"] {
+  padding-bottom: 14px;
+}
+
+/* Moving it: the palette folds away into a round token with the tool in hand,
+   which follows the finger; a bar marks the side it will dock on. */
+.finenotes-note-view.is-drawing > .finenotes-note-palette.is-folded {
+  opacity: 0;
+}
+
+.finenotes-note-palette-token {
+  position: absolute;
+  top: var(--fn-token-y, 0);
+  left: var(--fn-token-x, 0);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  color: var(--gob-active-fg);
+  pointer-events: none;
+  background: var(--gob-pop-bg);
+  border: var(--gob-bar-border);
+  border-radius: 50%;
+  box-shadow: var(--gob-shadow-sheet);
+  transform: translate(-50%, -50%);
+  animation: finenotes-note-token-in 0.2s cubic-bezier(0.2, 1.2, 0.32, 1);
+  transition:
+    top 0.24s cubic-bezier(0.2, 0.9, 0.25, 1),
+    left 0.24s cubic-bezier(0.2, 0.9, 0.25, 1),
+    opacity 0.24s ease,
+    scale 0.24s ease;
+  -webkit-backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+  backdrop-filter: var(--gob-blur, blur(22px) saturate(1.7));
+}
+
+/* Following the finger it moves at once; only its landing glides. */
+.finenotes-note-palette-token:not(.is-landing) {
+  transition: none;
+}
+
+.finenotes-note-palette-token.is-landing {
+  opacity: 0;
+  scale: 0.6;
+}
+
+.finenotes-note-palette-token .svg-icon {
+  width: 24px;
+  height: 24px;
+}
+
+@keyframes finenotes-note-token-in {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+
+.finenotes-note-dock-hint {
+  position: absolute;
+  z-index: 29;
+  pointer-events: none;
+  background: var(--interactive-accent);
+  border-radius: 4px;
+  opacity: 0.55;
+  transition:
+    inset 0.18s ease,
+    width 0.18s ease,
+    height 0.18s ease;
+}
+
+.finenotes-note-dock-hint[data-dock="left"] {
+  top: 25%;
+  left: 6px;
+  width: 4px;
+  height: 50%;
+}
+
+.finenotes-note-dock-hint[data-dock="right"] {
+  top: 25%;
+  right: 6px;
+  width: 4px;
+  height: 50%;
+}
+
+.finenotes-note-dock-hint[data-dock="top"] {
+  top: 62px;
+  left: 25%;
+  width: 50%;
+  height: 4px;
+}
+
+.finenotes-note-dock-hint[data-dock="bottom"] {
+  bottom: 10px;
+  left: 25%;
+  width: 50%;
+  height: 4px;
 }
 
 .finenotes-note-palette-group {
@@ -23706,7 +23811,17 @@ button.clickable-icon.finenotes-note-style.is-active {
 }
 
 .finenotes-note-tints {
-  justify-content: flex-end;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  animation: finenotes-note-tints-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+
+@keyframes finenotes-note-tints-in {
+  from {
+    opacity: 0;
+    translate: -8px 0;
+  }
 }
 
 .finenotes-note-tints.is-hidden {

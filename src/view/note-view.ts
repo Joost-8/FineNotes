@@ -238,6 +238,13 @@ const LIST_BUTTONS: ReadonlyArray<[TextKind, string | null, string, TextKey]> = 
   ["lower", null, "a.", "notebooks.note.lettersLower"],
 ];
 
+/** Each tool's icon, in the palette and on the token it folds into while it is moved. */
+const TOOL_ICONS: Readonly<Record<NoteTool, string>> = {
+  pen: "pen-line",
+  highlighter: "highlighter",
+  eraser: "eraser",
+};
+
 const PAPER_NAMES: Readonly<Record<InkPaper, TextKey>> = {
   blank: "notebooks.note.paperBlank",
   lined: "notebooks.note.paperLined",
@@ -252,11 +259,6 @@ const TABLE_LABELS: Readonly<Record<TableLabel, TextKey>> = {
   deleteColumn: "notebooks.note.table.deleteColumn",
   deleteTable: "notebooks.note.table.delete",
 };
-
-/** A palette standing upright at a side, rather than lying along the top or bottom. */
-function upright(dock: Dock): boolean {
-  return dock === "left" || dock === "right";
-}
 
 /** The side a palette dropped at `x, y` docks on: the nearest edge of the note. */
 export function nearestDock(x: number, y: number, width: number, height: number): Dock {
@@ -797,9 +799,7 @@ export class TextNoteView extends TextFileView {
     dot.addClass("finenotes-note-tint-dot");
     const color = (): string => HIGHLIGHTS.find((h) => h.mark === this.tint)?.color ?? "#ffd43b";
     dot.setCssProps({ "--fn-swatch": color() });
-    const tints = panel.createDiv({
-      cls: "finenotes-note-styles-row finenotes-note-tints is-hidden",
-    });
+    const tints = first.createDiv({ cls: "finenotes-note-tints is-hidden" });
     for (const h of HIGHLIGHTS) {
       const swatch = tints.createEl("button", {
         cls: "clickable-icon finenotes-note-swatch",
@@ -985,38 +985,58 @@ export class TextNoteView extends TextFileView {
     } catch {
       // A synthetic pointer cannot be captured.
     }
-    const start = { x: down.clientX, y: down.clientY };
-    palette.addClass("is-dragging");
+    const content = this.contentEl;
+    const still = content.win.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const view = (): DOMRect => content.getBoundingClientRect();
+    // The palette folds into one round token with the tool in hand, which follows the finger.
+    const token = content.createDiv({ cls: "finenotes-note-palette-token" });
+    setIcon(token, TOOL_ICONS[this.choices.tool]);
+    const hint = content.createDiv({ cls: "finenotes-note-dock-hint" });
+    const place = (x: number, y: number): void => {
+      const rect = view();
+      token.setCssProps({
+        "--fn-token-x": `${x - rect.left}px`,
+        "--fn-token-y": `${y - rect.top}px`,
+      });
+      hint.dataset.dock = nearestDock(x - rect.left, y - rect.top, rect.width, rect.height);
+    };
+    place(down.clientX, down.clientY);
+    const from = palette.getBoundingClientRect();
+    if (!still && typeof palette.animate === "function") {
+      const ox = down.clientX - from.left;
+      const oy = down.clientY - from.top;
+      palette.animate(
+        [
+          { opacity: 1, scale: "1", transformOrigin: `${ox}px ${oy}px` },
+          { opacity: 0, scale: "0.25", transformOrigin: `${ox}px ${oy}px` },
+        ],
+        { duration: 200, easing: "cubic-bezier(0.4, 0, 0.6, 1)" },
+      );
+    }
+    palette.addClass("is-folded");
+    palette.addClass("is-settling");
     const move = (event: PointerEvent): void => {
       if (event.pointerId !== down.pointerId) return;
-      palette.setCssProps({
-        "--fn-drag-x": `${event.clientX - start.x}px`,
-        "--fn-drag-y": `${event.clientY - start.y}px`,
-      });
+      place(event.clientX, event.clientY);
     };
     const up = (event: PointerEvent): void => {
       if (event.pointerId !== down.pointerId) return;
       grip.removeEventListener("pointermove", move);
       grip.removeEventListener("pointerup", up);
       grip.removeEventListener("pointercancel", up);
-      const rect = this.contentEl.getBoundingClientRect();
+      const rect = view();
       const dock = nearestDock(
         event.clientX - rect.left,
         event.clientY - rect.top,
         rect.width,
         rect.height,
       );
-      // Where it is let go, then where it rests: it glides from the one to the other.
-      const from = palette.getBoundingClientRect();
-      const was = this.choices.dock;
-      palette.addClass("is-settling");
-      palette.removeClass("is-dragging");
-      palette.setCssProps({ "--fn-drag-x": "0px", "--fn-drag-y": "0px" });
-      if (dock !== was) {
+      hint.remove();
+      if (dock !== this.choices.dock) {
         this.choices.dock = dock;
         this.choicesChanged();
       }
-      this.glidePalette(from, was !== dock && upright(was) !== upright(dock));
+      this.unfoldPalette(token, event.clientX, event.clientY, still);
     };
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", up);
@@ -1024,33 +1044,41 @@ export class TextNoteView extends TextFileView {
   }
 
   /**
-   * Glide the palette from `from` (where it was let go) to where it rests now:
-   * a little overshoot, as a sheet settles on iPadOS. Turning between upright
-   * and lying along an edge, it also fades and grows in, since its shape changes.
+   * Let go: the token flies into the palette's place on its side and the
+   * palette grows back out of it, with a little overshoot.
    */
-  private glidePalette(from: DOMRect, turned: boolean): void {
+  private unfoldPalette(token: HTMLElement, x: number, y: number, still: boolean): void {
     const palette = this.palette;
-    if (!palette) return;
-    const win = palette.win;
-    const settle = (): void => palette.removeClass("is-settling");
-    const still = win.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const to = palette.getBoundingClientRect();
-    const dx = from.left + from.width / 2 - (to.left + to.width / 2);
-    const dy = from.top + from.height / 2 - (to.top + to.height / 2);
-    if (still || typeof palette.animate !== "function" || (Math.abs(dx) < 1 && Math.abs(dy) < 1)) {
-      settle();
+    const win = this.contentEl.win;
+    if (!palette) {
+      token.remove();
       return;
     }
-    const start: Keyframe = turned
-      ? { translate: `${dx}px ${dy}px`, scale: "0.86", opacity: 0.3 }
-      : { translate: `${dx}px ${dy}px`, scale: "1.04" };
-    const duration = turned ? 460 : 420;
-    palette.animate([start, { translate: "0px 0px", scale: "1", opacity: 1 }], {
-      duration,
-      easing: "cubic-bezier(0.2, 1.18, 0.32, 1)",
+    palette.removeClass("is-folded");
+    win.setTimeout(() => palette.removeClass("is-settling"), 420);
+    const to = palette.getBoundingClientRect();
+    const view = this.contentEl.getBoundingClientRect();
+    if (still || typeof palette.animate !== "function") {
+      token.remove();
+      return;
+    }
+    // Grow from the edge of the palette nearest where the token was let go.
+    const ox = Math.max(0, Math.min(to.width, x - to.left));
+    const oy = Math.max(0, Math.min(to.height, y - to.top));
+    palette.animate(
+      [
+        { opacity: 0, scale: "0.25", transformOrigin: `${ox}px ${oy}px` },
+        { opacity: 1, scale: "1", transformOrigin: `${ox}px ${oy}px` },
+      ],
+      { duration: 380, easing: "cubic-bezier(0.2, 1.2, 0.32, 1)" },
+    );
+    token.setCssProps({
+      "--fn-token-x": `${to.left + ox - view.left}px`,
+      "--fn-token-y": `${to.top + oy - view.top}px`,
     });
+    token.addClass("is-landing");
     // A timer, not `finish`: the browser pane's animation clock can stall (ledger).
-    win.setTimeout(settle, duration + 30);
+    win.setTimeout(() => token.remove(), 260);
   }
 
   private choicesChanged(): void {
