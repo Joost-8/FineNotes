@@ -70,6 +70,7 @@ import { type ReadLine, lineHits } from "../search/hit-strokes";
 import { noteHits } from "../search/note-search";
 import { VaultSearchModal, vaultSearchBooks } from "./vault-search-modal";
 import { NoteExtras } from "./note-extras";
+import { type NoteExportHost, shareMenu } from "./note-export";
 import type GoodObsidianPlugin from "../main";
 
 export const ICON_TEXT_NOTE = "notepad-text";
@@ -619,6 +620,11 @@ export class TextNoteView extends TextFileView {
 
     const right = bar.createDiv({ cls: "finenotes-note-bar-group is-right" });
     const pen = this.pill(right);
+    // Share, as Apple Notes puts it: its rarer choices (PDF, Markdown, text) in its menu.
+    const share = this.button(pen, "share", "share", "notebooks.note.share", () => {
+      this.closeStyles();
+      shareMenu(share, this.exportHost());
+    });
     this.button(pen, "ask", "sparkles", "notebooks.note.askAi", () => {
       this.closeStyles();
       this.extras?.openAsk();
@@ -630,6 +636,22 @@ export class TextNoteView extends TextFileView {
     // Search, at the bar's far end as in Apple Notes: every note and notebook.
     const find = this.pill(right);
     this.button(find, "search", "search", "notebooks.note.search", () => void this.openSearch());
+  }
+
+  private exportHost(): NoteExportHost {
+    return {
+      app: this.app,
+      file: () => this.file,
+      note: () => this.editor?.current() ?? emptyNote(() => "b0"),
+      exportsFolder: async () => {
+        const own = await this.extras?.madeFolder("exports");
+        if (own) return own;
+        const parent = this.file?.parent;
+        return parent && !parent.isRoot() ? parent.path : undefined;
+      },
+      pressure: () => this.host.pressure(),
+      highlighterAlpha: () => this.host.highlighterAlpha(),
+    };
   }
 
   private refresh(): void {

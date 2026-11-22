@@ -23998,3 +23998,11 @@ button.clickable-icon.finenotes-note-button.is-recording::before {
   background: var(--color-red);
   content: "";
 }
+
+/* Text note export: the saved notice's Share… and Open (src/view/note-export.ts). */
+.finenotes-note-export-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
