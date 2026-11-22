@@ -118,6 +118,8 @@ export class InkSection {
   private holdTimer = 0;
   /** The shape the held stroke became: drawn and kept instead of the ink. */
   private snapped: ShapeResult | null = null;
+  /** Words a search found here, each its strokes' ids. */
+  private hits: string[][] | null = null;
 
   constructor(
     block: InkBlock,
@@ -210,6 +212,51 @@ export class InkSection {
   /** The theme or a pen setting changed: draw everything again. */
   redraw(): void {
     this.paintDry();
+  }
+
+  /**
+   * Light up words a search found, each a group of stroke ids, as a
+   * notebook lights them: a highlighter's tint under the ink. `null` clears.
+   */
+  setHits(groups: readonly (readonly string[])[] | null): void {
+    const next = groups && groups.length > 0 ? groups.map((g) => [...g]) : null;
+    if (!next && !this.hits) return;
+    this.hits = next;
+    this.paintDry();
+  }
+
+  /** The search hits' boxes, under everything else. */
+  private paintHits(ctx: CanvasRenderingContext2D): void {
+    if (!this.hits) return;
+    const byId = new Map(this.block.strokes.map((s) => [s.id, s]));
+    // A canvas cannot read a CSS variable: resolve it first (ledger, 2026-09-20).
+    const color =
+      this.el.win.getComputedStyle(this.el).getPropertyValue("--text-highlight-bg").trim() ||
+      "rgba(255, 208, 0, 0.4)";
+    ctx.fillStyle = color;
+    for (const group of this.hits) {
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (const id of group) {
+        const stroke = byId.get(id);
+        if (!stroke) continue;
+        const pad = stroke.size / 2;
+        const usable = stroke.pts.length - (stroke.pts.length % 3);
+        for (let i = 0; i < usable; i += 3) {
+          x0 = Math.min(x0, stroke.pts[i] - pad);
+          x1 = Math.max(x1, stroke.pts[i] + pad);
+          y0 = Math.min(y0, stroke.pts[i + 1] - pad);
+          y1 = Math.max(y1, stroke.pts[i + 1] + pad);
+        }
+      }
+      if (!Number.isFinite(x0)) continue;
+      const margin = 4;
+      ctx.beginPath();
+      ctx.roundRect(x0 - margin, y0 - margin, x1 - x0 + 2 * margin, y1 - y0 + 2 * margin, 6);
+      ctx.fill();
+    }
   }
 
   /**
@@ -307,6 +354,7 @@ export class InkSection {
     const ctx = this.wipe(this.dry);
     if (!ctx) return;
     this.paintPaper(ctx);
+    this.paintHits(ctx);
     const strokes = this.erased ?? this.block.strokes;
     // Highlights first: they sit under the writing, which stays crisp.
     for (const stroke of strokes) if (stroke.tool === "highlighter") this.paintStroke(ctx, stroke);

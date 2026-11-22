@@ -246,6 +246,7 @@ export default defineConfig({
         "src/search/link-choices.ts",
         "src/search/library-search.ts",
         "src/search/search-results.ts",
+        "src/search/note-search.ts",
         "src/util/errors.ts",
       ],
       thresholds: {

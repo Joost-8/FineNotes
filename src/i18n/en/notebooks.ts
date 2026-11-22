@@ -1495,4 +1495,11 @@ export const notebooks = {
   "notebooks.note.table.deleteRow": "Delete row",
   "notebooks.note.table.deleteColumn": "Delete column",
   "notebooks.note.table.delete": "Delete table",
+  "notebooks.note.search": "Search notes and notebooks",
+  "notebooks.note.searchPlaceholder": "Search notes and notebooks",
+  "notebooks.note.searchHint": "Finds typed text and handwriting in every note and notebook",
+  "notebooks.note.searchNone": "Nothing found",
+  "notebooks.note.toText": "Turn into text",
+  "notebooks.note.nothingRead": "No writing was found in this handwriting",
+  "notebooks.note.readFailed": "This handwriting could not be read on this device",
 } as const;

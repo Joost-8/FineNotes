@@ -12,6 +12,7 @@
  */
 
 import {
+  Notice,
   Scope,
   TextFileView,
   setIcon,
@@ -60,6 +61,14 @@ import {
 import type { GraphSpecData } from "../model/document";
 import type { GraphSpec } from "../model/graph";
 import { CalculatorPopover, type CalculatorHost } from "./calculator-popover";
+import { DEVICE_READ_IDLE_MS, DEVICE_READ_NEXT_MS, DEVICE_READ_OPEN_MS } from "../constants";
+import type { Stroke } from "../model/document";
+import { inkReadingHash, nextSectionStep } from "../model/ink-reading";
+import type { InkBlock } from "../model/text-note";
+import type { ReadingGuard } from "../recognition/reading-guard";
+import { type ReadLine, lineHits } from "../search/hit-strokes";
+import { noteHits } from "../search/note-search";
+import { VaultSearchModal, vaultSearchBooks } from "./vault-search-modal";
 
 export const ICON_TEXT_NOTE = "notepad-text";
 
@@ -81,6 +90,18 @@ export interface TextNoteHost {
   /** The calculator's switches and history, shared with the notebooks; absent: no calculator. */
   loadCalculator?: () => CalculatorData;
   saveCalculator?: (data: CalculatorData) => void;
+  /** Reading handwriting on this device (Grape); absent, nothing is read. */
+  reading?: NoteReadingHost;
+}
+
+/** What reading a note's handwriting on the device needs from the plugin. */
+export interface NoteReadingHost {
+  /** Reading handwriting on this device is on (the plugin's setting). */
+  enabled(): boolean;
+  /** The guard against a reading that takes the app down (`reading-guard.ts`). */
+  guard: Pick<ReadingGuard, "paused" | "skipped" | "begin" | "end" | "fail">;
+  /** Read strokes: the lines as text (`readingText`), and each line with its words' strokes. */
+  read(strokes: readonly Stroke[]): Promise<{ text: string; lines: ReadLine[] }>;
 }
 
 /** The colours the palette offers, by tool; the first of each is the default. */
@@ -143,6 +164,8 @@ const TINT_NAMES: Readonly<Record<string, TextKey>> = {
 };
 /** Set once a stylus has written on this device: from then on fingers scroll and never write. */
 const PEN_SEEN_KEY = "finenotes-note-pen-seen";
+/** The last search, so searching again carries on where it left off (across notes). */
+let lastQuery = "";
 
 function clampSize(tool: NoteTool, value: unknown): number {
   const range = SIZES[tool];
@@ -256,6 +279,12 @@ export class TextNoteView extends TextFileView {
   private tint: Marks;
   /** The calculator's window, while it is open over the note. */
   private calculator: CalculatorPopover | null = null;
+  private readTimer = 0;
+  private readBusy = false;
+  /** Readings made in this session, by ink hash: undo brings ink back that was read already. */
+  private readonly readings = new Map<string, string>();
+  /** What a search opened the note to light, until the note is in. */
+  private pendingSearch: string | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -321,13 +350,6 @@ export class TextNoteView extends TextFileView {
     if (clear) this.editor?.el.scrollTo({ top: 0 });
   }
 
-  /** `{ noteBlock }`: Home opened the note at a page of its preview, which starts at that block. */
-  override setEphemeralState(state: unknown): void {
-    super.setEphemeralState(state);
-    const block = (state as { noteBlock?: unknown } | null)?.noteBlock;
-    if (typeof block === "number" && Number.isInteger(block)) this.editor?.revealBlock(block);
-  }
-
   clear(): void {
     this.frontmatter = "";
     this.written = null;
@@ -341,10 +363,14 @@ export class TextNoteView extends TextFileView {
     if (note && noteTitle(note) === "" && note.blocks.length === 1) {
       this.contentEl.win.setTimeout(() => this.editor?.focusStart(), 60);
     }
+    if (this.pendingSearch) this.contentEl.win.setTimeout(() => void this.showSearch(), 60);
+    this.scheduleReading(DEVICE_READ_OPEN_MS);
   }
 
   override async onUnloadFile(file: TFile): Promise<void> {
     this.contentEl.win.clearTimeout(this.renameTimer);
+    this.contentEl.win.clearTimeout(this.readTimer);
+    this.readTimer = 0;
     await super.onUnloadFile(file);
   }
 
@@ -390,7 +416,9 @@ export class TextNoteView extends TextFileView {
       changed: () => {
         this.requestSave();
         this.queueRename();
+        this.scheduleReading(DEVICE_READ_IDLE_MS);
       },
+      turnIntoText: this.host.reading ? (block) => this.sectionText(block) : undefined,
       stateChanged: () => this.refresh(),
       ...(this.host.loadCalculator
         ? {
@@ -410,7 +438,9 @@ export class TextNoteView extends TextFileView {
                   ? "notebooks.note.missingPicture"
                   : key === "paper"
                     ? "notebooks.note.paper"
-                    : "notebooks.note.unreadable",
+                    : key === "toText"
+                      ? "notebooks.note.toText"
+                      : "notebooks.note.unreadable",
         ),
     });
     this.buildBar(this.bar);
@@ -461,6 +491,7 @@ export class TextNoteView extends TextFileView {
     this.contentEl.win.clearTimeout(this.renameTimer);
     this.calculator?.close();
     this.calculator = null;
+    this.contentEl.win.clearTimeout(this.readTimer);
     this.editor?.destroy();
     this.editor = null;
     this.buttons.clear();
@@ -562,6 +593,9 @@ export class TextNoteView extends TextFileView {
       this.closeStyles();
       this.editor?.setDrawing(!this.editor.isDrawing());
     });
+    // Search, at the bar's far end as in Apple Notes: every note and notebook.
+    const find = this.pill(right);
+    this.button(find, "search", "search", "notebooks.note.search", () => void this.openSearch());
   }
 
   private refresh(): void {
@@ -1028,6 +1062,144 @@ export class TextNoteView extends TextFileView {
       }
     }
     return saved;
+  }
+
+  // -------------------------------------------------------------- reading the handwriting
+
+  /**
+   * Read the note's handwriting on this device, for search, a moment after
+   * writing stops (`ink-reading.ts` picks the section): one section at a
+   * time, the one written in last first, never while the pen is down, each
+   * marked with the reading guard so one that takes the app down is not
+   * read again at the next start. The setting turns it off.
+   */
+  private scheduleReading(delay: number): void {
+    const win = this.contentEl.win;
+    win.clearTimeout(this.readTimer);
+    this.readTimer = 0;
+    const host = this.host.reading;
+    if (!host?.enabled() || !this.file) return;
+    this.readTimer = win.setTimeout(() => void this.readNextSection(), delay);
+  }
+
+  private async readNextSection(): Promise<void> {
+    this.readTimer = 0;
+    const host = this.host.reading;
+    const editor = this.editor;
+    const path = this.file?.path;
+    if (!host || !editor || !path || this.readBusy || host.guard.paused) return;
+    if (editor.isPenDown()) {
+      this.scheduleReading(DEVICE_READ_IDLE_MS);
+      return;
+    }
+    const step = nextSectionStep({
+      note: editor.current(),
+      known: this.readings,
+      skip: new Set(host.guard.skipped(path).keys()),
+      first: editor.lastInk(),
+    });
+    if (!step) return;
+    if (step.kind !== "read") {
+      editor.setReading(
+        step.block.id,
+        step.kind === "keep" ? { text: step.text, of: step.hash } : null,
+      );
+      this.scheduleReading(DEVICE_READ_NEXT_MS);
+      return;
+    }
+    // Marked until the reading is over: a mark left at the next start means it took the app down.
+    const mark = { path, key: step.hash, hash: step.hash, page: step.index + 1 };
+    this.readBusy = true;
+    host.guard.begin(mark);
+    try {
+      const { text } = await host.read(step.block.strokes);
+      this.readings.set(step.hash, text);
+      if (this.editor === editor) editor.setReading(step.block.id, { text, of: step.hash });
+      this.scheduleReading(DEVICE_READ_NEXT_MS);
+    } catch {
+      // No model, or this ink could not be read: leave it until it changes.
+      host.guard.fail(mark);
+    } finally {
+      host.guard.end();
+      this.readBusy = false;
+    }
+  }
+
+  /** What a section says, for "Turn into text": its kept reading, or read now. */
+  private async sectionText(block: InkBlock): Promise<string | null> {
+    const hash = inkReadingHash(block.strokes);
+    if (block.reading?.of === hash && block.reading.text) return block.reading.text;
+    const host = this.host.reading;
+    if (!host) return null;
+    try {
+      const { text } = await host.read(block.strokes);
+      this.readings.set(hash, text);
+      if (text.trim()) return text;
+      new Notice(t("notebooks.note.nothingRead"));
+    } catch {
+      new Notice(t("notebooks.note.readFailed"));
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------- search
+
+  /** Search every text note and notebook, this note first. */
+  private async openSearch(): Promise<void> {
+    const editor = this.editor;
+    const file = this.file;
+    const books = await vaultSearchBooks(
+      this.app,
+      editor && file ? { path: file.path, note: editor.current() } : null,
+    );
+    new VaultSearchModal(this.app, books, file?.path ?? null, lastQuery, (query) => {
+      lastQuery = query;
+    }).open();
+  }
+
+  /**
+   * `{ noteBlock }`: Home opened the note at a page of its preview, which
+   * starts at that block. `{ search }`: a search opened it at what it found
+   * (`openSearchHit`): light it once the note is in.
+   */
+  override setEphemeralState(state: unknown): void {
+    super.setEphemeralState(state);
+    const block = (state as { noteBlock?: unknown } | null)?.noteBlock;
+    if (typeof block === "number" && Number.isInteger(block)) this.editor?.revealBlock(block);
+    const search = (state as { search?: unknown } | null)?.search;
+    if (typeof search !== "string" || search.trim() === "") return;
+    this.pendingSearch = search;
+    this.contentEl.win.setTimeout(() => void this.showSearch(), 60);
+  }
+
+  /**
+   * Light every place the note holds the query: typed words at once; in
+   * handwriting, each section that holds it at once, then its words, from
+   * the device's reading of the section's strokes lined up with the kept
+   * reading (`lineHits`, as a notebook lights its pages).
+   */
+  private async showSearch(): Promise<void> {
+    const query = this.pendingSearch;
+    const editor = this.editor;
+    if (!query || !editor || !this.file) return;
+    this.pendingSearch = null;
+    const note = editor.current();
+    const hits = noteHits(note, query);
+    editor.showHits(hits);
+    const host = this.host.reading;
+    if (!host) return;
+    for (const index of hits.ink) {
+      const block = note.blocks[index];
+      if (block?.type !== "ink") continue;
+      try {
+        const { lines } = await host.read(block.strokes);
+        if (this.editor !== editor || editor.current().blocks[index] !== block) return;
+        const words = lineHits(query, lines, block.reading?.text ?? "");
+        editor.markInk(block.id, words);
+      } catch {
+        // No model: the section's outline is the mark.
+      }
+    }
   }
 
   // -------------------------------------------------------------- the file's name
