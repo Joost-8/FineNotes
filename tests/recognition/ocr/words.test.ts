@@ -19,6 +19,7 @@ import {
   nativeCoverage,
   nativeRects,
   needsOcr,
+  textSpread,
   wordItems,
 } from "../../../src/recognition/ocr/ocr-words";
 import { layoutPlainText, pdfHitRects } from "../../../src/search/pdf-hits";
@@ -119,6 +120,23 @@ describe("a page with too little text of its own", () => {
     expect(isSparse(big, 400, 560)).toBe(false);
     expect(isSparse(big, 400, 560, { ...OCR_TUNING, sparseChars: 100 })).toBe(true);
     expect(isSparse(layoutOf([native("x".repeat(45), 20, 500, 300)]), 0, 0)).toBe(true);
+  });
+});
+
+describe("how far down a page its own text runs", () => {
+  const layoutOf = (items: PdfTextItem[]) => layoutText(items, pdfToPage(VIEWPORT, SOURCE, SOURCE));
+
+  it("counts the bands of the page that hold a character, whatever the text's size", () => {
+    expect(textSpread(layoutOf([]), 560)).toBe(0);
+    // A title near the top: one band of twelve.
+    expect(textSpread(layoutOf([native("A slide title", 20, 520)]), 560)).toBe(1 / 12);
+    // A line every 12 pt from top to bottom reaches every band.
+    const book: PdfTextItem[] = [];
+    for (let i = 0; i < 44; i++) book.push(native("Een regel tekst", 20, 540 - i * 12));
+    expect(textSpread(layoutOf(book), 560)).toBe(1);
+    // Spaces are not text, and a page with no height has no bands.
+    expect(textSpread(layoutOf([native("   ", 20, 300)]), 560)).toBe(0);
+    expect(textSpread(layoutOf(book), 0)).toBe(0);
   });
 });
 
