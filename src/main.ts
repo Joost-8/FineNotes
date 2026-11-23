@@ -39,6 +39,7 @@ import { DEFAULT_PEN_GESTURES, type PenGestures, penGesturesOf } from "./ink/pen
 import {
   type Editor,
   MarkdownView,
+  apiVersion,
   Notice,
   addIcon,
   getIcon,
@@ -54,6 +55,7 @@ import {
   normalizePath,
 } from "obsidian";
 import { disposeVaultFonts } from "./view/font-store";
+import { bugFormDevice, bugReportUrl } from "./model/bug-report";
 import {
   ICON_IMPORT_NOTEBOOK,
   ICON_IMPORT_NOTEBOOK_SVG,
@@ -1027,6 +1029,12 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "show-tips",
       name: t("notebooks.command.tips"),
       callback: () => this.openTips(),
+    });
+
+    this.addCommand({
+      id: "report-bug",
+      name: t("notebooks.command.reportBug"),
+      callback: () => this.openReport(),
     });
 
     this.addCommand({
@@ -2124,7 +2132,24 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Tips: the collections, or `page` when one is given. */
-  openTips(page: TipsPage | null = null): void {
+  /** Report a bug: Tips' search, asking what went wrong, then GitHub's form. */
+  openReport(): void {
+    this.openTips(null, true);
+  }
+
+  /** GitHub's bug form, filled in with `title` and what FineNotes knows of this device. */
+  private openBugForm(title: string): void {
+    window.open(
+      bugReportUrl({
+        title,
+        plugin: this.manifest.version,
+        obsidian: apiVersion,
+        device: bugFormDevice(Platform),
+      }),
+    );
+  }
+
+  openTips(page: TipsPage | null = null, reporting = false): void {
     new TipsModal(
       this.app,
       {
@@ -2135,6 +2160,7 @@ export default class GoodObsidianPlugin extends Plugin {
         features: this.featureHost(),
       },
       page,
+      reporting,
     ).open();
   }
 
@@ -2212,6 +2238,7 @@ export default class GoodObsidianPlugin extends Plugin {
       ask: (query) => {
         window.open(`${ASK_URL}&title=${encodeURIComponent(query)}`);
       },
+      report: (query) => this.openBugForm(query),
     };
   }
 

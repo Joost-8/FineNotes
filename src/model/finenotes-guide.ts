@@ -25,6 +25,12 @@ export interface GuideEntry {
   title: string;
   /** Words and phrases people use for it, comma-separated. */
   words: string;
+  /**
+   * What people see when this is the answer to a problem, in a bug report's
+   * words ("left panel disappears"), comma-separated. Searched like `words`,
+   * so a report finds the setting that explains it.
+   */
+  seen?: string;
   /** What it does, in a few plain sentences. */
   what: string;
   /** How to reach it: the path through the UI, by its on-screen names. */
@@ -71,6 +77,7 @@ export const COMMAND_NAMES: Readonly<Record<string, string>> = {
   "open-library": "Open the notebook library",
   "show-notebooks-sidebar": "Show notebooks in the sidebar",
   "show-tips": "Show the tips",
+  "report-bug": "Report a bug",
   "show-whats-new": "Show what's new on Home",
   "next-look-style": "Look: next style",
   "next-look-palette": "Look: next colours",
@@ -130,7 +137,9 @@ const STOP = new Set(
   (
     "a about an and any are as at be by can could do does doing for from get got have how i if in " +
     "into is it its me my of on or please should so that the then there this to use using want was " +
-    "way what when where which while who why will with without would you your finenotes app make makes put just also some"
+    "way what when where which while who why will with without would you your finenotes app make makes put just also some " +
+    // A bug report's padding: says how bad, not what.
+    "latest completely totally suddenly urgent really anymore still since after now"
   ).split(" "),
 );
 
@@ -226,8 +235,54 @@ export function stem(word: string): string {
 }
 
 /**
+ * Whether two words are at most `limit` edits apart, a swap of two
+ * neighbouring letters counting as one ("compeltely" for "completely").
+ */
+export function withinEdits(a: string, b: string, limit: number): boolean {
+  if (Math.abs(a.length - b.length) > limit) return false;
+  // Optimal string alignment: three rows of the distance table.
+  let before: number[] = [];
+  let last = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let d = Math.min(last[j] + 1, row[j - 1] + 1, last[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d = Math.min(d, before[j - 2] + 1);
+      }
+      row.push(d);
+      best = Math.min(best, d);
+    }
+    if (best > limit) return false;
+    before = last;
+    last = row;
+  }
+  return last[b.length] <= limit;
+}
+
+/** A word with each run of one letter made single: "dissapears" and "disappears" both "disapears". */
+function single(word: string): string {
+  return word.replace(/(.)\1+/g, "$1");
+}
+
+/**
+ * The typos a word may carry and still be meant: none under six letters
+ * (too many short words are one letter apart), one up to eight, two beyond.
+ * Both words must be long, and they must start alike. Doubled letters are
+ * not counted, the most common misspelling ("dissapers").
+ */
+function typoLimit(term: string, word: string): number {
+  const shorter = Math.min(term.length, word.length);
+  if (shorter < 6 || term[0] !== word[0]) return 0;
+  return shorter <= 8 ? 1 : 2;
+}
+
+/**
  * Whether a question's term means a word: the same word, the word with a
- * short ending ("boxes" for "box"), or one family ("erasing" for "erase").
+ * short ending ("boxes" for "box"), one family ("erasing" for "erase"), or
+ * the word with a typo or two ("dissapears" for "disappears").
  * A short term is not the start of any longer word: "free" is not "freehand".
  */
 function means(term: string, word: string): boolean {
@@ -235,7 +290,9 @@ function means(term: string, word: string): boolean {
   if (term.length >= 3 && word.startsWith(term) && word.length - term.length <= 3) return true;
   if (word.length >= 3 && term.startsWith(word) && term.length - word.length <= 3) return true;
   const root = stem(term);
-  return root.length >= 4 && root === stem(word);
+  if (root.length >= 4 && root === stem(word)) return true;
+  const typos = typoLimit(term, word);
+  return typos > 0 && withinEdits(single(term), single(word), typos);
 }
 
 /** A question's terms: its words without the common ones. */
@@ -337,7 +394,7 @@ export function bestOf(scores: readonly number[], limit: number): number[] {
 export function searchableOf(entry: GuideEntry): Searchable {
   return {
     title: entry.title,
-    words: entry.words,
+    words: entry.seen ? `${entry.words}, ${entry.seen}` : entry.words,
     body: `${entry.what} ${entry.where}`,
   };
 }

@@ -28,6 +28,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Where:** Use the vault's own sync; FineNotes needs no setup for it.
 - **Notes:** Keyboard shortcuts and AI keys stay on each device; they do not sync.
 - **Words:** sync, syncing, icloud, obsidian sync, syncthing, other device, second ipad, laptop, transfer, backup, files, where are my notebooks stored, file format
+- **Seen as:** notebook lost after sync, sync conflict, pages missing on other device, notebook empty on iPad, changes gone
 - **Settings:** `notebookOwnFolder`
 
 ### Apple Pencil double-tap and squeeze
@@ -48,9 +49,10 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Report a bug or ask for a feature
 
 - **Id:** `reportBug`
-- **What:** Report bugs and ask for features on GitHub: https://github.com/Joost-8/FineNotes/issues (a bug report or a feature request). Ideas and questions also go to GitHub Discussions. For strokes that go missing or break, turn on the Input debug overlay first and describe what it shows.
-- **Where:** Settings › Feedback and community, under the list of sections: Report a bug, Ideas and questions.
+- **What:** Report bugs and ask for features on GitHub: https://github.com/Joost-8/FineNotes/issues (a bug report or a feature request). Report a bug first asks what went wrong and shows what the tips and this guide say about it, so an answer that already exists is found at once; its last row opens GitHub's bug form with the FineNotes and Obsidian versions and the device filled in. Ideas and questions also go to GitHub Discussions. For strokes that go missing or break, turn on the Input debug overlay first and describe what it shows.
+- **Where:** Settings › Feedback and community, under the list of sections: Report a bug, Ideas and questions. Also the command Report a bug.
 - **Words:** bug, broken, not working, crash, problem, issue, report, feature request, idea, suggestion, missing feature, wish, github, contact, feedback, support
+- **Commands:** `report-bug`
 
 ### Coming from Goodnotes
 
@@ -100,6 +102,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **What:** FineNotes checks once a day whether a newer release exists (nothing about you is sent) and marks the toolbar's gear with a dot; Remind me also says so under the gear. Updating itself is Obsidian's Update button for the plugin.
 - **Where:** Obsidian Settings › Community plugins › FineNotes › Update. Reminders: Settings › General › Updates.
 - **Words:** update, upgrade, new version, latest version, out of date, version
+- **Seen as:** new version not showing, update not available, still on the old version
 - **Settings:** `checkForUpdates`, `updateReminders`
 
 ### Privacy: what leaves the device
