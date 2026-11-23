@@ -18,6 +18,7 @@ import {
   countFeatures,
   drawSheet,
   lineGain,
+  lineShape,
   pairCoverage,
   poolLine,
   sheetQuota,
@@ -39,7 +40,9 @@ describe("the line pool", () => {
     for (const line of [...PRACTICE_POOL.prose, ...PRACTICE_POOL.notes, ...PRACTICE_POOL.sums]) {
       expect(/^[\x20-\x7e]+$/.test(line), line).toBe(true);
     }
-    expect(PRACTICE_POOL.signs.some((l) => /[√π≤≥∑∫≠±→∞]/.test(l))).toBe(true);
+    expect(PRACTICE_POOL.signs.some((l) => /[√π≤≥≠±→]/.test(l))).toBe(true);
+    // Only signs people write by hand in everyday notes.
+    for (const line of PRACTICE_POOL.signs) expect(/[∑∫∈∞Σφωλμσ]/.test(line), line).toBe(false);
   });
 
   it("has sums that are right", () => {
@@ -62,8 +65,27 @@ describe("the line pool", () => {
 
 describe("drawing a sheet", () => {
   it("splits a sheet across the kinds, prose taking what rounding leaves", () => {
-    expect(sheetQuota(30)).toEqual({ prose: 12, notes: 6, sums: 6, caps: 3, signs: 3 });
+    expect(sheetQuota(30)).toEqual({ prose: 13, caps: 6, notes: 6, sums: 4, signs: 1 });
     expect(Object.values(sheetQuota(20)).reduce((a, b) => a + b, 0)).toBe(20);
+  });
+
+  it("opens with every capital, and no rare signs", () => {
+    const anchor = ANCHOR_LINES.join(" ");
+    expect(new Set(anchor.match(/[A-Z]/g)).size).toBe(26);
+    expect(/[{}\\`~[\]#^]/.test(anchor)).toBe(false);
+    for (const line of ANCHOR_LINES) expect(line.length).toBeLessThanOrEqual(44);
+  });
+
+  it("takes one line of each made shape per sheet", () => {
+    expect(lineShape("Hugo flew from Galway to Nairobi.")).toBe(
+      lineShape("Ravi flew from Zagreb to Brno."),
+    );
+    expect(lineShape("#todo: redo networks sheet 9")).toBe(
+      lineShape("#todo: redo geography sheet 5"),
+    );
+    const sheet = drawSheet([], 30, 5, false).filter((l) => !l.id.startsWith("p"));
+    const shapes = sheet.map((l) => lineShape(l.text));
+    expect(new Set(shapes).size).toBe(shapes.length);
   });
 
   it("opens the first sheet with the anchor, and never repeats what was asked", () => {

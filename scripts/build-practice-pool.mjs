@@ -7,8 +7,10 @@
 //   stay out. Never anything from a vault;
 // - notes: note-like lines made here (dates, times, rooms, units, courses);
 // - sums: arithmetic with the right answer, many 1s and 7s;
-// - caps: capitals (acronyms, places, course codes);
-// - signs: short formulas with maths signs, Greek letters included.
+// - caps: capitals in ordinary sentences (names for every letter, places,
+//   days, months), plus acronyms and course codes;
+// - signs: short lines with the signs people write by hand (√ π ≤ ≥ ≠ ± ° →
+//   and α β θ Δ); nothing rarer.
 //
 // Deterministic: the same inputs give the same file. The pool is append-only
 // once a version ships: a sheet stores its lines' ids, and the rig checks a
@@ -27,7 +29,7 @@ if (!cvFile || !wordsFile) {
 }
 
 const VERSION = 1;
-const SIZES = { prose: 1500, notes: 600, sums: 600, caps: 300, signs: 300 };
+const SIZES = { prose: 1500, notes: 600, sums: 600, caps: 600, signs: 300 };
 
 /** A seeded generator (mulberry32), so templates come out the same every run. */
 function rng(seed) {
@@ -52,7 +54,7 @@ const words = new Set(
 );
 /** Words a sheet given to strangers should not ask anyone to copy. */
 const AVOID =
-  /\b(kill|killed|killing|murder|dead|death|die|died|blood|gun|guns|war|sex|sexy|drunk|drug|drugs|naked|hate|hell|damn|god|gospel|jesus|christ|church|bible|pray|suicide|rape|slave|slaves|nazi|bomb|stupid|idiot|fat|ugly|black|white|race|religion|muslim|jew|jewish|christian|catholic|protestant|presbyterian|baptist|methodist|priest|bishop|pope|mosque|temple|saint|holy|heaven|sin|politics|political|president|trump|biden|corpse|grave|weapon|knife|beer|wine|whisky|smoke|cigarette|naughty|kiss|lover)\b/i;
+  /\b(kill|killed|killing|murder|dead|death|die|died|blood|gun|guns|war|sex|sexy|drunk|drug|drugs|naked|hate|hell|damn|god|gospel|jesus|christ|church|bible|pray|suicide|rape|slave|slaves|nazi|bomb|stupid|idiot|fat|ugly|black|white|race|religion|muslim|jew|jewish|christian|catholic|protestant|presbyterian|baptist|methodist|priest|bishop|pope|mosque|temple|saint|holy|heaven|sin|politics|political|president|trump|biden|corpse|grave|weapon|knife|beer|wine|whisky|smoke|cigarette|naughty|kiss|lover|shoot|shot|deadly)\b/i;
 
 const prose = [];
 const seen = new Set();
@@ -176,7 +178,7 @@ const notesTemplates = [
     `Office hours ${pick(r, DAYS)} ${pad(int(r, 9, 16))}-${pad(int(r, 10, 17))}, room ${n17(r, 100, 799)}`,
   (r) => `Score: ${n17(r, 1, 17)}/${n17(r, 18, 20)} on the ${pick(r, COURSES)} test`,
   (r) => `Recap ${pick(r, COURSES)}, lecture ${n17(r, 1, 17)} (part ${n17(r, 1, 3)})`,
-  (r) => `Buy ${n17(r, 2, 12)} pens, ${n17(r, 1, 7)} pads & tape`,
+  (r) => `Buy ${n17(r, 2, 12)} pens, ${int(r, 2, 7)} pads & tape`,
   (r) =>
     `Train at ${pad(int(r, 6, 22))}:${pad(n17(r, 0, 59))}, platform ${n17(r, 1, 17)}${pick(r, ["a", "b", ""])}`,
   (r) =>
@@ -267,33 +269,6 @@ const sumsTemplates = [
   },
 ];
 
-const ACRONYMS = [
-  "NASA",
-  "EU",
-  "WHO",
-  "UN",
-  "DNA",
-  "RNA",
-  "CPU",
-  "GPU",
-  "USB",
-  "PDF",
-  "HTTP",
-  "SQL",
-  "AI",
-  "IQ",
-  "UK",
-  "USA",
-  "HQ",
-  "XY",
-  "UV",
-  "VAT",
-  "FAQ",
-  "RSVP",
-  "ETA",
-  "TBA",
-  "OK",
-];
 const PLACES = [
   "Quebec",
   "Zurich",
@@ -316,36 +291,137 @@ const PLACES = [
   "Galway",
   "Brno",
 ];
-const CODES = ["MATH", "PHYS", "CHEM", "BIO", "ECON", "HIST", "CS", "EE", "STAT", "PSY"];
+/** First names, several for every capital, from many languages. */
+const NAMES = [
+  "Ada",
+  "Amir",
+  "Ben",
+  "Bea",
+  "Chen",
+  "Clara",
+  "Dev",
+  "Dina",
+  "Emma",
+  "Eli",
+  "Femi",
+  "Fay",
+  "Gus",
+  "Grace",
+  "Hana",
+  "Hugo",
+  "Ines",
+  "Ivan",
+  "Jack",
+  "Jade",
+  "Kai",
+  "Kemi",
+  "Lena",
+  "Luis",
+  "Max",
+  "Mia",
+  "Nora",
+  "Nils",
+  "Omar",
+  "Olivia",
+  "Priya",
+  "Paul",
+  "Quinn",
+  "Qiu",
+  "Ravi",
+  "Rosa",
+  "Sofia",
+  "Sam",
+  "Tom",
+  "Tara",
+  "Uma",
+  "Ugo",
+  "Vera",
+  "Viktor",
+  "Wen",
+  "Will",
+  "Xavi",
+  "Xena",
+  "Yara",
+  "Yusuf",
+  "Zoe",
+  "Zane",
+];
+const MORE_PLACES = [
+  "Amsterdam",
+  "Berlin",
+  "Cairo",
+  "Dublin",
+  "Eindhoven",
+  "Florence",
+  "Ghent",
+  "Lisbon",
+  "Madrid",
+  "Nairobi",
+  "Paris",
+  "Rome",
+  "Seoul",
+  "Toronto",
+  "Lima",
+];
+const ALL_PLACES = [...PLACES, ...MORE_PLACES];
+const WEEKDAY = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const MONTH = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+/** Two different items of `list`. */
+const two = (r, list) => {
+  const a = pick(r, list);
+  let b = pick(r, list);
+  while (b === a) b = pick(r, list);
+  return [a, b];
+};
 const capsTemplates = [
-  (r) => `${pick(r, ACRONYMS)} and ${pick(r, ACRONYMS)} met in ${pick(r, PLACES)}`,
+  (r) => `${two(r, NAMES).join(" and ")} live in ${pick(r, ALL_PLACES)}.`,
+  (r) => `${two(r, NAMES).join(" meets ")} on ${pick(r, WEEKDAY)}.`,
   (r) =>
-    `${pick(r, CODES)} ${n17(r, 1000, 4999)}: ${pick(r, COURSES).replace(/\b\w/g, (c) => c.toUpperCase())}`,
-  (r) => `Trip to ${pick(r, PLACES)} via ${pick(r, PLACES)} (${pick(r, MONTHS)})`,
+    `Ask ${pick(r, NAMES)} about the ${pick(r, ["VAT", "RSVP", "ID", "PDF", "FAQ"])} in ${pick(r, MONTH)}.`,
+  (r) => `${pick(r, NAMES)} flew from ${two(r, ALL_PLACES).join(" to ")}.`,
+  (r) => `Dear ${pick(r, NAMES)}, see you in ${pick(r, ALL_PLACES)}!`,
+  (r) => {
+    const [code, course] = pick(r, [
+      ["MATH", "Calculus"],
+      ["MATH", "Linear Algebra"],
+      ["PHYS", "Mechanics"],
+      ["CHEM", "Organic Chemistry"],
+      ["BIO", "Genetics"],
+      ["ECON", "Economics"],
+      ["HIST", "History"],
+      ["CS", "Algorithms"],
+      ["EE", "Signals"],
+      ["STAT", "Statistics"],
+      ["PSY", "Psychology"],
+    ]);
+    return `${code} ${n17(r, 1000, 4999)}: ${course}`;
+  },
+  (r) => `Trip to ${two(r, ALL_PLACES).join(" via ")} (${pick(r, MONTHS)})`,
+  (r) => `The ${pick(r, ["UN", "EU", "WHO", "NASA"])} office in ${pick(r, ALL_PLACES)} is closed.`,
   (r) =>
-    `${pick(r, ACRONYMS)} ${pick(r, ["vs", "or", "and"])} ${pick(r, ACRONYMS)}: see FAQ ${n17(r, 1, 17)}`,
-  (r) =>
-    `Dr. ${pick(r, ["Quinn", "Yates", "Vance", "Xu", "Zhou", "Ortiz", "Ng", "Ward"])} at ${pick(r, ["MIT", "UCL", "ETH", "TU/e", "KTH", "UvA"])}`,
+    `Dr. ${pick(r, NAMES)} at ${pick(r, ["MIT", "UCL", "ETH", "TU/e", "KTH", "UvA"])} on ${pick(r, WEEKDAY)}`,
   (r) =>
     `THE ${pick(r, ["QUIZ", "EXAM", "LAB", "TALK", "DEMO"])} IS ON ${pick(r, ["MONDAY", "FRIDAY", "JUNE 7", "MAY 17"])}`,
-  (r) => `${pick(r, PLACES)}, ${pick(r, PLACES)} and ${pick(r, PLACES)}`,
+  (r) => `${pick(r, ALL_PLACES)}, ${pick(r, ALL_PLACES)} and ${pick(r, ALL_PLACES)}`,
 ];
 
-const GREEK = [
-  ["α", "alpha"],
-  ["β", "beta"],
-  ["γ", "gamma"],
-  ["δ", "delta"],
-  ["θ", "theta"],
-  ["λ", "lambda"],
-  ["μ", "mu"],
-  ["σ", "sigma"],
-  ["φ", "phi"],
-  ["ω", "omega"],
-  ["Δ", "Delta"],
-  ["Σ", "Sigma"],
-  ["Ω", "Omega"],
-];
+// Only the signs people write by hand in everyday notes: roots, pi,
+// comparisons, plus-minus, degrees, arrows, and a few Greek letters from
+// school maths. No sums, integrals, set signs or rarer Greek.
+const GREEK = ["α", "β", "θ", "Δ"];
 const signsTemplates = [
   (r) => {
     const a = n17(r, 2, 17);
@@ -353,36 +429,17 @@ const signsTemplates = [
   },
   (r) => `π ≈ 3.14, so 2π ≈ 6.28`,
   (r) => `x ≤ ${n17(r, 1, 17)} and y ≥ -${n17(r, 1, 9)}`,
-  (r) => `∑ k = n(n + 1)/2 for k = 1 to ${n17(r, 7, 17)}`,
-  (r) => {
-    const e = int(r, 1, 4);
-    return `∫ x^${e} dx = x^${e + 1}/${e + 1} + C`;
-  },
   (r) => `a ≠ b, so a - b ≠ 0`,
-  (r) => `f(x) → ${n17(r, 0, 9)} as x → ∞`,
   (r) => `x = ${n17(r, 1, 17)} ± ${n17(r, 1, 9)}`,
-  (r) => {
-    const [g] = pick(r, GREEK);
-    const [h] = pick(r, GREEK);
-    return `${g} + ${h} = ${pick(r, [90, 180, 45, 60])}°`;
-  },
-  (r) => {
-    const [g] = pick(r, GREEK);
-    return `${g} ∈ (0, ${n17(r, 1, 9)}) and ${g} ≠ 1`;
-  },
-  (r) => `μ = ${n17(r, 1, 17)}.${n17(r, 0, 9)}, σ = ${n17(r, 1, 7)}.${n17(r, 0, 9)}`,
+  (r) => `${pick(r, GREEK.slice(0, 3))} = ${pick(r, [30, 45, 60, 90, 120])}°`,
   (r) => `Δx = ${n17(r, 1, 17)} cm, Δt = ${n17(r, 1, 9)} s`,
-  (r) => `λ = ${n17(r, 100, 799)} nm, ω = 2π f`,
   (r) => `${n17(r, 1, 9)} ≤ √x ≤ ${n17(r, 10, 17)}`,
-  (r) => {
-    const b = n17(r, 1, 7);
-    return `∫ from 0 to ${b} of 1 dx = ${b}`;
-  },
-  (r) => `θ ≈ ${n17(r, 10, 79)}°, sin θ ≈ ?`,
-  (r) => `n ≥ ${n17(r, 1, 17)} → 2^n ≥ n^2`,
-  (r) => `φ = (1 + √5)/2 ≈ 1.618`,
-  (r) => `Σ x_i / n = ${n17(r, 1, 17)}.${n17(r, 0, 9)}`,
+  (r) => `θ ≈ ${n17(r, 10, 79)}°, so cos θ > 0`,
+  (r) => `It was ${n17(r, 2, 31)}°C at ${pad(int(r, 6, 22))}:00`,
+  (r) => `heat → water → steam (${n17(r, 100, 117)}°)`,
   (r) => `${n17(r, 17, 77)}° ± ${n17(r, 1, 7)}°`,
+  (r) => `area = π r^2 ≈ ${n17(r, 3, 77)}.${n17(r, 0, 9)} cm^2`,
+  (r) => `α + β = ${pick(r, [90, 180])}°`,
 ];
 
 /** `size` distinct lines from `templates`, seeded per kind. */

@@ -6,7 +6,8 @@
  * lines (practice-pool.ts), picked to fill what this writer has not written
  * yet: letter pairs, capitals and signs seen fewer than three times. Thirty
  * drawn lines lift the share of English letter pairs seen three times from
- * 71 % (the old 90 lines) to about 96 %; thirty random ones reach 87 %.
+ * 71 % (the old 90 lines) to about 94 %, and the first sheet alone holds
+ * every capital A to Z (the old sets never asked for two of them).
  *
  * A line is identified by its kind's letter and its index in the pool
  * ("p12", "s7"), and the anchor's lines by "a1" to "a10": the sheet stores
@@ -39,32 +40,33 @@ export interface DrawnLine {
 
 /**
  * The anchor: ten lines every writer copies once, at the top of their first
- * drawn sheet. Seven are set 1's (so lines donated before stay comparable),
- * three fill what the old sets lacked: 1s beside 7s, rare capitals, and
- * signs that were never asked for.
+ * drawn sheet. Five are set 1's (so lines donated before stay comparable);
+ * the other five put every capital A to Z on the page at least once, and 1s
+ * beside 7s, in ordinary sentences. No rare signs: they are drawn later, a
+ * few per sheet.
  */
 export const ANCHOR_LINES: readonly string[] = [
   "The quick brown fox jumps over the lazy dog.",
   "Meeting on Tuesday at 10:30 in room B-214.",
   "x = (a + b) / 2, so y = 3x - 4.",
   "Total: $45.80 (incl. 21% tax).",
-  "[[Project ideas]] and #todo items",
   '"Never give up," she said.',
-  "sqrt(x^2 + y^2) = 5",
-  "17 + 71 = 88, 7/11 at 1:17, room 717",
-  "I saw XY plots, UV light and HQ in Zurich.",
-  `C:${String.fromCharCode(92)}notes${String.fromCharCode(92)}v2 and \`code\` in ~/tmp {a, b}`,
+  "Jack, Lena and Olivia met in Quebec.",
+  "Zoe flew from Helsinki to Vienna in May.",
+  "Dr. Kim works for the UN and WHO in Geneva.",
+  "Is the EXAM on Friday? Yes, 9:17 in hall C.",
+  "Pay Ravi and Sofia 17 euros, 71 cents.",
 ];
 
 /** How many lines of each kind a sheet of `count` drawn lines takes. */
 export function sheetQuota(count: number): Record<PoolKind, number> {
-  // Prose 40 %, notes 20 %, sums 20 %, capitals 10 %, signs 10 %.
+  // Prose 40 %, capitals 20 %, notes 20 %, sums 15 %, signs 5 %.
   const shares: [PoolKind, number][] = [
     ["prose", 0.4],
+    ["caps", 0.2],
     ["notes", 0.2],
-    ["sums", 0.2],
-    ["caps", 0.1],
-    ["signs", 0.1],
+    ["sums", 0.15],
+    ["signs", 0.05],
   ];
   const out = { prose: 0, notes: 0, sums: 0, caps: 0, signs: 0 } as Record<PoolKind, number>;
   let given = 0;
@@ -182,6 +184,7 @@ export function drawSheet(
   const random = rng(seed);
   const quota = sheetQuota(count);
   const picked: DrawnLine[] = [];
+  const shapes = new Set<string>();
   for (const kind of Object.keys(KIND_LETTER) as PoolKind[]) {
     const lines = PRACTICE_POOL[kind] as readonly string[];
     const tie = lines.map(() => random());
@@ -192,6 +195,7 @@ export function drawSheet(
       for (let i = 0; i < lines.length; i++) {
         const text = lines[i];
         if (used.has(text)) continue;
+        if (kind !== "prose" && shapes.has(lineShape(text))) continue;
         if (wantSeven && !(text.includes("1") && text.includes("7"))) continue;
         const gain = lineGain(text, have) + tie[i] * 1e-6;
         if (gain > bestGain) {
@@ -202,6 +206,7 @@ export function drawSheet(
       if (best < 0) continue;
       const text = lines[best];
       used.add(text);
+      if (kind !== "prose") shapes.add(lineShape(text));
       for (const f of lineFeatures(text)) have.set(f, (have.get(f) ?? 0) + 1);
       picked.push({ id: `${KIND_LETTER[kind]}${best}`, text });
     }
@@ -210,6 +215,21 @@ export function drawSheet(
   const order = picked.map(() => random());
   const mixed = picked.map((line, i) => ({ line, at: order[i] })).sort((a, b) => a.at - b.at);
   return [...out, ...mixed.map((m) => m.line)];
+}
+
+/**
+ * What a made line looks like with its names and numbers taken out, first
+ * two words only ("N flew", "#todo: redo", "0 +"): two lines of one shape
+ * come from one template, and a sheet takes one of each.
+ */
+export function lineShape(text: string): string {
+  return text
+    .replace(/\d+/g, "0")
+    .replace(/\b[A-Z][a-z]+\b/g, "N")
+    .replace(/\b[A-Z]{2,}\b/g, "A")
+    .split(" ")
+    .slice(0, 2)
+    .join(" ");
 }
 
 /** Share of letter-pair weight `texts` hold at least {@link TARGET} times: the coverage measure. */
