@@ -22539,6 +22539,16 @@ button.goodobsidian-edit-switch.is-nudged {
 .goodobsidian-share-what {
   font-weight: var(--font-semibold);
 }
+/* What changed since the terms someone agreed to: the box the dialog opens on. */
+.goodobsidian-share-changes {
+  margin: 0;
+  padding: 10px 14px 10px 30px;
+  border-radius: var(--radius-m);
+  background: hsla(var(--interactive-accent-hsl), 0.1);
+}
+.goodobsidian-share-changes li + li {
+  margin-top: 6px;
+}
 .goodobsidian-share-invite {
   display: grid;
   grid-template-columns: auto 1fr;

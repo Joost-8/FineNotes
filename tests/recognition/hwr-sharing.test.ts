@@ -14,6 +14,7 @@ import {
   type SharingLedger,
   agree,
   buildBatches,
+  consentChanges,
   correctionDrafts,
   correctionKind,
   countByKind,
@@ -32,6 +33,7 @@ import {
   serializeLedger,
   sharingOn,
   stopSharing,
+  upgradeDone,
   withIds,
 } from "../../src/recognition/hwr/sharing";
 
@@ -281,6 +283,35 @@ describe("consent and ledger", () => {
       consent: { version: CONSENT_VERSION, licence: SHARE_LICENCE },
       client: CLIENT,
     });
+  });
+
+  it("is version 4 under the third private licence", () => {
+    expect(CONSENT_VERSION).toBe(4);
+    expect(SHARE_LICENCE).toBe("finenotes-grape-private-3");
+  });
+
+  it("lists only what changed since the terms someone agreed to", () => {
+    expect(consentChanges(3)).toEqual(["writer", "madeUp", "used", "cloud"]);
+    expect(consentChanges(2)).toEqual(["anthropic", "writer", "madeUp", "used", "cloud"]);
+    expect(consentChanges(CONSENT_VERSION)).toEqual([]);
+  });
+
+  it("owes the server an upgrade when agreeing after older terms with items sent", () => {
+    const old = markSent({ ...onLedger(1), consent: { version: 3, at: 1 } }, ["sha256:a"]);
+    const agreed = agree(old, 50, bytes(9));
+    expect(sharingOn(agreed)).toBe(true);
+    expect(agreed.upgradeOwed).toBe(CONSENT_VERSION);
+    // Round trip, and a sync copy that has not heard of it keeps it owed.
+    expect(parseLedger(serializeLedger(agreed)).upgradeOwed).toBe(CONSENT_VERSION);
+    expect(mergeLedgers(agreed, old).upgradeOwed).toBe(CONSENT_VERSION);
+    expect(upgradeDone(agreed, CONSENT_VERSION).upgradeOwed).toBe(0);
+    // Nothing sent before, or new terms agreed afresh after stopping: nothing to cover.
+    expect(
+      agree({ ...onLedger(1), consent: { version: 3, at: 1 } }, 50, bytes(9)).upgradeOwed,
+    ).toBe(0);
+    expect(agree(stopSharing(old), 50, bytes(9)).upgradeOwed).toBe(0);
+    // A delete starts a new contributor, with nothing owed.
+    expect(requestDelete(agreed, 60).upgradeOwed).toBe(0);
   });
 
   it("keeps the contributor when agreeing again", () => {
