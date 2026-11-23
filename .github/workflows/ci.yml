@@ -9,12 +9,17 @@ on:
 permissions:
   contents: read
 
+# The steps below are `npm run gates` (scripts/gates-lib.mjs), one by one and
+# in the same order; tests/scripts/gates-lib.test.ts fails when they differ.
 jobs:
   build:
-    name: Lint, typecheck, test, build
+    name: Format, lint, checks, typecheck, test, build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # All history: the CSS class check needs the merge-base with the base branch.
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v5
@@ -25,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Format
+        run: npm run format:check
+
       - name: Lint
         run: npm run lint
 
@@ -33,6 +41,24 @@ jobs:
 
       - name: Lint styles.css (plugin-review parity)
         run: npm run lint:css
+
+      - name: Coverage list holds every pure module
+        run: npm run check:coverage-include
+
+      - name: Largest files within their line caps
+        run: npm run check:file-size
+
+      # A pull request is checked out as its merge into the base, which holds
+      # both sides' CSS already; compare the pull request's own head instead.
+      - name: CSS classes not also introduced on the base branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run check:css-classes -- --base "origin/$BASE_REF" --head "$HEAD_SHA"
+
+      - name: Interface languages
+        run: npm run languages:check
 
       - name: Typecheck
         run: npm run typecheck
