@@ -330,6 +330,7 @@ export const surface = {
   "surface.selectionBar.segment.opacity": "Opacity",
   "surface.selectionBar.screenshot": "Screenshot",
   "surface.selectionBar.askAi": "Ask AI",
+  "surface.selectionBar.highlight": "Highlight",
   "surface.selectionBar.explore": "Explore",
   "surface.selectionBar.editTable": "Edit table",
   "surface.selectionBar.copyStyle": "Copy style",

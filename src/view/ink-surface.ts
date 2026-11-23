@@ -125,6 +125,7 @@ import {
   boundsCentre,
   boundsCorner,
   boxInLasso,
+  byLineStart,
   clampGroupDelta,
   cornerScale,
   crossPageDelta,
@@ -458,6 +459,7 @@ import {
 import { TextPickView } from "./text-pick-view";
 import { followTopShift as offsetAfterTopShift } from "./pill-row-model";
 import { highlightText, isHighlight, textHighlightStrokes } from "../model/text-highlight";
+import { highlighterColor } from "../model/pen-inks";
 import { DUPLICATE_OFFSET, duplicateImage, nextImageId } from "../model/images";
 import {
   TABLE_MIN_COL,
@@ -1654,6 +1656,8 @@ const IMAGE_CHROME_CLEAR_PX = 10;
 const PRESS_CLEAR_PX = 28;
 /** Room kept between selected PDF text and its bar: clear of a handle's knob, screen px. */
 const TEXT_KNOB_CLEAR_PX = 12;
+/** Page px round selected PDF text in the picture Ask AI gets, so no letter is cut. */
+const TEXT_ASK_PAD_PX = 4;
 /** Device-local mark that the right-click-to-select hint has been shown. */
 const PDF_SELECT_HINT_KEY = "finenotes-pdf-select-hint";
 /** The hint shows at most once a session, mark or no mark. */
@@ -1814,6 +1818,11 @@ interface LassoDraft {
   to: Pt;
   /** The pen was held still long enough to open the Paste / Unlock bar instead. */
   held: boolean;
+  /**
+   * A by-line lasso that came down on a PDF's text, which it selects as the
+   * pen drags (`startTextDrag`); `held` is set too, so the pen sweeps words.
+   */
+  textDrag?: true;
   /** The page's lines, for a lasso selecting by line; empty otherwise. */
   lines: LineBlock[];
   /**
@@ -11581,7 +11590,11 @@ export class InkSurface {
       builder.add({ ...sample, ...local });
       this.trackHold(local);
     }
-    if (this.debug) this.inkLatency.input(samples.map((sample) => sample.t), now());
+    if (this.debug)
+      this.inkLatency.input(
+        samples.map((sample) => sample.t),
+        now(),
+      );
     this.scheduleWet();
   }
 
@@ -12911,7 +12924,10 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     if (!this.textSource) return;
     const tool = this.toolState.tool;
     const snaps =
-      tool === "highlighter" || (tool === "tape" && this.toolState.tapeSnapText === true);
+      tool === "highlighter" ||
+      (tool === "tape" && this.toolState.tapeSnapText === true) ||
+      // The by-line lasso selects a PDF's text by dragging over it.
+      (tool === "select" && lassoModeFor(this.toolState) === "lines");
     if (!snaps) return;
     for (const index of [this.pageIndex, this.pageIndex + 1, this.pageIndex - 1]) {
       this.pageText(index);
@@ -13759,35 +13775,48 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     let lines: LineBlock[] = [];
     let space: LassoDraft["space"] = null;
     let boardSpace: LassoDraft["boardSpace"] = null;
-    const spacePage = mode === "lines" ? this.pageAt(box.index) : undefined;
-    if (mode === "lines" && spacePage && this.insertsFreeSpace(spacePage)) {
-      // A board, or paper with no lines, has no lines to select: by line, it
-      // inserts space from wherever the pen goes down (discussion #276).
-      boardSpace = {
-        axis: null,
-        amount: 0,
-        plan: null,
-        text: t("surface.readout.boardDragToInsert"),
-      };
-      this.flashReadout(boardSpace.text);
-    } else if (mode === "lines") {
-      // By line needs a line under the pen; elsewhere it drags a rectangle.
-      // From the margin next to a line, it inserts space instead.
-      const page = this.pageAt(box.index);
-      lines = page ? writingLines(page.backdrop, page.geometry) : [];
-      const target = page ? spaceTargetAt(lines, page.geometry.width, local.x, local.y) : null;
-      if (lines.length === 0) this.flashReadout(t("surface.readout.noLinesSelecting"));
-      if (target) {
-        space = {
-          target,
-          count: 0,
+    const page = mode === "lines" ? this.pageAt(box.index) : undefined;
+    if (mode === "lines" && page) {
+      // What by line does here: `byLineStart` (canvas/lasso.ts).
+      const free = this.insertsFreeSpace(page);
+      lines = free ? [] : writingLines(page.backdrop, page.geometry);
+      const target = free ? null : spaceTargetAt(lines, page.geometry.width, local.x, local.y);
+      const start = byLineStart({
+        onText: this.pressSelectsText(box, local),
+        freeSpace: free,
+        inMargin: target !== null,
+        onLine: lineAt(lines, local.x, local.y) !== null,
+      });
+      if (start === "text") {
+        this.startTextDrag(box, local);
+        return;
+      }
+      if (start === "free-space") {
+        // A board, or paper with no lines, has no lines to select: by line, it
+        // inserts space from wherever the pen goes down (discussion #276).
+        boardSpace = {
+          axis: null,
+          amount: 0,
           plan: null,
-          text: t("surface.readout.dragToInsertOrRemove"),
+          text: t("surface.readout.boardDragToInsert"),
         };
-        this.flashReadout(space.text);
-      } else if (!lineAt(lines, local.x, local.y)) {
-        mode = "rect";
-        lines = [];
+        this.flashReadout(boardSpace.text);
+      } else {
+        if (lines.length === 0 && !this.hasPageText(box.index)) {
+          this.flashReadout(t("surface.readout.noLinesSelecting"));
+        }
+        if (start === "space" && target) {
+          space = {
+            target,
+            count: 0,
+            plan: null,
+            text: t("surface.readout.dragToInsertOrRemove"),
+          };
+          this.flashReadout(space.text);
+        } else if (start === "rect") {
+          mode = "rect";
+          lines = [];
+        }
       }
     }
     this.lasso = {
@@ -13805,13 +13834,54 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     this.startPress(() => this.lassoHeld());
   }
 
+  /**
+   * A by-line lasso came down on a PDF's printed text: it selects that text
+   * at once, as a PDF viewer's drag does, without the hold the other lassos
+   * need (`lassoHeld`). The pen sweeps on over the words
+   * (`sweepPressText`), and the lift brings the text's bar.
+   */
+  private startTextDrag(box: PageBox, local: Pt): void {
+    this.openPressMenu(box, local);
+    const text = this.pressMenu?.text;
+    if (!text) return;
+    // The bar waits for the lift, as it does while a held press sweeps.
+    text.sweeping = true;
+    this.syncActionBar();
+    const path = new LassoPath(box, LASSO_SPACING_PX / this.gestureScale);
+    path.add(local);
+    this.lasso = {
+      box,
+      mode: "lines",
+      path,
+      origin: { x: local.x, y: local.y },
+      to: { x: local.x, y: local.y },
+      held: true,
+      textDrag: true,
+      lines: [],
+      space: null,
+      boardSpace: null,
+    };
+  }
+
+  /** Whether a lasso's pen went further than a tap's slop from where it came down. */
+  private lassoTravelled(lasso: LassoDraft): boolean {
+    const { origin, to } = lasso;
+    return Math.hypot(to.x - origin.x, to.y - origin.y) * this.gestureScale >= TAP_SLOP_PX;
+  }
+
+  /** Whether page `index` has PDF text read and ready to select. */
+  private hasPageText(index: number): boolean {
+    return (this.pageText(index)?.lines.length ?? 0) > 0;
+  }
+
   /** The pen moved: extend the loop (clamped to its page) and redraw it. */
   private selectMove(samples: readonly Pt[]): void {
     const lasso = this.lasso;
     const last = samples[samples.length - 1];
     if (!lasso || !last) return;
     if (lasso.held) {
-      // Held on PDF text: the pen sweeps on over words.
+      // Held on PDF text, or a by-line lasso on it: the pen sweeps on over words.
+      lasso.to = { x: last.x, y: last.y };
       this.sweepPressText(lasso.box, last);
       return;
     }
@@ -14228,6 +14298,13 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     this.activePage = null;
     this.stopPress();
     this.renderer?.clearWet();
+    // A by-line tap on a highlight takes the highlight, as any lasso's tap
+    // does; only a drag over it takes the words under it.
+    if (lasso?.textDrag && this.pressMenu?.ink && !this.lassoTravelled(lasso)) {
+      this.clearSelection();
+      this.tapSelect(lasso.box, lasso.origin, PEN_TAP_TOLERANCE_PX);
+      return;
+    }
     this.endTextSweep();
     // A held press has opened its bar already; the lift only lets go.
     if (!lasso || lasso.held) return;
@@ -16053,8 +16130,60 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         this.clearSelection();
       },
     };
+    const picked = text !== null && text.pick.rects.length > 0;
+    // Marked as the highlighter marks it when it snaps to the text (FineNotes#159).
+    const highlight: SelectionAction = {
+      id: "highlight-text",
+      icon: "highlighter",
+      label: t("surface.selectionBar.highlight"),
+      group: "press",
+      bar: true,
+      menu: "none",
+      enabled: picked,
+      run: () => {
+        if (text) this.highlightPick(press.pageId, text.pick);
+        this.clearSelection();
+      },
+    };
+    const own: SelectionAction[] = [copy, highlight];
+    // Ask AI about it, sent as a picture of the lines, as a lasso's selection is.
+    const ask = this.callbacks.canAskAi?.() ? this.callbacks.onAskAboutSelection : undefined;
+    const bounds = text ? pickBounds(text.pick) : null;
+    const index = this.doc.pages.findIndex((page) => page.id === press.pageId);
+    if (ask && bounds && index >= 0) {
+      own.push({
+        id: "ask-ai",
+        icon: "messages-square",
+        label: t("surface.selectionBar.askAi"),
+        group: "press",
+        bar: true,
+        menu: "none",
+        run: () => {
+          this.clearSelection();
+          ask(index, padBounds(bounds, TEXT_ASK_PAD_PX));
+        },
+      });
+    }
     const rest = this.pressActions(press).filter((action) => action.id !== "select-page");
-    return [copy, ...rest.map((action) => ({ ...action, bar: false, menu: "row" as const }))];
+    return [...own, ...rest.map((action) => ({ ...action, bar: false, menu: "row" as const }))];
+  }
+
+  /** Highlight `pick` on page `pageId` in the highlighter's colour: one stroke a line, one undo step. */
+  private highlightPick(pageId: string, pick: TextPick): void {
+    const box = this.boxForPage(pageId);
+    const page = box ? this.pageAt(box.index) : undefined;
+    if (!box || !page) return;
+    const state = this.toolState;
+    const color = highlighterColor(state.penType, state.color, state.penInks ?? {});
+    const strokes = textHighlightStrokes(pick.rects, color, () => this.strokeIds.next());
+    if (strokes.length === 0) return;
+    const command = highlightText(page, strokes, this.clock());
+    this.history.push(this.doc, command);
+    for (const stroke of strokes) {
+      this.strokeIndex.add(page.id, stroke);
+      this.renderer?.appendCommittedStroke(box.index, stroke, this.inkPressure);
+    }
+    this.inkChanged([page.id]);
   }
 
   /** The word of page `index`'s PDF text at page point `p`, or null when there is none. */
@@ -16918,6 +17047,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
   /** The lasso's type changed (the toolbar wrote it into the tool state): its page marks follow. */
   refreshLassoChrome(): void {
     this.syncSpaceHandles();
+    this.prefetchText();
   }
 
   /** One ribbon at the page's left edge for each section, level with its heading. */
@@ -22883,7 +23013,6 @@ function macKeys(): boolean {
 function now(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
-
 
 /** Whether an event's target is a page text box, or inside one. */
 /**
