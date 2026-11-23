@@ -356,7 +356,7 @@ import {
   planBoardSpace,
 } from "../model/board-space";
 import { afterPainted } from "./after-painted";
-import { lowMemoryDevice } from "./pdf-backdrop";
+import { lowMemoryDevice, roomyDevice } from "./pdf-backdrop";
 import { slidesAround } from "../model/beside-pdfs";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
@@ -3430,6 +3430,8 @@ export class InkSurface {
     // the CPU (a desktop with its GPU turned off), the larger canvas cost
     // more each frame than it saved.
     renderer.useOverscan(Platform.isMobile);
+    // Tiles for a pan to come back to, where there is memory for them (#298).
+    renderer.setPanRoom(roomyDevice());
     this.renderer = renderer;
 
     // The ruler hears every press first (capture, on the surface): a finger
@@ -5843,9 +5845,17 @@ export class InkSurface {
     this.layoutTail(cssW, cssH);
   }
 
+  /** The backdrop painter's caches are sized to the screen in device px (#298). */
+  private tellPainterScreen(): void {
+    if (!(this.cssW > 0 && this.cssH > 0)) return;
+    const dpr = backingScale(this.win.devicePixelRatio);
+    this.backdropPainter?.setScreen?.(Math.round(this.cssW * dpr), Math.round(this.cssH * dpr));
+  }
+
   /** The end of every layout: size the canvases, place the paper and paint. */
   private layoutTail(cssW: number, cssH: number): void {
     this.renderer?.resize(cssW, cssH, backingScale(this.win.devicePixelRatio));
+    this.tellPainterScreen();
     this.syncViewport();
     this.syncInkCursor();
     this.settleIfIdle();
@@ -8706,6 +8716,7 @@ export class InkSurface {
    */
   setBackdropPainter(painter: BackdropPainter | null): void {
     this.backdropPainter = painter;
+    this.tellPainterScreen();
     this.renderer?.setPainter(painter);
     this.requestFrame();
   }

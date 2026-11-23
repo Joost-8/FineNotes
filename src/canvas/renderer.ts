@@ -133,6 +133,7 @@ import {
   ByteLru,
   TILE_SIZE,
   type TileRect,
+  panTileBytes,
   previewScale,
   quantiseLevel,
   rasterSize,
@@ -237,6 +238,8 @@ export interface BackdropPainter {
      */
     near?: Array<{ backdrop: Backdrop; geometry: PageGeometry }>,
   ) => void;
+  /** The screen it draws for is `width` x `height` device px (FineNotes#298: caches sized to it). */
+  setScreen?: (width: number, height: number) => void;
   /**
    * `weight` thickens synthetic rules for a small thumbnail (default 1).
    * `target.paper` is the paper theme the caller paints the rest of the page
@@ -929,10 +932,34 @@ export class Renderer {
     this.applyTileBudget();
   }
 
+  /**
+   * Keep every tile a pan can come back to (`panTileBytes`, FineNotes#298),
+   * on a device with memory to spare: the prefetch ring round the dry layer
+   * and a screen more. Off, the budget is {@link TILE_BUDGET_VIEWPORTS}
+   * screens, which on a large screen held fewer tiles than one paint makes.
+   */
+  setPanRoom(on: boolean): void {
+    if (on === this.panRoom) return;
+    this.panRoom = on;
+    this.applyTileBudget();
+  }
+
+  private panRoom = false;
+
   private applyTileBudget(): void {
     const warm = this.warmViewports * this.viewportBytes;
+    const { w, h } = this.screenDevice;
+    const dpr = this.screen.dpr;
+    const pan = this.panRoom
+      ? panTileBytes(
+          w,
+          h,
+          PREFETCH_MARGIN + this.overscan.x * dpr,
+          PREFETCH_MARGIN + this.overscan.y * dpr,
+        )
+      : 0;
     this.tiles.setBudget(
-      Math.max(MIN_TILE_BUDGET, TILE_BUDGET_VIEWPORTS * this.viewportBytes) + warm,
+      Math.max(MIN_TILE_BUDGET, TILE_BUDGET_VIEWPORTS * this.viewportBytes, pan) + warm,
     );
   }
 
