@@ -1376,7 +1376,10 @@ describe("the feedback footer", () => {
     const opened: string[] = [];
     vi.stubGlobal("window", { open: (url: string) => opened.push(url) });
     try {
-      const footer = renderRow(named(rows(makeTab(makePlugin()).tab), FOOTER));
+      const plugin = makePlugin();
+      let reports = 0;
+      Object.assign(plugin, { openReport: () => reports++ });
+      const footer = renderRow(named(rows(makeTab(plugin).tab), FOOTER));
       expect(footer.settingEl.hasClass("goodobsidian-settings-footer")).toBe(true);
       const links = footer.settingEl.findAll("goodobsidian-footer-link");
       expect(links.map((l) => l.textContent)).toEqual([
@@ -1391,9 +1394,10 @@ describe("the feedback footer", () => {
       // The heart has no word; its name is its tooltip.
       expect(links[2].attrs["aria-label"]).toBe("Support FineNotes");
       for (const link of links) link.dispatch("click");
+      // Report a bug searches the tips and the guide first; its last row opens GitHub.
+      expect(reports).toBe(1);
       expect(opened).toEqual([
         "https://github.com/Joost-8/FineNotes/discussions",
-        "https://github.com/Joost-8/FineNotes/issues/new/choose",
         "https://github.com/sponsors/Joost-8",
         "https://x.com/finenotes_",
         "https://www.instagram.com/finenotesobsidian/",

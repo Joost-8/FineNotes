@@ -51,6 +51,8 @@ import {
   textSpread,
 } from "../recognition/ocr/ocr-words";
 import { type OperatorPageLike, opCodes, readFigures } from "./pdf-figures";
+import { repairLigatures } from "../canvas/pdf-ligatures";
+import { commonWords } from "../translate/languages";
 import { type TextWorker, workerTextDocument } from "./pdf-worker-text";
 import type { OcrOwner, OcrService } from "./ocr-service";
 
@@ -118,6 +120,7 @@ const EMPTY: PageText = {
 /** pdf.js's text items as {@link PdfTextItem}s, with their fonts' metrics. */
 export function readTextItems(content: TextContentLike): PdfTextItem[] {
   const items: PdfTextItem[] = [];
+  const fonts: (string | undefined)[] = [];
   for (const raw of content.items) {
     const { str, transform, width, height } = raw;
     if (typeof str !== "string" || !Array.isArray(transform)) continue;
@@ -138,7 +141,17 @@ export function readTextItems(content: TextContentLike): PdfTextItem[] {
     }
     if (style?.vertical === true) item.vertical = true;
     items.push(item);
+    fonts.push(typeof raw.fontName === "string" ? raw.fontName : undefined);
   }
+  // Ligatures some fonts map to private-use codes (U+E000...), read as letters.
+  const repaired = repairLigatures(
+    items.map((item) => item.str),
+    fonts,
+    commonWords(),
+  );
+  repaired.forEach((str, i) => {
+    items[i].str = str;
+  });
   return items;
 }
 

@@ -19,6 +19,7 @@ export const toolbar = {
   "toolbar.tool.coverTape": "Cover tape",
   "toolbar.tool.recordAudio": "Record audio",
   "toolbar.tool.fill": "Fill",
+  "toolbar.tool.translate": "Translate",
   "toolbar.shortcut.selectAll": "Select everything on the page",
   "toolbar.shortcut.deleteSelection": "Delete the selection",
   "toolbar.shortcut.turnIntoText": "Turn the selection into text",

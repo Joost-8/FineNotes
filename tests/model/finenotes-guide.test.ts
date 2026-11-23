@@ -12,6 +12,7 @@ import {
   questionTerms,
   searchGuide,
   stem,
+  withinEdits,
 } from "../../src/model/finenotes-guide";
 
 /** The command ids `main.ts` registers: the first string argument of each command call. */
@@ -196,5 +197,40 @@ describe("searching the guide", () => {
       found.some((id) => ids.includes(id)),
       `${question} → ${found.join(", ")}`,
     ).toBe(true);
+  });
+
+  /**
+   * Real issue titles, typos and all, and the entry that answers them: a bug
+   * report describes what it looks like ("Seen as"), not the feature's name.
+   */
+  const REPORTS: readonly [string, string | readonly string[]][] = [
+    ["Left Panel compeltely dissapers on latest release", "settingSimpleLook"], // #297
+    ["Urgent: update kills side panels in mac, iPhone and iPad", "settingSimpleLook"], // #187
+    ["sidebars disappeared", ["settingSimpleLook", "simpleLook"]],
+    ["Erasor size does not stay cutom size", "eraserSize"], // #247
+    ["Sync problem makes the data lost", "syncDevices"], // #246
+    ["Two-finger double-tap doesn't work", ["settingFingerUndo", "fingerTapUndo"]], // #218
+    ["S-Pen side button don't erase", ["settingStylusButton", "barrelButton"]], // #149
+    ["shapes on hold way too fast", ["holdToSnap", "snapOnLift"]], // #36
+    ["Custom pen cursor does not show when hovering", ["settingPenCursor", "penCursor"]], // #266
+    ["my finger draws lines instead of scrolling", "stylusOnly"],
+  ];
+
+  it.each(REPORTS)("report “%s” finds %s", (title, wanted) => {
+    const ids = typeof wanted === "string" ? [wanted] : wanted;
+    const found = searchGuide(title, 3).map((entry) => entry.id);
+    expect(
+      found.some((id) => ids.includes(id)),
+      `${title} → ${found.join(", ")}`,
+    ).toBe(true);
+  });
+
+  it("forgives a typo only in a long word that starts alike", () => {
+    expect(withinEdits("compeltely", "completely", 1)).toBe(true);
+    expect(withinEdits("erasor", "eraser", 1)).toBe(true);
+    expect(withinEdits("eraser", "easer", 0)).toBe(false);
+    expect(withinEdits("abcdef", "uvwxyz", 2)).toBe(false);
+    // Short words stay exact: "page" is not "pane".
+    expect(searchGuide("pane").map((entry) => entry.id)).not.toContain("addPage");
   });
 });

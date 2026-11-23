@@ -2557,7 +2557,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         const link = (
           label: string,
           key: string,
-          url: string,
+          url: string | (() => void),
           icon?: string,
           iconOnly = false,
         ): void => {
@@ -2567,10 +2567,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           if (icon) setIcon(button.createSpan({ cls: "goodobsidian-footer-icon" }), icon);
           if (iconOnly) button.setAttribute("aria-label", label);
           else button.createSpan({ text: label });
-          button.addEventListener("click", () => window.open(url));
+          button.addEventListener("click", () =>
+            typeof url === "string" ? window.open(url) : url(),
+          );
         };
         link(t("settings.feedback.ideas"), "ideas", COMMUNITY_LINKS.discussions, "lightbulb");
-        link(t("settings.feedback.bug"), "report", COMMUNITY_LINKS.bugReport, "bug");
+        // Through Tips' search first: what is already explained, then GitHub's form.
+        link(t("settings.feedback.bug"), "report", () => this.plugin.openReport(), "bug");
         link(t("settings.feedback.support"), "support", COMMUNITY_LINKS.support, "heart", true);
         for (const { label, url } of COMMUNITY_LINKS.social) {
           link(label, label.toLowerCase().split(" ")[0] ?? "", url);

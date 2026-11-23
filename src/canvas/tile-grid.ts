@@ -48,6 +48,41 @@ export function rasterSize(
 }
 
 /**
+ * The most `tile`-px tiles a `w` x `h` px rectangle can touch, wherever it
+ * lies on the grid: one more than fit along each side.
+ */
+export function tilesTouching(w: number, h: number, tile = TILE_SIZE): number {
+  if (!(w > 0 && h > 0 && tile > 0) || !Number.isFinite(w * h)) return 0;
+  return (Math.ceil(w / tile) + 1) * (Math.ceil(h / tile) + 1);
+}
+
+/**
+ * Bytes of ink tiles a pan needs kept (FineNotes#298): every tile the
+ * prefetch ring can touch, `reachX` and `reachY` device px past each side of
+ * a `screenW` x `screenH` screen (the dry layer's overscan and the ring
+ * beyond it), and one screen more to pan back to. With less, a whole paint
+ * evicts what the paint before it made: on an Android tablet's 3200 x 2000
+ * px screen, 2.5 screens of bytes (64 MB) held fewer tiles than the dry layer
+ * alone touches, and a zoomed-in pan back and forth made 387 of 522 tiles
+ * again.
+ */
+export function panTileBytes(
+  screenW: number,
+  screenH: number,
+  reachX: number,
+  reachY: number,
+  tile = TILE_SIZE,
+): number {
+  if (!(screenW > 0 && screenH > 0)) return 0;
+  const ring = tilesTouching(
+    screenW + 2 * Math.max(0, reachX),
+    screenH + 2 * Math.max(0, reachY),
+    tile,
+  );
+  return ring * tile * tile * 4 + screenW * screenH * 4;
+}
+
+/**
  * The tiles overlapping the device-px rectangle `[x0, x1) x [y0, y1)` of a
  * page's raster. Edge tiles are cut to the raster, so nothing is allocated
  * for pixels no page has.

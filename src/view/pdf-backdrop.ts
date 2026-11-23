@@ -28,6 +28,7 @@ import {
   pdfAreaKey,
   planPdfRaster,
 } from "../canvas/pdf-raster";
+import { roomierPdfBudget } from "../canvas/pdf-tiles";
 import type { Bounds, PageGeometry, PdfFrame } from "../model/document";
 import {
   type PdfAssets,
@@ -89,6 +90,17 @@ export function lowMemoryDevice(env: DeviceSigns = thisDevice()): boolean {
   const memory = env.navigator?.deviceMemory;
   if (typeof memory === "number" && memory > 0) return memory <= 2;
   return typeof env.OffscreenCanvas === "undefined";
+}
+
+/**
+ * Whether this device has memory to spare for caches sized to its screen
+ * (FineNotes#298): one that says it has 8 GB or more. Only Chromium says
+ * (Android, desktop; it reports at most 8); an iPad says nothing and keeps
+ * the fixed budgets, as iOS ends a web view whose canvases hold too much.
+ */
+export function roomyDevice(env: DeviceSigns = thisDevice()): boolean {
+  const memory = env.navigator?.deviceMemory;
+  return typeof memory === "number" && memory >= 8;
 }
 
 /** What {@link lowMemoryDevice} reads: `navigator.deviceMemory` is Chromium's alone. */
@@ -326,12 +338,33 @@ export class PdfBackdropCache {
     budget: PdfMemoryBudget = lowMemoryDevice() ? PDF_BUDGET_LOW : PDF_BUDGET,
   ) {
     this.budget = budget;
+    this.base = budget;
     this.entries = new ByteLru<Cached>(budget.hard, (cached) => releasePdfEntry(cached.entry));
   }
+
+  /** The budget asked for at construction, before {@link setScreen} grew it. */
+  private readonly base: PdfMemoryBudget;
+  /** A canvas was refused ({@link lowMemory}): the budget no longer grows. */
+  private lowered = false;
 
   /** What the cache keeps now (for tests and diagnostics). */
   get memoryBudget(): PdfMemoryBudget {
     return this.budget;
+  }
+
+  /**
+   * The screen the view draws to is `width` x `height` device px: on a
+   * {@link roomyDevice}, keep as much as one that size needs
+   * (`roomierPdfBudget`, FineNotes#298). Elsewhere, and once a canvas was
+   * refused, the budget stays as it is.
+   */
+  setScreen(width: number, height: number, roomy = roomyDevice()): void {
+    if (!roomy || this.lowered || this.destroyed) return;
+    const next = roomierPdfBudget(this.base, width, height);
+    const { soft, hard, keepDetail } = this.budget;
+    if (next.soft === soft && next.hard === hard && next.keepDetail === keepDetail) return;
+    this.budget = next;
+    this.entries.setBudget(next.hard);
   }
 
   /**
@@ -346,6 +379,7 @@ export class PdfBackdropCache {
       keepDetail: Math.min(this.budget.keepDetail, PDF_BUDGET_LOW.keepDetail),
     };
     this.budget = low;
+    this.lowered = true;
     this.entries.setBudget(low.hard);
     const cutoff = now() - RECENT_USE_MS;
     this.entries.deleteWhere((cached) => cached.lastUsed <= cutoff);

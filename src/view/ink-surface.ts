@@ -1,5 +1,7 @@
 import { bindScrollThumb } from "./scroll-thumb-drag";
 import { InkLatency, paintsPenDown } from "./ink-latency";
+import { joinRunOnLines } from "../translate/languages";
+import type { TranslateTarget } from "./translate-window";
 import { type PdfRenderArea, boundsMeet } from "../canvas/pdf-raster";
 import {
   ALIGN_GUIDE_OVERSHOOT_PX,
@@ -358,7 +360,7 @@ import {
   planBoardSpace,
 } from "../model/board-space";
 import { afterPainted } from "./after-painted";
-import { lowMemoryDevice } from "./pdf-backdrop";
+import { lowMemoryDevice, roomyDevice } from "./pdf-backdrop";
 import { slidesAround } from "../model/beside-pdfs";
 import { type PageSnapshot, prefersReducedMotion } from "./motion";
 import {
@@ -438,6 +440,7 @@ import {
   type TextLayout,
   type TextRect,
   type TextSelection,
+  rangeText,
   selectText,
   textMarkNote,
   textUnder,
@@ -1090,6 +1093,11 @@ export interface InkSurfaceCallbacks {
    */
   onAskAboutSelection?: (pageIndex: number, bounds: Bounds) => void;
   canAskAi?: () => boolean;
+  /**
+   * Translate selected text (PDF text, a highlight's text, text boxes) on
+   * this device: the view opens its card. Translate is offered only with it.
+   */
+  onTranslate?: (target: TranslateTarget) => void;
   /**
    * Screenshot of a patch of page `pageIndex` (page space): what a lasso
    * drawn round nothing offers, as Goodnotes does. The host draws the page
@@ -3442,6 +3450,8 @@ export class InkSurface {
     // the CPU (a desktop with its GPU turned off), the larger canvas cost
     // more each frame than it saved.
     renderer.useOverscan(Platform.isMobile);
+    // Tiles for a pan to come back to, where there is memory for them (#298).
+    renderer.setPanRoom(roomyDevice());
     this.renderer = renderer;
 
     // The ruler hears every press first (capture, on the surface): a finger
@@ -5856,9 +5866,17 @@ export class InkSurface {
     this.layoutTail(cssW, cssH);
   }
 
+  /** The backdrop painter's caches are sized to the screen in device px (#298). */
+  private tellPainterScreen(): void {
+    if (!(this.cssW > 0 && this.cssH > 0)) return;
+    const dpr = backingScale(this.win.devicePixelRatio);
+    this.backdropPainter?.setScreen?.(Math.round(this.cssW * dpr), Math.round(this.cssH * dpr));
+  }
+
   /** The end of every layout: size the canvases, place the paper and paint. */
   private layoutTail(cssW: number, cssH: number): void {
     this.renderer?.resize(cssW, cssH, backingScale(this.win.devicePixelRatio));
+    this.tellPainterScreen();
     this.syncViewport();
     this.syncInkCursor();
     this.settleIfIdle();
@@ -8719,6 +8737,7 @@ export class InkSurface {
    */
   setBackdropPainter(painter: BackdropPainter | null): void {
     this.backdropPainter = painter;
+    this.tellPainterScreen();
     this.renderer?.setPainter(painter);
     this.requestFrame();
   }
@@ -15812,6 +15831,17 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         run: () => this.copyText(highlighted),
       });
     }
+    // Translate the highlighted PDF text, or the selected text boxes' text.
+    const boxText = sel.textBoxes
+      .map((box) => box.text.trim())
+      .filter((text) => text !== "")
+      .join("\n\n");
+    const loneBox =
+      sel.textBoxes.length === 1 && selectedCount(sel) === 1 ? sel.textBoxes[0] : undefined;
+    const translate = highlighted
+      ? this.translateAction(sel.pageId, heading, highlighted, { fromPdf: true })
+      : this.translateAction(sel.pageId, heading, boxText, { textBox: loneBox });
+    if (translate) actions.push(translate);
     // The word check's card, for any word, underlined or not.
     const correct = this.correctWordAction(index, sel.strokes);
     if (menu.handwriting && correct) actions.push(correct);
@@ -16165,7 +16195,98 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       });
     }
     const rest = this.pressActions(press).filter((action) => action.id !== "select-page");
-    return [...own, ...rest.map((action) => ({ ...action, bar: false, menu: "row" as const }))];
+    // Translate beside Copy, as iPadOS offers it over selected text.
+    const translate =
+      text && text.pick.text
+        ? this.translateAction(press.pageId, rectsBounds(text.pick.rects), text.pick.text, {
+            fromPdf: true,
+            group: "press",
+            bar: true,
+            menu: "none",
+            showLabel: true,
+          })
+        : null;
+    const [first, ...others] = own;
+    return [
+      first,
+      ...(translate ? [translate] : []),
+      ...others,
+      ...rest.map((action) => ({ ...action, bar: false, menu: "row" as const })),
+    ];
+  }
+
+  /**
+   * Translate: the card for `text`, opened under `bounds` (page space) on
+   * page `pageId`. Its Add as text box puts the translation under them;
+   * `textBox` (a lone selected box) adds Replace. Null when the view does
+   * not translate or there is no text.
+   */
+  private translateAction(
+    pageId: string,
+    bounds: Bounds | null,
+    text: string,
+    options: Partial<SelectionAction> & { fromPdf?: boolean; textBox?: TextBoxElement } = {},
+  ): SelectionAction | null {
+    // Offered on any selected text whether or not the Translate tool is on
+    // the bar: hiding the tool hides only the way in without a selection
+    // (Joost, 2026-11-22). Never gate this on `toolOff` or `itemOff`.
+    const onTranslate = this.callbacks.onTranslate;
+    if (!onTranslate || !text.trim()) return null;
+    const { fromPdf, textBox, ...extra } = options;
+    return {
+      id: "translate",
+      icon: "languages",
+      label: t("surface.selectionBar.translate"),
+      group: "edit",
+      ...extra,
+      run: () => {
+        const index = this.doc.pages.findIndex((page) => page.id === pageId);
+        const box = this.boxForPage(pageId);
+        let at: { x: number; y: number; top: number } | undefined;
+        if (box && bounds) {
+          const x = box.x + (bounds.minX + bounds.maxX) / 2;
+          const bottom = this.toClient({ x, y: box.y + bounds.maxY });
+          at = { x: bottom.x, y: bottom.y, top: this.toClient({ x, y: box.y + bounds.minY }).y };
+        }
+        const below = bounds ? { x: bounds.minX, y: bounds.maxY + 12 } : null;
+        // The window takes the selection bar's place, as Copy text lets go too.
+        this.clearSelection();
+        onTranslate({
+          text: fromPdf ? joinRunOnLines(text) : text,
+          context: index >= 0 ? this.pageWords(index) : undefined,
+          at,
+          onInsert:
+            index >= 0 && below && !this.callbacks.isLocked?.()
+              ? (out) => this.addPastedText(index, below, out)
+              : undefined,
+          onReplace:
+            textBox && !this.callbacks.isLocked?.()
+              ? (out) => this.replaceTextBoxText(pageId, textBox.id, out)
+              : undefined,
+        });
+      },
+    };
+  }
+
+  /**
+   * The words on page `index`: its PDF text, then its text boxes'. The
+   * Translate window tells a short selection's language from them.
+   */
+  private pageWords(index: number): string {
+    const parts: string[] = [];
+    const layout = this.pageText(index);
+    if (layout) parts.push(rangeText(layout, { start: 0, end: layout.chars.length }));
+    for (const box of this.pageAt(index)?.textBoxes ?? []) parts.push(box.text);
+    return parts.join(" ").trim();
+  }
+
+  /** A text box's text replaced by `text`: one undo step. */
+  private replaceTextBoxText(pageId: string, id: string, text: string): void {
+    const page = this.doc.pages.find((p) => p.id === pageId);
+    if (!page?.textBoxes.some((box) => box.id === id)) return;
+    this.history.push(this.doc, new SetTextBoxText(pageId, id, text));
+    this.syncTextBoxes();
+    this.changed([pageId]);
   }
 
   /** Highlight `pick` on page `pageId` in the highlighter's colour: one stroke a line, one undo step. */
@@ -16405,6 +16526,20 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       return true;
     }
     // Between pages: the page in view, as a paste does.
+    const region = this.visibleRegion(this.pageIndex);
+    if (!region) return false;
+    const at = { x: (region.minX + region.maxX) / 2, y: (region.minY + region.maxY) / 2 };
+    this.addPastedText(this.pageIndex, at, text);
+    return true;
+  }
+
+  /**
+   * `text` as a new text box in the middle of the page in view, selected,
+   * as a pasted text lands (the Translate window's Add as text box). False
+   * when the notebook is locked or no page is in view.
+   */
+  addTextInView(text: string): boolean {
+    if (this.callbacks.isLocked?.() || !text.trim()) return false;
     const region = this.visibleRegion(this.pageIndex);
     if (!region) return false;
     const at = { x: (region.minX + region.maxX) / 2, y: (region.minY + region.maxY) / 2 };
@@ -23040,6 +23175,19 @@ function selectablesOf(page: Page): ElementLists {
 }
 
 /** How many elements a selection holds. */
+/** The page-space bounds of a text pick's line boxes, or null for none. */
+function rectsBounds(
+  rects: readonly { x: number; y: number; w: number; h: number }[],
+): Bounds | null {
+  if (rects.length === 0) return null;
+  return {
+    minX: Math.min(...rects.map((r) => r.x)),
+    minY: Math.min(...rects.map((r) => r.y)),
+    maxX: Math.max(...rects.map((r) => r.x + r.w)),
+    maxY: Math.max(...rects.map((r) => r.y + r.h)),
+  };
+}
+
 function selectedCount(sel: ElementLists): number {
   return (
     sel.strokes.length +

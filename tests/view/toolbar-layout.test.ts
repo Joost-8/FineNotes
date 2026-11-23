@@ -48,6 +48,7 @@ describe("the default layout", () => {
       "tape",
       "record",
       "fill",
+      "translate",
     ]);
   });
 

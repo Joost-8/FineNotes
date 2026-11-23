@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   ByteLru,
   TILE_SIZE,
+  panTileBytes,
   previewScale,
   quantiseLevel,
   rasterSize,
   tileKey,
   tilesCovering,
   tilesForBounds,
+  tilesTouching,
 } from "../../src/canvas/tile-grid";
 
 describe("tilesCovering", () => {
@@ -150,5 +152,34 @@ describe("ByteLru", () => {
     expect(lru.bytes).toBe(0);
     expect(gone).toEqual(["p1:0", "p1:1", "p2:0"]);
     expect(lru.delete("nope")).toBe(false);
+  });
+});
+
+describe("tiles a pan keeps (FineNotes#298)", () => {
+  it("counts the most tiles a rectangle can touch, wherever it lies", () => {
+    expect(tilesTouching(512, 512)).toBe(4);
+    expect(tilesTouching(1000, 300)).toBe(6);
+    // Every placement of a 1000 x 300 px rectangle touches no more than that.
+    for (let x = 0; x < 512; x += 37) {
+      for (let y = 0; y < 512; y += 41) {
+        expect(tilesCovering(1e5, 1e5, 1, x, y, x + 1000, y + 300).length).toBeLessThanOrEqual(6);
+      }
+    }
+    expect(tilesTouching(0, 300)).toBe(0);
+    expect(tilesTouching(Infinity, 300)).toBe(0);
+    expect(tilesTouching(1024, 1024, 1024)).toBe(4);
+  });
+
+  it("holds the prefetch ring round the dry layer and a screen more", () => {
+    const tile = TILE_SIZE * TILE_SIZE * 4;
+    // An Android tablet: 3200 x 2000 px, overscan 480 / 300 px, ring 512 past it.
+    const tablet = panTileBytes(3200, 2000, 992, 812);
+    expect(tablet).toBe(12 * 9 * tile + 3200 * 2000 * 4);
+    // 2.5 screens, the budget before, held fewer tiles than the dry layer alone touches.
+    expect(2.5 * 3200 * 2000 * 4).toBeLessThan(tilesTouching(4160, 2600) * tile);
+    expect(tablet).toBeGreaterThan(2.5 * 3200 * 2000 * 4);
+    expect(panTileBytes(0, 2000, 10, 10)).toBe(0);
+    // A negative reach is none.
+    expect(panTileBytes(512, 512, -5, -5)).toBe(4 * tile + 512 * 512 * 4);
   });
 });

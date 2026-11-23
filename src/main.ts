@@ -39,6 +39,7 @@ import { DEFAULT_PEN_GESTURES, type PenGestures, penGesturesOf } from "./ink/pen
 import {
   type Editor,
   MarkdownView,
+  apiVersion,
   Notice,
   addIcon,
   getIcon,
@@ -54,6 +55,8 @@ import {
   normalizePath,
 } from "obsidian";
 import { disposeVaultFonts } from "./view/font-store";
+import { type OsFacts, bugFormDevice, bugReportUrl, osName } from "./model/bug-report";
+import { readOsFacts } from "./view/os-facts";
 import {
   ICON_IMPORT_NOTEBOOK,
   ICON_IMPORT_NOTEBOOK_SVG,
@@ -307,6 +310,7 @@ import { GrapeFiles } from "./view/grape-files";
 import { StartupLog } from "./view/startup-log";
 import { DeviceTranscriber, decodeForSpeech } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
+import { Translator } from "./view/translator";
 import { obsidianOcrDeps } from "./view/ocr-deps";
 import { cleanupText, removeOtherOcrModels } from "./view/ocr-models";
 import { OcrOfferModal } from "./view/ocr-offer";
@@ -456,6 +460,13 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Models downloaded on first use, listed under Settings › Models on this device (model-downloads.ts). */
   readonly models = new ModelRegistry(this.app, () => this.pluginDir);
+
+  /** Translating selected text on this device (translator.ts). */
+  readonly translator = new Translator({
+    app: this.app,
+    models: this.models,
+    pluginDir: () => this.pluginDir,
+  });
 
   /** Transcribing recordings on this device: one job at a time (device-transcriber.ts). */
   readonly speech = new DeviceTranscriber({
@@ -860,9 +871,12 @@ export default class GoodObsidianPlugin extends Plugin {
       this.learner.dispose();
       this.handwriting.dispose();
       this.speech.dispose();
+      this.translator.dispose();
       this.ocr.dispose();
       this.models.dispose();
     });
+    // Translation models already downloaded show in Settings › Models on this device.
+    this.app.workspace.onLayoutReady(() => void this.translator.registerStored());
     const ocrStatus = new OcrStatus(this.ocr);
     this.register(() => ocrStatus.dispose());
     // A release that still bundles Grape writes it to the handwriting folder,
@@ -1027,6 +1041,12 @@ export default class GoodObsidianPlugin extends Plugin {
       id: "show-tips",
       name: t("notebooks.command.tips"),
       callback: () => this.openTips(),
+    });
+
+    this.addCommand({
+      id: "report-bug",
+      name: t("notebooks.command.reportBug"),
+      callback: () => this.openReport(),
     });
 
     this.addCommand({
@@ -2124,7 +2144,42 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Tips: the collections, or `page` when one is given. */
-  openTips(page: TipsPage | null = null): void {
+  /** Report a bug: Tips' search, asking what went wrong, then GitHub's form. */
+  openReport(): void {
+    this.openTips(null, true);
+  }
+
+  /**
+   * This device's system, read when Tips opens so the report row can open
+   * GitHub at once: `window.open` after an `await` may lose the tap that
+   * allowed it.
+   */
+  private osFacts: OsFacts | null = null;
+
+  /** Read this device's system once, in the background. */
+  private learnOs(): void {
+    if (this.osFacts) return;
+    void readOsFacts().then((facts) => {
+      this.osFacts = facts;
+    });
+  }
+
+  /** GitHub's bug form, filled in with `title` and what FineNotes knows of this device. */
+  private openBugForm(title: string): void {
+    const facts = this.osFacts;
+    window.open(
+      bugReportUrl({
+        title,
+        plugin: this.manifest.version,
+        obsidian: apiVersion,
+        device: bugFormDevice(Platform),
+        os: facts ? osName(facts) : null,
+      }),
+    );
+  }
+
+  openTips(page: TipsPage | null = null, reporting = false): void {
+    this.learnOs();
     new TipsModal(
       this.app,
       {
@@ -2135,6 +2190,7 @@ export default class GoodObsidianPlugin extends Plugin {
         features: this.featureHost(),
       },
       page,
+      reporting,
     ).open();
   }
 
@@ -2212,6 +2268,7 @@ export default class GoodObsidianPlugin extends Plugin {
       ask: (query) => {
         window.open(`${ASK_URL}&title=${encodeURIComponent(query)}`);
       },
+      report: (query) => this.openBugForm(query),
     };
   }
 
