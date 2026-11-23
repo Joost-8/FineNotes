@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FineNotes guide</title>
+    <meta
+      name="description"
+      content="Search FineNotes' guide: where everything is and how it works."
+    />
+    <style>
+      :root {
+        --bg: #fbfbfd;
+        --fg: #1d1b24;
+        --muted: #625d70;
+        --rule: #e3e0ea;
+        --panel: #f2f0f6;
+        --accent: #6a3fb5;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15131b;
+          --fg: #ece9f3;
+          --muted: #a8a2b8;
+          --rule: #2e2a39;
+          --panel: #1e1b26;
+          --accent: #b99cf0;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.55 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 40px 16px 80px;
+      }
+      h1 {
+        font-size: 1.7rem;
+        margin: 0 0 4px;
+      }
+      .lede {
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+      #q {
+        width: 100%;
+        font: inherit;
+        font-size: 1.05rem;
+        padding: 12px 16px;
+        border: 2px solid var(--rule);
+        border-radius: 12px;
+        background: var(--panel);
+        color: inherit;
+      }
+      #q:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .hit {
+        padding: 14px 0;
+        border-bottom: 1px solid var(--rule);
+      }
+      .hit h2 {
+        font-size: 1.1rem;
+        margin: 0 0 4px;
+      }
+      .hit p {
+        margin: 4px 0;
+      }
+      .where,
+      .notes,
+      .none {
+        color: var(--muted);
+        font-size: 0.93rem;
+      }
+      a {
+        color: var(--accent);
+      }
+      .report {
+        margin-top: 18px;
+      }
+      .pages {
+        padding-left: 20px;
+      }
+      footer {
+        margin-top: 40px;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>FineNotes guide</h1>
+      <p class="lede">
+        Where everything is and how it works. Type what you see or what you want to do.
+      </p>
+      <input id="q" type="search" autocomplete="off" aria-label="Search the guide" />
+      <div id="results" aria-live="polite"></div>
+      <footer>
+        Built from <a href="https://github.com/Joost-8/FineNotes/tree/main/guide">guide/</a> with
+        the same search as the app's Tips. The search runs in your browser.
+      </footer>
+    </main>
+    <script>
+      /*SCRIPT*/
+    </script>
+  </body>
+</html>

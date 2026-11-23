@@ -1,0 +1,62 @@
+name: Guide site
+
+# Publishes the guide's search page (scripts/guide-site/) to GitHub Pages
+# whenever the guide or its search changes on main. Needs Pages turned on
+# with "GitHub Actions" as its source (Settings › Pages); until then the
+# deploy step fails and nothing is published. A new site of our own: the
+# original project's docs/ and pages.yml stay deleted.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "guide/**"
+      - "src/model/finenotes-guide.ts"
+      - "src/model/finenotes-guide-data.ts"
+      - "src/model/guide-markdown.ts"
+      - "src/model/guide-site.ts"
+      - "scripts/guide-site/**"
+      - ".github/workflows/guide-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guide-site
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the page
+        run: node scripts/guide-site/build.mjs site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

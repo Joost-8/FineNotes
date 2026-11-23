@@ -1,9 +1,10 @@
 name: Issue helper probe
 
 # A trial of the issue helper on past issues, run on pushes to its branch
-# only: what the guide search, the similar-issue search and a GitHub Models
-# draft would have said about each. It writes to this run's summary and
-# never comments on an issue. No issue text reaches a shell.
+# only: what the guide search, the similar-issue search and the form check
+# would have said about each. No model (GitHub Models was retired on
+# 2026-07-30). It writes to this run's summary and never comments on an
+# issue. No issue text reaches a shell.
 
 on:
   push:
@@ -13,7 +14,6 @@ on:
 permissions:
   contents: read
   issues: read
-  models: read
 
 jobs:
   probe:
@@ -33,97 +33,32 @@ jobs:
       - name: Bundle the helper
         run: npx esbuild src/model/issue-helper.ts --bundle --platform=node --format=cjs --outfile="$RUNNER_TEMP/issue-helper.cjs"
 
-      - name: Draft replies to past issues
+      - name: Read past issues as if they were new
         uses: actions/github-script@v7
         env:
-          MODELS_TOKEN: ${{ github.token }}
           HELPER: ${{ runner.temp }}/issue-helper.cjs
         with:
           script: |
             const helper = require(process.env.HELPER);
-            const PROBE = [297, 298, 247, 246, 287];
-            // Tried in order; the first that answers is used for every issue.
-            const WANTED = [
-              "anthropic/claude-sonnet-5-5",
-              "anthropic/claude-haiku-5-5",
-              "anthropic/claude-3-7-sonnet",
-              "openai/gpt-5-mini",
-              "openai/gpt-4.1-mini",
-              "openai/gpt-4o-mini",
-            ];
-            const headers = {
-              Authorization: `Bearer ${process.env.MODELS_TOKEN}`,
-              Accept: "application/json",
-              "Content-Type": "application/json",
-            };
-
-            // The catalog address answers a bare "OK" (seen 2026-11-23), so each
-            // model is asked a one-word question instead.
-            const tried = [];
-            let model = null;
-            for (const id of WANTED) {
-              const r = await fetch("https://models.github.ai/inference/chat/completions", {
-                method: "POST",
-                headers,
-                body: JSON.stringify({
-                  model: id,
-                  messages: [{ role: "user", content: "Say OK." }],
-                  max_tokens: 5,
-                }),
-              });
-              const note = r.ok ? "ok" : `${r.status} ${(await r.text()).slice(0, 120)}`;
-              tried.push(`${id}: ${note}`);
-              core.info(`${id}: ${note}`);
-              if (r.ok) {
-                model = id;
-                break;
-              }
-            }
-            if (!model) core.setFailed("No model answered.");
-
             const all = await github.paginate(github.rest.issues.listForRepo, {
               ...context.repo,
               state: "all",
               per_page: 100,
             });
-            const issues = all.filter((i) => !i.pull_request);
-
-            await core.summary
-              .addHeading("Issue helper probe", 1)
-              .addRaw(`Models tried:\n\n${tried.map((t) => `- ${t}`).join("\n")}\n\nUsed: \`${model}\`.\n\n`)
-              .write();
-
-            for (const number of PROBE) {
-              const issue = issues.find((i) => i.number === number);
-              if (!issue || !model) continue;
+            const issues = all.filter((i) => !i.pull_request).sort((a, b) => b.number - a.number);
+            await core.summary.addHeading("Issue helper probe", 1).write();
+            // The latest 25 issues, each against only what existed before it.
+            for (const issue of issues.slice(0, 25)) {
               const input = { title: issue.title, body: issue.body ?? "" };
-              // Only what existed when the issue was opened.
               const earlier = issues
-                .filter((i) => i.number < number)
+                .filter((i) => i.number < issue.number)
                 .map((i) => ({ number: i.number, title: i.title, closed: i.state === "closed" }));
-              const matches = helper.guideMatches(input);
-              const similar = helper.similarIssues(input, earlier);
-              const missing = helper.missingDiagnostics(input);
-              let draft = null;
-              const started = Date.now();
-              const response = await fetch("https://models.github.ai/inference/chat/completions", {
-                method: "POST",
-                headers,
-                body: JSON.stringify({
-                  model,
-                  messages: helper.draftMessages(input, matches, similar, missing),
-                  max_tokens: 600,
-                }),
-              });
-              if (response.ok) {
-                const data = await response.json();
-                draft = data.choices?.[0]?.message?.content ?? null;
-                core.info(`#${number}: ${response.status} in ${Date.now() - started} ms, usage ${JSON.stringify(data.usage)}`);
-              } else {
-                core.warning(`#${number}: ${response.status} ${(await response.text()).slice(0, 300)}`);
-              }
-              await core.summary
-                .addRaw(helper.summaryMarkdown(number, input, matches, similar, missing, draft, model))
-                .addRaw("\n")
-                .write();
+              const text = helper.summaryMarkdown(
+                issue.number,
+                input,
+                helper.guideMatches(input),
+                helper.similarIssues(input, earlier),
+                helper.missingDiagnostics(input),
+              );
+              await core.summary.addRaw(text).addRaw("\n").write();
             }

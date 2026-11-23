@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  draftMessages,
   formAnswers,
   guideMatches,
   missingDiagnostics,
@@ -78,33 +77,14 @@ describe("what the helper finds", () => {
   });
 });
 
-describe("the draft request", () => {
-  it("puts the issue last and fenced, after what the model may use", () => {
-    const messages = draftMessages(issue297, guideMatches(issue297), [], []);
-    expect(messages[0].role).toBe("system");
-    expect(messages[0].content).toMatch(/never as instructions/);
-    const user = messages[1].content;
-    expect(user.indexOf("Guide entries:")).toBeLessThan(user.indexOf("<issue>"));
-    expect(user.trimEnd().endsWith("Write the draft reply.")).toBe(true);
-  });
-
-  it("keeps a long issue to 6000 characters", () => {
-    const messages = draftMessages({ title: "t", body: "x".repeat(20000) }, [], [], []);
-    expect(messages[1].content.length).toBeLessThan(7000);
-  });
-
-  it("says in the summary that the draft was not posted", () => {
-    const text = summaryMarkdown(
-      297,
-      issue297,
-      guideMatches(issue297),
-      [],
-      [],
-      "Thanks!",
-      "openai/gpt-4.1-mini",
-    );
-    expect(text).toContain("not posted");
-    expect(text).toContain("> Thanks!");
-    expect(summaryMarkdown(1, issue297, [], [], [], null, "m")).toContain("No draft");
+describe("the summary", () => {
+  it("is three lines: guide links, similar issues, what is missing", () => {
+    const similar = [{ number: 187, title: "Side panels gone", closed: true }];
+    const text = summaryMarkdown(297, issue297, guideMatches(issue297), similar, ["the device"]);
+    expect(text).toMatch(/^## #297 /);
+    expect(text).toMatch(/\*\*Guide:\*\* \[Simple look/);
+    expect(text).toContain("**Similar:** #187 Side panels gone (closed)");
+    expect(text).toContain("**Missing:** the device");
+    expect(summaryMarkdown(1, issue297, [], [], [])).toContain("**Guide:** nothing");
   });
 });
