@@ -310,6 +310,7 @@ import { GrapeFiles } from "./view/grape-files";
 import { StartupLog } from "./view/startup-log";
 import { DeviceTranscriber, decodeForSpeech } from "./view/device-transcriber";
 import { ModelRegistry } from "./view/model-downloads";
+import { Translator } from "./view/translator";
 import { obsidianOcrDeps } from "./view/ocr-deps";
 import { cleanupText, removeOtherOcrModels } from "./view/ocr-models";
 import { OcrOfferModal } from "./view/ocr-offer";
@@ -459,6 +460,13 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Models downloaded on first use, listed under Settings › Models on this device (model-downloads.ts). */
   readonly models = new ModelRegistry(this.app, () => this.pluginDir);
+
+  /** Translating selected text on this device (translator.ts). */
+  readonly translator = new Translator({
+    app: this.app,
+    models: this.models,
+    pluginDir: () => this.pluginDir,
+  });
 
   /** Transcribing recordings on this device: one job at a time (device-transcriber.ts). */
   readonly speech = new DeviceTranscriber({
@@ -863,9 +871,12 @@ export default class GoodObsidianPlugin extends Plugin {
       this.learner.dispose();
       this.handwriting.dispose();
       this.speech.dispose();
+      this.translator.dispose();
       this.ocr.dispose();
       this.models.dispose();
     });
+    // Translation models already downloaded show in Settings › Models on this device.
+    this.app.workspace.onLayoutReady(() => void this.translator.registerStored());
     const ocrStatus = new OcrStatus(this.ocr);
     this.register(() => ocrStatus.dispose());
     // A release that still bundles Grape writes it to the handwriting folder,

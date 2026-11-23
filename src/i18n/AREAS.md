@@ -2,7 +2,7 @@
 
 An area's agent edits only these files plus src/i18n/en/<area>.ts.
 
-## ai (29)
+## ai (31)
 
 - src/audio/recording.ts
 - src/audio/speech-models.ts
@@ -31,6 +31,8 @@ An area's agent edits only these files plus src/i18n/en/<area>.ts.
 - src/view/note-audio.ts
 - src/view/spelling-row.ts
 - src/view/task-modal.ts
+- src/view/translate-window.ts
+- src/view/translator.ts
 - src/view/word-check.ts
 - src/view/word-popover.ts
 

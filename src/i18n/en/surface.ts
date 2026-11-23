@@ -335,6 +335,7 @@ export const surface = {
   "surface.selectionBar.copyStyle": "Copy style",
   "surface.selectionBar.text": "Text",
   "surface.selectionBar.copyText": "Copy text",
+  "surface.selectionBar.translate": "Translate",
   "surface.selectionBar.contentsHeading": "Contents heading",
   "surface.selectionBar.region": "Frame to embed",
   "surface.selectionBar.sticker": "Sticker",
