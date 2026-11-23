@@ -202,6 +202,7 @@ export default defineConfig({
         "src/model/finenotes-guide-data.ts",
         "src/model/guide-markdown.ts",
         "src/model/bug-report.ts",
+        "src/model/issue-helper.ts",
         "src/recognition/ask-tool-dialects.ts",
         "src/recognition/ai-image.ts",
         "src/recognition/ai-menu-model.ts",

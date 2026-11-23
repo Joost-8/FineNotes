@@ -1,0 +1,112 @@
+name: Issue helper probe
+
+# A trial of the issue helper on past issues, run on pushes to its branch
+# only: what the guide search, the similar-issue search and a GitHub Models
+# draft would have said about each. It writes to this run's summary and
+# never comments on an issue. No issue text reaches a shell.
+
+on:
+  push:
+    branches: [issue-helper]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+  models: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bundle the helper
+        run: npx esbuild src/model/issue-helper.ts --bundle --platform=node --format=cjs --outfile="$RUNNER_TEMP/issue-helper.cjs"
+
+      - name: Draft replies to past issues
+        uses: actions/github-script@v7
+        env:
+          MODELS_TOKEN: ${{ github.token }}
+          HELPER: ${{ runner.temp }}/issue-helper.cjs
+        with:
+          script: |
+            const helper = require(process.env.HELPER);
+            const PROBE = [297, 298, 247, 246, 287];
+            // Tried in order; the first the catalog has is used.
+            const WANTED = [
+              "anthropic/claude-sonnet-5-5",
+              "anthropic/claude-haiku-5-5",
+              "openai/gpt-4.1-mini",
+              "openai/gpt-4o-mini",
+            ];
+            const headers = {
+              Authorization: `Bearer ${process.env.MODELS_TOKEN}`,
+              Accept: "application/json",
+              "Content-Type": "application/json",
+            };
+
+            const catalogResponse = await fetch("https://models.github.ai/catalog/models", { headers });
+            const catalog = catalogResponse.ok ? await catalogResponse.json() : [];
+            const ids = catalog.map((m) => m.id);
+            core.info(`Catalog (${catalogResponse.status}): ${ids.length} models`);
+            core.info(ids.join("\n"));
+            const vendors = [...new Set(ids.map((id) => id.split("/")[0]))].sort();
+            const claude = ids.filter((id) => /claude|anthropic/i.test(id));
+            const model = WANTED.find((id) => ids.includes(id)) ?? WANTED[WANTED.length - 1];
+
+            const all = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo,
+              state: "all",
+              per_page: 100,
+            });
+            const issues = all.filter((i) => !i.pull_request);
+
+            await core.summary
+              .addHeading("Issue helper probe", 1)
+              .addRaw(`Catalog: ${ids.length} models from ${vendors.join(", ")}. Claude: ${claude.length ? claude.join(", ") : "none"}. Used: \`${model}\`.\n\n`)
+              .write();
+
+            for (const number of PROBE) {
+              const issue = issues.find((i) => i.number === number);
+              if (!issue) continue;
+              const input = { title: issue.title, body: issue.body ?? "" };
+              // Only what existed when the issue was opened.
+              const earlier = issues
+                .filter((i) => i.number < number)
+                .map((i) => ({ number: i.number, title: i.title, closed: i.state === "closed" }));
+              const matches = helper.guideMatches(input);
+              const similar = helper.similarIssues(input, earlier);
+              const missing = helper.missingDiagnostics(input);
+              let draft = null;
+              const started = Date.now();
+              const response = await fetch("https://models.github.ai/inference/chat/completions", {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  model,
+                  messages: helper.draftMessages(input, matches, similar, missing),
+                  max_tokens: 600,
+                }),
+              });
+              if (response.ok) {
+                const data = await response.json();
+                draft = data.choices?.[0]?.message?.content ?? null;
+                core.info(`#${number}: ${response.status} in ${Date.now() - started} ms, usage ${JSON.stringify(data.usage)}`);
+              } else {
+                core.warning(`#${number}: ${response.status} ${(await response.text()).slice(0, 300)}`);
+              }
+              await core.summary
+                .addRaw(helper.summaryMarkdown(number, input, matches, similar, missing, draft, model))
+                .addRaw("\n")
+                .write();
+            }
