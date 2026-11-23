@@ -83,7 +83,7 @@ vi.mock("obsidian", async () => ({
 }));
 
 const { VaultBackdropRenderer } = await import("../../src/view/backdrop-renderer");
-const { PDF_BUDGET, PDF_BUDGET_LOW, PdfBackdropCache, lowMemoryDevice } =
+const { PDF_BUDGET, PDF_BUDGET_LOW, PdfBackdropCache, lowMemoryDevice, roomyDevice } =
   await import("../../src/view/pdf-backdrop");
 const { PdfCanvasUnavailable, PdfRenderCancelled } = await import("../../src/view/pdf-worker");
 
@@ -1071,6 +1071,32 @@ describe("memory on devices short of it", () => {
     expect(lowMemoryDevice({ navigator: {} })).toBe(true);
     expect(lowMemoryDevice({ navigator: {}, OffscreenCanvas: class {} })).toBe(false);
     expect(lowMemoryDevice({})).toBe(true);
+  });
+
+  it("knows a device with memory to spare, and an iPad is not one (#298)", () => {
+    expect(roomyDevice({ navigator: { deviceMemory: 8 } })).toBe(true);
+    expect(roomyDevice({ navigator: { deviceMemory: 32 } })).toBe(true);
+    expect(roomyDevice({ navigator: { deviceMemory: 4 } })).toBe(false);
+    expect(roomyDevice({ navigator: {}, OffscreenCanvas: class {} })).toBe(false);
+    expect(roomyDevice({})).toBe(false);
+  });
+
+  it("grows to the screen on such a device, and no more once a canvas was refused (#298)", () => {
+    const MB = 1024 * 1024;
+    const c = new PdfBackdropCache(app as never, PDF_BUDGET);
+    c.setScreen(3200, 2000, false);
+    expect(c.memoryBudget).toEqual(PDF_BUDGET);
+    c.setScreen(3200, 2000, true);
+    expect(c.memoryBudget.keepDetail).toBe(90 * MB);
+    expect(c.memoryBudget.hard).toBeGreaterThan(PDF_BUDGET.hard);
+    // A smaller pane grows it from the base again, not from the last screen.
+    c.setScreen(800, 600, true);
+    expect(c.memoryBudget).toEqual(PDF_BUDGET);
+    c.setScreen(3200, 2000, true);
+    c.lowMemory();
+    expect(c.memoryBudget).toEqual(PDF_BUDGET_LOW);
+    c.setScreen(3200, 2000, true);
+    expect(c.memoryBudget).toEqual(PDF_BUDGET_LOW);
   });
 
   it("keeps less there from the start", () => {

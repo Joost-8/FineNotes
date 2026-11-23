@@ -138,6 +138,11 @@ export class VaultBackdropRenderer implements BackdropRenderer, BackdropPainter 
     this.exact = null;
   }
 
+  /** The view's screen, `width` x `height` device px: the PDF cache sizes its budget to it. */
+  setScreen(width: number, height: number): void {
+    this.pdf?.setScreen(width, height);
+  }
+
   /** Tell the renderer what resolution PDF pages should be rasterised at. */
   setDeviceScale(deviceScale: number): void {
     this.scale = quantiseScale(deviceScale);
