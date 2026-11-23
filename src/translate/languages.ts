@@ -190,6 +190,29 @@ export function pickSource(
 }
 
 /**
+ * The selection's language, given its page's (`context`, detected from the
+ * text around it). fastText misreads short text (36 of 75 single words of a
+ * Dutch course book were read as English, German, French...), and a word
+ * taken for the language it is translated into is not translated at all; a
+ * page's text it reads right (155 of 155). The page wins unless the
+ * selection's own guess is sure (`SURE`) and long enough to trust
+ * (`SURE_LETTERS`): an English quote on a Dutch page.
+ */
+export const SURE = 0.9;
+export const SURE_LETTERS = 30;
+
+export function withContext(
+  text: string,
+  own: LanguageGuess | null,
+  context: LanguageGuess | null,
+): LanguageGuess | null {
+  if (!context) return own;
+  if (!own) return context;
+  if (own.lang === context.lang) return own.p >= context.p ? own : context;
+  return own.p >= SURE && letters(text) >= SURE_LETTERS ? own : context;
+}
+
+/**
  * Common short words of the languages most notes are in: a first guess at
  * a text's language before the detector is downloaded (it needs the
  * engine's download, and the download depends on the language).
@@ -330,6 +353,13 @@ const COMMON_WORDS: Readonly<Record<string, readonly string[]>> = {
   tr: ["ve", "bir", "bu", "da", "de", "için", "ile", "değil", "çok", "ne", "olarak"],
 };
 
+/** Every language's common short words, as one set (pdf-ligatures.ts reads it). */
+let commonSet: ReadonlySet<string> | null = null;
+export function commonWords(): ReadonlySet<string> {
+  commonSet ??= new Set(Object.values(COMMON_WORDS).flat());
+  return commonSet;
+}
+
 /**
  * A first guess at a text's language without the detector: by script
  * (Cyrillic → Russian, kana → Japanese, Hangul → Korean, Han → Chinese,
@@ -449,4 +479,18 @@ export function joinRunOnLines(text: string): string {
     if (last === "-" && /\p{L}-/u.test(before)) return "";
     return `${last} `;
   });
+}
+
+/**
+ * `text` without private-use characters (U+E000 to U+F8FF): a PDF font's
+ * own codes for its glyphs, which mean nothing to a translator and which
+ * iPadOS draws as emoji.
+ */
+export function withoutPrivateUse(text: string): string {
+  let out = "";
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    if (code < 0xe000 || code > 0xf8ff) out += ch;
+  }
+  return out;
 }

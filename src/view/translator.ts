@@ -31,6 +31,8 @@ import {
   routeOf,
   sourceLanguages,
   textPieces,
+  withContext,
+  withoutPrivateUse,
 } from "../translate/languages";
 import {
   TRANSLATE_TAG,
@@ -45,6 +47,8 @@ import type { ModelRegistry } from "./model-downloads";
 export const IDLE_RELEASE_MS = 2 * 60_000;
 /** Loading a model or translating a long text: at most this long before the worker counts as stuck. */
 const ANSWER_TIMEOUT_MS = 120_000;
+/** The text around a selection read for its language: a page's worth. */
+const CONTEXT_CHARS = 3000;
 
 export interface TranslatorHost {
   app: App;
@@ -162,9 +166,22 @@ export class Translator {
   /**
    * The text's language: fastText's when the engine is here, else a rough
    * guess from its script and common words. `fallback` is the language
-   * last translated from.
+   * last translated from; `context` the text around the selection (its
+   * page), whose language wins unless the text's own is sure
+   * (`withContext`).
    */
-  async detect(text: string, fallback: string | null): Promise<LanguageGuess | null> {
+  async detect(
+    text: string,
+    fallback: string | null,
+    context?: string,
+  ): Promise<LanguageGuess | null> {
+    const own = await this.detectOne(text, fallback);
+    const around = context?.trim() ? context.slice(0, CONTEXT_CHARS) : "";
+    if (!around || around === text) return own;
+    return withContext(text, own, await this.detectOne(around, null));
+  }
+
+  private async detectOne(text: string, fallback: string | null): Promise<LanguageGuess | null> {
     const known = sourceLanguages();
     const rough = roughGuess(text, known);
     const engine = this.engine();
@@ -186,7 +203,7 @@ export class Translator {
     const route = routeOf(from, to);
     if (!route) throw new Error(t("ai.translate.unsupported", { from, to }));
     if (route.length === 0) return text;
-    const cut = textPieces(text);
+    const cut = textPieces(withoutPrivateUse(text));
     if (cut.pieces.length === 0) return text;
     const toLoad: ModelBytes[] = [];
     const transfer: ArrayBuffer[] = [];

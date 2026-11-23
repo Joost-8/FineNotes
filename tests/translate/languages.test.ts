@@ -18,6 +18,8 @@ import {
   targetLanguages,
   textPieces,
   translationPairs,
+  withContext,
+  withoutPrivateUse,
 } from "../../src/translate/languages";
 import { ENGINE_FILES, MODELS_URL } from "../../src/translate/catalog";
 
@@ -283,5 +285,34 @@ describe("rough guess, before the detector is downloaded", () => {
   it("only names languages the catalogue has", () => {
     expect(roughGuess("Привет", ["en"])).toBeNull();
     expect(roughGuess("de het een", ["en", "de"])).toBeNull();
+  });
+});
+
+describe("withContext", () => {
+  const nl = { lang: "nl", p: 0.97 };
+  it("takes the page's language for a short selection read as another", () => {
+    expect(withContext("taken", { lang: "en", p: 0.96 }, nl)).toEqual(nl);
+    expect(withContext("De schipper gooit de trossen los.", { lang: "es", p: 0.59 }, nl)).toEqual(
+      nl,
+    );
+  });
+
+  it("keeps a long selection that is sure of another language", () => {
+    const en = { lang: "en", p: 0.98 };
+    const text = "This sentence is written in English on a Dutch page.";
+    expect(withContext(text, en, nl)).toEqual(en);
+  });
+
+  it("uses what there is when one side is missing", () => {
+    expect(withContext("x", null, nl)).toEqual(nl);
+    expect(withContext("x", nl, null)).toEqual(nl);
+  });
+});
+
+describe("withoutPrivateUse", () => {
+  it("drops a PDF font's private-use codes", () => {
+    const code = String.fromCharCode(0xe001);
+    expect(withoutPrivateUse(`a${code}b`)).toBe("ab");
+    expect(withoutPrivateUse("geen")).toBe("geen");
   });
 });

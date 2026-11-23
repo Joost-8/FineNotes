@@ -21,7 +21,12 @@ import { Notice, setIcon } from "obsidian";
 import { formatSize, totalBytes } from "../downloads/model-manifest";
 import type { AssetStore } from "../downloads/model-store";
 import { currentLanguage, t } from "../i18n/translate";
-import { pickTarget, sourceLanguages, targetLanguages } from "../translate/languages";
+import {
+  pickTarget,
+  sourceLanguages,
+  targetLanguages,
+  withoutPrivateUse,
+} from "../translate/languages";
 import { TRANSLATE_MIN, translatePlace } from "../translate/window-place";
 import { FloatingWindow } from "./floating-window";
 import { writeSystemText } from "./system-clipboard";
@@ -39,6 +44,12 @@ let lastSource: string | null = null;
 /** Text to translate, and what can be done with the translation. */
 export interface TranslateTarget {
   text: string;
+  /**
+   * The text around it (the PDF page it was selected on): its language is
+   * the text's unless the text says otherwise for sure. Short selections
+   * cannot tell their language on their own.
+   */
+  context?: string;
   /** The selection's bottom centre and top, client px: the window opens beside it. */
   at?: { x: number; y: number; top: number };
   /** Put the translation on the page as a new text box. */
@@ -157,7 +168,7 @@ export class TranslateWindow {
   load(target: TranslateTarget): void {
     this.target = target;
     this.frame.raise();
-    this.sourceEl.value = target.text;
+    this.sourceEl.value = withoutPrivateUse(target.text);
     if (!target.text) {
       this.sourceEl.focus();
       this.showEmpty();
@@ -273,7 +284,10 @@ export class TranslateWindow {
     if (from === AUTO) {
       const chosen = this.options.memory.from();
       const fallback = chosen && chosen !== AUTO ? chosen : lastSource;
-      const guess = await this.options.translator.detect(text, fallback);
+      // The page's text tells the language while the text is still the selection.
+      const selected = withoutPrivateUse(this.target.text).trim() === text;
+      const context = selected ? this.target.context : undefined;
+      const guess = await this.options.translator.detect(text, fallback, context);
       if (turn !== this.turn || this.closed) return;
       from = guess?.lang ?? "en";
       const detected = t("ai.translate.detected", { language: languageName(from) });

@@ -439,6 +439,7 @@ import {
   type TextLayout,
   type TextRect,
   type TextSelection,
+  rangeText,
   selectText,
   textMarkNote,
   textUnder,
@@ -16132,6 +16133,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         this.clearSelection();
         onTranslate({
           text: fromPdf ? joinRunOnLines(text) : text,
+          context: index >= 0 ? this.pageWords(index) : undefined,
           at,
           onInsert:
             index >= 0 && below && !this.callbacks.isLocked?.()
@@ -16144,6 +16146,18 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         });
       },
     };
+  }
+
+  /**
+   * The words on page `index`: its PDF text, then its text boxes'. The
+   * Translate window tells a short selection's language from them.
+   */
+  private pageWords(index: number): string {
+    const parts: string[] = [];
+    const layout = this.pageText(index);
+    if (layout) parts.push(rangeText(layout, { start: 0, end: layout.chars.length }));
+    for (const box of this.pageAt(index)?.textBoxes ?? []) parts.push(box.text);
+    return parts.join(" ").trim();
   }
 
   /** A text box's text replaced by `text`: one undo step. */
