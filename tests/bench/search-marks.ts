@@ -123,7 +123,15 @@ for (const path of notebooks(vault).filter((p) => p.includes(filter))) {
   const ai = collectPageText(doc.pages, null, sidecar);
   const keys = pageKeys(doc.pages);
   const title = rel.slice(rel.lastIndexOf("/") + 1).replace(/\.notebook\.md$/, "");
-  const tally: Tally = { pages: 0, unread: 0, words: 0, dark: 0, matches: 0, placed: 0, focused: 0 };
+  const tally: Tally = {
+    pages: 0,
+    unread: 0,
+    words: 0,
+    dark: 0,
+    matches: 0,
+    placed: 0,
+    focused: 0,
+  };
   doc.pages.forEach((page, i) => {
     const pageText = index[i];
     const sources = pageText.sources.filter((s) => s.kind === "handwriting");
