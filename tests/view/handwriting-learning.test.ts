@@ -6,6 +6,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_PAGE_GEOMETRY } from "../../src/model/document";
+import type { DrawnSheet } from "../../src/view/handwriting-learning";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
@@ -27,11 +28,15 @@ const {
   symbolsToWrite,
   writePracticePage,
   writeSymbolPractice,
+  nextDrawnSheet,
+  FIRST_DRAWN,
+  LATER_DRAWN,
   MIN_PRACTICE_LINES,
   LEARN_STEPS,
 } = await import("../../src/view/handwriting-learning");
+type DrawnSheetT = DrawnSheet;
 const { learnSummary, nextSheetAction } = await import("../../src/recognition/hwr/learned-model");
-const { buildPracticeFile, PRACTICE_LINES, SYMBOL_SET } =
+const { buildDrawnFile, buildPracticeFile, DRAWN_SET, PRACTICE_LINES, SYMBOL_SET } =
   await import("../../src/recognition/practice");
 
 describe("the learned model", () => {
@@ -67,6 +72,8 @@ describe("practice sets", () => {
     expect(practiceSetOf("Handwriting practice 2 1.practice.md")).toBe(1);
     expect(practiceSetOf("Handwriting practice.practice.md")).toBeNull();
     expect(practiceSetOf("Handwriting practice 7.practice.md")).toBeNull();
+    // A drawn sheet's name says nothing: its file does (practice.set 200).
+    expect(practiceSetOf("Practice sheet 2.practice.md")).toBeNull();
     // The symbol sheet, and a second copy of it.
     expect(practiceSetOf("Symbol practice.practice.md")).toBe(SYMBOL_SET);
     expect(practiceSetOf("Symbol practice 2.practice.md")).toBe(SYMBOL_SET);
@@ -326,14 +333,37 @@ describe("practice sheets", () => {
     expect(await practiceSheets(host)).toEqual([]);
   });
 
-  it("writes the set after the old notebook's", async () => {
+  it("draws the next sheet: the anchor first, then new lines the writer has not been asked", async () => {
     const path = "Handwriting practice.notebook.md";
     const { host } = fakeHost({ [path]: "" }, { [path]: legacy(20, 20) });
-    const made: unknown[] = [];
+    const made: unknown[][] = [];
     (host as { createPracticeFile: unknown }).createPracticeFile = async (...a: unknown[]) =>
       void made.push(a);
     await writePracticePage(host);
-    expect(made).toEqual([[2]]);
+    expect(made).toHaveLength(1);
+    const [set, only, drawn] = made[0] as [number, unknown, DrawnSheetT];
+    expect(set).toBe(DRAWN_SET);
+    expect(only).toBeUndefined();
+    // The old notebook is sheet 1, so this is sheet 2, the writer's first drawn one.
+    expect(drawn.sheet).toBe(2);
+    expect(drawn.lines.slice(0, 10).map((l) => l.id)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `a${i + 1}`),
+    );
+    expect(drawn.lines).toHaveLength(10 + FIRST_DRAWN);
+    const old = new Set(PRACTICE_LINES.slice(0, 20));
+    expect(drawn.lines.slice(10).some((l) => old.has(l.text))).toBe(false);
+
+    // With a drawn sheet in the vault: no anchor, thirty new lines, none repeated.
+    const first = buildDrawnFile(DEFAULT_PAGE_GEOMETRY, drawn.lines, drawn.draw, 2);
+    const second = fakeHost(
+      { "Practice sheet 2.practice.md": "" },
+      { "Practice sheet 2.practice.md": first },
+    );
+    const next = await nextDrawnSheet(second.host, 5);
+    expect(next.lines).toHaveLength(LATER_DRAWN);
+    expect(next.lines.some((l) => l.id.startsWith("a"))).toBe(false);
+    const asked = new Set(drawn.lines.map((l) => l.text));
+    expect(next.lines.some((l) => asked.has(l.text))).toBe(false);
   });
 
   it("writes only the symbols added since a symbol sheet was written", async () => {
