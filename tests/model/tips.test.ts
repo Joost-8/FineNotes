@@ -31,6 +31,7 @@ const english: Record<string, string> = EN;
 const fake = (id: string): Tip => ({
   id,
   scene: "hold",
+  handlers: ["src/model/tips.ts#highlightsSince"],
   title: "notebooks.tips.title",
   body: "notebooks.tips.title",
 });

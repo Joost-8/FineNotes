@@ -7,6 +7,7 @@
 
 import { compareVersions } from "../changelog";
 import type { TextKey } from "../i18n/translate";
+import { TIP_HANDLERS, type TipId } from "./tip-handlers";
 import type { SceneId } from "./tip-scenes";
 
 export interface Tip {
@@ -14,6 +15,11 @@ export interface Tip {
   title: TextKey;
   body: TextKey;
   scene: SceneId;
+  /**
+   * The code that does what the tip says, each `"<file>#<name>"`
+   * (tip-handlers.ts). A test fails when one is gone.
+   */
+  handlers: readonly string[];
   /** A pad to try the gesture on. */
   tryIt?: "shape" | "scribble";
 }
@@ -37,10 +43,12 @@ export interface ReleaseHighlights {
   tips: Tip[];
 }
 
-function tip(id: string, scene: SceneId, tryIt?: Tip["tryIt"]): Tip {
+/** A tip can only be made for an id whose code tip-handlers.ts names. */
+function tip(id: TipId, scene: SceneId, tryIt?: Tip["tryIt"]): Tip {
   return {
     id,
     scene,
+    handlers: TIP_HANDLERS[id],
     tryIt,
     title: `notebooks.tips.${id}.title` as TextKey,
     body: `notebooks.tips.${id}.body` as TextKey,

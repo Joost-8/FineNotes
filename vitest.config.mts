@@ -18,6 +18,7 @@ export default defineConfig({
         "src/model/library-rail.ts",
         "src/model/tips.ts",
         "src/model/tip-scenes.ts",
+        "src/model/tip-handlers.ts",
         "src/model/notebook-tree.ts",
         "src/i18n/languages.ts",
         "src/i18n/translate.ts",
