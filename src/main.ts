@@ -55,7 +55,8 @@ import {
   normalizePath,
 } from "obsidian";
 import { disposeVaultFonts } from "./view/font-store";
-import { bugFormDevice, bugReportUrl } from "./model/bug-report";
+import { type OsFacts, bugFormDevice, bugReportUrl, osName } from "./model/bug-report";
+import { readOsFacts } from "./view/os-facts";
 import {
   ICON_IMPORT_NOTEBOOK,
   ICON_IMPORT_NOTEBOOK_SVG,
@@ -2137,19 +2138,37 @@ export default class GoodObsidianPlugin extends Plugin {
     this.openTips(null, true);
   }
 
+  /**
+   * This device's system, read when Tips opens so the report row can open
+   * GitHub at once: `window.open` after an `await` may lose the tap that
+   * allowed it.
+   */
+  private osFacts: OsFacts | null = null;
+
+  /** Read this device's system once, in the background. */
+  private learnOs(): void {
+    if (this.osFacts) return;
+    void readOsFacts().then((facts) => {
+      this.osFacts = facts;
+    });
+  }
+
   /** GitHub's bug form, filled in with `title` and what FineNotes knows of this device. */
   private openBugForm(title: string): void {
+    const facts = this.osFacts;
     window.open(
       bugReportUrl({
         title,
         plugin: this.manifest.version,
         obsidian: apiVersion,
         device: bugFormDevice(Platform),
+        os: facts ? osName(facts) : null,
       }),
     );
   }
 
   openTips(page: TipsPage | null = null, reporting = false): void {
+    this.learnOs();
     new TipsModal(
       this.app,
       {

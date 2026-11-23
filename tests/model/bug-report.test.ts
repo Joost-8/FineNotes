@@ -5,6 +5,7 @@ import {
   bugFormDevice,
   bugReportUrl,
   guideAnswers,
+  osName,
   versionsLine,
 } from "../../src/model/bug-report";
 import { type GuideEntry, guideEntry } from "../../src/model/finenotes-guide";
@@ -78,6 +79,36 @@ describe("the bug form's link", () => {
       bugReportUrl({ title: "a".repeat(500), plugin: "1", obsidian: "1", device: null }),
     );
     expect(url.searchParams.get("title")).toHaveLength(200);
+  });
+});
+
+describe("the system in the Versions line", () => {
+  it("names it as people do, from what each platform really reports", () => {
+    // Read on Joost's iPad Air (Capacitor's Device plugin) and this laptop (Electron).
+    expect(osName({ system: "ios", version: "26.6.1", tablet: true })).toBe("iPadOS 26.6.1");
+    expect(osName({ system: "ios", version: "26.1" })).toBe("iOS 26.1");
+    expect(osName({ system: "windows", version: "10.0.26200" })).toBe("Windows 11 (build 26200)");
+    expect(osName({ system: "windows", version: "10.0.19045" })).toBe("Windows 10 (build 19045)");
+    expect(osName({ system: "macos", version: "15.1.0" })).toBe("macOS 15.1");
+    expect(osName({ system: "android", version: "15" })).toBe("Android 15");
+  });
+
+  it("says only the name when the version is missing or not a version", () => {
+    expect(osName({ system: "ios", version: null, tablet: true })).toBe("iPadOS");
+    expect(osName({ system: "android", version: "unknown" })).toBe("Android");
+    expect(osName({ system: "windows", version: "6.1" })).toBe("Windows");
+    expect(osName({ system: "macos", version: "10_15_7" })).toBe("macOS");
+    // A kernel's version says nothing about the distribution.
+    expect(osName({ system: "linux", version: "6.8.0" })).toBe("Linux");
+  });
+
+  it("is added to the versions, and left out when unknown", () => {
+    expect(versionsLine({ plugin: "2.10.0", obsidian: "1.15.1", os: "iPadOS 26.6.1" })).toBe(
+      "FineNotes 2.10.0, Obsidian 1.15.1, iPadOS 26.6.1",
+    );
+    expect(versionsLine({ plugin: "2.10.0", obsidian: "1.15.1", os: null })).toBe(
+      "FineNotes 2.10.0, Obsidian 1.15.1",
+    );
   });
 });
 

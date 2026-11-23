@@ -63,11 +63,64 @@ export interface BugReportFacts {
   /** Obsidian's version (`apiVersion`). */
   obsidian: string;
   device: BugFormDevice | null;
+  /** The system and its version ("iPadOS 26.6.1"), from `osName`; null when unknown. */
+  os?: string | null;
 }
 
-/** The versions line, in the form's own example's shape ("FineNotes 2.0.0, Obsidian 1.13.8"). */
-export function versionsLine(facts: Pick<BugReportFacts, "plugin" | "obsidian">): string {
-  return `FineNotes ${facts.plugin}, Obsidian ${facts.obsidian}`;
+/**
+ * What the device says about its system, read where it is trustworthy: on
+ * the iPad, iPhone and Android, Capacitor's Device plugin (the user agent of
+ * an iPad claims "Mac OS X 10_15_7" whatever it runs); on a computer,
+ * Electron's `process.getSystemVersion()`.
+ */
+export interface OsFacts {
+  system: "ios" | "android" | "windows" | "macos" | "linux";
+  /** As the platform gives it ("26.6.1", "10.0.26200", "15.1.0"); null when unread. */
+  version: string | null;
+  /** An iPad rather than an iPhone: iPadOS. */
+  tablet?: boolean;
+}
+
+/** A version that is only numbers and dots, at most four parts: anything else is not trusted. */
+const VERSION = /^\d{1,5}(\.\d{1,6}){0,3}$/;
+
+/**
+ * The system as the bug form's Versions field wants it: "iPadOS 26.6.1",
+ * "Android 15", "Windows 11 (build 26200)", "macOS 15.1". The name alone when
+ * the version is missing or does not look like one: never a wrong number.
+ * Linux gives only its kernel's version, which says nothing about the
+ * distribution, so it is the name alone.
+ */
+export function osName(facts: OsFacts): string {
+  const version = facts.version?.trim() ?? "";
+  const ok = VERSION.test(version);
+  switch (facts.system) {
+    case "ios": {
+      const name = facts.tablet ? "iPadOS" : "iOS";
+      return ok ? `${name} ${version}` : name;
+    }
+    case "android":
+      return ok ? `Android ${version}` : "Android";
+    case "windows": {
+      // Windows 11 still says 10.0; its builds start at 22000.
+      const [major, , build] = version.split(".").map(Number);
+      if (!ok || major !== 10 || !Number.isFinite(build)) return "Windows";
+      return `${build >= 22000 ? "Windows 11" : "Windows 10"} (build ${build})`;
+    }
+    case "macos":
+      return ok ? `macOS ${version.replace(/\.0$/, "")}` : "macOS";
+    case "linux":
+      return "Linux";
+  }
+}
+
+/**
+ * The versions line, in the form's own example's shape
+ * ("FineNotes 2.0.0, Obsidian 1.13.8, iPadOS 26.1").
+ */
+export function versionsLine(facts: Pick<BugReportFacts, "plugin" | "obsidian" | "os">): string {
+  const os = facts.os ? `, ${facts.os}` : "";
+  return `FineNotes ${facts.plugin}, Obsidian ${facts.obsidian}${os}`;
 }
 
 /**
