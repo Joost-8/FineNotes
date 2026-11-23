@@ -89,7 +89,9 @@ const n17 = (r, lo, hi) => {
     const i = Math.floor(r() * digits.length);
     digits[i] = r() < 0.5 ? "1" : "7";
     if (digits[0] === "0") digits[0] = "7";
-    return Number(digits.join(""));
+    const n = Number(digits.join(""));
+    // Never outside the range asked for: a divisor of 2 to 17 must not become 1.
+    if (n >= lo && n <= hi) return n;
   }
   return int(r, lo, hi);
 };
@@ -175,7 +177,7 @@ const notesTemplates = [
   (r) =>
     `Ex. ${n17(r, 1, 17)}${pick(r, ["a", "b", "c", "d"])} and ${n17(r, 1, 17)}${pick(r, ["a", "b", "c"])} for ${pick(r, DAYS)}`,
   (r) =>
-    `Office hours ${pick(r, DAYS)} ${pad(int(r, 9, 16))}-${pad(int(r, 10, 17))}, room ${n17(r, 100, 799)}`,
+    `Office hours ${pick(r, DAYS.slice(0, 5))} ${((h) => `${pad(h)}-${pad(h + int(r, 1, 3))}`)(int(r, 9, 15))}, room ${n17(r, 100, 799)}`,
   (r) => `Score: ${n17(r, 1, 17)}/${n17(r, 18, 20)} on the ${pick(r, COURSES)} test`,
   (r) => `Recap ${pick(r, COURSES)}, lecture ${n17(r, 1, 17)} (part ${n17(r, 1, 3)})`,
   (r) => `Buy ${n17(r, 2, 12)} pens, ${int(r, 2, 7)} pads & tape`,
@@ -442,6 +444,17 @@ const signsTemplates = [
   (r) => `α + β = ${pick(r, [90, 180])}°`,
 ];
 
+/**
+ * A sum nobody would write: an answer of 0, times, divided or raised by 1,
+ * or the same number taken from itself ("7^2 - 7^2").
+ */
+function trivial(line) {
+  if (/= 0\b/.test(line)) return true;
+  if (/[*/^] 1\b|[*/^]1\b|\b1 [*/]|\b1\^/.test(line)) return true;
+  const same = /\b(\d+)(\^\d)? - \1\2\b/.exec(line);
+  return same !== null;
+}
+
 /** `size` distinct lines from `templates`, seeded per kind. */
 function generate(kind, templates, size) {
   const r = rng(Number.parseInt(hash(kind).slice(0, 8), 16));
@@ -450,6 +463,7 @@ function generate(kind, templates, size) {
   for (let tries = 0; out.length < size && tries < size * 200; tries++) {
     const line = templates[tries % templates.length](r).replace(/\s+/g, " ").trim();
     if (line.length > 44 || have.has(line)) continue;
+    if (kind === "sums" && trivial(line)) continue;
     have.add(line);
     out.push(line);
   }

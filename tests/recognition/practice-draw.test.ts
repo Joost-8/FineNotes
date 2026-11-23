@@ -54,6 +54,16 @@ describe("the line pool", () => {
     }
   });
 
+  it("has no sum nobody would write, and no office hours that end before they start", () => {
+    for (const line of PRACTICE_POOL.sums) {
+      expect(/= 0\b|[*/^] 1\b|\b1 [*/]|\b1\^|\b(\d+)(\^\d)? - \1\2\b/.test(line), line).toBe(false);
+    }
+    for (const line of PRACTICE_POOL.notes) {
+      const hours = /^Office hours \w+ (\d+)-(\d+),/.exec(line);
+      if (hours) expect(Number(hours[1]), line).toBeLessThan(Number(hours[2]));
+    }
+  });
+
   it("finds every line by its id", () => {
     expect(poolLine("a1")?.text).toBe(ANCHOR_LINES[0]);
     expect(poolLine("p0")?.text).toBe(PRACTICE_POOL.prose[0]);

@@ -40,7 +40,7 @@ const TEXT = {
   "count.equation.one": "{count} equation",
   "consent.sentHeading": "What is sent",
   "consent.sent":
-    "For each item: the pen strokes (their shape, pressure and timing) and the text they say. With them: FineNotes' version, the Grape you read with, the kind of device, and a random number made on this device that tells your items apart from other people's. Later practice sheets, corrections and equations are shared too, when you press Share in settings. An equation, sum or graph FineNotes read counts as labelled once you used what it read.",
+    "For each item: the pen strokes (their shape, pressure and timing) and the text they say. With them: FineNotes' version, the Grape you read with, the kind of device, and a random number made on this device that tells your items apart from other people's. Later practice sheets, corrections and equations, sums or graphs whose reading you used are shared too, when you press Share in settings.",
   "consent.neverHeading": "What is never sent",
   "consent.never":
     "Note and vault names, where on a page anything was written, the rest of your notes, words you only marked as real words (often names), your AI transcriptions, ink FineNotes wrote for you (neatened or rewritten words), your name and your email. The server does not store your IP address.",
