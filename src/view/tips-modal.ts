@@ -9,9 +9,18 @@ import { TIP_COLLECTIONS, TIP_SECTIONS, type Tip, type TipCollection } from "../
 import { tipScene } from "../model/tip-scenes";
 import { TipPad } from "./tip-pad";
 import { TipVisual } from "./tip-visual";
-import { featureById, featureLink } from "../model/feature-index";
+import { featureById, featureLink, settingKeyOf } from "../model/feature-index";
+import { guideAnswers } from "../model/bug-report";
+import { guideEntryUrl } from "../model/guide-markdown";
 import { DialogKeyboard } from "./dialog-keyboard";
-import { type FeatureHost, featureControl, featureList } from "./feature-rows";
+import {
+  type FeatureHost,
+  askRow,
+  featureControl,
+  featureHits,
+  featureList,
+  featureRow,
+} from "./feature-rows";
 import { closeMenuOnPressOutside } from "./menu-dismiss";
 
 /** Features a search inside Tips lists at most. */
@@ -53,6 +62,11 @@ export class TipsModal extends Modal {
     app: App,
     private readonly actions: TipsActions,
     private readonly opening: TipsPage | null = null,
+    /**
+     * Opened to report a problem: the search asks what went wrong, shows
+     * what the tips and the guide say about it, and ends in the report.
+     */
+    private readonly reporting = false,
   ) {
     super(app);
   }
@@ -93,10 +107,11 @@ export class TipsModal extends Modal {
   private showCollections(): void {
     this.clearLive();
     this.page = null;
-    this.titleEl.setText(t("notebooks.tips.title"));
+    this.titleEl.setText(t(this.reporting ? "notebooks.report.title" : "notebooks.tips.title"));
     const top = this.contentEl;
     top.empty();
     const root = this.searchField(top);
+    if (this.reporting) return;
     const byCell = new Map<Element, TipVisual>();
     this.observer =
       typeof IntersectionObserver === "undefined"
@@ -231,44 +246,114 @@ export class TipsModal extends Modal {
    * the collections go.
    */
   private searchField(top: HTMLElement): HTMLElement {
+    const reporting = this.reporting;
     // Beside the field, where they are seen at once: what an update brought, and the welcome.
     const head = top.createDiv({ cls: "goodobsidian-tips-head" });
     const field = head.createDiv({ cls: "goodobsidian-tips-search" });
-    this.quick(head, "sparkles", t("notebooks.tips.whatsNew"), () => this.actions.showNews());
-    this.quick(head, "hand", t("notebooks.tips.welcome"), () => this.actions.showWelcome());
-    setIcon(field.createSpan(), "search");
+    if (!reporting) {
+      this.quick(head, "sparkles", t("notebooks.tips.whatsNew"), () => this.actions.showNews());
+      this.quick(head, "hand", t("notebooks.tips.welcome"), () => this.actions.showWelcome());
+    }
+    setIcon(field.createSpan(), reporting ? "bug" : "search");
+    const placeholder = t(reporting ? "notebooks.report.placeholder" : "notebooks.features.search");
     const input = field.createEl("input", {
-      attr: {
-        type: "search",
-        placeholder: t("notebooks.features.search"),
-        "aria-label": t("notebooks.features.search"),
-      },
+      attr: { type: "search", placeholder, "aria-label": placeholder },
     });
     const found = top.createDiv({ cls: "goodobsidian-tips-found is-hidden" });
     const browse = top.createDiv({ cls: "goodobsidian-tips-browse" });
-    input.addEventListener("input", () => {
+    const show = (): void => {
       const query = input.value.trim();
       found.empty();
-      found.toggleClass("is-hidden", query === "");
-      browse.toggleClass("is-hidden", query !== "");
-      if (query === "") return;
-      featureList(found, query, this.actions.features, {
-        limit: TIPS_SEARCH_HITS,
-        askFor: true,
-        done: () => this.close(),
-      });
-    });
+      found.toggleClass("is-hidden", query === "" && !reporting);
+      browse.toggleClass("is-hidden", query !== "" || reporting);
+      const answered = query !== "" && this.answers(found, query);
+      this.reportRow(found, query, answered);
+    };
+    input.addEventListener("input", show);
+    if (reporting) show();
     this.keyboard?.end();
     this.keyboard = new DialogKeyboard(this.modalEl);
     this.keyboard.start(input);
     // Obsidian puts the cursor in a dialog's first field. With a keyboard that
     // is "type to search"; on a tablet it would raise the keyboard over the tips.
-    if (Platform.isMobile) {
+    // Someone here to report came to type, so the field keeps it.
+    if (Platform.isMobile && !reporting) {
       window.setTimeout(() => {
         if (input.ownerDocument.activeElement === input) input.blur();
       }, 0);
     }
     return browse;
+  }
+
+  /**
+   * What the tips, settings and guide say about `query`: the features first,
+   * each with its switch; then what the guide adds (a feature by its row, the
+   * rest as a link to its guide page). When nothing answered, Tips offers
+   * to ask for it as a feature; a report goes straight to its own row.
+   * Returns whether anything answered.
+   */
+  private answers(found: HTMLElement, query: string): boolean {
+    const host = this.actions.features;
+    const done = (): void => this.close();
+    const shown = featureList(found, query, host, { limit: TIPS_SEARCH_HITS, done });
+    const shownIds = new Set(featureHits(query, TIPS_SEARCH_HITS).map((feature) => feature.id));
+    const guide = guideAnswers(query, shownIds, (id) => {
+      const feature = featureById(id);
+      return feature ? { setting: settingKeyOf(feature) } : null;
+    });
+    if (guide.features.length + guide.entries.length > 0) {
+      found.createDiv({ cls: "goodobsidian-library-label", text: t("notebooks.report.guide") });
+      const list = found.createDiv({ cls: "goodobsidian-feature-list" });
+      for (const id of guide.features) {
+        const feature = featureById(id);
+        if (feature) featureRow(list, feature, host, done);
+      }
+      for (const entry of guide.entries) {
+        const row = list.createDiv({ cls: "goodobsidian-feature-row" });
+        const main = row.createEl("button", {
+          cls: "goodobsidian-feature-main clickable-icon",
+          attr: { type: "button" },
+        });
+        setIcon(main.createSpan({ cls: "goodobsidian-feature-icon" }), "book-open");
+        const words = main.createSpan({ cls: "goodobsidian-feature-words" });
+        // The guide is English, as its page on GitHub is.
+        words.createSpan({
+          cls: "goodobsidian-feature-title",
+          text: entry.title,
+          attr: { lang: "en" },
+        });
+        words.createSpan({
+          cls: "goodobsidian-feature-sub",
+          text: entry.where,
+          attr: { lang: "en" },
+        });
+        main.addEventListener("click", () => window.open(guideEntryUrl(entry)));
+      }
+      return true;
+    }
+    if (shown === 0 && !this.reporting) askRow(found, query, host, done);
+    return shown > 0;
+  }
+
+  /**
+   * The last row: report it on GitHub, with what was typed as the title.
+   * "Not it?" only under answers it passes over.
+   */
+  private reportRow(found: HTMLElement, query: string, answered: boolean): void {
+    const report = this.actions.features.report;
+    if (!report || (query === "" && !this.reporting)) return;
+    const button = found.createEl("button", {
+      cls: "goodobsidian-feature-ask goodobsidian-feature-report clickable-icon",
+      attr: { type: "button" },
+    });
+    setIcon(button.createSpan({ cls: "goodobsidian-feature-icon" }), "bug");
+    button.createSpan({
+      text: t(answered ? "notebooks.report.notIt" : "notebooks.report.go"),
+    });
+    button.addEventListener("click", () => {
+      this.close();
+      report(query);
+    });
   }
 
   /**

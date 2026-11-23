@@ -395,6 +395,7 @@ export const notebooks = {
   "notebooks.command.openLibrary": "Open the notebook library",
   "notebooks.command.rereadScannedPages": "Re-read scanned pages of this PDF",
   "notebooks.command.tips": "Show the tips",
+  "notebooks.command.reportBug": "Report a bug",
   "notebooks.command.whatsNew": "Show what's new on Home",
   "notebooks.command.simpleLook": "Simple look: hide or show Obsidian's tabs, sidebars and menus",
   "notebooks.command.nextLookStyle": "Look: next style",
@@ -933,6 +934,11 @@ export const notebooks = {
   "notebooks.features.linkCopied": "Link copied",
   "notebooks.features.hide": "Hide from search",
   "notebooks.features.unhide": "Show in search again",
+  "notebooks.report.title": "Report a bug",
+  "notebooks.report.placeholder": "What went wrong?",
+  "notebooks.report.guide": "From the guide",
+  "notebooks.report.go": "Report it on GitHub",
+  "notebooks.report.notIt": "Not it? Report it on GitHub",
   "notebooks.features.darkShade": "Dark pages show colours in another shade",
 
   // One-time hints after doing something the slow way (model/nudges.ts).
