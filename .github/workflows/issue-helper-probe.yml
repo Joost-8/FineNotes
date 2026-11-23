@@ -42,10 +42,12 @@ jobs:
           script: |
             const helper = require(process.env.HELPER);
             const PROBE = [297, 298, 247, 246, 287];
-            // Tried in order; the first the catalog has is used.
+            // Tried in order; the first that answers is used for every issue.
             const WANTED = [
               "anthropic/claude-sonnet-5-5",
               "anthropic/claude-haiku-5-5",
+              "anthropic/claude-3-7-sonnet",
+              "openai/gpt-5-mini",
               "openai/gpt-4.1-mini",
               "openai/gpt-4o-mini",
             ];
@@ -55,14 +57,29 @@ jobs:
               "Content-Type": "application/json",
             };
 
-            const catalogResponse = await fetch("https://models.github.ai/catalog/models", { headers });
-            const catalog = catalogResponse.ok ? await catalogResponse.json() : [];
-            const ids = catalog.map((m) => m.id);
-            core.info(`Catalog (${catalogResponse.status}): ${ids.length} models`);
-            core.info(ids.join("\n"));
-            const vendors = [...new Set(ids.map((id) => id.split("/")[0]))].sort();
-            const claude = ids.filter((id) => /claude|anthropic/i.test(id));
-            const model = WANTED.find((id) => ids.includes(id)) ?? WANTED[WANTED.length - 1];
+            // The catalog address answers a bare "OK" (seen 2026-11-23), so each
+            // model is asked a one-word question instead.
+            const tried = [];
+            let model = null;
+            for (const id of WANTED) {
+              const r = await fetch("https://models.github.ai/inference/chat/completions", {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  model: id,
+                  messages: [{ role: "user", content: "Say OK." }],
+                  max_tokens: 5,
+                }),
+              });
+              const note = r.ok ? "ok" : `${r.status} ${(await r.text()).slice(0, 120)}`;
+              tried.push(`${id}: ${note}`);
+              core.info(`${id}: ${note}`);
+              if (r.ok) {
+                model = id;
+                break;
+              }
+            }
+            if (!model) core.setFailed("No model answered.");
 
             const all = await github.paginate(github.rest.issues.listForRepo, {
               ...context.repo,
@@ -73,12 +90,12 @@ jobs:
 
             await core.summary
               .addHeading("Issue helper probe", 1)
-              .addRaw(`Catalog: ${ids.length} models from ${vendors.join(", ")}. Claude: ${claude.length ? claude.join(", ") : "none"}. Used: \`${model}\`.\n\n`)
+              .addRaw(`Models tried:\n\n${tried.map((t) => `- ${t}`).join("\n")}\n\nUsed: \`${model}\`.\n\n`)
               .write();
 
             for (const number of PROBE) {
               const issue = issues.find((i) => i.number === number);
-              if (!issue) continue;
+              if (!issue || !model) continue;
               const input = { title: issue.title, body: issue.body ?? "" };
               // Only what existed when the issue was opened.
               const earlier = issues
