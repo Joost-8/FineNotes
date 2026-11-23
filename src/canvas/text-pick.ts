@@ -66,7 +66,15 @@ export function sweepWords(
   slop = 0,
 ): TextPick | null {
   const words = selectText(layout, from, to, slop);
-  return words && words.rects.length > 0 ? words : null;
+  if (!words || words.rects.length === 0) return null;
+  // The pen can land past the middle of a word's last letter (all of "A"),
+  // where the caret is already after the word: keep that word in anyway.
+  const pressed = selectText(layout, from, from, slop);
+  if (!pressed || (pressed.start >= words.start && pressed.end <= words.end)) return words;
+  return pickOf(layout, {
+    start: Math.min(words.start, pressed.start),
+    end: Math.max(words.end, pressed.end),
+  });
 }
 
 /** Whether a pick holds anything: a character that is not a space. */

@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FIRST_HIGHLIGHTER_COLOR,
+  highlighterColor,
   penInkFor,
   penInksOf,
   switchPenInk,
@@ -70,5 +71,23 @@ describe("penInksOf", () => {
   it("keeps at most twenty-four colours in a row", () => {
     const many = Array.from({ length: 30 }, (_, i) => `#0000${(i + 16).toString(16)}`);
     expect(penInksOf({ ball: { color: "#000000", colors: many } }).ball?.colors).toHaveLength(24);
+  });
+});
+
+describe("highlighterColor", () => {
+  it("is the colour in hand while the highlighter is the pen type", () => {
+    expect(highlighterColor("highlighter", "#00ff00", { highlighter: { color: "#ff0000" } })).toBe(
+      "#00ff00",
+    );
+  });
+
+  it("is the highlighter's own colour while another pen is in hand", () => {
+    expect(highlighterColor("fountain", "#000000", { highlighter: { color: "#ff0000" } })).toBe(
+      "#ff0000",
+    );
+  });
+
+  it("starts yellow when the highlighter was never used, not the pen's colour", () => {
+    expect(highlighterColor(undefined, "#000000", {})).toBe(FIRST_HIGHLIGHTER_COLOR);
   });
 });
