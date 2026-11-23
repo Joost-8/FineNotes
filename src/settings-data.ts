@@ -439,6 +439,8 @@ export interface GoodObsidianSettings {
   translateTo?: string;
   /** The language last translated from, used when a short text's language is unclear. */
   translateFrom?: string;
+  /** Translate with the AI service instead of on this device (shown only with one set up). */
+  translateWithAi?: boolean;
 
   // Dark pages (#25): a view setting. What is stored never changes.
   /** Light pages, dark pages, or following Obsidian's theme. Checked where it is read. */

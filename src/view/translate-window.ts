@@ -22,6 +22,11 @@ import { formatSize, totalBytes } from "../downloads/model-manifest";
 import type { AssetStore } from "../downloads/model-store";
 import { currentLanguage, t } from "../i18n/translate";
 import {
+  type AiTranslateRequest,
+  type AiTranslation,
+  sentenceAround,
+} from "../translate/ai-translate";
+import {
   pickTarget,
   sourceLanguages,
   targetLanguages,
@@ -36,6 +41,8 @@ import { type Translator, languageName } from "./translator";
 const AUTO = "auto";
 /** Typing pauses this long before the text is translated, ms. */
 const TYPE_PAUSE_MS = 400;
+/** With the AI: a request each pause costs, so it waits for a longer one. */
+const AI_TYPE_PAUSE_MS = 1000;
 /** The busy mark shows only when a translation takes longer than this, ms. */
 const BUSY_AFTER_MS = 150;
 /** The language last translated from, this session: short text that cannot be told apart is taken as it. */
@@ -66,10 +73,25 @@ export interface TranslateMemory {
   remember(from: string, to: string): void;
 }
 
+/**
+ * Translating with the AI service the user set up: given only when one is
+ * (a key, or the user's own endpoint). The window shows its switch then.
+ */
+export interface TranslateAi {
+  /** The service's name, for the switch's label ("Anthropic"). */
+  label: string;
+  /** Whether the AI translates (remembered in the settings). */
+  on(): boolean;
+  set(on: boolean): void;
+  /** The translation, or null when the user did not agree to send the text. Throws a Notice-ready error. */
+  translate(request: AiTranslateRequest): Promise<AiTranslation | null>;
+}
+
 export interface TranslateWindowOptions {
   container: HTMLElement;
   translator: Translator;
   memory: TranslateMemory;
+  ai?: TranslateAi;
   onClosed: () => void;
 }
 
@@ -78,6 +100,8 @@ export class TranslateWindow {
   private readonly fromEl: HTMLSelectElement;
   private readonly toEl: HTMLSelectElement;
   private readonly autoOption: HTMLOptionElement;
+  /** The AI switch, when an AI service is set up. */
+  private readonly aiButton: HTMLButtonElement | null = null;
   private readonly sourceEl: HTMLTextAreaElement;
   private readonly clearButton: HTMLButtonElement;
   private readonly resultEl: HTMLElement;
@@ -115,6 +139,12 @@ export class TranslateWindow {
     this.fromEl.prepend(this.autoOption);
     this.iconButton(langs, "arrow-left-right", t("ai.translate.swap"), () => this.swap(), "swap");
     this.toEl = this.languageSelect(langs, targetLanguages(), t("ai.translate.into"));
+    const ai = options.ai;
+    if (ai) {
+      // A switch: on is the accent fill; its label says what a tap does.
+      this.aiButton = this.iconButton(langs, "sparkles", "", () => this.toggleAi(), "ai");
+      this.showAi();
+    }
 
     const source = body.createDiv({ cls: "goodobsidian-tr-source" });
     this.sourceEl = source.createEl("textarea", {
@@ -237,6 +267,27 @@ export class TranslateWindow {
     return button;
   }
 
+  private toggleAi(): void {
+    const ai = this.options.ai;
+    if (!ai) return;
+    ai.set(!ai.on());
+    this.showAi();
+    this.changed(true);
+  }
+
+  private showAi(): void {
+    const ai = this.options.ai;
+    const button = this.aiButton;
+    if (!ai || !button) return;
+    const on = ai.on();
+    button.toggleClass("is-on", on);
+    button.setAttribute("aria-pressed", String(on));
+    button.setAttribute(
+      "aria-label",
+      on ? t("ai.translate.onDevice") : t("ai.translate.withAi", { label: ai.label }),
+    );
+  }
+
   private languagesChanged(): void {
     this.options.memory.remember(this.fromEl.value, this.toEl.value);
     void this.run();
@@ -247,7 +298,11 @@ export class TranslateWindow {
     this.clearButton.toggleClass("is-hidden", this.sourceEl.value === "");
     window.clearTimeout(this.typeTimer);
     if (now) void this.run();
-    else this.typeTimer = window.setTimeout(() => void this.run(), TYPE_PAUSE_MS);
+    else
+      this.typeTimer = window.setTimeout(
+        () => void this.run(),
+        this.options.ai?.on() ? AI_TYPE_PAUSE_MS : TYPE_PAUSE_MS,
+      );
   }
 
   /** Swap From and Into; the translation becomes the text, to go back. */
@@ -281,6 +336,8 @@ export class TranslateWindow {
       return;
     }
     let from = this.fromEl.value;
+    // Whether the text's language is known: chosen, or found by detection.
+    let fromKnown = true;
     if (from === AUTO) {
       const chosen = this.options.memory.from();
       const fallback = chosen && chosen !== AUTO ? chosen : lastSource;
@@ -290,6 +347,7 @@ export class TranslateWindow {
       const guess = await this.options.translator.detect(text, fallback, context);
       if (turn !== this.turn || this.closed) return;
       from = guess?.lang ?? "en";
+      fromKnown = guess !== null;
       const detected = t("ai.translate.detected", { language: languageName(from) });
       this.autoOption.dataset.lang = from;
       this.autoOption.text = languageName(from);
@@ -300,6 +358,11 @@ export class TranslateWindow {
     }
     lastSource = from;
     const to = this.toEl.value;
+    const ai = this.options.ai;
+    if (ai?.on()) {
+      await this.runAi(ai, turn, text, fromKnown ? from : null, to);
+      return;
+    }
     const stores = this.options.translator.storesFor(from, to);
     if (!stores) {
       this.note(t("ai.translate.unsupported", { from: languageName(from), to: languageName(to) }));
@@ -323,6 +386,53 @@ export class TranslateWindow {
       this.resultEl.empty();
       this.resultEl.removeClass("is-empty");
       this.resultEl.createDiv({ cls: "goodobsidian-tr-output", text: out });
+      this.renderActions();
+    } catch (error) {
+      if (turn !== this.turn || this.closed) return;
+      window.clearTimeout(this.busyTimer);
+      const message = error instanceof Error ? error.message : String(error);
+      this.note(t("ai.translate.failed", { message }));
+    }
+  }
+
+  /** The AI's translation: and for a word, its dictionary notes under it. */
+  private async runAi(
+    ai: TranslateAi,
+    turn: number,
+    text: string,
+    from: string | null,
+    to: string,
+  ): Promise<void> {
+    window.clearTimeout(this.busyTimer);
+    this.busyTimer = window.setTimeout(() => {
+      if (turn === this.turn) this.busy();
+    }, BUSY_AFTER_MS);
+    const selected = withoutPrivateUse(this.target.text).trim() === text;
+    try {
+      const answer = await ai.translate({
+        text,
+        to,
+        toName: englishName(to),
+        fromName: from === null || from === to ? null : englishName(from),
+        sentence: selected ? sentenceAround(this.target.context, text) : null,
+      });
+      if (turn !== this.turn || this.closed) return;
+      window.clearTimeout(this.busyTimer);
+      if (!answer) {
+        // Not agreed to send: back to this device.
+        ai.set(false);
+        this.showAi();
+        void this.run();
+        return;
+      }
+      this.result = answer.translation;
+      this.resultEl.empty();
+      this.resultEl.removeClass("is-empty");
+      this.resultEl.createDiv({ cls: "goodobsidian-tr-output", text: answer.translation });
+      if (answer.notes.length > 0) {
+        const list = this.resultEl.createEl("ul", { cls: "goodobsidian-tr-notes" });
+        for (const note of answer.notes) list.createEl("li", { text: note });
+      }
       this.renderActions();
     } catch (error) {
       if (turn !== this.turn || this.closed) return;
@@ -464,5 +574,14 @@ export class TranslateWindow {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = this.toEl.value;
     speechSynthesis.speak(utterance);
+  }
+}
+
+/** A language's name in English, for the AI's prompt ("nl" → "Dutch"). */
+function englishName(code: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code;
+  } catch {
+    return code;
   }
 }

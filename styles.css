@@ -6736,6 +6736,12 @@ button.goodobsidian-cover-swatch.clickable-icon {
   display: none;
 }
 
+/* The AI switch: on is the accent fill, as a selected tool is. */
+.goodobsidian-tr-window button.clickable-icon.goodobsidian-tr-button.is-ai.is-on {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
 /* The text: editable, with Clear in its corner while it holds any. */
 .goodobsidian-tr-source {
   position: relative;
@@ -6788,6 +6794,15 @@ button.goodobsidian-cover-swatch.clickable-icon {
   color: var(--text-faint);
   font-size: 16px;
   line-height: 1.45;
+}
+
+/* An AI translation of a word: its dictionary notes under it. */
+.goodobsidian-tr-notes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.4;
 }
 
 .goodobsidian-tr-note {

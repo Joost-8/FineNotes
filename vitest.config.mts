@@ -246,6 +246,7 @@ export default defineConfig({
         "src/audio/replay.ts",
         "src/audio/speech-chunks.ts",
         "src/translate/languages.ts",
+        "src/translate/ai-translate.ts",
         "src/translate/window-place.ts",
         "src/audio/online-speech.ts",
         "src/audio/speech-models.ts",

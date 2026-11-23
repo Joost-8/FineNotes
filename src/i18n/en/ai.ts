@@ -632,4 +632,8 @@ export const ai = {
   "ai.translate.pairLabel": "Translation {from} → {to}",
   "ai.translate.pairPurpose": "Translates {from} into {to} on this device.",
   "ai.translate.noAnswer": "The translation engine stopped answering.",
+  "ai.translate.withAi": "Translate with {label}",
+  "ai.translate.onDevice": "Translate on this device",
+  "ai.translate.consentAction": "Translating with AI",
+  "ai.translate.consentWhat": "the text you translate (for a word, with its sentence on the page)",
 } as const;

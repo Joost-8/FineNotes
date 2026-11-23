@@ -162,8 +162,10 @@ import {
   type GeneratedPicture,
   askAi,
   askAiWithTools,
+  assertConfigured,
   generateImage,
   targetLabel,
+  translateWithAi,
 } from "../recognition/ai-client";
 import { InkSurface, type SearchFocus } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
@@ -455,7 +457,7 @@ import {
 } from "../recognition/hwr/selection-words";
 import type { SpellingFix } from "./spelling-row";
 import type { WordPopover } from "./word-popover";
-import { TranslateWindow, type TranslateTarget } from "./translate-window";
+import { type TranslateAi, TranslateWindow, type TranslateTarget } from "./translate-window";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
 import {
@@ -2738,12 +2740,46 @@ export class InkView extends TextFileView {
             void this.plugin.saveSettings();
           },
         },
+        ai: this.translateAi() ?? undefined,
         onClosed: () => {
           this.translateWindow = null;
         },
       },
       first,
     );
+  }
+
+  /**
+   * The Translate window's AI option: the AI service the user set up, or
+   * null when there is none (no key, or no endpoint), and then no switch.
+   */
+  private translateAi(): TranslateAi | null {
+    const plugin = this.plugin;
+    const config = plugin.textAiConfig();
+    try {
+      assertConfigured(config);
+    } catch {
+      return null;
+    }
+    return {
+      label: targetLabel(config),
+      on: () => plugin.settings.translateWithAi === true,
+      set: (on) => {
+        plugin.settings.translateWithAi = on;
+        void plugin.saveSettings();
+      },
+      translate: async (request) => {
+        // Read again: the service or key may have changed since the window opened.
+        const now = plugin.textAiConfig();
+        const agreed = await plugin.confirmAiSend(
+          now,
+          t("ai.translate.consentAction"),
+          t("ai.translate.consentWhat"),
+        );
+        if (!agreed) return null;
+        return translateWithAi(now, request);
+      },
+    };
   }
 
   private toggleCalculator(): void {
