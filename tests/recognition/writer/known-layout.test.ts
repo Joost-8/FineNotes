@@ -65,6 +65,16 @@ describe("wordsOfLines", () => {
     expect(height).toBeLessThan(H * 1.25);
   });
 
+  it("evens out a line of several words toward the writer's size, a short one not", () => {
+    // Letters written half as tall as the model's calibration.
+    const half = (line: WrittenStroke[]): WrittenStroke[] =>
+      line.map((s) => ({ ...s, pts: s.pts.map((v, i) => (i % 2 === 1 ? v * 0.5 : v)) }));
+    const heightOf = (words: WrittenWord[]): number => -Math.min(...words[0].strokes.flatMap(ys));
+    const [long, short] = wordsOfLines([half(writtenLine(4, 3)), half(writtenLine(1, 3))], H);
+    expect(heightOf(long)).toBeCloseTo(H * 0.5 * 1.3, 0);
+    expect(heightOf(short)).toBeCloseTo(H * 0.5, 0);
+  });
+
   it("gives a stroke of no word to the word before it", () => {
     const line: WrittenStroke[] = [...writtenLine(2, 2), { pts: [5, 0, 5.05, 0.01], word: -1 }];
     const [words] = wordsOfLines([line], H);

@@ -5,16 +5,17 @@
  * (`view/neaten.ts`, `writeKnown`): each line in model units, its words
  * stood level (`rows.levelledStrokes`).
  *
- * Sizes follow Beautify's placement (`layout.ts`): a written line is scaled
- * to the writer's x-height by its own measure, held within 20 % of the
- * model's calibrated size, since one line's measure is noisy.
+ * Sizes are the model's calibration (`layout.MODEL_X_HEIGHT`), not each
+ * line's own measure: on the real model a single word measured 2.2 times its
+ * true size and whole lines 0.9 to 1.6 (gen/write_in_hand_check.mts), while
+ * the calibration matched the writer's own letters (20 px against 20.2).
  *
  * PURE: no DOM, no Obsidian.
  */
 
 import { ASKED_LEVEL_SLOPE, type LineGeometry, measureLines } from "../../ink/tidy";
 import type { PageInk } from "../hwr/lines";
-import { MODEL_X_HEIGHT, SIZE_SPREAD } from "./layout";
+import { MODEL_X_HEIGHT } from "./layout";
 import { median } from "./rows";
 import type { WrittenStroke } from "./rows";
 
@@ -27,6 +28,13 @@ export const MAX_LINE_CHARS = 40;
  * ascender meets the descender above it (a practice sheet measured 2.2).
  */
 export const MIN_LINE_PITCH = 3;
+/**
+ * A written line of this many words or more is sized by its own measure too;
+ * a shorter one's measure is noise (a single word read 2.2 times its size).
+ */
+export const MEASURED_WORDS = 3;
+/** How far a line's own measure may move it from the calibrated size. */
+export const LINE_SPREAD = 1.3;
 
 /** One written word: strokes of x, y, pressure in page px, x from its left edge, y from its baseline (down). */
 export interface WrittenWord {
@@ -126,8 +134,10 @@ function fitOf(strokes: readonly PageInk[]): LineGeometry | null {
 /**
  * Written lines cut into words, each sized to the writer's `xHeight` and
  * stood on its own baseline (x from its left edge, y from the baseline).
- * A line's size is its own measure, held within {@link SIZE_SPREAD} of the
- * lines' median, and the median within it of the model's calibrated size.
+ * The size is the model's calibration; a line of {@link MEASURED_WORDS} words
+ * or more is evened out toward `xHeight` by its own measure, within
+ * {@link LINE_SPREAD} (the model writes one line a third smaller than the
+ * next). The line's fit gives the baseline.
  * Strokes the alignment gave no word (-1) go with the word before them.
  */
 export function wordsOfLines(
@@ -137,16 +147,15 @@ export function wordsOfLines(
 ): WrittenWord[][] {
   const scaled = lines.map((line) => scaledLine(line, xHeight));
   const fits = scaled.map((made) => (made.length ? fitOf(made) : null));
-  const raw = fits.map((f) => (f && f.xHeight > 0 ? xHeight / f.xHeight : null));
-  const known = raw.filter((f): f is number => f !== null);
-  const spread = (v: number, around: number): number =>
-    Math.min(around * SIZE_SPREAD, Math.max(around / SIZE_SPREAD, v));
-  const lineF = spread(known.length ? median(known) : 1, 1);
   return lines.map((line, li) => {
     const made = scaled[li];
     if (made.length === 0) return [];
-    const f = spread(raw[li] ?? lineF, lineF);
     const fit = fits[li];
+    const words = new Set(line.map((s) => s.word).filter((w) => w >= 0)).size;
+    const f =
+      fit && fit.xHeight > 0 && words >= MEASURED_WORDS
+        ? Math.min(LINE_SPREAD, Math.max(1 / LINE_SPREAD, xHeight / fit.xHeight))
+        : 1;
     const lowest = Math.max(...made.flatMap((s) => every(s.pts, 1, 3)));
     const base = (x: number): number => (fit ? fit.slope * x + fit.level : lowest);
     // Strokes by word; a stroke of no word joins the word before it (or the first).
