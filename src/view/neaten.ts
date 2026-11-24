@@ -520,7 +520,7 @@ export class NeatenService {
       return { lines, sample: pool.flatMap((line) => line.strokes) };
     } finally {
       this.writer?.dispose();
-      (resumeOcr as (() => void) | null)?.();
+      resumeOcr?.();
       this.running = false;
     }
   }
