@@ -23,12 +23,13 @@
  * The text fields follow the iPad keyboard (`DialogKeyboard`).
  */
 
-import { type App, type EventRef, Modal, Setting, setIcon } from "obsidian";
+import { type App, type EventRef, Modal, Notice, Setting, setIcon } from "obsidian";
 import type { ScrollDirection } from "../model/document";
 import type { NotebookFurniture } from "../model/furniture";
 import { formatFileSize } from "../model/notebook-info";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
+import { FolderSuggestModal } from "./folder-suggest";
 import { t, tn } from "../i18n/translate";
 
 /** What the summary card shows. */
@@ -85,6 +86,26 @@ export interface NoteSettingsHost {
    * Resolves `false` when there is no cover to paint.
    */
   paintCover?: (canvas: HTMLCanvasElement, cssWidth: number) => Promise<boolean>;
+  /** Optional Companion PDF controls for FineNotes notebooks and pages. */
+  companion?: {
+    state: () => {
+      enabled: boolean;
+      followName: boolean;
+      pdfPath: string;
+      status: string;
+      dirty: boolean;
+      error?: string;
+      running: boolean;
+      pdfExists: boolean;
+    };
+    configure: (patch: {
+      enabled?: boolean;
+      followName?: boolean;
+      pdfPath?: string;
+    }) => Promise<void>;
+    update: () => Promise<void>;
+    openPdf: () => void;
+  };
 }
 
 /** The summary card's cover, in CSS px. */
@@ -146,7 +167,173 @@ export class NoteSettingsModal extends Modal {
     if (!this.host.board) this.renderPages(group);
     this.renderEditing(group);
     this.renderLook(group);
+    if (this.host.companion) this.renderCompanion(contentEl);
     this.renderAllSettings(contentEl);
+  }
+
+  private renderCompanion(parent: HTMLElement): void {
+    const host = this.host.companion;
+    if (!host) return;
+    const state = host.state();
+    const card = parent.createDiv({ cls: "goodobsidian-ns-group goodobsidian-ns-companion" });
+    const run = async (action: () => Promise<void>): Promise<void> => {
+      try {
+        await action();
+      } catch (error) {
+        new Notice(
+          t("notebooks.companion.noticePrefix", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+      if (this.modalEl.isConnected) this.render();
+    };
+
+    const head = new Setting(card).setDesc(t("notebooks.companion.desc"));
+    const titleWrap = head.nameEl.createDiv({ cls: "goodobsidian-ns-companion-head" });
+    titleWrap.createSpan({ text: t("notebooks.companion.title") });
+    const badge = titleWrap.createSpan({
+      cls: "goodobsidian-ns-companion-badge",
+      text: state.enabled
+        ? state.error
+          ? t("notebooks.companion.badgeError")
+          : state.running
+            ? t("notebooks.companion.statusUpdating")
+            : !state.pdfExists
+              ? t("notebooks.companion.badgeMissing")
+              : state.dirty
+                ? t("notebooks.companion.statusNeedsUpdate")
+                : t("notebooks.companion.statusUpToDate")
+        : t("notebooks.companion.statusOff"),
+    });
+    if (!state.enabled) badge.addClass("is-off");
+    else if (state.error || !state.pdfExists) badge.addClass("is-error");
+    else if (state.running) badge.addClass("is-running");
+    else if (state.dirty) badge.addClass("is-dirty");
+    else badge.addClass("is-synced");
+
+    head.addToggle((toggle) =>
+      toggle.setValue(state.enabled).onChange((on) => {
+        void run(() => host.configure({ enabled: on }));
+      }),
+    );
+
+    if (!state.enabled) return;
+
+    // Target PDF folder (native Obsidian fuzzy folder picker) + quick Open PDF button
+    const slashIdx = state.pdfPath.lastIndexOf("/");
+    const currentFolder = slashIdx >= 0 ? state.pdfPath.slice(0, slashIdx) : "";
+    const currentFile = slashIdx >= 0 ? state.pdfPath.slice(slashIdx + 1) : state.pdfPath;
+
+    const pathRow = new Setting(card).setName(t("notebooks.companion.folder"));
+    const pathWrap = pathRow.controlEl.createDiv({ cls: "goodobsidian-ns-companion-path" });
+    const folderBtn = pathWrap.createEl("button", {
+      cls: "clickable-icon goodobsidian-ns-companion-folder",
+      attr: { type: "button", "aria-label": t("notebooks.companion.chooseFolderAria") },
+    });
+    const folderIcon = folderBtn.createSpan({ cls: "goodobsidian-ns-companion-folder-icon" });
+    setIcon(folderIcon, "folder");
+    folderBtn.createSpan({
+      cls: "goodobsidian-ns-companion-folder-label",
+      text: currentFolder || "/",
+    });
+    folderBtn.addEventListener("click", () => {
+      new FolderSuggestModal(
+        this.app,
+        (chosen) => {
+          const next = chosen ? `${chosen}/${currentFile}` : currentFile;
+          if (next !== state.pdfPath) {
+            void run(() => host.configure({ pdfPath: next }));
+          }
+        },
+        t("notebooks.companion.chooseFolderPlaceholder"),
+        currentFolder,
+      ).open();
+    });
+
+    if (state.pdfExists) {
+      const openBtn = pathWrap.createEl("button", {
+        cls: "clickable-icon goodobsidian-ns-companion-open",
+        attr: { type: "button", "aria-label": t("notebooks.companion.openPdfAria") },
+      });
+      setIcon(openBtn, "external-link");
+      openBtn.addEventListener("click", () => {
+        this.close();
+        host.openPdf();
+      });
+    }
+
+    // Filename mode segmented control (Follow name | Custom)
+    const nameRow = new Setting(card).setName(t("notebooks.companion.filename"));
+    const seg = nameRow.controlEl.createDiv({
+      cls: "goodobsidian-ns-segmented",
+      attr: { role: "radiogroup", "aria-label": t("notebooks.companion.filenameModeAria") },
+    });
+    for (const [follow, label] of [
+      [true, t("notebooks.companion.followName")],
+      [false, t("notebooks.companion.custom")],
+    ] as const) {
+      const btn = seg.createEl("button", {
+        cls: "goodobsidian-ns-segment clickable-icon",
+        text: label,
+        attr: {
+          type: "button",
+          role: "radio",
+          "aria-checked": String(state.followName === follow),
+        },
+      });
+      btn.toggleClass("is-active", state.followName === follow);
+      btn.addEventListener("click", () => {
+        if (state.followName !== follow) {
+          void run(() => host.configure({ followName: follow }));
+        }
+      });
+    }
+
+    if (!state.followName) {
+      const customRow = new Setting(card).setName(t("notebooks.companion.customName"));
+      const nameInput = customRow.controlEl.createEl("input", {
+        cls: "goodobsidian-ns-companion-input",
+        attr: {
+          type: "text",
+          placeholder: "Notebook.pdf",
+          spellcheck: "false",
+          "aria-label": t("notebooks.companion.customNameAria"),
+        },
+      });
+      nameInput.value = currentFile;
+      const commitName = (): void => {
+        let nextFile = nameInput.value.trim();
+        if (!nextFile) {
+          nameInput.value = currentFile;
+          return;
+        }
+        if (!nextFile.toLowerCase().endsWith(".pdf")) nextFile += ".pdf";
+        const nextPath = currentFolder ? `${currentFolder}/${nextFile}` : nextFile;
+        if (nextPath !== state.pdfPath) {
+          void run(() => host.configure({ pdfPath: nextPath, followName: false }));
+        }
+      };
+      nameInput.addEventListener("change", commitName);
+      onEnterKey(nameInput, () => nameInput.blur());
+      this.keyboard.watch(nameInput, card);
+    }
+
+    // Update now action row
+    const syncRow = new Setting(card)
+      .setName(t("notebooks.companion.syncTitle"))
+      .setDesc(state.error ? state.status : t("notebooks.companion.syncDesc"));
+    syncRow.addButton((button) => {
+      button
+        .setButtonText(
+          state.running
+            ? t("notebooks.companion.statusUpdating")
+            : t("notebooks.companion.updateNow"),
+        )
+        .setDisabled(state.running)
+        .setCta()
+        .onClick(() => void run(host.update));
+    });
   }
 
   /** A row: its name and its one line, as every row in Settings. */

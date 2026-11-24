@@ -109,6 +109,8 @@ function withTapesOf(page: Page, sources: PdfExportSources): Page {
 
 export interface PdfExportOptions {
   title: string;
+  /** Optional PDF Subject metadata (used by Companion PDFs to store stable identity). */
+  subject?: string;
   /** Called before each page renders: `done` pages of `total` are finished. */
   onProgress?: (done: number, total: number) => void;
   /** Checked between pages; when it returns true the export stops with an `AbortError`. */
@@ -126,7 +128,9 @@ export async function exportPagesToPdf(
   if (hasPdf && !sources.readPdf) throw new Error("PDF source reader unavailable");
   const vector = sources.vectorInk !== false;
   const composer =
-    hasPdf || vector ? await PdfComposer.create(options.title, sources.readPdf ?? null) : null;
+    hasPdf || vector || options.subject
+      ? await PdfComposer.create(options.title, sources.readPdf ?? null, options.subject)
+      : null;
   for (const [i, original] of pages.entries()) {
     if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
     options.onProgress?.(i, pages.length);

@@ -205,6 +205,7 @@ import {
   parseNudges,
   recordUse,
 } from "./model/nudges";
+import { CompanionPdfManager } from "./view/companion-pdf";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import {
@@ -596,6 +597,12 @@ export default class GoodObsidianPlugin extends Plugin {
     return resolveProvider(this.providers, this.settings.recognitionProviderId);
   }
 
+  /** Companion PDF associations and atomic journalled writer. */
+  readonly companionPdfs = new CompanionPdfManager(this.app, async (store) => {
+    this.settings.companionPdfs = store;
+    await this.saveSettings();
+  });
+
   override async onload(): Promise<void> {
     this.startup.mark("onload");
     this.watchStartup();
@@ -609,6 +616,18 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.loadSettings();
     // Before anything with words in it is made.
     await this.language.start();
+    this.companionPdfs.load(this.settings.companionPdfs);
+    void this.companionPdfs.recoverAll();
+    this.addCommand({
+      id: "update-companion-pdf",
+      name: t("notebooks.companion.updateNow"),
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(InkView);
+        if (!view || !view.hasCompanionPdf) return false;
+        if (!checking) void view.updateCompanionPdf(true);
+        return true;
+      },
+    });
     this.installFullScreen();
     // The chosen speech model shows under Settings › Models on this device from the start.
     this.speech.store();
@@ -842,7 +861,16 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        this.fileMoves.renamed(file, oldPath);
+        if (!this.companionPdfs.isInternal(oldPath) && !this.companionPdfs.isInternal(file.path)) {
+          this.fileMoves.renamed(file, oldPath);
+        }
+        void this.companionPdfs.renamed(file, oldPath).catch((error) => {
+          new Notice(
+            t("notebooks.companion.noticePrefix", {
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        });
         this.keepFolderNotebookPaired(file, oldPath);
         void this.followPagesFolder(file, oldPath);
         followNoteFiles(this.app, file, oldPath);
@@ -855,7 +883,26 @@ export default class GoodObsidianPlugin extends Plugin {
         }
       }),
     );
-    this.registerEvent(this.app.vault.on("delete", (file) => this.libraryPathChanged(file.path)));
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        this.libraryPathChanged(file.path);
+        void this.companionPdfs
+          .deleted(file.path)
+          .catch(
+            () =>
+              new Notice(
+                t("notebooks.companion.noticePrefix", { error: "could not save status." }),
+              ),
+          );
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        this.companionPdfs.modified(file.path);
+        if (this.companionPdfs.isInternal(file.path)) return;
+        for (const view of this.openNotebooks()) view.companionResourceChanged(file.path);
+      }),
+    );
     this.register(() => this.fileMoves.destroy());
     this.wordCheck.answered = (count) => this.remindToRelearn(count);
     void loadSharing({

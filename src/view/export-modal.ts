@@ -122,6 +122,8 @@ export interface ExportPdfHost {
   formats?: false;
   /** The dialog's title; "Export" when not given. */
   title?: string;
+  /** Optional: link a newly exported full-notebook PDF as an auto-updating Companion PDF. */
+  keepPdfUpdated?: (path: string) => Promise<void>;
 }
 
 /** The margins button's icon and name for each choice: the name is its tooltip. */
@@ -427,7 +429,7 @@ export class ExportPdfModal extends Modal {
           () => this.cancelled,
         );
         if (this.closed) return;
-        this.renderDone(saved);
+        this.renderDone(saved, pages.length === pageCount);
       } catch (error) {
         if (this.closed || (error instanceof DOMException && error.name === "AbortError")) return;
         this.busy = false;
@@ -608,7 +610,7 @@ export class ExportPdfModal extends Modal {
 
   // --- Saved -----------------------------------------------------------------
 
-  private renderDone(saved: ExportedFiles): void {
+  private renderDone(saved: ExportedFiles, allPagesExported = false): void {
     this.busy = false;
     this.keyboard.end();
     this.disposePreviews();
@@ -621,6 +623,32 @@ export class ExportPdfModal extends Modal {
     });
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
+
+    if (
+      this.format === "pdf" &&
+      allPagesExported &&
+      saved.paths.length === 1 &&
+      this.host.keepPdfUpdated
+    ) {
+      const keep = actions.createEl("button", { text: t("notebooks.companion.keepUpdated") });
+      const enable = this.host.keepPdfUpdated;
+      keep.addEventListener("click", () => {
+        keep.disabled = true;
+        status.removeClass("is-error");
+        void enable(saved.paths[0])
+          .then(() => {
+            if (this.closed) return;
+            keep.remove();
+            status.setText(t("notebooks.companion.keptUpdated"));
+          })
+          .catch((error: unknown) => {
+            if (this.closed) return;
+            keep.disabled = false;
+            status.addClass("is-error");
+            status.setText(errorMessage(error));
+          });
+      });
+    }
 
     if (canShareFiles(saved.files)) {
       // A fresh tap: the share sheet needs a user gesture, which the export's

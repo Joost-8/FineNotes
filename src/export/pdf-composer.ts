@@ -50,9 +50,11 @@ export class PdfComposer {
   static async create(
     title: string,
     readPdf: ((path: string) => Promise<ArrayBuffer>) | null = null,
+    subject?: string,
   ): Promise<PdfComposer> {
     const output = await PDFDocument.create();
     output.setTitle(title);
+    if (subject) output.setSubject(subject);
     output.setProducer("FineNotes");
     output.setCreationDate(new Date());
     return new PdfComposer(output, readPdf);

@@ -70,7 +70,21 @@ import {
   blankPage,
   emptyDocument,
 } from "../model/document";
-import { DocumentEncoder, buildInkFile, inkFileText, parseInkFile } from "../model/serialize";
+import {
+  DocumentEncoder,
+  buildInkFile,
+  decodeDocument,
+  inkFileText,
+  parseInkFile,
+} from "../model/serialize";
+import { companionPdfSubject } from "../export/companion-metadata";
+import {
+  companionIdFromBody,
+  companionResources,
+  isCompanionNotebookPath,
+  type CompanionSnapshot,
+} from "../model/companion-pdf";
+import { fingerprintCompanionDoc } from "./companion-pdf";
 import { DotClock, attachDotClock, dotClockOf, idsIn } from "../model/dot-ids";
 import {
   type DevicePagesLoad,
@@ -1383,6 +1397,7 @@ export class InkView extends TextFileView {
     if (doc && !held && this.relinkDoc() + this.adoptRenamedLinks(body) > 0) this.requestSave();
     // Ticks made in the note (the Tasks plugin) since the notebook wrote it.
     if (doc && !held) this.adoptTicks(body);
+    this.companionUnloadedFile = null;
     this.handOverWaitingPages(this.loadedPath, this.file?.path ?? null);
     // What this view carried over is not on disk yet.
     if (merged) this.requestSave();
@@ -1405,6 +1420,8 @@ export class InkView extends TextFileView {
       void this.readDevicePages();
     }
     this.textPanel?.load(this.noteBody);
+    if (this.file) this.plugin.companionPdfs?.hydrateFromBody(this.file, this.noteBody);
+    if (this.hasCompanionPdf) void this.assessCompanionPdf();
     if (!this.mounted) return;
     this.showDocument();
     this.matchPdfResolution();
@@ -1729,6 +1746,11 @@ export class InkView extends TextFileView {
     }
     // Where the PDF's tab was left goes into this save.
     this.saveTabView();
+    if (this.companionUnloadedFile !== file) {
+      this.companionUnloadedFile = file;
+      await this.updateCompanionPdf(false);
+      this.companionUnloadedFile = file;
+    }
     await super.onUnloadFile(file);
   }
 
@@ -2520,6 +2542,8 @@ export class InkView extends TextFileView {
     this.requestBodySave();
   }
 
+  /** De-duplicate unload and close Companion PDF updates. */
+  private companionUnloadedFile: TFile | null = null;
   /** Canvas used only to measure text boxes that grow with their text. */
   private measureCtx: CanvasRenderingContext2D | null = null;
 
@@ -5070,6 +5094,7 @@ export class InkView extends TextFileView {
           if (this.onPdfTab) this.syncTabMarks();
           this.requestSaveOf(pages);
           this.relinkMovedFiles();
+          this.markCompanionChanged();
           // An undo, redo or edit may take Ask AI's changes back, or touch them.
           this.notifyAskChanges();
         },
@@ -5454,6 +5479,7 @@ export class InkView extends TextFileView {
       // on the main thread, as it may not get another chance.
       this.recordLastPage();
       if (this.writeHold.savePending || this.saver.busy) void this.saveNow(false, true);
+      void this.updateCompanionPdf(false);
     });
     // Paste events go to whatever has focus — often the body, outside this
     // view — so they are heard on the document, and taken only while this
@@ -5698,9 +5724,50 @@ export class InkView extends TextFileView {
       // Through the surface's stack, so it saves with the note and undoes.
       this.surface.applyCommand(command);
     };
+    const configuredFile = this.file;
     new NoteSettingsModal(this.app, {
       single: this.isSinglePage,
       board: this.isBoard,
+      companion:
+        configuredFile && isCompanionNotebookPath(configuredFile.path)
+          ? {
+              state: () => {
+                const id = companionIdFromBody(this.noteBody);
+                const entry = this.plugin.companionPdfs.entry(id);
+                const pdfExists = Boolean(
+                  entry?.pdfPath && this.app.vault.getFileByPath(entry.pdfPath),
+                );
+                return {
+                  enabled: entry?.enabled ?? false,
+                  followName: entry?.followName ?? true,
+                  pdfPath: entry?.pdfPath ?? "",
+                  status: this.plugin.companionPdfs.status(id),
+                  dirty: entry?.dirty ?? false,
+                  error: entry?.error,
+                  running: Boolean(id && this.plugin.companionPdfs.controller.isRunning(id)),
+                  pdfExists,
+                };
+              },
+              configure: async (patch) => {
+                if (this.file !== configuredFile) {
+                  throw new Error("Notebook changed; reopen its settings.");
+                }
+                await this.configureCompanionPdf(patch);
+              },
+              update: async () => {
+                if (this.file !== configuredFile) {
+                  throw new Error("Notebook changed; reopen its settings.");
+                }
+                await this.updateCompanionPdf(true);
+              },
+              openPdf: () => {
+                const id = companionIdFromBody(this.noteBody);
+                const entry = this.plugin.companionPdfs.entry(id);
+                if (!entry?.pdfPath) return;
+                void this.app.workspace.openLinkText(entry.pdfPath, configuredFile.path, true);
+              },
+            }
+          : undefined,
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => {
         apply(new SetScrollDirection(direction));
@@ -6234,6 +6301,169 @@ export class InkView extends TextFileView {
     }
   }
 
+  // --- Companion PDF ---------------------------------------------------------
+
+  get hasCompanionPdf(): boolean {
+    return (
+      Boolean(this.file && isCompanionNotebookPath(this.file.path)) &&
+      this.plugin.companionPdfs?.entry(companionIdFromBody(this.noteBody))?.enabled === true
+    );
+  }
+
+  private companionError(error: unknown): void {
+    new Notice(
+      t("notebooks.companion.noticePrefix", {
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+
+  private markCompanionChanged(): void {
+    const id = companionIdFromBody(this.noteBody);
+    if (id && this.plugin.companionPdfs?.controller.markChanged(id)) {
+      void this.plugin.companionPdfs
+        .persist()
+        .catch((error: unknown) => this.companionError(error));
+    }
+  }
+
+  companionResourceChanged(path: string): void {
+    if (
+      this.hasCompanionPdf &&
+      companionResources(this.surface?.document ?? this.doc).includes(path)
+    ) {
+      this.markCompanionChanged();
+    }
+  }
+
+  private persistedExportablePages(): Pick<InkDocument, "pages"> {
+    const persisted = decodeDocument(
+      this.encoder.encode(this.surface?.document ?? this.doc),
+      this.settings.paperWidth,
+    );
+    return hasBoards(persisted)
+      ? {
+          pages: persisted.pages.map((page) =>
+            isBoardPage(persisted, page) ? this.boardDrawing(page) : page,
+          ),
+        }
+      : persisted;
+  }
+
+  private pdfExportSources(preview = this.previewSources()): PdfExportSources {
+    return {
+      ...preview,
+      plainPaper: this.settings.exportPlainPaper === true,
+      withoutTapes: this.settings.exportWithoutTapes === true,
+      margins: exportMarginsOf(this.settings.exportMargins),
+    };
+  }
+
+  private companionOptions(sources: PdfExportSources) {
+    return {
+      usePressure: this.toolState.pressureEnabled,
+      highlighterAlpha: this.settings.highlighterAlpha,
+      plainPaper: sources.plainPaper === true,
+      withoutTapes: sources.withoutTapes === true,
+      margins: sources.margins,
+    };
+  }
+
+  private async companionSnapshot(): Promise<CompanionSnapshot> {
+    const note = this.file;
+    if (!note || this.isDamaged()) {
+      throw new Error("The notebook is unavailable or its load is protected.");
+    }
+    const exportable = this.persistedExportablePages();
+    if (exportable.pages.length === 0) throw new Error("The notebook has no pages to export.");
+    const id = companionIdFromBody(this.noteBody);
+    if (!id) throw new Error("Missing companion PDF identity.");
+    const title = stripInkSuffix(note.basename);
+    const subject = companionPdfSubject(id);
+    const sources = this.pdfExportSources();
+    const { fingerprint, resources } = await fingerprintCompanionDoc(
+      this.app,
+      exportable,
+      title,
+      this.companionOptions(sources),
+    );
+    return {
+      fingerprint,
+      resources,
+      export: () => exportPagesToPdf(exportable.pages, sources, { title, subject }),
+    };
+  }
+
+  private async assessCompanionPdf(): Promise<void> {
+    const id = companionIdFromBody(this.noteBody);
+    if (!id || !this.file || !this.hasCompanionPdf || this.isDamaged()) return;
+    try {
+      await this.plugin.companionPdfs.assess(id, this.file, () => this.companionSnapshot());
+    } catch (error) {
+      this.companionError(error);
+    }
+  }
+
+  private async configureCompanionPdf(patch: {
+    enabled?: boolean;
+    followName?: boolean;
+    pdfPath?: string;
+  }): Promise<void> {
+    const note = this.file;
+    if (!note || this.isDamaged()) {
+      throw new Error("Cannot configure a protected or unavailable notebook.");
+    }
+    await this.saveNow(false, true);
+    await this.plugin.companionPdfs.configure(
+      note,
+      this.noteBody,
+      this.attachmentFolder("exports"),
+      patch,
+    );
+    const savedBody = parseInkFile(await this.app.vault.read(note), this.settings.paperWidth).body;
+    if (this.file !== note) return;
+    this.noteBody = savedBody;
+    if (patch.enabled === true) await this.updateCompanionPdf(true);
+  }
+
+  private async adoptExportedCompanionPdf(exportedPath: string): Promise<void> {
+    const note = this.file;
+    if (!note || this.isDamaged()) {
+      throw new Error("Cannot configure a protected or unavailable notebook.");
+    }
+    await this.saveNow(false, true);
+    const { fingerprint } = await fingerprintCompanionDoc(
+      this.app,
+      this.persistedExportablePages(),
+      stripInkSuffix(note.basename),
+      this.companionOptions(this.pdfExportSources()),
+    );
+    await this.plugin.companionPdfs.adoptExportedPdf(note, exportedPath, fingerprint);
+    const savedBody = parseInkFile(await this.app.vault.read(note), this.settings.paperWidth).body;
+    if (this.file !== note) return;
+    this.noteBody = savedBody;
+  }
+
+  async updateCompanionPdf(force = true): Promise<void> {
+    const note = this.file;
+    const id = companionIdFromBody(this.noteBody);
+    if (!note || !id || !this.hasCompanionPdf || this.isDamaged()) return;
+    try {
+      await this.saveNow(false, true);
+      await this.plugin.companionPdfs.update(
+        id,
+        note,
+        () => {
+          if (this.file !== note) throw new Error("Notebook changed during companion update.");
+          return this.companionSnapshot();
+        },
+        force,
+      );
+    } catch (error) {
+      this.companionError(error);
+    }
+  }
+
   exportPdf(chosen?: readonly number[]): void {
     const note = this.file;
     if (this.isDamaged() || !note) return;
@@ -6250,12 +6480,7 @@ export class InkView extends TextFileView {
     const preview = this.previewSources();
     // Plain paper or with the template, with the tapes or without, as the
     // dialog's switches were last left.
-    const exported = (): PdfExportSources => ({
-      ...preview,
-      plainPaper: this.settings.exportPlainPaper === true,
-      withoutTapes: this.settings.exportWithoutTapes === true,
-      margins: exportMarginsOf(this.settings.exportMargins),
-    });
+    const exported = (): PdfExportSources => this.pdfExportSources(preview);
     const taped = doc.pages.some((page) => page.strokes.some(isTape));
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",
@@ -6365,6 +6590,11 @@ export class InkView extends TextFileView {
         const file = this.app.vault.getFileByPath(path);
         if (file) void this.app.workspace.getLeaf("tab").openFile(file);
       },
+      ...(!this.hasCompanionPdf && isCompanionNotebookPath(note.path)
+        ? {
+            keepPdfUpdated: (path: string) => this.adoptExportedCompanionPdf(path),
+          }
+        : {}),
     }).open();
   }
 
