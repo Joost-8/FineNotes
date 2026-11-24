@@ -25,8 +25,8 @@ export function neatenCommand(
   removed: ReadonlySet<string>,
   added: readonly Stroke[],
   moved: readonly StrokePoints[],
+  label = t("surface.command.beautify"),
 ): Command {
-  const label = t("surface.command.beautify");
   return new CompositeCommand(label, [
     new RemoveStrokesFromPage(pageId, removed, label),
     ...added.map((stroke) => new AddStrokeToPage(pageId, stroke)),
@@ -46,6 +46,8 @@ export function neatenCommandFor(
   changes: NeatenChanges,
   style: readonly Stroke[],
   nextId: () => string,
+  /** The undo step's name; Beautify's by default. */
+  label?: string,
 ): Command | null {
   const byId = new Map(strokes.map((s) => [s.id, s]));
   if (changes.added.length === 0 || changes.removed.some((id) => !byId.has(id))) return null;
@@ -73,5 +75,5 @@ export function neatenCommandFor(
     const stroke = byId.get(id);
     return stroke && stroke.pts.length === pts.length ? [{ stroke, pts }] : [];
   });
-  return neatenCommand(pageId, new Set(changes.removed), added, moved);
+  return neatenCommand(pageId, new Set(changes.removed), added, moved, label);
 }

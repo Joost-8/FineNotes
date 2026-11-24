@@ -45,6 +45,7 @@ export const surface = {
   "surface.command.changeShape": "Change shape",
   "surface.command.erase": "Erase",
   "surface.command.beautify": "Beautify handwriting",
+  "surface.command.writeInHand": "Write in my handwriting",
   "surface.command.fill": "Fill",
   "surface.command.pasteStyle": "Paste style",
   "surface.command.changeFurniture": "Change header and page numbers",

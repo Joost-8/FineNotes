@@ -25,6 +25,7 @@ import { WordCheck } from "./view/word-check";
 import { NeatenService } from "./view/neaten";
 import type { NeatnessControl } from "./view/neatness-row";
 import { neatnessOf } from "./recognition/writer/neatness";
+import { WriteInHand } from "./view/write-in-hand";
 import {
   followPairRename,
   isNotebookOwnFolder,
@@ -562,6 +563,9 @@ export default class GoodObsidianPlugin extends Plugin {
     pauseOcr: () => this.ocr.pause(),
     neatness: () => neatnessOf(this.settings.beautifyNeatness),
   });
+
+  /** Known text (a corrected word, a text box, an answer) written in the writer's hand. */
+  readonly writeInHand = new WriteInHand(this.neaten);
 
   /** "Help improve Grape", in a build that has it (`view/sharing-load.ts`); else null. */
   sharing: SharingFeature | null = null;

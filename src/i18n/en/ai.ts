@@ -266,6 +266,12 @@ export const ai = {
   "ai.word.title": "What does it say?",
   "ai.word.note": "Type the word as you wrote it. FineNotes learns your handwriting from it.",
   "ai.word.field": "The word",
+  "ai.word.writeInHand": "Write it in my handwriting",
+  "ai.word.writeAs": "Write “{word}” in my handwriting",
+  "ai.hand.writing": "Writing in your handwriting…",
+  "ai.hand.failed": "FineNotes: could not write it in your handwriting.",
+  "ai.hand.missing": "FineNotes: your handwriting cannot be written with {chars}.",
+  "ai.hand.noRoom": "FineNotes: the text does not fit on this page below the box.",
   "ai.task.edit": "Edit task",
   "ai.task.make": "Make a task",
   "ai.task.note":

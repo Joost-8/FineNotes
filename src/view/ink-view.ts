@@ -457,6 +457,7 @@ import {
 } from "../recognition/hwr/selection-words";
 import type { SpellingFix } from "./spelling-row";
 import type { WordPopover } from "./word-popover";
+import { wordInHand } from "./write-in-hand";
 import { type TranslateAi, TranslateWindow, type TranslateTarget } from "./translate-window";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
@@ -4429,6 +4430,9 @@ export class InkView extends TextFileView {
       },
       closed,
       asked,
+      wordInHand(this.plugin.writeInHand, surface, page.id, word.strokeIds, at, (card) => {
+        this.wordPopover = card;
+      }),
     );
   }
 

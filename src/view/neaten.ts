@@ -34,7 +34,7 @@ import type { WriterClient } from "../recognition/writer/client";
 import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
 import { neatenLine } from "../recognition/writer/repair";
-import { type TaggedLine, levelledStrokes } from "../recognition/writer/rows";
+import { type TaggedLine, type WrittenStroke, levelledStrokes } from "../recognition/writer/rows";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
 import { guidanceAt } from "../recognition/writer/neatness";
@@ -119,6 +119,8 @@ export class NeatenService {
   private lookedAt = 0;
   /** Prose-like practice lines at the last Beautify (null: none yet this session). */
   private practiceLines: number | null = null;
+  /** The last answer of `ready`, and when it was given (0: never). */
+  private readyAt = { at: 0, ready: false };
 
   constructor(private readonly host: NeatenHost) {
     // Listed in Settings › Models on this device from the start, like the other models.
@@ -410,6 +412,117 @@ export class NeatenService {
       this.writer = new WriterClient();
     }
     return this.writer;
+  }
+
+  /**
+   * Whether known text can be written in the writer's hand now: the model is
+   * here and the writer has copied enough practice lines (Beautify's rule).
+   * Looked at again at most every {@link RECHECK_MS}; `readyNow` gives the
+   * last answer at once, for menus built without waiting.
+   */
+  async ready(): Promise<boolean> {
+    const now = Date.now();
+    if (this.readyAt.at > 0 && now - this.readyAt.at < RECHECK_MS) return this.readyAt.ready;
+    this.readyAt = { at: now, ready: this.readyAt.ready };
+    try {
+      const store = this.host.models.register(WRITER_MODEL);
+      await store.check(true);
+      let ready = false;
+      if (store.state.kind === "ready") {
+        const model = await this.loadModel();
+        if (!("problem" in model)) {
+          const writable = (ch: string): boolean => model.manifest.chars.indexOf(ch) > 0;
+          ready = (await this.poolOf(writable)).length >= MIN_PRACTICE_LINES;
+        }
+      }
+      this.readyAt = { at: Date.now(), ready };
+    } catch {
+      this.readyAt = { at: Date.now(), ready: false };
+    }
+    return this.readyAt.ready;
+  }
+
+  /** The last answer of {@link ready}, and a look again in the background when it is old. */
+  readyNow(): boolean {
+    void this.ready();
+    return this.readyAt.ready;
+  }
+
+  /** Whether the model writes character `ch` (null until the model was read). */
+  writes(ch: string): boolean {
+    return (this.model?.manifest.chars.indexOf(ch) ?? -1) > 0;
+  }
+
+  /**
+   * Known text (a corrected word, typed text, an answer) written in the
+   * writer's hand, as Beautify writes a line: the same model, practice
+   * lines, the same guidance (the neatness slider), tries and repair. Each text is one line, with its
+   * own noise (`seed` and its place). Returns each line's strokes in model
+   * units, words stood level (`rows.levelledStrokes`), and the practice
+   * lines' ink (a hand to size by on an empty page). Null when the writer is
+   * not ready, a text has a letter the model lacks, or `stop` said so.
+   * The OCR is paused while it writes, and the writer let go after.
+   */
+  async writeKnown(
+    texts: readonly string[],
+    options: { stop?: () => boolean; seed?: number } = {},
+  ): Promise<{ lines: WrittenStroke[][]; sample: InkStroke[] } | null> {
+    if (this.running || texts.length === 0) return null;
+    this.running = true;
+    let resumeOcr: (() => void) | null = null;
+    const stop = options.stop ?? (() => false);
+    try {
+      if (!(await this.ready())) return null;
+      const model = await this.loadModel();
+      if ("problem" in model) return null;
+      const { manifest, kind } = model;
+      const writable = (ch: string): boolean => manifest.chars.indexOf(ch) > 0;
+      if (!texts.every((text) => text.trim() !== "" && Array.from(text).every(writable)))
+        return null;
+      const pool = await this.poolOf(writable);
+      if (pool.length < MIN_PRACTICE_LINES) return null;
+      const refs: unknown[] = [];
+      for (const [n, text] of texts.entries()) {
+        const shown = await this.shownFor(text, pool, manifest, kind);
+        if (!shown) return null;
+        // Each line its own choices of what is shown (the pieces kind), as its own noise.
+        const ref = kind.reference(text, shown, manifest, (options.seed ?? 0) + n + 1);
+        if (ref === null) return null;
+        refs.push(ref);
+        if (stop()) return null;
+      }
+      const guidance = manifest.sampling
+        ? guidanceAt(this.host.neatness(), manifest.sampling.guidance)
+        : undefined;
+      const tries = manifest.sampling?.tries ?? DEFAULT_TRIES;
+      resumeOcr = await this.host.pauseOcr();
+      const writer = await this.writerClient();
+      await writer.ensureModel(model.key, async () => {
+        const graphs: Record<string, ArrayBuffer> = {};
+        for (const role of Object.keys(kind.graphs)) {
+          graphs[role] = await this.bytes(manifest.graphs[role].file);
+        }
+        return { files: { graphs, wasm: await this.bytes(OCR_WASM_FILE.name) }, manifest };
+      });
+      const lines: WrittenStroke[][] = [];
+      for (const [n, text] of texts.entries()) {
+        const done = await neatenLine(
+          text,
+          refs[n],
+          n,
+          (t, r, seed, id, low) => writer.write(t, r, seed, id, low, guidance),
+          (written) => this.host.handwriting.readRows(written),
+          { seed: options.seed ?? 0, tries, repair: true, stop },
+        );
+        if (!done || stop()) return null;
+        lines.push(levelledStrokes(done.written, done.written.char, text));
+      }
+      return { lines, sample: pool.flatMap((line) => line.strokes) };
+    } finally {
+      this.writer?.dispose();
+      (resumeOcr as (() => void) | null)?.();
+      this.running = false;
+    }
   }
 
   /** Let the writer's worker go (the plugin unloads). */
