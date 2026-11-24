@@ -17,6 +17,7 @@ import { setIcon } from "obsidian";
 import type { ImageElement, Page, SlideRef } from "../model/document";
 import type { PageBox } from "../canvas/page-layout";
 import { fromImageLocal, transformOf } from "../canvas/image-geometry";
+import { isMirror } from "../canvas/mirrors";
 import { isFolded } from "../model/sticky-notes";
 import { t } from "../i18n/translate";
 import { onTap } from "./selection-bar";
@@ -60,7 +61,9 @@ export class SlideDots {
       const inset = { x: CHIP_INSET_X_PX / scale, y: CHIP_INSET_Y_PX / scale };
       for (const box of boxes) {
         for (const image of pageAt(box.index)?.images ?? []) {
-          if (!image.slide || isFolded(image) || image === this.aside) continue;
+          // A snippet across joined pages has a mirror on the next page, at the
+          // same spot: the owner's chip is the only one (canvas/mirrors.ts).
+          if (!image.slide || isFolded(image) || isMirror(image) || image === this.aside) continue;
           const at = chipPoint(image, inset);
           const chip = this.chip(targets.length);
           targets.push(image.slide);
