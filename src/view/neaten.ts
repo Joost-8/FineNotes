@@ -32,7 +32,13 @@ import type { WriterClient } from "../recognition/writer/client";
 import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
 import { neatenLine } from "../recognition/writer/repair";
-import { type TaggedLine, calm, levelledStrokes, pickLines, referenceOf } from "../recognition/writer/rows";
+import {
+  type TaggedLine,
+  calm,
+  levelledStrokes,
+  pickLines,
+  referenceOf,
+} from "../recognition/writer/rows";
 import type { WriterMeta } from "../recognition/writer/sampler";
 import { sureWords, wordsOf } from "../recognition/writer/sure-words";
 import { WRITER_FILES, WRITER_MODEL } from "../recognition/writer/writer-model";
@@ -88,7 +94,9 @@ export class NeatenService {
     try {
       return await this.work(request);
     } catch (error) {
-      new Notice(t("ai.neaten.failed", { error: error instanceof Error ? error.message : String(error) }));
+      new Notice(
+        t("ai.neaten.failed", { error: error instanceof Error ? error.message : String(error) }),
+      );
       return { kind: "stopped" };
     } finally {
       this.running = false;
@@ -106,15 +114,22 @@ export class NeatenService {
     const writable = (ch: string): boolean => meta.chars.indexOf(ch) > 0;
     const pool = await this.poolOf(writable);
     if (pool.length < MIN_PRACTICE_LINES) {
-      new NeedsSheetModal(this.host.app, () => void writePracticePage(this.host.learningHost())).open();
+      new NeedsSheetModal(
+        this.host.app,
+        () => void writePracticePage(this.host.learningHost()),
+      ).open();
       return { kind: "needs-sheet" };
     }
     if (request.stop()) return { kind: "stopped" };
 
     // The selected lines, top to bottom, and what Grape reads in each.
-    const selected = request.strokes.filter((s) => request.selected.has(s.id) && s.tool === "pen" && !s.shape);
+    const selected = request.strokes.filter(
+      (s) => request.selected.has(s.id) && s.tool === "pen" && !s.shape,
+    );
     const byId = new Map(selected.map((s) => [s.id, s]));
-    const lines = measureLines(selected).map((line) => line.strokes.map((id) => byId.get(id)).filter((s): s is Stroke => !!s));
+    const lines = measureLines(selected).map((line) =>
+      line.strokes.map((id) => byId.get(id)).filter((s): s is Stroke => !!s),
+    );
     const profile = measureHand(request.strokes.filter((s) => s.tool === "pen" && !s.shape));
     if (lines.length === 0 || !profile) return { kind: "nothing" };
     const lexicon = this.host.lexicon();
@@ -183,10 +198,20 @@ export class NeatenService {
     // The model writes the whole line (its neighbours shape each word), so every letter must be one it has.
     const text = wordsOf(reading.text).join(" ");
     if (!text || !Array.from(text).every(writable)) return null;
-    const words = reading.wordStrokes.map((word) => word.map((i) => strokes[i]?.id).filter((id): id is string => !!id));
+    const words = reading.wordStrokes.map((word) =>
+      word.map((i) => strokes[i]?.id).filter((id): id is string => !!id),
+    );
     if (words.length !== wordsOf(text).length) return null;
     const inList = listed ? (w: string) => listed.has(w.toLowerCase()) : null;
-    const rewrite = sureWords(text, reading.greedy, reading.chars, writable, undefined, undefined, inList);
+    const rewrite = sureWords(
+      text,
+      reading.greedy,
+      reading.chars,
+      writable,
+      undefined,
+      undefined,
+      inList,
+    );
     return rewrite.some(Boolean) ? { text, strokes, words, rewrite } : null;
   }
 
@@ -201,9 +226,13 @@ export class NeatenService {
     const key = `${this.host.handwriting.info?.name ?? ""}|${stamps.join("|")}`;
     if (this.pool?.key === key) return this.pool.lines;
     if (prose.length < MIN_PRACTICE_LINES) return [];
-    const tagged = await this.host.handwriting.tagLines(prose.map((line) => ({ text: line.text, strokes: line.strokes })));
+    const tagged = await this.host.handwriting.tagLines(
+      prose.map((line) => ({ text: line.text, strokes: line.strokes })),
+    );
     const meta = await this.loadMeta();
-    const pool = tagged.filter((line): line is TaggedLine => line !== null).map((line) => calm(line, meta.hold));
+    const pool = tagged
+      .filter((line): line is TaggedLine => line !== null)
+      .map((line) => calm(line, meta.hold));
     this.pool = { key, lines: pool };
     return pool;
   }
@@ -238,7 +267,7 @@ export class NeatenService {
 }
 
 /** "Neaten needs your handwriting": Learn's practice sheet, the same sheet for both. */
-class NeedsSheetModal extends Modal {
+export class NeedsSheetModal extends Modal {
   constructor(
     app: App,
     private readonly write: () => void,
@@ -250,7 +279,9 @@ class NeedsSheetModal extends Modal {
     this.setTitle(t("ai.neaten.needsSheetTitle"));
     this.contentEl.createEl("p", { text: t("ai.neaten.needsSheet", { min: MIN_PRACTICE_LINES }) });
     const buttons = this.contentEl.createDiv({ cls: "modal-button-container" });
-    buttons.createEl("button", { text: t("common.cancel") }).addEventListener("click", () => this.close());
+    buttons
+      .createEl("button", { text: t("common.cancel") })
+      .addEventListener("click", () => this.close());
     const cta = buttons.createEl("button", { cls: "mod-cta", text: t("ai.neaten.writeSheet") });
     cta.addEventListener("click", () => {
       this.close();

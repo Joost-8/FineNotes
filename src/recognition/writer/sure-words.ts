@@ -54,7 +54,10 @@ export function wordsOf(text: string): string[] {
 }
 
 /** The words of the greedy text with their letters' readings; null when they do not line up. */
-function greedyWords(greedy: string, chars: readonly CharReading[]): { word: string; letters: CharReading[] }[] | null {
+function greedyWords(
+  greedy: string,
+  chars: readonly CharReading[],
+): { word: string; letters: CharReading[] }[] | null {
   if (chars.length !== Array.from(greedy).length) return null;
   const out: { word: string; letters: CharReading[] }[] = [];
   let cur: CharReading[] = [];
@@ -89,7 +92,10 @@ export function sureWords(
   const out = words.map((w, i) => known.has(i) && Array.from(w).every(writable));
   const read = greedyWords(greedy, chars);
   if (!read) return out;
-  for (const [tag, a0, a1, b0] of opcodes(words, read.map((r) => r.word))) {
+  for (const [tag, a0, a1, b0] of opcodes(
+    words,
+    read.map((r) => r.word),
+  )) {
     if (tag !== "equal") continue;
     for (let i = a0; i < a1; i++) {
       const { letters } = read[b0 + (i - a0)];

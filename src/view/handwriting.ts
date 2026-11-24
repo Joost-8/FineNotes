@@ -247,7 +247,10 @@ export class HandwritingReader {
    * Neaten: read lines as a page is read (word list, language model), with
    * each letter's confidence and each word's strokes.
    */
-  readForNeaten(lines: readonly (readonly PageInk[])[], lexicon: WordListSource | null): Promise<LineReading[]> {
+  readForNeaten(
+    lines: readonly (readonly PageInk[])[],
+    lexicon: WordListSource | null,
+  ): Promise<LineReading[]> {
     return this.withClient(async (client) => {
       await this.sendLexicon(client, lexicon);
       return client.readLines(

@@ -47,14 +47,20 @@ function padded(bundle: HwrBundle, r: Rows): Float32Array {
  * Null when the model has no class for a letter, the ink is too short for
  * the text, or the text cannot be laid over it.
  */
-export function tagLine(bundle: HwrBundle, strokes: readonly InkStroke[], text: string): TaggedLine | null {
+export function tagLine(
+  bundle: HwrBundle,
+  strokes: readonly InkStroke[],
+  text: string,
+): TaggedLine | null {
   const input = bundle.meta.input;
   if (!input || input.kind !== "curves") return null;
   const ids = classes(bundle, text);
   if (!ids || ids.length === 0) return null;
   let rows: Rows;
   try {
-    const points = lineFeatures(strokes, bundle.meta.features.heightsPerSecond, { lateStrokes: false });
+    const points = lineFeatures(strokes, bundle.meta.features.heightsPerSecond, {
+      lateStrokes: false,
+    });
     const curves = curvesFromFeatures(points.features, points.frames, input.tol, ROW);
     rows = { x: curves.features, n: curves.frames };
   } catch (error) {

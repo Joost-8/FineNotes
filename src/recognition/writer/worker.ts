@@ -15,13 +15,18 @@ import { WRITER_TAG, type WriterReply, type WriterRequest, type WriterResult } f
 import { type Graphs, type WriterMeta, writeLine } from "./sampler";
 
 interface WorkerScope {
-  onmessage: ((event: MessageEvent<{ [WRITER_TAG]: true; id: number } & WriterRequest>) => void) | null;
+  onmessage:
+    ((event: MessageEvent<{ [WRITER_TAG]: true; id: number } & WriterRequest>) => void) | null;
   postMessage(message: unknown, transfer?: Transferable[]): void;
 }
 
 const scope = self as unknown as WorkerScope;
 
-let sessions: { encode: ort.InferenceSession; durations: ort.InferenceSession; velocity: ort.InferenceSession } | null = null;
+let sessions: {
+  encode: ort.InferenceSession;
+  durations: ort.InferenceSession;
+  velocity: ort.InferenceSession;
+} | null = null;
 let graphs: Graphs<OrtEncoded> | null = null;
 let meta: WriterMeta | null = null;
 let configured = false;
@@ -49,8 +54,14 @@ async function load(request: Extract<WriterRequest, { type: "load" }>): Promise<
   sessions = null;
   graphs = null;
   const encode = await ort.InferenceSession.create(new Uint8Array(request.files.encode), options);
-  const durations = await ort.InferenceSession.create(new Uint8Array(request.files.durations), options);
-  const velocity = await ort.InferenceSession.create(new Uint8Array(request.files.velocity), options);
+  const durations = await ort.InferenceSession.create(
+    new Uint8Array(request.files.durations),
+    options,
+  );
+  const velocity = await ort.InferenceSession.create(
+    new Uint8Array(request.files.velocity),
+    options,
+  );
   sessions = { encode, durations, velocity };
   graphs = ortGraphs(ort, sessions);
   meta = request.meta;
@@ -81,6 +92,7 @@ scope.onmessage = (event) => {
         { id, ok: true, result },
         result.type === "write" ? [result.written.x.buffer, result.written.char.buffer] : [],
       ),
-    (error: unknown) => done({ id, ok: false, error: error instanceof Error ? error.message : String(error) }),
+    (error: unknown) =>
+      done({ id, ok: false, error: error instanceof Error ? error.message : String(error) }),
   );
 };

@@ -32,6 +32,9 @@ export type WriterRequest =
       low: number[];
     };
 
-export type WriterResult = { type: "load"; ms: number } | { type: "write"; written: Written; ms: number };
+export type WriterResult =
+  { type: "load"; ms: number } | { type: "write"; written: Written; ms: number };
 
-export type WriterReply = { id: number } & ({ ok: true; result: WriterResult } | { ok: false; error: string });
+export type WriterReply = { id: number } & (
+  { ok: true; result: WriterResult } | { ok: false; error: string }
+);

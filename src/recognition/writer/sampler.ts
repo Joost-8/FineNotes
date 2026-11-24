@@ -57,7 +57,14 @@ export interface Graphs<E extends Encoded = Encoded> {
   /** Per character, logits over 1..maxDur rows (`L × maxDur`), given a summary. */
   durations(ids: Int32Array, g: Float32Array): Promise<Float32Array>;
   /** The velocity of normalised rows `x` (`T × ROW`) at time `tau`. */
-  velocity(x: Float32Array, tau: number, cid: Int32Array, k: Int32Array, d: Int32Array, enc: E): Promise<Float32Array>;
+  velocity(
+    x: Float32Array,
+    tau: number,
+    cid: Int32Array,
+    k: Int32Array,
+    d: Int32Array,
+    enc: E,
+  ): Promise<Float32Array>;
 }
 
 /** A written line: its raw rows and the character of the text each row was written for. */
@@ -119,7 +126,8 @@ export function lineSeed(seed: number, id: number): number {
 
 function argmaxRows(logits: Float32Array, i: number, classes: number): number {
   let best = 0;
-  for (let c = 1; c < classes; c++) if (logits[i * classes + c] > logits[i * classes + best]) best = c;
+  for (let c = 1; c < classes; c++)
+    if (logits[i * classes + c] > logits[i * classes + best]) best = c;
   return best + 1;
 }
 
@@ -153,7 +161,8 @@ export async function writeLine<E extends Encoded>(
   let dMix: Float32Array | null = null;
   if (low.size > 0) {
     const g = new Float32Array(his.g.length);
-    for (let i = 0; i < g.length; i++) g[i] = meta.lowMix * his.g[i] + (1 - meta.lowMix) * none.g[i];
+    for (let i = 0; i < g.length; i++)
+      g[i] = meta.lowMix * his.g[i] + (1 - meta.lowMix) * none.g[i];
     dMix = await graphs.durations(ids, g);
   }
   const counts = new Int32Array(L);

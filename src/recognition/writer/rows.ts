@@ -132,7 +132,11 @@ export function calm<R extends Rows>(r: R, limit: number): R {
  * The lines that share most letters (case ignored) with `text`, best
  * first, at most `count`; ties keep the pool's order.
  */
-export function pickLines<L extends { text: string }>(text: string, pool: readonly L[], count: number): L[] {
+export function pickLines<L extends { text: string }>(
+  text: string,
+  pool: readonly L[],
+  count: number,
+): L[] {
   const want = new Set(text.toLowerCase());
   want.delete(" ");
   const score = (line: L): number => {
@@ -206,7 +210,10 @@ export function median(values: readonly number[]): number {
 }
 
 /** Points along each row's curve, `per` per curve (ends included), y up. */
-function curvePoints(r: Rows, per: number): { pts: Float64Array; start: Float64Array; end: Float64Array } {
+function curvePoints(
+  r: Rows,
+  per: number,
+): { pts: Float64Array; start: Float64Array; end: Float64Array } {
   const pts = new Float64Array(r.n * per * 2);
   const start = new Float64Array(r.n * 2);
   const end = new Float64Array(r.n * 2);
@@ -251,7 +258,11 @@ export interface RowStroke {
  * space do not vote); a stroke with no vote goes to the word whose ink is
  * nearest along the line. -1 when no stroke has a word.
  */
-export function wordsOf(r: Rows, char: ArrayLike<number>, text: string): { strokes: RowStroke[]; owner: number[] } {
+export function wordsOf(
+  r: Rows,
+  char: ArrayLike<number>,
+  text: string,
+): { strokes: RowStroke[]; owner: number[] } {
   const { start, end } = curvePoints(r, 1);
   const wordAt: number[] = [];
   let w = 0;
@@ -332,7 +343,11 @@ export interface WrittenStroke {
  * none follows the word before it. Without an alignment (`char` null or of
  * another length) the strokes are as written, with no words.
  */
-export function levelledStrokes(r: Rows, char: ArrayLike<number> | null, text: string): WrittenStroke[] {
+export function levelledStrokes(
+  r: Rows,
+  char: ArrayLike<number> | null,
+  text: string,
+): WrittenStroke[] {
   const { pts } = curvePoints(r, POINTS_PER_CURVE);
   const per = POINTS_PER_CURVE;
   const strokeOf = (a: number, e: number, dy: number): number[] => {
@@ -392,7 +407,8 @@ export function levelledStrokes(r: Rows, char: ArrayLike<number> | null, text: s
     const pairs: number[] = [];
     ws.forEach((a, i) => {
       for (const b of ws.slice(i + 1)) {
-        if (Math.abs(mid(b) - mid(a)) > 1) pairs.push(((foot.get(b) as number) - (foot.get(a) as number)) / (mid(b) - mid(a)));
+        if (Math.abs(mid(b) - mid(a)) > 1)
+          pairs.push(((foot.get(b) as number) - (foot.get(a) as number)) / (mid(b) - mid(a)));
       }
     });
     slope = pairs.length ? median(pairs) : 0;
@@ -404,7 +420,10 @@ export function levelledStrokes(r: Rows, char: ArrayLike<number> | null, text: s
     if (foot.has(word)) last = slope * mid(word) + level - (foot.get(word) as number);
     dy.set(word, last);
   }
-  return strokes.map((s, i) => ({ pts: strokeOf(s.a, s.e, dy.get(owner[i]) ?? 0), word: owner[i] }));
+  return strokes.map((s, i) => ({
+    pts: strokeOf(s.a, s.e, dy.get(owner[i]) ?? 0),
+    word: owner[i],
+  }));
 }
 
 function plainStrokes(r: Rows): RowStroke[] {

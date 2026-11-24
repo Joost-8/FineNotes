@@ -52,7 +52,13 @@ export function neatenCommandFor(
   const added = changes.added.flatMap((s, i): Stroke[] => {
     const pen = style[s.line];
     if (!pen) return [];
-    const stroke: Stroke = { id: nextId(), color: pen.color, size: pen.size, tool: pen.tool, pts: [...s.pts] };
+    const stroke: Stroke = {
+      id: nextId(),
+      color: pen.color,
+      size: pen.size,
+      tool: pen.tool,
+      pts: [...s.pts],
+    };
     // Written where the line was written, in order.
     if (pen.t0 !== undefined) stroke.t0 = pen.t0 + i;
     return [stroke];

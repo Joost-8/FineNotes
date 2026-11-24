@@ -130,7 +130,10 @@ function handle(request: HwrRequest, id: number): HwrResult {
   }
   const model = bundle;
   if (request.type === "tag") {
-    return { type: "tag", lines: request.lines.map((line) => tagLine(model, line.strokes, line.text)) };
+    return {
+      type: "tag",
+      lines: request.lines.map((line) => tagLine(model, line.strokes, line.text)),
+    };
   }
   if (request.type === "rows") return { type: "rows", text: readRows(model, request.rows) };
   const rereadList = request.reread && lexicon ? { lexicon, words: lexiconWords } : null;

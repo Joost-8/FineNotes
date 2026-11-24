@@ -19463,7 +19463,9 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       this.selectionFrameEl.removeClass("is-working");
     }
     if (outcome.kind !== "done" || stop()) return;
-    const command = neatenCommandFor(page.id, strokes, outcome.edit, outcome.style, () => this.strokeIds.next());
+    const command = neatenCommandFor(page.id, strokes, outcome.edit, outcome.style, () =>
+      this.strokeIds.next(),
+    );
     if (!command) return;
     this.clearSelection();
     this.history.push(this.doc, command);

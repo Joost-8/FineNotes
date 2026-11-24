@@ -31,7 +31,12 @@ export function opcodes<T>(a: readonly T[], b: readonly T[]): Opcode[] {
     if (list) list.push(j);
     else b2j.set(v, [j]);
   });
-  const longest = (alo: number, ahi: number, blo: number, bhi: number): [number, number, number] => {
+  const longest = (
+    alo: number,
+    ahi: number,
+    blo: number,
+    bhi: number,
+  ): [number, number, number] => {
     let besti = alo;
     let bestj = blo;
     let bestsize = 0;
@@ -144,7 +149,9 @@ export function errorRate(text: string, read: string): number {
   for (let i = 1; i <= text.length; i++) {
     const cur = [i];
     for (let j = 1; j <= read.length; j++) {
-      cur.push(Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (text[i - 1] === read[j - 1] ? 0 : 1)));
+      cur.push(
+        Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (text[i - 1] === read[j - 1] ? 0 : 1)),
+      );
     }
     prev = cur;
   }
@@ -152,7 +159,13 @@ export function errorRate(text: string, read: string): number {
 }
 
 /** Writes one try of a line (`low`: letters at low guidance), from a try's seed and the line's number. */
-export type WriteTry = (text: string, ref: Reference, seed: number, id: number, low: ReadonlySet<number>) => Promise<Written>;
+export type WriteTry = (
+  text: string,
+  ref: Reference,
+  seed: number,
+  id: number,
+  low: ReadonlySet<number>,
+) => Promise<Written>;
 /** Reads a written line back. */
 export type ReadBack = (line: Written) => Promise<string>;
 
@@ -195,13 +208,22 @@ export async function neatenLine(
     if (bad.size === 0) break;
     if (options.stop?.()) return null;
     const low = new Set<number>();
-    for (const [wi, letters] of bad) for (const i of round === 1 ? letters : wordSpan(text, wi)) low.add(i);
+    for (const [wi, letters] of bad)
+      for (const i of round === 1 ? letters : wordSpan(text, wi)) low.add(i);
     const written = await write(text, ref, best.seed, id, low);
     const got = await read(written);
     const now = rejected(text, got);
-    const kept = [...now.keys()].every((wi) => bad.has(wi)) && errorRate(text, got) < errorRate(text, best.read);
+    const kept =
+      [...now.keys()].every((wi) => bad.has(wi)) &&
+      errorRate(text, got) < errorRate(text, best.read);
     best.repairs.tried++;
-    if (kept) best = { written, read: got, seed: best.seed, repairs: { tried: best.repairs.tried, kept: best.repairs.kept + 1 } };
+    if (kept)
+      best = {
+        written,
+        read: got,
+        seed: best.seed,
+        repairs: { tried: best.repairs.tried, kept: best.repairs.kept + 1 },
+      };
   }
   return best;
 }

@@ -12,7 +12,13 @@
  */
 
 import workerSource from "worker:./worker";
-import { WRITER_TAG, type WriterFiles, type WriterReply, type WriterRequest, type WriterResult } from "./protocol";
+import {
+  WRITER_TAG,
+  type WriterFiles,
+  type WriterReply,
+  type WriterRequest,
+  type WriterResult,
+} from "./protocol";
 import type { Reference } from "./rows";
 import type { WriterMeta, Written } from "./sampler";
 
@@ -64,7 +70,11 @@ export class WriterClient {
     return worker;
   }
 
-  private send(request: WriterRequest, transfer: Transferable[], timeoutMs: number): Promise<WriterResult> {
+  private send(
+    request: WriterRequest,
+    transfer: Transferable[],
+    timeoutMs: number,
+  ): Promise<WriterResult> {
     window.clearTimeout(this.idleTimer);
     let worker: Worker;
     try {
@@ -74,14 +84,20 @@ export class WriterClient {
     }
     return new Promise<WriterResult>((resolve, reject) => {
       const id = this.nextId++;
-      const timer = window.setTimeout(() => this.stop(new Error("the writer's worker did not answer")), timeoutMs);
+      const timer = window.setTimeout(
+        () => this.stop(new Error("the writer's worker did not answer")),
+        timeoutMs,
+      );
       this.pending.set(id, { resolve, reject, timer });
       worker.postMessage({ ...request, [WRITER_TAG]: true, id }, transfer);
     });
   }
 
   /** Make sure the worker holds model `key`, reading its files with `read` if not. */
-  async ensureModel(key: string, read: () => Promise<{ files: WriterFiles; meta: WriterMeta }>): Promise<void> {
+  async ensureModel(
+    key: string,
+    read: () => Promise<{ files: WriterFiles; meta: WriterMeta }>,
+  ): Promise<void> {
     if (this.worker && this.loaded === key) return;
     const { files, meta } = await read();
     this.loaded = "";
@@ -94,8 +110,18 @@ export class WriterClient {
   }
 
   /** One try of a line. The reference is copied, not handed over: the caller writes it again. */
-  async write(text: string, ref: Reference, seed: number, id: number, low: ReadonlySet<number>): Promise<Written> {
-    const result = await this.send({ type: "write", text, ref, seed, line: id, low: [...low] }, [], WRITE_TIMEOUT_MS);
+  async write(
+    text: string,
+    ref: Reference,
+    seed: number,
+    id: number,
+    low: ReadonlySet<number>,
+  ): Promise<Written> {
+    const result = await this.send(
+      { type: "write", text, ref, seed, line: id, low: [...low] },
+      [],
+      WRITE_TIMEOUT_MS,
+    );
     if (result.type !== "write") throw new Error("unexpected reply");
     return result.written;
   }

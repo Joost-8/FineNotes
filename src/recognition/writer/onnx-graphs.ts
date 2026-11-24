@@ -24,7 +24,8 @@ export interface WriterSessions {
   velocity: Ort.InferenceSession;
 }
 
-const i64 = (v: ArrayLike<number>): BigInt64Array => BigInt64Array.from(Array.from(v, (n) => BigInt(n)));
+const i64 = (v: ArrayLike<number>): BigInt64Array =>
+  BigInt64Array.from(Array.from(v, (n) => BigInt(n)));
 const bools = (v: ArrayLike<number>): Uint8Array => Uint8Array.from(v, (n) => (n ? 1 : 0));
 
 export function ortGraphs(ort: OrtModule, s: WriterSessions): Graphs<OrtEncoded> {
@@ -41,7 +42,12 @@ export function ortGraphs(ort: OrtModule, s: WriterSessions): Graphs<OrtEncoded>
         rsep: new T("bool", bools(ref.sep), [1, R]),
         drop: new T("bool", Uint8Array.from([drop ? 1 : 0]), [1]),
       });
-      return { mem: out.mem, valid: out.valid, gTensor: out.g, g: Float32Array.from(out.g.data as Float32Array) };
+      return {
+        mem: out.mem,
+        valid: out.valid,
+        gTensor: out.g,
+        g: Float32Array.from(out.g.data as Float32Array),
+      };
     },
     async durations(ids: Int32Array, g: Float32Array): Promise<Float32Array> {
       const L = ids.length;

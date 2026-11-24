@@ -158,7 +158,10 @@ export class HwrWorkerClient {
 
   /** Neaten: what the model reads in written curve rows. */
   async readRows(rows: Rows): Promise<string> {
-    const result = await this.send({ type: "rows", rows: { x: rows.x, n: rows.n } }, READ_TIMEOUT_MS);
+    const result = await this.send(
+      { type: "rows", rows: { x: rows.x, n: rows.n } },
+      READ_TIMEOUT_MS,
+    );
     if (result.type !== "rows") throw new Error("unexpected reply");
     return result.text;
   }

@@ -56,7 +56,9 @@ function every(pts: ArrayLike<number>, at: number): number[] {
 const xsOf = (pts: ArrayLike<number>): number[] => every(pts, 0);
 
 /** The baseline fit of the line most of these strokes are on. */
-function homeOf(strokes: readonly PageInk[]): { slope: number; level: number; xHeight: number } | null {
+function homeOf(
+  strokes: readonly PageInk[],
+): { slope: number; level: number; xHeight: number } | null {
   const fits = measureLines(strokes);
   if (fits.length === 0) return null;
   return [...fits].sort((a, b) => b.strokes.length - a.strokes.length)[0];
@@ -81,7 +83,8 @@ export function placeLines<S extends PageInk>(
   const scaled = lines.map((line) =>
     line.written.map((s, j) => {
       const pts: number[] = [];
-      for (let i = 0; i + 1 < s.pts.length; i += 2) pts.push(s.pts[i] * unit, -s.pts[i + 1] * unit, 0.5);
+      for (let i = 0; i + 1 < s.pts.length; i += 2)
+        pts.push(s.pts[i] * unit, -s.pts[i + 1] * unit, 0.5);
       return { id: `w${j}`, tool: "pen", shape: null, t0: j, pts, word: s.word };
     }),
   );
@@ -122,7 +125,8 @@ export function placeLines<S extends PageInk>(
       const xs = line.rewrite[w]
         ? placed.filter((s) => s.word === w).flatMap((s) => xsOf(s.pts))
         : ids.flatMap((id) => xsOf(byId.get(id)?.pts ?? []));
-      if (xs.length) units.push({ word: w, written: line.rewrite[w], x0: Math.min(...xs), x1: Math.max(...xs) });
+      if (xs.length)
+        units.push({ word: w, written: line.rewrite[w], x0: Math.min(...xs), x1: Math.max(...xs) });
     });
     // Between two kept words the writer's own gap stays: the reading may split one written
     // word in two ("prepen dS"), and a word gap opened there would split it on the page.
