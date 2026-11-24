@@ -56,6 +56,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Select all in the page sidebar works across the whole button.** The
+  title next to it was drawn over its right half and took those taps.
+- **Pinching a selected picture no longer raises an error** in the
+  background; the picture turned as before.
 - **Small handwriting keeps its letters on older iPads** (#275). On iPadOS
   before 26.2 the Pencil arrives rounded to whole pixels, and the smoothing
   that steadies it could flatten letters written small, as on a Learn your

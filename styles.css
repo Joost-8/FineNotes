@@ -23520,9 +23520,6 @@ button:not(.clickable-icon).goodobsidian-share-all,
   position: absolute;
   inset: 0;
   pointer-events: none;
-  /* Above a selected picture's frame: a snippet is selected right after it is
-     dropped, and its chip is the only way back to the slide. */
-  z-index: 1;
 }
 
 .goodobsidian-slide-dots.is-hidden,
