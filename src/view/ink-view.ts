@@ -5161,6 +5161,7 @@ export class InkView extends TextFileView {
         },
         onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
         onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
+        onNeaten: (request) => this.plugin.neaten.run(request),
         canCorrectWords: () => this.settings.handwritingOnDevice !== false,
         onReadingPoint: (index, y) => {
           this.sidebar?.setReadingPoint(index, y);

@@ -21,6 +21,7 @@ import {
 } from "./protocol";
 import type { LabelledLine } from "./tune";
 import type { LineReading, PageReading } from "./recognizer";
+import type { Rows, TaggedLine } from "../writer/rows";
 
 /** Parsing a file is fast; a page of 30 lines on a slow device is not. */
 const LOAD_TIMEOUT_MS = 30_000;
@@ -138,10 +139,28 @@ export class HwrWorkerClient {
     useLm = true,
     chars = false,
     math = false,
+    extra: { wordInk?: boolean; reread?: boolean } = {},
   ): Promise<LineReading[]> {
-    const result = await this.send({ type: "lines", lines, useLm, chars, math }, READ_TIMEOUT_MS);
+    const result = await this.send(
+      { type: "lines", lines, useLm, chars, math, ...extra },
+      READ_TIMEOUT_MS,
+    );
     if (result.type !== "lines") throw new Error("unexpected reply");
     return result.readings;
+  }
+
+  /** Neaten: copied lines as curve rows tied to their letters (null where they could not be). */
+  async tagLines(lines: { text: string; strokes: InkStroke[] }[]): Promise<(TaggedLine | null)[]> {
+    const result = await this.send({ type: "tag", lines }, READ_TIMEOUT_MS);
+    if (result.type !== "tag") throw new Error("unexpected reply");
+    return result.lines;
+  }
+
+  /** Neaten: what the model reads in written curve rows. */
+  async readRows(rows: Rows): Promise<string> {
+    const result = await this.send({ type: "rows", rows: { x: rows.x, n: rows.n } }, READ_TIMEOUT_MS);
+    if (result.type !== "rows") throw new Error("unexpected reply");
+    return result.text;
   }
 
   /**

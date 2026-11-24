@@ -22,6 +22,7 @@ import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import type { SharingFeature } from "./view/sharing-feature";
 import { loadSharing } from "./view/sharing-load";
 import { WordCheck } from "./view/word-check";
+import { NeatenService } from "./view/neaten";
 import {
   followPairRename,
   isNotebookOwnFolder,
@@ -548,6 +549,16 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Checking words read on the device, and the answers to learn from. */
   readonly wordCheck = new WordCheck(this.app, () => this.pluginDir);
 
+  /** Neaten: selected handwriting rewritten in the writer's own hand (view/neaten.ts). */
+  readonly neaten = new NeatenService({
+    app: this.app,
+    models: this.models,
+    handwriting: this.handwriting,
+    lexicon: () => this.wordCheck.lexicon(),
+    learningHost: () => this.learningHost(),
+    releaseOcr: () => this.ocr.releaseModel(),
+  });
+
   /** "Help improve Grape", in a build that has it (`view/sharing-load.ts`); else null. */
   sharing: SharingFeature | null = null;
 
@@ -871,6 +882,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.register(() => {
       this.learner.dispose();
       this.handwriting.dispose();
+      this.neaten.dispose();
       this.speech.dispose();
       this.translator.dispose();
       this.ocr.dispose();

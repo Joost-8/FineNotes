@@ -8876,6 +8876,35 @@ textarea.goodobsidian-chat-input:focus-visible {
   display: block;
 }
 
+/* Neaten at work on the selection: its loop runs, a mark and no words. */
+.goodobsidian-selection-frame.is-working {
+  animation: goodobsidian-working-frame 1.2s ease-in-out infinite;
+}
+
+.goodobsidian-selection-frame.is-working .goodobsidian-selection-outline path {
+  animation: goodobsidian-working-loop 0.8s linear infinite;
+}
+
+@keyframes goodobsidian-working-frame {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes goodobsidian-working-loop {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-selection-frame.is-working,
+  .goodobsidian-selection-frame.is-working .goodobsidian-selection-outline path {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 .goodobsidian-selection-outline path {
   fill: none;
   stroke: var(--gob-lasso);

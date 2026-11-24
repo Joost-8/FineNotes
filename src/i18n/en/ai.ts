@@ -581,6 +581,16 @@ export const ai = {
   "ai.ocr.modelMostAccurate": "Scanned-page reader, most accurate (OCR model)",
   "ai.ocr.purpose":
     "It reads the printed text of scanned PDF pages on this device, so search, the text-snapping highlighter and Copy text work on them; the pages never leave the device.",
+  // --- Neaten: the handwriting writer ----------------------------------------
+  "ai.neaten.modelLabel": "Handwriting writer (Neaten model)",
+  "ai.neaten.modelPurpose":
+    "It rewrites the handwriting you select neater, in your own hand, on this device; your ink never leaves it.",
+  "ai.neaten.needsSheetTitle": "Neaten needs your handwriting",
+  "ai.neaten.needsSheet":
+    "Copy at least {min} lines on a practice sheet. Grape learns from the same sheet.",
+  "ai.neaten.writeSheet": "Write practice sheet",
+  "ai.neaten.nothingSure": "No word here is clear enough to rewrite",
+  "ai.neaten.failed": "Neaten stopped: {error}",
   "ai.ocr.tierFast": "Fast",
   "ai.ocr.tierAccurate": "Accurate",
   "ai.ocr.tierMostAccurate": "Most accurate",

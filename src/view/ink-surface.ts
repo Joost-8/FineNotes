@@ -379,6 +379,8 @@ import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
 import { ASKED_LEVEL_SLOPE, lineOfStroke, measureHand, tidyInk } from "../ink/tidy";
 import { SetStrokePoints } from "../model/tidy-commands";
+import { neatenCommandFor } from "../model/neaten-commands";
+import type { NeatenOutcome, NeatenRequest } from "./neaten";
 import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
 import { explainShape, recognizeAtZoom, styleOfShape } from "../ink/shape-recognizer";
 import { SNAP_RADIUS_PX, ShapeSnapper, penForPoint } from "../ink/shape-snap";
@@ -1317,6 +1319,8 @@ export interface InkSurfaceCallbacks {
    * an underlined word does (`wordInk` places it under the word).
    */
   onCorrectWord?: (index: number, strokeIds: string[]) => void;
+  /** Neaten the selected handwriting (view/neaten.ts); the surface applies a "done". */
+  onNeaten?: (request: NeatenRequest) => Promise<NeatenOutcome>;
   /** Whether handwriting can be read here, so "Correct" is offered. */
   canCorrectWords?: () => boolean;
   /**
@@ -15875,6 +15879,16 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         group: "edit",
         run: () => this.tidySelection(),
       });
+      // Neaten: the same writing rewritten in the writer's own hand (view/neaten.ts).
+      if (this.callbacks.onNeaten) {
+        actions.push({
+          id: "neaten",
+          icon: "signature",
+          label: t("surface.selectionBar.neaten"),
+          group: "edit",
+          run: () => void this.neatenSelection(),
+        });
+      }
     }
     if (menu.handwriting && heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
@@ -19412,6 +19426,42 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
    * it tidies toward is measured from the whole page, and on ruled paper the
    * lines are set on the rules. One undo step; the selection stays.
    */
+  /**
+   * Neaten the selection: the writing rewritten in the writer's own hand
+   * (view/neaten.ts). The frame shows it is working; leaving the selection,
+   * or any edit meanwhile, ends the work with nothing changed. One undo step.
+   */
+  private async neatenSelection(): Promise<void> {
+    const sel = this.liveSelection();
+    const page = sel && this.doc.pages.find((candidate) => candidate.id === sel.pageId);
+    const run = this.callbacks.onNeaten;
+    if (!sel || !page || !run || this.callbacks.isLocked?.()) return;
+    const latest = this.history.latest;
+    const stop = (): boolean => this.liveSelection() !== sel || this.history.latest !== latest;
+    const strokes = page.strokes.filter((stroke) => !isMirror(stroke));
+    this.selectionFrameEl.addClass("is-working");
+    let outcome: NeatenOutcome;
+    try {
+      outcome = await run({
+        strokes,
+        selected: new Set(sel.strokes.map((stroke) => stroke.id)),
+        rules: writingLines(page.backdrop, page.geometry),
+        stop,
+      });
+    } finally {
+      this.selectionFrameEl.removeClass("is-working");
+    }
+    if (outcome.kind !== "done" || stop()) return;
+    const command = neatenCommandFor(page.id, strokes, outcome.edit, outcome.style, () => this.strokeIds.next());
+    if (!command) return;
+    this.clearSelection();
+    this.history.push(this.doc, command);
+    this.strokeIndex.refreshPages(this.doc.pages, [page.id]);
+    this.renderer?.invalidatePage(page.id);
+    this.renderDry();
+    this.changed([page.id]);
+  }
+
   private tidySelection(): void {
     const sel = this.liveSelection();
     if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
