@@ -19,20 +19,15 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **Tidy handwriting.** Lasso some lines and choose **Tidy** in the ⋯ menu, or
-  hold a handwritten word and tap the brush beside **Correct** to tidy its line:
-  lines are set level (on the paper's rules when it has them), a wandering
-  baseline is straightened, lines that start together share a margin, and
-  shaky strokes are smoothed. Nothing is read or redrawn, so no word can
-  change; formulas and tables are left alone. Lines written at a slant of up
-  to about 30° are levelled too, and when there is nothing to tidy a notice
-  says so. One undo puts it back.
-  change; formulas and tables are left alone. One undo puts it back.
-- **Neaten handwriting.** Lasso some lines and choose **Neaten** in the ⋯
-  menu: the words Grape is sure of are written again, neater, in your own
-  hand, where yours were; the rest stay as you wrote them, tidied. It learns
-  your hand from your practice sheets (at least 10 copied lines) and runs on
-  your device; the model is a one-time download. One undo puts it back.
+- **Beautify handwriting.** Lasso some lines and choose **Beautify** in the ⋯
+  menu, or hold a handwritten word and tap the brush beside **Correct** to
+  beautify its line. The words Grape is sure of are written again, neater, in
+  your own hand, where yours were, by Dostoyev (handwriting writer model, a
+  one-time download, run on your device); every line is set level (on the
+  paper's rules when it has them), wandering baselines are straightened,
+  margins aligned and shaky strokes smoothed. Writing in your hand needs your
+  practice sheets (at least 10 copied lines); without them Beautify only
+  tidies. Formulas and tables are left alone. One undo puts it all back.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything

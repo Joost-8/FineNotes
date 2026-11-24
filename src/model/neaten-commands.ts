@@ -26,7 +26,7 @@ export function neatenCommand(
   added: readonly Stroke[],
   moved: readonly StrokePoints[],
 ): Command {
-  const label = t("surface.command.neaten");
+  const label = t("surface.command.beautify");
   return new CompositeCommand(label, [
     new RemoveStrokesFromPage(pageId, removed, label),
     ...added.map((stroke) => new AddStrokeToPage(pageId, stroke)),

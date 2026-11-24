@@ -15872,25 +15872,15 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     // The word check's card, for any word, underlined or not.
     const correct = this.correctWordAction(index, sel.strokes);
     if (menu.handwriting && correct) actions.push(correct);
-    // Tidy: the selected writing set level, on its margin and evenly spaced.
+    // Beautify: the words it can rewritten in the writer's hand, every line tidied (design rulings).
     if (menu.handwriting && sel.strokes.some((stroke) => stroke.tool === "pen" && !stroke.shape)) {
       actions.push({
-        id: "tidy",
+        id: "beautify",
         icon: "brush-cleaning",
-        label: t("surface.selectionBar.tidy"),
+        label: t("surface.selectionBar.beautify"),
         group: "edit",
-        run: () => this.tidySelection(),
+        run: () => void this.beautifySelection(),
       });
-      // Neaten: the same writing rewritten in the writer's own hand (view/neaten.ts).
-      if (this.callbacks.onNeaten && this.callbacks.canNeaten?.() !== false) {
-        actions.push({
-          id: "neaten",
-          icon: "feather",
-          label: t("surface.selectionBar.neaten"),
-          group: "edit",
-          run: () => void this.neatenSelection(),
-        });
-      }
     }
     if (menu.handwriting && heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
@@ -16474,9 +16464,9 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       ? this.correctWordAction(index, [press.ink], { group: "press", ...inBar })
       : null;
     if (correct) actions.unshift(correct);
-    // Beside Correct: tidy the line that word is on.
-    const tidyLine = page && press.ink ? this.tidyLineAction(page, press.ink) : null;
-    if (tidyLine) actions.splice(correct ? 1 : 0, 0, tidyLine);
+    // Beside Correct: beautify the line that word is on.
+    const beautifyLine = page && press.ink ? this.beautifyLineAction(page, press.ink) : null;
+    if (beautifyLine) actions.splice(correct ? 1 : 0, 0, beautifyLine);
     actions.push(
       {
         id: "text-here",
@@ -19423,15 +19413,23 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
   }
 
   /**
-   * Neaten the selection: the writing rewritten in the writer's own hand
-   * (view/neaten.ts). The frame shows it is working; leaving the selection,
-   * or any edit meanwhile, ends the work with nothing changed. One undo step.
+   * Beautify the selection (design rulings, 2026-11-24): the words the
+   * writer model can, rewritten in the writer's own hand (view/neaten.ts),
+   * and every line tidied, as one undo step. Where nothing can be rewritten
+   * (no model or practice sheet here, no word read surely) the lines are
+   * only tidied. The frame shows it is working; leaving the selection, or
+   * any edit meanwhile, ends the work with nothing changed.
    */
-  private async neatenSelection(): Promise<void> {
+  private async beautifySelection(): Promise<void> {
     const sel = this.liveSelection();
     const page = sel && this.doc.pages.find((candidate) => candidate.id === sel.pageId);
+    if (!sel || !page || this.groupDrag || this.callbacks.isLocked?.()) return;
     const run = this.callbacks.onNeaten;
-    if (!sel || !page || !run || this.callbacks.isLocked?.()) return;
+    // No writer on this device (or none to be had): tidy at once.
+    if (!run || this.callbacks.canNeaten?.() === false) {
+      this.tidySelection();
+      return;
+    }
     const latest = this.history.latest;
     const chosen = new Set(sel.strokes);
     // `liveSelection` makes a new object each time: compare what is selected, not the object.
@@ -19461,11 +19459,18 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     } finally {
       this.selectionFrameEl.removeClass("is-working");
     }
-    if (outcome.kind !== "done" || stop()) return;
-    const command = neatenCommandFor(page.id, strokes, outcome.edit, outcome.style, () =>
-      this.strokeIds.next(),
-    );
-    if (!command) return;
+    if (outcome.kind === "stopped" || stop()) return;
+    const command =
+      outcome.kind === "done"
+        ? neatenCommandFor(page.id, strokes, outcome.edit, outcome.style, () =>
+            this.strokeIds.next(),
+          )
+        : null;
+    // Nothing rewritten: the lines are tidied, as Tidy alone did.
+    if (!command) {
+      this.tidySelection();
+      return;
+    }
     this.clearSelection();
     this.history.push(this.doc, command);
     this.strokeIndex.refreshPages(this.doc.pages, [page.id]);
@@ -19515,7 +19520,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       return pts ? [{ stroke, pts }] : [];
     });
     if (changes.length === 0 || !result.seen) {
-      new Notice(t("surface.notice.nothingToTidy"));
+      new Notice(t("surface.notice.nothingToBeautify"));
       return false;
     }
     const moved = changes.map((change) => change.stroke);
@@ -19532,10 +19537,10 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
   }
 
   /**
-   * The press menu's Tidy, beside Correct: the line the held word is on.
+   * The press menu's Beautify, beside Correct: the line the held word is on.
    * Null when the ink is on no line of running text (`lineOfStroke`).
    */
-  private tidyLineAction(page: Page, ink: Stroke): SelectionAction | null {
+  private beautifyLineAction(page: Page, ink: Stroke): SelectionAction | null {
     if (ink.shape || ink.tool !== "pen" || isMirror(ink) || this.callbacks.isLocked?.())
       return null;
     const ids = lineOfStroke(
@@ -19545,20 +19550,23 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     );
     if (!ids) return null;
     return {
-      id: "tidy-line",
+      id: "beautify-line",
       icon: "brush-cleaning",
-      label: t("surface.selectionBar.tidyLine"),
+      label: t("surface.selectionBar.beautifyLine"),
       group: "press",
       // A symbol in the bar, beside Correct, so the bar keeps to its three words.
       bar: true,
       menu: "none",
       run: () => {
+        // The line is selected and beautified as a lasso of it would be; its frame shows the work.
         const line = new Set(ids);
         this.clearSelection();
-        this.tidyStrokes(
-          page.id,
-          page.strokes.filter((stroke) => line.has(stroke.id)),
-        );
+        this.select(page.id, {
+          strokes: page.strokes.filter((stroke) => line.has(stroke.id)),
+          images: [],
+          textBoxes: [],
+        });
+        void this.beautifySelection();
       },
     };
   }

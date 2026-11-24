@@ -92,7 +92,10 @@ export interface NeatenRequest {
 
 export type NeatenOutcome =
   | { kind: "done"; edit: NeatenEdit; style: Stroke[] }
-  | { kind: "nothing" | "stopped" | "needs-sheet" | "needs-model" };
+  /** Nothing could be rewritten (no model or sheet, no word Grape is sure of, a problem): tidy only. */
+  | { kind: "tidy" }
+  /** Stopped by the user (an edit, the selection left): nothing changes. */
+  | { kind: "stopped" };
 
 /** A copied line the writer may be shown: its text and ink, and what identifies it for the cache. */
 interface PoolLine {
@@ -108,6 +111,8 @@ export class NeatenService {
   /** Copied lines tied to their letters, by `PoolLine.key` (null: could not be). */
   private readonly tagged = new Map<string, TaggedLine | null>();
   private running = false;
+  /** Whether this session already asked for a practice sheet. */
+  private askedSheet = false;
   /** When `available` last asked the store to look for the files again. */
   private lookedAt = 0;
 
@@ -142,7 +147,6 @@ export class NeatenService {
       const outcome = await this.work(request, async () => {
         resumeOcr ??= await this.host.pauseOcr();
       });
-      if (outcome.kind === "nothing") new Notice(t("ai.neaten.nothingSure"));
       return outcome;
     } catch (error) {
       console.warn("FineNotes: Neaten stopped", error);
@@ -152,7 +156,7 @@ export class NeatenService {
           : t("ai.neaten.failed"),
         8000,
       );
-      return { kind: "stopped" };
+      return { kind: "tidy" };
     } finally {
       // The writer goes before the OCR may load again.
       this.writer?.dispose();
@@ -169,23 +173,28 @@ export class NeatenService {
     // Looked at again each time (the files may have come by sync since launch): ~0.2 s on the iPad.
     await store.check(true);
     if (store.state.kind !== "ready") {
-      this.host.models.offer(WRITER_MODEL.id, "ask");
-      return { kind: "needs-model" };
+      // Offered as a card ("Not now" holds for the session); Beautify tidies meanwhile.
+      this.host.models.offer(WRITER_MODEL.id, "auto");
+      return { kind: "tidy" };
     }
     const model = await this.loadModel();
     if ("problem" in model) {
       new Notice(problemText(model.problem), 8000);
-      return { kind: "stopped" };
+      return { kind: "tidy" };
     }
     const { manifest, kind } = model;
     const writable = (ch: string): boolean => manifest.chars.indexOf(ch) > 0;
     const pool = await this.poolOf(writable);
     if (pool.length < MIN_PRACTICE_LINES) {
-      new NeedsSheetModal(
-        this.host.app,
-        () => void writePracticePage(this.host.learningHost()),
-      ).open();
-      return { kind: "needs-sheet" };
+      // Once a session: after that Beautify just tidies.
+      if (!this.askedSheet) {
+        this.askedSheet = true;
+        new NeedsSheetModal(
+          this.host.app,
+          () => void writePracticePage(this.host.learningHost()),
+        ).open();
+      }
+      return { kind: "tidy" };
     }
     if (request.stop()) return { kind: "stopped" };
 
@@ -198,7 +207,7 @@ export class NeatenService {
       line.strokes.map((id) => byId.get(id)).filter((s): s is Stroke => !!s),
     );
     const profile = measureHand(request.strokes.filter((s) => s.tool === "pen" && !s.shape));
-    if (lines.length === 0 || !profile) return { kind: "nothing" };
+    if (lines.length === 0 || !profile) return { kind: "tidy" };
     const lexicon = this.host.lexicon();
     const listed = lexicon ? new Set(lexicon.words().map((w) => w.toLowerCase())) : null;
     const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
@@ -207,7 +216,7 @@ export class NeatenService {
       const job = this.jobOf(strokes, readings[li], writable, listed, answers);
       return job ? [job] : [];
     });
-    if (jobs.length === 0) return { kind: "nothing" };
+    if (jobs.length === 0) return { kind: "tidy" };
     if (request.stop()) return { kind: "stopped" };
 
     // What the model is shown for each line, before it is loaded: the reader must make its rows.
@@ -216,7 +225,7 @@ export class NeatenService {
       const shown = await this.shownFor(job.text, pool, manifest, kind);
       if (!shown) {
         new Notice(problemText({ kind: "rows", detail: "the reader's curves differ" }), 8000);
-        return { kind: "stopped" };
+        return { kind: "tidy" };
       }
       refs.push(kind.reference(job.text, shown, manifest));
     }
@@ -253,8 +262,8 @@ export class NeatenService {
       });
     }
     const placed = placeLines(placing, profile);
-    const edit = neatenEdit(request.strokes, placed, profile, request.rules);
-    if (edit.added.length === 0) return { kind: "nothing" };
+    const edit = neatenEdit(request.strokes, placed, profile, request.rules, request.selected);
+    if (edit.added.length === 0) return { kind: "tidy" };
     // Each line's new strokes take the pen of the line's first stroke.
     return { kind: "done", edit, style: placing.map((line) => line.strokes[0]) };
   }

@@ -18,7 +18,7 @@ export interface StrokePoints {
 }
 
 export class SetStrokePoints implements Command {
-  readonly label = t("surface.command.tidy");
+  readonly label = t("surface.command.beautify");
   /** What each stroke held before the last apply, for an exact undo. */
   private before: { stroke: Stroke; pts: number[] }[] = [];
 
