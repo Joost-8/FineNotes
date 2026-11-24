@@ -33,7 +33,7 @@ import { type NeatenEdit, neatenEdit } from "../recognition/writer/apply";
 import type { WriterClient } from "../recognition/writer/client";
 import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
-import { neatenLine } from "../recognition/writer/repair";
+import { neatenLine, readBackRewrite } from "../recognition/writer/repair";
 import { type TaggedLine, levelledStrokes } from "../recognition/writer/rows";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
@@ -154,8 +154,12 @@ export class NeatenService {
 
   /** Neaten the selected lines. Shows its own dialogs and notices; the surface applies a "done". */
   async run(request: NeatenRequest): Promise<NeatenOutcome> {
-    // A second tap while it works: the first run goes on.
-    if (this.running) return { kind: "stopped" };
+    // While the writer is busy (another Beautify, or a text being written in the hand) this
+    // one waits its turn, unless the user moves on meanwhile.
+    while (this.running) {
+      if (request.stop()) return { kind: "stopped" };
+      await new Promise((done) => window.setTimeout(done, 100));
+    }
     this.running = true;
     let resumeOcr: (() => void) | null = null;
     try {
@@ -276,10 +280,14 @@ export class NeatenService {
         { seed: 0, tries, repair: true, stop: request.stop },
       );
       if (!done || request.stop()) return { kind: "stopped" };
+      // A word whose writing Grape does not read back as the word stays in the writer's own
+      // ink: the model wrote "simple" as "single" and "again" as "ag ain" on Joost's iPad.
+      const rewrite = readBackRewrite(job.text, done.read, job.rewrite);
+      if (!rewrite.some(Boolean)) continue;
       placing.push({
         strokes: job.strokes,
         words: job.words,
-        rewrite: job.rewrite,
+        rewrite,
         written: levelledStrokes(done.written, done.written.char, job.text),
       });
     }
