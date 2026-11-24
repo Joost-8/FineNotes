@@ -60,6 +60,8 @@ import { type LearningHost, readAllPracticeLines, writePracticePage } from "./ha
 const TRIES = 3;
 /** Practice lines looked at beyond the ones shown, in case some cannot be tied to their letters. */
 const SPARE_LINES = 4;
+/** How often the menu may ask for the model's files to be looked for again. */
+const RECHECK_MS = 30_000;
 
 export interface NeatenHost {
   app: App;
@@ -105,6 +107,8 @@ export class NeatenService {
   /** Copied lines tied to their letters, by `PoolLine.key` (null: could not be). */
   private readonly tagged = new Map<string, TaggedLine | null>();
   private running = false;
+  /** When `available` last asked the store to look for the files again. */
+  private lookedAt = 0;
 
   constructor(private readonly host: NeatenHost) {
     // Listed in Settings › Models on this device from the start, like the other models.
@@ -113,7 +117,15 @@ export class NeatenService {
 
   /** Whether the menu offers Neaten: the model can be downloaded, or is already here. */
   available(): boolean {
-    return WRITER_HOSTED || this.host.models.register(WRITER_MODEL).state.kind === "ready";
+    const store = this.host.models.register(WRITER_MODEL);
+    if (WRITER_HOSTED || store.state.kind === "ready") return true;
+    // Files that sync brings after launch: looked for again, for the next time the menu opens.
+    const now = Date.now();
+    if (now - this.lookedAt > RECHECK_MS) {
+      this.lookedAt = now;
+      void store.check(true);
+    }
+    return false;
   }
 
   /** Neaten the selected lines. Shows its own dialogs and notices; the surface applies a "done". */
@@ -150,7 +162,8 @@ export class NeatenService {
     pauseOcr: () => Promise<void>,
   ): Promise<NeatenOutcome> {
     const store = this.host.models.register(WRITER_MODEL);
-    await store.check();
+    // Looked at again each time (the files may have come by sync since launch): ~0.2 s on the iPad.
+    await store.check(true);
     if (store.state.kind !== "ready") {
       this.host.models.offer(WRITER_MODEL.id, "ask");
       return { kind: "needs-model" };
