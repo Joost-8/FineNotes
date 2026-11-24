@@ -19,6 +19,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Tidy handwriting.** Lasso some lines and choose **Tidy** in the ⋯ menu, or
+  hold a handwritten word and tap the wand beside **Correct** to tidy its line:
+  lines are set level (on the paper's rules when it has them), a wandering
+  baseline is straightened, lines that start together share a margin, and
+  shaky strokes are smoothed. Nothing is read or redrawn, so no word can
+  change; formulas and tables are left alone. One undo puts it back.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything
