@@ -587,7 +587,7 @@ export const ai = {
     "Beautify uses it to write the words you select again, neater, in your own hand, on this device; your ink never leaves it.",
   "ai.neaten.needsSheetTitle": "Beautify can write in your hand",
   "ai.neaten.needsSheet":
-    "Copy at least {min} lines on a practice sheet, and Beautify also rewrites words neater in your own hand. Grape learns from the same sheet.",
+    "This time Beautify only tidied your lines. To have it also write words again, neater, in your own hand: tap Write practice sheet, copy at least {min} of its lines, then choose Beautify again. Grape learns from the same sheet.",
   "ai.neaten.writeSheet": "Write practice sheet",
   "ai.neaten.modelNewer":
     "This version of Dostoyev needs a newer FineNotes. Update FineNotes to use it.",

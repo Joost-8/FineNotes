@@ -29,10 +29,12 @@ const RELEASE = "https://github.com/Joost-8/Dostoyev/releases/download/v2.0";
 
 /**
  * Whether the files are published at `RELEASE`: Neaten is then offered
- * everywhere, and its first use offers the download. False would offer it
- * only where a copy is already in the folder (a development copy).
+ * everywhere, and its first use offers the download. False offers it only
+ * where a copy is already in the folder (Joost's vault, by sync). False
+ * until release v2.0 is published (a public step, on Joost's word): a
+ * download from it would fail.
  */
-export const WRITER_HOSTED = true;
+export const WRITER_HOSTED = false;
 
 const file = (name: string, bytes: number, sha256: string) => ({
   name,

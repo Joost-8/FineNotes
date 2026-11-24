@@ -117,6 +117,8 @@ export class NeatenService {
   private askedSheet = false;
   /** When `available` last asked the store to look for the files again. */
   private lookedAt = 0;
+  /** Prose-like practice lines at the last Beautify (null: none yet this session). */
+  private practiceLines: number | null = null;
 
   constructor(private readonly host: NeatenHost) {
     // Listed in Settings › Models on this device from the start, like the other models.
@@ -137,6 +139,17 @@ export class NeatenService {
       void store.check(true);
     }
     return false;
+  }
+
+  /**
+   * Whether Beautify writes in the hand here, as far as is known without
+   * reading the vault: the model is on the device, and the last count of
+   * practice lines (none yet this session: not known, so yes) was enough.
+   * The neatness slider shows only then.
+   */
+  writesInHand(): boolean {
+    if (this.host.models.register(WRITER_MODEL).state.kind !== "ready") return false;
+    return this.practiceLines === null || this.practiceLines >= MIN_PRACTICE_LINES;
   }
 
   /** Neaten the selected lines. Shows its own dialogs and notices; the surface applies a "done". */
@@ -187,6 +200,7 @@ export class NeatenService {
     const { manifest, kind } = model;
     const writable = (ch: string): boolean => manifest.chars.indexOf(ch) > 0;
     const pool = await this.poolOf(writable);
+    this.practiceLines = pool.length;
     if (pool.length < MIN_PRACTICE_LINES) {
       // Once a session: after that Beautify just tidies.
       if (!this.askedSheet) {

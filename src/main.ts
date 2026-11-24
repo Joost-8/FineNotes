@@ -2723,7 +2723,7 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Beautify's neatness slider, while Beautify can write in the hand; null when it only tidies. */
   beautifyNeatness(): NeatnessControl | null {
-    if (!this.neaten.available()) return null;
+    if (!this.neaten.writesInHand()) return null;
     return {
       get: () => this.settings.beautifyNeatness,
       set: (neatness) => {
